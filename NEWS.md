@@ -1,4 +1,4 @@
-# TemporalHazard 1.1.0.9000 (development version)
+# TemporalHazard 1.2.0
 
 ## New features
 
