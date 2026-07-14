@@ -8,6 +8,7 @@
 ^inst/fixtures/\.gitkeep$
 ^TODO\.md$
 ^inst/dev$
+^\.superpowers$
 ^.*\.Rproj$
 ^_pkgdown\.yml$
 ^vignettes/.*\.html$

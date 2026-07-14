@@ -1188,12 +1188,60 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 # hzr_bootstrap -- Bootstrap inference for hazard models
 # =========================================================================
 
+#' Resolve parameter names for a bootstrap replicate's fitted theta
+#'
+#' Shape parameters are already named in `theta`; covariate betas often
+#' come through with empty names. Covariate coefficients occupy the last
+#' `ncol(x)` positions of theta -- fill any blanks within that block from
+#' the design matrix column names by relative index, so downstream pivots
+#' (e.g. `reshape(wide)`) get a distinct column per covariate, even when
+#' some betas are already named and others are not.
+#'
+#' @param fit_obj A fitted `hazard`-like object (has `$fit$theta` and
+#'   `$data$x`).
+#' @return Character vector of resolved parameter names, same length as
+#'   `fit_obj$fit$theta`.
+#' @keywords internal
+#' @noRd
+.hzr_bootstrap_param_names <- function(fit_obj) {
+  theta <- fit_obj$fit$theta
+  param_names <- names(theta)
+  if (is.null(param_names)) {
+    param_names <- character(length(theta))
+  }
+  if (!is.null(fit_obj$data$x)) {
+    x_names <- colnames(fit_obj$data$x)
+    p <- ncol(fit_obj$data$x)
+    n_theta <- length(param_names)
+    if (!is.null(x_names) && p > 0L && n_theta >= p) {
+      cov_idx <- seq.int(n_theta - p + 1L, n_theta)
+      blank_in_block <- !nzchar(param_names[cov_idx])
+      param_names[cov_idx[blank_in_block]] <- x_names[blank_in_block]
+    }
+  }
+  still_blank <- !nzchar(param_names)
+  if (any(still_blank)) {
+    param_names[still_blank] <- paste0("param_", which(still_blank))
+  }
+  param_names
+}
+
 #' Bootstrap resampling for hazard model coefficients
 #'
 #' Resample data with replacement, refit the hazard model on each
 #' replicate, and accumulate coefficient distributions. Returns a tidy
 #' data frame of per-replicate estimates with summary statistics.
 #' This is the R equivalent of the SAS `bootstrap.hazard.sas` macro.
+#'
+#' When `scope` is supplied, each replicate instead runs a fresh
+#' [hzr_stepwise()] selection on the resampled data (starting from a
+#' fixed-shape refit of `object`) instead of refitting `object`'s exact
+#' formula. This is the R equivalent of the SAS `%HAZBOOT` macro: fit the
+#' hazard shape with no covariates (fixing it via `hzr_phase(..., fixed =
+#' "shapes")`), then bootstrap-screen candidate covariates for how often
+#' they enter the model. `summary$pct` then reports the selection
+#' frequency across replicates, and `summary$mean`/`sd`/`ci_*` describe the
+#' coefficient distribution conditional on selection.
 #'
 #' @param object A fitted `hazard` object (with `fit = TRUE`).
 #' @param n_boot Integer: number of bootstrap replicates (default 200).
@@ -1208,6 +1256,21 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   during the call -- `seed = NULL` avoids the *reset* at entry, not
 #'   the advance during resampling.
 #' @param verbose Logical; if `TRUE`, print progress every 50 replicates.
+#' @param scope Candidate variable scope for embedded stepwise selection
+#'   during each bootstrap replicate. `NULL` (default) preserves the
+#'   original fixed-formula bootstrap: every replicate refits `object`'s
+#'   exact model, and `summary$pct` is always ~100. When supplied (a
+#'   one-sided formula, character vector, or -- for multiphase fits -- a
+#'   named list of one-sided formulas keyed by phase, matching
+#'   [hzr_stepwise()]'s `scope`), each replicate runs a fresh
+#'   [hzr_stepwise()] selection instead; see Details.
+#' @param direction,criterion,slentry,slstay,max_steps,max_move,force_in,force_out
+#'   Passed through to [hzr_stepwise()] on each replicate when `scope` is
+#'   supplied; ignored when `scope = NULL`. See [hzr_stepwise()] for
+#'   definitions and defaults.
+#' @param ... Additional arguments forwarded to [hzr_stepwise()] (e.g.
+#'   `control = list(n_starts = 1)`) when `scope` is supplied; ignored
+#'   otherwise.
 #'
 #' @return A list with class `"hzr_bootstrap"` containing:
 #' \describe{
@@ -1215,9 +1278,14 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     and `estimate` -- one row per parameter per successful replicate.}
 #'   \item{summary}{Data frame with columns `parameter`, `n`, `pct`,
 #'     `mean`, `sd`, `min`, `max`, `ci_lower`, `ci_upper` -- one row per
-#'     parameter.}
+#'     parameter. In `mode = "select"`, `pct` is the selection frequency
+#'     and the other statistics are conditional on selection.}
 #'   \item{n_success}{Number of successfully converged replicates.}
 #'   \item{n_failed}{Number of replicates that failed to converge.}
+#'   \item{mode}{`"refit"` (fixed-formula bootstrap) or `"select"`
+#'     (embedded stepwise selection).}
+#'   \item{scope}{Only present when `mode == "select"`: the candidate
+#'     scope used.}
 #' }
 #'
 #' @examples
@@ -1233,13 +1301,36 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #' )
 #' bs <- hzr_bootstrap(fit, n_boot = 50, seed = 123)
 #' print(bs)
+#'
+#' # Embedded stepwise selection: screen candidate covariates for how
+#' # often they enter the model across resamples (R equivalent of SAS
+#' # %HAZBOOT).
+#' base <- hazard(
+#'   survival::Surv(int_dead, dead) ~ 1,
+#'   data  = avc,
+#'   dist  = "weibull",
+#'   theta = c(mu = 0.01, nu = 0.5),
+#'   fit   = TRUE
+#' )
+#' bs_sel <- hzr_bootstrap(base, n_boot = 20, seed = 123,
+#'                          scope = ~ age + mal,
+#'                          slentry = 0.3, slstay = 0.2)
+#' print(bs_sel)
 #' }
 #'
 #' @seealso [hazard()] for model fitting, [vcov.hazard()] for
-#'   Hessian-based standard errors.
+#'   Hessian-based standard errors, [hzr_stepwise()] for the selection
+#'   procedure used when `scope` is supplied.
 #' @export
 hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
-                           seed = NULL, verbose = FALSE) {
+                           seed = NULL, verbose = FALSE,
+                           scope = NULL,
+                           direction = c("both", "forward", "backward"),
+                           criterion = c("wald", "aic"),
+                           slentry = 0.30, slstay = 0.20,
+                           max_steps = 50L, max_move = 4L,
+                           force_in = character(), force_out = character(),
+                           ...) {
   if (!inherits(object, "hazard")) {
     stop("'object' must be a fitted hazard object.", call. = FALSE)
   }
@@ -1254,6 +1345,10 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   if (fraction <= 0 || fraction > 1) {
     stop("'fraction' must be in (0, 1].", call. = FALSE)
   }
+
+  direction <- match.arg(direction)
+  criterion <- match.arg(criterion)
+  select_mode <- !is.null(scope)
 
   if (!is.null(seed)) set.seed(seed)
 
@@ -1290,31 +1385,29 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     NULL
   }
 
-  # Parameter names from the fitted model. Shape parameters (e.g. mu, nu) are
-  # named in theta, but covariate betas often come through with empty names.
-  # Covariate coefficients occupy the last ncol(x) positions of theta; fill
-  # any blanks within that block from the design matrix column names by
-  # relative index, so downstream pivots (e.g. reshape(wide)) get a distinct
-  # column per covariate -- even when some betas are already named and
-  # others are not.
-  param_names <- names(object$fit$theta)
-  if (is.null(param_names)) {
-    param_names <- character(length(object$fit$theta))
+  # Select-mode: fail loud on a structurally invalid scope (wrong type, an
+  # unnamed list for a multiphase fit, an unknown phase name) up front, by
+  # running one stepwise search against the untouched data, instead of
+  # surfacing it n_boot replicates later. This does NOT catch a merely
+  # nonexistent column name -- hzr_stepwise() itself converts that into a
+  # per-candidate warning() rather than an error (see
+  # inst/dev/BOOTSTRAP-SELECTION-DESIGN.md, "Error handling").
+  if (select_mode) {
+    hzr_stepwise(
+      object, scope = scope, data = orig_data,
+      direction = direction, criterion = criterion,
+      slentry = slentry, slstay = slstay,
+      max_steps = max_steps, max_move = max_move,
+      force_in = force_in, force_out = force_out,
+      trace = FALSE, ...
+    )
   }
-  if (!is.null(object$data$x)) {
-    x_names <- colnames(object$data$x)
-    p <- ncol(object$data$x)
-    n_theta <- length(param_names)
-    if (!is.null(x_names) && p > 0L && n_theta >= p) {
-      cov_idx <- seq.int(n_theta - p + 1L, n_theta)
-      blank_in_block <- !nzchar(param_names[cov_idx])
-      param_names[cov_idx[blank_in_block]] <- x_names[blank_in_block]
-    }
-  }
-  still_blank <- !nzchar(param_names)
-  if (any(still_blank)) {
-    param_names[still_blank] <- paste0("param_", which(still_blank))
-  }
+
+  # Parameter names from the fitted model. In fixed-refit mode every
+  # replicate shares the same theta layout, so names are resolved once, up
+  # front. In select-mode, each replicate can select a different variable
+  # set, so names are resolved per replicate inside the loop instead.
+  param_names <- if (!select_mode) .hzr_bootstrap_param_names(object) else NULL
 
   # Accumulate results
   rep_list <- vector("list", n_boot)
@@ -1332,22 +1425,52 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     # boot_weights is referenced via quote() inside eval -- lintr cannot trace it
     boot_weights <- if (is.null(orig_weights)) NULL else orig_weights[idx] # nolint: object_usage_linter.
 
-    # Refit using the same call but with resampled data (and weights, if any)
-    # (boot_data/boot_weights are referenced via quote() inside eval)
-    boot_fit <- tryCatch({
-      cl_boot <- cl
-      cl_boot$data <- quote(boot_data)
-      if (!is.null(orig_weights)) cl_boot$weights <- quote(boot_weights)
-      cl_boot$fit <- TRUE
-      eval(cl_boot)
-    }, error = function(e) NULL)
+    if (select_mode) {
+      # Refit the (shape-fixed) base model on the resampled data first, so
+      # the stepwise search's entry/retention tests compare candidates
+      # against a base likelihood computed on the SAME resampled data --
+      # then run a fresh stepwise selection from that base.
+      boot_fit <- tryCatch({
+        cl_base <- cl
+        cl_base$data <- quote(boot_data)
+        if (!is.null(orig_weights)) cl_base$weights <- quote(boot_weights)
+        cl_base$fit <- TRUE
+        base_boot <- eval(cl_base)
+        if (!is.finite(base_boot$fit$objective)) {
+          stop("base refit did not converge")
+        }
+        hzr_stepwise(
+          base_boot, scope = scope, data = boot_data,
+          direction = direction, criterion = criterion,
+          slentry = slentry, slstay = slstay,
+          max_steps = max_steps, max_move = max_move,
+          force_in = force_in, force_out = force_out,
+          trace = FALSE, ...
+        )
+      }, error = function(e) NULL)
+    } else {
+      # Refit using the same call but with resampled data (and weights, if any)
+      # (boot_data/boot_weights are referenced via quote() inside eval)
+      boot_fit <- tryCatch({
+        cl_boot <- cl
+        cl_boot$data <- quote(boot_data)
+        if (!is.null(orig_weights)) cl_boot$weights <- quote(boot_weights)
+        cl_boot$fit <- TRUE
+        eval(cl_boot)
+      }, error = function(e) NULL)
+    }
 
     if (!is.null(boot_fit) && is.finite(boot_fit$fit$objective)) {
       n_success <- n_success + 1L
       theta_b <- boot_fit$fit$theta
+      names_b <- if (select_mode) {
+        .hzr_bootstrap_param_names(boot_fit)
+      } else {
+        param_names[seq_along(theta_b)]
+      }
       rep_list[[b]] <- data.frame(
         replicate = b,
-        parameter = param_names[seq_along(theta_b)],
+        parameter = names_b,
         estimate  = as.numeric(theta_b),
         stringsAsFactors = FALSE
       )
@@ -1384,9 +1507,16 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     })
     summary_df <- do.call(rbind, summary_list)
     rownames(summary_df) <- NULL
-    # Sort by parameter order in the original model
-    idx_order <- match(summary_df$parameter, param_names)
-    summary_df <- summary_df[order(idx_order), ]
+    if (select_mode) {
+      # No single canonical variable order across replicates (different
+      # replicates select different sets) -- rank by selection frequency,
+      # most-selected first, ties broken alphabetically.
+      summary_df <- summary_df[order(-summary_df$pct, summary_df$parameter), ]
+    } else {
+      # Sort by parameter order in the original model
+      idx_order <- match(summary_df$parameter, param_names)
+      summary_df <- summary_df[order(idx_order), ]
+    }
   } else {
     summary_df <- data.frame(parameter = character(0), n = integer(0),
                               pct = numeric(0), mean = numeric(0),
@@ -1400,8 +1530,10 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     replicates = replicates,
     summary    = summary_df,
     n_success  = n_success,
-    n_failed   = n_failed
+    n_failed   = n_failed,
+    mode       = if (select_mode) "select" else "refit"
   )
+  if (select_mode) result$scope <- scope
   class(result) <- "hzr_bootstrap"
   result
 }
@@ -1409,10 +1541,15 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
 #' @rdname hzr_bootstrap
 #' @param x An `hzr_bootstrap` object.
 #' @param digits Number of decimal places for formatting.
-#' @param ... Additional arguments (ignored).
 #' @export
 print.hzr_bootstrap <- function(x, digits = 4, ...) {
   cat("Bootstrap inference for hazard model\n")
+  mode <- x$mode %||% "refit"
+  cat("Mode:", if (identical(mode, "select")) {
+    "embedded stepwise selection"
+  } else {
+    "fixed refit"
+  }, "\n")
   cat("Replicates:", x$n_success, "successful,", x$n_failed, "failed\n\n")
   if (nrow(x$summary) > 0) {
     display <- x$summary

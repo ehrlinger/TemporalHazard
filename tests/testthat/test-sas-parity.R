@@ -729,6 +729,44 @@ test_that("bs.death.AVC: R fixed-model bootstrap runs on the AVC cohort", {
   expect_gt(bs$n_success, 0L)
 })
 
+test_that("bs.death.AVC: R scope= embedded stepwise selection runs on the AVC cohort", {
+  testthat::skip_on_cran()
+  # No SAS .lst needed here -- exercises R's new scope= bootstrap-selection
+  # path (Task 2 of inst/dev/PLAN-bootstrap-stepwise-selection.md) on the
+  # shipped avc dataset, so it must run in public CI (do NOT gate on
+  # fixtures). This intentionally does NOT assert R-vs-SAS selection
+  # frequency parity -- see the "bs.death.AVC" SAS-frequency test above and
+  # inst/dev/BOOTSTRAP-SELECTION-DESIGN.md for why that remains a
+  # documented, accepted gap.
+  set.seed(222)
+
+  data(avc, package = "TemporalHazard")
+  # Same null 2-phase AVC model as the fixed-refit test above, with shapes
+  # fixed -- the R equivalent of hz.death.AVC's output feeding bh.death.AVC.
+  base <- hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = avc, dist = "multiphase",
+    phases = list(
+      early    = hzr_phase("cdf", t_half = 0.1512, nu = 1.44, m = 1,
+                           fixed = "shapes"),
+      constant = hzr_phase("constant")),
+    fit = TRUE, control = list(n_starts = 1, conserve = TRUE))
+
+  bs <- hzr_bootstrap(base, n_boot = 10L, seed = 222L,
+                       scope = list(early    = ~ age + mal,
+                                    constant = ~ status + com_iv),
+                       slentry = 0.3, slstay = 0.2,
+                       control = list(n_starts = 1, conserve = TRUE))
+
+  expect_s3_class(bs, "hzr_bootstrap")
+  expect_identical(bs$mode, "select")
+  expect_gt(bs$n_success, 0L)
+  # Phase-qualified shape parameters are never dropped by stepwise
+  # selection, so both phases must be represented in the summary.
+  params <- bs$summary$parameter
+  expect_true(any(grepl("^early\\.", params)))
+  expect_true(any(grepl("^constant\\.", params)))
+})
+
 # ---------------------------------------------------------------------------
 # hp.death.AVC.hm1 / hm2: patient-specific HAZPRED predictions from the saved
 # multivariable both-phase model (hm.death.AVC final fit, "HMDEATH").

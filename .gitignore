@@ -29,3 +29,4 @@ vignettes/*.R
 .positai
 CRAN-SUBMISSION
 .worktrees/
+.superpowers/
