@@ -102,14 +102,24 @@ mirroring `hzr_stepwise()`'s own `$scope` field. `class` stays
 ### Error handling
 
 Per-replicate failures (non-convergence, non-finite objective) are still
-caught and counted in `n_failed`, as today. But a **structurally bad**
-`scope`/`slentry`/`force_in` argument (e.g. a typo'd variable name not in
-`data`) should not silently manifest as "every one of 200 replicates
-failed" with no diagnostic. Before entering the loop, validate `scope`-mode
-arguments with one call to `hzr_stepwise()` on the *original* (unresampled)
-data; let that call's own argument checks raise immediately. Only errors
-inside the resampling loop itself (convergence-shaped failures) get
-swallowed into `n_failed`.
+caught and counted in `n_failed`, as today. Before entering the loop,
+validate `scope`-mode arguments with one call to `hzr_stepwise()` on the
+*original* (unresampled) data, so a **structurally invalid** `scope` (wrong
+type, an unnamed list for a multiphase fit, an unknown phase name — the
+cases `hzr_stepwise()` itself already raises `stop()` for) fails immediately
+instead of surfacing 200 replicates later.
+
+Note this does **not** catch a typo'd-but-syntactically-valid column name
+(e.g. `scope = ~ nonexistant_var`): confirmed by reading
+`.hzr_stepwise_forward_step()` (`stepwise-step.R:196-227`), a candidate that
+fails to refit — including "no such column" — is caught internally and
+converted into a `warning()` plus a rejected candidate, not a raised error.
+That is existing, documented `hzr_stepwise()` behavior, not something this
+feature introduces or needs to work around: the typo is still visible (as a
+`warning()` on every replicate that tries it, and as a variable permanently
+absent from `summary`), just not via a hard stop. This spec only adds the
+one pre-loop validation call; it does not add new column-existence
+checking.
 
 ### Out of scope
 
@@ -140,8 +150,13 @@ swallowed into `n_failed`.
    (still a documented gap) — this remains a regression guard plus a
    recorded SAS reference, upgraded from "parses SAS output" to "parses SAS
    output AND runs the equivalent R path."
-4. Bad-argument test: a `scope` referencing a nonexistent column raises
-   immediately (not silently reported as 200 failed replicates).
+4. Structural bad-argument test: an invalid `scope` shape (e.g. an unnamed
+   list for a multiphase fit) raises immediately via the pre-loop
+   validation call, not after 200 replicates.
+5. Typo'd-column test: a `scope` column absent from `data` produces
+   `warning()`s (inherited `hzr_stepwise()` behavior) and that variable
+   never appears in `summary` with a nonzero `pct` — it is not silently
+   reported as `n_failed` replicates, and it does not raise.
 
 No PHI-adjacent data is used in any `temporal_hazard` test or fixture.
 
