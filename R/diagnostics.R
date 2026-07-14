@@ -1188,6 +1188,44 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 # hzr_bootstrap -- Bootstrap inference for hazard models
 # =========================================================================
 
+#' Resolve parameter names for a bootstrap replicate's fitted theta
+#'
+#' Shape parameters are already named in `theta`; covariate betas often
+#' come through with empty names. Covariate coefficients occupy the last
+#' `ncol(x)` positions of theta -- fill any blanks within that block from
+#' the design matrix column names by relative index, so downstream pivots
+#' (e.g. `reshape(wide)`) get a distinct column per covariate, even when
+#' some betas are already named and others are not.
+#'
+#' @param fit_obj A fitted `hazard`-like object (has `$fit$theta` and
+#'   `$data$x`).
+#' @return Character vector of resolved parameter names, same length as
+#'   `fit_obj$fit$theta`.
+#' @keywords internal
+#' @noRd
+.hzr_bootstrap_param_names <- function(fit_obj) {
+  theta <- fit_obj$fit$theta
+  param_names <- names(theta)
+  if (is.null(param_names)) {
+    param_names <- character(length(theta))
+  }
+  if (!is.null(fit_obj$data$x)) {
+    x_names <- colnames(fit_obj$data$x)
+    p <- ncol(fit_obj$data$x)
+    n_theta <- length(param_names)
+    if (!is.null(x_names) && p > 0L && n_theta >= p) {
+      cov_idx <- seq.int(n_theta - p + 1L, n_theta)
+      blank_in_block <- !nzchar(param_names[cov_idx])
+      param_names[cov_idx[blank_in_block]] <- x_names[blank_in_block]
+    }
+  }
+  still_blank <- !nzchar(param_names)
+  if (any(still_blank)) {
+    param_names[still_blank] <- paste0("param_", which(still_blank))
+  }
+  param_names
+}
+
 #' Bootstrap resampling for hazard model coefficients
 #'
 #' Resample data with replacement, refit the hazard model on each
@@ -1290,31 +1328,7 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     NULL
   }
 
-  # Parameter names from the fitted model. Shape parameters (e.g. mu, nu) are
-  # named in theta, but covariate betas often come through with empty names.
-  # Covariate coefficients occupy the last ncol(x) positions of theta; fill
-  # any blanks within that block from the design matrix column names by
-  # relative index, so downstream pivots (e.g. reshape(wide)) get a distinct
-  # column per covariate -- even when some betas are already named and
-  # others are not.
-  param_names <- names(object$fit$theta)
-  if (is.null(param_names)) {
-    param_names <- character(length(object$fit$theta))
-  }
-  if (!is.null(object$data$x)) {
-    x_names <- colnames(object$data$x)
-    p <- ncol(object$data$x)
-    n_theta <- length(param_names)
-    if (!is.null(x_names) && p > 0L && n_theta >= p) {
-      cov_idx <- seq.int(n_theta - p + 1L, n_theta)
-      blank_in_block <- !nzchar(param_names[cov_idx])
-      param_names[cov_idx[blank_in_block]] <- x_names[blank_in_block]
-    }
-  }
-  still_blank <- !nzchar(param_names)
-  if (any(still_blank)) {
-    param_names[still_blank] <- paste0("param_", which(still_blank))
-  }
+  param_names <- .hzr_bootstrap_param_names(object)
 
   # Accumulate results
   rep_list <- vector("list", n_boot)
