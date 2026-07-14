@@ -811,7 +811,7 @@ test_that("hzr_bootstrap scope runs embedded stepwise selection per replicate", 
   # covariates are), so they must be present -- and selected -- in every
   # successful replicate.
   shape_rows <- bs$summary[bs$summary$parameter %in% c("mu", "nu"), ]
-  expect_true(all(shape_rows$pct == 100))
+  expect_true(all(shape_rows$n == bs$n_success))
 })
 
 test_that("hzr_bootstrap scope raises immediately on a structurally invalid scope", {

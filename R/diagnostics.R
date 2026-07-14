@@ -1541,7 +1541,6 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
 #' @rdname hzr_bootstrap
 #' @param x An `hzr_bootstrap` object.
 #' @param digits Number of decimal places for formatting.
-#' @param ... Additional arguments (ignored).
 #' @export
 print.hzr_bootstrap <- function(x, digits = 4, ...) {
   cat("Bootstrap inference for hazard model\n")

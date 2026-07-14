@@ -57,7 +57,9 @@ named list of one-sided formulas keyed by phase, matching
 supplied; ignored when \code{scope = NULL}. See \code{\link[=hzr_stepwise]{hzr_stepwise()}} for
 definitions and defaults.}
 
-\item{...}{Additional arguments (ignored).}
+\item{...}{Additional arguments forwarded to \code{\link[=hzr_stepwise]{hzr_stepwise()}} (e.g.
+\code{control = list(n_starts = 1)}) when \code{scope} is supplied; ignored
+otherwise.}
 
 \item{x}{An \code{hzr_bootstrap} object.}
 
