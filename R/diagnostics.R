@@ -1350,6 +1350,19 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   criterion <- match.arg(criterion)
   select_mode <- !is.null(scope)
 
+  # `...` exists only to forward stepwise-control arguments (e.g. `control=`)
+  # to hzr_stepwise() in select-mode; fixed-refit mode (scope = NULL) has no
+  # use for it. Without this check, a mistyped argument (e.g. `verbsoe =
+  # TRUE`) would silently be accepted and ignored instead of erroring, as it
+  # did before `...` was added for `scope=`.
+  extra_args <- list(...)
+  if (!select_mode && length(extra_args) > 0) {
+    stop("Unused argument(s) in '...': ",
+         paste(names(extra_args), collapse = ", "),
+         ". '...' is only forwarded to hzr_stepwise() when 'scope' is set.",
+         call. = FALSE)
+  }
+
   if (!is.null(seed)) set.seed(seed)
 
   # hzr_stepwise() is always called below with trace = FALSE (per-step
@@ -1357,7 +1370,6 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # controls bootstrap-level progress instead). Strip `trace` from `...`
   # first so a caller-supplied `trace=` doesn't collide with it ("formal
   # argument matched by multiple actual arguments").
-  extra_args <- list(...)
   extra_args$trace <- NULL
 
   # Reconstruct the call components

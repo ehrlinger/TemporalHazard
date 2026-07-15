@@ -782,6 +782,8 @@ test_that("hzr_bootstrap scope = NULL reports mode = refit and is unaffected", {
 
   expect_identical(bs$mode, "refit")
   expect_null(bs$scope)
+  expect_gt(bs$n_success, 0)
+  expect_gt(nrow(bs$summary), 0)
   expect_true(all(bs$summary$pct > 0))
 })
 
@@ -877,6 +879,17 @@ test_that("hzr_bootstrap(scope=) forwards a caller-supplied trace= without colli
                        control = list(n_starts = 1), trace = TRUE)
   expect_s3_class(bs, "hzr_bootstrap")
   expect_gte(bs$n_success, 0L)
+})
+
+test_that("hzr_bootstrap errors on unused '...' when scope is NULL", {
+  # '...' only has a purpose in select-mode (forwarded to hzr_stepwise());
+  # in fixed-refit mode it must still error on an unrecognized argument, as
+  # it did before '...' was added to the signature for scope=.
+  fit <- .fit_avc_weibull()
+  expect_error(
+    hzr_bootstrap(fit, n_boot = 5, verbsoe = TRUE),
+    "Unused argument"
+  )
 })
 
 test_that("print.hzr_bootstrap reports the mode", {
