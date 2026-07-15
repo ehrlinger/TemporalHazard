@@ -148,11 +148,11 @@ Each phase is one term \\j\\ in the additive cumulative hazard
 \Phi_j(t)\$\$
 
 where \\\mu_j(\mathbf{x}) = \exp(\alpha_j + \mathbf{x}\_j^\top
-\boldsymbol{\beta}\_j)\\ is the phase-specific log-linear scale and
-\\\Phi_j(t)\\ is the temporal shape selected by `type` (below). The
-`t_half`/`nu`/`m` (or g3 `tau`/`gamma`/`alpha`/`eta`) arguments set the
-starting values for that shape; `formula` attaches the covariates
-\\\mathbf{x}\_j\\ that enter \\\mu_j\\.
+\beta_j)\\ is the phase-specific log-linear scale and \\\Phi_j(t)\\ is
+the temporal shape selected by `type` (below). The `t_half`/`nu`/`m` (or
+g3 `tau`/`gamma`/`alpha`/`eta`) arguments set the starting values for
+that shape; `formula` attaches the covariates \\\mathbf{x}\_j\\ that
+enter \\\mu_j\\.
 
 ## Phase types
 

@@ -172,8 +172,8 @@ and survival are
 \exp\\\bigl(-H(t \mid \mathbf{x})\bigr)\$\$
 
 where \\\mu_j(\mathbf{x}) = \exp(\alpha_j + \mathbf{x}\_j^\top
-\boldsymbol{\beta}\_j)\\ and the temporal shapes \\\Phi_j\\,
-\\\varphi_j\\ are set by each phase's `type` (see
+\beta_j)\\ and the temporal shapes \\\Phi_j\\, \\\varphi_j\\ are set by
+each phase's `type` (see
 [`hzr_phase()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase.md)).
 The proportional-hazards single-phase families (`"weibull"`,
 `"exponential"`) are the special case \\J = 1\\, with covariates acting

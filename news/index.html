@@ -13,7 +13,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.1.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -56,7 +56,20 @@
     </div>
 
     <div class="section level2">
-<h2 class="pkg-version" data-toc-text="1.1.0" id="temporalhazard-110">TemporalHazard 1.1.0<a class="anchor" aria-label="anchor" href="#temporalhazard-110"></a></h2>
+<h2 class="pkg-version" data-toc-text="1.2.0" id="temporalhazard-120">TemporalHazard 1.2.0<a class="anchor" aria-label="anchor" href="#temporalhazard-120"></a></h2>
+<div class="section level3">
+<h3 id="new-features-1-2-0">New features<a class="anchor" aria-label="anchor" href="#new-features-1-2-0"></a></h3>
+<ul><li>
+<code><a href="../reference/hzr_bootstrap.html">hzr_bootstrap()</a></code> gains a <code>scope</code> argument for embedded stepwise variable selection during each bootstrap replicate – the R equivalent of SAS’s <code>%HAZBOOT</code> procedure. Each replicate runs a fresh <code><a href="../reference/hzr_stepwise.html">hzr_stepwise()</a></code> selection (starting from a fixed-shape refit of the base model) instead of a plain refit, so <code>summary$pct</code> reports the variable’s selection frequency across resamples and <code>summary$mean</code>/<code>sd</code>/<code>ci_*</code> describe the coefficient distribution conditional on selection. <code>scope = NULL</code> (the default) preserves the original fixed-formula bootstrap unchanged.</li>
+</ul></div>
+<div class="section level3">
+<h3 id="bug-fixes-1-2-0">Bug fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-1-2-0"></a></h3>
+<ul><li>
+<code>hzr_bootstrap(scope = ..., trace = ...)</code> no longer errors with “formal argument matched by multiple actual arguments”. Select-mode forwarded <code>...</code> to <code><a href="../reference/hzr_stepwise.html">hzr_stepwise()</a></code> alongside an explicit <code>trace = FALSE</code>, so any caller-supplied <code>trace=</code> collided with it.</li>
+</ul></div>
+</div>
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="1.1.0" id="temporalhazard-110">TemporalHazard 1.1.0<a class="anchor" aria-label="anchor" href="#temporalhazard-110"></a></h2><p class="text-muted">CRAN release: 2026-06-12</p>
 <div class="section level3">
 <h3 id="new-features-1-1-0">New features<a class="anchor" aria-label="anchor" href="#new-features-1-1-0"></a></h3>
 <ul><li><p><code>predict.hazard(type = "hazard")</code> now works for <strong>multiphase</strong> models, returning the instantaneous additive hazard <code>h(t|x) = sum_j mu_j(x) phi_j'(t)</code> (previously only single-distribution models supported <code>"hazard"</code>, via <code>exp(eta)</code>). Like <code>"survival"</code> / <code>"cumulative_hazard"</code> it is time-based (requires <code>newdata$time</code>), supports covariate <code>newdata</code>, and <code>se.fit = TRUE</code> (delta-method limits on the log scale via a numeric Jacobian of the hazard evaluator). <code>decompose = TRUE</code> is not supported for <code>"hazard"</code>. This gives the multiphase instantaneous hazard a public route (it was previously reachable only through internal functions).</p></li>
@@ -334,7 +347,7 @@
 </div>
 
 <div class="pkgdown-footer-right">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.0. Built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a></p>
+  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.1. Built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a></p>
 </div>
 
     </footer></div>

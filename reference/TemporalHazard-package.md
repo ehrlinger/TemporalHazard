@@ -15,11 +15,11 @@ The total cumulative hazard decomposes additively across \\J\\ phases:
 \Phi_j(t)\$\$
 
 where \\\mu_j(\mathbf{x}) = \exp(\alpha_j + \mathbf{x}\_j^\top
-\boldsymbol{\beta}\_j)\\ is the phase-specific log-linear scale
-(intercept plus covariate effects) and \\\Phi_j(t)\\ is the temporal
-shape contributed by phase \\j\\, with its own parameters depending on
-the phase `type` (see the phase vocabulary below). The instantaneous
-hazard and survival follow directly:
+\beta_j)\\ is the phase-specific log-linear scale (intercept plus
+covariate effects) and \\\Phi_j(t)\\ is the temporal shape contributed
+by phase \\j\\, with its own parameters depending on the phase `type`
+(see the phase vocabulary below). The instantaneous hazard and survival
+follow directly:
 
 \$\$h(t \mid \mathbf{x}) = \sum\_{j=1}^{J} \mu_j(\mathbf{x}) \\
 \varphi_j(t), \qquad S(t \mid \mathbf{x}) = \exp\\\bigl(-H(t \mid

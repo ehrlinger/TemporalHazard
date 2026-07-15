@@ -423,6 +423,7 @@ hzr_calibrate(avc$age, avc$dead, groups = 10, link = "logit")
 set.seed(1)
 hzr_bootstrap(fit, n_boot = 20)  # small for vignette build
 #> Bootstrap inference for hazard model
+#> Mode: fixed refit 
 #> Replicates: 20 successful, 0 failed
 #> 
 #>  parameter  n pct    mean     sd     min    max ci_lower ci_upper

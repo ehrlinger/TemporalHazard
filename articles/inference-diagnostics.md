@@ -332,6 +332,7 @@ set.seed(42)
 boot <- hzr_bootstrap(fit, n_boot = 30)  # kept small for vignette build time
 print(boot)
 #> Bootstrap inference for hazard model
+#> Mode: fixed refit 
 #> Replicates: 30 successful, 0 failed
 #> 
 #>  parameter  n pct    mean     sd     min    max ci_lower ci_upper
