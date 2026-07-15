@@ -96,7 +96,7 @@ Each phase is one term \eqn{j} in the additive cumulative hazard
       \Phi_j(t)}
 
 where \eqn{\mu_j(\mathbf{x}) = \exp(\alpha_j + \mathbf{x}_j^\top
-\boldsymbol{\beta}_j)} is the phase-specific log-linear scale and
+\beta_j)} is the phase-specific log-linear scale and
 \eqn{\Phi_j(t)} is the temporal shape selected by \code{type} (below).  The
 \code{t_half}/\code{nu}/\code{m} (or g3 \code{tau}/\code{gamma}/\code{alpha}/\code{eta}) arguments set the
 starting values for that shape; \code{formula} attaches the covariates

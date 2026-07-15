@@ -8,6 +8,7 @@
 ^inst/fixtures/\.gitkeep$
 ^TODO\.md$
 ^inst/dev$
+^\.superpowers$
 ^.*\.Rproj$
 ^_pkgdown\.yml$
 ^vignettes/.*\.html$
@@ -26,4 +27,6 @@
 ^CRAN-SUBMISSION$
 ^CONTRIBUTORS\.md$
 ^RELEASE\.md$
+^CLAUDE\.md$
 ^inst/extdata/weights-fixtures/payload/capture/\.gitkeep$
+^inst/extdata/stepwise-fixtures/payload/capture$

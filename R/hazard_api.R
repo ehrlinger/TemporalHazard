@@ -54,7 +54,7 @@ NULL
 #'       S(t \mid \mathbf{x}) = \exp\!\bigl(-H(t \mid \mathbf{x})\bigr)}
 #'
 #' where \eqn{\mu_j(\mathbf{x}) = \exp(\alpha_j + \mathbf{x}_j^\top
-#' \boldsymbol{\beta}_j)} and the temporal shapes \eqn{\Phi_j}, \eqn{\varphi_j}
+#' \beta_j)} and the temporal shapes \eqn{\Phi_j}, \eqn{\varphi_j}
 #' are set by each phase's `type` (see [hzr_phase()]).  The
 #' proportional-hazards single-phase families (`"weibull"`, `"exponential"`)
 #' are the special case \eqn{J = 1}, with covariates acting multiplicatively on

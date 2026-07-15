@@ -1,75 +1,33 @@
-# CRAN submission comments -- TemporalHazard 1.1.0
+# CRAN submission comments -- TemporalHazard 1.2.0
 
 ## Summary
 
-This is an update to TemporalHazard 1.0.3 (accepted 2026-05-29).
-No reviewer feedback to address. New version adds analytic Hessians for all
-five distribution families, full-information variance for
-Conservation-of-Events fits, and a suite of SAS HAZPRED parity fixtures.
+This is an update to TemporalHazard 1.1.0 (accepted 2026-06-12).
+No reviewer feedback to address. New version adds embedded stepwise
+variable selection to `hzr_bootstrap()`.
 
-## Changes since 1.0.3
+## Changes since 1.1.0
 
-* **Analytic Hessian for all five families (Phase 7c, Layer 2).** The
-  exponential, Weibull, log-logistic, log-normal, and multiphase
-  distributions now compute post-fit Hessians in closed form, replacing
-  the numerical Richardson approximation used previously. Each analytic
-  Hessian is validated against `numDeriv` at a non-trivial parameter
-  point; left/interval-censored fits fall back to the numerical Hessian.
-  The multiphase Hessian covers the three-term NLL assembly including the
-  Conservation-of-Events full-information path.
-
-* **Full-information variance for Conservation-of-Events fits.** CoE
-  constrains one phase's `log_mu` during optimization but previously also
-  dropped it from the uncertainty, producing an `NA` standard error for
-  the conserved phase. The conserved-phase SE is now recovered by
-  recomputing the unconstrained Hessian over the full free set at the
-  optimum. On `hz.death.AVC` every SE now matches the SAS HAZARD
-  reference.
-
-* **`predict.hazard()` improvements.** Added `type = "hazard"` for
-  multiphase (instantaneous additive hazard), `conf.type` for survival
-  confidence-limit transform (log-log default, logit for SAS HAZPRED
-  parity), and `decompose = TRUE` + `se.fit = TRUE` for per-phase
-  delta-method confidence limits on multiphase cumulative hazard.
-
-* **`hzr_deciles()` now matches the SAS `deciles.hazard` macro exactly.**
-  Subjects are ranked into equal-sized risk groups by predicted survival
-  at the horizon; expected counts use the sum of predicted cumulative
-  hazard at each subject's own follow-up time.
-
-* **Hessian inversion hardening.** Post-fit variance-covariance now
-  symmetrizes the Hessian, checks conditioning via `rcond`, applies a
-  Cholesky-with-`solve()` fallback, and guards against non-positive
-  variances. Ill-conditioned fits carry `rcond` and `pd` diagnostics
-  surfaced in `summary()`.
-
-* **SAS HAZPRED parity fixtures.** Group A fixture suite covers patient-
-  specific predictions, stratified calibration, Kaplan-Meier / Nelson-
-  Aalen life tables, and decile-of-risk tables for the `hz.death.AVC`
-  reference model; all verified to print-precision or better.
-
-* **Formula preprocessor hardened.** The multiphase formula preprocessor
-  now uses a parse-tree walk to detect phase-scoped calls, replacing a
-  `deparse`+regex approach that produced false positives when a phase name
-  coincided with a base-R function name.
-
-* **`hzr_bootstrap()` robustness.** Resamples `object$data$weights` and
-  `object$data$frame` directly rather than re-evaluating the call in the
-  caller frame, so bootstraps work correctly when the original data or
-  weight objects are out of scope.
+* **`hzr_bootstrap()` gains a `scope` argument for embedded stepwise
+  variable selection.** This is the R equivalent of SAS's `%HAZBOOT`
+  procedure: each bootstrap replicate runs a fresh `hzr_stepwise()`
+  selection (starting from a fixed-shape refit of the base model) instead
+  of a plain refit, so `summary$pct` reports the variable's selection
+  frequency across resamples and `summary$mean`/`sd`/`ci_*` describe the
+  coefficient distribution conditional on selection. `scope = NULL`
+  (the default) preserves the original fixed-formula bootstrap unchanged.
 
 ## Test environments
 
 * **Local:** R 4.6.0 on macOS (aarch64-apple-darwin23).
   `R CMD check --as-cran` (with PDF manual) returns 0 errors, 0 warnings,
-  0 notes (on the release-version tarball; the `.9000` dev tarball shows
-  an expected "Version contains large components" NOTE that disappears
-  once `.9000` is stripped).
+  0 notes.
 * **GitHub Actions matrix:** ubuntu-latest (R-devel / R-release /
   R-oldrel-1), macos-latest (R-release), windows-latest (R-release).
-  All checks passed (0 errors / 0 warnings / 0 notes).
+  All checks passed (0 errors / 0 warnings).
 * **Reverse-dependency check:** `tools::package_dependencies(reverse = TRUE)`
   returns 0.
+* **`urlchecker::url_check()`:** all URLs correct.
 
 ## NOTE disposition
 

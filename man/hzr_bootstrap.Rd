@@ -10,7 +10,17 @@ hzr_bootstrap(
   n_boot = 200L,
   fraction = 1,
   seed = NULL,
-  verbose = FALSE
+  verbose = FALSE,
+  scope = NULL,
+  direction = c("both", "forward", "backward"),
+  criterion = c("wald", "aic"),
+  slentry = 0.3,
+  slstay = 0.2,
+  max_steps = 50L,
+  max_move = 4L,
+  force_in = character(),
+  force_out = character(),
+  ...
 )
 
 \method{print}{hzr_bootstrap}(x, digits = 4, ...)
@@ -34,11 +44,26 @@ the advance during resampling.}
 
 \item{verbose}{Logical; if \code{TRUE}, print progress every 50 replicates.}
 
+\item{scope}{Candidate variable scope for embedded stepwise selection
+during each bootstrap replicate. \code{NULL} (default) preserves the
+original fixed-formula bootstrap: every replicate refits \code{object}'s
+exact model, and \code{summary$pct} is always ~100. When supplied (a
+one-sided formula, character vector, or -- for multiphase fits -- a
+named list of one-sided formulas keyed by phase, matching
+\code{\link[=hzr_stepwise]{hzr_stepwise()}}'s \code{scope}), each replicate runs a fresh
+\code{\link[=hzr_stepwise]{hzr_stepwise()}} selection instead; see Details.}
+
+\item{direction, criterion, slentry, slstay, max_steps, max_move, force_in, force_out}{Passed through to \code{\link[=hzr_stepwise]{hzr_stepwise()}} on each replicate when \code{scope} is
+supplied; ignored when \code{scope = NULL}. See \code{\link[=hzr_stepwise]{hzr_stepwise()}} for
+definitions and defaults.}
+
+\item{...}{Additional arguments forwarded to \code{\link[=hzr_stepwise]{hzr_stepwise()}} (e.g.
+\code{control = list(n_starts = 1)}) when \code{scope} is supplied; ignored
+otherwise.}
+
 \item{x}{An \code{hzr_bootstrap} object.}
 
 \item{digits}{Number of decimal places for formatting.}
-
-\item{...}{Additional arguments (ignored).}
 }
 \value{
 A list with class \code{"hzr_bootstrap"} containing:
@@ -47,9 +72,14 @@ A list with class \code{"hzr_bootstrap"} containing:
 and \code{estimate} -- one row per parameter per successful replicate.}
 \item{summary}{Data frame with columns \code{parameter}, \code{n}, \code{pct},
 \code{mean}, \code{sd}, \code{min}, \code{max}, \code{ci_lower}, \code{ci_upper} -- one row per
-parameter.}
+parameter. In \code{mode = "select"}, \code{pct} is the selection frequency
+and the other statistics are conditional on selection.}
 \item{n_success}{Number of successfully converged replicates.}
 \item{n_failed}{Number of replicates that failed to converge.}
+\item{mode}{\code{"refit"} (fixed-formula bootstrap) or \code{"select"}
+(embedded stepwise selection).}
+\item{scope}{Only present when \code{mode == "select"}: the candidate
+scope used.}
 }
 }
 \description{
@@ -57,6 +87,16 @@ Resample data with replacement, refit the hazard model on each
 replicate, and accumulate coefficient distributions. Returns a tidy
 data frame of per-replicate estimates with summary statistics.
 This is the R equivalent of the SAS \code{bootstrap.hazard.sas} macro.
+}
+\details{
+When \code{scope} is supplied, each replicate instead runs a fresh
+\code{\link[=hzr_stepwise]{hzr_stepwise()}} selection on the resampled data (starting from a
+fixed-shape refit of \code{object}) instead of refitting \code{object}'s exact
+formula. This is the R equivalent of the SAS \verb{\%HAZBOOT} macro: fit the
+hazard shape with no covariates (fixing it via \code{hzr_phase(..., fixed = "shapes")}), then bootstrap-screen candidate covariates for how often
+they enter the model. \code{summary$pct} then reports the selection
+frequency across replicates, and \code{summary$mean}/\code{sd}/\verb{ci_*} describe the
+coefficient distribution conditional on selection.
 }
 \examples{
 \donttest{
@@ -71,10 +111,26 @@ fit <- hazard(
 )
 bs <- hzr_bootstrap(fit, n_boot = 50, seed = 123)
 print(bs)
+
+# Embedded stepwise selection: screen candidate covariates for how
+# often they enter the model across resamples (R equivalent of SAS
+# \%HAZBOOT).
+base <- hazard(
+  survival::Surv(int_dead, dead) ~ 1,
+  data  = avc,
+  dist  = "weibull",
+  theta = c(mu = 0.01, nu = 0.5),
+  fit   = TRUE
+)
+bs_sel <- hzr_bootstrap(base, n_boot = 20, seed = 123,
+                         scope = ~ age + mal,
+                         slentry = 0.3, slstay = 0.2)
+print(bs_sel)
 }
 
 }
 \seealso{
 \code{\link[=hazard]{hazard()}} for model fitting, \code{\link[=vcov.hazard]{vcov.hazard()}} for
-Hessian-based standard errors.
+Hessian-based standard errors, \code{\link[=hzr_stepwise]{hzr_stepwise()}} for the selection
+procedure used when \code{scope} is supplied.
 }

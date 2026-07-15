@@ -1,3 +1,23 @@
+# TemporalHazard 1.2.0
+
+## New features
+
+* `hzr_bootstrap()` gains a `scope` argument for embedded stepwise variable
+  selection during each bootstrap replicate -- the R equivalent of SAS's
+  `%HAZBOOT` procedure. Each replicate runs a fresh `hzr_stepwise()`
+  selection (starting from a fixed-shape refit of the base model) instead
+  of a plain refit, so `summary$pct` reports the variable's selection
+  frequency across resamples and `summary$mean`/`sd`/`ci_*` describe the
+  coefficient distribution conditional on selection. `scope = NULL`
+  (the default) preserves the original fixed-formula bootstrap unchanged.
+
+## Bug fixes
+
+* `hzr_bootstrap(scope = ..., trace = ...)` no longer errors with "formal
+  argument matched by multiple actual arguments". Select-mode forwarded
+  `...` to `hzr_stepwise()` alongside an explicit `trace = FALSE`, so any
+  caller-supplied `trace=` collided with it.
+
 # TemporalHazard 1.1.0
 
 ## New features

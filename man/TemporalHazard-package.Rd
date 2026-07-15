@@ -22,7 +22,7 @@ The total cumulative hazard decomposes additively across \eqn{J} phases:
       \Phi_j(t)}
 
 where \eqn{\mu_j(\mathbf{x}) = \exp(\alpha_j + \mathbf{x}_j^\top
-\boldsymbol{\beta}_j)} is the phase-specific log-linear scale (intercept plus
+\beta_j)} is the phase-specific log-linear scale (intercept plus
 covariate effects) and \eqn{\Phi_j(t)} is the temporal shape contributed by
 phase \eqn{j}, with its own parameters depending on the phase \code{type} (see the
 phase vocabulary below).  The instantaneous hazard and survival follow

@@ -775,6 +775,142 @@ test_that("hzr_bootstrap uses stored data frame when the original symbol is out 
   expect_equal(bs$n_failed, 0)
 })
 
+test_that("hzr_bootstrap scope = NULL reports mode = refit and is unaffected", {
+  set.seed(42)
+  fit <- .fit_avc_weibull()
+  bs <- hzr_bootstrap(fit, n_boot = 10, seed = 123)
+
+  expect_identical(bs$mode, "refit")
+  expect_null(bs$scope)
+  expect_gt(bs$n_success, 0)
+  expect_gt(nrow(bs$summary), 0)
+  expect_true(all(bs$summary$pct > 0))
+})
+
+test_that("hzr_bootstrap scope runs embedded stepwise selection per replicate", {
+  set.seed(13)
+  data(avc, package = "TemporalHazard")
+  avc <- na.omit(avc)
+  base <- hazard(
+    survival::Surv(int_dead, dead) ~ 1,
+    data  = avc,
+    dist  = "weibull",
+    theta = c(mu = 0.01, nu = 0.5),
+    fit   = TRUE
+  )
+
+  bs <- hzr_bootstrap(base, n_boot = 10, seed = 321,
+                       scope = ~ age + mal + com_iv,
+                       slentry = 0.3, slstay = 0.2,
+                       control = list(n_starts = 1))
+
+  expect_s3_class(bs, "hzr_bootstrap")
+  expect_identical(bs$mode, "select")
+  expect_true(is.list(bs$scope) || inherits(bs$scope, "formula"))
+  expect_gt(bs$n_success, 0)
+  expect_true(all(bs$summary$pct > 0 & bs$summary$pct <= 100))
+  # Shape parameters are never dropped by stepwise selection (only
+  # covariates are), so they must be present -- and selected -- in every
+  # successful replicate.
+  shape_rows <- bs$summary[bs$summary$parameter %in% c("mu", "nu"), ]
+  expect_true(all(shape_rows$n == bs$n_success))
+})
+
+test_that("hzr_bootstrap scope raises immediately on a structurally invalid scope", {
+  data(avc, package = "TemporalHazard")
+  avc <- na.omit(avc)
+  base <- hazard(
+    survival::Surv(int_dead, dead) ~ 1,
+    data  = avc,
+    dist  = "weibull",
+    theta = c(mu = 0.01, nu = 0.5),
+    fit   = TRUE
+  )
+
+  # scope must be NULL, a one-sided formula, or a character vector for a
+  # single-distribution fit (hzr_stepwise()'s own validation); this must
+  # raise via the pre-loop validation call, not after n_boot replicates.
+  expect_error(
+    hzr_bootstrap(base, n_boot = 10, scope = 42),
+    "one-sided formula"
+  )
+})
+
+test_that("hzr_bootstrap scope with a nonexistent column warns but does not raise", {
+  # A typo'd (but syntactically valid) scope column is NOT caught by the
+  # pre-loop validation -- hzr_stepwise() itself only warns per candidate
+  # refit failure (see stepwise-step.R .hzr_stepwise_forward_step) and
+  # never selects it. Confirms hzr_bootstrap() inherits that behavior
+  # rather than silently reporting it as n_failed replicates.
+  data(avc, package = "TemporalHazard")
+  avc <- na.omit(avc)
+  base <- hazard(
+    survival::Surv(int_dead, dead) ~ 1,
+    data  = avc,
+    dist  = "weibull",
+    theta = c(mu = 0.01, nu = 0.5),
+    fit   = TRUE
+  )
+
+  expect_warning(
+    bs <- hzr_bootstrap(base, n_boot = 3, seed = 1,
+                         scope = ~ age + not_a_real_column,
+                         control = list(n_starts = 1)),
+    "not_a_real_column"
+  )
+  expect_false("not_a_real_column" %in% bs$summary$parameter)
+})
+
+test_that("hzr_bootstrap(scope=) forwards a caller-supplied trace= without colliding", {
+  # Regression test: select-mode passed `trace = FALSE` to hzr_stepwise()
+  # alongside the forwarded `...`, so a caller-supplied `trace=` in `...`
+  # raised "formal argument matched by multiple actual arguments".
+  data(avc, package = "TemporalHazard")
+  avc <- na.omit(avc)
+  base <- hazard(
+    survival::Surv(int_dead, dead) ~ 1,
+    data  = avc,
+    dist  = "weibull",
+    theta = c(mu = 0.01, nu = 0.5),
+    fit   = TRUE
+  )
+
+  bs <- hzr_bootstrap(base, n_boot = 2, seed = 42, scope = ~ age + mal,
+                       control = list(n_starts = 1), trace = TRUE)
+  expect_s3_class(bs, "hzr_bootstrap")
+  expect_gte(bs$n_success, 0L)
+})
+
+test_that("hzr_bootstrap errors on unused '...' when scope is NULL", {
+  # '...' only has a purpose in select-mode (forwarded to hzr_stepwise());
+  # in fixed-refit mode it must still error on an unrecognized argument, as
+  # it did before '...' was added to the signature for scope=.
+  fit <- .fit_avc_weibull()
+  expect_error(
+    hzr_bootstrap(fit, n_boot = 5, verbsoe = TRUE),
+    "Unused argument"
+  )
+})
+
+test_that("print.hzr_bootstrap reports the mode", {
+  fit <- .fit_avc_weibull()
+  bs_refit <- hzr_bootstrap(fit, n_boot = 5, seed = 42)
+  expect_output(print(bs_refit), "fixed refit")
+
+  data(avc, package = "TemporalHazard")
+  avc <- na.omit(avc)
+  base <- hazard(
+    survival::Surv(int_dead, dead) ~ 1,
+    data  = avc,
+    dist  = "weibull",
+    theta = c(mu = 0.01, nu = 0.5),
+    fit   = TRUE
+  )
+  bs_sel <- hzr_bootstrap(base, n_boot = 5, seed = 42, scope = ~ age + mal,
+                           control = list(n_starts = 1))
+  expect_output(print(bs_sel), "stepwise selection")
+})
+
 
 # =========================================================================
 # hzr_competing_risks tests
