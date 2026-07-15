@@ -29,6 +29,13 @@
   recompute. The boundary direction now uses a one-sided finite difference
   instead.
 
+* Multiphase fits with a single free parameter (a two-phase model with all
+  shapes fixed, where Conservation of Events fixes one of the two `log_mu`)
+  now use the analytic Hessian for standard errors instead of silently
+  falling back to a numerical one. Restricting the Hessian to the lone free
+  parameter dropped it from a 1x1 matrix to a scalar, which was rejected as
+  non-conformant; it is now kept as a matrix (`drop = FALSE`).
+
 # TemporalHazard 1.1.0
 
 ## New features

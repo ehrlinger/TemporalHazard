@@ -1324,8 +1324,12 @@
       phases = phases, covariate_counts = covariate_counts, x_list = x_list
     )
     if (is.null(H_full)) return(NULL)
-    # Restrict to the free-parameter block that the optimizer sees
-    if (any_fixed) H_full[free_idx_eff, free_idx_eff] else H_full
+    # Restrict to the free-parameter block that the optimizer sees.
+    # drop = FALSE keeps a single free parameter (e.g. a 2-phase fixed-shape
+    # CoE fit, where CoE fixes one of the two log_mu) as a 1x1 matrix rather
+    # than a scalar; otherwise .hzr_optim_generic rejects it as non-conformant
+    # and needlessly discards the analytic Hessian for a numerical one.
+    if (any_fixed) H_full[free_idx_eff, free_idx_eff, drop = FALSE] else H_full
   }
 
   for (start_i in seq_len(n_starts)) {

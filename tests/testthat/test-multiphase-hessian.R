@@ -124,6 +124,37 @@ test_that(".hzr_hessian_multiphase succeeds at the Case 3L fixed-shape boundary"
   expect_true(all(is.finite(H)))
 })
 
+test_that("fixed-shape 2-phase CoE fit uses the analytic Hessian (single free param, no drop)", {
+  # A 2-phase model with all shapes fixed leaves the two log_mu free; CoE then
+  # fixes one of them, so exactly ONE parameter is optimized. hessian_fn's
+  # restriction H_full[free, free] with a single index used to drop to a
+  # scalar (R drop = TRUE), which .hzr_optim_generic flagged as
+  # "hessian_fn returned a non-conformant result" and silently fell back to a
+  # numerical Hessian. Assert the analytic Hessian is used instead: no such
+  # warning, and a finite standard error is produced.
+  data(avc, package = "TemporalHazard")
+  avc <- na.omit(avc)
+  warns <- character(0)
+  fit <- withCallingHandlers(
+    hazard(
+      survival::Surv(int_dead, dead) ~ 1, data = avc, dist = "multiphase",
+      phases = list(
+        early    = hzr_phase("cdf", t_half = 0.2, nu = 1.4, m = 1,
+                             fixed = "shapes"),
+        constant = hzr_phase("constant")
+      ),
+      fit = TRUE
+    ),
+    warning = function(cnd) {
+      warns <<- c(warns, conditionMessage(cnd))
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_false(any(grepl("non-conformant", warns)))
+  expect_true(is.matrix(fit$fit$vcov))
+  expect_true(isTRUE(fit$fit$pd))
+})
+
 test_that(".hzr_g3_phase_second_derivatives diagonals match numDeriv", {
   skip_if_not_installed("numDeriv")
   t <- c(0.5, 1.0, 3.0, 8.0)
