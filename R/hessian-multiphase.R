@@ -105,14 +105,13 @@ NULL
   # Under nu_boundary, use forward-in-nu / central-in-t_half instead (drops
   # the nu_m corners).
   if (nu_boundary) {
-    e_tn_p0 <- eval_at(t_p, nu,   m)
+    # d_tp/d_tm (= eval_at(t_p/t_m, nu, m)) already computed above
     e_tn_pp <- eval_at(t_p, nu_p, m)
-    e_tn_m0 <- eval_at(t_m, nu,   m)
     e_tn_mp <- eval_at(t_m, nu_p, m)
-    d2_tn_Phi <- ((e_tn_pp$Phi - e_tn_p0$Phi) -
-                    (e_tn_mp$Phi - e_tn_m0$Phi)) / (2 * h2)
-    d2_tn_phi <- ((e_tn_pp$phi - e_tn_p0$phi) -
-                    (e_tn_mp$phi - e_tn_m0$phi)) / (2 * h2)
+    d2_tn_Phi <- ((e_tn_pp$Phi - d_tp$Phi) -
+                    (e_tn_mp$Phi - d_tm$Phi)) / (2 * h2)
+    d2_tn_phi <- ((e_tn_pp$phi - d_tp$phi) -
+                    (e_tn_mp$phi - d_tm$phi)) / (2 * h2)
   } else {
     e_tn_pp <- eval_at(t_p, nu_p, m)
     e_tn_pm <- eval_at(t_p, nu_m, m)
@@ -126,14 +125,13 @@ NULL
   # Under m_boundary, use forward-in-m / central-in-t_half instead (drops
   # the m_m corners).
   if (m_boundary) {
-    e_tm_p0 <- eval_at(t_p, nu, m)
+    # d_tp/d_tm (= eval_at(t_p/t_m, nu, m)) already computed above
     e_tm_pp <- eval_at(t_p, nu, m_p)
-    e_tm_m0 <- eval_at(t_m, nu, m)
     e_tm_mp <- eval_at(t_m, nu, m_p)
-    d2_tm_Phi <- ((e_tm_pp$Phi - e_tm_p0$Phi) -
-                    (e_tm_mp$Phi - e_tm_m0$Phi)) / (2 * h2)
-    d2_tm_phi <- ((e_tm_pp$phi - e_tm_p0$phi) -
-                    (e_tm_mp$phi - e_tm_m0$phi)) / (2 * h2)
+    d2_tm_Phi <- ((e_tm_pp$Phi - d_tp$Phi) -
+                    (e_tm_mp$Phi - d_tm$Phi)) / (2 * h2)
+    d2_tm_phi <- ((e_tm_pp$phi - d_tp$phi) -
+                    (e_tm_mp$phi - d_tm$phi)) / (2 * h2)
   } else {
     e_tm_pp <- eval_at(t_p, nu, m_p)
     e_tm_pm <- eval_at(t_p, nu, m_m)
@@ -148,23 +146,21 @@ NULL
   # only m is boundary-restricted). Under nu_boundary, use forward-in-nu /
   # central-in-m (m_m is valid here -- only nu is boundary-restricted).
   if (m_boundary) {
-    e_nm_p0 <- eval_at(t_half, nu_p, m)
+    # d_np/d_nm (= eval_at(t_half, nu_p/nu_m, m)) already computed above
     e_nm_pp <- eval_at(t_half, nu_p, m_p)
-    e_nm_m0 <- eval_at(t_half, nu_m, m)
     e_nm_mp <- eval_at(t_half, nu_m, m_p)
-    d2_nm_Phi <- ((e_nm_pp$Phi - e_nm_p0$Phi) -
-                    (e_nm_mp$Phi - e_nm_m0$Phi)) / (2 * h2)
-    d2_nm_phi <- ((e_nm_pp$phi - e_nm_p0$phi) -
-                    (e_nm_mp$phi - e_nm_m0$phi)) / (2 * h2)
+    d2_nm_Phi <- ((e_nm_pp$Phi - d_np$Phi) -
+                    (e_nm_mp$Phi - d_nm$Phi)) / (2 * h2)
+    d2_nm_phi <- ((e_nm_pp$phi - d_np$phi) -
+                    (e_nm_mp$phi - d_nm$phi)) / (2 * h2)
   } else if (nu_boundary) {
-    e_nm_0p <- eval_at(t_half, nu,   m_p)
+    # d_mp/d_mm (= eval_at(t_half, nu, m_p/m_m)) already computed above
     e_nm_pp <- eval_at(t_half, nu_p, m_p)
-    e_nm_0m <- eval_at(t_half, nu,   m_m)
     e_nm_pm <- eval_at(t_half, nu_p, m_m)
-    d2_nm_Phi <- ((e_nm_pp$Phi - e_nm_0p$Phi) -
-                    (e_nm_pm$Phi - e_nm_0m$Phi)) / (2 * h2)
-    d2_nm_phi <- ((e_nm_pp$phi - e_nm_0p$phi) -
-                    (e_nm_pm$phi - e_nm_0m$phi)) / (2 * h2)
+    d2_nm_Phi <- ((e_nm_pp$Phi - d_mp$Phi) -
+                    (e_nm_pm$Phi - d_mm$Phi)) / (2 * h2)
+    d2_nm_phi <- ((e_nm_pp$phi - d_mp$phi) -
+                    (e_nm_pm$phi - d_mm$phi)) / (2 * h2)
   } else {
     e_nm_pp <- eval_at(t_half, nu_p, m_p)
     e_nm_pm <- eval_at(t_half, nu_p, m_m)
