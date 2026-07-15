@@ -816,6 +816,45 @@ test_that("hzr_bootstrap scope runs embedded stepwise selection per replicate", 
   expect_true(all(shape_rows$n == bs$n_success))
 })
 
+test_that("hzr_bootstrap verbose = TRUE shows a progress bar", {
+  fit <- .fit_avc_weibull()
+  out <- capture.output(
+    bs <- hzr_bootstrap(fit, n_boot = 5, seed = 42, verbose = TRUE),
+    type = "output"
+  )
+  # txtProgressBar(style = 3) draws a bar with a percentage; some output must
+  # have been written, and the run must still return a valid object.
+  expect_true(any(nzchar(out)))
+  expect_true(any(grepl("100%|=====", paste(out, collapse = ""))))
+  expect_s3_class(bs, "hzr_bootstrap")
+  expect_gt(bs$n_success, 0)
+})
+
+test_that("hzr_bootstrap suppresses per-replicate fit warnings", {
+  # A fixed-shape multiphase base with covariate scope produces
+  # ill-conditioned per-replicate Hessians (.hzr_safe_solve warns). Those are
+  # not individually actionable and must not leak to the caller; the tryCatch
+  # only catches errors, so this relies on the in-loop suppressWarnings().
+  data(avc, package = "TemporalHazard")
+  avc <- na.omit(avc)
+  base <- hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = avc, dist = "multiphase",
+    phases = list(
+      early    = hzr_phase("cdf", t_half = 0.2, nu = 1.4, m = 1,
+                           fixed = "shapes"),
+      constant = hzr_phase("constant")
+    ),
+    fit = TRUE
+  )
+  expect_no_warning(
+    hzr_bootstrap(base, n_boot = 5, seed = 7,
+                  scope = list(early    = ~ age + mal + com_iv,
+                               constant = ~ age + mal + com_iv),
+                  slentry = 0.3, slstay = 0.2,
+                  control = list(n_starts = 1))
+  )
+})
+
 test_that("hzr_bootstrap scope raises immediately on a structurally invalid scope", {
   data(avc, package = "TemporalHazard")
   avc <- na.omit(avc)

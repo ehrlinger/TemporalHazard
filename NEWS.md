@@ -2,6 +2,10 @@
 
 ## New features
 
+* `hzr_bootstrap(verbose = TRUE)` now shows a text progress bar over the
+  bootstrap replicates (via `utils::txtProgressBar()`) instead of an
+  every-50-replicates message.
+
 * `hzr_bootstrap()` gains a `scope` argument for embedded stepwise variable
   selection during each bootstrap replicate -- the R equivalent of SAS's
   `%HAZBOOT` procedure. Each replicate runs a fresh `hzr_stepwise()`
@@ -12,6 +16,12 @@
   (the default) preserves the original fixed-formula bootstrap unchanged.
 
 ## Bug fixes
+
+* `hzr_bootstrap()` no longer floods the console with per-replicate numerical
+  warnings (e.g. ill-conditioned-Hessian notes from unstable resamples), which
+  are not individually actionable when the bootstrap aggregates over replicates.
+  Structural problems (a mistyped `scope` column, an invalid scope) still
+  surface once, up front.
 
 * `hzr_bootstrap(scope = ..., trace = ...)` no longer errors with "formal
   argument matched by multiple actual arguments". Select-mode forwarded
