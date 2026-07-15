@@ -18,6 +18,17 @@
   `...` to `hzr_stepwise()` alongside an explicit `trace = FALSE`, so any
   caller-supplied `trace=` collided with it.
 
+* Multiphase models with a `"cdf"`/`"hazard"` phase whose shape sits exactly
+  at the `m = 0` (Case 3L) or `nu = 0` (Case 2L) limiting-case boundary no
+  longer lose their analytic Hessian. The finite-difference second
+  derivative used to probe the *other* shape parameter's `-h` side, which
+  can cross into the mathematically undefined `m < 0 && nu < 0` region and
+  raise an error; this silently fell back to a numerical Hessian (or, if
+  that also failed to invert, to `NA` standard errors) for every affected
+  fit, not just `hzr_bootstrap()`'s Conservation-of-Events full-information
+  recompute. The boundary direction now uses a one-sided finite difference
+  instead.
+
 # TemporalHazard 1.1.0
 
 ## New features
