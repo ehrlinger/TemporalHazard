@@ -1414,13 +1414,16 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # per-candidate warning() rather than an error (see
   # inst/dev/BOOTSTRAP-SELECTION-DESIGN.md, "Error handling").
   if (select_mode) {
-    # Muffle only the numerical post-fit Hessian-conditioning warnings
-    # (.hzr_safe_solve: ill-conditioned / not invertible / not
-    # positive-definite -- every message contains "Hessian"). Those are the
-    # per-fit noise this screen aggregates over, and would otherwise fire on
-    # the real-data selected model here. Structural warnings (e.g. a
-    # nonexistent scope column, "candidate refit failed for ...") and all
-    # errors still surface, so a bad scope is caught once, up front.
+    # Muffle only .hzr_safe_solve()'s numerical post-fit warnings
+    # (ill-conditioned / non-invertible / non-positive-definite Hessian,
+    # non-positive variance) -- the per-fit noise this screen aggregates
+    # over, which would otherwise fire on the real-data selected model here.
+    # Identify them by their originating call, not message text, so all of
+    # them are caught (including messages without the word "Hessian") while
+    # unrelated warnings still surface: a mistyped scope column
+    # ("candidate refit failed for ..."), the optimizer's
+    # non-conformant-Hessian note, and all errors -- so a bad scope is caught
+    # once, up front.
     withCallingHandlers(
       do.call(hzr_stepwise, c(
         list(
@@ -1434,7 +1437,8 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
         extra_args
       )),
       warning = function(w) {
-        if (grepl("Hessian", conditionMessage(w), ignore.case = TRUE)) {
+        if (any(grepl("hzr_safe_solve", deparse(conditionCall(w)),
+                      fixed = TRUE))) {
           invokeRestart("muffleWarning")
         }
       }
