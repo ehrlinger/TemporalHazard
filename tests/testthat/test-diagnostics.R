@@ -859,6 +859,26 @@ test_that("hzr_bootstrap scope with a nonexistent column warns but does not rais
   expect_false("not_a_real_column" %in% bs$summary$parameter)
 })
 
+test_that("hzr_bootstrap(scope=) forwards a caller-supplied trace= without colliding", {
+  # Regression test: select-mode passed `trace = FALSE` to hzr_stepwise()
+  # alongside the forwarded `...`, so a caller-supplied `trace=` in `...`
+  # raised "formal argument matched by multiple actual arguments".
+  data(avc, package = "TemporalHazard")
+  avc <- na.omit(avc)
+  base <- hazard(
+    survival::Surv(int_dead, dead) ~ 1,
+    data  = avc,
+    dist  = "weibull",
+    theta = c(mu = 0.01, nu = 0.5),
+    fit   = TRUE
+  )
+
+  bs <- hzr_bootstrap(base, n_boot = 2, seed = 42, scope = ~ age + mal,
+                       control = list(n_starts = 1), trace = TRUE)
+  expect_s3_class(bs, "hzr_bootstrap")
+  expect_gte(bs$n_success, 0L)
+})
+
 test_that("print.hzr_bootstrap reports the mode", {
   fit <- .fit_avc_weibull()
   bs_refit <- hzr_bootstrap(fit, n_boot = 5, seed = 42)

@@ -29,3 +29,4 @@
 ^RELEASE\.md$
 ^CLAUDE\.md$
 ^inst/extdata/weights-fixtures/payload/capture/\.gitkeep$
+^inst/extdata/stepwise-fixtures/payload/capture$

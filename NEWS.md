@@ -11,6 +11,13 @@
   coefficient distribution conditional on selection. `scope = NULL`
   (the default) preserves the original fixed-formula bootstrap unchanged.
 
+## Bug fixes
+
+* `hzr_bootstrap(scope = ..., trace = ...)` no longer errors with "formal
+  argument matched by multiple actual arguments". Select-mode forwarded
+  `...` to `hzr_stepwise()` alongside an explicit `trace = FALSE`, so any
+  caller-supplied `trace=` collided with it.
+
 # TemporalHazard 1.1.0
 
 ## New features

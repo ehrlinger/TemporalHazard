@@ -1352,6 +1352,14 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
 
   if (!is.null(seed)) set.seed(seed)
 
+  # hzr_stepwise() is always called below with trace = FALSE (per-step
+  # stepwise output would be too noisy across n_boot replicates; `verbose`
+  # controls bootstrap-level progress instead). Strip `trace` from `...`
+  # first so a caller-supplied `trace=` doesn't collide with it ("formal
+  # argument matched by multiple actual arguments").
+  extra_args <- list(...)
+  extra_args$trace <- NULL
+
   # Reconstruct the call components
   cl <- object$call
   # Prefer the evaluated `data` argument stored on the fitted object
@@ -1393,14 +1401,17 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # per-candidate warning() rather than an error (see
   # inst/dev/BOOTSTRAP-SELECTION-DESIGN.md, "Error handling").
   if (select_mode) {
-    hzr_stepwise(
-      object, scope = scope, data = orig_data,
-      direction = direction, criterion = criterion,
-      slentry = slentry, slstay = slstay,
-      max_steps = max_steps, max_move = max_move,
-      force_in = force_in, force_out = force_out,
-      trace = FALSE, ...
-    )
+    do.call(hzr_stepwise, c(
+      list(
+        object, scope = scope, data = orig_data,
+        direction = direction, criterion = criterion,
+        slentry = slentry, slstay = slstay,
+        max_steps = max_steps, max_move = max_move,
+        force_in = force_in, force_out = force_out,
+        trace = FALSE
+      ),
+      extra_args
+    ))
   }
 
   # Parameter names from the fitted model. In fixed-refit mode every
@@ -1439,14 +1450,17 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
         if (!is.finite(base_boot$fit$objective)) {
           stop("base refit did not converge")
         }
-        hzr_stepwise(
-          base_boot, scope = scope, data = boot_data,
-          direction = direction, criterion = criterion,
-          slentry = slentry, slstay = slstay,
-          max_steps = max_steps, max_move = max_move,
-          force_in = force_in, force_out = force_out,
-          trace = FALSE, ...
-        )
+        do.call(hzr_stepwise, c(
+          list(
+            base_boot, scope = scope, data = boot_data,
+            direction = direction, criterion = criterion,
+            slentry = slentry, slstay = slstay,
+            max_steps = max_steps, max_move = max_move,
+            force_in = force_in, force_out = force_out,
+            trace = FALSE
+          ),
+          extra_args
+        ))
       }, error = function(e) NULL)
     } else {
       # Refit using the same call but with resampled data (and weights, if any)
