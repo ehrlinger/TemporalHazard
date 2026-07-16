@@ -28,6 +28,7 @@ Imports:
 Suggests:
     covr,
     ggplot2,
+    haven,
     knitr,
     lintr,
     numDeriv,
