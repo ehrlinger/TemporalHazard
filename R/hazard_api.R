@@ -1476,7 +1476,14 @@ vcov.hazard <- function(object, ...) {
 #' @return A new environment holding just the referenced bindings.
 #' @noRd
 .hzr_capture_call_env <- function(cl, envir) {
-  syms <- all.vars(cl)
+  # all.names(), deliberately NOT all.vars(): the call may invoke the user's own
+  # helper functions (e.g. one that builds `phases` or `theta`), and those live
+  # in the caller's scope, not on globalenv()'s search path. all.vars() returns
+  # only variables and omits function names, leaving such helpers unresolvable
+  # once the call is re-evaluated. Base/package functions matched this way
+  # (`list`, `Surv`, ...) are captured as shared references and cost effectively
+  # nothing to serialize.
+  syms <- all.names(cl)
   syms <- syms[vapply(syms, exists, logical(1), envir = envir)]
   # Parented to globalenv(), deliberately NOT to `envir`: parenting to the
   # caller would make its whole frame reachable again through the parent chain

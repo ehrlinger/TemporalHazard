@@ -816,6 +816,26 @@ test_that("hazard() captures only the symbols its call references", {
   expect_false(exists("unrelated_local", envir = fit$call_env, inherits = TRUE))
 })
 
+test_that("hzr_bootstrap resolves a call that invokes user-defined helpers", {
+  # Regression: call_env selected symbols with all.vars(), which omits FUNCTION
+  # names. A user whose call builds theta/phases via their own helper left those
+  # helpers uncaptured; call_env parents to globalenv(), where a local helper
+  # does not live, so every replicate threw and n_success silently returned 0 --
+  # the bug d9f38ee fixed. all.names() includes function names.
+  data(avc, package = "TemporalHazard")
+  avc <- na.omit(avc)
+  build <- function(d) {
+    make_theta <- function() c(mu = 0.01, nu = 0.5) # user-defined helper
+    hazard(survival::Surv(int_dead, dead) ~ 1, data = d, dist = "weibull",
+           theta = make_theta(), fit = TRUE)
+  }
+  fit <- build(avc)
+  expect_true(exists("make_theta", envir = fit$call_env, inherits = FALSE))
+  bs <- hzr_bootstrap(fit, n_boot = 3, seed = 42)
+  expect_gt(bs$n_success, 0)
+  expect_equal(bs$n_failed, 0)
+})
+
 test_that("hzr_bootstrap scope = NULL reports mode = refit and is unaffected", {
   set.seed(42)
   fit <- .fit_avc_weibull()
