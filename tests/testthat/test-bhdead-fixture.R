@@ -73,3 +73,12 @@ test_that("path helpers honour their environment variables", {
     expect_identical(.hzr_bhdead_fixture_path(), "/tmp/y.rds")
   })
 })
+
+test_that("path helpers return \"\" when their environment variable is unset", {
+  withr::with_envvar(c(TEMPORALHAZARD_BHBLT = NA), {
+    expect_identical(.hzr_bhblt_path(), "")
+  })
+  withr::with_envvar(c(TEMPORALHAZARD_BHDEAD_FIXTURE = NA), {
+    expect_identical(.hzr_bhdead_fixture_path(), "")
+  })
+})

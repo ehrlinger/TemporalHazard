@@ -3,34 +3,26 @@
 # DEVELOPMENT ONLY. inst/dev/ is .Rbuildignore'd and does not ship.
 #
 # This repository is public. The fixture itself is NOT stored here -- it lives
-# beside the source data on a secure volume, resolved via the environment
-# variables below. This file contains no study values; every expectation used
-# by the parity test is read out of the fixture at run time.
+# beside the source data on a secure volume. Both paths below come entirely
+# from environment variables; there is no default. When a variable is unset,
+# the corresponding helper returns "", and .hzr_load_bhdead_fixture() treats
+# that as "not configured" and returns NULL, so callers skip gracefully. This
+# file contains no study values; every expectation used by the parity test is
+# read out of the fixture at run time.
 #
 # Build the fixture with inst/dev/bhdead-parity/parse-bhdead-lst.R.
 # See inst/dev/bhdead-parity/README.md.
 
-.hzr_bhdead_default_root <-
-  "/Volumes/qhsstudies/thoracic/esophagus/malignant/neo_therapy"
-
-#' Path to the row-level SAS dataset (env-overridable)
+#' Path to the row-level SAS dataset (env-only, no default)
 #' @noRd
 .hzr_bhblt_path <- function() {
-  p <- Sys.getenv("TEMPORALHAZARD_BHBLT", unset = "")
-  if (nzchar(p)) {
-    return(p)
-  }
-  file.path(.hzr_bhdead_default_root, "datasets", "bhblt.sas7bdat")
+  Sys.getenv("TEMPORALHAZARD_BHBLT", unset = "")
 }
 
-#' Path to the built parity fixture (env-overridable)
+#' Path to the built parity fixture (env-only, no default)
 #' @noRd
 .hzr_bhdead_fixture_path <- function() {
-  p <- Sys.getenv("TEMPORALHAZARD_BHDEAD_FIXTURE", unset = "")
-  if (nzchar(p)) {
-    return(p)
-  }
-  file.path(.hzr_bhdead_default_root, "estimates", "bhdead.rds")
+  Sys.getenv("TEMPORALHAZARD_BHDEAD_FIXTURE", unset = "")
 }
 
 #' Required fields of a bh.dead parity fixture
