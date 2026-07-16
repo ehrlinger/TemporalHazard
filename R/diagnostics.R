@@ -1451,6 +1451,14 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # set, so names are resolved per replicate inside the loop instead.
   param_names <- if (!select_mode) .hzr_bootstrap_param_names(object) else NULL
 
+  # Replicate calls must resolve two different things: `boot_data`/`boot_weights`
+  # (locals here) and every other argument the user passed by symbol (theta,
+  # phases, control), which only exist in the environment the call was written
+  # in. A child of that environment carrying the resample bindings resolves
+  # both. Falls back to parent.frame() for objects fitted before call_env was
+  # stored.
+  eval_env <- object$call_env %||% parent.frame()
+
   # Accumulate results
   rep_list <- vector("list", n_boot)
   n_success <- 0L
@@ -1466,6 +1474,12 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     boot_data <- orig_data[idx, , drop = FALSE] # nolint: object_usage_linter.
     # boot_weights is referenced via quote() inside eval -- lintr cannot trace it
     boot_weights <- if (is.null(orig_weights)) NULL else orig_weights[idx] # nolint: object_usage_linter.
+
+    # Fresh child of the fitting environment per replicate, carrying this
+    # replicate's resample bindings (referenced via quote() in the call below).
+    rep_env <- new.env(parent = eval_env)
+    assign("boot_data", boot_data, envir = rep_env)
+    if (!is.null(orig_weights)) assign("boot_weights", boot_weights, envir = rep_env)
 
     # Per-replicate fits routinely hit ill-conditioned Hessians and other
     # numerical warnings on individual resamples; these are not individually
@@ -1484,7 +1498,7 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
           cl_base$data <- quote(boot_data)
           if (!is.null(orig_weights)) cl_base$weights <- quote(boot_weights)
           cl_base$fit <- TRUE
-          base_boot <- eval(cl_base)
+          base_boot <- eval(cl_base, envir = rep_env)
           if (!is.finite(base_boot$fit$objective)) {
             stop("base refit did not converge")
           }
@@ -1511,7 +1525,7 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
           cl_boot$data <- quote(boot_data)
           if (!is.null(orig_weights)) cl_boot$weights <- quote(boot_weights)
           cl_boot$fit <- TRUE
-          eval(cl_boot)
+          eval(cl_boot, envir = rep_env)
         }),
         error = function(e) NULL
       )

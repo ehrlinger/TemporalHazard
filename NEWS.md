@@ -17,6 +17,18 @@
 
 ## Bug fixes
 
+* `hzr_bootstrap()` no longer returns a silent `n_success = 0` (and
+  `n_failed = n_boot`, with no error and no warning) when the model was fitted
+  inside a function. `hazard()` stored its call but not the environment that
+  call was written in, so each replicate's refit resolved arguments passed by
+  symbol -- `theta`, `phases`, `control` -- against the package namespace and
+  `globalenv()` rather than the caller's locals. Fits built at the top level
+  appeared to work by falling through to `globalenv()`; fits built inside a
+  function failed on every replicate, and the per-replicate `tryCatch()`
+  swallowed the error. `hazard()` now records the fitting environment, and each
+  replicate is evaluated in a child of it that carries the resampled data and
+  weights. Affects both `refit` and `select` modes.
+
 * `hzr_bootstrap()` no longer floods the console with per-replicate numerical
   warnings (e.g. ill-conditioned-Hessian notes from unstable resamples), which
   are not individually actionable when the bootstrap aggregates over replicates.

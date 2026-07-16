@@ -574,6 +574,10 @@ hazard <- function(formula = NULL,
 
   # Assemble the hazard S3 object.
   # $call       -- captured call for reproducibility / print
+  # $call_env   -- the environment $call was written in (hazard()'s caller).
+  #                Refit-based tooling such as hzr_bootstrap() re-evaluates the
+  #                stored call; it must do so here, otherwise arguments passed
+  #                by symbol (theta, phases, control) cannot be resolved.
   # $spec       -- model specification (dist, control)
   # $data       -- raw data stored for default predict() / refit
   # $fit        -- optimisation results (see fit_state fields above)
@@ -581,6 +585,7 @@ hazard <- function(formula = NULL,
   # $engine     -- implementation tag ("native-r-m2")
   obj <- list(
     call = match.call(),
+    call_env = parent.frame(),
     spec = list(dist = dist, control = control, time_windows = time_windows,
                 phases = phases),
     data = list(

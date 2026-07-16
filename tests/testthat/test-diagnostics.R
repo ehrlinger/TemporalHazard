@@ -775,6 +775,25 @@ test_that("hzr_bootstrap uses stored data frame when the original symbol is out 
   expect_equal(bs$n_failed, 0)
 })
 
+test_that("hzr_bootstrap resolves call arguments passed by symbol from a function", {
+  # Regression: hzr_bootstrap re-evaluated the stored call in its own frame, so
+  # arguments passed by symbol (theta here) resolved against the package
+  # namespace -> globalenv and were invisible when the fit was built inside a
+  # function. Every replicate threw, the tryCatch swallowed it, and n_success
+  # was silently 0. Building the fit in a helper is what triggers it.
+  data(avc, package = "TemporalHazard")
+  avc <- stats::na.omit(avc)
+  build <- function(d) {
+    th <- c(mu = 0.01, nu = 0.5) # passed by SYMBOL, not inline
+    hazard(survival::Surv(int_dead, dead) ~ 1, data = d, dist = "weibull",
+           theta = th, fit = TRUE)
+  }
+  fit <- build(avc)
+  bs <- hzr_bootstrap(fit, n_boot = 3, seed = 42)
+  expect_gt(bs$n_success, 0)
+  expect_equal(bs$n_failed, 0)
+})
+
 test_that("hzr_bootstrap scope = NULL reports mode = refit and is unaffected", {
   set.seed(42)
   fit <- .fit_avc_weibull()
