@@ -119,9 +119,11 @@ test_that(".hzr_parse_bhdead_phase spans a paginated table via a contiguous Obs 
 test_that(".hzr_build_bhdead_fixture returns a schema-valid fixture", {
   testthat::skip_if_not(nzchar(.bhdead_helper),
                         "bh.dead parity helpers not installed (inst/dev is .Rbuildignore'd)")
-  hz <- tempfile(fileext = ".lst"); bh <- tempfile(fileext = ".lst")
+  hz <- tempfile(fileext = ".lst")
+  bh <- tempfile(fileext = ".lst")
   on.exit(unlink(c(hz, bh)), add = TRUE)
-  writeLines(.fake_hz_lines, hz); writeLines(.fake_bh_lines, bh)
+  writeLines(.fake_hz_lines, hz)
+  writeLines(.fake_bh_lines, bh)
   fix <- .hzr_build_bhdead_fixture(
     hz, bh,
     meta = list(resampl = 1000L, sle = 0.12, sls = 0.10, n_obs = 100L,

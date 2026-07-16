@@ -1,5 +1,11 @@
 linters: linters_with_defaults(
     line_length_linter(120),
+    # lintr 3.4.0 made `<<-` a default lint. The `<<-` uses here are deliberate
+    # accumulator patterns confined to a function's own closure (stepwise trace
+    # building, fixture capture) -- not the unpredictable global writes the
+    # linter targets. Allow the operator rather than refactor working
+    # selection internals for a style rule.
+    assignment_linter(operator = c("<-", "<<-")),
     object_name_linter = NULL,
     object_length_linter(40),
     commented_code_linter = NULL,
