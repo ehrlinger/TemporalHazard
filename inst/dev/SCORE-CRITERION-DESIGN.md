@@ -42,25 +42,39 @@ One change fixes both: score the entry candidates instead of refitting them.
   Wald p-values with no per-candidate refit (`R/stepwise-step.R:341`), so it is
   already cheap and is left untouched.
 
-### Validation is two-tier, because a reference exists for only one family
+### Validation is two-tier today, and the SAS tier grows
 
-`PROC HAZARD` **is** the Blackstone multiphase decomposition. It has no
-single-distribution stepwise, so there is no SAS `Q` to reproduce for the other
-four families — "match SAS's approximation" has no referent there. The one SAS
-`Q` fixture (`stepwise-avc-forward-wald.rds`) is a **two-phase** model despite
-its `meta$dist = "weibull"` label, which records the *shaping* family, not
-`dist`.
+**What is verified:** no SAS reference for a single-distribution stepwise exists
+in this repository. Every `proc hazard` source here specifies `EARLY`/`CONSTANT`
+phase statements, and the single-distribution fixtures (`hz_loglogistic`,
+`hz_lognormal`, `hz_univariate`) are **simulated** — they carry `true_params`
+and a `seed`, not captured SAS output. The one SAS `Q` fixture
+(`stepwise-avc-forward-wald.rds`) is a **two-phase** model despite its
+`meta$dist = "weibull"` label, which records the *shaping* family, not `dist`.
 
-Consequently:
+**What is not established:** whether `PROC HAZARD` *can* produce a reference for
+these families. It is the Blackstone multiphase decomposition, but a one-phase
+configuration is plausibly equivalent to some single distributions (a lone
+`CONSTANT` phase is an exponential). This design does not assume the answer.
 
-| Family | Gate |
-|--------|------|
+Owner direction (2026-07-16): **SAS references are added per family as the
+feature scales out.** So the SAS tier is a growing set, not a fixed one:
+
+| Family | Gate today |
+|--------|-----------|
 | `multiphase` | **SAS's per-step `Q`** from the committed fixture. Acceptance gate; a mismatch is a finding, not a tolerance to widen. |
 | the other four | **Numeric oracle:** the analytic score matches `numDeriv`'s gradient at the MLE, and `Q` agrees with the Wald chi-square from an actual refit where theory requires it (small effects, `df = 1`). |
 
 The numeric oracle is weaker than a reference implementation, but it is the same
 standard this package already holds its analytic Hessians to (see
-`tests/testthat/test-*-hessian.R`, which validate against `numDeriv`).
+`tests/testthat/test-*-hessian.R`, which validate against `numDeriv`). It is the
+shipping gate, not the ceiling.
+
+**Design consequence:** the score-test API and its test harness must make adding
+a SAS tier a *drop-in*, not a rewrite. Each family's parity test follows the
+existing `inst/extdata/*-fixtures/` pattern — capture → parse → `.rds` → skip
+when absent — so a later SAS capture upgrades a family from the numeric oracle
+to a hard gate by adding a fixture, with no change to the statistic's code.
 
 **The shape-covariance approximation is applied uniformly.** For the four
 single-distribution families the analogue of "ignore shaping parameter
@@ -156,10 +170,10 @@ Assertions:
    step-by-step comparison, which is what it was always reaching for.
 3. A speed assertion, so the 17-day regression cannot silently return.
 
-### Tier 2 — the other four families: numeric oracle
+### Tier 2 — the other four families: numeric oracle (today's floor)
 
-No SAS reference exists (see Scope). For `exponential`, `weibull`,
-`loglogistic` and `lognormal`:
+No SAS reference exists for these families *yet* (see Scope). For
+`exponential`, `weibull`, `loglogistic` and `lognormal`:
 
 1. **Score vs `numDeriv`:** the analytic `U_β` at `(θ̂, β = 0)` matches
    `numDeriv::grad()` of the log-likelihood, to the tolerance the existing
@@ -173,8 +187,8 @@ No SAS reference exists (see Scope). For `exponential`, `weibull`,
    than selected.
 
 This tier cannot catch an error shared by both the analytic score and the refit
-path. That limitation is the price of there being no reference implementation
-for these families, and is why only multiphase carries an acceptance gate.
+path. That is why only multiphase carries an acceptance gate today, and why a
+family graduates to Tier 1 as soon as a SAS capture for it lands.
 
 ## Breaking change
 
@@ -198,6 +212,9 @@ owner's decision under the project's versioning rule.
 ## Out of scope
 
 * The efficient (non-approximate) score as an option.
-* Capturing SAS fixtures for the single-distribution families — `PROC HAZARD`
-  is the multiphase decomposition and has no such models to capture.
+* Capturing SAS fixtures for the single-distribution families *in this change*.
+  Owner direction is to add them per family as the feature scales out; the
+  harness is designed so each is a drop-in fixture, not a rewrite. Whether
+  `PROC HAZARD` can express each family is an open question to answer at capture
+  time, not an assumption baked in here.
 * Changing the drop path, which already avoids per-candidate refits.
