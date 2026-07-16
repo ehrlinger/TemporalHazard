@@ -29,6 +29,7 @@ Design document: `inst/dev/SCORE-CRITERION-DESIGN.md`
 - **`I_θθ` does not depend on the candidate**, so it is computed once per step and reused. This is where the speedup comes from.
 - **Single-distribution fits store UNNAMED `theta`.** `R/wald.R:62` regenerates names via `.hzr_parameter_names()`. Multiphase stores names directly. Any code indexing coefficients must handle both.
 - **The fixture's `meta$dist = "weibull"` is the SHAPING family, not `dist`.** That fixture is a two-phase multiphase model (`early`/`constant`).
+- **The early-phase shapes must be SAS's exact `CONDITION=14` values:** `t_half = 0.1512095`, `nu = 1.438652`, `m = 1`, taken from `inst/extdata/stepwise-fixtures/payload/avc-forward-wald.sas` (`PARMS MUE=0.2361727 THALF=0.1512095 NU=1.438652 M=1 FIXM`). Rounded values such as `0.2`/`1.4` describe a DIFFERENT model and fail the acceptance gate (measured Q 34.8639 vs SAS's 34.3396). Do not "tidy" them.
 
 ---
 
@@ -75,7 +76,7 @@ test_that(".hzr_score_q reproduces SAS's first-step Q for the multiphase fixture
   base <- hazard(
     survival::Surv(int_dead, dead) ~ 1, data = avc, dist = "multiphase",
     phases = list(
-      early    = hzr_phase("cdf", t_half = 0.2, nu = 1.4, m = 1, fixed = "shapes"),
+      early    = hzr_phase("cdf", t_half = 0.1512095, nu = 1.438652, m = 1, fixed = "shapes"),
       constant = hzr_phase("constant")
     ),
     fit = TRUE
@@ -534,7 +535,7 @@ test_that("R's per-step Q matches SAS's for the entered variables", {
   base <- hazard(
     survival::Surv(int_dead, dead) ~ 1, data = avc, dist = "multiphase",
     phases = list(
-      early    = hzr_phase("cdf", t_half = 0.2, nu = 1.4, m = 1, fixed = "shapes"),
+      early    = hzr_phase("cdf", t_half = 0.1512095, nu = 1.438652, m = 1, fixed = "shapes"),
       constant = hzr_phase("constant")
     ),
     fit = TRUE
