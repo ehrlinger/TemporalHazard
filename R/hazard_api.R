@@ -572,20 +572,31 @@ hazard <- function(formula = NULL,
     fit_state$message <- optim_result$message
   }
 
+  # Refit-based tooling (hzr_bootstrap()) re-evaluates $call, so it needs the
+  # bindings that call refers to. Capturing parent.frame() wholesale would pin
+  # the caller's entire frame to every fitted object -- measured at a 1400x
+  # saveRDS bloat, and it would drag unrelated data (including other cohorts)
+  # into any saved model. Copy only the symbols the call actually references.
+  # Computed here, not inside list(), so parent.frame() unambiguously resolves
+  # to hazard()'s caller.
+  captured_call <- match.call()
+  captured_env <- .hzr_capture_call_env(captured_call, parent.frame())
+
   # Assemble the hazard S3 object.
   # $call       -- captured call for reproducibility / print
-  # $call_env   -- the environment $call was written in (hazard()'s caller).
-  #                Refit-based tooling such as hzr_bootstrap() re-evaluates the
-  #                stored call; it must do so here, otherwise arguments passed
-  #                by symbol (theta, phases, control) cannot be resolved.
+  # $call_env   -- the bindings $call references, copied out of hazard()'s
+  #                caller. Refit-based tooling such as hzr_bootstrap()
+  #                re-evaluates the stored call; it must do so here, otherwise
+  #                arguments passed by symbol (theta, phases, control) cannot
+  #                be resolved.
   # $spec       -- model specification (dist, control)
   # $data       -- raw data stored for default predict() / refit
   # $fit        -- optimisation results (see fit_state fields above)
   # $legacy_args -- pass-through ... args for SAS-migration parity
   # $engine     -- implementation tag ("native-r-m2")
   obj <- list(
-    call = match.call(),
-    call_env = parent.frame(),
+    call = captured_call,
+    call_env = captured_env,
     spec = list(dist = dist, control = control, time_windows = time_windows,
                 phases = phases),
     data = list(
@@ -1451,6 +1462,31 @@ vcov.hazard <- function(object, ...) {
     dimnames(v) <- list(nm, nm)
   }
   v
+}
+
+#' Capture the bindings a stored call references
+#'
+#' Copies out of `envir` only the symbols `cl` actually refers to. Names that
+#' resolve from the model's data frame rather than the calling scope (formula
+#' column names such as `int_dead`/`dead`) simply do not exist in `envir` and
+#' are skipped.
+#'
+#' @param cl Matched call, as returned by `match.call()`.
+#' @param envir Caller environment to copy bindings out of.
+#' @return A new environment holding just the referenced bindings.
+#' @noRd
+.hzr_capture_call_env <- function(cl, envir) {
+  syms <- all.vars(cl)
+  syms <- syms[vapply(syms, exists, logical(1), envir = envir)]
+  # Parented to globalenv(), deliberately NOT to `envir`: parenting to the
+  # caller would make its whole frame reachable again through the parent chain
+  # and defeat the point of copying only the referenced symbols.
+  out <- new.env(parent = globalenv())
+  if (length(syms)) {
+    bindings <- mget(syms, envir = envir, inherits = TRUE)
+    list2env(bindings, envir = out)
+  }
+  out
 }
 
 .hzr_parameter_names <- function(theta, dist, p) {

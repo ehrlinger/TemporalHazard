@@ -794,6 +794,28 @@ test_that("hzr_bootstrap resolves call arguments passed by symbol from a functio
   expect_equal(bs$n_failed, 0)
 })
 
+test_that("hazard() captures only the symbols its call references", {
+  # Regression: call_env was parent.frame(), pinning the caller's whole frame
+  # to every fit (measured ~1400x saveRDS bloat) and dragging unrelated data --
+  # including other cohorts -- into any saved model.
+  data(avc, package = "TemporalHazard")
+  avc <- na.omit(avc)
+  build <- function(d) {
+    unrelated_local <- matrix(0, nrow = 100, ncol = 100)
+    th <- c(mu = 0.01, nu = 0.5)
+    hazard(survival::Surv(int_dead, dead) ~ 1, data = d, dist = "weibull",
+           theta = th, fit = TRUE)
+  }
+  fit <- build(avc)
+  # `th` and `d` ARE referenced by the call and must be captured.
+  expect_true(exists("th", envir = fit$call_env, inherits = FALSE))
+  expect_true(exists("d", envir = fit$call_env, inherits = FALSE))
+  # `unrelated_local` is NOT referenced and must not be reachable at all --
+  # including through the parent chain, which is why call_env parents to
+  # globalenv() rather than the caller.
+  expect_false(exists("unrelated_local", envir = fit$call_env, inherits = TRUE))
+})
+
 test_that("hzr_bootstrap scope = NULL reports mode = refit and is unaffected", {
   set.seed(42)
   fit <- .fit_avc_weibull()
