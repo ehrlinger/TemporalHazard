@@ -775,6 +775,90 @@ test_that("hzr_bootstrap uses stored data frame when the original symbol is out 
   expect_equal(bs$n_failed, 0)
 })
 
+test_that("hzr_bootstrap resolves call arguments passed by symbol from a function", {
+  # Regression: hzr_bootstrap re-evaluated the stored call in its own frame, so
+  # arguments passed by symbol (theta here) resolved against the package
+  # namespace -> globalenv and were invisible when the fit was built inside a
+  # function. Every replicate threw, the tryCatch swallowed it, and n_success
+  # was silently 0. Building the fit in a helper is what triggers it.
+  data(avc, package = "TemporalHazard")
+  avc <- stats::na.omit(avc)
+  build <- function(d) {
+    th <- c(mu = 0.01, nu = 0.5) # passed by SYMBOL, not inline
+    hazard(survival::Surv(int_dead, dead) ~ 1, data = d, dist = "weibull",
+           theta = th, fit = TRUE)
+  }
+  fit <- build(avc)
+  bs <- hzr_bootstrap(fit, n_boot = 3, seed = 42)
+  expect_gt(bs$n_success, 0)
+  expect_equal(bs$n_failed, 0)
+})
+
+test_that("hazard() captures only the symbols its call references", {
+  # Regression: call_env was parent.frame(), pinning the caller's whole frame
+  # to every fit (measured ~1400x saveRDS bloat) and dragging unrelated data --
+  # including other cohorts -- into any saved model.
+  data(avc, package = "TemporalHazard")
+  avc <- na.omit(avc)
+  build <- function(d) {
+    unrelated_local <- matrix(0, nrow = 100, ncol = 100)
+    th <- c(mu = 0.01, nu = 0.5)
+    hazard(survival::Surv(int_dead, dead) ~ 1, data = d, dist = "weibull",
+           theta = th, fit = TRUE)
+  }
+  fit <- build(avc)
+  # `th` and `d` ARE referenced by the call and must be captured.
+  expect_true(exists("th", envir = fit$call_env, inherits = FALSE))
+  expect_true(exists("d", envir = fit$call_env, inherits = FALSE))
+  # `unrelated_local` is NOT referenced and must not be reachable at all --
+  # including through the parent chain, which is why call_env parents to
+  # globalenv() rather than the caller.
+  expect_false(exists("unrelated_local", envir = fit$call_env, inherits = TRUE))
+})
+
+test_that("hazard() does not capture package or base closures", {
+  # Regression: call_env captured any symbol all.names() found, including
+  # `hazard` itself and base functions. R serialises a closure's environment by
+  # reference but its BODY by value, so saveRDS(fit) froze a copy of hazard()'s
+  # body into every fit. A fit saved under one version and bootstrapped after an
+  # upgrade runs that stale body against the new namespace; it throws inside the
+  # replicate, hzr_bootstrap()'s tryCatch swallows it, and the user gets a
+  # silent n_success = 0. Package and base functions must resolve through
+  # call_env's parent (globalenv()) instead of being copied.
+  data(avc, package = "TemporalHazard")
+  avc <- na.omit(avc)
+  build <- function(d) {
+    # `c` is referenced BY the call, so all.names() finds it.
+    hazard(survival::Surv(int_dead, dead) ~ 1, data = d, dist = "weibull",
+           theta = c(mu = 0.01, nu = 0.5), fit = TRUE)
+  }
+  fit <- build(avc)
+  expect_false(exists("hazard", envir = fit$call_env, inherits = FALSE))
+  expect_false(exists("c", envir = fit$call_env, inherits = FALSE))
+  # ... but both must still RESOLVE, through call_env's parent.
+  expect_true(exists("hazard", envir = fit$call_env, inherits = TRUE))
+})
+
+test_that("hzr_bootstrap resolves a call that invokes user-defined helpers", {
+  # Regression: call_env selected symbols with all.vars(), which omits FUNCTION
+  # names. A user whose call builds theta/phases via their own helper left those
+  # helpers uncaptured; call_env parents to globalenv(), where a local helper
+  # does not live, so every replicate threw and n_success silently returned 0 --
+  # the bug d9f38ee fixed. all.names() includes function names.
+  data(avc, package = "TemporalHazard")
+  avc <- na.omit(avc)
+  build <- function(d) {
+    make_theta <- function() c(mu = 0.01, nu = 0.5) # user-defined helper
+    hazard(survival::Surv(int_dead, dead) ~ 1, data = d, dist = "weibull",
+           theta = make_theta(), fit = TRUE)
+  }
+  fit <- build(avc)
+  expect_true(exists("make_theta", envir = fit$call_env, inherits = FALSE))
+  bs <- hzr_bootstrap(fit, n_boot = 3, seed = 42)
+  expect_gt(bs$n_success, 0)
+  expect_equal(bs$n_failed, 0)
+})
+
 test_that("hzr_bootstrap scope = NULL reports mode = refit and is unaffected", {
   set.seed(42)
   fit <- .fit_avc_weibull()
