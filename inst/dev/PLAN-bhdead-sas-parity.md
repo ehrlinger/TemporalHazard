@@ -28,8 +28,12 @@ Design document: `inst/dev/BHDEAD-SAS-PARITY-DESIGN.md`
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `TEMPORALHAZARD_BHBLT` | `/Volumes/qhsstudies/thoracic/esophagus/malignant/neo_therapy/datasets/bhblt.sas7bdat` | Row-level data |
-| `TEMPORALHAZARD_BHDEAD_FIXTURE` | `/Volumes/qhsstudies/thoracic/esophagus/malignant/neo_therapy/estimates/bhdead.rds` | Built SAS reference |
+| `TEMPORALHAZARD_BHBLT` | *(none — must be set)* | Row-level SAS dataset |
+| `TEMPORALHAZARD_BHDEAD_FIXTURE` | *(none — must be set)* | Built SAS reference |
+
+There is **no default path**. A study-identifying directory must not appear in
+this public repository, so an unset variable yields `""` and the loader returns
+`NULL`, which is how callers skip. Set both (e.g. in your `.Rprofile`).
 
 ---
 
@@ -44,8 +48,8 @@ Design document: `inst/dev/BHDEAD-SAS-PARITY-DESIGN.md`
 - Produces:
   - `.hzr_bhdead_fixture_schema()` → named list: `shape = c("specified","converged")`, `phase = c("name","n","pct","min","max","mean","sd")`, `meta = c("resampl","sle","sls","n_obs","captured_on","source")`
   - `.hzr_validate_bhdead_fixture(fix)` → returns `fix` unchanged if valid; `stop()`s with a message listing every problem otherwise.
-  - `.hzr_bhdead_fixture_path()` → character path from `TEMPORALHAZARD_BHDEAD_FIXTURE` or its default.
-  - `.hzr_bhblt_path()` → character path from `TEMPORALHAZARD_BHBLT` or its default.
+  - `.hzr_bhdead_fixture_path()` → `Sys.getenv("TEMPORALHAZARD_BHDEAD_FIXTURE", unset = "")`. No default; `""` when unset.
+  - `.hzr_bhblt_path()` → `Sys.getenv("TEMPORALHAZARD_BHBLT", unset = "")`. No default; `""` when unset.
   - `.hzr_load_bhdead_fixture(path = .hzr_bhdead_fixture_path())` → validated fixture list, or `NULL` when the file does not exist.
   - `.hzr_bhdead_candidates(fix)` → character vector of candidate variable names (lowercased, intercept row removed).
 
@@ -153,27 +157,21 @@ Create `inst/dev/bhdead-parity/bhdead-fixture.R`:
 # Build the fixture with inst/dev/bhdead-parity/parse-bhdead-lst.R.
 # See inst/dev/bhdead-parity/README.md.
 
-.hzr_bhdead_default_root <-
-  "/Volumes/qhsstudies/thoracic/esophagus/malignant/neo_therapy"
-
-#' Path to the row-level SAS dataset (env-overridable)
+#' Path to the row-level SAS dataset
+#'
+#' From `TEMPORALHAZARD_BHBLT`. No default: a study-identifying path must not
+#' live in this public repo. Unset yields "", which callers treat as absent.
 #' @noRd
 .hzr_bhblt_path <- function() {
-  p <- Sys.getenv("TEMPORALHAZARD_BHBLT", unset = "")
-  if (nzchar(p)) {
-    return(p)
-  }
-  file.path(.hzr_bhdead_default_root, "datasets", "bhblt.sas7bdat")
+  Sys.getenv("TEMPORALHAZARD_BHBLT", unset = "")
 }
 
-#' Path to the built parity fixture (env-overridable)
+#' Path to the built parity fixture
+#'
+#' From `TEMPORALHAZARD_BHDEAD_FIXTURE`. No default, as above.
 #' @noRd
 .hzr_bhdead_fixture_path <- function() {
-  p <- Sys.getenv("TEMPORALHAZARD_BHDEAD_FIXTURE", unset = "")
-  if (nzchar(p)) {
-    return(p)
-  }
-  file.path(.hzr_bhdead_default_root, "estimates", "bhdead.rds")
+  Sys.getenv("TEMPORALHAZARD_BHDEAD_FIXTURE", unset = "")
 }
 
 #' Required fields of a bh.dead parity fixture

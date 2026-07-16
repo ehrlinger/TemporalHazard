@@ -21,7 +21,7 @@ Two SAS runs are the reference:
 ## Findings that motivate this work
 
 Comparing the existing draft qmd (`analyses/bh.dead_r_bootstrap.qmd`, on the
-`qhsstudies` volume) against the SAS sources and outputs surfaced three
+secure volume) against the SAS sources and outputs surfaced three
 fidelity defects. All three must be fixed for any comparison to be meaningful.
 
 ### 1. The draft screens four variables SAS never considered
@@ -91,7 +91,7 @@ estimates already land within ~0.5% of SAS despite defects 2 and 3.
   unpublished CCF cohort study. Publishing them, or hard-coding SAS's estimates
   and selection frequencies into committed test code, would put those results
   on the open internet. Therefore:
-  * The built fixture lives **beside the data on the `qhsstudies` volume**, not
+  * The built fixture lives **beside the data on the secure volume**, not
     in `inst/fixtures/`.
   * Committed code contains **no study values**. Every expectation is derived
     from the fixture at run time.
@@ -115,9 +115,9 @@ two cannot drift apart on what "SAS said".
 | `parse-bhdead-lst.R` | `inst/dev/bhdead-parity/` | yes (generic code) | Parse the two `.lst` files → write `bhdead.rds` to the volume |
 | `bhdead-fixture.R` | `inst/dev/bhdead-parity/` | yes (generic code) | Resolve/load/validate the fixture; no study values |
 | `README.md` | `inst/dev/bhdead-parity/` | yes | How to re-capture and where the fixture lives |
-| `bhdead.rds` | `qhsstudies` volume | **no** | SAS reference (stays off the repo) |
+| `bhdead.rds` | secure volume | **no** | SAS reference (stays off the repo) |
 | `test-bhdead-sas-parity.R` | `tests/testthat/` | yes (generic code) | Parity test; skips unless data **and** fixture present |
-| `bh.dead_r_bootstrap.qmd` | `qhsstudies` volume | no | Presentation/debug layer |
+| `bh.dead_r_bootstrap.qmd` | secure volume | no | Presentation/debug layer |
 
 All harness code lives under `inst/dev/` (`.Rbuildignore`d, so it does not ship
 to CRAN) except the test itself, which must live in `tests/testthat/` to run.
@@ -139,11 +139,12 @@ minus the intercept row — never hand-transcribed.
 
 ### Data access / skip gate
 
-Two environment variables, each with a default pointing at the `qhsstudies`
-mount:
+Two environment variables, with **no default** — an unset variable yields `""`,
+which the loader treats as "absent" so callers skip. No study-identifying path
+appears in committed code:
 
-* `TEMPORALHAZARD_BHBLT` — path to `bhblt.sas7bdat`
-* `TEMPORALHAZARD_BHDEAD_FIXTURE` — path to `bhdead.rds`
+* `TEMPORALHAZARD_BHBLT` — path to the row-level SAS dataset
+* `TEMPORALHAZARD_BHDEAD_FIXTURE` — path to the built fixture
 
 The test calls `skip_if_not()` when either is unreadable, and
 `skip_if_not_installed("haven")`. It therefore runs on the maintainer's machine
