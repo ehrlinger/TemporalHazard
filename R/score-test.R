@@ -36,6 +36,15 @@
 #' SAS ignores shaping-parameter covariances during selection, so only these
 #' positions enter the nuisance adjustment.
 #'
+#' The partition is derived from the phase layout, never from parameter names.
+#' Each phase's block is `[log_mu, shapes..., betas...]` (see
+#' `.hzr_unpack_phase_theta()`), so the shape slots are known by position:
+#' `.hzr_phase_n_shape()` of them, immediately after `log_mu`. A name-based
+#' rule cannot do this -- a covariate called `m`, `nu`, `gamma`, `alpha` or
+#' `eta` produces a theta name like `constant.m` that is indistinguishable
+#' from a shape by name alone (a `constant` phase has no shapes at all), and
+#' dropping it silently under-adjusts `V_beta` for every other candidate.
+#'
 #' @noRd
 .hzr_score_free_idx <- function(current) {
   theta <- current$fit$theta
@@ -46,11 +55,26 @@
     if (p_cov == 0L) return(integer(0))
     return(seq.int(length(theta) - p_cov + 1L, length(theta)))
   }
-  # Multiphase: keep each phase's log_mu and its covariate betas; drop shapes.
-  nm <- names(theta)
-  keep <- grepl("\\.log_mu$", nm) |
-    (!grepl("\\.(log_mu|log_t_half|nu|m|log_tau|gamma|alpha|eta)$", nm))
-  which(keep)
+  # Multiphase: keep each phase's log_mu and its covariate betas; drop exactly
+  # the phase's shape slots.
+  phases <- .hzr_score_phases(current)
+  counts <- current$fit$covariate_counts
+  if (is.null(counts)) {
+    counts <- stats::setNames(integer(length(phases)), names(phases))
+  }
+  starts <- .hzr_log_mu_positions(phases, counts)
+  idx <- integer(0)
+  for (nm in names(phases)) {
+    start <- starts[[nm]]
+    n_shape <- .hzr_phase_n_shape(phases[[nm]])
+    n_cov <- as.integer(counts[[nm]])
+    idx <- c(idx, start)
+    if (n_cov > 0L) {
+      beta_start <- start + 1L + n_shape
+      idx <- c(idx, seq.int(beta_start, beta_start + n_cov - 1L))
+    }
+  }
+  idx
 }
 
 #' Observed information (Hessian of the negative log-likelihood)
@@ -79,21 +103,24 @@
 #' Per-step reusable nuisance block
 #'
 #' @param current Fitted `hazard` object at the step's current model.
-#' @return `list(inv, idx)`; `inv` is `NULL` when the block is empty or
-#'   not invertible, in which case the candidate variance is unadjusted.
+#' @return `list(inv, idx, ok)`. `ok = FALSE` means a nuisance block exists but
+#'   could not be formed or inverted, and every candidate must return `NA`
+#'   rather than a wrongly unadjusted Q. `ok = TRUE` with `inv = NULL` is the
+#'   only legitimately unadjusted case: there are no nuisance parameters at all.
 #' @noRd
 .hzr_score_nuisance <- function(current) {
   idx <- .hzr_score_free_idx(current)
   if (length(idx) == 0L) {
-    return(list(inv = NULL, idx = idx))
+    # No nuisance parameters exist, so there is nothing to adjust for.
+    return(list(inv = NULL, idx = idx, ok = TRUE))
   }
   info <- .hzr_score_information(current, theta = current$fit$theta)
   if (is.null(info)) {
-    return(list(inv = NULL, idx = idx))
+    return(list(inv = NULL, idx = idx, ok = FALSE))
   }
   blk <- info[idx, idx, drop = FALSE]
   inv <- tryCatch(solve(blk), error = function(e) NULL)
-  list(inv = inv, idx = idx)
+  list(inv = inv, idx = idx, ok = !is.null(inv))
 }
 
 #' Expand the current model's design and theta with one pinned candidate
@@ -264,11 +291,26 @@
 #' @param nuisance Optional result of `.hzr_score_nuisance(current)`; recomputed
 #'   when `NULL`. Pass it to reuse across candidates within a step.
 #' @return `list(stat, df, p_value)`. `stat`/`p_value` are `NA_real_` for a
-#'   degenerate candidate or a non-positive variance.
+#'   degenerate candidate, a collinear candidate, or an unusable nuisance block.
 #' @noRd
 .hzr_score_q <- function(current, var, phase = NULL, data,
                          nuisance = NULL) {
   na_result <- list(stat = NA_real_, df = 1L, p_value = NA_real_)
+
+  # `data` must be row-aligned with the fit: the candidate column is read from
+  # `data` while the score is evaluated on the fit's own stored rows. A caller
+  # passing pre-`na.omit()` data would fail the row check inside
+  # .hzr_score_expand() for EVERY candidate, and stepwise would report nothing
+  # significant -- a plausible-looking wrong answer. Fail loudly instead.
+  n_obs <- length(current$data$time)
+  if (nrow(data) != n_obs) {
+    stop(
+      "`data` has ", nrow(data), " rows but the fitted model used ", n_obs,
+      ". The score test needs `data` row-aligned with the fit; pass the same ",
+      "data frame the model was fitted on (after any NA removal).",
+      call. = FALSE
+    )
+  }
 
   xcand <- data[[var]]
   if (is.null(xcand) || !is.numeric(xcand) ||
@@ -276,6 +318,9 @@
     return(na_result)
   }
   if (is.null(nuisance)) nuisance <- .hzr_score_nuisance(current)
+  # A nuisance block that exists but could not be inverted must not fall
+  # through to an unadjusted (too large) v_beta.
+  if (!isTRUE(nuisance$ok)) return(na_result)
 
   exp_ <- .hzr_score_expand(current, var, phase, data)
   if (is.null(exp_)) return(na_result)
@@ -295,7 +340,14 @@
     v_beta <- i_bb - as.numeric(i_bt %*% nuisance$inv %*% t(i_bt))
   }
 
-  if (!is.finite(u_beta) || !is.finite(v_beta) || v_beta <= 0) {
+  # A collinear candidate drives I_bt %*% solve(I_tt) %*% I_tb -> I_bb, so
+  # v_beta collapses towards zero from ABOVE: an absolute `v_beta <= 0` test
+  # never fires, leaves v_beta ~ 1e-14, and Q ~ 1e15 wins the step -- exactly
+  # the failure the NA contract exists to prevent. Floor v_beta relative to the
+  # unadjusted i_bb it is a difference of, at the scale where cancellation has
+  # eaten the significant digits.
+  if (!is.finite(u_beta) || !is.finite(v_beta) || !is.finite(i_bb) ||
+        v_beta <= i_bb * sqrt(.Machine$double.eps)) {
     return(na_result)
   }
   stat <- (u_beta^2) / v_beta
