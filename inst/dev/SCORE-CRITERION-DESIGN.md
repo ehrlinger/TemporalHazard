@@ -7,9 +7,9 @@ Development-only document: `inst/dev/` is `.Rbuildignore`d and does not ship.
 
 ## Purpose
 
-Add a score-test (`Q`-statistic) criterion to `hzr_stepwise()` for multiphase
-fits, reproducing what SAS/C HAZARD's `SELECTION` statement actually computes,
-and making SAS-scale variable screens computationally feasible.
+Add a score-test (`Q`-statistic) criterion to `hzr_stepwise()`, reproducing what
+SAS/C HAZARD's `SELECTION` statement computes for multiphase fits, and making
+SAS-scale variable screens computationally feasible.
 
 ## Why
 
@@ -33,21 +33,53 @@ One change fixes both: score the entry candidates instead of refitting them.
 
 ## Scope
 
-* **Multiphase only.** `dist = "multiphase"` is the case with the demonstrated
-  need and the target of the SAS parity work. Other distributions keep
-  `criterion = "wald"`; requesting `"score"` for them is an error with a clear
-  message.
+* **All five distributions** — `exponential`, `weibull`, `loglogistic`,
+  `lognormal` and `multiphase`. Each already has an analytic score vector
+  (`.hzr_gradient_<dist>()`), so the statistic is tractable for all of them, and
+  a uniform `criterion = "score"` avoids an API where the same argument is valid
+  for one `dist` and an error for four.
 * **Entry path only.** The drop path already scores from the current model's
-  Wald p-values with no per-candidate refit (`R/stepwise-step.R`), so it is
+  Wald p-values with no per-candidate refit (`R/stepwise-step.R:341`), so it is
   already cheap and is left untouched.
+
+### Validation is two-tier, because a reference exists for only one family
+
+`PROC HAZARD` **is** the Blackstone multiphase decomposition. It has no
+single-distribution stepwise, so there is no SAS `Q` to reproduce for the other
+four families — "match SAS's approximation" has no referent there. The one SAS
+`Q` fixture (`stepwise-avc-forward-wald.rds`) is a **two-phase** model despite
+its `meta$dist = "weibull"` label, which records the *shaping* family, not
+`dist`.
+
+Consequently:
+
+| Family | Gate |
+|--------|------|
+| `multiphase` | **SAS's per-step `Q`** from the committed fixture. Acceptance gate; a mismatch is a finding, not a tolerance to widen. |
+| the other four | **Numeric oracle:** the analytic score matches `numDeriv`'s gradient at the MLE, and `Q` agrees with the Wald chi-square from an actual refit where theory requires it (small effects, `df = 1`). |
+
+The numeric oracle is weaker than a reference implementation, but it is the same
+standard this package already holds its analytic Hessians to (see
+`tests/testthat/test-*-hessian.R`, which validate against `numDeriv`).
+
+**The shape-covariance approximation is applied uniformly.** For the four
+single-distribution families the analogue of "ignore shaping parameter
+covariances" is to ignore the covariance between the candidate's `β` and that
+family's shape parameter (e.g. `nu` for Weibull). Applying it consistently keeps
+one statistic across all five rather than two subtly different ones — but note
+this means the four unreferenced families inherit an approximation chosen to
+match SAS, not one independently justified for them. Documented in
+`?hzr_stepwise`.
 
 ## The statistic
 
-For candidate covariate `v` on phase `j`, with the current model at its MLE
-`θ̂` and the candidate's coefficient pinned at `β = 0`:
+For candidate covariate `v` (on phase `j` for multiphase fits; `phase` is `NULL`
+otherwise), with the current model at its MLE `θ̂` and the candidate's
+coefficient pinned at `β = 0`:
 
 * **Score:** `U_β = ∂logL/∂β` evaluated at `(θ̂, β = 0)` — one call to the
-  existing `.hzr_gradient_multiphase()` on the expanded parameter vector.
+  family's existing analytic score, `.hzr_gradient_<dist>()`, on the expanded
+  parameter vector.
 * **Variance:** `V_β`, the candidate's information block, adjusted for the
   other `μ`/`β` parameters **but not the shape parameters** (see below).
 * **Statistic:** `Q = U_β² / V_β`, compared against `χ²(1)`. The entering
@@ -88,21 +120,21 @@ reading fails loudly and early, before the default flips.
 
 | File | Change |
 |------|--------|
-| `R/score-test.R` *(new)* | `.hzr_score_q_multiphase()` — computes `Q`, `df`, `p_value` for one candidate. One responsibility; unit-testable in isolation. |
+| `R/score-test.R` *(new)* | `.hzr_score_q()` — computes `Q`, `df`, `p_value` for one candidate, dispatching on `dist` to the family's analytic score. One responsibility; unit-testable in isolation. |
 | `R/candidate-score.R` | `mode = "entry"` accepts a precomputed score result instead of requiring a fitted `candidate` object. |
 | `R/stepwise-step.R` | forward step dispatches to the score path when `criterion = "score"`; the existing refit loop remains for `"wald"`. |
-| `R/stepwise.R` | `criterion = c("score", "wald", "aic")` for multiphase — score first, i.e. the new default. Non-multiphase keeps `c("wald", "aic")` and errors on `"score"`. |
+| `R/stepwise.R` | `criterion = c("score", "wald", "aic")` for every `dist` — score first, i.e. the new default across the board. |
 
 ### Interfaces
 
-* `.hzr_score_q_multiphase(current, var, phase, data, nuisance = NULL)`
-  → `list(stat, df, p_value)`.
-* `.hzr_score_nuisance_multiphase(current)` → the per-step reusable block,
-  computed once and passed to every candidate in that step.
+* `.hzr_score_q(current, var, phase = NULL, data, nuisance = NULL)`
+  → `list(stat, df, p_value)`. `phase` is `NULL` for single-distribution fits.
+* `.hzr_score_nuisance(current)` → the per-step reusable block, computed once
+  and passed to every candidate in that step.
 
 ## Correctness
 
-**Acceptance gate: SAS's own `Q` values, in CI.**
+### Tier 1 — multiphase: SAS's own `Q` values, in CI (acceptance gate)
 
 `inst/fixtures/stepwise-avc-forward-wald.rds` is already committed and built on
 the **bundled `avc` data** — no PHI, no secure volume, so it runs on every PR.
@@ -124,12 +156,33 @@ Assertions:
    step-by-step comparison, which is what it was always reaching for.
 3. A speed assertion, so the 17-day regression cannot silently return.
 
+### Tier 2 — the other four families: numeric oracle
+
+No SAS reference exists (see Scope). For `exponential`, `weibull`,
+`loglogistic` and `lognormal`:
+
+1. **Score vs `numDeriv`:** the analytic `U_β` at `(θ̂, β = 0)` matches
+   `numDeriv::grad()` of the log-likelihood, to the tolerance the existing
+   Hessian tests use.
+2. **Q vs refit Wald:** for a candidate with a small true effect, `Q` agrees
+   with the Wald chi-square from an actual `.hzr_refit_with_scope()` — both are
+   asymptotically `χ²(1)` and must converge. This uses the existing, trusted
+   refit path as the oracle.
+3. **Degenerate guards:** a candidate that is constant, collinear with an
+   existing term, or all-`NA` yields a non-finite `Q` that is skipped rather
+   than selected.
+
+This tier cannot catch an error shared by both the analytic score and the refit
+path. That limitation is the price of there being no reference implementation
+for these families, and is why only multiphase carries an acceptance gate.
+
 ## Breaking change
 
-`criterion` defaults to `"score"` for multiphase. `hzr_stepwise()` has been on
-CRAN since 0.9.8, so **re-running an existing multiphase analysis can select a
-different variable set with no code change**. That is a real hazard for a
-package people publish from.
+`criterion` defaults to `"score"` for **every** `dist`. `hzr_stepwise()` has been
+on CRAN since 0.9.8, so **re-running any existing stepwise analysis can select a
+different variable set with no code change**. That is a real hazard for a package
+people publish from, and widening the scope widened this blast radius from
+multiphase users to all `hzr_stepwise()` users.
 
 Decision (owner, 2026-07-16): ship it as the default anyway. Wald-with-refit was
 a deviation from the C/SAS reference this package exists to reproduce; matching
@@ -144,8 +197,7 @@ owner's decision under the project's versioning rule.
 
 ## Out of scope
 
-* Score criterion for the four single-distribution families. Each has an
-  analytic gradient, so it is tractable, but only multiphase has a demonstrated
-  need.
 * The efficient (non-approximate) score as an option.
+* Capturing SAS fixtures for the single-distribution families — `PROC HAZARD`
+  is the multiphase decomposition and has no such models to capture.
 * Changing the drop path, which already avoids per-candidate refits.
