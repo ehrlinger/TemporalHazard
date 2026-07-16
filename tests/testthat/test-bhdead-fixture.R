@@ -1,9 +1,16 @@
 # Unit tests for the bh.dead parity fixture schema/loader.
-# These construct synthetic fixtures in-memory and never touch the secure
-# volume, so they run everywhere (including CRAN) and contain no study values.
+# These construct synthetic fixtures in-memory: they never touch the secure
+# volume and contain no study values.
+#
+# They run from a source checkout (devtools::load_all() / devtools::test()) and
+# SKIP against an installed package, because the helper they exercise lives in
+# inst/dev/, which is .Rbuildignore'd and therefore absent from the tarball.
 
-source(system.file("dev", "bhdead-parity", "bhdead-fixture.R",
-                   package = "TemporalHazard"), local = TRUE)
+.bhdead_helper <- system.file("dev", "bhdead-parity", "bhdead-fixture.R",
+                              package = "TemporalHazard")
+if (nzchar(.bhdead_helper)) {
+  source(.bhdead_helper, local = TRUE)
+}
 
 .fake_phase <- function(names_vec) {
   data.frame(
@@ -32,11 +39,15 @@ source(system.file("dev", "bhdead-parity", "bhdead-fixture.R",
 }
 
 test_that(".hzr_validate_bhdead_fixture accepts a well-formed fixture", {
+  testthat::skip_if_not(nzchar(.bhdead_helper),
+                        "bh.dead parity helpers not installed (inst/dev is .Rbuildignore'd)")
   fix <- .fake_fixture()
   expect_identical(.hzr_validate_bhdead_fixture(fix), fix)
 })
 
 test_that(".hzr_validate_bhdead_fixture reports every missing field at once", {
+  testthat::skip_if_not(nzchar(.bhdead_helper),
+                        "bh.dead parity helpers not installed (inst/dev is .Rbuildignore'd)")
   fix <- .fake_fixture()
   fix$meta$sle <- NULL
   fix$shape$converged <- NULL
@@ -45,20 +56,28 @@ test_that(".hzr_validate_bhdead_fixture reports every missing field at once", {
 })
 
 test_that(".hzr_validate_bhdead_fixture rejects a phase missing a column", {
+  testthat::skip_if_not(nzchar(.bhdead_helper),
+                        "bh.dead parity helpers not installed (inst/dev is .Rbuildignore'd)")
   fix <- .fake_fixture()
   fix$early$pct <- NULL
   expect_error(.hzr_validate_bhdead_fixture(fix), "early")
 })
 
 test_that(".hzr_bhdead_candidates drops the intercept row and lowercases", {
+  testthat::skip_if_not(nzchar(.bhdead_helper),
+                        "bh.dead parity helpers not installed (inst/dev is .Rbuildignore'd)")
   expect_identical(.hzr_bhdead_candidates(.fake_fixture()), c("var_a", "var_b"))
 })
 
 test_that(".hzr_load_bhdead_fixture returns NULL when the file is absent", {
+  testthat::skip_if_not(nzchar(.bhdead_helper),
+                        "bh.dead parity helpers not installed (inst/dev is .Rbuildignore'd)")
   expect_null(.hzr_load_bhdead_fixture(file.path(tempdir(), "nope.rds")))
 })
 
 test_that(".hzr_load_bhdead_fixture round-trips a valid fixture", {
+  testthat::skip_if_not(nzchar(.bhdead_helper),
+                        "bh.dead parity helpers not installed (inst/dev is .Rbuildignore'd)")
   p <- file.path(tempdir(), "bhdead-test.rds")
   on.exit(unlink(p), add = TRUE)
   saveRDS(.fake_fixture(), p)
@@ -66,6 +85,8 @@ test_that(".hzr_load_bhdead_fixture round-trips a valid fixture", {
 })
 
 test_that("path helpers honour their environment variables", {
+  testthat::skip_if_not(nzchar(.bhdead_helper),
+                        "bh.dead parity helpers not installed (inst/dev is .Rbuildignore'd)")
   withr::with_envvar(c(TEMPORALHAZARD_BHBLT = "/tmp/x.sas7bdat"), {
     expect_identical(.hzr_bhblt_path(), "/tmp/x.sas7bdat")
   })
@@ -75,6 +96,8 @@ test_that("path helpers honour their environment variables", {
 })
 
 test_that("path helpers return \"\" when their environment variable is unset", {
+  testthat::skip_if_not(nzchar(.bhdead_helper),
+                        "bh.dead parity helpers not installed (inst/dev is .Rbuildignore'd)")
   withr::with_envvar(c(TEMPORALHAZARD_BHBLT = NA), {
     expect_identical(.hzr_bhblt_path(), "")
   })

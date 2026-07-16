@@ -9,8 +9,8 @@ Development-only: `inst/dev/` is `.Rbuildignore`d and does not ship.
 
 Compare `TemporalHazard`'s multiphase fit and `hzr_bootstrap(scope=)` embedded
 stepwise screen against the SAS/C HAZARD originals (`%HAZARD`, `%HAZBOOT`) on
-the `bh.dead` esophageal analysis, to debug the R implementation and to guard
-against regressions.
+the `bh.dead` analysis, a clinical analysis held on a secure volume, to debug
+the R implementation and to guard against regressions.
 
 Two SAS runs are the reference:
 
@@ -88,7 +88,7 @@ estimates already land within ~0.5% of SAS despite defects 2 and 3.
   `temporal_hazard` is a **public** GitHub repository, and `.Rbuildignore` only
   excludes a file from the CRAN tarball — it does nothing about git. The SAS
   `.lst` aggregates are not PHI, but they are results from an apparently
-  unpublished CCF cohort study. Publishing them, or hard-coding SAS's estimates
+  unpublished cohort study. Publishing them, or hard-coding SAS's estimates
   and selection frequencies into committed test code, would put those results
   on the open internet. Therefore:
   * The built fixture lives **beside the data on the secure volume**, not
@@ -181,8 +181,8 @@ derived from the fixture's candidate pool, `slentry = fixture$meta$sle`,
 
 **The statistical assertions (Spearman floor, top-10 recovery) are deferred,
 not merely unwritten.** Measured 2026-07-16: one bootstrap replicate over the
-92-variable pool takes ~5.4 minutes, so SAS's `resampl=1000` extrapolates to
-roughly 90 hours. The feasible `n_boot = 5` yields a `pct` that can only take
+92-variable pool takes ~25 minutes, so SAS's `resampl=1000` extrapolates to
+roughly 17 days. The feasible `n_boot = 5` yields a `pct` that can only take
 the values {0, 20, 40, 60, 80, 100}; a rank correlation of that against SAS's
 1000-resample percentages is dominated by ties and sampling noise. A floor
 calibrated from it would encode noise while reading as verified parity — worse

@@ -816,6 +816,29 @@ test_that("hazard() captures only the symbols its call references", {
   expect_false(exists("unrelated_local", envir = fit$call_env, inherits = TRUE))
 })
 
+test_that("hazard() does not capture package or base closures", {
+  # Regression: call_env captured any symbol all.names() found, including
+  # `hazard` itself and base functions. R serialises a closure's environment by
+  # reference but its BODY by value, so saveRDS(fit) froze a copy of hazard()'s
+  # body into every fit. A fit saved under one version and bootstrapped after an
+  # upgrade runs that stale body against the new namespace; it throws inside the
+  # replicate, hzr_bootstrap()'s tryCatch swallows it, and the user gets a
+  # silent n_success = 0. Package and base functions must resolve through
+  # call_env's parent (globalenv()) instead of being copied.
+  data(avc, package = "TemporalHazard")
+  avc <- na.omit(avc)
+  build <- function(d) {
+    # `c` is referenced BY the call, so all.names() finds it.
+    hazard(survival::Surv(int_dead, dead) ~ 1, data = d, dist = "weibull",
+           theta = c(mu = 0.01, nu = 0.5), fit = TRUE)
+  }
+  fit <- build(avc)
+  expect_false(exists("hazard", envir = fit$call_env, inherits = FALSE))
+  expect_false(exists("c", envir = fit$call_env, inherits = FALSE))
+  # ... but both must still RESOLVE, through call_env's parent.
+  expect_true(exists("hazard", envir = fit$call_env, inherits = TRUE))
+})
+
 test_that("hzr_bootstrap resolves a call that invokes user-defined helpers", {
   # Regression: call_env selected symbols with all.vars(), which omits FUNCTION
   # names. A user whose call builds theta/phases via their own helper left those

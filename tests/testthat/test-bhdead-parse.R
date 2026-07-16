@@ -5,8 +5,16 @@
 # renamed variable with verbatim values is not anonymised. Round, obviously
 # fake numbers make that impossible to get wrong by accident.
 
-source(system.file("dev", "bhdead-parity", "parse-bhdead-lst.R",
-                   package = "TemporalHazard"), local = TRUE)
+# They run from a source checkout (devtools::load_all() / devtools::test()) and
+# SKIP against an installed package, because the parsers they exercise live in
+# inst/dev/, which is .Rbuildignore'd and therefore absent from the tarball.
+# They never touch the secure volume and contain no study values.
+
+.bhdead_helper <- system.file("dev", "bhdead-parity", "parse-bhdead-lst.R",
+                              package = "TemporalHazard")
+if (nzchar(.bhdead_helper)) {
+  source(.bhdead_helper, local = TRUE)
+}
 
 .fake_bh_lines <- c(
   "                        Study Title Redacted                       3",
@@ -43,6 +51,8 @@ source(system.file("dev", "bhdead-parity", "parse-bhdead-lst.R",
 )
 
 test_that(".hzr_parse_bhdead_phase extracts the Early table", {
+  testthat::skip_if_not(nzchar(.bhdead_helper),
+                        "bh.dead parity helpers not installed (inst/dev is .Rbuildignore'd)")
   d <- .hzr_parse_bhdead_phase(.fake_bh_lines, "Early Phase")
   expect_identical(d$name, c("E0", "VAR_A", "VAR_B"))
   expect_identical(d$n, c(500L, 250L, 100L))
@@ -52,12 +62,16 @@ test_that(".hzr_parse_bhdead_phase extracts the Early table", {
 })
 
 test_that(".hzr_parse_bhdead_phase does not bleed across phase boundaries", {
+  testthat::skip_if_not(nzchar(.bhdead_helper),
+                        "bh.dead parity helpers not installed (inst/dev is .Rbuildignore'd)")
   d <- .hzr_parse_bhdead_phase(.fake_bh_lines, "Constant Phase")
   expect_identical(d$name, c("C0", "VAR_A"))
   expect_equal(d$pct, c(100.0, 30.0))
 })
 
 test_that(".hzr_parse_bhdead_shape reads specified and converged values", {
+  testthat::skip_if_not(nzchar(.bhdead_helper),
+                        "bh.dead parity helpers not installed (inst/dev is .Rbuildignore'd)")
   s <- .hzr_parse_bhdead_shape(.fake_hz_lines)
   expect_equal(s$specified[["thalf"]], 1.1)
   expect_equal(s$specified[["mue"]], 0.8)
@@ -68,6 +82,8 @@ test_that(".hzr_parse_bhdead_shape reads specified and converged values", {
 })
 
 test_that(".hzr_parse_bhdead_phase does not absorb a trailing unrelated table", {
+  testthat::skip_if_not(nzchar(.bhdead_helper),
+                        "bh.dead parity helpers not installed (inst/dev is .Rbuildignore'd)")
   # The terminal phase table has no following label to bound it. A trailing
   # table that happens to match the data-row shape must not bleed in -- its
   # Obs sequence restarts at 1 rather than continuing the run.
@@ -83,6 +99,8 @@ test_that(".hzr_parse_bhdead_phase does not absorb a trailing unrelated table", 
 })
 
 test_that(".hzr_parse_bhdead_phase spans a paginated table via a contiguous Obs run", {
+  testthat::skip_if_not(nzchar(.bhdead_helper),
+                        "bh.dead parity helpers not installed (inst/dev is .Rbuildignore'd)")
   # The phase label and column header repeat on each page, but the Obs
   # sequence continues uninterrupted across the page break.
   lines <- c(
@@ -99,6 +117,8 @@ test_that(".hzr_parse_bhdead_phase spans a paginated table via a contiguous Obs 
 })
 
 test_that(".hzr_build_bhdead_fixture returns a schema-valid fixture", {
+  testthat::skip_if_not(nzchar(.bhdead_helper),
+                        "bh.dead parity helpers not installed (inst/dev is .Rbuildignore'd)")
   hz <- tempfile(fileext = ".lst"); bh <- tempfile(fileext = ".lst")
   on.exit(unlink(c(hz, bh)), add = TRUE)
   writeLines(.fake_hz_lines, hz); writeLines(.fake_bh_lines, bh)

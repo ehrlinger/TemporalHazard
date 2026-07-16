@@ -793,8 +793,8 @@ recorded without study values. Fixes the floors used by the parity test."
 
 **Scope change (2026-07-16, owner decision).** The statistical assertions are
 DEFERRED — there are no `<SPEARMAN_FLOOR>` / `<TOP10_FLOOR>` values to fill in.
-Task 3 measured one bootstrap replicate over the 92-variable pool at ~5.4
-minutes, so SAS's `resampl=1000` is ~90 hours; the feasible `n_boot = 5` gives a
+Task 3 measured one bootstrap replicate over the 92-variable pool at ~25
+minutes, so SAS's `resampl=1000` is ~17 days; the feasible `n_boot = 5` gives a
 `pct` restricted to {0, 20, 40, 60, 80, 100}, and a rank correlation of that
 against SAS's 1000-resample percentages is dominated by ties and noise. A floor
 calibrated from it would encode noise while reading as verified parity.
@@ -830,7 +830,7 @@ Create `tests/testthat/test-bhdead-sas-parity.R`:
 #
 # There is deliberately NO statistical tolerance for the bootstrap screen. SAS
 # seeds from the time of day (seed=-1), so its selection frequencies are one
-# random realisation; and one R replicate over the 92-variable pool costs ~5.4
+# random realisation; and one R replicate over the 92-variable pool costs ~25
 # minutes, making a SAS-scale n_boot infeasible until criterion = "score"
 # lands. At the feasible n_boot the frequencies are too coarse to support a
 # meaningful floor. See BHDEAD-SAS-PARITY-DESIGN.md, "Deferred: score-test
@@ -1179,7 +1179,7 @@ Confirm the repo is clean: `git status --short` shows nothing from this task.
 | Shape fit asserted tightly (~1e-3) | 4 |
 | Bootstrap asserted (smoke only; statistical parity DEFERRED — infeasible n_boot, see Task 4 scope change) | 4 |
 | Thresholds calibrated, not invented | 3 — shape_rel 1e-3 from measured 3.4e-04; no bootstrap floor invented |
-| `n_boot` staged 5 → 50 → 1000 | 4 (5, smoke). 50/1000 PARKED: ~5.4 min/replicate → 1000 ≈ 90 h. Unblocked by `criterion = "score"`. |
+| `n_boot` staged 5 → 50 → 1000 | 4 (5, smoke). 50/1000 PARKED: ~25 min/replicate → 1000 ≈ 17 days. Unblocked by `criterion = "score"`. |
 | qmd fixes `fixed=`, `conserve=`, scope | 5 |
 | Fail loud on missing columns | 4 (test), 5 (qmd `stop()`) |
 | No study values committed | Global constraint; enforced in 1, 2, 4 |

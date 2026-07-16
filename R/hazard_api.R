@@ -1480,18 +1480,47 @@ vcov.hazard <- function(object, ...) {
   # helper functions (e.g. one that builds `phases` or `theta`), and those live
   # in the caller's scope, not on globalenv()'s search path. all.vars() returns
   # only variables and omits function names, leaving such helpers unresolvable
-  # once the call is re-evaluated. Base/package functions matched this way
-  # (`list`, `Surv`, ...) are captured as shared references and cost effectively
-  # nothing to serialize.
-  syms <- all.names(cl)
-  syms <- syms[vapply(syms, exists, logical(1), envir = envir)]
+  # once the call is re-evaluated.
+  #
+  # The scope-chain walk below copies only bindings the caller itself owns: it
+  # stops at the first environment that is package territory rather than user
+  # scope. Package and base functions (`hazard`, `list`, `Surv`, ...) are
+  # deliberately left out: R serialises a closure's environment as a namespace
+  # reference but its BODY by value, so capturing them would freeze a copy of
+  # each function's body into every saved fit. A fit saved under one version and
+  # bootstrapped after an upgrade would then run the stale body against the new
+  # namespace, throw inside the replicate, and be swallowed by hzr_bootstrap()'s
+  # tryCatch into a silent n_success = 0. Left uncaptured, they resolve through
+  # `out`'s parent instead.
+  #
+  # The stop set is globalenv() plus any namespace/base env, NOT globalenv()
+  # alone. Called from a script the chain is simply frame -> globalenv(), but
+  # under testthat and R CMD check the package namespace sits in the chain
+  # BEFORE globalenv(), so a globalenv()-only stop would still capture
+  # `hazard`. When `envir` IS globalenv() the loop body never runs and nothing
+  # is captured -- correct, since every symbol resolves through the parent.
+  is_pkg_env <- function(e) {
+    identical(e, globalenv()) || identical(e, emptyenv()) ||
+      identical(e, baseenv()) || isNamespace(e)
+  }
+  syms <- unique(all.names(cl))
+  found <- character()
+  for (nm in syms) {
+    e <- envir
+    while (!is_pkg_env(e)) {
+      if (exists(nm, envir = e, inherits = FALSE)) {
+        found <- c(found, nm)
+        break
+      }
+      e <- parent.env(e)
+    }
+  }
   # Parented to globalenv(), deliberately NOT to `envir`: parenting to the
   # caller would make its whole frame reachable again through the parent chain
   # and defeat the point of copying only the referenced symbols.
   out <- new.env(parent = globalenv())
-  if (length(syms)) {
-    bindings <- mget(syms, envir = envir, inherits = TRUE)
-    list2env(bindings, envir = out)
+  if (length(found)) {
+    list2env(mget(found, envir = envir, inherits = TRUE), envir = out)
   }
   out
 }
