@@ -168,16 +168,61 @@ THALF, NU, MUE and MUC against `fixture$shape$converged` at ~1e-3 relative.
 This is the primary regression guard: it is exactly where the analytic-Hessian
 boundary bug and the single-free-parameter `drop=FALSE` bug surfaced.
 
-### Bootstrap screen — stochastic, statistical
+### Bootstrap screen — smoke only (statistical parity DEFERRED)
 
 Refit `bh.dead`'s spec — `fixed = c("nu", "m")`, `conserve = FALSE`, the scope
 derived from the fixture's candidate pool, `slentry = fixture$meta$sle`,
-`slstay = fixture$meta$sls` — and assert:
+`slstay = fixture$meta$sls` — and assert only that it runs end-to-end:
 
-* Spearman rank correlation of R `pct` vs the fixture's `pct` exceeds a floor.
-* Of the fixture's top-10 by `pct`, R recovers at least half.
+* The call returns an `hzr_bootstrap` object with `n_success > 0`.
+* The summary is non-empty.
 * The intercept rows (`E0` / `C0` ↔ `early.log_mu` / `constant.log_mu`) are
-  selected 100% of the time.
+  selected in every successful replicate — stepwise never drops them.
+
+**The statistical assertions (Spearman floor, top-10 recovery) are deferred,
+not merely unwritten.** Measured 2026-07-16: one bootstrap replicate over the
+92-variable pool takes ~5.4 minutes, so SAS's `resampl=1000` extrapolates to
+roughly 90 hours. The feasible `n_boot = 5` yields a `pct` that can only take
+the values {0, 20, 40, 60, 80, 100}; a rank correlation of that against SAS's
+1000-resample percentages is dominated by ties and sampling noise. A floor
+calibrated from it would encode noise while reading as verified parity — worse
+than no assertion.
+
+These assertions are unblocked by `criterion = "score"` (see
+"Deferred: score-test selection"), which makes a SAS-scale `n_boot` reachable.
+Until then the shape fit carries the regression-guard weight; it is
+deterministic and matches SAS to 3.4e-04.
+
+## Deferred: score-test selection (`criterion = "score"`)
+
+Profiling `hzr_stepwise()` over the 92-variable pool (2026-07-16, one stepwise,
+~53 s of samples) found **99.77% of time inside `.hzr_refit_with_scope`** —
+94% of it in `stats::optim` evaluating the multiphase likelihood
+(`hzr_decompos` 21% self, `.hzr_logl_multiphase` 16% self).
+
+The cause is algorithmic, not a slow inner loop. `R/stepwise-step.R`'s forward
+step performs **one full model refit per candidate per step** — 92 variables ×
+2 phases = 184 optimizations per step. SAS HAZARD instead scores entry
+candidates with **Q-statistics (a score test) evaluated at the current model,
+with no refit** (already documented in `tests/testthat/test-stepwise-parity.R`).
+SAS does ~1 fit per step where R does 184.
+
+Two secondary inefficiencies were also measured, both in the innermost loop:
+
+* `stopifnot` at 4.6% self — `hzr_decompos()` re-validates its scalar shape
+  arguments on every likelihood evaluation, re-checking values that cannot
+  change during a fit.
+* ~12% self across `.hzr_unpack_phase_theta`, `.hzr_split_theta`,
+  `.hzr_phase_n_params` and `.hzr_phase_n_shape` — the parameter layout is
+  re-derived per evaluation though it is fixed for the whole fit.
+
+Removing both might buy ~1.2-1.3×. That does not close a ~184× gap: only the
+score test does, and it additionally makes the comparison apples-to-apples,
+since R and SAS currently run *different selection algorithms*.
+
+`criterion = "score"` is therefore a real feature needing its own design, not
+an optimization to improvise inside a parity task. Owner decision 2026-07-16:
+land this harness first, return to the score test separately.
 
 **Thresholds are calibrated from the first real run, not invented now.** It is
 not yet known whether R and SAS agree well enough for any given threshold to

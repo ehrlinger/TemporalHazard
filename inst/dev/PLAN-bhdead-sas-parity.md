@@ -791,8 +791,18 @@ recorded without study values. Fixes the floors used by the parity test."
 - Consumes: `.hzr_load_bhdead_fixture()`, `.hzr_bhblt_path()`, `.hzr_bhdead_candidates()` from Task 1; the floors recorded in Task 3.
 - Produces: nothing consumed downstream.
 
-Replace `<SPEARMAN_FLOOR>` and `<TOP10_FLOOR>` with the values recorded in
-Task 3 Step 7. Do not invent them.
+**Scope change (2026-07-16, owner decision).** The statistical assertions are
+DEFERRED — there are no `<SPEARMAN_FLOOR>` / `<TOP10_FLOOR>` values to fill in.
+Task 3 measured one bootstrap replicate over the 92-variable pool at ~5.4
+minutes, so SAS's `resampl=1000` is ~90 hours; the feasible `n_boot = 5` gives a
+`pct` restricted to {0, 20, 40, 60, 80, 100}, and a rank correlation of that
+against SAS's 1000-resample percentages is dominated by ties and noise. A floor
+calibrated from it would encode noise while reading as verified parity.
+
+Task 4 therefore asserts: the shape fit tightly (deterministic, measured at
+3.4e-04 against SAS), and the bootstrap screen as a **smoke check only**.
+Statistical parity is unblocked by `criterion = "score"` — see the design doc's
+"Deferred: score-test selection". Do not invent a floor to fill the gap.
 
 - [ ] **Step 1: Write the test**
 
@@ -814,13 +824,19 @@ Create `tests/testthat/test-bhdead-sas-parity.R`:
 .bhdead_helpers <- system.file("dev", "bhdead-parity", "bhdead-fixture.R",
                                 package = "TemporalHazard")
 
-# Floors calibrated from observed output (see BHDEAD-SAS-PARITY-DESIGN.md,
-# "Calibration"). SAS seeds its bootstrap from the time of day (seed=-1), so
-# selection frequencies are one random realisation and cannot match exactly.
+# Shape-fit tolerance is calibrated from observed output: R reproduces SAS's
+# converged shape fit to 3.4e-04 max relative error (2026-07-16), so 1e-3 is a
+# real guard with headroom, not a guess.
+#
+# There is deliberately NO statistical tolerance for the bootstrap screen. SAS
+# seeds from the time of day (seed=-1), so its selection frequencies are one
+# random realisation; and one R replicate over the 92-variable pool costs ~5.4
+# minutes, making a SAS-scale n_boot infeasible until criterion = "score"
+# lands. At the feasible n_boot the frequencies are too coarse to support a
+# meaningful floor. See BHDEAD-SAS-PARITY-DESIGN.md, "Deferred: score-test
+# selection". The bootstrap test below is a smoke check by design.
 .bhdead_tolerance <- list(
-  shape_rel     = 1e-3,
-  spearman_min  = <SPEARMAN_FLOOR>,
-  top10_min     = <TOP10_FLOOR>
+  shape_rel = 1e-3
 )
 
 .bhdead_setup <- function() {
@@ -1161,17 +1177,20 @@ Confirm the repo is clean: `git status --short` shows nothing from this task.
 | Env-var resolution + skip gate | 1, 4 |
 | `haven` → Suggests, guarded | 4 |
 | Shape fit asserted tightly (~1e-3) | 4 |
-| Bootstrap asserted statistically | 3 (calibrate), 4 |
-| Thresholds calibrated, not invented | 3 |
-| `n_boot` staged 5 → 50 → 1000 | 3 (5/50), 4 (5), 5 (all three) |
+| Bootstrap asserted (smoke only; statistical parity DEFERRED — infeasible n_boot, see Task 4 scope change) | 4 |
+| Thresholds calibrated, not invented | 3 — shape_rel 1e-3 from measured 3.4e-04; no bootstrap floor invented |
+| `n_boot` staged 5 → 50 → 1000 | 4 (5, smoke). 50/1000 PARKED: ~5.4 min/replicate → 1000 ≈ 90 h. Unblocked by `criterion = "score"`. |
 | qmd fixes `fixed=`, `conserve=`, scope | 5 |
 | Fail loud on missing columns | 4 (test), 5 (qmd `stop()`) |
 | No study values committed | Global constraint; enforced in 1, 2, 4 |
 | No PHI in repo | Global constraint; data read from volume only |
 
-**Placeholder scan:** `<SPEARMAN_FLOOR>` / `<TOP10_FLOOR>` in Task 4 are
-deliberate — Task 3 Step 7 produces them, and Task 4's preamble says not to
-invent them. No other placeholders.
+**Placeholder scan:** none. Task 4 originally carried `<SPEARMAN_FLOOR>` /
+`<TOP10_FLOOR>` for Task 3 to fill; Task 3's measurements showed no honest
+value exists at a feasible `n_boot` (see the scope change in Task 4), so the
+statistical assertions were removed rather than filled with a guess. The only
+surviving tolerance, `shape_rel = 1e-3`, is calibrated from observed output
+(measured 3.4e-04).
 
 **Type consistency:** `.hzr_bhdead_candidates()`, `.hzr_load_bhdead_fixture()`,
 `.hzr_bhblt_path()`, `.hzr_bhdead_fixture_path()`, `.hzr_validate_bhdead_fixture()`
