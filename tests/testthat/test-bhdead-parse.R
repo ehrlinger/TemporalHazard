@@ -67,6 +67,37 @@ test_that(".hzr_parse_bhdead_shape reads specified and converged values", {
   expect_equal(s$converged[["muc"]], 0.055)
 })
 
+test_that(".hzr_parse_bhdead_phase does not absorb a trailing unrelated table", {
+  # The terminal phase table has no following label to bound it. A trailing
+  # table that happens to match the data-row shape must not bleed in -- its
+  # Obs sequence restarts at 1 rather than continuing the run.
+  lines <- c(
+    "Constant Phase", "", "Obs _NAME_ N PCT MIN MAX MEAN STD", "",
+    "  1    C0    500  100.0   -1.000   1.000   0.1000   1.000",
+    "", "Some Other Unrelated Table",
+    "Obs _NAME_ N PCT MIN MAX MEAN STD", "",
+    "  1    XYZ_9   500  100.0   -9.000   9.000   9.0000   9.000"
+  )
+  d <- .hzr_parse_bhdead_phase(lines, "Constant Phase")
+  expect_identical(d$name, "C0")
+})
+
+test_that(".hzr_parse_bhdead_phase spans a paginated table via a contiguous Obs run", {
+  # The phase label and column header repeat on each page, but the Obs
+  # sequence continues uninterrupted across the page break.
+  lines <- c(
+    "Early Phase", "", "Obs _NAME_ N PCT MIN MAX MEAN STD", "",
+    "  1    E0      500  100.0   -1.000   1.000   0.1000   1.000",
+    "  2    VAR_A   250   50.0   -2.000   2.000   0.2000   2.000",
+    "Study Title Redacted    2",
+    "Early Phase", "", "Obs _NAME_ N PCT MIN MAX MEAN STD", "",
+    "  3    VAR_B   100   20.0   -3.000   3.000   0.3000   3.000",
+    "  4    VAR_C    50   10.0   -4.000   4.000   0.4000   4.000"
+  )
+  d <- .hzr_parse_bhdead_phase(lines, "Early Phase")
+  expect_identical(d$name, c("E0", "VAR_A", "VAR_B", "VAR_C"))
+})
+
 test_that(".hzr_build_bhdead_fixture returns a schema-valid fixture", {
   hz <- tempfile(fileext = ".lst"); bh <- tempfile(fileext = ".lst")
   on.exit(unlink(c(hz, bh)), add = TRUE)

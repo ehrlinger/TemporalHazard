@@ -33,18 +33,12 @@ source(system.file("dev", "bhdead-parity", "bhdead-fixture.R",
     stop("Phase label not found in listing: ", phase_label, call. = FALSE)
   }
   # A listing repeats the phase label on each page header; take from the first
-  # occurrence to the first *other* phase label that follows it.
-  other <- if (identical(phase_label, "Early Phase")) {
-    "Constant Phase"
-  } else {
-    "Late Phase"
-  }
+  # occurrence to the end of the listing. The Obs sequence below -- not a
+  # following label -- is what bounds the table, so this works regardless of
+  # what (if anything) follows.
   from <- starts[1]
-  ends <- grep(other, lines, fixed = TRUE)
-  ends <- ends[ends > from]
-  to <- if (length(ends) > 0L) ends[1] - 1L else length(lines)
+  block <- lines[from:length(lines)]
 
-  block <- lines[from:to]
   # Data rows: obs index, then a NAME of uppercase/digits/underscore, then 6 numbers.
   rx <- paste0("^\\s*([0-9]+)\\s+([A-Z0-9_]+)\\s+([0-9]+)\\s+",
                "(-?[0-9.]+)\\s+(-?[0-9.]+)\\s+(-?[0-9.]+)\\s+",
@@ -54,6 +48,20 @@ source(system.file("dev", "bhdead-parity", "bhdead-fixture.R",
   if (length(hits) == 0L) {
     stop("No data rows parsed for ", phase_label, call. = FALSE)
   }
+
+  # The Obs column increments monotonically within one table and restarts at 1
+  # in a different one. Truncate at the first break in that run so trailing
+  # content that merely matches the data-row shape (a different table, or
+  # nothing at all) is never silently absorbed.
+  obs <- as.integer(vapply(hits, `[[`, character(1), 2L))
+  if (obs[1] != 1L) {
+    stop("First data row for ", phase_label, " has Obs = ", obs[1],
+         " (expected 1); the table did not start where expected.",
+         call. = FALSE)
+  }
+  breaks <- which(diff(obs) != 1L)
+  last <- if (length(breaks) > 0L) breaks[1] else length(obs)
+  hits <- hits[seq_len(last)]
 
   data.frame(
     name = vapply(hits, `[[`, character(1), 3L),
