@@ -42,7 +42,8 @@ random numbers either way, so the global RNG state will advance
 during the call -- \code{seed = NULL} avoids the \emph{reset} at entry, not
 the advance during resampling.}
 
-\item{verbose}{Logical; if \code{TRUE}, print progress every 50 replicates.}
+\item{verbose}{Logical; if \code{TRUE}, display a text progress bar over the
+\code{n_boot} replicates (via \code{\link[utils:txtProgressBar]{utils::txtProgressBar()}}).}
 
 \item{scope}{Candidate variable scope for embedded stepwise selection
 during each bootstrap replicate. \code{NULL} (default) preserves the

@@ -2,6 +2,10 @@
 
 ## New features
 
+* `hzr_bootstrap(verbose = TRUE)` now shows a text progress bar over the
+  bootstrap replicates (via `utils::txtProgressBar()`) instead of an
+  every-50-replicates message.
+
 * `hzr_bootstrap()` gains a `scope` argument for embedded stepwise variable
   selection during each bootstrap replicate -- the R equivalent of SAS's
   `%HAZBOOT` procedure. Each replicate runs a fresh `hzr_stepwise()`
@@ -13,10 +17,34 @@
 
 ## Bug fixes
 
+* `hzr_bootstrap()` no longer floods the console with per-replicate numerical
+  warnings (e.g. ill-conditioned-Hessian notes from unstable resamples), which
+  are not individually actionable when the bootstrap aggregates over replicates.
+  Structural problems (a mistyped `scope` column, an invalid scope) still
+  surface once, up front.
+
 * `hzr_bootstrap(scope = ..., trace = ...)` no longer errors with "formal
   argument matched by multiple actual arguments". Select-mode forwarded
   `...` to `hzr_stepwise()` alongside an explicit `trace = FALSE`, so any
   caller-supplied `trace=` collided with it.
+
+* Multiphase models with a `"cdf"`/`"hazard"` phase whose shape sits exactly
+  at the `m = 0` (Case 3L) or `nu = 0` (Case 2L) limiting-case boundary no
+  longer lose their analytic Hessian. The finite-difference second
+  derivative used to probe the *other* shape parameter's `-h` side, which
+  can cross into the mathematically undefined `m < 0 && nu < 0` region and
+  raise an error; this silently fell back to a numerical Hessian (or, if
+  that also failed to invert, to `NA` standard errors) for every affected
+  fit, not just `hzr_bootstrap()`'s Conservation-of-Events full-information
+  recompute. The boundary direction now uses a one-sided finite difference
+  instead.
+
+* Multiphase fits with a single free parameter (a two-phase model with all
+  shapes fixed, where Conservation of Events fixes one of the two `log_mu`)
+  now use the analytic Hessian for standard errors instead of silently
+  falling back to a numerical one. Restricting the Hessian to the lone free
+  parameter dropped it from a 1x1 matrix to a scalar, which was rejected as
+  non-conformant; it is now kept as a matrix (`drop = FALSE`).
 
 # TemporalHazard 1.1.0
 

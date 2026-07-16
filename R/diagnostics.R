@@ -1255,7 +1255,8 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   random numbers either way, so the global RNG state will advance
 #'   during the call -- `seed = NULL` avoids the *reset* at entry, not
 #'   the advance during resampling.
-#' @param verbose Logical; if `TRUE`, print progress every 50 replicates.
+#' @param verbose Logical; if `TRUE`, display a text progress bar over the
+#'   `n_boot` replicates (via [utils::txtProgressBar()]).
 #' @param scope Candidate variable scope for embedded stepwise selection
 #'   during each bootstrap replicate. `NULL` (default) preserves the
 #'   original fixed-formula bootstrap: every replicate refits `object`'s
@@ -1413,17 +1414,35 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # per-candidate warning() rather than an error (see
   # inst/dev/BOOTSTRAP-SELECTION-DESIGN.md, "Error handling").
   if (select_mode) {
-    do.call(hzr_stepwise, c(
-      list(
-        object, scope = scope, data = orig_data,
-        direction = direction, criterion = criterion,
-        slentry = slentry, slstay = slstay,
-        max_steps = max_steps, max_move = max_move,
-        force_in = force_in, force_out = force_out,
-        trace = FALSE
-      ),
-      extra_args
-    ))
+    # Muffle only .hzr_safe_solve()'s numerical post-fit warnings
+    # (ill-conditioned / non-invertible / non-positive-definite Hessian,
+    # non-positive variance) -- the per-fit noise this screen aggregates
+    # over, which would otherwise fire on the real-data selected model here.
+    # Identify them by their originating call, not message text, so all of
+    # them are caught (including messages without the word "Hessian") while
+    # unrelated warnings still surface: a mistyped scope column
+    # ("candidate refit failed for ..."), the optimizer's
+    # non-conformant-Hessian note, and all errors -- so a bad scope is caught
+    # once, up front.
+    withCallingHandlers(
+      do.call(hzr_stepwise, c(
+        list(
+          object, scope = scope, data = orig_data,
+          direction = direction, criterion = criterion,
+          slentry = slentry, slstay = slstay,
+          max_steps = max_steps, max_move = max_move,
+          force_in = force_in, force_out = force_out,
+          trace = FALSE
+        ),
+        extra_args
+      )),
+      warning = function(w) {
+        if (any(grepl("hzr_safe_solve", deparse(conditionCall(w)),
+                      fixed = TRUE))) {
+          invokeRestart("muffleWarning")
+        }
+      }
+    )
   }
 
   # Parameter names from the fitted model. In fixed-refit mode every
@@ -1437,53 +1456,65 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   n_success <- 0L
   n_failed <- 0L
 
-  for (b in seq_len(n_boot)) {
-    if (verbose && b %% 50 == 0) {
-      cat("Bootstrap replicate", b, "/", n_boot, "\n")
-    }
+  # Progress bar over replicates (verbose only). Closed after the loop.
+  pb <- if (verbose) utils::txtProgressBar(min = 0, max = n_boot, style = 3)
+  if (verbose) on.exit(close(pb), add = TRUE)
 
+  for (b in seq_len(n_boot)) {
     # Resample with replacement
     idx <- sample.int(n_obs, size = sample_size, replace = TRUE)
     boot_data <- orig_data[idx, , drop = FALSE] # nolint: object_usage_linter.
     # boot_weights is referenced via quote() inside eval -- lintr cannot trace it
     boot_weights <- if (is.null(orig_weights)) NULL else orig_weights[idx] # nolint: object_usage_linter.
 
+    # Per-replicate fits routinely hit ill-conditioned Hessians and other
+    # numerical warnings on individual resamples; these are not individually
+    # actionable (the bootstrap aggregates over replicates) and would swamp
+    # the console over n_boot fits. Suppress them here -- structural problems
+    # (e.g. a mistyped `scope` column) still surface once from the up-front
+    # validation call above, and hard failures are caught below and counted.
     if (select_mode) {
       # Refit the (shape-fixed) base model on the resampled data first, so
       # the stepwise search's entry/retention tests compare candidates
       # against a base likelihood computed on the SAME resampled data --
       # then run a fresh stepwise selection from that base.
-      boot_fit <- tryCatch({
-        cl_base <- cl
-        cl_base$data <- quote(boot_data)
-        if (!is.null(orig_weights)) cl_base$weights <- quote(boot_weights)
-        cl_base$fit <- TRUE
-        base_boot <- eval(cl_base)
-        if (!is.finite(base_boot$fit$objective)) {
-          stop("base refit did not converge")
-        }
-        do.call(hzr_stepwise, c(
-          list(
-            base_boot, scope = scope, data = boot_data,
-            direction = direction, criterion = criterion,
-            slentry = slentry, slstay = slstay,
-            max_steps = max_steps, max_move = max_move,
-            force_in = force_in, force_out = force_out,
-            trace = FALSE
-          ),
-          extra_args
-        ))
-      }, error = function(e) NULL)
+      boot_fit <- tryCatch(
+        suppressWarnings({
+          cl_base <- cl
+          cl_base$data <- quote(boot_data)
+          if (!is.null(orig_weights)) cl_base$weights <- quote(boot_weights)
+          cl_base$fit <- TRUE
+          base_boot <- eval(cl_base)
+          if (!is.finite(base_boot$fit$objective)) {
+            stop("base refit did not converge")
+          }
+          do.call(hzr_stepwise, c(
+            list(
+              base_boot, scope = scope, data = boot_data,
+              direction = direction, criterion = criterion,
+              slentry = slentry, slstay = slstay,
+              max_steps = max_steps, max_move = max_move,
+              force_in = force_in, force_out = force_out,
+              trace = FALSE
+            ),
+            extra_args
+          ))
+        }),
+        error = function(e) NULL
+      )
     } else {
       # Refit using the same call but with resampled data (and weights, if any)
       # (boot_data/boot_weights are referenced via quote() inside eval)
-      boot_fit <- tryCatch({
-        cl_boot <- cl
-        cl_boot$data <- quote(boot_data)
-        if (!is.null(orig_weights)) cl_boot$weights <- quote(boot_weights)
-        cl_boot$fit <- TRUE
-        eval(cl_boot)
-      }, error = function(e) NULL)
+      boot_fit <- tryCatch(
+        suppressWarnings({
+          cl_boot <- cl
+          cl_boot$data <- quote(boot_data)
+          if (!is.null(orig_weights)) cl_boot$weights <- quote(boot_weights)
+          cl_boot$fit <- TRUE
+          eval(cl_boot)
+        }),
+        error = function(e) NULL
+      )
     }
 
     if (!is.null(boot_fit) && is.finite(boot_fit$fit$objective)) {
@@ -1503,6 +1534,8 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     } else {
       n_failed <- n_failed + 1L
     }
+
+    if (verbose) utils::setTxtProgressBar(pb, b)
   }
 
   # Combine replicates
