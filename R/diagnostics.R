@@ -1265,7 +1265,15 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   named list of one-sided formulas keyed by phase, matching
 #'   [hzr_stepwise()]'s `scope`), each replicate runs a fresh
 #'   [hzr_stepwise()] selection instead; see Details.
-#' @param direction,criterion,slentry,slstay,max_steps,max_move,force_in,force_out
+#' @param criterion Entry / retention rule passed through to
+#'   [hzr_stepwise()] on each replicate when `scope` is supplied; ignored
+#'   when `scope = NULL`. One of `"score"` (default), `"wald"`, or `"aic"`.
+#'   `"score"` reproduces C/SAS HAZARD's `SELECTION` statistic and needs no
+#'   per-candidate refit, which is what makes a bootstrap screen over many
+#'   candidates tractable. Following SAS, the variance used during
+#'   *selection* is approximate (shaping-parameter covariances are ignored);
+#'   final-model standard errors are unaffected. See [hzr_stepwise()].
+#' @param direction,slentry,slstay,max_steps,max_move,force_in,force_out
 #'   Passed through to [hzr_stepwise()] on each replicate when `scope` is
 #'   supplied; ignored when `scope = NULL`. See [hzr_stepwise()] for
 #'   definitions and defaults.
@@ -1327,7 +1335,7 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
                            seed = NULL, verbose = FALSE,
                            scope = NULL,
                            direction = c("both", "forward", "backward"),
-                           criterion = c("wald", "aic"),
+                           criterion = c("score", "wald", "aic"),
                            slentry = 0.30, slstay = 0.20,
                            max_steps = 50L, max_move = 4L,
                            force_in = character(), force_out = character(),

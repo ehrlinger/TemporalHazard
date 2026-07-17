@@ -51,15 +51,15 @@
 #'     every candidate.  Only the winner is refit.  A candidate enters if its
 #'     p-value is below `slentry`.
 #'
-#'     Score is an *entry* criterion; the drop path never refit per candidate
-#'     in the first place, so removals are tested on the current model's Wald
-#'     p-value against `slstay`, as SAS does.
+#'   Score is an *entry* criterion; the drop path never refit per candidate
+#'   in the first place, so removals are tested on the current model's Wald
+#'   p-value against `slstay`, as SAS does.
 #'
-#'     Following SAS, the variance used during *selection* is approximate:
-#'     shaping-parameter covariances are ignored.  This affects selection only
-#'     --- final-model standard errors are unchanged and still come from the
-#'     full Hessian.  Candidates must be single-column numeric main-effect
-#'     terms; a factor is rejected with an error rather than skipped.}
+#'   Following SAS, the variance used during *selection* is approximate:
+#'   shaping-parameter covariances are ignored.  This affects selection only
+#'   --- final-model standard errors are unchanged and still come from the
+#'   full Hessian.  Candidates must be single-column numeric main-effect
+#'   terms; a factor is rejected with an error rather than skipped.}
 #'   \item{`criterion = "wald"`}{Accept moves on SAS-style
 #'     significance thresholds, using the Wald \eqn{\chi^2} of the affected
 #'     coefficient(s): a candidate enters if its p-value is below `slentry`, and

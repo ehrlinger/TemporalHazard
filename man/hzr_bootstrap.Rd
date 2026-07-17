@@ -13,7 +13,7 @@ hzr_bootstrap(
   verbose = FALSE,
   scope = NULL,
   direction = c("both", "forward", "backward"),
-  criterion = c("wald", "aic"),
+  criterion = c("score", "wald", "aic"),
   slentry = 0.3,
   slstay = 0.2,
   max_steps = 50L,
@@ -54,9 +54,18 @@ named list of one-sided formulas keyed by phase, matching
 \code{\link[=hzr_stepwise]{hzr_stepwise()}}'s \code{scope}), each replicate runs a fresh
 \code{\link[=hzr_stepwise]{hzr_stepwise()}} selection instead; see Details.}
 
-\item{direction, criterion, slentry, slstay, max_steps, max_move, force_in, force_out}{Passed through to \code{\link[=hzr_stepwise]{hzr_stepwise()}} on each replicate when \code{scope} is
+\item{direction, slentry, slstay, max_steps, max_move, force_in, force_out}{Passed through to \code{\link[=hzr_stepwise]{hzr_stepwise()}} on each replicate when \code{scope} is
 supplied; ignored when \code{scope = NULL}. See \code{\link[=hzr_stepwise]{hzr_stepwise()}} for
 definitions and defaults.}
+
+\item{criterion}{Entry / retention rule passed through to
+\code{\link[=hzr_stepwise]{hzr_stepwise()}} on each replicate when \code{scope} is supplied; ignored
+when \code{scope = NULL}. One of \code{"score"} (default), \code{"wald"}, or \code{"aic"}.
+\code{"score"} reproduces C/SAS HAZARD's \code{SELECTION} statistic and needs no
+per-candidate refit, which is what makes a bootstrap screen over many
+candidates tractable. Following SAS, the variance used during
+\emph{selection} is approximate (shaping-parameter covariances are ignored);
+final-model standard errors are unaffected. See \code{\link[=hzr_stepwise]{hzr_stepwise()}}.}
 
 \item{...}{Additional arguments forwarded to \code{\link[=hzr_stepwise]{hzr_stepwise()}} (e.g.
 \code{control = list(n_starts = 1)}) when \code{scope} is supplied; ignored

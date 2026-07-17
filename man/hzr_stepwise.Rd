@@ -169,17 +169,15 @@ reduced-model information is inverted once per step and reused across
 every candidate.  Only the winner is refit.  A candidate enters if its
 p-value is below \code{slentry}.
 
-\if{html}{\out{<div class="sourceCode">}}\preformatted{Score is an *entry* criterion; the drop path never refit per candidate
+Score is an \emph{entry} criterion; the drop path never refit per candidate
 in the first place, so removals are tested on the current model's Wald
-p-value against `slstay`, as SAS does.
+p-value against \code{slstay}, as SAS does.
 
-Following SAS, the variance used during *selection* is approximate:
+Following SAS, the variance used during \emph{selection} is approximate:
 shaping-parameter covariances are ignored.  This affects selection only
 --- final-model standard errors are unchanged and still come from the
 full Hessian.  Candidates must be single-column numeric main-effect
-terms; a factor is rejected with an error rather than skipped.\}
-}\if{html}{\out{</div>}}
-
+terms; a factor is rejected with an error rather than skipped.}
 \item{\code{criterion = "wald"}}{Accept moves on SAS-style
 significance thresholds, using the Wald \eqn{\chi^2} of the affected
 coefficient(s): a candidate enters if its p-value is below \code{slentry}, and
