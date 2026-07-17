@@ -193,9 +193,20 @@ ll_val <- as.numeric(trimws(sub(
 message("Final log-likelihood: ", ll_val)
 
 meta_lines <- readLines(meta_file)
-# Remove any existing logLik entry then append the fresh one.
-meta_lines <- meta_lines[!grepl("^logLik\\s*=", meta_lines)]
-meta_lines <- c(meta_lines, paste0("logLik=", ll_val))
+# Correct the misleading metadata: this is a two-phase MULTIPHASE model, and
+# SAS's SELECTION always scores with Q (the score test), never a Wald. The old
+# capture recorded dist=weibull / criterion=wald, but "weibull" is only the
+# early phase's SHAPING family and "wald" described the R side it was once
+# compared against -- neither describes what SAS computed. Record the truth:
+# dist=multiphase, shaping=weibull, criterion=score.
+force_kv <- function(lines, key, value) {
+  lines <- lines[!grepl(paste0("^", key, "\\s*="), lines)]
+  c(lines, paste0(key, "=", value))
+}
+meta_lines <- force_kv(meta_lines, "dist", "multiphase")
+meta_lines <- force_kv(meta_lines, "shaping", "weibull")
+meta_lines <- force_kv(meta_lines, "criterion", "score")
+meta_lines <- force_kv(meta_lines, "logLik", ll_val)
 writeLines(meta_lines, meta_file)
 message("Updated ", meta_file)
 

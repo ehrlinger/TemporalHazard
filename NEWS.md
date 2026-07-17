@@ -1,5 +1,29 @@
 # TemporalHazard 1.2.0
 
+## Breaking changes
+
+* `hzr_stepwise()` now defaults to `criterion = "score"`, reproducing SAS/C
+  HAZARD's `SELECTION` statistic. Previously it defaulted to `"wald"`, which
+  refit the model once per candidate and used the refit's Wald chi-square --
+  a deviation from the reference implementation this package exists to
+  reproduce. **Re-running an existing stepwise analysis can now select a
+  different variable set**, because the score and Wald paths take different
+  step sequences. Pass `criterion = "wald"` to restore the previous behaviour
+  exactly.
+
+  The score criterion also removes the per-candidate refit, which dominated
+  runtime: a 92-variable two-phase screen fell from roughly 25 minutes per
+  bootstrap replicate to seconds.
+
+  Following SAS, the variance used during *selection* is approximate --
+  shaping-parameter covariances are ignored. Final-model standard errors are
+  unchanged and still use the full Hessian.
+
+  Score is an *entry* criterion. The drop path never refit per candidate, so
+  removals are still tested on the current model's Wald p-value against
+  `slstay`, as SAS does; drop rows in `$steps` are labelled `"wald"`
+  accordingly.
+
 ## New features
 
 * `hzr_bootstrap(verbose = TRUE)` now shows a text progress bar over the

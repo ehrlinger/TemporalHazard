@@ -146,6 +146,7 @@
     meta = list(
       dataset     = meta_kv[["dataset"]]     %||% NA_character_,
       dist        = meta_kv[["dist"]]        %||% NA_character_,
+      shaping     = meta_kv[["shaping"]],
       criterion   = meta_kv[["criterion"]]   %||% "wald",
       direction   = meta_kv[["direction"]]   %||% NA_character_,
       slentry     = as.numeric(meta_kv[["slentry"]] %||% NA_real_),

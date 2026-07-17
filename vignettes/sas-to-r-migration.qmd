@@ -249,9 +249,12 @@ SELECTION SLE=0.2 SLS=0.1;
 `TemporalHazard` now ships `hzr_stepwise()`, which implements forward,
 backward, and two-way stepwise selection with SAS-style SLENTRY /
 SLSTAY thresholds, phase-specific entry for multiphase models, and a
-MOVE oscillation guard.  FAST-screening (Lawless-Singhal approximate
-Wald updates) is not yet implemented; every candidate currently gets a
-full refit.  See `?hzr_stepwise` for the full option list.
+MOVE oscillation guard.  It now defaults to `criterion = "score"`, which
+reproduces SAS's `SELECTION` Q statistic --- a score test at the current
+estimates, with no per-candidate refit --- so entry decisions match SAS's
+directly.  Passing `criterion = "wald"` selects the older refit-based path,
+which fits each candidate before testing it.  See `?hzr_stepwise` for the
+full option list.
 
 ---
 

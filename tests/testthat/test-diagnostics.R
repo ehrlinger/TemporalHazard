@@ -900,6 +900,42 @@ test_that("hzr_bootstrap scope runs embedded stepwise selection per replicate", 
   expect_true(all(shape_rows$n == bs$n_success))
 })
 
+test_that("hzr_bootstrap scope reaches criterion = 'score'", {
+  # The score criterion is why the bootstrap screen is feasible at all: it
+  # scores candidates at the current model's MLE with no per-candidate refit.
+  # hzr_bootstrap()'s formal must therefore offer it -- and default to it.
+  skip_if_not_installed("numDeriv")
+  set.seed(13)
+  data(avc, package = "TemporalHazard")
+  avc <- na.omit(avc)
+  base <- hazard(
+    survival::Surv(int_dead, dead) ~ 1,
+    data  = avc,
+    dist  = "weibull",
+    theta = c(mu = 0.01, nu = 0.5),
+    fit   = TRUE
+  )
+
+  expect_identical(eval(formals(hzr_bootstrap)$criterion)[1], "score")
+
+  bs <- hzr_bootstrap(base, n_boot = 3, seed = 321,
+                       scope = ~ age + mal,
+                       criterion = "score",
+                       slentry = 0.3, slstay = 0.2,
+                       control = list(n_starts = 1))
+  expect_s3_class(bs, "hzr_bootstrap")
+  expect_identical(bs$mode, "select")
+  expect_gt(bs$n_success, 0)
+
+  bs_wald <- hzr_bootstrap(base, n_boot = 3, seed = 321,
+                            scope = ~ age + mal,
+                            criterion = "wald",
+                            slentry = 0.3, slstay = 0.2,
+                            control = list(n_starts = 1))
+  expect_s3_class(bs_wald, "hzr_bootstrap")
+  expect_gt(bs_wald$n_success, 0)
+})
+
 test_that("hzr_bootstrap verbose = TRUE shows a progress bar", {
   fit <- .fit_avc_weibull()
   out <- capture.output(
@@ -965,6 +1001,11 @@ test_that("hzr_bootstrap scope with a nonexistent column warns but does not rais
   # refit failure (see stepwise-step.R .hzr_stepwise_forward_step) and
   # never selects it. Confirms hzr_bootstrap() inherits that behavior
   # rather than silently reporting it as n_failed replicates.
+  #
+  # Pinned to criterion = "wald": the refit-failure warning is a property of
+  # the per-candidate refit, which the score path does not perform, so this
+  # mechanism only exists under "wald"/"aic". The stepwise-level analogue
+  # (test-stepwise-integration.R) pins itself the same way.
   data(avc, package = "TemporalHazard")
   avc <- na.omit(avc)
   base <- hazard(
@@ -978,6 +1019,7 @@ test_that("hzr_bootstrap scope with a nonexistent column warns but does not rais
   expect_warning(
     bs <- hzr_bootstrap(base, n_boot = 3, seed = 1,
                          scope = ~ age + not_a_real_column,
+                         criterion = "wald",
                          control = list(n_starts = 1)),
     "not_a_real_column"
   )

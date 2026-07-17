@@ -412,6 +412,11 @@ per `(variable, phase)` pair, letting a covariate enter one phase
 and not another.  Single-distribution models accept either a flat
 one-sided formula or a character vector of names.
 
+`hzr_stepwise()` now defaults to `criterion = "score"`, which reproduces
+SAS's `SELECTION` Q statistic by testing each candidate at the current
+estimates without a per-candidate refit.  Here we pass `criterion = "wald"`
+deliberately, so the trace below reports the refit-based Wald statistic.
+
 ```{r}
 #| label: stepwise-forward
 #| eval: !expr requireNamespace("TemporalHazard", quietly = TRUE)
