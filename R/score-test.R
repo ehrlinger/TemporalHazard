@@ -505,8 +505,11 @@
   }
 
   xcand <- data[[var]]
-  if (is.null(xcand) || !is.numeric(xcand) ||
-        anyNA(xcand) || stats::sd(xcand) == 0) {
+  if (is.null(xcand) || !is.numeric(xcand) || anyNA(xcand)) {
+    return(na_result)
+  }
+  s <- stats::sd(xcand)
+  if (!is.finite(s) || s == 0) {
     return(na_result)
   }
   if (is.null(nuisance)) nuisance <- .hzr_score_nuisance(current)

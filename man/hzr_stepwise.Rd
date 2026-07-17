@@ -173,6 +173,11 @@ Score is an \emph{entry} criterion; the drop path never refit per candidate
 in the first place, so removals are tested on the current model's Wald
 p-value against \code{slstay}, as SAS does.
 
+For single-distribution fits, the score criterion computes the observed
+information numerically via the suggested \pkg{numDeriv} package and
+errors with a clear message if it is not installed; a multiphase fit
+uses the analytic Hessian instead and does not need it.
+
 Following SAS, the variance used during \emph{selection} is approximate:
 shaping-parameter covariances are ignored.  This affects selection only
 --- final-model standard errors are unchanged and still come from the

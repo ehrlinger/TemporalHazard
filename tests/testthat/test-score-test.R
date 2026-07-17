@@ -370,6 +370,18 @@ test_that("score returns NA for degenerate candidates rather than selecting them
   expect_true(is.na(q$p_value))
 })
 
+test_that("score returns NA rather than erroring for a length-1 candidate", {
+  # sd() of a length-1 vector is NA, not 0 -- a naive `sd(xcand) == 0` guard
+  # turns into `NA`, and `if (NA)` raises "missing value where TRUE/FALSE
+  # needed" instead of returning na_result. A minimal fake `current` is
+  # enough here: the guard runs before anything else touches the fit.
+  current <- list(data = list(time = 1))
+  d <- data.frame(x = 5)
+  q <- .hzr_score_q(current, var = "x", phase = NULL, data = d)
+  expect_true(is.na(q$stat))
+  expect_true(is.na(q$p_value))
+})
+
 test_that("score returns NA for a collinear single-distribution candidate", {
   skip_if_not_installed("numDeriv")
   # The collinear guard must hold on this path too: v_beta collapses towards

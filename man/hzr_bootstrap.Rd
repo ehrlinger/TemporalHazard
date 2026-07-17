@@ -65,7 +65,11 @@ when \code{scope = NULL}. One of \code{"score"} (default), \code{"wald"}, or \co
 per-candidate refit, which is what makes a bootstrap screen over many
 candidates tractable. Following SAS, the variance used during
 \emph{selection} is approximate (shaping-parameter covariances are ignored);
-final-model standard errors are unaffected. See \code{\link[=hzr_stepwise]{hzr_stepwise()}}.}
+final-model standard errors are unaffected. For single-distribution
+fits, \code{"score"} computes the observed information numerically via the
+suggested \pkg{numDeriv} package and errors if it is not installed; a
+multiphase fit uses the analytic Hessian instead and does not need it.
+See \code{\link[=hzr_stepwise]{hzr_stepwise()}}.}
 
 \item{...}{Additional arguments forwarded to \code{\link[=hzr_stepwise]{hzr_stepwise()}} (e.g.
 \code{control = list(n_starts = 1)}) when \code{scope} is supplied; ignored

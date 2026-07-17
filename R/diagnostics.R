@@ -1272,7 +1272,11 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   per-candidate refit, which is what makes a bootstrap screen over many
 #'   candidates tractable. Following SAS, the variance used during
 #'   *selection* is approximate (shaping-parameter covariances are ignored);
-#'   final-model standard errors are unaffected. See [hzr_stepwise()].
+#'   final-model standard errors are unaffected. For single-distribution
+#'   fits, `"score"` computes the observed information numerically via the
+#'   suggested \pkg{numDeriv} package and errors if it is not installed; a
+#'   multiphase fit uses the analytic Hessian instead and does not need it.
+#'   See [hzr_stepwise()].
 #' @param direction,slentry,slstay,max_steps,max_move,force_in,force_out
 #'   Passed through to [hzr_stepwise()] on each replicate when `scope` is
 #'   supplied; ignored when `scope = NULL`. See [hzr_stepwise()] for
