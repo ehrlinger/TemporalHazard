@@ -386,6 +386,39 @@ These fits store unnamed theta, so coefficients are indexed positionally."
 
 ### Task 3: Wire into `hzr_stepwise()` and flip the default
 
+**⚠️ Added 2026-07-16 after Task 2's review — a pre-existing divergence that this
+task makes user-visible.**
+
+`.hzr_score_q()` returns `NA` for a non-numeric candidate (its `is.numeric(xcand)`
+guard), while `.hzr_refit_with_scope()` **expands the factor and fits it**.
+Reproduced on the bundled `avc` with a 2-level factor:
+
+```
+score path -> stat: NA
+refit path -> refit SUCCEEDS, theta length 3 (base was 2)
+```
+
+Today this is harmless: `criterion = "wald"` is the default, so the refit path
+runs and factors work. **This task flips the default to `"score"`, at which point
+a factor candidate silently never enters** — no error, no warning, just absent
+from the selected model. That converts a latent quirk into a behaviour change,
+and it lands in the same release as the breaking default flip. It affects
+multiphase equally.
+
+Resolve it as part of this task. Either:
+* **expand factor candidates in the score path** so it matches the refit path
+  (`model.matrix()` on the candidate term, `df` = number of resulting columns —
+  note `Q` then has `df > 1`, so `.hzr_score_q()`'s hard-coded `df = 1L` and its
+  `U_β²/V_β` scalar form must generalise to `U' V⁻¹ U`); or
+* **fail loudly** — `stop()` on a non-numeric candidate under `criterion = "score"`,
+  naming the variable and telling the user to use `criterion = "wald"` or to
+  expand the term themselves.
+
+Do NOT leave it returning a silent `NA`. Whichever route, add a test asserting
+the score path and the refit path agree about whether a factor candidate is
+selectable.
+
+
 **Files:**
 - Modify: `R/stepwise.R`, `R/stepwise-step.R`, `R/candidate-score.R`
 - Modify: `NEWS.md`
