@@ -425,21 +425,35 @@
 
 #' Reject a candidate the score path cannot expand into a single column
 #'
-#' `.hzr_score_q()` returns a silent `NA` for a non-numeric candidate, which
-#' under `criterion = "score"` would mean the variable simply never enters --
-#' no error, no warning, just absent from the selected model.  The Wald path
-#' rejects the same candidate loudly (`.hzr_candidate_coef_name()` cannot
-#' find a factor's expanded coefficient by name), so failing here keeps the
+#' `.hzr_score_q()` returns a silent `NA` for a non-numeric or absent
+#' candidate, which under `criterion = "score"` would mean the variable
+#' simply never enters -- no error, no warning, just absent from the
+#' selected model.  The Wald path surfaces both cases loudly: a factor
+#' candidate fails in `.hzr_candidate_coef_name()` (cannot find its expanded
+#' coefficient by name), and a candidate missing from `data` fails inside
+#' `.hzr_refit_with_scope()`'s refit, which emits the
+#' "candidate refit failed for ..." warning. Matching that here keeps the
 #' two criteria in agreement about what is selectable.
 #'
-#' Stepwise is scoped to single-column main-effect terms; a `NULL` column is
-#' left to the caller's normal `NA` handling.
+#' A column absent from `data` warns (matching the Wald refit-failure
+#' warning's severity) and is left to the caller's normal `NA` handling --
+#' the run continues past it. A present-but-non-numeric column still
+#' errors, unchanged.
 #'
 #' @keywords internal
 #' @noRd
 .hzr_score_check_numeric <- function(data, var, phase) {
   xcand <- data[[var]]
-  if (is.null(xcand) || is.numeric(xcand)) {
+  if (is.null(xcand)) {
+    where <- if (is.null(phase)) "" else paste0(" in phase ", sQuote(phase))
+    warning(
+      "Stepwise forward: candidate ", sQuote(var), where,
+      " not found in `data`; skipping.",
+      call. = FALSE
+    )
+    return(invisible(NULL))
+  }
+  if (is.numeric(xcand)) {
     return(invisible(NULL))
   }
   where <- if (is.null(phase)) "" else paste0(" in phase ", sQuote(phase))

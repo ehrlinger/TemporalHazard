@@ -286,6 +286,35 @@ test_that("criterion = 'wald' still reproduces the previous behaviour", {
   expect_identical(res$steps$variable[1], "x1")
 })
 
+test_that("a scope naming a nonexistent column warns under both criteria", {
+  # NEWS claims a mistyped scope column "still surfaces once, up front" --
+  # and hzr_bootstrap()'s pre-loop scope validation (see
+  # test-diagnostics.R's "hzr_bootstrap scope with a nonexistent column
+  # warns but does not raise") relies on hzr_stepwise() warning here rather
+  # than silently dropping the candidate. Confirm the score path matches
+  # the pre-existing wald behaviour instead of staying silent.
+  skip_if_not_installed("numDeriv")
+  obj <- .fit_driver_base()
+
+  expect_warning(
+    res_wald <- hzr_stepwise(
+      obj$fit, scope = c("x1", "not_a_real_column"), data = obj$data,
+      criterion = "wald", direction = "forward", trace = FALSE
+    ),
+    "not_a_real_column"
+  )
+  expect_false("not_a_real_column" %in% res_wald$steps$variable)
+
+  expect_warning(
+    res_score <- hzr_stepwise(
+      obj$fit, scope = c("x1", "not_a_real_column"), data = obj$data,
+      criterion = "score", direction = "forward", trace = FALSE
+    ),
+    "not_a_real_column"
+  )
+  expect_false("not_a_real_column" %in% res_score$steps$variable)
+})
+
 test_that("score and wald paths agree that a factor candidate is not selectable", {
   skip_if_not_installed("numDeriv")
   obj <- .fit_driver_base()
