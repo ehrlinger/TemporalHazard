@@ -199,6 +199,15 @@ test_that(".hzr_score_q errors when data is not row-aligned with the fit", {
 
 # --- Defect guards: .hzr_score_free_idx() ---------------------------------
 
+# NOTE: this is the ONLY test that pins the SAS-approximation partition (shapes
+# excluded from the nuisance block) and the intercept fix (the defect where
+# exponential's index set returned `2`, dropping `log_lambda`, its only
+# baseline parameter) across all four single-distribution families. The
+# "score Q agrees with the refit Wald chi-square" test above cannot substitute
+# for it: mutation testing measured Q = 14.01 (correct baseline), 14.10
+# (efficient score, shapes included -- a defect), and 8.44 (intercept dropped
+# -- the pre-fix bug) against a Wald chi^2 of 13.04, and that test's
+# `tolerance = 0.5` passes all three. Do not weaken or delete this test.
 test_that(".hzr_score_free_idx keeps the intercept for single-distribution fits", {
   # The partition excludes SHAPES, not the intercept. Weibull's theta is
   # [mu, nu, betas...]: `mu` is the scale/intercept and must stay in the
@@ -208,6 +217,11 @@ test_that(".hzr_score_free_idx keeps the intercept for single-distribution fits"
   # [log_lambda, betas...] with NO shape parameter at all, so nothing is
   # dropped. This mirrors the multiphase rule in the same function, where a
   # `constant` phase has no shapes and its `log_mu` is kept.
+  #
+  # log-logistic and log-normal are covered too: their theta names
+  # ([log_alpha, log_beta, ...] and [mu, log_sigma, ...]) are the most
+  # misleading of the four -- neither pair reads as "intercept, shape" on
+  # sight -- which is exactly why pinning their index sets matters.
   data(avc, package = "TemporalHazard")
   avc <- na.omit(avc)
 
@@ -218,6 +232,14 @@ test_that(".hzr_score_free_idx keeps the intercept for single-distribution fits"
   e <- hazard(survival::Surv(int_dead, dead) ~ age, data = avc,
               dist = "exponential", theta = c(0.01, 0), fit = TRUE)
   expect_identical(as.integer(.hzr_score_free_idx(e)), c(1L, 2L))
+
+  ll <- hazard(survival::Surv(int_dead, dead) ~ age, data = avc,
+               dist = "loglogistic", theta = c(0.01, 0.5, 0), fit = TRUE)
+  expect_identical(as.integer(.hzr_score_free_idx(ll)), c(1L, 3L))
+
+  ln <- hazard(survival::Surv(int_dead, dead) ~ age, data = avc,
+               dist = "lognormal", theta = c(0.01, 0.5, 0), fit = TRUE)
+  expect_identical(as.integer(.hzr_score_free_idx(ln)), c(1L, 3L))
 })
 
 test_that(".hzr_score_free_idx errors on an empty theta rather than mis-indexing", {
@@ -316,9 +338,18 @@ test_that("score U_beta matches numDeriv for each single-distribution family", {
 })
 
 test_that("score Q agrees with the refit Wald chi-square for a weak effect", {
+  skip_if_not_installed("numDeriv")
   # Both are asymptotically chi^2(1) for the same hypothesis, so on a candidate
   # with a small true effect they must agree to within sampling tolerance. The
   # refit path is the trusted oracle here.
+  #
+  # NOTE: this only checks order-of-magnitude agreement, not discrimination.
+  # Mutation testing showed `tolerance = 0.5` on a Wald chi^2 of ~13.04 admits
+  # Q anywhere in ~[6.5, 19.6] -- wide enough that both the efficient score
+  # (14.10, the shape-inclusion defect) and the intercept-dropped bug (8.44)
+  # pass alongside the correct baseline (14.01). The
+  # `.hzr_score_free_idx() keeps the intercept` test below is what actually
+  # pins those cases; do not rely on this test to catch either regression.
   o <- .score_oracle_fit("weibull")
   q <- .hzr_score_q(o$fit, var = "age", phase = NULL, data = o$data)
   refit <- .hzr_refit_with_scope(o$fit, action = "add", var = "age",
@@ -340,6 +371,7 @@ test_that("score returns NA for degenerate candidates rather than selecting them
 })
 
 test_that("score returns NA for a collinear single-distribution candidate", {
+  skip_if_not_installed("numDeriv")
   # The collinear guard must hold on this path too: v_beta collapses towards
   # zero from ABOVE, so without the relative floor the duplicate column would
   # win the step with Q ~ 1e15.
