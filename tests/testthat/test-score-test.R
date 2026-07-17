@@ -196,3 +196,168 @@ test_that(".hzr_score_q errors when data is not row-aligned with the fit", {
     "row-aligned"
   )
 })
+
+# --- Defect guards: .hzr_score_free_idx() ---------------------------------
+
+test_that(".hzr_score_free_idx keeps the intercept for single-distribution fits", {
+  # The partition excludes SHAPES, not the intercept. Weibull's theta is
+  # [mu, nu, betas...]: `mu` is the scale/intercept and must stay in the
+  # nuisance block; only `nu` is a shape. Returning just the trailing beta
+  # slots drops `mu`, under-adjusts V_beta, and makes Q too SMALL -- candidates
+  # then silently fail to enter. Exponential is the sharpest case: its theta is
+  # [log_lambda, betas...] with NO shape parameter at all, so nothing is
+  # dropped. This mirrors the multiphase rule in the same function, where a
+  # `constant` phase has no shapes and its `log_mu` is kept.
+  data(avc, package = "TemporalHazard")
+  avc <- na.omit(avc)
+
+  w <- hazard(survival::Surv(int_dead, dead) ~ age, data = avc,
+              dist = "weibull", theta = c(0.01, 0.5, 0), fit = TRUE)
+  expect_identical(as.integer(.hzr_score_free_idx(w)), c(1L, 3L))
+
+  e <- hazard(survival::Surv(int_dead, dead) ~ age, data = avc,
+              dist = "exponential", theta = c(0.01, 0), fit = TRUE)
+  expect_identical(as.integer(.hzr_score_free_idx(e)), c(1L, 2L))
+})
+
+test_that(".hzr_score_free_idx errors on an empty theta rather than mis-indexing", {
+  # `seq.int(length(theta) - p_cov + 1L, length(theta))` with an empty theta
+  # evaluates to seq.int(-1, 0) -> c(-1L, 0L). R does not error on that:
+  # info[c(-1, 0), c(-1, 0)] silently DROPS row/column 1 and returns a
+  # plausible-looking matrix. Fail loudly instead.
+  fake <- structure(
+    list(
+      spec = list(dist = "weibull", control = list()),
+      data = list(x = matrix(1, nrow = 2L, ncol = 1L)),
+      fit  = list(theta = numeric(0))
+    ),
+    class = "hazard"
+  )
+  expect_error(.hzr_score_free_idx(fake), "theta")
+})
+
+test_that(".hzr_score_free_idx errors when multiphase covariate_counts are absent", {
+  # Zero counts feed .hzr_log_mu_positions(), so every phase start after the
+  # first would be wrong and the index set silently corrupt. A fitted
+  # multiphase object always carries counts, so the old all-zero fallback only
+  # converted a should-be-impossible state into a wrong V_beta.
+  data(avc, package = "TemporalHazard")
+  avc <- na.omit(avc)
+  avc$m <- avc$age
+
+  fit <- score_test_base_fit(avc, constant_phase = hzr_phase("constant",
+                                                             formula = ~ m))
+  expect_identical(as.integer(.hzr_score_free_idx(fit)), c(1L, 5L, 6L))
+
+  fit$fit$covariate_counts <- NULL
+  expect_error(.hzr_score_free_idx(fit), "covariate_counts")
+})
+
+# --- Tier 2: single-distribution families, numeric oracle ------------------
+# No SAS reference exists for these yet (PROC HAZARD sources in this repo are
+# all multiphase). They are validated against numDeriv and against the existing
+# refit path, which is the standard the analytic Hessians already meet.
+
+.score_oracle_fit <- function(dist) {
+  data(avc, package = "TemporalHazard")
+  avc <- na.omit(avc)
+  theta0 <- switch(
+    dist,
+    exponential = c(mu = 0.01),
+    weibull     = c(mu = 0.01, nu = 0.5),
+    loglogistic = c(mu = 0.01, nu = 0.5),
+    lognormal   = c(mu = 0.01, nu = 0.5)
+  )
+  list(
+    fit = hazard(survival::Surv(int_dead, dead) ~ 1, data = avc,
+                 dist = dist, theta = theta0, fit = TRUE),
+    data = avc
+  )
+}
+
+test_that("score U_beta matches numDeriv for each single-distribution family", {
+  skip_if_not_installed("numDeriv")
+  for (d in c("exponential", "weibull", "loglogistic", "lognormal")) {
+    o <- .score_oracle_fit(d)
+    exp_ <- .hzr_score_expand(o$fit, "age", phase = NULL, data = o$data)
+    expect_false(is.null(exp_), label = paste0("expand for dist = ", d))
+
+    # The analytic score at (theta_hat, beta = 0), against numDeriv on the same
+    # expanded negative log-likelihood. This is the oracle: the analytic
+    # gradient is what makes the score test cheaper than a refit, so it is the
+    # thing that has to be right.
+    grad <- .hzr_score_gradient(o$fit, exp_)
+    nll <- function(par) {
+      .hzr_score_single_nll(o$fit, exp_$x, par)
+    }
+    # SIGN: the .hzr_gradient_* functions return the score of the POSITIVE
+    # log-likelihood, while .hzr_score_single_nll() is the negated (objective)
+    # scale the information is a Hessian of. Q uses U^2, so the sign cannot
+    # show up there -- which is exactly why it is asserted here instead.
+    num <- -numDeriv::grad(nll, exp_$theta)
+    expect_equal(as.numeric(grad), as.numeric(num), tolerance = 1e-5,
+                 label = paste0("analytic vs numDeriv score for dist = ", d))
+
+    # The reduced-model score is zero at the current MLE, so only the
+    # candidate's own component survives. The tolerance here is the
+    # optimizer's convergence floor (control$reltol = 1e-5 on the objective),
+    # not the score's accuracy: theta_hat is a numerical MLE, so its score is
+    # near zero rather than exactly zero. Compare against the candidate's own
+    # component, which is ~1e3 -- four orders of magnitude larger.
+    expect_lt(max(abs(grad[exp_$theta_idx])), 1e-2)
+
+    q <- .hzr_score_q(o$fit, var = "age", phase = NULL, data = o$data)
+    expect_true(is.finite(q$stat),
+                label = paste0("finite Q for dist = ", d))
+    expect_equal(q$df, 1L, label = paste0("df for dist = ", d))
+    expect_true(q$p_value >= 0 && q$p_value <= 1,
+                label = paste0("p in [0,1] for dist = ", d))
+  }
+})
+
+test_that("score Q agrees with the refit Wald chi-square for a weak effect", {
+  # Both are asymptotically chi^2(1) for the same hypothesis, so on a candidate
+  # with a small true effect they must agree to within sampling tolerance. The
+  # refit path is the trusted oracle here.
+  o <- .score_oracle_fit("weibull")
+  q <- .hzr_score_q(o$fit, var = "age", phase = NULL, data = o$data)
+  refit <- .hzr_refit_with_scope(o$fit, action = "add", var = "age",
+                                 phase = NULL, data = o$data)
+  # Single-distribution fits store UNNAMED theta; .hzr_wald_p() regenerates
+  # canonical names via .hzr_parameter_names(), so the sole covariate is
+  # `beta1`, never `age`.
+  w <- .hzr_wald_p(refit, "beta1")
+  expect_equal(q$stat, w$stat^2, tolerance = 0.5)
+})
+
+test_that("score returns NA for degenerate candidates rather than selecting them", {
+  o <- .score_oracle_fit("weibull")
+  d <- o$data
+  d$const_col <- 1
+  q <- .hzr_score_q(o$fit, var = "const_col", phase = NULL, data = d)
+  expect_true(is.na(q$stat))
+  expect_true(is.na(q$p_value))
+})
+
+test_that("score returns NA for a collinear single-distribution candidate", {
+  # The collinear guard must hold on this path too: v_beta collapses towards
+  # zero from ABOVE, so without the relative floor the duplicate column would
+  # win the step with Q ~ 1e15.
+  data(avc, package = "TemporalHazard")
+  avc <- na.omit(avc)
+  avc$age_copy <- avc$age
+
+  fit <- hazard(survival::Surv(int_dead, dead) ~ age, data = avc,
+                dist = "weibull", theta = c(0.01, 0.5, 0), fit = TRUE)
+  q <- .hzr_score_q(fit, var = "age_copy", phase = NULL, data = avc)
+  expect_true(is.na(q$stat))
+  expect_true(is.na(q$p_value))
+})
+
+test_that("score rejects a candidate already in the single-distribution model", {
+  data(avc, package = "TemporalHazard")
+  avc <- na.omit(avc)
+  fit <- hazard(survival::Surv(int_dead, dead) ~ age, data = avc,
+                dist = "weibull", theta = c(0.01, 0.5, 0), fit = TRUE)
+  expect_null(.hzr_score_expand(fit, "age", phase = NULL, data = avc))
+})

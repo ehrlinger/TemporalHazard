@@ -18,8 +18,11 @@
 # parity; the efficient score would not match. See
 # inst/dev/SCORE-CRITERION-DESIGN.md.
 #
-# Scope: multiphase only. The single-distribution families land in a follow-up
-# task; their branches below return NULL rather than a wrong number.
+# The multiphase path is gated against SAS's own Q values. No SAS reference
+# exists for the single-distribution families -- every proc hazard source in
+# this repo is multiphase -- so those are held to a numeric oracle instead:
+# numDeriv for the score, and agreement with the refit path's Wald chi-square
+# where theory requires it.
 
 #' Phases as the fitted model actually used them
 #'
@@ -47,20 +50,23 @@
 #'
 #' @noRd
 .hzr_score_free_idx <- function(current) {
-  theta <- current$fit$theta
   if (current$spec$dist != "multiphase") {
-    # Single-distribution: theta is [shape..., beta...]; covariate coefficients
-    # occupy the trailing ncol(x) slots. Shapes are excluded per SAS.
-    p_cov <- if (is.null(current$data$x)) 0L else ncol(current$data$x)
-    if (p_cov == 0L) return(integer(0))
-    return(seq.int(length(theta) - p_cov + 1L, length(theta)))
+    return(.hzr_score_single_free_idx(current))
   }
   # Multiphase: keep each phase's log_mu and its covariate betas; drop exactly
   # the phase's shape slots.
   phases <- .hzr_score_phases(current)
   counts <- current$fit$covariate_counts
   if (is.null(counts)) {
-    counts <- stats::setNames(integer(length(phases)), names(phases))
+    # A fitted multiphase object always carries counts. They set every phase's
+    # start position via .hzr_log_mu_positions(), so substituting zeros would
+    # not degrade gracefully -- it would silently return the wrong index set
+    # and a wrong V_beta for every candidate in the step.
+    stop(
+      ".hzr_score_free_idx(): the fitted model has no `covariate_counts`. ",
+      "They are required to locate each phase's parameters in theta.",
+      call. = FALSE
+    )
   }
   starts <- .hzr_log_mu_positions(phases, counts)
   idx <- integer(0)
@@ -77,15 +83,150 @@
   idx
 }
 
+#' Size of a single distribution's leading baseline block in theta
+#'
+#' `.hzr_shape_parameter_count()` returns the size of the WHOLE leading block --
+#' intercept and shapes together -- so within it the intercept is always slot 1
+#' and the genuine shape slots are `2:n_base`. The documented layouts are
+#' `[log_lambda, betas...]` (exponential, so no shape at all), `[mu, nu,
+#' betas...]` (weibull), `[log_alpha, log_beta, betas...]` (log-logistic) and
+#' `[mu, log_sigma, betas...]` (log-normal).
+#'
+#' @noRd
+.hzr_score_n_base <- function(current) {
+  n_base <- .hzr_shape_parameter_count(
+    current$spec$dist, control = current$spec$control
+  )
+  if (!is.finite(n_base) || n_base < 1L) {
+    stop(
+      ".hzr_score_free_idx(): no known theta layout for dist ",
+      sQuote(current$spec$dist), "; refusing to guess which slots are shapes.",
+      call. = FALSE
+    )
+  }
+  as.integer(n_base)
+}
+
+#' Non-shape positions in a single distribution's theta
+#'
+#' Keeps the intercept and every covariate beta; drops ONLY the shape slots.
+#' The intercept is a nuisance parameter like any other and must stay in the
+#' block -- dropping it under-adjusts `V_beta`, which makes `Q` too small and
+#' silently keeps real candidates out of the model. Exponential is the clearest
+#' case: it has no shape parameter, so nothing is dropped.
+#'
+#' @noRd
+.hzr_score_single_free_idx <- function(current) {
+  theta <- current$fit$theta
+  n_base <- .hzr_score_n_base(current)
+  p_cov <- if (is.null(current$data$x)) 0L else ncol(current$data$x)
+  # An empty theta would make a positional rule produce NEGATIVE subscripts,
+  # which R happily accepts as a drop-these-rows instruction and turns into a
+  # plausible-looking wrong matrix. Check the layout instead of trusting it.
+  if (length(theta) != n_base + p_cov) {
+    stop(
+      ".hzr_score_free_idx(): theta has ", length(theta), " element(s) but the ",
+      current$spec$dist, " layout needs ", n_base + p_cov, " (", n_base,
+      " baseline + ", p_cov, " covariate).",
+      call. = FALSE
+    )
+  }
+  idx <- 1L
+  if (p_cov > 0L) idx <- c(idx, seq.int(n_base + 1L, n_base + p_cov))
+  idx
+}
+
+#' Log-likelihood / gradient entry points for a single distribution
+#'
+#' SIGN CONVENTION -- both return the POSITIVE log-likelihood scale, despite
+#' what some of their roxygen blocks say. `.hzr_optim_generic()` is what negates
+#' them for minimisation, and the analytic `hessian_fn` hook it takes is on the
+#' negated (objective) scale. So the observed information is a Hessian of
+#' `-logl_fn`, not of `logl_fn`. Getting this backwards yields a negative
+#' `v_beta`, which the collinearity floor then turns into a silent `NA` for
+#' every candidate.
+#'
+#' @noRd
+.hzr_score_logl_fn <- function(dist) {
+  switch(
+    dist,
+    exponential = .hzr_logl_exponential,
+    weibull     = .hzr_logl_weibull,
+    loglogistic = .hzr_logl_loglogistic,
+    lognormal   = .hzr_logl_lognormal,
+    stop(".hzr_score_logl_fn(): unsupported dist ", sQuote(dist), ".",
+         call. = FALSE)
+  )
+}
+
+#' @noRd
+.hzr_score_gradient_fn <- function(dist) {
+  switch(
+    dist,
+    exponential = .hzr_gradient_exponential,
+    weibull     = .hzr_gradient_weibull,
+    loglogistic = .hzr_gradient_loglogistic,
+    lognormal   = .hzr_gradient_lognormal,
+    stop(".hzr_score_gradient_fn(): unsupported dist ", sQuote(dist), ".",
+         call. = FALSE)
+  )
+}
+
+#' Negative log-likelihood of a single-distribution model at `theta`
+#'
+#' `x` is the design matrix to evaluate against -- the fit's own for the current
+#' model, or the expanded one when a candidate is pinned at zero.
+#'
+#' @noRd
+.hzr_score_single_nll <- function(current, x, theta) {
+  d <- current$data
+  fn <- .hzr_score_logl_fn(current$spec$dist)
+  -fn(theta, time = d$time, status = d$status,
+      time_lower = d$time_lower, time_upper = d$time_upper,
+      x = x, weights = d$weights)
+}
+
+#' Numeric observed information for a single distribution
+#'
+#' Weibull's analytic Hessian is on an internal reparameterisation, not the
+#' `(mu, nu, beta)` scale theta is stored on, and there is no analytic Hessian
+#' on the expanded design for the others either. A numeric Hessian of the
+#' negative log-likelihood is the one form that is uniform across all four
+#' families -- and it is the same oracle the analytic Hessians are themselves
+#' tested against.
+#'
+#' @noRd
+.hzr_score_single_hessian <- function(current, x, theta) {
+  if (!requireNamespace("numDeriv", quietly = TRUE)) {
+    # Returning NULL here would NA every candidate and make stepwise report
+    # nothing significant -- a plausible-looking wrong answer.
+    stop(
+      "The score criterion needs the 'numDeriv' package for dist ",
+      sQuote(current$spec$dist), ": its observed information is computed ",
+      "numerically. Install 'numDeriv', or select with the Wald criterion.",
+      call. = FALSE
+    )
+  }
+  h <- tryCatch(
+    numDeriv::hessian(
+      function(par) .hzr_score_single_nll(current, x, par), theta
+    ),
+    error = function(e) NULL
+  )
+  if (is.null(h) || !is.matrix(h) || nrow(h) != length(theta) ||
+        !all(is.finite(h))) {
+    return(NULL)
+  }
+  h
+}
+
 #' Observed information (Hessian of the negative log-likelihood)
 #'
 #' @noRd
 .hzr_score_information <- function(current, theta) {
   d <- current$data
   if (current$spec$dist != "multiphase") {
-    # Single-distribution families are out of scope for this task; returning
-    # NULL leaves the candidate variance unadjusted rather than wrong.
-    return(NULL)
+    return(.hzr_score_single_hessian(current, d$x, theta))
   }
   tryCatch(
     .hzr_hessian_multiphase(
@@ -130,13 +271,14 @@
 #' `.hzr_refit_with_scope(action = "add")` would build, with the new
 #' coefficient pinned at zero.
 #'
-#' @return `list(theta, beta_idx, theta_idx, phases, x_list,
-#'   covariate_counts)`, or `NULL` when the candidate cannot be expanded
-#'   (already in scope, unknown phase, row misalignment, non-multiphase).
+#' @return For multiphase, `list(theta, beta_idx, theta_idx, phases, x_list,
+#'   covariate_counts)`; for a single distribution, `list(theta, beta_idx,
+#'   theta_idx, x)`. `NULL` when the candidate cannot be expanded (already in
+#'   scope, unknown phase, row misalignment).
 #' @noRd
 .hzr_score_expand <- function(current, var, phase, data) {
   if (current$spec$dist != "multiphase") {
-    return(NULL)
+    return(.hzr_score_expand_single(current, var, phase, data))
   }
   phases <- .hzr_score_phases(current)
   if (is.null(phase) || !is.character(phase) || length(phase) != 1L ||
@@ -233,13 +375,63 @@
   )
 }
 
+#' Expand a single distribution's design and theta with one pinned candidate
+#'
+#' Mirrors `.hzr_refit_with_scope()`'s single-distribution path: the candidate
+#' becomes the formula's last term, so `model.matrix()` puts its column last and
+#' its coefficient takes the last slot of theta -- exactly where the refit's
+#' `c(theta_old, 0)` warm start puts it. Here it stays pinned at zero.
+#'
+#' @noRd
+.hzr_score_expand_single <- function(current, var, phase, data) {
+  if (!is.null(phase)) {
+    return(NULL)
+  }
+  if (var %in% .hzr_scope_current_vars(current)) {
+    return(NULL)
+  }
+
+  d <- current$data
+  xcand <- data[[var]]
+  if (is.null(xcand) || !is.numeric(xcand) ||
+        length(xcand) != length(d$time) || anyNA(xcand)) {
+    return(NULL)
+  }
+
+  new_col <- matrix(as.numeric(xcand), ncol = 1L,
+                    dimnames = list(NULL, var))
+  x_new <- if (is.null(d$x)) new_col else cbind(d$x, new_col)
+
+  # theta is UNNAMED on these fits (see R/wald.R); index positionally and do
+  # not attach names that the rest of the package would not have produced.
+  theta_old <- unname(current$fit$theta)
+  theta_new <- c(theta_old, 0)
+
+  list(
+    theta = theta_new,
+    beta_idx = length(theta_new),
+    theta_idx = seq_along(theta_old),
+    x = x_new
+  )
+}
+
 #' Score vector of the expanded model at (theta_hat, beta = 0)
 #'
 #' @noRd
 .hzr_score_gradient <- function(current, exp_) {
   d <- current$data
   if (current$spec$dist != "multiphase") {
-    return(NULL)
+    fn <- .hzr_score_gradient_fn(current$spec$dist)
+    g <- tryCatch(
+      fn(exp_$theta, time = d$time, status = d$status,
+         time_lower = d$time_lower, time_upper = d$time_upper,
+         x = exp_$x, weights = d$weights),
+      error = function(e) NULL
+    )
+    if (is.null(g) || length(g) != length(exp_$theta) || !all(is.finite(g))) {
+      return(NULL)
+    }
+    return(as.numeric(g))
   }
   g <- tryCatch(
     .hzr_gradient_multiphase(
@@ -262,7 +454,7 @@
 .hzr_score_information_expanded <- function(current, exp_) {
   d <- current$data
   if (current$spec$dist != "multiphase") {
-    return(NULL)
+    return(.hzr_score_single_hessian(current, exp_$x, exp_$theta))
   }
   h <- tryCatch(
     .hzr_hessian_multiphase(
