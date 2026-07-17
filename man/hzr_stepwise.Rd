@@ -205,9 +205,10 @@ information-criterion search.}
 data(avc)
 avc <- na.omit(avc)
 base <- hazard(survival::Surv(int_dead, dead) ~ age,
-               data = avc, dist = "weibull", fit = TRUE)
+               data = avc, dist = "weibull", fit = TRUE,
+               theta = c(mu = 0.01, nu = 0.5, 0))
 \donttest{
-sw <- hzr_stepwise(base, scope = ~ age + nyha,
+sw <- hzr_stepwise(base, scope = ~ age + mal,
                    data = avc, direction = "forward",
                    control = list(n_starts = 1))
 print(sw)

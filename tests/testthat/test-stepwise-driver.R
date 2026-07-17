@@ -315,6 +315,29 @@ test_that("a scope naming a nonexistent column warns under both criteria", {
   expect_false("not_a_real_column" %in% res_score$steps$variable)
 })
 
+test_that("criterion = 'score' rejects a non-converged base up front", {
+  data(avc)
+  avc <- na.omit(avc)
+  # No theta starting values -> the weibull base does not converge and is
+  # left with an empty theta, so the score statistic has nothing to evaluate.
+  base_bad <- hazard(survival::Surv(int_dead, dead) ~ age,
+                     data = avc, dist = "weibull", fit = TRUE)
+  expect_false(isTRUE(base_bad$fit$converged))
+  expect_length(base_bad$fit$theta, 0L)
+
+  expect_error(
+    hzr_stepwise(base_bad, scope = ~ age + mal, data = avc,
+                 criterion = "score", direction = "forward", trace = FALSE),
+    "did not converge"
+  )
+
+  # wald refits each candidate from the call and tolerates the bad base.
+  expect_no_error(
+    hzr_stepwise(base_bad, scope = ~ age + mal, data = avc,
+                 criterion = "wald", direction = "forward", trace = FALSE)
+  )
+})
+
 test_that("score and wald paths agree that a factor candidate is not selectable", {
   skip_if_not_installed("numDeriv")
   obj <- .fit_driver_base()

@@ -160,9 +160,10 @@
 #' data(avc)
 #' avc <- na.omit(avc)
 #' base <- hazard(survival::Surv(int_dead, dead) ~ age,
-#'                data = avc, dist = "weibull", fit = TRUE)
+#'                data = avc, dist = "weibull", fit = TRUE,
+#'                theta = c(mu = 0.01, nu = 0.5, 0))
 #' \donttest{
-#' sw <- hzr_stepwise(base, scope = ~ age + nyha,
+#' sw <- hzr_stepwise(base, scope = ~ age + mal,
 #'                    data = avc, direction = "forward",
 #'                    control = list(n_starts = 1))
 #' print(sw)
@@ -192,6 +193,20 @@ hzr_stepwise <- function(fit,
   }
   if (missing(data) || !is.data.frame(data)) {
     stop("`data` must be a data frame (typically the frame used for the base fit).",
+         call. = FALSE)
+  }
+
+  # The score (Q) statistic is evaluated at the base model's fitted MLE, so a
+  # base that did not converge (or was never fitted, leaving an empty theta)
+  # has nothing to score.  Catch that here with an actionable message rather
+  # than letting the internal `.hzr_score_free_idx()` guard fire deep in the
+  # candidate loop.  `wald` and `aic` refit each candidate from the call and
+  # legitimately tolerate a non-converged base, so they are left alone.
+  if (criterion == "score" &&
+        (!isTRUE(fit$fit$converged) || length(fit$fit$theta) == 0L)) {
+    stop("criterion = 'score' requires a converged base model with fitted ",
+         "coefficients; this fit did not converge. Supply theta starting ",
+         "values to hazard(), or use criterion = 'wald'.",
          call. = FALSE)
   }
 
@@ -482,9 +497,10 @@ as.data.frame.hzr_stepwise <- function(x, ...) {
 #' data(avc)
 #' avc <- na.omit(avc)
 #' base <- hazard(survival::Surv(int_dead, dead) ~ age,
-#'                data = avc, dist = "weibull", fit = TRUE)
+#'                data = avc, dist = "weibull", fit = TRUE,
+#'                theta = c(mu = 0.01, nu = 0.5, 0))
 #' \donttest{
-#' sw <- hzr_stepwise(base, scope = ~ age + nyha,
+#' sw <- hzr_stepwise(base, scope = ~ age + mal,
 #'                    data = avc, direction = "forward",
 #'                    control = list(n_starts = 1))
 #' cat(stepwise_trace(sw), sep = "\n")
