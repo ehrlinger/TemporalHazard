@@ -109,19 +109,28 @@
 
 #' Execute one forward step of stepwise selection
 #'
-#' Refits the current model with each candidate (variable, phase)
-#' appended, scores each via `.hzr_candidate_score(mode = "entry")`,
-#' and accepts the best if its score clears the entry threshold.
+#' Under `"wald"` / `"aic"`, refits the current model with each candidate
+#' (variable, phase) appended and scores each via
+#' `.hzr_candidate_score(mode = "entry")`.  Under `"score"` there is no
+#' candidate refit at all: each candidate is scored by `.hzr_score_q()` with
+#' its coefficient pinned at zero.  The reduced-model nuisance block is
+#' inverted ONCE per step by `.hzr_score_nuisance()` and reused for every
+#' candidate -- that reuse is what removes the optimizer from the loop, and
+#' letting `.hzr_score_q()` recompute it per candidate would silently give
+#' most of the speedup back.  The best candidate is accepted if its score
+#' clears the entry threshold.
 #'
 #' Divergent candidate refits emit a `warning()` naming the failing
 #' `(variable, phase)` pair and are excluded from the selection, per
-#' the sec.2 Q5 decision in STEPWISE-DESIGN.md.
+#' the sec.2 Q5 decision in STEPWISE-DESIGN.md.  The score path has no refit
+#' to diverge, so it reports no refit failures.
 #'
 #' @param current Fitted `hazard` object that is the starting point.
 #' @param scope Scope specification (see `.hzr_stepwise_candidates`).
-#' @param data Data frame for refits.
-#' @param criterion Either `"wald"` or `"aic"`.
-#' @param slentry Entry threshold for the Wald criterion (ignored when
+#' @param data Data frame for refits.  Must be row-aligned with the fit
+#'   under `criterion = "score"`, which reads candidate columns from it.
+#' @param criterion One of `"score"`, `"wald"`, or `"aic"`.
+#' @param slentry Entry threshold for the score / Wald criteria (ignored when
 #'   `criterion = "aic"`; the entry rule there is dAIC < 0).
 #' @param force_out Character vector of variables that may never be
 #'   considered as candidates.
@@ -147,7 +156,7 @@
 #' @keywords internal
 #' @noRd
 .hzr_stepwise_forward_step <- function(current, scope = NULL, data,
-                                        criterion = c("wald", "aic"),
+                                        criterion = c("score", "wald", "aic"),
                                         slentry   = 0.30,
                                         force_out = character(),
                                         ...) {
@@ -190,6 +199,13 @@
 
   rows     <- vector("list", length(cands))
   failures <- character()
+
+  if (criterion == "score") {
+    return(.hzr_stepwise_forward_step_score(
+      current = current, cands = cands, data = data,
+      slentry = slentry, null_result = null_result, ...
+    ))
+  }
 
   for (i in seq_along(cands)) {
     cand <- cands[[i]]
@@ -300,6 +316,143 @@
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+#' Score-criterion body of the forward step
+#'
+#' Split out of `.hzr_stepwise_forward_step()` to keep the refit-based and
+#' refit-free paths readable side by side.  Returns the same list shape.
+#'
+#' The winner is refit ONCE, after the decision -- mirroring the backward
+#' step, which has always worked this way.
+#'
+#' @param cands List of `list(var, phase)` pairs to score.
+#' @param null_result Zero-arg constructor for the "nothing entered" result,
+#'   supplied by the caller so both paths return an identical shape.
+#'
+#' @keywords internal
+#' @noRd
+.hzr_stepwise_forward_step_score <- function(current, cands, data, slentry,
+                                             null_result, ...) {
+  # The entire speedup: the reduced-model information does not depend on any
+  # candidate, so invert its nuisance block once and hand it to every
+  # candidate.  Letting .hzr_score_q() default `nuisance` to NULL would
+  # re-invert it per candidate and give most of the benefit back silently.
+  nuisance <- .hzr_score_nuisance(current)
+
+  rows <- vector("list", length(cands))
+  for (i in seq_along(cands)) {
+    cand <- cands[[i]]
+    .hzr_score_check_numeric(data, cand$var, cand$phase)
+
+    s_q <- .hzr_score_q(current, cand$var, phase = cand$phase, data = data,
+                        nuisance = nuisance)
+    s <- .hzr_candidate_score(
+      criterion = "score", mode = "entry",
+      current = current, score = s_q,
+      names = cand$var
+    )
+
+    rows[[i]] <- data.frame(
+      variable  = cand$var,
+      phase     = cand$phase %||% NA_character_,
+      score     = s$score,
+      p_value   = s$p_value,
+      delta_aic = s$delta_aic,
+      stat      = s$stat,
+      df        = s$df,
+      stringsAsFactors = FALSE
+    )
+  }
+  all_scores <- do.call(rbind, rows)
+
+  valid <- which(!is.na(all_scores$score))
+  if (length(valid) == 0L) {
+    out <- null_result()
+    out$all_scores <- all_scores
+    return(out)
+  }
+
+  best_idx <- valid[which.min(all_scores$score[valid])]
+  best     <- all_scores[best_idx, ]
+
+  if (!(best$score < slentry)) {
+    out <- null_result()
+    out$all_scores <- all_scores
+    return(out)
+  }
+
+  best_phase <- if (is.na(best$phase)) NULL else best$phase
+  refitted <- tryCatch(
+    .hzr_refit_with_scope(
+      current, action = "add", var = best$variable, phase = best_phase,
+      data = data, ...
+    ),
+    error = function(e) e
+  )
+
+  failure_token <- if (is.na(best$phase)) {
+    best$variable
+  } else {
+    paste0(best$variable, "@", best$phase)
+  }
+
+  if (inherits(refitted, "error") || isFALSE(refitted$fit$converged)) {
+    # The candidate won on Q but the model that would realise it will not fit.
+    # Entering it anyway would put a non-converged fit into the chain.
+    warning("Stepwise forward: post-entry refit failed for ",
+            failure_token, ".", call. = FALSE)
+    out <- null_result()
+    out$all_scores     <- all_scores
+    out$refit_failures <- failure_token
+    return(out)
+  }
+
+  list(
+    accepted  = TRUE,
+    fit       = refitted,
+    variable  = best$variable,
+    phase     = best$phase,
+    score     = best$score,
+    p_value   = best$p_value,
+    delta_aic = best$delta_aic,
+    stat      = best$stat,
+    df        = best$df,
+    all_scores = all_scores,
+    refit_failures = character()
+  )
+}
+
+
+#' Reject a candidate the score path cannot expand into a single column
+#'
+#' `.hzr_score_q()` returns a silent `NA` for a non-numeric candidate, which
+#' under `criterion = "score"` would mean the variable simply never enters --
+#' no error, no warning, just absent from the selected model.  The Wald path
+#' rejects the same candidate loudly (`.hzr_candidate_coef_name()` cannot
+#' find a factor's expanded coefficient by name), so failing here keeps the
+#' two criteria in agreement about what is selectable.
+#'
+#' Stepwise is scoped to single-column main-effect terms; a `NULL` column is
+#' left to the caller's normal `NA` handling.
+#'
+#' @keywords internal
+#' @noRd
+.hzr_score_check_numeric <- function(data, var, phase) {
+  xcand <- data[[var]]
+  if (is.null(xcand) || is.numeric(xcand)) {
+    return(invisible(NULL))
+  }
+  where <- if (is.null(phase)) "" else paste0(" in phase ", sQuote(phase))
+  stop(
+    "Stepwise forward: candidate ", sQuote(var), where, " is not numeric (",
+    class(xcand)[1L], "). The score criterion supports single-column ",
+    "main-effect terms only. Expand it into numeric main effects (e.g. a ",
+    "contrast matrix) and retry -- note `criterion = \"wald\"` rejects it ",
+    "too, so switching criterion will not help.",
+    call. = FALSE
+  )
+}
+
 
 # ---------------------------------------------------------------------------
 # Backward step

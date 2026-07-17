@@ -253,3 +253,54 @@ test_that("stepwise_trace rejects non-hzr_stepwise input", {
   expect_error(stepwise_trace(list()),
                "must be an `hzr_stepwise` object")
 })
+
+
+# Score criterion -----------------------------------------------------------
+
+test_that("hzr_stepwise defaults to criterion = 'score'", {
+  expect_identical(eval(formals(hzr_stepwise)$criterion)[1], "score")
+})
+
+test_that("hzr_stepwise(criterion = 'score') selects without refitting candidates", {
+  skip_if_not_installed("numDeriv")
+  obj <- .fit_driver_base()
+  res <- hzr_stepwise(
+    obj$fit, scope = ~ x1 + x2 + x3 + x4, data = obj$data,
+    criterion = "score", direction = "forward", trace = FALSE
+  )
+  expect_s3_class(res, "hzr_stepwise")
+  expect_true(nrow(res$steps) > 0)
+  expect_identical(res$steps$variable[1], "x1")
+  expect_true(all(res$steps$df == 1L))
+  # The score path reports no dAIC: there is no candidate refit to take it from.
+  expect_true(all(is.na(res$steps$delta_aic)))
+})
+
+test_that("criterion = 'wald' still reproduces the previous behaviour", {
+  obj <- .fit_driver_base()
+  res <- hzr_stepwise(
+    obj$fit, scope = ~ x1 + x2 + x3 + x4, data = obj$data,
+    criterion = "wald", direction = "forward", trace = FALSE
+  )
+  expect_s3_class(res, "hzr_stepwise")
+  expect_identical(res$steps$variable[1], "x1")
+})
+
+test_that("score and wald paths agree that a factor candidate is not selectable", {
+  skip_if_not_installed("numDeriv")
+  obj <- .fit_driver_base()
+  obj$data$fac <- factor(ifelse(obj$data$x2 > 0, "hi", "lo"))
+
+  # Wald refits the candidate, then fails to locate its coefficient by name.
+  expect_error(
+    hzr_stepwise(obj$fit, scope = ~ fac, data = obj$data,
+                 criterion = "wald", direction = "forward", trace = FALSE),
+    "design matrix"
+  )
+  # Score must not silently return NA and drop the candidate on the floor.
+  expect_error(
+    hzr_stepwise(obj$fit, scope = ~ fac, data = obj$data,
+                 criterion = "score", direction = "forward", trace = FALSE),
+    "not numeric"
+  )
+})

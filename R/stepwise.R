@@ -18,8 +18,8 @@
 #' Stepwise covariate selection for a parametric hazard model
 #'
 #' Run forward, backward, or two-way stepwise selection on an existing
-#' `hazard` fit using Wald p-values or AIC deltas as the entry /
-#' retention criterion.  Phase-specific entry is supported for
+#' `hazard` fit using score (Q) statistics, Wald p-values, or AIC deltas as
+#' the entry / retention criterion.  Phase-specific entry is supported for
 #' multiphase models: a covariate can enter one phase and not another.
 #'
 #' @section Selection direction and criterion:
@@ -42,17 +42,35 @@
 #' }
 #'
 #' \describe{
-#'   \item{`criterion = "wald"` (default)}{Accept moves on SAS-style
+#'   \item{`criterion = "score"` (default)}{Accept moves on SAS-style
+#'     significance thresholds, using the score (Q) statistic of the candidate
+#'     coefficient --- this reproduces C/SAS HAZARD's `SELECTION` statistic.
+#'     Q is evaluated at the *current* model's MLE with the candidate's
+#'     coefficient pinned at zero, so **no candidate refit is needed**: the
+#'     reduced-model information is inverted once per step and reused across
+#'     every candidate.  Only the winner is refit.  A candidate enters if its
+#'     p-value is below `slentry`.
+#'
+#'     Score is an *entry* criterion; the drop path never refit per candidate
+#'     in the first place, so removals are tested on the current model's Wald
+#'     p-value against `slstay`, as SAS does.
+#'
+#'     Following SAS, the variance used during *selection* is approximate:
+#'     shaping-parameter covariances are ignored.  This affects selection only
+#'     --- final-model standard errors are unchanged and still come from the
+#'     full Hessian.  Candidates must be single-column numeric main-effect
+#'     terms; a factor is rejected with an error rather than skipped.}
+#'   \item{`criterion = "wald"`}{Accept moves on SAS-style
 #'     significance thresholds, using the Wald \eqn{\chi^2} of the affected
 #'     coefficient(s): a candidate enters if its p-value is below `slentry`, and
 #'     a term is dropped if its p-value rises above `slstay`.  Entry candidates
 #'     are scored from a refit that adds the candidate (so its new coefficient
 #'     can be tested); drop candidates are scored from the *current* model's
 #'     Wald p-values without a per-candidate refit, and a single refit is run
-#'     only after a drop is chosen.  Note this differs algorithmically from
-#'     C/SAS HAZARD, which selects on a *score* (Q) statistic evaluated without
-#'     refitting; the two can take different step paths even when they converge
-#'     to a similar final model.}
+#'     only after a drop is chosen.  This was the default before version 1.2.0.
+#'     It differs algorithmically from C/SAS HAZARD, so the two criteria can
+#'     take different step paths --- and select different variable sets ---
+#'     even when they converge to a similar final model.}
 #'   \item{`criterion = "aic"`}{Accept any move with
 #'     \eqn{\Delta\mathrm{AIC} < 0} (a strictly better penalised fit), ignoring
 #'     `slentry` / `slstay`.  Entry candidates use the actual
@@ -77,13 +95,16 @@
 #'   `"forward"`, or `"backward"`.  Controls whether variables may only
 #'   enter, only leave, or both.  See the **Selection direction and
 #'   criterion** section.
-#' @param criterion Entry / retention rule --- one of `"wald"` (default)
-#'   or `"aic"`.  `"wald"` applies SAS-style p-value thresholds
-#'   (`slentry` / `slstay`); `"aic"` adds or drops whenever it lowers the
-#'   AIC.  See the **Selection direction and criterion** section.
-#' @param slentry Entry p-value threshold for the Wald criterion.
+#' @param criterion Entry / retention rule --- one of `"score"` (default),
+#'   `"wald"`, or `"aic"`.  `"score"` and `"wald"` both apply SAS-style
+#'   p-value thresholds (`slentry` / `slstay`) but score entry candidates
+#'   differently, and can therefore select different variable sets; `"score"`
+#'   reproduces C/SAS HAZARD and needs no per-candidate refit.  `"aic"` adds or
+#'   drops whenever it lowers the AIC.  See the **Selection direction and
+#'   criterion** section.
+#' @param slentry Entry p-value threshold for the score / Wald criteria.
 #'   Default `0.30` matches SAS `SLENTRY`.
-#' @param slstay Retention p-value threshold for the Wald criterion.
+#' @param slstay Retention p-value threshold for the score / Wald criteria.
 #'   Default `0.20` matches SAS `SLSTAY`.
 #' @param max_steps Hard cap on total accepted actions.  Emits a
 #'   `warning()` if hit.  Default `50`.
@@ -123,10 +144,12 @@
 #'   \item{\code{action}}{`"enter"`, `"drop"`, or `"frozen"`.}
 #'   \item{\code{variable}}{Variable affected.}
 #'   \item{\code{phase}}{Phase name (multiphase) or `NA_character_`.}
-#'   \item{\code{criterion}}{`"wald"` or `"aic"`.}
+#'   \item{\code{criterion}}{The criterion actually applied to this step ---
+#'     `"score"`, `"wald"`, or `"aic"`.  Under `criterion = "score"` the drop
+#'     rows read `"wald"`, because score is entry-only.}
 #'   \item{\code{score}}{Winning score used for the decision.}
-#'   \item{\code{stat}, \code{df}}{Wald statistic and degrees of
-#'     freedom.}
+#'   \item{\code{stat}, \code{df}}{Test statistic (score Q or Wald) and
+#'     degrees of freedom.}
 #'   \item{\code{p_value}, \code{delta_aic}}{Always populated when
 #'     computable, regardless of the active criterion.}
 #'   \item{\code{logLik}, \code{aic}, \code{n_coef}}{Goodness-of-fit
@@ -152,7 +175,7 @@ hzr_stepwise <- function(fit,
                          scope     = NULL,
                          data,
                          direction = c("both", "forward", "backward"),
-                         criterion = c("wald", "aic"),
+                         criterion = c("score", "wald", "aic"),
                          slentry   = 0.30,
                          slstay    = 0.20,
                          max_steps = 50L,
@@ -185,16 +208,21 @@ hzr_stepwise <- function(fit,
     if (isTRUE(trace)) cat(msg, "\n", sep = "")
   }
 
+  # The score criterion is entry-only: it exists to remove the per-candidate
+  # refit from the forward step, and the drop path never had one. Following
+  # SAS, removal is tested on the current model's Wald p-value.
+  drop_criterion <- if (criterion == "score") "wald" else criterion
+
   # Header line (mirrors design sec.5).
-  header <- if (criterion == "wald") {
-    sprintf(
-      "Stepwise selection (direction = %s, criterion = wald, slentry = %.2f, slstay = %.2f)",
-      direction, slentry, slstay
-    )
-  } else {
+  header <- if (criterion == "aic") {
     sprintf(
       "Stepwise selection (direction = %s, criterion = aic)",
       direction
+    )
+  } else {
+    sprintf(
+      "Stepwise selection (direction = %s, criterion = %s, slentry = %.2f, slstay = %.2f)",
+      direction, criterion, slentry, slstay
     )
   }
   emit(header)
@@ -210,14 +238,17 @@ hzr_stepwise <- function(fit,
   step_no <- 0L
   stopped_by_max_steps <- FALSE
 
-  record_step <- function(action, out) {
+  # `crit` is the criterion actually applied to THIS step, which is not always
+  # the run's `criterion`: score is entry-only, so its drops are decided by
+  # Wald and must be labelled as such.
+  record_step <- function(action, out, crit = criterion) {
     step_no <<- step_no + 1L
     row <- data.frame(
       step_num  = step_no,
       action    = action,
       variable  = out$variable,
       phase     = out$phase,
-      criterion = criterion,
+      criterion = crit,
       score     = out$score,
       stat      = out$stat,
       df        = out$df,
@@ -230,10 +261,10 @@ hzr_stepwise <- function(fit,
     )
     steps[[length(steps) + 1L]] <<- row
 
-    score_fmt <- if (criterion == "wald") {
-      sprintf("p = %.3f", out$p_value)
-    } else {
+    score_fmt <- if (criterion == "aic") {
       sprintf("\u0394AIC = %+.2f", out$delta_aic)
+    } else {
+      sprintf("p = %.3f", out$p_value)
     }
     phase_txt <- if (is.na(out$phase)) {
       ""
@@ -318,14 +349,14 @@ hzr_stepwise <- function(fit,
       bwd <- do.call(.hzr_stepwise_backward_step, c(list(
         current   = current,
         data      = data,
-        criterion = criterion,
+        criterion = drop_criterion,
         slstay    = slstay,
         force_in  = effective_force_in
       ), extra_args))
 
       if (bwd$accepted) {
         current <- bwd$fit
-        record_step("drop", bwd)
+        record_step("drop", bwd, crit = drop_criterion)
         bump_move(bwd$variable)
         drop_happened <- TRUE
       }
