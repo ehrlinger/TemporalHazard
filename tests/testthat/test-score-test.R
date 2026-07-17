@@ -25,8 +25,8 @@ score_test_base_fit <- function(data, constant_phase = hzr_phase("constant")) {
 }
 
 score_test_fixture_step1 <- function() {
-  fx <- readRDS(test_path("..", "..", "inst", "fixtures",
-                          "stepwise-avc-forward-wald.rds"))
+  fx <- .hzr_load_stepwise_fixture("avc-forward-wald")
+  testthat::skip_if(is.null(fx), "stepwise-avc-forward-wald fixture not installed")
   # Fixture step 1 is the first ENTER: SAS scored every candidate against the
   # intercept-only two-phase model and entered the largest Q.
   fx$steps[fx$steps$step_num == 1L, ]

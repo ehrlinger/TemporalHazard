@@ -186,8 +186,8 @@ test_that("fixture validator accepts a well-formed fixture skeleton", {
 
 
 test_that("R's per-step Q matches SAS's for the first entered variable", {
-  fx <- readRDS(test_path("..", "..", "inst", "fixtures",
-                          "stepwise-avc-forward-wald.rds"))
+  fx <- .hzr_load_stepwise_fixture("avc-forward-wald")
+  testthat::skip_if(is.null(fx), "stepwise-avc-forward-wald fixture not installed")
   data(avc, package = "TemporalHazard")
   avc <- na.omit(avc)
 
