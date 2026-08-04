@@ -72,7 +72,7 @@
 #'     are scored from a refit that adds the candidate (so its new coefficient
 #'     can be tested); drop candidates are scored from the *current* model's
 #'     Wald p-values without a per-candidate refit, and a single refit is run
-#'     only after a drop is chosen.  This was the default before version 1.2.0.
+#'     only after a drop is chosen.  This was the default before version 2.0.0.
 #'     It differs algorithmically from C/SAS HAZARD, so the two criteria can
 #'     take different step paths --- and select different variable sets ---
 #'     even when they converge to a similar final model.}

@@ -1,4 +1,4 @@
-# TemporalHazard 1.2.0
+# TemporalHazard 2.0.0
 
 ## Breaking changes
 
