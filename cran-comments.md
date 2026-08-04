@@ -62,8 +62,8 @@ exactly, through a documented argument.
 
 * **Local:** R 4.6.0 on macOS (aarch64-apple-darwin23).
   `R CMD check --as-cran` on the built tarball, **with the PDF manual**,
-  returns 0 errors, 0 warnings, 0 notes. Overall check time is approximately
-  2.5 minutes; the source tarball is 2.7 MB.
+  returns 0 errors, 0 warnings, 0 notes. Overall check time is about two
+  minutes, well inside the reference budget; the source tarball is 2.7 MB.
 * **GitHub Actions matrix:** ubuntu-latest (R-devel / R-release / R-oldrel-1),
   macos-latest (R-release), windows-latest (R-release).
 * **Reverse-dependency check:** `tools::package_dependencies(reverse = TRUE)`
