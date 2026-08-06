@@ -9,7 +9,8 @@ on:
 
 name: spelling
 
-permissions: read-all
+permissions:
+  contents: read
 
 jobs:
   spelling:
@@ -30,5 +31,10 @@ jobs:
           needs: check
 
       - name: Spell check
-        run: spelling::spell_check_package(use_wordlist = TRUE)
+        run: |
+          misspelled <- spelling::spell_check_package(use_wordlist = TRUE)
+          print(misspelled)
+          if (nrow(misspelled) > 0) {
+            quit(status = 1)
+          }
         shell: Rscript {0}
