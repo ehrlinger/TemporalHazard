@@ -473,13 +473,9 @@ fit_mv <- hazard(
   control = list(n_starts = 5, maxit = 1000)
 )
 #> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
-#> 7.11e-10); standard errors may be unreliable
-#> Warning in .hzr_safe_solve(hess_result): Hessian is not positive-definite at
-#> the optimum; standard errors may be unreliable
-#> Warning in .hzr_safe_solve(hess_result): Non-positive variance estimates; the
-#> optimum may not be a proper maximum
-#> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
-#> 2.04e-12); standard errors may be unreliable
+#> 0); standard errors may be unreliable
+#> Warning in .hzr_safe_solve(hess_result): Hessian not invertible; standard
+#> errors unavailable
 #> Warning in .hzr_safe_solve(hess_result): Hessian is not positive-definite at
 #> the optimum; standard errors may be unreliable
 #> Warning in .hzr_safe_solve(hess_result): Non-positive variance estimates; the
@@ -489,7 +485,9 @@ fit_mv <- hazard(
 #> Warning in .hzr_safe_solve(hess_result): Hessian not invertible; standard
 #> errors unavailable
 #> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
-#> 1.12e-08); standard errors may be unreliable
+#> 0); standard errors may be unreliable
+#> Warning in .hzr_safe_solve(hess_result): Hessian not invertible; standard
+#> errors unavailable
 summary(fit_mv)
 #> Multiphase hazard model (2 phases)
 #>   observations: 305 
@@ -579,14 +577,10 @@ fit_step <- hzr_stepwise(
   trace     = FALSE,
   control   = list(n_starts = 2, maxit = 500)
 )
-#> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
-#> 0); standard errors may be unreliable
-#> Warning in .hzr_safe_solve(hess_result): Hessian not invertible; standard
-#> errors unavailable
-#> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
-#> 5.85e-09); standard errors may be unreliable
 #> Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =
-#> 6.55e-10); standard errors may be unreliable
+#> 2.92e-09); standard errors may be unreliable
+#> Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =
+#> 1.08e-12); standard errors may be unreliable
 #> Warning in .hzr_safe_solve(H_unc): Hessian is not positive-definite at the
 #> optimum; standard errors may be unreliable
 #> Warning in .hzr_safe_solve(H_unc): Non-positive variance estimates; the optimum
@@ -595,30 +589,36 @@ fit_step <- hzr_stepwise(
 #> the optimum; standard errors may be unreliable
 #> Warning in .hzr_safe_solve(hess_result): Non-positive variance estimates; the
 #> optimum may not be a proper maximum
+#> Warning in .hzr_safe_solve(hess_result): Hessian is not positive-definite at
+#> the optimum; standard errors may be unreliable
+#> Warning in .hzr_safe_solve(hess_result): Non-positive variance estimates; the
+#> optimum may not be a proper maximum
 #> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
 #> 1.48e-09); standard errors may be unreliable
 #> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
-#> 1.34e-09); standard errors may be unreliable
+#> 1.27e-09); standard errors may be unreliable
 #> Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =
-#> 1.68e-10); standard errors may be unreliable
+#> 1.59e-10); standard errors may be unreliable
+#> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
+#> 2.85e-10); standard errors may be unreliable
 #> Warning in .hzr_safe_solve(hess_result): Hessian is not positive-definite at
 #> the optimum; standard errors may be unreliable
 #> Warning in .hzr_safe_solve(hess_result): Non-positive variance estimates; the
 #> optimum may not be a proper maximum
-#> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
-#> 3.07e-12); standard errors may be unreliable
 #> Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =
-#> 2.11e-13); standard errors may be unreliable
+#> 1.33e-09); standard errors may be unreliable
 #> Warning in .hzr_safe_solve(hess_result): Hessian is not positive-definite at
 #> the optimum; standard errors may be unreliable
-#> Warning in .hzr_safe_solve(hess_result): Non-positive variance estimates; the
-#> optimum may not be a proper maximum
 #> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
-#> 2.6e-14); standard errors may be unreliable
+#> 0); standard errors may be unreliable
+#> Warning in .hzr_safe_solve(hess_result): Hessian not invertible; standard
+#> errors unavailable
 #> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
-#> 2.06e-22); standard errors may be unreliable
-#> Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =
-#> 1.32e-23); standard errors may be unreliable
+#> 0); standard errors may be unreliable
+#> Warning in .hzr_safe_solve(hess_result): Hessian not invertible; standard
+#> errors unavailable
+#> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
+#> 1.73e-11); standard errors may be unreliable
 #> Warning in .hzr_safe_solve(hess_result): Hessian is not positive-definite at
 #> the optimum; standard errors may be unreliable
 #> Warning in .hzr_safe_solve(hess_result): Non-positive variance estimates; the
@@ -644,9 +644,9 @@ and p-value:
 fit_step$steps[, c("step_num", "action", "variable", "phase",
                    "p_value", "aic")]
 #>   step_num action variable    phase      p_value      aic
-#> 1        1  enter   status    early 1.967157e-09 424.9675
+#> 1        1  enter   status    early 1.967398e-09 424.9675
 #> 2        2  enter   com_iv    early 1.260359e-05 401.5605
-#> 3        3  enter   status constant 6.502167e-02 400.3834
+#> 3        3  enter   status constant 6.500830e-02 400.3834
 #> 4        4  enter      mal    early 1.094110e-01 399.8823
 #> 5        5  enter      age    early 1.174920e-01 398.2062
 ```
