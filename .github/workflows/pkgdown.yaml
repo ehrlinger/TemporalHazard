@@ -29,7 +29,7 @@ jobs:
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          extra-packages: any::pkgdown, any::roxygen2, any::pkgload
+          extra-packages: any::pkgdown, any::roxygen2@8.1.0, any::pkgload
           needs: website
 
       - name: Document and install package
