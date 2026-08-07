@@ -38,11 +38,15 @@ export(hzr_phase_hazard)
 export(hzr_stepwise)
 export(is_hzr_phase)
 export(stepwise_trace)
-importFrom(stats,dnorm)
-importFrom(stats,optim)
-importFrom(stats,pnorm)
-importFrom(stats,predict)
-importFrom(stats,setNames)
+importFrom(stats,
+  dnorm,
+  optim,
+  pnorm,
+  predict,
+  setNames
+)
 importFrom(survival,Surv)
-importFrom(utils,read.table)
-importFrom(utils,write.csv)
+importFrom(utils,
+  read.table,
+  write.csv
+)

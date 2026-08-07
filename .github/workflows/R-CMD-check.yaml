@@ -36,7 +36,7 @@ jobs:
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          extra-packages: any::rcmdcheck, any::roxygen2, any::pkgload
+          extra-packages: any::rcmdcheck, any::roxygen2@8.1.0, any::pkgload
           needs: check
 
       - name: Ensure roxygen outputs are current
