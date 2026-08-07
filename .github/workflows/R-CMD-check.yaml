@@ -13,11 +13,11 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - {os: ubuntu-latest, r: 'devel',    check_roxygen: false}
-          - {os: ubuntu-latest, r: 'release',  check_roxygen: true}
-          - {os: ubuntu-latest, r: 'oldrel-1', check_roxygen: false}
-          - {os: macos-latest,  r: 'release',  check_roxygen: false}
-          - {os: windows-latest, r: 'release', check_roxygen: false}
+          - {os: ubuntu-latest, r: 'devel'}
+          - {os: ubuntu-latest, r: 'release'}
+          - {os: ubuntu-latest, r: 'oldrel-1'}
+          - {os: macos-latest,  r: 'release'}
+          - {os: windows-latest, r: 'release'}
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -36,19 +36,8 @@ jobs:
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          extra-packages: any::rcmdcheck, any::roxygen2@8.1.0, any::pkgload
+          extra-packages: any::rcmdcheck
           needs: check
-
-      - name: Ensure roxygen outputs are current
-        if: matrix.config.check_roxygen
-        shell: Rscript {0}
-        run: |
-          roxygen2::roxygenise(load_code = roxygen2::load_pkgload)
-          changed <- system("git status --porcelain", intern = TRUE)
-          if (length(changed) > 0) {
-            writeLines(changed)
-            stop("Roxygen outputs are not up to date. Run roxygen2::roxygenise() and commit changes.")
-          }
 
       - uses: r-lib/actions/check-r-package@v2
         with:

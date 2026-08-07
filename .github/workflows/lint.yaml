@@ -34,3 +34,32 @@ jobs:
         shell: Rscript {0}
         env:
           LINTR_ERROR_ON_LINT: true
+
+  docs-current:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          # roxygen2 is pinned to the version DESCRIPTION records in
+          # Config/roxygen2/version, so a roxygen upgrade arrives as a
+          # deliberate bump rather than masquerading as documentation drift.
+          # Bump the two together. This is the only place the pin lives.
+          # "hard" skips the Suggests tree -- roxygenise() only needs Imports
+          # loadable, and every Suggests use in R/ is behind requireNamespace().
+          extra-packages: any::roxygen2@8.1.0
+          dependencies: '"hard"'
+
+      - name: Documentation is current
+        run: |
+          Rscript -e 'roxygen2::roxygenise()'
+          git diff --exit-code man/ NAMESPACE DESCRIPTION

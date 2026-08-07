@@ -29,13 +29,16 @@ jobs:
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          extra-packages: any::pkgdown, any::roxygen2@8.1.0, any::pkgload
+          extra-packages: any::pkgdown
           needs: website
 
-      - name: Document and install package
+      # No roxygenise here: the site is built from the committed man/*.Rd, which
+      # is what the package actually ships. Regenerating first would rebuild the
+      # site over any drift instead of surfacing it -- lint.yaml's docs-current
+      # job is what fails on drift, and it does so before the merge.
+      - name: Install package
         shell: Rscript {0}
         run: |
-          roxygen2::roxygenise(load_code = roxygen2::load_pkgload)
           install.packages(".", repos = NULL, type = "source")
 
       - name: Build pkgdown site
