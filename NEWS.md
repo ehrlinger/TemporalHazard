@@ -26,6 +26,28 @@
 
 ## New features
 
+* The SAS `.lst` parsers now ship with the installed package, under
+  `sas-parity/` (`inst/sas-parity/` in the source tree -- `R CMD INSTALL`
+  strips the `inst/` prefix). They previously lived in `tests/testthat/`,
+  which `R CMD INSTALL` skips unless `--install-tests` is passed -- so a plain
+  `install.packages()` or `remotes::install_github()` left them unreachable,
+  and a downstream analysis wanting to check its own SAS output against them
+  had to clone the repository. Reach them with:
+
+  ```r
+  source(system.file("sas-parity", "helper-sas-parity.R",
+                     package = "TemporalHazard"))
+  ```
+
+  The parsers themselves are unchanged; only their location is. The package's
+  own parity tests load them through a shim at
+  `tests/testthat/helper-sas-parity.R`, so testthat's helper auto-sourcing
+  still applies and no test file changed.
+
+  These functions remain internal (`.hzr_`-prefixed) and unexported. They
+  parse a specific vintage of SAS HAZARD listing output and carry no API
+  stability guarantee.
+
 * `hzr_bootstrap(verbose = TRUE)` now shows a text progress bar over the
   bootstrap replicates (via `utils::txtProgressBar()`) instead of an
   every-50-replicates message.
