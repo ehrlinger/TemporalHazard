@@ -1,6 +1,14 @@
-# TemporalHazard 2.0.0
+# TemporalHazard 1.2.0
 
 ## Breaking changes
+
+This release contains a breaking change but ships as a minor version. The
+`1.x` line is the run-up to a first production release; the major digit is
+reserved for that milestone rather than spent on a single changed default.
+The change below is also closer to a correction than a redesign — the previous
+default deviated from the SAS/C reference this package exists to reproduce.
+Read the entry regardless: it can change which variables a stepwise run
+selects.
 
 * `hzr_stepwise()` now defaults to `criterion = "score"`, reproducing SAS/C
   HAZARD's `SELECTION` statistic. Previously it defaulted to `"wald"`, which

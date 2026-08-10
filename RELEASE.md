@@ -14,6 +14,23 @@ Maintainer checklist for TemporalHazard. Not shipped (`.Rbuildignore`d).
   breaking API → major, back-compatible features → minor, fixes only → patch.
   Then strip `.9000` and set that number. You never submit a `.9000` version
   to CRAN.
+- **The major digit is reserved for a deliberate product milestone**, and this
+  overrides the mechanical rule above. A breaking change does **not** by itself
+  force a major bump while the package is still working toward its first
+  production release — the whole `1.x` line is the run-up to that milestone,
+  and spending the major digit on a single default flip mid-run-up leaves
+  nothing to mark the milestone with.
+
+  This is not hypothetical. On 2026-08-04 the mechanical reading took `dev` to
+  `2.0.0` for one changed default in `hzr_stepwise()` (`criterion = "wald"` →
+  `"score"`). That work was folded back into `1.2.0`, where it belonged: the
+  old default deviated from the SAS/C reference this package exists to
+  reproduce, so the change is closer to a correction than to a redesign, and
+  the `1.x` line had not yet reached production.
+
+  When a breaking change ships in a minor for this reason, say so plainly in
+  NEWS under a **Breaking changes** heading. The version number is a release
+  decision; the warning to users is not negotiable and is not softened by it.
 
 So the per-release cycle is:
 

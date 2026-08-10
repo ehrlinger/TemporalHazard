@@ -1,15 +1,24 @@
-# CRAN submission comments -- TemporalHazard 2.0.0
+# CRAN submission comments -- TemporalHazard 1.2.0
 
 ## Summary
 
 This is an update to TemporalHazard 1.1.0 (accepted 2026-06-12). There is no
 reviewer feedback to address.
 
-The major version bump reflects one breaking change: `hzr_stepwise()` now
-defaults to a different selection criterion, so re-running an existing stepwise
-analysis can select a different set of variables. Everything else in this
-release is additive or a bug fix, and the previous behaviour remains available
-exactly, through a documented argument.
+This is a minor-version release that nonetheless contains one breaking change:
+`hzr_stepwise()` now defaults to a different selection criterion, so re-running
+an existing stepwise analysis can select a different set of variables. It is
+numbered as a minor rather than a major deliberately. The previous default
+deviated from the C/SAS HAZARD reference this package exists to reproduce, so
+the change restores intended behaviour rather than redesigning the interface;
+the signature is unchanged and the old behaviour remains available exactly,
+through a documented argument. The `1.x` line is the run-up to a first
+production release, and the major digit is reserved for that milestone.
+
+Everything else in this release is additive or a bug fix. The breaking change
+is flagged under a "Breaking changes" heading in `NEWS.md` and in
+`?hzr_stepwise`, so users encounter the warning regardless of the version
+number.
 
 ## Changes since 1.1.0
 
