@@ -1,0 +1,136 @@
+# Layout variants in SAS HAZARD .lst output.
+#
+# The parsers were built against the AVC/KUL captures, which happen to print
+# one particular shape of the observation-count block and one particular set
+# of nomogram columns. Production listings from other studies print others.
+# Both variants below were found in a 2006-vintage CCF listing
+# (hz.dead_JR.lst, AVR/LV-function survival study); the fixture here
+# reproduces the two layouts synthetically, with no patient data.
+
+fx <- testthat::test_path("fixtures", "layout-variants.lst")
+
+test_that("observation counts parse when the events line ends in a colon", {
+  # AVC prints "545 events"; this study prints "1032 events:" with the
+  # per-censoring-type breakdown nested underneath. The old anchor
+  # \\bevents\\s*$ rejected the colon and returned NA.
+  counts <- .hzr_extract_obs_counts(.hzr_read_lst(fx))
+  expect_equal(counts$n_obs, 3049L)
+  expect_equal(counts$n_events, 1032L)
+  expect_equal(counts$n_censored, 2017L)
+})
+
+test_that("the nested Uncensored / Interval Censored lines are not mistaken for the total", {
+  # "1029 Uncensored" and "3 Interval Censored" sit between the events line
+  # and the right-censored line. A looser regex could pick one of them up.
+  counts <- .hzr_extract_obs_counts(.hzr_read_lst(fx))
+  expect_false(identical(counts$n_events, 1029L))
+  expect_false(identical(counts$n_events, 3L))
+})
+
+test_that("the nomogram parses without a MONTHS column", {
+  # hz.dead_JR prints Obs YEARS _SURVIV _CLLSURV _CLUSURV _HAZARD _CLLHAZ
+  # _CLUHAZ -- no MONTHS. The old header regex required YEARS\\s+MONTHS and
+  # returned NULL, and the row reader was hardcoded to toks[2:9].
+  nom <- .hzr_parse_sas_nomogram(fx)
+  expect_s3_class(nom, "data.frame")
+  expect_equal(nrow(nom), 3L)
+  expect_equal(names(nom),
+               c("YEARS", "SURVIV", "CLLSURV", "CLUSURV",
+                 "HAZARD", "CLLHAZ", "CLUHAZ"))
+  expect_false("MONTHS" %in% names(nom))
+})
+
+test_that("nomogram values are read from the right columns", {
+  nom <- .hzr_parse_sas_nomogram(fx)
+  # Row 1 is 30 days (30 / 365.2425 = 0.0821).
+  expect_equal(nom$YEARS[1], 0.0821, tolerance = 1e-6)
+  expect_equal(nom$SURVIV[1], 0.97106, tolerance = 1e-6)
+  expect_equal(nom$CLLSURV[1], 0.96812, tolerance = 1e-6)
+  expect_equal(nom$CLUHAZ[1], 0.26891, tolerance = 1e-6)
+  expect_equal(nom$SURVIV[3], 0.91050, tolerance = 1e-6)
+})
+
+test_that("a nomogram WITH a MONTHS column still parses", {
+  # Regression guard: the AVC fixtures print MONTHS, and must keep working.
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(c(
+    "                    Obs     YEARS   MONTHS    _SURVIV   _CLLSURV   _CLUSURV   _HAZARD   _CLLHAZ   _CLUHAZ",
+    "",
+    "                      1    0.0821     1.00    0.97106    0.96812    0.97373   0.24456   0.22241   0.26891",
+    ""
+  ), tmp)
+  nom <- .hzr_parse_sas_nomogram(tmp)
+  expect_equal(names(nom),
+               c("YEARS", "MONTHS", "SURVIV", "CLLSURV", "CLUSURV",
+                 "HAZARD", "CLLHAZ", "CLUHAZ"))
+  expect_equal(nom$MONTHS[1], 1.00, tolerance = 1e-6)
+  expect_equal(nom$SURVIV[1], 0.97106, tolerance = 1e-6)
+})
+
+test_that("SAS missing markers become NA without a coercion warning", {
+  # SAS prints a bare "." for missing. Coercing it with as.numeric() yields NA
+  # anyway, but warns once per row -- noise that buries real warnings.
+  # .hzr_parse_sas_lifetable() already normalises this; the nomogram must too.
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(c(
+    "          Obs     YEARS     _SURVIV    _CLLSURV    _CLUSURV    _HAZARD    _CLLHAZ    _CLUHAZ",
+    "",
+    "            1    0.0821     0.97106     0.96812     0.97373    0.24456    0.22241    0.26891",
+    "",
+    "            2    0.2500     0.94683     0.94276     0.95062          .          .          .",
+    ""
+  ), tmp)
+
+  expect_no_warning(nom <- .hzr_parse_sas_nomogram(tmp))
+  expect_equal(nrow(nom), 2L)
+  expect_equal(nom$SURVIV[2], 0.94683, tolerance = 1e-6)
+  expect_true(is.na(nom$HAZARD[2]))
+  expect_true(is.na(nom$CLLHAZ[2]))
+  expect_true(is.na(nom$CLUHAZ[2]))
+  # A missing marker in one column must not disturb the others on that row.
+  expect_equal(nom$CLUSURV[2], 0.95062, tolerance = 1e-6)
+})
+
+test_that("the nomogram parser still returns NULL when no table is present", {
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(c("nothing here", "no nomogram at all"), tmp)
+  expect_null(.hzr_parse_sas_nomogram(tmp))
+})
+
+test_that("the life table parses whatever the time variable is called", {
+  # The second column is the study's time variable: INT_DEAD in the AVC
+  # captures, iv_dead in the CCF AVR/LV listings. Hardcoding one study's name
+  # made every other study's life table return NULL.
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(c(
+    "       Obs iv_dead NUMBER CENSORED dead CUM_SURV   SE_EXACT CL_LOWER CL_UPPER",
+    "",
+    "         1  0.0821   3049       12   35  0.98852    0.00193  0.98659  0.99045",
+    "         2  0.2500   3002       31   48  0.97281    0.00297  0.96984  0.97578",
+    ""
+  ), tmp)
+
+  lt <- .hzr_parse_sas_lifetable(tmp, which = "kaplan")
+  expect_s3_class(lt, "data.frame")
+  expect_equal(nrow(lt), 2L)
+  expect_true("iv_dead" %in% names(lt))
+  expect_equal(lt$CUM_SURV[1], 0.98852, tolerance = 1e-6)
+  expect_equal(lt$SE_EXACT[2], 0.00297, tolerance = 1e-6)
+})
+
+test_that("the life table still parses the AVC INT_DEAD layout", {
+  # Regression guard: the fixtures this parser was built against must keep
+  # working with the loosened header match.
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(c(
+    "       Obs INT_DEAD NUMBER CENSORED DEAD CUM_SURV   SE_EXACT CL_LOWER CL_UPPER",
+    "",
+    "         1   0.0821    310        2    3  0.99032    0.00556  0.98476  0.99588",
+    ""
+  ), tmp)
+
+  lt <- .hzr_parse_sas_lifetable(tmp, which = "kaplan")
+  expect_equal(nrow(lt), 1L)
+  expect_true("INT_DEAD" %in% names(lt))
+  expect_equal(lt$CUM_SURV[1], 0.99032, tolerance = 1e-6)
+})
