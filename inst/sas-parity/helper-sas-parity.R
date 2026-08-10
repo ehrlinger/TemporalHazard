@@ -407,7 +407,17 @@
 # Split the file into per-fit blocks on "Initial Summary:" anchors.
 .hzr_split_fits <- function(lines) {
   anchors <- grep("Initial Summary:", lines)
-  if (!length(anchors)) return(list(lines))
+  if (!length(anchors)) {
+    # No per-fit anchor. Falling back to the whole listing as one block is
+    # right for a listing that HAS a fit but omits the anchor; it is wrong for
+    # a listing with no fit at all. A %KAPLAN job (ac.dead_JR.lst) contains
+    # zero "Initial Summary:" and zero "Log likelihood" lines, and used to
+    # yield ONE fit with every field NA -- a hollow fit, which survives both
+    # is.null() and a length check and reads downstream as a result.
+    # Require evidence of a fit before falling back.
+    if (any(grepl("Log likelihood", lines))) return(list(lines))
+    return(list())
+  }
   ends <- c(tail(anchors, -1L) - 1L, length(lines))
   mapply(function(s, e) lines[s:e], anchors, ends, SIMPLIFY = FALSE)
 }
@@ -517,15 +527,50 @@
   if (is.null(pick) || is.na(pick)) return(NULL)
 
   cols <- strsplit(trimws(lines[pick]), "\\s+")[[1]]
+
+  # SAS paginates long life tables. A page break looks like:
+  #
+  #     <last data row of the page>
+  #     \f  <title lines>
+  #     ---------------- _CATG=ALL ----------------
+  #             (continued)
+  #     Obs iv_dead NUMBER CENSORED dead CUM_SURV ...
+  #     <next data row, Obs counter continuing>
+  #
+  # The previous loop stopped at the first non-data line, so it returned only
+  # PAGE ONE: 97 rows of an 844-row table on the AVR/LV listing, across 56
+  # page headers. That is the worst possible failure for a parity harness --
+  # it returns real data, so every downstream guard passes and the comparison
+  # silently covers a fraction of the table while reporting a clean result.
+  #
+  # Continue across page breaks, bounded by the BY group: the `_CATG=` rule
+  # line identifies which stratum a page belongs to, so a change of group
+  # ends this table. A different table's `Obs` header ends it too.
+  catg_of <- function(s) sub(".*_CATG=(\\S+).*", "\\1", s)
+  before  <- grep("_CATG=", lines)
+  before  <- before[before < pick]
+  target  <- if (length(before)) catg_of(lines[max(before)]) else NA_character_
+
+  hdr <- strsplit(trimws(lines[pick]), "\\s+")[[1]]
   rows <- list()
   for (ln in lines[(pick + 1L):length(lines)]) {
-    if (grepl("^\\s*-{5,}", ln)) break          # summary rule ends the block
     if (!nzchar(trimws(ln))) next
-    toks <- strsplit(trimws(ln), "\\s+")[[1]]
-    # Data rows lead with the integer Obs counter.
-    if (!grepl("^[0-9]+$", toks[1])) {
-      if (length(rows)) break else next
+
+    # A _CATG rule: same group means a continuation page, different means the
+    # table is over. Checked before the generic rule test, since these lines
+    # are also made of dashes.
+    if (grepl("_CATG=", ln)) {
+      if (!is.na(target) && !identical(catg_of(ln), target)) break
+      next
     }
+    if (grepl("^\\s*-{5,}\\s*$", ln)) break     # plain summary rule ends it
+
+    toks <- strsplit(trimws(ln), "\\s+")[[1]]
+    if (identical(toks, hdr)) next              # repeated page header
+    if (identical(toks[1], "Obs")) break        # a DIFFERENT table starts
+
+    # Titles, "(continued)", page furniture: skip, do not stop.
+    if (!grepl("^[0-9]+$", toks[1])) next
     if (length(toks) < length(cols)) next
     vals <- toks[seq_along(cols)]
     vals[vals == "."] <- NA
