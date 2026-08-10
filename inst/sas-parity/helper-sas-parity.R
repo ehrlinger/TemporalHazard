@@ -63,11 +63,27 @@
 }
 
 .hzr_extract_obs_counts <- function(lines) {
-  # "There are  5880 observations available for analysis with:"
-  # "          545 events"
-  # "         5335 Right Censored Observations"
+  # Two layouts occur in the wild.
+  #
+  # Flat (AVC/KUL captures):
+  #   "There are  5880 observations available for analysis with:"
+  #   "          545 events"
+  #   "         5335 Right Censored Observations"
+  #
+  # With a per-censoring-type breakdown (2006-vintage CCF listings, e.g.
+  # hz.dead_JR.lst) -- note the trailing colon on the events line, and the
+  # indented sub-counts that must NOT be read as the total:
+  #   "There are  3049 observations available for analysis with:"
+  #   "          1032 events:"
+  #   "                1029 Uncensored"
+  #   "                   3 Interval Censored"
+  #   "          2017 Right Censored Observations"
+  #
+  # The colon is why the old anchor (\\bevents\\s*$) returned NA on the second
+  # layout. Matching "events" followed by an optional colon and nothing else
+  # still excludes the sub-count lines, which end in a word, not in "events".
   obs_line <- grep("observations available for analysis", lines, value = TRUE)[1]
-  ev_line  <- grep("\\bevents\\s*$",                       lines, value = TRUE)[1]
+  ev_line  <- grep("\\bevents:?\\s*$",                     lines, value = TRUE)[1]
   rc_line  <- grep("Right Censored Observations",          lines, value = TRUE)[1]
 
   pull <- function(pat, s) {
@@ -525,19 +541,35 @@
 # CLUHAZ. NULL if the table is absent.
 .hzr_parse_sas_nomogram <- function(path) {
   lines <- .hzr_read_lst(path)
-  h <- grep("YEARS[[:space:]]+MONTHS[[:space:]]+_SURVIV", lines)
+
+  # The column set is NOT fixed. hp.death.AVC prints
+  #   Obs YEARS MONTHS _SURVIV _CLLSURV _CLUSURV _HAZARD _CLLHAZ _CLUHAZ
+  # while hz.dead_JR prints the same table without MONTHS. Hardcoding the
+  # header regex, the column names and the toks[2:9] slice made the parser
+  # silently return NULL on the second layout.
+  #
+  # Read the header instead: drop the leading "Obs" counter, strip the
+  # underscore prefixes SAS puts on computed variables, and take exactly that
+  # many values from each row. Any future column set parses without a change
+  # here -- the same header-driven approach .hzr_parse_sas_lifetable() uses.
+  h <- grep("\\bYEARS\\b.*_SURVIV", lines)
   if (!length(h)) return(NULL)
-  cols <- c("YEARS", "MONTHS", "SURVIV", "CLLSURV", "CLUSURV",
-            "HAZARD", "CLLHAZ", "CLUHAZ")
+
+  cols <- strsplit(trimws(lines[h[1]]), "[[:space:]]+")[[1]]
+  cols <- cols[cols != "Obs"]
+  cols <- sub("^_", "", cols)
+  if (!length(cols)) return(NULL)
+
   rows <- list()
   for (ln in lines[(h[1] + 1L):length(lines)]) {
     if (!nzchar(trimws(ln))) next
     toks <- strsplit(trimws(ln), "[[:space:]]+")[[1]]
+    # Data rows lead with the integer Obs counter.
     if (!grepl("^[0-9]+$", toks[1])) {
       if (length(rows)) break else next
     }
-    if (length(toks) < 9L) next
-    rows[[length(rows) + 1L]] <- as.numeric(toks[2:9])
+    if (length(toks) < length(cols) + 1L) next
+    rows[[length(rows) + 1L]] <- as.numeric(toks[seq_along(cols) + 1L])
   }
   if (!length(rows)) return(NULL)
   df <- as.data.frame(do.call(rbind, rows))
