@@ -1,6 +1,8 @@
 # Shim. The SAS .lst parsers themselves live at
-# inst/sas-parity/helper-sas-parity.R so that they ship with an installed
-# package; testthat auto-sources this file, which loads them.
+# inst/sas-parity/helper-sas-parity.R in the source tree -- installed as
+# <library>/TemporalHazard/sas-parity/helper-sas-parity.R, since R strips the
+# inst/ prefix -- so that they ship with an installed package. testthat
+# auto-sources this file, which loads them.
 #
 # Why they moved out of tests/: R CMD INSTALL skips tests/ unless
 # --install-tests is passed, so a plain install.packages() or
@@ -19,10 +21,12 @@
 )
 
 if (!nzchar(.hzr_sas_parity_helper) || !file.exists(.hzr_sas_parity_helper)) {
-  stop("helper-sas-parity.R: SAS parsers not found under inst/sas-parity/. ",
-       "Expected system.file(\"sas-parity\", \"helper-sas-parity.R\", ",
-       "package = \"TemporalHazard\") to resolve to an existing file.",
-       call. = FALSE)
+  stop("helper-sas-parity.R: SAS parsers not found. Expected them at ",
+       "sas-parity/helper-sas-parity.R inside the installed package ",
+       "(inst/sas-parity/ in the source tree), reachable via ",
+       "system.file(\"sas-parity\", \"helper-sas-parity.R\", ",
+       "package = \"TemporalHazard\"). Reinstall the package if this ",
+       "persists.", call. = FALSE)
 }
 
 # local = TRUE evaluates into this file's environment, which testthat has set

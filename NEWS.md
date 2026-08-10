@@ -26,12 +26,13 @@
 
 ## New features
 
-* The SAS `.lst` parsers now ship with the installed package, at
-  `inst/sas-parity/helper-sas-parity.R`. They previously lived in
-  `tests/testthat/`, which `R CMD INSTALL` skips unless `--install-tests` is
-  passed -- so a plain `install.packages()` or `remotes::install_github()`
-  left them unreachable, and a downstream analysis wanting to check its own
-  SAS output against them had to clone the repository. Reach them with:
+* The SAS `.lst` parsers now ship with the installed package, under
+  `sas-parity/` (`inst/sas-parity/` in the source tree -- `R CMD INSTALL`
+  strips the `inst/` prefix). They previously lived in `tests/testthat/`,
+  which `R CMD INSTALL` skips unless `--install-tests` is passed -- so a plain
+  `install.packages()` or `remotes::install_github()` left them unreachable,
+  and a downstream analysis wanting to check its own SAS output against them
+  had to clone the repository. Reach them with:
 
   ```r
   source(system.file("sas-parity", "helper-sas-parity.R",

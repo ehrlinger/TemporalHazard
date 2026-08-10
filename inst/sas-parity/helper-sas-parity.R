@@ -1,5 +1,15 @@
-# Shared parser for SAS HAZARD .lst capture files.  testthat auto-sources
-# this helper before running test-sas-parity.R.
+# Shared parser for SAS HAZARD .lst capture files.
+#
+# Source tree:  inst/sas-parity/helper-sas-parity.R
+# Installed at: <library>/TemporalHazard/sas-parity/helper-sas-parity.R
+#               (R strips the inst/ prefix on install)
+#
+# The package's own tests load this through a shim at
+# tests/testthat/helper-sas-parity.R, which testthat auto-sources before
+# running test-sas-parity.R.  Downstream consumers reach it directly:
+#
+#   source(system.file("sas-parity", "helper-sas-parity.R",
+#                      package = "TemporalHazard"))
 #
 # Reference fixtures live at:
 #   ~/Documents/GitHub/hazard/examples/*.lst   (paired with *.sas)
