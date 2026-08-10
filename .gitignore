@@ -25,7 +25,8 @@ vignettes/*.R
 /docs
 /doc/
 /Meta/
-.claude/
+.claude/*
+!.claude/house-style.md
 .positai
 CRAN-SUBMISSION
 .worktrees/
