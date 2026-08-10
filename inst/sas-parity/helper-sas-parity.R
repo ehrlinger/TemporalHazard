@@ -569,7 +569,12 @@
       if (length(rows)) break else next
     }
     if (length(toks) < length(cols) + 1L) next
-    rows[[length(rows) + 1L]] <- as.numeric(toks[seq_along(cols) + 1L])
+    # SAS prints a bare "." for a missing value. Normalise it to NA before
+    # coercing, the same way .hzr_parse_sas_lifetable() does -- otherwise
+    # as.numeric() emits a coercion warning per row and the NA arrives anyway.
+    vals <- toks[seq_along(cols) + 1L]
+    vals[vals == "."] <- NA
+    rows[[length(rows) + 1L]] <- as.numeric(vals)
   }
   if (!length(rows)) return(NULL)
   df <- as.data.frame(do.call(rbind, rows))

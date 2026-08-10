@@ -67,6 +67,30 @@ test_that("a nomogram WITH a MONTHS column still parses", {
   expect_equal(nom$SURVIV[1], 0.97106, tolerance = 1e-6)
 })
 
+test_that("SAS missing markers become NA without a coercion warning", {
+  # SAS prints a bare "." for missing. Coercing it with as.numeric() yields NA
+  # anyway, but warns once per row -- noise that buries real warnings.
+  # .hzr_parse_sas_lifetable() already normalises this; the nomogram must too.
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(c(
+    "          Obs     YEARS     _SURVIV    _CLLSURV    _CLUSURV    _HAZARD    _CLLHAZ    _CLUHAZ",
+    "",
+    "            1    0.0821     0.97106     0.96812     0.97373    0.24456    0.22241    0.26891",
+    "",
+    "            2    0.2500     0.94683     0.94276     0.95062          .          .          .",
+    ""
+  ), tmp)
+
+  expect_no_warning(nom <- .hzr_parse_sas_nomogram(tmp))
+  expect_equal(nrow(nom), 2L)
+  expect_equal(nom$SURVIV[2], 0.94683, tolerance = 1e-6)
+  expect_true(is.na(nom$HAZARD[2]))
+  expect_true(is.na(nom$CLLHAZ[2]))
+  expect_true(is.na(nom$CLUHAZ[2]))
+  # A missing marker in one column must not disturb the others on that row.
+  expect_equal(nom$CLUSURV[2], 0.95062, tolerance = 1e-6)
+})
+
 test_that("the nomogram parser still returns NULL when no table is present", {
   tmp <- withr::local_tempfile(fileext = ".lst")
   writeLines(c("nothing here", "no nomogram at all"), tmp)
