@@ -96,3 +96,41 @@ test_that("the nomogram parser still returns NULL when no table is present", {
   writeLines(c("nothing here", "no nomogram at all"), tmp)
   expect_null(.hzr_parse_sas_nomogram(tmp))
 })
+
+test_that("the life table parses whatever the time variable is called", {
+  # The second column is the study's time variable: INT_DEAD in the AVC
+  # captures, iv_dead in the CCF AVR/LV listings. Hardcoding one study's name
+  # made every other study's life table return NULL.
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(c(
+    "       Obs iv_dead NUMBER CENSORED dead CUM_SURV   SE_EXACT CL_LOWER CL_UPPER",
+    "",
+    "         1  0.0821   3049       12   35  0.98852    0.00193  0.98659  0.99045",
+    "         2  0.2500   3002       31   48  0.97281    0.00297  0.96984  0.97578",
+    ""
+  ), tmp)
+
+  lt <- .hzr_parse_sas_lifetable(tmp, which = "kaplan")
+  expect_s3_class(lt, "data.frame")
+  expect_equal(nrow(lt), 2L)
+  expect_true("iv_dead" %in% names(lt))
+  expect_equal(lt$CUM_SURV[1], 0.98852, tolerance = 1e-6)
+  expect_equal(lt$SE_EXACT[2], 0.00297, tolerance = 1e-6)
+})
+
+test_that("the life table still parses the AVC INT_DEAD layout", {
+  # Regression guard: the fixtures this parser was built against must keep
+  # working with the loosened header match.
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(c(
+    "       Obs INT_DEAD NUMBER CENSORED DEAD CUM_SURV   SE_EXACT CL_LOWER CL_UPPER",
+    "",
+    "         1   0.0821    310        2    3  0.99032    0.00556  0.98476  0.99588",
+    ""
+  ), tmp)
+
+  lt <- .hzr_parse_sas_lifetable(tmp, which = "kaplan")
+  expect_equal(nrow(lt), 1L)
+  expect_true("INT_DEAD" %in% names(lt))
+  expect_equal(lt$CUM_SURV[1], 0.99032, tolerance = 1e-6)
+})

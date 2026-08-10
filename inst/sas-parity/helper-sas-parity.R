@@ -489,7 +489,12 @@
                                                      "catg0", "catg1")) {
   which <- match.arg(which)
   lines <- .hzr_read_lst(path)
-  headers <- grep("^\\s*Obs\\s+INT_DEAD\\s+NUMBER", lines)
+  # The second column is the TIME VARIABLE, whose name differs per study --
+  # INT_DEAD in the AVC captures, iv_dead in the CCF AVR/LV listings, and
+  # SAS prints it in whatever case the program used. Hardcoding one study's
+  # variable name here made every other study's life table parse as NULL.
+  # Match any single token in that position; NUMBER anchors the layout.
+  headers <- grep("^\\s*Obs\\s+\\S+\\s+NUMBER", lines, ignore.case = TRUE)
   if (!length(headers)) return(NULL)
 
   pick <- NULL
