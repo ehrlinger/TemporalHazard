@@ -141,7 +141,17 @@ NULL
   # or when it declines by returning NULL, fall back to a numerical Hessian.
   hess_result <- NULL
   if (!is.null(hessian_fn)) {
-    hess_result <- tryCatch(hessian_fn(result$par), error = function(e) NULL)
+    # A hook that ERRORS is a different thing from a hook that declines by
+    # returning NULL, and swallowing the error made the two indistinguishable
+    # downstream. Say which happened.
+    hess_result <- tryCatch(
+      hessian_fn(result$par),
+      error = function(e) {
+        warning("hessian_fn() errored, so the analytic Hessian was not used: ",
+                conditionMessage(e), call. = FALSE)
+        NULL
+      }
+    )
     # A non-NULL hook result must be a square matrix matching the parameter
     # dimension; a misbehaving hook should not silently produce a wrong vcov.
     p_dim <- length(result$par)
@@ -152,20 +162,22 @@ NULL
     }
   }
   if (is.null(hess_result)) {
-    # An analytic Hessian declining is routine and by design: it covers
-    # event + right-censored rows, and the multiphase one declines outright
-    # for left- or interval-censored data. numDeriv is the documented
-    # fallback, but it is a *Suggests*, so it is legitimately absent on a
-    # machine installed without Suggests -- and then there is no third option
-    # and no standard errors.
+    # Reached when no analytic Hessian was supplied, or the hook declined by
+    # returning NULL, or it returned something non-conformant, or it errored.
+    # Each of those is reported at its own site above; this branch only knows
+    # that it has no analytic Hessian, so the message says exactly that rather
+    # than asserting a reason it cannot distinguish.
+    #
+    # numDeriv is the documented fallback, but it is a *Suggests*, so it is
+    # legitimately absent on a machine installed without Suggests -- and then
+    # there is no third option and no standard errors.
     #
     # That combination used to fail silently: rcond and pd came back NA and
     # vcov() returned a bare logical, with nothing anywhere naming numDeriv.
     # The user-visible symptom was diag(vcov(fit)) complaining about an
-    # invalid 'nrow', which is unrecognisable from the cause. Warn where the
-    # cause is actually known.
+    # invalid 'nrow', which is unrecognisable from the cause.
     if (!requireNamespace("numDeriv", quietly = TRUE)) {
-      warning("No analytic Hessian is available for this fit and the ",
+      warning("No analytic Hessian was obtained for this fit, and the ",
               "'numDeriv' fallback is not installed, so standard errors ",
               "cannot be computed. Install it with ",
               "install.packages(\"numDeriv\"); note numDeriv is a Suggests ",

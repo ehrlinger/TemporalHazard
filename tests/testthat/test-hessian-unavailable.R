@@ -6,6 +6,63 @@
 # was rcond = NA, pd = NA and vcov() returning a bare logical, with nothing
 # naming the cause -- the user sees diag(vcov(fit)) complain about 'nrow'.
 
+fake_fit <- function(hessian_fn = function(...) NULL) {
+  logl <- function(theta, time, status, ...) -sum((theta - 1)^2)
+  grad <- function(theta, time, status, ...) -2 * (theta - 1)
+  TemporalHazard:::.hzr_optim_generic(
+    logl_fn     = logl,
+    gradient_fn = grad,
+    time        = c(1, 2, 3),
+    status      = c(1, 0, 1),
+    theta_start = c(0.5, 0.5),
+    hessian_fn  = hessian_fn
+  )
+}
+
+test_that("a missing numDeriv is named, and the NA consequence is stated", {
+  # THE production failure mode: numDeriv is a Suggests, so install_github()
+  # does not pull it, and an interval-censored multiphase fit then gets no
+  # curvature at all. Exercised even on a machine that HAS numDeriv by mocking
+  # requireNamespace() as seen from inside the TemporalHazard namespace --
+  # mocking base's own binding recurses infinitely.
+  # Capture the real function BEFORE mocking. Calling base::requireNamespace()
+  # from inside the mock re-resolves to the mock and recurses forever.
+  orig <- base::requireNamespace
+  local_mocked_bindings(
+    requireNamespace = function(package, ...) {
+      if (identical(package, "numDeriv")) FALSE else orig(package, ...)
+    },
+    .package = "base"
+  )
+
+  w <- testthat::capture_warnings(res <- fake_fit())
+
+  # Both warnings must fire: the cause, and the consequence. Asserting only
+  # one would let a regression that drops the other pass unnoticed.
+  expect_match(w, "numDeriv", all = FALSE)
+  expect_match(w, "Suggests", all = FALSE)
+  expect_match(w, "rcond and pd are all NA|No Hessian could be computed", all = FALSE)
+
+  # Behaviour unchanged: still NA diagnostics, now announced.
+  expect_true(is.na(res$rcond))
+  expect_true(is.na(res$pd))
+})
+
+test_that("a hessian_fn that ERRORS is distinguished from one that declines", {
+  # tryCatch(hessian_fn(...), error = function(e) NULL) used to swallow the
+  # error, making a broken hook indistinguishable from a deliberate decline.
+  skip_if_not_installed("numDeriv")
+
+  w <- testthat::capture_warnings(
+    fake_fit(hessian_fn = function(...) stop("synthetic hook failure")))
+  expect_match(w, "hessian_fn\\(\\) errored", all = FALSE)
+  expect_match(w, "synthetic hook failure", all = FALSE)
+
+  # A hook that merely declines must NOT produce that warning.
+  w2 <- testthat::capture_warnings(fake_fit(hessian_fn = function(...) NULL))
+  expect_false(any(grepl("errored", w2)))
+})
+
 test_that("a failing numDeriv fallback warns instead of returning NA mutely", {
   # The analytic Hessian declining is routine; numDeriv is the documented
   # fallback. When that fallback also fails there is no third option, and the

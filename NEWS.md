@@ -80,9 +80,11 @@ selects.
   `diag(vcov(fit))` reporting an invalid `'nrow'`, which is unrecognisable
   from the cause. Three paths now warn: `numDeriv` absent (naming it and the
   install command), `numDeriv::hessian()` failing (carrying its message), and
-  no Hessian available at all. Behaviour is unchanged -- the diagnostics are
-  still `NA` -- but the reason is now stated. Found while fitting a
-  production interval-censored study.
+  no Hessian available at all. A `hessian_fn` hook that *errors* is also no
+  longer swallowed into silence, so a broken analytic hook is distinguishable
+  from one that deliberately declines. Behaviour is unchanged -- the
+  diagnostics are still `NA` -- but the reason is now stated. Found while
+  fitting a production interval-censored study.
 
 
 * `hzr_bootstrap()` no longer returns a silent `n_success = 0` (and
