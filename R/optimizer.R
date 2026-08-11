@@ -152,22 +152,47 @@ NULL
     }
   }
   if (is.null(hess_result)) {
-    hess_result <- tryCatch(
-      {
-        if (requireNamespace("numDeriv", quietly = TRUE)) {
-          numDeriv::hessian(objective, result$par)
-        } else {
+    # An analytic Hessian declining is routine and by design: it covers
+    # event + right-censored rows, and the multiphase one declines outright
+    # for left- or interval-censored data. numDeriv is the documented
+    # fallback, but it is a *Suggests*, so it is legitimately absent on a
+    # machine installed without Suggests -- and then there is no third option
+    # and no standard errors.
+    #
+    # That combination used to fail silently: rcond and pd came back NA and
+    # vcov() returned a bare logical, with nothing anywhere naming numDeriv.
+    # The user-visible symptom was diag(vcov(fit)) complaining about an
+    # invalid 'nrow', which is unrecognisable from the cause. Warn where the
+    # cause is actually known.
+    if (!requireNamespace("numDeriv", quietly = TRUE)) {
+      warning("No analytic Hessian is available for this fit and the ",
+              "'numDeriv' fallback is not installed, so standard errors ",
+              "cannot be computed. Install it with ",
+              "install.packages(\"numDeriv\"); note numDeriv is a Suggests ",
+              "dependency, so install.packages() and install_github() do ",
+              "not pull it by default.", call. = FALSE)
+    } else {
+      hess_result <- tryCatch(
+        numDeriv::hessian(objective, result$par),
+        error = function(e) {
+          warning("numDeriv::hessian() failed, so standard errors are ",
+                  "unavailable: ", conditionMessage(e), call. = FALSE)
           NULL
         }
-      },
-      error = function(e) NULL
-    )
+      )
+    }
   }
 
   # Hardened inversion + conditioning diagnostics (Layer 1).
   inv <- if (is.matrix(hess_result)) {
     .hzr_safe_solve(hess_result)
   } else {
+    # Reached only when no Hessian could be produced at all.
+    # .hzr_safe_solve() warns on every degenerate path it handles, but this
+    # branch bypasses it entirely, so it needs its own voice or the fit
+    # returns NA diagnostics mutely.
+    warning("No Hessian could be computed for this fit; standard errors, ",
+            "rcond and pd are all NA.", call. = FALSE)
     list(vcov = NA, rcond = NA_real_, pd = NA)
   }
 
