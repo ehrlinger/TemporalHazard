@@ -134,3 +134,94 @@ test_that("the life table still parses the AVC INT_DEAD layout", {
   expect_true("INT_DEAD" %in% names(lt))
   expect_equal(lt$CUM_SURV[1], 0.99032, tolerance = 1e-6)
 })
+
+test_that("a paginated life table is read past the first page break", {
+  # SAS paginates long life tables: form feed, titles, a _CATG rule, a
+  # "(continued)" marker, and a repeated header, with the Obs counter running
+  # on. Stopping at the first page break returned page one only -- 97 rows of
+  # an 844-row table on the AVR/LV listing, across 56 page headers.
+  #
+  # This is the worst failure shape for a parity harness: it returns REAL
+  # DATA, so no absence guard fires, the comparison covers a fraction of the
+  # table, and the badge reads PASS.
+  fx <- testthat::test_path("fixtures", "paginated-lifetable.lst")
+  lt <- .hzr_parse_sas_lifetable(fx, which = "kaplan")
+
+  expect_s3_class(lt, "data.frame")
+  expect_equal(nrow(lt), 15L)            # 3 pages x 5 rows, not 5
+  expect_true("iv_dead" %in% names(lt))
+  # Rows from the 2nd and 3rd pages are present and in order.
+  expect_equal(lt$iv_dead[6],  0.06, tolerance = 1e-8)
+  expect_equal(lt$iv_dead[15], 0.15, tolerance = 1e-8)
+  expect_false(is.unsorted(lt$iv_dead))
+})
+
+test_that("a following BY group is not absorbed into the previous one", {
+  # The stratified tables share the overall table's columns, so "same header"
+  # cannot be the continuation test on its own. The _CATG rule is the boundary.
+  fx <- testthat::test_path("fixtures", "paginated-lifetable.lst")
+  lt <- .hzr_parse_sas_lifetable(fx, which = "kaplan")
+
+  expect_equal(nrow(lt), 15L)
+  # The _CATG=1 group contributes 4 more rows; they must be absent here.
+  expect_equal(max(lt$iv_dead), 0.15, tolerance = 1e-8)
+  expect_true(all(lt$NUMBER > 1000))     # group 1 rows carry NUMBER < 1000
+})
+
+test_that("a listing with no fit yields no fits, not one hollow fit", {
+  # .hzr_split_fits() fell back to the whole listing as one block when no
+  # "Initial Summary:" anchor was present, so a %KAPLAN job produced ONE fit
+  # with every field NA. That survives is.null() and a length check and reads
+  # downstream as a result.
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(c("Life Table Analyses", "no fit anywhere in this listing",
+               "       Obs iv_dead NUMBER", "         1  0.0821   3049"), tmp)
+
+  out <- .hzr_parse_sas_lst(tmp)
+  expect_false(is.null(out))
+  expect_equal(length(out$fits), 0L)
+})
+
+test_that("a listing with a fit but no anchor still parses as one fit", {
+  # The fallback is right when there IS a fit; only the no-fit case changed.
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(c("Some listing without the usual anchor",
+               "        Log likelihood =     -3659.01",
+               "      There are  3049 observations available for analysis with:",
+               "                           1032 events:",
+               "                           2017 Right Censored Observations"), tmp)
+
+  out <- .hzr_parse_sas_lst(tmp)
+  expect_equal(length(out$fits), 1L)
+  expect_equal(out$fits[[1]]$loglik, -3659.01, tolerance = 1e-8)
+  expect_equal(out$fits[[1]]$n_events, 1032L)
+})
+
+test_that("a listing that only MENTIONS log likelihood yields no fits", {
+  # The no-anchor fallback must ask the same question the extractor asks. A
+  # bare mention with no parsable value would pass a phrase test, then produce
+  # loglik = NA -- rebuilding the hollow fit the guard exists to prevent.
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(c("Notes on the Log likelihood reported by PROC HAZARD",
+               "(no value is printed in this listing)"), tmp)
+
+  out <- .hzr_parse_sas_lst(tmp)
+  expect_equal(length(out$fits), 0L)
+})
+
+test_that("a header on the last line returns NULL rather than walking backwards", {
+  # (pick + 1L):length(lines) is a DECREASING sequence when pick is the last
+  # line, so the loop would count down from an NA index.
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(c("Life Table Analyses",
+               "       Obs iv_dead NUMBER CENSORED dead CUM_SURV"), tmp)
+
+  expect_null(.hzr_parse_sas_lifetable(tmp, which = "kaplan"))
+})
+
+test_that("a header with only blank lines after it returns NULL", {
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(c("       Obs iv_dead NUMBER CENSORED dead CUM_SURV", "", "  "), tmp)
+
+  expect_null(.hzr_parse_sas_lifetable(tmp, which = "kaplan"))
+})
