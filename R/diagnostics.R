@@ -1457,6 +1457,39 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     )
   }
 
+  # VECTOR-INTERFACE FITS.
+  #
+  # hazard() accepts either a formula plus `data`, or bare `time`/`status`
+  # vectors. Resampling `data` alone is enough for the formula interface, but
+  # NOT for the vector one: the stored call holds `time = d$col` as an
+  # *expression*, so each replicate re-evaluates it against the ORIGINAL data
+  # and returns the original fit. That produced n_success = n_boot, n_failed
+  # = 0, no warning, and n_boot identical replicates -- a bootstrap summary
+  # that looks complete and contains nothing.
+  #
+  # The evaluated vectors are already stored on the object, so they can be
+  # resampled by the same index and rewired the same way `data` and `weights`
+  # are. `x` is excluded deliberately: a design matrix supplied that way is
+  # rebuilt from `data`/`scope` per replicate.
+  vector_interface <- is.null(cl$formula) && !is.null(cl$time)
+  vec_args <- c("time", "status", "time_lower", "time_upper")
+  vec_orig <- if (vector_interface) {
+    stats::setNames(lapply(vec_args, function(a) object$data[[a]]), vec_args)
+  } else {
+    NULL
+  }
+  if (vector_interface) {
+    have <- vapply(vec_orig, function(v) !is.null(v) && length(v) == n_obs, logical(1))
+    if (!any(have[c("time", "status")])) {
+      stop("hzr_bootstrap(): this fit was built with the vector interface ",
+           "(time=/status=), but the evaluated vectors are not stored on the ",
+           "object, so replicates cannot be resampled. Refit with the formula ",
+           "interface (Surv(...) ~ ., data = ...) and bootstrap that.",
+           call. = FALSE)
+    }
+    vec_orig <- vec_orig[have]
+  }
+
   # Parameter names from the fitted model. In fixed-refit mode every
   # replicate shares the same theta layout, so names are resolved once, up
   # front. In select-mode, each replicate can select a different variable
@@ -1492,6 +1525,12 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     rep_env <- new.env(parent = eval_env)
     assign("boot_data", boot_data, envir = rep_env)
     if (!is.null(orig_weights)) assign("boot_weights", boot_weights, envir = rep_env)
+    # Vector-interface arguments follow the same index as the rows.
+    if (vector_interface) {
+      for (a in names(vec_orig)) {
+        assign(paste0("boot_", a), vec_orig[[a]][idx], envir = rep_env)
+      }
+    }
 
     # Per-replicate fits routinely hit ill-conditioned Hessians and other
     # numerical warnings on individual resamples; these are not individually
@@ -1509,6 +1548,9 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
           cl_base <- cl
           cl_base$data <- quote(boot_data)
           if (!is.null(orig_weights)) cl_base$weights <- quote(boot_weights)
+          for (a in names(vec_orig)) {
+            cl_base[[a]] <- as.name(paste0("boot_", a))
+          }
           cl_base$fit <- TRUE
           base_boot <- eval(cl_base, envir = rep_env)
           if (!is.finite(base_boot$fit$objective)) {
@@ -1536,6 +1578,9 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
           cl_boot <- cl
           cl_boot$data <- quote(boot_data)
           if (!is.null(orig_weights)) cl_boot$weights <- quote(boot_weights)
+          for (a in names(vec_orig)) {
+            cl_boot[[a]] <- as.name(paste0("boot_", a))
+          }
           cl_boot$fit <- TRUE
           eval(cl_boot, envir = rep_env)
         }),

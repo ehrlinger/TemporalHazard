@@ -71,6 +71,21 @@ selects.
 
 ## Bug fixes
 
+* `hzr_bootstrap()` now resamples fits built with the **vector interface**
+  (`time =` / `status =` rather than a formula plus `data`). Previously it
+  resampled `data` only, but a vector-interface call stores `time = d$col` as
+  an *expression*, so every replicate re-evaluated it against the original
+  data and returned the original fit. The result was `n_success = n_boot`,
+  `n_failed = 0`, no warning, and `n_boot` **identical** replicates -- a
+  summary table that looked complete and contained nothing, with `sd` exactly
+  0 on every parameter. The evaluated `time`, `status`, `time_lower` and
+  `time_upper` vectors are already stored on the fitted object, so they are
+  now resampled by the same index as the rows and rewired into each
+  replicate's call, exactly as `data` and `weights` already were. Both
+  interfaces now produce identical bootstrap replicates for the same model,
+  data and seed. Found running a 500-replicate production bagging job that
+  completed in 9.5 minutes and produced no usable output.
+
 * A fit that cannot compute a Hessian now says so. The analytic Hessian
   declines for left- and interval-censored rows by design, the optimizer falls
   back to `numDeriv::hessian()`, and `numDeriv` is a `Suggests` -- so on a
