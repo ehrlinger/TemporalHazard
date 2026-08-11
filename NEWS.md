@@ -71,6 +71,22 @@ selects.
 
 ## Bug fixes
 
+* A fit that cannot compute a Hessian now says so. The analytic Hessian
+  declines for left- and interval-censored rows by design, the optimizer falls
+  back to `numDeriv::hessian()`, and `numDeriv` is a `Suggests` -- so on a
+  machine installed without Suggests, an interval-censored multiphase fit
+  produced no standard errors, `rcond = NA`, `pd = NA` and a `vcov()` of bare
+  `logical`, with nothing naming the cause. The user-visible symptom was
+  `diag(vcov(fit))` reporting an invalid `'nrow'`, which is unrecognisable
+  from the cause. Three paths now warn: `numDeriv` absent (naming it and the
+  install command), `numDeriv::hessian()` failing (carrying its message), and
+  no Hessian available at all. A `hessian_fn` hook that *errors* is also no
+  longer swallowed into silence, so a broken analytic hook is distinguishable
+  from one that deliberately declines. Behaviour is unchanged -- the
+  diagnostics are still `NA` -- but the reason is now stated. Found while
+  fitting a production interval-censored study.
+
+
 * `hzr_bootstrap()` no longer returns a silent `n_success = 0` (and
   `n_failed = n_boot`, with no error and no warning) when the model was fitted
   inside a function. `hazard()` stored its call but not the environment that
