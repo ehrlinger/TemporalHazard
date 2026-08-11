@@ -1479,15 +1479,25 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     NULL
   }
   if (vector_interface) {
-    have <- vapply(vec_orig, function(v) !is.null(v) && length(v) == n_obs, logical(1))
-    if (!any(have[c("time", "status")])) {
-      stop("hzr_bootstrap(): this fit was built with the vector interface ",
-           "(time=/status=), but the evaluated vectors are not stored on the ",
-           "object, so replicates cannot be resampled. Refit with the formula ",
-           "interface (Surv(...) ~ ., data = ...) and bootstrap that.",
-           call. = FALSE)
+    # EVERY vector argument the call actually passed must have a stored,
+    # correctly-sized copy. Rewiring only some of them is worse than rewiring
+    # none: the rewired arguments follow the resample while the rest still
+    # evaluate against the original data, so row i's time gets paired with
+    # row j's status or interval bound. That is silent corruption producing
+    # plausible numbers, not an error.
+    passed <- vec_args[vapply(vec_args, function(a) !is.null(cl[[a]]), logical(1))]
+    have   <- vapply(vec_orig, function(v) !is.null(v) && length(v) == n_obs,
+                     logical(1))
+    missing_vecs <- passed[!have[passed]]
+    if (length(missing_vecs)) {
+      stop("hzr_bootstrap(): this fit was built with the vector interface, ",
+           "but the evaluated vector(s) ",
+           paste(sQuote(missing_vecs), collapse = ", "),
+           " are not stored on the object, so replicates cannot be resampled ",
+           "consistently. Refit with the formula interface ",
+           "(Surv(...) ~ ., data = ...) and bootstrap that.", call. = FALSE)
     }
-    vec_orig <- vec_orig[have]
+    vec_orig <- vec_orig[passed]
   }
 
   # Parameter names from the fitted model. In fixed-refit mode every

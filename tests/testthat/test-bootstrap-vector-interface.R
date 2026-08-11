@@ -39,8 +39,9 @@ test_that("a vector-interface fit actually resamples", {
 })
 
 test_that("vector and formula interfaces bootstrap identically", {
-  # The strong form: same model, same data, same seed, so the replicates must
-  # agree. "It varies now" would also be satisfied by varying wrongly.
+  # The strong form, and it has to compare the REPLICATES, not a summary of
+  # them: two different sets of replicate estimates can share an SD, so
+  # comparing sd() alone would pass on outputs that differ.
   d <- fixture()
   fv <- suppressWarnings(hazard(
     time = d$int_dead, status = as.integer(d$dead), data = d,
@@ -51,7 +52,15 @@ test_that("vector and formula interfaces bootstrap identically", {
     dist = "multiphase", phases = phases_fixed(),
     fit = TRUE, control = list(n_starts = 1, maxit = 200)))
 
-  expect_equal(sd_log_mu(fv), sd_log_mu(ff), tolerance = 1e-8)
+  bv <- suppressWarnings(hzr_bootstrap(fv, n_boot = 20, seed = 1))
+  bf <- suppressWarnings(hzr_bootstrap(ff, n_boot = 20, seed = 1))
+
+  # Same model, same data, same seed: every replicate estimate must match.
+  expect_equal(bv$replicates, bf$replicates, tolerance = 1e-8)
+  expect_equal(bv$n_success, bf$n_success)
+  # And they must not be trivially equal by both being constant.
+  expect_gt(stats::sd(bv$replicates$estimate[
+    bv$replicates$parameter == "early.log_mu"]), 0)
 })
 
 test_that("time_lower and time_upper are resampled alongside time", {
@@ -71,4 +80,21 @@ test_that("time_lower and time_upper are resampled alongside time", {
     fit = TRUE, control = list(n_starts = 1, maxit = 200)))
 
   expect_gt(sd_log_mu(fit), 0)
+})
+
+test_that("a partially-stored vector-interface fit is refused, not half-rewired", {
+  # Rewiring some vector arguments and not others is worse than rewiring none:
+  # the rewired ones follow the resample while the rest evaluate against the
+  # original data, pairing row i's time with row j's status. Silent corruption
+  # producing plausible numbers.
+  d <- fixture()
+  fit <- suppressWarnings(hazard(
+    time = d$int_dead, status = as.integer(d$dead), data = d,
+    dist = "multiphase", phases = phases_fixed(),
+    fit = TRUE, control = list(n_starts = 1, maxit = 200)))
+
+  # Simulate an object fitted by an older version that did not store `status`.
+  fit$data$status <- NULL
+  expect_error(suppressWarnings(hzr_bootstrap(fit, n_boot = 5, seed = 1)),
+               "status")
 })
