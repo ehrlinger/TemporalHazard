@@ -196,3 +196,32 @@ test_that("a listing with a fit but no anchor still parses as one fit", {
   expect_equal(out$fits[[1]]$loglik, -3659.01, tolerance = 1e-8)
   expect_equal(out$fits[[1]]$n_events, 1032L)
 })
+
+test_that("a listing that only MENTIONS log likelihood yields no fits", {
+  # The no-anchor fallback must ask the same question the extractor asks. A
+  # bare mention with no parsable value would pass a phrase test, then produce
+  # loglik = NA -- rebuilding the hollow fit the guard exists to prevent.
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(c("Notes on the Log likelihood reported by PROC HAZARD",
+               "(no value is printed in this listing)"), tmp)
+
+  out <- .hzr_parse_sas_lst(tmp)
+  expect_equal(length(out$fits), 0L)
+})
+
+test_that("a header on the last line returns NULL rather than walking backwards", {
+  # (pick + 1L):length(lines) is a DECREASING sequence when pick is the last
+  # line, so the loop would count down from an NA index.
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(c("Life Table Analyses",
+               "       Obs iv_dead NUMBER CENSORED dead CUM_SURV"), tmp)
+
+  expect_null(.hzr_parse_sas_lifetable(tmp, which = "kaplan"))
+})
+
+test_that("a header with only blank lines after it returns NULL", {
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(c("       Obs iv_dead NUMBER CENSORED dead CUM_SURV", "", "  "), tmp)
+
+  expect_null(.hzr_parse_sas_lifetable(tmp, which = "kaplan"))
+})

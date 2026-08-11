@@ -414,8 +414,14 @@
     # zero "Initial Summary:" and zero "Log likelihood" lines, and used to
     # yield ONE fit with every field NA -- a hollow fit, which survives both
     # is.null() and a length check and reads downstream as a result.
-    # Require evidence of a fit before falling back.
-    if (any(grepl("Log likelihood", lines))) return(list(lines))
+    # Require evidence of a fit before falling back -- and ask the SAME
+    # question the extractor will. Testing for the phrase "Log likelihood"
+    # is weaker than testing for a parsable one: a listing that merely
+    # mentions it (a title, a note, a header with no value) would pass the
+    # phrase test, then yield loglik = NA and reconstruct the very hollow fit
+    # this guard exists to prevent. Reuse the extractor so the two cannot
+    # drift apart.
+    if (length(.hzr_extract_loglik(lines))) return(list(lines))
     return(list())
   }
   ends <- c(tail(anchors, -1L) - 1L, length(lines))
@@ -525,6 +531,11 @@
     }
   }
   if (is.null(pick) || is.na(pick)) return(NULL)
+  # A header on the very last line (or a listing truncated straight after one)
+  # would make (pick + 1L):length(lines) a DECREASING sequence -- R counts
+  # down -- so the loop would walk backwards from an NA index. There are no
+  # rows to read in that case; say so.
+  if (pick >= length(lines)) return(NULL)
 
   cols <- strsplit(trimws(lines[pick]), "\\s+")[[1]]
 
