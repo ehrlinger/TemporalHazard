@@ -1149,3 +1149,56 @@ test_that("print.hzr_competing_risks runs without error", {
   cr <- hzr_competing_risks(time_cr, event_cr)
   expect_output(print(cr), "Competing risks")
 })
+
+
+# Select-mode screens that select nothing -----------------------------------
+
+test_that("hzr_bootstrap warns when a select-mode screen picks no covariate", {
+  # A selection frequency is the whole deliverable of a screen, so "nothing
+  # was ever selected" is the result being empty, not a quiet edge case.
+  # The base model's own parameters appear in every replicate by
+  # construction, so they fill the summary at pct = 100 and the table reads
+  # as a set of perfectly reliable variables.
+  data(avc)
+  phases <- list(
+    early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes"),
+    constant = hzr_phase("constant")
+  )
+  fit <- hazard(Surv(int_dead, dead) ~ 1, data = avc, dist = "multiphase",
+                phases = phases, fit = TRUE,
+                control = list(n_starts = 1L, maxit = 500L))
+
+  # An entry criterion no candidate can clear -> a legitimately empty screen.
+  expect_warning(
+    boot <- hzr_bootstrap(fit, n_boot = 3, seed = 1,
+                          scope = list(early = ~ age, constant = ~ age),
+                          criterion = "score", direction = "forward",
+                          slentry = 1e-12, slstay = 1e-12),
+    "no covariate"
+  )
+
+  # The empty screen still reports as fully successful, which is exactly why
+  # the warning has to carry the news.
+  expect_equal(boot$n_failed, 0L)
+  expect_length(setdiff(unique(boot$replicates$parameter), names(coef(fit))), 0L)
+})
+
+test_that("hzr_bootstrap does not warn when a screen does select covariates", {
+  data(avc)
+  phases <- list(
+    early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes"),
+    constant = hzr_phase("constant")
+  )
+  fit <- hazard(Surv(int_dead, dead) ~ 1, data = avc, dist = "multiphase",
+                phases = phases, fit = TRUE,
+                control = list(n_starts = 1L, maxit = 500L))
+
+  expect_no_warning(
+    boot <- hzr_bootstrap(fit, n_boot = 3, seed = 1,
+                          scope = list(early = ~ age, constant = ~ age),
+                          criterion = "score", direction = "forward",
+                          slentry = 0.5, slstay = 0.5)
+  )
+  expect_gt(length(setdiff(unique(boot$replicates$parameter),
+                           names(coef(fit)))), 0L)
+})

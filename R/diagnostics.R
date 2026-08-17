@@ -1666,6 +1666,24 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
                               stringsAsFactors = FALSE)
   }
 
+  # A selection frequency is the whole deliverable of a select-mode run, so a
+  # screen that never selected anything is the result being empty rather than
+  # a quiet edge case.  It cannot be read off the object either: the base
+  # model's own parameters appear in every replicate by construction, so they
+  # fill the summary at pct = 100 and the table looks like a set of perfectly
+  # reliable variables.
+  if (select_mode && n_success > 0L) {
+    selected <- setdiff(unique(replicates$parameter), names(coef(object)))
+    if (length(selected) == 0L) {
+      warning("Bootstrap selection selected no covariate in any of the ",
+              n_success, " successful replicates. The summary holds only the ",
+              "base model's parameters, each at pct = 100. Common causes: ",
+              "`slentry` stricter than intended; a `scope` naming columns ",
+              "absent from the data; or a base fit whose stored call cannot ",
+              "be rewritten for the refit.", call. = FALSE)
+    }
+  }
+
   result <- list(
     replicates = replicates,
     summary    = summary_df,

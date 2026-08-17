@@ -114,6 +114,30 @@ selects.
   replicate is evaluated in a child of it that carries the resampled data and
   weights. Affects both `refit` and `select` modes.
 
+* **`hzr_bootstrap(scope = ...)` selected nothing when the base fit's formula
+  was passed by symbol.** `hazard()` records its call with `match.call()`, so a
+  formula assigned to a variable first (`f <- Surv(t, d) ~ 1; hazard(f, ...)`)
+  is stored as a *symbol* rather than a call. The scope-mutating refit
+  recovered it with `as.formula(deparse(...))`, which turns that symbol into
+  the string `"f"` and errors with `invalid formula "f": not a call`. Every
+  post-entry refit therefore failed, no candidate ever entered, and the run
+  reported `n_success = n_boot`, `n_failed = 0`, no error and no warning --
+  with a summary holding only the base model's parameters. The stored formula
+  is now evaluated in the fit's recorded calling environment, which handles
+  the literal and by-symbol forms alike, and a stored formula that fails to
+  resolve raises an error naming the problem instead of degrading to an empty
+  screen. The same defect affected `hzr_stepwise()` directly. (#114)
+
+* **A select-mode `hzr_bootstrap()` run that selects no covariate now warns.**
+  The base model's own parameters appear in every replicate by construction,
+  so they fill the summary at `pct = 100` and an empty screen reads as a set
+  of perfectly reliable variables; nothing in the output prompted the reader
+  to compare the parameter names against `names(coef(object))`. The warning
+  names the likely causes: an entry criterion stricter than intended, a
+  `scope` naming columns absent from the data, or a base fit whose stored call
+  cannot be rewritten. Legitimate empty screens warn too -- an entry criterion
+  no candidate can clear is also worth reporting. (#115)
+
 * `hzr_bootstrap()` no longer floods the console with per-replicate numerical
   warnings (e.g. ill-conditioned-Hessian notes from unstable resamples), which
   are not individually actionable when the bootstrap aggregates over replicates.
