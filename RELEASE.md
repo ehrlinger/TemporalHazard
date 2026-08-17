@@ -7,9 +7,10 @@ Maintainer checklist for TemporalHazard. Not shipped (`.Rbuildignore`d).
 - **Every version is a straight three-part number**: `1.1.0`, `1.2.0`, `1.2.1`.
   Never a fourth component, and never a `.9000` dev suffix — not for dev
   snapshots, not to satisfy a version-grep test, not anywhere.
-- **After a release is accepted, the version does not move.** `dev` simply
-  stays at the number that shipped. There is no placeholder to strip later
-  and nothing to remember to bump.
+- **Acceptance itself never bumps the version.** `dev` stays at the number
+  that shipped; there is no placeholder to strip later and no bump to
+  remember. The version moves only when work moves it, per the next two
+  bullets.
 - **The patch digit moves when a fix actually lands**, not before: `1.2.0` →
   `1.2.1` once there is work behind it.
 - **The minor and major digits are the maintainer's call, taken at release
@@ -41,7 +42,7 @@ So the per-release cycle is:
 1.1.0 (released)  ->  dev stays 1.1.0  ->  accumulate work, patch-bumping
                                             as fixes land (1.1.1, 1.1.2 ...)
   ->  at release, decide from NEWS: 1.1.3 | 1.2.0 | 2.0.0  ->  submit
-  ->  accepted  ->  dev stays at that number ...
+  ->  accepted  ->  dev stays at that number until work moves it ...
 ```
 
 **Do not pre-stamp a future release number into the version.** Labelling `dev`
@@ -98,7 +99,7 @@ dev (X.Y.Z) accumulates, patch-bumping as fixes land
   -> set DESCRIPTION + NEWS top heading to N on dev
   -> run the pre-submission gate (below), submit to CRAN
   -> on acceptance: merge dev -> main (main = N), tag vN, GitHub Release
-  -> dev stays at N; the next cycle opens with no version change
+  -> dev stays at N; it moves again only when work lands (N patch-bumped)
 ```
 
 ## Pre-submission checklist
@@ -172,10 +173,10 @@ keep the two in agreement.
      --title "TemporalHazard X.Y.Z" --notes-file <news-section.md>
    ```
 
-3. **No version bump.** `dev` stays at `X.Y.Z`, the number that just shipped.
-   Do not run `usethis::use_dev_version()` — it writes a fourth `.9000`
-   component, which this package does not use. The patch digit moves later,
-   when a fix actually lands.
+3. **Nothing to bump at this step.** `dev` stays at `X.Y.Z`, the number that
+   just shipped. Do not run `usethis::use_dev_version()` — it writes a fourth
+   `.9000` component, which this package does not use. The version moves later,
+   when work moves it: the patch digit once a fix actually lands.
 
    Steps 1 and 2 (tag push, GitHub Release) are the standard release-op
    exception to the branch + PR rule.
