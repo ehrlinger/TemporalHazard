@@ -83,8 +83,12 @@
   extra_args <- user_args[!names(user_args) %in%
                             c("weights", "time_windows")]
 
-  # Recover the original formula.  match.call() stores the formula arg
-  # as an unevaluated `call`; coerce to a real formula.
+  # Recover the original formula.  match.call() stores the `formula` arg
+  # unevaluated, so it arrives as a `call` when the caller wrote it out at
+  # the hazard() call and as a *symbol* when they passed a variable holding
+  # it.  Evaluating in the recorded calling environment covers both;
+  # deparsing does not, because deparse(quote(f)) is "f", which as.formula()
+  # rejects as "not a call".
   raw_formula <- current$call$formula
   if (is.null(raw_formula)) {
     stop("`current` was not built via the formula interface; refit ",
@@ -93,7 +97,28 @@
   current_formula <- if (inherits(raw_formula, "formula")) {
     raw_formula
   } else {
-    stats::as.formula(deparse(raw_formula))
+    # Evaluating can fail outright when the formula was passed by variable
+    # and that binding is gone -- after saveRDS()/readRDS() in a new
+    # session, say.  Bare, the error reads "object 'f' not found", which
+    # names neither the fit at fault nor the remedy, and callers that wrap
+    # candidate refits in tryCatch() reduce it to a generic failure.
+    tryCatch(
+      eval(raw_formula, envir = current$call_env %||% parent.frame()),
+      error = function(e) {
+        stop("`current`'s stored model formula (", deparse(raw_formula),
+             ") could not be resolved: ", conditionMessage(e),
+             ". The formula was passed to `hazard()` by variable and that ",
+             "binding is no longer reachable -- for example after saving ",
+             "and reloading the fit in a new session. Refit the base model ",
+             "with the formula written at the `hazard()` call.",
+             call. = FALSE)
+      }
+    )
+  }
+  if (!inherits(current_formula, "formula")) {
+    stop("`current`'s stored model formula (", deparse(raw_formula),
+         ") did not resolve to a formula. Refit the base model with the ",
+         "formula written at the `hazard()` call.", call. = FALSE)
   }
 
   if (dist == "multiphase") {

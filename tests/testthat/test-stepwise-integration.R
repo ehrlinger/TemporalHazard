@@ -152,3 +152,154 @@ test_that("one bad candidate does not prevent others from entering", {
   expect_identical(step$variable, "x1")
   expect_identical(step$refit_failures, "nonexistent")
 })
+
+
+# Base fit whose formula was passed by symbol -------------------------------
+#
+# `hazard()` stores its call via match.call(), so a formula written into a
+# variable first is stored as a *symbol*, not a formula.  Everything that
+# rebuilds the call for a refit has to resolve it.
+
+test_that("scope refit works when the base fit's formula is a symbol", {
+  data(avc)
+  set.seed(1L)
+  phases <- list(
+    early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes"),
+    constant = hzr_phase("constant")
+  )
+
+  f   <- Surv(int_dead, dead) ~ 1
+  fit <- hazard(f, data = avc, dist = "multiphase", phases = phases,
+                fit = TRUE, control = list(n_starts = 1L, maxit = 500L))
+
+  # The premise of the test: the call really does hold a symbol.
+  expect_true(is.symbol(fit$call$formula))
+
+  refit <- .hzr_refit_with_scope(fit, action = "add", var = "age",
+                                 phase = "early", data = avc,
+                                 control = list(n_starts = 1L, maxit = 500L))
+
+  expect_s3_class(refit, "hazard")
+  expect_true("age" %in% names(coef(refit)) ||
+                any(grepl("age", names(coef(refit)))))
+})
+
+test_that("stepwise selects identically whether the formula was literal", {
+  data(avc)
+  phases <- function() {
+    list(
+      early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                           fixed = "shapes"),
+      constant = hzr_phase("constant")
+    )
+  }
+  ctl   <- list(n_starts = 1L, maxit = 500L)
+  scope <- list(early = ~ age, constant = ~ age)
+
+  set.seed(2L)
+  lit <- hazard(Surv(int_dead, dead) ~ 1, data = avc, dist = "multiphase",
+                phases = phases(), fit = TRUE, control = ctl)
+  sw_lit <- hzr_stepwise(lit, scope = scope, data = avc, direction = "forward",
+                         slentry = 0.2, trace = FALSE)
+
+  set.seed(2L)
+  f   <- Surv(int_dead, dead) ~ 1
+  sym <- hazard(f, data = avc, dist = "multiphase",
+                phases = phases(), fit = TRUE, control = ctl)
+  sw_sym <- hzr_stepwise(sym, scope = scope, data = avc, direction = "forward",
+                         slentry = 0.2, trace = FALSE)
+
+  # Guard against both screens being empty, which would compare equal while
+  # testing nothing.
+  expect_gt(length(names(coef(sw_lit))), length(names(coef(lit))))
+  expect_equal(names(coef(sw_sym)), names(coef(sw_lit)))
+})
+
+test_that("an unresolvable stored formula errors clearly, not obscurely", {
+  # A fit saved with saveRDS() and reloaded in a fresh session loses the
+  # binding its `formula` symbol pointed at, so evaluating the stored call
+  # raises "object 'f' not found" -- which says nothing about which fit is
+  # at fault or what to do.  Inside hzr_stepwise()/hzr_bootstrap() the
+  # per-candidate tryCatch() then swallows it into a generic "candidate
+  # refit failed" and an empty screen.  Blanking `call_env` reproduces that
+  # state without a second R session.
+  data(avc)
+  set.seed(3L)
+  phases <- list(
+    early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes"),
+    constant = hzr_phase("constant")
+  )
+  f   <- Surv(int_dead, dead) ~ 1
+  fit <- hazard(f, data = avc, dist = "multiphase", phases = phases,
+                fit = TRUE, control = list(n_starts = 1L, maxit = 400L))
+
+  fit$call_env <- new.env(parent = emptyenv())
+
+  expect_error(
+    .hzr_refit_with_scope(fit, action = "add", var = "age", phase = "early",
+                          data = avc,
+                          control = list(n_starts = 1L, maxit = 400L)),
+    "could not be resolved"
+  )
+})
+
+
+# Uncomputable scores are not the same as "nothing met slentry" -------------
+#
+# Under criterion = "score", a candidate whose Q statistic cannot be computed
+# (degenerate or collinear column, uninvertible nuisance block) yields NA and
+# is dropped from `valid`.  When that happens to every candidate the step
+# returns the same shape as a legitimate "no candidate cleared slentry" stop,
+# so a broken screen and a finished one are indistinguishable.
+
+.uncomputable_fixture <- function() {
+  data(avc)
+  avc$constcol <- 1.0        # degenerate: Q is NA, but the column is numeric
+  phases <- list(
+    early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes"),
+    constant = hzr_phase("constant")
+  )
+  fit <- hazard(Surv(int_dead, dead) ~ 1, data = avc, dist = "multiphase",
+                phases = phases, fit = TRUE,
+                control = list(n_starts = 1L, maxit = 400L))
+  list(fit = fit, data = avc)
+}
+
+test_that("a step whose scores are all uncomputable says so", {
+  fx <- .uncomputable_fixture()
+
+  step <- .hzr_stepwise_forward_step(
+    fx$fit, scope = list(early = ~ constcol), data = fx$data,
+    criterion = "score", slentry = 0.5
+  )
+
+  expect_false(step$accepted)
+  expect_identical(step$stop_reason, "scores_uncomputable")
+  expect_equal(step$n_uncomputable, 1L)
+})
+
+test_that("a step that simply found nothing good enough is distinguishable", {
+  fx <- .uncomputable_fixture()
+
+  # `age` scores fine (p ~ 1e-4) but cannot clear an impossible slentry.
+  step <- .hzr_stepwise_forward_step(
+    fx$fit, scope = list(early = ~ age), data = fx$data,
+    criterion = "score", slentry = 1e-12
+  )
+
+  expect_false(step$accepted)
+  expect_identical(step$stop_reason, "no_candidate_met_slentry")
+  expect_equal(step$n_uncomputable, 0L)
+})
+
+test_that("hzr_stepwise warns when a screen stops on uncomputable scores", {
+  fx <- .uncomputable_fixture()
+
+  expect_warning(
+    sw <- hzr_stepwise(fx$fit, scope = list(early = ~ constcol),
+                       data = fx$data, direction = "forward",
+                       criterion = "score", slentry = 0.5, trace = FALSE),
+    "could not be computed"
+  )
+  expect_gt(sw$criteria$n_uncomputable_scores, 0L)
+})

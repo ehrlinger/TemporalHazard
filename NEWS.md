@@ -140,6 +140,57 @@ selects.
   replicate is evaluated in a child of it that carries the resampled data and
   weights. Affects both `refit` and `select` modes.
 
+* **`hzr_bootstrap(scope = ...)` selected nothing when the base fit's formula
+  was passed by symbol.** `hazard()` records its call with `match.call()`, so a
+  formula assigned to a variable first (`f <- Surv(t, d) ~ 1; hazard(f, ...)`)
+  is stored as a *symbol* rather than a call. The scope-mutating refit
+  recovered it with `as.formula(deparse(...))`, which turns that symbol into
+  the string `"f"` and errors with `invalid formula "f": not a call`. Every
+  post-entry refit therefore failed, no candidate ever entered, and the run
+  reported `n_success = n_boot`, `n_failed = 0`, no error and no warning --
+  with a summary holding only the base model's parameters. The stored formula
+  is now evaluated in the fit's recorded calling environment, which handles
+  the literal and by-symbol forms alike, and a stored formula that fails to
+  resolve raises an error naming the problem instead of degrading to an empty
+  screen. The same defect affected `hzr_stepwise()` directly. (#114)
+
+* **A select-mode `hzr_bootstrap()` run that selects no covariate now warns.**
+  The base model's own parameters appear in every replicate by construction,
+  so they fill the summary at `pct = 100` and an empty screen reads as a set
+  of perfectly reliable variables; nothing in the output prompted the reader
+  to compare the parameter names against `names(coef(object))`. The warning
+  names the likely causes: an entry criterion stricter than intended, a
+  `scope` naming columns absent from the data, or a base fit whose stored call
+  cannot be rewritten. Legitimate empty screens warn too -- an entry criterion
+  no candidate can clear is also worth reporting. (#115)
+
+* **A stepwise screen that could not score anything now says so, instead of
+  looking like one that finished.** Under `criterion = "score"` a candidate
+  whose Q statistic cannot be computed -- a degenerate or collinear column,
+  or an information matrix that will not invert on this data -- yields `NA`
+  and is dropped from consideration. When that happened to every remaining
+  candidate the step returned exactly what a legitimate "no candidate met
+  `slentry`" stop returns, so a screen that stopped because it was *unable
+  to test* its candidates was indistinguishable from one that tested them
+  and found nothing. The per-step diagnostic existed on the returned object
+  the whole time and had no readers.
+
+  `hzr_stepwise()` now warns when a run stops this way and reports
+  `$criteria$n_uncomputable_scores`. Because `hzr_bootstrap()` runs each
+  replicate under `suppressWarnings()` -- deliberately, so per-replicate
+  numerical noise does not swamp the console -- that warning cannot surface
+  in the mode where it matters most, so the count is aggregated instead:
+  `hzr_bootstrap()` gains `$n_uncomputable_replicates` and warns once when it
+  is non-zero. A replicate that scored nothing still counts toward
+  `n_success` while contributing no selections, so it silently depresses
+  every reported selection frequency -- which is the whole deliverable of a
+  bootstrap screen.
+
+  Found by a pre-release review pass, not by a failing test: the package's
+  own `print.hzr_bootstrap` test runs a five-replicate screen in which four
+  replicates cannot score a candidate and none selects anything, and it
+  passed throughout because it only ever asserted the printed label.
+
 * `hzr_bootstrap()` no longer floods the console with per-replicate numerical
   warnings (e.g. ill-conditioned-Hessian notes from unstable resamples), which
   are not individually actionable when the bootstrap aggregates over replicates.

@@ -90,6 +90,12 @@ parameter. In \code{mode = "select"}, \code{pct} is the selection frequency
 and the other statistics are conditional on selection.}
 \item{n_success}{Number of successfully converged replicates.}
 \item{n_failed}{Number of replicates that failed to converge.}
+\item{n_uncomputable_replicates}{Select mode only: number of otherwise
+successful replicates whose screen stopped because no remaining
+candidate's score statistic could be computed, rather than because no
+candidate met \code{slentry}. Such replicates contribute no selections, so
+a non-zero count means every reported selection frequency is
+depressed. Always \code{0} in refit mode.}
 \item{mode}{\code{"refit"} (fixed-formula bootstrap) or \code{"select"}
 (embedded stepwise selection).}
 \item{scope}{Only present when \code{mode == "select"}: the candidate

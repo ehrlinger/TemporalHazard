@@ -1295,6 +1295,12 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     and the other statistics are conditional on selection.}
 #'   \item{n_success}{Number of successfully converged replicates.}
 #'   \item{n_failed}{Number of replicates that failed to converge.}
+#'   \item{n_uncomputable_replicates}{Select mode only: number of otherwise
+#'     successful replicates whose screen stopped because no remaining
+#'     candidate's score statistic could be computed, rather than because no
+#'     candidate met `slentry`. Such replicates contribute no selections, so
+#'     a non-zero count means every reported selection frequency is
+#'     depressed. Always `0` in refit mode.}
 #'   \item{mode}{`"refit"` (fixed-formula bootstrap) or `"select"`
 #'     (embedded stepwise selection).}
 #'   \item{scope}{Only present when `mode == "select"`: the candidate
@@ -1518,6 +1524,11 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   rep_list <- vector("list", n_boot)
   n_success <- 0L
   n_failed <- 0L
+  # Replicates whose stepwise screen stopped because no candidate's score
+  # could be computed.  Each replicate runs under suppressWarnings(), so the
+  # step-level warning never reaches the user here; the count has to be read
+  # off the returned objects and reported in aggregate.
+  n_uncomputable_reps <- 0L
 
   # Progress bar over replicates (verbose only). Closed after the loop.
   pb <- if (verbose) utils::txtProgressBar(min = 0, max = n_boot, style = 3)
@@ -1600,6 +1611,10 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
 
     if (!is.null(boot_fit) && is.finite(boot_fit$fit$objective)) {
       n_success <- n_success + 1L
+      if (select_mode &&
+            isTRUE(boot_fit$criteria$stopped_uncomputable)) {
+        n_uncomputable_reps <- n_uncomputable_reps + 1L
+      }
       theta_b <- boot_fit$fit$theta
       names_b <- if (select_mode) {
         .hzr_bootstrap_param_names(boot_fit)
@@ -1666,11 +1681,40 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
                               stringsAsFactors = FALSE)
   }
 
+  # A selection frequency is the whole deliverable of a select-mode run, so a
+  # screen that never selected anything is the result being empty rather than
+  # a quiet edge case.  It cannot be read off the object either: the base
+  # model's own parameters appear in every replicate by construction, so they
+  # fill the summary at pct = 100 and the table looks like a set of perfectly
+  # reliable variables.
+  if (select_mode && n_success > 0L) {
+    selected <- setdiff(unique(replicates$parameter), names(coef(object)))
+    if (length(selected) == 0L) {
+      warning("Bootstrap selection selected no covariate in any of the ",
+              n_success, " successful replicates. The summary holds only the ",
+              "base model's parameters, each at pct = 100. Common causes: ",
+              "`slentry` stricter than intended; a `scope` naming columns ",
+              "absent from the data; or a base fit whose stored call cannot ",
+              "be rewritten for the refit.", call. = FALSE)
+    }
+  }
+
+  if (n_uncomputable_reps > 0L) {
+    warning(n_uncomputable_reps, " of ", n_success, " successful replicates ",
+            "stopped because the score statistic could not be computed for ",
+            "any remaining candidate, rather than because no candidate met ",
+            "`slentry`. Those replicates contribute no selections, so every ",
+            "reported selection frequency is depressed by them. Usual causes ",
+            "are a degenerate or collinear candidate column and resamples on ",
+            "which the information matrix is not invertible.", call. = FALSE)
+  }
+
   result <- list(
     replicates = replicates,
     summary    = summary_df,
     n_success  = n_success,
     n_failed   = n_failed,
+    n_uncomputable_replicates = n_uncomputable_reps,
     mode       = if (select_mode) "select" else "refit"
   )
   if (select_mode) result$scope <- scope
