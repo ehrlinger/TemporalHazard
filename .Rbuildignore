@@ -28,5 +28,6 @@
 ^CONTRIBUTORS\.md$
 ^RELEASE\.md$
 ^CLAUDE\.md$
+^AGENTS\.md$
 ^inst/extdata/weights-fixtures/payload/capture/\.gitkeep$
 ^inst/extdata/stepwise-fixtures/payload/capture$
