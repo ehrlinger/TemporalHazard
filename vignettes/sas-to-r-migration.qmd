@@ -510,8 +510,10 @@ tracked in `inst/dev/SAS-PARITY-GAP-ANALYSIS.md` and
 - **Not yet supported:** FAST-screening (Lawless-Singhal approximate
   Wald updates).  Much of what it exists to save is already gone, though:
   the default `criterion = "score"` tests each candidate at the current
-  estimates and never refits to do it.  `criterion = "wald"` is the path
-  that still fits every candidate before testing it.
+  estimates and never refits to do it.  `criterion = "wald"` still refits
+  once per *entry* candidate.  Removals never did, under either criterion:
+  a drop is tested on the current model's Wald p-value against `slstay`,
+  which is what SAS does, and only the accepted drop is refitted.
 
 ### Per-phase time-varying windows
 
