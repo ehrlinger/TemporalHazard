@@ -1257,8 +1257,11 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   the advance during resampling.
 #' @param verbose Logical; if `TRUE`, display a text progress bar over the
 #'   `n_boot` replicates (via [utils::txtProgressBar()]).
-#' @param scope Candidate variable scope for embedded stepwise selection
-#'   during each bootstrap replicate. `NULL` (default) preserves the
+#' @param scope **Experimental.** Candidate variable scope for embedded
+#'   stepwise selection during each bootstrap replicate. The argument and the
+#'   shape of the object it returns may change in a future release; see the
+#'   "Selection mode is experimental" section below. `NULL` (default)
+#'   preserves the
 #'   original fixed-formula bootstrap: every replicate refits `object`'s
 #'   exact model, and `summary$pct` is always ~100. When supplied (a
 #'   one-sided formula, character vector, or -- for multiphase fits -- a
@@ -1284,6 +1287,30 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #' @param ... Additional arguments forwarded to [hzr_stepwise()] (e.g.
 #'   `control = list(n_starts = 1)`) when `scope` is supplied; ignored
 #'   otherwise.
+#'
+#' @section Selection mode is experimental:
+#'
+#' Everything reached through `scope` -- the selection arguments, and the
+#' `summary$pct` selection frequencies they produce -- is new and should be
+#' treated as unstable. The fixed-formula bootstrap (`scope = NULL`) is not
+#' affected and has been stable since 0.9.3.
+#'
+#' Two reasons to expect change. The first is that the design is still being
+#' read off real runs rather than settled in advance: production screens have
+#' already moved the defaults once and turned up several ways a screen could
+#' report success while selecting nothing.
+#'
+#' The second is scale, and it is the one to plan around. A screen over a
+#' large candidate pool runs for hours, and this function writes nothing
+#' until its final replicate, so a run that dies late loses everything. There
+#' is no built-in way to split one screen across processes and combine the
+#' parts. If you are running at that scale, drive `hzr_bootstrap()` in chunks
+#' from your own script and pool the replicates yourself -- deriving each
+#' chunk's seed from its chunk number, offsetting replicate ids so a variable
+#' selected in two chunks is not counted once, and recomputing frequencies
+#' from the pooled replicates rather than averaging across chunks. Whatever
+#' eventually covers that inside the package may well change this function's
+#' interface.
 #'
 #' @return A list with class `"hzr_bootstrap"` containing:
 #' \describe{
