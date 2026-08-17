@@ -169,7 +169,9 @@ test_that("Surv(type = 'interval') fits identically to the vector interface", {
   ph  <- mp_ic_phases()
   ctl <- list(n_starts = 1, maxit = 2000)
 
-  df$lo <- lo; df$hi <- hi; df$ev <- ev
+  df$lo <- lo
+  df$hi <- hi
+  df$ev <- ev
   fit_formula <- hazard(survival::Surv(lo, hi, ev, type = "interval") ~ x,
                         data = df, dist = "multiphase", phases = ph,
                         fit = TRUE, control = ctl)
