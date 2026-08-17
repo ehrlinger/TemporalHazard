@@ -9,6 +9,20 @@
 #' The start times are returned as `time_lower` and stop times as `time`,
 #' enabling the likelihood to compute `H(stop) - H(start)` per epoch.
 #'
+#' `Surv()` and this package code censoring status differently, so the
+#' returned `status` is translated, not passed through:
+#'
+#' | Meaning   | TemporalHazard | `Surv` "left" | `Surv` "interval" |
+#' | --------- | -------------- | ------------- | ----------------- |
+#' | left      | `-1`           | `0`           | `2`               |
+#' | right     | `0`            | --            | `0`               |
+#' | event     | `1`            | `1`           | `1`               |
+#' | interval  | `2`            | --            | `3`               |
+#'
+#' Under `type = "interval"`, `Surv()` reuses the `time2` column to hold the
+#' status of any non-interval row, so an upper bound is read only where the
+#' row is genuinely interval-censored.
+#'
 #' @param formula A formula object with Surv() on the LHS.
 #' @param data A data frame containing variables referenced in the formula.
 #' @return A list with elements: time, status, time_lower, time_upper, x
@@ -51,17 +65,31 @@
     time_lower <- NULL
     time_upper <- NULL
   } else if (surv_type == "left") {
-    # Format: [time, status]
+    # Format: [time, status], where Surv codes 1 = event, 0 = left-censored.
+    # TemporalHazard codes left-censoring as -1; passing 0 through would
+    # silently read these rows as right-censored.
     time <- surv_mat[, 1L]
-    status <- surv_mat[, 2L]
+    status <- ifelse(surv_mat[, 2L] == 0, -1, 1)
     time_lower <- NULL
     time_upper <- surv_mat[, 1L]
   } else if (surv_type == "interval") {
-    # Format: [time1, time2, status]
-    time_lower <- surv_mat[, 1L]
+    # Format: [time1, time2, status], where Surv codes
+    #   0 = right-censored, 1 = event, 2 = left-censored, 3 = interval.
+    # Map onto TemporalHazard's 0 / 1 / -1 / 2.
+    surv_status <- surv_mat[, 3L]
+    status <- c(0, 1, -1, 2)[surv_status + 1L]
     time <- surv_mat[, 1L]
-    time_upper <- surv_mat[, 2L]
-    status <- surv_mat[, 3L]
+
+    # Surv stores the status in `time2` for every non-interval row, so that
+    # column is a sentinel except where surv_status == 3.
+    is_interval <- surv_status == 3
+    time_upper <- ifelse(is_interval, surv_mat[, 2L], time)
+
+    # `time_lower` doubles as the counting-process entry time for status
+    # 0 and 1, where the likelihood forms H(stop) - H(start).  Surv
+    # "interval" carries no left truncation, so entry time is 0 outside the
+    # interval rows; using `time` there would cancel those rows out.
+    time_lower <- ifelse(is_interval, surv_mat[, 1L], 0)
   } else if (surv_type == "counting") {
     # Start-stop (counting process) format: Surv(start, stop, event)
     # Used for repeating events / epoch-decomposed longitudinal data.
