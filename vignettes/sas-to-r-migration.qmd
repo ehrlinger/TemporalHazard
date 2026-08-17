@@ -498,7 +498,7 @@ hazard contributions instead of just the total.
 ## Known limitations vs. SAS HAZARD
 
 A SAS HAZARD veteran migrating to `TemporalHazard` should be aware of
-the following scope limits as of v0.9.8.  Detailed status per feature is
+the following scope limits as of v1.2.0.  Detailed status per feature is
 tracked in `inst/dev/SAS-PARITY-GAP-ANALYSIS.md` and
 `inst/dev/DEVELOPMENT-PLAN.md`.
 
@@ -508,8 +508,12 @@ tracked in `inst/dev/SAS-PARITY-GAP-ANALYSIS.md` and
   two-way stepwise with SAS-style SLENTRY / SLSTAY thresholds,
   per-phase entry for multiphase, and a MOVE oscillation guard.
 - **Not yet supported:** FAST-screening (Lawless-Singhal approximate
-  Wald updates).  Every candidate currently gets a full refit, which
-  is slower but always correct.
+  Wald updates).  Much of what it exists to save is already gone, though:
+  the default `criterion = "score"` tests each candidate at the current
+  estimates and never refits to do it.  `criterion = "wald"` still refits
+  once per *entry* candidate.  Removals never did, under either criterion:
+  a drop is tested on the current model's Wald p-value against `slstay`,
+  which is what SAS does, and only the accepted drop is refitted.
 
 ### Per-phase time-varying windows
 
