@@ -186,10 +186,13 @@ test_that("scope refit works when the base fit's formula is a symbol", {
 
 test_that("stepwise selects identically whether the formula was literal", {
   data(avc)
-  phases <- function() list(
-    early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes"),
-    constant = hzr_phase("constant")
-  )
+  phases <- function() {
+    list(
+      early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                           fixed = "shapes"),
+      constant = hzr_phase("constant")
+    )
+  }
   ctl   <- list(n_starts = 1L, maxit = 500L)
   scope <- list(early = ~ age, constant = ~ age)
 
