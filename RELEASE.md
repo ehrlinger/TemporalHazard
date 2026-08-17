@@ -110,7 +110,18 @@ dev (X.Y.Z) accumulates, patch-bumping as fixes land
 3. `cran-comments.md` version heading matches `DESCRIPTION`; if a
    resubmission, each reviewer point is itemised with how it was addressed.
 4. `devtools::document()` is clean and `man/` is in sync.
-5. `R CMD check --as-cran` **with the manual built** → 0 errors, 0 warnings,
+5. **Adversarial review of the accumulated release diff.** Every PR is reviewed
+   on its own; nobody reviews the release as a whole, and by submission time
+   `dev` is typically dozens of commits ahead of `main`. Run the `r-reviewer`
+   agent (`.claude/agents/r-reviewer.md`) over `git diff main...dev`.
+
+   This step is **advisory**, unlike the rest of this checklist. It returns
+   findings to triage, not a pass/fail. Verify each one against the code before
+   acting -- and equally, do not let a clean report substitute for step 6. The
+   two catch different things: the check finds what static analysis sees in a
+   built tarball, the review finds what is wrong but passing, including prose
+   that contradicts the code. Run it *before* the check so fixes land first.
+6. `R CMD check --as-cran` **with the manual built** → 0 errors, 0 warnings,
    0 notes. Build the real tarball and check it, *not* `--no-manual`:
 
    ```sh
@@ -123,16 +134,16 @@ dev (X.Y.Z) accumulates, patch-bumping as fixes land
    tarball is < 5 MB. The built tarball must contain `build/vignette.rds` — if
    it is missing you get a "no prebuilt vignette index" NOTE (do **not** re-add
    `^build$` to `.Rbuildignore`; that strips the index).
-6. `devtools::check_win_devel()` (and optionally `rhub::rhub_check()`).
+7. `devtools::check_win_devel()` (and optionally `rhub::rhub_check()`).
    **This is the source of truth for the aspell NOTE** — the local `--as-cran`
    does *not* run the CRAN incoming aspell step unless `aspell` is installed,
    so it under-reports. Reconcile the `## NOTE disposition` section of
    `cran-comments.md` against the *win-builder* `00check.log`. See "Known
    benign NOTE" below.
-7. `urlchecker::url_check()` and `tools::package_dependencies(reverse = TRUE)`
+8. `urlchecker::url_check()` and `tools::package_dependencies(reverse = TRUE)`
    (revdeps must be handled; currently 0). doi.org links may 403 to automated
    checkers but resolve in browsers — note, don't chase.
-8. Submit: `devtools::submit_cran()` (writes `CRAN-SUBMISSION`). Submit from a
+9. Submit: `devtools::submit_cran()` (writes `CRAN-SUBMISSION`). Submit from a
    checkout of the release tree (normally `dev` at the release number, or
    `main` once merged) — the shipped tarball content is what matters, not which
    branch the working tree was on.

@@ -31,6 +31,13 @@ R CMD check --as-cran TemporalHazard_X.Y.Z.tar.gz
 
 Run the commands. Reading the code is not evidence, and neither is a subagent's report.
 
+Before opening the PR, and whenever the change touches an exported function or the
+likelihood, run the `r-reviewer` agent (`.claude/agents/r-reviewer.md`) over the diff. It is
+advisory: verify each finding against the code rather than acting on it, and do not let a
+clean report stand in for the commands above. `RELEASE.md` step 5 runs the same agent over
+the accumulated `main...dev` diff at release time, because per-PR review never sees the
+release as a whole.
+
 Four details there are load bearing:
 
 - **`document()` runs first, every time.** `man/` and `NAMESPACE` are generated. A stale
