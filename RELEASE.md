@@ -2,18 +2,22 @@
 
 Maintainer checklist for TemporalHazard. Not shipped (`.Rbuildignore`d).
 
-## Versioning convention (single-line, decide the bump at release)
+## Versioning convention (three digits, decide the bump at release)
 
-- **CRAN releases** carry a clean three-part version: `1.1.0`.
-- **Development versions** carry a fourth `.9000` component (`1.1.0.9000`), so
-  it is unambiguous whether a given install is the CRAN release or a dev build.
-- After a release `X.Y.Z` is accepted, the dev version becomes **`X.Y.Z.9000`**
-  — the *just-released* version plus `.9000`. It deliberately does **not**
-  encode the next release number.
-- **Decide the next number at release time, from what is actually in NEWS** —
-  breaking API → major, back-compatible features → minor, fixes only → patch.
-  Then strip `.9000` and set that number. You never submit a `.9000` version
-  to CRAN.
+- **Every version is a straight three-part number**: `1.1.0`, `1.2.0`, `1.2.1`.
+  Never a fourth component, and never a `.9000` dev suffix — not for dev
+  snapshots, not to satisfy a version-grep test, not anywhere.
+- **Acceptance itself never bumps the version.** `dev` stays at the number
+  that shipped; there is no placeholder to strip later and no bump to
+  remember. The version moves only when work moves it, per the next two
+  bullets.
+- **The patch digit moves when a fix actually lands**, not before: `1.2.0` →
+  `1.2.1` once there is work behind it.
+- **The minor and major digits are the maintainer's call, taken at release
+  time** from what is actually in NEWS — breaking API → major, back-compatible
+  features → minor, fixes only → patch. Accumulate under the current minor and
+  let one consolidated minor carry a whole feature set rather than spending a
+  new one per batch.
 - **The major digit is reserved for a deliberate product milestone**, and this
   overrides the mechanical rule above. A breaking change does **not** by itself
   force a major bump while the package is still working toward its first
@@ -35,28 +39,29 @@ Maintainer checklist for TemporalHazard. Not shipped (`.Rbuildignore`d).
 So the per-release cycle is:
 
 ```
-1.1.0 (released)  ->  1.1.0.9000 (dev, number TBD)  ->  accumulate work
-  ->  at release, decide from NEWS: 1.1.1 | 1.2.0 | 2.0.0  ->  submit
-  ->  accepted  ->  <new>.9000 (dev) ...
+1.1.0 (released)  ->  dev stays 1.1.0  ->  accumulate work, patch-bumping
+                                            as fixes land (1.1.1, 1.1.2 ...)
+  ->  at release, decide from NEWS: 1.1.3 | 1.2.0 | 2.0.0  ->  submit
+  ->  accepted  ->  dev stays at that number until work moves it ...
 ```
 
-**Do not pre-stamp the next number into the dev label.** A dev version of
-`1.2.0.9000` (or `1.1.1.9000`) silently commits a decision that should be made
-last, from the evidence. This is the mistake that produced the 2026-06 version
-confusion (`dev` was labelled `1.2.0.9000` for what was really incremental
-work, before `1.1.0` had even shipped). `1.1.0.9000` makes no such claim.
+**Do not pre-stamp a future release number into the version.** Labelling `dev`
+with the number you expect to ship silently commits a decision that should be
+made last, from the evidence. That is the mistake behind the 2026-06 version
+confusion, when `dev` was labelled for a minor release before `1.1.0` had even
+shipped and before the work existed to justify it.
 
 ## Branch model (default: single line)
 
 | Branch | Version | Role |
 |--------|---------|------|
 | `main` | the clean CRAN release (e.g. `1.1.0`) | the released/stable line; always == the latest version on CRAN. Tagged at each release. |
-| `dev`  | `<released>.9000` (e.g. `1.1.0.9000`) | the working line; accumulates the next release. The `.9000` just means "ahead of the last release, number TBD". |
+| `dev`  | the same three-part number as `main`, patch-bumped as fixes land | the working line; accumulates the next release. Carries no dev marker. |
 
-`main` carries the **clean** released version — no `.9000`. (Earlier releases
-put `.9000` on `main`; that was dropped after `1.1.0`. A README/badge tweak on
-`main` at the same version number is normal and fine — it does not need a
-version marker.)
+Both branches carry a clean three-part version. A README/badge tweak on `main`
+at the same version number is normal and fine — it does not need a version
+marker. (Historically `main` carried a fourth `.9000` component; that was
+dropped after `1.1.0`, and the convention was dropped entirely in 2026-08.)
 
 **Routing:**
 
@@ -80,7 +85,7 @@ parallel PRs" situation.
 ### When to diverge into a two-branch model
 
 Reserve the heavier git-flow split — `main` keeps shipping `1.1.x` patches
-while `dev` becomes a diverged **next-major** line (e.g. `2.0.0.9000`) — for a
+while `dev` becomes a diverged **next-major** line (e.g. `2.0.0`) — for a
 **genuine breaking rewrite** running in parallel with patch maintenance (the
 ggRandomForests-v4 situation). It carries a real cost: every `main` hotfix must
 be back-merged into `dev` or `dev` drifts from the patched line. Do **not** use
@@ -89,17 +94,17 @@ it as the default — it is not worth that tax for ordinary incremental cycles.
 **Release flow (default single line):**
 
 ```
-dev (X.Y.Z.9000) accumulates
+dev (X.Y.Z) accumulates, patch-bumping as fixes land
   -> at release, decide the next number N from NEWS scope
-  -> set DESCRIPTION + NEWS top heading to N (drop .9000) on dev
+  -> set DESCRIPTION + NEWS top heading to N on dev
   -> run the pre-submission gate (below), submit to CRAN
-  -> on acceptance: merge dev -> main (main = N, clean), tag vN, GitHub Release
-  -> bump dev -> N.9000, open the next cycle
+  -> on acceptance: merge dev -> main (main = N), tag vN, GitHub Release
+  -> dev stays at N; it moves again only when work lands (N patch-bumped)
 ```
 
 ## Pre-submission checklist
 
-1. `DESCRIPTION` `Version:` is a clean `X.Y.Z` (no `.9000`).
+1. `DESCRIPTION` `Version:` is a three-part `X.Y.Z` (no fourth component).
 2. `NEWS.md` top heading is `# TemporalHazard X.Y.Z` and describes the
    user-visible changes since the last CRAN release.
 3. `cran-comments.md` version heading matches `DESCRIPTION`; if a
@@ -128,7 +133,7 @@ dev (X.Y.Z.9000) accumulates
    (revdeps must be handled; currently 0). doi.org links may 403 to automated
    checkers but resolve in browsers — note, don't chase.
 8. Submit: `devtools::submit_cran()` (writes `CRAN-SUBMISSION`). Submit from a
-   checkout of the release tree (normally `dev` with the suffix stripped, or
+   checkout of the release tree (normally `dev` at the release number, or
    `main` once merged) — the shipped tarball content is what matters, not which
    branch the working tree was on.
 
@@ -168,39 +173,34 @@ keep the two in agreement.
      --title "TemporalHazard X.Y.Z" --notes-file <news-section.md>
    ```
 
-3. Bump **`dev`** (not `main`) to the next development version — `main` stays
-   clean at `X.Y.Z`:
+3. **Nothing to bump at this step.** `dev` stays at `X.Y.Z`, the number that
+   just shipped. Do not run `usethis::use_dev_version()` — it writes a fourth
+   `.9000` component, which this package does not use. The version moves later,
+   when work moves it: the patch digit once a fix actually lands.
 
-   ```r
-   # on a branch off dev:
-   usethis::use_dev_version()   # DESCRIPTION -> X.Y.Z.9000
-   ```
-
-   or manually: set `DESCRIPTION` `Version:` to `X.Y.Z.9000` and add a NEWS
-   heading `# TemporalHazard X.Y.Z.9000 (development version)`. PR to `dev`.
-
-4. Step 3 changes tracked files, so per the repo's mandatory git workflow it
-   goes through a branch + PR. Steps 1 and 2 (tag push, GitHub Release) are the
-   standard release-op exception.
+   Steps 1 and 2 (tag push, GitHub Release) are the standard release-op
+   exception to the branch + PR rule.
 
 The badge block (CRAN status + cranlogs + R-CMD-check / codecov / lint /
 pkgdown) was aligned at the first CRAN release (`1.0.3`) and the manual
 version-badge CI (`update-version-badge.yaml`) retired then — no badge work on
 subsequent releases.
 
-All subsequent development happens at `X.Y.Z.9000` on `dev` until the next
-release decides and strips the number for submission.
+All subsequent development happens at `X.Y.Z` on `dev`, patch-bumping as
+fixes land, until the next release decides the number to submit.
 
 ## Historical note
 
 - Releases through `1.0.2` used clean three-part versions only.
-- The `.9000` dev convention was adopted after `1.0.2`; `1.0.3` (accepted
+- A `.9000` dev convention was adopted after `1.0.2`; `1.0.3` (accepted
   2026-05-29) was the first to use it, under a **two-branch** model where
   `main` carried the released `.9000` and `dev` the next-version `.9000`.
+  **That convention was dropped entirely on 2026-08-17** — see the versioning
+  section above. Versions are three digits, always.
 - **2026-06-12:** moved to the **single-line, decide-the-bump-at-release**
   model documented above, after the `dev = 1.2.0.9000` mislabel (a minor bump
   pre-stamped before the work existed, while `1.1.0` was frozen on `main` but
   never shipped). `1.1.0` folded that work in and was accepted & published on
-  CRAN 2026-06-12; `main` now stays clean at the released number and `dev` is
-  `<released>.9000`.
+  CRAN 2026-06-12; `main` stays at the released number, and since 2026-08-17
+  so does `dev`.
 - Existing tags: `v0.1.0`, `v0.9.3`, `v1.0.0`, `v1.0.1`, `v1.0.3`, `v1.1.0`.
