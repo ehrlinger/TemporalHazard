@@ -97,7 +97,23 @@
   current_formula <- if (inherits(raw_formula, "formula")) {
     raw_formula
   } else {
-    eval(raw_formula, envir = current$call_env %||% parent.frame())
+    # Evaluating can fail outright when the formula was passed by variable
+    # and that binding is gone -- after saveRDS()/readRDS() in a new
+    # session, say.  Bare, the error reads "object 'f' not found", which
+    # names neither the fit at fault nor the remedy, and callers that wrap
+    # candidate refits in tryCatch() reduce it to a generic failure.
+    tryCatch(
+      eval(raw_formula, envir = current$call_env %||% parent.frame()),
+      error = function(e) {
+        stop("`current`'s stored model formula (", deparse(raw_formula),
+             ") could not be resolved: ", conditionMessage(e),
+             ". The formula was passed to `hazard()` by variable and that ",
+             "binding is no longer reachable -- for example after saving ",
+             "and reloading the fit in a new session. Refit the base model ",
+             "with the formula written at the `hazard()` call.",
+             call. = FALSE)
+      }
+    )
   }
   if (!inherits(current_formula, "formula")) {
     stop("`current`'s stored model formula (", deparse(raw_formula),
