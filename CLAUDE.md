@@ -15,7 +15,6 @@ offer to refresh it (`/regenerate-codemap`) rather than working from a guess.
 
 ## Prose
 
-`AGENTS.md` names the voice and the reader personas. In Claude Code, apply the
-`ehrlinger-writing` skill: it carries that voice, the persona menu and the project context,
-read from the vault sources. This repo has no `.claude/house-style.md` — the skill is the
-only route.
+`AGENTS.md` points at `.claude/house-style.md` for the house voice. In Claude Code, apply the
+`ehrlinger-writing` skill instead: it carries the same voice, reader persona and project
+context, kept in sync from the vault sources that `house-style.md` is composed from.
