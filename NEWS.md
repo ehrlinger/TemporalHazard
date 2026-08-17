@@ -62,7 +62,14 @@ selects.
 
 * `hzr_bootstrap()` gains a `scope` argument for embedded stepwise variable
   selection during each bootstrap replicate -- the R equivalent of SAS's
-  `%HAZBOOT` procedure. Each replicate runs a fresh `hzr_stepwise()`
+  `%HAZBOOT` procedure. **This is experimental**: the selection arguments and
+  the shape of what they return may change in a future release, and
+  `?hzr_bootstrap` says why under "Selection mode is experimental". The
+  fixed-formula bootstrap (`scope = NULL`) is unaffected and unchanged.
+  The short version: the design is still being read off production runs, and
+  a screen large enough to matter runs for hours while this function writes
+  nothing until its last replicate, so splitting a run across processes is
+  currently the caller's job. Each replicate runs a fresh `hzr_stepwise()`
   selection (starting from a fixed-shape refit of the base model) instead
   of a plain refit, so `summary$pct` reports the variable's selection
   frequency across resamples and `summary$mean`/`sd`/`ci_*` describe the
