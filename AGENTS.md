@@ -24,7 +24,8 @@ Rscript -e 'devtools::test()'           # 0 failures
 Then once per PR, not once per edit:
 
 ```bash
-git archive HEAD | tar -x -C "$TMPDIR/tree"     # commit first — see below
+mkdir -p "$TMPDIR/tree"                          # tar -C will not create it
+git archive HEAD | tar -x -C "$TMPDIR/tree"      # commit first — see below
 R CMD build "$TMPDIR/tree"
 R CMD check --as-cran TemporalHazard_X.Y.Z.tar.gz
 ```
