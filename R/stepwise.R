@@ -257,6 +257,12 @@ hzr_stepwise <- function(fit,
   current <- fit
   step_no <- 0L
   stopped_by_max_steps <- FALSE
+  # Candidates whose score statistic could not be computed, summed over
+  # steps.  Tracked so a screen that stopped because nothing was
+  # computable is distinguishable from one that stopped because nothing
+  # was good enough -- the two produce identical empty steps otherwise.
+  n_uncomputable_scores <- 0L
+  stopped_uncomputable  <- FALSE
 
   # `crit` is the criterion actually applied to THIS step, which is not always
   # the run's `criterion`: score is entry-only, so its drops are decided by
@@ -357,6 +363,12 @@ hzr_stepwise <- function(fit,
         force_out = effective_force_out
       ), extra_args))
 
+      n_uncomputable_scores <- n_uncomputable_scores +
+        (fwd$n_uncomputable %||% 0L)
+      if (identical(fwd$stop_reason, "scores_uncomputable")) {
+        stopped_uncomputable <- TRUE
+      }
+
       if (fwd$accepted) {
         current <- fwd$fit
         record_step("enter", fwd)
@@ -429,8 +441,20 @@ hzr_stepwise <- function(fit,
     slstay    = slstay,
     max_steps = max_steps,
     max_move  = max_move,
-    hit_max_steps = stopped_by_max_steps
+    hit_max_steps = stopped_by_max_steps,
+    n_uncomputable_scores = n_uncomputable_scores,
+    stopped_uncomputable  = stopped_uncomputable
   )
+
+  if (stopped_uncomputable) {
+    warning("Stepwise selection stopped because the score statistic ",
+            "could not be computed for any remaining candidate (",
+            n_uncomputable_scores, " candidate score(s) were NA across the ",
+            "run). This is not the same as no candidate meeting `slentry`: ",
+            "the screen stopped without being able to test them. Usual ",
+            "causes are a degenerate or collinear candidate column and an ",
+            "uninvertible information matrix on this data.", call. = FALSE)
+  }
   result$trace_msg  <- trace_msg
   result$elapsed    <- elapsed
   result$final_call <- call

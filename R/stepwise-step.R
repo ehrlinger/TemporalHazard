@@ -366,9 +366,22 @@
   all_scores <- do.call(rbind, rows)
 
   valid <- which(!is.na(all_scores$score))
+
+  # A candidate whose Q could not be computed (degenerate or collinear
+  # column, uninvertible nuisance block) scores NA and drops out of `valid`
+  # silently.  Count them so the caller can tell a screen that finished from
+  # one that could not run: both otherwise return the same empty step.
+  n_uncomputable <- sum(is.na(all_scores$score))
+
   if (length(valid) == 0L) {
     out <- null_result()
-    out$all_scores <- all_scores
+    out$all_scores     <- all_scores
+    out$n_uncomputable <- n_uncomputable
+    out$stop_reason    <- if (n_uncomputable > 0L) {
+      "scores_uncomputable"
+    } else {
+      "no_candidates"
+    }
     return(out)
   }
 
@@ -377,7 +390,9 @@
 
   if (!(best$score < slentry)) {
     out <- null_result()
-    out$all_scores <- all_scores
+    out$all_scores     <- all_scores
+    out$n_uncomputable <- n_uncomputable
+    out$stop_reason    <- "no_candidate_met_slentry"
     return(out)
   }
 
@@ -404,6 +419,8 @@
     out <- null_result()
     out$all_scores     <- all_scores
     out$refit_failures <- failure_token
+    out$n_uncomputable <- n_uncomputable
+    out$stop_reason    <- "refit_failed"
     return(out)
   }
 
@@ -418,7 +435,9 @@
     stat      = best$stat,
     df        = best$df,
     all_scores = all_scores,
-    refit_failures = character()
+    refit_failures = character(),
+    n_uncomputable = n_uncomputable,
+    stop_reason    = "accepted"
   )
 }
 

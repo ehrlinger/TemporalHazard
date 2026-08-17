@@ -242,3 +242,64 @@ test_that("an unresolvable stored formula errors clearly, not obscurely", {
     "could not be resolved"
   )
 })
+
+
+# Uncomputable scores are not the same as "nothing met slentry" -------------
+#
+# Under criterion = "score", a candidate whose Q statistic cannot be computed
+# (degenerate or collinear column, uninvertible nuisance block) yields NA and
+# is dropped from `valid`.  When that happens to every candidate the step
+# returns the same shape as a legitimate "no candidate cleared slentry" stop,
+# so a broken screen and a finished one are indistinguishable.
+
+.uncomputable_fixture <- function() {
+  data(avc)
+  avc$constcol <- 1.0        # degenerate: Q is NA, but the column is numeric
+  phases <- list(
+    early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes"),
+    constant = hzr_phase("constant")
+  )
+  fit <- hazard(Surv(int_dead, dead) ~ 1, data = avc, dist = "multiphase",
+                phases = phases, fit = TRUE,
+                control = list(n_starts = 1L, maxit = 400L))
+  list(fit = fit, data = avc)
+}
+
+test_that("a step whose scores are all uncomputable says so", {
+  fx <- .uncomputable_fixture()
+
+  step <- .hzr_stepwise_forward_step(
+    fx$fit, scope = list(early = ~ constcol), data = fx$data,
+    criterion = "score", slentry = 0.5
+  )
+
+  expect_false(step$accepted)
+  expect_identical(step$stop_reason, "scores_uncomputable")
+  expect_equal(step$n_uncomputable, 1L)
+})
+
+test_that("a step that simply found nothing good enough is distinguishable", {
+  fx <- .uncomputable_fixture()
+
+  # `age` scores fine (p ~ 1e-4) but cannot clear an impossible slentry.
+  step <- .hzr_stepwise_forward_step(
+    fx$fit, scope = list(early = ~ age), data = fx$data,
+    criterion = "score", slentry = 1e-12
+  )
+
+  expect_false(step$accepted)
+  expect_identical(step$stop_reason, "no_candidate_met_slentry")
+  expect_equal(step$n_uncomputable, 0L)
+})
+
+test_that("hzr_stepwise warns when a screen stops on uncomputable scores", {
+  fx <- .uncomputable_fixture()
+
+  expect_warning(
+    sw <- hzr_stepwise(fx$fit, scope = list(early = ~ constcol),
+                       data = fx$data, direction = "forward",
+                       criterion = "score", slentry = 0.5, trace = FALSE),
+    "could not be computed"
+  )
+  expect_gt(sw$criteria$n_uncomputable_scores, 0L)
+})
