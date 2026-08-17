@@ -24,5 +24,19 @@ counting-process (start-stop) data.
 For counting-process (start-stop) data, use \code{Surv(start, stop, event)}.
 The start times are returned as \code{time_lower} and stop times as \code{time},
 enabling the likelihood to compute \code{H(stop) - H(start)} per epoch.
+
+\code{Surv()} and this package code censoring status differently, so the
+returned \code{status} is translated, not passed through:\tabular{llll}{
+   Meaning \tab TemporalHazard \tab \code{Surv} "left" \tab \code{Surv} "interval" \cr
+   left \tab \code{-1} \tab \code{0} \tab \code{2} \cr
+   right \tab \code{0} \tab -- \tab \code{0} \cr
+   event \tab \code{1} \tab \code{1} \tab \code{1} \cr
+   interval \tab \code{2} \tab -- \tab \code{3} \cr
+}
+
+
+Under \code{type = "interval"}, \code{Surv()} reuses the \code{time2} column to hold the
+status of any non-interval row, so an upper bound is read only where the
+row is genuinely interval-censored.
 }
 \keyword{internal}

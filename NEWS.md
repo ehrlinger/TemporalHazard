@@ -86,6 +86,32 @@ selects.
   data and seed. Found running a 500-replicate production bagging job that
   completed in 9.5 minutes and produced no usable output.
 
+* **The formula interface mistranslated left- and interval-censored
+  `Surv()` objects.** `survival::Surv()` and this package use different
+  integer codings for censoring status, and the parser passed `Surv()`'s
+  through unchanged. `Surv(time, event, type = "left")` codes a left-censored
+  row as `0`, which this package reads as *right*-censored: a wrong answer
+  with no error, warning, or other outward sign. Under
+  `type = "interval"` / `"interval2"`, `Surv()` codes rows `0`/`1`/`2`/`3`
+  for right / event / left / interval against this package's `0`/`1`/`-1`/`2`,
+  so left-censored rows were read as interval-censored and interval rows
+  carried a status the likelihood does not recognise at all.
+
+  Two related faults in the same branch: `Surv()` stores the status in its
+  `time2` column for every non-interval row, and the parser read that
+  sentinel as an upper bound; and it set `time_lower` for every row, which
+  the likelihood treats as a counting-process *entry* time when status is
+  `0` or `1`, cancelling each exact-event and right-censored row out of the
+  likelihood. Together these made an interval-censored formula fit return
+  the optimizer's failure sentinel rather than a fit.
+
+  Status codes are now translated, an upper bound is taken only from a
+  genuine interval row, and `time_lower` left-truncates only interval rows.
+  A regression test asserts that a `Surv(type = "interval")` fit reproduces
+  the equivalent vector-interface fit to 1e-8 in log-likelihood.
+  Found when a production study's three interval-censored records could only
+  be expressed through the vector interface.
+
 * A fit that cannot compute a Hessian now says so. The analytic Hessian
   declines for left- and interval-censored rows by design, the optimizer falls
   back to `numDeriv::hessian()`, and `numDeriv` is a `Suggests` -- so on a

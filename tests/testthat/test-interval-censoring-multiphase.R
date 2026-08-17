@@ -139,3 +139,59 @@ test_that("multiphase fit converges on an interval-censored sample", {
   # Two intercepts estimated (early + constant), shapes held fixed.
   expect_length(fit$fit$theta, 5L)
 })
+
+# ---------------------------------------------------------------------------
+# Formula interface parity
+#
+# The production job that surfaced this could not express its three
+# interval-censored records through the formula interface -- the fit returned
+# the optimizer's failure sentinel -- and fell back to the vector interface,
+# which in turn could not be bootstrapped.  The two interfaces must describe
+# the same data.
+# ---------------------------------------------------------------------------
+
+test_that("Surv(type = 'interval') fits identically to the vector interface", {
+  set.seed(20260817)
+  n  <- 400
+  df <- data.frame(x = rnorm(n))
+  t  <- rexp(n, rate = 0.25 * exp(0.6 * df$x))
+
+  # Statuses: right-censored at 6, exact event, or observed in an interval.
+  ev <- ifelse(t >= 6, 0L, 1L)
+  t  <- pmin(t, 6)
+  iv <- which(ev == 1L)[1:40]        # 40 events known only within a window
+  lo <- t
+  hi <- rep(NA_real_, n)
+  lo[iv] <- pmax(t[iv] - 0.4, 1e-6)
+  hi[iv] <- t[iv] + 0.4
+  ev[iv] <- 3L                        # Surv "interval" code
+
+  ph  <- mp_ic_phases()
+  ctl <- list(n_starts = 1, maxit = 2000)
+
+  df$lo <- lo; df$hi <- hi; df$ev <- ev
+  fit_formula <- hazard(survival::Surv(lo, hi, ev, type = "interval") ~ x,
+                        data = df, dist = "multiphase", phases = ph,
+                        fit = TRUE, control = ctl)
+
+  # Same data spelled out in TemporalHazard's own coding.
+  fit_vector <- hazard(
+    time        = lo,
+    status      = ifelse(ev == 3L, 2, ev),
+    time_lower  = ifelse(ev == 3L, lo, 0),
+    time_upper  = ifelse(ev == 3L, hi, lo),
+    x           = as.matrix(df["x"]),
+    dist = "multiphase", phases = ph, fit = TRUE, control = ctl)
+
+  # Assert both fits produced a real number before comparing them -- two
+  # absent objectives compare equal and would report parity that was never
+  # tested.
+  expect_true(is.finite(fit_formula$fit$objective))
+  expect_true(is.finite(fit_vector$fit$objective))
+  expect_length(coef(fit_formula), length(coef(fit_vector)))
+
+  expect_equal(fit_formula$fit$objective, fit_vector$fit$objective,
+               tolerance = 1e-8)
+  expect_equal(unname(coef(fit_formula)), unname(coef(fit_vector)),
+               tolerance = 1e-6)
+})
