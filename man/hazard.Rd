@@ -23,7 +23,14 @@ hazard(
 )
 }
 \arguments{
-\item{formula}{Optional formula of the form \code{Surv(time, status) ~ predictors}.
+\item{formula}{Optional formula with a \code{Surv()} object on the left.
+Right-censored (\code{Surv(time, status)}), left-censored
+(\code{Surv(time, event, type = "left")}), interval-censored
+(\code{type = "interval"} or \code{"interval2"}) and counting-process
+(\code{Surv(start, stop, event)}) forms are all accepted. \code{Surv()} codes
+censoring status with different integers than this package does; the
+formula path translates them, so write \code{Surv()}'s codes here and this
+package's codes when passing \code{status} directly.
 When provided, overrides direct time/status/x arguments and extracts from data.
 Example: \code{hazard(Surv(time, status) ~ x1 + x2, data = df, dist = "weibull", fit = TRUE)}.}
 

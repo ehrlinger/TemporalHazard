@@ -355,10 +355,21 @@ The package encodes censoring type in the `status` vector:
 | `2` | Interval-censored | Event occurred in `(time_lower, time_upper)` |
 | `-1` | Left-censored | Event occurred before `time` (upper bound) |
 
-For interval-censored rows, supply both `time_lower` and `time_upper`
-directly to `hazard()`.  The formula interface handles `Surv(time, status)`
-for right-censored data and `Surv(start, stop, event)` for counting-process
-(repeating-event) data; interval censoring is passed via the direct arguments.
+For interval-censored rows, supply both `time_lower` and `time_upper`.  You
+can pass them as direct arguments to `hazard()`, or hand it a `Surv()`
+object instead: `Surv(lower, upper, event, type = "interval")` and
+`Surv(lower, upper, type = "interval2")` both work, as do
+`Surv(time, event, type = "left")` for left censoring and
+`Surv(start, stop, event)` for counting-process (repeating-event) data.
+
+One thing to watch, because the two interfaces do not use the same numbers.
+The table above is this package's coding, and it is what you pass to the
+`status` argument.  `Surv()` has its own scheme --- under
+`type = "interval"` it reads `0` as right-censored, `1` as an exact event,
+`2` as left-censored and `3` as interval-censored --- and `hazard()`
+translates it for you when it parses the formula.  So use whichever coding
+belongs to the interface you are writing in, and don't carry one set of
+codes across to the other.
 
 ### Mixed censoring example
 

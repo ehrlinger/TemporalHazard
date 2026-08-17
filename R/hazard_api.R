@@ -111,7 +111,14 @@ NULL
 #' @param time_upper Optional numeric upper bound vector for censoring intervals.
 #'   Used when `status %in% c(-1, 2)`; defaults to `time` if NULL.
 #' @param x Optional design matrix (or data frame coercible to matrix).
-#' @param formula Optional formula of the form `Surv(time, status) ~ predictors`.
+#' @param formula Optional formula with a `Surv()` object on the left.
+#'   Right-censored (`Surv(time, status)`), left-censored
+#'   (`Surv(time, event, type = "left")`), interval-censored
+#'   (`type = "interval"` or `"interval2"`) and counting-process
+#'   (`Surv(start, stop, event)`) forms are all accepted. `Surv()` codes
+#'   censoring status with different integers than this package does; the
+#'   formula path translates them, so write `Surv()`'s codes here and this
+#'   package's codes when passing `status` directly.
 #'   When provided, overrides direct time/status/x arguments and extracts from data.
 #'   Example: `hazard(Surv(time, status) ~ x1 + x2, data = df, dist = "weibull", fit = TRUE)`.
 #' @param data Optional data frame containing variables referenced in formula.
