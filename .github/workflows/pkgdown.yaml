@@ -1,9 +1,17 @@
 name: pkgdown
 
 on:
+  # A commit that only touches the generated house-style artifact cannot change
+  # the package: .claude is in .Rbuildignore, so it never reaches the build.
+  # Running this on such a commit burns runner minutes and queues ahead of
+  # checks that can actually fail.
   push:
+    paths-ignore:
+      - '.claude/**'
     branches: [main, master, dev]
   pull_request:
+    paths-ignore:
+      - '.claude/**'
     branches: [main, master, dev]
   workflow_dispatch:
 
