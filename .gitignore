@@ -25,11 +25,6 @@ vignettes/*.R
 /docs
 /doc/
 /Meta/
-# Everything under .claude is personal and stays out of the repo, EXCEPT the
-# few files that are shared project configuration. settings.local.json in
-# particular is a per-machine permissions allowlist and must stay ignored.
-# house-style.md is a generated artifact that CI verifies, so it must be
-# tracked or the house-style job fails with nothing to check.
 .claude/*
 !.claude/house-style.md
 !.claude/agents/
