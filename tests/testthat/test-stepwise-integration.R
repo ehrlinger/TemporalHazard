@@ -303,3 +303,62 @@ test_that("hzr_stepwise warns when a screen stops on uncomputable scores", {
   )
   expect_gt(sw$criteria$n_uncomputable_scores, 0L)
 })
+
+
+# A formula passed by variable must work everywhere, not just in the refit ----
+#
+# #117 fixed .hzr_refit_with_scope(), and NEWS said the by-symbol defect
+# "also affected hzr_stepwise() directly" and was fixed. Two sibling sites in
+# .hzr_stepwise_candidates() still deparsed the stored call, so the default
+# scope = NULL path raised `invalid formula "f": not a call` -- verbatim the
+# string NEWS claims no longer occurs. Both distributions reach it.
+
+test_that("scope = NULL works when the base formula was passed by variable", {
+  data(avc)
+  avc <- na.omit(avc)
+
+  f    <- Surv(int_dead, dead) ~ age
+  base <- hazard(f, data = avc, dist = "weibull", fit = TRUE,
+                 theta = c(mu = 0.01, nu = 0.5, 0))
+  expect_true(is.symbol(base$call$formula))
+
+  sw <- hzr_stepwise(base, scope = NULL, data = avc, direction = "forward",
+                     slentry = 0.05, trace = FALSE)
+  expect_s3_class(sw, "hazard")
+  # The Surv() response columns must not be offered as candidates.
+  expect_false(any(c("int_dead", "dead") %in% sw$steps$variable))
+})
+
+test_that("scope = NULL works by variable for multiphase too", {
+  data(avc)
+  avc <- na.omit(avc)
+
+  g   <- Surv(int_dead, dead) ~ 1
+  ph  <- list(early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                                fixed = "shapes"),
+              constant = hzr_phase("constant"))
+  fit <- hazard(g, data = avc, dist = "multiphase", phases = ph, fit = TRUE,
+                control = list(n_starts = 1L, maxit = 400L))
+  expect_true(is.symbol(fit$call$formula))
+
+  cands <- .hzr_stepwise_candidates(fit, scope = NULL, data = avc)
+  expect_gt(length(cands), 0L)
+  expect_false(any(vapply(cands, function(c) c$var, character(1L)) %in%
+                     c("int_dead", "dead")))
+})
+
+test_that("scope = NULL keeps logical columns and drops unmodellable ones", {
+  # Whether a 0/1 field arrives logical or numeric depends on the reader that
+  # built the frame, not on the variable. Dropping logicals would make the
+  # default scope silently narrower for one of two equivalent read paths.
+  d <- data.frame(
+    t    = c(2, 4, 6, 8, 10, 12, 14, 16),
+    ev   = c(1L, 0L, 1L, 1L, 0L, 1L, 1L, 0L),
+    num  = c(1, 2, 3, 4, 5, 6, 7, 8),
+    flag = c(TRUE, FALSE, TRUE, TRUE, FALSE, TRUE, FALSE, TRUE),
+    chr  = letters[1:8],
+    stringsAsFactors = FALSE
+  )
+  expect_equal(.hzr_modellable_vars(d, c("num", "flag", "chr")),
+               c("num", "flag"))
+})
