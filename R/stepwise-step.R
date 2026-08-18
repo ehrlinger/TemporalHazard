@@ -36,10 +36,14 @@
     if (is.null(scope)) {
       # Default: all data-frame vars (excluding Surv components and
       # force_out) are candidates for every phase.
-      lhs_vars <- all.vars(stats::as.formula(
-        deparse(fit$call$formula)
-      )[[2L]])
+      stored <- .hzr_stored_formula(fit)
+      lhs_vars <- if (is.null(stored)) character() else all.vars(stored[[2L]])
       data_vars <- setdiff(colnames(data), c(lhs_vars, force_out))
+      # Under scope = NULL the *package* picks the candidates, so a column
+      # it cannot model is its own bad choice, not the caller's. Drop the
+      # non-numeric ones rather than erroring on them. An explicit scope
+      # still errors, because there the caller named the column.
+      data_vars <- data_vars[vapply(data[data_vars], is.numeric, logical(1L))]
       scope <- setNames(
         lapply(phase_names, function(p) {
           rhs_syms <- data_vars
@@ -79,12 +83,14 @@
 
   # Single-distribution
   if (is.null(scope)) {
-    f <- fit$call$formula
-    if (!is.null(f) && !inherits(f, "formula")) {
-      f <- stats::as.formula(deparse(f))
-    }
+    f <- .hzr_stored_formula(fit)
     lhs_vars <- if (is.null(f)) character() else all.vars(f[[2L]])
     data_vars <- setdiff(colnames(data), c(lhs_vars, force_out))
+      # Under scope = NULL the *package* picks the candidates, so a column
+      # it cannot model is its own bad choice, not the caller's. Drop the
+      # non-numeric ones rather than erroring on them. An explicit scope
+      # still errors, because there the caller named the column.
+      data_vars <- data_vars[vapply(data[data_vars], is.numeric, logical(1L))]
   } else {
     if (inherits(scope, "formula")) {
       data_vars <- .hzr_formula_rhs_terms(scope)

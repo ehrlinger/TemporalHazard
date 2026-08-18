@@ -135,6 +135,22 @@ selects.
   fitting a production interval-censored study.
 
 
+* **`hzr_stepwise(scope = NULL)` still failed on a formula passed by
+  variable.** The fix for that defect reached `.hzr_refit_with_scope()` but
+  not three sibling sites, so the default-scope path still raised
+  `invalid formula "f": not a call` -- the very string the entry below says
+  no longer occurs. All four sites now resolve the stored formula through one
+  internal helper, so a fifth cannot drift: `match.call()` records `formula`
+  unevaluated, and `deparse(quote(f))` is `"f"`, which `as.formula()` rejects.
+
+  Two consequences of that path becoming reachable, both fixed here.
+  `scope = NULL` now skips non-numeric columns instead of erroring on them:
+  under an explicit scope the caller named the column, so an error is right,
+  but under `scope = NULL` the package enumerates the candidates itself and a
+  column it cannot model is its own choice to make better. Any data frame
+  carrying a character or factor column -- which is most of them -- was
+  otherwise unusable with the default scope.
+
 * `hzr_bootstrap()` no longer returns a silent `n_success = 0` (and
   `n_failed = n_boot`, with no error and no warning) when the model was fitted
   inside a function. `hazard()` stored its call but not the environment that
