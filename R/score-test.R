@@ -544,7 +544,13 @@
 #' @noRd
 .hzr_score_q <- function(current, var, phase = NULL, data,
                          nuisance = NULL) {
-  na_result <- list(stat = NA_real_, df = 1L, p_value = NA_real_)
+  # Every NA return carries WHY. The reasons are not interchangeable: a
+  # collinear column should be dropped, while an indefinite information matrix
+  # usually means the candidate is among the strongest on offer. Reporting the
+  # second as the first tells a user to discard their best variable.
+  na_result <- function(reason) {
+    list(stat = NA_real_, df = 1L, p_value = NA_real_, reason = reason)
+  }
 
   # `data` must be row-aligned with the fit: the candidate column is read from
   # `data` while the score is evaluated on the fit's own stored rows. A caller
@@ -563,23 +569,23 @@
 
   xcand <- data[[var]]
   if (is.null(xcand) || !is.numeric(xcand) || anyNA(xcand)) {
-    return(na_result)
+    return(na_result("non_numeric"))
   }
   s <- stats::sd(xcand)
   if (!is.finite(s) || s == 0) {
-    return(na_result)
+    return(na_result("constant"))
   }
   if (is.null(nuisance)) nuisance <- .hzr_score_nuisance(current)
   # A nuisance block that exists but could not be inverted must not fall
   # through to an unadjusted (too large) v_beta.
-  if (!isTRUE(nuisance$ok)) return(na_result)
+  if (!isTRUE(nuisance$ok)) return(na_result("nuisance_singular"))
 
   exp_ <- .hzr_score_expand(current, var, phase, data)
-  if (is.null(exp_)) return(na_result)
+  if (is.null(exp_)) return(na_result("not_expandable"))
 
   grad <- .hzr_score_gradient(current, exp_)
   info <- .hzr_score_information_expanded(current, exp_)
-  if (is.null(grad) || is.null(info)) return(na_result)
+  if (is.null(grad) || is.null(info)) return(na_result("no_information"))
 
   b <- exp_$beta_idx
   u_beta <- grad[b]
@@ -592,17 +598,109 @@
     v_beta <- i_bb - as.numeric(i_bt %*% nuisance$inv %*% t(i_bt))
   }
 
-  # A collinear candidate drives I_bt %*% solve(I_tt) %*% I_tb -> I_bb, so
-  # v_beta collapses towards zero from ABOVE: an absolute `v_beta <= 0` test
-  # never fires, leaves v_beta ~ 1e-14, and Q ~ 1e15 wins the step -- exactly
-  # the failure the NA contract exists to prevent. Floor v_beta relative to the
-  # unadjusted i_bb it is a difference of, at the scale where cancellation has
-  # eaten the significant digits.
-  if (!is.finite(u_beta) || !is.finite(v_beta) || !is.finite(i_bb) ||
-        v_beta <= i_bb * sqrt(.Machine$double.eps)) {
-    return(na_result)
+  if (!is.finite(u_beta) || !is.finite(v_beta) || !is.finite(i_bb)) {
+    return(na_result("nonfinite"))
+  }
+
+  # v_beta is a Schur complement of the OBSERVED information at beta = 0, and
+  # observed information is not positive definite away from a maximum. Two
+  # unrelated failures both land on "v_beta is unusable", and they carry
+  # OPPOSITE meanings:
+  #
+  #   v_beta < 0   the log-likelihood curves UPWARD in beta at 0, so the
+  #                quadratic approximation the score test rests on does not
+  #                hold there. Reached when the candidate's effect is far from
+  #                zero -- that is, when it is a STRONG candidate -- and also
+  #                if `current` has not truly converged.
+  #   0 <= v_beta  collinearity. I_bt %*% solve(I_tt) %*% I_tb -> I_bb, so the
+  #     <= floor   adjusted variance collapses towards zero FROM ABOVE: an
+  #                absolute `v_beta <= 0` test never fires, leaves v_beta
+  #                ~ 1e-14, and Q ~ 1e15 wins the step. Floor it relative to
+  #                the i_bb it is a difference of, at the scale where
+  #                cancellation has eaten the significant digits.
+  #
+  # The negative branch also widens the guard slightly: with i_bb < 0 the old
+  # single floor admitted a slightly negative v_beta and returned a negative
+  # Q. A variance is never negative, so that is now an NA like any other.
+  if (v_beta < 0) {
+    return(na_result("information_indefinite"))
+  }
+  if (v_beta <= i_bb * sqrt(.Machine$double.eps)) {
+    return(na_result("collinear"))
   }
   stat <- (u_beta^2) / v_beta
   list(stat = stat, df = 1L,
-       p_value = stats::pchisq(stat, df = 1L, lower.tail = FALSE))
+       p_value = stats::pchisq(stat, df = 1L, lower.tail = FALSE),
+       reason = NA_character_)
+}
+
+
+#' One-line explanation of an unscorable candidate
+#'
+#' Maps `.hzr_score_q()`'s reason codes to prose for a warning. An unknown code
+#' passes through as itself, so a code added later still reports rather than
+#' silently becoming an empty string.
+#'
+#' @noRd
+.hzr_score_reason_text <- function(reason) {
+  txt <- c(
+    information_indefinite = paste(
+      "the observed information at beta = 0 was indefinite. That usually means",
+      "the candidate's effect is too large for the score test's approximation",
+      "at zero, so these are typically STRONG candidates rather than",
+      "degenerate ones; `criterion = \"wald\"` tests them. It is also reached",
+      "when the current fit has not truly converged"
+    ),
+    collinear = "the candidate was collinear with the current model",
+    constant  = "the candidate column was constant",
+    non_numeric = "the candidate column was not numeric, or held NA",
+    nuisance_singular = paste(
+      "the current model's information matrix could not be inverted, so no",
+      "candidate could be scored at that step"
+    ),
+    no_information = "no observed information was available for the candidate",
+    not_expandable = "the candidate could not be added to the model",
+    nonfinite = "the score or its variance was not finite"
+  )
+  out <- unname(txt[reason])
+  out[is.na(out)] <- reason[is.na(out)]
+  out
+}
+
+#' Tally reason codes into a named integer vector, commonest first
+#'
+#' @noRd
+.hzr_tally_reasons <- function(reasons) {
+  reasons <- reasons[!is.na(reasons)]
+  if (length(reasons) == 0L) {
+    return(stats::setNames(integer(0), character(0)))
+  }
+  tab <- sort(table(reasons), decreasing = TRUE)
+  stats::setNames(as.integer(tab), names(tab))
+}
+
+#' Add two reason tallies together
+#'
+#' @noRd
+.hzr_merge_reasons <- function(a, b) {
+  if (length(b) == 0L) return(a)
+  if (length(a) == 0L) return(b)
+  keys <- union(names(a), names(b))
+  out <- stats::setNames(integer(length(keys)), keys)
+  out[names(a)] <- out[names(a)] + as.integer(a)
+  out[names(b)] <- out[names(b)] + as.integer(b)
+  sort(out, decreasing = TRUE)
+}
+
+#' Render a reason tally as "n x <prose>" lines
+#'
+#' @noRd
+.hzr_format_reasons <- function(tally) {
+  if (length(tally) == 0L) return("")
+  paste0(
+    " Causes: ",
+    paste0(as.integer(tally), " x ", .hzr_score_reason_text(names(tally)),
+           collapse = "; "),
+    "."
+  )
 }

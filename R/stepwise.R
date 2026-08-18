@@ -134,7 +134,15 @@
 #'     \item{\code{scope}}{Record of the candidate scope, plus
 #'       `force_in`, `force_out`, and the frozen set.}
 #'     \item{\code{criteria}}{Named list of the threshold / direction
-#'       settings actually applied.}
+#'       settings actually applied, plus, under `criterion = "score"`,
+#'       `n_uncomputable_scores` (how many candidate scores were `NA`),
+#'       `uncomputable_reasons` (a named integer vector of *why*) and
+#'       `stopped_uncomputable`. Read `uncomputable_reasons` before treating
+#'       an unscored candidate as a bad one: `information_indefinite` marks
+#'       candidates whose effect is too large for the score test's
+#'       approximation at zero, which are typically the strongest variables
+#'       on offer rather than degenerate ones. `criterion = "wald"` tests
+#'       them.}
 #'     \item{\code{trace_msg}}{Character vector of the trace lines,
 #'       captured regardless of the `trace` flag.}
 #'     \item{\code{elapsed}}{`difftime` from start to finish.}
@@ -262,6 +270,7 @@ hzr_stepwise <- function(fit,
   # computable is distinguishable from one that stopped because nothing
   # was good enough -- the two produce identical empty steps otherwise.
   n_uncomputable_scores <- 0L
+  uncomputable_reasons  <- stats::setNames(integer(0), character(0))
   stopped_uncomputable  <- FALSE
 
   # `crit` is the criterion actually applied to THIS step, which is not always
@@ -365,6 +374,9 @@ hzr_stepwise <- function(fit,
 
       n_uncomputable_scores <- n_uncomputable_scores +
         (fwd$n_uncomputable %||% 0L)
+      uncomputable_reasons <- .hzr_merge_reasons(
+        uncomputable_reasons, fwd$uncomputable_reasons
+      )
       if (identical(fwd$stop_reason, "scores_uncomputable")) {
         stopped_uncomputable <- TRUE
       }
@@ -443,17 +455,33 @@ hzr_stepwise <- function(fit,
     max_move  = max_move,
     hit_max_steps = stopped_by_max_steps,
     n_uncomputable_scores = n_uncomputable_scores,
+    uncomputable_reasons  = uncomputable_reasons,
     stopped_uncomputable  = stopped_uncomputable
   )
+
+  n_indefinite <- unname(uncomputable_reasons["information_indefinite"])
+  if (is.na(n_indefinite)) n_indefinite <- 0L
 
   if (stopped_uncomputable) {
     warning("Stepwise selection stopped because the score statistic ",
             "could not be computed for any remaining candidate (",
             n_uncomputable_scores, " candidate score(s) were NA across the ",
             "run). This is not the same as no candidate meeting `slentry`: ",
-            "the screen stopped without being able to test them. Usual ",
-            "causes are a degenerate or collinear candidate column and an ",
-            "uninvertible information matrix on this data.", call. = FALSE)
+            "the screen stopped without being able to test them.",
+            .hzr_format_reasons(uncomputable_reasons), call. = FALSE)
+  } else if (n_indefinite > 0L) {
+    # The run finished normally, so the branch above stays quiet -- but a
+    # candidate the score test could not evaluate at beta = 0 is usually one
+    # with a LARGE effect, and it was passed over in favour of candidates that
+    # could be scored.  A completed run is where that is least visible and
+    # most misleading, so it warns on its own.
+    warning("Stepwise selection completed, but ", n_indefinite,
+            " candidate score(s) could not be computed because ",
+            .hzr_score_reason_text("information_indefinite"),
+            ". Those candidates were passed over rather than tested, so the ",
+            "selected set may omit strong variables. Re-run with ",
+            "`criterion = \"wald\"` to test them; see ",
+            "`$criteria$uncomputable_reasons`.", call. = FALSE)
   }
   result$trace_msg  <- trace_msg
   result$elapsed    <- elapsed

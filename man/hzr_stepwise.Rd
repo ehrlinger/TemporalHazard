@@ -96,7 +96,15 @@ frozen action; see Details.}
 \item{\code{scope}}{Record of the candidate scope, plus
 \code{force_in}, \code{force_out}, and the frozen set.}
 \item{\code{criteria}}{Named list of the threshold / direction
-settings actually applied.}
+settings actually applied, plus, under \code{criterion = "score"},
+\code{n_uncomputable_scores} (how many candidate scores were \code{NA}),
+\code{uncomputable_reasons} (a named integer vector of \emph{why}) and
+\code{stopped_uncomputable}. Read \code{uncomputable_reasons} before treating
+an unscored candidate as a bad one: \code{information_indefinite} marks
+candidates whose effect is too large for the score test's
+approximation at zero, which are typically the strongest variables
+on offer rather than degenerate ones. \code{criterion = "wald"} tests
+them.}
 \item{\code{trace_msg}}{Character vector of the trace lines,
 captured regardless of the \code{trace} flag.}
 \item{\code{elapsed}}{\code{difftime} from start to finish.}
