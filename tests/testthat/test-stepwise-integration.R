@@ -346,3 +346,19 @@ test_that("scope = NULL works by variable for multiphase too", {
   expect_false(any(vapply(cands, function(c) c$var, character(1L)) %in%
                      c("int_dead", "dead")))
 })
+
+test_that("scope = NULL keeps logical columns and drops unmodellable ones", {
+  # Whether a 0/1 field arrives logical or numeric depends on the reader that
+  # built the frame, not on the variable. Dropping logicals would make the
+  # default scope silently narrower for one of two equivalent read paths.
+  d <- data.frame(
+    t    = c(2, 4, 6, 8, 10, 12, 14, 16),
+    ev   = c(1L, 0L, 1L, 1L, 0L, 1L, 1L, 0L),
+    num  = c(1, 2, 3, 4, 5, 6, 7, 8),
+    flag = c(TRUE, FALSE, TRUE, TRUE, FALSE, TRUE, FALSE, TRUE),
+    chr  = letters[1:8],
+    stringsAsFactors = FALSE
+  )
+  expect_equal(.hzr_modellable_vars(d, c("num", "flag", "chr")),
+               c("num", "flag"))
+})

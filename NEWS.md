@@ -144,7 +144,10 @@ selects.
   unevaluated, and `deparse(quote(f))` is `"f"`, which `as.formula()` rejects.
 
   Two consequences of that path becoming reachable, both fixed here.
-  `scope = NULL` now skips non-numeric columns instead of erroring on them:
+  `scope = NULL` now skips columns it cannot model instead of erroring on
+  them -- numeric and logical columns are kept, since whether a 0/1 field
+  arrives logical or numeric depends on the reader that built the frame
+  rather than on the variable:
   under an explicit scope the caller named the column, so an error is right,
   but under `scope = NULL` the package enumerates the candidates itself and a
   column it cannot model is its own choice to make better. Any data frame

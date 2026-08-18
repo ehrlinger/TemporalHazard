@@ -246,7 +246,7 @@
   .walk(rhs)
 }
 
-#' Resolve the model formula a fit stored in its call
+#' Resolve the model formula stored in a fit's call
 #'
 #' `match.call()` stores the `formula` argument unevaluated, so it arrives as
 #' a `call` when the caller wrote it out at the `hazard()` call and as a
@@ -260,11 +260,16 @@
 #'
 #' @param fit A fitted `hazard` object.
 #' @param what Character label for the object in error messages.
+#' @param envir Environment to resolve in when the fit carries no recorded
+#'   `call_env` (objects serialised before it was stored). Defaults to the
+#'   caller's frame; passing it explicitly is preferable to relying on the
+#'   default, which is only correct because it is evaluated lazily.
 #' @return The formula, or `NULL` when the fit carries none (the vector
 #'   interface). Errors when a stored formula cannot be resolved.
 #' @keywords internal
 #' @noRd
-.hzr_stored_formula <- function(fit, what = "`fit`") {
+.hzr_stored_formula <- function(fit, what = "`fit`",
+                                envir = parent.frame()) {
   raw <- fit$call$formula
   if (is.null(raw)) {
     return(NULL)
@@ -277,7 +282,7 @@
   # Bare, the error reads "object 'f' not found", which names neither the fit
   # at fault nor the remedy.
   out <- tryCatch(
-    eval(raw, envir = fit$call_env %||% parent.frame(2L)),
+    eval(raw, envir = fit$call_env %||% envir),
     error = function(e) {
       stop(what, "'s stored model formula (", deparse(raw),
            ") could not be resolved: ", conditionMessage(e),
@@ -293,4 +298,26 @@
          "formula written at the `hazard()` call.", call. = FALSE)
   }
   out
+}
+
+#' Columns the package may offer itself as candidates
+#'
+#' Under `scope = NULL` the *package* enumerates candidates from the data, so a
+#' column it cannot model is its own bad choice rather than the caller's, and
+#' dropping it beats erroring on it. An explicit `scope` still errors, because
+#' there the caller named the column.
+#'
+#' Logical columns count: they are ordinary 0/1 predictors, and whether a
+#' 0/1 field arrives logical or numeric depends on the reader that produced
+#' the frame rather than on anything about the variable.
+#'
+#' @keywords internal
+#' @noRd
+.hzr_modellable_vars <- function(data, vars) {
+  keep <- vapply(
+    data[vars],
+    function(col) is.numeric(col) || is.logical(col),
+    logical(1L)
+  )
+  vars[keep]
 }
