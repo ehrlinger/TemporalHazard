@@ -405,3 +405,130 @@ test_that("score rejects a candidate already in the single-distribution model", 
                 dist = "weibull", theta = c(0.01, 0.5, 0), fit = TRUE)
   expect_null(.hzr_score_expand(fit, "age", phase = NULL, data = avc))
 })
+
+
+# The score criterion must work on the censoring the formula interface emits ---
+#
+# The multiphase analytic Hessian declines by design for status in {-1, 2}
+# (R/hessian-multiphase.R). .hzr_score_information() had no fallback on the
+# multiphase branch -- the single-distribution branch has one -- so NULL
+# propagated to nuisance$ok = FALSE and every candidate scored NA. The screen
+# then stopped having tested nothing, blaming a degenerate column.
+#
+# This became reachable in 1.2.0: the Surv() recoding fix made status -1 and 2
+# expressible through the formula interface, in the same release that made
+# criterion = "score" the default. No test exercised both.
+#
+# The fixture is run BOTH ways -- six rows interval-censored, and the same six
+# left as exact events -- because the claim is a parity one. Absolute
+# assertions on the interval fit alone would not distinguish "the fallback
+# works" from "the score criterion happens to like this data": the right-
+# censored arm is the control, and it exercises the analytic Hessian that the
+# fallback has to reproduce.
+#
+# beta_true is deliberately modest. The observed information at beta = 0 goes
+# indefinite for a strongly predictive candidate -- v_beta < 0, Q = NA -- on
+# right-censored data just as much as on interval-censored data, so a large
+# effect here would test that unrelated limitation instead of this fallback.
+
+.ic_multiphase_fixture <- function(interval = TRUE, beta_true = 0.2) {
+  set.seed(4242)
+  n <- 260
+  d <- data.frame(z = rnorm(n), w = rnorm(n))
+  tt <- rexp(n, 0.25 * exp(beta_true * d$z))
+  d$t <- pmin(tt, 12)
+  code <- ifelse(tt >= 12, 0L, 1L)
+  d$t2 <- NA_real_
+  if (interval) {
+    iv <- which(code == 1L)[1:6]
+    d$t[iv] <- pmax(d$t[iv] - 0.3, 1e-6)
+    d$t2[iv] <- d$t[iv] + 0.6
+    code[iv] <- 3L                    # Surv "interval" code
+  }
+  d$code <- code
+  ph <- list(early = hzr_phase("cdf", t_half = 1, nu = 1, m = 1,
+                               fixed = "shapes"),
+             const = hzr_phase("constant"))
+  f <- if (interval) {
+    survival::Surv(t, t2, code, type = "interval") ~ 1
+  } else {
+    survival::Surv(t, code) ~ 1
+  }
+  fit <- suppressWarnings(hazard(
+    f, data = d, dist = "multiphase", phases = ph, fit = TRUE,
+    control = list(n_starts = 1L, maxit = 800L)))
+  list(fit = fit, data = d)
+}
+
+test_that("observed information is available for interval-censored multiphase", {
+  skip_if_not_installed("numDeriv")
+  fx <- .ic_multiphase_fixture()
+  expect_true(any(fx$fit$data$status == 2L))
+
+  # The analytic Hessian declines here by design ...
+  expect_null(.hzr_hessian_multiphase(
+    fx$fit$fit$theta, time = fx$fit$data$time, status = fx$fit$data$status,
+    time_lower = fx$fit$data$time_lower, time_upper = fx$fit$data$time_upper,
+    x = fx$fit$data$x, weights = fx$fit$data$weights,
+    phases = .hzr_score_phases(fx$fit),
+    covariate_counts = fx$fit$fit$covariate_counts,
+    x_list = fx$fit$fit$x_list))
+
+  # ... so the information must come from somewhere else.
+  info <- .hzr_score_information(fx$fit, fx$fit$fit$theta)
+  expect_true(is.matrix(info))
+  expect_equal(dim(info), rep(length(fx$fit$fit$theta), 2L))
+  expect_true(all(is.finite(info)))
+  expect_equal(info, t(info), tolerance = 1e-6)
+})
+
+test_that("the numeric fallback reproduces the analytic observed information", {
+  skip_if_not_installed("numDeriv")
+  # Same model on right-censored data, where the analytic Hessian IS defined.
+  # The fallback must agree with it; agreeing is what licenses using it where
+  # the analytic form declines.
+  fx <- .ic_multiphase_fixture(interval = FALSE)
+  th <- fx$fit$fit$theta
+  analytic <- .hzr_hessian_multiphase(
+    th, time = fx$fit$data$time, status = fx$fit$data$status,
+    time_lower = fx$fit$data$time_lower, time_upper = fx$fit$data$time_upper,
+    x = fx$fit$data$x, weights = fx$fit$data$weights,
+    phases = .hzr_score_phases(fx$fit),
+    covariate_counts = fx$fit$fit$covariate_counts,
+    x_list = fx$fit$fit$x_list)
+  expect_true(is.matrix(analytic))
+
+  numeric_ <- .hzr_score_multiphase_hessian(
+    fx$fit, th, .hzr_score_phases(fx$fit),
+    fx$fit$fit$covariate_counts, fx$fit$fit$x_list)
+  expect_equal(numeric_, analytic, tolerance = 1e-4)
+})
+
+test_that("score selects on interval-censored multiphase, as it does without", {
+  skip_if_not_installed("numDeriv")
+  run <- function(interval, crit) {
+    fx <- .ic_multiphase_fixture(interval = interval)
+    r <- suppressWarnings(hzr_stepwise(
+      fx$fit, scope = list(early = ~ z + w, const = ~ z + w), data = fx$data,
+      direction = "forward", criterion = crit, slentry = 0.2, trace = FALSE,
+      control = list(n_starts = 1L)))
+    list(sel = setdiff(names(coef(r)), names(coef(fx$fit))),
+         nunc = r$criteria$n_uncomputable_scores %||% 0L)
+  }
+  ic <- run(TRUE, "score")
+  rc <- run(FALSE, "score")
+
+  # Not merely non-empty: the same variables the analytic path selects.
+  expect_gt(length(rc$sel), 0L)
+  expect_equal(ic$sel, rc$sel)
+
+  # No candidate went unscored for want of an information matrix.
+  expect_equal(ic$nunc, 0L)
+  expect_equal(rc$nunc, 0L)
+
+  # The wald path never needed the Hessian, so it is a check on the fixture
+  # rather than on the fallback: the data must carry signal either way. It is
+  # NOT asserted to select the same set -- 1.2.0's NEWS documents that score
+  # and wald can diverge, and here score enters early.z where wald does not.
+  expect_gt(length(run(TRUE, "wald")$sel), 0L)
+})
