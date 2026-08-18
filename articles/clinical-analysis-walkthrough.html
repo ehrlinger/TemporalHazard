@@ -75,7 +75,7 @@
       <h1>Complete Clinical Analysis Walkthrough</h1>
       <p class="subtitle">From Kaplan-Meier baseline to validated multivariable model</p>
       <p class="author">John Ehrlinger</p>
-      <p class="date">2026-08-10</p>
+      <p class="date">2026-08-18</p>
 
       <small class="dont-index">Source: <a href="https://github.com/ehrlinger/temporal_hazard/blob/main/vignettes/clinical-analysis-walkthrough.qmd" class="external-link"><code>vignettes/clinical-analysis-walkthrough.qmd</code></a></small>
       <div class="d-none name"><code></code></div>
@@ -287,7 +287,7 @@ Figure 2: Single Weibull vs. Kaplan-Meier
 <span><span class="co">#&gt;   engine:       native-r-m2 </span></span>
 <span><span class="co">#&gt;   converged:    TRUE </span></span>
 <span><span class="co">#&gt;   log-lik:      -228.029 </span></span>
-<span><span class="co">#&gt;   evaluations: fn=32, gr=10</span></span>
+<span><span class="co">#&gt;   evaluations: fn=19, gr=6</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Coefficients (internal scale):</span></span>
 <span><span class="co">#&gt; </span></span>
@@ -300,7 +300,7 @@ Figure 2: Single Weibull vs. Kaplan-Meier
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt;   Phase: constant (constant)</span></span>
 <span><span class="co">#&gt;           estimate std_error    z_stat      p_value</span></span>
-<span><span class="co">#&gt;   log_mu -7.609476 0.4495827 -16.92564 2.911483e-64</span></span></code></pre></div>
+<span><span class="co">#&gt;   log_mu -7.609476 0.4495826 -16.92564 2.911466e-64</span></span></code></pre></div>
 </div>
 <p>Note the use of <code>fixed = "shapes"</code> — we fix the temporal shape parameters and only estimate the scale (log_mu) for each phase. This matches the standard HAZARD workflow: shapes are set from clinical knowledge or preliminary exploration, then scales and covariates are estimated.</p>
 <div class="cell">
@@ -476,18 +476,20 @@ Figure 5: Decile calibration: age vs. logit(P(death))
 <span>  fit     <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_starts <span class="op">=</span> <span class="fl">5</span>, maxit <span class="op">=</span> <span class="fl">1000</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
-<span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian contains non-finite entries;</span></span>
-<span><span class="co">#&gt; standard errors unavailable</span></span>
-<span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian contains non-finite entries;</span></span>
-<span><span class="co">#&gt; standard errors unavailable</span></span>
 <span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =</span></span>
-<span><span class="co">#&gt; 2.43e-10); standard errors may be unreliable</span></span>
-<span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =</span></span>
-<span><span class="co">#&gt; 2.24e-09); standard errors may be unreliable</span></span>
+<span><span class="co">#&gt; 2.19e-12); standard errors may be unreliable</span></span>
 <span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian is not positive-definite at</span></span>
 <span><span class="co">#&gt; the optimum; standard errors may be unreliable</span></span>
 <span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Non-positive variance estimates; the</span></span>
 <span><span class="co">#&gt; optimum may not be a proper maximum</span></span>
+<span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =</span></span>
+<span><span class="co">#&gt; 0); standard errors may be unreliable</span></span>
+<span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian not invertible; standard</span></span>
+<span><span class="co">#&gt; errors unavailable</span></span>
+<span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =</span></span>
+<span><span class="co">#&gt; 0); standard errors may be unreliable</span></span>
+<span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian not invertible; standard</span></span>
+<span><span class="co">#&gt; errors unavailable</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_mv</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Multiphase hazard model (2 phases)</span></span>
 <span><span class="co">#&gt;   observations: 305 </span></span>
@@ -560,16 +562,10 @@ Figure 5: Decile calibration: age vs. logit(P(death))
 <span>  trace     <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  control   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_starts <span class="op">=</span> <span class="fl">2</span>, maxit <span class="op">=</span> <span class="fl">500</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
-<span><span class="co">#&gt; Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =</span></span>
-<span><span class="co">#&gt; 7.2e-09); standard errors may be unreliable</span></span>
-<span><span class="co">#&gt; Warning in .hzr_safe_solve(H_unc): Hessian is not positive-definite at the</span></span>
-<span><span class="co">#&gt; optimum; standard errors may be unreliable</span></span>
-<span><span class="co">#&gt; Warning in .hzr_safe_solve(H_unc): Non-positive variance estimates; the optimum</span></span>
-<span><span class="co">#&gt; may not be a proper maximum</span></span>
 <span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =</span></span>
-<span><span class="co">#&gt; 0); standard errors may be unreliable</span></span>
-<span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian not invertible; standard</span></span>
-<span><span class="co">#&gt; errors unavailable</span></span>
+<span><span class="co">#&gt; 2.03e-09); standard errors may be unreliable</span></span>
+<span><span class="co">#&gt; Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =</span></span>
+<span><span class="co">#&gt; 2.27e-10); standard errors may be unreliable</span></span>
 <span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian is not positive-definite at</span></span>
 <span><span class="co">#&gt; the optimum; standard errors may be unreliable</span></span>
 <span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Non-positive variance estimates; the</span></span>
@@ -579,37 +575,43 @@ Figure 5: Decile calibration: age vs. logit(P(death))
 <span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian not invertible; standard</span></span>
 <span><span class="co">#&gt; errors unavailable</span></span>
 <span><span class="co">#&gt; Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =</span></span>
-<span><span class="co">#&gt; 7.82e-11); standard errors may be unreliable</span></span>
+<span><span class="co">#&gt; 1.08e-12); standard errors may be unreliable</span></span>
 <span><span class="co">#&gt; Warning in .hzr_safe_solve(H_unc): Hessian is not positive-definite at the</span></span>
 <span><span class="co">#&gt; optimum; standard errors may be unreliable</span></span>
 <span><span class="co">#&gt; Warning in .hzr_safe_solve(H_unc): Non-positive variance estimates; the optimum</span></span>
 <span><span class="co">#&gt; may not be a proper maximum</span></span>
+<span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian is not positive-definite at</span></span>
+<span><span class="co">#&gt; the optimum; standard errors may be unreliable</span></span>
+<span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Non-positive variance estimates; the</span></span>
+<span><span class="co">#&gt; optimum may not be a proper maximum</span></span>
 <span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =</span></span>
 <span><span class="co">#&gt; 1.48e-09); standard errors may be unreliable</span></span>
 <span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =</span></span>
-<span><span class="co">#&gt; 3.13e-10); standard errors may be unreliable</span></span>
+<span><span class="co">#&gt; 1.05e-10); standard errors may be unreliable</span></span>
 <span><span class="co">#&gt; Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =</span></span>
-<span><span class="co">#&gt; 3.92e-11); standard errors may be unreliable</span></span>
-<span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =</span></span>
-<span><span class="co">#&gt; 2.55e-09); standard errors may be unreliable</span></span>
-<span><span class="co">#&gt; Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =</span></span>
-<span><span class="co">#&gt; 1.75e-10); standard errors may be unreliable</span></span>
-<span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =</span></span>
-<span><span class="co">#&gt; 1.03e-08); standard errors may be unreliable</span></span>
-<span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian is not positive-definite at</span></span>
-<span><span class="co">#&gt; the optimum; standard errors may be unreliable</span></span>
-<span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Non-positive variance estimates; the</span></span>
-<span><span class="co">#&gt; optimum may not be a proper maximum</span></span>
-<span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =</span></span>
-<span><span class="co">#&gt; 1.27e-09); standard errors may be unreliable</span></span>
-<span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian is not positive-definite at</span></span>
-<span><span class="co">#&gt; the optimum; standard errors may be unreliable</span></span>
-<span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Non-positive variance estimates; the</span></span>
-<span><span class="co">#&gt; optimum may not be a proper maximum</span></span>
+<span><span class="co">#&gt; 1.32e-11); standard errors may be unreliable</span></span>
 <span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =</span></span>
 <span><span class="co">#&gt; 0); standard errors may be unreliable</span></span>
 <span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian not invertible; standard</span></span>
 <span><span class="co">#&gt; errors unavailable</span></span>
+<span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =</span></span>
+<span><span class="co">#&gt; 3.48e-09); standard errors may be unreliable</span></span>
+<span><span class="co">#&gt; Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =</span></span>
+<span><span class="co">#&gt; 2.39e-10); standard errors may be unreliable</span></span>
+<span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =</span></span>
+<span><span class="co">#&gt; 0); standard errors may be unreliable</span></span>
+<span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian not invertible; standard</span></span>
+<span><span class="co">#&gt; errors unavailable</span></span>
+<span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =</span></span>
+<span><span class="co">#&gt; 2.71e-11); standard errors may be unreliable</span></span>
+<span><span class="co">#&gt; Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =</span></span>
+<span><span class="co">#&gt; 1.73e-12); standard errors may be unreliable</span></span>
+<span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =</span></span>
+<span><span class="co">#&gt; 5.91e-09); standard errors may be unreliable</span></span>
+<span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Hessian is not positive-definite at</span></span>
+<span><span class="co">#&gt; the optimum; standard errors may be unreliable</span></span>
+<span><span class="co">#&gt; Warning in .hzr_safe_solve(hess_result): Non-positive variance estimates; the</span></span>
+<span><span class="co">#&gt; optimum may not be a proper maximum</span></span>
 <span><span class="va">fit_step</span></span>
 <span><span class="co">#&gt; Stepwise selection (direction = both, criterion = wald, slentry = 0.30, slstay = 0.20)</span></span>
 <span><span class="co">#&gt; </span></span>
@@ -628,7 +630,7 @@ Figure 5: Decile calibration: age vs. logit(P(death))
 <code class="sourceCode R"><span><span class="va">fit_step</span><span class="op">$</span><span class="va">steps</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"step_num"</span>, <span class="st">"action"</span>, <span class="st">"variable"</span>, <span class="st">"phase"</span>,</span>
 <span>                   <span class="st">"p_value"</span>, <span class="st">"aic"</span><span class="op">)</span><span class="op">]</span></span>
 <span><span class="co">#&gt;   step_num action variable    phase      p_value      aic</span></span>
-<span><span class="co">#&gt; 1        1  enter   status    early 1.966575e-09 424.9675</span></span>
+<span><span class="co">#&gt; 1        1  enter   status    early 1.968336e-09 424.9675</span></span>
 <span><span class="co">#&gt; 2        2  enter   com_iv    early 1.260359e-05 401.5605</span></span>
 <span><span class="co">#&gt; 3        3  enter   status constant 6.502167e-02 400.3834</span></span>
 <span><span class="co">#&gt; 4        4  enter      mal    early 1.094110e-01 399.8823</span></span>
