@@ -31,7 +31,20 @@ jobs:
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
+          # Hard dependencies only. Resolving Suggests as well pulled pkgdown,
+          # rmarkdown, knitr, quarto, haven and ggplot2, and with them 18 apt
+          # system packages -- the ragg / systemfonts / textshaping graphics
+          # chain plus pandoc. Those are not cached by anything, so they cost
+          # about 8 minutes on every run, to lint for 18 seconds.
+          #
+          # Nothing here needs them. `Imports:` is `survival` alone, and no
+          # enabled linter loads the package namespace: `object_usage_linter`
+          # is the only default that does and `.lintr` sets it to NULL, while
+          # `namespace_linter` is not a default at all. If a future linter
+          # does need the namespace, `local::.` still installs the package --
+          # only Suggests are dropped.
           extra-packages: any::lintr, local::.
+          dependencies: hard
           needs: lint
 
       - name: Lint
