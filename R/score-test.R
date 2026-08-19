@@ -665,6 +665,32 @@
     return(na_result("information_indefinite"))
   }
   stat <- (u_beta^2) / v_beta
+
+  # The coefficient this Q implies: one Newton step from beta = 0, with
+  # standard error 1 / sqrt(v_beta). SAS forms the same quantity and rejects
+  # the candidate when it is absurd -- `dqstat.c`:
+  #
+  #     *qz    = sqrt(q);
+  #     *qse   = -(*qz)/d1llad;
+  #     *qbeta = (*qz)*(*qse);          /* = u_beta / v_beta */
+  #     if (fabs(*qbeta) > 50.0e0) { *qflag = 4; return; }
+  #
+  # calling it "the model is going to infinity ... legitimate for a variable
+  # that is either positive or negative with respect to all the remaining
+  # events in its phase. However the model cannot manage this."
+  #
+  # This is the guard against a Q that is finite, enormous and meaningless.
+  # The other two guards do not reach it: v_beta stays positive and well
+  # above the collinearity floor. Measured on `avc` with a near-collinear
+  # candidate, scored against a model moved 0.25 off its optimum -- which is
+  # what a failed refit leaves behind -- Q was 6.5e7 with v_beta = 0.0076 and
+  # no reason reported at all. A legitimate candidate at the optimum reached
+  # |qbeta| of about 14 in the same setting, so 50 leaves real headroom.
+  q_beta <- u_beta / v_beta
+  if (!is.finite(q_beta) || abs(q_beta) > 50) {
+    return(na_result("coefficient_diverging"))
+  }
+
   list(stat = stat, df = 1L,
        p_value = stats::pchisq(stat, df = 1L, lower.tail = FALSE),
        reason = NA_character_)
@@ -692,6 +718,14 @@
       "adjustment for the current model. This is a different fault from",
       "collinearity: the candidate is a poor one in itself, or the fit it",
       "would be added to is not at a maximum"
+    ),
+    coefficient_diverging = paste(
+      "the coefficient the score implies exceeds +/-50, so the fit for this",
+      "candidate is running to infinity. That is legitimate for a variable",
+      "that separates the remaining events in its phase, and the model cannot",
+      "represent it; it is also what a candidate scored against a model that",
+      "is NOT at its optimum looks like, so check whether an earlier step's",
+      "refit failed"
     ),
     collinear = "the candidate was collinear with the current model",
     constant  = "the candidate column was constant",

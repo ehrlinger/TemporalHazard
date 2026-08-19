@@ -87,6 +87,25 @@ selects.
 
 ## Bug fixes
 
+* **A score statistic could be finite, enormous and meaningless.** A
+  production screen accepted a candidate with `stat` = 92,211 on 1 df and
+  `p = 0.000`, after which the refit made the model worse. Neither existing
+  guard reached it: the adjusted variance stayed positive and well above the
+  collinearity floor, so the statistic was reported as evidence.
+
+  Near-collinearity alone does not do this — as a candidate approaches
+  collinearity its score shrinks along with its variance and `Q` stays small.
+  `Q` explodes when the model being scored against is *not at its optimum*,
+  because the reduced-model score is then no longer zero: the numerator is
+  inflated while the denominator stays small. That is the state a failed refit
+  leaves behind. `hzr_stepwise()` now declines a candidate whose implied
+  coefficient exceeds ±50, reporting `coefficient_diverging`, which is what
+  the SAS/C reference has always done (`dqstat.c` rejects `|QBETA| > 50` as
+  "the model is going to infinity"). Measured on the bundled `avc` data, a
+  model displaced 0.25 from its optimum produced `Q` = 6.5e7 with no reason
+  reported at all; a legitimate candidate reaches an implied coefficient of
+  about 14, so the threshold has real headroom. Reported as issue #134.
+
 * **The multiphase gradient and Hessian disagreed with the log-likelihood on
   left-truncated data.** For a row with `status` in `{0, 1}` the log-likelihood
   subtracts `H(time_lower)` unconditionally, but the analytic derivatives
