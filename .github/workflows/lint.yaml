@@ -44,7 +44,7 @@ jobs:
           # does need the namespace, `local::.` still installs the package --
           # only Suggests are dropped.
           extra-packages: any::lintr, local::.
-          dependencies: '"hard"'
+          dependencies: hard
           needs: lint
 
       - name: Lint
