@@ -48,8 +48,9 @@
 test_that("the multiphase gradient matches numDeriv for every entry-time layout", {
   skip_if_not_installed("numDeriv")
   k <- .entry_case()
-  for (nm in names(.entry_variants(k))) {
-    tl <- .entry_variants(k)[[nm]]
+  variants <- .entry_variants(k)
+  for (nm in names(variants)) {
+    tl <- variants[[nm]]
     f <- function(p) {
       .hzr_logl_multiphase(p, time = k$time, status = k$status, time_lower = tl,
                            time_upper = NULL, x = NULL, weights = k$weights,
@@ -68,8 +69,9 @@ test_that("the multiphase gradient matches numDeriv for every entry-time layout"
 test_that("the multiphase Hessian matches numDeriv for every entry-time layout", {
   skip_if_not_installed("numDeriv")
   k <- .entry_case()
-  for (nm in names(.entry_variants(k))) {
-    tl <- .entry_variants(k)[[nm]]
+  variants <- .entry_variants(k)
+  for (nm in names(variants)) {
+    tl <- variants[[nm]]
     nll <- function(p) {
       -.hzr_logl_multiphase(p, time = k$time, status = k$status, time_lower = tl,
                             time_upper = NULL, x = NULL, weights = k$weights,
@@ -93,9 +95,12 @@ test_that("entry at or after exit warns, and names the NULL default", {
       time = k$time, status = k$status, time_lower = tl,
       dist = "multiphase", phases = k$phases, theta = k$theta, fit = FALSE))
   }
+  n <- length(k$time)
   w <- capture_warnings(fit_with(k$time))
   expect_match(w, "counting-process entry time", all = FALSE)
-  expect_match(w, "310 of 310", all = FALSE)
+  # Derived, not hard-coded: the assertion is that the warning counts EVERY
+  # row, which stays true if `avc` ever changes size.
+  expect_match(w, paste0(n, " of ", n), all = FALSE)
   # The remedy has to be in the message: NULL is not the same as `time`.
   expect_match(w, "leave 'time_lower' as NULL", all = FALSE)
 })

@@ -618,7 +618,9 @@
   # whenever `time_lower` is supplied, with no further condition. An earlier
   # `time_lower < time` filter here excluded rows entering at their own event
   # or censoring time, so the derivative was taken of a different function from
-  # the one being evaluated -- the optimizer then walked off a cliff. The
+  # the one being evaluated: the reported gradient pointed somewhere the
+  # objective did not, and the optimizer followed it out of the region where
+  # the fit means anything. The
   # `> 0` test is only a skip: H(0) = 0, so those rows contribute nothing
   # either way, and it must match `has_start` below or the term is weighted in
   # while its derivative is left at zero.
