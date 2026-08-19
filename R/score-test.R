@@ -643,8 +643,10 @@
   #                     far from zero -- a STRONG candidate -- and also when
   #                     `current` has not truly converged.
   #
-  # The magnitude test must come FIRST, and the sign test must be against
-  # -tol rather than 0. For an exactly collinear candidate the true v_beta is
+  # The magnitude test comes FIRST and the sign test is against -tol, not 0.
+  # The `-tol` is redundant given the early return above, and is written out
+  # anyway so that the rule holds on its own: reordering these two guards must
+  # not be able to reintroduce the defect below. For an exactly collinear candidate the true v_beta is
   # exactly 0, so its computed sign is decided by rounding: an `if (v_beta <
   # 0)` ahead of the floor reported a perfect duplicate as
   # "information_indefinite" -- "this is a strong candidate, keep it" -- on
@@ -659,7 +661,7 @@
   if (abs(v_beta) <= tol) {
     return(na_result("collinear"))
   }
-  if (v_beta < 0) {
+  if (v_beta < -tol) {
     return(na_result("information_indefinite"))
   }
   stat <- (u_beta^2) / v_beta

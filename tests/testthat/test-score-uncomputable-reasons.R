@@ -157,7 +157,11 @@ test_that("a candidate whose own information is not positive says so", {
 
   # Flip only the candidate's own diagonal, leaving everything else as the
   # real fit produced it, so the test isolates exactly the new branch.
-  orig <- TemporalHazard:::.hzr_score_information_expanded
+  # Captured BEFORE mocking: afterwards this name resolves to the stub. Left
+  # unqualified so it binds in the same namespace local_mocked_bindings()
+  # writes to -- the package under test -- whether the suite runs under
+  # load_all() or against the installed package.
+  orig <- .hzr_score_information_expanded
   local_mocked_bindings(
     .hzr_score_information_expanded = function(current, exp_) {
       info <- orig(current, exp_)
