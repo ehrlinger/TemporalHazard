@@ -129,7 +129,13 @@ selects.
 
   `$criteria$uncomputable_reasons` (and `$uncomputable_reasons` on a
   `mode = "select"` bootstrap) now counts the causes by name, `$all_scores`
-  carries a `reason` column per candidate, and both warnings name them. A run
+  carries a `reason` column per candidate, and both warnings name them. The
+  reference implementation separates these too, and the R side now matches its
+  split: a candidate whose *own* observed information is not positive is
+  reported apart from one that is unusable only given what is already in the
+  model (`information_nonpositive` against `collinear` and
+  `information_indefinite`). The first is reachable on a multiphase fit with a
+  large share of interval-censored rows. A run
   that *completed* while declining a candidate for this reason now warns too:
   it previously returned a selection -- sometimes an empty one -- in complete
   silence, which is the case where the omission is least visible. The

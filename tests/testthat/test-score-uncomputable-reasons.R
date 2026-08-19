@@ -125,3 +125,76 @@ test_that("a degenerate-only screen does not claim a strong candidate", {
                  names(r$criteria$uncomputable_reasons))
   expect_identical(names(r$criteria$uncomputable_reasons), "constant")
 })
+
+
+# The candidate's own curvature, separately from the model's ------------------
+#
+# SAS tests I_bb <= 0 before the tolerance test and reports it as a distinct
+# diagnostic (q1.c err 2 vs err 3). The two say different things: err 2 is
+# "this candidate's own observed information is not positive", err 3 is "the
+# candidate is unusable given what is already in the model". Folding them
+# together blames the current model for a fault in the candidate.
+#
+# The branch is REACHABLE on real data, and censoring rather than effect size
+# is what reaches it: an interval-censored row contributes a difference of
+# survival terms rather than a log density, so its second derivative is not
+# sign-constrained. Measured on a 2-phase fit over a grid of sample size,
+# interval share, interval width and true beta, 16 of 36 configurations gave
+# i_bb < 0, the most negative being -0.27 (n = 300, 90% interval-censored,
+# width 3, beta 1).
+#
+# It is NOT tested through such a fixture, and that is deliberate. i_bb is
+# evaluated at the fitted theta, so its value carries the optimizer's
+# cross-platform variation -- which is basin-scale, not rounding-scale. A
+# fixture at i_bb = -6e-4 passed on macOS and failed on Linux and Windows
+# because the fit landed slightly elsewhere and i_bb came out positive. A
+# knife-edge numeric is the wrong instrument for a branch test; the branch is
+# stubbed instead, following test-hessian-unavailable.R.
+
+test_that("a candidate whose own information is not positive says so", {
+  skip_if_not_installed("numDeriv")
+  fx <- .reason_fixture(0.2)
+
+  # Flip only the candidate's own diagonal, leaving everything else as the
+  # real fit produced it, so the test isolates exactly the new branch.
+  # Captured BEFORE mocking: afterwards this name resolves to the stub. Left
+  # unqualified so it binds in the same namespace local_mocked_bindings()
+  # writes to -- the package under test -- whether the suite runs under
+  # load_all() or against the installed package.
+  orig <- .hzr_score_information_expanded
+  local_mocked_bindings(
+    .hzr_score_information_expanded = function(current, exp_) {
+      info <- orig(current, exp_)
+      if (!is.null(info)) {
+        b <- exp_$beta_idx
+        info[b, b] <- -1e-3
+      }
+      info
+    }
+  )
+
+  q <- .hzr_score_q(fx$fit, "z", phase = "early", data = fx$data)
+  expect_true(is.na(q$stat))
+  expect_identical(q$reason, "information_nonpositive")
+})
+
+test_that("the same candidate scores normally without the flipped diagonal", {
+  # The control for the test above: without the stub this candidate is
+  # scorable, so the stub is what produced the reason and not the fixture.
+  skip_if_not_installed("numDeriv")
+  fx <- .reason_fixture(0.2)
+  q <- .hzr_score_q(fx$fit, "z", phase = "early", data = fx$data)
+  expect_false(is.na(q$stat))
+  expect_true(is.na(q$reason))
+})
+
+test_that("the non-positive and collinear diagnoses stay distinct", {
+  txt <- .hzr_score_reason_text("information_nonpositive")
+  expect_match(txt, "own observed information")
+  # It must not read as collinearity, which carries the opposite remedy, nor
+  # as the strong-candidate case.
+  expect_no_match(txt, "collinear with")
+  expect_no_match(txt, "STRONG")
+  expect_false(identical(txt, .hzr_score_reason_text("collinear")))
+  expect_false(identical(txt, .hzr_score_reason_text("information_indefinite")))
+})
