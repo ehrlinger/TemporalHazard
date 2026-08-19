@@ -106,8 +106,18 @@ NULL
 #'
 #' @param time Numeric follow-up time vector.
 #' @param status Numeric or logical event indicator vector.
-#' @param time_lower Optional numeric lower bound vector for censoring intervals.
-#'   Used when `status == 2` (interval-censored); defaults to `time` if NULL.
+#' @param time_lower Optional numeric vector with two distinct roles, selected
+#'   by `status`. Supplying it explicitly is **not** a no-op.
+#'   * `status == 2` (interval-censored): the lower bound of the censoring
+#'     interval, defaulting to `time`.
+#'   * `status %in% c(0, 1)` (right-censored or event): the counting-process
+#'     **entry time**, so the row contributes `H(time) - H(time_lower)`.
+#'     Left `NULL`, the entry time is **`0`**, not `time`.
+#'
+#'   Passing `time_lower = time` therefore states that every subject entered
+#'   the risk set at the instant it left, which contributes nothing and
+#'   removes the row from the likelihood. That is a valid specification and
+#'   the fit will not converge to anything meaningful; it warns.
 #' @param time_upper Optional numeric upper bound vector for censoring intervals.
 #'   Used when `status %in% c(-1, 2)`; defaults to `time` if NULL.
 #' @param x Optional design matrix (or data frame coercible to matrix).
@@ -395,6 +405,28 @@ hazard <- function(formula = NULL,
   if (!is.null(time_upper)) {
     if (!is.numeric(time_upper) || length(time_upper) != n || any(!is.finite(time_upper)) || any(time_upper < 0)) {
       stop("'time_upper' must be a numeric vector of finite non-negative values matching length(time).", call. = FALSE)
+    }
+  }
+
+  # For status 0/1 rows `time_lower` is the counting-process ENTRY time, not a
+  # censoring bound, so `time_lower >= time` says the subject left the risk set
+  # at or before it entered.  Such a row contributes H(time) - H(time_lower),
+  # which is zero or negative: it drops out of the likelihood, or worse.  With
+  # every row like that the objective is unbounded above and the optimizer
+  # returns a large positive "log-likelihood", converged = TRUE and rcond = 0,
+  # with nothing naming the cause.  Reported as issue #136, where the argument
+  # had been supplied in the belief that it was a no-op.
+  if (!is.null(time_lower)) {
+    degenerate <- status %in% c(0, 1) & time_lower >= time
+    if (any(degenerate)) {
+      warning(sum(degenerate), " of ", n, " row(s) have 'time_lower' >= 'time' ",
+              "with status 0 or 1. For those rows 'time_lower' is the ",
+              "counting-process entry time, so they enter the risk set at or ",
+              "after they leave it and contribute nothing to the likelihood ",
+              "(it is not a censoring bound outside status 2). If you meant ",
+              "the default -- entry at time 0 -- leave 'time_lower' as NULL; ",
+              "passing 'time_lower = time' is not the same thing.",
+              call. = FALSE)
     }
   }
 

@@ -40,8 +40,20 @@ Example: \code{hazard(Surv(time, status) ~ x1 + x2, data = df, dist = "weibull",
 
 \item{status}{Numeric or logical event indicator vector.}
 
-\item{time_lower}{Optional numeric lower bound vector for censoring intervals.
-Used when \code{status == 2} (interval-censored); defaults to \code{time} if NULL.}
+\item{time_lower}{Optional numeric vector with two distinct roles, selected
+by \code{status}. Supplying it explicitly is \strong{not} a no-op.
+\itemize{
+\item \code{status == 2} (interval-censored): the lower bound of the censoring
+interval, defaulting to \code{time}.
+\item \code{status \%in\% c(0, 1)} (right-censored or event): the counting-process
+\strong{entry time}, so the row contributes \code{H(time) - H(time_lower)}.
+Left \code{NULL}, the entry time is \strong{\code{0}}, not \code{time}.
+}
+
+Passing \code{time_lower = time} therefore states that every subject entered
+the risk set at the instant it left, which contributes nothing and
+removes the row from the likelihood. That is a valid specification and
+the fit will not converge to anything meaningful; it warns.}
 
 \item{time_upper}{Optional numeric upper bound vector for censoring intervals.
 Used when \code{status \%in\% c(-1, 2)}; defaults to \code{time} if NULL.}

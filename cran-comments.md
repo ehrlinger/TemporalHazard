@@ -1,4 +1,4 @@
-# CRAN submission comments -- TemporalHazard 1.2.0
+# CRAN submission comments -- TemporalHazard 1.2.1
 
 ## Summary
 

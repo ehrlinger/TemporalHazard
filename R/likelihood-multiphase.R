@@ -613,17 +613,20 @@
   phase_deriv      <- vector("list", n_phases)  # derivative list at time
   phase_Phi_start  <- vector("list", n_phases)  # Phi_j(start_i), if needed
   phase_deriv_start <- vector("list", n_phases) # derivative list at start
-  # Whether to actually compute start-time quantities for the gradient.
-  # Without any counting-process rows (time_lower = NULL or all zeros with
-  # status in {0, 1}) these additions are identically zero and we can skip.
-  # Only genuine epoch rows (status 0/1 with time_lower < time) get a
-  # non-zero start.  Interval-censored rows (status 2) are handled through
-  # their own lower/upper cumhaz terms and must not contribute to H(start).
+  # The start time must be defined EXACTLY as the log-likelihood defines it:
+  # `.hzr_logl_multiphase()` subtracts H(time_lower) from every status 0/1 row
+  # whenever `time_lower` is supplied, with no further condition. An earlier
+  # `time_lower < time` filter here excluded rows entering at their own event
+  # or censoring time, so the derivative was taken of a different function from
+  # the one being evaluated -- the optimizer then walked off a cliff. The
+  # `> 0` test is only a skip: H(0) = 0, so those rows contribute nothing
+  # either way, and it must match `has_start` below or the term is weighted in
+  # while its derivative is left at zero.
   need_start <- !is.null(time_lower) &&
-                any(time_lower > 0 & time_lower < time & status %in% c(0L, 1L))
+                any(time_lower > 0 & status %in% c(0L, 1L))
   start_vec <- if (need_start) {
     sv <- rep(0, n)
-    epoch_idx <- status %in% c(0L, 1L) & time_lower < time
+    epoch_idx <- status %in% c(0L, 1L)
     sv[epoch_idx] <- time_lower[epoch_idx]
     sv
   } else {
