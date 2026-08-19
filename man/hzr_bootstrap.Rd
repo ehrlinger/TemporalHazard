@@ -105,6 +105,12 @@ replicate. \code{information_indefinite} is the one to read first: it marks
 candidates whose effect is too large for the score test's approximation
 at zero -- typically strong variables that were passed over rather than
 tested, understating their selection frequency. Empty in refit mode.}
+\item{n_nonmonotone_replicates}{Select mode only: number of otherwise
+successful replicates in which a forward step \emph{lowered} the
+log-likelihood. Entered models are nested, so this cannot occur at the
+optimum; such a replicate continued from a refit that did not converge,
+and its later selections are pooled on the same footing as any other.
+Always \code{0} in refit mode.}
 \item{mode}{\code{"refit"} (fixed-formula bootstrap) or \code{"select"}
 (embedded stepwise selection).}
 \item{scope}{Only present when \code{mode == "select"}: the candidate

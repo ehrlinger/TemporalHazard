@@ -1334,6 +1334,12 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     candidates whose effect is too large for the score test's approximation
 #'     at zero -- typically strong variables that were passed over rather than
 #'     tested, understating their selection frequency. Empty in refit mode.}
+#'   \item{n_nonmonotone_replicates}{Select mode only: number of otherwise
+#'     successful replicates in which a forward step *lowered* the
+#'     log-likelihood. Entered models are nested, so this cannot occur at the
+#'     optimum; such a replicate continued from a refit that did not converge,
+#'     and its later selections are pooled on the same footing as any other.
+#'     Always `0` in refit mode.}
 #'   \item{mode}{`"refit"` (fixed-formula bootstrap) or `"select"`
 #'     (embedded stepwise selection).}
 #'   \item{scope}{Only present when `mode == "select"`: the candidate
@@ -1568,6 +1574,11 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # see, and each replicate runs under suppressWarnings() so its own warning
   # never reaches the user.
   uncomputable_reasons <- stats::setNames(integer(0), character(0))
+  # Replicates whose selection path went BACKWARDS. Each still contributes its
+  # selected variables to the pooled frequencies, indistinguishable from a
+  # replicate that converged, and every replicate runs under
+  # suppressWarnings() so the step-level warning cannot reach the user.
+  n_nonmonotone_reps <- 0L
 
   # Progress bar over replicates (verbose only). Closed after the loop.
   pb <- if (verbose) utils::txtProgressBar(min = 0, max = n_boot, style = 3)
@@ -1657,6 +1668,9 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
         uncomputable_reasons <- .hzr_merge_reasons(
           uncomputable_reasons, boot_fit$criteria$uncomputable_reasons
         )
+        if (isTRUE((boot_fit$criteria$n_nonmonotone_entries %||% 0L) > 0L)) {
+          n_nonmonotone_reps <- n_nonmonotone_reps + 1L
+        }
       }
       theta_b <- boot_fit$fit$theta
       names_b <- if (select_mode) {
@@ -1766,6 +1780,16 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
             "`$uncomputable_reasons`.", call. = FALSE)
   }
 
+  if (n_nonmonotone_reps > 0L) {
+    warning(n_nonmonotone_reps, " of ", n_success, " successful replicates ",
+            "had a forward step LOWER the log-likelihood. Entered models are ",
+            "nested, so that cannot happen at the optimum -- those replicates ",
+            "continued from a refit that did not converge, and the variables ",
+            "they selected afterwards are in the pooled frequencies on the ",
+            "same footing as everything else. See ",
+            "`$n_nonmonotone_replicates`.", call. = FALSE)
+  }
+
   result <- list(
     replicates = replicates,
     summary    = summary_df,
@@ -1773,6 +1797,7 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     n_failed   = n_failed,
     n_uncomputable_replicates = n_uncomputable_reps,
     uncomputable_reasons      = uncomputable_reasons,
+    n_nonmonotone_replicates  = n_nonmonotone_reps,
     mode       = if (select_mode) "select" else "refit"
   )
   if (select_mode) result$scope <- scope
