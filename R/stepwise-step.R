@@ -358,6 +358,7 @@
       delta_aic = s$delta_aic,
       stat      = s$stat,
       df        = s$df,
+      reason    = s_q$reason %||% NA_character_,
       stringsAsFactors = FALSE
     )
   }
@@ -365,16 +366,25 @@
 
   valid <- which(!is.na(all_scores$score))
 
-  # A candidate whose Q could not be computed (degenerate or collinear
-  # column, uninvertible nuisance block) scores NA and drops out of `valid`
-  # silently.  Count them so the caller can tell a screen that finished from
-  # one that could not run: both otherwise return the same empty step.
+  # A candidate whose Q could not be computed scores NA and drops out of
+  # `valid` silently.  Count them so the caller can tell a screen that finished
+  # from one that could not run: both otherwise return the same empty step.
+  #
+  # Carry the REASONS up as well as the count.  The causes are not one thing:
+  # a collinear column should be dropped, while an indefinite information
+  # matrix usually marks a candidate whose effect is too large for the score
+  # test at 0 -- a strong candidate, not a degenerate one.  A bare count
+  # invites exactly the wrong reading of the second case.
   n_uncomputable <- sum(is.na(all_scores$score))
+  uncomputable_reasons <- .hzr_tally_reasons(
+    all_scores$reason[is.na(all_scores$score)]
+  )
 
   if (length(valid) == 0L) {
     out <- null_result()
     out$all_scores     <- all_scores
     out$n_uncomputable <- n_uncomputable
+    out$uncomputable_reasons <- uncomputable_reasons
     out$stop_reason    <- if (n_uncomputable > 0L) {
       "scores_uncomputable"
     } else {
@@ -390,6 +400,7 @@
     out <- null_result()
     out$all_scores     <- all_scores
     out$n_uncomputable <- n_uncomputable
+    out$uncomputable_reasons <- uncomputable_reasons
     out$stop_reason    <- "no_candidate_met_slentry"
     return(out)
   }
@@ -418,6 +429,7 @@
     out$all_scores     <- all_scores
     out$refit_failures <- failure_token
     out$n_uncomputable <- n_uncomputable
+    out$uncomputable_reasons <- uncomputable_reasons
     out$stop_reason    <- "refit_failed"
     return(out)
   }
@@ -435,6 +447,7 @@
     all_scores = all_scores,
     refit_failures = character(),
     n_uncomputable = n_uncomputable,
+    uncomputable_reasons = uncomputable_reasons,
     stop_reason    = "accepted"
   )
 }

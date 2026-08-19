@@ -99,6 +99,12 @@ candidate's score statistic could be computed, rather than because no
 candidate met \code{slentry}. Such replicates contribute no selections, so
 a non-zero count means every reported selection frequency is
 depressed. Always \code{0} in refit mode.}
+\item{uncomputable_reasons}{Select mode only: named integer vector
+counting \emph{why} candidate scores were unavailable, summed over every
+replicate. \code{information_indefinite} is the one to read first: it marks
+candidates whose effect is too large for the score test's approximation
+at zero -- typically strong variables that were passed over rather than
+tested, understating their selection frequency. Empty in refit mode.}
 \item{mode}{\code{"refit"} (fixed-formula bootstrap) or \code{"select"}
 (embedded stepwise selection).}
 \item{scope}{Only present when \code{mode == "select"}: the candidate

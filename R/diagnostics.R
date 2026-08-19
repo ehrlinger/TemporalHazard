@@ -1328,6 +1328,12 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     candidate met `slentry`. Such replicates contribute no selections, so
 #'     a non-zero count means every reported selection frequency is
 #'     depressed. Always `0` in refit mode.}
+#'   \item{uncomputable_reasons}{Select mode only: named integer vector
+#'     counting *why* candidate scores were unavailable, summed over every
+#'     replicate. `information_indefinite` is the one to read first: it marks
+#'     candidates whose effect is too large for the score test's approximation
+#'     at zero -- typically strong variables that were passed over rather than
+#'     tested, understating their selection frequency. Empty in refit mode.}
 #'   \item{mode}{`"refit"` (fixed-formula bootstrap) or `"select"`
 #'     (embedded stepwise selection).}
 #'   \item{scope}{Only present when `mode == "select"`: the candidate
@@ -1556,6 +1562,12 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # step-level warning never reaches the user here; the count has to be read
   # off the returned objects and reported in aggregate.
   n_uncomputable_reps <- 0L
+  # Reasons are merged from EVERY select-mode replicate, not only the ones
+  # that stopped. A replicate that finished having silently passed over a
+  # candidate it could not score is the case a stopped-replicate count cannot
+  # see, and each replicate runs under suppressWarnings() so its own warning
+  # never reaches the user.
+  uncomputable_reasons <- stats::setNames(integer(0), character(0))
 
   # Progress bar over replicates (verbose only). Closed after the loop.
   pb <- if (verbose) utils::txtProgressBar(min = 0, max = n_boot, style = 3)
@@ -1638,9 +1650,13 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
 
     if (!is.null(boot_fit) && is.finite(boot_fit$fit$objective)) {
       n_success <- n_success + 1L
-      if (select_mode &&
-            isTRUE(boot_fit$criteria$stopped_uncomputable)) {
-        n_uncomputable_reps <- n_uncomputable_reps + 1L
+      if (select_mode) {
+        if (isTRUE(boot_fit$criteria$stopped_uncomputable)) {
+          n_uncomputable_reps <- n_uncomputable_reps + 1L
+        }
+        uncomputable_reasons <- .hzr_merge_reasons(
+          uncomputable_reasons, boot_fit$criteria$uncomputable_reasons
+        )
       }
       theta_b <- boot_fit$fit$theta
       names_b <- if (select_mode) {
@@ -1727,14 +1743,27 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     }
   }
 
+  n_indefinite <- unname(uncomputable_reasons["information_indefinite"])
+  if (is.na(n_indefinite)) n_indefinite <- 0L
+
   if (n_uncomputable_reps > 0L) {
     warning(n_uncomputable_reps, " of ", n_success, " successful replicates ",
             "stopped because the score statistic could not be computed for ",
             "any remaining candidate, rather than because no candidate met ",
             "`slentry`. Those replicates contribute no selections, so every ",
-            "reported selection frequency is depressed by them. Usual causes ",
-            "are a degenerate or collinear candidate column and resamples on ",
-            "which the information matrix is not invertible.", call. = FALSE)
+            "reported selection frequency is depressed by them.",
+            .hzr_format_reasons(uncomputable_reasons), call. = FALSE)
+  } else if (n_indefinite > 0L) {
+    # No replicate stopped, so the branch above stays quiet. Candidates the
+    # score test could not evaluate at beta = 0 were still passed over, and
+    # they are typically the strong ones -- which depresses exactly the
+    # selection frequencies a screen exists to measure.
+    warning(n_indefinite, " candidate score(s) ",
+            "across ", n_success, " replicates could not be computed because ",
+            .hzr_score_reason_text("information_indefinite"),
+            ". Those candidates were passed over rather than tested, so their ",
+            "selection frequencies are understated. See ",
+            "`$uncomputable_reasons`.", call. = FALSE)
   }
 
   result <- list(
@@ -1743,6 +1772,7 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     n_success  = n_success,
     n_failed   = n_failed,
     n_uncomputable_replicates = n_uncomputable_reps,
+    uncomputable_reasons      = uncomputable_reasons,
     mode       = if (select_mode) "select" else "refit"
   )
   if (select_mode) result$scope <- scope

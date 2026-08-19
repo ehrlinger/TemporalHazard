@@ -87,6 +87,35 @@ selects.
 
 ## Bug fixes
 
+* **`hzr_stepwise()` now says *why* a candidate could not be scored, and warns
+  when the reason is that the candidate looks strong.** Under
+  `criterion = "score"` a candidate whose Q statistic cannot be computed drops
+  out of the step, and the run previously reported only a count of them. Two of
+  the causes mean opposite things. A collinear column should be dropped. But
+  the observed information at `beta = 0` is not positive definite away from a
+  maximum, and when a candidate's effect is *large* the log-likelihood curves
+  upward there, the adjusted variance goes negative, and the candidate is
+  declined -- so the criterion is least able to score exactly the variables a
+  screen most wants to find. The old warning attributed both to "a degenerate
+  or collinear candidate column", which tells a user to discard their best
+  variable.
+
+  `$criteria$uncomputable_reasons` (and `$uncomputable_reasons` on a
+  `mode = "select"` bootstrap) now counts the causes by name, `$all_scores`
+  carries a `reason` column per candidate, and both warnings name them. A run
+  that *completed* while declining a candidate for this reason now warns too:
+  it previously returned a selection -- sometimes an empty one -- in complete
+  silence, which is the case where the omission is least visible. The
+  underlying limitation of the score criterion is unchanged and is tracked
+  separately; `criterion = "wald"` tests these candidates.
+
+  One behaviour change comes with it: the guard on the adjusted variance is now
+  a magnitude test rather than a sign test. A variance within rounding distance
+  of zero is reported as collinear whichever side of zero it lands on, and only
+  a materially negative one is reported as indefinite. The previous floor was
+  signed and relative to `I_bb`, so where `I_bb` was itself negative a slightly
+  negative variance passed through and produced a negative Q.
+
 * `hzr_bootstrap()` now resamples fits built with the **vector interface**
   (`time =` / `status =` rather than a formula plus `data`). Previously it
   resampled `data` only, but a vector-interface call stores `time = d$col` as
