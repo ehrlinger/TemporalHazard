@@ -65,10 +65,20 @@ test_that("degenerate and collinear candidates keep their own reasons", {
     fx$fit, scope = list(early = ~ z, const = ~ z), data = d,
     direction = "forward", criterion = "score", slentry = 0.5, trace = FALSE,
     control = list(n_starts = 1L)))
+  # Two exactly-collinear candidates, not one. For a perfect duplicate the
+  # true v_beta is exactly 0, so its computed SIGN is decided by rounding --
+  # this assertion passed on macOS and failed on Linux with
+  # "information_indefinite" until the magnitude test was put ahead of the
+  # sign test. A scaled copy rounds differently from an identical one, so the
+  # pair samples both sides of the boundary.
   d$zdup <- d$z
-  expect_identical(
-    .hzr_score_q(entered, "zdup", phase = "early", data = d)$reason,
-    "collinear")
+  d$zscaled <- 2 * d$z
+  for (v in c("zdup", "zscaled")) {
+    expect_identical(
+      .hzr_score_q(entered, v, phase = "early", data = d)$reason,
+      "collinear",
+      info = v)
+  }
 })
 
 test_that("hzr_stepwise reports the reasons and names the strong-candidate case", {

@@ -100,10 +100,12 @@ selects.
   underlying limitation of the score criterion is unchanged and is tracked
   separately; `criterion = "wald"` tests these candidates.
 
-  One behaviour change comes with it: a negative adjusted variance is now
-  always `NA`. The previous guard floored it relative to `I_bb`, so where
-  `I_bb` was itself negative a slightly negative variance passed through and
-  produced a negative Q.
+  One behaviour change comes with it: the guard on the adjusted variance is now
+  a magnitude test rather than a sign test. A variance within rounding distance
+  of zero is reported as collinear whichever side of zero it lands on, and only
+  a materially negative one is reported as indefinite. The previous floor was
+  signed and relative to `I_bb`, so where `I_bb` was itself negative a slightly
+  negative variance passed through and produced a negative Q.
 
 * `hzr_bootstrap()` now resamples fits built with the **vector interface**
   (`time =` / `status =` rather than a formula plus `data`). Previously it

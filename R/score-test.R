@@ -607,26 +607,34 @@
   # unrelated failures both land on "v_beta is unusable", and they carry
   # OPPOSITE meanings:
   #
-  #   v_beta < 0   the log-likelihood curves UPWARD in beta at 0, so the
-  #                quadratic approximation the score test rests on does not
-  #                hold there. Reached when the candidate's effect is far from
-  #                zero -- that is, when it is a STRONG candidate -- and also
-  #                if `current` has not truly converged.
-  #   0 <= v_beta  collinearity. I_bt %*% solve(I_tt) %*% I_tb -> I_bb, so the
-  #     <= floor   adjusted variance collapses towards zero FROM ABOVE: an
-  #                absolute `v_beta <= 0` test never fires, leaves v_beta
-  #                ~ 1e-14, and Q ~ 1e15 wins the step. Floor it relative to
-  #                the i_bb it is a difference of, at the scale where
-  #                cancellation has eaten the significant digits.
+  #   |v_beta| <= tol   collinearity. I_bt %*% solve(I_tt) %*% I_tb -> I_bb,
+  #                     so v_beta is a difference of two nearly equal numbers
+  #                     and its true value is 0. Left unguarded it lands at
+  #                     ~1e-14 and Q ~ 1e15 wins the step.
+  #   v_beta < -tol     the log-likelihood curves UPWARD in beta at 0, so the
+  #                     quadratic approximation the score test rests on does
+  #                     not hold there. Reached when the candidate's effect is
+  #                     far from zero -- a STRONG candidate -- and also when
+  #                     `current` has not truly converged.
   #
-  # The negative branch also widens the guard slightly: with i_bb < 0 the old
-  # single floor admitted a slightly negative v_beta and returned a negative
-  # Q. A variance is never negative, so that is now an NA like any other.
+  # The magnitude test must come FIRST, and the sign test must be against
+  # -tol rather than 0. For an exactly collinear candidate the true v_beta is
+  # exactly 0, so its computed sign is decided by rounding: an `if (v_beta <
+  # 0)` ahead of the floor reported a perfect duplicate as
+  # "information_indefinite" -- "this is a strong candidate, keep it" -- on
+  # Linux while reporting "collinear" on macOS, from the same code and data.
+  # Caught by CI, invisible on one platform. Inside the band the two are not
+  # distinguishable, and zero means collinear.
+  #
+  # tol takes abs(i_bb) because i_bb itself can be negative away from the
+  # optimum; the old floor was signed, which let a slightly negative v_beta
+  # through and returned a negative Q.
+  tol <- abs(i_bb) * sqrt(.Machine$double.eps)
+  if (abs(v_beta) <= tol) {
+    return(na_result("collinear"))
+  }
   if (v_beta < 0) {
     return(na_result("information_indefinite"))
-  }
-  if (v_beta <= i_bb * sqrt(.Machine$double.eps)) {
-    return(na_result("collinear"))
   }
   stat <- (u_beta^2) / v_beta
   list(stat = stat, df = 1L,
