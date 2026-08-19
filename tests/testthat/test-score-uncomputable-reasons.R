@@ -134,46 +134,54 @@ test_that("a degenerate-only screen does not claim a strong candidate", {
 # "this candidate's own observed information is not positive", err 3 is "the
 # candidate is unusable given what is already in the model". Folding them
 # together blames the current model for a fault in the candidate.
-
-.nonpositive_ibb_fixture <- function() {
-  # Heavy interval censoring drives i_bb slightly negative: those rows
-  # contribute a difference of survival terms rather than a log density.
-  set.seed(11)
-  n <- 300
-  d <- data.frame(z = rnorm(n), w = rnorm(n))
-  tt <- rexp(n, 0.3 * exp(0.5 * d$z))
-  d$t <- pmin(tt, 10)
-  code <- ifelse(tt >= 10, 0L, 1L)
-  d$t2 <- NA_real_
-  iv <- which(code == 1L)
-  iv <- iv[seq_len(floor(length(iv) * 0.9))]
-  d$t[iv] <- pmax(d$t[iv] - 0.5, 1e-6)
-  d$t2[iv] <- d$t[iv] + 3.0
-  code[iv] <- 3L
-  d$code <- code
-  ph <- list(early = hzr_phase("cdf", t_half = 1, nu = 1, m = 1,
-                               fixed = "shapes"),
-             const = hzr_phase("constant"))
-  fit <- suppressWarnings(hazard(
-    survival::Surv(t, t2, code, type = "interval") ~ 1, data = d,
-    dist = "multiphase", phases = ph, fit = TRUE,
-    control = list(n_starts = 1L, maxit = 800L)))
-  list(fit = fit, data = d)
-}
+#
+# The branch is REACHABLE on real data, and censoring rather than effect size
+# is what reaches it: an interval-censored row contributes a difference of
+# survival terms rather than a log density, so its second derivative is not
+# sign-constrained. Measured on a 2-phase fit over a grid of sample size,
+# interval share, interval width and true beta, 16 of 36 configurations gave
+# i_bb < 0, the most negative being -0.27 (n = 300, 90% interval-censored,
+# width 3, beta 1).
+#
+# It is NOT tested through such a fixture, and that is deliberate. i_bb is
+# evaluated at the fitted theta, so its value carries the optimizer's
+# cross-platform variation -- which is basin-scale, not rounding-scale. A
+# fixture at i_bb = -6e-4 passed on macOS and failed on Linux and Windows
+# because the fit landed slightly elsewhere and i_bb came out positive. A
+# knife-edge numeric is the wrong instrument for a branch test; the branch is
+# stubbed instead, following test-hessian-unavailable.R.
 
 test_that("a candidate whose own information is not positive says so", {
   skip_if_not_installed("numDeriv")
-  fx <- .nonpositive_ibb_fixture()
+  fx <- .reason_fixture(0.2)
 
-  # The fixture must actually exercise the branch, or the test asserts nothing.
-  nui <- .hzr_score_nuisance(fx$fit)
-  ex <- .hzr_score_expand(fx$fit, "z", phase = "early", data = fx$data)
-  info <- .hzr_score_information_expanded(fx$fit, ex)
-  expect_lte(info[ex$beta_idx, ex$beta_idx], 0)
+  # Flip only the candidate's own diagonal, leaving everything else as the
+  # real fit produced it, so the test isolates exactly the new branch.
+  orig <- TemporalHazard:::.hzr_score_information_expanded
+  local_mocked_bindings(
+    .hzr_score_information_expanded = function(current, exp_) {
+      info <- orig(current, exp_)
+      if (!is.null(info)) {
+        b <- exp_$beta_idx
+        info[b, b] <- -1e-3
+      }
+      info
+    }
+  )
 
-  expect_identical(
-    .hzr_score_q(fx$fit, "z", phase = "early", data = fx$data)$reason,
-    "information_nonpositive")
+  q <- .hzr_score_q(fx$fit, "z", phase = "early", data = fx$data)
+  expect_true(is.na(q$stat))
+  expect_identical(q$reason, "information_nonpositive")
+})
+
+test_that("the same candidate scores normally without the flipped diagonal", {
+  # The control for the test above: without the stub this candidate is
+  # scorable, so the stub is what produced the reason and not the fixture.
+  skip_if_not_installed("numDeriv")
+  fx <- .reason_fixture(0.2)
+  q <- .hzr_score_q(fx$fit, "z", phase = "early", data = fx$data)
+  expect_false(is.na(q$stat))
+  expect_true(is.na(q$reason))
 })
 
 test_that("the non-positive and collinear diagnoses stay distinct", {
