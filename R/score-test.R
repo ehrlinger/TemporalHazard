@@ -591,6 +591,32 @@
   u_beta <- grad[b]
   i_bb <- info[b, b]
 
+  if (!is.finite(u_beta) || !is.finite(i_bb)) {
+    return(na_result("nonfinite"))
+  }
+
+  # The candidate's OWN curvature, before any adjustment for the model. SAS
+  # tests this separately and before the tolerance test below -- `q1.c`:
+  #
+  #     diag = b1[n];
+  #     if (diag <= ZERO) { *err = 2; return ZERO; }   /* flag 2 */
+  #     ...
+  #     if (*qtol <= ZERO) { *err = 3; return ZERO; }  /* flag 3 */
+  #
+  # and the two are different diagnoses. This one says the candidate's own
+  # observed information is not positive; the tolerance test says the
+  # candidate is unusable *given what is already in the model*. Folding them
+  # together reports a candidate whose own curvature is wrong as though the
+  # current model were responsible for it.
+  #
+  # Reachable, and where this package's other censoring faults live: a
+  # multiphase fit with a large share of interval-censored rows drives i_bb
+  # slightly negative, because those rows contribute a difference of survival
+  # terms rather than a log density.
+  if (i_bb <= 0) {
+    return(na_result("information_nonpositive"))
+  }
+
   v_beta <- i_bb
   if (!is.null(nuisance$inv) && length(nuisance$idx) > 0L) {
     t_idx <- exp_$theta_idx[nuisance$idx]
@@ -598,7 +624,7 @@
     v_beta <- i_bb - as.numeric(i_bt %*% nuisance$inv %*% t(i_bt))
   }
 
-  if (!is.finite(u_beta) || !is.finite(v_beta) || !is.finite(i_bb)) {
+  if (!is.finite(v_beta)) {
     return(na_result("nonfinite"))
   }
 
@@ -626,10 +652,10 @@
   # Caught by CI, invisible on one platform. Inside the band the two are not
   # distinguishable, and zero means collinear.
   #
-  # tol takes abs(i_bb) because i_bb itself can be negative away from the
-  # optimum; the old floor was signed, which let a slightly negative v_beta
-  # through and returned a negative Q.
-  tol <- abs(i_bb) * sqrt(.Machine$double.eps)
+  # i_bb is known positive by the guard above, so tol needs no abs(); an
+  # earlier signed floor let a slightly negative v_beta through and returned
+  # a negative Q.
+  tol <- i_bb * sqrt(.Machine$double.eps)
   if (abs(v_beta) <= tol) {
     return(na_result("collinear"))
   }
@@ -658,6 +684,12 @@
       "at zero, so these are typically STRONG candidates rather than",
       "degenerate ones; `criterion = \"wald\"` tests them. It is also reached",
       "when the current fit has not truly converged"
+    ),
+    information_nonpositive = paste(
+      "the candidate's own observed information was not positive, before any",
+      "adjustment for the current model. This is a different fault from",
+      "collinearity: the candidate is a poor one in itself, or the fit it",
+      "would be added to is not at a maximum"
     ),
     collinear = "the candidate was collinear with the current model",
     constant  = "the candidate column was constant",

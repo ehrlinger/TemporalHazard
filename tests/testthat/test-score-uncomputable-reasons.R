@@ -125,3 +125,64 @@ test_that("a degenerate-only screen does not claim a strong candidate", {
                  names(r$criteria$uncomputable_reasons))
   expect_identical(names(r$criteria$uncomputable_reasons), "constant")
 })
+
+
+# The candidate's own curvature, separately from the model's ------------------
+#
+# SAS tests I_bb <= 0 before the tolerance test and reports it as a distinct
+# diagnostic (q1.c err 2 vs err 3). The two say different things: err 2 is
+# "this candidate's own observed information is not positive", err 3 is "the
+# candidate is unusable given what is already in the model". Folding them
+# together blames the current model for a fault in the candidate.
+
+.nonpositive_ibb_fixture <- function() {
+  # Heavy interval censoring drives i_bb slightly negative: those rows
+  # contribute a difference of survival terms rather than a log density.
+  set.seed(11)
+  n <- 300
+  d <- data.frame(z = rnorm(n), w = rnorm(n))
+  tt <- rexp(n, 0.3 * exp(0.5 * d$z))
+  d$t <- pmin(tt, 10)
+  code <- ifelse(tt >= 10, 0L, 1L)
+  d$t2 <- NA_real_
+  iv <- which(code == 1L)
+  iv <- iv[seq_len(floor(length(iv) * 0.9))]
+  d$t[iv] <- pmax(d$t[iv] - 0.5, 1e-6)
+  d$t2[iv] <- d$t[iv] + 3.0
+  code[iv] <- 3L
+  d$code <- code
+  ph <- list(early = hzr_phase("cdf", t_half = 1, nu = 1, m = 1,
+                               fixed = "shapes"),
+             const = hzr_phase("constant"))
+  fit <- suppressWarnings(hazard(
+    survival::Surv(t, t2, code, type = "interval") ~ 1, data = d,
+    dist = "multiphase", phases = ph, fit = TRUE,
+    control = list(n_starts = 1L, maxit = 800L)))
+  list(fit = fit, data = d)
+}
+
+test_that("a candidate whose own information is not positive says so", {
+  skip_if_not_installed("numDeriv")
+  fx <- .nonpositive_ibb_fixture()
+
+  # The fixture must actually exercise the branch, or the test asserts nothing.
+  nui <- .hzr_score_nuisance(fx$fit)
+  ex <- .hzr_score_expand(fx$fit, "z", phase = "early", data = fx$data)
+  info <- .hzr_score_information_expanded(fx$fit, ex)
+  expect_lte(info[ex$beta_idx, ex$beta_idx], 0)
+
+  expect_identical(
+    .hzr_score_q(fx$fit, "z", phase = "early", data = fx$data)$reason,
+    "information_nonpositive")
+})
+
+test_that("the non-positive and collinear diagnoses stay distinct", {
+  txt <- .hzr_score_reason_text("information_nonpositive")
+  expect_match(txt, "own observed information")
+  # It must not read as collinearity, which carries the opposite remedy, nor
+  # as the strong-candidate case.
+  expect_no_match(txt, "collinear with")
+  expect_no_match(txt, "STRONG")
+  expect_false(identical(txt, .hzr_score_reason_text("collinear")))
+  expect_false(identical(txt, .hzr_score_reason_text("information_indefinite")))
+})
