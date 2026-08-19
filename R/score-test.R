@@ -220,6 +220,54 @@
   h
 }
 
+#' Numeric observed information for a multiphase fit
+#'
+#' `.hzr_hessian_multiphase()` declines by design when any row is left- or
+#' interval-censored (`status` in `{-1, 2}`): the analytic second derivative
+#' is not defined for those contributions. Before this fallback existed the
+#' `NULL` propagated to `nuisance$ok = FALSE` and every candidate scored `NA`,
+#' so the screen stopped having tested nothing -- and said so in the language
+#' of a degenerate column, which is a different fault entirely.
+#'
+#' This costs a numeric Hessian per candidate, which is the per-candidate work
+#' the score criterion exists to avoid. It fires only where the analytic form
+#' is unavailable, and slower is the correct trade against selecting nothing.
+#'
+#' @noRd
+.hzr_score_multiphase_hessian <- function(current, theta, phases,
+                                           covariate_counts, x_list) {
+  if (!requireNamespace("numDeriv", quietly = TRUE)) {
+    # Returning NULL here would NA every candidate and make stepwise report
+    # nothing significant -- a plausible-looking wrong answer.
+    stop(
+      "The score criterion needs the 'numDeriv' package for a multiphase fit ",
+      "with left- or interval-censored rows: the analytic observed ",
+      "information is not defined there, so it must be computed numerically. ",
+      "Install 'numDeriv', or select with the Wald criterion.",
+      call. = FALSE
+    )
+  }
+  d <- current$data
+  nll <- function(par) {
+    -.hzr_logl_multiphase(
+      par, time = d$time, status = d$status,
+      time_lower = d$time_lower, time_upper = d$time_upper,
+      x = d$x, weights = d$weights, phases = phases,
+      covariate_counts = covariate_counts, x_list = x_list
+    )
+  }
+  h <- tryCatch(numDeriv::hessian(nll, theta), error = function(e) NULL)
+  if (is.null(h) || !is.matrix(h) || nrow(h) != length(theta) ||
+        !all(is.finite(h))) {
+    return(NULL)
+  }
+  # Mirror .hzr_hessian_multiphase(), which names from `theta`, so the two are
+  # interchangeable to a caller. `theta` is unnamed on an expanded model, and
+  # this then yields NULL dimnames there -- as the analytic path also does.
+  dimnames(h) <- list(names(theta), names(theta))
+  h
+}
+
 #' Observed information (Hessian of the negative log-likelihood)
 #'
 #' @noRd
@@ -228,16 +276,23 @@
   if (current$spec$dist != "multiphase") {
     return(.hzr_score_single_hessian(current, d$x, theta))
   }
-  tryCatch(
+  phases <- .hzr_score_phases(current)
+  h <- tryCatch(
     .hzr_hessian_multiphase(
       theta, time = d$time, status = d$status,
       time_lower = d$time_lower, time_upper = d$time_upper,
       x = d$x, weights = d$weights,
-      phases = .hzr_score_phases(current),
+      phases = phases,
       covariate_counts = current$fit$covariate_counts,
       x_list = current$fit$x_list
     ),
     error = function(e) NULL
+  )
+  if (!is.null(h)) {
+    return(h)
+  }
+  .hzr_score_multiphase_hessian(
+    current, theta, phases, current$fit$covariate_counts, current$fit$x_list
   )
 }
 
@@ -467,10 +522,12 @@
     ),
     error = function(e) NULL
   )
-  if (is.null(h) || !is.matrix(h) || nrow(h) != length(exp_$theta)) {
-    return(NULL)
+  if (!is.null(h) && is.matrix(h) && nrow(h) == length(exp_$theta)) {
+    return(h)
   }
-  h
+  .hzr_score_multiphase_hessian(
+    current, exp_$theta, exp_$phases, exp_$covariate_counts, exp_$x_list
+  )
 }
 
 #' Score statistic for one entry candidate

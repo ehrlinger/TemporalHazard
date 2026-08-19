@@ -143,6 +143,47 @@ selects.
   diagnostics are still `NA` -- but the reason is now stated. Found while
   fitting a production interval-censored study.
 
+* **The score criterion could not test a single candidate on an interval- or
+  left-censored multiphase fit.** The analytic multiphase Hessian declines by
+  design for `status` in `{-1, 2}`, and the score path had no fallback on that
+  branch -- the single-distribution branch has had one all along. The `NULL`
+  propagated into the step's reusable nuisance block, every candidate scored
+  `NA`, and `hzr_stepwise()` stopped having tested nothing, reporting it in the
+  language of a degenerate candidate. Both halves became reachable in this
+  release and only together: the `Surv()` translation fix above made left- and
+  interval-censored rows expressible through the formula interface, and
+  `criterion = "score"` became the default. No test exercised the two at once.
+
+  The observed information is now computed numerically where the analytic form
+  declines, as the single-distribution path already did. It agrees with the
+  analytic Hessian to 1e-4 on the equivalent right-censored fit, which is what
+  licenses using it in place of one. The cost is a numeric Hessian per
+  candidate -- the per-candidate work the score criterion exists to avoid --
+  but it is paid only where there would otherwise be no information matrix at
+  all, and slower is the right trade against selecting nothing. `numDeriv` is a
+  `Suggests` here as elsewhere: when it is absent this now stops and names both
+  it and `criterion = "wald"`, rather than returning a screen that tested
+  nothing.
+
+
+* **`hzr_stepwise(scope = NULL)` still failed on a formula passed by
+  variable.** The fix for that defect reached `.hzr_refit_with_scope()` but
+  not three sibling sites, so the default-scope path still raised
+  `invalid formula "f": not a call` -- the very string the entry below says
+  no longer occurs. All four sites now resolve the stored formula through one
+  internal helper, so a fifth cannot drift: `match.call()` records `formula`
+  unevaluated, and `deparse(quote(f))` is `"f"`, which `as.formula()` rejects.
+
+  Two consequences of that path becoming reachable, both fixed here.
+  `scope = NULL` now skips columns it cannot model instead of erroring on
+  them -- numeric and logical columns are kept, since whether a 0/1 field
+  arrives logical or numeric depends on the reader that built the frame
+  rather than on the variable:
+  under an explicit scope the caller named the column, so an error is right,
+  but under `scope = NULL` the package enumerates the candidates itself and a
+  column it cannot model is its own choice to make better. Any data frame
+  carrying a character or factor column -- which is most of them -- was
+  otherwise unusable with the default scope.
 
 * `hzr_bootstrap()` no longer returns a silent `n_success = 0` (and
   `n_failed = n_boot`, with no error and no warning) when the model was fitted
