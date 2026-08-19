@@ -1,4 +1,4 @@
-# TemporalHazard 1.2.0
+# TemporalHazard 1.2.1
 
 ## Breaking changes
 
@@ -86,6 +86,33 @@ selects.
   log-likelihood is not among them; that still comes from the `.lst`.
 
 ## Bug fixes
+
+* **The multiphase gradient and Hessian disagreed with the log-likelihood on
+  left-truncated data.** For a row with `status` in `{0, 1}` the log-likelihood
+  subtracts `H(time_lower)` unconditionally, but the analytic derivatives
+  defined the entry time with an extra `time_lower < time` filter. A subject
+  entering the risk set at its own event or censoring time was therefore
+  differentiated as though it had no entry time, while its weight was still
+  applied -- so the derivative was taken of a different function from the one
+  being evaluated, and the optimizer left any sensible region immediately.
+  Measured on `avc` at fixed parameters, the analytic gradient was out by 382
+  where every row entered at its exit time, and by 126 where only *some* did
+  -- which is ordinary left-truncated data, not a pathological input. Both
+  derivatives now define the entry time exactly as the likelihood does, and
+  new tests assert agreement with `numDeriv` across five entry-time layouts
+  rather than the one the old filter happened to admit.
+
+* **`hazard()` documented `time_lower` incorrectly, and now warns when it is
+  self-defeating.** The argument was described only as the lower bound of a
+  censoring interval, "defaulting to `time` if NULL". For `status` in
+  `{0, 1}` it is in fact the counting-process **entry time**, and leaving it
+  `NULL` means entry at `0`, *not* at `time`. Read literally, the old wording
+  said that passing `time_lower = time` changes nothing; it in fact states
+  that every subject left the risk set at the instant it entered, which
+  removes every such row from the likelihood and leaves the objective
+  unbounded above. The documentation now gives both roles, and supplying
+  `time_lower >= time` on a `status` 0 or 1 row warns, naming the count and
+  the `NULL` default. Reported as issue #136.
 
 * **`hzr_stepwise()` now says *why* a candidate could not be scored, and warns
   when the reason is that the candidate looks strong.** Under

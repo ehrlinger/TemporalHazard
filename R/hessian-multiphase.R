@@ -376,11 +376,20 @@ NULL
   n_e       <- length(idx_event)
 
   # Counting-process start-time handling (mirrors gradient)
+  # The start time must be defined EXACTLY as the log-likelihood defines it:
+  # `.hzr_logl_multiphase()` subtracts H(time_lower) from every status 0/1 row
+  # whenever `time_lower` is supplied, with no further condition. An earlier
+  # `time_lower < time` filter here excluded rows entering at their own event
+  # or censoring time, so the derivative was taken of a different function from
+  # the one being evaluated -- the optimizer then walked off a cliff. The
+  # `> 0` test is only a skip: H(0) = 0, so those rows contribute nothing
+  # either way, and it must match `has_start` below or the term is weighted in
+  # while its derivative is left at zero.
   need_start <- !is.null(time_lower) &&
-                any(time_lower > 0 & time_lower < time & status %in% c(0L, 1L))
+                any(time_lower > 0 & status %in% c(0L, 1L))
   start_vec <- if (need_start) {
     sv <- rep(0, n)
-    epoch_idx <- status %in% c(0L, 1L) & time_lower < time
+    epoch_idx <- status %in% c(0L, 1L)
     sv[epoch_idx] <- time_lower[epoch_idx]
     sv
   } else {
