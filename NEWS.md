@@ -76,6 +76,15 @@ selects.
   coefficient distribution conditional on selection. `scope = NULL`
   (the default) preserves the original fixed-formula bootstrap unchanged.
 
+* `hzr_read_outhaz()` reads a `PROC HAZARD` `outhaz=` estimate dataset,
+  returning the estimates, each parameter's free/fixed status, the
+  variance-covariance matrix over the free parameters, and the model-structure
+  flags. `outhaz` stores its numbers at full double precision where the
+  printed `.lst` carries about seven significant figures, so for any quantity
+  it holds it is the better parity reference -- print precision stops being
+  the binding constraint and optimizer convergence takes over. The
+  log-likelihood is not among them; that still comes from the `.lst`.
+
 ## Bug fixes
 
 * **`hzr_stepwise()` now says *why* a candidate could not be scored, and warns
