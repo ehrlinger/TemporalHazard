@@ -134,6 +134,28 @@ selects.
   diagnostics are still `NA` -- but the reason is now stated. Found while
   fitting a production interval-censored study.
 
+* **The score criterion could not test a single candidate on an interval- or
+  left-censored multiphase fit.** The analytic multiphase Hessian declines by
+  design for `status` in `{-1, 2}`, and the score path had no fallback on that
+  branch -- the single-distribution branch has had one all along. The `NULL`
+  propagated into the step's reusable nuisance block, every candidate scored
+  `NA`, and `hzr_stepwise()` stopped having tested nothing, reporting it in the
+  language of a degenerate candidate. Both halves became reachable in this
+  release and only together: the `Surv()` translation fix above made left- and
+  interval-censored rows expressible through the formula interface, and
+  `criterion = "score"` became the default. No test exercised the two at once.
+
+  The observed information is now computed numerically where the analytic form
+  declines, as the single-distribution path already did. It agrees with the
+  analytic Hessian to 1e-4 on the equivalent right-censored fit, which is what
+  licenses using it in place of one. The cost is a numeric Hessian per
+  candidate -- the per-candidate work the score criterion exists to avoid --
+  but it is paid only where there would otherwise be no information matrix at
+  all, and slower is the right trade against selecting nothing. `numDeriv` is a
+  `Suggests` here as elsewhere: when it is absent this now stops and names both
+  it and `criterion = "wald"`, rather than returning a screen that tested
+  nothing.
+
 
 * **`hzr_stepwise(scope = NULL)` still failed on a formula passed by
   variable.** The fix for that defect reached `.hzr_refit_with_scope()` but
