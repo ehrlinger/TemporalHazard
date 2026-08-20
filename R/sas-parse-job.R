@@ -91,3 +91,136 @@
     untranslated = .hzr_untranslated_frame()
   )
 }
+
+#' Parse a PROC HAZARD block into a hazard() or hzr_stepwise() call.
+#'
+#' Every keyword is resolved through .hzr_sas_token() in its lexer context.
+#' A keyword that does not resolve is recorded in `untranslated`, never
+#' skipped: a dropped option changes the model silently.
+#' @noRd
+.hzr_parse_hazard <- function(block) {
+  st <- strsplit(block$text, ";", fixed = TRUE)[[1L]]
+  untr <- .hzr_untranslated_frame()
+  seen <- 0L
+  mapped <- 0L
+  note <- function(kw, reason) {
+    untr <<- rbind(untr, .hzr_untranslated_frame(NA_integer_, kw, reason))
+  }
+
+  # --- statement 1: the PROC line and its options -------------------------
+  toks <- strsplit(trimws(st[[1L]]), " ", fixed = TRUE)[[1L]]
+  toks <- toks[nzchar(toks)]
+  ctl <- list()
+  data_name <- NULL
+  outhaz <- NULL
+
+  for (tok in toks) {
+    eqp <- .idx(tok, "=")
+    key <- if (eqp > 0L) substring(tok, 1L, eqp - 1L) else tok
+    val <- if (eqp > 0L) substring(tok, eqp + 1L) else ""
+    token <- .hzr_sas_token(key, "HAZARD", "HZRP")
+    if (identical(token, "PROC") || identical(token, "HAZARD")) next
+    seen <- seen + 1L
+    if (is.na(token)) {
+      note(key, "unknown PROC HAZARD option")
+      next
+    }
+    mapped <- mapped + 1L
+    switch(token,
+      DATA        = data_name <- val,
+      OUTHAZ      = outhaz <- val,
+      MAXITER     = ctl$maxit <- as.numeric(val),
+      CONDITION   = ctl$condition <- as.numeric(val),
+      CONSERVE    = ctl$conserve <- TRUE,
+      NOCONSERVE  = ctl$conserve <- FALSE,
+      QUASINEWTON = ctl$method <- "bfgs",
+      STEEPEST    = {
+        mapped <- mapped - 1L
+        note("STEEPEST", "no R equivalent for steepest descent (issue #145)")
+      },
+      # Print-only options. Mapped, because "no R effect" is the correct
+      # translation, not a gap.
+      PRINTIT = NULL, NOPRINT = NULL, NOCOR = NULL, NOCOV = NULL,
+      NOLOG = NULL, NONOTES = NULL,
+      {
+        mapped <- mapped - 1L
+        note(key, "no hazard() equivalent")
+      }
+    )
+  }
+
+  # --- statements 2..n ----------------------------------------------------
+  statements <- list()
+  parms_ops <- character(0)
+  sel_ops <- NULL
+  covars <- list()
+
+  for (i in seq_along(st)[-1L]) {
+    w <- strsplit(trimws(st[[i]]), " ", fixed = TRUE)[[1L]]
+    w <- w[nzchar(w)]
+    if (!length(w)) next
+    kw <- w[[1L]]
+    ops <- w[-1L]
+    token <- .hzr_sas_token(kw, "HAZARD", "STMT")
+    seen <- seen + 1L
+    if (is.na(token)) {
+      note(kw, "unknown HAZARD statement")
+      next
+    }
+    mapped <- mapped + 1L
+    switch(token,
+      TIME       = statements$TIME <- ops[[1L]],
+      EVENT      = statements$EVENT <- ops[[1L]],
+      ICENSOR    = statements$ICENSOR <- ops,
+      LCENSOR    = statements$LCENSOR <- ops[[1L]],
+      RCENSOR    = statements$RCENSOR <- ops[[1L]],
+      WEIGHT     = statements$WEIGHT <- ops[[1L]],
+      PARAMETERS = parms_ops <- ops,
+      STEPWISE   = sel_ops <- ops,
+      EARLY      = covars$early <- ops,
+      CONSTANT   = covars$constant <- ops,
+      LATE       = covars$late <- ops,
+      {
+        mapped <- mapped - 1L
+        note(kw, "no R equivalent")
+      }
+    )
+  }
+
+  # --- assemble -----------------------------------------------------------
+  parms <- .hzr_parse_parms(parms_ops, covars = covars)
+  untr <- rbind(untr, parms$untranslated)
+  cens <- .hzr_censor_spec(statements)
+  untr <- rbind(untr, cens$untranslated)
+
+  args <- list()
+  if (!is.null(data_name)) args$data <- as.name(data_name)
+  args$time <- as.name(statements$TIME)
+  args$status <- cens$status_expr
+  if (!is.null(cens$time_lower)) args$time_lower <- cens$time_lower
+  if (!is.null(cens$time_upper)) args$time_upper <- cens$time_upper
+  args$phases <- parms$phases
+  args$theta <- parms$theta
+  if (!is.null(statements$WEIGHT)) args$weights <- as.name(statements$WEIGHT)
+
+  # Canonical control order, so the emitted call does not depend on the order
+  # the options happened to appear in the SAS text.
+  ctl <- ctl[intersect(c("maxit", "condition", "conserve", "method"),
+                       names(ctl))]
+  if (length(ctl)) args$control <- as.call(c(quote(list), ctl))
+
+  head <- quote(hazard)
+  if (!is.null(sel_ops)) {
+    sel <- .hzr_selection_spec(sel_ops)
+    untr <- rbind(untr, sel$untranslated)
+    if (!is.null(sel$direction)) {
+      head <- quote(hzr_stepwise)
+      args$direction <- sel$direction
+      if (!is.null(sel$slentry)) args$slentry <- sel$slentry
+      if (!is.null(sel$slstay)) args$slstay <- sel$slstay
+    }
+  }
+
+  list(call = as.call(c(head, args)), outhaz = outhaz,
+       untranslated = untr, tokens_seen = seen, tokens_mapped = mapped)
+}
