@@ -376,7 +376,16 @@ could diverge.
 2. **`_CLLSURV`/`_CLUSURV` confidence-limit type.** `predict.hazard()` supports
    `conf.type = "log-log"` and `"logit"`. Which does HAZPRED emit? Guessing
    silently produces wrong limits.
-3. **`CONSERVE` + `ICENSOR` in SAS.** Does SAS conserve events when interval rows
+3. **`LCENSOR` precedence against `EVENT`.** The translator assumes an event
+   outranks a left-censoring flag — a row with `EVENT == 1` stays coded `1`
+   even if the `LCENSOR` flag is set — and that `ICENSOR` wins over `LCENSOR`
+   where both fire. Both are conservative readings chosen for symmetry, not
+   observed behaviour: no SAS reference run confirms either, and the corpus has
+   no row exercising the conflict. Recorded here because the mapping is silent
+   if wrong. (Settled from `src/hazard/varterm.c`: `EVENT` and `ICENSOR` are
+   alternatives — a job may specify `ICENSOR` alone — so the translator accepts
+   that and rejects only a job with neither.)
+4. **`CONSERVE` + `ICENSOR` in SAS.** Does SAS conserve events when interval rows
    are present, or silently disable as R does?
 
 None blocks implementation; each blocks a specific fixture from being trusted.
