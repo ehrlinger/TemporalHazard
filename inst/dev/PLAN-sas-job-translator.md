@@ -344,6 +344,9 @@ git commit -m "feat(sas): context-aware grammar lookup"
 
 **Interfaces:**
 - Produces: `.hzr_sas_job(source, calls, grid, inhaz, outhaz, untranslated, coverage)`
+  where `source` is `list(path =, checksum =)`. **`checksum` is an md5 from
+  `tools::md5sum()`** — base R has no SHA-256, and adding `digest` for a
+  provenance stamp would breach the no-new-dependency constraint.
   → object of class `hzr_sas_job`; `print.hzr_sas_job(x, ...)`;
   `.hzr_validate_sas_job(x)` → `x` invisibly, or `stop()`.
 
@@ -359,7 +362,7 @@ test_that("a job with no statements seen is rejected, not returned empty", {
   # hollow object -- right shape, empty inside -- which defeats is.null() and
   # a length check both. This is the hollow case.
   j <- .hzr_sas_job(
-    source = list(path = "x.sas", sha256 = "abc"),
+    source = list(path = "x.sas", checksum = "abc"),
     calls = list(), grid = NULL, inhaz = NULL, outhaz = NULL,
     untranslated = .hzr_untranslated_frame(),
     coverage = list(tokens_seen = 0L, tokens_mapped = 0L)
@@ -369,7 +372,7 @@ test_that("a job with no statements seen is rejected, not returned empty", {
 
 test_that("a populated job validates and prints its coverage", {
   j <- .hzr_sas_job(
-    source = list(path = "x.sas", sha256 = "abc"),
+    source = list(path = "x.sas", checksum = "abc"),
     calls = list(fit = quote(hazard(time = t, status = s))),
     grid = NULL, inhaz = NULL, outhaz = "LIB.D",
     untranslated = .hzr_untranslated_frame(),
@@ -471,9 +474,17 @@ The densest task. Read spec §5 and §7.1 first.
 
 **Interfaces:**
 - Consumes: `.hzr_sas_token()`.
-- Produces: `.hzr_parse_parms(operands)` → `list(phases = <call>, theta = <call>, untranslated = <data.frame>)`
+- Produces: `.hzr_parse_parms(operands, covars = list())` →
+  `list(phases = <call>, theta = <call>, untranslated = <data.frame>)`
   where `operands` is a character vector of `PARMS` tokens such as
   `c("MUE=0.2", "THALF=0.15", "NU=1.4", "M=1", "FIXM", "MUC=0.0005")`.
+
+  `covars` is an optional named list — `list(early = c("X1", "X2"), constant = ,
+  late = )` — carrying the operands of the `EARLY` / `CONSTANT` / `LATE`
+  statements. When a phase has covariates, its `hzr_phase()` call gains
+  `formula = ~X1 + X2`, built with
+  `str2lang(paste("~", paste(v, collapse = " + ")))`. These statements appear
+  16–44 times per production study, so this is v1 scope, not an extension.
 
 Mapping (spec §3.1 and §7.1):
 
@@ -515,6 +526,19 @@ test_that("WEIBULL becomes a G3 constrained at alpha = 1, eta = 1", {
     quote(list(
       hzr_phase("g3", tau = 2, gamma = 1.5, alpha = 1, eta = 1,
                 fixed = c("tau", "gamma", "alpha", "eta"))
+    ))
+  )
+})
+
+test_that("phase covariates become a formula on the owning phase", {
+  ops <- c("MUE=0.2", "THALF=1", "NU=1", "MUC=0.001")
+  got <- .hzr_parse_parms(ops, covars = list(early = c("AGE", "SEX"),
+                                             constant = "AGE"))
+  expect_equal(
+    got$phases,
+    quote(list(
+      hzr_phase("cdf", t_half = 1, nu = 1, formula = ~AGE + SEX),
+      hzr_phase("constant", formula = ~AGE)
     ))
   )
 })
@@ -744,13 +768,144 @@ Expected: FAIL, `could not find function ".hzr_parse_hazard"`.
 
 - [ ] **Step 3: Implement**
 
-Split `block$text` on `;`. Statement 1 is the PROC line: tokenise on spaces,
-resolve each in `HZRP` context, accumulate `control` entries and `outhaz`.
-Statements 2..n: resolve the leading word in `STMT` context and dispatch —
-`TIME`/`EVENT`/`ICENSOR`/`LCENSOR`/`RCENSOR` into the `statements` list for
-`.hzr_censor_spec()`, `PARAMETERS` into `.hzr_parse_parms()`. Count every token
-resolved into `tokens_seen`, and those with a non-`NA` `r_target` into
-`tokens_mapped`. Assemble with `as.call(c(quote(hazard), args))`.
+```r
+#' Parse a PROC HAZARD block into a hazard() or hzr_stepwise() call.
+#'
+#' Every keyword is resolved through .hzr_sas_token() in its lexer context.
+#' A keyword that does not resolve is recorded in `untranslated`, never
+#' skipped: a dropped option changes the model silently.
+#' @noRd
+.hzr_parse_hazard <- function(block) {
+  st <- strsplit(block$text, ";", fixed = TRUE)[[1L]]
+  untr <- .hzr_untranslated_frame()
+  seen <- 0L
+  mapped <- 0L
+  note <- function(kw, reason) {
+    untr <<- rbind(untr, .hzr_untranslated_frame(NA_integer_, kw, reason))
+  }
+
+  # --- statement 1: the PROC line and its options -------------------------
+  toks <- strsplit(trimws(st[[1L]]), " ", fixed = TRUE)[[1L]]
+  toks <- toks[nzchar(toks)]
+  ctl <- list()
+  data_name <- NULL
+  outhaz <- NULL
+
+  for (tok in toks) {
+    eqp <- .idx(tok, "=")
+    key <- if (eqp > 0L) substring(tok, 1L, eqp - 1L) else tok
+    val <- if (eqp > 0L) substring(tok, eqp + 1L) else ""
+    token <- .hzr_sas_token(key, "HAZARD", "HZRP")
+    if (identical(token, "PROC") || identical(token, "HAZARD")) next
+    seen <- seen + 1L
+    if (is.na(token)) {
+      note(key, "unknown PROC HAZARD option")
+      next
+    }
+    mapped <- mapped + 1L
+    switch(token,
+      DATA        = data_name <- val,
+      OUTHAZ      = outhaz <- val,
+      MAXITER     = ctl$maxit <- as.numeric(val),
+      CONDITION   = ctl$condition <- as.numeric(val),
+      CONSERVE    = ctl$conserve <- TRUE,
+      NOCONSERVE  = ctl$conserve <- FALSE,
+      QUASINEWTON = ctl$method <- "bfgs",
+      STEEPEST    = {
+        mapped <- mapped - 1L
+        note("STEEPEST", "no R equivalent for steepest descent (issue #145)")
+      },
+      # Print-only options. Mapped, because "no R effect" is the correct
+      # translation, not a gap.
+      PRINTIT = NULL, NOPRINT = NULL, NOCOR = NULL, NOCOV = NULL,
+      NOLOG = NULL, NONOTES = NULL,
+      {
+        mapped <- mapped - 1L
+        note(key, "no hazard() equivalent")
+      }
+    )
+  }
+
+  # --- statements 2..n ----------------------------------------------------
+  statements <- list()
+  parms_ops <- character(0)
+  sel_ops <- NULL
+  covars <- list()
+
+  for (i in seq_along(st)[-1L]) {
+    w <- strsplit(trimws(st[[i]]), " ", fixed = TRUE)[[1L]]
+    w <- w[nzchar(w)]
+    if (!length(w)) next
+    kw <- w[[1L]]
+    ops <- w[-1L]
+    token <- .hzr_sas_token(kw, "HAZARD", "STMT")
+    seen <- seen + 1L
+    if (is.na(token)) {
+      note(kw, "unknown HAZARD statement")
+      next
+    }
+    mapped <- mapped + 1L
+    switch(token,
+      TIME       = statements$TIME <- ops[[1L]],
+      EVENT      = statements$EVENT <- ops[[1L]],
+      ICENSOR    = statements$ICENSOR <- ops,
+      LCENSOR    = statements$LCENSOR <- ops[[1L]],
+      RCENSOR    = statements$RCENSOR <- ops[[1L]],
+      WEIGHT     = statements$WEIGHT <- ops[[1L]],
+      PARAMETERS = parms_ops <- ops,
+      STEPWISE   = sel_ops <- ops,
+      EARLY      = covars$early <- ops,
+      CONSTANT   = covars$constant <- ops,
+      LATE       = covars$late <- ops,
+      {
+        mapped <- mapped - 1L
+        note(kw, "no R equivalent")
+      }
+    )
+  }
+
+  # --- assemble -----------------------------------------------------------
+  parms <- .hzr_parse_parms(parms_ops, covars = covars)
+  untr <- rbind(untr, parms$untranslated)
+  cens <- .hzr_censor_spec(statements)
+  untr <- rbind(untr, cens$untranslated)
+
+  args <- list()
+  if (!is.null(data_name)) args$data <- as.name(data_name)
+  args$time <- as.name(statements$TIME)
+  args$status <- cens$status_expr
+  if (!is.null(cens$time_lower)) args$time_lower <- cens$time_lower
+  if (!is.null(cens$time_upper)) args$time_upper <- cens$time_upper
+  args$phases <- parms$phases
+  args$theta <- parms$theta
+  if (!is.null(statements$WEIGHT)) args$weights <- as.name(statements$WEIGHT)
+
+  # Canonical control order, so the emitted call does not depend on the order
+  # the options happened to appear in the SAS text.
+  ctl <- ctl[intersect(c("maxit", "condition", "conserve", "method"),
+                       names(ctl))]
+  if (length(ctl)) args$control <- as.call(c(quote(list), ctl))
+
+  head <- quote(hazard)
+  if (!is.null(sel_ops)) {
+    sel <- .hzr_selection_spec(sel_ops)
+    untr <- rbind(untr, sel$untranslated)
+    if (!is.null(sel$direction)) {
+      head <- quote(hzr_stepwise)
+      args$direction <- sel$direction
+      if (!is.null(sel$slentry)) args$slentry <- sel$slentry
+      if (!is.null(sel$slstay)) args$slstay <- sel$slstay
+    }
+  }
+
+  list(call = as.call(c(head, args)), outhaz = outhaz,
+       untranslated = untr, tokens_seen = seen, tokens_mapped = mapped)
+}
+```
+
+**Dependency note:** this calls `.hzr_selection_spec()` from Task 9. Implement
+the `sel_ops` branch as written; the Task 9 tests exercise it, and until Task 9
+lands `sel_ops` is always `NULL` for the Task 7 fixtures.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -827,13 +982,181 @@ test_that("a grid built by SET is untranslated, not guessed at", {
 Run: `Rscript -e 'devtools::load_all(quiet=TRUE); testthat::test_local(filter="sas-parse-hazpred")'`
 Expected: FAIL, `could not find function ".hzr_parse_hazpred"`.
 
-- [ ] **Step 3: Implement**
+- [ ] **Step 3: Implement the grid helper**
 
-Resolve PROC options in `HZPP` context for `DATA`/`INHAZ`/`OUT`, and the `TIME`
-statement in `STMT`. Then locate `DATA <name>;` in `txt`, take its body to the
-next `DATA `/`PROC ` boundary, and classify: `DO` plus `LOG(` → log grid, `DO`
-alone → explicit list, `SET` → untranslated. For the log grid, extract the lower
-bound, the `MAX=` value and the point count from the `INC` divisor (`99.9` → 100).
+```r
+#' Translate the DATA step that builds a HAZPRED prediction grid.
+#'
+#' Returns an unevaluated data.frame() call, or NULL when the step is not one
+#' of the two stereotyped forms. NULL means untranslated, never "no grid":
+#' a predict() with no newdata is a hollow result, so the caller must record it.
+#' @noRd
+.hzr_parse_grid <- function(txt, name) {
+  if (is.null(name) || !nzchar(name)) return(NULL)
+  p <- .idx(txt, paste0("DATA ", name, ";"))
+  if (p == 0L) return(NULL)
+
+  rest <- substring(txt, p + 1L)
+  ends <- c(.idx(rest, "DATA "), .idx(rest, "PROC "), .idx(rest, "%HAZ"))
+  ends <- ends[ends > 0L]
+  body <- if (length(ends)) substring(rest, 1L, min(ends)) else rest
+
+  time_var <- local({
+    m <- regmatches(body, regexec("([A-Z_][A-Z0-9_]*) *= *EXP\\(", body))[[1L]]
+    if (length(m) > 1L) m[[2L]] else NA_character_
+  })
+
+  # --- log-spaced grid: DO LN_TIME=-5 TO LN_MAX BY INC; t = EXP(LN_TIME) ----
+  if (grepl(" DO ", body) && grepl("LOG(", body, fixed = TRUE) &&
+      !is.na(time_var)) {
+    lo <- local({
+      m <- regmatches(body,
+             regexec("DO [A-Z_][A-Z0-9_]* *= *(-?[0-9.]+) TO", body))[[1L]]
+      if (length(m) > 1L) as.numeric(m[[2L]]) else NA_real_
+    })
+    hi <- local({
+      m <- regmatches(body, regexec("MAX *= *([0-9.]+)", body))[[1L]]
+      if (length(m) > 1L) as.numeric(m[[2L]]) else NA_real_
+    })
+    if (is.na(lo) || is.na(hi)) return(NULL)
+    # SAS writes INC=(5+LN_MAX)/99.9, i.e. 100 points inclusive.
+    inner <- bquote(exp(seq(.(lo), log(.(hi)), length.out = 100)))
+    cl <- as.call(list(quote(data.frame), inner))
+    names(cl) <- c("", time_var)
+    return(cl)
+  }
+
+  # --- explicit DO list: DO MONTHS=1,2,3,6,12,24 TO 180 BY 12; --------------
+  if (grepl(" DO ", body)) {
+    m <- regmatches(body,
+           regexec("DO ([A-Z_][A-Z0-9_]*) *= *([^;]+);", body))[[1L]]
+    if (length(m) < 3L) return(NULL)
+    var <- m[[2L]]
+    parts <- trimws(strsplit(m[[3L]], ",", fixed = TRUE)[[1L]])
+    elems <- list()
+    for (part in parts) {
+      rng <- regmatches(part,
+               regexec("^([0-9.]+) +TO +([0-9.]+)( +BY +([0-9.]+))?$",
+                       part))[[1L]]
+      if (length(rng) >= 3L) {
+        by <- if (length(rng) >= 5L && nzchar(rng[[5L]])) as.numeric(rng[[5L]]) else 1
+        elems[[length(elems) + 1L]] <- bquote(
+          seq(.(as.numeric(rng[[2L]])), .(as.numeric(rng[[3L]])), by = .(by))
+        )
+      } else if (grepl("^[0-9.]+$", part)) {
+        elems[[length(elems) + 1L]] <- as.numeric(part)
+      } else {
+        # An element we cannot read (a SAS expression such as 1*DTY). Refuse
+        # the whole grid rather than emit a partial one.
+        return(NULL)
+      }
+    }
+    inner <- as.call(c(quote(c), elems))
+    cl <- as.call(list(quote(data.frame), inner))
+    names(cl) <- c("", var)
+    return(cl)
+  }
+
+  # SET-derived or anything else: not translatable.
+  NULL
+}
+```
+
+- [ ] **Step 3b: Implement the HAZPRED parser**
+
+```r
+#' Parse a PROC HAZPRED block into predict() call(s).
+#'
+#' HAZPRED emits _SURVIV/_CLLSURV/_CLUSURV and _HAZARD/_CLLHAZ/_CLUHAZ, so it
+#' maps to two predict() calls with se.fit. `conf.type` is deliberately NOT set:
+#' whether SAS uses log-log or logit limits is unresolved (spec section 8), and
+#' guessing produces silently wrong bounds.
+#' @noRd
+.hzr_parse_hazpred <- function(block, txt) {
+  st <- strsplit(block$text, ";", fixed = TRUE)[[1L]]
+  untr <- .hzr_untranslated_frame()
+  seen <- 0L
+  mapped <- 0L
+  note <- function(kw, reason) {
+    untr <<- rbind(untr, .hzr_untranslated_frame(NA_integer_, kw, reason))
+  }
+
+  toks <- strsplit(trimws(st[[1L]]), " ", fixed = TRUE)[[1L]]
+  toks <- toks[nzchar(toks)]
+  data_name <- NULL
+  inhaz <- NULL
+  want_surv <- TRUE
+  want_haz <- TRUE
+  want_cl <- TRUE
+
+  for (tok in toks) {
+    eqp <- .idx(tok, "=")
+    key <- if (eqp > 0L) substring(tok, 1L, eqp - 1L) else tok
+    val <- if (eqp > 0L) substring(tok, eqp + 1L) else ""
+    token <- .hzr_sas_token(key, "HAZPRED", "HZPP")
+    if (identical(token, "PROC") || identical(token, "HAZPRED")) next
+    seen <- seen + 1L
+    if (is.na(token)) {
+      note(key, "unknown PROC HAZPRED option")
+      next
+    }
+    mapped <- mapped + 1L
+    switch(token,
+      DATA    = data_name <- val,
+      INHAZ   = inhaz <- val,
+      OUT     = NULL,
+      NOSURV  = want_surv <- FALSE,
+      NOHAZ   = want_haz <- FALSE,
+      NOCL    = want_cl <- FALSE,
+      CLIMITS = want_cl <- TRUE,
+      NOLOG = NULL, NONOTES = NULL,
+      {
+        mapped <- mapped - 1L
+        note(key, "no predict() equivalent")
+      }
+    )
+  }
+
+  for (i in seq_along(st)[-1L]) {
+    w <- strsplit(trimws(st[[i]]), " ", fixed = TRUE)[[1L]]
+    w <- w[nzchar(w)]
+    if (!length(w)) next
+    kw <- w[[1L]]
+    token <- .hzr_sas_token(kw, "HAZPRED", "STMT")
+    seen <- seen + 1L
+    if (is.na(token)) {
+      note(kw, "unknown HAZPRED statement")
+      next
+    }
+    mapped <- mapped + 1L
+    if (!(token %in% c("TIME", "ID"))) {
+      mapped <- mapped - 1L
+      note(kw, "SAS listing control; no R effect")
+    }
+  }
+
+  grid <- .hzr_parse_grid(txt, data_name)
+  if (is.null(grid) && !is.null(data_name)) {
+    note(paste0("DATA=", data_name),
+         "prediction grid DATA step is not one of the translatable forms")
+  }
+
+  mk <- function(type) {
+    args <- list(quote(fit))
+    if (!is.null(data_name)) args$newdata <- as.name(data_name)
+    args$type <- type
+    args$se.fit <- want_cl
+    as.call(c(quote(predict), args))
+  }
+
+  list(
+    call = if (want_surv) mk("survival") else mk("hazard"),
+    call_haz = if (want_surv && want_haz) mk("hazard") else NULL,
+    inhaz = inhaz, grid = grid, untranslated = untr,
+    tokens_seen = seen, tokens_mapped = mapped
+  )
+}
+```
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -997,7 +1320,7 @@ templating.
 ```r
 test_that("calls render as R chunks", {
   j <- .hzr_sas_job(
-    source = list(path = "hz.death.AVC.sas", sha256 = "abc"),
+    source = list(path = "hz.death.AVC.sas", checksum = "abc"),
     calls = list(fit = quote(hazard(time = T, status = D))),
     grid = NULL, inhaz = NULL, outhaz = "EX.HZD",
     untranslated = .hzr_untranslated_frame(),
@@ -1010,7 +1333,7 @@ test_that("calls render as R chunks", {
 
 test_that("an untranslated construct becomes a visible callout", {
   j <- .hzr_sas_job(
-    source = list(path = "x.sas", sha256 = "abc"),
+    source = list(path = "x.sas", checksum = "abc"),
     calls = list(fit = quote(hazard(time = T, status = D))),
     grid = NULL, inhaz = NULL, outhaz = NULL,
     untranslated = .hzr_untranslated_frame(12L, "STEEPEST",
@@ -1026,7 +1349,7 @@ test_that("an unresolved INHAZ renders a stop(), not a comment", {
   # The document must FAIL to render rather than produce a report over a model
   # it never loaded.
   j <- .hzr_sas_job(
-    source = list(path = "hp.sas", sha256 = "abc"),
+    source = list(path = "hp.sas", checksum = "abc"),
     calls = list(pred = quote(predict(fit, newdata = PREDICT))),
     grid = NULL, inhaz = "CABGKUL.HMDEADP", outhaz = NULL,
     untranslated = .hzr_untranslated_frame(),
@@ -1045,11 +1368,63 @@ Expected: FAIL, `could not find function ".hzr_render_qmd"`.
 
 - [ ] **Step 3: Implement**
 
-YAML header with `title` from the source basename. Then, in order: a provenance
-comment carrying `source$path` and `sha256`; an unresolved-`INHAZ` `stop()` chunk
-if `inhaz` is set and unresolved; the grid chunk if present; each entry of
-`calls` as its own chunk via `deparse()`; and a `::: {.callout-warning}` block
-per `untranslated` row. Close with a coverage line.
+```r
+#' Render an hzr_sas_job as Quarto source.
+#'
+#' Calls are stored unevaluated, so rendering is deparse() rather than string
+#' templating. An unresolved INHAZ emits stop(), not a comment: the document
+#' must fail to render rather than produce a report over a model it never
+#' loaded.
+#' @noRd
+.hzr_render_qmd <- function(job) {
+  out <- character(0)
+  add <- function(...) out <<- c(out, ...)
+  base <- basename(job$source$path)
+
+  add("---",
+      sprintf('title: "%s"', sub("[.]sas$", "", base)),
+      "format: html",
+      "---",
+      "")
+  add(sprintf("<!-- Translated from %s (md5 %s) by hzr_translate_sas(). -->",
+              base, substr(job$source$checksum, 1L, 12L)),
+      "")
+  add("```{r}", "#| label: setup", "library(TemporalHazard)", "```", "")
+
+  if (!is.null(job$inhaz) && !isTRUE(job$inhaz_resolved)) {
+    lib <- sub("[.].*$", "", job$inhaz)
+    add("```{r}",
+        "#| label: inhaz-unresolved",
+        sprintf(
+          "stop('unresolved INHAZ=%s -- pass librefs = c(%s = \"<path>\") to hzr_translate_sas()')",
+          job$inhaz, lib
+        ),
+        "```", "")
+  }
+
+  for (nm in names(job$calls)) {
+    add("```{r}",
+        sprintf("#| label: %s", nm),
+        deparse(job$calls[[nm]], width.cutoff = 60L),
+        "```", "")
+  }
+
+  for (i in seq_len(nrow(job$untranslated))) {
+    add("::: {.callout-warning}",
+        sprintf("## UNTRANSLATED: %s", job$untranslated$construct[i]),
+        job$untranslated$reason[i],
+        ":::", "")
+  }
+
+  add(sprintf("<!-- coverage: %d/%d tokens mapped -->",
+              job$coverage$tokens_mapped, job$coverage$tokens_seen))
+  out
+}
+```
+
+`job$inhaz_resolved` is set by `hzr_translate_sas()` in Task 11; on a job that
+lacks it, `job$inhaz_resolved` is `NULL` and `!isTRUE(NULL)` is `TRUE`, so an
+unresolved `INHAZ` fails closed.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -1123,12 +1498,131 @@ Expected: FAIL, `could not find function "hzr_translate_sas"`.
 
 - [ ] **Step 3: Implement**
 
-Read, lex, extract blocks; error if none. Parse each block; assemble the job;
-`.hzr_validate_sas_job()`. Resolve `INHAZ` against `librefs` by splitting on `.`
-and matching the libref name; on success rewrite the `pred` call to read from
-`hzr_read_outhaz(file.path(<path>, <member>))`. Warn once, listing every
-untranslated construct and any unresolved `INHAZ`. Write the `.qmd`. Roxygen it
-with `@return`, `@export`, and a `@examples` block using `\donttest{}`.
+```r
+#' Translate a SAS HAZARD job into a Quarto document
+#'
+#' Reads a SAS program containing `PROC HAZARD` and/or `PROC HAZPRED` blocks and
+#' emits a Quarto document that reproduces the analysis with [hazard()] and
+#' [predict.hazard()].
+#'
+#' Constructs the translator does not cover are recorded on the returned object
+#' and rendered as visible callouts, never dropped. A `PROC HAZPRED` job whose
+#' `INHAZ=` fitted model cannot be located emits a `stop()`, so the document
+#' fails to render rather than reporting over a model it did not load.
+#'
+#' @param path Path to a `.sas` file.
+#' @param out_dir Directory to write the `.qmd` into. `NULL` (default) parses
+#'   without writing.
+#' @param librefs Optional named character vector mapping SAS librefs to
+#'   directories, e.g. `c(EX = "estimates")`, used to resolve `INHAZ=`.
+#' @return An `hzr_sas_job` object, invisibly.
+#' @examples
+#' \donttest{
+#' job <- hzr_translate_sas(
+#'   system.file("extdata", "hz-example.sas", package = "TemporalHazard")
+#' )
+#' }
+#' @export
+hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
+  stopifnot(is.character(path), length(path) == 1L)
+  if (!file.exists(path)) stop("no such file: ", path, call. = FALSE)
+  if (!is.null(librefs) &&
+      (!is.character(librefs) || is.null(names(librefs)))) {
+    stop('librefs must be a named character vector, e.g. c(EX = "estimates").',
+         call. = FALSE)
+  }
+
+  txt <- .hzr_sas_normalise(readLines(path, warn = FALSE))
+  blocks <- .hzr_sas_blocks(txt)
+  if (!length(blocks)) {
+    stop("no HAZARD or HAZPRED block found in ", path, call. = FALSE)
+  }
+
+  calls <- list()
+  untr <- .hzr_untranslated_frame()
+  seen <- 0L
+  mapped <- 0L
+  inhaz <- NULL
+  outhaz <- NULL
+  grid <- NULL
+
+  for (b in blocks) {
+    if (identical(b$proc, "HAZARD")) {
+      r <- .hzr_parse_hazard(b)
+      calls$fit <- r$call
+      outhaz <- r$outhaz
+    } else {
+      r <- .hzr_parse_hazpred(b, txt)
+      inhaz <- r$inhaz
+      grid <- r$grid
+      calls$pred <- r$call
+      if (!is.null(r$call_haz)) calls$pred_haz <- r$call_haz
+    }
+    untr <- rbind(untr, r$untranslated)
+    seen <- seen + r$tokens_seen
+    mapped <- mapped + r$tokens_mapped
+  }
+
+  # The grid is an assignment, placed before the predict() chunks that use it.
+  if (!is.null(grid) && !is.null(calls$pred[["newdata"]])) {
+    nm <- as.character(calls$pred[["newdata"]])
+    calls <- c(list(grid = call("<-", as.name(nm), grid)), calls)
+  }
+
+  # --- INHAZ resolution: this job's own OUTHAZ, then librefs, then fail ----
+  resolved <- FALSE
+  if (!is.null(inhaz)) {
+    if (!is.null(outhaz) && identical(inhaz, outhaz)) {
+      resolved <- TRUE
+    } else if (!is.null(librefs)) {
+      lib <- sub("[.].*$", "", inhaz)
+      mem <- tolower(sub("^[^.]*[.]", "", inhaz))
+      if (lib %in% names(librefs)) {
+        calls <- c(
+          list(fit = call("<-", as.name("fit"),
+                          bquote(hzr_read_outhaz(
+                            file.path(.(unname(librefs[[lib]])), .(mem)))))),
+          calls
+        )
+        resolved <- TRUE
+      }
+    }
+  }
+
+  job <- .hzr_sas_job(
+    source = list(path = path,
+                  checksum = unname(tools::md5sum(path))),
+    calls = calls, grid = grid, inhaz = inhaz, outhaz = outhaz,
+    untranslated = untr,
+    coverage = list(tokens_seen = seen, tokens_mapped = mapped)
+  )
+  job$inhaz_resolved <- resolved
+  .hzr_validate_sas_job(job)
+
+  if (!is.null(inhaz) && !resolved) {
+    warning("unresolved INHAZ=", inhaz, " in ", basename(path),
+            "; the emitted document will stop() rather than render.",
+            call. = FALSE)
+  }
+  if (nrow(untr)) {
+    warning(nrow(untr), " untranslated construct(s) in ", basename(path), ": ",
+            paste(unique(untr$construct), collapse = ", "), call. = FALSE)
+  }
+
+  if (!is.null(out_dir)) {
+    dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+    writeLines(
+      .hzr_render_qmd(job),
+      file.path(out_dir, sub("[.]sas$", ".qmd", basename(path)))
+    )
+  }
+  invisible(job)
+}
+```
+
+`tools::md5sum()` is base R, so this adds no dependency. The `@examples` block
+references `inst/extdata/hz-example.sas`; create it in this task by copying a
+de-identified `PROC HAZARD` block from the public `examples/` corpus.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -1200,83 +1694,85 @@ git commit -m "test(sas): corpus-wide smoke test for the translator"
 
 ---
 
-### Task 13: The three gap fixtures from spec §7
+### Task 13: G3 Weibull correspondence fixture
 
-These stand on their own, independent of the translator. Each needs a SAS
-reference run or a stored `.lst`; write the R half and `skip_if` the reference
-is absent, following the pattern in `tests/testthat/test-sas-parity.R`.
+Spec §7.1. The CoE half of this task was **split out to
+[#146](https://github.com/ehrlinger/temporal_hazard/issues/146)** so this PR does
+not touch `R/likelihood-multiphase.R` — AGENTS.md calls the multiphase path the
+place the bugs are, and a translator PR has no business editing it.
 
 **Files:**
 - Test: `tests/testthat/test-g3-weibull-correspondence.R`
-- Test: `tests/testthat/test-coe-icensor.R`
 
-- [ ] **Step 1: G3 Weibull correspondence (spec §7.1)**
+The identity was checked by hand on 2026-08-20 and holds (8.6e-16 at moderate
+times, 5.0e-13 across 1e-6 to 1e6, hazard 1.9e-16). This task makes it a
+permanent test so it cannot regress unnoticed.
+
+- [ ] **Step 1: Write the test**
 
 ```r
 test_that("a G3 constrained at alpha = eta = 1 is a Weibull cumulative hazard", {
-  # SETG3_weibull sets g3flag += 2 in the reference implementation. The R
-  # general form (((t/tau)^gamma + 1)^(1/alpha) - 1)^eta collapses at
-  # alpha = eta = 1 to (t/tau)^gamma. This is the most common production
-  # configuration (76-88 blocks per study) and has never been shown to hold.
+  # PARMS ... WEIBULL is setopt(6) -> SETG3_weibull, g3flag += 2 in the
+  # reference implementation. The R general form
+  #   (((t/tau)^gamma + 1)^(1/alpha) - 1)^eta
+  # collapses at alpha = eta = 1 to (t/tau)^gamma. This is the most common
+  # production configuration: 76-88 blocks in every study profiled.
   t <- c(0.01, 0.5, 1, 5, 50, 180)
   tau <- 2.5
   gamma <- 1.4
   got <- hzr_decompos_g3(t, tau = tau, gamma = gamma, alpha = 1, eta = 1)
-  expect_equal(got$G3, (t / tau)^gamma, tolerance = 1e-10)
+  expect_equal(got$G3, (t / tau)^gamma, tolerance = 1e-12)
 })
 
-test_that("the constrained path does not lose precision at extreme times", {
+test_that("the constrained hazard matches the Weibull hazard", {
+  t <- c(0.5, 5, 50)
+  tau <- 2.5
+  gamma <- 1.4
+  got <- hzr_decompos_g3(t, tau = tau, gamma = gamma, alpha = 1, eta = 1)
+  expect_equal(got$g3, (gamma / tau) * (t / tau)^(gamma - 1),
+               tolerance = 1e-12)
+})
+
+test_that("the constrained path survives extreme times", {
   # HAZARD branches on g3flag partly for numerical reasons: at the constraint
-  # it would otherwise compute expm1(log1p(exp(y))) where the answer is exp(y).
+  # the general path computes expm1(log1p(exp(y))) where the answer is exp(y).
+  # Measured worst case is 5e-13 relative, so the tolerance is set just wide
+  # enough to admit it and no wider -- a looser one would stop detecting drift.
   t <- c(1e-6, 1e-3, 1e3, 1e6)
   got <- hzr_decompos_g3(t, tau = 1, gamma = 2, alpha = 1, eta = 1)
-  expect_equal(got$G3, t^2, tolerance = 1e-8)
+  expect_true(all(is.finite(got$G3)))
+  expect_equal(got$G3, t^2, tolerance = 1e-11)
+})
+
+test_that("the comparison is not trivially satisfied", {
+  # A max discrepancy of exactly zero across every case would more likely mean
+  # nothing was compared than that the identity is exact. Assert the general
+  # form differs from the Weibull form away from the constraint.
+  t <- c(0.5, 5, 50)
+  general <- hzr_decompos_g3(t, tau = 2.5, gamma = 1.4, alpha = 2, eta = 1.5)
+  expect_false(isTRUE(all.equal(general$G3, (t / 2.5)^1.4)))
 })
 ```
 
 - [ ] **Step 2: Run it**
 
 Run: `Rscript -e 'devtools::load_all(quiet=TRUE); testthat::test_local(filter="g3-weibull")'`
-Expected: PASS. **If either fails, stop and report** — that would mean the
-Weibull late phase is *not* reachable as a constrained G3, which would change
-spec §7.1 from a verification gap to a feature gap and is a finding in itself.
+Expected: PASS, 4 tests.
 
-- [ ] **Step 3: CoE + ICENSOR (spec §7.3)**
+**If any of the first three fail, stop and report.** That would mean the Weibull
+late phase is *not* reachable as a constrained G3, turning spec §7.1 from a
+verification gap into a feature gap and changing v1 scope.
 
-```r
-test_that("CoE is disabled when interval rows are present", {
-  # R disables CoE whenever status leaves {0,1}, which ICENSOR guarantees. SAS
-  # reaches the same place by a different route. Pin the R behaviour so a change
-  # to coe_supported_data cannot silently diverge from SAS.
-  skip_on_cran()
-  set.seed(42)
-  n <- 60
-  time <- stats::rexp(n, 0.2)
-  status <- rep(c(1, 0, 2), length.out = n)
-  tl <- ifelse(status == 2, time, NA)
-  tu <- ifelse(status == 2, time * 1.5, NA)
-  fit <- hazard(time = time, status = status, time_lower = tl, time_upper = tu,
-                phases = list(hzr_phase("cdf"), hzr_phase("constant")),
-                control = list(conserve = TRUE))
-  expect_false(isTRUE(fit$control$conserve_applied))
-})
-```
-
-- [ ] **Step 4: Run it**
-
-Run: `Rscript -e 'devtools::load_all(quiet=TRUE); testthat::test_local(filter="coe-icensor")'`
-Expected: PASS. If `fit$control$conserve_applied` does not exist, add it in
-`R/likelihood-multiphase.R` near line 1172 where `coe_supported_data` is
-computed — the fact that CoE was silently disabled should be recorded on the
-fit, not merely acted on.
-
-- [ ] **Step 5: Full gate, then commit**
+- [ ] **Step 3: Full gate, then commit**
 
 ```bash
 Rscript -e 'devtools::document()' && Rscript -e 'lintr::lint_package()' && Rscript -e 'devtools::test()'
-git add tests/testthat/test-g3-weibull-correspondence.R tests/testthat/test-coe-icensor.R
-git commit -m "test: pin the G3 Weibull correspondence and CoE/ICENSOR interaction"
+git add tests/testthat/test-g3-weibull-correspondence.R
+git commit -m "test: pin the G3 Weibull correspondence at alpha = eta = 1"
 ```
+
+**Note:** this verifies the identity *inside R*. It does not compare against SAS.
+The SAS parity leg still needs a reference run, so §7.1 stays open.
 
 ---
 
