@@ -34,7 +34,8 @@
 #' @noRd
 .hzr_validate_sas_job <- function(x) {
   stopifnot(inherits(x, "hzr_sas_job"))
-  if (!is.numeric(x$coverage$tokens_seen) || x$coverage$tokens_seen < 1L) {
+  n <- x$coverage$tokens_seen
+  if (!is.numeric(n) || length(n) != 1L || !is.finite(n) || n < 1L) {
     stop("no SAS statements were recognised in ", x$source$path,
          "; this is a parse failure, not an empty job.", call. = FALSE)
   }
