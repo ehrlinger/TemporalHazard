@@ -91,12 +91,12 @@ sas_strip_comments <- function(lines) {
     }
 
     if (in_star) {
-      p <- .first_semi(line)
+      p <- .idx(line, ";")
       if (p == 0L) line <- "" else { line <- substring(line, p + 1L); in_star <- FALSE }
     }
 
     if (grepl("^[[:space:]]*%?\\*", line)) {
-      p <- .first_semi(line)
+      p <- .idx(line, ";")
       if (p == 0L) { line <- ""; in_star <- TRUE } else line <- substring(line, p + 1L)
     }
 
