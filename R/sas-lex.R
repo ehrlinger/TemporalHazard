@@ -165,35 +165,85 @@
 
 #' Extract PROC HAZARD / PROC HAZPRED blocks from normalised source.
 #'
-#' Blocks are delimited by the `%HAZARD(...)` macro's parentheses, not by the
-#' PROC statement: HAZARD's own lexer treats `)` as whitespace, so the macro
-#' owns delimitation. Bounding on the first `);` fails whenever the block
-#' contains a nested paren.
+#' Blocks are delimited by parentheses, not by the macro call's name: HAZARD's
+#' own lexer treats `)` as whitespace, so a parenthesised group -- not the
+#' `%HAZARD(`/`%HAZPRED(` spelling -- is what owns delimitation. Anchoring on
+#' the literal macro call text missed macro-argument fragments: files that are
+#' `%INCLUDE`d into a `%HAZARD(...)` call held in a different file, so the
+#' fragment itself begins with a bare `(` and the macro name is never present
+#' in this text at all. The fix locates each `PROC HAZARD `/`PROC HAZPRED `
+#' occurrence directly, then scans *backwards* for the nearest unmatched `(`
+#' that opens the group containing it, then forwards from that paren to its
+#' balancing `)` (unchanged balanced-paren logic -- the corpus confirms 0
+#' unterminated). A PROC with no enclosing paren at all is still returned,
+#' never dropped: its text is bounded at the next `PROC `/`DATA `boundary so
+#' it does not run to end of file.
 #' @noRd
 .hzr_sas_blocks <- function(txt) {
   out <- list()
-  starts <- gregexpr("%HAZ(ARD|PRED) *\\(", txt)[[1L]]
-  if (starts[1L] == -1L) return(out)
+  procs <- gregexpr("PROC HAZ(ARD|PRED) ", txt)[[1L]]
+  if (procs[1L] == -1L) return(out)
+  proc_lens <- attr(procs, "match.length")
 
-  for (s in starts) {
-    open_at <- s + attr(starts, "match.length")[which(starts == s)] - 1L
-    depth <- 0L
-    close_at <- NA_integer_
-    for (i in seq(open_at, nchar(txt))) {
-      ch <- substr(txt, i, i)
-      if (ch == "(") depth <- depth + 1L
-      if (ch == ")") {
-        depth <- depth - 1L
-        if (depth == 0L) {
-          close_at <- i
-          break
+  for (k in seq_along(procs)) {
+    proc_at <- procs[k]
+    proc <- if (identical(substring(txt, proc_at, proc_at + 10L), "PROC HAZARD")) {
+      "HAZARD"
+    } else {
+      "HAZPRED"
+    }
+
+    # Scan backwards from the PROC keyword for the nearest unmatched `(` --
+    # the paren that opens the group containing this PROC statement.
+    open_at <- NA_integer_
+    balance <- 0L
+    if (proc_at > 1L) {
+      for (i in seq(proc_at - 1L, 1L)) {
+        ch <- substr(txt, i, i)
+        if (ch == ")") {
+          balance <- balance + 1L
+        } else if (ch == "(") {
+          if (balance == 0L) {
+            open_at <- i
+            break
+          }
+          balance <- balance - 1L
         }
       }
     }
-    term <- if (is.na(close_at)) "none" else "paren"
-    body <- substring(txt, open_at + 1L,
-                      if (is.na(close_at)) nchar(txt) else close_at - 1L)
-    proc <- if (grepl("PROC HAZARD", body)) "HAZARD" else "HAZPRED"
+
+    if (is.na(open_at)) {
+      # No enclosing paren anywhere before this PROC. Bound the text at the
+      # next PROC / DATA boundary so it never runs to end of file, and never
+      # drop the block.
+      search_from <- proc_at + proc_lens[k]
+      rest <- substring(txt, search_from)
+      b <- regexpr("PROC |DATA ", rest)
+      body <- if (b == -1L) {
+        substring(txt, proc_at)
+      } else {
+        substring(txt, proc_at, search_from + b - 2L)
+      }
+      term <- "none"
+    } else {
+      depth <- 0L
+      close_at <- NA_integer_
+      for (i in seq(open_at, nchar(txt))) {
+        ch <- substr(txt, i, i)
+        if (ch == "(") depth <- depth + 1L
+        if (ch == ")") {
+          depth <- depth - 1L
+          if (depth == 0L) {
+            close_at <- i
+            break
+          }
+        }
+      }
+      term <- if (is.na(close_at)) "none" else "paren"
+      body <- substring(txt, open_at + 1L,
+                        if (is.na(close_at)) nchar(txt) else close_at - 1L)
+    }
+
     out[[length(out) + 1L]] <- list(proc = proc, text = trimws(body),
                                     terminator = term)
   }

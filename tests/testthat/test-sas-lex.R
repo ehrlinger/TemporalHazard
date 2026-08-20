@@ -57,3 +57,20 @@ test_that("an unbalanced block is reported, never silently extended", {
   b <- .hzr_sas_blocks(txt)
   expect_equal(b[[1]]$terminator, "none")
 })
+
+test_that("a bare parenthesised fragment is extracted", {
+  txt <- .hzr_sas_normalise("(  PROC HAZARD DATA=A; EVENT D; TIME T; )")
+  b <- .hzr_sas_blocks(txt)
+  expect_length(b, 1L)
+  expect_equal(b[[1]]$proc, "HAZARD")
+  expect_equal(b[[1]]$terminator, "paren")
+  expect_true(grepl("EVENT D;", b[[1]]$text, fixed = TRUE))
+})
+
+test_that("a PROC with no enclosing paren is returned, never dropped", {
+  txt <- .hzr_sas_normalise("PROC HAZARD DATA=A; EVENT D; DATA NEXT;")
+  b <- .hzr_sas_blocks(txt)
+  expect_length(b, 1L)
+  expect_equal(b[[1]]$terminator, "none")
+  expect_false(grepl("DATA NEXT", b[[1]]$text, fixed = TRUE))
+})
