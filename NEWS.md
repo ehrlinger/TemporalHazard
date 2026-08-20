@@ -87,6 +87,24 @@ selects.
 
 ## Bug fixes
 
+* **`hzr_stepwise()` never checked that an accepted step improved the fit.**
+  A forward step enters a model that *contains* the one it started from, so at
+  the optimum the log-likelihood cannot fall. It was written into `$steps` at
+  every step and compared at none, so a step whose refit failed to converge
+  entered anyway and every later step was then scored against a model that was
+  not at its own optimum. In the production screen that surfaced this, three of
+  ten steps lowered the log-likelihood and the run still reported convergence,
+  ten entries and `p = 0.000` throughout; the final 19-coefficient model fitted
+  57 units worse than the nested 16-coefficient model from three steps earlier,
+  which cannot happen at a maximum.
+
+  `$steps` now carries `delta_logLik`, a forward step that lowers the objective
+  warns and is counted in `$criteria$n_nonmonotone_entries`, and
+  `hzr_bootstrap(scope = )` reports `$n_nonmonotone_replicates` — a replicate
+  whose path went backwards still contributes its selections to the pooled
+  frequencies, and each replicate runs under `suppressWarnings()` so the
+  step-level warning cannot reach the user. The comparison carries a small
+  tolerance so optimizer noise does not fire it. Reported as issue #134.
 * **A score statistic could be finite, enormous and meaningless.** A
   production screen accepted a candidate with `stat` = 92,211 on 1 df and
   `p = 0.000`, after which the refit made the model worse. Neither existing

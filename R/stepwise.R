@@ -264,6 +264,13 @@ hzr_stepwise <- function(fit,
 
   current <- fit
   step_no <- 0L
+  # The log-likelihood the next step starts from. A forward step produces a
+  # model that CONTAINS the current one, so at the optimum the objective
+  # cannot fall. When it does, the refit did not converge -- provable in one
+  # comparison, which nothing was doing: the objective was written at every
+  # step and read at none.
+  prev_objective <- current$fit$objective %||% NA_real_
+  n_nonmonotone_entries <- 0L
   stopped_by_max_steps <- FALSE
   # Candidates whose score statistic could not be computed, summed over
   # steps.  Tracked so a screen that stopped because nothing was
@@ -290,10 +297,12 @@ hzr_stepwise <- function(fit,
       p_value   = out$p_value,
       delta_aic = out$delta_aic,
       logLik    = current$fit$objective   %||% NA_real_,
+      delta_logLik = (current$fit$objective %||% NA_real_) - prev_objective,
       aic       = .hzr_aic(current),
       n_coef    = length(current$fit$theta),
       stringsAsFactors = FALSE
     )
+    prev_objective <<- current$fit$objective %||% NA_real_
     steps[[length(steps) + 1L]] <<- row
 
     score_fmt <- if (criterion == "aic") {
@@ -328,6 +337,7 @@ hzr_stepwise <- function(fit,
       p_value   = NA_real_,
       delta_aic = NA_real_,
       logLik    = current$fit$objective   %||% NA_real_,
+      delta_logLik = 0,   # freezing changes no parameter
       aic       = .hzr_aic(current),
       n_coef    = length(current$fit$theta),
       stringsAsFactors = FALSE
@@ -382,6 +392,28 @@ hzr_stepwise <- function(fit,
       }
 
       if (fwd$accepted) {
+        # Nested models: the entered model contains the current one, so at the
+        # optimum objective_new >= objective_old. A violation is not a
+        # statistical result, it is proof the refit failed -- and every later
+        # step is then scored against a model that is not at its own optimum.
+        # The tolerance keeps optimizer noise from firing this; the cases that
+        # matter are whole log-likelihood units, not 1e-10.
+        entered_objective <- fwd$fit$fit$objective %||% NA_real_
+        obj_tol <- 1e-8 * max(1, abs(prev_objective))
+        if (is.finite(entered_objective) && is.finite(prev_objective) &&
+              entered_objective < prev_objective - obj_tol) {
+          n_nonmonotone_entries <- n_nonmonotone_entries + 1L
+          warning("Stepwise forward step ", step_no + 1L, " entered ",
+                  fwd$variable,
+                  if (!is.na(fwd$phase)) paste0(" (", fwd$phase, ")") else "",
+                  " and the log-likelihood FELL, ", format(prev_objective),
+                  " -> ", format(entered_objective), " (",
+                  format(entered_objective - prev_objective), "). The entered ",
+                  "model contains the current one, so this cannot happen at ",
+                  "the optimum: the refit did not converge, and every later ",
+                  "step is scored against a model that is not at its optimum. ",
+                  "See `$steps$delta_logLik`.", call. = FALSE)
+        }
         current <- fwd$fit
         record_step("enter", fwd)
         bump_move(fwd$variable)
@@ -431,7 +463,8 @@ hzr_stepwise <- function(fit,
       criterion = character(), score = numeric(),
       stat = numeric(), df = integer(),
       p_value = numeric(), delta_aic = numeric(),
-      logLik = numeric(), aic = numeric(), n_coef = integer(),
+      logLik = numeric(), delta_logLik = numeric(),
+      aic = numeric(), n_coef = integer(),
       stringsAsFactors = FALSE
     )
   } else {
@@ -456,7 +489,8 @@ hzr_stepwise <- function(fit,
     hit_max_steps = stopped_by_max_steps,
     n_uncomputable_scores = n_uncomputable_scores,
     uncomputable_reasons  = uncomputable_reasons,
-    stopped_uncomputable  = stopped_uncomputable
+    stopped_uncomputable  = stopped_uncomputable,
+    n_nonmonotone_entries = n_nonmonotone_entries
   )
 
   n_indefinite <- unname(uncomputable_reasons["information_indefinite"])
