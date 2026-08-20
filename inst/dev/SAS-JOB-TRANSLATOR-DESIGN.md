@@ -1,0 +1,267 @@
+# SAS job translator: `PROC HAZARD` / `PROC HAZPRED` → R + Quarto
+
+Design doc. Status: **approved through architecture; v1 scope set by measurement.**
+Date: 2026-08-20. Branch: `feat/sas-job-translator`.
+
+## 1. Purpose
+
+Translate legacy SAS HAZARD jobs into `.qmd` documents that reproduce them in
+`TemporalHazard`. Two audiences, deliberately coupled:
+
+1. **A shipped analyst tool** — one export, `hzr_translate_sas()`, for the
+   SAS-to-R migration.
+2. **A parity harness** — every translated job whose SAS `.lst` exists becomes an
+   automated SAS-versus-R fixture.
+
+The coupling is the point. The harness renders (or `purl`s) the *emitted
+document* and compares the resulting fit against SAS, so the thing under test is
+the artifact that ships, not a parallel code path. Without it, the tool produces
+R that looks plausible; with it, the tool produces R that is checked.
+
+Secondary uses — bulk migration of the production corpus, and reproducible
+reporting — fall out of the same machinery and are not designed for separately.
+
+## 2. Evidence base
+
+Nothing below is inferred from reading jobs. Two independent sources:
+
+**The grammar** is HAZARD's own lexer, `src/hazard/hazard_l.l` and
+`src/hazpred/hazpred_l.l` in the GPL-2 reference implementation: **117 keyword
+rules, 77 distinct parser tokens, 30 aliases, 11 context start conditions.**
+
+**The corpus** was measured with `tools/sas-hazard-profile.R` over three
+production studies plus the public examples. Counts are `PROC HAZARD` blocks
+unless noted:
+
+| | public | preserve_root | lv_function | resilia |
+|---|---|---|---|---|
+| `.sas` files | 110 | 349 | 194 | 337 |
+| HAZARD / HAZPRED blocks | 44 / 55 | 115 / 92 | 82 / 71 | 92 / 82 |
+| `MI` (→ `MAXITER`) | 7 | 113 | 75 | 86 |
+| `ICENSOR` | 0 | 43 | 74 | 42 |
+| `WEIBULL` (in `PARMS`) | 19 | 87 | 76 | 88 |
+| `NOCONSERVE` / `CONSERVE` | 3 / 27 | 68 / 41 | 16 / 31 | 51 / 33 |
+| `INHAZ` resolved in-tree | 40% | 26% | 11% | 26% |
+| distinct unresolved librefs | 7 | **1** | **1** | **2** |
+
+Three consequences drive the design:
+
+- **Interval censoring is the production norm** (`ICENSOR` on 74 of 76 blocks in
+  `lv_function`) and is absent from the public corpus entirely. Anything designed
+  against `examples/` would have missed it.
+- **Conservation of Events inverts in production** — `NOCONSERVE` outnumbers
+  `CONSERVE` in two of three studies, the reverse of the public corpus.
+- **Unresolved `INHAZ=` collapses to one or two librefs per study.** A
+  libref→path map needs *one entry* to resolve ~60 jobs.
+
+## 3. Architecture
+
+```
+     .sas file
+         │
+    [ sas-lex ]          comment strip, quote-aware; mirrors <STMT>\*[^;]*;
+         │
+  [ context-aware parser ]  ← .hzr_sas_grammar, GENERATED from the lex sources
+         │
+   hzr_sas_job  ──────────► coverage report (translated / untranslated / unresolved)
+         │
+   [ renderer ]           deparse() the stored calls into chunk fences
+         │
+     .qmd
+```
+
+One export, `hzr_translate_sas()`. Everything else internal.
+
+| Path | Contents |
+|---|---|
+| `data-raw/hazard-grammar.R` | generator; reads the `.l` files, writes `R/sysdata.rda` |
+| `R/sas-lex.R` | comment stripping, normalisation, block extraction |
+| `R/sas-parse-job.R` | context-aware parser → `hzr_sas_job` |
+| `R/sas-job.R` | class, validator, `print` method |
+| `R/sas-render-qmd.R` | renderer |
+| `R/translate-sas.R` | `hzr_translate_sas()` |
+
+### 3.1 The grammar is generated, not hand-written
+
+`.hzr_sas_grammar` is produced by `data-raw/hazard-grammar.R` from the reference
+lexer. Columns: `proc`, `context`, `keyword`, `token`, `is_alias`, `r_target`,
+`implementation_status`, `note`.
+
+A hand-written table captures only the spellings the author happened to see. The
+grammar has 30 aliases that fall through to one parser token — `QUASI`/
+`QUASINEWTON`, `BW`/`BACKWARD`, `SLE`/`SLENTRY`, `NOH`/`NOHAZ`, `MI`/`MAXITER`,
+`P`/`PRINTIT`, `PARMS`/`PARAMETERS`, and the single-letter phase options
+`E`/`I`/`M`/`O`/`S`. A corpus-inferred table fails silently on every spelling the
+sample lacks.
+
+Generating it also makes totality checkable: every one of the 117 keywords has a
+row and a status, asserted in `tests/testthat/test-sas-grammar.R`. Regenerating
+against a newer HAZARD becomes a drift check.
+
+**Licence.** `hazard` is GPL-2, `TemporalHazard` is MIT. The generator lives in
+`data-raw/` (already `.Rbuildignore`d), reads the `.l` files from a local
+checkout path, and **only the extracted keyword table ships**. No GPL source
+enters the tarball.
+
+### 3.2 Parsing must be context-aware
+
+Not a stylistic preference — the grammar has genuine collisions:
+
+| spelling | context | token |
+|---|---|---|
+| `M` | `PARM` | `M` (early-phase shape) |
+| `M` | `PHOP`, `STEP` | `MOVE` |
+| `NOS` | `STEP` | `NOPRINTS` |
+| `NOS` | `HZPP` | `NOSURV` |
+
+`M` occurs 76–115 times per study as a `PARMS` shape parameter. A context-free
+lookup translates it as `MOVE` and produces a wrong model with no error. The
+guarantee the parser relies on — *within one proc and one context, a spelling
+resolves to exactly one token* — is asserted as a test rather than assumed.
+
+### 3.3 Block bounding follows the macro, not the PROC
+
+`hazard_l.l` puts `)` in its whitespace class, so HAZARD itself does not treat it
+as a terminator: block delimitation is the `%HAZARD(...)` **macro's** job.
+Bounding a block by scanning forward for `);` therefore fails whenever the block
+contains a nested paren — measured at 38 of 82 blocks in `lv_function`.
+
+The parser instead matches **balanced parentheses from `%HAZARD(` / `%HAZPRED(`**.
+A block must never run to end of file: that is how comment prose reaches the
+token tables, and comment prose is where study and patient detail live.
+
+### 3.4 `hzr_sas_job` is a thin index over R calls
+
+```r
+structure(list(
+  source       = list(path =, sha256 =),
+  calls        = list(fit = quote(hazard(...)), pred = quote(predict(...))),
+  grid         = quote(data.frame(MONTHS = ...)),
+  inhaz        = "LIB.DSNAME",   # or NULL
+  outhaz       = "LIB.DSNAME",
+  untranslated = data.frame(line =, construct =, reason =),
+  coverage     = list(tokens_seen =, tokens_mapped =)
+), class = "hzr_sas_job")
+```
+
+Model state is stored as **unevaluated calls**, not a bespoke schema. Rendering
+is then `deparse()` rather than string templating; the parity harness `eval()`s
+the fit call directly; the round-trip test compares call objects. Storing calls
+is already house style here — `hazard(formula, data)` stores one.
+
+The intermediate exists for exactly one reason that emitted text cannot serve:
+**cross-job `INHAZ=`/`OUTHAZ=` resolution**, which needs an index of what every
+*other* job wrote. Coverage accumulation and harness reuse are secondary.
+
+## 4. Coverage policy
+
+| Outcome | Emitted `.qmd` | `hzr_translate_sas()` |
+|---|---|---|
+| Fully translated | runnable | returns quietly |
+| Keyword with `no_r_equivalent` | `UNTRANSLATED` callout, construct + line | warns, lists them |
+| Keyword `unmapped` | `UNTRANSLATED` callout | warns, lists them |
+| **Unresolved `INHAZ=`** | `stop()` at the head of the chunk | warns loudly |
+| Nothing recognised | **no file written** | **errors** |
+
+The `INHAZ` row is the one the corpus forces: a document that cannot resolve its
+fit must **fail to render** rather than render a report over a missing model.
+
+Resolution order for `INHAZ=`: another translated job's `OUTHAZ=` first, then a
+user-supplied libref→path map passed to `hzr_translate_sas()`, then failure. The
+map is worth having because the measurement says one entry clears ~60 jobs.
+
+Two derived guarantees, both testable:
+
+- **Round-trip** — parse → render → re-parse yields the same `calls`.
+- **Totality** — every keyword in `.hzr_sas_grammar` is exercised by at least one
+  fixture, so rows cannot accumulate that nothing covers.
+
+## 5. v1 scope, set by measurement
+
+**In scope** (used in production, ordered by measured frequency): `DATA`,
+`TIME`, `EVENT`, `PARAMETERS`, `OUTHAZ`, `INHAZ`, `OUT`, `MAXITER`, `CONDITION`,
+`CONSERVE`, `NOCONSERVE`, `STEEPEST`, `QUASINEWTON`, `PRINTIT`, `NOCOR`,
+`NOCOV`, `NOLOG`, `NONOTES`, `NOPRINT`, `NOHAZ`, the `PARM` parameter family
+(`MUE`/`MUC`/`MUL`/`THALF`/`NU`/`M`/`TAU`/`GAMMA`/`ALPHA`/`ETA` and their `FIX*`
+forms), `WEIBULL`, `EARLY`/`CONSTANT`/`LATE`, `SELECTION`, and
+**`ICENSOR`/`LCENSOR`/`RCENSOR`**.
+
+**Deferred** (present in the grammar, absent from all four corpora): `BUNDLE`,
+`FIXGAE2`, `FIXGE2`, `FIXMNU1`, the `PHOP` family (`EXCLUDE`/`INCLUDE`/`MOVE`/
+`ORDER`/`START`), `FAST`, `MAXSTEPS`, `MAXVARS`, `NUMERIC`, `ROBUST`,
+`SEMIROBUST`, `ONEWAY`, `CLIMITS`, `NOSURV`, `NOPRINTQ`, `NOPRINTS`.
+
+### 5.1 Highest-risk mapping: the censoring statements
+
+`ICENSOR`/`LCENSOR`/`RCENSOR` get a dedicated parity fixture and the loudest
+flag in the table. This package codes censoring `-1` left, `0` right, `1` event,
+`2` interval, while `survival::Surv(type = "interval")` uses `0`/`1`/`2`/`3` for
+right/event/left/interval. Carrying one coding into the other is a wrong answer
+with no error, and it has shipped here before.
+
+It also touches known open work: the 2026-08-19 `preserve_root` parity run left a
+named residual where SAS maximises the interval-censored likelihood but *reports*
+a log-likelihood treating interval rows as exact-event densities.
+
+### 5.2 Conservation of Events interacts with censoring
+
+`R/likelihood-multiphase.R:1172` auto-disables CoE when
+`!all(status %in% c(0, 1))`, which `ICENSOR` guarantees. R will therefore often
+disable CoE **for a different reason than SAS did**. A job carrying both
+`CONSERVE` and `ICENSOR` is where the two could diverge silently, so it gets an
+explicit fixture. `CONSERVE`/`NOCONSERVE` is always emitted, never defaulted.
+
+### 5.3 `SELECTION` forks to `hzr_stepwise()`
+
+Phase statements carry up to **320** covariates in `lv_function` — those are
+stepwise *candidate pools*, not fitted covariates. A job with `SELECTION` routes
+to `hzr_stepwise()`; without it, to `hazard()`. Note that HAZARD's lexer collapses
+`SELECT`, `FORWARD`, `FW`, `SW` and `STEPWISE` into **one token**, while
+`BACKWARD` is distinct.
+
+**`SELECTION FORWARD` maps to `direction = "both"`, not `"forward"`.** In
+`hazard_y.y`, `STEPWISE` sets option 21, `BACKWARD` 22, `ONEWAY` 34 — and every
+spelling of forward/stepwise lexes to the same `STEPWISE` token, so HAZARD does
+not distinguish them. Option 21 is therefore two-way. Corroborated by `slstay`,
+which would be meaningless under a forward-only search. The obvious mapping
+(`FORWARD` → `"forward"`) is wrong on every stepwise job and fails silently, so
+this pair gets an explicit fixture.
+
+| SAS | `setopt` | `hzr_stepwise(direction =)` |
+|---|---|---|
+| `FORWARD` / `FW` / `SW` / `SELECT` / `STEPWISE` | 21 | `"both"` |
+| `BACKWARD` / `BW` | 22 | `"backward"` |
+| `ONEWAY` / `NOSTEPWISE` / `NOSW` | 34 | no stepwise; plain `hazard()` |
+
+`direction = "forward"` is reachable in R but **not** from a translated SAS job.
+
+### 5.4 Prediction grids
+
+92% of `HAZPRED` `DATA=` grids classify as `log_grid` or `explicit_do`, with
+**zero** unclassifiable across all three production studies. The `grid` field is
+worth having. `derived_set` grids emit `UNTRANSLATED`.
+
+## 6. Testing
+
+- `test-sas-grammar.R` — table populated, statuses valid, keyword unique per
+  context, alias runs terminate, the `M`/`NOS` collisions are real.
+- `test-sas-lex.R` — comment stripping against constructed fixtures, including
+  the `; * ... ;` inline form and apostrophes inside comments.
+- `test-sas-parse-job.R` — golden `hzr_sas_job` objects for representative jobs.
+- `test-sas-translate-parity.R` — `skip_on_cran()`; render emitted `.qmd`,
+  compare against stored SAS `.lst`.
+
+Fixtures are synthesised from the public `examples/` corpus or deliberately
+de-identified. **No production job content enters the repository.**
+
+## 7. Open questions
+
+1. ~~**`FORWARD` ≡ `STEPWISE` at the token level.**~~ **Resolved 2026-08-20** from
+   `hazard_y.y`: they are genuinely synonymous (option 21, two-way). See §5.3.
+2. **`_CLLSURV`/`_CLUSURV` confidence-limit type.** `predict.hazard()` supports
+   `conf.type = "log-log"` and `"logit"`. Which does HAZPRED emit? Guessing
+   silently produces wrong limits.
+3. **`CONSERVE` + `ICENSOR` in SAS.** Does SAS conserve events when interval rows
+   are present, or silently disable as R does?
+
+None blocks implementation; each blocks a specific fixture from being trusted.
