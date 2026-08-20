@@ -59,7 +59,7 @@ Three consequences drive the design:
 ```
      .sas file
          │
-    [ sas-lex ]          comment strip, quote-aware; mirrors <STMT>\*[^;]*;
+    [ sas-lex ]          comment strip; mirrors <STMT>\*[^;]*;
          │
   [ context-aware parser ]  ← .hzr_sas_grammar, GENERATED from the lex sources
          │
@@ -262,6 +262,14 @@ worth having. `derived_set` grids emit `UNTRANSLATED`.
   context, alias runs terminate, the `M`/`NOS` collisions are real.
 - `test-sas-lex.R` — comment stripping against constructed fixtures, including
   the `; * ... ;` inline form and apostrophes inside comments.
+
+  Note that comment termination is **quote-agnostic**: HAZARD's rule is
+  `<STMT>\*[^;]*;`, so a comment ends at the first `;` whether or not an
+  apostrophe precedes it. Treating it as quote-aware silently swallowed the
+  following statement — caught in Task 1 review, in both the line-initial and
+  inline paths. A quote-*aware* semicolon search is still needed for splitting
+  statements, where `TITLE 'a; b';` must not split; that is what `.first_semi()`
+  is for, and it must not be reused for comments.
 - `test-sas-parse-job.R` — golden `hzr_sas_job` objects for representative jobs.
 - `test-sas-translate-parity.R` — `skip_on_cran()`; render emitted `.qmd`,
   compare against stored SAS `.lst`.
