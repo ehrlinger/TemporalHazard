@@ -43,8 +43,13 @@ jobs:
           # `namespace_linter` is not a default at all. If a future linter
           # does need the namespace, `local::.` still installs the package --
           # only Suggests are dropped.
+          #
+          # The quoting is load-bearing and must stay: `dependencies` is
+          # documented by the action as "Must be an R expression. Note that it
+          # often needs to be quoted in YAML" and its own default is '"all"'.
+          # Bare `hard` is the R symbol `hard`, not the string "hard".
           extra-packages: any::lintr, local::.
-          dependencies: hard
+          dependencies: '"hard"'
           needs: lint
 
       - name: Lint
