@@ -64,3 +64,39 @@ test_that("MI is an alias for MAXITER, not a distinct option", {
   expect_equal(g$token[g$keyword == "MI"], "MAXITER")
   expect_true(all(g$is_alias[g$keyword == "MI"]))
 })
+
+test_that("the phase and restriction statements are present", {
+  # These five were silently dropped by the first generator, which read only a
+  # lex rule's own line and so missed multi-line actions such as
+  #   <STMT>EARLY  { BEGIN PHVR;
+  #                  return EARLY; }
+  # Asserting the table is self-consistent could never catch that. Name the
+  # keywords explicitly so a regression fails here without needing the source.
+  g <- .hzr_sas_grammar
+  expect_true(all(c("EARLY", "CONSTANT", "LATE", "RESTRICT", "EXCLUSIVE") %in%
+                    g$keyword))
+  expect_equal(g$token[g$keyword == "EARLY"], "EARLY")
+  expect_equal(g$token[g$keyword == "EXCLUSIVE"], "RESTRICT")
+})
+
+test_that("the table covers every keyword rule in the lex sources", {
+  # The assertion that matters: coverage against the source, not internal
+  # consistency. Skips without a checkout, so the test above is the guard that
+  # always runs.
+  skip_on_cran()
+  repo <- path.expand(Sys.getenv("HAZARD_REPO", "~/Documents/GitHub/hazard"))
+  skip_if_not(dir.exists(repo), "hazard checkout not available")
+
+  rule <- "^<([A-Z,]+)>([A-Z][A-Z0-9_]*)[[:space:]]+(.*)$"
+  for (spec in list(
+    list(f = "src/hazard/hazard_l.l", proc = "HAZARD"),
+    list(f = "src/hazpred/hazpred_l.l", proc = "HAZPRED")
+  )) {
+    path <- file.path(repo, spec$f)
+    skip_if_not(file.exists(path), paste("missing", spec$f))
+    lines <- readLines(path, warn = FALSE)
+    n_rules <- sum(grepl(rule, lines))
+    n_rows <- sum(.hzr_sas_grammar$proc == spec$proc)
+    expect_equal(n_rows, n_rules, info = spec$f)
+  }
+})

@@ -43,23 +43,40 @@ parse_lex_keywords <- function(path, proc) {
   lines <- readLines(path, warn = FALSE)
 
   rule <- "^<([A-Z,]+)>([A-Z][A-Z0-9_]*)[[:space:]]+(.*)$"
-  hit <- grepl(rule, lines)
+  starts <- which(grepl(rule, lines))
+  if (!length(starts)) {
+    stop("no keyword rules parsed from ", path, call. = FALSE)
+  }
+
+  # A lex action may span lines: `<STMT>EARLY { BEGIN PHVR;` puts its
+  # `return EARLY;` two lines further down. Reading only the rule's own line
+  # drops such keywords silently -- it dropped EARLY, CONSTANT and LATE, the
+  # phase covariate statements, from the first version of this table. Take
+  # each rule's action to be everything up to the next rule.
+  ends <- c(starts[-1L] - 1L, length(lines))
 
   out <- list()
   pending <- list()
 
-  for (ln in lines[hit]) {
+  for (k in seq_along(starts)) {
+    ln <- lines[starts[k]]
     p <- regmatches(ln, regexec(rule, ln))[[1L]]
     ctx <- p[[2L]]
     kw <- p[[3L]]
-    action <- trimws(p[[4L]])
+    action <- trimws(paste(
+      c(p[[4L]], lines[seq_len(max(0L, ends[k] - starts[k])) + starts[k]]),
+      collapse = " "
+    ))
 
-    if (identical(action, "|")) {
+    if (grepl("^\\|", action)) {
       pending[[length(pending) + 1L]] <- list(ctx = ctx, kw = kw)
       next
     }
 
-    ret <- regmatches(action, regexec("return[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)", action))[[1L]]
+    ret <- regmatches(
+      action,
+      regexec("return[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)", action)
+    )[[1L]]
     if (length(ret) < 2L) {
       pending <- list()
       next
@@ -80,10 +97,20 @@ parse_lex_keywords <- function(path, proc) {
     pending <- list()
   }
 
-  if (!length(out)) {
-    stop("no keyword rules parsed from ", path, call. = FALSE)
+  res <- do.call(rbind, out)
+
+  # FAIL LOUD on incomplete extraction. Asserting the table is internally
+  # consistent says nothing about whether it covers the source; only this
+  # comparison does.
+  if (nrow(res) < length(starts)) {
+    stop(sprintf(
+      "incomplete extraction from %s: %d keyword rules in the source, %d rows produced. Missing: %s",
+      basename(path), length(starts), nrow(res),
+      paste(setdiff(sub(rule, "\\2", lines[starts]), res$keyword), collapse = ", ")
+    ), call. = FALSE)
   }
-  do.call(rbind, out)
+
+  res
 }
 
 hazard  <- parse_lex_keywords(file.path(hazard_repo, "src/hazard/hazard_l.l"), "HAZARD")
