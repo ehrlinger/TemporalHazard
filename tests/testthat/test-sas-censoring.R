@@ -44,3 +44,34 @@ test_that("untranslated is a well-formed empty frame, not merely non-NULL", {
   expect_equal(nrow(got$untranslated), 0L)
   expect_equal(names(got$untranslated), c("line", "construct", "reason"))
 })
+
+test_that("an ICENSOR-only job needs no EVENT statement", {
+  # HAZARD terminates only when BOTH EVENT and ICENSOR are missing
+  # (src/hazard/varterm.c), so ICENSOR alone is a legitimate job.
+  st <- list(TIME = "T", ICENSOR = c("LO", "HI"))
+  got <- .hzr_censor_spec(st)
+  expect_equal(eval(got$status_expr, list(LO = c(1, NA), HI = c(2, NA))),
+               c(2, 0))
+})
+
+test_that("a job with neither EVENT nor ICENSOR is rejected", {
+  expect_error(.hzr_censor_spec(list(TIME = "T")), "EVENT|ICENSOR")
+})
+
+test_that("an event outranks a left-censoring flag", {
+  st <- list(EVENT = "DEAD", TIME = "T", LCENSOR = "LFLAG")
+  got <- .hzr_censor_spec(st)
+  expect_equal(eval(got$status_expr, list(DEAD = c(1, 0), LFLAG = c(1, 1))),
+               c(1, -1))
+})
+
+test_that("ICENSOR wins over LCENSOR where both fire", {
+  st <- list(EVENT = "DEAD", TIME = "T", LCENSOR = "LFLAG",
+             ICENSOR = c("LO", "HI"))
+  got <- .hzr_censor_spec(st)
+  expect_equal(
+    eval(got$status_expr,
+         list(DEAD = c(0, 0), LFLAG = c(1, 1), LO = c(5, NA), HI = c(9, NA))),
+    c(2, -1)
+  )
+})
