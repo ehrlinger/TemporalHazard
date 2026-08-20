@@ -162,3 +162,40 @@
   s <- gsub("[[:space:]]+", " ", s)
   trimws(.hzr_sas_strip_inline_comments(s))
 }
+
+#' Extract PROC HAZARD / PROC HAZPRED blocks from normalised source.
+#'
+#' Blocks are delimited by the `%HAZARD(...)` macro's parentheses, not by the
+#' PROC statement: HAZARD's own lexer treats `)` as whitespace, so the macro
+#' owns delimitation. Bounding on the first `);` fails whenever the block
+#' contains a nested paren.
+#' @noRd
+.hzr_sas_blocks <- function(txt) {
+  out <- list()
+  starts <- gregexpr("%HAZ(ARD|PRED) *\\(", txt)[[1L]]
+  if (starts[1L] == -1L) return(out)
+
+  for (s in starts) {
+    open_at <- s + attr(starts, "match.length")[which(starts == s)] - 1L
+    depth <- 0L
+    close_at <- NA_integer_
+    for (i in seq(open_at, nchar(txt))) {
+      ch <- substr(txt, i, i)
+      if (ch == "(") depth <- depth + 1L
+      if (ch == ")") {
+        depth <- depth - 1L
+        if (depth == 0L) {
+          close_at <- i
+          break
+        }
+      }
+    }
+    term <- if (is.na(close_at)) "none" else "paren"
+    body <- substring(txt, open_at + 1L,
+                      if (is.na(close_at)) nchar(txt) else close_at - 1L)
+    proc <- if (grepl("PROC HAZARD", body)) "HAZARD" else "HAZPRED"
+    out[[length(out) + 1L]] <- list(proc = proc, text = trimws(body),
+                                    terminator = term)
+  }
+  out
+}

@@ -29,3 +29,31 @@ test_that("an apostrophe inside an inline comment does not swallow the following
   src <- "TIME T; * patient's note ; EVENT D;"
   expect_equal(.hzr_sas_normalise(src), "TIME T; EVENT D;")
 })
+
+test_that("a block is bounded by balanced parens, not the first close", {
+  txt <- .hzr_sas_normalise(
+    "%HAZARD( PROC HAZARD DATA=A; PARMS MUE=EXP(1); ); DATA NEXT;"
+  )
+  b <- .hzr_sas_blocks(txt)
+  expect_length(b, 1L)
+  expect_equal(b[[1]]$proc, "HAZARD")
+  expect_equal(b[[1]]$terminator, "paren")
+  # The nested EXP( ... ) must not terminate the block early.
+  expect_true(grepl("MUE=EXP(1)", b[[1]]$text, fixed = TRUE))
+  expect_false(grepl("DATA NEXT", b[[1]]$text, fixed = TRUE))
+})
+
+test_that("HAZARD and HAZPRED blocks are both found, in order", {
+  txt <- .hzr_sas_normalise(
+    "%HAZARD( PROC HAZARD DATA=A; ); %HAZPRED( PROC HAZPRED DATA=P; );"
+  )
+  b <- .hzr_sas_blocks(txt)
+  expect_equal(vapply(b, `[[`, "", "proc"), c("HAZARD", "HAZPRED"))
+})
+
+test_that("an unbalanced block is reported, never silently extended", {
+  # Running to end of file is how comment prose reaches the token tables.
+  txt <- .hzr_sas_normalise("%HAZARD( PROC HAZARD DATA=A; PARMS MUE=1;")
+  b <- .hzr_sas_blocks(txt)
+  expect_equal(b[[1]]$terminator, "none")
+})
