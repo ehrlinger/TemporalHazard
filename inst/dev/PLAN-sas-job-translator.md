@@ -565,7 +565,13 @@ operands once:
 - `KEY=VALUE` → resolve `KEY` via `.hzr_sas_token(KEY, "HAZARD", "PARM")`;
   route `MUE`/`MUC`/`MUL` to `mu`, `THALF`/`NU`/`M` to `early`, and
   `TAU`/`GAMMA`/`ALPHA`/`ETA` to `late`. `NA` token → untranslated.
-- Bare `FIX<X>` → append `tolower(X)` to the owning phase's `fixed`.
+- Bare `FIX<X>` → append the **R parameter name** to the owning phase's `fixed`,
+  via an explicit map. `tolower(X)` is WRONG: `FIXTHALF`'s R parameter is
+  `t_half`, not `thalf`, and `hzr_phase()` accepts only `"t_half"`, `"nu"`,
+  `"m"` (cdf/hazard) or `"tau"`, `"gamma"`, `"alpha"`, `"eta"` (g3). A name
+  outside that set leaves the parameter free — a different model, no error.
+  `FIXDELTA`, `FIXMNU1`, `FIXGE2` and `FIXGAE2` have no owning `hzr_phase()`
+  parameter and go to `untranslated`.
 - Bare `WEIBULL` → set `late$alpha <- 1`, `late$eta <- 1`, and append
   `"alpha"` and `"eta"` to the late phase's `fixed`.
 - Any other bare token with an `NA` token → untranslated.
