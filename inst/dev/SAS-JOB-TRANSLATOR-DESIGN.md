@@ -166,9 +166,24 @@ The intermediate exists for exactly one reason that emitted text cannot serve:
 The `INHAZ` row is the one the corpus forces: a document that cannot resolve its
 fit must **fail to render** rather than render a report over a missing model.
 
-Resolution order for `INHAZ=`: another translated job's `OUTHAZ=` first, then a
-user-supplied libref→path map passed to `hzr_translate_sas()`, then failure. The
-map is worth having because the measurement says one entry clears ~60 jobs.
+### 4.1 `INHAZ=` resolution and the `librefs` contract
+
+Resolution order: another translated job's `OUTHAZ=` first, then the
+`librefs` argument, then failure. The map is worth having because the
+measurement says one entry clears ~60 jobs per study.
+
+`librefs` is a **plain named character vector**, `c(LIBNAME = "path")`, and that
+is the whole contract. It is deliberately *not* a path to a config file:
+
+- **No new dependency.** Reading a YAML file would put `yaml` in the
+  dependency graph. `Imports:` is currently the single package `survival`, and
+  that cheap CRAN footprint is worth protecting.
+- **No coupling to a site convention.** `_study.yml` is an institutional
+  convention that a public CRAN user — the package's primary persona — does
+  not have and should not need. A study that has one reads it itself and passes
+  the result in; the package never learns the file exists.
+- **It degrades honestly.** With no `librefs`, unresolved `INHAZ=` still fails
+  loudly per the table above, rather than half-working.
 
 Two derived guarantees, both testable:
 
@@ -251,10 +266,96 @@ worth having. `derived_set` grids emit `UNTRANSLATED`.
 - `test-sas-translate-parity.R` — `skip_on_cran()`; render emitted `.qmd`,
   compare against stored SAS `.lst`.
 
+Three further fixtures come from the gap analysis in §7 and are worth having
+whether or not the translator ships:
+
+- **G3 Weibull correspondence** (§7.1) — constrained G3 in R against
+  `PARMS ... WEIBULL` in SAS. Converts the most common production configuration
+  from assumed to shown.
+- **`CONSERVE` + `ICENSOR`** (§7.3) — the combination where R and SAS could
+  diverge despite usually agreeing.
+- **Censoring status round-trip** (§5.1) — `ICENSOR`/`LCENSOR`/`RCENSOR`
+  through the translator and into `hazard()`, asserting the exact status vector
+  rather than membership in the set of possible codes.
+
 Fixtures are synthesised from the public `examples/` corpus or deliberately
 de-identified. **No production job content enters the repository.**
 
-## 7. Open questions
+## 7. Package gaps surfaced by this analysis
+
+The grammar plus the usage counts is, incidentally, a gap analysis of
+`TemporalHazard` against what production actually does. These items are
+independent of the translator and stand on their own.
+
+| SAS construct | production use | `TemporalHazard` | verdict |
+|---|---|---|---|
+| `CONDITION=` | every block | `control$condition` (default 14) | present |
+| `MI` / `MAXITER` | 75–113 | `control$maxit` | present |
+| `NOCOR` / `NOCOV` | 6–28 | documented no-ops | correct |
+| `QUASI` / `QUASINEWTON` | 21–109 | `control$method = "bfgs"` | equivalent |
+| `CONSERVE` / `NOCONSERVE` | 16–68 | auto-disables on `status` outside {0,1} | right answer, different mechanism |
+| `WEIBULL` late phase | 76–88 | expressible, unverified, undocumented | **verification gap** |
+| `STEEPEST` | 14–109 | `method` offers only `"bfgs"` / `"nm"` | **absent** |
+| `DELTA` | 0 of 3 studies | unmapped | tracked as [#143](https://github.com/ehrlinger/temporal_hazard/issues/143) |
+| `RESTRICT` | 0 of 3 studies | no equivalent | defer |
+
+### 7.1 The G3 Weibull variant is unverified, not missing
+
+`PARMS ... WEIBULL` is `setopt(6)` → `SETG3_weibull()`, which sets
+`Late.g3flag = Late.g3flag + 2`. HAZARD's late phase has four structural
+variants (`g3flag` 1–4) and its likelihood branches on `1||3` versus `2||4`.
+`hzr_decompos_g3()` has no variant argument.
+
+That looks like a missing feature and is not one. The R general form
+
+```
+G3(t) = (((t/tau)^gamma + 1)^(1/alpha) - 1)^eta
+```
+
+collapses at `alpha = 1, eta = 1` to `(t/tau)^gamma` — a Weibull cumulative
+hazard. The corpus corroborates the reading: `WEIBULL`, `FIXTAU`, `FIXGAMMA`
+and `FIXALPHA` occur the *same* number of times in each study (87/87/87/87 in
+`preserve_root`, 76/76/76/76 in `lv_function`).
+
+So the most common production configuration is one the package can probably fit
+and has **never been shown to fit**. HAZARD branches on `g3flag` for numerical
+reasons — at the constraint it computes `expm1(log1p(exp(y)))` where the answer
+is `exp(y)` — and R always takes the general path. Whether that costs precision
+at the boundary is untested.
+
+**Action:** a correspondence fixture. Fit the same data as a constrained G3 in R
+and as `PARMS ... WEIBULL` in SAS, and assert agreement. Then document the
+correspondence on `hzr_phase()`, because an undocumented equivalence is one a
+user cannot find.
+
+### 7.2 `STEEPEST` has no R equivalent
+
+Jobs write `STEEPEST QUASI` *together* — steepest descent, then quasi-Newton.
+`control$method` offers `"bfgs"` and `"nm"`; there is no steepest-descent option
+and no two-stage strategy.
+
+This is not cosmetic. The multiphase likelihood is multimodal, and `n_starts`
+explores a neighbourhood rather than the space, so a different descent path can
+land on a different optimum. A silent mapping of `STEEPEST QUASI` to `"bfgs"`
+would surface later as an unexplained numerical discrepancy rather than as a
+missing feature.
+
+**Action:** decide explicitly — either add it to `control$method`, or document
+that it is unsupported and that translated jobs may find a different optimum.
+Either is defensible; silence is not. Tracked as
+[#145](https://github.com/ehrlinger/temporal_hazard/issues/145).
+
+### 7.3 Conservation of Events agrees by coincidence
+
+`R/likelihood-multiphase.R:1172` disables CoE when
+`!all(status %in% c(0, 1))`, which `ICENSOR` guarantees. Production writes
+`NOCONSERVE` on 16–68 blocks per study, so R and SAS usually agree — but for
+different reasons. A job carrying both `CONSERVE` and `ICENSOR` is where they
+could diverge.
+
+**Action:** a fixture for exactly that combination.
+
+## 8. Open questions
 
 1. ~~**`FORWARD` ≡ `STEPWISE` at the token level.**~~ **Resolved 2026-08-20** from
    `hazard_y.y`: they are genuinely synonymous (option 21, two-way). See §5.3.
