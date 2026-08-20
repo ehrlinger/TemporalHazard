@@ -20,3 +20,12 @@ test_that("inline comments after a semicolon are stripped", {
   src <- "TIME T; * a note ; EVENT D;"
   expect_equal(.hzr_sas_normalise(src), "TIME T; EVENT D;")
 })
+
+test_that("an apostrophe inside an inline comment does not swallow the following statement", {
+  # HAZARD's lexer rule (<STMT>\*[^;]*;) is quote-agnostic: the comment ends
+  # at the first literal `;`, apostrophes included. A quote-aware search here
+  # would see an unbalanced quote in "patient's" and read on past the real
+  # terminator, silently dropping "EVENT D;".
+  src <- "TIME T; * patient's note ; EVENT D;"
+  expect_equal(.hzr_sas_normalise(src), "TIME T; EVENT D;")
+})

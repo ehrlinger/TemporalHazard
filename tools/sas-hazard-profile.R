@@ -109,13 +109,18 @@ sas_strip_comments <- function(lines) {
 #'
 #' The line-based pass in sas_strip_comments() only catches the line-initial
 #' form. In these jobs a comment frequently follows a statement on the same
-#' line, which would otherwise be tokenised as a statement keyword.
+#' line, which would otherwise be tokenised as a statement keyword. The
+#' comment's own terminating `;` is found with a plain first-`;` search
+#' (.idx()), not the quote-aware .first_semi() -- HAZARD's lexer rule
+#' (<STMT>\*[^;]*;) has no quote awareness, so an apostrophe in comment prose
+#' (e.g. "patient's") must not be read as an unclosed string. Kept in sync
+#' with R/sas-lex.R's .hzr_sas_strip_inline_comments().
 sas_strip_inline_comments <- function(txt) {
   repeat {
     p <- .re(txt, "; *%?[*]")
     if (p == 0L) break
     rest <- substring(txt, p + 1L)
-    q <- .first_semi(rest)
+    q <- .idx(rest, ";")
     if (q == 0L) { txt <- substring(txt, 1L, p); break }
     txt <- paste0(substring(txt, 1L, p), substring(rest, q + 1L))
   }

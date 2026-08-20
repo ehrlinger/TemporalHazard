@@ -1,23 +1,26 @@
 # sas-lex.R -- SAS comment stripping and normalisation for the HAZARD job
 # translator.
 #
-# Ported from tools/sas-hazard-profile.R PART 1, which ran clean over 990
-# files across four corpora and matches HAZARD's own comment rule
-# (<STMT>\*[^;]*; in hazard_l.l). Do not change the logic here without
-# re-validating against that corpus.
+# Ported from tools/sas-hazard-profile.R PART 1. The prototype ran clean over
+# 990 files across four corpora, but that run predates the fixes below, so it
+# is evidence for the general shape of this logic, not a re-validation of it.
+# HAZARD's own comment rule (<STMT>\*[^;]*; in hazard_l.l) is quote-agnostic:
+# a `* ... ;` comment ends at the first literal `;`, apostrophes and all. Both
+# comment-termination call sites here -- the line-initial pass in
+# .hzr_sas_strip_comments() and the mid-line pass in
+# .hzr_sas_strip_inline_comments() -- must use a plain first-`;` search
+# (.idx()), never the quote-aware .first_semi(), to match that rule. An
+# earlier revision used .first_semi() in .hzr_sas_strip_inline_comments() and
+# silently dropped any statement following a comment that contained an
+# apostrophe; see test-sas-lex.R and task-1-report.md for the case that
+# surfaced this and the reasoning. Keep this file and
+# tools/sas-hazard-profile.R PART 1 in sync on this point -- the profiler's
+# measurements are the evidence base for this parser's design.
 #
-# One deliberate deviation from the prototype: comment termination in
-# .hzr_sas_strip_comments() uses a plain next-`;` search rather than the
-# quote-aware .first_semi() the prototype reused for that purpose. The
-# reference lexer's own rule (<STMT>\*[^;]*;) has no quote awareness, so a
-# comment containing a single apostrophe (e.g. "patient's") does not swallow
-# the next statement. See test-sas-lex.R and task-1-report.md for the case
-# that surfaced this and the reasoning.
-#
-# A second deviation: .hzr_sas_normalise() trims leading/trailing whitespace
-# from the assembled string (the prototype's sas_normalise() did not), so a
-# source that opens with a comment-only line does not leave a stray leading
-# space in the returned string.
+# A second deviation from the prototype: .hzr_sas_normalise() trims
+# leading/trailing whitespace from the assembled string (the prototype's
+# sas_normalise() did not), so a source that opens with a comment-only line
+# does not leave a stray leading space in the returned string.
 
 #' @noRd
 .idx <- function(hay, needle) {
@@ -31,7 +34,15 @@
   if (p == -1L) 0L else as.integer(p)
 }
 
-# First `;` that is not inside a quoted string. SAS strings use ' or ".
+#' First `;` that is not inside a quoted string. SAS strings use `'` or `"`.
+#'
+#' For splitting *statements*, where a `;` embedded in a quoted string literal
+#' (e.g. `TITLE 'a; b';`) must not be treated as a statement terminator. This
+#' is NOT for finding where a `* ... ;` comment ends -- HAZARD's comment rule
+#' is quote-agnostic, so using this for comment termination is a bug (see the
+#' file header). Nothing in this package calls this function today; it is
+#' kept for statement-splitting logic that may need it later.
+#'
 #' @noRd
 .first_semi <- function(line) {
   pos <- gregexpr(";", line, fixed = TRUE)[[1L]]
@@ -86,10 +97,10 @@
 
     # A `* ... ;` statement comment is terminated by the next literal `;`,
     # with no quote-balance check -- HAZARD's own lexer rule is the
-    # quote-agnostic <STMT>\*[^;]*; (hazard_l.l). Unlike .hzr_sas_strip_inline_comments(),
-    # which uses the quote-aware .first_semi() to find the semicolon that
-    # ends the *statement following* a comment, comment termination itself
-    # must not treat an apostrophe in comment prose as an unclosed string.
+    # quote-agnostic <STMT>\*[^;]*; (hazard_l.l). .hzr_sas_strip_inline_comments()
+    # below applies the same plain-`;` rule for the mid-line form of this
+    # comment; neither pass may treat an apostrophe in comment prose as an
+    # unclosed string.
     if (in_star) {
       p <- .idx(line, ";")
       if (p == 0L) {
@@ -120,7 +131,10 @@
 #' The line-based pass in .hzr_sas_strip_comments() only catches the
 #' line-initial form. In these jobs a comment frequently follows a statement
 #' on the same line, which would otherwise be tokenised as a statement
-#' keyword.
+#' keyword. The comment's own terminating `;` is found with a plain
+#' first-`;` search (.idx()), not the quote-aware .first_semi() -- HAZARD's
+#' lexer rule (`<STMT>\*[^;]*;`) has no quote awareness, so an apostrophe in
+#' comment prose (e.g. "patient's") must not be read as an unclosed string.
 #'
 #' @noRd
 .hzr_sas_strip_inline_comments <- function(txt) {
@@ -128,7 +142,7 @@
     p <- .re(txt, "; *%?[*]")
     if (p == 0L) break
     rest <- substring(txt, p + 1L)
-    q <- .first_semi(rest)
+    q <- .idx(rest, ";")
     if (q == 0L) {
       txt <- substring(txt, 1L, p)
       break
@@ -146,6 +160,5 @@
   s <- paste(lines, collapse = " ")
   s <- toupper(s)
   s <- gsub("[[:space:]]+", " ", s)
-  s <- trimws(s)
   trimws(.hzr_sas_strip_inline_comments(s))
 }
