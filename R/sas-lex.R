@@ -176,8 +176,12 @@
 #' that opens the group containing it, then forwards from that paren to its
 #' balancing `)` (unchanged balanced-paren logic -- the corpus confirms 0
 #' unterminated). A PROC with no enclosing paren at all is still returned,
-#' never dropped: its text is bounded at the next `PROC `/`DATA `boundary so
-#' it does not run to end of file.
+#' never dropped: its text is bounded at the next `PROC `/`DATA `/`RUN;`
+#' boundary, whichever comes first. If none of those follow, the block
+#' extends to the end of the normalised text -- this is safe because this
+#' function only ever runs on output from `.hzr_sas_normalise()`, which has
+#' already stripped all comments, so there is no trailing comment prose left
+#' to sweep in.
 #' @noRd
 .hzr_sas_blocks <- function(txt) {
   out <- list()
@@ -214,11 +218,15 @@
 
     if (is.na(open_at)) {
       # No enclosing paren anywhere before this PROC. Bound the text at the
-      # next PROC / DATA boundary so it never runs to end of file, and never
-      # drop the block.
+      # next PROC / DATA / RUN; boundary, never dropping the block. If none
+      # of those follow either, the block genuinely extends to the end of
+      # txt -- that is safe here because .hzr_sas_blocks() only ever sees
+      # output from .hzr_sas_normalise(), which has already stripped all
+      # comments, so the end-of-file-prose hazard this bounding rule exists
+      # to prevent cannot arise at this point.
       search_from <- proc_at + proc_lens[k]
       rest <- substring(txt, search_from)
-      b <- regexpr("PROC |DATA ", rest)
+      b <- regexpr("PROC |DATA |RUN;", rest)
       body <- if (b == -1L) {
         substring(txt, proc_at)
       } else {

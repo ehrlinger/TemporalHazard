@@ -74,3 +74,21 @@ test_that("a PROC with no enclosing paren is returned, never dropped", {
   expect_equal(b[[1]]$terminator, "none")
   expect_false(grepl("DATA NEXT", b[[1]]$text, fixed = TRUE))
 })
+
+test_that("an unenclosed PROC with no following boundary is bounded and reported", {
+  txt <- .hzr_sas_normalise("PROC HAZARD DATA=A; EVENT D; TIME T; RUN;")
+  b <- .hzr_sas_blocks(txt)
+  expect_length(b, 1L)
+  expect_equal(b[[1]]$terminator, "none")
+  expect_false(grepl("RUN;", b[[1]]$text, fixed = TRUE))
+})
+
+test_that("an unenclosed PROC with nothing following extends to end of text", {
+  # Documented behaviour, not an accident: comments are already stripped by
+  # .hzr_sas_normalise() before this function sees the text.
+  txt <- .hzr_sas_normalise("PROC HAZARD DATA=A; EVENT D;")
+  b <- .hzr_sas_blocks(txt)
+  expect_length(b, 1L)
+  expect_equal(b[[1]]$terminator, "none")
+  expect_true(grepl("EVENT D;", b[[1]]$text, fixed = TRUE))
+})
