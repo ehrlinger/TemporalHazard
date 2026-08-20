@@ -107,3 +107,29 @@ test_that("the tolerance does not fire on optimizer noise", {
     max_steps = 1L, control = list(n_starts = 1L, maxit = 500L)))
   expect_identical(r$criteria$n_nonmonotone_entries, 0L)
 })
+
+test_that("$steps has the same schema whether or not a step was taken", {
+  # The empty fallback frame is built by hand, separately from record_step()
+  # and record_freeze(), so a column added to the rows can be missed there --
+  # and it was. `$steps` then had 13 columns on a run that did nothing and 14
+  # on a run that did something, so `r$steps$delta_logLik` was NULL for the
+  # first. Assert the whole schema, not the presence of one column, or the
+  # next added column repeats this.
+  o <- .mono_fit()
+  taken <- suppressWarnings(hzr_stepwise(
+    o$fit, scope = list(early = ~ age, constant = ~ age), data = o$data,
+    direction = "forward", criterion = "wald", slentry = 0.5, trace = FALSE,
+    max_steps = 1L, control = list(n_starts = 1L, maxit = 500L)))
+
+  # slentry = 0 admits nothing, so no step is taken and the fallback is used.
+  none <- suppressWarnings(hzr_stepwise(
+    o$fit, scope = list(early = ~ age, constant = ~ age), data = o$data,
+    direction = "forward", criterion = "wald", slentry = 0, trace = FALSE,
+    max_steps = 1L, control = list(n_starts = 1L, maxit = 500L)))
+
+  expect_identical(nrow(none$steps), 0L)
+  expect_gt(nrow(taken$steps), 0L)
+  expect_identical(names(none$steps), names(taken$steps))
+  expect_true("delta_logLik" %in% names(none$steps))
+  expect_type(none$steps$delta_logLik, "double")
+})

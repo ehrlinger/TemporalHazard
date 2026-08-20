@@ -463,7 +463,8 @@ hzr_stepwise <- function(fit,
       criterion = character(), score = numeric(),
       stat = numeric(), df = integer(),
       p_value = numeric(), delta_aic = numeric(),
-      logLik = numeric(), aic = numeric(), n_coef = integer(),
+      logLik = numeric(), delta_logLik = numeric(),
+      aic = numeric(), n_coef = integer(),
       stringsAsFactors = FALSE
     )
   } else {
