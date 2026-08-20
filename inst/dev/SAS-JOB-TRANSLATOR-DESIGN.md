@@ -323,8 +323,14 @@ reasons — at the constraint it computes `expm1(log1p(exp(y)))` where the answe
 is `exp(y)` — and R always takes the general path. Whether that costs precision
 at the boundary is untested.
 
-**Action:** a correspondence fixture. Fit the same data as a constrained G3 in R
-and as `PARMS ... WEIBULL` in SAS, and assert agreement. Then document the
+**Verified 2026-08-20 (R side only).** `hzr_decompos_g3(t, tau, gamma, alpha = 1,
+eta = 1)` equals `(t/tau)^gamma` to 8.6e-16 at moderate times and 5.0e-13 across
+1e-6 to 1e6; the hazard agrees to 1.9e-16. The worse extreme-times figure is the
+`expm1(log1p(exp(y)))` precision loss predicted above — real, and harmless at
+that magnitude. **The SAS leg is still outstanding:** this shows the identity
+holds inside R, not that R agrees with `PARMS ... WEIBULL`.
+
+**Action:** complete the fixture with a SAS reference run. Then document the
 correspondence on `hzr_phase()`, because an undocumented equivalence is one a
 user cannot find.
 
