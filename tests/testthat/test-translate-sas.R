@@ -32,6 +32,15 @@ test_that("a malformed librefs is rejected with a clear error", {
   writeLines("%HAZPRED( PROC HAZPRED DATA=P INHAZ=EX.HZD OUT=P; TIME MONTHS; );", f)
   expect_error(hzr_translate_sas(f, librefs = "estimates"), "named character vector")
   expect_error(hzr_translate_sas(f, librefs = c(EX = 1)), "named character vector")
+  # An NA name used to pass: nzchar() defaults to keepNA = FALSE, so
+  # nzchar(NA_character_) is TRUE and any(!nzchar(...)) never sees it. The
+  # validation now rejects it with the same message the empty-name case gets.
+  na_named <- c(EX = "estimates", "other")
+  names(na_named)[2] <- NA
+  expect_error(hzr_translate_sas(f, librefs = na_named),
+               "named character vector")
+  expect_error(hzr_translate_sas(f, librefs = c(EX = "estimates", "")),
+               "named character vector")
 })
 
 test_that("a block missing both EVENT and ICENSOR fails cleanly, naming the file", {

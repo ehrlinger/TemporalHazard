@@ -83,9 +83,12 @@
 hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
   stopifnot(is.character(path), length(path) == 1L)
   if (!file.exists(path)) stop("no such file: ", path, call. = FALSE)
+  # anyNA() is a separate term from the nzchar() check on purpose: nzchar()
+  # defaults to keepNA = FALSE, so nzchar(NA_character_) is TRUE and an NA
+  # name would otherwise pass a check whose message promises a named vector.
   if (!is.null(librefs) &&
       (!is.character(librefs) || is.null(names(librefs)) ||
-       any(!nzchar(names(librefs))))) {
+       anyNA(names(librefs)) || any(!nzchar(names(librefs))))) {
     stop('librefs must be a named character vector, e.g. c(EX = "estimates").',
          call. = FALSE)
   }
