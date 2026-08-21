@@ -26,3 +26,20 @@ test_that("NOCONSERVE is emitted explicitly rather than defaulted", {
   got <- .hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]])
   expect_equal(got$call[["control"]][["conserve"]], FALSE)
 })
+
+test_that("a LATE statement with comma-separated VAR=VALUE operands parses", {
+  txt <- .hzr_sas_normalise(paste(
+    "%HAZARD( PROC HAZARD DATA=A;",
+    "EVENT D; TIME T;",
+    "PARMS MUL=0.01 TAU=2 GAMMA=1.5;",
+    "LATE NOPREVTE=2.653528, NOTEE=-0.3680751; );"
+  ))
+  got <- .hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]])
+  expect_equal(
+    got$call[["phases"]],
+    quote(list(hzr_phase("g3", tau = 2, gamma = 1.5,
+                          formula = ~NOPREVTE + NOTEE)))
+  )
+  expect_true(any(got$untranslated$reason ==
+    "phase covariate starting values are not yet mapped to theta"))
+})

@@ -156,11 +156,16 @@
   covars <- list()
 
   for (i in seq_along(st)[-1L]) {
-    w <- strsplit(trimws(st[[i]]), " ", fixed = TRUE)[[1L]]
+    stmt_text <- trimws(st[[i]])
+    w <- strsplit(stmt_text, " ", fixed = TRUE)[[1L]]
     w <- w[nzchar(w)]
     if (!length(w)) next
     kw <- w[[1L]]
     ops <- w[-1L]
+    # EARLY/CONSTANT/LATE operands are a comma-separated VAR=VALUE list, not
+    # whitespace-separated bare names -- keep the raw tail text (commas and
+    # all) for .hzr_parse_parms()/.hzr_parse_phase_covars() to split.
+    ops_text <- trimws(substring(stmt_text, nchar(kw) + 1L))
     token <- .hzr_sas_token(kw, "HAZARD", "STMT")
     seen <- seen + 1L
     if (is.na(token)) {
@@ -177,9 +182,9 @@
       WEIGHT     = statements$WEIGHT <- ops[[1L]],
       PARAMETERS = parms_ops <- ops,
       STEPWISE   = sel_ops <- ops,
-      EARLY      = covars$early <- ops,
-      CONSTANT   = covars$constant <- ops,
-      LATE       = covars$late <- ops,
+      EARLY      = covars$early <- ops_text,
+      CONSTANT   = covars$constant <- ops_text,
+      LATE       = covars$late <- ops_text,
       {
         mapped <- mapped - 1L
         note(kw, "no R equivalent")

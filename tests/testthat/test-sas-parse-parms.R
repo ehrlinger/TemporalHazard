@@ -46,3 +46,47 @@ test_that("an unrecognised PARMS token is recorded, never dropped", {
   expect_equal(got$untranslated$construct, "FIXGAE2")
   expect_equal(nrow(got$untranslated), 1L)
 })
+
+test_that("a raw EARLY VAR=value operand list produces a formula from names only", {
+  # Real syntax: phasevaropt : phasevar phaseval phaseoptspec -- comma-
+  # separated VAR=startvalue pairs, not bare names.
+  ops <- c("MUE=0.2", "THALF=1", "NU=1")
+  got <- .hzr_parse_parms(
+    ops, covars = list(early = "NYHA=1.121142, I_PATH=0.9513664")
+  )
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, formula = ~NYHA + I_PATH)))
+  )
+})
+
+test_that("a non-numeric phase-statement value is untranslated, not guessed", {
+  ops <- c("MUE=0.2", "THALF=1", "NU=1")
+  got <- .hzr_parse_parms(ops, covars = list(early = "NOBS=NUM"))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 1)))
+  )
+  expect_true("NOBS=NUM" %in% got$untranslated$construct)
+})
+
+test_that("a phase '/ options' tail is untranslated, not parsed", {
+  ops <- c("MUE=0.2", "THALF=1", "NU=1")
+  got <- .hzr_parse_parms(ops, covars = list(early = "AGE=1.2 / EXCLUDE=(SEX)"))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, formula = ~AGE)))
+  )
+  expect_true(any(grepl("phase options", got$untranslated$reason, fixed = TRUE)))
+})
+
+test_that("phase covariate starting values are noted once per phase, not per covariate", {
+  ops <- c("MUE=0.2", "THALF=1", "NU=1")
+  got <- .hzr_parse_parms(ops, covars = list(
+    early = "NYHA=1.121142, I_PATH=0.9513664, INC_SURG=1.375285"
+  ))
+  note_reason <- "phase covariate starting values are not yet mapped to theta"
+  note_rows <- got$untranslated[got$untranslated$reason == note_reason, ]
+  expect_equal(nrow(note_rows), 1L)
+  expect_equal(note_rows$construct, "early")
+})

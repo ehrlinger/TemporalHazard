@@ -36,6 +36,62 @@
   x[intersect(key_order, names(x))]
 }
 
+#' Parse one phase's `EARLY`/`CONSTANT`/`LATE` operand text into covariate
+#' names, discarding a `/ options` tail and non-numeric `VAR=VALUE` pairs.
+#'
+#' The real grammar (`phasevaropt : phasevar phaseval phaseoptspec`, with
+#' `phaseoptspec : /*nothing*/ | '/' phaseopts`) is a comma-separated list of
+#' `VAR=startvalue` pairs or bare `VAR`s, optionally followed by `/ options`
+#' (the `PHOP` family -- `EXCLUDE`/`INCLUDE`/`MOVE`/`ORDER`/`START` --
+#' deferred in v1 scope). `x` may be a single raw operand string (from the
+#' job parser) or an already-split character vector of bare names (the
+#' `.hzr_parse_parms()` `covars=` back-compat interface); both are handled by
+#' splitting every element on `/` then `,`, which is a no-op on a plain bare
+#' name.
+#' @noRd
+.hzr_parse_phase_covars <- function(x) {
+  names_out <- character(0)
+  bad_construct <- character(0)
+  bad_reason <- character(0)
+  opt_tail <- character(0)
+  had_value <- FALSE
+
+  for (piece in x) {
+    slash <- .idx(piece, "/")
+    if (slash > 0L) {
+      tail <- trimws(substr(piece, slash + 1L, nchar(piece)))
+      if (nzchar(tail)) opt_tail <- c(opt_tail, tail)
+      piece <- substr(piece, 1L, slash - 1L)
+    }
+    parts <- strsplit(piece, ",", fixed = TRUE)[[1L]]
+    for (p in parts) {
+      p <- trimws(p)
+      if (!nzchar(p)) next
+      eq <- .idx(p, "=")
+      if (eq == 0L) {
+        names_out <- c(names_out, p)
+        next
+      }
+      var <- trimws(substr(p, 1L, eq - 1L))
+      val_chr <- trimws(substr(p, eq + 1L, nchar(p)))
+      val <- suppressWarnings(as.numeric(val_chr))
+      if (is.na(val)) {
+        bad_construct <- c(bad_construct, p)
+        bad_reason <- c(
+          bad_reason,
+          sprintf("non-numeric value for phase-statement covariate %s", var)
+        )
+      } else {
+        names_out <- c(names_out, var)
+        had_value <- TRUE
+      }
+    }
+  }
+
+  list(names = names_out, had_value = had_value, options_tail = opt_tail,
+       untranslated_construct = bad_construct, untranslated_reason = bad_reason)
+}
+
 #' `fixed=` value: a bare string for one entry, a `c(...)` call for several.
 #' @noRd
 .hzr_parms_fixed_call <- function(fixed) {
@@ -85,10 +141,12 @@
 
     if (eq > 0L) {
       key <- substr(op, 1L, eq - 1L)
-      val <- as.numeric(substr(op, eq + 1L, nchar(op)))
+      val <- suppressWarnings(as.numeric(substr(op, eq + 1L, nchar(op))))
       token <- .hzr_sas_token(key, "HAZARD", "PARM")
       if (is.na(token)) {
         flag_bad(op, "unresolved PARMS keyword")
+      } else if (is.na(val)) {
+        flag_bad(op, sprintf("PARMS value for %s is not numeric", key))
       } else if (token %in% .hzr_parms_mu_order) {
         mu[[token]] <- val
       } else if (token %in% names(.hzr_parms_early_arg)) {
@@ -127,20 +185,51 @@
   mu <- .hzr_parms_ordered(mu, .hzr_parms_mu_order)
   has_muc <- "MUC" %in% names(mu)
 
+  # EARLY/CONSTANT/LATE operand text: comma-separated VAR=VALUE pairs (or
+  # bare VARs), optionally followed by a "/ options" tail. Non-numeric values
+  # and the options tail are recorded to untranslated, never guessed at; see
+  # .hzr_parse_phase_covars(). Starting values are noted once per phase (not
+  # once per covariate) because they are not yet mapped to theta.
+  phase_covars <- list()
+  for (ph in c("early", "constant", "late")) {
+    raw <- covars[[ph]]
+    if (is.null(raw)) {
+      phase_covars[[ph]] <- character(0)
+      next
+    }
+    parsed <- .hzr_parse_phase_covars(raw)
+    phase_covars[[ph]] <- parsed$names
+    for (i in seq_along(parsed$untranslated_construct)) {
+      flag_bad(parsed$untranslated_construct[[i]], parsed$untranslated_reason[[i]])
+    }
+    if (length(parsed$options_tail)) {
+      flag_bad(
+        paste("/", paste(parsed$options_tail, collapse = " ")),
+        sprintf(
+          "%s phase options (EXCLUDE/INCLUDE/MOVE/ORDER/START) are deferred (v1 scope)",
+          ph
+        )
+      )
+    }
+    if (parsed$had_value) {
+      flag_bad(ph, "phase covariate starting values are not yet mapped to theta")
+    }
+  }
+
   phase_calls <- list()
   if (length(early)) {
     phase_calls[[length(phase_calls) + 1L]] <- .hzr_parms_phase_call(
-      "cdf", early, covars$early, fixed_early
+      "cdf", early, phase_covars$early, fixed_early
     )
   }
   if (has_muc) {
     phase_calls[[length(phase_calls) + 1L]] <- .hzr_parms_phase_call(
-      "constant", list(), covars$constant, character(0)
+      "constant", list(), phase_covars$constant, character(0)
     )
   }
   if (length(late)) {
     phase_calls[[length(phase_calls) + 1L]] <- .hzr_parms_phase_call(
-      "g3", late, covars$late, fixed_late
+      "g3", late, phase_covars$late, fixed_late
     )
   }
 
