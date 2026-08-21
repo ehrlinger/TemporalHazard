@@ -1,3 +1,41 @@
+# TemporalHazard 1.2.2
+
+## New features
+
+* `hzr_translate_sas()` translates a SAS `PROC HAZARD` / `PROC HAZPRED` job
+  into a Quarto document that reproduces the analysis with [hazard()] and
+  [predict.hazard()]. It parses the SAS statements, builds the equivalent R
+  calls, and renders them into `.qmd` chunks -- the model state is stored as
+  unevaluated calls, so rendering is `deparse()`, not string templating.
+
+  The keyword grammar behind the parser -- 117 keyword rules mapped to R
+  targets -- is **generated from the reference `HAZARD`/`HAZPRED` C
+  implementation's own lex sources** (`data-raw/hazard-grammar.R`), not
+  hand-written. Only the extracted table ships; no GPL-2 source enters the
+  tarball. A hand-written table would capture only the spellings a study
+  happened to use, and the grammar has real context-dependent collisions --
+  `M` means a phase shape parameter inside `PARMS` and `MOVE` inside a
+  `PHOP`/`STEP` statement -- that a context-free lookup gets silently wrong.
+
+  Constructs the translator does not cover are recorded on the returned
+  `hzr_sas_job` object and rendered as visible `UNTRANSLATED` callouts in
+  the `.qmd`, never dropped. Two limits are worth stating plainly:
+
+  - **Prediction grids built from expressions over DATA-step constants are
+    not translated.** The parser resolves a `PROC HAZPRED` grid only when
+    its `DO` loop bounds are literal numbers. Real SAS grids are commonly
+    written as `DO MONTHS = 1*DTY, 2*DTY, ... ;` with `DTY` assigned
+    earlier in the same DATA step, and that form is refused rather than
+    partially read -- a partially read grid is a partial `newdata`, which
+    is a hollow result. Such grids emit an explicit `UNTRANSLATED` block
+    instead.
+  - **An unresolved `INHAZ=` fails the render, on purpose.** A `PROC
+    HAZPRED` job whose fitted-model dataset can't be located -- neither
+    from another translated job's `OUTHAZ=` nor from the `librefs`
+    argument -- emits a `stop()` at the head of the chunk, so the document
+    fails to render rather than reporting predictions over a model it
+    never loaded.
+
 # TemporalHazard 1.2.1
 
 ## Breaking changes
