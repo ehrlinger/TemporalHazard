@@ -246,6 +246,69 @@
        untranslated = untr, tokens_seen = seen, tokens_mapped = mapped)
 }
 
+#' Translate a SELECTION statement to hzr_stepwise() arguments.
+#'
+#' HAZARD's lexer collapses FORWARD, FW, SW, SELECT and STEPWISE into one
+#' token, which hazard_y.y maps to option 21; BACKWARD is option 22 and
+#' ONEWAY (NOSTEPWISE/NOSW) is 34. Option 21 is therefore two-way, so FORWARD
+#' maps to `direction = "both"`, not `"forward"`. Mapping it to `"forward"`
+#' would silently change the search on every stepwise job.
+#'
+#' Operands are resolved in `STEP` lexer context, matching HAZARD's own
+#' `BEGIN STEP` start condition once inside a `SELECTION` statement. `SELECT`
+#' is the one spelling that only resolves in `STMT` context (it is also an
+#' alias for the statement keyword itself), so a `STEP`-context miss falls
+#' back to `STMT` before being recorded as untranslated.
+#' @noRd
+.hzr_selection_spec <- function(operands) {
+  out <- list(direction = NULL, slentry = NULL, slstay = NULL,
+              untranslated = .hzr_untranslated_frame())
+  for (op in operands) {
+    eqp <- .idx(op, "=")
+    key <- if (eqp > 0L) substring(op, 1L, eqp - 1L) else op
+    val_txt <- if (eqp > 0L) substring(op, eqp + 1L) else NA_character_
+    token <- .hzr_sas_token(key, "HAZARD", "STEP")
+    if (is.na(token)) token <- .hzr_sas_token(key, "HAZARD", "STMT")
+    if (is.na(token)) {
+      out$untranslated <- rbind(out$untranslated, .hzr_untranslated_frame(
+        NA_integer_, key, "unknown SELECTION option"
+      ))
+      next
+    }
+    switch(token,
+      STEPWISE = out$direction <- "both",
+      BACKWARD = out$direction <- "backward",
+      ONEWAY   = out$direction <- NULL,
+      SLENTRY  = {
+        val <- suppressWarnings(as.numeric(val_txt))
+        if (is.na(val)) {
+          out$untranslated <- rbind(out$untranslated, .hzr_untranslated_frame(
+            NA_integer_, key, "non-numeric value for SLENTRY"
+          ))
+        } else {
+          out$slentry <- val
+        }
+      },
+      SLSTAY   = {
+        val <- suppressWarnings(as.numeric(val_txt))
+        if (is.na(val)) {
+          out$untranslated <- rbind(out$untranslated, .hzr_untranslated_frame(
+            NA_integer_, key, "non-numeric value for SLSTAY"
+          ))
+        } else {
+          out$slstay <- val
+        }
+      },
+      {
+        out$untranslated <- rbind(out$untranslated, .hzr_untranslated_frame(
+          NA_integer_, key, "no hzr_stepwise() equivalent"
+        ))
+      }
+    )
+  }
+  out
+}
+
 #' Translate the DATA step that builds a HAZPRED prediction grid.
 #'
 #' Returns an unevaluated `data.frame()` call, or `NULL` when the step is not
@@ -437,8 +500,17 @@
     as.call(c(quote(predict), args))
   }
 
+  # NOSURV and NOHAZ together suppress both prediction families. The ternary
+  # below tests only want_surv, so without this guard `call` would silently
+  # fall back to a hazard predict() nobody asked for -- a populated result
+  # over a request for nothing, this package's signature defect. Emit NULL
+  # for both and record it, rather than guess which one the caller meant.
+  if (!want_surv && !want_haz) {
+    note("NOSURV NOHAZ", "both survival and hazard predictions suppressed")
+  }
+
   list(
-    call = if (want_surv) mk("survival") else mk("hazard"),
+    call = if (want_surv) mk("survival") else if (want_haz) mk("hazard"),
     call_haz = if (want_surv && want_haz) mk("hazard") else NULL,
     inhaz = inhaz, grid = grid, untranslated = untr,
     tokens_seen = seen, tokens_mapped = mapped
