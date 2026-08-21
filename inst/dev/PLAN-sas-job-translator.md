@@ -479,9 +479,26 @@ The densest task. Read spec §5 and §7.1 first.
   where `operands` is a character vector of `PARMS` tokens such as
   `c("MUE=0.2", "THALF=0.15", "NU=1.4", "M=1", "FIXM", "MUC=0.0005")`.
 
-  `covars` is an optional named list — `list(early = c("X1", "X2"), constant = ,
-  late = )` — carrying the operands of the `EARLY` / `CONSTANT` / `LATE`
-  statements. When a phase has covariates, its `hzr_phase()` call gains
+  `covars` is an optional named list carrying the operands of the `EARLY` /
+  `CONSTANT` / `LATE` statements.
+
+  **Their real syntax is comma-separated `VAR=startvalue` pairs with an
+  optional `/ options` tail**, per the reference yacc production
+  `phasevaropt : phasevar phaseval phaseoptspec`:
+
+  ```
+  CONSTANT INC_SURG=1.375285, ORIFICE=3.11765, STATUS=1.054988;
+  EARLY NOBS=NUM;
+  ```
+
+  Modelling them as bare names — as an earlier revision of this plan did —
+  produces invalid R such as `~ AGE=-0.032,` and fails 31 of 44 corpus blocks.
+  Only the **names** go into the formula. A non-numeric value (`NOBS=NUM`)
+  is not a starting coefficient and goes to `untranslated`. Starting values
+  are recorded as untranslated once per phase, because the ordering of
+  coefficient entries within `hazard(theta =)` has not been verified against
+  the reference implementation and inventing one would be a silent wrong
+  answer. When a phase has covariates, its `hzr_phase()` call gains
   `formula = ~X1 + X2`, built with
   `str2lang(paste("~", paste(v, collapse = " + ")))`. These statements appear
   16–44 times per production study, so this is v1 scope, not an extension.
