@@ -42,3 +42,38 @@ test_that("an unknown SELECTION option is recorded, not dropped", {
   got <- .hzr_selection_spec("BOGUS")
   expect_true(any(grepl("BOGUS", got$untranslated$construct)))
 })
+
+test_that("a SELECTION statement with no direction still enables stepwise", {
+  # stepwisestmt : STEPWISE stepwiseopts { setopt(33); } -- stepwiseopts may be
+  # empty, so the statement itself turns stepwise on.
+  got <- .hzr_selection_spec(c("SLENTRY=0.05", "SLSTAY=0.1"))
+  expect_true(got$stepwise)
+  expect_equal(got$direction, "both")
+  expect_equal(got$slentry, 0.05)
+  expect_equal(got$slstay, 0.1)
+})
+
+test_that("a bare SELECTION with no options at all enables stepwise", {
+  got <- .hzr_selection_spec(character(0))
+  expect_true(got$stepwise)
+  expect_equal(got$direction, "both")
+})
+
+test_that("NOSTEPWISE disables it and records any orphaned thresholds", {
+  got <- .hzr_selection_spec(c("NOSTEPWISE", "SLENTRY=0.05"))
+  expect_false(got$stepwise)
+  expect_true(any(grepl("SLENTRY", got$untranslated$construct)))
+})
+
+test_that("a directionless SELECTION block emits hzr_stepwise, not hazard", {
+  txt <- .hzr_sas_normalise(paste(
+    "%HAZARD( PROC HAZARD DATA=A CONDITION=14;",
+    "EVENT D; TIME T; EARLY X1=0.5, X2=0.25;",
+    "PARMS MUE=1 THALF=1 NU=1;",
+    "SELECTION SLENTRY=0.05 SLSTAY=0.1; );"
+  ))
+  got <- .hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]])
+  expect_equal(got$call[[1L]], as.name("hzr_stepwise"))
+  expect_equal(got$call[["slentry"]], 0.05)
+  expect_equal(got$call[["slstay"]], 0.1)
+})

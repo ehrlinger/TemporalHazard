@@ -234,7 +234,7 @@
   if (!is.null(sel_ops)) {
     sel <- .hzr_selection_spec(sel_ops)
     untr <- rbind(untr, sel$untranslated)
-    if (!is.null(sel$direction)) {
+    if (isTRUE(sel$stepwise)) {
       head <- quote(hzr_stepwise)
       args$direction <- sel$direction
       if (!is.null(sel$slentry)) args$slentry <- sel$slentry
@@ -248,21 +248,36 @@
 
 #' Translate a SELECTION statement to hzr_stepwise() arguments.
 #'
-#' HAZARD's lexer collapses FORWARD, FW, SW, SELECT and STEPWISE into one
-#' token, which hazard_y.y maps to option 21; BACKWARD is option 22 and
-#' ONEWAY (NOSTEPWISE/NOSW) is 34. Option 21 is therefore two-way, so FORWARD
-#' maps to `direction = "both"`, not `"forward"`. Mapping it to `"forward"`
-#' would silently change the search on every stepwise job.
+#' `hazard_y.y`'s `stepwisestmt` production is `STEPWISE stepwiseopts { setopt(33); }`,
+#' and `stepwiseopts` can be empty -- the *statement* is what turns stepwise
+#' on, not any particular direction keyword. So a bare `SELECTION;` (or one
+#' carrying only `SLENTRY`/`SLSTAY`) legitimately enables stepwise; the
+#' direction keywords only refine it. `ONEWAY` (aliases `NOSTEPWISE`/`NOSW`,
+#' option 34) is the one option that turns stepwise back off.
+#'
+#' HAZARD's lexer also collapses FORWARD, FW, SW, SELECT and STEPWISE into
+#' one token, which `hazard_y.y` maps to option 21; BACKWARD is option 22.
+#' Option 21 is therefore two-way, so FORWARD maps to `direction = "both"`,
+#' not `"forward"`. Mapping it to `"forward"` would silently change the
+#' search on every stepwise job.
 #'
 #' Operands are resolved in `STEP` lexer context, matching HAZARD's own
 #' `BEGIN STEP` start condition once inside a `SELECTION` statement. `SELECT`
 #' is the one spelling that only resolves in `STMT` context (it is also an
 #' alias for the statement keyword itself), so a `STEP`-context miss falls
 #' back to `STMT` before being recorded as untranslated.
+#'
+#' When `ONEWAY`/`NOSTEPWISE`/`NOSW` disables stepwise, any `SLENTRY`/
+#' `SLSTAY` also given are meaningless (there is no entry/stay search to
+#' apply them to) and are moved into `untranslated` rather than silently
+#' dropped -- discarding a parsed value with nothing recorded is exactly
+#' the defect this package guards against.
+#' @return `list(stepwise = <logical>, direction = <chr|NULL>,
+#'   slentry = <dbl|NULL>, slstay = <dbl|NULL>, untranslated = <data.frame>)`.
 #' @noRd
 .hzr_selection_spec <- function(operands) {
-  out <- list(direction = NULL, slentry = NULL, slstay = NULL,
-              untranslated = .hzr_untranslated_frame())
+  out <- list(stepwise = TRUE, direction = "both", slentry = NULL,
+              slstay = NULL, untranslated = .hzr_untranslated_frame())
   for (op in operands) {
     eqp <- .idx(op, "=")
     key <- if (eqp > 0L) substring(op, 1L, eqp - 1L) else op
@@ -278,7 +293,10 @@
     switch(token,
       STEPWISE = out$direction <- "both",
       BACKWARD = out$direction <- "backward",
-      ONEWAY   = out$direction <- NULL,
+      ONEWAY   = {
+        out$direction <- NULL
+        out$stepwise <- FALSE
+      },
       SLENTRY  = {
         val <- suppressWarnings(as.numeric(val_txt))
         if (is.na(val)) {
@@ -305,6 +323,22 @@
         ))
       }
     )
+  }
+  if (!out$stepwise) {
+    if (!is.null(out$slentry)) {
+      out$untranslated <- rbind(out$untranslated, .hzr_untranslated_frame(
+        NA_integer_, "SLENTRY",
+        "stepwise disabled by ONEWAY/NOSTEPWISE/NOSW; SLENTRY has no effect"
+      ))
+      out$slentry <- NULL
+    }
+    if (!is.null(out$slstay)) {
+      out$untranslated <- rbind(out$untranslated, .hzr_untranslated_frame(
+        NA_integer_, "SLSTAY",
+        "stepwise disabled by ONEWAY/NOSTEPWISE/NOSW; SLSTAY has no effect"
+      ))
+      out$slstay <- NULL
+    }
   }
   out
 }
