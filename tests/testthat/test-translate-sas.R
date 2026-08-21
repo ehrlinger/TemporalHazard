@@ -104,3 +104,107 @@ test_that("a librefs value that already carries an .rds extension is used verbat
   # value already names the file directly -- no separate ".sas7bdat" form.
   expect_false(any(grepl("sas7bdat", line, fixed = TRUE)))
 })
+
+test_that("a two-PROC-HAZARD job yields two distinct fit calls, not one dropped", {
+  # This is the package's signature defect: a second block of the same kind
+  # silently overwrote the first. Both fits must survive, under distinct,
+  # stable names, and both must actually appear in the emitted .qmd.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste(
+    "%HAZARD( PROC HAZARD DATA=X OUTHAZ=A; EVENT DEAD; TIME T;",
+    "PARMS MUE=1 THALF=1; );",
+    "%HAZARD( PROC HAZARD DATA=X OUTHAZ=B; EVENT DEAD; TIME T;",
+    "PARMS MUE=2 THALF=2; );"
+  ), f)
+  out <- withr::local_tempdir()
+  job <- hzr_translate_sas(f, out_dir = out)
+
+  expect_true(all(c("fit", "fit_2") %in% names(job$calls)))
+  expect_equal(job$outhaz, c("A", "B"))
+  # The two fits must not be identical calls -- otherwise the second block
+  # would still be silently dropped in substance, even under a new name.
+  expect_false(identical(job$calls$fit, job$calls$fit_2))
+
+  qmd <- readLines(file.path(out, sub("[.]sas$", ".qmd", basename(f))))
+  expect_length(grep("^#\\| label: fit$", qmd), 1L)
+  expect_length(grep("^#\\| label: fit_2$", qmd), 1L)
+  expect_true(any(grepl("t_half = 1", qmd, fixed = TRUE)))
+  expect_true(any(grepl("t_half = 2", qmd, fixed = TRUE)))
+})
+
+test_that("a three-HAZPRED job yields three predict calls", {
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste(
+    "%HAZPRED( PROC HAZPRED DATA=P INHAZ=EX.A OUT=P NOHAZ; TIME MONTHS; );",
+    "%HAZPRED( PROC HAZPRED DATA=P INHAZ=EX.B OUT=P NOHAZ; TIME MONTHS; );",
+    "%HAZPRED( PROC HAZPRED DATA=P INHAZ=EX.C OUT=P NOHAZ; TIME MONTHS; );"
+  ), f)
+  out <- withr::local_tempdir()
+  job <- suppressWarnings(hzr_translate_sas(f, out_dir = out))
+
+  expect_equal(names(job$calls), c("pred", "pred_2", "pred_3"))
+
+  qmd <- readLines(file.path(out, sub("[.]sas$", ".qmd", basename(f))))
+  expect_length(grep("^#\\| label: pred$", qmd), 1L)
+  expect_length(grep("^#\\| label: pred_2$", qmd), 1L)
+  expect_length(grep("^#\\| label: pred_3$", qmd), 1L)
+})
+
+test_that("several fits with the same OUTHAZ resolve predict() positionally", {
+  # Two PROC HAZARD blocks that both write OUTHAZ=OUTEST -- SAS semantics:
+  # the second write overwrites the dataset the first one wrote. A HAZPRED
+  # block that appears between them must reference the first fit; one after
+  # both must reference the second. This is not "ambiguous": document order
+  # of the blocks fully determines it.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste(
+    "%HAZARD( PROC HAZARD DATA=X OUTHAZ=OUTEST; EVENT DEAD; TIME T;",
+    "PARMS MUE=1 THALF=1; );",
+    "%HAZPRED( PROC HAZPRED DATA=P INHAZ=OUTEST OUT=P NOHAZ; TIME MONTHS; );",
+    "%HAZARD( PROC HAZARD DATA=X OUTHAZ=OUTEST; EVENT DEAD; TIME T;",
+    "PARMS MUE=2 THALF=2; );",
+    "%HAZPRED( PROC HAZPRED DATA=P INHAZ=OUTEST OUT=P NOHAZ; TIME MONTHS; );"
+  ), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+
+  expect_equal(job$calls$pred[[2L]], as.name("fit"))
+  expect_equal(job$calls$pred_2[[2L]], as.name("fit_2"))
+  # Neither is a genuine ambiguity: the same-job resolution above is
+  # deterministic, so no "ambiguous" row is expected here.
+  expect_false(any(grepl("ambiguous", job$untranslated$reason)))
+})
+
+test_that("an INHAZ that matches none of several local OUTHAZ is recorded ambiguous", {
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste(
+    "%HAZARD( PROC HAZARD DATA=X OUTHAZ=A; EVENT DEAD; TIME T;",
+    "PARMS MUE=1 THALF=1; );",
+    "%HAZARD( PROC HAZARD DATA=X OUTHAZ=B; EVENT DEAD; TIME T;",
+    "PARMS MUE=2 THALF=2; );",
+    "%HAZPRED( PROC HAZPRED DATA=P INHAZ=EX.C OUT=P NOHAZ; TIME MONTHS; );"
+  ), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+
+  # Falls back to `fit` rather than guessing which local fit was meant.
+  expect_equal(job$calls$pred[[2L]], as.name("fit"))
+  expect_true(any(grepl("ambiguous", job$untranslated$reason)))
+})
+
+test_that("a corpus round-trip on hz.te123.OMC.sas preserves both HAZARD and both HAZPRED blocks", {
+  skip_on_cran()
+  repo <- Sys.getenv("HAZARD_REPO", "~/Documents/GitHub/hazard")
+  f <- file.path(path.expand(repo), "examples", "hz.te123.OMC.sas")
+  skip_if_not(file.exists(f), "hz.te123.OMC.sas not available")
+
+  job <- suppressWarnings(hzr_translate_sas(f))
+
+  # HAZARD 2, HAZPRED 2 (measured 2026-08-20): both fits and both predict()
+  # families -- four calls of the expected kinds -- must all survive.
+  expect_true(all(c("fit", "fit_2", "pred", "pred_2") %in% names(job$calls)))
+  expect_equal(job$outhaz, c("OUTEST", "OUTEST"))
+  expect_false(identical(job$calls$fit, job$calls$fit_2))
+  # Both PROC HAZPRED blocks in this file omit NOSURV/NOHAZ, so each also
+  # emits a paired hazard predict() -- these must survive too, not just the
+  # four minimum kinds.
+  expect_true(all(c("pred_haz", "pred_haz_2") %in% names(job$calls)))
+})
