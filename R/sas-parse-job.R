@@ -430,6 +430,69 @@
   out
 }
 
+#' Evaluate a SAS DATA-step numeric expression, using only known constants.
+#'
+#' Used to resolve explicit `DO` list elements such as `1*DTY`: `DTY` becomes
+#' a plain number only when it was already folded from an earlier
+#' `DTY=12/365.2425;` assignment in the *same* `DATA` step
+#' (`.hzr_sas_data_constants()`). Anything else -- a function call, a
+#' data-step variable, an unknown name -- must refuse rather than guess, so
+#' `text` is checked against a strict whitelist regex (digits, the four
+#' arithmetic operators, parentheses, whitespace, and known constant names)
+#' *before* `parse()`/`eval()` ever see it; text that fails the whitelist is
+#' never evaluated at all. `consts` doubles as the `eval()` environment, so
+#' the only names that can resolve are exactly the ones the whitelist
+#' allowed.
+#' @param text A candidate numeric expression, e.g. `"1*DTY"` or `"24"`.
+#' @param consts Named list of already-folded constants (name -> `double`).
+#' @return A finite `double`, or `NA_real_` if `text` cannot be safely
+#'   evaluated.
+#' @noRd
+.hzr_eval_sas_const <- function(text, consts) {
+  text <- trimws(text)
+  if (!nzchar(text)) return(NA_real_)
+  nms <- names(consts)
+  alt <- if (length(nms)) paste(nms[order(-nchar(nms))], collapse = "|") else "(?!)"
+  whitelist <- sprintf("^(?:%s|[0-9.]+|[+*/()-]|[[:space:]]+)+$", alt)
+  if (!grepl(whitelist, text, perl = TRUE)) return(NA_real_)
+
+  # Safe by construction, not by luck: the whitelist above has already
+  # rejected everything except digits/operators/parens/whitespace and
+  # literal known-constant names, and `consts` (the only environment eval()
+  # is given) holds nothing but doubles -- no function, including any base R
+  # function, is reachable through it. There is no code path from here to
+  # arbitrary execution.
+  val <- tryCatch({
+    expr <- parse(text = text, keep.source = FALSE)
+    if (length(expr) != 1L) NA_real_ else eval(expr[[1L]], envir = consts)
+  }, error = function(e) NA_real_)
+  if (!is.numeric(val) || length(val) != 1L || !is.finite(val)) return(NA_real_)
+  as.double(val)
+}
+
+#' Fold `NAME = <numeric expression>;` assignments into a constants map.
+#'
+#' Scoped to one `DATA` step's own preamble (the text before its `DO`
+#' statement): collects assignments in order, so a later constant may
+#' reference an earlier one (`INC=(5+LN_MAX)/99.9` after `LN_MAX=...`).
+#' Only assignments `.hzr_eval_sas_const()` can actually evaluate end up in
+#' the map -- an assignment whose right-hand side is not pure arithmetic
+#' over already-known constants (a function call, an unresolved name) is
+#' silently skipped here, not stored; it simply never becomes foldable.
+#' @noRd
+.hzr_sas_data_constants <- function(pre) {
+  consts <- list()
+  for (s in strsplit(pre, ";", fixed = TRUE)[[1L]]) {
+    s <- trimws(s)
+    if (!nzchar(s)) next
+    m <- regmatches(s, regexec("^([A-Z_][A-Z0-9_]*) *= *(.+)$", s))[[1L]]
+    if (length(m) < 3L) next
+    val <- .hzr_eval_sas_const(trimws(m[[3L]]), consts)
+    if (!is.na(val)) consts[[m[[2L]]]] <- val
+  }
+  consts
+}
+
 #' Translate the DATA step that builds a HAZPRED prediction grid.
 #'
 #' Returns an unevaluated `data.frame()` call, or `NULL` when the step is not
@@ -483,40 +546,51 @@
   }
 
   # --- explicit DO list: DO MONTHS=1,2,3,6,12,24 TO 180 BY 12; --------------
+  # or, with constants folded first: DO MONTHS=1*DTY,2*DTY,24 TO 180 BY 12;
   if (grepl(" DO ", body)) {
+    do_at <- regexpr("DO [A-Z_][A-Z0-9_]* *= *[^;]+;", body)
+    if (do_at == -1L) return(NULL)
+    consts <- .hzr_sas_data_constants(substring(body, 1L, as.integer(do_at) - 1L))
+
     m <- regmatches(body,
            regexec("DO ([A-Z_][A-Z0-9_]*) *= *([^;]+);", body))[[1L]]
     if (length(m) < 3L) return(NULL)
     var <- m[[2L]]
     parts <- trimws(strsplit(m[[3L]], ",", fixed = TRUE)[[1L]])
     elems <- list()
+    is_literal <- function(txt) grepl("^-?[0-9.]+$", txt)
     for (part in parts) {
       rng <- regmatches(part,
-               regexec("^([0-9.]+) +TO +([0-9.]+)( +BY +([0-9.]+))?$",
+               regexec("^([A-Z0-9_.+*/()-]+) +TO +([A-Z0-9_.+*/()-]+)( +BY +([A-Z0-9_.+*/()-]+))?$",
                        part))[[1L]]
       if (length(rng) >= 3L) {
         lo_txt <- rng[[2L]]
         hi_txt <- rng[[3L]]
         by_txt <- if (length(rng) >= 5L && nzchar(rng[[5L]])) rng[[5L]] else "1"
-        lo <- suppressWarnings(as.numeric(lo_txt))
-        hi <- suppressWarnings(as.numeric(hi_txt))
-        by <- suppressWarnings(as.numeric(by_txt))
-        # A range bound that failed to parse as numeric (rare, given the
-        # digit-only capture group above, but not impossible -- e.g. a
-        # malformed literal like "1.2.3"). Refuse the whole grid rather than
-        # coerce silently to NA.
+        lo <- .hzr_eval_sas_const(lo_txt, consts)
+        hi <- .hzr_eval_sas_const(hi_txt, consts)
+        by <- .hzr_eval_sas_const(by_txt, consts)
+        # A range bound this cannot be evaluated at all -- unknown name, a
+        # function call, or a malformed literal. Refuse the whole grid
+        # rather than coerce silently to NA or emit a partial grid.
         if (is.na(lo) || is.na(hi) || is.na(by)) return(NULL)
+        # Splice bare numeric literals through str2lang(), not the double:
+        # a negative bound such as -5 parses (like source code) to a
+        # unary-minus call, not a bare negative double, and only str2lang()
+        # reproduces that. A folded constant expression (e.g. 1*DTY) has no
+        # such source form to preserve -- it becomes the evaluated number.
         elems[[length(elems) + 1L]] <- bquote(
-          seq(.(str2lang(lo_txt)), .(str2lang(hi_txt)), by = .(str2lang(by_txt)))
+          seq(.(if (is_literal(lo_txt)) str2lang(lo_txt) else lo),
+              .(if (is_literal(hi_txt)) str2lang(hi_txt) else hi),
+              by = .(if (is_literal(by_txt)) str2lang(by_txt) else by))
         )
-      } else if (grepl("^[0-9.]+$", part)) {
-        val <- suppressWarnings(as.numeric(part))
-        if (is.na(val)) return(NULL)
-        elems[[length(elems) + 1L]] <- str2lang(part)
       } else {
-        # An element we cannot read (a SAS expression such as 1*DTY). Refuse
-        # the whole grid rather than emit a partial one.
-        return(NULL)
+        val <- .hzr_eval_sas_const(part, consts)
+        # An element that cannot be evaluated at all -- an unknown name, a
+        # function call, or a data-step variable. Refuse the whole grid
+        # rather than emit a partial one.
+        if (is.na(val)) return(NULL)
+        elems[[length(elems) + 1L]] <- if (is_literal(part)) str2lang(part) else val
       }
     }
     inner <- as.call(c(quote(c), elems))

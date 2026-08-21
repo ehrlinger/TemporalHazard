@@ -59,6 +59,52 @@ test_that("NOSURV makes call the hazard prediction", {
   expect_null(got$call_haz)
 })
 
+test_that("an explicit DO grid resolves DATA-step constants, incl. 1*DTY", {
+  txt <- .hzr_sas_normalise(paste(
+    "DATA PREDICT; DIGITAL=0;",
+    "DTY=12/365.2425;",
+    "DO MONTHS=1*DTY,2*DTY,24 TO 180 BY 12;",
+    "OUTPUT; END;",
+    "%HAZPRED( PROC HAZPRED DATA=PREDICT INHAZ=E.H OUT=P; TIME MONTHS; );"
+  ))
+  got <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)
+  expect_false(is.null(got$grid))
+
+  dty <- 12 / 365.2425
+  expected <- c(1 * dty, 2 * dty, seq(24, 180, by = 12))
+  expect_equal(eval(got$grid)$MONTHS, expected)
+})
+
+test_that("a DO list referencing an unknown name still refuses and records", {
+  txt <- .hzr_sas_normalise(paste(
+    "DATA PREDICT; DO MONTHS=1*FOO,2*FOO; OUTPUT; END;",
+    "%HAZPRED( PROC HAZPRED DATA=PREDICT INHAZ=E.H OUT=P; TIME MONTHS; );"
+  ))
+  got <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)
+  expect_null(got$grid)
+  expect_true(any(grepl("grid", got$untranslated$reason)))
+})
+
+test_that("a constant defined in terms of an earlier constant resolves", {
+  txt <- .hzr_sas_normalise(paste(
+    "DATA PREDICT; A=10; B=A*2; DO MONTHS=1*B,2*B; OUTPUT; END;",
+    "%HAZPRED( PROC HAZPRED DATA=PREDICT INHAZ=E.H OUT=P; TIME MONTHS; );"
+  ))
+  got <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)
+  expect_false(is.null(got$grid))
+  expect_equal(eval(got$grid)$MONTHS, c(20, 40))
+})
+
+test_that("a DO list constant defined via a function call refuses, not evaluates", {
+  txt <- .hzr_sas_normalise(paste(
+    "DATA PREDICT; A=SQRT(4); DO MONTHS=1*A,2*A; OUTPUT; END;",
+    "%HAZPRED( PROC HAZPRED DATA=PREDICT INHAZ=E.H OUT=P; TIME MONTHS; );"
+  ))
+  got <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)
+  expect_null(got$grid)
+  expect_true(any(grepl("grid", got$untranslated$reason)))
+})
+
 test_that("NOSURV and NOHAZ together yield no predict() call at all", {
   # The ternary that picks `call` tests only want_surv, so without a guard
   # this degenerate input would silently produce a hazard predict() nobody
