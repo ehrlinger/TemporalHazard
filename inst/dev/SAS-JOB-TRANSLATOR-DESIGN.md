@@ -400,6 +400,29 @@ could diverge.
 
 **Action:** a fixture for exactly that combination.
 
+## 7.4 End-to-end parity, measured
+
+`examples/hz.death.AVC.sas` translated from disk and fitted in R against
+`inst/extdata/avc.csv` — the same 310-row dataset the SAS job reads:
+
+| | |
+|---|---|
+| R, from the translated `.sas` file | **−210.500617** |
+| SAS, per the job's own comments | **−210.5** |
+
+| R parameter | fitted | `exp()` | SAS `PARMS` |
+|---|---|---|---|
+| `phase_1.log_mu` | −1.443200 | 0.236173 | `MUE=0.2361727` |
+| `phase_1.log_t_half` | −1.889173 | 0.151210 | `THALF=0.1512095` |
+| `phase_1.nu` | 1.438635 | — | `NU=1.438652` |
+| `phase_1.m` | 1.000000 | — | `M=1 FIXM` |
+| `phase_2.log_mu` | −7.517091 | 0.00054370 | `MUC=0.0005436977` |
+
+Log-likelihood to six significant figures, every parameter to five or six.
+This is one job on a two-phase `cdf` + `constant` model with no covariates and
+no censoring beyond exact/right — it is not a claim about the interval-censored
+or stepwise paths, which have no comparable reference run yet.
+
 ## 8. Open questions
 
 1. ~~**`FORWARD` ≡ `STEPWISE` at the token level.**~~ **Resolved 2026-08-20** from
