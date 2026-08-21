@@ -2,12 +2,19 @@
 # starting-theta call.
 #
 # PARMS carries the starting values for the multiphase optimizer: MUE/MUC/MUL
-# scale each phase (theta is the log of those SAS scales), THALF/NU/M shape
-# the early (G1/"cdf") phase, TAU/GAMMA/ALPHA/ETA shape the late (G3) phase,
-# bare FIX<param> tokens freeze a parameter at its starting value, and bare
-# WEIBULL is setopt(6) / SETG3_weibull() in the reference C: it does not add a
-# phase, it constrains the existing late phase to alpha = eta = 1, which
-# collapses the general G3 form to a Weibull cumulative hazard (spec S7.1).
+# scale each phase, THALF/NU/M shape the early (G1/"cdf") phase, TAU/GAMMA/
+# ALPHA/ETA shape the late (G3) phase, bare FIX<param> tokens freeze a
+# parameter at its starting value, and bare WEIBULL is setopt(6) /
+# SETG3_weibull() in the reference C: it does not add a phase, it constrains
+# the existing late phase to alpha = eta = 1, which collapses the general G3
+# form to a Weibull cumulative hazard (spec S7.1).
+#
+# `theta` is the full interleaved starting vector the multiphase engine
+# expects -- one block per phase, in the same early -> constant -> late
+# order the phases are emitted, each block laid out exactly as
+# .hzr_phase_theta_names() names it: log(mu), then that phase's shape
+# starts (THALF/TAU logged, NU/M/GAMMA/ALPHA/ETA untransformed), then one
+# entry per covariate. See .hzr_parms_theta_block().
 #
 # Every operand keyword is resolved through .hzr_sas_token() before it is
 # routed anywhere; an unresolved keyword is recorded in `untranslated`, never
@@ -20,6 +27,15 @@
 .hzr_parms_early_arg <- c(THALF = "t_half", NU = "nu", M = "m")
 .hzr_parms_late_arg  <- c(TAU = "tau", GAMMA = "gamma", ALPHA = "alpha", ETA = "eta")
 .hzr_parms_mu_order  <- c("MUE", "MUC", "MUL")
+
+# hzr_phase() default shape values (mirrored here so the theta starting
+# vector agrees with what hzr_phase() itself defaults to when PARMS did not
+# supply a given shape parameter). mu has no hzr_phase() argument -- its
+# only documented default is .hzr_phase_start()'s mu_start = 0.1, used here
+# for a built phase whose PARMS never supplied its MU value.
+.hzr_parms_early_default <- c(t_half = 1, nu = 1, m = 0)
+.hzr_parms_late_default  <- c(tau = 1, gamma = 1, alpha = 1, eta = 1)
+.hzr_parms_default_mu_start <- 0.1
 
 # FIX<param> keywords are their own grammar tokens (FIXTHALF, not FIX+THALF),
 # and the R parameter name is not always the lowercased SAS spelling --
@@ -51,10 +67,10 @@
 #' @noRd
 .hzr_parse_phase_covars <- function(x) {
   names_out <- character(0)
+  values_out <- numeric(0)
   bad_construct <- character(0)
   bad_reason <- character(0)
   opt_tail <- character(0)
-  had_value <- FALSE
 
   for (piece in x) {
     slash <- .idx(piece, "/")
@@ -70,6 +86,7 @@
       eq <- .idx(p, "=")
       if (eq == 0L) {
         names_out <- c(names_out, p)
+        values_out <- c(values_out, NA_real_)
         next
       }
       var <- trimws(substr(p, 1L, eq - 1L))
@@ -83,12 +100,12 @@
         )
       } else {
         names_out <- c(names_out, var)
-        had_value <- TRUE
+        values_out <- c(values_out, val)
       }
     }
   }
 
-  list(names = names_out, had_value = had_value, options_tail = opt_tail,
+  list(names = names_out, values = values_out, options_tail = opt_tail,
        untranslated_construct = bad_construct, untranslated_reason = bad_reason)
 }
 
@@ -98,6 +115,49 @@
   if (length(fixed) == 0L) return(NULL)
   if (length(fixed) == 1L) return(fixed)
   as.call(c(quote(c), as.list(fixed)))
+}
+
+#' Build one phase's block of the full interleaved `theta` starting vector.
+#'
+#' Mirrors `.hzr_phase_theta_names()`'s layout exactly: `log_mu`, then (for
+#' `"early"`/`"late"`) the shape parameters, then one entry per covariate.
+#' `THALF`/`TAU` enter as logs (`log_t_half`/`log_tau`); `NU`/`M`/`GAMMA`/
+#' `ALPHA`/`ETA` enter untransformed; `MUE`/`MUC`/`MUL` are always logged.
+#' @param family One of `"early"`, `"constant"`, `"late"`.
+#' @param mu_val Numeric SAS-scale mu starting value for this phase.
+#' @param shape Named list of parsed shape starting values (may omit entries
+#'   PARMS did not supply -- those fall back to the `hzr_phase()` default).
+#' @param covar_vals Numeric vector of covariate starting values, `NA` where
+#'   PARMS gave a bare name with no explicit start (defaults to 0, matching
+#'   `.hzr_phase_start()`).
+#' @return A list of language/numeric elements, in theta order.
+#' @noRd
+.hzr_parms_theta_block <- function(family, mu_val, shape, covar_vals) {
+  block <- list(bquote(log(.(mu_val))))
+
+  if (family == "early") {
+    d <- .hzr_parms_early_default
+    t_half <- if (!is.null(shape$t_half)) shape$t_half else d[["t_half"]]
+    nu     <- if (!is.null(shape$nu))     shape$nu     else d[["nu"]]
+    m      <- if (!is.null(shape$m))      shape$m      else d[["m"]]
+    block <- c(block, list(bquote(log(.(t_half)))), list(nu), list(m))
+  } else if (family == "late") {
+    d <- .hzr_parms_late_default
+    tau   <- if (!is.null(shape$tau))   shape$tau   else d[["tau"]]
+    gamma <- if (!is.null(shape$gamma)) shape$gamma else d[["gamma"]]
+    alpha <- if (!is.null(shape$alpha)) shape$alpha else d[["alpha"]]
+    eta   <- if (!is.null(shape$eta))   shape$eta   else d[["eta"]]
+    block <- c(block,
+      list(bquote(log(.(tau)))), list(gamma), list(alpha), list(eta)
+    )
+  }
+
+  if (length(covar_vals)) {
+    covar_vals[is.na(covar_vals)] <- 0
+    block <- c(block, as.list(unname(covar_vals)))
+  }
+
+  block
 }
 
 #' Build one `hzr_phase(...)` call.
@@ -192,17 +252,22 @@
   # EARLY/CONSTANT/LATE operand text: comma-separated VAR=VALUE pairs (or
   # bare VARs), optionally followed by a "/ options" tail. Non-numeric values
   # and the options tail are recorded to untranslated, never guessed at; see
-  # .hzr_parse_phase_covars(). Starting values are noted once per phase (not
-  # once per covariate) because they are not yet mapped to theta.
+  # .hzr_parse_phase_covars(). VAR=VALUE starting values are now mapped into
+  # theta (one entry per covariate, appended after that phase's shape block,
+  # per .hzr_phase_theta_names()); a bare VAR with no value defaults to 0,
+  # matching .hzr_phase_start().
   phase_covars <- list()
+  phase_covar_vals <- list()
   for (ph in c("early", "constant", "late")) {
     raw <- covars[[ph]]
     if (is.null(raw)) {
       phase_covars[[ph]] <- character(0)
+      phase_covar_vals[[ph]] <- numeric(0)
       next
     }
     parsed <- .hzr_parse_phase_covars(raw)
     phase_covars[[ph]] <- parsed$names
+    phase_covar_vals[[ph]] <- parsed$values
     for (i in seq_along(parsed$untranslated_construct)) {
       flag_bad(parsed$untranslated_construct[[i]], parsed$untranslated_reason[[i]])
     }
@@ -215,31 +280,44 @@
         )
       )
     }
-    if (parsed$had_value) {
-      flag_bad(ph, "phase covariate starting values are not yet mapped to theta")
-    }
   }
 
+  # Phases are built, and their theta blocks appended, in the same
+  # early -> constant -> late order -- .hzr_phase_theta_names() assigns
+  # labels by *position* (phases are auto-named "phase_1", "phase_2", ... by
+  # .hzr_validate_phases()), so only this order matters, not the names.
   phase_calls <- list()
+  theta_blocks <- list()
   if (length(early)) {
     phase_calls[[length(phase_calls) + 1L]] <- .hzr_parms_phase_call(
       "cdf", early, phase_covars$early, fixed_early
+    )
+    mu_val <- if (!is.null(mu[["MUE"]])) mu[["MUE"]] else .hzr_parms_default_mu_start
+    theta_blocks <- c(theta_blocks,
+      .hzr_parms_theta_block("early", mu_val, early, phase_covar_vals$early)
     )
   }
   if (has_muc) {
     phase_calls[[length(phase_calls) + 1L]] <- .hzr_parms_phase_call(
       "constant", list(), phase_covars$constant, character(0)
     )
+    theta_blocks <- c(theta_blocks,
+      .hzr_parms_theta_block("constant", mu[["MUC"]], list(), phase_covar_vals$constant)
+    )
   }
   if (length(late)) {
     phase_calls[[length(phase_calls) + 1L]] <- .hzr_parms_phase_call(
       "g3", late, phase_covars$late, fixed_late
     )
+    mu_val <- if (!is.null(mu[["MUL"]])) mu[["MUL"]] else .hzr_parms_default_mu_start
+    theta_blocks <- c(theta_blocks,
+      .hzr_parms_theta_block("late", mu_val, late, phase_covar_vals$late)
+    )
   }
 
   list(
     phases = as.call(c(quote(list), phase_calls)),
-    theta = as.call(c(quote(c), lapply(unname(mu), function(v) bquote(log(.(v)))))),
+    theta = as.call(c(quote(c), theta_blocks)),
     has_phases = length(phase_calls) > 0L,
     untranslated = .hzr_untranslated_frame(
       line = rep(NA_integer_, length(bad_construct)),

@@ -10,7 +10,10 @@ test_that("an early-plus-constant PARMS maps to two phases and a theta", {
       hzr_phase("constant")
     ))
   )
-  expect_equal(got$theta, quote(c(log(0.2361727), log(0.0005436977))))
+  expect_equal(
+    got$theta,
+    quote(c(log(0.2361727), log(0.1512095), 1.438652, 1, log(0.0005436977)))
+  )
 })
 
 test_that("WEIBULL becomes a G3 constrained at alpha = 1, eta = 1", {
@@ -80,13 +83,18 @@ test_that("a phase '/ options' tail is untranslated, not parsed", {
   expect_true(any(grepl("phase options", got$untranslated$reason, fixed = TRUE)))
 })
 
-test_that("phase covariate starting values are noted once per phase, not per covariate", {
+test_that("phase covariate starting values map into theta, in covariate order", {
   ops <- c("MUE=0.2", "THALF=1", "NU=1")
   got <- .hzr_parse_parms(ops, covars = list(
     early = "NYHA=1.121142, I_PATH=0.9513664, INC_SURG=1.375285"
   ))
-  note_reason <- "phase covariate starting values are not yet mapped to theta"
-  note_rows <- got$untranslated[got$untranslated$reason == note_reason, ]
-  expect_equal(nrow(note_rows), 1L)
-  expect_equal(note_rows$construct, "early")
+  # log_mu, log_t_half, nu, m (defaulted, PARMS gave none), then the three
+  # covariate starts in the order they appear on the EARLY statement.
+  expect_equal(
+    got$theta,
+    quote(c(log(0.2), log(1), 1, 0, 1.121142, 0.9513664, 1.375285))
+  )
+  expect_false(any(grepl(
+    "not yet mapped to theta", got$untranslated$reason, fixed = TRUE
+  )))
 })

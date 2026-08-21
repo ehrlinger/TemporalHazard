@@ -154,3 +154,49 @@ test_that("evaluating the emitted call emits no 'phases is ignored' warning", {
   )
   expect_false(any(grepl("phases' is ignored", w, fixed = TRUE)))
 })
+
+# theta used to carry only c(log(MUE), log(MUC)) -- the multiphase engine's
+# theta_start is the full interleaved vector (one block per phase; see
+# .hzr_phase_theta_names()), so forcing fit = TRUE on the emitted call
+# failed outright with "'names' attribute [5] must be the same length as
+# the vector [2]". .hzr_parse_parms() now builds theta by walking the same
+# early -> constant -> late phase order the phases themselves are built in.
+
+test_that("theta is the full interleaved multiphase vector", {
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste(
+    "%HAZARD( PROC HAZARD DATA=D CONDITION=14;",
+    "EVENT DEAD; TIME TT;",
+    "PARMS MUE=0.2361727 THALF=0.1512095 NU=1.438652 M=1 FIXM",
+    "MUC=0.0005436977; );"
+  ), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  expect_equal(
+    eval(job$calls$fit[["theta"]]),
+    c(log(0.2361727), log(0.1512095), 1.438652, 1, log(0.0005436977))
+  )
+})
+
+test_that("the emitted call fits end to end", {
+  skip_on_cran()
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste(
+    "%HAZARD( PROC HAZARD DATA=D CONDITION=14;",
+    "EVENT DEAD; TIME TT;",
+    "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
+  ), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  set.seed(1)
+  n <- 300
+  D <- data.frame(TT = stats::rexp(n, 0.2),
+                  DEAD = rep(c(1, 0), length.out = n))
+  env <- list2env(as.list(D), parent = environment())
+  fit <- NULL
+  for (nm in names(job$calls)) {
+    if (identical(nm, "data")) next
+    fit <- eval(job$calls[[nm]], env)
+  }
+  expect_s3_class(fit, "hazard")
+  expect_equal(fit$spec$dist, "multiphase")
+  expect_length(fit$fit$theta, 5L)
+})

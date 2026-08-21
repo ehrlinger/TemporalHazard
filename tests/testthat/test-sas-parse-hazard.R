@@ -40,8 +40,15 @@ test_that("a LATE statement with comma-separated VAR=VALUE operands parses", {
     quote(list(hzr_phase("g3", tau = 2, gamma = 1.5,
                           formula = ~NOPREVTE + NOTEE)))
   )
-  expect_true(any(got$untranslated$reason ==
-    "phase covariate starting values are not yet mapped to theta"))
+  # log_mu, log_tau, gamma, alpha (defaulted), eta (defaulted), then the two
+  # covariate starts in the order they appear on the LATE statement. Compare
+  # evaluated: a parsed `-0.3680751` literal is a unary-minus call, not the
+  # plain double the translator builds, so quote()-comparing the call would
+  # spuriously differ in representation.
+  expect_equal(
+    eval(got$call[["theta"]]),
+    c(log(0.01), log(2), 1.5, 1, 1, 2.653528, -0.3680751)
+  )
 })
 
 test_that("a non-numeric CONDITION is recorded, not coerced to NA", {
