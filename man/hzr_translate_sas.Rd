@@ -20,14 +20,22 @@ directory) to name an already-converted fit directly, e.g.
 \code{c(EX = "estimates/hzdeath.rds")}.}
 }
 \value{
-An \code{hzr_sas_job} object, invisibly.
+An \code{hzr_sas_job} object, invisibly. \verb{$calls} holds the emitted
+calls keyed by chunk label, \verb{$grid} the last prediction grid seen and
+\verb{$inhaz} the first unresolved \verb{INHAZ=} (not all of each, when a job has
+several), \verb{$untranslated} the recorded gaps and \verb{$coverage} the token
+counts.
 }
 \description{
 Reads a SAS program containing \verb{PROC HAZARD} and/or \verb{PROC HAZPRED} blocks and
-emits a Quarto document that reproduces the analysis with \code{\link[=hazard]{hazard()}} and
-\code{\link[=predict.hazard]{predict.hazard()}}.
+emits a Quarto document of the equivalent \code{\link[=hazard]{hazard()}} and \code{\link[=predict.hazard]{predict.hazard()}}
+calls.
 }
 \details{
+\strong{Experimental, and the emitted document does not render as-is:} it is a
+translation aid whose chunks need hand-editing before they run. See the
+Experimental section below.
+
 Constructs the translator does not cover are recorded on the returned object
 and rendered as visible callouts, never dropped. A \verb{PROC HAZPRED} job whose
 \verb{INHAZ=} fitted model cannot be located emits a \code{stop()}, so the document
@@ -49,6 +57,18 @@ resolves and the job holds more than one local fit, which fit a
 back to referencing \code{fit} and the ambiguity is recorded in
 \code{untranslated}, never guessed at silently.
 }
+\section{Experimental}{
+
+This function is experimental and \strong{the emitted document does not render
+as-is} -- it is a translation aid whose chunks currently need hand-editing
+before they run. \verb{$coverage} counts tokens the parser recognised; it is not
+evidence that the emitted calls execute, and a job can report full coverage
+with an empty \verb{$untranslated} while its document still errors on render.
+See the 1.2.2 \code{NEWS.md} entry for the tracked gaps. The function's API, the
+\code{hzr_sas_job} field layout and the emitted document format are all expected
+to change.
+}
+
 \examples{
 \donttest{
 job <- hzr_translate_sas(

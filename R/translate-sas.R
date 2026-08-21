@@ -38,8 +38,12 @@
 #' Translate a SAS HAZARD job into a Quarto document
 #'
 #' Reads a SAS program containing `PROC HAZARD` and/or `PROC HAZPRED` blocks and
-#' emits a Quarto document that reproduces the analysis with [hazard()] and
-#' [predict.hazard()].
+#' emits a Quarto document of the equivalent [hazard()] and [predict.hazard()]
+#' calls.
+#'
+#' **Experimental, and the emitted document does not render as-is:** it is a
+#' translation aid whose chunks need hand-editing before they run. See the
+#' Experimental section below.
 #'
 #' Constructs the translator does not cover are recorded on the returned object
 #' and rendered as visible callouts, never dropped. A `PROC HAZPRED` job whose
@@ -72,7 +76,21 @@
 #'   that already ends in `.rds` or `.sas7bdat` (a specific file, not a
 #'   directory) to name an already-converted fit directly, e.g.
 #'   `c(EX = "estimates/hzdeath.rds")`.
-#' @return An `hzr_sas_job` object, invisibly.
+#' @return An `hzr_sas_job` object, invisibly. `$calls` holds the emitted
+#'   calls keyed by chunk label, `$grid` the last prediction grid seen and
+#'   `$inhaz` the first unresolved `INHAZ=` (not all of each, when a job has
+#'   several), `$untranslated` the recorded gaps and `$coverage` the token
+#'   counts.
+#'
+#' @section Experimental:
+#' This function is experimental and **the emitted document does not render
+#' as-is** -- it is a translation aid whose chunks currently need hand-editing
+#' before they run. `$coverage` counts tokens the parser recognised; it is not
+#' evidence that the emitted calls execute, and a job can report full coverage
+#' with an empty `$untranslated` while its document still errors on render.
+#' See the 1.2.2 `NEWS.md` entry for the tracked gaps. The function's API, the
+#' `hzr_sas_job` field layout and the emitted document format are all expected
+#' to change.
 #' @examples
 #' \donttest{
 #' job <- hzr_translate_sas(

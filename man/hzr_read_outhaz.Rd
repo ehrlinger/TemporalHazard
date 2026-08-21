@@ -11,9 +11,11 @@ hzr_read_outhaz(path)
 holding the same data frame.}
 }
 \value{
-A list with \code{estimates} (named numeric), \code{status} (named integer,
-1 free / 0 fixed), \code{vcov} (matrix over free parameters, dimnames set) and
-\code{flags} (named numeric of model-structure flags).
+A plain list -- \strong{not} a \code{hazard} object -- with \code{estimates}
+(named numeric), \code{status} (named integer, 1 free / 0 fixed), \code{vcov}
+(matrix over free parameters, dimnames set) and \code{flags} (named numeric of
+model-structure flags). When no parameter is free, \code{vcov} is a 0x0 matrix
+rather than \code{NULL}, so check its dimensions rather than \code{is.null()}.
 }
 \description{
 \verb{PROC HAZARD}'s \verb{outhaz=} dataset stores the converged estimates and the
@@ -25,6 +27,16 @@ being the binding constraint and optimizer convergence takes over.
 \details{
 The log-likelihood is \emph{not} stored here; take it from the \code{.lst}.
 }
+\section{Experimental}{
+
+This function is experimental and its return shape is expected to change.
+Because the result is an unclassed list, it has no \code{predict()} method: the
+\code{hzr_translate_sas(librefs = )} path emits \code{predict()} against it, which
+does not work today (#151). The \verb{_STATUS_} coding is asserted against a
+synthetic fixture, so a real \verb{OUTHAZ=} file using a different convention
+would yield an empty \code{vcov} alongside a fully populated \code{estimates}.
+}
+
 \examples{
 f <- system.file("extdata", "outhaz-fixture.rds", package = "TemporalHazard")
 if (nzchar(f)) str(hzr_read_outhaz(f))

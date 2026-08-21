@@ -3,10 +3,35 @@
 ## New features
 
 * `hzr_translate_sas()` translates a SAS `PROC HAZARD` / `PROC HAZPRED` job
-  into a Quarto document that reproduces the analysis with [hazard()] and
-  [predict.hazard()]. It parses the SAS statements, builds the equivalent R
-  calls, and renders them into `.qmd` chunks -- the model state is stored as
-  unevaluated calls, so rendering is `deparse()`, not string templating.
+  into a Quarto document of equivalent R calls. It parses the SAS statements,
+  builds the calls, and renders them into `.qmd` chunks -- the model state is
+  stored as unevaluated calls, so rendering is `deparse()`, not string
+  templating.
+
+  **This function is experimental, and the emitted document does not render
+  as-is.** It is a translation aid, not a turnkey reproduction: the emitted
+  chunks currently need hand-editing before they run. Known gaps, all
+  tracked: the fitted model is not bound to a name and `fit = TRUE` is not
+  emitted, so the `predict()` chunks have nothing to predict from and the
+  `hazard()` call stops at the SAS starting values (#151); a resolved
+  prediction grid is named after the SAS `DO` variable rather than the `time`
+  column `predict.hazard()` requires (#151); `hzr_read_outhaz()` returns an
+  unclassed list, so the external-`INHAZ=` path has no `predict()` method
+  (#151); a `SELECTION` statement emits an `hzr_stepwise()` call that is
+  missing `fit` and `scope` (#152); and the log prediction grid uses a step
+  that diverges from SAS's by up to ~9.6% at the last point (#153). Two
+  translation gaps affect the likelihood rather than the document: an
+  `ICENSOR` event count is discarded (#154), and `LCENSOR` combined with
+  `ICENSOR` drops left truncation on interval rows (#155).
+
+  Treat the coverage figures below, and `job$coverage`, as a measure of
+  *parsing* -- tokens recognised -- not of whether the result runs. The
+  parameter translation itself is verified: refitting the `hz.death.AVC.sas`
+  job's parameters through `hazard()` directly reproduces the SAS
+  log-likelihood to six significant figures.
+
+  The API of this function, the `hzr_sas_job` field layout and the emitted
+  document format are all expected to change as those gaps close.
 
   The keyword grammar behind the parser -- 117 keyword rules mapped to R
   targets -- is **generated from the reference `HAZARD`/`HAZPRED` C

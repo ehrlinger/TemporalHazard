@@ -10,9 +10,19 @@
 #'
 #' @param path Path to a `.sas7bdat` written by `outhaz=`, or to an `.rds`
 #'   holding the same data frame.
-#' @return A list with `estimates` (named numeric), `status` (named integer,
-#'   1 free / 0 fixed), `vcov` (matrix over free parameters, dimnames set) and
-#'   `flags` (named numeric of model-structure flags).
+#' @return A plain list -- **not** a `hazard` object -- with `estimates`
+#'   (named numeric), `status` (named integer, 1 free / 0 fixed), `vcov`
+#'   (matrix over free parameters, dimnames set) and `flags` (named numeric of
+#'   model-structure flags). When no parameter is free, `vcov` is a 0x0 matrix
+#'   rather than `NULL`, so check its dimensions rather than `is.null()`.
+#'
+#' @section Experimental:
+#' This function is experimental and its return shape is expected to change.
+#' Because the result is an unclassed list, it has no `predict()` method: the
+#' `hzr_translate_sas(librefs = )` path emits `predict()` against it, which
+#' does not work today (#151). The `_STATUS_` coding is asserted against a
+#' synthetic fixture, so a real `OUTHAZ=` file using a different convention
+#' would yield an empty `vcov` alongside a fully populated `estimates`.
 #' @export
 #' @examples
 #' f <- system.file("extdata", "outhaz-fixture.rds", package = "TemporalHazard")
