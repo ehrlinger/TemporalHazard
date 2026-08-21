@@ -81,17 +81,84 @@ test_that("an event outranks interval censoring", {
                c(1, 2))
 })
 
-test_that("LCENSOR and ICENSOR together: time_lower picks CTIME on interval rows, LCENSOR's var elsewhere", {
+test_that("LCENSOR and ICENSOR together are refused, not translated", {
+  # This test used to assert the opposite -- time_lower = ifelse(status == 2,
+  # CTIME, STARTTME) -- which reads as if it preserved the entry time. It does
+  # not: on the interval rows the entry time is gone, so a left-truncated
+  # interval-censored subject is fitted as at risk from time 0. There is no
+  # expression that serves, because time_lower is one column carrying two
+  # meanings. SAS carries three times (TIME, CTIME, STIME) and subtracts
+  # H(STIME) for every row, so a faithful translation needs a hazard()
+  # argument that does not exist yet (#155). Refuse until it does.
   st <- list(EVENT = "DEAD", TIME = "T", LCENSOR = "STARTTME",
              ICENSOR = c("C3", "CTIME"))
   got <- .hzr_censor_spec(st)
-  # status is unaffected by LCENSOR -- it stays a pure EVENT/ICENSOR mapping.
+  expect_true(isTRUE(got$refused))
+  expect_equal(got$untranslated$construct, "LCENSOR + ICENSOR")
+  expect_match(got$untranslated$reason, "entry-time")
+  # Nothing is emitted: a partial spec is how a wrong fit gets built anyway.
+  expect_null(got$status_expr)
+  expect_null(got$status_name)
+  expect_null(got$time_lower)
+  expect_null(got$weights_expr)
+  # Both returns carry the same element names, so a caller reading one never
+  # meets an unexpected missing field.
   expect_equal(
-    eval(got$status_expr, list(DEAD = c(0, 0), C3 = c(1, 0))),
-    c(2, 0)
+    sort(names(got)),
+    sort(names(.hzr_censor_spec(list(EVENT = "DEAD", TIME = "T"))))
   )
-  env <- list(.hzr_status = c(2, 0, 1), CTIME = c(5, 5, 5), STARTTME = c(1, 1, 1))
-  expect_equal(eval(got$time_lower, env), c(5, 1, 1))
+})
+
+test_that("LCENSOR combined with ICENSOR is refused, not silently mis-fitted", {
+  txt <- .hzr_sas_normalise(paste(
+    "%HAZARD( PROC HAZARD DATA=A CONDITION=14;",
+    "EVENT DEAD; TIME T; LCENSOR ST; ICENSOR C3 = CT;",
+    "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
+  ))
+  got <- .hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]])
+  expect_true(any(grepl("LCENSOR", got$untranslated$construct)))
+  # time_lower cannot carry both an entry time and an interval lower bound,
+  # so the job must not translate to a silently wrong fit (#155).
+  expect_null(got$call[["time_lower"]])
+  # The callout alone is not enough -- a reader who renders past it would
+  # still get a fit. The emitted call must itself refuse.
+  expect_identical(got$call[[1L]], as.name("stop"))
+  expect_error(eval(got$call), "LCENSOR")
+  expect_null(got$status_call)
+})
+
+test_that("the refusal does not leak into LCENSOR-only or ICENSOR-only jobs", {
+  # ICENSOR appears in 64 of 93 production PROC HAZARD jobs and LCENSOR in 10;
+  # a refusal that fired on either alone would be far worse than the bug it
+  # replaces.
+  lonly <- .hzr_censor_spec(list(EVENT = "DEAD", TIME = "T",
+                                 LCENSOR = "STARTTME"))
+  expect_false(isTRUE(lonly$refused))
+  expect_equal(lonly$time_lower, as.name("STARTTME"))
+  expect_equal(nrow(lonly$untranslated), 0L)
+
+  ionly <- .hzr_censor_spec(list(EVENT = "DEAD", TIME = "T",
+                                 ICENSOR = c("C3", "CTIME")))
+  expect_false(isTRUE(ionly$refused))
+  expect_equal(
+    eval(ionly$time_lower, list(.hzr_status = c(2, 0), CTIME = c(5, 5))),
+    c(5, 0)
+  )
+  expect_equal(nrow(ionly$untranslated), 0L)
+
+  # And through the whole block parser, not just the spec helper: both still
+  # emit a real hazard() call.
+  for (stmt in c("LCENSOR ST;", "ICENSOR C3 = CT;")) {
+    txt <- .hzr_sas_normalise(paste(
+      "%HAZARD( PROC HAZARD DATA=A CONDITION=14;",
+      "EVENT DEAD; TIME T;", stmt,
+      "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
+    ))
+    got <- .hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]])
+    expect_identical(got$call[[1L]], as.name("hazard"))
+    expect_false(any(grepl("LCENSOR", got$untranslated$construct)))
+    expect_false(is.null(got$call[["time_lower"]]))
+  }
 })
 
 test_that("ICENSOR's event count is carried as a status-gated weight", {
@@ -171,4 +238,23 @@ test_that("a job with no ICENSOR emits no weights argument at all", {
   ))
   got2 <- .hzr_parse_hazard(.hzr_sas_blocks(txt2)[[1L]])
   expect_equal(got2$call[["weights"]], as.name("WT"))
+})
+
+test_that("the refusal reaches both the untranslated callout and a stop() chunk", {
+  # Two places, and the second is the one that matters: a reader who scrolls
+  # past a callout still gets whatever the fit chunk produces.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(c(
+    "%HAZARD( PROC HAZARD DATA=A CONDITION=14;",
+    "EVENT DEAD; TIME T; LCENSOR ST; ICENSOR C3 = CT;",
+    "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
+  ), f)
+  expect_warning(hzr_translate_sas(f), "LCENSOR")
+  job <- suppressWarnings(hzr_translate_sas(f))
+  expect_true("LCENSOR + ICENSOR" %in% job$untranslated$construct)
+  qmd <- paste(.hzr_render_qmd(job), collapse = "\n")
+  expect_match(qmd, "UNTRANSLATED: LCENSOR \\+ ICENSOR")
+  expect_match(qmd, "stop\\(")
+  # No fit is emitted at all -- not a fit guarded by a warning.
+  expect_false(grepl("fit <- hazard(", qmd, fixed = TRUE))
 })

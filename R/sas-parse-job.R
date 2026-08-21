@@ -73,8 +73,20 @@
 #'   documented default entry time for status 0/1 rows).
 #' * `LCENSOR` only: the `LCENSOR` variable directly -- it applies to every
 #'   row, not just interval ones, so no `ifelse()` gating is needed.
-#' * Both: `ifelse(status == 2, CTIME, <LCENSOR variable>)`.
 #' * Neither: `time_lower` is omitted (`NULL`).
+#'
+#' **`LCENSOR` and `ICENSOR` together are refused, not translated.** There is
+#' no expression that serves: `time_lower` is one column carrying two
+#' meanings, so gating it on status hands the interval rows their lower bound
+#' and thereby drops their entry time, fitting a left-truncated
+#' interval-censored subject as at risk from time `0`. That converges and
+#' reports plausibly -- the exact failure mode this package exists to refuse.
+#' The reference implementation carries three distinct times (`TIME`, `CTIME`,
+#' `STIME`) and subtracts `H(STIME)` for every row, interval rows included, so
+#' translating it faithfully needs an entry-time argument [hazard()] does not
+#' have. It is also rare: 0 of the 93 `PROC HAZARD` jobs across the production
+#' studies use the combination. So the pair is recorded in `untranslated` and
+#' `refused` is set, and the caller emits a `stop()` in place of the fit.
 #'
 #' The `ifelse()` forms are gated on a `status_name` placeholder (`.hzr_status`)
 #' the caller assigns the `status_expr` to first -- never unconditionally,
@@ -89,14 +101,17 @@
 #'   may be absent if `ICENSOR` is present.
 #' @return `list(status_expr = <call>, status_name = <name|NULL>,
 #'   time_lower = <call|NULL>, weights_expr = <call|NULL>,
-#'   untranslated = <data.frame>)`. `status_expr` is
+#'   untranslated = <data.frame>, refused = <logical>)`. `status_expr` is
 #'   a `bquote()`-built call, evaluable against an environment/list holding
 #'   the named SAS variables. `time_lower` and `weights_expr`, when
 #'   non-`NULL`, are `bquote()`-built calls; `status_name` is non-`NULL` only
 #'   when `ICENSOR` is present, since only then does anything need to gate on
 #'   it. `weights_expr` is likewise non-`NULL` only under `ICENSOR`, so a job
 #'   without one emits no `weights` argument at all and fits with the unit
-#'   weights it always did.
+#'   weights it always did. `refused` is `TRUE` only for the `LCENSOR` +
+#'   `ICENSOR` combination described above, and every other element is `NULL`
+#'   when it is: there is nothing to emit. Both returns carry the same element
+#'   names, so a caller reading one never meets an unexpected missing field.
 #' @noRd
 .hzr_censor_spec <- function(statements) {
   has_event <- !is.null(statements$EVENT)
@@ -105,6 +120,28 @@
 
   if (!has_event && !has_icensor) {
     stop("The EVENT or ICENSOR variable must be specified.", call. = FALSE)
+  }
+
+  # hazard()'s time_lower has two meanings selected by status: entry time for
+  # status 0/1, interval lower bound for status 2. One row cannot carry both,
+  # so a left-truncated interval-censored subject would be fitted as at risk
+  # from time 0 -- a converging, plausible, wrong answer. SAS carries three
+  # distinct times (TIME, CTIME, STIME) and subtracts H(STIME) for every row.
+  # Supporting this needs a new hazard() argument; refuse until it exists.
+  if (has_lcensor && has_icensor) {
+    return(list(
+      status_expr = NULL,
+      status_name = NULL,
+      time_lower = NULL,
+      weights_expr = NULL,
+      untranslated = .hzr_untranslated_frame(
+        NA_integer_, "LCENSOR + ICENSOR",
+        paste("left truncation combined with interval censoring needs a",
+              "separate entry-time argument hazard() does not have (#155);",
+              "translate this job by hand")
+      ),
+      refused = TRUE
+    ))
   }
 
   ev <- if (has_event) as.name(statements$EVENT)
@@ -148,13 +185,9 @@
     weights_expr <- bquote(ifelse(.(status_name) == 2, .(c3), 1))
     # Status-gated, not unconditional (see roxygen): interval rows get the
     # interval's lower bound (CTIME); every other row falls back to
-    # hazard()'s own entry-time default (0), or, if LCENSOR is also present,
-    # the counting-process entry time it names.
-    time_lower <- if (has_lcensor) {
-      bquote(ifelse(.(status_name) == 2, .(ctime), .(as.name(statements$LCENSOR))))
-    } else {
-      bquote(ifelse(.(status_name) == 2, .(ctime), 0))
-    }
+    # hazard()'s own entry-time default (0). LCENSOR cannot be present here
+    # -- the pair is refused above -- so there is no other fallback to pick.
+    time_lower <- bquote(ifelse(.(status_name) == 2, .(ctime), 0))
   } else if (has_lcensor) {
     # No ICENSOR, so no interval rows to gate around: LCENSOR's entry time
     # applies to every row, unconditionally.
@@ -166,7 +199,8 @@
     status_name = status_name,
     time_lower = time_lower,
     weights_expr = weights_expr,
-    untranslated = .hzr_untranslated_frame()
+    untranslated = .hzr_untranslated_frame(),
+    refused = FALSE
   )
 }
 
@@ -306,6 +340,26 @@
   untr <- rbind(untr, parms$untranslated)
   cens <- .hzr_censor_spec(statements)
   untr <- rbind(untr, cens$untranslated)
+
+  # The UNTRANSLATED callout alone is not enough here: a reader who renders
+  # past it would still get a fit, and a fit over a mis-specified model is
+  # this package's signature defect -- a result that looks like one and is
+  # not. Emit a stop() in place of the hazard() call so the document fails
+  # where the fit would have been, and say what has to be done by hand.
+  if (isTRUE(cens$refused)) {
+    return(list(
+      call = quote(stop(
+        "This job combines LCENSOR (left truncation) with ICENSOR (interval ",
+        "censoring). hazard()'s `time_lower` carries the entry time for ",
+        "status 0/1 rows and the interval's lower bound for status 2 rows, ",
+        "so one column cannot express both and any translation would fit ",
+        "the interval-censored rows as at risk from time 0. Translate this ",
+        "job by hand (#155)."
+      )),
+      status_call = NULL, outhaz = outhaz, untranslated = untr,
+      tokens_seen = seen, tokens_mapped = mapped
+    ))
+  }
 
   # ICENSOR jobs get the status expression hoisted into its own chunk, named
   # .hzr_status so it cannot collide with a SAS variable, so that time_lower
