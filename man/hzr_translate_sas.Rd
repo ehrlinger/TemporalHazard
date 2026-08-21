@@ -13,7 +13,11 @@ hzr_translate_sas(path, out_dir = NULL, librefs = NULL)
 without writing.}
 
 \item{librefs}{Optional named character vector mapping SAS librefs to
-directories, e.g. \code{c(EX = "estimates")}, used to resolve \verb{INHAZ=}.}
+directories, e.g. \code{c(EX = "estimates")}, used to resolve \verb{INHAZ=}. The
+resolved member is read as \verb{<member>.sas7bdat}; give a librefs value
+that already ends in \code{.rds} or \code{.sas7bdat} (a specific file, not a
+directory) to name an already-converted fit directly, e.g.
+\code{c(EX = "estimates/hzdeath.rds")}.}
 }
 \value{
 An \code{hzr_sas_job} object, invisibly.

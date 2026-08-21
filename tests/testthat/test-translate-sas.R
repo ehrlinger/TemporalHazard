@@ -75,3 +75,32 @@ test_that("hzr_translate_sas parses the packaged example without writing when ou
   expect_s3_class(job, "hzr_sas_job")
   expect_true(job$coverage$tokens_seen > 0L)
 })
+
+test_that("a librefs-resolved INHAZ emits a path with a real extension", {
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(
+    "%HAZPRED( PROC HAZPRED DATA=P INHAZ=EX.HZD OUT=P; TIME MONTHS; );", f)
+  out <- withr::local_tempdir()
+  suppressWarnings(hzr_translate_sas(f, out_dir = out, librefs = c(EX = "est")))
+  qmd <- readLines(list.files(out, pattern = "[.]qmd$", full.names = TRUE))
+  line <- grep("hzr_read_outhaz", qmd, value = TRUE)
+  expect_length(line, 1L)
+  # The emitted path must be one hzr_read_outhaz() can actually dispatch on.
+  expect_match(line, "\\.(sas7bdat|rds)")
+})
+
+test_that("a librefs value that already carries an .rds extension is used verbatim", {
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(
+    "%HAZPRED( PROC HAZPRED DATA=P INHAZ=EX.HZD OUT=P; TIME MONTHS; );", f)
+  out <- withr::local_tempdir()
+  suppressWarnings(hzr_translate_sas(
+    f, out_dir = out, librefs = c(EX = "estimates/hzdeath.rds")))
+  qmd <- readLines(list.files(out, pattern = "[.]qmd$", full.names = TRUE))
+  line <- grep("hzr_read_outhaz", qmd, value = TRUE)
+  expect_length(line, 1L)
+  expect_true(any(grepl("estimates/hzdeath.rds", line, fixed = TRUE)))
+  # No file.path() re-derivation from the member name when the librefs
+  # value already names the file directly -- no separate ".sas7bdat" form.
+  expect_false(any(grepl("sas7bdat", line, fixed = TRUE)))
+})

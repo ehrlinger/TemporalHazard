@@ -20,7 +20,11 @@
 #' @param out_dir Directory to write the `.qmd` into. `NULL` (default) parses
 #'   without writing.
 #' @param librefs Optional named character vector mapping SAS librefs to
-#'   directories, e.g. `c(EX = "estimates")`, used to resolve `INHAZ=`.
+#'   directories, e.g. `c(EX = "estimates")`, used to resolve `INHAZ=`. The
+#'   resolved member is read as `<member>.sas7bdat`; give a librefs value
+#'   that already ends in `.rds` or `.sas7bdat` (a specific file, not a
+#'   directory) to name an already-converted fit directly, e.g.
+#'   `c(EX = "estimates/hzdeath.rds")`.
 #' @return An `hzr_sas_job` object, invisibly.
 #' @examples
 #' \donttest{
@@ -91,10 +95,21 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
       lib <- sub("[.].*$", "", inhaz)
       mem <- tolower(sub("^[^.]*[.]", "", inhaz))
       if (lib %in% names(librefs)) {
+        dir <- unname(librefs[[lib]])
+        # A libref names a directory of SAS datasets, so the member's
+        # on-disk form is <member>.sas7bdat -- a bare member name matches
+        # neither branch hzr_read_outhaz() dispatches on and cannot run.
+        # If the librefs value already carries a recognised extension, an
+        # analyst who has already converted the fit (e.g. to .rds) is
+        # naming that file directly, verbatim.
+        read_expr <- if (grepl("[.](rds|sas7bdat)$", dir, ignore.case = TRUE)) {
+          bquote(hzr_read_outhaz(.(dir)))
+        } else {
+          bquote(hzr_read_outhaz(
+            file.path(.(dir), .(paste0(mem, ".sas7bdat")))))
+        }
         calls <- c(
-          list(fit = call("<-", as.name("fit"),
-                          bquote(hzr_read_outhaz(
-                            file.path(.(unname(librefs[[lib]])), .(mem)))))),
+          list(fit = call("<-", as.name("fit"), read_expr)),
           calls
         )
         resolved <- TRUE
