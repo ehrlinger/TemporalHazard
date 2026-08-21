@@ -1,4 +1,17 @@
+# assignment_linter permits <<-. All 15 current uses are closure accumulators
+# updating a variable in the enclosing *function's* environment -- see
+# R/stepwise.R and tests/testthat/helper-sas-parity.R, where a local callback
+# builds up trace messages, step counters and result rows. None writes to
+# .GlobalEnv or to the package namespace, which is what CRAN objects to and
+# what the house rule against <<- is aimed at.
+#
+# Be clear about the cost: lintr cannot tell a closure-local <<- from a
+# .GlobalEnv write, so allowing it here switches the check off for BOTH.
+# A genuine global write would no longer be flagged. That is a review
+# responsibility now, not an automated one -- if superassignment starts
+# appearing outside a closure in this package, this setting is wrong.
 linters: linters_with_defaults(
+    assignment_linter = assignment_linter(operator = c("<-", "<<-")),
     line_length_linter(120),
     # lintr 3.4.0 made `<<-` a default lint. The `<<-` uses here are deliberate
     # accumulator patterns confined to a function's own closure (stepwise trace

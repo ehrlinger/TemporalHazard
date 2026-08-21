@@ -10,10 +10,10 @@ concurrency:
   # One in-flight run per workflow per ref. Without this every push starts a
   # fresh run while the superseded one keeps holding a runner, and the queue
   # grows faster than it drains -- one run sat queued for 410 minutes on
-  # 2026-08-17 behind work that had already been replaced. main is exempt so a
-  # release run is never cancelled mid-flight.
+  # 2026-08-17 behind work that had already been replaced. Protected branches
+  # are exempt, so a release run is never cancelled mid-flight.
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: ${{ !github.ref_protected }}
 
 jobs:
 
@@ -48,7 +48,12 @@ jobs:
           # documented by the action as "Must be an R expression. Note that it
           # often needs to be quoted in YAML" and its own default is '"all"'.
           # Bare `hard` is the R symbol `hard`, not the string "hard".
-          extra-packages: any::lintr, local::.
+          #
+          # lintr is version-pinned. A lintr release can add checks to an
+          # existing linter -- 3.4.0 added a <<- check to assignment_linter --
+          # which turns a green build red with no change to the code. .lintr
+          # pins which linters run, not what each one checks.
+          extra-packages: any::lintr@3.4.0, local::.
           dependencies: '"hard"'
           needs: lint
 
@@ -57,3 +62,92 @@ jobs:
         shell: Rscript {0}
         env:
           LINTR_ERROR_ON_LINT: true
+
+  docs-current:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          # roxygen2 is pinned to the version DESCRIPTION records in
+          # Config/roxygen2/version, so a roxygen upgrade arrives as a
+          # deliberate bump rather than masquerading as documentation drift.
+          # Bump the two together. This is the only place the pin lives.
+          # "hard" skips the Suggests tree -- roxygenise() only needs Imports
+          # loadable, and every Suggests use in R/ is behind requireNamespace().
+          extra-packages: any::roxygen2@8.1.0
+          dependencies: '"hard"'
+
+      - name: Documentation is current
+        run: |
+          Rscript -e 'roxygen2::roxygenise()'
+          git diff --exit-code man/ NAMESPACE DESCRIPTION
+
+  house-style:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # This job executes a script checked out from another repository.
+          # Not persisting the token keeps it out of .git/config for every
+          # step that follows, so a later `git` call cannot reach the remote
+          # with this repo's credentials.
+          persist-credentials: false
+
+      - name: Check out the house style composer
+        uses: actions/checkout@v4
+        with:
+          repository: ehrlinger/house-style
+          # Pinned to a tag, not the default branch: an in-progress change to
+          # the composer must not redden this repo's CI. The tag moves when the
+          # standard changes, which is exactly when every repo should start
+          # reporting drift until it recomposes.
+          ref: house-style-v1
+          path: .house-style-tools
+          persist-credentials: false
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      # Only the composer's two dependencies. This job never builds the
+      # package, so resolving the full DESCRIPTION tree would cost minutes
+      # to install code nothing here calls.
+      - name: Install composer dependencies
+        run: install.packages(c("yaml", "digest"))
+        shell: Rscript {0}
+
+      - name: Point the registry at this checkout
+        run: |
+          # repos.yml carries workstation paths; CI must repoint this entry at
+          # the runner's checkout. A sed that matches nothing exits 0, and the
+          # failure would surface two steps later as "path not found" drift --
+          # a true failure with a misleading cause. Check first and say so.
+          if ! grep -qF 'path: ~/Documents/GitHub/temporal_hazard' .house-style-tools/repos.yml; then
+            echo "::error::repos.yml no longer contains 'path: ~/Documents/GitHub/temporal_hazard'. The registry format or this repo's entry changed upstream; update this workflow rather than trusting the check." >&2
+            exit 1
+          fi
+          # & means "the whole match" to sed, and \ and the | delimiter are
+          # special too. GITHUB_WORKSPACE is /home/runner/work/<repo>/<repo>
+          # on a hosted runner, built from names GitHub restricts to
+          # alphanumerics, hyphen, underscore and period, so none of them can
+          # appear. Escaping anyway costs one line and removes the need to
+          # know that -- and keeps this correct on a self-hosted runner whose
+          # workspace root is not so constrained.
+          workspace=$(printf '%s' "$GITHUB_WORKSPACE" | sed 's/[&|\\]/\\&/g')
+          sed -i "s|path: ~/Documents/GitHub/temporal_hazard|path: $workspace|" \
+            .house-style-tools/repos.yml
+
+      - name: Verify the house style artifact is current
+        run: |
+          Rscript .house-style-tools/compose-house-style.R \
+            --check --repo TemporalHazard

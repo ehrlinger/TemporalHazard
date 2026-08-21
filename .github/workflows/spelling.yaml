@@ -1,0 +1,49 @@
+# Spell-check package documentation, vignettes, and README against
+# inst/WORDLIST. CRAN rejects packages with misspelled documentation, so on
+# a CRAN-bound package this isn't optional. To add words to the allow-list,
+# add them to inst/WORDLIST (one word per line).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+name: spelling
+
+concurrency:
+  # One in-flight run per workflow per ref. Without this every push starts a
+  # fresh run while the superseded one keeps holding a runner, and the queue
+  # grows faster than it drains -- one run sat queued for 410 minutes on
+  # 2026-08-17 behind work that had already been replaced. Protected branches
+  # are exempt, so a release run is never cancelled mid-flight.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !github.ref_protected }}
+
+permissions:
+  contents: read
+
+jobs:
+  spelling:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::spelling
+          needs: check
+
+      - name: Spell check
+        run: |
+          misspelled <- spelling::spell_check_package(use_wordlist = TRUE)
+          print(misspelled)
+          if (nrow(misspelled) > 0) {
+            quit(status = 1)
+          }
+        shell: Rscript {0}

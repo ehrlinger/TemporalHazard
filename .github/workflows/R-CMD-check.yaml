@@ -1,19 +1,28 @@
 name: R-CMD-check
 
 on:
+  # A commit that only touches the generated house-style artifact cannot change
+  # the package: .claude is in .Rbuildignore, so it is excluded from the built
+  # package, and no step in this workflow reads it from the checkout. Running
+  # this on such a commit burns runner minutes and queues ahead of checks that
+  # can actually fail.
   push:
+    paths-ignore:
+      - '.claude/**'
     branches: [main, master, dev]
   pull_request:
+    paths-ignore:
+      - '.claude/**'
     branches: [main, master, dev]
 
 concurrency:
   # One in-flight run per workflow per ref. Without this every push starts a
   # fresh run while the superseded one keeps holding a runner, and the queue
   # grows faster than it drains -- one run sat queued for 410 minutes on
-  # 2026-08-17 behind work that had already been replaced. main is exempt so a
-  # release run is never cancelled mid-flight.
+  # 2026-08-17 behind work that had already been replaced. Protected branches
+  # are exempt, so a release run is never cancelled mid-flight.
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: ${{ !github.ref_protected }}
 
 jobs:
   R-CMD-check:
@@ -22,11 +31,11 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - {os: ubuntu-latest, r: 'devel',    check_roxygen: false}
-          - {os: ubuntu-latest, r: 'release',  check_roxygen: true}
-          - {os: ubuntu-latest, r: 'oldrel-1', check_roxygen: false}
-          - {os: macos-latest,  r: 'release',  check_roxygen: false}
-          - {os: windows-latest, r: 'release', check_roxygen: false}
+          - {os: ubuntu-latest, r: 'devel'}
+          - {os: ubuntu-latest, r: 'release'}
+          - {os: ubuntu-latest, r: 'oldrel-1'}
+          - {os: macos-latest,  r: 'release'}
+          - {os: windows-latest, r: 'release'}
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -45,19 +54,8 @@ jobs:
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          extra-packages: any::rcmdcheck, any::roxygen2, any::pkgload
+          extra-packages: any::rcmdcheck
           needs: check
-
-      - name: Ensure roxygen outputs are current
-        if: matrix.config.check_roxygen
-        shell: Rscript {0}
-        run: |
-          roxygen2::roxygenise(load_code = roxygen2::load_pkgload)
-          changed <- system("git status --porcelain", intern = TRUE)
-          if (length(changed) > 0) {
-            writeLines(changed)
-            stop("Roxygen outputs are not up to date. Run roxygen2::roxygenise() and commit changes.")
-          }
 
       - uses: r-lib/actions/check-r-package@v2
         with:
