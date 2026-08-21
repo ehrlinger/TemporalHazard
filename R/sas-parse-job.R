@@ -292,6 +292,10 @@
     args$status <- cens$status_expr
   }
   if (!is.null(cens$time_lower)) args$time_lower <- cens$time_lower
+  # Without fit = TRUE the emitted call returns an unfitted object: converged
+  # is NA, objective is NA, and theta holds the SAS starting values, while
+  # print.hazard() shows a populated summary that says none of that (#151).
+  args$fit <- TRUE
   # A PARMS statement that actually specified shape parameters makes this a
   # multiphase job. hazard()'s `dist` defaults to "weibull", and its
   # `else if (!is.null(phases))` branch silently discards the entire phase

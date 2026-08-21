@@ -162,7 +162,11 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
         calls[[status_slot]] <- r$status_call
       }
       fit_slot <- .hzr_next_call_name(calls, "fit")
-      calls[[fit_slot]] <- r$call
+      # Bind the fit: predict() chunks reference the fit by its slot name, and
+      # a bare hazard(...) call binds nothing, so those chunks failed with
+      # "object 'fit' not found" -- or worse, silently used an unrelated
+      # object of that name already in the rendering session (#151).
+      calls[[fit_slot]] <- call("<-", as.name(fit_slot), r$call)
       fits[[length(fits) + 1L]] <- list(slot = fit_slot, outhaz = r$outhaz)
     } else {
       r <- tryCatch(.hzr_parse_hazpred(b, txt), error = function(e) {

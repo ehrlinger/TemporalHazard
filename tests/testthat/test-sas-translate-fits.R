@@ -30,18 +30,23 @@ test_that("an ICENSOR job's emitted call actually fits", {
 
   job <- suppressWarnings(hzr_translate_sas(f))
   expect_equal(names(job$calls), c("data", "status", "fit"))
-  expect_null(job$calls$fit[["time_upper"]])
+  # job$calls$fit is now `fit <- hazard(...)`; index into the hazard() call.
+  expect_null(job$calls$fit[[3L]][["time_upper"]])
 
   # Evaluate every emitted call in order, in an env holding the data. The
   # "data" chunk is a guard that fails loudly when the DATA= dataset was
   # never assigned (see translate-sas.R); it checks for a bound variable
   # literally named "AVCS", which the fit call's `data = AVCS` argument
   # never forces (hazard() only touches `data` on the formula path), so
-  # bind AVCS itself alongside its columns rather than skip the guard.
+  # bind AVCS itself. Its columns still need binding too: unlike the fit
+  # call, the "status" chunk this job emits (.hzr_status <- ifelse(...)) is
+  # a bare R assignment that references SAS columns (DEAD, C3FLAG, ICTIME)
+  # directly and is never routed through hazard()'s masking, so it cannot
+  # rely on Task 2's fix -- this binding stays for that reason alone.
   env <- list2env(as.list(AVCS), parent = environment())
   env$AVCS <- AVCS
-  fit <- NULL
-  for (nm in names(job$calls)) fit <- suppressWarnings(eval(job$calls[[nm]], env))
+  for (nm in names(job$calls)) suppressWarnings(eval(job$calls[[nm]], env))
+  fit <- env$fit
   expect_s3_class(fit, "hazard")
 
   # This package has no logLik.hazard method (confirmed: methods("logLik")
@@ -96,7 +101,9 @@ test_that("hz.te123.OMC's LCENSOR STARTTME round-trips to time_lower with no tim
   writeLines(block, f)
 
   job <- suppressWarnings(hzr_translate_sas(f, out_dir = withr::local_tempdir()))
-  fit_call <- job$calls$fit
+  # job$calls$fit is now `fit <- hazard(...)`; the hazard() call itself is
+  # the assignment's right-hand side.
+  fit_call <- job$calls$fit[[3L]]
   expect_equal(fit_call[["time_lower"]], as.name("STARTTME"))
   expect_null(fit_call[["time_upper"]])
 })
@@ -119,13 +126,14 @@ test_that("a plain EVENT/TIME job's emitted call fits with no time_lower/time_up
 
   job <- suppressWarnings(hzr_translate_sas(f))
   expect_equal(names(job$calls), c("data", "fit"))
-  expect_null(job$calls$fit[["time_lower"]])
-  expect_null(job$calls$fit[["time_upper"]])
+  # job$calls$fit is now `fit <- hazard(...)`; index into the hazard() call.
+  expect_null(job$calls$fit[[3L]][["time_lower"]])
+  expect_null(job$calls$fit[[3L]][["time_upper"]])
 
-  env <- list2env(as.list(AVCS), parent = environment())
+  env <- new.env(parent = environment())
   env$AVCS <- AVCS
-  fit <- NULL
-  for (nm in names(job$calls)) fit <- suppressWarnings(eval(job$calls[[nm]], env))
+  for (nm in names(job$calls)) suppressWarnings(eval(job$calls[[nm]], env))
+  fit <- env$fit
   expect_s3_class(fit, "hazard")
   expect_null(fit$data$time_lower)
   expect_null(fit$data$time_upper)
@@ -140,7 +148,8 @@ test_that("the emitted call fits the multiphase model, not a Weibull", {
     "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
   ), f)
   job <- suppressWarnings(hzr_translate_sas(f))
-  cl <- job$calls$fit
+  # job$calls$fit is now `fit <- hazard(...)`; index into the hazard() call.
+  cl <- job$calls$fit[[3L]]
   # phases are silently discarded unless dist is multiphase
   expect_equal(cl[["dist"]], "multiphase")
 
@@ -148,12 +157,12 @@ test_that("the emitted call fits the multiphase model, not a Weibull", {
   n <- 200
   D <- data.frame(TT = stats::rexp(n, 0.2),
                   DEAD = rep(c(1, 0), length.out = n))
-  env <- list2env(as.list(D), parent = environment())
-  fit <- NULL
+  env <- new.env(parent = environment())
   for (nm in names(job$calls)) {
     if (identical(nm, "data")) next
-    fit <- eval(job$calls[[nm]], env)
+    eval(job$calls[[nm]], env)
   }
+  fit <- env$fit
   expect_s3_class(fit, "hazard")
   # The decisive assertion: the fitted object must actually BE multiphase.
   expect_equal(fit$spec$dist, "multiphase")
@@ -173,7 +182,7 @@ test_that("evaluating the emitted call emits no 'phases is ignored' warning", {
   n <- 200
   D <- data.frame(TT = stats::rexp(n, 0.2),
                   DEAD = rep(c(1, 0), length.out = n))
-  env <- list2env(as.list(D), parent = environment())
+  env <- new.env(parent = environment())
   w <- character(0)
   withCallingHandlers(
     for (nm in names(job$calls)) {
@@ -204,8 +213,9 @@ test_that("theta is the full interleaved multiphase vector", {
     "MUC=0.0005436977; );"
   ), f)
   job <- suppressWarnings(hzr_translate_sas(f))
+  # job$calls$fit is now `fit <- hazard(...)`; index into the hazard() call.
   expect_equal(
-    eval(job$calls$fit[["theta"]]),
+    eval(job$calls$fit[[3L]][["theta"]]),
     c(log(0.2361727), log(0.1512095), 1.438652, 1, log(0.0005436977))
   )
 })
@@ -223,12 +233,12 @@ test_that("the emitted call fits end to end", {
   n <- 300
   D <- data.frame(TT = stats::rexp(n, 0.2),
                   DEAD = rep(c(1, 0), length.out = n))
-  env <- list2env(as.list(D), parent = environment())
-  fit <- NULL
+  env <- new.env(parent = environment())
   for (nm in names(job$calls)) {
     if (identical(nm, "data")) next
-    fit <- eval(job$calls[[nm]], env)
+    eval(job$calls[[nm]], env)
   }
+  fit <- env$fit
   expect_s3_class(fit, "hazard")
   expect_equal(fit$spec$dist, "multiphase")
   expect_length(fit$fit$theta, 5L)
