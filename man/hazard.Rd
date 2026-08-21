@@ -34,7 +34,13 @@ package's codes when passing \code{status} directly.
 When provided, overrides direct time/status/x arguments and extracts from data.
 Example: \code{hazard(Surv(time, status) ~ x1 + x2, data = df, dist = "weibull", fit = TRUE)}.}
 
-\item{data}{Optional data frame containing variables referenced in formula.}
+\item{data}{Optional data frame. On the formula path it supplies the model
+frame. On the vector path \code{time}, \code{status}, \code{time_lower}, \code{time_upper}
+and \code{weights} are evaluated in its scope, the way \code{\link[base:subset]{base::subset()}} and
+\code{\link[base:transform]{base::transform()}} do: a bare column name resolves to that column, and
+anything that is not a column (\code{df$col}, a local vector, a literal)
+falls through to the calling environment. A column of the same name as
+a caller variable wins.}
 
 \item{time}{Numeric follow-up time vector.}
 

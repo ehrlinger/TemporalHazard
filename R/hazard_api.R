@@ -131,7 +131,13 @@ NULL
 #'   package's codes when passing `status` directly.
 #'   When provided, overrides direct time/status/x arguments and extracts from data.
 #'   Example: `hazard(Surv(time, status) ~ x1 + x2, data = df, dist = "weibull", fit = TRUE)`.
-#' @param data Optional data frame containing variables referenced in formula.
+#' @param data Optional data frame. On the formula path it supplies the model
+#'   frame. On the vector path `time`, `status`, `time_lower`, `time_upper`
+#'   and `weights` are evaluated in its scope, the way [base::subset()] and
+#'   [base::transform()] do: a bare column name resolves to that column, and
+#'   anything that is not a column (`df$col`, a local vector, a literal)
+#'   falls through to the calling environment. A column of the same name as
+#'   a caller variable wins.
 #' @param time_windows Optional numeric vector of strictly positive cut points for
 #'   piecewise time-varying coefficients. When provided, each predictor column in
 #'   `x` is expanded into one column per time window so each window gets its own
@@ -371,6 +377,26 @@ hazard <- function(formula = NULL,
     time_upper <- parsed$time_upper
     x <- parsed$x
 
+  }
+
+  # Data masking on the vector path. `data` used to be consulted only by the
+  # formula path, so hazard(data = df, time = tt) failed with "object 'tt'
+  # not found" while looking like it should work -- the defect behind the SAS
+  # translator's unrenderable documents (#151). This is the base-R idiom
+  # subset()/transform()/with() use: evaluate the argument expression with
+  # `data` as the environment and the caller's frame as its parent, so a
+  # column wins, and anything that is not a column (df$col, a local vector,
+  # a literal) falls through to the caller unchanged.
+  if (is.null(formula) && !is.null(data)) {
+    if (!is.data.frame(data) && !is.list(data)) {
+      stop("'data' must be a data frame or a list.", call. = FALSE)
+    }
+    mask_env <- parent.frame()
+    time <- eval(substitute(time), data, mask_env)
+    status <- eval(substitute(status), data, mask_env)
+    time_lower <- eval(substitute(time_lower), data, mask_env)
+    time_upper <- eval(substitute(time_upper), data, mask_env)
+    weights <- eval(substitute(weights), data, mask_env)
   }
 
   # After formula dispatch, require time and status
