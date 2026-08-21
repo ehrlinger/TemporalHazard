@@ -43,3 +43,35 @@ test_that("a LATE statement with comma-separated VAR=VALUE operands parses", {
   expect_true(any(got$untranslated$reason ==
     "phase covariate starting values are not yet mapped to theta"))
 })
+
+test_that("a non-numeric CONDITION is recorded, not coerced to NA", {
+  txt <- .hzr_sas_normalise(paste(
+    "%HAZARD( PROC HAZARD DATA=A CONDITION=ABC;",
+    "EVENT D; TIME T; PARMS MUE=1 THALF=1 NU=1; );"
+  ))
+  got <- expect_silent(.hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]]))
+  expect_true("CONDITION" %in% got$untranslated$construct)
+  expect_null(got$call[["control"]][["condition"]])
+})
+
+test_that("a non-numeric MI is recorded, not coerced to NA", {
+  txt <- .hzr_sas_normalise(paste(
+    "%HAZARD( PROC HAZARD DATA=A MI=XYZ CONDITION=14;",
+    "EVENT D; TIME T; PARMS MUE=1 THALF=1 NU=1; );"
+  ))
+  got <- expect_silent(.hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]]))
+  expect_true(any(grepl("MI|MAXITER", got$untranslated$construct)))
+  expect_null(got$call[["control"]][["maxit"]])
+  # The valid option alongside it must still be translated.
+  expect_equal(got$call[["control"]][["condition"]], 14)
+})
+
+test_that("tokens_mapped never exceeds tokens_seen when values are bad", {
+  txt <- .hzr_sas_normalise(paste(
+    "%HAZARD( PROC HAZARD DATA=A CONDITION=ABC MI=XYZ STEEPEST;",
+    "EVENT D; TIME T; PARMS MUE=1 THALF=1 NU=1; );"
+  ))
+  got <- .hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]])
+  expect_lte(got$tokens_mapped, got$tokens_seen)
+  expect_gte(nrow(got$untranslated), 3L)
+})

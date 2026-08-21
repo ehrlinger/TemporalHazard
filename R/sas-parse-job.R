@@ -129,8 +129,24 @@
     switch(token,
       DATA        = data_name <- val,
       OUTHAZ      = outhaz <- val,
-      MAXITER     = ctl$maxit <- as.numeric(val),
-      CONDITION   = ctl$condition <- as.numeric(val),
+      MAXITER     = {
+        val_num <- suppressWarnings(as.numeric(val))
+        if (is.na(val_num)) {
+          mapped <- mapped - 1L
+          note("MAXITER", "non-numeric value for MAXITER")
+        } else {
+          ctl$maxit <- val_num
+        }
+      },
+      CONDITION   = {
+        val_num <- suppressWarnings(as.numeric(val))
+        if (is.na(val_num)) {
+          mapped <- mapped - 1L
+          note("CONDITION", "non-numeric value for CONDITION")
+        } else {
+          ctl$condition <- val_num
+        }
+      },
       CONSERVE    = ctl$conserve <- TRUE,
       NOCONSERVE  = ctl$conserve <- FALSE,
       QUASINEWTON = ctl$method <- "bfgs",
