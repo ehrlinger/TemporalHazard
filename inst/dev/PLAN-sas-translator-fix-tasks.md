@@ -680,13 +680,13 @@ In `.hzr_censor_spec()`, when both an `LCENSOR` and an `ICENSOR` statement are p
   # distinct times (TIME, CTIME, STIME) and subtracts H(STIME) for every row.
   # Supporting this needs a new hazard() argument; refuse until it exists.
   if (has_lcensor && has_icensor) {
-    untr <- rbind(untr, .hzr_untranslated_row(
-      construct = "LCENSOR + ICENSOR",
-      detail = paste(
-        "Left truncation combined with interval censoring needs a separate",
-        "entry-time argument that hazard() does not have yet (see #155).",
-        "Translate this job by hand."
-      )
+    # NOTE: the helper is .hzr_untranslated_frame(line, construct, detail),
+    # called positionally -- see .hzr_selection_spec() for the existing usage.
+    untr <- rbind(untr, .hzr_untranslated_frame(
+      NA_integer_, "LCENSOR + ICENSOR",
+      paste("left truncation combined with interval censoring needs a",
+            "separate entry-time argument hazard() does not have (#155);",
+            "translate this job by hand")
     ))
     return(list(status_name = NULL, status_expr = NULL, time_lower = NULL,
                 weights_name = NULL, untranslated = untr, refused = TRUE))
@@ -774,12 +774,34 @@ In the `isTRUE(sel$stepwise)` branch: build `scope` as a one-sided formula from 
       # candidates, not model terms. Baking them into the phase formula made
       # them forced-in, inverting the statement's meaning, and the emitted
       # call had neither `fit` nor `scope` so it could not run at all (#152).
-      cand <- sel$candidates
       args$fit <- quote(fit)
-      args$scope <- stats::reformulate(cand)
-      args$phases <- .hzr_phases_without(args$phases, cand)
+      args$scope <- stats::reformulate(cand_names)
       args$direction <- sel$direction
 ```
+
+`cand_names` and the forced-term removal come from **where the covariates are
+gathered**, not from post-processing built phases. In `.hzr_parse_hazard()`,
+`covars` is assembled at `R/sas-parse-job.R:217-263` as a list with `$early`,
+`$constant` and `$late` elements, then passed to `.hzr_parse_parms(parms_ops,
+covars = covars)` at line 272. Split the same way `.hzr_parse_phase_covars()`
+does, and when the job is a stepwise SELECTION build the phases with **no**
+covariates so they are candidates rather than forced terms:
+
+```r
+  # Under SELECTION the phase variables are the candidate pool, so they must
+  # not reach .hzr_parse_parms() as phase formulas -- that is what made them
+  # forced-in model terms (#152). Collect their names for `scope` instead.
+  cand_names <- unique(unlist(lapply(covars, .hzr_parse_phase_covars),
+                              use.names = FALSE))
+  is_stepwise <- !is.null(sel_ops) && isTRUE(.hzr_selection_spec(sel_ops)$stepwise)
+  parms <- .hzr_parse_parms(parms_ops,
+                            covars = if (is_stepwise) list() else covars)
+```
+
+Order matters: this runs before line 272's existing `parms <-` call, which it
+replaces. `.hzr_selection_spec()` is called twice as written -- hoist it to a
+single local if the duplicate call is awkward, but do not change its
+behaviour.
 
 - [ ] **Step 4: Run to verify it passes**
 
