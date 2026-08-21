@@ -38,8 +38,12 @@
 #' Translate a SAS HAZARD job into a Quarto document
 #'
 #' Reads a SAS program containing `PROC HAZARD` and/or `PROC HAZPRED` blocks and
-#' emits a Quarto document that reproduces the analysis with [hazard()] and
-#' [predict.hazard()].
+#' emits a Quarto document of the equivalent [hazard()] and [predict.hazard()]
+#' calls.
+#'
+#' **Experimental, and the emitted document does not render as-is:** it is a
+#' translation aid whose chunks need hand-editing before they run. See the
+#' Experimental section below.
 #'
 #' Constructs the translator does not cover are recorded on the returned object
 #' and rendered as visible callouts, never dropped. A `PROC HAZPRED` job whose

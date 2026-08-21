@@ -28,10 +28,14 @@ counts.
 }
 \description{
 Reads a SAS program containing \verb{PROC HAZARD} and/or \verb{PROC HAZPRED} blocks and
-emits a Quarto document that reproduces the analysis with \code{\link[=hazard]{hazard()}} and
-\code{\link[=predict.hazard]{predict.hazard()}}.
+emits a Quarto document of the equivalent \code{\link[=hazard]{hazard()}} and \code{\link[=predict.hazard]{predict.hazard()}}
+calls.
 }
 \details{
+\strong{Experimental, and the emitted document does not render as-is:} it is a
+translation aid whose chunks need hand-editing before they run. See the
+Experimental section below.
+
 Constructs the translator does not cover are recorded on the returned object
 and rendered as visible callouts, never dropped. A \verb{PROC HAZPRED} job whose
 \verb{INHAZ=} fitted model cannot be located emits a \code{stop()}, so the document
