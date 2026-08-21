@@ -18,5 +18,7 @@ render_sim <- function(job, data = list()) {
     }, error = function(e) paste0("ERROR: ", conditionMessage(e)))
     res[[nm]] <- out
   }
-  list(ok = all(res == "ok"), results = res, env = env)
+  # all(character(0) == "ok") is TRUE, so an empty `res` would report ok
+  # having evaluated nothing -- require at least one call ran.
+  list(ok = length(res) > 0 && all(res == "ok"), results = res, env = env)
 }

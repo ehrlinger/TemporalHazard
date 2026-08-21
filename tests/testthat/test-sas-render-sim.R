@@ -18,6 +18,13 @@ test_that("render_sim binds supplied data and nothing else", {
   expect_match(got$results[["b"]], "object 'MISSING_VAR' not found")
 })
 
+test_that("render_sim does not report ok when nothing was evaluated", {
+  # all(character(0) == "ok") is TRUE -- a job with zero emitted calls must
+  # not be indistinguishable from one where every call succeeded.
+  got <- render_sim(list(calls = list()))
+  expect_false(got$ok)
+})
+
 test_that("a minimal translated job renders end to end", {
   skip_on_cran()
   set.seed(1)
