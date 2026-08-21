@@ -249,7 +249,11 @@ Expected: PASS, 0 failures.
 
 `AGENTS.md` warns that anything rewriting or resampling a stored call has to handle both interfaces. Masking changes what a stored call means, so check the resamplers explicitly rather than assuming.
 
-Run: `NOT_CRAN=true Rscript -e 'devtools::load_all("."); testthat::test_file("tests/testthat/test-bootstrap.R"); testthat::test_file("tests/testthat/test-stepwise.R")'`
+Run (these are the files that actually exist -- there is no `test-bootstrap.R` or `test-stepwise.R`):
+
+```bash
+NOT_CRAN=true Rscript -e 'devtools::load_all(".");   for (f in c(list.files("tests/testthat", pattern = "bootstrap", full.names = TRUE),               list.files("tests/testthat", pattern = "^test-stepwise", full.names = TRUE)))     testthat::test_file(f)'
+```
 Expected: 0 failures. If a bootstrap replicate now fails to resolve a column, the resampler is rewriting `time`/`status` without carrying `data`; fix by having it also substitute the resampled `data`, and record what you changed in the commit message.
 
 - [ ] **Step 6: Update the `@param data` documentation**
