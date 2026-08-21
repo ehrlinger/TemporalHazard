@@ -607,10 +607,14 @@
 #'
 #' HAZPRED emits `_SURVIV`/`_CLLSURV`/`_CLUSURV` and
 #' `_HAZARD`/`_CLLHAZ`/`_CLUHAZ`, so it maps to `predict()` call(s) with
-#' `se.fit`. `conf.type` is deliberately NOT set: whether SAS's confidence
-#' limits are log-log or logit is unresolved (spec section 8, open question
-#' 2), and guessing would produce silently wrong bounds -- so this emits the
-#' package default instead.
+#' `se.fit`.
+#'
+#' `conf.type = "logit"` is set on the survival call, because SAS HAZPRED's
+#' survival confidence limits are on the logit scale (`hzp_calc_srv_CL.c`),
+#' while `predict.hazard()` defaults to `"log-log"` (the survfit standard).
+#' Emitting the default would produce bounds that silently disagree with the
+#' job being reproduced. The hazard call sets nothing: hazard limits are on
+#' the log scale in both engines, so the default already agrees.
 #'
 #' `txt` is the whole normalised source, because HAZPRED's real input is the
 #' `DATA=` prediction grid built by a preceding DATA step, not anything in
@@ -692,6 +696,12 @@
     if (!is.null(data_name)) args$newdata <- as.name(data_name)
     args$type <- type
     args$se.fit <- want_cl
+    # SAS HAZPRED puts survival CLs on the logit scale; predict.hazard()
+    # defaults to "log-log". Hazard CLs are log scale in both engines, so
+    # only the survival call needs steering.
+    if (identical(type, "survival") && isTRUE(want_cl)) {
+      args$conf.type <- "logit"
+    }
     as.call(c(quote(predict), args))
   }
 

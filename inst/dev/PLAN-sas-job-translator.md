@@ -959,10 +959,13 @@ Spec §5.4: 92% of grids are `log_grid` or `explicit_do`; a `derived_set` grid
 emits `UNTRANSLATED`. `HAZPRED` emits `_SURVIV`/`_CLLSURV`/`_CLUSURV` and
 `_HAZARD`/`_CLLHAZ`/`_CLUHAZ`, so the call needs `se.fit = TRUE`.
 
-**Note:** `conf.type` is deliberately **not** set — spec §8 open question 2
-records that whether SAS uses `log-log` or `logit` limits is unresolved, and
-guessing produces silently wrong bounds. Emit the package default and add a
-`.qmd` callout naming the uncertainty.
+**Note:** `conf.type = "logit"` is set on the survival call. Spec section 8
+open question 2 is **resolved** against the reference source:
+`hzp_calc_srv_CL.c` builds the limits on `Z = log(e^H - 1) = logit(1 - S)`
+with `se(Z) = se(H) / (1 - S)`, i.e. the logit scale, while
+`predict.hazard()` defaults to `"log-log"`. The hazard call sets nothing --
+`hzp_calc_haz_CL.c` is plain log scale (`Z = log(hazard)`), which the package
+default already matches.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1091,9 +1094,10 @@ Expected: FAIL, `could not find function ".hzr_parse_hazpred"`.
 #' Parse a PROC HAZPRED block into predict() call(s).
 #'
 #' HAZPRED emits _SURVIV/_CLLSURV/_CLUSURV and _HAZARD/_CLLHAZ/_CLUHAZ, so it
-#' maps to two predict() calls with se.fit. `conf.type` is deliberately NOT set:
-#' whether SAS uses log-log or logit limits is unresolved (spec section 8), and
-#' guessing produces silently wrong bounds.
+#' maps to two predict() calls with se.fit. The survival call sets
+#' `conf.type = "logit"`: SAS's survival limits are logit-scale
+#' (`hzp_calc_srv_CL.c`) where `predict.hazard()` defaults to log-log. The
+#' hazard call sets nothing -- both engines use the log scale there.
 #' @noRd
 .hzr_parse_hazpred <- function(block, txt) {
   st <- strsplit(block$text, ";", fixed = TRUE)[[1L]]

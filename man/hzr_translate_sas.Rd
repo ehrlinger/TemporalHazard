@@ -41,7 +41,7 @@ seen. \code{job$outhaz} is therefore a character vector, one element per \verb{P
 \verb{PROC HAZPRED} block's \verb{INHAZ=} is resolved independently against that
 vector, matching the most recently written \verb{OUTHAZ=} at that point in the
 file -- mirroring SAS itself, where a later \verb{OUTHAZ=} write overwrites the
-dataset a earlier one wrote under the same name. If a job's own \verb{OUTHAZ=}
+dataset an earlier one wrote under the same name. If a job's own \verb{OUTHAZ=}
 values don't cover it, \code{librefs} is tried next; distinct external
 \verb{INHAZ=} values each get their own loaded-fit chunk. When neither
 resolves and the job holds more than one local fit, which fit a

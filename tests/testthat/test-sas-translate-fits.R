@@ -233,3 +233,44 @@ test_that("the emitted call fits end to end", {
   expect_equal(fit$spec$dist, "multiphase")
   expect_length(fit$fit$theta, 5L)
 })
+
+# The emitted HAZPRED survival call carries conf.type = "logit" because SAS's
+# hzp_calc_srv_CL.c builds the limits on Z = log(e^H - 1) = logit(1 - S),
+# where predict.hazard() defaults to "log-log". A shape assertion on the call
+# cannot tell whether predict() honours the argument or silently ignores it,
+# so this evaluates the emitted call and checks the bounds it actually
+# produces.
+
+test_that("the emitted HAZPRED call produces logit bounds, not the default", {
+  skip_on_cran()
+  set.seed(17)
+  n <- 60
+  df <- data.frame(time = stats::rexp(n, 0.3),
+                   status = stats::rbinom(n, 1, 0.6),
+                   x = stats::rnorm(n))
+  fit <- hazard(survival::Surv(time, status) ~ x, data = df, dist = "weibull",
+                theta = c(0.5, 1, 0), fit = TRUE)
+
+  txt <- .hzr_sas_normalise(
+    "%HAZPRED( PROC HAZPRED DATA=P INHAZ=E.H OUT=P; TIME TIME; );"
+  )
+  emitted <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)$call
+
+  env <- new.env(parent = environment())
+  env$fit <- fit
+  env$P <- data.frame(time = c(0.5, 1, 2, 5), x = 0)
+  got <- eval(emitted, env)
+
+  logit <- predict(fit, newdata = env$P, type = "survival", se.fit = TRUE,
+                   conf.type = "logit")
+  loglog <- predict(fit, newdata = env$P, type = "survival", se.fit = TRUE,
+                    conf.type = "log-log")
+
+  expect_equal(got, logit)
+  # The decisive check: the two transforms must genuinely disagree here, or
+  # `expect_equal(got, logit)` would pass no matter which one predict() used.
+  expect_false(isTRUE(all.equal(logit$lower, loglog$lower)))
+  expect_false(isTRUE(all.equal(logit$upper, loglog$upper)))
+  expect_true(all(got$lower <= got$fit & got$fit <= got$upper))
+  expect_true(all(got$lower >= 0 & got$upper <= 1))
+})

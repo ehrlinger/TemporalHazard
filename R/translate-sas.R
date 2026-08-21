@@ -55,7 +55,7 @@
 #' `PROC HAZPRED` block's `INHAZ=` is resolved independently against that
 #' vector, matching the most recently written `OUTHAZ=` at that point in the
 #' file -- mirroring SAS itself, where a later `OUTHAZ=` write overwrites the
-#' dataset a earlier one wrote under the same name. If a job's own `OUTHAZ=`
+#' dataset an earlier one wrote under the same name. If a job's own `OUTHAZ=`
 #' values don't cover it, `librefs` is tried next; distinct external
 #' `INHAZ=` values each get their own loaded-fit chunk. When neither
 #' resolves and the job holds more than one local fit, which fit a

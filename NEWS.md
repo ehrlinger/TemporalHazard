@@ -21,14 +21,17 @@
   `hzr_sas_job` object and rendered as visible `UNTRANSLATED` callouts in
   the `.qmd`, never dropped. Two limits are worth stating plainly:
 
-  - **Prediction grids built from expressions over DATA-step constants are
-    not translated.** The parser resolves a `PROC HAZPRED` grid only when
-    its `DO` loop bounds are literal numbers. Real SAS grids are commonly
-    written as `DO MONTHS = 1*DTY, 2*DTY, ... ;` with `DTY` assigned
-    earlier in the same DATA step, and that form is refused rather than
-    partially read -- a partially read grid is a partial `newdata`, which
-    is a hollow result. Such grids emit an explicit `UNTRANSLATED` block
-    instead.
+  - **Prediction grids built from `SET`-derived values, function calls, or
+    unknown names are not translated.** The parser resolves a `PROC
+    HAZPRED` grid's `DO` loop bounds when they are literal numbers or
+    DATA-step constants it can fold (e.g. `DO MONTHS = 1*DTY, 2*DTY, ...;`
+    with `DTY` assigned earlier in the same DATA step) -- but a bound
+    read from `SET`, computed by a function call, or naming something the
+    parser can't resolve is refused whole rather than partially read: a
+    partially read grid is a partial `newdata`, which is a hollow result.
+    Such grids emit an explicit `UNTRANSLATED` block instead. On the
+    public corpus, grid resolution is 19 of 55 (35%), up from 10 of 55
+    (18%) before constant folding.
   - **An unresolved `INHAZ=` fails the render, on purpose.** A `PROC
     HAZPRED` job whose fitted-model dataset can't be located -- neither
     from another translated job's `OUTHAZ=` nor from the `librefs`

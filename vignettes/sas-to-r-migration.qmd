@@ -530,7 +530,7 @@ job <- hzr_translate_sas(
 ```
 
 The emitted `.qmd` carries a `data` chunk and a `fit` chunk (reformatted
-here for width; the emitted document wraps at 80 columns like any
+here for width; the emitted document wraps at 60 columns like any
 `deparse()`d call). `DATA` step translation is out of scope, so the
 `data` chunk is a guard, not a re-implementation -- it checks that
 `AVCS` is already in scope and stops with a named error if not, rather
@@ -546,12 +546,14 @@ if (!exists("AVCS")) {
 }
 
 hazard(
-  data = AVCS, time = INT_DEAD, status = DEAD,
+  data = AVCS, time = INT_DEAD, status = DEAD, dist = "multiphase",
   phases = list(
     hzr_phase("cdf", t_half = 0.1512095, nu = 1.438652, m = 1, fixed = "m"),
     hzr_phase("constant")
   ),
-  theta = c(log(0.2361727), log(0.0005436977)),
+  theta = c(
+    log(0.2361727), log(0.1512095), 1.438652, 1, log(0.0005436977)
+  ),
   control = list(condition = 14, conserve = TRUE, method = "bfgs")
 )
 ```
@@ -561,6 +563,10 @@ hazard(
 = 14`, and the `PARMS` early-phase shape (`MUE`/`THALF`/`NU`/`M FIXM`)
 becomes a `hzr_phase("cdf", ...)` with `m` fixed -- exactly the
 mappings covered statement-by-statement above, applied automatically.
+`dist = "multiphase"` is emitted whenever `phases` is, and `theta`
+carries the full interleaved multiphase start vector -- early scale,
+then every early-phase shape parameter in phase order, then the
+constant/late scale -- not just the phases' log(mu) starts.
 
 ### What it doesn't translate
 
@@ -570,15 +576,19 @@ land on the returned `hzr_sas_job` object and render as visible
 its own gaps instead of quietly under-reporting the original job. Two
 gaps are common enough in production jobs to know about going in:
 
-- **`PROC HAZPRED` prediction grids built from DATA-step expressions
-  are not translated.** The parser resolves a grid only when its `DO`
-  loop bounds are literal numbers. A grid written as
-  `DO MONTHS = 1*DTY, 2*DTY, ... ;` with `DTY` assigned earlier in the
-  same DATA step is refused rather than partially read -- a partial
-  grid is a partial `newdata`, and reporting predictions over a
-  half-read grid would be worse than not reporting them. Such grids
-  emit an `UNTRANSLATED` block; build the `newdata` grid by hand and
-  pass it to `predict.hazard()` instead.
+- **`PROC HAZPRED` prediction grids built from `SET`-derived values,
+  function calls, or unknown names are not translated.** The parser
+  resolves a grid's `DO` loop bounds when they are literal numbers or
+  DATA-step constants it can fold (e.g. `DO MONTHS = 1*DTY, 2*DTY,
+  ... ;` with `DTY` assigned earlier in the same DATA step), but a
+  bound read from `SET`, computed by a function call, or naming
+  something the parser can't resolve is refused whole rather than
+  partially read -- a partial grid is a partial `newdata`, and
+  reporting predictions over a half-read grid would be worse than not
+  reporting them. Such grids emit an `UNTRANSLATED` block; build the
+  `newdata` grid by hand and pass it to `predict.hazard()` instead. On
+  the public corpus, grid resolution is 19 of 55 (35%), up from 10 of
+  55 (18%) before constant folding.
 - **An unresolved `INHAZ=` fails the render on purpose.** If a
   `PROC HAZPRED` job's fitted-model dataset can't be found -- neither
   from another translated job's `OUTHAZ=` nor from the `librefs=`

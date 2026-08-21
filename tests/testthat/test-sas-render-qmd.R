@@ -40,6 +40,23 @@ test_that("an unresolved INHAZ renders a stop(), not a comment", {
   expect_true(any(grepl("CABGKUL.HMDEADP", out, fixed = TRUE)))
 })
 
+test_that("an unresolved INHAZ with an apostrophe still emits parseable R", {
+  # A hand-assembled single-quoted stop() string breaks when the libref
+  # contains an apostrophe. The chunk must still parse.
+  j <- .hzr_sas_job(
+    source = list(path = "hp.sas", checksum = "abc"),
+    calls = list(pred = quote(predict(fit, newdata = PREDICT))),
+    grid = NULL, inhaz = "O'BRIEN.HZD", outhaz = NULL,
+    untranslated = .hzr_untranslated_frame(),
+    coverage = list(tokens_seen = 4L, tokens_mapped = 4L)
+  )
+  out <- .hzr_render_qmd(j)
+  stop_line <- out[grepl("^stop\\(", out)]
+  expect_length(stop_line, 1L)
+  expect_silent(parse(text = stop_line))
+  expect_true(grepl("O'BRIEN.HZD", stop_line, fixed = TRUE))
+})
+
 test_that("a resolved INHAZ does not emit a stop()", {
   j <- .hzr_sas_job(
     source = list(path = "hp.sas", checksum = "abc"),

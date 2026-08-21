@@ -32,12 +32,14 @@
 
   if (!is.null(job$inhaz) && !isTRUE(job$inhaz_resolved)) {
     lib <- sub("[.].*$", "", job$inhaz)
+    msg <- paste0(
+      "unresolved INHAZ=", job$inhaz, " -- pass librefs = c(", lib,
+      ' = "<path>") to hzr_translate_sas()'
+    )
+    stop_call <- bquote(stop(.(msg)))
     add("```{r}",
         "#| label: inhaz-unresolved",
-        sprintf(
-          "stop('unresolved INHAZ=%s -- pass librefs = c(%s = \"<path>\") to hzr_translate_sas()')",
-          job$inhaz, lib
-        ),
+        deparse(stop_call, width.cutoff = 500L),
         "```", "")
   }
 

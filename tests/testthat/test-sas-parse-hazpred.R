@@ -118,3 +118,25 @@ test_that("NOSURV and NOHAZ together yield no predict() call at all", {
   expect_null(got$call_haz)
   expect_true(any(grepl("NOSURV", got$untranslated$construct)))
 })
+
+test_that("the survival predict call sets conf.type = logit for SAS parity", {
+  # SAS HAZPRED's survival confidence limits are logit-scale
+  # (hzp_calc_srv_CL.c); predict.hazard() defaults to "log-log". Emitting the
+  # default reproduces the job with silently different bounds.
+  txt <- .hzr_sas_normalise(
+    "%HAZPRED( PROC HAZPRED DATA=P INHAZ=E.H OUT=P; TIME MONTHS; );"
+  )
+  got <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)
+  expect_equal(got$call[["conf.type"]], "logit")
+  # Hazard CLs are log scale in both engines, so that call must NOT be steered.
+  expect_null(got$call_haz[["conf.type"]])
+})
+
+test_that("conf.type is omitted when NOCL suppresses confidence limits", {
+  txt <- .hzr_sas_normalise(
+    "%HAZPRED( PROC HAZPRED DATA=P INHAZ=E.H OUT=P NOCL; TIME MONTHS; );"
+  )
+  got <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)
+  expect_equal(got$call[["se.fit"]], FALSE)
+  expect_null(got$call[["conf.type"]])
+})
