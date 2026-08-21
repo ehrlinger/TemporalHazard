@@ -73,6 +73,7 @@ reference:
     contents:
       - hzr_argument_mapping
       - hzr_read_outhaz
+      - hzr_translate_sas
   - title: Numerical Primitives
     contents:
       - hzr_log1pexp
