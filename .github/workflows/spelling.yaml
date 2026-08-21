@@ -1,19 +1,21 @@
-name: test-coverage
-
+# Spell-check package documentation, vignettes, and README against
+# inst/WORDLIST. CRAN rejects packages with misspelled documentation, so on
+# a CRAN-bound package this isn't optional. To add words to the allow-list,
+# add them to inst/WORDLIST (one word per line).
 on:
   # A commit that only touches the generated house-style artifact cannot change
-  # the package: .claude is in .Rbuildignore, so it is excluded from the built
-  # package, and no step in this workflow reads it from the checkout. Running
-  # this on such a commit burns runner minutes and queues ahead of checks that
-  # can actually fail.
+  # what this checks: spell_check_package() reads DESCRIPTION, man/, vignettes/
+  # and README, never .claude/. Running it on such a commit burns runner
+  # minutes and queues ahead of checks that can actually fail.
   push:
     paths-ignore:
       - '.claude/**'
-    branches: [main, master, dev]
+    branches: [main]
   pull_request:
     paths-ignore:
       - '.claude/**'
-    branches: [main, master, dev]
+
+name: spelling
 
 concurrency:
   # One in-flight run per workflow per ref. Without this every push starts a
@@ -24,11 +26,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ !github.ref_protected }}
 
+permissions:
+  contents: read
+
 jobs:
-  test-coverage:
+  spelling:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
 
@@ -37,18 +40,18 @@ jobs:
 
       - uses: r-lib/actions/setup-r@v2
         with:
-          r-version: release
           use-public-rspm: true
-
-      - uses: r-lib/actions/setup-pandoc@v2
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          extra-packages: any::covr
-          needs: coverage
+          extra-packages: any::spelling
+          needs: check
 
-      - name: Test coverage
+      - name: Spell check
+        run: |
+          misspelled <- spelling::spell_check_package(use_wordlist = TRUE)
+          print(misspelled)
+          if (nrow(misspelled) > 0) {
+            quit(status = 1)
+          }
         shell: Rscript {0}
-        run: covr::codecov(quiet = FALSE)
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

@@ -1,9 +1,18 @@
 name: pkgdown
 
 on:
+  # A commit that only touches the generated house-style artifact cannot change
+  # the package: .claude is in .Rbuildignore, so it is excluded from the built
+  # package, and no step in this workflow reads it from the checkout. Running
+  # this on such a commit burns runner minutes and queues ahead of checks that
+  # can actually fail.
   push:
+    paths-ignore:
+      - '.claude/**'
     branches: [main, master, dev]
   pull_request:
+    paths-ignore:
+      - '.claude/**'
     branches: [main, master, dev]
   workflow_dispatch:
 
@@ -11,10 +20,10 @@ concurrency:
   # One in-flight run per workflow per ref. Without this every push starts a
   # fresh run while the superseded one keeps holding a runner, and the queue
   # grows faster than it drains -- one run sat queued for 410 minutes on
-  # 2026-08-17 behind work that had already been replaced. main is exempt so a
-  # release run is never cancelled mid-flight.
+  # 2026-08-17 behind work that had already been replaced. Protected branches
+  # are exempt, so a release run is never cancelled mid-flight.
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: ${{ !github.ref_protected }}
 
 jobs:
   build-and-deploy:
@@ -38,13 +47,16 @@ jobs:
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          extra-packages: any::pkgdown, any::roxygen2, any::pkgload
+          extra-packages: any::pkgdown
           needs: website
 
-      - name: Document and install package
+      # No roxygenise here: the site is built from the committed man/*.Rd, which
+      # is what the package actually ships. Regenerating first would rebuild the
+      # site over any drift instead of surfacing it -- lint.yaml's docs-current
+      # job is what fails on drift, and it does so before the merge.
+      - name: Install package
         shell: Rscript {0}
         run: |
-          roxygen2::roxygenise(load_code = roxygen2::load_pkgload)
           install.packages(".", repos = NULL, type = "source")
 
       - name: Build pkgdown site
