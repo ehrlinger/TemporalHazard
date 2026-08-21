@@ -286,7 +286,17 @@
   if (!is.null(data_name)) args$data <- as.name(data_name)
   args$time <- as.name(statements$TIME)
   if (!is.null(cens$status_name)) {
-    status_call <- call("<-", cens$status_name, cens$status_expr)
+    # The status chunk is evaluated outside hazard(), so hazard()'s data
+    # masking does not reach it: wrap it in with() so its bare column names
+    # resolve. A plain local binding (not a new column) keeps the caller's
+    # data frame unmutated, and hazard()'s mask falls through to the caller's
+    # frame to find it.
+    status_expr <- if (is.null(data_name)) {
+      cens$status_expr
+    } else {
+      call("with", as.name(data_name), cens$status_expr)
+    }
+    status_call <- call("<-", cens$status_name, status_expr)
     args$status <- cens$status_name
   } else {
     args$status <- cens$status_expr

@@ -38,12 +38,11 @@ test_that("an ICENSOR job's emitted call actually fits", {
   # never assigned (see translate-sas.R); it checks for a bound variable
   # literally named "AVCS", which the fit call's `data = AVCS` argument
   # never forces (hazard() only touches `data` on the formula path), so
-  # bind AVCS itself. Its columns still need binding too: unlike the fit
-  # call, the "status" chunk this job emits (.hzr_status <- ifelse(...)) is
-  # a bare R assignment that references SAS columns (DEAD, C3FLAG, ICTIME)
-  # directly and is never routed through hazard()'s masking, so it cannot
-  # rely on Task 2's fix -- this binding stays for that reason alone.
-  env <- list2env(as.list(AVCS), parent = environment())
+  # bind AVCS itself. The "status" chunk this job emits
+  # (.hzr_status <- with(AVCS, ifelse(...))) now wraps its SAS-column
+  # expression in with(AVCS, ...), so it resolves those columns from AVCS
+  # itself and needs no separate per-column binding.
+  env <- new.env(parent = environment())
   env$AVCS <- AVCS
   for (nm in names(job$calls)) suppressWarnings(eval(job$calls[[nm]], env))
   fit <- env$fit
