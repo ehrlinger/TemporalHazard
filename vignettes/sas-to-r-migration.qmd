@@ -505,6 +505,23 @@ blocks describe. It is the same statement-by-statement mapping this
 vignette documents, run by the parser instead of by you -- useful
 for a one-off job, and essential for migrating a corpus of hundreds.
 
+::: {.callout-warning}
+## Experimental: the emitted document does not render as-is
+
+`hzr_translate_sas()` is a translation aid, not a turnkey reproduction.
+It gets you the calls; it does not yet get you a runnable document. The
+emitted chunks need hand-editing first -- most importantly the fitted
+model is not bound to a name and `fit = TRUE` is not emitted, so the
+`hazard()` chunk stops at the SAS starting values and the `predict()`
+chunks have nothing to predict from.
+
+Read the coverage figures below, and `job$coverage`, as a measure of how
+much of the SAS job the *parser recognised* -- not of whether the result
+runs. A job can report full coverage with nothing in `$untranslated` and
+still error on render. The tracked gaps are listed in the 1.2.2 entry of
+`NEWS.md`; the API and the emitted format will change as they close.
+:::
+
 Take the `PROC HAZARD` block shipped as
 `system.file("extdata", "hz-example.sas", package = "TemporalHazard")`
 (de-identified from the public `hazard` examples):
