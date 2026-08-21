@@ -63,6 +63,7 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
         stop("failed to parse PROC HAZARD block in ", basename(path), ": ",
              conditionMessage(e), call. = FALSE)
       })
+      if (!is.null(r$status_call)) calls$status <- r$status_call
       calls$fit <- r$call
       outhaz <- r$outhaz
     } else {

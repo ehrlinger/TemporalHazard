@@ -1,12 +1,23 @@
-test_that("ICENSOR produces interval code 2 and both bounds", {
-  st <- list(EVENT = "DEAD", TIME = "T", ICENSOR = c("LO", "HI"))
+test_that("ICENSOR produces interval code 2 and status-gated bounds", {
+  # ICENSOR's grammar is `ICENSOR flag = timevar;` (src/hazard/hazard_y.y):
+  # an interval-censoring INDICATOR, not a bound variable -- ICFLAG is 0/1,
+  # not NA-gated like a bound would be.
+  st <- list(EVENT = "DEAD", TIME = "T", ICENSOR = c("ICFLAG", "ICTIME"))
   got <- .hzr_censor_spec(st)
-  expect_equal(got$time_lower, as.name("LO"))
-  expect_equal(got$time_upper, as.name("HI"))
+  expect_equal(got$status_name, as.name(".hzr_status"))
+  # time_lower/time_upper are gated on status, not unconditional -- passing
+  # bounds for every row is wrong for every non-interval row, and the
+  # interval's orientation (TIME vs. ICTIME) is unverified, so both are
+  # emitted as pmin()/pmax() of the two, correct under either reading.
+  env <- list(.hzr_status = c(1, 2), T = c(3, 8), ICTIME = c(99, 5))
+  expect_equal(eval(got$time_lower, env), c(0, 5))
+  expect_equal(eval(got$time_upper, env), c(3, 8))
   # Assert the exact codes. `all(status %in% c(0,1,2,3))` cannot fail and is
   # the assertion shape that hid this class of bug for years.
-  expect_equal(eval(got$status_expr, list(DEAD = c(1, 0), LO = c(1, 1), HI = c(2, 2))),
-               c(1, 2))
+  expect_equal(
+    eval(got$status_expr, list(DEAD = c(1, 0), ICFLAG = c(1, 1), ICTIME = c(2, 2))),
+    c(1, 2)
+  )
 })
 
 test_that("LCENSOR produces -1, not survival's 2", {
@@ -48,9 +59,9 @@ test_that("untranslated is a well-formed empty frame, not merely non-NULL", {
 test_that("an ICENSOR-only job needs no EVENT statement", {
   # HAZARD terminates only when BOTH EVENT and ICENSOR are missing
   # (src/hazard/varterm.c), so ICENSOR alone is a legitimate job.
-  st <- list(TIME = "T", ICENSOR = c("LO", "HI"))
+  st <- list(TIME = "T", ICENSOR = c("ICFLAG", "ICTIME"))
   got <- .hzr_censor_spec(st)
-  expect_equal(eval(got$status_expr, list(LO = c(1, NA), HI = c(2, NA))),
+  expect_equal(eval(got$status_expr, list(ICFLAG = c(1, 0), ICTIME = c(2, NA))),
                c(2, 0))
 })
 
@@ -67,11 +78,11 @@ test_that("an event outranks a left-censoring flag", {
 
 test_that("ICENSOR wins over LCENSOR where both fire", {
   st <- list(EVENT = "DEAD", TIME = "T", LCENSOR = "LFLAG",
-             ICENSOR = c("LO", "HI"))
+             ICENSOR = c("ICFLAG", "ICTIME"))
   got <- .hzr_censor_spec(st)
   expect_equal(
     eval(got$status_expr,
-         list(DEAD = c(0, 0), LFLAG = c(1, 1), LO = c(5, NA), HI = c(9, NA))),
+         list(DEAD = c(0, 0), LFLAG = c(1, 1), ICFLAG = c(1, 0), ICTIME = c(5, NA))),
     c(2, -1)
   )
 })

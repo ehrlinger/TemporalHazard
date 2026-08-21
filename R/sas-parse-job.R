@@ -18,11 +18,18 @@
 #' `0`/`1` for right-censored/event and so also covers `RCENSOR` with no
 #' extra branch (see below).
 #'
+#' `ICENSOR`'s grammar (`src/hazard/hazard_y.y`) is
+#' `ICENSOR icensorvar '=' icensortime;` -- an interval-censoring *indicator*
+#' variable and a second *time* variable, not two bound variables. Its
+#' siblings for contrast: `TIME name`, `EVENT name`, `RCENSOR name`,
+#' `LCENSOR name` all carry a single bare operand; `ICENSOR` alone is
+#' `flag = timevar`.
+#'
 #' `EVENT` is optional: the reference `HAZARD` program (`src/hazard/varterm.c`)
 #' terminates only when *both* `EVENT` and `ICENSOR` are missing, so a job
 #' that specifies `ICENSOR` alone is legitimate. In that case the base status
 #' is right-censored (`0`) everywhere, overridden to `2` where `ICENSOR`'s
-#' lower bound is non-missing. A job specifying neither is rejected with an
+#' indicator variable is `1`. A job specifying neither is rejected with an
 #' error, mirroring HAZARD's own termination.
 #'
 #' An event outranks a censoring flag: a row that is an event is not left- or
@@ -36,14 +43,36 @@
 #' own precedence for this combination is undefined; this is this package's
 #' documented tie-break.
 #'
+#' `hazard()`'s `time_lower`/`time_upper` carry a different meaning per row,
+#' selected by `status` (see `R/hazard_api.R`): for status 2 (interval) they
+#' are the interval bounds, but for status 0/1 `time_lower` is the
+#' counting-process *entry time* (default `0`), not a censoring bound. So
+#' `time_lower`/`time_upper` are built as `ifelse()` expressions gated on a
+#' `status_name` placeholder (`.hzr_status`) the caller assigns the
+#' `status_expr` to first -- never unconditionally, which would trip
+#' `hazard()`'s finite-value check off the interval subset and, where
+#' populated, silently redefine event/right-censored rows' risk-set entry
+#' times.
+#'
+#' The interval itself runs between `TIME` and `ICENSOR`'s time variable, but
+#' the grammar does not say which bound is which, and the public SAS corpus
+#' this package was checked against contains zero `ICENSOR` statements to
+#' verify against. `time_lower`/`time_upper` are therefore emitted as
+#' `pmin()`/`pmax()` of the two -- correct under either reading -- and a row
+#' is recorded on `untranslated` flagging the orientation as assumed, not
+#' verified.
+#'
 #' @param statements Named list of SAS statement operands, e.g.
-#'   `list(EVENT = "DEAD", TIME = "T", ICENSOR = c("LO", "HI"))`. `ICENSOR`
-#'   carries two operands (lower, upper bound variables); `LCENSOR` and
-#'   `RCENSOR` carry one. `EVENT` may be absent if `ICENSOR` is present.
-#' @return `list(status_expr = <call>, time_lower = <name|NULL>,
-#'   time_upper = <name|NULL>, untranslated = <data.frame>)`. `status_expr`
-#'   is a `bquote()`-built call, evaluable against an environment/list
-#'   holding the named SAS variables.
+#'   `list(EVENT = "DEAD", TIME = "T", ICENSOR = c("ICFLAG", "ICTIME"))`.
+#'   `ICENSOR` carries two operands (indicator variable, second time
+#'   variable); `LCENSOR` and `RCENSOR` carry one. `EVENT` may be absent if
+#'   `ICENSOR` is present.
+#' @return `list(status_expr = <call>, status_name = <name|NULL>,
+#'   time_lower = <call|NULL>, time_upper = <call|NULL>,
+#'   untranslated = <data.frame>)`. `status_expr` is a `bquote()`-built call,
+#'   evaluable against an environment/list holding the named SAS variables.
+#'   `time_lower`/`time_upper`, when non-`NULL`, are `bquote()`-built calls
+#'   gated on `status_name` (i.e. `.hzr_status`).
 #' @noRd
 .hzr_censor_spec <- function(statements) {
   has_event <- !is.null(statements$EVENT)
@@ -71,24 +100,51 @@
     }
   }
 
+  untr <- .hzr_untranslated_frame()
+
   if (has_icensor) {
-    lo <- as.name(statements$ICENSOR[[1L]])
+    icflag <- as.name(statements$ICENSOR[[1L]])
     # Interval censoring only applies where the event did not occur; if it
     # did, EVENT == 1 and the row stays coded as an event, not an interval.
     # Applied last, so ICENSOR wins over LCENSOR where both would fire (see
     # roxygen).
     expr <- if (has_event) {
-      bquote(ifelse(.(ev) == 0 & !is.na(.(lo)), 2, .(expr)))
+      bquote(ifelse(.(ev) == 0 & .(icflag) == 1, 2, .(expr)))
     } else {
-      bquote(ifelse(!is.na(.(lo)), 2, .(expr)))
+      bquote(ifelse(.(icflag) == 1, 2, .(expr)))
     }
+  }
+
+  status_name <- NULL
+  time_lower <- NULL
+  time_upper <- NULL
+  if (has_icensor) {
+    status_name <- as.name(".hzr_status")
+    ictime <- as.name(statements$ICENSOR[[2L]])
+    tm <- as.name(statements$TIME)
+    # Status-gated, not unconditional (see roxygen): interval rows get the
+    # interval bounds, every other row falls back to hazard()'s own
+    # defaults -- entry time 0 for time_lower, TIME for time_upper. The
+    # interval's orientation (TIME vs ICENSOR's time variable) is assumed,
+    # not verified -- pmin()/pmax() is correct under either reading.
+    time_lower <- bquote(ifelse(.(status_name) == 2, pmin(.(tm), .(ictime)), 0))
+    time_upper <- bquote(ifelse(.(status_name) == 2, pmax(.(tm), .(ictime)), .(tm)))
+    untr <- rbind(untr, .hzr_untranslated_frame(
+      NA_integer_, "ICENSOR",
+      paste0(
+        "interval bound orientation (TIME vs. the ICENSOR time variable) is ",
+        "assumed via pmin()/pmax(), not verified against a SAS reference -- ",
+        "the grammar does not say which bound is which"
+      )
+    ))
   }
 
   list(
     status_expr = expr,
-    time_lower = if (has_icensor) as.name(statements$ICENSOR[[1L]]),
-    time_upper = if (has_icensor) as.name(statements$ICENSOR[[2L]]),
-    untranslated = .hzr_untranslated_frame()
+    status_name = status_name,
+    time_lower = time_lower,
+    time_upper = time_upper,
+    untranslated = untr
   )
 }
 
@@ -192,7 +248,22 @@
     switch(token,
       TIME       = statements$TIME <- ops[[1L]],
       EVENT      = statements$EVENT <- ops[[1L]],
-      ICENSOR    = statements$ICENSOR <- ops,
+      ICENSOR    = {
+        # ICENSOR's grammar (src/hazard/hazard_y.y) is
+        # `ICENSOR icensorvar '=' icensortime;` -- an interval-censoring
+        # indicator variable and a second time variable, not two
+        # comma-separated bound variables. Split on "=" and tolerate a
+        # stray trailing comma; anything else is not this shape and must
+        # not be guessed at.
+        parts <- trimws(sub(",$", "", strsplit(ops_text, "=", fixed = TRUE)[[1L]]))
+        parts <- parts[nzchar(parts)]
+        if (length(parts) == 2L) {
+          statements$ICENSOR <- parts
+        } else {
+          mapped <- mapped - 1L
+          note("ICENSOR", "expected 'ICENSOR flag = timevar' operand shape")
+        }
+      },
       LCENSOR    = statements$LCENSOR <- ops[[1L]],
       RCENSOR    = statements$RCENSOR <- ops[[1L]],
       WEIGHT     = statements$WEIGHT <- ops[[1L]],
@@ -214,12 +285,22 @@
   cens <- .hzr_censor_spec(statements)
   untr <- rbind(untr, cens$untranslated)
 
+  # ICENSOR jobs get the status expression hoisted into its own chunk, named
+  # .hzr_status so it cannot collide with a SAS variable, so that
+  # time_lower/time_upper can gate on it -- see .hzr_censor_spec() roxygen
+  # for why the raw ICENSOR bounds cannot be passed for every row.
+  status_call <- NULL
   args <- list()
   if (!is.null(data_name)) args$data <- as.name(data_name)
   args$time <- as.name(statements$TIME)
-  args$status <- cens$status_expr
-  if (!is.null(cens$time_lower)) args$time_lower <- cens$time_lower
-  if (!is.null(cens$time_upper)) args$time_upper <- cens$time_upper
+  if (!is.null(cens$time_lower)) {
+    status_call <- call("<-", cens$status_name, cens$status_expr)
+    args$status <- cens$status_name
+    args$time_lower <- cens$time_lower
+    args$time_upper <- cens$time_upper
+  } else {
+    args$status <- cens$status_expr
+  }
   args$phases <- parms$phases
   args$theta <- parms$theta
   if (!is.null(statements$WEIGHT)) args$weights <- as.name(statements$WEIGHT)
@@ -242,8 +323,9 @@
     }
   }
 
-  list(call = as.call(c(head, args)), outhaz = outhaz,
-       untranslated = untr, tokens_seen = seen, tokens_mapped = mapped)
+  list(call = as.call(c(head, args)), status_call = status_call,
+       outhaz = outhaz, untranslated = untr, tokens_seen = seen,
+       tokens_mapped = mapped)
 }
 
 #' Translate a SELECTION statement to hzr_stepwise() arguments.
