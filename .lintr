@@ -1,9 +1,10 @@
-# assignment_linter permits <<-. All 15 current uses are closure accumulators
-# updating a variable in the enclosing *function's* environment -- see
-# R/stepwise.R and tests/testthat/helper-sas-parity.R, where a local callback
-# builds up trace messages, step counters and result rows. None writes to
-# .GlobalEnv or to the package namespace, which is what CRAN objects to and
-# what the house rule against <<- is aimed at.
+# assignment_linter permits <<-. lintr 3.4.0 made `<<-` a default lint; every
+# use here is a closure accumulator updating a variable in the enclosing
+# *function's* environment -- see R/stepwise.R and
+# tests/testthat/helper-sas-parity.R, where a local callback builds up trace
+# messages, step counters and result rows. None writes to .GlobalEnv or to
+# the package namespace, which is what CRAN objects to and what the house
+# rule against <<- is aimed at.
 #
 # Be clear about the cost: lintr cannot tell a closure-local <<- from a
 # .GlobalEnv write, so allowing it here switches the check off for BOTH.
@@ -13,12 +14,6 @@
 linters: linters_with_defaults(
     assignment_linter = assignment_linter(operator = c("<-", "<<-")),
     line_length_linter(120),
-    # lintr 3.4.0 made `<<-` a default lint. The `<<-` uses here are deliberate
-    # accumulator patterns confined to a function's own closure (stepwise trace
-    # building, fixture capture) -- not the unpredictable global writes the
-    # linter targets. Allow the operator rather than refactor working
-    # selection internals for a style rule.
-    assignment_linter(operator = c("<-", "<<-")),
     object_name_linter = NULL,
     object_length_linter(40),
     commented_code_linter = NULL,
