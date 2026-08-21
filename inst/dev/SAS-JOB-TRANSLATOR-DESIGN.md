@@ -252,9 +252,40 @@ this pair gets an explicit fixture.
 
 ### 5.4 Prediction grids
 
-92% of `HAZPRED` `DATA=` grids classify as `log_grid` or `explicit_do`, with
-**zero** unclassifiable across all three production studies. The `grid` field is
-worth having. `derived_set` grids emit `UNTRANSLATED`.
+92% of `HAZPRED` `DATA=` grids **classify** as `log_grid` or `explicit_do`,
+with zero unclassifiable across all three production studies.
+
+⚠️ **That is a classification rate, not a translation rate, and the two differ
+sharply.** Measured on the public corpus after the parser landed:
+
+| profiler class | classified | parser resolved |
+|---|---|---|
+| `log_grid` | 8 | 4 |
+| `explicit_do` | 3 | **0** |
+| `derived_set` | 3 | 0 |
+| other / not found | 6 | 0 |
+
+The classifier only asks whether the DATA step contains a `DO` loop. The parser
+needs the bounds to be **literal numbers**, and real grids are written with
+expressions over constants defined in the same step:
+
+```
+DTY=12/365.2425;
+DO MONTHS=1*DTY,2*DTY,3*DTY,...,24 TO 180 BY 12;
+```
+
+Refusing such a grid outright is correct — a partly-read grid is a partial
+`newdata`, which is the hollow-result failure this design exists to prevent.
+But it means `explicit_do`, the **most common** form in `lv_function` (32
+occurrences), currently resolves at 0%.
+
+**Closing that gap means resolving the DATA step's own constant assignments**
+(`NAME = <numeric expression>;`) before evaluating the `DO` list. That is a
+bounded extension, not open-ended DATA-step support, and it is the single
+highest-leverage change available to grid coverage. Deferred pending a decision;
+until then unresolved grids emit `UNTRANSLATED` and the document says so.
+
+`derived_set` grids emit `UNTRANSLATED` by design.
 
 ## 6. Testing
 
