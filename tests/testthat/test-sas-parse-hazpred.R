@@ -17,7 +17,7 @@ test_that("a log-spaced DO grid becomes an exp(seq(...)) call", {
   ))
   got <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)
   expect_equal(got$grid,
-               quote(data.frame(MONTHS = exp(seq(-5, log(180), length.out = 100)))))
+               quote(data.frame(time = exp(seq(-5, log(180), length.out = 100)))))
 })
 
 test_that("a grid built by SET is untranslated, not guessed at", {
@@ -72,7 +72,7 @@ test_that("an explicit DO grid resolves DATA-step constants, incl. 1*DTY", {
 
   dty <- 12 / 365.2425
   expected <- c(1 * dty, 2 * dty, seq(24, 180, by = 12))
-  expect_equal(eval(got$grid)$MONTHS, expected)
+  expect_equal(eval(got$grid)$time, expected)
 })
 
 test_that("a DO list referencing an unknown name still refuses and records", {
@@ -92,7 +92,7 @@ test_that("a constant defined in terms of an earlier constant resolves", {
   ))
   got <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)
   expect_false(is.null(got$grid))
-  expect_equal(eval(got$grid)$MONTHS, c(20, 40))
+  expect_equal(eval(got$grid)$time, c(20, 40))
 })
 
 test_that("a DO list constant defined via a function call refuses, not evaluates", {

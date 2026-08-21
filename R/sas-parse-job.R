@@ -555,7 +555,11 @@
     inner <- bquote(exp(seq(.(str2lang(lo_txt)), log(.(str2lang(hi_txt))),
                              length.out = 100)))
     cl <- as.call(list(quote(data.frame), inner))
-    names(cl) <- c("", time_var)
+    # predict.hazard() requires a column literally named `time`
+    # (R/hazard_api.R:1006). Naming the grid column after the SAS DO variable
+    # produced a newdata that predict() rejects outright, so the "grids
+    # resolve" coverage figure counted grids that could not be used (#151).
+    names(cl) <- c("", "time")
     return(cl)
   }
 
@@ -609,7 +613,11 @@
     }
     inner <- as.call(c(quote(c), elems))
     cl <- as.call(list(quote(data.frame), inner))
-    names(cl) <- c("", var)
+    # predict.hazard() requires a column literally named `time`
+    # (R/hazard_api.R:1006). Naming the grid column after the SAS DO variable
+    # produced a newdata that predict() rejects outright, so the "grids
+    # resolve" coverage figure counted grids that could not be used (#151).
+    names(cl) <- c("", "time")
     return(cl)
   }
 

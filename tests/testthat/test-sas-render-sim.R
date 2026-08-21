@@ -64,3 +64,22 @@ test_that("a censoring job's status chunk renders", {
                                    collapse = " | "))
   expect_true(any(got$env$.hzr_status == 2))
 })
+
+test_that("a HAZARD + HAZPRED job renders, predictions included", {
+  skip_on_cran()
+  set.seed(3)
+  AVCS <- data.frame(INT_DEAD = stats::rexp(200, 0.2),
+                     DEAD = rep(c(1, 0), length.out = 200))
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(c(
+    "%HAZARD( PROC HAZARD DATA=AVCS CONDITION=14 OUTHAZ=E.H;",
+    "EVENT DEAD; TIME INT_DEAD; PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );",
+    "DATA PGRID; DO MONTHS = 1 TO 12 BY 1; OUTPUT; END; RUN;",
+    "%HAZPRED( PROC HAZPRED DATA=PGRID INHAZ=E.H OUT=P; TIME MONTHS; );"
+  ), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  got <- render_sim(job, data = list(AVCS = AVCS))
+  expect_true(got$ok, info = paste(names(got$results), got$results,
+                                   collapse = " | "))
+  expect_true("time" %in% names(got$env$PGRID))
+})
