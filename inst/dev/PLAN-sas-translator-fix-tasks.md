@@ -116,7 +116,7 @@ test_that("a minimal translated job renders end to end", {
 - [ ] **Step 5: Run it and confirm it fails for the expected reasons**
 
 Run: `NOT_CRAN=true Rscript -e 'devtools::load_all("."); testthat::test_file("tests/testthat/test-sas-render-sim.R")'`
-Expected: FAIL 1 -- the `info` string shows `fit  ERROR: object 'INT_DEAD' not found`, and `got$env$fit` does not exist.
+Expected: the acceptance test fails. Note testthat counts failed **expectations**, not test blocks, so one failing `test_that` reports as `FAIL 3` here -- all three assertions in the block fail independently from the same root cause. The `info` string shows `fit  ERROR: object 'INT_DEAD' not found`, and `got$env$fit` does not exist.
 
 - [ ] **Step 6: Commit**
 
