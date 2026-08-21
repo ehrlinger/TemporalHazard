@@ -120,7 +120,11 @@
 #' @param covars Optional named list of phase covariates, e.g.
 #'   `list(early = c("X1", "X2"), constant = , late = )`, from the operands of
 #'   the `EARLY` / `CONSTANT` / `LATE` statements.
-#' @return `list(phases = <call>, theta = <call>, untranslated = <data.frame>)`.
+#' @return `list(phases = <call>, theta = <call>, has_phases = <logical>,
+#'   untranslated = <data.frame>)`. `has_phases` is `TRUE` only when at least
+#'   one phase was actually built from the operands (i.e. `phases` is not the
+#'   empty `list()` call) -- callers use it to decide whether the job
+#'   qualifies as multiphase at all.
 #' @noRd
 .hzr_parse_parms <- function(operands, covars = list()) {
   mu <- list()
@@ -236,6 +240,7 @@
   list(
     phases = as.call(c(quote(list), phase_calls)),
     theta = as.call(c(quote(c), lapply(unname(mu), function(v) bquote(log(.(v)))))),
+    has_phases = length(phase_calls) > 0L,
     untranslated = .hzr_untranslated_frame(
       line = rep(NA_integer_, length(bad_construct)),
       construct = bad_construct,

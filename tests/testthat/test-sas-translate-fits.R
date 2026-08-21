@@ -43,16 +43,21 @@ test_that("an ICENSOR job's emitted call actually fits", {
 
   # This package has no logLik.hazard method (confirmed: methods("logLik")
   # lists none for class "hazard", and getS3method("logLik", "hazard",
-  # optional = TRUE) is NULL), and the translator never emits fit = TRUE or
-  # dist = "multiphase" (separate, out-of-scope gaps -- forcing fit = TRUE
-  # here diverges with "non-finite value supplied by optim" because the
-  # default dist = "weibull" ignores the emitted `phases` and misreads the
-  # multiphase theta as a 2-parameter Weibull start). So "actually fits"
-  # here means: hazard()'s own finite/non-negative validation on
-  # time_lower/time_upper passes -- exactly the check that errored before
-  # this fix -- and the bounds are genuinely status-gated, not just
-  # populated. Comparing replicates (interval vs. non-interval rows), not
-  # a summary statistic, per AGENTS.md's assertion-discipline rule.
+  # optional = TRUE) is NULL). The translator now emits dist = "multiphase"
+  # whenever it emits `phases` (see .hzr_parse_hazard()), but it still never
+  # emits fit = TRUE -- forcing fit = TRUE here now fails with
+  # "'names' attribute [5] must be the same length as the vector [2]" from
+  # .hzr_optim_multiphase(), because the translator's `theta` carries only
+  # the log(MUE)/log(MUC) scale starts, not the full parameter vector the
+  # multiphase engine expects to seed from (it also wants the phase shape
+  # starts, e.g. t_half/nu). That is a separate, already-tracked translator
+  # gap (the "blind-start convergence" item), out of scope here. So
+  # "actually fits" in this test still means: hazard()'s own
+  # finite/non-negative validation on time_lower/time_upper passes --
+  # exactly the check that errored before this fix -- and the bounds are
+  # genuinely status-gated, not just populated. Comparing replicates
+  # (interval vs. non-interval rows), not a summary statistic, per
+  # AGENTS.md's assertion-discipline rule.
   interval <- fit$data$status == 2
   expect_true(any(interval))
   expect_false(anyNA(fit$data$time_lower))
@@ -91,4 +96,61 @@ test_that("a plain EVENT/TIME job's emitted call fits with no time_lower/time_up
   expect_s3_class(fit, "hazard")
   expect_null(fit$data$time_lower)
   expect_null(fit$data$time_upper)
+})
+
+test_that("the emitted call fits the multiphase model, not a Weibull", {
+  skip_on_cran()
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste(
+    "%HAZARD( PROC HAZARD DATA=D CONDITION=14;",
+    "EVENT DEAD; TIME TT;",
+    "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
+  ), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  cl <- job$calls$fit
+  # phases are silently discarded unless dist is multiphase
+  expect_equal(cl[["dist"]], "multiphase")
+
+  set.seed(1)
+  n <- 200
+  D <- data.frame(TT = stats::rexp(n, 0.2),
+                  DEAD = rep(c(1, 0), length.out = n))
+  env <- list2env(as.list(D), parent = environment())
+  fit <- NULL
+  for (nm in names(job$calls)) {
+    if (identical(nm, "data")) next
+    fit <- eval(job$calls[[nm]], env)
+  }
+  expect_s3_class(fit, "hazard")
+  # The decisive assertion: the fitted object must actually BE multiphase.
+  expect_equal(fit$spec$dist, "multiphase")
+  expect_length(fit$spec$phases, 2L)
+})
+
+test_that("evaluating the emitted call emits no 'phases is ignored' warning", {
+  skip_on_cran()
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste(
+    "%HAZARD( PROC HAZARD DATA=D CONDITION=14;",
+    "EVENT DEAD; TIME TT;",
+    "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
+  ), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  set.seed(1)
+  n <- 200
+  D <- data.frame(TT = stats::rexp(n, 0.2),
+                  DEAD = rep(c(1, 0), length.out = n))
+  env <- list2env(as.list(D), parent = environment())
+  w <- character(0)
+  withCallingHandlers(
+    for (nm in names(job$calls)) {
+      if (identical(nm, "data")) next
+      eval(job$calls[[nm]], env)
+    },
+    warning = function(x) {
+      w <<- c(w, conditionMessage(x))
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_false(any(grepl("phases' is ignored", w, fixed = TRUE)))
 })

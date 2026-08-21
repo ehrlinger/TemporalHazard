@@ -301,7 +301,21 @@
   } else {
     args$status <- cens$status_expr
   }
-  args$phases <- parms$phases
+  # A PARMS statement that actually specified shape parameters makes this a
+  # multiphase job. hazard()'s `dist` defaults to "weibull", and its
+  # `else if (!is.null(phases))` branch silently discards the entire phase
+  # specification (with only a warning) when dist stays at that default --
+  # so dist = "multiphase" must be emitted whenever phases were built. A job
+  # with no PARMS statement at all (or one that specified no shape
+  # parameters) has phase_calls = list(), i.e. parms$phases is the empty
+  # `list()` call rather than NULL; omit both phases and dist on that path
+  # so it stays a plain non-multiphase fit and does not trip that same
+  # "'phases' is ignored" warning for a phases arg that was never meant to
+  # carry anything.
+  if (isTRUE(parms$has_phases)) {
+    args$dist <- "multiphase"
+    args$phases <- parms$phases
+  }
   args$theta <- parms$theta
   if (!is.null(statements$WEIGHT)) args$weights <- as.name(statements$WEIGHT)
 
