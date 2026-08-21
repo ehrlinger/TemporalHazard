@@ -137,7 +137,9 @@ NULL
 #'   [base::transform()] do: a bare column name resolves to that column, and
 #'   anything that is not a column (`df$col`, a local vector, a literal)
 #'   falls through to the calling environment. A column of the same name as
-#'   a caller variable wins.
+#'   a caller variable wins, and because that silently discards the caller's
+#'   vector -- the way a wrapper forwarding its own argument by name does --
+#'   such a name raises a warning naming the symbol and the argument.
 #' @param time_windows Optional numeric vector of strictly positive cut points for
 #'   piecewise time-varying coefficients. When provided, each predictor column in
 #'   `x` is expanded into one column per time window so each window gets its own
@@ -392,6 +394,42 @@ hazard <- function(formula = NULL,
       stop("'data' must be a data frame or a list.", call. = FALSE)
     }
     mask_env <- parent.frame()
+    # A wrapper that forwards its own argument by name -- f <- function(tt)
+    # hazard(data = d, time = tt, ...) -- reads as "use the caller's vector"
+    # and silently gets the column instead: a fit over the wrong rows, no
+    # error, no warning. The column still wins (that is the subset() rule),
+    # but a name that is BOTH a column and bound in the calling frame is
+    # ambiguous enough to say so out loud. `inherits = FALSE` keeps this to
+    # the caller's own bindings rather than every function up the search path.
+    ambiguous <- lapply(
+      list(time = substitute(time), status = substitute(status),
+           time_lower = substitute(time_lower),
+           time_upper = substitute(time_upper),
+           weights = substitute(weights)),
+      function(e) {
+        if (is.null(e)) {
+          return(character(0))
+        }
+        nms <- all.vars(e)
+        nms[nms %in% names(data) &
+              vapply(nms, exists, logical(1),
+                     envir = mask_env, inherits = FALSE)]
+      }
+    )
+    ambiguous <- ambiguous[lengths(ambiguous) > 0L]
+    if (length(ambiguous) > 0L) {
+      warning(
+        "In hazard(), ", paste(sprintf("'%s' (%s)",
+                                       unlist(ambiguous, use.names = FALSE),
+                                       rep(names(ambiguous),
+                                           lengths(ambiguous))),
+                               collapse = ", "),
+        ": the name is both a column of 'data' and a variable in the calling ",
+        "frame. The column was used. Write data$<name> for the column, or ",
+        "omit 'data' to use the calling frame's value.",
+        call. = FALSE
+      )
+    }
     time <- eval(substitute(time), data, mask_env)
     status <- eval(substitute(status), data, mask_env)
     time_lower <- eval(substitute(time_lower), data, mask_env)

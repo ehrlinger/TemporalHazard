@@ -40,7 +40,9 @@ and \code{weights} are evaluated in its scope, the way \code{\link[base:subset]{
 \code{\link[base:transform]{base::transform()}} do: a bare column name resolves to that column, and
 anything that is not a column (\code{df$col}, a local vector, a literal)
 falls through to the calling environment. A column of the same name as
-a caller variable wins.}
+a caller variable wins, and because that silently discards the caller's
+vector -- the way a wrapper forwarding its own argument by name does --
+such a name raises a warning naming the symbol and the argument.}
 
 \item{time}{Numeric follow-up time vector.}
 

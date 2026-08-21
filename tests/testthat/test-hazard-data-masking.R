@@ -35,8 +35,12 @@ test_that("df$col, a local vector and a bare name all still work", {
 test_that("a column masks a same-named caller variable", {
   df <- make_df()
   tt <- rep(999, nrow(df))
-  fit <- hazard(data = df, time = tt, status = ev, dist = "weibull",
-                theta = c(0.5, 1), fit = TRUE)
+  # `tt` is both a column and bound here, so the call is now audibly ambiguous.
+  expect_warning(
+    fit <- hazard(data = df, time = tt, status = ev, dist = "weibull",
+                  theta = c(0.5, 1), fit = TRUE),
+    "tt"
+  )
   expect_equal(fit$data$time, df$tt)
   expect_false(any(fit$data$time == 999))
 })
@@ -55,4 +59,28 @@ test_that("the formula path is unaffected", {
                 theta = c(0.5, 1), fit = TRUE)
   expect_s3_class(fit, "hazard")
   expect_equal(fit$data$time, df$tt)
+})
+
+# Masking made a wrapper that forwards its own argument by name silently pick
+# up the column instead of the vector the caller passed -- a fit over the
+# wrong rows, with no error and no warning. The column still wins; the
+# ambiguity is now audible.
+
+test_that("a wrapper forwarding its own argument warns about the shadowed name", {
+  df <- make_df()
+  sub <- df[1:20, ]
+  wrap <- function(tt, ev, d) {
+    hazard(data = d, time = tt, status = ev, dist = "weibull",
+           theta = c(0.5, 1), fit = TRUE)
+  }
+  expect_warning(fit <- wrap(sub$tt, sub$ev, df), "tt")
+  expect_equal(fit$data$time, df$tt)
+})
+
+test_that("an unambiguous masked call does not warn", {
+  df <- make_df()
+  expect_no_warning(
+    hazard(data = df, time = tt, status = ev, dist = "weibull",
+           theta = c(0.5, 1), fit = TRUE)
+  )
 })
