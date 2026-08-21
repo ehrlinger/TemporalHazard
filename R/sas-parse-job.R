@@ -10,73 +10,77 @@
 
 #' Translate SAS censoring statements to this package's status coding.
 #'
-#' Builds an unevaluated `status` expression from the `EVENT`/`ICENSOR`/
-#' `LCENSOR`/`RCENSOR` operands of a `PROC HAZARD` statements list, ready to
-#' drop into a `hazard()` call. Priority, most specific first: `ICENSOR` (only
-#' where the event did not occur), then `LCENSOR` (also only where the event
-#' did not occur), defaulting to the bare `EVENT` variable, which is already
-#' `0`/`1` for right-censored/event and so also covers `RCENSOR` with no
-#' extra branch (see below).
+#' Builds an unevaluated `status` expression -- and, where needed, a
+#' `time_lower` expression -- from the `EVENT`/`ICENSOR`/`LCENSOR`/`RCENSOR`
+#' operands of a `PROC HAZARD` statements list, ready to drop into a
+#' `hazard()` call.
 #'
-#' `ICENSOR`'s grammar (`src/hazard/hazard_y.y`) is
-#' `ICENSOR icensorvar '=' icensortime;` -- an interval-censoring *indicator*
-#' variable and a second *time* variable, not two bound variables. Its
-#' siblings for contrast: `TIME name`, `EVENT name`, `RCENSOR name`,
-#' `LCENSOR name` all carry a single bare operand; `ICENSOR` alone is
-#' `flag = timevar`.
+#' **`LCENSOR` is left-*truncation*, not left-censoring.** Its operand is the
+#' counting-process *entry time* -- all four corpus uses are literally
+#' `LCENSOR STARTTME`, paired with `TIME INT_TE` (see
+#' `inst/dev/FIXTURE-GAP-LIST.md`, answered Q1). It never changes `status`:
+#' HAZARD has no left-censoring in this package's sense, so `status = -1` is
+#' never produced by this translator. A future reader must not "restore" an
+#' `LCENSOR` -> `-1` branch.
 #'
-#' `EVENT` is optional: the reference `HAZARD` program (`src/hazard/varterm.c`)
-#' terminates only when *both* `EVENT` and `ICENSOR` are missing, so a job
-#' that specifies `ICENSOR` alone is legitimate. In that case the base status
-#' is right-censored (`0`) everywhere, overridden to `2` where `ICENSOR`'s
-#' indicator variable is `1`. A job specifying neither is rejected with an
-#' error, mirroring HAZARD's own termination.
+#' **`ICENSOR`'s first operand is an event *count* (OBS column 4, `C3`), not a
+#' 0/1 flag.** Its grammar (`src/hazard/hazard_y.y`) is
+#' `ICENSOR c3var '=' ctimevar;`, and the likelihood in `setlik.c` uses a
+#' Nelson-type approximation `C3 * ln([CF(T) - CF(CT)] / (T - CT))`, so a row
+#' is interval-censored where `C3 > 0`. The second operand (`CTIME`) is the
+#' interval's *lower* bound -- the interval runs `CTIME` -> `TIME` (see
+#' `FIXTURE-GAP-LIST.md` Q1). `EVENT` is optional: the reference `HAZARD`
+#' program (`src/hazard/varterm.c`) terminates only when *both* `EVENT` and
+#' `ICENSOR` are missing, so a job that specifies `ICENSOR` alone is
+#' legitimate. In that case the base status is right-censored (`0`)
+#' everywhere, overridden to `2` where `C3 > 0`. A job specifying neither is
+#' rejected with an error, mirroring HAZARD's own termination.
 #'
-#' An event outranks a censoring flag: a row that is an event is not left- or
-#' interval-censored, so both `LCENSOR` and `ICENSOR` override only where
-#' `EVENT == 0`. Treating a malformed row where `EVENT` and a censoring flag
-#' both fire as an event is the conservative reading; this is an assumption
-#' of this translation, not something confirmed against a SAS reference run.
+#' An event outranks interval censoring: a row that is an event is not
+#' interval-censored, so `ICENSOR` overrides only where `EVENT == 0`. Treating
+#' a malformed row where `EVENT` and `C3 > 0` both fire as an event is the
+#' conservative reading; this is an assumption of this translation, not
+#' something confirmed against a SAS reference run.
 #'
-#' When `LCENSOR` and `ICENSOR` both fire for the same row, `ICENSOR` is
-#' applied last and wins, because it is applied after `LCENSOR` below. SAS's
-#' own precedence for this combination is undefined; this is this package's
-#' documented tie-break.
+#' `hazard()`'s `time_lower` carries a different meaning per row, selected by
+#' `status` (see `R/hazard_api.R`): for status 2 (interval) it is the
+#' interval's lower bound (`CTIME`), but for status 0/1 it is the
+#' counting-process *entry time* (default `0`), not a censoring bound. `TIME`
+#' is always the interval's upper bound, and that is exactly what
+#' `hazard()`'s `time_upper` already defaults to when left `NULL` -- so
+#' `time_upper` is never emitted by this translator; passing it would be
+#' redundant, and omitting it cannot drift out of sync with `TIME`.
+#' `time_lower` is therefore built as one of, depending on which statements
+#' are present:
+#' * `ICENSOR` only: `ifelse(status == 2, CTIME, 0)` (`0` is `hazard()`'s
+#'   documented default entry time for status 0/1 rows).
+#' * `LCENSOR` only: the `LCENSOR` variable directly -- it applies to every
+#'   row, not just interval ones, so no `ifelse()` gating is needed.
+#' * Both: `ifelse(status == 2, CTIME, <LCENSOR variable>)`.
+#' * Neither: `time_lower` is omitted (`NULL`).
 #'
-#' `hazard()`'s `time_lower`/`time_upper` carry a different meaning per row,
-#' selected by `status` (see `R/hazard_api.R`): for status 2 (interval) they
-#' are the interval bounds, but for status 0/1 `time_lower` is the
-#' counting-process *entry time* (default `0`), not a censoring bound. So
-#' `time_lower`/`time_upper` are built as `ifelse()` expressions gated on a
-#' `status_name` placeholder (`.hzr_status`) the caller assigns the
-#' `status_expr` to first -- never unconditionally, which would trip
-#' `hazard()`'s finite-value check off the interval subset and, where
-#' populated, silently redefine event/right-censored rows' risk-set entry
-#' times.
-#'
-#' The interval itself runs between `TIME` and `ICENSOR`'s time variable, but
-#' the grammar does not say which bound is which, and the public SAS corpus
-#' this package was checked against contains zero `ICENSOR` statements to
-#' verify against. `time_lower`/`time_upper` are therefore emitted as
-#' `pmin()`/`pmax()` of the two -- correct under either reading -- and a row
-#' is recorded on `untranslated` flagging the orientation as assumed, not
-#' verified.
+#' The `ifelse()` forms are gated on a `status_name` placeholder (`.hzr_status`)
+#' the caller assigns the `status_expr` to first -- never unconditionally,
+#' which would trip `hazard()`'s finite-value check off the interval subset
+#' and, where populated, silently redefine event/right-censored rows' risk-set
+#' entry times.
 #'
 #' @param statements Named list of SAS statement operands, e.g.
-#'   `list(EVENT = "DEAD", TIME = "T", ICENSOR = c("ICFLAG", "ICTIME"))`.
-#'   `ICENSOR` carries two operands (indicator variable, second time
-#'   variable); `LCENSOR` and `RCENSOR` carry one. `EVENT` may be absent if
-#'   `ICENSOR` is present.
+#'   `list(EVENT = "DEAD", TIME = "T", ICENSOR = c("C3", "CTIME"))`.
+#'   `ICENSOR` carries two operands (event-count variable, interval
+#'   lower-bound time variable); `LCENSOR` and `RCENSOR` carry one. `EVENT`
+#'   may be absent if `ICENSOR` is present.
 #' @return `list(status_expr = <call>, status_name = <name|NULL>,
-#'   time_lower = <call|NULL>, time_upper = <call|NULL>,
-#'   untranslated = <data.frame>)`. `status_expr` is a `bquote()`-built call,
-#'   evaluable against an environment/list holding the named SAS variables.
-#'   `time_lower`/`time_upper`, when non-`NULL`, are `bquote()`-built calls
-#'   gated on `status_name` (i.e. `.hzr_status`).
+#'   time_lower = <call|NULL>, untranslated = <data.frame>)`. `status_expr` is
+#'   a `bquote()`-built call, evaluable against an environment/list holding
+#'   the named SAS variables. `time_lower`, when non-`NULL`, is a
+#'   `bquote()`-built call; `status_name` is non-`NULL` only when `ICENSOR` is
+#'   present, since only then does anything need to gate on it.
 #' @noRd
 .hzr_censor_spec <- function(statements) {
   has_event <- !is.null(statements$EVENT)
   has_icensor <- !is.null(statements$ICENSOR)
+  has_lcensor <- !is.null(statements$LCENSOR)
 
   if (!has_event && !has_icensor) {
     stop("The EVENT or ICENSOR variable must be specified.", call. = FALSE)
@@ -89,62 +93,47 @@
   # EVENT already carries when the event did not occur. This is deliberate,
   # not an omission -- there is nothing for an RCENSOR flag to change.
 
-  if (!is.null(statements$LCENSOR)) {
-    flag <- as.name(statements$LCENSOR)
-    # An event outranks a left-censoring flag (see roxygen); LCENSOR only
-    # overrides where the event did not occur, symmetric with ICENSOR below.
-    expr <- if (has_event) {
-      bquote(ifelse(.(ev) == 0 & .(flag) == 1, -1, .(expr)))
-    } else {
-      bquote(ifelse(.(flag) == 1, -1, .(expr)))
-    }
-  }
-
-  untr <- .hzr_untranslated_frame()
+  # LCENSOR is left-truncation, not left-censoring (see roxygen): it never
+  # touches status, only time_lower below.
 
   if (has_icensor) {
-    icflag <- as.name(statements$ICENSOR[[1L]])
-    # Interval censoring only applies where the event did not occur; if it
-    # did, EVENT == 1 and the row stays coded as an event, not an interval.
-    # Applied last, so ICENSOR wins over LCENSOR where both would fire (see
-    # roxygen).
+    c3 <- as.name(statements$ICENSOR[[1L]])
+    # C3 is an event count, not a 0/1 flag (see roxygen): a row is
+    # interval-censored where C3 > 0. Interval censoring only applies where
+    # the event did not occur; if it did, EVENT == 1 and the row stays coded
+    # as an event, not an interval.
     expr <- if (has_event) {
-      bquote(ifelse(.(ev) == 0 & .(icflag) == 1, 2, .(expr)))
+      bquote(ifelse(.(ev) == 0 & .(c3) > 0, 2, .(expr)))
     } else {
-      bquote(ifelse(.(icflag) == 1, 2, .(expr)))
+      bquote(ifelse(.(c3) > 0, 2, .(expr)))
     }
   }
 
   status_name <- NULL
   time_lower <- NULL
-  time_upper <- NULL
   if (has_icensor) {
     status_name <- as.name(".hzr_status")
-    ictime <- as.name(statements$ICENSOR[[2L]])
-    tm <- as.name(statements$TIME)
+    ctime <- as.name(statements$ICENSOR[[2L]])
     # Status-gated, not unconditional (see roxygen): interval rows get the
-    # interval bounds, every other row falls back to hazard()'s own
-    # defaults -- entry time 0 for time_lower, TIME for time_upper. The
-    # interval's orientation (TIME vs ICENSOR's time variable) is assumed,
-    # not verified -- pmin()/pmax() is correct under either reading.
-    time_lower <- bquote(ifelse(.(status_name) == 2, pmin(.(tm), .(ictime)), 0))
-    time_upper <- bquote(ifelse(.(status_name) == 2, pmax(.(tm), .(ictime)), .(tm)))
-    untr <- rbind(untr, .hzr_untranslated_frame(
-      NA_integer_, "ICENSOR",
-      paste0(
-        "interval bound orientation (TIME vs. the ICENSOR time variable) is ",
-        "assumed via pmin()/pmax(), not verified against a SAS reference -- ",
-        "the grammar does not say which bound is which"
-      )
-    ))
+    # interval's lower bound (CTIME); every other row falls back to
+    # hazard()'s own entry-time default (0), or, if LCENSOR is also present,
+    # the counting-process entry time it names.
+    time_lower <- if (has_lcensor) {
+      bquote(ifelse(.(status_name) == 2, .(ctime), .(as.name(statements$LCENSOR))))
+    } else {
+      bquote(ifelse(.(status_name) == 2, .(ctime), 0))
+    }
+  } else if (has_lcensor) {
+    # No ICENSOR, so no interval rows to gate around: LCENSOR's entry time
+    # applies to every row, unconditionally.
+    time_lower <- as.name(statements$LCENSOR)
   }
 
   list(
     status_expr = expr,
     status_name = status_name,
     time_lower = time_lower,
-    time_upper = time_upper,
-    untranslated = untr
+    untranslated = .hzr_untranslated_frame()
   )
 }
 
@@ -250,18 +239,18 @@
       EVENT      = statements$EVENT <- ops[[1L]],
       ICENSOR    = {
         # ICENSOR's grammar (src/hazard/hazard_y.y) is
-        # `ICENSOR icensorvar '=' icensortime;` -- an interval-censoring
-        # indicator variable and a second time variable, not two
-        # comma-separated bound variables. Split on "=" and tolerate a
-        # stray trailing comma; anything else is not this shape and must
-        # not be guessed at.
+        # `ICENSOR c3var '=' ctimevar;` -- an event-COUNT variable (OBS
+        # column 4, C3), not a 0/1 flag, and a second time variable (the
+        # interval's lower bound), not two comma-separated bound variables.
+        # Split on "=" and tolerate a stray trailing comma; anything else is
+        # not this shape and must not be guessed at.
         parts <- trimws(sub(",$", "", strsplit(ops_text, "=", fixed = TRUE)[[1L]]))
         parts <- parts[nzchar(parts)]
         if (length(parts) == 2L) {
           statements$ICENSOR <- parts
         } else {
           mapped <- mapped - 1L
-          note("ICENSOR", "expected 'ICENSOR flag = timevar' operand shape")
+          note("ICENSOR", "expected 'ICENSOR count = timevar' operand shape")
         }
       },
       LCENSOR    = statements$LCENSOR <- ops[[1L]],
@@ -286,21 +275,23 @@
   untr <- rbind(untr, cens$untranslated)
 
   # ICENSOR jobs get the status expression hoisted into its own chunk, named
-  # .hzr_status so it cannot collide with a SAS variable, so that
-  # time_lower/time_upper can gate on it -- see .hzr_censor_spec() roxygen
-  # for why the raw ICENSOR bounds cannot be passed for every row.
+  # .hzr_status so it cannot collide with a SAS variable, so that time_lower
+  # can gate on it -- see .hzr_censor_spec() roxygen. LCENSOR-only jobs need
+  # no gating (LCENSOR's entry time applies to every row unconditionally), so
+  # status stays unhoisted there. time_upper is never emitted: the ICENSOR
+  # interval's upper bound is TIME, and hazard()'s time_upper already
+  # defaults to TIME when left NULL (see .hzr_censor_spec() roxygen).
   status_call <- NULL
   args <- list()
   if (!is.null(data_name)) args$data <- as.name(data_name)
   args$time <- as.name(statements$TIME)
-  if (!is.null(cens$time_lower)) {
+  if (!is.null(cens$status_name)) {
     status_call <- call("<-", cens$status_name, cens$status_expr)
     args$status <- cens$status_name
-    args$time_lower <- cens$time_lower
-    args$time_upper <- cens$time_upper
   } else {
     args$status <- cens$status_expr
   }
+  if (!is.null(cens$time_lower)) args$time_lower <- cens$time_lower
   # A PARMS statement that actually specified shape parameters makes this a
   # multiphase job. hazard()'s `dist` defaults to "weibull", and its
   # `else if (!is.null(phases))` branch silently discards the entire phase

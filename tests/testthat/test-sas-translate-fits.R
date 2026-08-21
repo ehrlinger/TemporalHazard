@@ -1,8 +1,8 @@
 # test-sas-translate-fits.R -- nothing in the rest of the suite ever fits
 # the translator's own output. An ICENSOR job's emitted call errored outright
-# (time_lower/time_upper carried the raw ICENSOR bounds for every row, which
-# are NA off the interval-censored subset) until .hzr_censor_spec() started
-# status-gating them; these tests fit the emitted calls so a regression here
+# (time_lower carried the raw ICENSOR bounds for every row, which are NA off
+# the interval-censored subset) until .hzr_censor_spec() started
+# status-gating it; these tests fit the emitted calls so a regression here
 # fails loudly instead of shipping as a document that merely renders.
 
 test_that("an ICENSOR job's emitted call actually fits", {
@@ -13,21 +13,24 @@ test_that("an ICENSOR job's emitted call actually fits", {
     INT_DEAD = stats::rexp(n, 0.2),
     DEAD = rep(c(1, 0, 0), length.out = n)
   )
-  # ICENSOR's grammar (src/hazard/hazard_y.y) is `ICENSOR flag = timevar;` --
-  # an interval-censoring INDICATOR variable and a second time variable, not
-  # two comma-separated bound variables. ICFLAG is 0/1, not NA-gated.
-  AVCS$ICFLAG <- as.numeric(seq_len(n) %% 5 == 0)
-  AVCS$ICTIME <- ifelse(AVCS$ICFLAG == 1, AVCS$INT_DEAD * 1.5, NA)
+  # ICENSOR's grammar (src/hazard/hazard_y.y) is `ICENSOR c3 = ctime;` -- an
+  # event-COUNT variable (OBS column 4, C3), not a 0/1 flag, and a second
+  # time variable that is the interval's LOWER bound (the interval runs
+  # ctime -> TIME). C3FLAG is a count (any positive value fires), not
+  # NA-gated; CTIME must precede INT_DEAD to be a valid lower bound.
+  AVCS$C3FLAG <- as.numeric(seq_len(n) %% 5 == 0)
+  AVCS$ICTIME <- ifelse(AVCS$C3FLAG > 0, AVCS$INT_DEAD * 0.5, NA)
 
   f <- withr::local_tempfile(fileext = ".sas")
   writeLines(paste(
     "%HAZARD( PROC HAZARD DATA=AVCS CONDITION=14;",
-    "EVENT DEAD; TIME INT_DEAD; ICENSOR ICFLAG = ICTIME;",
+    "EVENT DEAD; TIME INT_DEAD; ICENSOR C3FLAG = ICTIME;",
     "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
   ), f)
 
   job <- suppressWarnings(hzr_translate_sas(f))
   expect_equal(names(job$calls), c("data", "status", "fit"))
+  expect_null(job$calls$fit[["time_upper"]])
 
   # Evaluate every emitted call in order, in an env holding the data. The
   # "data" chunk is a guard that fails loudly when the DATA= dataset was
@@ -53,19 +56,49 @@ test_that("an ICENSOR job's emitted call actually fits", {
   # starts, e.g. t_half/nu). That is a separate, already-tracked translator
   # gap (the "blind-start convergence" item), out of scope here. So
   # "actually fits" in this test still means: hazard()'s own
-  # finite/non-negative validation on time_lower/time_upper passes --
-  # exactly the check that errored before this fix -- and the bounds are
-  # genuinely status-gated, not just populated. Comparing replicates
-  # (interval vs. non-interval rows), not a summary statistic, per
-  # AGENTS.md's assertion-discipline rule.
+  # finite/non-negative validation on time_lower passes -- exactly the check
+  # that errored before this fix -- and the bound is genuinely status-gated,
+  # not just populated. time_upper is never emitted (the ICENSOR interval's
+  # upper bound is TIME, which is exactly what hazard()'s time_upper already
+  # defaults to), so fit$data$time_upper is NULL, same as an untranslated
+  # job. Comparing replicates (interval vs. non-interval rows), not a
+  # summary statistic, per AGENTS.md's assertion-discipline rule.
   interval <- fit$data$status == 2
   expect_true(any(interval))
+  expect_null(fit$data$time_upper)
   expect_false(anyNA(fit$data$time_lower))
-  expect_false(anyNA(fit$data$time_upper))
   expect_true(all(fit$data$time_lower[!interval] == 0))
   expect_true(all(fit$data$time_lower[interval] > 0))
-  expect_equal(fit$data$time_upper[!interval], fit$data$time[!interval])
-  expect_true(all(fit$data$time_upper[interval] > fit$data$time[interval]))
+  expect_true(all(fit$data$time_lower[interval] < fit$data$time[interval]))
+})
+
+test_that("hz.te123.OMC's LCENSOR STARTTME round-trips to time_lower with no time_upper", {
+  skip_on_cran()
+  dir <- .hzr_sas_fixture_dir() # nolint: object_usage_linter.
+  skip_if(is.na(dir), "SAS HAZARD fixture directory not available")
+  src <- file.path(dir, "hz.te123.OMC.sas")
+  skip_if_not(file.exists(src), "hz.te123.OMC.sas not available")
+
+  # hz.te123.OMC.sas has TWO PROC HAZARD blocks; hzr_translate_sas() keeps
+  # only the last block's fit call (translate-sas.R: `calls$fit <- r$call`
+  # overwrites per block), and the second block has no LCENSOR at all.
+  # Isolate the first block -- the one carrying the real corpus's
+  # `LCENSOR STARTTME;` -- from the actual file text, rather than
+  # hand-copying it, so this stays tied to the real corpus job rather than a
+  # paraphrase of it.
+  lines <- readLines(src, warn = FALSE)
+  start <- grep("%HAZARD\\(", lines)[[1L]]
+  stop_rel <- grep("^\\s*\\);\\s*$", lines[start:length(lines)])[[1L]]
+  block <- lines[start:(start + stop_rel - 1L)]
+  expect_true(any(grepl("LCENSOR\\s+STARTTME", block)))
+
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(block, f)
+
+  job <- suppressWarnings(hzr_translate_sas(f, out_dir = withr::local_tempdir()))
+  fit_call <- job$calls$fit
+  expect_equal(fit_call[["time_lower"]], as.name("STARTTME"))
+  expect_null(fit_call[["time_upper"]])
 })
 
 test_that("a plain EVENT/TIME job's emitted call fits with no time_lower/time_upper", {

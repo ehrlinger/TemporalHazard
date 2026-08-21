@@ -214,6 +214,29 @@ flag in the table. This package codes censoring `-1` left, `0` right, `1` event,
 right/event/left/interval. Carrying one coding into the other is a wrong answer
 with no error, and it has shipped here before.
 
+**`LCENSOR` is left-*truncation*, not left-censoring.** Its operand is the
+counting-process entry time (`hazard_y.y`'s own comment: "start of followup"),
+so it maps to `time_lower` and never touches `status`. HAZARD has no
+left-censoring in this package's sense: `status = -1` is never produced by
+this translator. All four corpus uses are literally `LCENSOR STARTTME`,
+paired with `TIME INT_TE` (see `~/Documents/GitHub/hazard/examples/hz.te123.OMC.sas`).
+
+**`ICENSOR`'s first operand is an event *count* (OBS column 4, `C3`), not a
+0/1 flag.** A row is interval-censored where `C3 > 0`; the second operand
+(`CTIME`) is the interval's *lower* bound, and `TIME` is the upper bound --
+the interval runs `CTIME` -> `TIME`. The likelihood in `setlik.c` uses a
+Nelson-type approximation `C3 * ln([CF(T) - CF(CT)] / (T - CT))`. `TIME`
+being the upper bound is exactly what `hazard()`'s `time_upper` already
+defaults to when left `NULL`, so `time_upper` is never emitted by this
+translator.
+
+| SAS | `hazard()` |
+|---|---|
+| `LCENSOR <var>` | `time_lower = <var>` -- entry time, `status` unchanged |
+| `ICENSOR <c3> = <ctime>` | rows where `<c3> > 0`: `status = 2`, `time_lower = <ctime>` |
+| `RCENSOR <var>` | unchanged: `status = 0`, no branch needed |
+| `EVENT <var>` | unchanged |
+
 It also touches known open work: the 2026-08-19 `preserve_root` parity run left a
 named residual where SAS maximises the interval-censored likelihood but *reports*
 a log-likelihood treating interval rows as exact-event densities.
@@ -430,15 +453,21 @@ or stepwise paths, which have no comparable reference run yet.
 2. **`_CLLSURV`/`_CLUSURV` confidence-limit type.** `predict.hazard()` supports
    `conf.type = "log-log"` and `"logit"`. Which does HAZPRED emit? Guessing
    silently produces wrong limits.
-3. **`LCENSOR` precedence against `EVENT`.** The translator assumes an event
-   outranks a left-censoring flag — a row with `EVENT == 1` stays coded `1`
-   even if the `LCENSOR` flag is set — and that `ICENSOR` wins over `LCENSOR`
-   where both fire. Both are conservative readings chosen for symmetry, not
-   observed behaviour: no SAS reference run confirms either, and the corpus has
-   no row exercising the conflict. Recorded here because the mapping is silent
-   if wrong. (Settled from `src/hazard/varterm.c`: `EVENT` and `ICENSOR` are
-   alternatives — a job may specify `ICENSOR` alone — so the translator accepts
-   that and rejects only a job with neither.)
+3. ~~**`LCENSOR` precedence against `EVENT`.**~~ **Resolved 2026-08-21** from
+   `inst/dev/FIXTURE-GAP-LIST.md`'s answered Q1 and the reference grammar:
+   `LCENSOR` is left-*truncation* (the counting-process entry time), not
+   left-censoring, and never competes with `EVENT` or `ICENSOR` for
+   `status` at all — it maps only to `time_lower`. `status = -1` is
+   therefore never produced by this translator, and there is no
+   `LCENSOR`/`ICENSOR` tie-break to resolve: `ICENSOR`'s `C3 > 0` and
+   `LCENSOR`'s entry time apply to disjoint outputs (`status` vs.
+   `time_lower`'s non-interval branch) and can both fire on the same row
+   without conflict. `EVENT` still outranks `ICENSOR` for `status` — a row
+   with `EVENT == 1` stays coded `1` even where `C3 > 0` — which remains a
+   conservative reading chosen for symmetry, not confirmed against a SAS
+   reference run. (`src/hazard/varterm.c`: `EVENT` and `ICENSOR` are
+   alternatives — a job may specify `ICENSOR` alone — so the translator
+   accepts that and rejects only a job with neither.) See §5.1.
 4. **`CONSERVE` + `ICENSOR` in SAS.** Does SAS conserve events when interval rows
    are present, or silently disable as R does?
 
