@@ -245,3 +245,202 @@
   list(call = as.call(c(head, args)), outhaz = outhaz,
        untranslated = untr, tokens_seen = seen, tokens_mapped = mapped)
 }
+
+#' Translate the DATA step that builds a HAZPRED prediction grid.
+#'
+#' Returns an unevaluated `data.frame()` call, or `NULL` when the step is not
+#' one of the two stereotyped forms this package can read. `NULL` means
+#' untranslated, never "no grid": a `predict()` call with no `newdata` is a
+#' hollow result -- right shape, empty inside -- so the caller
+#' (`.hzr_parse_hazpred()`) must record it in `untranslated`, not treat it as
+#' nothing to translate.
+#' @noRd
+.hzr_parse_grid <- function(txt, name) {
+  if (is.null(name) || !nzchar(name)) return(NULL)
+  p <- .idx(txt, paste0("DATA ", name, ";"))
+  if (p == 0L) return(NULL)
+
+  rest <- substring(txt, p + 1L)
+  ends <- c(.idx(rest, "DATA "), .idx(rest, "PROC "), .idx(rest, "%HAZ"))
+  ends <- ends[ends > 0L]
+  body <- if (length(ends)) substring(rest, 1L, min(ends)) else rest
+
+  time_var <- local({
+    m <- regmatches(body, regexec("([A-Z_][A-Z0-9_]*) *= *EXP\\(", body))[[1L]]
+    if (length(m) > 1L) m[[2L]] else NA_character_
+  })
+
+  # --- log-spaced grid: DO LN_TIME=-5 TO LN_MAX BY INC; t = EXP(LN_TIME) ----
+  if (grepl(" DO ", body) && grepl("LOG(", body, fixed = TRUE) &&
+      !is.na(time_var)) {
+    lo_txt <- local({
+      m <- regmatches(body,
+             regexec("DO [A-Z_][A-Z0-9_]* *= *(-?[0-9.]+) TO", body))[[1L]]
+      if (length(m) > 1L) m[[2L]] else NA_character_
+    })
+    hi_txt <- local({
+      m <- regmatches(body, regexec("MAX *= *([0-9.]+)", body))[[1L]]
+      if (length(m) > 1L) m[[2L]] else NA_character_
+    })
+    if (is.na(lo_txt) || is.na(hi_txt)) return(NULL)
+    lo <- suppressWarnings(as.numeric(lo_txt))
+    hi <- suppressWarnings(as.numeric(hi_txt))
+    if (is.na(lo) || is.na(hi)) return(NULL)
+    # SAS writes INC=(5+LN_MAX)/99.9, i.e. 100 points inclusive. Splice the
+    # matched text through str2lang(), not the numeric value: a negative
+    # bound such as -5 parses (like source code) to a unary-minus call, not
+    # a bare negative double, and only str2lang() reproduces that so the
+    # emitted call matches what quote()ing the equivalent source produces.
+    inner <- bquote(exp(seq(.(str2lang(lo_txt)), log(.(str2lang(hi_txt))),
+                             length.out = 100)))
+    cl <- as.call(list(quote(data.frame), inner))
+    names(cl) <- c("", time_var)
+    return(cl)
+  }
+
+  # --- explicit DO list: DO MONTHS=1,2,3,6,12,24 TO 180 BY 12; --------------
+  if (grepl(" DO ", body)) {
+    m <- regmatches(body,
+           regexec("DO ([A-Z_][A-Z0-9_]*) *= *([^;]+);", body))[[1L]]
+    if (length(m) < 3L) return(NULL)
+    var <- m[[2L]]
+    parts <- trimws(strsplit(m[[3L]], ",", fixed = TRUE)[[1L]])
+    elems <- list()
+    for (part in parts) {
+      rng <- regmatches(part,
+               regexec("^([0-9.]+) +TO +([0-9.]+)( +BY +([0-9.]+))?$",
+                       part))[[1L]]
+      if (length(rng) >= 3L) {
+        lo_txt <- rng[[2L]]
+        hi_txt <- rng[[3L]]
+        by_txt <- if (length(rng) >= 5L && nzchar(rng[[5L]])) rng[[5L]] else "1"
+        lo <- suppressWarnings(as.numeric(lo_txt))
+        hi <- suppressWarnings(as.numeric(hi_txt))
+        by <- suppressWarnings(as.numeric(by_txt))
+        # A range bound that failed to parse as numeric (rare, given the
+        # digit-only capture group above, but not impossible -- e.g. a
+        # malformed literal like "1.2.3"). Refuse the whole grid rather than
+        # coerce silently to NA.
+        if (is.na(lo) || is.na(hi) || is.na(by)) return(NULL)
+        elems[[length(elems) + 1L]] <- bquote(
+          seq(.(str2lang(lo_txt)), .(str2lang(hi_txt)), by = .(str2lang(by_txt)))
+        )
+      } else if (grepl("^[0-9.]+$", part)) {
+        val <- suppressWarnings(as.numeric(part))
+        if (is.na(val)) return(NULL)
+        elems[[length(elems) + 1L]] <- str2lang(part)
+      } else {
+        # An element we cannot read (a SAS expression such as 1*DTY). Refuse
+        # the whole grid rather than emit a partial one.
+        return(NULL)
+      }
+    }
+    inner <- as.call(c(quote(c), elems))
+    cl <- as.call(list(quote(data.frame), inner))
+    names(cl) <- c("", var)
+    return(cl)
+  }
+
+  # SET-derived or anything else: not translatable.
+  NULL
+}
+
+#' Parse a PROC HAZPRED block into predict() call(s).
+#'
+#' HAZPRED emits `_SURVIV`/`_CLLSURV`/`_CLUSURV` and
+#' `_HAZARD`/`_CLLHAZ`/`_CLUHAZ`, so it maps to `predict()` call(s) with
+#' `se.fit`. `conf.type` is deliberately NOT set: whether SAS's confidence
+#' limits are log-log or logit is unresolved (spec section 8, open question
+#' 2), and guessing would produce silently wrong bounds -- so this emits the
+#' package default instead.
+#'
+#' `txt` is the whole normalised source, because HAZPRED's real input is the
+#' `DATA=` prediction grid built by a preceding DATA step, not anything in
+#' the PROC block itself. A grid that cannot be translated (`.hzr_parse_grid()`
+#' returns `NULL`) is always recorded in `untranslated` here: a `predict()`
+#' with no `newdata` is a hollow result, not "no grid needed".
+#' @noRd
+.hzr_parse_hazpred <- function(block, txt) {
+  st <- strsplit(block$text, ";", fixed = TRUE)[[1L]]
+  untr <- .hzr_untranslated_frame()
+  seen <- 0L
+  mapped <- 0L
+  note <- function(kw, reason) {
+    untr <<- rbind(untr, .hzr_untranslated_frame(NA_integer_, kw, reason))
+  }
+
+  toks <- strsplit(trimws(st[[1L]]), " ", fixed = TRUE)[[1L]]
+  toks <- toks[nzchar(toks)]
+  data_name <- NULL
+  inhaz <- NULL
+  want_surv <- TRUE
+  want_haz <- TRUE
+  want_cl <- TRUE
+
+  for (tok in toks) {
+    eqp <- .idx(tok, "=")
+    key <- if (eqp > 0L) substring(tok, 1L, eqp - 1L) else tok
+    val <- if (eqp > 0L) substring(tok, eqp + 1L) else ""
+    token <- .hzr_sas_token(key, "HAZPRED", "HZPP")
+    if (identical(token, "PROC") || identical(token, "HAZPRED")) next
+    seen <- seen + 1L
+    if (is.na(token)) {
+      note(key, "unknown PROC HAZPRED option")
+      next
+    }
+    mapped <- mapped + 1L
+    switch(token,
+      DATA    = data_name <- val,
+      INHAZ   = inhaz <- val,
+      OUT     = NULL,
+      NOSURV  = want_surv <- FALSE,
+      NOHAZ   = want_haz <- FALSE,
+      NOCL    = want_cl <- FALSE,
+      CLIMITS = want_cl <- TRUE,
+      NOLOG = NULL, NONOTES = NULL,
+      {
+        mapped <- mapped - 1L
+        note(key, "no predict() equivalent")
+      }
+    )
+  }
+
+  for (i in seq_along(st)[-1L]) {
+    w <- strsplit(trimws(st[[i]]), " ", fixed = TRUE)[[1L]]
+    w <- w[nzchar(w)]
+    if (!length(w)) next
+    kw <- w[[1L]]
+    token <- .hzr_sas_token(kw, "HAZPRED", "STMT")
+    seen <- seen + 1L
+    if (is.na(token)) {
+      note(kw, "unknown HAZPRED statement")
+      next
+    }
+    mapped <- mapped + 1L
+    if (!(token %in% c("TIME", "ID"))) {
+      mapped <- mapped - 1L
+      note(kw, "SAS listing control; no R effect")
+    }
+  }
+
+  grid <- .hzr_parse_grid(txt, data_name)
+  if (is.null(grid) && !is.null(data_name)) {
+    note(paste0("DATA=", data_name),
+         "prediction grid DATA step is not one of the translatable forms")
+  }
+
+  mk <- function(type) {
+    args <- list(quote(fit))
+    if (!is.null(data_name)) args$newdata <- as.name(data_name)
+    args$type <- type
+    args$se.fit <- want_cl
+    as.call(c(quote(predict), args))
+  }
+
+  list(
+    call = if (want_surv) mk("survival") else mk("hazard"),
+    call_haz = if (want_surv && want_haz) mk("hazard") else NULL,
+    inhaz = inhaz, grid = grid, untranslated = untr,
+    tokens_seen = seen, tokens_mapped = mapped
+  )
+}
