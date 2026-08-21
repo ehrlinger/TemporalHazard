@@ -83,3 +83,48 @@ test_that("a HAZARD + HAZPRED job renders, predictions included", {
                                    collapse = " | "))
   expect_true("time" %in% names(got$env$PGRID))
 })
+
+test_that("the ICENSOR count reaches the fitted object as weights", {
+  skip_on_cran()
+  set.seed(5)
+  n <- 120
+  AVCS <- data.frame(INT_DEAD = stats::rexp(n, 0.2),
+                     DEAD = rep(c(1, 0, 0), length.out = n))
+  AVCS$C3FLAG <- ifelse(seq_len(n) %% 5 == 0, 3, 0)
+  AVCS$ICTIME <- ifelse(AVCS$C3FLAG > 0, AVCS$INT_DEAD * 0.5, NA)
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste(
+    "%HAZARD( PROC HAZARD DATA=AVCS CONDITION=14;",
+    "EVENT DEAD; TIME INT_DEAD; ICENSOR C3FLAG = ICTIME;",
+    "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
+  ), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  got <- render_sim(job, data = list(AVCS = AVCS))
+  expect_true(got$ok, info = paste(names(got$results), got$results,
+                                   collapse = " | "))
+  # The decisive check: a count of 3 must not arrive as a weight of 1 -- and
+  # a count of 0 on a non-interval row must not arrive as a weight of 0,
+  # which would delete that row from the likelihood.
+  status <- ifelse(AVCS$DEAD == 0 & AVCS$C3FLAG > 0, 2, AVCS$DEAD)
+  expect_equal(got$env$fit$data$weights, ifelse(status == 2, AVCS$C3FLAG, 1))
+  expect_true(any(got$env$fit$data$weights == 3))
+  expect_false(any(got$env$fit$data$weights == 0))
+})
+
+test_that("a job with no ICENSOR fits with unit weights, unchanged", {
+  skip_on_cran()
+  set.seed(6)
+  AVCS <- data.frame(INT_DEAD = stats::rexp(200, 0.2),
+                     DEAD = rep(c(1, 0), length.out = 200))
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste(
+    "%HAZARD( PROC HAZARD DATA=AVCS CONDITION=14;",
+    "EVENT DEAD; TIME INT_DEAD;",
+    "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
+  ), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  got <- render_sim(job, data = list(AVCS = AVCS))
+  expect_true(got$ok, info = paste(names(got$results), got$results,
+                                   collapse = " | "))
+  expect_null(got$env$fit$data$weights)
+})

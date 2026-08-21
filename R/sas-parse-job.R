@@ -36,6 +36,23 @@
 #' everywhere, overridden to `2` where `C3 > 0`. A job specifying neither is
 #' rejected with an error, mirroring HAZARD's own termination.
 #'
+#' Because `C3` is a count, it also carries a *weight*. `setlik.c` multiplies
+#' the whole log-likelihood contribution of an interval row by it
+#' (`c3w = c3 * weight`, then both `-(c1w + c2 + c3w) * (cumhaz - cumhst)` and
+#' `+= c3w * lct`), which is exactly what [hazard()]'s `weights` argument does
+#' per row. So `weights_expr` is emitted as
+#' `ifelse(<status> == 2, C3, 1)` whenever `ICENSOR` is present. Two details
+#' there are not negotiable. Passing the bare `C3` instead would give every
+#' event and right-censored row a weight of *zero* -- `C3` is 0 on those rows
+#' -- deleting them from the likelihood without a word; `readc2.c` sets
+#' `C2 = 1` on exactly those rows when no `RCENSOR` statement is given, so
+#' their weight is 1. And the gate is on `status`, not on `C3 > 0`, so that a
+#' row where `EVENT` and `C3` both fire keeps the event's weight, matching the
+#' status mapping directly below.
+#'
+#' A `WEIGHT` statement, if also present, multiplies that expression, since
+#' `c3w` is the product of the two.
+#'
 #' An event outranks interval censoring: a row that is an event is not
 #' interval-censored, so `ICENSOR` overrides only where `EVENT == 0`. Treating
 #' a malformed row where `EVENT` and `C3 > 0` both fire as an event is the
@@ -71,11 +88,15 @@
 #'   lower-bound time variable); `LCENSOR` and `RCENSOR` carry one. `EVENT`
 #'   may be absent if `ICENSOR` is present.
 #' @return `list(status_expr = <call>, status_name = <name|NULL>,
-#'   time_lower = <call|NULL>, untranslated = <data.frame>)`. `status_expr` is
+#'   time_lower = <call|NULL>, weights_expr = <call|NULL>,
+#'   untranslated = <data.frame>)`. `status_expr` is
 #'   a `bquote()`-built call, evaluable against an environment/list holding
-#'   the named SAS variables. `time_lower`, when non-`NULL`, is a
-#'   `bquote()`-built call; `status_name` is non-`NULL` only when `ICENSOR` is
-#'   present, since only then does anything need to gate on it.
+#'   the named SAS variables. `time_lower` and `weights_expr`, when
+#'   non-`NULL`, are `bquote()`-built calls; `status_name` is non-`NULL` only
+#'   when `ICENSOR` is present, since only then does anything need to gate on
+#'   it. `weights_expr` is likewise non-`NULL` only under `ICENSOR`, so a job
+#'   without one emits no `weights` argument at all and fits with the unit
+#'   weights it always did.
 #' @noRd
 .hzr_censor_spec <- function(statements) {
   has_event <- !is.null(statements$EVENT)
@@ -111,9 +132,20 @@
 
   status_name <- NULL
   time_lower <- NULL
+  weights_expr <- NULL
   if (has_icensor) {
     status_name <- as.name(".hzr_status")
     ctime <- as.name(statements$ICENSOR[[2L]])
+    # C3 is a count, and setlik.c multiplies the whole log-likelihood
+    # contribution by it -- c3w = c3 * weight, then both
+    # -(c1w + c2 + c3w) * (cumhaz - cumhst) and += c3w * lct. hazard()'s
+    # `weights` multiplies each row's contribution the same way, so the count
+    # belongs there; without it a row carrying 3 events is fitted as one
+    # observation (#154). Status-gated, and emphatically not the bare count:
+    # C3 is 0 on every non-interval row, and a weight of 0 deletes a row from
+    # the likelihood outright. readc2.c sets C2 = 1 on exactly those rows
+    # when no RCENSOR statement is given, so their weight is 1.
+    weights_expr <- bquote(ifelse(.(status_name) == 2, .(c3), 1))
     # Status-gated, not unconditional (see roxygen): interval rows get the
     # interval's lower bound (CTIME); every other row falls back to
     # hazard()'s own entry-time default (0), or, if LCENSOR is also present,
@@ -133,6 +165,7 @@
     status_expr = expr,
     status_name = status_name,
     time_lower = time_lower,
+    weights_expr = weights_expr,
     untranslated = .hzr_untranslated_frame()
   )
 }
@@ -322,7 +355,19 @@
     args$phases <- parms$phases
   }
   args$theta <- parms$theta
-  if (!is.null(statements$WEIGHT)) args$weights <- as.name(statements$WEIGHT)
+  # Two independent sources of a row weight, and they multiply, exactly as
+  # setlik.c's c3w = c3 * weight does: the SAS WEIGHT statement's variable,
+  # and ICENSOR's event count on interval rows (see .hzr_censor_spec()).
+  wt_name <- if (!is.null(statements$WEIGHT)) as.name(statements$WEIGHT)
+  if (!is.null(cens$weights_expr)) {
+    args$weights <- if (is.null(wt_name)) {
+      cens$weights_expr
+    } else {
+      bquote(.(cens$weights_expr) * .(wt_name))
+    }
+  } else if (!is.null(wt_name)) {
+    args$weights <- wt_name
+  }
 
   # Canonical control order, so the emitted call does not depend on the order
   # the options happened to appear in the SAS text.

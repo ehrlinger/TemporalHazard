@@ -93,3 +93,82 @@ test_that("LCENSOR and ICENSOR together: time_lower picks CTIME on interval rows
   env <- list(.hzr_status = c(2, 0, 1), CTIME = c(5, 5, 5), STARTTME = c(1, 1, 1))
   expect_equal(eval(got$time_lower, env), c(5, 1, 1))
 })
+
+test_that("ICENSOR's event count is carried as a status-gated weight", {
+  # setlik.c: C3 is a COUNT of interval-censored individuals at TIME, and it
+  # multiplies the log-likelihood contribution in BOTH terms
+  # (c3w = c3 * weight; llike = -(c1w + c2 + c3w) * (cumhaz - cumhst);
+  # if (c3 > ZERO) llike += c3w * lct). Discarding the magnitude fits a
+  # 3-event row as a single observation (#154).
+  st <- list(EVENT = "DEAD", TIME = "T", ICENSOR = c("C3", "CTIME"))
+  got <- .hzr_censor_spec(st)
+  # Gated on status, never the bare count. C3 is 0 on every non-interval row,
+  # and hazard() multiplies each row's log-likelihood contribution by its
+  # weight, so a bare C3 would delete every event and right-censored row from
+  # the fit outright. readc2.c sets C2 = 1 on exactly those rows when no
+  # RCENSOR statement is given, so their weight is 1.
+  env <- list(.hzr_status = c(1, 2, 0), C3 = c(0, 3, 0))
+  expect_equal(eval(got$weights_expr, env), c(1, 3, 1))
+  # An event outranks interval censoring, so a row that is both carries the
+  # event's weight of 1, not C3.
+  expect_equal(eval(got$weights_expr, list(.hzr_status = 1, C3 = 3)), 1)
+})
+
+test_that("a job with no ICENSOR emits no weights expression", {
+  expect_null(.hzr_censor_spec(list(EVENT = "DEAD", TIME = "T"))$weights_expr)
+  expect_null(
+    .hzr_censor_spec(list(EVENT = "DEAD", TIME = "T",
+                          LCENSOR = "STARTTME"))$weights_expr
+  )
+  expect_null(
+    .hzr_censor_spec(list(EVENT = "DEAD", TIME = "T",
+                          RCENSOR = "RFLAG"))$weights_expr
+  )
+})
+
+test_that("the emitted call carries ICENSOR's count as weights", {
+  txt <- .hzr_sas_normalise(paste(
+    "%HAZARD( PROC HAZARD DATA=A CONDITION=14;",
+    "EVENT DEAD; TIME T; ICENSOR C3 = CT;",
+    "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
+  ))
+  got <- .hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]])
+  expect_equal(
+    eval(got$call[["weights"]], list(.hzr_status = c(2, 0), C3 = c(3, 0))),
+    c(3, 1)
+  )
+})
+
+test_that("ICENSOR and WEIGHT together multiply, as c3w = c3 * weight does", {
+  txt <- .hzr_sas_normalise(paste(
+    "%HAZARD( PROC HAZARD DATA=A CONDITION=14;",
+    "EVENT DEAD; TIME T; ICENSOR C3 = CT; WEIGHT WT;",
+    "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
+  ))
+  got <- .hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]])
+  expect_equal(
+    eval(got$call[["weights"]],
+         list(.hzr_status = c(2, 0), C3 = c(3, 0), WT = c(2, 2))),
+    c(6, 2)
+  )
+})
+
+test_that("a job with no ICENSOR emits no weights argument at all", {
+  # The non-ICENSOR path must be untouched by #154: no weights argument, so
+  # hazard() uses unit weights exactly as it did before.
+  txt <- .hzr_sas_normalise(paste(
+    "%HAZARD( PROC HAZARD DATA=A CONDITION=14;",
+    "EVENT DEAD; TIME T;",
+    "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
+  ))
+  got <- .hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]])
+  expect_false("weights" %in% names(as.list(got$call)))
+  # A WEIGHT statement without ICENSOR still emits the bare weight variable.
+  txt2 <- .hzr_sas_normalise(paste(
+    "%HAZARD( PROC HAZARD DATA=A CONDITION=14;",
+    "EVENT DEAD; TIME T; WEIGHT WT;",
+    "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
+  ))
+  got2 <- .hzr_parse_hazard(.hzr_sas_blocks(txt2)[[1L]])
+  expect_equal(got2$call[["weights"]], as.name("WT"))
+})
