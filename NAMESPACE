@@ -3,6 +3,7 @@
 S3method(as.data.frame,hzr_stepwise)
 S3method(coef,hazard)
 S3method(predict,hazard)
+S3method(predict,hzr_outhaz)
 S3method(print,hazard)
 S3method(print,hzr_bootstrap)
 S3method(print,hzr_calibrate)
