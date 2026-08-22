@@ -204,7 +204,9 @@
   )
 }
 
-#' Parse a PROC HAZARD block into a hazard() or hzr_stepwise() call.
+#' Parse a PROC HAZARD block into a hazard() call, or a stop() call when the
+#' block requests something this translator refuses (see .hzr_censor_spec()'s
+#' LCENSOR + ICENSOR refusal and the SELECTION stepwise refusal below).
 #'
 #' Every keyword is resolved through .hzr_sas_token() in its lexer context.
 #' A keyword that does not resolve is recorded in `untranslated`, never
@@ -433,11 +435,38 @@
   if (!is.null(sel_ops)) {
     sel <- .hzr_selection_spec(sel_ops)
     untr <- rbind(untr, sel$untranslated)
+    # A SELECTION statement that requests stepwise cannot be translated into
+    # hzr_stepwise(): .hzr_refit_with_scope() (R/stepwise-refit.R) requires a
+    # formula-interface base fit, and this translator always emits the
+    # vector interface. Every candidate refit therefore errors, the forward
+    # step downgrades those errors to warnings, and the run silently returns
+    # zero steps -- indistinguishable from "nothing met slentry". That is
+    # exactly the shipped-defect shape AGENTS.md warns about, so refuse
+    # loudly instead, mirroring .hzr_censor_spec()'s LCENSOR + ICENSOR
+    # refusal above: record an untranslated row and emit a stop() chunk in
+    # place of the fit, rather than a hazard()/hzr_stepwise() call.
     if (isTRUE(sel$stepwise)) {
-      head <- quote(hzr_stepwise)
-      args$direction <- sel$direction
-      if (!is.null(sel$slentry)) args$slentry <- sel$slentry
-      if (!is.null(sel$slstay)) args$slstay <- sel$slstay
+      untr <- rbind(untr, .hzr_untranslated_frame(
+        NA_integer_, "SELECTION",
+        paste("stepwise selection is not translated: hzr_stepwise()'s refit",
+              "path needs a formula-interface base fit, and this translator",
+              "emits the vector interface, so every candidate refit would",
+              "error and the screen would silently report zero steps. Run",
+              "this job's selection by hand (#160).")
+      ))
+      return(list(
+        call = quote(stop(
+          "This job's SELECTION statement requests a stepwise screen, which ",
+          "is not translated: the stepwise-selection refit path needs a ",
+          "formula-interface base fit, and this translator emits the ",
+          "vector interface, so every candidate refit would error and the ",
+          "screen would silently report zero steps -- indistinguishable ",
+          "from \"nothing met slentry\". Run this job's selection by hand ",
+          "(#160)."
+        )),
+        status_call = NULL, outhaz = outhaz, untranslated = untr,
+        tokens_seen = seen, tokens_mapped = mapped
+      ))
     }
   }
 
