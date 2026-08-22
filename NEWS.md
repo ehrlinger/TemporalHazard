@@ -12,10 +12,12 @@
 
   Because a column winning can silently redirect a wrapper that forwards its
   own argument by name, `hazard()` now **warns**, once per call, when a symbol
-  is both a column of `data` and bound in the calling frame, naming every such
-  symbol and the argument it appeared in. `data` must now be a data frame or a
-  list: `hazard(data = <matrix>, ...)` errors, where a matrix was previously
-  accepted and silently ignored along with everything else in `data`.
+  is both a column of `data` and visible from the calling frame -- that frame
+  or a lexical parent of it, up to and including the global environment --
+  naming every such symbol and the argument it appeared in. `data` must now be
+  a data frame or a list: `hazard(data = <matrix>, ...)` errors, where a matrix
+  was previously accepted and silently ignored along with everything else in
+  `data`.
 
 * `hzr_translate_sas()` translates a SAS `PROC HAZARD` / `PROC HAZPRED` job
   into a Quarto document of equivalent R calls. It parses the SAS statements,
