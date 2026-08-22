@@ -403,14 +403,14 @@ test_that("Gradient is near zero at converged fit", {
     const = hzr_phase("constant")
   )
 
-  fit <- tryCatch(
-    suppressWarnings(hazard(time = time, status = status, dist = "multiphase",
-           phases = phases, fit = TRUE,
-           control = list(n_starts = 3, maxit = 500))),
-    error = function(e) NULL
-  )
-  skip_if(is.null(fit), "Fit did not converge")
-  skip_if(!fit$fit$converged, "Fit did not converge")
+  # Not guarded with skip_if().  This fit used to fail about a quarter of the
+  # time -- an error thrown out of the objective and relabelled a convergence
+  # failure -- and the guard reported every one of those as a green skip.  It
+  # converges now, so assert it: a regression must fail here, not vanish.
+  fit <- suppressWarnings(hazard(time = time, status = status,
+    dist = "multiphase", phases = phases, fit = TRUE,
+    control = list(n_starts = 3, maxit = 500)))
+  expect_true(fit$fit$converged)
 
   covariate_counts <- c(early = 0L, const = 0L)
   x_list <- list(early = NULL, const = NULL)

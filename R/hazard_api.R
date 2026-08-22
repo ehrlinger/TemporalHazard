@@ -349,7 +349,10 @@ NULL
 #'   \code{weights}, etc.),
 #'   \code{fit} (optimisation results: \code{theta}, \code{objective},
 #'   \code{converged}, \code{se}, \code{vcov}, \code{counts}, \code{message};
-#'   all \code{NULL} when \code{fit = FALSE}),
+#'   all \code{NULL} when \code{fit = FALSE}; multiphase fits add
+#'   \code{starts}, one row per optimisation start with its \code{status}
+#'   (\code{"ok"}, \code{"error"} or \code{"nonfinite"}), \code{objective},
+#'   whether it was the \code{best}, and the \code{message} of any error),
 #'   and \code{engine} (implementation tag, \code{"native-r-m2"}).
 #' @export
 hazard <- function(formula = NULL,
@@ -668,6 +671,7 @@ hazard <- function(formula = NULL,
     fit_state$covariate_counts <- optim_result$covariate_counts
     fit_state$x_list <- optim_result$x_list
     fit_state$fixed_mask <- optim_result$fixed_mask
+    fit_state$starts <- optim_result$starts
 
   } else if (fit && !is.null(theta)) {
     optim_fn <- switch(

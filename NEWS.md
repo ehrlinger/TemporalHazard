@@ -203,11 +203,12 @@
   stream, so a later `sample()` or `rnorm()` depended on whether a model had
   been fitted first.
 
-  Where the assembled starting values do not converge on their own, the draw
-  decided whether there was a fit at all: the fit succeeds only from a
-  perturbed start, and about a quarter of draws stop with `Multiphase
-  optimization failed to converge on any start`. The same call could raise that
-  error on one run and not the next.
+  Where the assembled starting values did not converge on their own, the draw
+  decided whether there was a fit at all: the fit succeeded only from a
+  perturbed start, and about a quarter of draws stopped outright. The same call
+  could raise that error on one run and not the next. The reason those starting
+  values failed is fixed below, so the draw no longer decides that; it decides
+  only which optimum is reached.
 
   The offsets now come from an internally seeded stream, and the ambient
   `.Random.seed` is restored afterwards. The same data and the same control
@@ -221,6 +222,38 @@
   still distinct. Its numbers do shift, because the refits no longer advance
   the stream between resamples, and a run with `seed=` is now reproducible end
   to end.
+
+* A multiphase optimization start no longer dies on an infeasible shape. The
+  multiphase cumulative hazard short-circuits to an infinite hazard when a
+  phase's `m` and `nu` are both negative, so the optimizer sees a penalty and
+  backs out of the region. Asked for a per-phase decomposition it
+  short-circuited in the wrong shape -- a bare vector where the caller expects
+  a named list -- and the Conservation-of-Events adjustment, which runs inside
+  the objective on every evaluation, raised `$ operator is invalid for atomic
+  vectors`. BFGS steps into that region routinely, so the error came back out
+  of `optim()` and the multi-start loop threw the whole start away.
+
+  A discarded start was reported as a failure to converge, so a crash read as a
+  numerical problem. On the two-phase fixture in `test-multiphase-gradient.R`
+  it cost the fit its assembled starting values outright: `n_starts = 1`
+  stopped with an error, the fit survived only on a perturbed start, and 12 of
+  50 `start_seed` values failed. All 50 converge now, `n_starts = 1` converges
+  on its own, and across 50 seeds every one of the 250 starts is usable.
+
+* A multiphase fit now says which of its starts survived. `fit$fit$starts`
+  gives one row per optimization start: its `status` (`"ok"`, `"error"` or
+  `"nonfinite"`), its `objective`, whether it was the `best` one and so the
+  fit you are looking at, and the `message` of any error it raised. Worth a
+  look when a fit is in doubt -- on the fixture above the assembled start
+  reaches -159.15 and a perturbed start -158.30, and start 1 wins about one
+  time in ten, which is the multi-start doing real work rather than papering
+  over a bad start.
+
+  A start that errors now also warns rather than being absorbed, and when every
+  start fails the error names what was raised instead of calling it a
+  convergence failure. An error thrown inside the objective used to be
+  indistinguishable from a start that merely optimized badly, which is how the
+  defect above stayed hidden.
 
 
 # TemporalHazard 1.2.1
