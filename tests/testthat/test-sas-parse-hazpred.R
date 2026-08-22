@@ -18,10 +18,12 @@ test_that("a log-spaced DO grid becomes an exp(seq(...)) call", {
   got <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)
   # The span is log(hi) - lo, not the 5 + log(hi) that only coincides with it
   # because this job starts at -5, and the /99.9 denominator is read from the
-  # job's own INC=, not assumed.
+  # job's own INC=, not assumed. The DO's `, LN_MAX` trailing element is SAS's
+  # own extra list value -- `a TO b BY c, d` runs the loop and then takes
+  # `d` -- so the emitted grid appends the exact bound, 180, after the loop.
   expect_equal(got$grid,
                quote(data.frame(
-                 time = exp(-5 + seq(0, 99) * ((log(180) - -5) / 99.9))
+                 time = c(exp(-5 + seq(0, 99) * ((log(180) - -5) / 99.9)), 180)
                )))
 })
 
@@ -147,19 +149,28 @@ test_that("conf.type is omitted when NOCL suppresses confidence limits", {
 })
 
 test_that("the log grid matches SAS's INC = (5 + LN_MAX)/99.9 step", {
+  # hp.death.AVC.sas's own DO reads `DO LN_TIME=-5 TO LN_MAX BY INC,LN_MAX;`
+  # -- the trailing `, LN_MAX` is SAS's own extra DO-list value, not
+  # decoration: `a TO b BY c, d` runs the loop and then takes `d`. An
+  # earlier version of this test omitted the trailing element and asserted
+  # 100 points ending at 164.207 -- one point short of SAS's actual 101,
+  # because it wasn't exercising the trailing element at all. Do not "fix"
+  # this back to 100 points; that was the bug.
   txt <- .hzr_sas_normalise(paste(
     "DATA PGRID; MAX = 180; LN_MAX = LOG(MAX);",
     "INC = (5 + LN_MAX)/99.9;",
-    "DO LN_TIME = -5 TO LN_MAX BY INC; MONTHS = EXP(LN_TIME);",
+    "DO LN_TIME = -5 TO LN_MAX BY INC, LN_MAX; MONTHS = EXP(LN_TIME);",
     "OUTPUT; END; RUN;"
   ))
   cl <- .hzr_parse_grid(txt, "PGRID")
   grid <- eval(cl)
-  expect_equal(nrow(grid), 100L)
-  # SAS's last point is exp(-5 + 99*(log(180)+5)/99.9) = 164.2, not 180.
-  expect_equal(max(grid$time), exp(-5 + 99 * (log(180) + 5) / 99.9),
+  expect_equal(nrow(grid), 101L)
+  # The 100th (last loop) point is exp(-5 + 99*(log(180)+5)/99.9) = 164.207,
+  # still correct -- it is simply no longer the last row.
+  expect_equal(grid$time[100L], exp(-5 + 99 * (log(180) + 5) / 99.9),
                tolerance = 1e-8)
-  expect_false(isTRUE(all.equal(max(grid$time), 180)))
+  # The 101st (trailing DO-list) point is the job's own MAX, exactly.
+  expect_equal(grid$time[101L], 180)
 })
 
 test_that("a directly-assigned log bound is not mistaken for MAX", {
@@ -187,7 +198,10 @@ test_that("a directly-assigned log bound is not mistaken for MAX", {
 test_that("the log grid reads its step denominator from INC=, not /99.9", {
   # hp.dthip.PAIVS.time.sas and hmdeadp.sas both use /999.9. Read as /99.9
   # they produced 100 points on a step ten times too large -- every time
-  # wrong, with `untranslated` empty and coverage reported as full.
+  # wrong, with `untranslated` empty and coverage reported as full. Both
+  # jobs' DO also carries a `, LN_MAX` trailing element (SAS's own DO-list
+  # extra value), which adds one more point beyond the loop: /999.9 lands
+  # 1000 loop points + 1 trailing = 1001 rows.
   txt <- .hzr_sas_normalise(paste(
     "DATA PGRID; MAX = 84; LN_MAX = LOG(MAX);",
     "INC = (5 + LN_MAX)/999.9;",
@@ -195,20 +209,29 @@ test_that("the log grid reads its step denominator from INC=, not /99.9", {
     "OUTPUT; END; RUN;"
   ))
   grid <- eval(.hzr_parse_grid(txt, "PGRID"))
-  expect_equal(nrow(grid), 1000L)
-  expect_equal(max(grid$time), exp(-5 + 999 * (log(84) + 5) / 999.9),
+  expect_equal(nrow(grid), 1001L)
+  # The trailing point is the job's own MAX, exactly -- same value regardless
+  # of the step, so it is the *loop's* last point (row 1000, not 1001) that
+  # has to reflect the /999.9 step.
+  expect_equal(grid$time[1000L], exp(-5 + 999 * (log(84) + 5) / 999.9),
                tolerance = 1e-8)
+  expect_equal(grid$time[1001L], 84)
 
-  # And the same job read at /99.9 is a different grid: if these agreed, the
-  # denominator would not be doing anything.
+  # And the same job read at /99.9 is a different grid: if the loop's last
+  # points agreed, the denominator would not be doing anything. The trailing
+  # point is unaffected by the step -- both still land on 84 -- so the
+  # comparison has to be on the loop's own last point, not on max().
   txt99 <- sub("/999.9", "/99.9", txt, fixed = TRUE)
   grid99 <- eval(.hzr_parse_grid(txt99, "PGRID"))
-  expect_equal(nrow(grid99), 100L)
-  expect_false(isTRUE(all.equal(max(grid99$time), max(grid$time))))
+  expect_equal(nrow(grid99), 101L)
+  expect_equal(grid99$time[101L], 84)
+  expect_false(isTRUE(all.equal(grid99$time[100L], grid$time[1000L])))
 })
 
-test_that("a /49.9 step gives the 50 points SAS's DO loop lands", {
+test_that("a /49.9 step gives the 50 loop points SAS's DO loop lands, plus its trailing point", {
   # hs.dthar.TGA.setup.sas's form, with its bound named MAX rather than MAX0.
+  # Its DO also carries the corpus's `, LN_MAX` trailing element, so the
+  # emitted grid is 50 loop points + 1 trailing point = 51 rows.
   txt <- .hzr_sas_normalise(paste(
     "DATA PGRID; MAX = 96; LN_MAX = LOG(MAX);",
     "INC = (5 + LN_MAX)/49.9;",
@@ -216,9 +239,12 @@ test_that("a /49.9 step gives the 50 points SAS's DO loop lands", {
     "OUTPUT; END; RUN;"
   ))
   grid <- eval(.hzr_parse_grid(txt, "PGRID"))
-  expect_equal(nrow(grid), 50L)
-  expect_equal(max(grid$time), exp(-5 + 49 * (log(96) + 5) / 49.9),
+  expect_equal(nrow(grid), 51L)
+  # The 50th (last loop) point reflects the /49.9 step; the 51st (trailing
+  # DO-list) point is the job's own MAX, exactly.
+  expect_equal(grid$time[50L], exp(-5 + 49 * (log(96) + 5) / 49.9),
                tolerance = 1e-8)
+  expect_equal(grid$time[51L], 96)
 })
 
 test_that("a log grid starting somewhere other than -5 uses its own span", {

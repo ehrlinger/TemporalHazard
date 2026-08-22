@@ -711,16 +711,36 @@
   # --- log-spaced grid: DO LN_TIME=-5 TO LN_MAX BY INC; t = EXP(LN_TIME) ----
   if (grepl(" DO ", body) && grepl("LOG(", body, fixed = TRUE) &&
       !is.na(time_var)) {
-    do_m <- regmatches(body, regexec(
-      paste0("DO [A-Z_][A-Z0-9_]* *= *(-?[0-9.]+) TO ",
-             "([A-Z_][A-Z0-9_]*) BY ([A-Z_][A-Z0-9_]*)"),
-      body))[[1L]]
+    do_at <- regexpr("DO [A-Z_][A-Z0-9_]* *= *[^;]+;", body)
+    if (do_at < 0L) return(NULL)
+    do_txt <- regmatches(body, do_at)
+    pre <- substring(body, 1L, as.integer(do_at) - 1L)
+    # Every corpus DO of this form writes an explicit trailing element after
+    # the BY term (`BY INC,LN_MAX`, `BY INC0, LN_MAX0`, `BY INC, MAX`): SAS's
+    # `DO a TO b BY c, d` list runs the loop and then takes the extra value
+    # `d`, so the emitted grid is one point short of SAS's without it. The
+    # trailing group is captured separately so a DO with none (no comma) is
+    # told apart from one whose trailing element this cannot resolve.
+    do_m <- regmatches(do_txt, regexec(
+      paste0("^DO [A-Z_][A-Z0-9_]* *= *(-?[0-9.]+) TO ",
+             "([A-Z_][A-Z0-9_]*) BY ([A-Z_][A-Z0-9_]*)",
+             "( *, *([A-Za-z0-9_.]+))? *;$"),
+      do_txt))[[1L]]
     # No `BY` at all means a SAS step of 1, which is not this stereotyped
     # form; refuse rather than reuse the step of the form it is not.
     if (length(do_m) < 4L) return(NULL)
     lo_txt <- do_m[[2L]]
     bound_var <- do_m[[3L]]
     inc_var <- do_m[[4L]]
+    trailing_txt <- if (length(do_m) >= 6L) trimws(do_m[[6L]]) else ""
+    # A trailing element is only resolved when it is literally the DO's own
+    # `TO` bound (as in every corpus job) -- SAS then evaluates it to exactly
+    # the loop's `hi`. Anything else cannot be resolved without guessing, so
+    # refuse the whole grid rather than silently drop or misplace the point.
+    if (nzchar(trailing_txt) && !identical(trailing_txt, bound_var)) {
+      return(NULL)
+    }
+    has_trailing <- nzchar(trailing_txt)
     hi_txt <- local({
       # Anchor on a non-word character before MAX so LN_MAX=5.2 is not read
       # as MAX=5.2 -- that produced a grid ending at t = 5.2 instead of 181,
@@ -734,8 +754,6 @@
     if (is.na(lo) || is.na(hi) || hi <= 0) return(NULL)
     span <- log(hi) - lo
     if (!is.finite(span) || span <= 0) return(NULL)
-    do_at <- regexpr("DO [A-Z_][A-Z0-9_]* *= *[^;]+;", body)
-    pre <- if (do_at > 0L) substring(body, 1L, as.integer(do_at) - 1L) else ""
     # The step is the job's own INC=, never an assumed one. Three
     # denominators appear across the corpus (/49.9, /99.9, /999.9), and
     # hardcoding /99.9 gave the /999.9 jobs a step ten times too large --
@@ -754,11 +772,15 @@
     # so the emitted call matches what quote()ing the equivalent source
     # produces.
     lo_lang <- str2lang(lo_txt)
-    inner <- bquote(
+    loop <- bquote(
       exp(.(lo_lang) +
             seq(0, .(n - 1)) *
               ((log(.(str2lang(hi_txt))) - .(lo_lang)) / .(denom)))
     )
+    # SAS's DO list `a TO b BY c, d` runs the loop and then takes the extra
+    # value `d`; that final value is the loop's own `hi` in this form, exact
+    # (EXP(LN_MAX) == MAX), not another step of the loop.
+    inner <- if (has_trailing) bquote(c(.(loop), .(str2lang(hi_txt)))) else loop
     cl <- as.call(list(quote(data.frame), inner))
     # predict.hazard() requires a column literally named `time`
     # (R/hazard_api.R:1006). Naming the grid column after the SAS DO variable

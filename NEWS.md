@@ -64,6 +64,14 @@
   loop's own `log(hi) - lo`, which coincides with `5 + log(hi)` only because
   every corpus job starts at -5, and an `INC=` in a form the parser cannot
   read is refused with an `UNTRANSLATED` row rather than stepped by a guess.
+  Every log grid in the public corpus also writes its `DO` statement with an
+  explicit trailing element (`DO lo TO hi BY INC, hi`), which SAS's `DO` list
+  syntax evaluates as the loop *plus* one final point at exactly `hi` -- the
+  translator emitted only the loop, so every translated grid stopped short
+  of the time the job actually asked for (about 8% short for a `/99.9`
+  step). The trailing element is now read from the job's own `DO` statement
+  and emitted as the grid's last point; a trailing element this cannot
+  resolve to the loop's own bound is refused with an `UNTRANSLATED` row.
   An `ICENSOR` event count now reaches the fit as `weights` instead of being
   discarded (#154).
 
