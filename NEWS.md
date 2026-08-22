@@ -95,10 +95,23 @@
   Four censored individuals were therefore fitted as one observation. The
   censored branch of `weights` is now that variable, still unmultiplied by
   `WEIGHT`, and the both-fire guard now covers `EVENT` + `RCENSOR` and
-  `ICENSOR` + `RCENSOR` as well, since `readobs.c` drops a row only when
-  both counts of a pair are zero. Jobs whose `RCENSOR` variable is a `0/1`
-  flag -- which is every such job in the public corpus -- fit exactly as
-  before.
+  `ICENSOR` + `RCENSOR` as well: `readobs.c` deletes an all-zero row only
+  when `RCENSOR` is named *and* exactly one of the other two is, so a row
+  with two counts positive always survives to be summed.
+
+  A `0/1` `RCENSOR` flag that is exactly `1 - EVENT` -- which is what both
+  corpus jobs carry, and what the statement is usually used for -- fits
+  exactly as before. A `0/1` flag that is **not** its complement does not,
+  and both ways it can differ are deliberate: a row with the event and the
+  censoring flag both set now stops the document instead of being fitted as
+  an event alone, and a row with neither set now carries weight `0` instead
+  of a fabricated weight of `1`, matching the row SAS would have deleted.
+  An `RCENSOR` column that is negative or missing likewise stops the fit at
+  `hazard()`'s weight check rather than being silently dropped.
+
+  A job with an `RCENSOR` statement now emits an extra `status` chunk ahead
+  of its fit, where the guard lives; the emitted document format remains
+  experimental.
 
   Loading a fit from an external `INHAZ=` dataset returns a classed
   `hzr_outhaz` object with a `predict()` method (#151). That method takes

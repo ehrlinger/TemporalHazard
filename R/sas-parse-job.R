@@ -106,13 +106,20 @@
 #' derived `1` agree on every row. That is why it went unseen, not evidence
 #' that it does not bite.
 #'
-#' Two edge cases follow from reading `C2` verbatim, and neither is silent.
-#' `readobs.c` deletes an all-zero row (`ic10 && ic20`, or `ic30 && ic20`);
-#' this translator has no way to drop a row, so such a row arrives with
-#' weight `0` -- no contribution to the likelihood, which is what deletion
-#' means for the fit, though it still counts toward `n`. A *negative* `C2`
-#' SAS also deletes (`c2del`); here it reaches [hazard()]'s non-negative
-#' check and stops the fit outright rather than vanishing from it.
+#' Three edge cases follow from reading `C2` verbatim, and none is silent.
+#' `readobs.c`'s all-zero deletion is narrower than it first looks: both of
+#' its rules are guarded by a blank-name test, `ic10 && ic20` only when
+#' `c3name` is blank and `ic30 && ic20` only when `c1name` is blank. So a row
+#' with every count zero is deleted for `EVENT` + `RCENSOR` and for `ICENSOR`
+#' + `RCENSOR`, and *kept* -- contributing `c1c2c3 = 0` -- when all three are
+#' named. There is no such rule at all for `EVENT` + `ICENSOR`, which is
+#' exactly the pairing with no `c2name`. This translator has no way to drop a
+#' row, so an all-zero row arrives with weight `0`: no contribution to the
+#' likelihood, which is what deletion means for the fit and what the
+#' all-three case does anyway, though the row still counts toward `n`.
+#' A *negative* `C2` SAS deletes (`c2del`) and a *missing* one it deletes too
+#' (`mc2del`); both reach [hazard()]'s "non-negative and finite" check and
+#' stop the fit outright rather than vanishing from it.
 #'
 #' **A row where two named counts both fire is refused at fit time.** With
 #' `RCENSOR` present this is no longer only the `EVENT` + `ICENSOR` pair:
@@ -496,12 +503,14 @@
     ))
   }
 
-  # ICENSOR jobs get the status expression hoisted into its own chunk, named
-  # .hzr_status so it cannot collide with a SAS variable, so that time_lower
-  # can gate on it -- see .hzr_censor_spec() roxygen. LCENSOR-only jobs need
-  # no gating (LCENSOR's entry time applies to every row unconditionally), so
-  # status stays unhoisted there. time_upper is never emitted: the ICENSOR
-  # interval's upper bound is TIME, and hazard()'s time_upper already
+  # The status expression is hoisted into its own chunk, named .hzr_status so
+  # it cannot collide with a SAS variable, for two reasons: an ICENSOR job's
+  # time_lower has to gate on it, and a job that named more than one count
+  # carries a both-fire guard that must run, and be seen to run, ahead of the
+  # fit. A job with neither -- a plain EVENT job, or an LCENSOR-only one,
+  # whose entry time applies to every row unconditionally -- leaves status
+  # inline. See .hzr_censor_spec() roxygen. time_upper is never emitted: the
+  # ICENSOR interval's upper bound is TIME, and hazard()'s time_upper already
   # defaults to TIME when left NULL (see .hzr_censor_spec() roxygen).
   status_call <- NULL
   args <- list()
@@ -556,11 +565,12 @@
     args$phases <- parms$phases
   }
   args$theta <- parms$theta
-  # One expression, built in .hzr_censor_spec() from all three counts at
-  # once: EVENT, ICENSOR's C3 and the WEIGHT variable. It cannot be composed
-  # by multiplying a WEIGHT variable onto a count-only expression, because
-  # setlik.c's c2 term -- the right-censored row -- enters the sum unweighted
-  # (#158).
+  # One expression, built in .hzr_censor_spec() from every count the job
+  # named -- EVENT's C1, ICENSOR's C3, RCENSOR's C2 -- together with the
+  # WEIGHT variable, which is not a count but multiplies two of the three.
+  # It cannot be composed by multiplying a WEIGHT variable onto a count-only
+  # expression, because setlik.c's c2 term -- the right-censored row --
+  # enters the sum unweighted (#158, #162).
   if (!is.null(cens$weights_expr)) args$weights <- cens$weights_expr
 
   # Canonical control order, so the emitted call does not depend on the order

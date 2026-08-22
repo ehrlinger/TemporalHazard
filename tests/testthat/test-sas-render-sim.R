@@ -367,7 +367,13 @@ test_that("a data column named .hzr_status cannot change the fitted status", {
   n <- 120
   AVCS <- data.frame(INT_DEAD = stats::rexp(n, 0.2),
                      DEAD = rep(c(1, 0, 0), length.out = n))
-  AVCS$C3FLAG <- as.numeric(seq_len(n) %% 5 == 0)
+  # Conditioned on DEAD, as every neighbouring fixture is: a row where the
+  # EVENT and ICENSOR counts BOTH fire is two contributions at once, which
+  # the status chunk refuses at fit time (#157). Unconditioned, every fifth
+  # row collided and the refusal fired before any of the assertions below
+  # could reach a fit -- this test would then be measuring the guard, not
+  # the column-masking it exists for.
+  AVCS$C3FLAG <- as.numeric(seq_len(n) %% 5 == 0 & AVCS$DEAD == 0)
   AVCS$ICTIME <- ifelse(AVCS$C3FLAG > 0, AVCS$INT_DEAD * 0.5, NA)
   # The hostile column: every row an exact event, which is a different
   # censoring structure from the one the job specifies. `.hzr_status` is

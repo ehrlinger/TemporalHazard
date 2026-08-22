@@ -376,8 +376,12 @@ test_that("a row that is both an event and right-censored stops, rather than pic
   expect_match(err, "both non-zero")
   # The message must name the two weights the split-out rows need, or the
   # remedy it prescribes cannot be carried out.
-  expect_match(err, "DEAD \\* WT")
-  expect_match(err, "NCENS")
+  expect_match(err, "of weight DEAD \\* WT")
+  # "NCENS" alone also matches "NCENS * WT", so it cannot catch c2 being
+  # weighted here -- #158 re-introduced inside the remedy this very message
+  # prescribes. Assert the weight C2 actually needs, and that it is bare.
+  expect_match(err, "of weight NCENS\\.")
+  expect_false(grepl("NCENS * WT", err, fixed = TRUE))
   # Non-mixed rows are untouched: this is not a blanket refusal of the job.
   expect_equal(
     eval(got$status_expr,
