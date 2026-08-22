@@ -11,18 +11,19 @@
   **This function is experimental, and the emitted document does not render
   as-is.** It is a translation aid, not a turnkey reproduction: the emitted
   chunks currently need hand-editing before they run. Known gaps, all
-  tracked: the fitted model is not bound to a name and `fit = TRUE` is not
-  emitted, so the `predict()` chunks have nothing to predict from and the
-  `hazard()` call stops at the SAS starting values (#151); a resolved
-  prediction grid is named after the SAS `DO` variable rather than the `time`
-  column `predict.hazard()` requires (#151); `hzr_read_outhaz()` returns an
-  unclassed list, so the external-`INHAZ=` path has no `predict()` method
-  (#151); a `SELECTION` statement emits an `hzr_stepwise()` call that is
-  missing `fit` and `scope` (#152); and the log prediction grid uses a step
-  that diverges from SAS's by up to ~9.6% at the last point (#153). Two
-  translation gaps affect the likelihood rather than the document: an
-  `ICENSOR` event count is discarded (#154), and `LCENSOR` combined with
-  `ICENSOR` drops left truncation on interval rows (#155).
+  tracked: the log prediction grid uses a step that diverges from SAS's by
+  up to ~9.6% at the last point (#153), and an `ICENSOR` event count is
+  discarded, which affects the likelihood rather than the document (#154).
+  Two constructs are refused outright rather than mistranslated into
+  something that computes a wrong answer: a `SELECTION` statement, which
+  cannot yet be resolved into a stepwise screen that selects correctly
+  (#152, #160), and `LCENSOR` combined with `ICENSOR`, which would
+  otherwise silently drop left truncation on interval rows (#155). Loading
+  a fit from an external `INHAZ=` dataset now has a `predict()` method, but
+  it currently requires `se.fit = FALSE` for fits under a constrained
+  late-phase transformation -- the stored covariance is not yet mapped onto
+  this reader's parameter scale for those cases, and the precise scope of
+  which fits need `se.fit = FALSE` is still under investigation.
 
   Treat the coverage figures below, and `job$coverage`, as a measure of
   *parsing* -- tokens recognised -- not of whether the result runs. The
