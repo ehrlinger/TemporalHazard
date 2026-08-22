@@ -2,43 +2,116 @@
 
 ## New features
 
+* `hazard()`'s vector interface now evaluates `time`, `status`, `time_lower`,
+  `time_upper` and `weights` in `data`'s scope. `hazard(data = df, time = tt)`
+  previously failed with `object 'tt' not found`: `data` was consulted only by
+  the formula path, and the vector path accepted it and ignored it. The rule is
+  `subset()`'s -- a column of `data` wins, and `df$col`, a local vector or a
+  literal falls through to the calling frame unchanged -- so with `data = NULL`
+  nothing changes and the formula path is untouched.
+
+  Because a column winning can silently redirect a wrapper that forwards its
+  own argument by name, `hazard()` now **warns**, once per call, when a symbol
+  is both a column of `data` and visible from the calling frame -- that frame
+  or a lexical parent of it, up to and including the global environment --
+  naming every such symbol and the argument it appeared in. `data` must now be
+  a data frame or a list: `hazard(data = <matrix>, ...)` errors, where a matrix
+  was previously accepted and silently ignored along with everything else in
+  `data`.
+
 * `hzr_translate_sas()` translates a SAS `PROC HAZARD` / `PROC HAZPRED` job
   into a Quarto document of equivalent R calls. It parses the SAS statements,
   builds the calls, and renders them into `.qmd` chunks -- the model state is
   stored as unevaluated calls, so rendering is `deparse()`, not string
   templating.
 
-  **This function is experimental, and the emitted document does not render
-  as-is.** It is a translation aid, not a turnkey reproduction: the emitted
-  chunks currently need hand-editing before they run. Known gaps, all
-  tracked: the fitted model is not bound to a name and `fit = TRUE` is not
-  emitted, so the `predict()` chunks have nothing to predict from and the
-  `hazard()` call stops at the SAS starting values (#151); a resolved
-  prediction grid is named after the SAS `DO` variable rather than the `time`
-  column `predict.hazard()` requires (#151); `hzr_read_outhaz()` returns an
-  unclassed list, so the external-`INHAZ=` path has no `predict()` method
-  (#151); a `SELECTION` statement emits an `hzr_stepwise()` call that is
-  missing `fit` and `scope` (#152); and the log prediction grid uses a step
-  that diverges from SAS's by up to ~9.6% at the last point (#153). Two
-  translation gaps affect the likelihood rather than the document: an
-  `ICENSOR` event count is discarded (#154), and `LCENSOR` combined with
-  `ICENSOR` drops left truncation on interval rows (#155).
+  **This function is experimental.** A job that translates now renders: the
+  emitted `hazard()` chunk binds its fit to a name and asks for an actual
+  fit, and the `predict()` chunks have something to predict from. Measured
+  on the public `hazard` corpus of 110 `.sas` files, 57 translate into 22
+  distinct documents; the 11 of those that synthetic data can drive end to
+  end evaluate every chunk and bind a converged fit, and the other 11 --
+  `PROC HAZPRED`-only jobs with no local fit to bind -- are exercised up to
+  their fit chunks. Read that as a measurement, not as "the translator
+  works": the rest of the corpus is refusals or jobs whose external `INHAZ=`
+  could not be resolved. It remains a translation aid rather than a turnkey
+  reproduction, and the API, the `hzr_sas_job` field layout and the emitted
+  document format may all still change.
 
-  Treat the coverage figures below, and `job$coverage`, as a measure of
-  *parsing* -- tokens recognised -- not of whether the result runs. The
-  parameter translation itself is verified: refitting the `hz.death.AVC.sas`
-  job's parameters through `hazard()` directly reproduces the SAS
-  log-likelihood to six significant figures.
+  Two SAS constructs are refused outright rather than mistranslated into
+  something that computes a wrong answer. Each records an `UNTRANSLATED` row
+  and emits a `stop()` in place of the fit, so the document fails where the
+  fit would have been:
 
-  The API of this function, the `hzr_sas_job` field layout and the emitted
-  document format are all expected to change as those gaps close.
+  - a `SELECTION` statement requesting a stepwise screen. `hzr_stepwise()`'s
+    refit path needs a formula-interface base fit and this translator emits
+    the vector interface, so every candidate refit would error and the screen
+    would report zero steps -- indistinguishable from "nothing met
+    `slentry`" (#152, #160; the underlying `hzr_stepwise()` silent no-op is
+    #159).
+  - `LCENSOR` combined with `ICENSOR`. `hazard()`'s single `time_lower`
+    argument carries the entry time for status 0/1 rows and the interval's
+    lower bound for status 2 rows, so one column cannot express both (#155).
 
-  The keyword grammar behind the parser -- 117 keyword rules mapped to R
-  targets -- is **generated from the reference `HAZARD`/`HAZPRED` C
-  implementation's own lex sources** (`data-raw/hazard-grammar.R`), not
-  hand-written. Only the extracted table ships; no GPL-2 source enters the
-  tarball. A hand-written table would capture only the spellings a study
-  happened to use, and the grammar has real context-dependent collisions --
+  Two gaps that made the emitted calls compute a different answer from the
+  SAS job are closed. The log prediction grid now takes its step from the
+  job's own `INC=` expression rather than a hardcoded one (#153): three
+  denominators appear across the public corpus (`/49.9`, `/99.9`, `/999.9`)
+  and the denominator sets both the step and the number of points SAS's
+  `DO lo TO hi BY INC` lands, so reading every job as `/99.9` gave the
+  `/999.9` jobs 100 points on a step ten times too large -- every time
+  wrong, over an empty `untranslated` and full coverage. The span is the
+  loop's own `log(hi) - lo`, which coincides with `5 + log(hi)` only because
+  every corpus job starts at -5, and an `INC=` in a form the parser cannot
+  read is refused with an `UNTRANSLATED` row rather than stepped by a guess.
+  Every log grid in the public corpus also writes its `DO` statement with an
+  explicit trailing element (`DO lo TO hi BY INC, hi`), which SAS's `DO` list
+  syntax evaluates as the loop *plus* one final point at exactly `hi` -- the
+  translator emitted only the loop, so every translated grid stopped short
+  of the time the job actually asked for (about 8% short for a `/99.9`
+  step). The trailing element is now read from the job's own `DO` statement
+  and emitted as the grid's last point; a trailing element this cannot
+  resolve to the loop's own bound is refused with an `UNTRANSLATED` row.
+  An `ICENSOR` event count now reaches the fit as `weights` instead of being
+  discarded (#154).
+
+  Loading a fit from an external `INHAZ=` dataset returns a classed
+  `hzr_outhaz` object with a `predict()` method (#151). That method takes
+  the same arguments in the same order as `predict.hazard()` --
+  `newdata`, `type`, `decompose`, `se.fit`, `level`, `conf.type` -- so a
+  positional call means the same thing for both methods of the generic, and
+  `conf.type` (the `PROC HAZPRED` parity switch the translator emits) is a
+  real argument rather than one that a misspelling could drop into `...`,
+  returning the log-log limits the SAS job did not ask for. Its *value* is
+  checked only on the survival standard-error path that reads it, exactly as
+  `predict.hazard()` does, so an ignored value does not fail a point or
+  hazard prediction; a mistyped argument *name* still errors. `type` defaults to
+  `"hazard"`, as in `predict.hazard()`, and `decompose = TRUE` is an error:
+  an `OUTHAZ=` dataset carries fitted parameters, not a per-phase
+  decomposition. Point predictions work; `se.fit = TRUE` is **refused** whenever the SAS fit *estimated* a
+  late shape parameter that `PROC HAZARD` put on a composite scale --
+  `log(GAMMA*ETA - 2)` and friends, which is the generic unconstrained
+  three-phase case rather than an exotic one -- and likewise under `FIXMNU1`
+  or where one late parameter is derived from another. A translated `PROC
+  HAZPRED` block requests confidence limits unless the SAS job says `NOCL`,
+  so such a job stops at its `predict()` chunks with an explicit message
+  naming the parameter and its scale, rather than reporting standard errors
+  built on the wrong one.
+
+  Treat `job$coverage` as a measure of *parsing* -- tokens recognised --
+  not of whether the result runs. The
+  parameter translation itself is verified separately: refitting the
+  `hz.death.AVC.sas` job's parameters through `hazard()` directly reproduces
+  the SAS log-likelihood to the six significant figures the reference
+  listing prints (`-210.501`).
+
+  The keyword grammar behind the parser -- 122 keyword rules, 67 of them
+  mapped to an R target -- is **generated from the reference
+  `HAZARD`/`HAZPRED` C implementation's own lex sources**
+  (`data-raw/hazard-grammar.R`), not hand-written. Only the extracted table
+  ships; no GPL-2 source enters the tarball. A hand-written table would
+  capture only the spellings a study happened to use, and the grammar has
+  real context-dependent collisions --
   `M` means a phase shape parameter inside `PARMS` and `MOVE` inside a
   `PHOP`/`STEP` statement -- that a context-free lookup gets silently wrong.
 
@@ -54,15 +127,21 @@
     read from `SET`, computed by a function call, or naming something the
     parser can't resolve is refused whole rather than partially read: a
     partially read grid is a partial `newdata`, which is a hollow result.
-    Such grids emit an explicit `UNTRANSLATED` block instead. On the
+    Such grids emit an explicit `UNTRANSLATED` block instead, and the
+    `predict()` chunks that would have read the grid become a `stop()`
+    naming it: emitting `predict(fit, newdata = <name>)` that nothing
+    builds either fails on an unbound name or, if the rendering session
+    happens to hold an object of that name, reports predictions over
+    unrelated times. On the
     public corpus, grid resolution is 19 of 55 (35%), up from 10 of 55
     (18%) before constant folding.
   - **An unresolved `INHAZ=` fails the render, on purpose.** A `PROC
     HAZPRED` job whose fitted-model dataset can't be located -- neither
     from another translated job's `OUTHAZ=` nor from the `librefs`
-    argument -- emits a `stop()` at the head of the chunk, so the document
-    fails to render rather than reporting predictions over a model it
-    never loaded.
+    argument -- gets an `inhaz-unresolved` chunk, ahead of the grid and
+    `predict()` chunks, whose whole body is a `stop()` naming the
+    unresolved libref. The document fails to render rather than reporting
+    predictions over a model it never loaded.
 
 # TemporalHazard 1.2.1
 

@@ -8,7 +8,11 @@ test_that("a job with no recognisable block errors and writes nothing", {
 
 test_that("librefs resolves an INHAZ that no translated job wrote", {
   f <- withr::local_tempfile(fileext = ".sas")
+  # The grid DATA step is load bearing: a DATA= grid the translator cannot
+  # build is refused, and the refusal is itself a stop() chunk, so without it
+  # the "no stop()" assertion below would be about the wrong stop().
   writeLines(paste(
+    "DATA P; DO MONTHS=1 TO 12 BY 1; OUTPUT; END;",
     "%HAZPRED( PROC HAZPRED DATA=P INHAZ=EX.HZD OUT=P; TIME MONTHS; );"
   ), f)
   out <- withr::local_tempdir()
@@ -20,11 +24,17 @@ test_that("librefs resolves an INHAZ that no translated job wrote", {
 
 test_that("without librefs an unresolved INHAZ warns and emits stop()", {
   f <- withr::local_tempfile(fileext = ".sas")
-  writeLines("%HAZPRED( PROC HAZPRED DATA=P INHAZ=EX.HZD OUT=P; TIME MONTHS; );", f)
+  # Translatable grid, so the stop() this asserts on can only be the
+  # unresolved INHAZ -- a refused grid emits a stop() of its own.
+  writeLines(paste(
+    "DATA P; DO MONTHS=1 TO 12 BY 1; OUTPUT; END;",
+    "%HAZPRED( PROC HAZPRED DATA=P INHAZ=EX.HZD OUT=P; TIME MONTHS; );"
+  ), f)
   out <- withr::local_tempdir()
   expect_warning(hzr_translate_sas(f, out_dir = out), "unresolved")
   qmd <- readLines(file.path(out, sub("[.]sas$", ".qmd", basename(f))))
   expect_true(any(grepl("stop(", qmd, fixed = TRUE)))
+  expect_true(any(grepl("EX.HZD", qmd, fixed = TRUE)))
 })
 
 test_that("a malformed librefs is rejected with a clear error", {
@@ -167,6 +177,7 @@ test_that("several fits with the same OUTHAZ resolve predict() positionally", {
   # of the blocks fully determines it.
   f <- withr::local_tempfile(fileext = ".sas")
   writeLines(paste(
+    "DATA P; DO MONTHS=1 TO 12 BY 1; OUTPUT; END;",
     "%HAZARD( PROC HAZARD DATA=X OUTHAZ=OUTEST; EVENT DEAD; TIME T;",
     "PARMS MUE=1 THALF=1; );",
     "%HAZPRED( PROC HAZPRED DATA=P INHAZ=OUTEST OUT=P NOHAZ; TIME MONTHS; );",
@@ -186,6 +197,7 @@ test_that("several fits with the same OUTHAZ resolve predict() positionally", {
 test_that("an INHAZ that matches none of several local OUTHAZ is recorded ambiguous", {
   f <- withr::local_tempfile(fileext = ".sas")
   writeLines(paste(
+    "DATA P; DO MONTHS=1 TO 12 BY 1; OUTPUT; END;",
     "%HAZARD( PROC HAZARD DATA=X OUTHAZ=A; EVENT DEAD; TIME T;",
     "PARMS MUE=1 THALF=1; );",
     "%HAZARD( PROC HAZARD DATA=X OUTHAZ=B; EVENT DEAD; TIME T;",

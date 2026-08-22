@@ -506,20 +506,42 @@ vignette documents, run by the parser instead of by you -- useful
 for a one-off job, and essential for migrating a corpus of hundreds.
 
 ::: {.callout-warning}
-## Experimental: the emitted document does not render as-is
+## Experimental: what it will and will not translate
 
-`hzr_translate_sas()` is a translation aid, not a turnkey reproduction.
-It gets you the calls; it does not yet get you a runnable document. The
-emitted chunks need hand-editing first -- most importantly the fitted
-model is not bound to a name and `fit = TRUE` is not emitted, so the
-`hazard()` chunk stops at the SAS starting values and the `predict()`
-chunks have nothing to predict from.
+The emitted document renders. The `hazard()` chunk binds its fit to a
+name and passes `fit = TRUE`, so the `predict()` chunks have something
+to predict from. What you should not read into that is "the translator
+works": it is a translation aid, and four limits are worth knowing
+before you point it at a corpus.
 
-Read the coverage figures below, and `job$coverage`, as a measure of how
-much of the SAS job the *parser recognised* -- not of whether the result
-runs. A job can report full coverage with nothing in `$untranslated` and
-still error on render. The tracked gaps are listed in the 1.2.2 entry of
-`NEWS.md`; the API and the emitted format will change as they close.
+- **A `SELECTION` statement is refused, not translated.** The emitted
+  chunk is a `stop()`. `hzr_stepwise()`'s refit path needs a
+  formula-interface base fit and this translator emits the vector
+  interface, so a translated screen would report zero steps --
+  indistinguishable from "nothing met `slentry`". Run the selection by
+  hand.
+- **`LCENSOR` combined with `ICENSOR` is refused.** `hazard()`'s single
+  `time_lower` argument carries the entry time for status 0/1 rows and
+  the interval's lower bound for status 2 rows; one column cannot
+  express both. Either statement alone translates.
+- **Prediction grids the parser cannot resolve are refused whole**, and
+  an unresolved `INHAZ=` stops the render on purpose. Both are covered
+  under "What it doesn't translate" below -- and note that resolving an
+  external `INHAZ=` at all requires you to pass `librefs=`.
+- **Confidence limits from a loaded `INHAZ=` fit may stop the render.**
+  A translated `PROC HAZPRED` block asks for `se.fit = TRUE` unless the
+  SAS job says `NOCL`, and `predict()` on an `hzr_outhaz` object refuses
+  `se.fit = TRUE` when `PROC HAZARD` estimated a late shape parameter on
+  a composite scale -- `log(GAMMA*ETA - 2)` and friends, which is the
+  *generic* unconstrained three-phase case, not an exotic one. Point
+  predictions are unaffected; drop `se.fit` from the emitted call to get
+  them.
+
+Read `job$coverage` as a measure of how much of the SAS job the *parser
+recognised* -- not of whether the result runs. A job can report full
+coverage with nothing in `$untranslated` and still error on render. The
+API and the emitted format will change as these limits close; the 1.2.2
+entry of `NEWS.md` carries the issue numbers.
 :::
 
 Take the `PROC HAZARD` block shipped as
@@ -562,8 +584,9 @@ if (!exists("AVCS")) {
        " before rendering.")
 }
 
-hazard(
-  data = AVCS, time = INT_DEAD, status = DEAD, dist = "multiphase",
+fit <- hazard(
+  data = AVCS, time = INT_DEAD, status = DEAD, fit = TRUE,
+  dist = "multiphase",
   phases = list(
     hzr_phase("cdf", t_half = 0.1512095, nu = 1.438652, m = 1, fixed = "m"),
     hzr_phase("constant")
@@ -574,6 +597,10 @@ hazard(
   control = list(condition = 14, conserve = TRUE, method = "bfgs")
 )
 ```
+
+The fit is bound to `fit` and `fit = TRUE` is emitted, which is what
+makes the document runnable: a later `predict()` chunk from a
+`PROC HAZPRED` block in the same job refers to that name.
 
 `CONSERVE` becomes `control$conserve = TRUE`, `QUASI` becomes
 `control$method = "bfgs"`, `CONDITION=14` becomes `control$condition
@@ -609,14 +636,15 @@ gaps are common enough in production jobs to know about going in:
 - **An unresolved `INHAZ=` fails the render on purpose.** If a
   `PROC HAZPRED` job's fitted-model dataset can't be found -- neither
   from another translated job's `OUTHAZ=` nor from the `librefs=`
-  argument you pass in -- the emitted chunk calls `stop()`, so
-  rendering the document fails loudly instead of producing predictions
-  against a model it never loaded.
+  argument you pass in -- the document gets an `inhaz-unresolved` chunk
+  ahead of the grid and `predict()` chunks whose whole body is a
+  `stop()` naming the libref, so rendering fails loudly instead of
+  producing predictions against a model it never loaded.
 
 ## Known limitations vs. SAS HAZARD
 
 A SAS HAZARD veteran migrating to `TemporalHazard` should be aware of
-the following scope limits as of v1.2.0.  Detailed status per feature is
+the following scope limits as of v1.2.2.  Detailed status per feature is
 tracked in `inst/dev/SAS-PARITY-GAP-ANALYSIS.md` and
 `inst/dev/DEVELOPMENT-PLAN.md`.
 

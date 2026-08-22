@@ -31,6 +31,10 @@
 #' @noRd
 .hzr_retarget_fit <- function(call, fit_ref) {
   if (is.null(call)) return(NULL)
+  # A refused grid makes this a stop() chunk, whose first argument is the
+  # message, not the fit. Overwriting it would replace the explanation with
+  # a bare symbol -- a refusal that no longer says what it refused.
+  if (!identical(call[[1L]], as.name("predict"))) return(call)
   call[[2L]] <- as.name(fit_ref)
   call
 }
@@ -41,9 +45,10 @@
 #' emits a Quarto document of the equivalent [hazard()] and [predict.hazard()]
 #' calls.
 #'
-#' **Experimental, and the emitted document does not render as-is:** it is a
-#' translation aid whose chunks need hand-editing before they run. See the
-#' Experimental section below.
+#' **Experimental:** a job that translates does render -- the emitted
+#' `hazard()` chunk binds its fit and asks for an actual fit -- but this is a
+#' translation aid, not a turnkey reproduction, and some SAS constructs are
+#' refused rather than translated. See the Experimental section below.
 #'
 #' Constructs the translator does not cover are recorded on the returned object
 #' and rendered as visible callouts, never dropped. A `PROC HAZPRED` job whose
@@ -83,14 +88,29 @@
 #'   counts.
 #'
 #' @section Experimental:
-#' This function is experimental and **the emitted document does not render
-#' as-is** -- it is a translation aid whose chunks currently need hand-editing
-#' before they run. `$coverage` counts tokens the parser recognised; it is not
-#' evidence that the emitted calls execute, and a job can report full coverage
-#' with an empty `$untranslated` while its document still errors on render.
-#' See the 1.2.2 `NEWS.md` entry for the tracked gaps. The function's API, the
-#' `hzr_sas_job` field layout and the emitted document format are all expected
-#' to change.
+#' The emitted document renders: the `hazard()` chunk binds its fit to a name
+#' and passes `fit = TRUE`, so the `predict()` chunks have something to
+#' predict from. Two SAS constructs are refused outright rather than
+#' mistranslated, each emitting a `stop()` in place of the fit: a `SELECTION`
+#' statement requesting a stepwise screen (#152, #160), and `LCENSOR`
+#' combined with `ICENSOR`, which one `time_lower` argument cannot express
+#' (#155). Prediction grids the parser cannot resolve are refused whole, and
+#' the `predict()` chunks that would have read such a grid become a `stop()`
+#' naming it, rather than a `predict(newdata = )` over a name no chunk
+#' builds. An unresolved `INHAZ=` stops the render on purpose.
+#'
+#' On a fit loaded from an external `INHAZ=` dataset, point predictions work
+#' but `se.fit = TRUE` is refused when `PROC HAZARD` estimated a late shape
+#' parameter on a composite scale -- the generic unconstrained three-phase
+#' case, not an exotic one. A translated `PROC HAZPRED` block asks for
+#' confidence limits unless the SAS job says `NOCL`, so such a job stops at
+#' its `predict()` chunks.
+#'
+#' `$coverage` counts tokens the parser recognised; it is not evidence that
+#' the emitted calls execute, and a job can report full coverage with an
+#' empty `$untranslated` while its document still errors on render. See the
+#' 1.2.2 `NEWS.md` entry. The function's API, the `hzr_sas_job` field layout
+#' and the emitted document format are all expected to change.
 #' @examples
 #' \donttest{
 #' job <- hzr_translate_sas(
@@ -162,7 +182,11 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
         calls[[status_slot]] <- r$status_call
       }
       fit_slot <- .hzr_next_call_name(calls, "fit")
-      calls[[fit_slot]] <- r$call
+      # Bind the fit: predict() chunks reference the fit by its slot name, and
+      # a bare hazard(...) call binds nothing, so those chunks failed with
+      # "object 'fit' not found" -- or worse, silently used an unrelated
+      # object of that name already in the rendering session (#151).
+      calls[[fit_slot]] <- call("<-", as.name(fit_slot), r$call)
       fits[[length(fits) + 1L]] <- list(slot = fit_slot, outhaz = r$outhaz)
     } else {
       r <- tryCatch(.hzr_parse_hazpred(b, txt), error = function(e) {

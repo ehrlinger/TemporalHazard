@@ -1,7 +1,7 @@
 test_that("calls render as R chunks", {
   j <- .hzr_sas_job(
     source = list(path = "hz.death.AVC.sas", checksum = "abc"),
-    calls = list(fit = quote(hazard(time = Time, status = D))),
+    calls = list(fit = quote(fit <- hazard(time = Time, status = D))),
     grid = NULL, inhaz = NULL, outhaz = "EX.HZD",
     untranslated = .hzr_untranslated_frame(),
     coverage = list(tokens_seen = 6L, tokens_mapped = 6L)
@@ -14,7 +14,7 @@ test_that("calls render as R chunks", {
 test_that("an untranslated construct becomes a visible callout", {
   j <- .hzr_sas_job(
     source = list(path = "x.sas", checksum = "abc"),
-    calls = list(fit = quote(hazard(time = Time, status = D))),
+    calls = list(fit = quote(fit <- hazard(time = Time, status = D))),
     grid = NULL, inhaz = NULL, outhaz = NULL,
     untranslated = .hzr_untranslated_frame(12L, "STEEPEST",
                                            "no R equivalent (see #145)"),
@@ -73,7 +73,7 @@ test_that("a resolved INHAZ does not emit a stop()", {
 test_that(".hzr_render_qmd returns a character vector, not a printed side effect", {
   j <- .hzr_sas_job(
     source = list(path = "x.sas", checksum = "abc"),
-    calls = list(fit = quote(hazard(time = Time, status = D))),
+    calls = list(fit = quote(fit <- hazard(time = Time, status = D))),
     grid = NULL, inhaz = NULL, outhaz = NULL,
     untranslated = .hzr_untranslated_frame(),
     coverage = list(tokens_seen = 1L, tokens_mapped = 1L)

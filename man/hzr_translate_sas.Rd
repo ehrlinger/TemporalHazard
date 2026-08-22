@@ -32,9 +32,10 @@ emits a Quarto document of the equivalent \code{\link[=hazard]{hazard()}} and \c
 calls.
 }
 \details{
-\strong{Experimental, and the emitted document does not render as-is:} it is a
-translation aid whose chunks need hand-editing before they run. See the
-Experimental section below.
+\strong{Experimental:} a job that translates does render -- the emitted
+\code{hazard()} chunk binds its fit and asks for an actual fit -- but this is a
+translation aid, not a turnkey reproduction, and some SAS constructs are
+refused rather than translated. See the Experimental section below.
 
 Constructs the translator does not cover are recorded on the returned object
 and rendered as visible callouts, never dropped. A \verb{PROC HAZPRED} job whose
@@ -59,14 +60,29 @@ back to referencing \code{fit} and the ambiguity is recorded in
 }
 \section{Experimental}{
 
-This function is experimental and \strong{the emitted document does not render
-as-is} -- it is a translation aid whose chunks currently need hand-editing
-before they run. \verb{$coverage} counts tokens the parser recognised; it is not
-evidence that the emitted calls execute, and a job can report full coverage
-with an empty \verb{$untranslated} while its document still errors on render.
-See the 1.2.2 \code{NEWS.md} entry for the tracked gaps. The function's API, the
-\code{hzr_sas_job} field layout and the emitted document format are all expected
-to change.
+The emitted document renders: the \code{hazard()} chunk binds its fit to a name
+and passes \code{fit = TRUE}, so the \code{predict()} chunks have something to
+predict from. Two SAS constructs are refused outright rather than
+mistranslated, each emitting a \code{stop()} in place of the fit: a \code{SELECTION}
+statement requesting a stepwise screen (#152, #160), and \code{LCENSOR}
+combined with \code{ICENSOR}, which one \code{time_lower} argument cannot express
+(#155). Prediction grids the parser cannot resolve are refused whole, and
+the \code{predict()} chunks that would have read such a grid become a \code{stop()}
+naming it, rather than a \code{predict(newdata = )} over a name no chunk
+builds. An unresolved \verb{INHAZ=} stops the render on purpose.
+
+On a fit loaded from an external \verb{INHAZ=} dataset, point predictions work
+but \code{se.fit = TRUE} is refused when \verb{PROC HAZARD} estimated a late shape
+parameter on a composite scale -- the generic unconstrained three-phase
+case, not an exotic one. A translated \verb{PROC HAZPRED} block asks for
+confidence limits unless the SAS job says \code{NOCL}, so such a job stops at
+its \code{predict()} chunks.
+
+\verb{$coverage} counts tokens the parser recognised; it is not evidence that
+the emitted calls execute, and a job can report full coverage with an
+empty \verb{$untranslated} while its document still errors on render. See the
+1.2.2 \code{NEWS.md} entry. The function's API, the \code{hzr_sas_job} field layout
+and the emitted document format are all expected to change.
 }
 
 \examples{

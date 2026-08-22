@@ -36,6 +36,23 @@
 #' everywhere, overridden to `2` where `C3 > 0`. A job specifying neither is
 #' rejected with an error, mirroring HAZARD's own termination.
 #'
+#' Because `C3` is a count, it also carries a *weight*. `setlik.c` multiplies
+#' the whole log-likelihood contribution of an interval row by it
+#' (`c3w = c3 * weight`, then both `-(c1w + c2 + c3w) * (cumhaz - cumhst)` and
+#' `+= c3w * lct`), which is exactly what [hazard()]'s `weights` argument does
+#' per row. So `weights_expr` is emitted as
+#' `ifelse(<status> == 2, C3, 1)` whenever `ICENSOR` is present. Two details
+#' there are not negotiable. Passing the bare `C3` instead would give every
+#' event and right-censored row a weight of *zero* -- `C3` is 0 on those rows
+#' -- deleting them from the likelihood without a word; `readc2.c` sets
+#' `C2 = 1` on exactly those rows when no `RCENSOR` statement is given, so
+#' their weight is 1. And the gate is on `status`, not on `C3 > 0`, so that a
+#' row where `EVENT` and `C3` both fire keeps the event's weight, matching the
+#' status mapping directly below.
+#'
+#' A `WEIGHT` statement, if also present, multiplies that expression, since
+#' `c3w` is the product of the two.
+#'
 #' An event outranks interval censoring: a row that is an event is not
 #' interval-censored, so `ICENSOR` overrides only where `EVENT == 0`. Treating
 #' a malformed row where `EVENT` and `C3 > 0` both fire as an event is the
@@ -56,8 +73,20 @@
 #'   documented default entry time for status 0/1 rows).
 #' * `LCENSOR` only: the `LCENSOR` variable directly -- it applies to every
 #'   row, not just interval ones, so no `ifelse()` gating is needed.
-#' * Both: `ifelse(status == 2, CTIME, <LCENSOR variable>)`.
 #' * Neither: `time_lower` is omitted (`NULL`).
+#'
+#' **`LCENSOR` and `ICENSOR` together are refused, not translated.** There is
+#' no expression that serves: `time_lower` is one column carrying two
+#' meanings, so gating it on status hands the interval rows their lower bound
+#' and thereby drops their entry time, fitting a left-truncated
+#' interval-censored subject as at risk from time `0`. That converges and
+#' reports plausibly -- the exact failure mode this package exists to refuse.
+#' The reference implementation carries three distinct times (`TIME`, `CTIME`,
+#' `STIME`) and subtracts `H(STIME)` for every row, interval rows included, so
+#' translating it faithfully needs an entry-time argument [hazard()] does not
+#' have. It is also rare: 0 of the 93 `PROC HAZARD` jobs across the production
+#' studies use the combination. So the pair is recorded in `untranslated` and
+#' `refused` is set, and the caller emits a `stop()` in place of the fit.
 #'
 #' The `ifelse()` forms are gated on a `status_name` placeholder (`.hzr_status`)
 #' the caller assigns the `status_expr` to first -- never unconditionally,
@@ -71,11 +100,18 @@
 #'   lower-bound time variable); `LCENSOR` and `RCENSOR` carry one. `EVENT`
 #'   may be absent if `ICENSOR` is present.
 #' @return `list(status_expr = <call>, status_name = <name|NULL>,
-#'   time_lower = <call|NULL>, untranslated = <data.frame>)`. `status_expr` is
+#'   time_lower = <call|NULL>, weights_expr = <call|NULL>,
+#'   untranslated = <data.frame>, refused = <logical>)`. `status_expr` is
 #'   a `bquote()`-built call, evaluable against an environment/list holding
-#'   the named SAS variables. `time_lower`, when non-`NULL`, is a
-#'   `bquote()`-built call; `status_name` is non-`NULL` only when `ICENSOR` is
-#'   present, since only then does anything need to gate on it.
+#'   the named SAS variables. `time_lower` and `weights_expr`, when
+#'   non-`NULL`, are `bquote()`-built calls; `status_name` is non-`NULL` only
+#'   when `ICENSOR` is present, since only then does anything need to gate on
+#'   it. `weights_expr` is likewise non-`NULL` only under `ICENSOR`, so a job
+#'   without one emits no `weights` argument at all and fits with the unit
+#'   weights it always did. `refused` is `TRUE` only for the `LCENSOR` +
+#'   `ICENSOR` combination described above, and every other element is `NULL`
+#'   when it is: there is nothing to emit. Both returns carry the same element
+#'   names, so a caller reading one never meets an unexpected missing field.
 #' @noRd
 .hzr_censor_spec <- function(statements) {
   has_event <- !is.null(statements$EVENT)
@@ -84,6 +120,28 @@
 
   if (!has_event && !has_icensor) {
     stop("The EVENT or ICENSOR variable must be specified.", call. = FALSE)
+  }
+
+  # hazard()'s time_lower has two meanings selected by status: entry time for
+  # status 0/1, interval lower bound for status 2. One row cannot carry both,
+  # so a left-truncated interval-censored subject would be fitted as at risk
+  # from time 0 -- a converging, plausible, wrong answer. SAS carries three
+  # distinct times (TIME, CTIME, STIME) and subtracts H(STIME) for every row.
+  # Supporting this needs a new hazard() argument; refuse until it exists.
+  if (has_lcensor && has_icensor) {
+    return(list(
+      status_expr = NULL,
+      status_name = NULL,
+      time_lower = NULL,
+      weights_expr = NULL,
+      untranslated = .hzr_untranslated_frame(
+        NA_integer_, "LCENSOR + ICENSOR",
+        paste("left truncation combined with interval censoring needs a",
+              "separate entry-time argument hazard() does not have (#155);",
+              "translate this job by hand")
+      ),
+      refused = TRUE
+    ))
   }
 
   ev <- if (has_event) as.name(statements$EVENT)
@@ -111,18 +169,25 @@
 
   status_name <- NULL
   time_lower <- NULL
+  weights_expr <- NULL
   if (has_icensor) {
     status_name <- as.name(".hzr_status")
     ctime <- as.name(statements$ICENSOR[[2L]])
+    # C3 is a count, and setlik.c multiplies the whole log-likelihood
+    # contribution by it -- c3w = c3 * weight, then both
+    # -(c1w + c2 + c3w) * (cumhaz - cumhst) and += c3w * lct. hazard()'s
+    # `weights` multiplies each row's contribution the same way, so the count
+    # belongs there; without it a row carrying 3 events is fitted as one
+    # observation (#154). Status-gated, and emphatically not the bare count:
+    # C3 is 0 on every non-interval row, and a weight of 0 deletes a row from
+    # the likelihood outright. readc2.c sets C2 = 1 on exactly those rows
+    # when no RCENSOR statement is given, so their weight is 1.
+    weights_expr <- bquote(ifelse(.(status_name) == 2, .(c3), 1))
     # Status-gated, not unconditional (see roxygen): interval rows get the
     # interval's lower bound (CTIME); every other row falls back to
-    # hazard()'s own entry-time default (0), or, if LCENSOR is also present,
-    # the counting-process entry time it names.
-    time_lower <- if (has_lcensor) {
-      bquote(ifelse(.(status_name) == 2, .(ctime), .(as.name(statements$LCENSOR))))
-    } else {
-      bquote(ifelse(.(status_name) == 2, .(ctime), 0))
-    }
+    # hazard()'s own entry-time default (0). LCENSOR cannot be present here
+    # -- the pair is refused above -- so there is no other fallback to pick.
+    time_lower <- bquote(ifelse(.(status_name) == 2, .(ctime), 0))
   } else if (has_lcensor) {
     # No ICENSOR, so no interval rows to gate around: LCENSOR's entry time
     # applies to every row, unconditionally.
@@ -133,11 +198,15 @@
     status_expr = expr,
     status_name = status_name,
     time_lower = time_lower,
-    untranslated = .hzr_untranslated_frame()
+    weights_expr = weights_expr,
+    untranslated = .hzr_untranslated_frame(),
+    refused = FALSE
   )
 }
 
-#' Parse a PROC HAZARD block into a hazard() or hzr_stepwise() call.
+#' Parse a PROC HAZARD block into a hazard() call, or a stop() call when the
+#' block requests something this translator refuses (see .hzr_censor_spec()'s
+#' LCENSOR + ICENSOR refusal and the SELECTION stepwise refusal below).
 #'
 #' Every keyword is resolved through .hzr_sas_token() in its lexer context.
 #' A keyword that does not resolve is recorded in `untranslated`, never
@@ -274,6 +343,28 @@
   cens <- .hzr_censor_spec(statements)
   untr <- rbind(untr, cens$untranslated)
 
+  # The UNTRANSLATED callout alone is not enough here: a reader who renders
+  # past it would still get a fit, and a fit over a mis-specified model is
+  # this package's signature defect -- a result that looks like one and is
+  # not. Emit a stop() in place of the hazard() call so the document fails
+  # where the fit would have been, and say what has to be done by hand.
+  # This return precedes SELECTION parsing, so a job carrying BOTH refusals
+  # records only this one; it still stops loudly, and no corpus job does both.
+  if (isTRUE(cens$refused)) {
+    return(list(
+      call = quote(stop(
+        "This job combines LCENSOR (left truncation) with ICENSOR (interval ",
+        "censoring). hazard()'s `time_lower` carries the entry time for ",
+        "status 0/1 rows and the interval's lower bound for status 2 rows, ",
+        "so one column cannot express both and any translation would fit ",
+        "the interval-censored rows as at risk from time 0. Translate this ",
+        "job by hand (#155)."
+      )),
+      status_call = NULL, outhaz = outhaz, untranslated = untr,
+      tokens_seen = seen, tokens_mapped = mapped
+    ))
+  }
+
   # ICENSOR jobs get the status expression hoisted into its own chunk, named
   # .hzr_status so it cannot collide with a SAS variable, so that time_lower
   # can gate on it -- see .hzr_censor_spec() roxygen. LCENSOR-only jobs need
@@ -286,12 +377,38 @@
   if (!is.null(data_name)) args$data <- as.name(data_name)
   args$time <- as.name(statements$TIME)
   if (!is.null(cens$status_name)) {
-    status_call <- call("<-", cens$status_name, cens$status_expr)
+    # The status chunk is evaluated outside hazard(), so it has to resolve
+    # its own bare SAS column names. When the job reads a DATA= dataset the
+    # hoisted status is written back INTO that data frame rather than bound
+    # locally: hazard()'s vector path gives data columns precedence over the
+    # calling frame, so a local binding is shadowed by any column of the same
+    # name, and both `status =` and the `time_lower` gate would then read the
+    # user's column instead of the computed censoring classification -- a
+    # different censoring structure, from a fit that raises nothing but an
+    # ambiguity warning. Derived as a column, the mask resolves to the value
+    # this chunk just wrote, so it cannot be shadowed at all. `.hzr_` is this
+    # package's reserved prefix, so overwriting a column of that name is the
+    # intended consequence, not collateral damage. transform() masks exactly
+    # as with() did, so the expression's column names still resolve against
+    # the dataset. With no DATA= there is no data frame and no mask, so a
+    # plain local binding is already unshadowable.
+    status_call <- if (is.null(data_name)) {
+      call("<-", cens$status_name, cens$status_expr)
+    } else {
+      derive <- as.call(list(quote(transform), as.name(data_name),
+                             cens$status_expr))
+      names(derive) <- c("", "", as.character(cens$status_name))
+      call("<-", as.name(data_name), derive)
+    }
     args$status <- cens$status_name
   } else {
     args$status <- cens$status_expr
   }
   if (!is.null(cens$time_lower)) args$time_lower <- cens$time_lower
+  # Without fit = TRUE the emitted call returns an unfitted object: converged
+  # is NA, objective is NA, and theta holds the SAS starting values, while
+  # print.hazard() shows a populated summary that says none of that (#151).
+  args$fit <- TRUE
   # A PARMS statement that actually specified shape parameters makes this a
   # multiphase job. hazard()'s `dist` defaults to "weibull", and its
   # `else if (!is.null(phases))` branch silently discards the entire phase
@@ -308,7 +425,19 @@
     args$phases <- parms$phases
   }
   args$theta <- parms$theta
-  if (!is.null(statements$WEIGHT)) args$weights <- as.name(statements$WEIGHT)
+  # Two independent sources of a row weight, and they multiply, exactly as
+  # setlik.c's c3w = c3 * weight does: the SAS WEIGHT statement's variable,
+  # and ICENSOR's event count on interval rows (see .hzr_censor_spec()).
+  wt_name <- if (!is.null(statements$WEIGHT)) as.name(statements$WEIGHT)
+  if (!is.null(cens$weights_expr)) {
+    args$weights <- if (is.null(wt_name)) {
+      cens$weights_expr
+    } else {
+      bquote(.(cens$weights_expr) * .(wt_name))
+    }
+  } else if (!is.null(wt_name)) {
+    args$weights <- wt_name
+  }
 
   # Canonical control order, so the emitted call does not depend on the order
   # the options happened to appear in the SAS text.
@@ -320,11 +449,38 @@
   if (!is.null(sel_ops)) {
     sel <- .hzr_selection_spec(sel_ops)
     untr <- rbind(untr, sel$untranslated)
+    # A SELECTION statement that requests stepwise cannot be translated into
+    # hzr_stepwise(): .hzr_refit_with_scope() (R/stepwise-refit.R) requires a
+    # formula-interface base fit, and this translator always emits the
+    # vector interface. Every candidate refit therefore errors, the forward
+    # step downgrades those errors to warnings, and the run silently returns
+    # zero steps -- indistinguishable from "nothing met slentry". That is
+    # exactly the shipped-defect shape AGENTS.md warns about, so refuse
+    # loudly instead, mirroring .hzr_censor_spec()'s LCENSOR + ICENSOR
+    # refusal above: record an untranslated row and emit a stop() chunk in
+    # place of the fit, rather than a hazard()/hzr_stepwise() call.
     if (isTRUE(sel$stepwise)) {
-      head <- quote(hzr_stepwise)
-      args$direction <- sel$direction
-      if (!is.null(sel$slentry)) args$slentry <- sel$slentry
-      if (!is.null(sel$slstay)) args$slstay <- sel$slstay
+      untr <- rbind(untr, .hzr_untranslated_frame(
+        NA_integer_, "SELECTION",
+        paste("stepwise selection is not translated: hzr_stepwise()'s refit",
+              "path needs a formula-interface base fit, and this translator",
+              "emits the vector interface, so every candidate refit would",
+              "error and the screen would silently report zero steps. Run",
+              "this job's selection by hand (#160).")
+      ))
+      return(list(
+        call = quote(stop(
+          "This job's SELECTION statement requests a stepwise screen, which ",
+          "is not translated: the stepwise-selection refit path needs a ",
+          "formula-interface base fit, and this translator emits the ",
+          "vector interface, so every candidate refit would error and the ",
+          "screen would silently report zero steps -- indistinguishable ",
+          "from \"nothing met slentry\". Run this job's selection by hand ",
+          "(#160)."
+        )),
+        status_call = NULL, outhaz = outhaz, untranslated = untr,
+        tokens_seen = seen, tokens_mapped = mapped
+      ))
     }
   }
 
@@ -493,6 +649,53 @@
   consts
 }
 
+#' Read the step denominator out of a log-grid DATA step's own `INC=`.
+#'
+#' SAS writes the log-grid step as `INC = (<numerator>)/<denominator>`, and
+#' the corpus uses three different denominators (`/49.9`, `/99.9`, `/999.9`).
+#' The denominator is what sets both the step and the point count, so it is
+#' read from the job rather than assumed.
+#'
+#' The numerator has to be the loop's own span, `log(hi) - lo`. Every corpus
+#' job writes that span in one of two spellings -- `(5 + LN_MAX)` where the
+#' loop starts at -5, or `(MAX - MIN)` -- and the two coincide only because
+#' `lo = -5`. A numerator that is *not* the span means the emitted
+#' `(log(hi) - lo)/denominator` step would not be the job's step, so this
+#' returns `NA_real_` and the caller refuses the grid.
+#'
+#' @param pre The DATA step's text before its `DO` statement.
+#' @param inc_var Name of the variable the `DO ... BY` clause steps by.
+#' @param bound_var Name of the `DO ... TO` bound (e.g. `LN_MAX`).
+#' @param ln_hi The bound's value, `log(hi)`.
+#' @param span `log(hi) - lo`, the range the loop covers.
+#' @return The denominator as a positive `double`, or `NA_real_` when the
+#'   `INC=` assignment is absent or is not a form this can parse.
+#' @noRd
+.hzr_sas_grid_denom <- function(pre, inc_var, bound_var, ln_hi, span) {
+  consts <- .hzr_sas_data_constants(pre)
+  # LN_MAX = LOG(MAX) is a function call, so .hzr_sas_data_constants() never
+  # folds it. The DO's TO bound is the log bound by construction, so bind it
+  # here -- after the fold, so it wins over any earlier assignment.
+  consts[[bound_var]] <- ln_hi
+
+  rhs <- NA_character_
+  for (s in strsplit(pre, ";", fixed = TRUE)[[1L]]) {
+    s <- trimws(s)
+    m <- regmatches(s, regexec("^([A-Z_][A-Z0-9_]*) *= *(.+)$", s))[[1L]]
+    # Last assignment wins, as SAS's own sequential DATA-step semantics do.
+    if (length(m) >= 3L && identical(m[[2L]], inc_var)) rhs <- trimws(m[[3L]])
+  }
+  if (is.na(rhs)) return(NA_real_)
+
+  parts <- regmatches(rhs, regexec("^\\((.+)\\) */ *([0-9.]+)$", rhs))[[1L]]
+  if (length(parts) < 3L) return(NA_real_)
+  num <- .hzr_eval_sas_const(parts[[2L]], consts)
+  den <- suppressWarnings(as.numeric(parts[[3L]]))
+  if (is.na(num) || is.na(den) || den <= 0) return(NA_real_)
+  if (!isTRUE(all.equal(num, span, tolerance = 1e-8))) return(NA_real_)
+  den
+}
+
 #' Translate the DATA step that builds a HAZPRED prediction grid.
 #'
 #' Returns an unevaluated `data.frame()` call, or `NULL` when the step is not
@@ -520,28 +723,82 @@
   # --- log-spaced grid: DO LN_TIME=-5 TO LN_MAX BY INC; t = EXP(LN_TIME) ----
   if (grepl(" DO ", body) && grepl("LOG(", body, fixed = TRUE) &&
       !is.na(time_var)) {
-    lo_txt <- local({
-      m <- regmatches(body,
-             regexec("DO [A-Z_][A-Z0-9_]* *= *(-?[0-9.]+) TO", body))[[1L]]
-      if (length(m) > 1L) m[[2L]] else NA_character_
-    })
+    do_at <- regexpr("DO [A-Z_][A-Z0-9_]* *= *[^;]+;", body)
+    if (do_at < 0L) return(NULL)
+    do_txt <- regmatches(body, do_at)
+    pre <- substring(body, 1L, as.integer(do_at) - 1L)
+    # Every corpus DO of this form writes an explicit trailing element after
+    # the BY term (`BY INC,LN_MAX`, `BY INC0, LN_MAX0`, `BY INC, MAX`): SAS's
+    # `DO a TO b BY c, d` list runs the loop and then takes the extra value
+    # `d`, so the emitted grid is one point short of SAS's without it. The
+    # trailing group is captured separately so a DO with none (no comma) is
+    # told apart from one whose trailing element this cannot resolve.
+    do_m <- regmatches(do_txt, regexec(
+      paste0("^DO [A-Z_][A-Z0-9_]* *= *(-?[0-9.]+) TO ",
+             "([A-Z_][A-Z0-9_]*) BY ([A-Z_][A-Z0-9_]*)",
+             "( *, *([A-Za-z0-9_.]+))? *;$"),
+      do_txt))[[1L]]
+    # No `BY` at all means a SAS step of 1, which is not this stereotyped
+    # form; refuse rather than reuse the step of the form it is not.
+    if (length(do_m) < 4L) return(NULL)
+    lo_txt <- do_m[[2L]]
+    bound_var <- do_m[[3L]]
+    inc_var <- do_m[[4L]]
+    trailing_txt <- if (length(do_m) >= 6L) trimws(do_m[[6L]]) else ""
+    # A trailing element is only resolved when it is literally the DO's own
+    # `TO` bound (as in every corpus job) -- SAS then evaluates it to exactly
+    # the loop's `hi`. Anything else cannot be resolved without guessing, so
+    # refuse the whole grid rather than silently drop or misplace the point.
+    if (nzchar(trailing_txt) && !identical(trailing_txt, bound_var)) {
+      return(NULL)
+    }
+    has_trailing <- nzchar(trailing_txt)
     hi_txt <- local({
-      m <- regmatches(body, regexec("MAX *= *([0-9.]+)", body))[[1L]]
-      if (length(m) > 1L) m[[2L]] else NA_character_
+      # Anchor on a non-word character before MAX so LN_MAX=5.2 is not read
+      # as MAX=5.2 -- that produced a grid ending at t = 5.2 instead of 181,
+      # with no error (#153).
+      m <- regmatches(body, regexec("(^|[^A-Z0-9_])MAX *= *([0-9.]+)", body))[[1L]]
+      if (length(m) > 2L) m[[3L]] else NA_character_
     })
-    if (is.na(lo_txt) || is.na(hi_txt)) return(NULL)
+    if (is.na(hi_txt)) return(NULL)
     lo <- suppressWarnings(as.numeric(lo_txt))
     hi <- suppressWarnings(as.numeric(hi_txt))
-    if (is.na(lo) || is.na(hi)) return(NULL)
-    # SAS writes INC=(5+LN_MAX)/99.9, i.e. 100 points inclusive. Splice the
-    # matched text through str2lang(), not the numeric value: a negative
-    # bound such as -5 parses (like source code) to a unary-minus call, not
-    # a bare negative double, and only str2lang() reproduces that so the
-    # emitted call matches what quote()ing the equivalent source produces.
-    inner <- bquote(exp(seq(.(str2lang(lo_txt)), log(.(str2lang(hi_txt))),
-                             length.out = 100)))
+    if (is.na(lo) || is.na(hi) || hi <= 0) return(NULL)
+    span <- log(hi) - lo
+    if (!is.finite(span) || span <= 0) return(NULL)
+    # The step is the job's own INC=, never an assumed one. Three
+    # denominators appear across the corpus (/49.9, /99.9, /999.9), and
+    # hardcoding /99.9 gave the /999.9 jobs a step ten times too large --
+    # wrong times over a full progress bar, reported as fully translated.
+    denom <- .hzr_sas_grid_denom(pre, inc_var, bound_var, log(hi), span)
+    if (is.na(denom)) return(NULL)
+    # SAS's DO LN_TIME = lo TO LN_MAX BY INC runs floor((LN_MAX - lo)/INC) + 1
+    # times, and INC is span/denom, so the count follows the denominator:
+    # /99.9 lands 100 points, /999.9 lands 1000. The last is
+    # exp(lo + (n - 1) * INC), NOT LN_MAX -- seq(length.out = n) would imply
+    # a /(n - 1) step, so only the first point would agree (#153).
+    n <- floor(denom) + 1
+    # Splice the matched text through str2lang(), not the numeric value: a
+    # negative bound such as -5 parses (like source code) to a unary-minus
+    # call, not a bare negative double, and only str2lang() reproduces that
+    # so the emitted call matches what quote()ing the equivalent source
+    # produces.
+    lo_lang <- str2lang(lo_txt)
+    loop <- bquote(
+      exp(.(lo_lang) +
+            seq(0, .(n - 1)) *
+              ((log(.(str2lang(hi_txt))) - .(lo_lang)) / .(denom)))
+    )
+    # SAS's DO list `a TO b BY c, d` runs the loop and then takes the extra
+    # value `d`; that final value is the loop's own `hi` in this form, exact
+    # (EXP(LN_MAX) == MAX), not another step of the loop.
+    inner <- if (has_trailing) bquote(c(.(loop), .(str2lang(hi_txt)))) else loop
     cl <- as.call(list(quote(data.frame), inner))
-    names(cl) <- c("", time_var)
+    # predict.hazard() requires a column literally named `time`
+    # (R/hazard_api.R:1006). Naming the grid column after the SAS DO variable
+    # produced a newdata that predict() rejects outright, so the "grids
+    # resolve" coverage figure counted grids that could not be used (#151).
+    names(cl) <- c("", "time")
     return(cl)
   }
 
@@ -595,7 +852,11 @@
     }
     inner <- as.call(c(quote(c), elems))
     cl <- as.call(list(quote(data.frame), inner))
-    names(cl) <- c("", var)
+    # predict.hazard() requires a column literally named `time`
+    # (R/hazard_api.R:1006). Naming the grid column after the SAS DO variable
+    # produced a newdata that predict() rejects outright, so the "grids
+    # resolve" coverage figure counted grids that could not be used (#151).
+    names(cl) <- c("", "time")
     return(cl)
   }
 
@@ -686,12 +947,30 @@
   }
 
   grid <- .hzr_parse_grid(txt, data_name)
-  if (is.null(grid) && !is.null(data_name)) {
+  grid_refused <- is.null(grid) && !is.null(data_name)
+  if (grid_refused) {
     note(paste0("DATA=", data_name),
          "prediction grid DATA step is not one of the translatable forms")
   }
 
   mk <- function(type) {
+    # A refused grid is a refusal, not an absent argument. Emitting
+    # predict(fit, newdata = <name>) when no chunk builds <name> leaves the
+    # document to fail on an unbound name -- or, if an object of that name
+    # happens to exist in the rendering session, to predict over unrelated
+    # data and report it. That is the whole reason .hzr_parse_grid() refuses
+    # a partially-read grid, so refuse in the emitted document too, the way
+    # the LCENSOR + ICENSOR and SELECTION refusals do.
+    if (grid_refused) {
+      return(as.call(list(quote(stop), paste0(
+        "The ", type, " predictions of this PROC HAZPRED block read the ",
+        "grid ", data_name, ", built by a SAS DATA step ",
+        "hzr_translate_sas() does not translate. Build ", data_name,
+        " by hand (a data frame with a `time` column) and call predict() ",
+        "yourself; rendering over whatever else is named ", data_name,
+        " would report predictions over the wrong times."
+      ))))
+    }
     args <- list(quote(fit))
     if (!is.null(data_name)) args$newdata <- as.name(data_name)
     args$type <- type

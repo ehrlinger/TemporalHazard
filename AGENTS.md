@@ -2,7 +2,7 @@
 
 CRAN R package. A native R implementation of the multiphase parametric hazard model of
 Blackstone, Naftel and Turner (1986) — the model the SAS/C `HAZARD` program implements. The
-public API is `hazard()` plus the `hzr_*` family (20 exports, 18 S3 methods, as declared in
+public API is `hazard()` plus the `hzr_*` family (22 exports, 20 S3 methods, as declared in
 `NAMESPACE`).
 
 The package exists to **reproduce a reference implementation**. That shapes almost every rule
@@ -46,8 +46,10 @@ Four details there are load bearing:
 - **Lint runs before tests** because it is seconds against about a minute for the suite. Cheap
   failures first.
 - **`R CMD check` does not run the whole suite.** It runs with `NOT_CRAN` false, so
-  `skip_on_cran()` tests are skipped: 111 skips and 1500 passes under check, against 96 skips
-  and **1538** passes locally (both measured 2026-08-17 on `dev`). A green check is **not**
+  `skip_on_cran()` tests are skipped: 128 skips and 1990 passes under check, against 6 skips
+  and **2738** passes locally (both measured 2026-08-22 on `fix/sas-translator-runnable`,
+  with no environment variables set; the local figure needs the SAS fixture checkouts
+  present under `~/Documents/GitHub/hazard`). A green check is **not**
   evidence that those tests pass; only the local `devtools::test()` line is.
 - **Commit before you `git archive`.** It exports the committed tree, so an uncommitted fix is
   silently absent and the check answers a question about the wrong code. This has already
@@ -138,7 +140,7 @@ Note the registry name is `TemporalHazard` while the directory is `temporal_haza
   unevaluated call; `hazard(time =, status =)` stores evaluated vectors. Anything that
   rewrites or resamples a stored call has to handle both — this asymmetry has produced three
   separate defects.
-- **`stats::` prefixing is the house style.** `R/diagnostics.R` alone uses it ten times.
+- **`stats::` prefixing is the house style.** `R/diagnostics.R` alone uses it twelve times.
   An unqualified `stats` generic is an `R CMD check` NOTE waiting to happen; it will not fail
   a test, because it resolves fine at runtime.
 - **`numDeriv` is a `Suggests`.** The analytic Hessian declines for left- and interval-censored
@@ -149,20 +151,20 @@ Note the registry name is `TemporalHazard` while the directory is `temporal_haza
 - **The score criterion is an *entry* criterion.** The drop path never refits per candidate
   under either criterion: removals are tested on the current model's Wald p-value against
   `slstay`, as SAS does, and only the accepted drop is refitted.
-- Anything slow gets `skip_on_cran()`. There are 92 calls today.
+- Anything slow gets `skip_on_cran()`. There are 109 calls today.
 - No `browser()`, no bare `print()`, no `library()` inside `R/`. `cat()` belongs only in a
   `print.*` method.
 
 ### Where the check's time actually goes
 
-Overall `R CMD check --as-cran` with the manual: **3m 44s**, tarball **2.7 MB** (measured
-2026-08-17 on `dev`). CRAN's ceiling is about 10 minutes and it rejects on that even at 0/0/0
-— that is what got ggRandomForests archived in June 2026.
+Overall `R CMD check --as-cran` with the manual: **2m 52s**, tarball **2.9 MB** (measured
+2026-08-22 on `fix/sas-translator-runnable`). CRAN's ceiling is about 10 minutes and it
+rejects on that even at 0/0/0 — that is what got ggRandomForests archived in June 2026.
 
 | Component | Time |
 |---|---|
-| Tests | 67s / 77s |
-| Vignette rebuild | 50s / 58s |
+| Tests | 53s / 58s |
+| Vignette rebuild | 35s / 43s |
 | Everything else | the remainder |
 
 Both dominant costs are the ones that grow silently. Watch the budget when adding a vignette
