@@ -36,28 +36,60 @@
 #' everywhere, overridden to `2` where `C3 > 0`. A job specifying neither is
 #' rejected with an error, mirroring HAZARD's own termination.
 #'
-#' Because `C3` is a count, it also carries a *weight*. `setlik.c` multiplies
-#' the whole log-likelihood contribution of an interval row by it
-#' (`c3w = c3 * weight`, then both `-(c1w + c2 + c3w) * (cumhaz - cumhst)` and
-#' `+= c3w * lct`), which is exactly what [hazard()]'s `weights` argument does
-#' per row. So `weights_expr` is emitted as
-#' `ifelse(<status> == 2, C3, 1)` whenever `ICENSOR` is present. Two details
-#' there are not negotiable. Passing the bare `C3` instead would give every
-#' event and right-censored row a weight of *zero* -- `C3` is 0 on those rows
-#' -- deleting them from the likelihood without a word; `readc2.c` sets
-#' `C2 = 1` on exactly those rows when no `RCENSOR` statement is given, so
-#' their weight is 1. And the gate is on `status`, not on `C3 > 0`, so that a
-#' row where `EVENT` and `C3` both fire keeps the event's weight, matching the
-#' status mapping directly below.
+#' **`EVENT`, `ICENSOR` and `WEIGHT` are all counts**, and `setlik.c` combines
+#' them for one OBS record as `c1c2c3 = c1w + c2 + c3w` (with `c1w = C1 * WT`
+#' and `c3w = C3 * WT`), then
+#' `llike = -(c1c2c3) * (CH(T) - CH(ST)) + c1w * log h(T) + c3w * lct`. That
+#' decomposes into at most three independent contributions, each of which
+#' [hazard()] expresses as one row's status and weight:
+#' * `C1 > 0` -- an event row of weight `C1 * WT` (status `1`);
+#' * `C2 > 0` -- a right-censored row of weight `C2` (status `0`);
+#' * `C3 > 0` -- an interval row of weight `C3 * WT` (status `2`).
 #'
-#' A `WEIGHT` statement, if also present, multiplies that expression, since
-#' `c3w` is the product of the two.
+#' `C2` is the one **not** multiplied by `WT`, and that is not an oversight in
+#' the reference: `readc2.c` sets `C2 = ONE` on exactly the rows where neither
+#' `C1` nor `C3` fires, so SAS weights a right-censored row `1` whatever the
+#' `WEIGHT` variable says. Emitting a bare `WT` there instead over- or
+#' under-weights every censored row -- and a `WEIGHT` that happens to be `0`
+#' on censored rows deletes them from the fit outright, silently (#158).
 #'
-#' An event outranks interval censoring: a row that is an event is not
-#' interval-censored, so `ICENSOR` overrides only where `EVENT == 0`. Treating
-#' a malformed row where `EVENT` and `C3 > 0` both fire as an event is the
-#' conservative reading; this is an assumption of this translation, not
-#' something confirmed against a SAS reference run.
+#' So `weights_expr` is emitted whenever `EVENT` or `ICENSOR` is present --
+#' which is always, since a job with neither is rejected -- as
+#' `ifelse(EVENT > 0, EVENT * WT, ifelse(C3 > 0, C3 * WT, 1))`, dropping
+#' whichever branches the job does not have and dropping `* WT` when there is
+#' no `WEIGHT` statement. For the 0/1 `EVENT` and absent `WEIGHT` that most
+#' jobs carry this evaluates to exactly the unit weights those jobs already
+#' fitted with; it is the repeat-event and weighted rows that change.
+#'
+#' `status` therefore derives from `EVENT > 0`, never from `EVENT` itself
+#' (#157). This package codes status `-1` left, `0` right, `1` event, `2`
+#' interval, so a row recording two events (`EVENT = 2`) mapped straight onto
+#' `status` becomes *interval-censored* -- a different likelihood branch, not
+#' an under-count -- and `EVENT = 3` lands outside the coding altogether,
+#' which also disables Conservation of Events (`coe_supported_data`).
+#' `readc1.c` accepts any `C1 >= 0` and keeps a fractional count (`notintg`
+#' only raises a report flag), so `> 0` is the right test and a fractional
+#' count carries through as a fractional weight. A *negative* count SAS
+#' deletes (`c1del`, `del = 1`); this translator has no way to drop a row, so
+#' such a row arrives as right-censored with weight 1 rather than absent.
+#'
+#' **A row where `EVENT` and `ICENSOR` both fire is refused at fit time.**
+#' `setlik.c` *sums* the two contributions, so such a row is simultaneously an
+#' event of weight `C1 * WT` and an interval observation of weight `C3 * WT`;
+#' [hazard()] carries one status and one weight per row and cannot express
+#' both. Whether any row does this is a property of the *data*, not of the job
+#' text, so it cannot be refused at translation time the way `LCENSOR` +
+#' `ICENSOR` is; instead the hoisted status chunk opens with a guard that
+#' stops before the fit and names the by-hand remedy (split the row in two).
+#' Picking the event branch and discarding `c3w` -- what this translator did
+#' before -- converges and reports plausibly, which is the shape this package
+#' exists to refuse.
+#'
+#' `RCENSOR` names `C2` itself (`rcnsprc.c` sets `c2name` from statement field
+#' 13), which is likewise a *count*. This translator still ignores it and
+#' relies on `readc2.c`'s derived `C2 = 1`, which is exact for the 0/1
+#' `CENSORED` flags every corpus job uses but under-weights a genuine count
+#' above 1. That is a separate defect from #157/#158 and is not fixed here.
 #'
 #' `hazard()`'s `time_lower` carries a different meaning per row, selected by
 #' `status` (see `R/hazard_api.R`): for status 2 (interval) it is the
@@ -88,11 +120,12 @@
 #' studies use the combination. So the pair is recorded in `untranslated` and
 #' `refused` is set, and the caller emits a `stop()` in place of the fit.
 #'
-#' The `ifelse()` forms are gated on a `status_name` placeholder (`.hzr_status`)
-#' the caller assigns the `status_expr` to first -- never unconditionally,
-#' which would trip `hazard()`'s finite-value check off the interval subset
-#' and, where populated, silently redefine event/right-censored rows' risk-set
-#' entry times.
+#' The `time_lower` `ifelse()` is gated on a `status_name` placeholder
+#' (`.hzr_status`) the caller assigns the `status_expr` to first -- never
+#' unconditionally, which would trip `hazard()`'s finite-value check off the
+#' interval subset and, where populated, silently redefine event/right-censored
+#' rows' risk-set entry times. `weights_expr` gates on the count variables
+#' themselves, not on `status`, so it stays valid on the un-hoisted paths.
 #'
 #' @param statements Named list of SAS statement operands, e.g.
 #'   `list(EVENT = "DEAD", TIME = "T", ICENSOR = c("C3", "CTIME"))`.
@@ -105,10 +138,10 @@
 #'   a `bquote()`-built call, evaluable against an environment/list holding
 #'   the named SAS variables. `time_lower` and `weights_expr`, when
 #'   non-`NULL`, are `bquote()`-built calls; `status_name` is non-`NULL` only
-#'   when `ICENSOR` is present, since only then does anything need to gate on
-#'   it. `weights_expr` is likewise non-`NULL` only under `ICENSOR`, so a job
-#'   without one emits no `weights` argument at all and fits with the unit
-#'   weights it always did. `refused` is `TRUE` only for the `LCENSOR` +
+#'   when `ICENSOR` is present, since only then does `time_lower` need to gate
+#'   on it. `weights_expr` is non-`NULL` on every non-refused path, because
+#'   `EVENT` and `ICENSOR` are both counts and one of the two is always
+#'   present. `refused` is `TRUE` only for the `LCENSOR` +
 #'   `ICENSOR` combination described above, and every other element is `NULL`
 #'   when it is: there is nothing to emit. Both returns carry the same element
 #'   names, so a caller reading one never meets an unexpected missing field.
@@ -145,44 +178,73 @@
   }
 
   ev <- if (has_event) as.name(statements$EVENT)
-  expr <- if (has_event) ev else 0
+  c3 <- if (has_icensor) as.name(statements$ICENSOR[[1L]])
+  wt <- if (!is.null(statements$WEIGHT)) as.name(statements$WEIGHT)
 
-  # RCENSOR needs no branch: right-censoring is code 0, which is exactly what
-  # EVENT already carries when the event did not occur. This is deliberate,
-  # not an omission -- there is nothing for an RCENSOR flag to change.
+  # RCENSOR needs no status branch: right-censoring is code 0, which is what
+  # a zero EVENT count already yields. Its C2 *count* is a separate,
+  # unfixed gap -- see roxygen.
 
   # LCENSOR is left-truncation, not left-censoring (see roxygen): it never
   # touches status, only time_lower below.
 
-  if (has_icensor) {
-    c3 <- as.name(statements$ICENSOR[[1L]])
-    # C3 is an event count, not a 0/1 flag (see roxygen): a row is
-    # interval-censored where C3 > 0. Interval censoring only applies where
-    # the event did not occur; if it did, EVENT == 1 and the row stays coded
-    # as an event, not an interval.
-    expr <- if (has_event) {
-      bquote(ifelse(.(ev) == 0 & .(c3) > 0, 2, .(expr)))
-    } else {
-      bquote(ifelse(.(c3) > 0, 2, .(expr)))
-    }
+  # EVENT and C3 are counts, not flags (see roxygen). status comes from
+  # `> 0`, never from the count itself: EVENT = 2 read as a status is
+  # interval-censored, a different likelihood branch (#157).
+  expr <- if (has_event && has_icensor) {
+    bquote(ifelse(.(ev) > 0, 1, ifelse(.(c3) > 0, 2, 0)))
+  } else if (has_event) {
+    bquote(ifelse(.(ev) > 0, 1, 0))
+  } else {
+    bquote(ifelse(.(c3) > 0, 2, 0))
+  }
+
+  # setlik.c SUMS the two contributions (c1c2c3 = c1w + c2 + c3w), so a row
+  # with both counts non-zero is an event AND an interval observation at
+  # once. hazard() has one status and one weight per row and cannot say
+  # that. Whether any row does it is a property of the data, so the refusal
+  # has to happen at fit time rather than at translation time.
+  if (has_event && has_icensor) {
+    expr <- bquote({
+      if (any(.(ev) > 0 & .(c3) > 0, na.rm = TRUE)) {
+        stop(.(sprintf(paste(
+          "This job has rows where the EVENT count (%s) and the ICENSOR",
+          "count (%s) are both non-zero. SAS sums the two contributions",
+          "(setlik.c: c1c2c3 = c1w + c2 + c3w), so such a row is at once an",
+          "event of weight %s and an interval observation of weight %s.",
+          "hazard() carries one status and one weight per row and cannot",
+          "express both. Split each such row into two -- a status 1 row and",
+          "a status 2 row, same times, those two weights -- and fit by hand",
+          "(#157)."),
+          deparse(ev), deparse(c3),
+          deparse(if (is.null(wt)) ev else bquote(.(ev) * .(wt))),
+          deparse(if (is.null(wt)) c3 else bquote(.(c3) * .(wt))))),
+          call. = FALSE)
+      }
+      .(expr)
+    })
+  }
+
+  # The weight is the row's own count times the WEIGHT variable on event and
+  # interval rows (c1w = C1 * WT, c3w = C3 * WT), and exactly 1 on
+  # right-censored rows -- c2 enters the sum unweighted, and readc2.c sets it
+  # to ONE on precisely the rows where neither other count fires. Weighting a
+  # censored row by WT is #158; a WEIGHT that is 0 there deletes the row.
+  ev_w <- if (is.null(wt)) ev else bquote(.(ev) * .(wt))
+  c3_w <- if (is.null(wt)) c3 else bquote(.(c3) * .(wt))
+  weights_expr <- if (has_event && has_icensor) {
+    bquote(ifelse(.(ev) > 0, .(ev_w), ifelse(.(c3) > 0, .(c3_w), 1)))
+  } else if (has_event) {
+    bquote(ifelse(.(ev) > 0, .(ev_w), 1))
+  } else {
+    bquote(ifelse(.(c3) > 0, .(c3_w), 1))
   }
 
   status_name <- NULL
   time_lower <- NULL
-  weights_expr <- NULL
   if (has_icensor) {
     status_name <- as.name(".hzr_status")
     ctime <- as.name(statements$ICENSOR[[2L]])
-    # C3 is a count, and setlik.c multiplies the whole log-likelihood
-    # contribution by it -- c3w = c3 * weight, then both
-    # -(c1w + c2 + c3w) * (cumhaz - cumhst) and += c3w * lct. hazard()'s
-    # `weights` multiplies each row's contribution the same way, so the count
-    # belongs there; without it a row carrying 3 events is fitted as one
-    # observation (#154). Status-gated, and emphatically not the bare count:
-    # C3 is 0 on every non-interval row, and a weight of 0 deletes a row from
-    # the likelihood outright. readc2.c sets C2 = 1 on exactly those rows
-    # when no RCENSOR statement is given, so their weight is 1.
-    weights_expr <- bquote(ifelse(.(status_name) == 2, .(c3), 1))
     # Status-gated, not unconditional (see roxygen): interval rows get the
     # interval's lower bound (CTIME); every other row falls back to
     # hazard()'s own entry-time default (0). LCENSOR cannot be present here
@@ -413,19 +475,12 @@
     args$phases <- parms$phases
   }
   args$theta <- parms$theta
-  # Two independent sources of a row weight, and they multiply, exactly as
-  # setlik.c's c3w = c3 * weight does: the SAS WEIGHT statement's variable,
-  # and ICENSOR's event count on interval rows (see .hzr_censor_spec()).
-  wt_name <- if (!is.null(statements$WEIGHT)) as.name(statements$WEIGHT)
-  if (!is.null(cens$weights_expr)) {
-    args$weights <- if (is.null(wt_name)) {
-      cens$weights_expr
-    } else {
-      bquote(.(cens$weights_expr) * .(wt_name))
-    }
-  } else if (!is.null(wt_name)) {
-    args$weights <- wt_name
-  }
+  # One expression, built in .hzr_censor_spec() from all three counts at
+  # once: EVENT, ICENSOR's C3 and the WEIGHT variable. It cannot be composed
+  # by multiplying a WEIGHT variable onto a count-only expression, because
+  # setlik.c's c2 term -- the right-censored row -- enters the sum unweighted
+  # (#158).
+  if (!is.null(cens$weights_expr)) args$weights <- cens$weights_expr
 
   # Canonical control order, so the emitted call does not depend on the order
   # the options happened to appear in the SAS text.

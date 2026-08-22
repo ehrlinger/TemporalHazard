@@ -72,8 +72,21 @@
   step). The trailing element is now read from the job's own `DO` statement
   and emitted as the grid's last point; a trailing element this cannot
   resolve to the loop's own bound is refused with an `UNTRANSLATED` row.
-  An `ICENSOR` event count now reaches the fit as `weights` instead of being
-  discarded (#154).
+  `EVENT`, `ICENSOR` and `WEIGHT` are **counts** in the reference
+  implementation, not flags, and `setlik.c` combines one record's
+  contribution as `c1c2c3 = c1w + c2 + c3w` with `c1w = C1 * WT` and
+  `c3w = C3 * WT`. All three now reach the fit that way. An `ICENSOR` event
+  count is no longer discarded (#154); an `EVENT` count carries into
+  `weights` and `status` derives from `EVENT > 0`, where `EVENT = 2` used to
+  map straight onto `status = 2` and be fitted as **interval-censored** --
+  a different likelihood branch, not an under-count (#157); and a `WEIGHT`
+  variable no longer weights right-censored rows, because `c2` is the one
+  term entering that sum unweighted and `readc2.c` sets it to `1` on exactly
+  those rows -- a `WEIGHT` that was `0` there previously deleted them from
+  the fit silently (#158). A row where the `EVENT` and `ICENSOR` counts both
+  fire is two contributions at once, which one `status` and one `weight`
+  cannot express, so the emitted status chunk now stops before the fit
+  rather than picking the event branch and discarding the interval one.
 
   Loading a fit from an external `INHAZ=` dataset returns a classed
   `hzr_outhaz` object with a `predict()` method (#151). That method takes

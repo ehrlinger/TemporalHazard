@@ -50,7 +50,7 @@ test_that("a censoring job's status chunk renders", {
   n <- 120
   AVCS <- data.frame(INT_DEAD = stats::rexp(n, 0.2),
                      DEAD = rep(c(1, 0, 0), length.out = n))
-  AVCS$C3FLAG <- as.numeric(seq_len(n) %% 5 == 0)
+  AVCS$C3FLAG <- as.numeric(seq_len(n) %% 5 == 0 & AVCS$DEAD == 0)
   AVCS$ICTIME <- ifelse(AVCS$C3FLAG > 0, AVCS$INT_DEAD * 0.5, NA)
   f <- withr::local_tempfile(fileext = ".sas")
   writeLines(paste(
@@ -90,7 +90,7 @@ test_that("the ICENSOR count reaches the fitted object as weights", {
   n <- 120
   AVCS <- data.frame(INT_DEAD = stats::rexp(n, 0.2),
                      DEAD = rep(c(1, 0, 0), length.out = n))
-  AVCS$C3FLAG <- ifelse(seq_len(n) %% 5 == 0, 3, 0)
+  AVCS$C3FLAG <- ifelse(seq_len(n) %% 5 == 0 & AVCS$DEAD == 0, 3, 0)
   AVCS$ICTIME <- ifelse(AVCS$C3FLAG > 0, AVCS$INT_DEAD * 0.5, NA)
   f <- withr::local_tempfile(fileext = ".sas")
   writeLines(paste(
@@ -105,8 +105,11 @@ test_that("the ICENSOR count reaches the fitted object as weights", {
   # The decisive check: a count of 3 must not arrive as a weight of 1 -- and
   # a count of 0 on a non-interval row must not arrive as a weight of 0,
   # which would delete that row from the likelihood.
-  status <- ifelse(AVCS$DEAD == 0 & AVCS$C3FLAG > 0, 2, AVCS$DEAD)
-  expect_equal(got$env$fit$data$weights, ifelse(status == 2, AVCS$C3FLAG, 1))
+  status <- ifelse(AVCS$DEAD > 0, 1, ifelse(AVCS$C3FLAG > 0, 2, 0))
+  expect_equal(got$env$fit$data$status, status)
+  expect_equal(got$env$fit$data$weights,
+               ifelse(AVCS$DEAD > 0, AVCS$DEAD,
+                      ifelse(AVCS$C3FLAG > 0, AVCS$C3FLAG, 1)))
   expect_true(any(got$env$fit$data$weights == 3))
   expect_false(any(got$env$fit$data$weights == 0))
 })
@@ -126,5 +129,101 @@ test_that("a job with no ICENSOR fits with unit weights, unchanged", {
   got <- render_sim(job, data = list(AVCS = AVCS))
   expect_true(got$ok, info = paste(names(got$results), got$results,
                                    collapse = " | "))
-  expect_null(got$env$fit$data$weights)
+  # EVENT is a count, so a weights argument is always emitted now (#157).
+  # For the 0/1 DEAD this job carries it must evaluate to unit weights on
+  # every row -- the same fit the job got before, asserted on the fitted
+  # object rather than on the presence or absence of an argument.
+  expect_equal(got$env$fit$data$weights, rep(1, 200))
+  expect_equal(got$env$fit$data$status, AVCS$DEAD)
+})
+
+test_that("a repeat-event count reaches the fitted object as weight and status 1", {
+  # #157: EVENT is a COUNT (readc1.c keeps any C1 >= 0; setlik.c weights the
+  # row's whole contribution by c1w = C1 * WT). Mapped straight onto status,
+  # DEAD = 2 becomes INTERVAL-CENSORED in this package's coding -- a
+  # different likelihood branch -- and DEAD = 3 falls outside the coding
+  # entirely, which also disables Conservation of Events.
+  skip_on_cran()
+  set.seed(11)
+  n <- 120
+  AVCS <- data.frame(INT_DEAD = stats::rexp(n, 0.2),
+                     DEAD = rep(c(0, 1, 2, 3), length.out = n))
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste(
+    "%HAZARD( PROC HAZARD DATA=AVCS CONDITION=14;",
+    "EVENT DEAD; TIME INT_DEAD;",
+    "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
+  ), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  got <- render_sim(job, data = list(AVCS = AVCS))
+  expect_true(got$ok, info = paste(names(got$results), got$results,
+                                   collapse = " | "))
+  # Every count > 0 is an event, never an interval or an out-of-range code.
+  expect_equal(got$env$fit$data$status, as.numeric(AVCS$DEAD > 0))
+  expect_false(any(got$env$fit$data$status == 2))
+  # The magnitude survives as the weight, and no row is deleted by a zero.
+  expect_equal(got$env$fit$data$weights, ifelse(AVCS$DEAD > 0, AVCS$DEAD, 1))
+  expect_equal(sort(unique(got$env$fit$data$weights)), c(1, 2, 3))
+})
+
+test_that("WEIGHT leaves right-censored rows at 1, as c2 enters setlik.c unweighted", {
+  # #158: setlik.c accumulates c1c2c3 = c1w + c2 + c3w, and c2 -- which
+  # readc2.c sets to ONE on exactly the rows where neither other count fires
+  # -- is the term NOT multiplied by the weight. A bare WT on censored rows
+  # over-weights them, and a WT of 0 there deletes them from the likelihood
+  # silently.
+  skip_on_cran()
+  set.seed(12)
+  n <- 120
+  AVCS <- data.frame(INT_DEAD = stats::rexp(n, 0.2),
+                     DEAD = rep(c(1, 0, 0), length.out = n))
+  # MORBID is 0 on censored rows -- the shape of hz.tm123.OMC.sas's WEIGHT
+  # MORBID, and the case that silently deletes rows.
+  AVCS$MORBID <- ifelse(AVCS$DEAD > 0, rep(c(2, 4), length.out = n), 0)
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste(
+    "%HAZARD( PROC HAZARD DATA=AVCS CONDITION=14;",
+    "EVENT DEAD; TIME INT_DEAD; WEIGHT MORBID;",
+    "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
+  ), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  got <- render_sim(job, data = list(AVCS = AVCS))
+  expect_true(got$ok, info = paste(names(got$results), got$results,
+                                   collapse = " | "))
+  w <- got$env$fit$data$weights
+  expect_equal(w, ifelse(AVCS$DEAD > 0, AVCS$MORBID, 1))
+  # The decisive one: not a single censored row was deleted by a zero
+  # weight, and there are as many weight-1 rows as there are censored rows.
+  expect_equal(sum(w == 0), 0L)
+  expect_equal(sum(w == 1), sum(AVCS$DEAD == 0))
+  expect_equal(got$env$fit$data$status, as.numeric(AVCS$DEAD > 0))
+})
+
+test_that("a row that is both an event and interval-censored is refused, not guessed", {
+  # setlik.c SUMS the contributions (c1c2c3 = c1w + c2 + c3w), so such a row
+  # is an event of weight C1*WT AND an interval observation of weight C3*WT
+  # at once. hazard() has one status and one weight per row. Picking the
+  # event branch converges and reports plausibly, which is the shape this
+  # package exists to refuse.
+  skip_on_cran()
+  set.seed(13)
+  n <- 60
+  AVCS <- data.frame(INT_DEAD = stats::rexp(n, 0.2),
+                     DEAD = rep(c(1, 0, 0), length.out = n))
+  AVCS$C3FLAG <- ifelse(seq_len(n) %% 5 == 0, 2, 0)
+  AVCS$ICTIME <- ifelse(AVCS$C3FLAG > 0, AVCS$INT_DEAD * 0.5, NA)
+  expect_true(any(AVCS$DEAD > 0 & AVCS$C3FLAG > 0))
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste(
+    "%HAZARD( PROC HAZARD DATA=AVCS CONDITION=14;",
+    "EVENT DEAD; TIME INT_DEAD; ICENSOR C3FLAG = ICTIME;",
+    "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
+  ), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  got <- render_sim(job, data = list(AVCS = AVCS))
+  expect_false(got$ok)
+  expect_match(got$results[["status"]], "both non-zero")
+  # And no fit was produced: a refusal that still leaves a fitted object
+  # behind is not a refusal.
+  expect_null(got$env$fit)
 })
