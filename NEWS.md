@@ -143,6 +143,37 @@
     unresolved libref. The document fails to render rather than reporting
     predictions over a model it never loaded.
 
+## Bug fixes
+
+* A multiphase fit is now reproducible. `hazard(dist = "multiphase")` offsets
+  the starting values for every optimization start after the first, and those
+  offsets were drawn from the ambient RNG stream. The identical call run twice
+  returned a different answer: on a 150-row two-phase fit the estimates moved
+  by about 0.3 on the log scale and the objective by about 0.08, which is
+  enough to change what the fit says. Fitting also advanced the caller's
+  stream, so a later `sample()` or `rnorm()` depended on whether a model had
+  been fitted first.
+
+  Where the assembled starting values do not converge on their own, the draw
+  decided whether there was a fit at all: the fit succeeds only from a
+  perturbed start, and about a quarter of draws stop with `Multiphase
+  optimization failed to converge on any start`. The same call could raise that
+  error on one run and not the next.
+
+  The offsets now come from an internally seeded stream, and the ambient
+  `.Random.seed` is restored afterwards. The same data and the same control
+  give the same fit, with no `set.seed()` needed, and fitting leaves the
+  caller's stream where it found it. The new `control$start_seed` (default 3)
+  selects a different ensemble of starts. That is worth reaching for when a fit
+  looks like it settled in a local optimum: fit at a few seeds and compare the
+  `objective` values.
+
+  `hzr_bootstrap()` draws its own resample before each refit, so replicates are
+  still distinct. Its numbers do shift, because the refits no longer advance
+  the stream between resamples, and a run with `seed=` is now reproducible end
+  to end.
+
+
 # TemporalHazard 1.2.1
 
 ## Breaking changes

@@ -128,9 +128,14 @@ Control parameters:
 \itemize{
 \item \code{maxit}: Maximum iterations (default 1000)
 \item \code{n_starts}: Number of optimization starts for multiphase fits (default 5).
-Each start after the first adds random noise to the initial values, drawn
-from the ambient RNG stream; call \code{set.seed()} before fitting for
-reproducible results.
+Each start after the first offsets the initial values. The offsets are
+drawn from an internally seeded stream, so a multiphase fit is
+reproducible without \code{set.seed()} and does not advance the caller's RNG
+stream.
+\item \code{start_seed}: Seed selecting the ensemble of multi-start offsets
+(default 3). Fits are reproducible at any value; vary it to probe a
+different set of starts when a fit is suspected of sitting in a local
+optimum, and compare the resulting \code{objective} values.
 \item \code{reltol}: Relative parameter change tolerance (default 1e-5)
 \item \code{abstol}: Absolute gradient norm tolerance (default 1e-6)
 \item \code{method}: Optimization method: "bfgs" or "nm" (default "bfgs")
