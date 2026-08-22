@@ -107,7 +107,10 @@
   positional call means the same thing for both methods of the generic, and
   `conf.type` (the `PROC HAZPRED` parity switch the translator emits) is a
   real argument rather than one that a misspelling could drop into `...`,
-  returning the log-log limits the SAS job did not ask for. `type` defaults to
+  returning the log-log limits the SAS job did not ask for. Its *value* is
+  checked only on the survival standard-error path that reads it, exactly as
+  `predict.hazard()` does, so an ignored value does not fail a point or
+  hazard prediction; a mistyped argument *name* still errors. `type` defaults to
   `"hazard"`, as in `predict.hazard()`, and `decompose = TRUE` is an error:
   an `OUTHAZ=` dataset carries fitted parameters, not a per-phase
   decomposition. Point predictions work; `se.fit = TRUE` is **refused** whenever the SAS fit *estimated* a
@@ -149,7 +152,12 @@
     read from `SET`, computed by a function call, or naming something the
     parser can't resolve is refused whole rather than partially read: a
     partially read grid is a partial `newdata`, which is a hollow result.
-    Such grids emit an explicit `UNTRANSLATED` block instead. On the
+    Such grids emit an explicit `UNTRANSLATED` block instead, and the
+    `predict()` chunks that would have read the grid become a `stop()`
+    naming it: emitting `predict(fit, newdata = <name>)` that nothing
+    builds either fails on an unbound name or, if the rendering session
+    happens to hold an object of that name, reports predictions over
+    unrelated times. On the
     public corpus, grid resolution is 19 of 55 (35%), up from 10 of 55
     (18%) before constant folding.
   - **An unresolved `INHAZ=` fails the render, on purpose.** A `PROC

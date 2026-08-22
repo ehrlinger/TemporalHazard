@@ -508,17 +508,29 @@
   if (!is.null(data_name)) args$data <- as.name(data_name)
   args$time <- as.name(statements$TIME)
   if (!is.null(cens$status_name)) {
-    # The status chunk is evaluated outside hazard(), so hazard()'s data
-    # masking does not reach it: wrap it in with() so its bare column names
-    # resolve. A plain local binding (not a new column) keeps the caller's
-    # data frame unmutated, and hazard()'s mask falls through to the caller's
-    # frame to find it.
-    status_expr <- if (is.null(data_name)) {
-      cens$status_expr
+    # The status chunk is evaluated outside hazard(), so it has to resolve
+    # its own bare SAS column names. When the job reads a DATA= dataset the
+    # hoisted status is written back INTO that data frame rather than bound
+    # locally: hazard()'s vector path gives data columns precedence over the
+    # calling frame, so a local binding is shadowed by any column of the same
+    # name, and both `status =` and the `time_lower` gate would then read the
+    # user's column instead of the computed censoring classification -- a
+    # different censoring structure, from a fit that raises nothing but an
+    # ambiguity warning. Derived as a column, the mask resolves to the value
+    # this chunk just wrote, so it cannot be shadowed at all. `.hzr_` is this
+    # package's reserved prefix, so overwriting a column of that name is the
+    # intended consequence, not collateral damage. transform() masks exactly
+    # as with() did, so the expression's column names still resolve against
+    # the dataset. With no DATA= there is no data frame and no mask, so a
+    # plain local binding is already unshadowable.
+    status_call <- if (is.null(data_name)) {
+      call("<-", cens$status_name, cens$status_expr)
     } else {
-      call("with", as.name(data_name), cens$status_expr)
+      derive <- as.call(list(quote(transform), as.name(data_name),
+                             cens$status_expr))
+      names(derive) <- c("", "", as.character(cens$status_name))
+      call("<-", as.name(data_name), derive)
     }
-    status_call <- call("<-", cens$status_name, status_expr)
     args$status <- cens$status_name
   } else {
     args$status <- cens$status_expr
@@ -1059,12 +1071,30 @@
   }
 
   grid <- .hzr_parse_grid(txt, data_name)
-  if (is.null(grid) && !is.null(data_name)) {
+  grid_refused <- is.null(grid) && !is.null(data_name)
+  if (grid_refused) {
     note(paste0("DATA=", data_name),
          "prediction grid DATA step is not one of the translatable forms")
   }
 
   mk <- function(type) {
+    # A refused grid is a refusal, not an absent argument. Emitting
+    # predict(fit, newdata = <name>) when no chunk builds <name> leaves the
+    # document to fail on an unbound name -- or, if an object of that name
+    # happens to exist in the rendering session, to predict over unrelated
+    # data and report it. That is the whole reason .hzr_parse_grid() refuses
+    # a partially-read grid, so refuse in the emitted document too, the way
+    # the LCENSOR + ICENSOR and SELECTION refusals do.
+    if (grid_refused) {
+      return(as.call(list(quote(stop), paste0(
+        "The ", type, " predictions of this PROC HAZPRED block read the ",
+        "grid ", data_name, ", built by a SAS DATA step ",
+        "hzr_translate_sas() does not translate. Build ", data_name,
+        " by hand (a data frame with a `time` column) and call predict() ",
+        "yourself; rendering over whatever else is named ", data_name,
+        " would report predictions over the wrong times."
+      ))))
+    }
     args <- list(quote(fit))
     if (!is.null(data_name)) args$newdata <- as.name(data_name)
     args$type <- type

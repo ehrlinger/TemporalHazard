@@ -264,9 +264,10 @@ test_that("the emitted HAZPRED call produces logit bounds, not the default", {
   fit <- hazard(survival::Surv(time, status) ~ x, data = df, dist = "weibull",
                 theta = c(0.5, 1, 0), fit = TRUE)
 
-  txt <- .hzr_sas_normalise(
+  txt <- .hzr_sas_normalise(paste(
+    "DATA P; DO MONTHS=1 TO 12 BY 1; OUTPUT; END;",
     "%HAZPRED( PROC HAZPRED DATA=P INHAZ=E.H OUT=P; TIME TIME; );"
-  )
+  ))
   emitted <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)$call
 
   env <- new.env(parent = environment())

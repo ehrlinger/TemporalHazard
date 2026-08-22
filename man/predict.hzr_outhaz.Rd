@@ -39,7 +39,9 @@ used when \code{se.fit = TRUE}.}
 \code{se.fit = TRUE}: \code{"log-log"} (default) or \code{"logit"}, which reproduces
 SAS \verb{PROC HAZPRED}'s survival limits. A real argument rather than part
 of \code{...} because a misspelling would otherwise be swallowed silently and
-return log-log limits that disagree with the SAS job being reproduced.}
+return log-log limits that disagree with the SAS job being reproduced.
+As in \code{\link[=predict.hazard]{predict.hazard()}}, the value is checked only where it is used, so
+an ignored one does not make a point or hazard prediction fail.}
 
 \item{...}{Must be empty. Anything landing here is an error rather than a
 silently ignored argument.}

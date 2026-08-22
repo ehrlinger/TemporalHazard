@@ -1,7 +1,13 @@
+# The DATA step that builds the grid is part of every fixture below that
+# asserts a predict() call: a DATA= grid no DATA step builds is refused, and
+# the block emits a stop() rather than a predict() over an unbound name.
+grid_step <- "DATA %s; DO MONTHS=1 TO 12 BY 1; OUTPUT; END;"
+
 test_that("a HAZPRED block becomes a predict() call with se.fit", {
-  txt <- .hzr_sas_normalise(
+  txt <- .hzr_sas_normalise(paste(
+    sprintf(grid_step, "PREDICT"),
     "%HAZPRED( PROC HAZPRED DATA=PREDICT INHAZ=EX.HZD OUT=PREDICT; TIME MONTHS; );"
-  )
+  ))
   b <- .hzr_sas_blocks(txt)[[1L]]
   got <- .hzr_parse_hazpred(b, txt)
   expect_equal(got$inhaz, "EX.HZD")
@@ -35,12 +41,21 @@ test_that("a grid built by SET is untranslated, not guessed at", {
   got <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)
   expect_null(got$grid)
   expect_true(any(grepl("grid", got$untranslated$reason)))
+  # And the refusal reaches the emitted document. predict(fit, newdata =
+  # PREDICT) with no chunk building PREDICT either fails on an unbound name
+  # or, if the rendering session holds an object of that name, predicts over
+  # unrelated times and reports it.
+  for (cl in list(got$call, got$call_haz)) {
+    expect_equal(cl[[1L]], quote(stop))
+    expect_match(deparse1(cl), "PREDICT", fixed = TRUE)
+  }
 })
 
 test_that("the default HAZPRED block emits both call and call_haz with se.fit", {
-  txt <- .hzr_sas_normalise(
+  txt <- .hzr_sas_normalise(paste(
+    sprintf(grid_step, "PREDICT"),
     "%HAZPRED( PROC HAZPRED DATA=PREDICT INHAZ=EX.HZD OUT=PREDICT; TIME MONTHS; );"
-  )
+  ))
   got <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)
   expect_equal(got$call[["type"]], "survival")
   expect_equal(got$call[["se.fit"]], TRUE)
@@ -49,18 +64,20 @@ test_that("the default HAZPRED block emits both call and call_haz with se.fit", 
 })
 
 test_that("NOHAZ makes call_haz NULL", {
-  txt <- .hzr_sas_normalise(
+  txt <- .hzr_sas_normalise(paste(
+    sprintf(grid_step, "PREDICT"),
     "%HAZPRED( PROC HAZPRED DATA=PREDICT INHAZ=EX.HZD OUT=PREDICT NOHAZ; TIME MONTHS; );"
-  )
+  ))
   got <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)
   expect_equal(got$call[["type"]], "survival")
   expect_null(got$call_haz)
 })
 
 test_that("NOSURV makes call the hazard prediction", {
-  txt <- .hzr_sas_normalise(
+  txt <- .hzr_sas_normalise(paste(
+    sprintf(grid_step, "PREDICT"),
     "%HAZPRED( PROC HAZPRED DATA=PREDICT INHAZ=EX.HZD OUT=PREDICT NOSURV; TIME MONTHS; );"
-  )
+  ))
   got <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)
   expect_equal(got$call[["type"]], "hazard")
   expect_null(got$call_haz)
@@ -130,9 +147,10 @@ test_that("the survival predict call sets conf.type = logit for SAS parity", {
   # SAS HAZPRED's survival confidence limits are logit-scale
   # (hzp_calc_srv_CL.c); predict.hazard() defaults to "log-log". Emitting the
   # default reproduces the job with silently different bounds.
-  txt <- .hzr_sas_normalise(
+  txt <- .hzr_sas_normalise(paste(
+    sprintf(grid_step, "P"),
     "%HAZPRED( PROC HAZPRED DATA=P INHAZ=E.H OUT=P; TIME MONTHS; );"
-  )
+  ))
   got <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)
   expect_equal(got$call[["conf.type"]], "logit")
   # Hazard CLs are log scale in both engines, so that call must NOT be steered.
@@ -140,9 +158,10 @@ test_that("the survival predict call sets conf.type = logit for SAS parity", {
 })
 
 test_that("conf.type is omitted when NOCL suppresses confidence limits", {
-  txt <- .hzr_sas_normalise(
+  txt <- .hzr_sas_normalise(paste(
+    sprintf(grid_step, "P"),
     "%HAZPRED( PROC HAZPRED DATA=P INHAZ=E.H OUT=P NOCL; TIME MONTHS; );"
-  )
+  ))
   got <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)
   expect_equal(got$call[["se.fit"]], FALSE)
   expect_null(got$call[["conf.type"]])
