@@ -4,8 +4,28 @@
 # that errors -- every defect in #151/#152 was invisible to shape assertions
 # and visible to this in one line.
 
+# The render environment's parent. globalenv() is not one: an unrelated
+# global `fit`, or any leftover symbol from another test file, satisfies a
+# broken translation and this helper reports "ok" -- an oracle that ambient
+# state can satisfy is not an oracle. The attached package environment sits
+# AFTER globalenv() on the search path, so parenting on it reaches the
+# package's exports, stats and base, and nothing of the user's.
+.render_parent <- function() {
+  if ("package:TemporalHazard" %in% search()) {
+    return(as.environment("package:TemporalHazard"))
+  }
+  # Belt and braces for a load path that does not attach: rebuild the same
+  # layer by hand rather than silently fall back to globalenv().
+  e <- new.env(parent = baseenv())
+  for (pkg in c("stats", "TemporalHazard")) {
+    ns <- asNamespace(pkg)
+    for (s in getNamespaceExports(pkg)) assign(s, get(s, envir = ns), envir = e)
+  }
+  e
+}
+
 render_sim <- function(job, data = list()) {
-  env <- new.env(parent = globalenv())
+  env <- new.env(parent = .render_parent())
   for (nm in names(data)) assign(nm, data[[nm]], envir = env)
   res <- character(0)
   for (nm in names(job$calls)) {
@@ -35,10 +55,6 @@ render_sim <- function(job, data = list()) {
 
 .sas_strip_assign <- function(cl) {
   if (is.call(cl) && identical(cl[[1L]], as.name("<-"))) cl[[3L]] else cl
-}
-
-.sas_assigned_name <- function(cl) {
-  if (is.call(cl) && identical(cl[[1L]], as.name("<-"))) as.character(cl[[2L]]) else NA_character_
 }
 
 # The called function of a chunk, looking through the `x <- ...` binding, so
@@ -91,13 +107,17 @@ sas_job_shape <- function(job) {
 #' Column roles are read off the argument they appear in -- `time=`,
 #' `status=`, `time_lower=`, `weights=`, and the phase formulas -- so the
 #' values are at least of the right kind (positive times, 0/1 status, an
-#' entry time below the event time). Datasets a `predict()` names as
-#' `newdata=` but no chunk builds get a `time` column plus every covariate
-#' the job mentions.
+#' entry time below the event time).
+#'
+#' Only the job's SAS *input* datasets are built. A `newdata=` prediction
+#' grid is deliberately NOT: the document is supposed to build its own grid,
+#' so fabricating one hands the job the very object it fails to create and
+#' counts it as rendered when it cannot run. That is how this oracle went
+#' vacuous the last time -- a job whose grid the translator refused rendered
+#' anyway, on data no chunk of it produced.
 sas_synth_data <- function(job, n = 24L) {
   nms <- names(job$calls)
   heads <- vapply(job$calls, .sas_head, character(1))
-  assigned <- stats::na.omit(vapply(job$calls, .sas_assigned_name, character(1)))
 
   roles <- list()
   add <- function(d, slot, v) {
@@ -112,8 +132,10 @@ sas_synth_data <- function(job, n = 24L) {
   for (k in seq_along(job$calls)) {
     rhs <- .sas_strip_assign(job$calls[[k]])
     if (grepl("^status(_[0-9]+)?$", nms[[k]])) {
-      # ICENSOR hoists status into its own chunk, wrapped in with(<data>, .)
-      d <- if (identical(heads[[k]], "with")) as.character(rhs[[2L]]) else ""
+      # ICENSOR hoists status into its own chunk, derived into the dataset
+      # with transform(<data>, .hzr_status = .) so hazard()'s data mask
+      # cannot shadow it; with no DATA= it is a bare local binding.
+      d <- if (identical(heads[[k]], "transform")) as.character(rhs[[2L]]) else ""
       add(d, "status", .sas_syms(rhs))
     }
     if (identical(heads[[k]], "hazard")) {
@@ -151,7 +173,6 @@ sas_synth_data <- function(job, n = 24L) {
     cols
   }
 
-  all_cov <- unique(unlist(lapply(roles, `[[`, "cov")))
   data <- list()
   free <- list()
   for (d in names(roles)) {
@@ -164,15 +185,5 @@ sas_synth_data <- function(job, n = 24L) {
     }
   }
 
-  nd <- unlist(lapply(which(heads == "predict"), function(k) {
-    a <- as.list(.sas_strip_assign(job$calls[[k]]))[-1L]
-    if (is.null(a$newdata) || !is.name(a$newdata)) NULL else as.character(a$newdata)
-  }))
-  for (d in setdiff(unique(nd), c(assigned, names(data)))) {
-    data[[d]] <- as.data.frame(c(
-      list(time = time_col),
-      stats::setNames(lapply(seq_along(all_cov), covs), all_cov)
-    ))
-  }
   c(data, free)
 }

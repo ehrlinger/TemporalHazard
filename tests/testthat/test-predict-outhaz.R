@@ -592,3 +592,38 @@ test_that("a misspelt conf.type errors instead of changing the answer", {
                     conf.type = "log-log")
   expect_false(isTRUE(all.equal(logit$lower, loglog$lower)))
 })
+
+test_that("conf.type is validated where it is used, not before", {
+  # predict.hazard() defers this match.arg() to the survival-SE path, so an
+  # otherwise-ignored value must not error here either: the two methods of
+  # one generic disagreeing about which calls are legal is a surprise the
+  # bilingual reader pays for. Rejecting an unknown argument NAME is the
+  # separate half, pinned in the test above and again below.
+  obj <- hzr_read_outhaz(fixture_path())
+  nd <- data.frame(time = c(1, 6, 12))
+
+  ref_haz <- predict(obj, newdata = nd, type = "hazard")
+  expect_equal(predict(obj, newdata = nd, type = "hazard",
+                       conf.type = "unused"),
+               ref_haz)
+  ref_pt <- predict(obj, newdata = nd, type = "survival")
+  expect_equal(predict(obj, newdata = nd, type = "survival",
+                       conf.type = "unused"),
+               ref_pt)
+  # Not vacuous: the reference values must be real predictions, not a
+  # degenerate constant that any two calls would agree on.
+  expect_true(all(is.finite(ref_haz)))
+  expect_gt(length(unique(ref_pt)), 1L)
+
+  # On the one path that reads it, a bad value still errors.
+  expect_error(
+    predict(obj, newdata = nd, type = "survival", se.fit = TRUE,
+            conf.type = "unused")
+  )
+  # And an unknown argument NAME errors regardless of the type, rather than
+  # vanishing into `...`.
+  err <- expect_error(
+    predict(obj, newdata = nd, type = "hazard", conf_type = "logit")
+  )
+  expect_match(conditionMessage(err), "conf_type", fixed = TRUE)
+})

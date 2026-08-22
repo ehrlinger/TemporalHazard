@@ -455,6 +455,8 @@ hzr_read_outhaz <- function(path) {
 #'   SAS `PROC HAZPRED`'s survival limits. A real argument rather than part
 #'   of `...` because a misspelling would otherwise be swallowed silently and
 #'   return log-log limits that disagree with the SAS job being reproduced.
+#'   As in [predict.hazard()], the value is checked only where it is used, so
+#'   an ignored one does not make a point or hazard prediction fail.
 #' @param ... Must be empty. Anything landing here is an error rather than a
 #'   silently ignored argument.
 #' @return What [predict.hazard()] returns for a fit with no covariates: a
@@ -478,12 +480,20 @@ predict.hzr_outhaz <- function(object, newdata,
                                se.fit = FALSE, level = 0.95,
                                conf.type = c("log-log", "logit"), ...) {
   type <- match.arg(type)
-  conf.type <- match.arg(conf.type)
   # `decompose`, `level` and `conf.type` are formals here, in
   # predict.hazard()'s order, so that the two methods of the same generic
   # mean the same thing positionally and a misspelt `conf.type` cannot fall
   # into `...` and quietly return log-log limits where the SAS job asked for
   # logit ones.
+  #
+  # `conf.type`'s VALUE is not validated here, only its name. It reaches
+  # nothing but survival confidence limits, so predict.hazard() defers the
+  # match.arg() to that path (R/predict-cl.R) and this method must too, or
+  # the two methods of the same generic disagree about which calls are legal
+  # -- a point or hazard prediction would error on an argument it ignores.
+  # Rejecting an unknown argument NAME (below) is the separate, and still
+  # strict, half: a `conf_type=` typo used to vanish into `...` and return
+  # log-log limits where the SAS job asked for logit ones.
   extra <- list(...)
   if (length(extra)) {
     nms <- names(extra)

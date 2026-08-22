@@ -31,6 +31,10 @@
 #' @noRd
 .hzr_retarget_fit <- function(call, fit_ref) {
   if (is.null(call)) return(NULL)
+  # A refused grid makes this a stop() chunk, whose first argument is the
+  # message, not the fit. Overwriting it would replace the explanation with
+  # a bare symbol -- a refusal that no longer says what it refused.
+  if (!identical(call[[1L]], as.name("predict"))) return(call)
   call[[2L]] <- as.name(fit_ref)
   call
 }
@@ -91,7 +95,9 @@
 #' statement requesting a stepwise screen (#152, #160), and `LCENSOR`
 #' combined with `ICENSOR`, which one `time_lower` argument cannot express
 #' (#155). Prediction grids the parser cannot resolve are refused whole, and
-#' an unresolved `INHAZ=` stops the render on purpose.
+#' the `predict()` chunks that would have read such a grid become a `stop()`
+#' naming it, rather than a `predict(newdata = )` over a name no chunk
+#' builds. An unresolved `INHAZ=` stops the render on purpose.
 #'
 #' On a fit loaded from an external `INHAZ=` dataset, point predictions work
 #' but `se.fit = TRUE` is refused when `PROC HAZARD` estimated a late shape

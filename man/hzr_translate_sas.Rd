@@ -67,7 +67,9 @@ mistranslated, each emitting a \code{stop()} in place of the fit: a \code{SELECT
 statement requesting a stepwise screen (#152, #160), and \code{LCENSOR}
 combined with \code{ICENSOR}, which one \code{time_lower} argument cannot express
 (#155). Prediction grids the parser cannot resolve are refused whole, and
-an unresolved \verb{INHAZ=} stops the render on purpose.
+the \code{predict()} chunks that would have read such a grid become a \code{stop()}
+naming it, rather than a \code{predict(newdata = )} over a name no chunk
+builds. An unresolved \verb{INHAZ=} stops the render on purpose.
 
 On a fit loaded from an external \verb{INHAZ=} dataset, point predictions work
 but \code{se.fit = TRUE} is refused when \verb{PROC HAZARD} estimated a late shape
