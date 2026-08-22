@@ -668,20 +668,29 @@
       if (length(m) > 1L) m[[2L]] else NA_character_
     })
     hi_txt <- local({
-      m <- regmatches(body, regexec("MAX *= *([0-9.]+)", body))[[1L]]
-      if (length(m) > 1L) m[[2L]] else NA_character_
+      # Anchor on a non-word character before MAX so LN_MAX=5.2 is not read
+      # as MAX=5.2 -- that produced a grid ending at t = 5.2 instead of 181,
+      # with no error (#153).
+      m <- regmatches(body, regexec("(^|[^A-Z0-9_])MAX *= *([0-9.]+)", body))[[1L]]
+      if (length(m) > 2L) m[[3L]] else NA_character_
     })
     if (is.na(lo_txt) || is.na(hi_txt)) return(NULL)
     lo <- suppressWarnings(as.numeric(lo_txt))
     hi <- suppressWarnings(as.numeric(hi_txt))
     if (is.na(lo) || is.na(hi)) return(NULL)
-    # SAS writes INC=(5+LN_MAX)/99.9, i.e. 100 points inclusive. Splice the
-    # matched text through str2lang(), not the numeric value: a negative
-    # bound such as -5 parses (like source code) to a unary-minus call, not
-    # a bare negative double, and only str2lang() reproduces that so the
-    # emitted call matches what quote()ing the equivalent source produces.
-    inner <- bquote(exp(seq(.(str2lang(lo_txt)), log(.(str2lang(hi_txt))),
-                             length.out = 100)))
+    # SAS writes INC = (5 + LN_MAX)/99.9 and steps DO LN_TIME = -5 TO LN_MAX
+    # BY INC, which lands 100 points whose LAST is exp(-5 + 99*INC), NOT
+    # LN_MAX. seq(length.out = 100) implies a /99 step, so only the first
+    # point agreed and the divergence grew to ~9.6% by the last (#153).
+    # Splice the matched text through str2lang(), not the numeric value: a
+    # negative bound such as -5 parses (like source code) to a unary-minus
+    # call, not a bare negative double, and only str2lang() reproduces that
+    # so the emitted call matches what quote()ing the equivalent source
+    # produces.
+    inner <- bquote(
+      exp(.(str2lang(lo_txt)) +
+            seq(0, 99) * ((5 + log(.(str2lang(hi_txt)))) / 99.9))
+    )
     cl <- as.call(list(quote(data.frame), inner))
     # predict.hazard() requires a column literally named `time`
     # (R/hazard_api.R:1006). Naming the grid column after the SAS DO variable

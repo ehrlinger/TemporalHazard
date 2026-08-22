@@ -17,7 +17,9 @@ test_that("a log-spaced DO grid becomes an exp(seq(...)) call", {
   ))
   got <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)
   expect_equal(got$grid,
-               quote(data.frame(time = exp(seq(-5, log(180), length.out = 100)))))
+               quote(data.frame(
+                 time = exp(-5 + seq(0, 99) * ((5 + log(180)) / 99.9))
+               )))
 })
 
 test_that("a grid built by SET is untranslated, not guessed at", {
@@ -139,4 +141,37 @@ test_that("conf.type is omitted when NOCL suppresses confidence limits", {
   got <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)
   expect_equal(got$call[["se.fit"]], FALSE)
   expect_null(got$call[["conf.type"]])
+})
+
+test_that("the log grid matches SAS's INC = (5 + LN_MAX)/99.9 step", {
+  txt <- .hzr_sas_normalise(paste(
+    "DATA PGRID; MAX = 180; LN_MAX = LOG(MAX);",
+    "INC = (5 + LN_MAX)/99.9;",
+    "DO LN_TIME = -5 TO LN_MAX BY INC; MONTHS = EXP(LN_TIME);",
+    "OUTPUT; END; RUN;"
+  ))
+  cl <- .hzr_parse_grid(txt, "PGRID")
+  grid <- eval(cl)
+  expect_equal(nrow(grid), 100L)
+  # SAS's last point is exp(-5 + 99*(log(180)+5)/99.9) = 164.2, not 180.
+  expect_equal(max(grid$time), exp(-5 + 99 * (log(180) + 5) / 99.9),
+               tolerance = 1e-8)
+  expect_false(isTRUE(all.equal(max(grid$time), 180)))
+})
+
+test_that("a directly-assigned log bound is not mistaken for MAX", {
+  # No separate MAX variable is ever assigned here -- LN_MAX is set directly,
+  # as #153 describes. The unrelated LOG(2) is only there so the body still
+  # trips the log-grid branch's own " DO "/"LOG("/EXP() detection heuristic.
+  txt <- .hzr_sas_normalise(paste(
+    "DATA PGRID; LN_MAX = 5.2; X = LOG(2); INC = (5 + LN_MAX)/99.9;",
+    "DO LN_TIME = -5 TO LN_MAX BY INC; MONTHS = EXP(LN_TIME);",
+    "OUTPUT; END; RUN;"
+  ))
+  cl <- .hzr_parse_grid(txt, "PGRID")
+  grid <- if (is.null(cl)) NULL else eval(cl)
+  # Must not silently produce a grid ending at t = 5.2 by reading LN_MAX=5.2
+  # as MAX=5.2 and taking its log (#153). There is no MAX to log here, so
+  # refusing to translate (NULL) is the correct outcome.
+  expect_true(is.null(grid) || max(grid$time) > 100)
 })
