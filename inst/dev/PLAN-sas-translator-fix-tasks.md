@@ -729,112 +729,96 @@ Refs #155"
 
 ---
 
-### Task 8: Make SELECTION emit a callable `hzr_stepwise()`
+### Task 8: Refuse SELECTION loudly
 
 **Files:**
-- Modify: `R/sas-parse-job.R` (the `head <- quote(hzr_stepwise)` branch, ~lines 319-329)
-- Modify: `R/translate-sas.R` (so the stepwise call can reference the bound fit)
-- Test: `tests/testthat/test-sas-selection.R`, `tests/testthat/test-sas-render-sim.R`
+- Modify: `R/sas-parse-job.R` (the `isTRUE(sel$stepwise)` branch)
+- Test: `tests/testthat/test-sas-selection.R`
 
 **Interfaces:**
-- Consumes: Tasks 1-3 (the fit binding provides the `fit =` argument).
-- Produces: `hzr_stepwise(fit = <fitname>, scope = ~ <candidates>, direction =, slentry =, slstay =)`.
+- Consumes: `.hzr_untranslated_frame(line, construct, detail)` (positional), and
+  the refusal pattern Task 7 established in `.hzr_censor_spec()`.
+- Produces: a `SELECTION` job records an `untranslated` row and emits a `stop()`
+  chunk instead of a `hzr_stepwise()` call.
 
-`SELECTION` appears in **36 of 93** production jobs -- the second most common construct after the censoring statements.
+**Why refuse rather than translate.** The original plan emitted
+`hzr_stepwise(fit = , scope = , ...)`. That cannot work: `.hzr_refit_with_scope()`
+(`R/stepwise-refit.R:88-91`) requires a **formula-interface** base fit, and the
+translator emits the vector interface. Every candidate refit then errors, the
+forward step downgrades those errors to warnings (`R/stepwise-step.R:210,227`),
+and the run returns **zero steps** — indistinguishable from "nothing met
+`slentry`". That is a row in `AGENTS.md`'s own table of shipped defects, and
+evaluating the emitted chunks does not catch it.
+
+Measured scale: 26 production jobs use `SELECTION` with `PROC HAZARD`; **25 also
+use `ICENSOR`**, 1 is plain `EVENT`/`TIME`. Supporting only the plain case would
+cover one job. The real fix is tracked in #160; the `hzr_stepwise()` silent-no-op
+is #159.
 
 - [ ] **Step 1: Write the failing test**
 
 ```r
-test_that("SELECTION emits a callable hzr_stepwise() with a real scope", {
-  txt <- .hzr_sas_normalise(paste(
-    "%HAZARD( PROC HAZARD DATA=A CONDITION=14 SELECTION=STEPWISE",
-    "SLENTRY=0.05 SLSTAY=0.1;",
+test_that("a SELECTION job is refused, not translated into a no-op screen", {
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste(
+    "%HAZARD( PROC HAZARD DATA=A CONDITION=14;",
+    "EVENT DEAD; TIME T; EARLY X1, X2, X3;",
+    "SELECTION STEPWISE SLENTRY=0.05 SLSTAY=0.1;",
+    "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
+  ), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  expect_true(any(grepl("SELECTION", job$untranslated$construct, fixed = TRUE)))
+  # No hzr_stepwise() call may be emitted at all: one that runs and screens
+  # nothing is the defect this refusal exists to avoid (#159, #160).
+  deparsed <- paste(vapply(job$calls, function(c0)
+    paste(deparse(c0), collapse = " "), character(1)), collapse = " ")
+  expect_false(grepl("hzr_stepwise", deparsed, fixed = TRUE))
+  expect_true(grepl("stop(", deparsed, fixed = TRUE))
+})
+
+test_that("a job with no SELECTION statement is unaffected", {
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste(
+    "%HAZARD( PROC HAZARD DATA=A CONDITION=14;",
     "EVENT DEAD; TIME T; EARLY X1, X2, X3;",
     "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
-  ))
-  got <- .hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]], txt)
-  expect_equal(got$call[[1L]], as.name("hzr_stepwise"))
-  expect_false(is.null(got$call[["fit"]]))
-  expect_equal(got$call[["scope"]], quote(~X1 + X2 + X3))
-  # The candidate pool must NOT be baked into the phase formula as forced-in
-  # terms -- that inverts the meaning of the SAS statement (#152).
-  ph <- got$call[["phases"]]
-  expect_false(grepl("X1", paste(deparse(ph), collapse = " ")))
+  ), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  expect_false(any(grepl("SELECTION", job$untranslated$construct, fixed = TRUE)))
+  expect_equal(job$calls$fit[[3L]][[1L]], as.name("hazard"))
 })
 ```
 
 - [ ] **Step 2: Run it and verify it fails**
 
 Run: `NOT_CRAN=true Rscript -e 'devtools::load_all("."); testthat::test_file("tests/testthat/test-sas-selection.R")'`
-Expected: FAIL -- `fit` and `scope` are both absent and `X1` appears in the phase formula.
+Expected: FAIL — today a `hzr_stepwise()` call is emitted and nothing is recorded
+in `untranslated`.
 
-- [ ] **Step 3: Implement**
+- [ ] **Step 3: Implement the refusal**
 
-In the `isTRUE(sel$stepwise)` branch: build `scope` as a one-sided formula from the phase-covariate names, remove those names from the phase formula so they are candidates rather than forced terms, and add a `fit` placeholder that `R/translate-sas.R` rewrites to the resolved fit slot name (the same placeholder-rewriting `.hzr_point_predict_at()` already does for `predict()`):
+In the `isTRUE(sel$stepwise)` branch of `.hzr_parse_hazard()`, replace the
+`head <- quote(hzr_stepwise)` retargeting with a refusal that mirrors Task 7's:
+record an `untranslated` row naming the construct and the reason, and emit a
+`stop()` chunk in place of the fit rather than a `hazard()`/`hzr_stepwise()`
+call. Reuse Task 7's mechanism rather than writing a second one.
 
-```r
-      head <- quote(hzr_stepwise)
-      # SAS's SELECTION screens the phase-statement variables; they are
-      # candidates, not model terms. Baking them into the phase formula made
-      # them forced-in, inverting the statement's meaning, and the emitted
-      # call had neither `fit` nor `scope` so it could not run at all (#152).
-      args$fit <- quote(fit)
-      args$scope <- stats::reformulate(cand_names)
-      args$direction <- sel$direction
-```
-
-`cand_names` and the forced-term removal come from **where the covariates are
-gathered**, not from post-processing built phases. In `.hzr_parse_hazard()`,
-`covars` is assembled at `R/sas-parse-job.R:217-263` as a list with `$early`,
-`$constant` and `$late` elements, then passed to `.hzr_parse_parms(parms_ops,
-covars = covars)` at line 272. Split the same way `.hzr_parse_phase_covars()`
-does, and when the job is a stepwise SELECTION build the phases with **no**
-covariates so they are candidates rather than forced terms:
-
-```r
-  # Under SELECTION the phase variables are the candidate pool, so they must
-  # not reach .hzr_parse_parms() as phase formulas -- that is what made them
-  # forced-in model terms (#152). Collect their names for `scope` instead.
-  cand_names <- unique(unlist(lapply(covars, .hzr_parse_phase_covars),
-                              use.names = FALSE))
-  is_stepwise <- !is.null(sel_ops) && isTRUE(.hzr_selection_spec(sel_ops)$stepwise)
-  parms <- .hzr_parse_parms(parms_ops,
-                            covars = if (is_stepwise) list() else covars)
-```
-
-Order matters: this runs before line 272's existing `parms <-` call, which it
-replaces. `.hzr_selection_spec()` is called twice as written -- hoist it to a
-single local if the duplicate call is awkward, but do not change its
-behaviour.
+The detail string should say plainly that the screen is not translated, that
+translating it needs a formula-interface base fit, and that the job's selection
+must be run by hand — and cite #160.
 
 - [ ] **Step 4: Run to verify it passes**
 
 Run: `NOT_CRAN=true Rscript -e 'devtools::load_all("."); testthat::test_file("tests/testthat/test-sas-selection.R")'`
 Expected: PASS.
 
-- [ ] **Step 5: Add a render test that executes the stepwise call**
+- [ ] **Step 5: Update the existing SELECTION tests**
 
-```r
-test_that("a SELECTION job renders end to end", {
-  skip_on_cran()
-  set.seed(6)
-  n <- 300
-  A <- data.frame(T = stats::rexp(n, 0.2), DEAD = rep(c(1, 0), length.out = n),
-                  X1 = stats::rnorm(n), X2 = stats::rnorm(n),
-                  X3 = stats::rnorm(n))
-  f <- withr::local_tempfile(fileext = ".sas")
-  writeLines(paste(
-    "%HAZARD( PROC HAZARD DATA=A CONDITION=14 SELECTION=STEPWISE",
-    "SLENTRY=0.05 SLSTAY=0.1;",
-    "EVENT DEAD; TIME T; EARLY X1, X2, X3;",
-    "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
-  ), f)
-  job <- suppressWarnings(hzr_translate_sas(f))
-  got <- render_sim(job, data = list(A = A))
-  expect_true(got$ok, info = paste(names(got$results), got$results,
-                                   collapse = " | "))
-})
-```
+`tests/testthat/test-sas-selection.R` currently asserts the *emitted call's
+shape* (`got$call[[1L]] == as.name("hzr_stepwise")`, the `direction` value, and
+the `slentry`/`slstay` values). Those assertions describe behaviour this task
+removes. Update them to assert the refusal; do not delete them, and record in a
+comment what they used to claim, as Task 7 did for `test-sas-censoring.R`.
 
 - [ ] **Step 6: Run the full gate and commit**
 
@@ -842,18 +826,23 @@ test_that("a SELECTION job renders end to end", {
 Rscript -e 'devtools::document()'
 Rscript -e 'lintr::lint_package()'
 Rscript -e 'devtools::test()'
-git add R/sas-parse-job.R R/translate-sas.R tests/testthat/
-git commit -m "fix(sas): emit a callable hzr_stepwise() for SELECTION
+git add R/sas-parse-job.R tests/testthat/test-sas-selection.R
+git commit -m "fix(sas): refuse SELECTION instead of emitting a screen that finds nothing
 
-Two defects. The emitted call had neither fit nor scope -- hzr_stepwise()'s
-signature is (fit, scope, data, ...) -- so it failed with 'argument fit is
-missing'. And the EARLY candidate pool was baked into the phase formula as
-forced-in model terms, inverting the meaning of the SAS statement: even once
-callable it would have screened the wrong thing.
+hzr_stepwise()'s refit path requires a formula-interface base fit; the
+translator emits the vector interface. Every candidate refit therefore errors,
+the forward step downgrades those errors to warnings, and the run returns zero
+steps -- indistinguishable from 'nothing met slentry'. That is a row in
+AGENTS.md's table of shipped defects, and it renders clean.
 
-The old test asserted only that call[[1]] was the symbol hzr_stepwise, never
-evaluating it. SELECTION appears in 36 of 93 PROC HAZARD jobs across the
-production studies.
+Also, the EARLY candidate pool was baked into the phase formula as forced-in
+model terms, inverting the meaning of the SAS statement.
+
+26 production jobs use SELECTION with PROC HAZARD; 25 of them also use ICENSOR
+and 1 is plain EVENT/TIME, so partial support would cover a single job.
+
+Refuse loudly instead: an UNTRANSLATED callout plus a stop() chunk. The real
+translation is #160; the hzr_stepwise() silent-no-op is #159.
 
 Closes #152"
 ```
