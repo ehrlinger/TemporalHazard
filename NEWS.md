@@ -54,9 +54,17 @@
     lower bound for status 2 rows, so one column cannot express both (#155).
 
   Two gaps that made the emitted calls compute a different answer from the
-  SAS job are closed. The log prediction grid now uses SAS's
-  `INC = (5 + LN_MAX)/99.9` step rather than a `/99` one (#153), and an
-  `ICENSOR` event count now reaches the fit as `weights` instead of being
+  SAS job are closed. The log prediction grid now takes its step from the
+  job's own `INC=` expression rather than a hardcoded one (#153): three
+  denominators appear across the public corpus (`/49.9`, `/99.9`, `/999.9`)
+  and the denominator sets both the step and the number of points SAS's
+  `DO lo TO hi BY INC` lands, so reading every job as `/99.9` gave the
+  `/999.9` jobs 100 points on a step ten times too large -- every time
+  wrong, over an empty `untranslated` and full coverage. The span is the
+  loop's own `log(hi) - lo`, which coincides with `5 + log(hi)` only because
+  every corpus job starts at -5, and an `INC=` in a form the parser cannot
+  read is refused with an `UNTRANSLATED` row rather than stepped by a guess.
+  An `ICENSOR` event count now reaches the fit as `weights` instead of being
   discarded (#154).
 
   Loading a fit from an external `INHAZ=` dataset returns a classed

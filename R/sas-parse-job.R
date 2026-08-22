@@ -637,6 +637,53 @@
   consts
 }
 
+#' Read the step denominator out of a log-grid DATA step's own `INC=`.
+#'
+#' SAS writes the log-grid step as `INC = (<numerator>)/<denominator>`, and
+#' the corpus uses three different denominators (`/49.9`, `/99.9`, `/999.9`).
+#' The denominator is what sets both the step and the point count, so it is
+#' read from the job rather than assumed.
+#'
+#' The numerator has to be the loop's own span, `log(hi) - lo`. Every corpus
+#' job writes that span in one of two spellings -- `(5 + LN_MAX)` where the
+#' loop starts at -5, or `(MAX - MIN)` -- and the two coincide only because
+#' `lo = -5`. A numerator that is *not* the span means the emitted
+#' `(log(hi) - lo)/denominator` step would not be the job's step, so this
+#' returns `NA_real_` and the caller refuses the grid.
+#'
+#' @param pre The DATA step's text before its `DO` statement.
+#' @param inc_var Name of the variable the `DO ... BY` clause steps by.
+#' @param bound_var Name of the `DO ... TO` bound (e.g. `LN_MAX`).
+#' @param ln_hi The bound's value, `log(hi)`.
+#' @param span `log(hi) - lo`, the range the loop covers.
+#' @return The denominator as a positive `double`, or `NA_real_` when the
+#'   `INC=` assignment is absent or is not a form this can parse.
+#' @noRd
+.hzr_sas_grid_denom <- function(pre, inc_var, bound_var, ln_hi, span) {
+  consts <- .hzr_sas_data_constants(pre)
+  # LN_MAX = LOG(MAX) is a function call, so .hzr_sas_data_constants() never
+  # folds it. The DO's TO bound is the log bound by construction, so bind it
+  # here -- after the fold, so it wins over any earlier assignment.
+  consts[[bound_var]] <- ln_hi
+
+  rhs <- NA_character_
+  for (s in strsplit(pre, ";", fixed = TRUE)[[1L]]) {
+    s <- trimws(s)
+    m <- regmatches(s, regexec("^([A-Z_][A-Z0-9_]*) *= *(.+)$", s))[[1L]]
+    # Last assignment wins, as SAS's own sequential DATA-step semantics do.
+    if (length(m) >= 3L && identical(m[[2L]], inc_var)) rhs <- trimws(m[[3L]])
+  }
+  if (is.na(rhs)) return(NA_real_)
+
+  parts <- regmatches(rhs, regexec("^\\((.+)\\) */ *([0-9.]+)$", rhs))[[1L]]
+  if (length(parts) < 3L) return(NA_real_)
+  num <- .hzr_eval_sas_const(parts[[2L]], consts)
+  den <- suppressWarnings(as.numeric(parts[[3L]]))
+  if (is.na(num) || is.na(den) || den <= 0) return(NA_real_)
+  if (!isTRUE(all.equal(num, span, tolerance = 1e-8))) return(NA_real_)
+  den
+}
+
 #' Translate the DATA step that builds a HAZPRED prediction grid.
 #'
 #' Returns an unevaluated `data.frame()` call, or `NULL` when the step is not
@@ -664,11 +711,16 @@
   # --- log-spaced grid: DO LN_TIME=-5 TO LN_MAX BY INC; t = EXP(LN_TIME) ----
   if (grepl(" DO ", body) && grepl("LOG(", body, fixed = TRUE) &&
       !is.na(time_var)) {
-    lo_txt <- local({
-      m <- regmatches(body,
-             regexec("DO [A-Z_][A-Z0-9_]* *= *(-?[0-9.]+) TO", body))[[1L]]
-      if (length(m) > 1L) m[[2L]] else NA_character_
-    })
+    do_m <- regmatches(body, regexec(
+      paste0("DO [A-Z_][A-Z0-9_]* *= *(-?[0-9.]+) TO ",
+             "([A-Z_][A-Z0-9_]*) BY ([A-Z_][A-Z0-9_]*)"),
+      body))[[1L]]
+    # No `BY` at all means a SAS step of 1, which is not this stereotyped
+    # form; refuse rather than reuse the step of the form it is not.
+    if (length(do_m) < 4L) return(NULL)
+    lo_txt <- do_m[[2L]]
+    bound_var <- do_m[[3L]]
+    inc_var <- do_m[[4L]]
     hi_txt <- local({
       # Anchor on a non-word character before MAX so LN_MAX=5.2 is not read
       # as MAX=5.2 -- that produced a grid ending at t = 5.2 instead of 181,
@@ -676,22 +728,36 @@
       m <- regmatches(body, regexec("(^|[^A-Z0-9_])MAX *= *([0-9.]+)", body))[[1L]]
       if (length(m) > 2L) m[[3L]] else NA_character_
     })
-    if (is.na(lo_txt) || is.na(hi_txt)) return(NULL)
+    if (is.na(hi_txt)) return(NULL)
     lo <- suppressWarnings(as.numeric(lo_txt))
     hi <- suppressWarnings(as.numeric(hi_txt))
-    if (is.na(lo) || is.na(hi)) return(NULL)
-    # SAS writes INC = (5 + LN_MAX)/99.9 and steps DO LN_TIME = -5 TO LN_MAX
-    # BY INC, which lands 100 points whose LAST is exp(-5 + 99*INC), NOT
-    # LN_MAX. seq(length.out = 100) implies a /99 step, so only the first
-    # point agreed and the divergence grew to ~9.6% by the last (#153).
+    if (is.na(lo) || is.na(hi) || hi <= 0) return(NULL)
+    span <- log(hi) - lo
+    if (!is.finite(span) || span <= 0) return(NULL)
+    do_at <- regexpr("DO [A-Z_][A-Z0-9_]* *= *[^;]+;", body)
+    pre <- if (do_at > 0L) substring(body, 1L, as.integer(do_at) - 1L) else ""
+    # The step is the job's own INC=, never an assumed one. Three
+    # denominators appear across the corpus (/49.9, /99.9, /999.9), and
+    # hardcoding /99.9 gave the /999.9 jobs a step ten times too large --
+    # wrong times over a full progress bar, reported as fully translated.
+    denom <- .hzr_sas_grid_denom(pre, inc_var, bound_var, log(hi), span)
+    if (is.na(denom)) return(NULL)
+    # SAS's DO LN_TIME = lo TO LN_MAX BY INC runs floor((LN_MAX - lo)/INC) + 1
+    # times, and INC is span/denom, so the count follows the denominator:
+    # /99.9 lands 100 points, /999.9 lands 1000. The last is
+    # exp(lo + (n - 1) * INC), NOT LN_MAX -- seq(length.out = n) would imply
+    # a /(n - 1) step, so only the first point would agree (#153).
+    n <- floor(denom) + 1
     # Splice the matched text through str2lang(), not the numeric value: a
     # negative bound such as -5 parses (like source code) to a unary-minus
     # call, not a bare negative double, and only str2lang() reproduces that
     # so the emitted call matches what quote()ing the equivalent source
     # produces.
+    lo_lang <- str2lang(lo_txt)
     inner <- bquote(
-      exp(.(str2lang(lo_txt)) +
-            seq(0, 99) * ((5 + log(.(str2lang(hi_txt)))) / 99.9))
+      exp(.(lo_lang) +
+            seq(0, .(n - 1)) *
+              ((log(.(str2lang(hi_txt))) - .(lo_lang)) / .(denom)))
     )
     cl <- as.call(list(quote(data.frame), inner))
     # predict.hazard() requires a column literally named `time`
