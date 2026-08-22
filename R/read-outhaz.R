@@ -439,13 +439,30 @@ hzr_read_outhaz <- function(path) {
 #'
 #' @param object An `hzr_outhaz` object from [hzr_read_outhaz()].
 #' @param newdata Data frame with a `time` column. Required.
-#' @param type One of `"survival"`, `"hazard"` or `"cumulative_hazard"`.
+#' @param type One of `"hazard"`, `"survival"` or `"cumulative_hazard"`;
+#'   default `"hazard"`, as in [predict.hazard()].
+#' @param decompose Accepted only to keep this method's argument list
+#'   identical to [predict.hazard()]'s, so that a positional call means the
+#'   same thing for both. `TRUE` is an error: an `OUTHAZ=` dataset names its
+#'   phases but carries no per-phase decomposition, and silently returning
+#'   the total prediction instead would answer a question that was not asked.
 #' @param se.fit Logical; add delta-method standard errors and confidence
 #'   limits, as [predict.hazard()] does.
-#' @param ... Passed to [predict.hazard()] (`level`, `conf.type`,
-#'   `decompose`).
-#' @return What [predict.hazard()] returns: a numeric vector, or a data frame
-#'   with `fit`, `se.fit`, `lower` and `upper` when `se.fit = TRUE`.
+#' @param level Numeric confidence level in `(0, 1)`; default `0.95`. Only
+#'   used when `se.fit = TRUE`.
+#' @param conf.type Transform for `type = "survival"` confidence limits when
+#'   `se.fit = TRUE`: `"log-log"` (default) or `"logit"`, which reproduces
+#'   SAS `PROC HAZPRED`'s survival limits. A real argument rather than part
+#'   of `...` because a misspelling would otherwise be swallowed silently and
+#'   return log-log limits that disagree with the SAS job being reproduced.
+#' @param ... Must be empty. Anything landing here is an error rather than a
+#'   silently ignored argument.
+#' @return What [predict.hazard()] returns for a fit with no covariates: a
+#'   numeric vector of predictions when `se.fit = FALSE`, and when
+#'   `se.fit = TRUE` a data frame with columns `fit`, `se.fit`, `lower` and
+#'   `upper` (the confidence limits at `level`). The decomposed long-format
+#'   return of [predict.hazard()] is not reachable here, because
+#'   `decompose = TRUE` is refused.
 #' @seealso [hzr_read_outhaz()], [predict.hazard()].
 #' @export
 #' @examples
@@ -455,14 +472,39 @@ hzr_read_outhaz <- function(path) {
 #'   predict(fit, newdata = data.frame(time = c(1, 6, 12)), type = "survival")
 #' }
 predict.hzr_outhaz <- function(object, newdata,
-                               type = c("survival", "hazard",
+                               type = c("hazard", "survival",
                                         "cumulative_hazard"),
-                               se.fit = FALSE, ...) {
+                               decompose = FALSE,
+                               se.fit = FALSE, level = 0.95,
+                               conf.type = c("log-log", "logit"), ...) {
   type <- match.arg(type)
+  conf.type <- match.arg(conf.type)
+  # `decompose`, `level` and `conf.type` are formals here, in
+  # predict.hazard()'s order, so that the two methods of the same generic
+  # mean the same thing positionally and a misspelt `conf.type` cannot fall
+  # into `...` and quietly return log-log limits where the SAS job asked for
+  # logit ones.
+  extra <- list(...)
+  if (length(extra)) {
+    nms <- names(extra)
+    nms <- if (is.null(nms)) rep("", length(extra)) else nms
+    nms[!nzchar(nms)] <- "<unnamed>"
+    stop("Unused argument(s) passed to predict(): ",
+         paste(nms, collapse = ", "),
+         ". predict.hzr_outhaz() takes 'newdata', 'type', 'decompose', ",
+         "'se.fit', 'level' and 'conf.type'.", call. = FALSE)
+  }
+  if (!identical(decompose, FALSE)) {
+    stop("'decompose' is not available for a fit loaded from an OUTHAZ= ",
+         "dataset: the dataset holds the fitted parameters, not the ",
+         "per-phase decomposition, so there is nothing to decompose.",
+         call. = FALSE)
+  }
   if (missing(newdata) || is.null(newdata)) {
     stop("'newdata' is required: an OUTHAZ= dataset carries a fitted model ",
          "and no data, so there are no times to predict at.", call. = FALSE)
   }
   spec <- .hzr_outhaz_to_spec(object, need_vcov = isTRUE(se.fit))
-  stats::predict(spec, newdata = newdata, type = type, se.fit = se.fit, ...)
+  stats::predict(spec, newdata = newdata, type = type, se.fit = se.fit,
+                 level = level, conf.type = conf.type)
 }

@@ -68,8 +68,16 @@
   discarded (#154).
 
   Loading a fit from an external `INHAZ=` dataset returns a classed
-  `hzr_outhaz` object with a `predict()` method (#151). Point predictions
-  work; `se.fit = TRUE` is **refused** whenever the SAS fit *estimated* a
+  `hzr_outhaz` object with a `predict()` method (#151). That method takes
+  the same arguments in the same order as `predict.hazard()` --
+  `newdata`, `type`, `decompose`, `se.fit`, `level`, `conf.type` -- so a
+  positional call means the same thing for both methods of the generic, and
+  `conf.type` (the `PROC HAZPRED` parity switch the translator emits) is a
+  real argument rather than one that a misspelling could drop into `...`,
+  returning the log-log limits the SAS job did not ask for. `type` defaults to
+  `"hazard"`, as in `predict.hazard()`, and `decompose = TRUE` is an error:
+  an `OUTHAZ=` dataset carries fitted parameters, not a per-phase
+  decomposition. Point predictions work; `se.fit = TRUE` is **refused** whenever the SAS fit *estimated* a
   late shape parameter that `PROC HAZARD` put on a composite scale --
   `log(GAMMA*ETA - 2)` and friends, which is the generic unconstrained
   three-phase case rather than an exotic one -- and likewise under `FIXMNU1`

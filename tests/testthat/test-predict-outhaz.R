@@ -529,3 +529,66 @@ test_that("a plain-log late shape IS mapped -- the gate is not blanket refusal",
   expect_equal(got$fit, exp(-late_cumhaz(tt, est)))
   expect_equal(got$se.fit, want_se, tolerance = 1e-6)
 })
+
+# predict.hzr_outhaz() and predict.hazard() are two methods of one generic in
+# one package. When their argument lists disagreed, positional slot 4 was
+# `decompose` on one and `se.fit` on the other, and `level`/`conf.type` fell
+# into `...` here -- so a misspelt `conf.type` silently returned log-log
+# limits where the SAS job being reproduced asked for logit ones.
+
+test_that("predict.hzr_outhaz() takes predict.hazard()'s arguments in order", {
+  fo <- formals(predict.hzr_outhaz)
+  fh <- formals(predict.hazard)
+  expect_equal(names(fo),
+               c("object", "newdata", "type", "decompose", "se.fit",
+                 "level", "conf.type", "..."))
+  expect_equal(names(fo), names(fh))
+  # Same default type, so an unnamed `type` means the same thing in both.
+  expect_equal(eval(fo$type)[[1L]], eval(fh$type)[[1L]])
+  expect_equal(fo$level, fh$level)
+  expect_equal(eval(fo$conf.type), eval(fh$conf.type))
+})
+
+test_that("a positional predict() call means the same for both methods", {
+  obj <- hzr_read_outhaz(fixture_path())
+  nd <- data.frame(time = c(1, 6, 12))
+  # Slot 4 is `decompose`, slot 5 is `se.fit` -- as in predict.hazard().
+  got <- predict(obj, nd, "survival", FALSE, TRUE)
+  want <- predict(obj, newdata = nd, type = "survival", se.fit = TRUE)
+  expect_equal(got, want)
+  expect_s3_class(got, "data.frame")
+  # Not a positional call that quietly did nothing: it really used se.fit.
+  expect_true(all(got$se.fit > 0))
+})
+
+test_that("decompose = TRUE is refused, not silently ignored", {
+  obj <- hzr_read_outhaz(fixture_path())
+  nd <- data.frame(time = c(1, 6, 12))
+  err <- expect_error(
+    predict(obj, newdata = nd, type = "cumulative_hazard", decompose = TRUE)
+  )
+  expect_match(conditionMessage(err), "OUTHAZ=", fixed = TRUE)
+  expect_match(conditionMessage(err), "decompose", fixed = TRUE)
+  # The undecomposed prediction is what would have come back instead.
+  expect_length(
+    predict(obj, newdata = nd, type = "cumulative_hazard", decompose = FALSE),
+    3L
+  )
+})
+
+test_that("a misspelt conf.type errors instead of changing the answer", {
+  obj <- hzr_read_outhaz(fixture_path())
+  nd <- data.frame(time = c(1, 6, 12))
+  err <- expect_error(
+    predict(obj, newdata = nd, type = "survival", se.fit = TRUE,
+            conf_type = "logit")
+  )
+  expect_match(conditionMessage(err), "conf_type", fixed = TRUE)
+  # The two transforms really do give different limits, so swallowing the
+  # typo would have been a wrong answer, not a harmless one.
+  logit <- predict(obj, newdata = nd, type = "survival", se.fit = TRUE,
+                   conf.type = "logit")
+  loglog <- predict(obj, newdata = nd, type = "survival", se.fit = TRUE,
+                    conf.type = "log-log")
+  expect_false(isTRUE(all.equal(logit$lower, loglog$lower)))
+})

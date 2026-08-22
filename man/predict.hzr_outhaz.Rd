@@ -7,8 +7,11 @@
 \method{predict}{hzr_outhaz}(
   object,
   newdata,
-  type = c("survival", "hazard", "cumulative_hazard"),
+  type = c("hazard", "survival", "cumulative_hazard"),
+  decompose = FALSE,
   se.fit = FALSE,
+  level = 0.95,
+  conf.type = c("log-log", "logit"),
   ...
 )
 }
@@ -17,17 +20,37 @@
 
 \item{newdata}{Data frame with a \code{time} column. Required.}
 
-\item{type}{One of \code{"survival"}, \code{"hazard"} or \code{"cumulative_hazard"}.}
+\item{type}{One of \code{"hazard"}, \code{"survival"} or \code{"cumulative_hazard"};
+default \code{"hazard"}, as in \code{\link[=predict.hazard]{predict.hazard()}}.}
+
+\item{decompose}{Accepted only to keep this method's argument list
+identical to \code{\link[=predict.hazard]{predict.hazard()}}'s, so that a positional call means the
+same thing for both. \code{TRUE} is an error: an \verb{OUTHAZ=} dataset names its
+phases but carries no per-phase decomposition, and silently returning
+the total prediction instead would answer a question that was not asked.}
 
 \item{se.fit}{Logical; add delta-method standard errors and confidence
 limits, as \code{\link[=predict.hazard]{predict.hazard()}} does.}
 
-\item{...}{Passed to \code{\link[=predict.hazard]{predict.hazard()}} (\code{level}, \code{conf.type},
-\code{decompose}).}
+\item{level}{Numeric confidence level in \verb{(0, 1)}; default \code{0.95}. Only
+used when \code{se.fit = TRUE}.}
+
+\item{conf.type}{Transform for \code{type = "survival"} confidence limits when
+\code{se.fit = TRUE}: \code{"log-log"} (default) or \code{"logit"}, which reproduces
+SAS \verb{PROC HAZPRED}'s survival limits. A real argument rather than part
+of \code{...} because a misspelling would otherwise be swallowed silently and
+return log-log limits that disagree with the SAS job being reproduced.}
+
+\item{...}{Must be empty. Anything landing here is an error rather than a
+silently ignored argument.}
 }
 \value{
-What \code{\link[=predict.hazard]{predict.hazard()}} returns: a numeric vector, or a data frame
-with \code{fit}, \code{se.fit}, \code{lower} and \code{upper} when \code{se.fit = TRUE}.
+What \code{\link[=predict.hazard]{predict.hazard()}} returns for a fit with no covariates: a
+numeric vector of predictions when \code{se.fit = FALSE}, and when
+\code{se.fit = TRUE} a data frame with columns \code{fit}, \code{se.fit}, \code{lower} and
+\code{upper} (the confidence limits at \code{level}). The decomposed long-format
+return of \code{\link[=predict.hazard]{predict.hazard()}} is not reachable here, because
+\code{decompose = TRUE} is refused.
 }
 \description{
 Rebuilds the multiphase model the \verb{OUTHAZ=} dataset describes -- which
