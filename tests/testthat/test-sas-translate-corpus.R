@@ -35,55 +35,75 @@ test_that("public-corpus jobs that translate also render", {
                    pattern = "[.]sas$", full.names = TRUE, recursive = TRUE)
   skip_if(length(fs) == 0L, "no .sas corpus available")
 
-  n_render <- 0L
-  n_trans <- 0L
-  n_excluded <- 0L
+  n_trans <- 0L        # .sas files that translated at all
+  n_eligible <- 0L     # distinct jobs synthetic data can drive end to end
+  n_rendered <- 0L     # of those, jobs whose every chunk ran
+  n_partial <- 0L      # distinct jobs checked only up to their fit chunks
   failures <- character(0)
+  ineligible <- character(0)
+  seen <- new.env(parent = emptyenv())
 
   for (f in fs) {
     job <- tryCatch(suppressWarnings(hzr_translate_sas(f)), error = function(e) NULL)
     if (is.null(job)) next
     n_trans <- n_trans + 1L
 
-    # Three constructs are refused or unresolvable by design, not translator
-    # defects, so a job in one of these categories is excluded from the
-    # render requirement rather than misclassified against it:
-    #  - SELECTION's stepwise screen and LCENSOR + ICENSOR are refused
-    #    outright: the "fit" chunk holds a bare stop() (R/sas-parse-job.R),
-    #    indistinguishable by chunk name from a real fit.
-    #  - An unresolved INHAZ= is a third documented non-render case --
-    #    hzr_translate_sas() itself warns "the emitted document will stop()
-    #    rather than render" (R/translate-sas.R), and .hzr_render_qmd()
-    #    inserts that stop() chunk *before* any of job$calls, so nothing in
-    #    job$calls is reachable in an actual render. render_sim() only
-    #    evaluates job$calls, so it never sees that stop() and instead
-    #    surfaces a downstream "object 'fit' not found" -- the same
-    #    intentional failure, at the wrong chunk.
-    refused <- any(job$untranslated$construct %in% c("SELECTION", "LCENSOR + ICENSOR"))
-    if (refused || !isTRUE(job$inhaz_resolved)) {
-      n_excluded <- n_excluded + 1L
+    # The corpus holds the same jobs under examples/, dist/examples/ and
+    # tests/, so 57 translations are 22 distinct documents. Fitting each
+    # one once keeps the file inside its time budget; the duplicates would
+    # exercise byte-identical calls.
+    key <- paste(vapply(job$calls, function(x) paste(deparse(x), collapse = " "), ""),
+                 collapse = " ;; ")
+    if (!is.null(seen[[key]])) next
+    assign(key, TRUE, envir = seen)
+
+    shape <- sas_job_shape(job)
+    # A meaningless fit is fine here -- the assertion is that the chunks run
+    # -- but a nonsense fit warns freely (no convergence, no standard
+    # errors). Errors are the signal; warnings are noise, so drop them.
+    sim <- suppressWarnings(render_sim(job, sas_synth_data(job)))
+
+    # Chunks the translator emits as a deliberate stop() must actually stop:
+    # a SELECTION or LCENSOR + ICENSOR refusal that quietly succeeded would
+    # be a fit over a model this package refuses to specify.
+    for (nm in shape$refusals) {
+      expect_match(sim$results[[nm]], "^ERROR: ", info = paste(basename(f), nm))
+    }
+
+    if (!shape$eligible) {
+      # No local fit to bind (an unresolved INHAZ= job is the usual case),
+      # so predict() chunks cannot run here. Everything else still must:
+      # excluding the whole job would hide a defect in its grid or guard
+      # chunks, which is what the previous version of this exclusion did.
+      n_partial <- n_partial + 1L
+      ineligible <- c(ineligible, basename(f))
+      other <- setdiff(names(sim$results), c(shape$preds, shape$refusals))
+      bad <- other[sim$results[other] != "ok"]
+      if (length(bad)) {
+        failures <- c(failures, paste0(basename(f), " [", bad[1], "] ", sim$results[[bad[1]]]))
+      }
+      expect_true(length(bad) == 0L,
+                  info = paste(basename(f), paste(bad, collapse = ", ")))
       next
     }
 
-    # Render with no data bound: a job whose DATA= dataset is absent must
-    # fail in its guard chunk and nowhere else. A real render halts at the
-    # first uncaught error, so only the *first* failing chunk in document
-    # order decides whether the document would have rendered past the
-    # guard -- a later chunk failing only because an earlier one already
-    # stopped the document is not a separate defect.
-    sim <- render_sim(job)
-    bad_idx <- which(sim$results != "ok")
-    ok <- length(sim$results) > 0L &&
-      (length(bad_idx) == 0L || grepl("^data(_[0-9]+)?$", names(sim$results)[bad_idx[1]]))
-    if (ok) {
-      n_render <- n_render + 1L
-    } else {
-      first_bad <- if (length(sim$results) == 0L) {
-        "<no calls emitted>"
-      } else {
-        paste0(names(sim$results)[bad_idx[1]], ": ", sim$results[bad_idx[1]])
+    n_eligible <- n_eligible + 1L
+    # Assert the fit was BOUND, not merely evaluated. A chunk that calls
+    # hazard() without assigning it returns "ok" from render_sim and leaves
+    # every downstream predict() chunk referencing an object that is not
+    # there -- the defect (#151, R/translate-sas.R) this test exists for.
+    for (nm in shape$hazard_chunks) {
+      expect_true(exists(nm, envir = sim$env, inherits = FALSE),
+                  info = paste(basename(f), nm, "not bound"))
+      if (exists(nm, envir = sim$env, inherits = FALSE)) {
+        expect_s3_class(get(nm, envir = sim$env, inherits = FALSE), "hazard")
       }
-      failures <- c(failures, paste0(basename(f), " -- ", first_bad))
+    }
+    bad <- setdiff(names(sim$results)[sim$results != "ok"], shape$refusals)
+    if (length(bad)) {
+      failures <- c(failures, paste0(basename(f), " [", bad[1], "] ", sim$results[[bad[1]]]))
+    } else {
+      n_rendered <- n_rendered + 1L
     }
   }
 
@@ -91,9 +111,22 @@ test_that("public-corpus jobs that translate also render", {
     message("Corpus jobs that translate but do not render:\n",
             paste(failures, collapse = "\n"))
   }
+  if (length(ineligible)) {
+    message(length(ineligible), " corpus job(s) checked only up to their fit chunks: ",
+            paste(ineligible, collapse = "; "))
+  }
 
-  # Assert coverage, not just a non-zero count: a threshold that cannot fail
-  # is how the previous corpus test passed over unrenderable documents.
+  # Measured 2026-08-22 against ~/Documents/GitHub/hazard: 57 translations,
+  # 22 distinct documents, 11 of them eligible and all 11 rendering. The
+  # other 11 are PROC HAZPRED-only jobs -- an unresolved INHAZ= or a
+  # refused SELECTION leaves no local fit to bind -- and are checked up to
+  # their fit chunks only. That is the honest measurement: half the corpus
+  # gets its predict() chunks exercised, half does not, and the eligible
+  # count is asserted so a shrinking eligible set fails rather than
+  # quietly reducing what is tested. Floors, not equalities, so a corpus
+  # that grows does not fail.
   expect_gt(n_trans, 20L)
-  expect_gte(n_render, n_trans - n_excluded)
+  expect_gte(n_eligible, 11L)
+  expect_gte(n_partial, 11L)
+  expect_equal(n_rendered, n_eligible)
 })

@@ -22,3 +22,157 @@ render_sim <- function(job, data = list()) {
   # having evaluated nothing -- require at least one call ran.
   list(ok = length(res) > 0 && all(res == "ok"), results = res, env = env)
 }
+
+# --- synthetic data for a translated SAS job ---------------------------
+#
+# render_sim(job) with nothing bound cannot exercise anything: every job
+# whose PROC HAZARD read a SAS DATA= dataset opens with a guard chunk that
+# stop()s when that dataset is absent, so the guard fails first and for
+# every job, and the fit/grid/pred chunks are never really tested. The
+# helpers below read the column names back off the emitted calls and build a
+# small data frame per dataset so the guard passes and the rest actually
+# runs. The fit is meaningless -- the point is that the chunks execute.
+
+.sas_strip_assign <- function(cl) {
+  if (is.call(cl) && identical(cl[[1L]], as.name("<-"))) cl[[3L]] else cl
+}
+
+.sas_assigned_name <- function(cl) {
+  if (is.call(cl) && identical(cl[[1L]], as.name("<-"))) as.character(cl[[2L]]) else NA_character_
+}
+
+# The called function of a chunk, looking through the `x <- ...` binding, so
+# that classification does not depend on whether the chunk assigns. That
+# matters: whether the fit chunk binds its result is exactly the defect this
+# test has to be able to catch, so it must not also decide what gets tested.
+.sas_head <- function(cl) {
+  cl <- .sas_strip_assign(cl)
+  if (is.call(cl) && is.name(cl[[1L]])) as.character(cl[[1L]]) else ""
+}
+
+# Every symbol in argument position; the function position is dropped, so
+# `ifelse`, `hazard`, `~` and friends do not come back as column names.
+.sas_syms <- function(x) {
+  if (is.name(x)) return(as.character(x))
+  if (is.call(x)) return(unlist(lapply(as.list(x)[-1L], .sas_syms)))
+  character(0)
+}
+
+#' Classify a translated job's chunks.
+#'
+#' `eligible` says whether synthetic data can make the whole document run:
+#' it needs at least one chunk that calls `hazard()`, and every `predict()`
+#' must name one of those chunks. `refusals` are the chunks the translator
+#' deliberately emits as `stop()` (SELECTION, LCENSOR + ICENSOR).
+sas_job_shape <- function(job) {
+  nms <- names(job$calls)
+  heads <- vapply(job$calls, .sas_head, character(1))
+  fit_chunks <- nms[heads %in% c("hazard", "hzr_read_outhaz")]
+  pred_i <- which(heads == "predict")
+  refs <- vapply(pred_i, function(i) as.character(.sas_strip_assign(job$calls[[i]])[[2L]]),
+                 character(1))
+  dangling <- setdiff(unique(refs), fit_chunks)
+  reason <- if (!length(job$calls)) {
+    "no calls emitted"
+  } else if (!length(fit_chunks)) {
+    "no PROC HAZARD block that translates to a fit"
+  } else if (length(dangling)) {
+    paste0("predict() references a chunk that holds no fit: ", paste(dangling, collapse = ", "))
+  } else {
+    ""
+  }
+  list(eligible = !nzchar(reason), reason = reason, heads = heads,
+       fit_chunks = fit_chunks, hazard_chunks = nms[heads == "hazard"],
+       refusals = nms[heads == "stop"], preds = nms[pred_i])
+}
+
+#' Build a synthetic data frame per dataset the job's emitted calls name.
+#'
+#' Column roles are read off the argument they appear in -- `time=`,
+#' `status=`, `time_lower=`, `weights=`, and the phase formulas -- so the
+#' values are at least of the right kind (positive times, 0/1 status, an
+#' entry time below the event time). Datasets a `predict()` names as
+#' `newdata=` but no chunk builds get a `time` column plus every covariate
+#' the job mentions.
+sas_synth_data <- function(job, n = 24L) {
+  nms <- names(job$calls)
+  heads <- vapply(job$calls, .sas_head, character(1))
+  assigned <- stats::na.omit(vapply(job$calls, .sas_assigned_name, character(1)))
+
+  roles <- list()
+  add <- function(d, slot, v) {
+    v <- setdiff(unique(v), c(".hzr_status", d))
+    if (!length(v)) return(invisible(NULL))
+    r <- roles[[d]]
+    if (is.null(r)) r <- list()
+    r[[slot]] <- unique(c(r[[slot]], v))
+    roles[[d]] <<- r
+  }
+
+  for (k in seq_along(job$calls)) {
+    rhs <- .sas_strip_assign(job$calls[[k]])
+    if (grepl("^status(_[0-9]+)?$", nms[[k]])) {
+      # ICENSOR hoists status into its own chunk, wrapped in with(<data>, .)
+      d <- if (identical(heads[[k]], "with")) as.character(rhs[[2L]]) else ""
+      add(d, "status", .sas_syms(rhs))
+    }
+    if (identical(heads[[k]], "hazard")) {
+      a <- as.list(rhs)[-1L]
+      d <- if (!is.null(a$data)) as.character(a$data) else ""
+      add(d, "time", .sas_syms(a$time))
+      add(d, "status", .sas_syms(a$status))
+      add(d, "lower", .sas_syms(a$time_lower))
+      add(d, "wt", .sas_syms(a$weights))
+      add(d, "cov", .sas_syms(a$phases))
+    }
+  }
+
+  time_col <- seq_len(n) * (60 / n)
+  covs <- function(i) sin(seq_len(n) * i)
+  mk <- function(r) {
+    cols <- list()
+    i <- 0L
+    put <- function(v, gen) {
+      for (nm in v) {
+        if (is.null(cols[[nm]])) {
+          i <<- i + 1L
+          cols[[nm]] <<- gen(i)
+        }
+      }
+    }
+    put(r$time, function(i) time_col)
+    # Distinct 0/1 patterns per status variable, so an ICENSOR job's EVENT
+    # and event-count columns do not coincide and the interval branch of the
+    # emitted ifelse() is actually reached.
+    put(r$status, function(i) as.numeric(seq_len(n) %% (i %% 3L + 2L) == 0L))
+    put(r$lower, function(i) time_col * 0.25)
+    put(r$wt, function(i) rep(1, n))
+    put(r$cov, covs)
+    cols
+  }
+
+  all_cov <- unique(unlist(lapply(roles, `[[`, "cov")))
+  data <- list()
+  free <- list()
+  for (d in names(roles)) {
+    cols <- mk(roles[[d]])
+    if (!nzchar(d)) {
+      free <- c(free, cols)
+    } else {
+      if (is.null(cols[["time"]])) cols[["time"]] <- time_col
+      data[[d]] <- as.data.frame(cols)
+    }
+  }
+
+  nd <- unlist(lapply(which(heads == "predict"), function(k) {
+    a <- as.list(.sas_strip_assign(job$calls[[k]]))[-1L]
+    if (is.null(a$newdata) || !is.name(a$newdata)) NULL else as.character(a$newdata)
+  }))
+  for (d in setdiff(unique(nd), c(assigned, names(data)))) {
+    data[[d]] <- as.data.frame(c(
+      list(time = time_col),
+      stats::setNames(lapply(seq_along(all_cov), covs), all_cov)
+    ))
+  }
+  c(data, free)
+}
