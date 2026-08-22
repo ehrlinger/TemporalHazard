@@ -46,10 +46,10 @@ Four details there are load bearing:
 - **Lint runs before tests** because it is seconds against about a minute for the suite. Cheap
   failures first.
 - **`R CMD check` does not run the whole suite.** It runs with `NOT_CRAN` false, so
-  `skip_on_cran()` tests are skipped: 128 skips and 1983 passes under check, against 7 skips
-  and **2685** passes locally (both measured 2026-08-22 on `fix/sas-translator-runnable`;
-  the local figure needs the SAS fixture checkouts present, and the corpus render test
-  additionally needs `HZR_SAS_CORPUS` set or it skips too). A green check is **not**
+  `skip_on_cran()` tests are skipped: 128 skips and 1990 passes under check, against 6 skips
+  and **2738** passes locally (both measured 2026-08-22 on `fix/sas-translator-runnable`,
+  with no environment variables set; the local figure needs the SAS fixture checkouts
+  present under `~/Documents/GitHub/hazard`). A green check is **not**
   evidence that those tests pass; only the local `devtools::test()` line is.
 - **Commit before you `git archive`.** It exports the committed tree, so an uncommitted fix is
   silently absent and the check answers a question about the wrong code. This has already
@@ -157,14 +157,14 @@ Note the registry name is `TemporalHazard` while the directory is `temporal_haza
 
 ### Where the check's time actually goes
 
-Overall `R CMD check --as-cran` with the manual: **2m 53s**, tarball **2.8 MB** (measured
+Overall `R CMD check --as-cran` with the manual: **2m 52s**, tarball **2.9 MB** (measured
 2026-08-22 on `fix/sas-translator-runnable`). CRAN's ceiling is about 10 minutes and it
 rejects on that even at 0/0/0 — that is what got ggRandomForests archived in June 2026.
 
 | Component | Time |
 |---|---|
-| Tests | 55s / 59s |
-| Vignette rebuild | 36s / 44s |
+| Tests | 53s / 58s |
+| Vignette rebuild | 35s / 43s |
 | Everything else | the remainder |
 
 Both dominant costs are the ones that grow silently. Watch the budget when adding a vignette
