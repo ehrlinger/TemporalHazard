@@ -88,6 +88,18 @@
   cannot express, so the emitted status chunk now stops before the fit
   rather than picking the event branch and discarding the interval one.
 
+  `RCENSOR` is the third of those counts and was being ignored outright
+  (#162). It names `C2` -- "COUNT OF CENSORED INDIVIDUALS AT TIME=T" --
+  and when a job names it, `readc2.c` reads the column straight from the
+  data and skips the `C2 = 1` derivation that a job without `RCENSOR` gets.
+  Four censored individuals were therefore fitted as one observation. The
+  censored branch of `weights` is now that variable, still unmultiplied by
+  `WEIGHT`, and the both-fire guard now covers `EVENT` + `RCENSOR` and
+  `ICENSOR` + `RCENSOR` as well, since `readobs.c` drops a row only when
+  both counts of a pair are zero. Jobs whose `RCENSOR` variable is a `0/1`
+  flag -- which is every such job in the public corpus -- fit exactly as
+  before.
+
   Loading a fit from an external `INHAZ=` dataset returns a classed
   `hzr_outhaz` object with a `predict()` method (#151). That method takes
   the same arguments in the same order as `predict.hazard()` --

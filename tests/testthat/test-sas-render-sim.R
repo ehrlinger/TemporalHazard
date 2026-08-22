@@ -227,3 +227,134 @@ test_that("a row that is both an event and interval-censored is refused, not gue
   # behind is not a refusal.
   expect_null(got$env$fit)
 })
+
+test_that("the RCENSOR count reaches the fitted object as weights", {
+  # #162: RCENSOR names C2 (hazard_y.y; rcnsprc.c sets c2name from statement
+  # field 13), and C2 is a COUNT of censored individuals at T (setlik.c
+  # header). With c2name non-blank readc2.c reads it straight from the data
+  # -- the `C2 = ONE` derivation is skipped entirely -- so four censored
+  # individuals must arrive as weight 4, not as one observation.
+  skip_on_cran()
+  set.seed(21)
+  n <- 120
+  AVCS <- data.frame(INT_DEAD = stats::rexp(n, 0.2),
+                     DEAD = rep(c(1, 0, 0), length.out = n))
+  # A genuine count above 1, and only on rows where DEAD does not fire --
+  # the both-fire case is refused, and is tested separately below.
+  AVCS$NCENS <- ifelse(AVCS$DEAD > 0, 0, rep(c(1, 4), length.out = n))
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste(
+    "%HAZARD( PROC HAZARD DATA=AVCS CONDITION=14;",
+    "EVENT DEAD; TIME INT_DEAD; RCENSOR NCENS;",
+    "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
+  ), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  got <- render_sim(job, data = list(AVCS = AVCS))
+  expect_true(got$ok, info = paste(names(got$results), got$results,
+                                   collapse = " | "))
+  # The decisive check, on the fitted object: a count of 4 must not arrive
+  # as a weight of 1, and the event rows keep their own count.
+  expect_equal(got$env$fit$data$weights,
+               ifelse(AVCS$DEAD > 0, AVCS$DEAD, AVCS$NCENS))
+  expect_true(any(got$env$fit$data$weights == 4))
+  # C2 changes the weight, never the status: it is right-censoring, code 0.
+  expect_equal(got$env$fit$data$status, as.numeric(AVCS$DEAD > 0))
+  expect_false(any(got$env$fit$data$status == 2))
+  # And the counts really are being read -- a fit whose weights are all 1
+  # would satisfy a weaker assertion while ignoring RCENSOR entirely.
+  expect_gt(sum(got$env$fit$data$weights), n)
+})
+
+test_that("a WEIGHT variable never multiplies the RCENSOR count", {
+  # c2 is the one term setlik.c leaves out of the WT product
+  # (c1c2c3 = c1w + c2 + c3w). Naming C2 explicitly does not change that.
+  skip_on_cran()
+  set.seed(22)
+  n <- 90
+  AVCS <- data.frame(INT_DEAD = stats::rexp(n, 0.2),
+                     DEAD = rep(c(1, 0, 0), length.out = n))
+  AVCS$NCENS <- ifelse(AVCS$DEAD > 0, 0, 3)
+  # MORBID is 0 on censored rows, the hz.tm123.OMC.sas shape: multiplied in,
+  # it would delete every censored row from the likelihood.
+  AVCS$MORBID <- ifelse(AVCS$DEAD > 0, 2, 0)
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste(
+    "%HAZARD( PROC HAZARD DATA=AVCS CONDITION=14;",
+    "EVENT DEAD; TIME INT_DEAD; RCENSOR NCENS; WEIGHT MORBID;",
+    "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
+  ), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  got <- render_sim(job, data = list(AVCS = AVCS))
+  expect_true(got$ok, info = paste(names(got$results), got$results,
+                                   collapse = " | "))
+  expect_equal(got$env$fit$data$weights,
+               ifelse(AVCS$DEAD > 0, AVCS$DEAD * AVCS$MORBID, AVCS$NCENS))
+  expect_equal(sum(got$env$fit$data$weights == 0), 0L)
+})
+
+test_that("a row that is both an event and right-censored is refused, not guessed", {
+  # readobs.c deletes a row only when BOTH ic10 and ic20 fire, so a row with
+  # C1 > 0 AND C2 > 0 reaches setlik.c and contributes c1w + c2 -- an event
+  # of weight C1*WT and a right-censored observation of weight C2 at once.
+  # Fitting it as an event alone converges and reports plausibly (#162).
+  skip_on_cran()
+  set.seed(23)
+  n <- 60
+  AVCS <- data.frame(INT_DEAD = stats::rexp(n, 0.2),
+                     DEAD = rep(c(1, 0, 0), length.out = n))
+  AVCS$NCENS <- ifelse(seq_len(n) %% 5 == 0, 2, 0)
+  expect_true(any(AVCS$DEAD > 0 & AVCS$NCENS > 0))
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste(
+    "%HAZARD( PROC HAZARD DATA=AVCS CONDITION=14;",
+    "EVENT DEAD; TIME INT_DEAD; RCENSOR NCENS;",
+    "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
+  ), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  got <- render_sim(job, data = list(AVCS = AVCS))
+  expect_false(got$ok)
+  expect_match(got$results[["status"]], "both non-zero")
+  # A refusal that still leaves a fitted object behind is not a refusal.
+  expect_null(got$env$fit)
+})
+
+test_that("a 0/1 RCENSOR flag fits identically with and without the statement", {
+  # The two corpus jobs that carry RCENSOR (hz.te123.OMC.sas,
+  # hz.tm123.OMC.sas) set a mutually-exclusive 0/1 CENSORED. Their fits must
+  # be bit-for-bit what they were: this fix is for counts above 1. Compared
+  # as two real fits, not as two call shapes.
+  skip_on_cran()
+  set.seed(24)
+  n <- 150
+  AVCS <- data.frame(INT_DEAD = stats::rexp(n, 0.2),
+                     TE = rep(c(1, 0, 0), length.out = n))
+  AVCS$CENSORED <- 1 - AVCS$TE
+  head <- "%HAZARD( PROC HAZARD DATA=AVCS CONDITION=14; EVENT TE; TIME INT_DEAD;"
+  tail <- "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
+  fits <- lapply(c("", " RCENSOR CENSORED;"), function(stmt) {
+    f <- withr::local_tempfile(fileext = ".sas")
+    writeLines(paste0(head, stmt, " ", tail), f)
+    job <- suppressWarnings(hzr_translate_sas(f))
+    # .hzr_optim_multiphase()'s random restart draws from the global RNG
+    # stream (R/likelihood-multiphase.R), so the SAME call twice returns
+    # different theta. Seed each fit identically or this comparison tests
+    # the RNG, not the translation.
+    set.seed(99)
+    got <- render_sim(job, data = list(AVCS = AVCS))
+    expect_true(got$ok, info = paste(names(got$results), got$results,
+                                     collapse = " | "))
+    got$env$fit
+  })
+  expect_equal(fits[[2L]]$data$weights, fits[[1L]]$data$weights)
+  expect_equal(fits[[2L]]$data$status, fits[[1L]]$data$status)
+  expect_equal(fits[[2L]]$fit$theta, fits[[1L]]$fit$theta)
+  expect_equal(fits[[2L]]$fit$objective, fits[[1L]]$fit$objective)
+  # Guard against the comparison being vacuous. The fitted parameters live
+  # under fit$fit, not fit -- `fits[[1L]]$theta` is NULL, and every
+  # all()/is.finite() assertion over NULL passes while comparing nothing.
+  expect_equal(length(fits[[1L]]$data$weights), n)
+  expect_true(is.finite(fits[[1L]]$fit$objective))
+  expect_true(all(is.finite(fits[[1L]]$fit$theta)))
+  expect_gt(length(fits[[1L]]$fit$theta), 0L)
+  expect_equal(fits[[1L]]$data$weights, rep(1, n))
+})

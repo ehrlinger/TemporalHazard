@@ -141,10 +141,22 @@ sas_synth_data <- function(job, n = 24L) {
       }
     }
     put(r$time, function(i) time_col)
-    # Distinct 0/1 patterns per status variable, so an ICENSOR job's EVENT
-    # and event-count columns do not coincide and the interval branch of the
-    # emitted ifelse() is actually reached.
-    put(r$status, function(i) as.numeric(seq_len(n) %% (i %% 3L + 2L) == 0L))
+    # One residue class per count variable, so no two of them ever fire on
+    # the same row and one class is left over where none does. EVENT,
+    # ICENSOR's C3 and RCENSOR's C2 are SEPARATE counts: a row where two
+    # fire is two observations at once, which the translator refuses at fit
+    # time (#157, #162). The patterns here used to be `%% (i %% 3L + 2L)`,
+    # which coincide at every common multiple -- that generates data the
+    # refusal is right to reject, and the rejection then reads as a
+    # rendering failure, testing this generator rather than the translation.
+    # Disjoint classes still reach every branch of the emitted ifelse(),
+    # which is what the old comment was after.
+    n_status <- length(r$status)
+    status_i <- 0L
+    put(r$status, function(i) {
+      status_i <<- status_i + 1L
+      as.numeric(seq_len(n) %% (n_status + 1L) == status_i - 1L)
+    })
     put(r$lower, function(i) time_col * 0.25)
     put(r$wt, function(i) rep(1, n))
     put(r$cov, covs)

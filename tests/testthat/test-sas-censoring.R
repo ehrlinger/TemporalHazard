@@ -315,3 +315,146 @@ test_that("the refusal reaches both the untranslated callout and a stop() chunk"
   # No fit is emitted at all -- not a fit guarded by a warning.
   expect_false(grepl("fit <- hazard(", qmd, fixed = TRUE))
 })
+
+test_that("RCENSOR's C2 is a count: a censored row's weight is C2, not 1", {
+  # #162: RCENSOR names C2 itself (hazard_y.y `rcensorstmt : RCENSOR NAME
+  # { setvar(13,$2); }`; rcnsprc.c sets c2name from statement field 13), and
+  # C2 is "COUNT OF CENSORED INDIVIDUALS AT TIME=T" (setlik.c header). When
+  # c2name is non-blank readc2.c reads it straight from the data -- the
+  # `C2 = ONE` derivation applies only when it is BLANK. So a genuine count
+  # of 4 is four censored individuals, not one.
+  got <- .hzr_censor_spec(list(EVENT = "DEAD", TIME = "T",
+                               RCENSOR = "NCENS"))
+  expect_equal(
+    eval(got$weights_expr, list(DEAD = c(0, 0, 2), NCENS = c(1, 4, 0))),
+    c(1, 4, 2)
+  )
+})
+
+test_that("C2 stays unweighted by WEIGHT, count or not", {
+  # c2 is the term setlik.c does NOT multiply by WT (c1c2c3 = c1w + c2 + c3w),
+  # and that does not change just because the job named C2 itself (#158).
+  got <- .hzr_censor_spec(list(EVENT = "DEAD", TIME = "T",
+                               RCENSOR = "NCENS", WEIGHT = "WT"))
+  expect_equal(
+    eval(got$weights_expr,
+         list(DEAD = c(0, 2), NCENS = c(4, 0), WT = c(9, 3))),
+    c(4, 6)
+  )
+})
+
+test_that("an ICENSOR + RCENSOR job weights its censored rows by C2", {
+  got <- .hzr_censor_spec(list(TIME = "T", ICENSOR = c("C3", "CTIME"),
+                               RCENSOR = "NCENS"))
+  expect_equal(
+    eval(got$weights_expr, list(C3 = c(3, 0), NCENS = c(0, 5))),
+    c(3, 5)
+  )
+})
+
+test_that("RCENSOR still adds no status branch: C2 > 0 is right-censored, code 0", {
+  got <- .hzr_censor_spec(list(EVENT = "DEAD", TIME = "T",
+                               RCENSOR = "NCENS"))
+  expect_equal(
+    eval(got$status_expr, list(DEAD = c(0, 0, 2), NCENS = c(1, 4, 0))),
+    c(0, 0, 1)
+  )
+})
+
+test_that("a row that is both an event and right-censored stops, rather than picking one", {
+  # readobs.c deletes a row only when BOTH counts are zero (ic10 && ic20), so
+  # a row with C1 > 0 AND C2 > 0 survives and setlik.c sums the two
+  # contributions: it is an event of weight C1*WT AND a right-censored
+  # observation of weight C2 at once. hazard() carries one status and one
+  # weight per row and cannot say that (#162).
+  got <- .hzr_censor_spec(list(EVENT = "DEAD", TIME = "T",
+                               RCENSOR = "NCENS", WEIGHT = "WT"))
+  err <- tryCatch(
+    eval(got$status_expr, list(DEAD = 1, NCENS = 2, WT = 3)),
+    error = function(e) conditionMessage(e)
+  )
+  expect_match(err, "both non-zero")
+  # The message must name the two weights the split-out rows need, or the
+  # remedy it prescribes cannot be carried out.
+  expect_match(err, "DEAD \\* WT")
+  expect_match(err, "NCENS")
+  # Non-mixed rows are untouched: this is not a blanket refusal of the job.
+  expect_equal(
+    eval(got$status_expr,
+         list(DEAD = c(1, 0), NCENS = c(0, 2), WT = c(3, 3))),
+    c(1, 0)
+  )
+})
+
+test_that("a row that is both interval- and right-censored stops", {
+  # The C2 + C3 pairing has its own deletion rule in readobs.c (ic30 && ic20),
+  # so it too survives with both counts positive (#162).
+  got <- .hzr_censor_spec(list(TIME = "T", ICENSOR = c("C3", "CTIME"),
+                               RCENSOR = "NCENS"))
+  expect_error(
+    eval(got$status_expr, list(C3 = 1, NCENS = 2, CTIME = 4)),
+    "both non-zero"
+  )
+  expect_equal(
+    eval(got$status_expr,
+         list(C3 = c(1, 0), NCENS = c(0, 2), CTIME = c(4, 4))),
+    c(2, 0)
+  )
+})
+
+test_that("the guard is hoisted into its own chunk even with no ICENSOR", {
+  # The guard has to run BEFORE the fit, and a braced block buried in
+  # hazard(status = ...) is not something a reader of the rendered document
+  # can see fire. ICENSOR jobs already hoist; an EVENT + RCENSOR job needs
+  # the same treatment even though its time_lower gates on nothing.
+  got <- .hzr_censor_spec(list(EVENT = "DEAD", TIME = "T",
+                               RCENSOR = "NCENS"))
+  expect_equal(got$status_name, as.name(".hzr_status"))
+  # And through the parser: the emitted status is the hoisted name, not the
+  # expression, and the assignment chunk carries the guard.
+  txt <- .hzr_sas_normalise(paste(
+    "%HAZARD( PROC HAZARD DATA=A CONDITION=14;",
+    "EVENT DEAD; TIME T; RCENSOR NCENS;",
+    "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
+  ))
+  parsed <- .hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]])
+  expect_equal(parsed$call[["status"]], as.name(".hzr_status"))
+  expect_false(is.null(parsed$status_call))
+  expect_error(
+    eval(parsed$status_call, list(A = data.frame(DEAD = 1, NCENS = 1))),
+    "both non-zero"
+  )
+})
+
+test_that("no RCENSOR statement leaves the censored weight the literal 1", {
+  # #154/#157/#158 non-regression. Without RCENSOR, c2name is blank and
+  # readc2.c DERIVES C2 = ONE on exactly the rows where no other count
+  # fires -- so 1 is right there, and no guard is possible either, because
+  # the derived C2 cannot collide with a count that fired.
+  for (st in list(list(EVENT = "DEAD", TIME = "T"),
+                  list(EVENT = "DEAD", TIME = "T", WEIGHT = "WT"),
+                  list(TIME = "T", ICENSOR = c("C3", "CTIME")))) {
+    got <- .hzr_censor_spec(st)
+    w <- eval(got$weights_expr,
+              list(DEAD = 0, C3 = 0, WT = 7, CTIME = 1))
+    expect_equal(w, 1)
+  }
+  plain <- .hzr_censor_spec(list(EVENT = "DEAD", TIME = "T"))
+  expect_null(plain$status_name)
+  expect_equal(eval(plain$status_expr, list(DEAD = c(0, 1))), c(0, 1))
+})
+
+test_that("a 0/1 RCENSOR flag fits exactly as it did before #162", {
+  # hz.te123.OMC.sas and hz.tm123.OMC.sas -- the only two corpus jobs with an
+  # RCENSOR statement -- set CENSORED to 0/1, mutually exclusive with TE.
+  # Their weights must not move: the fix is for counts above 1, and a
+  # translator change that shifted the corpus would be the defect, not the
+  # fix.
+  got <- .hzr_censor_spec(list(EVENT = "TE", TIME = "INT_TE",
+                               LCENSOR = "STARTTME", RCENSOR = "CENSORED"))
+  env <- list(TE = c(1, 0, 1, 0), CENSORED = c(0, 1, 0, 1))
+  expect_equal(eval(got$weights_expr, env), c(1, 1, 1, 1))
+  expect_equal(eval(got$status_expr, env), c(1, 0, 1, 0))
+  # LCENSOR still supplies the entry time, unconditionally.
+  expect_equal(got$time_lower, as.name("STARTTME"))
+})

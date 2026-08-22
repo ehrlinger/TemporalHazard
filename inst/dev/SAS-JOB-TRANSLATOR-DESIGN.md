@@ -234,7 +234,7 @@ translator.
 |---|---|
 | `LCENSOR <var>` | `time_lower = <var>` -- entry time, `status` unchanged |
 | `ICENSOR <c3> = <ctime>` | rows where `<c3> > 0`: `status = 2`, `time_lower = <ctime>` |
-| `RCENSOR <var>` | unchanged: `status = 0`, no branch needed |
+| `RCENSOR <var>` | `status = 0`, no branch needed -- but `<var>` is `C2`, a *count*, so it is the censored rows' `weights` (#162) |
 | `EVENT <var>` | unchanged |
 
 It also touches known open work: the 2026-08-19 `preserve_root` parity run left a
