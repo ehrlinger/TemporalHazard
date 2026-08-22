@@ -52,11 +52,25 @@ These cases error rather than return a number that looks like a
 prediction: a dataset carrying covariates (their coefficients cannot be
 matched to \code{newdata} columns from the file alone); a non-zero \code{DELTA} (the
 early-phase time transformation is not implemented); and a \code{G1FLAG} that
-disagrees with the signs of the \code{M} and \code{NU} estimates. With
-\code{se.fit = TRUE} there are two more, because the stored covariance is on
-SAS's estimation scale and has to be mapped onto this package's: a fit
-constrained by \code{FIXMNU1}, and one estimating \code{GAMMA}, \code{ALPHA} or \code{ETA}
-under the \code{FIXGE2}/\code{FIXGAE2} late-phase constraints.
+disagrees with the signs of the \code{M} and \code{NU} estimates.
+
+With \code{se.fit = TRUE} there are three more, because the stored covariance is
+on SAS's estimation scale and has to be mapped onto this package's:
+\itemize{
+\item a fit constrained by \code{FIXMNU1}, which ties \code{M} to \code{1/NU};
+\item a fit estimating \code{GAMMA}, \code{ALPHA} or \code{ETA} on one of PROC HAZARD's
+\emph{composite} late-phase scales -- \code{log(GAMMA*ETA - 2)} or
+\code{log(GAMMA*ETA/ALPHA - 2)} rather than \code{log()} of the parameter. This is
+the ordinary unconstrained late phase, not an exotic case: with
+\code{G3FLAG = 1} and no \code{FIXGE2}/\code{FIXGAE2}, \code{ETA} and \code{ALPHA} are always on a
+composite scale and \code{GAMMA} is whenever \code{ETA} is fixed. So an
+early + constant + late fit with any free late shape gets point
+predictions but no standard errors;
+\item a fit under \code{FIXGE2} or \code{FIXGAE2} where a late parameter is \emph{derived}
+from an estimated one (\code{ETA = 2/GAMMA}, \code{GAMMA = 2/ETA},
+\code{ALPHA = GAMMA*ETA/2}). The derived parameter has no covariance row, so
+its contribution to the variance would be dropped without trace.
+}
 }
 
 \examples{

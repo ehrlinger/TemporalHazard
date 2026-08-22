@@ -124,8 +124,11 @@ hzr_read_outhaz <- function(path) {
 #' variables), which is not this package's internal scale: SAS estimates
 #' `log|NU|` and `log|M|` where the multiphase likelihood carries `nu` and `m`
 #' untransformed. The mapping is the diagonal Jacobian `dtheta_R/dtheta_SAS`
-#' applied below. Where that Jacobian is not determinable from the file --
-#' the constrained late-phase transforms, and the `FIXMNU1` constraint that
+#' applied below. It is only valid where SAS's estimation variable is the
+#' plain `log()` of the parameter, and the late phase is often not: see
+#' `.hzr_outhaz_late_composite()`. Where the Jacobian is not determinable --
+#' a composite late-phase estimation scale, a late parameter derived from an
+#' estimated one under `FIXGE2`/`FIXGAE2`, or the `FIXMNU1` constraint that
 #' ties `m` to `nu` -- this refuses rather than return standard errors built
 #' on the wrong scale.
 #'
@@ -264,6 +267,49 @@ hzr_read_outhaz <- function(path) {
   )
 }
 
+#' What scale PROC HAZARD estimated each late shape on
+#'
+#' A one-for-one transcription of the three conditionals in
+#' `hazard/src/common/hzd_late_p2t.c` (`Common.status` 5, 7 and 6 are GAMMA,
+#' ETA and ALPHA):
+#'
+#' | Parameter | plain `log()` when | otherwise |
+#' |---|---|---|
+#' | GAMMA | `g_two \|\| g3flag >= 3 \|\| status[ETA] == 1` | `log(gamma*eta - 2)` |
+#' | ETA | `g_two \|\| g3flag >= 3` | `log(gamma*eta - 2)` |
+#' | ALPHA | `(ga_two && !g_two) \|\| g3flag >= 3` | `log(gamma*eta/alpha - 2)` |
+#'
+#' Only the plain-`log()` branch has the diagonal derivative
+#' `d(parameter)/d(theta_SAS) = parameter` that `.hzr_outhaz_to_spec()`
+#' builds. Note which way round the generic case falls: an unconstrained late
+#' phase is `G3FLAG = 1` with `FIXGE2 = FIXGAE2 = 0` (`setg3.c`; `G3FLAG = 0`
+#' is that routine's initialisation sentinel, not a value it writes), and then
+#' ETA and ALPHA are always on a composite scale and GAMMA is whenever ETA is
+#' fixed. The composite scales are the common case, not the exotic one.
+#'
+#' @return Character vector named GAMMA, ETA, ALPHA: `NA` where SAS estimated
+#'   the plain `log()`, otherwise the composite expression it estimated.
+#' @noRd
+.hzr_outhaz_late_composite <- function(status, flags) {
+  g_two <- flags[["FIXGE2"]] != 0
+  ga_two <- flags[["FIXGAE2"]] != 0
+  g3flag <- flags[["G3FLAG"]]
+  ge_2 <- "log(GAMMA*ETA - 2)"
+  c(
+    GAMMA = if (g_two || g3flag >= 3 || status[["ETA"]] == 1L) {
+      NA_character_
+    } else {
+      ge_2
+    },
+    ETA = if (g_two || g3flag >= 3) NA_character_ else ge_2,
+    ALPHA = if ((ga_two && !g_two) || g3flag >= 3) {
+      NA_character_
+    } else {
+      "log(GAMMA*ETA/ALPHA - 2)"
+    }
+  )
+}
+
 #' Map an OUTHAZ covariance block onto this package's parameter scale
 #'
 #' See `.hzr_outhaz_to_spec()` for why the scales differ. Returns a full
@@ -286,20 +332,50 @@ hzr_read_outhaz <- function(path) {
     g_two <- flags[["FIXGE2"]] != 0
     ga_two <- flags[["FIXGAE2"]] != 0
     g3flag <- flags[["G3FLAG"]]
-    plain_log <- c(
-      GAMMA = g_two || g3flag >= 3 || status[["ETA"]] == 1L,
-      ETA   = g_two || g3flag >= 3,
-      ALPHA = (ga_two && !g_two) || g3flag >= 3
+
+    composite <- .hzr_outhaz_late_composite(status, flags)
+    hit <- names(composite)[!is.na(composite) &
+                              status[names(composite)] == 1L]
+    if (length(hit)) {
+      stop("This OUTHAZ dataset estimates ",
+           paste0(hit, " as ", composite[hit], collapse = ", "),
+           ", not as log(", paste(hit, collapse = "), log("),
+           "). That is what PROC HAZARD's late-phase transform does for ",
+           "these flags (G3FLAG = ", g3flag, ", FIXGE2 = ", as.integer(g_two),
+           ", FIXGAE2 = ", as.integer(ga_two),
+           "); with no late-phase constraint at all it is the generic case, ",
+           "not a special one. The stored covariance is on those composite ",
+           "scales, which the diagonal Jacobian this reader applies cannot ",
+           "map onto the multiphase likelihood's, so se.fit = TRUE would ",
+           "report standard errors built on the wrong scale. Use ",
+           "se.fit = FALSE.", call. = FALSE)
+    }
+
+    # A second way the mapping fails, and the dangerous one because nothing
+    # about it is visible in the covariance block: `hzd_late_t2p.c` lines
+    # 37-39, 57-59 and 90-94 DERIVE one late parameter from another under the
+    # constraints -- eta = 2/gamma or gamma = 2/eta under FIXGE2, and
+    # alpha = gamma*eta/2 for a fixed ALPHA under FIXGAE2. The derived
+    # parameter carries _STATUS_ = 0, so the reconstruction above marks it
+    # fixed and the delta method drops its contribution entirely (for
+    # eta = 2/gamma that is d(eta)/d(gamma) = -2/gamma^2). The result is a
+    # populated se.fit column that is quietly wrong, so refuse.
+    derived <- c(
+      if (g_two && status[["GAMMA"]] == 1L) "ETA = 2 / GAMMA",
+      if (g_two && status[["ETA"]] == 1L) "GAMMA = 2 / ETA",
+      if (ga_two && status[["ALPHA"]] == 0L &&
+            (status[["GAMMA"]] == 1L || status[["ETA"]] == 1L))
+        "ALPHA = GAMMA * ETA / 2"
     )
-    bad <- names(plain_log)[!plain_log & status[names(plain_log)] == 1L]
-    if (length(bad)) {
-      stop("This OUTHAZ dataset estimates ", paste(bad, collapse = ", "),
-           " under a constrained late-phase transformation (G3FLAG = ",
-           g3flag, ", FIXGE2 = ", as.integer(g_two), ", FIXGAE2 = ",
-           as.integer(ga_two), "). Its covariance is on a parameterisation ",
-           "this reader cannot map onto the multiphase likelihood's, so ",
-           "se.fit = TRUE would report standard errors built on the wrong ",
-           "scale. Use se.fit = FALSE.", call. = FALSE)
+    if (length(derived)) {
+      stop("This OUTHAZ dataset was fitted with ",
+           paste(c("FIXGE2", "FIXGAE2")[c(g_two, ga_two)],
+                 collapse = " and "),
+           ", which holds ", paste(derived, collapse = " and "),
+           ". A derived parameter carries _STATUS_ = 0 and so has no row in ",
+           "the stored covariance, but its value moves with an estimated ",
+           "one, so se.fit = TRUE would report standard errors that silently ",
+           "omit that term. Use se.fit = FALSE.", call. = FALSE)
     }
   }
 
@@ -342,11 +418,24 @@ hzr_read_outhaz <- function(path) {
 #' prediction: a dataset carrying covariates (their coefficients cannot be
 #' matched to `newdata` columns from the file alone); a non-zero `DELTA` (the
 #' early-phase time transformation is not implemented); and a `G1FLAG` that
-#' disagrees with the signs of the `M` and `NU` estimates. With
-#' `se.fit = TRUE` there are two more, because the stored covariance is on
-#' SAS's estimation scale and has to be mapped onto this package's: a fit
-#' constrained by `FIXMNU1`, and one estimating `GAMMA`, `ALPHA` or `ETA`
-#' under the `FIXGE2`/`FIXGAE2` late-phase constraints.
+#' disagrees with the signs of the `M` and `NU` estimates.
+#'
+#' With `se.fit = TRUE` there are three more, because the stored covariance is
+#' on SAS's estimation scale and has to be mapped onto this package's:
+#'
+#' * a fit constrained by `FIXMNU1`, which ties `M` to `1/NU`;
+#' * a fit estimating `GAMMA`, `ALPHA` or `ETA` on one of PROC HAZARD's
+#'   *composite* late-phase scales -- `log(GAMMA*ETA - 2)` or
+#'   `log(GAMMA*ETA/ALPHA - 2)` rather than `log()` of the parameter. This is
+#'   the ordinary unconstrained late phase, not an exotic case: with
+#'   `G3FLAG = 1` and no `FIXGE2`/`FIXGAE2`, `ETA` and `ALPHA` are always on a
+#'   composite scale and `GAMMA` is whenever `ETA` is fixed. So an
+#'   early + constant + late fit with any free late shape gets point
+#'   predictions but no standard errors;
+#' * a fit under `FIXGE2` or `FIXGAE2` where a late parameter is *derived*
+#'   from an estimated one (`ETA = 2/GAMMA`, `GAMMA = 2/ETA`,
+#'   `ALPHA = GAMMA*ETA/2`). The derived parameter has no covariance row, so
+#'   its contribution to the variance would be dropped without trace.
 #'
 #' @param object An `hzr_outhaz` object from [hzr_read_outhaz()].
 #' @param newdata Data frame with a `time` column. Required.

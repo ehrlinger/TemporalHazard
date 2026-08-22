@@ -94,3 +94,87 @@ make_outhaz_fixture <- function(path = "inst/extdata/outhaz-fixture.rds") {
   saveRDS(d, path)
   invisible(d)
 }
+
+# ---------------------------------------------------------------------------
+# The late-phase fixture
+# ---------------------------------------------------------------------------
+# The fixture above is an early + constant fit: its L0 carries _STATUS_ = 0, so
+# the entire g3 reconstruction block in .hzr_outhaz_to_spec() -- and the
+# late-phase scale gate in .hzr_outhaz_vcov() -- never executes under the test
+# suite. This second fixture is the same layout with the late phase in the
+# model, so that path runs.
+#
+# The flags are the ones a plain unconstrained late-phase fit writes:
+# G3FLAG = 1 (setg3.c: ALPHA > 0, GETWO false, GAETWO false, "GENERIC"), with
+# FIXGE2 = FIXGAE2 = 0. Note that G3FLAG = 0 is setg3()'s initialisation
+# sentinel and is NOT a value PROC HAZARD writes; the six real values are 1-6.
+#
+# The four late SHAPE rows are fixed and only TAU is free among them, which is
+# deliberate: TAU is the one late parameter SAS always estimates as log(TAU)
+# (hzd_late_p2t.c line 26), so its covariance maps through the diagonal
+# Jacobian exactly. GAMMA, ALPHA and ETA are estimated on composite scales
+# under these flags and are refused by .hzr_outhaz_vcov(); tests free them
+# from this fixture to exercise that refusal.
+#
+# The shape values satisfy G3FLAG = 1's own preconditions -- GAMMA*ETA > 2 and
+# GAMMA*ETA/ALPHA > 2 -- so the flag is consistent with the estimates, exactly
+# as G1FLAG is for the early block.
+
+make_outhaz_late_fixture <- function(
+    path = "inst/extdata/outhaz-late-fixture.rds") {
+  flags <- c(G1FLAG = 2, FIXDEL0 = 1, FIXMNU1 = 0,
+             G3FLAG = 1, FIXGE2 = 0, FIXGAE2 = 0)
+
+  params <- c("DELTA", "THALF", "NU", "M", "TAU", "GAMMA",
+              "ALPHA", "ETA", "E0", "C0", "L0")
+  free <- c("THALF", "NU", "TAU", "E0", "C0", "L0")
+
+  est <- stats::setNames(numeric(length(params)), params)
+  est[["THALF"]] <- pi / 100
+  est[["NU"]]    <- sqrt(2)
+  est[["TAU"]]   <- 30 * pi
+  est[["GAMMA"]] <- exp(1)
+  est[["ALPHA"]] <- 1 / sqrt(5)
+  est[["ETA"]]   <- sqrt(3)
+  est[["E0"]]    <- -exp(1)
+  est[["C0"]]    <- -log(10) / log(2)
+  est[["L0"]]    <- -log(2) * sqrt(2)
+
+  # G3FLAG = 1's preconditions, asserted rather than assumed.
+  stopifnot(est[["ALPHA"]] > 0,
+            est[["GAMMA"]] * est[["ETA"]] > 2,
+            est[["GAMMA"]] * est[["ETA"]] / est[["ALPHA"]] > 2)
+
+  status <- stats::setNames(rep(0, length(params)), params)
+  status[free] <- 1
+
+  lt <- matrix(0, length(free), length(free), dimnames = list(free, free))
+  diag(lt) <- c(1 / pi, 1 / exp(1), 1 / sqrt(7), 1 / sqrt(11),
+                1 / sqrt(13), 1 / sqrt(17))
+  lt[lower.tri(lt)] <- c(1 / 13, -1 / 17, 1 / 19, 1 / 23, -1 / 29,
+                         1 / 31, -1 / 37, 1 / 41, 1 / 43, -1 / 47,
+                         1 / 53, 1 / 59, -1 / 61, 1 / 67, 1 / 71)
+  vc <- lt %*% t(lt)
+
+  # SAS writes the two triangles independently; keep that asymmetry.
+  vc["THALF", "NU"] <- vc["NU", "THALF"] + 3.469446951953614e-18
+
+  block <- matrix(0, length(params), length(params),
+                  dimnames = list(params, params))
+  block[free, free] <- vc
+
+  d <- data.frame(
+    `_NAME_`   = c(names(flags), params),
+    `_EST_`    = c(unname(flags), unname(est)),
+    `_STATUS_` = c(rep(NA_real_, length(flags)), unname(status)),
+    check.names = FALSE,
+    stringsAsFactors = FALSE
+  )
+  for (p in params) {
+    d[[p]] <- c(rep(NA_real_, length(flags)), unname(block[, p]))
+  }
+
+  stopifnot(nrow(d) == 17, ncol(d) == 3 + length(params))
+  saveRDS(d, path)
+  invisible(d)
+}
