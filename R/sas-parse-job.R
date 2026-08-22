@@ -348,6 +348,8 @@
   # this package's signature defect -- a result that looks like one and is
   # not. Emit a stop() in place of the hazard() call so the document fails
   # where the fit would have been, and say what has to be done by hand.
+  # This return precedes SELECTION parsing, so a job carrying BOTH refusals
+  # records only this one; it still stops loudly, and no corpus job does both.
   if (isTRUE(cens$refused)) {
     return(list(
       call = quote(stop(

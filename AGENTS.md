@@ -2,7 +2,7 @@
 
 CRAN R package. A native R implementation of the multiphase parametric hazard model of
 Blackstone, Naftel and Turner (1986) — the model the SAS/C `HAZARD` program implements. The
-public API is `hazard()` plus the `hzr_*` family (20 exports, 18 S3 methods, as declared in
+public API is `hazard()` plus the `hzr_*` family (22 exports, 20 S3 methods, as declared in
 `NAMESPACE`).
 
 The package exists to **reproduce a reference implementation**. That shapes almost every rule
@@ -138,7 +138,7 @@ Note the registry name is `TemporalHazard` while the directory is `temporal_haza
   unevaluated call; `hazard(time =, status =)` stores evaluated vectors. Anything that
   rewrites or resamples a stored call has to handle both — this asymmetry has produced three
   separate defects.
-- **`stats::` prefixing is the house style.** `R/diagnostics.R` alone uses it ten times.
+- **`stats::` prefixing is the house style.** `R/diagnostics.R` alone uses it twelve times.
   An unqualified `stats` generic is an `R CMD check` NOTE waiting to happen; it will not fail
   a test, because it resolves fine at runtime.
 - **`numDeriv` is a `Suggests`.** The analytic Hessian declines for left- and interval-censored
@@ -149,7 +149,7 @@ Note the registry name is `TemporalHazard` while the directory is `temporal_haza
 - **The score criterion is an *entry* criterion.** The drop path never refits per candidate
   under either criterion: removals are tested on the current model's Wald p-value against
   `slstay`, as SAS does, and only the accepted drop is refitted.
-- Anything slow gets `skip_on_cran()`. There are 92 calls today.
+- Anything slow gets `skip_on_cran()`. There are 109 calls today.
 - No `browser()`, no bare `print()`, no `library()` inside `R/`. `cat()` belongs only in a
   `print.*` method.
 
