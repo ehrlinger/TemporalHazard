@@ -78,13 +78,49 @@ test_that("the same start_seed reproduces a fit and a different one may not", {
   ))
 })
 
-test_that("start_seed is rejected when it is not a single finite number", {
+test_that("start_seed is rejected when it is not a single whole number", {
   d <- mp_repro_data()
 
   expect_error(mp_repro_fit(d, control = list(start_seed = c(1L, 2L))),
                "start_seed")
   expect_error(mp_repro_fit(d, control = list(start_seed = NA_integer_)),
                "start_seed")
+  expect_error(mp_repro_fit(d, control = list(start_seed = Inf)),
+               "start_seed")
+  expect_error(mp_repro_fit(d, control = list(start_seed = "3")),
+               "start_seed")
+
+  # Out of integer range. Left to set.seed() this raises "supplied seed is not
+  # a valid integer", after a coercion warning, and names neither the argument
+  # nor the fit it came from.
+  expect_error(mp_repro_fit(d, control = list(start_seed = 3e9)),
+               "start_seed")
+
+  # Fractional seeds are rejected, not truncated: set.seed() truncates, so 3.9
+  # and 3 would silently select the same ensemble and a seed sweep over
+  # 3.1/3.5/3.9 would report three fits having tried one set of starts.
+  expect_error(mp_repro_fit(d, control = list(start_seed = 3.9)),
+               "start_seed")
+  set.seed(3.9)
+  from_fractional <- stats::rnorm(3)
+  set.seed(3L)
+  from_whole <- stats::rnorm(3)
+  expect_identical(from_fractional, from_whole)
+})
+
+test_that("a negative start_seed is accepted and reproducible", {
+  # set.seed() takes negative integers; rejecting them would remove half the
+  # seed space for no reason.
+  d <- mp_repro_data()
+
+  a <- mp_repro_fit(d, control = list(condition = 14, start_seed = -7L))
+  b <- mp_repro_fit(d, control = list(condition = 14, start_seed = -7L))
+
+  expect_identical(a$fit$theta, b$fit$theta)
+  expect_false(identical(
+    .hzr_start_perturbations(5L, 5L, seed = -7L),
+    .hzr_start_perturbations(5L, 5L, seed = 7L)
+  ))
 })
 
 # ---------------------------------------------------------------------------

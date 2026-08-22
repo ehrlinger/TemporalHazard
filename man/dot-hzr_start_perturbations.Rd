@@ -11,7 +11,7 @@
 
 \item{n_par}{Length of the free-parameter vector being perturbed.}
 
-\item{seed}{Single finite number selecting the ensemble of offsets.}
+\item{seed}{Single whole number selecting the ensemble of offsets.}
 
 \item{sd}{Standard deviation of the offsets (default 0.5).}
 }

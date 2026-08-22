@@ -989,7 +989,7 @@
 #'
 #' @param n_starts Number of optimization starts.
 #' @param n_par Length of the free-parameter vector being perturbed.
-#' @param seed Single finite number selecting the ensemble of offsets.
+#' @param seed Single whole number selecting the ensemble of offsets.
 #' @param sd Standard deviation of the offsets (default 0.5).
 #' @return A list of `max(0, n_starts - 1)` numeric vectors of length `n_par`;
 #'   empty for a single start, which is never perturbed.
@@ -1349,10 +1349,20 @@
   # re-check those three before doing so.
   start_seed <- if (!is.null(control$start_seed)) control$start_seed else 3L
   control$start_seed <- NULL  # remove before passing to optim
+  # Validated against what set.seed() can actually take, and rejected rather
+  # than coerced.  Negative seeds are fine (set.seed(-1) is valid and
+  # deterministic), but a non-whole number is not: set.seed() truncates it, so
+  # 3.9 and 3 select the SAME ensemble, and a user sweeping 3.1/3.5/3.9 would
+  # believe they had tried three sets of starts having tried one.  Out of
+  # integer range, set.seed() fails with "supplied seed is not a valid integer"
+  # and never names the argument that caused it.
   if (length(start_seed) != 1L || !is.numeric(start_seed) ||
-      !is.finite(start_seed)) {
-    stop("'control$start_seed' must be a single finite number.", call. = FALSE)
+      !is.finite(start_seed) || start_seed != trunc(start_seed) ||
+      abs(start_seed) > .Machine$integer.max) {
+    stop("'control$start_seed' must be a single whole number no larger in ",
+         "magnitude than ", .Machine$integer.max, ".", call. = FALSE)
   }
+  start_seed <- as.integer(start_seed)
 
   best_result <- NULL
   best_value <- -Inf

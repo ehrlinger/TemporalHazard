@@ -180,9 +180,12 @@ NULL
 #'   reproducible without `set.seed()` and does not advance the caller's RNG
 #'   stream.
 #' - `start_seed`: Seed selecting the ensemble of multi-start offsets
-#'   (default 3). Fits are reproducible at any value; vary it to probe a
-#'   different set of starts when a fit is suspected of sitting in a local
-#'   optimum, and compare the resulting `objective` values.
+#'   (default 3). Any whole number within integer range, negative included.
+#'   Fits are reproducible at any value; vary it to probe a different set of
+#'   starts when a fit is suspected of sitting in a local optimum, and compare
+#'   the resulting `objective` values. A fractional value is rejected rather
+#'   than truncated, since `3.9` and `3` would otherwise select the same
+#'   ensemble without saying so.
 #' - `reltol`: Relative parameter change tolerance (default 1e-5)
 #' - `abstol`: Absolute gradient norm tolerance (default 1e-6)
 #' - `method`: Optimization method: "bfgs" or "nm" (default "bfgs")
