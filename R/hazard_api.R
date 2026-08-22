@@ -383,7 +383,11 @@ NULL
 #'   the \code{best} and so the reported fit, and the \code{message} of any
 #'   error. A start that stops at \code{maxit} has a finite \code{objective}
 #'   and can win the selection, so \code{status} distinguishes it from one
-#'   that converged),
+#'   that converged. Any fit whose likelihood is near-flat along a parameter
+#'   combination also carries \code{weak}, listing the \code{params}
+#'   spanning that direction, their squared loadings (\code{weights}), the
+#'   strongest pairwise \code{correlation} among them, and the Hessian
+#'   \code{rcond} -- \code{NULL} when the fit is well identified),
 #'   and \code{engine} (implementation tag, \code{"native-r-m2"}).
 #' @export
 hazard <- function(formula = NULL,
@@ -759,6 +763,19 @@ hazard <- function(formula = NULL,
     fit_state$pd <- optim_result$pd
     fit_state$counts <- optim_result$counts
     fit_state$message <- optim_result$message
+  }
+
+  # An ill-conditioned Hessian already warns that standard errors are
+  # unreliable. That understates a ridge: where the likelihood is near-flat
+  # along a parameter combination, the point estimates along it are not
+  # determined either, and a fit that reports converged with an ordinary-
+  # looking coefficient table gives no sign of it. Name the parameters
+  # involved instead of leaving them to be read as estimated quantities.
+  # Runs for every distribution -- nothing here knows about phase shapes.
+  fit_state$weak <- .hzr_weak_direction(fit_state$vcov, fit_state$rcond,
+                                        names(fit_state$par))
+  if (!is.null(fit_state$weak)) {
+    warning(.hzr_weak_direction_message(fit_state$weak), call. = FALSE)
   }
 
   # Refit-based tooling (hzr_bootstrap()) re-evaluates $call, so it needs the
@@ -1479,6 +1496,7 @@ summary.hazard <- function(object, ...) {
     has_vcov = !is.null(vcov_mat) && is.matrix(vcov_mat),
     rcond = object$fit$rcond,
     pd = object$fit$pd,
+    weak = object$fit$weak,
     phases = object$spec$phases
   )
 
@@ -1536,6 +1554,14 @@ print.summary.hazard <- function(x, ...) {
     cat("  Note: Hessian ill-conditioned (rcond = ",
         format(x$rcond, digits = 3),
         "); standard errors may be unreliable.\n", sep = "")
+  }
+  if (!is.null(x$weak)) {
+    # Wrapped rather than cat()'d flat: the message names parameters and two
+    # diagnostics, and an unwrapped line buries them off the right edge.
+    cat(strwrap(paste0("Note: ", .hzr_weak_direction_message(x$weak)),
+                width = 76, indent = 2, exdent = 8),
+        sep = "\n")
+    cat("\n")
   }
   if (!is.null(x$pd) && !is.na(x$pd) && !isTRUE(x$pd)) {
     cat("  Note: Hessian not positive-definite at the optimum; ",
