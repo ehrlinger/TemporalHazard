@@ -31,7 +31,12 @@ test_that("every public-corpus job either translates or fails loudly", {
 
 test_that("public-corpus jobs that translate also render", {
   skip_on_cran()
-  fs <- list.files(Sys.getenv("HZR_SAS_CORPUS", unset = ""),
+  corpus <- Sys.getenv(
+    "HZR_SAS_CORPUS",
+    Sys.getenv("HAZARD_REPO", "~/Documents/GitHub/hazard")
+  )
+  skip_if_not(dir.exists(path.expand(corpus)), "hazard checkout not available")
+  fs <- list.files(path.expand(corpus),
                    pattern = "[.]sas$", full.names = TRUE, recursive = TRUE)
   skip_if(length(fs) == 0L, "no .sas corpus available")
 

@@ -41,7 +41,10 @@ test_that("hzr_read_outhaz() returns a classed object", {
   expect_s3_class(got, "hzr_outhaz")
 })
 
-test_that("an all-fixed parameter set yields a 0x0 vcov, not NULL", {
+test_that("vcov is a matrix sized by the free parameters, not NULL", {
+  # The fixture has four FREE parameters, so this asserts 4x4. It is not the
+  # all-fixed case -- an all-fixed OUTHAZ would give a 0x0 matrix, and no
+  # fixture here has one.
   obj <- hzr_read_outhaz(fixture_path())
   # Documented hollow-object shape: check dimensions, never is.null().
   expect_true(is.matrix(obj$vcov))

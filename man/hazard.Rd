@@ -42,7 +42,11 @@ anything that is not a column (\code{df$col}, a local vector, a literal)
 falls through to the calling environment. A column of the same name as
 a caller variable wins, and because that silently discards the caller's
 vector -- the way a wrapper forwarding its own argument by name does --
-such a name raises a warning naming the symbol and the argument.}
+such a name raises a warning naming the symbol and the argument.
+Masked arguments are validated like any other, so an \code{NA} in a
+masked column now errors -- an \code{NA} count on the SAS \code{ICENSOR}
+path reaches \code{weights} and stops with \verb{'weights' must be non-negative and finite}, where it was previously accepted
+silently.}
 
 \item{time}{Numeric follow-up time vector.}
 
@@ -66,7 +70,11 @@ the fit will not converge to anything meaningful; it warns.}
 \item{time_upper}{Optional numeric upper bound vector for censoring intervals.
 Used when \code{status \%in\% c(-1, 2)}; defaults to \code{time} if NULL.}
 
-\item{x}{Optional design matrix (or data frame coercible to matrix).}
+\item{x}{Optional design matrix (or data frame coercible to matrix).
+Unlike \code{time} and the other vector arguments, \code{x} is \strong{not}
+data-masked: \code{hazard(data = df, time = tt, x = age)} errors with
+\verb{object 'age' not found} where \code{time = tt} resolves, so write
+\code{x = df[["age"]]} or use the formula interface.}
 
 \item{time_windows}{Optional numeric vector of strictly positive cut points for
 piecewise time-varying coefficients. When provided, each predictor column in
