@@ -128,7 +128,10 @@ test_that("a plain EVENT/TIME job's emitted call fits with no time_lower/time_up
   ), f)
 
   job <- suppressWarnings(hzr_translate_sas(f))
-  expect_equal(names(job$calls), c("data", "fit"))
+  # The status chunk is emitted for every job now, not only ICENSOR or
+  # multi-count ones: it carries the missing/negative guard on EVENT, which
+  # has to run and be seen to run ahead of the fit.
+  expect_equal(names(job$calls), c("data", "status", "fit"))
   # job$calls$fit is now `fit <- hazard(...)`; index into the hazard() call.
   expect_null(job$calls$fit[[3L]][["time_lower"]])
   expect_null(job$calls$fit[[3L]][["time_upper"]])

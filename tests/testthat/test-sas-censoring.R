@@ -26,7 +26,7 @@ test_that("LCENSOR is left-truncation: status is untouched, time_lower is the en
   # status = -1 must never be produced by this translator.
   st <- list(EVENT = "DEAD", TIME = "T", LCENSOR = "STARTTME")
   got <- .hzr_censor_spec(st)
-  expect_null(got$status_name)
+  expect_equal(got$status_name, as.name(".hzr_status"))
   expect_equal(eval(got$status_expr, list(DEAD = c(1, 0))), c(1, 0))
   expect_equal(got$time_lower, as.name("STARTTME"))
   expect_null(got$time_upper)
@@ -444,7 +444,9 @@ test_that("no RCENSOR statement leaves the censored weight the literal 1", {
     expect_equal(w, 1)
   }
   plain <- .hzr_censor_spec(list(EVENT = "DEAD", TIME = "T"))
-  expect_null(plain$status_name)
+  # Hoisted even here: the missing/negative guard on EVENT has to run ahead
+  # of the fit, and every non-refused job names at least one count.
+  expect_equal(plain$status_name, as.name(".hzr_status"))
   expect_equal(eval(plain$status_expr, list(DEAD = c(0, 1))), c(0, 1))
 })
 
@@ -461,4 +463,77 @@ test_that("a 0/1 RCENSOR flag fits exactly as it did before #162", {
   expect_equal(eval(got$status_expr, env), c(1, 0, 1, 0))
   # LCENSOR still supplies the entry time, unconditionally.
   expect_equal(got$time_lower, as.name("STARTTME"))
+})
+
+test_that("a missing or negative count stops instead of fitting as censored", {
+  # readc1.c/readc2.c/readc3.c apply ONE rule to every count the job names,
+  # guarded only by the name being non-blank: ISMISS sets mdel, < ZERO sets
+  # del, and readobs.c then skips setobs() and subtracts the row from Nobs.
+  # A deleted row contributes nothing -- it is NOT a right-censored row of
+  # weight 1, which is what `ifelse(count > 0, ...)` alone makes of a
+  # negative count, and NA is what it makes of a missing one. Both change
+  # the likelihood against SAS, so both stop.
+  cases <- list(
+    list(st = list(EVENT = "DEAD", TIME = "T"),
+         var = "DEAD", ok = list(DEAD = c(0, 1, 2)),
+         bad = list(list(DEAD = c(0, 1, NA)), list(DEAD = c(0, 1, -1)))),
+    list(st = list(EVENT = "DEAD", TIME = "T", RCENSOR = "NCENS"),
+         var = "NCENS", ok = list(DEAD = c(0, 1), NCENS = c(3, 0)),
+         bad = list(list(DEAD = c(0, 1), NCENS = c(NA, 0)),
+                    list(DEAD = c(0, 1), NCENS = c(-2, 0)))),
+    list(st = list(TIME = "T", ICENSOR = c("C3", "CTIME")),
+         var = "C3", ok = list(C3 = c(0, 4)),
+         bad = list(list(C3 = c(0, NA)), list(C3 = c(0, -4))))
+  )
+  for (case in cases) {
+    got <- .hzr_censor_spec(case$st)
+    # The guard must be capable of NOT firing: a clean count still returns a
+    # status vector, so a red result below is the guard, not a broken chunk.
+    expect_type(eval(got$status_expr, case$ok), "double")
+    for (env in case$bad) {
+      expect_error(eval(got$status_expr, env), case$var, fixed = TRUE)
+      expect_error(eval(got$status_expr, env), "missing or negative")
+      expect_error(eval(got$status_expr, env), "deletes such rows")
+    }
+  }
+})
+
+test_that("a missing count is NOT treated as a zero count", {
+  # Zero and missing are opposite in SAS: a zero count is KEPT (readobs.c
+  # deletes an all-zero row only under its two blank-name-guarded rules, and
+  # never when all three counts are named), while a missing one is always
+  # deleted. Treating NA as non-firing would land the row in the fit as
+  # right-censored of weight 1 -- a row SAS removed, contributing survival
+  # mass at its time. Pin the asymmetry: zero flows through, NA stops.
+  got <- .hzr_censor_spec(list(EVENT = "DEAD", TIME = "T"))
+  expect_equal(eval(got$status_expr, list(DEAD = c(0, 1))), c(0, 1))
+  expect_equal(eval(got$weights_expr, list(DEAD = c(0, 1))), c(1, 1))
+  expect_error(eval(got$status_expr, list(DEAD = c(0, NA))),
+               "missing or negative")
+})
+
+test_that("a missing count stops before hazard()'s weights check", {
+  # The reported reproduction (PR #164 review): with the count NA, the
+  # emitted weights ifelse() yields NA and hazard() aborts with "'weights'
+  # must be non-negative and finite" -- a message that names neither the
+  # variable nor the cause. The hoisted status chunk runs first and says
+  # both, so that incidental message is never what the reader sees.
+  txt <- .hzr_sas_normalise(paste(
+    "%HAZARD( PROC HAZARD DATA=A CONDITION=14;",
+    "EVENT DEAD; TIME T;",
+    "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
+  ))
+  parsed <- .hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]])
+  expect_equal(parsed$call[["status"]], as.name(".hzr_status"))
+  a <- data.frame(DEAD = c(1, 0, 1, 0), T = c(1, 2, 3, 4))
+  a$DEAD[3] <- NA
+  env <- new.env()
+  assign("A", a, envir = env)
+  err <- expect_error(eval(parsed$status_call, env), "DEAD", fixed = TRUE)
+  expect_no_match(conditionMessage(err), "non-negative and finite")
+  # Same job, same data, count repaired: the chunk runs and the fit follows.
+  a$DEAD[3] <- 1
+  assign("A", a, envir = env)
+  expect_silent(eval(parsed$status_call, env))
+  expect_equal(get("A", envir = env)$.hzr_status, c(1, 0, 1, 0))
 })

@@ -106,12 +106,23 @@
   censoring flag both set now stops the document instead of being fitted as
   an event alone, and a row with neither set now carries weight `0` instead
   of a fabricated weight of `1`, matching the row SAS would have deleted.
-  An `RCENSOR` column that is negative or missing likewise stops the fit at
-  `hazard()`'s weight check rather than being silently dropped.
+  A count column that is **negative or missing** on any row now stops the
+  document with a message naming the variable, rather than being folded into
+  the censored branch or propagating `NA` into `weights` until `hazard()`
+  refused it as "non-negative and finite". `readc1.c`, `readc2.c` and
+  `readc3.c` apply the same rule to every count the job names -- a missing
+  value sets `mdel`, a negative one sets `del` -- and `readobs.c` then skips
+  `setobs()` for that row and subtracts it from `Nobs`. Such a row
+  contributes nothing at all, so translating it as a right-censored
+  observation of weight `1` adds survival mass at a time SAS had removed.
+  This is the one case where a missing count is **not** interchangeable with
+  a zero one: a zero count is kept and contributes, a missing one is deleted.
+  The translator cannot drop rows without changing `n` behind the reader's
+  back, so it stops and says to filter them.
 
-  A job with an `RCENSOR` statement now emits an extra `status` chunk ahead
-  of its fit, where the guard lives; the emitted document format remains
-  experimental.
+  Every translated job now emits a `status` chunk ahead of its fit, where
+  these guards live -- previously only jobs with `ICENSOR` or more than one
+  named count did. The emitted document format remains experimental.
 
   Loading a fit from an external `INHAZ=` dataset returns a classed
   `hzr_outhaz` object with a `predict()` method (#151). That method takes

@@ -70,8 +70,13 @@
 #' `readc1.c` accepts any `C1 >= 0` and keeps a fractional count (`notintg`
 #' only raises a report flag), so `> 0` is the right test and a fractional
 #' count carries through as a fractional weight. A *negative* count SAS
-#' deletes (`c1del`, `del = 1`); this translator has no way to drop a row, so
-#' such a row arrives as right-censored with weight 1 rather than absent.
+#' deletes (`c1del`, `del = 1`) and a *missing* one likewise (`mc1del`,
+#' `mdel = 1`); `readobs.c` then skips `setobs()` and subtracts the row from
+#' `Nobs`, so it contributes nothing at all -- it is emphatically not a
+#' right-censored row of weight 1. This translator has no way to drop a row,
+#' and dropping one silently would change `n` behind the reader's back, so the
+#' hoisted status chunk opens with a guard per named count that stops and
+#' names the variable, the SAS rule and the remedy (filter the rows out).
 #'
 #' **A row where `EVENT` and `ICENSOR` both fire is refused at fit time.**
 #' `setlik.c` *sums* the two contributions, so such a row is simultaneously an
@@ -118,8 +123,10 @@
 #' likelihood, which is what deletion means for the fit and what the
 #' all-three case does anyway, though the row still counts toward `n`.
 #' A *negative* `C2` SAS deletes (`c2del`) and a *missing* one it deletes too
-#' (`mc2del`); both reach [hazard()]'s "non-negative and finite" check and
-#' stop the fit outright rather than vanishing from it.
+#' (`mc2del`) -- the same rule `readc1.c` and `readc3.c` apply to their own
+#' counts, guarded only by the name being non-blank -- so both are caught by
+#' the missing/negative guard above rather than by [hazard()]'s incidental
+#' "non-negative and finite" check.
 #'
 #' **A row where two named counts both fire is refused at fit time.** With
 #' `RCENSOR` present this is no longer only the `EVENT` + `ICENSOR` pair:
@@ -179,10 +186,10 @@
 #'   untranslated = <data.frame>, refused = <logical>)`. `status_expr` is
 #'   a `bquote()`-built call, evaluable against an environment/list holding
 #'   the named SAS variables. `time_lower` and `weights_expr`, when
-#'   non-`NULL`, are `bquote()`-built calls; `status_name` is non-`NULL` when
-#'   `ICENSOR` is present, since only then does `time_lower` need to gate on
-#'   it, and whenever the job named more than one count, since the both-fire
-#'   guard then has to run in its own chunk ahead of the fit.
+#'   non-`NULL`, are `bquote()`-built calls; `status_name` is non-`NULL` on
+#'   every non-refused path, because every such job names at least one count
+#'   and every named count carries a missing/negative guard that has to run in
+#'   its own chunk ahead of the fit.
 #'   `weights_expr` is non-`NULL` on every non-refused path, because
 #'   `EVENT` and `ICENSOR` are both counts and one of the two is always
 #'   present. `refused` is `TRUE` only for the `LCENSOR` +
@@ -267,14 +274,15 @@
   # so it cannot collide with one. A named C2 can, and does (#162).
   counts <- list()
   if (has_event) {
-    counts$EVENT <- list(v = ev, w = ev_w, code = 1L, what = "an event")
+    counts$EVENT <- list(v = ev, w = ev_w, code = 1L, readc = 1L,
+                         what = "an event")
   }
   if (has_rcensor) {
-    counts$RCENSOR <- list(v = c2, w = c2, code = 0L,
+    counts$RCENSOR <- list(v = c2, w = c2, code = 0L, readc = 2L,
                            what = "a right-censored observation")
   }
   if (has_icensor) {
-    counts$ICENSOR <- list(v = c3, w = c3_w, code = 2L,
+    counts$ICENSOR <- list(v = c3, w = c3_w, code = 2L, readc = 3L,
                            what = "an interval observation")
   }
 
@@ -310,14 +318,51 @@
     }
   }
 
-  # A job carrying a guard gets its status hoisted into a chunk of its own,
-  # not only the ICENSOR jobs whose time_lower has to gate on it: the guard
-  # must run and be seen to run BEFORE the fit, and one buried inside
-  # hazard(status = ...) is neither readable in the rendered document nor
-  # separable from the fit that follows it.
-  status_name <- if (has_icensor || length(counts) > 1L) {
-    as.name(".hzr_status")
+  # readc1.c, readc2.c and readc3.c apply one rule to every count the job
+  # NAMED, and it is the same rule in all three: a missing value sets mdel, a
+  # negative one sets del, and readobs.c then skips setobs() for that row and
+  # subtracts it from Nobs. A deleted row is NOT a right-censored observation
+  # of weight 1 -- it contributes nothing at all, and SAS reports the two
+  # tallies (mcNdel, cNdel) in its listing. `> 0` alone cannot say that: it
+  # folds a negative count into the censored fallback, and it propagates NA
+  # out of ifelse() into both status and weights, where hazard() rejects it
+  # with a message about weights that names neither the variable nor the
+  # cause. Deleting the rows here instead would change n silently, so stop
+  # and say which variable, what SAS does, and what to do about it.
+  # Reversed so the guards read EVENT, RCENSOR, ICENSOR top to bottom in the
+  # rendered document: each wrap goes outside the previous one.
+  for (nm in rev(names(counts))) {
+    a <- counts[[nm]]
+    expr <- bquote({
+      if (any(is.na(.(a$v)) | .(a$v) < 0)) {
+        stop(.(sprintf(paste(
+          "This job has rows where the %s count (%s) is missing or negative.",
+          "SAS deletes such rows outright: readc%d.c sets mdel on a missing",
+          "count and del on a negative one, and readobs.c then skips",
+          "setobs() and subtracts the row from Nobs, so it contributes",
+          "nothing to the likelihood -- it is not %s of weight 1. hazard()",
+          "has no equivalent, and translating the row as censored would",
+          "change the fit without saying so. Drop those rows before fitting",
+          "-- subset to !is.na(%s) & %s >= 0 -- and compare your row count",
+          "against the deletion tallies SAS prints for this job."),
+          nm, deparse(a$v), a$readc, a$what,
+          deparse(a$v), deparse(a$v))),
+          call. = FALSE)
+      }
+      .(expr)
+    })
   }
+
+  # Every job carrying a guard gets its status hoisted into a chunk of its
+  # own, not only the ICENSOR jobs whose time_lower has to gate on it: the
+  # guard must run and be seen to run BEFORE the fit, and one buried inside
+  # hazard(status = ...) is neither readable in the rendered document nor
+  # separable from the fit that follows it. Since every non-refused job names
+  # at least one count, and every named count carries the missing/negative
+  # guard above, that is now every job. It also settles the evaluation order:
+  # a missing count reaches the guard before it can reach hazard()'s
+  # `weights` check, so the explanatory message wins over the incidental one.
+  status_name <- as.name(".hzr_status")
   time_lower <- NULL
   if (has_icensor) {
     ctime <- as.name(statements$ICENSOR[[2L]])
@@ -504,46 +549,42 @@
   }
 
   # The status expression is hoisted into its own chunk, named .hzr_status so
-  # it cannot collide with a SAS variable, for two reasons: an ICENSOR job's
-  # time_lower has to gate on it, and a job that named more than one count
-  # carries a both-fire guard that must run, and be seen to run, ahead of the
-  # fit. A job with neither -- a plain EVENT job, or an LCENSOR-only one,
-  # whose entry time applies to every row unconditionally -- leaves status
-  # inline. See .hzr_censor_spec() roxygen. time_upper is never emitted: the
-  # ICENSOR interval's upper bound is TIME, and hazard()'s time_upper already
-  # defaults to TIME when left NULL (see .hzr_censor_spec() roxygen).
-  status_call <- NULL
+  # it cannot collide with a SAS variable, because every job carries at least
+  # one guard that must run, and be seen to run, ahead of the fit: the
+  # missing/negative guard on each named count, plus the both-fire guard when
+  # the job named more than one. ICENSOR jobs additionally need the name so
+  # time_lower can gate on it. See .hzr_censor_spec() roxygen. The refused
+  # path returned above, so status_name is non-NULL from here on.
+  # time_upper is never emitted: the ICENSOR interval's upper bound is TIME,
+  # and hazard()'s time_upper already defaults to TIME when left NULL (see
+  # .hzr_censor_spec() roxygen).
   args <- list()
   if (!is.null(data_name)) args$data <- as.name(data_name)
   args$time <- as.name(statements$TIME)
-  if (!is.null(cens$status_name)) {
-    # The status chunk is evaluated outside hazard(), so it has to resolve
-    # its own bare SAS column names. When the job reads a DATA= dataset the
-    # hoisted status is written back INTO that data frame rather than bound
-    # locally: hazard()'s vector path gives data columns precedence over the
-    # calling frame, so a local binding is shadowed by any column of the same
-    # name, and both `status =` and the `time_lower` gate would then read the
-    # user's column instead of the computed censoring classification -- a
-    # different censoring structure, from a fit that raises nothing but an
-    # ambiguity warning. Derived as a column, the mask resolves to the value
-    # this chunk just wrote, so it cannot be shadowed at all. `.hzr_` is this
-    # package's reserved prefix, so overwriting a column of that name is the
-    # intended consequence, not collateral damage. transform() masks exactly
-    # as with() did, so the expression's column names still resolve against
-    # the dataset. With no DATA= there is no data frame and no mask, so a
-    # plain local binding is already unshadowable.
-    status_call <- if (is.null(data_name)) {
-      call("<-", cens$status_name, cens$status_expr)
-    } else {
-      derive <- as.call(list(quote(transform), as.name(data_name),
-                             cens$status_expr))
-      names(derive) <- c("", "", as.character(cens$status_name))
-      call("<-", as.name(data_name), derive)
-    }
-    args$status <- cens$status_name
+  # The status chunk is evaluated outside hazard(), so it has to resolve
+  # its own bare SAS column names. When the job reads a DATA= dataset the
+  # hoisted status is written back INTO that data frame rather than bound
+  # locally: hazard()'s vector path gives data columns precedence over the
+  # calling frame, so a local binding is shadowed by any column of the same
+  # name, and both `status =` and the `time_lower` gate would then read the
+  # user's column instead of the computed censoring classification -- a
+  # different censoring structure, from a fit that raises nothing but an
+  # ambiguity warning. Derived as a column, the mask resolves to the value
+  # this chunk just wrote, so it cannot be shadowed at all. `.hzr_` is this
+  # package's reserved prefix, so overwriting a column of that name is the
+  # intended consequence, not collateral damage. transform() masks exactly
+  # as with() did, so the expression's column names still resolve against
+  # the dataset. With no DATA= there is no data frame and no mask, so a
+  # plain local binding is already unshadowable.
+  status_call <- if (is.null(data_name)) {
+    call("<-", cens$status_name, cens$status_expr)
   } else {
-    args$status <- cens$status_expr
+    derive <- as.call(list(quote(transform), as.name(data_name),
+                           cens$status_expr))
+    names(derive) <- c("", "", as.character(cens$status_name))
+    call("<-", as.name(data_name), derive)
   }
+  args$status <- cens$status_name
   if (!is.null(cens$time_lower)) args$time_lower <- cens$time_lower
   # Without fit = TRUE the emitted call returns an unfitted object: converged
   # is NA, objective is NA, and theta holds the SAS starting values, while
