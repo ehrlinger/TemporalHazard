@@ -208,6 +208,49 @@
   the variance matrix directly, so this was a quiet inconsistency on the fit
   object rather than a visible break.
 
+* `hzr_decompos()` no longer returns a wrong value for large `|m|`. The three
+  branches with a nonzero `m` all formed `2^m` and the terms built from it
+  all three lost the answer well inside the range a fit can reach.
+
+  For `m > 0` the failure is overflow. `2^m` is `Inf` from `m = 1024`, but
+  `bt^(-1/nu)` goes first: at `t/t_half = 0.5` with `m * nu = 3` it overflows by
+  `m = 750`, and sooner for `nu > 1`. Either way `btnu` becomes `Inf`, and
+  `Inf^(-1/m)` is `0`. So `hzr_decompos(0.5, t_half = 1, nu = 3/1000, m = 1000)`
+  reported `G = 0` where the answer is `0.3969`, with `g` and `h` `NaN`. Nothing
+  warned. `G = 0` is a perfectly ordinary probability, and a fit whose optimizer
+  wandered into large `m` used it. The `nu < 0` branch collapsed the same way,
+  to `G = 1`.
+
+  For `m < 0` the failure is cancellation instead. `1 - 2^m` rounds to exactly
+  `1` once `2^m` falls below machine epsilon, so `(1 - 2^m)^(-nu) - 1` is `0`,
+  `rho` is `Inf`, and `G` is again `0`. That collapse is at `m = -53`, which an
+  optimizer reaches much more easily than `m = 750`, and the accuracy decays
+  before it: at `m = -20` the old code was already wrong in the tenth digit.
+
+  All three branches now work on the log scale. The `m` in the `(2^m - 1)/m`
+  factor of `rho` cancels the explicit multiplier, so `m * bt^(-1/nu)` is
+  exactly `(t_half/t)^(1/nu) * (2^m - 1)`, and `log(btnu)` follows from
+  `hzr_log1pexp()` applied to the log of that product. The `m < 0` branch takes
+  `log(1 - 2^m)` from `hzr_log1mexp()` rather than forming the difference. Both
+  primitives were already in the package. Checked against a reference computed
+  at 100 or more decimal digits, `G` and `g` are now accurate to machine
+  precision from `m = -1000` up to `m = 5000`, they track the analytic
+  large-`m` limit at `m = 1e6`, and they are unchanged where the old code was
+  already right. Small `m` improves too, by eight orders of magnitude or more:
+  `log(2^m - 1)` is taken as `x + hzr_log1mexp(x)` for `x = m * log(2)`, which
+  holds at both ends, where the direct `log1p(-2^(-m))` decays from about
+  `m = 1e-3` down and reaches `-Inf` once `2^(-m)` rounds to `1`.
+
+  One boundary remains, and it is now visible rather than silent. Below about
+  `m = -1074` the term `2^m` underflows outright and no rearrangement recovers
+  it in double precision; `hzr_decompos()` returns `NA` there.
+
+  The multiphase log-likelihood is evaluable again over the same range. On a
+  two-phase fixture it returned `-Inf` from about `m = 450`, for this same
+  reason: the smallest observed time is what makes `log(t_half/t)` largest, so
+  the overflow arrives earlier than the `m = 750` above. That is what made the
+  likelihood surface along the ridge `m * nu = const` hard to characterize.
+
 * `hzr_stepwise()` can no longer return a zero-step result that is silently
   empty. Every accepted move goes through a refit, and a refit that failed was
   downgraded to a warning and then dropped: the returned object carried no
@@ -245,6 +288,17 @@
   looks like it settled in a local optimum: fit at a few seeds and compare the
   `objective` values. See the note on `starts` below for how to read two
   objectives that differ, which is not always a pair of rival optima.
+
+  `start_seed` takes any whole number within integer range, negatives included
+  -- `set.seed(-1)` is perfectly valid and deterministic, so restricting to
+  non-negative values would discard half the seed space for no reason. A
+  fractional value is rejected rather than truncated: `set.seed()` truncates,
+  so `3.9` and `3` would select the same ensemble, and a sweep over
+  `3.1 / 3.5 / 3.9` would report three fits having tried one set of starts.
+  Coercing quietly would keep that aliasing and merely move it. A value out of
+  integer range is rejected too, because `set.seed()` would otherwise fail with
+  "supplied seed is not a valid integer" and name neither the argument nor the
+  fit it came from.
 
   `hzr_bootstrap()` draws its own resample before each refit, so replicates are
   still distinct. Its numbers do shift, because the refits no longer advance
