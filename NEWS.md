@@ -194,6 +194,20 @@
 
 ## Bug fixes
 
+* `$se` on a fitted object is now one standard error per parameter, whatever
+  the variance matrix looks like. A multiphase fit legitimately carries NA
+  variance rows for the parameters it holds fixed, and a single NA anywhere in
+  the matrix collapsed the whole vector to a length-1 `NA`. A five-parameter
+  fit came back with a length-1 `$se`, so naming the standard errors against
+  the parameters failed with "'names' attribute [5] must be the same length as
+  the vector [1]".
+
+  A scalar `NA` now carries the meaning it already has for `vcov()`, that there
+  is no variance matrix at all. Where a matrix is present, `$se` is sized to it.
+  `summary()` was never affected, since it builds its coefficient table from
+  the variance matrix directly, so this was a quiet inconsistency on the fit
+  object rather than a visible break.
+
 * `hzr_decompos()` no longer returns a wrong value for large `|m|`. The three
   branches with a nonzero `m` all formed `2^m` and the terms built from it
   all three lost the answer well inside the range a fit can reach.
