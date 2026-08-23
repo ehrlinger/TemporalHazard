@@ -29,6 +29,34 @@
 # directly should pre-expand factors and splines into explicit main
 # effects.
 
+#' Why a fit cannot be refit with a mutated scope
+#'
+#' Single decision point for "can `.hzr_refit_with_scope()` handle this
+#' fit at all". `hzr_stepwise()` asks the same question up front so that a
+#' base fit no candidate could ever be refit from is rejected once, with a
+#' message that names the remedy, rather than failing candidate-by-candidate
+#' into N warnings and an empty screen that looks like an honest null result
+#' (#159). Both callers read this one function so the two answers cannot
+#' drift apart.
+#'
+#' @param fit A fitted `hazard` object.
+#' @return `NULL` when the fit can be refit, otherwise a character scalar
+#'   naming the obstruction, phrased to follow "... because".
+#'
+#' @keywords internal
+#' @noRd
+.hzr_refit_blocker <- function(fit) {
+  if (is.null(fit$call$formula)) {
+    return(paste0(
+      "it was built via the vector interface (`time =` / `status =`) ",
+      "rather than the formula interface, so it stores no model formula ",
+      "to mutate"
+    ))
+  }
+  NULL
+}
+
+
 #' Refit a hazard model with a single scope mutation applied
 #'
 #' @param current A fitted `hazard` object that was built via the
@@ -83,13 +111,12 @@
   extra_args <- user_args[!names(user_args) %in%
                             c("weights", "time_windows")]
 
+  blocker <- .hzr_refit_blocker(current)
+  if (!is.null(blocker)) {
+    stop("`current` cannot be refit because ", blocker, ".", call. = FALSE)
+  }
   # Recover the original formula; see .hzr_stored_formula() for why this
   # cannot be a deparse.
-  raw_formula <- current$call$formula
-  if (is.null(raw_formula)) {
-    stop("`current` was not built via the formula interface; refit ",
-         "requires a formula-based base fit.", call. = FALSE)
-  }
   current_formula <- .hzr_stored_formula(current, "`current`")
 
   if (dist == "multiphase") {

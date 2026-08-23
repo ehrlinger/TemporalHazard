@@ -362,3 +362,143 @@ test_that("scope = NULL keeps logical columns and drops unmodellable ones", {
   expect_equal(.hzr_modellable_vars(d, c("num", "flag", "chr")),
                c("num", "flag"))
 })
+
+
+# A zero-step screen must say WHY it is empty (#159) -------------------------
+#
+# The refit-failure counterpart of the uncomputable-score tests above.  Every
+# accepted step goes through .hzr_refit_with_scope(); when the refit fails the
+# forward/backward step downgrades it to a warning and returns nothing.  The
+# step functions have always reported `refit_failures`, but hzr_stepwise()
+# never read it, so a screen that could not fit a single candidate returned
+# the same zero-row `steps` as one that fit them all and liked none.
+
+test_that("hzr_stepwise rejects a vector-interface base fit up front", {
+  # The reproduction from #159: `.hzr_refit_with_scope()` cannot rebuild a
+  # call that has no stored formula, so EVERY candidate refit fails.  Before
+  # the fix this ran to completion and returned a zero-step result with
+  # nothing on the object to distinguish it from an honest empty screen.
+  data(avc)
+  avc <- na.omit(avc)
+  vecfit <- hazard(time = avc$int_dead, status = avc$dead, dist = "weibull",
+                   fit = TRUE, theta = c(mu = 0.01, nu = 0.5))
+  # Premise of the test: the call really does lack a formula.
+  expect_null(vecfit$call$formula)
+
+  expect_error(
+    hzr_stepwise(vecfit, scope = ~ age + mal, data = avc,
+                 direction = "forward", trace = FALSE),
+    "vector interface"
+  )
+})
+
+test_that(".hzr_refit_blocker is the single answer both callers read", {
+  data(avc)
+  avc <- na.omit(avc)
+  vecfit <- hazard(time = avc$int_dead, status = avc$dead, dist = "weibull",
+                   fit = TRUE, theta = c(mu = 0.01, nu = 0.5))
+  frmfit <- hazard(Surv(int_dead, dead) ~ 1, data = avc, dist = "weibull",
+                   fit = TRUE, theta = c(mu = 0.01, nu = 0.5))
+
+  expect_null(.hzr_refit_blocker(frmfit))
+  expect_match(.hzr_refit_blocker(vecfit), "vector interface")
+})
+
+# Fixture: an intercept-only formula fit whose only candidate names a column
+# that is not in `data`, so hazard() errors inside the candidate tryCatch.
+.refit_failure_fixture <- function() {
+  data(avc)
+  avc <- na.omit(avc)
+  fit <- hazard(Surv(int_dead, dead) ~ 1, data = avc, dist = "weibull",
+                fit = TRUE, theta = c(mu = 0.01, nu = 0.5))
+  list(fit = fit, data = avc)
+}
+
+test_that("a screen emptied by refit failures records that on the object", {
+  fx <- .refit_failure_fixture()
+
+  warns <- character()
+  sw <- withCallingHandlers(
+    hzr_stepwise(fx$fit, scope = c("nonexistent"), data = fx$data,
+                 direction = "forward", criterion = "wald",
+                 trace = FALSE, control = list(n_starts = 1L)),
+    warning = function(w) {
+      warns <<- c(warns, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
+  )
+  # The run must say out loud that the empty screen is not a null result.
+  expect_true(any(grepl("never tested", warns, fixed = TRUE)))
+
+  # Assert on the OBJECT, not on printed output: this is what a caller has.
+  expect_equal(nrow(sw$steps), 0L)
+  expect_true(sw$criteria$stopped_refit_failed)
+  expect_equal(sw$criteria$n_refit_failures, 1L)
+  expect_identical(sw$criteria$refit_failures, "nonexistent")
+})
+
+test_that("an honest empty screen records no refit failure", {
+  # The discriminating negative control: same zero-row `steps`, but nothing
+  # failed -- the candidate was tested and simply did not clear slentry.
+  fx <- .refit_failure_fixture()
+
+  sw <- hzr_stepwise(fx$fit, scope = ~ age, data = fx$data,
+                     direction = "forward", criterion = "score",
+                     slentry = 1e-12, trace = FALSE,
+                     control = list(n_starts = 1L))
+
+  expect_equal(nrow(sw$steps), 0L)
+  expect_false(sw$criteria$stopped_refit_failed)
+  expect_equal(sw$criteria$n_refit_failures, 0L)
+  expect_identical(sw$criteria$refit_failures, character())
+})
+
+test_that("the trace does not claim 'no further action' when nothing was fit", {
+  fx <- .refit_failure_fixture()
+
+  sw <- suppressWarnings(
+    hzr_stepwise(fx$fit, scope = c("nonexistent"), data = fx$data,
+                 direction = "forward", criterion = "wald",
+                 trace = FALSE, control = list(n_starts = 1L))
+  )
+  trace <- stepwise_trace(sw)
+
+  expect_false(any(grepl("no further action", trace, fixed = TRUE)))
+  expect_true(any(grepl("refit FAILED", trace, fixed = TRUE)))
+  expect_true(any(grepl("nonexistent", trace, fixed = TRUE)))
+
+  # print() shows exactly the trace, so the reader sees the same thing.
+  expect_output(print(sw), "refit FAILED")
+})
+
+test_that("a score screen stopped on uncomputable scores says so in the trace", {
+  fx <- .uncomputable_fixture()
+
+  sw <- suppressWarnings(
+    hzr_stepwise(fx$fit, scope = list(early = ~ constcol), data = fx$data,
+                 direction = "forward", criterion = "score", slentry = 0.5,
+                 trace = FALSE)
+  )
+  trace <- stepwise_trace(sw)
+
+  expect_false(any(grepl("no further action", trace, fixed = TRUE)))
+  expect_true(any(grepl("could be COMPUTED", trace, fixed = TRUE)))
+})
+
+test_that("partial refit failure keeps the steps it did accept", {
+  # Partial failure is not total failure: one candidate is unfittable, the
+  # other enters.  Erroring out here would discard a real accepted step, so
+  # the run continues and records the failure instead.
+  fx <- .refit_failure_fixture()
+
+  sw <- suppressWarnings(
+    hzr_stepwise(fx$fit, scope = c("age", "nonexistent"), data = fx$data,
+                 direction = "forward", criterion = "wald", trace = FALSE,
+                 control = list(n_starts = 1L))
+  )
+
+  expect_equal(nrow(sw$steps), 1L)
+  expect_identical(sw$steps$variable, "age")
+  expect_gt(sw$criteria$n_refit_failures, 0L)
+  expect_true(all(sw$criteria$refit_failures == "nonexistent"))
+})
