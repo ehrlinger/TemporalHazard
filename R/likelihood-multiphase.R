@@ -1355,10 +1355,23 @@
   # instead of penalising and took whole starts with it.  With that fixed, all
   # 50 seeds swept in test-multiphase-reproducibility.R converge.
   #
-  # What the seed still decides is which optimum is reached.  On that fixture
-  # the assembled start lands on -159.15 and a perturbed start on -158.30, and
-  # start 1 wins only about one sweep in ten -- so the multi-start is doing real
-  # work, and `starts` on the fit records which one the answer came from.
+  # What the seed still decides is how good an objective the fit reaches, and
+  # `starts` on the fit records which start the answer came from.  On real data
+  # that means which optimum: the `avc` early+constant profile has an interior
+  # maximum in m near 1 and falls away on both sides.
+  #
+  # On the two-phase gradient fixture it does NOT mean that, and the fixture
+  # should not be read as an example of competing optima.  That likelihood has
+  # no interior maximum in m.  Profiling it along m*nu, the objective climbs
+  # past the -158.30 that a perturbed start reports (-158.29 at m = 50, -158.08
+  # at m = 100) toward a finite supremum of -157.88 reached only as m -> Inf
+  # with m*nu -> 0.753; the shape converges to 0.5*(t/t_half)^(1/k) truncated at
+  # t_half*2^k.  So -158.30 is a point on a flat ridge where the optimizer hit
+  # its tolerance, not a maximum -- its SE(m) is 42.8 on an m of 27.2 -- and
+  # -159.15 is a near-boundary solution with nu driven to zero, whose vcov is
+  # part non-finite.  Two seeds stopping at m = 27.1580 and 27.1501 look like
+  # agreement on an optimum and are agreement on a stopping rule.
+  #
   # Changing the default is a behavior change: re-check the three reference
   # problems (the gradient fixture, the `avc` early+constant fit, and the
   # synthetic two-phase fit in test-multiphase-reproducibility.R) before doing so.

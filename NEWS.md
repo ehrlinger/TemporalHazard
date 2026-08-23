@@ -216,7 +216,8 @@
   caller's stream where it found it. The new `control$start_seed` (default 3)
   selects a different ensemble of starts. That is worth reaching for when a fit
   looks like it settled in a local optimum: fit at a few seeds and compare the
-  `objective` values.
+  `objective` values. See the note on `starts` below for how to read two
+  objectives that differ, which is not always a pair of rival optima.
 
   `hzr_bootstrap()` draws its own resample before each refit, so replicates are
   still distinct. Its numbers do shift, because the refits no longer advance
@@ -244,10 +245,20 @@
   gives one row per optimization start: its `status` (`"ok"`, `"error"` or
   `"nonfinite"`), its `objective`, whether it was the `best` one and so the
   fit you are looking at, and the `message` of any error it raised. Worth a
-  look when a fit is in doubt -- on the fixture above the assembled start
-  reaches -159.15 and a perturbed start -158.30, and start 1 wins about one
-  time in ten, which is the multi-start doing real work rather than papering
-  over a bad start.
+  look when a fit is in doubt: on the fixture above the assembled start reaches
+  -159.15 and a perturbed start -158.30, and start 1 wins about one time in
+  ten.
+
+  Read two such numbers as objectives, not as rival optima. That fixture has no
+  interior maximum in `m`. Profiled, its objective climbs past -158.30 toward a
+  finite limit of -157.88 that is reached only as `m` grows without bound, so
+  the better number is a point on a flat ridge where the optimizer met its
+  tolerance, and its standard error on `m` is 42.8 against an estimate of 27.2.
+  Starts that disagree like that are telling you the shape is barely
+  identified, which is the reading `starts` is there to support. On data that
+  does identify the shape the picture is the ordinary one: the `avc`
+  early+constant profile has an interior maximum near `m = 1` and falls away on
+  either side.
 
   A start that errors now also warns rather than being absorbed, and when every
   start fails the error names what was raised instead of calling it a
