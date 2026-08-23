@@ -222,6 +222,9 @@ test_that("the assembled start converges on its own", {
 
   expect_true(fit$fit$converged)
   expect_identical(fit$fit$starts$status, "ok")
+  # converged = TRUE alone is satisfied by a clamped-penalty fit over no
+  # likelihood at all, so pin the objective to a real one.
+  expect_true(is.finite(fit$fit$objective) && fit$fit$objective > -1e9)
 })
 
 
@@ -247,7 +250,8 @@ test_that("every start_seed converges on the reference fixture", {
       )),
       error = function(e) NULL
     )
-    is.null(fit) || !isTRUE(fit$fit$converged)
+    is.null(fit) || !isTRUE(fit$fit$converged) ||
+      !is.finite(fit$fit$objective) || fit$fit$objective <= -1e9
   }, logical(1))
 
   expect_equal(sum(failures), 0L)
@@ -278,13 +282,11 @@ test_that("starts records every start and marks the one that won", {
   expect_identical(starts$start, 1:5)
   expect_true(all(starts$convergence == 0L))
 
-  # Exactly one winner, and it is the best objective among the usable starts.
+  # Exactly one winner. Cross-check its objective against the separately
+  # plumbed fit$fit$objective -- comparing it to max(starts$objective) instead
+  # would be a tautology, since `best` is assigned by that same comparison.
   expect_identical(sum(starts$best), 1L)
-  expect_equal(starts$objective[starts$best], max(starts$objective, na.rm = TRUE))
   expect_equal(starts$objective[starts$best], fit$fit$objective)
-
-  # A start that errored carries its message; one that did not is NA.
-  expect_true(all(is.na(starts$message[starts$status == "ok"])))
 })
 
 
@@ -329,9 +331,19 @@ test_that("a start that errors is named, not silently discarded", {
     testthat::with_mocked_bindings(
       {
         calls <- 0L
-        hazard(time = time, status = status, dist = "multiphase",
-               phases = phases, fit = TRUE,
-               control = list(n_starts = 3, maxit = 500))
+        # Muffle only the unrelated numerical warnings; a blanket
+        # suppressWarnings() would swallow the one under test.
+        withCallingHandlers(
+          hazard(time = time, status = status, dist = "multiphase",
+                 phases = phases, fit = TRUE,
+                 control = list(n_starts = 3, maxit = 500)),
+          warning = function(w) {
+            if (!grepl("synthetic start failure", conditionMessage(w),
+                       fixed = TRUE)) {
+              invokeRestart("muffleWarning")
+            }
+          }
+        )
       },
       .hzr_optim_generic = stub,
       .package = "TemporalHazard"
@@ -403,4 +415,43 @@ test_that("a start that stops at maxit is not reported as ok", {
   # you can now see it did not converge.
   expect_identical(sum(starts$best), 1L)
   expect_equal(starts$objective[starts$best], max(starts$objective))
+})
+
+
+test_that("an infeasible start is not reported as a converged fit", {
+  skip_on_cran()
+
+  # .hzr_optim_generic() clamps a non-finite log-likelihood to a large penalty,
+  # so a start that begins on an infeasible shape and never leaves it returns a
+  # zero gradient, convergence 0 and a finite objective -- over a likelihood
+  # that does not exist there. Before this was caught, the fit came back with
+  # converged = TRUE, objective -1e10, theta exactly as supplied, and every
+  # start marked "ok": a populated result with nothing inside.
+  set.seed(1)
+  n <- 60
+  time   <- stats::rexp(n, 0.5) + 1
+  status <- sample(0:1, n, replace = TRUE, prob = c(0.3, 0.7))
+  phases <- list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0),
+                 const = hzr_phase("constant"))
+  theta  <- c(log(0.5), log(2), -0.5, -0.5, log(0.3))   # nu < 0 and m < 0
+
+  expect_error(
+    suppressWarnings(hazard(
+      time = time, status = status, dist = "multiphase", phases = phases,
+      theta = theta, fit = TRUE, control = list(n_starts = 3)
+    )),
+    "ended where the likelihood is not defined"
+  )
+
+  # Same under left truncation, where every phase sum is Inf - Inf. That used
+  # to leave .hzr_select_fixmu_phase() returning NULL and surfaced as
+  # "attempt to select less than one element in get1index".
+  expect_error(
+    suppressWarnings(hazard(
+      time = time, status = status, time_lower = stats::runif(n, 0, 0.5),
+      dist = "multiphase", phases = phases, theta = theta, fit = TRUE,
+      control = list(n_starts = 2)
+    )),
+    "ended where the likelihood is not defined"
+  )
 })

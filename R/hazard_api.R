@@ -351,8 +351,10 @@ NULL
 #'   \code{converged}, \code{se}, \code{vcov}, \code{counts}, \code{message};
 #'   all \code{NULL} when \code{fit = FALSE}; multiphase fits add
 #'   \code{starts}, one row per optimisation start with its \code{status}
-#'   (\code{"ok"}, \code{"nonconverged"}, \code{"nonfinite"} or
-#'   \code{"error"}), \code{objective}, \code{convergence} (the
+#'   (\code{"ok"}, \code{"nonconverged"}, \code{"infeasible"},
+#'   \code{"nonfinite"} or \code{"error"}), \code{objective} (\code{NA}
+#'   unless the start reached a point where the likelihood is defined),
+#'   \code{convergence} (the
 #'   \code{\link[stats]{optim}} code, \code{0} for success), whether it was
 #'   the \code{best} and so the reported fit, and the \code{message} of any
 #'   error. A start that stops at \code{maxit} has a finite \code{objective}

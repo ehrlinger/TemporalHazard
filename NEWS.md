@@ -246,8 +246,9 @@
   `convergence` code from `optim()`, whether it was the `best` one and so the
   fit you are looking at, and the `message` of any error it raised. Worth a
   look when a fit is in doubt: on the fixture above the assembled start reaches
-  -159.15 and a perturbed start -158.30, and start 1 wins about one time in
-  ten.
+  -159.15 and a perturbed start -158.30, and start 1 wins 5 of 50 seeds at the
+  default `n_starts = 5` (17 of 50 at `n_starts = 3` -- the rate depends on how
+  many starts there are to lose to, so read it against your own setting).
 
   Read two such numbers as objectives, not as rival optima. That fixture has no
   interior maximum in `m`. Profiled, its objective climbs past -158.30 toward a

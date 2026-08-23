@@ -353,7 +353,17 @@
     }
   }
 
-  names(which.max(phase_sums))
+  selected <- names(which.max(phase_sums))
+  if (length(selected) != 1L) {
+    # Every phase sum is NaN.  Under left truncation an infeasible shape makes
+    # both H(stop) and H(start) infinite for every phase, so each difference is
+    # Inf - Inf; which.max() then answers integer(0) and this used to return
+    # NULL -- a silently-empty result that the caller turned into "attempt to
+    # select less than one element".  There is nothing to rank, so name a phase
+    # and let the optimizer report the infeasibility, which it does per start.
+    return(names(phases)[1L])
+  }
+  selected
 }
 
 
@@ -1509,18 +1519,38 @@
       start_status[start_i] <- "nonfinite"
       start_conv[start_i]   <- as.integer(result$convergence)
     } else {
-      # A finite objective is not the same as a converged one: optim() returns
-      # code 1 when it stops at maxit, with a perfectly finite value attached.
-      # Calling that "ok" would be the shape of defect this record exists to
-      # expose, and it is reachable -- a maxit-terminated start can carry a
-      # better objective than a converged one and win the selection below.
-      start_status[start_i] <- if (result$convergence == 0L) "ok" else "nonconverged"
-      start_value[start_i]  <- result$value
-      start_conv[start_i]   <- as.integer(result$convergence)
-      if (result$value > best_value) {
-        best_value  <- result$value
-        best_result <- result
-        best_start  <- start_i
+      start_conv[start_i] <- as.integer(result$convergence)
+
+      # A finite objective is not the same as a usable fit.  .hzr_optim_generic()
+      # clamps a non-finite log-likelihood to a large penalty, so a start that
+      # began on an infeasible shape and never left it comes back with a zero
+      # gradient, convergence 0 and a finite value -- over a likelihood that does
+      # not exist there.  That is a populated result with nothing inside, so ask
+      # the likelihood directly rather than trusting the clamped objective.
+      ll_at_par <- tryCatch(
+        logl_fn(theta = result$par, time = time, status = status,
+                time_lower = time_lower, time_upper = time_upper,
+                x = x, weights = weights, return_gradient = FALSE),
+        error = function(e) NA_real_
+      )
+
+      if (!is.finite(ll_at_par)) {
+        # No objective is recorded: the clamped penalty is a sentinel, not a
+        # log-likelihood, and reporting it as one is the defect itself.
+        start_status[start_i] <- "infeasible"
+      } else {
+        # Nor is a finite objective the same as a converged one: optim() returns
+        # code 1 when it stops at maxit, with a perfectly ordinary value
+        # attached, and such a start can carry a better objective than a
+        # converged one and win the selection below.
+        start_status[start_i] <-
+          if (result$convergence == 0L) "ok" else "nonconverged"
+        start_value[start_i] <- result$value
+        if (result$value > best_value) {
+          best_value  <- result$value
+          best_result <- result
+          best_start  <- start_i
+        }
       }
     }
   }
@@ -1542,9 +1572,11 @@
     # numerical-tuning problem and a defect to go and find.
     errs <- unique(start_message[!is.na(start_message)])
     stop(
-      "Multiphase optimization failed on all ", n_starts,
+      "Multiphase optimization produced no usable fit from ", n_starts,
       if (n_starts == 1L) " start" else " starts", ": ",
       sum(start_status == "error", na.rm = TRUE), " errored, ",
+      sum(start_status == "infeasible", na.rm = TRUE),
+      " ended where the likelihood is not defined, ",
       sum(start_status == "nonfinite", na.rm = TRUE),
       " returned a non-finite objective.",
       if (length(errs)) paste0(" Error(s) raised: ",
