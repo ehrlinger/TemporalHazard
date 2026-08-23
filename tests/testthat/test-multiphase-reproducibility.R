@@ -171,14 +171,14 @@ test_that(".hzr_start_perturbations leaves no .Random.seed where there was none"
 # The default start_seed is a behavioral choice, not an arbitrary constant
 # ---------------------------------------------------------------------------
 
-test_that("the default start_seed converges where the plain start does not", {
+test_that("the default start_seed converges on the reference fixture", {
   skip_on_cran()
 
-  # The fixture from test-multiphase-gradient.R.  Its assembled starting values
-  # do not converge on their own, so the fit lives or dies on the perturbed
-  # starts, and about a quarter of seeds fail outright.  That test guards itself
-  # with skip_if(), so a bad default would turn it into a permanent skip rather
-  # than a failure.  Assert the default here, where it fails loudly instead.
+  # The fixture from test-multiphase-gradient.R.  That test guards itself with
+  # skip_if(), so a bad default would turn it into a permanent skip rather than
+  # a failure.  Assert the default here, where it fails loudly instead.  Its
+  # assembled start used to fail on its own -- see the n_starts = 1 test below,
+  # which pins the fix that made it converge.
   set.seed(42)
   n <- 100
   time   <- stats::rexp(n, rate = 0.5) + 0.01
@@ -193,4 +193,265 @@ test_that("the default start_seed converges where the plain start does not", {
   ))
 
   expect_true(fit$fit$converged)
+})
+
+
+# ---------------------------------------------------------------------------
+# Per-start outcomes and the diagnostics that name a discarded error
+# ---------------------------------------------------------------------------
+
+test_that("the assembled start converges on its own", {
+  skip_on_cran()
+
+  # The regression that motivated `starts`: this fixture's start 1 raised
+  # "$ operator is invalid for atomic vectors" from the CoE adjustment, the
+  # loop discarded it, and the fit was reported as a convergence failure.  At
+  # n_starts = 1 there is nothing to hide behind.
+  set.seed(42)
+  n <- 100
+  time   <- stats::rexp(n, rate = 0.5) + 0.01
+  status <- sample(0:1, n, replace = TRUE, prob = c(0.2, 0.8))
+  phases <- list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0),
+                 const = hzr_phase("constant"))
+
+  fit <- suppressWarnings(hazard(
+    time = time, status = status, dist = "multiphase",
+    phases = phases, fit = TRUE,
+    control = list(n_starts = 1, maxit = 500)
+  ))
+
+  expect_true(fit$fit$converged)
+  expect_identical(fit$fit$starts$status, "ok")
+  # converged = TRUE alone is satisfied by a clamped-penalty fit over no
+  # likelihood at all, so pin the objective to a real one.
+  expect_true(is.finite(fit$fit$objective) && fit$fit$objective > -1e9)
+})
+
+
+test_that("every start_seed converges on the reference fixture", {
+  skip_on_cran()
+
+  # Before the cumhaz guard was shape-corrected, 12 of these 50 seeds failed
+  # outright, so the default seed was load-bearing.  Sweep rather than trust
+  # the default: a single passing seed is not evidence.
+  set.seed(42)
+  n <- 100
+  time   <- stats::rexp(n, rate = 0.5) + 0.01
+  status <- sample(0:1, n, replace = TRUE, prob = c(0.2, 0.8))
+  phases <- list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0),
+                 const = hzr_phase("constant"))
+
+  failures <- vapply(1:50, function(s) {
+    fit <- tryCatch(
+      suppressWarnings(hazard(
+        time = time, status = status, dist = "multiphase",
+        phases = phases, fit = TRUE,
+        control = list(n_starts = 3, maxit = 500, start_seed = s)
+      )),
+      error = function(e) NULL
+    )
+    is.null(fit) || !isTRUE(fit$fit$converged) ||
+      !is.finite(fit$fit$objective) || fit$fit$objective <= -1e9
+  }, logical(1))
+
+  expect_equal(sum(failures), 0L)
+})
+
+
+test_that("starts records every start and marks the one that won", {
+  skip_on_cran()
+
+  set.seed(42)
+  n <- 100
+  time   <- stats::rexp(n, rate = 0.5) + 0.01
+  status <- sample(0:1, n, replace = TRUE, prob = c(0.2, 0.8))
+  phases <- list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0),
+                 const = hzr_phase("constant"))
+
+  fit <- suppressWarnings(hazard(
+    time = time, status = status, dist = "multiphase",
+    phases = phases, fit = TRUE,
+    control = list(n_starts = 5, maxit = 500)
+  ))
+
+  starts <- fit$fit$starts
+  expect_s3_class(starts, "data.frame")
+  expect_identical(nrow(starts), 5L)
+  expect_named(starts, c("start", "status", "objective", "convergence",
+                         "best", "message"))
+  expect_identical(starts$start, 1:5)
+  expect_true(all(starts$convergence == 0L))
+
+  # Exactly one winner. Cross-check its objective against the separately
+  # plumbed fit$fit$objective -- comparing it to max(starts$objective) instead
+  # would be a tautology, since `best` is assigned by that same comparison.
+  expect_identical(sum(starts$best), 1L)
+  expect_equal(starts$objective[starts$best], fit$fit$objective)
+})
+
+
+test_that("a start that errors is named, not silently discarded", {
+  skip_on_cran()
+
+  # Force one start to throw by making the objective error on a marked theta,
+  # so the discard path is exercised without waiting for a real defect.
+  set.seed(42)
+  n <- 100
+  time   <- stats::rexp(n, rate = 0.5) + 0.01
+  status <- sample(0:1, n, replace = TRUE, prob = c(0.2, 0.8))
+  phases <- list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0),
+                 const = hzr_phase("constant"))
+
+  calls <- 0L
+  orig <- TemporalHazard:::.hzr_optim_generic
+  stub <- function(...) {
+    calls <<- calls + 1L
+    if (calls == 1L) stop("synthetic start failure", call. = FALSE)
+    orig(...)
+  }
+
+  fit <- testthat::with_mocked_bindings(
+    suppressWarnings(hazard(
+      time = time, status = status, dist = "multiphase",
+      phases = phases, fit = TRUE,
+      control = list(n_starts = 3, maxit = 500)
+    )),
+    .hzr_optim_generic = stub,
+    .package = "TemporalHazard"
+  )
+
+  starts <- fit$fit$starts
+  expect_identical(starts$status[1], "error")
+  expect_match(starts$message[1], "synthetic start failure")
+  expect_false(starts$best[1])
+  expect_true(any(starts$best))
+
+  # And it is warned about rather than absorbed.
+  expect_warning(
+    testthat::with_mocked_bindings(
+      {
+        calls <- 0L
+        # Muffle only the unrelated numerical warnings; a blanket
+        # suppressWarnings() would swallow the one under test.
+        withCallingHandlers(
+          hazard(time = time, status = status, dist = "multiphase",
+                 phases = phases, fit = TRUE,
+                 control = list(n_starts = 3, maxit = 500)),
+          warning = function(w) {
+            if (!grepl("synthetic start failure", conditionMessage(w),
+                       fixed = TRUE)) {
+              invokeRestart("muffleWarning")
+            }
+          }
+        )
+      },
+      .hzr_optim_generic = stub,
+      .package = "TemporalHazard"
+    ),
+    "synthetic start failure"
+  )
+})
+
+
+test_that("failing every start names the error instead of calling it convergence", {
+  skip_on_cran()
+
+  set.seed(42)
+  n <- 100
+  time   <- stats::rexp(n, rate = 0.5) + 0.01
+  status <- sample(0:1, n, replace = TRUE, prob = c(0.2, 0.8))
+  phases <- list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0),
+                 const = hzr_phase("constant"))
+
+  stub <- function(...) stop("synthetic total failure", call. = FALSE)
+
+  expect_error(
+    testthat::with_mocked_bindings(
+      suppressWarnings(hazard(
+        time = time, status = status, dist = "multiphase",
+        phases = phases, fit = TRUE,
+        control = list(n_starts = 3, maxit = 500)
+      )),
+      .hzr_optim_generic = stub,
+      .package = "TemporalHazard"
+    ),
+    "synthetic total failure"
+  )
+})
+
+
+test_that("a start that stops at maxit is not reported as ok", {
+  skip_on_cran()
+
+  # A finite objective is not a converged one. optim() returns code 1 when it
+  # stops at maxit and attaches a perfectly ordinary value, so a status keyed
+  # only on is.finite() would call every one of these "ok" -- and one of them
+  # can carry the best objective and become the reported fit.
+  #
+  # conserve = FALSE is load-bearing: with CoE on, a parameter is fixed, which
+  # turns on the Nelder-Mead warm-up. That warm-up runs at its own hardcoded
+  # maxit, reaches the optimum, and leaves BFGS nothing to do, so `maxit` here
+  # would not bite at all.
+  set.seed(42)
+  n <- 100
+  time   <- stats::rexp(n, rate = 0.5) + 0.01
+  status <- sample(0:1, n, replace = TRUE, prob = c(0.2, 0.8))
+  phases <- list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0),
+                 const = hzr_phase("constant"))
+
+  fit <- suppressWarnings(hazard(
+    time = time, status = status, dist = "multiphase",
+    phases = phases, fit = TRUE,
+    control = list(n_starts = 3, maxit = 2, conserve = FALSE)
+  ))
+
+  starts <- fit$fit$starts
+  expect_identical(starts$status, rep("nonconverged", 3L))
+  expect_true(all(starts$convergence == 1L))
+  expect_true(all(is.finite(starts$objective)))   # finite, and still not "ok"
+  expect_false(fit$fit$converged)
+
+  # The winner is still chosen on the objective, unchanged -- the point is that
+  # you can now see it did not converge.
+  expect_identical(sum(starts$best), 1L)
+  expect_equal(starts$objective[starts$best], max(starts$objective))
+})
+
+
+test_that("an infeasible start is not reported as a converged fit", {
+  skip_on_cran()
+
+  # .hzr_optim_generic() clamps a non-finite log-likelihood to a large penalty,
+  # so a start that begins on an infeasible shape and never leaves it returns a
+  # zero gradient, convergence 0 and a finite objective -- over a likelihood
+  # that does not exist there. Before this was caught, the fit came back with
+  # converged = TRUE, objective -1e10, theta exactly as supplied, and every
+  # start marked "ok": a populated result with nothing inside.
+  set.seed(1)
+  n <- 60
+  time   <- stats::rexp(n, 0.5) + 1
+  status <- sample(0:1, n, replace = TRUE, prob = c(0.3, 0.7))
+  phases <- list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0),
+                 const = hzr_phase("constant"))
+  theta  <- c(log(0.5), log(2), -0.5, -0.5, log(0.3))   # nu < 0 and m < 0
+
+  expect_error(
+    suppressWarnings(hazard(
+      time = time, status = status, dist = "multiphase", phases = phases,
+      theta = theta, fit = TRUE, control = list(n_starts = 3)
+    )),
+    "ended where the likelihood is not defined"
+  )
+
+  # Same under left truncation, where every phase sum is Inf - Inf. That used
+  # to leave .hzr_select_fixmu_phase() returning NULL and surfaced as
+  # "attempt to select less than one element in get1index".
+  expect_error(
+    suppressWarnings(hazard(
+      time = time, status = status, time_lower = stats::runif(n, 0, 0.5),
+      dist = "multiphase", phases = phases, theta = theta, fit = TRUE,
+      control = list(n_starts = 2)
+    )),
+    "ended where the likelihood is not defined"
+  )
 })
