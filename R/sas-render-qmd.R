@@ -32,9 +32,12 @@
 
   if (!is.null(job$inhaz) && !isTRUE(job$inhaz_resolved)) {
     lib <- sub("[.].*$", "", job$inhaz)
+    # Quote the libref. A SAS libref is nearly always a syntactic R name, but
+    # one that collides with a reserved word (TRUE, if) would make the remedy
+    # invalid R, and the whole point of the line is that it can be pasted.
     msg <- paste0(
-      "unresolved INHAZ=", job$inhaz, " -- pass librefs = c(", lib,
-      ' = "<path>") to hzr_translate_sas()'
+      "unresolved INHAZ=", job$inhaz, ' -- pass librefs = c("', lib,
+      '" = "<path>") to hzr_translate_sas()'
     )
     stop_call <- bquote(stop(.(msg)))
     add("```{r}",
