@@ -237,6 +237,19 @@
   the overflow arrives earlier than the `m = 750` above. That is what made the
   likelihood surface along the ridge `m * nu = const` hard to characterize.
 
+* `hzr_stepwise()` can no longer return a zero-step result that is silently
+  empty. Every accepted move goes through a refit, and a refit that failed was
+  downgraded to a warning and then dropped: the returned object carried no
+  record of it, so a screen that could not fit a single candidate looked
+  exactly like one that tested them all and liked none. `$criteria` now carries
+  `refit_failures`, `n_refit_failures` and `stopped_refit_failed`; a run that
+  ends on an iteration with failed refits warns that its candidates were never
+  tested; and the trace names the cause instead of claiming "no further
+  action". A base fit built with the vector interface (`time =` / `status =`)
+  stores no formula for the refit to mutate, so every candidate would fail --
+  `hzr_stepwise()` now rejects it up front with one message naming the remedy,
+  through the same predicate the refit itself uses.
+
 * A multiphase fit is now reproducible. `hazard(dist = "multiphase")` offsets
   the starting values for every optimization start after the first, and those
   offsets were drawn from the ambient RNG stream. The identical call run twice
@@ -246,11 +259,12 @@
   stream, so a later `sample()` or `rnorm()` depended on whether a model had
   been fitted first.
 
-  Where the assembled starting values do not converge on their own, the draw
-  decided whether there was a fit at all: the fit succeeds only from a
-  perturbed start, and about a quarter of draws stop with `Multiphase
-  optimization failed to converge on any start`. The same call could raise that
-  error on one run and not the next.
+  Where the assembled starting values did not converge on their own, the draw
+  decided whether there was a fit at all: the fit succeeded only from a
+  perturbed start, and about a quarter of draws stopped outright. The same call
+  could raise that error on one run and not the next. The reason those starting
+  values failed is fixed below, so the draw no longer decides that; it decides
+  only which optimum is reached.
 
   The offsets now come from an internally seeded stream, and the ambient
   `.Random.seed` is restored afterwards. The same data and the same control
@@ -258,12 +272,65 @@
   caller's stream where it found it. The new `control$start_seed` (default 3)
   selects a different ensemble of starts. That is worth reaching for when a fit
   looks like it settled in a local optimum: fit at a few seeds and compare the
-  `objective` values.
+  `objective` values. See the note on `starts` below for how to read two
+  objectives that differ, which is not always a pair of rival optima.
 
   `hzr_bootstrap()` draws its own resample before each refit, so replicates are
   still distinct. Its numbers do shift, because the refits no longer advance
   the stream between resamples, and a run with `seed=` is now reproducible end
   to end.
+
+* A multiphase optimization start no longer dies on an infeasible shape. The
+  multiphase cumulative hazard short-circuits to an infinite hazard when a
+  phase's `m` and `nu` are both negative, so the optimizer sees a penalty and
+  backs out of the region. Asked for a per-phase decomposition it
+  short-circuited in the wrong shape -- a bare vector where the caller expects
+  a named list -- and the Conservation-of-Events adjustment, which runs inside
+  the objective on every evaluation, raised `$ operator is invalid for atomic
+  vectors`. BFGS steps into that region routinely, so the error came back out
+  of `optim()` and the multi-start loop threw the whole start away.
+
+  A discarded start was reported as a failure to converge, so a crash read as a
+  numerical problem. On the two-phase fixture in `test-multiphase-gradient.R`
+  it cost the fit its assembled starting values outright: `n_starts = 1`
+  stopped with an error, the fit survived only on a perturbed start, and 12 of
+  50 `start_seed` values failed. All 50 converge now, `n_starts = 1` converges
+  on its own, and across 50 seeds every one of the 250 starts is usable.
+
+* A multiphase fit now says which of its starts survived. `fit$fit$starts`
+  gives one row per optimization start: its `status`, its `objective`, its
+  `convergence` code from `optim()`, whether it was the `best` one and so the
+  fit you are looking at, and the `message` of any error it raised. Worth a
+  look when a fit is in doubt: on the fixture above the assembled start reaches
+  -159.15 and a perturbed start -158.30, and start 1 wins 5 of 50 seeds at the
+  default `n_starts = 5` (17 of 50 at `n_starts = 3` -- the rate depends on how
+  many starts there are to lose to, so read it against your own setting).
+
+  Read two such numbers as objectives, not as rival optima. That fixture has no
+  interior maximum in `m`. Profiled, its objective climbs past -158.30 toward a
+  finite limit of -157.88 that is reached only as `m` grows without bound, so
+  the better number is a point on a flat ridge where the optimizer met its
+  tolerance, and its standard error on `m` is 42.8 against an estimate of 27.2.
+  Starts that disagree like that are telling you the shape is barely
+  identified, which is the reading `starts` is there to support. On data that
+  does identify the shape the picture is the ordinary one: the `avc`
+  early+constant profile has an interior maximum near `m = 1` and falls away on
+  either side.
+
+  `status` separates the four ways a start can end, and in particular a start
+  that stopped at `maxit` reads as `"nonconverged"`, not `"ok"`. That
+  distinction is not cosmetic: `optim()` attaches a perfectly finite objective
+  to a run it abandoned at the iteration limit, and such a start can carry a
+  better objective than one that genuinely converged and so become the
+  reported fit. Which start wins is unchanged -- it is still the best
+  objective -- but you can now see whether it converged. `fit$fit$converged`
+  continues to report that for the fit as a whole.
+
+  A start that errors now also warns rather than being absorbed, and when every
+  start fails the error names what was raised instead of calling it a
+  convergence failure. An error thrown inside the objective used to be
+  indistinguishable from a start that merely optimized badly, which is how the
+  defect above stayed hidden.
 
 
 # TemporalHazard 1.2.1
