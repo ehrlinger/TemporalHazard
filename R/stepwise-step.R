@@ -364,6 +364,42 @@
   }
   all_scores <- do.call(rbind, rows)
 
+  # --- Wald fallback for candidates the score could not test (#130) --------
+  # Q is SAS's exactly (src/vars/q1.c), and so is its blind spot: the observed
+  # information at beta = 0 goes indefinite precisely when the candidate's
+  # effect is LARGE, so the criterion declines candidates in proportion to how
+  # predictive they are. Refit those few and test them by Wald rather than
+  # dropping the screen's best variables. Only the reasons a refit can
+  # actually rescue qualify -- see .hzr_score_fallback_reasons.
+  all_scores$fallback <- FALSE
+  for (i in which(is.na(all_scores$score) &
+                    all_scores$reason %in% .hzr_score_fallback_reasons)) {
+    cand_phase <- if (is.na(all_scores$phase[i])) NULL else all_scores$phase[i]
+    refit <- tryCatch(
+      .hzr_refit_with_scope(current, action = "add",
+                            var = all_scores$variable[i], phase = cand_phase,
+                            data = data, ...),
+      error = function(e) NULL
+    )
+    # A refit that fails or does not converge leaves the row NA with its
+    # original reason, so it still counts as uncomputable below rather than
+    # quietly becoming a candidate with no score.
+    if (is.null(refit) || isFALSE(refit$fit$converged)) next
+    w <- .hzr_candidate_score(
+      criterion = "wald", mode = "entry", current = current, candidate = refit,
+      names = .hzr_candidate_coef_name(refit, all_scores$variable[i],
+                                       cand_phase)
+    )
+    if (is.na(w$score)) next
+    all_scores$score[i]    <- w$score
+    all_scores$p_value[i]  <- w$p_value
+    all_scores$stat[i]     <- w$stat
+    all_scores$df[i]       <- w$df
+    all_scores$fallback[i] <- TRUE
+    all_scores$reason[i]   <- NA_character_
+  }
+  n_wald_fallbacks <- sum(all_scores$fallback)
+
   valid <- which(!is.na(all_scores$score))
 
   # A candidate whose Q could not be computed scores NA and drops out of
@@ -385,6 +421,7 @@
     out$all_scores     <- all_scores
     out$n_uncomputable <- n_uncomputable
     out$uncomputable_reasons <- uncomputable_reasons
+    out$n_wald_fallbacks <- n_wald_fallbacks
     out$stop_reason    <- if (n_uncomputable > 0L) {
       "scores_uncomputable"
     } else {
@@ -401,6 +438,7 @@
     out$all_scores     <- all_scores
     out$n_uncomputable <- n_uncomputable
     out$uncomputable_reasons <- uncomputable_reasons
+    out$n_wald_fallbacks <- n_wald_fallbacks
     out$stop_reason    <- "no_candidate_met_slentry"
     return(out)
   }
@@ -430,6 +468,7 @@
     out$refit_failures <- failure_token
     out$n_uncomputable <- n_uncomputable
     out$uncomputable_reasons <- uncomputable_reasons
+    out$n_wald_fallbacks <- n_wald_fallbacks
     out$stop_reason    <- "refit_failed"
     return(out)
   }
@@ -448,6 +487,7 @@
     refit_failures = character(),
     n_uncomputable = n_uncomputable,
     uncomputable_reasons = uncomputable_reasons,
+    n_wald_fallbacks = n_wald_fallbacks,
     stop_reason    = "accepted"
   )
 }

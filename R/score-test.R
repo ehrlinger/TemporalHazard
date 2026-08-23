@@ -703,6 +703,23 @@
 #' silently becoming an empty string.
 #'
 #' @noRd
+# Reasons a candidate can be rescued by refitting it and testing by Wald.
+#
+# Both mean "the quadratic approximation at beta = 0 broke down", which is
+# what a LARGE true effect looks like -- so declining them is exactly backwards
+# and a refit gives the right answer. SAS's own q1.c says as much ("IT IS
+# POSSIBLE THAT THE PROGRAM WILL RETURN A NEGATIVE Q VALUE ... THE USER SHOULD
+# USE THE MORE EXPENSIVE Q2 AS AN ALTERNATIVE"); Q2 is named once in the C
+# tree and never implemented, and dqstat.c instead declines the candidate with
+# p = 1. This is that unbuilt alternative.
+#
+# Kept deliberately narrow. The degenerate reasons -- collinear, constant,
+# non_numeric, nuisance_singular -- are NOT here: no refit can make those
+# candidates testable, and paying one per degenerate candidate would give back
+# the whole speed advantage the score criterion exists for.
+.hzr_score_fallback_reasons <- c("information_indefinite",
+                                 "coefficient_diverging")
+
 .hzr_score_reason_text <- function(reason) {
   txt <- c(
     information_indefinite = paste(

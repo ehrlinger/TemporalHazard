@@ -141,14 +141,17 @@
 #'       an unscored candidate as a bad one: `information_indefinite` marks
 #'       candidates whose effect is too large for the score test's
 #'       approximation at zero, which are typically the strongest variables
-#'       on offer rather than degenerate ones. `criterion = "wald"` tests
-#'       them.  For every criterion it also carries `refit_failures` (the
-#'       `"var"` / `"var@phase"` tokens of candidate moves whose refit
-#'       errored or failed to converge), `n_refit_failures`, and
-#'       `stopped_refit_failed` --- `TRUE` when the run ended on an iteration
-#'       in which refits failed, which is a screen that could not test its
-#'       candidates rather than one that tested them and liked none.  Check
-#'       it before reading a zero-row `steps` as an honest null result.}
+#'       on offer rather than degenerate ones. Those are now refit and tested
+#'       by Wald automatically, counted in `n_wald_fallbacks`; a candidate
+#'       still reaches `uncomputable_reasons` only when that refit itself
+#'       fails, or when the cause is one no refit can rescue (a collinear or
+#'       constant column).  For every criterion it also carries
+#'       `refit_failures` (the `"var"` / `"var@phase"` tokens of candidate
+#'       moves whose refit errored or failed to converge), `n_refit_failures`,
+#'       and `stopped_refit_failed` --- `TRUE` when the run ended on an
+#'       iteration in which refits failed, which is a screen that could not
+#'       test its candidates rather than one that tested them and liked none.
+#'       Check it before reading a zero-row `steps` as an honest null result.}
 #'     \item{\code{trace_msg}}{Character vector of the trace lines,
 #'       captured regardless of the `trace` flag.}
 #'     \item{\code{elapsed}}{`difftime` from start to finish.}
@@ -302,6 +305,7 @@ hzr_stepwise <- function(fit,
   # was good enough -- the two produce identical empty steps otherwise.
   n_uncomputable_scores <- 0L
   uncomputable_reasons  <- stats::setNames(integer(0), character(0))
+  n_wald_fallbacks      <- 0L
   stopped_uncomputable  <- FALSE
   # Candidates whose REFIT failed, summed over steps.  The per-candidate
   # warning already fires inside the step, but nothing recorded it on the
@@ -420,6 +424,7 @@ hzr_stepwise <- function(fit,
 
       n_uncomputable_scores <- n_uncomputable_scores +
         (fwd$n_uncomputable %||% 0L)
+      n_wald_fallbacks <- n_wald_fallbacks + (fwd$n_wald_fallbacks %||% 0L)
       uncomputable_reasons <- .hzr_merge_reasons(
         uncomputable_reasons, fwd$uncomputable_reasons
       )
@@ -551,6 +556,7 @@ hzr_stepwise <- function(fit,
     hit_max_steps = stopped_by_max_steps,
     n_uncomputable_scores = n_uncomputable_scores,
     uncomputable_reasons  = uncomputable_reasons,
+    n_wald_fallbacks      = n_wald_fallbacks,
     stopped_uncomputable  = stopped_uncomputable,
     n_refit_failures      = length(refit_failures),
     refit_failures        = refit_failures,
