@@ -242,8 +242,8 @@
   on its own, and across 50 seeds every one of the 250 starts is usable.
 
 * A multiphase fit now says which of its starts survived. `fit$fit$starts`
-  gives one row per optimization start: its `status` (`"ok"`, `"error"` or
-  `"nonfinite"`), its `objective`, whether it was the `best` one and so the
+  gives one row per optimization start: its `status`, its `objective`, its
+  `convergence` code from `optim()`, whether it was the `best` one and so the
   fit you are looking at, and the `message` of any error it raised. Worth a
   look when a fit is in doubt: on the fixture above the assembled start reaches
   -159.15 and a perturbed start -158.30, and start 1 wins about one time in
@@ -259,6 +259,15 @@
   does identify the shape the picture is the ordinary one: the `avc`
   early+constant profile has an interior maximum near `m = 1` and falls away on
   either side.
+
+  `status` separates the four ways a start can end, and in particular a start
+  that stopped at `maxit` reads as `"nonconverged"`, not `"ok"`. That
+  distinction is not cosmetic: `optim()` attaches a perfectly finite objective
+  to a run it abandoned at the iteration limit, and such a start can carry a
+  better objective than one that genuinely converged and so become the
+  reported fit. Which start wins is unchanged -- it is still the best
+  objective -- but you can now see whether it converged. `fit$fit$converged`
+  continues to report that for the fit as a whole.
 
   A start that errors now also warns rather than being absorbed, and when every
   start fails the error names what was raised instead of calling it a

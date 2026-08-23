@@ -1400,9 +1400,12 @@
   # record of that an error raised inside the objective is indistinguishable
   # from a start that merely optimized poorly -- which is how a hard error in
   # the cumulative hazard was read as a convergence failure for as long as it
-  # was.  Reported on the fit as `starts`.
+  # was.  optim()'s convergence code is kept alongside the objective, because a
+  # finite objective alone does not mean the start converged.  Reported on the
+  # fit as `starts`.
   start_status  <- rep(NA_character_, n_starts)
   start_value   <- rep(NA_real_, n_starts)
+  start_conv    <- rep(NA_integer_, n_starts)
   start_message <- rep(NA_character_, n_starts)
 
   # When shapes are fixed the free-parameter count is small (typically just the
@@ -1504,9 +1507,16 @@
       start_message[start_i] <- conditionMessage(result)
     } else if (!is.finite(result$value)) {
       start_status[start_i] <- "nonfinite"
+      start_conv[start_i]   <- as.integer(result$convergence)
     } else {
-      start_status[start_i] <- "ok"
+      # A finite objective is not the same as a converged one: optim() returns
+      # code 1 when it stops at maxit, with a perfectly finite value attached.
+      # Calling that "ok" would be the shape of defect this record exists to
+      # expose, and it is reachable -- a maxit-terminated start can carry a
+      # better objective than a converged one and win the selection below.
+      start_status[start_i] <- if (result$convergence == 0L) "ok" else "nonconverged"
       start_value[start_i]  <- result$value
+      start_conv[start_i]   <- as.integer(result$convergence)
       if (result$value > best_value) {
         best_value  <- result$value
         best_result <- result
@@ -1516,11 +1526,12 @@
   }
 
   starts <- data.frame(
-    start     = seq_len(n_starts),
-    status    = start_status,
-    objective = start_value,
-    best      = seq_len(n_starts) == best_start & !is.na(best_start),
-    message   = start_message,
+    start       = seq_len(n_starts),
+    status      = start_status,
+    objective   = start_value,
+    convergence = start_conv,
+    best        = seq_len(n_starts) == best_start & !is.na(best_start),
+    message     = start_message,
     stringsAsFactors = FALSE
   )
 

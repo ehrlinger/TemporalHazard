@@ -273,8 +273,10 @@ test_that("starts records every start and marks the one that won", {
   starts <- fit$fit$starts
   expect_s3_class(starts, "data.frame")
   expect_identical(nrow(starts), 5L)
-  expect_named(starts, c("start", "status", "objective", "best", "message"))
+  expect_named(starts, c("start", "status", "objective", "convergence",
+                         "best", "message"))
   expect_identical(starts$start, 1:5)
+  expect_true(all(starts$convergence == 0L))
 
   # Exactly one winner, and it is the best objective among the usable starts.
   expect_identical(sum(starts$best), 1L)
@@ -363,4 +365,42 @@ test_that("failing every start names the error instead of calling it convergence
     ),
     "synthetic total failure"
   )
+})
+
+
+test_that("a start that stops at maxit is not reported as ok", {
+  skip_on_cran()
+
+  # A finite objective is not a converged one. optim() returns code 1 when it
+  # stops at maxit and attaches a perfectly ordinary value, so a status keyed
+  # only on is.finite() would call every one of these "ok" -- and one of them
+  # can carry the best objective and become the reported fit.
+  #
+  # conserve = FALSE is load-bearing: with CoE on, a parameter is fixed, which
+  # turns on the Nelder-Mead warm-up. That warm-up runs at its own hardcoded
+  # maxit, reaches the optimum, and leaves BFGS nothing to do, so `maxit` here
+  # would not bite at all.
+  set.seed(42)
+  n <- 100
+  time   <- stats::rexp(n, rate = 0.5) + 0.01
+  status <- sample(0:1, n, replace = TRUE, prob = c(0.2, 0.8))
+  phases <- list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0),
+                 const = hzr_phase("constant"))
+
+  fit <- suppressWarnings(hazard(
+    time = time, status = status, dist = "multiphase",
+    phases = phases, fit = TRUE,
+    control = list(n_starts = 3, maxit = 2, conserve = FALSE)
+  ))
+
+  starts <- fit$fit$starts
+  expect_identical(starts$status, rep("nonconverged", 3L))
+  expect_true(all(starts$convergence == 1L))
+  expect_true(all(is.finite(starts$objective)))   # finite, and still not "ok"
+  expect_false(fit$fit$converged)
+
+  # The winner is still chosen on the objective, unchanged -- the point is that
+  # you can now see it did not converge.
+  expect_identical(sum(starts$best), 1L)
+  expect_equal(starts$objective[starts$best], max(starts$objective))
 })
