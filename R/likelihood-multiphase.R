@@ -173,8 +173,19 @@
       phi_j <- d3$G3
     } else {
       t_half_j <- exp(pars$log_t_half)
-      # Guard against invalid decomposition parameters
-      if (pars$m < 0 && pars$nu < 0) return(rep(Inf, n))
+      # Guard against invalid decomposition parameters.  Answer in the shape the
+      # caller asked for: per_phase callers (the CoE adjustment, which runs
+      # inside the objective on every evaluation) index the result by name, and
+      # a bare vector there errors out of optim() and loses the whole start
+      # rather than merely penalising the step.
+      if (pars$m < 0 && pars$nu < 0) {
+        inf_n <- rep(Inf, n)
+        if (!per_phase) return(inf_n)
+        infeasible <- rep(list(inf_n), length(phases))
+        names(infeasible) <- names(phases)
+        infeasible$total <- inf_n
+        return(infeasible)
+      }
       phi_j <- hzr_phase_cumhaz(time, t_half = t_half_j, nu = pars$nu,
                                   m = pars$m, type = phases[[nm]]$type)
     }
@@ -342,7 +353,17 @@
     }
   }
 
-  names(which.max(phase_sums))
+  selected <- names(which.max(phase_sums))
+  if (length(selected) != 1L) {
+    # Every phase sum is NaN.  Under left truncation an infeasible shape makes
+    # both H(stop) and H(start) infinite for every phase, so each difference is
+    # Inf - Inf; which.max() then answers integer(0) and this used to return
+    # NULL -- a silently-empty result that the caller turned into "attempt to
+    # select less than one element".  There is nothing to rank, so name a phase
+    # and let the optimizer report the infeasibility, which it does per start.
+    return(names(phases)[1L])
+  }
+  selected
 }
 
 
@@ -1338,15 +1359,32 @@
   # identical call returns the identical fit; vary it to probe a different set
   # of starts when a fit is suspected of sitting in a local optimum.
   #
-  # The default is not arbitrary.  On problems where the assembled starting
-  # values do not themselves converge, the fit succeeds only from a perturbed
-  # start, and roughly a quarter of seeds fail outright -- which is what made
-  # the ambient-stream draw a silent coin flip rather than merely irreproducible.
-  # 3 converges on all three reference problems used to pick it (the two-phase
-  # gradient fixture in test-multiphase-gradient.R, the `avc` early+constant
-  # fit, and the synthetic two-phase fit in test-multiphase-reproducibility.R)
-  # and reaches the better optimum on each.  Changing it is a behavior change:
-  # re-check those three before doing so.
+  # The seed no longer decides whether there is a fit at all.  It once did:
+  # roughly a quarter of seeds failed outright on the two-phase gradient
+  # fixture, because the cumulative hazard's infeasible-shape guard threw
+  # instead of penalising and took whole starts with it.  With that fixed, all
+  # 50 seeds swept in test-multiphase-reproducibility.R converge.
+  #
+  # What the seed still decides is how good an objective the fit reaches, and
+  # `starts` on the fit records which start the answer came from.  On real data
+  # that means which optimum: the `avc` early+constant profile has an interior
+  # maximum in m near 1 and falls away on both sides.
+  #
+  # On the two-phase gradient fixture it does NOT mean that, and the fixture
+  # should not be read as an example of competing optima.  That likelihood has
+  # no interior maximum in m.  Profiling it along m*nu, the objective climbs
+  # past the -158.30 that a perturbed start reports (-158.29 at m = 50, -158.08
+  # at m = 100) toward a finite supremum of -157.88 reached only as m -> Inf
+  # with m*nu -> 0.753; the shape converges to 0.5*(t/t_half)^(1/k) truncated at
+  # t_half*2^k.  So -158.30 is a point on a flat ridge where the optimizer hit
+  # its tolerance, not a maximum -- its SE(m) is 42.8 on an m of 27.2 -- and
+  # -159.15 is a near-boundary solution with nu driven to zero, whose vcov is
+  # part non-finite.  Two seeds stopping at m = 27.1580 and 27.1501 look like
+  # agreement on an optimum and are agreement on a stopping rule.
+  #
+  # Changing the default is a behavior change: re-check the three reference
+  # problems (the gradient fixture, the `avc` early+constant fit, and the
+  # synthetic two-phase fit in test-multiphase-reproducibility.R) before doing so.
   start_seed <- if (!is.null(control$start_seed)) control$start_seed else 3L
   control$start_seed <- NULL  # remove before passing to optim
   # Validated against what set.seed() can actually take, and rejected rather
@@ -1366,6 +1404,19 @@
 
   best_result <- NULL
   best_value <- -Inf
+  best_start <- NA_integer_
+
+  # Per-start outcomes.  The loop discards a start that errors, and without a
+  # record of that an error raised inside the objective is indistinguishable
+  # from a start that merely optimized poorly -- which is how a hard error in
+  # the cumulative hazard was read as a convergence failure for as long as it
+  # was.  optim()'s convergence code is kept alongside the objective, because a
+  # finite objective alone does not mean the start converged.  Reported on the
+  # fit as `starts`.
+  start_status  <- rep(NA_character_, n_starts)
+  start_value   <- rep(NA_real_, n_starts)
+  start_conv    <- rep(NA_integer_, n_starts)
+  start_message <- rep(NA_character_, n_starts)
 
   # When shapes are fixed the free-parameter count is small (typically just the
 
@@ -1458,17 +1509,97 @@
         use_bounds  = FALSE,
         hessian_fn  = hessian_fn_mp
       ),
-      error = function(e) NULL
+      error = function(e) e
     )
 
-    if (!is.null(result) && is.finite(result$value) && result$value > best_value) {
-      best_value <- result$value
-      best_result <- result
+    if (inherits(result, "error")) {
+      start_status[start_i]  <- "error"
+      start_message[start_i] <- conditionMessage(result)
+    } else if (!is.finite(result$value)) {
+      start_status[start_i] <- "nonfinite"
+      start_conv[start_i]   <- as.integer(result$convergence)
+    } else {
+      start_conv[start_i] <- as.integer(result$convergence)
+
+      # A finite objective is not the same as a usable fit.  .hzr_optim_generic()
+      # clamps a non-finite log-likelihood to a large penalty, so a start that
+      # began on an infeasible shape and never left it comes back with a zero
+      # gradient, convergence 0 and a finite value -- over a likelihood that does
+      # not exist there.  That is a populated result with nothing inside, so ask
+      # the likelihood directly rather than trusting the clamped objective.
+      ll_at_par <- tryCatch(
+        logl_fn(theta = result$par, time = time, status = status,
+                time_lower = time_lower, time_upper = time_upper,
+                x = x, weights = weights, return_gradient = FALSE),
+        error = function(e) NA_real_
+      )
+
+      if (!is.finite(ll_at_par)) {
+        # No objective is recorded: the clamped penalty is a sentinel, not a
+        # log-likelihood, and reporting it as one is the defect itself.
+        start_status[start_i] <- "infeasible"
+      } else {
+        # Nor is a finite objective the same as a converged one: optim() returns
+        # code 1 when it stops at maxit, with a perfectly ordinary value
+        # attached, and such a start can carry a better objective than a
+        # converged one and win the selection below.
+        start_status[start_i] <-
+          if (result$convergence == 0L) "ok" else "nonconverged"
+        start_value[start_i] <- result$value
+        if (result$value > best_value) {
+          best_value  <- result$value
+          best_result <- result
+          best_start  <- start_i
+        }
+      }
     }
   }
 
+  starts <- data.frame(
+    start       = seq_len(n_starts),
+    status      = start_status,
+    objective   = start_value,
+    convergence = start_conv,
+    best        = seq_len(n_starts) == best_start & !is.na(best_start),
+    message     = start_message,
+    stringsAsFactors = FALSE
+  )
+
   if (is.null(best_result)) {
-    stop("Multiphase optimization failed to converge on any start.", call. = FALSE)
+    # Name the errors.  "Failed to converge" is the right description of a start
+    # that optimized badly and the wrong one for a start that threw, and the two
+    # arrive here identically; saying which happened is the difference between a
+    # numerical-tuning problem and a defect to go and find.
+    errs <- unique(start_message[!is.na(start_message)])
+    stop(
+      "Multiphase optimization produced no usable fit from ", n_starts,
+      if (n_starts == 1L) " start" else " starts", ": ",
+      sum(start_status == "error", na.rm = TRUE), " errored, ",
+      sum(start_status == "infeasible", na.rm = TRUE),
+      " ended where the likelihood is not defined, ",
+      sum(start_status == "nonfinite", na.rm = TRUE),
+      " returned a non-finite objective.",
+      if (length(errs)) paste0(" Error(s) raised: ",
+                               paste(errs, collapse = "; "), ".") else "",
+      call. = FALSE
+    )
+  }
+
+  # A start that throws is a defect, not a tuning problem, and the surviving
+  # starts hide it: the fit comes back looking ordinary.  Measured on the
+  # reference fixture, a healthy multi-start errors on none of its starts, so
+  # this stays quiet unless something is actually wrong.  Losing start 1 to a
+  # better perturbed optimum is routine and is reported in `starts`, not here.
+  n_errored <- sum(start_status == "error", na.rm = TRUE)
+  if (n_errored > 0L) {
+    warning(
+      n_errored, " of ", n_starts,
+      if (n_starts == 1L) " optimization start" else " optimization starts",
+      " errored and were discarded; the reported fit comes from start ",
+      best_start, ". Error(s) raised: ",
+      paste(unique(start_message[!is.na(start_message)]), collapse = "; "), ".",
+      call. = FALSE
+    )
   }
 
   # Expand optimized free params back to full theta vector
@@ -1579,6 +1710,9 @@
   best_result$phases <- phases
   best_result$covariate_counts <- covariate_counts
   best_result$x_list <- x_list
+
+  # Which starts survived, and which one the reported fit came from.
+  best_result$starts <- starts
 
   best_result
 }

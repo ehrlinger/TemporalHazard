@@ -403,14 +403,19 @@ test_that("Gradient is near zero at converged fit", {
     const = hzr_phase("constant")
   )
 
-  fit <- tryCatch(
-    suppressWarnings(hazard(time = time, status = status, dist = "multiphase",
-           phases = phases, fit = TRUE,
-           control = list(n_starts = 3, maxit = 500))),
-    error = function(e) NULL
-  )
-  skip_if(is.null(fit), "Fit did not converge")
-  skip_if(!fit$fit$converged, "Fit did not converge")
+  # Not guarded with skip_if().  When the multi-start perturbations were drawn
+  # from the ambient RNG stream this call was a coin flip -- about a quarter of
+  # draws hit an error thrown out of the objective, relabelled a convergence
+  # failure -- and the skip_if() reported every one of those as a green skip.
+  # Pinning start_seed made it deterministic and the underlying error is fixed,
+  # so assert convergence: a regression must fail here, not vanish.  (At the
+  # pinned default seed 3 this particular call did not fail; the one-in-four
+  # figure is the rate across a seed sweep, which
+  # test-multiphase-reproducibility.R asserts directly.)
+  fit <- suppressWarnings(hazard(time = time, status = status,
+    dist = "multiphase", phases = phases, fit = TRUE,
+    control = list(n_starts = 3, maxit = 500)))
+  expect_true(fit$fit$converged)
 
   covariate_counts <- c(early = 0L, const = 0L)
   x_list <- list(early = NULL, const = NULL)
