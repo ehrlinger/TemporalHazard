@@ -6,8 +6,9 @@ This is an update to TemporalHazard 1.1.0 (accepted 2026-06-12). There is no
 reviewer feedback to address.
 
 The work accumulated under two development version numbers, 1.2.0 and 1.2.1,
-that were never submitted. `NEWS.md` carries a section for each; everything in
-them is new to CRAN, and the changes below cover all of it.
+neither of which was submitted. `NEWS.md` records it under its 1.2.2 and 1.2.1
+headings, the 1.2.0 work having been folded into the 1.2.1 section rather than
+kept separate. All of it is new to CRAN, and the changes below cover it.
 
 This is a minor-version release that nonetheless contains one breaking change:
 `hzr_stepwise()` now defaults to a different selection criterion, so re-running
