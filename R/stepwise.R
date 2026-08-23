@@ -227,8 +227,9 @@ hzr_stepwise <- function(fit,
     stop("`fit` cannot be used as a stepwise base model because ",
          refit_blocker, ". Every candidate would fail to refit, so the ",
          "screen could never enter or drop anything. Rebuild the base fit ",
-         "with the formula interface -- ",
-         "hazard(Surv(time, status) ~ ., data = df) -- and retry.",
+         "with the formula interface -- for a forward screen that usually ",
+         "means an intercept-only base, hazard(Surv(time, status) ~ 1, ",
+         "data = df, ...) -- and retry.",
          call. = FALSE)
   }
 
