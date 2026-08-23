@@ -1,9 +1,13 @@
-# CRAN submission comments -- TemporalHazard 1.2.1
+# CRAN submission comments -- TemporalHazard 1.2.2
 
 ## Summary
 
 This is an update to TemporalHazard 1.1.0 (accepted 2026-06-12). There is no
 reviewer feedback to address.
+
+The work accumulated under two development version numbers, 1.2.0 and 1.2.1,
+that were never submitted. `NEWS.md` carries a section for each; everything in
+them is new to CRAN, and the changes below cover all of it.
 
 This is a minor-version release that nonetheless contains one breaking change:
 `hzr_stepwise()` now defaults to a different selection criterion, so re-running
@@ -42,6 +46,24 @@ number.
 
 ### New features
 
+* `hazard()` now evaluates its vector interface in `data`'s scope.
+  `hazard(data = df, time = tt)` previously failed with `object 'tt' not
+  found`, because `data` was consulted only by the formula path. The rule is
+  `subset()`'s -- a column of `data` wins, while `df$col`, a local vector or a
+  literal falls through to the calling frame unchanged -- so `data = NULL`
+  behaves exactly as before and the formula path is untouched. Because a column
+  winning can silently redirect a wrapper that forwards its own argument by
+  name, `hazard()` now warns once per call when a symbol is both a column of
+  `data` and visible from the calling frame. `data` must now be a data frame or
+  a list; a matrix, previously accepted and then silently ignored, is an error.
+* `hzr_translate_sas()` translates a SAS `PROC HAZARD` / `PROC HAZPRED` job
+  into a Quarto document of equivalent R calls. The model state is held as
+  unevaluated calls, so rendering is `deparse()` rather than string templating.
+  It is **marked experimental** in its own documentation: measured on the
+  public `hazard` corpus of 110 `.sas` files, 57 translate into 22 distinct
+  documents, of which 11 evaluate end to end against synthetic data. It is a
+  translation aid rather than a turnkey reproduction, and its API and emitted
+  document format may still change.
 * `hzr_bootstrap()` gains a `scope` argument for embedded stepwise variable
   selection within each bootstrap replicate -- the R equivalent of SAS's
   `%HAZBOOT` procedure. `scope = NULL` (the default) preserves the original
@@ -83,8 +105,56 @@ through its first production analysis. `NEWS.md` carries the full detail.
   replicates, with `sd` exactly 0 on every parameter. Both interfaces now
   produce identical replicates for the same model, data and seed.
 
+**Multiphase fitting.**
+
+* `hzr_decompos()` returned a wrong value for large `|m|`, with no warning. All
+  three branches with a nonzero `m` formed `2^m` directly. For `m > 0` that
+  overflows, driving `G` to `0`: `hzr_decompos(0.5, t_half = 1, nu = 3/1000,
+  m = 1000)` reported `G = 0` where the answer is `0.3969`, with `g` and `h`
+  `NaN`. For `m < 0` cancellation in `1 - 2^m` did the same from `m = -53`,
+  which an optimizer reaches easily. `G = 0` is a perfectly ordinary
+  probability, so nothing about the result looked wrong. All three branches now
+  work on the log scale; checked against a reference computed at 100 or more
+  decimal digits, `G` and `g` are accurate to machine precision from
+  `m = -1000` to `m = 5000`. The multiphase log-likelihood, which returned
+  `-Inf` from about `m = 450` for the same reason, is evaluable across that
+  range again.
+* A multiphase fit is now reproducible. `hazard(dist = "multiphase")` drew the
+  starting-value offsets for every optimization start after the first from the
+  ambient RNG stream, so the identical call run twice returned a different
+  answer -- on a 150-row two-phase fit, estimates moving about 0.3 on the log
+  scale -- and fitting advanced the caller's stream. The offsets now come from
+  an internally seeded stream and `.Random.seed` is restored afterwards; the
+  new `control$start_seed` selects a different ensemble of starts.
+* A multiphase optimization start no longer dies on an infeasible shape. The
+  cumulative hazard short-circuits to an infinite hazard when a phase's `m` and
+  `nu` are both negative, but returned that short-circuit in the wrong shape
+  for a per-phase decomposition, so the Conservation-of-Events adjustment
+  raised `$ operator is invalid for atomic vectors` from inside the objective.
+  BFGS steps into that region routinely, so the multi-start loop discarded the
+  start and reported the crash as a failure to converge.
+* `fit$fit$starts` now reports one row per optimization start -- its status,
+  objective, `optim()` convergence code, whether it was the best, and the
+  message of any error it raised. A start that stopped at `maxit` reads as
+  `"nonconverged"` rather than `"ok"`, so starts that disagree identify a
+  barely-identified shape instead of looking mysterious.
+* `$se` on a fitted object is now one standard error per parameter whatever the
+  variance matrix looks like. A multiphase fit legitimately carries NA variance
+  rows for the parameters it holds fixed, and a single NA collapsed the whole
+  vector to a length-1 `NA`, so naming the standard errors against the
+  parameters failed. `summary()` was never affected, since it builds its
+  coefficient table from the variance matrix directly.
+
 **Selection that could not run, and did not say so.**
 
+* `hzr_stepwise()` can no longer return a zero-step result that is silently
+  empty. Every accepted move goes through a refit, and a refit that failed was
+  downgraded to a warning and then dropped, so a screen that could not fit a
+  single candidate looked exactly like one that tested them all and liked none.
+  `$criteria` now carries `refit_failures`, `n_refit_failures` and
+  `stopped_refit_failed`. A base fit built with the vector interface stores no
+  formula for the refit to mutate, so every candidate would fail; that is now
+  rejected up front with one message naming the remedy.
 * Under the new score criterion, an interval- or left-censored multiphase fit
   could not score a single candidate. The analytic observed information is not
   defined for those rows, and the score path had no numeric fallback on that
@@ -137,8 +207,9 @@ through its first production analysis. `NEWS.md` carries the full detail.
 * **Local:** R 4.6.1 on macOS (aarch64-apple-darwin23).
   `R CMD check --as-cran` on the built tarball, **with the PDF manual**,
   returns `Status: OK` -- 0 errors, 0 warnings, 0 notes. Overall check time is
-  about three minutes, well inside the reference budget; the source tarball is
-  2.7 MB.
+  200 seconds, well inside the reference budget; the two dominant steps are the
+  test suite at 79 seconds and the vignette rebuild at 41 seconds. The source
+  tarball is 2.8 MB.
 * **GitHub Actions matrix:** ubuntu-latest (R-devel / R-release / R-oldrel-1),
   macos-latest (R-release), windows-latest (R-release).
 * **Reverse-dependency check:** `tools::package_dependencies(reverse = TRUE)`
