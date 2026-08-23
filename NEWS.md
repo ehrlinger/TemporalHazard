@@ -194,6 +194,46 @@
 
 ## Bug fixes
 
+* `hzr_decompos()` no longer returns a wrong value for large `|m|`. The three
+  branches with a nonzero `m` all formed `2^m` and its neighbours directly, and
+  all three lost the answer well inside the range a fit can reach.
+
+  For `m > 0` the failure is overflow. `2^m` is `Inf` from `m = 1024`, but
+  `bt^(-1/nu)` goes first: at `t/t_half = 0.5` with `m * nu = 3` it overflows by
+  `m = 750`, and sooner for `nu > 1`. Either way `btnu` becomes `Inf`, and
+  `Inf^(-1/m)` is `0`. So `hzr_decompos(0.5, t_half = 1, nu = 3/1000, m = 1000)`
+  reported `G = 0` where the answer is `0.3969`, with `g` and `h` `NaN`. Nothing
+  warned. `G = 0` is a perfectly ordinary probability, and a fit whose optimizer
+  wandered into large `m` used it. The `nu < 0` branch collapsed the same way,
+  to `G = 1`.
+
+  For `m < 0` the failure is cancellation instead. `1 - 2^m` rounds to exactly
+  `1` once `2^m` falls below machine epsilon, so `(1 - 2^m)^(-nu) - 1` is `0`,
+  `rho` is `Inf`, and `G` is again `0`. That collapse is at `m = -53`, which an
+  optimizer reaches much more easily than `m = 750`, and the accuracy decays
+  before it: at `m = -20` the old code was already wrong in the tenth digit.
+
+  All three branches now work on the log scale. The `m` in the `(2^m - 1)/m`
+  factor of `rho` cancels the explicit multiplier, so `m * bt^(-1/nu)` is
+  exactly `(t_half/t)^(1/nu) * (2^m - 1)`, and `log(btnu)` follows from
+  `hzr_log1pexp()` applied to the log of that product. The `m < 0` branch takes
+  `log(1 - 2^m)` from `hzr_log1mexp()` rather than forming the difference. Both
+  primitives were already in the package. Checked against a reference computed
+  at 100 or more decimal digits, `G` and `g` are now accurate to machine
+  precision from `m = -1000` up to `m = 5000`, they track the analytic
+  large-`m` limit at `m = 1e6`, and they are unchanged where the old code was
+  already right.
+
+  One boundary remains, and it is now visible rather than silent. Below about
+  `m = -1074` the term `2^m` underflows outright and no rearrangement recovers
+  it in double precision; `hzr_decompos()` returns `NA` there.
+
+  The multiphase log-likelihood is evaluable again over the same range. On a
+  two-phase fixture it returned `-Inf` from about `m = 450`, for this same
+  reason: the smallest observed time is what makes `log(t_half/t)` largest, so
+  the overflow arrives earlier than the `m = 750` above. That is what made the
+  likelihood surface along the ridge `m * nu = const` hard to characterize.
+
 * A multiphase fit is now reproducible. `hazard(dist = "multiphase")` offsets
   the starting values for every optimization start after the first, and those
   offsets were drawn from the ambient RNG stream. The identical call run twice

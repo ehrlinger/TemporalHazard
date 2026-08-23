@@ -29,6 +29,54 @@
 # hzr_decompos -- core engine
 # ============================================================================
 
+#' Log-scale terms shared by the m > 0 branches of [hzr_decompos()]
+#'
+#' Cases 1 (`nu > 0`) and 3 (`nu < 0`) evaluate the same intermediate
+#' quantities; only the sign of `rho` and the final assembly of `G` differ.
+#' Forming them directly overflows well inside the range an optimizer can
+#' reach: `2^m` is `Inf` from `m = 1024`, and `bt^(-1/nu)` overflows sooner
+#' still (from `m ~ 750` at `t/t_half = 0.5`, `m*nu = 3`).  `btnu` then
+#' becomes `Inf` and `btnu^(-1/m)` collapses silently to 0.
+#'
+#' The `m` in `rho`'s `(2^m - 1)/m` factor cancels the explicit `m`
+#' multiplier, so exactly
+#'   \deqn{m \, b(t)^{-1/\nu} = (t_{1/2}/t)^{1/\nu} (2^m - 1),}
+#' and `log(btnu)` follows from a softplus of the log of that product.  Every
+#' intermediate below stays finite for any representable `m > 0`.
+#'
+#' @param time Numeric vector of positive times.
+#' @param t_half Positive scalar.
+#' @param nu Nonzero scalar.
+#' @param m Positive scalar.
+#' @return List with `log_S` (\eqn{= -\log(\mathrm{btnu})/m}) and `log_g`.
+#' @keywords internal
+.hzr_decompos_g1_logs <- function(time, t_half, nu, m) {
+  # log(2^m - 1), exact for every m > 0: 2^(-m) underflows to 0 for large m
+  # and log1p(0) = 0, leaving the exact m*log(2).
+  log_2m1 <- m * log(2) + log1p(-2^(-m))
+
+  # log(rho) = log|nu| + log(t_half) + nu*log((2^m - 1)/m)
+  q       <- nu * (log_2m1 - log(m))
+  log_rho <- log(abs(nu)) + log(t_half) + q
+  log_bt  <- log(time) - log(t_half) - q
+
+  # a = log(m * bt^(-1/nu)) = (1/nu)*log(t_half/t) + log(2^m - 1)
+  a        <- log(t_half / time) / nu + log_2m1
+  log_btnu <- hzr_log1pexp(a)
+
+  # Softplus excess e = log(btnu) - a = log(1 + exp(-a)), evaluated as
+  # log1pexp(-a) so neither tail overflows.  Subtracting it below removes an
+  # O(m) cancellation: the naive
+  #   log_g = (-1/m - 1)*log_btnu + (-1/nu - 1)*log_bt - log_rho
+  # differences two terms of size ~m*log(2) to reach an O(1) answer, losing
+  # ~1e-13 relative accuracy by m = 2000.
+  e     <- hzr_log1pexp(-a)
+  log_S <- -log_btnu / m
+
+  list(log_S = log_S,
+       log_g = log_S - e - log(m) - log_bt - log_rho)
+}
+
 #' Generalized temporal decomposition
 #'
 #' Computes the cumulative distribution \eqn{G(t)}, density \eqn{g(t)}, and
@@ -160,12 +208,11 @@ hzr_decompos <- function(time, t_half, nu, m) {
 
   # --- Case dispatch ---------------------------------------------------------
   if (m > 0 && nu > 0) {
-    # Case 1: standard sigmoidal
-    rho   <- nu * t_half * (((2^m - 1) / m)^nu)
-    bt    <- nu * time / rho
-    btnu  <- 1 + m * bt^(-1 / nu)
-    G     <- btnu^(-1 / m)
-    g     <- (btnu^mm1) * (bt^num1) / rho
+    # Case 1: standard sigmoidal.  Evaluated on the log scale via
+    # .hzr_decompos_g1_logs(); the direct form overflowed for large m.
+    lg    <- .hzr_decompos_g1_logs(time, t_half, nu, m)
+    G     <- exp(lg$log_S)
+    g     <- exp(lg$log_g)
 
   } else if (m == 0 && nu > 0) {
     # Case 1L: Weibull-like (m -> 0 limit)
@@ -176,12 +223,20 @@ hzr_decompos <- function(time, t_half, nu, m) {
     g     <- G * (bt^num1) / rho
 
   } else if (m < 0 && nu > 0) {
-    # Case 2: heavy-tailed
-    rho   <- nu * t_half / ((1 - 2^m)^(-nu) - 1)
-    bt    <- 1 + nu * time / rho
-    btnu  <- 1 - bt^(-1 / nu)
-    G     <- btnu^(-1 / m)
-    g     <- -(btnu^mm1) * (bt^num1) / (m * rho)
+    # Case 2: heavy-tailed.  `1 - 2^m` loses every significant digit once
+    # 2^m falls below eps (m < -52): it rounds to exactly 1, so
+    # (1 - 2^m)^(-nu) - 1 is 0, rho is Inf, and G collapses silently to 0.
+    # The decay starts well before the collapse -- at m = -20 the direct form
+    # is already wrong in the 10th digit.  hzr_log1mexp() evaluates
+    # log(1 - 2^m) without the cancellation and expm1() recovers the
+    # difference, holding full precision down to where 2^m itself underflows.
+    log_1m2m <- hzr_log1mexp(-m * log(2))       # log(1 - 2^m)
+    dm       <- expm1(-nu * log_1m2m)           # (1 - 2^m)^(-nu) - 1
+    log_bt   <- log1p(time * dm / t_half)       # bt = 1 + nu*time/rho
+    log_btnu <- hzr_log1mexp(log_bt / nu)       # log(1 - bt^(-1/nu))
+    log_rho  <- log(nu) + log(t_half) - log(dm)
+    G     <- exp(-log_btnu / m)
+    g     <- exp(mm1 * log_btnu + num1 * log_bt - log(-m) - log_rho)
 
   } else if (m < 0 && nu == 0) {
     # Case 2L: exponential decay (nu -> 0 limit)
@@ -199,11 +254,12 @@ hzr_decompos <- function(time, t_half, nu, m) {
     # breaking continuity with the m -> 0 limit (Case 3L).  With /m the m
     # factors cancel and G reduces to 1 - (bt^(-1/nu) + 1)^(-1/m), matching
     # C exactly (verified against src/common/hzd_ln_G1_and_SG1.c case 5).
-    rho   <- -nu * t_half * (((2^m - 1) / m)^nu)
-    bt    <- -nu * time / rho
-    btnu  <- 1 + m * bt^(-1 / nu)
-    G     <- 1 - btnu^(-1 / m)
-    g     <- (btnu^mm1) * (bt^num1) / rho
+    # Shares every intermediate with Case 1 (the -nu factors in rho and bt
+    # cancel); only the assembly of G differs.  expm1 keeps 1 - exp(log_S)
+    # accurate when log_S is near 0.
+    lg    <- .hzr_decompos_g1_logs(time, t_half, nu, m)
+    G     <- -expm1(lg$log_S)
+    g     <- exp(lg$log_g)
 
   } else if (m == 0 && nu < 0) {
     # Case 3L: bounded exponential (m -> 0 limit)
