@@ -641,8 +641,16 @@ hazard <- function(formula = NULL,
   }
 
   .hzr_safe_se_from_vcov <- function(vcov_mat) {
-    if (is.null(vcov_mat) || !is.matrix(vcov_mat) || anyNA(vcov_mat)) {
+    # Scalar NA means there is no variance matrix at all -- the same contract
+    # vcov.hazard() keeps. Whenever a matrix *is* present, size the result to it
+    # so `$se` stays conformable with `$par`: a multiphase vcov legitimately
+    # carries NA rows for parameters held fixed, and collapsing that to a
+    # length-1 NA left callers unable to name the SEs against the parameters.
+    if (is.null(vcov_mat) || !is.matrix(vcov_mat)) {
       return(NA)
+    }
+    if (anyNA(vcov_mat)) {
+      return(rep(NA_real_, ncol(vcov_mat)))
     }
     d <- diag(vcov_mat)
     # Guard against small negative/invalid variances from numerical Hessians.

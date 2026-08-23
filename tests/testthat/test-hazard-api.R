@@ -133,6 +133,43 @@ test_that("optimizer produces valid vcov and SEs for all distributions", {
   expect_true(all(is.finite(fit_ln$fit$se)))
 })
 
+test_that("fit$se is conformable with fit$par whether or not vcov has NA rows", {
+  skip_if_not_installed("numDeriv")
+
+  # `$se` is derived from the fit's vcov. A multiphase fit legitimately carries
+  # NA variance rows for parameters held fixed, and the guard used to collapse
+  # the whole vector to a scalar NA as soon as any cell was NA -- so `$se` came
+  # back length 1 against a length-5 `$par`, and naming it errored. This is the
+  # `$se` half of the contract vcov.hazard() already keeps: a scalar NA means
+  # there is no variance matrix at all, not that some of it is missing.
+
+  set.seed(101)
+  n <- 150
+  df <- data.frame(time = rexp(n, 0.6) + 0.01,
+                   status = rbinom(n, 1, 0.7))
+
+  # Finite vcov -- one SE per parameter.
+  fit_w <- hazard(time = df$time, status = df$status,
+                  theta = c(0.3, 1.0), dist = "weibull", fit = TRUE)
+  expect_false(anyNA(fit_w$fit$vcov))
+  expect_length(fit_w$fit$se, length(fit_w$fit$par))
+  expect_true(all(is.finite(fit_w$fit$se)))
+
+  # vcov with NA rows (fixed shapes) -- still one SE per parameter.
+  fit_mp <- suppressWarnings(hazard(
+    survival::Surv(time, status) ~ 1, data = df, dist = "multiphase",
+    phases = list(
+      early    = hzr_phase("cdf", t_half = 0.3, nu = 1, m = 1,
+                           fixed = "shapes"),
+      constant = hzr_phase("constant")),
+    fit = TRUE, control = list(n_starts = 1, maxit = 300, conserve = TRUE)))
+  expect_true(is.matrix(fit_mp$fit$vcov))
+  expect_true(anyNA(fit_mp$fit$vcov))
+  expect_length(fit_mp$fit$se, length(fit_mp$fit$par))
+  # Naming the SEs against the parameters is what the old shape broke.
+  expect_named(stats::setNames(fit_mp$fit$se, names(fit_mp$fit$par)),
+               names(fit_mp$fit$par))
+})
 test_that("vcov.hazard returns a named matrix and preserves NA rows", {
   # A multiphase fit legitimately has NA variance rows: parameters held fixed
   # (e.g. early shapes) and the Conservation-of-Events-conserved phase log_mu
