@@ -649,15 +649,20 @@ hazard <- function(formula = NULL,
     if (is.null(vcov_mat) || !is.matrix(vcov_mat)) {
       return(NA)
     }
-    if (anyNA(vcov_mat)) {
-      return(rep(NA_real_, ncol(vcov_mat)))
-    }
     d <- diag(vcov_mat)
-    # Guard against small negative/invalid variances from numerical Hessians.
-    if (!all(is.finite(d)) || any(d < 0)) {
-      return(rep(NA_real_, length(d)))
-    }
-    sqrt(d)
+    # Element by element, never all-or-nothing. A parameter held fixed carries
+    # an NA variance row and earns an NA standard error; every parameter whose
+    # variance *was* computed keeps its own. Collapsing the whole vector on the
+    # first NA -- or on one small negative variance from a numerical Hessian --
+    # discarded standard errors that summary() reports from the same matrix,
+    # leaving `$se` the right length and empty of everything it should carry.
+    out <- rep(NA_real_, length(d))
+    # rep() starts unnamed; carry over whatever diag() gave us so a named vcov
+    # still yields a named `$se`, as the old sqrt(d) path did.
+    names(out) <- names(d)
+    ok <- is.finite(d) & d >= 0
+    out[ok] <- sqrt(d[ok])
+    out
   }
 
   # Distribution dispatch -- select the distribution-specific optimizer and fit.
