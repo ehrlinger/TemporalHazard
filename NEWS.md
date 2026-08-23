@@ -195,7 +195,7 @@
 ## Bug fixes
 
 * `hzr_decompos()` no longer returns a wrong value for large `|m|`. The three
-  branches with a nonzero `m` all formed `2^m` and its neighbours directly, and
+  branches with a nonzero `m` all formed `2^m` and the terms built from it
   all three lost the answer well inside the range a fit can reach.
 
   For `m > 0` the failure is overflow. `2^m` is `Inf` from `m = 1024`, but
@@ -222,7 +222,10 @@
   at 100 or more decimal digits, `G` and `g` are now accurate to machine
   precision from `m = -1000` up to `m = 5000`, they track the analytic
   large-`m` limit at `m = 1e6`, and they are unchanged where the old code was
-  already right.
+  already right. Small `m` improves too, by eight orders of magnitude or more:
+  `log(2^m - 1)` is taken as `x + hzr_log1mexp(x)` for `x = m * log(2)`, which
+  holds at both ends, where the direct `log1p(-2^(-m))` decays from about
+  `m = 1e-3` down and reaches `-Inf` once `2^(-m)` rounds to `1`.
 
   One boundary remains, and it is now visible rather than silent. Below about
   `m = -1074` the term `2^m` underflows outright and no rearrangement recovers

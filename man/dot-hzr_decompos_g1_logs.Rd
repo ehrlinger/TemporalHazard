@@ -31,6 +31,6 @@ The \code{m} in \code{rho}'s \code{(2^m - 1)/m} factor cancels the explicit \cod
 multiplier, so exactly
 \deqn{m \, b(t)^{-1/\nu} = (t_{1/2}/t)^{1/\nu} (2^m - 1),}
 and \code{log(btnu)} follows from a softplus of the log of that product.  Every
-intermediate below stays finite for any representable \code{m > 0}.
+intermediate below stays finite for any \code{m > 0} a double can hold.
 }
 \keyword{internal}

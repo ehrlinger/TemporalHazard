@@ -194,6 +194,55 @@ test_that("moderate m still matches the high-precision reference", {
 })
 
 # ---------------------------------------------------------------------------
+# (3b) The other end: the shared helper must also hold up as m -> 0+
+# ---------------------------------------------------------------------------
+
+test_that("small m stays accurate in the log-scale branches", {
+  # log(2^m - 1) is evaluated as x + hzr_log1mexp(x) with x = m*log(2).  The
+  # obvious alternative, m*log(2) + log1p(-2^(-m)), agrees for m >= 1 but
+  # decays from about m = 1e-3 down: 2^(-m) approaches 1, so forming
+  # 1 - 2^(-m) cancels, and once 2^(-m) rounds to exactly 1 the result is
+  # -Inf.  Caught in review on PR #168; these pin the corrected form.
+  ref1 <- list(
+    list(t = 0.3, m = 1e-07, G = 1.11701663546386915e-01),
+    list(t = 0.3, m = 1e-09, G = 1.11701645381732745e-01),
+    list(t = 0.3, m = 1e-13, G = 1.11701645198269722e-01),
+    list(t = 7.0, m = 1e-09, G = 6.35227963961886744e-01),
+    list(t = 7.0, m = 1e-13, G = 6.35227963996383149e-01)
+  )
+  for (r in ref1) {
+    expect_equal(hzr_decompos(r$t, t_half = 3, nu = 2, m = r$m)$G, r$G,
+                 tolerance = 1e-13,
+                 label = sprintf("Case 1 G(t=%g, m=%g)", r$t, r$m))
+  }
+
+  ref3 <- list(
+    list(t = 0.3, m = 1e-09, G = 1.96832813613191854e-01),
+    list(t = 7.0, m = 1e-13, G = 6.53128126395353226e-01)
+  )
+  for (r in ref3) {
+    expect_equal(hzr_decompos(r$t, t_half = 3, nu = -2, m = r$m)$G, r$G,
+                 tolerance = 1e-13,
+                 label = sprintf("Case 3 G(t=%g, m=%g)", r$t, r$m))
+  }
+})
+
+test_that("log(2^m - 1) is exact across the full range of m", {
+  # Spot values from an 80-digit reference.  The pairing matters: the naive
+  # form is fine at the top of this range and wrong at the bottom, so a test
+  # that only sampled large m would not have caught the regression.
+  x <- function(m) m * log(2) + hzr_log1mexp(m * log(2))
+  expect_equal(x(1e-16), -37.207874408486397, tolerance = 1e-14)
+  expect_equal(x(1e-13), -30.300119129504225, tolerance = 1e-14)
+  expect_equal(x(1e-09), -21.089778757181502, tolerance = 1e-14)
+  expect_equal(x(1e-03),  -7.2739216059546461, tolerance = 1e-14)
+  expect_equal(x(1),       0,                  tolerance = 1e-14)
+  expect_equal(x(1000),  693.14718055994524,   tolerance = 1e-12)
+  # and for large m it is exactly m*log(2), with 2^(-m) underflowed away
+  expect_identical(x(1e6), 1e6 * log(2))
+})
+
+# ---------------------------------------------------------------------------
 # (4) Structural sanity across the whole large-m range
 # ---------------------------------------------------------------------------
 

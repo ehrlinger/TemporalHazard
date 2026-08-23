@@ -42,7 +42,7 @@
 #' multiplier, so exactly
 #'   \deqn{m \, b(t)^{-1/\nu} = (t_{1/2}/t)^{1/\nu} (2^m - 1),}
 #' and `log(btnu)` follows from a softplus of the log of that product.  Every
-#' intermediate below stays finite for any representable `m > 0`.
+#' intermediate below stays finite for any `m > 0` a double can hold.
 #'
 #' @param time Numeric vector of positive times.
 #' @param t_half Positive scalar.
@@ -51,9 +51,13 @@
 #' @return List with `log_S` (\eqn{= -\log(\mathrm{btnu})/m}) and `log_g`.
 #' @keywords internal
 .hzr_decompos_g1_logs <- function(time, t_half, nu, m) {
-  # log(2^m - 1), exact for every m > 0: 2^(-m) underflows to 0 for large m
-  # and log1p(0) = 0, leaving the exact m*log(2).
-  log_2m1 <- m * log(2) + log1p(-2^(-m))
+  # log(2^m - 1) = x + log(1 - exp(-x)) for x = m*log(2).  Both tails are
+  # exact: hzr_log1mexp() switches to log(-expm1(-x)) for small x, where the
+  # naive log1p(-2^(-m)) loses digits from about m = 1e-3 down and returns
+  # -Inf once 2^(-m) rounds to 1; and for large m, exp(-x) underflows to 0,
+  # leaving the exact m*log(2).
+  x_log2   <- m * log(2)
+  log_2m1  <- x_log2 + hzr_log1mexp(x_log2)
 
   # log(rho) = log|nu| + log(t_half) + nu*log((2^m - 1)/m)
   q       <- nu * (log_2m1 - log(m))
