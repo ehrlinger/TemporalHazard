@@ -208,6 +208,19 @@
   the variance matrix directly, so this was a quiet inconsistency on the fit
   object rather than a visible break.
 
+* `hzr_stepwise()` can no longer return a zero-step result that is silently
+  empty. Every accepted move goes through a refit, and a refit that failed was
+  downgraded to a warning and then dropped: the returned object carried no
+  record of it, so a screen that could not fit a single candidate looked
+  exactly like one that tested them all and liked none. `$criteria` now carries
+  `refit_failures`, `n_refit_failures` and `stopped_refit_failed`; a run that
+  ends on an iteration with failed refits warns that its candidates were never
+  tested; and the trace names the cause instead of claiming "no further
+  action". A base fit built with the vector interface (`time =` / `status =`)
+  stores no formula for the refit to mutate, so every candidate would fail --
+  `hzr_stepwise()` now rejects it up front with one message naming the remedy,
+  through the same predicate the refit itself uses.
+
 * A multiphase fit is now reproducible. `hazard(dist = "multiphase")` offsets
   the starting values for every optimization start after the first, and those
   offsets were drawn from the ambient RNG stream. The identical call run twice
