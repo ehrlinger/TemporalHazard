@@ -72,8 +72,57 @@
   step). The trailing element is now read from the job's own `DO` statement
   and emitted as the grid's last point; a trailing element this cannot
   resolve to the loop's own bound is refused with an `UNTRANSLATED` row.
-  An `ICENSOR` event count now reaches the fit as `weights` instead of being
-  discarded (#154).
+  `EVENT`, `ICENSOR` and `WEIGHT` are **counts** in the reference
+  implementation, not flags, and `setlik.c` combines one record's
+  contribution as `c1c2c3 = c1w + c2 + c3w` with `c1w = C1 * WT` and
+  `c3w = C3 * WT`. All three now reach the fit that way. An `ICENSOR` event
+  count is no longer discarded (#154); an `EVENT` count carries into
+  `weights` and `status` derives from `EVENT > 0`, where `EVENT = 2` used to
+  map straight onto `status = 2` and be fitted as **interval-censored** --
+  a different likelihood branch, not an under-count (#157); and a `WEIGHT`
+  variable no longer weights right-censored rows, because `c2` is the one
+  term entering that sum unweighted and `readc2.c` sets it to `1` on exactly
+  those rows -- a `WEIGHT` that was `0` there previously deleted them from
+  the fit silently (#158). A row where the `EVENT` and `ICENSOR` counts both
+  fire is two contributions at once, which one `status` and one `weight`
+  cannot express, so the emitted status chunk now stops before the fit
+  rather than picking the event branch and discarding the interval one.
+
+  `RCENSOR` is the third of those counts and was being ignored outright
+  (#162). It names `C2` -- "COUNT OF CENSORED INDIVIDUALS AT TIME=T" --
+  and when a job names it, `readc2.c` reads the column straight from the
+  data and skips the `C2 = 1` derivation that a job without `RCENSOR` gets.
+  Four censored individuals were therefore fitted as one observation. The
+  censored branch of `weights` is now that variable, still unmultiplied by
+  `WEIGHT`, and the both-fire guard now covers `EVENT` + `RCENSOR` and
+  `ICENSOR` + `RCENSOR` as well: `readobs.c` deletes an all-zero row only
+  when `RCENSOR` is named *and* exactly one of the other two is, so a row
+  with two counts positive always survives to be summed.
+
+  A `0/1` `RCENSOR` flag that is exactly `1 - EVENT` -- which is what both
+  corpus jobs carry, and what the statement is usually used for -- fits
+  exactly as before. A `0/1` flag that is **not** its complement does not,
+  and both ways it can differ are deliberate: a row with the event and the
+  censoring flag both set now stops the document instead of being fitted as
+  an event alone, and a row with neither set now carries weight `0` instead
+  of a fabricated weight of `1`, matching the row SAS would have deleted.
+  A count column that is **negative or missing** on any row now stops the
+  document with a message naming the variable, rather than being folded into
+  the censored branch or propagating `NA` into `weights` until `hazard()`
+  refused it as "non-negative and finite". `readc1.c`, `readc2.c` and
+  `readc3.c` apply the same rule to every count the job names -- a missing
+  value sets `mdel`, a negative one sets `del` -- and `readobs.c` then skips
+  `setobs()` for that row and subtracts it from `Nobs`. Such a row
+  contributes nothing at all, so translating it as a right-censored
+  observation of weight `1` adds survival mass at a time SAS had removed.
+  This is the one case where a missing count is **not** interchangeable with
+  a zero one: a zero count is kept and contributes, a missing one is deleted.
+  The translator cannot drop rows without changing `n` behind the reader's
+  back, so it stops and says to filter them.
+
+  Every translated job now emits a `status` chunk ahead of its fit, where
+  these guards live -- previously only jobs with `ICENSOR` or more than one
+  named count did. The emitted document format remains experimental.
 
   Loading a fit from an external `INHAZ=` dataset returns a classed
   `hzr_outhaz` object with a `predict()` method (#151). That method takes

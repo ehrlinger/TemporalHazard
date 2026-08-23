@@ -18,7 +18,11 @@ test_that("an ICENSOR job's emitted call actually fits", {
   # time variable that is the interval's LOWER bound (the interval runs
   # ctime -> TIME). C3FLAG is a count (any positive value fires), not
   # NA-gated; CTIME must precede INT_DEAD to be a valid lower bound.
-  AVCS$C3FLAG <- as.numeric(seq_len(n) %% 5 == 0)
+  # Gated on DEAD == 0: a row where EVENT and C3 both fire is refused at
+  # fit time (setlik.c sums the two contributions and hazard() carries one
+  # status per row), so a fixture that mixes them tests the refusal, not
+  # the fit.
+  AVCS$C3FLAG <- as.numeric(seq_len(n) %% 5 == 0 & AVCS$DEAD == 0)
   AVCS$ICTIME <- ifelse(AVCS$C3FLAG > 0, AVCS$INT_DEAD * 0.5, NA)
 
   f <- withr::local_tempfile(fileext = ".sas")
@@ -124,7 +128,10 @@ test_that("a plain EVENT/TIME job's emitted call fits with no time_lower/time_up
   ), f)
 
   job <- suppressWarnings(hzr_translate_sas(f))
-  expect_equal(names(job$calls), c("data", "fit"))
+  # The status chunk is emitted for every job now, not only ICENSOR or
+  # multi-count ones: it carries the missing/negative guard on EVENT, which
+  # has to run and be seen to run ahead of the fit.
+  expect_equal(names(job$calls), c("data", "status", "fit"))
   # job$calls$fit is now `fit <- hazard(...)`; index into the hazard() call.
   expect_null(job$calls$fit[[3L]][["time_lower"]])
   expect_null(job$calls$fit[[3L]][["time_upper"]])

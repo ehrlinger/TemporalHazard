@@ -234,8 +234,8 @@ translator.
 |---|---|
 | `LCENSOR <var>` | `time_lower = <var>` -- entry time, `status` unchanged |
 | `ICENSOR <c3> = <ctime>` | rows where `<c3> > 0`: `status = 2`, `time_lower = <ctime>` |
-| `RCENSOR <var>` | unchanged: `status = 0`, no branch needed |
-| `EVENT <var>` | unchanged |
+| `RCENSOR <var>` | `status = 0`, no branch needed -- but `<var>` is `C2`, a *count*, so it is the censored rows' `weights` (#162) |
+| `EVENT <var>` | rows where `<var> > 0`: `status = 1` -- and `<var>` is `C1`, a *count*, so it is those rows' `weights` (#157) |
 
 It also touches known open work: the 2026-08-19 `preserve_root` parity run left a
 named residual where SAS maximises the interval-censored likelihood but *reports*
