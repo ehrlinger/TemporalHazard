@@ -138,12 +138,13 @@ through its first production analysis. `NEWS.md` carries the full detail.
   message of any error it raised. A start that stopped at `maxit` reads as
   `"nonconverged"` rather than `"ok"`, so starts that disagree identify a
   barely-identified shape instead of looking mysterious.
-* `$se` on a fitted object is now one standard error per parameter whatever the
-  variance matrix looks like. A multiphase fit legitimately carries NA variance
-  rows for the parameters it holds fixed, and a single NA collapsed the whole
-  vector to a length-1 `NA`, so naming the standard errors against the
-  parameters failed. `summary()` was never affected, since it builds its
-  coefficient table from the variance matrix directly.
+* `$se` on a fitted object is now one standard error per parameter, computed
+  element by element. A multiphase fit legitimately carries NA variance rows
+  for the parameters it holds fixed, and a single NA collapsed the whole vector
+  to a length-1 `NA`, so naming the standard errors against the parameters
+  failed. Sizing the vector to the matrix was not sufficient on its own: a
+  parameter whose variance was computed now keeps its own standard error, so
+  `$se` no longer disagrees with `summary()`, which reads the same matrix.
 
 **Selection that could not run, and did not say so.**
 
