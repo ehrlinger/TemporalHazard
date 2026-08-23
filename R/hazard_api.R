@@ -657,6 +657,9 @@ hazard <- function(formula = NULL,
     # discarded standard errors that summary() reports from the same matrix,
     # leaving `$se` the right length and empty of everything it should carry.
     out <- rep(NA_real_, length(d))
+    # rep() starts unnamed; carry over whatever diag() gave us so a named vcov
+    # still yields a named `$se`, as the old sqrt(d) path did.
+    names(out) <- names(d)
     ok <- is.finite(d) & d >= 0
     out[ok] <- sqrt(d[ok])
     out

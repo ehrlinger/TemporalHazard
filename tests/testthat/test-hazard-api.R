@@ -181,6 +181,11 @@ test_that("fit$se is conformable with fit$par whether or not vcov has NA rows", 
   expect_equal(unname(fit_mp$fit$se[computable]), unname(sqrt(d_mp[computable])))
   expect_true(all(is.na(fit_mp$fit$se[!computable])))
 
+  # `$se` carries the variance matrix's names when it has them. No fitted path
+  # currently produces a named `fit$fit$vcov`, so this guards against the two
+  # diverging later rather than reproducing a fault seen today.
+  expect_equal(names(fit_mp$fit$se), names(diag(fit_mp$fit$vcov)))
+
   # `$se` and summary() derive from the same matrix, so they cannot disagree.
   # They did: summary() reported real standard errors where `$se` was all NA.
   expect_equal(unname(fit_mp$fit$se),
