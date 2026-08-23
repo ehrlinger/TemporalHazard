@@ -203,10 +203,14 @@
   the vector [1]".
 
   A scalar `NA` now carries the meaning it already has for `vcov()`, that there
-  is no variance matrix at all. Where a matrix is present, `$se` is sized to it.
-  `summary()` was never affected, since it builds its coefficient table from
-  the variance matrix directly, so this was a quiet inconsistency on the fit
-  object rather than a visible break.
+  is no variance matrix at all. Where a matrix is present, `$se` is computed
+  element by element: a parameter held fixed carries an NA variance row and
+  earns an `NA` standard error, while every parameter whose variance *was*
+  computed keeps its own. Sizing the vector to the matrix is not enough on its
+  own -- filling it with `NA` throughout would leave `$se` conformable and
+  empty, and contradicting `summary()`, which reads the same matrix and reports
+  those standard errors. `summary()` was never affected either way, so this was
+  a quiet inconsistency on the fit object rather than a visible break.
 
 * `hzr_decompos()` no longer returns a wrong value for large `|m|`. The three
   branches with a nonzero `m` all formed `2^m` and the terms built from it

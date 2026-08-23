@@ -169,6 +169,22 @@ test_that("fit$se is conformable with fit$par whether or not vcov has NA rows", 
   # Naming the SEs against the parameters is what the old shape broke.
   expect_named(stats::setNames(fit_mp$fit$se, names(fit_mp$fit$par)),
                names(fit_mp$fit$par))
+
+  # Length and naming alone cannot fail on a vector of NA, which is exactly
+  # what the first fix returned: one NA per parameter, conformable and empty.
+  # Assert first that this fixture reaches both branches, then that the SEs
+  # that were computable actually survive.
+  d_mp <- diag(fit_mp$fit$vcov)
+  computable <- is.finite(d_mp) & d_mp >= 0
+  expect_true(any(computable))
+  expect_true(any(!computable))
+  expect_equal(unname(fit_mp$fit$se[computable]), unname(sqrt(d_mp[computable])))
+  expect_true(all(is.na(fit_mp$fit$se[!computable])))
+
+  # `$se` and summary() derive from the same matrix, so they cannot disagree.
+  # They did: summary() reported real standard errors where `$se` was all NA.
+  expect_equal(unname(fit_mp$fit$se),
+               unname(summary(fit_mp)$coefficients$std_error))
 })
 test_that("vcov.hazard returns a named matrix and preserves NA rows", {
   # A multiphase fit legitimately has NA variance rows: parameters held fixed
