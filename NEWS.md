@@ -232,6 +232,17 @@
   `objective` values. See the note on `starts` below for how to read two
   objectives that differ, which is not always a pair of rival optima.
 
+  `start_seed` takes any whole number within integer range, negatives included
+  -- `set.seed(-1)` is perfectly valid and deterministic, so restricting to
+  non-negative values would discard half the seed space for no reason. A
+  fractional value is rejected rather than truncated: `set.seed()` truncates,
+  so `3.9` and `3` would select the same ensemble, and a sweep over
+  `3.1 / 3.5 / 3.9` would report three fits having tried one set of starts.
+  Coercing quietly would keep that aliasing and merely move it. A value out of
+  integer range is rejected too, because `set.seed()` would otherwise fail with
+  "supplied seed is not a valid integer" and name neither the argument nor the
+  fit it came from.
+
   `hzr_bootstrap()` draws its own resample before each refit, so replicates are
   still distinct. Its numbers do shift, because the refits no longer advance
   the stream between resamples, and a run with `seed=` is now reproducible end
