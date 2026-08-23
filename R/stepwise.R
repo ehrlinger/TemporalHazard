@@ -142,7 +142,13 @@
 #'       candidates whose effect is too large for the score test's
 #'       approximation at zero, which are typically the strongest variables
 #'       on offer rather than degenerate ones. `criterion = "wald"` tests
-#'       them.}
+#'       them.  For every criterion it also carries `refit_failures` (the
+#'       `"var"` / `"var@phase"` tokens of candidate moves whose refit
+#'       errored or failed to converge), `n_refit_failures`, and
+#'       `stopped_refit_failed` --- `TRUE` when the run ended on an iteration
+#'       in which refits failed, which is a screen that could not test its
+#'       candidates rather than one that tested them and liked none.  Check
+#'       it before reading a zero-row `steps` as an honest null result.}
 #'     \item{\code{trace_msg}}{Character vector of the trace lines,
 #'       captured regardless of the `trace` flag.}
 #'     \item{\code{elapsed}}{`difftime` from start to finish.}
@@ -206,6 +212,24 @@ hzr_stepwise <- function(fit,
   }
   if (missing(data) || !is.data.frame(data)) {
     stop("`data` must be a data frame (typically the frame used for the base fit).",
+         call. = FALSE)
+  }
+
+  # Every accepted step goes through .hzr_refit_with_scope(), so a base fit
+  # it cannot refit makes the entire screen a no-op.  Left to fail
+  # candidate-by-candidate that produces N warnings and a zero-step result
+  # indistinguishable from an honest "nothing met slentry" (#159).  Ask the
+  # refit's own predicate once, up front: one message, naming the remedy,
+  # before any fitting happens.  Sharing .hzr_refit_blocker() with the refit
+  # is what stops the two answers drifting apart.
+  refit_blocker <- .hzr_refit_blocker(fit)
+  if (!is.null(refit_blocker)) {
+    stop("`fit` cannot be used as a stepwise base model because ",
+         refit_blocker, ". Every candidate would fail to refit, so the ",
+         "screen could never enter or drop anything. Rebuild the base fit ",
+         "with the formula interface -- for a forward screen that usually ",
+         "means an intercept-only base, hazard(Surv(time, status) ~ 1, ",
+         "data = df, ...) -- and retry.",
          call. = FALSE)
   }
 
@@ -279,6 +303,14 @@ hzr_stepwise <- function(fit,
   n_uncomputable_scores <- 0L
   uncomputable_reasons  <- stats::setNames(integer(0), character(0))
   stopped_uncomputable  <- FALSE
+  # Candidates whose REFIT failed, summed over steps.  The per-candidate
+  # warning already fires inside the step, but nothing recorded it on the
+  # result, so a screen that could not fit any candidate returned the same
+  # empty object as one that fit them all and liked none (#159).  The step
+  # functions have returned `refit_failures` since v1; this is the caller
+  # finally reading it.
+  refit_failures       <- character()
+  stopped_refit_failed <- FALSE
 
   # `crit` is the criterion actually applied to THIS step, which is not always
   # the run's `criterion`: score is entry-only, so its drops are decided by
@@ -368,6 +400,10 @@ hzr_stepwise <- function(fit,
 
     add_happened  <- FALSE
     drop_happened <- FALSE
+    # Per-ITERATION, not per-run: what stopped the screen is what the last
+    # iteration did, and a failure three steps back is not why it ended.
+    iter_refit_failures <- character()
+    iter_uncomputable   <- FALSE
 
     effective_force_out <- unique(c(force_out, frozen))
     effective_force_in  <- unique(c(force_in,  frozen))
@@ -389,7 +425,10 @@ hzr_stepwise <- function(fit,
       )
       if (identical(fwd$stop_reason, "scores_uncomputable")) {
         stopped_uncomputable <- TRUE
+        iter_uncomputable    <- TRUE
       }
+      iter_refit_failures <- c(iter_refit_failures,
+                               fwd$refit_failures %||% character())
 
       if (fwd$accepted) {
         # Nested models: the entered model contains the current one, so at the
@@ -430,6 +469,9 @@ hzr_stepwise <- function(fit,
         force_in  = effective_force_in
       ), extra_args))
 
+      iter_refit_failures <- c(iter_refit_failures,
+                               bwd$refit_failures %||% character())
+
       if (bwd$accepted) {
         current <- bwd$fit
         record_step("drop", bwd, crit = drop_criterion)
@@ -438,9 +480,29 @@ hzr_stepwise <- function(fit,
       }
     }
 
+    refit_failures <- c(refit_failures, iter_refit_failures)
+
     if (!add_happened && !drop_happened) {
-      emit(sprintf("(no further action after %d step%s)",
-                   step_no, if (step_no == 1L) "" else "s"))
+      step_txt <- sprintf("%d step%s", step_no,
+                          if (step_no == 1L) "" else "s")
+      # "no further action" is a claim that candidates were tested and none
+      # was good enough.  Say that only when it is true.
+      if (length(iter_refit_failures) > 0L) {
+        stopped_refit_failed <- TRUE
+        emit(sprintf(
+          "(stopped after %s: %d candidate refit%s FAILED and could not be tested -- %s)",
+          step_txt, length(iter_refit_failures),
+          if (length(iter_refit_failures) == 1L) "" else "s",
+          paste(iter_refit_failures, collapse = ", ")
+        ))
+      } else if (iter_uncomputable) {
+        emit(sprintf(
+          "(stopped after %s: no candidate score could be COMPUTED -- none was tested)",
+          step_txt
+        ))
+      } else {
+        emit(sprintf("(no further action after %s)", step_txt))
+      }
       break
     }
   }
@@ -490,6 +552,9 @@ hzr_stepwise <- function(fit,
     n_uncomputable_scores = n_uncomputable_scores,
     uncomputable_reasons  = uncomputable_reasons,
     stopped_uncomputable  = stopped_uncomputable,
+    n_refit_failures      = length(refit_failures),
+    refit_failures        = refit_failures,
+    stopped_refit_failed  = stopped_refit_failed,
     n_nonmonotone_entries = n_nonmonotone_entries
   )
 
@@ -516,6 +581,16 @@ hzr_stepwise <- function(fit,
             "selected set may omit strong variables. Re-run with ",
             "`criterion = \"wald\"` to test them; see ",
             "`$criteria$uncomputable_reasons`.", call. = FALSE)
+  }
+  if (stopped_refit_failed) {
+    warning("Stepwise selection stopped after ", nrow(steps_df),
+            " accepted step(s), and the iteration it stopped on had ",
+            "candidate refit failure(s) (", length(refit_failures),
+            " across the run: ",
+            paste(unique(refit_failures), collapse = ", "),
+            "). Those candidates were never tested, so stopping here is ",
+            "NOT evidence that nothing met the entry or retention rule. ",
+            "See `$criteria$refit_failures`.", call. = FALSE)
   }
   result$trace_msg  <- trace_msg
   result$elapsed    <- elapsed
