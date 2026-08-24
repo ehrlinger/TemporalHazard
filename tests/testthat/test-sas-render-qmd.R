@@ -57,6 +57,33 @@ test_that("an unresolved INHAZ with an apostrophe still emits parseable R", {
   expect_true(grepl("O'BRIEN.HZD", stop_line, fixed = TRUE))
 })
 
+test_that("the INHAZ remedy is pasteable R for a reserved-word libref", {
+  # The message advertises a `librefs = c(...)` call for the user to copy. The
+  # libref went in unquoted, so one colliding with an R reserved word made the
+  # advertised fragment a syntax error: the remedy could not be run as printed.
+  j <- .hzr_sas_job(
+    source = list(path = "hp.sas", checksum = "abc"),
+    calls = list(pred = quote(predict(fit, newdata = PREDICT))),
+    grid = NULL, inhaz = "TRUE.HZD", outhaz = NULL,
+    untranslated = .hzr_untranslated_frame(),
+    coverage = list(tokens_seen = 4L, tokens_mapped = 4L)
+  )
+  out <- .hzr_render_qmd(j)
+  stop_line <- out[grepl("^stop\\(", out)]
+  expect_length(stop_line, 1L)
+
+  # Run the remedy rather than matching its text: the claim is that it works,
+  # not that it looks right.
+  msg <- tryCatch(eval(parse(text = stop_line)), error = conditionMessage)
+  # Stop at the first ")" rather than leaning on a non-greedy quantifier: the
+  # fragment has no nested parentheses, and this needs no regex-engine
+  # extension to mean what it says.
+  remedy <- sub(".*pass librefs = (c\\([^)]*\\)) to .*", "\\1", msg)
+  expect_false(identical(remedy, msg))
+  v <- eval(parse(text = remedy))
+  expect_named(v, "TRUE")
+})
+
 test_that("a resolved INHAZ does not emit a stop()", {
   j <- .hzr_sas_job(
     source = list(path = "hp.sas", checksum = "abc"),
