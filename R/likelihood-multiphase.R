@@ -450,6 +450,31 @@
 # Interval-censored contribution
 # ============================================================================
 
+#' Reject row types the SAS objective has no counterpart for
+#'
+#' `PROC HAZARD` has no left-censoring statement, so no SAS run corresponds to
+#' a fit containing left-censored rows.  That is a data defect rather than
+#' parameter infeasibility, so it stops rather than returning `-Inf`.
+#'
+#' Called from BOTH `.hzr_logl_multiphase()` and `.hzr_gradient_multiphase()`.
+#' Guarding only the objective would leave the gradient computing happily for
+#' data the objective refuses -- and the gradient is reachable on its own, for
+#' instance from `.hzr_score_test()`, so the objective's refusal is not
+#' guaranteed to come first.
+#'
+#' @param status Numeric event indicator.
+#' @param objective Resolved objective, `"likelihood"` or `"sas"`.
+#' @return `NULL`, invisibly; called for its side effect.
+#' @keywords internal
+.hzr_check_sas_status <- function(status, objective) {
+  if (identical(objective, "sas") && any(status == -1)) {
+    stop("objective = \"sas\" does not support left-censored rows ",
+         "(status == -1): PROC HAZARD has no left-censoring statement, so no ",
+         "SAS run corresponds to the result.", call. = FALSE)
+  }
+  invisible(NULL)
+}
+
 #' Interval-censored log-likelihood contribution
 #'
 #' The single place the interval-censored contribution is written.  Both
@@ -491,10 +516,10 @@
     if (length(bad) > 0) {
       stop("objective = \"sas\" requires upper > lower on every ",
            "interval-censored row; the interval-mean hazard divides by ",
-           "(u - l). Offending interval row(s): ",
+           "(u - l). ", length(bad), " of ", length(upper),
+           " interval row(s) fail this, at index/indices ",
            paste(utils::head(bad, 10L), collapse = ", "),
-           if (length(bad) > 10L) ", ..." else "",
-           " (of ", length(bad), ").",
+           if (length(bad) > 10L) ", ..." else "", ".",
            call. = FALSE)
     }
   }
@@ -569,14 +594,7 @@
   n <- length(time)
   if (is.null(weights)) weights <- rep(1, n)
 
-  # PROC HAZARD has no left-censoring statement, so no SAS run corresponds to
-  # a left-censored row under the SAS objective.  Data defect, not parameter
-  # infeasibility: stop() rather than -Inf.
-  if (objective == "sas" && any(status == -1)) {
-    stop("objective = \"sas\" does not support left-censored rows ",
-         "(status == -1): PROC HAZARD has no left-censoring statement, so no ",
-         "SAS run corresponds to the result.", call. = FALSE)
-  }
+  .hzr_check_sas_status(status, objective)
 
   # Feasibility: check parameter constraints
 
@@ -691,6 +709,7 @@
                                       objective = c("likelihood", "sas"),
                                       ...) {
   objective <- match.arg(objective)
+  .hzr_check_sas_status(status, objective)
   n <- length(time)
   p <- length(theta)
   grad <- numeric(p)

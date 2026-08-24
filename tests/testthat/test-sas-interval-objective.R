@@ -169,6 +169,20 @@ test_that("non-positive dLambda is parameter infeasibility, not an error", {
   }
 })
 
+test_that("the width-guard message counts offenders against rows checked", {
+  # The count after "of" is the number of interval rows examined, not the
+  # number that failed -- reporting the failure count twice reads as though
+  # every row failed.
+  err <- tryCatch(
+    TemporalHazard:::.hzr_logl_interval(
+      cumhaz_lower = c(0.1, 0.2, 0.3), cumhaz_upper = c(0.4, 0.5, 0.6),
+      lower = c(1, 2, 3), upper = c(1, 5, 3), weights = c(1, 1, 1),
+      objective = "sas"),
+    error = conditionMessage)
+  expect_match(err, "2 of 3 interval row\\(s\\) fail this")
+  expect_match(err, "at index/indices 1, 3")
+})
+
 test_that('objective = "sas" rejects left-censored rows', {
   # PROC HAZARD has no left-censoring statement, so no SAS run corresponds to
   # the result.
@@ -179,6 +193,26 @@ test_that('objective = "sas" rejects left-censored rows', {
       phases = sas_mp_phases(), covariate_counts = sas_mp_cc,
       x_list = sas_mp_xl, objective = "sas"),
     "does not support left-censored rows")
+})
+
+test_that("the gradient refuses exactly the data the objective refuses", {
+  # Guarding only the objective would leave the gradient computing happily for
+  # data the objective rejects. The gradient is reachable on its own (the score
+  # test calls it directly), so the objective's refusal is not guaranteed to
+  # come first.
+  args <- list(theta = sas_mp_theta, time = c(1, 2), status = c(-1, 2),
+               time_lower = c(0, 1), time_upper = c(1, 2), weights = c(1, 1),
+               phases = sas_mp_phases(), covariate_counts = sas_mp_cc,
+               x_list = sas_mp_xl, objective = "sas")
+  expect_error(do.call(TemporalHazard:::.hzr_logl_multiphase, args),
+               "does not support left-censored rows")
+  expect_error(do.call(TemporalHazard:::.hzr_gradient_multiphase, args),
+               "does not support left-censored rows")
+
+  # ...and under the default, both still accept it.
+  args$objective <- "likelihood"
+  expect_no_error(do.call(TemporalHazard:::.hzr_logl_multiphase, args))
+  expect_no_error(do.call(TemporalHazard:::.hzr_gradient_multiphase, args))
 })
 
 test_that('objective = "sas" applies only to dist = "multiphase"', {
