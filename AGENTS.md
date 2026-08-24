@@ -46,8 +46,8 @@ Four details there are load bearing:
 - **Lint runs before tests** because it is seconds against about a minute for the suite. Cheap
   failures first.
 - **`R CMD check` does not run the whole suite.** It runs with `NOT_CRAN` false, so
-  `skip_on_cran()` tests are skipped: 128 skips and 1990 passes under check, against 6 skips
-  and **2738** passes locally (both measured 2026-08-22 on `fix/sas-translator-runnable`,
+  `skip_on_cran()` tests are skipped: 146 skips and 2339 passes under check, against 6 skips
+  and **3193** passes locally (both measured 2026-08-23 on `dev` at `c9f6c28`,
   with no environment variables set; the local figure needs the SAS fixture checkouts
   present under `~/Documents/GitHub/hazard`). A green check is **not**
   evidence that those tests pass; only the local `devtools::test()` line is.
@@ -151,21 +151,27 @@ Note the registry name is `TemporalHazard` while the directory is `temporal_haza
 - **The score criterion is an *entry* criterion.** The drop path never refits per candidate
   under either criterion: removals are tested on the current model's Wald p-value against
   `slstay`, as SAS does, and only the accepted drop is refitted.
-- Anything slow gets `skip_on_cran()`. There are 109 calls today.
+- Anything slow gets `skip_on_cran()`. There are 127 calls today.
 - No `browser()`, no bare `print()`, no `library()` inside `R/`. `cat()` belongs only in a
   `print.*` method.
 
 ### Where the check's time actually goes
 
-Overall `R CMD check --as-cran` with the manual: **2m 52s**, tarball **2.9 MB** (measured
-2026-08-22 on `fix/sas-translator-runnable`). CRAN's ceiling is about 10 minutes and it
+Overall `R CMD check --as-cran` with the manual: **3m 29s**, tarball **2.8 MB** (measured
+2026-08-23 on `dev` at `c9f6c28`). CRAN's ceiling is about 10 minutes and it
 rejects on that even at 0/0/0 — that is what got ggRandomForests archived in June 2026.
 
 | Component | Time |
 |---|---|
-| Tests | 53s / 58s |
-| Vignette rebuild | 35s / 43s |
+| Tests | 84s / 89s |
+| Vignette rebuild | 42s / 45s |
 | Everything else | the remainder |
+
+Re-measure these when you change them, and stamp the commit. The previous entry read
+2m 52s with tests at 53s, measured 2026-08-22; one release cycle later the total is up
+37 seconds and the tests up 31, which nothing flagged, because a figure in a file does not
+go stale loudly. The margin against CRAN is still wide. It is the direction that is worth
+watching, and it only shows against a dated baseline.
 
 Both dominant costs are the ones that grow silently. Watch the budget when adding a vignette
 chunk or an unskipped slow test.
