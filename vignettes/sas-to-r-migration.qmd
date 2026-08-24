@@ -570,7 +570,9 @@ job <- hzr_translate_sas(
 
 The emitted `.qmd` carries three chunks past its `setup`: a `data`
 chunk, a `status` chunk, and a `fit` chunk (reformatted here for width;
-the emitted document wraps at 60 columns like any `deparse()`d call).
+the emitted document wraps at 60 columns like any `deparse()`d call,
+and the three are run together in one block below, each marked by a
+comment, rather than shown as the three separate chunks they are).
 `DATA` step translation is out of scope, so the `data` chunk is a
 guard, not a re-implementation. It checks that `AVCS` is already in
 scope and stops with a named error if not, rather than silently
@@ -581,12 +583,14 @@ if you are checking a translation against the job it came from:
 ```{r}
 #| eval: false
 #| label: translate-output
+# chunk: data
 if (!exists("AVCS")) {
   stop("This job read ", "AVCS", " from a SAS DATA step, which ",
        "hzr_translate_sas() does not translate. Assign ", "AVCS",
        " before rendering.")
 }
 
+# chunk: status
 AVCS <- transform(AVCS, .hzr_status = {
   if (any(is.na(DEAD) | DEAD < 0)) {
     stop("This job has rows where the EVENT count (DEAD) is missing or ",
@@ -595,6 +599,7 @@ AVCS <- transform(AVCS, .hzr_status = {
   ifelse(DEAD > 0, 1, 0)
 })
 
+# chunk: fit
 fit <- hazard(
   data = AVCS, time = INT_DEAD, status = .hzr_status, fit = TRUE,
   dist = "multiphase",
