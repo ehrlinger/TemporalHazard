@@ -36,8 +36,8 @@ Before opening the PR, and whenever the change touches an exported function or t
 likelihood, run the `r-reviewer` agent (`.claude/agents/r-reviewer.md`) over the diff. It is
 advisory: verify each finding against the code rather than acting on it, and do not let a
 clean report stand in for the commands above. `RELEASE.md` step 5 runs the same agent over
-the accumulated `main...dev` diff at release time, because per-PR review never sees the
-release as a whole.
+the accumulated `v<previous>...main` diff at release time, because per-PR review never sees
+the release as a whole.
 
 Four details there are load bearing:
 
@@ -47,7 +47,7 @@ Four details there are load bearing:
   failures first.
 - **`R CMD check` does not run the whole suite.** It runs with `NOT_CRAN` false, so
   `skip_on_cran()` tests are skipped: 146 skips and 2339 passes under check, against 6 skips
-  and **3193** passes locally (both measured 2026-08-23 on `dev` at `c9f6c28`,
+  and **3193** passes locally (both measured 2026-08-23 at `c9f6c28`,
   with no environment variables set; the local figure needs the SAS fixture checkouts
   present under `~/Documents/GitHub/hazard`). A green check is **not**
   evidence that those tests pass; only the local `devtools::test()` line is.
@@ -158,7 +158,7 @@ Note the registry name is `TemporalHazard` while the directory is `temporal_haza
 ### Where the check's time actually goes
 
 Overall `R CMD check --as-cran` with the manual: **3m 29s**, tarball **2.8 MB** (measured
-2026-08-23 on `dev` at `c9f6c28`). CRAN's ceiling is about 10 minutes and it
+2026-08-23 at `c9f6c28`). CRAN's ceiling is about 10 minutes and it
 rejects on that even at 0/0/0 — that is what got ggRandomForests archived in June 2026.
 
 | Component | Time |
@@ -195,8 +195,9 @@ A new dependency is a CRAN cost. Ask first.
 
 ## Git and versioning
 
-- **Never push to `main` or `dev` directly.** Branch, commit, push the branch, open a PR, then
-  stop. The maintainer merges.
+- **Never push to `main` directly.** Branch, commit, push the branch, open a PR, then stop.
+  The maintainer merges. `main` is the only long-lived branch: there is no `dev`, and every
+  kind of change takes the same route (see `RELEASE.md`, "Branch model").
 - **Never roll the MINOR or MAJOR digit.** That is the maintainer's call, made when a feature
   set is consolidated into a release. Patch bumps are fine for incremental work; say so when
   you make one.
@@ -205,9 +206,10 @@ A new dependency is a CRAN cost. Ask first.
 - ⚠️ **Unlike ggRandomForests, there is no test here that greps `NEWS.md` for the `DESCRIPTION`
   version.** Nothing will catch a mismatch. Keep `DESCRIPTION` `Version:` and the `NEWS.md`
   top heading in sync **by hand** on every bump.
-- ⚠️ **`Closes #123` does not fire on this repo's normal flow.** GitHub auto-closes only on
-  merge into the *default* branch, and routine work merges to `dev`. Close the issue manually
-  after the merge, or it stays open silently.
+- **`Closes #123` fires on the normal flow.** GitHub auto-closes only on merge into the
+  *default* branch, and routine work now merges to `main`, which is it. This inverted on
+  2026-08-24 when the `dev` branch was dropped; before that the keyword silently did nothing
+  and issues had to be closed by hand.
 
 ## Prose
 

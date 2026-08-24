@@ -9,11 +9,11 @@ on:
   push:
     paths-ignore:
       - '.claude/**'
-    branches: [main, master, dev]
+    branches: [main, master]
   pull_request:
     paths-ignore:
       - '.claude/**'
-    branches: [main, master, dev]
+    branches: [main, master]
 
 concurrency:
   # One in-flight run per workflow per ref. Without this every push starts a
