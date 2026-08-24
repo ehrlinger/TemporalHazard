@@ -13,7 +13,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.2</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.3</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -55,6 +55,18 @@
       <small>Source: <a href="https://github.com/ehrlinger/temporal_hazard/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="1.2.3" id="temporalhazard-123">TemporalHazard 1.2.3<a class="anchor" aria-label="anchor" href="#temporalhazard-123"></a></h2>
+<div class="section level3">
+<h3 id="bug-fixes-1-2-3">Bug fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-1-2-3"></a></h3>
+<ul><li>
+<p>A logical column no longer stops a stepwise screen dead. <code>hzr_stepwise(scope = NULL)</code> enumerates its own candidates and counts logical columns among them, on the grounds that a 0/1 field arriving logical rather than numeric is a property of the reader that produced the frame, not of the variable. Both criteria then refused what the package had offered: the score criterion errored with “is not numeric (logical)”, and the Wald criterion failed looking up <code>phase.var</code> when <code><a href="https://rdrr.io/r/stats/model.matrix.html" class="external-link">model.matrix()</a></code> had named the column <code>phase.varTRUE</code>. Either way the screen stopped before its first step, on a column nobody had chosen by hand.</p>
+<p>A logical candidate is now modelled as the 0/1 predictor it is, and gives the same screen as the identical numeric column: same variables entered, in the same order, at the same p-values, with the same coefficients.</p>
+<p>The coefficient-name half of this also fixes a two-level factor, which expands the same way (<code>varb</code>). A candidate that expands to more than one column is still refused, unchanged.</p>
+<p>That makes <code>criterion = "wald"</code> a real answer for a two-level factor or character column named in an explicit <code>scope</code>, which the score criterion still cannot expand. Its refusal used to say switching criterion would not help, and now points at it instead.</p>
+</li>
+</ul></div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="1.2.2" id="temporalhazard-122">TemporalHazard 1.2.2<a class="anchor" aria-label="anchor" href="#temporalhazard-122"></a></h2>
 <div class="section level3">
