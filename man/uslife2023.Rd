@@ -21,7 +21,7 @@ Sums to 100000.0125; ranges from 0.2352 to 3620.335}
 National Center for Health Statistics, United States Life Tables,
 2023. Derived from \verb{/studies/general/uslife/table2023} via
 \code{data-raw/make_data.R}; \code{inst/extdata/uslife2023.csv} is the durable
-source, reproducible without a SAS licence.
+source, reproducible without a SAS license.
 }
 \usage{
 uslife2023

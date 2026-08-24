@@ -479,7 +479,7 @@
 #'
 #' The single place the interval-censored contribution is written.  Both
 #' `.hzr_logl_multiphase()` and the finite-difference closure inside
-#' `.hzr_gradient_multiphase()` delegate here, so the optimiser cannot step by
+#' `.hzr_gradient_multiphase()` delegate here, so the optimizer cannot step by
 #' the gradient of a different objective than the one it evaluates.
 #'
 #' Callers pass **only the interval rows** -- already subset by `status == 2`
@@ -509,7 +509,7 @@
   # Data-defect guard, deliberately BEFORE the delta_h guard below.  A row
   # with u <= l almost always also yields delta_h <= 0, so checking
   # feasibility first would return -Inf and silently swallow the defect --
-  # the optimiser would walk away from a corrupt row instead of stopping on
+  # the optimizer would walk away from a corrupt row instead of stopping on
   # it.  Order is load-bearing here.
   if (objective == "sas") {
     bad <- which(!(upper > lower))
@@ -526,7 +526,7 @@
 
   delta_h <- cumhaz_upper - cumhaz_lower
 
-  # Parameter infeasibility, NOT a data defect: -Inf is a value the optimiser
+  # Parameter infeasibility, NOT a data defect: -Inf is a value the optimizer
   # is expected to walk away from.  Contrast the stop() above.
   if (any(!is.finite(delta_h)) || any(delta_h <= 0)) return(-Inf)
 

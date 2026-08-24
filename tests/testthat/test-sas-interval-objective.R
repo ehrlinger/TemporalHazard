@@ -136,7 +136,7 @@ test_that("the two objectives disagree, so a passing gradient is not vacuous", {
 
 # ---------------------------------------------------------------------------
 # Test 4 -- guards.  The stop()/-Inf split is deliberate: -Inf is a value the
-# optimiser is expected to walk away from, whereas a data defect must not be
+# optimizer is expected to walk away from, whereas a data defect must not be
 # survivable.
 # ---------------------------------------------------------------------------
 
@@ -151,7 +151,7 @@ test_that('objective = "sas" stops on a non-positive interval width', {
 test_that("the width guard is checked before the feasibility guard", {
   # A row with u <= l almost always also yields dLambda <= 0.  If the order
   # were reversed the feasibility guard would return -Inf first and silently
-  # convert a data defect into a region the optimiser merely avoids.
+  # convert a data defect into a region the optimizer merely avoids.
   expect_error(
     TemporalHazard:::.hzr_logl_interval(
       cumhaz_lower = 0.5, cumhaz_upper = 0.5,   # dLambda == 0 as well
@@ -233,7 +233,7 @@ test_that("an unknown objective is rejected", {
 
 # ---------------------------------------------------------------------------
 # Test 5 -- the default is unchanged.  The extraction of .hzr_logl_interval()
-# had to be behaviour-preserving; these pin the default against the formula it
+# had to be behavior-preserving; these pin the default against the formula it
 # replaced rather than against a stored number.
 # ---------------------------------------------------------------------------
 
@@ -266,7 +266,7 @@ test_that("omitting objective is identical to naming the default", {
 #
 # Reference: /studies/general/uslife/table2023/distributions/hz.icall.lst,
 # reproduced here through the shipped `uslife2023` fixture so the assertions
-# outlive the SAS licence. Every row of that fit is interval-censored, so the
+# outlive the SAS license. Every row of that fit is interval-censored, so the
 # whole log-likelihood IS the interval contribution -- there is no exact-event
 # or right-censored term to net out.
 #

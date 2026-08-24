@@ -17,7 +17,7 @@
   row `log S(u) + log h_bar(l, u]`. Exact-event and right-censored rows are
   untouched by the switch, and it applies only to `dist = "multiphase"`.
 
-  **This is a different estimator, not a reparameterisation, and must not be
+  **This is a different estimator, not a reparameterization, and must not be
   used for new analyses.** It is a density, not a probability, so it is
   inconsistent for wide intervals -- on a 12-year-interval reference fit the
   two forms differ by 22 log-likelihood units. It exists to reproduce legacy
@@ -39,9 +39,9 @@
 
 * The interval-censored contribution was written twice -- once in the
   log-likelihood and again in the finite-difference closure inside the
-  gradient. Those copies had to agree or the optimiser would step by the
+  gradient. Those copies had to agree or the optimizer would step by the
   gradient of a different objective than it evaluated. Both now delegate to a
-  single `.hzr_logl_interval()`. Behaviour under the default is unchanged and
+  single `.hzr_logl_interval()`. Behavior under the default is unchanged and
   bit-identical, log-likelihood and gradient alike.
 
 
@@ -456,7 +456,7 @@ selects.
   a deviation from the reference implementation this package exists to
   reproduce. **Re-running an existing stepwise analysis can now select a
   different variable set**, because the score and Wald paths take different
-  step sequences. Pass `criterion = "wald"` to restore the previous behaviour
+  step sequences. Pass `criterion = "wald"` to restore the previous behavior
   exactly.
 
   The score criterion also removes the per-candidate refit, which dominated
@@ -619,7 +619,7 @@ selects.
   underlying limitation of the score criterion is unchanged and is tracked
   separately; `criterion = "wald"` tests these candidates.
 
-  One behaviour change comes with it: the guard on the adjusted variance is now
+  One behavior change comes with it: the guard on the adjusted variance is now
   a magnitude test rather than a sign test. A variance within rounding distance
   of zero is reported as collinear whichever side of zero it lands on, and only
   a materially negative one is reported as indefinite. The previous floor was
@@ -678,7 +678,7 @@ selects.
   install command), `numDeriv::hessian()` failing (carrying its message), and
   no Hessian available at all. A `hessian_fn` hook that *errors* is also no
   longer swallowed into silence, so a broken analytic hook is distinguishable
-  from one that deliberately declines. Behaviour is unchanged -- the
+  from one that deliberately declines. Behavior is unchanged -- the
   diagnostics are still `NA` -- but the reason is now stated. Found while
   fitting a production interval-censored study.
 

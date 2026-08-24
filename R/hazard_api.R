@@ -1284,7 +1284,7 @@ predict.hazard <- function(object, newdata = NULL,
     dist_lbl <- object$spec$dist
     has_cov <- !is.null(x) && ncol(x) > 0
 
-    # Preserve the pre-0.9.8 stop() behaviour on an ill-conditioned MLE.
+    # Preserve the pre-0.9.8 stop() behavior on an ill-conditioned MLE.
     # The closures below return NA on negative shape parameters so numeric
     # jacobian perturbations stay robust, but we want a clean error at the
     # point estimate itself.

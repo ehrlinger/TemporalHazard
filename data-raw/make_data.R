@@ -46,7 +46,7 @@ message("All 5 datasets saved to data/")
 # Derived from /studies/general/uslife/table2023/datasets/built.sas7bdat by
 # `IF D_ALL=0 THEN DELETE`, keeping the three columns the parity fit uses.
 # The CSV in inst/extdata/ is the durable source: it must remain reproducible
-# after the SAS licence lapses and the .sas7bdat becomes unreadable.
+# after the SAS license lapses and the .sas7bdat becomes unreadable.
 #
 # The gates below are the figures printed by the SAS job's own .lst
 # (distributions/hz.icall.lst), not values recomputed from this CSV -- they

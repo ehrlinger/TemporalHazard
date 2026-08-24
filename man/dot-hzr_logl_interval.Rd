@@ -39,7 +39,7 @@ Scalar summed contribution; \code{-Inf} for infeasible parameters.
 \description{
 The single place the interval-censored contribution is written.  Both
 \code{.hzr_logl_multiphase()} and the finite-difference closure inside
-\code{.hzr_gradient_multiphase()} delegate here, so the optimiser cannot step by
+\code{.hzr_gradient_multiphase()} delegate here, so the optimizer cannot step by
 the gradient of a different objective than the one it evaluates.
 }
 \details{
