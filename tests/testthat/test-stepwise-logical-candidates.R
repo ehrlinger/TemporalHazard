@@ -50,3 +50,39 @@ for (crit in c("score", "wald")) {
                  tolerance = 1e-6)
   })
 }
+
+test_that("the score criterion's refusal names an escape hatch that works", {
+  skip_on_cran()
+
+  # A two-level factor expands to one design-matrix column, so the Wald path
+  # refits and tests it. The score path cannot expand it and refuses -- and the
+  # refusal used to tell the caller that `criterion = "wald"` "rejects it too,
+  # so switching criterion will not help". That stopped being true once the
+  # coefficient-name lookup returned the expansion it had found, so the message
+  # was steering people away from the one thing that works.
+
+  data(avc, package = "TemporalHazard", envir = environment())
+  d <- avc[, c("int_dead", "dead", "age", "mal")]
+  d$mal <- factor(ifelse(d$mal > 0, "b", "a"))
+  sc <- stats::setNames(list(~ age + mal), "constant")
+  base <- function() {
+    hazard(survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
+           phases = list(constant = hzr_phase("constant")), fit = TRUE)
+  }
+
+  err <- tryCatch(
+    hzr_stepwise(base(), scope = sc, data = d, direction = "forward",
+                 criterion = "score"),
+    error = conditionMessage
+  )
+  expect_match(err, "not numeric", fixed = TRUE)
+  expect_false(grepl("switching criterion will not help", err, fixed = TRUE))
+  expect_match(err, 'criterion = "wald"', fixed = TRUE)
+
+  # Naming an escape hatch that does not work would be worse than naming none.
+  r <- suppressWarnings(
+    hzr_stepwise(base(), scope = sc, data = d, direction = "forward",
+                 criterion = "wald")
+  )
+  expect_true("mal" %in% r$steps$variable)
+})

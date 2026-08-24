@@ -20,6 +20,11 @@
   expands the same way (`varb`). A candidate that expands to more than one
   column is still refused, unchanged.
 
+  That makes `criterion = "wald"` a real answer for a two-level factor or
+  character column named in an explicit `scope`, which the score criterion
+  still cannot expand. Its refusal used to say switching criterion would not
+  help, and now points at it instead.
+
 # TemporalHazard 1.2.2
 
 ## New features
