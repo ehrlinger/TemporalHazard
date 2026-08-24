@@ -207,7 +207,7 @@ keep the two in agreement.
     tags), on `main` (the released line):
 
     ``` sh
-    git tag -a vX.Y.Z -m "TemporalHazard vX.Y.Z — accepted & published on CRAN <date>" <main-HEAD>
+    git tag -a vX.Y.Z -m "TemporalHazard vX.Y.Z — accepted & published on CRAN YYYY-MM-DD" main
     git push origin vX.Y.Z
     ```
 
@@ -218,8 +218,12 @@ keep the two in agreement.
     `NEWS.md` section as the body, marked as the latest release:
 
     ``` sh
+    # The body is this version's NEWS.md section, so write it out first.
+    awk '/^# TemporalHazard X\.Y\.Z$/{f=1;next} /^# TemporalHazard /{f=0} f' \
+      NEWS.md > news-section.md
+
     gh release create vX.Y.Z --verify-tag --latest \
-      --title "TemporalHazard X.Y.Z" --notes-file <news-section.md>
+      --title "TemporalHazard X.Y.Z" --notes-file news-section.md
     ```
 
 3.  **Nothing to bump at this step.** `main` stays at `X.Y.Z`, the

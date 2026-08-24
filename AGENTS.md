@@ -285,7 +285,8 @@ at a time, not a blend.
 - **`.Rbuildignore` must exclude `^\.claude$`, `^CLAUDE\.md$` and
   `^AGENTS\.md$`.** These are developer files and have no business in a
   CRAN tarball. Confirm with
-  `tar tzf <tarball> | grep -iE 'CLAUDE|AGENTS'` after building.
+  `tar tzf TemporalHazard_X.Y.Z.tar.gz | grep -iE 'CLAUDE|AGENTS'` after
+  building.
 - The CRAN incoming aspell check is **not** run by a local `--as-cran`
   unless `aspell` is installed, so local checks under-report it.
   `devtools::check_win_devel()` is the source of truth for that NOTE,

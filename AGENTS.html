@@ -218,7 +218,7 @@
 <li>
 <strong>The SAS <code>.lst</code> parsers encode what one study’s listings happen to print.</strong> Expect roughly one gap per parser per new study: a hardcoded time-variable name, a missing column, a colon-terminated count line, a paginated table read only to page one. Read the header, do not assert it.</li>
 <li>
-<strong><code>.Rbuildignore</code> must exclude <code>^\.claude$</code>, <code>^CLAUDE\.md$</code> and <code>^AGENTS\.md$</code>.</strong> These are developer files and have no business in a CRAN tarball. Confirm with <code>tar tzf &lt;tarball&gt; | grep -iE 'CLAUDE|AGENTS'</code> after building.</li>
+<strong><code>.Rbuildignore</code> must exclude <code>^\.claude$</code>, <code>^CLAUDE\.md$</code> and <code>^AGENTS\.md$</code>.</strong> These are developer files and have no business in a CRAN tarball. Confirm with <code>tar tzf TemporalHazard_X.Y.Z.tar.gz | grep -iE 'CLAUDE|AGENTS'</code> after building.</li>
 <li>The CRAN incoming aspell check is <strong>not</strong> run by a local <code>--as-cran</code> unless <code>aspell</code> is installed, so local checks under-report it. <code>devtools::check_win_devel()</code> is the source of truth for that NOTE, and <code>inst/WORDLIST</code> feeds only <code>devtools::spell_check()</code> — it has no effect on CRAN’s check.</li>
 <li>
 <code>n_starts</code> explores a neighbourhood, not the space. <code>n_starts = 5</code> can be bit-identical to <code>n_starts = 1</code> from the same start, while a genuinely different start finds a worse optimum. The multiphase likelihood is multimodal.</li>
