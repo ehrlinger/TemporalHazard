@@ -15,6 +15,7 @@
   phases,
   covariate_counts,
   x_list,
+  objective = c("likelihood", "sas"),
   ...
 )
 }
@@ -37,6 +38,10 @@
 \item{covariate_counts}{Named integer vector of per-phase covariate counts.}
 
 \item{x_list}{Named list of per-phase design matrices.}
+
+\item{objective}{Which interval-censored contribution to accumulate;
+see \code{.hzr_logl_interval()}. Exact-event, right-censored and left-censored
+rows are unaffected.}
 
 \item{...}{Ignored.}
 }

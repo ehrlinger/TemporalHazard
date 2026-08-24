@@ -19,6 +19,7 @@ hazard(
   fit = FALSE,
   weights = NULL,
   control = list(),
+  objective = c("likelihood", "sas"),
   ...
 )
 }
@@ -102,6 +103,14 @@ Implements the SAS \code{WEIGHT} statement.}
 
 \item{control}{Named list of control options (see Details).}
 
+\item{objective}{Which interval-censored contribution the multiphase
+likelihood accumulates. \code{"likelihood"} (default) uses the interval
+probability \eqn{\log(S(l) - S(u))}. \code{"sas"} reproduces what
+\verb{PROC HAZARD} accumulates -- the event-density term with the instantaneous
+hazard replaced by the interval-mean hazard over \eqn{(l, u]}. Applies
+only to \code{dist = "multiphase"}; exact-event and right-censored rows are
+unaffected either way.}
+
 \item{...}{Additional named arguments retained for parity with legacy calling
 conventions.}
 }
@@ -171,6 +180,15 @@ interactions so each window has its own coefficient vector.
 \item This is implemented as design-matrix expansion, so the existing likelihood
 engines remain unchanged.
 }
+}
+\note{
+\code{objective = "sas"} exists to reproduce legacy \verb{PROC HAZARD} runs and
+\strong{must not be used for new analyses}. It is a density, not a probability:
+it is inconsistent for wide intervals, where the two forms differ
+materially -- 22 log-likelihood units on the esophagectomy reference fit.
+The default is the statistically correct interval likelihood. See
+\code{inst/dev/SAS-INTERVAL-OBJECTIVE-DESIGN.md} for the derivation and the
+four-reference evidence.
 }
 \section{The fitted model}{
 

@@ -168,6 +168,21 @@ NULL
 #'   Use for severity-weighted repeated events. Default `NULL` (unit weights).
 #'   Implements the SAS `WEIGHT` statement.
 #' @param control Named list of control options (see Details).
+#' @param objective Which interval-censored contribution the multiphase
+#'   likelihood accumulates. `"likelihood"` (default) uses the interval
+#'   probability \eqn{\log(S(l) - S(u))}. `"sas"` reproduces what
+#'   `PROC HAZARD` accumulates -- the event-density term with the instantaneous
+#'   hazard replaced by the interval-mean hazard over \eqn{(l, u]}. Applies
+#'   only to `dist = "multiphase"`; exact-event and right-censored rows are
+#'   unaffected either way.
+#' @note `objective = "sas"` exists to reproduce legacy `PROC HAZARD` runs and
+#'   **must not be used for new analyses**. It is a density, not a probability:
+#'   it is inconsistent for wide intervals, where the two forms differ
+#'   materially -- 22 log-likelihood units on the esophagectomy reference fit.
+#'   The default is the statistically correct interval likelihood. See
+#'   `inst/dev/SAS-INTERVAL-OBJECTIVE-DESIGN.md` for the derivation and the
+#'   four-reference evidence.
+#'
 #' @param ... Additional named arguments retained for parity with legacy calling
 #'   conventions.
 #'
@@ -376,7 +391,20 @@ hazard <- function(formula = NULL,
                    fit = FALSE,
                    weights = NULL,
                    control = list(),
+                   objective = c("likelihood", "sas"),
                    ...) {
+
+  objective <- match.arg(objective)
+
+  # `objective` is a top-level argument rather than a `control` element on
+  # purpose: it changes the estimand, and burying that among convergence
+  # tolerances makes it easy to miss in review.
+  if (objective == "sas" && dist != "multiphase") {
+    stop("objective = \"sas\" applies only to dist = \"multiphase\": it ",
+         "reproduces PROC HAZARD's interval-censored contribution, and no ",
+         "other distribution here is a PROC HAZARD target. Got dist = \"",
+         dist, "\".", call. = FALSE)
+  }
   # Formula dispatch: if formula is provided, parse it and extract time/status/x from data
   if (!is.null(formula)) {
     if (is.null(data)) {
@@ -673,7 +701,8 @@ hazard <- function(formula = NULL,
       time_lower = time_lower, time_upper = time_upper,
       x = x_fit, theta_start = theta, weights = weights,
       control = control,
-      phases = phases, formula_global = formula, data = data
+      phases = phases, objective = objective,
+      formula_global = formula, data = data
     ))
 
     fit_state$theta <- optim_result$par

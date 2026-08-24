@@ -149,8 +149,45 @@ differ by 22 log-likelihood units on the esophagectomy reference. Cross-ref
 
 ### 7. Version
 
-1.2.1 -> **1.2.2** (patch), bumped in both `DESCRIPTION` and `NEWS.md`, which a
-test greps for the exact `DESCRIPTION` version. Not a minor bump.
+~~1.2.1 -> **1.2.2**~~ **Superseded 2026-08-24:** `main` already shipped 1.2.2
+(vector-interface `data` scoping, `hzr_translate_sas()`) while this design sat
+unimplemented. The target is now 1.2.2 -> **1.2.3** (patch), bumped in both
+`DESCRIPTION` and `NEWS.md`, which a test greps for the exact `DESCRIPTION`
+version. Still not a minor bump. **Bump when the feature lands, not while the
+`"sas"` branch is a stub** -- a version claiming the feature that errors on use
+is worse than no bump.
+
+## 8. Implementation status (2026-08-24)
+
+Scaffolded on `feat/sas-interval-objective-v2`:
+
+- [x] §1 `.hzr_logl_interval()` extracted; both call sites delegate. Verified
+      bit-identical to installed 1.2.2 (log-likelihood *and* gradient, three
+      parameter vectors) on mixed-status weighted interval data.
+- [x] §2 threading: `objective` on `hazard()`, `.hzr_optim_multiphase()`,
+      `.hzr_logl_multiphase()`, `.hzr_gradient_multiphase()`.
+- [x] §3 guards, all four verified firing.
+- [ ] **The `"sas"` per-row contribution itself** -- deliberately left as a
+      `stop()` stub for the author of the parity finding.
+- [ ] §4 `uslife2023` fixture.
+- [ ] §5 tests 1-6.
+- [ ] §6 `@note` -- drafted on `?hazard`; revisit once the form is live.
+
+### Note on the `objective` name
+
+`hazard()` already returns `fit$objective`, a *number* (the log-likelihood at
+the optimum). The new argument is a *choice of estimand* with the same name.
+They never collide in code, but a reader of `summary()` output may reasonably
+read one as the other. Flagged rather than renamed: the design was approved
+with this name, and renaming is the author's call.
+
+### Guard ordering is load-bearing
+
+`u <= l` must be checked **before** `delta_h <= 0`. A row with `u <= l` almost
+always also produces `delta_h <= 0`, so the feasibility guard would return
+`-Inf` first and silently swallow the data defect -- the optimiser would walk
+away from a corrupt row instead of stopping on it. This is not obvious from
+the §3 table, which lists the conditions but not their order.
 
 ## Risks
 

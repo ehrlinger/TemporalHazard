@@ -447,6 +447,91 @@
 
 
 # ============================================================================
+# Interval-censored contribution
+# ============================================================================
+
+#' Interval-censored log-likelihood contribution
+#'
+#' The single place the interval-censored contribution is written.  Both
+#' `.hzr_logl_multiphase()` and the finite-difference closure inside
+#' `.hzr_gradient_multiphase()` delegate here, so the optimiser cannot step by
+#' the gradient of a different objective than the one it evaluates.
+#'
+#' Callers pass **only the interval rows** -- already subset by `status == 2`
+#' -- so this helper never sees the status mask and cannot disagree with a
+#' caller about which rows are intervals.
+#'
+#' @param cumhaz_lower Cumulative hazard at the interval lower bounds,
+#'   \eqn{\Lambda(l)}.
+#' @param cumhaz_upper Cumulative hazard at the interval upper bounds,
+#'   \eqn{\Lambda(u)}.
+#' @param lower Interval lower bounds. Used only by `objective = "sas"`.
+#' @param upper Interval upper bounds. Used only by `objective = "sas"`.
+#' @param weights Case weights. In a SAS parity run these are the ICENSOR
+#'   variable, which is a weight (a death count in an aggregated study), not
+#'   merely an indicator.
+#' @param objective `"likelihood"` for the interval probability -- the default,
+#'   and the only statistically consistent form -- or `"sas"` for the
+#'   interval-mean-hazard density term `PROC HAZARD` accumulates. See
+#'   `inst/dev/SAS-INTERVAL-OBJECTIVE-DESIGN.md`.
+#' @return Scalar summed contribution; `-Inf` for infeasible parameters.
+#' @keywords internal
+.hzr_logl_interval <- function(cumhaz_lower, cumhaz_upper, lower, upper,
+                               weights,
+                               objective = c("likelihood", "sas")) {
+  objective <- match.arg(objective)
+
+  # Data-defect guard, deliberately BEFORE the delta_h guard below.  A row
+  # with u <= l almost always also yields delta_h <= 0, so checking
+  # feasibility first would return -Inf and silently swallow the defect --
+  # the optimiser would walk away from a corrupt row instead of stopping on
+  # it.  Order is load-bearing here.
+  if (objective == "sas") {
+    bad <- which(!(upper > lower))
+    if (length(bad) > 0) {
+      stop("objective = \"sas\" requires upper > lower on every ",
+           "interval-censored row; the interval-mean hazard divides by ",
+           "(u - l). Offending interval row(s): ",
+           paste(utils::head(bad, 10L), collapse = ", "),
+           if (length(bad) > 10L) ", ..." else "",
+           " (of ", length(bad), ").",
+           call. = FALSE)
+    }
+  }
+
+  delta_h <- cumhaz_upper - cumhaz_lower
+
+  # Parameter infeasibility, NOT a data defect: -Inf is a value the optimiser
+  # is expected to walk away from.  Contrast the stop() above.
+  if (any(!is.finite(delta_h)) || any(delta_h <= 0)) return(-Inf)
+
+  if (objective == "likelihood") {
+    # w * [ -Lambda(l) + log(1 - exp(-(Lambda(u) - Lambda(l)))) ]
+    return(sum(weights * (-cumhaz_lower + hzr_log1mexp(delta_h))))
+  }
+
+  # ---------------------------------------------------------------------
+  # objective == "sas" -- PROC HAZARD's interval-mean-hazard density term.
+  #
+  # SAS does not use the interval probability at all.  It uses the ordinary
+  # event-density term with the *instantaneous* hazard replaced by the
+  # *interval-mean* hazard over (l, u]:
+  #
+  #   d * log[ S(u) * (Lambda(u) - Lambda(l)) / (u - l) ]
+  # = d * [ -Lambda(u) + log(delta_h) - log(u - l) ]
+  #
+  # `delta_h` is Lambda(u) - Lambda(l) and is already guaranteed finite and
+  # strictly positive above, so log(delta_h) is safe.  Note the leading term
+  # is -Lambda(u), NOT the -Lambda(l) the likelihood branch uses.
+  #
+  # TODO(john): implement.  Return the weighted sum, as the branch above does.
+  # ---------------------------------------------------------------------
+  stop("objective = \"sas\" is not implemented yet: the interval-mean-hazard ",
+       "contribution in .hzr_logl_interval() is still a stub.", call. = FALSE)
+}
+
+
+# ============================================================================
 # Log-likelihood
 # ============================================================================
 
@@ -462,6 +547,9 @@
 #' @param phases Named list of validated `hzr_phase` objects.
 #' @param covariate_counts Named integer vector of per-phase covariate counts.
 #' @param x_list Named list of per-phase design matrices.
+#' @param objective Which interval-censored contribution to accumulate;
+#'   see `.hzr_logl_interval()`. Exact-event, right-censored and left-censored
+#'   rows are unaffected.
 #' @param return_gradient Logical (ignored; gradient via separate function).
 #' @param return_hessian Logical (ignored).
 #' @param ... Ignored.
@@ -471,11 +559,22 @@
                                   time_lower = NULL, time_upper = NULL,
                                   x = NULL, weights = NULL,
                                   phases, covariate_counts, x_list,
+                                  objective = c("likelihood", "sas"),
                                   return_gradient = FALSE,
                                   return_hessian = FALSE, ...) {
+  objective <- match.arg(objective)
 
   n <- length(time)
   if (is.null(weights)) weights <- rep(1, n)
+
+  # PROC HAZARD has no left-censoring statement, so no SAS run corresponds to
+  # a left-censored row under the SAS objective.  Data defect, not parameter
+  # infeasibility: stop() rather than -Inf.
+  if (objective == "sas" && any(status == -1)) {
+    stop("objective = \"sas\" does not support left-censored rows ",
+         "(status == -1): PROC HAZARD has no left-censoring statement, so no ",
+         "SAS run corresponds to the result.", call. = FALSE)
+  }
 
   # Feasibility: check parameter constraints
 
@@ -544,17 +643,22 @@
                          hzr_log1mexp(cumhaz_upper[idx_left]))
   }
 
-  # Interval-censored: w * [-H(l) + log(1 - exp(-(H(u) - H(l))))]
+  # Interval-censored: delegated to .hzr_logl_interval(), the single place
+  # the contribution is written.  See its @param objective.
   idx_interval <- status == 2
   if (any(idx_interval)) {
     cumhaz_lower <- .hzr_multiphase_cumhaz(lower, theta, phases,
                                              covariate_counts, x_list)
     cumhaz_upper_iv <- .hzr_multiphase_cumhaz(upper, theta, phases,
                                                 covariate_counts, x_list)
-    delta_h <- cumhaz_upper_iv[idx_interval] - cumhaz_lower[idx_interval]
-    logl <- logl + sum(weights[idx_interval] *
-                         (-cumhaz_lower[idx_interval] +
-                            hzr_log1mexp(delta_h)))
+    logl <- logl + .hzr_logl_interval(
+      cumhaz_lower = cumhaz_lower[idx_interval],
+      cumhaz_upper = cumhaz_upper_iv[idx_interval],
+      lower        = lower[idx_interval],
+      upper        = upper[idx_interval],
+      weights      = weights[idx_interval],
+      objective    = objective
+    )
   }
 
   if (!is.finite(logl)) return(-Inf)
@@ -582,7 +686,9 @@
                                       time_lower = NULL, time_upper = NULL,
                                       x = NULL, weights = NULL,
                                       phases, covariate_counts, x_list,
+                                      objective = c("likelihood", "sas"),
                                       ...) {
+  objective <- match.arg(objective)
   n <- length(time)
   p <- length(theta)
   grad <- numeric(p)
@@ -973,9 +1079,14 @@
                                           x_list)
       cumhaz_u <- .hzr_multiphase_cumhaz(upper, th, phases, covariate_counts,
                                           x_list)
-      delta <- cumhaz_u[idx_interval] - cumhaz_l[idx_interval]
-      sum(w_iv *
-            (-cumhaz_l[idx_interval] + hzr_log1mexp(delta)))
+      .hzr_logl_interval(
+        cumhaz_lower = cumhaz_l[idx_interval],
+        cumhaz_upper = cumhaz_u[idx_interval],
+        lower        = lower[idx_interval],
+        upper        = upper[idx_interval],
+        weights      = w_iv,
+        objective    = objective
+      )
     }
     eps_rel <- sqrt(.Machine$double.eps)
     ll0_iv <- logl_iv(theta)
@@ -1054,6 +1165,8 @@
 #'   phase-specific formula).
 #' @param data Data frame containing covariates (needed for phase-specific
 #'   formula evaluation).
+#' @param objective Which interval-censored contribution to accumulate;
+#'   see `.hzr_logl_interval()`.
 #' @return List with par (internal scale), value, convergence, vcov, etc.
 #' @keywords internal
 .hzr_optim_multiphase <- function(time, status,
@@ -1063,8 +1176,11 @@
                                    weights = NULL,
                                    control = list(),
                                    phases,
+                                   objective = c("likelihood", "sas"),
                                    formula_global = NULL,
                                    data = NULL) {
+
+  objective <- match.arg(objective)
 
   if (is.null(weights)) weights <- rep(1, length(time))
 
@@ -1171,7 +1287,7 @@
       time_lower = time_lower, time_upper = time_upper,
       x = x, weights = weights,
       phases = phases, covariate_counts = covariate_counts,
-      x_list = x_list, ...
+      x_list = x_list, objective = objective, ...
     )
   }
 
@@ -1193,7 +1309,8 @@
       theta = theta, time = time, status = status,
       time_lower = time_lower, time_upper = time_upper, x = x,
       weights = weights,
-      phases = phases, covariate_counts = covariate_counts, x_list = x_list
+      phases = phases, covariate_counts = covariate_counts, x_list = x_list,
+      objective = objective
     )
 
     # Fallback: if gradient is all zero (e.g. at infeasible point), try
