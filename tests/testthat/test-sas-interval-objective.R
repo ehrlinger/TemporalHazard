@@ -224,3 +224,106 @@ test_that("omitting objective is identical to naming the default", {
     sas_iv("likelihood"))
   expect_identical(sas_mp_ll(), sas_mp_ll(objective = "likelihood"))
 })
+
+
+# ---------------------------------------------------------------------------
+# Tests 1 and 6 -- end-to-end parity against SAS's printed log-likelihood, at
+# the optimum and at three off-optimum iterates.
+#
+# Reference: /studies/general/uslife/table2023/distributions/hz.icall.lst,
+# reproduced here through the shipped `uslife2023` fixture so the assertions
+# outlive the SAS licence. Every row of that fit is interval-censored, so the
+# whole log-likelihood IS the interval contribution -- there is no exact-event
+# or right-censored term to net out.
+#
+# SAS prints the log-likelihood to 6 significant figures, so the admissible
+# error at this magnitude is a half-ulp: +-0.5. A tighter tolerance would be
+# asserting more precision than SAS reported.
+# ---------------------------------------------------------------------------
+
+# Cumulative hazard of the three-phase model. With TAU = GAMMA = ALPHA = 1 the
+# late phase is a pure Weibull, G3 = t^eta. Built from the package's own shape
+# functions rather than re-derived.
+sas_uslife_Lambda <- function(t, mue, thalf, nu, muc, mul, eta) {
+  mue * hzr_decompos(t, t_half = thalf, nu = nu, m = 0)$G +
+    muc * t +
+    mul * hzr_decompos_g3(t, tau = 1, gamma = 1, alpha = 1, eta = eta)$G3
+}
+
+test_that("the uslife2023 fixture gates on the SAS job's own printed figures", {
+  # Protocol: gate the cohort before trusting any parity number. These are the
+  # figures the .lst prints, not values recomputed from the fixture.
+  expect_identical(nrow(uslife2023), 124L)
+  expect_true(all(uslife2023$age_u - uslife2023$age_l == 1))
+  expect_equal(sum(uslife2023$d_all), 100000.0125, tolerance = 1e-9)
+  expect_equal(min(uslife2023$d_all), 0.2352, tolerance = 1e-4)
+  expect_equal(max(uslife2023$d_all), 3620.335, tolerance = 1e-4)
+})
+
+test_that('objective = "sas" reproduces SAS hz.icall at its final estimates', {
+  lo <- uslife2023$age_l
+  up <- uslife2023$age_u
+  w  <- uslife2023$d_all
+  # Natural-scale estimates as printed in the .lst parameter table.
+  lam <- function(t) {
+    sas_uslife_Lambda(t, mue = 4.504471e-03, thalf = 1.533746e-03,
+                      nu = -2.159600, muc = 1.082926e-03,
+                      mul = 5.309996e-17, eta = 8.386895)
+  }
+  ll <- TemporalHazard:::.hzr_logl_interval(
+    lam(lo), lam(up), lo, up, w, objective = "sas")
+
+  expect_lt(abs(ll - (-410414)), 0.5)             # SAS print precision
+  expect_lt(abs(ll - (-410414)), 0.01)            # regression canary: -410414.0025
+
+  # Conservation of events: SAS reports sum_i d_i Lambda(u_i) = 100000, which
+  # validates the whole cumulative hazard at once rather than one point of it.
+  expect_equal(sum(w * lam(up)), 100000, tolerance = 1e-6)
+
+  # The default objective must NOT match. Without this, the test would also
+  # pass if `objective` were ignored and both branches computed the same thing.
+  ll_lik <- TemporalHazard:::.hzr_logl_interval(
+    lam(lo), lam(up), lo, up, w, objective = "likelihood")
+  expect_lt(abs(ll_lik - (-406268)), 0.5)
+  expect_gt(abs(ll_lik - (-410414)), 4000)
+})
+
+test_that('objective = "sas" tracks SAS along its own iteration trace', {
+  # At the optimum a wrong objective and a different optimum are
+  # indistinguishable. Off-optimum iterates separate them, and cost four
+  # objective evaluations with no refitting.
+  #
+  # Trace columns are the internal scale: E2 = log(t_half), E3 with
+  # nu = -exp(E3), E0/C0/L0 = log(mu) per phase, L4 = log(eta). The nu mapping
+  # is read off the .lst directly: -exp(0.7699208) = -2.15960 against a printed
+  # NU of -2.159600.
+  trace <- list(
+    list(it =  0, sas = -410612,
+         p = c(-5.15857, 1.0677340, 2.102790, -5.21282, -7.18509, -36.5550)),
+    list(it =  4, sas = -410419,
+         p = c(-5.17612, 1.0637730, 2.124433, -5.38322, -6.83621, -37.3892)),
+    list(it =  8, sas = -410414,
+         p = c(-5.83365, 0.9155983, 2.126492, -5.39579, -6.82636, -37.4678)),
+    list(it = 13, sas = -410414,
+         p = c(-6.48004, 0.7699208, 2.126670, -5.40268, -6.82809, -37.4744))
+  )
+  lo <- uslife2023$age_l
+  up <- uslife2023$age_u
+  w  <- uslife2023$d_all
+
+  for (tr in trace) {
+    p <- tr$p
+    lam <- function(t) {
+      sas_uslife_Lambda(t, mue = exp(p[4]), thalf = exp(p[1]),
+                        nu = -exp(p[2]), muc = exp(p[5]),
+                        mul = exp(p[6]), eta = exp(p[3]))
+    }
+    ll <- TemporalHazard:::.hzr_logl_interval(
+      lam(lo), lam(up), lo, up, w, objective = "sas")
+    expect_lt(abs(ll - tr$sas), 0.5)
+  }
+
+  # The trace spans 198 log-likelihood units, so agreement across it is not
+  # an artefact of every iterate sitting near the same value.
+  expect_gt(abs(trace[[1]]$sas - trace[[4]]$sas), 190)
+})

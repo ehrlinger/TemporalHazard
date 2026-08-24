@@ -54,6 +54,7 @@ Other datasets:
 \code{\link{avc}},
 \code{\link{omc}},
 \code{\link{tga}},
+\code{\link{uslife2023}},
 \code{\link{valves}}
 }
 \concept{datasets}

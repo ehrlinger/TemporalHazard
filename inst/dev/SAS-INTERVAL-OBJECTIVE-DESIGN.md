@@ -172,7 +172,10 @@ Scaffolded on `feat/sas-interval-objective-v2`:
       and would take the sum to `-Inf`. Agrees with the parity document's
       product form to 0 ULP, reproduces the closed-form identity exactly, and
       collapses correctly when every width is 1.
-- [ ] §4 `uslife2023` fixture.
+- [x] §4 `uslife2023` fixture. 124 rows x 3 columns, 1000 bytes xz -- the
+      estimate was ~1 KB. Derived in `data-raw/make_data.R` and gated there on
+      the `.lst`'s own printed figures. `inst/extdata/uslife2023.csv` is the
+      durable source and round-trips bit-identically to the SAS read.
 - [x] §5 tests 2-5, in `tests/testthat/test-sas-interval-objective.R`
       (14 blocks, 21 assertions). Built from deterministic sequences rather
       than `set.seed()`, so an R RNG change cannot move an assertion, and
@@ -181,8 +184,18 @@ Scaffolded on `feat/sas-interval-objective-v2`:
       beyond the design: the underflow case that motivates the log-space
       form, and an explicit "the two objectives disagree" assertion without
       which every `"sas"` test would still pass if the switch were ignored.
-- [ ] §5 tests 1 and 6 -- both need the `uslife2023` fixture.
-- [ ] §6 `@note` -- drafted on `?hazard`; revisit once the form is live.
+- [x] §5 tests 1 and 6. Reproduce SAS's -410414 at the printed natural
+      estimates (achieved -410414.0025, against a +-0.5 print precision) and
+      at iterations 0/4/8/13 of SAS's own trace, spanning 198 LL units. The
+      conservation check `sum(d*Lambda(u))` lands at 100000.030 against SAS's
+      reported 100000, validating the whole cumulative hazard rather than one
+      point of it.
+- [x] §6 `@note` on `?hazard`, plus a `NEWS.md` entry stating that this is a
+      different estimator and not for new analyses.
+- [x] §7 version bumped 1.2.2 -> 1.2.3 in `DESCRIPTION` and `NEWS.md`.
+
+**The design is now fully implemented.** What remains is release hygiene, not
+design: `R CMD check --as-cran` with the manual, and a PR.
 
 ### Note on the `objective` name
 
