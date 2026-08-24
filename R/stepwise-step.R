@@ -483,7 +483,7 @@
     )
     return(invisible(NULL))
   }
-  if (is.numeric(xcand)) {
+  if (!is.null(.hzr_candidate_numeric(xcand))) {
     return(invisible(NULL))
   }
   where <- if (is.null(phase)) "" else paste0(" in phase ", sQuote(phase))
@@ -719,6 +719,13 @@
           "rebuild your candidate as pre-expanded main effects and retry.",
           call. = FALSE
         )
+      }
+      # A single expansion is the term under another name -- a logical becomes
+      # `varTRUE`, a two-level factor `varb`. The name model.matrix() gave it is
+      # the one the coefficient vector carries, so return that rather than the
+      # name we guessed.
+      if (length(expanded) == 1L) {
+        return(expanded)
       }
     }
     return(target)
