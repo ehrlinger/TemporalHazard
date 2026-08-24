@@ -106,15 +106,49 @@ NULL
 #'
 #' @param time Numeric follow-up time vector.
 #' @param status Numeric or logical event indicator vector.
-#' @param time_lower Optional numeric lower bound vector for censoring intervals.
-#'   Used when `status == 2` (interval-censored); defaults to `time` if NULL.
+#' @param time_lower Optional numeric vector with two distinct roles, selected
+#'   by `status`. Supplying it explicitly is **not** a no-op.
+#'   * `status == 2` (interval-censored): the lower bound of the censoring
+#'     interval, defaulting to `time`.
+#'   * `status %in% c(0, 1)` (right-censored or event): the counting-process
+#'     **entry time**, so the row contributes `H(time) - H(time_lower)`.
+#'     Left `NULL`, the entry time is **`0`**, not `time`.
+#'
+#'   Passing `time_lower = time` therefore states that every subject entered
+#'   the risk set at the instant it left, which contributes nothing and
+#'   removes the row from the likelihood. That is a valid specification and
+#'   the fit will not converge to anything meaningful; it warns.
 #' @param time_upper Optional numeric upper bound vector for censoring intervals.
 #'   Used when `status %in% c(-1, 2)`; defaults to `time` if NULL.
 #' @param x Optional design matrix (or data frame coercible to matrix).
-#' @param formula Optional formula of the form `Surv(time, status) ~ predictors`.
+#'   Unlike `time` and the other vector arguments, `x` is **not**
+#'   data-masked: `hazard(data = df, time = tt, x = age)` errors with
+#'   `object 'age' not found` where `time = tt` resolves, so write
+#'   `x = df[["age"]]` or use the formula interface.
+#' @param formula Optional formula with a `Surv()` object on the left.
+#'   Right-censored (`Surv(time, status)`), left-censored
+#'   (`Surv(time, event, type = "left")`), interval-censored
+#'   (`type = "interval"` or `"interval2"`) and counting-process
+#'   (`Surv(start, stop, event)`) forms are all accepted. `Surv()` codes
+#'   censoring status with different integers than this package does; the
+#'   formula path translates them, so write `Surv()`'s codes here and this
+#'   package's codes when passing `status` directly.
 #'   When provided, overrides direct time/status/x arguments and extracts from data.
 #'   Example: `hazard(Surv(time, status) ~ x1 + x2, data = df, dist = "weibull", fit = TRUE)`.
-#' @param data Optional data frame containing variables referenced in formula.
+#' @param data Optional data frame. On the formula path it supplies the model
+#'   frame. On the vector path `time`, `status`, `time_lower`, `time_upper`
+#'   and `weights` are evaluated in its scope, the way [base::subset()] and
+#'   [base::transform()] do: a bare column name resolves to that column, and
+#'   anything that is not a column (`df$col`, a local vector, a literal)
+#'   falls through to the calling environment. A column of the same name as
+#'   a caller variable wins, and because that silently discards the caller's
+#'   vector -- the way a wrapper forwarding its own argument by name does --
+#'   such a name raises a warning naming the symbol and the argument.
+#'   Masked arguments are validated like any other, so an `NA` in a
+#'   masked column now errors -- an `NA` count on the SAS `ICENSOR`
+#'   path reaches `weights` and stops with `'weights' must be
+#'   non-negative and finite`, where it was previously accepted
+#'   silently.
 #' @param time_windows Optional numeric vector of strictly positive cut points for
 #'   piecewise time-varying coefficients. When provided, each predictor column in
 #'   `x` is expanded into one column per time window so each window gets its own
@@ -141,9 +175,17 @@ NULL
 #' Control parameters:
 #' - `maxit`: Maximum iterations (default 1000)
 #' - `n_starts`: Number of optimization starts for multiphase fits (default 5).
-#'   Each start after the first adds random noise to the initial values, drawn
-#'   from the ambient RNG stream; call `set.seed()` before fitting for
-#'   reproducible results.
+#'   Each start after the first offsets the initial values. The offsets are
+#'   drawn from an internally seeded stream, so a multiphase fit is
+#'   reproducible without `set.seed()` and does not advance the caller's RNG
+#'   stream.
+#' - `start_seed`: Seed selecting the ensemble of multi-start offsets
+#'   (default 3). Any whole number within integer range, negative included.
+#'   Fits are reproducible at any value; vary it to probe a different set of
+#'   starts when a fit is suspected of sitting in a local optimum, and compare
+#'   the resulting `objective` values. A fractional value is rejected rather
+#'   than truncated, since `3.9` and `3` would otherwise select the same
+#'   ensemble without saying so.
 #' - `reltol`: Relative parameter change tolerance (default 1e-5)
 #' - `abstol`: Absolute gradient norm tolerance (default 1e-6)
 #' - `method`: Optimization method: "bfgs" or "nm" (default "bfgs")
@@ -307,7 +349,17 @@ NULL
 #'   \code{weights}, etc.),
 #'   \code{fit} (optimisation results: \code{theta}, \code{objective},
 #'   \code{converged}, \code{se}, \code{vcov}, \code{counts}, \code{message};
-#'   all \code{NULL} when \code{fit = FALSE}),
+#'   all \code{NULL} when \code{fit = FALSE}; multiphase fits add
+#'   \code{starts}, one row per optimisation start with its \code{status}
+#'   (\code{"ok"}, \code{"nonconverged"}, \code{"infeasible"},
+#'   \code{"nonfinite"} or \code{"error"}), \code{objective} (\code{NA}
+#'   unless the start reached a point where the likelihood is defined),
+#'   \code{convergence} (the
+#'   \code{\link[stats]{optim}} code, \code{0} for success), whether it was
+#'   the \code{best} and so the reported fit, and the \code{message} of any
+#'   error. A start that stops at \code{maxit} has a finite \code{objective}
+#'   and can win the selection, so \code{status} distinguishes it from one
+#'   that converged),
 #'   and \code{engine} (implementation tag, \code{"native-r-m2"}).
 #' @export
 hazard <- function(formula = NULL,
@@ -356,6 +408,68 @@ hazard <- function(formula = NULL,
 
   }
 
+  # Data masking on the vector path. `data` used to be consulted only by the
+  # formula path, so hazard(data = df, time = tt) failed with "object 'tt'
+  # not found" while looking like it should work -- the defect behind the SAS
+  # translator's unrenderable documents (#151). This is the base-R idiom
+  # subset()/transform()/with() use: evaluate the argument expression with
+  # `data` as the environment and the caller's frame as its parent, so a
+  # column wins, and anything that is not a column (df$col, a local vector,
+  # a literal) falls through to the caller unchanged.
+  if (is.null(formula) && !is.null(data)) {
+    if (!is.data.frame(data) && !is.list(data)) {
+      stop("'data' must be a data frame or a list.", call. = FALSE)
+    }
+    mask_env <- parent.frame()
+    # A wrapper that forwards its own argument by name -- f <- function(tt)
+    # hazard(data = d, time = tt, ...) -- reads as "use the caller's vector"
+    # and silently gets the column instead: a fit over the wrong rows, no
+    # error, no warning. The column still wins (that is the subset() rule),
+    # but a name that is BOTH a column and visible from the calling frame is
+    # ambiguous enough to say so out loud. The lexical walk stops at the
+    # global environment (see .hzr_bound_locally): `inherits = FALSE` misses
+    # the wrapper case entirely, and `inherits = TRUE` reaches base, where a
+    # column named `c`, `t` or `df` would warn on every call.
+    ambiguous <- lapply(
+      list(time = substitute(time), status = substitute(status),
+           time_lower = substitute(time_lower),
+           time_upper = substitute(time_upper),
+           weights = substitute(weights)),
+      function(e) {
+        if (is.null(e)) {
+          return(character(0))
+        }
+        # Not all.vars(): it counts the RHS of `$` as a variable, so
+        # all.vars(quote(other$tt)) is c("other", "tt") and the warning names
+        # `tt` -- a column that was never consulted -- while `data$tt`, the
+        # remedy the warning itself prescribes, triggers it.
+        nms <- .hzr_mask_symbols(e)
+        nms[nms %in% names(data) &
+              vapply(nms, .hzr_bound_locally, logical(1), env = mask_env)]
+      }
+    )
+    ambiguous <- ambiguous[lengths(ambiguous) > 0L]
+    if (length(ambiguous) > 0L) {
+      warning(
+        "In hazard(), ", paste(sprintf("'%s' (%s)",
+                                       unlist(ambiguous, use.names = FALSE),
+                                       rep(names(ambiguous),
+                                           lengths(ambiguous))),
+                               collapse = ", "),
+        ": the name is both a column of 'data' and a variable visible from ",
+        "the calling frame. The column was used. Write data$<name> for the ",
+        "column, or ",
+        "omit 'data' to use the calling frame's value.",
+        call. = FALSE
+      )
+    }
+    time <- eval(substitute(time), data, mask_env)
+    status <- eval(substitute(status), data, mask_env)
+    time_lower <- eval(substitute(time_lower), data, mask_env)
+    time_upper <- eval(substitute(time_upper), data, mask_env)
+    weights <- eval(substitute(weights), data, mask_env)
+  }
+
   # After formula dispatch, require time and status
   if (is.null(time) || is.null(status)) {
     stop("'time' and 'status' are required (either directly or via 'formula').", call. = FALSE)
@@ -388,6 +502,28 @@ hazard <- function(formula = NULL,
   if (!is.null(time_upper)) {
     if (!is.numeric(time_upper) || length(time_upper) != n || any(!is.finite(time_upper)) || any(time_upper < 0)) {
       stop("'time_upper' must be a numeric vector of finite non-negative values matching length(time).", call. = FALSE)
+    }
+  }
+
+  # For status 0/1 rows `time_lower` is the counting-process ENTRY time, not a
+  # censoring bound, so `time_lower >= time` says the subject left the risk set
+  # at or before it entered.  Such a row contributes H(time) - H(time_lower),
+  # which is zero or negative: it drops out of the likelihood, or worse.  With
+  # every row like that the objective is unbounded above and the optimizer
+  # returns a large positive "log-likelihood", converged = TRUE and rcond = 0,
+  # with nothing naming the cause.  Reported as issue #136, where the argument
+  # had been supplied in the belief that it was a no-op.
+  if (!is.null(time_lower)) {
+    degenerate <- status %in% c(0, 1) & time_lower >= time
+    if (any(degenerate)) {
+      warning(sum(degenerate), " of ", n, " row(s) have 'time_lower' >= 'time' ",
+              "with status 0 or 1. For those rows 'time_lower' is the ",
+              "counting-process entry time, so they enter the risk set at or ",
+              "after they leave it and contribute nothing to the likelihood ",
+              "(it is not a censoring bound outside status 2). If you meant ",
+              "the default -- entry at time 0 -- leave 'time_lower' as NULL; ",
+              "passing 'time_lower = time' is not the same thing.",
+              call. = FALSE)
     }
   }
 
@@ -505,15 +641,28 @@ hazard <- function(formula = NULL,
   }
 
   .hzr_safe_se_from_vcov <- function(vcov_mat) {
-    if (is.null(vcov_mat) || !is.matrix(vcov_mat) || anyNA(vcov_mat)) {
+    # Scalar NA means there is no variance matrix at all -- the same contract
+    # vcov.hazard() keeps. Whenever a matrix *is* present, size the result to it
+    # so `$se` stays conformable with `$par`: a multiphase vcov legitimately
+    # carries NA rows for parameters held fixed, and collapsing that to a
+    # length-1 NA left callers unable to name the SEs against the parameters.
+    if (is.null(vcov_mat) || !is.matrix(vcov_mat)) {
       return(NA)
     }
     d <- diag(vcov_mat)
-    # Guard against small negative/invalid variances from numerical Hessians.
-    if (!all(is.finite(d)) || any(d < 0)) {
-      return(rep(NA_real_, length(d)))
-    }
-    sqrt(d)
+    # Element by element, never all-or-nothing. A parameter held fixed carries
+    # an NA variance row and earns an NA standard error; every parameter whose
+    # variance *was* computed keeps its own. Collapsing the whole vector on the
+    # first NA -- or on one small negative variance from a numerical Hessian --
+    # discarded standard errors that summary() reports from the same matrix,
+    # leaving `$se` the right length and empty of everything it should carry.
+    out <- rep(NA_real_, length(d))
+    # rep() starts unnamed; carry over whatever diag() gave us so a named vcov
+    # still yields a named `$se`, as the old sqrt(d) path did.
+    names(out) <- names(d)
+    ok <- is.finite(d) & d >= 0
+    out[ok] <- sqrt(d[ok])
+    out
   }
 
   # Distribution dispatch -- select the distribution-specific optimizer and fit.
@@ -542,6 +691,7 @@ hazard <- function(formula = NULL,
     fit_state$covariate_counts <- optim_result$covariate_counts
     fit_state$x_list <- optim_result$x_list
     fit_state$fixed_mask <- optim_result$fixed_mask
+    fit_state$starts <- optim_result$starts
 
   } else if (fit && !is.null(theta)) {
     optim_fn <- switch(
@@ -572,15 +722,31 @@ hazard <- function(formula = NULL,
     fit_state$message <- optim_result$message
   }
 
+  # Refit-based tooling (hzr_bootstrap()) re-evaluates $call, so it needs the
+  # bindings that call refers to. Capturing parent.frame() wholesale would pin
+  # the caller's entire frame to every fitted object -- measured at a 1400x
+  # saveRDS bloat, and it would drag unrelated data (including other cohorts)
+  # into any saved model. Copy only the symbols the call actually references.
+  # Computed here, not inside list(), so parent.frame() unambiguously resolves
+  # to hazard()'s caller.
+  captured_call <- match.call()
+  captured_env <- .hzr_capture_call_env(captured_call, parent.frame())
+
   # Assemble the hazard S3 object.
   # $call       -- captured call for reproducibility / print
+  # $call_env   -- the bindings $call references, copied out of hazard()'s
+  #                caller. Refit-based tooling such as hzr_bootstrap()
+  #                re-evaluates the stored call; it must do so here, otherwise
+  #                arguments passed by symbol (theta, phases, control) cannot
+  #                be resolved.
   # $spec       -- model specification (dist, control)
   # $data       -- raw data stored for default predict() / refit
   # $fit        -- optimisation results (see fit_state fields above)
   # $legacy_args -- pass-through ... args for SAS-migration parity
   # $engine     -- implementation tag ("native-r-m2")
   obj <- list(
-    call = match.call(),
+    call = captured_call,
+    call_env = captured_env,
     spec = list(dist = dist, control = control, time_windows = time_windows,
                 phases = phases),
     data = list(
@@ -1446,6 +1612,67 @@ vcov.hazard <- function(object, ...) {
     dimnames(v) <- list(nm, nm)
   }
   v
+}
+
+#' Capture the bindings a stored call references
+#'
+#' Copies out of `envir` only the symbols `cl` actually refers to. Names that
+#' resolve from the model's data frame rather than the calling scope (formula
+#' column names such as `int_dead`/`dead`) simply do not exist in `envir` and
+#' are skipped.
+#'
+#' @param cl Matched call, as returned by `match.call()`.
+#' @param envir Caller environment to copy bindings out of.
+#' @return A new environment holding just the referenced bindings.
+#' @noRd
+.hzr_capture_call_env <- function(cl, envir) {
+  # all.names(), deliberately NOT all.vars(): the call may invoke the user's own
+  # helper functions (e.g. one that builds `phases` or `theta`), and those live
+  # in the caller's scope, not on globalenv()'s search path. all.vars() returns
+  # only variables and omits function names, leaving such helpers unresolvable
+  # once the call is re-evaluated.
+  #
+  # The scope-chain walk below copies only bindings the caller itself owns: it
+  # stops at the first environment that is package territory rather than user
+  # scope. Package and base functions (`hazard`, `list`, `Surv`, ...) are
+  # deliberately left out: R serialises a closure's environment as a namespace
+  # reference but its BODY by value, so capturing them would freeze a copy of
+  # each function's body into every saved fit. A fit saved under one version and
+  # bootstrapped after an upgrade would then run the stale body against the new
+  # namespace, throw inside the replicate, and be swallowed by hzr_bootstrap()'s
+  # tryCatch into a silent n_success = 0. Left uncaptured, they resolve through
+  # `out`'s parent instead.
+  #
+  # The stop set is globalenv() plus any namespace/base env, NOT globalenv()
+  # alone. Called from a script the chain is simply frame -> globalenv(), but
+  # under testthat and R CMD check the package namespace sits in the chain
+  # BEFORE globalenv(), so a globalenv()-only stop would still capture
+  # `hazard`. When `envir` IS globalenv() the loop body never runs and nothing
+  # is captured -- correct, since every symbol resolves through the parent.
+  is_pkg_env <- function(e) {
+    identical(e, globalenv()) || identical(e, emptyenv()) ||
+      identical(e, baseenv()) || isNamespace(e)
+  }
+  syms <- unique(all.names(cl))
+  found <- character()
+  for (nm in syms) {
+    e <- envir
+    while (!is_pkg_env(e)) {
+      if (exists(nm, envir = e, inherits = FALSE)) {
+        found <- c(found, nm)
+        break
+      }
+      e <- parent.env(e)
+    }
+  }
+  # Parented to globalenv(), deliberately NOT to `envir`: parenting to the
+  # caller would make its whole frame reachable again through the parent chain
+  # and defeat the point of copying only the referenced symbols.
+  out <- new.env(parent = globalenv())
+  if (length(found)) {
+    list2env(mget(found, envir = envir, inherits = TRUE), envir = out)
+  }
+  out
 }
 
 .hzr_parameter_names <- function(theta, dist, p) {

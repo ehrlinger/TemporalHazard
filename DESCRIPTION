@@ -1,6 +1,6 @@
 Package: TemporalHazard
 Title: Temporal Parametric Hazard Modeling
-Version: 1.2.0
+Version: 1.2.2
 Authors@R: person("John", "Ehrlinger", email = "john.ehrlinger@gmail.com", role = c("aut", "cre", "cph"))
 URL: https://ehrlinger.github.io/temporal_hazard/, https://github.com/ehrlinger/temporal_hazard
 BugReports: https://github.com/ehrlinger/temporal_hazard/issues
@@ -28,6 +28,7 @@ Imports:
 Suggests:
     covr,
     ggplot2,
+    haven,
     knitr,
     lintr,
     numDeriv,
@@ -36,7 +37,8 @@ Suggests:
     roxygen2,
     rmarkdown,
     scales,
-    testthat (>= 3.0.0)
+    testthat (>= 3.2.0),
+    withr
 LazyData: true
 Config/testthat/edition: 3
 Config/roxygen2/version: 8.1.0

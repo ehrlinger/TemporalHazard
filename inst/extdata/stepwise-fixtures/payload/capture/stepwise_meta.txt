@@ -1,10 +1,11 @@
 sas_version=9.4
 dataset=avc
-dist=weibull
-criterion=wald
 direction=both
 slentry=0.30
 slstay=0.20
 proc_hazard=SAS HAZARD (PROC HAZARD via run;  option nonotes;  option notes; run; macro)
 captured_on=2026-06-10
+dist=multiphase
+shaping=weibull
+criterion=score
 logLik=-182.659

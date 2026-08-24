@@ -23,23 +23,58 @@ hazard(
 )
 }
 \arguments{
-\item{formula}{Optional formula of the form \code{Surv(time, status) ~ predictors}.
+\item{formula}{Optional formula with a \code{Surv()} object on the left.
+Right-censored (\code{Surv(time, status)}), left-censored
+(\code{Surv(time, event, type = "left")}), interval-censored
+(\code{type = "interval"} or \code{"interval2"}) and counting-process
+(\code{Surv(start, stop, event)}) forms are all accepted. \code{Surv()} codes
+censoring status with different integers than this package does; the
+formula path translates them, so write \code{Surv()}'s codes here and this
+package's codes when passing \code{status} directly.
 When provided, overrides direct time/status/x arguments and extracts from data.
 Example: \code{hazard(Surv(time, status) ~ x1 + x2, data = df, dist = "weibull", fit = TRUE)}.}
 
-\item{data}{Optional data frame containing variables referenced in formula.}
+\item{data}{Optional data frame. On the formula path it supplies the model
+frame. On the vector path \code{time}, \code{status}, \code{time_lower}, \code{time_upper}
+and \code{weights} are evaluated in its scope, the way \code{\link[base:subset]{base::subset()}} and
+\code{\link[base:transform]{base::transform()}} do: a bare column name resolves to that column, and
+anything that is not a column (\code{df$col}, a local vector, a literal)
+falls through to the calling environment. A column of the same name as
+a caller variable wins, and because that silently discards the caller's
+vector -- the way a wrapper forwarding its own argument by name does --
+such a name raises a warning naming the symbol and the argument.
+Masked arguments are validated like any other, so an \code{NA} in a
+masked column now errors -- an \code{NA} count on the SAS \code{ICENSOR}
+path reaches \code{weights} and stops with \verb{'weights' must be non-negative and finite}, where it was previously accepted
+silently.}
 
 \item{time}{Numeric follow-up time vector.}
 
 \item{status}{Numeric or logical event indicator vector.}
 
-\item{time_lower}{Optional numeric lower bound vector for censoring intervals.
-Used when \code{status == 2} (interval-censored); defaults to \code{time} if NULL.}
+\item{time_lower}{Optional numeric vector with two distinct roles, selected
+by \code{status}. Supplying it explicitly is \strong{not} a no-op.
+\itemize{
+\item \code{status == 2} (interval-censored): the lower bound of the censoring
+interval, defaulting to \code{time}.
+\item \code{status \%in\% c(0, 1)} (right-censored or event): the counting-process
+\strong{entry time}, so the row contributes \code{H(time) - H(time_lower)}.
+Left \code{NULL}, the entry time is \strong{\code{0}}, not \code{time}.
+}
+
+Passing \code{time_lower = time} therefore states that every subject entered
+the risk set at the instant it left, which contributes nothing and
+removes the row from the likelihood. That is a valid specification and
+the fit will not converge to anything meaningful; it warns.}
 
 \item{time_upper}{Optional numeric upper bound vector for censoring intervals.
 Used when \code{status \%in\% c(-1, 2)}; defaults to \code{time} if NULL.}
 
-\item{x}{Optional design matrix (or data frame coercible to matrix).}
+\item{x}{Optional design matrix (or data frame coercible to matrix).
+Unlike \code{time} and the other vector arguments, \code{x} is \strong{not}
+data-masked: \code{hazard(data = df, time = tt, x = age)} errors with
+\verb{object 'age' not found} where \code{time = tt} resolves, so write
+\code{x = df[["age"]]} or use the formula interface.}
 
 \item{time_windows}{Optional numeric vector of strictly positive cut points for
 piecewise time-varying coefficients. When provided, each predictor column in
@@ -79,7 +114,17 @@ An object of class \code{hazard}, a named list with components:
 \code{weights}, etc.),
 \code{fit} (optimisation results: \code{theta}, \code{objective},
 \code{converged}, \code{se}, \code{vcov}, \code{counts}, \code{message};
-all \code{NULL} when \code{fit = FALSE}),
+all \code{NULL} when \code{fit = FALSE}; multiphase fits add
+\code{starts}, one row per optimisation start with its \code{status}
+(\code{"ok"}, \code{"nonconverged"}, \code{"infeasible"},
+\code{"nonfinite"} or \code{"error"}), \code{objective} (\code{NA}
+unless the start reached a point where the likelihood is defined),
+\code{convergence} (the
+\code{\link[stats]{optim}} code, \code{0} for success), whether it was
+the \code{best} and so the reported fit, and the \code{message} of any
+error. A start that stops at \code{maxit} has a finite \code{objective}
+and can win the selection, so \code{status} distinguishes it from one
+that converged),
 and \code{engine} (implementation tag, \code{"native-r-m2"}).
 }
 \description{
@@ -93,9 +138,17 @@ Control parameters:
 \itemize{
 \item \code{maxit}: Maximum iterations (default 1000)
 \item \code{n_starts}: Number of optimization starts for multiphase fits (default 5).
-Each start after the first adds random noise to the initial values, drawn
-from the ambient RNG stream; call \code{set.seed()} before fitting for
-reproducible results.
+Each start after the first offsets the initial values. The offsets are
+drawn from an internally seeded stream, so a multiphase fit is
+reproducible without \code{set.seed()} and does not advance the caller's RNG
+stream.
+\item \code{start_seed}: Seed selecting the ensemble of multi-start offsets
+(default 3). Any whole number within integer range, negative included.
+Fits are reproducible at any value; vary it to probe a different set of
+starts when a fit is suspected of sitting in a local optimum, and compare
+the resulting \code{objective} values. A fractional value is rejected rather
+than truncated, since \code{3.9} and \code{3} would otherwise select the same
+ensemble without saying so.
 \item \code{reltol}: Relative parameter change tolerance (default 1e-5)
 \item \code{abstol}: Absolute gradient norm tolerance (default 1e-6)
 \item \code{method}: Optimization method: "bfgs" or "nm" (default "bfgs")

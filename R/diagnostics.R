@@ -1255,22 +1255,62 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   random numbers either way, so the global RNG state will advance
 #'   during the call -- `seed = NULL` avoids the *reset* at entry, not
 #'   the advance during resampling.
-#' @param verbose Logical; if `TRUE`, print progress every 50 replicates.
-#' @param scope Candidate variable scope for embedded stepwise selection
-#'   during each bootstrap replicate. `NULL` (default) preserves the
+#' @param verbose Logical; if `TRUE`, display a text progress bar over the
+#'   `n_boot` replicates (via [utils::txtProgressBar()]).
+#' @param scope **Experimental.** Candidate variable scope for embedded
+#'   stepwise selection during each bootstrap replicate. The argument and the
+#'   shape of the object it returns may change in a future release; see the
+#'   "Selection mode is experimental" section below. `NULL` (default)
+#'   preserves the
 #'   original fixed-formula bootstrap: every replicate refits `object`'s
 #'   exact model, and `summary$pct` is always ~100. When supplied (a
 #'   one-sided formula, character vector, or -- for multiphase fits -- a
 #'   named list of one-sided formulas keyed by phase, matching
 #'   [hzr_stepwise()]'s `scope`), each replicate runs a fresh
 #'   [hzr_stepwise()] selection instead; see Details.
-#' @param direction,criterion,slentry,slstay,max_steps,max_move,force_in,force_out
+#' @param criterion Entry / retention rule passed through to
+#'   [hzr_stepwise()] on each replicate when `scope` is supplied; ignored
+#'   when `scope = NULL`. One of `"score"` (default), `"wald"`, or `"aic"`.
+#'   `"score"` reproduces C/SAS HAZARD's `SELECTION` statistic and needs no
+#'   per-candidate refit, which is what makes a bootstrap screen over many
+#'   candidates tractable. Following SAS, the variance used during
+#'   *selection* is approximate (shaping-parameter covariances are ignored);
+#'   final-model standard errors are unaffected. For single-distribution
+#'   fits, `"score"` computes the observed information numerically via the
+#'   suggested \pkg{numDeriv} package and errors if it is not installed; a
+#'   multiphase fit uses the analytic Hessian instead and does not need it.
+#'   See [hzr_stepwise()].
+#' @param direction,slentry,slstay,max_steps,max_move,force_in,force_out
 #'   Passed through to [hzr_stepwise()] on each replicate when `scope` is
 #'   supplied; ignored when `scope = NULL`. See [hzr_stepwise()] for
 #'   definitions and defaults.
 #' @param ... Additional arguments forwarded to [hzr_stepwise()] (e.g.
 #'   `control = list(n_starts = 1)`) when `scope` is supplied; ignored
 #'   otherwise.
+#'
+#' @section Selection mode is experimental:
+#'
+#' Everything reached through `scope` -- the selection arguments, and the
+#' `summary$pct` selection frequencies they produce -- is new and should be
+#' treated as unstable. The fixed-formula bootstrap (`scope = NULL`) is not
+#' affected and has been stable since 0.9.3.
+#'
+#' Two reasons to expect change. The first is that the design is still being
+#' read off real runs rather than settled in advance: production screens have
+#' already moved the defaults once and turned up several ways a screen could
+#' report success while selecting nothing.
+#'
+#' The second is scale, and it is the one to plan around. A screen over a
+#' large candidate pool runs for hours, and this function writes nothing
+#' until its final replicate, so a run that dies late loses everything. There
+#' is no built-in way to split one screen across processes and combine the
+#' parts. If you are running at that scale, drive `hzr_bootstrap()` in chunks
+#' from your own script and pool the replicates yourself -- deriving each
+#' chunk's seed from its chunk number, offsetting replicate ids so a variable
+#' selected in two chunks is not counted once, and recomputing frequencies
+#' from the pooled replicates rather than averaging across chunks. Whatever
+#' eventually covers that inside the package may well change this function's
+#' interface.
 #'
 #' @return A list with class `"hzr_bootstrap"` containing:
 #' \describe{
@@ -1282,6 +1322,24 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     and the other statistics are conditional on selection.}
 #'   \item{n_success}{Number of successfully converged replicates.}
 #'   \item{n_failed}{Number of replicates that failed to converge.}
+#'   \item{n_uncomputable_replicates}{Select mode only: number of otherwise
+#'     successful replicates whose screen stopped because no remaining
+#'     candidate's score statistic could be computed, rather than because no
+#'     candidate met `slentry`. Such replicates contribute no selections, so
+#'     a non-zero count means every reported selection frequency is
+#'     depressed. Always `0` in refit mode.}
+#'   \item{uncomputable_reasons}{Select mode only: named integer vector
+#'     counting *why* candidate scores were unavailable, summed over every
+#'     replicate. `information_indefinite` is the one to read first: it marks
+#'     candidates whose effect is too large for the score test's approximation
+#'     at zero -- typically strong variables that were passed over rather than
+#'     tested, understating their selection frequency. Empty in refit mode.}
+#'   \item{n_nonmonotone_replicates}{Select mode only: number of otherwise
+#'     successful replicates in which a forward step *lowered* the
+#'     log-likelihood. Entered models are nested, so this cannot occur at the
+#'     optimum; such a replicate continued from a refit that did not converge,
+#'     and its later selections are pooled on the same footing as any other.
+#'     Always `0` in refit mode.}
 #'   \item{mode}{`"refit"` (fixed-formula bootstrap) or `"select"`
 #'     (embedded stepwise selection).}
 #'   \item{scope}{Only present when `mode == "select"`: the candidate
@@ -1326,7 +1384,7 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
                            seed = NULL, verbose = FALSE,
                            scope = NULL,
                            direction = c("both", "forward", "backward"),
-                           criterion = c("wald", "aic"),
+                           criterion = c("score", "wald", "aic"),
                            slentry = 0.30, slstay = 0.20,
                            max_steps = 50L, max_move = 4L,
                            force_in = character(), force_out = character(),
@@ -1413,17 +1471,78 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # per-candidate warning() rather than an error (see
   # inst/dev/BOOTSTRAP-SELECTION-DESIGN.md, "Error handling").
   if (select_mode) {
-    do.call(hzr_stepwise, c(
-      list(
-        object, scope = scope, data = orig_data,
-        direction = direction, criterion = criterion,
-        slentry = slentry, slstay = slstay,
-        max_steps = max_steps, max_move = max_move,
-        force_in = force_in, force_out = force_out,
-        trace = FALSE
-      ),
-      extra_args
-    ))
+    # Muffle only .hzr_safe_solve()'s numerical post-fit warnings
+    # (ill-conditioned / non-invertible / non-positive-definite Hessian,
+    # non-positive variance) -- the per-fit noise this screen aggregates
+    # over, which would otherwise fire on the real-data selected model here.
+    # Identify them by their originating call, not message text, so all of
+    # them are caught (including messages without the word "Hessian") while
+    # unrelated warnings still surface: a mistyped scope column
+    # ("candidate refit failed for ..."), the optimizer's
+    # non-conformant-Hessian note, and all errors -- so a bad scope is caught
+    # once, up front.
+    withCallingHandlers(
+      do.call(hzr_stepwise, c(
+        list(
+          object, scope = scope, data = orig_data,
+          direction = direction, criterion = criterion,
+          slentry = slentry, slstay = slstay,
+          max_steps = max_steps, max_move = max_move,
+          force_in = force_in, force_out = force_out,
+          trace = FALSE
+        ),
+        extra_args
+      )),
+      warning = function(w) {
+        if (any(grepl("hzr_safe_solve", deparse(conditionCall(w)),
+                      fixed = TRUE))) {
+          invokeRestart("muffleWarning")
+        }
+      }
+    )
+  }
+
+  # VECTOR-INTERFACE FITS.
+  #
+  # hazard() accepts either a formula plus `data`, or bare `time`/`status`
+  # vectors. Resampling `data` alone is enough for the formula interface, but
+  # NOT for the vector one: the stored call holds `time = d$col` as an
+  # *expression*, so each replicate re-evaluates it against the ORIGINAL data
+  # and returns the original fit. That produced n_success = n_boot, n_failed
+  # = 0, no warning, and n_boot identical replicates -- a bootstrap summary
+  # that looks complete and contains nothing.
+  #
+  # The evaluated vectors are already stored on the object, so they can be
+  # resampled by the same index and rewired the same way `data` and `weights`
+  # are. `x` is excluded deliberately: a design matrix supplied that way is
+  # rebuilt from `data`/`scope` per replicate.
+  vector_interface <- is.null(cl$formula) && !is.null(cl$time)
+  vec_args <- c("time", "status", "time_lower", "time_upper")
+  vec_orig <- if (vector_interface) {
+    stats::setNames(lapply(vec_args, function(a) object$data[[a]]), vec_args)
+  } else {
+    NULL
+  }
+  if (vector_interface) {
+    # EVERY vector argument the call actually passed must have a stored,
+    # correctly-sized copy. Rewiring only some of them is worse than rewiring
+    # none: the rewired arguments follow the resample while the rest still
+    # evaluate against the original data, so row i's time gets paired with
+    # row j's status or interval bound. That is silent corruption producing
+    # plausible numbers, not an error.
+    passed <- vec_args[vapply(vec_args, function(a) !is.null(cl[[a]]), logical(1))]
+    have   <- vapply(vec_orig, function(v) !is.null(v) && length(v) == n_obs,
+                     logical(1))
+    missing_vecs <- passed[!have[passed]]
+    if (length(missing_vecs)) {
+      stop("hzr_bootstrap(): this fit was built with the vector interface, ",
+           "but the evaluated vector(s) ",
+           paste(sQuote(missing_vecs), collapse = ", "),
+           " are not stored on the object, so replicates cannot be resampled ",
+           "consistently. Refit with the formula interface ",
+           "(Surv(...) ~ ., data = ...) and bootstrap that.", call. = FALSE)
+    }
+    vec_orig <- vec_orig[passed]
   }
 
   # Parameter names from the fitted model. In fixed-refit mode every
@@ -1432,62 +1551,127 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # set, so names are resolved per replicate inside the loop instead.
   param_names <- if (!select_mode) .hzr_bootstrap_param_names(object) else NULL
 
+  # Replicate calls must resolve two different things: `boot_data`/`boot_weights`
+  # (locals here) and every other argument the user passed by symbol (theta,
+  # phases, control), which only exist in the environment the call was written
+  # in. A child of that environment carrying the resample bindings resolves
+  # both. Falls back to parent.frame() for objects fitted before call_env was
+  # stored.
+  eval_env <- object$call_env %||% parent.frame()
+
   # Accumulate results
   rep_list <- vector("list", n_boot)
   n_success <- 0L
   n_failed <- 0L
+  # Replicates whose stepwise screen stopped because no candidate's score
+  # could be computed.  Each replicate runs under suppressWarnings(), so the
+  # step-level warning never reaches the user here; the count has to be read
+  # off the returned objects and reported in aggregate.
+  n_uncomputable_reps <- 0L
+  # Reasons are merged from EVERY select-mode replicate, not only the ones
+  # that stopped. A replicate that finished having silently passed over a
+  # candidate it could not score is the case a stopped-replicate count cannot
+  # see, and each replicate runs under suppressWarnings() so its own warning
+  # never reaches the user.
+  uncomputable_reasons <- stats::setNames(integer(0), character(0))
+  # Replicates whose selection path went BACKWARDS. Each still contributes its
+  # selected variables to the pooled frequencies, indistinguishable from a
+  # replicate that converged, and every replicate runs under
+  # suppressWarnings() so the step-level warning cannot reach the user.
+  n_nonmonotone_reps <- 0L
+
+  # Progress bar over replicates (verbose only). Closed after the loop.
+  pb <- if (verbose) utils::txtProgressBar(min = 0, max = n_boot, style = 3)
+  if (verbose) on.exit(close(pb), add = TRUE)
 
   for (b in seq_len(n_boot)) {
-    if (verbose && b %% 50 == 0) {
-      cat("Bootstrap replicate", b, "/", n_boot, "\n")
-    }
-
     # Resample with replacement
     idx <- sample.int(n_obs, size = sample_size, replace = TRUE)
     boot_data <- orig_data[idx, , drop = FALSE] # nolint: object_usage_linter.
     # boot_weights is referenced via quote() inside eval -- lintr cannot trace it
     boot_weights <- if (is.null(orig_weights)) NULL else orig_weights[idx] # nolint: object_usage_linter.
 
+    # Fresh child of the fitting environment per replicate, carrying this
+    # replicate's resample bindings (referenced via quote() in the call below).
+    rep_env <- new.env(parent = eval_env)
+    assign("boot_data", boot_data, envir = rep_env)
+    if (!is.null(orig_weights)) assign("boot_weights", boot_weights, envir = rep_env)
+    # Vector-interface arguments follow the same index as the rows.
+    if (vector_interface) {
+      for (a in names(vec_orig)) {
+        assign(paste0("boot_", a), vec_orig[[a]][idx], envir = rep_env)
+      }
+    }
+
+    # Per-replicate fits routinely hit ill-conditioned Hessians and other
+    # numerical warnings on individual resamples; these are not individually
+    # actionable (the bootstrap aggregates over replicates) and would swamp
+    # the console over n_boot fits. Suppress them here -- structural problems
+    # (e.g. a mistyped `scope` column) still surface once from the up-front
+    # validation call above, and hard failures are caught below and counted.
     if (select_mode) {
       # Refit the (shape-fixed) base model on the resampled data first, so
       # the stepwise search's entry/retention tests compare candidates
       # against a base likelihood computed on the SAME resampled data --
       # then run a fresh stepwise selection from that base.
-      boot_fit <- tryCatch({
-        cl_base <- cl
-        cl_base$data <- quote(boot_data)
-        if (!is.null(orig_weights)) cl_base$weights <- quote(boot_weights)
-        cl_base$fit <- TRUE
-        base_boot <- eval(cl_base)
-        if (!is.finite(base_boot$fit$objective)) {
-          stop("base refit did not converge")
-        }
-        do.call(hzr_stepwise, c(
-          list(
-            base_boot, scope = scope, data = boot_data,
-            direction = direction, criterion = criterion,
-            slentry = slentry, slstay = slstay,
-            max_steps = max_steps, max_move = max_move,
-            force_in = force_in, force_out = force_out,
-            trace = FALSE
-          ),
-          extra_args
-        ))
-      }, error = function(e) NULL)
+      boot_fit <- tryCatch(
+        suppressWarnings({
+          cl_base <- cl
+          cl_base$data <- quote(boot_data)
+          if (!is.null(orig_weights)) cl_base$weights <- quote(boot_weights)
+          for (a in names(vec_orig)) {
+            cl_base[[a]] <- as.name(paste0("boot_", a))
+          }
+          cl_base$fit <- TRUE
+          base_boot <- eval(cl_base, envir = rep_env)
+          if (!is.finite(base_boot$fit$objective)) {
+            stop("base refit did not converge")
+          }
+          do.call(hzr_stepwise, c(
+            list(
+              base_boot, scope = scope, data = boot_data,
+              direction = direction, criterion = criterion,
+              slentry = slentry, slstay = slstay,
+              max_steps = max_steps, max_move = max_move,
+              force_in = force_in, force_out = force_out,
+              trace = FALSE
+            ),
+            extra_args
+          ))
+        }),
+        error = function(e) NULL
+      )
     } else {
       # Refit using the same call but with resampled data (and weights, if any)
       # (boot_data/boot_weights are referenced via quote() inside eval)
-      boot_fit <- tryCatch({
-        cl_boot <- cl
-        cl_boot$data <- quote(boot_data)
-        if (!is.null(orig_weights)) cl_boot$weights <- quote(boot_weights)
-        cl_boot$fit <- TRUE
-        eval(cl_boot)
-      }, error = function(e) NULL)
+      boot_fit <- tryCatch(
+        suppressWarnings({
+          cl_boot <- cl
+          cl_boot$data <- quote(boot_data)
+          if (!is.null(orig_weights)) cl_boot$weights <- quote(boot_weights)
+          for (a in names(vec_orig)) {
+            cl_boot[[a]] <- as.name(paste0("boot_", a))
+          }
+          cl_boot$fit <- TRUE
+          eval(cl_boot, envir = rep_env)
+        }),
+        error = function(e) NULL
+      )
     }
 
     if (!is.null(boot_fit) && is.finite(boot_fit$fit$objective)) {
       n_success <- n_success + 1L
+      if (select_mode) {
+        if (isTRUE(boot_fit$criteria$stopped_uncomputable)) {
+          n_uncomputable_reps <- n_uncomputable_reps + 1L
+        }
+        uncomputable_reasons <- .hzr_merge_reasons(
+          uncomputable_reasons, boot_fit$criteria$uncomputable_reasons
+        )
+        if (isTRUE((boot_fit$criteria$n_nonmonotone_entries %||% 0L) > 0L)) {
+          n_nonmonotone_reps <- n_nonmonotone_reps + 1L
+        }
+      }
       theta_b <- boot_fit$fit$theta
       names_b <- if (select_mode) {
         .hzr_bootstrap_param_names(boot_fit)
@@ -1503,6 +1687,8 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     } else {
       n_failed <- n_failed + 1L
     }
+
+    if (verbose) utils::setTxtProgressBar(pb, b)
   }
 
   # Combine replicates
@@ -1552,11 +1738,66 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
                               stringsAsFactors = FALSE)
   }
 
+  # A selection frequency is the whole deliverable of a select-mode run, so a
+  # screen that never selected anything is the result being empty rather than
+  # a quiet edge case.  It cannot be read off the object either: the base
+  # model's own parameters appear in every replicate by construction, so they
+  # fill the summary at pct = 100 and the table looks like a set of perfectly
+  # reliable variables.
+  if (select_mode && n_success > 0L) {
+    selected <- setdiff(unique(replicates$parameter),
+                        names(stats::coef(object)))
+    if (length(selected) == 0L) {
+      warning("Bootstrap selection selected no covariate in any of the ",
+              n_success, " successful replicates. The summary holds only the ",
+              "base model's parameters, each at pct = 100. Common causes: ",
+              "`slentry` stricter than intended; a `scope` naming columns ",
+              "absent from the data; or a base fit whose stored call cannot ",
+              "be rewritten for the refit.", call. = FALSE)
+    }
+  }
+
+  n_indefinite <- unname(uncomputable_reasons["information_indefinite"])
+  if (is.na(n_indefinite)) n_indefinite <- 0L
+
+  if (n_uncomputable_reps > 0L) {
+    warning(n_uncomputable_reps, " of ", n_success, " successful replicates ",
+            "stopped because the score statistic could not be computed for ",
+            "any remaining candidate, rather than because no candidate met ",
+            "`slentry`. Those replicates contribute no selections, so every ",
+            "reported selection frequency is depressed by them.",
+            .hzr_format_reasons(uncomputable_reasons), call. = FALSE)
+  } else if (n_indefinite > 0L) {
+    # No replicate stopped, so the branch above stays quiet. Candidates the
+    # score test could not evaluate at beta = 0 were still passed over, and
+    # they are typically the strong ones -- which depresses exactly the
+    # selection frequencies a screen exists to measure.
+    warning(n_indefinite, " candidate score(s) ",
+            "across ", n_success, " replicates could not be computed because ",
+            .hzr_score_reason_text("information_indefinite"),
+            ". Those candidates were passed over rather than tested, so their ",
+            "selection frequencies are understated. See ",
+            "`$uncomputable_reasons`.", call. = FALSE)
+  }
+
+  if (n_nonmonotone_reps > 0L) {
+    warning(n_nonmonotone_reps, " of ", n_success, " successful replicates ",
+            "had a forward step LOWER the log-likelihood. Entered models are ",
+            "nested, so that cannot happen at the optimum -- those replicates ",
+            "continued from a refit that did not converge, and the variables ",
+            "they selected afterwards are in the pooled frequencies on the ",
+            "same footing as everything else. See ",
+            "`$n_nonmonotone_replicates`.", call. = FALSE)
+  }
+
   result <- list(
     replicates = replicates,
     summary    = summary_df,
     n_success  = n_success,
     n_failed   = n_failed,
+    n_uncomputable_replicates = n_uncomputable_reps,
+    uncomputable_reasons      = uncomputable_reasons,
+    n_nonmonotone_replicates  = n_nonmonotone_reps,
     mode       = if (select_mode) "select" else "refit"
   )
   if (select_mode) result$scope <- scope

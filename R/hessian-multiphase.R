@@ -44,57 +44,131 @@ NULL
 
   d00 <- eval_at(t_half, nu, m)
 
+  # hzr_decompos() rejects m < 0 && nu < 0 as mathematically undefined. A
+  # fixed shape sitting exactly at m = 0 (nu < 0, Case 3L) or nu = 0 (m < 0,
+  # Case 2L) is a valid, documented limiting case, but the central-difference
+  # step below would probe the OTHER parameter's -h side, which crosses into
+  # that undefined region. Detect it and fall back to a forward-only
+  # (one-sided) difference in just that one direction; every other
+  # direction/pair keeps the ordinary central-difference formula. (The two
+  # conditions can't both hold: that would require m < 0 && nu < 0
+  # simultaneously, which d00 above would already have rejected.)
+  m_boundary  <- nu < 0 && abs(m)  < h
+  nu_boundary <- m  < 0 && abs(nu) < h
+
   # Perturbed values on each internal scale:
   #   log_t_half: steps are multiplicative -> t_half * exp(+/-h)
   #   nu, m:      additive steps
   t_p  <- t_half * exp(h)
   t_m  <- t_half * exp(-h)
   nu_p <- nu + h
-  nu_m <- nu - h
+  nu_m <- if (nu_boundary) NA_real_ else nu - h
   m_p  <- m  + h
-  m_m  <- m  - h
+  m_m  <- if (m_boundary)  NA_real_ else m  - h
 
   # Six single-parameter perturbations for diagonal second differences
+  # (skip the -h evaluation in a boundary direction -- it would error)
   d_tp  <- eval_at(t_p,    nu,   m)
   d_tm  <- eval_at(t_m,    nu,   m)
   d_np  <- eval_at(t_half, nu_p, m)
-  d_nm  <- eval_at(t_half, nu_m, m)
+  d_nm  <- if (nu_boundary) NULL else eval_at(t_half, nu_m, m)
   d_mp  <- eval_at(t_half, nu,   m_p)
-  d_mm  <- eval_at(t_half, nu,   m_m)
+  d_mm  <- if (m_boundary)  NULL else eval_at(t_half, nu,   m_m)
 
   h2 <- h * h
 
-  # Diagonal second differences
-  d2Phi_tt  <- (d_tp$Phi - 2 * d00$Phi + d_tm$Phi) / h2
-  d2Phi_nn  <- (d_np$Phi - 2 * d00$Phi + d_nm$Phi) / h2
-  d2Phi_mm_ <- (d_mp$Phi - 2 * d00$Phi + d_mm$Phi) / h2
-  d2phi_tt  <- (d_tp$phi - 2 * d00$phi + d_tm$phi) / h2
-  d2phi_nn  <- (d_np$phi - 2 * d00$phi + d_nm$phi) / h2
-  d2phi_mm_ <- (d_mp$phi - 2 * d00$phi + d_mm$phi) / h2
+  # Diagonal second differences. At a boundary, use the forward second
+  # difference (f(x+2h) - 2f(x+h) + f(x)) / h^2 -- valid but O(h) rather
+  # than O(h^2) locally, exactly at these two named limiting cases.
+  d2Phi_tt <- (d_tp$Phi - 2 * d00$Phi + d_tm$Phi) / h2
+  d2phi_tt <- (d_tp$phi - 2 * d00$phi + d_tm$phi) / h2
 
-  # t_half / nu cross: corners (t_p, nu_p), (t_p, nu_m), (t_m, nu_p), (t_m, nu_m)
-  e_tn_pp <- eval_at(t_p, nu_p, m)
-  e_tn_pm <- eval_at(t_p, nu_m, m)
-  e_tn_mp <- eval_at(t_m, nu_p, m)
-  e_tn_mm <- eval_at(t_m, nu_m, m)
-  d2_tn_Phi <- (e_tn_pp$Phi - e_tn_pm$Phi - e_tn_mp$Phi + e_tn_mm$Phi) / (4 * h2)
-  d2_tn_phi <- (e_tn_pp$phi - e_tn_pm$phi - e_tn_mp$phi + e_tn_mm$phi) / (4 * h2)
+  if (nu_boundary) {
+    d_np2 <- eval_at(t_half, nu + 2 * h, m)
+    d2Phi_nn <- (d_np2$Phi - 2 * d_np$Phi + d00$Phi) / h2
+    d2phi_nn <- (d_np2$phi - 2 * d_np$phi + d00$phi) / h2
+  } else {
+    d2Phi_nn <- (d_np$Phi - 2 * d00$Phi + d_nm$Phi) / h2
+    d2phi_nn <- (d_np$phi - 2 * d00$phi + d_nm$phi) / h2
+  }
 
-  # t_half / m cross
-  e_tm_pp <- eval_at(t_p, nu, m_p)
-  e_tm_pm <- eval_at(t_p, nu, m_m)
-  e_tm_mp <- eval_at(t_m, nu, m_p)
-  e_tm_mm <- eval_at(t_m, nu, m_m)
-  d2_tm_Phi <- (e_tm_pp$Phi - e_tm_pm$Phi - e_tm_mp$Phi + e_tm_mm$Phi) / (4 * h2)
-  d2_tm_phi <- (e_tm_pp$phi - e_tm_pm$phi - e_tm_mp$phi + e_tm_mm$phi) / (4 * h2)
+  if (m_boundary) {
+    d_mp2 <- eval_at(t_half, nu, m + 2 * h)
+    d2Phi_mm_ <- (d_mp2$Phi - 2 * d_mp$Phi + d00$Phi) / h2
+    d2phi_mm_ <- (d_mp2$phi - 2 * d_mp$phi + d00$phi) / h2
+  } else {
+    d2Phi_mm_ <- (d_mp$Phi - 2 * d00$Phi + d_mm$Phi) / h2
+    d2phi_mm_ <- (d_mp$phi - 2 * d00$phi + d_mm$phi) / h2
+  }
 
-  # nu / m cross
-  e_nm_pp <- eval_at(t_half, nu_p, m_p)
-  e_nm_pm <- eval_at(t_half, nu_p, m_m)
-  e_nm_mp <- eval_at(t_half, nu_m, m_p)
-  e_nm_mm <- eval_at(t_half, nu_m, m_m)
-  d2_nm_Phi <- (e_nm_pp$Phi - e_nm_pm$Phi - e_nm_mp$Phi + e_nm_mm$Phi) / (4 * h2)
-  d2_nm_phi <- (e_nm_pp$phi - e_nm_pm$phi - e_nm_mp$phi + e_nm_mm$phi) / (4 * h2)
+  # t_half / nu cross: corners (t_p, nu_p), (t_p, nu_m), (t_m, nu_p), (t_m, nu_m).
+  # Under nu_boundary, use forward-in-nu / central-in-t_half instead (drops
+  # the nu_m corners).
+  if (nu_boundary) {
+    # d_tp/d_tm (= eval_at(t_p/t_m, nu, m)) already computed above
+    e_tn_pp <- eval_at(t_p, nu_p, m)
+    e_tn_mp <- eval_at(t_m, nu_p, m)
+    d2_tn_Phi <- ((e_tn_pp$Phi - d_tp$Phi) -
+                    (e_tn_mp$Phi - d_tm$Phi)) / (2 * h2)
+    d2_tn_phi <- ((e_tn_pp$phi - d_tp$phi) -
+                    (e_tn_mp$phi - d_tm$phi)) / (2 * h2)
+  } else {
+    e_tn_pp <- eval_at(t_p, nu_p, m)
+    e_tn_pm <- eval_at(t_p, nu_m, m)
+    e_tn_mp <- eval_at(t_m, nu_p, m)
+    e_tn_mm <- eval_at(t_m, nu_m, m)
+    d2_tn_Phi <- (e_tn_pp$Phi - e_tn_pm$Phi - e_tn_mp$Phi + e_tn_mm$Phi) / (4 * h2)
+    d2_tn_phi <- (e_tn_pp$phi - e_tn_pm$phi - e_tn_mp$phi + e_tn_mm$phi) / (4 * h2)
+  }
+
+  # t_half / m cross: corners (t_p, m_p), (t_p, m_m), (t_m, m_p), (t_m, m_m).
+  # Under m_boundary, use forward-in-m / central-in-t_half instead (drops
+  # the m_m corners).
+  if (m_boundary) {
+    # d_tp/d_tm (= eval_at(t_p/t_m, nu, m)) already computed above
+    e_tm_pp <- eval_at(t_p, nu, m_p)
+    e_tm_mp <- eval_at(t_m, nu, m_p)
+    d2_tm_Phi <- ((e_tm_pp$Phi - d_tp$Phi) -
+                    (e_tm_mp$Phi - d_tm$Phi)) / (2 * h2)
+    d2_tm_phi <- ((e_tm_pp$phi - d_tp$phi) -
+                    (e_tm_mp$phi - d_tm$phi)) / (2 * h2)
+  } else {
+    e_tm_pp <- eval_at(t_p, nu, m_p)
+    e_tm_pm <- eval_at(t_p, nu, m_m)
+    e_tm_mp <- eval_at(t_m, nu, m_p)
+    e_tm_mm <- eval_at(t_m, nu, m_m)
+    d2_tm_Phi <- (e_tm_pp$Phi - e_tm_pm$Phi - e_tm_mp$Phi + e_tm_mm$Phi) / (4 * h2)
+    d2_tm_phi <- (e_tm_pp$phi - e_tm_pm$phi - e_tm_mp$phi + e_tm_mm$phi) / (4 * h2)
+  }
+
+  # nu / m cross: corners (nu_p, m_p), (nu_p, m_m), (nu_m, m_p), (nu_m, m_m).
+  # Under m_boundary, use forward-in-m / central-in-nu (nu_m is valid here --
+  # only m is boundary-restricted). Under nu_boundary, use forward-in-nu /
+  # central-in-m (m_m is valid here -- only nu is boundary-restricted).
+  if (m_boundary) {
+    # d_np/d_nm (= eval_at(t_half, nu_p/nu_m, m)) already computed above
+    e_nm_pp <- eval_at(t_half, nu_p, m_p)
+    e_nm_mp <- eval_at(t_half, nu_m, m_p)
+    d2_nm_Phi <- ((e_nm_pp$Phi - d_np$Phi) -
+                    (e_nm_mp$Phi - d_nm$Phi)) / (2 * h2)
+    d2_nm_phi <- ((e_nm_pp$phi - d_np$phi) -
+                    (e_nm_mp$phi - d_nm$phi)) / (2 * h2)
+  } else if (nu_boundary) {
+    # d_mp/d_mm (= eval_at(t_half, nu, m_p/m_m)) already computed above
+    e_nm_pp <- eval_at(t_half, nu_p, m_p)
+    e_nm_pm <- eval_at(t_half, nu_p, m_m)
+    d2_nm_Phi <- ((e_nm_pp$Phi - d_mp$Phi) -
+                    (e_nm_pm$Phi - d_mm$Phi)) / (2 * h2)
+    d2_nm_phi <- ((e_nm_pp$phi - d_mp$phi) -
+                    (e_nm_pm$phi - d_mm$phi)) / (2 * h2)
+  } else {
+    e_nm_pp <- eval_at(t_half, nu_p, m_p)
+    e_nm_pm <- eval_at(t_half, nu_p, m_m)
+    e_nm_mp <- eval_at(t_half, nu_m, m_p)
+    e_nm_mm <- eval_at(t_half, nu_m, m_m)
+    d2_nm_Phi <- (e_nm_pp$Phi - e_nm_pm$Phi - e_nm_mp$Phi + e_nm_mm$Phi) / (4 * h2)
+    d2_nm_phi <- (e_nm_pp$phi - e_nm_pm$phi - e_nm_mp$phi + e_nm_mm$phi) / (4 * h2)
+  }
 
   list(
     d2Phi_dlog_thalf2    = d2Phi_tt,
@@ -302,11 +376,20 @@ NULL
   n_e       <- length(idx_event)
 
   # Counting-process start-time handling (mirrors gradient)
+  # The start time must be defined EXACTLY as the log-likelihood defines it:
+  # `.hzr_logl_multiphase()` subtracts H(time_lower) from every status 0/1 row
+  # whenever `time_lower` is supplied, with no further condition. An earlier
+  # `time_lower < time` filter here excluded rows entering at their own event
+  # or censoring time, so the derivative was taken of a different function from
+  # the one being evaluated -- the optimizer then walked off a cliff. The
+  # `> 0` test is only a skip: H(0) = 0, so those rows contribute nothing
+  # either way, and it must match `has_start` below or the term is weighted in
+  # while its derivative is left at zero.
   need_start <- !is.null(time_lower) &&
-                any(time_lower > 0 & time_lower < time & status %in% c(0L, 1L))
+                any(time_lower > 0 & status %in% c(0L, 1L))
   start_vec <- if (need_start) {
     sv <- rep(0, n)
-    epoch_idx <- status %in% c(0L, 1L) & time_lower < time
+    epoch_idx <- status %in% c(0L, 1L)
     sv[epoch_idx] <- time_lower[epoch_idx]
     sv
   } else {

@@ -1,0 +1,21 @@
+                                    Synthetic HAZARD listing -- layout variants
+
+      There are  3049 observations available for analysis with:
+                           1032 events:
+                                 1029 Uncensored
+                                    3 Interval Censored
+                           2017 Right Censored Observations
+                           3049 Total Subjects
+
+        Normal exit: Convergence attained
+
+        Log likelihood =     -3659.01
+
+                         Obs     YEARS     _SURVIV    _CLLSURV    _CLUSURV    _HAZARD    _CLLHAZ    _CLUHAZ
+
+                           1     0.0821    0.97106     0.96812     0.97373    0.24456    0.22241    0.26891
+
+                           2     0.2500    0.94683     0.94276     0.95062    0.09424    0.08597    0.10332
+
+                           3     1.0000    0.91050     0.90502     0.91566    0.03919    0.03566    0.04307
+

@@ -27,6 +27,9 @@ vignettes/*.R
 /Meta/
 .claude/*
 !.claude/house-style.md
+!.claude/agents/
+.claude/agents/*
+!.claude/agents/r-reviewer.md
 .positai
 CRAN-SUBMISSION
 .worktrees/

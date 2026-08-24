@@ -62,6 +62,99 @@ test_that(".hzr_phase_second_derivatives phi second derivs match numDeriv", {
   }
 })
 
+# ---------------------------------------------------------------------------
+# Task 1b: Case-boundary robustness (Case 3L: m=0,nu<0; Case 2L: nu=0,m<0)
+# ---------------------------------------------------------------------------
+# hzr_decompos() rejects m<0 && nu<0 as mathematically undefined. A shape
+# sitting exactly at m=0 (with nu<0) or nu=0 (with m<0) is a legitimate,
+# documented limiting case (Case 3L / Case 2L respectively), but the naive
+# central-difference perturbation used below steps the OTHER side of the
+# fixed value by -h, which crosses into that undefined region and used to
+# raise "Decomposition undefined when both m < 0 and nu < 0 ...".
+
+test_that(".hzr_phase_second_derivatives does not error at the Case 3L boundary (m=0, nu<0)", {
+  t <- c(0.2, 0.5, 1.0, 2.0, 4.0)
+  d2 <- .hzr_phase_second_derivatives(t, t_half = 1.666871, nu = -0.7462,
+                                       m = 0, type = "cdf")
+  expect_true(all(vapply(d2, function(v) all(is.finite(v)), logical(1))))
+})
+
+test_that(".hzr_phase_second_derivatives does not error at the Case 2L boundary (nu=0, m<0)", {
+  t <- c(0.2, 0.5, 1.0, 2.0, 4.0)
+  d2 <- .hzr_phase_second_derivatives(t, t_half = 1.0, nu = 0, m = -0.5,
+                                       type = "cdf")
+  expect_true(all(vapply(d2, function(v) all(is.finite(v)), logical(1))))
+})
+
+test_that(".hzr_phase_second_derivatives boundary values are continuous with the interior", {
+  # m = 1e-3 is far enough from 0 (relative to h ~ 1.2e-4) that both m+h and
+  # m-h stay positive, so this interior point still uses the ordinary
+  # central-difference formula. Phi/phi are smooth in m here (m=0 is a
+  # formula/case-dispatch artifact, not a true singularity), so the boundary
+  # (forward-diff) value at m=0 should be close to the interior value.
+  t <- c(0.5, 1.0, 2.0)
+  d2_boundary <- .hzr_phase_second_derivatives(
+    t, t_half = 1.666871, nu = -0.7462, m = 0, type = "cdf")
+  d2_interior <- .hzr_phase_second_derivatives(
+    t, t_half = 1.666871, nu = -0.7462, m = 1e-3, type = "cdf")
+  expect_equal(d2_boundary$d2Phi_dm2, d2_interior$d2Phi_dm2, tolerance = 0.05)
+  expect_equal(d2_boundary$d2Phi_dnu_dm, d2_interior$d2Phi_dnu_dm,
+               tolerance = 0.05)
+  expect_equal(d2_boundary$d2Phi_dlog_thalf_dm,
+               d2_interior$d2Phi_dlog_thalf_dm, tolerance = 0.05)
+})
+
+test_that(".hzr_hessian_multiphase succeeds at the Case 3L fixed-shape boundary", {
+  data(avc, package = "TemporalHazard")
+  avc <- na.omit(avc)
+  phases <- list(
+    early    = hzr_phase("cdf", t_half = 1.666871, nu = -0.7462, m = 0,
+                         fixed = "shapes"),
+    constant = hzr_phase("constant")
+  )
+  theta <- c(early.log_mu = -1, early.log_t_half = log(1.666871),
+             early.nu = -0.7462, early.m = 0, constant.log_mu = -1)
+  cov_counts <- c(early = 0L, constant = 0L)
+  H <- .hzr_hessian_multiphase(
+    theta, time = avc$int_dead, status = avc$dead,
+    phases = phases, covariate_counts = cov_counts,
+    x_list = list(early = NULL, constant = NULL)
+  )
+  expect_true(is.matrix(H))
+  expect_true(all(is.finite(H)))
+})
+
+test_that("fixed-shape 2-phase CoE fit uses the analytic Hessian (single free param, no drop)", {
+  # A 2-phase model with all shapes fixed leaves the two log_mu free; CoE then
+  # fixes one of them, so exactly ONE parameter is optimized. hessian_fn's
+  # restriction H_full[free, free] with a single index used to drop to a
+  # scalar (R drop = TRUE), which .hzr_optim_generic flagged as
+  # "hessian_fn returned a non-conformant result" and silently fell back to a
+  # numerical Hessian. Assert the analytic Hessian is used instead: no such
+  # warning, and a finite standard error is produced.
+  data(avc, package = "TemporalHazard")
+  avc <- na.omit(avc)
+  warns <- character(0)
+  fit <- withCallingHandlers(
+    hazard(
+      survival::Surv(int_dead, dead) ~ 1, data = avc, dist = "multiphase",
+      phases = list(
+        early    = hzr_phase("cdf", t_half = 0.2, nu = 1.4, m = 1,
+                             fixed = "shapes"),
+        constant = hzr_phase("constant")
+      ),
+      fit = TRUE
+    ),
+    warning = function(cnd) {
+      warns <<- c(warns, conditionMessage(cnd))
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_false(any(grepl("non-conformant", warns)))
+  expect_true(is.matrix(fit$fit$vcov))
+  expect_true(isTRUE(fit$fit$pd))
+})
+
 test_that(".hzr_g3_phase_second_derivatives diagonals match numDeriv", {
   skip_if_not_installed("numDeriv")
   t <- c(0.5, 1.0, 3.0, 8.0)

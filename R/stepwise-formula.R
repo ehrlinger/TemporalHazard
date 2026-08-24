@@ -176,16 +176,11 @@
     if (!is.null(phase)) {
       stop("`phase` is only meaningful for multiphase models.", call. = FALSE)
     }
-    f <- fit$call$formula
+    f <- .hzr_stored_formula(fit)
     if (is.null(f)) {
       # Non-formula fit (time/x interface); infer from design matrix names.
       xcols <- colnames(fit$data$x)
       return(if (is.null(xcols)) character() else xcols)
-    }
-    # `match.call()` captures `formula` as an unevaluated `call` rather
-    # than a real `formula` object; coerce before term extraction.
-    if (!inherits(f, "formula")) {
-      f <- stats::as.formula(deparse(f))
     }
     return(.hzr_formula_rhs_terms(f))
   }
@@ -249,4 +244,80 @@
     FALSE
   }
   .walk(rhs)
+}
+
+#' Resolve the model formula stored in a fit's call
+#'
+#' `match.call()` stores the `formula` argument unevaluated, so it arrives as
+#' a `call` when the caller wrote it out at the `hazard()` call and as a
+#' *symbol* when they passed a variable holding it. Evaluating in the
+#' recorded calling environment covers both; deparsing does not, because
+#' `deparse(quote(f))` is `"f"`, which `as.formula()` rejects as "not a call".
+#'
+#' Every site that needs the stored formula goes through here. Three did it
+#' independently once, and two of them were still deparsing after the third
+#' was fixed.
+#'
+#' @param fit A fitted `hazard` object.
+#' @param what Character label for the object in error messages.
+#' @param envir Environment to resolve in when the fit carries no recorded
+#'   `call_env` (objects serialised before it was stored). Defaults to the
+#'   caller's frame; passing it explicitly is preferable to relying on the
+#'   default, which is only correct because it is evaluated lazily.
+#' @return The formula, or `NULL` when the fit carries none (the vector
+#'   interface). Errors when a stored formula cannot be resolved.
+#' @keywords internal
+#' @noRd
+.hzr_stored_formula <- function(fit, what = "`fit`",
+                                envir = parent.frame()) {
+  raw <- fit$call$formula
+  if (is.null(raw)) {
+    return(NULL)
+  }
+  if (inherits(raw, "formula")) {
+    return(raw)
+  }
+  # Evaluating can fail outright when the formula was passed by variable and
+  # that binding is gone -- after saveRDS()/readRDS() in a new session, say.
+  # Bare, the error reads "object 'f' not found", which names neither the fit
+  # at fault nor the remedy.
+  out <- tryCatch(
+    eval(raw, envir = fit$call_env %||% envir),
+    error = function(e) {
+      stop(what, "'s stored model formula (", deparse(raw),
+           ") could not be resolved: ", conditionMessage(e),
+           ". The formula was passed to `hazard()` by variable and that ",
+           "binding is no longer reachable -- for example after saving and ",
+           "reloading the fit in a new session. Refit the base model with ",
+           "the formula written at the `hazard()` call.", call. = FALSE)
+    }
+  )
+  if (!inherits(out, "formula")) {
+    stop(what, "'s stored model formula (", deparse(raw),
+         ") did not resolve to a formula. Refit the base model with the ",
+         "formula written at the `hazard()` call.", call. = FALSE)
+  }
+  out
+}
+
+#' Columns the package may offer itself as candidates
+#'
+#' Under `scope = NULL` the *package* enumerates candidates from the data, so a
+#' column it cannot model is its own bad choice rather than the caller's, and
+#' dropping it beats erroring on it. An explicit `scope` still errors, because
+#' there the caller named the column.
+#'
+#' Logical columns count: they are ordinary 0/1 predictors, and whether a
+#' 0/1 field arrives logical or numeric depends on the reader that produced
+#' the frame rather than on anything about the variable.
+#'
+#' @keywords internal
+#' @noRd
+.hzr_modellable_vars <- function(data, vars) {
+  keep <- vapply(
+    data[vars],
+    function(col) is.numeric(col) || is.logical(col),
+    logical(1L)
+  )
+  vars[keep]
 }

@@ -13,7 +13,7 @@ hzr_bootstrap(
   verbose = FALSE,
   scope = NULL,
   direction = c("both", "forward", "backward"),
-  criterion = c("wald", "aic"),
+  criterion = c("score", "wald", "aic"),
   slentry = 0.3,
   slstay = 0.2,
   max_steps = 50L,
@@ -42,10 +42,14 @@ random numbers either way, so the global RNG state will advance
 during the call -- \code{seed = NULL} avoids the \emph{reset} at entry, not
 the advance during resampling.}
 
-\item{verbose}{Logical; if \code{TRUE}, print progress every 50 replicates.}
+\item{verbose}{Logical; if \code{TRUE}, display a text progress bar over the
+\code{n_boot} replicates (via \code{\link[utils:txtProgressBar]{utils::txtProgressBar()}}).}
 
-\item{scope}{Candidate variable scope for embedded stepwise selection
-during each bootstrap replicate. \code{NULL} (default) preserves the
+\item{scope}{\strong{Experimental.} Candidate variable scope for embedded
+stepwise selection during each bootstrap replicate. The argument and the
+shape of the object it returns may change in a future release; see the
+"Selection mode is experimental" section below. \code{NULL} (default)
+preserves the
 original fixed-formula bootstrap: every replicate refits \code{object}'s
 exact model, and \code{summary$pct} is always ~100. When supplied (a
 one-sided formula, character vector, or -- for multiphase fits -- a
@@ -53,9 +57,22 @@ named list of one-sided formulas keyed by phase, matching
 \code{\link[=hzr_stepwise]{hzr_stepwise()}}'s \code{scope}), each replicate runs a fresh
 \code{\link[=hzr_stepwise]{hzr_stepwise()}} selection instead; see Details.}
 
-\item{direction, criterion, slentry, slstay, max_steps, max_move, force_in, force_out}{Passed through to \code{\link[=hzr_stepwise]{hzr_stepwise()}} on each replicate when \code{scope} is
+\item{direction, slentry, slstay, max_steps, max_move, force_in, force_out}{Passed through to \code{\link[=hzr_stepwise]{hzr_stepwise()}} on each replicate when \code{scope} is
 supplied; ignored when \code{scope = NULL}. See \code{\link[=hzr_stepwise]{hzr_stepwise()}} for
 definitions and defaults.}
+
+\item{criterion}{Entry / retention rule passed through to
+\code{\link[=hzr_stepwise]{hzr_stepwise()}} on each replicate when \code{scope} is supplied; ignored
+when \code{scope = NULL}. One of \code{"score"} (default), \code{"wald"}, or \code{"aic"}.
+\code{"score"} reproduces C/SAS HAZARD's \code{SELECTION} statistic and needs no
+per-candidate refit, which is what makes a bootstrap screen over many
+candidates tractable. Following SAS, the variance used during
+\emph{selection} is approximate (shaping-parameter covariances are ignored);
+final-model standard errors are unaffected. For single-distribution
+fits, \code{"score"} computes the observed information numerically via the
+suggested \pkg{numDeriv} package and errors if it is not installed; a
+multiphase fit uses the analytic Hessian instead and does not need it.
+See \code{\link[=hzr_stepwise]{hzr_stepwise()}}.}
 
 \item{...}{Additional arguments forwarded to \code{\link[=hzr_stepwise]{hzr_stepwise()}} (e.g.
 \code{control = list(n_starts = 1)}) when \code{scope} is supplied; ignored
@@ -76,6 +93,24 @@ parameter. In \code{mode = "select"}, \code{pct} is the selection frequency
 and the other statistics are conditional on selection.}
 \item{n_success}{Number of successfully converged replicates.}
 \item{n_failed}{Number of replicates that failed to converge.}
+\item{n_uncomputable_replicates}{Select mode only: number of otherwise
+successful replicates whose screen stopped because no remaining
+candidate's score statistic could be computed, rather than because no
+candidate met \code{slentry}. Such replicates contribute no selections, so
+a non-zero count means every reported selection frequency is
+depressed. Always \code{0} in refit mode.}
+\item{uncomputable_reasons}{Select mode only: named integer vector
+counting \emph{why} candidate scores were unavailable, summed over every
+replicate. \code{information_indefinite} is the one to read first: it marks
+candidates whose effect is too large for the score test's approximation
+at zero -- typically strong variables that were passed over rather than
+tested, understating their selection frequency. Empty in refit mode.}
+\item{n_nonmonotone_replicates}{Select mode only: number of otherwise
+successful replicates in which a forward step \emph{lowered} the
+log-likelihood. Entered models are nested, so this cannot occur at the
+optimum; such a replicate continued from a refit that did not converge,
+and its later selections are pooled on the same footing as any other.
+Always \code{0} in refit mode.}
 \item{mode}{\code{"refit"} (fixed-formula bootstrap) or \code{"select"}
 (embedded stepwise selection).}
 \item{scope}{Only present when \code{mode == "select"}: the candidate
@@ -98,6 +133,32 @@ they enter the model. \code{summary$pct} then reports the selection
 frequency across replicates, and \code{summary$mean}/\code{sd}/\verb{ci_*} describe the
 coefficient distribution conditional on selection.
 }
+\section{Selection mode is experimental}{
+
+
+Everything reached through \code{scope} -- the selection arguments, and the
+\code{summary$pct} selection frequencies they produce -- is new and should be
+treated as unstable. The fixed-formula bootstrap (\code{scope = NULL}) is not
+affected and has been stable since 0.9.3.
+
+Two reasons to expect change. The first is that the design is still being
+read off real runs rather than settled in advance: production screens have
+already moved the defaults once and turned up several ways a screen could
+report success while selecting nothing.
+
+The second is scale, and it is the one to plan around. A screen over a
+large candidate pool runs for hours, and this function writes nothing
+until its final replicate, so a run that dies late loses everything. There
+is no built-in way to split one screen across processes and combine the
+parts. If you are running at that scale, drive \code{hzr_bootstrap()} in chunks
+from your own script and pool the replicates yourself -- deriving each
+chunk's seed from its chunk number, offsetting replicate ids so a variable
+selected in two chunks is not counted once, and recomputing frequencies
+from the pooled replicates rather than averaging across chunks. Whatever
+eventually covers that inside the package may well change this function's
+interface.
+}
+
 \examples{
 \donttest{
 data(avc)

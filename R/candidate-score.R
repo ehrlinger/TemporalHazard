@@ -8,10 +8,16 @@
 # ---------------
 # Lower `score` is always "better" in the candidate's favour:
 #
+#   criterion="score", mode="entry" ->  p_value(Q for the pinned new coef)
 #   criterion="wald", mode="entry"  ->  p_value(candidate for new coef)
 #   criterion="wald", mode="drop"   ->  1 - p_value(current)  (high p -> easy drop)
 #   criterion="aic",  mode="entry"  ->  AIC(candidate) - AIC(current)
 #   criterion="aic",  mode="drop"   ->  DeltaAIC_drop ~ W - 2*df  (Wald->LR approx)
+#
+# `criterion = "score"` is an ENTRY-ONLY criterion: it exists to remove the
+# per-candidate refit from the forward step, and the drop path never had one to
+# remove.  Following SAS, removal is tested on the current model's Wald
+# p-value, so hzr_stepwise() maps score -> wald for the backward step.
 #
 # For forward selection: argmin(score) picks the best candidate and the
 # threshold test is `score < slentry` (Wald) or `score < 0` (AIC).
@@ -62,15 +68,21 @@
 #' from the current model (`mode = "drop"`), under a Wald or AIC
 #' criterion.
 #'
-#' @param criterion Either `"wald"` or `"aic"`.
+#' @param criterion One of `"score"`, `"wald"`, or `"aic"`.  `"score"` is
+#'   entry-only (see the file header).
 #' @param mode Either `"entry"` or `"drop"`.
 #' @param current Fitted `hazard` object that is the starting point for
 #'   the step.  Always required (AIC baseline; Wald target for drops).
 #' @param candidate Fitted `hazard` object containing the proposed new
-#'   coefficient(s).  Required when `mode = "entry"`; ignored otherwise.
+#'   coefficient(s).  Required when `mode = "entry"` under the `"wald"` and
+#'   `"aic"` criteria; ignored otherwise.  The `"score"` criterion has no
+#'   candidate fit -- that is the point of it -- and takes `score` instead.
+#' @param score Precomputed `.hzr_score_q()` result (`list(stat, df,
+#'   p_value)`).  Required when `criterion = "score"`; ignored otherwise.
 #' @param names Character vector of coefficient names being tested.
 #'   Must exist in the target fit (`candidate` for entries, `current`
-#'   for drops).
+#'   for drops).  Purely descriptive under `criterion = "score"`, which
+#'   never looks a coefficient up by name.
 #'
 #' @return A list with:
 #' \describe{
@@ -86,10 +98,11 @@
 #'
 #' @keywords internal
 #' @noRd
-.hzr_candidate_score <- function(criterion = c("wald", "aic"),
+.hzr_candidate_score <- function(criterion = c("score", "wald", "aic"),
                                   mode      = c("entry", "drop"),
                                   current,
                                   candidate = NULL,
+                                  score     = NULL,
                                   names) {
   criterion <- match.arg(criterion)
   mode      <- match.arg(mode)
@@ -97,6 +110,33 @@
   if (!inherits(current, "hazard")) {
     stop("`current` must be a fitted `hazard` object.", call. = FALSE)
   }
+
+  if (criterion == "score") {
+    # Entry-only.  hzr_stepwise() maps score -> wald before the backward step,
+    # so reaching here with mode = "drop" is a caller bug, not a user error.
+    if (mode != "entry") {
+      stop("The score criterion is entry-only; `mode` must be 'entry'.",
+           call. = FALSE)
+    }
+    # `names` is a formal of this function, so spell base::names() out rather
+    # than relying on R skipping the non-function binding.
+    if (!is.list(score) ||
+          !all(c("stat", "df", "p_value") %in% base::names(score))) {
+      stop("`score` must be a `.hzr_score_q()` result when criterion = 'score'.",
+           call. = FALSE)
+    }
+    return(list(
+      score     = score$p_value,   # smaller p = stronger entry case
+      criterion = criterion,
+      mode      = mode,
+      stat      = score$stat,
+      df        = score$df,
+      p_value   = score$p_value,
+      delta_aic = NA_real_,        # no candidate refit to take an AIC from
+      names     = names
+    ))
+  }
+
   if (mode == "entry") {
     if (is.null(candidate) || !inherits(candidate, "hazard")) {
       stop("`candidate` must be a fitted `hazard` object when mode = 'entry'.",

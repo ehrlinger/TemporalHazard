@@ -3,9 +3,17 @@
 # a CRAN-bound package this isn't optional. To add words to the allow-list,
 # add them to inst/WORDLIST (one word per line).
 on:
+  # A commit that only touches the generated house-style artifact cannot change
+  # what this checks: spell_check_package() reads DESCRIPTION, man/, vignettes/
+  # and README, never .claude/. Running it on such a commit burns runner
+  # minutes and queues ahead of checks that can actually fail.
   push:
+    paths-ignore:
+      - '.claude/**'
     branches: [main]
   pull_request:
+    paths-ignore:
+      - '.claude/**'
 
 name: spelling
 

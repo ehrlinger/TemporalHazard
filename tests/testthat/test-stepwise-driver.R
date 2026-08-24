@@ -253,3 +253,106 @@ test_that("stepwise_trace rejects non-hzr_stepwise input", {
   expect_error(stepwise_trace(list()),
                "must be an `hzr_stepwise` object")
 })
+
+
+# Score criterion -----------------------------------------------------------
+
+test_that("hzr_stepwise defaults to criterion = 'score'", {
+  expect_identical(eval(formals(hzr_stepwise)$criterion)[1], "score")
+})
+
+test_that("hzr_stepwise(criterion = 'score') selects without refitting candidates", {
+  skip_if_not_installed("numDeriv")
+  obj <- .fit_driver_base()
+  res <- hzr_stepwise(
+    obj$fit, scope = ~ x1 + x2 + x3 + x4, data = obj$data,
+    criterion = "score", direction = "forward", trace = FALSE
+  )
+  expect_s3_class(res, "hzr_stepwise")
+  expect_true(nrow(res$steps) > 0)
+  expect_identical(res$steps$variable[1], "x1")
+  expect_true(all(res$steps$df == 1L))
+  # The score path reports no dAIC: there is no candidate refit to take it from.
+  expect_true(all(is.na(res$steps$delta_aic)))
+})
+
+test_that("criterion = 'wald' still reproduces the previous behaviour", {
+  obj <- .fit_driver_base()
+  res <- hzr_stepwise(
+    obj$fit, scope = ~ x1 + x2 + x3 + x4, data = obj$data,
+    criterion = "wald", direction = "forward", trace = FALSE
+  )
+  expect_s3_class(res, "hzr_stepwise")
+  expect_identical(res$steps$variable[1], "x1")
+})
+
+test_that("a scope naming a nonexistent column warns under both criteria", {
+  # NEWS claims a mistyped scope column "still surfaces once, up front" --
+  # and hzr_bootstrap()'s pre-loop scope validation (see
+  # test-diagnostics.R's "hzr_bootstrap scope with a nonexistent column
+  # warns but does not raise") relies on hzr_stepwise() warning here rather
+  # than silently dropping the candidate. Confirm the score path matches
+  # the pre-existing wald behaviour instead of staying silent.
+  skip_if_not_installed("numDeriv")
+  obj <- .fit_driver_base()
+
+  expect_warning(
+    res_wald <- hzr_stepwise(
+      obj$fit, scope = c("x1", "not_a_real_column"), data = obj$data,
+      criterion = "wald", direction = "forward", trace = FALSE
+    ),
+    "not_a_real_column"
+  )
+  expect_false("not_a_real_column" %in% res_wald$steps$variable)
+
+  expect_warning(
+    res_score <- hzr_stepwise(
+      obj$fit, scope = c("x1", "not_a_real_column"), data = obj$data,
+      criterion = "score", direction = "forward", trace = FALSE
+    ),
+    "not_a_real_column"
+  )
+  expect_false("not_a_real_column" %in% res_score$steps$variable)
+})
+
+test_that("criterion = 'score' rejects a non-converged base up front", {
+  data(avc)
+  avc <- na.omit(avc)
+  # No theta starting values -> the weibull base does not converge and is
+  # left with an empty theta, so the score statistic has nothing to evaluate.
+  base_bad <- hazard(survival::Surv(int_dead, dead) ~ age,
+                     data = avc, dist = "weibull", fit = TRUE)
+  expect_false(isTRUE(base_bad$fit$converged))
+  expect_length(base_bad$fit$theta, 0L)
+
+  expect_error(
+    hzr_stepwise(base_bad, scope = ~ age + mal, data = avc,
+                 criterion = "score", direction = "forward", trace = FALSE),
+    "did not converge"
+  )
+
+  # wald refits each candidate from the call and tolerates the bad base.
+  expect_no_error(
+    hzr_stepwise(base_bad, scope = ~ age + mal, data = avc,
+                 criterion = "wald", direction = "forward", trace = FALSE)
+  )
+})
+
+test_that("score and wald paths agree that a factor candidate is not selectable", {
+  skip_if_not_installed("numDeriv")
+  obj <- .fit_driver_base()
+  obj$data$fac <- factor(ifelse(obj$data$x2 > 0, "hi", "lo"))
+
+  # Wald refits the candidate, then fails to locate its coefficient by name.
+  expect_error(
+    hzr_stepwise(obj$fit, scope = ~ fac, data = obj$data,
+                 criterion = "wald", direction = "forward", trace = FALSE),
+    "design matrix"
+  )
+  # Score must not silently return NA and drop the candidate on the floor.
+  expect_error(
+    hzr_stepwise(obj$fit, scope = ~ fac, data = obj$data,
+                 criterion = "score", direction = "forward", trace = FALSE),
+    "not numeric"
+  )
+})

@@ -18,8 +18,8 @@
 #' Stepwise covariate selection for a parametric hazard model
 #'
 #' Run forward, backward, or two-way stepwise selection on an existing
-#' `hazard` fit using Wald p-values or AIC deltas as the entry /
-#' retention criterion.  Phase-specific entry is supported for
+#' `hazard` fit using score (Q) statistics, Wald p-values, or AIC deltas as
+#' the entry / retention criterion.  Phase-specific entry is supported for
 #' multiphase models: a covariate can enter one phase and not another.
 #'
 #' @section Selection direction and criterion:
@@ -42,17 +42,40 @@
 #' }
 #'
 #' \describe{
-#'   \item{`criterion = "wald"` (default)}{Accept moves on SAS-style
+#'   \item{`criterion = "score"` (default)}{Accept moves on SAS-style
+#'     significance thresholds, using the score (Q) statistic of the candidate
+#'     coefficient --- this reproduces C/SAS HAZARD's `SELECTION` statistic.
+#'     Q is evaluated at the *current* model's MLE with the candidate's
+#'     coefficient pinned at zero, so **no candidate refit is needed**: the
+#'     reduced-model information is inverted once per step and reused across
+#'     every candidate.  Only the winner is refit.  A candidate enters if its
+#'     p-value is below `slentry`.
+#'
+#'   Score is an *entry* criterion; the drop path never refit per candidate
+#'   in the first place, so removals are tested on the current model's Wald
+#'   p-value against `slstay`, as SAS does.
+#'
+#'   For single-distribution fits, the score criterion computes the observed
+#'   information numerically via the suggested \pkg{numDeriv} package and
+#'   errors with a clear message if it is not installed; a multiphase fit
+#'   uses the analytic Hessian instead and does not need it.
+#'
+#'   Following SAS, the variance used during *selection* is approximate:
+#'   shaping-parameter covariances are ignored.  This affects selection only
+#'   --- final-model standard errors are unchanged and still come from the
+#'   full Hessian.  Candidates must be single-column numeric main-effect
+#'   terms; a factor is rejected with an error rather than skipped.}
+#'   \item{`criterion = "wald"`}{Accept moves on SAS-style
 #'     significance thresholds, using the Wald \eqn{\chi^2} of the affected
 #'     coefficient(s): a candidate enters if its p-value is below `slentry`, and
 #'     a term is dropped if its p-value rises above `slstay`.  Entry candidates
 #'     are scored from a refit that adds the candidate (so its new coefficient
 #'     can be tested); drop candidates are scored from the *current* model's
 #'     Wald p-values without a per-candidate refit, and a single refit is run
-#'     only after a drop is chosen.  Note this differs algorithmically from
-#'     C/SAS HAZARD, which selects on a *score* (Q) statistic evaluated without
-#'     refitting; the two can take different step paths even when they converge
-#'     to a similar final model.}
+#'     only after a drop is chosen.  This was the default before version 1.2.0.
+#'     It differs algorithmically from C/SAS HAZARD, so the two criteria can
+#'     take different step paths --- and select different variable sets ---
+#'     even when they converge to a similar final model.}
 #'   \item{`criterion = "aic"`}{Accept any move with
 #'     \eqn{\Delta\mathrm{AIC} < 0} (a strictly better penalised fit), ignoring
 #'     `slentry` / `slstay`.  Entry candidates use the actual
@@ -77,13 +100,16 @@
 #'   `"forward"`, or `"backward"`.  Controls whether variables may only
 #'   enter, only leave, or both.  See the **Selection direction and
 #'   criterion** section.
-#' @param criterion Entry / retention rule --- one of `"wald"` (default)
-#'   or `"aic"`.  `"wald"` applies SAS-style p-value thresholds
-#'   (`slentry` / `slstay`); `"aic"` adds or drops whenever it lowers the
-#'   AIC.  See the **Selection direction and criterion** section.
-#' @param slentry Entry p-value threshold for the Wald criterion.
+#' @param criterion Entry / retention rule --- one of `"score"` (default),
+#'   `"wald"`, or `"aic"`.  `"score"` and `"wald"` both apply SAS-style
+#'   p-value thresholds (`slentry` / `slstay`) but score entry candidates
+#'   differently, and can therefore select different variable sets; `"score"`
+#'   reproduces C/SAS HAZARD and needs no per-candidate refit.  `"aic"` adds or
+#'   drops whenever it lowers the AIC.  See the **Selection direction and
+#'   criterion** section.
+#' @param slentry Entry p-value threshold for the score / Wald criteria.
 #'   Default `0.30` matches SAS `SLENTRY`.
-#' @param slstay Retention p-value threshold for the Wald criterion.
+#' @param slstay Retention p-value threshold for the score / Wald criteria.
 #'   Default `0.20` matches SAS `SLSTAY`.
 #' @param max_steps Hard cap on total accepted actions.  Emits a
 #'   `warning()` if hit.  Default `50`.
@@ -108,7 +134,21 @@
 #'     \item{\code{scope}}{Record of the candidate scope, plus
 #'       `force_in`, `force_out`, and the frozen set.}
 #'     \item{\code{criteria}}{Named list of the threshold / direction
-#'       settings actually applied.}
+#'       settings actually applied, plus, under `criterion = "score"`,
+#'       `n_uncomputable_scores` (how many candidate scores were `NA`),
+#'       `uncomputable_reasons` (a named integer vector of *why*) and
+#'       `stopped_uncomputable`. Read `uncomputable_reasons` before treating
+#'       an unscored candidate as a bad one: `information_indefinite` marks
+#'       candidates whose effect is too large for the score test's
+#'       approximation at zero, which are typically the strongest variables
+#'       on offer rather than degenerate ones. `criterion = "wald"` tests
+#'       them.  For every criterion it also carries `refit_failures` (the
+#'       `"var"` / `"var@phase"` tokens of candidate moves whose refit
+#'       errored or failed to converge), `n_refit_failures`, and
+#'       `stopped_refit_failed` --- `TRUE` when the run ended on an iteration
+#'       in which refits failed, which is a screen that could not test its
+#'       candidates rather than one that tested them and liked none.  Check
+#'       it before reading a zero-row `steps` as an honest null result.}
 #'     \item{\code{trace_msg}}{Character vector of the trace lines,
 #'       captured regardless of the `trace` flag.}
 #'     \item{\code{elapsed}}{`difftime` from start to finish.}
@@ -123,10 +163,12 @@
 #'   \item{\code{action}}{`"enter"`, `"drop"`, or `"frozen"`.}
 #'   \item{\code{variable}}{Variable affected.}
 #'   \item{\code{phase}}{Phase name (multiphase) or `NA_character_`.}
-#'   \item{\code{criterion}}{`"wald"` or `"aic"`.}
+#'   \item{\code{criterion}}{The criterion actually applied to this step ---
+#'     `"score"`, `"wald"`, or `"aic"`.  Under `criterion = "score"` the drop
+#'     rows read `"wald"`, because score is entry-only.}
 #'   \item{\code{score}}{Winning score used for the decision.}
-#'   \item{\code{stat}, \code{df}}{Wald statistic and degrees of
-#'     freedom.}
+#'   \item{\code{stat}, \code{df}}{Test statistic (score Q or Wald) and
+#'     degrees of freedom.}
 #'   \item{\code{p_value}, \code{delta_aic}}{Always populated when
 #'     computable, regardless of the active criterion.}
 #'   \item{\code{logLik}, \code{aic}, \code{n_coef}}{Goodness-of-fit
@@ -137,9 +179,10 @@
 #' data(avc)
 #' avc <- na.omit(avc)
 #' base <- hazard(survival::Surv(int_dead, dead) ~ age,
-#'                data = avc, dist = "weibull", fit = TRUE)
+#'                data = avc, dist = "weibull", fit = TRUE,
+#'                theta = c(mu = 0.01, nu = 0.5, 0))
 #' \donttest{
-#' sw <- hzr_stepwise(base, scope = ~ age + nyha,
+#' sw <- hzr_stepwise(base, scope = ~ age + mal,
 #'                    data = avc, direction = "forward",
 #'                    control = list(n_starts = 1))
 #' print(sw)
@@ -152,7 +195,7 @@ hzr_stepwise <- function(fit,
                          scope     = NULL,
                          data,
                          direction = c("both", "forward", "backward"),
-                         criterion = c("wald", "aic"),
+                         criterion = c("score", "wald", "aic"),
                          slentry   = 0.30,
                          slstay    = 0.20,
                          max_steps = 50L,
@@ -172,6 +215,38 @@ hzr_stepwise <- function(fit,
          call. = FALSE)
   }
 
+  # Every accepted step goes through .hzr_refit_with_scope(), so a base fit
+  # it cannot refit makes the entire screen a no-op.  Left to fail
+  # candidate-by-candidate that produces N warnings and a zero-step result
+  # indistinguishable from an honest "nothing met slentry" (#159).  Ask the
+  # refit's own predicate once, up front: one message, naming the remedy,
+  # before any fitting happens.  Sharing .hzr_refit_blocker() with the refit
+  # is what stops the two answers drifting apart.
+  refit_blocker <- .hzr_refit_blocker(fit)
+  if (!is.null(refit_blocker)) {
+    stop("`fit` cannot be used as a stepwise base model because ",
+         refit_blocker, ". Every candidate would fail to refit, so the ",
+         "screen could never enter or drop anything. Rebuild the base fit ",
+         "with the formula interface -- for a forward screen that usually ",
+         "means an intercept-only base, hazard(Surv(time, status) ~ 1, ",
+         "data = df, ...) -- and retry.",
+         call. = FALSE)
+  }
+
+  # The score (Q) statistic is evaluated at the base model's fitted MLE, so a
+  # base that did not converge (or was never fitted, leaving an empty theta)
+  # has nothing to score.  Catch that here with an actionable message rather
+  # than letting the internal `.hzr_score_free_idx()` guard fire deep in the
+  # candidate loop.  `wald` and `aic` refit each candidate from the call and
+  # legitimately tolerate a non-converged base, so they are left alone.
+  if (criterion == "score" &&
+        (!isTRUE(fit$fit$converged) || length(fit$fit$theta) == 0L)) {
+    stop("criterion = 'score' requires a converged base model with fitted ",
+         "coefficients; this fit did not converge. Supply theta starting ",
+         "values to hazard(), or use criterion = 'wald'.",
+         call. = FALSE)
+  }
+
   ts_start <- Sys.time()
   call <- match.call()
 
@@ -185,16 +260,21 @@ hzr_stepwise <- function(fit,
     if (isTRUE(trace)) cat(msg, "\n", sep = "")
   }
 
+  # The score criterion is entry-only: it exists to remove the per-candidate
+  # refit from the forward step, and the drop path never had one. Following
+  # SAS, removal is tested on the current model's Wald p-value.
+  drop_criterion <- if (criterion == "score") "wald" else criterion
+
   # Header line (mirrors design sec.5).
-  header <- if (criterion == "wald") {
-    sprintf(
-      "Stepwise selection (direction = %s, criterion = wald, slentry = %.2f, slstay = %.2f)",
-      direction, slentry, slstay
-    )
-  } else {
+  header <- if (criterion == "aic") {
     sprintf(
       "Stepwise selection (direction = %s, criterion = aic)",
       direction
+    )
+  } else {
+    sprintf(
+      "Stepwise selection (direction = %s, criterion = %s, slentry = %.2f, slstay = %.2f)",
+      direction, criterion, slentry, slstay
     )
   }
   emit(header)
@@ -208,32 +288,59 @@ hzr_stepwise <- function(fit,
 
   current <- fit
   step_no <- 0L
+  # The log-likelihood the next step starts from. A forward step produces a
+  # model that CONTAINS the current one, so at the optimum the objective
+  # cannot fall. When it does, the refit did not converge -- provable in one
+  # comparison, which nothing was doing: the objective was written at every
+  # step and read at none.
+  prev_objective <- current$fit$objective %||% NA_real_
+  n_nonmonotone_entries <- 0L
   stopped_by_max_steps <- FALSE
+  # Candidates whose score statistic could not be computed, summed over
+  # steps.  Tracked so a screen that stopped because nothing was
+  # computable is distinguishable from one that stopped because nothing
+  # was good enough -- the two produce identical empty steps otherwise.
+  n_uncomputable_scores <- 0L
+  uncomputable_reasons  <- stats::setNames(integer(0), character(0))
+  stopped_uncomputable  <- FALSE
+  # Candidates whose REFIT failed, summed over steps.  The per-candidate
+  # warning already fires inside the step, but nothing recorded it on the
+  # result, so a screen that could not fit any candidate returned the same
+  # empty object as one that fit them all and liked none (#159).  The step
+  # functions have returned `refit_failures` since v1; this is the caller
+  # finally reading it.
+  refit_failures       <- character()
+  stopped_refit_failed <- FALSE
 
-  record_step <- function(action, out) {
+  # `crit` is the criterion actually applied to THIS step, which is not always
+  # the run's `criterion`: score is entry-only, so its drops are decided by
+  # Wald and must be labelled as such.
+  record_step <- function(action, out, crit = criterion) {
     step_no <<- step_no + 1L
     row <- data.frame(
       step_num  = step_no,
       action    = action,
       variable  = out$variable,
       phase     = out$phase,
-      criterion = criterion,
+      criterion = crit,
       score     = out$score,
       stat      = out$stat,
       df        = out$df,
       p_value   = out$p_value,
       delta_aic = out$delta_aic,
       logLik    = current$fit$objective   %||% NA_real_,
+      delta_logLik = (current$fit$objective %||% NA_real_) - prev_objective,
       aic       = .hzr_aic(current),
       n_coef    = length(current$fit$theta),
       stringsAsFactors = FALSE
     )
+    prev_objective <<- current$fit$objective %||% NA_real_
     steps[[length(steps) + 1L]] <<- row
 
-    score_fmt <- if (criterion == "wald") {
-      sprintf("p = %.3f", out$p_value)
-    } else {
+    score_fmt <- if (criterion == "aic") {
       sprintf("\u0394AIC = %+.2f", out$delta_aic)
+    } else {
+      sprintf("p = %.3f", out$p_value)
     }
     phase_txt <- if (is.na(out$phase)) {
       ""
@@ -262,6 +369,7 @@ hzr_stepwise <- function(fit,
       p_value   = NA_real_,
       delta_aic = NA_real_,
       logLik    = current$fit$objective   %||% NA_real_,
+      delta_logLik = 0,   # freezing changes no parameter
       aic       = .hzr_aic(current),
       n_coef    = length(current$fit$theta),
       stringsAsFactors = FALSE
@@ -292,6 +400,10 @@ hzr_stepwise <- function(fit,
 
     add_happened  <- FALSE
     drop_happened <- FALSE
+    # Per-ITERATION, not per-run: what stopped the screen is what the last
+    # iteration did, and a failure three steps back is not why it ended.
+    iter_refit_failures <- character()
+    iter_uncomputable   <- FALSE
 
     effective_force_out <- unique(c(force_out, frozen))
     effective_force_in  <- unique(c(force_in,  frozen))
@@ -306,7 +418,41 @@ hzr_stepwise <- function(fit,
         force_out = effective_force_out
       ), extra_args))
 
+      n_uncomputable_scores <- n_uncomputable_scores +
+        (fwd$n_uncomputable %||% 0L)
+      uncomputable_reasons <- .hzr_merge_reasons(
+        uncomputable_reasons, fwd$uncomputable_reasons
+      )
+      if (identical(fwd$stop_reason, "scores_uncomputable")) {
+        stopped_uncomputable <- TRUE
+        iter_uncomputable    <- TRUE
+      }
+      iter_refit_failures <- c(iter_refit_failures,
+                               fwd$refit_failures %||% character())
+
       if (fwd$accepted) {
+        # Nested models: the entered model contains the current one, so at the
+        # optimum objective_new >= objective_old. A violation is not a
+        # statistical result, it is proof the refit failed -- and every later
+        # step is then scored against a model that is not at its own optimum.
+        # The tolerance keeps optimizer noise from firing this; the cases that
+        # matter are whole log-likelihood units, not 1e-10.
+        entered_objective <- fwd$fit$fit$objective %||% NA_real_
+        obj_tol <- 1e-8 * max(1, abs(prev_objective))
+        if (is.finite(entered_objective) && is.finite(prev_objective) &&
+              entered_objective < prev_objective - obj_tol) {
+          n_nonmonotone_entries <- n_nonmonotone_entries + 1L
+          warning("Stepwise forward step ", step_no + 1L, " entered ",
+                  fwd$variable,
+                  if (!is.na(fwd$phase)) paste0(" (", fwd$phase, ")") else "",
+                  " and the log-likelihood FELL, ", format(prev_objective),
+                  " -> ", format(entered_objective), " (",
+                  format(entered_objective - prev_objective), "). The entered ",
+                  "model contains the current one, so this cannot happen at ",
+                  "the optimum: the refit did not converge, and every later ",
+                  "step is scored against a model that is not at its optimum. ",
+                  "See `$steps$delta_logLik`.", call. = FALSE)
+        }
         current <- fwd$fit
         record_step("enter", fwd)
         bump_move(fwd$variable)
@@ -318,22 +464,45 @@ hzr_stepwise <- function(fit,
       bwd <- do.call(.hzr_stepwise_backward_step, c(list(
         current   = current,
         data      = data,
-        criterion = criterion,
+        criterion = drop_criterion,
         slstay    = slstay,
         force_in  = effective_force_in
       ), extra_args))
 
+      iter_refit_failures <- c(iter_refit_failures,
+                               bwd$refit_failures %||% character())
+
       if (bwd$accepted) {
         current <- bwd$fit
-        record_step("drop", bwd)
+        record_step("drop", bwd, crit = drop_criterion)
         bump_move(bwd$variable)
         drop_happened <- TRUE
       }
     }
 
+    refit_failures <- c(refit_failures, iter_refit_failures)
+
     if (!add_happened && !drop_happened) {
-      emit(sprintf("(no further action after %d step%s)",
-                   step_no, if (step_no == 1L) "" else "s"))
+      step_txt <- sprintf("%d step%s", step_no,
+                          if (step_no == 1L) "" else "s")
+      # "no further action" is a claim that candidates were tested and none
+      # was good enough.  Say that only when it is true.
+      if (length(iter_refit_failures) > 0L) {
+        stopped_refit_failed <- TRUE
+        emit(sprintf(
+          "(stopped after %s: %d candidate refit%s FAILED and could not be tested -- %s)",
+          step_txt, length(iter_refit_failures),
+          if (length(iter_refit_failures) == 1L) "" else "s",
+          paste(iter_refit_failures, collapse = ", ")
+        ))
+      } else if (iter_uncomputable) {
+        emit(sprintf(
+          "(stopped after %s: no candidate score could be COMPUTED -- none was tested)",
+          step_txt
+        ))
+      } else {
+        emit(sprintf("(no further action after %s)", step_txt))
+      }
       break
     }
   }
@@ -356,7 +525,8 @@ hzr_stepwise <- function(fit,
       criterion = character(), score = numeric(),
       stat = numeric(), df = integer(),
       p_value = numeric(), delta_aic = numeric(),
-      logLik = numeric(), aic = numeric(), n_coef = integer(),
+      logLik = numeric(), delta_logLik = numeric(),
+      aic = numeric(), n_coef = integer(),
       stringsAsFactors = FALSE
     )
   } else {
@@ -378,8 +548,50 @@ hzr_stepwise <- function(fit,
     slstay    = slstay,
     max_steps = max_steps,
     max_move  = max_move,
-    hit_max_steps = stopped_by_max_steps
+    hit_max_steps = stopped_by_max_steps,
+    n_uncomputable_scores = n_uncomputable_scores,
+    uncomputable_reasons  = uncomputable_reasons,
+    stopped_uncomputable  = stopped_uncomputable,
+    n_refit_failures      = length(refit_failures),
+    refit_failures        = refit_failures,
+    stopped_refit_failed  = stopped_refit_failed,
+    n_nonmonotone_entries = n_nonmonotone_entries
   )
+
+  n_indefinite <- unname(uncomputable_reasons["information_indefinite"])
+  if (is.na(n_indefinite)) n_indefinite <- 0L
+
+  if (stopped_uncomputable) {
+    warning("Stepwise selection stopped because the score statistic ",
+            "could not be computed for any remaining candidate (",
+            n_uncomputable_scores, " candidate score(s) were NA across the ",
+            "run). This is not the same as no candidate meeting `slentry`: ",
+            "the screen stopped without being able to test them.",
+            .hzr_format_reasons(uncomputable_reasons), call. = FALSE)
+  } else if (n_indefinite > 0L) {
+    # The run finished normally, so the branch above stays quiet -- but a
+    # candidate the score test could not evaluate at beta = 0 is usually one
+    # with a LARGE effect, and it was passed over in favour of candidates that
+    # could be scored.  A completed run is where that is least visible and
+    # most misleading, so it warns on its own.
+    warning("Stepwise selection completed, but ", n_indefinite,
+            " candidate score(s) could not be computed because ",
+            .hzr_score_reason_text("information_indefinite"),
+            ". Those candidates were passed over rather than tested, so the ",
+            "selected set may omit strong variables. Re-run with ",
+            "`criterion = \"wald\"` to test them; see ",
+            "`$criteria$uncomputable_reasons`.", call. = FALSE)
+  }
+  if (stopped_refit_failed) {
+    warning("Stepwise selection stopped after ", nrow(steps_df),
+            " accepted step(s), and the iteration it stopped on had ",
+            "candidate refit failure(s) (", length(refit_failures),
+            " across the run: ",
+            paste(unique(refit_failures), collapse = ", "),
+            "). Those candidates were never tested, so stopping here is ",
+            "NOT evidence that nothing met the entry or retention rule. ",
+            "See `$criteria$refit_failures`.", call. = FALSE)
+  }
   result$trace_msg  <- trace_msg
   result$elapsed    <- elapsed
   result$final_call <- call
@@ -451,9 +663,10 @@ as.data.frame.hzr_stepwise <- function(x, ...) {
 #' data(avc)
 #' avc <- na.omit(avc)
 #' base <- hazard(survival::Surv(int_dead, dead) ~ age,
-#'                data = avc, dist = "weibull", fit = TRUE)
+#'                data = avc, dist = "weibull", fit = TRUE,
+#'                theta = c(mu = 0.01, nu = 0.5, 0))
 #' \donttest{
-#' sw <- hzr_stepwise(base, scope = ~ age + nyha,
+#' sw <- hzr_stepwise(base, scope = ~ age + mal,
 #'                    data = avc, direction = "forward",
 #'                    control = list(n_starts = 1))
 #' cat(stepwise_trace(sw), sep = "\n")

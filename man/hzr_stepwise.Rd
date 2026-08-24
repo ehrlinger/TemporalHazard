@@ -13,7 +13,7 @@ hzr_stepwise(
   scope = NULL,
   data,
   direction = c("both", "forward", "backward"),
-  criterion = c("wald", "aic"),
+  criterion = c("score", "wald", "aic"),
   slentry = 0.3,
   slstay = 0.2,
   max_steps = 50L,
@@ -50,15 +50,18 @@ refits.}
 enter, only leave, or both.  See the \strong{Selection direction and
 criterion} section.}
 
-\item{criterion}{Entry / retention rule --- one of \code{"wald"} (default)
-or \code{"aic"}.  \code{"wald"} applies SAS-style p-value thresholds
-(\code{slentry} / \code{slstay}); \code{"aic"} adds or drops whenever it lowers the
-AIC.  See the \strong{Selection direction and criterion} section.}
+\item{criterion}{Entry / retention rule --- one of \code{"score"} (default),
+\code{"wald"}, or \code{"aic"}.  \code{"score"} and \code{"wald"} both apply SAS-style
+p-value thresholds (\code{slentry} / \code{slstay}) but score entry candidates
+differently, and can therefore select different variable sets; \code{"score"}
+reproduces C/SAS HAZARD and needs no per-candidate refit.  \code{"aic"} adds or
+drops whenever it lowers the AIC.  See the \strong{Selection direction and
+criterion} section.}
 
-\item{slentry}{Entry p-value threshold for the Wald criterion.
+\item{slentry}{Entry p-value threshold for the score / Wald criteria.
 Default \code{0.30} matches SAS \code{SLENTRY}.}
 
-\item{slstay}{Retention p-value threshold for the Wald criterion.
+\item{slstay}{Retention p-value threshold for the score / Wald criteria.
 Default \code{0.20} matches SAS \code{SLSTAY}.}
 
 \item{max_steps}{Hard cap on total accepted actions.  Emits a
@@ -93,7 +96,21 @@ frozen action; see Details.}
 \item{\code{scope}}{Record of the candidate scope, plus
 \code{force_in}, \code{force_out}, and the frozen set.}
 \item{\code{criteria}}{Named list of the threshold / direction
-settings actually applied.}
+settings actually applied, plus, under \code{criterion = "score"},
+\code{n_uncomputable_scores} (how many candidate scores were \code{NA}),
+\code{uncomputable_reasons} (a named integer vector of \emph{why}) and
+\code{stopped_uncomputable}. Read \code{uncomputable_reasons} before treating
+an unscored candidate as a bad one: \code{information_indefinite} marks
+candidates whose effect is too large for the score test's
+approximation at zero, which are typically the strongest variables
+on offer rather than degenerate ones. \code{criterion = "wald"} tests
+them.  For every criterion it also carries \code{refit_failures} (the
+\code{"var"} / \code{"var@phase"} tokens of candidate moves whose refit
+errored or failed to converge), \code{n_refit_failures}, and
+\code{stopped_refit_failed} --- \code{TRUE} when the run ended on an iteration
+in which refits failed, which is a screen that could not test its
+candidates rather than one that tested them and liked none.  Check
+it before reading a zero-row \code{steps} as an honest null result.}
 \item{\code{trace_msg}}{Character vector of the trace lines,
 captured regardless of the \code{trace} flag.}
 \item{\code{elapsed}}{\code{difftime} from start to finish.}
@@ -112,8 +129,8 @@ appended.
 }
 \description{
 Run forward, backward, or two-way stepwise selection on an existing
-\code{hazard} fit using Wald p-values or AIC deltas as the entry /
-retention criterion.  Phase-specific entry is supported for
+\code{hazard} fit using score (Q) statistics, Wald p-values, or AIC deltas as
+the entry / retention criterion.  Phase-specific entry is supported for
 multiphase models: a covariate can enter one phase and not another.
 }
 \details{
@@ -124,10 +141,12 @@ The \code{steps} data frame has columns:
 \item{\code{action}}{\code{"enter"}, \code{"drop"}, or \code{"frozen"}.}
 \item{\code{variable}}{Variable affected.}
 \item{\code{phase}}{Phase name (multiphase) or \code{NA_character_}.}
-\item{\code{criterion}}{\code{"wald"} or \code{"aic"}.}
+\item{\code{criterion}}{The criterion actually applied to this step ---
+\code{"score"}, \code{"wald"}, or \code{"aic"}.  Under \code{criterion = "score"} the drop
+rows read \code{"wald"}, because score is entry-only.}
 \item{\code{score}}{Winning score used for the decision.}
-\item{\code{stat}, \code{df}}{Wald statistic and degrees of
-freedom.}
+\item{\code{stat}, \code{df}}{Test statistic (score Q or Wald) and
+degrees of freedom.}
 \item{\code{p_value}, \code{delta_aic}}{Always populated when
 computable, regardless of the active criterion.}
 \item{\code{logLik}, \code{aic}, \code{n_coef}}{Goodness-of-fit
@@ -155,17 +174,40 @@ often a single variable may oscillate before it is frozen.}
 }
 
 \describe{
-\item{\code{criterion = "wald"} (default)}{Accept moves on SAS-style
+\item{\code{criterion = "score"} (default)}{Accept moves on SAS-style
+significance thresholds, using the score (Q) statistic of the candidate
+coefficient --- this reproduces C/SAS HAZARD's \code{SELECTION} statistic.
+Q is evaluated at the \emph{current} model's MLE with the candidate's
+coefficient pinned at zero, so \strong{no candidate refit is needed}: the
+reduced-model information is inverted once per step and reused across
+every candidate.  Only the winner is refit.  A candidate enters if its
+p-value is below \code{slentry}.
+
+Score is an \emph{entry} criterion; the drop path never refit per candidate
+in the first place, so removals are tested on the current model's Wald
+p-value against \code{slstay}, as SAS does.
+
+For single-distribution fits, the score criterion computes the observed
+information numerically via the suggested \pkg{numDeriv} package and
+errors with a clear message if it is not installed; a multiphase fit
+uses the analytic Hessian instead and does not need it.
+
+Following SAS, the variance used during \emph{selection} is approximate:
+shaping-parameter covariances are ignored.  This affects selection only
+--- final-model standard errors are unchanged and still come from the
+full Hessian.  Candidates must be single-column numeric main-effect
+terms; a factor is rejected with an error rather than skipped.}
+\item{\code{criterion = "wald"}}{Accept moves on SAS-style
 significance thresholds, using the Wald \eqn{\chi^2} of the affected
 coefficient(s): a candidate enters if its p-value is below \code{slentry}, and
 a term is dropped if its p-value rises above \code{slstay}.  Entry candidates
 are scored from a refit that adds the candidate (so its new coefficient
 can be tested); drop candidates are scored from the \emph{current} model's
 Wald p-values without a per-candidate refit, and a single refit is run
-only after a drop is chosen.  Note this differs algorithmically from
-C/SAS HAZARD, which selects on a \emph{score} (Q) statistic evaluated without
-refitting; the two can take different step paths even when they converge
-to a similar final model.}
+only after a drop is chosen.  This was the default before version 1.2.0.
+It differs algorithmically from C/SAS HAZARD, so the two criteria can
+take different step paths --- and select different variable sets ---
+even when they converge to a similar final model.}
 \item{\code{criterion = "aic"}}{Accept any move with
 \eqn{\Delta\mathrm{AIC} < 0} (a strictly better penalised fit), ignoring
 \code{slentry} / \code{slstay}.  Entry candidates use the actual
@@ -182,9 +224,10 @@ information-criterion search.}
 data(avc)
 avc <- na.omit(avc)
 base <- hazard(survival::Surv(int_dead, dead) ~ age,
-               data = avc, dist = "weibull", fit = TRUE)
+               data = avc, dist = "weibull", fit = TRUE,
+               theta = c(mu = 0.01, nu = 0.5, 0))
 \donttest{
-sw <- hzr_stepwise(base, scope = ~ age + nyha,
+sw <- hzr_stepwise(base, scope = ~ age + mal,
                    data = avc, direction = "forward",
                    control = list(n_starts = 1))
 print(sw)

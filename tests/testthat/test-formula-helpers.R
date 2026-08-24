@@ -43,7 +43,7 @@ test_that("left-censored Surv sets time_upper but not time_lower", {
   )
 
   expect_equal(out$time,       df$t)
-  expect_equal(out$status,     df$d)
+  expect_equal(out$status,     c(1, -1, 1))   # Surv 0 = left-censored -> -1
   expect_null(out$time_lower)
   expect_equal(out$time_upper, df$t)
   expect_null(out$x)
@@ -64,12 +64,80 @@ test_that("interval-censored Surv extracts time_lower + time_upper + status", {
     data = df
   )
 
-  # interval status codes coming out of Surv are 0/1/2/3; the parser
-  # keeps them as-is, just routes lower/upper columns.
+  # Surv codes every row here as 3 (interval); the parser recodes to
+  # TemporalHazard's 2.  Asserting the value matters -- an earlier version
+  # of this test checked `status %in% c(0, 1, 2, 3)`, which is the full set
+  # of codes Surv can emit and so could never fail.
   expect_length(out$time, 3)
   expect_equal(out$time_lower, df$lo)
   expect_equal(out$time_upper, df$hi)
-  expect_true(all(out$status %in% c(0, 1, 2, 3)))
+  expect_equal(out$status, rep(2, 3))
+})
+
+# ---------------------------------------------------------------------------
+# Surv() status codes are not TemporalHazard status codes
+#
+# survival::Surv() and this package disagree on the integer coding, so the
+# parser has to translate rather than pass through:
+#
+#   TemporalHazard   -1 left   0 right   1 event   2 interval
+#   Surv "left"                0 left    1 event
+#   Surv "interval"            0 right   1 event   2 left   3 interval
+#
+# For a non-interval row, Surv stores the status in the `time2` column, so
+# `time2` is a sentinel there and must never be read as an upper bound.
+# ---------------------------------------------------------------------------
+
+test_that("left-censored Surv recodes status 0 to TemporalHazard's -1", {
+  df <- data.frame(
+    t = c(1, 2, 3),
+    d = c(1, 0, 1)   # Surv "left": 1 = event, 0 = left-censored
+  )
+  out <- parse(survival::Surv(t, d, type = "left") ~ 1, data = df)
+
+  expect_equal(out$status, c(1, -1, 1))
+})
+
+test_that("interval Surv recodes all four status codes", {
+  df <- data.frame(
+    lo = c(1, 2, 3, 4),
+    hi = c(NA, NA, NA, 6),
+    ev = c(1, 0, 2, 3)   # event, right-censored, left-censored, interval
+  )
+  out <- parse(survival::Surv(lo, hi, ev, type = "interval") ~ 1, data = df)
+
+  expect_equal(out$status, c(1, 0, -1, 2))
+})
+
+test_that("interval Surv never reads an upper bound from the time2 sentinel", {
+  # Surv writes 1 into time2 for every non-interval row.  Only the genuine
+  # interval row (4, 6) has an upper bound; the rest must fall back to `time`.
+  df <- data.frame(
+    lo = c(1, 2, 3, 4),
+    hi = c(NA, NA, NA, 6),
+    ev = c(1, 0, 2, 3)
+  )
+  out <- parse(survival::Surv(lo, hi, ev, type = "interval") ~ 1, data = df)
+
+  expect_equal(out$time,       c(1, 2, 3, 4))
+  expect_equal(out$time_upper, c(1, 2, 3, 6))
+})
+
+test_that("interval Surv does not left-truncate non-interval rows", {
+  # `time_lower` is overloaded: the interval lower bound when status == 2,
+  # but the counting-process entry time when status is 0 or 1, where the
+  # likelihood forms H(stop) - H(start).  Surv "interval" carries no
+  # truncation, so entry time is 0 for every non-interval row -- setting it
+  # to the observed time instead would cancel those rows out of the
+  # likelihood entirely.
+  df <- data.frame(
+    lo = c(1, 2, 3, 4),
+    hi = c(NA, NA, NA, 6),
+    ev = c(1, 0, 2, 3)
+  )
+  out <- parse(survival::Surv(lo, hi, ev, type = "interval") ~ 1, data = df)
+
+  expect_equal(out$time_lower, c(0, 0, 0, 4))
 })
 
 # ---------------------------------------------------------------------------
