@@ -61,7 +61,7 @@
 <div class="section level2">
 <h2 id="versioning-convention-three-digits-decide-the-bump-at-release">Versioning convention (three digits, decide the bump at release)<a class="anchor" aria-label="anchor" href="#versioning-convention-three-digits-decide-the-bump-at-release"></a></h2>
 <ul><li><p><strong>Every version is a straight three-part number</strong>: <code>1.1.0</code>, <code>1.2.0</code>, <code>1.2.1</code>. Never a fourth component, and never a <code>.9000</code> dev suffix — not for dev snapshots, not to satisfy a version-grep test, not anywhere.</p></li>
-<li><p><strong>Acceptance itself never bumps the version.</strong> <code>dev</code> stays at the number that shipped; there is no placeholder to strip later and no bump to remember. The version moves only when work moves it, per the next two bullets.</p></li>
+<li><p><strong>Acceptance itself never bumps the version.</strong> <code>main</code> stays at the number that shipped; there is no placeholder to strip later and no bump to remember. The version moves only when work moves it, per the next two bullets.</p></li>
 <li><p><strong>The patch digit moves when a fix actually lands</strong>, not before: <code>1.2.0</code> → <code>1.2.1</code> once there is work behind it.</p></li>
 <li><p><strong>The minor and major digits are the maintainer’s call, taken at release time</strong> from what is actually in NEWS — breaking API → major, back-compatible features → minor, fixes only → patch. Accumulate under the current minor and let one consolidated minor carry a whole feature set rather than spending a new one per batch.</p></li>
 <li>
@@ -70,44 +70,39 @@
 <p>When a breaking change ships in a minor for this reason, say so plainly in NEWS under a <strong>Breaking changes</strong> heading. The version number is a release decision; the warning to users is not negotiable and is not softened by it.</p>
 </li>
 </ul><p>So the per-release cycle is:</p>
-<pre><code>1.1.0 (released)  -&gt;  dev stays 1.1.0  -&gt;  accumulate work, patch-bumping
-                                            as fixes land (1.1.1, 1.1.2 ...)
+<pre><code>1.1.0 (released)  -&gt;  main stays 1.1.0  -&gt;  accumulate work, patch-bumping
+                                             as fixes land (1.1.1, 1.1.2 ...)
   -&gt;  at release, decide from NEWS: 1.1.3 | 1.2.0 | 2.0.0  -&gt;  submit
-  -&gt;  accepted  -&gt;  dev stays at that number until work moves it ...</code></pre>
-<p><strong>Do not pre-stamp a future release number into the version.</strong> Labelling <code>dev</code> with the number you expect to ship silently commits a decision that should be made last, from the evidence. That is the mistake behind the 2026-06 version confusion, when <code>dev</code> was labelled for a minor release before <code>1.1.0</code> had even shipped and before the work existed to justify it.</p>
+  -&gt;  accepted  -&gt;  main stays at that number until work moves it ...</code></pre>
+<p><strong>Do not pre-stamp a future release number into the version.</strong> Labelling the working line with the number you expect to ship silently commits a decision that should be made last, from the evidence. That is the mistake behind the 2026-06 version confusion, when the line was labelled for a minor release before <code>1.1.0</code> had even shipped and before the work existed to justify it. It recurred on <code>main</code> in 2026-08, via <code>chore(release): target 1.2.0 for the next CRAN drop</code>, which left <code>main</code> naming a release that never went out.</p>
 </div>
 <div class="section level2">
-<h2 id="branch-model-default-single-line">Branch model (default: single line)<a class="anchor" aria-label="anchor" href="#branch-model-default-single-line"></a></h2>
+<h2 id="branch-model-one-line-main">Branch model (one line: <code>main</code>)<a class="anchor" aria-label="anchor" href="#branch-model-one-line-main"></a></h2>
 <table class="table"><colgroup><col width="34%"><col width="39%"><col width="26%"></colgroup><thead><tr><th>Branch</th>
 <th>Version</th>
 <th>Role</th>
 </tr></thead><tbody><tr><td><code>main</code></td>
-<td>the clean CRAN release (e.g. <code>1.1.0</code>)</td>
-<td>the released/stable line; always == the latest version on CRAN. Tagged at each release.</td>
-</tr><tr><td><code>dev</code></td>
-<td>the same three-part number as <code>main</code>, patch-bumped as fixes land</td>
-<td>the working line; accumulates the next release. Carries no dev marker.</td>
-</tr></tbody></table><p>Both branches carry a clean three-part version. A README/badge tweak on <code>main</code> at the same version number is normal and fine — it does not need a version marker. (Historically <code>main</code> carried a fourth <code>.9000</code> component; that was dropped after <code>1.1.0</code>, and the convention was dropped entirely in 2026-08.)</p>
-<p><strong>Routing:</strong></p>
+<td>a clean three-part number, patch-bumped as fixes land</td>
+<td>the only long-lived branch. Feature branches merge in; releases are cut from it and tagged.</td>
+</tr></tbody></table><p><code>main</code> carries a clean three-part version at all times, and it is <strong>not</strong> pinned to whatever is on CRAN: work accumulates and the patch digit moves as fixes land. A README or badge tweak at the same version number is normal and needs no version marker. (Historically <code>main</code> carried a fourth <code>.9000</code> component; that was dropped after <code>1.1.0</code>, and the convention was dropped entirely in 2026-08.)</p>
+<p><strong>Routing: there is one route.</strong> Branch off <code>main</code>, PR to <code>main</code>, the maintainer merges. That covers R code, <code>man/</code>, vignettes, tests, docs, cosmetic fixes and hotfixes alike — no second destination to choose between, and no back-merge to forget.</p>
+<p><strong>Release ops</strong> (tag, GitHub Release) go directly on <code>main</code>, the documented exception to the branch + PR rule.</p>
+<p>Two things follow from having one line, both worth knowing:</p>
 <ul><li>
-<strong>Routine work</strong> (R code, <code>man/</code>, vignettes, tests, docs) — branch off <code>dev</code>, PR to <code>dev</code>. It reaches <code>main</code> only via a release.</li>
+<strong><code>Closes #123</code> works now.</strong> GitHub auto-closes an issue only on merge into the <em>default</em> branch. Under the old split, routine work merged to <code>dev</code>, so the keyword silently did nothing and every issue had to be closed by hand.</li>
 <li>
-<strong>Urgent patch / hotfix</strong> to the released line — branch off <code>main</code>, fix, set <code>DESCRIPTION</code> to the next <em>patch</em> (<code>X.Y.(Z+1)</code>), PR to <code>main</code>, release it, then merge <code>main -&gt; dev</code> so the fix flows into the dev line. (This is the “bug fixes go to <code>main</code>” path: ship a patch without dragging in <code>dev</code>’s unfinished features.)</li>
-<li>
-<strong>Cosmetic / GitHub-facing fixes</strong> (README prose, badges, figures, pkgdown config) — branch off <code>main</code>, PR to <code>main</code>. No version change; <code>main</code> stays at the released number.</li>
-<li>
-<strong>Release ops</strong> (tag, GitHub Release) — directly on <code>main</code> (the documented exception to the branch+PR rule).</li>
-</ul><p><strong>Keep them in sync:</strong> after any <code>main</code>-side fix, merge <code>main -&gt; dev</code> so it flows into the dev line. Skipping this is what produces the “same fix, two parallel PRs” situation.</p>
+<strong>There is no release PR, and no trap inside it.</strong> With “Automatically delete head branches” enabled, merging a <code>dev -&gt; main</code> release PR deletes <code>dev</code>, because <code>dev</code> is that PR’s head branch. That happened on the 1.2.2 release (2026-08-24); nothing was lost, since <code>main</code> already contained every commit, but <code>dev</code> had to be pushed back from <code>main</code>.</li>
+</ul><p><strong>Adopted 2026-08-24</strong>, replacing a <code>main</code> + <code>dev</code> split. A second long-lived branch earns its keep only when a stable line must keep shipping patches while a diverged line runs in parallel. TemporalHazard has no such parallel line, so the split bought nothing and cost a back-merge after every <code>main</code>-side fix. (ggRandomForests <em>does</em> have that constraint, for the greenfield RHF work, and keeps its feature branch. The two repos differ here on purpose.)</p>
 <div class="section level3">
 <h3 id="when-to-diverge-into-a-two-branch-model">When to diverge into a two-branch model<a class="anchor" aria-label="anchor" href="#when-to-diverge-into-a-two-branch-model"></a></h3>
 <p>Reserve the heavier git-flow split — <code>main</code> keeps shipping <code>1.1.x</code> patches while <code>dev</code> becomes a diverged <strong>next-major</strong> line (e.g. <code>2.0.0</code>) — for a <strong>genuine breaking rewrite</strong> running in parallel with patch maintenance (the ggRandomForests-v4 situation). It carries a real cost: every <code>main</code> hotfix must be back-merged into <code>dev</code> or <code>dev</code> drifts from the patched line. Do <strong>not</strong> use it as the default — it is not worth that tax for ordinary incremental cycles.</p>
 <p><strong>Release flow (default single line):</strong></p>
-<pre><code>dev (X.Y.Z) accumulates, patch-bumping as fixes land
+<pre><code>main (X.Y.Z) accumulates, patch-bumping as fixes land
   -&gt; at release, decide the next number N from NEWS scope
-  -&gt; set DESCRIPTION + NEWS top heading to N on dev
+  -&gt; set DESCRIPTION + NEWS top heading to N on main (via a PR)
   -&gt; run the pre-submission gate (below), submit to CRAN
-  -&gt; on acceptance: merge dev -&gt; main (main = N), tag vN, GitHub Release
-  -&gt; dev stays at N; it moves again only when work lands (N patch-bumped)</code></pre>
+  -&gt; on acceptance: tag vN on main, GitHub Release
+  -&gt; main stays at N; it moves again only when work lands (N patch-bumped)</code></pre>
 </div>
 </div>
 <div class="section level2">
@@ -117,7 +112,7 @@
 <li><p><code>cran-comments.md</code> version heading matches <code>DESCRIPTION</code>; if a resubmission, each reviewer point is itemised with how it was addressed.</p></li>
 <li><p><code>devtools::document()</code> is clean and <code>man/</code> is in sync.</p></li>
 <li>
-<p><strong>Adversarial review of the accumulated release diff.</strong> Every PR is reviewed on its own; nobody reviews the release as a whole, and by submission time <code>dev</code> is typically dozens of commits ahead of <code>main</code>. Run the <code>r-reviewer</code> agent (<code>.claude/agents/r-reviewer.md</code>) over <code>git diff main...dev</code>.</p>
+<p><strong>Adversarial review of the accumulated release diff.</strong> Every PR is reviewed on its own; nobody reviews the release as a whole, and by submission time <code>main</code> is typically dozens of commits past the last release. Run the <code>r-reviewer</code> agent (<code>.claude/agents/r-reviewer.md</code>) over the diff from the previous release tag to <code>main</code> — <code>git diff v1.2.2...main</code> at the time of writing. That tag is the anchor now that there is no <code>dev</code> to diff against, and it is the better one: a tag records exactly what shipped, where <code>dev</code>’s position depended on when you looked.</p>
 <p>This step is <strong>advisory</strong>, unlike the rest of this checklist. It returns findings to triage, not a pass/fail. Verify each one against the code before acting – and equally, do not let a clean report substitute for step 6. The two catch different things: the check finds what static analysis sees in a built tarball, the review finds what is wrong but passing, including prose that contradicts the code. Run it <em>before</em> the check so fixes land first.</p>
 </li>
 <li>
@@ -128,7 +123,7 @@
 </li>
 <li><p><code>devtools::check_win_devel()</code> (and optionally <code>rhub::rhub_check()</code>). <strong>This is the source of truth for the aspell NOTE</strong> — the local <code>--as-cran</code> does <em>not</em> run the CRAN incoming aspell step unless <code>aspell</code> is installed, so it under-reports. Reconcile the <code>## NOTE disposition</code> section of <code>cran-comments.md</code> against the <em>win-builder</em> <code>00check.log</code>. See “Known benign NOTE” below.</p></li>
 <li><p><code>urlchecker::url_check()</code> and <code>tools::package_dependencies(reverse = TRUE)</code> (revdeps must be handled; currently 0). doi.org links may 403 to automated checkers but resolve in browsers — note, don’t chase.</p></li>
-<li><p>Submit: <code>devtools::submit_cran()</code> (writes <code>CRAN-SUBMISSION</code>). Submit from a checkout of the release tree (normally <code>dev</code> at the release number, or <code>main</code> once merged) — the shipped tarball content is what matters, not which branch the working tree was on.</p></li>
+<li><p>Submit: <code>devtools::submit_cran()</code> (writes <code>CRAN-SUBMISSION</code>). Submit from a checkout of <code>main</code> at the release number — the shipped tarball content is what matters, not which branch the working tree was on.</p></li>
 </ol><div class="section level3">
 <h3 id="known-benign-note">Known benign NOTE<a class="anchor" aria-label="anchor" href="#known-benign-note"></a></h3>
 <p>The CRAN incoming check reports one expected NOTE the local <code>--as-cran</code> does not show (without <code>aspell</code> installed):</p>
@@ -143,7 +138,7 @@
 <p>Tag the release and push the tag (annotated, mirroring existing tags), on <code>main</code> (the released line):</p>
 <div class="sourceCode" id="cb4"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="fu">git</span> tag <span class="at">-a</span> vX.Y.Z <span class="at">-m</span> <span class="st">"TemporalHazard vX.Y.Z — accepted &amp; published on CRAN &lt;date&gt;"</span> <span class="op">&lt;</span>main-HEAD<span class="op">&gt;</span></span>
 <span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a><span class="fu">git</span> push origin vX.Y.Z</span></code></pre></div>
-<p><code>CRAN-SUBMISSION</code>’s <code>SHA:</code> records the tree <code>submit_cran()</code> ran from; if you submitted from <code>dev</code>, the shipped content still matches <code>main</code> HEAD (they differ only in <code>.Rbuildignore</code>’d files), so tag <code>main</code>.</p>
+<p><code>CRAN-SUBMISSION</code>’s <code>SHA:</code> records the tree <code>submit_cran()</code> ran from, which is <code>main</code> HEAD.</p>
 </li>
 <li>
 <p>Publish a GitHub Release from the tag, using that version’s <code>NEWS.md</code> section as the body, marked as the latest release:</p>
@@ -151,18 +146,20 @@
 <span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>  <span class="at">--title</span> <span class="st">"TemporalHazard X.Y.Z"</span> <span class="at">--notes-file</span> <span class="op">&lt;</span>news-section.md<span class="op">&gt;</span></span></code></pre></div>
 </li>
 <li>
-<p><strong>Nothing to bump at this step.</strong> <code>dev</code> stays at <code>X.Y.Z</code>, the number that just shipped. Do not run <code>usethis::use_dev_version()</code> — it writes a fourth <code>.9000</code> component, which this package does not use. The version moves later, when work moves it: the patch digit once a fix actually lands.</p>
+<p><strong>Nothing to bump at this step.</strong> <code>main</code> stays at <code>X.Y.Z</code>, the number that just shipped. Do not run <code>usethis::use_dev_version()</code> — it writes a fourth <code>.9000</code> component, which this package does not use. The version moves later, when work moves it: the patch digit once a fix actually lands.</p>
 <p>Steps 1 and 2 (tag push, GitHub Release) are the standard release-op exception to the branch + PR rule.</p>
 </li>
 </ol><p>The badge block (CRAN status + cranlogs + R-CMD-check / codecov / lint / pkgdown) was aligned at the first CRAN release (<code>1.0.3</code>) and the manual version-badge CI (<code>update-version-badge.yaml</code>) retired then — no badge work on subsequent releases.</p>
-<p>All subsequent development happens at <code>X.Y.Z</code> on <code>dev</code>, patch-bumping as fixes land, until the next release decides the number to submit.</p>
+<p>All subsequent development happens at <code>X.Y.Z</code> on <code>main</code>, patch-bumping as fixes land, until the next release decides the number to submit.</p>
 </div>
 <div class="section level2">
 <h2 id="historical-note">Historical note<a class="anchor" aria-label="anchor" href="#historical-note"></a></h2>
 <ul><li>Releases through <code>1.0.2</code> used clean three-part versions only.</li>
 <li>A <code>.9000</code> dev convention was adopted after <code>1.0.2</code>; <code>1.0.3</code> (accepted 2026-05-29) was the first to use it, under a <strong>two-branch</strong> model where <code>main</code> carried the released <code>.9000</code> and <code>dev</code> the next-version <code>.9000</code>. <strong>That convention was dropped entirely on 2026-08-17</strong> — see the versioning section above. Versions are three digits, always.</li>
 <li>
-<strong>2026-06-12:</strong> moved to the <strong>single-line, decide-the-bump-at-release</strong> model documented above, after the <code>dev = 1.2.0.9000</code> mislabel (a minor bump pre-stamped before the work existed, while <code>1.1.0</code> was frozen on <code>main</code> but never shipped). <code>1.1.0</code> folded that work in and was accepted &amp; published on CRAN 2026-06-12; <code>main</code> stays at the released number, and since 2026-08-17 so does <code>dev</code>.</li>
+<strong>2026-06-12:</strong> moved to the <strong>single-line, decide-the-bump-at-release</strong> model documented above, after the <code>dev = 1.2.0.9000</code> mislabel (a minor bump pre-stamped before the work existed, while <code>1.1.0</code> was frozen on <code>main</code> but never shipped). <code>1.1.0</code> folded that work in and was accepted &amp; published on CRAN 2026-06-12.</li>
+<li>
+<strong>2026-08-24:</strong> dropped the <code>main</code> + <code>dev</code> split entirely for the one-line model above. 1.2.0 and 1.2.1 were both numbered and never submitted, and 1.2.2 was tagged as a GitHub release without a CRAN submission, so the premise that <code>main</code> tracks CRAN had already stopped holding.</li>
 <li>Existing tags: <code>v0.1.0</code>, <code>v0.9.3</code>, <code>v1.0.0</code>, <code>v1.0.1</code>, <code>v1.0.3</code>, <code>v1.1.0</code>.</li>
 </ul></div>
 </div>

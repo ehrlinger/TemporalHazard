@@ -72,14 +72,14 @@
 <span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a><span class="ex">R</span> CMD build <span class="st">"</span><span class="va">$TMPDIR</span><span class="st">/tree"</span></span>
 <span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a><span class="ex">R</span> CMD check <span class="at">--as-cran</span> TemporalHazard_X.Y.Z.tar.gz</span></code></pre></div>
 <p>Run the commands. Reading the code is not evidence, and neither is a subagent’s report.</p>
-<p>Before opening the PR, and whenever the change touches an exported function or the likelihood, run the <code>r-reviewer</code> agent (<code>.claude/agents/r-reviewer.md</code>) over the diff. It is advisory: verify each finding against the code rather than acting on it, and do not let a clean report stand in for the commands above. <code>RELEASE.md</code> step 5 runs the same agent over the accumulated <code>main...dev</code> diff at release time, because per-PR review never sees the release as a whole.</p>
+<p>Before opening the PR, and whenever the change touches an exported function or the likelihood, run the <code>r-reviewer</code> agent (<code>.claude/agents/r-reviewer.md</code>) over the diff. It is advisory: verify each finding against the code rather than acting on it, and do not let a clean report stand in for the commands above. <code>RELEASE.md</code> step 5 runs the same agent over the accumulated diff from the previous release tag to <code>main</code> (<code>git diff v1.2.2...main</code> at the time of writing) at release time, because per-PR review never sees the release as a whole.</p>
 <p>Four details there are load bearing:</p>
 <ul><li>
 <strong><code>document()</code> runs first, every time.</strong> <code>man/</code> and <code>NAMESPACE</code> are generated. A stale <code>NAMESPACE</code> makes the test run answer a question about the previous commit.</li>
 <li>
 <strong>Lint runs before tests</strong> because it is seconds against about a minute for the suite. Cheap failures first.</li>
 <li>
-<strong><code>R CMD check</code> does not run the whole suite.</strong> It runs with <code>NOT_CRAN</code> false, so <code>skip_on_cran()</code> tests are skipped: 146 skips and 2339 passes under check, against 6 skips and <strong>3193</strong> passes locally (both measured 2026-08-23 on <code>dev</code> at <code>c9f6c28</code>, with no environment variables set; the local figure needs the SAS fixture checkouts present under <code>~/Documents/GitHub/hazard</code>). A green check is <strong>not</strong> evidence that those tests pass; only the local <code>devtools::test()</code> line is.</li>
+<strong><code>R CMD check</code> does not run the whole suite.</strong> It runs with <code>NOT_CRAN</code> false, so <code>skip_on_cran()</code> tests are skipped: 146 skips and 2339 passes under check, against 6 skips and <strong>3193</strong> passes locally (both measured 2026-08-23 at <code>c9f6c28</code>, with no environment variables set; the local figure needs the SAS fixture checkouts present under <code>~/Documents/GitHub/hazard</code>). A green check is <strong>not</strong> evidence that those tests pass; only the local <code>devtools::test()</code> line is.</li>
 <li>
 <strong>Commit before you <code>git archive</code>.</strong> It exports the committed tree, so an uncommitted fix is silently absent and the check answers a question about the wrong code. This has already cost one wrong conclusion. Nothing in the output tells you.</li>
 </ul><p>Check with the manual — never <code>--no-manual</code>. The PDF step is the only thing that catches raw Unicode in <code>Rd</code>.</p>
@@ -169,7 +169,7 @@
 <li>No <code><a href="https://rdrr.io/r/base/browser.html" class="external-link">browser()</a></code>, no bare <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code>, no <code><a href="https://rdrr.io/r/base/library.html" class="external-link">library()</a></code> inside <code>R/</code>. <code><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat()</a></code> belongs only in a <code>print.*</code> method.</li>
 </ul><div class="section level3">
 <h3 id="where-the-checks-time-actually-goes">Where the check’s time actually goes<a class="anchor" aria-label="anchor" href="#where-the-checks-time-actually-goes"></a></h3>
-<p>Overall <code>R CMD check --as-cran</code> with the manual: <strong>3m 29s</strong>, tarball <strong>2.8 MB</strong> (measured 2026-08-23 on <code>dev</code> at <code>c9f6c28</code>). CRAN’s ceiling is about 10 minutes and it rejects on that even at 0/0/0 — that is what got ggRandomForests archived in June 2026.</p>
+<p>Overall <code>R CMD check --as-cran</code> with the manual: <strong>3m 29s</strong>, tarball <strong>2.8 MB</strong> (measured 2026-08-23 at <code>c9f6c28</code>). CRAN’s ceiling is about 10 minutes and it rejects on that even at 0/0/0 — that is what got ggRandomForests archived in June 2026.</p>
 <table class="table"><thead><tr><th>Component</th>
 <th>Time</th>
 </tr></thead><tbody><tr><td>Tests</td>
@@ -197,13 +197,14 @@
 <div class="section level2">
 <h2 id="git-and-versioning">Git and versioning<a class="anchor" aria-label="anchor" href="#git-and-versioning"></a></h2>
 <ul><li>
-<strong>Never push to <code>main</code> or <code>dev</code> directly.</strong> Branch, commit, push the branch, open a PR, then stop. The maintainer merges.</li>
+<strong>Never push to <code>main</code> directly.</strong> Branch, commit, push the branch, open a PR, then stop. The maintainer merges. <code>main</code> is the only long-lived branch: there is no <code>dev</code>, and every kind of change takes the same route (see <code>RELEASE.md</code>, “Branch model”).</li>
 <li>
 <strong>Never roll the MINOR or MAJOR digit.</strong> That is the maintainer’s call, made when a feature set is consolidated into a release. Patch bumps are fine for incremental work; say so when you make one.</li>
 <li>
 <strong>Always a plain three-digit version. No <code>.9000</code>, no fourth digit, ever</strong> — not for dev snapshots, not to satisfy a version grep. <code>RELEASE.md</code> carries the full convention.</li>
 <li>⚠️ <strong>Unlike ggRandomForests, there is no test here that greps <code>NEWS.md</code> for the <code>DESCRIPTION</code> version.</strong> Nothing will catch a mismatch. Keep <code>DESCRIPTION</code> <code>Version:</code> and the <code>NEWS.md</code> top heading in sync <strong>by hand</strong> on every bump.</li>
-<li>⚠️ <strong><code>Closes #123</code> does not fire on this repo’s normal flow.</strong> GitHub auto-closes only on merge into the <em>default</em> branch, and routine work merges to <code>dev</code>. Close the issue manually after the merge, or it stays open silently.</li>
+<li>
+<strong><code>Closes #123</code> fires on the normal flow.</strong> GitHub auto-closes only on merge into the <em>default</em> branch, and routine work now merges to <code>main</code>, which is it. This inverted on 2026-08-24 when the <code>dev</code> branch was dropped; before that the keyword silently did nothing and issues had to be closed by hand.</li>
 </ul></div>
 <div class="section level2">
 <h2 id="prose">Prose<a class="anchor" aria-label="anchor" href="#prose"></a></h2>
