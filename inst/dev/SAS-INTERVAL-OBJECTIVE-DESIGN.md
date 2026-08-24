@@ -173,7 +173,15 @@ Scaffolded on `feat/sas-interval-objective-v2`:
       product form to 0 ULP, reproduces the closed-form identity exactly, and
       collapses correctly when every width is 1.
 - [ ] §4 `uslife2023` fixture.
-- [ ] §5 tests 1-6.
+- [x] §5 tests 2-5, in `tests/testthat/test-sas-interval-objective.R`
+      (14 blocks, 21 assertions). Built from deterministic sequences rather
+      than `set.seed()`, so an R RNG change cannot move an assertion, and
+      asserted against algebraic identities rather than stored numbers, so
+      they pin the formula rather than one build's output. Two additions
+      beyond the design: the underflow case that motivates the log-space
+      form, and an explicit "the two objectives disagree" assertion without
+      which every `"sas"` test would still pass if the switch were ignored.
+- [ ] §5 tests 1 and 6 -- both need the `uslife2023` fixture.
 - [ ] §6 `@note` -- drafted on `?hazard`; revisit once the form is live.
 
 ### Note on the `objective` name
