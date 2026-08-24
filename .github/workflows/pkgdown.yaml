@@ -9,11 +9,11 @@ on:
   push:
     paths-ignore:
       - '.claude/**'
-    branches: [main, master, dev]
+    branches: [main, master]
   pull_request:
     paths-ignore:
       - '.claude/**'
-    branches: [main, master, dev]
+    branches: [main, master]
   workflow_dispatch:
 
 concurrency:
