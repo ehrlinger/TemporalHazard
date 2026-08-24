@@ -524,10 +524,12 @@
   # strictly positive above, so log(delta_h) is safe.  Note the leading term
   # is -Lambda(u), NOT the -Lambda(l) the likelihood branch uses.
   #
-  # TODO(john): implement.  Return the weighted sum, as the branch above does.
-  # ---------------------------------------------------------------------
-  stop("objective = \"sas\" is not implemented yet: the interval-mean-hazard ",
-       "contribution in .hzr_logl_interval() is still a stub.", call. = FALSE)
+  # Accumulated in log space rather than as log(S(u) * delta_h / (u - l)).
+  # The two are algebraically identical, but S(u) = exp(-Lambda(u)) underflows
+  # to exactly 0 once Lambda(u) > ~745, and log(0) would take the whole sum to
+  # -Inf on a single high-cumulative-hazard row.  The additive form has no
+  # such path and costs one fewer exp().
+  sum(weights * (-cumhaz_upper + log(delta_h) - log(upper - lower)))
 }
 
 

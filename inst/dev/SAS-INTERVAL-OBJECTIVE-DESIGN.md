@@ -167,8 +167,11 @@ Scaffolded on `feat/sas-interval-objective-v2`:
 - [x] §2 threading: `objective` on `hazard()`, `.hzr_optim_multiphase()`,
       `.hzr_logl_multiphase()`, `.hzr_gradient_multiphase()`.
 - [x] §3 guards, all four verified firing.
-- [ ] **The `"sas"` per-row contribution itself** -- deliberately left as a
-      `stop()` stub for the author of the parity finding.
+- [x] **The `"sas"` per-row contribution itself.** Implemented in log space,
+      not as `log(S(u)*dL/(u-l))`: `S(u)` underflows to 0 for `Lambda(u) > ~745`
+      and would take the sum to `-Inf`. Agrees with the parity document's
+      product form to 0 ULP, reproduces the closed-form identity exactly, and
+      collapses correctly when every width is 1.
 - [ ] §4 `uslife2023` fixture.
 - [ ] §5 tests 1-6.
 - [ ] §6 `@note` -- drafted on `?hazard`; revisit once the form is live.
