@@ -191,6 +191,10 @@ keep the two in agreement.
    section as the body, marked as the latest release:
 
    ```sh
+   # The body is this version's NEWS.md section, so write it out first.
+   awk '/^# TemporalHazard X\.Y\.Z$/{f=1;next} /^# TemporalHazard /{f=0} f' \
+     NEWS.md > news-section.md
+
    gh release create vX.Y.Z --verify-tag --latest \
      --title "TemporalHazard X.Y.Z" --notes-file news-section.md
    ```
