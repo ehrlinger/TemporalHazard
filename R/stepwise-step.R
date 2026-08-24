@@ -483,16 +483,17 @@
     )
     return(invisible(NULL))
   }
-  if (is.numeric(xcand)) {
+  if (!is.null(.hzr_candidate_numeric(xcand))) {
     return(invisible(NULL))
   }
   where <- if (is.null(phase)) "" else paste0(" in phase ", sQuote(phase))
   stop(
     "Stepwise forward: candidate ", sQuote(var), where, " is not numeric (",
-    class(xcand)[1L], "). The score criterion supports single-column ",
-    "main-effect terms only. Expand it into numeric main effects (e.g. a ",
-    "contrast matrix) and retry -- note `criterion = \"wald\"` rejects it ",
-    "too, so switching criterion will not help.",
+    class(xcand)[1L], "). The score criterion tests the column as it stands ",
+    "and cannot expand it. `criterion = \"wald\"` refits once per candidate, ",
+    "so it does handle a term that expands to a single design-matrix column ",
+    "-- a two-level factor or character column. For anything wider, expand it ",
+    "into numeric main effects (e.g. a contrast matrix) and retry.",
     call. = FALSE
   )
 }
@@ -719,6 +720,13 @@
           "rebuild your candidate as pre-expanded main effects and retry.",
           call. = FALSE
         )
+      }
+      # A single expansion is the term under another name -- a logical becomes
+      # `varTRUE`, a two-level factor `varb`. The name model.matrix() gave it is
+      # the one the coefficient vector carries, so return that rather than the
+      # name we guessed.
+      if (length(expanded) == 1L) {
+        return(expanded)
       }
     }
     return(target)

@@ -1,3 +1,30 @@
+# TemporalHazard 1.2.3
+
+## Bug fixes
+
+* A logical column no longer stops a stepwise screen dead. `hzr_stepwise(scope
+  = NULL)` enumerates its own candidates and counts logical columns among them,
+  on the grounds that a 0/1 field arriving logical rather than numeric is a
+  property of the reader that produced the frame, not of the variable. Both
+  criteria then refused what the package had offered: the score criterion
+  errored with "is not numeric (logical)", and the Wald criterion failed
+  looking up `phase.var` when `model.matrix()` had named the column
+  `phase.varTRUE`. Either way the screen stopped before its first step, on a
+  column nobody had chosen by hand.
+
+  A logical candidate is now modelled as the 0/1 predictor it is, and gives
+  the same screen as the identical numeric column: same variables entered, in
+  the same order, at the same p-values, with the same coefficients.
+
+  The coefficient-name half of this also fixes a two-level factor, which
+  expands the same way (`varb`). A candidate that expands to more than one
+  column is still refused, unchanged.
+
+  That makes `criterion = "wald"` a real answer for a two-level factor or
+  character column named in an explicit `scope`, which the score criterion
+  still cannot expand. Its refusal used to say switching criterion would not
+  help, and now points at it instead.
+
 # TemporalHazard 1.2.2
 
 ## New features

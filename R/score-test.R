@@ -447,9 +447,8 @@
   }
 
   d <- current$data
-  xcand <- data[[var]]
-  if (is.null(xcand) || !is.numeric(xcand) ||
-        length(xcand) != length(d$time) || anyNA(xcand)) {
+  xcand <- .hzr_candidate_numeric(data[[var]])
+  if (is.null(xcand) || length(xcand) != length(d$time) || anyNA(xcand)) {
     return(NULL)
   }
 
@@ -567,8 +566,8 @@
     )
   }
 
-  xcand <- data[[var]]
-  if (is.null(xcand) || !is.numeric(xcand) || anyNA(xcand)) {
+  xcand <- .hzr_candidate_numeric(data[[var]])
+  if (is.null(xcand) || anyNA(xcand)) {
     return(na_result("non_numeric"))
   }
   s <- stats::sd(xcand)

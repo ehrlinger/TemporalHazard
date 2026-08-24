@@ -321,3 +321,21 @@
   )
   vars[keep]
 }
+
+#' Coerce a candidate column to the numeric vector the screen models
+#'
+#' Logical columns are ordinary 0/1 predictors, and `.hzr_modellable_vars()`
+#' offers them as candidates under `scope = NULL`. Everything downstream -- the
+#' score statistic, the design-matrix column -- wants a numeric vector, so the
+#' translation happens once here rather than teaching each site about logicals.
+#'
+#' Returns `NULL` for anything that is not modellable as a single numeric
+#' column, which is the caller's signal to skip or refuse it.
+#'
+#' @keywords internal
+#' @noRd
+.hzr_candidate_numeric <- function(x) {
+  if (is.logical(x)) return(as.numeric(x))
+  if (is.numeric(x)) return(x)
+  NULL
+}
