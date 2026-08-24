@@ -15,7 +15,7 @@ fit diagnostics, and coefficient-level statistics when available."></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.2</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -104,13 +104,13 @@ fit diagnostics, and coefficient-level statistics when available.</p>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   dist:         weibull </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   engine:       native-r-m2 </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   converged:    TRUE </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   log-lik:      -55.1318 </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   evaluations: fn=31, gr=5</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   log-lik:      -49.8926 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   evaluations: fn=15, gr=6</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Coefficients:</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>     estimate std_error   z_stat      p_value</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> mu 0.4582700 0.1066703 4.296136 1.738007e-05</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> nu 0.8182644 0.1251257 6.539537 6.170969e-11</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> mu 0.5284203 0.1084224 4.873719 1.095168e-06</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> nu 0.9378551 0.1375396 6.818802 9.180267e-12</span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="co"># \donttest{</span></span></span>
 <span class="r-in"><span><span class="co"># -- Multiphase model summary ----------------------------------------</span></span></span>
@@ -133,11 +133,6 @@ fit diagnostics, and coefficient-level statistics when available.</p>
 <span class="r-in"><span>  fit     <span class="op">=</span> <span class="cn">TRUE</span>,</span></span>
 <span class="r-in"><span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_starts <span class="op">=</span> <span class="fl">5</span>, maxit <span class="op">=</span> <span class="fl">1000</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="op">)</span></span></span>
-<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>hessian_fn returned a non-conformant result; using numerical Hessian</span>
-<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>hessian_fn returned a non-conformant result; using numerical Hessian</span>
-<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>hessian_fn returned a non-conformant result; using numerical Hessian</span>
-<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>hessian_fn returned a non-conformant result; using numerical Hessian</span>
-<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>hessian_fn returned a non-conformant result; using numerical Hessian</span>
 <span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_mp</span><span class="op">)</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Multiphase hazard model (2 phases)</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   observations: 200 </span>
@@ -148,20 +143,20 @@ fit diagnostics, and coefficient-level statistics when available.</p>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   engine:       native-r-m2 </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   converged:    TRUE </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   log-lik:      -428.716 </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   evaluations: fn=26, gr=5</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   evaluations: fn=30, gr=6</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Coefficients (internal scale):</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   Phase: early (cdf)</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>                estimate std_error    z_stat      p_value</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   log_mu     -2.1153072 0.2910751 -7.267221 3.669585e-13</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   log_mu     -2.1152885 0.2910719 -7.267238 3.669127e-13</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   log_t_half -0.6931472        NA        NA           NA</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   nu          2.0000000        NA        NA           NA</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   m           0.0000000        NA        NA           NA</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   Phase: late (cdf)</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>               estimate  std_error   z_stat      p_value</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   log_mu     0.5511641 0.09532812 5.781758 7.392398e-09</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   log_mu     0.5511614 0.09532828 5.781719 7.394105e-09</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   log_t_half 1.6094379         NA       NA           NA</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   nu         1.0000000         NA       NA           NA</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   m          0.0000000         NA       NA           NA</span>

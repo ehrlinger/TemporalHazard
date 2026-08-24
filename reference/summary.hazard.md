@@ -50,13 +50,13 @@ summary(fit)
 #>   dist:         weibull 
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
-#>   log-lik:      -55.1318 
-#>   evaluations: fn=31, gr=5
+#>   log-lik:      -49.8926 
+#>   evaluations: fn=15, gr=6
 #> 
 #> Coefficients:
 #>     estimate std_error   z_stat      p_value
-#> mu 0.4582700 0.1066703 4.296136 1.738007e-05
-#> nu 0.8182644 0.1251257 6.539537 6.170969e-11
+#> mu 0.5284203 0.1084224 4.873719 1.095168e-06
+#> nu 0.9378551 0.1375396 6.818802 9.180267e-12
 
 # \donttest{
 # -- Multiphase model summary ----------------------------------------
@@ -79,11 +79,6 @@ fit_mp <- hazard(
   fit     = TRUE,
   control = list(n_starts = 5, maxit = 1000)
 )
-#> Warning: hessian_fn returned a non-conformant result; using numerical Hessian
-#> Warning: hessian_fn returned a non-conformant result; using numerical Hessian
-#> Warning: hessian_fn returned a non-conformant result; using numerical Hessian
-#> Warning: hessian_fn returned a non-conformant result; using numerical Hessian
-#> Warning: hessian_fn returned a non-conformant result; using numerical Hessian
 summary(fit_mp)
 #> Multiphase hazard model (2 phases)
 #>   observations: 200 
@@ -94,20 +89,20 @@ summary(fit_mp)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
 #>   log-lik:      -428.716 
-#>   evaluations: fn=26, gr=5
+#>   evaluations: fn=30, gr=6
 #> 
 #> Coefficients (internal scale):
 #> 
 #>   Phase: early (cdf)
 #>                estimate std_error    z_stat      p_value
-#>   log_mu     -2.1153072 0.2910751 -7.267221 3.669585e-13
+#>   log_mu     -2.1152885 0.2910719 -7.267238 3.669127e-13
 #>   log_t_half -0.6931472        NA        NA           NA
 #>   nu          2.0000000        NA        NA           NA
 #>   m           0.0000000        NA        NA           NA
 #> 
 #>   Phase: late (cdf)
 #>               estimate  std_error   z_stat      p_value
-#>   log_mu     0.5511641 0.09532812 5.781758 7.392398e-09
+#>   log_mu     0.5511614 0.09532828 5.781719 7.394105e-09
 #>   log_t_half 1.6094379         NA       NA           NA
 #>   nu         1.0000000         NA       NA           NA
 #>   m          0.0000000         NA       NA           NA

@@ -1,9 +1,9 @@
 # Stepwise covariate selection for a parametric hazard model
 
 Run forward, backward, or two-way stepwise selection on an existing
-`hazard` fit using Wald p-values or AIC deltas as the entry / retention
-criterion. Phase-specific entry is supported for multiphase models: a
-covariate can enter one phase and not another.
+`hazard` fit using score (Q) statistics, Wald p-values, or AIC deltas as
+the entry / retention criterion. Phase-specific entry is supported for
+multiphase models: a covariate can enter one phase and not another.
 
 ## Usage
 
@@ -13,7 +13,7 @@ hzr_stepwise(
   scope = NULL,
   data,
   direction = c("both", "forward", "backward"),
-  criterion = c("wald", "aic"),
+  criterion = c("score", "wald", "aic"),
   slentry = 0.3,
   slstay = 0.2,
   max_steps = 50L,
@@ -64,20 +64,23 @@ as.data.frame(x, ...)
 
 - criterion:
 
-  Entry / retention rule — one of `"wald"` (default) or `"aic"`.
-  `"wald"` applies SAS-style p-value thresholds (`slentry` / `slstay`);
+  Entry / retention rule — one of `"score"` (default), `"wald"`, or
+  `"aic"`. `"score"` and `"wald"` both apply SAS-style p-value
+  thresholds (`slentry` / `slstay`) but score entry candidates
+  differently, and can therefore select different variable sets;
+  `"score"` reproduces C/SAS HAZARD and needs no per-candidate refit.
   `"aic"` adds or drops whenever it lowers the AIC. See the **Selection
   direction and criterion** section.
 
 - slentry:
 
-  Entry p-value threshold for the Wald criterion. Default `0.30` matches
-  SAS `SLENTRY`.
+  Entry p-value threshold for the score / Wald criteria. Default `0.30`
+  matches SAS `SLENTRY`.
 
 - slstay:
 
-  Retention p-value threshold for the Wald criterion. Default `0.20`
-  matches SAS `SLSTAY`.
+  Retention p-value threshold for the score / Wald criteria. Default
+  `0.20` matches SAS `SLSTAY`.
 
 - max_steps:
 
@@ -134,7 +137,21 @@ augmented with:
 
 - `criteria`:
 
-  Named list of the threshold / direction settings actually applied.
+  Named list of the threshold / direction settings actually applied,
+  plus, under `criterion = "score"`, `n_uncomputable_scores` (how many
+  candidate scores were `NA`), `uncomputable_reasons` (a named integer
+  vector of *why*) and `stopped_uncomputable`. Read
+  `uncomputable_reasons` before treating an unscored candidate as a bad
+  one: `information_indefinite` marks candidates whose effect is too
+  large for the score test's approximation at zero, which are typically
+  the strongest variables on offer rather than degenerate ones.
+  `criterion = "wald"` tests them. For every criterion it also carries
+  `refit_failures` (the `"var"` / `"var@phase"` tokens of candidate
+  moves whose refit errored or failed to converge), `n_refit_failures`,
+  and `stopped_refit_failed` — `TRUE` when the run ended on an iteration
+  in which refits failed, which is a screen that could not test its
+  candidates rather than one that tested them and liked none. Check it
+  before reading a zero-row `steps` as an honest null result.
 
 - `trace_msg`:
 
@@ -180,7 +197,9 @@ The `steps` data frame has columns:
 
 - `criterion`:
 
-  `"wald"` or `"aic"`.
+  The criterion actually applied to this step — `"score"`, `"wald"`, or
+  `"aic"`. Under `criterion = "score"` the drop rows read `"wald"`,
+  because score is entry-only.
 
 - `score`:
 
@@ -188,7 +207,7 @@ The `steps` data frame has columns:
 
 - `stat`, `df`:
 
-  Wald statistic and degrees of freedom.
+  Test statistic (score Q or Wald) and degrees of freedom.
 
 - `p_value`, `delta_aic`:
 
@@ -225,7 +244,32 @@ and whether it is accepted.
 
 &nbsp;
 
-- `criterion = "wald"` (default):
+- `criterion = "score"` (default):
+
+  Accept moves on SAS-style significance thresholds, using the score (Q)
+  statistic of the candidate coefficient — this reproduces C/SAS
+  HAZARD's `SELECTION` statistic. Q is evaluated at the *current*
+  model's MLE with the candidate's coefficient pinned at zero, so **no
+  candidate refit is needed**: the reduced-model information is inverted
+  once per step and reused across every candidate. Only the winner is
+  refit. A candidate enters if its p-value is below `slentry`.
+
+  Score is an *entry* criterion; the drop path never refit per candidate
+  in the first place, so removals are tested on the current model's Wald
+  p-value against `slstay`, as SAS does.
+
+  For single-distribution fits, the score criterion computes the
+  observed information numerically via the suggested numDeriv package
+  and errors with a clear message if it is not installed; a multiphase
+  fit uses the analytic Hessian instead and does not need it.
+
+  Following SAS, the variance used during *selection* is approximate:
+  shaping-parameter covariances are ignored. This affects selection only
+  — final-model standard errors are unchanged and still come from the
+  full Hessian. Candidates must be single-column numeric main-effect
+  terms; a factor is rejected with an error rather than skipped.
+
+- `criterion = "wald"`:
 
   Accept moves on SAS-style significance thresholds, using the Wald
   \\\chi^2\\ of the affected coefficient(s): a candidate enters if its
@@ -234,10 +278,10 @@ and whether it is accepted.
   candidate (so its new coefficient can be tested); drop candidates are
   scored from the *current* model's Wald p-values without a
   per-candidate refit, and a single refit is run only after a drop is
-  chosen. Note this differs algorithmically from C/SAS HAZARD, which
-  selects on a *score* (Q) statistic evaluated without refitting; the
-  two can take different step paths even when they converge to a similar
-  final model.
+  chosen. This was the default before version 1.2.0. It differs
+  algorithmically from C/SAS HAZARD, so the two criteria can take
+  different step paths — and select different variable sets — even when
+  they converge to a similar final model.
 
 - `criterion = "aic"`:
 
@@ -265,22 +309,24 @@ to retrieve the captured selection log.
 data(avc)
 avc <- na.omit(avc)
 base <- hazard(survival::Surv(int_dead, dead) ~ age,
-               data = avc, dist = "weibull", fit = TRUE)
+               data = avc, dist = "weibull", fit = TRUE,
+               theta = c(mu = 0.01, nu = 0.5, 0))
 # \donttest{
-sw <- hzr_stepwise(base, scope = ~ age + nyha,
+sw <- hzr_stepwise(base, scope = ~ age + mal,
                    data = avc, direction = "forward",
                    control = list(n_starts = 1))
-#> Stepwise selection (direction = forward, criterion = wald, slentry = 0.30, slstay = 0.20)
+#> Stepwise selection (direction = forward, criterion = score, slentry = 0.30, slstay = 0.20)
 #> 
-#> Warning: Stepwise forward: candidate refit failed for nyha.
-#> (no further action after 0 steps)
+#> Step 1: ENTER  mal   (p = 0.001)
+#> (no further action after 1 step)
 #> 
-#> Final model: 0 covariates, logLik = NA, AIC = NA
+#> Final model: 2 covariates, logLik = -223.55, AIC = 455.09
 print(sw)
-#> Stepwise selection (direction = forward, criterion = wald, slentry = 0.30, slstay = 0.20)
+#> Stepwise selection (direction = forward, criterion = score, slentry = 0.30, slstay = 0.20)
 #> 
-#> (no further action after 0 steps)
+#> Step 1: ENTER  mal   (p = 0.001)
+#> (no further action after 1 step)
 #> 
-#> Final model: 0 covariates, logLik = NA, AIC = NA
+#> Final model: 2 covariates, logLik = -223.55, AIC = 455.09
 # }
 ```

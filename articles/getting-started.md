@@ -280,23 +280,23 @@ summary(fit_mp)
 #> Coefficients (internal scale):
 #> 
 #>   Phase: early (cdf)
-#>               estimate  std_error    z_stat p_value
-#>   log_mu     -3.779546 0.09381208 -40.28848       0
-#>   log_t_half -1.609438         NA        NA      NA
-#>   nu          1.000000         NA        NA      NA
-#>   m           1.000000         NA        NA      NA
+#>               estimate  std_error   z_stat p_value
+#>   log_mu     -3.779544 0.09381199 -40.2885       0
+#>   log_t_half -1.609438         NA       NA      NA
+#>   nu          1.000000         NA       NA      NA
+#>   m           1.000000         NA       NA      NA
 #> 
 #>   Phase: constant (constant)
-#>           estimate  std_error   z_stat p_value
-#>   log_mu -7.225794 0.09312623 -77.5914       0
+#>           estimate  std_error    z_stat p_value
+#>   log_mu -7.225806 0.09312693 -77.59093       0
 #> 
 #>   Phase: late (g3)
-#>            estimate std_error    z_stat p_value
-#>   log_mu  -16.65782 0.1157721 -143.8846       0
-#>   log_tau   0.00000        NA        NA      NA
-#>   gamma     3.00000        NA        NA      NA
-#>   alpha     1.00000        NA        NA      NA
-#>   eta       1.00000        NA        NA      NA
+#>           estimate std_error    z_stat p_value
+#>   log_mu  -16.6578 0.1157704 -143.8865       0
+#>   log_tau   0.0000        NA        NA      NA
+#>   gamma     3.0000        NA        NA      NA
+#>   alpha     1.0000        NA        NA      NA
+#>   eta       1.0000        NA        NA      NA
 ```
 
 The summary marks most rows `NA` in the `std_error`, `z_stat`, and

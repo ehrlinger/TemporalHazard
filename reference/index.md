@@ -65,6 +65,19 @@
 - [`hzr_argument_mapping()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_argument_mapping.md)
   : Legacy HAZARD to TemporalHazard argument mapping
 
+- [`hzr_read_outhaz()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_read_outhaz.md)
+  :
+
+  Read a SAS `outhaz` estimate dataset
+
+- [`predict(`*`<hzr_outhaz>`*`)`](https://ehrlinger.github.io/temporal_hazard/reference/predict.hzr_outhaz.md)
+  :
+
+  Predictions from a fit loaded out of a SAS `OUTHAZ=` dataset
+
+- [`hzr_translate_sas()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_translate_sas.md)
+  : Translate a SAS HAZARD job into a Quarto document
+
 ## Numerical Primitives
 
 - [`hzr_log1pexp()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_log1pexp.md)

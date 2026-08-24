@@ -31,14 +31,35 @@ hazard(
 
 - formula:
 
-  Optional formula of the form `Surv(time, status) ~ predictors`. When
-  provided, overrides direct time/status/x arguments and extracts from
-  data. Example:
+  Optional formula with a `Surv()` object on the left. Right-censored
+  (`Surv(time, status)`), left-censored
+  (`Surv(time, event, type = "left")`), interval-censored
+  (`type = "interval"` or `"interval2"`) and counting-process
+  (`Surv(start, stop, event)`) forms are all accepted. `Surv()` codes
+  censoring status with different integers than this package does; the
+  formula path translates them, so write `Surv()`'s codes here and this
+  package's codes when passing `status` directly. When provided,
+  overrides direct time/status/x arguments and extracts from data.
+  Example:
   `hazard(Surv(time, status) ~ x1 + x2, data = df, dist = "weibull", fit = TRUE)`.
 
 - data:
 
-  Optional data frame containing variables referenced in formula.
+  Optional data frame. On the formula path it supplies the model frame.
+  On the vector path `time`, `status`, `time_lower`, `time_upper` and
+  `weights` are evaluated in its scope, the way
+  [`base::subset()`](https://rdrr.io/r/base/subset.html) and
+  [`base::transform()`](https://rdrr.io/r/base/transform.html) do: a
+  bare column name resolves to that column, and anything that is not a
+  column (`df$col`, a local vector, a literal) falls through to the
+  calling environment. A column of the same name as a caller variable
+  wins, and because that silently discards the caller's vector – the way
+  a wrapper forwarding its own argument by name does – such a name
+  raises a warning naming the symbol and the argument. Masked arguments
+  are validated like any other, so an `NA` in a masked column now errors
+  – an `NA` count on the SAS `ICENSOR` path reaches `weights` and stops
+  with `'weights' must be non-negative and finite`, where it was
+  previously accepted silently.
 
 - time:
 
@@ -50,8 +71,21 @@ hazard(
 
 - time_lower:
 
-  Optional numeric lower bound vector for censoring intervals. Used when
-  `status == 2` (interval-censored); defaults to `time` if NULL.
+  Optional numeric vector with two distinct roles, selected by `status`.
+  Supplying it explicitly is **not** a no-op.
+
+  - `status == 2` (interval-censored): the lower bound of the censoring
+    interval, defaulting to `time`.
+
+  - `status %in% c(0, 1)` (right-censored or event): the
+    counting-process **entry time**, so the row contributes
+    `H(time) - H(time_lower)`. Left `NULL`, the entry time is **`0`**,
+    not `time`.
+
+  Passing `time_lower = time` therefore states that every subject
+  entered the risk set at the instant it left, which contributes nothing
+  and removes the row from the likelihood. That is a valid specification
+  and the fit will not converge to anything meaningful; it warns.
 
 - time_upper:
 
@@ -60,7 +94,11 @@ hazard(
 
 - x:
 
-  Optional design matrix (or data frame coercible to matrix).
+  Optional design matrix (or data frame coercible to matrix). Unlike
+  `time` and the other vector arguments, `x` is **not** data-masked:
+  `hazard(data = df, time = tt, x = age)` errors with
+  `object 'age' not found` where `time = tt` resolves, so write
+  `x = df[["age"]]` or use the formula interface.
 
 - time_windows:
 
@@ -118,7 +156,15 @@ matched call), `spec` (model specification: `dist`, `control`,
 `time_windows`, `phases`), `data` (input data: `time`, `status`, `x`,
 `weights`, etc.), `fit` (optimisation results: `theta`, `objective`,
 `converged`, `se`, `vcov`, `counts`, `message`; all `NULL` when
-`fit = FALSE`), and `engine` (implementation tag, `"native-r-m2"`).
+`fit = FALSE`; multiphase fits add `starts`, one row per optimisation
+start with its `status` (`"ok"`, `"nonconverged"`, `"infeasible"`,
+`"nonfinite"` or `"error"`), `objective` (`NA` unless the start reached
+a point where the likelihood is defined), `convergence` (the
+[`optim`](https://rdrr.io/r/stats/optim.html) code, `0` for success),
+whether it was the `best` and so the reported fit, and the `message` of
+any error. A start that stops at `maxit` has a finite `objective` and
+can win the selection, so `status` distinguishes it from one that
+converged), and `engine` (implementation tag, `"native-r-m2"`).
 
 ## Details
 
@@ -127,10 +173,19 @@ Control parameters:
 - `maxit`: Maximum iterations (default 1000)
 
 - `n_starts`: Number of optimization starts for multiphase fits (default
-  5). Each start after the first adds random noise to the initial
-  values, drawn from the ambient RNG stream; call
-  [`set.seed()`](https://rdrr.io/r/base/Random.html) before fitting for
-  reproducible results.
+  5). Each start after the first offsets the initial values. The offsets
+  are drawn from an internally seeded stream, so a multiphase fit is
+  reproducible without
+  [`set.seed()`](https://rdrr.io/r/base/Random.html) and does not
+  advance the caller's RNG stream.
+
+- `start_seed`: Seed selecting the ensemble of multi-start offsets
+  (default 3). Any whole number within integer range, negative included.
+  Fits are reproducible at any value; vary it to probe a different set
+  of starts when a fit is suspected of sitting in a local optimum, and
+  compare the resulting `objective` values. A fractional value is
+  rejected rather than truncated, since `3.9` and `3` would otherwise
+  select the same ensemble without saying so.
 
 - `reltol`: Relative parameter change tolerance (default 1e-5)
 
@@ -374,11 +429,6 @@ fit_mp <- hazard(
   fit     = TRUE,
   control = list(n_starts = 5, maxit = 1000)
 )
-#> Warning: hessian_fn returned a non-conformant result; using numerical Hessian
-#> Warning: hessian_fn returned a non-conformant result; using numerical Hessian
-#> Warning: hessian_fn returned a non-conformant result; using numerical Hessian
-#> Warning: hessian_fn returned a non-conformant result; using numerical Hessian
-#> Warning: hessian_fn returned a non-conformant result; using numerical Hessian
 summary(fit_mp)
 #> Multiphase hazard model (2 phases)
 #>   observations: 180 
@@ -389,23 +439,23 @@ summary(fit_mp)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
 #>   log-lik:      -321.926 
-#>   evaluations: fn=16, gr=7
+#>   evaluations: fn=21, gr=6
 #> 
 #> Coefficients (internal scale):
 #> 
 #>   Phase: early (cdf)
 #>                estimate std_error    z_stat      p_value
-#>   log_mu     -1.8209827 0.2701943 -6.739531 1.588985e-11
+#>   log_mu     -1.8214603  0.270271 -6.739385 1.590589e-11
 #>   log_t_half -0.6931472        NA        NA           NA
 #>   nu          2.0000000        NA        NA           NA
 #>   m           0.0000000        NA        NA           NA
 #> 
 #>   Phase: late (cdf)
-#>               estimate std_error   z_stat      p_value
-#>   log_mu     0.6119202 0.1098498 5.570517 2.539839e-08
-#>   log_t_half 1.6094379        NA       NA           NA
-#>   nu         1.0000000        NA       NA           NA
-#>   m          0.0000000        NA       NA           NA
+#>               estimate std_error   z_stat     p_value
+#>   log_mu     0.6120246 0.1098426 5.571832 2.52075e-08
+#>   log_t_half 1.6094379        NA       NA          NA
+#>   nu         1.0000000        NA       NA          NA
+#>   m          0.0000000        NA       NA          NA
 
 # -- Per-phase decomposed cumulative hazard ------------------------
 if (requireNamespace("ggplot2", quietly = TRUE)) {

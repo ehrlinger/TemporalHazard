@@ -28,7 +28,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.2</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -227,16 +227,6 @@ Figure 1: Weibull parametric survival vs. Kaplan-Meier (CABG, KU Leuven)
 <span>  fit     <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_starts <span class="op">=</span> <span class="fl">5</span>, maxit <span class="op">=</span> <span class="fl">1000</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
-<span><span class="co">#&gt; Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :</span></span>
-<span><span class="co">#&gt; hessian_fn returned a non-conformant result; using numerical Hessian</span></span>
-<span><span class="co">#&gt; Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :</span></span>
-<span><span class="co">#&gt; hessian_fn returned a non-conformant result; using numerical Hessian</span></span>
-<span><span class="co">#&gt; Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :</span></span>
-<span><span class="co">#&gt; hessian_fn returned a non-conformant result; using numerical Hessian</span></span>
-<span><span class="co">#&gt; Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :</span></span>
-<span><span class="co">#&gt; hessian_fn returned a non-conformant result; using numerical Hessian</span></span>
-<span><span class="co">#&gt; Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :</span></span>
-<span><span class="co">#&gt; hessian_fn returned a non-conformant result; using numerical Hessian</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_mp</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Multiphase hazard model (2 phases)</span></span>
@@ -408,7 +398,8 @@ Figure 2: Single-phase Weibull vs. multiphase model against Kaplan-Meier (AVC)
 </tr>
 </tbody>
 </table>
-<p>For interval-censored rows, supply both <code>time_lower</code> and <code>time_upper</code> directly to <code><a href="../reference/hazard.html">hazard()</a></code>. The formula interface handles <code>Surv(time, status)</code> for right-censored data and <code>Surv(start, stop, event)</code> for counting-process (repeating-event) data; interval censoring is passed via the direct arguments.</p>
+<p>For interval-censored rows, supply both <code>time_lower</code> and <code>time_upper</code>. You can pass them as direct arguments to <code><a href="../reference/hazard.html">hazard()</a></code>, or hand it a <code><a href="https://rdrr.io/pkg/survival/man/Surv.html" class="external-link">Surv()</a></code> object instead: <code>Surv(lower, upper, event, type = "interval")</code> and <code>Surv(lower, upper, type = "interval2")</code> both work, as do <code>Surv(time, event, type = "left")</code> for left censoring and <code>Surv(start, stop, event)</code> for counting-process (repeating-event) data.</p>
+<p>One thing to watch, because the two interfaces do not use the same numbers. The table above is this package’s coding, and it is what you pass to the <code>status</code> argument. <code><a href="https://rdrr.io/pkg/survival/man/Surv.html" class="external-link">Surv()</a></code> has its own scheme — under <code>type = "interval"</code> it reads <code>0</code> as right-censored, <code>1</code> as an exact event, <code>2</code> as left-censored and <code>3</code> as interval-censored — and <code><a href="../reference/hazard.html">hazard()</a></code> translates it for you when it parses the formula. So use whichever coding belongs to the interface you are writing in, and don’t carry one set of codes across to the other.</p>
 </section><section class="level3" data-number="5.2"><h3 data-number="5.2" id="mixed-censoring-example">
 <span class="header-section-number">5.2</span> Mixed censoring example<a class="anchor" aria-label="anchor" href="#mixed-censoring-example"></a>
 </h3>
@@ -626,13 +617,13 @@ Figure 3: Nelson-Aalen cumulative hazard for CABGKUL — three-phase shape visi
 <span>  fit <span class="op">=</span> <span class="cn">TRUE</span>, control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_starts <span class="op">=</span> <span class="fl">5</span>, maxit <span class="op">=</span> <span class="fl">1000</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span><span class="co">#&gt; Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =</span></span>
-<span><span class="co">#&gt; 4.46e-11); standard errors may be unreliable</span></span>
+<span><span class="co">#&gt; 3.78e-11); standard errors may be unreliable</span></span>
 <span></span>
 <span><span class="co"># Scale magnitudes: exp(log_mu) ≈ 0 for any phase the data doesn't support</span></span>
 <span><span class="va">log_mu_idx</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/grep.html" class="external-link">grep</a></span><span class="op">(</span><span class="st">"log_mu"</span>, <span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_3ph</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_3ph</span><span class="op">)</span><span class="op">[</span><span class="va">log_mu_idx</span><span class="op">]</span><span class="op">)</span>, <span class="fl">6</span><span class="op">)</span></span>
 <span><span class="co">#&gt;    early.log_mu constant.log_mu     late.log_mu </span></span>
-<span><span class="co">#&gt;        0.248869        0.000000        0.000006</span></span></code></pre></div>
+<span><span class="co">#&gt;        0.248871        0.000000        0.000006</span></span></code></pre></div>
 </div>
 <p>The constant and late phase scales are both near zero — the optimizer found no evidence in the AVC data for either of those temporal shapes over this follow-up window. The early phase is absorbing all the identifiable structure. Any phase whose fitted scale is <span class="math inline">\(\mu \lesssim 10^{-4}\)</span> is not contributing meaningful hazard and is a candidate for removal. The right diagnostic question is not “did the AIC improve?” but “does this phase represent real clinical biology?” — late deterioration after AVC repair requires long follow-up to observe; this dataset doesn’t have it.</p>
 <p>When shapes are also free (<code>fixed = "none"</code>), a redundant phase can make the Hessian rank-deficient and <code><a href="https://rdrr.io/r/stats/vcov.html" class="external-link">vcov()</a></code> will return <code>NA</code> (the Hessian inversion failed). Fix by adding <code>fixed = "shapes"</code> to each phase to reduce the free-parameter count, then release shapes one at a time if the fixed-shapes fit shows systematic misfit.</p>
@@ -656,26 +647,6 @@ Figure 3: Nelson-Aalen cumulative hazard for CABGKUL — three-phase shape visi
 <span>  fit     <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_starts <span class="op">=</span> <span class="fl">10</span>, maxit <span class="op">=</span> <span class="fl">1000</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
-<span><span class="co">#&gt; Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :</span></span>
-<span><span class="co">#&gt; hessian_fn returned a non-conformant result; using numerical Hessian</span></span>
-<span><span class="co">#&gt; Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :</span></span>
-<span><span class="co">#&gt; hessian_fn returned a non-conformant result; using numerical Hessian</span></span>
-<span><span class="co">#&gt; Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :</span></span>
-<span><span class="co">#&gt; hessian_fn returned a non-conformant result; using numerical Hessian</span></span>
-<span><span class="co">#&gt; Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :</span></span>
-<span><span class="co">#&gt; hessian_fn returned a non-conformant result; using numerical Hessian</span></span>
-<span><span class="co">#&gt; Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :</span></span>
-<span><span class="co">#&gt; hessian_fn returned a non-conformant result; using numerical Hessian</span></span>
-<span><span class="co">#&gt; Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :</span></span>
-<span><span class="co">#&gt; hessian_fn returned a non-conformant result; using numerical Hessian</span></span>
-<span><span class="co">#&gt; Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :</span></span>
-<span><span class="co">#&gt; hessian_fn returned a non-conformant result; using numerical Hessian</span></span>
-<span><span class="co">#&gt; Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :</span></span>
-<span><span class="co">#&gt; hessian_fn returned a non-conformant result; using numerical Hessian</span></span>
-<span><span class="co">#&gt; Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :</span></span>
-<span><span class="co">#&gt; hessian_fn returned a non-conformant result; using numerical Hessian</span></span>
-<span><span class="co">#&gt; Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :</span></span>
-<span><span class="co">#&gt; hessian_fn returned a non-conformant result; using numerical Hessian</span></span>
 <span><span class="va">fit_robust</span><span class="op">$</span><span class="va">fit</span><span class="op">$</span><span class="va">converged</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
 </div>

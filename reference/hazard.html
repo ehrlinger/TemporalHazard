@@ -19,7 +19,7 @@ optimize to produce fitted estimates."></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.2</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -95,13 +95,32 @@ optimize to produce fitted estimates.</p>
 
 
 <dl><dt id="arg-formula">formula<a class="anchor" aria-label="anchor" href="#arg-formula"></a></dt>
-<dd><p>Optional formula of the form <code>Surv(time, status) ~ predictors</code>.
+<dd><p>Optional formula with a <code>Surv()</code> object on the left.
+Right-censored (<code>Surv(time, status)</code>), left-censored
+(<code>Surv(time, event, type = "left")</code>), interval-censored
+(<code>type = "interval"</code> or <code>"interval2"</code>) and counting-process
+(<code>Surv(start, stop, event)</code>) forms are all accepted. <code>Surv()</code> codes
+censoring status with different integers than this package does; the
+formula path translates them, so write <code>Surv()</code>'s codes here and this
+package's codes when passing <code>status</code> directly.
 When provided, overrides direct time/status/x arguments and extracts from data.
 Example: <code>hazard(Surv(time, status) ~ x1 + x2, data = df, dist = "weibull", fit = TRUE)</code>.</p></dd>
 
 
 <dt id="arg-data">data<a class="anchor" aria-label="anchor" href="#arg-data"></a></dt>
-<dd><p>Optional data frame containing variables referenced in formula.</p></dd>
+<dd><p>Optional data frame. On the formula path it supplies the model
+frame. On the vector path <code>time</code>, <code>status</code>, <code>time_lower</code>, <code>time_upper</code>
+and <code>weights</code> are evaluated in its scope, the way <code><a href="https://rdrr.io/r/base/subset.html" class="external-link">base::subset()</a></code> and
+<code><a href="https://rdrr.io/r/base/transform.html" class="external-link">base::transform()</a></code> do: a bare column name resolves to that column, and
+anything that is not a column (<code>df$col</code>, a local vector, a literal)
+falls through to the calling environment. A column of the same name as
+a caller variable wins, and because that silently discards the caller's
+vector – the way a wrapper forwarding its own argument by name does –
+such a name raises a warning naming the symbol and the argument.
+Masked arguments are validated like any other, so an <code>NA</code> in a
+masked column now errors – an <code>NA</code> count on the SAS <code>ICENSOR</code>
+path reaches <code>weights</code> and stops with <code>'weights' must be non-negative and finite</code>, where it was previously accepted
+silently.</p></dd>
 
 
 <dt id="arg-time">time<a class="anchor" aria-label="anchor" href="#arg-time"></a></dt>
@@ -113,8 +132,16 @@ Example: <code>hazard(Surv(time, status) ~ x1 + x2, data = df, dist = "weibull",
 
 
 <dt id="arg-time-lower">time_lower<a class="anchor" aria-label="anchor" href="#arg-time-lower"></a></dt>
-<dd><p>Optional numeric lower bound vector for censoring intervals.
-Used when <code>status == 2</code> (interval-censored); defaults to <code>time</code> if NULL.</p></dd>
+<dd><p>Optional numeric vector with two distinct roles, selected
+by <code>status</code>. Supplying it explicitly is <strong>not</strong> a no-op.</p><ul><li><p><code>status == 2</code> (interval-censored): the lower bound of the censoring
+interval, defaulting to <code>time</code>.</p></li>
+<li><p><code>status %in% c(0, 1)</code> (right-censored or event): the counting-process
+<strong>entry time</strong>, so the row contributes <code>H(time) - H(time_lower)</code>.
+Left <code>NULL</code>, the entry time is <strong><code>0</code></strong>, not <code>time</code>.</p></li>
+</ul><p>Passing <code>time_lower = time</code> therefore states that every subject entered
+the risk set at the instant it left, which contributes nothing and
+removes the row from the likelihood. That is a valid specification and
+the fit will not converge to anything meaningful; it warns.</p></dd>
 
 
 <dt id="arg-time-upper">time_upper<a class="anchor" aria-label="anchor" href="#arg-time-upper"></a></dt>
@@ -123,7 +150,11 @@ Used when <code>status %in% c(-1, 2)</code>; defaults to <code>time</code> if NU
 
 
 <dt id="arg-x">x<a class="anchor" aria-label="anchor" href="#arg-x"></a></dt>
-<dd><p>Optional design matrix (or data frame coercible to matrix).</p></dd>
+<dd><p>Optional design matrix (or data frame coercible to matrix).
+Unlike <code>time</code> and the other vector arguments, <code>x</code> is <strong>not</strong>
+data-masked: <code>hazard(data = df, time = tt, x = age)</code> errors with
+<code>object 'age' not found</code> where <code>time = tt</code> resolves, so write
+<code>x = df[["age"]]</code> or use the formula interface.</p></dd>
 
 
 <dt id="arg-time-windows">time_windows<a class="anchor" aria-label="anchor" href="#arg-time-windows"></a></dt>
@@ -181,16 +212,34 @@ conventions.</p></dd>
 <code>weights</code>, etc.),
 <code>fit</code> (optimisation results: <code>theta</code>, <code>objective</code>,
 <code>converged</code>, <code>se</code>, <code>vcov</code>, <code>counts</code>, <code>message</code>;
-all <code>NULL</code> when <code>fit = FALSE</code>),
+all <code>NULL</code> when <code>fit = FALSE</code>; multiphase fits add
+<code>starts</code>, one row per optimisation start with its <code>status</code>
+(<code>"ok"</code>, <code>"nonconverged"</code>, <code>"infeasible"</code>,
+<code>"nonfinite"</code> or <code>"error"</code>), <code>objective</code> (<code>NA</code>
+unless the start reached a point where the likelihood is defined),
+<code>convergence</code> (the
+<code><a href="https://rdrr.io/r/stats/optim.html" class="external-link">optim</a></code> code, <code>0</code> for success), whether it was
+the <code>best</code> and so the reported fit, and the <code>message</code> of any
+error. A start that stops at <code>maxit</code> has a finite <code>objective</code>
+and can win the selection, so <code>status</code> distinguishes it from one
+that converged),
 and <code>engine</code> (implementation tag, <code>"native-r-m2"</code>).</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
     <p>Control parameters:</p><ul><li><p><code>maxit</code>: Maximum iterations (default 1000)</p></li>
 <li><p><code>n_starts</code>: Number of optimization starts for multiphase fits (default 5).
-Each start after the first adds random noise to the initial values, drawn
-from the ambient RNG stream; call <code><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed()</a></code> before fitting for
-reproducible results.</p></li>
+Each start after the first offsets the initial values. The offsets are
+drawn from an internally seeded stream, so a multiphase fit is
+reproducible without <code><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed()</a></code> and does not advance the caller's RNG
+stream.</p></li>
+<li><p><code>start_seed</code>: Seed selecting the ensemble of multi-start offsets
+(default 3). Any whole number within integer range, negative included.
+Fits are reproducible at any value; vary it to probe a different set of
+starts when a fit is suspected of sitting in a local optimum, and compare
+the resulting <code>objective</code> values. A fractional value is rejected rather
+than truncated, since <code>3.9</code> and <code>3</code> would otherwise select the same
+ensemble without saying so.</p></li>
 <li><p><code>reltol</code>: Relative parameter change tolerance (default 1e-5)</p></li>
 <li><p><code>abstol</code>: Absolute gradient norm tolerance (default 1e-6)</p></li>
 <li><p><code>method</code>: Optimization method: "bfgs" or "nm" (default "bfgs")</p></li>
@@ -410,11 +459,6 @@ nonlinear temporal decomposition mixed effects model. <em>Stat Methods Med Res.<
 <span class="r-in"><span>  fit     <span class="op">=</span> <span class="cn">TRUE</span>,</span></span>
 <span class="r-in"><span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_starts <span class="op">=</span> <span class="fl">5</span>, maxit <span class="op">=</span> <span class="fl">1000</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="op">)</span></span></span>
-<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>hessian_fn returned a non-conformant result; using numerical Hessian</span>
-<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>hessian_fn returned a non-conformant result; using numerical Hessian</span>
-<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>hessian_fn returned a non-conformant result; using numerical Hessian</span>
-<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>hessian_fn returned a non-conformant result; using numerical Hessian</span>
-<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>hessian_fn returned a non-conformant result; using numerical Hessian</span>
 <span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_mp</span><span class="op">)</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Multiphase hazard model (2 phases)</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   observations: 180 </span>
@@ -425,23 +469,23 @@ nonlinear temporal decomposition mixed effects model. <em>Stat Methods Med Res.<
 <span class="r-out co"><span class="r-pr">#&gt;</span>   engine:       native-r-m2 </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   converged:    TRUE </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   log-lik:      -321.926 </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   evaluations: fn=16, gr=7</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   evaluations: fn=21, gr=6</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Coefficients (internal scale):</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   Phase: early (cdf)</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>                estimate std_error    z_stat      p_value</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   log_mu     -1.8209827 0.2701943 -6.739531 1.588985e-11</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   log_mu     -1.8214603  0.270271 -6.739385 1.590589e-11</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   log_t_half -0.6931472        NA        NA           NA</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   nu          2.0000000        NA        NA           NA</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   m           0.0000000        NA        NA           NA</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   Phase: late (cdf)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>               estimate std_error   z_stat      p_value</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   log_mu     0.6119202 0.1098498 5.570517 2.539839e-08</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   log_t_half 1.6094379        NA       NA           NA</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   nu         1.0000000        NA       NA           NA</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   m          0.0000000        NA       NA           NA</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>               estimate std_error   z_stat     p_value</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   log_mu     0.6120246 0.1098426 5.571832 2.52075e-08</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   log_t_half 1.6094379        NA       NA          NA</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   nu         1.0000000        NA       NA          NA</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   m          0.0000000        NA       NA          NA</span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="co"># -- Per-phase decomposed cumulative hazard ------------------------</span></span></span>
 <span class="r-in"><span><span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/ns-load.html" class="external-link">requireNamespace</a></span><span class="op">(</span><span class="st">"ggplot2"</span>, quietly <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span></span>

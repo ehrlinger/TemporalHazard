@@ -28,7 +28,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.2</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -495,7 +495,7 @@ CONSTANT INC_SURG=1.375285, ORIFICE=3.11765, STATUS=1.054988;</code></pre>
 </h3>
 <p>Triggers stepwise covariate selection inside the hazard fit. <code>SLE</code> is the significance level for entry, <code>SLS</code> for staying. SAS HAZARD embedded this in the same <code>PROC HAZARD</code> call; in R the stepwise loop is a separate <code><a href="../reference/hzr_stepwise.html">hzr_stepwise()</a></code> function that wraps a fitted <code><a href="../reference/hazard.html">hazard()</a></code> object.</p>
 <pre class="sas"><code>SELECTION SLE=0.2 SLS=0.1;</code></pre>
-<p><code>TemporalHazard</code> now ships <code><a href="../reference/hzr_stepwise.html">hzr_stepwise()</a></code>, which implements forward, backward, and two-way stepwise selection with SAS-style SLENTRY / SLSTAY thresholds, phase-specific entry for multiphase models, and a MOVE oscillation guard. FAST-screening (Lawless-Singhal approximate Wald updates) is not yet implemented; every candidate currently gets a full refit. See <code><a href="../reference/hzr_stepwise.html">?hzr_stepwise</a></code> for the full option list.</p>
+<p><code>TemporalHazard</code> now ships <code><a href="../reference/hzr_stepwise.html">hzr_stepwise()</a></code>, which implements forward, backward, and two-way stepwise selection with SAS-style SLENTRY / SLSTAY thresholds, phase-specific entry for multiphase models, and a MOVE oscillation guard. It now defaults to <code>criterion = "score"</code>, which reproduces SAS’s <code>SELECTION</code> Q statistic — a score test at the current estimates, with no per-candidate refit — so entry decisions match SAS’s directly. Passing <code>criterion = "wald"</code> selects the older refit-based path, which fits each candidate before testing it. See <code><a href="../reference/hzr_stepwise.html">?hzr_stepwise</a></code> for the full option list.</p>
 <hr></section></section><section class="level2"><h2 id="sas-macro-equivalents">SAS macro equivalents<a class="anchor" aria-label="anchor" href="#sas-macro-equivalents"></a>
 </h2>
 <p>The legacy SAS distribution ships a suite of macros for nonparametric baselines, goodness-of-fit diagnostics, bootstrap inference, and variable calibration that sit alongside <code>PROC HAZARD</code>. Each has an R equivalent in <code>TemporalHazard</code>:</p>
@@ -812,7 +812,7 @@ PROC HAZARD DATA=AVCS P CONSERVE OUTHAZ=OUTEST CONDITION=14 QUASI;
 <code>FILENAME</code> / <code>INFILE</code> / <code>INPUT</code>
 </td>
 <td>
-<code><a href="https://rdrr.io/r/utils/read.table.html" class="external-link">read.table()</a></code>, <code><a href="https://rdrr.io/r/utils/read.table.html" class="external-link">read.csv()</a></code>, or <code>haven::read_sas()</code>
+<code><a href="https://rdrr.io/r/utils/read.table.html" class="external-link">read.table()</a></code>, <code><a href="https://rdrr.io/r/utils/read.table.html" class="external-link">read.csv()</a></code>, or <code><a href="https://haven.tidyverse.org/reference/read_sas.html" class="external-link">haven::read_sas()</a></code>
 </td>
 </tr>
 <tr class="odd">
@@ -889,16 +889,99 @@ PROC HAZARD DATA=AVCS P CONSERVE OUTHAZ=OUTEST CONDITION=14 QUASI;
 <span><span class="va">hz</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, type <span class="op">=</span> <span class="st">"hazard"</span><span class="op">)</span></span></code></pre></div>
 </div>
 <p>The code chunk above shows only <code>"linear_predictor"</code> and <code>"hazard"</code>; <code>"survival"</code> and <code>"cumulative_hazard"</code> follow the same pattern. For multiphase fits pass <code>decompose = TRUE</code> to get per-phase cumulative hazard contributions instead of just the total.</p>
-<hr></section><section class="level2"><h2 id="known-limitations-vs--sas-hazard">Known limitations vs. SAS HAZARD<a class="anchor" aria-label="anchor" href="#known-limitations-vs--sas-hazard"></a>
+<hr></section><section class="level2"><h2 id="automated-translation-with-hzr_translate_sas">Automated translation with <code>hzr_translate_sas()</code>
+<a class="anchor" aria-label="anchor" href="#automated-translation-with-hzr_translate_sas"></a>
 </h2>
-<p>A SAS HAZARD veteran migrating to <code>TemporalHazard</code> should be aware of the following scope limits as of v0.9.8. Detailed status per feature is tracked in <code>inst/dev/SAS-PARITY-GAP-ANALYSIS.md</code> and <code>inst/dev/DEVELOPMENT-PLAN.md</code>.</p>
+<p>Everything above is a mapping you apply by hand. <code><a href="../reference/hzr_translate_sas.html">hzr_translate_sas()</a></code> applies it for you: point it at a <code>.sas</code> file and it parses the <code>PROC HAZARD</code> / <code>PROC HAZPRED</code> blocks and emits a <code>.qmd</code> document whose chunks are the <code><a href="../reference/hazard.html">hazard()</a></code> / <code><a href="../reference/predict.hazard.html">predict.hazard()</a></code> calls those blocks describe. It is the same statement-by-statement mapping this vignette documents, run by the parser instead of by you – useful for a one-off job, and essential for migrating a corpus of hundreds.</p>
+<div>
+<blockquote>
+<p><strong>Experimental: what it will and will not translate</strong></p>
+<p>The emitted document renders. The <code><a href="../reference/hazard.html">hazard()</a></code> chunk binds its fit to a name and passes <code>fit = TRUE</code>, so the <code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> chunks have something to predict from. What you should not read into that is “the translator works”: it is a translation aid, and four limits are worth knowing before you point it at a corpus.</p>
+<ul>
+<li>
+<strong>A <code>SELECTION</code> statement is refused, not translated.</strong> The emitted chunk is a <code><a href="https://rdrr.io/r/base/stop.html" class="external-link">stop()</a></code>. <code><a href="../reference/hzr_stepwise.html">hzr_stepwise()</a></code>’s refit path needs a formula-interface base fit and this translator emits the vector interface, so a translated screen would report zero steps – indistinguishable from “nothing met <code>slentry</code>”. Run the selection by hand.</li>
+<li>
+<strong><code>LCENSOR</code> combined with <code>ICENSOR</code> is refused.</strong> <code><a href="../reference/hazard.html">hazard()</a></code>’s single <code>time_lower</code> argument carries the entry time for status 0/1 rows and the interval’s lower bound for status 2 rows; one column cannot express both. Either statement alone translates.</li>
+<li>
+<strong>Prediction grids the parser cannot resolve are refused whole</strong>, and an unresolved <code>INHAZ=</code> stops the render on purpose. Both are covered under “What it doesn’t translate” below – and note that resolving an external <code>INHAZ=</code> at all requires you to pass <code>librefs=</code>.</li>
+<li>
+<strong>Confidence limits from a loaded <code>INHAZ=</code> fit may stop the render.</strong> A translated <code>PROC HAZPRED</code> block asks for <code>se.fit = TRUE</code> unless the SAS job says <code>NOCL</code>, and <code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> on an <code>hzr_outhaz</code> object refuses <code>se.fit = TRUE</code> when <code>PROC HAZARD</code> estimated a late shape parameter on a composite scale – <code>log(GAMMA*ETA - 2)</code> and friends, which is the <em>generic</em> unconstrained three-phase case, not an exotic one. Point predictions are unaffected; drop <code>se.fit</code> from the emitted call to get them.</li>
+</ul>
+<p>Read <code>job$coverage</code> as a measure of how much of the SAS job the <em>parser recognised</em> – not of whether the result runs. A job can report full coverage with nothing in <code>$untranslated</code> and still error on render. The API and the emitted format will change as these limits close; the 1.2.2 entry of <code>NEWS.md</code> carries the issue numbers.</p>
+</blockquote>
+</div>
+<p>Take the <code>PROC HAZARD</code> block shipped as <code>system.file("extdata", "hz-example.sas", package = "TemporalHazard")</code> (de-identified from the public <code>hazard</code> examples):</p>
+<pre class="sas"><code>%HAZARD(
+PROC HAZARD DATA=AVCS CONSERVE OUTHAZ=EXAMPLES.HZDEATH
+     QUASI CONDITION=14;
+     EVENT DEAD;
+     TIME INT_DEAD;
+     PARMS MUE=0.2361727 THALF=0.1512095 NU=1.438652 M=1 FIXM
+           MUC=0.0005436977;
+);</code></pre>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb26"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">job</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/hzr_translate_sas.html">hzr_translate_sas</a></span><span class="op">(</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/system.file.html" class="external-link">system.file</a></span><span class="op">(</span><span class="st">"extdata"</span>, <span class="st">"hz-example.sas"</span>, package <span class="op">=</span> <span class="st">"TemporalHazard"</span><span class="op">)</span>,</span>
+<span>  out_dir <span class="op">=</span> <span class="st">"translated"</span></span>
+<span><span class="op">)</span></span></code></pre></div>
+</div>
+<p>The emitted <code>.qmd</code> carries three chunks past its <code>setup</code>: a <code>data</code> chunk, a <code>status</code> chunk, and a <code>fit</code> chunk (reformatted here for width; the emitted document wraps at 60 columns like any <code><a href="https://rdrr.io/r/base/deparse.html" class="external-link">deparse()</a></code>d call, and the three are run together in one block below, each marked by a comment, rather than shown as the three separate chunks they are). <code>DATA</code> step translation is out of scope, so the <code>data</code> chunk is a guard, not a re-implementation. It checks that <code>AVCS</code> is already in scope and stops with a named error if not, rather than silently proceeding without data. The <code>status</code> chunk is where <code>EVENT DEAD</code> becomes something <code><a href="../reference/hazard.html">hazard()</a></code> can take, and it is worth reading closely if you are checking a translation against the job it came from:</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb27"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="co"># chunk: data</span></span>
+<span><span class="kw">if</span> <span class="op">(</span><span class="op">!</span><span class="fu"><a href="https://rdrr.io/r/base/exists.html" class="external-link">exists</a></span><span class="op">(</span><span class="st">"AVCS"</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="kw"><a href="https://rdrr.io/r/base/stop.html" class="external-link">stop</a></span><span class="op">(</span><span class="st">"This job read "</span>, <span class="st">"AVCS"</span>, <span class="st">" from a SAS DATA step, which "</span>,</span>
+<span>       <span class="st">"hzr_translate_sas() does not translate. Assign "</span>, <span class="st">"AVCS"</span>,</span>
+<span>       <span class="st">" before rendering."</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span></span>
+<span><span class="co"># chunk: status</span></span>
+<span><span class="va">AVCS</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/transform.html" class="external-link">transform</a></span><span class="op">(</span><span class="va">AVCS</span>, .hzr_status <span class="op">=</span> <span class="op">{</span></span>
+<span>  <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/any.html" class="external-link">any</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/NA.html" class="external-link">is.na</a></span><span class="op">(</span><span class="va">DEAD</span><span class="op">)</span> <span class="op">|</span> <span class="va">DEAD</span> <span class="op">&lt;</span> <span class="fl">0</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span>
+<span>    <span class="kw"><a href="https://rdrr.io/r/base/stop.html" class="external-link">stop</a></span><span class="op">(</span><span class="st">"This job has rows where the EVENT count (DEAD) is missing or "</span>,</span>
+<span>         <span class="st">"negative. ..."</span><span class="op">)</span>   <span class="co"># message trimmed here; see below</span></span>
+<span>  <span class="op">}</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/ifelse.html" class="external-link">ifelse</a></span><span class="op">(</span><span class="va">DEAD</span> <span class="op">&gt;</span> <span class="fl">0</span>, <span class="fl">1</span>, <span class="fl">0</span><span class="op">)</span></span>
+<span><span class="op">}</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># chunk: fit</span></span>
+<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/hazard.html">hazard</a></span><span class="op">(</span></span>
+<span>  data <span class="op">=</span> <span class="va">AVCS</span>, time <span class="op">=</span> <span class="va">INT_DEAD</span>, status <span class="op">=</span> <span class="va">.hzr_status</span>, fit <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>  dist <span class="op">=</span> <span class="st">"multiphase"</span>,</span>
+<span>  phases <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
+<span>    <span class="fu"><a href="../reference/hzr_phase.html">hzr_phase</a></span><span class="op">(</span><span class="st">"cdf"</span>, t_half <span class="op">=</span> <span class="fl">0.1512095</span>, nu <span class="op">=</span> <span class="fl">1.438652</span>, m <span class="op">=</span> <span class="fl">1</span>, fixed <span class="op">=</span> <span class="st">"m"</span><span class="op">)</span>,</span>
+<span>    <span class="fu"><a href="../reference/hzr_phase.html">hzr_phase</a></span><span class="op">(</span><span class="st">"constant"</span><span class="op">)</span></span>
+<span>  <span class="op">)</span>,</span>
+<span>  theta <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="fl">0.2361727</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="fl">0.1512095</span><span class="op">)</span>, <span class="fl">1.438652</span>, <span class="fl">1</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="fl">0.0005436977</span><span class="op">)</span></span>
+<span>  <span class="op">)</span>,</span>
+<span>  weights <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/ifelse.html" class="external-link">ifelse</a></span><span class="op">(</span><span class="va">DEAD</span> <span class="op">&gt;</span> <span class="fl">0</span>, <span class="va">DEAD</span>, <span class="fl">1</span><span class="op">)</span>,</span>
+<span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>condition <span class="op">=</span> <span class="fl">14</span>, conserve <span class="op">=</span> <span class="cn">TRUE</span>, method <span class="op">=</span> <span class="st">"bfgs"</span><span class="op">)</span></span>
+<span><span class="op">)</span></span></code></pre></div>
+</div>
+<p><code>EVENT DEAD</code> names a <strong>count</strong>, not a flag. In the reference program a row with <code>DEAD = 2</code> is two events, and <code>setlik.c</code> weights its contribution accordingly. <code><a href="../reference/hazard.html">hazard()</a></code> takes a 0/1 status and a separate <code>weights</code> argument, so the one SAS statement translates into two: the status derives from <code>DEAD &gt; 0</code>, and the count carries into <code>weights</code>. Read <code>status = .hzr_status</code> and <code>weights = ifelse(DEAD &gt; 0, DEAD, 1)</code> as a pair and they are your <code>EVENT</code> statement, not two new modelling choices. If you have translated this job before version 1.2.2, note that <code>DEAD = 2</code> used to map straight onto <code>status = 2</code> and be fitted as interval-censored, which is a different likelihood branch rather than an under-count.</p>
+<p>The guard in front of it refuses the rows SAS would have deleted. A missing or negative count is dropped outright by the reference program: <code>readc1.c</code> sets <code>mdel</code> on a missing count and <code>del</code> on a negative one, and <code>readobs.c</code> then skips the row and subtracts it from <code>Nobs</code>, so it contributes nothing to the likelihood. <code><a href="../reference/hazard.html">hazard()</a></code> has no equivalent of that deletion, and translating such a row as censored would change the fit without saying so, so the chunk stops instead and asks you to drop the rows yourself. When it fires, subset to <code>!is.na(DEAD) &amp; DEAD &gt;= 0</code> and check your row count against the deletion tallies SAS printed for the job.</p>
+<p>The fit is bound to <code>fit</code> and <code>fit = TRUE</code> is emitted, which is what makes the document runnable: a later <code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> chunk from a <code>PROC HAZPRED</code> block in the same job refers to that name.</p>
+<p><code>CONSERVE</code> becomes <code>control$conserve = TRUE</code>, <code>QUASI</code> becomes <code>control$method = "bfgs"</code>, <code>CONDITION=14</code> becomes <code>control$condition = 14</code>, and the <code>PARMS</code> early-phase shape (<code>MUE</code>/<code>THALF</code>/<code>NU</code>/<code>M FIXM</code>) becomes a <code>hzr_phase("cdf", ...)</code> with <code>m</code> fixed – exactly the mappings covered statement-by-statement above, applied automatically. <code>dist = "multiphase"</code> is emitted whenever <code>phases</code> is, and <code>theta</code> carries the full interleaved multiphase start vector – early scale, then every early-phase shape parameter in phase order, then the constant/late scale – not just the phases’ log(mu) starts.</p>
+<section class="level3"><h3 id="what-it-doesnt-translate">What it doesn’t translate<a class="anchor" aria-label="anchor" href="#what-it-doesnt-translate"></a>
+</h3>
+<p>Constructs the parser can’t resolve are never silently dropped: they land on the returned <code>hzr_sas_job</code> object and render as visible <code>UNTRANSLATED</code> callouts in the <code>.qmd</code>, so a translated document shows its own gaps instead of quietly under-reporting the original job. Two gaps are common enough in production jobs to know about going in:</p>
+<ul>
+<li>
+<strong><code>PROC HAZPRED</code> prediction grids built from <code>SET</code>-derived values, function calls, or unknown names are not translated.</strong> The parser resolves a grid’s <code>DO</code> loop bounds when they are literal numbers or DATA-step constants it can fold (e.g. <code>DO MONTHS = 1*DTY, 2*DTY, ... ;</code> with <code>DTY</code> assigned earlier in the same DATA step), but a bound read from <code>SET</code>, computed by a function call, or naming something the parser can’t resolve is refused whole rather than partially read – a partial grid is a partial <code>newdata</code>, and reporting predictions over a half-read grid would be worse than not reporting them. Such grids emit an <code>UNTRANSLATED</code> block; build the <code>newdata</code> grid by hand and pass it to <code><a href="../reference/predict.hazard.html">predict.hazard()</a></code> instead. On the public corpus, grid resolution is 19 of 55 (35%), up from 10 of 55 (18%) before constant folding.</li>
+<li>
+<strong>An unresolved <code>INHAZ=</code> fails the render on purpose.</strong> If a <code>PROC HAZPRED</code> job’s fitted-model dataset can’t be found – neither from another translated job’s <code>OUTHAZ=</code> nor from the <code>librefs=</code> argument you pass in – the document gets an <code>inhaz-unresolved</code> chunk ahead of the grid and <code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> chunks whose whole body is a <code><a href="https://rdrr.io/r/base/stop.html" class="external-link">stop()</a></code> naming the libref, so rendering fails loudly instead of producing predictions against a model it never loaded.</li>
+</ul></section></section><section class="level2"><h2 id="known-limitations-vs--sas-hazard">Known limitations vs. SAS HAZARD<a class="anchor" aria-label="anchor" href="#known-limitations-vs--sas-hazard"></a>
+</h2>
+<p>A SAS HAZARD veteran migrating to <code>TemporalHazard</code> should be aware of the following scope limits as of v1.2.2. Detailed status per feature is tracked in <code>inst/dev/SAS-PARITY-GAP-ANALYSIS.md</code> and <code>inst/dev/DEVELOPMENT-PLAN.md</code>.</p>
 <section class="level3"><h3 id="stepwise-variable-selection-selection-statement">Stepwise variable selection (<code>SELECTION</code> statement)<a class="anchor" aria-label="anchor" href="#stepwise-variable-selection-selection-statement"></a>
 </h3>
 <ul>
 <li>
 <strong>Supported:</strong> <code><a href="../reference/hzr_stepwise.html">hzr_stepwise()</a></code> implements forward / backward / two-way stepwise with SAS-style SLENTRY / SLSTAY thresholds, per-phase entry for multiphase, and a MOVE oscillation guard.</li>
 <li>
-<strong>Not yet supported:</strong> FAST-screening (Lawless-Singhal approximate Wald updates). Every candidate currently gets a full refit, which is slower but always correct.</li>
+<strong>Not yet supported:</strong> FAST-screening (Lawless-Singhal approximate Wald updates). Much of what it exists to save is already gone, though: the default <code>criterion = "score"</code> tests each candidate at the current estimates and never refits to do it. <code>criterion = "wald"</code> still refits once per <em>entry</em> candidate. Removals never did, under either criterion: a drop is tested on the current model’s Wald p-value against <code>slstay</code>, which is what SAS does, and only the accepted drop is refitted.</li>
 </ul></section><section class="level3"><h3 id="per-phase-time-varying-windows">Per-phase time-varying windows<a class="anchor" aria-label="anchor" href="#per-phase-time-varying-windows"></a>
 </h3>
 <ul>

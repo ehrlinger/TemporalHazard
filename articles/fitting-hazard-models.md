@@ -214,16 +214,6 @@ fit_mp <- hazard(
   fit     = TRUE,
   control = list(n_starts = 5, maxit = 1000)
 )
-#> Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :
-#> hessian_fn returned a non-conformant result; using numerical Hessian
-#> Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :
-#> hessian_fn returned a non-conformant result; using numerical Hessian
-#> Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :
-#> hessian_fn returned a non-conformant result; using numerical Hessian
-#> Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :
-#> hessian_fn returned a non-conformant result; using numerical Hessian
-#> Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :
-#> hessian_fn returned a non-conformant result; using numerical Hessian
 
 summary(fit_mp)
 #> Multiphase hazard model (2 phases)
@@ -410,13 +400,26 @@ The package encodes censoring type in the `status` vector:
 |    `2` | Interval-censored | Event occurred in `(time_lower, time_upper)` |
 |   `-1` | Left-censored     | Event occurred before `time` (upper bound)   |
 
-For interval-censored rows, supply both `time_lower` and `time_upper`
-directly to
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md).
-The formula interface handles `Surv(time, status)` for right-censored
-data and `Surv(start, stop, event)` for counting-process
-(repeating-event) data; interval censoring is passed via the direct
-arguments.
+For interval-censored rows, supply both `time_lower` and `time_upper`.
+You can pass them as direct arguments to
+[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md),
+or hand it a [`Surv()`](https://rdrr.io/pkg/survival/man/Surv.html)
+object instead: `Surv(lower, upper, event, type = "interval")` and
+`Surv(lower, upper, type = "interval2")` both work, as do
+`Surv(time, event, type = "left")` for left censoring and
+`Surv(start, stop, event)` for counting-process (repeating-event) data.
+
+One thing to watch, because the two interfaces do not use the same
+numbers. The table above is this package’s coding, and it is what you
+pass to the `status` argument.
+[`Surv()`](https://rdrr.io/pkg/survival/man/Surv.html) has its own
+scheme — under `type = "interval"` it reads `0` as right-censored, `1`
+as an exact event, `2` as left-censored and `3` as interval-censored —
+and
+[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+translates it for you when it parses the formula. So use whichever
+coding belongs to the interface you are writing in, and don’t carry one
+set of codes across to the other.
 
 ### 5.2 Mixed censoring example
 
@@ -672,13 +675,13 @@ fit_3ph <- hazard(
   fit = TRUE, control = list(n_starts = 5, maxit = 1000)
 )
 #> Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =
-#> 4.46e-11); standard errors may be unreliable
+#> 3.78e-11); standard errors may be unreliable
 
 # Scale magnitudes: exp(log_mu) ≈ 0 for any phase the data doesn't support
 log_mu_idx <- grep("log_mu", names(coef(fit_3ph)))
 round(exp(coef(fit_3ph)[log_mu_idx]), 6)
 #>    early.log_mu constant.log_mu     late.log_mu 
-#>        0.248869        0.000000        0.000006
+#>        0.248871        0.000000        0.000006
 ```
 
 The constant and late phase scales are both near zero — the optimizer
@@ -724,26 +727,6 @@ fit_robust <- hazard(
   fit     = TRUE,
   control = list(n_starts = 10, maxit = 1000)
 )
-#> Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :
-#> hessian_fn returned a non-conformant result; using numerical Hessian
-#> Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :
-#> hessian_fn returned a non-conformant result; using numerical Hessian
-#> Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :
-#> hessian_fn returned a non-conformant result; using numerical Hessian
-#> Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :
-#> hessian_fn returned a non-conformant result; using numerical Hessian
-#> Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :
-#> hessian_fn returned a non-conformant result; using numerical Hessian
-#> Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :
-#> hessian_fn returned a non-conformant result; using numerical Hessian
-#> Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :
-#> hessian_fn returned a non-conformant result; using numerical Hessian
-#> Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :
-#> hessian_fn returned a non-conformant result; using numerical Hessian
-#> Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :
-#> hessian_fn returned a non-conformant result; using numerical Hessian
-#> Warning in .hzr_optim_generic(logl_fn = logl_fn, gradient_fn = gradient_fn, :
-#> hessian_fn returned a non-conformant result; using numerical Hessian
 fit_robust$fit$converged
 #> [1] TRUE
 ```

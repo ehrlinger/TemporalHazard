@@ -6,11 +6,11 @@
     }
   };
 </script><script src="../deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"><link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet"><script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet"><link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet"><script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Stepwise covariate selection for a parametric hazard model — hzr_stepwise"><meta name="description" content="Run forward, backward, or two-way stepwise selection on an existing
-hazard fit using Wald p-values or AIC deltas as the entry /
-retention criterion.  Phase-specific entry is supported for
+hazard fit using score (Q) statistics, Wald p-values, or AIC deltas as
+the entry / retention criterion.  Phase-specific entry is supported for
 multiphase models: a covariate can enter one phase and not another."><meta property="og:description" content="Run forward, backward, or two-way stepwise selection on an existing
-hazard fit using Wald p-values or AIC deltas as the entry /
-retention criterion.  Phase-specific entry is supported for
+hazard fit using score (Q) statistics, Wald p-values, or AIC deltas as
+the entry / retention criterion.  Phase-specific entry is supported for
 multiphase models: a covariate can enter one phase and not another."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
@@ -19,7 +19,7 @@ multiphase models: a covariate can enter one phase and not another."></head><bod
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.2</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -64,8 +64,8 @@ multiphase models: a covariate can enter one phase and not another."></head><bod
 
     <div class="ref-description section level2">
     <p>Run forward, backward, or two-way stepwise selection on an existing
-<code>hazard</code> fit using Wald p-values or AIC deltas as the entry /
-retention criterion.  Phase-specific entry is supported for
+<code>hazard</code> fit using score (Q) statistics, Wald p-values, or AIC deltas as
+the entry / retention criterion.  Phase-specific entry is supported for
 multiphase models: a covariate can enter one phase and not another.</p>
     </div>
 
@@ -76,7 +76,7 @@ multiphase models: a covariate can enter one phase and not another.</p>
 <span>  scope <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  <span class="va">data</span>,</span>
 <span>  direction <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"both"</span>, <span class="st">"forward"</span>, <span class="st">"backward"</span><span class="op">)</span>,</span>
-<span>  criterion <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"wald"</span>, <span class="st">"aic"</span><span class="op">)</span>,</span>
+<span>  criterion <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"score"</span>, <span class="st">"wald"</span>, <span class="st">"aic"</span><span class="op">)</span>,</span>
 <span>  slentry <span class="op">=</span> <span class="fl">0.3</span>,</span>
 <span>  slstay <span class="op">=</span> <span class="fl">0.2</span>,</span>
 <span>  max_steps <span class="op">=</span> <span class="fl">50L</span>,</span>
@@ -130,19 +130,22 @@ criterion</strong> section.</p></dd>
 
 
 <dt id="arg-criterion">criterion<a class="anchor" aria-label="anchor" href="#arg-criterion"></a></dt>
-<dd><p>Entry / retention rule — one of <code>"wald"</code> (default)
-or <code>"aic"</code>.  <code>"wald"</code> applies SAS-style p-value thresholds
-(<code>slentry</code> / <code>slstay</code>); <code>"aic"</code> adds or drops whenever it lowers the
-AIC.  See the <strong>Selection direction and criterion</strong> section.</p></dd>
+<dd><p>Entry / retention rule — one of <code>"score"</code> (default),
+<code>"wald"</code>, or <code>"aic"</code>.  <code>"score"</code> and <code>"wald"</code> both apply SAS-style
+p-value thresholds (<code>slentry</code> / <code>slstay</code>) but score entry candidates
+differently, and can therefore select different variable sets; <code>"score"</code>
+reproduces C/SAS HAZARD and needs no per-candidate refit.  <code>"aic"</code> adds or
+drops whenever it lowers the AIC.  See the <strong>Selection direction and
+criterion</strong> section.</p></dd>
 
 
 <dt id="arg-slentry">slentry<a class="anchor" aria-label="anchor" href="#arg-slentry"></a></dt>
-<dd><p>Entry p-value threshold for the Wald criterion.
+<dd><p>Entry p-value threshold for the score / Wald criteria.
 Default <code>0.30</code> matches SAS <code>SLENTRY</code>.</p></dd>
 
 
 <dt id="arg-slstay">slstay<a class="anchor" aria-label="anchor" href="#arg-slstay"></a></dt>
-<dd><p>Retention p-value threshold for the Wald criterion.
+<dd><p>Retention p-value threshold for the score / Wald criteria.
 Default <code>0.20</code> matches SAS <code>SLSTAY</code>.</p></dd>
 
 
@@ -198,7 +201,21 @@ frozen action; see Details.</p></dd>
 
 <dt><code>criteria</code></dt>
 <dd><p>Named list of the threshold / direction
-settings actually applied.</p></dd>
+settings actually applied, plus, under <code>criterion = "score"</code>,
+<code>n_uncomputable_scores</code> (how many candidate scores were <code>NA</code>),
+<code>uncomputable_reasons</code> (a named integer vector of <em>why</em>) and
+<code>stopped_uncomputable</code>. Read <code>uncomputable_reasons</code> before treating
+an unscored candidate as a bad one: <code>information_indefinite</code> marks
+candidates whose effect is too large for the score test's
+approximation at zero, which are typically the strongest variables
+on offer rather than degenerate ones. <code>criterion = "wald"</code> tests
+them.  For every criterion it also carries <code>refit_failures</code> (the
+<code>"var"</code> / <code>"var@phase"</code> tokens of candidate moves whose refit
+errored or failed to converge), <code>n_refit_failures</code>, and
+<code>stopped_refit_failed</code> — <code>TRUE</code> when the run ended on an iteration
+in which refits failed, which is a screen that could not test its
+candidates rather than one that tested them and liked none.  Check
+it before reading a zero-row <code>steps</code> as an honest null result.</p></dd>
 
 <dt><code>trace_msg</code></dt>
 <dd><p>Character vector of the trace lines,
@@ -234,14 +251,16 @@ appended.</p>
 <dd><p>Phase name (multiphase) or <code>NA_character_</code>.</p></dd>
 
 <dt><code>criterion</code></dt>
-<dd><p><code>"wald"</code> or <code>"aic"</code>.</p></dd>
+<dd><p>The criterion actually applied to this step —
+<code>"score"</code>, <code>"wald"</code>, or <code>"aic"</code>.  Under <code>criterion = "score"</code> the drop
+rows read <code>"wald"</code>, because score is entry-only.</p></dd>
 
 <dt><code>score</code></dt>
 <dd><p>Winning score used for the decision.</p></dd>
 
 <dt><code>stat</code>, <code>df</code></dt>
-<dd><p>Wald statistic and degrees of
-freedom.</p></dd>
+<dd><p>Test statistic (score Q or Wald) and
+degrees of freedom.</p></dd>
 
 <dt><code>p_value</code>, <code>delta_aic</code></dt>
 <dd><p>Always populated when
@@ -278,7 +297,29 @@ This is the SAS <code>SELECTION = STEPWISE</code> strategy.  <code>max_move</cod
 often a single variable may oscillate before it is frozen.</p></dd>
 
 
-</dl><dl><dt><code>criterion = "wald"</code> (default)</dt>
+</dl><dl><dt><code>criterion = "score"</code> (default)</dt>
+<dd><p>Accept moves on SAS-style
+significance thresholds, using the score (Q) statistic of the candidate
+coefficient — this reproduces C/SAS HAZARD's <code>SELECTION</code> statistic.
+Q is evaluated at the <em>current</em> model's MLE with the candidate's
+coefficient pinned at zero, so <strong>no candidate refit is needed</strong>: the
+reduced-model information is inverted once per step and reused across
+every candidate.  Only the winner is refit.  A candidate enters if its
+p-value is below <code>slentry</code>.</p>
+<p>Score is an <em>entry</em> criterion; the drop path never refit per candidate
+in the first place, so removals are tested on the current model's Wald
+p-value against <code>slstay</code>, as SAS does.</p>
+<p>For single-distribution fits, the score criterion computes the observed
+information numerically via the suggested <span class="pkg">numDeriv</span> package and
+errors with a clear message if it is not installed; a multiphase fit
+uses the analytic Hessian instead and does not need it.</p>
+<p>Following SAS, the variance used during <em>selection</em> is approximate:
+shaping-parameter covariances are ignored.  This affects selection only
+— final-model standard errors are unchanged and still come from the
+full Hessian.  Candidates must be single-column numeric main-effect
+terms; a factor is rejected with an error rather than skipped.</p></dd>
+
+<dt><code>criterion = "wald"</code></dt>
 <dd><p>Accept moves on SAS-style
 significance thresholds, using the Wald \(\chi^2\) of the affected
 coefficient(s): a candidate enters if its p-value is below <code>slentry</code>, and
@@ -286,10 +327,10 @@ a term is dropped if its p-value rises above <code>slstay</code>.  Entry candida
 are scored from a refit that adds the candidate (so its new coefficient
 can be tested); drop candidates are scored from the <em>current</em> model's
 Wald p-values without a per-candidate refit, and a single refit is run
-only after a drop is chosen.  Note this differs algorithmically from
-C/SAS HAZARD, which selects on a <em>score</em> (Q) statistic evaluated without
-refitting; the two can take different step paths even when they converge
-to a similar final model.</p></dd>
+only after a drop is chosen.  This was the default before version 1.2.0.
+It differs algorithmically from C/SAS HAZARD, so the two criteria can
+take different step paths — and select different variable sets —
+even when they converge to a similar final model.</p></dd>
 
 <dt><code>criterion = "aic"</code></dt>
 <dd><p>Accept any move with
@@ -315,23 +356,25 @@ scopes; <code><a href="stepwise_trace.html">stepwise_trace()</a></code> to retri
     <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/utils/data.html" class="external-link">data</a></span><span class="op">(</span><span class="va">avc</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="va">avc</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/na.fail.html" class="external-link">na.omit</a></span><span class="op">(</span><span class="va">avc</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="va">base</span> <span class="op">&lt;-</span> <span class="fu"><a href="hazard.html">hazard</a></span><span class="op">(</span><span class="fu">survival</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/survival/man/Surv.html" class="external-link">Surv</a></span><span class="op">(</span><span class="va">int_dead</span>, <span class="va">dead</span><span class="op">)</span> <span class="op">~</span> <span class="va">age</span>,</span></span>
-<span class="r-in"><span>               data <span class="op">=</span> <span class="va">avc</span>, dist <span class="op">=</span> <span class="st">"weibull"</span>, fit <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></span>
+<span class="r-in"><span>               data <span class="op">=</span> <span class="va">avc</span>, dist <span class="op">=</span> <span class="st">"weibull"</span>, fit <span class="op">=</span> <span class="cn">TRUE</span>,</span></span>
+<span class="r-in"><span>               theta <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>mu <span class="op">=</span> <span class="fl">0.01</span>, nu <span class="op">=</span> <span class="fl">0.5</span>, <span class="fl">0</span><span class="op">)</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="co"># \donttest{</span></span></span>
-<span class="r-in"><span><span class="va">sw</span> <span class="op">&lt;-</span> <span class="fu">hzr_stepwise</span><span class="op">(</span><span class="va">base</span>, scope <span class="op">=</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">nyha</span>,</span></span>
+<span class="r-in"><span><span class="va">sw</span> <span class="op">&lt;-</span> <span class="fu">hzr_stepwise</span><span class="op">(</span><span class="va">base</span>, scope <span class="op">=</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">mal</span>,</span></span>
 <span class="r-in"><span>                   data <span class="op">=</span> <span class="va">avc</span>, direction <span class="op">=</span> <span class="st">"forward"</span>,</span></span>
 <span class="r-in"><span>                   control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_starts <span class="op">=</span> <span class="fl">1</span><span class="op">)</span><span class="op">)</span></span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> Stepwise selection (direction = forward, criterion = wald, slentry = 0.30, slstay = 0.20)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Stepwise selection (direction = forward, criterion = score, slentry = 0.30, slstay = 0.20)</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>Stepwise forward: candidate refit failed for nyha.</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> (no further action after 0 steps)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Step 1: ENTER  mal   (p = 0.001)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> (no further action after 1 step)</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> Final model: 0 covariates, logLik = NA, AIC = NA</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Final model: 2 covariates, logLik = -223.55, AIC = 455.09</span>
 <span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">sw</span><span class="op">)</span></span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> Stepwise selection (direction = forward, criterion = wald, slentry = 0.30, slstay = 0.20)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Stepwise selection (direction = forward, criterion = score, slentry = 0.30, slstay = 0.20)</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> (no further action after 0 steps)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Step 1: ENTER  mal   (p = 0.001)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> (no further action after 1 step)</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> Final model: 0 covariates, logLik = NA, AIC = NA</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Final model: 2 covariates, logLik = -223.55, AIC = 455.09</span>
 <span class="r-in"><span><span class="co"># }</span></span></span>
 <span class="r-in"><span></span></span>
 </code></pre></div>

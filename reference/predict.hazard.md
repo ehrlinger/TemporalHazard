@@ -245,11 +245,6 @@ fit_mp <- hazard(
   fit     = TRUE,
   control = list(n_starts = 5, maxit = 1000)
 )
-#> Warning: hessian_fn returned a non-conformant result; using numerical Hessian
-#> Warning: hessian_fn returned a non-conformant result; using numerical Hessian
-#> Warning: hessian_fn returned a non-conformant result; using numerical Hessian
-#> Warning: hessian_fn returned a non-conformant result; using numerical Hessian
-#> Warning: hessian_fn returned a non-conformant result; using numerical Hessian
 
 t_grid <- seq(0.01, max(dat$time) * 0.9, length.out = 100)
 nd     <- data.frame(time = t_grid)
@@ -257,50 +252,50 @@ nd     <- data.frame(time = t_grid)
 # Overall survival
 predict(fit_mp, newdata = nd, type = "survival")
 #> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.9991035    0.9506793    0.9308162    0.8914472    0.8319967    0.7661083 
+#>    0.9991035    0.9506784    0.9308151    0.8914460    0.8319957    0.7661075 
 #> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.7030012    0.6464729    0.5973334    0.5551219    0.5189604    0.4879204 
+#>    0.7030006    0.6464725    0.5973331    0.5551218    0.5189604    0.4879203 
 #> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.4611599    0.4379618    0.4177323    0.3999852    0.3843243    0.3704264 
+#>    0.4611599    0.4379620    0.4177325    0.3999854    0.3843245    0.3704267 
 #> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.3580275    0.3469102    0.3368953    0.3278339    0.3196015    0.3120937 
+#>    0.3580277    0.3469105    0.3368956    0.3278342    0.3196018    0.3120940 
 #> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.3052222    0.2989121    0.2930993    0.2877292    0.2827542    0.2781335 
+#>    0.3052225    0.2989124    0.2930997    0.2877295    0.2827546    0.2781339 
 #> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.2738314    0.2698169    0.2660626    0.2625446    0.2592417    0.2561351 
+#>    0.2738318    0.2698173    0.2660630    0.2625450    0.2592421    0.2561355 
 #> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.2532082    0.2504459    0.2478352    0.2453639    0.2430214    0.2407981 
+#>    0.2532086    0.2504463    0.2478356    0.2453643    0.2430218    0.2407985 
 #> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.2386851    0.2366746    0.2347594    0.2329329    0.2311892    0.2295228 
+#>    0.2386855    0.2366750    0.2347598    0.2329333    0.2311896    0.2295232 
 #> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.2279288    0.2264026    0.2249400    0.2235372    0.2221905    0.2208967 
+#>    0.2279292    0.2264030    0.2249404    0.2235376    0.2221909    0.2208972 
 #> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.2196529    0.2184561    0.2173037    0.2161934    0.2151230    0.2140902 
+#>    0.2196533    0.2184565    0.2173041    0.2161938    0.2151234    0.2140906 
 #> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.2130932    0.2121302    0.2111994    0.2102993    0.2094284    0.2085853 
+#>    0.2130936    0.2121306    0.2111998    0.2102997    0.2094289    0.2085858 
 #> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.2077688    0.2069774    0.2062103    0.2054661    0.2047440    0.2040429 
+#>    0.2077692    0.2069779    0.2062107    0.2054665    0.2047444    0.2040434 
 #> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.2033620    0.2027005    0.2020574    0.2014320    0.2008237    0.2002317 
+#>    0.2033625    0.2027009    0.2020578    0.2014325    0.2008241    0.2002321 
 #> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.1996554    0.1990942    0.1985474    0.1980146    0.1974952    0.1969888 
+#>    0.1996558    0.1990946    0.1985478    0.1980150    0.1974957    0.1969892 
 #> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.1964947    0.1960127    0.1955422    0.1950828    0.1946343    0.1941961 
+#>    0.1964951    0.1960131    0.1955426    0.1950833    0.1946347    0.1941965 
 #> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.1937679    0.1933494    0.1929403    0.1925402    0.1921489    0.1917661 
+#>    0.1937683    0.1933498    0.1929407    0.1925406    0.1921493    0.1917665 
 #> early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.1913914    0.1910247    0.1906657    0.1903142 
+#>    0.1913919    0.1910252    0.1906662    0.1903146 
 
 # Per-phase decomposed cumulative hazard
 decomp <- predict(fit_mp, newdata = nd,
                   type = "cumulative_hazard", decompose = TRUE)
 head(decomp)
 #>        time        total        early          late
-#> 1 0.0100000 0.0008968715 0.0008968715 5.301145e-151
-#> 2 0.3177112 0.0505785158 0.0505467552  3.176063e-05
-#> 3 0.6254224 0.0716934643 0.0648896246  6.803840e-03
-#> 4 0.9331336 0.1149091204 0.0726070448  4.230208e-02
-#> 5 1.2408448 0.1839268533 0.0776684396  1.062584e-01
-#> 6 1.5485560 0.2664317832 0.0813355656  1.850962e-01
+#> 1 0.0100000 0.0008968883 0.0008968883 5.301131e-151
+#> 2 0.3177112 0.0505794621 0.0505477015  3.176054e-05
+#> 3 0.6254224 0.0716946604 0.0648908394  6.803821e-03
+#> 4 0.9331336 0.1149103629 0.0726084041  4.230196e-02
+#> 5 1.2408448 0.1839280141 0.0776698937  1.062581e-01
+#> 6 1.5485560 0.2664327951 0.0813370883  1.850957e-01
 # }
 ```

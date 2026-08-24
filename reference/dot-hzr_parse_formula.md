@@ -30,3 +30,18 @@ A list with elements: time, status, time_lower, time_upper, x
 For counting-process (start-stop) data, use `Surv(start, stop, event)`.
 The start times are returned as `time_lower` and stop times as `time`,
 enabling the likelihood to compute `H(stop) - H(start)` per epoch.
+
+`Surv()` and this package code censoring status differently, so the
+returned `status` is translated, not passed through:
+
+|          |                |               |                   |
+|----------|----------------|---------------|-------------------|
+| Meaning  | TemporalHazard | `Surv` "left" | `Surv` "interval" |
+| left     | `-1`           | `0`           | `2`               |
+| right    | `0`            | –             | `0`               |
+| event    | `1`            | `1`           | `1`               |
+| interval | `2`            | –             | `3`               |
+
+Under `type = "interval"`, `Surv()` reuses the `time2` column to hold
+the status of any non-interval row, so an upper bound is read only where
+the row is genuinely interval-censored.

@@ -19,7 +19,7 @@ counting-process (start-stop) data."></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.2</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -95,6 +95,10 @@ counting-process (start-stop) data.</p>
     <p>For counting-process (start-stop) data, use <code>Surv(start, stop, event)</code>.
 The start times are returned as <code>time_lower</code> and stop times as <code>time</code>,
 enabling the likelihood to compute <code>H(stop) - H(start)</code> per epoch.</p>
+<p><code>Surv()</code> and this package code censoring status differently, so the
+returned <code>status</code> is translated, not passed through:</p><table class="table table"><tr><td>Meaning</td><td>TemporalHazard</td><td><code>Surv</code> "left"</td><td><code>Surv</code> "interval"</td></tr><tr><td>left</td><td><code>-1</code></td><td><code>0</code></td><td><code>2</code></td></tr><tr><td>right</td><td><code>0</code></td><td>–</td><td><code>0</code></td></tr><tr><td>event</td><td><code>1</code></td><td><code>1</code></td><td><code>1</code></td></tr><tr><td>interval</td><td><code>2</code></td><td>–</td><td><code>3</code></td></tr></table><p>Under <code>type = "interval"</code>, <code>Surv()</code> reuses the <code>time2</code> column to hold the
+status of any non-interval row, so an upper bound is read only where the
+row is genuinely interval-censored.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
