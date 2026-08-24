@@ -122,9 +122,11 @@ main (X.Y.Z) accumulates, patch-bumping as fixes land
 5. **Adversarial review of the accumulated release diff.** Every PR is reviewed
    on its own; nobody reviews the release as a whole, and by submission time
    `main` is typically dozens of commits past the last release. Run the
-   `r-reviewer` agent (`.claude/agents/r-reviewer.md`) over
-   `git diff v<previous>...main` — the previous release tag is the anchor now
-   that there is no `dev` to diff against.
+   `r-reviewer` agent (`.claude/agents/r-reviewer.md`) over the diff from the
+   previous release tag to `main` — `git diff v1.2.2...main` at the time of
+   writing. That tag is the anchor now that there is no `dev` to diff against,
+   and it is the better one: a tag records exactly what shipped, where `dev`'s
+   position depended on when you looked.
 
    This step is **advisory**, unlike the rest of this checklist. It returns
    findings to triage, not a pass/fail. Verify each one against the code before

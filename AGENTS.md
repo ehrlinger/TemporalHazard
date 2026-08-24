@@ -36,8 +36,9 @@ Before opening the PR, and whenever the change touches an exported function or t
 likelihood, run the `r-reviewer` agent (`.claude/agents/r-reviewer.md`) over the diff. It is
 advisory: verify each finding against the code rather than acting on it, and do not let a
 clean report stand in for the commands above. `RELEASE.md` step 5 runs the same agent over
-the accumulated `v<previous>...main` diff at release time, because per-PR review never sees
-the release as a whole.
+the accumulated diff from the previous release tag to `main` (`git diff v1.2.2...main` at
+the time of writing) at release time, because per-PR review never sees the release as a
+whole.
 
 Four details there are load bearing:
 
