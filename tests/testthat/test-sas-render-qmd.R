@@ -75,7 +75,10 @@ test_that("the INHAZ remedy is pasteable R for a reserved-word libref", {
   # Run the remedy rather than matching its text: the claim is that it works,
   # not that it looks right.
   msg <- tryCatch(eval(parse(text = stop_line)), error = conditionMessage)
-  remedy <- sub(".*pass librefs = (c\\(.*?\\)) to .*", "\\1", msg)
+  # Stop at the first ")" rather than leaning on a non-greedy quantifier: the
+  # fragment has no nested parentheses, and this needs no regex-engine
+  # extension to mean what it says.
+  remedy <- sub(".*pass librefs = (c\\([^)]*\\)) to .*", "\\1", msg)
   expect_false(identical(remedy, msg))
   v <- eval(parse(text = remedy))
   expect_named(v, "TRUE")
