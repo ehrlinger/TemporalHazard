@@ -180,7 +180,7 @@ keep the two in agreement.
    `main` (the released line):
 
    ```sh
-   git tag -a vX.Y.Z -m "TemporalHazard vX.Y.Z — accepted & published on CRAN <date>" <main-HEAD>
+   git tag -a vX.Y.Z -m "TemporalHazard vX.Y.Z — accepted & published on CRAN YYYY-MM-DD" main
    git push origin vX.Y.Z
    ```
 
@@ -192,7 +192,7 @@ keep the two in agreement.
 
    ```sh
    gh release create vX.Y.Z --verify-tag --latest \
-     --title "TemporalHazard X.Y.Z" --notes-file <news-section.md>
+     --title "TemporalHazard X.Y.Z" --notes-file news-section.md
    ```
 
 3. **Nothing to bump at this step.** `main` stays at `X.Y.Z`, the number that
