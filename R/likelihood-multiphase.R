@@ -1127,6 +1127,141 @@
 
 
 # ============================================================================
+# Phase identifiability
+# ============================================================================
+
+#' Diagnose phases that have effectively left the model
+#'
+#' Two distinct failure modes, with different consequences, both silent:
+#'
+#' \describe{
+#'   \item{`"absent"`}{The phase contributes essentially none of
+#'     \eqn{\Lambda} at any observed time -- it has not started by the end of
+#'     follow-up. Its `mu` **and** its shape are unidentified.}
+#'   \item{`"saturated"`}{The phase's \eqn{\Phi} is effectively constant across
+#'     the observed times -- a `cdf` phase whose half-life is far shorter than
+#'     the first observation has already finished. It then contributes
+#'     \eqn{\mu \cdot \Phi \approx \mu}, a constant offset, so **`mu` stays
+#'     well identified** while the shape parameters (`t_half`, `nu`, `m`) go
+#'     exactly flat: the likelihood is unchanged whether they are pinned or
+#'     fitted.}
+#' }
+#'
+#' Share is taken of \eqn{\Lambda}, not of \eqn{h}, because every row type's
+#' contribution runs through \eqn{\Lambda(t)}. A phase can supply almost none
+#' of the instantaneous hazard late in follow-up and still be perfectly well
+#' identified through the offset it already contributed -- which is why the
+#' hazard is the wrong basis for this test.
+#'
+#' The **maximum** over times is the right summary rather than the mean: a
+#' phase mattering only in the first week is identified, and a mean over long
+#' follow-up would hide it.
+#'
+#' @inheritParams .hzr_logl_multiphase
+#' @return `data.frame` with one row per phase: `share` (largest share of
+#'   \eqn{\Lambda} at any observed time) and `variation` (relative range of the
+#'   phase's contribution across observed times, `NA` when the phase carries
+#'   covariates -- `mu` then varies by row and the two sources of variation
+#'   cannot be separated from the contribution alone).
+#'
+#'   The shape is the same whatever happens: if no observed time carries a
+#'   usable total, both columns are `NA` rather than the frame being `NULL`.
+#'   `fit$phase_share` is then one type for a caller to handle rather than two,
+#'   and "could not be measured" stays distinct from "measured as zero".
+#' @keywords internal
+.hzr_phase_shares <- function(theta, time, phases, covariate_counts, x_list) {
+  contrib <- .hzr_multiphase_cumhaz(time, theta, phases, covariate_counts,
+                                    x_list, per_phase = TRUE)
+  total <- contrib$total
+  ok <- is.finite(total) & total > 0
+  nms <- names(phases)
+  if (!any(ok)) {
+    return(data.frame(phase = nms, share = NA_real_, variation = NA_real_,
+                      row.names = NULL, stringsAsFactors = FALSE))
+  }
+
+  share <- vapply(nms, function(nm) {
+    ci <- contrib[[nm]]
+    if (is.null(ci) || !any(is.finite(ci[ok]))) return(NA_real_)
+    max(ci[ok] / total[ok], na.rm = TRUE)
+  }, numeric(1))
+
+  variation <- vapply(nms, function(nm) {
+    # With covariates, mu_j differs by row, so the spread of the contribution
+    # mixes covariate variation with the shape's. Only report where mu is a
+    # single number and the spread is the shape's alone.
+    if (covariate_counts[[nm]] > 0) return(NA_real_)
+    ci <- contrib[[nm]][ok]
+    ci <- ci[is.finite(ci)]
+    if (!length(ci)) return(NA_real_)
+    mx <- max(abs(ci))
+    if (mx == 0) return(0)
+    (max(ci) - min(ci)) / mx
+  }, numeric(1))
+
+  data.frame(phase = nms, share = share, variation = variation,
+             row.names = NULL, stringsAsFactors = FALSE)
+}
+
+#' Warn when a phase has effectively left the model
+#'
+#' Warns rather than stops: the fit is arithmetically fine and the other
+#' phases' estimates are usable. It is the unidentified parameters that must
+#' not be read as estimates -- and which ones those are differs by mode, so
+#' the message says which.
+#'
+#' @inheritParams .hzr_logl_multiphase
+#' @param tol Threshold for both tests -- the minimum share of \eqn{\Lambda} a
+#'   phase must reach somewhere, and the minimum relative variation its
+#'   contribution must show. Default 1e-8: far above double precision, and
+#'   orders of magnitude below any real contribution, so it fires on dead
+#'   phases rather than merely small ones.
+#' @return The share `data.frame`, invisibly; called for the warning.
+#' @keywords internal
+.hzr_check_phase_identifiability <- function(theta, time, phases,
+                                             covariate_counts, x_list,
+                                             tol = 1e-8) {
+  # With one phase the share is 1 by construction; only the saturation test
+  # means anything, and it still does.
+  sh <- .hzr_phase_shares(theta, time, phases, covariate_counts, x_list)
+
+  absent <- which(is.finite(sh$share) & sh$share < tol)
+  # A phase that is absent is trivially also flat; report it once, as absent,
+  # which is the more informative of the two.
+  saturated <- setdiff(
+    which(is.finite(sh$variation) & sh$variation < tol), absent)
+
+  if (length(absent) > 0) {
+    warning(
+      "Phase", if (length(absent) > 1L) "s " else " ",
+      paste0("'", sh$phase[absent], "'", collapse = ", "),
+      " contribute", if (length(absent) == 1L) "s" else "",
+      " at most ", paste(format(sh$share[absent], digits = 3), collapse = ", "),
+      " of the cumulative hazard at any observed time. Such a phase has not ",
+      "started by the end of follow-up, so neither its 'mu' nor its shape is ",
+      "identified: the fit converges and those parameters drift freely.",
+      call. = FALSE)
+  }
+  if (length(saturated) > 0) {
+    warning(
+      "Phase", if (length(saturated) > 1L) "s " else " ",
+      paste0("'", sh$phase[saturated], "'", collapse = ", "),
+      if (length(saturated) == 1L) " has" else " have",
+      " a contribution that is constant across the observed times ",
+      "(relative variation ",
+      paste(format(sh$variation[saturated], digits = 3), collapse = ", "),
+      "). The phase has already finished before the first observation, so it ",
+      "acts as a constant offset: 'mu' remains identified but the shape ",
+      "parameters do not, and the likelihood is unchanged whether they are ",
+      "pinned or fitted. A 'cdf' phase whose half-life is far shorter than ",
+      "the first observed time is the usual cause.",
+      call. = FALSE)
+  }
+  invisible(sh)
+}
+
+
+# ============================================================================
 # Optimizer
 # ============================================================================
 
@@ -1493,6 +1628,23 @@
   n_starts <- if (!is.null(control$n_starts)) control$n_starts else 5L
   control$n_starts <- NULL  # remove before passing to optim
 
+  phase_share_tol <- if (!is.null(control$phase_share_tol)) {
+    control$phase_share_tol
+  } else {
+    1e-8
+  }
+  control$phase_share_tol <- NULL  # remove before passing to optim
+
+  # Validate rather than let it fail downstream. NA is the dangerous value:
+  # `shares < NA` is NA, `which()` drops it, and the guard would silently pass
+  # every phase -- a silent failure inside the check written to stop silent
+  # failures. A negative tolerance disables it just as quietly.
+  if (length(phase_share_tol) != 1L || !is.numeric(phase_share_tol) ||
+      !is.finite(phase_share_tol) || phase_share_tol < 0) {
+    stop("'control$phase_share_tol' must be a single finite non-negative ",
+         "number; got ", deparse(phase_share_tol), ".", call. = FALSE)
+  }
+
   # Seed for the multi-start perturbations.  Fixed by default so that the
   # identical call returns the identical fit; vary it to probe a different set
   # of starts when a fit is suspected of sitting in a local optimum.
@@ -1851,6 +2003,13 @@
 
   # Which starts survived, and which one the reported fit came from.
   best_result$starts <- starts
+
+  # Identifiability is checked on the fit that won, not on the starts: a phase
+  # can be identified at a start and dead at the optimum, and it is the
+  # reported estimates a reader will use.
+  best_result$phase_share <- .hzr_check_phase_identifiability(
+    best_result$par, time, phases, covariate_counts, x_list,
+    tol = phase_share_tol)
 
   best_result
 }
