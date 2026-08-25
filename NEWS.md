@@ -1,3 +1,31 @@
+# TemporalHazard 1.2.5
+
+## New features
+
+* A multiphase fit now warns when a phase has effectively left the model. Such
+  a phase is silent in every other way: the fit converges, reports no trouble,
+  and the affected parameters simply drift.
+
+  Two modes are distinguished, because the consequences differ. A phase that is
+  **absent** -- contributing essentially none of the cumulative hazard at any
+  observed time -- has not started by the end of follow-up, and neither its
+  `mu` nor its shape is identified. A phase that is **saturated** -- one whose
+  contribution is constant across the observed times, typically a `cdf` phase
+  whose half-life is far shorter than the first observation -- has already
+  finished, and then acts as a constant offset: its `mu` stays well identified
+  while the shape parameters (`t_half`, `nu`, `m`) go exactly flat. Pinning
+  those at any value leaves the log-likelihood unchanged.
+
+  The distinction is the point. It is tempting to describe a phase that
+  supplies no late hazard as one whose `mu` has stopped being identified;
+  `mu` is in fact the one parameter that survives, through the offset the
+  phase already contributed. The share is measured against the cumulative
+  hazard rather than the instantaneous hazard for the same reason.
+
+  The shares are recorded on the fit as `fit$phase_share`, so the warning can
+  be checked rather than taken on trust, and the threshold is
+  `control$phase_share_tol` (default 1e-8).
+
 # TemporalHazard 1.2.4
 
 ## New features

@@ -716,6 +716,7 @@ hazard <- function(formula = NULL,
     fit_state$counts <- optim_result$counts
     fit_state$message <- optim_result$message
     # Store optimizer metadata for predict/summary
+    fit_state$phase_share <- optim_result$phase_share
     fit_state$phases <- optim_result$phases
     fit_state$covariate_counts <- optim_result$covariate_counts
     fit_state$x_list <- optim_result$x_list
