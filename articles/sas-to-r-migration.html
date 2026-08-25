@@ -28,7 +28,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.3</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.4</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -877,6 +877,9 @@ PROC HAZARD DATA=AVCS P CONSERVE OUTHAZ=OUTEST CONDITION=14 QUASI;
 </tr>
 </tbody>
 </table>
+<blockquote>
+<p><strong>Note:</strong> <code>$fit$objective</code> above is a <em>number</em> – the log-likelihood the optimizer reached; <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code> and <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> label it <code>log-lik</code> and <code>log_lik</code>, which are the names to prefer when writing about it. It is unrelated to the <code>objective</code> <em>argument</em> of <code><a href="../reference/hazard.html">hazard()</a></code>, which selects an estimand: <code>"likelihood"</code> (the default) or <code>"sas"</code>, reproducing what <code>PROC HAZARD</code> accumulates for an interval-censored row. See <code><a href="../reference/hazard.html">?hazard</a></code>; the SAS objective exists to reproduce legacy runs, not for new analyses.</p>
+</blockquote>
 <hr></section><section class="level2"><h2 id="prediction">Prediction<a class="anchor" aria-label="anchor" href="#prediction"></a>
 </h2>
 <p>In SAS HAZARD the <code>P</code> (predict / print) option on the <code>PROC HAZARD</code> line writes predicted survival, hazard, and cumulative-hazard tables to the output dataset. In R the same predictions come from <code><a href="../reference/predict.hazard.html">predict.hazard()</a></code> on the fitted object, with the requested quantity chosen via the <code>type=</code> argument. <code><a href="../reference/predict.hazard.html">predict.hazard()</a></code> currently supports four output types — <code>"linear_predictor"</code>, <code>"hazard"</code>, <code>"survival"</code>, and <code>"cumulative_hazard"</code> — covering every quantity the SAS <code>P</code> option produces:</p>

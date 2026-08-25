@@ -22,12 +22,14 @@
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/cabgkul.html</loc></url>
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/coef.hazard.html</loc></url>
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_as_design_matrix.html</loc></url>
+<url><loc>https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_check_sas_status.html</loc></url>
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_conserve_events.html</loc></url>
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_decompos_g1_logs.html</loc></url>
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_free_vcov.html</loc></url>
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_g3_phase_derivatives.html</loc></url>
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_gradient_multiphase.html</loc></url>
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_log_mu_positions.html</loc></url>
+<url><loc>https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_logl_interval.html</loc></url>
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_logl_multiphase.html</loc></url>
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_multiphase_cumhaz.html</loc></url>
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_multiphase_hazard.html</loc></url>
@@ -89,6 +91,7 @@
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/stepwise_trace.html</loc></url>
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/summary.hazard.html</loc></url>
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/tga.html</loc></url>
+<url><loc>https://ehrlinger.github.io/temporal_hazard/reference/uslife2023.html</loc></url>
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/valves.html</loc></url>
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/vcov.hazard.html</loc></url>
 </urlset>

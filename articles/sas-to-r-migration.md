@@ -593,6 +593,19 @@ returns a list of class `hazard`:
 | `$fit$objective` | Log-likelihood at convergence (M2+) |
 | `$legacy_args` | Named pass-through arguments for parity |
 
+> **Note:** `$fit$objective` above is a *number* – the log-likelihood
+> the optimizer reached; [`print()`](https://rdrr.io/r/base/print.html)
+> and [`summary()`](https://rdrr.io/r/base/summary.html) label it
+> `log-lik` and `log_lik`, which are the names to prefer when writing
+> about it. It is unrelated to the `objective` *argument* of
+> [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md),
+> which selects an estimand: `"likelihood"` (the default) or `"sas"`,
+> reproducing what `PROC HAZARD` accumulates for an interval-censored
+> row. See
+> [`?hazard`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md);
+> the SAS objective exists to reproduce legacy runs, not for new
+> analyses.
+
 ------------------------------------------------------------------------
 
 ## Prediction

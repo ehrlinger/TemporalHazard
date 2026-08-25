@@ -16,6 +16,7 @@ design matrices, and delegates to `.hzr_optim_generic()`.
   weights = NULL,
   control = list(),
   phases,
+  objective = c("likelihood", "sas"),
   formula_global = NULL,
   data = NULL
 )
@@ -55,6 +56,11 @@ design matrices, and delegates to `.hzr_optim_generic()`.
 - phases:
 
   Named list of validated `hzr_phase` objects.
+
+- objective:
+
+  Which interval-censored contribution to accumulate; see
+  [`.hzr_logl_interval()`](https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_logl_interval.md).
 
 - formula_global:
 

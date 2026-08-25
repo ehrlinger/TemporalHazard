@@ -20,6 +20,7 @@ for shape parameters (`log_t_half`, `nu`, `m`).
   phases,
   covariate_counts,
   x_list,
+  objective = c("likelihood", "sas"),
   ...
 )
 ```
@@ -62,6 +63,12 @@ for shape parameters (`log_t_half`, `nu`, `m`).
 - x_list:
 
   Named list of per-phase design matrices.
+
+- objective:
+
+  Which interval-censored contribution to accumulate; see
+  [`.hzr_logl_interval()`](https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_logl_interval.md).
+  Exact-event, right-censored and left-censored rows are unaffected.
 
 - ...:
 

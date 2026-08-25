@@ -1,5 +1,56 @@
 # Changelog
 
+## TemporalHazard 1.2.4
+
+### New features
+
+- [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+  gains an `objective` argument. The default, `"likelihood"`, is
+  unchanged: interval-censored rows contribute the interval probability
+  `log(S(l) - S(u))`. The new `"sas"` reproduces what `PROC HAZARD`
+  actually accumulates for such a row – the ordinary event-density term
+  with the *instantaneous* hazard replaced by the *interval-mean* hazard
+  over (l, u\]:
+
+        d * log[ S(u) * (Lambda(u) - Lambda(l)) / (u - l) ]
+
+  which makes the three row types one family: right-censored contributes
+  `log S(u)`, an exact event `log S(u) + log h(u)`, and an
+  interval-censored row `log S(u) + log h_bar(l, u]`. Exact-event and
+  right-censored rows are untouched by the switch, and it applies only
+  to `dist = "multiphase"`.
+
+  **This is a different estimator, not a reparameterization, and must
+  not be used for new analyses.** It is a density, not a probability, so
+  it is inconsistent for wide intervals – on a 12-year-interval
+  reference fit the two forms differ by 22 log-likelihood units. It
+  exists to reproduce legacy `PROC HAZARD` runs, and it is deliberately
+  an explicit top-level argument rather than a `control` element,
+  because it changes the estimand.
+
+  Interval-censored rows with `u <= l`, and any left-censored row, are
+  errors under `"sas"` rather than silently-substituted values:
+  `PROC HAZARD` has no left-censoring statement, so no SAS run
+  corresponds to such a result.
+
+- New dataset `uslife2023`: the NCHS United States life table for 2023
+  on a synthetic 100,000 radix, 124 rows, every one interval-censored
+  and exactly one year wide. Published aggregate counts only. It is the
+  reference fixture for `objective = "sas"`, which reproduces its SAS
+  log-likelihood of -410414 at the printed estimates and at three
+  off-optimum points of SAS’s own iteration trace.
+
+### Internal
+
+- The interval-censored contribution was written twice – once in the
+  log-likelihood and again in the finite-difference closure inside the
+  gradient. Those copies had to agree or the optimizer would step by the
+  gradient of a different objective than it evaluated. Both now delegate
+  to a single
+  [`.hzr_logl_interval()`](https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_logl_interval.md).
+  Behavior under the default is unchanged and bit-identical,
+  log-likelihood and gradient alike.
+
 ## TemporalHazard 1.2.3
 
 ### Bug fixes
@@ -487,7 +538,7 @@ which variables a stepwise run selects.
   package exists to reproduce. **Re-running an existing stepwise
   analysis can now select a different variable set**, because the score
   and Wald paths take different step sequences. Pass
-  `criterion = "wald"` to restore the previous behaviour exactly.
+  `criterion = "wald"` to restore the previous behavior exactly.
 
   The score criterion also removes the per-candidate refit, which
   dominated runtime: a 92-variable two-phase screen fell from roughly 25
@@ -673,7 +724,7 @@ which variables a stepwise run selects.
   underlying limitation of the score criterion is unchanged and is
   tracked separately; `criterion = "wald"` tests these candidates.
 
-  One behaviour change comes with it: the guard on the adjusted variance
+  One behavior change comes with it: the guard on the adjusted variance
   is now a magnitude test rather than a sign test. A variance within
   rounding distance of zero is reported as collinear whichever side of
   zero it lands on, and only a materially negative one is reported as
@@ -748,7 +799,7 @@ which variables a stepwise run selects.
   failing (carrying its message), and no Hessian available at all. A
   `hessian_fn` hook that *errors* is also no longer swallowed into
   silence, so a broken analytic hook is distinguishable from one that
-  deliberately declines. Behaviour is unchanged – the diagnostics are
+  deliberately declines. Behavior is unchanged – the diagnostics are
   still `NA` – but the reason is now stated. Found while fitting a
   production interval-censored study.
 

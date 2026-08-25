@@ -57,6 +57,8 @@
   : OMC: Open Mitral Commissurotomy
 - [`tga`](https://ehrlinger.github.io/temporal_hazard/reference/tga.md)
   : TGA: Transposition of the Great Arteries
+- [`uslife2023`](https://ehrlinger.github.io/temporal_hazard/reference/uslife2023.md)
+  : US Life Table 2023: All-Interval-Censored SAS Parity Anchor
 - [`valves`](https://ehrlinger.github.io/temporal_hazard/reference/valves.md)
   : Valves: Primary Heart Valve Replacement
 

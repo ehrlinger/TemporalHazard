@@ -19,7 +19,7 @@ optimize to produce fitted estimates."></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.3</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.4</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -86,6 +86,7 @@ optimize to produce fitted estimates.</p>
 <span>  fit <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  weights <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="op">)</span>,</span>
+<span>  objective <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"likelihood"</span>, <span class="st">"sas"</span><span class="op">)</span>,</span>
 <span>  <span class="va">...</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
@@ -197,6 +198,16 @@ Implements the SAS <code>WEIGHT</code> statement.</p></dd>
 <dd><p>Named list of control options (see Details).</p></dd>
 
 
+<dt id="arg-objective">objective<a class="anchor" aria-label="anchor" href="#arg-objective"></a></dt>
+<dd><p>Which interval-censored contribution the multiphase
+likelihood accumulates. <code>"likelihood"</code> (default) uses the interval
+probability \(\log(S(l) - S(u))\). <code>"sas"</code> reproduces what
+<code>PROC HAZARD</code> accumulates – the event-density term with the instantaneous
+hazard replaced by the interval-mean hazard over \((l, u]\). Applies
+only to <code>dist = "multiphase"</code>; exact-event and right-censored rows are
+unaffected either way.</p></dd>
+
+
 <dt id="arg--">...<a class="anchor" aria-label="anchor" href="#arg--"></a></dt>
 <dd><p>Additional named arguments retained for parity with legacy calling
 conventions.</p></dd>
@@ -254,6 +265,16 @@ interactions so each window has its own coefficient vector.</p></li>
 <li><p>This is implemented as design-matrix expansion, so the existing likelihood
 engines remain unchanged.</p></li>
 </ul></div>
+    <div class="section level2">
+    <h2 id="note">Note<a class="anchor" aria-label="anchor" href="#note"></a></h2>
+    <p><code>objective = "sas"</code> exists to reproduce legacy <code>PROC HAZARD</code> runs and
+<strong>must not be used for new analyses</strong>. It is a density, not a probability:
+it is inconsistent for wide intervals, where the two forms differ
+materially – 22 log-likelihood units on the esophagectomy reference fit.
+The default is the statistically correct interval likelihood. See
+<code>inst/dev/SAS-INTERVAL-OBJECTIVE-DESIGN.md</code> for the derivation and the
+four-reference evidence.</p>
+    </div>
     <div class="section level2">
     <h2 id="the-fitted-model">The fitted model<a class="anchor" aria-label="anchor" href="#the-fitted-model"></a></h2>
 
