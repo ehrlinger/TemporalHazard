@@ -465,6 +465,14 @@ fit
 | `$fit$objective`      | Log-likelihood at convergence (M2+)                        |
 | `$legacy_args`        | Named pass-through arguments for parity                     |
 
+> **Note:** `$fit$objective` above is a *number* -- the log-likelihood the
+> optimizer reached; `print()` and `summary()` label it `log-lik` and
+> `log_lik`, which are the names to prefer when writing about it. It is
+> unrelated to the `objective` *argument* of `hazard()`, which selects an
+> estimand: `"likelihood"` (the default) or `"sas"`, reproducing what
+> `PROC HAZARD` accumulates for an interval-censored row. See `?hazard`; the
+> SAS objective exists to reproduce legacy runs, not for new analyses.
+
 ---
 
 ## Prediction

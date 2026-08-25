@@ -14,6 +14,7 @@
   weights = NULL,
   control = list(),
   phases,
+  objective = c("likelihood", "sas"),
   formula_global = NULL,
   data = NULL
 )
@@ -35,6 +36,9 @@ If NULL, assembled automatically from phase specs.}
 \item{control}{Named list of control options.}
 
 \item{phases}{Named list of validated \code{hzr_phase} objects.}
+
+\item{objective}{Which interval-censored contribution to accumulate;
+see \code{.hzr_logl_interval()}.}
 
 \item{formula_global}{The global formula (used when phases have no
 phase-specific formula).}

@@ -16,12 +16,16 @@ Commissurotomy
 DSL
 Decile
 EL
+esophagectomy
+estimand
 GOF
 Gompertz
 HAZARD's
 HAZPRED
 HMDEATH
 Hessians
+ICENSOR
+infeasibility
 Interventricular
 Ishwaran
 Johansen
@@ -37,6 +41,7 @@ Malalignment
 Multiphase
 Multivariable
 Mächler
+NCHS
 NYHA
 Naftel
 Nelder
@@ -46,6 +51,7 @@ PROC
 PVE
 Parides
 Pre
+radix
 README
 RL
 Rajeswaran

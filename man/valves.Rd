@@ -64,7 +64,8 @@ Other datasets:
 \code{\link{avc}},
 \code{\link{cabgkul}},
 \code{\link{omc}},
-\code{\link{tga}}
+\code{\link{tga}},
+\code{\link{uslife2023}}
 }
 \concept{datasets}
 \keyword{datasets}

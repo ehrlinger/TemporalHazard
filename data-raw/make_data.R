@@ -40,3 +40,26 @@ stopifnot(nrow(valves) == 1533)
 usethis::use_data(valves, overwrite = TRUE, compress = "xz")
 
 message("All 5 datasets saved to data/")
+
+# ── uslife2023: US Life Table 2023, all-interval-censored SAS parity anchor ──
+#
+# Derived from /studies/general/uslife/table2023/datasets/built.sas7bdat by
+# `IF D_ALL=0 THEN DELETE`, keeping the three columns the parity fit uses.
+# The CSV in inst/extdata/ is the durable source: it must remain reproducible
+# after the SAS license lapses and the .sas7bdat becomes unreadable.
+#
+# The gates below are the figures printed by the SAS job's own .lst
+# (distributions/hz.icall.lst), not values recomputed from this CSV -- they
+# fail loudly if the CSV is ever regenerated from a different dataset.
+uslife2023 <- .read_sas_csv("inst/extdata/uslife2023.csv")
+stopifnot(
+  nrow(uslife2023) == 124L,
+  identical(names(uslife2023), c("age_l", "age_u", "d_all")),
+  # Every interval is exactly one year wide: this is what makes the fixture
+  # the clean anchor, since log(u - l) = 0 switches the width term off.
+  all(uslife2023$age_u - uslife2023$age_l == 1),
+  abs(sum(uslife2023$d_all) - 100000.0125) < 5e-5,
+  abs(min(uslife2023$d_all) - 0.2352) < 5e-5,
+  abs(max(uslife2023$d_all) - 3620.335) < 5e-4
+)
+usethis::use_data(uslife2023, overwrite = TRUE, compress = "xz")

@@ -40,6 +40,7 @@ Other datasets:
 \code{\link{avc}},
 \code{\link{cabgkul}},
 \code{\link{omc}},
+\code{\link{uslife2023}},
 \code{\link{valves}}
 }
 \concept{datasets}
