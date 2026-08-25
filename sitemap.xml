@@ -22,6 +22,7 @@
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/cabgkul.html</loc></url>
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/coef.hazard.html</loc></url>
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_as_design_matrix.html</loc></url>
+<url><loc>https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_check_phase_identifiability.html</loc></url>
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_check_sas_status.html</loc></url>
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_conserve_events.html</loc></url>
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_decompos_g1_logs.html</loc></url>
@@ -41,6 +42,7 @@
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_phase_free_mask.html</loc></url>
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_phase_n_params.html</loc></url>
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_phase_n_shape.html</loc></url>
+<url><loc>https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_phase_shares.html</loc></url>
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_phase_start.html</loc></url>
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_phase_theta_names.html</loc></url>
 <url><loc>https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_predict_cl_from_se.html</loc></url>

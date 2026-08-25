@@ -13,7 +13,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.4</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.5</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -55,6 +55,18 @@
       <small>Source: <a href="https://github.com/ehrlinger/temporal_hazard/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="1.2.5" id="temporalhazard-125">TemporalHazard 1.2.5<a class="anchor" aria-label="anchor" href="#temporalhazard-125"></a></h2>
+<div class="section level3">
+<h3 id="new-features-1-2-5">New features<a class="anchor" aria-label="anchor" href="#new-features-1-2-5"></a></h3>
+<ul><li>
+<p>A multiphase fit now warns when a phase has effectively left the model. Such a phase is silent in every other way: the fit converges, reports no trouble, and the affected parameters simply drift.</p>
+<p>Two modes are distinguished, because the consequences differ. A phase that is <strong>absent</strong> – contributing essentially none of the cumulative hazard at any observed time – has not started by the end of follow-up, and neither its <code>mu</code> nor its shape is identified. A phase that is <strong>saturated</strong> – one whose contribution is constant across the observed times, typically a <code>cdf</code> phase whose half-life is far shorter than the first observation – has already finished, and then acts as a constant offset: its <code>mu</code> stays well identified while the shape parameters (<code>t_half</code>, <code>nu</code>, <code>m</code>) go exactly flat. Pinning those at any value leaves the log-likelihood unchanged.</p>
+<p>The distinction is the point. It is tempting to describe a phase that supplies no late hazard as one whose <code>mu</code> has stopped being identified; <code>mu</code> is in fact the one parameter that survives, through the offset the phase already contributed. The share is measured against the cumulative hazard rather than the instantaneous hazard for the same reason.</p>
+<p>The shares are recorded on the fit as <code>fit$phase_share</code>, so the warning can be checked rather than taken on trust, and the threshold is <code>control$phase_share_tol</code> (default 1e-8).</p>
+</li>
+</ul></div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="1.2.4" id="temporalhazard-124">TemporalHazard 1.2.4<a class="anchor" aria-label="anchor" href="#temporalhazard-124"></a></h2>
 <div class="section level3">

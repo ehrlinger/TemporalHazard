@@ -676,6 +676,10 @@ fit_3ph <- hazard(
 )
 #> Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =
 #> 3.78e-11); standard errors may be unreliable
+#> Warning: Phase 'constant' contributes at most 2.75e-10 of the cumulative hazard
+#> at any observed time. Such a phase has not started by the end of follow-up, so
+#> neither its 'mu' nor its shape is identified: the fit converges and those
+#> parameters drift freely.
 
 # Scale magnitudes: exp(log_mu) ≈ 0 for any phase the data doesn't support
 log_mu_idx <- grep("log_mu", names(coef(fit_3ph)))

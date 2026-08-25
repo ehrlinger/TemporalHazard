@@ -28,7 +28,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.4</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.5</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -618,6 +618,10 @@ Figure 3: Nelson-Aalen cumulative hazard for CABGKUL — three-phase shape visi
 <span><span class="op">)</span></span>
 <span><span class="co">#&gt; Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =</span></span>
 <span><span class="co">#&gt; 3.78e-11); standard errors may be unreliable</span></span>
+<span><span class="co">#&gt; Warning: Phase 'constant' contributes at most 2.75e-10 of the cumulative hazard</span></span>
+<span><span class="co">#&gt; at any observed time. Such a phase has not started by the end of follow-up, so</span></span>
+<span><span class="co">#&gt; neither its 'mu' nor its shape is identified: the fit converges and those</span></span>
+<span><span class="co">#&gt; parameters drift freely.</span></span>
 <span></span>
 <span><span class="co"># Scale magnitudes: exp(log_mu) ≈ 0 for any phase the data doesn't support</span></span>
 <span><span class="va">log_mu_idx</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/grep.html" class="external-link">grep</a></span><span class="op">(</span><span class="st">"log_mu"</span>, <span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_3ph</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>

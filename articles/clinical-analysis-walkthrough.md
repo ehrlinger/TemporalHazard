@@ -574,6 +574,10 @@ fit_step <- hzr_stepwise(
 #> optimum; standard errors may be unreliable
 #> Warning in .hzr_safe_solve(H_unc): Non-positive variance estimates; the optimum
 #> may not be a proper maximum
+#> Warning: Phase 'constant' contributes at most 4.62e-10 of the cumulative hazard
+#> at any observed time. Such a phase has not started by the end of follow-up, so
+#> neither its 'mu' nor its shape is identified: the fit converges and those
+#> parameters drift freely.
 #> Warning in .hzr_safe_solve(hess_result): Hessian is not positive-definite at
 #> the optimum; standard errors may be unreliable
 #> Warning in .hzr_safe_solve(hess_result): Non-positive variance estimates; the
