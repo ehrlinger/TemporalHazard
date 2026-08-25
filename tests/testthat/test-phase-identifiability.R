@@ -112,3 +112,63 @@ test_that("the fit carries the shares so the warning is checkable", {
   expect_s3_class(f$fit$phase_share, "data.frame")
   expect_setequal(f$fit$phase_share$phase, c("early", "constant"))
 })
+
+
+# --- control$phase_share_tol validation -------------------------------------
+# NA is the dangerous input, not the obviously-wrong one: `shares < NA` is NA,
+# which() drops it, and the guard would pass every phase while looking like it
+# ran. A check written against silent failure must not fail silently itself.
+
+ident_fit_tol <- function(tol) {
+  data("avc", package = "TemporalHazard", envir = environment())
+  ph <- list(early = hzr_phase("cdf", t_half = 1e-6, nu = 0, m = -0.4,
+                               fixed = c("nu", "m", "t_half")),
+             constant = hzr_phase("constant"))
+  hazard(survival::Surv(int_dead, dead) ~ 1, data = avc, dist = "multiphase",
+         phases = ph, theta = c(log(0.045), log(1e-6), 0, -0.4, log(0.036)),
+         fit = TRUE,
+         control = list(n_starts = 1, conserve = TRUE, phase_share_tol = tol))
+}
+
+test_that("a bad phase_share_tol is rejected, naming the option", {
+  skip_if_not_installed("survival")
+  for (bad in list(NA_real_, NA, "1e-8", -1, c(1e-8, 1e-9), numeric(0), Inf)) {
+    # fixed = TRUE: the option name contains a `$`, and escaping it for a
+    # regex is exactly the kind of quiet mismatch this test exists to catch.
+    expect_error(ident_fit_tol(bad), "'control$phase_share_tol'",
+                 fixed = TRUE, info = deparse(bad))
+  }
+})
+
+test_that("phase_share_tol = 0 silences the check rather than erroring", {
+  skip_if_not_installed("survival")
+  expect_no_warning(ident_fit_tol(0))
+})
+
+test_that("a valid phase_share_tol still warns", {
+  skip_if_not_installed("survival")
+  expect_warning(ident_fit_tol(1e-8), "constant across the observed times")
+})
+
+
+# --- return type is stable --------------------------------------------------
+
+test_that("shares are a data.frame even when nothing can be measured", {
+  # No observed time carries a positive total, so there is nothing to measure.
+  # The frame must still have the same shape -- fit$phase_share is one type for
+  # a caller to handle, not two -- and NA must mean "not measured" rather than
+  # being confusable with a measured zero.
+  s <- ident_setup(0.003)
+  sh <- ident_ns(".hzr_phase_shares")(s$theta, numeric(0), s$phases, s$cc, s$xl)
+  expect_s3_class(sh, "data.frame")
+  expect_identical(sh$phase, c("early", "constant"))
+  expect_true(all(is.na(sh$share)))
+  expect_true(all(is.na(sh$variation)))
+})
+
+test_that("unmeasurable shares warn about nothing", {
+  s <- ident_setup(0.003)
+  expect_no_warning(
+    ident_ns(".hzr_check_phase_identifiability")(
+      s$theta, numeric(0), s$phases, s$cc, s$xl))
+})

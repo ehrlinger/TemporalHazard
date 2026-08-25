@@ -201,6 +201,15 @@ NULL
 #'   the resulting `objective` values. A fractional value is rejected rather
 #'   than truncated, since `3.9` and `3` would otherwise select the same
 #'   ensemble without saying so.
+#' - `phase_share_tol`: Threshold for the multiphase identifiability warning
+#'   (default 1e-8). A phase is reported as having left the model when it
+#'   supplies less than this share of the cumulative hazard at every observed
+#'   time (it never started -- neither its `mu` nor its shape is identified),
+#'   or when its contribution varies by less than this relative amount across
+#'   them (it finished before the first observation and acts as a constant
+#'   offset -- `mu` stays identified, the shape parameters do not). The
+#'   measured shares are kept on the fit as `fit$phase_share`. Raise it to
+#'   catch marginal phases, set it to 0 to silence the check.
 #' - `reltol`: Relative parameter change tolerance (default 1e-5)
 #' - `abstol`: Absolute gradient norm tolerance (default 1e-6)
 #' - `method`: Optimization method: "bfgs" or "nm" (default "bfgs")

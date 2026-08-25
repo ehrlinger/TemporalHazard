@@ -1163,15 +1163,23 @@
 #'   phase's contribution across observed times, `NA` when the phase carries
 #'   covariates -- `mu` then varies by row and the two sources of variation
 #'   cannot be separated from the contribution alone).
+#'
+#'   The shape is the same whatever happens: if no observed time carries a
+#'   usable total, both columns are `NA` rather than the frame being `NULL`.
+#'   `fit$phase_share` is then one type for a caller to handle rather than two,
+#'   and "could not be measured" stays distinct from "measured as zero".
 #' @keywords internal
 .hzr_phase_shares <- function(theta, time, phases, covariate_counts, x_list) {
   contrib <- .hzr_multiphase_cumhaz(time, theta, phases, covariate_counts,
                                     x_list, per_phase = TRUE)
   total <- contrib$total
   ok <- is.finite(total) & total > 0
-  if (!any(ok)) return(NULL)
-
   nms <- names(phases)
+  if (!any(ok)) {
+    return(data.frame(phase = nms, share = NA_real_, variation = NA_real_,
+                      row.names = NULL, stringsAsFactors = FALSE))
+  }
+
   share <- vapply(nms, function(nm) {
     ci <- contrib[[nm]]
     if (is.null(ci) || !any(is.finite(ci[ok]))) return(NA_real_)
@@ -1216,7 +1224,6 @@
   # With one phase the share is 1 by construction; only the saturation test
   # means anything, and it still does.
   sh <- .hzr_phase_shares(theta, time, phases, covariate_counts, x_list)
-  if (is.null(sh)) return(invisible(NULL))
 
   absent <- which(is.finite(sh$share) & sh$share < tol)
   # A phase that is absent is trivially also flat; report it once, as absent,
@@ -1627,6 +1634,16 @@
     1e-8
   }
   control$phase_share_tol <- NULL  # remove before passing to optim
+
+  # Validate rather than let it fail downstream. NA is the dangerous value:
+  # `shares < NA` is NA, `which()` drops it, and the guard would silently pass
+  # every phase -- a silent failure inside the check written to stop silent
+  # failures. A negative tolerance disables it just as quietly.
+  if (length(phase_share_tol) != 1L || !is.numeric(phase_share_tol) ||
+      !is.finite(phase_share_tol) || phase_share_tol < 0) {
+    stop("'control$phase_share_tol' must be a single finite non-negative ",
+         "number; got ", deparse(phase_share_tol), ".", call. = FALSE)
+  }
 
   # Seed for the multi-start perturbations.  Fixed by default so that the
   # identical call returns the identical fit; vary it to probe a different set

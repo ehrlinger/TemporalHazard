@@ -23,6 +23,11 @@
 phase's contribution across observed times, \code{NA} when the phase carries
 covariates -- \code{mu} then varies by row and the two sources of variation
 cannot be separated from the contribution alone).
+
+The shape is the same whatever happens: if no observed time carries a
+usable total, both columns are \code{NA} rather than the frame being \code{NULL}.
+\code{fit$phase_share} is then one type for a caller to handle rather than two,
+and "could not be measured" stays distinct from "measured as zero".
 }
 \description{
 Two distinct failure modes, with different consequences, both silent:
