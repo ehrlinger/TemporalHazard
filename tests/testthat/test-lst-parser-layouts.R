@@ -91,6 +91,107 @@ test_that("SAS missing markers become NA without a coercion warning", {
   expect_equal(nom$CLUSURV[2], 0.95062, tolerance = 1e-6)
 })
 
+test_that("the nomogram parses when the counter column is labelled OBS", {
+  # #184. SAS's casing for PROC PRINT's counter is not stable across the
+  # corpus. Dropping it with cols[cols != "Obs"] left "OBS" in the header
+  # names, which made the row-width guard reject every data row -- so the
+  # parser returned NULL as though the job had printed no nomogram at all.
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(c(
+    "        OBS    MONTHS     YEARS     _SURVIV   _CLLSURV   _CLUSURV   _HAZARD   _CLLHAZ   _CLUHAZ",
+    "",
+    "          1     0.986    0.0821     0.99983    0.99961    0.99993   0.00208   0.00091   0.00477",
+    "",
+    "          2     3.000    0.2500     0.99946    0.99879    0.99976   0.00238   0.00112   0.00504",
+    ""
+  ), tmp)
+  nom <- .hzr_parse_sas_nomogram(tmp)
+  expect_s3_class(nom, "data.frame")
+  expect_equal(nrow(nom), 2L)
+  expect_equal(names(nom),
+               c("MONTHS", "YEARS", "SURVIV", "CLLSURV", "CLUSURV",
+                 "HAZARD", "CLLHAZ", "CLUHAZ"))
+  # The counter must be gone, not shifted into the first data column.
+  expect_false("OBS" %in% names(nom))
+  expect_equal(nom$MONTHS[1], 0.986, tolerance = 1e-6)
+  expect_equal(nom$YEARS[2], 0.2500, tolerance = 1e-6)
+  expect_equal(nom$CLUHAZ[2], 0.00504, tolerance = 1e-6)
+})
+
+test_that("the counter is found structurally, whatever SAS calls it", {
+  # The fix must not trade one hardcoded label for two. Any label works
+  # because the counter is identified as a leading 1..n run, not by name.
+  for (label in c("Obs", "OBS", "Observation", "#")) {
+    tmp <- withr::local_tempfile(fileext = ".lst")
+    writeLines(c(
+      paste0("        ", label,
+             "     YEARS     _SURVIV   _CLLSURV   _CLUSURV   _HAZARD   _CLLHAZ   _CLUHAZ"),
+      "",
+      "          1    0.0821     0.97106    0.96812    0.97373   0.24456   0.22241   0.26891",
+      "          2    0.2500     0.94683    0.94276    0.95062   0.09424   0.08597   0.10332",
+      ""
+    ), tmp)
+    nom <- .hzr_parse_sas_nomogram(tmp)
+    expect_equal(names(nom),
+                 c("YEARS", "SURVIV", "CLLSURV", "CLUSURV",
+                   "HAZARD", "CLLHAZ", "CLUHAZ"),
+                 info = label)
+    expect_equal(nom$YEARS[1], 0.0821, tolerance = 1e-6, info = label)
+  }
+})
+
+test_that("a leading measurement column is not mistaken for the counter", {
+  # The structural test must fire on a 1..n run and nothing else. Here the
+  # counter is suppressed and YEARS leads; dropping it would silently shift
+  # every column left and corrupt the whole table.
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(c(
+    "           YEARS     _SURVIV   _CLLSURV   _CLUSURV   _HAZARD   _CLLHAZ   _CLUHAZ",
+    "",
+    "          0.0821     0.97106    0.96812    0.97373   0.24456   0.22241   0.26891",
+    "          0.2500     0.94683    0.94276    0.95062   0.09424   0.08597   0.10332",
+    ""
+  ), tmp)
+  nom <- .hzr_parse_sas_nomogram(tmp)
+  expect_equal(names(nom),
+               c("YEARS", "SURVIV", "CLLSURV", "CLUSURV",
+                 "HAZARD", "CLLHAZ", "CLUHAZ"))
+  expect_equal(nom$YEARS, c(0.0821, 0.2500), tolerance = 1e-6)
+  expect_equal(nom$SURVIV, c(0.97106, 0.94683), tolerance = 1e-6)
+})
+
+test_that("an unparseable table warns instead of returning NULL in silence", {
+  # #184's real damage was the silence: a caller cannot tell "no table" from
+  # "table I failed to read", so a sweep reports its own parse failures as
+  # properties of the SAS corpus. Once a header has matched, NULL must talk.
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(c(
+    "        Obs     YEARS     _SURVIV   _CLLSURV   _CLUSURV   _HAZARD   _CLLHAZ   _CLUHAZ",
+    "",
+    "          1     0.0821    not-a-number   0.96812   0.97373   0.24456   0.22241   0.26891",
+    ""
+  ), tmp)
+  expect_warning(res <- .hzr_parse_sas_nomogram(tmp), "no data rows parsed")
+  expect_null(res)
+})
+
+test_that("a header on the final line warns rather than erroring", {
+  # (h + 1):length(lines) is a DECREASING sequence when the header is last,
+  # which would walk off the end of the file. The scan range is guarded, so
+  # this lands on the same "no data rows parsed" warning as any other
+  # unreadable table -- not an error, and not a silent NULL.
+  for (tail_line in list(character(0), "")) {
+    tmp <- withr::local_tempfile(fileext = ".lst")
+    writeLines(c(
+      "preamble",
+      "     Obs     YEARS     _SURVIV   _CLLSURV   _CLUSURV   _HAZARD   _CLLHAZ   _CLUHAZ",
+      tail_line
+    ), tmp)
+    expect_warning(res <- .hzr_parse_sas_nomogram(tmp), "no data rows parsed")
+    expect_null(res)
+  }
+})
+
 test_that("the nomogram parser still returns NULL when no table is present", {
   tmp <- withr::local_tempfile(fileext = ".lst")
   writeLines(c("nothing here", "no nomogram at all"), tmp)
