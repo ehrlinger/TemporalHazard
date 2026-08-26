@@ -609,36 +609,83 @@
   # header regex, the column names and the toks[2:9] slice made the parser
   # silently return NULL on the second layout.
   #
-  # Read the header instead: drop the leading "Obs" counter, strip the
-  # underscore prefixes SAS puts on computed variables, and take exactly that
-  # many values from each row. Any future column set parses without a change
-  # here -- the same header-driven approach .hzr_parse_sas_lifetable() uses.
+  # Read the header instead: strip the underscore prefixes SAS puts on
+  # computed variables and take exactly that many values from each row. Any
+  # future column set parses without a change here -- the same header-driven
+  # approach .hzr_parse_sas_lifetable() uses.
   h <- grep("\\bYEARS\\b.*_SURVIV", lines)
   if (!length(h)) return(NULL)
 
-  cols <- strsplit(trimws(lines[h[1]]), "[[:space:]]+")[[1]]
-  cols <- cols[cols != "Obs"]
-  cols <- sub("^_", "", cols)
+  cols <- sub("^_", "", strsplit(trimws(lines[h[1]]), "[[:space:]]+")[[1]])
   if (!length(cols)) return(NULL)
 
-  rows <- list()
+  # A data row is numeric all the way across and as wide as the header -- or
+  # one wider, on layouts where PROC PRINT emits the counter without naming it
+  # in the header. Deciding by width and content rather than "the first token
+  # is an integer" is what lets the counter be identified after the fact,
+  # below, instead of having to be known here.
+  num_rx <- "^[-+]?([0-9]+\\.?[0-9]*|\\.[0-9]+)([eE][-+]?[0-9]+)?$"
+  raw <- list()
   for (ln in lines[(h[1] + 1L):length(lines)]) {
     if (!nzchar(trimws(ln))) next
     toks <- strsplit(trimws(ln), "[[:space:]]+")[[1]]
-    # Data rows lead with the integer Obs counter.
-    if (!grepl("^[0-9]+$", toks[1])) {
-      if (length(rows)) break else next
+    if (!(length(toks) %in% c(length(cols), length(cols) + 1L)) ||
+        !all(toks == "." | grepl(num_rx, toks))) {
+      if (length(raw)) break else next
     }
-    if (length(toks) < length(cols) + 1L) next
-    # SAS prints a bare "." for a missing value. Normalise it to NA before
-    # coercing, the same way .hzr_parse_sas_lifetable() does -- otherwise
-    # as.numeric() emits a coercion warning per row and the NA arrives anyway.
-    vals <- toks[seq_along(cols) + 1L]
-    vals[vals == "."] <- NA
-    rows[[length(rows) + 1L]] <- as.numeric(vals)
+    raw[[length(raw) + 1L]] <- toks
   }
-  if (!length(rows)) return(NULL)
-  df <- as.data.frame(do.call(rbind, rows))
+
+  # NULL must mean "no such table". Reaching here with a matched header and no
+  # rows means the table IS present and this parser did not understand it --
+  # a defect, and one a caller cannot distinguish from absence unless it says
+  # so. Silence here is what made the OBS-vs-Obs bug (#184) read as "this job
+  # printed no nomogram" across a whole corpus sweep.
+  if (!length(raw)) {
+    warning("nomogram header found at line ", h[1],
+            " but no data rows parsed -- unrecognised layout: ",
+            trimws(lines[h[1]]), call. = FALSE)
+    return(NULL)
+  }
+
+  # Rows are ragged only if something other than the table crept in; take the
+  # first row's width as canonical and keep the rows that agree with it.
+  w <- length(raw[[1]])
+  raw <- raw[vapply(raw, length, integer(1)) == w]
+
+  # SAS prints a bare "." for a missing value. Normalise it to NA before
+  # coercing, the same way .hzr_parse_sas_lifetable() does -- otherwise
+  # as.numeric() emits a coercion warning per row and the NA arrives anyway.
+  m <- do.call(rbind, lapply(raw, function(v) {
+    v[v == "."] <- NA
+    as.numeric(v)
+  }))
+
+  # Drop PROC PRINT's observation counter.
+  #
+  # Its LABEL is not stable across the corpus -- one listing prints "Obs",
+  # another "OBS" -- so dropping it by name left the counter in `cols` on the
+  # second, which made the row-width guard reject every row and the parser
+  # return NULL as though the table were absent (#184). Identify it
+  # structurally instead: the counter is a leading column running exactly
+  # 1..n. No measurement column here is a gapless 1-based integer run --
+  # YEARS goes 0.0821, 0.25, 0.5, 1 and MONTHS goes 0.986, 3, 6 -- and when
+  # the counter is suppressed the leading column is a time in years, so the
+  # test does not fire at all. Whatever SAS calls it next parses unchanged.
+  if (w == length(cols) + 1L) {
+    m <- m[, -1L, drop = FALSE]            # counter emitted but not in header
+  } else if (identical(m[, 1L], as.numeric(seq_len(nrow(m))))) {
+    m <- m[, -1L, drop = FALSE]            # counter named in the header
+    cols <- cols[-1L]
+  }
+
+  if (ncol(m) != length(cols)) {
+    warning("nomogram at line ", h[1], " has ", ncol(m),
+            " data columns against ", length(cols), " header names",
+            call. = FALSE)
+    return(NULL)
+  }
+  df <- as.data.frame(m)
   names(df) <- cols
   df
 }
