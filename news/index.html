@@ -13,7 +13,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.5</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.6</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -55,6 +55,14 @@
       <small>Source: <a href="https://github.com/ehrlinger/temporal_hazard/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="1.2.6" id="temporalhazard-126">TemporalHazard 1.2.6<a class="anchor" aria-label="anchor" href="#temporalhazard-126"></a></h2>
+<div class="section level3">
+<h3 id="bug-fixes-1-2-6">Bug fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-1-2-6"></a></h3>
+<ul><li><p><code>.hzr_parse_sas_nomogram()</code> no longer discards a nomogram whose PROC PRINT counter column is labelled <code>OBS</code> rather than <code>Obs</code> (<a href="https://github.com/ehrlinger/temporal_hazard/issues/184" class="external-link">#184</a>). The counter was dropped by exact name, so on the other casing it stayed among the header names, the row-width guard rejected every data row, and the parser returned <code>NULL</code> – indistinguishable from a listing that printed no nomogram at all. A corpus sweep therefore reported its own parse failures as gaps in the SAS output. The counter is now identified structurally, as a leading column running exactly <code>1..n</code>, so any label parses.</p></li>
+<li><p><code>.hzr_parse_sas_nomogram()</code> now warns rather than returning <code>NULL</code> in silence when a nomogram header matched but no data rows could be read. <code>NULL</code> again means “no such table”, and only that.</p></li>
+</ul></div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="1.2.5" id="temporalhazard-125">TemporalHazard 1.2.5<a class="anchor" aria-label="anchor" href="#temporalhazard-125"></a></h2>
 <div class="section level3">

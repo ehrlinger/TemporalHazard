@@ -1,5 +1,24 @@
 # Changelog
 
+## TemporalHazard 1.2.6
+
+### Bug fixes
+
+- `.hzr_parse_sas_nomogram()` no longer discards a nomogram whose PROC
+  PRINT counter column is labelled `OBS` rather than `Obs`
+  ([\#184](https://github.com/ehrlinger/temporal_hazard/issues/184)).
+  The counter was dropped by exact name, so on the other casing it
+  stayed among the header names, the row-width guard rejected every data
+  row, and the parser returned `NULL` – indistinguishable from a listing
+  that printed no nomogram at all. A corpus sweep therefore reported its
+  own parse failures as gaps in the SAS output. The counter is now
+  identified structurally, as a leading column running exactly `1..n`,
+  so any label parses.
+
+- `.hzr_parse_sas_nomogram()` now warns rather than returning `NULL` in
+  silence when a nomogram header matched but no data rows could be read.
+  `NULL` again means “no such table”, and only that.
+
 ## TemporalHazard 1.2.5
 
 ### New features
