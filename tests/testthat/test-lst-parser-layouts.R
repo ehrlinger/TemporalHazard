@@ -175,6 +175,23 @@ test_that("an unparseable table warns instead of returning NULL in silence", {
   expect_null(res)
 })
 
+test_that("a header on the final line warns rather than erroring", {
+  # (h + 1):length(lines) is a DECREASING sequence when the header is last,
+  # which would walk off the end of the file. The scan range is guarded, so
+  # this lands on the same "no data rows parsed" warning as any other
+  # unreadable table -- not an error, and not a silent NULL.
+  for (tail_line in list(character(0), "")) {
+    tmp <- withr::local_tempfile(fileext = ".lst")
+    writeLines(c(
+      "preamble",
+      "     Obs     YEARS     _SURVIV   _CLLSURV   _CLUSURV   _HAZARD   _CLLHAZ   _CLUHAZ",
+      tail_line
+    ), tmp)
+    expect_warning(res <- .hzr_parse_sas_nomogram(tmp), "no data rows parsed")
+    expect_null(res)
+  }
+})
+
 test_that("the nomogram parser still returns NULL when no table is present", {
   tmp <- withr::local_tempfile(fileext = ".lst")
   writeLines(c("nothing here", "no nomogram at all"), tmp)

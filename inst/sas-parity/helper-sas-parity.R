@@ -626,7 +626,13 @@
   # below, instead of having to be known here.
   num_rx <- "^[-+]?([0-9]+\\.?[0-9]*|\\.[0-9]+)([eE][-+]?[0-9]+)?$"
   raw <- list()
-  for (ln in lines[(h[1] + 1L):length(lines)]) {
+  # Guard the scan range explicitly. A header on the final line makes
+  # (h[1] + 1L):length(lines) a DECREASING sequence, which walks off the end
+  # and then back over the header itself. That happens to reach the warning
+  # below -- nzchar(NA) is TRUE, and the width test short-circuits before the
+  # NA can reach all() -- but only by accident of evaluation order. Say it.
+  scan <- if (h[1] < length(lines)) lines[(h[1] + 1L):length(lines)] else character(0)
+  for (ln in scan) {
     if (!nzchar(trimws(ln))) next
     toks <- strsplit(trimws(ln), "[[:space:]]+")[[1]]
     if (!(length(toks) %in% c(length(cols), length(cols) + 1L)) ||
