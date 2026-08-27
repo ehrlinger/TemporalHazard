@@ -30,9 +30,9 @@ package Rmpfr vignette.
 
 ## See also
 
-[`hzr_log1mexp()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_log1mexp.md)
+[`hzr_log1mexp()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_log1mexp.md)
 for the complementary \\\log(1 - e^{-x})\\,
-[`hzr_clamp_prob()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_clamp_prob.md)
+[`hzr_clamp_prob()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_clamp_prob.md)
 for boundary-safe probabilities.
 
 ## Examples

@@ -1,7 +1,7 @@
 # Print method for hazard summary objects
 
 Formatted console display of
-[`summary.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/summary.hazard.md)
+[`summary.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/summary.hazard.md)
 output: distribution, phase list (for multiphase), coefficient table
 with standard errors, and log-likelihood. When the post-fit Hessian is
 ill-conditioned or not positive-definite, a note warns that the standard
@@ -21,7 +21,7 @@ print(x, ...)
 - x:
 
   A `summary.hazard` object returned by
-  [`summary.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/summary.hazard.md).
+  [`summary.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/summary.hazard.md).
 
 - ...:
 

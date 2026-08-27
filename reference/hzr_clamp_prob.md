@@ -27,9 +27,9 @@ Numeric vector bounded to `[eps, 1 - eps]`.
 
 ## See also
 
-[`hzr_log1pexp()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_log1pexp.md)
+[`hzr_log1pexp()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_log1pexp.md)
 and
-[`hzr_log1mexp()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_log1mexp.md)
+[`hzr_log1mexp()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_log1mexp.md)
 for the companion stable-logarithm primitives.
 
 ## Examples

@@ -2,9 +2,9 @@
 
 Reads a SAS program containing `PROC HAZARD` and/or `PROC HAZPRED`
 blocks and emits a Quarto document of the equivalent
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 and
-[`predict.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/predict.hazard.md)
+[`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)
 calls.
 
 ## Usage
@@ -43,7 +43,7 @@ the first unresolved `INHAZ=` (not all of each, when a job has several),
 ## Details
 
 **Experimental:** a job that translates does render – the emitted
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 chunk binds its fit and asks for an actual fit – but this is a
 translation aid, not a turnkey reproduction, and some SAS constructs are
 refused rather than translated. See the Experimental section below.
@@ -75,7 +75,7 @@ the ambiguity is recorded in `untranslated`, never guessed at silently.
 ## Experimental
 
 The emitted document renders: the
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 chunk binds its fit to a name and passes `fit = TRUE`, so the
 [`predict()`](https://rdrr.io/r/stats/predict.html) chunks have
 something to predict from. Two SAS constructs are refused outright

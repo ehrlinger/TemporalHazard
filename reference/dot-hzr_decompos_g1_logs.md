@@ -1,4 +1,4 @@
-# Log-scale terms shared by the m \> 0 branches of [`hzr_decompos()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_decompos.md)
+# Log-scale terms shared by the m \> 0 branches of [`hzr_decompos()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos.md)
 
 Cases 1 (`nu > 0`) and 3 (`nu < 0`) evaluate the same intermediate
 quantities; only the sign of `rho` and the final assembly of `G` differ.

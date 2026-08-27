@@ -37,7 +37,7 @@ The log-likelihood is *not* stored here; take it from the `.lst`.
 
 This function is experimental and its return shape is expected to
 change. The result carries the fitted model, so
-[`predict.hzr_outhaz()`](https://ehrlinger.github.io/temporal_hazard/reference/predict.hzr_outhaz.md)
+[`predict.hzr_outhaz()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hzr_outhaz.md)
 predicts from it – that is what the `hzr_translate_sas(librefs = )` path
 emits – but it is not a `hazard` object and none of the other `hazard`
 methods apply to it. The `_STATUS_` coding is asserted against a

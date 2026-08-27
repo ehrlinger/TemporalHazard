@@ -23,7 +23,7 @@ decomposition and patient-specific risk profiles where the covariate
 machinery pays off. The last section reuses the workflow across multiple
 endpoints on the same cohort. If you haven’t seen the fitting workflow
 yet,
-[`vignette("fitting-hazard-models")`](https://ehrlinger.github.io/temporal_hazard/articles/fitting-hazard-models.md)
+[`vignette("fitting-hazard-models")`](https://ehrlinger.github.io/TemporalHazard/articles/fitting-hazard-models.md)
 is the prerequisite.
 
 ## 1 Kaplan-Meier baseline
@@ -174,7 +174,7 @@ round to “85%”. Delta-method confidence limits let you plot the second
 case honestly instead of pretending it’s the first.
 
 As of v0.9.8,
-[`predict.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/predict.hazard.md)
+[`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)
 accepts `se.fit = TRUE` (default `FALSE`) and `level = 0.95` to return
 delta-method standard errors and confidence limits alongside the point
 estimate. The return value changes shape: a plain numeric vector with
@@ -447,9 +447,9 @@ risk for, and over what time horizon. The `valves` dataset has separate
 event-time pairs for each endpoint, so we can plot all of them as
 Kaplan-Meier curves on shared axes without needing a parametric fit at
 all. (You’d parametrize them in the next step, one endpoint per
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 call, as we did in
-[`vignette("fitting-hazard-models")`](https://ehrlinger.github.io/temporal_hazard/articles/fitting-hazard-models.md).)
+[`vignette("fitting-hazard-models")`](https://ehrlinger.github.io/TemporalHazard/articles/fitting-hazard-models.md).)
 
 ``` r
 

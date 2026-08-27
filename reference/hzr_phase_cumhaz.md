@@ -59,9 +59,9 @@ length as `time`.
 
 ## See also
 
-[`hzr_decompos()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_decompos.md)
+[`hzr_decompos()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos.md)
 for the underlying parametric family,
-[`hzr_phase_hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase_hazard.md)
+[`hzr_phase_hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase_hazard.md)
 for the instantaneous hazard contribution.
 
 ## Examples

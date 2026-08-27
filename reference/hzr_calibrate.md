@@ -100,7 +100,7 @@ suggests a transformation (log, quadratic) may improve fit.
 
 ## See also
 
-[`hzr_deciles()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_deciles.md)
+[`hzr_deciles()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_deciles.md)
 for model-based calibration after fitting.
 
 ## Examples

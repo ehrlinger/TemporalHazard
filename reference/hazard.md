@@ -125,7 +125,7 @@ hazard(
 - phases:
 
   Optional named list of
-  [`hzr_phase()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase.md)
+  [`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
   objects specifying the phases for a multiphase model
   (`dist = "multiphase"`). See Examples.
 
@@ -261,7 +261,7 @@ and survival are
 where \\\mu_j(\mathbf{x}) = \exp(\alpha_j + \mathbf{x}\_j^\top
 \beta_j)\\ and the temporal shapes \\\Phi_j\\, \\\varphi_j\\ are set by
 each phase's `type` (see
-[`hzr_phase()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase.md)).
+[`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)).
 The proportional-hazards single-phase families (`"weibull"`,
 `"exponential"`) are the special case \\J = 1\\, with covariates acting
 multiplicatively on one temporal shape. The `"loglogistic"`
@@ -271,7 +271,7 @@ log-time location, respectively — so they are separate
 parameterizations, not special cases of this additive form. Parameters
 are estimated on an unconstrained internal scale (e.g. \\\log\mu\\,
 \\\log t\_{1/2}\\) and transformed back for reporting; see
-[`vignette("mf-mathematical-foundations")`](https://ehrlinger.github.io/temporal_hazard/articles/mf-mathematical-foundations.md).
+[`vignette("mf-mathematical-foundations")`](https://ehrlinger.github.io/TemporalHazard/articles/mf-mathematical-foundations.md).
 
 ## Baseline distributions
 
@@ -317,7 +317,7 @@ such shapes coexist.
   Sums several phase shapes into one model, \\H = \sum_j
   \mu_j(\mathbf{x}) \Phi_j(t)\\, so the overall hazard can fall, level
   off, and rise again within one fit. Requires `phases`; see
-  [`hzr_phase()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase.md)
+  [`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
   for the available phase shapes. This is the form that reproduces the
   classic C/SAS HAZARD models.
 
@@ -336,19 +336,19 @@ Res.* 2018;27(1):126–141.
 
 ## See also
 
-[`predict.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/predict.hazard.md)
+[`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)
 for survival/cumulative-hazard predictions,
-[`summary.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/summary.hazard.md)
+[`summary.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/summary.hazard.md)
 for model summaries,
-[`hzr_phase()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase.md)
+[`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
 for specifying multiphase temporal shapes.
 
 Vignettes with worked examples:
-[`vignette("fitting-hazard-models")`](https://ehrlinger.github.io/temporal_hazard/articles/fitting-hazard-models.md)
+[`vignette("fitting-hazard-models")`](https://ehrlinger.github.io/TemporalHazard/articles/fitting-hazard-models.md)
 — single-phase through multiphase fitting,
-[`vignette("prediction-visualization")`](https://ehrlinger.github.io/temporal_hazard/articles/prediction-visualization.md)
+[`vignette("prediction-visualization")`](https://ehrlinger.github.io/TemporalHazard/articles/prediction-visualization.md)
 — prediction types and decomposed hazard plots,
-[`vignette("inference-diagnostics")`](https://ehrlinger.github.io/temporal_hazard/articles/inference-diagnostics.md)
+[`vignette("inference-diagnostics")`](https://ehrlinger.github.io/TemporalHazard/articles/inference-diagnostics.md)
 — bootstrap CIs and model diagnostics.
 
 ## Examples

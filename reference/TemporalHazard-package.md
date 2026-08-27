@@ -26,9 +26,9 @@ follow directly:
 \mathbf{x})\bigr)\$\$
 
 with \\\varphi_j = d\Phi_j/dt\\. Each phase is specified with
-[`hzr_phase()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase.md)
+[`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
 and the model is fit by maximum likelihood with
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md).
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md).
 
 ## Phase vocabulary
 
@@ -41,17 +41,17 @@ and the model is fit by maximum likelihood with
 | `"constant"` | \\t\\ | \\\[0, \infty)\\ | Flat background rate (no shape parameters) |
 
 Here \\G(t)\\ is the generalized temporal decomposition CDF computed by
-[`hzr_decompos()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_decompos.md),
+[`hzr_decompos()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos.md),
 and \\G_3(t)\\ is the unbounded late-phase intensity from
-[`hzr_decompos_g3()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_decompos_g3.md).
+[`hzr_decompos_g3()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos_g3.md).
 See
-[`vignette("mf-mathematical-foundations")`](https://ehrlinger.github.io/temporal_hazard/articles/mf-mathematical-foundations.md)
+[`vignette("mf-mathematical-foundations")`](https://ehrlinger.github.io/TemporalHazard/articles/mf-mathematical-foundations.md)
 for the full derivation.
 
 ## SAS/C HAZARD bridge
 
 The classic three-phase HAZARD model maps directly onto
-[`hzr_phase()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase.md)
+[`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
 calls:
 
 |                  |                      |                         |
@@ -63,7 +63,7 @@ calls:
 
 TemporalHazard generalizes the fixed three-phase structure to \\N\\
 phases of any type.
-[`hzr_argument_mapping()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_argument_mapping.md)
+[`hzr_argument_mapping()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_argument_mapping.md)
 gives the full parameter translation table between the SAS/C
 parameterization and the R arguments.
 
@@ -71,11 +71,11 @@ parameterization and the R arguments.
 
 - Model fitting:
 
-  [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   — build and fit single- or multiphase models;
-  [`hzr_phase()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase.md)
+  [`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
   — specify one phase;
-  [`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   — forward, backward, or bidirectional covariate selection.
 
 - Prediction:
@@ -87,53 +87,53 @@ parameterization and the R arguments.
 
 - Parametric family:
 
-  [`hzr_decompos()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_decompos.md)
+  [`hzr_decompos()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos.md)
   — the early-phase (G1) decomposition \\G(t)\\, \\g(t)\\, \\h(t)\\;
-  [`hzr_decompos_g3()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_decompos_g3.md)
+  [`hzr_decompos_g3()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos_g3.md)
   — the late-phase (G3) intensity;
-  [`hzr_phase_cumhaz()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase_cumhaz.md)
+  [`hzr_phase_cumhaz()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase_cumhaz.md)
   and
-  [`hzr_phase_hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase_hazard.md)
+  [`hzr_phase_hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase_hazard.md)
   — per-phase \\\Phi(t)\\ and \\\varphi(t)\\.
 
 - Diagnostics:
 
-  [`hzr_kaplan()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_kaplan.md),
-  [`hzr_nelson()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_nelson.md)
+  [`hzr_kaplan()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_kaplan.md),
+  [`hzr_nelson()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_nelson.md)
   — nonparametric references;
-  [`hzr_gof()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_gof.md)
+  [`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
   — goodness of fit;
-  [`hzr_calibrate()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_calibrate.md),
-  [`hzr_deciles()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_deciles.md)
+  [`hzr_calibrate()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_calibrate.md),
+  [`hzr_deciles()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_deciles.md)
   — calibration;
-  [`hzr_bootstrap()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_bootstrap.md)
+  [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
   — resampling CIs;
-  [`hzr_competing_risks()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_competing_risks.md)
+  [`hzr_competing_risks()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_competing_risks.md)
   — cumulative incidence.
 
 ## Vignettes
 
-- [`vignette("getting-started")`](https://ehrlinger.github.io/temporal_hazard/articles/getting-started.md):
+- [`vignette("getting-started")`](https://ehrlinger.github.io/TemporalHazard/articles/getting-started.md):
 
   First fit, end to end.
 
-- [`vignette("mf-mathematical-foundations")`](https://ehrlinger.github.io/temporal_hazard/articles/mf-mathematical-foundations.md):
+- [`vignette("mf-mathematical-foundations")`](https://ehrlinger.github.io/TemporalHazard/articles/mf-mathematical-foundations.md):
 
   The decomposition family and multiphase model, with derivations.
 
-- [`vignette("fitting-hazard-models")`](https://ehrlinger.github.io/temporal_hazard/articles/fitting-hazard-models.md):
+- [`vignette("fitting-hazard-models")`](https://ehrlinger.github.io/TemporalHazard/articles/fitting-hazard-models.md):
 
   Single-phase through multiphase fitting.
 
-- [`vignette("prediction-visualization")`](https://ehrlinger.github.io/temporal_hazard/articles/prediction-visualization.md):
+- [`vignette("prediction-visualization")`](https://ehrlinger.github.io/TemporalHazard/articles/prediction-visualization.md):
 
   Prediction types and decomposed-hazard plots.
 
-- [`vignette("inference-diagnostics")`](https://ehrlinger.github.io/temporal_hazard/articles/inference-diagnostics.md):
+- [`vignette("inference-diagnostics")`](https://ehrlinger.github.io/TemporalHazard/articles/inference-diagnostics.md):
 
   Bootstrap CIs and diagnostics.
 
-- [`vignette("sas-to-r-migration")`](https://ehrlinger.github.io/temporal_hazard/articles/sas-to-r-migration.md):
+- [`vignette("sas-to-r-migration")`](https://ehrlinger.github.io/TemporalHazard/articles/sas-to-r-migration.md):
 
   Translating SAS/C HAZARD code.
 
@@ -154,11 +154,11 @@ Res.* 2018;27(1):126–141.
 
 Useful links:
 
-- <https://ehrlinger.github.io/temporal_hazard/>
+- <https://ehrlinger.github.io/TemporalHazard/>
 
-- <https://github.com/ehrlinger/temporal_hazard>
+- <https://github.com/ehrlinger/TemporalHazard>
 
-- Report bugs at <https://github.com/ehrlinger/temporal_hazard/issues>
+- Report bugs at <https://github.com/ehrlinger/TemporalHazard/issues>
 
 ## Author
 

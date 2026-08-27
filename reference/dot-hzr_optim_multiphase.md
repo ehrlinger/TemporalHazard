@@ -60,7 +60,7 @@ design matrices, and delegates to `.hzr_optim_generic()`.
 - objective:
 
   Which interval-censored contribution to accumulate; see
-  [`.hzr_logl_interval()`](https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_logl_interval.md).
+  [`.hzr_logl_interval()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_logl_interval.md).
 
 - formula_global:
 

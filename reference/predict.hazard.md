@@ -119,14 +119,14 @@ can be selected.
 
 ## See also
 
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 for model fitting,
-[`summary.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/summary.hazard.md)
+[`summary.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/summary.hazard.md)
 for model summaries,
-[`hzr_phase()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase.md)
+[`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
 for multiphase temporal shapes.
 
-[`vignette("prediction-visualization")`](https://ehrlinger.github.io/temporal_hazard/articles/prediction-visualization.md)
+[`vignette("prediction-visualization")`](https://ehrlinger.github.io/TemporalHazard/articles/prediction-visualization.md)
 for detailed prediction workflows including decomposed hazard plots and
 patient-specific curves.
 

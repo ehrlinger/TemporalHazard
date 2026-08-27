@@ -2,7 +2,7 @@
 
 Computes \\\phi_j(t) = d\Phi_j/dt\\ for one phase – the derivative of
 the cumulative hazard contribution returned by
-[`hzr_phase_cumhaz()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase_cumhaz.md).
+[`hzr_phase_cumhaz()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase_cumhaz.md).
 
 ## Usage
 
@@ -55,9 +55,9 @@ length as `time`.
 
 ## See also
 
-[`hzr_decompos()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_decompos.md)
+[`hzr_decompos()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos.md)
 for the underlying parametric family,
-[`hzr_phase_cumhaz()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase_cumhaz.md)
+[`hzr_phase_cumhaz()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase_cumhaz.md)
 for the cumulative version.
 
 ## Examples

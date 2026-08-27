@@ -17,7 +17,7 @@ print(x, ...)
 - x:
 
   A `hazard` object returned by
-  [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md).
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md).
 
 - ...:
 

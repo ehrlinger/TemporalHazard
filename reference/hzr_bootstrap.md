@@ -73,24 +73,24 @@ print(x, digits = 4, ...)
   `object`'s exact model, and `summary$pct` is always ~100. When
   supplied (a one-sided formula, character vector, or – for multiphase
   fits – a named list of one-sided formulas keyed by phase, matching
-  [`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)'s
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)'s
   `scope`), each replicate runs a fresh
-  [`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   selection instead; see Details.
 
 - direction, slentry, slstay, max_steps, max_move, force_in, force_out:
 
   Passed through to
-  [`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   on each replicate when `scope` is supplied; ignored when
   `scope = NULL`. See
-  [`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   for definitions and defaults.
 
 - criterion:
 
   Entry / retention rule passed through to
-  [`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   on each replicate when `scope` is supplied; ignored when
   `scope = NULL`. One of `"score"` (default), `"wald"`, or `"aic"`.
   `"score"` reproduces C/SAS HAZARD's `SELECTION` statistic and needs no
@@ -102,12 +102,12 @@ print(x, digits = 4, ...)
   numerically via the suggested numDeriv package and errors if it is not
   installed; a multiphase fit uses the analytic Hessian instead and does
   not need it. See
-  [`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md).
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md).
 
 - ...:
 
   Additional arguments forwarded to
-  [`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   (e.g. `control = list(n_starts = 1)`) when `scope` is supplied;
   ignored otherwise.
 
@@ -180,7 +180,7 @@ A list with class `"hzr_bootstrap"` containing:
 ## Details
 
 When `scope` is supplied, each replicate instead runs a fresh
-[`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+[`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
 selection on the resampled data (starting from a fixed-shape refit of
 `object`) instead of refitting `object`'s exact formula. This is the R
 equivalent of the SAS `%HAZBOOT` macro: fit the hazard shape with no
@@ -216,11 +216,11 @@ package may well change this function's interface.
 
 ## See also
 
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 for model fitting,
-[`vcov.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/vcov.hazard.md)
+[`vcov.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/vcov.hazard.md)
 for Hessian-based standard errors,
-[`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+[`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
 for the selection procedure used when `scope` is supplied.
 
 ## Examples

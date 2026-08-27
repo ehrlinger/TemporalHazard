@@ -3,7 +3,7 @@
 CRAN R package. A native R implementation of the multiphase parametric
 hazard model of Blackstone, Naftel and Turner (1986) — the model the
 SAS/C `HAZARD` program implements. The public API is
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 plus the `hzr_*` family (22 exports, 20 S3 methods, as declared in
 `NAMESPACE`).
 
@@ -124,9 +124,9 @@ the codemap is the fast path — see `CLAUDE.md`.
 
 The multiphase path is where the bugs are. A fit reaches the optimizer
 through
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 →
-[`.hzr_optim_multiphase()`](https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_optim_multiphase.md)
+[`.hzr_optim_multiphase()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_optim_multiphase.md)
 → the likelihood in `R/likelihood-multiphase.R`, with shape handling
 split across `R/phase-spec.R` and the decomposition helpers, so the
 function you found is often not the one that runs.
@@ -158,7 +158,7 @@ Note the registry name is `TemporalHazard` while the directory is
   *different* integers for the same meanings — under `type = "interval"`
   it is `0`/`1`/`2`/`3` for right/event/left/interval. The formula path
   translates in
-  [`.hzr_parse_formula()`](https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_parse_formula.md);
+  [`.hzr_parse_formula()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_parse_formula.md);
   the vector path does not. Never carry one coding into the other.
   Passing them through unchanged is a real bug this package shipped:
   `Surv(type = "left")` read left-censored rows as *right*-censored, a

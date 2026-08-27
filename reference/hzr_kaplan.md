@@ -109,7 +109,7 @@ Health and Medical Subjects* 33:1–26.
 
 ## See also
 
-[`hzr_gof()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_gof.md)
+[`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
 for parametric vs. nonparametric comparison.
 
 ## Examples

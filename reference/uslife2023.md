@@ -64,15 +64,15 @@ whose printed log-likelihood is -410414 with
 
 ## See also
 
-[`hazard`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 for the `objective` argument this fixture anchors.
 
 Other datasets:
-[`avc`](https://ehrlinger.github.io/temporal_hazard/reference/avc.md),
-[`cabgkul`](https://ehrlinger.github.io/temporal_hazard/reference/cabgkul.md),
-[`omc`](https://ehrlinger.github.io/temporal_hazard/reference/omc.md),
-[`tga`](https://ehrlinger.github.io/temporal_hazard/reference/tga.md),
-[`valves`](https://ehrlinger.github.io/temporal_hazard/reference/valves.md)
+[`avc`](https://ehrlinger.github.io/TemporalHazard/reference/avc.md),
+[`cabgkul`](https://ehrlinger.github.io/TemporalHazard/reference/cabgkul.md),
+[`omc`](https://ehrlinger.github.io/TemporalHazard/reference/omc.md),
+[`tga`](https://ehrlinger.github.io/TemporalHazard/reference/tga.md),
+[`valves`](https://ehrlinger.github.io/TemporalHazard/reference/valves.md)
 
 ## Examples
 

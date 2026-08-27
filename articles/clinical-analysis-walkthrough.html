@@ -62,7 +62,7 @@
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul>
 <ul class="navbar-nav">
-<li class="nav-item"><a class="external-link nav-link" href="https://github.com/ehrlinger/temporal_hazard/" aria-label="GitHub"><span class="fa fab fa-github fa-lg"></span></a></li>
+<li class="nav-item"><a class="external-link nav-link" href="https://github.com/ehrlinger/TemporalHazard/" aria-label="GitHub"><span class="fa fab fa-github fa-lg"></span></a></li>
       </ul>
 </div>
 
@@ -75,9 +75,9 @@
       <h1>Complete Clinical Analysis Walkthrough</h1>
       <p class="subtitle">From Kaplan-Meier baseline to validated multivariable model</p>
       <p class="author">John Ehrlinger</p>
-      <p class="date">2026-08-26</p>
+      <p class="date">2026-08-27</p>
 
-      <small class="dont-index">Source: <a href="https://github.com/ehrlinger/temporal_hazard/blob/main/vignettes/clinical-analysis-walkthrough.qmd" class="external-link"><code>vignettes/clinical-analysis-walkthrough.qmd</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/ehrlinger/TemporalHazard/blob/main/vignettes/clinical-analysis-walkthrough.qmd" class="external-link"><code>vignettes/clinical-analysis-walkthrough.qmd</code></a></small>
       <div class="d-none name"><code></code></div>
     </div>
 
@@ -110,7 +110,7 @@
 <p>Load the package and the AVC dataset, drop incomplete rows so the design matrix is rectangular for the multivariable fits to come, and inspect the resulting column types and ranges. The <code><a href="https://rdrr.io/r/stats/na.fail.html" class="external-link">na.omit()</a></code> step is conservative — losing rows is a real cost — but for a walkthrough we want every later fit to use the same patient set so the comparisons are apples-to-apples.</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb1"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://ehrlinger.github.io/temporal_hazard/">TemporalHazard</a></span><span class="op">)</span></span>
+<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://ehrlinger.github.io/TemporalHazard/">TemporalHazard</a></span><span class="op">)</span></span>
 <span><span class="kw">if</span> <span class="op">(</span><span class="va">has_ggplot2</span><span class="op">)</span> <span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://ggplot2.tidyverse.org" class="external-link">ggplot2</a></span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/utils/data.html" class="external-link">data</a></span><span class="op">(</span><span class="va">avc</span><span class="op">)</span></span>

@@ -123,11 +123,11 @@ predict(fit_mp, newdata = data.frame(time = t_grid),
 ```
 
 Each phase is specified with
-[`hzr_phase()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase.md),
+[`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md),
 which sets the temporal shape type and starting values. The optimizer
 estimates both the phase-specific scale parameters and shape parameters
 jointly. Covariates are supported via the formula interface (see
-[`vignette("fitting-hazard-models")`](https://ehrlinger.github.io/temporal_hazard/articles/fitting-hazard-models.md)).
+[`vignette("fitting-hazard-models")`](https://ehrlinger.github.io/TemporalHazard/articles/fitting-hazard-models.md)).
 
 ## Documentation
 

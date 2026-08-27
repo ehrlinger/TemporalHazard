@@ -1,9 +1,9 @@
 # Interval-censored log-likelihood contribution
 
 The single place the interval-censored contribution is written. Both
-[`.hzr_logl_multiphase()`](https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_logl_multiphase.md)
+[`.hzr_logl_multiphase()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_logl_multiphase.md)
 and the finite-difference closure inside
-[`.hzr_gradient_multiphase()`](https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_gradient_multiphase.md)
+[`.hzr_gradient_multiphase()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_gradient_multiphase.md)
 delegate here, so the optimizer cannot step by the gradient of a
 different objective than the one it evaluates.
 

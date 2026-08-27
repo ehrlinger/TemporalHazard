@@ -110,7 +110,7 @@ processes. *Ann Statist* 6(4):701–726.
 
 ## See also
 
-[`hzr_kaplan()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_kaplan.md)
+[`hzr_kaplan()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_kaplan.md)
 for survival estimation.
 
 ## Examples

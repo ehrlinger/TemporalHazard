@@ -84,7 +84,7 @@ This estimator is **unweighted**: every observation contributes a unit
 count to the at-risk and event tallies. There is no `weights` argument,
 so case or inverse-probability weights are not yet supported for
 competing-risks incidence (unlike
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md),
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md),
 which accepts `weights`). Pre-expand weighted rows to individual records
 if an approximate weighted estimate is needed.
 
@@ -99,7 +99,7 @@ Time Data.* Wiley, New York.
 
 ## See also
 
-[`hzr_kaplan()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_kaplan.md)
+[`hzr_kaplan()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_kaplan.md)
 for single-event survival estimation.
 
 ## Examples

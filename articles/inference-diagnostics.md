@@ -20,12 +20,12 @@ These pieces correspond directly to steps in the classic SAS HAZARD
 workflow — the `lg.*` logistic-screening macros, the `bs.*` bootstrap
 macros, the `hs.*` hazard-sensitivity macros — re-implemented as
 first-class R functions
-([`hzr_calibrate()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_calibrate.md),
-[`hzr_kaplan()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_kaplan.md),
-[`hzr_nelson()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_nelson.md),
-[`hzr_bootstrap()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_bootstrap.md),
-[`hzr_gof()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_gof.md),
-[`hzr_deciles()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_deciles.md)).
+([`hzr_calibrate()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_calibrate.md),
+[`hzr_kaplan()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_kaplan.md),
+[`hzr_nelson()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_nelson.md),
+[`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md),
+[`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md),
+[`hzr_deciles()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_deciles.md)).
 If you’ve worked through a SAS HAZARD analysis you already know the
 shape of what follows; if not, treat this vignette as the standard
 diagnostic pass you’d run on any fitted hazard model before trusting its
@@ -41,7 +41,7 @@ significance triage), and what *functional form* each covariate enters
 with — linear, log, polynomial, or something non-monotone that needs
 binning. The screening step is what stops you from blindly throwing
 every column at
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 and then trying to debug a model that has shape mis-specification baked
 in.
 
@@ -107,12 +107,12 @@ covariate enters the hazard model on its natural scale; a U or
 inverted-U shape means a polynomial or a non-monotone transform; a
 plateau-then-rise means a threshold effect that may need binning. This
 is the call you make *before* writing the formula for
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md),
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md),
 not after staring at a converged-but-misspecified model.
 
 ### 1.1 Quantile calibration with `hzr_calibrate()`
 
-[`hzr_calibrate()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_calibrate.md)
+[`hzr_calibrate()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_calibrate.md)
 bins a continuous covariate into quantile groups and applies the logit /
 Gompertz / Cox link transform, so you can eyeball whether the
 covariate-outcome relationship is linear on the chosen link scale. It
@@ -152,17 +152,17 @@ A parametric fit has to be compared against *something*. The natural
 something is the nonparametric estimate of the same quantity from the
 same data — Kaplan-Meier for survival, Nelson-Aalen for cumulative
 hazard. The package’s
-[`hzr_kaplan()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_kaplan.md)
+[`hzr_kaplan()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_kaplan.md)
 and
-[`hzr_nelson()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_nelson.md)
+[`hzr_nelson()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_nelson.md)
 are convenience wrappers that return richer output than
 [`survival::survfit()`](https://rdrr.io/pkg/survival/man/survfit.html):
-[`hzr_kaplan()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_kaplan.md)
+[`hzr_kaplan()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_kaplan.md)
 ships KM with logit-transformed confidence limits (more accurate in the
 tails than the standard Greenwood limits, which can stray outside \\\[0,
 1\]\\), interval hazard rates, density estimates, and a
 restricted-mean-survival-time scalar.
-[`hzr_nelson()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_nelson.md)
+[`hzr_nelson()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_nelson.md)
 returns the Wayne Nelson cumulative hazard estimator with log-normal
 confidence limits — the right reference when you care about the
 integrated intensity rather than the survival probability.
@@ -291,7 +291,7 @@ computationally heavier but it doesn’t assume the likelihood is locally
 quadratic, and it picks up the right tail behavior even when
 delta-method theory creaks.
 
-[`hzr_bootstrap()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_bootstrap.md)
+[`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
 wraps the resample-and-refit loop and corresponds to the SAS
 `bootstrap.hazard.sas` and `bootstrap.summary.sas` macros. We fit a base
 model first; bootstrap replicates will resample from the same data and
@@ -317,13 +317,13 @@ base_nd <- data.frame(time = t_grid, age = median(avc$age),
 surv_point <- predict(fit, newdata = base_nd, type = "survival")
 ```
 
-[`hzr_bootstrap()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_bootstrap.md)
+[`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
 returns a long data frame of per-replicate coefficient estimates
 (`$replicates`) and a parameter-level summary (mean, SD, 95% percentile
 CI) in `$summary`. We use `n_boot = 30` here purely so the vignette
 renders in reasonable time — for a real analysis you’d want 200 or more
 replicates. The `set.seed(42)` call before
-[`hzr_bootstrap()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_bootstrap.md)
+[`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
 makes the resample sequence reproducible.
 
 ``` r
@@ -355,14 +355,14 @@ all in the returned object.
 
 The Kaplan-Meier overlay in the prediction-visualization vignette is the
 *visual* goodness-of-fit check.
-[`hzr_gof()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_gof.md)
+[`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
 is the *quantitative* complement: it tabulates parametric predictions
 side by side with the nonparametric KM estimate at each event time, and
 computes the Conservation-of-Events observed-vs-expected ratio across
 the whole follow-up window. The ratio compresses everything the model is
 doing into a single number, which makes it the right summary statistic
 to report alongside coefficient tables.
-([`hzr_gof()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_gof.md)
+([`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
 corresponds to the SAS `hazplot.sas` macro.)
 
 ``` r
@@ -393,7 +393,7 @@ calibrated *on average*. That’s necessary but not sufficient — a model
 can hit the right total event count while systematically over-predicting
 risk for one part of the cohort and under-predicting for another, with
 the errors cancelling in aggregate.
-[`hzr_deciles()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_deciles.md)
+[`hzr_deciles()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_deciles.md)
 is the check that catches that failure mode: it partitions patients into
 deciles of predicted risk at a chosen time point and compares observed
 with expected event counts within each decile, returning a chi-square
@@ -549,33 +549,33 @@ The complete sequence, with the SAS HAZARD correspondences each piece
 descends from:
 
 1.  **Exploratory screening** (`glm`,
-    [`hzr_calibrate()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_calibrate.md))
+    [`hzr_calibrate()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_calibrate.md))
     — identify covariate transformations and functional forms
 2.  **Nonparametric baselines**
-    ([`hzr_kaplan()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_kaplan.md),
-    [`hzr_nelson()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_nelson.md))
+    ([`hzr_kaplan()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_kaplan.md),
+    [`hzr_nelson()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_nelson.md))
     — reference KM / Nelson cumulative hazard estimators
 3.  **Fit hazard model**
-    ([`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md))
+    ([`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md))
     — parametric shape + covariates
 4.  **Predict & visualize**
     ([`predict()`](https://rdrr.io/r/stats/predict.html)) — survival,
     hazard, risk profiles
 5.  **Goodness-of-fit overlay**
-    ([`hzr_gof()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_gof.md))
+    ([`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md))
     — parametric vs. KM + Conservation-of-Events check
 6.  **Bootstrap CIs**
-    ([`hzr_bootstrap()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_bootstrap.md))
+    ([`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md))
     — uncertainty quantification via resampling
 7.  **Sensitivity analysis**
     ([`predict()`](https://rdrr.io/r/stats/predict.html) on covariate
     profiles) — compare scenarios across risk factors
 8.  **Decile calibration**
-    ([`hzr_deciles()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_deciles.md))
+    ([`hzr_deciles()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_deciles.md))
     — chi-square observed vs. expected by risk decile
 
 See
-[`vignette("getting-started")`](https://ehrlinger.github.io/temporal_hazard/articles/getting-started.md)
+[`vignette("getting-started")`](https://ehrlinger.github.io/TemporalHazard/articles/getting-started.md)
 for the minimal workflow and
-[`vignette("fitting-hazard-models")`](https://ehrlinger.github.io/temporal_hazard/articles/fitting-hazard-models.md)
+[`vignette("fitting-hazard-models")`](https://ehrlinger.github.io/TemporalHazard/articles/fitting-hazard-models.md)
 for the model-fitting details.

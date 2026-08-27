@@ -53,7 +53,7 @@ A named list with three numeric vectors, each the same length as `time`:
 The original C code used separate parameterizations for early (DELTA,
 RHO/THALF, NU, M) and late (TAU, GAMMA, ALPHA, ETA) phases. Both
 collapse onto the three parameters here. See
-[`hzr_argument_mapping()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_argument_mapping.md)
+[`hzr_argument_mapping()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_argument_mapping.md)
 for the full translation table.
 
 ## Valid parameter combinations
@@ -93,7 +93,7 @@ and the hazard is \\h(t) = g(t) / (1 - G(t))\\. The remaining five cases
 in the table above arise as limits (\\m \to 0\\, \\\nu \to 0\\) or sign
 reflections of this base form; the implementation dispatches to the
 appropriate branch after inspecting the signs of `nu` and `m`. See
-[`vignette("mf-mathematical-foundations")`](https://ehrlinger.github.io/temporal_hazard/articles/mf-mathematical-foundations.md)
+[`vignette("mf-mathematical-foundations")`](https://ehrlinger.github.io/TemporalHazard/articles/mf-mathematical-foundations.md)
 for the full derivation of every case.
 
 ## References
@@ -111,16 +111,16 @@ Res.* 2018;27(1):126–141.
 
 ## See also
 
-[`hzr_phase_cumhaz()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase_cumhaz.md)
+[`hzr_phase_cumhaz()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase_cumhaz.md)
 for the phase-level cumulative hazard contribution,
-[`hzr_argument_mapping()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_argument_mapping.md)
+[`hzr_argument_mapping()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_argument_mapping.md)
 for SAS/C parameter mapping,
-[`hzr_phase()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase.md)
+[`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
 for specifying phases in
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 models.
 
-[`vignette("mf-mathematical-foundations")`](https://ehrlinger.github.io/temporal_hazard/articles/mf-mathematical-foundations.md)
+[`vignette("mf-mathematical-foundations")`](https://ehrlinger.github.io/TemporalHazard/articles/mf-mathematical-foundations.md)
 for the full derivation.
 
 ## Examples

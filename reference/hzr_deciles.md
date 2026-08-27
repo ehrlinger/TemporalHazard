@@ -100,7 +100,7 @@ totals are independent of it.
 
 ## See also
 
-[`predict.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/predict.hazard.md)
+[`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)
 for the prediction types used internally.
 
 ## Examples

@@ -1,7 +1,7 @@
 # Per-phase + total cumulative-hazard predictions with delta-method CLs
 
 Long-format companion to
-[`.hzr_predict_with_se()`](https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_predict_with_se.md)
+[`.hzr_predict_with_se()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_predict_with_se.md)
 for multiphase models under `decompose = TRUE`. Computes log-scale CLs
 for the total cumulative hazard and for each phase's additive
 contribution `H_j(t) = mu_j(x) Phi_j(t)`. Per-phase CLs use only that

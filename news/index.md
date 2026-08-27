@@ -6,12 +6,12 @@
 
 - `.hzr_parse_sas_nomogram()` no longer discards a nomogram whose PROC
   PRINT counter column is labelled `OBS` rather than `Obs`
-  ([\#184](https://github.com/ehrlinger/temporal_hazard/issues/184)).
-  The counter was dropped by exact name, so on the other casing it
-  stayed among the header names, the row-width guard rejected every data
-  row, and the parser returned `NULL` – indistinguishable from a listing
-  that printed no nomogram at all. A corpus sweep therefore reported its
-  own parse failures as gaps in the SAS output. The counter is now
+  ([\#184](https://github.com/ehrlinger/TemporalHazard/issues/184)). The
+  counter was dropped by exact name, so on the other casing it stayed
+  among the header names, the row-width guard rejected every data row,
+  and the parser returned `NULL` – indistinguishable from a listing that
+  printed no nomogram at all. A corpus sweep therefore reported its own
+  parse failures as gaps in the SAS output. The counter is now
   identified structurally, as a leading column running exactly `1..n`,
   so any label parses.
 
@@ -53,7 +53,7 @@
 
 ### New features
 
-- [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+- [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   gains an `objective` argument. The default, `"likelihood"`, is
   unchanged: interval-censored rows contribute the interval probability
   `log(S(l) - S(u))`. The new `"sas"` reproduces what `PROC HAZARD`
@@ -96,7 +96,7 @@
   gradient. Those copies had to agree or the optimizer would step by the
   gradient of a different objective than it evaluated. Both now delegate
   to a single
-  [`.hzr_logl_interval()`](https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_logl_interval.md).
+  [`.hzr_logl_interval()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_logl_interval.md).
   Behavior under the default is unchanged and bit-identical,
   log-likelihood and gradient alike.
 
@@ -133,7 +133,7 @@
 
 ### New features
 
-- [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)’s
+- [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)’s
   vector interface now evaluates `time`, `status`, `time_lower`,
   `time_upper` and `weights` in `data`’s scope.
   `hazard(data = df, time = tt)` previously failed with
@@ -146,7 +146,7 @@
 
   Because a column winning can silently redirect a wrapper that forwards
   its own argument by name,
-  [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   now **warns**, once per call, when a symbol is both a column of `data`
   and visible from the calling frame – that frame or a lexical parent of
   it, up to and including the global environment – naming every such
@@ -155,7 +155,7 @@
   was previously accepted and silently ignored along with everything
   else in `data`.
 
-- [`hzr_translate_sas()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_translate_sas.md)
+- [`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
   translates a SAS `PROC HAZARD` / `PROC HAZPRED` job into a Quarto
   document of equivalent R calls. It parses the SAS statements, builds
   the calls, and renders them into `.qmd` chunks – the model state is
@@ -165,7 +165,7 @@
 
   **This function is experimental.** A job that translates now renders:
   the emitted
-  [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   chunk binds its fit to a name and asks for an actual fit, and the
   [`predict()`](https://rdrr.io/r/stats/predict.html) chunks have
   something to predict from. Measured on the public `hazard` corpus of
@@ -185,28 +185,28 @@
   of the fit, so the document fails where the fit would have been:
 
   - a `SELECTION` statement requesting a stepwise screen.
-    [`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)’s
+    [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)’s
     refit path needs a formula-interface base fit and this translator
     emits the vector interface, so every candidate refit would error and
     the screen would report zero steps – indistinguishable from “nothing
     met `slentry`”
-    ([\#152](https://github.com/ehrlinger/temporal_hazard/issues/152),
-    [\#160](https://github.com/ehrlinger/temporal_hazard/issues/160);
-    the underlying
-    [`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+    ([\#152](https://github.com/ehrlinger/TemporalHazard/issues/152),
+    [\#160](https://github.com/ehrlinger/TemporalHazard/issues/160); the
+    underlying
+    [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
     silent no-op is
-    [\#159](https://github.com/ehrlinger/temporal_hazard/issues/159)).
+    [\#159](https://github.com/ehrlinger/TemporalHazard/issues/159)).
   - `LCENSOR` combined with `ICENSOR`.
-    [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)’s
+    [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)’s
     single `time_lower` argument carries the entry time for status 0/1
     rows and the interval’s lower bound for status 2 rows, so one column
     cannot express both
-    ([\#155](https://github.com/ehrlinger/temporal_hazard/issues/155)).
+    ([\#155](https://github.com/ehrlinger/TemporalHazard/issues/155)).
 
   Two gaps that made the emitted calls compute a different answer from
   the SAS job are closed. The log prediction grid now takes its step
   from the job’s own `INC=` expression rather than a hardcoded one
-  ([\#153](https://github.com/ehrlinger/temporal_hazard/issues/153)):
+  ([\#153](https://github.com/ehrlinger/TemporalHazard/issues/153)):
   three denominators appear across the public corpus (`/49.9`, `/99.9`,
   `/999.9`) and the denominator sets both the step and the number of
   points SAS’s `DO lo TO hi BY INC` lands, so reading every job as
@@ -229,24 +229,24 @@
   record’s contribution as `c1c2c3 = c1w + c2 + c3w` with
   `c1w = C1 * WT` and `c3w = C3 * WT`. All three now reach the fit that
   way. An `ICENSOR` event count is no longer discarded
-  ([\#154](https://github.com/ehrlinger/temporal_hazard/issues/154)); an
+  ([\#154](https://github.com/ehrlinger/TemporalHazard/issues/154)); an
   `EVENT` count carries into `weights` and `status` derives from
   `EVENT > 0`, where `EVENT = 2` used to map straight onto `status = 2`
   and be fitted as **interval-censored** – a different likelihood
   branch, not an under-count
-  ([\#157](https://github.com/ehrlinger/temporal_hazard/issues/157));
-  and a `WEIGHT` variable no longer weights right-censored rows, because
+  ([\#157](https://github.com/ehrlinger/TemporalHazard/issues/157)); and
+  a `WEIGHT` variable no longer weights right-censored rows, because
   `c2` is the one term entering that sum unweighted and `readc2.c` sets
   it to `1` on exactly those rows – a `WEIGHT` that was `0` there
   previously deleted them from the fit silently
-  ([\#158](https://github.com/ehrlinger/temporal_hazard/issues/158)). A
+  ([\#158](https://github.com/ehrlinger/TemporalHazard/issues/158)). A
   row where the `EVENT` and `ICENSOR` counts both fire is two
   contributions at once, which one `status` and one `weight` cannot
   express, so the emitted status chunk now stops before the fit rather
   than picking the event branch and discarding the interval one.
 
   `RCENSOR` is the third of those counts and was being ignored outright
-  ([\#162](https://github.com/ehrlinger/temporal_hazard/issues/162)). It
+  ([\#162](https://github.com/ehrlinger/TemporalHazard/issues/162)). It
   names `C2` – “COUNT OF CENSORED INDIVIDUALS AT TIME=T” – and when a
   job names it, `readc2.c` reads the column straight from the data and
   skips the `C2 = 1` derivation that a job without `RCENSOR` gets. Four
@@ -268,7 +268,7 @@
   missing** on any row now stops the document with a message naming the
   variable, rather than being folded into the censored branch or
   propagating `NA` into `weights` until
-  [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   refused it as “non-negative and finite”. `readc1.c`, `readc2.c` and
   `readc3.c` apply the same rule to every count the job names – a
   missing value sets `mdel`, a negative one sets `del` – and `readobs.c`
@@ -289,9 +289,9 @@
   Loading a fit from an external `INHAZ=` dataset returns a classed
   `hzr_outhaz` object with a
   [`predict()`](https://rdrr.io/r/stats/predict.html) method
-  ([\#151](https://github.com/ehrlinger/temporal_hazard/issues/151)).
+  ([\#151](https://github.com/ehrlinger/TemporalHazard/issues/151)).
   That method takes the same arguments in the same order as
-  [`predict.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/predict.hazard.md)
+  [`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)
   – `newdata`, `type`, `decompose`, `se.fit`, `level`, `conf.type` – so
   a positional call means the same thing for both methods of the
   generic, and `conf.type` (the `PROC HAZPRED` parity switch the
@@ -299,11 +299,11 @@
   misspelling could drop into `...`, returning the log-log limits the
   SAS job did not ask for. Its *value* is checked only on the survival
   standard-error path that reads it, exactly as
-  [`predict.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/predict.hazard.md)
+  [`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)
   does, so an ignored value does not fail a point or hazard prediction;
   a mistyped argument *name* still errors. `type` defaults to
   `"hazard"`, as in
-  [`predict.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/predict.hazard.md),
+  [`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md),
   and `decompose = TRUE` is an error: an `OUTHAZ=` dataset carries
   fitted parameters, not a per-phase decomposition. Point predictions
   work; `se.fit = TRUE` is **refused** whenever the SAS fit *estimated*
@@ -321,7 +321,7 @@
   not of whether the result runs. The parameter translation itself is
   verified separately: refitting the `hz.death.AVC.sas` job’s parameters
   through
-  [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   directly reproduces the SAS log-likelihood to the six significant
   figures the reference listing prints (`-210.501`).
 
@@ -390,7 +390,7 @@
   either way, so this was a quiet inconsistency on the fit object rather
   than a visible break.
 
-- [`hzr_decompos()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_decompos.md)
+- [`hzr_decompos()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos.md)
   no longer returns a wrong value for large `|m|`. The three branches
   with a nonzero `m` all formed `2^m` and the terms built from it all
   three lost the answer well inside the range a fit can reach.
@@ -416,10 +416,10 @@
   `(2^m - 1)/m` factor of `rho` cancels the explicit multiplier, so
   `m * bt^(-1/nu)` is exactly `(t_half/t)^(1/nu) * (2^m - 1)`, and
   `log(btnu)` follows from
-  [`hzr_log1pexp()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_log1pexp.md)
+  [`hzr_log1pexp()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_log1pexp.md)
   applied to the log of that product. The `m < 0` branch takes
   `log(1 - 2^m)` from
-  [`hzr_log1mexp()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_log1mexp.md)
+  [`hzr_log1mexp()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_log1mexp.md)
   rather than forming the difference. Both primitives were already in
   the package. Checked against a reference computed at 100 or more
   decimal digits, `G` and `g` are now accurate to machine precision from
@@ -434,7 +434,7 @@
   One boundary remains, and it is now visible rather than silent. Below
   about `m = -1074` the term `2^m` underflows outright and no
   rearrangement recovers it in double precision;
-  [`hzr_decompos()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_decompos.md)
+  [`hzr_decompos()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos.md)
   returns `NA` there.
 
   The multiphase log-likelihood is evaluable again over the same range.
@@ -444,7 +444,7 @@
   `m = 750` above. That is what made the likelihood surface along the
   ridge `m * nu = const` hard to characterize.
 
-- [`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+- [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   can no longer return a zero-step result that is silently empty. Every
   accepted move goes through a refit, and a refit that failed was
   downgraded to a warning and then dropped: the returned object carried
@@ -456,7 +456,7 @@
   names the cause instead of claiming “no further action”. A base fit
   built with the vector interface (`time =` / `status =`) stores no
   formula for the refit to mutate, so every candidate would fail –
-  [`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   now rejects it up front with one message naming the remedy, through
   the same predicate the refit itself uses.
 
@@ -502,7 +502,7 @@
   fail with “supplied seed is not a valid integer” and name neither the
   argument nor the fit it came from.
 
-  [`hzr_bootstrap()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_bootstrap.md)
+  [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
   draws its own resample before each refit, so replicates are still
   distinct. Its numbers do shift, because the refits no longer advance
   the stream between resamples, and a run with `seed=` is now
@@ -579,7 +579,7 @@ redesign — the previous default deviated from the SAS/C reference this
 package exists to reproduce. Read the entry regardless: it can change
 which variables a stepwise run selects.
 
-- [`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+- [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   now defaults to `criterion = "score"`, reproducing SAS/C HAZARD’s
   `SELECTION` statistic. Previously it defaulted to `"wald"`, which
   refit the model once per candidate and used the refit’s Wald
@@ -634,19 +634,19 @@ which variables a stepwise run selects.
   [`utils::txtProgressBar()`](https://rdrr.io/r/utils/txtProgressBar.html))
   instead of an every-50-replicates message.
 
-- [`hzr_bootstrap()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_bootstrap.md)
+- [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
   gains a `scope` argument for embedded stepwise variable selection
   during each bootstrap replicate – the R equivalent of SAS’s `%HAZBOOT`
   procedure. **This is experimental**: the selection arguments and the
   shape of what they return may change in a future release, and
-  [`?hzr_bootstrap`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_bootstrap.md)
+  [`?hzr_bootstrap`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
   says why under “Selection mode is experimental”. The fixed-formula
   bootstrap (`scope = NULL`) is unaffected and unchanged. The short
   version: the design is still being read off production runs, and a
   screen large enough to matter runs for hours while this function
   writes nothing until its last replicate, so splitting a run across
   processes is currently the caller’s job. Each replicate runs a fresh
-  [`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   selection (starting from a fixed-shape refit of the base model)
   instead of a plain refit, so `summary$pct` reports the variable’s
   selection frequency across resamples and `summary$mean`/`sd`/`ci_*`
@@ -654,7 +654,7 @@ which variables a stepwise run selects.
   `scope = NULL` (the default) preserves the original fixed-formula
   bootstrap unchanged.
 
-- [`hzr_read_outhaz()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_read_outhaz.md)
+- [`hzr_read_outhaz()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_read_outhaz.md)
   reads a `PROC HAZARD` `outhaz=` estimate dataset, returning the
   estimates, each parameter’s free/fixed status, the variance-covariance
   matrix over the free parameters, and the model-structure flags.
@@ -666,7 +666,7 @@ which variables a stepwise run selects.
 
 ### Bug fixes
 
-- **[`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+- **[`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   never checked that an accepted step improved the fit.** A forward step
   enters a model that *contains* the one it started from, so at the
   optimum the log-likelihood cannot fall. It was written into `$steps`
@@ -687,7 +687,7 @@ which variables a stepwise run selects.
   [`suppressWarnings()`](https://rdrr.io/r/base/warning.html) so the
   step-level warning cannot reach the user. The comparison carries a
   small tolerance so optimizer noise does not fire it. Reported as issue
-  [\#134](https://github.com/ehrlinger/temporal_hazard/issues/134).
+  [\#134](https://github.com/ehrlinger/TemporalHazard/issues/134).
 
 - **A score statistic could be finite, enormous and meaningless.** A
   production screen accepted a candidate with `stat` = 92,211 on 1 df
@@ -702,7 +702,7 @@ which variables a stepwise run selects.
   optimum*, because the reduced-model score is then no longer zero: the
   numerator is inflated while the denominator stays small. That is the
   state a failed refit leaves behind.
-  [`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   now declines a candidate whose implied coefficient exceeds ±50,
   reporting `coefficient_diverging`, which is what the SAS/C reference
   has always done (`dqstat.c` rejects `|QBETA| > 50` as “the model is
@@ -710,7 +710,7 @@ which variables a stepwise run selects.
   displaced 0.25 from its optimum produced `Q` = 6.5e7 with no reason
   reported at all; a legitimate candidate reaches an implied coefficient
   of about 14, so the threshold has real headroom. Reported as issue
-  [\#134](https://github.com/ehrlinger/temporal_hazard/issues/134).
+  [\#134](https://github.com/ehrlinger/TemporalHazard/issues/134).
 
 - **The multiphase gradient and Hessian disagreed with the
   log-likelihood on left-truncated data.** For a row with `status` in
@@ -728,7 +728,7 @@ which variables a stepwise run selects.
   and new tests assert agreement with `numDeriv` across five entry-time
   layouts rather than the one the old filter happened to admit.
 
-- **[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+- **[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   documented `time_lower` incorrectly, and now warns when it is
   self-defeating.** The argument was described only as the lower bound
   of a censoring interval, “defaulting to `time` if NULL”. For `status`
@@ -740,9 +740,9 @@ which variables a stepwise run selects.
   leaves the objective unbounded above. The documentation now gives both
   roles, and supplying `time_lower >= time` on a `status` 0 or 1 row
   warns, naming the count and the `NULL` default. Reported as issue
-  [\#136](https://github.com/ehrlinger/temporal_hazard/issues/136).
+  [\#136](https://github.com/ehrlinger/TemporalHazard/issues/136).
 
-- **[`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+- **[`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   now says *why* a candidate could not be scored, and warns when the
   reason is that the candidate looks strong.** Under
   `criterion = "score"` a candidate whose Q statistic cannot be computed
@@ -781,7 +781,7 @@ which variables a stepwise run selects.
   where `I_bb` was itself negative a slightly negative variance passed
   through and produced a negative Q.
 
-- [`hzr_bootstrap()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_bootstrap.md)
+- [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
   now resamples fits built with the **vector interface** (`time =` /
   `status =` rather than a formula plus `data`). Previously it resampled
   `data` only, but a vector-interface call stores `time = d$col` as an
@@ -858,7 +858,7 @@ which variables a stepwise run selects.
   path had no fallback on that branch – the single-distribution branch
   has had one all along. The `NULL` propagated into the step’s reusable
   nuisance block, every candidate scored `NA`, and
-  [`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   stopped having tested nothing, reporting it in the language of a
   degenerate candidate. Both halves became reachable in this release and
   only together: the
@@ -900,11 +900,11 @@ which variables a stepwise run selects.
   or factor column – which is most of them – was otherwise unusable with
   the default scope.
 
-- [`hzr_bootstrap()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_bootstrap.md)
+- [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
   no longer returns a silent `n_success = 0` (and `n_failed = n_boot`,
   with no error and no warning) when the model was fitted inside a
   function.
-  [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   stored its call but not the environment that call was written in, so
   each replicate’s refit resolved arguments passed by symbol – `theta`,
   `phases`, `control` – against the package namespace and
@@ -915,14 +915,14 @@ which variables a stepwise run selects.
   inside a function failed on every replicate, and the per-replicate
   [`tryCatch()`](https://rdrr.io/r/base/conditions.html) swallowed the
   error.
-  [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   now records the fitting environment, and each replicate is evaluated
   in a child of it that carries the resampled data and weights. Affects
   both `refit` and `select` modes.
 
 - **`hzr_bootstrap(scope = ...)` selected nothing when the base fit’s
   formula was passed by symbol.**
-  [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   records its call with
   [`match.call()`](https://rdrr.io/r/base/match.call.html), so a formula
   assigned to a variable first (`f <- Surv(t, d) ~ 1; hazard(f, ...)`)
@@ -937,12 +937,12 @@ which variables a stepwise run selects.
   handles the literal and by-symbol forms alike, and a stored formula
   that fails to resolve raises an error naming the problem instead of
   degrading to an empty screen. The same defect affected
-  [`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   directly.
-  ([\#114](https://github.com/ehrlinger/temporal_hazard/issues/114))
+  ([\#114](https://github.com/ehrlinger/TemporalHazard/issues/114))
 
 - **A select-mode
-  [`hzr_bootstrap()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_bootstrap.md)
+  [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
   run that selects no covariate now warns.** The base model’s own
   parameters appear in every replicate by construction, so they fill the
   summary at `pct = 100` and an empty screen reads as a set of perfectly
@@ -952,7 +952,7 @@ which variables a stepwise run selects.
   `scope` naming columns absent from the data, or a base fit whose
   stored call cannot be rewritten. Legitimate empty screens warn too –
   an entry criterion no candidate can clear is also worth reporting.
-  ([\#115](https://github.com/ehrlinger/temporal_hazard/issues/115))
+  ([\#115](https://github.com/ehrlinger/TemporalHazard/issues/115))
 
 - **A stepwise screen that could not score anything now says so, instead
   of looking like one that finished.** Under `criterion = "score"` a
@@ -966,16 +966,16 @@ which variables a stepwise run selects.
   per-step diagnostic existed on the returned object the whole time and
   had no readers.
 
-  [`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   now warns when a run stops this way and reports
   `$criteria$n_uncomputable_scores`. Because
-  [`hzr_bootstrap()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_bootstrap.md)
+  [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
   runs each replicate under
   [`suppressWarnings()`](https://rdrr.io/r/base/warning.html) –
   deliberately, so per-replicate numerical noise does not swamp the
   console – that warning cannot surface in the mode where it matters
   most, so the count is aggregated instead:
-  [`hzr_bootstrap()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_bootstrap.md)
+  [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
   gains `$n_uncomputable_replicates` and warns once when it is non-zero.
   A replicate that scored nothing still counts toward `n_success` while
   contributing no selections, so it silently depresses every reported
@@ -988,7 +988,7 @@ which variables a stepwise run selects.
   anything, and it passed throughout because it only ever asserted the
   printed label.
 
-- [`hzr_bootstrap()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_bootstrap.md)
+- [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
   no longer floods the console with per-replicate numerical warnings
   (e.g. ill-conditioned-Hessian notes from unstable resamples), which
   are not individually actionable when the bootstrap aggregates over
@@ -998,7 +998,7 @@ which variables a stepwise run selects.
 - `hzr_bootstrap(scope = ..., trace = ...)` no longer errors with
   “formal argument matched by multiple actual arguments”. Select-mode
   forwarded `...` to
-  [`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   alongside an explicit `trace = FALSE`, so any caller-supplied `trace=`
   collided with it.
 
@@ -1010,7 +1010,7 @@ which variables a stepwise run selects.
   `m < 0 && nu < 0` region and raise an error; this silently fell back
   to a numerical Hessian (or, if that also failed to invert, to `NA`
   standard errors) for every affected fit, not just
-  [`hzr_bootstrap()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_bootstrap.md)’s
+  [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)’s
   Conservation-of-Events full-information recompute. The boundary
   direction now uses a one-sided finite difference instead.
 
@@ -1058,7 +1058,7 @@ CRAN release: 2026-06-12
 
 ### Changes
 
-- **[`hzr_deciles()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_deciles.md)
+- **[`hzr_deciles()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_deciles.md)
   now matches the SAS `deciles.hazard` macro exactly.** Previously it
   excluded subjects censored before the horizon and defined the expected
   count as `sum(1 - S(horizon))`. It now follows the SAS method: **all**
@@ -1072,7 +1072,7 @@ CRAN release: 2026-06-12
   reproduce the `hm.death.AVC.deciles` SAS decile table
   (CASES/EXPECTED/ACTUAL) to print precision. The output columns are
   unchanged; their definitions are updated in
-  [`?hzr_deciles`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_deciles.md).
+  [`?hzr_deciles`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_deciles.md).
 
 ### Bug fixes
 
@@ -1101,17 +1101,17 @@ CRAN release: 2026-06-12
   absorbed the spurious `Sum H(start)`, biasing its intercept and
   lowering the attained log-likelihood (the `hz.te123.OMC` fit-1 parity
   offset, gap-list P1
-  [\#6](https://github.com/ehrlinger/temporal_hazard/issues/6)).
-  [`.hzr_conserve_events()`](https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_conserve_events.md)
+  [\#6](https://github.com/ehrlinger/TemporalHazard/issues/6)).
+  [`.hzr_conserve_events()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_conserve_events.md)
   and
-  [`.hzr_select_fixmu_phase()`](https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_select_fixmu_phase.md)
+  [`.hzr_select_fixmu_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_select_fixmu_phase.md)
   now subtract the per-phase entry-time cumulative hazard, matching the
   likelihood and C HAZARD `setcoe` under `LCENSOR`/ `STARTTME`. Plain
   right-censored fits (no `start` time) are unaffected.
 
 - **[`vcov()`](https://rdrr.io/r/stats/vcov.html) was unusable for
   multiphase fits and returned an unnamed matrix.**
-  [`vcov.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/vcov.hazard.md)
+  [`vcov.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/vcov.hazard.md)
   collapsed the entire matrix to a scalar `NA` whenever any cell was
   `NA`. Multiphase fits legitimately have `NA` variance rows – for
   parameters held fixed (e.g. early shapes) and for the
@@ -1156,7 +1156,7 @@ CRAN release: 2026-06-12
   weighted gradient); this only changes callers reading the
   `return_gradient = TRUE` attribute on weighted data.
 
-- **[`hzr_bootstrap()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_bootstrap.md)
+- **[`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
   was non-functional for weighted fits** (Phase 7c). The resample loop
   rewired only `data` in the refit call, leaving the original `weights`
   argument bound to a symbol in the *caller’s* frame. The internal
@@ -1169,7 +1169,7 @@ CRAN release: 2026-06-12
   Unweighted bootstraps are unaffected. A regression test covers both
   the `fraction < 1` and full-size weighted paths in
   `test-diagnostics.R`. Follow-up:
-  [`hzr_bootstrap()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_bootstrap.md)
+  [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
   now resamples the weights already stored on the fitted object
   (`object$data$weights`) rather than re-evaluating the call’s `weights`
   expression in
@@ -1178,12 +1178,12 @@ CRAN release: 2026-06-12
   built inside a helper that has returned). Caller-frame evaluation
   remains a fallback for objects fitted before weights were stored. The
   same fragility applied to the call’s `data` argument:
-  [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   now stores the evaluated `data` argument (the data frame passed to
-  [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md),
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md),
   not a [`model.frame()`](https://rdrr.io/r/stats/model.frame.html)
   result) on the fitted object (`object$data$frame`), and
-  [`hzr_bootstrap()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_bootstrap.md)
+  [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
   resamples that stored frame instead of re-evaluating `cl$data` in
   [`parent.frame()`](https://rdrr.io/r/base/sys.parent.html), so
   bootstrap succeeds even when the original `data` symbol is out of
@@ -1191,7 +1191,7 @@ CRAN release: 2026-06-12
   before the frame was stored.
 
 - **4-phase CoE fixmu-phase selection** (Phase 7d).
-  [`.hzr_select_fixmu_phase()`](https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_select_fixmu_phase.md)
+  [`.hzr_select_fixmu_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_select_fixmu_phase.md)
   used [`which.max()`](https://rdrr.io/r/base/which.min.html) over raw
   per-phase cumhaz at the starting theta. G3 late phases with typical
   shape parameters have unnormalized cumhaz orders of magnitude larger
@@ -1213,7 +1213,7 @@ CRAN release: 2026-06-12
   (`status %in% c(0L, 1L)` and `time_lower < time`). Two regression
   tests added to `test-interval-censoring-weibull.R`.
 
-- **[`hzr_decompos()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_decompos.md)
+- **[`hzr_decompos()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos.md)
   Case 3 corrected and `nu = 0, m >= 0` now fails loud** (Phase 7d). Two
   issues in the early-phase (G1) sign dispatch:
 
@@ -1298,7 +1298,7 @@ CRAN release: 2026-06-12
 
 ### Documentation
 
-- [`vignette("fitting-hazard-models")`](https://ehrlinger.github.io/temporal_hazard/articles/fitting-hazard-models.md)
+- [`vignette("fitting-hazard-models")`](https://ehrlinger.github.io/TemporalHazard/articles/fitting-hazard-models.md)
   gains an **Interval and left censoring** section covering: status
   coding reference (`-1`/`0`/`1`/`2`), a cardiac clinic-visit simulation
   with right- and interval-censored observations, the direct
@@ -1307,7 +1307,7 @@ CRAN release: 2026-06-12
   the naive exact-at-upper fit incurs a shape bias of ~+0.45. Includes a
   callout note on the correct use of `time_lower = 0` for right-censored
   rows.
-- [`vignette("fitting-hazard-models")`](https://ehrlinger.github.io/temporal_hazard/articles/fitting-hazard-models.md)
+- [`vignette("fitting-hazard-models")`](https://ehrlinger.github.io/TemporalHazard/articles/fitting-hazard-models.md)
   gains a **Convergence troubleshooting** section covering: reading the
   KM cumulative hazard for Weibull starting values (log-log plot), when
   to fix shape parameters vs. estimate freely, diagnosing
@@ -1315,33 +1315,33 @@ CRAN release: 2026-06-12
   [`vcov()`](https://rdrr.io/r/stats/vcov.html), and `control` options
   (`n_starts`, `maxit`).
 - Added a package-level overview help page
-  ([`?TemporalHazard`](https://ehrlinger.github.io/temporal_hazard/reference/TemporalHazard-package.md))
+  ([`?TemporalHazard`](https://ehrlinger.github.io/TemporalHazard/reference/TemporalHazard-package.md))
   giving the additive multiphase model, the phase-type vocabulary, the
   SAS/C HAZARD bridge, and a map of the main entry points.
 - Expanded the mathematical content of the core help files in the style
   of `randomForestSRC`: explicit display equations for the generalized
   temporal decomposition `G(t)`
-  ([`?hzr_decompos`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_decompos.md)),
+  ([`?hzr_decompos`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos.md)),
   the additive cumulative-hazard model on
-  [`?hzr_phase`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase.md)
+  [`?hzr_phase`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
   and
-  [`?hazard`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md),
+  [`?hazard`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md),
   and defining formulas plus the Mächler (2012) reference for the
   numerical primitives
-  ([`?hzr_log1pexp`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_log1pexp.md),
-  [`?hzr_log1mexp`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_log1mexp.md),
-  [`?hzr_clamp_prob`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_clamp_prob.md)).
+  ([`?hzr_log1pexp`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_log1pexp.md),
+  [`?hzr_log1mexp`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_log1mexp.md),
+  [`?hzr_clamp_prob`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_clamp_prob.md)).
 - Added methodological references to the nonparametric diagnostics
   (Kaplan-Meier/Greenwood, Nelson-Aalen, Aalen-Johansen) and filled in
   missing cross-references across the exported help pages.
 - Explained the remaining enumerated options in the style of the
-  [`hzr_phase()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase.md)
+  [`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
   phase-type help.
-  [`?hazard`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+  [`?hazard`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   gains a **Baseline distributions** section describing each `dist`
   value (`"weibull"`, `"exponential"`, `"loglogistic"`, `"lognormal"`,
   `"multiphase"`) by its hazard shape and when to use it;
-  [`?hzr_stepwise`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+  [`?hzr_stepwise`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   gains a **Selection direction and criterion** section explaining each
   `direction` (`"forward"`/`"backward"`/`"both"`) and `criterion`
   (`"wald"`/`"aic"`), including how Wald selection differs from C/SAS
@@ -1391,7 +1391,7 @@ CRAN release: 2026-06-12
 - **`bs.death.AVC` bootstrap documented as a non-parity gap** (Group A).
   SAS `%HAZBOOT` runs a fresh stepwise selection on each bootstrap
   resample and reports a variable-selection frequency; R’s
-  [`hzr_bootstrap()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_bootstrap.md)
+  [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
   resamples and refits a *fixed* model (no embedded-selection mode), and
   reimplementing the SAS procedure would inherit the documented
   `hm.death.AVC` stepwise divergence. `test-sas-parity.R` adds
@@ -1457,7 +1457,7 @@ CRAN release: 2026-05-30
 
 ### Bug fixes / CRAN compliance
 
-- [`hzr_bootstrap()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_bootstrap.md)
+- [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
   no longer touches `.GlobalEnv` directly. The 1.0.2
   `oldseed`/[`on.exit()`](https://rdrr.io/r/base/on.exit.html)/`assign(".Random.seed", ...)`
   save-restore wrapper added in 1.0.2 violated CRAN policy on writing to
@@ -1495,7 +1495,7 @@ CRAN release: 2026-05-30
   relocated generators; recorded fixture metadata reflects the actual
   `seed` argument passed (`NULL` by default, so no seed is set inside
   the function).
-- [`hzr_bootstrap()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_bootstrap.md)
+- [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
   no longer leaves the caller’s random-number stream altered when `seed`
   is supplied: the global `.Random.seed` is saved before
   [`set.seed()`](https://rdrr.io/r/base/Random.html) and restored via
@@ -1509,14 +1509,14 @@ CRAN release: 2026-05-30
 
 - Added `\value` documentation to all exported functions that were
   missing it:
-  [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md),
-  [`coef.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/coef.hazard.md),
-  [`vcov.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/vcov.hazard.md),
-  [`print.hzr_calibrate()`](https://ehrlinger.github.io/temporal_hazard/reference/print.hzr_calibrate.md),
-  [`print.hzr_deciles()`](https://ehrlinger.github.io/temporal_hazard/reference/print.hzr_deciles.md),
-  [`print.hzr_gof()`](https://ehrlinger.github.io/temporal_hazard/reference/print.hzr_gof.md),
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md),
+  [`coef.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/coef.hazard.md),
+  [`vcov.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/vcov.hazard.md),
+  [`print.hzr_calibrate()`](https://ehrlinger.github.io/TemporalHazard/reference/print.hzr_calibrate.md),
+  [`print.hzr_deciles()`](https://ehrlinger.github.io/TemporalHazard/reference/print.hzr_deciles.md),
+  [`print.hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/print.hzr_gof.md),
   and
-  [`print.hzr_kaplan()`](https://ehrlinger.github.io/temporal_hazard/reference/print.hzr_kaplan.md).
+  [`print.hzr_kaplan()`](https://ehrlinger.github.io/TemporalHazard/reference/print.hzr_kaplan.md).
 - Internal fixture generators (`R/golden_fixtures.R`) no longer set a
   specific seed unconditionally. Generators now accept an optional
   `seed` argument; when provided, the global RNG state is saved and
@@ -1530,7 +1530,7 @@ CRAN release: 2026-05-30
 ### New features
 
 - **Delta-method confidence limits on
-  [`predict.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/predict.hazard.md)**
+  [`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)**
   — Phase 4g of the development plan lands. Two new arguments:
   `se.fit = FALSE` and `level = 0.95`. When `se.fit = TRUE`, the return
   value becomes a data frame with columns `fit`, `se.fit`, `lower`,
@@ -1571,7 +1571,7 @@ CRAN release: 2026-05-30
   phase derivatives at `start` use the same finite-difference machinery
   as at `stop`.
 - **0.9.5 narrowing removed.** The
-  [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   guard that rejected counting-process `Surv(start, stop, event)` with
   any `start > 0` is gone.
 
@@ -1584,15 +1584,15 @@ CRAN release: 2026-05-30
   likelihoods and their analytic gradients now apply row weights to
   every censoring term (event, right-censored, left-censored,
   interval-censored). The 0.9.5 guard in
-  [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   that rejected `weights` for
   `dist %in% c("exponential", "loglogistic", "lognormal")` has been
   removed. Fits with integer weights reproduce the row-duplicated fit to
   optimizer tolerance across all five distributions.
 - **Conservation of Events now honours weights.**
-  [`.hzr_conserve_events()`](https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_conserve_events.md)
+  [`.hzr_conserve_events()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_conserve_events.md)
   and
-  [`.hzr_select_fixmu_phase()`](https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_select_fixmu_phase.md)
+  [`.hzr_select_fixmu_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_select_fixmu_phase.md)
   take an optional `weights` argument; the multiphase optimizer threads
   it through so per-phase cumulative hazards are summed on the same
   scale as the (weighted) observed event count. CoE no longer
@@ -1602,7 +1602,7 @@ CRAN release: 2026-05-30
 ### Bug fixes
 
 - **Multiphase analytic gradient now applies `weights`.**
-  [`.hzr_gradient_multiphase()`](https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_gradient_multiphase.md)
+  [`.hzr_gradient_multiphase()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_gradient_multiphase.md)
   accepted neither `weights` nor its downstream equivalents: the per-row
   score weights `w_H` / `inv_h` were set to ±1 and the interval-censored
   finite-difference correction summed an unweighted LL. Weighted
@@ -1613,14 +1613,14 @@ CRAN release: 2026-05-30
   (including the all-zero numeric fallback and the CoE wrapper) forwards
   `weights` consistently. Regression test covers weighted analytic vs
   numerical gradient parity. Surfaced by Copilot review on PR
-  [\#18](https://github.com/ehrlinger/temporal_hazard/issues/18).
+  [\#18](https://github.com/ehrlinger/TemporalHazard/issues/18).
 
 ## TemporalHazard 0.9.5
 
 ### New features
 
 - **Stepwise covariate selection** —
-  [`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   runs forward, backward, or two-way stepwise selection on an existing
   `hazard` fit using Wald p-values or AIC deltas as the entry /
   retention criterion. Phase-specific entry is supported for multiphase
@@ -1659,14 +1659,14 @@ CRAN release: 2026-05-30
   exponential, log-logistic, and log-normal single-distribution paths
   accepted the formal but never applied it, so the fit was silently
   unweighted.
-  [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   now raises an explicit error when `weights` is supplied with one of
   those distributions rather than returning an unweighted fit. Full
   support for the remaining single-dist paths is tracked in
   `inst/dev/DEVELOPMENT-PLAN.md` Phase 4e.
 - **Conservation of Events is auto-disabled when weights are not all
   1.**
-  [`.hzr_conserve_events()`](https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_conserve_events.md)
+  [`.hzr_conserve_events()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_conserve_events.md)
   receives the weighted event count as its target but sums per-phase
   cumulative hazards across rows *without* applying weights, so Turner’s
   adjustment comes out on a mismatched scale. The multiphase optimizer
@@ -1678,13 +1678,13 @@ CRAN release: 2026-05-30
   `inst/dev/DEVELOPMENT-PLAN.md` Phase 4e.
 - **Repeating-events / counting-process notation narrowed.**
   `Surv(start, stop, event)` with `start > 0` is no longer accepted by
-  [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md).
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md).
   The 0.9.4 NEWS claimed each epoch contributed `H(stop) - H(start)` to
   the likelihood, but downstream likelihoods only read `time_lower` for
   interval-censored rows (`status == 2`); counting-process rows
   (`status` in `{0, 1}`) were silently scored with `H(stop)` alone, so
   any fit with nonzero entry times was silently wrong.
-  [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   now raises an explicit error. The trivial case `Surv(0, t, d)` –
   equivalent to `Surv(t, d)` – continues to work. Full wire-up of
   `H(stop) - H(start)` for all distribution paths is tracked in
@@ -1695,7 +1695,7 @@ CRAN release: 2026-05-30
 ### New features
 
 - **Observation weights** — `weights` argument in
-  [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   applies Fisher weighting to the log-likelihood for `dist = "weibull"`
   and `dist = "multiphase"`. Each observation’s contribution is
   multiplied by its weight, enabling severity-weighted event analyses.
@@ -1713,35 +1713,35 @@ CRAN release: 2026-05-30
 
 ### New features
 
-- [`hzr_deciles()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_deciles.md)
+- [`hzr_deciles()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_deciles.md)
   — Decile-of-risk calibration function comparing observed vs. expected
   event counts across risk groups with chi-square GOF testing.
   Implements the SAS `deciles.hazard.sas` macro workflow.
-- [`hzr_gof()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_gof.md)
+- [`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
   — Goodness-of-fit function comparing parametric predictions against
   nonparametric (Kaplan-Meier) estimates with observed vs. expected
   event counting. Implements the SAS `hazplot.sas` macro workflow.
-- [`hzr_kaplan()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_kaplan.md)
+- [`hzr_kaplan()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_kaplan.md)
   — Kaplan-Meier survival estimator with logit-transformed confidence
   limits that respect the \[0, 1\] boundary, interval hazard rate,
   density, and restricted mean survival time (life integral). Implements
   the SAS `kaplan.sas` macro output structure.
-- [`hzr_calibrate()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_calibrate.md)
+- [`hzr_calibrate()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_calibrate.md)
   — Variable calibration function for assessing functional form before
   model entry. Groups a continuous covariate into quantile bins and
   applies logit, Gompertz, or Cox link transforms. Supports
   stratification via the `by` parameter. Implements the SAS `logit.sas`
   and `logitgr.sas` macros.
-- [`hzr_nelson()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_nelson.md)
+- [`hzr_nelson()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_nelson.md)
   — Wayne Nelson cumulative hazard estimator with lognormal confidence
   limits. Supports weighted events for severity-adjusted repeated event
   analyses. Implements the SAS `nelsonl.sas` macro.
-- [`hzr_bootstrap()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_bootstrap.md)
+- [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
   — Bootstrap resampling for hazard model coefficients with bagging
   support (fractional sampling). Returns per-replicate estimates and
   summary statistics (mean, SD, percentile CI). Implements the SAS
   `bootstrap.hazard.sas` macro workflow.
-- [`hzr_competing_risks()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_competing_risks.md)
+- [`hzr_competing_risks()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_competing_risks.md)
   — Competing risks cumulative incidence using the Aalen-Johansen
   estimator with Greenwood variance. Handles any number of competing
   event types. Implements the SAS `markov.sas` macro.
@@ -1773,20 +1773,20 @@ CRAN release: 2026-05-30
   integrated into the multiphase optimizer, Hessian, and prediction
   pipeline.
 - `fixed = "shapes"` parameter in
-  [`hzr_phase()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase.md)
+  [`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
   allows fixing shape parameters during estimation (matching C/SAS
   HAZARD workflow of estimating only log-mu scale parameters).
 
 ### Bug fixes
 
-- [`summary.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/summary.hazard.md)
+- [`summary.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/summary.hazard.md)
   now correctly reports standard errors when some parameters are fixed.
   Previously, `anyNA(vcov)` rejected the entire variance-covariance
   matrix when fixed parameters had NA entries.
-- [`print.summary.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/print.summary.hazard.md)
+- [`print.summary.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/print.summary.hazard.md)
   coefficient table now shows the correct label for G3 phases (was
   printing empty parentheses).
-- [`print.summary.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/print.summary.hazard.md)
+- [`print.summary.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/print.summary.hazard.md)
   phase listing now uses the phase name in CDF labels (e.g., “cdf (late
   risk)”) instead of hardcoded “early risk”.
 - SAS missing value markers (`.`) in CSV datasets are now handled via
@@ -1819,9 +1819,9 @@ CRAN release: 2026-05-30
 
 - Multiphase engine: N-phase additive cumulative hazard models via
   `dist = "multiphase"` with
-  [`hzr_phase()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase.md)
+  [`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
   specification.
-- [`hzr_decompos()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_decompos.md)
+- [`hzr_decompos()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos.md)
   parametric family implementing the three-parameter temporal
   decomposition of Blackstone, Naftel, and Turner (1986).
 - Multi-start optimizer with Hessian-based variance-covariance
@@ -1836,7 +1836,7 @@ CRAN release: 2026-05-30
 
 - Single-phase engine: Weibull, exponential, log-logistic, and
   log-normal distributions with formula interface.
-- [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+- [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   API with [`predict()`](https://rdrr.io/r/stats/predict.html),
   [`summary()`](https://rdrr.io/r/base/summary.html),
   [`coef()`](https://rdrr.io/r/stats/coef.html),

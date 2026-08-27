@@ -7,18 +7,18 @@
 ## Citation
 
 Source:
-[`inst/CITATION`](https://github.com/ehrlinger/temporal_hazard/blob/main/inst/CITATION)
+[`inst/CITATION`](https://github.com/ehrlinger/TemporalHazard/blob/main/inst/CITATION)
 
 Ehrlinger J (2026). *TemporalHazard: Temporal Parametric Hazard Modeling
 in R*. R package version 1.2.6,
-<https://ehrlinger.github.io/temporal_hazard/>.
+<https://ehrlinger.github.io/TemporalHazard/>.
 
     @Manual{,
       title = {TemporalHazard: Temporal Parametric Hazard Modeling in R},
       author = {John Ehrlinger},
       year = {2026},
       note = {R package version 1.2.6},
-      url = {https://ehrlinger.github.io/temporal_hazard/},
+      url = {https://ehrlinger.github.io/TemporalHazard/},
     }
 
 Blackstone E, Naftel D, Turner Jr. M (1986). “The decomposition of

@@ -14,7 +14,7 @@ multi-endpoint analyses on the same cohort. Every example uses a
 clinical dataset shipped with the package. If you haven’t seen the
 basics — what a parametric hazard model is, why we use the
 `Surv(time, status)` formula — start with
-[`vignette("getting-started")`](https://ehrlinger.github.io/temporal_hazard/articles/getting-started.md)
+[`vignette("getting-started")`](https://ehrlinger.github.io/TemporalHazard/articles/getting-started.md)
 first; this vignette assumes that context.
 
 The progression matters. Single-distribution intercept-only fits tell
@@ -189,7 +189,7 @@ saturating, flat constant, late-rising polynomial) and each \\\mu_j(x)\\
 is the phase-specific scale, possibly modulated by covariates. The
 phases overlap and add — no switching, no thresholds — so the total
 instantaneous hazard at any \\t\\ is the sum of the per-phase rates. See
-[`vignette("getting-started")`](https://ehrlinger.github.io/temporal_hazard/articles/getting-started.md)
+[`vignette("getting-started")`](https://ehrlinger.github.io/TemporalHazard/articles/getting-started.md)
 for the longer-form motivation; what follows here is the practical
 workflow for *fitting* one.
 
@@ -301,7 +301,7 @@ than averaging it away into one monotone curve.
 The `valves` dataset (1,533 patients) has multiple time-to-event
 endpoints — death, prosthetic valve endocarditis (PVE), and reoperation
 — each with its own follow-up time and event indicator. The same
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 call fits each endpoint independently:
 
 Start with the death endpoint. We use age at operation, NYHA class, and
@@ -402,7 +402,7 @@ The package encodes censoring type in the `status` vector:
 
 For interval-censored rows, supply both `time_lower` and `time_upper`.
 You can pass them as direct arguments to
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md),
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md),
 or hand it a [`Surv()`](https://rdrr.io/pkg/survival/man/Surv.html)
 object instead: `Surv(lower, upper, event, type = "interval")` and
 `Surv(lower, upper, type = "interval2")` both work, as do
@@ -416,7 +416,7 @@ pass to the `status` argument.
 scheme — under `type = "interval"` it reads `0` as right-censored, `1`
 as an exact event, `2` as left-censored and `3` as interval-censored —
 and
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 translates it for you when it parses the formula. So use whichever
 coding belongs to the interface you are writing in, and don’t carry one
 set of codes across to the other.
@@ -769,6 +769,6 @@ parameterization that matches the SAS HAZARD “late” library; use it when
 you need parity against a C/SAS reference fit, or when the late rise has
 a clear lag-then-accelerate pattern that a delayed `"cdf"` doesn’t
 capture cleanly. See
-[`vignette("mf-mathematical-foundations")`](https://ehrlinger.github.io/temporal_hazard/articles/mf-mathematical-foundations.md)
+[`vignette("mf-mathematical-foundations")`](https://ehrlinger.github.io/TemporalHazard/articles/mf-mathematical-foundations.md)
 for the full mathematical treatment of each, including the parameter
 identifiability constraints.

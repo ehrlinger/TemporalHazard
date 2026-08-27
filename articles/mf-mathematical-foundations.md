@@ -8,7 +8,7 @@ library(TemporalHazard)
 This vignette lays out the mathematical foundation for the models in
 TemporalHazard. The other vignettes treat the package as a black box you
 call
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 on; this one opens the box. If you’ve used the package and want to know
 *what* it’s computing, *why* the parameterization is what it is, and
 *how* the multiphase decomposition relates to standard parametric
@@ -27,9 +27,9 @@ this vignette stays in the survival regime.
 For users migrating from the legacy SAS/C HAZARD program, each section
 notes how the R parameterization relates to the original parameter
 names. For the full translation table, see
-[`vignette("sas-to-r-migration")`](https://ehrlinger.github.io/temporal_hazard/articles/sas-to-r-migration.md)
+[`vignette("sas-to-r-migration")`](https://ehrlinger.github.io/TemporalHazard/articles/sas-to-r-migration.md)
 or call
-[`hzr_argument_mapping()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_argument_mapping.md).
+[`hzr_argument_mapping()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_argument_mapping.md).
 
 ## 1 Generalized Temporal Decomposition
 
@@ -67,7 +67,7 @@ The three parameters control the shape of the distribution:
 > (\exp(\delta t) - 1)/\delta\\ that is absorbed into the shape.
 
 In R,
-[`hzr_decompos()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_decompos.md)
+[`hzr_decompos()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos.md)
 computes all three quantities:
 
 ``` r
@@ -174,7 +174,7 @@ b(t)^{-1/\nu - 1} / \rho \\
 
 The other five cases arise as limits (\\m \to 0\\, \\\nu \to 0\\) or
 sign reflections of this base form. The implementation in
-[`hzr_decompos()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_decompos.md)
+[`hzr_decompos()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos.md)
 dispatches to the appropriate branch after checking the signs of `nu`
 and `m`.
 
@@ -231,9 +231,9 @@ The derivative \\\varphi_j(t)\\ depends on phase type:
 ### 2.3 Constructing phases in R
 
 The math above is exposed in R through
-[`hzr_phase()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase.md),
+[`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md),
 which builds one phase at a time, and
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md),
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md),
 which composes phases into a full model. The same `(t_half, nu, m)`
 triple from `decompos()` parameterizes the `"cdf"` and `"hazard"`
 shapes; the `"g3"` shape exposes its own `(tau, gamma, alpha, eta)`
@@ -389,7 +389,7 @@ The full log-likelihood is:
 
 The \\\log(1 - e^{-x})\\ terms are computed using the numerically stable
 primitive
-[`hzr_log1mexp()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_log1mexp.md),
+[`hzr_log1mexp()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_log1mexp.md),
 which avoids catastrophic cancellation when \\x\\ is near zero.
 
 ``` r
@@ -562,12 +562,12 @@ likelihood surfaces. Practical guidelines:
 1.  **Fix shape parameters when possible.** If clinical knowledge
     suggests a specific temporal pattern (e.g. early mortality follows a
     Weibull shape with \\m = 0\\), fix `m` in the
-    [`hzr_phase()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase.md)
+    [`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
     starting values and inspect whether the optimizer moves it.
 
 2.  **Start from the SAS/C estimates.** If legacy results are available,
     translate them using
-    [`hzr_argument_mapping()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_argument_mapping.md)
+    [`hzr_argument_mapping()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_argument_mapping.md)
     and supply as starting values.
 
 3.  **Use multi-start optimization.** The default `control$n_starts = 5`
@@ -587,7 +587,7 @@ The decomposition engine applies several guards:
 - \\1 - G(t)\\ is clamped above `.Machine$double.xmin` before computing
   the hazard \\h(t) = g(t)/(1 - G(t))\\
 - Left- and interval-censored contributions use
-  [`hzr_log1mexp()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_log1mexp.md)
+  [`hzr_log1mexp()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_log1mexp.md)
   to avoid \\\log(0)\\ when \\H(t)\\ is very small
 
 Together these keep the gradients finite throughout the optimization,
@@ -603,13 +603,13 @@ even in regions of parameter space far from the optimum.
 | `hzr_phase(type, t_half, nu, m, formula)` | Construct a phase specification |
 | `hazard(..., dist = "multiphase", phases = ...)` | Fit a multiphase model |
 | `predict(fit, type, decompose = TRUE)` | Per-phase decomposed predictions |
-| [`hzr_argument_mapping()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_argument_mapping.md) | SAS/C \\\to\\ R parameter translation table |
+| [`hzr_argument_mapping()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_argument_mapping.md) | SAS/C \\\to\\ R parameter translation table |
 | `hzr_log1mexp(x)` | Stable \\\log(1 - e^{-x})\\ |
 
 For a worked clinical example, see
-[`vignette("getting-started")`](https://ehrlinger.github.io/temporal_hazard/articles/getting-started.md).
+[`vignette("getting-started")`](https://ehrlinger.github.io/TemporalHazard/articles/getting-started.md).
 For migration from SAS HAZARD, see
-[`vignette("sas-to-r-migration")`](https://ehrlinger.github.io/temporal_hazard/articles/sas-to-r-migration.md).
+[`vignette("sas-to-r-migration")`](https://ehrlinger.github.io/TemporalHazard/articles/sas-to-r-migration.md).
 
 ## References
 

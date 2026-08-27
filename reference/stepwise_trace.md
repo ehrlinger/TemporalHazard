@@ -1,7 +1,7 @@
 # Extract the captured console trace from an `hzr_stepwise` fit
 
 Every run of
-[`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+[`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
 records the header, per-step lines, and final summary regardless of the
 `trace` flag. This accessor returns the full character vector for
 display or logging.
@@ -24,7 +24,7 @@ Character vector, one element per console line.
 
 ## See also
 
-[`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md),
+[`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md),
 which produces the object this accessor reads.
 
 ## Examples

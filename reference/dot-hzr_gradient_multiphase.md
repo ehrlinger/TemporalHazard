@@ -3,7 +3,7 @@
 Computes the score vector \\d\ell / d\theta\\ using analytic chain-rule
 formulas for `log_mu` and `beta` parameters, and central-difference
 derivatives (via
-[`.hzr_phase_derivatives()`](https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_phase_derivatives.md))
+[`.hzr_phase_derivatives()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_phase_derivatives.md))
 for shape parameters (`log_t_half`, `nu`, `m`).
 
 ## Usage
@@ -67,7 +67,7 @@ for shape parameters (`log_t_half`, `nu`, `m`).
 - objective:
 
   Which interval-censored contribution to accumulate; see
-  [`.hzr_logl_interval()`](https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_logl_interval.md).
+  [`.hzr_logl_interval()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_logl_interval.md).
   Exact-event, right-censored and left-censored rows are unaffected.
 
 - ...:

@@ -81,7 +81,7 @@ Before fitting any parametric model, establish the empirical survival
 curve using the Kaplan-Meier estimator. This is the benchmark against
 which all parametric fits will be compared.
 
-[`hzr_kaplan()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_kaplan.md)
+[`hzr_kaplan()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_kaplan.md)
 wraps
 [`survival::survfit()`](https://rdrr.io/pkg/survival/man/survfit.html)
 and adds logit-transformed exact confidence limits that respect the
@@ -117,7 +117,7 @@ head(km)
 The returned data frame is the life table: one row per event time with
 `n_risk`, `n_event`, `survival`, logit-transformed 95% CLs (`cl_lower` /
 `cl_upper`), and a KM-based cumulative hazard (`-log(survival)` — use
-[`hzr_nelson()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_nelson.md)
+[`hzr_nelson()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_nelson.md)
 if you need the Nelson-Aalen estimator instead). Plotting just requires
 the survival column:
 
@@ -386,7 +386,7 @@ screen_results
 
 For continuous covariates that appear significant, examine whether the
 relationship with outcome is monotone on the logit scale.
-[`hzr_calibrate()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_calibrate.md)
+[`hzr_calibrate()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_calibrate.md)
 implements the SAS `logit.sas` / `logitgr.sas` macros: bin the
 continuous covariate into quantile groups, compute the observed event
 rate per bin, and transform it to the logit scale.
@@ -519,7 +519,7 @@ beta).
 
 The manual approach works when screening has already narrowed the
 candidate pool, but with a larger pool it helps to let the model choose.
-[`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+[`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
 runs forward, backward, or two-way selection against an existing
 `hazard` fit, scoring candidates with Wald p-values or delta-AIC.
 Defaults match SAS `PROC HAZARD` (`SLENTRY = 0.30`, `SLSTAY = 0.20`).
@@ -532,7 +532,7 @@ phase can advertise its own candidate set; stepping operates per
 another. Single-distribution models accept either a flat one-sided
 formula or a character vector of names.
 
-[`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+[`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
 now defaults to `criterion = "score"`, which reproduces SAS’s
 `SELECTION` Q statistic by testing each candidate at the current
 estimates without a per-candidate refit. Here we pass
@@ -656,7 +656,7 @@ When the screening and stepwise agree on the same covariate set the
 log-likelihoods match exactly; when stepwise selects a leaner model AIC
 drops. For an AIC-driven run use `criterion = "aic"`; for a forward-only
 sweep `direction = "forward"`. See
-[`?hzr_stepwise`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+[`?hzr_stepwise`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
 for the full argument surface including `force_in`, `force_out`, and the
 `max_move` oscillation guard.
 
@@ -852,7 +852,7 @@ observed event rates across the risk spectrum.
 
 The conservation-of-events principle states that a well-fitting model
 should predict the same total number of events as actually observed.
-[`hzr_gof()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_gof.md)
+[`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
 tracks this cumulatively over time — the residual (expected minus
 observed) should stay near zero.
 
@@ -930,7 +930,7 @@ several things that Cox proportional hazards does not:
 | Multiple hazard phases | No | Yes (additive) |
 | Patient-specific survival prediction | Approximate | Exact |
 | Smooth extrapolation beyond data | No | Yes |
-| Conservation of events check | No | Yes ([`hzr_gof()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_gof.md)) |
+| Conservation of events check | No | Yes ([`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)) |
 | Interval censoring | Not standard | Supported |
 
 Many clinical outcomes show **non-proportional hazards**: the risk
@@ -952,7 +952,7 @@ The complete analytical workflow follows a disciplined sequence:
 This sequence ensures that the temporal shape is established before
 covariates are introduced, and that the final model is validated against
 the observed data. See
-[`vignette("getting-started")`](https://ehrlinger.github.io/temporal_hazard/articles/getting-started.md)
+[`vignette("getting-started")`](https://ehrlinger.github.io/TemporalHazard/articles/getting-started.md)
 for the minimal API workflow and
-[`vignette("mf-mathematical-foundations")`](https://ehrlinger.github.io/temporal_hazard/articles/mf-mathematical-foundations.md)
+[`vignette("mf-mathematical-foundations")`](https://ehrlinger.github.io/TemporalHazard/articles/mf-mathematical-foundations.md)
 for the mathematical details.

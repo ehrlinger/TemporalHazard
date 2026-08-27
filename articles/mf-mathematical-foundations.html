@@ -62,7 +62,7 @@
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul>
 <ul class="navbar-nav">
-<li class="nav-item"><a class="external-link nav-link" href="https://github.com/ehrlinger/temporal_hazard/" aria-label="GitHub"><span class="fa fab fa-github fa-lg"></span></a></li>
+<li class="nav-item"><a class="external-link nav-link" href="https://github.com/ehrlinger/TemporalHazard/" aria-label="GitHub"><span class="fa fab fa-github fa-lg"></span></a></li>
       </ul>
 </div>
 
@@ -77,7 +77,7 @@
 
 
 
-      <small class="dont-index">Source: <a href="https://github.com/ehrlinger/temporal_hazard/blob/main/vignettes/mf-mathematical-foundations.qmd" class="external-link"><code>vignettes/mf-mathematical-foundations.qmd</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/ehrlinger/TemporalHazard/blob/main/vignettes/mf-mathematical-foundations.qmd" class="external-link"><code>vignettes/mf-mathematical-foundations.qmd</code></a></small>
       <div class="d-none name"><code></code></div>
     </div>
 
@@ -88,7 +88,7 @@
 
     <div class="cell">
 <div class="sourceCode cell-code" id="cb1"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://ehrlinger.github.io/temporal_hazard/">TemporalHazard</a></span><span class="op">)</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://ehrlinger.github.io/TemporalHazard/">TemporalHazard</a></span><span class="op">)</span></span></code></pre></div>
 </div>
 <p>This vignette lays out the mathematical foundation for the models in TemporalHazard. The other vignettes treat the package as a black box you call <code><a href="../reference/hazard.html">hazard()</a></code> on; this one opens the box. If you’ve used the package and want to know <em>what</em> it’s computing, <em>why</em> the parameterization is what it is, and <em>how</em> the multiphase decomposition relates to standard parametric survival families, this is the place.</p>
 <p>The four pieces, in order: the generalized temporal decomposition family (Blackstone, Naftel, and Turner 1986) that every phase is built from; the additive multiphase hazard model that composes phases into a full hazard; the maximum-likelihood objective under mixed censoring (right, left, interval, counting-process), which is what the optimizer minimizes; and extensions for phase-specific and time-varying covariates. The same decomposition framework carries over to longitudinal mixed-effects settings (Rajeswaran et al. 2018), though this vignette stays in the survival regime.</p>

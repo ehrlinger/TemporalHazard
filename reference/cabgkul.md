@@ -30,14 +30,14 @@ binary parity testing.
 
 ## See also
 
-[`vignette("fitting-hazard-models")`](https://ehrlinger.github.io/temporal_hazard/articles/fitting-hazard-models.md)
+[`vignette("fitting-hazard-models")`](https://ehrlinger.github.io/TemporalHazard/articles/fitting-hazard-models.md)
 
 Other datasets:
-[`avc`](https://ehrlinger.github.io/temporal_hazard/reference/avc.md),
-[`omc`](https://ehrlinger.github.io/temporal_hazard/reference/omc.md),
-[`tga`](https://ehrlinger.github.io/temporal_hazard/reference/tga.md),
-[`uslife2023`](https://ehrlinger.github.io/temporal_hazard/reference/uslife2023.md),
-[`valves`](https://ehrlinger.github.io/temporal_hazard/reference/valves.md)
+[`avc`](https://ehrlinger.github.io/TemporalHazard/reference/avc.md),
+[`omc`](https://ehrlinger.github.io/TemporalHazard/reference/omc.md),
+[`tga`](https://ehrlinger.github.io/TemporalHazard/reference/tga.md),
+[`uslife2023`](https://ehrlinger.github.io/TemporalHazard/reference/uslife2023.md),
+[`valves`](https://ehrlinger.github.io/TemporalHazard/reference/valves.md)
 
 ## Examples
 

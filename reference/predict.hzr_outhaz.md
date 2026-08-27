@@ -3,7 +3,7 @@
 Rebuilds the multiphase model the `OUTHAZ=` dataset describes – which
 phases are in it, their shapes, and the fitted parameter vector – and
 then predicts exactly as
-[`predict.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/predict.hazard.md)
+[`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)
 does.
 
 ## Usage
@@ -27,7 +27,7 @@ predict(
 - object:
 
   An `hzr_outhaz` object from
-  [`hzr_read_outhaz()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_read_outhaz.md).
+  [`hzr_read_outhaz()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_read_outhaz.md).
 
 - newdata:
 
@@ -37,12 +37,12 @@ predict(
 
   One of `"hazard"`, `"survival"` or `"cumulative_hazard"`; default
   `"hazard"`, as in
-  [`predict.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/predict.hazard.md).
+  [`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md).
 
 - decompose:
 
   Accepted only to keep this method's argument list identical to
-  [`predict.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/predict.hazard.md)'s,
+  [`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)'s,
   so that a positional call means the same thing for both. `TRUE` is an
   error: an `OUTHAZ=` dataset names its phases but carries no per-phase
   decomposition, and silently returning the total prediction instead
@@ -51,7 +51,7 @@ predict(
 - se.fit:
 
   Logical; add delta-method standard errors and confidence limits, as
-  [`predict.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/predict.hazard.md)
+  [`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)
   does.
 
 - level:
@@ -67,7 +67,7 @@ predict(
   of `...` because a misspelling would otherwise be swallowed silently
   and return log-log limits that disagree with the SAS job being
   reproduced. As in
-  [`predict.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/predict.hazard.md),
+  [`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md),
   the value is checked only where it is used, so an ignored one does not
   make a point or hazard prediction fail.
 
@@ -79,12 +79,12 @@ predict(
 ## Value
 
 What
-[`predict.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/predict.hazard.md)
+[`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)
 returns for a fit with no covariates: a numeric vector of predictions
 when `se.fit = FALSE`, and when `se.fit = TRUE` a data frame with
 columns `fit`, `se.fit`, `lower` and `upper` (the confidence limits at
 `level`). The decomposed long-format return of
-[`predict.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/predict.hazard.md)
+[`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)
 is not reachable here, because `decompose = TRUE` is refused.
 
 ## Details
@@ -129,8 +129,8 @@ is on SAS's estimation scale and has to be mapped onto this package's:
 
 ## See also
 
-[`hzr_read_outhaz()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_read_outhaz.md),
-[`predict.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/predict.hazard.md).
+[`hzr_read_outhaz()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_read_outhaz.md),
+[`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md).
 
 ## Examples
 

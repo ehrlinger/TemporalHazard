@@ -19,7 +19,7 @@ The mapping is faithful, not literal. SAS HAZARD is a step-driven DSL:
 you write a `PROC HAZARD` block with separate `TIME`, `EVENT`, `PARMS`,
 `EARLY`, `CONSTANT`, and `SELECTION` statements, and the macro assembles
 them into a binary call. R is function-driven: you write a single
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 call with named arguments. The conceptual pieces are identical; the
 syntactic ergonomics differ. Use this vignette to translate an existing
 SAS analysis, or as a reference when comparing the package’s output
@@ -90,7 +90,7 @@ PROC HAZARD DATA=AVCS NOCOV NOCOR CONDITION=14;
 ```
 
 Maps to
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 `control` list:
 
 ``` r
@@ -256,9 +256,9 @@ Triggers stepwise covariate selection inside the hazard fit. `SLE` is
 the significance level for entry, `SLS` for staying. SAS HAZARD embedded
 this in the same `PROC HAZARD` call; in R the stepwise loop is a
 separate
-[`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+[`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
 function that wraps a fitted
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 object.
 
 ``` sas
@@ -266,7 +266,7 @@ SELECTION SLE=0.2 SLS=0.1;
 ```
 
 `TemporalHazard` now ships
-[`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md),
+[`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md),
 which implements forward, backward, and two-way stepwise selection with
 SAS-style SLENTRY / SLSTAY thresholds, phase-specific entry for
 multiphase models, and a MOVE oscillation guard. It now defaults to
@@ -275,7 +275,7 @@ a score test at the current estimates, with no per-candidate refit — so
 entry decisions match SAS’s directly. Passing `criterion = "wald"`
 selects the older refit-based path, which fits each candidate before
 testing it. See
-[`?hzr_stepwise`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+[`?hzr_stepwise`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
 for the full option list.
 
 ------------------------------------------------------------------------
@@ -289,16 +289,16 @@ equivalent in `TemporalHazard`:
 
 | SAS macro | R function | Purpose |
 |:---|:---|:---|
-| `kaplan.sas` | [`hzr_kaplan()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_kaplan.md) | KM survival with logit-transformed exact CL |
-| `nelsonl.sas` / `nelsont.sas` | [`hzr_nelson()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_nelson.md) | Nelson cumulative hazard with lognormal CL |
-| `hazplot.sas` | [`hzr_gof()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_gof.md) | Parametric vs. KM overlay + CoE goodness-of-fit |
-| `deciles.hazard.sas` | [`hzr_deciles()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_deciles.md) | Decile-of-risk calibration + chi-square GOF |
-| `logit.sas` / `logitgr.sas` | [`hzr_calibrate()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_calibrate.md) | Quantile-group calibration (logit / Gompertz / Cox link) |
-| `bootstrap.hazard.sas` | [`hzr_bootstrap()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_bootstrap.md) | Bootstrap resampling + summary |
-| `markov.sas` | [`hzr_competing_risks()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_competing_risks.md) | Aalen-Johansen competing-risks incidence |
+| `kaplan.sas` | [`hzr_kaplan()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_kaplan.md) | KM survival with logit-transformed exact CL |
+| `nelsonl.sas` / `nelsont.sas` | [`hzr_nelson()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_nelson.md) | Nelson cumulative hazard with lognormal CL |
+| `hazplot.sas` | [`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md) | Parametric vs. KM overlay + CoE goodness-of-fit |
+| `deciles.hazard.sas` | [`hzr_deciles()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_deciles.md) | Decile-of-risk calibration + chi-square GOF |
+| `logit.sas` / `logitgr.sas` | [`hzr_calibrate()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_calibrate.md) | Quantile-group calibration (logit / Gompertz / Cox link) |
+| `bootstrap.hazard.sas` | [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md) | Bootstrap resampling + summary |
+| `markov.sas` | [`hzr_competing_risks()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_competing_risks.md) | Aalen-Johansen competing-risks incidence |
 
 Minimal illustrations on the AVC dataset follow. The
-[`vignette("inference-diagnostics")`](https://ehrlinger.github.io/temporal_hazard/articles/inference-diagnostics.md)
+[`vignette("inference-diagnostics")`](https://ehrlinger.github.io/TemporalHazard/articles/inference-diagnostics.md)
 walkthrough builds these into a full analysis workflow.
 
 ``` r
@@ -504,7 +504,7 @@ corresponding R argument here: `TIME` and `EVENT` collapse into
 list goes on the right; the `PARMS` starting values become the `theta`
 vector; phase-specific assignments use the `formula` argument inside
 each
-[`hzr_phase()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase.md);
+[`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md);
 `FIXM` becomes `fixed = "shapes"` (or a subset of shape names). The
 line-by-line correspondence is the point — once you’ve translated one
 analysis this way, the pattern carries to every other.
@@ -577,7 +577,7 @@ fit
 
 ## Output object
 
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 returns a list of class `hazard`:
 
 | Slot | Contents |
@@ -598,11 +598,11 @@ returns a list of class `hazard`:
 > and [`summary()`](https://rdrr.io/r/base/summary.html) label it
 > `log-lik` and `log_lik`, which are the names to prefer when writing
 > about it. It is unrelated to the `objective` *argument* of
-> [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md),
+> [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md),
 > which selects an estimand: `"likelihood"` (the default) or `"sas"`,
 > reproducing what `PROC HAZARD` accumulates for an interval-censored
 > row. See
-> [`?hazard`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md);
+> [`?hazard`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md);
 > the SAS objective exists to reproduce legacy runs, not for new
 > analyses.
 
@@ -613,10 +613,10 @@ returns a list of class `hazard`:
 In SAS HAZARD the `P` (predict / print) option on the `PROC HAZARD` line
 writes predicted survival, hazard, and cumulative-hazard tables to the
 output dataset. In R the same predictions come from
-[`predict.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/predict.hazard.md)
+[`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)
 on the fitted object, with the requested quantity chosen via the `type=`
 argument.
-[`predict.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/predict.hazard.md)
+[`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)
 currently supports four output types — `"linear_predictor"`, `"hazard"`,
 `"survival"`, and `"cumulative_hazard"` — covering every quantity the
 SAS `P` option produces:
@@ -640,13 +640,13 @@ hazard contributions instead of just the total.
 ## Automated translation with `hzr_translate_sas()`
 
 Everything above is a mapping you apply by hand.
-[`hzr_translate_sas()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_translate_sas.md)
+[`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
 applies it for you: point it at a `.sas` file and it parses the
 `PROC HAZARD` / `PROC HAZPRED` blocks and emits a `.qmd` document whose
 chunks are the
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 /
-[`predict.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/predict.hazard.md)
+[`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)
 calls those blocks describe. It is the same statement-by-statement
 mapping this vignette documents, run by the parser instead of by you –
 useful for a one-off job, and essential for migrating a corpus of
@@ -655,7 +655,7 @@ hundreds.
 > **Experimental: what it will and will not translate**
 >
 > The emitted document renders. The
-> [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+> [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 > chunk binds its fit to a name and passes `fit = TRUE`, so the
 > [`predict()`](https://rdrr.io/r/stats/predict.html) chunks have
 > something to predict from. What you should not read into that is “the
@@ -664,13 +664,13 @@ hundreds.
 >
 > - **A `SELECTION` statement is refused, not translated.** The emitted
 >   chunk is a [`stop()`](https://rdrr.io/r/base/stop.html).
->   [`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)’s
+>   [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)’s
 >   refit path needs a formula-interface base fit and this translator
 >   emits the vector interface, so a translated screen would report zero
 >   steps – indistinguishable from “nothing met `slentry`”. Run the
 >   selection by hand.
 > - **`LCENSOR` combined with `ICENSOR` is refused.**
->   [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)’s
+>   [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)’s
 >   single `time_lower` argument carries the entry time for status 0/1
 >   rows and the interval’s lower bound for status 2 rows; one column
 >   cannot express both. Either statement alone translates.
@@ -728,7 +728,7 @@ translation is out of scope, so the `data` chunk is a guard, not a
 re-implementation. It checks that `AVCS` is already in scope and stops
 with a named error if not, rather than silently proceeding without data.
 The `status` chunk is where `EVENT DEAD` becomes something
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 can take, and it is worth reading closely if you are checking a
 translation against the job it came from:
 
@@ -769,7 +769,7 @@ fit <- hazard(
 `EVENT DEAD` names a **count**, not a flag. In the reference program a
 row with `DEAD = 2` is two events, and `setlik.c` weights its
 contribution accordingly.
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 takes a 0/1 status and a separate `weights` argument, so the one SAS
 statement translates into two: the status derives from `DEAD > 0`, and
 the count carries into `weights`. Read `status = .hzr_status` and
@@ -784,7 +784,7 @@ missing or negative count is dropped outright by the reference program:
 `readc1.c` sets `mdel` on a missing count and `del` on a negative one,
 and `readobs.c` then skips the row and subtracts it from `Nobs`, so it
 contributes nothing to the likelihood.
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 has no equivalent of that deletion, and translating such a row as
 censored would change the fit without saying so, so the chunk stops
 instead and asks you to drop the rows yourself. When it fires, subset to
@@ -826,7 +826,7 @@ gaps are common enough in production jobs to know about going in:
   `newdata`, and reporting predictions over a half-read grid would be
   worse than not reporting them. Such grids emit an `UNTRANSLATED`
   block; build the `newdata` grid by hand and pass it to
-  [`predict.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/predict.hazard.md)
+  [`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)
   instead. On the public corpus, grid resolution is 19 of 55 (35%), up
   from 10 of 55 (18%) before constant folding.
 - **An unresolved `INHAZ=` fails the render on purpose.** If a
@@ -849,7 +849,7 @@ tracked in `inst/dev/SAS-PARITY-GAP-ANALYSIS.md` and
 ### Stepwise variable selection (`SELECTION` statement)
 
 - **Supported:**
-  [`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   implements forward / backward / two-way stepwise with SAS-style
   SLENTRY / SLSTAY thresholds, per-phase entry for multiphase, and a
   MOVE oscillation guard.
@@ -868,7 +868,7 @@ tracked in `inst/dev/SAS-PARITY-GAP-ANALYSIS.md` and
   set across all covariates.
 - **Not yet supported:** distinct `EARLY`/`LATE` window sets per phase.
   Workaround: expand the design matrix manually before calling
-  [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md).
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md).
 
 ### Output datasets (`OUTEST=`, `OUTVCOV=`)
 
@@ -879,7 +879,7 @@ tracked in `inst/dev/SAS-PARITY-GAP-ANALYSIS.md` and
 
 ### Density / quantile prediction types
 
-- [`predict.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/predict.hazard.md)
+- [`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)
   covers `hazard`, `cumulative_hazard`, `survival`, and
   `linear_predictor`. Density and quantile (median survival) types are
   not wired up; derive them from `cumulative_hazard` and `survival`
@@ -897,7 +897,7 @@ SAS parity notes:
 - **`Surv(start, stop, event)` with `start > 0`** — shipped v0.9.7.
   Counting-process rows contribute `H(stop) - H(start)` for Weibull and
   multiphase. The previous
-  [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   guard against non-zero starts is gone.
 - **Delta-method prediction confidence limits** — shipped v0.9.8. Use
   `predict(..., se.fit = TRUE, level = 0.95)` to get a data frame with
@@ -914,8 +914,8 @@ SAS parity notes:
 datasets turns up bottlenecks in the likelihood kernel or the optimizer
 inner loop, those specific functions will be re-implemented with Rcpp.
 The public interface
-([`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md),
-[`predict.hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/predict.hazard.md),
+([`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md),
+[`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md),
 etc.) will not change.
 
 ## References

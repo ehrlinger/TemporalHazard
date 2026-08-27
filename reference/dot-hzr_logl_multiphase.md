@@ -65,7 +65,7 @@ Log-likelihood for multiphase additive hazard model
 - objective:
 
   Which interval-censored contribution to accumulate; see
-  [`.hzr_logl_interval()`](https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_logl_interval.md).
+  [`.hzr_logl_interval()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_logl_interval.md).
   Exact-event, right-censored and left-censored rows are unaffected.
 
 - return_gradient:

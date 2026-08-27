@@ -296,11 +296,11 @@ and whether it is accepted.
 
 ## See also
 
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 for the base model and
-[`hzr_phase()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase.md)
+[`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
 for multiphase scopes;
-[`stepwise_trace()`](https://ehrlinger.github.io/temporal_hazard/reference/stepwise_trace.md)
+[`stepwise_trace()`](https://ehrlinger.github.io/TemporalHazard/reference/stepwise_trace.md)
 to retrieve the captured selection log.
 
 ## Examples

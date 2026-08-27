@@ -50,8 +50,8 @@ University of Alabama Birmingham cardiac surgery registry.
 ## See also
 
 Other datasets:
-[`avc`](https://ehrlinger.github.io/temporal_hazard/reference/avc.md),
-[`cabgkul`](https://ehrlinger.github.io/temporal_hazard/reference/cabgkul.md),
-[`tga`](https://ehrlinger.github.io/temporal_hazard/reference/tga.md),
-[`uslife2023`](https://ehrlinger.github.io/temporal_hazard/reference/uslife2023.md),
-[`valves`](https://ehrlinger.github.io/temporal_hazard/reference/valves.md)
+[`avc`](https://ehrlinger.github.io/TemporalHazard/reference/avc.md),
+[`cabgkul`](https://ehrlinger.github.io/TemporalHazard/reference/cabgkul.md),
+[`tga`](https://ehrlinger.github.io/TemporalHazard/reference/tga.md),
+[`uslife2023`](https://ehrlinger.github.io/TemporalHazard/reference/uslife2023.md),
+[`valves`](https://ehrlinger.github.io/TemporalHazard/reference/valves.md)

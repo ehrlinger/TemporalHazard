@@ -3,7 +3,7 @@
 Creates an `hzr_phase` object describing one term in a multiphase
 additive cumulative hazard model. Pass a list of these to the `phases`
 argument of
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 when `dist = "multiphase"`.
 
 ## Usage
@@ -75,7 +75,7 @@ print(x, ...)
   Optional one-sided formula (e.g. `~ age + nyha`) for phase-specific
   covariates. When `NULL` (default), the phase inherits the global
   formula from
-  [`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md).
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md).
 
 - fixed:
 
@@ -187,7 +187,7 @@ again.
   Named for the **G3** (third) decomposition family used by the original
   HAZARD program for the late phase. It contributes \\\Phi(t) = G_3(t)\\
   from
-  [`hzr_decompos_g3()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_decompos_g3.md),
+  [`hzr_decompos_g3()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos_g3.md),
   an unbounded intensity with its own four-parameter shape (`tau`,
   `gamma`, `alpha`, `eta`) that is more flexible than the G1-derived
   `"hazard"` form for capturing accelerating late mortality (e.g.
@@ -211,18 +211,18 @@ for `"constant"`.
 
 ## See also
 
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 for fitting multiphase models,
-[`hzr_decompos()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_decompos.md)
+[`hzr_decompos()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos.md)
 for the underlying parametric family,
-[`hzr_phase_cumhaz()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase_cumhaz.md)
+[`hzr_phase_cumhaz()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase_cumhaz.md)
 and
-[`hzr_phase_hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase_hazard.md)
+[`hzr_phase_hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase_hazard.md)
 for computing \\\Phi(t)\\ and \\\phi(t)\\ from these specifications.
 
-[`vignette("fitting-hazard-models")`](https://ehrlinger.github.io/temporal_hazard/articles/fitting-hazard-models.md)
+[`vignette("fitting-hazard-models")`](https://ehrlinger.github.io/TemporalHazard/articles/fitting-hazard-models.md)
 for multiphase fitting examples,
-[`vignette("mf-mathematical-foundations")`](https://ehrlinger.github.io/temporal_hazard/articles/mf-mathematical-foundations.md)
+[`vignette("mf-mathematical-foundations")`](https://ehrlinger.github.io/TemporalHazard/articles/mf-mathematical-foundations.md)
 for the mathematical framework.
 
 ## Examples

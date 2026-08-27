@@ -3,7 +3,7 @@
 Computes the cumulative intensity \\G_3(t)\\ and its derivative \\g_3(t)
 = dG_3/dt\\ for the late-phase parametric family used in the original
 Blackstone C/SAS HAZARD code. Unlike
-[`hzr_decompos()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_decompos.md)
+[`hzr_decompos()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos.md)
 (which computes the early-phase G1 – a bounded CDF), this function can
 produce **unbounded** values, making it suitable for modelling
 increasing late risk.
@@ -75,9 +75,9 @@ concomitant information. *J Am Stat Assoc.* 1986;81(395):615–624.
 
 ## See also
 
-[`hzr_decompos()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_decompos.md)
+[`hzr_decompos()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos.md)
 for the early-phase (G1) decomposition,
-[`hzr_phase_cumhaz()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase_cumhaz.md)
+[`hzr_phase_cumhaz()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase_cumhaz.md)
 for phase-level cumulative hazard helpers.
 
 ## Examples

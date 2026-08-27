@@ -67,15 +67,15 @@ Blackstone, Naftel, and Turner (1986)
 
 ## See also
 
-[`vignette("fitting-hazard-models")`](https://ehrlinger.github.io/temporal_hazard/articles/fitting-hazard-models.md),
-[`vignette("prediction-visualization")`](https://ehrlinger.github.io/temporal_hazard/articles/prediction-visualization.md)
+[`vignette("fitting-hazard-models")`](https://ehrlinger.github.io/TemporalHazard/articles/fitting-hazard-models.md),
+[`vignette("prediction-visualization")`](https://ehrlinger.github.io/TemporalHazard/articles/prediction-visualization.md)
 
 Other datasets:
-[`cabgkul`](https://ehrlinger.github.io/temporal_hazard/reference/cabgkul.md),
-[`omc`](https://ehrlinger.github.io/temporal_hazard/reference/omc.md),
-[`tga`](https://ehrlinger.github.io/temporal_hazard/reference/tga.md),
-[`uslife2023`](https://ehrlinger.github.io/temporal_hazard/reference/uslife2023.md),
-[`valves`](https://ehrlinger.github.io/temporal_hazard/reference/valves.md)
+[`cabgkul`](https://ehrlinger.github.io/TemporalHazard/reference/cabgkul.md),
+[`omc`](https://ehrlinger.github.io/TemporalHazard/reference/omc.md),
+[`tga`](https://ehrlinger.github.io/TemporalHazard/reference/tga.md),
+[`uslife2023`](https://ehrlinger.github.io/TemporalHazard/reference/uslife2023.md),
+[`valves`](https://ehrlinger.github.io/TemporalHazard/reference/valves.md)
 
 ## Examples
 

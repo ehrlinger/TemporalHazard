@@ -2,7 +2,7 @@
 
 Computes \\\Phi_j(t)\\, \\\phi_j(t)\\, and their derivatives with
 respect to `t_half`, `nu`, and `m` using central finite differences on
-[`hzr_decompos()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_decompos.md).
+[`hzr_decompos()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos.md).
 The `log_t_half` derivative is obtained via the chain rule:
 \\d\Phi/d(\log t\_{1/2}) = t\_{1/2} \cdot d\Phi/dt\_{1/2}\\.
 

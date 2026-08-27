@@ -32,7 +32,7 @@ point for a single-distribution fit because it covers all three monotone
 shapes with just two parameters.
 
 The
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 interface takes a survival formula (`Surv(time, status)` on the left,
 covariates on the right), a starting-value vector (`theta`), and a
 distribution name. Passing `fit = TRUE` runs the optimizer and returns a
@@ -231,7 +231,7 @@ For the CABGKUL fit below we use three phases. That’s not a property of
 the package; it’s a property of this dataset.
 
 Each phase is specified with
-[`hzr_phase()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase.md).
+[`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md).
 The first argument picks the shape function: `"cdf"` for a saturating
 curve bounded between 0 and 1 (the SAS “early” / G1 shape), `"constant"`
 for a flat hazard plateau (SAS “G2”), `"g3"` for the polynomial
@@ -446,7 +446,7 @@ HAZARD library:
   archetype.
 
 See
-[`?hzr_phase`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase.md)
+[`?hzr_phase`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
 for the additional `"hazard"` shape and the full parameterization of
 each.
 
@@ -468,7 +468,7 @@ hzr_phase("g3",       tau = 1, gamma = 3, alpha = 1,   # Late risk (G3 power law
 The `"g3"` type uses the four-parameter G3 decomposition from the
 original C/SAS HAZARD program, providing unbounded power-law growth for
 late-phase hazards. See
-[`vignette("mf-mathematical-foundations")`](https://ehrlinger.github.io/temporal_hazard/articles/mf-mathematical-foundations.md)
+[`vignette("mf-mathematical-foundations")`](https://ehrlinger.github.io/TemporalHazard/articles/mf-mathematical-foundations.md)
 for the full mathematical treatment.
 
 ## Numerical helpers

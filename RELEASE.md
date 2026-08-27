@@ -32,7 +32,7 @@ Maintainer checklist for TemporalHazard. Not shipped (`.Rbuildignore`d).
 
   This is not hypothetical. On 2026-08-04 the mechanical reading took
   `dev` to `2.0.0` for one changed default in
-  [`hzr_stepwise()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_stepwise.md)
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   (`criterion = "wald"` → `"score"`). That work was folded back into
   `1.2.0`, where it belonged: the old default deviated from the SAS/C
   reference this package exists to reproduce, so the change is closer to

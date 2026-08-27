@@ -47,7 +47,7 @@ R source files by architectural layer {.table .caption-top}
 ## 3 Function call graph
 
 The primary user entry point is
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md),
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md),
 which dispatches to distribution-specific optimizers. The diagram below
 shows the call flow for a multiphase fit.
 
@@ -72,7 +72,7 @@ shows the call flow for a multiphase fit.
 
 For single-phase distributions (Weibull, exponential, log-logistic,
 log-normal),
-[`hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hazard.md)
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 dispatches to the corresponding `.hzr_optim_<dist>()` function, which
 calls `.hzr_optim_generic()` with the distribution-specific
 log-likelihood and gradient.
@@ -92,10 +92,10 @@ flat `theta` on the **internal (estimation) scale**:
 
 Internal theta layout per phase {.table .caption-top}
 
-[`.hzr_split_theta()`](https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_split_theta.md)
+[`.hzr_split_theta()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_split_theta.md)
 partitions the concatenated vector into a named list of per-phase
 sub-vectors.
-[`.hzr_unpack_phase_theta()`](https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_unpack_phase_theta.md)
+[`.hzr_unpack_phase_theta()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_unpack_phase_theta.md)
 extracts named parameters (`log_mu`, `log_t_half`, `nu`, `m`, `beta`)
 from each sub-vector.
 
@@ -107,7 +107,7 @@ optional phase-specific covariate formula. The constructor validates
 inputs and returns `NA` for shape parameters of constant phases.
 
 A list of `hzr_phase` objects is validated by
-[`.hzr_validate_phases()`](https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_validate_phases.md),
+[`.hzr_validate_phases()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_validate_phases.md),
 which auto-names unnamed phases (“phase_1”, “phase_2”, …) and catches
 the common mistake of passing a bare `hzr_phase` instead of a list.
 
@@ -117,11 +117,11 @@ the common mistake of passing a bare `hzr_phase` instead of a list.
 computes `G(t)` (CDF), `g(t)` (density), and `h(t)` (hazard) for the
 three-parameter family across six valid sign combinations of `nu` and
 `m`. The phase-level helpers
-[`hzr_phase_cumhaz()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase_cumhaz.md)
+[`hzr_phase_cumhaz()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase_cumhaz.md)
 and
-[`hzr_phase_hazard()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase_hazard.md)
+[`hzr_phase_hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase_hazard.md)
 wrap
-[`hzr_decompos()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_decompos.md)
+[`hzr_decompos()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos.md)
 and apply the phase type mapping:
 
 | Phase type   | \\\Phi(t)\\                            | \\\phi(t)\\ |
@@ -133,7 +133,7 @@ and apply the phase type mapping:
 
 #### 3.1.4 Multi-start optimization
 
-[`.hzr_optim_multiphase()`](https://ehrlinger.github.io/temporal_hazard/reference/dot-hzr_optim_multiphase.md)
+[`.hzr_optim_multiphase()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_optim_multiphase.md)
 runs a multi-start strategy: the first start uses the assembled starting
 values (from `theta` or `hzr_phase` specs); subsequent starts perturb
 randomly (sd = 0.5). The best log-likelihood across all starts is kept.
@@ -375,7 +375,7 @@ covariates across multiple event types.
 
 The original C/SAS HAZARD procedure uses a different parameterization
 than TemporalHazard. The
-[`hzr_argument_mapping()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_argument_mapping.md)
+[`hzr_argument_mapping()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_argument_mapping.md)
 function documents the full translation.
 
 Show code
@@ -426,7 +426,7 @@ These collapse onto the three-parameter decompos family:
   absorbed. Non-zero DELTA is not currently supported.
 - **RHO / THALF** —Scale parameter.
   `RHO = NU * THALF * ((2^M - 1)/M)^NU`. Maps directly to `t_half` in
-  [`hzr_phase()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase.md).
+  [`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md).
 - **NU** —Time exponent. Maps directly.
 - **M** —Shape exponent. Maps directly.
 
@@ -457,7 +457,7 @@ during active development:
   log-normal distributions with formula interface, predict, and golden
   fixture testing.
 - **v0.9.0** —Multiphase engine: N-phase additive cumulative hazard,
-  [`hzr_phase()`](https://ehrlinger.github.io/temporal_hazard/reference/hzr_phase.md)
+  [`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
   specification, decomposition engine, C binary parity tests, dataset
   catalog.
 - **v0.9.1** (current) —Vignette suite, roxygen multiphase examples, CI
