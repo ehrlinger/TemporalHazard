@@ -166,7 +166,7 @@
 <span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"TemporalHazard"</span><span class="op">)</span></span></code></pre></div>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Or install the development version from GitHub</span></span>
-<span><span class="fu">remotes</span><span class="fu">::</span><span class="fu">install_github</span><span class="op">(</span><span class="st">"ehrlinger/temporal_hazard"</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu">remotes</span><span class="fu">::</span><span class="fu">install_github</span><span class="op">(</span><span class="st">"ehrlinger/TemporalHazard"</span><span class="op">)</span></span></code></pre></div>
 <p>TemporalHazard requires R &gt;= 4.1.0 and depends on the <a href="https://CRAN.R-project.org/package=survival" class="external-link">survival</a> package. Optional packages for visualization and vignettes include ggplot2, numDeriv, and quarto.</p>
 </div>
 <div class="section level2">
@@ -221,21 +221,21 @@
 </h2>
 <ul>
 <li>
-<strong><a href="https://ehrlinger.github.io/temporal_hazard/articles/clinical-analysis-walkthrough.html" class="external-link">Clinical Analysis Walkthrough</a></strong> — complete end-to-end workflow from Kaplan-Meier baseline through validated multivariable model.</li>
+<strong><a href="https://ehrlinger.github.io/TemporalHazard/articles/clinical-analysis-walkthrough.html">Clinical Analysis Walkthrough</a></strong> — complete end-to-end workflow from Kaplan-Meier baseline through validated multivariable model.</li>
 <li>
-<strong><a href="https://ehrlinger.github.io/temporal_hazard/articles/getting-started.html" class="external-link">Getting Started</a></strong> — first fit-predict workflow with visualizations.</li>
+<strong><a href="https://ehrlinger.github.io/TemporalHazard/articles/getting-started.html">Getting Started</a></strong> — first fit-predict workflow with visualizations.</li>
 <li>
-<strong><a href="https://ehrlinger.github.io/temporal_hazard/articles/fitting-hazard-models.html" class="external-link">Fitting Hazard Models</a></strong> — intercept-only through multiphase and multi-endpoint models.</li>
+<strong><a href="https://ehrlinger.github.io/TemporalHazard/articles/fitting-hazard-models.html">Fitting Hazard Models</a></strong> — intercept-only through multiphase and multi-endpoint models.</li>
 <li>
-<strong><a href="https://ehrlinger.github.io/temporal_hazard/articles/prediction-visualization.html" class="external-link">Prediction &amp; Visualization</a></strong> — survival curves, decomposed hazard, patient-specific risk profiles.</li>
+<strong><a href="https://ehrlinger.github.io/TemporalHazard/articles/prediction-visualization.html">Prediction &amp; Visualization</a></strong> — survival curves, decomposed hazard, patient-specific risk profiles.</li>
 <li>
-<strong><a href="https://ehrlinger.github.io/temporal_hazard/articles/inference-diagnostics.html" class="external-link">Inference &amp; Diagnostics</a></strong> — bootstrap CIs, decile-of-risk validation, sensitivity analysis.</li>
+<strong><a href="https://ehrlinger.github.io/TemporalHazard/articles/inference-diagnostics.html">Inference &amp; Diagnostics</a></strong> — bootstrap CIs, decile-of-risk validation, sensitivity analysis.</li>
 <li>
-<strong><a href="https://ehrlinger.github.io/temporal_hazard/articles/mf-mathematical-foundations.html" class="external-link">Mathematical Foundations</a></strong> — the generalized decomposition, additive hazard model, censoring likelihood, and time-varying covariates.</li>
+<strong><a href="https://ehrlinger.github.io/TemporalHazard/articles/mf-mathematical-foundations.html">Mathematical Foundations</a></strong> — the generalized decomposition, additive hazard model, censoring likelihood, and time-varying covariates.</li>
 <li>
-<strong><a href="https://ehrlinger.github.io/temporal_hazard/articles/ar-architecture.html" class="external-link">Package Architecture</a></strong> — internal design, golden fixtures, and dataset catalog.</li>
+<strong><a href="https://ehrlinger.github.io/TemporalHazard/articles/ar-architecture.html">Package Architecture</a></strong> — internal design, golden fixtures, and dataset catalog.</li>
 <li>
-<strong><a href="https://ehrlinger.github.io/temporal_hazard/articles/sas-to-r-migration.html" class="external-link">SAS-to-R Migration</a></strong> — statement-by-statement mapping from SAS HAZARD syntax.</li>
+<strong><a href="https://ehrlinger.github.io/TemporalHazard/articles/sas-to-r-migration.html">SAS-to-R Migration</a></strong> — statement-by-statement mapping from SAS HAZARD syntax.</li>
 </ul>
 </div>
 <div class="section level2">
@@ -290,10 +290,10 @@
 <li><a href="https://CRAN.R-project.org/package=TemporalHazard" class="external-link"><img src="https://www.r-pkg.org/badges/version/TemporalHazard" alt="CRAN status"></a></li>
 <li><a href="https://CRAN.R-project.org/package=TemporalHazard" class="external-link"><img src="https://cranlogs.r-pkg.org/badges/TemporalHazard" alt="CRAN downloads"></a></li>
 <li><a href="https://CRAN.R-project.org/package=TemporalHazard" class="external-link"><img src="https://cranlogs.r-pkg.org/badges/grand-total/TemporalHazard" alt="CRAN downloads total"></a></li>
-<li><a href="https://github.com/ehrlinger/temporal_hazard/actions/workflows/R-CMD-check.yaml" class="external-link"><img src="https://github.com/ehrlinger/temporal_hazard/actions/workflows/R-CMD-check.yaml/badge.svg" alt="R-CMD-check"></a></li>
-<li><a href="https://app.codecov.io/gh/ehrlinger/temporal_hazard?branch=main" class="external-link"><img src="https://codecov.io/gh/ehrlinger/temporal_hazard/branch/main/graph/badge.svg" alt="Codecov test coverage"></a></li>
-<li><a href="https://github.com/ehrlinger/temporal_hazard/actions/workflows/lint.yaml" class="external-link"><img src="https://github.com/ehrlinger/temporal_hazard/actions/workflows/lint.yaml/badge.svg" alt="lint"></a></li>
-<li><a href="https://ehrlinger.github.io/temporal_hazard/" class="external-link"><img src="https://img.shields.io/badge/docs-pkgdown-blue" alt="pkgdown site"></a></li>
+<li><a href="https://github.com/ehrlinger/TemporalHazard/actions/workflows/R-CMD-check.yaml" class="external-link"><img src="https://github.com/ehrlinger/TemporalHazard/actions/workflows/R-CMD-check.yaml/badge.svg" alt="R-CMD-check"></a></li>
+<li><a href="https://app.codecov.io/gh/ehrlinger/TemporalHazard?branch=main" class="external-link"><img src="https://codecov.io/gh/ehrlinger/TemporalHazard/branch/main/graph/badge.svg" alt="Codecov test coverage"></a></li>
+<li><a href="https://github.com/ehrlinger/TemporalHazard/actions/workflows/lint.yaml" class="external-link"><img src="https://github.com/ehrlinger/TemporalHazard/actions/workflows/lint.yaml/badge.svg" alt="lint"></a></li>
+<li><a href="https://ehrlinger.github.io/TemporalHazard/"><img src="https://img.shields.io/badge/docs-pkgdown-blue" alt="pkgdown site"></a></li>
 </ul>
 </div>
 
