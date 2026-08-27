@@ -4,10 +4,10 @@
 [![CRAN status](https://www.r-pkg.org/badges/version/TemporalHazard)](https://CRAN.R-project.org/package=TemporalHazard)
 [![CRAN downloads](https://cranlogs.r-pkg.org/badges/TemporalHazard)](https://CRAN.R-project.org/package=TemporalHazard)
 [![CRAN downloads total](https://cranlogs.r-pkg.org/badges/grand-total/TemporalHazard)](https://CRAN.R-project.org/package=TemporalHazard)
-[![R-CMD-check](https://github.com/ehrlinger/temporal_hazard/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/ehrlinger/temporal_hazard/actions/workflows/R-CMD-check.yaml)
-[![Codecov test coverage](https://codecov.io/gh/ehrlinger/temporal_hazard/branch/main/graph/badge.svg)](https://app.codecov.io/gh/ehrlinger/temporal_hazard?branch=main)
-[![lint](https://github.com/ehrlinger/temporal_hazard/actions/workflows/lint.yaml/badge.svg)](https://github.com/ehrlinger/temporal_hazard/actions/workflows/lint.yaml)
-[![pkgdown site](https://img.shields.io/badge/docs-pkgdown-blue)](https://ehrlinger.github.io/temporal_hazard/)
+[![R-CMD-check](https://github.com/ehrlinger/TemporalHazard/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/ehrlinger/TemporalHazard/actions/workflows/R-CMD-check.yaml)
+[![Codecov test coverage](https://codecov.io/gh/ehrlinger/TemporalHazard/branch/main/graph/badge.svg)](https://app.codecov.io/gh/ehrlinger/TemporalHazard?branch=main)
+[![lint](https://github.com/ehrlinger/TemporalHazard/actions/workflows/lint.yaml/badge.svg)](https://github.com/ehrlinger/TemporalHazard/actions/workflows/lint.yaml)
+[![pkgdown site](https://img.shields.io/badge/docs-pkgdown-blue)](https://ehrlinger.github.io/TemporalHazard/)
 ![active](https://www.repostatus.org/badges/latest/active.svg)
 <!-- badges: end -->
 
@@ -70,7 +70,7 @@ install.packages("TemporalHazard")
 
 ```r
 # Or install the development version from GitHub
-remotes::install_github("ehrlinger/temporal_hazard")
+remotes::install_github("ehrlinger/TemporalHazard")
 ```
 
 TemporalHazard requires R >= 4.1.0 and depends on the
@@ -129,14 +129,14 @@ the formula interface (see `vignette("fitting-hazard-models")`).
 
 ## Documentation
 
-- **[Clinical Analysis Walkthrough](https://ehrlinger.github.io/temporal_hazard/articles/clinical-analysis-walkthrough.html)** --- complete end-to-end workflow from Kaplan-Meier baseline through validated multivariable model.
-- **[Getting Started](https://ehrlinger.github.io/temporal_hazard/articles/getting-started.html)** --- first fit-predict workflow with visualizations.
-- **[Fitting Hazard Models](https://ehrlinger.github.io/temporal_hazard/articles/fitting-hazard-models.html)** --- intercept-only through multiphase and multi-endpoint models.
-- **[Prediction & Visualization](https://ehrlinger.github.io/temporal_hazard/articles/prediction-visualization.html)** --- survival curves, decomposed hazard, patient-specific risk profiles.
-- **[Inference & Diagnostics](https://ehrlinger.github.io/temporal_hazard/articles/inference-diagnostics.html)** --- bootstrap CIs, decile-of-risk validation, sensitivity analysis.
-- **[Mathematical Foundations](https://ehrlinger.github.io/temporal_hazard/articles/mf-mathematical-foundations.html)** --- the generalized decomposition, additive hazard model, censoring likelihood, and time-varying covariates.
-- **[Package Architecture](https://ehrlinger.github.io/temporal_hazard/articles/ar-architecture.html)** --- internal design, golden fixtures, and dataset catalog.
-- **[SAS-to-R Migration](https://ehrlinger.github.io/temporal_hazard/articles/sas-to-r-migration.html)** --- statement-by-statement mapping from SAS HAZARD syntax.
+- **[Clinical Analysis Walkthrough](https://ehrlinger.github.io/TemporalHazard/articles/clinical-analysis-walkthrough.html)** --- complete end-to-end workflow from Kaplan-Meier baseline through validated multivariable model.
+- **[Getting Started](https://ehrlinger.github.io/TemporalHazard/articles/getting-started.html)** --- first fit-predict workflow with visualizations.
+- **[Fitting Hazard Models](https://ehrlinger.github.io/TemporalHazard/articles/fitting-hazard-models.html)** --- intercept-only through multiphase and multi-endpoint models.
+- **[Prediction & Visualization](https://ehrlinger.github.io/TemporalHazard/articles/prediction-visualization.html)** --- survival curves, decomposed hazard, patient-specific risk profiles.
+- **[Inference & Diagnostics](https://ehrlinger.github.io/TemporalHazard/articles/inference-diagnostics.html)** --- bootstrap CIs, decile-of-risk validation, sensitivity analysis.
+- **[Mathematical Foundations](https://ehrlinger.github.io/TemporalHazard/articles/mf-mathematical-foundations.html)** --- the generalized decomposition, additive hazard model, censoring likelihood, and time-varying covariates.
+- **[Package Architecture](https://ehrlinger.github.io/TemporalHazard/articles/ar-architecture.html)** --- internal design, golden fixtures, and dataset catalog.
+- **[SAS-to-R Migration](https://ehrlinger.github.io/TemporalHazard/articles/sas-to-r-migration.html)** --- statement-by-statement mapping from SAS HAZARD syntax.
 
 ## Development
 
