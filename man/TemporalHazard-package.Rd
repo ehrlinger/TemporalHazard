@@ -121,9 +121,9 @@ nonlinear temporal decomposition mixed effects model. \emph{Stat Methods Med Res
 \seealso{
 Useful links:
 \itemize{
-  \item \url{https://ehrlinger.github.io/temporal_hazard/}
-  \item \url{https://github.com/ehrlinger/temporal_hazard}
-  \item Report bugs at \url{https://github.com/ehrlinger/temporal_hazard/issues}
+  \item \url{https://ehrlinger.github.io/TemporalHazard/}
+  \item \url{https://github.com/ehrlinger/TemporalHazard}
+  \item Report bugs at \url{https://github.com/ehrlinger/TemporalHazard/issues}
 }
 
 }

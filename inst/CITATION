@@ -4,7 +4,7 @@ bibentry(
   author   = person("John", "Ehrlinger"),
   year     = "2026",
   note     = paste("R package version", meta$Version),
-  url      = "https://ehrlinger.github.io/temporal_hazard/"
+  url      = "https://ehrlinger.github.io/TemporalHazard/"
 )
 
 bibentry(
