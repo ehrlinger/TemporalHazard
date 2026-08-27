@@ -132,8 +132,8 @@ jobs:
           # the runner's checkout. A sed that matches nothing exits 0, and the
           # failure would surface two steps later as "path not found" drift --
           # a true failure with a misleading cause. Check first and say so.
-          if ! grep -qF 'path: ~/Documents/GitHub/temporal_hazard' .house-style-tools/repos.yml; then
-            echo "::error::repos.yml no longer contains 'path: ~/Documents/GitHub/temporal_hazard'. The registry format or this repo's entry changed upstream; update this workflow rather than trusting the check." >&2
+          if ! grep -qF 'path: ~/Documents/GitHub/TemporalHazard' .house-style-tools/repos.yml; then
+            echo "::error::repos.yml no longer contains 'path: ~/Documents/GitHub/TemporalHazard'. The registry format or this repo's entry changed upstream; update this workflow rather than trusting the check." >&2
             exit 1
           fi
           # & means "the whole match" to sed, and \ and the | delimiter are
@@ -144,7 +144,7 @@ jobs:
           # know that -- and keeps this correct on a self-hosted runner whose
           # workspace root is not so constrained.
           workspace=$(printf '%s' "$GITHUB_WORKSPACE" | sed 's/[&|\\]/\\&/g')
-          sed -i "s|path: ~/Documents/GitHub/temporal_hazard|path: $workspace|" \
+          sed -i "s|path: ~/Documents/GitHub/TemporalHazard|path: $workspace|" \
             .house-style-tools/repos.yml
 
       - name: Verify the house style artifact is current
