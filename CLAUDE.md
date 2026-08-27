@@ -10,7 +10,7 @@ affordances live here.
 
 `AGENTS.md` says to orient on the public API surface before editing. In Claude Code the way to
 do that is the codemap: it lives in the Obsidian vault under `Claude/repomaps/` and is read via
-the `read-codemap` skill (`/codemap temporal_hazard`). If the codemap looks stale, say so and
+the `read-codemap` skill (`/codemap TemporalHazard`). If the codemap looks stale, say so and
 offer to refresh it (`/regenerate-codemap`) rather than working from a guess.
 
 ## Prose
