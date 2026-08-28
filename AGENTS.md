@@ -147,9 +147,6 @@ the sources under `~/Documents/ObsidianVault/memory/`, then:
 Rscript ~/Documents/GitHub/house-style/compose-house-style.R --repo TemporalHazard
 ```
 
-Note the registry name is `TemporalHazard` while the directory is
-`temporal_hazard`.
-
 ## Rules for this repo
 
 - **Censoring status is coded `-1` left, `0` right, `1` event, `2`
