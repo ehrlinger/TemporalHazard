@@ -103,8 +103,10 @@ depressed. Always \code{0} in refit mode.}
 counting \emph{why} candidate scores were unavailable, summed over every
 replicate. \code{information_indefinite} is the one to read first: it marks
 candidates whose effect is too large for the score test's approximation
-at zero -- typically strong variables that were passed over rather than
-tested, understating their selection frequency. Empty in refit mode.}
+at zero -- typically strong variables. Those are refit and Wald-tested
+automatically, so a candidate reaching this count is one whose refit
+also failed and which therefore went untested, understating its
+selection frequency. Empty in refit mode.}
 \item{n_nonmonotone_replicates}{Select mode only: number of otherwise
 successful replicates in which a forward step \emph{lowered} the
 log-likelihood. Entered models are nested, so this cannot occur at the

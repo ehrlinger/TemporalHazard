@@ -81,29 +81,39 @@ test_that("degenerate and collinear candidates keep their own reasons", {
   }
 })
 
-test_that("hzr_stepwise reports the reasons and names the strong-candidate case", {
+test_that("hzr_stepwise now tests the strong candidate instead of passing it over", {
+  # Was: this run warned "passed over rather than tested", left
+  # n_uncomputable_scores > 0, and selected nothing -- the candidate with the
+  # largest effect on offer was the one the criterion could not test (#130).
+  # The Wald fallback now refits exactly those candidates, so the screen
+  # reaches them.  The reporting path below has not gone away; it is now only
+  # for candidates whose fallback refit itself fails.
   fx <- .reason_fixture(0.8)
-  expect_warning(
-    r <- hzr_stepwise(
-      fx$fit, scope = list(early = ~ z + w, const = ~ z + w), data = fx$data,
-      direction = "forward", criterion = "score", slentry = 0.2,
-      trace = FALSE, control = list(n_starts = 1L)),
-    "passed over rather than tested")
+  r <- suppressWarnings(hzr_stepwise(
+    fx$fit, scope = list(early = ~ z + w, const = ~ z + w), data = fx$data,
+    direction = "forward", criterion = "score", slentry = 0.2,
+    trace = FALSE, control = list(n_starts = 1L)))
 
-  # The run COMPLETED -- it did not stop -- which is precisely the case the
-  # old code left silent: an empty selection and no warning at all.
   expect_false(isTRUE(r$criteria$stopped_uncomputable))
-  expect_gt(r$criteria$n_uncomputable_scores, 0L)
-  expect_identical(
-    names(r$criteria$uncomputable_reasons), "information_indefinite")
-  expect_equal(
-    sum(r$criteria$uncomputable_reasons), r$criteria$n_uncomputable_scores)
+  # Rescued, not merely counted: nothing is left uncomputable, and the
+  # fallback is reported rather than silently switching criterion.
+  expect_identical(r$criteria$n_uncomputable_scores, 0L)
+  expect_gt(r$criteria$n_wald_fallbacks, 0L)
+  # z carries the planted effect; asserting it ENTERED is what distinguishes
+  # "the fallback ran" from "the fallback got the right answer".
+  steps <- as.data.frame(r)
+  expect_true("z" %in% steps$variable[toupper(steps$action) == "ENTER"])
 })
 
 test_that("the reason text tells a user to keep the candidate, not drop it", {
   txt <- .hzr_score_reason_text("information_indefinite")
   expect_match(txt, "STRONG")
-  expect_match(txt, "wald")
+  # The remedy changed with the fallback: the score criterion Wald-tests
+  # these itself, so the text must say the refit failed rather than advise a
+  # re-run under `criterion = "wald"` -- which now runs the identical refit
+  # and fails identically.
+  expect_match(txt, "Wald-tests")
+  expect_match(txt, "refit also failed")
   # And it must not be reachable from the collinear code, which is the
   # opposite advice.
   expect_no_match(.hzr_score_reason_text("collinear"), "STRONG")

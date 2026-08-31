@@ -1332,8 +1332,10 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     counting *why* candidate scores were unavailable, summed over every
 #'     replicate. `information_indefinite` is the one to read first: it marks
 #'     candidates whose effect is too large for the score test's approximation
-#'     at zero -- typically strong variables that were passed over rather than
-#'     tested, understating their selection frequency. Empty in refit mode.}
+#'     at zero -- typically strong variables. Those are refit and Wald-tested
+#'     automatically, so a candidate reaching this count is one whose refit
+#'     also failed and which therefore went untested, understating its
+#'     selection frequency. Empty in refit mode.}
 #'   \item{n_nonmonotone_replicates}{Select mode only: number of otherwise
 #'     successful replicates in which a forward step *lowered* the
 #'     log-likelihood. Entered models are nested, so this cannot occur at the
@@ -1768,15 +1770,16 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
             "reported selection frequency is depressed by them.",
             .hzr_format_reasons(uncomputable_reasons), call. = FALSE)
   } else if (n_indefinite > 0L) {
-    # No replicate stopped, so the branch above stays quiet. Candidates the
-    # score test could not evaluate at beta = 0 were still passed over, and
-    # they are typically the strong ones -- which depresses exactly the
-    # selection frequencies a screen exists to measure.
+    # No replicate stopped, so the branch above stays quiet. Under
+    # `criterion = "score"` such a candidate is refit and Wald-tested, so
+    # reaching this count means the refit failed and it went untested after
+    # all -- and these are typically the strong ones, which depresses exactly
+    # the selection frequencies a screen exists to measure.
     warning(n_indefinite, " candidate score(s) ",
             "across ", n_success, " replicates could not be computed because ",
             .hzr_score_reason_text("information_indefinite"),
-            ". Those candidates were passed over rather than tested, so their ",
-            "selection frequencies are understated. See ",
+            ". The automatic Wald refit failed for these, so they went ",
+            "untested and their selection frequencies are understated. See ",
             "`$uncomputable_reasons`.", call. = FALSE)
   }
 

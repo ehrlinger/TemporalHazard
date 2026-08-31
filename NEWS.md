@@ -32,6 +32,41 @@
   already uses, so it never fires where the ill-conditioning warning stays
   silent.
 
+## Bug fixes
+
+* **The score criterion no longer declines a candidate for being too
+  predictive.** `criterion = "score"` computes SAS HAZARD's Q exactly --
+  `Q = grad^2 * I22`, the reciprocal Schur complement of the *observed*
+  information at `beta = 0` (`src/vars/q1.c`). When a candidate's true effect
+  is far from zero the log-likelihood is convex there, the Schur complement
+  turns negative, and Q is undefined. The criterion therefore declined
+  candidates in proportion to how predictive they were: on a fixture with one
+  planted effect (`beta = 0.9`, LR = 178) and two pure-noise columns, the
+  screen entered both noise columns and never tested the real one (#130).
+
+  This is not a deviation from the reference -- it is inherited from it. SAS
+  documents the same failure in `q1.c` ("IT IS POSSIBLE THAT THE PROGRAM WILL
+  RETURN A NEGATIVE Q VALUE ... THE USER SHOULD USE THE MORE EXPENSIVE Q2 AS
+  AN ALTERNATIVE"), and `dqstat.c` declines the candidate with `p = 1`. `Q2`
+  is named once in the C tree and never implemented.
+
+  So Q itself is unchanged and stays bit-faithful; only the *handling*
+  diverges, and only where SAS says its own answer is unusable. A candidate
+  the score cannot test is now refit and tested by Wald -- the substitute the
+  unbuilt `Q2` was for. This is a deliberate, documented divergence from the
+  reference implementation.
+
+  The fallback is deliberately narrow: it applies to `information_indefinite`
+  and `coefficient_diverging`, the two causes that mean "the approximation at
+  zero broke down". Collinear, constant and non-numeric candidates are still
+  declined without a refit, so the screen keeps the speed advantage that the
+  score criterion exists for -- the cost is paid only on the few candidates
+  that trip it. The returned object's `$criteria` gains `n_wald_fallbacks`,
+  so the substitution is reported rather than silent, and a fallback refit
+  that fails is recorded in `$criteria$refit_failures` and warned about
+  rather than leaving a row indistinguishable from one never refit.
+
+
 # TemporalHazard 1.2.6
 
 ## Bug fixes
