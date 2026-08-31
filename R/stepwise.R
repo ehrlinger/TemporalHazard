@@ -583,10 +583,13 @@ hzr_stepwise <- function(fit,
     warning("Stepwise selection completed, but ", n_indefinite,
             " candidate score(s) could not be computed because ",
             .hzr_score_reason_text("information_indefinite"),
-            ". Those candidates were passed over rather than tested, so the ",
-            "selected set may omit strong variables. Re-run with ",
-            "`criterion = \"wald\"` to test them; see ",
-            "`$criteria$uncomputable_reasons`.", call. = FALSE)
+            ". Under `criterion = \"score\"` such candidates are refit and ",
+            "Wald-tested automatically, so reaching this means the refit ",
+            "itself failed and they were never tested -- the selected set ",
+            "may omit strong variables. Re-running with ",
+            "`criterion = \"wald\"` runs the same refit and will fail the ",
+            "same way; see `$criteria$refit_failures` for which candidates, ",
+            "and `$criteria$uncomputable_reasons`.", call. = FALSE)
   }
   if (stopped_refit_failed) {
     warning("Stepwise selection stopped after ", nrow(steps_df),

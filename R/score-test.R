@@ -726,8 +726,9 @@
       "the observed information at beta = 0 was indefinite. That usually means",
       "the candidate's effect is too large for the score test's approximation",
       "at zero, so these are typically STRONG candidates rather than",
-      "degenerate ones; `criterion = \"wald\"` tests them. It is also reached",
-      "when the current fit has not truly converged"
+      "degenerate ones. `criterion = \"score\"` refits and Wald-tests them",
+      "itself, so reaching this reason means that refit also failed. It is",
+      "also reached when the current fit has not truly converged"
     ),
     information_nonpositive = paste(
       "the candidate's own observed information was not positive, before any",

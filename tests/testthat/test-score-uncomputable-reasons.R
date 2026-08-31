@@ -108,7 +108,12 @@ test_that("hzr_stepwise now tests the strong candidate instead of passing it ove
 test_that("the reason text tells a user to keep the candidate, not drop it", {
   txt <- .hzr_score_reason_text("information_indefinite")
   expect_match(txt, "STRONG")
-  expect_match(txt, "wald")
+  # The remedy changed with the fallback: the score criterion Wald-tests
+  # these itself, so the text must say the refit failed rather than advise a
+  # re-run under `criterion = "wald"` -- which now runs the identical refit
+  # and fails identically.
+  expect_match(txt, "Wald-tests")
+  expect_match(txt, "refit also failed")
   # And it must not be reachable from the collinear code, which is the
   # opposite advice.
   expect_no_match(.hzr_score_reason_text("collinear"), "STRONG")

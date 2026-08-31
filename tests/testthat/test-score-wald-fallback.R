@@ -111,3 +111,31 @@ test_that("fallback reasons are classified, not lumped together", {
   expect_false("non_numeric" %in% .hzr_score_fallback_reasons)
   expect_true("information_indefinite" %in% .hzr_score_fallback_reasons)
 })
+
+test_that("a fallback refit that fails is recorded and warned, not silent", {
+  skip_on_cran()
+  # Before this, a failed fallback refit hit `next` and recorded nothing: no
+  # warning, no refit_failures token, no stopped_refit_failed. The resulting
+  # row was byte-identical to one from a run where no refit was attempted at
+  # all, so the only signal left -- an information_indefinite count -- meant
+  # the opposite of what a reader would take it to mean.
+  D <- planted()
+  base <- planted_fit(D)
+
+  testthat::local_mocked_bindings(
+    .hzr_refit_with_scope = function(...) stop("forced refit failure")
+  )
+
+  w <- testthat::capture_warnings(
+    sw <- hzr_stepwise(fit = base, scope = list(const = ~ x1 + x2 + x3),
+                       data = D, direction = "both", slentry = 0.05)
+  )
+
+  # The candidate the score could not test is x1; its refit was attempted
+  # and failed, so it must appear by name.
+  expect_true(any(grepl("Wald-fallback refit failed", w)))
+  expect_true(any(grepl("x1", sw$criteria$refit_failures, fixed = TRUE)))
+  expect_gt(sw$criteria$n_refit_failures, 0L)
+  # And nothing may be reported as a successful substitution.
+  expect_identical(sw$criteria$n_wald_fallbacks, 0L)
+})

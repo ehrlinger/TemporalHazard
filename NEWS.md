@@ -29,8 +29,10 @@
   zero broke down". Collinear, constant and non-numeric candidates are still
   declined without a refit, so the screen keeps the speed advantage that the
   score criterion exists for -- the cost is paid only on the few candidates
-  that trip it. `summary()`'s `$criteria` gains `n_wald_fallbacks`, so the
-  substitution is reported rather than silent.
+  that trip it. The returned object's `$criteria` gains `n_wald_fallbacks`,
+  so the substitution is reported rather than silent, and a fallback refit
+  that fails is recorded in `$criteria$refit_failures` and warned about
+  rather than leaving a row indistinguishable from one never refit.
 
 # TemporalHazard 1.2.6
 
