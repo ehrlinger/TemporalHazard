@@ -89,11 +89,38 @@ defeats both `is.null` and a length check.
 
 ## The automated gates
 
-| Gate | When | What it runs |
-|---|---|---|
-| `.github/workflows/lint.yaml` | PR | `lintr::lint_package()`, `LINTR_ERROR_ON_LINT=true` |
-| `R-CMD-check.yaml` | PR | 5 platforms: ubuntu devel/release/oldrel-1, macOS, Windows |
-| `test-coverage.yaml`, `pkgdown.yaml` | PR | coverage; docs site |
+Eight of these are **required status checks** on `main`: a PR cannot merge until they pass.
+The rest run and report but do not block.
+
+| Gate | When | Blocks merge | What it runs |
+|---|---|---|---|
+| `lint.yaml` → `lint` | PR, push | **yes** | `lintr::lint_package()`, `LINTR_ERROR_ON_LINT=true` |
+| `lint.yaml` → `house-style` | PR, push | **yes** | fails when `.claude/house-style.md` has drifted from its vault sources |
+| `lint.yaml` → `docs-current` | PR, push | no | `git diff --exit-code man/ NAMESPACE DESCRIPTION` after `document()` |
+| `spelling.yaml` | PR, push | **yes** | `spelling::spell_check_package(use_wordlist = TRUE)` |
+| `R-CMD-check.yaml` | PR, push, release | **yes**, all five | ubuntu devel/release/oldrel-1, macOS, Windows |
+| `test-coverage.yaml` | PR, push, release | no | coverage upload |
+| `pkgdown.yaml` → `build-and-deploy` | PR, push, release | no | docs site |
+| `check-manual.yaml` | push to `main`, release | **cannot** | the PDF manual — the only thing that catches raw Unicode in `Rd` |
+| `check-release.yaml` | release published | no | `R CMD check --as-cran` |
+
+`check-manual` says *cannot* rather than *no*: it deliberately does not run on pull requests,
+because building the manual is slow and a check that makes every PR wait is one people learn to
+route around. A check that never reports on a PR can never be required — making it one would
+block every merge permanently. It runs after the merge instead, so a raw-Unicode `Rd` is caught
+on `main`, not before it lands.
+
+The rules live in the repository **ruleset** `protect main`, not in the legacy branch-protection
+settings — the two are separate systems, and the `branches/main/protection` API returns 404 here
+even though `main` is protected. Alongside the required checks the ruleset blocks deletion and
+force-push, requires a pull request, and auto-requests Copilot review. There are **no bypass
+actors**, so it applies to the maintainer too.
+
+Required checks are *not* strict: a PR is not forced to re-run the matrix every time `main`
+moves. That is a deliberate trade against a roughly 45-minute Windows job, and it means a branch
+can merge green having never been tested against the current `main`. When a change depends on
+something `main` gained after the branch was cut, merge `main` in and re-run rather than trusting
+the badge.
 
 **There are no git hooks and no Claude Code hooks in this repo.** Nothing runs locally on
 your behalf. The definition of done above is entirely manual — run it yourself.
