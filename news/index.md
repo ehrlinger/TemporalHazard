@@ -1,5 +1,41 @@
 # Changelog
 
+## TemporalHazard 1.2.7
+
+### New features
+
+- **A fit sitting on a likelihood ridge now says so, and names the
+  parameters.** An ill-conditioned Hessian already warned that standard
+  errors were unreliable. That understates the problem when the
+  ill-conditioning is a ridge: the likelihood is near-flat along some
+  combination of parameters, and there the individual *point estimates*
+  are not determined by the data either – only the combination is. The
+  fit still reports `converged`, and the coefficient table still prints
+  a number for every parameter, so nothing on the object signalled it.
+
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  now warns, once per fit, naming the parameters that span the flat
+  direction along with their correlation and the Hessian’s `rcond`, and
+  [`summary()`](https://rdrr.io/r/base/summary.html) prints the same
+  note. The finding is recorded on the object as `fit$weak` (`NULL` when
+  the fit is well identified), so it can be checked programmatically
+  rather than scraped from a warning.
+
+  The direction is read off the *correlation* of the estimates rather
+  than their raw covariance. Parameters here sit on very different
+  scales – an `m` of 27 against a `nu` of 0.027 – and in raw units a
+  direction that moves both equally in statistical terms loads almost
+  entirely on the larger one, which would report a two-parameter ridge
+  as a single unidentified parameter. A parameter that is merely
+  imprecise, without trading off against another, is deliberately not
+  reported: that is ordinary low precision, and the existing `rcond`
+  warning and the parameter’s own standard error already cover it.
+
+  The check is generic – it runs for every distribution and knows
+  nothing about phase shapes – and is gated on the `rcond` threshold the
+  package already uses, so it never fires where the ill-conditioning
+  warning stays silent.
+
 ## TemporalHazard 1.2.6
 
 ### Bug fixes

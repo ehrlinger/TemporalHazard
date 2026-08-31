@@ -10,14 +10,14 @@ Source:
 [`inst/CITATION`](https://github.com/ehrlinger/TemporalHazard/blob/main/inst/CITATION)
 
 Ehrlinger J (2026). *TemporalHazard: Temporal Parametric Hazard Modeling
-in R*. R package version 1.2.6,
+in R*. R package version 1.2.7,
 <https://ehrlinger.github.io/TemporalHazard/>.
 
     @Manual{,
       title = {TemporalHazard: Temporal Parametric Hazard Modeling in R},
       author = {John Ehrlinger},
       year = {2026},
-      note = {R package version 1.2.6},
+      note = {R package version 1.2.7},
       url = {https://ehrlinger.github.io/TemporalHazard/},
     }
 

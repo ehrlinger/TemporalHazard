@@ -13,7 +13,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.6</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.7</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -55,6 +55,18 @@
       <small>Source: <a href="https://github.com/ehrlinger/TemporalHazard/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="1.2.7" id="temporalhazard-127">TemporalHazard 1.2.7<a class="anchor" aria-label="anchor" href="#temporalhazard-127"></a></h2>
+<div class="section level3">
+<h3 id="new-features-1-2-7">New features<a class="anchor" aria-label="anchor" href="#new-features-1-2-7"></a></h3>
+<ul><li>
+<p><strong>A fit sitting on a likelihood ridge now says so, and names the parameters.</strong> An ill-conditioned Hessian already warned that standard errors were unreliable. That understates the problem when the ill-conditioning is a ridge: the likelihood is near-flat along some combination of parameters, and there the individual <em>point estimates</em> are not determined by the data either – only the combination is. The fit still reports <code>converged</code>, and the coefficient table still prints a number for every parameter, so nothing on the object signalled it.</p>
+<p><code><a href="../reference/hazard.html">hazard()</a></code> now warns, once per fit, naming the parameters that span the flat direction along with their correlation and the Hessian’s <code>rcond</code>, and <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> prints the same note. The finding is recorded on the object as <code>fit$weak</code> (<code>NULL</code> when the fit is well identified), so it can be checked programmatically rather than scraped from a warning.</p>
+<p>The direction is read off the <em>correlation</em> of the estimates rather than their raw covariance. Parameters here sit on very different scales – an <code>m</code> of 27 against a <code>nu</code> of 0.027 – and in raw units a direction that moves both equally in statistical terms loads almost entirely on the larger one, which would report a two-parameter ridge as a single unidentified parameter. A parameter that is merely imprecise, without trading off against another, is deliberately not reported: that is ordinary low precision, and the existing <code>rcond</code> warning and the parameter’s own standard error already cover it.</p>
+<p>The check is generic – it runs for every distribution and knows nothing about phase shapes – and is gated on the <code>rcond</code> threshold the package already uses, so it never fires where the ill-conditioning warning stays silent.</p>
+</li>
+</ul></div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="1.2.6" id="temporalhazard-126">TemporalHazard 1.2.6<a class="anchor" aria-label="anchor" href="#temporalhazard-126"></a></h2>
 <div class="section level3">

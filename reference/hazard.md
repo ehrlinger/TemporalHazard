@@ -175,7 +175,11 @@ a point where the likelihood is defined), `convergence` (the
 whether it was the `best` and so the reported fit, and the `message` of
 any error. A start that stops at `maxit` has a finite `objective` and
 can win the selection, so `status` distinguishes it from one that
-converged), and `engine` (implementation tag, `"native-r-m2"`).
+converged. Any fit whose likelihood is near-flat along a parameter
+combination also carries `weak`, listing the `params` spanning that
+direction, their squared loadings (`weights`), the strongest pairwise
+`correlation` among them, and the Hessian `rcond` – `NULL` when the fit
+is well identified), and `engine` (implementation tag, `"native-r-m2"`).
 
 ## Details
 
