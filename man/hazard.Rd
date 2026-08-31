@@ -133,7 +133,11 @@ unless the start reached a point where the likelihood is defined),
 the \code{best} and so the reported fit, and the \code{message} of any
 error. A start that stops at \code{maxit} has a finite \code{objective}
 and can win the selection, so \code{status} distinguishes it from one
-that converged),
+that converged. Any fit whose likelihood is near-flat along a parameter
+combination also carries \code{weak}, listing the \code{params}
+spanning that direction, their squared loadings (\code{weights}), the
+strongest pairwise \code{correlation} among them, and the Hessian
+\code{rcond} -- \code{NULL} when the fit is well identified),
 and \code{engine} (implementation tag, \code{"native-r-m2"}).
 }
 \description{
