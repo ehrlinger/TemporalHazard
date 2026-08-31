@@ -115,7 +115,10 @@ NULL
 #' @return \code{NULL} when there is no ridge, otherwise a list with
 #'   \code{params} (names spanning the flat direction), \code{weights} (their
 #'   squared loadings), \code{correlation} (the strongest pairwise
-#'   correlation among them) and \code{rcond}.
+#'   correlation among them) and \code{rcond}.  Directions are examined from
+#'   flattest to stiffest and the first one that is a genuine trade-off is
+#'   reported, so a ridge is still found when some larger block of
+#'   moderately correlated parameters carries more variance than it does.
 #' @noRd
 .hzr_weak_direction <- function(vcov, rcond, param_names = NULL,
                                 tol = .hzr_rcond_tol,
@@ -143,29 +146,49 @@ NULL
   R <- V / outer(s, s)
   if (anyNA(R) || any(!is.finite(R))) return(NULL)
 
-  # (4) The ridge is the high-variance direction of the standardised
-  #     estimates: the leading eigenvector of their correlation matrix.
+  # (4) Scan the standardised directions from flattest to stiffest, rather
+  #     than gating only the leading one. Taking just the top eigenvector
+  #     misses a real ridge whenever a larger *block* of moderately
+  #     correlated parameters outranks it: an equicorrelated block of k
+  #     parameters has eigenvalue 1 + (k - 1) * r, which passes a perfect
+  #     two-parameter ridge's ceiling of 2 as soon as r > 1 / (k - 1) --
+  #     0.50 at k = 3, 0.33 at k = 4. The block is the higher-variance
+  #     direction and is not a trade-off, so the gate below rejects it, and
+  #     the ridge underneath it was never looked at. Returning NULL there
+  #     reports "well identified" for a fit that is not, which is the exact
+  #     failure this function exists to prevent.
   e <- tryCatch(eigen(R, symmetric = TRUE), error = function(e) NULL)
   if (is.null(e)) return(NULL)
-  w <- e$vectors[, which.max(e$values)]^2
 
-  ord <- order(w, decreasing = TRUE)
-  k <- which(cumsum(w[ord]) >= share)[1]
-  if (is.na(k)) k <- length(ord)
-  idx <- ord[seq_len(k)]
-  if (length(idx) < 2L) return(NULL)
+  # eigen() returns values in decreasing order, so this walks flattest first
+  # and the first direction that is a genuine trade-off wins. No separate
+  # floor on the eigenvalue is needed to keep a stiff direction from being
+  # reported: clearing cor_tol requires a strongly correlated pair among the
+  # selected parameters, and such a pair always puts a high-variance
+  # direction earlier in this same scan, so the flat one is returned first.
+  for (j in seq_along(e$values)) {
+    w <- e$vectors[, j]^2
 
-  # (5) Require a genuine trade-off. Without this an uncorrelated but
-  #     imprecise parameter set (correlation matrix near identity, where the
-  #     eigenvectors are arbitrary) would be reported as a ridge.
-  sub <- R[idx, idx, drop = FALSE]
-  off <- sub[upper.tri(sub)]
-  if (!length(off)) return(NULL)
-  r_max <- off[which.max(abs(off))]
-  if (abs(r_max) < cor_tol) return(NULL)
+    ord <- order(w, decreasing = TRUE)
+    k <- which(cumsum(w[ord]) >= share)[1]
+    if (is.na(k)) k <- length(ord)
+    idx <- ord[seq_len(k)]
+    if (length(idx) < 2L) next
 
-  list(params = nms[idx], weights = w[idx],
-       correlation = r_max, rcond = rcond)
+    # (5) Require a genuine trade-off. Without this an uncorrelated but
+    #     imprecise parameter set (correlation matrix near identity, where
+    #     the eigenvectors are arbitrary) would be reported as a ridge.
+    sub <- R[idx, idx, drop = FALSE]
+    off <- sub[upper.tri(sub)]
+    if (!length(off)) next
+    r_max <- off[which.max(abs(off))]
+    if (abs(r_max) < cor_tol) next
+
+    return(list(params = nms[idx], weights = w[idx],
+                correlation = r_max, rcond = rcond))
+  }
+
+  NULL
 }
 
 

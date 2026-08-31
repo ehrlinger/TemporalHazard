@@ -772,8 +772,20 @@ hazard <- function(formula = NULL,
   # looking coefficient table gives no sign of it. Name the parameters
   # involved instead of leaving them to be read as estimated quantities.
   # Runs for every distribution -- nothing here knows about phase shapes.
+  # optim() hands back an unnamed `par` for the single-distribution fits, so
+  # taking names() alone would label the warning "par1"/"par2" while
+  # summary() prints the real parameter names against the same numbers, and
+  # the reader cannot map one onto the other. Fall back to the same source
+  # summary() uses, so the two cannot disagree.
+  weak_names <- names(fit_state$par)
+  if (is.null(weak_names) && !is.null(fit_state$par)) {
+    weak_names <- .hzr_parameter_names(
+      theta = fit_state$par, dist = dist,
+      p = if (is.null(x_fit)) 0L else ncol(x_fit)
+    )
+  }
   fit_state$weak <- .hzr_weak_direction(fit_state$vcov, fit_state$rcond,
-                                        names(fit_state$par))
+                                        weak_names)
   if (!is.null(fit_state$weak)) {
     warning(.hzr_weak_direction_message(fit_state$weak), call. = FALSE)
   }

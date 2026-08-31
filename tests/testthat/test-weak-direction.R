@@ -135,11 +135,52 @@ test_that("a well-identified fit stays silent and records no weak direction", {
   n <- 300
   time   <- rweibull(n, shape = 1.5, scale = 2)
   status <- rep(1L, n)
+  # `theta` is required: hazard()'s single-distribution fit branch is
+  # `else if (fit && !is.null(theta))`, so without it nothing is optimised,
+  # $vcov and $rcond come back NULL, and .hzr_weak_direction() returns at its
+  # first guard.  Both assertions below then pass with the whole detector
+  # deleted -- which is what this test used to do.
   w <- testthat::capture_warnings(
-    fit <- hazard(time = time, status = status, dist = "weibull", fit = TRUE)
+    fit <- hazard(time = time, status = status, dist = "weibull",
+                  theta = c(0.5, 1.0), fit = TRUE)
   )
+  # Guard the guard: assert the fit actually reached the detector, or the
+  # two assertions below are vacuous again.
+  expect_false(is.null(fit$fit$rcond))
+  expect_false(is.null(fit$fit$vcov))
   expect_false(any(grepl("only in combination", w)))
   expect_null(fit$fit$weak)
+})
+
+test_that("a ridge is found even when a larger correlated block outranks it", {
+  # Regression for the leading-eigenvector bug: gating only the top
+  # eigenvector on cor_tol missed a near-perfect two-parameter ridge whenever
+  # some block of k >= 3 moderately correlated parameters carried more
+  # variance.  An equicorrelated k-block has eigenvalue 1 + (k - 1) * r, so it
+  # passes the ridge's ceiling of 2 as soon as r > 1 / (k - 1) -- 0.5 at
+  # k = 3.  The detector then returned NULL, which is the documented signal
+  # for "well identified".
+  ridge_with_block <- function(rho) {
+    R <- diag(5)
+    R[1, 2] <- R[2, 1] <- 0.99999
+    for (i in 3:5) {
+      for (j in 3:5) if (i != j) R[i, j] <- rho
+    }
+    .hzr_weak_direction(R, rcond = 1e-10,
+                        param_names = paste0("p", seq_len(5)))
+  }
+
+  # Below the crossover the block loses on variance and the old code worked.
+  expect_setequal(ridge_with_block(0.45)$params, c("p1", "p2"))
+
+  # Above it the block wins on variance but is not a trade-off. These are the
+  # values that returned NULL before the scan was introduced.
+  for (rho in c(0.51, 0.60, 0.75)) {
+    w <- ridge_with_block(rho)
+    expect_false(is.null(w))
+    expect_setequal(w$params, c("p1", "p2"))
+    expect_gt(abs(w$correlation), 0.999)
+  }
 })
 
 test_that("summary() prints the ridge note when one is recorded", {
@@ -159,4 +200,31 @@ test_that("summary() prints the ridge note when one is recorded", {
   out <- gsub("\\s+", " ", out)
   expect_match(out, "only in combination")
   expect_match(out, "early\\.nu")
+})
+
+test_that("a single-distribution ridge is reported under the real parameter names", {
+  skip_on_cran()
+  # optim() returns an unnamed `par` for the single-distribution fits, so
+  # reading names(fit$par) alone labelled the warning "par3"/"par4" while
+  # summary() printed "beta1"/"beta2" against the same numbers.  The names
+  # must come from the same source summary() uses.
+  set.seed(3)
+  n <- 250
+  x1 <- stats::rnorm(n)
+  x2 <- x1 + stats::rnorm(n, sd = 1e-4)   # near-collinear: a genuine ridge
+  df <- data.frame(
+    tt = stats::rweibull(n, 1.4, 2),
+    st = stats::rbinom(n, 1, 0.9),
+    x1 = x1, x2 = x2
+  )
+  fit <- suppressWarnings(hazard(
+    survival::Surv(tt, st) ~ x1 + x2, data = df, dist = "weibull",
+    theta = c(0.5, 1, 0, 0), fit = TRUE
+  ))
+
+  # Assert the fixture is still a ridge, or the naming assertion below is
+  # vacuous.
+  expect_false(is.null(fit$fit$weak))
+  expect_null(names(fit$fit$par))          # the condition the fallback exists for
+  expect_setequal(fit$fit$weak$params, c("beta1", "beta2"))
 })
