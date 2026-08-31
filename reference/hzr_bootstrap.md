@@ -157,8 +157,10 @@ A list with class `"hzr_bootstrap"` containing:
   were unavailable, summed over every replicate.
   `information_indefinite` is the one to read first: it marks candidates
   whose effect is too large for the score test's approximation at zero –
-  typically strong variables that were passed over rather than tested,
-  understating their selection frequency. Empty in refit mode.
+  typically strong variables. Those are refit and Wald-tested
+  automatically, so a candidate reaching this count is one whose refit
+  also failed and which therefore went untested, understating its
+  selection frequency. Empty in refit mode.
 
 - n_nonmonotone_replicates:
 

@@ -66,6 +66,15 @@
 <p>The check is generic – it runs for every distribution and knows nothing about phase shapes – and is gated on the <code>rcond</code> threshold the package already uses, so it never fires where the ill-conditioning warning stays silent.</p>
 </li>
 </ul></div>
+<div class="section level3">
+<h3 id="bug-fixes-1-2-7">Bug fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-1-2-7"></a></h3>
+<ul><li>
+<p><strong>The score criterion no longer declines a candidate for being too predictive.</strong> <code>criterion = "score"</code> computes SAS HAZARD’s Q exactly – <code>Q = grad^2 * I22</code>, the reciprocal Schur complement of the <em>observed</em> information at <code>beta = 0</code> (<code>src/vars/q1.c</code>). When a candidate’s true effect is far from zero the log-likelihood is convex there, the Schur complement turns negative, and Q is undefined. The criterion therefore declined candidates in proportion to how predictive they were: on a fixture with one planted effect (<code>beta = 0.9</code>, LR = 178) and two pure-noise columns, the screen entered both noise columns and never tested the real one (<a href="https://github.com/ehrlinger/TemporalHazard/issues/130" class="external-link">#130</a>).</p>
+<p>This is not a deviation from the reference – it is inherited from it. SAS documents the same failure in <code>q1.c</code> (“IT IS POSSIBLE THAT THE PROGRAM WILL RETURN A NEGATIVE Q VALUE … THE USER SHOULD USE THE MORE EXPENSIVE Q2 AS AN ALTERNATIVE”), and <code>dqstat.c</code> declines the candidate with <code>p = 1</code>. <code>Q2</code> is named once in the C tree and never implemented.</p>
+<p>So Q itself is unchanged and stays bit-faithful; only the <em>handling</em> diverges, and only where SAS says its own answer is unusable. A candidate the score cannot test is now refit and tested by Wald – the substitute the unbuilt <code>Q2</code> was for. This is a deliberate, documented divergence from the reference implementation.</p>
+<p>The fallback is deliberately narrow: it applies to <code>information_indefinite</code> and <code>coefficient_diverging</code>, the two causes that mean “the approximation at zero broke down”. Collinear, constant and non-numeric candidates are still declined without a refit, so the screen keeps the speed advantage that the score criterion exists for – the cost is paid only on the few candidates that trip it. The returned object’s <code>$criteria</code> gains <code>n_wald_fallbacks</code>, so the substitution is reported rather than silent, and a fallback refit that fails is recorded in <code>$criteria$refit_failures</code> and warned about rather than leaving a row indistinguishable from one never refit.</p>
+</li>
+</ul></div>
 </div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="1.2.6" id="temporalhazard-126">TemporalHazard 1.2.6<a class="anchor" aria-label="anchor" href="#temporalhazard-126"></a></h2>

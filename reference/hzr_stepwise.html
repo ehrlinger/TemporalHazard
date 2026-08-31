@@ -208,14 +208,20 @@ settings actually applied, plus, under <code>criterion = "score"</code>,
 an unscored candidate as a bad one: <code>information_indefinite</code> marks
 candidates whose effect is too large for the score test's
 approximation at zero, which are typically the strongest variables
-on offer rather than degenerate ones. <code>criterion = "wald"</code> tests
-them.  For every criterion it also carries <code>refit_failures</code> (the
-<code>"var"</code> / <code>"var@phase"</code> tokens of candidate moves whose refit
-errored or failed to converge), <code>n_refit_failures</code>, and
-<code>stopped_refit_failed</code> — <code>TRUE</code> when the run ended on an iteration
-in which refits failed, which is a screen that could not test its
-candidates rather than one that tested them and liked none.  Check
-it before reading a zero-row <code>steps</code> as an honest null result.</p></dd>
+on offer rather than degenerate ones. Those are now refit and tested
+by Wald automatically, counted in <code>n_wald_fallbacks</code>; a candidate
+still reaches <code>uncomputable_reasons</code> only when that refit itself
+fails, or when the cause is one no refit can rescue — which is
+every cause except <code>information_indefinite</code> and
+<code>coefficient_diverging</code>, the two a refit exists to rescue. Read
+<code>uncomputable_reasons</code> for which one it was in any given run.  For
+every criterion it also carries
+<code>refit_failures</code> (the <code>"var"</code> / <code>"var@phase"</code> tokens of candidate
+moves whose refit errored or failed to converge), <code>n_refit_failures</code>,
+and <code>stopped_refit_failed</code> — <code>TRUE</code> when the run ended on an
+iteration in which refits failed, which is a screen that could not
+test its candidates rather than one that tested them and liked none.
+Check it before reading a zero-row <code>steps</code> as an honest null result.</p></dd>
 
 <dt><code>trace_msg</code></dt>
 <dd><p>Character vector of the trace lines,
