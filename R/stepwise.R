@@ -144,8 +144,11 @@
 #'       on offer rather than degenerate ones. Those are now refit and tested
 #'       by Wald automatically, counted in `n_wald_fallbacks`; a candidate
 #'       still reaches `uncomputable_reasons` only when that refit itself
-#'       fails, or when the cause is one no refit can rescue (a collinear or
-#'       constant column).  For every criterion it also carries
+#'       fails, or when the cause is one no refit can rescue --- which is
+#'       every cause except `information_indefinite` and
+#'       `coefficient_diverging`, the two a refit exists to rescue. Read
+#'       `uncomputable_reasons` for which one it was in any given run.  For
+#'       every criterion it also carries
 #'       `refit_failures` (the `"var"` / `"var@phase"` tokens of candidate
 #'       moves whose refit errored or failed to converge), `n_refit_failures`,
 #'       and `stopped_refit_failed` --- `TRUE` when the run ended on an

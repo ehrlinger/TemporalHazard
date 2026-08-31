@@ -106,8 +106,11 @@ approximation at zero, which are typically the strongest variables
 on offer rather than degenerate ones. Those are now refit and tested
 by Wald automatically, counted in \code{n_wald_fallbacks}; a candidate
 still reaches \code{uncomputable_reasons} only when that refit itself
-fails, or when the cause is one no refit can rescue (a collinear or
-constant column).  For every criterion it also carries
+fails, or when the cause is one no refit can rescue --- which is
+every cause except \code{information_indefinite} and
+\code{coefficient_diverging}, the two a refit exists to rescue. Read
+\code{uncomputable_reasons} for which one it was in any given run.  For
+every criterion it also carries
 \code{refit_failures} (the \code{"var"} / \code{"var@phase"} tokens of candidate
 moves whose refit errored or failed to converge), \code{n_refit_failures},
 and \code{stopped_refit_failed} --- \code{TRUE} when the run ended on an
