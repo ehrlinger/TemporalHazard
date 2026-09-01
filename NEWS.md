@@ -56,7 +56,7 @@
   refit the winner again with identical arguments. The two fits were
   bit-identical, so this was cost rather than incorrectness -- but it doubled
   the price of every accepted fallback entry, against a criterion whose whole
-  advantage is that it does not refit per candidate. The fallback's fit is now
+  advantage is that it does not refit per candidate. The rescuing fit is now
   kept and reused, as the Wald path already did with its candidate fits.
 
 ## Documentation
@@ -73,8 +73,8 @@
   comments named. Widening `.hzr_score_fallback_reasons` to include `constant`
   and `collinear` left both green, because a degenerate candidate still fails
   to enter -- it merely costs a refit on the way out -- and the "noise stays
-  out" assertion is guarded by `slentry` rather than by the fallback's
-  narrowness (the fixture's own Wald p-values are 0.0997 and 0.149, so a
+  out" assertion is guarded by `slentry` rather than by how narrow the
+  fallback is (the fixture's own Wald p-values are 0.0997 and 0.149, so a
   fallback that refit everything would still decline both). Both now assert
   `n_wald_fallbacks`, which is the quantity that moves.
 

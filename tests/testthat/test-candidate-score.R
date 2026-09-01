@@ -233,3 +233,51 @@ test_that("non-invertible vcov yields NA score without erroring", {
   expect_true(is.na(s$p_value))
   expect_true(is.na(s$delta_aic))
 })
+
+# stat_type ----------------------------------------------------------------
+
+test_that("stat_type names the distribution `stat` belongs to", {
+  # `stat` is a Wald z for a scalar candidate and a chi-square for a joint
+  # one, and a score Q is a chi-square too -- all three at df = 1 for the
+  # scalar cases. `df` therefore cannot tell a caller which reference
+  # distribution recomputes the p-value, which is what stat_type exists for.
+  # Pinned here, against the scorer, rather than through a stepwise run: the
+  # Wald path refits each candidate, and a multiphase refit is not stable
+  # enough across platforms to hang a reporting assertion on.
+  fit <- .fit_weibull()
+  covariate_row <- setdiff(
+    rownames(summary(fit)$coefficients), c("mu", "nu"))
+
+  w <- .hzr_candidate_score(
+    criterion = "wald", mode = "drop", current = fit, names = covariate_row)
+  expect_identical(w$stat_type, "wald_z")
+  expect_identical(w$df, 1L)
+  # A scalar Wald is reported as a z, NOT as its square -- which is exactly
+  # why it is indistinguishable from a 1-df Q on `df` alone.
+  expect_equal(2 * stats::pnorm(-abs(w$stat)), w$p_value, tolerance = 1e-8)
+
+  # The score branch, from a .hzr_score_q()-shaped result.
+  q <- list(stat = 3.84, df = 1L, p_value = 0.05)
+  sc <- .hzr_candidate_score(
+    criterion = "score", mode = "entry", current = fit,
+    score = q, names = covariate_row)
+  expect_identical(sc$stat_type, "score_q")
+  expect_identical(sc$df, 1L)
+
+  # The two branches must not agree, or the field distinguishes nothing.
+  expect_false(identical(w$stat_type, sc$stat_type))
+})
+
+test_that("a multi-df Wald is labelled chi-square, not z", {
+  # The joint case: .hzr_candidate_score() reports the chi-square directly
+  # rather than a z, so stat_type has to switch with it.
+  fit <- .fit_weibull(betas = c(0.3, -0.2), seed = 7L)
+  covariate_rows <- setdiff(
+    rownames(summary(fit)$coefficients), c("mu", "nu"))
+  skip_if(length(covariate_rows) < 2L, "fixture has fewer than 2 covariates")
+
+  w <- .hzr_candidate_score(
+    criterion = "wald", mode = "drop", current = fit, names = covariate_rows)
+  expect_gt(w$df, 1L)
+  expect_identical(w$stat_type, "wald_chisq")
+})
