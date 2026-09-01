@@ -65,10 +65,14 @@ test_that("the planted strong effect is selected, not the noise variables", {
   steps <- as.data.frame(sw)
   entered <- steps$variable[toupper(steps$action) == "ENTER"]
   expect_true("x1" %in% entered)
-  # Asserting the noise stays out is the half that can fail for the right
-  # reason: a fallback that simply refit everything would enter all three.
   expect_false("x2" %in% entered)
   expect_false("x3" %in% entered)
+  # The two assertions above do NOT test the fallback's narrowness, despite an
+  # earlier comment here saying so: x2 and x3 have Wald p-values of 0.0997 and
+  # 0.149 on this fixture, so a fallback that refit every candidate would
+  # still see both declined by `slentry`. The count is what can fail --
+  # refitting everything makes it 3.
+  expect_identical(sw$criteria$n_wald_fallbacks, 1L)
 })
 
 test_that("the Wald fallback is reported rather than silent", {
@@ -95,6 +99,50 @@ test_that("only untestable-because-strong candidates fall back", {
   entered <- as.data.frame(sw)$variable[toupper(as.data.frame(sw)$action) == "ENTER"]
   expect_false("flat" %in% entered)
   expect_true("x1" %in% entered)
+  # The two assertions above stayed green when "constant" and "collinear" were
+  # added to .hzr_score_fallback_reasons -- `flat` still does not enter, it
+  # just costs a refit on the way out. Only the count sees the widening.
+  expect_identical(sw$criteria$n_wald_fallbacks, 1L)
+})
+
+test_that("a Wald-decided row says so, so its p-value can be recomputed", {
+  skip_on_cran()
+  # THE REPORTING DEFECT. A rescued candidate carries a Wald z on a row still
+  # labelled criterion = "score", where every neighbouring row carries a 1-df
+  # chi-square Q. `df` cannot tell them apart -- both read 1 -- so a reader
+  # recomputing pchisq(stat, df) on this fixture gets 1.1e-04 against a true
+  # 2.5e-50, wrong by 46 orders of magnitude.
+  D <- planted()
+  sw <- suppressWarnings(hzr_stepwise(
+    fit = planted_fit(D), scope = list(const = ~ x1 + x2 + x3),
+    data = D, direction = "both", slentry = 0.05))
+  steps <- as.data.frame(sw)
+  row <- steps[toupper(steps$action) == "ENTER" & steps$variable == "x1", ]
+  expect_equal(nrow(row), 1L)
+  expect_identical(row$criterion, "score")
+  expect_identical(row$stat_type, "wald_z")
+  # The point of the column: recomputing from `stat` under the distribution
+  # `stat_type` names reproduces the reported p-value.
+  #
+  # Compared on the LOG scale, and guarded by p_value > 0 first. An
+  # expect_equal(tolerance = 1e-8) on the natural scale cannot fail here:
+  # all.equal switches from relative to absolute comparison once the target
+  # falls below the tolerance, and at 2.5e-50 everything -- including a
+  # p_value that underflowed to exactly 0 -- is within 1e-8 of everything
+  # else. A hollow pass, in the test written to catch hollow passes.
+  expect_gt(row$p_value, 0)
+  expect_equal(log(row$p_value),
+               stats::pnorm(-abs(row$stat), log.p = TRUE) + log(2),
+               tolerance = 1e-8)
+  # And the chi-square reading -- the one `df` alone invites -- does not.
+  # Also on the log scale: the two differ by ~46 orders of magnitude, so the
+  # gap is what should be asserted, not a difference that rounds to 1.1e-04
+  # whatever the second term does.
+  expect_gt(
+    stats::pchisq(row$stat, row$df, lower.tail = FALSE, log.p = TRUE) -
+      log(row$p_value),
+    30
+  )
 })
 
 test_that("fallback reasons are classified, not lumped together", {
@@ -138,4 +186,53 @@ test_that("a fallback refit that fails is recorded and warned, not silent", {
   expect_gt(sw$criteria$n_refit_failures, 0L)
   # And nothing may be reported as a successful substitution.
   expect_identical(sw$criteria$n_wald_fallbacks, 0L)
+})
+
+test_that("an ordinary score row reads score_q, not wald_z", {
+  skip_on_cran()
+  # The score half of "stat_type varies". A weaker planted effect is scorable,
+  # so it enters on Q rather than being rescued.
+  #
+  # The Wald half of this test used to live here, running the same fixture
+  # under criterion = "wald". It failed in CI on Linux and Windows with zero
+  # ENTER rows -- not because of the threshold, but because the candidate
+  # REFIT failed there ("1 candidate refit FAILED and could not be tested --
+  # x1@const"), which the Wald path needs and the score path does not. A
+  # multiphase refit is not a stable thing to hang a reporting assertion on,
+  # so the Wald side is pinned in test-candidate-score.R against the scorer
+  # itself, where no refit is involved.
+  D <- planted(beta = 0.35)
+  sw_s <- suppressWarnings(hzr_stepwise(
+    fit = planted_fit(D), scope = list(const = ~ x1), data = D,
+    direction = "forward", criterion = "score", slentry = 0.2))
+  st_s <- as.data.frame(sw_s)
+  st_s <- st_s[toupper(st_s$action) == "ENTER", ]
+  expect_gte(nrow(st_s), 1L)
+  expect_identical(unique(st_s$stat_type), "score_q")
+  expect_identical(unique(st_s$df), 1L)
+  # And this arm really was scored, not rescued -- otherwise "score_q" could
+  # quietly become "wald_z" and the assertion above would be vacuous.
+  expect_identical(sw_s$criteria$n_wald_fallbacks, 0L)
+  # Q is a 1-df chi-square, and reads as one.
+  expect_equal(stats::pchisq(st_s$stat[1], 1, lower.tail = FALSE),
+               st_s$p_value[1], tolerance = 1e-8)
+})
+
+test_that("the bootstrap aggregates Wald fallbacks instead of dropping them", {
+  skip_on_cran()
+  # Each replicate runs under suppressWarnings(), so a select-mode run in
+  # which the fallback fired everywhere reported nothing at all -- and the
+  # bootstrap is where a wholesale substitution matters most, since these
+  # entries drive the pooled selection frequencies.
+  D <- planted()
+  # No `data =`: hzr_bootstrap() supplies the resampled frame itself, and
+  # passing one collides with it through `...`.
+  boot <- suppressWarnings(hzr_bootstrap(
+    planted_fit(D), scope = list(const = ~ x1 + x2 + x3),
+    n_boot = 3L, direction = "both", criterion = "score",
+    slentry = 0.05, verbose = FALSE))
+  expect_true(is.numeric(boot$n_wald_fallbacks))
+  expect_gte(boot$n_wald_fallback_replicates, 1L)
+  # The total counts entries, not replicates, so it can only be the larger.
+  expect_gte(boot$n_wald_fallbacks, boot$n_wald_fallback_replicates)
 })

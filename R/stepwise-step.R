@@ -176,6 +176,7 @@
       p_value   = NA_real_,
       delta_aic = NA_real_,
       stat      = NA_real_,
+      stat_type = NA_character_,
       df        = NA_integer_,
       all_scores = data.frame(
         variable  = character(),
@@ -184,6 +185,7 @@
         p_value   = numeric(),
         delta_aic = numeric(),
         stat      = numeric(),
+        stat_type = character(),
         df        = integer(),
         stringsAsFactors = FALSE
       ),
@@ -234,6 +236,7 @@
         p_value   = NA_real_,
         delta_aic = NA_real_,
         stat      = NA_real_,
+        stat_type = NA_character_,
         df        = NA_integer_,
         stringsAsFactors = FALSE
       )
@@ -259,6 +262,7 @@
       p_value   = s$p_value,
       delta_aic = s$delta_aic,
       stat      = s$stat,
+      stat_type = s$stat_type,
       df        = s$df,
       stringsAsFactors = FALSE
     )
@@ -304,6 +308,7 @@
     p_value   = best$p_value,
     delta_aic = best$delta_aic,
     stat      = best$stat,
+    stat_type = best$stat_type,
     df        = best$df,
     all_scores = all_scores,
     refit_failures = failures
@@ -357,6 +362,7 @@
       p_value   = s$p_value,
       delta_aic = s$delta_aic,
       stat      = s$stat,
+      stat_type = s$stat_type,
       df        = s$df,
       reason    = s_q$reason %||% NA_character_,
       stringsAsFactors = FALSE
@@ -373,6 +379,12 @@
   # actually rescue qualify -- see .hzr_score_fallback_reasons.
   all_scores$fallback <- FALSE
   fallback_failures <- character()
+  # Keep each fallback's refit, keyed by row, the way the Wald path keeps its
+  # candidate fits. The acceptance step below refits the winner with exactly
+  # the same arguments, so without this a rescued candidate that goes on to
+  # win is fitted twice -- against a criterion whose whole advantage is that
+  # it does not refit per candidate.
+  fallback_fits <- vector("list", nrow(all_scores))
   for (i in which(is.na(all_scores$score) &
                     all_scores$reason %in% .hzr_score_fallback_reasons)) {
     cand_phase <- if (is.na(all_scores$phase[i])) NULL else all_scores$phase[i]
@@ -405,9 +417,14 @@
                                        cand_phase)
     )
     if (is.na(w$score)) next
+    fallback_fits[[i]]     <- refit
     all_scores$score[i]    <- w$score
     all_scores$p_value[i]  <- w$p_value
     all_scores$stat[i]     <- w$stat
+    # `stat` is now a Wald z where every other row on this screen carries a
+    # score Q. Leaving stat_type saying "score_q" would make a reader who
+    # recomputes pchisq(stat, df) wrong by dozens of orders of magnitude.
+    all_scores$stat_type[i] <- w$stat_type
     all_scores$df[i]       <- w$df
     all_scores$fallback[i] <- TRUE
     all_scores$reason[i]   <- NA_character_
@@ -460,13 +477,18 @@
   }
 
   best_phase <- if (is.na(best$phase)) NULL else best$phase
-  refitted <- tryCatch(
-    .hzr_refit_with_scope(
-      current, action = "add", var = best$variable, phase = best_phase,
-      data = data, ...
-    ),
-    error = function(e) e
-  )
+  # A rescued winner was already fitted, with identical arguments, in the
+  # fallback loop above. Reuse it rather than paying for the same fit twice.
+  refitted <- fallback_fits[[best_idx]]
+  if (is.null(refitted)) {
+    refitted <- tryCatch(
+      .hzr_refit_with_scope(
+        current, action = "add", var = best$variable, phase = best_phase,
+        data = data, ...
+      ),
+      error = function(e) e
+    )
+  }
 
   failure_token <- if (is.na(best$phase)) {
     best$variable
@@ -498,6 +520,7 @@
     p_value   = best$p_value,
     delta_aic = best$delta_aic,
     stat      = best$stat,
+    stat_type = best$stat_type,
     df        = best$df,
     all_scores = all_scores,
     refit_failures = fallback_failures,
@@ -635,6 +658,7 @@
     p_value   = numeric(),
     delta_aic = numeric(),
     stat      = numeric(),
+    stat_type = character(),
     df        = integer(),
     stringsAsFactors = FALSE
   )
@@ -649,6 +673,7 @@
       p_value   = NA_real_,
       delta_aic = NA_real_,
       stat      = NA_real_,
+      stat_type = NA_character_,
       df        = NA_integer_,
       all_scores     = all_scores,
       refit_failures = character()
@@ -677,6 +702,7 @@
       p_value   = s$p_value,
       delta_aic = s$delta_aic,
       stat      = s$stat,
+      stat_type = s$stat_type,
       df        = s$df,
       stringsAsFactors = FALSE
     )
@@ -734,6 +760,7 @@
     p_value   = best$p_value,
     delta_aic = best$delta_aic,
     stat      = best$stat,
+    stat_type = best$stat_type,
     df        = best$df,
     all_scores     = all_scores,
     refit_failures = character()

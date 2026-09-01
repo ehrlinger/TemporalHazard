@@ -696,13 +696,6 @@
 }
 
 
-#' One-line explanation of an unscorable candidate
-#'
-#' Maps `.hzr_score_q()`'s reason codes to prose for a warning. An unknown code
-#' passes through as itself, so a code added later still reports rather than
-#' silently becoming an empty string.
-#'
-#' @noRd
 # Reasons a candidate can be rescued by refitting it and testing by Wald.
 #
 # Both mean "the quadratic approximation at beta = 0 broke down", which is
@@ -720,6 +713,13 @@
 .hzr_score_fallback_reasons <- c("information_indefinite",
                                  "coefficient_diverging")
 
+#' One-line explanation of an unscorable candidate
+#'
+#' Maps `.hzr_score_q()`'s reason codes to prose for a warning. An unknown code
+#' passes through as itself, so a code added later still reports rather than
+#' silently becoming an empty string.
+#'
+#' @noRd
 .hzr_score_reason_text <- function(reason) {
   txt <- c(
     information_indefinite = paste(

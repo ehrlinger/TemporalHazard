@@ -1,5 +1,29 @@
 # TemporalHazard 1.2.8
 
+## New features
+
+* **`hzr_stepwise()`'s `$steps` frame gains a `stat_type` column**, saying
+  what the `stat` on that row is and so which reference distribution
+  recomputes its p-value: `"score_q"` (chi-square on `df`), `"wald_z"`
+  (standard normal) or `"wald_chisq"` (chi-square on `df`).
+
+  `df` could not tell these apart. A scalar Wald is reported as a *z*, not as
+  its square, so it and a score Q are both recorded at `df = 1` while calling
+  for different distributions. The gap was widest on a candidate rescued by
+  the Wald fallback added in 1.2.7: that row carries a Wald z under
+  `criterion = "score"`, where every neighbouring row carries a Q. The
+  selection was right and `p_value` was right, but a reader recomputing a
+  p-value from `stat` the way the neighbouring rows permit got an answer wrong
+  by dozens of orders of magnitude. Under `criterion = "score"` the rows
+  reading `"wald_z"` are exactly the ones the fallback rescued.
+
+* **`hzr_bootstrap()` reports Wald fallbacks in select mode**, through
+  `$n_wald_fallback_replicates` and `$n_wald_fallbacks`, with a warning when
+  either is non-zero. Every replicate runs under `suppressWarnings()`, so a
+  run in which the fallback fired throughout previously reported nothing at
+  all -- and the bootstrap is where a wholesale substitution matters most,
+  since those entries drive the pooled selection frequencies.
+
 ## Bug fixes
 
 * **`fit$weak` now distinguishes "no ridge" from "not checked".** The
@@ -27,6 +51,14 @@
   once on the flat direction and once on its stiff partner, so counting
   eigenvectors would report one ridge as two.
 
+* **A rescued candidate that goes on to win is no longer fitted twice.** The
+  Wald fallback refits each candidate it rescues, and the acceptance step then
+  refit the winner again with identical arguments. The two fits were
+  bit-identical, so this was cost rather than incorrectness -- but it doubled
+  the price of every accepted fallback entry, against a criterion whose whole
+  advantage is that it does not refit per candidate. The rescuing fit is now
+  kept and reused, as the Wald path already did with its candidate fits.
+
 ## Documentation
 
 * `summary()`'s documentation and the *Inference and diagnostics* vignette
@@ -34,6 +66,21 @@
   ridge note. Both now include it, and the vignette says plainly that a flat
   direction means the point estimates along it are unreliable, not only their
   standard errors.
+
+## Internal
+
+* Two tests in `test-score-wald-fallback.R` did not catch the mutations their
+  comments named. Widening `.hzr_score_fallback_reasons` to include `constant`
+  and `collinear` left both green, because a degenerate candidate still fails
+  to enter -- it merely costs a refit on the way out -- and the "noise stays
+  out" assertion is guarded by `slentry` rather than by how narrow the
+  fallback is (the fixture's own Wald p-values are 0.0997 and 0.149, so a
+  fallback that refit everything would still decline both). Both now assert
+  `n_wald_fallbacks`, which is the quantity that moves.
+
+* A roxygen block in `R/score-test.R` bound to the character vector declared
+  after it rather than to the function it documents. `@noRd`, so no Rd was
+  affected; source readability only.
 
 # TemporalHazard 1.2.7
 

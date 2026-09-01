@@ -113,6 +113,17 @@ log-likelihood. Entered models are nested, so this cannot occur at the
 optimum; such a replicate continued from a refit that did not converge,
 and its later selections are pooled on the same footing as any other.
 Always \code{0} in refit mode.}
+\item{n_wald_fallback_replicates, n_wald_fallbacks}{Select mode only:
+the number of otherwise successful replicates that entered at least one
+variable on a Wald test instead of the score statistic, and the total
+number of such entries across all replicates. The score criterion
+declines a candidate whose observed information is indefinite at
+\code{beta = 0} -- which happens when the effect is \emph{large} -- so those
+candidates are refit and Wald-tested rather than dropped. A high count
+means much of the selection was decided by a different criterion from
+the one requested, which matters most here: these entries drive the
+pooled selection frequencies on the same footing as every other.
+Always \code{0} in refit mode.}
 \item{mode}{\code{"refit"} (fixed-formula bootstrap) or \code{"select"}
 (embedded stepwise selection).}
 \item{scope}{Only present when \code{mode == "select"}: the candidate

@@ -1342,6 +1342,17 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     optimum; such a replicate continued from a refit that did not converge,
 #'     and its later selections are pooled on the same footing as any other.
 #'     Always `0` in refit mode.}
+#'   \item{n_wald_fallback_replicates, n_wald_fallbacks}{Select mode only:
+#'     the number of otherwise successful replicates that entered at least one
+#'     variable on a Wald test instead of the score statistic, and the total
+#'     number of such entries across all replicates. The score criterion
+#'     declines a candidate whose observed information is indefinite at
+#'     `beta = 0` -- which happens when the effect is *large* -- so those
+#'     candidates are refit and Wald-tested rather than dropped. A high count
+#'     means much of the selection was decided by a different criterion from
+#'     the one requested, which matters most here: these entries drive the
+#'     pooled selection frequencies on the same footing as every other.
+#'     Always `0` in refit mode.}
 #'   \item{mode}{`"refit"` (fixed-formula bootstrap) or `"select"`
 #'     (embedded stepwise selection).}
 #'   \item{scope}{Only present when `mode == "select"`: the candidate
@@ -1592,6 +1603,15 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # replicate that converged, and every replicate runs under
   # suppressWarnings() so the step-level warning cannot reach the user.
   n_nonmonotone_reps <- 0L
+  # Replicates in which the score criterion declined a candidate it could not
+  # score and the Wald fallback tested it instead. The fallback is a different
+  # criterion, so a run where it fired everywhere selected on Wald while
+  # reporting `criterion = "score"` -- and the bootstrap is where a wholesale
+  # substitution distorts most, since it drives the selection frequencies.
+  # Each replicate runs under suppressWarnings(), so nothing else can surface
+  # this.
+  n_wald_fallback_reps <- 0L
+  n_wald_fallbacks <- 0L
 
   # Progress bar over replicates (verbose only). Closed after the loop.
   pb <- if (verbose) utils::txtProgressBar(min = 0, max = n_boot, style = 3)
@@ -1683,6 +1703,11 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
         )
         if (isTRUE((boot_fit$criteria$n_nonmonotone_entries %||% 0L) > 0L)) {
           n_nonmonotone_reps <- n_nonmonotone_reps + 1L
+        }
+        n_fb <- boot_fit$criteria$n_wald_fallbacks %||% 0L
+        if (n_fb > 0L) {
+          n_wald_fallback_reps <- n_wald_fallback_reps + 1L
+          n_wald_fallbacks <- n_wald_fallbacks + n_fb
         }
       }
       theta_b <- boot_fit$fit$theta
@@ -1804,6 +1829,16 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
             "`$n_nonmonotone_replicates`.", call. = FALSE)
   }
 
+  if (n_wald_fallback_reps > 0L) {
+    warning(n_wald_fallback_reps, " of ", n_success, " successful replicates ",
+            "entered at least one variable on a Wald test rather than on the ",
+            "score statistic (", n_wald_fallbacks, " candidate(s) in total), ",
+            "because the score could not test them. Those entries were ",
+            "decided by a different criterion from the rest of the run, and ",
+            "they are in the pooled frequencies on the same footing as ",
+            "everything else. See `$n_wald_fallbacks`.", call. = FALSE)
+  }
+
   result <- list(
     replicates = replicates,
     summary    = summary_df,
@@ -1812,6 +1847,8 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     n_uncomputable_replicates = n_uncomputable_reps,
     uncomputable_reasons      = uncomputable_reasons,
     n_nonmonotone_replicates  = n_nonmonotone_reps,
+    n_wald_fallback_replicates = n_wald_fallback_reps,
+    n_wald_fallbacks          = n_wald_fallbacks,
     mode       = if (select_mode) "select" else "refit"
   )
   if (select_mode) result$scope <- scope
