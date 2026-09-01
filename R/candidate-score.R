@@ -89,7 +89,13 @@
 #'   \item{score}{Numeric, smaller is better (see file header).}
 #'   \item{criterion}{Echoed input.}
 #'   \item{mode}{Echoed input.}
-#'   \item{stat}{Wald z (scalar) or chi^2 (joint).}
+#'   \item{stat}{Wald z (scalar) or chi^2 (joint), or the score Q.}
+#'   \item{stat_type}{What `stat` is, and so what reference distribution
+#'     recomputes its p-value: `"score_q"` (chi^2 on `df`), `"wald_z"`
+#'     (standard normal) or `"wald_chisq"` (chi^2 on `df`).  `df` alone does
+#'     not distinguish these -- a scalar Wald z and a score Q are both
+#'     recorded at `df = 1` -- so a caller recomputing from `stat` needs
+#'     this.}
 #'   \item{df}{Integer degrees of freedom.}
 #'   \item{p_value}{Always populated when computable.}
 #'   \item{delta_aic}{Always populated when computable.}
@@ -130,6 +136,7 @@
       criterion = criterion,
       mode      = mode,
       stat      = score$stat,
+      stat_type = "score_q",
       df        = score$df,
       p_value   = score$p_value,
       delta_aic = NA_real_,        # no candidate refit to take an AIC from
@@ -191,6 +198,10 @@
     criterion = criterion,
     mode      = mode,
     stat      = wald$stat,
+    # A one-df Wald is reported as a z, not as its square, so it and a score Q
+    # are indistinguishable on `df` alone while calling for different
+    # reference distributions.
+    stat_type = if (wald$df == 1L) "wald_z" else "wald_chisq",
     df        = wald$df,
     p_value   = wald$p_value,
     delta_aic = delta,

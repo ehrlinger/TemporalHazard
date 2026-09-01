@@ -173,8 +173,17 @@
 #'     `"score"`, `"wald"`, or `"aic"`.  Under `criterion = "score"` the drop
 #'     rows read `"wald"`, because score is entry-only.}
 #'   \item{\code{score}}{Winning score used for the decision.}
-#'   \item{\code{stat}, \code{df}}{Test statistic (score Q or Wald) and
-#'     degrees of freedom.}
+#'   \item{\code{stat}, \code{df}}{Test statistic and degrees of freedom.}
+#'   \item{\code{stat_type}}{What \code{stat} is on this row, and so which
+#'     reference distribution recomputes its p-value: \code{"score_q"}
+#'     (chi-square on \code{df}), \code{"wald_z"} (standard normal) or
+#'     \code{"wald_chisq"} (chi-square on \code{df}).  \code{df} alone does
+#'     not distinguish them --- a scalar Wald is reported as a \emph{z}, not
+#'     as its square, so it and a score Q are both recorded at \code{df = 1}
+#'     while calling for different distributions.  This also identifies the
+#'     rows the Wald fallback rescued: under \code{criterion = "score"} they
+#'     are the ones reading \code{"wald_z"} (see \code{$criteria$n_wald_fallbacks}
+#'     for the count).}
 #'   \item{\code{p_value}, \code{delta_aic}}{Always populated when
 #'     computable, regardless of the active criterion.}
 #'   \item{\code{logLik}, \code{aic}, \code{n_coef}}{Goodness-of-fit
@@ -332,6 +341,7 @@ hzr_stepwise <- function(fit,
       criterion = crit,
       score     = out$score,
       stat      = out$stat,
+      stat_type = out$stat_type %||% NA_character_,
       df        = out$df,
       p_value   = out$p_value,
       delta_aic = out$delta_aic,
@@ -372,6 +382,7 @@ hzr_stepwise <- function(fit,
       criterion = criterion,
       score     = NA_real_,
       stat      = NA_real_,
+      stat_type = NA_character_,
       df        = NA_integer_,
       p_value   = NA_real_,
       delta_aic = NA_real_,
@@ -531,7 +542,7 @@ hzr_stepwise <- function(fit,
       step_num = integer(), action = character(),
       variable = character(), phase = character(),
       criterion = character(), score = numeric(),
-      stat = numeric(), df = integer(),
+      stat = numeric(), stat_type = character(), df = integer(),
       p_value = numeric(), delta_aic = numeric(),
       logLik = numeric(), delta_logLik = numeric(),
       aic = numeric(), n_coef = integer(),
