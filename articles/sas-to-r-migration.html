@@ -110,15 +110,15 @@
 <table class="table caption-top">
 <caption>Formal argument map: SAS HAZARD/C → hazard()</caption>
 <colgroup>
-<col style="width: 4%">
-<col style="width: 7%">
-<col style="width: 8%">
-<col style="width: 8%">
 <col style="width: 2%">
-<col style="width: 8%">
-<col style="width: 26%">
-<col style="width: 3%">
-<col style="width: 30%">
+<col style="width: 5%">
+<col style="width: 5%">
+<col style="width: 5%">
+<col style="width: 1%">
+<col style="width: 5%">
+<col style="width: 18%">
+<col style="width: 2%">
+<col style="width: 52%">
 </colgroup>
 <thead><tr class="header">
 <th style="text-align: left;">SAS Statement</th>
@@ -317,7 +317,7 @@
 <td style="text-align: left;">numeric scalar</td>
 <td style="text-align: left;">time transform B(t) = (exp(delta*t)-1)/delta absorbed into decompos shape</td>
 <td style="text-align: left;">implemented</td>
-<td style="text-align: left;">The C DELTA controlled B(t) = (exp(delta*t)-1)/delta. This transform is absorbed by decompos().</td>
+<td style="text-align: left;">NOT IMPLEMENTED, not absorbed. The C DELTA controls B(t) = (exp(delta*t)-1)/delta, which enters rho, the time argument and the density Jacobian separately; R computes the delta=0 branch of each. A job with DELTA != 0 is refused or flagged, never fitted silently.</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">G2</td>

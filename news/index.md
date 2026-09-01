@@ -71,6 +71,36 @@
   candidate. The rescuing fit is now kept and reused, as the Wald path
   already did with its candidate fits.
 
+- **`DELTA` is not implemented, and two comments said it was absorbed.**
+  The headers of `R/decomposition.R` and `R/argument_mapping.R` both
+  stated that the C `DELTA` parameter’s time transformation
+  `B(t) = (exp(delta * t) - 1) / delta` is “absorbed by `decompos()`”.
+  It is not absorbed; it is unimplemented, and `delta = 0` is assumed.
+  `DELTA` enters the C reference in three separate places – it builds
+  `rho` from `B(t_half)` rather than `t_half`, it replaces the time
+  argument with `B(t)`, and `delta * t` enters the log-density
+  additively so the density carries a factor of `exp(delta * t)` – and R
+  computes the `delta = 0` branch of all three.
+
+  The comment was the harmful part. It made the omission look deliberate
+  and safe, so a reader looking for exactly this discrepancy was told to
+  stop looking, while a `PROC HAZARD` job with `DELTA != 0` was
+  reproduced against a different function with no error. Both comments
+  now say what is true.
+
+  The SAS-facing paths now distinguish the two cases rather than
+  treating `DELTA` as one unmapped keyword.
+  [`hzr_read_outhaz()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_read_outhaz.md)
+  already stopped on a non-zero `DELTA`;
+  [`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
+  now records `PARMS DELTA = <nonzero>` as untranslated with a reason
+  saying the emitted call fits a *different* model, and the `.lst`
+  natural-estimates parser warns when a listing carries one. `DELTA = 0`
+  and a bare `FIXDELTA` are treated as faithful translations, because
+  that is the branch R implements – previously both the safe and the
+  unsafe case produced the identical generic note “PARMS keyword has no
+  phase target”, which distinguished nothing.
+
 ### Documentation
 
 - [`summary()`](https://rdrr.io/r/base/summary.html)’s documentation and
@@ -79,6 +109,19 @@
   include it, and the vignette says plainly that a flat direction means
   the point estimates along it are unreliable, not only their standard
   errors.
+
+- **[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  now states that SAS’s `STEEPEST` has no equivalent.** `PROC HAZARD`
+  jobs write `STEEPEST QUASI` together – steepest descent, then
+  quasi-Newton – and `STEEPEST` appears 14 to 109 times per study across
+  the corpus. `QUASI`/`QUASINEWTON` maps to `method = "bfgs"`; there is
+  no steepest-descent option and no two-stage strategy. Since the
+  multiphase likelihood is multimodal, a different descent path can land
+  on a different optimum, so a fit translated from such a job may not
+  reproduce SAS’s estimates.
+  [`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
+  already recorded the keyword as untranslated rather than dropping it;
+  the `control$method` documentation now says why.
 
 ### Internal
 

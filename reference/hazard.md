@@ -223,7 +223,15 @@ Control parameters:
 
 - `abstol`: Absolute gradient norm tolerance (default 1e-6)
 
-- `method`: Optimization method: "bfgs" or "nm" (default "bfgs")
+- `method`: Optimization method: "bfgs" or "nm" (default "bfgs"). SAS
+  `PROC HAZARD` jobs write `STEEPEST QUASI` together – steepest descent
+  first, then quasi-Newton. `QUASI`/`QUASINEWTON` is `"bfgs"`; **there
+  is no steepest-descent option and no two-stage strategy**. The
+  multiphase likelihood is multimodal, so a different descent path can
+  land on a different optimum: a fit translated from a job using
+  `STEEPEST` may not reproduce SAS's estimates, and
+  [`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
+  records the keyword as untranslated rather than dropping it.
 
 - `condition`: Condition number control (default 14)
 

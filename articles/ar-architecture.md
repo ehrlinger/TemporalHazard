@@ -407,7 +407,7 @@ knitr::kable(
 | THALF / RHO (early) | hzr_phase(t_half=) | implemented | Half-life: time at which G(t_half) = 0.5. Same concept as SAS RHO/THALF. |
 | NU (early) | hzr_phase(nu=) | implemented | Time exponent controlling rate dynamics. Same parameter name as SAS early NU. |
 | M (early) | hzr_phase(m=) | implemented | Shape exponent controlling distributional form. Same parameter name as SAS early M. |
-| DELTA (early) | (absorbed by decompos) | implemented | The C DELTA controlled B(t) = (exp(delta\*t)-1)/delta. This transform is absorbed by decompos(). |
+| DELTA (early) | (absorbed by decompos) | implemented | NOT IMPLEMENTED, not absorbed. The C DELTA controls B(t) = (exp(delta\*t)-1)/delta, which enters rho, the time argument and the density Jacobian separately; R computes the delta=0 branch of each. A job with DELTA != 0 is refused or flagged, never fitted silently. |
 | G2 constant phase | hzr_phase(‘constant’) | implemented | Flat background rate. No shape parameters estimated. SAS G2 equivalent. |
 | TAU (late) | hzr_phase(‘g3’, tau=) | implemented | Late-phase G3 scale parameter. Maps directly to hzr_phase(‘g3’, tau=). |
 | GAMMA (late) | hzr_phase(‘g3’, gamma=) | implemented | Late-phase G3 time exponent. Maps directly to hzr_phase(‘g3’, gamma=). |
