@@ -79,7 +79,7 @@
 <li>
 <strong>Lint runs before tests</strong> because it is seconds against about a minute for the suite. Cheap failures first.</li>
 <li>
-<strong><code>R CMD check</code> does not run the whole suite.</strong> It runs with <code>NOT_CRAN</code> false, so <code>skip_on_cran()</code> tests are skipped: 146 skips and 2339 passes under check, against 6 skips and <strong>3193</strong> passes locally (both measured 2026-08-23 at <code>c9f6c28</code>, with no environment variables set; the local figure needs the SAS fixture checkouts present under <code>~/Documents/GitHub/hazard</code>). A green check is <strong>not</strong> evidence that those tests pass; only the local <code>devtools::test()</code> line is.</li>
+<strong><code>R CMD check</code> does not run the whole suite.</strong> It runs with <code>NOT_CRAN</code> false, so <code>skip_on_cran()</code> tests are skipped: 158 skips and 2473 passes under check, against 6 skips and <strong>3373</strong> passes locally (both measured 2026-08-31 at <code>3f4a506</code>, with no environment variables set; the local figure needs the SAS fixture checkouts present under <code>~/Documents/GitHub/hazard</code>). A green check is <strong>not</strong> evidence that those tests pass; only the local <code>devtools::test()</code> line is.</li>
 <li>
 <strong>Commit before you <code>git archive</code>.</strong> It exports the committed tree, so an uncommitted fix is silently absent and the check answers a question about the wrong code. This has already cost one wrong conclusion. Nothing in the output tells you.</li>
 </ul><p>Check with the manual — never <code>--no-manual</code>. The PDF step is the only thing that catches raw Unicode in <code>Rd</code>.</p>
@@ -112,24 +112,66 @@
 </div>
 <div class="section level2">
 <h2 id="the-automated-gates">The automated gates<a class="anchor" aria-label="anchor" href="#the-automated-gates"></a></h2>
-<table class="table"><colgroup><col width="33%"><col width="33%"><col width="33%"></colgroup><thead><tr><th>Gate</th>
+<p>Eight of these are <strong>required status checks</strong> on <code>main</code>: a PR cannot merge until they pass. The rest run and report but do not block.</p>
+<table class="table"><colgroup><col width="25%"><col width="25%"><col width="25%"><col width="25%"></colgroup><thead><tr><th>Gate</th>
 <th>When</th>
+<th>Blocks merge</th>
 <th>What it runs</th>
-</tr></thead><tbody><tr><td><code>.github/workflows/lint.yaml</code></td>
-<td>PR</td>
+</tr></thead><tbody><tr><td>
+<code>lint.yaml</code> → <code>lint</code>
+</td>
+<td>PR, push</td>
+<td><strong>yes</strong></td>
 <td>
 <code><a href="https://lintr.r-lib.org/reference/lint.html" class="external-link">lintr::lint_package()</a></code>, <code>LINTR_ERROR_ON_LINT=true</code>
 </td>
-</tr><tr><td><code>R-CMD-check.yaml</code></td>
-<td>PR</td>
-<td>5 platforms: ubuntu devel/release/oldrel-1, macOS, Windows</td>
 </tr><tr><td>
-<code>test-coverage.yaml</code>, <code>pkgdown.yaml</code>
+<code>lint.yaml</code> → <code>house-style</code>
 </td>
-<td>PR</td>
-<td>coverage; docs site</td>
-</tr></tbody></table><p><strong>There are no git hooks and no Claude Code hooks in this repo.</strong> Nothing runs locally on your behalf. The definition of done above is entirely manual — run it yourself.</p>
-<p>CI is not a substitute for the local suite, for the reason in the previous section: CI’s <code>R CMD check</code> skips 111 tests that the local run exercises.</p>
+<td>PR, push</td>
+<td><strong>yes</strong></td>
+<td>fails when <code>.claude/house-style.md</code> has drifted from its vault sources</td>
+</tr><tr><td>
+<code>lint.yaml</code> → <code>docs-current</code>
+</td>
+<td>PR, push</td>
+<td>no</td>
+<td>
+<code>git diff --exit-code man/ NAMESPACE DESCRIPTION</code> after <code>document()</code>
+</td>
+</tr><tr><td><code>spelling.yaml</code></td>
+<td>PR, push</td>
+<td><strong>yes</strong></td>
+<td><code>spelling::spell_check_package(use_wordlist = TRUE)</code></td>
+</tr><tr><td><code>R-CMD-check.yaml</code></td>
+<td>PR, push, release</td>
+<td>
+<strong>yes</strong>, all five</td>
+<td>ubuntu devel/release/oldrel-1, macOS, Windows</td>
+</tr><tr><td><code>test-coverage.yaml</code></td>
+<td>PR, push, release</td>
+<td>no</td>
+<td>coverage upload</td>
+</tr><tr><td>
+<code>pkgdown.yaml</code> → <code>build-and-deploy</code>
+</td>
+<td>PR, push, release</td>
+<td>no</td>
+<td>docs site</td>
+</tr><tr><td><code>check-manual.yaml</code></td>
+<td>push to <code>main</code>, release</td>
+<td><strong>cannot</strong></td>
+<td>the PDF manual — the only thing that catches raw Unicode in <code>Rd</code>
+</td>
+</tr><tr><td><code>check-release.yaml</code></td>
+<td>release published</td>
+<td>no</td>
+<td><code>R CMD check --as-cran</code></td>
+</tr></tbody></table><p><code>check-manual</code> says <em>cannot</em> rather than <em>no</em>: it deliberately does not run on pull requests, because building the manual is slow and a check that makes every PR wait is one people learn to route around. A check that never reports on a PR can never be required — making it one would block every merge permanently. It runs after the merge instead, so a raw-Unicode <code>Rd</code> is caught on <code>main</code>, not before it lands.</p>
+<p>The rules live in the repository <strong>ruleset</strong> <code>protect main</code>, not in the legacy branch-protection settings — the two are separate systems, and the <code>branches/main/protection</code> API returns 404 here even though <code>main</code> is protected. Alongside the required checks the ruleset blocks deletion and force-push, requires a pull request, and auto-requests Copilot review. There are <strong>no bypass actors</strong>, so it applies to the maintainer too.</p>
+<p>Required checks are <em>not</em> strict: a PR is not forced to re-run the matrix every time <code>main</code> moves. That is a deliberate trade against a roughly 45-minute Windows job, and it means a branch can merge green having never been tested against the current <code>main</code>. When a change depends on something <code>main</code> gained after the branch was cut, merge <code>main</code> in and re-run rather than trusting the badge.</p>
+<p><strong>There are no git hooks and no Claude Code hooks in this repo.</strong> Nothing runs locally on your behalf. The definition of done above is entirely manual — run it yourself.</p>
+<p>CI is not a substitute for the local suite, for the reason in the previous section: CI’s <code>R CMD check</code> skips 152 tests that the local run exercises — the difference between the two skip counts above, and a figure that only stays honest if it is re-derived from them rather than carried forward on its own.</p>
 </div>
 <div class="section level2">
 <h2 id="before-you-touch-code">Before you touch code<a class="anchor" aria-label="anchor" href="#before-you-touch-code"></a></h2>
