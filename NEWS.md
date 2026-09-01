@@ -85,6 +85,32 @@
   unsafe case produced the identical generic note "PARMS keyword has no phase
   target", which distinguished nothing.
 
+* **A multiphase fit now records whether Conservation of Events was actually
+  applied.** CoE counts exact events, so it is disabled whenever any `status`
+  falls outside \{0, 1\} -- which interval or left censoring guarantees -- and
+  whenever the model has fewer than two phases. That is deliberate and
+  correct. What was missing is that **nothing on the returned object said it
+  had happened**: a caller who passed `control = list(conserve = TRUE)` got a
+  fit carrying `conserve = TRUE` over a computation that did not run.
+
+  It is not an edge case. `ICENSOR` appears on 42 to 74 blocks per production
+  study, and `ICENSOR` guarantees `status` leaves \{0, 1\}, so the auto-disable
+  fires constantly. Production also writes `NOCONSERVE` on 16 to 68 blocks per
+  study, so R and SAS usually agree on the *outcome* -- but for different
+  reasons, and a job carrying both `CONSERVE` and `ICENSOR` is exactly where
+  the two could diverge unobserved.
+
+  A fitted multiphase object now carries `fit$spec$control$conserve_applied`
+  (logical) alongside the requested `conserve`, and
+  `conserve_disabled_reason`, one of `"not_requested"`,
+  `"unsupported_censoring"`, `"single_phase"`, `"no_events"` or
+  `"setup_failed"`, and `NA` when CoE was applied. Read `conserve_applied`:
+  `conserve` says only what you asked for.
+
+  The reason is recorded rather than a bare logical because the causes want
+  different responses -- and a bare `FALSE` reads as "you turned it off" to a
+  user who did the opposite.
+
 ## Documentation
 
 * `summary()`'s documentation and the *Inference and diagnostics* vignette
