@@ -1,18 +1,12 @@
 name: R-CMD-check
 
 on:
-  # A commit that only touches the generated house-style artifact cannot change
-  # the package: .claude is in .Rbuildignore, so it is excluded from the built
-  # package, and no step in this workflow reads it from the checkout. Running
-  # this on such a commit burns runner minutes and queues ahead of checks that
-  # can actually fail.
+  # No paths-ignore here: see the `changes` job below. A commit that only
+  # touches the generated house-style artifact still needs every required
+  # context REPORTED, even though it does not need the work done.
   push:
-    paths-ignore:
-      - '.claude/**'
     branches: [main, master]
   pull_request:
-    paths-ignore:
-      - '.claude/**'
     branches: [main, master]
 
 concurrency:
@@ -25,7 +19,49 @@ concurrency:
   cancel-in-progress: ${{ !github.ref_protected }}
 
 jobs:
+  # Whether anything outside .claude/ changed.
+  #
+  # This used to be a `paths-ignore: ['.claude/**']` on the triggers, which
+  # was correct about the work -- a .claude/-only commit cannot change what
+  # this checks -- but made the required status checks unsatisfiable. main's
+  # ruleset requires every context below, and a workflow skipped by a path
+  # filter never reports one. A check that never runs is never passing, so a
+  # recompose-only pull request could not be merged at all (#207).
+  #
+  # The trigger now always fires and the expensive steps are gated instead:
+  # every required context is reported, and on a .claude/-only change the job
+  # reaches the end without doing the work. The cost is a briefly-allocated
+  # runner per matrix entry rather than a full check.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.filter.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        shell: bash
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$base" ]; then
+            base="$(git rev-parse HEAD^ 2>/dev/null || echo '')"
+          fi
+          if [ -z "$base" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"   # first commit: do the work
+            exit 0
+          fi
+          changed="$(git diff --name-only "$base" HEAD)"
+          # `grep -qv` is wrong here: it succeeds when ANY line fails to match.
+          # Strip the .claude/ lines and ask whether anything is left.
+          if [ -n "$(printf '%s\n' "$changed" | grep -v '^\.claude/' || true)" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
   R-CMD-check:
+    needs: changes
     runs-on: ${{ matrix.config.os }}
     strategy:
       fail-fast: false
@@ -41,22 +77,28 @@ jobs:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
-      - uses: actions/checkout@v4
+      - if: needs.changes.outputs.run == 'true'
+        uses: actions/checkout@v4
 
-      - uses: r-lib/actions/setup-r@v2
+      - if: needs.changes.outputs.run == 'true'
+        uses: r-lib/actions/setup-r@v2
         with:
           r-version: ${{ matrix.config.r }}
           use-public-rspm: true
 
-      - uses: r-lib/actions/setup-pandoc@v2
+      - if: needs.changes.outputs.run == 'true'
+        uses: r-lib/actions/setup-pandoc@v2
 
-      - uses: quarto-dev/quarto-actions/setup@v2
+      - if: needs.changes.outputs.run == 'true'
+        uses: quarto-dev/quarto-actions/setup@v2
 
-      - uses: r-lib/actions/setup-r-dependencies@v2
+      - if: needs.changes.outputs.run == 'true'
+        uses: r-lib/actions/setup-r-dependencies@v2
         with:
           extra-packages: any::rcmdcheck
           needs: check
 
-      - uses: r-lib/actions/check-r-package@v2
+      - if: needs.changes.outputs.run == 'true'
+        uses: r-lib/actions/check-r-package@v2
         with:
           upload-snapshots: true
