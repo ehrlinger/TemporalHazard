@@ -49,6 +49,27 @@
   strsplit(joined, "\n", fixed = TRUE)[[1]]
 }
 
+# Accept either a file path or already-split lines.
+#
+# A multi-fit listing has to be parsed one fit at a time -- the nomogram
+# belongs to the fit whose block contains it, not to the file -- and every
+# parser here took a `path`, so a caller who had already split the lines by
+# fit had to write each block back out to a tempfile to use them. That is a
+# workaround, not an interface.
+.hzr_lst_lines <- function(path = NULL, lines = NULL) {
+  if (!is.null(lines)) {
+    if (!is.character(lines)) {
+      stop("`lines` must be a character vector of listing lines.",
+           call. = FALSE)
+    }
+    return(lines)
+  }
+  if (is.null(path)) {
+    stop("Supply either `path` or `lines`.", call. = FALSE)
+  }
+  .hzr_read_lst(path)
+}
+
 .hzr_extract_loglik <- function(lines) {
   m <- regmatches(
     lines,
@@ -623,8 +644,8 @@
 # Returns a data frame (Obs dropped) with the leading underscores stripped from
 # the column names: YEARS, MONTHS, SURVIV, CLLSURV, CLUSURV, HAZARD, CLLHAZ,
 # CLUHAZ. NULL if the table is absent.
-.hzr_parse_sas_nomogram <- function(path) {
-  lines <- .hzr_read_lst(path)
+.hzr_parse_sas_nomogram <- function(path = NULL, lines = NULL) {
+  lines <- .hzr_lst_lines(path, lines)
 
   # The column set is NOT fixed. hp.death.AVC prints
   #   Obs YEARS MONTHS _SURVIV _CLLSURV _CLUSURV _HAZARD _CLLHAZ _CLUHAZ
@@ -638,6 +659,24 @@
   # approach .hzr_parse_sas_lifetable() uses.
   h <- grep("\\bYEARS\\b.*_SURVIV", lines)
   if (!length(h)) return(NULL)
+
+  # `h` may hold several headers, and only h[1] is read. Returning the first of
+  # N with nothing in the value to say a second existed is the same shape as
+  # the three layout defects fixed in #110 -- silent, and found only by
+  # pointing the parser at a second study. Every file in the resilia corpus
+  # happens to print exactly one, so the current code gets the right answer
+  # here by luck of the corpus rather than by construction.
+  #
+  # Say how many were seen, and say it two ways: a warning for the caller who
+  # is not looking, and `n_found` on the result for the one who is. A
+  # multi-fit listing wants splitting by fit and re-parsing per block, which
+  # the `lines` argument now makes possible without a tempfile.
+  if (length(h) > 1L) {
+    warning("nomogram: ", length(h), " tables found in this listing; only ",
+            "the first (line ", h[1], ") is returned. Split the listing by ",
+            "fit and parse each block via `lines =` to attribute a nomogram ",
+            "to the fit that printed it.", call. = FALSE)
+  }
 
   cols <- sub("^_", "", strsplit(trimws(lines[h[1]]), "[[:space:]]+")[[1]])
   if (!length(cols)) return(NULL)
@@ -716,6 +755,10 @@
   }
   df <- as.data.frame(m)
   names(df) <- cols
+  # How many nomograms the listing held, of which this is the first. Present
+  # whatever the count, so a caller can test it without having to know whether
+  # the attribute is set only in the plural case.
+  attr(df, "n_found") <- length(h)
   df
 }
 

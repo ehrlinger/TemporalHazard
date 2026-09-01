@@ -374,3 +374,65 @@ test_that("a .lst with DELTA != 0 warns that R fits a different function", {
   expect_warning(.hzr_extract_natural(.hzr_delta_lst(-0.2)),
                  "different function")
 })
+
+# A listing holding more than one nomogram (#183).
+#
+# `h <- grep(...)` may match several headers; the parser reads h[1] and never
+# looks at the rest, with no warning and nothing in the return value to say a
+# second existed. Same shape as the three layout defects fixed in #110 --
+# silent, and found only by pointing the parser at a second study. Every file
+# in the resilia corpus prints exactly one, so the code gets the right answer
+# there by luck of the corpus, not by construction.
+
+.hzr_nomo_block <- function(surv) {
+  c(
+    "         Obs     YEARS    _SURVIV   _CLLSURV   _CLUSURV",
+    "",
+    paste0("           1    0.0821    ", format(surv, nsmall = 5),
+           "    0.96812    0.97373"),
+    ""
+  )
+}
+
+test_that("a single nomogram parses silently and reports n_found = 1", {
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(.hzr_nomo_block(0.97106), tmp)
+  expect_no_warning(nom <- .hzr_parse_sas_nomogram(tmp))
+  # n_found is present whatever the count, so a caller can test it without
+  # knowing whether it is set only in the plural case.
+  expect_identical(attr(nom, "n_found"), 1L)
+  expect_equal(nom$SURVIV[1], 0.97106, tolerance = 1e-6)
+})
+
+test_that("a listing with two nomograms warns and says how many", {
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(c(.hzr_nomo_block(0.97106), "Initial Summary:",
+               .hzr_nomo_block(0.88231)), tmp)
+  expect_warning(nom <- .hzr_parse_sas_nomogram(tmp), "2 tables found")
+  expect_identical(attr(nom, "n_found"), 2L)
+  # Still the FIRST one -- the behaviour is unchanged, only no longer silent.
+  # Asserting the value pins which table was returned; asserting only n_found
+  # would pass if the parser had started returning the second.
+  expect_equal(suppressWarnings(
+    .hzr_parse_sas_nomogram(tmp))$SURVIV[1], 0.97106, tolerance = 1e-6)
+})
+
+test_that("a caller can parse one fit's block without a tempfile round-trip", {
+  # The workaround this replaces: split the listing by fit, write each block
+  # back out to a tempfile, and re-read it. A multi-fit listing needs the
+  # nomogram attributed to the fit whose block contains it, not to the file.
+  all_lines <- c(.hzr_nomo_block(0.97106), "Initial Summary:",
+                 .hzr_nomo_block(0.88231))
+  split_at <- grep("Initial Summary:", all_lines)
+  second <- all_lines[split_at:length(all_lines)]
+
+  expect_no_warning(nom2 <- .hzr_parse_sas_nomogram(lines = second))
+  expect_identical(attr(nom2, "n_found"), 1L)
+  # The SECOND fit's value, which the file-level call cannot reach at all.
+  expect_equal(nom2$SURVIV[1], 0.88231, tolerance = 1e-6)
+})
+
+test_that("the lines argument is validated rather than silently misread", {
+  expect_error(.hzr_parse_sas_nomogram(), "Supply either")
+  expect_error(.hzr_parse_sas_nomogram(lines = 42), "character vector")
+})
