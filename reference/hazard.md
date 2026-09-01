@@ -175,11 +175,17 @@ a point where the likelihood is defined), `convergence` (the
 whether it was the `best` and so the reported fit, and the `message` of
 any error. A start that stops at `maxit` has a finite `objective` and
 can win the selection, so `status` distinguishes it from one that
-converged. Any fit whose likelihood is near-flat along a parameter
-combination also carries `weak`, listing the `params` spanning that
-direction, their squared loadings (`weights`), the strongest pairwise
-`correlation` among them, and the Hessian `rcond` – `NULL` when the fit
-is well identified), and `engine` (implementation tag, `"native-r-m2"`).
+converged. Every fit carries `weak`, which takes one of three values: a
+list, when the likelihood is near-flat along a parameter combination,
+giving the `params` spanning that direction, their squared loadings
+(`weights`), the strongest pairwise `correlation` among them, the
+Hessian `rcond` and `n_directions`, the number of near-flat directions
+found; `NULL` when the fit was examined and is well identified; and `NA`
+when the check could not run because no usable Hessian was available –
+which includes an unfitted object and an install without the suggested
+numDeriv. Test with `is.list(fit$fit$weak)`, not `!is.null()`: the `NA`
+case has not been examined and must not be read as a clean result), and
+`engine` (implementation tag, `"native-r-m2"`).
 
 ## Details
 

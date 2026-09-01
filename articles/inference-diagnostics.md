@@ -280,15 +280,19 @@ asymptotically correct, but they lean on the Hessian-derived parameter
 vcov — which can mislead when the likelihood surface is poorly behaved
 near the MLE (boundary fits, near-degenerate parameter combinations,
 small samples). The package flags these cases for you: each fit carries
-`rcond` and `pd` diagnostics, and
+`rcond`, `pd` and `weak` diagnostics, and
 [`summary()`](https://rdrr.io/r/base/summary.html) prints a note (with a
-matching warning at fit time) when the Hessian is ill-conditioned or not
-positive-definite — a strong signal to prefer the bootstrap. Bootstrap
-resampling is the robust alternative: refit the model on each resampled
-dataset, collect the resulting parameter and prediction values, and read
-the empirical 2.5th / 97.5th percentiles as the 95% CI. It’s
-computationally heavier but it doesn’t assume the likelihood is locally
-quadratic, and it picks up the right tail behavior even when
+matching warning at fit time) when the Hessian is ill-conditioned, is
+not positive-definite, could not be inverted at all, or is flat along
+some combination of parameters — any of which is a strong signal to
+prefer the bootstrap. That last one is worth reading closely: it means
+the individual estimates along that direction are not pinned down by the
+data, so it is not only the standard errors that are unreliable.
+Bootstrap resampling is the robust alternative: refit the model on each
+resampled dataset, collect the resulting parameter and prediction
+values, and read the empirical 2.5th / 97.5th percentiles as the 95% CI.
+It’s computationally heavier but it doesn’t assume the likelihood is
+locally quadratic, and it picks up the right tail behavior even when
 delta-method theory creaks.
 
 [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)

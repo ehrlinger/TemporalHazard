@@ -10,14 +10,18 @@ phase list (for multiphase), coefficient table with standard errors,
 and log-likelihood.  When the post-fit Hessian is ill-conditioned or not
 positive-definite, a note warns that the standard errors may be unreliable;
 when the Hessian could not be inverted at all, a note reports that standard
-errors are unavailable.  S3 dispatch only – users call print(summary(fit))
-rather than invoking this directly."><meta property="og:description" content="Formatted console display of summary.hazard() output: distribution,
+errors are unavailable.  A further note names the parameters spanning a
+weakly identified direction when one was found, or records that the check
+could not run when no Hessian was available.  S3 dispatch only – users
+call print(summary(fit)) rather than invoking this directly."><meta property="og:description" content="Formatted console display of summary.hazard() output: distribution,
 phase list (for multiphase), coefficient table with standard errors,
 and log-likelihood.  When the post-fit Hessian is ill-conditioned or not
 positive-definite, a note warns that the standard errors may be unreliable;
 when the Hessian could not be inverted at all, a note reports that standard
-errors are unavailable.  S3 dispatch only – users call print(summary(fit))
-rather than invoking this directly."></head><body>
+errors are unavailable.  A further note names the parameters spanning a
+weakly identified direction when one was found, or records that the check
+could not run when no Hessian was available.  S3 dispatch only – users
+call print(summary(fit)) rather than invoking this directly."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -25,7 +29,7 @@ rather than invoking this directly."></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.7</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.8</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -74,8 +78,10 @@ phase list (for multiphase), coefficient table with standard errors,
 and log-likelihood.  When the post-fit Hessian is ill-conditioned or not
 positive-definite, a note warns that the standard errors may be unreliable;
 when the Hessian could not be inverted at all, a note reports that standard
-errors are unavailable.  S3 dispatch only – users call <code>print(summary(fit))</code>
-rather than invoking this directly.</p>
+errors are unavailable.  A further note names the parameters spanning a
+weakly identified direction when one was found, or records that the check
+could not run when no Hessian was available.  S3 dispatch only – users
+call <code>print(summary(fit))</code> rather than invoking this directly.</p>
     </div>
 
     <div class="section level2">

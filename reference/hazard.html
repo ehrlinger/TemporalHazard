@@ -19,7 +19,7 @@ optimize to produce fitted estimates."></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.7</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.8</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -233,11 +233,18 @@ unless the start reached a point where the likelihood is defined),
 the <code>best</code> and so the reported fit, and the <code>message</code> of any
 error. A start that stops at <code>maxit</code> has a finite <code>objective</code>
 and can win the selection, so <code>status</code> distinguishes it from one
-that converged. Any fit whose likelihood is near-flat along a parameter
-combination also carries <code>weak</code>, listing the <code>params</code>
-spanning that direction, their squared loadings (<code>weights</code>), the
-strongest pairwise <code>correlation</code> among them, and the Hessian
-<code>rcond</code> – <code>NULL</code> when the fit is well identified),
+that converged. Every fit carries <code>weak</code>, which takes one of three
+values: a list, when the likelihood is near-flat along a parameter
+combination, giving the <code>params</code> spanning that direction, their
+squared loadings (<code>weights</code>), the strongest pairwise
+<code>correlation</code> among them, the Hessian <code>rcond</code> and
+<code>n_directions</code>, the number of near-flat directions found;
+<code>NULL</code> when the fit was examined and is well identified; and
+<code>NA</code> when the check could not run because no usable Hessian was
+available – which includes an unfitted object and an install without
+the suggested <span class="pkg">numDeriv</span>. Test with <code>is.list(fit$fit$weak)</code>,
+not <code>!is.null()</code>: the <code>NA</code> case has not been examined and
+must not be read as a clean result),
 and <code>engine</code> (implementation tag, <code>"native-r-m2"</code>).</p>
     </div>
     <div class="section level2">
