@@ -254,7 +254,30 @@
     )
   }
   if (!length(rows)) return(NULL)
-  do.call(rbind, rows)
+  out <- do.call(rbind, rows)
+
+  # DELTA is not absorbed by the shape -- it is unimplemented, and R assumes
+  # delta = 0 (see the header of R/decomposition.R). A listing with a non-zero
+  # DELTA describes a fit against a different function, so comparing R to it
+  # measures that difference and reports it as a parity discrepancy. Say so
+  # here, where the value is read, rather than leaving every downstream
+  # comparison to attribute the gap to something else.
+  bad_delta <- out$name == "DELTA" & is.finite(out$estimate) &
+    out$estimate != 0
+  if (any(bad_delta)) {
+    # sprintf("%g") rather than format(), for the same reason as the
+    # untranslated reason string in R/sas-parse-parms.R: format() honours
+    # getOption("OutDec"), so the text a caller greps would change under
+    # OutDec = ",".
+    warning("SAS listing has DELTA = ",
+            paste(sprintf("%g", out$estimate[bad_delta]), collapse = ", "),
+            ". The early-phase time transformation B(t) = ",
+            "(exp(DELTA t) - 1)/DELTA is unimplemented in R, which assumes ",
+            "DELTA = 0, so any parity comparison against this fit is against ",
+            "a different function.", call. = FALSE)
+  }
+
+  out
 }
 
 # Symmetric matrix parser shared by vcov and correlation blocks.

@@ -180,7 +180,14 @@ measured shares are kept on the fit as \code{fit$phase_share}. Raise it to
 catch marginal phases, set it to 0 to silence the check.
 \item \code{reltol}: Relative parameter change tolerance (default 1e-5)
 \item \code{abstol}: Absolute gradient norm tolerance (default 1e-6)
-\item \code{method}: Optimization method: "bfgs" or "nm" (default "bfgs")
+\item \code{method}: Optimization method: "bfgs" or "nm" (default "bfgs").
+SAS \verb{PROC HAZARD} jobs write \verb{STEEPEST QUASI} together -- steepest
+descent first, then quasi-Newton. \code{QUASI}/\code{QUASINEWTON} is \code{"bfgs"};
+\strong{there is no steepest-descent option and no two-stage strategy}. The
+multiphase likelihood is multimodal, so a different descent path can land
+on a different optimum: a fit translated from a job using \code{STEEPEST} may
+not reproduce SAS's estimates, and \code{hzr_translate_sas()} records the
+keyword as untranslated rather than dropping it.
 \item \code{condition}: Condition number control (default 14)
 \item \code{nocov}, \code{nocor}: Suppress covariance/correlation output (legacy; no-op in M2)
 }

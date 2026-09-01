@@ -326,3 +326,51 @@ test_that("a header with only blank lines after it returns NULL", {
 
   expect_null(.hzr_parse_sas_lifetable(tmp, which = "kaplan"))
 })
+
+# DELTA in a .lst natural-estimates table (#181).
+#
+# DELTA is unimplemented in R, not "absorbed by decompos()" as two comments
+# used to claim. It enters rho, the time argument and the density Jacobian
+# separately, and R computes the delta = 0 branch of all three. A listing with
+# a non-zero DELTA therefore describes a fit against a different function, and
+# comparing R to it measures that difference while reporting it as a parity
+# discrepancy.
+
+.hzr_delta_lst <- function(delta) {
+  c(
+    "                    Estimates for Model Parameters",
+    "",
+    "        Phase       Parameter     Fixed?     Estimate",
+    "        ---------------------------------------------",
+    paste0("        Early:      DELTA         Yes       ", format(delta)),
+    "                    THALF         Yes                0.2",
+    "                    NU            No                 1.4",
+    "                    MUE           No          0.02283304",
+    "",
+    "        Asymptotic Variance-Covariance Matrix"
+  )
+}
+
+test_that("a .lst with DELTA = 0 parses without a warning", {
+  # The branch R actually implements. Warning here would be a false alarm, and
+  # a warning that fires on the safe case gets ignored on the unsafe one.
+  expect_silent(nat <- .hzr_extract_natural(.hzr_delta_lst(0)))
+  # Guard the guard: assert the table really was parsed, or "silent" is
+  # satisfied by a parser that returned NULL without reading anything.
+  expect_true(is.data.frame(nat))
+  expect_true("DELTA" %in% nat$name)
+  expect_equal(nat$estimate[nat$name == "DELTA"], 0)
+})
+
+test_that("a .lst with DELTA != 0 warns that R fits a different function", {
+  expect_warning(nat <- .hzr_extract_natural(.hzr_delta_lst(0.35)),
+                 "different function")
+  expect_warning(.hzr_extract_natural(.hzr_delta_lst(0.35)), "DELTA = 0")
+  # The table is still returned -- this is a flag on the comparison, not a
+  # refusal to read the listing.
+  expect_true(is.data.frame(nat))
+  expect_equal(nat$estimate[nat$name == "DELTA"], 0.35)
+  # And a negative one is caught too, not just a positive.
+  expect_warning(.hzr_extract_natural(.hzr_delta_lst(-0.2)),
+                 "different function")
+})
