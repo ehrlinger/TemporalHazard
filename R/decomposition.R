@@ -22,8 +22,28 @@
 # SAS Const (G2): (none)                   -->  type = "constant"
 #
 # The 4-parameter C/SAS parameterizations collapse onto this 3-parameter
-# family.  The C DELTA parameter controlled a time transformation
-# B(t) = (exp(delta*t) - 1)/delta that is absorbed by the shape.
+# family.
+#
+# DELTA is NOT among them, and is NOT absorbed by the shape -- it is
+# unimplemented, and delta = 0 is assumed throughout. Earlier comments here
+# and in R/argument_mapping.R said "absorbed", which made the omission look
+# deliberate and harmless. It is neither.
+#
+# The C DELTA controls a time transformation B(t) = (exp(delta*t) - 1)/delta
+# that enters in three separate places, and R computes the delta = 0 branch of
+# each:
+#
+#   1. rho is built from B(tHalf), not from tHalf   (src/common/hzd_set_rho.c)
+#   2. the time argument is B(t), not t             (hzd_ln_G1_and_SG1.c:60)
+#   3. dBt = delta*T enters lnSG1 ADDITIVELY, so the density carries a factor
+#      of exp(delta*T)                              (hzd_ln_G1_and_SG1.c:84)
+#
+# So a PROC HAZARD job with DELTA != 0 is reproduced here against a different
+# function. The condition is detectable -- OUTHAZ carries the estimate and the
+# .lst flags block prints "Delta = 0  Yes" -- and the SAS-facing paths check
+# it: R/read-outhaz.R stops, .hzr_parse_parms() records it as untranslated,
+# and the .lst natural-estimates parser warns. Implementing DELTA is a
+# separate question (see #181).
 
 # ============================================================================
 # hzr_decompos -- core engine

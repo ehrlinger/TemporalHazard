@@ -98,3 +98,40 @@ test_that("phase covariate starting values map into theta, in covariate order", 
     "not yet mapped to theta", got$untranslated$reason, fixed = TRUE
   )))
 })
+
+# DELTA is unimplemented, not "absorbed by decompos()" (#181). Two comments in
+# the package said absorbed, which made the omission look deliberate and
+# harmless. It is neither: DELTA enters rho, the time argument and the density
+# Jacobian separately, and R computes the delta = 0 branch of all three, so a
+# job with DELTA != 0 is reproduced against a DIFFERENT function.
+
+test_that("PARMS DELTA = 0 is a faithful translation, not a gap", {
+  # R implements exactly this branch, so flagging it would be a false alarm --
+  # and a note that fires on the safe case teaches the reader to ignore it on
+  # the unsafe one.
+  r <- .hzr_parse_parms(c("MUE=0.2", "THALF=0.15", "DELTA=0"))
+  expect_equal(nrow(r$untranslated), 0L)
+  r2 <- .hzr_parse_parms(c("MUE=0.2", "THALF=0.15", "FIXDELTA"))
+  expect_equal(nrow(r2$untranslated), 0L)
+})
+
+test_that("PARMS DELTA != 0 is flagged as a different model, not a missing keyword", {
+  r <- .hzr_parse_parms(c("MUE=0.2", "THALF=0.15", "DELTA=0.5"))
+  expect_equal(nrow(r$untranslated), 1L)
+  expect_identical(r$untranslated$construct, "DELTA=0.5")
+  # The reason must say the emitted call fits something else. Before this, both
+  # DELTA=0 and DELTA=0.5 produced the identical generic string "PARMS keyword
+  # has no phase target", so the note distinguished nothing.
+  expect_match(r$untranslated$reason, "DIFFERENT model")
+  expect_match(r$untranslated$reason, "0\\.5")
+  expect_false(grepl("no phase target", r$untranslated$reason))
+})
+
+test_that("a non-zero DELTA is flagged whatever else the PARMS carries", {
+  # Negative, and alongside a FIXDELTA that pins it there.
+  r <- .hzr_parse_parms(c("MUE=0.2", "DELTA=-0.25", "FIXDELTA", "NU=1.4"))
+  expect_equal(nrow(r$untranslated), 1L)
+  expect_match(r$untranslated$reason, "DIFFERENT model")
+  # The rest of the statement still translates -- this is a flag, not a refusal.
+  expect_true(r$has_phases)
+})

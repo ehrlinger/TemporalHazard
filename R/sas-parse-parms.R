@@ -39,8 +39,10 @@
 
 # FIX<param> keywords are their own grammar tokens (FIXTHALF, not FIX+THALF),
 # and the R parameter name is not always the lowercased SAS spelling --
-# THALF's R name is "t_half". Map explicitly rather than guess; FIXDELTA has
-# no owning hzr_phase() parameter and is left untranslated.
+# THALF's R name is "t_half". Map explicitly rather than guess. FIXDELTA has
+# no owning hzr_phase() parameter and is handled separately below: DELTA is
+# unimplemented rather than absorbed, so what matters is its VALUE, not
+# whether it was pinned.
 .hzr_parms_fix_map <- c(
   FIXTHALF = "t_half", FIXNU = "nu", FIXM = "m",
   FIXTAU = "tau", FIXGAMMA = "gamma", FIXALPHA = "alpha", FIXETA = "eta"
@@ -217,6 +219,21 @@
         early[[.hzr_parms_early_arg[[token]]]] <- val
       } else if (token %in% names(.hzr_parms_late_arg)) {
         late[[.hzr_parms_late_arg[[token]]]] <- val
+      } else if (token == "DELTA") {
+        # DELTA is not absorbed by the shape -- it is unimplemented, and R
+        # assumes delta = 0 (see the header of R/decomposition.R). DELTA = 0 is
+        # therefore a faithful translation and not a gap, exactly as the
+        # print-only PROC options are. A non-zero one is not a missing feature
+        # but a WRONG ANSWER: the emitted call fits a different function, with
+        # no error. Say which of the two this is; the generic "no phase target"
+        # reason fired identically on both and so distinguished nothing.
+        if (!identical(val, 0)) {
+          flag_bad(op, paste0(
+            "DELTA = ", format(val), " is not implemented -- R assumes ",
+            "delta = 0, so the emitted call fits a DIFFERENT model than this ",
+            "job (rho, the time argument and the density Jacobian all differ)"
+          ))
+        }
       } else {
         flag_bad(op, "PARMS keyword has no phase target")
       }
@@ -237,6 +254,12 @@
       } else {
         fixed_late <- union(fixed_late, param)
       }
+    } else if (token == "FIXDELTA") {
+      # Pinning DELTA at whatever PARMS set it to. That value is what decides
+      # whether this job is reproducible, and a DELTA= operand is flagged
+      # above; FIXDELTA on its own leaves it at the SAS default of 0, which is
+      # the branch R implements. Mapped, not a gap.
+      NULL
     } else {
       flag_bad(op, "PARMS token has no phase target")
     }
