@@ -1027,6 +1027,10 @@ print.hzr_calibrate <- function(x, digits = 3, ...) {
 #'   Weights are applied only to events (censored observations contribute
 #'   zero weight). Use for severity-weighted repeated events.
 #' @param conf_level Confidence level for the interval (default 0.95).
+#'   SAS `%NELSONT` defaults to `CLEVEL = 0.68268948`, a 1-SD (68.3%)
+#'   interval, so a band reproduced at this function's default is about 1.96
+#'   times wider than the SAS one. Pass `conf_level = 2 * stats::pnorm(1) - 1`
+#'   to match. Same convention as [hzr_kaplan()].
 #'
 #' @return A data frame with one row per unique event time and columns:
 #' \describe{

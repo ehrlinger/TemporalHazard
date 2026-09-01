@@ -142,6 +142,25 @@
 
 ## Documentation
 
+* **`predict()` and `hzr_nelson()` now say that SAS draws narrower bands.**
+  SAS `%KAPLAN`, `%NELSONT` and `PROC HAZPRED` all take their band width from
+  `CLEVEL`, whose default is `0.68268948` -- documented in the macro source as
+  "(1 sd)". That makes the multiplier `1`, so the band is one standard error,
+  68.3%, not 95%.
+
+  Nothing here computed the wrong thing: parity is tested and passing, and
+  `hzr_kaplan()` already documented the convention. The gap was that the other
+  three entry points did not, and they are the ones a reader meets when
+  checking an R fit against an existing SAS figure. At the R default of
+  `level = 0.95` the reproduced band is about 1.96 times wider than the one
+  being checked against, with no error on either side -- so the two look like
+  they disagree numerically when they do not.
+
+  The defaults are unchanged. `0.95` is the right R-side default, and adopting
+  SAS's silently would make `predict()` disagree with every other R modelling
+  function. The help pages now carry the level to pass instead:
+  `level = 2 * stats::pnorm(1) - 1`.
+
 * `summary()`'s documentation and the *Inference and diagnostics* vignette
   both listed the notes the method prints and had not been updated for the
   ridge note. Both now include it, and the vignette says plainly that a flat

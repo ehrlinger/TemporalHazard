@@ -18,7 +18,11 @@ hzr_nelson(time, event, weight = NULL, conf_level = 0.95)
 Weights are applied only to events (censored observations contribute
 zero weight). Use for severity-weighted repeated events.}
 
-\item{conf_level}{Confidence level for the interval (default 0.95).}
+\item{conf_level}{Confidence level for the interval (default 0.95).
+SAS \verb{\%NELSONT} defaults to \code{CLEVEL = 0.68268948}, a 1-SD (68.3\%)
+interval, so a band reproduced at this function's default is about 1.96
+times wider than the SAS one. Pass \code{conf_level = 2 * stats::pnorm(1) - 1}
+to match. Same convention as \code{\link[=hzr_kaplan]{hzr_kaplan()}}.}
 
 \item{x}{An \code{hzr_nelson} object.}
 

@@ -915,6 +915,23 @@ hazard <- function(formula = NULL,
 #'   survival is not additive).
 #' @param level Numeric confidence level in `(0, 1)`; default `0.95`.
 #'   Only used when `se.fit = TRUE`.
+#'
+#'   **SAS draws narrower bands than this by default.** `PROC HAZPRED` takes
+#'   its width from `CLEVEL`, whose default is `0.68268948` --- documented in
+#'   the macro source as "(1 sd)" --- so its `T_ALPHA` multiplier is `1` and
+#'   the band is one standard error, 68.3%, not 95%. Reproducing a SAS figure at this
+#'   function's default therefore yields a band about 1.96 times wider than the
+#'   one being checked against, with no error and no warning on either side.
+#'   Pass the SAS level explicitly to match:
+#'
+#'   ```r
+#'   predict(fit, newdata, type = "survival", se.fit = TRUE,
+#'           level = 2 * stats::pnorm(1) - 1, conf.type = "logit")
+#'   ```
+#'
+#'   The default is left at `0.95` deliberately: it is the right R-side
+#'   default, and silently adopting SAS's would make this method disagree with
+#'   every other R modelling function.
 #' @param conf.type Transform for `type = "survival"` confidence limits when
 #'   `se.fit = TRUE`: `"log-log"` (default) builds them on `log(-log S)` (the
 #'   `survival::survfit` standard); `"logit"` builds them on `logit(1 - S)`,

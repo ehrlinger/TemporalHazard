@@ -450,3 +450,52 @@ test_that("predict(type='survival') conf.type selects the CL transform", {
   expect_error(predict(fit, newdata = grid, type = "survival", se.fit = TRUE,
                        conf.type = "bogus"))
 })
+
+# The SAS band level documented on predict() and hzr_nelson() (#204).
+#
+# SAS %KAPLAN / %NELSONT / HAZPRED default to CLEVEL = 0.68268948, documented
+# in the macro source as "(1 sd)", which makes T_ALPHA 1: a 68.3% band, not
+# 95%. The help pages now tell a caller to pass `level = 2 * pnorm(1) - 1` to
+# reproduce a SAS figure. These pin that recipe, so the documented incantation
+# cannot quietly stop being the right one.
+
+test_that("the documented SAS level is the 1-SD level", {
+  lvl <- 2 * stats::pnorm(1) - 1
+  # This is what SAS computes as T_ALPHA=PROBIT(0.5+(0.5*&CLEVEL)).
+  expect_equal(stats::qnorm(0.5 + 0.5 * lvl), 1, tolerance = 1e-12)
+  # The macro spells CLEVEL as a truncated literal, so its T_ALPHA is 1 only
+  # to about seven decimals -- close enough to reproduce a plot, and worth
+  # recording so "exactly 1" is not carried around as a fact.
+  expect_equal(stats::qnorm(0.5 + 0.5 * 0.68268948), 1, tolerance = 1e-7)
+  expect_lt(abs(lvl - 0.68268948), 1e-7)
+})
+
+test_that("the SAS level narrows a band by the z ratio, on the CL's own scale", {
+  skip_on_cran()
+  # NOT (upper - fit) / se.fit: predict() builds cumulative-hazard limits on
+  # the LOG scale (and survival limits on log-log), so the half-width is not
+  # z * se on the natural scale and asserting that fails against correct code.
+  # The invariant that does hold is that the two levels differ by exactly the
+  # ratio of their z values, measured on the scale the limits are built on.
+  set.seed(4)
+  n <- 200
+  fit <- hazard(time = stats::rweibull(n, 1.3, 2), status = rep(1L, n),
+                theta = c(0.4, 1.0), dist = "weibull", fit = TRUE)
+  nd <- data.frame(time = c(0.5, 1, 2))
+
+  sas <- predict(fit, newdata = nd, type = "cumulative_hazard",
+                 se.fit = TRUE, level = 2 * stats::pnorm(1) - 1)
+  d95 <- predict(fit, newdata = nd, type = "cumulative_hazard", se.fit = TRUE)
+
+  # Guard the guard: a degenerate band makes every ratio below 0/0 or 1.
+  expect_true(all(is.finite(sas$se.fit) & sas$se.fit > 0))
+  expect_true(all(sas$upper > sas$fit))
+
+  ratio <- log(d95$upper / d95$fit) / log(sas$upper / sas$fit)
+  expect_equal(ratio, rep(stats::qnorm(0.975), nrow(nd)), tolerance = 1e-6)
+
+  # And the plain statement the documentation makes: the default band is
+  # materially wider than the SAS one, so reproducing a figure at level = 0.95
+  # does not match it.
+  expect_true(all(d95$upper > sas$upper))
+})
