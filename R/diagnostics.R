@@ -1483,6 +1483,17 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     # ("candidate refit failed for ..."), the optimizer's
     # non-conformant-Hessian note, and all errors -- so a bad scope is caught
     # once, up front.
+    #
+    # The weak-identification (ridge) warning deliberately passes through.
+    # It is raised with call. = FALSE, so conditionCall(w) is NULL and the
+    # grepl() below cannot match it -- but the pass-through is intended, not
+    # merely a side effect of that: a ridge in the real-data selected model
+    # says the selection itself rests on parameters the data do not pin down,
+    # which is exactly what this up-front screen exists to surface. It fires
+    # once here; the replicates are suppressWarnings()-wrapped, so there is no
+    # flood. Raising it with call. = TRUE would start muffling it silently,
+    # so if that call. ever changes, add the ridge warning to the list this
+    # handler lets through by name.
     withCallingHandlers(
       do.call(hzr_stepwise, c(
         list(

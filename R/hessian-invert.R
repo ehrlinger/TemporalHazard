@@ -100,6 +100,12 @@ NULL
 #' reported: that is ordinary low precision, already covered by the
 #' ill-conditioning warning and by the parameter's own standard error.
 #'
+#' Where two eigenvalues are exactly tied, LAPACK may return any basis of the
+#' degenerate eigenspace, so the loadings can spread across both ridges and
+#' the reported parameter set be their union.  \code{n_directions} is the
+#' honest signal in that case: treat a count above one as "look at the whole
+#' coefficient table", not as a precise inventory of two separate ridges.
+#'
 #' @param vcov Variance-covariance matrix of the estimates.  Rows/columns for
 #'   parameters that were not estimated (\code{NA} diagonals) are dropped.
 #' @param rcond Reciprocal condition number of the Hessian, as returned by
@@ -112,28 +118,53 @@ NULL
 #' @param cor_tol Minimum absolute correlation for a trade-off to count.
 #' @param share Cumulative squared-loading share used to decide how many
 #'   parameters span the flat direction.
-#' @return \code{NULL} when there is no ridge, otherwise a list with
-#'   \code{params} (names spanning the flat direction), \code{weights} (their
-#'   squared loadings), \code{correlation} (the strongest pairwise
-#'   correlation among them) and \code{rcond}.  Directions are examined from
-#'   flattest to stiffest and the first one that is a genuine trade-off is
-#'   reported, so a ridge is still found when some larger block of
-#'   moderately correlated parameters carries more variance than it does.
+#' @return One of three values, which callers must keep distinct:
+#'   \code{NULL} when the check ran and found no ridge; \code{NA} when the
+#'   check \emph{could not} run, because no usable Hessian was available; and
+#'   otherwise a list with \code{params} (names spanning the flat direction),
+#'   \code{weights} (their squared loadings), \code{correlation} (the
+#'   strongest pairwise correlation among them), \code{rcond}, and
+#'   \code{n_directions} (how many independent near-flat directions cleared
+#'   the gate, of which this is the flattest).
+#'
+#'   Collapsing \code{NA} into \code{NULL} is the defect this separation
+#'   exists to prevent: \code{numDeriv} is a \code{Suggests} and the
+#'   analytic Hessian declines for left- and interval-censored rows by
+#'   design, so "no Hessian" is reachable on a real install, and reporting
+#'   it as "well identified" is a result-shaped answer over a computation
+#'   that never happened.
+#'
+#'   Directions are examined from flattest to stiffest and the flattest
+#'   genuine trade-off is reported, so a ridge is still found when some larger
+#'   block of moderately correlated parameters carries more variance than it
+#'   does.
 #' @noRd
 .hzr_weak_direction <- function(vcov, rcond, param_names = NULL,
                                 tol = .hzr_rcond_tol,
                                 cor_tol = .hzr_ridge_cor_tol,
                                 share = 0.9) {
-  # (1) Gate on the existing ill-conditioning threshold.
-  if (length(rcond) != 1L || is.na(rcond) || rcond >= tol) return(NULL)
-  if (is.null(vcov) || !is.matrix(vcov) || nrow(vcov) < 2L) return(NULL)
+  # (1) Gate on the existing ill-conditioning threshold. Each exit below is
+  #     either NA ("could not look") or NULL ("looked, nothing there"); see
+  #     the @return note on why the two must not be merged.
+  #
+  #     An absent or unassessable rcond means no Hessian was obtained, so
+  #     nothing was examined. A well-conditioned one is a real answer: the
+  #     likelihood cannot be near-flat in any direction when it is.
+  if (length(rcond) != 1L || is.na(rcond)) return(NA)
+  if (rcond >= tol) return(NULL)
+  if (is.null(vcov) || !is.matrix(vcov)) return(NA)
+  # One parameter cannot trade off against another, so there is no ridge to
+  # find. That is a conclusion, not a gap.
+  if (nrow(vcov) < 2L) return(NULL)
 
   # (2) Drop parameters that were not estimated (fixed params carry NA rows).
   d <- diag(vcov)
   keep <- which(is.finite(d) & d > 0)
   if (length(keep) < 2L) return(NULL)
   V <- vcov[keep, keep, drop = FALSE]
-  if (anyNA(V) || any(!is.finite(V))) return(NULL)
+  # A non-finite entry among parameters that *were* estimated is a gap: the
+  # covariance exists but cannot be decomposed.
+  if (anyNA(V) || any(!is.finite(V))) return(NA)
 
   nms <- if (length(param_names) == nrow(vcov)) {
     as.character(param_names)[keep]
@@ -144,7 +175,7 @@ NULL
   # (3) Standardise to a correlation matrix (see note above on scaling).
   s <- sqrt(diag(V))
   R <- V / outer(s, s)
-  if (anyNA(R) || any(!is.finite(R))) return(NULL)
+  if (anyNA(R) || any(!is.finite(R))) return(NA)
 
   # (4) Scan the standardised directions from flattest to stiffest, rather
   #     than gating only the leading one. Taking just the top eigenvector
@@ -158,7 +189,7 @@ NULL
   #     reports "well identified" for a fit that is not, which is the exact
   #     failure this function exists to prevent.
   e <- tryCatch(eigen(R, symmetric = TRUE), error = function(e) NULL)
-  if (is.null(e)) return(NULL)
+  if (is.null(e)) return(NA)
 
   # eigen() returns values in decreasing order, so this walks flattest first
   # and the first direction that is a genuine trade-off wins. No separate
@@ -166,6 +197,23 @@ NULL
   # reported: clearing cor_tol requires a strongly correlated pair among the
   # selected parameters, and such a pair always puts a high-variance
   # direction earlier in this same scan, so the flat one is returned first.
+  #     The scan runs to the end rather than returning on the first hit. A
+  #     second flat direction means a second set of parameters is unidentified
+  #     too, and reporting only the first invites reading every parameter it
+  #     does not name as identified. Counting them costs one pass over an
+  #     already-computed eigendecomposition; the flattest is still what gets
+  #     named, since it is the one the data constrain least.
+  #
+  #     Distinctness is measured on the parameter SET, not on the eigenvector.
+  #     A ridge between a and b clears the gate twice -- once on the flat
+  #     direction (a - b) and again on its stiff partner (a + b), since the
+  #     gate tests the correlation among the selected parameters and both
+  #     directions select the same pair. Counting eigenvectors would report a
+  #     single ridge as two. Only the first direction over each set of
+  #     parameters is counted.
+  found <- NULL
+  seen <- character(0)
+
   for (j in seq_along(e$values)) {
     w <- e$vectors[, j]^2
 
@@ -184,11 +232,19 @@ NULL
     r_max <- off[which.max(abs(off))]
     if (abs(r_max) < cor_tol) next
 
-    return(list(params = nms[idx], weights = w[idx],
-                correlation = r_max, rcond = rcond))
+    key <- paste(sort(idx), collapse = ",")
+    if (key %in% seen) next
+    seen <- c(seen, key)
+
+    if (is.null(found)) {
+      found <- list(params = nms[idx], weights = w[idx],
+                    correlation = r_max, rcond = rcond)
+    }
   }
 
-  NULL
+  if (is.null(found)) return(NULL)
+  found$n_directions <- length(seen)
+  found
 }
 
 
@@ -197,10 +253,22 @@ NULL
 #' Shared by the fit-time warning and the \code{summary()} note so the two
 #' never drift apart.
 #'
-#' @param weak A non-\code{NULL} result from \code{.hzr_weak_direction()}.
+#' @param weak A list result from \code{.hzr_weak_direction()}.
 #' @return A single string.
 #' @noRd
 .hzr_weak_direction_message <- function(weak) {
+  # Naming one direction and stopping invites the reader to treat every
+  # parameter it does not mention as identified. When the scan cleared the
+  # gate more than once, say so rather than letting the omission speak.
+  more <- if (isTRUE(weak$n_directions > 1L)) {
+    paste0(
+      " ", weak$n_directions, " near-flat directions were found; this is ",
+      "the flattest, and parameters it does not name may be unidentified ",
+      "too."
+    )
+  } else {
+    ""
+  }
   paste0(
     "weakly identified fit: ",
     paste0("'", weak$params, "'", collapse = " and "),
@@ -209,6 +277,7 @@ NULL
     ", Hessian rcond = ", format(weak$rcond, digits = 3),
     "). The likelihood is near-flat along that direction, so their ",
     "individual point estimates -- not just their standard errors -- are ",
-    "not pinned down by the data."
+    "not pinned down by the data.",
+    more
   )
 }

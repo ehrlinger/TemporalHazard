@@ -1,3 +1,40 @@
+# TemporalHazard 1.2.8
+
+## Bug fixes
+
+* **`fit$weak` now distinguishes "no ridge" from "not checked".** The
+  weak-identification diagnostic introduced in 1.2.7 returned `NULL` both when
+  a fit had been examined and found well identified and when it could not be
+  examined at all -- most importantly when no Hessian was available, which
+  happens on an install without the suggested numDeriv package and on fits whose
+  rows are left- or interval-censored, where the analytic Hessian declines by
+  design. `NEWS` offered `fit$weak` as the programmatic check, so on those
+  installs it certified as well identified a fit nothing had looked at.
+
+  The field now takes three values: a list when a ridge was found, `NULL` when
+  the fit was examined and is well identified, and `NA` when the check could
+  not run. Test it with `is.list(fit$weak)` rather than `!is.null()`.
+  `summary()` prints a note in the `NA` case saying the check did not run, and
+  a fit imported with `hzr_read_outhaz()` -- which has no R Hessian to examine
+  -- now reports `NA` rather than reading as certified clean.
+
+* **A fit with more than one flat direction says so.** The detector reported a
+  single direction, which invited reading every parameter it did not name as
+  identified. It now reports `n_directions`, the number of distinct
+  near-flat directions found, and the warning says when there is more than
+  one. Distinctness is counted over the parameters spanning each direction,
+  not over eigenvectors: a ridge between two parameters clears the gate twice,
+  once on the flat direction and once on its stiff partner, so counting
+  eigenvectors would report one ridge as two.
+
+## Documentation
+
+* `summary()`'s documentation and the *Inference and diagnostics* vignette
+  both listed the notes the method prints and had not been updated for the
+  ridge note. Both now include it, and the vignette says plainly that a flat
+  direction means the point estimates along it are unreliable, not only their
+  standard errors.
+
 # TemporalHazard 1.2.7
 
 ## New features
@@ -14,8 +51,8 @@
   `hazard()` now warns, once per fit, naming the parameters that span the flat
   direction along with their correlation and the Hessian's `rcond`, and
   `summary()` prints the same note. The finding is recorded on the object as
-  `fit$weak` (`NULL` when the fit is well identified), so it can be checked
-  programmatically rather than scraped from a warning.
+  `fit$weak`, so it can be checked programmatically rather than scraped from a
+  warning. See the 1.2.8 notes below for the three values that field takes.
 
   The direction is read off the *correlation* of the estimates rather than
   their raw covariance. Parameters here sit on very different scales -- an `m`

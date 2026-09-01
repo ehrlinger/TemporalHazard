@@ -383,11 +383,18 @@ NULL
 #'   the \code{best} and so the reported fit, and the \code{message} of any
 #'   error. A start that stops at \code{maxit} has a finite \code{objective}
 #'   and can win the selection, so \code{status} distinguishes it from one
-#'   that converged. Any fit whose likelihood is near-flat along a parameter
-#'   combination also carries \code{weak}, listing the \code{params}
-#'   spanning that direction, their squared loadings (\code{weights}), the
-#'   strongest pairwise \code{correlation} among them, and the Hessian
-#'   \code{rcond} -- \code{NULL} when the fit is well identified),
+#'   that converged. Every fit carries \code{weak}, which takes one of three
+#'   values: a list, when the likelihood is near-flat along a parameter
+#'   combination, giving the \code{params} spanning that direction, their
+#'   squared loadings (\code{weights}), the strongest pairwise
+#'   \code{correlation} among them, the Hessian \code{rcond} and
+#'   \code{n_directions}, the number of near-flat directions found;
+#'   \code{NULL} when the fit was examined and is well identified; and
+#'   \code{NA} when the check could not run because no usable Hessian was
+#'   available -- which includes an unfitted object and an install without
+#'   the suggested \pkg{numDeriv}. Test with \code{is.list(fit$fit$weak)},
+#'   not \code{!is.null()}: the \code{NA} case has not been examined and
+#'   must not be read as a clean result),
 #'   and \code{engine} (implementation tag, \code{"native-r-m2"}).
 #' @export
 hazard <- function(formula = NULL,
@@ -784,9 +791,13 @@ hazard <- function(formula = NULL,
       p = if (is.null(x_fit)) 0L else ncol(x_fit)
     )
   }
+  # is.list(), not !is.null(): the detector now returns NA when it could not
+  # look at all (no Hessian, or a non-finite covariance among the estimated
+  # parameters), and NULL only when it looked and found nothing. Testing for
+  # non-NULL would warn on the NA and print a message built from empty fields.
   fit_state$weak <- .hzr_weak_direction(fit_state$vcov, fit_state$rcond,
                                         weak_names)
-  if (!is.null(fit_state$weak)) {
+  if (is.list(fit_state$weak)) {
     warning(.hzr_weak_direction_message(fit_state$weak), call. = FALSE)
   }
 
@@ -1523,8 +1534,10 @@ summary.hazard <- function(object, ...) {
 #' and log-likelihood.  When the post-fit Hessian is ill-conditioned or not
 #' positive-definite, a note warns that the standard errors may be unreliable;
 #' when the Hessian could not be inverted at all, a note reports that standard
-#' errors are unavailable.  S3 dispatch only -- users call `print(summary(fit))`
-#' rather than invoking this directly.
+#' errors are unavailable.  A further note names the parameters spanning a
+#' weakly identified direction when one was found, or records that the check
+#' could not run when no Hessian was available.  S3 dispatch only -- users
+#' call `print(summary(fit))` rather than invoking this directly.
 #'
 #' @param x A `summary.hazard` object returned by [summary.hazard()].
 #' @param ... Additional arguments (ignored).
@@ -1567,10 +1580,19 @@ print.summary.hazard <- function(x, ...) {
         format(x$rcond, digits = 3),
         "); standard errors may be unreliable.\n", sep = "")
   }
-  if (!is.null(x$weak)) {
+  if (is.list(x$weak)) {
     # Wrapped rather than cat()'d flat: the message names parameters and two
     # diagnostics, and an unwrapped line buries them off the right edge.
     cat(strwrap(paste0("Note: ", .hzr_weak_direction_message(x$weak)),
+                width = 76, indent = 2, exdent = 8),
+        sep = "\n")
+    cat("\n")
+  } else if (length(x$weak) == 1L && is.na(x$weak)) {
+    # Say that the ridge check did not run, rather than leaving its silence to
+    # be read as a clean bill of health.
+    cat(strwrap(paste0(
+          "Note: the fit was not examined for a weakly identified ",
+          "direction; no usable Hessian was available."),
                 width = 76, indent = 2, exdent = 8),
         sep = "\n")
     cat("\n")

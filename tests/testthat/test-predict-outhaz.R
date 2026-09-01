@@ -627,3 +627,14 @@ test_that("conf.type is validated where it is used, not before", {
   )
   expect_match(conditionMessage(err), "conf_type", fixed = TRUE)
 })
+
+test_that("an imported SAS fit records 'not checked' for the ridge diagnostic", {
+  # An OUTHAZ fit assembles its $fit list outside hazard(), so the ridge
+  # detector never runs on it -- there is no R Hessian to examine. Leaving the
+  # element off would make fit$weak NULL, which is the documented signal for
+  # "examined and well identified", and an imported fit would read as
+  # certified clean by a check that never happened.
+  spec <- .hzr_outhaz_to_spec(hzr_read_outhaz(fixture_path()))
+  expect_false(is.list(spec$fit$weak))
+  expect_true(length(spec$fit$weak) == 1L && is.na(spec$fit$weak))
+})
