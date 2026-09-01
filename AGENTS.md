@@ -47,8 +47,8 @@ Four details there are load bearing:
 - **Lint runs before tests** because it is seconds against about a minute for the suite. Cheap
   failures first.
 - **`R CMD check` does not run the whole suite.** It runs with `NOT_CRAN` false, so
-  `skip_on_cran()` tests are skipped: 146 skips and 2339 passes under check, against 6 skips
-  and **3193** passes locally (both measured 2026-08-23 at `c9f6c28`,
+  `skip_on_cran()` tests are skipped: 158 skips and 2473 passes under check, against 6 skips
+  and **3373** passes locally (both measured 2026-08-31 at `3f4a506`,
   with no environment variables set; the local figure needs the SAS fixture checkouts
   present under `~/Documents/GitHub/hazard`). A green check is **not**
   evidence that those tests pass; only the local `devtools::test()` line is.
@@ -126,7 +126,9 @@ the badge.
 your behalf. The definition of done above is entirely manual — run it yourself.
 
 CI is not a substitute for the local suite, for the reason in the previous section: CI's
-`R CMD check` skips 111 tests that the local run exercises.
+`R CMD check` skips 152 tests that the local run exercises --- the difference between the two
+skip counts above, and a figure that only stays honest if it is re-derived from them rather
+than carried forward on its own.
 
 ## Before you touch code
 
