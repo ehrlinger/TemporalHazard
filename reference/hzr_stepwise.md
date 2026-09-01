@@ -213,7 +213,18 @@ The `steps` data frame has columns:
 
 - `stat`, `df`:
 
-  Test statistic (score Q or Wald) and degrees of freedom.
+  Test statistic and degrees of freedom.
+
+- `stat_type`:
+
+  What `stat` is on this row, and so which reference distribution
+  recomputes its p-value: `"score_q"` (chi-square on `df`), `"wald_z"`
+  (standard normal) or `"wald_chisq"` (chi-square on `df`). `df` alone
+  does not distinguish them — a scalar Wald is reported as a *z*, not as
+  its square, so it and a score Q are both recorded at `df = 1` while
+  calling for different distributions. This also identifies the rows the
+  Wald fallback rescued: under `criterion = "score"` they are the ones
+  reading `"wald_z"` (see `$criteria$n_wald_fallbacks` for the count).
 
 - `p_value`, `delta_aic`:
 
