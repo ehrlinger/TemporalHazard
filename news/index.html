@@ -64,6 +64,7 @@
 <p><code>df</code> could not tell these apart. A scalar Wald is reported as a <em>z</em>, not as its square, so it and a score Q are both recorded at <code>df = 1</code> while calling for different distributions. The gap was widest on a candidate rescued by the Wald fallback added in 1.2.7: that row carries a Wald z under <code>criterion = "score"</code>, where every neighbouring row carries a Q. The selection was right and <code>p_value</code> was right, but a reader recomputing a p-value from <code>stat</code> the way the neighbouring rows permit got an answer wrong by dozens of orders of magnitude. Under <code>criterion = "score"</code> the rows reading <code>"wald_z"</code> are exactly the ones the fallback rescued.</p>
 </li>
 <li><p><strong><code><a href="../reference/hzr_bootstrap.html">hzr_bootstrap()</a></code> reports Wald fallbacks in select mode</strong>, through <code>$n_wald_fallback_replicates</code> and <code>$n_wald_fallbacks</code>, with a warning when either is non-zero. Every replicate runs under <code><a href="https://rdrr.io/r/base/warning.html" class="external-link">suppressWarnings()</a></code>, so a run in which the fallback fired throughout previously reported nothing at all – and the bootstrap is where a wholesale substitution matters most, since those entries drive the pooled selection frequencies.</p></li>
+<li><p><strong>The nomogram parser accepts <code>lines =</code> as well as <code>path =</code>.</strong> A multi-fit listing needs each nomogram attributed to the fit whose block contains it, not to the file. Previously a caller who had already split the listing by fit had to write each block back out to a temporary file to parse it, which is a workaround rather than an interface. Passing the lines directly now works, and is what makes the multiple-nomogram warning actionable.</p></li>
 </ul></div>
 <div class="section level3">
 <h3 id="bug-fixes-1-2-8">Bug fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-1-2-8"></a></h3>
@@ -88,6 +89,11 @@
 <code>fit$spec$control$conserve_disabled_reason</code> – one of <code>"not_requested"</code>, <code>"unsupported_censoring"</code>, <code>"single_phase"</code>, <code>"no_events"</code> or <code>"setup_failed"</code>, and <code>NA</code> when CoE was applied.</li>
 </ul><p>Read <code>fit$spec$control$conserve_applied</code>, not <code>fit$spec$control$conserve</code>: the latter says only what you asked for. <code>conserve</code> is a <code>dist = "multiphase"</code> control; the single-distribution fits do not use it.</p>
 <p>The reason is recorded rather than a bare logical because the causes want different responses – and a bare <code>FALSE</code> reads as “you turned it off” to a user who did the opposite.</p>
+</li>
+<li>
+<p><strong>The SAS <code>.lst</code> nomogram parser no longer returns the first of several tables silently.</strong> <code>.hzr_parse_sas_nomogram()</code> matched every nomogram header in a listing and read only the first, with no warning and nothing in the return value to say a second existed. That is the same shape as the three layout defects fixed in 1.2.1 – silent, and discoverable only by pointing the parser at a second study.</p>
+<p>It now warns when a listing holds more than one, and attaches <code>n_found</code> to the returned frame whatever the count, so a caller can distinguish “one nomogram” from “the first of several” without reading the source. The behaviour is otherwise unchanged: the first table is still what comes back.</p>
+<p>Every file in the corpus this was found against happens to print exactly one nomogram, so the parser got the right answer there – by luck of the corpus rather than by construction.</p>
 </li>
 </ul></div>
 <div class="section level3">

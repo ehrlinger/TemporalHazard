@@ -143,11 +143,26 @@ depends on something `main` gained after the branch was cut, merge
 Nothing runs locally on your behalf. The definition of done above is
 entirely manual — run it yourself.
 
-CI is not a substitute for the local suite, for the reason in the
-previous section: CI’s `R CMD check` skips 152 tests that the local run
-exercises — the difference between the two skip counts above, and a
-figure that only stays honest if it is re-derived from them rather than
-carried forward on its own.
+**CI does not skip `skip_on_cran()` tests, whatever a local `--as-cran`
+run does.** `r-lib/actions/check-r-package` sets `NOT_CRAN: true`
+itself, so every one of them runs on all five platforms. This was
+verified the hard way on 2026-09-01: a `skip_on_cran()` test added in PR
+\#200 passed locally and *failed* on Linux and Windows.
+
+That matters mostly for how you read a red CI. The previous text here
+claimed CI skipped those tests, which would lead you to dismiss a
+CI-only test failure as impossible — and the CI-only failures are the
+valuable ones, because they are the platform differences a single
+machine cannot show you. CI does skip more than the local run (42
+against 6 on that commit), but those are the SAS fixture-availability
+skips: the local machine has the checkouts under
+`~/Documents/GitHub/hazard` and the runners do not.
+
+CI is still not a substitute for the local suite, for the opposite
+reason to the one previously given: it exercises *more* of the suite
+than a local `--as-cran` check does, and runs it on platforms you do not
+have — so a green local check and a green CI answer different questions,
+and you want both.
 
 ## Before you touch code
 

@@ -30,6 +30,14 @@
   all – and the bootstrap is where a wholesale substitution matters
   most, since those entries drive the pooled selection frequencies.
 
+- **The nomogram parser accepts `lines =` as well as `path =`.** A
+  multi-fit listing needs each nomogram attributed to the fit whose
+  block contains it, not to the file. Previously a caller who had
+  already split the listing by fit had to write each block back out to a
+  temporary file to parse it, which is a workaround rather than an
+  interface. Passing the lines directly now works, and is what makes the
+  multiple-nomogram warning actionable.
+
 ### Bug fixes
 
 - **`fit$weak` now distinguishes “no ridge” from “not checked”.** The
@@ -135,6 +143,23 @@
   The reason is recorded rather than a bare logical because the causes
   want different responses – and a bare `FALSE` reads as “you turned it
   off” to a user who did the opposite.
+
+- **The SAS `.lst` nomogram parser no longer returns the first of
+  several tables silently.** `.hzr_parse_sas_nomogram()` matched every
+  nomogram header in a listing and read only the first, with no warning
+  and nothing in the return value to say a second existed. That is the
+  same shape as the three layout defects fixed in 1.2.1 – silent, and
+  discoverable only by pointing the parser at a second study.
+
+  It now warns when a listing holds more than one, and attaches
+  `n_found` to the returned frame whatever the count, so a caller can
+  distinguish “one nomogram” from “the first of several” without reading
+  the source. The behaviour is otherwise unchanged: the first table is
+  still what comes back.
+
+  Every file in the corpus this was found against happens to print
+  exactly one nomogram, so the parser got the right answer there – by
+  luck of the corpus rather than by construction.
 
 ### Documentation
 
