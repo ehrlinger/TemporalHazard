@@ -123,11 +123,26 @@ test_that("a Wald-decided row says so, so its p-value can be recomputed", {
   expect_identical(row$stat_type, "wald_z")
   # The point of the column: recomputing from `stat` under the distribution
   # `stat_type` names reproduces the reported p-value.
-  expect_equal(2 * stats::pnorm(-abs(row$stat)), row$p_value,
+  #
+  # Compared on the LOG scale, and guarded by p_value > 0 first. An
+  # expect_equal(tolerance = 1e-8) on the natural scale cannot fail here:
+  # all.equal switches from relative to absolute comparison once the target
+  # falls below the tolerance, and at 2.5e-50 everything -- including a
+  # p_value that underflowed to exactly 0 -- is within 1e-8 of everything
+  # else. A hollow pass, in the test written to catch hollow passes.
+  expect_gt(row$p_value, 0)
+  expect_equal(log(row$p_value),
+               stats::pnorm(-abs(row$stat), log.p = TRUE) + log(2),
                tolerance = 1e-8)
   # And the chi-square reading -- the one `df` alone invites -- does not.
-  expect_gt(abs(stats::pchisq(row$stat, row$df, lower.tail = FALSE) -
-                  row$p_value), 1e-6)
+  # Also on the log scale: the two differ by ~46 orders of magnitude, so the
+  # gap is what should be asserted, not a difference that rounds to 1.1e-04
+  # whatever the second term does.
+  expect_gt(
+    stats::pchisq(row$stat, row$df, lower.tail = FALSE, log.p = TRUE) -
+      log(row$p_value),
+    30
+  )
 })
 
 test_that("fallback reasons are classified, not lumped together", {
