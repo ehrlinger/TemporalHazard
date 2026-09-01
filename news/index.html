@@ -78,6 +78,17 @@
 <p>The comment was the harmful part. It made the omission look deliberate and safe, so a reader looking for exactly this discrepancy was told to stop looking, while a <code>PROC HAZARD</code> job with <code>DELTA != 0</code> was reproduced against a different function with no error. Both comments now say what is true.</p>
 <p>The SAS-facing paths now distinguish the two cases rather than treating <code>DELTA</code> as one unmapped keyword. <code><a href="../reference/hzr_read_outhaz.html">hzr_read_outhaz()</a></code> already stopped on a non-zero <code>DELTA</code>; <code><a href="../reference/hzr_translate_sas.html">hzr_translate_sas()</a></code> now records <code>PARMS DELTA = &lt;nonzero&gt;</code> as untranslated with a reason saying the emitted call fits a <em>different</em> model, and the <code>.lst</code> natural-estimates parser warns when a listing carries one. <code>DELTA = 0</code> and a bare <code>FIXDELTA</code> are treated as faithful translations, because that is the branch R implements – previously both the safe and the unsafe case produced the identical generic note “PARMS keyword has no phase target”, which distinguished nothing.</p>
 </li>
+<li>
+<p><strong>A multiphase fit now records whether Conservation of Events was actually applied.</strong> CoE counts exact events, so it is disabled whenever any <code>status</code> falls outside {0, 1} – which interval or left censoring guarantees – and whenever the model has fewer than two phases. That is deliberate and correct. What was missing is that <strong>nothing on the returned object said it had happened</strong>: a caller who passed <code>control = list(conserve = TRUE)</code> got a fit carrying <code>conserve = TRUE</code> over a computation that did not run.</p>
+<p>It is not an edge case. <code>ICENSOR</code> appears on 42 to 74 blocks per production study, and <code>ICENSOR</code> guarantees <code>status</code> leaves {0, 1}, so the auto-disable fires constantly. Production also writes <code>NOCONSERVE</code> on 16 to 68 blocks per study, so R and SAS usually agree on the <em>outcome</em> – but for different reasons, and a job carrying both <code>CONSERVE</code> and <code>ICENSOR</code> is exactly where the two could diverge unobserved.</p>
+<p>A fitted multiphase object now carries two new fields, both alongside the requested <code>conserve</code> under <code>fit$spec$control</code>:</p>
+<ul><li>
+<code>fit$spec$control$conserve_applied</code> – logical, whether CoE was actually applied;</li>
+<li>
+<code>fit$spec$control$conserve_disabled_reason</code> – one of <code>"not_requested"</code>, <code>"unsupported_censoring"</code>, <code>"single_phase"</code>, <code>"no_events"</code> or <code>"setup_failed"</code>, and <code>NA</code> when CoE was applied.</li>
+</ul><p>Read <code>fit$spec$control$conserve_applied</code>, not <code>fit$spec$control$conserve</code>: the latter says only what you asked for. <code>conserve</code> is a <code>dist = "multiphase"</code> control; the single-distribution fits do not use it.</p>
+<p>The reason is recorded rather than a bare logical because the causes want different responses – and a bare <code>FALSE</code> reads as “you turned it off” to a user who did the opposite.</p>
+</li>
 </ul></div>
 <div class="section level3">
 <h3 id="documentation-1-2-8">Documentation<a class="anchor" aria-label="anchor" href="#documentation-1-2-8"></a></h3>
