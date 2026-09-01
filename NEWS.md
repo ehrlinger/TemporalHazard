@@ -2,6 +2,32 @@
 
 ## New features
 
+* **New `hzr_theta_names()`** returns the names of a multiphase `theta`
+  vector, in the order `theta` requires, before any fit runs. Use it to check
+  a hand-written starting vector against the specification it belongs to:
+
+  ```r
+  phases <- list(early = hzr_phase("cdf"), late = hzr_phase("g3"))
+  stopifnot(length(theta0) == length(hzr_theta_names(phases)))
+  setNames(theta0, hzr_theta_names(phases))
+  ```
+
+  `theta` is positional and its entries are not on a common scale -- the late
+  phase logs `mu` and `tau` but carries `gamma`, `alpha` and `eta` naturally --
+  and **wrapping the wrong element in `log()` produces a fit, not an error**.
+  A comment describing the order is therefore not enough for a template that
+  ships to many studies, which is what prompted this: the order is a property
+  of the phase specification and changes the moment an author adds, removes or
+  retypes a phase.
+
+  The function is a thin wrapper over the naming the optimizer itself uses,
+  not a second implementation of it. `hazard()`'s optimizer, the score test's
+  re-expansion and this function now all go through one internal helper, so
+  the order documented here cannot drift from the order a fit produces --- a
+  test asserts the two are identical for three different phase
+  specifications. Phase validation is shared too, so unnamed phases get the
+  same `phase_1` / `phase_2` labels a fit will give them.
+
 * **`hzr_stepwise()`'s `$steps` frame gains a `stat_type` column**, saying
   what the `stat` on that row is and so which reference distribution
   recomputes its p-value: `"score_q"` (chi-square on `df`), `"wald_z"`

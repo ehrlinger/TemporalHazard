@@ -416,6 +416,134 @@ is_hzr_phase <- function(x) {
 }
 
 
+#' Parameter names for a phase specification, in `theta` order
+#'
+#' Returns the names of the `theta` vector a multiphase [hazard()] fit builds
+#' from `phases`, in the order `theta` requires.  Use it to check a
+#' hand-written starting vector against the specification it is meant to go
+#' with, before any fit runs.
+#'
+#' @details
+#' `theta` is positional and its entries are not on a common scale.  For an
+#' `early` + `late` pair the layout is
+#'
+#' ```
+#' early.log_mu, early.log_t_half, early.nu, early.m,
+#' late.log_mu,  late.log_tau,     late.gamma, late.alpha, late.eta
+#' ```
+#'
+#' so the late phase logs `mu` and `tau` while carrying `gamma`, `alpha` and
+#' `eta` on the natural scale.  **Wrapping the wrong element in `log()`
+#' produces a fit, not an error**, which is why a comment describing the order
+#' is not enough and this returns the real thing.  The order is a property of
+#' the specification, so it changes the moment a phase is added, removed or
+#' retyped.
+#'
+#' Phase names come from `names(phases)`; unnamed phases are labelled
+#' `phase_1`, `phase_2`, ... by the same validation [hazard()] applies, so the
+#' labels here are the labels a fit will use.
+#'
+#' @param phases A non-empty list of [hzr_phase()] objects, as passed to
+#'   [hazard()].
+#' @param covariates Optional named list mapping phase name to that phase's
+#'   covariate column names, e.g. `list(early = c("age", "sex"))`.  Phases
+#'   absent from the list are treated as having no covariates.  Names are used
+#'   verbatim, so they must match the columns the fit will see.
+#'
+#' @return A character vector whose **order is the required `theta` order**.
+#'   Its length is the number of parameters the specification implies, so
+#'   `length(hzr_theta_names(phases))` is the length `theta` must have.
+#'
+#' @examples
+#' phases <- list(early = hzr_phase("cdf"), late = hzr_phase("g3"))
+#' hzr_theta_names(phases)
+#'
+#' # Check a hand-written starting vector before fitting.
+#' theta0 <- c(log(0.05), log(0.2), 0, -0.4, log(0.03), log(1), 1, 1, 1)
+#' stopifnot(length(theta0) == length(hzr_theta_names(phases)))
+#' setNames(theta0, hzr_theta_names(phases))
+#'
+#' # With covariates on one phase.
+#' hzr_theta_names(phases, covariates = list(early = c("age", "sex")))
+#'
+#' @seealso [hzr_phase()] for building a specification, [hazard()] for the fit
+#'   whose `theta` this names.
+#' @export
+hzr_theta_names <- function(phases, covariates = NULL) {
+  # The same validation hazard() applies, so auto-named phases get the same
+  # phase_1/phase_2 labels here as they will in the fit. Re-deriving them
+  # would let the two drift.
+  phases <- .hzr_validate_phases(phases)
+
+  if (is.null(covariates)) {
+    covariates <- list()
+  }
+  if (!is.list(covariates) ||
+        (length(covariates) > 0L && is.null(names(covariates)))) {
+    stop("'covariates' must be a named list mapping phase name to that ",
+         "phase's covariate column names.", call. = FALSE)
+  }
+  unknown <- setdiff(names(covariates), names(phases))
+  if (length(unknown)) {
+    # Silently ignoring these would return a name vector that is short by
+    # exactly the covariates the caller thought they had asked for.
+    stop("'covariates' names no such phase: ",
+         paste0("'", unknown, "'", collapse = ", "),
+         ". Phases are: ", paste0("'", names(phases), "'", collapse = ", "),
+         ".", call. = FALSE)
+  }
+  for (nm in names(covariates)) {
+    if (!is.character(covariates[[nm]])) {
+      stop("covariates[['", nm, "']] must be a character vector of column ",
+           "names.", call. = FALSE)
+    }
+  }
+
+  .hzr_theta_names_list(phases, covariates)
+}
+
+
+#' Resolve each phase's covariate column names, with a positional fallback
+#'
+#' The full theta vector needs one name per covariate column, and `x_list` may
+#' carry a matrix with no `colnames`.  Falling through with `character(0)`
+#' there produces FEWER names than the phase has parameters, and
+#' `names(theta) <- <short vector>` pads with `NA` rather than erroring --- so
+#' the misalignment is silent.  Substitute positional labels instead.
+#'
+#' @param phases Named list of `hzr_phase` objects.
+#' @param covariate_counts Named list/vector of covariate counts per phase.
+#' @param x_list Named list of per-phase covariate matrices, or `NULL`s.
+#' @return Named list of character vectors, one per phase.
+#' @noRd
+.hzr_phase_cov_names <- function(phases, covariate_counts, x_list) {
+  stats::setNames(lapply(names(phases), function(nm) {
+    k <- covariate_counts[[nm]] %||% 0L
+    if (k <= 0L) return(character(0))
+    nms <- if (!is.null(x_list[[nm]])) colnames(x_list[[nm]]) else NULL
+    if (length(nms) == k) nms else paste0("x", seq_len(k))
+  }), names(phases))
+}
+
+#' Parameter names for a whole phase list, in theta order
+#'
+#' The list-level counterpart of [.hzr_phase_theta_names()].  Single source of
+#' truth: `hazard()`'s optimiser, the score test's re-expansion and the
+#' exported [hzr_theta_names()] all go through this, so the order the public
+#' function documents cannot drift from the order a fit actually uses.
+#'
+#' @param phases Named list of `hzr_phase` objects, already validated.
+#' @param cov_names Named list of character vectors, as returned by
+#'   `.hzr_phase_cov_names()`.
+#' @return Character vector, concatenated in phase order.
+#' @noRd
+.hzr_theta_names_list <- function(phases, cov_names = NULL) {
+  unlist(lapply(names(phases), function(nm) {
+    .hzr_phase_theta_names(phases[[nm]], nm, cov_names[[nm]] %||% character(0))
+  }), use.names = FALSE)
+}
+
+
 #' Total number of parameters for a phase
 #'
 #' Returns the count of free parameters in the theta sub-vector for one phase:

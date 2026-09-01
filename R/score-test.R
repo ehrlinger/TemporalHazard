@@ -411,14 +411,12 @@
     }
   }
 
-  names(theta_new) <- unlist(lapply(nms, function(nm) {
-    cov_names <- if (cov_counts[[nm]] > 0L && !is.null(x_list[[nm]])) {
-      colnames(x_list[[nm]])
-    } else {
-      character(0)
-    }
-    .hzr_phase_theta_names(new_phases[[nm]], nm, cov_names)
-  }))
+  # Shared with the optimizer's own naming (and with hzr_theta_names()). This
+  # path previously fell through to character(0) when a covariate matrix had
+  # no colnames, producing FEWER names than parameters -- and `names(x) <-`
+  # pads with NA rather than erroring, so the misalignment was silent.
+  names(theta_new) <- .hzr_theta_names_list(
+    new_phases, .hzr_phase_cov_names(new_phases, cov_counts, x_list))
 
   list(
     theta = theta_new,

@@ -1415,19 +1415,11 @@
     }))
   }
 
-  # Build parameter names for the full theta vector
-  theta_names <- unlist(lapply(names(phases), function(nm) {
-    cov_names <- if (covariate_counts[[nm]] > 0 && !is.null(x_list[[nm]])) {
-      colnames(x_list[[nm]])
-    } else {
-      character(0)
-    }
-    # Ensure we have names even if colnames are NULL
-    if (covariate_counts[[nm]] > 0 && length(cov_names) == 0) {
-      cov_names <- paste0("x", seq_len(covariate_counts[[nm]]))
-    }
-    .hzr_phase_theta_names(phases[[nm]], nm, cov_names)
-  }))
+  # Build parameter names for the full theta vector. Shared with the score
+  # test's re-expansion and with the exported hzr_theta_names(), so the order
+  # that function documents is the order a fit actually uses.
+  theta_names <- .hzr_theta_names_list(
+    phases, .hzr_phase_cov_names(phases, covariate_counts, x_list))
 
   names(theta_start) <- theta_names
 
