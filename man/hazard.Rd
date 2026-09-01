@@ -189,17 +189,22 @@ on a different optimum: a fit translated from a job using \code{STEEPEST} may
 not reproduce SAS's estimates, and \code{hzr_translate_sas()} records the
 keyword as untranslated rather than dropping it.
 \item \code{condition}: Condition number control (default 14)
-\item \code{conserve}: Apply Conservation of Events (default \code{TRUE}). CoE counts
-exact events, so it is \strong{automatically disabled} whenever any \code{status}
-falls outside \{0, 1\} -- which interval or left censoring guarantees --
-and whenever the model has fewer than two phases. On a fitted multiphase
-object the outcome is recorded next to the request, as
-\code{fit$spec$control$conserve_applied} (logical) and
-\code{conserve_disabled_reason} (one of \code{"not_requested"},
-\code{"unsupported_censoring"}, \code{"single_phase"}, \code{"no_events"},
-\code{"setup_failed"}, or \code{NA} when CoE was applied). Read
-\code{conserve_applied}, not \code{conserve}: the latter says only what you asked
-for.
+\item \code{conserve}: Apply Conservation of Events (\strong{\code{dist = "multiphase"} only};
+default \code{TRUE}). CoE counts exact events, so it is \strong{automatically
+disabled} whenever any \code{status} falls outside \{0, 1\} -- which interval
+or left censoring guarantees -- and whenever the model has fewer than two
+phases. On a fitted multiphase object the outcome is recorded next to the
+request, both fields living under \code{fit$spec$control}:
+\itemize{
+\item \code{fit$spec$control$conserve_applied} -- logical, whether CoE was actually
+applied;
+\item \code{fit$spec$control$conserve_disabled_reason} -- one of
+\code{"not_requested"}, \code{"unsupported_censoring"}, \code{"single_phase"},
+\code{"no_events"}, \code{"setup_failed"}, or \code{NA} when CoE was applied.
+}
+
+Read \code{fit$spec$control$conserve_applied}, not
+\code{fit$spec$control$conserve}: the latter says only what you asked for.
 \item \code{nocov}, \code{nocor}: Suppress covariance/correlation output (legacy; no-op in M2)
 }
 

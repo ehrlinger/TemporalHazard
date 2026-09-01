@@ -100,12 +100,18 @@
   reasons, and a job carrying both `CONSERVE` and `ICENSOR` is exactly where
   the two could diverge unobserved.
 
-  A fitted multiphase object now carries `fit$spec$control$conserve_applied`
-  (logical) alongside the requested `conserve`, and
-  `conserve_disabled_reason`, one of `"not_requested"`,
-  `"unsupported_censoring"`, `"single_phase"`, `"no_events"` or
-  `"setup_failed"`, and `NA` when CoE was applied. Read `conserve_applied`:
-  `conserve` says only what you asked for.
+  A fitted multiphase object now carries two new fields, both alongside the
+  requested `conserve` under `fit$spec$control`:
+
+  * `fit$spec$control$conserve_applied` -- logical, whether CoE was actually
+    applied;
+  * `fit$spec$control$conserve_disabled_reason` -- one of `"not_requested"`,
+    `"unsupported_censoring"`, `"single_phase"`, `"no_events"` or
+    `"setup_failed"`, and `NA` when CoE was applied.
+
+  Read `fit$spec$control$conserve_applied`, not `fit$spec$control$conserve`:
+  the latter says only what you asked for. `conserve` is a
+  `dist = "multiphase"` control; the single-distribution fits do not use it.
 
   The reason is recorded rather than a bare logical because the causes want
   different responses -- and a bare `FALSE` reads as "you turned it off" to a

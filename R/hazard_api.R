@@ -221,17 +221,20 @@ NULL
 #'   not reproduce SAS's estimates, and `hzr_translate_sas()` records the
 #'   keyword as untranslated rather than dropping it.
 #' - `condition`: Condition number control (default 14)
-#' - `conserve`: Apply Conservation of Events (default `TRUE`). CoE counts
-#'   exact events, so it is **automatically disabled** whenever any `status`
-#'   falls outside \{0, 1\} -- which interval or left censoring guarantees --
-#'   and whenever the model has fewer than two phases. On a fitted multiphase
-#'   object the outcome is recorded next to the request, as
-#'   `fit$spec$control$conserve_applied` (logical) and
-#'   `conserve_disabled_reason` (one of `"not_requested"`,
-#'   `"unsupported_censoring"`, `"single_phase"`, `"no_events"`,
-#'   `"setup_failed"`, or `NA` when CoE was applied). Read
-#'   `conserve_applied`, not `conserve`: the latter says only what you asked
-#'   for.
+#' - `conserve`: Apply Conservation of Events (**`dist = "multiphase"` only**;
+#'   default `TRUE`). CoE counts exact events, so it is **automatically
+#'   disabled** whenever any `status` falls outside \{0, 1\} -- which interval
+#'   or left censoring guarantees -- and whenever the model has fewer than two
+#'   phases. On a fitted multiphase object the outcome is recorded next to the
+#'   request, both fields living under `fit$spec$control`:
+#'   - `fit$spec$control$conserve_applied` -- logical, whether CoE was actually
+#'     applied;
+#'   - `fit$spec$control$conserve_disabled_reason` -- one of
+#'     `"not_requested"`, `"unsupported_censoring"`, `"single_phase"`,
+#'     `"no_events"`, `"setup_failed"`, or `NA` when CoE was applied.
+#'
+#'   Read `fit$spec$control$conserve_applied`, not
+#'   `fit$spec$control$conserve`: the latter says only what you asked for.
 #' - `nocov`, `nocor`: Suppress covariance/correlation output (legacy; no-op in M2)
 #'
 #' Censoring status coding:
