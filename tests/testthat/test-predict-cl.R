@@ -454,10 +454,11 @@ test_that("predict(type='survival') conf.type selects the CL transform", {
 # The SAS band level documented on predict() and hzr_nelson() (#204).
 #
 # SAS %KAPLAN / %NELSONT / HAZPRED default to CLEVEL = 0.68268948, documented
-# in the macro source as "(1 sd)", which makes T_ALPHA 1: a 68.3% band, not
-# 95%. The help pages now tell a caller to pass `level = 2 * pnorm(1) - 1` to
-# reproduce a SAS figure. These pin that recipe, so the documented incantation
-# cannot quietly stop being the right one.
+# in the macro source as "(1 sd)", which makes T_ALPHA 1 to seven decimals
+# (the literal is truncated): a 68.3% band, not 95%. The help pages now tell
+# a caller to pass `level = 2 * pnorm(1) - 1` to reproduce a SAS figure.
+# These pin that recipe, so the documented incantation cannot quietly stop
+# being the right one.
 
 test_that("the documented SAS level is the 1-SD level", {
   lvl <- 2 * stats::pnorm(1) - 1

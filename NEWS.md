@@ -145,8 +145,8 @@
 * **`predict()` and `hzr_nelson()` now say that SAS draws narrower bands.**
   SAS `%KAPLAN`, `%NELSONT` and `PROC HAZPRED` all take their band width from
   `CLEVEL`, whose default is `0.68268948` -- documented in the macro source as
-  "(1 sd)". That makes the multiplier `1`, so the band is one standard error,
-  68.3%, not 95%.
+  "(1 sd)". That makes the multiplier `1` to seven decimals -- the literal is
+  truncated -- so the band is one standard error, 68.3%, not 95%.
 
   Nothing here computed the wrong thing: parity is tested and passing, and
   `hzr_kaplan()` already documented the convention. The gap was that the other

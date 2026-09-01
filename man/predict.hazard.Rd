@@ -58,8 +58,9 @@ Only used when \code{se.fit = TRUE}.
 
 \strong{SAS draws narrower bands than this by default.} \verb{PROC HAZPRED} takes
 its width from \code{CLEVEL}, whose default is \code{0.68268948} --- documented in
-the macro source as "(1 sd)" --- so its \code{T_ALPHA} multiplier is \code{1} and
-the band is one standard error, 68.3\%, not 95\%. Reproducing a SAS figure at this
+the macro source as "(1 sd)" --- so its \code{T_ALPHA} multiplier is \code{1} to
+seven decimals (the literal is truncated) and the band is one standard
+error, 68.3\%, not 95\%. Reproducing a SAS figure at this
 function's default therefore yields a band about 1.96 times wider than the
 one being checked against, with no error and no warning on either side.
 Pass the SAS level explicitly to match:
