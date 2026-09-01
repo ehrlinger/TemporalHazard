@@ -221,6 +221,20 @@ NULL
 #'   not reproduce SAS's estimates, and `hzr_translate_sas()` records the
 #'   keyword as untranslated rather than dropping it.
 #' - `condition`: Condition number control (default 14)
+#' - `conserve`: Apply Conservation of Events (**`dist = "multiphase"` only**;
+#'   default `TRUE`). CoE counts exact events, so it is **automatically
+#'   disabled** whenever any `status` falls outside \{0, 1\} -- which interval
+#'   or left censoring guarantees -- and whenever the model has fewer than two
+#'   phases. On a fitted multiphase object the outcome is recorded next to the
+#'   request, both fields living under `fit$spec$control`:
+#'   - `fit$spec$control$conserve_applied` -- logical, whether CoE was actually
+#'     applied;
+#'   - `fit$spec$control$conserve_disabled_reason` -- one of
+#'     `"not_requested"`, `"unsupported_censoring"`, `"single_phase"`,
+#'     `"no_events"`, `"setup_failed"`, or `NA` when CoE was applied.
+#'
+#'   Read `fit$spec$control$conserve_applied`, not
+#'   `fit$spec$control$conserve`: the latter says only what you asked for.
 #' - `nocov`, `nocor`: Suppress covariance/correlation output (legacy; no-op in M2)
 #'
 #' Censoring status coding:
@@ -749,6 +763,11 @@ hazard <- function(formula = NULL,
     fit_state$x_list <- optim_result$x_list
     fit_state$fixed_mask <- optim_result$fixed_mask
     fit_state$starts <- optim_result$starts
+    # Applied CoE state, recorded next to the requested one in spec$control
+    # below. Kept here first so the assembly reads the optimizer's answer
+    # rather than re-deriving it from `status`.
+    control$conserve_applied <- optim_result$conserve_applied
+    control$conserve_disabled_reason <- optim_result$conserve_disabled_reason
 
   } else if (fit && !is.null(theta)) {
     optim_fn <- switch(

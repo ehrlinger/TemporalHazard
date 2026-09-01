@@ -1503,6 +1503,24 @@
   # left censoring require a different event-counting formulation.
   coe_supported_data <- all(status %in% c(0, 1))
 
+  # A caller who passed conserve = TRUE and got a fit with CoE silently not
+  # applied had no way to tell: the requested state was on the object and the
+  # applied state was nowhere. That is this package's signature defect shape --
+  # an output that looks like a result over a computation that did not happen --
+  # and it fires constantly, since ICENSOR appears on 42-74 blocks per
+  # production study and guarantees status leaves {0, 1}. Record WHY, not just
+  # that: the causes want different responses, and a bare FALSE reads as
+  # "you turned it off" for a user who did the opposite.
+  coe_reason <- if (!use_conserve) {
+    "not_requested"
+  } else if (!coe_supported_data) {
+    "unsupported_censoring"
+  } else if (length(phases) < 2L) {
+    "single_phase"
+  } else {
+    NA_character_
+  }
+
   if (use_conserve && coe_supported_data && length(phases) >= 2L) {
     total_events <- sum(weights[status == 1])
     if (total_events > 0) {
@@ -1572,6 +1590,7 @@
       }
     } else {
       use_conserve <- FALSE
+      coe_reason <- "no_events"
     }
   } else {
     use_conserve <- FALSE
@@ -1995,6 +2014,20 @@
 
   # Restore parameter names
   names(best_result$par) <- theta_names
+
+  # Whether CoE was actually applied, taken from the same expression the mask
+  # uses (`use_conserve && !is.null(fixmu_pos)`) rather than restated, so the
+  # recorded state cannot drift from the applied one.
+  best_result$conserve_applied <- use_conserve && !is.null(fixmu_pos)
+  best_result$conserve_disabled_reason <- if (best_result$conserve_applied) {
+    NA_character_
+  } else if (is.na(coe_reason)) {
+    # use_conserve survived every gate above but fixmu_pos is absent, so the
+    # setup did not complete. Name it rather than reporting NA next to FALSE.
+    "setup_failed"
+  } else {
+    coe_reason
+  }
 
   # Store phase metadata for downstream use (predict, summary)
   best_result$phases <- phases
