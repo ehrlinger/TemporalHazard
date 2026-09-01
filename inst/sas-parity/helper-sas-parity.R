@@ -265,8 +265,12 @@
   bad_delta <- out$name == "DELTA" & is.finite(out$estimate) &
     out$estimate != 0
   if (any(bad_delta)) {
+    # sprintf("%g") rather than format(), for the same reason as the
+    # untranslated reason string in R/sas-parse-parms.R: format() honours
+    # getOption("OutDec"), so the text a caller greps would change under
+    # OutDec = ",".
     warning("SAS listing has DELTA = ",
-            paste(format(out$estimate[bad_delta]), collapse = ", "),
+            paste(sprintf("%g", out$estimate[bad_delta]), collapse = ", "),
             ". The early-phase time transformation B(t) = ",
             "(exp(DELTA t) - 1)/DELTA is unimplemented in R, which assumes ",
             "DELTA = 0, so any parity comparison against this fit is against ",

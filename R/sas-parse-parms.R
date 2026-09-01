@@ -228,8 +228,12 @@
         # no error. Say which of the two this is; the generic "no phase target"
         # reason fired identically on both and so distinguished nothing.
         if (!identical(val, 0)) {
+          # sprintf("%g"), not format(): this string is DATA, not just a
+          # message -- it lands in the untranslated frame and is grepped by
+          # callers and tests. format() honours getOption("OutDec"), so a
+          # session with OutDec = "," would write "DELTA = 0,5" and break both.
           flag_bad(op, paste0(
-            "DELTA = ", format(val), " is not implemented -- R assumes ",
+            "DELTA = ", sprintf("%g", val), " is not implemented -- R assumes ",
             "delta = 0, so the emitted call fits a DIFFERENT model than this ",
             "job (rho, the time argument and the density Jacobian all differ)"
           ))

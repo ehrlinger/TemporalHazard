@@ -135,3 +135,15 @@ test_that("a non-zero DELTA is flagged whatever else the PARMS carries", {
   # The rest of the statement still translates -- this is a flag, not a refusal.
   expect_true(r$has_phases)
 })
+
+test_that("the DELTA reason string does not move with OutDec", {
+  # The reason lands in the untranslated frame and is grepped by callers and
+  # by the tests above, so it is data rather than only a message. format()
+  # honours getOption("OutDec"); a session with OutDec = "," would write
+  # "DELTA = 0,5" and break every grep silently.
+  old <- options(OutDec = ",")
+  on.exit(options(old), add = TRUE)
+  r <- .hzr_parse_parms(c("MUE=0.2", "DELTA=0.5"))
+  expect_match(r$untranslated$reason, "DELTA = 0\\.5", fixed = FALSE)
+  expect_false(grepl("0,5", r$untranslated$reason, fixed = TRUE))
+})
