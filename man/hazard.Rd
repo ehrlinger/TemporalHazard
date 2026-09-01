@@ -133,11 +133,18 @@ unless the start reached a point where the likelihood is defined),
 the \code{best} and so the reported fit, and the \code{message} of any
 error. A start that stops at \code{maxit} has a finite \code{objective}
 and can win the selection, so \code{status} distinguishes it from one
-that converged. Any fit whose likelihood is near-flat along a parameter
-combination also carries \code{weak}, listing the \code{params}
-spanning that direction, their squared loadings (\code{weights}), the
-strongest pairwise \code{correlation} among them, and the Hessian
-\code{rcond} -- \code{NULL} when the fit is well identified),
+that converged. Every fit carries \code{weak}, which takes one of three
+values: a list, when the likelihood is near-flat along a parameter
+combination, giving the \code{params} spanning that direction, their
+squared loadings (\code{weights}), the strongest pairwise
+\code{correlation} among them, the Hessian \code{rcond} and
+\code{n_directions}, the number of near-flat directions found;
+\code{NULL} when the fit was examined and is well identified; and
+\code{NA} when the check could not run because no usable Hessian was
+available -- which includes an unfitted object and an install without
+the suggested \pkg{numDeriv}. Test with \code{is.list(fit$fit$weak)},
+not \code{!is.null()}: the \code{NA} case has not been examined and
+must not be read as a clean result),
 and \code{engine} (implementation tag, \code{"native-r-m2"}).
 }
 \description{

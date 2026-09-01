@@ -33,9 +33,20 @@ test_that("rcond above tolerance suppresses detection even on a ridge", {
 test_that("a two-parameter ridge names both parameters", {
   w <- .hzr_weak_direction(ridge_vcov(), rcond = 1e-10,
                            param_names = c("a", "b"))
-  expect_false(is.null(w))
+  expect_true(is.list(w))
   expect_setequal(w$params, c("a", "b"))
-  expect_gt(abs(w$correlation), 0.99)
+  # The fixture's own correlation, not the gate. `abs(w$correlation) > 0.99`
+  # cannot fail: the function returns NULL unless it clears cor_tol (0.99),
+  # and the assertion above already establishes it did not.
+  expect_equal(abs(w$correlation), 0.99999, tolerance = 1e-9)
+  # `weights` is a documented field and was asserted nowhere. On a perfect
+  # two-parameter ridge the flat direction is (1, -1)/sqrt(2), so the SQUARED
+  # loadings are (0.5, 0.5). Loadings left un-squared would be +/-0.7071 and
+  # fail both of these -- which is the mutation this pins.
+  expect_equal(unname(w$weights), c(0.5, 0.5), tolerance = 1e-4)
+  expect_true(all(w$weights >= 0))
+  expect_equal(sum(w$weights), 1, tolerance = 1e-8)
+  expect_identical(w$n_directions, 1L)
 })
 
 test_that("the flat direction is scale-invariant", {
@@ -80,36 +91,131 @@ test_that("a moderate correlation is not a ridge", {
   )
 })
 
-test_that("degenerate covariances yield no weak direction rather than an error", {
+test_that("a check that could not run returns NA, not NULL", {
+  # THE SENTINEL. NULL is the documented signal for "examined, well
+  # identified", so every path that never examined anything must be
+  # distinguishable from it. numDeriv is a Suggests and the analytic Hessian
+  # declines for left- and interval-censored rows by design, so an install
+  # with no Hessian at all is reachable -- and there NULL would report a
+  # clean bill of health for a fit nothing looked at.
   nms <- c("a", "b")
-  expect_null(.hzr_weak_direction(NULL, rcond = 1e-10, param_names = nms))
-  expect_null(.hzr_weak_direction(NA, rcond = 1e-10, param_names = nms))
-  expect_null(.hzr_weak_direction(ridge_vcov(), rcond = NA_real_,
+  expect_identical(.hzr_weak_direction(NULL, rcond = 1e-10,
+                                       param_names = nms), NA)
+  expect_identical(.hzr_weak_direction(NA, rcond = 1e-10,
+                                       param_names = nms), NA)
+  # rcond = NA is the numDeriv-absent path: .hzr_safe_solve() returns
+  # list(vcov = NA, rcond = NA_real_, pd = NA).
+  expect_identical(.hzr_weak_direction(ridge_vcov(), rcond = NA_real_,
+                                       param_names = nms), NA)
+  expect_identical(.hzr_weak_direction(ridge_vcov(), rcond = numeric(0),
+                                       param_names = nms), NA)
+  # A non-finite entry among parameters that *were* estimated: the covariance
+  # exists but cannot be decomposed.
+  expect_identical(.hzr_weak_direction(matrix(c(1, NA, NA, 1), 2, 2),
+                                       rcond = 1e-10, param_names = nms), NA)
+  expect_identical(.hzr_weak_direction(matrix(c(1, Inf, Inf, 1), 2, 2),
+                                       rcond = 1e-10, param_names = nms), NA)
+})
+
+test_that("a check that ran and found nothing returns NULL", {
+  nms <- c("a", "b")
+  # Well conditioned: the likelihood cannot be near-flat in any direction,
+  # so this is a conclusion rather than a gap.
+  expect_null(.hzr_weak_direction(ridge_vcov(), rcond = 1e-3,
                                   param_names = nms))
-  expect_null(.hzr_weak_direction(matrix(c(1, NA, NA, 1), 2, 2),
-                                  rcond = 1e-10, param_names = nms))
-  # A non-estimated (fixed) parameter carries an NA row/column.
-  V <- ridge_vcov()
-  V3 <- matrix(NA_real_, 3, 3)
-  V3[1:2, 1:2] <- V
-  expect_setequal(
-    .hzr_weak_direction(V3, rcond = 1e-10,
-                        param_names = c("a", "b", "fixed"))$params,
-    c("a", "b")
-  )
-  # Zero variance makes the correlation undefined.
+  # A zero-variance parameter is dropped by the `keep` filter, leaving one
+  # estimated parameter and so no pair to trade off. (It never reaches the
+  # correlation step, which an earlier comment here claimed it tested.)
   expect_null(.hzr_weak_direction(diag(c(0, 1)), rcond = 1e-10,
                                   param_names = nms))
+  # A single-parameter fit, likewise.
+  expect_null(.hzr_weak_direction(matrix(1e12, 1, 1), rcond = 1e-10,
+                                  param_names = "a"))
+})
+
+test_that("a fixed parameter's NA row is dropped rather than blocking the check", {
+  # A non-estimated (fixed) parameter carries an NA row/column. That is not a
+  # gap -- the remaining block is intact and is examined.
+  V3 <- matrix(NA_real_, 3, 3)
+  V3[1:2, 1:2] <- ridge_vcov()
+  w <- .hzr_weak_direction(V3, rcond = 1e-10,
+                           param_names = c("a", "b", "fixed"))
+  expect_true(is.list(w))
+  expect_setequal(w$params, c("a", "b"))
+})
+
+test_that("two independent ridges are counted, not silently reduced to one", {
+  # Reporting one direction and stopping invites reading every parameter it
+  # does not name as identified. Two disjoint near-perfect pairs among four
+  # parameters: whichever is reported, n_directions must say there is more.
+  R <- diag(4)
+  R[1, 2] <- R[2, 1] <- 0.99999
+  R[3, 4] <- R[4, 3] <- 0.9999
+  w <- .hzr_weak_direction(R, rcond = 1e-10,
+                           param_names = paste0("p", 1:4))
+  expect_true(is.list(w))
+  expect_identical(w$n_directions, 2L)
+  # The flattest is reported: p1/p2 is the more strongly correlated pair.
+  expect_setequal(w$params, c("p1", "p2"))
+  # And the message says the other one exists.
+  expect_match(.hzr_weak_direction_message(w), "2 near-flat directions")
+  expect_match(.hzr_weak_direction_message(w), "may be unidentified too")
 })
 
 test_that("unnamed parameters fall back to positional labels", {
   w <- .hzr_weak_direction(ridge_vcov(), rcond = 1e-10, param_names = NULL)
-  expect_false(is.null(w))
-  expect_length(w$params, 2)
+  expect_true(is.list(w))
+  # expect_length(w$params, 2) was the whole test, and it passes for
+  # c("", ""), c(NA, NA) and c("par1", "par2") alike -- so it asserted
+  # nothing about the labels the fallback exists to produce. The positions
+  # are indices into the kept parameters, so both rows survive as par1/par2.
+  expect_setequal(w$params, c("par1", "par2"))
+  # A fixed (dropped) parameter shifts the labels, since they are indices
+  # into the original vcov rather than into the kept block.
+  V3 <- matrix(NA_real_, 3, 3)
+  V3[2:3, 2:3] <- ridge_vcov()
+  w3 <- .hzr_weak_direction(V3, rcond = 1e-10, param_names = NULL)
+  expect_setequal(w3$params, c("par2", "par3"))
 })
 
-test_that("the multiphase ridge fixture warns and records nu and m", {
+test_that("a multiphase ridge is reported under phase-qualified names", {
+  # The naming half of the multiphase case, without the optimizer. Building
+  # the covariance directly makes this deterministic: the end-to-end test
+  # below depends on which optimum the perturbed start finds, and cannot pin
+  # the labels without inheriting that dependence.
+  phases <- list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0),
+                 const = hzr_phase("constant"))
+  nms <- unlist(lapply(names(phases), function(nm) {
+    .hzr_phase_theta_names(phases[[nm]], nm)
+  }), use.names = FALSE)
+  expect_true(all(c("early.nu", "early.m") %in% nms))
+
+  # A near-perfect trade-off between nu and m, on the wildly different scales
+  # they actually occupy (m ~ 27 against nu ~ 0.027), with every other
+  # parameter well determined.
+  R <- diag(length(nms))
+  i <- match(c("early.nu", "early.m"), nms)
+  R[i[1], i[2]] <- R[i[2], i[1]] <- -0.99999
+  sdv <- rep(1, length(nms))
+  sdv[i] <- c(0.03, 30)
+  V <- outer(sdv, sdv) * R
+  dimnames(V) <- list(nms, nms)
+
+  w <- .hzr_weak_direction(V, rcond = 1e-10, param_names = nms)
+  expect_true(is.list(w))
+  expect_setequal(w$params, c("early.nu", "early.m"))
+  expect_identical(w$n_directions, 1L)
+})
+
+test_that("the multiphase fit path wires a ridge through to the object", {
   skip_on_cran()
+  # The WIRING half: that hazard()'s multiphase branch runs the detector and
+  # stores the result under phase-qualified names. Which pair it finds is
+  # deliberately not asserted -- see the naming test above, which pins that
+  # deterministically. This fixture reaches its ridge only via the n_starts=5
+  # perturbed start (n_starts=1 lands on a different, degenerate optimum) at a
+  # correlation of -0.995 against a 0.99 gate, so tying the assertion to the
+  # exact pair would make an optimizer-path change look like a detector bug.
   set.seed(42)
   n <- 100
   time   <- rexp(n, rate = 0.5) + 0.01
@@ -122,11 +228,17 @@ test_that("the multiphase ridge fixture warns and records nu and m", {
                   phases = phases, fit = TRUE,
                   control = list(n_starts = 5, maxit = 500))
   )
-  # The perturbed start wins and lands on the m*nu ridge, where m (~27) and nu
-  # (~0.027) are identified only through their product.
+  # Named separately so a fixture that stops landing on the ridge reads as a
+  # fixture problem rather than as the detector failing.
+  expect_true(
+    is.list(fit$fit$weak),
+    info = paste("the multiphase ridge fixture no longer lands on a ridge;",
+                 "re-tune the fixture rather than the detector")
+  )
   expect_true(any(grepl("only in combination", w)))
-  expect_false(is.null(fit$fit$weak))
-  expect_setequal(fit$fit$weak$params, c("early.nu", "early.m"))
+  expect_gte(length(fit$fit$weak$params), 2L)
+  expect_true(all(grepl("^(early|const)\\.", fit$fit$weak$params)))
+  expect_gte(abs(fit$fit$weak$correlation), .hzr_ridge_cor_tol)
 })
 
 test_that("a well-identified fit stays silent and records no weak direction", {
@@ -199,7 +311,10 @@ test_that("summary() prints the ridge note when one is recorded", {
   out <- paste(capture.output(print(summary(fit))), collapse = " ")
   out <- gsub("\\s+", " ", out)
   expect_match(out, "only in combination")
-  expect_match(out, "early\\.nu")
+  # A phase-qualified name, not a specific one: this test is about the note
+  # reaching the console, and the fixture's pair is pinned deterministically
+  # by "a multiphase ridge is reported under phase-qualified names" above.
+  expect_match(out, "'(early|const)\\.[a-z_]+'")
 })
 
 test_that("a single-distribution ridge is reported under the real parameter names", {
@@ -227,4 +342,26 @@ test_that("a single-distribution ridge is reported under the real parameter name
   expect_false(is.null(fit$fit$weak))
   expect_null(names(fit$fit$par))          # the condition the fallback exists for
   expect_setequal(fit$fit$weak$params, c("beta1", "beta2"))
+})
+
+test_that("an unfitted object records 'not checked', not 'well identified'", {
+  # hazard(fit = FALSE) never reaches an optimizer, so there is no Hessian and
+  # nothing was examined. NULL here would be the documented signal for "well
+  # identified" over a fit that does not exist.
+  set.seed(11)
+  n <- 50
+  fit0 <- hazard(time = stats::rweibull(n, 1.4, 2),
+                 status = rep(1L, n), dist = "weibull", fit = FALSE)
+  expect_false(is.list(fit0$fit$weak))
+  expect_true(length(fit0$fit$weak) == 1L && is.na(fit0$fit$weak))
+})
+
+test_that("summary() says so when the ridge check could not run", {
+  set.seed(11)
+  n <- 50
+  fit0 <- hazard(time = stats::rweibull(n, 1.4, 2),
+                 status = rep(1L, n), dist = "weibull", fit = FALSE)
+  out <- paste(capture.output(print(summary(fit0))), collapse = " ")
+  out <- gsub("\\s+", " ", out)
+  expect_match(out, "not examined for a weakly identified direction")
 })

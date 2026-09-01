@@ -238,10 +238,14 @@ hzr_read_outhaz <- function(path) {
   x_list <- stats::setNames(vector("list", length(phases)), names(phases))
   free_slot <- status[theta_sas] == 1L
 
+  # weak = NA, not absent. An imported SAS fit is never run through
+  # .hzr_weak_direction() -- there is no R Hessian to examine -- and leaving
+  # the element off makes fit$weak NULL, which is the signal for "examined and
+  # well identified". Say "not checked" explicitly.
   fit <- list(
     theta = theta, par = theta,
     converged = TRUE, objective = NA_real_,
-    se = NULL, vcov = NULL,
+    se = NULL, vcov = NULL, weak = NA,
     phases = phases, covariate_counts = cov_counts, x_list = x_list,
     fixed_mask = !free_slot
   )
