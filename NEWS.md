@@ -62,13 +62,13 @@
 * **`DELTA` is not implemented, and two comments said it was absorbed.** The
   headers of `R/decomposition.R` and `R/argument_mapping.R` both stated that
   the C `DELTA` parameter's time transformation
-  \eqn{B(t) = (e^{\delta t} - 1)/\delta} is "absorbed by `decompos()`". It is
+  `B(t) = (exp(delta * t) - 1) / delta` is "absorbed by `decompos()`". It is
   not absorbed; it is unimplemented, and `delta = 0` is assumed. `DELTA`
   enters the C reference in three separate places -- it builds `rho` from
-  \eqn{B(t_{1/2})} rather than \eqn{t_{1/2}}, it replaces the time argument
-  with \eqn{B(t)}, and \eqn{\delta t} enters the log-density additively so
-  the density carries a factor of \eqn{e^{\delta t}} -- and R computes the
-  `delta = 0` branch of all three.
+  `B(t_half)` rather than `t_half`, it replaces the time argument with
+  `B(t)`, and `delta * t` enters the log-density additively so the density
+  carries a factor of `exp(delta * t)` -- and R computes the `delta = 0`
+  branch of all three.
 
   The comment was the harmful part. It made the omission look deliberate and
   safe, so a reader looking for exactly this discrepancy was told to stop
