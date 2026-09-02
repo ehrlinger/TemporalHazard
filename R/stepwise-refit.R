@@ -39,6 +39,18 @@
 #' (#159). Both callers read this one function so the two answers cannot
 #' drift apart.
 #'
+#' The answer differs by distribution, and deliberately so. A
+#' single-distribution scope change adds or drops a term in the **global**
+#' formula, so without one there is nothing to mutate. A multiphase scope
+#' change rewrites the **phase** formula instead, and the global formula only
+#' ever carried the response --- so a vector-interface multiphase fit refits
+#' perfectly well from its stored response vectors (#160). Blocking it shut
+#' out every translated SAS `SELECTION` job, since SAS's censoring statements
+#' map onto this package's `-1/0/1/2` coding, which `survival::Surv()` does
+#' not share; 25 of the 26 such jobs also use `ICENSOR`. Requiring a formula
+#' there would have forced exactly the status-code round-trip `AGENTS.md`
+#' records as having shipped a wrong-answer bug.
+#'
 #' @param fit A fitted `hazard` object.
 #' @return `NULL` when the fit can be refit, otherwise a character scalar
 #'   naming the obstruction, phrased to follow "... because".
@@ -46,13 +58,31 @@
 #' @keywords internal
 #' @noRd
 .hzr_refit_blocker <- function(fit) {
-  if (is.null(fit$call$formula)) {
+  if (!is.null(fit$call$formula)) {
+    return(NULL)
+  }
+
+  if (!identical(fit$spec$dist, "multiphase")) {
     return(paste0(
       "it was built via the vector interface (`time =` / `status =`) ",
       "rather than the formula interface, so it stores no model formula ",
-      "to mutate"
+      "to mutate. A multiphase fit does not need one --- its scope lives in ",
+      "the phase formulas --- but a single-distribution fit adds and drops ",
+      "terms in the global formula"
     ))
   }
+
+  # Multiphase and no formula: the refit rebuilds the call from the stored
+  # response vectors, so they have to be there. hazard() always records them,
+  # so this fires only for a hand-assembled object -- but an absent `time`
+  # would otherwise reach hazard() as a missing argument several frames later.
+  if (is.null(fit$data$time) || is.null(fit$data$status)) {
+    return(paste0(
+      "it was built via the vector interface but stores no `time` / ",
+      "`status` vectors to refit from"
+    ))
+  }
+
   NULL
 }
 
@@ -116,8 +146,14 @@
     stop("`current` cannot be refit because ", blocker, ".", call. = FALSE)
   }
   # Recover the original formula; see .hzr_stored_formula() for why this
-  # cannot be a deparse.
-  current_formula <- .hzr_stored_formula(current, "`current`")
+  # cannot be a deparse. A vector-interface fit has none -- which the blocker
+  # above has already established is survivable on the multiphase path only.
+  has_formula <- !is.null(current$call$formula)
+  current_formula <- if (has_formula) {
+    .hzr_stored_formula(current, "`current`")
+  } else {
+    NULL
+  }
 
   if (dist == "multiphase") {
     if (is.null(phase)) {
@@ -135,10 +171,23 @@
       new_phases[[phase]], action = action, var = var
     )
 
+    # The scope change above rewrote the PHASE formula; the global formula
+    # only ever carried the response. So a vector-interface base fit refits
+    # fine, provided its stored response vectors are handed back --
+    # time_lower / time_upper included. The formula path gets those from
+    # Surv(); a vector refit that dropped them would silently refit a
+    # left-truncated cohort as at risk from time 0.
+    response_args <- if (has_formula) {
+      list(formula = current_formula, data = data)
+    } else {
+      c(Filter(Negate(is.null),
+               current$data[c("time", "status", "time_lower", "time_upper")]),
+        list(data = data))
+    }
+
     do.call(hazard, c(
+      response_args,
       list(
-        formula      = current_formula,
-        data         = data,
         dist         = "multiphase",
         phases       = new_phases,
         weights      = weights,
@@ -149,7 +198,15 @@
     ))
   } else {
     # Single-distribution path: mutate the global formula, warm-start
-    # theta by inserting / dropping the relevant beta slot.
+    # theta by inserting / dropping the relevant beta slot. Unlike multiphase
+    # this genuinely cannot proceed without a formula, which is why
+    # .hzr_refit_blocker() still refuses that combination -- assert it rather
+    # than letting a NULL formula travel into .hzr_formula_update().
+    if (!has_formula) {
+      stop("Internal: a single-distribution refit reached the formula ",
+           "mutation with no formula. .hzr_refit_blocker() should have ",
+           "refused this fit.", call. = FALSE)
+    }
     new_formula <- .hzr_formula_update(current_formula, action, var)
 
     n_shape <- .hzr_shape_parameter_count(dist, control = current$spec$control)
