@@ -134,6 +134,22 @@ main (X.Y.Z) accumulates, patch-bumping as fixes land
    two catch different things: the check finds what static analysis sees in a
    built tarball, the review finds what is wrong but passing, including prose
    that contradicts the code. Run it *before* the check so fixes land first.
+
+   **File every finding you do not fix, before you submit.** The review's only
+   output is a session transcript, so a finding that is neither fixed nor filed
+   is gone -- and the next release review pays the full verification cost to
+   rediscover it. Verify the finding first, then either fix it or open an issue
+   carrying the reproduction; "noted and moved on" is the one disposition that
+   loses the work. On 2026-09-02 the review of `v1.2.2...main` returned ten
+   findings: four were fixed in the release branch and six filed as #211-#216,
+   which is what this line exists to make routine.
+
+   Re-verify before you write the issue, not just before you fix. #215 is the
+   worked example: the review reported `$steps` with zero rows and reason
+   `information_indefinite`, and reproducing it gave **one** row and
+   `nuisance_singular`. The conclusion held, the mechanism did not, and the
+   suggested fix keyed on the wrong code. An issue filed verbatim would have
+   sent the next reader after a reproduction that does not reproduce.
 6. `R CMD check --as-cran` **with the manual built** → 0 errors, 0 warnings,
    0 notes. Build the real tarball and check it, *not* `--no-manual`:
 
