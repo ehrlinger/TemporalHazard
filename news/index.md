@@ -72,6 +72,37 @@
 
 ### Bug fixes
 
+- **A candidate that neither criterion could test is now reported as
+  such.** `criterion = "score"` declines a candidate whose observed
+  information is indefinite at `beta = 0` – which happens when the
+  effect is *large* – and then refits it and tests it by Wald instead.
+  That rescue can converge, producing a perfectly good point estimate,
+  while its Hessian is singular: no standard error, so the Wald test
+  cannot be computed either.
+
+  The fallback dropped that case silently. The row kept the *score’s*
+  reason, `information_indefinite`, which describes the first of two
+  independent failures and says nothing about the second, and no counter
+  moved. A strongly predictive variable vanished and the screen rendered
+  as an honest “nothing met `slentry`” – the same failure this package
+  has twice fixed elsewhere, where a clean-looking screen and an honest
+  null result cannot be told apart.
+
+  Such rows now report `fallback_no_variance`, distinct from
+  `information_indefinite` (the rescue errored or did not converge, and
+  is listed in `$criteria$refit_failures`).
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  and
+  [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
+  both warn on either, saying the candidate was tested by **neither**
+  criterion and which mechanism applied. The `information_indefinite`
+  prose claimed “that refit also failed”, which was wrong for the new
+  case and sent readers to an empty `refit_failures`; both it and the
+  bootstrap warning now describe the two mechanisms separately.
+
+  No behaviour changed in what gets selected: a candidate that could not
+  be tested is still not entered. What changed is that the run says so.
+
 - **`fit$weak` now distinguishes “no ridge” from “not checked”.** The
   weak-identification diagnostic introduced in 1.2.7 returned `NULL`
   both when a fit had been examined and found well identified and when
