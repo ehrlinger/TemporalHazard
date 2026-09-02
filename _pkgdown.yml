@@ -51,6 +51,7 @@ reference:
       - is_hzr_phase
       - hzr_phase_cumhaz
       - hzr_phase_hazard
+      - hzr_theta_names
   - title: Variable selection
     contents:
       - hzr_stepwise
