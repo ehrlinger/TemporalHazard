@@ -192,13 +192,33 @@ keep the two in agreement.
 
 ## On CRAN acceptance
 
-1. Tag the release and push the tag (annotated, mirroring existing tags), on
-   `main` (the released line):
+1. Tag the release and push the tag (annotated), on `main` (the released line):
 
    ```sh
-   git tag -a vX.Y.Z -m "TemporalHazard vX.Y.Z — accepted & published on CRAN YYYY-MM-DD" main
+   git tag -a vX.Y.Z -m "TemporalHazard vX.Y.Z: accepted & published on CRAN YYYY-MM-DD" main
    git push origin vX.Y.Z
    ```
+
+   **Colon, not an em-dash.** A tag annotation is outbound text, and the
+   house rule is no em-dashes in outbound prose. This template used an
+   em-dash in that position until 2026-09-02, and every tag through `v1.2.8`
+   followed it, so the existing tags are the old form and are left alone;
+   `v1.2.9` onward uses the colon. Do not "mirror existing tags" here, which
+   is what the previous wording asked for and what carried the em-dash
+   forward.
+
+   **Say which kind of release it is.** The wording above is for a CRAN
+   release. A GitHub-only release takes, following `v1.2.2` and `v1.2.8`:
+
+   ```sh
+   git tag -a vX.Y.Z -m "TemporalHazard vX.Y.Z: GitHub release YYYY-MM-DD; not submitted to CRAN" main
+   ```
+
+   The annotation is the only durable record of the distinction. The
+   Historical note below exists because nobody could later tell which of
+   1.2.0 to 1.2.2 reached CRAN, and step 5's `git diff <previous tag>...main`
+   anchor needs to know whether its anchor marks a published state or a
+   GitHub snapshot.
 
    `CRAN-SUBMISSION`'s `SHA:` records the tree `submit_cran()` ran from, which
    is `main` HEAD.
