@@ -239,12 +239,22 @@ hzr_stepwise <- function(fit,
   # is what stops the two answers drifting apart.
   refit_blocker <- .hzr_refit_blocker(fit)
   if (!is.null(refit_blocker)) {
+    # The remedy is distribution-specific. Telling a multiphase caller to
+    # "rebuild with the formula interface" would be wrong twice over: it is
+    # not what blocked them, and for a translated SAS job it would force the
+    # -1/0/1/2 -> Surv() 0/1/2/3 status round-trip this package has already
+    # shipped a wrong answer through.
+    remedy <- if (identical(fit$spec$dist, "multiphase")) {
+      paste0("Refit the base model with hazard(), supplying `time` and ",
+             "`status` (or a formula), and retry.")
+    } else {
+      paste0("Rebuild the base fit with the formula interface -- for a ",
+             "forward screen that usually means an intercept-only base, ",
+             "hazard(Surv(time, status) ~ 1, data = df, ...) -- and retry.")
+    }
     stop("`fit` cannot be used as a stepwise base model because ",
          refit_blocker, ". Every candidate would fail to refit, so the ",
-         "screen could never enter or drop anything. Rebuild the base fit ",
-         "with the formula interface -- for a forward screen that usually ",
-         "means an intercept-only base, hazard(Surv(time, status) ~ 1, ",
-         "data = df, ...) -- and retry.",
+         "screen could never enter or drop anything. ", remedy,
          call. = FALSE)
   }
 

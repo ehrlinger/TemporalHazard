@@ -402,6 +402,18 @@ test_that(".hzr_refit_blocker is the single answer both callers read", {
 
   expect_null(.hzr_refit_blocker(frmfit))
   expect_match(.hzr_refit_blocker(vecfit), "vector interface")
+
+  # The predicate is distribution-aware (#160): a multiphase fit's scope lives
+  # in the phase formulas, so it needs no global one and is NOT blocked. Both
+  # vector fits above and below are the same interface; only `dist` differs,
+  # which is what makes this a contrast rather than two spellings of one case.
+  vecmp <- suppressWarnings(hazard(
+    time = avc$int_dead, status = avc$dead, dist = "multiphase",
+    phases = list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0),
+                  const = hzr_phase("constant")),
+    fit = TRUE, control = list(n_starts = 1)))
+  expect_null(vecmp$call$formula)
+  expect_null(.hzr_refit_blocker(vecmp))
 })
 
 # Fixture: an intercept-only formula fit whose only candidate names a column
