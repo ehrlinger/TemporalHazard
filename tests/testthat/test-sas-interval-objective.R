@@ -453,3 +453,39 @@ test_that("the two objectives are far enough apart for the mix-up to matter", {
   expect_gt(abs(sas_mp_ll(objective = "sas") -
                   sas_mp_ll(objective = "likelihood")), 1)
 })
+
+test_that("a vector-interface sas fit keeps its objective across a scope refit", {
+  skip_on_cran()
+  # The intersection of #160 (multiphase models refit from a vector-interface
+  # base fit) and the objective fix. Neither change tested it on its own, and
+  # it is the combination SAS SELECTION jobs actually land on: 25 of 26 use
+  # ICENSOR, so they arrive interval-censored, through the vector interface,
+  # and are the reason objective = "sas" exists.
+  set.seed(7)
+  n <- 60L
+  D <- data.frame(tt = stats::rexp(n, 0.4) + 0.05,
+                  x1 = stats::rnorm(n), x2 = stats::rnorm(n))
+  D$st <- rep(c(1, 0, 2), length.out = n)
+  D$lo <- ifelse(D$st == 2, D$tt, 0.02)
+  D$up <- ifelse(D$st == 2, D$tt + 0.6, D$tt)
+
+  # Guard the guard: interval rows must be present or objective = "sas" is
+  # indistinguishable from the likelihood and this test proves nothing.
+  expect_gt(sum(D$st == 2), 0L)
+
+  f <- suppressWarnings(hazard(time = D$tt, status = D$st, time_lower = D$lo,
+                               time_upper = D$up, dist = "multiphase",
+                               phases = sas_obj_phases(), objective = "sas",
+                               fit = TRUE))
+  expect_null(f$call$formula)
+  expect_identical(f$spec$objective, "sas")
+
+  out <- suppressWarnings(
+    TemporalHazard:::.hzr_refit_with_scope(f, action = "add", var = "x1",
+                                           data = D, phase = "early"))
+  # Both halves have to survive together: the response vectors rebuilt from
+  # `$data` (#160) and the estimand read from `$spec` (this fix).
+  expect_identical(out$spec$objective, "sas")
+  expect_equal(out$data$time_upper, D$up)
+  expect_equal(out$data$time_lower, D$lo)
+})
