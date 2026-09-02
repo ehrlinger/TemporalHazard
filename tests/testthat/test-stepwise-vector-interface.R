@@ -106,6 +106,42 @@ test_that("a vector-interface refit carries weights and time_lower through", {
   expect_equal(out$data$time_lower, D$entry)
 })
 
+test_that("a vector-interface refit carries BOTH censoring bounds through", {
+  skip_on_cran()
+  # The test above uses status 0/1 and entry 0, so `time_upper` is NULL there
+  # and asserting on it would compare NULL with NULL -- an assertion that
+  # cannot fail. This fixture makes both bounds load bearing: interval rows
+  # with genuinely wide intervals, and a non-zero entry time on the rest.
+  D <- vec_data()
+  n <- nrow(D)
+  D$st <- rep(c(1, 0, 2), length.out = n)
+  D$lo <- ifelse(D$st == 2, D$tt, 0.05 + seq_len(n) / (20 * n))
+  D$up <- ifelse(D$st == 2, D$tt + 0.75, D$tt)
+
+  # Guard the guard: if the fixture degenerated to zero entry times or
+  # zero-width intervals, dropping either bound would not change the
+  # likelihood and the assertions below would prove nothing.
+  expect_true(all(D$lo[D$st != 2] > 0))
+  expect_true(all(D$up[D$st == 2] > D$lo[D$st == 2]))
+  expect_gt(sum(D$st == 2), 0L)
+
+  fv <- suppressWarnings(hazard(time = D$tt, status = D$st,
+                                time_lower = D$lo, time_upper = D$up,
+                                dist = "multiphase", phases = vec_phases(),
+                                fit = TRUE))
+  out <- suppressWarnings(
+    .hzr_refit_with_scope(fv, action = "add", var = "x1",
+                          data = D, phase = "early"))
+
+  expect_s3_class(out, "hazard")
+  # Dropping `time_lower` refits a left-truncated cohort as at risk from 0;
+  # dropping `time_upper` turns every interval row into something else. Both
+  # are silent -- the refit still returns a populated fit.
+  expect_equal(out$data$time_lower, D$lo)
+  expect_equal(out$data$time_upper, D$up)
+  expect_equal(out$data$status, D$st)
+})
+
 test_that("a single-distribution vector fit still cannot be refit", {
   skip_on_cran()
   D <- vec_data()
