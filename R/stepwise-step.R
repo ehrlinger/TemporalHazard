@@ -416,7 +416,20 @@
       names = .hzr_candidate_coef_name(refit, all_scores$variable[i],
                                        cand_phase)
     )
-    if (is.na(w$score)) next
+    if (is.na(w$score)) {
+      # The refit CONVERGED -- it returned a point estimate -- but its Hessian
+      # was not invertible, so there is no standard error and .hzr_wald_p()
+      # cannot compute a test (it returns NA for "no vcov or non-finite SE").
+      #
+      # A bare `next` here recorded nothing at all. The row kept the SCORE's
+      # reason, which describes the first of two independent failures and says
+      # nothing about the second, and no counter moved -- so a strong
+      # candidate that neither criterion could test vanished, and the screen
+      # rendered as an honest "nothing met slentry". That indistinguishability
+      # is the defect #159 and #130 were both about.
+      all_scores$reason[i] <- "fallback_no_variance"
+      next
+    }
     fallback_fits[[i]]     <- refit
     all_scores$score[i]    <- w$score
     all_scores$p_value[i]  <- w$p_value

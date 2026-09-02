@@ -578,8 +578,13 @@ hzr_stepwise <- function(fit,
     n_nonmonotone_entries = n_nonmonotone_entries
   )
 
-  n_indefinite <- unname(uncomputable_reasons["information_indefinite"])
-  if (is.na(n_indefinite)) n_indefinite <- 0L
+  # Both codes mean "no criterion tested this candidate". Keying the warning
+  # below on information_indefinite alone would go silent the moment the
+  # rescue's own failure was labelled separately -- quieter, for a case that
+  # needs to be louder.
+  untested_codes <- c("information_indefinite", "fallback_no_variance")
+  n_indefinite <- sum(unname(uncomputable_reasons[untested_codes]),
+                      na.rm = TRUE)
 
   if (stopped_uncomputable) {
     warning("Stepwise selection stopped because the score statistic ",
@@ -595,15 +600,20 @@ hzr_stepwise <- function(fit,
     # could be scored.  A completed run is where that is least visible and
     # most misleading, so it warns on its own.
     warning("Stepwise selection completed, but ", n_indefinite,
-            " candidate score(s) could not be computed because ",
-            .hzr_score_reason_text("information_indefinite"),
-            ". Under `criterion = \"score\"` such candidates are refit and ",
-            "Wald-tested automatically, so reaching this means the refit ",
-            "itself failed and they were never tested -- the selected set ",
-            "may omit strong variables. Re-running with ",
-            "`criterion = \"wald\"` runs the same refit and will fail the ",
-            "same way; see `$criteria$refit_failures` for which candidates, ",
-            "and `$criteria$uncomputable_reasons`.", call. = FALSE)
+            " candidate(s) were tested by NEITHER criterion. The score ",
+            "statistic could not be computed for them, and under ",
+            "`criterion = \"score\"` they are then refit and Wald-tested ",
+            "automatically -- so reaching this means that rescue did not ",
+            "produce a test either: it errored or did not converge ",
+            "(`information_indefinite`, listed in ",
+            "`$criteria$refit_failures`), or it converged but yielded no ",
+            "usable variance to test with (`fallback_no_variance`, which ",
+            "leaves `refit_failures` empty). Such candidates are typically ",
+            "STRONG -- that is what drives the score's information ",
+            "indefinite -- so the selected set may omit them. Re-running ",
+            "with `criterion = \"wald\"` runs the same refit and fails the ",
+            "same way. See `$criteria$uncomputable_reasons` for which ",
+            "mechanism applied.", call. = FALSE)
   }
   if (stopped_refit_failed) {
     warning("Stepwise selection stopped after ", nrow(steps_df),

@@ -109,11 +109,18 @@ test_that("the reason text tells a user to keep the candidate, not drop it", {
   txt <- .hzr_score_reason_text("information_indefinite")
   expect_match(txt, "STRONG")
   # The remedy changed with the fallback: the score criterion Wald-tests
-  # these itself, so the text must say the refit failed rather than advise a
-  # re-run under `criterion = "wald"` -- which now runs the identical refit
-  # and fails identically.
+  # these itself, so the text must say why that rescue did not help, rather
+  # than advise a re-run under `criterion = "wald"` -- which now runs the
+  # identical refit and fails identically.
   expect_match(txt, "Wald-tests")
-  expect_match(txt, "refit also failed")
+  # It must name the mechanism precisely. "that refit also failed" was too
+  # broad: the refit can CONVERGE and still yield no test, when its Hessian is
+  # singular so the coefficient has an estimate but no standard error. That
+  # case reports `fallback_no_variance` and leaves `refit_failures` empty, so
+  # a reader sent there by the old wording found nothing.
+  expect_match(txt, "ERRORED or did not converge")
+  expect_match(txt, "fallback_no_variance")
+  expect_false(grepl("refit also failed", txt))
   # And it must not be reachable from the collinear code, which is the
   # opposite advice.
   expect_no_match(.hzr_score_reason_text("collinear"), "STRONG")

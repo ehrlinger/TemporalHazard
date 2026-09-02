@@ -725,8 +725,19 @@
       "the candidate's effect is too large for the score test's approximation",
       "at zero, so these are typically STRONG candidates rather than",
       "degenerate ones. `criterion = \"score\"` refits and Wald-tests them",
-      "itself, so reaching this reason means that refit also failed. It is",
-      "also reached when the current fit has not truly converged"
+      "itself, so reaching this reason means that refit ERRORED or did not",
+      "converge -- see `refit_failures`. A refit that converged but could not",
+      "be Wald-tested reports `fallback_no_variance` instead. It is also",
+      "reached when the current fit has not truly converged"
+    ),
+    fallback_no_variance = paste(
+      "the score could not test the candidate, and the Wald refit that would",
+      "have rescued it converged but produced no usable variance -- its",
+      "Hessian was not invertible, so the coefficient has an estimate but no",
+      "standard error. The candidate was therefore tested by NEITHER",
+      "criterion. It is typically a STRONG one, since that is what drives the",
+      "score's information indefinite in the first place, so a screen",
+      "reporting this has understated that variable rather than declined it"
     ),
     information_nonpositive = paste(
       "the candidate's own observed information was not positive, before any",

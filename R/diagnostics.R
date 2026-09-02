@@ -1799,8 +1799,14 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     }
   }
 
-  n_indefinite <- unname(uncomputable_reasons["information_indefinite"])
-  if (is.na(n_indefinite)) n_indefinite <- 0L
+  # Both codes mean "no criterion tested this candidate", and both are
+  # typically STRONG variables, so both belong in the warning below. They
+  # differ in mechanism: information_indefinite means the rescuing refit
+  # errored or did not converge, fallback_no_variance means it converged but
+  # yielded no standard error to test with. The previous text described every
+  # such row as a failed refit, which is wrong for the second.
+  n_indefinite <- sum(unname(uncomputable_reasons[
+    c("information_indefinite", "fallback_no_variance")]), na.rm = TRUE)
 
   if (n_uncomputable_reps > 0L) {
     warning(n_uncomputable_reps, " of ", n_success, " successful replicates ",
@@ -1815,12 +1821,16 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     # reaching this count means the refit failed and it went untested after
     # all -- and these are typically the strong ones, which depresses exactly
     # the selection frequencies a screen exists to measure.
-    warning(n_indefinite, " candidate score(s) ",
-            "across ", n_success, " replicates could not be computed because ",
-            .hzr_score_reason_text("information_indefinite"),
-            ". The automatic Wald refit failed for these, so they went ",
-            "untested and their selection frequencies are understated. See ",
-            "`$uncomputable_reasons`.", call. = FALSE)
+    warning(n_indefinite, " candidate score(s) across ", n_success,
+            " replicates were tested by NEITHER criterion: the score ",
+            "statistic could not be computed, and the Wald refit that would ",
+            "have rescued them either failed to converge ",
+            "(`information_indefinite`) or converged without a usable ",
+            "variance to test with (`fallback_no_variance`). These are ",
+            "typically STRONG candidates -- that is what drives the score's ",
+            "information indefinite -- so their selection frequencies are ",
+            "understated rather than merely noisy. See ",
+            "`$uncomputable_reasons` for which mechanism.", call. = FALSE)
   }
 
   if (n_nonmonotone_reps > 0L) {
