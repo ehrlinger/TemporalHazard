@@ -208,7 +208,8 @@ keep the two in agreement.
    forward.
 
    **Say which kind of release it is.** The wording above is for a CRAN
-   release. A GitHub-only release takes, following `v1.2.2` and `v1.2.8`:
+   release. A GitHub-only release uses this form instead, following `v1.2.2`
+   and `v1.2.8`:
 
    ```sh
    git tag -a vX.Y.Z -m "TemporalHazard vX.Y.Z: GitHub release YYYY-MM-DD; not submitted to CRAN" main
