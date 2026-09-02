@@ -29,6 +29,30 @@
 # directly should pre-expand factors and splines into explicit main
 # effects.
 
+#' The objective a fit was estimated under
+#'
+#' `objective` changes the estimand, not just the arithmetic: on the
+#' esophagectomy reference the SAS interval density and the likelihood differ
+#' by about 22 log-likelihood units, which is larger than most single-variable
+#' effects. Anything that refits a stored fit, or evaluates its likelihood
+#' again, has to reuse the same one or it silently compares two estimands ---
+#' a populated `delta_logLik` / `aic` computed against a model the base fit
+#' was never fitted to. Every such caller reads this one accessor so they
+#' cannot drift apart.
+#'
+#' A fit with no `objective` recorded predates the argument, so it was
+#' necessarily estimated under the likelihood; the default is a fact about
+#' those objects, not a fallback guess.
+#'
+#' @param fit A fitted `hazard` object.
+#' @return `"likelihood"` or `"sas"`.
+#'
+#' @keywords internal
+#' @noRd
+.hzr_fit_objective <- function(fit) {
+  fit$spec$objective %||% "likelihood"
+}
+
 #' Why a fit cannot be refit with a mutated scope
 #'
 #' Single decision point for "can `.hzr_refit_with_scope()` handle this
@@ -185,6 +209,10 @@
         list(data = data))
     }
 
+    # Reuse the base fit's objective. Dropping it refits every candidate
+    # under the likelihood while the base fit's `objective` is the SAS
+    # density, so `delta_logLik` and `aic` would be differenced across two
+    # estimands -- a full `$steps` table, no warning, wrong numbers.
     do.call(hazard, c(
       response_args,
       list(
@@ -192,6 +220,7 @@
         phases       = new_phases,
         weights      = weights,
         time_windows = time_windows,
+        objective    = .hzr_fit_objective(current),
         fit          = TRUE
       ),
       extra_args

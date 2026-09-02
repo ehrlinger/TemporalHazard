@@ -253,7 +253,8 @@
       par, time = d$time, status = d$status,
       time_lower = d$time_lower, time_upper = d$time_upper,
       x = d$x, weights = d$weights, phases = phases,
-      covariate_counts = covariate_counts, x_list = x_list
+      covariate_counts = covariate_counts, x_list = x_list,
+      objective = .hzr_fit_objective(current)
     )
   }
   h <- tryCatch(numDeriv::hessian(nll, theta), error = function(e) NULL)
@@ -492,7 +493,8 @@
       x = d$x, weights = d$weights,
       phases = exp_$phases,
       covariate_counts = exp_$covariate_counts,
-      x_list = exp_$x_list
+      x_list = exp_$x_list,
+      objective = .hzr_fit_objective(current)
     ),
     error = function(e) NULL
   )
