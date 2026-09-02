@@ -222,9 +222,14 @@ The `steps` data frame has columns:
   (standard normal) or `"wald_chisq"` (chi-square on `df`). `df` alone
   does not distinguish them — a scalar Wald is reported as a *z*, not as
   its square, so it and a score Q are both recorded at `df = 1` while
-  calling for different distributions. This also identifies the rows the
-  Wald fallback rescued: under `criterion = "score"` they are the ones
-  reading `"wald_z"` (see `$criteria$n_wald_fallbacks` for the count).
+  calling for different distributions. It also identifies the rows the
+  Wald fallback rescued, but only among *entry* rows: under
+  `criterion = "score"` those are the rows with
+  `action == "enter" & stat_type == "wald_z"`. Drop rows are always
+  Wald-tested under that criterion — removal follows SAS and is tested
+  on the current model's Wald p-value — so they read `"wald_z"` whether
+  or not the fallback ever fired. See `$criteria$n_wald_fallbacks` for
+  the count.
 
 - `p_value`, `delta_aic`:
 

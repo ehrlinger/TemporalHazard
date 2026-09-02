@@ -216,8 +216,8 @@ Control parameters:
   relative amount across them (it finished before the first observation
   and acts as a constant offset – `mu` stays identified, the shape
   parameters do not). The measured shares are kept on the fit as
-  `fit$phase_share`. Raise it to catch marginal phases, set it to 0 to
-  silence the check.
+  `fit$fit$phase_share`. Raise it to catch marginal phases, set it to 0
+  to silence the check.
 
 - `reltol`: Relative parameter change tolerance (default 1e-5)
 
