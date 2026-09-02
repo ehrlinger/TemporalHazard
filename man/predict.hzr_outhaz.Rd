@@ -32,8 +32,25 @@ the total prediction instead would answer a question that was not asked.}
 \item{se.fit}{Logical; add delta-method standard errors and confidence
 limits, as \code{\link[=predict.hazard]{predict.hazard()}} does.}
 
-\item{level}{Numeric confidence level in \verb{(0, 1)}; default \code{0.95}. Only
-used when \code{se.fit = TRUE}.}
+\item{level}{Numeric confidence level in \verb{(0, 1)}; default \code{0.95}.
+Only used when \code{se.fit = TRUE}.
+
+\strong{SAS draws narrower bands than this by default.} \verb{PROC HAZPRED} takes
+its width from \code{CLEVEL}, whose default is \code{0.68268948} --- documented in
+the macro source as "(1 sd)" --- so its \code{T_ALPHA} multiplier is \code{1} to
+seven decimals (the literal is truncated) and the band is one standard
+error, 68.3\%, not 95\%. Reproducing a SAS figure at this
+function's default therefore yields a band about 1.96 times wider than the
+one being checked against, with no error and no warning on either side.
+Pass the SAS level explicitly to match:
+
+\if{html}{\out{<div class="sourceCode r">}}\preformatted{predict(fit, newdata, type = "survival", se.fit = TRUE,
+        level = 2 * stats::pnorm(1) - 1, conf.type = "logit")
+}\if{html}{\out{</div>}}
+
+The default is left at \code{0.95} deliberately: it is the right R-side
+default, and silently adopting SAS's would make this method disagree with
+every other R modelling function.}
 
 \item{conf.type}{Transform for \code{type = "survival"} confidence limits when
 \code{se.fit = TRUE}: \code{"log-log"} (default) or \code{"logit"}, which reproduces
