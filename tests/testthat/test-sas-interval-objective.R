@@ -489,3 +489,41 @@ test_that("a vector-interface sas fit keeps its objective across a scope refit",
   expect_equal(out$data$time_upper, D$up)
   expect_equal(out$data$time_lower, D$lo)
 })
+
+test_that("a refit refuses a conflicting objective and tolerates a redundant one", {
+  skip_on_cran()
+  # `objective` reaches .hzr_refit_with_scope() through `...` -- hzr_stepwise()
+  # documents `...` as "Passed to the underlying hazard() refits" -- while the
+  # refit also supplies it from the base fit. Before the guard this matched the
+  # same formal twice and died inside do.call() with a message about argument
+  # matching that says nothing about estimands.
+  D <- sas_obj_data()
+  f <- suppressWarnings(hazard(Surv(tt, ev) ~ 1, data = D, dist = "multiphase",
+                               phases = sas_obj_phases(), objective = "sas",
+                               fit = TRUE))
+  refit <- function(...) {
+    TemporalHazard:::.hzr_refit_with_scope(f, action = "add", var = "x1",
+                                           data = D, phase = "early", ...)
+  }
+
+  # Conflicting: refused, and the message has to say WHY a refit cannot change
+  # estimand or the next reader deletes the guard as pedantry.
+  expect_error(suppressWarnings(refit(objective = "likelihood")),
+               "cannot be changed in a refit")
+  expect_error(suppressWarnings(refit(objective = "likelihood")),
+               "between two estimands rather than between two models")
+  # Specifically NOT the bare R argument-matching error it used to raise: the
+  # regression would still "error", so asserting only that it errors would pass
+  # against the broken code.
+  msg <- tryCatch(suppressWarnings(refit(objective = "likelihood")),
+                  error = conditionMessage)
+  expect_false(grepl("matched by multiple actual arguments", msg, fixed = TRUE))
+
+  # Redundant: dropped, not refused -- restating the base fit's own objective
+  # asks for nothing the refit was not already going to do.
+  out <- suppressWarnings(refit(objective = "sas"))
+  expect_identical(out$spec$objective, "sas")
+
+  # Absent: unchanged.
+  expect_identical(suppressWarnings(refit())$spec$objective, "sas")
+})

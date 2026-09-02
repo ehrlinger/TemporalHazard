@@ -85,6 +85,15 @@
   re-evaluates the stored call, which did carry `objective = "sas"`, so it was
   already consistent; *select* mode goes through the scope refit and was not.
 
+  Following from this, **`objective` cannot be overridden per refit.** Passing it
+  through `hzr_stepwise()`'s `...` is accepted when it restates the base fit's
+  own objective and refused when it conflicts, with a message saying why:
+  a candidate refit under a different objective would make `delta_logLik`,
+  `aic` and `delta_aic` differences between two estimands rather than between
+  two models. It is refused rather than quietly ignored, because a full
+  `$steps` table that silently disregarded an explicit argument is the failure
+  this entry is about.
+
 * **A candidate that neither criterion could test is now reported as such.**
   `criterion = "score"` declines a candidate whose observed information is
   indefinite at `beta = 0` -- which happens when the effect is *large* -- and
