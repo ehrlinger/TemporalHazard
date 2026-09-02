@@ -40,8 +40,11 @@
   `criterion = "score"`, where every neighbouring row carries a Q. The
   selection was right and `p_value` was right, but a reader recomputing a
   p-value from `stat` the way the neighbouring rows permit got an answer wrong
-  by dozens of orders of magnitude. Under `criterion = "score"` the rows
-  reading `"wald_z"` are exactly the ones the fallback rescued.
+  by dozens of orders of magnitude. Under `criterion = "score"` the *entry*
+  rows reading `"wald_z"` are the ones the fallback rescued --- filter on
+  `action == "enter" & stat_type == "wald_z"`. Drop rows are always
+  Wald-tested under that criterion, following SAS, so they read `"wald_z"`
+  whether or not the fallback fired.
 
 * **`hzr_bootstrap()` reports Wald fallbacks in select mode**, through
   `$n_wald_fallback_replicates` and `$n_wald_fallbacks`, with a warning when
@@ -58,6 +61,29 @@
   works, and is what makes the multiple-nomogram warning actionable.
 
 ## Bug fixes
+
+* **`objective` is now recorded on the fit, so refits keep the estimand.**
+  `hazard(objective = "sas")` was accepted and acted on by the optimizer, but
+  the choice was never stored on the object. Everything that rebuilds a
+  `hazard()` call from `fit$spec` therefore reverted to
+  `objective = "likelihood"`: every `hzr_stepwise()` candidate refit, the
+  Wald-fallback refit and each accepted move, plus the score test's numeric
+  Hessian and gradient.
+
+  Selecting on a `"sas"` base fit consequently differenced `delta_logLik`,
+  `aic` and `delta_aic` across *two different estimands*, and the score
+  statistic was computed against a likelihood the fit had not been fitted to.
+  On the esophagectomy reference the two objectives differ by about 22
+  log-likelihood units -- larger than most single-variable effects -- and the
+  run produced a full `$steps` table with no error and no warning.
+
+  `fit$spec$objective` now records it, and one accessor feeds every consumer
+  so they cannot drift apart. A fit that carries no `objective` predates the
+  argument and is read as `"likelihood"`, which is what it was.
+
+  Note the asymmetry this had created: `hzr_bootstrap()` *refit* mode
+  re-evaluates the stored call, which did carry `objective = "sas"`, so it was
+  already consistent; *select* mode goes through the scope refit and was not.
 
 * **A candidate that neither criterion could test is now reported as such.**
   `criterion = "score"` declines a candidate whose observed information is
@@ -86,18 +112,18 @@
   No behaviour changed in what gets selected: a candidate that could not be
   tested is still not entered. What changed is that the run says so.
 
-* **`fit$weak` now distinguishes "no ridge" from "not checked".** The
+* **`fit$fit$weak` now distinguishes "no ridge" from "not checked".** The
   weak-identification diagnostic introduced in 1.2.7 returned `NULL` both when
   a fit had been examined and found well identified and when it could not be
   examined at all -- most importantly when no Hessian was available, which
   happens on an install without the suggested numDeriv package and on fits whose
   rows are left- or interval-censored, where the analytic Hessian declines by
-  design. `NEWS` offered `fit$weak` as the programmatic check, so on those
+  design. `NEWS` offered `fit$fit$weak` as the programmatic check, so on those
   installs it certified as well identified a fit nothing had looked at.
 
   The field now takes three values: a list when a ridge was found, `NULL` when
   the fit was examined and is well identified, and `NA` when the check could
-  not run. Test it with `is.list(fit$weak)` rather than `!is.null()`.
+  not run. Test it with `is.list(fit$fit$weak)` rather than `!is.null()`.
   `summary()` prints a note in the `NA` case saying the check did not run, and
   a fit imported with `hzr_read_outhaz()` -- which has no R Hessian to examine
   -- now reports `NA` rather than reading as certified clean.
@@ -195,6 +221,19 @@
 
 ## Documentation
 
+* **Corrected the documented paths for two fit fields.** The weak-identification
+  result is at `fit$fit$weak` and the phase shares at `fit$fit$phase_share`;
+  `NEWS.md` and, for the shares, `?hazard` had both named them one level too
+  high. Code following the documented recipe got `FALSE` from
+  `is.list(fit$weak)` for every fit, ridge or not -- the same wrong answer the
+  1.2.8 three-value change was made to prevent, reached by a different route.
+
+* **`stat_type` no longer over-claims which rows the Wald fallback rescued.**
+  Under `criterion = "score"` drop rows are always Wald-tested, following SAS,
+  so they read `"wald_z"` whether or not the fallback fired. The rescued rows
+  are the *entry* rows: filter on
+  `action == "enter" & stat_type == "wald_z"`.
+
 * **`predict()` and `hzr_nelson()` now say that SAS draws narrower bands.**
   SAS `%KAPLAN`, `%NELSONT` and `PROC HAZPRED` all take their band width from
   `CLEVEL`, whose default is `0.68268948` -- documented in the macro source as
@@ -262,7 +301,7 @@
   `hazard()` now warns, once per fit, naming the parameters that span the flat
   direction along with their correlation and the Hessian's `rcond`, and
   `summary()` prints the same note. The finding is recorded on the object as
-  `fit$weak`, so it can be checked programmatically rather than scraped from a
+  `fit$fit$weak`, so it can be checked programmatically rather than scraped from a
   warning. See the 1.2.8 notes below for the three values that field takes.
 
   The direction is read off the *correlation* of the estimates rather than
@@ -356,7 +395,7 @@
   phase already contributed. The share is measured against the cumulative
   hazard rather than the instantaneous hazard for the same reason.
 
-  The shares are recorded on the fit as `fit$phase_share`, so the warning can
+  The shares are recorded on the fit as `fit$fit$phase_share`, so the warning can
   be checked rather than taken on trust, and the threshold is
   `control$phase_share_tol` (default 1e-8).
 

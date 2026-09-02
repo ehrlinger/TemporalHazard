@@ -176,7 +176,7 @@ time (it never started -- neither its \code{mu} nor its shape is identified),
 or when its contribution varies by less than this relative amount across
 them (it finished before the first observation and acts as a constant
 offset -- \code{mu} stays identified, the shape parameters do not). The
-measured shares are kept on the fit as \code{fit$phase_share}. Raise it to
+measured shares are kept on the fit as \code{fit$fit$phase_share}. Raise it to
 catch marginal phases, set it to 0 to silence the check.
 \item \code{reltol}: Relative parameter change tolerance (default 1e-5)
 \item \code{abstol}: Absolute gradient norm tolerance (default 1e-6)

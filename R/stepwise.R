@@ -180,10 +180,14 @@
 #'     \code{"wald_chisq"} (chi-square on \code{df}).  \code{df} alone does
 #'     not distinguish them --- a scalar Wald is reported as a \emph{z}, not
 #'     as its square, so it and a score Q are both recorded at \code{df = 1}
-#'     while calling for different distributions.  This also identifies the
-#'     rows the Wald fallback rescued: under \code{criterion = "score"} they
-#'     are the ones reading \code{"wald_z"} (see \code{$criteria$n_wald_fallbacks}
-#'     for the count).}
+#'     while calling for different distributions.  It also identifies the
+#'     rows the Wald fallback rescued, but only among \emph{entry} rows:
+#'     under \code{criterion = "score"} those are the rows with
+#'     \code{action == "enter" & stat_type == "wald_z"}.  Drop rows are
+#'     always Wald-tested under that criterion --- removal follows SAS and
+#'     is tested on the current model's Wald p-value --- so they read
+#'     \code{"wald_z"} whether or not the fallback ever fired.  See
+#'     \code{$criteria$n_wald_fallbacks} for the count.}
 #'   \item{\code{p_value}, \code{delta_aic}}{Always populated when
 #'     computable, regardless of the active criterion.}
 #'   \item{\code{logLik}, \code{aic}, \code{n_coef}}{Goodness-of-fit

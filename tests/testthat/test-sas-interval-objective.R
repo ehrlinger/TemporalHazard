@@ -361,3 +361,131 @@ test_that('objective = "sas" tracks SAS along its own iteration trace', {
   # an artefact of every iterate sitting near the same value.
   expect_gt(abs(trace[[1]]$sas - trace[[4]]$sas), 190)
 })
+
+
+# ---------------------------------------------------------------------------
+# Objective is recorded on the fit and survives every refit path.
+#
+# `objective` was accepted, match.arg'd and threaded to the optimizer, but
+# never stored -- so `.hzr_refit_with_scope()`, which rebuilds the hazard()
+# call from `$spec`, refit every stepwise candidate under the likelihood while
+# the base fit's own objective was the SAS density. That differences
+# `delta_logLik` and `aic` across two estimands and reports a full `$steps`
+# table with no warning. The tests below assert the recording, the default for
+# objects that predate the argument, and the forwarding.
+# ---------------------------------------------------------------------------
+
+sas_obj_data <- function(n = 60, seed = 11) {
+  set.seed(seed)
+  x1 <- stats::rnorm(n)
+  data.frame(
+    tt = stats::rexp(n, 0.4) + 0.05,
+    ev = rep(c(1, 0), length.out = n),
+    x1 = x1,
+    x2 = stats::rnorm(n)
+  )
+}
+
+sas_obj_phases <- function() {
+  list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0),
+       const = hzr_phase("constant"))
+}
+
+test_that("hazard() records the objective it was fitted under", {
+  skip_on_cran()
+  D <- sas_obj_data()
+  f_lik <- suppressWarnings(hazard(time = D$tt, status = D$ev,
+                                   dist = "multiphase",
+                                   phases = sas_obj_phases(), fit = TRUE))
+  f_sas <- suppressWarnings(hazard(time = D$tt, status = D$ev,
+                                   dist = "multiphase",
+                                   phases = sas_obj_phases(),
+                                   objective = "sas", fit = TRUE))
+  # Distinct values, not merely non-NULL: a spec that hardcoded either one
+  # would pass a `!is.null()` check.
+  expect_identical(f_lik$spec$objective, "likelihood")
+  expect_identical(f_sas$spec$objective, "sas")
+})
+
+test_that(".hzr_fit_objective() defaults only when nothing was recorded", {
+  skip_on_cran()
+  D <- sas_obj_data()
+  f <- suppressWarnings(hazard(time = D$tt, status = D$ev, dist = "multiphase",
+                               phases = sas_obj_phases(), objective = "sas",
+                               fit = TRUE))
+  expect_identical(TemporalHazard:::.hzr_fit_objective(f), "sas")
+
+  # A fit from before the argument existed carries no `objective`; it was
+  # necessarily estimated under the likelihood.
+  legacy <- f
+  legacy$spec$objective <- NULL
+  expect_identical(TemporalHazard:::.hzr_fit_objective(legacy), "likelihood")
+})
+
+test_that("a scope refit keeps the base fit's objective", {
+  skip_on_cran()
+  D <- sas_obj_data()
+  f_sas <- suppressWarnings(hazard(Surv(tt, ev) ~ 1, data = D,
+                                   dist = "multiphase",
+                                   phases = sas_obj_phases(),
+                                   objective = "sas", fit = TRUE))
+  expect_identical(f_sas$spec$objective, "sas")
+
+  out <- suppressWarnings(
+    TemporalHazard:::.hzr_refit_with_scope(f_sas, action = "add", var = "x1",
+                                           data = D, phase = "early"))
+  # The refit is where the estimand used to change silently.
+  expect_identical(out$spec$objective, "sas")
+
+  f_lik <- suppressWarnings(hazard(Surv(tt, ev) ~ 1, data = D,
+                                   dist = "multiphase",
+                                   phases = sas_obj_phases(), fit = TRUE))
+  out_lik <- suppressWarnings(
+    TemporalHazard:::.hzr_refit_with_scope(f_lik, action = "add", var = "x1",
+                                           data = D, phase = "early"))
+  expect_identical(out_lik$spec$objective, "likelihood")
+})
+
+test_that("the two objectives are far enough apart for the mix-up to matter", {
+  # Guards the tests above against becoming cosmetic: if the two objectives
+  # ever agreed numerically, forwarding the label would protect nothing and a
+  # test asserting only the label would still pass.
+  expect_gt(abs(sas_mp_ll(objective = "sas") -
+                  sas_mp_ll(objective = "likelihood")), 1)
+})
+
+test_that("a vector-interface sas fit keeps its objective across a scope refit", {
+  skip_on_cran()
+  # The intersection of #160 (multiphase models refit from a vector-interface
+  # base fit) and the objective fix. Neither change tested it on its own, and
+  # it is the combination SAS SELECTION jobs actually land on: 25 of 26 use
+  # ICENSOR, so they arrive interval-censored, through the vector interface,
+  # and are the reason objective = "sas" exists.
+  set.seed(7)
+  n <- 60L
+  D <- data.frame(tt = stats::rexp(n, 0.4) + 0.05,
+                  x1 = stats::rnorm(n), x2 = stats::rnorm(n))
+  D$st <- rep(c(1, 0, 2), length.out = n)
+  D$lo <- ifelse(D$st == 2, D$tt, 0.02)
+  D$up <- ifelse(D$st == 2, D$tt + 0.6, D$tt)
+
+  # Guard the guard: interval rows must be present or objective = "sas" is
+  # indistinguishable from the likelihood and this test proves nothing.
+  expect_gt(sum(D$st == 2), 0L)
+
+  f <- suppressWarnings(hazard(time = D$tt, status = D$st, time_lower = D$lo,
+                               time_upper = D$up, dist = "multiphase",
+                               phases = sas_obj_phases(), objective = "sas",
+                               fit = TRUE))
+  expect_null(f$call$formula)
+  expect_identical(f$spec$objective, "sas")
+
+  out <- suppressWarnings(
+    TemporalHazard:::.hzr_refit_with_scope(f, action = "add", var = "x1",
+                                           data = D, phase = "early"))
+  # Both halves have to survive together: the response vectors rebuilt from
+  # `$data` (#160) and the estimand read from `$spec` (this fix).
+  expect_identical(out$spec$objective, "sas")
+  expect_equal(out$data$time_upper, D$up)
+  expect_equal(out$data$time_lower, D$lo)
+})

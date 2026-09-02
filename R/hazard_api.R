@@ -208,7 +208,7 @@ NULL
 #'   or when its contribution varies by less than this relative amount across
 #'   them (it finished before the first observation and acts as a constant
 #'   offset -- `mu` stays identified, the shape parameters do not). The
-#'   measured shares are kept on the fit as `fit$phase_share`. Raise it to
+#'   measured shares are kept on the fit as `fit$fit$phase_share`. Raise it to
 #'   catch marginal phases, set it to 0 to silence the check.
 #' - `reltol`: Relative parameter change tolerance (default 1e-5)
 #' - `abstol`: Absolute gradient norm tolerance (default 1e-6)
@@ -853,7 +853,7 @@ hazard <- function(formula = NULL,
     call = captured_call,
     call_env = captured_env,
     spec = list(dist = dist, control = control, time_windows = time_windows,
-                phases = phases),
+                phases = phases, objective = objective),
     data = list(
       time = time,
       time_lower = time_lower,
