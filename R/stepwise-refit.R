@@ -162,8 +162,30 @@
     default_windows
   }
 
+  # `objective` is supplied from the base fit below, so a user-supplied one
+  # would match the same formal twice and error inside do.call() with a message
+  # about argument matching that says nothing about estimands. Unlike `weights`
+  # and `time_windows`, it is NOT user-overridable: the whole point of carrying
+  # it is that a candidate refit must be comparable to the model it is being
+  # compared against. A redundant value is dropped; a conflicting one is
+  # refused, because silently discarding it would return a full result that
+  # ignored an explicit argument.
+  if ("objective" %in% names(user_args)) {
+    fit_objective <- .hzr_fit_objective(current)
+    if (!identical(user_args$objective, fit_objective)) {
+      stop("`objective` cannot be changed in a refit. The base fit was ",
+           "estimated under objective = \"", fit_objective, "\", and refitting ",
+           "candidates under ", deparse1(user_args$objective), " would make ",
+           "`delta_logLik`, `aic` and `delta_aic` differences between two ",
+           "estimands rather than between two models -- a populated `$steps` ",
+           "table whose comparisons do not mean what they appear to. Refit the ",
+           "base model with that objective and run the selection from there.",
+           call. = FALSE)
+    }
+  }
+
   extra_args <- user_args[!names(user_args) %in%
-                            c("weights", "time_windows")]
+                            c("weights", "time_windows", "objective")]
 
   blocker <- .hzr_refit_blocker(current)
   if (!is.null(blocker)) {
