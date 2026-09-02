@@ -96,7 +96,11 @@ zero weight). Use for severity-weighted repeated events.</p></dd>
 
 
 <dt id="arg-conf-level">conf_level<a class="anchor" aria-label="anchor" href="#arg-conf-level"></a></dt>
-<dd><p>Confidence level for the interval (default 0.95).</p></dd>
+<dd><p>Confidence level for the interval (default 0.95).
+SAS <code>%NELSONT</code> defaults to <code>CLEVEL = 0.68268948</code>, a 1-SD (68.3%)
+interval, so a band reproduced at this function's default is about 1.96
+times wider than the SAS one. Pass <code>conf_level = 2 * stats::pnorm(1) - 1</code>
+to match. Same convention as <code><a href="hzr_kaplan.html">hzr_kaplan()</a></code>.</p></dd>
 
 
 <dt id="arg-x">x<a class="anchor" aria-label="anchor" href="#arg-x"></a></dt>

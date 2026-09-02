@@ -112,8 +112,21 @@ limits, as <code><a href="predict.hazard.html">predict.hazard()</a></code> does.
 
 
 <dt id="arg-level">level<a class="anchor" aria-label="anchor" href="#arg-level"></a></dt>
-<dd><p>Numeric confidence level in <code>(0, 1)</code>; default <code>0.95</code>. Only
-used when <code>se.fit = TRUE</code>.</p></dd>
+<dd><p>Numeric confidence level in <code>(0, 1)</code>; default <code>0.95</code>.
+Only used when <code>se.fit = TRUE</code>.</p>
+<p><strong>SAS draws narrower bands than this by default.</strong> <code>PROC HAZPRED</code> takes
+its width from <code>CLEVEL</code>, whose default is <code>0.68268948</code> — documented in
+the macro source as "(1 sd)" — so its <code>T_ALPHA</code> multiplier is <code>1</code> to
+seven decimals (the literal is truncated) and the band is one standard
+error, 68.3%, not 95%. Reproducing a SAS figure at this
+function's default therefore yields a band about 1.96 times wider than the
+one being checked against, with no error and no warning on either side.
+Pass the SAS level explicitly to match:</p>
+<p></p><div class="sourceCode r"><pre><code><span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, <span class="va">newdata</span>, type <span class="op">=</span> <span class="st">"survival"</span>, se.fit <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>        level <span class="op">=</span> <span class="fl">2</span> <span class="op">*</span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">pnorm</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span> <span class="op">-</span> <span class="fl">1</span>, conf.type <span class="op">=</span> <span class="st">"logit"</span><span class="op">)</span></span></code></pre><p></p></div>
+<p>The default is left at <code>0.95</code> deliberately: it is the right R-side
+default, and silently adopting SAS's would make this method disagree with
+every other R modelling function.</p></dd>
 
 
 <dt id="arg-conf-type">conf.type<a class="anchor" aria-label="anchor" href="#arg-conf-type"></a></dt>
