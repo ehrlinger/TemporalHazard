@@ -18,12 +18,20 @@
 - [`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
   [`print(`*`<hzr_phase>`*`)`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
   : Specify a single hazard phase
+
 - [`is_hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/is_hzr_phase.md)
   : Test if an object is an hzr_phase
+
 - [`hzr_phase_cumhaz()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase_cumhaz.md)
   : Cumulative hazard contribution from a single phase
+
 - [`hzr_phase_hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase_hazard.md)
   : Instantaneous hazard contribution from a single phase
+
+- [`hzr_theta_names()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_theta_names.md)
+  :
+
+  Parameter names for a phase specification, in `theta` order
 
 ## Variable selection
 

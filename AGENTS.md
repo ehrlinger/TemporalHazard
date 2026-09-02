@@ -4,7 +4,7 @@ CRAN R package. A native R implementation of the multiphase parametric
 hazard model of Blackstone, Naftel and Turner (1986) — the model the
 SAS/C `HAZARD` program implements. The public API is
 [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
-plus the `hzr_*` family (22 exports, 20 S3 methods, as declared in
+plus the `hzr_*` family (23 exports, 20 S3 methods, as declared in
 `NAMESPACE`).
 
 The package exists to **reproduce a reference implementation**. That
