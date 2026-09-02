@@ -137,19 +137,23 @@
 <div class="section level2">
 <h2 id="on-cran-acceptance">On CRAN acceptance<a class="anchor" aria-label="anchor" href="#on-cran-acceptance"></a></h2>
 <ol style="list-style-type: decimal"><li>
-<p>Tag the release and push the tag (annotated, mirroring existing tags), on <code>main</code> (the released line):</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="fu">git</span> tag <span class="at">-a</span> vX.Y.Z <span class="at">-m</span> <span class="st">"TemporalHazard vX.Y.Z — accepted &amp; published on CRAN YYYY-MM-DD"</span> main</span>
+<p>Tag the release and push the tag (annotated), on <code>main</code> (the released line):</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="fu">git</span> tag <span class="at">-a</span> vX.Y.Z <span class="at">-m</span> <span class="st">"TemporalHazard vX.Y.Z: accepted &amp; published on CRAN YYYY-MM-DD"</span> main</span>
 <span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a><span class="fu">git</span> push origin vX.Y.Z</span></code></pre></div>
+<p><strong>Colon, not an em-dash.</strong> A tag annotation is outbound text, and the house rule is no em-dashes in outbound prose. This template used an em-dash in that position until 2026-09-02, and every tag through <code>v1.2.8</code> followed it, so the existing tags are the old form and are left alone; <code>v1.2.9</code> onward uses the colon. Do not “mirror existing tags” here, which is what the previous wording asked for and what carried the em-dash forward.</p>
+<p><strong>Say which kind of release it is.</strong> The wording above is for a CRAN release. A GitHub-only release uses this form instead, following <code>v1.2.2</code> and <code>v1.2.8</code>:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="fu">git</span> tag <span class="at">-a</span> vX.Y.Z <span class="at">-m</span> <span class="st">"TemporalHazard vX.Y.Z: GitHub release YYYY-MM-DD; not submitted to CRAN"</span> main</span></code></pre></div>
+<p>The annotation is the only durable record of the distinction. The Historical note below exists because nobody could later tell which of 1.2.0 to 1.2.2 reached CRAN, and step 5’s <code>git diff &lt;previous tag&gt;...main</code> anchor needs to know whether its anchor marks a published state or a GitHub snapshot.</p>
 <p><code>CRAN-SUBMISSION</code>’s <code>SHA:</code> records the tree <code>submit_cran()</code> ran from, which is <code>main</code> HEAD.</p>
 </li>
 <li>
 <p>Publish a GitHub Release from the tag, using that version’s <code>NEWS.md</code> section as the body, marked as the latest release:</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="co"># The body is this version's NEWS.md section, so write it out first.</span></span>
-<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a><span class="fu">awk</span> <span class="st">'/^# TemporalHazard X\.Y\.Z$/{f=1;next} /^# TemporalHazard /{f=0} f'</span> <span class="dt">\</span></span>
-<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a>  NEWS.md <span class="op">&gt;</span> news-section.md</span>
-<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a></span>
-<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a><span class="ex">gh</span> release create vX.Y.Z <span class="at">--verify-tag</span> <span class="at">--latest</span> <span class="dt">\</span></span>
-<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a>  <span class="at">--title</span> <span class="st">"TemporalHazard X.Y.Z"</span> <span class="at">--notes-file</span> news-section.md</span></code></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="co"># The body is this version's NEWS.md section, so write it out first.</span></span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a><span class="fu">awk</span> <span class="st">'/^# TemporalHazard X\.Y\.Z$/{f=1;next} /^# TemporalHazard /{f=0} f'</span> <span class="dt">\</span></span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a>  NEWS.md <span class="op">&gt;</span> news-section.md</span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a></span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a><span class="ex">gh</span> release create vX.Y.Z <span class="at">--verify-tag</span> <span class="at">--latest</span> <span class="dt">\</span></span>
+<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a>  <span class="at">--title</span> <span class="st">"TemporalHazard X.Y.Z"</span> <span class="at">--notes-file</span> news-section.md</span></code></pre></div>
 </li>
 <li>
 <p><strong>Nothing to bump at this step.</strong> <code>main</code> stays at <code>X.Y.Z</code>, the number that just shipped. Do not run <code>usethis::use_dev_version()</code> — it writes a fourth <code>.9000</code> component, which this package does not use. The version moves later, when work moves it: the patch digit once a fix actually lands.</p>
