@@ -237,23 +237,44 @@ Rscript ~/Documents/GitHub/house-style/compose-house-style.R --repo TemporalHaza
 
 ### Where the check’s time actually goes
 
-Overall `R CMD check --as-cran` with the manual: **3m 29s**, tarball
-**2.8 MB** (measured 2026-08-23 at `c9f6c28`). CRAN’s ceiling is about
-10 minutes and it rejects on that even at 0/0/0 — that is what got
-ggRandomForests archived in June 2026.
+Overall `R CMD check --as-cran` with the manual: **3m 33s** (213s),
+tarball **2.9 MB** (measured 2026-09-02 at `f790c73`, the `v1.2.8`
+release artifact). CRAN’s ceiling is about 10 minutes and it rejects on
+that even at 0/0/0, which is what got ggRandomForests archived in June
+2026.
 
 | Component        | Time          |
 |------------------|---------------|
-| Tests            | 84s / 89s     |
-| Vignette rebuild | 42s / 45s     |
+| Tests            | 91s / 97s     |
+| Vignette rebuild | 44s / 46s     |
 | Everything else  | the remainder |
 
-Re-measure these when you change them, and stamp the commit. The
-previous entry read 2m 52s with tests at 53s, measured 2026-08-22; one
-release cycle later the total is up 37 seconds and the tests up 31,
-which nothing flagged, because a figure in a file does not go stale
-loudly. The margin against CRAN is still wide. It is the direction that
-is worth watching, and it only shows against a dated baseline.
+Re-measure these when you change them, and stamp the commit.
+
+⚠️ **One pair of measurements is not a trend.** Five `--as-cran` runs on
+2026-09-02, on the same machine, gave **199s, 206s, 212s, 213s and
+245s**: an observed range of 199s to 245s, a **46-second spread**,
+around a median of 212s. Two of those runs, `d5212d9` at 245s and
+`8f68f2a` at 206s, differ by 39s while their test content differs by six
+assertions, so the spread is the machine and not the code. Quote the
+range rather than a mean and a band; five runs do not support a
+distribution. The practical consequence is that any two runs can differ
+by more than a release cycle’s real growth, so read the dated series,
+not the last delta:
+
+| Measured   | Commit        | Overall | Tests |
+|------------|---------------|---------|-------|
+| 2026-08-22 | (not stamped) | 2m 52s  | 53s   |
+| 2026-08-23 | `c9f6c28`     | 3m 29s  | 84s   |
+| 2026-09-02 | `f790c73`     | 3m 33s  | 91s   |
+
+Across those three the total moved about 41 seconds and the tests about
+38, all of it in tests, over two release cycles. Real, slow, and still a
+wide margin against CRAN. The 2026-08-23 entry read the 2026-08-22 delta
+as a 37-second jump that “nothing flagged”; against a 46-second spread
+on unchanged code, a delta that size can be entirely the machine. The
+direction is what is worth watching, and it only shows against several
+dated points.
 
 Both dominant costs are the ones that grow silently. Watch the budget
 when adding a vignette chunk or an unskipped slow test.

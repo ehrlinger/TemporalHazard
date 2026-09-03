@@ -212,16 +212,34 @@
 <li>No <code><a href="https://rdrr.io/r/base/browser.html" class="external-link">browser()</a></code>, no bare <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code>, no <code><a href="https://rdrr.io/r/base/library.html" class="external-link">library()</a></code> inside <code>R/</code>. <code><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat()</a></code> belongs only in a <code>print.*</code> method.</li>
 </ul><div class="section level3">
 <h3 id="where-the-checks-time-actually-goes">Where the check’s time actually goes<a class="anchor" aria-label="anchor" href="#where-the-checks-time-actually-goes"></a></h3>
-<p>Overall <code>R CMD check --as-cran</code> with the manual: <strong>3m 29s</strong>, tarball <strong>2.8 MB</strong> (measured 2026-08-23 at <code>c9f6c28</code>). CRAN’s ceiling is about 10 minutes and it rejects on that even at 0/0/0 — that is what got ggRandomForests archived in June 2026.</p>
+<p>Overall <code>R CMD check --as-cran</code> with the manual: <strong>3m 33s</strong> (213s), tarball <strong>2.9 MB</strong> (measured 2026-09-02 at <code>f790c73</code>, the <code>v1.2.8</code> release artifact). CRAN’s ceiling is about 10 minutes and it rejects on that even at 0/0/0, which is what got ggRandomForests archived in June 2026.</p>
 <table class="table"><thead><tr><th>Component</th>
 <th>Time</th>
 </tr></thead><tbody><tr><td>Tests</td>
-<td>84s / 89s</td>
+<td>91s / 97s</td>
 </tr><tr><td>Vignette rebuild</td>
-<td>42s / 45s</td>
+<td>44s / 46s</td>
 </tr><tr><td>Everything else</td>
 <td>the remainder</td>
-</tr></tbody></table><p>Re-measure these when you change them, and stamp the commit. The previous entry read 2m 52s with tests at 53s, measured 2026-08-22; one release cycle later the total is up 37 seconds and the tests up 31, which nothing flagged, because a figure in a file does not go stale loudly. The margin against CRAN is still wide. It is the direction that is worth watching, and it only shows against a dated baseline.</p>
+</tr></tbody></table><p>Re-measure these when you change them, and stamp the commit.</p>
+<p>⚠️ <strong>One pair of measurements is not a trend.</strong> Five <code>--as-cran</code> runs on 2026-09-02, on the same machine, gave <strong>199s, 206s, 212s, 213s and 245s</strong>: an observed range of 199s to 245s, a <strong>46-second spread</strong>, around a median of 212s. Two of those runs, <code>d5212d9</code> at 245s and <code>8f68f2a</code> at 206s, differ by 39s while their test content differs by six assertions, so the spread is the machine and not the code. Quote the range rather than a mean and a band; five runs do not support a distribution. The practical consequence is that any two runs can differ by more than a release cycle’s real growth, so read the dated series, not the last delta:</p>
+<table class="table"><thead><tr><th>Measured</th>
+<th>Commit</th>
+<th>Overall</th>
+<th>Tests</th>
+</tr></thead><tbody><tr><td>2026-08-22</td>
+<td>(not stamped)</td>
+<td>2m 52s</td>
+<td>53s</td>
+</tr><tr><td>2026-08-23</td>
+<td><code>c9f6c28</code></td>
+<td>3m 29s</td>
+<td>84s</td>
+</tr><tr><td>2026-09-02</td>
+<td><code>f790c73</code></td>
+<td>3m 33s</td>
+<td>91s</td>
+</tr></tbody></table><p>Across those three the total moved about 41 seconds and the tests about 38, all of it in tests, over two release cycles. Real, slow, and still a wide margin against CRAN. The 2026-08-23 entry read the 2026-08-22 delta as a 37-second jump that “nothing flagged”; against a 46-second spread on unchanged code, a delta that size can be entirely the machine. The direction is what is worth watching, and it only shows against several dated points.</p>
 <p>Both dominant costs are the ones that grow silently. Watch the budget when adding a vignette chunk or an unskipped slow test.</p>
 </div>
 </div>
