@@ -322,10 +322,26 @@ test_that("scope = NULL works when the base formula was passed by variable", {
                  theta = c(mu = 0.01, nu = 0.5, 0))
   expect_true(is.symbol(base$call$formula))
 
+  # The claim is about what the screen is OFFERED, so assert it on the pool
+  # itself, as the multiphase sibling below does. Reading it off `$steps`
+  # instead only ever inspects what entered, and a name cannot appear in a
+  # screen that stopped early -- so a broken candidate builder and a screen
+  # that scored nothing are indistinguishable there.
+  cands <- .hzr_stepwise_candidates(base, scope = NULL, data = avc)
+  expect_setequal(vapply(cands, function(c) c$var, character(1L)),
+                  c("status", "inc_surg", "opmos", "mal", "com_iv",
+                    "orifice", "op_age"))
+
+  # `criterion = "score"` is deliberately not used here. On this fixture the
+  # current model's nuisance block goes singular the moment `status` enters,
+  # so the run stops after one step having scored none of the six survivors
+  # (#215); the screen below has to actually work for its result to mean
+  # anything. The uncomputable-score path has its own test above.
   sw <- hzr_stepwise(base, scope = NULL, data = avc, direction = "forward",
-                     slentry = 0.05, trace = FALSE)
+                     criterion = "aic", trace = FALSE)
   expect_s3_class(sw, "hazard")
-  # The Surv() response columns must not be offered as candidates.
+  expect_identical(sum(sw$criteria$uncomputable_reasons), 0L)
+  expect_gt(nrow(sw$steps), 0L)
   expect_false(any(c("int_dead", "dead") %in% sw$steps$variable))
 })
 
