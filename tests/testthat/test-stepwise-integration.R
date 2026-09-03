@@ -316,6 +316,16 @@ test_that("hzr_stepwise warns when a screen stops on uncomputable scores", {
 test_that("scope = NULL works when the base formula was passed by variable", {
   data(avc)
   avc <- na.omit(avc)
+  # Standardize the continuous columns. Raw, they span five orders of
+  # magnitude -- `op_age` reaches 1.3e05 and `age` 791 -- and every refit in
+  # the screen below then came back with an ill-conditioned Hessian (rcond
+  # 2.5e-09 down to 1.5e-10) and no standard errors. The screen ran, but over
+  # models the package itself flags, which is a thin thing to assert against.
+  # Scaling leaves the column *names* alone, so the candidate pool and the
+  # by-symbol path under test are unchanged: base rcond 4.2e-05 -> 0.060,
+  # final 2.4e-06 -> 0.0023, five warnings -> none, SEs present throughout.
+  num_cols <- c("age", "opmos", "op_age")
+  avc[num_cols] <- lapply(avc[num_cols], function(z) as.numeric(scale(z)))
 
   f    <- Surv(int_dead, dead) ~ age
   base <- hazard(f, data = avc, dist = "weibull", fit = TRUE,
@@ -350,7 +360,16 @@ test_that("scope = NULL works when the base formula was passed by variable", {
   # aic it is refit failure that silently empties a screen, and this field
   # counts it (0 healthy, 7 when every candidate refit is made to fail).
   expect_identical(sw$criteria$n_refit_failures, 0L)
-  expect_gt(nrow(sw$steps), 0L)
+  # Name the entries rather than counting them. `nrow(sw$steps) > 0` conflates
+  # two things -- that the screen ran, and that it liked something -- and a
+  # healthy screen is allowed to accept nothing. The screen still has to enter
+  # something here, or the response-column assertion below is vacuous, which
+  # is #215 itself. So pin the three entries whose AIC margins are comfortable
+  # (dAIC -29.5, -8.9, -3.4) and leave `mal` out of the assertion: it enters
+  # last on -0.99, thin enough for a BLAS difference to flip it on one of the
+  # five CI platforms. Membership, not order -- the per-step ranking among
+  # candidates is not what this test is about.
+  expect_true(all(c("status", "com_iv", "orifice") %in% sw$steps$variable))
   expect_false(any(c("int_dead", "dead") %in% sw$steps$variable))
 })
 
