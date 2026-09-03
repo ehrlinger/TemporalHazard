@@ -210,10 +210,13 @@ June 2026.
 
 Re-measure these when you change them, and stamp the commit.
 
-⚠️ **One pair of measurements is not a trend.** Four `--as-cran` runs on 2026-09-02, on
-near-identical code and the same machine, gave **199s, 206s, 213s and 245s**. That is roughly
-215s plus or minus 20s of machine noise, so any two runs can differ by more than a release
-cycle's real growth. Read the dated series, not the last delta:
+⚠️ **One pair of measurements is not a trend.** Five `--as-cran` runs on 2026-09-02, on the
+same machine, gave **199s, 206s, 212s, 213s and 245s**: an observed range of 199s to 245s, a
+**46-second spread**, around a median of 212s. Two of those runs, `d5212d9` at 245s and
+`8f68f2a` at 206s, differ by 39s while their test content differs by six assertions, so the
+spread is the machine and not the code. Quote the range rather than a mean and a band; five
+runs do not support a distribution. The practical consequence is that any two runs can differ
+by more than a release cycle's real growth, so read the dated series, not the last delta:
 
 | Measured | Commit | Overall | Tests |
 |---|---|---|---|
@@ -224,7 +227,7 @@ cycle's real growth. Read the dated series, not the last delta:
 Across those three the total moved about 41 seconds and the tests about 38, all of it in
 tests, over two release cycles. Real, slow, and still a wide margin against CRAN. The
 2026-08-23 entry read the 2026-08-22 delta as a 37-second jump that "nothing flagged"; against
-the noise floor above, most of one such delta can be the machine. The direction is what is
+a 46-second spread on unchanged code, a delta that size can be entirely the machine. The direction is what is
 worth watching, and it only shows against several dated points.
 
 Both dominant costs are the ones that grow silently. Watch the budget when adding a vignette
