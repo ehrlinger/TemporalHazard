@@ -316,16 +316,60 @@ test_that("hzr_stepwise warns when a screen stops on uncomputable scores", {
 test_that("scope = NULL works when the base formula was passed by variable", {
   data(avc)
   avc <- na.omit(avc)
+  # Standardize the continuous columns. Raw, they span five orders of
+  # magnitude -- `op_age` reaches 1.3e05 and `age` 791 -- and every refit in
+  # the screen below then came back with an ill-conditioned Hessian (rcond
+  # 2.5e-09 down to 1.5e-10) and no standard errors. The screen ran, but over
+  # models the package itself flags, which is a thin thing to assert against.
+  # Scaling leaves the column *names* alone, so the candidate pool and the
+  # by-symbol path under test are unchanged: base rcond 4.2e-05 -> 0.060,
+  # final 2.4e-06 -> 0.0023, five warnings -> none, SEs present throughout.
+  num_cols <- c("age", "opmos", "op_age")
+  avc[num_cols] <- lapply(avc[num_cols], function(z) as.numeric(scale(z)))
 
   f    <- Surv(int_dead, dead) ~ age
   base <- hazard(f, data = avc, dist = "weibull", fit = TRUE,
                  theta = c(mu = 0.01, nu = 0.5, 0))
   expect_true(is.symbol(base$call$formula))
 
+  # The claim is about what the screen is OFFERED, so assert it on the pool
+  # itself, as the multiphase sibling below does. Reading it off `$steps`
+  # instead only ever inspects what entered, and a name cannot appear in a
+  # screen that stopped early -- so a broken candidate builder and a screen
+  # that scored nothing are indistinguishable there.
+  cands <- .hzr_stepwise_candidates(base, scope = NULL, data = avc)
+  # expect_setequal() alone would accept a pool that emitted a variable twice,
+  # so pin the length too.
+  expect_length(cands, 7L)
+  expect_setequal(vapply(cands, function(c) c$var, character(1L)),
+                  c("status", "inc_surg", "opmos", "mal", "com_iv",
+                    "orifice", "op_age"))
+
+  # `criterion = "score"` is deliberately not used here. On this fixture the
+  # current model's nuisance block goes singular the moment `status` enters,
+  # so the run stops after one step having scored none of the six survivors
+  # (#215); the screen below has to get through its candidates for the result
+  # to mean anything. The uncomputable-score path has its own test above.
   sw <- hzr_stepwise(base, scope = NULL, data = avc, direction = "forward",
-                     slentry = 0.05, trace = FALSE)
+                     criterion = "aic", trace = FALSE)
   expect_s3_class(sw, "hazard")
-  # The Surv() response columns must not be offered as candidates.
+  # `n_refit_failures`, NOT `uncomputable_reasons`: the latter is written only
+  # by .hzr_stepwise_forward_step_score(), so under any other criterion it is
+  # `integer(0)` and `sum()` of it is 0L no matter what happened -- an
+  # assertion that cannot fail, which is the very defect #215 is about. Under
+  # aic it is refit failure that silently empties a screen, and this field
+  # counts it (0 healthy, 7 when every candidate refit is made to fail).
+  expect_identical(sw$criteria$n_refit_failures, 0L)
+  # Name the entries rather than counting them. `nrow(sw$steps) > 0` conflates
+  # two things -- that the screen ran, and that it liked something -- and a
+  # healthy screen is allowed to accept nothing. The screen still has to enter
+  # something here, or the response-column assertion below is vacuous, which
+  # is #215 itself. So pin the three entries whose AIC margins are comfortable
+  # (dAIC -29.5, -8.9, -3.4) and leave `mal` out of the assertion: it enters
+  # last on -0.99, thin enough for a BLAS difference to flip it on one of the
+  # five CI platforms. Membership, not order -- the per-step ranking among
+  # candidates is not what this test is about.
+  expect_true(all(c("status", "com_iv", "orifice") %in% sw$steps$variable))
   expect_false(any(c("int_dead", "dead") %in% sw$steps$variable))
 })
 
