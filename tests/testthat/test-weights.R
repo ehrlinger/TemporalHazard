@@ -723,10 +723,12 @@ test_that("weighted multiphase fit matches duplicated-row fit, covariates, CoE o
   expect_gt(early_share(fit_w),   1e-3)
   expect_gt(early_share(fit_dup), 1e-3)
 
-  # These agree to machine precision, not merely to `tolerance`: the weighted
-  # and duplicated objectives are algebraically the same function, so the
-  # optimizer walks one path. That is the expected result here, not a sign
-  # that nothing was compared -- the guard against that is `early_share`.
+  # Observed agreement here is ~5e-17, far inside `tolerance`: the weighted and
+  # duplicated objectives are algebraically the same function, so the optimizer
+  # walks one path. That near-exactness is the expected result, not a sign that
+  # nothing was compared -- the guard against that is `early_share` above. The
+  # tolerance stays loose deliberately, because the one path is not guaranteed
+  # to be bit-identical across the five CI platforms' BLAS implementations.
   expect_equal(coef(fit_w), coef(fit_dup), tolerance = 1e-3)
   expect_equal(fit_w$fit$objective, fit_dup$fit$objective, tolerance = 1e-4)
 })

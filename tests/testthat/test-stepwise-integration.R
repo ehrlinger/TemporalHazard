@@ -328,6 +328,9 @@ test_that("scope = NULL works when the base formula was passed by variable", {
   # screen that stopped early -- so a broken candidate builder and a screen
   # that scored nothing are indistinguishable there.
   cands <- .hzr_stepwise_candidates(base, scope = NULL, data = avc)
+  # expect_setequal() alone would accept a pool that emitted a variable twice,
+  # so pin the length too.
+  expect_length(cands, 7L)
   expect_setequal(vapply(cands, function(c) c$var, character(1L)),
                   c("status", "inc_surg", "opmos", "mal", "com_iv",
                     "orifice", "op_age"))
@@ -335,12 +338,18 @@ test_that("scope = NULL works when the base formula was passed by variable", {
   # `criterion = "score"` is deliberately not used here. On this fixture the
   # current model's nuisance block goes singular the moment `status` enters,
   # so the run stops after one step having scored none of the six survivors
-  # (#215); the screen below has to actually work for its result to mean
-  # anything. The uncomputable-score path has its own test above.
+  # (#215); the screen below has to get through its candidates for the result
+  # to mean anything. The uncomputable-score path has its own test above.
   sw <- hzr_stepwise(base, scope = NULL, data = avc, direction = "forward",
                      criterion = "aic", trace = FALSE)
   expect_s3_class(sw, "hazard")
-  expect_identical(sum(sw$criteria$uncomputable_reasons), 0L)
+  # `n_refit_failures`, NOT `uncomputable_reasons`: the latter is written only
+  # by .hzr_stepwise_forward_step_score(), so under any other criterion it is
+  # `integer(0)` and `sum()` of it is 0L no matter what happened -- an
+  # assertion that cannot fail, which is the very defect #215 is about. Under
+  # aic it is refit failure that silently empties a screen, and this field
+  # counts it (0 healthy, 7 when every candidate refit is made to fail).
+  expect_identical(sw$criteria$n_refit_failures, 0L)
   expect_gt(nrow(sw$steps), 0L)
   expect_false(any(c("int_dead", "dead") %in% sw$steps$variable))
 })
