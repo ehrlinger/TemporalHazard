@@ -133,6 +133,14 @@ gh api repos/ehrlinger/TemporalHazard/rulesets/15010037 \
 #  "current_user_can_bypass":"always"}
 ```
 
+Read `current_user_can_bypass`, not `actor_id`. GitHub does not publish what its `RepositoryRole`
+ids mean, and no endpoint resolves them on a personal repo — `repos/:o/:r/roles` and
+`orgs/:o/custom-repository-roles` both 404 here. The documentation says only that a
+`RepositoryRole` bypass actor is an admin, a maintain or write role, or a custom role built on
+write, so `5` is one of those four and which one is not checkable from here. Naming it would be a
+guess wearing the costume of a fact, which is the house failure mode. `current_user_can_bypass`
+answers the question that actually matters and is evaluated for whoever holds the token.
+
 It is not theoretical: PR #222 merged with **zero** approving reviews. So the rule is a matter of
 practice, not of enforcement — which is the stronger reason to follow it, not a licence to skip
 it. **An agent still never merges and never bypasses**; the maintainer decides when to.
