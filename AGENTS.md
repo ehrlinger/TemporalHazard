@@ -128,9 +128,43 @@ The rules live in the repository **ruleset** `protect main`, not in the
 legacy branch-protection settings — the two are separate systems, and
 the `branches/main/protection` API returns 404 here even though `main`
 is protected. Alongside the required checks the ruleset blocks deletion
-and force-push, requires a pull request, and auto-requests Copilot
-review. There are **no bypass actors**, so it applies to the maintainer
-too.
+and force-push, requires a pull request, auto-requests Copilot review,
+and requires **one approving review**.
+
+That last one is what actually blocks a merge, and it is easy to miss: a
+PR with all eight required checks green still sits at
+`mergeStateStatus: BLOCKED` and `reviewDecision: REVIEW_REQUIRED` until
+someone approves it. Copilot does not satisfy it — its reviews come back
+`COMMENTED`, never `APPROVED`.
+
+⚠️ **The maintainer can bypass all of it.** An earlier version of this
+paragraph said there were no bypass actors and the rules therefore
+applied to the maintainer too. That was wrong on both halves, and it
+mattered, because “nobody can bypass this” is the sentence that makes
+*branch, PR, stop* feel non-negotiable. Verified 2026-09-03:
+
+``` bash
+gh api repos/ehrlinger/TemporalHazard/rulesets/15010037 \
+  --jq '{bypass_actors, current_user_can_bypass}'
+# {"bypass_actors":[{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"always"}],
+#  "current_user_can_bypass":"always"}
+```
+
+Read `current_user_can_bypass`, not `actor_id`. GitHub does not publish
+what its `RepositoryRole` ids mean, and no endpoint resolves them on a
+personal repo — `repos/:o/:r/roles` and
+`orgs/:o/custom-repository-roles` both 404 here. The documentation says
+only that a `RepositoryRole` bypass actor is an admin, a maintain or
+write role, or a custom role built on write, so `5` is one of those four
+and which one is not checkable from here. Naming it would be a guess
+wearing the costume of a fact, which is the house failure mode.
+`current_user_can_bypass` answers the question that actually matters and
+is evaluated for whoever holds the token.
+
+It is not theoretical: PR \#222 merged with **zero** approving reviews.
+So the rule is a matter of practice, not of enforcement — which is the
+stronger reason to follow it, not a licence to skip it. **An agent still
+never merges and never bypasses**; the maintainer decides when to.
 
 Required checks are *not* strict: a PR is not forced to re-run the
 matrix every time `main` moves. That is a deliberate trade against a
