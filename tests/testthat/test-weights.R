@@ -698,8 +698,8 @@ test_that("weighted multiphase fit matches duplicated-row fit, covariates, CoE o
       survival::Surv(time, status) ~ 1,
       data = data, dist = "multiphase",
       phases = list(
-        early    = hzr_phase("cdf", t_half = 0.3, nu = 1, m = 1,
-                             fixed = "shapes", formula = ~ x),
+        early    = hzr_phase("cdf", t_half = 0.5, nu = 0, m = -0.4,
+                             fixed = c("nu", "m"), formula = ~ x),
         constant = hzr_phase("constant", formula = ~ x)
       ),
       weights = weights, fit = TRUE,
@@ -710,6 +710,23 @@ test_that("weighted multiphase fit matches duplicated-row fit, covariates, CoE o
   fit_w   <- mk_fit(df,     d$w)
   fit_dup <- mk_fit(df_exp, NULL)
 
+  # Parity only means something over parameters the data determines. The
+  # former spec pinned all three shapes (`fixed = "shapes"` is t_half, nu and
+  # m), which left `early` contributing 2.7e-09 of the cumulative hazard: its
+  # mu and beta drifted freely, and the two fits agreed on them only because
+  # both took the identical deterministic path from the identical start
+  # (#216). Freeing t_half revives the phase -- rcond 5.3e-12 -> 2.4e-04 --
+  # so assert it is alive before trusting the comparison below.
+  early_share <- function(f) {
+    f$fit$phase_share$share[f$fit$phase_share$phase == "early"]
+  }
+  expect_gt(early_share(fit_w),   1e-3)
+  expect_gt(early_share(fit_dup), 1e-3)
+
+  # These agree to machine precision, not merely to `tolerance`: the weighted
+  # and duplicated objectives are algebraically the same function, so the
+  # optimizer walks one path. That is the expected result here, not a sign
+  # that nothing was compared -- the guard against that is `early_share`.
   expect_equal(coef(fit_w), coef(fit_dup), tolerance = 1e-3)
   expect_equal(fit_w$fit$objective, fit_dup$fit$objective, tolerance = 1e-4)
 })
