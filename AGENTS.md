@@ -117,9 +117,9 @@ force-push, requires a pull request, auto-requests Copilot review, and requires 
 review**.
 
 That last one is what actually blocks a merge, and it is easy to miss: a PR with all eight
-required checks green still sits at `mergeStateStatus: BLOCKED` and `reviewDecision:
-REVIEW_REQUIRED` until someone approves it. Copilot does not satisfy it — its reviews come back
-`COMMENTED`, never `APPROVED`.
+required checks green still sits at `mergeStateStatus: BLOCKED` and
+`reviewDecision: REVIEW_REQUIRED` until someone approves it. Copilot does not satisfy it — its
+reviews come back `COMMENTED`, never `APPROVED`.
 
 ⚠️ **The maintainer can bypass all of it.** An earlier version of this paragraph said there were
 no bypass actors and the rules therefore applied to the maintainer too. That was wrong on both
