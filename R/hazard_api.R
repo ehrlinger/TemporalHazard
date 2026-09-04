@@ -675,6 +675,13 @@ hazard <- function(formula = NULL,
     }
   }
 
+  # Data preconditions of objective = "sas", checked once here rather than
+  # inside the objective: both are pure functions of the data, so reporting
+  # them through the optimizer's per-start tryCatch framed a data defect as a
+  # convergence problem. The guards inside the objective and gradient stay --
+  # the gradient is reachable without hazard(). See .hzr_check_sas_data().
+  .hzr_check_sas_data(status, time, time_lower, time_upper, objective)
+
   # fit_state holds the result of optimization (or just starting values if fit=FALSE).
   # Fields:
   #   theta     -- parameter vector (starting values before fit; MLE estimates after)
