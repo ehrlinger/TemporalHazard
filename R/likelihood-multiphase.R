@@ -475,6 +475,77 @@
   invisible(NULL)
 }
 
+#' Check the SAS objective's data preconditions at entry
+#'
+#' Both conditions `objective = "sas"` imposes -- no left-censored rows, and a
+#' positive width on every interval row -- are pure functions of the data, so
+#' they hold or fail identically at every start.  Evaluated inside the
+#' objective they reach the user through `.hzr_optim_multiphase()`'s per-start
+#' `tryCatch`, which frames them as "produced no usable fit from N starts" and
+#' invites raising `n_starts` -- a remedy that cannot work.  `hazard()` calls
+#' this once, before any optimization, so a data defect is reported as one.
+#'
+#' This does **not** replace the guards inside the objective and the gradient.
+#' Those remain because the gradient is reachable without `hazard()` -- the
+#' score test calls it directly -- so entry validation is not guaranteed to
+#' have run.  See `.hzr_check_sas_status()`.
+#'
+#' Bounds are normalised here exactly as `.hzr_logl_multiphase()` normalises
+#' them, so the check cannot disagree with the objective about which rows are
+#' offenders.  Indices are reported against the **data**, not against the
+#' interval subset the inner guard sees.
+#'
+#' **This guards the codes it is given, not the ones the user meant.**  On the
+#' vector interface a `survival::Surv()` object is unclassed without
+#' translation, so its `0`/`1`/`2`/`3` codes reach here unchanged and a
+#' left-censored row arrives as `1`, invisible to this check.  The formula
+#' path translates in `.hzr_parse_formula()` and is guarded correctly.  That
+#' asymmetry is a pre-existing defect of the vector path, not of this check.
+#'
+#' @param status Numeric event indicator.
+#' @param time Event/censoring times.
+#' @param time_lower,time_upper Optional censoring bounds; `NULL` means `time`.
+#' @param objective Resolved objective, `"likelihood"` or `"sas"`.
+#' @return `NULL`, invisibly; called for its side effect.
+#' @keywords internal
+.hzr_check_sas_data <- function(status, time, time_lower, time_upper,
+                                objective) {
+  if (!identical(objective, "sas")) {
+    return(invisible(NULL))
+  }
+
+  # any(status == -1) is NA-poisoned, so the inner guard's `if` would throw a
+  # bare "missing value where TRUE/FALSE needed" naming neither the argument
+  # nor the row. Name both.
+  if (anyNA(status)) {
+    stop("objective = \"sas\" requires a complete 'status' vector; ",
+         sum(is.na(status)), " row(s) are NA, at index/indices ",
+         paste(utils::head(which(is.na(status)), 10L), collapse = ", "),
+         if (sum(is.na(status)) > 10L) ", ..." else "", ".", call. = FALSE)
+  }
+
+  .hzr_check_sas_status(status, objective)
+
+  idx_interval <- which(status == 2)
+  if (length(idx_interval) > 0) {
+    lower <- if (is.null(time_lower)) time else time_lower
+    upper <- if (is.null(time_upper)) time else time_upper
+    bad <- idx_interval[!(upper[idx_interval] > lower[idx_interval])]
+    if (length(bad) > 0) {
+      stop("objective = \"sas\" requires upper > lower on every ",
+           "interval-censored row; the interval-mean hazard divides by ",
+           "(u - l). ", length(bad), " of ", length(idx_interval),
+           " interval row(s) fail this, at index/indices ",
+           paste(utils::head(bad, 10L), collapse = ", "),
+           if (length(bad) > 10L) ", ..." else "", ".",
+           call. = FALSE)
+    }
+  }
+
+  invisible(NULL)
+}
+
+
 #' Interval-censored log-likelihood contribution
 #'
 #' The single place the interval-censored contribution is written.  Both

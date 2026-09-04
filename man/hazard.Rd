@@ -112,7 +112,13 @@ probability \eqn{\log(S(l) - S(u))}. \code{"sas"} reproduces what
 \verb{PROC HAZARD} accumulates -- the event-density term with the instantaneous
 hazard replaced by the interval-mean hazard over \eqn{(l, u]}. Applies
 only to \code{dist = "multiphase"}; exact-event and right-censored rows are
-unaffected either way.}
+unaffected either way.
+
+\code{"sas"} requires data it can represent: no left-censored rows (\verb{PROC HAZARD} has no left-censoring statement) and a positive width on every
+interval-censored row (the interval-mean hazard divides by \eqn{u - l}).
+Both are properties of the data rather than of the fit, so they are
+checked when the argument is supplied -- including under \code{fit = FALSE},
+which therefore stops rather than returning an unusable object.}
 
 \item{...}{Additional named arguments retained for parity with legacy calling
 conventions.}
