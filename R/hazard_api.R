@@ -175,6 +175,13 @@ NULL
 #'   hazard replaced by the interval-mean hazard over \eqn{(l, u]}. Applies
 #'   only to `dist = "multiphase"`; exact-event and right-censored rows are
 #'   unaffected either way.
+#'
+#'   `"sas"` requires data it can represent: no left-censored rows (`PROC
+#'   HAZARD` has no left-censoring statement) and a positive width on every
+#'   interval-censored row (the interval-mean hazard divides by \eqn{u - l}).
+#'   Both are properties of the data rather than of the fit, so they are
+#'   checked when the argument is supplied -- including under `fit = FALSE`,
+#'   which therefore stops rather than returning an unusable object.
 #' @note `objective = "sas"` exists to reproduce legacy `PROC HAZARD` runs and
 #'   **must not be used for new analyses**. It is a density, not a probability:
 #'   it is inconsistent for wide intervals, where the two forms differ

@@ -495,6 +495,13 @@
 #' offenders.  Indices are reported against the **data**, not against the
 #' interval subset the inner guard sees.
 #'
+#' **This guards the codes it is given, not the ones the user meant.**  On the
+#' vector interface a `survival::Surv()` object is unclassed without
+#' translation, so its `0`/`1`/`2`/`3` codes reach here unchanged and a
+#' left-censored row arrives as `1`, invisible to this check.  The formula
+#' path translates in `.hzr_parse_formula()` and is guarded correctly.  That
+#' asymmetry is a pre-existing defect of the vector path, not of this check.
+#'
 #' @param status Numeric event indicator.
 #' @param time Event/censoring times.
 #' @param time_lower,time_upper Optional censoring bounds; `NULL` means `time`.
@@ -505,6 +512,16 @@
                                 objective) {
   if (!identical(objective, "sas")) {
     return(invisible(NULL))
+  }
+
+  # any(status == -1) is NA-poisoned, so the inner guard's `if` would throw a
+  # bare "missing value where TRUE/FALSE needed" naming neither the argument
+  # nor the row. Name both.
+  if (anyNA(status)) {
+    stop("objective = \"sas\" requires a complete 'status' vector; ",
+         sum(is.na(status)), " row(s) are NA, at index/indices ",
+         paste(utils::head(which(is.na(status)), 10L), collapse = ", "),
+         if (sum(is.na(status)) > 10L) ", ..." else "", ".", call. = FALSE)
   }
 
   .hzr_check_sas_status(status, objective)
