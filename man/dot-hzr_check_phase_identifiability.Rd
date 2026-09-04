@@ -25,7 +25,7 @@
 
 \item{x_list}{Named list of per-phase design matrices.}
 
-\item{tol}{Threshold for both tests -- the minimum share of \eqn{\Lambda} a
+\item{tol}{Threshold for all three tests -- the minimum share of \eqn{\Lambda} a
 phase must reach somewhere, and the minimum relative variation its
 contribution must show. Default 1e-8: far above double precision, and
 orders of magnitude below any real contribution, so it fires on dead

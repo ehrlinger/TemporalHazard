@@ -299,11 +299,13 @@ test_that("what counts is whether other_times ADD an evaluation point", {
   # counted those and got both directions wrong.
   expect_length(ident_warn(rep(2, 20), other_times = c(0.5, 1.5)), 0L)
 
-  # A constant entry time is ONE value and is informative: entry at 0.5 with
-  # every exit tied at 2 moves the log-likelihood 11.1 units between
-  # t_half 0.5 and 5, so the shape is identified and the verdict is withheld.
-  # This assertion previously required the warning, locking in a wrong answer.
-  expect_length(ident_warn(rep(2, 20), other_times = rep(0.5, 20)), 0L)
+  # A constant entry time adds ONE evaluation point, which buys one functional
+  # of theta and cannot identify a shape: with exits tied at 2 and entries at
+  # 0.5 the likelihood sees only Lambda(2) - Lambda(0.5) and h(2). An earlier
+  # version withheld here on the strength of a sensitivity measurement taken
+  # with `mu` held fixed, which is not an identification test.
+  expect_match(ident_warn(rep(2, 20), other_times = rep(0.5, 20)),
+               "span a relative range below")
 
   # Lambda(0) is 0 for every phase type, so a zero entry time adds nothing --
   # and .hzr_parse_formula() synthesises one for every interval-censored row.
@@ -314,6 +316,19 @@ test_that("what counts is whether other_times ADD an evaluation point", {
   # copy of `time` on that same path.
   expect_match(ident_warn(rep(2, 20), other_times = c(rep(0, 20), rep(2, 20))),
                "span a relative range below")
+
+  # Each exclusion carries its own weight, which the two cases above cannot
+  # show: under a two-point rule, dropping either one alone still leaves the
+  # count below the threshold. A zero alongside ONE real entry time is two
+  # values but one added point.
+  expect_match(ident_warn(rep(2, 20),
+                          other_times = c(rep(0, 10), rep(0.5, 10))),
+               "span a relative range below")
+
+  # ...and a copy of the exit time alongside one real entry time, likewise.
+  expect_match(ident_warn(rep(2, 20),
+                          other_times = c(rep(2, 10), rep(0.5, 10))),
+               "span a relative range below")
 })
 
 test_that("the same data written as interval-censored gets the same verdict", {
@@ -323,19 +338,27 @@ test_that("the same data written as interval-censored gets the same verdict", {
   skip_if_not_installed("survival")
   d <- data.frame(t = rep(2, 40), ev = rep(1, 40))
   ph <- list(early = hzr_phase("cdf"), constant = hzr_phase("constant"))
-  for (f in list(survival::Surv(d$t, d$ev),
-                 survival::Surv(d$t, d$t, d$ev, type = "interval"))) {
-    expect_warning(
-      hazard(time = d$t, status = f, dist = "multiphase", phases = ph,
-             fit = TRUE, control = list(n_starts = 1)),
-      "span a relative range below")
-  }
+  # Both through the FORMULA interface: only .hzr_parse_formula() synthesises
+  # time_lower = 0 and time_upper = time, and it is that synthesis this test
+  # exists for. On the vector path `unclass(status)[, 2L]` reads a Surv matrix
+  # positionally, so both spellings would collapse to the same fit and the
+  # test would compare a computation with itself.
+  expect_warning(
+    hazard(survival::Surv(t, ev) ~ 1, data = d, dist = "multiphase",
+           phases = ph, fit = TRUE, control = list(n_starts = 1)),
+    "span a relative range below")
+  expect_warning(
+    hazard(survival::Surv(t, t, ev, type = "interval") ~ 1, data = d,
+           dist = "multiphase", phases = ph, fit = TRUE,
+           control = list(n_starts = 1)),
+    "span a relative range below")
 })
 
-test_that("a constant but informative entry time withholds the verdict", {
-  # One distinct entry time, tied exit times: Lambda(2) - Lambda(1) identifies
-  # the shape (8.0 log-likelihood units between t_half 0.5 and 5), so the
-  # degenerate verdict must not fire.
+test_that("a constant entry time does not rescue tied exit times", {
+  # Every row shares the same entry and the same exit, so the likelihood
+  # depends on theta through two numbers only. Five free parameters, so the
+  # shapes are unidentified and the warning is correct -- contrast the
+  # 200-distinct-entry fit below, which is withheld.
   skip_if_not_installed("survival")
   set.seed(9)
   d <- data.frame(start = rep(1, 200), stop = rep(2, 200),
@@ -343,14 +366,15 @@ test_that("a constant but informative entry time withholds the verdict", {
   w <- character(0)
   withCallingHandlers(
     hazard(survival::Surv(start, stop, ev) ~ 1, data = d, dist = "multiphase",
-           phases = list(early = hzr_phase("cdf"), constant = hzr_phase("constant")),
+           phases = list(early = hzr_phase("cdf", t_half = 0.5, nu = 0, m = -0.4),
+                         constant = hzr_phase("constant")),
            theta = c(log(0.045), log(0.5), 0, -0.4, log(0.036)), fit = TRUE,
            control = list(n_starts = 1, conserve = FALSE)),
     warning = function(x) {
       w <<- c(w, conditionMessage(x))
       invokeRestart("muffleWarning")
     })
-  expect_false(any(grepl("span a relative range below", w)))
+  expect_true(any(grepl("span a relative range below", w)))
 })
 
 test_that("degenerate times with an absent phase still warn", {
@@ -502,6 +526,7 @@ test_that("the degenerate branch still returns the shares, without the measure",
   expect_s3_class(sh, "data.frame")
   expect_identical(sh$phase, c("early", "constant"))
   expect_null(attr(sh, "time_variation"))
+  expect_null(attr(sh, "time_unique"))
 })
 
 test_that("the check reaches the degenerate branch through hazard()", {

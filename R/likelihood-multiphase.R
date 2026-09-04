@@ -1305,7 +1305,7 @@
 #' `other_times` vary, since the measures here cannot see those.
 #'
 #' @inheritParams .hzr_logl_multiphase
-#' @param tol Threshold for both tests -- the minimum share of \eqn{\Lambda} a
+#' @param tol Threshold for all three tests -- the minimum share of \eqn{\Lambda} a
 #'   phase must reach somewhere, and the minimum relative variation its
 #'   contribution must show. Default 1e-8: far above double precision, and
 #'   orders of magnitude below any real contribution, so it fires on dead
@@ -1361,13 +1361,25 @@
   #                   same path, and restating a point already measured adds
   #                   nothing.
   #
-  # Counting distinct values in the pooled vector instead got both directions
-  # wrong: it silenced #211's own input when written as Surv(type = "interval")
-  # (0 and time are two values), and it fired the degenerate verdict on a
-  # left-truncated fit whose entry time was constant but informative (one
-  # value), where the shape moves the log-likelihood by 8 units.
+  # Two, not one. Each added evaluation point buys one functional of theta, and
+  # one is not enough to identify a shape: with every exit tied at T and every
+  # entry at e, each row's contribution depends on theta only through
+  # Lambda(T) - Lambda(e) and h(T) -- two numbers against five free parameters,
+  # so a flat manifold passes through every interior point and the shapes are
+  # unidentified exactly as they are with no entry time at all.
+  #
+  # An earlier version used `> 0L` on the strength of "moving t_half moves the
+  # log-likelihood by 8 units". That measures sensitivity with `mu` HELD FIXED,
+  # which is not identification -- identification asks whether a compensating
+  # move exists in the other free parameters, and here it does. By that same
+  # metric #211's own input scores 15.5, more than the case it was used to
+  # exonerate.
+  #
+  # Two is necessary rather than sufficient: {0, e} on tied exits gives three
+  # functionals, still short of five. Comparing the distinct evaluation points
+  # against the free shape parameters is the principled rule; see #228.
   other_vary <- length(setdiff(unique(other_times),
-                               c(0, time_unique))) > 0L
+                               c(0, time_unique))) >= 2L
 
   if (length(absent) > 0) {
     warning(

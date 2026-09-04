@@ -25,13 +25,18 @@
   Two related corrections. A phase that has not started is reported as absent
   even in a left-truncated fit, since that test rests on the share and not on
   how the times are spread. And when the counting-process entry times or
-  interval bounds add an evaluation point the measure did not see, only the
-  degenerate-times verdict is withheld -- the per-phase saturation message is
-  not, so adding a `start` column no longer removes a correct diagnostic. A
-  bound that adds nothing, such as a zero entry time or an upper bound equal to
-  the event time, does not trigger the withholding: `Surv(type = "interval")`
-  synthesises both, and counting them silenced this very warning on data that
-  needed it (#211).
+  interval bounds add at least two evaluation points the measure did not see,
+  the degenerate-times verdict is withheld. Two, not one: each added point
+  buys one functional of the parameters, and with every exit tied and every
+  entry equal the likelihood sees only two numbers, so the shapes are no more
+  identified than with no entry time at all. Points that add nothing do not
+  count -- a zero entry time, or a bound equal to the event time, which is
+  what `Surv(type = "interval")` synthesises for every row; counting those
+  silenced this very warning on data that needed it.
+
+  Where the times are NOT degenerate, the per-phase saturation message is
+  reported regardless of the bounds, so adding a `start` column no longer
+  removes a correct diagnostic (#211).
 
   Known limitation, unchanged by this work and now stated rather than implicit:
   the per-phase measures are taken over the event times alone, so for an
