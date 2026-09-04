@@ -469,6 +469,8 @@ is_hzr_phase <- function(x) {
 #' @seealso [hzr_phase()] for building a specification, [hazard()] for the fit
 #'   whose `theta` this names.
 #' @export
+#' @details Phase names must be unique, and `"total"` is reserved; this applies
+#'   the same validation [hazard()] does, so both reject it identically.
 hzr_theta_names <- function(phases, covariates = NULL) {
   # The same validation hazard() applies, so auto-named phases get the same
   # phase_1/phase_2 labels here as they will in the fit. Re-deriving them
@@ -676,6 +678,13 @@ hzr_theta_names <- function(phases, covariates = NULL) {
   empty <- nms == "" | is.na(nms)
   if (any(empty)) {
     nms[empty] <- paste0("phase_", which(empty))
+  }
+
+  # 'total' is the key .hzr_multiphase_cumhaz() stores the accumulator under, so
+  # a phase of that name would lose its own contribution vector to it.
+  if (any(nms == "total")) {
+    stop("'total' is a reserved phase name. Rename the phase: it collides with ",
+         "the accumulator holding the summed cumulative hazard.", call. = FALSE)
   }
 
   # Check for duplicate names
