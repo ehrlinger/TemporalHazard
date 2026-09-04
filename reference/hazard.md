@@ -158,6 +158,14 @@ hazard(
   `dist = "multiphase"`; exact-event and right-censored rows are
   unaffected either way.
 
+  `"sas"` requires data it can represent: no left-censored rows
+  (`PROC HAZARD` has no left-censoring statement) and a positive width
+  on every interval-censored row (the interval-mean hazard divides by
+  \\u - l\\). Both are properties of the data rather than of the fit, so
+  they are checked when the argument is supplied – including under
+  `fit = FALSE`, which therefore stops rather than returning an unusable
+  object.
+
 - ...:
 
   Additional named arguments retained for parity with legacy calling

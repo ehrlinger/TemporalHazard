@@ -208,7 +208,12 @@ probability \(\log(S(l) - S(u))\). <code>"sas"</code> reproduces what
 <code>PROC HAZARD</code> accumulates – the event-density term with the instantaneous
 hazard replaced by the interval-mean hazard over \((l, u]\). Applies
 only to <code>dist = "multiphase"</code>; exact-event and right-censored rows are
-unaffected either way.</p></dd>
+unaffected either way.</p>
+<p><code>"sas"</code> requires data it can represent: no left-censored rows (<code>PROC HAZARD</code> has no left-censoring statement) and a positive width on every
+interval-censored row (the interval-mean hazard divides by \(u - l\)).
+Both are properties of the data rather than of the fit, so they are
+checked when the argument is supplied – including under <code>fit = FALSE</code>,
+which therefore stops rather than returning an unusable object.</p></dd>
 
 
 <dt id="arg--">...<a class="anchor" aria-label="anchor" href="#arg--"></a></dt>
