@@ -10,20 +10,24 @@
   unidentified, when a `constant` phase has none, and blamed a short half-life.
   A single-row fit produced the same text.
 
-  The check now asks the question of the **times** -- whether their own
-  relative range falls below the tolerance -- rather than inferring it from the
-  phases, and reports that case in its own words. Because the measure is
-  relative it is scale-free: near-ties reach it (`c(100, 100.000001)` produced
-  the old wording verbatim), and so do times bunched far from the origin, which
-  is not the same thing as tied. Per-phase saturation over well-spread times is
-  reported exactly as before.
+  That case is now reported in its own words, under a condition that takes two
+  things together: the observed times' own relative range is below the
+  tolerance, *and* no phase's contribution varies across them. Neither half is
+  sufficient. The range alone would condemn times bunched far from the origin,
+  where a steep phase can be fully identified; the phase measures alone would
+  condemn well-spread times whenever a single phase saturates. Because the
+  range is relative, near-ties reach the condition as exact ties do --
+  `c(100, 100.000001)` produced the old wording verbatim. Per-phase saturation
+  and absence over well-spread times are reported exactly as before, and the
+  condition is now caught even when every phase carries covariates, where the
+  per-phase measures are withheld and previously nothing was said at all.
 
   Two related corrections. A phase that has not started is reported as absent
-  even when the fit is left-truncated, since that test rests on the share and
-  not on how the times are spread. And when `time` is degenerate but the
-  counting-process entry times or interval bounds vary, the flatness verdict is
-  **withheld** rather than reported: the phase shapes do enter that likelihood,
-  and the measures taken over `time` alone cannot see it (#211).
+  even in a left-truncated fit, since that test rests on the share and not on
+  how the times are spread. And when the counting-process entry times or
+  interval bounds vary, only the degenerate-times verdict is withheld -- the
+  per-phase saturation message is not, so adding a `start` column no longer
+  removes a correct diagnostic (#211).
 
 * **A phase named `total` is now rejected rather than silently losing its
   contribution.** `total` is the key the multiphase cumulative-hazard

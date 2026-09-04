@@ -217,9 +217,15 @@ NULL
 #'   time (it never started -- neither its `mu` nor its shape is identified),
 #'   or when its contribution varies by less than this relative amount across
 #'   them (it finished before the first observation and acts as a constant
-#'   offset -- `mu` stays identified, the shape parameters do not). The
-#'   measured shares are kept on the fit as `fit$fit$phase_share`. Raise it to
-#'   catch marginal phases, set it to 0 to silence the check.
+#'   offset -- `mu` stays identified, the shape parameters do not). A third
+#'   condition is a property of the observed times rather than of any phase:
+#'   when their own relative range falls below this threshold and no phase's
+#'   contribution varies across them, they separate no phase from any other
+#'   and none of the shapes is identified. That verdict is withheld when the
+#'   fit supplies counting-process entry times or interval bounds that vary,
+#'   since it is measured over the event times alone. The measured shares are
+#'   kept on the fit as `fit$fit$phase_share`. Raise it to catch marginal
+#'   phases, set it to 0 to silence the check.
 #' - `reltol`: Relative parameter change tolerance (default 1e-5)
 #' - `abstol`: Absolute gradient norm tolerance (default 1e-6)
 #' - `method`: Optimization method: "bfgs" or "nm" (default "bfgs").

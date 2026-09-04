@@ -184,9 +184,15 @@ supplies less than this share of the cumulative hazard at every observed
 time (it never started -- neither its \code{mu} nor its shape is identified),
 or when its contribution varies by less than this relative amount across
 them (it finished before the first observation and acts as a constant
-offset -- \code{mu} stays identified, the shape parameters do not). The
-measured shares are kept on the fit as \code{fit$fit$phase_share}. Raise it to
-catch marginal phases, set it to 0 to silence the check.
+offset -- \code{mu} stays identified, the shape parameters do not). A third
+condition is a property of the observed times rather than of any phase:
+when their own relative range falls below this threshold and no phase's
+contribution varies across them, they separate no phase from any other
+and none of the shapes is identified. That verdict is withheld when the
+fit supplies counting-process entry times or interval bounds that vary,
+since it is measured over the event times alone. The measured shares are
+kept on the fit as \code{fit$fit$phase_share}. Raise it to catch marginal
+phases, set it to 0 to silence the check.
 \item \code{reltol}: Relative parameter change tolerance (default 1e-5)
 \item \code{abstol}: Absolute gradient norm tolerance (default 1e-6)
 \item \code{method}: Optimization method: "bfgs" or "nm" (default "bfgs").

@@ -1328,20 +1328,27 @@
   attr(sh, "time_variation") <- NULL
 
   absent <- which(is.finite(sh$share) & sh$share < tol)
+  measurable <- which(is.finite(sh$variation))
+  flat_all <- which(is.finite(sh$variation) & sh$variation < tol)
   # A phase that is absent is trivially also flat; report it once, as absent,
   # which is the more informative of the two.
-  flat <- setdiff(which(is.finite(sh$variation) & sh$variation < tol), absent)
+  flat <- setdiff(flat_all, absent)
 
-  # Do the observed times carry anything at all? Asked of the TIMES, not
-  # inferred from the phases: a single saturated phase, or an absent one, is
-  # flat across times that are perfectly well spread, and reading that as
-  # degenerate times reports a cause that did not occur. Relative, so it is
-  # scale-free and near-ties reach it as exact ties do.
-  degenerate <- isTRUE(time_var < tol)
+  # Both halves are needed, and each was a separate wrong answer on its own.
+  # The times must be degenerate -- asked of the TIMES, since a saturated or
+  # absent phase is flat across times that are perfectly well spread. And no
+  # phase may still vary across them: times bunched far from the origin have a
+  # small relative range while a steep enough phase is fully identified there,
+  # so the range alone would call an identified shape unidentified. Vacuously
+  # true when nothing is measurable, which is the all-covariates case -- the
+  # times are then the only evidence there is.
+  degenerate <- isTRUE(time_var < tol) &&
+    length(setdiff(measurable, flat_all)) == 0L
 
-  # `other_times` are the further points the likelihood evaluates (entry
-  # times, interval bounds). If those vary, the shapes DO enter the likelihood
-  # and no flatness conclusion drawn from `time` alone is safe.
+  # `other_times` are the further points the likelihood evaluates (entry times,
+  # interval bounds). They bear only on the degenerate-times verdict, which is
+  # measured over `time` alone. Per-phase flatness over well-spread `time` is
+  # not made unsafe by their existence.
   other_vary <- length(unique(other_times)) >= 2L
 
   if (length(absent) > 0) {
@@ -1357,42 +1364,47 @@
   }
   # Flatness conclusions only. The absent test above is measured on `share`,
   # which does not depend on how the times are spread, so it is never withheld.
-  if (length(flat) > 0 && !other_vary) {
-    if (degenerate) {
+  if (degenerate) {
+    if (!other_vary) {
       warning(
         "The observed times span a relative range below ",
         format(tol, digits = 3),
-        ", so they carry nothing that separates one phase from another: the ",
-        "phase shapes are not identified however the fit converges. Only the ",
-        "total cumulative hazard at those times is determined, plus the ",
-        "hazard there if any row is an exact event. Tied or near-tied ",
-        "observation times are the usual cause.",
+        " and no phase's contribution varies across them, so they carry ",
+        "nothing that separates one phase from another: the phase shapes are ",
+        "not identified however the fit converges. Only the total cumulative ",
+        "hazard at those times is determined, plus the hazard there if any ",
+        "row is an exact event. Tied or near-tied observation times are the ",
+        "usual cause.",
         call. = FALSE)
-    } else {
-      # No filter for phases without shape parameters is needed here, and one
-      # would be dead code. A `constant` phase's contribution is mu * t, so its
-      # relative range is identically the times' own -- it is flat exactly when
-      # `degenerate` is TRUE, which is the other branch. Reaching here, every
-      # flat phase has shape parameters and the message's wording holds. The
-      # test "a constant phase's variation IS the times' variation" pins it.
-      saturated <- flat
-      if (length(saturated) > 0) {
-        warning(
-          "Phase", if (length(saturated) > 1L) "s " else " ",
-          paste0("'", sh$phase[saturated], "'", collapse = ", "),
-          if (length(saturated) == 1L) " has" else " have",
-          " a contribution that is constant across the observed times ",
-          "(relative variation ",
-          paste(format(sh$variation[saturated], digits = 3), collapse = ", "),
-          "). The phase has already finished before the first observation, so ",
-          "it acts as a constant offset: 'mu' remains identified but the shape ",
-          "parameters do not, and the likelihood is unchanged whether they are ",
-          "pinned or fitted. A 'cdf' phase whose half-life is far shorter than ",
-          "the first observed time is the usual cause.",
-          call. = FALSE)
-      }
+    }
+    # else: entry times or interval bounds vary, so the shapes do enter the
+    # likelihood and this verdict, taken over `time` alone, cannot see it.
+  } else if (length(flat) > 0) {
+    # A phase with no shape parameters cannot have shape parameters go flat, so
+    # the message below is never true of it -- the wording defect in #211. This
+    # asks whether they EXIST, not whether they are free: for a phase whose
+    # shapes are pinned the message is true, and is usually why they were
+    # pinned. A constant phase's relative range tracks the times' own closely
+    # but not exactly, so it can land on the other side of `tol`; the filter is
+    # not dead code.
+    saturated <- flat[.hzr_phase_has_shape(phases[sh$phase[flat]])]
+    if (length(saturated) > 0) {
+      warning(
+        "Phase", if (length(saturated) > 1L) "s " else " ",
+        paste0("'", sh$phase[saturated], "'", collapse = ", "),
+        if (length(saturated) == 1L) " has" else " have",
+        " a contribution that is constant across the observed times ",
+        "(relative variation ",
+        paste(format(sh$variation[saturated], digits = 3), collapse = ", "),
+        "). The phase has already finished before the first observation, so ",
+        "it acts as a constant offset: 'mu' remains identified but the shape ",
+        "parameters do not, and the likelihood is unchanged whether they are ",
+        "pinned or fitted. A 'cdf' phase whose half-life is far shorter than ",
+        "the first observed time is the usual cause.",
+        call. = FALSE)
     }
   }
+
   invisible(sh)
 }
 

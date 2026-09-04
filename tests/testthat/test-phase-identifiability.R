@@ -305,7 +305,10 @@ test_that("two distinct other-times are enough to withhold", {
 test_that("tol = 0 silences the check, as ?hazard documents", {
   expect_length(ident_warn(rep(2, 20), tol = 0), 0L)
   expect_length(ident_warn(c(100, 100.000001), tol = 0), 0L)
-  expect_length(ident_mixed(seq(1, 10, length.out = 25)), 2L)
+  # ...and the same inputs are NOT silent at the default tolerance, so those
+  # assertions cannot pass merely because nothing would have warned anyway.
+  expect_length(ident_warn(rep(2, 20)), 1L)
+  expect_length(ident_warn(c(100, 100.000001)), 1L)
 })
 
 test_that("distinguishable times still get the ordinary saturated message", {
@@ -314,48 +317,121 @@ test_that("distinguishable times still get the ordinary saturated message", {
   expect_false(any(grepl("span a relative range below", w)))
 })
 
-test_that("a constant phase's variation IS the times' relative range", {
-  # #211's specific complaint was a `constant` phase being told its shape
-  # parameters were unidentified when it has none. No filter guards against
-  # that, and none is needed: a constant phase's contribution is mu * t, so its
-  # relative range equals the times' own EXACTLY. It is therefore flat if and
-  # only if the times are degenerate -- which is the other branch, where no
-  # per-phase message is emitted. This identity is the whole reason the
-  # saturated wording can never reach a constant phase, so it is asserted
-  # rather than argued.
-  s <- ident_setup(t_half = 0.5)
-  for (times in list(ident_time(), seq(1, 10, length.out = 25),
-                     seq(1e9, 1e9 + 1, length.out = 20))) {
-    sh <- ident_ns(".hzr_phase_shares")(
-      s$theta, times, s$phases, s$cc, s$xl)
-    tv <- attr(sh, "time_variation")
-    expect_equal(sh$variation[sh$phase == "constant"], tv,
-                 info = paste("range", signif(diff(range(times)), 3)))
-  }
-})
-
-test_that("bunched large times are degenerate, not a saturated constant phase", {
-  # The concrete case: times spanning 1 unit at t ~ 1e9. `constant` is flat
-  # there, and without the identity above it would have been handed the
-  # saturated message -- #211 verbatim, for a phase with no shapes and no
-  # half-life.
+test_that("bunched times with a phase that still varies are not degenerate", {
+  # A relative range below tol is NOT sufficient. Times spanning 1 unit at
+  # t ~ 1e9 are bunched, but a steep enough g3 is fully identified across them:
+  # moving gamma from 1e9 to 2e9 moves the log-likelihood by ~11 units. Calling
+  # that "nothing separates one phase from another" is the same wrong answer
+  # #211 is about, so the verdict requires BOTH a degenerate range and no phase
+  # still varying. `const` is flat here and has no shape parameters, so nothing
+  # is said at all.
   ph <- ident_ns(".hzr_validate_phases")(
     list(const = hzr_phase("constant"),
-         late  = hzr_phase("g3", tau = 1e9, gamma = 100, alpha = 1, eta = 1)))
+         late  = hzr_phase("g3", tau = 1e9 + 0.5, gamma = 1e9, alpha = 1, eta = 1)))
+  th <- c(log(1e-12), 0, log(1e9 + 0.5), 1e9, 1, 1)
+  tt <- seq(1e9, 1e9 + 1, length.out = 20)
+  cc <- c(const = 0L, late = 0L)
+  xl <- list(const = NULL, late = NULL)
+
+  sh <- ident_ns(".hzr_phase_shares")(th, tt, ph, cc, xl)
+  expect_lt(attr(sh, "time_variation"), 1e-8)      # the range IS degenerate
+  expect_gt(sh$variation[sh$phase == "late"], 0.5)  # yet a phase varies
+
+  w <- character(0)
+  withCallingHandlers(
+    ident_ns(".hzr_check_phase_identifiability")(th, tt, ph, cc, xl),
+    warning = function(x) {
+      w <<- c(w, conditionMessage(x))
+      invokeRestart("muffleWarning")
+    })
+  expect_length(w, 0L)
+
+  ll <- function(gamma) {
+    ident_ns(".hzr_logl_multiphase")(
+      theta = c(log(1e-12), 0, log(1e9 + 0.5), gamma, 1, 1), time = tt,
+      status = rep(1, 20), weights = rep(1, 20), phases = ph,
+      covariate_counts = cc, x_list = xl)
+  }
+  expect_gt(abs(ll(2e9) - ll(1e9)), 1)
+})
+
+test_that("a phase with no shape parameters is never told its shape is flat", {
+  # #211's specific complaint. The filter is not dead code: a constant phase's
+  # relative range tracks the times' own closely but not exactly in floating
+  # point, so it can land on the other side of tol while the times do not.
+  has <- ident_ns(".hzr_phase_has_shape")
+  expect_identical(has(list(hzr_phase("constant"))), FALSE)
+  expect_identical(has(list(hzr_phase("cdf"))), TRUE)
+  expect_identical(has(list(hzr_phase("g3"))), TRUE)
+  # Pinned shapes still EXIST, and the saturated message is true of them --
+  # which is what the pre-existing phase_share_tol test relies on.
+  expect_identical(
+    has(list(hzr_phase("cdf", t_half = 1, nu = 0, m = 0,
+                       fixed = c("t_half", "nu", "m")))),
+    TRUE)
+})
+
+test_that("exactly tied times warn even when every phase carries covariates", {
+  # `variation` is withheld for a covariate-carrying phase, so nothing is
+  # measurable and any phase-derived verdict says nothing -- on the maximally
+  # degenerate input. The times are the only evidence there is.
+  set.seed(211)
+  ph <- ident_ns(".hzr_validate_phases")(
+    list(a = hzr_phase("cdf"), b = hzr_phase("constant")))
   w <- character(0)
   withCallingHandlers(
     ident_ns(".hzr_check_phase_identifiability")(
-      c(log(0.01), log(1e5), log(1e9), 100, 1, 1),
-      seq(1e9, 1e9 + 1, length.out = 20), ph,
-      c(const = 0L, late = 0L), list(const = NULL, late = NULL)),
+      c(log(0.045), log(0.5), 0, -0.4, 0.1, log(0.036), 0.1),
+      rep(2, 20), ph, c(a = 1L, b = 1L),
+      list(a = matrix(rnorm(20)), b = matrix(rnorm(20)))),
     warning = function(x) {
       w <<- c(w, conditionMessage(x))
       invokeRestart("muffleWarning")
     })
   expect_length(w, 1L)
   expect_match(w, "span a relative range below")
-  expect_no_match(w, "shape parameters")
-  expect_no_match(w, "half-life")
+})
+
+test_that("entry times withhold the degenerate verdict, not the saturated one", {
+  # Withholding is justified only for the verdict measured over `time` alone.
+  # Gating the per-phase message on it too meant adding a `start` column
+  # silently removed a correct diagnostic.
+  ph <- ident_ns(".hzr_validate_phases")(
+    list(early = hzr_phase("cdf", t_half = 1e-6, nu = 0, m = -0.4),
+         constant = hzr_phase("constant")))
+  w <- character(0)
+  withCallingHandlers(
+    ident_ns(".hzr_check_phase_identifiability")(
+      c(log(0.045), log(1e-6), 0, -0.4, log(0.036)),
+      seq(1, 10, length.out = 25), ph, c(early = 0L, constant = 0L),
+      list(early = NULL, constant = NULL),
+      other_times = seq(0.1, 0.9, length.out = 25)),
+    warning = function(x) {
+      w <<- c(w, conditionMessage(x))
+      invokeRestart("muffleWarning")
+    })
+  expect_match(w, "constant across the observed times", all = FALSE)
+})
+
+test_that("the time measure is taken over the measured rows only", {
+  # Rows with a zero total are dropped by `ok`, and the measure follows them:
+  # over all of `time` this spans a full relative range, over the measured
+  # rows it is degenerate.
+  s <- ident_setup(t_half = 0.5)
+  sh <- ident_ns(".hzr_phase_shares")(
+    s$theta, c(0, 0, 3, 3), s$phases, s$cc, s$xl)
+  expect_identical(attr(sh, "time_variation"), 0)
+})
+
+test_that("all-zero times are a measured zero, not an unmeasured NA", {
+  # Reachable rather than defensive: a g3 phase returns G3(0) > 0, so `ok` is
+  # all TRUE and the maximum is 0. Dividing would give NaN.
+  ph <- ident_ns(".hzr_validate_phases")(
+    list(late = hzr_phase("g3"), constant = hzr_phase("constant")))
+  sh <- ident_ns(".hzr_phase_shares")(
+    c(log(0.045), log(1), 1, 1, 1, log(0.036)), rep(0, 10), ph,
+    c(late = 0L, constant = 0L), list(late = NULL, constant = NULL))
+  expect_identical(attr(sh, "time_variation"), 0)
 })
 
 test_that("the degenerate branch still returns the shares, without the measure", {
