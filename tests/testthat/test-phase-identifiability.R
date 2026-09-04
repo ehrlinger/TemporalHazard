@@ -332,6 +332,7 @@ test_that("what counts is whether other_times ADD an evaluation point", {
 })
 
 test_that("the same data written as interval-censored gets the same verdict", {
+  skip_on_cran()  # end-to-end fit; CI runs it, --as-cran need not
   # End-to-end form of the above. Surv(type = "interval") synthesises
   # time_lower = 0 and time_upper = time, so a representation change that adds
   # no information silenced #211's own input.
@@ -355,6 +356,7 @@ test_that("the same data written as interval-censored gets the same verdict", {
 })
 
 test_that("a constant entry time does not rescue tied exit times", {
+  skip_on_cran()  # end-to-end fit; CI runs it, --as-cran need not
   # Every row shares the same entry and the same exit, so the likelihood
   # depends on theta through two numbers only. Five free parameters, so the
   # shapes are unidentified and the warning is correct -- contrast the
@@ -530,6 +532,7 @@ test_that("the degenerate branch still returns the shares, without the measure",
 })
 
 test_that("the check reaches the degenerate branch through hazard()", {
+  skip_on_cran()  # end-to-end fit; CI runs it, --as-cran need not
   # Every other test here calls the internal directly, so a change to the
   # arguments at the call site would go uncaught.
   skip_if_not_installed("survival")
@@ -542,6 +545,7 @@ test_that("the check reaches the degenerate branch through hazard()", {
 })
 
 test_that("interval bounds count as other times at the call site", {
+  skip_on_cran()  # end-to-end fit; CI runs it, --as-cran need not
   # The call site passes c(time_lower, time_upper); a version passing only
   # time_lower is undetectable without an interval-censored case.
   skip_if_not_installed("survival")
@@ -562,6 +566,7 @@ test_that("interval bounds count as other times at the call site", {
 })
 
 test_that("a left-truncated fit through hazard() is not called unidentified", {
+  skip_on_cran()  # end-to-end fit; CI runs it, --as-cran need not
   skip_if_not_installed("survival")
   set.seed(211)
   d <- data.frame(start = runif(200, 0.01, 1.9), stop = rep(2, 200),
