@@ -1,5 +1,25 @@
 # Changelog
 
+## TemporalHazard 1.2.9
+
+### Bug fixes
+
+- **A phase named `total` is now rejected rather than silently losing
+  its contribution.** `total` is the key the multiphase
+  cumulative-hazard accumulator is stored under, so
+  `phases = list(total = hzr_phase("cdf"), ...)` overwrote that phase’s
+  own contribution vector with the summed hazard. The fit returned
+  normally; the phase then reported a contribution share of exactly 1
+  and the identifiability diagnostic read it as dominating the model.
+  The name is reserved across the decomposition and prediction output as
+  well, where it labels the total column.
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  and
+  [`hzr_theta_names()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_theta_names.md)
+  – which applies the same validation – now stop with an explanatory
+  message, and the reservation is documented on the `phases` argument
+  ([\#214](https://github.com/ehrlinger/TemporalHazard/issues/214)).
+
 ## TemporalHazard 1.2.8
 
 ### New features

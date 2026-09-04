@@ -19,7 +19,7 @@ optimize to produce fitted estimates."></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.8</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.9</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -180,7 +180,10 @@ each means and when to use it.</p></dd>
 
 <dt id="arg-phases">phases<a class="anchor" aria-label="anchor" href="#arg-phases"></a></dt>
 <dd><p>Optional named list of <code><a href="hzr_phase.html">hzr_phase()</a></code> objects specifying the
-phases for a multiphase model (<code>dist = "multiphase"</code>).  See Examples.</p></dd>
+phases for a multiphase model (<code>dist = "multiphase"</code>).  Names must be
+unique, and <code>"total"</code> is reserved: it labels the summed column in the
+decomposed output of <code><a href="predict.hazard.html">predict.hazard()</a></code>, so a phase of that name is
+rejected.  See Examples.</p></dd>
 
 
 <dt id="arg-fit">fit<a class="anchor" aria-label="anchor" href="#arg-fit"></a></dt>

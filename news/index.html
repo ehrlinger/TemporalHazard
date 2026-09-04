@@ -13,7 +13,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.8</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.9</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -55,6 +55,14 @@
       <small>Source: <a href="https://github.com/ehrlinger/TemporalHazard/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="1.2.9" id="temporalhazard-129">TemporalHazard 1.2.9<a class="anchor" aria-label="anchor" href="#temporalhazard-129"></a></h2>
+<div class="section level3">
+<h3 id="bug-fixes-1-2-9">Bug fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-1-2-9"></a></h3>
+<ul><li>
+<strong>A phase named <code>total</code> is now rejected rather than silently losing its contribution.</strong> <code>total</code> is the key the multiphase cumulative-hazard accumulator is stored under, so <code>phases = list(total = hzr_phase("cdf"), ...)</code> overwrote that phase’s own contribution vector with the summed hazard. The fit returned normally; the phase then reported a contribution share of exactly 1 and the identifiability diagnostic read it as dominating the model. The name is reserved across the decomposition and prediction output as well, where it labels the total column. <code><a href="../reference/hazard.html">hazard()</a></code> and <code><a href="../reference/hzr_theta_names.html">hzr_theta_names()</a></code> – which applies the same validation – now stop with an explanatory message, and the reservation is documented on the <code>phases</code> argument (<a href="https://github.com/ehrlinger/TemporalHazard/issues/214" class="external-link">#214</a>).</li>
+</ul></div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="1.2.8" id="temporalhazard-128">TemporalHazard 1.2.8<a class="anchor" aria-label="anchor" href="#temporalhazard-128"></a></h2>
 <div class="section level3">

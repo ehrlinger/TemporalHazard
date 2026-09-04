@@ -127,7 +127,10 @@ hazard(
   Optional named list of
   [`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
   objects specifying the phases for a multiphase model
-  (`dist = "multiphase"`). See Examples.
+  (`dist = "multiphase"`). Names must be unique, and `"total"` is
+  reserved: it labels the summed column in the decomposed output of
+  [`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md),
+  so a phase of that name is rejected. See Examples.
 
 - fit:
 

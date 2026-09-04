@@ -55,6 +55,11 @@ Phase names come from `names(phases)`; unnamed phases are labelled
 [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 applies, so the labels here are the labels a fit will use.
 
+Phase names must be unique, and `"total"` is reserved; this applies the
+same validation
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+does, so both reject it identically.
+
 ## See also
 
 [`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
