@@ -189,8 +189,13 @@ condition is a property of the observed times rather than of any phase:
 when their own relative range falls below this threshold and no phase's
 contribution varies across them, they separate no phase from any other
 and none of the shapes is identified. That verdict is withheld when the
-fit supplies counting-process entry times or interval bounds that vary,
-since it is measured over the event times alone. The measured shares are
+fit supplies counting-process entry times or interval bounds that add an
+evaluation point the measure did not see -- a zero entry time, or a bound
+equal to the event time, adds nothing -- since it is measured over the
+event times alone. For the same reason the per-phase measures can
+overstate what an interval-censored or left-truncated fit loses, since a
+phase flat across the event times may still be identified through the
+bounds. The measured shares are
 kept on the fit as \code{fit$fit$phase_share}. Raise it to catch marginal
 phases, set it to 0 to silence the check.
 \item \code{reltol}: Relative parameter change tolerance (default 1e-5)

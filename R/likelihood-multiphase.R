@@ -1280,6 +1280,9 @@
   tt <- time[ok]
   mxt <- max(abs(tt))
   attr(out, "time_variation") <- if (mxt == 0) 0 else (max(tt) - min(tt)) / mxt
+  # The distinct measured times, so the caller can ask whether `other_times`
+  # add an evaluation point rather than merely restating these.
+  attr(out, "time_unique") <- unique(tt)
   out
 }
 
@@ -1325,7 +1328,9 @@
   # Read and strip: this is a measure for the decision below, not part of the
   # frame a caller receives on fit$phase_share.
   time_var <- attr(sh, "time_variation")
+  time_unique <- attr(sh, "time_unique")
   attr(sh, "time_variation") <- NULL
+  attr(sh, "time_unique") <- NULL
 
   absent <- which(is.finite(sh$share) & sh$share < tol)
   measurable <- which(is.finite(sh$variation))
@@ -1346,10 +1351,23 @@
     length(setdiff(measurable, flat_all)) == 0L
 
   # `other_times` are the further points the likelihood evaluates (entry times,
-  # interval bounds). They bear only on the degenerate-times verdict, which is
-  # measured over `time` alone. Per-phase flatness over well-spread `time` is
-  # not made unsafe by their existence.
-  other_vary <- length(unique(other_times)) >= 2L
+  # interval bounds). What matters is whether they add an evaluation point, not
+  # how many values the pooled vector holds. Two exclusions carry that:
+  #
+  #   0            -- Lambda(0) is 0 for every phase type, so a zero entry time
+  #                   is a no-op. `.hzr_parse_formula()` synthesises one for
+  #                   every interval-censored row.
+  #   the times    -- `time_upper` is synthesised as a copy of `time` on that
+  #                   same path, and restating a point already measured adds
+  #                   nothing.
+  #
+  # Counting distinct values in the pooled vector instead got both directions
+  # wrong: it silenced #211's own input when written as Surv(type = "interval")
+  # (0 and time are two values), and it fired the degenerate verdict on a
+  # left-truncated fit whose entry time was constant but informative (one
+  # value), where the shape moves the log-likelihood by 8 units.
+  other_vary <- length(setdiff(unique(other_times),
+                               c(0, time_unique))) > 0L
 
   if (length(absent) > 0) {
     warning(
@@ -1367,7 +1385,7 @@
   if (degenerate) {
     if (!other_vary) {
       warning(
-        "The observed times span a relative range below ",
+        "The times this fit is measured at span a relative range below ",
         format(tol, digits = 3),
         " and no phase's contribution varies across them, so they carry ",
         "nothing that separates one phase from another: the phase shapes are ",

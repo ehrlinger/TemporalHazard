@@ -294,12 +294,71 @@ test_that("other evaluation times withhold the flatness verdict", {
   expect_length(w, 0L)
 })
 
-test_that("two distinct other-times are enough to withhold", {
-  # Boundary: the test is "do they vary", not "are there many of them".
+test_that("what counts is whether other_times ADD an evaluation point", {
+  # Not how many distinct values the pooled vector holds. An earlier version
+  # counted those and got both directions wrong.
   expect_length(ident_warn(rep(2, 20), other_times = c(0.5, 1.5)), 0L)
-  # ...and a single repeated value is not variation.
-  expect_match(ident_warn(rep(2, 20), other_times = rep(0.5, 20)),
+
+  # A constant entry time is ONE value and is informative: entry at 0.5 with
+  # every exit tied at 2 moves the log-likelihood 11.1 units between
+  # t_half 0.5 and 5, so the shape is identified and the verdict is withheld.
+  # This assertion previously required the warning, locking in a wrong answer.
+  expect_length(ident_warn(rep(2, 20), other_times = rep(0.5, 20)), 0L)
+
+  # Lambda(0) is 0 for every phase type, so a zero entry time adds nothing --
+  # and .hzr_parse_formula() synthesises one for every interval-censored row.
+  expect_match(ident_warn(rep(2, 20), other_times = rep(0, 20)),
                "span a relative range below")
+
+  # Nor does restating a time already measured: time_upper is synthesised as a
+  # copy of `time` on that same path.
+  expect_match(ident_warn(rep(2, 20), other_times = c(rep(0, 20), rep(2, 20))),
+               "span a relative range below")
+})
+
+test_that("the same data written as interval-censored gets the same verdict", {
+  # End-to-end form of the above. Surv(type = "interval") synthesises
+  # time_lower = 0 and time_upper = time, so a representation change that adds
+  # no information silenced #211's own input.
+  skip_if_not_installed("survival")
+  d <- data.frame(t = rep(2, 40), ev = rep(1, 40))
+  ph <- list(early = hzr_phase("cdf"), constant = hzr_phase("constant"))
+  for (f in list(survival::Surv(d$t, d$ev),
+                 survival::Surv(d$t, d$t, d$ev, type = "interval"))) {
+    expect_warning(
+      hazard(time = d$t, status = f, dist = "multiphase", phases = ph,
+             fit = TRUE, control = list(n_starts = 1)),
+      "span a relative range below")
+  }
+})
+
+test_that("a constant but informative entry time withholds the verdict", {
+  # One distinct entry time, tied exit times: Lambda(2) - Lambda(1) identifies
+  # the shape (8.0 log-likelihood units between t_half 0.5 and 5), so the
+  # degenerate verdict must not fire.
+  skip_if_not_installed("survival")
+  set.seed(9)
+  d <- data.frame(start = rep(1, 200), stop = rep(2, 200),
+                  ev = rbinom(200, 1, 0.4))
+  w <- character(0)
+  withCallingHandlers(
+    hazard(survival::Surv(start, stop, ev) ~ 1, data = d, dist = "multiphase",
+           phases = list(early = hzr_phase("cdf"), constant = hzr_phase("constant")),
+           theta = c(log(0.045), log(0.5), 0, -0.4, log(0.036)), fit = TRUE,
+           control = list(n_starts = 1, conserve = FALSE)),
+    warning = function(x) {
+      w <<- c(w, conditionMessage(x))
+      invokeRestart("muffleWarning")
+    })
+  expect_false(any(grepl("span a relative range below", w)))
+})
+
+test_that("degenerate times with an absent phase still warn", {
+  # Pins `flat_all` rather than `flat` in the predicate: an absent phase is
+  # excluded from `flat`, so using that set would let one dead phase block the
+  # verdict. Previously this choice was covered only incidentally.
+  w <- ident_mixed(rep(2, 20))
+  expect_match(w, "span a relative range below", all = FALSE)
 })
 
 test_that("tol = 0 silences the check, as ?hazard documents", {

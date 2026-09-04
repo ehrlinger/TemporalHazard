@@ -25,9 +25,19 @@
   Two related corrections. A phase that has not started is reported as absent
   even in a left-truncated fit, since that test rests on the share and not on
   how the times are spread. And when the counting-process entry times or
-  interval bounds vary, only the degenerate-times verdict is withheld -- the
-  per-phase saturation message is not, so adding a `start` column no longer
-  removes a correct diagnostic (#211).
+  interval bounds add an evaluation point the measure did not see, only the
+  degenerate-times verdict is withheld -- the per-phase saturation message is
+  not, so adding a `start` column no longer removes a correct diagnostic. A
+  bound that adds nothing, such as a zero entry time or an upper bound equal to
+  the event time, does not trigger the withholding: `Surv(type = "interval")`
+  synthesises both, and counting them silenced this very warning on data that
+  needed it (#211).
+
+  Known limitation, unchanged by this work and now stated rather than implicit:
+  the per-phase measures are taken over the event times alone, so for an
+  interval-censored or left-truncated fit a phase can be flat across those
+  while its shape is identified through the bounds. The saturated message can
+  therefore overstate what is lost. Tracked in #228.
 
 * **A phase named `total` is now rejected rather than silently losing its
   contribution.** `total` is the key the multiphase cumulative-hazard
