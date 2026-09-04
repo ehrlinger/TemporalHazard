@@ -2,6 +2,17 @@
 
 ## Bug fixes
 
+* **A phase named `total` is now rejected rather than silently losing its
+  contribution.** `total` is the key the multiphase cumulative-hazard
+  accumulator is stored under, so `phases = list(total = hzr_phase("cdf"), ...)`
+  overwrote that phase's own contribution vector with the summed hazard. The fit
+  returned normally; the phase then reported a contribution share of exactly 1
+  and the identifiability diagnostic read it as dominating the model. The name is
+  reserved across the decomposition and prediction output as well, where it
+  labels the total column. `hazard()` and `hzr_theta_names()` -- which applies
+  the same validation -- now stop with an explanatory message, and the
+  reservation is documented on the `phases` argument (#214).
+
 * **`objective = "sas"` data defects are reported as data defects.** The two
   conditions the SAS objective imposes -- no left-censored rows, and a positive
   width on every interval-censored row -- are pure functions of the data, but

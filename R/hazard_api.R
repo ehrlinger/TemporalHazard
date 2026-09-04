@@ -161,7 +161,10 @@ NULL
 #'   and requires `phases`.  See the **Baseline distributions** section for what
 #'   each means and when to use it.
 #' @param phases Optional named list of [hzr_phase()] objects specifying the
-#'   phases for a multiphase model (`dist = "multiphase"`).  See Examples.
+#'   phases for a multiphase model (`dist = "multiphase"`).  Names must be
+#'   unique, and `"total"` is reserved: it labels the summed column in the
+#'   decomposed output of [predict.hazard()], so a phase of that name is
+#'   rejected.  See Examples.
 #' @param fit Logical; if TRUE, fit the model via maximum likelihood (default FALSE).
 #' @param weights Optional numeric vector of observation weights (non-negative).
 #'   Each observation's log-likelihood contribution is multiplied by its weight.

@@ -292,6 +292,47 @@ test_that("validate_phases rejects duplicate names", {
                "unique")
 })
 
+test_that("validate_phases rejects a phase named 'total'", {
+  # 'total' is the key .hzr_multiphase_cumhaz() writes the accumulator under,
+  # so a phase of that name loses its own contribution vector entirely.
+  phases <- list(total = hzr_phase("cdf"), late = hzr_phase("constant"))
+  expect_error(.hzr_validate_phases(phases), "reserved")
+})
+
+test_that("hazard() rejects a phase named 'total' before it can collide", {
+  # The guard runs during validation, so the call fails before the optimizer is
+  # reached even with fit = TRUE. Without it this returned a populated fit whose
+  # 'total' phase had lost its contribution vector to the accumulator.
+  dat <- data.frame(time = c(1, 2, 3, 4, 5), status = c(1, 1, 0, 1, 0))
+  expect_error(
+    hazard(survival::Surv(time, status) ~ 1, data = dat, dist = "multiphase",
+           fit = TRUE,
+           phases = list(total = hzr_phase("cdf"), late = hzr_phase("constant"))),
+    "reserved")
+})
+
+test_that("hzr_theta_names() rejects a phase named 'total'", {
+  # Exported, and validates through the same path, so the reservation reaches it.
+  expect_error(hzr_theta_names(list(total = hzr_phase("cdf"))), "reserved")
+})
+
+test_that("'total' is still the name the cumhaz accumulator is stored under", {
+  # Cross-check for the guard above. Asserting only that "reserved" is thrown
+  # restates the guard's own string: rename the accumulator and that test stays
+  # green while the guard protects a name that no longer collides. This reads
+  # the key off the returned object instead, so it fails when the two drift.
+  phases <- .hzr_validate_phases(
+    list(early = hzr_phase("cdf"), late = hzr_phase("constant")))
+  tt <- c(0.5, 1, 2, 3, 5)
+  theta <- unlist(lapply(phases, .hzr_phase_start))
+  cc <- stats::setNames(as.list(rep(0L, length(phases))), names(phases))
+  xl <- stats::setNames(vector("list", length(phases)), names(phases))
+  contrib <- .hzr_multiphase_cumhaz(tt, theta, phases, cc, xl, per_phase = TRUE)
+
+  expect_equal(setdiff(names(contrib), names(phases)), "total")
+  expect_length(contrib, length(phases) + 1L)
+})
+
 
 # ============================================================================
 # Round-trip: start values match theta names in length
