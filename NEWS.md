@@ -2,16 +2,22 @@
 
 ## Bug fixes
 
-* **The phase-identifiability warning no longer misdiagnoses tied observation
-  times.** `variation` is the relative range of a phase's contribution across
-  the observed times, which is `0` for *every* phase when there is only one
-  distinct time -- by construction, not because any phase saturated. The
-  warning fired anyway and described a cause that had not occurred: with
-  `time = rep(2, 20)` it told a `constant` phase that its shape parameters were
-  unidentified, when a `constant` phase has none, and blamed a short half-life.
-  A single-row fit produced the same text. That case is now reported in its own
-  words -- no phase is identified at a single time point -- and the share and
-  variation scans, which cannot say anything there, are skipped (#211).
+* **The phase-identifiability warning no longer misdiagnoses degenerate
+  observation times.** `variation` is the relative range of a phase's
+  contribution across the observed times, so it collapses for *every* phase
+  when those times carry nothing that separates them. The saturated scan fired
+  anyway and described a cause that had not occurred: with `time = rep(2, 20)`
+  it told a `constant` phase that its shape parameters were unidentified, when
+  a `constant` phase has none, and blamed a short half-life. A single-row fit
+  produced the same text.
+
+  That case is now reported once, in its own words, saying what is actually
+  lost. The condition is measured rather than counted, so near-ties reach it
+  too -- `time = c(100, 100.000001)` produced the old wording verbatim. And
+  because the measures are taken over `time` alone, a fit whose `time` is tied
+  but whose counting-process entry times or interval bounds vary has them
+  **withheld** rather than reported: the phase shapes do enter that likelihood,
+  and neither the old message nor the new one is true of it (#211).
 
 * **A phase named `total` is now rejected rather than silently losing its
   contribution.** `total` is the key the multiphase cumulative-hazard

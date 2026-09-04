@@ -10,7 +10,8 @@
   phases,
   covariate_counts,
   x_list,
-  tol = 1e-08
+  tol = 1e-08,
+  other_times = NULL
 )
 }
 \arguments{
@@ -29,6 +30,12 @@ phase must reach somewhere, and the minimum relative variation its
 contribution must show. Default 1e-8: far above double precision, and
 orders of magnitude below any real contribution, so it fires on dead
 phases rather than merely small ones.}
+
+\item{other_times}{Further times the likelihood evaluates beyond \code{time} --
+counting-process entry times and interval bounds. The share and variation
+measures are taken over \code{time} alone, so when they are degenerate but
+these vary, the shapes still enter the likelihood and the measures are
+withheld rather than reported.}
 }
 \value{
 The share \code{data.frame}, invisibly; called for the warning.
