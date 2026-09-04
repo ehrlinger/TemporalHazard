@@ -644,28 +644,48 @@ test_that("the entry check reads the bounds, not `time`", {
 })
 
 test_that("the entry check and the objective agree on which rows offend", {
-  # The @details claims the two cannot disagree. Assert it directly rather
-  # than trusting that both were written from the same normalisation.
-  ph <- list(early = hzr_phase("cdf"), late = hzr_phase("constant"))
+  # The @details claims the two cannot disagree. This must call the objective
+  # DIRECTLY: hazard() now runs .hzr_check_sas_data() before optimization, so
+  # comparing the entry check against hazard() would compare the entry check
+  # with itself and pass no matter what the objective did.
   tt <- c(1, 2, 3, 4, 5, 6)
   st <- c(1, 0, 2, 1, 0, 1)
-  for (bounds in list(
-    list(lo = NULL, up = NULL),                      # both default to time
-    list(lo = c(1, 2, 3, 4, 5, 6), up = NULL),       # upper defaults
-    list(lo = NULL, up = c(1, 2, 3, 4, 5, 6)))) {    # lower defaults
-    entry <- tryCatch({
-      suppressWarnings(TemporalHazard:::.hzr_check_sas_data(
-        st, tt, bounds$lo, bounds$up, "sas"))
+  objective_errors <- function(lo, up) {
+    tryCatch({
+      TemporalHazard:::.hzr_logl_multiphase(
+        theta = sas_mp_theta, time = tt, status = st,
+        time_lower = lo, time_upper = up, weights = rep(1, length(tt)),
+        phases = sas_mp_phases(), covariate_counts = sas_mp_cc,
+        x_list = sas_mp_xl, objective = "sas")
       FALSE
     }, error = function(e) TRUE)
-    inner <- tryCatch({
-      suppressWarnings(hazard(
-        time = tt, status = st, time_lower = bounds$lo, time_upper = bounds$up,
-        dist = "multiphase", phases = ph, fit = TRUE, objective = "sas"))
+  }
+  entry_errors <- function(lo, up) {
+    tryCatch({
+      TemporalHazard:::.hzr_check_sas_data(st, tt, lo, up, "sas")
       FALSE
     }, error = function(e) TRUE)
-    expect_identical(entry, inner)
-    expect_true(entry)
+  }
+
+  cases <- list(
+    # Offenders: every interval row has zero width once bounds default to time.
+    list(lo = NULL,                    up = NULL,                    bad = TRUE),
+    list(lo = c(1, 2, 3, 4, 5, 6),     up = NULL,                    bad = TRUE),
+    list(lo = NULL,                    up = c(1, 2, 3, 4, 5, 6),     bad = TRUE),
+    list(lo = c(1, 2, 3, 4, 5, 6),     up = c(1, 2, 3, 4, 5, 6),     bad = TRUE),
+    # Accepted: row 3 is the only interval row and has a positive width.
+    list(lo = c(1, 2, 2.0, 4, 5, 6),   up = c(1, 2, 3.5, 4, 5, 6),   bad = FALSE),
+    # Accepted, and `time` disagrees with the bounds on the interval row --
+    # an implementation normalising from `time` would reject this.
+    list(lo = c(1, 2, 5.0, 4, 5, 6),   up = c(1, 2, 7.0, 4, 5, 6),   bad = FALSE)
+  )
+
+  for (i in seq_along(cases)) {
+    cs <- cases[[i]]
+    entry <- entry_errors(cs$lo, cs$up)
+    inner <- objective_errors(cs$lo, cs$up)
+    expect_identical(entry, inner, info = paste("case", i))
+    expect_identical(entry, cs$bad, info = paste("case", i))
   }
 })
 
