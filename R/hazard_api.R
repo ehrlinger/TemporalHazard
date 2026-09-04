@@ -178,6 +178,13 @@ NULL
 #'   hazard replaced by the interval-mean hazard over \eqn{(l, u]}. Applies
 #'   only to `dist = "multiphase"`; exact-event and right-censored rows are
 #'   unaffected either way.
+#'
+#'   `"sas"` requires data it can represent: no left-censored rows (`PROC
+#'   HAZARD` has no left-censoring statement) and a positive width on every
+#'   interval-censored row (the interval-mean hazard divides by \eqn{u - l}).
+#'   Both are properties of the data rather than of the fit, so they are
+#'   checked when the argument is supplied -- including under `fit = FALSE`,
+#'   which therefore stops rather than returning an unusable object.
 #' @note `objective = "sas"` exists to reproduce legacy `PROC HAZARD` runs and
 #'   **must not be used for new analyses**. It is a density, not a probability:
 #'   it is inconsistent for wide intervals, where the two forms differ
@@ -677,6 +684,13 @@ hazard <- function(formula = NULL,
       warning("'time_lower' not provided; using 'time' as lower bound for interval-censored rows.")
     }
   }
+
+  # Data preconditions of objective = "sas", checked once here rather than
+  # inside the objective: both are pure functions of the data, so reporting
+  # them through the optimizer's per-start tryCatch framed a data defect as a
+  # convergence problem. The guards inside the objective and gradient stay --
+  # the gradient is reachable without hazard(). See .hzr_check_sas_data().
+  .hzr_check_sas_data(status, time, time_lower, time_upper, objective)
 
   # fit_state holds the result of optimization (or just starting values if fit=FALSE).
   # Fields:

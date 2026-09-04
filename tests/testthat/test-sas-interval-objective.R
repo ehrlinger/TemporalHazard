@@ -527,3 +527,178 @@ test_that("a refit refuses a conflicting objective and tolerates a redundant one
   # Absent: unchanged.
   expect_identical(suppressWarnings(refit())$spec$objective, "sas")
 })
+
+# ---------------------------------------------------------------------------
+# Test 5 -- the SAS data guards are entry guards (#213).
+#
+# Both conditions are pure functions of the data: identical at every start, so
+# reporting them through the optimizer's per-start tryCatch framed a data
+# defect as a convergence problem and invited raising `n_starts`, a remedy that
+# cannot work. They are checked in hazard() before any optimization.
+# ---------------------------------------------------------------------------
+
+test_that("left-censored rows under sas are reported as a data defect, not a fit failure", {
+  ph <- list(early = hzr_phase("cdf"), late = hzr_phase("constant"))
+  err <- tryCatch(
+    suppressWarnings(hazard(
+      time = c(1, 2, 3, 4, 5, 6), status = c(1, 0, -1, 1, 0, 1),
+      dist = "multiphase", phases = ph, fit = TRUE, objective = "sas")),
+    error = conditionMessage)
+
+  expect_match(err, "does not support left-censored rows")
+  # The defect: the message used to arrive wrapped in "produced no usable fit
+  # from N starts: N errored", which reads as a convergence problem.
+  expect_no_match(err, "no usable fit")
+  expect_no_match(err, "start")
+})
+
+test_that("the sas guards fire with fit = FALSE as well", {
+  # The combination can never produce a fit, so it is rejected when it is
+  # specified rather than when it is first evaluated. Before this, fit = FALSE
+  # returned a normal hazard object carrying an objective it could never use.
+  ph <- list(early = hzr_phase("cdf"), late = hzr_phase("constant"))
+  expect_error(
+    suppressWarnings(hazard(
+      time = c(1, 2, 3, 4, 5, 6), status = c(1, 0, -1, 1, 0, 1),
+      dist = "multiphase", phases = ph, fit = FALSE, objective = "sas")),
+    "does not support left-censored rows")
+})
+
+test_that("the interval-width guard reports the data row, not the interval-subset row", {
+  # The inner guard sees only the interval rows, so it numbered the offender 1.
+  # Checked on the full data, the same row is 3 -- which is the number the user
+  # can look up.
+  ph <- list(early = hzr_phase("cdf"), late = hzr_phase("constant"))
+  err <- tryCatch(
+    suppressWarnings(hazard(
+      time = c(1, 2, 3, 4, 5, 6), status = c(1, 0, 2, 1, 0, 1),
+      time_lower = c(1, 2, 3, 4, 5, 6), time_upper = c(1, 2, 3, 4, 5, 6),
+      dist = "multiphase", phases = ph, fit = TRUE, objective = "sas")),
+    error = conditionMessage)
+
+  expect_match(err, "requires upper > lower")
+  expect_match(err, "at index/indices 3")
+  expect_no_match(err, "no usable fit")
+})
+
+test_that("the entry guards are specific to objective = 'sas'", {
+  # Negative control: the same data are legitimate under the default
+  # objective, which is the statistically consistent one. A guard that fired
+  # here would be rejecting valid work.
+  ph <- list(early = hzr_phase("cdf"), late = hzr_phase("constant"))
+  expect_no_error(suppressWarnings(hazard(
+    time = c(1, 2, 3, 4, 5, 6), status = c(1, 0, -1, 1, 0, 1),
+    dist = "multiphase", phases = ph, fit = FALSE, objective = "likelihood")))
+})
+
+test_that("the entry guards accept data that sas does support", {
+  # Negative control against over-firing: interval rows with a positive width
+  # and no left-censoring are exactly what objective = "sas" is for. fit = TRUE
+  # so the objective is actually evaluated on the data the guard declared
+  # valid -- at fit = FALSE the guard's verdict is never tested against the
+  # objective's.
+  ph <- list(early = hzr_phase("cdf"), late = hzr_phase("constant"))
+  expect_no_error(suppressWarnings(hazard(
+    time = c(1, 2, 3, 4, 5, 6), status = c(1, 0, 2, 1, 0, 1),
+    time_lower = c(1, 2, 2.0, 4, 5, 6), time_upper = c(1, 2, 3.5, 4, 5, 6),
+    dist = "multiphase", phases = ph, fit = TRUE, objective = "sas")))
+})
+
+test_that("interval rows with no bounds supplied are caught at entry", {
+  # Both bounds default to `time`, so every interval row has zero width. This
+  # is the commonest way to hit the guard and the earlier tests missed it:
+  # they passed time_lower/time_upper explicitly, so an entry check that gave
+  # up whenever a bound was NULL passed the whole file.
+  ph <- list(early = hzr_phase("cdf"), late = hzr_phase("constant"))
+  err <- tryCatch(
+    suppressWarnings(hazard(
+      time = c(1, 2, 3, 4, 5, 6), status = c(1, 0, 2, 1, 0, 1),
+      dist = "multiphase", phases = ph, fit = TRUE, objective = "sas")),
+    error = conditionMessage)
+  expect_match(err, "requires upper > lower")
+  expect_match(err, "at index/indices 3")
+  expect_no_match(err, "no usable fit")
+})
+
+test_that("the entry check reads the bounds, not `time`", {
+  # Pins the parity claim in .hzr_check_sas_data()'s @details. Row 3 has a
+  # valid interval (5, 7) but a `time` of 1, so an implementation that
+  # normalised from `time` instead of the supplied bounds would reject it;
+  # row 6 is the mirror -- bounds are degenerate while `time` looks fine.
+  ph <- list(early = hzr_phase("cdf"), late = hzr_phase("constant"))
+  expect_no_error(suppressWarnings(hazard(
+    time        = c(1, 2, 1, 4, 5, 6), status = c(1, 0, 2, 1, 0, 1),
+    time_lower  = c(1, 2, 5, 4, 5, 6),
+    time_upper  = c(1, 2, 7, 4, 5, 6),
+    dist = "multiphase", phases = ph, fit = FALSE, objective = "sas")))
+
+  err <- tryCatch(
+    suppressWarnings(hazard(
+      time        = c(1, 2, 3, 4, 5, 6), status = c(1, 0, 1, 1, 0, 2),
+      time_lower  = c(1, 2, 3, 4, 5, 9),
+      time_upper  = c(1, 2, 3, 4, 5, 9),
+      dist = "multiphase", phases = ph, fit = FALSE, objective = "sas")),
+    error = conditionMessage)
+  expect_match(err, "requires upper > lower")
+  expect_match(err, "at index/indices 6")
+})
+
+test_that("the entry check and the objective agree on which rows offend", {
+  # The @details claims the two cannot disagree. This must call the objective
+  # DIRECTLY: hazard() now runs .hzr_check_sas_data() before optimization, so
+  # comparing the entry check against hazard() would compare the entry check
+  # with itself and pass no matter what the objective did.
+  tt <- c(1, 2, 3, 4, 5, 6)
+  st <- c(1, 0, 2, 1, 0, 1)
+  objective_errors <- function(lo, up) {
+    tryCatch({
+      TemporalHazard:::.hzr_logl_multiphase(
+        theta = sas_mp_theta, time = tt, status = st,
+        time_lower = lo, time_upper = up, weights = rep(1, length(tt)),
+        phases = sas_mp_phases(), covariate_counts = sas_mp_cc,
+        x_list = sas_mp_xl, objective = "sas")
+      FALSE
+    }, error = function(e) TRUE)
+  }
+  entry_errors <- function(lo, up) {
+    tryCatch({
+      TemporalHazard:::.hzr_check_sas_data(st, tt, lo, up, "sas")
+      FALSE
+    }, error = function(e) TRUE)
+  }
+
+  cases <- list(
+    # Offenders: every interval row has zero width once bounds default to time.
+    list(lo = NULL,                    up = NULL,                    bad = TRUE),
+    list(lo = c(1, 2, 3, 4, 5, 6),     up = NULL,                    bad = TRUE),
+    list(lo = NULL,                    up = c(1, 2, 3, 4, 5, 6),     bad = TRUE),
+    list(lo = c(1, 2, 3, 4, 5, 6),     up = c(1, 2, 3, 4, 5, 6),     bad = TRUE),
+    # Accepted: row 3 is the only interval row and has a positive width.
+    list(lo = c(1, 2, 2.0, 4, 5, 6),   up = c(1, 2, 3.5, 4, 5, 6),   bad = FALSE),
+    # Accepted, and `time` disagrees with the bounds on the interval row --
+    # an implementation normalising from `time` would reject this.
+    list(lo = c(1, 2, 5.0, 4, 5, 6),   up = c(1, 2, 7.0, 4, 5, 6),   bad = FALSE)
+  )
+
+  for (i in seq_along(cases)) {
+    cs <- cases[[i]]
+    entry <- entry_errors(cs$lo, cs$up)
+    inner <- objective_errors(cs$lo, cs$up)
+    expect_identical(entry, inner, info = paste("case", i))
+    expect_identical(entry, cs$bad, info = paste("case", i))
+  }
+})
+
+test_that("an NA status under sas names the argument and the row", {
+  # any(status == -1) is NA-poisoned, so without this the inner guard's `if`
+  # threw a bare "missing value where TRUE/FALSE needed".
+  ph <- list(early = hzr_phase("cdf"), late = hzr_phase("constant"))
+  err <- tryCatch(
+    suppressWarnings(hazard(
+      time = c(1, 2, 3, 4, 5, 6), status = c(1, 0, NA, 1, 0, 1),
+      dist = "multiphase", phases = ph, fit = FALSE, objective = "sas")),
+    error = conditionMessage)
+  expect_match(err, "complete 'status' vector")
+  expect_match(err, "at index/indices 3")
+  expect_no_match(err, "missing value where TRUE/FALSE needed")
+})

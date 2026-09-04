@@ -24,6 +24,33 @@
   the same validation -- now stop with an explanatory message, and the
   reservation is documented on the `phases` argument (#214).
 
+* **`objective = "sas"` data defects are reported as data defects.** The two
+  conditions the SAS objective imposes -- no left-censored rows, and a positive
+  width on every interval-censored row -- are pure functions of the data, but
+  were checked inside the objective. The optimizer's per-start handler caught
+  them and reported "produced no usable fit from N starts", which reads as a
+  convergence problem and invites raising `n_starts`: a remedy that cannot work,
+  because the condition is identical at every start. `hazard()` now checks both
+  before any optimization, and the interval-width message reports the offending
+  row in the data rather than its position among the interval rows. The guards
+  inside the objective and gradient are unchanged, since the gradient is
+  reachable without `hazard()` (#213).
+
+* **Behaviour change:** because those preconditions are properties of the data
+  and not of the fit, they are now checked whenever `objective = "sas"` is
+  specified, including `fit = FALSE`. `hazard(..., fit = FALSE, objective =
+  "sas")` on left-censored or zero-width-interval data previously returned a
+  `hazard` object carrying an objective it could never be fitted with; it now
+  stops. An `NA` in `status` under `objective = "sas"` is also reported by
+  argument and row, rather than as a bare `missing value where TRUE/FALSE
+  needed`.
+
+  Note this reaches only the codes `hazard()` is given. On the **vector**
+  interface a `survival::Surv()` object is unclassed without translating its
+  codes, so a left-censored row arrives as `1` and is invisible to the check;
+  the formula interface translates and is guarded. That asymmetry is a
+  pre-existing defect of the vector path, tracked in #226.
+
 # TemporalHazard 1.2.8
 
 ## New features
