@@ -1176,8 +1176,13 @@
   ok <- is.finite(total) & total > 0
   nms <- names(phases)
   if (!any(ok)) {
-    return(data.frame(phase = nms, share = NA_real_, variation = NA_real_,
-                      row.names = NULL, stringsAsFactors = FALSE))
+    out <- data.frame(phase = nms, share = NA_real_, variation = NA_real_,
+                      row.names = NULL, stringsAsFactors = FALSE)
+    # NA, not 0: no rows were usable, so the count was not measured. A 0 here
+    # would be indistinguishable from a measured count and would trip the
+    # single-time guard, which is a different condition entirely.
+    attr(out, "n_distinct_time") <- NA_integer_
+    return(out)
   }
 
   share <- vapply(nms, function(nm) {
@@ -1199,8 +1204,13 @@
     (max(ci) - min(ci)) / mx
   }, numeric(1))
 
-  data.frame(phase = nms, share = share, variation = variation,
-             row.names = NULL, stringsAsFactors = FALSE)
+  out <- data.frame(phase = nms, share = share, variation = variation,
+                    row.names = NULL, stringsAsFactors = FALSE)
+  # Counted over the rows the measures were actually taken on, not over all of
+  # `time`: `variation` is a range across exactly these, so it is degenerate
+  # when they carry one distinct value even if the excluded rows differ.
+  attr(out, "n_distinct_time") <- length(unique(time[ok]))
+  out
 }
 
 #' Warn when a phase has effectively left the model
@@ -1224,6 +1234,25 @@
   # With one phase the share is 1 by construction; only the saturation test
   # means anything, and it still does.
   sh <- .hzr_phase_shares(theta, time, phases, covariate_counts, x_list)
+
+  # `variation` is a relative range across the observed times, so with one
+  # distinct time it is 0 for every phase by construction -- not because any
+  # phase saturated. Reporting that as saturation described a cause that had
+  # not occurred, and told a `constant` phase its shape parameters were
+  # unidentified when it has none. The real condition subsumes both tests: no
+  # phase can be separated from any other at a single time point.
+  if (isTRUE(attr(sh, "n_distinct_time") < 2L)) {
+    warning(
+      "The fit has only one distinct observation time, so no phase is ",
+      "identified: at a single time point the phases cannot be separated ",
+      "from one another, and only the total cumulative hazard there is ",
+      "determined. Every parameter of ",
+      paste0("'", sh$phase, "'", collapse = ", "),
+      " is free to drift, and the fit will converge regardless. Neither the ",
+      "share nor the variation diagnostic can say anything here.",
+      call. = FALSE)
+    return(invisible(sh))
+  }
 
   absent <- which(is.finite(sh$share) & sh$share < tol)
   # A phase that is absent is trivially also flat; report it once, as absent,

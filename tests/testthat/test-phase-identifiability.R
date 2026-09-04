@@ -172,3 +172,109 @@ test_that("unmeasurable shares warn about nothing", {
     ident_ns(".hzr_check_phase_identifiability")(
       s$theta, numeric(0), s$phases, s$cc, s$xl))
 })
+
+
+# ---------------------------------------------------------------------------
+# One distinct observation time (#211).
+#
+# `variation` is (max - min) / max of a phase's contribution, which is 0 for
+# EVERY phase when there is only one distinct time -- by construction, not
+# because any phase saturated. The scan then fired and described a cause that
+# had not occurred, including telling a `constant` phase that its shape
+# parameters were unidentified when it has none. The real condition is worse
+# than either of the two being reported and went unnamed.
+# ---------------------------------------------------------------------------
+
+ident_tied <- function(times) {
+  s <- ident_setup(t_half = 0.5)
+  warns <- character(0)
+  withCallingHandlers(
+    ident_ns(".hzr_check_phase_identifiability")(
+      s$theta, times, s$phases, s$cc, s$xl),
+    warning = function(w) {
+      warns <<- c(warns, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    })
+  warns
+}
+
+test_that("tied observation times are reported as their own condition", {
+  w <- ident_tied(rep(2, 20))
+
+  expect_length(w, 1L)
+  expect_match(w, "one distinct observation time")
+
+  # The three claims that were wrong for this input.
+  expect_no_match(w, "shape parameters")
+  expect_no_match(w, "finished before the first observation")
+  expect_no_match(w, "half-life")
+})
+
+test_that("a single-row fit reports the same condition", {
+  w <- ident_tied(2)
+  expect_length(w, 1L)
+  expect_match(w, "one distinct observation time")
+})
+
+test_that("the tied-time condition names both phases, not one", {
+  # Every phase is unidentified here, so reporting one of them would imply the
+  # other is fine.
+  w <- ident_tied(rep(2, 20))
+  expect_match(w, "early")
+  expect_match(w, "constant")
+})
+
+test_that("the tied-time guard still returns the shares", {
+  # summary() and fit$phase_share read this; an early return must not drop it.
+  s <- ident_setup(t_half = 0.5)
+  sh <- suppressWarnings(ident_ns(".hzr_check_phase_identifiability")(
+    s$theta, rep(2, 20), s$phases, s$cc, s$xl))
+  expect_s3_class(sh, "data.frame")
+  expect_identical(sh$phase, c("early", "constant"))
+})
+
+test_that("two distinct times are enough to run the ordinary scan", {
+  # Boundary: the guard must not swallow the real diagnostics one time point
+  # too eagerly. With t_half = 0.5 and times 2 and 3 the early phase has long
+  # since saturated, which is the ordinary saturated message.
+  w <- ident_tied(c(2, 3))
+  expect_false(any(grepl("one distinct observation time", w)))
+})
+
+test_that("no measurable rows is not the same condition as one distinct time", {
+  # Both leave `variation` uninformative, but they are different problems and
+  # only one of them is worth a warning. The distinct-time count is NA when
+  # nothing was measured, so it cannot be confused with a measured 0 -- the
+  # same NA-versus-zero rule the shares themselves follow.
+  s <- ident_setup(0.003)
+  none <- ident_ns(".hzr_phase_shares")(s$theta, numeric(0), s$phases, s$cc, s$xl)
+  tied <- ident_ns(".hzr_phase_shares")(s$theta, rep(2, 20), s$phases, s$cc, s$xl)
+
+  expect_identical(attr(none, "n_distinct_time"), NA_integer_)
+  expect_identical(attr(tied, "n_distinct_time"), 1L)
+})
+
+test_that("the distinct-time count is taken over measured rows, not all rows", {
+  # Rows at t = 0 carry a zero total, so `ok` drops them and no measure is
+  # taken there. `time` then has two distinct values while the measurements
+  # rest on one -- and it is the measurements that make `variation` degenerate.
+  # Counting over all of `time` would call this fit measurable and hand it back
+  # to the saturation scan, which is the misdiagnosis being fixed.
+  s <- ident_setup(t_half = 0.5)
+  tt <- c(0, 0, 2, 2)
+  sh <- ident_ns(".hzr_phase_shares")(s$theta, tt, s$phases, s$cc, s$xl)
+
+  expect_identical(length(unique(tt)), 2L)
+  expect_identical(attr(sh, "n_distinct_time"), 1L)
+
+  w <- character(0)
+  withCallingHandlers(
+    ident_ns(".hzr_check_phase_identifiability")(
+      s$theta, tt, s$phases, s$cc, s$xl),
+    warning = function(x) {
+      w <<- c(w, conditionMessage(x))
+      invokeRestart("muffleWarning")
+    })
+  expect_length(w, 1L)
+  expect_match(w, "one distinct observation time")
+})
