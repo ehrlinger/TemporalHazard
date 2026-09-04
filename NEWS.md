@@ -2,22 +2,28 @@
 
 ## Bug fixes
 
-* **The phase-identifiability warning no longer misdiagnoses degenerate
-  observation times.** `variation` is the relative range of a phase's
-  contribution across the observed times, so it collapses for *every* phase
-  when those times carry nothing that separates them. The saturated scan fired
-  anyway and described a cause that had not occurred: with `time = rep(2, 20)`
-  it told a `constant` phase that its shape parameters were unidentified, when
-  a `constant` phase has none, and blamed a short half-life. A single-row fit
-  produced the same text.
+* **The phase-identifiability warning no longer names a cause that did not
+  occur.** `variation` is the relative range of a phase's contribution across
+  the observed times, so it collapses for every phase when those times carry
+  nothing that separates them. The saturated scan fired anyway: with
+  `time = rep(2, 20)` it told a `constant` phase that its shape parameters were
+  unidentified, when a `constant` phase has none, and blamed a short half-life.
+  A single-row fit produced the same text.
 
-  That case is now reported once, in its own words, saying what is actually
-  lost. The condition is measured rather than counted, so near-ties reach it
-  too -- `time = c(100, 100.000001)` produced the old wording verbatim. And
-  because the measures are taken over `time` alone, a fit whose `time` is tied
-  but whose counting-process entry times or interval bounds vary has them
+  The check now asks the question of the **times** -- whether their own
+  relative range falls below the tolerance -- rather than inferring it from the
+  phases, and reports that case in its own words. Because the measure is
+  relative it is scale-free: near-ties reach it (`c(100, 100.000001)` produced
+  the old wording verbatim), and so do times bunched far from the origin, which
+  is not the same thing as tied. Per-phase saturation over well-spread times is
+  reported exactly as before.
+
+  Two related corrections. A phase that has not started is reported as absent
+  even when the fit is left-truncated, since that test rests on the share and
+  not on how the times are spread. And when `time` is degenerate but the
+  counting-process entry times or interval bounds vary, the flatness verdict is
   **withheld** rather than reported: the phase shapes do enter that likelihood,
-  and neither the old message nor the new one is true of it (#211).
+  and the measures taken over `time` alone cannot see it (#211).
 
 * **A phase named `total` is now rejected rather than silently losing its
   contribution.** `total` is the key the multiphase cumulative-hazard

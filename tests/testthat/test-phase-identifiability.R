@@ -177,18 +177,16 @@ test_that("unmeasurable shares warn about nothing", {
 # ---------------------------------------------------------------------------
 # Degenerate observed times (#211).
 #
-# `variation` is (max - min) / max of a phase's contribution, so it collapses
-# for EVERY phase when the observed times carry nothing that separates them.
-# The saturated scan fired anyway and described a cause that had not occurred,
-# including telling a `constant` phase -- which has only `log_mu` -- that its
-# shape parameters were unidentified.
-#
-# The condition is measured, not counted: exactly-tied times were only the
-# reproducer in the issue, and near-ties reach the same degeneracy.
+# `variation` collapsing does NOT mean the times are degenerate: a saturated
+# phase is flat across times that are perfectly well spread. The condition is
+# therefore asked of the TIMES -- their own relative range -- and not inferred
+# from the phases. Two earlier attempts inferred it, and each reported a cause
+# that had not occurred, which is the defect #211 is about.
 # ---------------------------------------------------------------------------
 
-ident_warn <- function(times, tol = 1e-8, other_times = NULL) {
-  s <- ident_setup(t_half = 0.5)
+ident_warn <- function(times, tol = 1e-8, other_times = NULL,
+                       t_half = 0.5) {
+  s <- ident_setup(t_half = t_half)
   w <- character(0)
   withCallingHandlers(
     ident_ns(".hzr_check_phase_identifiability")(
@@ -201,11 +199,30 @@ ident_warn <- function(times, tol = 1e-8, other_times = NULL) {
   w
 }
 
+# One saturated phase and one absent phase over well-spread times. Both
+# diagnostics are correct here and neither is about the times.
+ident_mixed <- function(times, other_times = NULL) {
+  ph <- ident_ns(".hzr_validate_phases")(
+    list(early = hzr_phase("cdf", t_half = 1e-6, nu = 0, m = -0.4),
+         late  = hzr_phase("cdf", t_half = 1e12, nu = 0, m = -0.4)))
+  th <- c(log(0.045), log(1e-6), 0, -0.4, log(1e-12), log(1e12), 0, -0.4)
+  w <- character(0)
+  withCallingHandlers(
+    ident_ns(".hzr_check_phase_identifiability")(
+      th, times, ph, c(early = 0L, late = 0L),
+      list(early = NULL, late = NULL), other_times = other_times),
+    warning = function(x) {
+      w <<- c(w, conditionMessage(x))
+      invokeRestart("muffleWarning")
+    })
+  w
+}
+
 test_that("tied observation times are reported as their own condition", {
   w <- ident_warn(rep(2, 20))
 
   expect_length(w, 1L)
-  expect_match(w, "carry nothing that separates one phase from another")
+  expect_match(w, "span a relative range below")
 
   # The three claims that were wrong for this input.
   expect_no_match(w, "shape parameters")
@@ -216,86 +233,140 @@ test_that("tied observation times are reported as their own condition", {
 test_that("a single-row fit reports the same condition", {
   w <- ident_warn(2)
   expect_length(w, 1L)
-  expect_match(w, "carry nothing that separates one phase from another")
+  expect_match(w, "span a relative range below")
 })
 
 test_that("near-tied times reach the same condition as exact ties", {
-  # The original fix counted distinct times, so this slipped through and
-  # produced #211's wording verbatim: variation is 0 and 1e-08 here, both
-  # under tol, while the two times are distinct to `unique()`.
+  # Counting distinct times missed this: `unique()` separates them while the
+  # measures are degenerate, and it produced #211's wording verbatim.
   w <- ident_warn(c(100, 100.000001))
   expect_length(w, 1L)
-  expect_match(w, "carry nothing that separates one phase from another")
+  expect_match(w, "span a relative range below")
   expect_no_match(w, "shape parameters")
 })
 
-test_that("the condition names every measurable phase, not one", {
-  w <- ident_warn(rep(2, 20))
-  expect_match(w, "early")
-  expect_match(w, "constant")
-})
-
-test_that("other evaluation times keep the fit out of the degenerate branch", {
-  # A left-truncated fit evaluates Lambda(stop) - Lambda(start), so varying
-  # entry times identify the shapes even when every `stop` is tied. Counting
-  # only `time` called such a fit unidentified, which was false.
-  w <- ident_warn(rep(2, 20), other_times = seq(0.01, 1.9, length.out = 20))
-  expect_false(any(grepl("carry nothing that separates", w)))
-})
-
-test_that("a single distinct other-time does not rescue a degenerate fit", {
-  # Boundary the other way: `other_times` must actually vary.
-  w <- ident_warn(rep(2, 20), other_times = rep(0.5, 20))
+test_that("a saturated phase over well-spread times is still saturated", {
+  # Regression guard. Inferring degeneracy from the phases made this fire the
+  # tied-times message on 25 evenly spaced times -- and with a single phase,
+  # "every phase is flat" IS "this phase saturated", so single-phase
+  # saturation could never be reported correctly.
+  ph <- ident_ns(".hzr_validate_phases")(
+    list(early = hzr_phase("cdf", t_half = 1e-6, nu = 0, m = -0.4)))
+  w <- character(0)
+  withCallingHandlers(
+    ident_ns(".hzr_check_phase_identifiability")(
+      c(log(0.045), log(1e-6), 0, -0.4), seq(1, 10, length.out = 25),
+      ph, c(early = 0L), list(early = NULL)),
+    warning = function(x) {
+      w <<- c(w, conditionMessage(x))
+      invokeRestart("muffleWarning")
+    })
   expect_length(w, 1L)
-  expect_match(w, "carry nothing that separates one phase from another")
+  expect_match(w, "constant across the observed times")
+  expect_no_match(w, "span a relative range below")
+})
+
+test_that("an absent phase over well-spread times does not mask a saturated one", {
+  # `variation` is normalised by the phase's OWN maximum, so an absent phase
+  # varies across nearly its full range (0.997 here) -- folding it into a
+  # flatness verdict wrongly declared these 25 distinct times degenerate.
+  w <- ident_mixed(seq(1, 10, length.out = 25))
+  expect_length(w, 2L)
+  expect_match(w, "contributes at most", all = FALSE)
+  expect_match(w, "constant across the observed times", all = FALSE)
+  expect_false(any(grepl("span a relative range below", w)))
+})
+
+test_that("an absent phase is reported even when only other times vary", {
+  # `share` does not depend on how the times are spread, so the absent test is
+  # never withheld -- a phase that has not started by the end of follow-up is
+  # unidentified whatever the entry times do.
+  w <- ident_mixed(rep(2, 20), other_times = seq(0.01, 1.9, length.out = 20))
+  expect_match(w, "contributes at most", all = FALSE)
+})
+
+test_that("other evaluation times withhold the flatness verdict", {
+  # A left-truncated fit evaluates Lambda(stop) - Lambda(start), so varying
+  # entry times identify the shapes even when every `stop` is tied. Measures
+  # taken over `time` alone cannot see that, so they are withheld rather than
+  # guessed -- the same rule `variation` already follows for covariates.
+  w <- ident_warn(rep(2, 20), other_times = seq(0.01, 1.9, length.out = 20))
+  expect_length(w, 0L)
+})
+
+test_that("two distinct other-times are enough to withhold", {
+  # Boundary: the test is "do they vary", not "are there many of them".
+  expect_length(ident_warn(rep(2, 20), other_times = c(0.5, 1.5)), 0L)
+  # ...and a single repeated value is not variation.
+  expect_match(ident_warn(rep(2, 20), other_times = rep(0.5, 20)),
+               "span a relative range below")
 })
 
 test_that("tol = 0 silences the check, as ?hazard documents", {
   expect_length(ident_warn(rep(2, 20), tol = 0), 0L)
   expect_length(ident_warn(c(100, 100.000001), tol = 0), 0L)
+  expect_length(ident_mixed(seq(1, 10, length.out = 25)), 2L)
 })
 
 test_that("distinguishable times still get the ordinary saturated message", {
-  # The guard must not swallow the real diagnostics. Assert the message rather
-  # than only the absence of the new one: `expect_false(any(grepl(...)))` alone
-  # passes vacuously when nothing warns at all, so it would survive deleting
-  # the saturated block outright.
   w <- capture_warnings(ident_check(1e-6))
   expect_match(w, "constant across the observed times", all = FALSE)
-  expect_false(any(grepl("carry nothing that separates", w)))
+  expect_false(any(grepl("span a relative range below", w)))
 })
 
-test_that("a phase with no shape parameters is never told its shape is flat", {
-  # #211's specific complaint. `constant` has only log_mu, so the saturated
-  # wording ("mu remains identified but the shape parameters do not") is
-  # vacuous for it. It holds structurally rather than by a filter: a constant
-  # phase's contribution is mu * t, so it can only be flat when the measured
-  # times are degenerate -- and then no per-phase message is emitted at all.
-  w <- ident_warn(rep(2, 20))
-  expect_no_match(w, "shape parameters")
-
+test_that("a constant phase's variation IS the times' relative range", {
+  # #211's specific complaint was a `constant` phase being told its shape
+  # parameters were unidentified when it has none. No filter guards against
+  # that, and none is needed: a constant phase's contribution is mu * t, so its
+  # relative range equals the times' own EXACTLY. It is therefore flat if and
+  # only if the times are degenerate -- which is the other branch, where no
+  # per-phase message is emitted. This identity is the whole reason the
+  # saturated wording can never reach a constant phase, so it is asserted
+  # rather than argued.
   s <- ident_setup(t_half = 0.5)
-  sh <- ident_ns(".hzr_phase_shares")(
-    s$theta, ident_time(), s$phases, s$cc, s$xl)
-  expect_gt(sh$variation[sh$phase == "constant"], 0.5)
+  for (times in list(ident_time(), seq(1, 10, length.out = 25),
+                     seq(1e9, 1e9 + 1, length.out = 20))) {
+    sh <- ident_ns(".hzr_phase_shares")(
+      s$theta, times, s$phases, s$cc, s$xl)
+    tv <- attr(sh, "time_variation")
+    expect_equal(sh$variation[sh$phase == "constant"], tv,
+                 info = paste("range", signif(diff(range(times)), 3)))
+  }
 })
 
-test_that("flatness is withheld, not guessed, when only other times vary", {
-  # Tied `time` with varying entry times: the measures here are taken over
-  # `time` alone, so they cannot see that the shapes do enter the likelihood.
-  # Saying anything about flatness would be a guess -- including the saturated
-  # message, whose stated cause did not occur.
-  w <- ident_warn(rep(2, 20), other_times = seq(0.01, 1.9, length.out = 20))
-  expect_length(w, 0L)
+test_that("bunched large times are degenerate, not a saturated constant phase", {
+  # The concrete case: times spanning 1 unit at t ~ 1e9. `constant` is flat
+  # there, and without the identity above it would have been handed the
+  # saturated message -- #211 verbatim, for a phase with no shapes and no
+  # half-life.
+  ph <- ident_ns(".hzr_validate_phases")(
+    list(const = hzr_phase("constant"),
+         late  = hzr_phase("g3", tau = 1e9, gamma = 100, alpha = 1, eta = 1)))
+  w <- character(0)
+  withCallingHandlers(
+    ident_ns(".hzr_check_phase_identifiability")(
+      c(log(0.01), log(1e5), log(1e9), 100, 1, 1),
+      seq(1e9, 1e9 + 1, length.out = 20), ph,
+      c(const = 0L, late = 0L), list(const = NULL, late = NULL)),
+    warning = function(x) {
+      w <<- c(w, conditionMessage(x))
+      invokeRestart("muffleWarning")
+    })
+  expect_length(w, 1L)
+  expect_match(w, "span a relative range below")
+  expect_no_match(w, "shape parameters")
+  expect_no_match(w, "half-life")
 })
 
-test_that("the degenerate branch still returns the shares", {
-  # summary() and fit$phase_share read this; an early return must not drop it.
+test_that("the degenerate branch still returns the shares, without the measure", {
+  # summary() and fit$phase_share read this; the internal time measure must
+  # not travel out on it.
   s <- ident_setup(t_half = 0.5)
   sh <- suppressWarnings(ident_ns(".hzr_check_phase_identifiability")(
     s$theta, rep(2, 20), s$phases, s$cc, s$xl))
   expect_s3_class(sh, "data.frame")
   expect_identical(sh$phase, c("early", "constant"))
+  expect_null(attr(sh, "time_variation"))
 })
 
 test_that("the check reaches the degenerate branch through hazard()", {
@@ -307,12 +378,30 @@ test_that("the check reaches the degenerate branch through hazard()", {
     hazard(survival::Surv(t, ev) ~ 1, data = d, dist = "multiphase",
            phases = list(early = hzr_phase("cdf"), constant = hzr_phase("constant")),
            fit = TRUE, control = list(n_starts = 1)),
-    "carry nothing that separates one phase from another")
+    "span a relative range below")
+})
+
+test_that("interval bounds count as other times at the call site", {
+  # The call site passes c(time_lower, time_upper); a version passing only
+  # time_lower is undetectable without an interval-censored case.
+  skip_if_not_installed("survival")
+  n <- 40
+  d <- data.frame(lo = rep(2, n), up = seq(2.1, 6, length.out = n),
+                  st = rep(2, n))
+  w <- character(0)
+  withCallingHandlers(
+    hazard(time = rep(2, n), status = d$st, time_lower = d$lo,
+           time_upper = d$up, dist = "multiphase",
+           phases = list(early = hzr_phase("cdf"), constant = hzr_phase("constant")),
+           fit = TRUE, control = list(n_starts = 1)),
+    warning = function(x) {
+      w <<- c(w, conditionMessage(x))
+      invokeRestart("muffleWarning")
+    })
+  expect_false(any(grepl("span a relative range below", w)))
 })
 
 test_that("a left-truncated fit through hazard() is not called unidentified", {
-  # The end-to-end form of the other_times case: every stop time is tied, but
-  # 200 distinct entry times enter the likelihood.
   skip_if_not_installed("survival")
   set.seed(211)
   d <- data.frame(start = runif(200, 0.01, 1.9), stop = rep(2, 200),
@@ -328,5 +417,5 @@ test_that("a left-truncated fit through hazard() is not called unidentified", {
       w <<- c(w, conditionMessage(x))
       invokeRestart("muffleWarning")
     })
-  expect_false(any(grepl("carry nothing that separates", w)))
+  expect_false(any(grepl("span a relative range below", w)))
 })

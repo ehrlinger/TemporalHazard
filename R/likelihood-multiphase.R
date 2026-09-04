@@ -1270,8 +1270,17 @@
     (max(ci) - min(ci)) / mx
   }, numeric(1))
 
-  data.frame(phase = nms, share = share, variation = variation,
-             row.names = NULL, stringsAsFactors = FALSE)
+  out <- data.frame(phase = nms, share = share, variation = variation,
+                    row.names = NULL, stringsAsFactors = FALSE)
+  # The same relative-range measure, applied to the times themselves and over
+  # the same rows. `variation` being degenerate does not say the TIMES are:
+  # a saturated phase is flat across times that are perfectly well spread.
+  # Only this can tell those apart. Read and removed by the caller, so it does
+  # not travel out on fit$phase_share.
+  tt <- time[ok]
+  mxt <- max(abs(tt))
+  attr(out, "time_variation") <- if (mxt == 0) 0 else (max(tt) - min(tt)) / mxt
+  out
 }
 
 #' Warn when a phase has effectively left the model
@@ -1280,6 +1289,17 @@
 #' phases' estimates are usable. It is the unidentified parameters that must
 #' not be read as estimates -- and which ones those are differs by mode, so
 #' the message says which.
+#'
+#' Three conditions, not two. `absent` and `saturated` are per-phase. The
+#' third is a property of the **times**: when their own relative range falls
+#' below `tol` they separate no phase from any other, and the per-phase
+#' messages would name a cause that did not occur (#211). It is asked of the
+#' times rather than inferred from the phases, because a saturated or absent
+#' phase is flat across times that are perfectly well spread.
+#'
+#' `absent` is measured on `share`, which does not depend on how the times are
+#' spread, so it is always reported. The flatness verdict is withheld when
+#' `other_times` vary, since the measures here cannot see those.
 #'
 #' @inheritParams .hzr_logl_multiphase
 #' @param tol Threshold for both tests -- the minimum share of \eqn{\Lambda} a
@@ -1302,48 +1322,27 @@
   # means anything, and it still does.
   sh <- .hzr_phase_shares(theta, time, phases, covariate_counts, x_list)
 
+  # Read and strip: this is a measure for the decision below, not part of the
+  # frame a caller receives on fit$phase_share.
+  time_var <- attr(sh, "time_variation")
+  attr(sh, "time_variation") <- NULL
+
   absent <- which(is.finite(sh$share) & sh$share < tol)
   # A phase that is absent is trivially also flat; report it once, as absent,
   # which is the more informative of the two.
   flat <- setdiff(which(is.finite(sh$variation) & sh$variation < tol), absent)
 
-  # A `constant` phase's contribution is mu * t, so it is flat only when the
-  # measured times are themselves degenerate -- and then EVERY phase is flat.
-  # That is the #211 case: the per-phase messages then describe a cause that
-  # did not occur, including telling `constant`, which has only 'mu', that its
-  # shape parameters went flat. Absent phases count here: a phase contributing
-  # nothing is trivially flat too, so excluding them would let one dead phase
-  # mask the fact that nothing varies at all.
-  measurable <- which(is.finite(sh$variation))
-  all_flat <- length(measurable) > 0L &&
-    length(setdiff(measurable, union(absent, flat))) == 0L
+  # Do the observed times carry anything at all? Asked of the TIMES, not
+  # inferred from the phases: a single saturated phase, or an absent one, is
+  # flat across times that are perfectly well spread, and reading that as
+  # degenerate times reports a cause that did not occur. Relative, so it is
+  # scale-free and near-ties reach it as exact ties do.
+  degenerate <- isTRUE(time_var < tol)
 
-  if (all_flat) {
-    # `other_times` are the further points the likelihood evaluates (counting-
-    # process entry times, interval bounds). If those vary, the shapes DO enter
-    # the likelihood and nothing is unidentified -- but these measures, taken
-    # over `time` alone, cannot see that. Withhold rather than guess, the same
-    # way `variation` is withheld for a phase carrying covariates.
-    if (length(unique(other_times)) >= 2L) {
-      return(invisible(sh))
-    }
-    warning(
-      "No phase's contribution varies across the observed times (relative ",
-      "variation below ", format(tol, digits = 3), " for ",
-      paste0("'", sh$phase[measurable], "'", collapse = ", "),
-      "). The times carry nothing that separates one phase from another, so ",
-      "the phase shapes are not identified however the fit converges; only ",
-      "the total cumulative hazard at the observed times is determined, plus ",
-      "the hazard there if any row is an exact event. Tied observation times ",
-      "are the usual cause.",
-      call. = FALSE)
-    return(invisible(sh))
-  }
-
-  # Reaching here, at least one phase varies. A `constant` phase cannot be in
-  # `flat` (see above), so every flat phase has shape parameters and the
-  # saturated message's wording holds.
-  saturated <- flat
+  # `other_times` are the further points the likelihood evaluates (entry
+  # times, interval bounds). If those vary, the shapes DO enter the likelihood
+  # and no flatness conclusion drawn from `time` alone is safe.
+  other_vary <- length(unique(other_times)) >= 2L
 
   if (length(absent) > 0) {
     warning(
@@ -1356,20 +1355,43 @@
       "identified: the fit converges and those parameters drift freely.",
       call. = FALSE)
   }
-  if (length(saturated) > 0) {
-    warning(
-      "Phase", if (length(saturated) > 1L) "s " else " ",
-      paste0("'", sh$phase[saturated], "'", collapse = ", "),
-      if (length(saturated) == 1L) " has" else " have",
-      " a contribution that is constant across the observed times ",
-      "(relative variation ",
-      paste(format(sh$variation[saturated], digits = 3), collapse = ", "),
-      "). The phase has already finished before the first observation, so it ",
-      "acts as a constant offset: 'mu' remains identified but the shape ",
-      "parameters do not, and the likelihood is unchanged whether they are ",
-      "pinned or fitted. A 'cdf' phase whose half-life is far shorter than ",
-      "the first observed time is the usual cause.",
-      call. = FALSE)
+  # Flatness conclusions only. The absent test above is measured on `share`,
+  # which does not depend on how the times are spread, so it is never withheld.
+  if (length(flat) > 0 && !other_vary) {
+    if (degenerate) {
+      warning(
+        "The observed times span a relative range below ",
+        format(tol, digits = 3),
+        ", so they carry nothing that separates one phase from another: the ",
+        "phase shapes are not identified however the fit converges. Only the ",
+        "total cumulative hazard at those times is determined, plus the ",
+        "hazard there if any row is an exact event. Tied or near-tied ",
+        "observation times are the usual cause.",
+        call. = FALSE)
+    } else {
+      # No filter for phases without shape parameters is needed here, and one
+      # would be dead code. A `constant` phase's contribution is mu * t, so its
+      # relative range is identically the times' own -- it is flat exactly when
+      # `degenerate` is TRUE, which is the other branch. Reaching here, every
+      # flat phase has shape parameters and the message's wording holds. The
+      # test "a constant phase's variation IS the times' variation" pins it.
+      saturated <- flat
+      if (length(saturated) > 0) {
+        warning(
+          "Phase", if (length(saturated) > 1L) "s " else " ",
+          paste0("'", sh$phase[saturated], "'", collapse = ", "),
+          if (length(saturated) == 1L) " has" else " have",
+          " a contribution that is constant across the observed times ",
+          "(relative variation ",
+          paste(format(sh$variation[saturated], digits = 3), collapse = ", "),
+          "). The phase has already finished before the first observation, so ",
+          "it acts as a constant offset: 'mu' remains identified but the shape ",
+          "parameters do not, and the likelihood is unchanged whether they are ",
+          "pinned or fitted. A 'cdf' phase whose half-life is far shorter than ",
+          "the first observed time is the usual cause.",
+          call. = FALSE)
+      }
+    }
   }
   invisible(sh)
 }

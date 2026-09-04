@@ -46,4 +46,16 @@ phases' estimates are usable. It is the unidentified parameters that must
 not be read as estimates -- and which ones those are differs by mode, so
 the message says which.
 }
+\details{
+Three conditions, not two. \code{absent} and \code{saturated} are per-phase. The
+third is a property of the \strong{times}: when their own relative range falls
+below \code{tol} they separate no phase from any other, and the per-phase
+messages would name a cause that did not occur (#211). It is asked of the
+times rather than inferred from the phases, because a saturated or absent
+phase is flat across times that are perfectly well spread.
+
+\code{absent} is measured on \code{share}, which does not depend on how the times are
+spread, so it is always reported. The flatness verdict is withheld when
+\code{other_times} vary, since the measures here cannot see those.
+}
 \keyword{internal}
