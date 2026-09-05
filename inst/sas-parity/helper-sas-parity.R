@@ -740,11 +740,46 @@
   # YEARS goes 0.0821, 0.25, 0.5, 1 and MONTHS goes 0.986, 3, 6 -- and when
   # the counter is suppressed the leading column is a time in years, so the
   # test does not fire at all. Whatever SAS calls it next parses unchanged.
+  # Three cases, in order of how much the listing tells us.
+  #
+  # The 1..n run alone is NOT a sufficient test when the header and the data
+  # agree on width. "No measurement column is a gapless 1-based integer run"
+  # was true of the corpus in hand, not of SAS listings: a counter-suppressed
+  # nomogram on a whole-year grid prints YEARS as 1.0000, 2.0000, 3.0000, and
+  # the branch deleted the time key. `ncol == length(cols)` afterwards, so the
+  # shape guard below could not catch it -- a silent column deletion (#212).
+  #
+  # Nor is the run NECESSARY when the header names the column a counter: page
+  # two of a paginated PROC PRINT starts at 41, and requiring 1..n there left
+  # a labelled counter in the data, silently. The label decides when there is
+  # one; the run is only the fallback for when there is not.
+  #
+  # Labels are matched case-insensitively because SAS's casing is not stable
+  # across the corpus -- "Obs" in one listing and "OBS" in another was #184.
+  # Note these are compared AFTER the leading underscore is stripped from the
+  # header tokens above, so SAS's `_N_` is matched here as "n_".
+  counter_labels <- c("obs", "observation", "row", "n_", "#")
   if (w == length(cols) + 1L) {
-    m <- m[, -1L, drop = FALSE]            # counter emitted but not in header
-  } else if (identical(m[, 1L], as.numeric(seq_len(nrow(m))))) {
-    m <- m[, -1L, drop = FALSE]            # counter named in the header
+    # Width alone settles it: a column the header does not name.
+    m <- m[, -1L, drop = FALSE]
+  } else if (tolower(cols[1L]) %in% counter_labels) {
+    # The header says what it is, whatever values it happens to carry.
+    m <- m[, -1L, drop = FALSE]
     cols <- cols[-1L]
+  } else if (identical(m[, 1L], as.numeric(seq_len(nrow(m))))) {
+    # A 1..n run under a name we do not recognise. Either a counter SAS has
+    # started spelling differently or a measurement that happens to run 1..n,
+    # and the listing cannot say which. Keep it and say so: an extra column is
+    # visible in `names()` and in this warning, whereas deleting a real one is
+    # not. There is deliberately no silent branch here -- nothing downstream
+    # inspects the column count, so the warning is the only defence.
+    warning("nomogram at line ", h[1], ": leading column '", cols[1L],
+            "' runs exactly 1..", nrow(m), " but the header does not name it ",
+            "as a counter (", paste(counter_labels, collapse = ", "),
+            "). Keeping it. If it is a counter, add that spelling -- as it ",
+            "appears after a leading underscore is stripped -- to ",
+            "`counter_labels` in .hzr_parse_sas_nomogram().",
+            call. = FALSE)
   }
 
   if (ncol(m) != length(cols)) {
