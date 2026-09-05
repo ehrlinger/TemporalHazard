@@ -48,7 +48,10 @@
   removes a correct diagnostic (#211).
 
   Known limitation, unchanged by this work and stated rather than implicit: the
-  per-phase measures are taken over the event times alone. That cuts both ways.
+  per-phase measures are taken over the event times alone, and the count of
+  evaluation points is deliberately conservative -- it does not credit the
+  extra functional a zero entry time makes separately observable, so a fit can
+  be warned about while being identified. That cuts both ways.
   A phase can be flat across the event times while its shape is identified
   through the bounds, so the saturated message can overstate what is lost; and
   the counting rule above is a *local* identification argument for tied event
@@ -109,8 +112,12 @@
 
   Note this reaches only the codes `hazard()` is given. On the **vector**
   interface a `survival::Surv()` object is unclassed without translating its
-  codes, so a left-censored row arrives as `1` and is invisible to the check;
-  the formula interface translates and is guarded. That asymmetry is a
+  codes, so they mean something else on arrival, and what goes wrong depends on
+  `type`: under `type = "left"` a left-censored row is coded `0` and is fitted
+  as *right-censored*; under `type = "interval"` it is coded `2` and is read as
+  an *interval* of zero width, which this guard then rejects; and a genuine
+  interval row, coded `3`, matches no branch of the likelihood and contributes
+  nothing. The formula interface translates and is guarded. That asymmetry is a
   pre-existing defect of the vector path, tracked in #226.
 
 # TemporalHazard 1.2.8

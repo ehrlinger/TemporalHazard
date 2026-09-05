@@ -40,9 +40,14 @@ interval subset the inner guard sees.
 
 \strong{This guards the codes it is given, not the ones the user meant.}  On the
 vector interface a \code{survival::Surv()} object is unclassed without
-translation, so its \code{0}/\code{1}/\code{2}/\code{3} codes reach here unchanged and a
-left-censored row arrives as \code{1}, invisible to this check.  The formula
-path translates in \code{.hzr_parse_formula()} and is guarded correctly.  That
-asymmetry is a pre-existing defect of the vector path, not of this check.
+translation, so its codes reach here meaning something else entirely, and
+what goes wrong depends on \code{type}:  under \code{type = "left"} a left-censored
+row is coded \code{0} and so arrives as this package's \emph{right-censored}, and is
+fitted as one;  under \code{type = "interval"} it is coded \code{2} and arrives as
+\emph{interval}, where this check rejects it for having zero width.  A genuine
+interval row is coded \code{3}, which no branch of \code{.hzr_logl_multiphase()}
+matches, so it contributes nothing at all.  The formula path translates in
+\code{.hzr_parse_formula()} and is guarded correctly.  That asymmetry is a
+pre-existing defect of the vector path, not of this check;  see #226.
 }
 \keyword{internal}

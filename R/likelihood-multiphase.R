@@ -497,10 +497,15 @@
 #'
 #' **This guards the codes it is given, not the ones the user meant.**  On the
 #' vector interface a `survival::Surv()` object is unclassed without
-#' translation, so its `0`/`1`/`2`/`3` codes reach here unchanged and a
-#' left-censored row arrives as `1`, invisible to this check.  The formula
-#' path translates in `.hzr_parse_formula()` and is guarded correctly.  That
-#' asymmetry is a pre-existing defect of the vector path, not of this check.
+#' translation, so its codes reach here meaning something else entirely, and
+#' what goes wrong depends on `type`:  under `type = "left"` a left-censored
+#' row is coded `0` and so arrives as this package's *right-censored*, and is
+#' fitted as one;  under `type = "interval"` it is coded `2` and arrives as
+#' *interval*, where this check rejects it for having zero width.  A genuine
+#' interval row is coded `3`, which no branch of `.hzr_logl_multiphase()`
+#' matches, so it contributes nothing at all.  The formula path translates in
+#' `.hzr_parse_formula()` and is guarded correctly.  That asymmetry is a
+#' pre-existing defect of the vector path, not of this check;  see #226.
 #'
 #' @param status Numeric event indicator.
 #' @param time Event/censoring times.
@@ -510,18 +515,20 @@
 #' @keywords internal
 .hzr_check_sas_data <- function(status, time, time_lower, time_upper,
                                 objective) {
-  if (!identical(objective, "sas")) {
-    return(invisible(NULL))
-  }
-
-  # any(status == -1) is NA-poisoned, so the inner guard's `if` would throw a
-  # bare "missing value where TRUE/FALSE needed" naming neither the argument
-  # nor the row. Name both.
+  # Checked BEFORE the objective gate, because an NA status is a data defect
+  # under every objective. Left inside the gate it reached the user through
+  # the optimizer's per-start handler as "ended where the likelihood is not
+  # defined", which is the framing #213 removed -- and which invites raising
+  # `n_starts`, a remedy that cannot work on a pure function of the data.
   if (anyNA(status)) {
-    stop("objective = \"sas\" requires a complete 'status' vector; ",
+    stop("'status' must be complete; ",
          sum(is.na(status)), " row(s) are NA, at index/indices ",
          paste(utils::head(which(is.na(status)), 10L), collapse = ", "),
          if (sum(is.na(status)) > 10L) ", ..." else "", ".", call. = FALSE)
+  }
+
+  if (!identical(objective, "sas")) {
+    return(invisible(NULL))
   }
 
   .hzr_check_sas_status(status, objective)

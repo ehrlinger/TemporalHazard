@@ -689,7 +689,7 @@ test_that("the entry check and the objective agree on which rows offend", {
   }
 })
 
-test_that("an NA status under sas names the argument and the row", {
+test_that("an NA status names the argument and the row, under any objective", {
   # any(status == -1) is NA-poisoned, so without this the inner guard's `if`
   # threw a bare "missing value where TRUE/FALSE needed".
   ph <- list(early = hzr_phase("cdf"), late = hzr_phase("constant"))
@@ -698,7 +698,19 @@ test_that("an NA status under sas names the argument and the row", {
       time = c(1, 2, 3, 4, 5, 6), status = c(1, 0, NA, 1, 0, 1),
       dist = "multiphase", phases = ph, fit = FALSE, objective = "sas")),
     error = conditionMessage)
-  expect_match(err, "complete 'status' vector")
+  expect_match(err, "'status' must be complete")
   expect_match(err, "at index/indices 3")
   expect_no_match(err, "missing value where TRUE/FALSE needed")
+
+  # An NA status is a data defect under EVERY objective. Gated on sas, the
+  # default path still reached the user as "ended where the likelihood is not
+  # defined" -- the framing #213 removed.
+  err2 <- tryCatch(
+    suppressWarnings(hazard(
+      time = c(1, 2, 3, 4, 5, 6), status = c(1, 0, NA, 1, 0, 1),
+      dist = "multiphase", phases = ph, fit = TRUE,
+      objective = "likelihood", control = list(n_starts = 1))),
+    error = conditionMessage)
+  expect_match(err2, "'status' must be complete")
+  expect_no_match(err2, "no usable fit")
 })
