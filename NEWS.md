@@ -25,24 +25,33 @@
   Two related corrections. A phase that has not started is reported as absent
   even in a left-truncated fit, since that test rests on the share and not on
   how the times are spread. And when the counting-process entry times or
-  interval bounds add at least two evaluation points the measure did not see,
-  the degenerate-times verdict is withheld. Two, not one: each added point
-  buys one functional of the parameters, and with every exit tied and every
-  entry equal the likelihood sees only two numbers, so the shapes are no more
-  identified than with no entry time at all. Points that add nothing do not
-  count -- a zero entry time, or a bound equal to the event time, which is
-  what `Surv(type = "interval")` synthesises for every row; counting those
-  silenced this very warning on data that needed it.
+  interval bounds supply enough evaluation points, the degenerate-times verdict
+  is withheld -- and "enough" is counted rather than assumed. With the event
+  times tied, each added point supplies one more functional of the parameters,
+  so one more than the number of added points must reach the number of **free**
+  parameters. The package's default two-phase model has five, and pinning a
+  phase's shapes lowers the bar because those parameters are no longer free.
+  Points that add nothing do not count: a zero entry time, or a bound equal to
+  an event time, both of which `Surv(type = "interval")` synthesises for every
+  row -- counting those silenced this very warning on data that needed it.
+
+  The message also no longer names shape parameters for a model that has none.
+  A single `constant` phase is now silent, since one functional determines its
+  `mu` exactly; two `constant` phases still warn, since only their sum is
+  determined, but the wording says the phases cannot be told apart rather than
+  naming shapes they do not have.
 
   Where the times are NOT degenerate, the per-phase saturation message is
   reported regardless of the bounds, so adding a `start` column no longer
   removes a correct diagnostic (#211).
 
-  Known limitation, unchanged by this work and now stated rather than implicit:
-  the per-phase measures are taken over the event times alone, so for an
-  interval-censored or left-truncated fit a phase can be flat across those
-  while its shape is identified through the bounds. The saturated message can
-  therefore overstate what is lost. Tracked in #228.
+  Known limitation, unchanged by this work and stated rather than implicit: the
+  per-phase measures are taken over the event times alone. That cuts both ways.
+  A phase can be flat across the event times while its shape is identified
+  through the bounds, so the saturated message can overstate what is lost; and
+  the counting rule above is a *local* identification argument for tied event
+  times, so a fit can clear it and still have a flat direction the guard does
+  not see, in which case nothing is said at all. Tracked in #228.
 
 * **A phase named `total` is now rejected rather than silently losing its
   contribution.** `total` is the key the multiphase cumulative-hazard

@@ -294,41 +294,102 @@ test_that("other evaluation times withhold the flatness verdict", {
   expect_length(w, 0L)
 })
 
-test_that("what counts is whether other_times ADD an evaluation point", {
-  # Not how many distinct values the pooled vector holds. An earlier version
-  # counted those and got both directions wrong.
-  expect_length(ident_warn(rep(2, 20), other_times = c(0.5, 1.5)), 0L)
+test_that("the verdict counts functionals against free parameters", {
+  # With exits tied, k added evaluation points give k + 1 functionals of theta,
+  # and identifying p free parameters needs k + 1 >= p. ident_setup() is the
+  # two-phase model, p = 5, so four added points are needed. Two thresholds
+  # were guessed before this: one point (silenced a constant entry time) and
+  # two (off by a factor of two for exactly this model, in the silent
+  # direction).
+  expect_match(ident_warn(rep(2, 20), other_times = rep(0.5, 20)),
+               "span a relative range below")                      # k = 1
+  expect_match(ident_warn(rep(2, 20), other_times = c(0.5, 1.5)),
+               "span a relative range below")                      # k = 2
+  expect_match(ident_warn(rep(2, 20), other_times = c(0.5, 1.0, 1.5)),
+               "span a relative range below")                      # k = 3
+  expect_length(ident_warn(rep(2, 20),
+                           other_times = c(0.4, 0.8, 1.2, 1.6)), 0L)  # k = 4
 
-  # A constant entry time adds ONE evaluation point, which buys one functional
-  # of theta and cannot identify a shape: with exits tied at 2 and entries at
-  # 0.5 the likelihood sees only Lambda(2) - Lambda(0.5) and h(2). An earlier
-  # version withheld here on the strength of a sensitivity measurement taken
-  # with `mu` held fixed, which is not an identification test.
+  # Points that add nothing do not count toward k. Lambda(0) is 0 for every
+  # phase type, and a bound equal to a measured time restates it -- both are
+  # synthesised for every row by Surv(type = "interval").
+  # Four values of which one is excluded leaves k = 3, which is short; without
+  # the exclusion it would be k = 4 and silent, so each case discriminates.
+  expect_match(ident_warn(rep(2, 20), other_times = c(0, 0.4, 0.8, 1.2)),
+               "span a relative range below")
+  expect_match(ident_warn(rep(2, 20), other_times = c(2, 0.4, 0.8, 1.2)),
+               "span a relative range below")
+})
+
+test_that("pinned shapes lower the bar, because they are not free", {
+  # The count is of FREE parameters, not of theta's length. Pinning the early
+  # phase's three shapes leaves p = 2 (the two log_mu), so a single added
+  # evaluation point supplies the two functionals needed and nothing is
+  # warned about -- where the same model with those shapes free would warn.
+  ph <- ident_ns(".hzr_validate_phases")(
+    list(early = hzr_phase("cdf", t_half = 0.5, nu = 0, m = -0.4,
+                           fixed = c("t_half", "nu", "m")),
+         constant = hzr_phase("constant")))
+  th <- c(log(0.045), log(0.5), 0, -0.4, log(0.036))
+  cc <- c(early = 0L, constant = 0L)
+  xl <- list(early = NULL, constant = NULL)
+  expect_length(th, 5L)                                       # theta is long
+  expect_identical(sum(ident_ns(".hzr_phase_free_mask")(ph, cc)), 2L)  # p is not
+
+  w <- character(0)
+  withCallingHandlers(
+    ident_ns(".hzr_check_phase_identifiability")(
+      th, rep(2, 20), ph, cc, xl, other_times = rep(0.5, 20)),
+    warning = function(x) {
+      w <<- c(w, conditionMessage(x))
+      invokeRestart("muffleWarning")
+    })
+  expect_length(w, 0L)
+
+  # Same data, same one added point, shapes free: p = 5 and it warns.
   expect_match(ident_warn(rep(2, 20), other_times = rep(0.5, 20)),
                "span a relative range below")
+})
 
-  # Lambda(0) is 0 for every phase type, so a zero entry time adds nothing --
-  # and .hzr_parse_formula() synthesises one for every interval-censored row.
-  expect_match(ident_warn(rep(2, 20), other_times = rep(0, 20)),
-               "span a relative range below")
+test_that("a model whose mu is identified at one time point says nothing", {
+  # A lone `constant` phase has p = 1, so the single functional the tied times
+  # supply determines its mu exactly -- verified against the closed form
+  # D/(nT). Warning here would be #211's defect reproduced by its own fix.
+  skip_on_cran()  # end-to-end fit; CI runs it, --as-cran need not
+  skip_if_not_installed("survival")
+  set.seed(3)
+  d <- data.frame(t = rep(2, 200), ev = rbinom(200, 1, 0.4))
+  w <- character(0)
+  f <- withCallingHandlers(
+    hazard(survival::Surv(t, ev) ~ 1, data = d, dist = "multiphase",
+           phases = list(base = hzr_phase("constant")), fit = TRUE,
+           control = list(n_starts = 1)),
+    warning = function(x) {
+      w <<- c(w, conditionMessage(x))
+      invokeRestart("muffleWarning")
+    })
+  expect_false(any(grepl("span a relative range below", w)))
+  expect_equal(unname(exp(coef(f))), sum(d$ev) / (200 * 2), tolerance = 1e-5)
+})
 
-  # Nor does restating a time already measured: time_upper is synthesised as a
-  # copy of `time` on that same path.
-  expect_match(ident_warn(rep(2, 20), other_times = c(rep(0, 20), rep(2, 20))),
-               "span a relative range below")
-
-  # Each exclusion carries its own weight, which the two cases above cannot
-  # show: under a two-point rule, dropping either one alone still leaves the
-  # count below the threshold. A zero alongside ONE real entry time is two
-  # values but one added point.
-  expect_match(ident_warn(rep(2, 20),
-                          other_times = c(rep(0, 10), rep(0.5, 10))),
-               "span a relative range below")
-
-  # ...and a copy of the exit time alongside one real entry time, likewise.
-  expect_match(ident_warn(rep(2, 20),
-                          other_times = c(rep(2, 10), rep(0.5, 10))),
-               "span a relative range below")
+test_that("a model with no shape parameters is not told its shapes are flat", {
+  # Two `constant` phases DO warrant the warning -- only mu1 + mu2 is
+  # identified -- but they have no shapes, so the sentence must not name any.
+  # That wording, on a shapeless model, is #211 verbatim.
+  ph <- ident_ns(".hzr_validate_phases")(
+    list(a = hzr_phase("constant"), b = hzr_phase("constant")))
+  w <- character(0)
+  withCallingHandlers(
+    ident_ns(".hzr_check_phase_identifiability")(
+      c(log(0.02), log(0.03)), rep(2, 20), ph, c(a = 0L, b = 0L),
+      list(a = NULL, b = NULL)),
+    warning = function(x) {
+      w <<- c(w, conditionMessage(x))
+      invokeRestart("muffleWarning")
+    })
+  expect_length(w, 1L)
+  expect_match(w, "cannot be told apart")
+  expect_no_match(w, "shape")
 })
 
 test_that("the same data written as interval-censored gets the same verdict", {

@@ -1361,25 +1361,28 @@
   #                   same path, and restating a point already measured adds
   #                   nothing.
   #
-  # Two, not one. Each added evaluation point buys one functional of theta, and
-  # one is not enough to identify a shape: with every exit tied at T and every
-  # entry at e, each row's contribution depends on theta only through
-  # Lambda(T) - Lambda(e) and h(T) -- two numbers against five free parameters,
-  # so a flat manifold passes through every interior point and the shapes are
-  # unidentified exactly as they are with no entry time at all.
+  # Count the functionals of theta the data can see, and compare against the
+  # free parameters. With every exit tied, each row's contribution depends on
+  # theta through Lambda(T) - Lambda(e) at each distinct entry e, plus h(T):
+  # k added evaluation points give k + 1 functionals, and locally identifying
+  # p free parameters needs k + 1 >= p. Below that a flat manifold passes
+  # through every interior point and the shapes are not identified.
   #
-  # An earlier version used `> 0L` on the strength of "moving t_half moves the
-  # log-likelihood by 8 units". That measures sensitivity with `mu` HELD FIXED,
-  # which is not identification -- identification asks whether a compensating
-  # move exists in the other free parameters, and here it does. By that same
-  # metric #211's own input scores 15.5, more than the case it was used to
-  # exonerate.
+  # Points that add nothing are excluded first: a zero entry contributes
+  # Lambda(0) = 0, and a bound equal to an already-measured time restates it.
+  # .hzr_parse_formula() synthesises both for every row under
+  # Surv(type = "interval"), and counting them silenced #211's own input.
   #
-  # Two is necessary rather than sufficient: {0, e} on tied exits gives three
-  # functionals, still short of five. Comparing the distinct evaluation points
-  # against the free shape parameters is the principled rule; see #228.
-  other_vary <- length(setdiff(unique(other_times),
-                               c(0, time_unique))) >= 2L
+  # This replaces two earlier guesses. `> 0L` silenced a constant entry time,
+  # where two functionals face five parameters -- the evidence for it measured
+  # sensitivity at fixed `mu`, not identification. `>= 2L` was off by a factor
+  # of two for this package's default two-phase model, in the silent
+  # direction. The count is derived rather than chosen, so it also gets the
+  # small models right: a lone `constant` phase has p = 1, one functional
+  # determines its `mu`, and nothing is warned about.
+  n_free <- sum(.hzr_phase_free_mask(phases, covariate_counts))
+  n_added <- length(setdiff(unique(other_times), c(0, time_unique)))
+  identified <- (n_added + 1L) >= n_free
 
   if (length(absent) > 0) {
     warning(
@@ -1395,16 +1398,22 @@
   # Flatness conclusions only. The absent test above is measured on `share`,
   # which does not depend on how the times are spread, so it is never withheld.
   if (degenerate) {
-    if (!other_vary) {
+    if (!identified) {
       warning(
         "The times this fit is measured at span a relative range below ",
         format(tol, digits = 3),
         " and no phase's contribution varies across them, so they carry ",
-        "nothing that separates one phase from another: the phase shapes are ",
-        "not identified however the fit converges. Only the total cumulative ",
-        "hazard at those times is determined, plus the hazard there if any ",
-        "row is an exact event. Tied or near-tied observation times are the ",
-        "usual cause.",
+        "nothing that separates one phase from another: only the total ",
+        "cumulative hazard at those times is determined, plus the hazard ",
+        "there if any row is an exact event",
+        # Not every model HAS shapes -- naming them for a model of `constant`
+        # phases is the wording defect #211 was filed about.
+        if (any(.hzr_phase_has_shape(phases))) {
+          ", so the phase shapes are not identified however the fit converges"
+        } else {
+          ", so the phases cannot be told apart however the fit converges"
+        },
+        ". Tied or near-tied observation times are the usual cause.",
         call. = FALSE)
     }
     # else: entry times or interval bounds vary, so the shapes do enter the
