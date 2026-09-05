@@ -31,9 +31,11 @@
   so one more than the number of added points must reach the number of **free**
   parameters. The package's default two-phase model has five, and pinning a
   phase's shapes lowers the bar because those parameters are no longer free.
-  Points that add nothing do not count: a zero entry time, or a bound equal to
-  an event time, both of which `Surv(type = "interval")` synthesises for every
-  row -- counting those silenced this very warning on data that needed it.
+  Points that add nothing do not count: a zero entry time, a bound equal to an
+  event time -- both of which `Surv(type = "interval")` synthesises for every
+  row -- or a bound the objective never reads, since `time_upper` is live only
+  for left-censored and interval rows. Counting any of those silenced this
+  warning on data that needed it while changing no likelihood value.
 
   The message also no longer names shape parameters for a model that has none.
   A single `constant` phase is now silent, since one functional determines its

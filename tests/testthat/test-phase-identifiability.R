@@ -607,17 +607,27 @@ test_that("the check reaches the degenerate branch through hazard()", {
 
 test_that("interval bounds count as other times at the call site", {
   skip_on_cran()  # end-to-end fit; CI runs it, --as-cran need not
-  # The call site passes c(time_lower, time_upper); a version passing only
-  # time_lower is undetectable without an interval-censored case.
+  # The call site gates each bound by the status that makes it live; a version
+  # passing only time_lower is undetectable without an interval-censored case.
+  #
+  # The shapes are PINNED and theta supplied, so the fit is deterministic and
+  # this asserts argument plumbing rather than where an unconstrained optimiser
+  # happens to land. The earlier version used the bare defaults and failed only
+  # on Windows, with "t_half must be a positive scalar" -- a platform-dependent
+  # assertion masquerading as a check of the call site.
   skip_if_not_installed("survival")
   n <- 40
   d <- data.frame(lo = rep(2, n), up = seq(2.1, 6, length.out = n),
                   st = rep(2, n))
+  ph <- list(
+    early = hzr_phase("cdf", t_half = 1, nu = 0, m = -0.4,
+                      fixed = c("t_half", "nu", "m")),
+    constant = hzr_phase("constant"))
   w <- character(0)
   withCallingHandlers(
     hazard(time = rep(2, n), status = d$st, time_lower = d$lo,
-           time_upper = d$up, dist = "multiphase",
-           phases = list(early = hzr_phase("cdf"), constant = hzr_phase("constant")),
+           time_upper = d$up, dist = "multiphase", phases = ph,
+           theta = c(log(0.05), log(1), 0, -0.4, log(0.03)),
            fit = TRUE, control = list(n_starts = 1)),
     warning = function(x) {
       w <<- c(w, conditionMessage(x))
@@ -625,6 +635,47 @@ test_that("interval bounds count as other times at the call site", {
     })
   expect_false(any(grepl("span a relative range below", w)))
 })
+
+test_that("a bound the objective never reads does not count", {
+  # time_upper is read only for left-censored and interval rows, so on tied
+  # right-censored data it changes nothing: .hzr_logl_multiphase() is
+  # bit-identical with and without it. Counting it anyway silenced the warning
+  # on data that needed it -- the silent failure this guard exists to prevent.
+  ph <- ident_ns(".hzr_validate_phases")(
+    list(early = hzr_phase("cdf", t_half = 0.5, nu = 0, m = -0.4),
+         constant = hzr_phase("constant")))
+  th <- c(log(0.045), log(0.5), 0, -0.4, log(0.036))
+  cc <- c(early = 0L, constant = 0L)
+  xl <- list(early = NULL, constant = NULL)
+  tt <- rep(2, 20)
+  st <- rep(0, 20)
+  up <- seq(0.2, 1.8, length.out = 20)
+
+  ll <- function(u) {
+    ident_ns(".hzr_logl_multiphase")(
+      theta = th, time = tt, status = st, time_upper = u,
+      weights = rep(1, 20), phases = ph, covariate_counts = cc, x_list = xl)
+  }
+  expect_identical(ll(NULL), ll(up))          # the objective cannot see it
+
+  skip_if_not_installed("survival")
+  saw <- function(u) {
+    w <- character(0)
+    withCallingHandlers(
+      hazard(time = tt, status = st, time_upper = u, dist = "multiphase",
+             phases = list(early = hzr_phase("cdf", t_half = 0.5, nu = 0, m = -0.4),
+                           constant = hzr_phase("constant")),
+             theta = th, fit = TRUE, control = list(n_starts = 1)),
+      warning = function(x) {
+        w <<- c(w, conditionMessage(x))
+        invokeRestart("muffleWarning")
+      })
+    any(grepl("span a relative range below", w))
+  }
+  expect_true(saw(NULL))
+  expect_true(saw(up))                         # ...so neither can the guard
+})
+
 
 test_that("a left-truncated fit through hazard() is not called unidentified", {
   skip_on_cran()  # end-to-end fit; CI runs it, --as-cran need not

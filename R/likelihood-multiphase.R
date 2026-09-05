@@ -2219,12 +2219,17 @@
   # Identifiability is checked on the fit that won, not on the starts: a phase
   # can be identified at a start and dead at the optimum, and it is the
   # reported estimates a reader will use.
-  # time_lower/time_upper are further points the likelihood evaluates, so a
-  # fit whose `time` is tied can still identify the shapes through them.
+  # Further points the likelihood evaluates, gated by the status that makes
+  # each one live -- a bound the objective never reads must not count toward
+  # identification, or it silences the warning while changing nothing. Traced
+  # in .hzr_logl_multiphase(): `time_lower` is the counting-process entry time
+  # for status 0/1 and the interval lower bound for status 2, while
+  # `time_upper` is read only for left-censored (-1) and interval (2) rows.
   best_result$phase_share <- .hzr_check_phase_identifiability(
     best_result$par, time, phases, covariate_counts, x_list,
     tol = phase_share_tol,
-    other_times = c(time_lower, time_upper))
+    other_times = c(time_lower[status %in% c(0, 1, 2)],
+                    time_upper[status %in% c(-1, 2)]))
 
   best_result
 }
