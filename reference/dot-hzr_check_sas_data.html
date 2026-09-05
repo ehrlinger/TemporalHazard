@@ -119,10 +119,15 @@ offenders.  Indices are reported against the <strong>data</strong>, not against 
 interval subset the inner guard sees.</p>
 <p><strong>This guards the codes it is given, not the ones the user meant.</strong>  On the
 vector interface a <code><a href="https://rdrr.io/pkg/survival/man/Surv.html" class="external-link">survival::Surv()</a></code> object is unclassed without
-translation, so its <code>0</code>/<code>1</code>/<code>2</code>/<code>3</code> codes reach here unchanged and a
-left-censored row arrives as <code>1</code>, invisible to this check.  The formula
-path translates in <code><a href="dot-hzr_parse_formula.html">.hzr_parse_formula()</a></code> and is guarded correctly.  That
-asymmetry is a pre-existing defect of the vector path, not of this check.</p>
+translation, so its codes reach here meaning something else entirely, and
+what goes wrong depends on <code>type</code>:  under <code>type = "left"</code> a left-censored
+row is coded <code>0</code> and so arrives as this package's <em>right-censored</em>, and is
+fitted as one;  under <code>type = "interval"</code> it is coded <code>2</code> and arrives as
+<em>interval</em>, where this check rejects it for having zero width.  A genuine
+interval row is coded <code>3</code>, which no branch of <code><a href="dot-hzr_logl_multiphase.html">.hzr_logl_multiphase()</a></code>
+matches, so it contributes nothing at all.  The formula path translates in
+<code><a href="dot-hzr_parse_formula.html">.hzr_parse_formula()</a></code> and is guarded correctly.  That asymmetry is a
+pre-existing defect of the vector path, not of this check;  see #226.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

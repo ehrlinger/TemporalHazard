@@ -281,12 +281,15 @@ condition is a property of the observed times rather than of any phase:
 when their own relative range falls below this threshold and no phase's
 contribution varies across them, they separate no phase from any other
 and none of the shapes is identified. That verdict is withheld when the
-fit supplies counting-process entry times or interval bounds that add an
+fit supplies counting-process entry times or interval bounds that add
 enough evaluation points the measure did not see. "Enough" is counted, not
 assumed: with the event times tied, each added point supplies one more
 functional of the parameters, and one more than the number of added points
 must reach the number of free parameters. A zero entry time, or a bound
-equal to an event time, adds nothing and does not count. For the same reason the per-phase measures can
+equal to an event time, adds nothing and does not count. The count is
+deliberately conservative: it does not credit the extra functional that a
+zero entry time makes separately observable, so a fit can be warned about
+while being identified. For the same reason the per-phase measures can
 overstate what an interval-censored or left-truncated fit loses, since a
 phase flat across the event times may still be identified through the
 bounds. The measured shares are
