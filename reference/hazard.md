@@ -226,9 +226,22 @@ Control parameters:
   is identified), or when its contribution varies by less than this
   relative amount across them (it finished before the first observation
   and acts as a constant offset – `mu` stays identified, the shape
-  parameters do not). The measured shares are kept on the fit as
-  `fit$fit$phase_share`. Raise it to catch marginal phases, set it to 0
-  to silence the check.
+  parameters do not). A third condition is a property of the observed
+  times rather than of any phase: when their own relative range falls
+  below this threshold and no phase's contribution varies across them,
+  they separate no phase from any other and none of the shapes is
+  identified. That verdict is withheld when the fit supplies
+  counting-process entry times or interval bounds that add an enough
+  evaluation points the measure did not see. "Enough" is counted, not
+  assumed: with the event times tied, each added point supplies one more
+  functional of the parameters, and one more than the number of added
+  points must reach the number of free parameters. A zero entry time, or
+  a bound equal to an event time, adds nothing and does not count. For
+  the same reason the per-phase measures can overstate what an
+  interval-censored or left-truncated fit loses, since a phase flat
+  across the event times may still be identified through the bounds. The
+  measured shares are kept on the fit as `fit$fit$phase_share`. Raise it
+  to catch marginal phases, set it to 0 to silence the check.
 
 - `reltol`: Relative parameter change tolerance (default 1e-5)
 
