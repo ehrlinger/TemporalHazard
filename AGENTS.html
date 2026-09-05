@@ -79,7 +79,7 @@
 <li>
 <strong>Lint runs before tests</strong> because it is seconds against about a minute for the suite. Cheap failures first.</li>
 <li>
-<strong><code>R CMD check</code> does not run the whole suite.</strong> It runs with <code>NOT_CRAN</code> false, so <code>skip_on_cran()</code> tests are skipped: 158 skips and 2473 passes under check, against 6 skips and <strong>3373</strong> passes locally (both measured 2026-08-31 at <code>3f4a506</code>, with no environment variables set; the local figure needs the SAS fixture checkouts present under <code>~/Documents/GitHub/hazard</code>). A green check is <strong>not</strong> evidence that those tests pass; only the local <code>devtools::test()</code> line is.</li>
+<strong><code>R CMD check</code> does not run the whole suite.</strong> It runs with <code>NOT_CRAN</code> false, so <code>skip_on_cran()</code> tests are skipped: 193 skips and 2679 passes under check, against 6 skips and <strong>3703</strong> passes locally (both measured 2026-09-05 at <code>fe57e60</code>, the <code>v1.2.9</code> release artifact, with no environment variables set; the local figure needs the SAS fixture checkouts present under <code>~/Documents/GitHub/hazard</code>). <strong>That gap is now 1,024 passes</strong>, up from about 900 when it was last measured on 2026-08-31, so the check covers proportionally less of the suite than it did. A green check is <strong>not</strong> evidence that those tests pass; only the local <code>devtools::test()</code> line is.</li>
 <li>
 <strong>Commit before you <code>git archive</code>.</strong> It exports the committed tree, so an uncommitted fix is silently absent and the check answers a question about the wrong code. This has already cost one wrong conclusion. Nothing in the output tells you.</li>
 </ul><p>Check with the manual — never <code>--no-manual</code>. The PDF step is the only thing that catches raw Unicode in <code>Rd</code>.</p>
@@ -216,17 +216,17 @@
 <strong>Conservation of Events auto-disables</strong> when any status is outside <code>{0, 1}</code> (<code>coe_supported_data</code>). That is deliberate — the CoE identity counts only exact events.</li>
 <li>
 <strong>The score criterion is an <em>entry</em> criterion.</strong> The drop path never refits per candidate under either criterion: removals are tested on the current model’s Wald p-value against <code>slstay</code>, as SAS does, and only the accepted drop is refitted.</li>
-<li>Anything slow gets <code>skip_on_cran()</code>. There are 127 calls today.</li>
+<li>Anything slow gets <code>skip_on_cran()</code>. There are 173 calls today (2026-09-05, <code>fe57e60</code>).</li>
 <li>No <code><a href="https://rdrr.io/r/base/browser.html" class="external-link">browser()</a></code>, no bare <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code>, no <code><a href="https://rdrr.io/r/base/library.html" class="external-link">library()</a></code> inside <code>R/</code>. <code><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat()</a></code> belongs only in a <code>print.*</code> method.</li>
 </ul><div class="section level3">
 <h3 id="where-the-checks-time-actually-goes">Where the check’s time actually goes<a class="anchor" aria-label="anchor" href="#where-the-checks-time-actually-goes"></a></h3>
-<p>Overall <code>R CMD check --as-cran</code> with the manual: <strong>3m 33s</strong> (213s), tarball <strong>2.9 MB</strong> (measured 2026-09-02 at <code>f790c73</code>, the <code>v1.2.8</code> release artifact). CRAN’s ceiling is about 10 minutes and it rejects on that even at 0/0/0, which is what got ggRandomForests archived in June 2026.</p>
+<p>Overall <code>R CMD check --as-cran</code> with the manual: <strong>3m 32s</strong> (212s), tarball <strong>2.91 MB</strong> (measured 2026-09-05 at <code>fe57e60</code>, the <code>v1.2.9</code> release artifact). CRAN’s ceiling is about 10 minutes and it rejects on that even at 0/0/0, which is what got ggRandomForests archived in June 2026.</p>
 <table class="table"><thead><tr><th>Component</th>
 <th>Time</th>
 </tr></thead><tbody><tr><td>Tests</td>
-<td>91s / 97s</td>
+<td>87s / 93s</td>
 </tr><tr><td>Vignette rebuild</td>
-<td>44s / 46s</td>
+<td>42s / 46s</td>
 </tr><tr><td>Everything else</td>
 <td>the remainder</td>
 </tr></tbody></table><p>Re-measure these when you change them, and stamp the commit.</p>
@@ -247,7 +247,12 @@
 <td><code>f790c73</code></td>
 <td>3m 33s</td>
 <td>91s</td>
-</tr></tbody></table><p>Across those three the total moved about 41 seconds and the tests about 38, all of it in tests, over two release cycles. Real, slow, and still a wide margin against CRAN. The 2026-08-23 entry read the 2026-08-22 delta as a 37-second jump that “nothing flagged”; against a 46-second spread on unchanged code, a delta that size can be entirely the machine. The direction is what is worth watching, and it only shows against several dated points.</p>
+</tr><tr><td>2026-09-05</td>
+<td><code>fe57e60</code></td>
+<td>3m 32s</td>
+<td>87s</td>
+</tr></tbody></table><p>Across those four the total moved about 40 seconds and the tests about 34, nearly all of it in tests, over three release cycles. Real, slow, and still a wide margin against CRAN. The 2026-08-23 entry read the 2026-08-22 delta as a 37-second jump that “nothing flagged”; against a 46-second spread on unchanged code, a delta that size can be entirely the machine. The direction is what is worth watching, and it only shows against several dated points.</p>
+<p>⚠️ <strong>The 2026-09-05 row went DOWN while the suite grew by 330 passes, and that is not a speedup.</strong> Five end-to-end <code><a href="reference/hazard.html">hazard()</a></code> fits added that cycle carry <code>skip_on_cran()</code>, so the check now measures less work than it did, not the same work faster. A falling number in this column can mean the tests moved out of the check rather than got cheaper – read it against the under-check pass count in <strong>Definition of done</strong>, which is the figure that says how much the check is actually running.</p>
 <p>Both dominant costs are the ones that grow silently. Watch the budget when adding a vignette chunk or an unskipped slow test.</p>
 </div>
 </div>
