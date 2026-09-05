@@ -120,10 +120,12 @@ test_that("the nomogram parses when the counter column is labelled OBS", {
 
 test_that("the counter is dropped under any of its known labels", {
   # The fix for #184 must not trade one hardcoded label for two, so the set is
-  # case-insensitive and holds every spelling the corpus has shown. The 1..n
-  # run is still required -- the label alone does not drop a column -- but it
-  # is no longer sufficient on its own, because a whole-year YEARS grid runs
-  # 1..n too and was being deleted (#212).
+  # case-insensitive and holds every spelling the corpus has shown. The label
+  # is what decides: a column the header names as a counter is dropped whatever
+  # values it carries, which is why a paginated counter starting at 41 is
+  # dropped too. The 1..n run is only the fallback for an unrecognised name,
+  # and it is not sufficient alone -- a whole-year YEARS grid runs 1..n and was
+  # being deleted (#212).
   # Every member of counter_labels, so the set cannot be silently trimmed.
   # "_N_" is written as SAS prints it; the parser strips the leading
   # underscore before matching, which is why the set holds "n_".
