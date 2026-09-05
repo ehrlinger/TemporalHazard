@@ -740,11 +740,35 @@
   # YEARS goes 0.0821, 0.25, 0.5, 1 and MONTHS goes 0.986, 3, 6 -- and when
   # the counter is suppressed the leading column is a time in years, so the
   # test does not fire at all. Whatever SAS calls it next parses unchanged.
+  # The 1..n test alone is NOT sufficient when the header and the data agree on
+  # width. "No measurement column is a gapless 1-based integer run" was true of
+  # the corpus in hand, not of SAS listings: a counter-suppressed nomogram on a
+  # whole-year grid prints YEARS as 1.0000, 2.0000, 3.0000, and the branch
+  # deleted the time key. `ncol == length(cols)` afterwards, so the shape guard
+  # below could not catch it -- a silent column deletion (#212).
+  #
+  # So require the header to agree that the leading column is a counter. The
+  # label is not stable across the corpus ("Obs" one listing, "OBS" another,
+  # which is #184), hence the case-insensitive set rather than a literal.
+  counter_labels <- c("obs", "observation", "row", "_n_", "#")
   if (w == length(cols) + 1L) {
     m <- m[, -1L, drop = FALSE]            # counter emitted but not in header
   } else if (identical(m[, 1L], as.numeric(seq_len(nrow(m))))) {
-    m <- m[, -1L, drop = FALSE]            # counter named in the header
-    cols <- cols[-1L]
+    if (tolower(cols[1L]) %in% counter_labels) {
+      m <- m[, -1L, drop = FALSE]          # counter named in the header
+      cols <- cols[-1L]
+    } else {
+      # Ambiguous: either a counter SAS has started spelling differently, or a
+      # measurement that happens to run 1..n. Keep the column and say so. This
+      # errs toward an extra column, which the caller's shape checks catch,
+      # rather than toward deleting a real one, which nothing catches.
+      warning("nomogram at line ", h[1], ": leading column '", cols[1L],
+              "' runs exactly 1..", nrow(m), " but is not a known counter ",
+              "label (", paste(counter_labels, collapse = ", "),
+              "). Keeping it. If it is a counter, add its spelling to ",
+              "`counter_labels` in .hzr_parse_sas_nomogram().",
+              call. = FALSE)
+    }
   }
 
   if (ncol(m) != length(cols)) {

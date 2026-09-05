@@ -118,9 +118,12 @@ test_that("the nomogram parses when the counter column is labelled OBS", {
   expect_equal(nom$CLUHAZ[2], 0.00504, tolerance = 1e-6)
 })
 
-test_that("the counter is found structurally, whatever SAS calls it", {
-  # The fix must not trade one hardcoded label for two. Any label works
-  # because the counter is identified as a leading 1..n run, not by name.
+test_that("the counter is dropped under any of its known labels", {
+  # The fix for #184 must not trade one hardcoded label for two, so the set is
+  # case-insensitive and holds every spelling the corpus has shown. The 1..n
+  # run is still required -- the label alone does not drop a column -- but it
+  # is no longer sufficient on its own, because a whole-year YEARS grid runs
+  # 1..n too and was being deleted (#212).
   for (label in c("Obs", "OBS", "Observation", "#")) {
     tmp <- withr::local_tempfile(fileext = ".lst")
     writeLines(c(
@@ -138,6 +141,69 @@ test_that("the counter is found structurally, whatever SAS calls it", {
                  info = label)
     expect_equal(nom$YEARS[1], 0.0821, tolerance = 1e-6, info = label)
   }
+})
+
+test_that("a counter emitted but absent from the header is dropped on width", {
+  # The other arm of the same block, which nothing covered: PROC PRINT can
+  # print the counter while the header names only the measurements, so the
+  # data row is one token wider than the header. That arm is decided by width
+  # alone and needs no label, which is why it survives an unknown spelling.
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(c(
+    "           YEARS     _SURVIV   _CLLSURV   _CLUSURV   _HAZARD   _CLLHAZ   _CLUHAZ",
+    "",
+    "      1    0.0821     0.97106    0.96812    0.97373   0.24456   0.22241   0.26891",
+    "      2    0.2500     0.94683    0.94276    0.95062   0.09424   0.08597   0.10332",
+    ""
+  ), tmp)
+
+  nom <- .hzr_parse_sas_nomogram(tmp)
+  expect_equal(names(nom),
+               c("YEARS", "SURVIV", "CLLSURV", "CLUSURV",
+                 "HAZARD", "CLLHAZ", "CLUHAZ"))
+  expect_equal(nom$YEARS, c(0.0821, 0.2500), tolerance = 1e-6)
+})
+
+test_that("a whole-year time grid is kept, not deleted as a counter", {
+  # #212. YEARS on a whole-year grid runs 1.0000, 2.0000, 3.0000 -- a gapless
+  # 1-based integer run -- so the structural test alone deleted the time key.
+  # `ncol == length(cols)` afterwards, so the shape guard could not catch it:
+  # the listing parsed, the badge was green, and the comparison ran against a
+  # table with no time column.
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(c(
+    "           YEARS     _SURVIV   _CLLSURV   _CLUSURV   _HAZARD   _CLLHAZ   _CLUHAZ",
+    "",
+    "          1.0000     0.97106    0.96812    0.97373   0.24456   0.22241   0.26891",
+    "          2.0000     0.94683    0.94001    0.95102   0.21001   0.19004   0.23555",
+    "          3.0000     0.91050    0.90112    0.92004   0.18775   0.16888   0.20901",
+    ""
+  ), tmp)
+
+  expect_warning(nom <- .hzr_parse_sas_nomogram(tmp), "not a known counter")
+  expect_equal(names(nom),
+               c("YEARS", "SURVIV", "CLLSURV", "CLUSURV",
+                 "HAZARD", "CLLHAZ", "CLUHAZ"))
+  expect_equal(nom$YEARS, c(1, 2, 3), tolerance = 1e-9)
+  expect_equal(nom$SURVIV, c(0.97106, 0.94683, 0.91050), tolerance = 1e-6)
+})
+
+test_that("an unknown leading label on a 1..n run warns rather than guessing", {
+  # If SAS starts spelling the counter something new, the ambiguity is real
+  # and unresolvable from the listing alone. Keeping the column errs toward an
+  # extra column, which a caller's shape check catches, rather than toward
+  # deleting a real one, which nothing catches.
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(c(
+    "         SEQNO     YEARS     _SURVIV   _CLLSURV   _CLUSURV   _HAZARD   _CLLHAZ   _CLUHAZ",
+    "",
+    "             1    0.0821     0.97106    0.96812    0.97373   0.24456   0.22241   0.26891",
+    "             2    0.2500     0.94683    0.94276    0.95062   0.09424   0.08597   0.10332",
+    ""
+  ), tmp)
+
+  expect_warning(nom <- .hzr_parse_sas_nomogram(tmp), "SEQNO")
+  expect_true("SEQNO" %in% names(nom))
 })
 
 test_that("a leading measurement column is not mistaken for the counter", {
