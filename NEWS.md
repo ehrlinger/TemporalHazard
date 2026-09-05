@@ -10,10 +10,17 @@
   2.0000, 3.0000`, and the parser deleted the time key. Because the remaining
   columns then matched the header count, the shape check that would have caught
   it passed: the listing parsed, and the comparison ran against a table with no
-  time column. The run must now also be labelled as a counter in the header,
-  case-insensitively and across every spelling the corpus has shown; an
-  unlabelled `1..n` leading column is kept and warned about rather than
-  silently dropped (#212).
+  time column.
+
+  The header now decides: a leading column the header names as a counter is
+  dropped whatever values it carries, which also fixes the reverse case -- page
+  two of a paginated listing starts at 41, and requiring a `1..n` run left that
+  counter in the data. The labels are matched case-insensitively, after the
+  leading underscore the parser strips, so SAS's `_N_` is recognised. A `1..n`
+  run under a name the parser does not know is now kept and warned about rather
+  than silently dropped: the listing cannot distinguish a counter spelled a new
+  way from a measurement that happens to run `1..n`, and an extra column is
+  visible where a deleted one is not (#212).
 
 * **A phase named `total` is now rejected rather than silently losing its
   contribution.** `total` is the key the multiphase cumulative-hazard

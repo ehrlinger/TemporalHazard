@@ -124,7 +124,10 @@ test_that("the counter is dropped under any of its known labels", {
   # run is still required -- the label alone does not drop a column -- but it
   # is no longer sufficient on its own, because a whole-year YEARS grid runs
   # 1..n too and was being deleted (#212).
-  for (label in c("Obs", "OBS", "Observation", "#")) {
+  # Every member of counter_labels, so the set cannot be silently trimmed.
+  # "_N_" is written as SAS prints it; the parser strips the leading
+  # underscore before matching, which is why the set holds "n_".
+  for (label in c("Obs", "OBS", "Observation", "Row", "_N_", "#")) {
     tmp <- withr::local_tempfile(fileext = ".lst")
     writeLines(c(
       paste0("        ", label,
@@ -164,6 +167,44 @@ test_that("a counter emitted but absent from the header is dropped on width", {
   expect_equal(nom$YEARS, c(0.0821, 0.2500), tolerance = 1e-6)
 })
 
+test_that("a labelled counter is dropped even when it does not start at 1", {
+  # Page two of a paginated PROC PRINT starts at 41. Requiring a 1..n run as
+  # well as the label left that counter in the data as a measurement column,
+  # silently -- the same paginated-listing family as the life table that was
+  # read only to page one.
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(c(
+    "             Obs     YEARS     _SURVIV   _CLLSURV   _CLUSURV   _HAZARD   _CLLHAZ   _CLUHAZ",
+    "",
+    "              41    0.0821     0.97106    0.96812    0.97373   0.24456   0.22241   0.26891",
+    "              42    0.2500     0.94683    0.94276    0.95062   0.09424   0.08597   0.10332",
+    ""
+  ), tmp)
+
+  nom <- .hzr_parse_sas_nomogram(tmp)
+  expect_equal(names(nom),
+               c("YEARS", "SURVIV", "CLLSURV", "CLUSURV",
+                 "HAZARD", "CLLHAZ", "CLUHAZ"))
+  expect_equal(nom$YEARS, c(0.0821, 0.2500), tolerance = 1e-6)
+})
+
+test_that("an unlabelled column that is not a 1..n run is kept in silence", {
+  # The third branch is only for the ambiguous case. A leading measurement
+  # that looks nothing like a counter must not warn, or the warning becomes
+  # noise a reader learns to skip.
+  tmp <- withr::local_tempfile(fileext = ".lst")
+  writeLines(c(
+    "           YEARS     _SURVIV   _CLLSURV   _CLUSURV   _HAZARD   _CLLHAZ   _CLUHAZ",
+    "",
+    "          0.0821     0.97106    0.96812    0.97373   0.24456   0.22241   0.26891",
+    "          0.2500     0.94683    0.94276    0.95062   0.09424   0.08597   0.10332",
+    ""
+  ), tmp)
+
+  expect_no_warning(nom <- .hzr_parse_sas_nomogram(tmp))
+  expect_true("YEARS" %in% names(nom))
+})
+
 test_that("a whole-year time grid is kept, not deleted as a counter", {
   # #212. YEARS on a whole-year grid runs 1.0000, 2.0000, 3.0000 -- a gapless
   # 1-based integer run -- so the structural test alone deleted the time key.
@@ -180,7 +221,7 @@ test_that("a whole-year time grid is kept, not deleted as a counter", {
     ""
   ), tmp)
 
-  expect_warning(nom <- .hzr_parse_sas_nomogram(tmp), "not a known counter")
+  expect_warning(nom <- .hzr_parse_sas_nomogram(tmp), "does not name it as a counter")
   expect_equal(names(nom),
                c("YEARS", "SURVIV", "CLLSURV", "CLUSURV",
                  "HAZARD", "CLLHAZ", "CLUHAZ"))
