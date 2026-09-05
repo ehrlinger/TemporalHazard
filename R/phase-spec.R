@@ -643,6 +643,25 @@ hzr_theta_names <- function(phases, covariates = NULL) {
 }
 
 
+#' Does each phase have shape parameters at all?
+#'
+#' A `constant` phase is `mu` and nothing else. The saturated identifiability
+#' message says `mu` survives while the shape parameters go flat, which is
+#' vacuous for a phase that has none -- the wording defect in #211.
+#'
+#' This asks whether the parameters *exist*, not whether they are free. A phase
+#' whose shapes are pinned with `hzr_phase(fixed = )` still has them, and the
+#' message is true and useful there: it is usually why they were pinned.
+#'
+#' @param phases A list of validated `hzr_phase` objects.
+#' @return Logical vector, one element per phase, in `phases` order.
+#' @keywords internal
+.hzr_phase_has_shape <- function(phases) {
+  vapply(phases, function(ph) !identical(ph$type, "constant"),
+         logical(1), USE.NAMES = FALSE)
+}
+
+
 #' Validate a list of phase specifications
 #'
 #' Checks that `phases` is a non-empty named list of `hzr_phase` objects.
