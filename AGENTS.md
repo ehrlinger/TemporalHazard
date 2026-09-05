@@ -47,10 +47,12 @@ Four details there are load bearing:
 - **Lint runs before tests** because it is seconds against about a minute for the suite. Cheap
   failures first.
 - **`R CMD check` does not run the whole suite.** It runs with `NOT_CRAN` false, so
-  `skip_on_cran()` tests are skipped: 158 skips and 2473 passes under check, against 6 skips
-  and **3373** passes locally (both measured 2026-08-31 at `3f4a506`,
-  with no environment variables set; the local figure needs the SAS fixture checkouts
-  present under `~/Documents/GitHub/hazard`). A green check is **not**
+  `skip_on_cran()` tests are skipped: 193 skips and 2679 passes under check, against 6 skips
+  and **3703** passes locally (both measured 2026-09-05 at `fe57e60`, the `v1.2.9` release
+  artifact, with no environment variables set; the local figure needs the SAS fixture
+  checkouts present under `~/Documents/GitHub/hazard`). **That gap is now 1,024 passes**, up
+  from about 900 when it was last measured on 2026-08-31, so the check covers proportionally
+  less of the suite than it did. A green check is **not**
   evidence that those tests pass; only the local `devtools::test()` line is.
 - **Commit before you `git archive`.** It exports the committed tree, so an uncommitted fix is
   silently absent and the check answers a question about the wrong code. This has already
@@ -220,21 +222,21 @@ Rscript ~/Documents/GitHub/house-style/compose-house-style.R --repo TemporalHaza
 - **The score criterion is an *entry* criterion.** The drop path never refits per candidate
   under either criterion: removals are tested on the current model's Wald p-value against
   `slstay`, as SAS does, and only the accepted drop is refitted.
-- Anything slow gets `skip_on_cran()`. There are 127 calls today.
+- Anything slow gets `skip_on_cran()`. There are 173 calls today (2026-09-05, `fe57e60`).
 - No `browser()`, no bare `print()`, no `library()` inside `R/`. `cat()` belongs only in a
   `print.*` method.
 
 ### Where the check's time actually goes
 
-Overall `R CMD check --as-cran` with the manual: **3m 33s** (213s), tarball **2.9 MB**
-(measured 2026-09-02 at `f790c73`, the `v1.2.8` release artifact). CRAN's ceiling is about 10
+Overall `R CMD check --as-cran` with the manual: **3m 32s** (212s), tarball **2.91 MB**
+(measured 2026-09-05 at `fe57e60`, the `v1.2.9` release artifact). CRAN's ceiling is about 10
 minutes and it rejects on that even at 0/0/0, which is what got ggRandomForests archived in
 June 2026.
 
 | Component | Time |
 |---|---|
-| Tests | 91s / 97s |
-| Vignette rebuild | 44s / 46s |
+| Tests | 87s / 93s |
+| Vignette rebuild | 42s / 46s |
 | Everything else | the remainder |
 
 Re-measure these when you change them, and stamp the commit.
@@ -252,12 +254,20 @@ by more than a release cycle's real growth, so read the dated series, not the la
 | 2026-08-22 | (not stamped) | 2m 52s | 53s |
 | 2026-08-23 | `c9f6c28` | 3m 29s | 84s |
 | 2026-09-02 | `f790c73` | 3m 33s | 91s |
+| 2026-09-05 | `fe57e60` | 3m 32s | 87s |
 
-Across those three the total moved about 41 seconds and the tests about 38, all of it in
-tests, over two release cycles. Real, slow, and still a wide margin against CRAN. The
+Across those four the total moved about 40 seconds and the tests about 34, nearly all of it in
+tests, over three release cycles. Real, slow, and still a wide margin against CRAN. The
 2026-08-23 entry read the 2026-08-22 delta as a 37-second jump that "nothing flagged"; against
 a 46-second spread on unchanged code, a delta that size can be entirely the machine. The direction is what is
 worth watching, and it only shows against several dated points.
+
+⚠️ **The 2026-09-05 row went DOWN while the suite grew by 330 passes, and that is not a
+speedup.** Five end-to-end `hazard()` fits added that cycle carry `skip_on_cran()`, so the
+check now measures less work than it did, not the same work faster. A falling number in this
+column can mean the tests moved out of the check rather than got cheaper -- read it against the
+under-check pass count in **Definition of done**, which is the figure that says how much the
+check is actually running.
 
 Both dominant costs are the ones that grow silently. Watch the budget when adding a vignette
 chunk or an unskipped slow test.
