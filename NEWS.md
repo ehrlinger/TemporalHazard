@@ -2,6 +2,59 @@
 
 ## Bug fixes
 
+* **The phase-identifiability warning no longer names a cause that did not
+  occur.** `variation` is the relative range of a phase's contribution across
+  the observed times, so it collapses for every phase when those times carry
+  nothing that separates them. The saturated scan fired anyway: with
+  `time = rep(2, 20)` it told a `constant` phase that its shape parameters were
+  unidentified, when a `constant` phase has none, and blamed a short half-life.
+  A single-row fit produced the same text.
+
+  That case is now reported in its own words, under a condition that takes two
+  things together: the observed times' own relative range is below the
+  tolerance, *and* no phase's contribution varies across them. Neither half is
+  sufficient. The range alone would condemn times bunched far from the origin,
+  where a steep phase can be fully identified; the phase measures alone would
+  condemn well-spread times whenever a single phase saturates. Because the
+  range is relative, near-ties reach the condition as exact ties do --
+  `c(100, 100.000001)` produced the old wording verbatim. Per-phase saturation
+  and absence over well-spread times are reported exactly as before, and the
+  condition is now caught even when every phase carries covariates, where the
+  per-phase measures are withheld and previously nothing was said at all.
+
+  Two related corrections. A phase that has not started is reported as absent
+  even in a left-truncated fit, since that test rests on the share and not on
+  how the times are spread. And when the counting-process entry times or
+  interval bounds supply enough evaluation points, the degenerate-times verdict
+  is withheld -- and "enough" is counted rather than assumed. With the event
+  times tied, each added point supplies one more functional of the parameters,
+  so one more than the number of added points must reach the number of **free**
+  parameters. The package's default two-phase model has five, and pinning a
+  phase's shapes lowers the bar because those parameters are no longer free.
+  Points that add nothing do not count: a zero entry time, a bound equal to an
+  event time -- both of which `Surv(type = "interval")` synthesises for every
+  row -- or a bound the objective never reads, since `time_upper` is live only
+  for left-censored and interval rows. Counting any of those silenced this
+  warning on data that needed it while changing no likelihood value.
+
+  The message also no longer names shape parameters for a model that has none.
+  A single `constant` phase is now silent, since one functional determines its
+  `mu` exactly; two `constant` phases still warn, since only their sum is
+  determined, but the wording says the phases cannot be told apart rather than
+  naming shapes they do not have.
+
+  Where the times are NOT degenerate, the per-phase saturation message is
+  reported regardless of the bounds, so adding a `start` column no longer
+  removes a correct diagnostic (#211).
+
+  Known limitation, unchanged by this work and stated rather than implicit: the
+  per-phase measures are taken over the event times alone. That cuts both ways.
+  A phase can be flat across the event times while its shape is identified
+  through the bounds, so the saturated message can overstate what is lost; and
+  the counting rule above is a *local* identification argument for tied event
+  times, so a fit can clear it and still have a flat direction the guard does
+  not see, in which case nothing is said at all. Tracked in #228.
+
 * **The SAS nomogram parser no longer deletes a whole-year time column.** The
   `PROC PRINT` observation counter is identified as a leading column running
   exactly `1..n`, which rested on no measurement column ever being a gapless

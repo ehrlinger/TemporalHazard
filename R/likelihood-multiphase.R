@@ -1270,8 +1270,20 @@
     (max(ci) - min(ci)) / mx
   }, numeric(1))
 
-  data.frame(phase = nms, share = share, variation = variation,
-             row.names = NULL, stringsAsFactors = FALSE)
+  out <- data.frame(phase = nms, share = share, variation = variation,
+                    row.names = NULL, stringsAsFactors = FALSE)
+  # The same relative-range measure, applied to the times themselves and over
+  # the same rows. `variation` being degenerate does not say the TIMES are:
+  # a saturated phase is flat across times that are perfectly well spread.
+  # Only this can tell those apart. Read and removed by the caller, so it does
+  # not travel out on fit$phase_share.
+  tt <- time[ok]
+  mxt <- max(abs(tt))
+  attr(out, "time_variation") <- if (mxt == 0) 0 else (max(tt) - min(tt)) / mxt
+  # The distinct measured times, so the caller can ask whether `other_times`
+  # add an evaluation point rather than merely restating these.
+  attr(out, "time_unique") <- unique(tt)
+  out
 }
 
 #' Warn when a phase has effectively left the model
@@ -1281,26 +1293,96 @@
 #' not be read as estimates -- and which ones those are differs by mode, so
 #' the message says which.
 #'
+#' Three conditions, not two. `absent` and `saturated` are per-phase. The
+#' third is a property of the **times**: when their own relative range falls
+#' below `tol` they separate no phase from any other, and the per-phase
+#' messages would name a cause that did not occur (#211). It is asked of the
+#' times rather than inferred from the phases, because a saturated or absent
+#' phase is flat across times that are perfectly well spread.
+#'
+#' `absent` is measured on `share`, which does not depend on how the times are
+#' spread, so it is always reported. The flatness verdict is withheld when
+#' `other_times` vary, since the measures here cannot see those.
+#'
 #' @inheritParams .hzr_logl_multiphase
-#' @param tol Threshold for both tests -- the minimum share of \eqn{\Lambda} a
+#' @param tol Threshold for all three tests -- the minimum share of \eqn{\Lambda} a
 #'   phase must reach somewhere, and the minimum relative variation its
 #'   contribution must show. Default 1e-8: far above double precision, and
 #'   orders of magnitude below any real contribution, so it fires on dead
 #'   phases rather than merely small ones.
+#' @param other_times Further times the likelihood evaluates beyond `time` --
+#'   counting-process entry times and interval bounds. The share and variation
+#'   measures are taken over `time` alone, so when they are degenerate but
+#'   these vary, the shapes still enter the likelihood and the measures are
+#'   withheld rather than reported.
 #' @return The share `data.frame`, invisibly; called for the warning.
 #' @keywords internal
 .hzr_check_phase_identifiability <- function(theta, time, phases,
                                              covariate_counts, x_list,
-                                             tol = 1e-8) {
+                                             tol = 1e-8,
+                                             other_times = NULL) {
   # With one phase the share is 1 by construction; only the saturation test
   # means anything, and it still does.
   sh <- .hzr_phase_shares(theta, time, phases, covariate_counts, x_list)
 
+  # Read and strip: this is a measure for the decision below, not part of the
+  # frame a caller receives on fit$phase_share.
+  time_var <- attr(sh, "time_variation")
+  time_unique <- attr(sh, "time_unique")
+  attr(sh, "time_variation") <- NULL
+  attr(sh, "time_unique") <- NULL
+
   absent <- which(is.finite(sh$share) & sh$share < tol)
+  measurable <- which(is.finite(sh$variation))
+  flat_all <- which(is.finite(sh$variation) & sh$variation < tol)
   # A phase that is absent is trivially also flat; report it once, as absent,
   # which is the more informative of the two.
-  saturated <- setdiff(
-    which(is.finite(sh$variation) & sh$variation < tol), absent)
+  flat <- setdiff(flat_all, absent)
+
+  # Both halves are needed, and each was a separate wrong answer on its own.
+  # The times must be degenerate -- asked of the TIMES, since a saturated or
+  # absent phase is flat across times that are perfectly well spread. And no
+  # phase may still vary across them: times bunched far from the origin have a
+  # small relative range while a steep enough phase is fully identified there,
+  # so the range alone would call an identified shape unidentified. Vacuously
+  # true when nothing is measurable, which is the all-covariates case -- the
+  # times are then the only evidence there is.
+  degenerate <- isTRUE(time_var < tol) &&
+    length(setdiff(measurable, flat_all)) == 0L
+
+  # `other_times` are the further points the likelihood evaluates (entry times,
+  # interval bounds). What matters is whether they add an evaluation point, not
+  # how many values the pooled vector holds. Two exclusions carry that:
+  #
+  #   0            -- Lambda(0) is 0 for every phase type, so a zero entry time
+  #                   is a no-op. `.hzr_parse_formula()` synthesises one for
+  #                   every interval-censored row.
+  #   the times    -- `time_upper` is synthesised as a copy of `time` on that
+  #                   same path, and restating a point already measured adds
+  #                   nothing.
+  #
+  # Count the functionals of theta the data can see, and compare against the
+  # free parameters. With every exit tied, each row's contribution depends on
+  # theta through Lambda(T) - Lambda(e) at each distinct entry e, plus h(T):
+  # k added evaluation points give k + 1 functionals, and locally identifying
+  # p free parameters needs k + 1 >= p. Below that a flat manifold passes
+  # through every interior point and the shapes are not identified.
+  #
+  # Points that add nothing are excluded first: a zero entry contributes
+  # Lambda(0) = 0, and a bound equal to an already-measured time restates it.
+  # .hzr_parse_formula() synthesises both for every row under
+  # Surv(type = "interval"), and counting them silenced #211's own input.
+  #
+  # This replaces two earlier guesses. `> 0L` silenced a constant entry time,
+  # where two functionals face five parameters -- the evidence for it measured
+  # sensitivity at fixed `mu`, not identification. `>= 2L` was off by a factor
+  # of two for this package's default two-phase model, in the silent
+  # direction. The count is derived rather than chosen, so it also gets the
+  # small models right: a lone `constant` phase has p = 1, one functional
+  # determines its `mu`, and nothing is warned about.
+  n_free <- sum(.hzr_phase_free_mask(phases, covariate_counts))
+  n_added <- length(setdiff(unique(other_times), c(0, time_unique)))
+  identified <- (n_added + 1L) >= n_free
 
   if (length(absent) > 0) {
     warning(
@@ -1313,21 +1395,55 @@
       "identified: the fit converges and those parameters drift freely.",
       call. = FALSE)
   }
-  if (length(saturated) > 0) {
-    warning(
-      "Phase", if (length(saturated) > 1L) "s " else " ",
-      paste0("'", sh$phase[saturated], "'", collapse = ", "),
-      if (length(saturated) == 1L) " has" else " have",
-      " a contribution that is constant across the observed times ",
-      "(relative variation ",
-      paste(format(sh$variation[saturated], digits = 3), collapse = ", "),
-      "). The phase has already finished before the first observation, so it ",
-      "acts as a constant offset: 'mu' remains identified but the shape ",
-      "parameters do not, and the likelihood is unchanged whether they are ",
-      "pinned or fitted. A 'cdf' phase whose half-life is far shorter than ",
-      "the first observed time is the usual cause.",
-      call. = FALSE)
+  # Flatness conclusions only. The absent test above is measured on `share`,
+  # which does not depend on how the times are spread, so it is never withheld.
+  if (degenerate) {
+    if (!identified) {
+      warning(
+        "The times this fit is measured at span a relative range below ",
+        format(tol, digits = 3),
+        " and no phase's contribution varies across them, so they carry ",
+        "nothing that separates one phase from another: only the total ",
+        "cumulative hazard at those times is determined, plus the hazard ",
+        "there if any row is an exact event",
+        # Not every model HAS shapes -- naming them for a model of `constant`
+        # phases is the wording defect #211 was filed about.
+        if (any(.hzr_phase_has_shape(phases))) {
+          ", so the phase shapes are not identified however the fit converges"
+        } else {
+          ", so the phases cannot be told apart however the fit converges"
+        },
+        ". Tied or near-tied observation times are the usual cause.",
+        call. = FALSE)
+    }
+    # else: entry times or interval bounds vary, so the shapes do enter the
+    # likelihood and this verdict, taken over `time` alone, cannot see it.
+  } else if (length(flat) > 0) {
+    # A phase with no shape parameters cannot have shape parameters go flat, so
+    # the message below is never true of it -- the wording defect in #211. This
+    # asks whether they EXIST, not whether they are free: for a phase whose
+    # shapes are pinned the message is true, and is usually why they were
+    # pinned. A constant phase's relative range tracks the times' own closely
+    # but not exactly, so it can land on the other side of `tol`; the filter is
+    # not dead code.
+    saturated <- flat[.hzr_phase_has_shape(phases[sh$phase[flat]])]
+    if (length(saturated) > 0) {
+      warning(
+        "Phase", if (length(saturated) > 1L) "s " else " ",
+        paste0("'", sh$phase[saturated], "'", collapse = ", "),
+        if (length(saturated) == 1L) " has" else " have",
+        " a contribution that is constant across the observed times ",
+        "(relative variation ",
+        paste(format(sh$variation[saturated], digits = 3), collapse = ", "),
+        "). The phase has already finished before the first observation, so ",
+        "it acts as a constant offset: 'mu' remains identified but the shape ",
+        "parameters do not, and the likelihood is unchanged whether they are ",
+        "pinned or fitted. A 'cdf' phase whose half-life is far shorter than ",
+        "the first observed time is the usual cause.",
+        call. = FALSE)
+    }
   }
+
   invisible(sh)
 }
 
@@ -2103,9 +2219,17 @@
   # Identifiability is checked on the fit that won, not on the starts: a phase
   # can be identified at a start and dead at the optimum, and it is the
   # reported estimates a reader will use.
+  # Further points the likelihood evaluates, gated by the status that makes
+  # each one live -- a bound the objective never reads must not count toward
+  # identification, or it silences the warning while changing nothing. Traced
+  # in .hzr_logl_multiphase(): `time_lower` is the counting-process entry time
+  # for status 0/1 and the interval lower bound for status 2, while
+  # `time_upper` is read only for left-censored (-1) and interval (2) rows.
   best_result$phase_share <- .hzr_check_phase_identifiability(
     best_result$par, time, phases, covariate_counts, x_list,
-    tol = phase_share_tol)
+    tol = phase_share_tol,
+    other_times = c(time_lower[status %in% c(0, 1, 2)],
+                    time_upper[status %in% c(-1, 2)]))
 
   best_result
 }
