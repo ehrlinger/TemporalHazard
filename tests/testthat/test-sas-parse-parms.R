@@ -277,3 +277,27 @@ test_that("ALPHA = 0 with FIXALPHA under WEIBULL is not recorded", {
                             "ETA=1", "WEIBULL", "FIXALPHA"))
   expect_equal(nrow(got$untranslated), 0L)
 })
+
+test_that("the alpha = 1 guard does not fire on a job with no late phase", {
+  # alpha_val falls back to hzr_phase()'s default of 1 when PARMS named no
+  # ALPHA, which is right for a late phase that exists and wrong for one that
+  # does not: an early-only or constant-only job carrying a stray FIXALPHA was
+  # flagged about GAMMA and ETA it has no phase for. A false positive on the
+  # untranslated frame is not harmless -- that frame is how a caller decides
+  # whether a translation is trustworthy.
+  expect_equal(nrow(.hzr_parse_parms(c("MUE=0.2", "THALF=1", "NU=1",
+                                       "FIXALPHA"))$untranslated), 0L)
+  expect_equal(nrow(.hzr_parse_parms(c("MUE=0.2", "THALF=1", "NU=1",
+                                       "FIXALPHA", "WEIBULL"))$untranslated), 0L)
+  expect_equal(nrow(.hzr_parse_parms(c("MUC=0.01", "FIXALPHA"))$untranslated), 0L)
+})
+
+test_that("the alpha = 1 guard still fires when ALPHA was left to default", {
+  # The other half of the same boundary: a late phase exists, PARMS never named
+  # ALPHA, and FIXALPHA pins it at the default of 1 with GAMMA and ETA free.
+  # SAS fixes ETA here, so this must still be recorded -- the scope fix above
+  # must not buy its way out of the guard by requiring an explicit ALPHA.
+  got <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=2", "ETA=3", "FIXALPHA"))
+  expect_equal(nrow(got$untranslated), 1L)
+  expect_match(got$untranslated$reason, "estimates GAMMA\\*ETA")
+})

@@ -379,9 +379,16 @@
   # estimates the product as GAMMA alone. That is one fewer estimated parameter
   # than hazard() would use, on a pair that is not separately identifiable --
   # a different model, not a different label for the same one. Recorded.
+  # Both guards are about the late phase, so both require one to exist. The
+  # alpha default of 1 is right for a late phase PARMS never gave an ALPHA and
+  # meaningless for a job that has no late phase at all -- without this, an
+  # early-only job carrying a stray FIXALPHA was flagged about GAMMA and ETA it
+  # has no phase for. A false positive here is not harmless: $untranslated is
+  # how a caller decides whether a translation can be trusted.
+  has_late <- length(late) > 0L
   alpha_val <- if (!is.null(late[["alpha"]])) late[["alpha"]] else
     .hzr_parms_late_default[["alpha"]]
-  if (isTRUE(alpha_val == 1) && "alpha" %in% fixed_late &&
+  if (has_late && isTRUE(alpha_val == 1) && "alpha" %in% fixed_late &&
       !("gamma" %in% fixed_late) && !("eta" %in% fixed_late)) {
     flag_bad(
       "ALPHA=1 FIXALPHA with GAMMA and ETA both estimated",
@@ -396,7 +403,8 @@
   # (g3flag == 3 vs 4) and the job does not run. hzr_phase() accepts alpha = 0
   # as the limiting exponential, so without this the translator would emit a
   # runnable fit for a job SAS refuses outright.
-  if (saw_weibull && isTRUE(alpha_val == 0) && !("alpha" %in% fixed_late)) {
+  if (has_late && saw_weibull && isTRUE(alpha_val == 0) &&
+      !("alpha" %in% fixed_late)) {
     flag_bad(
       "ALPHA=0 with WEIBULL and no FIXALPHA",
       paste0("PROC HAZARD rejects this: SETG3_weibull() raises SETG3980 for ",
