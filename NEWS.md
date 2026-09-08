@@ -120,6 +120,26 @@
   nothing. The formula interface translates and is guarded. That asymmetry is a
   pre-existing defect of the vector path, tracked in #226.
 
+## Testing
+
+* **The SAS parity tests for `hz.te123.OMC` fit 1 and `hz.tm123.OMC` still
+  described the P1 #6 Conservation-of-Events gap that PR #65 closed, and their
+  tolerances were set from that gap rather than from the code's behaviour.**
+  Fit 1 asserted the log-likelihood within `0.2` where R and SAS now agree to
+  1.3e-04, `hz.tm123.OMC` within `0.5` against 4.6e-04, and neither asserted `MUE`
+  at all, each carrying a comment quoting a value the fix had already moved. Restoring
+  the pre-PR-#65 defect -- dropping the entry-time term from
+  `.hzr_conserve_events()` -- left every one of those assertions passing, so
+  they could not have caught the regression they were nominally about. The
+  log-likelihood tolerances are now `1e-5` (relative), both
+  Conservation-of-Events intercepts `MUE` and `MUL` are asserted, and each fit
+  first checks `conserve_applied`, since CoE disables itself silently on
+  unsupported data and the shape assertions pass either way. The same mutation
+  now fails four assertions. `hz.te123.OMC` fit 2's log-likelihood tolerance
+  goes from `1e-2` to `1e-5` for the same reason; it carried no stale claim, but
+  `1e-2` admitted a drift of 3.1 in log-likelihood on a quantity matching to
+  1.5e-04. No package code changed.
+
 # TemporalHazard 1.2.8
 
 ## New features
