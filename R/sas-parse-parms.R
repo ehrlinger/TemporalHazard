@@ -5,9 +5,9 @@
 # scale each phase, THALF/NU/M shape the early (G1/"cdf") phase, TAU/GAMMA/
 # ALPHA/ETA shape the late (G3) phase, bare FIX<param> tokens freeze a
 # parameter at its starting value, and bare WEIBULL is setopt(6) /
-# SETG3_weibull() in the reference C: it does not add a phase, it constrains
-# the existing late phase to alpha = eta = 1, which collapses the general G3
-# form to a Weibull cumulative hazard (spec S7.1).
+# SETG3_weibull() in the reference C: the GENERALIZED Weibull, which admits
+# all positive parameter values. It neither adds a phase nor constrains one --
+# see the WEIBULL branch below.
 #
 # `theta` is the full interleaved starting vector the multiphase engine
 # expects -- one block per phase, in the same early -> constant -> late
@@ -353,6 +353,25 @@
     theta_blocks <- c(theta_blocks,
       .hzr_parms_theta_block("late", mu_val, late, phase_covar_vals$late)
     )
+  }
+
+  # A MU names its phase. Building a phase only when a *shape* operand
+  # appeared let an orphaned MUE/MUL disappear together with the phase it
+  # scaled -- a one-phase R model against SAS's two, and no untranslated row
+  # to say so. PROC HAZARD would supply its own shape defaults here
+  # (stmtprc.c:30-37: thalf 1, nu 2, m 1; tau = 2*Tmax/3, gamma 1, alpha 1,
+  # eta 2), which are not this parser's defaults, so the MU is recorded
+  # rather than guessed at.
+  # sprintf("%g"), not format(): format() honours getOption("OutDec"), so a
+  # session with OutDec = "," would record "MUE=0,2" and break every grep --
+  # the same trap the DELTA reason string above avoids.
+  if (!is.null(mu[["MUE"]]) && !length(early)) {
+    flag_bad(paste0("MUE=", sprintf("%g", mu[["MUE"]])),
+             "MUE with no early phase shape operand (THALF/NU/M)")
+  }
+  if (!is.null(mu[["MUL"]]) && !length(late)) {
+    flag_bad(paste0("MUL=", sprintf("%g", mu[["MUL"]])),
+             "MUL with no late phase shape operand (TAU/GAMMA/ALPHA/ETA)")
   }
 
   list(

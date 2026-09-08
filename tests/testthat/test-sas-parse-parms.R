@@ -23,6 +23,12 @@ test_that("WEIBULL leaves unspecified ALPHA and ETA at their defaults, free", {
   # so they are omitted from the emitted call -- and stay estimated. Only the
   # explicit FIXTAU/FIXGAMMA pin anything.
   #
+  # Note those are *R's* defaults, not SAS's: stmtprc.c:30-37 starts an
+  # unspecified late phase at gamma = 1, alpha = 1, eta = 2 (and tau at
+  # 2*Tmax/3, data-dependent). This test pins the translator's behaviour, not
+  # start-value parity with PROC HAZARD -- a separate, pre-existing gap that
+  # WEIBULL jobs now share with every other path.
+  #
   # This test previously asserted alpha = eta = 1, fixed. That was the
   # translator's behaviour, not SAS's: it read WEIBULL as a constraint to the
   # alpha = eta = 1 special case. The G3-collapses-to-Weibull identity at
@@ -152,8 +158,14 @@ test_that("the DELTA reason string does not move with OutDec", {
   old <- options(OutDec = ",")
   on.exit(options(old), add = TRUE)
   r <- .hzr_parse_parms(c("MUE=0.2", "DELTA=0.5"))
-  expect_match(r$untranslated$reason, "DELTA = 0\\.5", fixed = FALSE)
-  expect_false(grepl("0,5", r$untranslated$reason, fixed = TRUE))
+  # MUE here has no early shape operand, so it is recorded too; target the
+  # DELTA row rather than asserting over the whole frame.
+  delta_row <- r$untranslated[grepl("DELTA", r$untranslated$reason), ]
+  expect_equal(nrow(delta_row), 1L)
+  expect_match(delta_row$reason, "DELTA = 0\\.5", fixed = FALSE)
+  expect_false(any(grepl(",", r$untranslated$construct, fixed = TRUE)))
+  expect_false(any(grepl("0,5", r$untranslated$reason, fixed = TRUE)))
+  expect_false(any(grepl("0,2", r$untranslated$construct, fixed = TRUE)))
 })
 
 test_that("WEIBULL keeps the ALPHA and ETA that PARMS specified, both free", {
@@ -175,6 +187,14 @@ test_that("WEIBULL keeps the ALPHA and ETA that PARMS specified, both free", {
                 eta = 0.1365255)
     ))
   )
+  # $phases is what a reader sees; $theta is what reaches the optimizer, and
+  # .hzr_parms_theta_block() reads the shape list independently -- so assert
+  # it too. These are the starting values the old WEIBULL branch discarded.
+  expect_equal(
+    got$theta,
+    quote(c(log(0.3012686), log(0.01038402), 0.1708571, 5.818869,
+            log(0.2450542), log(0.5433813), 6.448979, 2.501719, 0.1365255))
+  )
 })
 
 test_that("WEIBULL alongside FIXALPHA fixes alpha and only alpha", {
@@ -191,4 +211,24 @@ test_that("WEIBULL alongside FIXALPHA fixes alpha and only alpha", {
                 fixed = "alpha")
     ))
   )
+})
+
+test_that("a MUL with no late shape operand is recorded, not dropped", {
+  # PARMS names a late phase by giving it a scale. Building the phase only
+  # when a *shape* operand appeared meant MUL could vanish with the phase --
+  # a one-phase R model against SAS's two, reported as fully translated. The
+  # starting values SAS would default to here (stmtprc.c: tau = 2*Tmax/3,
+  # gamma = 1, alpha = 1, eta = 2) are not this parser's defaults, so the MU
+  # is recorded as untranslated rather than guessed at.
+  got <- .hzr_parse_parms(c("MUE=0.2", "THALF=1", "NU=1", "MUL=0.05", "WEIBULL"))
+  expect_equal(nrow(got$untranslated), 1L)
+  expect_equal(got$untranslated$construct, "MUL=0.05")
+  expect_match(got$untranslated$reason, "no late phase")
+})
+
+test_that("a MUE with no early shape operand is recorded, not dropped", {
+  got <- .hzr_parse_parms(c("MUE=0.2", "MUL=0.05", "TAU=2", "GAMMA=1.5"))
+  expect_equal(nrow(got$untranslated), 1L)
+  expect_equal(got$untranslated$construct, "MUE=0.2")
+  expect_match(got$untranslated$reason, "no early phase")
 })
