@@ -98,14 +98,17 @@ verified against SAS.
   THALF/NU/MUE/MUC natural-scale, SE(E2) [SE(E0) skipped per P2 #11]
   (9 expectations).
 - `hz.te123.OMC` fit 1 (left-truncated 2-phase): CoE-applied guard, LL within
-  1e-5, THALF/NU/ETA natural-scale (5e-3), MUE (1e-4) and MUL (5e-4)
-  (8 expectations).  P1 #6 closed; tolerances re-measured 2026-09-08.
+  1e-5, THALF/NU/ETA natural-scale (5e-3), MUE (1e-4) and MUL as a ratio to
+  SAS (5e-4) (8 expectations).  P1 #6 closed; tolerances re-measured
+  2026-09-08.  MUL is asserted as a ratio because at 2.1e-04 a direct
+  `expect_equal()` falls into waldo's absolute branch and cannot fail.
 - `hz.te123.OMC` fit 2 (modulated renewal + late covariates): LL within 1e-5,
   THALF/NU/MUE/MUL natural-scale (1e-3), NOPREVTE/NOTEE coefficients,
   SE(E2/NOPREVTE/NOTEE) (14 expectations).
 - `hz.tm123.OMC` fit 1 (morbidity-weighted 2-phase): CoE-applied guard, LL
-  within 1e-5, THALF/ETA natural-scale (5e-3), MUE and MUL (1e-3)
-  (7 expectations).  P1 #6 closed; tolerances re-measured 2026-09-08.
+  within 1e-5, THALF/ETA natural-scale (5e-3), MUE (1e-3) and MUL as a ratio
+  to SAS (1e-3) (7 expectations).  P1 #6 closed; tolerances re-measured
+  2026-09-08.
 - `hm.deadp.VALVES` null model (Case 2L: m<0, nu=0): LL=−1864.76 exact,
   finite MUE/MUC (3 expectations).  Confirms P1 #5 closed (misdiagnosis).
 

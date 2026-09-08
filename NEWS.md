@@ -134,8 +134,18 @@
   log-likelihood tolerances are now `1e-5` (relative), both
   Conservation-of-Events intercepts `MUE` and `MUL` are asserted, and each fit
   first checks `conserve_applied`, since CoE disables itself silently on
-  unsupported data and the shape assertions pass either way. The same mutation
-  now fails four assertions. `hz.te123.OMC` fit 2's log-likelihood tolerance
+  unsupported data. The same mutation now fails six assertions.
+
+  `MUL` is compared as a ratio to the SAS value rather than directly, and that
+  distinction is the point rather than a detail. `expect_equal()` divides by
+  `mean(abs(expected))` only when that exceeds `tolerance`; `MUL` is 2.1e-04,
+  below any tolerance worth setting for it, so a direct comparison silently
+  becomes an *absolute* one -- `MUL = 0` passes at `5e-04`, and so does the
+  regression above. A first version of this change asserted `MUL` directly and
+  reproduced, in the fix, the defect it was removing. Against an expected value
+  of `1` the comparison is relative, as the tolerance implies. `hz.te123.OMC`
+  fit 2's pre-existing `MUL` assertion sat 7% above that branch point and moves
+  to the same form. `hz.te123.OMC` fit 2's log-likelihood tolerance
   goes from `1e-2` to `1e-5` for the same reason; it carried no stale claim, but
   `1e-2` admitted a drift of 3.1 in log-likelihood on a quantity matching to
   1.5e-04. No package code changed.

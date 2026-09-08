@@ -1000,9 +1000,11 @@ test_that("hz.te123.OMC fit 1: left-truncated 2-phase shape params match SAS", {
     control = list(n_starts = 3, maxit = 500, conserve = TRUE)
   )
 
-  # CoE auto-disables silently on unsupported data.  Without this guard every
-  # assertion below still passes with conservation switched off, and the test
-  # stops exercising the conserved parameterisation it exists to check.
+  # CoE auto-disables silently on unsupported data.  With the tolerances below
+  # that shows up as four numeric mismatches (refitting `conserve = FALSE`
+  # moves THALF 18%, NU 12%, MUE 12%), which says nothing about the cause; this
+  # guard fails first and names it.  It is also the only assertion here that
+  # still catches a silent disable if the tolerances are ever loosened again.
   expect_true(fit$spec$control$conserve_applied,
               label = "Conservation of Events actually applied")
 
@@ -1030,12 +1032,19 @@ test_that("hz.te123.OMC fit 1: left-truncated 2-phase shape params match SAS", {
   # PR #65 entry-time fix moved, so they are the direct regression guard for it.
   # Measured relative differences: MUE 1.1e-05, MUL 3.7e-05 (worst across
   # n_starts 1/3/5: 1.7e-05 and 6.9e-05).
+  #
+  # MUL is compared as a ratio deliberately.  `expect_equal()` scales by
+  # `mean(abs(expected))` only when that exceeds `tolerance`, and MUL is
+  # 2.1e-04 — below any tolerance worth setting here — so comparing it
+  # directly silently becomes an ABSOLUTE check: `MUL = 0` passes at 5e-04,
+  # and so does the PR #65 regression this is meant to catch.  Against an
+  # expected value of 1 the comparison is relative, as the tolerance implies.
   mue_ref <- nat$estimate[nat$name == "MUE"]
   mul_ref <- nat$estimate[nat$name == "MUL"]
   expect_equal(unname(exp(th["early.log_mu"])), mue_ref, tolerance = 1e-4,
                label = "MUE (Early) natural-scale")
-  expect_equal(unname(exp(th["late.log_mu"])),  mul_ref, tolerance = 5e-4,
-               label = "MUL (Late) natural-scale")
+  expect_equal(unname(exp(th["late.log_mu"])) / mul_ref, 1, tolerance = 5e-4,
+               label = "MUL (Late) natural-scale, as a ratio to SAS")
 })
 
 test_that("hz.te123.OMC fit 2: modulated renewal + late covariates matches SAS LL/MLEs", {
@@ -1068,6 +1077,7 @@ test_that("hz.te123.OMC fit 2: modulated renewal + late covariates matches SAS L
     control = list(n_starts = 3, maxit = 500, conserve = TRUE)
   )
 
+  # See fit 1 for why this guard is here.
   expect_true(fit$spec$control$conserve_applied,
               label = "Conservation of Events actually applied")
 
@@ -1089,8 +1099,10 @@ test_that("hz.te123.OMC fit 2: modulated renewal + late covariates matches SAS L
                label = "NU (Early) natural-scale")
   expect_equal(unname(exp(th["early.log_mu"])),     mue_ref,   tolerance = 1e-3,
                label = "MUE (Early) natural-scale")
-  expect_equal(unname(exp(th["late.log_mu"])),      mul_ref,   tolerance = 1e-3,
-               label = "MUL (Late) natural-scale")
+  # Ratio for the same reason as fit 1: MUL is 1.07e-03 against a 1e-03
+  # tolerance, only 7% above the point where this check would turn absolute.
+  expect_equal(unname(exp(th["late.log_mu"])) / mul_ref, 1, tolerance = 1e-3,
+               label = "MUL (Late) natural-scale, as a ratio to SAS")
 
   # Late-phase covariate coefficients — compare to SAS Parameter Estimate Summary.
   params_ref <- ref$params
@@ -1126,8 +1138,9 @@ test_that("hz.te123.OMC fit 2: modulated renewal + late covariates matches SAS L
 # The P1 #6 CoE gap described above for hz.te123.OMC fit 1 applied here too and
 # is likewise closed (PR #65); LL and both CoE intercepts assert against SAS.
 # Measured 2026-09-08 at 8133b2a, stable across seeds 1/2/42/106/999 and
-# n_starts 1/3/5.  Tolerances are looser than fit 1's because the WEIGHT MORBID
-# fit reproduces SAS about an order of magnitude less closely.
+# n_starts 1/3/5.  The LL tolerance matches fit 1's; the MUE one is looser
+# because the WEIGHT MORBID fit reproduces that intercept about an order of
+# magnitude less closely (9.5e-05 against 1.1e-05).
 test_that("hz.tm123.OMC: morbidity-weighted 2-phase shape params match SAS", {
   testthat::skip_on_cran()
   dir  <- skip_if_no_sas_fixtures()
@@ -1161,6 +1174,7 @@ test_that("hz.tm123.OMC: morbidity-weighted 2-phase shape params match SAS", {
     control = list(n_starts = 3, maxit = 500, conserve = TRUE)
   )
 
+  # See hz.te123.OMC fit 1 for why this guard is here.
   expect_true(fit$spec$control$conserve_applied,
               label = "Conservation of Events actually applied")
 
@@ -1181,12 +1195,13 @@ test_that("hz.tm123.OMC: morbidity-weighted 2-phase shape params match SAS", {
 
   # CoE intercepts: measured relative differences MUE 9.5e-05, MUL 6.8e-05
   # (worst across n_starts 1/3/5: 1.3e-04 and 1.5e-04); 1e-03 leaves ~7x.
+  # MUL as a ratio — see hz.te123.OMC fit 1; here MUL is 2.1e-04.
   mue_ref <- nat$estimate[nat$name == "MUE"]
   mul_ref <- nat$estimate[nat$name == "MUL"]
   expect_equal(unname(exp(th["early.log_mu"])), mue_ref, tolerance = 1e-3,
                label = "MUE (Early) natural-scale")
-  expect_equal(unname(exp(th["late.log_mu"])),  mul_ref, tolerance = 1e-3,
-               label = "MUL (Late) natural-scale")
+  expect_equal(unname(exp(th["late.log_mu"])) / mul_ref, 1, tolerance = 1e-3,
+               label = "MUL (Late) natural-scale, as a ratio to SAS")
 
   # NOTE: NU=1 FIXNU (fixed); M=1e-6 FIXM (fixed) — not compared.
 })
