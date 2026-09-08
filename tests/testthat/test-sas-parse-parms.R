@@ -301,3 +301,35 @@ test_that("the alpha = 1 guard still fires when ALPHA was left to default", {
   expect_equal(nrow(got$untranslated), 1L)
   expect_match(got$untranslated$reason, "estimates GAMMA\\*ETA")
 })
+
+test_that("the alpha = 1 guard does not fire without MUL", {
+  # A phase is active in PROC HAZARD iff its MU is specified and positive.
+  # parmprc.c:19 registers MUL through setparmno(22, 7, 3, ...), and
+  # setparmno.c:14 sets C->phase[3] = 1 only when the value is > 0. The four
+  # shape operands go through setprmf (parmprc.c:20-23), which never touches
+  # C->phase[]. With phase 3 off, stmtprc.c:113-122 zeroes TAU/GAMMA/ALPHA/ETA
+  # and shape.c:31 never calls SETG3(), so SETG3_ignore_tau() cannot run and
+  # there is nothing to warn about.
+  #
+  # Gating on shape operands instead of MUL got this wrong: TAU/GAMMA/ETA with
+  # no MUL is not a late phase at all.
+  got <- .hzr_parse_parms(c("TAU=2", "GAMMA=2", "ETA=3", "FIXALPHA"))
+  expect_false(any(grepl("estimates GAMMA", got$untranslated$reason)))
+})
+
+test_that("the ALPHA = 0 WEIBULL guard does not fire without MUL", {
+  # Same gate: with no MUL there is no phase 3, shape.c:31 never reaches
+  # SETG3(), and SETG3_weibull() cannot raise SETG3980. Claiming PROC HAZARD
+  # refuses the job would be wrong.
+  got <- .hzr_parse_parms(c("TAU=2", "GAMMA=1.5", "ALPHA=0", "ETA=1", "WEIBULL"))
+  expect_false(any(grepl("SETG3980", got$untranslated$reason)))
+})
+
+test_that("both late-phase guards still fire when MUL is present", {
+  # The other side of the gate, so it cannot be satisfied by never firing.
+  g1 <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=2", "ETA=3", "FIXALPHA"))
+  expect_true(any(grepl("estimates GAMMA", g1$untranslated$reason)))
+  g2 <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=1.5", "ALPHA=0",
+                           "ETA=1", "WEIBULL"))
+  expect_true(any(grepl("SETG3980", g2$untranslated$reason)))
+})

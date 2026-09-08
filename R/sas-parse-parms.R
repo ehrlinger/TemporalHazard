@@ -379,13 +379,28 @@
   # estimates the product as GAMMA alone. That is one fewer estimated parameter
   # than hazard() would use, on a pair that is not separately identifiable --
   # a different model, not a different label for the same one. Recorded.
-  # Both guards are about the late phase, so both require one to exist. The
-  # alpha default of 1 is right for a late phase PARMS never gave an ALPHA and
-  # meaningless for a job that has no late phase at all -- without this, an
-  # early-only job carrying a stray FIXALPHA was flagged about GAMMA and ETA it
-  # has no phase for. A false positive here is not harmless: $untranslated is
-  # how a caller decides whether a translation can be trusted.
-  has_late <- length(late) > 0L
+  # Both guards describe things SETG3() does, so both require a late phase that
+  # is actually active -- and in PROC HAZARD a phase is active iff its MU was
+  # specified and positive. parmprc.c:19 registers MUL through
+  # setparmno(22, 7, 3, ...) and setparmno.c:14 sets C->phase[3] = 1 only when
+  # stmtfld() > 0; the four shape operands go through setprmf
+  # (parmprc.c:20-23), which never touches C->phase[]. With phase 3 off,
+  # stmtprc.c:113-122 zeroes TAU/GAMMA/ALPHA/ETA and shape.c:31 never calls
+  # SETG3() at all.
+  #
+  # So the gate is MUL, not the presence of shape operands: TAU/GAMMA/ETA with
+  # no MUL is not a late phase, and warning about SETG3_ignore_tau() or
+  # SETG3980 there describes code PROC HAZARD never reaches. A false positive
+  # on $untranslated is not harmless -- that frame is how a caller decides
+  # whether a translation can be trusted.
+  #
+  # Note the asymmetry this leaves inside this function, deliberately and
+  # tracked separately: the phase-building block below still keys on shape
+  # operands (`if (length(late))`), so PARMS carrying TAU/GAMMA with no MUL
+  # emits a late phase that PROC HAZARD would not build at all. No corpus job
+  # does that, so it is latent, and changing how phases are built is a wider
+  # change than gating these two warnings.
+  has_late <- !is.null(mu[["MUL"]]) && isTRUE(mu[["MUL"]] > 0)
   alpha_val <- if (!is.null(late[["alpha"]])) late[["alpha"]] else
     .hzr_parms_late_default[["alpha"]]
   if (has_late && isTRUE(alpha_val == 1) && "alpha" %in% fixed_late &&
