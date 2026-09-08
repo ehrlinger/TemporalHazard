@@ -194,6 +194,7 @@
   late <- list()
   fixed_early <- character(0)
   fixed_late <- character(0)
+  saw_weibull <- FALSE
   bad_construct <- character(0)
   bad_reason <- character(0)
 
@@ -263,7 +264,7 @@
       # and GAMMA*ETA/ALPHA = 2 constraint flags SETG3_weibull() also honours
       # are driven by separate PARMS keywords that this parser does not yet
       # resolve -- they are recorded as untranslated, not assumed absent.
-      NULL
+      saw_weibull <- TRUE
     } else if (token %in% names(.hzr_parms_fix_map)) {
       param <- .hzr_parms_fix_map[[token]]
       if (param %in% .hzr_parms_early_arg) {
@@ -362,6 +363,47 @@
   # (stmtprc.c:30-37: thalf 1, nu 2, m 1; tau = 2*Tmax/3, gamma 1, alpha 1,
   # eta 2), which are not this parser's defaults, so the MU is recorded
   # rather than guessed at.
+  # SETG3_ignore_tau() (setg3.c:377-424) fires when ALPHA is fixed at 1 --
+  # setg3.c:312-314, before the WEIBULL dispatch. It pins TAU at 1 and rewrites
+  # the GAMMA/ETA split, which at alpha = 1, tau = 1 is a reparameterisation of
+  # a single exponent: the G3 form collapses to t^(gamma*eta), so only the
+  # product is identified. Two consequences, and only one of them is a defect.
+  #
+  # The reported values diverge: SAS's listing prints the rewritten split, this
+  # parser emits what PARMS said. The fit is identical, so that is documented
+  # in hzr_translate_sas() rather than mirrored here -- rewriting the emitted
+  # call would make it disagree with the user's own PARMS text, and across the
+  # public corpus it would change 16 blocks to alter 2 (measured 2026-09-08).
+  #
+  # With GAMMA and ETA *both* free, though, setg3.c:405-406 fixes ETA and
+  # estimates the product as GAMMA alone. That is one fewer estimated parameter
+  # than hazard() would use, on a pair that is not separately identifiable --
+  # a different model, not a different label for the same one. Recorded.
+  alpha_val <- if (!is.null(late[["alpha"]])) late[["alpha"]] else
+    .hzr_parms_late_default[["alpha"]]
+  if (isTRUE(alpha_val == 1) && "alpha" %in% fixed_late &&
+      !("gamma" %in% fixed_late) && !("eta" %in% fixed_late)) {
+    flag_bad(
+      "ALPHA=1 FIXALPHA with GAMMA and ETA both estimated",
+      paste0("SETG3_ignore_tau() estimates GAMMA*ETA as a single parameter ",
+             "here (it fixes ETA); hazard() would estimate both, which is one ",
+             "more free parameter than PROC HAZARD on a product that is not ",
+             "separately identifiable at alpha = 1")
+    )
+  }
+
+  # setg3.c:437: SETG3_weibull() rejects alpha == 0 unless ALPHA is fixed
+  # (g3flag == 3 vs 4) and the job does not run. hzr_phase() accepts alpha = 0
+  # as the limiting exponential, so without this the translator would emit a
+  # runnable fit for a job SAS refuses outright.
+  if (saw_weibull && isTRUE(alpha_val == 0) && !("alpha" %in% fixed_late)) {
+    flag_bad(
+      "ALPHA=0 with WEIBULL and no FIXALPHA",
+      paste0("PROC HAZARD rejects this: SETG3_weibull() raises SETG3980 for ",
+             "alpha = 0 unless ALPHA is fixed, so the job does not run")
+    )
+  }
+
   # sprintf("%g"), not format(): format() honours getOption("OutDec"), so a
   # session with OutDec = "," would record "MUE=0,2" and break every grep --
   # the same trap the DELTA reason string above avoids.

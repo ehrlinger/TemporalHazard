@@ -232,3 +232,48 @@ test_that("a MUE with no early shape operand is recorded, not dropped", {
   expect_equal(got$untranslated$construct, "MUE=0.2")
   expect_match(got$untranslated$reason, "no early phase")
 })
+
+test_that("alpha = 1 fixed with GAMMA and ETA both free is recorded", {
+  # setg3.c:312-314 routes alpha == 1 && FIXALPHA into SETG3_ignore_tau(),
+  # which at setg3.c:405-406 does `if(hzr_parms_ge_estim()) set_fixed(ETA)`:
+  # with both shape parameters free, SAS fixes ETA and estimates the product
+  # gamma*eta as gamma alone. At alpha = 1, tau = 1 the G3 form collapses to
+  # t^(gamma*eta), so gamma and eta are not separately identifiable and SAS is
+  # resolving that. hazard() would leave both free and fit the ridge -- one
+  # more estimated parameter than PROC HAZARD, with different standard errors.
+  # A model difference, not a reporting one, so it is recorded.
+  #
+  # No corpus job reaches this today (0 of 38 live PARMS blocks, measured
+  # 2026-09-08); the 16 that fire SETG3_ignore_tau() all fix GAMMA.
+  got <- .hzr_parse_parms(c("MUL=0.01", "TAU=1", "ALPHA=1", "GAMMA=2",
+                            "ETA=3", "FIXALPHA"))
+  expect_equal(nrow(got$untranslated), 1L)
+  expect_match(got$untranslated$reason, "estimates GAMMA\\*ETA")
+})
+
+test_that("alpha = 1 fixed with GAMMA fixed is not recorded", {
+  # The dominant corpus shape -- gamma fixed, eta free. SAS reparameterises to
+  # eta <- gamma*eta, gamma <- 1, which with gamma = 1 is an identity. Nothing
+  # to report. Distinguishes the guard above from "any fixed alpha = 1".
+  got <- .hzr_parse_parms(c("MUL=0.01", "TAU=1", "ALPHA=1", "GAMMA=1",
+                            "ETA=1.32", "FIXALPHA", "FIXGAMMA", "WEIBULL"))
+  expect_equal(nrow(got$untranslated), 0L)
+})
+
+test_that("ALPHA = 0 under WEIBULL without FIXALPHA is recorded", {
+  # setg3.c:437: SETG3_weibull() rejects alpha == 0 when g3flag == 3, i.e.
+  # ALPHA=0 under WEIBULL without FIXALPHA, with error SETG3980. The job does
+  # not run. hzr_phase() accepts alpha = 0 as the limiting exponential, so
+  # without this the translator would emit a fit for a job SAS refuses.
+  # ALPHA=0 FIXALPHA is legal (g3flag == 4) and stays unflagged.
+  got <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=1.5", "ALPHA=0",
+                            "ETA=1", "WEIBULL"))
+  expect_equal(nrow(got$untranslated), 1L)
+  expect_match(got$untranslated$reason, "SETG3980")
+})
+
+test_that("ALPHA = 0 with FIXALPHA under WEIBULL is not recorded", {
+  got <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=1.5", "ALPHA=0",
+                            "ETA=1", "WEIBULL", "FIXALPHA"))
+  expect_equal(nrow(got$untranslated), 0L)
+})
