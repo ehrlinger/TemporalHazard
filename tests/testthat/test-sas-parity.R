@@ -965,9 +965,10 @@ test_that("hs.death.AVC.hm1: per-stratum mean survival curve matches SAS", {
 # was biased (0.01601 against SAS 0.01740) while the shapes stayed correct.
 # Both fits now agree with SAS to within the .lst's own printed precision, and
 # the tolerances below are set from measured agreement rather than from a
-# documented offset.  Measured 2026-09-08 at 8133b2a; the numbers were stable
-# across seeds 1/2/3/7/42/104/999/2026 and n_starts 1/3/5, so they are the
-# single dominant optimum and not a multi-start artifact.
+# documented offset.  Measured 2026-09-08 at 8133b2a: fit 1 was stable across
+# seeds 1/2/3/7/42/104/999/2026 and fit 2 across 1/42/105, both over n_starts
+# 1/3/5, so these are the single dominant optimum and not a multi-start
+# artifact.
 test_that("hz.te123.OMC fit 1: left-truncated 2-phase shape params match SAS", {
   testthat::skip_on_cran()
   dir  <- skip_if_no_sas_fixtures()
