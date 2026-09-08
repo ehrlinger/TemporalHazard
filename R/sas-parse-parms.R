@@ -248,9 +248,22 @@
     if (is.na(token)) {
       flag_bad(op, "unresolved PARMS keyword")
     } else if (token == "WEIBULL") {
-      late[["alpha"]] <- 1
-      late[["eta"]] <- 1
-      fixed_late <- union(fixed_late, c("alpha", "eta"))
+      # setopt(6) -> SETG3_weibull() (setg3.c:427) is the GENERALIZED Weibull:
+      # "NOW HANDLE THE SPECIAL SITUATION OF THE GENERALIZED WEIBULL, WHERE WE
+      # ADMIT ALL POSITIVE VALUES OF THE PARAMETERS." It bumps g3flag and
+      # validates gamma > 0, eta > 0, alpha >= 0. It assigns nothing and fixes
+      # nothing, so neither does this branch -- ALPHA and ETA keep whatever
+      # PARMS specified and stay free unless an explicit FIXALPHA/FIXETA pins
+      # them. Overwriting them with 1 discarded the user's starting values and
+      # silently fitted a smaller model; the listing for
+      # hz.ce_cardioversion_repeated.ehb.sas prints both as "Estimated? Yes".
+      #
+      # g3flag itself has no R counterpart: it selects a numerical branch, and
+      # hzr_decompos_g3() handles the general form directly. The GAMMA*ETA = 2
+      # and GAMMA*ETA/ALPHA = 2 constraint flags SETG3_weibull() also honours
+      # are driven by separate PARMS keywords that this parser does not yet
+      # resolve -- they are recorded as untranslated, not assumed absent.
+      NULL
     } else if (token %in% names(.hzr_parms_fix_map)) {
       param <- .hzr_parms_fix_map[[token]]
       if (param %in% .hzr_parms_early_arg) {

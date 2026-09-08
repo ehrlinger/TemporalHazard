@@ -16,17 +16,25 @@ test_that("an early-plus-constant PARMS maps to two phases and a theta", {
   )
 })
 
-test_that("WEIBULL becomes a G3 constrained at alpha = 1, eta = 1", {
-  # PARMS ... WEIBULL is setopt(6) -> SETG3_weibull, g3flag += 2. The R general
-  # form (((t/tau)^gamma + 1)^(1/alpha) - 1)^eta collapses at alpha = eta = 1
-  # to (t/tau)^gamma, a Weibull cumulative hazard. See spec 7.1.
+test_that("WEIBULL leaves unspecified ALPHA and ETA at their defaults, free", {
+  # PARMS ... WEIBULL is setopt(6) -> SETG3_weibull (setg3.c:427), the
+  # generalized Weibull, which admits all positive parameter values. With
+  # ALPHA and ETA absent from PARMS they take hzr_phase()'s defaults of 1 --
+  # so they are omitted from the emitted call -- and stay estimated. Only the
+  # explicit FIXTAU/FIXGAMMA pin anything.
+  #
+  # This test previously asserted alpha = eta = 1, fixed. That was the
+  # translator's behaviour, not SAS's: it read WEIBULL as a constraint to the
+  # alpha = eta = 1 special case. The G3-collapses-to-Weibull identity at
+  # alpha = eta = 1 is real and is covered by
+  # test-g3-weibull-correspondence.R, but it is not what the WEIBULL keyword
+  # requests.
   ops <- c("MUL=0.01", "TAU=2", "GAMMA=1.5", "WEIBULL", "FIXTAU", "FIXGAMMA")
   got <- .hzr_parse_parms(ops)
   expect_equal(
     got$phases,
     quote(list(
-      hzr_phase("g3", tau = 2, gamma = 1.5, alpha = 1, eta = 1,
-                fixed = c("tau", "gamma", "alpha", "eta"))
+      hzr_phase("g3", tau = 2, gamma = 1.5, fixed = c("tau", "gamma"))
     ))
   )
 })
@@ -146,4 +154,41 @@ test_that("the DELTA reason string does not move with OutDec", {
   r <- .hzr_parse_parms(c("MUE=0.2", "DELTA=0.5"))
   expect_match(r$untranslated$reason, "DELTA = 0\\.5", fixed = FALSE)
   expect_false(grepl("0,5", r$untranslated$reason, fixed = TRUE))
+})
+
+test_that("WEIBULL keeps the ALPHA and ETA that PARMS specified, both free", {
+  # setg3.c:427 SETG3_weibull() is the GENERALIZED Weibull: "we admit all
+  # positive values of the parameters". It validates gamma > 0, eta > 0 and
+  # alpha >= 0 and bumps g3flag; it never assigns 1 to alpha or eta and never
+  # fixes either. Operands are from the production job
+  # hz.ce_cardioversion_repeated.ehb.sas, whose listing prints ALPHA and ETA
+  # as "Estimated? Yes" with exactly these starting values.
+  ops <- c("MUE=0.3012686", "THALF=0.01038402", "NU=0.1708571", "M=5.818869",
+           "MUL=0.2450542", "TAU=0.5433813", "ALPHA=2.501719",
+           "GAMMA=6.448979", "ETA=0.1365255", "WEIBULL")
+  got <- .hzr_parse_parms(ops)
+  expect_equal(
+    got$phases,
+    quote(list(
+      hzr_phase("cdf", t_half = 0.01038402, nu = 0.1708571, m = 5.818869),
+      hzr_phase("g3", tau = 0.5433813, gamma = 6.448979, alpha = 2.501719,
+                eta = 0.1365255)
+    ))
+  )
+})
+
+test_that("WEIBULL alongside FIXALPHA fixes alpha and only alpha", {
+  # The fix must not overshoot: an explicit FIX<param> still pins that one
+  # parameter. Distinguishes "WEIBULL fixes nothing" from "nothing is ever
+  # fixed on a WEIBULL phase".
+  ops <- c("MUL=0.01", "TAU=2", "GAMMA=1.5", "ALPHA=3", "ETA=4",
+           "WEIBULL", "FIXALPHA")
+  got <- .hzr_parse_parms(ops)
+  expect_equal(
+    got$phases,
+    quote(list(
+      hzr_phase("g3", tau = 2, gamma = 1.5, alpha = 3, eta = 4,
+                fixed = "alpha")
+    ))
+  )
 })
