@@ -508,7 +508,13 @@
       LCENSOR    = statements$LCENSOR <- ops[[1L]],
       RCENSOR    = statements$RCENSOR <- ops[[1L]],
       WEIGHT     = statements$WEIGHT <- ops[[1L]],
-      PARAMETERS = parms_ops <- ops,
+      # Accumulate rather than overwrite: PROC HAZARD keeps its PARMS fields
+      # in one table that parmprc() reads once, after every statement has been
+      # processed (stmtprc.c), so a second PARMS statement adds to the first
+      # rather than replacing it. Overwriting also made the no-phase refusal
+      # below fire on `PARMS MUE=0.2 THALF=1; PARMS FIXNU;` -- a job the
+      # reference runs -- because only the trailing statement survived.
+      PARAMETERS = parms_ops <- c(parms_ops, ops),
       STEPWISE   = sel_ops <- ops,
       EARLY      = covars$early <- ops_text,
       CONSTANT   = covars$constant <- ops_text,
@@ -542,6 +548,34 @@
         "so one column cannot express both and any translation would fit ",
         "the interval-censored rows as at risk from time 0. Translate this ",
         "job by hand (#155)."
+      )),
+      status_call = NULL, outhaz = outhaz, untranslated = untr,
+      tokens_seen = seen, tokens_mapped = mapped
+    ))
+  }
+
+  # The second refusal, and for the same reason as the LCENSOR + ICENSOR one
+  # above: PROC HAZARD does not run this job at all. With no active phase
+  # modterm.c:18-22 raises ERROR 1001 ("No phase selected") and hazard.c:299-302
+  # exits via hzfxit("SEMANTIC") BEFORE results(), so the reference produces no
+  # estimates -- there is no fit here for a translation to be faithful to. An
+  # $untranslated row alone leaves the fit chunk in place, and a reader who
+  # renders past the callout gets a converged single-distribution fit with a
+  # populated summary standing in for a job that produced nothing.
+  #
+  # Placed AFTER the censoring refusal so a job carrying both keeps that one's
+  # more specific message, matching the precedence already established there.
+  if (isTRUE(parms$refused)) {
+    return(list(
+      call = quote(stop(
+        "This PROC HAZARD job selects no phase: no PARMS statement named a ",
+        "positive MUE, MUC or MUL. PROC HAZARD refuses such a job outright -- ",
+        "modterm.c raises ERROR 1001, \"No phase selected\", and the ",
+        "procedure exits before computing any results -- so there is no fit ",
+        "to translate. Add the PARMS statement naming the phase(s) this ",
+        "model needs, or fit it by hand as a single-distribution model if ",
+        "that is what you intend.",
+        call. = FALSE
       )),
       status_call = NULL, outhaz = outhaz, untranslated = untr,
       tokens_seen = seen, tokens_mapped = mapped

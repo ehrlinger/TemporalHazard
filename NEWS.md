@@ -19,14 +19,38 @@
   whether the keyword was present. Shape operands belonging to a phase that
   never activated are recorded in `$untranslated` rather than dropped, since
   `PROC HAZARD` zeroes them (`src/hazard/stmtprc.c`) and skips their covariates
-  (`src/hazard/setstat.c`). A `PARMS` that activates no phase at all is now
-  recorded too, because `PROC HAZARD` refuses that job outright
-  (`src/hazard/modterm.c`, `ERROR 1001: No phase selected`) where the
-  translator would previously have emitted a runnable single-distribution fit
-  and reported full coverage. No job in the public `hazard` corpus is affected:
-  the only `PARMS` statement in it that this gate changes is a documentation
-  template with literal `?` placeholders, so this closes a latent divergence
-  rather than changing any translation you have already run.
+  (`src/hazard/setstat.c`). A job that activates no phase at all is now
+  **refused** rather than translated -- whether its `PARMS` named no positive
+  `MU`, or it carried no `PARMS` statement whatsoever. `PROC HAZARD` does not
+  run such a job: `src/hazard/modterm.c` raises `ERROR 1001: No phase
+  selected` and the procedure exits before computing any results, so there is
+  no fit for a translation to be faithful to. The translator previously
+  emitted a runnable single-distribution fit and reported full token coverage;
+  it now emits a `stop()` in place of the `hazard()` call, as it already did
+  for `LCENSOR` combined with `ICENSOR`. The two cases are one state rather
+  than two: `src/hazard/stmtprc.c` zeroes all three phases at initialization
+  and only `setparmno()` turns one back on, so a job with no `PARMS` has no
+  active phase for the same reason a `PARMS` naming `MUE=0` does. `modterm()`
+  is reached on every job, not only once a multiphase model has been selected
+  -- its one call site in `outmods()` is unconditional in the procedure's main
+  sequence.
+
+  The refusal fires only when every `PARMS` operand was understood. A
+  statement this parser could not read is recorded, operand by operand, but
+  never refused: `PARMS MUE = 0.2 THALF = 1` (spaces around `=`) parses to
+  nothing here while `PROC HAZARD`'s own lexer discards whitespace and runs
+  the job with an active early phase, so refusing it would stop a job the
+  reference accepts. A second `PARMS` statement also now adds to the first
+  rather than replacing it, matching the single field table `parmprc()` reads
+  once after all statements are processed.
+
+  One job in the public `hazard` corpus changes, and only to drop a claim that
+  was wrong: the second `%HAZARD` block of
+  `dist/examples/hm.dthar.TGA.sas` is a documentation template carrying
+  literal `?` placeholders, which the reference would reject as a syntax
+  error rather than as `ERROR 1001`. (That file's first block is a valid
+  `PARMS` activating two phases and is unaffected.) Its per-operand rows are
+  unchanged. No corpus job is refused.
 
 * **`hzr_translate_sas()` no longer discards the `ALPHA` and `ETA` a `PARMS`
   statement specified alongside `WEIBULL`.** The translator read the bare
