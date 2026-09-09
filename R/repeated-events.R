@@ -135,3 +135,38 @@
   drop <- flags$first & !flags$last & nonevent
   data[!drop, , drop = FALSE]
 }
+
+# Stage 4 -- SAS:
+#   first=first.&id; last=last.&id;
+#   output;
+#   if last.&id and &rcensor=0 then do;
+#     &rcensor=1; &iv_event=&iv_end; &eventype=0; output;
+#   end;
+#
+# `first` and `last` become ordinary data columns here.  Stage 6's renewal
+# assignment reads THESE values, not the automatic variables of its own
+# step, and stage 5 subsets the data in between.  They must be carried
+# forward, never recomputed.  See REPEATED-EVENTS-DESIGN.md.
+.hzr_re_stage4 <- function(data, id, time, followup, indicator) {
+  data <- data[.hzr_re_order(data, id, time), , drop = FALSE]
+  flags <- .hzr_re_flags(data[[id]])
+  data$first <- as.numeric(flags$first)
+  data$last <- as.numeric(flags$last)
+
+  extra_rows <- which(flags$last & data$rcensor == 0)
+  if (length(extra_rows) == 0L) {
+    return(data)
+  }
+  extra <- data[extra_rows, , drop = FALSE]
+  extra$rcensor <- 1
+  extra[[time]] <- extra[[followup]]
+  extra[[indicator]] <- 0
+
+  # The appended row must land immediately after its source row, as the
+  # second SAS `output` does.  Interleave rather than rbind-and-resort:
+  # at a tie (last event exactly at &iv_end) a re-sort could place the
+  # copy first, which would change which row stage 6 lags from.
+  combined <- rbind(data, extra)
+  place <- c(seq_len(nrow(data)), extra_rows + 0.5)
+  combined[order(place, method = "radix"), , drop = FALSE]
+}

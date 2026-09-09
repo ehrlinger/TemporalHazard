@@ -87,3 +87,34 @@ test_that("stage 3 drops a leading non-event when the subject has later rows", {
   expect_equal(out$id, c("s1", "s1", "s2", "s3", "s4"))
   expect_equal(out$t, c(1, 3, 2, 10, 4))
 })
+
+test_that("stage 4 records first and last as numeric data columns", {
+  d <- .hzr_re_stage3(.hzr_re_stage2(.hzr_re_stage1(re_fixture()), "id", "t", "ev"), "id", "t", "fu", "ev")
+  out <- .hzr_re_stage4(d, "id", "t", "fu", "ev")
+  expect_type(out$first, "double")
+  expect_type(out$last, "double")
+})
+
+test_that("stage 4 appends a terminal censored row only where the last row is not already censored", {
+  d <- .hzr_re_stage3(.hzr_re_stage2(.hzr_re_stage1(re_fixture()), "id", "t", "ev"), "id", "t", "fu", "ev")
+  out <- .hzr_re_stage4(d, "id", "t", "fu", "ev")
+  # s1, s2 and s4 gain a terminal row; s3 was already rcensor=1 at stage 3.
+  expect_equal(as.vector(table(out$id)[c("s1", "s2", "s3", "s4")]), c(3L, 2L, 1L, 2L))
+  expect_equal(nrow(out), 8L)
+})
+
+test_that("stage 4's appended row carries followup as the time and a zero indicator", {
+  d <- .hzr_re_stage3(.hzr_re_stage2(.hzr_re_stage1(re_fixture()), "id", "t", "ev"), "id", "t", "fu", "ev")
+  out <- .hzr_re_stage4(d, "id", "t", "fu", "ev")
+  added <- out[out$id == "s1" & out$rcensor == 1, ]
+  expect_equal(nrow(added), 1L)
+  expect_equal(added$t, 10)
+  expect_equal(added$ev, 0)
+})
+
+test_that("stage 4 puts the appended row after the row it was copied from", {
+  d <- .hzr_re_stage3(.hzr_re_stage2(.hzr_re_stage1(re_fixture()), "id", "t", "ev"), "id", "t", "fu", "ev")
+  out <- .hzr_re_stage4(d, "id", "t", "fu", "ev")
+  s1 <- out[out$id == "s1", ]
+  expect_equal(s1$t, c(1, 3, 10))
+})
