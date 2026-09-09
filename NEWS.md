@@ -67,9 +67,20 @@
   substitutions in all eight sign branches, and `SETG3_alpha_fixup()` /
   `SETG3_alpha_gener()` deriving `ALPHA` from `GAMMA * ETA`.
 
-  Sixteen refusal codes are now recorded rather than emitted as runnable fits,
+  Nine refusal codes can now be recorded rather than emitted as runnable fits,
   where previously only `SETG3980` was -- and that one only for `alpha = 0`,
-  not for the negative `ALPHA` that raises it too. `ALPHA = 0` **with**
+  not for the negative `ALPHA` that raises it too. (All sixteen are mirrored
+  from the C, but seven guard conditions the entry checks at `setg3.c:269-284`
+  have already refused, so no input reaches them; an exhaustive search in the
+  tests pins which nine are live.)
+
+  One correction to a rule this package had recorded wrongly: an **unspecified**
+  `TAU` does not reach `SETG3()` as the value `stmtprc.c` starts it at, 0.
+  `src/hazard/readobs.c:153-154` replaces it with `0.75 * Tmax` on an active
+  late phase, and `readobs()` runs before `SETG3()` (`hazard.c:276` against
+  `:292`). So an absent `TAU` starts at `0.75 * Tmax`, not `2 * Tmax / 3` --
+  that rule (`setg3.c:317`) governs only a `TAU` the job wrote as non-positive
+  -- and a bare `FIXTAU` cannot raise `SETG3900`. `ALPHA = 0` **with**
   `FIXALPHA` is the limiting exponential in both implementations and still
   translates cleanly; left free, `SETG3` derives an `ALPHA` instead, which is
   now reported.

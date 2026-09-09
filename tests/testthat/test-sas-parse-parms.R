@@ -472,22 +472,27 @@ test_that("an incomplete shape list fails loudly in the theta block", {
 })
 
 test_that("a late phase with no TAU records the data-dependent SAS default", {
-  # setg3.c:317 starts a non-positive TAU at 2*Tmax/3, which is unreproducible
-  # at parse time. The emitted phase starts at tau = 1, so the difference is
-  # recorded rather than passed off as a translation.
+  # An UNSPECIFIED TAU is 0.75*Tmax (readobs.c:153-154), not setg3.c:317's
+  # 2*Tmax/3 -- readobs() has already replaced it before SETG3 runs, so the
+  # tau <= 0 branch there is never reached for an absent TAU. This assertion
+  # named the wrong rule and the wrong number until that was checked; the
+  # explicit-TAU=0 case below is the one setg3.c:317 governs.
   got <- .hzr_parse_parms(c("MUL=0.01", "GAMMA=2"))
   expect_equal(nrow(got$untranslated), 1L)
   expect_equal(got$untranslated$construct, "TAU (unspecified)")
-  expect_match(got$untranslated$reason, "2\\*Tmax/3")
+  expect_match(got$untranslated$reason, "0\\.75\\*Tmax")
+  expect_false(grepl("2*Tmax/3", got$untranslated$reason, fixed = TRUE))
   expect_equal(got$phases,
                quote(list(hzr_phase("g3", tau = 1, gamma = 2, alpha = 1,
                                     eta = 2))))
 })
 
-test_that("an explicit TAU = 0 takes the same SETG3 branch and is recorded", {
-  # The C predicate is tau <= 0, not "absent", and hzr_phase() would reject
-  # tau = 0 outright -- so without this the translator emitted a call that
-  # errored where SAS supplies a default and runs.
+test_that("an explicit TAU = 0 takes SETG3's own branch and is recorded", {
+  # setg3.c:316-317's predicate is tau <= 0, and only a TAU the job WROTE can
+  # still be non-positive there -- readobs.c:153-154 has already replaced an
+  # absent one. hzr_phase() would reject tau = 0 outright, so without this the
+  # translator emitted a call that errored where SAS supplies a default and
+  # runs. Different rule and different constant from the absent case above.
   got <- .hzr_parse_parms(c("MUL=0.01", "TAU=0", "GAMMA=2"))
   expect_equal(got$untranslated$construct, "TAU=0")
   expect_match(got$untranslated$reason, "2\\*Tmax/3")
@@ -599,9 +604,11 @@ test_that("the verify_ge_2 row does not fire above the boundary or on WEIBULL", 
 test_that("the product SETG3_verify_ge_2 reads survives the ignore_tau swap", {
   # setg3.c:403-421 moves the exponent between GAMMA and ETA but preserves
   # their PRODUCT, which is all `gte` reads -- so the boundary test is the same
-  # whether or not that branch ran. This is what lets one predicate serve both
-  # paths; if the reparameterisation ever stops being product-preserving, the
-  # guard silently starts testing the wrong quantity.
+  # whether or not that branch ran.
+  #
+  # Only while the product is positive, though: setg3.c:411-412 falls back to
+  # the other operand when gamma*eta <= 0, and the product then changes. That
+  # case is covered by the test below, not here.
   # gamma * eta = 3, above the boundary, in both orderings: 0.5 * 6 straight,
   # and 1 * 3 after the swap. Neither may record the rewrite.
   a <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=0.5", "ETA=6"))
@@ -675,7 +682,10 @@ test_that("each SETG3 entry refusal is recorded with its own code", {
     expect_equal(nrow(got$untranslated), 1L, info = paste(ops, collapse = " "))
     got$untranslated$reason
   }
-  expect_match(refusal(c("MUL=0.01", "FIXTAU", "GAMMA=2", "ETA=2")),
+  # TAU=0 explicitly, NOT a bare FIXTAU: an unspecified TAU never reaches
+  # setg3.c:269 as 0 (see the readobs.c test below), so a bare FIXTAU cannot
+  # raise SETG3900. This assertion said otherwise until that was checked.
+  expect_match(refusal(c("MUL=0.01", "TAU=0", "FIXTAU", "GAMMA=2", "ETA=2")),
                "SETG3900")
   expect_match(refusal(c("MUL=0.01", "TAU=1", "GAMMA=0", "FIXGAMMA", "ETA=2")),
                "SETG3910")
@@ -689,19 +699,45 @@ test_that("each SETG3 entry refusal is recorded with its own code", {
 test_that("a refusal names the operand, not just the SAS message code", {
   # The code alone is greppable but opaque; a caller reading $untranslated has
   # to know which operand to change.
-  got <- .hzr_parse_parms(c("MUL=0.01", "FIXTAU", "GAMMA=2", "ETA=2"))
+  got <- .hzr_parse_parms(c("MUL=0.01", "TAU=0", "FIXTAU", "GAMMA=2",
+                            "ETA=2"))
   expect_match(got$untranslated$reason, "TAU is fixed at a non-positive value")
   expect_match(got$untranslated$construct, "fixed:tau")
 })
 
-test_that("a refused job records only the refusal, not the TAU rules too", {
-  # SETG3 returns at :271 before either TAU rule runs, so reporting the
-  # 2*Tmax/3 divergence alongside would describe code PROC HAZARD never
-  # reaches -- the same false positive the MUL gate exists to avoid. This
-  # input has no TAU operand, so the 2*Tmax/3 row would otherwise fire.
-  got <- .hzr_parse_parms(c("MUL=0.01", "FIXTAU", "GAMMA=2", "ETA=2"))
-  expect_equal(nrow(got$untranslated), 1L)
-  expect_false(any(grepl("Tmax", got$untranslated$reason, fixed = TRUE)))
+test_that("an ENTRY refusal suppresses the TAU row but a later one does not", {
+  # setg3.c:269-284 returns before the TAU rules at :309-323, so a TAU row
+  # there would describe code PROC HAZARD never reaches. The other twelve
+  # codes fire from :429 onwards, by which point the TAU rule HAS run --
+  # suppressing the row for those would hide a divergence that happened.
+  # Keying the suppression on "refused at all" gets the second case wrong.
+  entry <- .hzr_parse_parms(c("MUL=0.01", "TAU=0", "FIXTAU", "GAMMA=2",
+                              "ETA=2"))
+  expect_equal(nrow(entry$untranslated), 1L)
+  expect_false(any(grepl("Tmax", entry$untranslated$reason, fixed = TRUE)))
+  late <- .hzr_parse_parms(c("MUL=0.01", "GAMMA=1", "FIXGAMMA", "ETA=2",
+                             "FIXETA"))
+  expect_true(any(grepl("SETG31020", late$untranslated$reason)))
+  expect_true(any(grepl("Tmax", late$untranslated$reason, fixed = TRUE)))
+})
+
+test_that("an unspecified TAU is 0.75*Tmax, not the stmtprc.c initializer", {
+  # readobs.c:153-154 replaces an unspecified TAU with 0.75*Tmax whenever the
+  # late phase is active, and readobs() runs at hazard.c:276, before hzrg()
+  # reaches SETG3() at :292. So the stmtprc.c initializer of 0 never arrives
+  # at setg3.c:269 -- an absent TAU is POSITIVE there, cannot raise SETG3900,
+  # and never reaches the 2*Tmax/3 assignment at :317 either.
+  #
+  # Conflating "absent" with "non-positive" put a refusal in $untranslated for
+  # a job PROC HAZARD runs, which is this package's signature defect inverted:
+  # a finding that looks like one and is not.
+  absent <- .hzr_parse_parms(c("MUL=0.01", "FIXTAU", "GAMMA=2", "ETA=2"))
+  expect_equal(nrow(absent$untranslated), 1L)
+  expect_match(absent$untranslated$reason, "0\\.75\\*Tmax")
+  expect_false(any(grepl("SETG3900", absent$untranslated$reason)))
+  # An explicit non-positive TAU is the other rule, and a different number.
+  written <- .hzr_parse_parms(c("MUL=0.01", "TAU=0", "GAMMA=2", "ETA=2"))
+  expect_match(written$untranslated$reason, "2\\*Tmax/3")
 })
 
 test_that("WEIBULL's own refusals are recorded, including a negative ALPHA", {
@@ -740,6 +776,10 @@ test_that("a non-positive GAMMA or ETA is a rewrite SAS makes and R cannot", {
   # recording it says which operand to supply.
   g <- .hzr_parse_parms(c("MUL=0.01", "TAU=1", "GAMMA=0", "ETA=2", "ALPHA=1"))
   expect_match(g$untranslated$reason, "optimizes from gamma = 1\\.5")
+  # The claim above, made load-bearing: the emitted call really cannot be
+  # built, so the row must not describe the difference as a starting value.
+  expect_error(eval(g$phases), "gamma must be a positive scalar")
+  expect_match(g$untranslated$reason, "cannot be built at all")
   e <- .hzr_parse_parms(c("MUL=0.01", "TAU=1", "GAMMA=2", "ETA=0", "ALPHA=1"))
   expect_match(e$untranslated$reason, "optimizes from .*eta = 1\\.5")
 })
@@ -771,4 +811,129 @@ test_that("the SETG3 trace is gated on an active late phase", {
                                        "ETA=2"))$untranslated), 0L)
   expect_equal(nrow(.hzr_parse_parms(c("MUL=0", "FIXTAU",
                                        "GAMMA=2"))$untranslated), 0L)
+})
+
+test_that("the ignore_tau swap is NOT product-preserving when the product is <= 0", {
+  # setg3.c:411-412: `if(Late.gamma<=ZERO) Late.gamma = HZRstr.l.eta;`. With
+  # gamma = -2 and eta = 3 the C does not carry -6 across -- it keeps eta,
+  # leaving gamma = 3, eta = 1 and a product of 3. The trace has to reproduce
+  # the fallback rather than the arithmetic, and the comparison has to notice.
+  # Stated as an invariant without this exception, "the swap preserves the
+  # product" is the kind of half-read claim that put a wrong assertion in this
+  # file once already.
+  tr <- .hzr_setg3_notes(tau_raw = 1, gamma = -2, alpha = 1, eta = 3,
+                         fixed = "alpha", weibull = FALSE)
+  expect_equal(unname(tr$shape[["gamma"]]), 3)
+  expect_equal(unname(tr$shape[["eta"]]), 1)
+  expect_false(isTRUE(all.equal(
+    tr$shape[["gamma"]] * tr$shape[["eta"]], -2 * 3
+  )))
+  # And the divergence is reported rather than absorbed by the product test.
+  got <- .hzr_parse_parms(c("MUL=0.01", "TAU=1", "ALPHA=1", "GAMMA=-2",
+                            "ETA=3", "FIXALPHA"))
+  expect_match(got$untranslated$reason, "optimizes from gamma\\*eta = 3")
+  # The positive case still preserves it, so the two halves are distinguished.
+  pos <- .hzr_setg3_notes(tau_raw = 1, gamma = 2, alpha = 1, eta = 3,
+                          fixed = "alpha", weibull = FALSE)
+  expect_equal(unname(pos$shape[["gamma"]] * pos$shape[["eta"]]), 6)
+})
+
+test_that("the four remaining sign branches use SETG3's own constants", {
+  # setg3.c:638-812. These are the branches with the distinctive substitutions,
+  # and none was covered: mutating `eta <- 3` to 2 in all_le_0, or
+  # `gamma <- 1.5 * alpha` to `alpha` in alpha_gt_0, produced no failure.
+  # Asserted through .hzr_setg3_notes() directly so the values are visible
+  # rather than inferred from a reason string.
+  fx <- character(0)
+  # eta_gt_0 (:638): alpha <= 0, gamma <= 0, eta > 0 -> gamma = 3/eta, then
+  # alpha_gener derives alpha = gamma*eta/3 = 1.
+  a <- .hzr_setg3_notes(1, gamma = 0, alpha = 0, eta = 3, fixed = fx,
+                        weibull = FALSE)
+  expect_equal(unname(a$shape[["gamma"]]), 1)
+  expect_equal(unname(a$shape[["alpha"]]), 1)
+  # gamma_gt_0 (:678): alpha <= 0, gamma > 0, eta <= 0 -> eta = 3/gamma.
+  b <- .hzr_setg3_notes(1, gamma = 2, alpha = 0, eta = 0, fixed = fx,
+                        weibull = FALSE)
+  expect_equal(unname(b$shape[["eta"]]), 1.5)
+  # alpha_gt_0 (:717): alpha > 0, gamma <= 0, eta <= 0 -> eta = 2,
+  # gamma = 1.5*alpha.
+  cc <- .hzr_setg3_notes(1, gamma = 0, alpha = 2, eta = 0, fixed = fx,
+                         weibull = FALSE)
+  expect_equal(unname(cc$shape[["eta"]]), 2)
+  expect_equal(unname(cc$shape[["gamma"]]), 3)
+  # all_le_0 (:772): gamma = 1, eta = 3.
+  d <- .hzr_setg3_notes(1, gamma = 0, alpha = 0, eta = 0, fixed = fx,
+                        weibull = FALSE)
+  expect_equal(unname(d$shape[["gamma"]]), 1)
+  expect_equal(unname(d$shape[["eta"]]), 3)
+})
+
+test_that("the reachable refusal codes are exactly the nine, by exhaustive search", {
+  # Sixteen codes are mirrored from the C, but only NINE can fire. The other
+  # seven each guard a condition the ENTRY checks at setg3.c:269-284 already
+  # refused: SETG31090/32050/33020 want a non-positive GAMMA that is fixed
+  # (SETG3910), SETG32020/32080/33010 a non-positive ETA that is fixed
+  # (SETG3930), and SETG31070 a fixed ALPHA on a branch where alpha <= 0 --
+  # negative refuses at SETG3920, and zero sets g3flag = 2 so alpha_gener is
+  # never called. That is a property of PROC HAZARD, not of this port, and it
+  # is why they have no individual tests: an input that reaches them does not
+  # exist.
+  #
+  # Searched rather than argued. Reasoning about reachability through three
+  # files is how the SETG3900 claim went wrong; a grid says what is true.
+  skip_on_cran()
+  parms <- c("tau", "gamma", "alpha", "eta")
+  subsets <- unlist(lapply(0:4, function(k) utils::combn(parms, k, simplify = FALSE)),
+                    recursive = FALSE)
+  seen <- character(0)
+  for (tau in c(NA, -1, 0, 1, 5)) {
+    for (g in c(-2, 0, 1, 2, 3)) {
+      for (a in c(-2, 0, 1, 2, 3)) {
+        for (e in c(-2, 0, 1, 2, 3)) {
+          for (fx in subsets) {
+            for (w in c(TRUE, FALSE)) {
+              tr <- .hzr_setg3_notes(tau, g, a, e, fx, w)
+              if (!is.null(tr$refusal)) seen <- union(seen, tr$refusal)
+            }
+          }
+        }
+      }
+    }
+  }
+  expect_setequal(seen, c("(SETG3900)", "(SETG3910)", "(SETG3920)",
+                          "(SETG3930)", "(SETG3960)", "(SETG3970)",
+                          "(SETG3980)", "(SETG31020)", "(SETG31040)"))
+})
+
+test_that("the two non-entry refusals that ARE reachable fire on named inputs", {
+  # SETG31020 (verify_ge_2, both operands fixed at or below the boundary) and
+  # SETG31040 (alpha_fixup, ALPHA fixed with GAMMA*ETA/ALPHA <= 2) are the only
+  # refusals raised after the entry checks. Both need positive operands, which
+  # is exactly why they survive where the other seven do not.
+  both <- .hzr_setg3_notes(1, gamma = 1, alpha = 1, eta = 2,
+                           fixed = c("gamma", "eta"), weibull = FALSE)
+  expect_equal(both$refusal, "(SETG31020)")
+  expect_false(isTRUE(both$entry))
+  pinned <- .hzr_setg3_notes(1, gamma = 2, alpha = 3, eta = 2,
+                             fixed = "alpha", weibull = FALSE)
+  expect_equal(pinned$refusal, "(SETG31040)")
+})
+
+test_that("every code in the refusal table has its own gloss", {
+  # The table is kept complete against the C even where a code is unreachable,
+  # so nothing may fall through to the generic text.
+  for (code in names(.hzr_setg3_refusal)) {
+    expect_false(identical(.hzr_setg3_refusal_reason(code),
+                           "the operand combination is rejected"),
+                 info = code)
+  }
+})
+
+test_that("an unknown refusal code degrades instead of erroring", {
+  # `[[` on an unmatched name in a character vector throws rather than
+  # returning NULL, so the is.null() fallback this replaced was hollow: right
+  # shape, unreachable, and the parser would have errored if a code were ever
+  # added to the trace but not the table.
+  expect_equal(.hzr_setg3_refusal_reason("(SETG39999)"),
+               "the operand combination is rejected")
 })

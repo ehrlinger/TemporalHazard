@@ -28,7 +28,7 @@
 .hzr_parms_late_arg  <- c(TAU = "tau", GAMMA = "gamma", ALPHA = "alpha", ETA = "eta")
 .hzr_parms_mu_order  <- c("MUE", "MUC", "MUL")
 
-# PROC HAZARD's OWN shape defaults (stmtprc.c:30-37), used for any shape
+# PROC HAZARD's OWN shape defaults (src/hazard/stmtprc.c:34-37), used for any shape
 # operand a PARMS statement did not name. They are not hzr_phase()'s defaults
 # -- nu, m and eta all differ (SAS 2/1/2 against R 1/0/1) -- and the starting
 # vector is what the emitted call hands the optimizer, so mirroring R's
@@ -259,12 +259,37 @@
   "(SETG33010)" = "ETA is fixed but non-positive, with no GAMMA to derive one from",
   "(SETG33020)" = "GAMMA is fixed but non-positive, with no ETA to derive one from"
 )
+# Deliberately absent, so their omission is not read as an oversight:
+#   SETG3950  (setg3.c:319-321) fires when 2*Tmax/3 itself is <= 0. That is a
+#             property of the data, not of the PARMS block, so it cannot be
+#             decided here -- the TAU row already says the start is
+#             data-dependent.
+#   SETG3940, SETG3990, SETG31000, SETG31010
+#             are reachable only through g_two/ga_two, which FIXGE2/FIXGAE2
+#             drive and .hzr_sas_token() records as unresolved.
+# SEVEN of the sixteen are unreachable in both languages, because each guards a
+# condition the ENTRY checks at setg3.c:269-284 have already refused:
+#   SETG31090, SETG32050, SETG33020  want a non-positive GAMMA that is fixed
+#                                    -- SETG3910 refuses first.
+#   SETG32020, SETG32080, SETG33010  want a non-positive ETA that is fixed
+#                                    -- SETG3930 refuses first.
+#   SETG31070                        wants a fixed ALPHA on a branch where
+#                                    alpha <= 0: negative refuses at SETG3920,
+#                                    and zero sets g3flag = 2 (:332-335) so
+#                                    SETG3_alpha_gener() is never called.
+# They are kept because the C keeps them and because the entry checks are what
+# makes them dead -- change those and these wake up. Nine codes can actually
+# fire, which an exhaustive search in the tests pins rather than asserts.
 
 #' Plain-language gloss for a SETG3 refusal code.
 #' @noRd
 .hzr_setg3_refusal_reason <- function(code) {
-  hit <- .hzr_setg3_refusal[[code]]
-  if (is.null(hit)) "the operand combination is rejected" else hit
+  # `[[` on an unmatched name in a CHARACTER vector throws "subscript out of
+  # bounds" rather than returning NULL, so an is.null() fallback here would be
+  # hollow -- right shape, never reachable, and the parser would error instead
+  # of degrading if a code were ever added to the trace but not the table.
+  hit <- .hzr_setg3_refusal[code]
+  if (is.na(hit)) "the operand combination is rejected" else unname(hit)
 }
 
 #' `alpha` handling shared by several SETG3 branches (setg3.c:815-852).
@@ -290,9 +315,13 @@
 #' Walk `SETG3()` and report what it would do to one late phase.
 #'
 #' @param tau_raw,gamma,alpha,eta The operand values `PARMS` supplied, with
-#'   PROC HAZARD's own initializers for any it did not (`stmtprc.c:33-36`).
-#'   `tau_raw` is 0 when `TAU` was absent -- SAS's initializer, not the 1 the
-#'   emitted call uses as a placeholder.
+#'   PROC HAZARD's own initializers for any it did not
+#'   (`src/hazard/stmtprc.c:34-37`). `tau_raw` is `NA` when `TAU` was absent:
+#'   the `stmtprc.c` initializer of 0 does NOT survive to `SETG3()`, because
+#'   `src/hazard/readobs.c:153-154` replaces an unspecified `TAU` with
+#'   `0.75 * Tmax` on an active late phase, and `readobs()` runs at
+#'   `hazard.c:276`, before `hzrg()` reaches `SETG3()` at `:292`. So an absent
+#'   `TAU` arrives POSITIVE and cannot raise `SETG3900`.
 #' @param fixed Character vector of parameters the job's `FIX*` tokens pinned,
 #'   as the user wrote them: these checks run before SETG3 changes any flag.
 #' @param weibull Whether the job carries the bare `WEIBULL` keyword.
@@ -302,14 +331,21 @@
 #' @noRd
 .hzr_setg3_notes <- function(tau_raw, gamma, alpha, eta, fixed, weibull) {
   fx <- function(p) p %in% fixed
-  refuse <- function(code) list(refusal = code, shape = NULL)
+  # `entry` marks the four checks at setg3.c:269-284, the only ones raised
+  # BEFORE the TAU rules at :309-323. The other twelve codes fire after those
+  # rules have already run, which decides whether a TAU row still applies.
+  refuse <- function(code, entry = FALSE) {
+    list(refusal = code, entry = entry, shape = NULL)
+  }
 
   # setg3.c:269-284. A FIX* on an operand SAS reads as unspecified is fatal,
   # and it is checked before anything else -- including SETG3_ignore_tau().
-  if (isTRUE(tau_raw <= 0) && fx("tau")) return(refuse("(SETG3900)"))
-  if (isTRUE(gamma <= 0) && fx("gamma")) return(refuse("(SETG3910)"))
-  if (isTRUE(alpha < 0) && fx("alpha")) return(refuse("(SETG3920)"))
-  if (isTRUE(eta <= 0) && fx("eta")) return(refuse("(SETG3930)"))
+  # An absent TAU (NA) is 0.75*Tmax by the time SETG3 sees it -- positive, so
+  # only an explicitly non-positive TAU= can refuse here.
+  if (isTRUE(tau_raw <= 0) && fx("tau")) return(refuse("(SETG3900)", TRUE))
+  if (isTRUE(gamma <= 0) && fx("gamma")) return(refuse("(SETG3910)", TRUE))
+  if (isTRUE(alpha < 0) && fx("alpha")) return(refuse("(SETG3920)", TRUE))
+  if (isTRUE(eta <= 0) && fx("eta")) return(refuse("(SETG3930)", TRUE))
 
   # setg3.c:313-315 and 403-421. Reproduced here for the trace only: the
   # emitted call deliberately keeps the user's GAMMA and ETA, because the
@@ -339,7 +375,7 @@
     if (isTRUE(alpha < 0) || (isTRUE(alpha == 0) && g3flag + 2L == 3L)) {
       return(refuse("(SETG3980)"))
     }
-    return(list(refusal = NULL,
+    return(list(refusal = NULL, entry = FALSE,
                 shape = c(gamma = gamma, alpha = alpha, eta = eta)))
   }
 
@@ -366,14 +402,14 @@
       if (is.character(a)) bad <- a else alpha <- a
     }
   } else if (isTRUE(alpha > 0) && isTRUE(eta > 0)) {
-    # gamma <= 0 (setg3.c:533-585)
+    # gamma <= 0 (setg3.c:534-585)
     if (fx("gamma")) return(refuse("(SETG31090)"))
     gamma <- 3 * alpha / eta
     if (isTRUE(gamma * eta <= 2)) gamma <- 3 / eta
     a <- .hzr_setg3_alpha_fixup(gamma, eta, alpha, fx("alpha"), weibull)
     if (is.character(a)) bad <- a else if (!is.null(a)) alpha <- a
   } else if (isTRUE(alpha > 0) && isTRUE(gamma > 0)) {
-    # eta <= 0 (setg3.c:587-636)
+    # eta <= 0 (setg3.c:588-636)
     if (fx("eta")) return(refuse("(SETG32020)"))
     eta <- 3 * alpha / gamma
     if (isTRUE(gamma * eta <= 2)) eta <- 3 / gamma
@@ -396,7 +432,7 @@
       if (is.character(a)) bad <- a else alpha <- a
     }
   } else if (isTRUE(alpha > 0)) {
-    # gamma <= 0, eta <= 0 (setg3.c:716-770)
+    # gamma <= 0, eta <= 0 (setg3.c:717-770)
     if (fx("gamma")) return(refuse("(SETG33020)"))
     if (fx("eta")) return(refuse("(SETG33010)"))
     eta <- 2
@@ -417,7 +453,8 @@
   }
 
   if (!is.null(bad)) return(refuse(bad))
-  list(refusal = NULL, shape = c(gamma = gamma, alpha = alpha, eta = eta))
+  list(refusal = NULL, entry = FALSE,
+       shape = c(gamma = gamma, alpha = alpha, eta = eta))
 }
 
 #' Map a SAS `PARMS` statement's operands to phases and a starting theta.
@@ -550,7 +587,17 @@
   # pins TAU at 1 (setg3.c:378), exactly the value emitted here.
   # `late` itself is left untouched: `length(late)` is the "did PARMS name a
   # late shape operand" gate below, and a TAU=0 operand still counts as one.
-  tau_defaulted <- is.null(late[["tau"]]) || !isTRUE(late[["tau"]] > 0)
+  #
+  # Absent and explicitly-non-positive are DIFFERENT cases, and conflating
+  # them put a false refusal in $untranslated. PROC HAZARD never sees the
+  # stmtprc.c initializer of 0 for an absent TAU: readobs.c:153-154 replaces
+  # it with 0.75*Tmax on an active late phase, before hzrg() reaches SETG3()
+  # (hazard.c:276 against :292). Only a TAU= the job actually wrote can still
+  # be <= 0 at setg3.c:269, and only that one reaches the 2*Tmax/3 assignment
+  # at :317. Both defaults are data-dependent; they are different data.
+  tau_absent <- is.null(late[["tau"]])
+  tau_nonpositive <- !tau_absent && !isTRUE(late[["tau"]] > 0)
+  tau_defaulted <- tau_absent || tau_nonpositive
   early_full <- .hzr_parms_fill_shape(early, .hzr_parms_early_sas_default)
   late_full <- .hzr_parms_fill_shape(late, .hzr_parms_late_sas_default)
 
@@ -586,7 +633,7 @@
     # is exactly what $untranslated exists to surface.
     late_full[["tau"]] <- 1
     pins <- "tau"
-    # setg3.c:405: with GAMMA and ETA both free, SETG3_ignore_tau() fixes ETA.
+    # setg3.c:406-407: with GAMMA and ETA both free, SETG3_ignore_tau() fixes ETA.
     # Mirrored for the same reason TAU is, and NOT for the reason
     # SETG3_verify_ge_2() is declined below: this one is exact algebra, not a
     # numerical-branch restriction. At alpha = 1 only the product gamma*eta
@@ -595,7 +642,7 @@
     # leaving both free relocates the flat ridge the TAU pin removed rather
     # than exercising a shape SAS cannot reach.
     #
-    # The VALUE rewrite that follows in the C (setg3.c:414-420: gamma <-
+    # The VALUE rewrite that follows in the C (setg3.c:411-415: gamma <-
     # gamma*eta, eta <- 1) is still not mirrored, per the decision recorded
     # above: it is likelihood-equivalent -- both parameterisations span the
     # same exponent -- so it changes what is reported, not what is fitted, and
@@ -678,7 +725,7 @@
   # A MU names its phase. Building a phase only when a *shape* operand
   # appeared let an orphaned MUE/MUL disappear together with the phase it
   # scaled -- a one-phase R model against SAS's two, and no untranslated row
-  # to say so. The shape defaults are now PROC HAZARD's own (stmtprc.c:30-37,
+  # to say so. The shape defaults are now PROC HAZARD's own (src/hazard/stmtprc.c:34-37,
   # see .hzr_parms_early_sas_default), but a phase reconstructed from nothing
   # but a MU would still start from a scale SAS does not use, and its tau would
   # still be data-dependent, so the MU stays recorded rather than guessed at.
@@ -732,7 +779,7 @@
   setg3_refused <- FALSE
   if (length(late) && has_late) {
     setg3 <- .hzr_setg3_notes(
-      tau_raw = if (tau_defaulted) 0 else late[["tau"]],
+      tau_raw = if (tau_absent) NA_real_ else late[["tau"]],
       gamma = late_full[["gamma"]],
       alpha = late_full[["alpha"]],
       eta = late_full[["eta"]],
@@ -740,7 +787,7 @@
       weibull = saw_weibull
     )
     if (!is.null(setg3$refusal)) {
-      setg3_refused <- TRUE
+      setg3_refused <- isTRUE(setg3$entry)
       flag_bad(
         sprintf("GAMMA=%g ALPHA=%g ETA=%g%s", late_full[["gamma"]],
                 late_full[["alpha"]], late_full[["eta"]],
@@ -759,9 +806,18 @@
     } else {
       # At alpha = 1 only the product gamma*eta is identified, and the
       # emitted call deliberately keeps the user's split rather than
-      # SETG3_ignore_tau()'s (setg3.c:414-420) -- likelihood-equivalent, so
+      # SETG3_ignore_tau()'s (setg3.c:411-415) -- likelihood-equivalent, so
       # compare the product there and each operand otherwise. Without this
       # every ignore_tau job would report a rewrite that changes no fit.
+      #
+      # The swap is product-preserving only while that product is POSITIVE.
+      # setg3.c:411-412 and :416-417 carry a fallback -- when gamma*eta <= 0
+      # the C keeps the OTHER operand instead, so gamma = -2, eta = 3 leaves
+      # SAS at gamma = 3, eta = 1, a product of 3 rather than -6. Comparing
+      # products still catches that (the two differ), which is the point: the
+      # comparison must not be read as an assertion that the swap is always
+      # harmless. Such a phase is emitted with a non-positive gamma anyway,
+      # which hzr_phase() rejects outright.
       emitted <- c(gamma = late_full[["gamma"]], alpha = late_full[["alpha"]],
                    eta = late_full[["eta"]])
       got <- setg3$shape
@@ -775,15 +831,36 @@
         function(a, b) isTRUE(all.equal(a, b)), emitted, got
       )]
       if (length(moved)) {
+        # Where the operand is outside hzr_phase()'s own domain the "general
+        # shape kept deliberately" framing is simply false: hzr_phase()
+        # stopifnot()s gamma > 0, eta > 0 and alpha >= 0 (R/phase-spec.R), so
+        # the emitted call cannot even be built. This is the one direction in
+        # which PROC HAZARD is the MORE permissive of the two -- it reads a
+        # non-positive operand as "derive one for me" -- and saying "a parity
+        # run starts elsewhere" would tell the reader the difference is a
+        # starting value when the difference is that R will not run this.
+        unbuildable <- !isTRUE(late_full[["gamma"]] > 0) ||
+          !isTRUE(late_full[["eta"]] > 0) ||
+          !isTRUE(late_full[["alpha"]] >= 0)
         flag_bad(
           paste(sprintf("%s=%g", names(emitted), emitted), collapse = " "),
           paste0("SETG3() optimizes from ",
                  paste(sprintf("%s = %g", moved, got[moved]), collapse = ", "),
-                 ", not the value(s) emitted here: it constrains the late ",
-                 "shape to keep PROC HAZARD inside a numerical branch it can ",
-                 "evaluate. hzr_decompos_g3() carries the general G3 form and ",
-                 "needs no such constraint, so the emitted call keeps it ",
-                 "deliberately -- but a SAS parity run starts elsewhere")
+                 ", not the value(s) emitted here: it ",
+                 if (unbuildable) {
+                   paste0("reads a non-positive GAMMA/ETA (or negative ALPHA) ",
+                          "as a request to derive one. hzr_phase() requires ",
+                          "gamma > 0, eta > 0 and alpha >= 0, so the emitted ",
+                          "call cannot be built at all -- supply the operand ",
+                          "rather than expecting a starting-value difference")
+                 } else {
+                   paste0("constrains the late shape to keep PROC HAZARD ",
+                          "inside a numerical branch it can evaluate. ",
+                          "hzr_decompos_g3() carries the general G3 form and ",
+                          "needs no such constraint, so the emitted call ",
+                          "keeps it deliberately -- but a SAS parity run ",
+                          "starts elsewhere")
+                 })
         )
       }
     }
@@ -794,10 +871,13 @@
   # A job that WROTE a different TAU is a different matter: PROC HAZARD
   # discards that value, and so now does this translator, but a starting value
   # the user typed and neither program uses is worth saying out loud.
-  # A refused job stops inside SETG3 before either TAU rule runs, so neither
-  # row below applies -- reporting them alongside the refusal would describe
-  # code PROC HAZARD never reaches, the same false-positive the MUL gate above
-  # exists to avoid.
+  # Only the four ENTRY refusals (setg3.c:269-284) are raised before the TAU
+  # rules at :309-323; the other twelve fire from :429 onwards, by which point
+  # PROC HAZARD has already applied whichever TAU rule was going to apply. So
+  # the suppression below is keyed on `setg3$entry`, not on "refused at all" --
+  # reporting a TAU rule alongside an entry refusal would describe code PROC
+  # HAZARD never reaches, the same false positive the MUL gate exists to avoid,
+  # while suppressing it for a late refusal would hide one that did run.
   if (length(late) && has_late && !setg3_refused && ignore_tau &&
       !is.null(late[["tau"]]) && !isTRUE(late[["tau"]] == 1)) {
     flag_bad(
@@ -809,6 +889,8 @@
     )
   } else if (length(late) && has_late && !setg3_refused && tau_defaulted &&
              !ignore_tau) {
+    # Which data-dependent default applies depends on whether the job wrote a
+    # TAU at all -- see the tau_absent/tau_nonpositive split above.
     # The other SETG3 branch (setg3.c:316-318), reached only when the
     # ignore_tau branch above was NOT taken -- setg3.c:313-316 is an if/else,
     # so a job that fixes ALPHA at 1 never gets this assignment at all.
@@ -824,13 +906,18 @@
     # `length(late)` because a late phase that was never built is already
     # reported by the MUL guard below, and two rows for one absence is noise.
     flag_bad(
-      if (is.null(late[["tau"]])) "TAU (unspecified)" else
+      if (tau_absent) "TAU (unspecified)" else
         paste0("TAU=", sprintf("%g", late[["tau"]])),
-      paste0("SETG3() starts a non-positive TAU at 2*Tmax/3, which depends ",
-             "on the data and cannot be reproduced at parse time; the ",
-             "emitted phase starts at tau = 1, so this fit begins somewhere ",
-             "PROC HAZARD would not and the multiphase likelihood is ",
-             "multimodal")
+      paste0("PROC HAZARD starts TAU at ",
+             if (tau_absent) {
+               "0.75*Tmax (readobs.c:153-154, applied to an unspecified TAU "
+             } else {
+               "2*Tmax/3 (setg3.c:317, applied to a non-positive TAU "
+             },
+             "before SETG3 runs), which depends on the data and cannot be ",
+             "reproduced at parse time; the emitted phase starts at tau = 1, ",
+             "so this fit begins somewhere PROC HAZARD would not and the ",
+             "multiphase likelihood is multimodal")
     )
   }
 
