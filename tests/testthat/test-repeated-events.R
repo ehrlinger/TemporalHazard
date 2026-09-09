@@ -118,3 +118,16 @@ test_that("stage 4 puts the appended row after the row it was copied from", {
   s1 <- out[out$id == "s1", ]
   expect_equal(s1$t, c(1, 3, 10))
 })
+
+test_that("stage 4's appended row inherits first and last from its source row", {
+  d <- .hzr_re_stage3(.hzr_re_stage2(.hzr_re_stage1(re_fixture()), "id", "t", "ev"), "id", "t", "fu", "ev")
+  out <- .hzr_re_stage4(d, "id", "t", "fu", "ev")
+  s1 <- out[out$id == "s1", ]
+  # s1 has two original rows (t=1 and t=3) plus one appended row (t=10).
+  # Row 1 (t=1) is first in its group: first=1, last=0.
+  # Row 2 (t=3) is the last original row: first=0, last=1.
+  # Row 3 (appended from row 2) must inherit those flags: first=0, last=1.
+  # Stage 6 reads the carried values, so this inheritance is load-bearing.
+  expect_equal(s1$first, c(1, 0, 0))
+  expect_equal(s1$last, c(0, 1, 1))
+})
