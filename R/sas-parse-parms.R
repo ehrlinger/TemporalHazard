@@ -368,8 +368,26 @@
     # PROC HAZARD overrides it too, but a silent rewrite of what the job said
     # is exactly what $untranslated exists to surface.
     late_full[["tau"]] <- 1
+    pins <- "tau"
+    # setg3.c:405: with GAMMA and ETA both free, SETG3_ignore_tau() fixes ETA.
+    # Mirrored for the same reason TAU is, and NOT for the reason
+    # SETG3_verify_ge_2() is declined below: this one is exact algebra, not a
+    # numerical-branch restriction. At alpha = 1 only the product gamma*eta
+    # enters the likelihood, so the pair is exactly singular in R too -- the
+    # general G3 shape hzr_phase() carries is genuinely degenerate here, and
+    # leaving both free relocates the flat ridge the TAU pin removed rather
+    # than exercising a shape SAS cannot reach.
+    #
+    # The VALUE rewrite that follows in the C (setg3.c:414-420: gamma <-
+    # gamma*eta, eta <- 1) is still not mirrored, per the decision recorded
+    # above: it is likelihood-equivalent -- both parameterisations span the
+    # same exponent -- so it changes what is reported, not what is fitted, and
+    # rewriting it would put the emitted call at odds with the user's PARMS.
+    if (!("gamma" %in% fixed_late) && !("eta" %in% fixed_late)) {
+      pins <- c(pins, "eta")
+    }
     fixed_late <- intersect(unname(.hzr_parms_late_arg),
-                            union(fixed_late, "tau"))
+                            union(fixed_late, pins))
   } else if (tau_defaulted) {
     late_full[["tau"]] <- .hzr_parms_late_sas_default[["tau"]]
   }
@@ -484,18 +502,56 @@
   # emits a late phase that PROC HAZARD would not build at all. No corpus job
   # does that, so it is latent, and changing how phases are built is a wider
   # change than gating these two warnings.
-  alpha_val <- late_full[["alpha"]]
-  if (has_late && ignore_tau &&
-      !("gamma" %in% fixed_late) && !("eta" %in% fixed_late)) {
+  # The GAMMA*ETA divergence this block used to record is gone: setg3.c:405's
+  # ETA fix is now mirrored above, so hazard() estimates the same number of
+  # free parameters as PROC HAZARD on this branch. What remains unmirrored is
+  # the value rewrite (gamma <- gamma*eta, eta <- 1), which is
+  # likelihood-equivalent and is documented in hzr_translate_sas() rather than
+  # reported per job.
+
+  # SETG3_verify_ge_2() (setg3.c:873-924) rewrites a late phase whose
+  # GAMMA*ETA <= 2: with neither fixed it sets gamma = 3/eta, and with one
+  # fixed it sets the other to 3/(the fixed one). The 3 is not a normalisation
+  # to the boundary but a deliberate push clear of it.
+  #
+  # This is NOT mirrored, and that is a design decision rather than an
+  # omission. The constraint exists so PROC HAZARD stays inside a numerical
+  # branch it can evaluate -- the same reason g3flag exists, which the WEIBULL
+  # branch above notes "has no R counterpart: hzr_decompos_g3() handles the
+  # general form directly". hzr_phase("g3") carries the general four-parameter
+  # shape and is under no such restriction, and exercising a late shape SAS
+  # cannot reach is a goal of this package rather than a defect in it. Copying
+  # the rewrite would import a SAS limitation into R.
+  #
+  # It is recorded because it is still a start-value divergence: a parity run
+  # against a SAS listing will see different GAMMA (or ETA) here, and that
+  # difference should be explained rather than discovered.
+  #
+  # Reached from SETG3_all_gt_0() (setg3.c:499) and SETG3_alpha_le_0() (:523),
+  # i.e. whenever GAMMA > 0 and ETA > 0, whatever ALPHA is -- but never on the
+  # WEIBULL path, which returns at setg3.c:347 before the sign dispatch. Note
+  # the predicate is invariant to SETG3_ignore_tau(): its reparameterisation
+  # (setg3.c:403-421) moves the exponent between GAMMA and ETA but preserves
+  # their PRODUCT, which is all `gte` reads. The g_two half of the function is
+  # driven by FIXGE2/FIXGAE2, which .hzr_sas_token() records as unresolved, so
+  # a job carrying those is never reported clean anyway.
+  gte <- late_full[["gamma"]] * late_full[["eta"]]
+  if (length(late) && has_late && !saw_weibull &&
+      isTRUE(late_full[["gamma"]] > 0) && isTRUE(late_full[["eta"]] > 0) &&
+      isTRUE(gte <= 2) &&
+      !all(c("gamma", "eta") %in% fixed_late)) {
     flag_bad(
-      "ALPHA=1 FIXALPHA with GAMMA and ETA both estimated",
-      paste0("SETG3_ignore_tau() estimates GAMMA*ETA as a single parameter ",
-             "here (it fixes ETA); hazard() would estimate both, which is one ",
-             "more free parameter than PROC HAZARD on a product that is not ",
-             "separately identifiable at alpha = 1")
+      sprintf("GAMMA=%g ETA=%g (product %g)", late_full[["gamma"]],
+              late_full[["eta"]], gte),
+      paste0("SETG3_verify_ge_2() rewrites a late phase with GAMMA*ETA <= 2 ",
+             "(setg3.c:907-921), setting the unfixed one to 3 over the other, ",
+             "so PROC HAZARD does not start where this call does; the general ",
+             "G3 shape hzr_phase() carries needs no such constraint and is ",
+             "kept deliberately, but a SAS parity comparison will differ here")
     )
   }
 
+  alpha_val <- late_full[["alpha"]]
   # setg3.c:437: SETG3_weibull() rejects alpha == 0 unless ALPHA is fixed
   # (g3flag == 3 vs 4) and the job does not run. hzr_phase() accepts alpha = 0
   # as the limiting exponential, so without this the translator would emit a
@@ -526,8 +582,9 @@
   } else if (length(late) && has_late && tau_defaulted && !ignore_tau) {
     # The other SETG3 branch (setg3.c:316-318), reached only when the
     # ignore_tau branch above was NOT taken -- setg3.c:313-316 is an if/else,
-    # so a job that fixes ALPHA at 1 never gets the 2*Tmax/3 assignment at all.: a non-positive TAU -- absent
-    # from PARMS, or written as TAU=0 -- is replaced by 2*Tmax/3. It is the one
+    # so a job that fixes ALPHA at 1 never gets this assignment at all.
+    # A non-positive TAU -- absent from PARMS, or written as TAU=0 -- is
+    # replaced by 2*Tmax/3. It is the one
     # shape default that cannot be reproduced at parse time, because it depends
     # on the data, so the emitted call starts at tau = 1 and this says so
     # rather than letting the difference pass as a translation. Emitting

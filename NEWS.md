@@ -30,9 +30,31 @@
   `$untranslated` to say so. The emitted call now carries `tau = 1` and
   `"tau"` in `fixed`, which identifies `log_mu` again. Jobs whose `PARMS`
   named a different `TAU` additionally record a row, since that value is used
-  by neither `PROC HAZARD` nor the translation. **This changes the emitted
-  call for every job that fixes `ALPHA` at 1**, which is the dominant late-
-  phase shape in the corpus.
+  by neither `PROC HAZARD` nor the translation. No corpus translation changes:
+  every late-phase block in the public corpus already writes `TAU=1 FIXTAU`,
+  so the emitted calls are byte-identical before and after (checked by running
+  the parser over all of them). What changes there is that those jobs no
+  longer need a warning.
+
+  The same branch's `ETA` fix (`setg3.c:405`) is mirrored too: with `GAMMA` and
+  `ETA` both free at `alpha = 1` the pair is exactly singular, and
+  `hzr_phase()` previously left both free and fitted the ridge. On the
+  package's own fixture that moves `gamma`'s standard error from 7.5 to 0.02.
+  This replaces an `$untranslated` row with a faithful translation.
+
+* **`hzr_translate_sas()` records, but deliberately does not mirror,
+  `SETG3_verify_ge_2()`.** When `GAMMA * ETA <= 2` and neither is fixed,
+  `setg3.c:907-921` rewrites the free one to `3` over the other -- and the
+  `PROC HAZARD` defaults `gamma = 1`, `eta = 2` land on that boundary exactly,
+  so it applies to every defaulted non-`WEIBULL` late phase. That constraint
+  exists to keep `PROC HAZARD` inside a numerical branch it can evaluate, the
+  same role `g3flag` plays; `hzr_decompos_g3()` carries the general
+  four-parameter form and needs no such restriction, and reaching a late shape
+  the reference implementation cannot is a purpose of this package. The
+  emitted call therefore keeps the general shape, and the divergence is
+  recorded so a SAS parity comparison knows why the starting values differ.
+  No corpus job is affected: every late-phase block there is `WEIBULL`, which
+  returns at `setg3.c:347` before this code runs.
 
 * **`hzr_translate_sas()` no longer discards the `ALPHA` and `ETA` a `PARMS`
   statement specified alongside `WEIBULL`.** The translator read the bare

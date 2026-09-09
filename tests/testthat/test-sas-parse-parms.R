@@ -236,24 +236,52 @@ test_that("a MUE with no early shape operand is recorded, not dropped", {
   expect_match(got$untranslated$reason, "no early phase")
 })
 
-test_that("alpha = 1 fixed with GAMMA and ETA both free is recorded", {
+test_that("alpha = 1 fixed with GAMMA and ETA both free fixes ETA, as SAS does", {
   # setg3.c:312-314 routes alpha == 1 && FIXALPHA into SETG3_ignore_tau(),
-  # which at setg3.c:405-406 does `if(hzr_parms_ge_estim()) set_fixed(ETA)`:
-  # with both shape parameters free, SAS fixes ETA and estimates the product
-  # gamma*eta as gamma alone. At alpha = 1, tau = 1 the G3 form collapses to
-  # t^(gamma*eta), so gamma and eta are not separately identifiable and SAS is
-  # resolving that. hazard() would leave both free and fit the ridge -- one
-  # more estimated parameter than PROC HAZARD, with different standard errors.
-  # A model difference, not a reporting one, so it is recorded.
+  # which at setg3.c:405 does `if(hzr_parms_ge_estim()) set_fixed(ETA)`: with
+  # both shape parameters free, SAS fixes ETA. At alpha = 1, tau = 1 the G3
+  # form collapses to t^(gamma*eta), so the pair is not separately
+  # identifiable and SAS is resolving that.
   #
-  # No corpus job reaches this today (0 of 38 live PARMS blocks, measured
-  # 2026-09-08); the 16 that fire SETG3_ignore_tau() all fix GAMMA.
+  # This was previously RECORDED rather than mirrored, which left hazard()
+  # fitting the flat ridge with one more free parameter than PROC HAZARD. It
+  # is now mirrored: unlike SETG3_verify_ge_2()'s GAMMA rewrite, this is exact
+  # algebra rather than a numerical-branch restriction, so mirroring it costs
+  # none of the general G3 shape hzr_phase() carries -- that shape is
+  # genuinely degenerate at alpha = 1.
   got <- .hzr_parse_parms(c("MUL=0.01", "TAU=1", "ALPHA=1", "GAMMA=2",
                             "ETA=3", "FIXALPHA"))
-  expect_equal(nrow(got$untranslated), 1L)
-  expect_match(got$untranslated$reason, "estimates GAMMA\\*ETA")
-  # TAU=1 is what the branch pins anyway, so it contributes no second row.
-  expect_true("tau" %in% eval(got$phases)[[1L]]$fixed)
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("g3", tau = 1, gamma = 2, alpha = 1, eta = 3,
+                         fixed = c("tau", "alpha", "eta"))))
+  )
+  expect_equal(nrow(got$untranslated), 0L)
+})
+
+test_that("fixing ETA at alpha = 1 is what makes GAMMA estimable", {
+  # Two-sided, because "the standard error is finite" alone could come from
+  # anything: fit the SAME phase with ETA left free and show the ridge. The
+  # emitted (fixed) form gives gamma an SE around 0.02; leaving ETA free gives
+  # 7.5 on gamma and 13.7 on eta -- the flat direction, not a tighter fit.
+  skip_on_cran()
+  got <- .hzr_parse_parms(c("MUL=0.01", "TAU=1", "ALPHA=1", "GAMMA=2",
+                            "ETA=3", "FIXALPHA"))
+  set.seed(1)
+  n <- 400
+  d <- data.frame(t = stats::rexp(n, 0.3), s = rep(c(1, 0), length.out = n))
+  fit_one <- function(phases) {
+    f <- suppressWarnings(hazard(
+      time = d$t, status = d$s, dist = "multiphase",
+      phases = phases, theta = eval(got$theta), fit = TRUE
+    ))
+    sqrt(diag(stats::vcov(f)))[["phase_1.gamma"]]
+  }
+  se_fixed <- fit_one(eval(got$phases))
+  se_free <- fit_one(list(hzr_phase("g3", tau = 1, gamma = 2, alpha = 1,
+                                    eta = 3, fixed = c("tau", "alpha"))))
+  expect_true(is.finite(se_fixed))
+  expect_lt(se_fixed, se_free / 100)
 })
 
 test_that("alpha = 1 fixed with GAMMA fixed is not recorded", {
@@ -297,13 +325,15 @@ test_that("the alpha = 1 guard does not fire on a job with no late phase", {
   expect_equal(nrow(.hzr_parse_parms(c("MUC=0.01", "FIXALPHA"))$untranslated), 0L)
 })
 
-test_that("the alpha = 1 guard still fires when ALPHA was left to default", {
+test_that("ETA is fixed even when ALPHA was left to its default", {
   # The other half of the same boundary: a late phase exists, PARMS never named
   # ALPHA, and FIXALPHA pins it at the default of 1 with GAMMA and ETA free.
-  # SAS fixes ETA here, so this must still be recorded -- the scope fix above
-  # must not buy its way out of the guard by requiring an explicit ALPHA.
+  # SAS fixes ETA here too, so the mirror must not buy its way out by
+  # requiring an explicit ALPHA operand.
   got <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=2", "ETA=3", "FIXALPHA"))
-  expect_true(any(grepl("estimates GAMMA\\*ETA", got$untranslated$reason)))
+  expect_true("eta" %in% eval(got$phases)[[1L]]$fixed)
+  # TAU=2 is discarded by the same branch, which is the one row here.
+  expect_equal(got$untranslated$construct, "TAU=2")
 })
 
 test_that("the alpha = 1 guard does not fire without MUL", {
@@ -318,7 +348,7 @@ test_that("the alpha = 1 guard does not fire without MUL", {
   # Gating on shape operands instead of MUL got this wrong: TAU/GAMMA/ETA with
   # no MUL is not a late phase at all.
   got <- .hzr_parse_parms(c("TAU=2", "GAMMA=2", "ETA=3", "FIXALPHA"))
-  expect_false(any(grepl("estimates GAMMA", got$untranslated$reason)))
+  expect_false("eta" %in% eval(got$phases)[[1L]]$fixed)
 })
 
 test_that("the ALPHA = 0 WEIBULL guard does not fire without MUL", {
@@ -332,7 +362,7 @@ test_that("the ALPHA = 0 WEIBULL guard does not fire without MUL", {
 test_that("both late-phase guards still fire when MUL is present", {
   # The other side of the gate, so it cannot be satisfied by never firing.
   g1 <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=2", "ETA=3", "FIXALPHA"))
-  expect_true(any(grepl("estimates GAMMA", g1$untranslated$reason)))
+  expect_true("eta" %in% eval(g1$phases)[[1L]]$fixed)
   g2 <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=1.5", "ALPHA=0",
                            "ETA=1", "WEIBULL"))
   expect_true(any(grepl("SETG3980", g2$untranslated$reason)))
@@ -480,8 +510,11 @@ test_that("SETG3_ignore_tau() pins TAU at 1 AND fixes it, and so does the call",
   # there is genuinely nothing to report -- but assert the emitted `fixed=`,
   # not just the row count, or this reverts to the assertion that could not
   # fail.
+  # WEIBULL matches every late-phase block in the corpus, and keeps this test
+  # on the tau pin alone: without it GAMMA*ETA = 1.32 <= 2 also trips the
+  # SETG3_verify_ge_2 row, which is a separate divergence tested below.
   got <- .hzr_parse_parms(c("MUL=0.01", "ALPHA=1", "GAMMA=1", "ETA=1.32",
-                            "FIXALPHA", "FIXGAMMA"))
+                            "FIXALPHA", "FIXGAMMA", "WEIBULL"))
   expect_equal(
     got$phases,
     quote(list(hzr_phase("g3", tau = 1, gamma = 1, alpha = 1, eta = 1.32,
@@ -497,7 +530,7 @@ test_that("pinning TAU restores standard errors on the aliased log_mu", {
   # emitted `fixed=` alone would not show that.
   skip_on_cran()
   got <- .hzr_parse_parms(c("MUL=0.01", "ALPHA=1", "GAMMA=1", "ETA=1.32",
-                            "FIXALPHA", "FIXGAMMA"))
+                            "FIXALPHA", "FIXGAMMA", "WEIBULL"))
   set.seed(1)
   n <- 400
   d <- data.frame(t = stats::rexp(n, 0.3), s = rep(c(1, 0), length.out = n))
@@ -514,7 +547,7 @@ test_that("a TAU the ignore_tau branch discards is recorded", {
   # starting value the job wrote and neither program uses is worth saying out
   # loud, which is what $untranslated is for.
   got <- .hzr_parse_parms(c("MUL=0.01", "TAU=5", "ALPHA=1", "GAMMA=1",
-                            "ETA=1.32", "FIXALPHA", "FIXGAMMA"))
+                            "ETA=1.32", "FIXALPHA", "FIXGAMMA", "WEIBULL"))
   expect_equal(got$untranslated$construct, "TAU=5")
   expect_match(got$untranslated$reason, "discards this TAU")
   expect_equal(
@@ -530,8 +563,56 @@ test_that("the ignore_tau branch suppresses the 2*Tmax/3 row, not just reorders 
   # default. The first cut of this fell through to that row and reported a
   # divergence PROC HAZARD does not have.
   got <- .hzr_parse_parms(c("MUL=0.01", "ALPHA=1", "GAMMA=1", "ETA=1.32",
-                            "FIXALPHA", "FIXGAMMA"))
+                            "FIXALPHA", "FIXGAMMA", "WEIBULL"))
   expect_false(any(grepl("Tmax", got$untranslated$reason, fixed = TRUE)))
+})
+
+test_that("SETG3_verify_ge_2's GAMMA rewrite is recorded, not mirrored", {
+  # setg3.c:907-921 pushes a late phase with GAMMA*ETA <= 2 clear of the
+  # boundary -- gamma = 3/eta with neither fixed. The SAS defaults gamma = 1,
+  # eta = 2 land on GAMMA*ETA = 2 exactly, so this fires on every defaulted
+  # non-WEIBULL late phase: PROC HAZARD would start at gamma = 1.5.
+  #
+  # It is deliberately NOT mirrored. The constraint keeps PROC HAZARD inside a
+  # numerical branch it can evaluate; hzr_decompos_g3() carries the general
+  # form and needs no such restriction, and reaching a late shape SAS cannot
+  # is a goal here. Recorded so a parity run knows why the starts differ.
+  got <- .hzr_parse_parms(c("MUL=0.01", "TAU=3"))
+  expect_equal(got$untranslated$construct, "GAMMA=1 ETA=2 (product 2)")
+  expect_match(got$untranslated$reason, "GAMMA\\*ETA <= 2")
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("g3", tau = 3, gamma = 1, alpha = 1, eta = 2)))
+  )
+})
+
+test_that("the verify_ge_2 row does not fire above the boundary or on WEIBULL", {
+  # GAMMA*ETA > 2 is untouched by setg3.c:907, and the WEIBULL path returns at
+  # setg3.c:347 before the sign dispatch reaches SETG3_verify_ge_2() at all --
+  # which is why no corpus job trips this (every late block there is WEIBULL).
+  above <- .hzr_parse_parms(c("MUL=0.01", "TAU=3", "GAMMA=2", "ETA=2"))
+  expect_equal(nrow(above$untranslated), 0L)
+  weib <- .hzr_parse_parms(c("MUL=0.01", "TAU=3", "GAMMA=1", "ETA=2", "WEIBULL"))
+  expect_false(any(grepl("GAMMA\\*ETA", weib$untranslated$reason)))
+})
+
+test_that("the product SETG3_verify_ge_2 reads survives the ignore_tau swap", {
+  # setg3.c:403-421 moves the exponent between GAMMA and ETA but preserves
+  # their PRODUCT, which is all `gte` reads -- so the boundary test is the same
+  # whether or not that branch ran. This is what lets one predicate serve both
+  # paths; if the reparameterisation ever stops being product-preserving, the
+  # guard silently starts testing the wrong quantity.
+  # gamma * eta = 3, above the boundary, in both orderings: 0.5 * 6 straight,
+  # and 1 * 3 after the swap. Neither may record the rewrite.
+  a <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=0.5", "ETA=6"))
+  expect_equal(nrow(a$untranslated), 0L)
+  b <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=0.5", "ETA=6",
+                          "ALPHA=1", "FIXALPHA", "FIXGAMMA"))
+  expect_false(any(grepl("GAMMA\\*ETA <= 2", b$untranslated$reason)))
+  # And the same product BELOW the boundary does record, so the pair above is
+  # not passing merely because the guard never fires on these shapes.
+  lo <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=0.5", "ETA=3"))
+  expect_true(any(grepl("GAMMA\\*ETA <= 2", lo$untranslated$reason)))
 })
 
 test_that("the aliasing that motivates pinning TAU is real, not asserted", {
