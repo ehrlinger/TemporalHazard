@@ -95,3 +95,43 @@
   }
   invisible(NULL)
 }
+
+# Stage 1 -- SAS: data &out; set &in; &rcensor=0;
+.hzr_re_stage1 <- function(data) {
+  data$rcensor <- 0
+  data
+}
+
+# Stage 2 -- SAS: if first.&id=0 and (&eventype=0 or &eventype=.) then delete;
+#
+# Keep the group's first row unconditionally, plus every row that is not a
+# non-event.  Note the double negative is deliberate: "not a non-event" is
+# wider than "is an event", and SAS's predicate is the non-event one.
+.hzr_re_stage2 <- function(data, id, time, indicator) {
+  data <- data[.hzr_re_order(data, id, time), , drop = FALSE]
+  flags <- .hzr_re_flags(data[[id]])
+  keep <- flags$first | !.hzr_re_nonevent(data[[indicator]])
+  data[keep, , drop = FALSE]
+}
+
+# Stage 3 -- SAS:
+#   if first.&id=1 and last.&id=1 and nonevent then do; &iv_event=&iv_end; &rcensor=1; end;
+#   if first.&id>last.&id and nonevent then delete;
+#
+# Both statements read the SAME first./last. values, so the flags are
+# computed once, before the padding mutation.  The two conditions are
+# disjoint (first & last against first & !last), so order does not matter
+# between them -- but recomputing the flags after the mutation would be
+# wrong in principle and is avoided here on purpose.
+.hzr_re_stage3 <- function(data, id, time, followup, indicator) {
+  data <- data[.hzr_re_order(data, id, time), , drop = FALSE]
+  flags <- .hzr_re_flags(data[[id]])
+  nonevent <- .hzr_re_nonevent(data[[indicator]])
+
+  solo <- flags$first & flags$last & nonevent
+  data[[time]][solo] <- data[[followup]][solo]
+  data$rcensor[solo] <- 1
+
+  drop <- flags$first & !flags$last & nonevent
+  data[!drop, , drop = FALSE]
+}
