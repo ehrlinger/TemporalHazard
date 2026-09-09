@@ -21,15 +21,18 @@
   partial block (`MUE THALF NU MUC`, no `M`), and its early phase now starts at
   `m = 1`.
 
-* **`hzr_translate_sas()` now reports that `SETG3_ignore_tau()` fixes `TAU`,
-  not merely that it sets it.** When `ALPHA` is fixed at 1, `setg3.c:378-379`
-  sets `TAU` to 1 *and* fixes it; the emitted `hzr_phase()` call left `TAU`
-  free. At `alpha = 1` the `G3` form collapses to `(t/tau)^(gamma*eta)`, so
-  `log_mu` and `log_tau` are exactly aliased -- the fit converges onto a flat
-  ridge and returns no standard errors for either, with nothing in
-  `$untranslated` to say so. Such a job now records a row. This fires whether
-  or not `PARMS` named a `TAU`, because `PROC HAZARD` overwrites the value
-  either way.
+* **`hzr_translate_sas()` now pins `TAU` where `SETG3_ignore_tau()` pins it.**
+  When `ALPHA` is fixed at 1, `setg3.c:378-379` sets `TAU` to 1 *and* fixes
+  it; the emitted `hzr_phase()` call mirrored neither, leaving `TAU` free. At
+  `alpha = 1` the `G3` form collapses to `(t/tau)^(gamma*eta)`, so `log_mu`
+  and `log_tau` are exactly aliased: the translated fit converged onto a flat
+  ridge and returned no standard errors for either, with nothing in
+  `$untranslated` to say so. The emitted call now carries `tau = 1` and
+  `"tau"` in `fixed`, which identifies `log_mu` again. Jobs whose `PARMS`
+  named a different `TAU` additionally record a row, since that value is used
+  by neither `PROC HAZARD` nor the translation. **This changes the emitted
+  call for every job that fixes `ALPHA` at 1**, which is the dominant late-
+  phase shape in the corpus.
 
 * **`hzr_translate_sas()` no longer discards the `ALPHA` and `ETA` a `PARMS`
   statement specified alongside `WEIBULL`.** The translator read the bare

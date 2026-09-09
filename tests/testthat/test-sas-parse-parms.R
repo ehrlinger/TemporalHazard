@@ -250,11 +250,10 @@ test_that("alpha = 1 fixed with GAMMA and ETA both free is recorded", {
   # 2026-09-08); the 16 that fire SETG3_ignore_tau() all fix GAMMA.
   got <- .hzr_parse_parms(c("MUL=0.01", "TAU=1", "ALPHA=1", "GAMMA=2",
                             "ETA=3", "FIXALPHA"))
-  expect_true(any(grepl("estimates GAMMA\\*ETA", got$untranslated$reason)))
-  # The same branch also leaves TAU free where SAS fixes it; that is a second,
-  # separate row (see the SETG3_ignore_tau TAU tests below), so assert this
-  # guard by its reason rather than by the row count.
-  expect_equal(nrow(got$untranslated), 2L)
+  expect_equal(nrow(got$untranslated), 1L)
+  expect_match(got$untranslated$reason, "estimates GAMMA\\*ETA")
+  # TAU=1 is what the branch pins anyway, so it contributes no second row.
+  expect_true("tau" %in% eval(got$phases)[[1L]]$fixed)
 })
 
 test_that("alpha = 1 fixed with GAMMA fixed is not recorded", {
@@ -472,37 +471,73 @@ test_that("a positive TAU is not recorded", {
   expect_equal(nrow(got$untranslated), 0L)
 })
 
-test_that("SETG3_ignore_tau() fixing TAU, not just setting it, is recorded", {
-  # This test previously asserted ZERO untranslated rows here, on the grounds
-  # that setg3.c:378 pins tau at 1 -- "exactly what is emitted, so there is
-  # nothing to report". That read half the function. Line 379 is
-  # hzr_parm_set_fixed(HZ_TAU): SAS fixes TAU as well, and the emitted call
-  # does not. At alpha = 1 that is not a spare parameter but an unidentified
-  # one, and the fit below is the reason this matters -- it converges and
-  # reports no standard errors on the two aliased parameters, which is the
-  # exact shape AGENTS.md opens with. FIXGAMMA keeps the GAMMA*ETA guard quiet
-  # so the surviving row can only be the TAU one.
+test_that("SETG3_ignore_tau() pins TAU at 1 AND fixes it, and so does the call", {
+  # setg3.c:378-379 is two statements: Late.tau = ONE, then
+  # hzr_parm_set_fixed(HZ_TAU). An earlier version of this test read only the
+  # first, concluded "exactly what is emitted, so there is nothing to report",
+  # and asserted ZERO untranslated rows over a fit that returns no standard
+  # errors. Both halves are now mirrored, so the translation is faithful and
+  # there is genuinely nothing to report -- but assert the emitted `fixed=`,
+  # not just the row count, or this reverts to the assertion that could not
+  # fail.
   got <- .hzr_parse_parms(c("MUL=0.01", "ALPHA=1", "GAMMA=1", "ETA=1.32",
                             "FIXALPHA", "FIXGAMMA"))
-  expect_equal(nrow(got$untranslated), 1L)
-  expect_match(got$untranslated$reason, "exactly aliased")
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("g3", tau = 1, gamma = 1, alpha = 1, eta = 1.32,
+                         fixed = c("tau", "gamma", "alpha"))))
+  )
+  expect_equal(nrow(got$untranslated), 0L)
 })
 
-test_that("the SETG3_ignore_tau TAU row fires on a TAU the job did specify", {
-  # SAS overwrites the value either way, so a job written TAU=5 runs at
-  # tau = 1, fixed. Keying the row on "TAU was defaulted" would have missed
-  # this entirely -- the emitted call starts at 5, free.
+test_that("pinning TAU restores standard errors on the aliased log_mu", {
+  # The point of the pin, executed rather than argued. With TAU free this fit
+  # converges onto the log_mu/log_tau ridge and vcov() gives NA for both; with
+  # TAU fixed as SAS fixes it, log_mu is identified again. An assertion on the
+  # emitted `fixed=` alone would not show that.
+  skip_on_cran()
+  got <- .hzr_parse_parms(c("MUL=0.01", "ALPHA=1", "GAMMA=1", "ETA=1.32",
+                            "FIXALPHA", "FIXGAMMA"))
+  set.seed(1)
+  n <- 400
+  d <- data.frame(t = stats::rexp(n, 0.3), s = rep(c(1, 0), length.out = n))
+  fit <- suppressWarnings(hazard(
+    time = d$t, status = d$s, dist = "multiphase",
+    phases = eval(got$phases), theta = eval(got$theta), fit = TRUE
+  ))
+  se <- sqrt(diag(stats::vcov(fit)))
+  expect_true(is.finite(se[["phase_1.log_mu"]]))
+})
+
+test_that("a TAU the ignore_tau branch discards is recorded", {
+  # PROC HAZARD overrides the value, and so now does the translator -- but a
+  # starting value the job wrote and neither program uses is worth saying out
+  # loud, which is what $untranslated is for.
   got <- .hzr_parse_parms(c("MUL=0.01", "TAU=5", "ALPHA=1", "GAMMA=1",
                             "ETA=1.32", "FIXALPHA", "FIXGAMMA"))
-  expect_equal(got$untranslated$construct, "ALPHA=1 FIXALPHA with TAU=5")
-  expect_match(got$untranslated$reason, "exactly aliased")
+  expect_equal(got$untranslated$construct, "TAU=5")
+  expect_match(got$untranslated$reason, "discards this TAU")
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("g3", tau = 1, gamma = 1, alpha = 1, eta = 1.32,
+                         fixed = c("tau", "gamma", "alpha"))))
+  )
 })
 
-test_that("the aliasing the ignore_tau row describes is real, not asserted", {
-  # The row claims G3 collapses to (t/tau)^(gamma*eta) at alpha = 1, which is
-  # why log_mu and log_tau cannot both be identified. Compute it rather than
-  # restate it: a wrong claim in an $untranslated reason is a wrong claim a
-  # caller acts on.
+test_that("the ignore_tau branch suppresses the 2*Tmax/3 row, not just reorders it", {
+  # setg3.c:313-316 is an if/else: a job that fixes ALPHA at 1 never reaches
+  # the 2*Tmax/3 assignment, so an absent TAU there is not a data-dependent
+  # default. The first cut of this fell through to that row and reported a
+  # divergence PROC HAZARD does not have.
+  got <- .hzr_parse_parms(c("MUL=0.01", "ALPHA=1", "GAMMA=1", "ETA=1.32",
+                            "FIXALPHA", "FIXGAMMA"))
+  expect_false(any(grepl("Tmax", got$untranslated$reason, fixed = TRUE)))
+})
+
+test_that("the aliasing that motivates pinning TAU is real, not asserted", {
+  # The comment justifying the pin claims G3 collapses to (t/tau)^(gamma*eta)
+  # at alpha = 1, which is why log_mu and log_tau cannot both be identified.
+  # Compute it rather than restate it.
   tt <- c(0.5, 1, 2, 5, 10)
   g <- hzr_decompos_g3(tt, tau = 2, gamma = 1.3, alpha = 1, eta = 1.7)$G
   expect_equal(g, (tt / 2)^(1.3 * 1.7))

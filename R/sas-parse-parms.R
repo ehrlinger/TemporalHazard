@@ -341,7 +341,36 @@
   tau_defaulted <- is.null(late[["tau"]]) || !isTRUE(late[["tau"]] > 0)
   early_full <- .hzr_parms_fill_shape(early, .hzr_parms_early_sas_default)
   late_full <- .hzr_parms_fill_shape(late, .hzr_parms_late_sas_default)
-  if (tau_defaulted) {
+
+  # A phase is active in PROC HAZARD iff its MU was specified and positive
+  # (parmprc.c:19 -> setparmno.c:14); with phase 3 off, shape.c never calls
+  # SETG3() and none of what follows happens. This is the gate every SETG3
+  # guard below shares.
+  has_late <- !is.null(mu[["MUL"]]) && isTRUE(mu[["MUL"]] > 0)
+  # setg3.c:312-314's own predicate for taking the SETG3_ignore_tau() branch.
+  # The `g_two && ga_two` disjunct alongside it is driven by PARMS keywords
+  # this parser does not resolve; those are recorded as untranslated, so this
+  # is the half that can be evaluated here.
+  ignore_tau <- isTRUE(late_full[["alpha"]] == 1) && "alpha" %in% fixed_late
+
+  if (has_late && ignore_tau) {
+    # setg3.c:378-379 does TWO things, and mirroring only the first is what
+    # made this branch look harmless: it sets TAU to 1 AND fixes it. Leaving
+    # TAU free is not a spare degree of freedom here but an unidentified one --
+    # at alpha = 1 the G3 form collapses to (t/tau)^(gamma*eta), so mu enters
+    # the likelihood only through log_mu - gamma*eta*log_tau and the two are
+    # exactly aliased. The emitted fit converged onto that ridge and returned
+    # no standard errors for either parameter.
+    #
+    # So the value AND the fix are both mirrored, which is what the C does and
+    # what makes the emitted call identifiable. Where PARMS named a different
+    # TAU this overrides the user's own text, so that case is recorded below --
+    # PROC HAZARD overrides it too, but a silent rewrite of what the job said
+    # is exactly what $untranslated exists to surface.
+    late_full[["tau"]] <- 1
+    fixed_late <- intersect(unname(.hzr_parms_late_arg),
+                            union(fixed_late, "tau"))
+  } else if (tau_defaulted) {
     late_full[["tau"]] <- .hzr_parms_late_sas_default[["tau"]]
   }
 
@@ -455,13 +484,7 @@
   # emits a late phase that PROC HAZARD would not build at all. No corpus job
   # does that, so it is latent, and changing how phases are built is a wider
   # change than gating these two warnings.
-  has_late <- !is.null(mu[["MUL"]]) && isTRUE(mu[["MUL"]] > 0)
   alpha_val <- late_full[["alpha"]]
-  # setg3.c:312-314's own predicate for taking the SETG3_ignore_tau() branch.
-  # The `g_two && ga_two` disjunct alongside it is driven by PARMS keywords
-  # this parser does not resolve; those are recorded as untranslated, so this
-  # is the half that can be evaluated here.
-  ignore_tau <- isTRUE(alpha_val == 1) && "alpha" %in% fixed_late
   if (has_late && ignore_tau &&
       !("gamma" %in% fixed_late) && !("eta" %in% fixed_late)) {
     flag_bad(
@@ -486,36 +509,24 @@
     )
   }
 
-  # SETG3_ignore_tau() does TWO things at setg3.c:378-379, and naming only the
-  # first is what made this look harmless: it sets TAU to 1 AND fixes it. The
-  # emitted call carries only what FIXTAU named, so TAU stays free -- and at
-  # alpha = 1 that is not a spare degree of freedom but an unidentified one.
-  # G3 collapses to (t/tau)^(gamma*eta) there (checked against
-  # hzr_decompos_g3() to 2e-16), so mu enters the likelihood only through
-  # log_mu - gamma*eta*log_tau: the two are exactly aliased, the Hessian is
-  # singular, and hazard() returns NO standard errors for either while still
-  # reporting a fit. That is the shape AGENTS.md opens with, so it is recorded.
-  #
-  # It fires whether or not PARMS named a TAU, because SAS overwrites the value
-  # either way -- a job written TAU=5 runs at tau = 1 in PROC HAZARD. Recorded
-  # rather than rewritten, for the same reason the GAMMA/ETA split above is:
-  # rewriting the emitted call would put it at odds with the user's own PARMS
-  # text. Whether to instead emit `tau = 1, fixed = "tau"` here, which would be
-  # exactly what the C does and would remove the aliasing, is a maintainer
-  # decision -- it changes the emitted call for every corpus block that fires
-  # this branch.
-  if (length(late) && has_late && ignore_tau) {
+  # The emitted call now pins TAU at 1 exactly as SETG3_ignore_tau() does, so
+  # an unspecified (or already-1) TAU translates faithfully and needs no row.
+  # A job that WROTE a different TAU is a different matter: PROC HAZARD
+  # discards that value, and so now does this translator, but a starting value
+  # the user typed and neither program uses is worth saying out loud.
+  if (length(late) && has_late && ignore_tau &&
+      !is.null(late[["tau"]]) && !isTRUE(late[["tau"]] == 1)) {
     flag_bad(
-      if (is.null(late[["tau"]])) "ALPHA=1 FIXALPHA (TAU unspecified)" else
-        paste0("ALPHA=1 FIXALPHA with TAU=", sprintf("%g", late[["tau"]])),
-      paste0("SETG3_ignore_tau() sets TAU to 1 and FIXES it (setg3.c:378-379); ",
-             "the emitted phase leaves TAU free, and at alpha = 1 the G3 form ",
-             "collapses to (t/tau)^(gamma*eta), so log_mu and log_tau are ",
-             "exactly aliased -- the fit converges onto a flat ridge and ",
-             "reports no standard errors for either")
+      paste0("TAU=", sprintf("%g", late[["tau"]])),
+      paste0("SETG3_ignore_tau() discards this TAU and runs at tau = 1, ",
+             "fixed (setg3.c:378-379), because ALPHA is fixed at 1; the ",
+             "emitted phase mirrors that, so the value written here is used ",
+             "by neither PROC HAZARD nor the translation")
     )
-  } else if (length(late) && has_late && tau_defaulted) {
-    # The other SETG3 branch (setg3.c:316-318): a non-positive TAU -- absent
+  } else if (length(late) && has_late && tau_defaulted && !ignore_tau) {
+    # The other SETG3 branch (setg3.c:316-318), reached only when the
+    # ignore_tau branch above was NOT taken -- setg3.c:313-316 is an if/else,
+    # so a job that fixes ALPHA at 1 never gets the 2*Tmax/3 assignment at all.: a non-positive TAU -- absent
     # from PARMS, or written as TAU=0 -- is replaced by 2*Tmax/3. It is the one
     # shape default that cannot be reproduced at parse time, because it depends
     # on the data, so the emitted call starts at tau = 1 and this says so
@@ -525,8 +536,7 @@
     # so the expression would look exact while being a guess.
     #
     # `length(late)` because a late phase that was never built is already
-    # reported by the MUL guard below, and two rows for one absence is noise;
-    # `has_late` because with no positive MUL, shape.c never calls SETG3().
+    # reported by the MUL guard below, and two rows for one absence is noise.
     flag_bad(
       if (is.null(late[["tau"]])) "TAU (unspecified)" else
         paste0("TAU=", sprintf("%g", late[["tau"]])),
