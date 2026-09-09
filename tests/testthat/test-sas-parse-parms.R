@@ -250,8 +250,11 @@ test_that("alpha = 1 fixed with GAMMA and ETA both free is recorded", {
   # 2026-09-08); the 16 that fire SETG3_ignore_tau() all fix GAMMA.
   got <- .hzr_parse_parms(c("MUL=0.01", "TAU=1", "ALPHA=1", "GAMMA=2",
                             "ETA=3", "FIXALPHA"))
-  expect_equal(nrow(got$untranslated), 1L)
-  expect_match(got$untranslated$reason, "estimates GAMMA\\*ETA")
+  expect_true(any(grepl("estimates GAMMA\\*ETA", got$untranslated$reason)))
+  # The same branch also leaves TAU free where SAS fixes it; that is a second,
+  # separate row (see the SETG3_ignore_tau TAU tests below), so assert this
+  # guard by its reason rather than by the row count.
+  expect_equal(nrow(got$untranslated), 2L)
 })
 
 test_that("alpha = 1 fixed with GAMMA fixed is not recorded", {
@@ -260,7 +263,7 @@ test_that("alpha = 1 fixed with GAMMA fixed is not recorded", {
   # to report. Distinguishes the guard above from "any fixed alpha = 1".
   got <- .hzr_parse_parms(c("MUL=0.01", "TAU=1", "ALPHA=1", "GAMMA=1",
                             "ETA=1.32", "FIXALPHA", "FIXGAMMA", "WEIBULL"))
-  expect_equal(nrow(got$untranslated), 0L)
+  expect_false(any(grepl("estimates GAMMA", got$untranslated$reason)))
 })
 
 test_that("ALPHA = 0 under WEIBULL without FIXALPHA is recorded", {
@@ -301,8 +304,7 @@ test_that("the alpha = 1 guard still fires when ALPHA was left to default", {
   # SAS fixes ETA here, so this must still be recorded -- the scope fix above
   # must not buy its way out of the guard by requiring an explicit ALPHA.
   got <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=2", "ETA=3", "FIXALPHA"))
-  expect_equal(nrow(got$untranslated), 1L)
-  expect_match(got$untranslated$reason, "estimates GAMMA\\*ETA")
+  expect_true(any(grepl("estimates GAMMA\\*ETA", got$untranslated$reason)))
 })
 
 test_that("the alpha = 1 guard does not fire without MUL", {
@@ -347,8 +349,13 @@ test_that("both late-phase guards still fire when MUL is present", {
 # multimodal -- a different start is a different answer.
 #
 # No public-corpus PARMS block is partially specified (0 of 38 measured
-# 2026-09-08; every live block gives MUE + THALF + NU + M together), so
-# these tests carry the whole burden of the behaviour.
+# 2026-09-08; every live block gives MUE + THALF + NU + M together). That is
+# NOT the same as "nothing exercises this": test-sas-translate-fits.R's
+# end-to-end fit uses `MUE THALF NU MUC` with no M, so its early phase moved
+# from m = 0 to m = 1 under this change. It needed no edit only because its
+# assertions are on class, dist and theta LENGTH -- none of which can see a
+# start-value change -- which is the reason these tests carry the burden of
+# the behaviour, not the absence of a caller.
 # ---------------------------------------------------------------------------
 
 test_that("an unspecified early NU and M start at PROC HAZARD's values", {
@@ -421,6 +428,20 @@ test_that("the emitted phases call and the theta vector agree, defaults included
   }
 })
 
+test_that("an incomplete shape list fails loudly in the theta block", {
+  # .hzr_parms_theta_block()'s roxygen claims completeness is asserted rather
+  # than defaulted. Reachable only by calling it directly, since the one
+  # in-package caller always passes a .hzr_parms_fill_shape() result -- so
+  # without this the claim is untested and the stopifnot() has never been seen
+  # to fire.
+  expect_error(
+    .hzr_parms_theta_block("late", 0.1, list(tau = 1), numeric(0))
+  )
+  expect_error(
+    .hzr_parms_theta_block("early", 0.1, list(t_half = 1, nu = 2), numeric(0))
+  )
+})
+
 test_that("a late phase with no TAU records the data-dependent SAS default", {
   # setg3.c:317 starts a non-positive TAU at 2*Tmax/3, which is unreproducible
   # at parse time. The emitted phase starts at tau = 1, so the difference is
@@ -451,23 +472,57 @@ test_that("a positive TAU is not recorded", {
   expect_equal(nrow(got$untranslated), 0L)
 })
 
-test_that("the TAU guard does not fire where SETG3_ignore_tau() pins tau at 1", {
-  # setg3.c:312-316: the ignore_tau branch runs INSTEAD of the 2*Tmax/3
-  # assignment, and setg3.c:378 pins tau at 1 -- exactly what is emitted, so
-  # there is nothing to report. FIXGAMMA keeps the separate GAMMA*ETA guard
-  # quiet so a surviving row could only be the TAU one.
+test_that("SETG3_ignore_tau() fixing TAU, not just setting it, is recorded", {
+  # This test previously asserted ZERO untranslated rows here, on the grounds
+  # that setg3.c:378 pins tau at 1 -- "exactly what is emitted, so there is
+  # nothing to report". That read half the function. Line 379 is
+  # hzr_parm_set_fixed(HZ_TAU): SAS fixes TAU as well, and the emitted call
+  # does not. At alpha = 1 that is not a spare parameter but an unidentified
+  # one, and the fit below is the reason this matters -- it converges and
+  # reports no standard errors on the two aliased parameters, which is the
+  # exact shape AGENTS.md opens with. FIXGAMMA keeps the GAMMA*ETA guard quiet
+  # so the surviving row can only be the TAU one.
   got <- .hzr_parse_parms(c("MUL=0.01", "ALPHA=1", "GAMMA=1", "ETA=1.32",
                             "FIXALPHA", "FIXGAMMA"))
-  expect_equal(nrow(got$untranslated), 0L)
+  expect_equal(nrow(got$untranslated), 1L)
+  expect_match(got$untranslated$reason, "exactly aliased")
+})
+
+test_that("the SETG3_ignore_tau TAU row fires on a TAU the job did specify", {
+  # SAS overwrites the value either way, so a job written TAU=5 runs at
+  # tau = 1, fixed. Keying the row on "TAU was defaulted" would have missed
+  # this entirely -- the emitted call starts at 5, free.
+  got <- .hzr_parse_parms(c("MUL=0.01", "TAU=5", "ALPHA=1", "GAMMA=1",
+                            "ETA=1.32", "FIXALPHA", "FIXGAMMA"))
+  expect_equal(got$untranslated$construct, "ALPHA=1 FIXALPHA with TAU=5")
+  expect_match(got$untranslated$reason, "exactly aliased")
+})
+
+test_that("the aliasing the ignore_tau row describes is real, not asserted", {
+  # The row claims G3 collapses to (t/tau)^(gamma*eta) at alpha = 1, which is
+  # why log_mu and log_tau cannot both be identified. Compute it rather than
+  # restate it: a wrong claim in an $untranslated reason is a wrong claim a
+  # caller acts on.
+  tt <- c(0.5, 1, 2, 5, 10)
+  g <- hzr_decompos_g3(tt, tau = 2, gamma = 1.3, alpha = 1, eta = 1.7)$G
+  expect_equal(g, (tt / 2)^(1.3 * 1.7))
+  # And it does NOT collapse away from alpha = 1, so the guard's scope is right.
+  g2 <- hzr_decompos_g3(tt, tau = 2, gamma = 1.3, alpha = 1.5, eta = 1.7)$G
+  expect_false(isTRUE(all.equal(g2, (tt / 2)^(1.3 * 1.7))))
 })
 
 test_that("the TAU guard does not fire without a positive MUL", {
   # Same gate as the other two SETG3 guards: with phase 3 off, shape.c never
   # calls SETG3(), so no TAU default is ever applied.
+  #
+  # MUL=0 deliberately does NOT appear here. It is SAS's own "phase off"
+  # marker, but this parser still builds the phase and emits log(0) = -Inf as
+  # its starting log_mu with no untranslated row -- a pre-existing gap in the
+  # phase-activation asymmetry noted in .hzr_parse_parms(), not something this
+  # guard should be read as blessing. Asserting the TAU row is absent there
+  # would pass over the -Inf and quietly certify it.
   got <- .hzr_parse_parms(c("GAMMA=2", "ETA=3"))
   expect_false(any(grepl("Tmax", got$untranslated$reason, fixed = TRUE)))
-  got0 <- .hzr_parse_parms(c("MUL=0", "GAMMA=2"))
-  expect_false(any(grepl("Tmax", got0$untranslated$reason, fixed = TRUE)))
 })
 
 test_that("a MUL with no late shape operand records the MU, not TAU as well", {

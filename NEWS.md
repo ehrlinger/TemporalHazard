@@ -16,8 +16,20 @@
   `TAU` at `2*Tmax/3`, which depends on the data and cannot be reproduced at
   parse time, so such a phase is emitted at `tau = 1` and recorded in
   `$untranslated` -- unless `SETG3_ignore_tau()` applies, which pins `TAU` at
-  1 anyway. No job in the public corpus is partially specified, so nothing
-  previously translated changes.
+  1 anyway. No job in the *public corpus* is partially specified, so no corpus
+  translation changes; the package's own end-to-end fits test does carry a
+  partial block (`MUE THALF NU MUC`, no `M`), and its early phase now starts at
+  `m = 1`.
+
+* **`hzr_translate_sas()` now reports that `SETG3_ignore_tau()` fixes `TAU`,
+  not merely that it sets it.** When `ALPHA` is fixed at 1, `setg3.c:378-379`
+  sets `TAU` to 1 *and* fixes it; the emitted `hzr_phase()` call left `TAU`
+  free. At `alpha = 1` the `G3` form collapses to `(t/tau)^(gamma*eta)`, so
+  `log_mu` and `log_tau` are exactly aliased -- the fit converges onto a flat
+  ridge and returns no standard errors for either, with nothing in
+  `$untranslated` to say so. Such a job now records a row. This fires whether
+  or not `PARMS` named a `TAU`, because `PROC HAZARD` overwrites the value
+  either way.
 
 * **`hzr_translate_sas()` no longer discards the `ALPHA` and `ETA` a `PARMS`
   statement specified alongside `WEIBULL`.** The translator read the bare

@@ -486,22 +486,47 @@
     )
   }
 
-  # SETG3() replaces a non-positive TAU -- absent from PARMS, or written as
-  # TAU=0 -- with 2*Tmax/3 (setg3.c:317). It is the one shape default that
-  # cannot be reproduced at parse time, because it depends on the data, so the
-  # emitted call starts at tau = 1 and this says so rather than letting the
-  # difference pass as a translation. Emitting `2 * max(<timevar>) / 3` instead
-  # was considered and rejected: SAS's Tmax is taken over the analysis set
-  # after exclusions, not over the raw column, so the expression would look
-  # exact while being a guess.
+  # SETG3_ignore_tau() does TWO things at setg3.c:378-379, and naming only the
+  # first is what made this look harmless: it sets TAU to 1 AND fixes it. The
+  # emitted call carries only what FIXTAU named, so TAU stays free -- and at
+  # alpha = 1 that is not a spare degree of freedom but an unidentified one.
+  # G3 collapses to (t/tau)^(gamma*eta) there (checked against
+  # hzr_decompos_g3() to 2e-16), so mu enters the likelihood only through
+  # log_mu - gamma*eta*log_tau: the two are exactly aliased, the Hessian is
+  # singular, and hazard() returns NO standard errors for either while still
+  # reporting a fit. That is the shape AGENTS.md opens with, so it is recorded.
   #
-  # Three conditions, each doing work. `length(late)` because a late phase that
-  # was never built is already reported by the MUL guard below, and two rows
-  # for one absence is noise. `has_late` for the same reason the guards above
-  # carry it: with no positive MUL, shape.c never calls SETG3() at all.
-  # `!ignore_tau` because that branch pins TAU at 1 (setg3.c:378) -- exactly
-  # what is emitted -- so there is nothing to report.
-  if (length(late) && has_late && tau_defaulted && !ignore_tau) {
+  # It fires whether or not PARMS named a TAU, because SAS overwrites the value
+  # either way -- a job written TAU=5 runs at tau = 1 in PROC HAZARD. Recorded
+  # rather than rewritten, for the same reason the GAMMA/ETA split above is:
+  # rewriting the emitted call would put it at odds with the user's own PARMS
+  # text. Whether to instead emit `tau = 1, fixed = "tau"` here, which would be
+  # exactly what the C does and would remove the aliasing, is a maintainer
+  # decision -- it changes the emitted call for every corpus block that fires
+  # this branch.
+  if (length(late) && has_late && ignore_tau) {
+    flag_bad(
+      if (is.null(late[["tau"]])) "ALPHA=1 FIXALPHA (TAU unspecified)" else
+        paste0("ALPHA=1 FIXALPHA with TAU=", sprintf("%g", late[["tau"]])),
+      paste0("SETG3_ignore_tau() sets TAU to 1 and FIXES it (setg3.c:378-379); ",
+             "the emitted phase leaves TAU free, and at alpha = 1 the G3 form ",
+             "collapses to (t/tau)^(gamma*eta), so log_mu and log_tau are ",
+             "exactly aliased -- the fit converges onto a flat ridge and ",
+             "reports no standard errors for either")
+    )
+  } else if (length(late) && has_late && tau_defaulted) {
+    # The other SETG3 branch (setg3.c:316-318): a non-positive TAU -- absent
+    # from PARMS, or written as TAU=0 -- is replaced by 2*Tmax/3. It is the one
+    # shape default that cannot be reproduced at parse time, because it depends
+    # on the data, so the emitted call starts at tau = 1 and this says so
+    # rather than letting the difference pass as a translation. Emitting
+    # `2 * max(<timevar>) / 3` instead was considered and rejected: SAS's Tmax
+    # is taken over the analysis set after exclusions, not over the raw column,
+    # so the expression would look exact while being a guess.
+    #
+    # `length(late)` because a late phase that was never built is already
+    # reported by the MUL guard below, and two rows for one absence is noise;
+    # `has_late` because with no positive MUL, shape.c never calls SETG3().
     flag_bad(
       if (is.null(late[["tau"]])) "TAU (unspecified)" else
         paste0("TAU=", sprintf("%g", late[["tau"]])),
