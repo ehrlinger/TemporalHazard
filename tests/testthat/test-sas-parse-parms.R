@@ -578,8 +578,8 @@ test_that("SETG3_verify_ge_2's GAMMA rewrite is recorded, not mirrored", {
   # form and needs no such restriction, and reaching a late shape SAS cannot
   # is a goal here. Recorded so a parity run knows why the starts differ.
   got <- .hzr_parse_parms(c("MUL=0.01", "TAU=3"))
-  expect_equal(got$untranslated$construct, "GAMMA=1 ETA=2 (product 2)")
-  expect_match(got$untranslated$reason, "GAMMA\\*ETA <= 2")
+  expect_equal(got$untranslated$construct, "gamma=1 alpha=1 eta=2")
+  expect_match(got$untranslated$reason, "optimizes from gamma = 1\\.5")
   expect_equal(
     got$phases,
     quote(list(hzr_phase("g3", tau = 3, gamma = 1, alpha = 1, eta = 2)))
@@ -593,7 +593,7 @@ test_that("the verify_ge_2 row does not fire above the boundary or on WEIBULL", 
   above <- .hzr_parse_parms(c("MUL=0.01", "TAU=3", "GAMMA=2", "ETA=2"))
   expect_equal(nrow(above$untranslated), 0L)
   weib <- .hzr_parse_parms(c("MUL=0.01", "TAU=3", "GAMMA=1", "ETA=2", "WEIBULL"))
-  expect_false(any(grepl("GAMMA\\*ETA", weib$untranslated$reason)))
+  expect_equal(nrow(weib$untranslated), 0L)
 })
 
 test_that("the product SETG3_verify_ge_2 reads survives the ignore_tau swap", {
@@ -608,11 +608,11 @@ test_that("the product SETG3_verify_ge_2 reads survives the ignore_tau swap", {
   expect_equal(nrow(a$untranslated), 0L)
   b <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=0.5", "ETA=6",
                           "ALPHA=1", "FIXALPHA", "FIXGAMMA"))
-  expect_false(any(grepl("GAMMA\\*ETA <= 2", b$untranslated$reason)))
+  expect_false(any(grepl("optimizes from", b$untranslated$reason)))
   # And the same product BELOW the boundary does record, so the pair above is
   # not passing merely because the guard never fires on these shapes.
   lo <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=0.5", "ETA=3"))
-  expect_true(any(grepl("GAMMA\\*ETA <= 2", lo$untranslated$reason)))
+  expect_true(any(grepl("optimizes from gamma", lo$untranslated$reason)))
 })
 
 test_that("the aliasing that motivates pinning TAU is real, not asserted", {
@@ -648,4 +648,127 @@ test_that("a MUL with no late shape operand records the MU, not TAU as well", {
   got <- .hzr_parse_parms(c("MUE=0.2", "THALF=1", "NU=1", "MUL=0.05"))
   expect_equal(nrow(got$untranslated), 1L)
   expect_match(got$untranslated$reason, "no late phase")
+})
+
+# ---------------------------------------------------------------------------
+# The rest of the SETG3() chain (.hzr_setg3_notes()).
+#
+# Two kinds of divergence, both recorded and neither mirrored, per the split
+# documented on that function: a REFUSAL is a job PROC HAZARD will not run, and
+# a REWRITE is SETG3 constraining the late shape to stay inside a numerical
+# branch it can evaluate. Only the two alpha = 1 identifiability fixes are
+# mirrored, and those are tested above.
+#
+# None of this fires on the public corpus: every late-phase PARMS block there
+# carries WEIBULL, which returns at setg3.c:347 before the sign dispatch, and
+# all of them write TAU=1 FIXTAU ALPHA=1 FIXALPHA with a positive GAMMA and
+# ETA. These tests therefore carry the whole behaviour.
+# ---------------------------------------------------------------------------
+
+test_that("each SETG3 entry refusal is recorded with its own code", {
+  # setg3.c:269-284, checked before anything else -- including
+  # SETG3_ignore_tau(). A FIX* on an operand SAS reads as unspecified is
+  # fatal, and the value SAS reads is the job's own, so FIXTAU with no TAU
+  # operand refuses on the stmtprc.c initializer of 0.
+  refusal <- function(ops) {
+    got <- .hzr_parse_parms(ops)
+    expect_equal(nrow(got$untranslated), 1L, info = paste(ops, collapse = " "))
+    got$untranslated$reason
+  }
+  expect_match(refusal(c("MUL=0.01", "FIXTAU", "GAMMA=2", "ETA=2")),
+               "SETG3900")
+  expect_match(refusal(c("MUL=0.01", "TAU=1", "GAMMA=0", "FIXGAMMA", "ETA=2")),
+               "SETG3910")
+  expect_match(refusal(c("MUL=0.01", "TAU=1", "GAMMA=2", "ETA=2",
+                         "ALPHA=-1", "FIXALPHA")),
+               "SETG3920")
+  expect_match(refusal(c("MUL=0.01", "TAU=1", "GAMMA=2", "ETA=0", "FIXETA")),
+               "SETG3930")
+})
+
+test_that("a refusal names the operand, not just the SAS message code", {
+  # The code alone is greppable but opaque; a caller reading $untranslated has
+  # to know which operand to change.
+  got <- .hzr_parse_parms(c("MUL=0.01", "FIXTAU", "GAMMA=2", "ETA=2"))
+  expect_match(got$untranslated$reason, "TAU is fixed at a non-positive value")
+  expect_match(got$untranslated$construct, "fixed:tau")
+})
+
+test_that("a refused job records only the refusal, not the TAU rules too", {
+  # SETG3 returns at :271 before either TAU rule runs, so reporting the
+  # 2*Tmax/3 divergence alongside would describe code PROC HAZARD never
+  # reaches -- the same false positive the MUL gate exists to avoid. This
+  # input has no TAU operand, so the 2*Tmax/3 row would otherwise fire.
+  got <- .hzr_parse_parms(c("MUL=0.01", "FIXTAU", "GAMMA=2", "ETA=2"))
+  expect_equal(nrow(got$untranslated), 1L)
+  expect_false(any(grepl("Tmax", got$untranslated$reason, fixed = TRUE)))
+})
+
+test_that("WEIBULL's own refusals are recorded, including a negative ALPHA", {
+  # setg3.c:429-440. The pre-existing guard covered only alpha == 0; a
+  # negative ALPHA raises the same SETG3980 and was emitted as a runnable fit.
+  neg <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=1.5", "ALPHA=-2",
+                            "ETA=1", "WEIBULL"))
+  expect_match(neg$untranslated$reason, "SETG3980")
+  g <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=0", "ETA=1", "WEIBULL"))
+  expect_match(g$untranslated$reason, "SETG3960")
+  e <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=1.5", "ETA=0",
+                          "WEIBULL"))
+  expect_match(e$untranslated$reason, "SETG3970")
+})
+
+test_that("ALPHA = 0 is faithful when fixed and a rewrite when free", {
+  # setg3.c:332-335: alpha == 0 with FIXALPHA sets g3flag = 2, the limiting
+  # exponential, which is exactly what hzr_phase() fits at alpha = 0 -- so
+  # that job translates cleanly. Left free, SETG3_alpha_gener() (:854) instead
+  # derives alpha = gamma*eta/3, and the emitted call would fit the
+  # exponential SAS did not choose. The pair distinguishes the two; asserting
+  # only the second would pass for a guard that fired on every ALPHA = 0.
+  fixed <- .hzr_parse_parms(c("MUL=0.01", "TAU=1", "GAMMA=2", "ETA=2",
+                              "ALPHA=0", "FIXALPHA"))
+  expect_equal(nrow(fixed$untranslated), 0L)
+  free <- .hzr_parse_parms(c("MUL=0.01", "TAU=1", "GAMMA=2", "ETA=2",
+                             "ALPHA=0"))
+  expect_match(free$untranslated$reason, "optimizes from alpha = 1\\.33333")
+})
+
+test_that("a non-positive GAMMA or ETA is a rewrite SAS makes and R cannot", {
+  # setg3.c:533-585 and :587-636 treat a non-positive operand as "derive one
+  # for me" -- gamma = 3*alpha/eta, then 3/eta if the product still sits at or
+  # below 2. hzr_phase() requires gamma > 0 and would reject the emitted call
+  # outright, so this is the one place SAS is the more permissive of the two;
+  # recording it says which operand to supply.
+  g <- .hzr_parse_parms(c("MUL=0.01", "TAU=1", "GAMMA=0", "ETA=2", "ALPHA=1"))
+  expect_match(g$untranslated$reason, "optimizes from gamma = 1\\.5")
+  e <- .hzr_parse_parms(c("MUL=0.01", "TAU=1", "GAMMA=2", "ETA=0", "ALPHA=1"))
+  expect_match(e$untranslated$reason, "optimizes from .*eta = 1\\.5")
+})
+
+test_that("SETG3_alpha_fixup's refusal and its substitution are distinguished", {
+  # setg3.c:838-851: with GAMMA*ETA/ALPHA <= 2 the C either derives
+  # alpha = gamma*eta/3, or refuses with SETG31040 when ALPHA is fixed and it
+  # cannot. Same operands, one FIXALPHA apart.
+  free <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=2", "ETA=2",
+                             "ALPHA=3"))
+  expect_match(free$untranslated$reason, "optimizes from alpha = 1\\.33333")
+  pinned <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=2", "ETA=2",
+                               "ALPHA=3", "FIXALPHA"))
+  expect_match(pinned$untranslated$reason, "SETG31040")
+})
+
+test_that("a late shape SETG3 leaves alone records nothing", {
+  # The other side of every guard above, so none of them can be satisfied by
+  # firing unconditionally: GAMMA*ETA = 4 > 2 and GAMMA*ETA/ALPHA = 4 > 2, so
+  # verify_ge_2 and alpha_fixup are both no-ops and the translation is exact.
+  got <- .hzr_parse_parms(c("MUL=0.01", "TAU=3", "GAMMA=2", "ETA=2"))
+  expect_equal(nrow(got$untranslated), 0L)
+})
+
+test_that("the SETG3 trace is gated on an active late phase", {
+  # Same gate as every other SETG3 guard: with no positive MUL, shape.c never
+  # calls SETG3(), so neither a refusal nor a rewrite can happen.
+  expect_equal(nrow(.hzr_parse_parms(c("GAMMA=0", "FIXGAMMA",
+                                       "ETA=2"))$untranslated), 0L)
+  expect_equal(nrow(.hzr_parse_parms(c("MUL=0", "FIXTAU",
+                                       "GAMMA=2"))$untranslated), 0L)
 })

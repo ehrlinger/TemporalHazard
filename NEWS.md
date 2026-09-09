@@ -42,19 +42,42 @@
   package's own fixture that moves `gamma`'s standard error from 7.5 to 0.02.
   This replaces an `$untranslated` row with a faithful translation.
 
-* **`hzr_translate_sas()` records, but deliberately does not mirror,
-  `SETG3_verify_ge_2()`.** When `GAMMA * ETA <= 2` and neither is fixed,
-  `setg3.c:907-921` rewrites the free one to `3` over the other -- and the
-  `PROC HAZARD` defaults `gamma = 1`, `eta = 2` land on that boundary exactly,
-  so it applies to every defaulted non-`WEIBULL` late phase. That constraint
-  exists to keep `PROC HAZARD` inside a numerical branch it can evaluate, the
-  same role `g3flag` plays; `hzr_decompos_g3()` carries the general
-  four-parameter form and needs no such restriction, and reaching a late shape
-  the reference implementation cannot is a purpose of this package. The
-  emitted call therefore keeps the general shape, and the divergence is
-  recorded so a SAS parity comparison knows why the starting values differ.
-  No corpus job is affected: every late-phase block there is `WEIBULL`, which
-  returns at `setg3.c:347` before this code runs.
+* **`hzr_translate_sas()` now reports the whole of what `SETG3()` would do to
+  a late phase, and mirrors only the part that has to be mirrored.**
+  `PROC HAZARD` does not optimize from the operands `PARMS` supplies: `SETG3()`
+  rewrites them first, and refuses some jobs outright. The translator now walks
+  that function (`src/model/setg3.c`) and records both, splitting them on a
+  single principle:
+
+  - A rewrite that resolves an **exact non-identifiability** is *mirrored*,
+    because the degeneracy is algebra and is just as real in R. There are two,
+    both in `SETG3_ignore_tau()`: the `TAU` pin and the `ETA` fix, described
+    above.
+  - Every other rewrite keeps `PROC HAZARD` inside a numerical branch it can
+    evaluate -- the role `g3flag` plays, which `hzr_decompos_g3()` does not
+    need because it carries the general four-parameter `G3` form. Copying those
+    would import a SAS limitation into R, and reaching a late shape the
+    reference implementation cannot is a purpose of this package. They are
+    *recorded* in `$untranslated`, so a SAS parity run knows why the starting
+    values differ.
+
+  In practice this covers `SETG3_verify_ge_2()`'s push of `GAMMA * ETA` clear
+  of 2 (which the `PROC HAZARD` defaults `gamma = 1`, `eta = 2` trip exactly,
+  so it applied to every defaulted non-`WEIBULL` late phase), the value
+  substitutions in all eight sign branches, and `SETG3_alpha_fixup()` /
+  `SETG3_alpha_gener()` deriving `ALPHA` from `GAMMA * ETA`.
+
+  Sixteen refusal codes are now recorded rather than emitted as runnable fits,
+  where previously only `SETG3980` was -- and that one only for `alpha = 0`,
+  not for the negative `ALPHA` that raises it too. `ALPHA = 0` **with**
+  `FIXALPHA` is the limiting exponential in both implementations and still
+  translates cleanly; left free, `SETG3` derives an `ALPHA` instead, which is
+  now reported.
+
+  No corpus job is affected: every late-phase block in the public corpus
+  carries `WEIBULL`, which returns at `setg3.c:347` before the sign dispatch,
+  and all of them write `TAU=1 FIXTAU ALPHA=1 FIXALPHA` with a positive `GAMMA`
+  and `ETA`. Verified by running the parser over all of them before and after.
 
 * **`hzr_translate_sas()` no longer discards the `ALPHA` and `ETA` a `PARMS`
   statement specified alongside `WEIBULL`.** The translator read the bare

@@ -208,6 +208,218 @@
   as.call(call_args)
 }
 
+# ---------------------------------------------------------------------------
+# SETG3() trace
+# ---------------------------------------------------------------------------
+# PROC HAZARD does not optimize from the operands PARMS supplies: SETG3()
+# (src/model/setg3.c) rewrites them first, and refuses some jobs outright.
+# .hzr_setg3_notes() walks that function and reports what it would do, in the
+# C's own order. It changes nothing about the emitted call.
+#
+# Which of the two happens is a deliberate split, settled once and applied
+# throughout:
+#
+#   * A rewrite that resolves an EXACT non-identifiability is MIRRORED into
+#     the emitted call, because the degeneracy is algebra and is just as real
+#     in R -- SETG3_ignore_tau()'s TAU pin (setg3.c:378-379) and ETA fix
+#     (:405) are the two, both handled at the build site above.
+#   * Every other rewrite here keeps PROC HAZARD inside a numerical branch it
+#     can evaluate -- the role g3flag plays, which hzr_decompos_g3() does not
+#     need because it carries the general four-parameter G3 form. Copying
+#     those would import a SAS limitation into R, and reaching a late shape
+#     the reference cannot is a purpose of this package. They are RECORDED.
+#
+# Refusals are recorded for the reason SETG3980 always was: emitting a
+# runnable fit for a job PROC HAZARD will not run is an answer that looks like
+# a result and is not.
+#
+# g_two/ga_two (the GAMMA*ETA = 2 and GAMMA*ETA/ALPHA = 2 constraint flags)
+# are driven by FIXGE2/FIXGAE2, which .hzr_sas_token() leaves unresolved and
+# records as untranslated -- so a job carrying either is never reported clean,
+# and this trace takes both as FALSE rather than guessing. Every branch below
+# is therefore the !g_two && !ga_two column of the C's own tables.
+
+# What each SETG3 refusal code objects to. The code alone is greppable but
+# opaque; a caller reading $untranslated needs to know which operand to change.
+.hzr_setg3_refusal <- c(
+  "(SETG3900)" = "TAU is fixed at a non-positive value",
+  "(SETG3910)" = "GAMMA is fixed at a non-positive value",
+  "(SETG3920)" = "ALPHA is fixed at a negative value",
+  "(SETG3930)" = "ETA is fixed at a non-positive value",
+  "(SETG3960)" = "WEIBULL requires GAMMA > 0",
+  "(SETG3970)" = "WEIBULL requires ETA > 0",
+  "(SETG3980)" = "WEIBULL rejects a negative ALPHA, and rejects ALPHA = 0 unless ALPHA is fixed",
+  "(SETG31020)" = "GAMMA*ETA <= 2 with both GAMMA and ETA fixed, so neither can be adjusted",
+  "(SETG31040)" = "GAMMA*ETA/ALPHA <= 2 with ALPHA fixed, so ALPHA cannot be adjusted",
+  "(SETG31070)" = "ALPHA is fixed where SETG3 must derive it from GAMMA*ETA",
+  "(SETG31090)" = "GAMMA is fixed but non-positive, so SETG3 cannot derive one from ALPHA and ETA",
+  "(SETG32020)" = "ETA is fixed but non-positive, so SETG3 cannot derive one from ALPHA and GAMMA",
+  "(SETG32050)" = "GAMMA is fixed but non-positive, so SETG3 cannot derive one from ETA",
+  "(SETG32080)" = "ETA is fixed but non-positive, so SETG3 cannot derive one from GAMMA",
+  "(SETG33010)" = "ETA is fixed but non-positive, with no GAMMA to derive one from",
+  "(SETG33020)" = "GAMMA is fixed but non-positive, with no ETA to derive one from"
+)
+
+#' Plain-language gloss for a SETG3 refusal code.
+#' @noRd
+.hzr_setg3_refusal_reason <- function(code) {
+  hit <- .hzr_setg3_refusal[[code]]
+  if (is.null(hit)) "the operand combination is rejected" else hit
+}
+
+#' `alpha` handling shared by several SETG3 branches (setg3.c:815-852).
+#' @return `NULL`, a refusal string, or the substituted alpha.
+#' @noRd
+.hzr_setg3_alpha_fixup <- function(gamma, eta, alpha, alpha_fixed, weibull) {
+  # ga_two is FALSE, so the C falls to the `gteva > TWO || weibul` early
+  # return; under WEIBULL this function is a no-op entirely.
+  if (weibull) return(NULL)
+  if (isTRUE(gamma * eta / alpha > 2)) return(NULL)
+  if (alpha_fixed) return("(SETG31040)")
+  gamma * eta / 3
+}
+
+#' `alpha` handling for the branches that reach SETG3_alpha_gener()
+#' (setg3.c:854-871).
+#' @noRd
+.hzr_setg3_alpha_gener <- function(gamma, eta, alpha_fixed) {
+  if (alpha_fixed) return("(SETG31070)")
+  gamma * eta / 3
+}
+
+#' Walk `SETG3()` and report what it would do to one late phase.
+#'
+#' @param tau_raw,gamma,alpha,eta The operand values `PARMS` supplied, with
+#'   PROC HAZARD's own initializers for any it did not (`stmtprc.c:33-36`).
+#'   `tau_raw` is 0 when `TAU` was absent -- SAS's initializer, not the 1 the
+#'   emitted call uses as a placeholder.
+#' @param fixed Character vector of parameters the job's `FIX*` tokens pinned,
+#'   as the user wrote them: these checks run before SETG3 changes any flag.
+#' @param weibull Whether the job carries the bare `WEIBULL` keyword.
+#' @return `list(refusal = <chr or NULL>, shape = <named numeric or NULL>)`.
+#'   `refusal` names the SAS message code for a job PROC HAZARD will not run;
+#'   otherwise `shape` gives the values SETG3 would optimize from.
+#' @noRd
+.hzr_setg3_notes <- function(tau_raw, gamma, alpha, eta, fixed, weibull) {
+  fx <- function(p) p %in% fixed
+  refuse <- function(code) list(refusal = code, shape = NULL)
+
+  # setg3.c:269-284. A FIX* on an operand SAS reads as unspecified is fatal,
+  # and it is checked before anything else -- including SETG3_ignore_tau().
+  if (isTRUE(tau_raw <= 0) && fx("tau")) return(refuse("(SETG3900)"))
+  if (isTRUE(gamma <= 0) && fx("gamma")) return(refuse("(SETG3910)"))
+  if (isTRUE(alpha < 0) && fx("alpha")) return(refuse("(SETG3920)"))
+  if (isTRUE(eta <= 0) && fx("eta")) return(refuse("(SETG3930)"))
+
+  # setg3.c:313-315 and 403-421. Reproduced here for the trace only: the
+  # emitted call deliberately keeps the user's GAMMA and ETA, because the
+  # swap is likelihood-equivalent. The trace needs SAS's values because the
+  # dispatch below keys on their signs.
+  if (isTRUE(alpha == 1) && fx("alpha")) {
+    if (!fx("gamma") && !fx("eta")) fixed <- union(fixed, "eta")
+    product <- gamma * eta
+    if (fx("eta")) {
+      gamma <- if (isTRUE(product > 0)) product else eta
+      eta <- 1
+    } else {
+      eta <- if (isTRUE(product > 0)) product else gamma
+      gamma <- 1
+    }
+    fixed <- union(fixed, c("tau", "alpha"))
+  }
+
+  # setg3.c:332-335, with ga_two FALSE.
+  g3flag <- if (isTRUE(alpha == 0) && fx("alpha")) 2L else 1L
+
+  if (weibull) {
+    # setg3.c:427-482, then the return at :347. The g_two block is skipped
+    # (see the header), and SETG3_alpha_fixup() is a no-op under WEIBULL.
+    if (isTRUE(gamma <= 0)) return(refuse("(SETG3960)"))
+    if (isTRUE(eta <= 0)) return(refuse("(SETG3970)"))
+    if (isTRUE(alpha < 0) || (isTRUE(alpha == 0) && g3flag + 2L == 3L)) {
+      return(refuse("(SETG3980)"))
+    }
+    return(list(refusal = NULL,
+                shape = c(gamma = gamma, alpha = alpha, eta = eta)))
+  }
+
+  # setg3.c:873-924 with g_two FALSE: push GAMMA*ETA clear of 2.
+  verify_ge_2 <- function() {
+    if (!isTRUE(gamma * eta <= 2)) return(NULL)
+    if (fx("gamma") && fx("eta")) return("(SETG31020)")
+    if (fx("gamma")) eta <<- 3 / gamma else gamma <<- 3 / eta
+    NULL
+  }
+
+  # setg3.c:359-374. Each branch is the !g_two && !ga_two row of its table.
+  bad <- NULL
+  if (isTRUE(alpha > 0) && isTRUE(gamma > 0) && isTRUE(eta > 0)) {
+    bad <- verify_ge_2()
+    if (is.null(bad)) {
+      a <- .hzr_setg3_alpha_fixup(gamma, eta, alpha, fx("alpha"), weibull)
+      if (is.character(a)) bad <- a else if (!is.null(a)) alpha <- a
+    }
+  } else if (isTRUE(gamma > 0) && isTRUE(eta > 0)) {
+    bad <- verify_ge_2()
+    if (is.null(bad) && g3flag == 1L) {
+      a <- .hzr_setg3_alpha_gener(gamma, eta, fx("alpha"))
+      if (is.character(a)) bad <- a else alpha <- a
+    }
+  } else if (isTRUE(alpha > 0) && isTRUE(eta > 0)) {
+    # gamma <= 0 (setg3.c:533-585)
+    if (fx("gamma")) return(refuse("(SETG31090)"))
+    gamma <- 3 * alpha / eta
+    if (isTRUE(gamma * eta <= 2)) gamma <- 3 / eta
+    a <- .hzr_setg3_alpha_fixup(gamma, eta, alpha, fx("alpha"), weibull)
+    if (is.character(a)) bad <- a else if (!is.null(a)) alpha <- a
+  } else if (isTRUE(alpha > 0) && isTRUE(gamma > 0)) {
+    # eta <= 0 (setg3.c:587-636)
+    if (fx("eta")) return(refuse("(SETG32020)"))
+    eta <- 3 * alpha / gamma
+    if (isTRUE(gamma * eta <= 2)) eta <- 3 / gamma
+    a <- .hzr_setg3_alpha_fixup(gamma, eta, alpha, fx("alpha"), weibull)
+    if (is.character(a)) bad <- a else if (!is.null(a)) alpha <- a
+  } else if (isTRUE(eta > 0)) {
+    # alpha <= 0, gamma <= 0 (setg3.c:638-675)
+    if (fx("gamma")) return(refuse("(SETG32050)"))
+    gamma <- 3 / eta
+    if (g3flag == 1L) {
+      a <- .hzr_setg3_alpha_gener(gamma, eta, fx("alpha"))
+      if (is.character(a)) bad <- a else alpha <- a
+    }
+  } else if (isTRUE(gamma > 0)) {
+    # alpha <= 0, eta <= 0 (setg3.c:677-714)
+    if (fx("eta")) return(refuse("(SETG32080)"))
+    eta <- 3 / gamma
+    if (g3flag == 1L) {
+      a <- .hzr_setg3_alpha_gener(gamma, eta, fx("alpha"))
+      if (is.character(a)) bad <- a else alpha <- a
+    }
+  } else if (isTRUE(alpha > 0)) {
+    # gamma <= 0, eta <= 0 (setg3.c:716-770)
+    if (fx("gamma")) return(refuse("(SETG33020)"))
+    if (fx("eta")) return(refuse("(SETG33010)"))
+    eta <- 2
+    gamma <- 1.5 * alpha
+    if (isTRUE(gamma * eta <= 2)) gamma <- 3 / eta
+    a <- .hzr_setg3_alpha_fixup(gamma, eta, alpha, fx("alpha"), weibull)
+    if (is.character(a)) bad <- a else if (!is.null(a)) alpha <- a
+  } else {
+    # all <= 0 (setg3.c:772-812)
+    if (fx("gamma")) return(refuse("(SETG33020)"))
+    if (fx("eta")) return(refuse("(SETG33010)"))
+    gamma <- 1
+    eta <- 3
+    if (g3flag == 1L) {
+      a <- .hzr_setg3_alpha_gener(gamma, eta, fx("alpha"))
+      if (is.character(a)) bad <- a else alpha <- a
+    }
+  }
+
+  if (!is.null(bad)) return(refuse(bad))
+  list(refusal = NULL, shape = c(gamma = gamma, alpha = alpha, eta = eta))
+}
+
 #' Map a SAS `PARMS` statement's operands to phases and a starting theta.
 #'
 #' @param operands Character vector of `PARMS` tokens, e.g.
@@ -352,6 +564,11 @@
   # this parser does not resolve; those are recorded as untranslated, so this
   # is the half that can be evaluated here.
   ignore_tau <- isTRUE(late_full[["alpha"]] == 1) && "alpha" %in% fixed_late
+
+  # SETG3's entry checks (setg3.c:269-284) read the job's OWN FIX* flags,
+  # before SETG3 sets any of its own, so the trace below needs this snapshot
+  # rather than the post-pin set.
+  fixed_late_user <- fixed_late
 
   if (has_late && ignore_tau) {
     # setg3.c:378-379 does TWO things, and mirroring only the first is what
@@ -509,60 +726,67 @@
   # likelihood-equivalent and is documented in hzr_translate_sas() rather than
   # reported per job.
 
-  # SETG3_verify_ge_2() (setg3.c:873-924) rewrites a late phase whose
-  # GAMMA*ETA <= 2: with neither fixed it sets gamma = 3/eta, and with one
-  # fixed it sets the other to 3/(the fixed one). The 3 is not a normalisation
-  # to the boundary but a deliberate push clear of it.
-  #
-  # This is NOT mirrored, and that is a design decision rather than an
-  # omission. The constraint exists so PROC HAZARD stays inside a numerical
-  # branch it can evaluate -- the same reason g3flag exists, which the WEIBULL
-  # branch above notes "has no R counterpart: hzr_decompos_g3() handles the
-  # general form directly". hzr_phase("g3") carries the general four-parameter
-  # shape and is under no such restriction, and exercising a late shape SAS
-  # cannot reach is a goal of this package rather than a defect in it. Copying
-  # the rewrite would import a SAS limitation into R.
-  #
-  # It is recorded because it is still a start-value divergence: a parity run
-  # against a SAS listing will see different GAMMA (or ETA) here, and that
-  # difference should be explained rather than discovered.
-  #
-  # Reached from SETG3_all_gt_0() (setg3.c:499) and SETG3_alpha_le_0() (:523),
-  # i.e. whenever GAMMA > 0 and ETA > 0, whatever ALPHA is -- but never on the
-  # WEIBULL path, which returns at setg3.c:347 before the sign dispatch. Note
-  # the predicate is invariant to SETG3_ignore_tau(): its reparameterisation
-  # (setg3.c:403-421) moves the exponent between GAMMA and ETA but preserves
-  # their PRODUCT, which is all `gte` reads. The g_two half of the function is
-  # driven by FIXGE2/FIXGAE2, which .hzr_sas_token() records as unresolved, so
-  # a job carrying those is never reported clean anyway.
-  gte <- late_full[["gamma"]] * late_full[["eta"]]
-  if (length(late) && has_late && !saw_weibull &&
-      isTRUE(late_full[["gamma"]] > 0) && isTRUE(late_full[["eta"]] > 0) &&
-      isTRUE(gte <= 2) &&
-      !all(c("gamma", "eta") %in% fixed_late)) {
-    flag_bad(
-      sprintf("GAMMA=%g ETA=%g (product %g)", late_full[["gamma"]],
-              late_full[["eta"]], gte),
-      paste0("SETG3_verify_ge_2() rewrites a late phase with GAMMA*ETA <= 2 ",
-             "(setg3.c:907-921), setting the unfixed one to 3 over the other, ",
-             "so PROC HAZARD does not start where this call does; the general ",
-             "G3 shape hzr_phase() carries needs no such constraint and is ",
-             "kept deliberately, but a SAS parity comparison will differ here")
+  # Everything SETG3() would do to this phase, in one place. See the header
+  # of .hzr_setg3_notes() for why a refusal and a rewrite are both recorded
+  # while only the two identifiability fixes are mirrored.
+  setg3_refused <- FALSE
+  if (length(late) && has_late) {
+    setg3 <- .hzr_setg3_notes(
+      tau_raw = if (tau_defaulted) 0 else late[["tau"]],
+      gamma = late_full[["gamma"]],
+      alpha = late_full[["alpha"]],
+      eta = late_full[["eta"]],
+      fixed = fixed_late_user,
+      weibull = saw_weibull
     )
-  }
-
-  alpha_val <- late_full[["alpha"]]
-  # setg3.c:437: SETG3_weibull() rejects alpha == 0 unless ALPHA is fixed
-  # (g3flag == 3 vs 4) and the job does not run. hzr_phase() accepts alpha = 0
-  # as the limiting exponential, so without this the translator would emit a
-  # runnable fit for a job SAS refuses outright.
-  if (has_late && saw_weibull && isTRUE(alpha_val == 0) &&
-      !("alpha" %in% fixed_late)) {
-    flag_bad(
-      "ALPHA=0 with WEIBULL and no FIXALPHA",
-      paste0("PROC HAZARD rejects this: SETG3_weibull() raises SETG3980 for ",
-             "alpha = 0 unless ALPHA is fixed, so the job does not run")
-    )
+    if (!is.null(setg3$refusal)) {
+      setg3_refused <- TRUE
+      flag_bad(
+        sprintf("GAMMA=%g ALPHA=%g ETA=%g%s", late_full[["gamma"]],
+                late_full[["alpha"]], late_full[["eta"]],
+                if (length(fixed_late_user)) {
+                  paste0(" fixed:", paste(fixed_late_user, collapse = ","))
+                } else {
+                  ""
+                }),
+        paste0("PROC HAZARD refuses this job: SETG3 raises ",
+               setg3$refusal, " -- ",
+               .hzr_setg3_refusal_reason(setg3$refusal),
+               ". hzr_phase() would accept it, so without this the ",
+               "translation would emit a runnable fit for a job that does ",
+               "not run")
+      )
+    } else {
+      # At alpha = 1 only the product gamma*eta is identified, and the
+      # emitted call deliberately keeps the user's split rather than
+      # SETG3_ignore_tau()'s (setg3.c:414-420) -- likelihood-equivalent, so
+      # compare the product there and each operand otherwise. Without this
+      # every ignore_tau job would report a rewrite that changes no fit.
+      emitted <- c(gamma = late_full[["gamma"]], alpha = late_full[["alpha"]],
+                   eta = late_full[["eta"]])
+      got <- setg3$shape
+      if (ignore_tau) {
+        emitted <- c(`gamma*eta` = unname(emitted[["gamma"]] * emitted[["eta"]]),
+                     alpha = unname(emitted[["alpha"]]))
+        got <- c(`gamma*eta` = unname(got[["gamma"]] * got[["eta"]]),
+                 alpha = unname(got[["alpha"]]))
+      }
+      moved <- names(emitted)[!mapply(
+        function(a, b) isTRUE(all.equal(a, b)), emitted, got
+      )]
+      if (length(moved)) {
+        flag_bad(
+          paste(sprintf("%s=%g", names(emitted), emitted), collapse = " "),
+          paste0("SETG3() optimizes from ",
+                 paste(sprintf("%s = %g", moved, got[moved]), collapse = ", "),
+                 ", not the value(s) emitted here: it constrains the late ",
+                 "shape to keep PROC HAZARD inside a numerical branch it can ",
+                 "evaluate. hzr_decompos_g3() carries the general G3 form and ",
+                 "needs no such constraint, so the emitted call keeps it ",
+                 "deliberately -- but a SAS parity run starts elsewhere")
+        )
+      }
+    }
   }
 
   # The emitted call now pins TAU at 1 exactly as SETG3_ignore_tau() does, so
@@ -570,7 +794,11 @@
   # A job that WROTE a different TAU is a different matter: PROC HAZARD
   # discards that value, and so now does this translator, but a starting value
   # the user typed and neither program uses is worth saying out loud.
-  if (length(late) && has_late && ignore_tau &&
+  # A refused job stops inside SETG3 before either TAU rule runs, so neither
+  # row below applies -- reporting them alongside the refusal would describe
+  # code PROC HAZARD never reaches, the same false-positive the MUL gate above
+  # exists to avoid.
+  if (length(late) && has_late && !setg3_refused && ignore_tau &&
       !is.null(late[["tau"]]) && !isTRUE(late[["tau"]] == 1)) {
     flag_bad(
       paste0("TAU=", sprintf("%g", late[["tau"]])),
@@ -579,7 +807,8 @@
              "emitted phase mirrors that, so the value written here is used ",
              "by neither PROC HAZARD nor the translation")
     )
-  } else if (length(late) && has_late && tau_defaulted && !ignore_tau) {
+  } else if (length(late) && has_late && !setg3_refused && tau_defaulted &&
+             !ignore_tau) {
     # The other SETG3 branch (setg3.c:316-318), reached only when the
     # ignore_tau branch above was NOT taken -- setg3.c:313-316 is an if/else,
     # so a job that fixes ALPHA at 1 never gets this assignment at all.
