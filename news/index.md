@@ -168,6 +168,43 @@
   path, tracked in
   [\#226](https://github.com/ehrlinger/TemporalHazard/issues/226).
 
+### Testing
+
+- **The SAS parity tests for `hz.te123.OMC` fit 1 and `hz.tm123.OMC`
+  still described the P1
+  [\#6](https://github.com/ehrlinger/TemporalHazard/issues/6)
+  Conservation-of-Events gap that PR
+  [\#65](https://github.com/ehrlinger/TemporalHazard/issues/65) closed,
+  and their tolerances were set from that gap rather than from the
+  code’s behaviour.** Fit 1 asserted the log-likelihood within `0.2`
+  where R and SAS now agree to 1.3e-04, `hz.tm123.OMC` within `0.5`
+  against 4.6e-04, and neither asserted `MUE` at all, each carrying a
+  comment quoting a value the fix had already moved. Restoring the
+  pre-PR-#65 defect – dropping the entry-time term from
+  [`.hzr_conserve_events()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_conserve_events.md)
+  – left every one of those assertions passing, so they could not have
+  caught the regression they were nominally about. The log-likelihood
+  tolerances are now `1e-5` (relative), both Conservation-of-Events
+  intercepts `MUE` and `MUL` are asserted, and each fit first checks
+  `conserve_applied`, since CoE disables itself silently on unsupported
+  data. The same mutation now fails six assertions.
+
+  `MUL` is compared as a ratio to the SAS value rather than directly,
+  and that distinction is the point rather than a detail.
+  `expect_equal()` divides by `mean(abs(expected))` only when that
+  exceeds `tolerance`; `MUL` is 2.1e-04, below any tolerance worth
+  setting for it, so a direct comparison silently becomes an *absolute*
+  one – `MUL = 0` passes at `5e-04`, and so does the regression above. A
+  first version of this change asserted `MUL` directly and reproduced,
+  in the fix, the defect it was removing. Against an expected value of
+  `1` the comparison is relative, as the tolerance implies.
+  `hz.te123.OMC` fit 2’s pre-existing `MUL` assertion sat 7% above that
+  branch point and moves to the same form. `hz.te123.OMC` fit 2’s
+  log-likelihood tolerance goes from `1e-2` to `1e-5` for the same
+  reason; it carried no stale claim, but `1e-2` admitted a drift of 3.1
+  in log-likelihood on a quantity matching to 1.5e-04. No package code
+  changed.
+
 ## TemporalHazard 1.2.8
 
 ### New features
