@@ -32,8 +32,8 @@ alters them, and the following columns added:
 \item{\code{iv_seg}}{Duration of the segment, \code{time} minus \code{iv_start}.}
 \item{\code{renewal}}{Segment number under the modulated renewal
 formulation.}
-\item{\code{first}, \code{last}}{Whether the row was the subject's first or last
-before censored rows were appended.}
+\item{\code{first}, \code{last}}{1 when the row was the subject's first or last
+before censored rows were appended, otherwise 0.}
 }
 }
 \description{
@@ -56,12 +56,18 @@ event nor an absence, and rows are ordered with missing times first, as SAS
 sorts them.
 }
 \examples{
+# One row per candidate event per subject: s1 has two events, s2 one,
+# and s3 none (its only row is a non-event, so it contributes no rows
+# of its own before the function pads it with a censored one below).
 events <- data.frame(
   id = c("s1", "s1", "s2", "s3"),
   t = c(1, 3, 2, NA),
   fu = c(10, 10, 10, 10),
   ev = c(1, 1, 1, 0)
 )
+# The result appends a censored row at end of follow-up for any subject
+# whose last event happened before `fu`, so every subject gets at least
+# one row even when, like s3, they never had an event.
 hzr_repeated_events(events, id = "id", time = "t", followup = "fu", indicator = "ev")
 
 }

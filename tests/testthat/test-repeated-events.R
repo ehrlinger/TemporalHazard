@@ -38,6 +38,27 @@ test_that(".hzr_re_validate rejects a missing id", {
   expect_error(.hzr_re_validate(d, "id", "t", "fu", "ev"), "missing")
 })
 
+test_that("hzr_repeated_events rejects a non-numeric, non-logical indicator instead of silently dropping events", {
+  # "Y"/"N" match neither `== 1` nor `== 0`, so before this fix every row
+  # was dropped and censored rows backfilled: a populated, plausible frame
+  # with zero events and no error. This test proves the guard fires.
+  d <- data.frame(id = c("s1", "s1", "s2"), t = c(1, 3, 2), fu = 10, ev = c("Y", "Y", "N"),
+    stringsAsFactors = FALSE)
+  expect_error(hzr_repeated_events(d, "id", "t", "fu", "ev"), "character")
+})
+
+test_that("hzr_repeated_events warns, but does not error, when the indicator has no event at all", {
+  d <- data.frame(id = c("s1", "s2"), t = c(1, 2), fu = c(10, 10), ev = c(0, 0), stringsAsFactors = FALSE)
+  expect_warning(hzr_repeated_events(d, "id", "t", "fu", "ev"), "no events")
+})
+
+test_that("hzr_repeated_events rejects a missing followup value", {
+  # A missing followup used to sort the appended censored row BEFORE the
+  # event it terminates (NA maps to -Inf), scrambling first/last flags.
+  d3 <- data.frame(id = c("s1", "s2"), t = c(1, NA), fu = c(NA, NA), ev = c(1, 0), stringsAsFactors = FALSE)
+  expect_error(hzr_repeated_events(d3, "id", "t", "fu", "ev"), "followup")
+})
+
 # A four-subject fixture covering the branches stages 2-3 discriminate:
 #   s1 -- two events, no leading non-event
 #   s2 -- a leading non-event row then one event
@@ -52,6 +73,15 @@ re_fixture <- function() {
     stringsAsFactors = FALSE
   )
 }
+
+test_that("hzr_repeated_events rejects a factor id rather than sorting by level order", {
+  # A factor sorts by level order, not value; with levels reversed relative
+  # to the subject labels this would silently give a different subject
+  # ordering, and therefore different `first` rows, than SAS's proc sort.
+  d <- re_fixture()
+  d$id <- factor(d$id, levels = c("s4", "s3", "s2", "s1"))
+  expect_error(hzr_repeated_events(d, "id", "t", "fu", "ev"), "factor")
+})
 
 test_that("stage 1 adds rcensor as all zero and changes nothing else", {
   d <- re_fixture()
@@ -189,6 +219,11 @@ test_that("stage 6 sets rcensor where the event time equals end of follow-up", {
 test_that("stage 6 sets rcensor at end of follow-up when both time and followup are missing", {
   # SAS numeric missing compares equal to itself, so `if . = . then` is TRUE:
   # a row with both &iv_event and &iv_end missing is at end of follow-up.
+  # This is still SAS-faithful and correct at the stage level, but a missing
+  # `followup` is now refused by hzr_repeated_events() itself (see the test
+  # "hzr_repeated_events rejects a missing followup value" below), so this
+  # input is unreachable through the exported function. The stages are
+  # called directly here to keep the behaviour covered.
   d <- data.frame(
     id = c("a"), t = NA_real_, fu = NA_real_, ev = 1, rcensor = 0, first = 1, last = 1,
     stringsAsFactors = FALSE
@@ -288,12 +323,25 @@ test_that("hzr_repeated_events gives every subject at least one row", {
 })
 
 test_that("hzr_repeated_events produces segments that tile each subject's follow-up without gaps", {
+  # The original assertions (iv_start == c(0, head(t, -1)), iv_seg == t -
+  # iv_start) restated exactly how stage 6 computes those columns from `t`,
+  # and on this fixture stage 7 drops no rows so they always held -- a
+  # mutant that broke the tiling would still pass them if it also broke
+  # them the same way. These instead constrain the OUTPUT: within each
+  # subject, ordered by iv_start, each segment must start exactly where the
+  # previous one ended (contiguous, no gap or overlap) and the segments
+  # together must cover [0, followup] -- a property that would legitimately
+  # break if stage 7 ever dropped a row, unlike the arithmetic restatement.
   out <- hzr_repeated_events(re_fixture(), "id", "t", "fu", "ev")
   for (subject in unique(out$id)) {
     rows <- out[out$id == subject, ]
-    expect_equal(rows$iv_start, c(0, utils::head(rows$t, -1)), info = subject)
-    expect_equal(rows$iv_seg, rows$t - rows$iv_start, info = subject)
-    expect_equal(max(rows$t), 10, info = subject)
+    rows <- rows[order(rows$iv_start), ]
+    seg_end <- rows$iv_start + rows$iv_seg
+    expect_equal(rows$iv_start[1], 0, info = subject)
+    if (nrow(rows) > 1L) {
+      expect_equal(rows$iv_start[-1], utils::head(seg_end, -1), info = subject)
+    }
+    expect_equal(utils::tail(seg_end, 1), 10, info = subject)
   }
 })
 

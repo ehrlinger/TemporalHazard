@@ -93,6 +93,44 @@
   if (anyNA(data[[id]])) {
     stop(sprintf("Column \"%s\" (argument `id`) has missing values.", id), call. = FALSE)
   }
+  if (is.factor(data[[id]])) {
+    stop(
+      sprintf(
+        paste(
+          "Column \"%s\" (argument `id`) is a factor. Convert it to character first: a factor sorts",
+          "by level order, not value, and can give a different subject ordering than SAS's `proc sort`."
+        ),
+        id
+      ),
+      call. = FALSE
+    )
+  }
+  indicator_col <- data[[indicator]]
+  if (!(is.numeric(indicator_col) || is.logical(indicator_col))) {
+    stop(
+      sprintf(
+        "Column \"%s\" (argument `indicator`) must be numeric, integer or logical, not %s.",
+        indicator, class(indicator_col)[1]
+      ),
+      call. = FALSE
+    )
+  }
+  if (!any(!is.na(indicator_col) & indicator_col == 1)) {
+    warning(
+      sprintf(
+        paste(
+          "Column \"%s\" (argument `indicator`) has no value equal to 1: no events were found.",
+          "This can be a legitimately all-censored cohort, but is often a data problem -- check that",
+          "the indicator is coded as documented (1 = event, 0 or NA = no event)."
+        ),
+        indicator
+      ),
+      call. = FALSE
+    )
+  }
+  if (anyNA(data[[followup]])) {
+    stop(sprintf("Column \"%s\" (argument `followup`) has missing values.", followup), call. = FALSE)
+  }
   invisible(NULL)
 }
 
@@ -308,17 +346,23 @@
 #'     \item{`iv_seg`}{Duration of the segment, `time` minus `iv_start`.}
 #'     \item{`renewal`}{Segment number under the modulated renewal
 #'       formulation.}
-#'     \item{`first`, `last`}{Whether the row was the subject's first or last
-#'       before censored rows were appended.}
+#'     \item{`first`, `last`}{1 when the row was the subject's first or last
+#'       before censored rows were appended, otherwise 0.}
 #'   }
 #'
 #' @examples
+#' # One row per candidate event per subject: s1 has two events, s2 one,
+#' # and s3 none (its only row is a non-event, so it contributes no rows
+#' # of its own before the function pads it with a censored one below).
 #' events <- data.frame(
 #'   id = c("s1", "s1", "s2", "s3"),
 #'   t = c(1, 3, 2, NA),
 #'   fu = c(10, 10, 10, 10),
 #'   ev = c(1, 1, 1, 0)
 #' )
+#' # The result appends a censored row at end of follow-up for any subject
+#' # whose last event happened before `fu`, so every subject gets at least
+#' # one row even when, like s3, they never had an event.
 #' hzr_repeated_events(events, id = "id", time = "t", followup = "fu", indicator = "ev")
 #'
 #' @export
