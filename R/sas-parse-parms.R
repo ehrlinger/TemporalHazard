@@ -182,10 +182,16 @@
 #'   `list(early = c("X1", "X2"), constant = , late = )`, from the operands of
 #'   the `EARLY` / `CONSTANT` / `LATE` statements.
 #' @return `list(phases = <call>, theta = <call>, has_phases = <logical>,
-#'   untranslated = <data.frame>)`. `has_phases` is `TRUE` only when at least
-#'   one phase was actually built from the operands (i.e. `phases` is not the
-#'   empty `list()` call) -- callers use it to decide whether the job
-#'   qualifies as multiphase at all.
+#'   refused = <logical>, untranslated = <data.frame>)`. `has_phases` is
+#'   `TRUE` only when at least one phase was actually built from the operands
+#'   (i.e. `phases` is not the empty `list()` call) -- callers use it to decide
+#'   whether the job qualifies as multiphase at all. `refused` is `TRUE` only
+#'   when no phase is active AND every operand was understood, meaning
+#'   `PROC HAZARD` would raise `ERROR 1001` and run nothing
+#'   (`src/hazard/modterm.c`); the caller emits a `stop()` in place of the fit.
+#'   It is deliberately narrower than `!has_phases`: a statement this parser
+#'   could not read is recorded but not refused, because the refusal is a
+#'   claim about the reference and not about this parser.
 #' @noRd
 .hzr_parse_parms <- function(operands, covars = list()) {
   mu <- list()
@@ -196,6 +202,14 @@
   saw_weibull <- FALSE
   bad_construct <- character(0)
   bad_reason <- character(0)
+  # Set when an operand could not be read at all -- an unresolved keyword, a
+  # non-numeric value, or a keyword with no phase target. It gates the "no
+  # phase selected" refusal below, which is a claim about what PROC HAZARD
+  # would do and is only sound when this parser actually understood the whole
+  # statement. Distinct from `bad_construct`, which also collects the later
+  # SEMANTIC guards: `MUE=0 THALF=1` is fully readable and genuinely selects
+  # no phase, so it must still refuse even though it flags THALF=1.
+  unreadable <- FALSE
 
   flag_bad <- function(construct, reason) {
     bad_construct <<- c(bad_construct, construct)
@@ -210,8 +224,10 @@
       val <- suppressWarnings(as.numeric(substr(op, eq + 1L, nchar(op))))
       token <- .hzr_sas_token(key, "HAZARD", "PARM")
       if (is.na(token)) {
+        unreadable <- TRUE
         flag_bad(op, "unresolved PARMS keyword")
       } else if (is.na(val)) {
+        unreadable <- TRUE
         flag_bad(op, sprintf("PARMS value for %s is not numeric", key))
       } else if (token %in% .hzr_parms_mu_order) {
         mu[[token]] <- val
@@ -239,6 +255,7 @@
           ))
         }
       } else {
+        unreadable <- TRUE
         flag_bad(op, "PARMS keyword has no phase target")
       }
       next
@@ -246,6 +263,7 @@
 
     token <- .hzr_sas_token(op, "HAZARD", "PARM")
     if (is.na(token)) {
+      unreadable <- TRUE
       flag_bad(op, "unresolved PARMS keyword")
     } else if (token == "WEIBULL") {
       # setopt(6) -> SETG3_weibull() (setg3.c:427) is the GENERALIZED Weibull:
@@ -486,28 +504,35 @@
   # every job rather than only for a selected multiphase model: its single
   # call site is outmods.c:91, and outmods() sits in main's straight-line
   # sequence (hazard.c:296) with the no-phase test as one of the three
-  # disjuncts at outmods.c:89 that fire the call. hazard.c:298-301 then routes
+  # disjuncts at outmods.c:89 that fire the call. hazard.c:299-302 then routes
   # errorno 1001 to hzfxit("SEMANTIC"), which exits BEFORE results() -- so the
-  # job prints no estimates and never fits.
+  # job prints no estimates and never fits. `refused` therefore propagates to
+  # .hzr_parse_job(), which emits a stop() in place of the hazard() call: an
+  # $untranslated row alone still renders a populated fit, and a fit standing
+  # in for a job that produced no result is this package's signature defect.
   #
-  # Without this row the emitted call falls through to hazard()'s default
-  # distribution (sas-parse-job.R:604 omits `dist` when has_phases is FALSE)
-  # and hzr_translate_sas() reports FULL coverage for a job SAS refuses
-  # outright -- the same shape as the SETG3980 guard above. The no-PARMS half
-  # is latent rather than shipped: 0 of the 29 hazard() fits the public corpus
-  # emits lack dist = "multiphase" (measured 2026-09-09). Latent is why this
-  # is a `flag_bad()` and not a corpus-visible regression, not a reason to
-  # leave the path reporting full coverage for a model that has no phases.
-  # The wording keys on `operands`, not on mu/early/late: a PARMS statement
-  # whose every operand failed to parse (dist/examples/hm.dthar.TGA.sas is a
-  # template carrying literal `MUE=? THALF=? NU=?`) leaves all three empty
-  # while the statement plainly existed, and calling that "no PARMS" would be
-  # a confident wrong annotation in the frame a caller reads to decide whether
-  # the translation can be trusted. A bare `PARMS;` is genuinely
-  # indistinguishable from an absent one here -- both arrive as character(0) --
-  # so the absent wording is phrased to be true of either.
-  if (!has_early && !has_muc && !has_late) {
+  # `unreadable` is the gate that keeps this from being a FALSE POSITIVE, and
+  # it is load bearing now that the outcome is a hard stop. Testing only the
+  # three has_* flags conflates "PARMS selected no phase" with "this parser
+  # could not read PARMS". `PARMS MUE = 0.2 THALF = 1` is the case that bites:
+  # .hzr_parse_hazard() splits operands on " ", so it yields "MUE", "=", "0.2"
+  # and nothing parses -- while HAZARD's own lexer discards whitespace
+  # unconditionally (hazard_l.l:32 `ws [ \t\n\r\)]+`, rule at :50), making
+  # that a well-formed parmsopt (hazard_y.y:138) whose job RUNS with an active
+  # early phase. Refusing it would stop a job PROC HAZARD accepts. The
+  # per-operand rows still record what was not understood; only the refusal,
+  # which is a claim about the reference, requires having understood it all.
+  refused <- !has_early && !has_muc && !has_late && !unreadable
+  if (refused) {
     flag_bad(
+      # Keyed on `operands`, not on mu/early/late: dist/examples/
+      # hm.dthar.TGA.sas is a template carrying literal `MUE=? THALF=? NU=?`,
+      # which leaves all three empty while the statement plainly existed.
+      # (It is unreadable, so it no longer reaches here -- but the wording
+      # must not depend on that gate to be true.) A bare `PARMS;` cannot
+      # occur: hazard_y.y:133-135 requires at least one parmsopt, so it is a
+      # HAZARD syntax error, and character(0) here means the statement was
+      # genuinely absent.
       if (length(operands)) {
         "PARMS with no positive MUE, MUC or MUL"
       } else {
@@ -515,7 +540,7 @@
       },
       paste0("PROC HAZARD selects no phase here and refuses the job ",
              "(modterm.c:18-22 raises ERROR 1001, \"No phase selected\"; ",
-             "hazard.c:298-301 then exits before results())")
+             "hazard.c:299-302 then exits before results())")
     )
   }
 
@@ -539,6 +564,7 @@
     phases = as.call(c(quote(list), phase_calls)),
     theta = as.call(c(quote(c), theta_blocks)),
     has_phases = length(phase_calls) > 0L,
+    refused = refused,
     untranslated = .hzr_untranslated_frame(
       line = rep(NA_integer_, length(bad_construct)),
       construct = bad_construct,

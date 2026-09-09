@@ -454,29 +454,55 @@ test_that("a job with no PARMS operands at all is refused, not defaulted", {
   # stay at their stmtprc.c:87 zero, and modterm.c:18-22 raises ERROR 1001.
   # modterm() is universal rather than multiphase-only: its single call site
   # is outmods.c:91, outmods() is unconditional in main (hazard.c:296), and
-  # hazard.c:298-301 routes 1001 to hzfxit("SEMANTIC") BEFORE results(). The
+  # hazard.c:299-302 routes 1001 to hzfxit("SEMANTIC") BEFORE results(). The
   # job never fits, so a translation that emits one is a wrong answer.
   got <- .hzr_parse_parms(character(0))
   expect_false(got$has_phases)
+  expect_true(got$refused)
   expect_equal(got$untranslated$construct,
                "no PARMS operands (no MUE, MUC or MUL)")
   expect_true(any(grepl("modterm.c", got$untranslated$reason, fixed = TRUE)))
 })
 
-test_that("a PARMS whose operands all fail to parse is not called 'no PARMS'", {
+test_that("operands this parser cannot read are recorded but never refused", {
+  # `refused` drives a stop() in place of the fit, so it is a claim about what
+  # PROC HAZARD does and is sound only when the whole statement was understood.
+  # .hzr_parse_hazard() splits on " ", so `PARMS MUE = 0.2` arrives as separate
+  # "MUE", "=", "0.2" operands and nothing parses -- while HAZARD's lexer drops
+  # whitespace unconditionally (hazard_l.l:32, rule at :50) and RUNS that job
+  # with an active early phase. Refusing it would stop a job the reference
+  # accepts, so the gate must key on comprehension, not on has_phases.
+  spaced <- .hzr_parse_parms(c("MUE", "=", "0.2", "THALF", "=", "1"))
+  expect_false(spaced$has_phases)
+  expect_false(spaced$refused)
+  expect_false(any(grepl("modterm.c", spaced$untranslated$reason, fixed = TRUE)))
+  # Not refusing is not the same as declaring it fine -- the operands are still
+  # reported, so this cannot pass by the parser having silently accepted them.
+  expect_true("MUE" %in% spaced$untranslated$construct)
+
+  # The paired readable case, so the assertions above cannot pass merely
+  # because nothing ever refuses: MUE=0 is understood AND selects no phase.
+  read <- .hzr_parse_parms(c("MUE=0", "THALF=1"))
+  expect_false(read$has_phases)
+  expect_true(read$refused)
+})
+
+test_that("a PARMS template with `?` placeholders is not refused as no-phase", {
   # dist/examples/hm.dthar.TGA.sas is a template carrying literal
   # `PARMS MUE=? THALF=? NU=? M=1 FIXM MUC=?;` for the reader to fill in from
-  # the stepwise output above it. Every value is non-numeric, so mu, early and
-  # late all stay empty while the statement plainly existed. $untranslated is
-  # the frame a caller reads to decide whether a translation can be trusted,
-  # so keying the wording on mu/early/late rather than on `operands` would
-  # annotate that job "no PARMS" -- wrong, and confidently so.
-  got <- .hzr_parse_parms(c("MUE=?", "MUC=?"))
+  # the stepwise output above it. Every value is non-numeric, so no MU is
+  # active -- but that is this parser failing to read the statement, not PROC
+  # HAZARD selecting no phase, and the reference would reject `?` as a SYNTAX
+  # error long before modterm.c's ERROR 1001. Claiming "No phase selected"
+  # here would attribute the wrong refusal to the reference, and now that
+  # `refused` emits a stop() it would also replace the fit on that basis.
+  got <- .hzr_parse_parms(c("MUE=?", "THALF=?", "M=1", "FIXM", "MUC=?"))
   expect_false(got$has_phases)
-  expect_true("PARMS with no positive MUE, MUC or MUL" %in%
-                got$untranslated$construct)
-  expect_false("no PARMS operands (no MUE, MUC or MUL)" %in%
-                 got$untranslated$construct)
+  expect_false(got$refused)
+  expect_false(any(grepl("modterm.c", got$untranslated$reason, fixed = TRUE)))
+  # The unreadable operands are each still reported by name, so the assertions
+  # above cannot pass by the whole statement having been silently dropped.
+  expect_true(all(c("MUE=?", "THALF=?", "MUC=?") %in% got$untranslated$construct))
 })
 
 test_that("covariates of a phase that is not built are recorded, not dropped", {
