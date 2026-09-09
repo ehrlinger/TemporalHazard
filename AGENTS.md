@@ -47,13 +47,15 @@ Four details there are load bearing:
 - **Lint runs before tests** because it is seconds against about a minute for the suite. Cheap
   failures first.
 - **`R CMD check` does not run the whole suite.** It runs with `NOT_CRAN` false, so
-  `skip_on_cran()` tests are skipped: 193 skips and 2679 passes under check, against 6 skips
-  and **3703** passes locally (both measured 2026-09-05 at `fe57e60`, the `v1.2.9` release
-  artifact, with no environment variables set; the local figure needs the SAS fixture
-  checkouts present under `~/Documents/GitHub/hazard`). **That gap is now 1,024 passes**, up
-  from about 900 when it was last measured on 2026-08-31, so the check covers proportionally
-  less of the suite than it did. A green check is **not**
-  evidence that those tests pass; only the local `devtools::test()` line is.
+  `skip_on_cran()` tests are skipped: 193 skips and 2765 passes under check, against 6 skips
+  and **3796** passes locally (both measured 2026-09-09 at `bd75f9f`, with no environment
+  variables set; the local figure needs the SAS fixture checkouts present under
+  `~/Documents/GitHub/hazard`). **That gap is 1,031 passes**, against 1,024 on 2026-09-05 and
+  about 900 on 2026-08-31. Note the gap barely moved this cycle while the suite grew by 93
+  passes: the skip count held at 193 and `skip_on_cran()` calls held at 173, so this cycle's
+  new tests run *under* the check rather than being skipped out of it. That is the opposite of
+  the previous cycle and the reason the timing rows below move the way they do. A green check
+  is **not** evidence that the skipped tests pass; only the local `devtools::test()` line is.
 - **Commit before you `git archive`.** It exports the committed tree, so an uncommitted fix is
   silently absent and the check answers a question about the wrong code. This has already
   cost one wrong conclusion. Nothing in the output tells you.
@@ -222,21 +224,22 @@ Rscript ~/Documents/GitHub/house-style/compose-house-style.R --repo TemporalHaza
 - **The score criterion is an *entry* criterion.** The drop path never refits per candidate
   under either criterion: removals are tested on the current model's Wald p-value against
   `slstay`, as SAS does, and only the accepted drop is refitted.
-- Anything slow gets `skip_on_cran()`. There are 173 calls today (2026-09-05, `fe57e60`).
+- Anything slow gets `skip_on_cran()`. There are 173 calls today (2026-09-09, `bd75f9f` --
+  unchanged from `fe57e60`, so nothing added this cycle was skipped).
 - No `browser()`, no bare `print()`, no `library()` inside `R/`. `cat()` belongs only in a
   `print.*` method.
 
 ### Where the check's time actually goes
 
-Overall `R CMD check --as-cran` with the manual: **3m 32s** (212s), tarball **2.91 MB**
-(measured 2026-09-05 at `fe57e60`, the `v1.2.9` release artifact). CRAN's ceiling is about 10
+Overall `R CMD check --as-cran` with the manual: **3m 41s** (221s), tarball **2.93 MB**
+(measured 2026-09-09 at `bd75f9f`). CRAN's ceiling is about 10
 minutes and it rejects on that even at 0/0/0, which is what got ggRandomForests archived in
 June 2026.
 
 | Component | Time |
 |---|---|
-| Tests | 87s / 93s |
-| Vignette rebuild | 42s / 46s |
+| Tests | 90s / 96s |
+| Vignette rebuild | 47s / 52s |
 | Everything else | the remainder |
 
 Re-measure these when you change them, and stamp the commit.
@@ -255,19 +258,30 @@ by more than a release cycle's real growth, so read the dated series, not the la
 | 2026-08-23 | `c9f6c28` | 3m 29s | 84s |
 | 2026-09-02 | `f790c73` | 3m 33s | 91s |
 | 2026-09-05 | `fe57e60` | 3m 32s | 87s |
+| 2026-09-09 | `bd75f9f` | 3m 41s | 90s |
 
-Across those four the total moved about 40 seconds and the tests about 34, nearly all of it in
-tests, over three release cycles. Real, slow, and still a wide margin against CRAN. The
+Across those five the total moved about 49 seconds and the tests about 37, nearly all of it in
+tests, over four release cycles. Real, slow, and still a wide margin against CRAN. The
 2026-08-23 entry read the 2026-08-22 delta as a 37-second jump that "nothing flagged"; against
 a 46-second spread on unchanged code, a delta that size can be entirely the machine. The direction is what is
 worth watching, and it only shows against several dated points.
 
-⚠️ **The 2026-09-05 row went DOWN while the suite grew by 330 passes, and that is not a
-speedup.** Five end-to-end `hazard()` fits added that cycle carry `skip_on_cran()`, so the
-check now measures less work than it did, not the same work faster. A falling number in this
-column can mean the tests moved out of the check rather than got cheaper -- read it against the
-under-check pass count in **Definition of done**, which is the figure that says how much the
-check is actually running.
+⚠️ **A move in this column can be about what the check RUNS, not about what it costs.** The
+two most recent cycles show it in both directions, and neither is readable from the seconds
+alone:
+
+- **2026-09-05 went DOWN while the suite grew by 330 passes, and that is not a speedup.** Five
+  end-to-end `hazard()` fits added that cycle carry `skip_on_cran()`, so the check measured
+  less work than before, not the same work faster.
+- **2026-09-09 went UP by 9s, and that one is real.** Under-check passes rose 2679 -> 2765
+  while the skip count held at 193 and `skip_on_cran()` calls held at 173 -- so the work was
+  added *inside* the check rather than skipped past it. Against the 46-second spread a 9s
+  delta is well within noise on its own; what makes it readable is the pass count moving with
+  it.
+
+So always read this column against the under-check pass count in **Definition of done**, which
+is the figure that says how much the check is actually running. Seconds alone cannot tell a
+cheaper suite from a smaller one.
 
 Both dominant costs are the ones that grow silently. Watch the budget when adding a vignette
 chunk or an unskipped slow test.
