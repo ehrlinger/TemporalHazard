@@ -231,3 +231,74 @@ test_that("stage 6 reads the STALE first/last from stage 4, not flags recomputed
   expect_equal(out$last, c(0, 0))
   expect_equal(out$renewal, c(1, 1))
 })
+
+test_that("stage 7 drops a zero-duration non-event row that is not the subject's first", {
+  d <- data.frame(
+    id = c("a", "a"), t = c(0, 5), fu = c(9, 9), ev = c(0, 0),
+    rcensor = c(1, 1), first = c(1, 0), last = c(0, 1),
+    event = c(0, 0), event_no = c(0, 0), iv_start = c(0, 5), iv_seg = c(0, 0),
+    renewal = c(1, 1), stringsAsFactors = FALSE
+  )
+  out <- .hzr_re_stage7(d, "id", "t", "ev")
+  expect_equal(nrow(out), 1L)
+  expect_equal(out$iv_start, 0)
+})
+
+test_that("stage 7 tests eventype=0 exactly and keeps a zero-duration row with a missing indicator", {
+  d <- data.frame(
+    id = c("a", "a"), t = c(0, 5), fu = c(9, 9), ev = c(0, NA),
+    rcensor = c(1, 1), first = c(1, 0), last = c(0, 1),
+    event = c(0, 0), event_no = c(0, 0), iv_start = c(0, 5), iv_seg = c(0, 0),
+    renewal = c(1, 1), stringsAsFactors = FALSE
+  )
+  expect_equal(nrow(.hzr_re_stage7(d, "id", "t", "ev")), 2L)
+})
+
+test_that("stage 7 keeps a zero-duration non-first row when iv_seg is NA rather than injecting a phantom row", {
+  # iv_seg can legitimately be NA (time - iv_start with a missing event
+  # time). SAS's `if &iv_seg=0 ...` is FALSE when iv_seg is missing (a
+  # missing never equals 0), so the row is kept. Without a !is.na() guard
+  # on the iv_seg comparison, `drop` evaluates to NA for this row and
+  # `data[!drop, ]` injects an all-NA phantom row instead of keeping or
+  # dropping it.
+  # Row 2 is not the subject's first row, has indicator 0 (not missing), and
+  # an iv_seg of NA: every conjunct but the iv_seg comparison is TRUE.
+  d <- data.frame(
+    id = c("a", "a"), t = c(0, 5), fu = c(9, 9), ev = c(0, 0),
+    rcensor = c(1, 1), first = c(1, 0), last = c(0, 1),
+    event = c(0, 0), event_no = c(0, 0), iv_start = c(0, 5), iv_seg = c(0, NA),
+    renewal = c(1, 1), stringsAsFactors = FALSE
+  )
+  out <- .hzr_re_stage7(d, "id", "t", "ev")
+  expect_equal(nrow(out), 2L)
+  expect_false(anyNA(out$id))
+})
+
+test_that("hzr_repeated_events returns the documented columns and drops SAS loop state", {
+  out <- hzr_repeated_events(re_fixture(), "id", "t", "fu", "ev")
+  expect_true(all(c("event", "event_no", "rcensor", "iv_start", "iv_seg", "renewal", "first", "last")
+                  %in% names(out)))
+  expect_false(any(c("lag_iv", "number") %in% names(out)))
+  expect_equal(names(out)[1:4], c("id", "t", "fu", "ev"))
+})
+
+test_that("hzr_repeated_events gives every subject at least one row", {
+  out <- hzr_repeated_events(re_fixture(), "id", "t", "fu", "ev")
+  expect_setequal(unique(out$id), c("s1", "s2", "s3", "s4"))
+})
+
+test_that("hzr_repeated_events produces segments that tile each subject's follow-up without gaps", {
+  out <- hzr_repeated_events(re_fixture(), "id", "t", "fu", "ev")
+  for (subject in unique(out$id)) {
+    rows <- out[out$id == subject, ]
+    expect_equal(rows$iv_start, c(0, utils::head(rows$t, -1)), info = subject)
+    expect_equal(rows$iv_seg, rows$t - rows$iv_start, info = subject)
+    expect_equal(max(rows$t), 10, info = subject)
+  }
+})
+
+test_that("hzr_repeated_events rejects a column name clash rather than overwriting", {
+  d <- re_fixture()
+  d$renewal <- 0
+  expect_error(hzr_repeated_events(d, "id", "t", "fu", "ev"), "renewal")
+})

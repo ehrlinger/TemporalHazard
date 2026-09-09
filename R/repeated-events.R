@@ -246,3 +246,93 @@
 
   data
 }
+
+# Stage 7 -- SAS:
+#   if &iv_seg=0 and &eventype=0 and (first.&id NE 1) then delete;
+#
+# Note &eventype=0 EXACTLY.  Unlike stages 2 and 3 this is not the
+# "0 or missing" non-event test, so a zero-duration row with a missing
+# indicator survives here.
+#
+# iv_seg can legitimately be NA (it is time - iv_start, and a missing event
+# time propagates). SAS's `if &iv_seg=0 ...` is FALSE when iv_seg is missing
+# (a missing never equals 0), so the row is kept -- guard the comparison so a
+# missing iv_seg yields FALSE, not NA, otherwise `drop` is NA for that row and
+# `data[!drop, ]` neither drops nor keeps it: it injects an all-NA phantom row.
+.hzr_re_stage7 <- function(data, id, time, indicator) {
+  data <- data[.hzr_re_order(data, id, time), , drop = FALSE]
+  flags <- .hzr_re_flags(data[[id]])
+  drop <- !is.na(data$iv_seg) & data$iv_seg == 0 &
+    !is.na(data[[indicator]]) & data[[indicator]] == 0 &
+    !flags$first
+  data[!drop, , drop = FALSE]
+}
+
+#' Build repeated-event segments, reproducing the SAS `%repeat` macro
+#'
+#' Converts a long data set of candidate event times into one row per
+#' inter-event segment, ready to fit as a repeated-events model. This is a
+#' native R implementation of the SAS macro `%repeat` used by the
+#' repeated-events HAZARD jobs, whose fit input was never saved.
+#'
+#' @details
+#' The input holds one row per candidate event per subject, with an indicator
+#' naming the event of interest: a value of 1 marks an event, and 0 or `NA`
+#' marks its absence. For each subject the function keeps the event rows,
+#' guarantees at least one row, appends a censored row at the end of follow-up
+#' when the last event happened earlier, and then lags the event time within
+#' subject so that each row describes the interval since the previous event.
+#'
+#' Two details are inherited from the macro and are not R conventions. An
+#' indicator code that is neither 0, 1 nor missing is treated as neither an
+#' event nor an absence, and rows are ordered with missing times first, as SAS
+#' sorts them.
+#'
+#' @param data A data frame with one row per candidate event per subject.
+#' @param id Name of the column identifying the subject.
+#' @param time Name of the column giving the interval from time zero to each
+#'   event.
+#' @param followup Name of the column giving the interval from time zero to the
+#'   end of follow-up.
+#' @param indicator Name of the event indicator column: 1 marks an event, 0 or
+#'   `NA` marks its absence.
+#'
+#' @return A data frame with one row per inter-event segment. Every input
+#'   column is retained, with `time` and `indicator` altered where the macro
+#'   alters them, and the following columns added:
+#'   \describe{
+#'     \item{`event`}{1 when the row is an event of interest, otherwise 0.}
+#'     \item{`event_no`}{Running count of event repeats within the subject.}
+#'     \item{`rcensor`}{1 when the row is right censored, otherwise 0.}
+#'     \item{`iv_start`}{Interval from time zero to the start of the segment.}
+#'     \item{`iv_seg`}{Duration of the segment, `time` minus `iv_start`.}
+#'     \item{`renewal`}{Segment number under the modulated renewal
+#'       formulation.}
+#'     \item{`first`, `last`}{Whether the row was the subject's first or last
+#'       before censored rows were appended.}
+#'   }
+#'
+#' @examples
+#' events <- data.frame(
+#'   id = c("s1", "s1", "s2", "s3"),
+#'   t = c(1, 3, 2, NA),
+#'   fu = c(10, 10, 10, 10),
+#'   ev = c(1, 1, 1, 0)
+#' )
+#' hzr_repeated_events(events, id = "id", time = "t", followup = "fu", indicator = "ev")
+#'
+#' @export
+hzr_repeated_events <- function(data, id, time, followup, indicator) {
+  .hzr_re_validate(data, id, time, followup, indicator)
+
+  data <- .hzr_re_stage1(data)
+  data <- .hzr_re_stage2(data, id, time, indicator)
+  data <- .hzr_re_stage3(data, id, time, followup, indicator)
+  data <- .hzr_re_stage4(data, id, time, followup, indicator)
+  data <- .hzr_re_stage5(data, indicator)
+  data <- .hzr_re_stage6(data, id, time, followup)
+  data <- .hzr_re_stage7(data, id, time, indicator)
+
+  row.names(data) <- NULL
+  data
+}
