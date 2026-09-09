@@ -79,7 +79,7 @@
 <li>
 <strong>Lint runs before tests</strong> because it is seconds against about a minute for the suite. Cheap failures first.</li>
 <li>
-<strong><code>R CMD check</code> does not run the whole suite.</strong> It runs with <code>NOT_CRAN</code> false, so <code>skip_on_cran()</code> tests are skipped: 193 skips and 2679 passes under check, against 6 skips and <strong>3703</strong> passes locally (both measured 2026-09-05 at <code>fe57e60</code>, the <code>v1.2.9</code> release artifact, with no environment variables set; the local figure needs the SAS fixture checkouts present under <code>~/Documents/GitHub/hazard</code>). <strong>That gap is now 1,024 passes</strong>, up from about 900 when it was last measured on 2026-08-31, so the check covers proportionally less of the suite than it did. A green check is <strong>not</strong> evidence that those tests pass; only the local <code>devtools::test()</code> line is.</li>
+<strong><code>R CMD check</code> does not run the whole suite.</strong> It runs with <code>NOT_CRAN</code> false, so <code>skip_on_cran()</code> tests are skipped: 193 skips and 2765 passes under check, against 6 skips and <strong>3796</strong> passes locally (both measured 2026-09-09 at <code>bd75f9f</code>, with no environment variables set; the local figure needs the SAS fixture checkouts present under <code>~/Documents/GitHub/hazard</code>). <strong>That gap is 1,031 passes</strong>, against 1,024 on 2026-09-05 and about 900 on 2026-08-31. Note the gap barely moved this cycle while the suite grew by 93 passes: the skip count held at 193 and <code>skip_on_cran()</code> calls held at 173, so this cycle’s new tests run <em>under</em> the check rather than being skipped out of it. That is a statement about coverage only — it says nothing about the check’s wall time, and must not be used to explain one (see “Where the check’s time actually goes”). A green check is <strong>not</strong> evidence that the skipped tests pass; only the local <code>devtools::test()</code> line is.</li>
 <li>
 <strong>Commit before you <code>git archive</code>.</strong> It exports the committed tree, so an uncommitted fix is silently absent and the check answers a question about the wrong code. This has already cost one wrong conclusion. Nothing in the output tells you.</li>
 </ul><p>Check with the manual — never <code>--no-manual</code>. The PDF step is the only thing that catches raw Unicode in <code>Rd</code>.</p>
@@ -216,17 +216,17 @@
 <strong>Conservation of Events auto-disables</strong> when any status is outside <code>{0, 1}</code> (<code>coe_supported_data</code>). That is deliberate — the CoE identity counts only exact events.</li>
 <li>
 <strong>The score criterion is an <em>entry</em> criterion.</strong> The drop path never refits per candidate under either criterion: removals are tested on the current model’s Wald p-value against <code>slstay</code>, as SAS does, and only the accepted drop is refitted.</li>
-<li>Anything slow gets <code>skip_on_cran()</code>. There are 173 calls today (2026-09-05, <code>fe57e60</code>).</li>
+<li>Anything slow gets <code>skip_on_cran()</code>. There are 173 calls today (2026-09-09, <code>bd75f9f</code> – unchanged from <code>fe57e60</code>, so nothing added this cycle was skipped).</li>
 <li>No <code><a href="https://rdrr.io/r/base/browser.html" class="external-link">browser()</a></code>, no bare <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code>, no <code><a href="https://rdrr.io/r/base/library.html" class="external-link">library()</a></code> inside <code>R/</code>. <code><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat()</a></code> belongs only in a <code>print.*</code> method.</li>
 </ul><div class="section level3">
 <h3 id="where-the-checks-time-actually-goes">Where the check’s time actually goes<a class="anchor" aria-label="anchor" href="#where-the-checks-time-actually-goes"></a></h3>
-<p>Overall <code>R CMD check --as-cran</code> with the manual: <strong>3m 32s</strong> (212s), tarball <strong>2.91 MB</strong> (measured 2026-09-05 at <code>fe57e60</code>, the <code>v1.2.9</code> release artifact). CRAN’s ceiling is about 10 minutes and it rejects on that even at 0/0/0, which is what got ggRandomForests archived in June 2026.</p>
+<p>Overall <code>R CMD check --as-cran</code> with the manual: <strong>3m 41s</strong> (221s), tarball <strong>2.93 MB</strong> (measured 2026-09-09 at <code>bd75f9f</code>). CRAN’s ceiling is about 10 minutes and it rejects on that even at 0/0/0, which is what got ggRandomForests archived in June 2026.</p>
 <table class="table"><thead><tr><th>Component</th>
 <th>Time</th>
 </tr></thead><tbody><tr><td>Tests</td>
-<td>87s / 93s</td>
+<td>90s / 96s</td>
 </tr><tr><td>Vignette rebuild</td>
-<td>42s / 46s</td>
+<td>47s / 52s</td>
 </tr><tr><td>Everything else</td>
 <td>the remainder</td>
 </tr></tbody></table><p>Re-measure these when you change them, and stamp the commit.</p>
@@ -251,8 +251,19 @@
 <td><code>fe57e60</code></td>
 <td>3m 32s</td>
 <td>87s</td>
-</tr></tbody></table><p>Across those four the total moved about 40 seconds and the tests about 34, nearly all of it in tests, over three release cycles. Real, slow, and still a wide margin against CRAN. The 2026-08-23 entry read the 2026-08-22 delta as a 37-second jump that “nothing flagged”; against a 46-second spread on unchanged code, a delta that size can be entirely the machine. The direction is what is worth watching, and it only shows against several dated points.</p>
-<p>⚠️ <strong>The 2026-09-05 row went DOWN while the suite grew by 330 passes, and that is not a speedup.</strong> Five end-to-end <code><a href="reference/hazard.html">hazard()</a></code> fits added that cycle carry <code>skip_on_cran()</code>, so the check now measures less work than it did, not the same work faster. A falling number in this column can mean the tests moved out of the check rather than got cheaper – read it against the under-check pass count in <strong>Definition of done</strong>, which is the figure that says how much the check is actually running.</p>
+</tr><tr><td>2026-09-09</td>
+<td><code>bd75f9f</code></td>
+<td>3m 41s</td>
+<td>90s</td>
+</tr></tbody></table><p>Across those five the total moved about 49 seconds and the tests about 37, nearly all of it in tests, over four release cycles. Real, slow, and still a wide margin against CRAN. The 2026-08-23 entry read the 2026-08-22 delta as a 37-second jump that “nothing flagged”; against a 46-second spread on unchanged code, a delta that size can be entirely the machine. The direction is what is worth watching, and it only shows against several dated points.</p>
+<p>⚠️ <strong>Assertion counts and seconds are two different measurements. Neither explains the other.</strong> Track both, and keep the claims apart.</p>
+<p><strong>What the assertion counts establish (coverage):</strong></p>
+<ul><li>
+<strong>2026-09-05: coverage fell proportionally.</strong> The suite grew by 330 passes locally, and the five end-to-end <code><a href="reference/hazard.html">hazard()</a></code> fits added that cycle carry <code>skip_on_cran()</code>. Adding skipped tests does <strong>not</strong> reduce the work the check performs — those tests never ran under it in the first place. What fell is the <em>proportion</em> of the suite the check covers.</li>
+<li>
+<strong>2026-09-09: coverage largely held.</strong> Under-check passes rose 2679 -&gt; 2765 while the skip count held at 193 and <code>skip_on_cran()</code> calls held at 173, so this cycle’s additions ran inside the check. The check’s own workload grew.</li>
+</ul><p><strong>What the seconds do NOT establish (timing):</strong> the overall moved 212s -&gt; 221s and the tests 87s -&gt; 90s. Both sit far inside the 46-second spread measured above on effectively unchanged code, so <strong>neither can be attributed to the coverage change, or to anything else.</strong> Record them; do not explain them. The same applies looking backwards: the 2026-09-05 “fall” was 213s -&gt; 212s — <strong>one second</strong> — and an earlier version of this paragraph built a causal story on it.</p>
+<p>The reason to keep both series is that they answer different questions. The seconds say whether CRAN’s ceiling is in danger. The under-check pass count in <strong>Definition of done</strong> says how much of the suite the check is actually running, which is the only thing that can tell a cheaper suite from a smaller one — and it cannot be read off the clock.</p>
 <p>Both dominant costs are the ones that grow silently. Watch the budget when adding a vignette chunk or an unskipped slow test.</p>
 </div>
 </div>
