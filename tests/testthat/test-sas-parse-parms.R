@@ -16,17 +16,31 @@ test_that("an early-plus-constant PARMS maps to two phases and a theta", {
   )
 })
 
-test_that("WEIBULL becomes a G3 constrained at alpha = 1, eta = 1", {
-  # PARMS ... WEIBULL is setopt(6) -> SETG3_weibull, g3flag += 2. The R general
-  # form (((t/tau)^gamma + 1)^(1/alpha) - 1)^eta collapses at alpha = eta = 1
-  # to (t/tau)^gamma, a Weibull cumulative hazard. See spec 7.1.
+test_that("WEIBULL leaves unspecified ALPHA and ETA at their defaults, free", {
+  # PARMS ... WEIBULL is setopt(6) -> SETG3_weibull (setg3.c:427), the
+  # generalized Weibull, which admits all positive parameter values. With
+  # ALPHA and ETA absent from PARMS they take hzr_phase()'s defaults of 1 --
+  # so they are omitted from the emitted call -- and stay estimated. Only the
+  # explicit FIXTAU/FIXGAMMA pin anything.
+  #
+  # Note those are *R's* defaults, not SAS's: stmtprc.c:30-37 starts an
+  # unspecified late phase at gamma = 1, alpha = 1, eta = 2 (and tau at
+  # 2*Tmax/3, data-dependent). This test pins the translator's behaviour, not
+  # start-value parity with PROC HAZARD -- a separate, pre-existing gap that
+  # WEIBULL jobs now share with every other path.
+  #
+  # This test previously asserted alpha = eta = 1, fixed. That was the
+  # translator's behaviour, not SAS's: it read WEIBULL as a constraint to the
+  # alpha = eta = 1 special case. The G3-collapses-to-Weibull identity at
+  # alpha = eta = 1 is real and is covered by
+  # test-g3-weibull-correspondence.R, but it is not what the WEIBULL keyword
+  # requests.
   ops <- c("MUL=0.01", "TAU=2", "GAMMA=1.5", "WEIBULL", "FIXTAU", "FIXGAMMA")
   got <- .hzr_parse_parms(ops)
   expect_equal(
     got$phases,
     quote(list(
-      hzr_phase("g3", tau = 2, gamma = 1.5, alpha = 1, eta = 1,
-                fixed = c("tau", "gamma", "alpha", "eta"))
+      hzr_phase("g3", tau = 2, gamma = 1.5, fixed = c("tau", "gamma"))
     ))
   )
 })
@@ -144,6 +158,178 @@ test_that("the DELTA reason string does not move with OutDec", {
   old <- options(OutDec = ",")
   on.exit(options(old), add = TRUE)
   r <- .hzr_parse_parms(c("MUE=0.2", "DELTA=0.5"))
-  expect_match(r$untranslated$reason, "DELTA = 0\\.5", fixed = FALSE)
-  expect_false(grepl("0,5", r$untranslated$reason, fixed = TRUE))
+  # MUE here has no early shape operand, so it is recorded too; target the
+  # DELTA row rather than asserting over the whole frame.
+  delta_row <- r$untranslated[grepl("DELTA", r$untranslated$reason), ]
+  expect_equal(nrow(delta_row), 1L)
+  expect_match(delta_row$reason, "DELTA = 0\\.5", fixed = FALSE)
+  expect_false(any(grepl(",", r$untranslated$construct, fixed = TRUE)))
+  expect_false(any(grepl("0,5", r$untranslated$reason, fixed = TRUE)))
+  expect_false(any(grepl("0,2", r$untranslated$construct, fixed = TRUE)))
+})
+
+test_that("WEIBULL keeps the ALPHA and ETA that PARMS specified, both free", {
+  # setg3.c:427 SETG3_weibull() is the GENERALIZED Weibull: "we admit all
+  # positive values of the parameters". It validates gamma > 0, eta > 0 and
+  # alpha >= 0 and bumps g3flag; it never assigns 1 to alpha or eta and never
+  # fixes either. Operands are from the production job
+  # hz.ce_cardioversion_repeated.ehb.sas, whose listing prints ALPHA and ETA
+  # as "Estimated? Yes" with exactly these starting values.
+  ops <- c("MUE=0.3012686", "THALF=0.01038402", "NU=0.1708571", "M=5.818869",
+           "MUL=0.2450542", "TAU=0.5433813", "ALPHA=2.501719",
+           "GAMMA=6.448979", "ETA=0.1365255", "WEIBULL")
+  got <- .hzr_parse_parms(ops)
+  expect_equal(
+    got$phases,
+    quote(list(
+      hzr_phase("cdf", t_half = 0.01038402, nu = 0.1708571, m = 5.818869),
+      hzr_phase("g3", tau = 0.5433813, gamma = 6.448979, alpha = 2.501719,
+                eta = 0.1365255)
+    ))
+  )
+  # $phases is what a reader sees; $theta is what reaches the optimizer, and
+  # .hzr_parms_theta_block() reads the shape list independently -- so assert
+  # it too. These are the starting values the old WEIBULL branch discarded.
+  expect_equal(
+    got$theta,
+    quote(c(log(0.3012686), log(0.01038402), 0.1708571, 5.818869,
+            log(0.2450542), log(0.5433813), 6.448979, 2.501719, 0.1365255))
+  )
+})
+
+test_that("WEIBULL alongside FIXALPHA fixes alpha and only alpha", {
+  # The fix must not overshoot: an explicit FIX<param> still pins that one
+  # parameter. Distinguishes "WEIBULL fixes nothing" from "nothing is ever
+  # fixed on a WEIBULL phase".
+  ops <- c("MUL=0.01", "TAU=2", "GAMMA=1.5", "ALPHA=3", "ETA=4",
+           "WEIBULL", "FIXALPHA")
+  got <- .hzr_parse_parms(ops)
+  expect_equal(
+    got$phases,
+    quote(list(
+      hzr_phase("g3", tau = 2, gamma = 1.5, alpha = 3, eta = 4,
+                fixed = "alpha")
+    ))
+  )
+})
+
+test_that("a MUL with no late shape operand is recorded, not dropped", {
+  # PARMS names a late phase by giving it a scale. Building the phase only
+  # when a *shape* operand appeared meant MUL could vanish with the phase --
+  # a one-phase R model against SAS's two, reported as fully translated. The
+  # starting values SAS would default to here (stmtprc.c: tau = 2*Tmax/3,
+  # gamma = 1, alpha = 1, eta = 2) are not this parser's defaults, so the MU
+  # is recorded as untranslated rather than guessed at.
+  got <- .hzr_parse_parms(c("MUE=0.2", "THALF=1", "NU=1", "MUL=0.05", "WEIBULL"))
+  expect_equal(nrow(got$untranslated), 1L)
+  expect_equal(got$untranslated$construct, "MUL=0.05")
+  expect_match(got$untranslated$reason, "no late phase")
+})
+
+test_that("a MUE with no early shape operand is recorded, not dropped", {
+  got <- .hzr_parse_parms(c("MUE=0.2", "MUL=0.05", "TAU=2", "GAMMA=1.5"))
+  expect_equal(nrow(got$untranslated), 1L)
+  expect_equal(got$untranslated$construct, "MUE=0.2")
+  expect_match(got$untranslated$reason, "no early phase")
+})
+
+test_that("alpha = 1 fixed with GAMMA and ETA both free is recorded", {
+  # setg3.c:312-314 routes alpha == 1 && FIXALPHA into SETG3_ignore_tau(),
+  # which at setg3.c:405-406 does `if(hzr_parms_ge_estim()) set_fixed(ETA)`:
+  # with both shape parameters free, SAS fixes ETA and estimates the product
+  # gamma*eta as gamma alone. At alpha = 1, tau = 1 the G3 form collapses to
+  # t^(gamma*eta), so gamma and eta are not separately identifiable and SAS is
+  # resolving that. hazard() would leave both free and fit the ridge -- one
+  # more estimated parameter than PROC HAZARD, with different standard errors.
+  # A model difference, not a reporting one, so it is recorded.
+  #
+  # No corpus job reaches this today (0 of 38 live PARMS blocks, measured
+  # 2026-09-08); the 16 that fire SETG3_ignore_tau() all fix GAMMA.
+  got <- .hzr_parse_parms(c("MUL=0.01", "TAU=1", "ALPHA=1", "GAMMA=2",
+                            "ETA=3", "FIXALPHA"))
+  expect_equal(nrow(got$untranslated), 1L)
+  expect_match(got$untranslated$reason, "estimates GAMMA\\*ETA")
+})
+
+test_that("alpha = 1 fixed with GAMMA fixed is not recorded", {
+  # The dominant corpus shape -- gamma fixed, eta free. SAS reparameterises to
+  # eta <- gamma*eta, gamma <- 1, which with gamma = 1 is an identity. Nothing
+  # to report. Distinguishes the guard above from "any fixed alpha = 1".
+  got <- .hzr_parse_parms(c("MUL=0.01", "TAU=1", "ALPHA=1", "GAMMA=1",
+                            "ETA=1.32", "FIXALPHA", "FIXGAMMA", "WEIBULL"))
+  expect_equal(nrow(got$untranslated), 0L)
+})
+
+test_that("ALPHA = 0 under WEIBULL without FIXALPHA is recorded", {
+  # setg3.c:437: SETG3_weibull() rejects alpha == 0 when g3flag == 3, i.e.
+  # ALPHA=0 under WEIBULL without FIXALPHA, with error SETG3980. The job does
+  # not run. hzr_phase() accepts alpha = 0 as the limiting exponential, so
+  # without this the translator would emit a fit for a job SAS refuses.
+  # ALPHA=0 FIXALPHA is legal (g3flag == 4) and stays unflagged.
+  got <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=1.5", "ALPHA=0",
+                            "ETA=1", "WEIBULL"))
+  expect_equal(nrow(got$untranslated), 1L)
+  expect_match(got$untranslated$reason, "SETG3980")
+})
+
+test_that("ALPHA = 0 with FIXALPHA under WEIBULL is not recorded", {
+  got <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=1.5", "ALPHA=0",
+                            "ETA=1", "WEIBULL", "FIXALPHA"))
+  expect_equal(nrow(got$untranslated), 0L)
+})
+
+test_that("the alpha = 1 guard does not fire on a job with no late phase", {
+  # alpha_val falls back to hzr_phase()'s default of 1 when PARMS named no
+  # ALPHA, which is right for a late phase that exists and wrong for one that
+  # does not: an early-only or constant-only job carrying a stray FIXALPHA was
+  # flagged about GAMMA and ETA it has no phase for. A false positive on the
+  # untranslated frame is not harmless -- that frame is how a caller decides
+  # whether a translation is trustworthy.
+  expect_equal(nrow(.hzr_parse_parms(c("MUE=0.2", "THALF=1", "NU=1",
+                                       "FIXALPHA"))$untranslated), 0L)
+  expect_equal(nrow(.hzr_parse_parms(c("MUE=0.2", "THALF=1", "NU=1",
+                                       "FIXALPHA", "WEIBULL"))$untranslated), 0L)
+  expect_equal(nrow(.hzr_parse_parms(c("MUC=0.01", "FIXALPHA"))$untranslated), 0L)
+})
+
+test_that("the alpha = 1 guard still fires when ALPHA was left to default", {
+  # The other half of the same boundary: a late phase exists, PARMS never named
+  # ALPHA, and FIXALPHA pins it at the default of 1 with GAMMA and ETA free.
+  # SAS fixes ETA here, so this must still be recorded -- the scope fix above
+  # must not buy its way out of the guard by requiring an explicit ALPHA.
+  got <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=2", "ETA=3", "FIXALPHA"))
+  expect_equal(nrow(got$untranslated), 1L)
+  expect_match(got$untranslated$reason, "estimates GAMMA\\*ETA")
+})
+
+test_that("the alpha = 1 guard does not fire without MUL", {
+  # A phase is active in PROC HAZARD iff its MU is specified and positive.
+  # parmprc.c:19 registers MUL through setparmno(22, 7, 3, ...), and
+  # setparmno.c:14 sets C->phase[3] = 1 only when the value is > 0. The four
+  # shape operands go through setprmf (parmprc.c:20-23), which never touches
+  # C->phase[]. With phase 3 off, stmtprc.c:113-122 zeroes TAU/GAMMA/ALPHA/ETA
+  # and shape.c:31 never calls SETG3(), so SETG3_ignore_tau() cannot run and
+  # there is nothing to warn about.
+  #
+  # Gating on shape operands instead of MUL got this wrong: TAU/GAMMA/ETA with
+  # no MUL is not a late phase at all.
+  got <- .hzr_parse_parms(c("TAU=2", "GAMMA=2", "ETA=3", "FIXALPHA"))
+  expect_false(any(grepl("estimates GAMMA", got$untranslated$reason)))
+})
+
+test_that("the ALPHA = 0 WEIBULL guard does not fire without MUL", {
+  # Same gate: with no MUL there is no phase 3, shape.c:31 never reaches
+  # SETG3(), and SETG3_weibull() cannot raise SETG3980. Claiming PROC HAZARD
+  # refuses the job would be wrong.
+  got <- .hzr_parse_parms(c("TAU=2", "GAMMA=1.5", "ALPHA=0", "ETA=1", "WEIBULL"))
+  expect_false(any(grepl("SETG3980", got$untranslated$reason)))
+})
+
+test_that("both late-phase guards still fire when MUL is present", {
+  # The other side of the gate, so it cannot be satisfied by never firing.
+  g1 <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=2", "ETA=3", "FIXALPHA"))
+  expect_true(any(grepl("estimates GAMMA", g1$untranslated$reason)))
+  g2 <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=1.5", "ALPHA=0",
+                           "ETA=1", "WEIBULL"))
+  expect_true(any(grepl("SETG3980", g2$untranslated$reason)))
 })

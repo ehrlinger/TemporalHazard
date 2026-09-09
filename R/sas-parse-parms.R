@@ -5,9 +5,9 @@
 # scale each phase, THALF/NU/M shape the early (G1/"cdf") phase, TAU/GAMMA/
 # ALPHA/ETA shape the late (G3) phase, bare FIX<param> tokens freeze a
 # parameter at its starting value, and bare WEIBULL is setopt(6) /
-# SETG3_weibull() in the reference C: it does not add a phase, it constrains
-# the existing late phase to alpha = eta = 1, which collapses the general G3
-# form to a Weibull cumulative hazard (spec S7.1).
+# SETG3_weibull() in the reference C: the GENERALIZED Weibull, which admits
+# all positive parameter values. It neither adds a phase nor constrains one --
+# see the WEIBULL branch below.
 #
 # `theta` is the full interleaved starting vector the multiphase engine
 # expects -- one block per phase, in the same early -> constant -> late
@@ -194,6 +194,7 @@
   late <- list()
   fixed_early <- character(0)
   fixed_late <- character(0)
+  saw_weibull <- FALSE
   bad_construct <- character(0)
   bad_reason <- character(0)
 
@@ -248,9 +249,22 @@
     if (is.na(token)) {
       flag_bad(op, "unresolved PARMS keyword")
     } else if (token == "WEIBULL") {
-      late[["alpha"]] <- 1
-      late[["eta"]] <- 1
-      fixed_late <- union(fixed_late, c("alpha", "eta"))
+      # setopt(6) -> SETG3_weibull() (setg3.c:427) is the GENERALIZED Weibull:
+      # "NOW HANDLE THE SPECIAL SITUATION OF THE GENERALIZED WEIBULL, WHERE WE
+      # ADMIT ALL POSITIVE VALUES OF THE PARAMETERS." It bumps g3flag and
+      # validates gamma > 0, eta > 0, alpha >= 0. It assigns nothing and fixes
+      # nothing, so neither does this branch -- ALPHA and ETA keep whatever
+      # PARMS specified and stay free unless an explicit FIXALPHA/FIXETA pins
+      # them. Overwriting them with 1 discarded the user's starting values and
+      # silently fitted a smaller model; the listing for
+      # hz.ce_cardioversion_repeated.ehb.sas prints both as "Estimated? Yes".
+      #
+      # g3flag itself has no R counterpart: it selects a numerical branch, and
+      # hzr_decompos_g3() handles the general form directly. The GAMMA*ETA = 2
+      # and GAMMA*ETA/ALPHA = 2 constraint flags SETG3_weibull() also honours
+      # are driven by separate PARMS keywords that this parser does not yet
+      # resolve -- they are recorded as untranslated, not assumed absent.
+      saw_weibull <- TRUE
     } else if (token %in% names(.hzr_parms_fix_map)) {
       param <- .hzr_parms_fix_map[[token]]
       if (param %in% .hzr_parms_early_arg) {
@@ -340,6 +354,89 @@
     theta_blocks <- c(theta_blocks,
       .hzr_parms_theta_block("late", mu_val, late, phase_covar_vals$late)
     )
+  }
+
+  # A MU names its phase. Building a phase only when a *shape* operand
+  # appeared let an orphaned MUE/MUL disappear together with the phase it
+  # scaled -- a one-phase R model against SAS's two, and no untranslated row
+  # to say so. PROC HAZARD would supply its own shape defaults here
+  # (stmtprc.c:30-37: thalf 1, nu 2, m 1; tau = 2*Tmax/3, gamma 1, alpha 1,
+  # eta 2), which are not this parser's defaults, so the MU is recorded
+  # rather than guessed at.
+  # SETG3_ignore_tau() (setg3.c:377-424) fires when ALPHA is fixed at 1 --
+  # setg3.c:312-314, before the WEIBULL dispatch. It pins TAU at 1 and rewrites
+  # the GAMMA/ETA split, which at alpha = 1, tau = 1 is a reparameterisation of
+  # a single exponent: the G3 form collapses to t^(gamma*eta), so only the
+  # product is identified. Two consequences, and only one of them is a defect.
+  #
+  # The reported values diverge: SAS's listing prints the rewritten split, this
+  # parser emits what PARMS said. The fit is identical, so that is documented
+  # in hzr_translate_sas() rather than mirrored here -- rewriting the emitted
+  # call would make it disagree with the user's own PARMS text, and across the
+  # public corpus it would change 16 blocks to alter 2 (measured 2026-09-08).
+  #
+  # With GAMMA and ETA *both* free, though, setg3.c:405-406 fixes ETA and
+  # estimates the product as GAMMA alone. That is one fewer estimated parameter
+  # than hazard() would use, on a pair that is not separately identifiable --
+  # a different model, not a different label for the same one. Recorded.
+  # Both guards describe things SETG3() does, so both require a late phase that
+  # is actually active -- and in PROC HAZARD a phase is active iff its MU was
+  # specified and positive. parmprc.c:19 registers MUL through
+  # setparmno(22, 7, 3, ...) and setparmno.c:14 sets C->phase[3] = 1 only when
+  # stmtfld() > 0; the four shape operands go through setprmf
+  # (parmprc.c:20-23), which never touches C->phase[]. With phase 3 off,
+  # stmtprc.c:113-122 zeroes TAU/GAMMA/ALPHA/ETA and shape.c:31 never calls
+  # SETG3() at all.
+  #
+  # So the gate is MUL, not the presence of shape operands: TAU/GAMMA/ETA with
+  # no MUL is not a late phase, and warning about SETG3_ignore_tau() or
+  # SETG3980 there describes code PROC HAZARD never reaches. A false positive
+  # on $untranslated is not harmless -- that frame is how a caller decides
+  # whether a translation can be trusted.
+  #
+  # Note the asymmetry this leaves inside this function, deliberately and
+  # tracked separately: the phase-building block below still keys on shape
+  # operands (`if (length(late))`), so PARMS carrying TAU/GAMMA with no MUL
+  # emits a late phase that PROC HAZARD would not build at all. No corpus job
+  # does that, so it is latent, and changing how phases are built is a wider
+  # change than gating these two warnings.
+  has_late <- !is.null(mu[["MUL"]]) && isTRUE(mu[["MUL"]] > 0)
+  alpha_val <- if (!is.null(late[["alpha"]])) late[["alpha"]] else
+    .hzr_parms_late_default[["alpha"]]
+  if (has_late && isTRUE(alpha_val == 1) && "alpha" %in% fixed_late &&
+      !("gamma" %in% fixed_late) && !("eta" %in% fixed_late)) {
+    flag_bad(
+      "ALPHA=1 FIXALPHA with GAMMA and ETA both estimated",
+      paste0("SETG3_ignore_tau() estimates GAMMA*ETA as a single parameter ",
+             "here (it fixes ETA); hazard() would estimate both, which is one ",
+             "more free parameter than PROC HAZARD on a product that is not ",
+             "separately identifiable at alpha = 1")
+    )
+  }
+
+  # setg3.c:437: SETG3_weibull() rejects alpha == 0 unless ALPHA is fixed
+  # (g3flag == 3 vs 4) and the job does not run. hzr_phase() accepts alpha = 0
+  # as the limiting exponential, so without this the translator would emit a
+  # runnable fit for a job SAS refuses outright.
+  if (has_late && saw_weibull && isTRUE(alpha_val == 0) &&
+      !("alpha" %in% fixed_late)) {
+    flag_bad(
+      "ALPHA=0 with WEIBULL and no FIXALPHA",
+      paste0("PROC HAZARD rejects this: SETG3_weibull() raises SETG3980 for ",
+             "alpha = 0 unless ALPHA is fixed, so the job does not run")
+    )
+  }
+
+  # sprintf("%g"), not format(): format() honours getOption("OutDec"), so a
+  # session with OutDec = "," would record "MUE=0,2" and break every grep --
+  # the same trap the DELTA reason string above avoids.
+  if (!is.null(mu[["MUE"]]) && !length(early)) {
+    flag_bad(paste0("MUE=", sprintf("%g", mu[["MUE"]])),
+             "MUE with no early phase shape operand (THALF/NU/M)")
+  }
+  if (!is.null(mu[["MUL"]]) && !length(late)) {
+    flag_bad(paste0("MUL=", sprintf("%g", mu[["MUL"]])),
+             "MUL with no late phase shape operand (TAU/GAMMA/ALPHA/ETA)")
   }
 
   list(

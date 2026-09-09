@@ -77,6 +77,30 @@ parameter on a composite scale -- the generic unconstrained three-phase
 case, not an exotic one. A translated \verb{PROC HAZPRED} block asks for
 confidence limits unless the SAS job says \code{NOCL}, so such a job stops at
 its \code{predict()} chunks.
+}
+
+\section{Comparing a translated fit against a SAS listing}{
+
+The emitted \code{hzr_phase("g3", ...)} call carries the \code{TAU}, \code{GAMMA},
+\code{ALPHA} and \code{ETA} that \code{PARMS} specified. \verb{PROC HAZARD} does not always
+report the values it was given: when \code{ALPHA} is fixed at 1 it rewrites the
+late phase before fitting, pinning \code{TAU} at 1 and folding the two shape
+parameters into one exponent, because at \verb{alpha = 1, tau = 1} the G3 form
+collapses to \eqn{t^{\gamma\eta}} and only that product is identified.
+With \code{ETA} fixed it reports \code{GAMMA} as \eqn{\gamma\eta} and \code{ETA} as 1;
+otherwise it reports \code{ETA} as \eqn{\gamma\eta} and \code{GAMMA} as 1.
+
+So a listing can print a \code{GAMMA}/\code{ETA} pair that differs from the job's own
+\code{PARMS} text, and from the emitted call, while describing the same fitted
+model. Compare the \strong{product} \eqn{\gamma\eta}, not the two parameters
+separately, and expect \code{TAU} to read 1 and fixed. The log-likelihood,
+\code{MUL} and every prediction agree regardless. Most jobs are unaffected in
+practice: \verb{GAMMA = 1 FIXGAMMA} is the usual companion to \verb{ALPHA = 1 FIXALPHA}, and it makes the rewrite an identity.
+
+The one case that is a genuine model difference -- \code{ALPHA} fixed at 1 with
+\code{GAMMA} and \code{ETA} \emph{both} estimated, where \verb{PROC HAZARD} fixes \code{ETA} and
+fits one parameter fewer than \code{\link[=hazard]{hazard()}} would -- is recorded in
+\verb{$untranslated} rather than left to be discovered in the comparison.
 
 \verb{$coverage} counts tokens the parser recognised; it is not evidence that
 the emitted calls execute, and a job can report full coverage with an
