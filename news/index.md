@@ -1,5 +1,25 @@
 # Changelog
 
+## TemporalHazard 1.2.10
+
+### Bug fixes
+
+- **[`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
+  no longer discards the `ALPHA` and `ETA` a `PARMS` statement specified
+  alongside `WEIBULL`.** The translator read the bare `WEIBULL` keyword
+  as a request to constrain the late phase to `alpha = eta = 1` and
+  pinned both. `SETG3_weibull()` in the reference C
+  (`src/model/setg3.c`) is the *generalized* Weibull – it admits all
+  positive parameter values, validates `gamma > 0`, `eta > 0` and
+  `alpha >= 0`, and assigns nothing. A production job carrying
+  `alpha = 2.501719 ... eta = 0.1365255 weibull` therefore translated to
+  a seven-parameter fit where `PROC HAZARD` estimated nine, with both
+  starting values replaced by 1 and no warning. `WEIBULL` now leaves
+  `ALPHA` and `ETA` as `PARMS` gave them, free unless an explicit
+  `FIXALPHA`/`FIXETA` pins them. The `G3`-collapses-to-Weibull identity
+  at `alpha = eta = 1` is real and unchanged; it was simply not what the
+  keyword requests.
+
 ## TemporalHazard 1.2.9
 
 ### Bug fixes

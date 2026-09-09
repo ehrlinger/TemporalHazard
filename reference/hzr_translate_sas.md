@@ -98,6 +98,33 @@ three-phase case, not an exotic one. A translated `PROC HAZPRED` block
 asks for confidence limits unless the SAS job says `NOCL`, so such a job
 stops at its [`predict()`](https://rdrr.io/r/stats/predict.html) chunks.
 
+## Comparing a translated fit against a SAS listing
+
+The emitted `hzr_phase("g3", ...)` call carries the `TAU`, `GAMMA`,
+`ALPHA` and `ETA` that `PARMS` specified. `PROC HAZARD` does not always
+report the values it was given: when `ALPHA` is fixed at 1 it rewrites
+the late phase before fitting, pinning `TAU` at 1 and folding the two
+shape parameters into one exponent, because at `alpha = 1, tau = 1` the
+G3 form collapses to \\t^{\gamma\eta}\\ and only that product is
+identified. With `ETA` fixed it reports `GAMMA` as \\\gamma\eta\\ and
+`ETA` as 1; otherwise it reports `ETA` as \\\gamma\eta\\ and `GAMMA` as
+1.
+
+So a listing can print a `GAMMA`/`ETA` pair that differs from the job's
+own `PARMS` text, and from the emitted call, while describing the same
+fitted model. Compare the **product** \\\gamma\eta\\, not the two
+parameters separately, and expect `TAU` to read 1 and fixed. The
+log-likelihood, `MUL` and every prediction agree regardless. Most jobs
+are unaffected in practice: `GAMMA = 1 FIXGAMMA` is the usual companion
+to `ALPHA = 1 FIXALPHA`, and it makes the rewrite an identity.
+
+The one case that is a genuine model difference – `ALPHA` fixed at 1
+with `GAMMA` and `ETA` *both* estimated, where `PROC HAZARD` fixes `ETA`
+and fits one parameter fewer than
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+would – is recorded in `$untranslated` rather than left to be discovered
+in the comparison.
+
 `$coverage` counts tokens the parser recognised; it is not evidence that
 the emitted calls execute, and a job can report full coverage with an
 empty `$untranslated` while its document still errors on render. See the

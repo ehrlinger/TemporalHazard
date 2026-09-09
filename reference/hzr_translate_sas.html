@@ -17,7 +17,7 @@ calls."></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.9</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.10</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -147,6 +147,29 @@ parameter on a composite scale – the generic unconstrained three-phase
 case, not an exotic one. A translated <code>PROC HAZPRED</code> block asks for
 confidence limits unless the SAS job says <code>NOCL</code>, so such a job stops at
 its <code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> chunks.</p>
+    </div>
+    <div class="section level2">
+    <h2 id="comparing-a-translated-fit-against-a-sas-listing">Comparing a translated fit against a SAS listing<a class="anchor" aria-label="anchor" href="#comparing-a-translated-fit-against-a-sas-listing"></a></h2>
+
+
+<p>The emitted <code>hzr_phase("g3", ...)</code> call carries the <code>TAU</code>, <code>GAMMA</code>,
+<code>ALPHA</code> and <code>ETA</code> that <code>PARMS</code> specified. <code>PROC HAZARD</code> does not always
+report the values it was given: when <code>ALPHA</code> is fixed at 1 it rewrites the
+late phase before fitting, pinning <code>TAU</code> at 1 and folding the two shape
+parameters into one exponent, because at <code>alpha = 1, tau = 1</code> the G3 form
+collapses to \(t^{\gamma\eta}\) and only that product is identified.
+With <code>ETA</code> fixed it reports <code>GAMMA</code> as \(\gamma\eta\) and <code>ETA</code> as 1;
+otherwise it reports <code>ETA</code> as \(\gamma\eta\) and <code>GAMMA</code> as 1.</p>
+<p>So a listing can print a <code>GAMMA</code>/<code>ETA</code> pair that differs from the job's own
+<code>PARMS</code> text, and from the emitted call, while describing the same fitted
+model. Compare the <strong>product</strong> \(\gamma\eta\), not the two parameters
+separately, and expect <code>TAU</code> to read 1 and fixed. The log-likelihood,
+<code>MUL</code> and every prediction agree regardless. Most jobs are unaffected in
+practice: <code>GAMMA = 1 FIXGAMMA</code> is the usual companion to <code>ALPHA = 1 FIXALPHA</code>, and it makes the rewrite an identity.</p>
+<p>The one case that is a genuine model difference – <code>ALPHA</code> fixed at 1 with
+<code>GAMMA</code> and <code>ETA</code> <em>both</em> estimated, where <code>PROC HAZARD</code> fixes <code>ETA</code> and
+fits one parameter fewer than <code><a href="hazard.html">hazard()</a></code> would – is recorded in
+<code>$untranslated</code> rather than left to be discovered in the comparison.</p>
 <p><code>$coverage</code> counts tokens the parser recognised; it is not evidence that
 the emitted calls execute, and a job can report full coverage with an
 empty <code>$untranslated</code> while its document still errors on render. See the

@@ -13,7 +13,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.9</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.10</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -55,6 +55,14 @@
       <small>Source: <a href="https://github.com/ehrlinger/TemporalHazard/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="1.2.10" id="temporalhazard-1210">TemporalHazard 1.2.10<a class="anchor" aria-label="anchor" href="#temporalhazard-1210"></a></h2>
+<div class="section level3">
+<h3 id="bug-fixes-1-2-10">Bug fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-1-2-10"></a></h3>
+<ul><li>
+<strong><code><a href="../reference/hzr_translate_sas.html">hzr_translate_sas()</a></code> no longer discards the <code>ALPHA</code> and <code>ETA</code> a <code>PARMS</code> statement specified alongside <code>WEIBULL</code>.</strong> The translator read the bare <code>WEIBULL</code> keyword as a request to constrain the late phase to <code>alpha = eta = 1</code> and pinned both. <code>SETG3_weibull()</code> in the reference C (<code>src/model/setg3.c</code>) is the <em>generalized</em> Weibull – it admits all positive parameter values, validates <code>gamma &gt; 0</code>, <code>eta &gt; 0</code> and <code>alpha &gt;= 0</code>, and assigns nothing. A production job carrying <code>alpha = 2.501719 ... eta = 0.1365255 weibull</code> therefore translated to a seven-parameter fit where <code>PROC HAZARD</code> estimated nine, with both starting values replaced by 1 and no warning. <code>WEIBULL</code> now leaves <code>ALPHA</code> and <code>ETA</code> as <code>PARMS</code> gave them, free unless an explicit <code>FIXALPHA</code>/<code>FIXETA</code> pins them. The <code>G3</code>-collapses-to-Weibull identity at <code>alpha = eta = 1</code> is real and unchanged; it was simply not what the keyword requests.</li>
+</ul></div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="1.2.9" id="temporalhazard-129">TemporalHazard 1.2.9<a class="anchor" aria-label="anchor" href="#temporalhazard-129"></a></h2>
 <div class="section level3">
