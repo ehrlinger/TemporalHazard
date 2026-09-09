@@ -2,6 +2,23 @@
 
 ## Bug fixes
 
+* **`hzr_translate_sas()` now starts an unspecified shape parameter where
+  `PROC HAZARD` starts it, not where `hzr_phase()` does.** A `PARMS` statement
+  that named only some of a phase's shape operands had the rest filled from
+  `hzr_phase()`'s defaults, and three of them disagree with the reference C
+  (`src/hazard/stmtprc.c`): `NU` starts at 2 rather than 1, `M` at 1 rather
+  than 0, and `ETA` at 2 rather than 1. Since the multiphase likelihood is
+  multimodal, a different starting vector can reach a different optimum, so
+  this was a fidelity divergence rather than a cosmetic one. The defaults are
+  now `PROC HAZARD`'s, and the emitted `hzr_phase()` call names every shape
+  argument explicitly so that what is printed and what reaches the optimizer
+  cannot disagree. `TAU` is the exception: `SETG3()` starts a non-positive
+  `TAU` at `2*Tmax/3`, which depends on the data and cannot be reproduced at
+  parse time, so such a phase is emitted at `tau = 1` and recorded in
+  `$untranslated` -- unless `SETG3_ignore_tau()` applies, which pins `TAU` at
+  1 anyway. No job in the public corpus is partially specified, so nothing
+  previously translated changes.
+
 * **`hzr_translate_sas()` no longer discards the `ALPHA` and `ETA` a `PARMS`
   statement specified alongside `WEIBULL`.** The translator read the bare
   `WEIBULL` keyword as a request to constrain the late phase to

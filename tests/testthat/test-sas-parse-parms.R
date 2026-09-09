@@ -19,15 +19,14 @@ test_that("an early-plus-constant PARMS maps to two phases and a theta", {
 test_that("WEIBULL leaves unspecified ALPHA and ETA at their defaults, free", {
   # PARMS ... WEIBULL is setopt(6) -> SETG3_weibull (setg3.c:427), the
   # generalized Weibull, which admits all positive parameter values. With
-  # ALPHA and ETA absent from PARMS they take hzr_phase()'s defaults of 1 --
-  # so they are omitted from the emitted call -- and stay estimated. Only the
+  # ALPHA and ETA absent from PARMS they take PROC HAZARD's defaults
+  # (stmtprc.c:30-37: alpha = 1, eta = 2) and stay estimated. Only the
   # explicit FIXTAU/FIXGAMMA pin anything.
   #
-  # Note those are *R's* defaults, not SAS's: stmtprc.c:30-37 starts an
-  # unspecified late phase at gamma = 1, alpha = 1, eta = 2 (and tau at
-  # 2*Tmax/3, data-dependent). This test pins the translator's behaviour, not
-  # start-value parity with PROC HAZARD -- a separate, pre-existing gap that
-  # WEIBULL jobs now share with every other path.
+  # Those defaults are emitted explicitly rather than left to hzr_phase(),
+  # whose own eta default is 1. Omitting them would put the printed call and
+  # the theta vector into disagreement the moment the two default tables
+  # differ, which is what this test guards: assert $theta as well as $phases.
   #
   # This test previously asserted alpha = eta = 1, fixed. That was the
   # translator's behaviour, not SAS's: it read WEIBULL as a constraint to the
@@ -40,9 +39,11 @@ test_that("WEIBULL leaves unspecified ALPHA and ETA at their defaults, free", {
   expect_equal(
     got$phases,
     quote(list(
-      hzr_phase("g3", tau = 2, gamma = 1.5, fixed = c("tau", "gamma"))
+      hzr_phase("g3", tau = 2, gamma = 1.5, alpha = 1, eta = 2,
+                fixed = c("tau", "gamma"))
     ))
   )
+  expect_equal(got$theta, quote(c(log(0.01), log(2), 1.5, 1, 2)))
 })
 
 test_that("phase covariates become a formula on the owning phase", {
@@ -52,7 +53,7 @@ test_that("phase covariates become a formula on the owning phase", {
   expect_equal(
     got$phases,
     quote(list(
-      hzr_phase("cdf", t_half = 1, nu = 1, formula = ~AGE + SEX),
+      hzr_phase("cdf", t_half = 1, nu = 1, m = 1, formula = ~AGE + SEX),
       hzr_phase("constant", formula = ~AGE)
     ))
   )
@@ -73,7 +74,8 @@ test_that("a raw EARLY VAR=value operand list produces a formula from names only
   )
   expect_equal(
     got$phases,
-    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, formula = ~NYHA + I_PATH)))
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1,
+                         formula = ~NYHA + I_PATH)))
   )
 })
 
@@ -82,7 +84,7 @@ test_that("a non-numeric phase-statement value is untranslated, not guessed", {
   got <- .hzr_parse_parms(ops, covars = list(early = "NOBS=NUM"))
   expect_equal(
     got$phases,
-    quote(list(hzr_phase("cdf", t_half = 1, nu = 1)))
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1)))
   )
   expect_true("NOBS=NUM" %in% got$untranslated$construct)
 })
@@ -92,7 +94,7 @@ test_that("a phase '/ options' tail is untranslated, not parsed", {
   got <- .hzr_parse_parms(ops, covars = list(early = "AGE=1.2 / EXCLUDE=(SEX)"))
   expect_equal(
     got$phases,
-    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, formula = ~AGE)))
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1, formula = ~AGE)))
   )
   expect_true(any(grepl("phase options", got$untranslated$reason, fixed = TRUE)))
 })
@@ -102,11 +104,12 @@ test_that("phase covariate starting values map into theta, in covariate order", 
   got <- .hzr_parse_parms(ops, covars = list(
     early = "NYHA=1.121142, I_PATH=0.9513664, INC_SURG=1.375285"
   ))
-  # log_mu, log_t_half, nu, m (defaulted, PARMS gave none), then the three
-  # covariate starts in the order they appear on the EARLY statement.
+  # log_mu, log_t_half, nu, m (defaulted to PROC HAZARD's 1, PARMS gave none),
+  # then the three covariate starts in the order they appear on the EARLY
+  # statement.
   expect_equal(
     got$theta,
-    quote(c(log(0.2), log(1), 1, 0, 1.121142, 0.9513664, 1.375285))
+    quote(c(log(0.2), log(1), 1, 1, 1.121142, 0.9513664, 1.375285))
   )
   expect_false(any(grepl(
     "not yet mapped to theta", got$untranslated$reason, fixed = TRUE
@@ -332,4 +335,146 @@ test_that("both late-phase guards still fire when MUL is present", {
   g2 <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=1.5", "ALPHA=0",
                            "ETA=1", "WEIBULL"))
   expect_true(any(grepl("SETG3980", g2$untranslated$reason)))
+})
+
+# ---------------------------------------------------------------------------
+# Shape defaults for a partially specified PARMS block (PROC HAZARD's, not
+# hzr_phase()'s). stmtprc.c:30-37 starts an unspecified early phase at
+# thalf 1, nu 2, m 1 and an unspecified late phase at gamma 1, alpha 1,
+# eta 2; hzr_phase() defaults nu 1, m 0, eta 1. theta is what reaches the
+# optimizer, so mirroring R's defaults started a partially specified job
+# somewhere PROC HAZARD would not have, and the multiphase likelihood is
+# multimodal -- a different start is a different answer.
+#
+# No public-corpus PARMS block is partially specified (0 of 38 measured
+# 2026-09-08; every live block gives MUE + THALF + NU + M together), so
+# these tests carry the whole burden of the behaviour.
+# ---------------------------------------------------------------------------
+
+test_that("an unspecified early NU and M start at PROC HAZARD's values", {
+  got <- .hzr_parse_parms(c("MUE=0.2", "THALF=0.5"))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("cdf", t_half = 0.5, nu = 2, m = 1)))
+  )
+  expect_equal(got$theta, quote(c(log(0.2), log(0.5), 2, 1)))
+})
+
+test_that("an unspecified late GAMMA, ALPHA and ETA start at SAS's values", {
+  got <- .hzr_parse_parms(c("MUL=0.01", "TAU=3"))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("g3", tau = 3, gamma = 1, alpha = 1, eta = 2)))
+  )
+  expect_equal(got$theta, quote(c(log(0.01), log(3), 1, 1, 2)))
+})
+
+test_that("the emitted defaults are SAS's and differ from hzr_phase()'s", {
+  # Without this the two tests above would keep passing if the values were
+  # silently re-derived from hzr_phase()'s formals -- which is the state this
+  # change exists to leave. Reads the formals rather than restating them, so
+  # it fails loudly if hzr_phase()'s own defaults are ever changed to match
+  # (at which point emitting them explicitly stops being load bearing and
+  # this whole block should be revisited, not quietly deleted).
+  f <- formals(hzr_phase)
+  expect_false(identical(eval(f$nu), unname(.hzr_parms_early_sas_default[["nu"]])))
+  expect_false(identical(eval(f$m), unname(.hzr_parms_early_sas_default[["m"]])))
+  expect_false(identical(eval(f$eta), unname(.hzr_parms_late_sas_default[["eta"]])))
+  expect_equal(.hzr_parms_early_sas_default, c(t_half = 1, nu = 2, m = 1))
+  expect_equal(.hzr_parms_late_sas_default,
+               c(tau = 1, gamma = 1, alpha = 1, eta = 2))
+})
+
+test_that("the emitted phases call and the theta vector agree, defaults included", {
+  # The failure this change had to avoid: filling theta from SAS's defaults
+  # while the hzr_phase() call kept omitting them, so the printed call would
+  # describe a fit that did not happen. Asserting both literals side by side
+  # would share the generator's assumptions, so EXECUTE both instead --
+  # evaluate the emitted call and rebuild theta from the resulting phase
+  # objects through .hzr_phase_start(), the same route hazard() takes when no
+  # theta is supplied. A disagreement of any kind fails here.
+  cases <- list(
+    c("MUE=0.2", "THALF=0.5"),
+    c("MUE=0.2", "THALF=0.5", "NU=1.4"),
+    c("MUL=0.01", "TAU=3"),
+    c("MUL=0.01", "TAU=3", "GAMMA=2.5", "ALPHA=0.5", "ETA=1.25"),
+    c("MUE=0.3", "THALF=0.1", "M=4", "MUC=0.002", "MUL=0.05", "TAU=2",
+      "ETA=0.5")
+  )
+  mu_of <- function(ops, key) {
+    hit <- grep(paste0("^", key, "="), ops, value = TRUE)
+    if (!length(hit)) return(NULL)
+    as.numeric(sub("^[^=]+=", "", hit))
+  }
+  for (ops in cases) {
+    got <- .hzr_parse_parms(ops)
+    phases <- eval(got$phases)
+    expect_gt(length(phases), 0L)
+    mus <- Filter(Negate(is.null),
+                  lapply(c("MUE", "MUC", "MUL"), function(k) mu_of(ops, k)))
+    expect_equal(length(mus), length(phases))
+    from_phases <- unlist(Map(
+      function(ph, mu) .hzr_phase_start(ph, n_covariates = 0L, mu_start = mu),
+      phases, mus
+    ))
+    expect_equal(eval(got$theta), from_phases, info = paste(ops, collapse = " "))
+  }
+})
+
+test_that("a late phase with no TAU records the data-dependent SAS default", {
+  # setg3.c:317 starts a non-positive TAU at 2*Tmax/3, which is unreproducible
+  # at parse time. The emitted phase starts at tau = 1, so the difference is
+  # recorded rather than passed off as a translation.
+  got <- .hzr_parse_parms(c("MUL=0.01", "GAMMA=2"))
+  expect_equal(nrow(got$untranslated), 1L)
+  expect_equal(got$untranslated$construct, "TAU (unspecified)")
+  expect_match(got$untranslated$reason, "2\\*Tmax/3")
+  expect_equal(got$phases,
+               quote(list(hzr_phase("g3", tau = 1, gamma = 2, alpha = 1,
+                                    eta = 2))))
+})
+
+test_that("an explicit TAU = 0 takes the same SETG3 branch and is recorded", {
+  # The C predicate is tau <= 0, not "absent", and hzr_phase() would reject
+  # tau = 0 outright -- so without this the translator emitted a call that
+  # errored where SAS supplies a default and runs.
+  got <- .hzr_parse_parms(c("MUL=0.01", "TAU=0", "GAMMA=2"))
+  expect_equal(got$untranslated$construct, "TAU=0")
+  expect_match(got$untranslated$reason, "2\\*Tmax/3")
+  expect_equal(got$phases,
+               quote(list(hzr_phase("g3", tau = 1, gamma = 2, alpha = 1,
+                                    eta = 2))))
+})
+
+test_that("a positive TAU is not recorded", {
+  got <- .hzr_parse_parms(c("MUL=0.01", "TAU=2", "GAMMA=2"))
+  expect_equal(nrow(got$untranslated), 0L)
+})
+
+test_that("the TAU guard does not fire where SETG3_ignore_tau() pins tau at 1", {
+  # setg3.c:312-316: the ignore_tau branch runs INSTEAD of the 2*Tmax/3
+  # assignment, and setg3.c:378 pins tau at 1 -- exactly what is emitted, so
+  # there is nothing to report. FIXGAMMA keeps the separate GAMMA*ETA guard
+  # quiet so a surviving row could only be the TAU one.
+  got <- .hzr_parse_parms(c("MUL=0.01", "ALPHA=1", "GAMMA=1", "ETA=1.32",
+                            "FIXALPHA", "FIXGAMMA"))
+  expect_equal(nrow(got$untranslated), 0L)
+})
+
+test_that("the TAU guard does not fire without a positive MUL", {
+  # Same gate as the other two SETG3 guards: with phase 3 off, shape.c never
+  # calls SETG3(), so no TAU default is ever applied.
+  got <- .hzr_parse_parms(c("GAMMA=2", "ETA=3"))
+  expect_false(any(grepl("Tmax", got$untranslated$reason, fixed = TRUE)))
+  got0 <- .hzr_parse_parms(c("MUL=0", "GAMMA=2"))
+  expect_false(any(grepl("Tmax", got0$untranslated$reason, fixed = TRUE)))
+})
+
+test_that("a MUL with no late shape operand records the MU, not TAU as well", {
+  # The whole phase is missing and the MUL row already says so; a second row
+  # about that phase's TAU would be noise on $untranslated, which is how a
+  # caller decides whether a translation can be trusted.
+  got <- .hzr_parse_parms(c("MUE=0.2", "THALF=1", "NU=1", "MUL=0.05"))
+  expect_equal(nrow(got$untranslated), 1L)
+  expect_match(got$untranslated$reason, "no late phase")
 })

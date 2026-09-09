@@ -28,13 +28,31 @@
 .hzr_parms_late_arg  <- c(TAU = "tau", GAMMA = "gamma", ALPHA = "alpha", ETA = "eta")
 .hzr_parms_mu_order  <- c("MUE", "MUC", "MUL")
 
-# hzr_phase() default shape values (mirrored here so the theta starting
-# vector agrees with what hzr_phase() itself defaults to when PARMS did not
-# supply a given shape parameter). mu has no hzr_phase() argument -- its
-# only documented default is .hzr_phase_start()'s mu_start = 0.1, used here
-# for a built phase whose PARMS never supplied its MU value.
-.hzr_parms_early_default <- c(t_half = 1, nu = 1, m = 0)
-.hzr_parms_late_default  <- c(tau = 1, gamma = 1, alpha = 1, eta = 1)
+# PROC HAZARD's OWN shape defaults (stmtprc.c:30-37), used for any shape
+# operand a PARMS statement did not name. They are not hzr_phase()'s defaults
+# -- nu, m and eta all differ (SAS 2/1/2 against R 1/0/1) -- and the starting
+# vector is what the emitted call hands the optimizer, so mirroring R's
+# defaults here started a partially-specified job somewhere PROC HAZARD would
+# not have started it. On a multimodal likelihood a different start is a
+# different answer, not a cosmetic difference (AGENTS.md, "n_starts explores a
+# neighbourhood").
+#
+# TAU is the one entry that is NOT SAS's default. stmtprc.c:33 sets it to
+# ZERO, and SETG3() (setg3.c:317) then replaces any non-positive TAU with
+# 2*Tmax/3 -- data-dependent, so unreproducible at parse time. The 1 below is
+# SETG3_ignore_tau()'s pinned value (setg3.c:378), which is right exactly when
+# that branch fires; every other defaulted-TAU late phase gets an untranslated
+# row instead. See the TAU guard in .hzr_parse_parms().
+#
+# mu has no hzr_phase() argument -- its only documented default is
+# .hzr_phase_start()'s mu_start = 0.1, used here for a built phase whose PARMS
+# never supplied its MU value. That is a separate divergence from SAS (SETG1
+# floors a non-positive muE at 1, setg1.c) and, more to the point, a phase
+# whose MU is absent is one PROC HAZARD would not build at all -- the
+# phase-activation asymmetry tracked in the MU comment further down. Left
+# alone here deliberately.
+.hzr_parms_early_sas_default <- c(t_half = 1, nu = 2, m = 1)
+.hzr_parms_late_sas_default  <- c(tau = 1, gamma = 1, alpha = 1, eta = 2)
 .hzr_parms_default_mu_start <- 0.1
 
 # FIX<param> keywords are their own grammar tokens (FIXTHALF, not FIX+THALF),
@@ -119,6 +137,25 @@
   as.call(c(quote(c), as.list(fixed)))
 }
 
+#' Fill a parsed shape list out to every shape parameter of its family.
+#'
+#' The one place a default is applied. Both the emitted `hzr_phase()` call and
+#' the `theta` starting vector are built from this function's result, so they
+#' cannot disagree about what an unspecified operand started at -- filling only
+#' one of the two would be worse than defaulting neither, because the printed
+#' call would then describe a fit that did not happen.
+#'
+#' @param shape Named list of the shape values `PARMS` actually supplied.
+#' @param defaults Named numeric vector of defaults, in canonical argument
+#'   order.
+#' @return A named list carrying every name of `defaults`, in that order.
+#' @noRd
+.hzr_parms_fill_shape <- function(shape, defaults) {
+  out <- as.list(defaults)
+  out[names(shape)] <- shape
+  out[names(defaults)]
+}
+
 #' Build one phase's block of the full interleaved `theta` starting vector.
 #'
 #' Mirrors `.hzr_phase_theta_names()`'s layout exactly: `log_mu`, then (for
@@ -127,8 +164,11 @@
 #' `ALPHA`/`ETA` enter untransformed; `MUE`/`MUC`/`MUL` are always logged.
 #' @param family One of `"early"`, `"constant"`, `"late"`.
 #' @param mu_val Numeric SAS-scale mu starting value for this phase.
-#' @param shape Named list of parsed shape starting values (may omit entries
-#'   PARMS did not supply -- those fall back to the `hzr_phase()` default).
+#' @param shape Named list of shape starting values, already filled out to
+#'   every parameter of the family by `.hzr_parms_fill_shape()`. Completeness
+#'   is asserted rather than defaulted: a short list here would emit a theta
+#'   block of the wrong length, which `.hzr_optim_multiphase()` would either
+#'   reject or, worse, silently mis-align against the phase's parameter names.
 #' @param covar_vals Numeric vector of covariate starting values, `NA` where
 #'   PARMS gave a bare name with no explicit start (defaults to 0, matching
 #'   `.hzr_phase_start()`).
@@ -138,20 +178,13 @@
   block <- list(bquote(log(.(mu_val))))
 
   if (family == "early") {
-    d <- .hzr_parms_early_default
-    t_half <- if (!is.null(shape$t_half)) shape$t_half else d[["t_half"]]
-    nu     <- if (!is.null(shape$nu))     shape$nu     else d[["nu"]]
-    m      <- if (!is.null(shape$m))      shape$m      else d[["m"]]
-    block <- c(block, list(bquote(log(.(t_half)))), list(nu), list(m))
+    stopifnot(all(names(.hzr_parms_early_sas_default) %in% names(shape)))
+    block <- c(block, list(bquote(log(.(shape$t_half)))),
+               list(shape$nu), list(shape$m))
   } else if (family == "late") {
-    d <- .hzr_parms_late_default
-    tau   <- if (!is.null(shape$tau))   shape$tau   else d[["tau"]]
-    gamma <- if (!is.null(shape$gamma)) shape$gamma else d[["gamma"]]
-    alpha <- if (!is.null(shape$alpha)) shape$alpha else d[["alpha"]]
-    eta   <- if (!is.null(shape$eta))   shape$eta   else d[["eta"]]
-    block <- c(block,
-      list(bquote(log(.(tau)))), list(gamma), list(alpha), list(eta)
-    )
+    stopifnot(all(names(.hzr_parms_late_sas_default) %in% names(shape)))
+    block <- c(block, list(bquote(log(.(shape$tau)))),
+               list(shape$gamma), list(shape$alpha), list(shape$eta))
   }
 
   if (length(covar_vals)) {
@@ -290,6 +323,28 @@
   mu <- .hzr_parms_ordered(mu, .hzr_parms_mu_order)
   has_muc <- "MUC" %in% names(mu)
 
+  # Every shape operand PARMS did not name is filled from PROC HAZARD's own
+  # defaults, once, here -- and the same filled list then builds both the
+  # hzr_phase() call and that phase's theta block, so the two cannot describe
+  # different starting values. A partially specified PARMS block therefore
+  # emits a call naming every shape argument explicitly, which is also what
+  # makes the divergence readable: the defaulted values are on the page rather
+  # than hidden in hzr_phase()'s formals.
+  #
+  # TAU is the exception, because SETG3() derives it from the data. Its
+  # predicate is the C one -- tau <= 0, which catches an explicit TAU=0 as well
+  # as an absent TAU (setg3.c:316) -- and it is a divergence only when
+  # SETG3_ignore_tau() does not take the branch above it, since that branch
+  # pins TAU at 1 (setg3.c:378), exactly the value emitted here.
+  # `late` itself is left untouched: `length(late)` is the "did PARMS name a
+  # late shape operand" gate below, and a TAU=0 operand still counts as one.
+  tau_defaulted <- is.null(late[["tau"]]) || !isTRUE(late[["tau"]] > 0)
+  early_full <- .hzr_parms_fill_shape(early, .hzr_parms_early_sas_default)
+  late_full <- .hzr_parms_fill_shape(late, .hzr_parms_late_sas_default)
+  if (tau_defaulted) {
+    late_full[["tau"]] <- .hzr_parms_late_sas_default[["tau"]]
+  }
+
   # EARLY/CONSTANT/LATE operand text: comma-separated VAR=VALUE pairs (or
   # bare VARs), optionally followed by a "/ options" tail. Non-numeric values
   # and the options tail are recorded to untranslated, never guessed at; see
@@ -331,11 +386,11 @@
   theta_blocks <- list()
   if (length(early)) {
     phase_calls[[length(phase_calls) + 1L]] <- .hzr_parms_phase_call(
-      "cdf", early, phase_covars$early, fixed_early
+      "cdf", early_full, phase_covars$early, fixed_early
     )
     mu_val <- if (!is.null(mu[["MUE"]])) mu[["MUE"]] else .hzr_parms_default_mu_start
     theta_blocks <- c(theta_blocks,
-      .hzr_parms_theta_block("early", mu_val, early, phase_covar_vals$early)
+      .hzr_parms_theta_block("early", mu_val, early_full, phase_covar_vals$early)
     )
   }
   if (has_muc) {
@@ -348,21 +403,21 @@
   }
   if (length(late)) {
     phase_calls[[length(phase_calls) + 1L]] <- .hzr_parms_phase_call(
-      "g3", late, phase_covars$late, fixed_late
+      "g3", late_full, phase_covars$late, fixed_late
     )
     mu_val <- if (!is.null(mu[["MUL"]])) mu[["MUL"]] else .hzr_parms_default_mu_start
     theta_blocks <- c(theta_blocks,
-      .hzr_parms_theta_block("late", mu_val, late, phase_covar_vals$late)
+      .hzr_parms_theta_block("late", mu_val, late_full, phase_covar_vals$late)
     )
   }
 
   # A MU names its phase. Building a phase only when a *shape* operand
   # appeared let an orphaned MUE/MUL disappear together with the phase it
   # scaled -- a one-phase R model against SAS's two, and no untranslated row
-  # to say so. PROC HAZARD would supply its own shape defaults here
-  # (stmtprc.c:30-37: thalf 1, nu 2, m 1; tau = 2*Tmax/3, gamma 1, alpha 1,
-  # eta 2), which are not this parser's defaults, so the MU is recorded
-  # rather than guessed at.
+  # to say so. The shape defaults are now PROC HAZARD's own (stmtprc.c:30-37,
+  # see .hzr_parms_early_sas_default), but a phase reconstructed from nothing
+  # but a MU would still start from a scale SAS does not use, and its tau would
+  # still be data-dependent, so the MU stays recorded rather than guessed at.
   # SETG3_ignore_tau() (setg3.c:377-424) fires when ALPHA is fixed at 1 --
   # setg3.c:312-314, before the WEIBULL dispatch. It pins TAU at 1 and rewrites
   # the GAMMA/ETA split, which at alpha = 1, tau = 1 is a reparameterisation of
@@ -401,9 +456,13 @@
   # does that, so it is latent, and changing how phases are built is a wider
   # change than gating these two warnings.
   has_late <- !is.null(mu[["MUL"]]) && isTRUE(mu[["MUL"]] > 0)
-  alpha_val <- if (!is.null(late[["alpha"]])) late[["alpha"]] else
-    .hzr_parms_late_default[["alpha"]]
-  if (has_late && isTRUE(alpha_val == 1) && "alpha" %in% fixed_late &&
+  alpha_val <- late_full[["alpha"]]
+  # setg3.c:312-314's own predicate for taking the SETG3_ignore_tau() branch.
+  # The `g_two && ga_two` disjunct alongside it is driven by PARMS keywords
+  # this parser does not resolve; those are recorded as untranslated, so this
+  # is the half that can be evaluated here.
+  ignore_tau <- isTRUE(alpha_val == 1) && "alpha" %in% fixed_late
+  if (has_late && ignore_tau &&
       !("gamma" %in% fixed_late) && !("eta" %in% fixed_late)) {
     flag_bad(
       "ALPHA=1 FIXALPHA with GAMMA and ETA both estimated",
@@ -424,6 +483,33 @@
       "ALPHA=0 with WEIBULL and no FIXALPHA",
       paste0("PROC HAZARD rejects this: SETG3_weibull() raises SETG3980 for ",
              "alpha = 0 unless ALPHA is fixed, so the job does not run")
+    )
+  }
+
+  # SETG3() replaces a non-positive TAU -- absent from PARMS, or written as
+  # TAU=0 -- with 2*Tmax/3 (setg3.c:317). It is the one shape default that
+  # cannot be reproduced at parse time, because it depends on the data, so the
+  # emitted call starts at tau = 1 and this says so rather than letting the
+  # difference pass as a translation. Emitting `2 * max(<timevar>) / 3` instead
+  # was considered and rejected: SAS's Tmax is taken over the analysis set
+  # after exclusions, not over the raw column, so the expression would look
+  # exact while being a guess.
+  #
+  # Three conditions, each doing work. `length(late)` because a late phase that
+  # was never built is already reported by the MUL guard below, and two rows
+  # for one absence is noise. `has_late` for the same reason the guards above
+  # carry it: with no positive MUL, shape.c never calls SETG3() at all.
+  # `!ignore_tau` because that branch pins TAU at 1 (setg3.c:378) -- exactly
+  # what is emitted -- so there is nothing to report.
+  if (length(late) && has_late && tau_defaulted && !ignore_tau) {
+    flag_bad(
+      if (is.null(late[["tau"]])) "TAU (unspecified)" else
+        paste0("TAU=", sprintf("%g", late[["tau"]])),
+      paste0("SETG3() starts a non-positive TAU at 2*Tmax/3, which depends ",
+             "on the data and cannot be reproduced at parse time; the ",
+             "emitted phase starts at tau = 1, so this fit begins somewhere ",
+             "PROC HAZARD would not and the multiphase likelihood is ",
+             "multimodal")
     )
   }
 
