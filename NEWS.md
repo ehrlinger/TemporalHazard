@@ -40,9 +40,9 @@
   never refused: `PARMS MUE = 0.2 THALF = 1` (spaces around `=`) parses to
   nothing here while `PROC HAZARD`'s own lexer discards whitespace and runs
   the job with an active early phase, so refusing it would stop a job the
-  reference accepts. Relatedly, a second `PARMS` statement now adds to the
-  first rather than replacing it, matching the single field table
-  `parmprc()` reads once after all statements are processed.
+  reference accepts. A second `PARMS` statement also now adds to the first
+  rather than replacing it, matching the single field table `parmprc()` reads
+  once after all statements are processed.
 
   One job in the public `hazard` corpus changes, and only to drop a claim that
   was wrong: the second `%HAZARD` block of
