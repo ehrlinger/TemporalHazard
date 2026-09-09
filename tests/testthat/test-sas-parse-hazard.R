@@ -37,17 +37,18 @@ test_that("a LATE statement with comma-separated VAR=VALUE operands parses", {
   got <- .hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]])
   expect_equal(
     got$call[["phases"]],
-    quote(list(hzr_phase("g3", tau = 2, gamma = 1.5,
+    quote(list(hzr_phase("g3", tau = 2, gamma = 1.5, alpha = 1, eta = 2,
                           formula = ~NOPREVTE + NOTEE)))
   )
-  # log_mu, log_tau, gamma, alpha (defaulted), eta (defaulted), then the two
-  # covariate starts in the order they appear on the LATE statement. Compare
-  # evaluated: a parsed `-0.3680751` literal is a unary-minus call, not the
-  # plain double the translator builds, so quote()-comparing the call would
-  # spuriously differ in representation.
+  # log_mu, log_tau, gamma, alpha (defaulted to PROC HAZARD's 1), eta
+  # (defaulted to PROC HAZARD's 2, NOT hzr_phase()'s 1), then the two covariate
+  # starts in the order they appear on the LATE statement. Compare evaluated: a
+  # parsed `-0.3680751` literal is a unary-minus call, not the plain double the
+  # translator builds, so quote()-comparing the call would spuriously differ in
+  # representation.
   expect_equal(
     eval(got$call[["theta"]]),
-    c(log(0.01), log(2), 1.5, 1, 1, 2.653528, -0.3680751)
+    c(log(0.01), log(2), 1.5, 1, 2, 2.653528, -0.3680751)
   )
 })
 
