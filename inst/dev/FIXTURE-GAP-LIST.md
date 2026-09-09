@@ -118,7 +118,7 @@ fixture to drive the fix:
 |---|---|
 | 2-phase E+C (standard): CoE via closed-form μ_C | Covered — `hz.death.AVC` |
 | 3-phase E+C+L (standard): CoE distributes across 3 phases | Covered — `hz.deadp.KUL` |
-| 2-phase E+L (no constant): CoE under left-truncation — ~~**P1 #6 gap**~~ **FIXED (PR #65)** | `hz.te123.OMC` fit 1 / `hz.tm123.OMC` documented the discrepancy; root cause was the omitted `CF(ST)` term, fixed in R. SAS parity assertion still gated on `HAZARD_OMC_RAW`. |
+| 2-phase E+L (no constant): CoE under left-truncation — ~~**P1 #6 gap**~~ **FIXED (PR #65)** | `hz.te123.OMC` fit 1 / `hz.tm123.OMC` documented the discrepancy; root cause was the omitted `CF(ST)` term, fixed in R. Both tests now assert the fix (LL 1e-5, MUE, MUL, plus a `conserve_applied` guard), still gated on `HAZARD_OMC_RAW`. |
 | NOCONSERVE explicit: no CoE applied | Covered — `hz.deadp.KUL` (NOCONSERVE) |
 | CONSERVE with all phases free-shape | Need a job where CoE interacts with free-shape estimation | No fixture |
 
@@ -222,7 +222,7 @@ feature value and estimated complexity, not release blocking.
 | P1 — high value, low effort | Materialize stepwise parity fixture (`cabgkul-forward-wald.rds`) and confirm `test-stepwise-parity.R` passes | 1 day |
 | P1 — high value, low effort | Kaplan + Nelson parity tests (`ac.death.AVC`) | 0.5 days |
 | P1 — high value, low effort | Predict parity tests (`hp.*` fixtures) | 1 day |
-| ~~P2~~ DONE | ~~Fix P1 #6 CoE Lagrange~~ — fixed in PR #65 (left-truncation `CF(ST)` term, not Lagrange). Remaining: tighten `hz.te123.OMC` fit-1 tolerances once `HAZARD_OMC_RAW` is available | ~0.5 day (tolerances) |
+| ~~P2~~ DONE | ~~Fix P1 #6 CoE Lagrange~~ — fixed in PR #65 (left-truncation `CF(ST)` term, not Lagrange). Tolerances tightened 2026-09-08 on the `HAZARD_OMC_RAW` checkout: LL 0.2/0.5 → 1e-5, MUE and MUL now asserted. | done |
 | P2 — high value, more work | Interval censoring SAS sample job (confirm SAS HAZARD syntax first) | 1–2 days |
 | P2 — high value, more work | TGA dataset sample jobs (null model + multivariable) | 1 day |
 | P2 — high value, more work | 3-phase free-shape SAS job + R parity | 1 day |
