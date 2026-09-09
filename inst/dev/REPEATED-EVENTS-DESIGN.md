@@ -207,6 +207,12 @@ set must be able to fail on its own.
    not contain; and the log numbers 162 source lines for the included file against this
    file's 161. Confirm by diffing the log's echoed source against the file. **If it is a
    different `repeat.sas`, the stage list above is wrong.**
+
+   ⚠️ That diff settles **identity only**. It is not the acceptance test and must not be
+   allowed to stand in for one: a correctly identified macro can still be reimplemented
+   wrongly, and the diff would be just as clean. The log's shape ladder under
+   **Acceptance** is what says the reimplementation is right. Read the source to know
+   *which* macro ran; read the ladder to know whether the R code reproduces it.
 2. **The guard predicate at stage 8 is unknown.** The volume was unmounted when this was
    written, so `hz.ce_cardioversion_repeated.ehb.sas` could not be read. "Post-macro
    `iv_start` guard" narrows it to roughly `iv_start < iv_end` or a zero/missing test,
@@ -223,6 +229,35 @@ set must be able to fail on its own.
 
 All three open items require `/Volumes/qhsstudies` to be mounted. None blocks
 implementing stages 1–7; item 3 blocks only the shape of the gated parity test.
+
+## Gates and mechanics
+
+The definition of done is `AGENTS.md`'s, with two corrections that apply to this change
+specifically.
+
+**Run `spelling`, which the definition of done omits.** `spelling.yaml` is a *required*
+blocking check on `main`, but `AGENTS.md`'s definition-of-done list does not name it, so
+following that list alone reddens CI. This change is unusually exposed: it introduces a
+crowd of SAS identifiers (`iv_start`, `iv_seg`, `iv_event`, `iv_end`, `eventype`,
+`rcensor`, `event_no`) into roxygen prose. Run
+
+```r
+spelling::spell_check_package(use_wordlist = TRUE)
+```
+
+as part of the gate, and add the identifiers it flags to `inst/WORDLIST`. Note that
+`inst/WORDLIST` feeds only this check — it has no effect on CRAN's own incoming aspell
+check, for which `devtools::check_win_devel()` is the source of truth.
+
+**Build the check tarball under the session scratchpad, not `$TMPDIR/tree`.**
+`AGENTS.md`'s recipe hardcodes a shared path that collides when two sessions run in the
+same tree, and the collision surfaces as a fabricated `R CMD check` ERROR that looks like
+a package defect. Use a session-unique directory.
+
+Otherwise unchanged, and in this order: `devtools::document()`, then
+`lintr::lint_package()` (0 lints), then `devtools::test()` (0 failures), then
+`spelling::spell_check_package()`, then once per PR `R CMD check --as-cran` with the
+manual from a clean `git archive` export of a **committed** tree.
 
 ## Out of scope
 
