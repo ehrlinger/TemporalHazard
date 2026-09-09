@@ -45,9 +45,11 @@
   `parmprc()` reads once after all statements are processed.
 
   One job in the public `hazard` corpus changes, and only to drop a claim that
-  was wrong: `dist/examples/hm.dthar.TGA.sas` is a documentation template
-  carrying literal `?` placeholders, which the reference would reject as a
-  syntax error rather than as `ERROR 1001`. Its per-operand rows are
+  was wrong: the second `%HAZARD` block of
+  `dist/examples/hm.dthar.TGA.sas` is a documentation template carrying
+  literal `?` placeholders, which the reference would reject as a syntax
+  error rather than as `ERROR 1001`. (That file's first block is a valid
+  `PARMS` activating two phases and is unaffected.) Its per-operand rows are
   unchanged. No corpus job is refused.
 
 * **`hzr_translate_sas()` no longer discards the `ALPHA` and `ETA` a `PARMS`

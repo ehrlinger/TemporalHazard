@@ -488,9 +488,12 @@ test_that("operands this parser cannot read are recorded but never refused", {
 })
 
 test_that("a PARMS template with `?` placeholders is not refused as no-phase", {
-  # dist/examples/hm.dthar.TGA.sas is a template carrying literal
-  # `PARMS MUE=? THALF=? NU=? M=1 FIXM MUC=?;` for the reader to fill in from
-  # the stepwise output above it. Every value is non-numeric, so no MU is
+  # The SECOND %HAZARD block of dist/examples/hm.dthar.TGA.sas (line 110,
+  # PARMS at 122) carries literal `PARMS MUE=? THALF=? NU=? M=1 FIXM MUC=?;`
+  # for the reader to fill in from the stepwise output above it. The file's
+  # FIRST block (line 70, PARMS at 74) is fully valid and activates phases 1
+  # and 2, so grepping the file for a valid PARMS will find one -- the shape
+  # under test here belongs to the second block alone. Every value is non-numeric, so no MU is
   # active -- but that is this parser failing to read the statement, not PROC
   # HAZARD selecting no phase, and the reference would reject `?` as a SYNTAX
   # error long before modterm.c's ERROR 1001. Claiming "No phase selected"

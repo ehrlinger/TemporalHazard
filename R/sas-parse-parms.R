@@ -525,9 +525,13 @@
   refused <- !has_early && !has_muc && !has_late && !unreadable
   if (refused) {
     flag_bad(
-      # Keyed on `operands`, not on mu/early/late: dist/examples/
-      # hm.dthar.TGA.sas is a template carrying literal `MUE=? THALF=? NU=?`,
-      # which leaves all three empty while the statement plainly existed.
+      # Keyed on `operands`, not on mu/early/late: the SECOND %HAZARD block
+      # of dist/examples/hm.dthar.TGA.sas (line 110; its PARMS at 122) carries
+      # literal `MUE=? THALF=? NU=?` for the reader to fill in from the
+      # stepwise output, which leaves all three empty while the statement
+      # plainly existed. The file's FIRST block (line 70, PARMS at 74) is a
+      # valid `MUE=0.2 THALF=0.08 NU=1 M=1 FIXM MUC=0.001` activating phases 1
+      # and 2 -- so this is a property of that one block, not of the file.
       # (It is unreadable, so it no longer reaches here -- but the wording
       # must not depend on that gate to be true.) A bare `PARMS;` cannot
       # occur: hazard_y.y:133-135 requires at least one parmsopt, so it is a
