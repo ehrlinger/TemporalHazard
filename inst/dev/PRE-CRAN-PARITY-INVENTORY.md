@@ -2,7 +2,7 @@
 
 **Source:** `~/Documents/GitHub/hazard/examples/` (18 paired `.sas`/`.lst` fixtures)
 **Capture vintage:** v4.4.6 macOS (refreshed 2026-05-12)
-**Status:** Complete. Captures finalized 2026-05-12; all 54 parity expectations passing.
+**Status:** Complete. Captures finalized 2026-05-12; all 63 parity expectations passing.
 
 ## Scope summary
 
@@ -91,15 +91,20 @@ step reproduced in `.hzr_derive_primisol()`; raw file discovered at
 `~/Documents/GitHub/hazard/examples/data/omc`; n_obs=382 / n_events=44
 verified against SAS.
 
-**Parity tests** at `tests/testthat/test-sas-parity.R` — **54/54 PASS**:
+**Parity tests** at `tests/testthat/test-sas-parity.R` — **63/63 PASS**.
+Counts below are `testthat`'s own per-test expectation counts, so they can be
+re-derived rather than tallied by eye:
+`as.data.frame(testthat::test_local(filter = "sas-parity"))[, c("test", "passed")]`
+(measured 2026-09-08).  The previous total of 54 had drifted by 2 before this
+PR, and two of the per-test counts with it.
 - `hz.deadp.KUL` (3-phase all-fixed, 3 free): LL=−3740.52, MUE/MUC/MUL
   natural-scale, SE(E0/C0/L0), 3 off-diagonal vcov entries (14 expectations).
 - `hz.death.AVC` (2-phase free-shape Early): LL=−210.501,
   THALF/NU/MUE/MUC natural-scale, SE(E2) [SE(E0) skipped per P2 #11]
-  (9 expectations).
+  (11 expectations).
 - `hz.te123.OMC` fit 1 (left-truncated 2-phase): CoE-applied guard, LL within
   1e-5, THALF/NU/ETA natural-scale (5e-3), MUE (1e-4) and MUL as a ratio to
-  SAS (5e-4) (8 expectations).  P1 #6 closed; tolerances re-measured
+  SAS (5e-4) (12 expectations).  P1 #6 closed; tolerances re-measured
   2026-09-08.  MUL is asserted as a ratio because at 2.1e-04 a direct
   `expect_equal()` falls into waldo's absolute branch and cannot fail.
 - `hz.te123.OMC` fit 2 (modulated renewal + late covariates): LL within 1e-5,
@@ -107,7 +112,7 @@ verified against SAS.
   SE(E2/NOPREVTE/NOTEE) (14 expectations).
 - `hz.tm123.OMC` fit 1 (morbidity-weighted 2-phase): CoE-applied guard, LL
   within 1e-5, THALF/ETA natural-scale (5e-3), MUE (1e-3) and MUL as a ratio
-  to SAS (1e-3) (7 expectations).  P1 #6 closed; tolerances re-measured
+  to SAS (1e-3) (9 expectations).  P1 #6 closed; tolerances re-measured
   2026-09-08.
 - `hm.deadp.VALVES` null model (Case 2L: m<0, nu=0): LL=−1864.76 exact,
   finite MUE/MUC (3 expectations).  Confirms P1 #5 closed (misdiagnosis).
