@@ -5,6 +5,35 @@
 ### Bug fixes
 
 - **[`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
+  no longer builds a phase that `PROC HAZARD` would not.** A `PARMS`
+  statement names its phases with `MUE`, `MUC` and `MUL`; the shape
+  operands (`THALF`/`NU`/`M` early, `TAU`/`GAMMA`/`ALPHA`/`ETA` late)
+  only shape a phase that already exists. The translator had this the
+  other way round and keyed on the shape operands, so
+  `PARMS MUE=0.2 THALF=1 NU=1 TAU=2 GAMMA=1.5` emitted a two-phase model
+  against `PROC HAZARD`’s one – carrying an invented `mu` starting value
+  of 0.1 for the phase that should not have been there, and offering
+  nothing in `$untranslated` to say so. In the reference C only
+  `setparmno()` sets `C->phase[n]`, and only when that `MU` is greater
+  than zero (`src/hazard/setparmno.c`); the seven shape operands are
+  registered by `setprmf()`, which never touches it. A phase is now
+  built only when its own `MU` was specified and positive – so a `MUC`
+  of exactly zero no longer builds a constant phase either, where before
+  the translator tested only whether the keyword was present. Shape
+  operands belonging to a phase that never activated are recorded in
+  `$untranslated` rather than dropped, since `PROC HAZARD` zeroes them
+  (`src/hazard/stmtprc.c`) and skips their covariates
+  (`src/hazard/setstat.c`). A `PARMS` that activates no phase at all is
+  now recorded too, because `PROC HAZARD` refuses that job outright
+  (`src/hazard/modterm.c`, `ERROR 1001: No phase selected`) where the
+  translator would previously have emitted a runnable
+  single-distribution fit and reported full coverage. No job in the
+  public `hazard` corpus is affected: the only `PARMS` statement in it
+  that this gate changes is a documentation template with literal `?`
+  placeholders, so this closes a latent divergence rather than changing
+  any translation you have already run.
+
+- **[`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
   no longer discards the `ALPHA` and `ETA` a `PARMS` statement specified
   alongside `WEIBULL`.** The translator read the bare `WEIBULL` keyword
   as a request to constrain the late phase to `alpha = eta = 1` and
