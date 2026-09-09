@@ -53,9 +53,10 @@ Four details there are load bearing:
   `~/Documents/GitHub/hazard`). **That gap is 1,031 passes**, against 1,024 on 2026-09-05 and
   about 900 on 2026-08-31. Note the gap barely moved this cycle while the suite grew by 93
   passes: the skip count held at 193 and `skip_on_cran()` calls held at 173, so this cycle's
-  new tests run *under* the check rather than being skipped out of it. That is the opposite of
-  the previous cycle and the reason the timing rows below move the way they do. A green check
-  is **not** evidence that the skipped tests pass; only the local `devtools::test()` line is.
+  new tests run *under* the check rather than being skipped out of it. That is a statement
+  about coverage only — it says nothing about the check's wall time, and must not be used to
+  explain one (see "Where the check's time actually goes"). A green check is **not** evidence
+  that the skipped tests pass; only the local `devtools::test()` line is.
 - **Commit before you `git archive`.** It exports the committed tree, so an uncommitted fix is
   silently absent and the check answers a question about the wrong code. This has already
   cost one wrong conclusion. Nothing in the output tells you.
@@ -266,22 +267,30 @@ tests, over four release cycles. Real, slow, and still a wide margin against CRA
 a 46-second spread on unchanged code, a delta that size can be entirely the machine. The direction is what is
 worth watching, and it only shows against several dated points.
 
-⚠️ **A move in this column can be about what the check RUNS, not about what it costs.** The
-two most recent cycles show it in both directions, and neither is readable from the seconds
-alone:
+⚠️ **Assertion counts and seconds are two different measurements. Neither explains the
+other.** Track both, and keep the claims apart.
 
-- **2026-09-05 went DOWN while the suite grew by 330 passes, and that is not a speedup.** Five
-  end-to-end `hazard()` fits added that cycle carry `skip_on_cran()`, so the check measured
-  less work than before, not the same work faster.
-- **2026-09-09 went UP by 9s, and that one is real.** Under-check passes rose 2679 -> 2765
-  while the skip count held at 193 and `skip_on_cran()` calls held at 173 -- so the work was
-  added *inside* the check rather than skipped past it. Against the 46-second spread a 9s
-  delta is well within noise on its own; what makes it readable is the pass count moving with
-  it.
+**What the assertion counts establish (coverage):**
 
-So always read this column against the under-check pass count in **Definition of done**, which
-is the figure that says how much the check is actually running. Seconds alone cannot tell a
-cheaper suite from a smaller one.
+- **2026-09-05: coverage fell proportionally.** The suite grew by 330 passes locally, and the
+  five end-to-end `hazard()` fits added that cycle carry `skip_on_cran()`. Adding skipped
+  tests does **not** reduce the work the check performs — those tests never ran under it in
+  the first place. What fell is the *proportion* of the suite the check covers.
+- **2026-09-09: coverage largely held.** Under-check passes rose 2679 -> 2765 while the skip
+  count held at 193 and `skip_on_cran()` calls held at 173, so this cycle's additions ran
+  inside the check. The check's own workload grew.
+
+**What the seconds do NOT establish (timing):** the overall moved 212s -> 221s and the tests
+87s -> 90s. Both sit far inside the 46-second spread measured above on effectively unchanged
+code, so **neither can be attributed to the coverage change, or to anything else.** Record
+them; do not explain them. The same applies looking backwards: the 2026-09-05 "fall" was 213s
+-> 212s — **one second** — and an earlier version of this paragraph built a causal story on
+it.
+
+The reason to keep both series is that they answer different questions. The seconds say
+whether CRAN's ceiling is in danger. The under-check pass count in **Definition of done** says
+how much of the suite the check is actually running, which is the only thing that can tell a
+cheaper suite from a smaller one — and it cannot be read off the clock.
 
 Both dominant costs are the ones that grow silently. Watch the budget when adding a vignette
 chunk or an unskipped slow test.
