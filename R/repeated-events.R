@@ -44,9 +44,9 @@
 #
 # Missing numerics sort FIRST in SAS and LAST under order(), so missing
 # times are mapped to -Inf for the sort key.  method = "radix" is forced
-# because order()'s "auto" falls back to an unstable shell sort for
-# character keys, and stability at tied times is the only thing keeping
-# R's row selection aligned with SAS's.
+# because character-vector sort order for other methods depends on the
+# locale's collating sequence, which would change which row is a subject's
+# first row between machines.
 .hzr_re_order <- function(data, id, time) {
   key <- data[[time]]
   key[is.na(key)] <- -Inf
