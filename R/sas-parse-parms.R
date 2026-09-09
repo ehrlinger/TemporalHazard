@@ -473,19 +473,49 @@
     }
   }
 
-  # (3) No phase activated at all. modterm.c:18-22 prints "No phase selected",
-  # sets C->errorno = 1001 and the job does not run. Without this row the
-  # emitted call falls through to hazard()'s default distribution
-  # (sas-parse-job.R:604 omits `dist` when has_phases is FALSE) and
-  # hzr_translate_sas() reports full coverage for a job SAS refuses outright --
-  # the same shape as the SETG3980 guard above. Guarded on PARMS having said
-  # something, so a job with no PARMS at all keeps its existing path.
-  if (!has_early && !has_muc && !has_late &&
-      (length(mu) || length(early) || length(late))) {
+  # (3) No phase activated at all -- including the job carrying no PARMS
+  # statement whatsoever, which arrives here with `operands` empty. PROC
+  # HAZARD does not distinguish the two: stmtprc.c:87 zeroes all three phases
+  # at init, and the only write that turns one back on is setparmno.c:14,
+  # reached from parmprc.c:13,18,19 for MUE/MUC/MUL alone and only under
+  # `stmtfld(parmno) > ZERO`. The seven shape operands go through setprmf()
+  # (parmprc.c:14-17,20-23), which never touches C->phase[] at all. So "no
+  # PARMS" and "PARMS naming no positive MU" are one state, not two cases.
+  #
+  # That state is refused, not merely defaulted, and modterm() is reached for
+  # every job rather than only for a selected multiphase model: its single
+  # call site is outmods.c:91, and outmods() sits in main's straight-line
+  # sequence (hazard.c:296) with the no-phase test as one of the three
+  # disjuncts at outmods.c:89 that fire the call. hazard.c:298-301 then routes
+  # errorno 1001 to hzfxit("SEMANTIC"), which exits BEFORE results() -- so the
+  # job prints no estimates and never fits.
+  #
+  # Without this row the emitted call falls through to hazard()'s default
+  # distribution (sas-parse-job.R:604 omits `dist` when has_phases is FALSE)
+  # and hzr_translate_sas() reports FULL coverage for a job SAS refuses
+  # outright -- the same shape as the SETG3980 guard above. The no-PARMS half
+  # is latent rather than shipped: 0 of the 29 hazard() fits the public corpus
+  # emits lack dist = "multiphase" (measured 2026-09-09). Latent is why this
+  # is a `flag_bad()` and not a corpus-visible regression, not a reason to
+  # leave the path reporting full coverage for a model that has no phases.
+  # The wording keys on `operands`, not on mu/early/late: a PARMS statement
+  # whose every operand failed to parse (dist/examples/hm.dthar.TGA.sas is a
+  # template carrying literal `MUE=? THALF=? NU=?`) leaves all three empty
+  # while the statement plainly existed, and calling that "no PARMS" would be
+  # a confident wrong annotation in the frame a caller reads to decide whether
+  # the translation can be trusted. A bare `PARMS;` is genuinely
+  # indistinguishable from an absent one here -- both arrive as character(0) --
+  # so the absent wording is phrased to be true of either.
+  if (!has_early && !has_muc && !has_late) {
     flag_bad(
-      "PARMS with no positive MUE, MUC or MUL",
+      if (length(operands)) {
+        "PARMS with no positive MUE, MUC or MUL"
+      } else {
+        "no PARMS operands (no MUE, MUC or MUL)"
+      },
       paste0("PROC HAZARD selects no phase here and refuses the job ",
-             "(modterm.c:18-22 raises ERROR 1001, \"No phase selected\")")
+             "(modterm.c:18-22 raises ERROR 1001, \"No phase selected\"; ",
+             "hazard.c:298-301 then exits before results())")
     )
   }
 

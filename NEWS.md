@@ -19,11 +19,19 @@
   whether the keyword was present. Shape operands belonging to a phase that
   never activated are recorded in `$untranslated` rather than dropped, since
   `PROC HAZARD` zeroes them (`src/hazard/stmtprc.c`) and skips their covariates
-  (`src/hazard/setstat.c`). A `PARMS` that activates no phase at all is now
-  recorded too, because `PROC HAZARD` refuses that job outright
-  (`src/hazard/modterm.c`, `ERROR 1001: No phase selected`) where the
+  (`src/hazard/setstat.c`). A job that activates no phase at all is now
+  recorded too -- whether its `PARMS` named no positive `MU`, or it carried no
+  `PARMS` statement whatsoever -- because `PROC HAZARD` refuses that job
+  outright (`src/hazard/modterm.c`, `ERROR 1001: No phase selected`) where the
   translator would previously have emitted a runnable single-distribution fit
-  and reported full coverage. No job in the public `hazard` corpus is affected:
+  and reported full coverage. The two are one state rather than two cases:
+  `stmtprc.c` zeroes all three phases at initialization and only `setparmno()`
+  turns one back on, so a job with no `PARMS` has no active phase for the same
+  reason a `PARMS` naming `MUE=0` does. `modterm()` is reached on every job,
+  not only once a multiphase model has been selected -- its one call site in
+  `outmods()` is unconditional in the procedure's main sequence, and
+  `hazard.c` exits on `ERROR 1001` before any results are computed. No job in
+  the public `hazard` corpus is affected:
   the only `PARMS` statement in it that this gate changes is a documentation
   template with literal `?` placeholders, so this closes a latent divergence
   rather than changing any translation you have already run.

@@ -229,3 +229,24 @@ test_that("a corpus round-trip on hz.te123.OMC.sas preserves both HAZARD and bot
   # four minimum kinds.
   expect_true(all(c("pred_haz", "pred_haz_2") %in% names(job$calls)))
 })
+
+test_that("a PROC HAZARD job with no PARMS surfaces the modterm.c refusal", {
+  # End to end, because the unit assertion in test-sas-parse-parms.R proves
+  # only that .hzr_parse_parms() built the row -- not that it survives into
+  # what a caller of hzr_translate_sas() actually reads. Before this guard the
+  # job below translated with an EMPTY $untranslated frame and full token
+  # coverage, emitting a runnable single-distribution fit for a job PROC
+  # HAZARD refuses outright (modterm.c:18-22, ERROR 1001 "No phase selected";
+  # hazard.c:298-301 exits before results()). The coverage assertion is the
+  # point: it is exactly what made the defect invisible.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(c("PROC HAZARD DATA=D;", "  TIME FU;", "  EVENT DEAD;", "RUN;"), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+
+  expect_true(any(grepl("modterm.c", job$untranslated$reason, fixed = TRUE)))
+  expect_equal(job$untranslated$construct,
+               "no PARMS operands (no MUE, MUC or MUL)")
+  # Coverage still reports every token mapped -- the counters cannot express
+  # this defect, which is why the row has to.
+  expect_equal(job$coverage$tokens_seen, job$coverage$tokens_mapped)
+})

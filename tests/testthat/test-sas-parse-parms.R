@@ -447,6 +447,38 @@ test_that("no active MU at all is recorded as the refusal PROC HAZARD raises", {
   expect_equal(ok$untranslated$construct, "MUE=0.2")
 })
 
+test_that("a job with no PARMS operands at all is refused, not defaulted", {
+  # The wider half of the same modterm.c rule. A PROC HAZARD job carrying no
+  # PARMS statement reaches here with operands = character(0), so no
+  # setparmno() call ever fires (parmprc.c:13,18,19), all three C->phase[]
+  # stay at their stmtprc.c:87 zero, and modterm.c:18-22 raises ERROR 1001.
+  # modterm() is universal rather than multiphase-only: its single call site
+  # is outmods.c:91, outmods() is unconditional in main (hazard.c:296), and
+  # hazard.c:298-301 routes 1001 to hzfxit("SEMANTIC") BEFORE results(). The
+  # job never fits, so a translation that emits one is a wrong answer.
+  got <- .hzr_parse_parms(character(0))
+  expect_false(got$has_phases)
+  expect_equal(got$untranslated$construct,
+               "no PARMS operands (no MUE, MUC or MUL)")
+  expect_true(any(grepl("modterm.c", got$untranslated$reason, fixed = TRUE)))
+})
+
+test_that("a PARMS whose operands all fail to parse is not called 'no PARMS'", {
+  # dist/examples/hm.dthar.TGA.sas is a template carrying literal
+  # `PARMS MUE=? THALF=? NU=? M=1 FIXM MUC=?;` for the reader to fill in from
+  # the stepwise output above it. Every value is non-numeric, so mu, early and
+  # late all stay empty while the statement plainly existed. $untranslated is
+  # the frame a caller reads to decide whether a translation can be trusted,
+  # so keying the wording on mu/early/late rather than on `operands` would
+  # annotate that job "no PARMS" -- wrong, and confidently so.
+  got <- .hzr_parse_parms(c("MUE=?", "MUC=?"))
+  expect_false(got$has_phases)
+  expect_true("PARMS with no positive MUE, MUC or MUL" %in%
+                got$untranslated$construct)
+  expect_false("no PARMS operands (no MUE, MUC or MUL)" %in%
+                 got$untranslated$construct)
+})
+
 test_that("covariates of a phase that is not built are recorded, not dropped", {
   # setstat.c:9-12 returns early for a phase whose C->phase[] is 0, so PROC
   # HAZARD drops these too -- the values agree and only silence would be wrong.
