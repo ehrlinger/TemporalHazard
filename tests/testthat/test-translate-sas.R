@@ -229,3 +229,75 @@ test_that("a corpus round-trip on hz.te123.OMC.sas preserves both HAZARD and bot
   # four minimum kinds.
   expect_true(all(c("pred_haz", "pred_haz_2") %in% names(job$calls)))
 })
+
+# The translator emits its fit as `fit <- hazard(...)`, so the call head is
+# `<-` and a naive identical(x[[1]], quote(hazard)) never matches -- an
+# assertion that "no fit was emitted" would then pass unconditionally.
+.is_hazard_fit <- function(x) {
+  if (!is.call(x)) return(FALSE)
+  if (identical(x[[1L]], quote(`<-`)) && is.call(x[[3L]])) x <- x[[3L]]
+  identical(x[[1L]], quote(hazard))
+}
+
+test_that("a PROC HAZARD job with no PARMS is refused, not fitted", {
+  # PROC HAZARD does not run this job: with no active phase modterm.c:18-22
+  # raises ERROR 1001 and hazard.c:299-302 exits via hzfxit("SEMANTIC") before
+  # results(). Before this guard the job translated with an EMPTY $untranslated
+  # frame and full token coverage, emitting a runnable single-distribution fit
+  # for a job the reference refuses outright.
+  #
+  # The assertion that carries the weight is the absence of a hazard() call:
+  # an $untranslated row alone leaves the fit chunk in place, so a reader who
+  # renders past the callout still gets a converged fit with a populated
+  # summary standing in for a job that produced no result at all.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(c("PROC HAZARD DATA=D;", "  TIME FU;", "  EVENT DEAD;", "RUN;"), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+
+  expect_false(any(vapply(job$calls, .is_hazard_fit, logical(1))))
+  says_refused <- function(x) {
+    any(grepl("No phase selected", as.character(x), fixed = TRUE))
+  }
+  expect_true(any(vapply(job$calls, says_refused, logical(1))))
+  expect_equal(job$untranslated$construct,
+               "no PARMS operands (no MUE, MUC or MUL)")
+})
+
+test_that("a PARMS this parser cannot read is recorded but NOT refused", {
+  # The false positive the refusal gate exists to prevent, and it is not
+  # hypothetical: .hzr_parse_hazard() splits operands on " ", so `MUE = 0.2`
+  # yields "MUE", "=", "0.2" and nothing parses -- while HAZARD's own lexer
+  # discards whitespace unconditionally (hazard_l.l:32, rule at :50), making
+  # this a well-formed parmsopt (hazard_y.y:138) whose job RUNS with an active
+  # early phase. Refusing it would stop a job PROC HAZARD accepts, which is
+  # worse than translating it imperfectly: $untranslated still records every
+  # operand that was not understood.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste("PROC HAZARD DATA=D; TIME FU; EVENT DEAD;",
+                   "PARMS MUE = 0.2 THALF = 1 NU = 1; RUN;"), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+
+  expect_false(any(grepl("No phase selected", job$untranslated$reason,
+                         fixed = TRUE)))
+  expect_true(any(vapply(job$calls, .is_hazard_fit, logical(1))))
+  # ... and the operands it could not read are still reported, so declining to
+  # refuse is not the same as declaring the job fine.
+  expect_true("MUE" %in% job$untranslated$construct)
+})
+
+test_that("a second PARMS statement adds to the first rather than replacing it", {
+  # PROC HAZARD keeps its PARMS fields in one table that parmprc() reads once,
+  # after every statement is processed, so `PARMS MUE=0.2 ...; PARMS FIXNU;`
+  # runs with an active early phase. Overwriting parms_ops dropped MUE and made
+  # the no-phase guard refuse a job the reference accepts.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste("PROC HAZARD DATA=D; TIME FU; EVENT DEAD;",
+                   "PARMS MUE=0.2 THALF=1 NU=1; PARMS FIXNU; RUN;"), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+
+  expect_false(any(grepl("No phase selected", job$untranslated$reason,
+                         fixed = TRUE)))
+  fit <- Filter(.is_hazard_fit, job$calls)
+  expect_length(fit, 1L)
+  expect_equal(fit[[1L]][[3L]]$dist, "multiphase")
+})

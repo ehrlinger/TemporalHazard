@@ -28,32 +28,27 @@
 .hzr_parms_late_arg  <- c(TAU = "tau", GAMMA = "gamma", ALPHA = "alpha", ETA = "eta")
 .hzr_parms_mu_order  <- c("MUE", "MUC", "MUL")
 
-# PROC HAZARD's OWN shape defaults (src/hazard/stmtprc.c:34-37), used for any shape
-# operand a PARMS statement did not name. They are not hzr_phase()'s defaults
-# -- nu, m and eta all differ (SAS 2/1/2 against R 1/0/1) -- and the starting
-# vector is what the emitted call hands the optimizer, so mirroring R's
-# defaults here started a partially-specified job somewhere PROC HAZARD would
-# not have started it. On a multimodal likelihood a different start is a
+# PROC HAZARD's OWN shape defaults (src/hazard/stmtprc.c:34-37), used for any
+# shape operand a PARMS statement did not name. They are not hzr_phase()'s
+# defaults -- nu, m and eta all differ (SAS 2/1/2 against R 1/0/1) -- and the
+# starting vector is what the emitted call hands the optimizer, so mirroring
+# R's defaults here started a partially-specified job somewhere PROC HAZARD
+# would not have started it. On a multimodal likelihood a different start is a
 # different answer, not a cosmetic difference (AGENTS.md, "n_starts explores a
 # neighbourhood").
 #
-# TAU is the one entry that is NOT SAS's default. stmtprc.c:33 sets it to
-# ZERO, and SETG3() (setg3.c:317) then replaces any non-positive TAU with
-# 2*Tmax/3 -- data-dependent, so unreproducible at parse time. The 1 below is
-# SETG3_ignore_tau()'s pinned value (setg3.c:378), which is right exactly when
-# that branch fires; every other defaulted-TAU late phase gets an untranslated
-# row instead. See the TAU guard in .hzr_parse_parms().
+# TAU is the one entry that is NOT SAS's. src/hazard/stmtprc.c:37 sets it to
+# ZERO, but that zero never reaches SETG3(): readobs.c:153-154 replaces an
+# unspecified TAU with 0.75*Tmax on an active late phase, and readobs() runs
+# first (hazard.c:276 against :292). The 1 below is SETG3_ignore_tau()'s pinned
+# value (setg3.c:378), right exactly when that branch fires; every other
+# defaulted-TAU late phase gets an untranslated row instead, naming whichever
+# data-dependent rule applies. See the TAU guards in .hzr_parse_parms().
 #
-# mu has no hzr_phase() argument -- its only documented default is
-# .hzr_phase_start()'s mu_start = 0.1, used here for a built phase whose PARMS
-# never supplied its MU value. That is a separate divergence from SAS (SETG1
-# floors a non-positive muE at 1, setg1.c) and, more to the point, a phase
-# whose MU is absent is one PROC HAZARD would not build at all -- the
-# phase-activation asymmetry tracked in the MU comment further down. Left
-# alone here deliberately.
+# There is no matching mu default: a phase is built only when its MU was
+# specified and positive, so every built phase has a real MU to log.
 .hzr_parms_early_sas_default <- c(t_half = 1, nu = 2, m = 1)
 .hzr_parms_late_sas_default  <- c(tau = 1, gamma = 1, alpha = 1, eta = 2)
-.hzr_parms_default_mu_start <- 0.1
 
 # FIX<param> keywords are their own grammar tokens (FIXTHALF, not FIX+THALF),
 # and the R parameter name is not always the lowercased SAS spelling --
@@ -465,10 +460,16 @@
 #'   `list(early = c("X1", "X2"), constant = , late = )`, from the operands of
 #'   the `EARLY` / `CONSTANT` / `LATE` statements.
 #' @return `list(phases = <call>, theta = <call>, has_phases = <logical>,
-#'   untranslated = <data.frame>)`. `has_phases` is `TRUE` only when at least
-#'   one phase was actually built from the operands (i.e. `phases` is not the
-#'   empty `list()` call) -- callers use it to decide whether the job
-#'   qualifies as multiphase at all.
+#'   refused = <logical>, untranslated = <data.frame>)`. `has_phases` is
+#'   `TRUE` only when at least one phase was actually built from the operands
+#'   (i.e. `phases` is not the empty `list()` call) -- callers use it to decide
+#'   whether the job qualifies as multiphase at all. `refused` is `TRUE` only
+#'   when no phase is active AND every operand was understood, meaning
+#'   `PROC HAZARD` would raise `ERROR 1001` and run nothing
+#'   (`src/hazard/modterm.c`); the caller emits a `stop()` in place of the fit.
+#'   It is deliberately narrower than `!has_phases`: a statement this parser
+#'   could not read is recorded but not refused, because the refusal is a
+#'   claim about the reference and not about this parser.
 #' @noRd
 .hzr_parse_parms <- function(operands, covars = list()) {
   mu <- list()
@@ -479,6 +480,14 @@
   saw_weibull <- FALSE
   bad_construct <- character(0)
   bad_reason <- character(0)
+  # Set when an operand could not be read at all -- an unresolved keyword, a
+  # non-numeric value, or a keyword with no phase target. It gates the "no
+  # phase selected" refusal below, which is a claim about what PROC HAZARD
+  # would do and is only sound when this parser actually understood the whole
+  # statement. Distinct from `bad_construct`, which also collects the later
+  # SEMANTIC guards: `MUE=0 THALF=1` is fully readable and genuinely selects
+  # no phase, so it must still refuse even though it flags THALF=1.
+  unreadable <- FALSE
 
   flag_bad <- function(construct, reason) {
     bad_construct <<- c(bad_construct, construct)
@@ -493,8 +502,10 @@
       val <- suppressWarnings(as.numeric(substr(op, eq + 1L, nchar(op))))
       token <- .hzr_sas_token(key, "HAZARD", "PARM")
       if (is.na(token)) {
+        unreadable <- TRUE
         flag_bad(op, "unresolved PARMS keyword")
       } else if (is.na(val)) {
+        unreadable <- TRUE
         flag_bad(op, sprintf("PARMS value for %s is not numeric", key))
       } else if (token %in% .hzr_parms_mu_order) {
         mu[[token]] <- val
@@ -522,6 +533,7 @@
           ))
         }
       } else {
+        unreadable <- TRUE
         flag_bad(op, "PARMS keyword has no phase target")
       }
       next
@@ -529,6 +541,7 @@
 
     token <- .hzr_sas_token(op, "HAZARD", "PARM")
     if (is.na(token)) {
+      unreadable <- TRUE
       flag_bad(op, "unresolved PARMS keyword")
     } else if (token == "WEIBULL") {
       # setopt(6) -> SETG3_weibull() (setg3.c:427) is the GENERALIZED Weibull:
@@ -570,7 +583,6 @@
   fixed_early <- intersect(unname(.hzr_parms_early_arg), fixed_early)
   fixed_late <- intersect(unname(.hzr_parms_late_arg), fixed_late)
   mu <- .hzr_parms_ordered(mu, .hzr_parms_mu_order)
-  has_muc <- "MUC" %in% names(mu)
 
   # Every shape operand PARMS did not name is filled from PROC HAZARD's own
   # defaults, once, here -- and the same filled list then builds both the
@@ -601,11 +613,19 @@
   early_full <- .hzr_parms_fill_shape(early, .hzr_parms_early_sas_default)
   late_full <- .hzr_parms_fill_shape(late, .hzr_parms_late_sas_default)
 
-  # A phase is active in PROC HAZARD iff its MU was specified and positive
-  # (parmprc.c:19 -> setparmno.c:14); with phase 3 off, shape.c never calls
-  # SETG3() and none of what follows happens. This is the gate every SETG3
-  # guard below shares.
-  has_late <- !is.null(mu[["MUL"]]) && isTRUE(mu[["MUL"]] > 0)
+  # A phase is active iff its MU was specified and *positive*. That is the
+  # reference rule rather than an inference from it: parmprc.c:13,18,19
+  # registers MUE/MUC/MUL through setparmno(), which sets C->phase[n] = 1 only
+  # under `stmtfld(parmno) > ZERO` (setparmno.c:11-14), while the seven shape
+  # operands go through setprmf() (parmprc.c:14-17,20-23), which never touches
+  # C->phase[] at all. Absence and non-positivity are therefore the same
+  # outcome, which is why this tests the value and not merely the name --
+  # a presence test lets MUE=0 build a phase PROC HAZARD would not.
+  mu_active <- function(key) !is.null(mu[[key]]) && isTRUE(mu[[key]] > 0)
+  has_early <- mu_active("MUE")
+  has_muc <- mu_active("MUC")
+  has_late <- mu_active("MUL")
+
   # setg3.c:312-314's own predicate for taking the SETG3_ignore_tau() branch.
   # The `g_two && ga_two` disjunct alongside it is driven by PARMS keywords
   # this parser does not resolve; those are recorded as untranslated, so this
@@ -692,16 +712,23 @@
   # Phases are built, and their theta blocks appended, in the same
   # early -> constant -> late order -- .hzr_phase_theta_names() assigns
   # labels by *position* (phases are auto-named "phase_1", "phase_2", ... by
-  # .hzr_validate_phases()), so only this order matters, not the names.
+  # .hzr_validate_phases()), so only this order matters, not the names. A
+  # phase that is not built must therefore contribute no theta block either,
+  # or every later block is read against the wrong labels.
+  #
+  # The MU gate is necessary but not sufficient here: an active MU whose phase
+  # has no shape operand is recorded rather than built, because PROC HAZARD
+  # would supply its own shape defaults and they are not this parser's -- see
+  # the orphan branches below.
   phase_calls <- list()
   theta_blocks <- list()
-  if (length(early)) {
+  if (has_early && length(early)) {
     phase_calls[[length(phase_calls) + 1L]] <- .hzr_parms_phase_call(
       "cdf", early_full, phase_covars$early, fixed_early
     )
-    mu_val <- if (!is.null(mu[["MUE"]])) mu[["MUE"]] else .hzr_parms_default_mu_start
     theta_blocks <- c(theta_blocks,
-      .hzr_parms_theta_block("early", mu_val, early_full, phase_covar_vals$early)
+      .hzr_parms_theta_block("early", mu[["MUE"]], early_full,
+                             phase_covar_vals$early)
     )
   }
   if (has_muc) {
@@ -712,23 +739,16 @@
       .hzr_parms_theta_block("constant", mu[["MUC"]], list(), phase_covar_vals$constant)
     )
   }
-  if (length(late)) {
+  if (has_late && length(late)) {
     phase_calls[[length(phase_calls) + 1L]] <- .hzr_parms_phase_call(
       "g3", late_full, phase_covars$late, fixed_late
     )
-    mu_val <- if (!is.null(mu[["MUL"]])) mu[["MUL"]] else .hzr_parms_default_mu_start
     theta_blocks <- c(theta_blocks,
-      .hzr_parms_theta_block("late", mu_val, late_full, phase_covar_vals$late)
+      .hzr_parms_theta_block("late", mu[["MUL"]], late_full,
+                             phase_covar_vals$late)
     )
   }
 
-  # A MU names its phase. Building a phase only when a *shape* operand
-  # appeared let an orphaned MUE/MUL disappear together with the phase it
-  # scaled -- a one-phase R model against SAS's two, and no untranslated row
-  # to say so. The shape defaults are now PROC HAZARD's own (src/hazard/stmtprc.c:34-37,
-  # see .hzr_parms_early_sas_default), but a phase reconstructed from nothing
-  # but a MU would still start from a scale SAS does not use, and its tau would
-  # still be data-dependent, so the MU stays recorded rather than guessed at.
   # SETG3_ignore_tau() (setg3.c:377-424) fires when ALPHA is fixed at 1 --
   # setg3.c:312-314, before the WEIBULL dispatch. It pins TAU at 1 and rewrites
   # the GAMMA/ETA split, which at alpha = 1, tau = 1 is a reparameterisation of
@@ -745,27 +765,13 @@
   # estimates the product as GAMMA alone. That is one fewer estimated parameter
   # than hazard() would use, on a pair that is not separately identifiable --
   # a different model, not a different label for the same one. Recorded.
-  # Both guards describe things SETG3() does, so both require a late phase that
-  # is actually active -- and in PROC HAZARD a phase is active iff its MU was
-  # specified and positive. parmprc.c:19 registers MUL through
-  # setparmno(22, 7, 3, ...) and setparmno.c:14 sets C->phase[3] = 1 only when
-  # stmtfld() > 0; the four shape operands go through setprmf
-  # (parmprc.c:20-23), which never touches C->phase[]. With phase 3 off,
-  # stmtprc.c:113-122 zeroes TAU/GAMMA/ALPHA/ETA and shape.c:31 never calls
-  # SETG3() at all.
   #
-  # So the gate is MUL, not the presence of shape operands: TAU/GAMMA/ETA with
-  # no MUL is not a late phase, and warning about SETG3_ignore_tau() or
-  # SETG3980 there describes code PROC HAZARD never reaches. A false positive
-  # on $untranslated is not harmless -- that frame is how a caller decides
-  # whether a translation can be trusted.
+  # Both guards describe things SETG3() does, and shape.c:31 calls SETG3() only
+  # under Common.phase[3] == 1, so both require an active late phase. Warning
+  # about them for TAU/GAMMA with no MUL would describe code PROC HAZARD never
+  # reaches, and a false positive on $untranslated is not harmless -- that
+  # frame is how a caller decides whether a translation can be trusted.
   #
-  # Note the asymmetry this leaves inside this function, deliberately and
-  # tracked separately: the phase-building block below still keys on shape
-  # operands (`if (length(late))`), so PARMS carrying TAU/GAMMA with no MUL
-  # emits a late phase that PROC HAZARD would not build at all. No corpus job
-  # does that, so it is latent, and changing how phases are built is a wider
-  # change than gating these two warnings.
   # The GAMMA*ETA divergence this block used to record is gone: setg3.c:405's
   # ETA fix is now mirrored above, so hazard() estimates the same number of
   # free parameters as PROC HAZARD on this branch. What remains unmirrored is
@@ -921,14 +927,128 @@
     )
   }
 
+  # Everything a MU gate discards has to leave a row behind. A phase that is
+  # not built takes its shape operands, its FIX tokens *and* its covariates
+  # with it, and silence on any of them hands back a model a phase short of the
+  # SAS job with nothing to say so -- the failure this package keeps shipping
+  # (see AGENTS.md). PROC HAZARD discards the same material, so the values are
+  # right and only the silence would be wrong: stmtprc.c:101-122 zeroes the
+  # shape operands and clears their status flags, and setstat.c:9-12 returns
+  # early for a phase whose C->phase[] is 0, dropping its covariates.
+  #
   # sprintf("%g"), not format(): format() honours getOption("OutDec"), so a
   # session with OutDec = "," would record "MUE=0,2" and break every grep --
   # the same trap the DELTA reason string above avoids.
-  if (!is.null(mu[["MUE"]]) && !length(early)) {
+  dropped <- function(shape, arg_map, fixed, covars) {
+    sas <- names(arg_map)[match(names(shape), unname(arg_map))]
+    ops <- sprintf("%s=%s", sas, vapply(shape, function(v) sprintf("%g", v), ""))
+    fix <- names(.hzr_parms_fix_map)[match(fixed, unname(.hzr_parms_fix_map))]
+    paste(c(ops, fix, covars), collapse = " ")
+  }
+
+  # (1) A MU that was specified but is not positive. stmtfld(parmno) > ZERO
+  # fails, so the phase never activates; the keyword is not an error and is not
+  # a phase either.
+  for (key in names(mu)) {
+    if (!mu_active(key)) {
+      flag_bad(paste0(key, "=", sprintf("%g", mu[[key]])),
+               paste0(key, " is not positive, so PROC HAZARD leaves that phase ",
+                      "inactive (setparmno.c:11): the phase is not built"))
+    }
+  }
+
+  # (2) Everything belonging to a phase whose MU never activated it.
+  if (!has_early) {
+    gone <- dropped(early, .hzr_parms_early_arg, fixed_early, phase_covars$early)
+    if (nzchar(gone)) {
+      flag_bad(gone, paste0("early phase material with no active MUE: PROC ",
+                            "HAZARD zeroes the shape operands (stmtprc.c:",
+                            "101-112) and skips the covariates (setstat.c:9-12)"))
+    }
+  }
+  if (!has_muc && length(phase_covars$constant)) {
+    flag_bad(paste(phase_covars$constant, collapse = " "),
+             paste0("constant phase covariates with no active MUC: PROC ",
+                    "HAZARD skips them (setstat.c:9-12)"))
+  }
+  if (!has_late) {
+    gone <- dropped(late, .hzr_parms_late_arg, fixed_late, phase_covars$late)
+    if (nzchar(gone)) {
+      flag_bad(gone, paste0("late phase material with no active MUL: PROC ",
+                            "HAZARD zeroes the shape operands (stmtprc.c:",
+                            "113-122) and skips the covariates (setstat.c:9-12)"))
+    }
+  }
+
+  # (3) No phase activated at all -- including the job carrying no PARMS
+  # statement whatsoever, which arrives here with `operands` empty. PROC
+  # HAZARD does not distinguish the two: stmtprc.c:87 zeroes all three phases
+  # at init, and the only write that turns one back on is setparmno.c:14,
+  # reached from parmprc.c:13,18,19 for MUE/MUC/MUL alone and only under
+  # `stmtfld(parmno) > ZERO`. The seven shape operands go through setprmf()
+  # (parmprc.c:14-17,20-23), which never touches C->phase[] at all. So "no
+  # PARMS" and "PARMS naming no positive MU" are one state, not two cases.
+  #
+  # That state is refused, not merely defaulted, and modterm() is reached for
+  # every job rather than only for a selected multiphase model: its single
+  # call site is outmods.c:91, and outmods() sits in main's straight-line
+  # sequence (hazard.c:296) with the no-phase test as one of the three
+  # disjuncts at outmods.c:89 that fire the call. hazard.c:299-302 then routes
+  # errorno 1001 to hzfxit("SEMANTIC"), which exits BEFORE results() -- so the
+  # job prints no estimates and never fits. `refused` therefore propagates to
+  # .hzr_parse_job(), which emits a stop() in place of the hazard() call: an
+  # $untranslated row alone still renders a populated fit, and a fit standing
+  # in for a job that produced no result is this package's signature defect.
+  #
+  # `unreadable` is the gate that keeps this from being a FALSE POSITIVE, and
+  # it is load bearing now that the outcome is a hard stop. Testing only the
+  # three has_* flags conflates "PARMS selected no phase" with "this parser
+  # could not read PARMS". `PARMS MUE = 0.2 THALF = 1` is the case that bites:
+  # .hzr_parse_hazard() splits operands on " ", so it yields "MUE", "=", "0.2"
+  # and nothing parses -- while HAZARD's own lexer discards whitespace
+  # unconditionally (hazard_l.l:32 `ws [ \t\n\r\)]+`, rule at :50), making
+  # that a well-formed parmsopt (hazard_y.y:138) whose job RUNS with an active
+  # early phase. Refusing it would stop a job PROC HAZARD accepts. The
+  # per-operand rows still record what was not understood; only the refusal,
+  # which is a claim about the reference, requires having understood it all.
+  refused <- !has_early && !has_muc && !has_late && !unreadable
+  if (refused) {
+    flag_bad(
+      # Keyed on `operands`, not on mu/early/late: the SECOND %HAZARD block
+      # of dist/examples/hm.dthar.TGA.sas (line 110; its PARMS at 122) carries
+      # literal `MUE=? THALF=? NU=?` for the reader to fill in from the
+      # stepwise output, which leaves all three empty while the statement
+      # plainly existed. The file's FIRST block (line 70, PARMS at 74) is a
+      # valid `MUE=0.2 THALF=0.08 NU=1 M=1 FIXM MUC=0.001` activating phases 1
+      # and 2 -- so this is a property of that one block, not of the file.
+      # (It is unreadable, so it no longer reaches here -- but the wording
+      # must not depend on that gate to be true.) A bare `PARMS;` cannot
+      # occur: hazard_y.y:133-135 requires at least one parmsopt, so it is a
+      # HAZARD syntax error, and character(0) here means the statement was
+      # genuinely absent.
+      if (length(operands)) {
+        "PARMS with no positive MUE, MUC or MUL"
+      } else {
+        "no PARMS operands (no MUE, MUC or MUL)"
+      },
+      paste0("PROC HAZARD selects no phase here and refuses the job ",
+             "(modterm.c:18-22 raises ERROR 1001, \"No phase selected\"; ",
+             "hazard.c:299-302 then exits before results())")
+    )
+  }
+
+  # (4) An active MU whose phase carries no shape operand. PROC HAZARD builds
+  # the phase here, on its own defaults: thalf 1, nu 2, m 1, gamma 1, alpha 1,
+  # eta 2 (stmtprc.c:30-37) and tau = 2*Tmax/3 (setg3.c:317 -- stmtprc.c:34
+  # only zeroes tau; the data-dependent default is set later, in SETG3()).
+  # Those are not this parser's defaults, and tau needs max(time) and so is not
+  # computable at parse time, so the MU is recorded rather than guessed at. A
+  # translation this parser declines is recoverable; one it invents is not.
+  if (has_early && !length(early)) {
     flag_bad(paste0("MUE=", sprintf("%g", mu[["MUE"]])),
              "MUE with no early phase shape operand (THALF/NU/M)")
   }
-  if (!is.null(mu[["MUL"]]) && !length(late)) {
+  if (has_late && !length(late)) {
     flag_bad(paste0("MUL=", sprintf("%g", mu[["MUL"]])),
              "MUL with no late phase shape operand (TAU/GAMMA/ALPHA/ETA)")
   }
@@ -937,6 +1057,7 @@
     phases = as.call(c(quote(list), phase_calls)),
     theta = as.call(c(quote(c), theta_blocks)),
     has_phases = length(phase_calls) > 0L,
+    refused = refused,
     untranslated = .hzr_untranslated_frame(
       line = rep(NA_integer_, length(bad_construct)),
       construct = bad_construct,

@@ -958,12 +958,17 @@ test_that("hs.death.AVC.hm1: per-stratum mean survival curve matches SAS", {
 # Data derivation: PRIMISOL DATA step reproduced in .hzr_derive_primisol();
 # raw fixed-width file from ~/Documents/GitHub/hazard/examples/data/omc.
 #
-# Known gaps:
-#   P1 #6 (fit 1): CoE for early+late 2-phase differs from SAS CONSERVE.
-#   SAS keeps all 5 mus free under Lagrange constraint; R fixes late.log_mu
-#   via closed-form CoE, yielding LL offset ~0.14 and MUE shifted.
-#   Shape params (THALF, NU, ETA) still match well; asserted below.
-#   MUE NOT asserted (affected by P1 #6 gap).
+# The "P1 #6" CoE gap that these fits once documented is CLOSED (PR #65).
+# Conservation of Events summed each phase's cumulative hazard from zero and
+# ignored the counting-process entry time, so under LCENSOR STARTTME the
+# conserved phase absorbed a spurious sum CF(ST): the LL sat ~0.14 low and MUE
+# was biased (0.01601 against SAS 0.01740) while the shapes stayed correct.
+# Both fits now agree with SAS to within the .lst's own printed precision, and
+# the tolerances below are set from measured agreement rather than from a
+# documented offset.  Measured 2026-09-08 at 8133b2a: fit 1 was stable across
+# seeds 1/2/3/7/42/104/999/2026 and fit 2 across 1/42/105, both over n_starts
+# 1/3/5, so these are the single dominant optimum and not a multi-start
+# artifact.
 test_that("hz.te123.OMC fit 1: left-truncated 2-phase shape params match SAS", {
   testthat::skip_on_cran()
   dir  <- skip_if_no_sas_fixtures()
@@ -995,9 +1000,19 @@ test_that("hz.te123.OMC fit 1: left-truncated 2-phase shape params match SAS", {
     control = list(n_starts = 3, maxit = 500, conserve = TRUE)
   )
 
-  # LL: P1 #6 gap produces ~0.14 offset; assert within 0.2.
-  expect_equal(fit$fit$objective, ref$loglik, tolerance = 0.2,
-               label = "R LL vs SAS (P1 #6 gap: CoE implementation differs)")
+  # CoE auto-disables silently on unsupported data.  With the tolerances below
+  # that shows up as four numeric mismatches (refitting `conserve = FALSE`
+  # moves THALF 18%, NU 12%, MUE 12%), which says nothing about the cause; this
+  # guard fails first and names it.  It is also the only assertion here that
+  # still catches a silent disable if the tolerances are ever loosened again.
+  expect_true(fit$spec$control$conserve_applied,
+              label = "Conservation of Events actually applied")
+
+  # LL agrees to 1.3e-04 absolute (4.0e-07 relative), inside the three-decimal
+  # printed precision of the .lst.  1e-05 relative leaves ~25x margin for
+  # optimizer noise and still fails on any regression above 3e-03 in LL.
+  expect_equal(fit$fit$objective, ref$loglik, tolerance = 1e-5,
+               label = "R LL vs SAS")
 
   # Shape params from "Estimates for Model Parameters" natural-scale table.
   nat       <- ref$natural
@@ -1013,8 +1028,23 @@ test_that("hz.te123.OMC fit 1: left-truncated 2-phase shape params match SAS", {
   expect_equal(unname(th["late.eta"]),              eta_ref,   tolerance = 5e-3,
                label = "ETA (Late) natural-scale")
 
-  # NOTE: MUE NOT asserted — affected by P1 #6 CoE gap.
-  # R: MUE ~ 0.01601; SAS: MUE = 0.01740.
+  # MUE and MUL are the Conservation-of-Events intercepts — the parameters the
+  # PR #65 entry-time fix moved, so they are the direct regression guard for it.
+  # Measured relative differences: MUE 1.1e-05, MUL 3.7e-05 (worst across
+  # n_starts 1/3/5: 1.7e-05 and 6.9e-05).
+  #
+  # MUL is compared as a ratio deliberately.  `expect_equal()` scales by
+  # `mean(abs(expected))` only when that exceeds `tolerance`, and MUL is
+  # 2.1e-04 — below any tolerance worth setting here — so comparing it
+  # directly silently becomes an ABSOLUTE check: `MUL = 0` passes at 5e-04,
+  # and so does the PR #65 regression this is meant to catch.  Against an
+  # expected value of 1 the comparison is relative, as the tolerance implies.
+  mue_ref <- nat$estimate[nat$name == "MUE"]
+  mul_ref <- nat$estimate[nat$name == "MUL"]
+  expect_equal(unname(exp(th["early.log_mu"])), mue_ref, tolerance = 1e-4,
+               label = "MUE (Early) natural-scale")
+  expect_equal(unname(exp(th["late.log_mu"])) / mul_ref, 1, tolerance = 5e-4,
+               label = "MUL (Late) natural-scale, as a ratio to SAS")
 })
 
 test_that("hz.te123.OMC fit 2: modulated renewal + late covariates matches SAS LL/MLEs", {
@@ -1047,7 +1077,13 @@ test_that("hz.te123.OMC fit 2: modulated renewal + late covariates matches SAS L
     control = list(n_starts = 3, maxit = 500, conserve = TRUE)
   )
 
-  expect_equal(fit$fit$objective, ref$loglik, tolerance = 1e-2,
+  # See fit 1 for why this guard is here.
+  expect_true(fit$spec$control$conserve_applied,
+              label = "Conservation of Events actually applied")
+
+  # LL agrees to 1.5e-04 absolute (4.9e-07 relative); 1e-05 relative leaves
+  # ~20x margin.  The former 1e-02 admitted a 3.1 drift in log-likelihood.
+  expect_equal(fit$fit$objective, ref$loglik, tolerance = 1e-5,
                label = "R LL vs SAS (fit 2)")
 
   nat       <- ref$natural
@@ -1063,8 +1099,10 @@ test_that("hz.te123.OMC fit 2: modulated renewal + late covariates matches SAS L
                label = "NU (Early) natural-scale")
   expect_equal(unname(exp(th["early.log_mu"])),     mue_ref,   tolerance = 1e-3,
                label = "MUE (Early) natural-scale")
-  expect_equal(unname(exp(th["late.log_mu"])),      mul_ref,   tolerance = 1e-3,
-               label = "MUL (Late) natural-scale")
+  # Ratio for the same reason as fit 1: MUL is 1.07e-03 against a 1e-03
+  # tolerance, only 7% above the point where this check would turn absolute.
+  expect_equal(unname(exp(th["late.log_mu"])) / mul_ref, 1, tolerance = 1e-3,
+               label = "MUL (Late) natural-scale, as a ratio to SAS")
 
   # Late-phase covariate coefficients — compare to SAS Parameter Estimate Summary.
   params_ref <- ref$params
@@ -1097,9 +1135,12 @@ test_that("hz.te123.OMC fit 2: modulated renewal + late covariates matches SAS L
 # censored intervals contribute to the survival function with weight = 1.
 # R: pass weights = ifelse(te==1, morbid, 1) to reproduce this semantics.
 #
-# Known gaps:
-#   Same P1 #6 gap as fit 1 above (CoE for early+late, MUE shifted ~10%).
-#   LL offset ~0.43.  THALF and ETA assert within 5e-3.
+# The P1 #6 CoE gap described above for hz.te123.OMC fit 1 applied here too and
+# is likewise closed (PR #65); LL and both CoE intercepts assert against SAS.
+# Measured 2026-09-08 at 8133b2a, stable across seeds 1/2/42/106/999 and
+# n_starts 1/3/5.  The LL tolerance matches fit 1's; the MUE one is looser
+# because the WEIGHT MORBID fit reproduces that intercept about an order of
+# magnitude less closely (9.5e-05 against 1.1e-05).
 test_that("hz.tm123.OMC: morbidity-weighted 2-phase shape params match SAS", {
   testthat::skip_on_cran()
   dir  <- skip_if_no_sas_fixtures()
@@ -1133,9 +1174,14 @@ test_that("hz.tm123.OMC: morbidity-weighted 2-phase shape params match SAS", {
     control = list(n_starts = 3, maxit = 500, conserve = TRUE)
   )
 
-  # LL: P1 #6 gap produces ~0.43 offset; assert within 0.5.
-  expect_equal(fit$fit$objective, ref$loglik, tolerance = 0.5,
-               label = "R LL vs SAS (P1 #6 gap: CoE implementation differs)")
+  # See hz.te123.OMC fit 1 for why this guard is here.
+  expect_true(fit$spec$control$conserve_applied,
+              label = "Conservation of Events actually applied")
+
+  # LL agrees to 4.6e-04 absolute (7.8e-07 relative), inside the .lst's
+  # three-decimal printed precision; 1e-05 relative leaves ~13x margin.
+  expect_equal(fit$fit$objective, ref$loglik, tolerance = 1e-5,
+               label = "R LL vs SAS")
 
   nat       <- ref$natural
   thalf_ref <- nat$estimate[nat$name == "THALF" & nat$phase == "Early"]
@@ -1147,6 +1193,15 @@ test_that("hz.tm123.OMC: morbidity-weighted 2-phase shape params match SAS", {
   expect_equal(unname(th["late.eta"]),              eta_ref,   tolerance = 5e-3,
                label = "ETA (Late) natural-scale")
 
-  # NOTE: MUE NOT asserted — P1 #6 CoE gap shifts MUE ~10% (R 0.01643 vs SAS 0.01828).
+  # CoE intercepts: measured relative differences MUE 9.5e-05, MUL 6.8e-05
+  # (worst across n_starts 1/3/5: 1.3e-04 and 1.5e-04); 1e-03 leaves ~7x.
+  # MUL as a ratio — see hz.te123.OMC fit 1; here MUL is 2.1e-04.
+  mue_ref <- nat$estimate[nat$name == "MUE"]
+  mul_ref <- nat$estimate[nat$name == "MUL"]
+  expect_equal(unname(exp(th["early.log_mu"])), mue_ref, tolerance = 1e-3,
+               label = "MUE (Early) natural-scale")
+  expect_equal(unname(exp(th["late.log_mu"])) / mul_ref, 1, tolerance = 1e-3,
+               label = "MUL (Late) natural-scale, as a ratio to SAS")
+
   # NOTE: NU=1 FIXNU (fixed); M=1e-6 FIXM (fixed) — not compared.
 })

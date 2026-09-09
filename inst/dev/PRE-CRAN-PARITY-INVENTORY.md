@@ -2,7 +2,7 @@
 
 **Source:** `~/Documents/GitHub/hazard/examples/` (18 paired `.sas`/`.lst` fixtures)
 **Capture vintage:** v4.4.6 macOS (refreshed 2026-05-12)
-**Status:** Complete. Captures finalized 2026-05-12; all 54 parity expectations passing.
+**Status:** Complete. Captures finalized 2026-05-12; all 63 parity expectations passing.
 
 ## Scope summary
 
@@ -91,19 +91,42 @@ step reproduced in `.hzr_derive_primisol()`; raw file discovered at
 `~/Documents/GitHub/hazard/examples/data/omc`; n_obs=382 / n_events=44
 verified against SAS.
 
-**Parity tests** at `tests/testthat/test-sas-parity.R` — **54/54 PASS**:
+**Parity tests** at `tests/testthat/test-sas-parity.R`.  The six prototype
+fits listed below are **63/63 PASS** and are a SUBSET of that file, not all of
+it: the file now holds **18 tests / 194 expectations**, 0 failing.  Read 63 as
+"these six", never as the file total — it was the file total in May 2026 and
+has not been since.
+
+Counts below are `testthat`'s own per-test expectation counts, so they can be
+re-derived rather than tallied by eye:
+`as.data.frame(testthat::test_local(filter = "^sas-parity$"))[, c("test", "passed")]`
+(measured 2026-09-09 at `bd75f9f`; all six per-test counts unchanged from
+2026-09-08).
+
+⚠️ **The anchors in that filter are load bearing.** Bare `"sas-parity"` is a
+regex, and it also matches `test-bhdead-sas-parity.R` (3 tests) and
+`test-weights-sas-parity.R` (4 tests) — 25 tests / 196 expectations, which
+reconciles with neither 63 nor 194.  This file carried the unanchored form
+until 2026-09-09, so anyone who ran it as written got a number that matched
+nothing here and no way to see why.  The previous total of 54 had drifted by 2
+before the 2026-09-08 pass, and two of the per-test counts with it.
 - `hz.deadp.KUL` (3-phase all-fixed, 3 free): LL=−3740.52, MUE/MUC/MUL
   natural-scale, SE(E0/C0/L0), 3 off-diagonal vcov entries (14 expectations).
 - `hz.death.AVC` (2-phase free-shape Early): LL=−210.501,
   THALF/NU/MUE/MUC natural-scale, SE(E2) [SE(E0) skipped per P2 #11]
-  (9 expectations).
-- `hz.te123.OMC` fit 1 (left-truncated 2-phase): LL within 0.2 (P1 #6 gap),
-  THALF/NU/ETA natural-scale (5e-3) — MUE skipped per P1 #6 (5 expectations).
-- `hz.te123.OMC` fit 2 (modulated renewal + late covariates): LL within 1e-2,
+  (11 expectations).
+- `hz.te123.OMC` fit 1 (left-truncated 2-phase): CoE-applied guard, LL within
+  1e-5, THALF/NU/ETA natural-scale (5e-3), MUE (1e-4) and MUL as a ratio to
+  SAS (5e-4) (12 expectations).  P1 #6 closed; tolerances re-measured
+  2026-09-08.  MUL is asserted as a ratio because at 2.1e-04 a direct
+  `expect_equal()` falls into waldo's absolute branch and cannot fail.
+- `hz.te123.OMC` fit 2 (modulated renewal + late covariates): LL within 1e-5,
   THALF/NU/MUE/MUL natural-scale (1e-3), NOPREVTE/NOTEE coefficients,
   SE(E2/NOPREVTE/NOTEE) (14 expectations).
-- `hz.tm123.OMC` fit 1 (morbidity-weighted 2-phase): LL within 0.5 (P1 #6),
-  THALF/ETA natural-scale (5e-3) — MUE skipped per P1 #6 (4 expectations).
+- `hz.tm123.OMC` fit 1 (morbidity-weighted 2-phase): CoE-applied guard, LL
+  within 1e-5, THALF/ETA natural-scale (5e-3), MUE (1e-3) and MUL as a ratio
+  to SAS (1e-3) (9 expectations).  P1 #6 closed; tolerances re-measured
+  2026-09-08.
 - `hm.deadp.VALVES` null model (Case 2L: m<0, nu=0): LL=−1864.76 exact,
   finite MUE/MUC (3 expectations).  Confirms P1 #5 closed (misdiagnosis).
 
@@ -182,17 +205,18 @@ via ordered RP3→RP2→RP1 overwrites; multi-row expansion per patient
 (died same day as TE) dropped to match SAS LCENSOR auto-exclusion.
 Final n_obs=382, n_events=44 verified.
 
-**P1 #6 — CoE for 2-phase early+late models (no constant phase).** When
-`conserve = TRUE` with phases = {early, late} (no constant phase), R
-fixes `late.log_mu` via a closed-form constraint, leaving 4 free params.
-SAS CONSERVE keeps all 5 mus free under a Lagrange constraint, reporting
-both MUE and MUL as free in the natural-scale table.  Consequence: R
-finds a slightly worse LL (−322.37 vs SAS −322.23 for hz.te123.OMC fit 1;
-−581.96 vs SAS −581.53 for hz.tm123.OMC) and the late-constrained MUE
-shifts ~10%.  Shape params (THALF, NU, ETA) still match within 5e-3.
-Tests assert shape params within tolerance and note MUE as skipped.
-Affects: `hz.te123.OMC` fit 1, `hz.tm123.OMC`.  Fix: implement Lagrange-
-style CoE for any 2-phase model in `R/likelihood-multiphase.R`.
+**P1 #6 — CLOSED 2026-06-05 (PR #65); diagnosis above was wrong.** The
+gap was never Lagrange-vs-closed-form: the C binary's `consrv` also
+fixes one mu, so R already matched it.  The cause was left truncation.
+Under `LCENSOR STARTTME` the CoE constraint summed `CF(T)` from zero and
+omitted the entry-time term, so the conserved phase absorbed a spurious
+`Sum CF(ST)` — biasing its intercept (MUE 0.01601 vs SAS 0.01740) and
+offsetting the LL by ~0.14 while leaving the shapes correct.  Fixed by
+threading `time_lower` into `.hzr_conserve_events()` and
+`.hzr_select_fixmu_phase()`.  Since then `hz.te123.OMC` fit 1 agrees with
+SAS to 1.3e-04 in LL and 1.1e-05 relative in MUE, and `hz.tm123.OMC` to
+4.6e-04 and 9.5e-05.  Tolerances tightened accordingly 2026-09-08; the
+old ones (LL within 0.2 / 0.5, MUE not asserted) could not fail.
 
 **P1 #5 — CLOSED 2026-05-12 (misdiagnosis).** The alleged ~17-unit LL
 gap at `nu = 0`, `m < 0` was a spurious comparison: the "SAS LL" used

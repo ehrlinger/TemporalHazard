@@ -12,11 +12,13 @@
   this was a fidelity divergence rather than a cosmetic one. The defaults are
   now `PROC HAZARD`'s, and the emitted `hzr_phase()` call names every shape
   argument explicitly so that what is printed and what reaches the optimizer
-  cannot disagree. `TAU` is the exception: `SETG3()` starts a non-positive
-  `TAU` at `2*Tmax/3`, which depends on the data and cannot be reproduced at
-  parse time, so such a phase is emitted at `tau = 1` and recorded in
-  `$untranslated` -- unless `SETG3_ignore_tau()` applies, which pins `TAU` at
-  1 anyway. No job in the *public corpus* is partially specified, so no corpus
+  cannot disagree. `TAU` is the exception, because `PROC HAZARD` derives it
+  from the data: an unspecified `TAU` becomes `0.75 * Tmax`
+  (`src/hazard/readobs.c`) and one written as non-positive becomes
+  `2 * Tmax / 3` (`SETG3()`). Neither can be reproduced at parse time, so such
+  a phase is emitted at `tau = 1` and recorded in `$untranslated`, naming
+  whichever rule applies -- unless `SETG3_ignore_tau()` does, which pins `TAU`
+  at 1 anyway. No job in the *public corpus* is partially specified, so no corpus
   translation changes; the package's own end-to-end fits test does carry a
   partial block (`MUE THALF NU MUC`, no `M`), and its early phase now starts at
   `m = 1`.
@@ -89,6 +91,55 @@
   carries `WEIBULL`, which returns at `setg3.c:347` before the sign dispatch,
   and all of them write `TAU=1 FIXTAU ALPHA=1 FIXALPHA` with a positive `GAMMA`
   and `ETA`. Verified by running the parser over all of them before and after.
+* **`hzr_translate_sas()` no longer builds a phase that `PROC HAZARD` would
+  not.** A `PARMS` statement names its phases with `MUE`, `MUC` and `MUL`; the
+  shape operands (`THALF`/`NU`/`M` early, `TAU`/`GAMMA`/`ALPHA`/`ETA` late)
+  only shape a phase that already exists. The translator had this the other way
+  round and keyed on the shape operands, so
+  `PARMS MUE=0.2 THALF=1 NU=1 TAU=2 GAMMA=1.5` emitted a two-phase model
+  against `PROC HAZARD`'s one -- carrying an invented `mu` starting value of
+  0.1 for the phase that should not have been there, and offering nothing in
+  `$untranslated` to say so. In the reference C only `setparmno()` sets
+  `C->phase[n]`, and only when that `MU` is greater than zero
+  (`src/hazard/setparmno.c`); the seven shape operands are registered by
+  `setprmf()`, which never touches it. A phase is now built only when its own
+  `MU` was specified and positive -- so a `MUC` of exactly zero no longer
+  builds a constant phase either, where before the translator tested only
+  whether the keyword was present. Shape operands belonging to a phase that
+  never activated are recorded in `$untranslated` rather than dropped, since
+  `PROC HAZARD` zeroes them (`src/hazard/stmtprc.c`) and skips their covariates
+  (`src/hazard/setstat.c`). A job that activates no phase at all is now
+  **refused** rather than translated -- whether its `PARMS` named no positive
+  `MU`, or it carried no `PARMS` statement whatsoever. `PROC HAZARD` does not
+  run such a job: `src/hazard/modterm.c` raises `ERROR 1001: No phase
+  selected` and the procedure exits before computing any results, so there is
+  no fit for a translation to be faithful to. The translator previously
+  emitted a runnable single-distribution fit and reported full token coverage;
+  it now emits a `stop()` in place of the `hazard()` call, as it already did
+  for `LCENSOR` combined with `ICENSOR`. The two cases are one state rather
+  than two: `src/hazard/stmtprc.c` zeroes all three phases at initialization
+  and only `setparmno()` turns one back on, so a job with no `PARMS` has no
+  active phase for the same reason a `PARMS` naming `MUE=0` does. `modterm()`
+  is reached on every job, not only once a multiphase model has been selected
+  -- its one call site in `outmods()` is unconditional in the procedure's main
+  sequence.
+
+  The refusal fires only when every `PARMS` operand was understood. A
+  statement this parser could not read is recorded, operand by operand, but
+  never refused: `PARMS MUE = 0.2 THALF = 1` (spaces around `=`) parses to
+  nothing here while `PROC HAZARD`'s own lexer discards whitespace and runs
+  the job with an active early phase, so refusing it would stop a job the
+  reference accepts. A second `PARMS` statement also now adds to the first
+  rather than replacing it, matching the single field table `parmprc()` reads
+  once after all statements are processed.
+
+  One job in the public `hazard` corpus changes, and only to drop a claim that
+  was wrong: the second `%HAZARD` block of
+  `dist/examples/hm.dthar.TGA.sas` is a documentation template carrying
+  literal `?` placeholders, which the reference would reject as a syntax
+  error rather than as `ERROR 1001`. (That file's first block is a valid
+  `PARMS` activating two phases and is unaffected.) Its per-operand rows are
+  unchanged. No corpus job is refused.
 
 * **`hzr_translate_sas()` no longer discards the `ALPHA` and `ETA` a `PARMS`
   statement specified alongside `WEIBULL`.** The translator read the bare
@@ -225,6 +276,36 @@
   interval row, coded `3`, matches no branch of the likelihood and contributes
   nothing. The formula interface translates and is guarded. That asymmetry is a
   pre-existing defect of the vector path, tracked in #226.
+
+## Testing
+
+* **The SAS parity tests for `hz.te123.OMC` fit 1 and `hz.tm123.OMC` still
+  described the P1 #6 Conservation-of-Events gap that PR #65 closed, and their
+  tolerances were set from that gap rather than from the code's behaviour.**
+  Fit 1 asserted the log-likelihood within `0.2` where R and SAS now agree to
+  1.3e-04, `hz.tm123.OMC` within `0.5` against 4.6e-04, and neither asserted `MUE`
+  at all, each carrying a comment quoting a value the fix had already moved. Restoring
+  the pre-PR-#65 defect -- dropping the entry-time term from
+  `.hzr_conserve_events()` -- left every one of those assertions passing, so
+  they could not have caught the regression they were nominally about. The
+  log-likelihood tolerances are now `1e-5` (relative), both
+  Conservation-of-Events intercepts `MUE` and `MUL` are asserted, and each fit
+  first checks `conserve_applied`, since CoE disables itself silently on
+  unsupported data. The same mutation now fails six assertions.
+
+  `MUL` is compared as a ratio to the SAS value rather than directly, and that
+  distinction is the point rather than a detail. `expect_equal()` divides by
+  `mean(abs(expected))` only when that exceeds `tolerance`; `MUL` is 2.1e-04,
+  below any tolerance worth setting for it, so a direct comparison silently
+  becomes an *absolute* one -- `MUL = 0` passes at `5e-04`, and so does the
+  regression above. A first version of this change asserted `MUL` directly and
+  reproduced, in the fix, the defect it was removing. Against an expected value
+  of `1` the comparison is relative, as the tolerance implies. `hz.te123.OMC`
+  fit 2's pre-existing `MUL` assertion sat 7% above that branch point and moves
+  to the same form. `hz.te123.OMC` fit 2's log-likelihood tolerance
+  goes from `1e-2` to `1e-5` for the same reason; it carried no stale claim, but
+  `1e-2` admitted a drift of 3.1 in log-likelihood on a quantity matching to
+  1.5e-04. No package code changed.
 
 # TemporalHazard 1.2.8
 

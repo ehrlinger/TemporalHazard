@@ -318,11 +318,18 @@ test_that("the alpha = 1 guard does not fire on a job with no late phase", {
   # flagged about GAMMA and ETA it has no phase for. A false positive on the
   # untranslated frame is not harmless -- that frame is how a caller decides
   # whether a translation is trustworthy.
-  expect_equal(nrow(.hzr_parse_parms(c("MUE=0.2", "THALF=1", "NU=1",
-                                       "FIXALPHA"))$untranslated), 0L)
-  expect_equal(nrow(.hzr_parse_parms(c("MUE=0.2", "THALF=1", "NU=1",
-                                       "FIXALPHA", "WEIBULL"))$untranslated), 0L)
-  expect_equal(nrow(.hzr_parse_parms(c("MUC=0.01", "FIXALPHA"))$untranslated), 0L)
+  #
+  # Asserts that no row blames SETG3_ignore_tau(), not that there are no rows:
+  # a stray FIXALPHA on a job with no late phase IS dropped material and earns
+  # its own row (PROC HAZARD clears its status flag at stmtprc.c:118-121). An
+  # nrow == 0 proxy would fail on that unrelated and correct row.
+  no_setg3 <- function(ops) {
+    u <- .hzr_parse_parms(ops)$untranslated
+    expect_false(any(grepl("SETG3|GAMMA\\*ETA|estimates GAMMA", u$reason)))
+  }
+  no_setg3(c("MUE=0.2", "THALF=1", "NU=1", "FIXALPHA"))
+  no_setg3(c("MUE=0.2", "THALF=1", "NU=1", "FIXALPHA", "WEIBULL"))
+  no_setg3(c("MUC=0.01", "FIXALPHA"))
 })
 
 test_that("ETA is fixed even when ALPHA was left to its default", {
@@ -347,8 +354,10 @@ test_that("the alpha = 1 guard does not fire without MUL", {
   #
   # Gating on shape operands instead of MUL got this wrong: TAU/GAMMA/ETA with
   # no MUL is not a late phase at all.
+  # Since the MU gate landed, no MUL builds no late phase at all, so there is
+  # no `fixed=` to inspect -- the stronger form of the same claim.
   got <- .hzr_parse_parms(c("TAU=2", "GAMMA=2", "ETA=3", "FIXALPHA"))
-  expect_false("eta" %in% eval(got$phases)[[1L]]$fixed)
+  expect_length(eval(got$phases), 0L)
 })
 
 test_that("the ALPHA = 0 WEIBULL guard does not fire without MUL", {
@@ -807,10 +816,19 @@ test_that("a late shape SETG3 leaves alone records nothing", {
 test_that("the SETG3 trace is gated on an active late phase", {
   # Same gate as every other SETG3 guard: with no positive MUL, shape.c never
   # calls SETG3(), so neither a refusal nor a rewrite can happen.
-  expect_equal(nrow(.hzr_parse_parms(c("GAMMA=0", "FIXGAMMA",
-                                       "ETA=2"))$untranslated), 0L)
-  expect_equal(nrow(.hzr_parse_parms(c("MUL=0", "FIXTAU",
-                                       "GAMMA=2"))$untranslated), 0L)
+  #
+  # These jobs are NOT silent -- the MU gate records the orphaned operands, and
+  # the no-phase job is refused outright -- so this asserts the absence of the
+  # SETG3 rows specifically. An nrow == 0 here would be asserting the MU gate's
+  # rows away, which is the opposite of what either guard wants.
+  setg3_rows <- function(ops) {
+    r <- .hzr_parse_parms(ops)$untranslated$reason
+    sum(grepl("SETG3|optimizes from", r))
+  }
+  expect_equal(setg3_rows(c("GAMMA=0", "FIXGAMMA", "ETA=2")), 0L)
+  expect_equal(setg3_rows(c("MUL=0", "FIXTAU", "GAMMA=2")), 0L)
+  # And the paired active case does produce one, so the helper can fail.
+  expect_gt(setg3_rows(c("MUL=0.01", "TAU=2", "GAMMA=1", "ETA=2")), 0L)
 })
 
 test_that("the ignore_tau swap is NOT product-preserving when the product is <= 0", {
@@ -936,4 +954,223 @@ test_that("an unknown refusal code degrades instead of erroring", {
   # added to the trace but not the table.
   expect_equal(.hzr_setg3_refusal_reason("(SETG39999)"),
                "the operand combination is rejected")
+})
+
+# ---------------------------------------------------------------------------
+# A phase is active iff its MU was specified and positive (setparmno.c:11-14).
+# ---------------------------------------------------------------------------
+
+test_that("late shape operands with no MUL build no phase and are recorded", {
+  # parmprc.c:19-23 registers MUL through setparmno() and TAU/GAMMA/ALPHA/ETA
+  # through setprmf(), and setprmf() never touches C->phase[]. With phase 3
+  # off, stmtprc.c:113-122 zeroes all four operands and shape.c:31 never calls
+  # SETG3(). So this is a one-phase job in PROC HAZARD, and the operands are
+  # discarded -- recorded here rather than dropped silently.
+  # M is unspecified, so it starts at PROC HAZARD's default of 1, not
+  # hzr_phase()'s 0 -- see the shape-defaults block above.
+  got <- .hzr_parse_parms(c("MUE=0.2", "THALF=1", "NU=1", "TAU=2", "GAMMA=1.5"))
+  expect_equal(got$phases,
+               quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1))))
+  expect_equal(got$theta, quote(c(log(0.2), log(1), 1, 1)))
+  expect_equal(nrow(got$untranslated), 1L)
+  expect_equal(got$untranslated$construct, "TAU=2 GAMMA=1.5")
+  expect_match(got$untranslated$reason, "no active MUL")
+})
+
+test_that("early shape operands with no MUE build no phase and are recorded", {
+  # The mirror of the above through stmtprc.c:101-112 and shape.c:19.
+  # GAMMA/ALPHA/ETA are unspecified and start at PROC HAZARD's 1/1/2. That
+  # product is exactly 2, so SETG3_verify_ge_2() would rewrite GAMMA -- a
+  # second row, deliberately not mirrored (see the SETG3 block above).
+  got <- .hzr_parse_parms(c("THALF=1", "NU=1", "MUL=0.05", "TAU=2"))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("g3", tau = 2, gamma = 1, alpha = 1, eta = 2)))
+  )
+  expect_equal(got$theta, quote(c(log(0.05), log(2), 1, 1, 2)))
+  expect_equal(nrow(got$untranslated), 2L)
+  expect_true("THALF=1 NU=1" %in% got$untranslated$construct)
+  expect_true(any(grepl("no active MUE", got$untranslated$reason)))
+})
+
+test_that("a MU of zero is inactive, not merely absent", {
+  # setparmno.c:11 gates on stmtfld(parmno) > ZERO, so MUE=0 registers the
+  # keyword but leaves C->phase[1] at 0. Absence and non-positivity are the
+  # same outcome, and testing only for absence would let this through.
+  got <- .hzr_parse_parms(c("MUE=0", "THALF=1", "NU=1", "MUC=0.001"))
+  expect_equal(got$phases, quote(list(hzr_phase("constant"))))
+  expect_equal(got$theta, quote(c(log(0.001))))
+  expect_true(any(grepl("no active MUE", got$untranslated$reason)))
+})
+
+test_that("MUC gates the constant phase on positivity, not presence", {
+  # shape.c:23 reads Common.phase[2], set by setparmno(21, 6, 2, ...) under the
+  # same > ZERO gate as the other two. A presence test would build this phase.
+  off <- .hzr_parse_parms(c("MUE=0.2", "THALF=1", "NU=1", "MUC=0"))
+  expect_equal(off$phases,
+               quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1))))
+  expect_equal(off$theta, quote(c(log(0.2), log(1), 1, 1)))
+  expect_equal(off$untranslated$construct, "MUC=0")
+
+  # The paired positive case, so the assertion above cannot pass by the phase
+  # never being built at all.
+  on <- .hzr_parse_parms(c("MUE=0.2", "THALF=1", "NU=1", "MUC=0.001"))
+  expect_equal(
+    on$phases,
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1),
+               hzr_phase("constant")))
+  )
+  expect_equal(on$theta, quote(c(log(0.2), log(1), 1, 1, log(0.001))))
+  expect_equal(nrow(on$untranslated), 0L)
+})
+
+test_that("theta drops the block of a phase that was not built", {
+  # .hzr_phase_theta_names() labels theta by *position*, so a phase that is
+  # not built must not leave its block behind: the late block would otherwise
+  # be read as the early phase's shape. Asserts the whole vector, not its
+  # length -- a length check passes on a block of the wrong contents.
+  got <- .hzr_parse_parms(c("THALF=9", "NU=7", "M=5", "MUC=0.001",
+                            "MUL=0.05", "TAU=2", "GAMMA=1.5"))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("constant"),
+               hzr_phase("g3", tau = 2, gamma = 1.5, alpha = 1, eta = 2)))
+  )
+  expect_equal(got$theta, quote(c(log(0.001), log(0.05), log(2), 1.5, 1, 2)))
+})
+
+test_that("a PARMS with no active MU builds nothing and says so", {
+  # The hollow-object case from AGENTS.md: has_phases must be FALSE rather
+  # than the caller receiving an empty list() that looks like a translation.
+  got <- .hzr_parse_parms(c("THALF=1", "NU=1", "TAU=2"))
+  expect_false(got$has_phases)
+  expect_equal(got$phases, quote(list()))
+  expect_setequal(
+    got$untranslated$construct,
+    c("THALF=1 NU=1", "TAU=2", "PARMS with no positive MUE, MUC or MUL")
+  )
+})
+
+test_that("no active MU at all is recorded as the refusal PROC HAZARD raises", {
+  # modterm.c:18-22: with phase[1], phase[2] and phase[3] all 0 the reference
+  # prints "No phase selected", sets C->errorno = 1001 and the job does not
+  # run. Without this row .hzr_parse_job() omits `dist` (sas-parse-job.R:604),
+  # the emitted call falls through to hazard()'s default distribution, and
+  # hzr_translate_sas() reports full coverage for a job SAS refuses -- an
+  # output that looks like a result. Same shape as the SETG3980 guard.
+  got <- .hzr_parse_parms(c("MUE=0", "THALF=1"))
+  expect_false(got$has_phases)
+  expect_true(any(grepl("modterm.c", got$untranslated$reason, fixed = TRUE)))
+
+  # The paired case that must NOT be refused: MUE is positive, so PROC HAZARD
+  # does select phase 1 and does run the job -- this parser declines to
+  # translate it for a different reason (no shape operand), and saying
+  # "no phase selected" there would be a false positive.
+  ok <- .hzr_parse_parms(c("MUE=0.2"))
+  expect_false(any(grepl("modterm.c", ok$untranslated$reason, fixed = TRUE)))
+  expect_equal(ok$untranslated$construct, "MUE=0.2")
+})
+
+test_that("a job with no PARMS operands at all is refused, not defaulted", {
+  # The wider half of the same modterm.c rule. A PROC HAZARD job carrying no
+  # PARMS statement reaches here with operands = character(0), so no
+  # setparmno() call ever fires (parmprc.c:13,18,19), all three C->phase[]
+  # stay at their stmtprc.c:87 zero, and modterm.c:18-22 raises ERROR 1001.
+  # modterm() is universal rather than multiphase-only: its single call site
+  # is outmods.c:91, outmods() is unconditional in main (hazard.c:296), and
+  # hazard.c:299-302 routes 1001 to hzfxit("SEMANTIC") BEFORE results(). The
+  # job never fits, so a translation that emits one is a wrong answer.
+  got <- .hzr_parse_parms(character(0))
+  expect_false(got$has_phases)
+  expect_true(got$refused)
+  expect_equal(got$untranslated$construct,
+               "no PARMS operands (no MUE, MUC or MUL)")
+  expect_true(any(grepl("modterm.c", got$untranslated$reason, fixed = TRUE)))
+})
+
+test_that("operands this parser cannot read are recorded but never refused", {
+  # `refused` drives a stop() in place of the fit, so it is a claim about what
+  # PROC HAZARD does and is sound only when the whole statement was understood.
+  # .hzr_parse_hazard() splits on " ", so `PARMS MUE = 0.2` arrives as separate
+  # "MUE", "=", "0.2" operands and nothing parses -- while HAZARD's lexer drops
+  # whitespace unconditionally (hazard_l.l:32, rule at :50) and RUNS that job
+  # with an active early phase. Refusing it would stop a job the reference
+  # accepts, so the gate must key on comprehension, not on has_phases.
+  spaced <- .hzr_parse_parms(c("MUE", "=", "0.2", "THALF", "=", "1"))
+  expect_false(spaced$has_phases)
+  expect_false(spaced$refused)
+  expect_false(any(grepl("modterm.c", spaced$untranslated$reason, fixed = TRUE)))
+  # Not refusing is not the same as declaring it fine -- the operands are still
+  # reported, so this cannot pass by the parser having silently accepted them.
+  expect_true("MUE" %in% spaced$untranslated$construct)
+
+  # The paired readable case, so the assertions above cannot pass merely
+  # because nothing ever refuses: MUE=0 is understood AND selects no phase.
+  read <- .hzr_parse_parms(c("MUE=0", "THALF=1"))
+  expect_false(read$has_phases)
+  expect_true(read$refused)
+})
+
+test_that("a PARMS template with `?` placeholders is not refused as no-phase", {
+  # The SECOND %HAZARD block of dist/examples/hm.dthar.TGA.sas (line 110,
+  # PARMS at 122) carries literal `PARMS MUE=? THALF=? NU=? M=1 FIXM MUC=?;`
+  # for the reader to fill in from the stepwise output above it. The file's
+  # FIRST block (line 70, PARMS at 74) is fully valid and activates phases 1
+  # and 2, so grepping the file for a valid PARMS will find one -- the shape
+  # under test here belongs to the second block alone. Every value is non-numeric, so no MU is
+  # active -- but that is this parser failing to read the statement, not PROC
+  # HAZARD selecting no phase, and the reference would reject `?` as a SYNTAX
+  # error long before modterm.c's ERROR 1001. Claiming "No phase selected"
+  # here would attribute the wrong refusal to the reference, and now that
+  # `refused` emits a stop() it would also replace the fit on that basis.
+  got <- .hzr_parse_parms(c("MUE=?", "THALF=?", "M=1", "FIXM", "MUC=?"))
+  expect_false(got$has_phases)
+  expect_false(got$refused)
+  expect_false(any(grepl("modterm.c", got$untranslated$reason, fixed = TRUE)))
+  # The unreadable operands are each still reported by name, so the assertions
+  # above cannot pass by the whole statement having been silently dropped.
+  expect_true(all(c("MUE=?", "THALF=?", "MUC=?") %in% got$untranslated$construct))
+})
+
+test_that("covariates of a phase that is not built are recorded, not dropped", {
+  # setstat.c:9-12 returns early for a phase whose C->phase[] is 0, so PROC
+  # HAZARD drops these too -- the values agree and only silence would be wrong.
+  # This is the hole the MU gate opened: with MUL present the covariate
+  # survives into the emitted formula, so it must not simply vanish without it.
+  got <- .hzr_parse_parms(c("MUE=0.2", "THALF=1", "NU=1", "TAU=2"),
+                          covars = list(late = "AGE=1.2, SEX=0.5"))
+  expect_equal(got$phases, quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1))))
+  expect_equal(got$untranslated$construct, "TAU=2 AGE SEX")
+
+  # The paired built case, so the assertion above cannot pass by the covariates
+  # never having been parsed at all.
+  kept <- .hzr_parse_parms(c("MUE=0.2", "THALF=1", "NU=1", "MUL=0.05", "TAU=2"),
+                           covars = list(late = "AGE=1.2, SEX=0.5"))
+  expect_equal(
+    kept$phases,
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1),
+               hzr_phase("g3", tau = 2, gamma = 1, alpha = 1, eta = 2,
+                         formula = ~AGE + SEX)))
+  )
+  # The defaulted GAMMA*ETA is exactly 2, so SETG3_verify_ge_2() would rewrite
+  # GAMMA -- one row, and not about the covariates this test is pinning.
+  expect_false(any(grepl("AGE|SEX", kept$untranslated$construct)))
+})
+
+test_that("constant phase covariates with no active MUC are recorded", {
+  got <- .hzr_parse_parms(c("MUE=0.2", "THALF=1", "NU=1", "MUC=0"),
+                          covars = list(constant = "AGE=1.2"))
+  expect_equal(got$phases, quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1))))
+  expect_setequal(got$untranslated$construct, c("MUC=0", "AGE"))
+})
+
+test_that("FIX tokens of a phase that is not built are recorded", {
+  # A reader grepping $untranslated for FIXTAU must find it: the token pinned a
+  # parameter in the SAS job and has no effect on the emitted R call.
+  got <- .hzr_parse_parms(c("THALF=1", "NU=1", "FIXTHALF", "MUL=0.05",
+                            "TAU=2", "FIXTAU"))
+  expect_equal(got$phases,
+               quote(list(hzr_phase("g3", tau = 2, gamma = 1, alpha = 1,
+                                    eta = 2, fixed = "tau"))))
+  expect_true("THALF=1 NU=1 FIXTHALF" %in% got$untranslated$construct)
 })
