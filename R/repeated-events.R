@@ -170,3 +170,73 @@
   place <- c(seq_len(nrow(data)), extra_rows + 0.5)
   combined[order(place, method = "radix"), , drop = FALSE]
 }
+
+# Stage 5 -- SAS:
+#   if &rcensor=1 or &eventype=1;
+#   if &eventype=1 then &event=1; else &event=0;
+#
+# A subsetting IF, then the event flag.  &eventype=1 is an exact test:
+# a missing eventype fails it, and so does any other code.
+.hzr_re_stage5 <- function(data, indicator) {
+  is_event <- !is.na(data[[indicator]]) & data[[indicator]] == 1
+  data <- data[data$rcensor == 1 | is_event, , drop = FALSE]
+  data$event <- as.numeric(!is.na(data[[indicator]]) & data[[indicator]] == 1)
+  data
+}
+
+# Stage 6 -- SAS:
+#   retain lag_iv 0 number 0;
+#   &iv_start=0; &event_no=0;
+#   if first.&id=1 then do; number=&event; &event_no=&event; end;
+#   else do; &iv_start=lag_iv; &event_no=number + &event; number=&event_no; end;
+#   lag_iv=&iv_event;
+#   if &iv_event=&iv_end then &rcensor=1;
+#   &iv_seg=&iv_event-&iv_start;
+#   &renewal=&event_no;
+#   if (first and &event_no=0) or (last and &rcensor=1 and &event=0)
+#      then &renewal=&event_no+1;
+#
+# The loop is row-sequential because SAS's RETAIN is.  lag_iv and number
+# are DATA-step loop state and are deliberately NOT returned -- see
+# REPEATED-EVENTS-DESIGN.md, "Column-count discrepancy".
+.hzr_re_stage6 <- function(data, id, time, followup) {
+  data <- data[.hzr_re_order(data, id, time), , drop = FALSE]
+  flags <- .hzr_re_flags(data[[id]])
+  n <- nrow(data)
+
+  event_time <- data[[time]]
+  event <- data$event
+  iv_start <- numeric(n)
+  event_no <- numeric(n)
+  lag_iv <- 0
+  number <- 0
+
+  for (i in seq_len(n)) {
+    if (flags$first[i]) {
+      number <- event[i]
+      event_no[i] <- event[i]
+    } else {
+      iv_start[i] <- lag_iv
+      event_no[i] <- number + event[i]
+      number <- event_no[i]
+    }
+    lag_iv <- event_time[i]
+  }
+
+  data$iv_start <- iv_start
+  data$event_no <- event_no
+
+  at_end <- !is.na(event_time) & !is.na(data[[followup]]) & event_time == data[[followup]]
+  data$rcensor[at_end] <- 1
+
+  data$iv_seg <- event_time - iv_start
+
+  # `first` and `last` here are the stage-4 columns, deliberately stale.
+  # `rcensor` is the value just updated on the line above, not stage 5's.
+  data$renewal <- event_no
+  bump <- (data$first == 1 & event_no == 0) |
+    (data$last == 1 & data$rcensor == 1 & data$event == 0)
+  data$renewal[bump] <- event_no[bump] + 1
+
+  data
+}

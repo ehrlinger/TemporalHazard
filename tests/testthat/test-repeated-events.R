@@ -131,3 +131,88 @@ test_that("stage 4's appended row inherits first and last from its source row", 
   expect_equal(s1$first, c(1, 0, 0))
   expect_equal(s1$last, c(0, 1, 1))
 })
+
+re_through_stage4 <- function(d = re_fixture()) {
+  .hzr_re_stage4(
+    .hzr_re_stage3(.hzr_re_stage2(.hzr_re_stage1(d), "id", "t", "ev"), "id", "t", "fu", "ev"),
+    "id", "t", "fu", "ev"
+  )
+}
+
+test_that("stage 5 derives event from eventype=1 exactly, not from the non-event complement", {
+  d <- data.frame(
+    id = c("a", "a", "a"), t = c(1, 2, 3), fu = c(9, 9, 9), ev = c(1, 2, 0),
+    rcensor = c(0, 1, 1), first = c(1, 0, 0), last = c(0, 0, 1), stringsAsFactors = FALSE
+  )
+  out <- .hzr_re_stage5(d, "ev")
+  expect_equal(out$ev, c(1, 2, 0))
+  expect_equal(out$event, c(1, 0, 0))
+})
+
+test_that("stage 5 keeps only censored rows and events", {
+  d <- data.frame(
+    id = c("a", "a"), t = c(1, 2), fu = c(9, 9), ev = c(0, 1),
+    rcensor = c(0, 0), first = c(1, 0), last = c(0, 1), stringsAsFactors = FALSE
+  )
+  out <- .hzr_re_stage5(d, "ev")
+  expect_equal(nrow(out), 1L)
+  expect_equal(out$t, 2)
+})
+
+test_that("stage 6 lags the event time within subject to give iv_start and iv_seg", {
+  out <- .hzr_re_stage6(.hzr_re_stage5(re_through_stage4(), "ev"), "id", "t", "fu")
+  s1 <- out[out$id == "s1", ]
+  expect_equal(s1$t, c(1, 3, 10))
+  expect_equal(s1$iv_start, c(0, 1, 3))
+  expect_equal(s1$iv_seg, c(1, 2, 7))
+})
+
+test_that("stage 6 counts event repeats within subject and restarts at each subject", {
+  out <- .hzr_re_stage6(.hzr_re_stage5(re_through_stage4(), "ev"), "id", "t", "fu")
+  expect_equal(out$event_no[out$id == "s1"], c(1, 2, 2))
+  expect_equal(out$event_no[out$id == "s2"], c(1, 1))
+  expect_equal(out$event_no[out$id == "s3"], 0)
+})
+
+test_that("stage 6 sets rcensor where the event time equals end of follow-up", {
+  d <- data.frame(
+    id = c("a"), t = 9, fu = 9, ev = 1, rcensor = 0, first = 1, last = 1, stringsAsFactors = FALSE
+  )
+  out <- .hzr_re_stage6(.hzr_re_stage5(d, "ev"), "id", "t", "fu")
+  expect_equal(out$rcensor, 1)
+})
+
+test_that("stage 6 bumps renewal for a subject with no events and for a trailing censored row", {
+  out <- .hzr_re_stage6(.hzr_re_stage5(re_through_stage4(), "ev"), "id", "t", "fu")
+  # s3 never had an event: first == 1 and event_no == 0, so renewal is bumped to 1.
+  expect_equal(out$renewal[out$id == "s3"], 1)
+  # s1's trailing censored row: last == 1, rcensor == 1, event == 0, so 2 -> 3.
+  expect_equal(out$renewal[out$id == "s1"], c(1, 2, 3))
+})
+
+test_that("stage 6 reads the STALE first/last from stage 4, not flags recomputed after stage 5", {
+  # Subject "a" has three rows at stage 4, with last == 1 on the third.
+  # Stage 5 removes that third row (rcensor 0 and not an event), so the
+  # carried flags leave NO row with last == 1, while flags recomputed
+  # after the subset would put last == 1 on the second row.  That second
+  # row satisfies the rest of the renewal bump (rcensor == 1, event == 0),
+  # so the two readings give different renewal values -- which is what
+  # makes this test able to fail.
+  #
+  #   carried    -> last c(0, 0) -> no bump -> renewal c(1, 1)
+  #   recomputed -> last c(0, 1) ->    bump -> renewal c(1, 2)
+  d <- data.frame(
+    id      = c("a", "a", "a"),
+    t       = c(1, 5, 7),
+    fu      = c(9, 9, 9),
+    ev      = c(1, 0, 0),
+    rcensor = c(0, 1, 0),
+    first   = c(1, 0, 0),
+    last    = c(0, 0, 1),
+    stringsAsFactors = FALSE
+  )
+  out <- .hzr_re_stage6(.hzr_re_stage5(d, "ev"), "id", "t", "fu")
+  expect_equal(nrow(out), 2L)
+  expect_equal(out$last, c(0, 0))
+  expect_equal(out$renewal, c(1, 1))
+})
