@@ -226,7 +226,13 @@
   data$iv_start <- iv_start
   data$event_no <- event_no
 
-  at_end <- !is.na(event_time) & !is.na(data[[followup]]) & event_time == data[[followup]]
+  # SAS numeric missing is an ordered value that compares equal to itself, so
+  # `if . = . then` is TRUE: a row with both &iv_event and &iv_end missing is
+  # at end of follow-up. Only the one-side-missing case is false (`. = 9` is
+  # false), so that case, and only that case, is excluded below.
+  both_missing <- is.na(event_time) & is.na(data[[followup]])
+  at_end <- both_missing |
+    (!is.na(event_time) & !is.na(data[[followup]]) & event_time == data[[followup]])
   data$rcensor[at_end] <- 1
 
   data$iv_seg <- event_time - iv_start

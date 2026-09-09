@@ -150,9 +150,13 @@ test_that("stage 5 derives event from eventype=1 exactly, not from the non-event
 })
 
 test_that("stage 5 keeps only censored rows and events", {
+  # Row 3 (ev = 2, rcensor = 0) is neither an event nor censored, and SAS
+  # drops it. The complement-of-nonevent form (!.hzr_re_nonevent(ev)) would
+  # treat ev = 2 as event-like and keep it, since it is not 0 or missing --
+  # this row is what makes the test able to fail against that mutant.
   d <- data.frame(
-    id = c("a", "a"), t = c(1, 2), fu = c(9, 9), ev = c(0, 1),
-    rcensor = c(0, 0), first = c(1, 0), last = c(0, 1), stringsAsFactors = FALSE
+    id = c("a", "a", "a"), t = c(1, 2, 3), fu = c(9, 9, 9), ev = c(0, 1, 2),
+    rcensor = c(0, 0, 0), first = c(1, 0, 0), last = c(0, 0, 1), stringsAsFactors = FALSE
   )
   out <- .hzr_re_stage5(d, "ev")
   expect_equal(nrow(out), 1L)
@@ -177,6 +181,17 @@ test_that("stage 6 counts event repeats within subject and restarts at each subj
 test_that("stage 6 sets rcensor where the event time equals end of follow-up", {
   d <- data.frame(
     id = c("a"), t = 9, fu = 9, ev = 1, rcensor = 0, first = 1, last = 1, stringsAsFactors = FALSE
+  )
+  out <- .hzr_re_stage6(.hzr_re_stage5(d, "ev"), "id", "t", "fu")
+  expect_equal(out$rcensor, 1)
+})
+
+test_that("stage 6 sets rcensor at end of follow-up when both time and followup are missing", {
+  # SAS numeric missing compares equal to itself, so `if . = . then` is TRUE:
+  # a row with both &iv_event and &iv_end missing is at end of follow-up.
+  d <- data.frame(
+    id = c("a"), t = NA_real_, fu = NA_real_, ev = 1, rcensor = 0, first = 1, last = 1,
+    stringsAsFactors = FALSE
   )
   out <- .hzr_re_stage6(.hzr_re_stage5(d, "ev"), "id", "t", "fu")
   expect_equal(out$rcensor, 1)
