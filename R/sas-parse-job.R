@@ -582,6 +582,33 @@
     ))
   }
 
+  # A PARMS statement that builds no phase and is NOT refused -- operands this
+  # parser could not read (a template's `MUE=?`) or could not use (a MUE with
+  # no shape operand). This is not a claim about PROC HAZARD, which is why it
+  # is kept apart from `refused` above. Theta blocks are built only alongside
+  # phases, so the call below would carry theta = c() under hazard()'s
+  # default Weibull: a model PROC HAZARD never fits, with no starting values.
+  # hazard() refuses that call now; before, it returned an unfitted object and
+  # the chunk rendered as if it held a result. Stop here instead, where the
+  # message can name the real cause.
+  if (!isTRUE(parms$has_phases)) {
+    return(list(
+      call = quote(stop(
+        "This job's PARMS statement builds no phase this translator could ",
+        "use, so there are no starting values to fit from. The operands it ",
+        "could not read or use are listed in $untranslated -- for example ",
+        "`?` placeholders left for the reader to fill in, an operand ",
+        "written with spaces around `=` (`MUE = 0.2`, which this translator ",
+        "splits apart), or a MUE or MUL with no shape operand. This is a ",
+        "limit of the translation, not a PROC HAZARD refusal. Correct those ",
+        "operands and translate again, or fit the model by hand.",
+        call. = FALSE
+      )),
+      status_call = NULL, outhaz = outhaz, untranslated = untr,
+      tokens_seen = seen, tokens_mapped = mapped
+    ))
+  }
+
   # The status expression is hoisted into its own chunk, named .hzr_status so
   # it cannot collide with a SAS variable, because every job carries at least
   # one guard that must run, and be seen to run, ahead of the fit: the

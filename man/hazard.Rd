@@ -82,7 +82,11 @@ piecewise time-varying coefficients. When provided, each predictor column in
 \code{x} is expanded into one column per time window so each window gets its own
 coefficient.}
 
-\item{theta}{Optional numeric coefficient vector (starting values for optimization).}
+\item{theta}{Numeric starting values for optimization: the shape
+parameters, then one coefficient per column of the design matrix.
+Required when \code{fit = TRUE} with a single-distribution \code{dist}; optional for
+\code{dist = "multiphase"}, which assembles its own starting values from
+\code{phases} when \code{theta} is \code{NULL}.}
 
 \item{dist}{Character baseline distribution label (default \code{"weibull"}).
 One of \code{"weibull"}, \code{"exponential"}, \code{"loglogistic"}, \code{"lognormal"}, or

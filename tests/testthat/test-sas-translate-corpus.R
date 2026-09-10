@@ -130,8 +130,14 @@ test_that("public-corpus jobs that translate also render", {
   # count is asserted so a shrinking eligible set fails rather than
   # quietly reducing what is tested. Floors, not equalities, so a corpus
   # that grows does not fail.
+  #
+  # Re-measured 2026-09-10: 10 eligible, 12 partial. The eleventh eligible
+  # job, hm.dthar.TGA.sas, never rendered a fit: its second PARMS is a `?`
+  # template, so fit_2 was hazard(fit = TRUE, theta = c()) and bound an
+  # unfitted object, which this test counted as rendered. The translator
+  # now emits a stop() there, which makes the job partial.
   expect_gt(n_trans, 20L)
-  expect_gte(n_eligible, 11L)
-  expect_gte(n_partial, 11L)
+  expect_gte(n_eligible, 10L)
+  expect_gte(n_partial, 12L)
   expect_equal(n_rendered, n_eligible)
 })

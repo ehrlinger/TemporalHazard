@@ -318,12 +318,17 @@ test_that("a scope naming a nonexistent column warns under both criteria", {
 test_that("criterion = 'score' rejects a non-converged base up front", {
   data(avc)
   avc <- na.omit(avc)
-  # No theta starting values -> the weibull base does not converge and is
-  # left with an empty theta, so the score statistic has nothing to evaluate.
-  base_bad <- hazard(survival::Surv(int_dead, dead) ~ age,
-                     data = avc, dist = "weibull", fit = TRUE)
-  expect_false(isTRUE(base_bad$fit$converged))
-  expect_length(base_bad$fit$theta, 0L)
+  # One iteration from a real start: the optimizer runs and stops short, so
+  # the base has coefficients but did not converge. (This used to omit theta,
+  # which never ran the optimizer at all -- converged NA, not FALSE -- and
+  # hazard() now refuses that call.)
+  base_bad <- suppressWarnings(
+    hazard(survival::Surv(int_dead, dead) ~ age, data = avc,
+           dist = "weibull", fit = TRUE, theta = c(0.5, 1, 0),
+           control = list(maxit = 1))
+  )
+  expect_identical(base_bad$fit$converged, FALSE)
+  expect_length(base_bad$fit$theta, 3L)
 
   expect_error(
     hzr_stepwise(base_bad, scope = ~ age + mal, data = avc,
@@ -332,10 +337,13 @@ test_that("criterion = 'score' rejects a non-converged base up front", {
   )
 
   # wald refits each candidate from the call and tolerates the bad base.
-  expect_no_error(
-    hzr_stepwise(base_bad, scope = ~ age + mal, data = avc,
-                 criterion = "wald", direction = "forward", trace = FALSE)
-  )
+  # Assert the screen tested something: a screen whose refits all failed
+  # also returns without error.
+  res <- hzr_stepwise(base_bad, scope = ~ age + mal, data = avc,
+                      criterion = "wald", direction = "forward",
+                      trace = FALSE)
+  expect_length(res$criteria$refit_failures, 0L)
+  expect_identical(res$steps$variable[res$steps$action == "enter"], "mal")
 })
 
 test_that("score and wald paths agree that a factor candidate is not selectable", {

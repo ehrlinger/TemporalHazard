@@ -34,14 +34,18 @@ test_that("Surv(0, t, d) fits identically to Surv(t, d) on Weibull", {
   df <- make_toy_rc()
   df$start <- 0
 
+  # theta is required: without it hazard() used to skip the optimizer, and
+  # this test compared NULL coefficients with NULL coefficients.
   fit_rc <- hazard(
     survival::Surv(time, status) ~ x,
-    data = df, dist = "weibull", fit = TRUE
+    data = df, dist = "weibull", fit = TRUE, theta = c(0.5, 1, 0)
   )
   fit_cp <- hazard(
     survival::Surv(start, time, status) ~ x,
-    data = df, dist = "weibull", fit = TRUE
+    data = df, dist = "weibull", fit = TRUE, theta = c(0.5, 1, 0)
   )
+  expect_true(fit_rc$fit$converged)                 # guard: both fits ran
+  expect_true(fit_cp$fit$converged)
 
   expect_equal(coef(fit_rc), coef(fit_cp), tolerance = 1e-3)
   expect_equal(fit_rc$fit$objective, fit_cp$fit$objective, tolerance = 1e-4)
@@ -155,14 +159,18 @@ test_that("Weibull fit on split-epoch data matches unsplit fit", {
   df <- make_toy_rc()
   df_split <- split_epochs(df, split_frac = 0.35)
 
+  # theta is required: without it hazard() used to skip the optimizer, and
+  # this test compared NULL coefficients with NULL coefficients.
   fit_orig <- hazard(
     survival::Surv(time, status) ~ x,
-    data = df, dist = "weibull", fit = TRUE
+    data = df, dist = "weibull", fit = TRUE, theta = c(0.5, 1, 0)
   )
   fit_split <- hazard(
     survival::Surv(start, stop, status) ~ x,
-    data = df_split, dist = "weibull", fit = TRUE
+    data = df_split, dist = "weibull", fit = TRUE, theta = c(0.5, 1, 0)
   )
+  expect_true(fit_orig$fit$converged)               # guard: both fits ran
+  expect_true(fit_split$fit$converged)
 
   expect_equal(coef(fit_orig), coef(fit_split), tolerance = 1e-2)
   expect_equal(fit_orig$fit$objective, fit_split$fit$objective, tolerance = 1e-3)
