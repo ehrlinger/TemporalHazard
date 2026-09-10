@@ -24,13 +24,16 @@ NULL
 #'   \code{NA}); \code{rcond} (reciprocal condition number of the symmetrized
 #'   Hessian, \code{NA} if unavailable); \code{pd} (\code{TRUE} if the Hessian
 #'   was positive-definite, \code{FALSE} if inverted via fallback, \code{NA}
-#'   if not invertible).
+#'   if not invertible); \code{reason} (why \code{vcov} is \code{NA}:
+#'   \code{"Hessian has non-finite entries"} or \code{"Hessian not
+#'   invertible"}; \code{NA_character_} when a matrix was returned).
 #' @noRd
 .hzr_safe_solve <- function(H, tol = .hzr_rcond_tol) {
   # (1) Non-finite / non-matrix guard
   if (is.null(H) || !is.matrix(H) || anyNA(H) || any(!is.finite(H))) {
     warning("Hessian contains non-finite entries; standard errors unavailable")
-    return(list(vcov = NA, rcond = NA_real_, pd = NA))
+    return(list(vcov = NA, rcond = NA_real_, pd = NA,
+                reason = "Hessian has non-finite entries"))
   }
 
   # (2) Symmetrize (numDeriv Hessians are only symmetric to Richardson tol)
@@ -57,7 +60,8 @@ NULL
     vcov <- tryCatch(solve(H), error = function(e) NULL)
     if (is.null(vcov)) {
       warning("Hessian not invertible; standard errors unavailable")
-      return(list(vcov = NA, rcond = rc, pd = NA))
+      return(list(vcov = NA, rcond = rc, pd = NA,
+                  reason = "Hessian not invertible"))
     }
     warning("Hessian is not positive-definite at the optimum; standard errors may be unreliable")
   }
@@ -72,7 +76,7 @@ NULL
     vcov[, bad] <- NA_real_
   }
 
-  list(vcov = vcov, rcond = rc, pd = pd)
+  list(vcov = vcov, rcond = rc, pd = pd, reason = NA_character_)
 }
 
 
