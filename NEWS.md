@@ -7,7 +7,10 @@
   repeated-events HAZARD jobs. It validates its inputs and refuses ones that
   would produce a wrong answer silently -- a missing `followup` value, a
   non-numeric indicator column, or a factor `id` -- rather than returning a
-  plausible-looking but wrong result.
+  plausible-looking but wrong result. `\value` and a `@note` now document that
+  `rcensor` and `event` can both be 1 on the same row, matching the SAS
+  macro's own warning that this combination is not compatible with a
+  `HAZARD`-style fit.
 
 # TemporalHazard 1.2.10
 

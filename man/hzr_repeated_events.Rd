@@ -27,7 +27,10 @@ alters them, and the following columns added:
 \describe{
 \item{\code{event}}{1 when the row is an event of interest, otherwise 0.}
 \item{\code{event_no}}{Running count of event repeats within the subject.}
-\item{\code{rcensor}}{1 when the row is right censored, otherwise 0.}
+\item{\code{rcensor}}{1 when the row is right censored at the end of follow-up,
+otherwise 0. This is set both for a genuine censoring row and for an event
+row whose event time equals the end of follow-up -- \code{rcensor} and \code{event}
+are therefore not mutually exclusive; see the Note below.}
 \item{\code{iv_start}}{Interval from time zero to the start of the segment.}
 \item{\code{iv_seg}}{Duration of the segment, \code{time} minus \code{iv_start}.}
 \item{\code{renewal}}{Segment number under the modulated renewal
@@ -54,6 +57,14 @@ Two details are inherited from the macro and are not R conventions. An
 indicator code that is neither 0, 1 nor missing is treated as neither an
 event nor an absence, and rows are ordered with missing times first, as SAS
 sorts them.
+}
+\note{
+\code{rcensor} is not a plain censoring indicator: a row can have
+\code{event == 1} and \code{rcensor == 1} together, when a subject's last event
+happens to fall exactly at the end of follow-up. This is faithful to the
+SAS macro, whose own header warns that this combination is not compatible
+with a \code{HAZARD}-style fit. Do not pass \code{rcensor} directly as a censoring
+indicator without first accounting for the overlap with \code{event}.
 }
 \examples{
 # One row per candidate event per subject: s1 has two events, s2 one,

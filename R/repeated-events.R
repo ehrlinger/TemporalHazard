@@ -70,7 +70,10 @@
   if (!is.data.frame(data)) {
     stop("`data` must be a data frame.", call. = FALSE)
   }
-  cols <- c(id = id, time = time, followup = followup, indicator = indicator)
+  # list(), not c(): c() flattens a multi-element argument (e.g. id = c("a", "b"))
+  # into entries named id1/id2, which would let a bad call slip past the
+  # length(value) != 1L check below instead of tripping it.
+  cols <- list(id = id, time = time, followup = followup, indicator = indicator)
   for (arg in names(cols)) {
     value <- cols[[arg]]
     if (!is.character(value) || length(value) != 1L || is.na(value)) {
@@ -341,7 +344,10 @@
 #'   \describe{
 #'     \item{`event`}{1 when the row is an event of interest, otherwise 0.}
 #'     \item{`event_no`}{Running count of event repeats within the subject.}
-#'     \item{`rcensor`}{1 when the row is right censored, otherwise 0.}
+#'     \item{`rcensor`}{1 when the row is right censored at the end of follow-up,
+#'       otherwise 0. This is set both for a genuine censoring row and for an event
+#'       row whose event time equals the end of follow-up -- `rcensor` and `event`
+#'       are therefore not mutually exclusive; see the Note below.}
 #'     \item{`iv_start`}{Interval from time zero to the start of the segment.}
 #'     \item{`iv_seg`}{Duration of the segment, `time` minus `iv_start`.}
 #'     \item{`renewal`}{Segment number under the modulated renewal
@@ -349,6 +355,13 @@
 #'     \item{`first`, `last`}{1 when the row was the subject's first or last
 #'       before censored rows were appended, otherwise 0.}
 #'   }
+#'
+#' @note `rcensor` is not a plain censoring indicator: a row can have
+#'   `event == 1` and `rcensor == 1` together, when a subject's last event
+#'   happens to fall exactly at the end of follow-up. This is faithful to the
+#'   SAS macro, whose own header warns that this combination is not compatible
+#'   with a `HAZARD`-style fit. Do not pass `rcensor` directly as a censoring
+#'   indicator without first accounting for the overlap with `event`.
 #'
 #' @examples
 #' # One row per candidate event per subject: s1 has two events, s2 one,

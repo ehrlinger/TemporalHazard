@@ -64,12 +64,31 @@ columns **mutated in place** (the macro overwrites both), plus:
 |---|---|
 | `event` | 1 when this row is the event of interest, else 0 |
 | `event_no` | running count of event repeats within subject |
-| `rcensor` | right-censored indicator (see caveat below) |
+| `rcensor` | right-censored indicator (see the caveat below, "`rcensor` and `event` overlap") |
 | `iv_start` | interval from t=0 to the start of this segment |
 | `iv_seg` | segment duration, `time - iv_start` |
 | `renewal` | modulated-renewal count |
 | `first` | group flag: this was the subject's first row at stage 4 |
 | `last` | group flag: this was the subject's last row at stage 4 |
+
+### `rcensor` and `event` overlap
+
+`rcensor` is not a plain censoring indicator: it is 1 whenever a row's event time
+equals the end of follow-up, and that includes a genuine event row, not only a
+padded censoring row. A subject whose last event happens to land exactly at
+`followup` gets a row with `event == 1` AND `rcensor == 1` together.
+
+This is faithful to the macro, which sets `rcensor` in exactly that case
+(`.hzr_re_stage6()`, mirroring `if &iv_event=&iv_end then &rcensor=1;`) and says
+so in its own header: the macro's output-column comment for `rcensor` warns this
+combination is not compatible with a `HAZARD`-style fit. The behaviour is
+correct and is not changed here -- what was missing was documentation. `\value`
+and the `@note` on `hzr_repeated_events()` now say this explicitly, and
+`test-repeated-events.R` pins a case where both columns are 1 on the same row so
+a future change that "fixes" the overlap fails loudly.
+
+Practical consequence: do not pass `rcensor` straight through as a censoring
+indicator to a `HAZARD`-style fit without first accounting for this overlap.
 
 ### Argument decisions and what they cost
 

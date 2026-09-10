@@ -350,3 +350,33 @@ test_that("hzr_repeated_events rejects a column name clash rather than overwriti
   d$renewal <- 0
   expect_error(hzr_repeated_events(d, "id", "t", "fu", "ev"), "renewal")
 })
+
+test_that("rcensor and event are not mutually exclusive: a genuine event at end of follow-up sets both", {
+  # Confirmed directly: with the last event coinciding with end of follow-up,
+  # the returned row carries event == 1 AND rcensor == 1 together, exactly the
+  # overlap documented in \value and @note. A "fix" that made them exclusive
+  # (e.g. clearing rcensor whenever event == 1) would fail this.
+  d <- data.frame(id = c("a", "a"), t = c(2, 9), fu = c(9, 9), ev = c(1, 1))
+  out <- hzr_repeated_events(d, "id", "t", "fu", "ev")
+  last_row <- out[out$id == "a" & out$t == 9, ]
+  expect_equal(nrow(last_row), 1L)
+  expect_equal(last_row$event, 1)
+  expect_equal(last_row$rcensor, 1)
+})
+
+test_that(".hzr_re_validate gives the intended error for a multi-element argument, not 'subscript out of bounds'", {
+  # Before the fix, c(id = id, ...) FLATTENED a multi-element `id` into
+  # entries named id1/id2, so length(value) != 1L could never fire here: the
+  # bad call instead died later with "subscript out of bounds" from deep in
+  # the pipeline. This pins the intended, earlier, clearer error.
+  d <- data.frame(id = 1, t = 1, fu = 1, ev = 1)
+  expect_error(.hzr_re_validate(d, c("id", "t"), "t", "fu", "ev"), "single column name")
+})
+
+test_that(".hzr_re_validate rejects a non-character argument instead of silently coercing it", {
+  # c()'s type coercion, not just its flattening, made !is.character(value)
+  # dead too: c(id = 5, time = "t", ...) coerces 5 to the string "5" before
+  # the guard ever sees it. list() keeps the original type so the guard fires.
+  d <- data.frame(id = 1, t = 1, fu = 1, ev = 1)
+  expect_error(.hzr_re_validate(d, 5, "t", "fu", "ev"), "single column name")
+})
