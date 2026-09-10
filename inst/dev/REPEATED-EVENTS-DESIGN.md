@@ -283,9 +283,10 @@ set must be able to fail on its own.
    touches 15 rows and removes none: 962 in, 962 out. The 963 -> 962 drop is the macro's
    own stage 7. So stage 8 as specified -- "apply the job's guard, which removes a row" --
    does not exist, and the decision to include it in the function rested on that misreading.
-   The function already returns 962 rows. Whether it should also apply line 65's adjustment
-   is open for the maintainer: it is job code, specific to HAZARD needing a positive-length
-   interval under `LCENSOR`, and for now the parity test applies it, as the job does.
+   The function already returns 962 rows. **Decided 2026-09-10 by the maintainer: line 65 is
+   not applied.** It is job code, not macro code, specific to HAZARD needing a positive-length
+   interval under `LCENSOR`. A caller fitting that way applies it, as the job does and as the
+   parity test does.
 3. **The ladder-to-stage mapping** is the table under Acceptance. Stages 3 and 5 remove no
    rows in this job, which is why shapes repeat.
 
