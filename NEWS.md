@@ -1,19 +1,36 @@
-# TemporalHazard 1.2.10
+# TemporalHazard 1.2.11
+
+## Breaking changes
+
+* **`hazard(fit = TRUE)` without `theta` is now an error for the
+  single-distribution models.** For `dist = "weibull"`, `"exponential"`,
+  `"loglogistic"` and `"lognormal"`, the optimizer ran only when `theta` was
+  supplied, so a call that left it out returned an unfitted object -- `NULL`
+  coefficients, an `NA` objective -- with no error and no warning. `print()`
+  gave no sign of it. The call now stops and asks for starting values, as it
+  does for a zero-length `theta`, which used to fail inside `optim()` with a
+  message that did not name the cause.
+  `dist = "multiphase"` is unaffected: it assembles its own start from
+  `phases`. `fit = FALSE` without `theta` still builds an unfitted model.
+
+  Code that relied on the old behaviour was getting no fit. Two tests in this
+  package were: they compared `NULL` coefficients with `NULL` coefficients,
+  so the counting-process equivalence and epoch-split invariance they claimed
+  for the Weibull were never checked. Both now fit, and both pass.
+
+* **`hzr_translate_sas()` now emits a `stop()` in place of the fit when a
+  `PARMS` statement builds no phase it could use.** Operands the translator
+  could not read (a template's `MUE=?`, or `MUE = 0.2` written with spaces
+  around `=`, which `PROC HAZARD` accepts) or could not use (a `MUE` or `MUL`
+  with no shape operand) are recorded in `$untranslated`, but the fit chunk
+  used to be emitted anyway, as `hazard(fit = TRUE, theta = c())` under the
+  default Weibull. That chunk rendered an unfitted object, and would now fail
+  on the error above with a message about `theta` that does not name the real
+  cause. The emitted `stop()` names it. This is a limit of the translation,
+  not a `PROC HAZARD` refusal, so it is kept apart from the existing
+  "selects no phase" stop.
 
 ## New features
-
-* New `hzr_repeated_events()` rebuilds the input to a repeated-events hazard
-  model. From a long data set with one row per candidate event per subject, it
-  returns one row per inter-event segment, with the segment's start time,
-  duration and running event count. It reproduces the SAS macro `%repeat`,
-  which built this input for the repeated-events `HAZARD` jobs and whose output
-  was never saved, so those jobs can now be run again in R. It refuses input
-  that would otherwise give a plausible but wrong result -- a non-numeric time,
-  follow-up or indicator column, a factor `id`, a missing `followup` value, or
-  an empty data frame -- and warns, naming the subjects, when an event falls
-  after the end of follow-up, when `followup` varies within a subject, or when
-  a missing time leaves a segment undefined. As in the macro, `rcensor` and
-  `event` can both be 1 on the same row; see `?hzr_repeated_events`.
 
 * **Every fit now says what it did not do** (#242, following #197). A
   `hazard` object carries `degraded`, the steps the fit did not perform, and
@@ -37,6 +54,23 @@
   Hessian could not be inverted". `fit$fit$weak` keeps its meaning, and is
   `NA` exactly when `"weak_direction_check"` is listed. An object saved by an
   earlier version prints "not recorded" rather than "none".
+
+# TemporalHazard 1.2.10
+
+## New features
+
+* New `hzr_repeated_events()` rebuilds the input to a repeated-events hazard
+  model. From a long data set with one row per candidate event per subject, it
+  returns one row per inter-event segment, with the segment's start time,
+  duration and running event count. It reproduces the SAS macro `%repeat`,
+  which built this input for the repeated-events `HAZARD` jobs and whose output
+  was never saved, so those jobs can now be run again in R. It refuses input
+  that would otherwise give a plausible but wrong result -- a non-numeric time,
+  follow-up or indicator column, a factor `id`, a missing `followup` value, or
+  an empty data frame -- and warns, naming the subjects, when an event falls
+  after the end of follow-up, when `followup` varies within a subject, or when
+  a missing time leaves a segment undefined. As in the macro, `rcensor` and
+  `event` can both be 1 on the same row; see `?hzr_repeated_events`.
 
 ## Bug fixes
 

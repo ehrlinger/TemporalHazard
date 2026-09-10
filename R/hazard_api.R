@@ -153,7 +153,11 @@ NULL
 #'   piecewise time-varying coefficients. When provided, each predictor column in
 #'   `x` is expanded into one column per time window so each window gets its own
 #'   coefficient.
-#' @param theta Optional numeric coefficient vector (starting values for optimization).
+#' @param theta Numeric starting values for optimization: the shape
+#'   parameters, then one coefficient per column of the design matrix.
+#'   Required when `fit = TRUE` with a single-distribution `dist`; optional for
+#'   `dist = "multiphase"`, which assembles its own starting values from
+#'   `phases` when `theta` is `NULL`.
 #' @param dist Character baseline distribution label (default `"weibull"`).
 #'   One of `"weibull"`, `"exponential"`, `"loglogistic"`, `"lognormal"`, or
 #'   `"multiphase"`.  The single-distribution families differ in the *shape* the
@@ -684,6 +688,21 @@ hazard <- function(formula = NULL,
 
   if (!is.character(dist) || length(dist) != 1 || !nzchar(dist)) {
     stop("'dist' must be a non-empty character scalar.", call. = FALSE)
+  }
+
+  # Only the multiphase optimizer assembles its own starting values. The
+  # single-distribution branch below runs only when theta is supplied, so
+  # without this a fit = TRUE call returned an unfitted object -- NULL
+  # coefficients, NA objective -- with no error and no warning. `fit` is
+  # tested exactly as that dispatch tests it, so no value reaches one and
+  # not the other. A zero-length theta carries no starting values either; it
+  # used to reach optim() and fail there with a message that did not say so.
+  if (fit && dist != "multiphase" && length(theta) == 0L) {
+    stop("fit = TRUE needs starting values for dist = \"", dist, "\": ",
+         "supply 'theta' (the shape parameters, then one coefficient per ",
+         "column of the design matrix), or use fit = FALSE for an unfitted ",
+         "model. Only dist = \"multiphase\" assembles its own starting ",
+         "values.", call. = FALSE)
   }
 
   if (!is.list(control)) {

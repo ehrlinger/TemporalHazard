@@ -145,6 +145,28 @@ test_that("a plain EVENT/TIME job's emitted call fits with no time_lower/time_up
   expect_null(fit$data$time_upper)
 })
 
+test_that("a PARMS that builds no usable phase emits a stop(), not a fit", {
+  # Both shapes build no phase and are not refused: the parser could not use
+  # MUE without a shape operand, nor read a template's `?`. The fit chunk
+  # used to be hazard(fit = TRUE, theta = c()) under the default Weibull,
+  # which rendered an unfitted object. The test above is the paired case: a
+  # usable PARMS still emits hazard().
+  for (parms in c("PARMS MUE=0.2;", "PARMS MUE=? THALF=? NU=? MUC=?;")) {
+    f <- withr::local_tempfile(fileext = ".sas")
+    writeLines(paste(
+      "%HAZARD( PROC HAZARD DATA=AVCS CONDITION=14;",
+      "EVENT DEAD; TIME INT_DEAD;", parms, ");"
+    ), f)
+    job <- suppressWarnings(hzr_translate_sas(f))
+    expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"), info = parms)
+    expect_error(eval(job$calls$fit, new.env()),
+                 "builds no phase this translator could use", info = parms)
+    # Not the reference's own refusal, which needs a PARMS the parser read.
+    expect_false(any(grepl("modterm.c", job$untranslated$reason, fixed = TRUE)),
+                 info = parms)
+  }
+})
+
 test_that("the emitted call fits the multiphase model, not a Weibull", {
   skip_on_cran()
   f <- withr::local_tempfile(fileext = ".sas")
