@@ -76,9 +76,9 @@ builder itself is wrong.
 
 | Capability | Listed when (state) | Causes (exact strings) |
 |---|---|---|
-| `fitting` | `fit = FALSE`, or built by `hzr_read_outhaz()` | `"not requested (fit = FALSE)"`; `"imported from SAS output; not fitted in R"` |
+| `fitting` | the optimizer did not run, or the object was imported from SAS | `"not requested (fit = FALSE)"`; `"no starting values (theta = NULL); the optimizer did not run"`; `"imported from SAS output; not fitted in R"` |
 | `standard_errors` | `fit$fit$vcov` is not a matrix | `"numDeriv not installed and no analytic Hessian"`; `"numDeriv::hessian() failed"`; `"Hessian has non-finite entries"`; `"Hessian not invertible"`; `"model not fitted"`; `"covariance not imported"` |
-| `conserved_phase_variance` | CoE applied **and** the full-information recompute failed | `"numDeriv not installed"`; `"Hessian could not be computed"`; `"Hessian not invertible"` |
+| `conserved_phase_variance` | CoE applied **and** the full-information recompute failed | `"numDeriv not installed"`; `"Hessian could not be computed"`; `"Hessian has non-finite entries"`; `"Hessian not invertible"` |
 | `weak_direction_check` | `fit$fit$weak` is `NA`, exactly | `"model not fitted"`; `"imported from SAS output; no R Hessian"`; `"standard errors unavailable"`; `"Hessian condition number unavailable"`; `"covariance has non-finite entries"`; `"eigendecomposition failed"` |
 | `conservation_of_events` | `dist = "multiphase"` and `isFALSE(spec$control$conserve_applied)` | from `conserve_disabled_reason`: `not_requested` → `"not requested (conserve = FALSE)"`; `unsupported_censoring` → `"status outside {0, 1} (left or interval censoring)"`; `single_phase` → `"fewer than two phases"`; `no_events` → `"no events"`; `setup_failed` → `"setup did not complete"` |
 
@@ -99,7 +99,8 @@ fields):
 - `.hzr_degraded_record(...)`: a pure function of the fit state, control,
   `dist`, and whether the object was fitted or imported. Returns
   `list(degraded, degraded_causes)`.
-- `.hzr_validate_degraded(object)`: `stop()`s unless all of these hold:
+- `.hzr_validate_degraded(object, fitted, imported = FALSE)`: `stop()`s
+  unless all of these hold:
   - the record's shape: `degraded` is a character subset of
     `.hzr_capabilities`, in canonical order, with no duplicates;
     `identical(names(degraded_causes), degraded)`; every cause is a non-empty
@@ -129,7 +130,7 @@ fields):
   Hessian was not invertible" is split into its real causes.
 
 **Stamping:** `hazard()` (`R/hazard_api.R`, where the object is assembled) and
-`hzr_read_outhaz()` (`R/read-outhaz.R`) build the record and run
+`.hzr_outhaz_to_spec()` (`R/read-outhaz.R`, the SAS import) build the record and run
 `.hzr_validate_degraded()` before returning. These are the only two places a
 `hazard` object is built; `hzr_bootstrap()`, stepwise and the SAS translator
 all refit through `hazard()`. `summary.hazard()` carries both fields.
@@ -188,7 +189,36 @@ Every test must be able to fail.
 
 - `hazard()` `@return`: document `degraded` / `degraded_causes`, and point the
   `weak` paragraph at them.
-- `hzr_read_outhaz()` `@return`: the same.
 - `print.summary.hazard()` `@description`: the block replaces the two notes.
 - `NEWS.md`: a bullet under 1.2.10. `DESCRIPTION` stays at 1.2.10.
 - No new dependency.
+
+## Amendments made while planning (2026-09-10)
+
+Found while tracing the code for the implementation plan
+(`inst/dev/DEGRADED-RECORD-PLAN.md`). The tables above already include them.
+
+1. **`fit = TRUE` without `theta` skips fitting silently.** On a
+   single-distribution model, `hazard()` runs the optimizer only when
+   `fit && !is.null(theta)` (`R/hazard_api.R`, the dispatch). It raises no
+   error and no warning. This change leaves that behaviour alone and records
+   it, under its own cause rather than "fit = FALSE". Whether it should error
+   is a separate decision.
+2. **Objects without a record.** Fits saved with `saveRDS()` by an earlier
+   version, and `hazard` objects that tests build by hand, have no
+   `degraded`. Printing "none" for them would be the defect itself, so they
+   print `Not done in this run: not recorded (object built before this record
+   existed)`.
+3. **The conserved-variance cause comes from `.hzr_safe_solve()`** when the
+   recompute has a Hessian but cannot invert it, so it can also read
+   "Hessian has non-finite entries".
+4. **The validator is told whether the object was fitted or imported.**
+   Nothing in a `hazard` object's state reliably says whether the optimizer
+   ran, so `hazard()` tracks it (`fit_ran`) and passes it in.
+5. **`hzr_read_outhaz()` needs no doc change.** It returns an `hzr_outhaz`,
+   not a `hazard` object; the `hazard` object is built by the internal
+   `.hzr_outhaz_to_spec()`.
+6. **The weak-direction check's `eigen()` failure exit has no test.** `eigen()`
+   is base R and cannot be mocked, and no input is known to make it fail on a
+   finite symmetric matrix. Its cause string exists and is untested; the PR
+   says so.
