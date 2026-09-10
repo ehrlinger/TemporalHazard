@@ -96,3 +96,18 @@ test_that("summary() carries the record", {
   expect_identical(s$degraded, fit0$degraded)
   expect_identical(s$degraded_causes, fit0$degraded_causes)
 })
+
+test_that("a failed full-information recompute under CoE is recorded", {
+  skip_on_cran()
+  # With the analytic Hessian declining and numDeriv absent, both the fit's
+  # own vcov and the CoE recompute have no Hessian to work from.
+  local_mocked_bindings(
+    .hzr_hessian_multiphase = function(...) NULL,
+    .hzr_numderiv_available = function() FALSE
+  )
+  fit <- mp_fit(c(1, 0))
+  expect_true(fit$spec$control$conserve_applied)   # guard: the recompute ran
+  expect_identical(fit$degraded_causes[["conserved_phase_variance"]],
+                   "numDeriv not installed")
+  expect_false("cause not recorded" %in% fit$degraded_causes)
+})

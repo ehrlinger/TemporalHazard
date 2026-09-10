@@ -2163,11 +2163,20 @@
         H_unc <- H_unc[idx_unc, idx_unc]
       }
       # numDeriv fallback only when analytic declines (left/interval rows)
-      if (is.null(H_unc) && requireNamespace("numDeriv", quietly = TRUE)) {
+      if (is.null(H_unc) && .hzr_numderiv_available()) {
         H_unc <- tryCatch(
           numDeriv::hessian(neg_ll_unc, base_theta[idx_unc]),
           error = function(e) NULL
         )
+      }
+      # Why the recompute failed, if it does, for the record print() shows
+      # (#242). Refined below when there is a Hessian that will not invert.
+      cv_reason <- if (is.matrix(H_unc)) {
+        NA_character_
+      } else if (.hzr_numderiv_available()) {
+        "Hessian could not be computed"
+      } else {
+        "numDeriv not installed"
       }
       if (is.matrix(H_unc)) {
         inv_unc <- .hzr_safe_solve(H_unc)
@@ -2182,18 +2191,24 @@
           # the search, not for inference.
           best_result$fixed_mask <- !free_unc
           recomputed <- TRUE
+          # The full-information vcov replaces the reduced one, so a reason the
+          # reduced one carried for missing SEs no longer applies.
+          best_result$se_unavailable_reason <- NA_character_
+        } else {
+          cv_reason <- inv_unc$reason
         }
       }
       if (!recomputed) {
         # Fall back to the reduced (search-only) vcov, in which the conserved
         # log_mu has no variance. Warn loudly so the understated uncertainty is
-        # visible rather than silent.
+        # visible rather than silent, and record it, so it is not only a
+        # warning that scrolled past.
         warning(
           "Could not compute the full-information variance for the ",
-          "Conservation-of-Events-conserved phase 'log_mu' (numDeriv ",
-          "unavailable or the Hessian was not invertible). Its standard error ",
-          "stays NA and downstream standard errors / confidence limits for ",
-          "that phase may be understated.", call. = FALSE)
+          "Conservation-of-Events-conserved phase 'log_mu' (", cv_reason,
+          "). Its standard error stays NA and downstream standard errors / ",
+          "confidence limits for that phase may be understated.", call. = FALSE)
+        best_result$conserved_variance_reason <- cv_reason
       }
     }
   }
