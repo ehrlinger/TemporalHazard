@@ -59,3 +59,25 @@ test_that("a numDeriv failure is named, not folded into 'not installed'", {
   expect_false(is.matrix(res$vcov))
   expect_identical(res$se_unavailable_reason, "numDeriv::hessian() failed")
 })
+
+test_that("every 'could not look' exit of the weak-direction check names why", {
+  why <- function(...) .hzr_weak_direction_impl(...)$reason
+  expect_identical(why(NULL, NA_real_), "standard errors unavailable")
+  expect_identical(why(diag(2), NA_real_), "Hessian condition number unavailable")
+  expect_identical(why(NA, 1e-10), "standard errors unavailable")
+  # Finite, positive diagonal, but a non-finite entry among estimated params.
+  expect_identical(why(matrix(c(1, Inf, Inf, 1), 2), 1e-10),
+                   "covariance has non-finite entries")
+  # Finite covariance whose correlation overflows: 1e300 / (1e-150)^2.
+  expect_identical(why(matrix(c(1e-300, 1e300, 1e300, 1e-300), 2), 1e-10),
+                   "covariance has non-finite entries")
+})
+
+test_that("the split leaves .hzr_weak_direction() returning what it did", {
+  expect_identical(.hzr_weak_direction(NULL, NA_real_), NA)
+  expect_null(.hzr_weak_direction(diag(2), 0.5))
+  res <- .hzr_weak_direction_impl(diag(2), 0.5)
+  expect_true("weak" %in% names(res))     # a NULL result keeps its slot
+  expect_null(res$weak)
+  expect_identical(res$reason, NA_character_)
+})
