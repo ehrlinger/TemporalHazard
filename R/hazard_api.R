@@ -1528,6 +1528,8 @@ print.hazard <- function(x, ...) {
     cat("  log-lik:     ", format(x$fit$objective, digits = 6), "\n")
     cat("  converged:   ", x$fit$converged, "\n")
   }
+  # Always printed, "none" included (#242).
+  cat(.hzr_format_not_done(x$degraded, x$degraded_causes), sep = "\n")
   invisible(x)
 }
 
@@ -1697,24 +1699,17 @@ print.summary.hazard <- function(x, ...) {
                 width = 76, indent = 2, exdent = 8),
         sep = "\n")
     cat("\n")
-  } else if (length(x$weak) == 1L && is.na(x$weak)) {
-    # Say that the ridge check did not run, rather than leaving its silence to
-    # be read as a clean bill of health.
-    cat(strwrap(paste0(
-          "Note: the fit was not examined for a weakly identified ",
-          "direction; no usable Hessian was available."),
-                width = 76, indent = 2, exdent = 8),
-        sep = "\n")
-    cat("\n")
   }
   if (!is.null(x$pd) && !is.na(x$pd) && !isTRUE(x$pd)) {
     cat("  Note: Hessian not positive-definite at the optimum; ",
         "standard errors may be unreliable.\n", sep = "")
   }
-  if (!is.null(x$converged) && !is.na(x$converged) && isFALSE(x$has_vcov)) {
-    cat("  Note: standard errors unavailable; the Hessian could not be ",
-        "inverted.\n", sep = "")
-  }
+  # Always printed, "none" included (#242): a line that appears only on bad
+  # news cannot be told from a line its author forgot to write. It replaces
+  # the notes that said "not examined for a weakly identified direction" and
+  # "standard errors unavailable; the Hessian could not be inverted", both of
+  # which could name the wrong cause.
+  cat(.hzr_format_not_done(x$degraded, x$degraded_causes), sep = "\n")
   if (!is.null(x$counts)) {
     fn_count <- x$counts[["function"]] %||% x$counts[["fn"]] %||% NA_integer_
     gr_count <- x$counts[["gradient"]] %||% x$counts[["gr"]] %||% NA_integer_
