@@ -197,12 +197,14 @@ names as this package's signature defect.
 
 ### Sort stability at tied times
 
-Every stage re-runs `proc sort by &id &iv_event`, and R's `order()` is stable. From memory,
-`PROC SORT`'s default is `EQUALS`, which keeps tied rows in their input order; if so, an
-earlier draft of this document was wrong to call SAS's sort unstable. That default has not
-been checked against SAS's documentation here, and nothing below rests on it. What matters
-is the order rows *reach* the first sort, and in the reference job that comes out of a
-`PROC SQL` join whose output order is not guaranteed.
+Every stage re-runs `proc sort by &id &iv_event`, and R's `order()` is stable. So is
+`PROC SORT` by default: `EQUALS` is its default, and for observations with identical BY
+values it keeps their relative order from the input data set ([SAS 9.3 Base Procedures
+Guide, PROC SORT statement](https://support.sas.com/documentation/cdl/en/proc/65145/HTML/default/p02bhn81rn4u64n1b6l00ftdnxge.htm),
+checked 2026-09-10; the reference job ran on SAS 8.2). An earlier draft of this document
+called SAS's sort unstable, which was wrong. What matters is the order rows *reach* the
+first sort, and in the reference job that comes out of a `PROC SQL` join whose output
+order is not guaranteed.
 
 That caveat is not inert for this job: 2845 of `bd_card`'s 3246 rows sit in 545 tied
 `(ccfid, iv_event)` groups. It is nonetheless harmless, and the parity test shows it rather
