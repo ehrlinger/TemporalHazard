@@ -60,7 +60,7 @@ The macro is seven DATA steps. This plan's stage numbering matches the design do
 | 5 | `if &rcensor=1 or &eventype=1; ... &event=` | subset, derive `event` |
 | 6 | `retain lag_iv 0 number 0; ...` | `iv_start`, `event_no`, `iv_seg`, `rcensor` update, `renewal` |
 | 7 | `if &iv_seg=0 and &eventype=0 and (first.&id NE 1) then delete` | drop zero-duration rows |
-| 8 | *(the job's own guard, not the macro)* | **BLOCKED — see Task 7** |
+| 8 | *(the job's own line 65, not the macro)* | **Not applied** — it adjusts values and removes no rows; see Task 7 |
 
 ## Three SAS subtleties that must survive translation
 
@@ -1030,7 +1030,15 @@ someone approves it, and Copilot's review comes back `COMMENTED`, never `APPROVE
 
 ---
 
-### Task 7: BLOCKED — stage 8 and the parity test
+### Task 7: DONE 2026-09-10 — stage 8 and the parity test
+
+**Outcome.** With the volume mounted, R reproduced every shape in the job's log and every
+tally in its listing; see `REPEATED-EVENTS-DESIGN.md`, Acceptance. Two premises below turned
+out wrong. The job's post-macro statement is not a filter: it moves event times on 15 rows
+and removes none. And the 963 -> 962 drop is the macro's own stage 7, so there is no stage 8
+to implement. The parity test is `tests/testthat/test-repeated-events-parity.R`, and the
+rebuild of `bd_card` is `.hzr_derive_bd_card()` in `inst/sas-parity/helper-sas-parity.R`.
+The original task text is kept below as the record of what was planned.
 
 **Do not attempt this task while `/Volumes/qhsstudies` is unmounted.** It cannot be done correctly without the study
 volume, and guessing at it would produce exactly the failure mode this package is prone to: a parity test that looks

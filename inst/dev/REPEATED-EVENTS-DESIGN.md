@@ -1,8 +1,9 @@
 # Design: `hzr_repeated_events()` — an R reimplementation of the SAS `%repeat` macro
 
 - **Date:** 2026-09-09
-- **Status:** implemented on this branch (stages 1-7). Stage 8 and the volume-gated parity
-  test are deferred -- see Open Items.
+- **Status:** implemented on this branch. SAS parity verified 2026-09-10 against the reference
+  job's log and listing -- see Acceptance. The post-macro step once planned as stage 8 does not
+  exist as specified -- see Open Items 2.
 - **Branch:** `feat/hzr-repeated-events`, cut from `main` at `f93d00c`
 
 ## Purpose
@@ -157,7 +158,7 @@ than a silent difference a future reader mistakes for a defect.
 
 ## Pipeline
 
-Eight stages, the first seven mirroring the macro's seven DATA steps. Each is a small
+Seven stages, one for each of the macro's seven DATA steps. Each is a small
 internal function, so each is testable alone and the row ladder is observable stage by
 stage rather than only at the end.
 
@@ -172,8 +173,9 @@ stage rather than only at the end.
    `iv_seg <- time - iv_start`; set `rcensor <- 1` where `time == followup`; derive
    `renewal` from the **stage-4** `first`/`last`.
 7. Drop zero-duration non-event rows that are not a subject's first row.
-8. **(deferred)** Apply the job's post-macro `iv_start` guard (see Open Items 2). Not
-   implemented on this branch.
+The reference job runs one more statement after the macro, its line 65. It adjusts values and
+removes no rows, it belongs to the job rather than the macro, and it is not applied here --
+see Open Items 2.
 
 Base R throughout — `order()`, group flags computed from run boundaries. **No new
 dependency.**
@@ -195,33 +197,46 @@ names as this package's signature defect.
 
 ### Sort stability at tied times
 
-Every stage re-runs `proc sort by &id &iv_event`. SAS's PROC SORT is **not** guaranteed
-stable; R's `order()` is. Where a subject has two rows at the same `(id, time)`, R and
-SAS can disagree about which row `first.&id` selects, and that propagates into
-`event_no` and `renewal`.
+Every stage re-runs `proc sort by &id &iv_event`, and R's `order()` is stable. From memory,
+`PROC SORT`'s default is `EQUALS`, which keeps tied rows in their input order; if so, an
+earlier draft of this document was wrong to call SAS's sort unstable. That default has not
+been checked against SAS's documentation here, and nothing below rests on it. What matters
+is the order rows *reach* the first sort, and in the reference job that comes out of a
+`PROC SQL` join whose output order is not guaranteed.
 
-This is not fixable in general. It is a documented parity caveat, and the parity test
-asserts whether any tied `(id, time)` pairs exist in `bd_card` at all. If none do, the
-trap is inert for this job and we say so **with evidence**, rather than assuming it.
+That caveat is not inert for this job: 2845 of `bd_card`'s 3246 rows sit in 545 tied
+`(ccfid, iv_event)` groups. It is nonetheless harmless, and the parity test shows it rather
+than assuming it. Shuffling the input changes none of the derived columns and neither
+covariate of the job's second model (`maze_prc` and `iso_pvi`, both constant within every
+subject). The only columns that move are six belonging to other event types -- `ce_cva`,
+`ce_embol`, `dt_cva`, `dt_embol`, `iv_cva`, `iv_embol` -- which neither fit reads. Only one
+tied group mixes an event with a non-event row, and none of the 303 tied groups at a
+subject's first time does; that is the one place order would change which rows survive
+stage 2.
 
 ## Acceptance
 
-The reference ladder is recorded in
-`hz.ce_cardioversion_repeated.ehb.log`, from `bd_card` (3246 obs, 357 vars):
+Verified 2026-09-10 with the study volume mounted. Each row is a DATA step's output as the
+job's `.log` records it, against R:
 
-```
-3246 x 357  -> bd_card, the macro input
-3246 x 358
- 709 x 358
- 963 x 360
- 963 x 361
- 963 x 367  -> macro output
- 962 x 367  -> after the job's own post-macro iv_start guard
-```
+| `.log` line | SAS | R | step |
+|---|---|---|---|
+| 188 | 3246 x 357 | 3246 x 357 | `bd_card`, rebuilt by `.hzr_derive_bd_card()` |
+| 196 | 3246 x 358 | 3246 x 358 | stage 1 |
+| 211 | 709 x 358 | 709 x 358 | stage 2 |
+| 229 | 709 x 358 | 709 x 358 | stage 3, which removes nothing in this job |
+| 244 | 963 x 360 | 963 x 360 | stage 4 |
+| 252 | 963 x 361 | 963 x 361 | stage 5, which removes nothing in this job |
+| 267 | 963 x 367 | 963 x 365 | stage 6; R returns two fewer columns by design |
+| 290 | 962 x 367 | 962 x 365 | stage 7 removes one zero-duration row |
+| 315 | 962 x 367 | -- | the job's line 65, which removes nothing |
 
-and the fit input must then match the listing's independent tallies: 962 obs, 388
-events, 574 right-censored, 387 left-censored, `IV_EVENT` in
-[0.0001140795, 12.99137], `IV_START` in [0.0001140795, 9.716832].
+The log lines in between are `PROC SORT`s and the macro's empty `data &out; set &out;`
+step, which change no shape. After the job's line 65, the fit input matches the listing's
+independent tallies exactly: 962 observations, 388 events, 574 right censored, 387 left
+censored, `IV_EVENT` in [0.0001140795, 12.99137] and `IV_START` in
+[0.0001140795, 9.716832]. The exported function raises none of its input warnings on this
+data. Fitting it and reproducing LL -267.885 is out of scope; see below.
 
 ### PHI constraint
 
@@ -246,44 +261,33 @@ everywhere and carry the real burden:
 Assertions state exact expected vectors. Never
 `expect_true(all(x %in% <every possible value>))` — see `AGENTS.md`.
 
-**Volume-gated parity test**, `skip_if` on the presence of `/Volumes/qhsstudies`:
-asserts the row ladder stage by stage, then the tallies and ranges above. Row coverage
-is asserted **before** any value is compared.
+**Volume-gated parity test** (`tests/testthat/test-repeated-events-parity.R`): skips
+unless the maze study datasets are mounted (overridable with `HAZARD_MAZE_DATASETS`) and
+`haven` is installed. It rebuilds `bd_card`, asserts every shape in the table under
+Acceptance **before** comparing any value, then the tallies and ranges, then that the
+result does not depend on input row order.
 
 Because a gated test prints green when it never ran, it is not evidence. The synthetic
 set must be able to fail on its own.
 
-## Open items
+## Open items, resolved 2026-09-10
 
-1. **Macro identity is unconfirmed.** The evidence is suggestive, not proof: this copy
-   accepts all seven keyword parameters the job passes, where a rival copy at
-   `/Volumes/qhsstudies/cardiac/valves/mitral/mr_severe_lvf/1999/datasets/repeat.sas`
-   declares only `in=`/`out=` and would have produced five SAS errors the job's log does
-   not contain; and the log numbers 162 source lines for the included file against this
-   file's 161. Confirm by diffing the log's echoed source against the file. **If it is a
-   different `repeat.sas`, the stage list above is wrong.**
-
-   ⚠️ That diff settles **identity only**. It is not the acceptance test and must not be
-   allowed to stand in for one: a correctly identified macro can still be reimplemented
-   wrongly, and the diff would be just as clean. The log's shape ladder under
-   **Acceptance** is what says the reimplementation is right. Read the source to know
-   *which* macro ran; read the ladder to know whether the R code reproduces it.
-2. **The guard predicate at stage 8 is unknown.** The volume was unmounted when this was
-   written, so `hz.ce_cardioversion_repeated.ehb.sas` could not be read. "Post-macro
-   `iv_start` guard" narrows it to roughly `iv_start < iv_end` or a zero/missing test,
-   but which one determines *which* of the 963 rows is dropped. Read the job and fix the
-   predicate before implementing stage 8.
-
-3. **The ladder-to-stage mapping is not established.** The log records seven shapes and
-   the macro has seven DATA steps, but they do not line up one-to-one: stages 2 and 3
-   both leave 709 x 358, and the counts imply at least one step's output is not
-   separately listed. The parity test is specified above as asserting the ladder "stage
-   by stage", which presumes a mapping. Derive it from the log's actual step boundaries
-   before writing that test; until then, only the endpoints (3246 x 357 in, 962 out) are
-   known to be anchored to a specific stage.
-
-All three open items require `/Volumes/qhsstudies` to be mounted. None blocks
-implementing stages 1–7; item 3 blocks only the shape of the gated parity test.
+1. **Macro identity.** The log's source numbering jumps from the `%inc` at line 1444 to the
+   job's next statement at 1606, so the included file is 161 lines -- exactly this file's
+   length. (The brief that started this work said 162; that was off by one.) SAS did not
+   echo the included source, so there is nothing to diff. What settles it is functional: R
+   reproduces every shape in the log and every tally in the listing.
+2. **The "guard" is not a filter.** The job's line 65 is
+   `if iv_start ge iv_event then iv_event=iv_event+0.0001141553;`. It moves an event time
+   forward by one hour, in 365-day years, where a segment would otherwise have no length. It
+   touches 15 rows and removes none: 962 in, 962 out. The 963 -> 962 drop is the macro's
+   own stage 7. So stage 8 as specified -- "apply the job's guard, which removes a row" --
+   does not exist, and the decision to include it in the function rested on that misreading.
+   The function already returns 962 rows. Whether it should also apply line 65's adjustment
+   is open for the maintainer: it is job code, specific to HAZARD needing a positive-length
+   interval under `LCENSOR`, and for now the parity test applies it, as the job does.
+3. **The ladder-to-stage mapping** is the table under Acceptance. Stages 3 and 5 remove no
+   rows in this job, which is why shapes repeat.
 
 ## Gates and mechanics
 
