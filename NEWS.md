@@ -7,7 +7,9 @@
   `"loglogistic"` and `"lognormal"`, the optimizer ran only when `theta` was
   supplied, so a call that left it out returned an unfitted object -- `NULL`
   coefficients, an `NA` objective -- with no error and no warning. `print()`
-  gave no sign of it. The call now stops and asks for starting values.
+  gave no sign of it. The call now stops and asks for starting values, as it
+  does for a zero-length `theta`, which used to fail inside `optim()` with a
+  message that did not name the cause.
   `dist = "multiphase"` is unaffected: it assembles its own start from
   `phases`. `fit = FALSE` without `theta` still builds an unfitted model.
 

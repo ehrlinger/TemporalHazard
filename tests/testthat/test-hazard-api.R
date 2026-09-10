@@ -42,6 +42,9 @@ test_that("fit = TRUE without theta is refused for single-distribution models", 
   # `fit` is tested the way the optimizer dispatch tests it, so a truthy
   # non-logical cannot slip past the guard into the unfitted path.
   expect_error(hazard(time = tt, status = st, fit = 1), "needs starting values")
+  # A zero-length theta is no starting values too, not a start optim() fails on.
+  expect_error(hazard(time = tt, status = st, fit = TRUE, theta = numeric(0)),
+               "needs starting values")
   # `dist` is validated before the guard reads it.
   expect_error(hazard(time = tt, status = st, dist = NULL, fit = TRUE),
                "non-empty character scalar")

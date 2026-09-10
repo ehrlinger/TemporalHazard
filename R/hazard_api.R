@@ -685,8 +685,9 @@ hazard <- function(formula = NULL,
   # without this a fit = TRUE call returned an unfitted object -- NULL
   # coefficients, NA objective -- with no error and no warning. `fit` is
   # tested exactly as that dispatch tests it, so no value reaches one and
-  # not the other.
-  if (fit && dist != "multiphase" && is.null(theta)) {
+  # not the other. A zero-length theta carries no starting values either; it
+  # used to reach optim() and fail there with a message that did not say so.
+  if (fit && dist != "multiphase" && length(theta) == 0L) {
     stop("fit = TRUE needs starting values for dist = \"", dist, "\": ",
          "supply 'theta' (the shape parameters, then one coefficient per ",
          "column of the design matrix), or use fit = FALSE for an unfitted ",
