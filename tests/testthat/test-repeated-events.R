@@ -33,6 +33,15 @@ test_that(".hzr_re_validate rejects an input column that would be overwritten by
   expect_error(.hzr_re_validate(d, "id", "t", "fu", "ev"), "rcensor")
 })
 
+test_that(".hzr_re_validate rejects a zero-row data frame before the no-events warning", {
+  # A zero-row `data` used to pass validation (triggering the no-events
+  # warning) and then die in stage 1 with an opaque "replacement has 1 row,
+  # data has 0" error. Reject it up front, with a clear message, and confirm
+  # it never reaches the no-events warning.
+  d <- data.frame(id = character(0), t = numeric(0), fu = numeric(0), ev = numeric(0))
+  expect_error(.hzr_re_validate(d, "id", "t", "fu", "ev"), "no rows")
+})
+
 test_that(".hzr_re_validate rejects a missing id", {
   d <- data.frame(id = c(1, NA), t = 1, fu = 1, ev = 1)
   expect_error(.hzr_re_validate(d, "id", "t", "fu", "ev"), "missing")
@@ -50,6 +59,21 @@ test_that("hzr_repeated_events rejects a non-numeric, non-logical indicator inst
 test_that("hzr_repeated_events warns, but does not error, when the indicator has no event at all", {
   d <- data.frame(id = c("s1", "s2"), t = c(1, 2), fu = c(10, 10), ev = c(0, 0), stringsAsFactors = FALSE)
   expect_warning(hzr_repeated_events(d, "id", "t", "fu", "ev"), "no events")
+})
+
+test_that("hzr_repeated_events rejects a Date time column instead of reading days-since-epoch", {
+  # A Date column used to sail through as days-since-epoch: iv_start/iv_seg
+  # came back numeric but wrong, and iv_seg was even class Date, with stage 7
+  # comparing it against 1970-01-01. No error anywhere in the pipeline.
+  d <- data.frame(id = c("s1", "s2"), t = as.Date(c("2020-01-02", "2020-01-03")),
+    fu = c(10, 10), ev = c(1, 0))
+  expect_error(hzr_repeated_events(d, "id", "t", "fu", "ev"), "numeric")
+})
+
+test_that("hzr_repeated_events rejects a Date followup column instead of reading days-since-epoch", {
+  d <- data.frame(id = c("s1", "s2"), t = c(1, 2),
+    fu = as.Date(c("2020-01-10", "2020-01-10")), ev = c(1, 0))
+  expect_error(hzr_repeated_events(d, "id", "t", "fu", "ev"), "numeric")
 })
 
 test_that("hzr_repeated_events rejects a missing followup value", {
@@ -362,6 +386,45 @@ test_that("rcensor and event are not mutually exclusive: a genuine event at end 
   expect_equal(nrow(last_row), 1L)
   expect_equal(last_row$event, 1)
   expect_equal(last_row$rcensor, 1)
+})
+
+test_that("hzr_repeated_events warns when a missing time leaks NA into iv_start/iv_seg", {
+  # A missing time on a retained (non-solo) row is normal input, not refused
+  # up front, but it leaks NA downstream through the stage-6 lag.
+  d <- data.frame(id = c("a", "a"), t = c(NA, 3), fu = 10, ev = c(1, 1))
+  expect_warning(hzr_repeated_events(d, "id", "t", "fu", "ev"), "iv_start|iv_seg")
+})
+
+test_that("hzr_repeated_events does not warn about iv_start/iv_seg on clean input", {
+  expect_no_warning(hzr_repeated_events(re_fixture(), "id", "t", "fu", "ev"))
+})
+
+test_that("hzr_repeated_events warns when an event time exceeds followup", {
+  # The macro's own header requires end of follow-up to be at least the time
+  # of any event; the calling program used to own this precondition.
+  d <- data.frame(id = c("s1", "s1"), t = c(1, 12), fu = 10, ev = c(1, 1))
+  expect_warning(hzr_repeated_events(d, "id", "t", "fu", "ev"), "greater than")
+})
+
+test_that("hzr_repeated_events warns when followup varies within a subject", {
+  d <- data.frame(id = c("s1", "s1"), t = c(1, 3), fu = c(10, 4), ev = c(1, 1))
+  expect_warning(hzr_repeated_events(d, "id", "t", "fu", "ev"), "not constant")
+})
+
+test_that("hzr_repeated_events does not warn about event-time or followup preconditions on clean input", {
+  expect_no_warning(hzr_repeated_events(re_fixture(), "id", "t", "fu", "ev"))
+})
+
+test_that("stage 7 reads the RECOMPUTED first flag, not the carried stage-4 first column", {
+  # SAS stage 7 runs `by &id`, so `first.&id NE 1` is recomputed at stage 7,
+  # not the carried stage-4 `first` column -- unlike stage 6's renewal
+  # assignment, which deliberately reads the stale stage-4 columns. The two
+  # readings diverge here: the correct code (!flags$first, recomputed at
+  # stage 7) keeps one row; a mutant reading the carried `first` column
+  # instead (!(data$first == 1)) drops it too, and the subject vanishes.
+  d <- data.frame(id = c("a", "a"), t = c(NA, 0), fu = c(0, 0), ev = c(2, 2), stringsAsFactors = FALSE)
+  expect_warning(out <- hzr_repeated_events(d, "id", "t", "fu", "ev"), "no events")
+  expect_equal(nrow(out), 1L)
 })
 
 test_that(".hzr_re_validate gives the intended error for a multi-element argument, not 'subscript out of bounds'", {

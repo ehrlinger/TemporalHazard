@@ -36,7 +36,10 @@ are therefore not mutually exclusive; see the Note below.}
 \item{\code{renewal}}{Segment number under the modulated renewal
 formulation.}
 \item{\code{first}, \code{last}}{1 when the row was the subject's first or last
-before censored rows were appended, otherwise 0.}
+row at stage 4, otherwise 0. The row stage 4 appends to pad a
+subject's censored tail inherits its source row's flags, so a
+subject can have two rows with \code{last == 1} together, or two with
+\code{first == 1} together.}
 }
 }
 \description{
@@ -57,6 +60,11 @@ Two details are inherited from the macro and are not R conventions. An
 indicator code that is neither 0, 1 nor missing is treated as neither an
 event nor an absence, and rows are ordered with missing times first, as SAS
 sorts them.
+
+\code{data} may not already contain a column named \code{rcensor}, \code{first}, \code{last},
+\code{event}, \code{event_no}, \code{iv_start}, \code{iv_seg} or \code{renewal}: this function
+creates all eight and would silently overwrite an existing one of the same
+name.
 }
 \note{
 \code{rcensor} is not a plain censoring indicator: a row can have

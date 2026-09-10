@@ -10,7 +10,11 @@
   plausible-looking but wrong result. `\value` and a `@note` now document that
   `rcensor` and `event` can both be 1 on the same row, matching the SAS
   macro's own warning that this combination is not compatible with a
-  `HAZARD`-style fit.
+  `HAZARD`-style fit. It now also rejects a `Date` (or otherwise non-numeric)
+  `time` or `followup` column and a zero-row `data`, and warns, naming the
+  affected subjects, when a missing `time` value leaves `iv_start`/`iv_seg`
+  missing, when an event time exceeds `followup`, or when `followup` is not
+  constant within a subject.
 
 # TemporalHazard 1.2.10
 

@@ -1,7 +1,8 @@
 # Design: `hzr_repeated_events()` — an R reimplementation of the SAS `%repeat` macro
 
 - **Date:** 2026-09-09
-- **Status:** design approved; not yet implemented
+- **Status:** implemented on this branch (stages 1-7). Stage 8 and the volume-gated parity
+  test are deferred -- see Open Items.
 - **Branch:** `feat/hzr-repeated-events`, cut from `main` at `f93d00c`
 
 ## Purpose
@@ -114,9 +115,9 @@ machinery would be the worst of both. It also makes the corpus renewal variant
 
 SAS numeric missing is an ordered value that compares EQUAL TO ITSELF, so `if . = . then` is
 true. A row with both event time and end of follow-up missing therefore counts as at end of
-follow-up and gets `rcensor = 1`. The internal stage (`.hzr_re_stage3()`) preserves this: it
+follow-up and gets `rcensor = 1`. The internal stage (`.hzr_re_stage6()`) preserves this: it
 tests `event_time == followup` with both sides possibly `NA`, and treats the both-missing
-case as the solo/nonevent branch, matching the macro rather than propagating `NA`.
+case as at end of follow-up, matching the macro rather than propagating `NA`.
 
 The exported function nonetheless REJECTS a missing `followup` value, because carrying it
 through scrambles row order downstream: the appended censored row (stage 4) sorts before the
@@ -124,12 +125,24 @@ event it terminates, and `iv_start` comes out missing. This is a deliberate devi
 macro, chosen because a plausible-wrong data frame is worse than a refusal. Note that SAS's
 own macro header assumes end of follow-up is present.
 
-The exported function also rejects a non-numeric indicator column and a factor `id`, and warns
-when no indicator value equals 1. A character indicator matches neither the event test nor the
-non-event test, so every row is dropped and censored rows backfilled, producing a frame
-indistinguishable from a legitimately all-censored cohort -- silently, with no error. A factor
-`id` sorts by level order rather than value, which can give a different subject ordering than
-SAS's `proc sort`.
+The exported function also rejects a non-numeric indicator column, a factor `id`, a `time` or
+`followup` column that is not numeric (a `Date` column, notably, used to sail through as
+days-since-epoch with no error), a zero-row `data`, and a reserved output column name already
+present in `data`, and warns when no indicator value equals 1. A character indicator matches
+neither the event test nor the non-event test, so every row is dropped and censored rows
+backfilled, producing a frame indistinguishable from a legitimately all-censored cohort --
+silently, with no error. A factor `id` sorts by level order rather than value, which can give a
+different subject ordering than SAS's `proc sort`.
+
+Three further preconditions are the calling program's responsibility in the macro, and
+`hzr_repeated_events()` now WARNS (rather than errors) when they are broken, naming the
+affected subjects: a missing `time` value leaking `NA` into `iv_start`/`iv_seg`, an event time
+greater than `followup`, and a `followup` value that is not constant within a subject. These
+stay warnings, not errors, because they are faithful to the macro -- it leaves the calling
+program to guarantee them and does not itself refuse a violation. The hard refusals above are
+reserved for inputs where the wrong answer is silent and there is no way for a caller to tell
+after the fact (a `Date` column, a name clash, an empty input); these three instead produce a
+recognisably degraded but inspectable result, so a warning that says so is enough.
 
 ## Column-count discrepancy, asserted not hidden
 
@@ -137,9 +150,10 @@ SAS's macro output is 367 columns. Two of them, `lag_iv` and `number`, are pure 
 loop state — a retained lag and a running counter. Returning them from a CRAN export
 would be noise, so this implementation **drops those two and returns 365**.
 
-The parity test asserts `ncol(out) == 367 - 2` with both dropped names spelled out in the
-test, so the gap is an assertion that can fail rather than a silent difference a future
-reader mistakes for a defect.
+The parity test will assert `ncol(out) == 367 - 2`, with both dropped names spelled out in
+the test, once Task 7 (the ladder-to-stage mapping, Open Item 3) is resolved and the test can
+be written -- it does not exist yet. That gap is meant to be an assertion that can fail rather
+than a silent difference a future reader mistakes for a defect.
 
 ## Pipeline
 
@@ -158,10 +172,11 @@ stage rather than only at the end.
    `iv_seg <- time - iv_start`; set `rcensor <- 1` where `time == followup`; derive
    `renewal` from the **stage-4** `first`/`last`.
 7. Drop zero-duration non-event rows that are not a subject's first row.
-8. Apply the job's post-macro `iv_start` guard (see Open Items 2).
+8. **(deferred)** Apply the job's post-macro `iv_start` guard (see Open Items 2). Not
+   implemented on this branch.
 
-Base R throughout — `order()`, `split()`, group flags computed from run boundaries.
-**No new dependency.**
+Base R throughout — `order()`, group flags computed from run boundaries. **No new
+dependency.**
 
 ## Two traps this design exists to avoid
 

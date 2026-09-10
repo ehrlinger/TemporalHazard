@@ -66,9 +66,24 @@
   list(first = c(TRUE, boundary), last = c(boundary, TRUE))
 }
 
+# Cap a subject list in a warning message at a handful of names, then
+# summarise the rest as "and N more" -- naming every subject in a large
+# cohort would make the warning unreadable, but the point is to name someone.
+.hzr_re_subject_list <- function(ids, cap = 5L) {
+  u <- unique(ids)
+  if (length(u) <= cap) {
+    paste(u, collapse = ", ")
+  } else {
+    paste0(paste(utils::head(u, cap), collapse = ", "), ", and ", length(u) - cap, " more")
+  }
+}
+
 .hzr_re_validate <- function(data, id, time, followup, indicator) {
   if (!is.data.frame(data)) {
     stop("`data` must be a data frame.", call. = FALSE)
+  }
+  if (nrow(data) == 0L) {
+    stop("`data` has no rows.", call. = FALSE)
   }
   # list(), not c(): c() flattens a multi-element argument (e.g. id = c("a", "b"))
   # into entries named id1/id2, which would let a bad call slip past the
@@ -83,12 +98,37 @@
       stop(sprintf("Column \"%s\" (argument `%s`) not found in `data`.", value, arg), call. = FALSE)
     }
   }
+  # is.numeric() is FALSE for a Date column, which is the point: a Date time
+  # column used to sail through as days-since-epoch, giving a fully populated
+  # but wrong frame (iv_seg comes back class Date, and stage 7's `iv_seg == 0`
+  # compares it against 1970-01-01) with no error anywhere in the pipeline.
+  for (arg in c("time", "followup")) {
+    col_name <- cols[[arg]]
+    col <- data[[col_name]]
+    if (!is.numeric(col)) {
+      stop(
+        sprintf(
+          paste(
+            "Column \"%s\" (argument `%s`) is class %s, not numeric.",
+            "Convert it to a numeric interval from time zero before calling this function,",
+            "e.g. `as.numeric(date_column - origin_date)`."
+          ),
+          col_name, arg, paste(class(col), collapse = "/")
+        ),
+        call. = FALSE
+      )
+    }
+  }
   clash <- intersect(names(data), .hzr_re_output_cols)
   if (length(clash) > 0L) {
     stop(
       sprintf(
-        "`data` already has column(s) %s, which this function creates and would overwrite.",
-        paste(sprintf("\"%s\"", clash), collapse = ", ")
+        paste(
+          "`data` already has column(s) %s, which this function creates and would overwrite.",
+          "Rename %s in `data` before calling this function."
+        ),
+        paste(sprintf("\"%s\"", clash), collapse = ", "),
+        if (length(clash) == 1L) "this column" else "these columns"
       ),
       call. = FALSE
     )
@@ -133,6 +173,44 @@
   }
   if (anyNA(data[[followup]])) {
     stop(sprintf("Column \"%s\" (argument `followup`) has missing values.", followup), call. = FALSE)
+  }
+  # The macro's own header requires &iv_end to be at least the time of any
+  # event; it leaves this to the calling program.  This function replaces
+  # that calling program, so it warns instead of accepting the violation
+  # silently -- the appended censored row lands before the event it should
+  # follow, and segments stop tiling [0, followup].
+  is_event <- !is.na(indicator_col) & indicator_col == 1
+  too_late <- is_event & !is.na(data[[time]]) & data[[time]] > data[[followup]]
+  if (any(too_late)) {
+    warning(
+      sprintf(
+        paste(
+          "Column \"%s\" (argument `time`) has an event time greater than \"%s\" (argument `followup`)",
+          "for subject(s): %s. The macro's own header requires end of follow-up to be at least the time",
+          "of any event; segments will not tile [0, followup] for these subjects."
+        ),
+        time, followup, .hzr_re_subject_list(data[[id]][too_late])
+      ),
+      call. = FALSE
+    )
+  }
+  # Likewise, the macro leaves it to the calling program that &iv_end is
+  # constant within a subject.  A subject whose rows carry different values
+  # builds a plausible frame from two different ends of follow-up.
+  followup_varies <- tapply(data[[followup]], data[[id]], function(x) length(unique(x)) > 1L)
+  varying_ids <- names(followup_varies)[followup_varies]
+  if (length(varying_ids) > 0L) {
+    warning(
+      sprintf(
+        paste(
+          "Column \"%s\" (argument `followup`) is not constant within subject(s): %s.",
+          "The macro treats end of follow-up as one value per subject; a varying value builds a",
+          "plausible-looking frame from two different ends of follow-up."
+        ),
+        followup, .hzr_re_subject_list(varying_ids)
+      ),
+      call. = FALSE
+    )
   }
   invisible(NULL)
 }
@@ -204,9 +282,10 @@
   extra[[indicator]] <- 0
 
   # The appended row must land immediately after its source row, as the
-  # second SAS `output` does.  Interleave rather than rbind-and-resort:
-  # at a tie (last event exactly at &iv_end) a re-sort could place the
-  # copy first, which would change which row stage 6 lags from.
+  # second SAS `output` does.  The fractional placement key puts each copy
+  # directly after its source; .hzr_re_order()'s stable radix sort is what
+  # keeps a later re-sort from moving it, even at a tie (last event exactly
+  # at &iv_end).
   combined <- rbind(data, extra)
   place <- c(seq_len(nrow(data)), extra_rows + 0.5)
   combined[order(place, method = "radix"), , drop = FALSE]
@@ -329,6 +408,11 @@
 #' event nor an absence, and rows are ordered with missing times first, as SAS
 #' sorts them.
 #'
+#' `data` may not already contain a column named `rcensor`, `first`, `last`,
+#' `event`, `event_no`, `iv_start`, `iv_seg` or `renewal`: this function
+#' creates all eight and would silently overwrite an existing one of the same
+#' name.
+#'
 #' @param data A data frame with one row per candidate event per subject.
 #' @param id Name of the column identifying the subject.
 #' @param time Name of the column giving the interval from time zero to each
@@ -353,7 +437,10 @@
 #'     \item{`renewal`}{Segment number under the modulated renewal
 #'       formulation.}
 #'     \item{`first`, `last`}{1 when the row was the subject's first or last
-#'       before censored rows were appended, otherwise 0.}
+#'       row at stage 4, otherwise 0. The row stage 4 appends to pad a
+#'       subject's censored tail inherits its source row's flags, so a
+#'       subject can have two rows with `last == 1` together, or two with
+#'       `first == 1` together.}
 #'   }
 #'
 #' @note `rcensor` is not a plain censoring indicator: a row can have
@@ -389,6 +476,25 @@ hzr_repeated_events <- function(data, id, time, followup, indicator) {
   data <- .hzr_re_stage5(data, indicator)
   data <- .hzr_re_stage6(data, id, time, followup)
   data <- .hzr_re_stage7(data, id, time, indicator)
+
+  # A missing `time` on a retained row (a solo non-event, padded at stage 3)
+  # is normal input, but it leaks NA into iv_start/iv_seg for that row and,
+  # via the lag in stage 6, into the row that follows it within subject.
+  # Check the output rather than refusing the input up front.
+  na_rows <- is.na(data$iv_start) | is.na(data$iv_seg)
+  if (any(na_rows)) {
+    warning(
+      sprintf(
+        paste(
+          "`iv_start` or `iv_seg` is missing for subject(s): %s.",
+          "This follows from a missing `%s` value on a retained row; check whether that value",
+          "was intended to be missing."
+        ),
+        .hzr_re_subject_list(data[[id]][na_rows]), time
+      ),
+      call. = FALSE
+    )
+  }
 
   row.names(data) <- NULL
   data
