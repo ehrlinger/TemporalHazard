@@ -767,6 +767,13 @@ hazard <- function(formula = NULL,
     out
   }
 
+  # Filled by whichever optimizer branch runs, and read by the record of what
+  # this fit did not do (#242). fit_ran stays FALSE when fit = TRUE but the
+  # single-distribution branch below is skipped because theta is NULL -- a
+  # skip that raises no error, and that the record is now the only report of.
+  fit_ran <- FALSE
+  degraded_reasons <- list()
+
   # Distribution dispatch -- select the distribution-specific optimizer and fit.
   if (fit && dist == "multiphase") {
     # Multiphase: theta_start is optional (assembled from phase specs if NULL)
@@ -801,6 +808,9 @@ hazard <- function(formula = NULL,
     # rather than re-deriving it from `status`.
     control$conserve_applied <- optim_result$conserve_applied
     control$conserve_disabled_reason <- optim_result$conserve_disabled_reason
+    fit_ran <- TRUE
+    degraded_reasons$se <- optim_result$se_unavailable_reason
+    degraded_reasons$conserved_variance <- optim_result$conserved_variance_reason
 
   } else if (fit && !is.null(theta)) {
     optim_fn <- switch(
@@ -829,6 +839,8 @@ hazard <- function(formula = NULL,
     fit_state$pd <- optim_result$pd
     fit_state$counts <- optim_result$counts
     fit_state$message <- optim_result$message
+    fit_ran <- TRUE
+    degraded_reasons$se <- optim_result$se_unavailable_reason
   }
 
   # An ill-conditioned Hessian already warns that standard errors are
@@ -854,8 +866,10 @@ hazard <- function(formula = NULL,
   # look at all (no Hessian, or a non-finite covariance among the estimated
   # parameters), and NULL only when it looked and found nothing. Testing for
   # non-NULL would warn on the NA and print a message built from empty fields.
-  fit_state$weak <- .hzr_weak_direction(fit_state$vcov, fit_state$rcond,
-                                        weak_names)
+  weak_check <- .hzr_weak_direction_impl(fit_state$vcov, fit_state$rcond,
+                                         weak_names)
+  fit_state$weak <- weak_check$weak
+  degraded_reasons$weak <- weak_check$reason
   if (is.list(fit_state$weak)) {
     warning(.hzr_weak_direction_message(fit_state$weak), call. = FALSE)
   }
@@ -908,6 +922,23 @@ hazard <- function(formula = NULL,
   )
 
   class(obj) <- "hazard"
+
+  # What this fit did not do, and why (#242). The object's state decides which
+  # entries appear; the reasons carried up from the optimizer say why. The
+  # validator stops if the two disagree, because that is a package bug.
+  record <- .hzr_degraded_record(
+    vcov = fit_state$vcov, weak = fit_state$weak, control = control,
+    dist = dist, fitted = fit_ran,
+    not_fitted_cause = if (fit) {
+      "no starting values (theta = NULL); the optimizer did not run"
+    } else {
+      "not requested (fit = FALSE)"
+    },
+    reasons = degraded_reasons
+  )
+  obj$degraded <- record$degraded
+  obj$degraded_causes <- record$degraded_causes
+  .hzr_validate_degraded(obj, fitted = fit_ran)
   obj
 }
 
@@ -1597,6 +1628,8 @@ summary.hazard <- function(object, ...) {
     rcond = object$fit$rcond,
     pd = object$fit$pd,
     weak = object$fit$weak,
+    degraded = object$degraded,
+    degraded_causes = object$degraded_causes,
     phases = object$spec$phases
   )
 
