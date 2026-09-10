@@ -133,3 +133,44 @@ test_that("an import read without its covariance also lists standard errors", {
   expect_identical(obj$degraded_causes[["standard_errors"]],
                    "covariance not imported")
 })
+
+# .hzr_safe_solve() masks a non-positive variance to NA and still returns a
+# matrix. These mocks reproduce that on real fits by masking row/column 1 of
+# every covariance it returns.
+mask_first_variance <- function() {
+  real <- .hzr_safe_solve
+  function(H, tol = .hzr_rcond_tol) {
+    out <- real(H, tol)
+    if (is.matrix(out$vcov)) {
+      out$vcov[1, ] <- NA_real_
+      out$vcov[, 1] <- NA_real_
+    }
+    out
+  }
+}
+
+test_that("a masked variance in an existing matrix is listed, naming the parameter", {
+  local_mocked_bindings(.hzr_safe_solve = mask_first_variance())
+  fit <- hazard(survival::Surv(t, d) ~ 1, data = weib_data(), dist = "weibull",
+                fit = TRUE, theta = c(mu = 1, nu = 1))
+  expect_true(is.matrix(fit$fit$vcov))             # guard: a matrix, not NA
+  cause <- fit$degraded_causes[["standard_errors"]]
+  expect_match(cause, "^no finite positive variance for: ")
+  # The named parameter is the one the coefficient table shows without an SE.
+  named <- sub("^no finite positive variance for: ", "", cause)
+  coefs <- summary(fit)$coefficients
+  expect_true(is.na(coefs[named, "std_error"]))
+  expect_identical(sum(is.na(coefs$std_error)), 1L)
+})
+
+test_that("under CoE, a recompute that masks a variance is not reported as none", {
+  skip_on_cran()
+  local_mocked_bindings(.hzr_safe_solve = mask_first_variance())
+  fit <- mp_fit(c(1, 0))
+  expect_true(fit$spec$control$conserve_applied)   # guard: the recompute ran
+  expect_true(is.matrix(fit$fit$vcov))             # guard: it returned a matrix
+  expect_false("conserved_phase_variance" %in% fit$degraded)   # it "succeeded"
+  expect_match(fit$degraded_causes[["standard_errors"]],
+               "^no finite positive variance for: ")
+  expect_false("cause not recorded" %in% fit$degraded_causes)
+})

@@ -46,6 +46,24 @@
   }
 }
 
+# Estimated parameters whose variance is missing from a covariance matrix
+# that does exist. .hzr_safe_solve() masks a non-positive variance to NA and
+# still returns a matrix, so "vcov is a matrix" does not mean every estimated
+# parameter has a standard error. A parameter held fixed carries an NA row by
+# design and is not counted. Returns character(0) when vcov is not a matrix:
+# that case is recorded separately, with its own causes.
+.hzr_params_missing_variance <- function(vcov, fixed_mask = NULL,
+                                         param_names = NULL) {
+  if (!is.matrix(vcov)) return(character(0))
+  d <- diag(vcov)
+  p <- length(d)
+  estimated <- if (length(fixed_mask) == p) !as.logical(fixed_mask) else rep(TRUE, p)
+  estimated[is.na(estimated)] <- TRUE
+  lacking <- estimated & !(is.finite(d) & d > 0)
+  nms <- if (length(param_names) == p) as.character(param_names) else paste0("par", seq_len(p))
+  nms[lacking]
+}
+
 #' Build the record of what a fit did not do
 #'
 #' @param vcov,weak The fit's covariance and weak-direction result.
@@ -57,12 +75,16 @@
 #' @param not_fitted_cause The `fitting` cause when `fitted` is `FALSE`.
 #' @param reasons List of carried-up reasons: `se`, `weak`,
 #'   `conserved_variance`, each a single string or `NA`.
+#' @param fixed_mask Logical, `TRUE` for a parameter held fixed; its missing
+#'   variance is by design and not recorded.
+#' @param param_names Names used in the partial-loss cause.
 #' @return `list(degraded, degraded_causes)`, in canonical order.
 #' @noRd
 .hzr_degraded_record <- function(vcov, weak, control, dist,
                                  fitted = TRUE, imported = FALSE,
                                  not_fitted_cause = "not requested (fit = FALSE)",
-                                 reasons = list()) {
+                                 reasons = list(),
+                                 fixed_mask = NULL, param_names = NULL) {
   # Entries are added in canonical order, so names(causes) is already ordered.
   causes <- character(0)
 
@@ -79,6 +101,12 @@
       "covariance not imported"
     } else {
       .hzr_reason_or_unrecorded(reasons$se)
+    }
+  } else {
+    lacking <- .hzr_params_missing_variance(vcov, fixed_mask, param_names)
+    if (length(lacking)) {
+      causes["standard_errors"] <- paste0("no finite positive variance for: ",
+                                          paste(lacking, collapse = ", "))
     }
   }
 
@@ -151,7 +179,10 @@
     }
   }
   agree("fitting", !fitted || imported)
-  agree("standard_errors", !is.matrix(object$fit$vcov))
+  agree("standard_errors",
+        !is.matrix(object$fit$vcov) ||
+          length(.hzr_params_missing_variance(object$fit$vcov,
+                                              object$fit$fixed_mask)) > 0L)
   agree("weak_direction_check", .hzr_is_na_scalar(object$fit$weak))
   agree("conservation_of_events",
         identical(object$spec$dist, "multiphase") &&

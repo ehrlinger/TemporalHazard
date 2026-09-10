@@ -275,7 +275,8 @@ hzr_read_outhaz <- function(path) {
   # SAS fit.
   record <- .hzr_degraded_record(
     vcov = fit$vcov, weak = fit$weak, control = obj$spec$control,
-    dist = "multiphase", fitted = TRUE, imported = TRUE
+    dist = "multiphase", fitted = TRUE, imported = TRUE,
+    fixed_mask = fit$fixed_mask, param_names = theta_sas
   )
   obj$degraded <- record$degraded
   obj$degraded_causes <- record$degraded_causes

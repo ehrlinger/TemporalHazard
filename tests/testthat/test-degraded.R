@@ -203,3 +203,39 @@ test_that("the output check passes a faithful block and names each fault", {
   expect_identical(chk("  Not done in this run: none", legacy),
                    "an object with no record was not reported as unrecorded")
 })
+
+test_that("an estimated parameter with no variance in an existing matrix is listed", {
+  v <- diag(c(1, NA, 2))
+  rec <- .hzr_degraded_record(vcov = v, weak = NULL, control = list(),
+                              dist = "weibull", param_names = c("a", "b", "c"))
+  expect_identical(rec$degraded_causes,
+                   c(standard_errors = "no finite positive variance for: b"))
+
+  # A fixed parameter's NA row is there by design, not a loss.
+  rec <- .hzr_degraded_record(vcov = v, weak = NULL, control = list(),
+                              dist = "weibull", fixed_mask = c(FALSE, TRUE, FALSE),
+                              param_names = c("a", "b", "c"))
+  expect_length(rec$degraded, 0L)
+
+  # Negative and infinite variances are missing too; no names falls back to
+  # positions.
+  rec <- .hzr_degraded_record(vcov = diag(c(-1, 1, Inf)), weak = NULL,
+                              control = list(), dist = "weibull")
+  expect_identical(rec$degraded_causes,
+                   c(standard_errors = "no finite positive variance for: par1, par3"))
+
+  # A fixed_mask of the wrong length is ignored: every parameter counts.
+  rec <- .hzr_degraded_record(vcov = v, weak = NULL, control = list(),
+                              dist = "weibull", fixed_mask = c(FALSE, TRUE),
+                              param_names = c("a", "b", "c"))
+  expect_identical(rec$degraded_causes,
+                   c(standard_errors = "no finite positive variance for: b"))
+})
+
+test_that("the validator requires the entry when an estimated variance is missing", {
+  f <- fake_fit(vcov = diag(c(1, NA)))
+  expect_error(.hzr_validate_degraded(f, fitted = TRUE),
+               "'standard_errors' is absent")
+  f$fit$fixed_mask <- c(FALSE, TRUE)
+  expect_true(.hzr_validate_degraded(f, fitted = TRUE))
+})

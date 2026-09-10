@@ -12,7 +12,9 @@
     with no `theta`, which skips the optimizer without an error or warning;
     or a fit imported from SAS output;
   - standard errors, naming whether numDeriv was missing, `numDeriv::hessian()`
-    failed, or the Hessian was non-finite or singular;
+    failed, or the Hessian was non-finite or singular, and, when a covariance
+    was computed, which estimated parameters were left without a usable
+    variance;
   - the variance of the phase that Conservation of Events conserves;
   - the weak-direction check;
   - Conservation of Events itself.

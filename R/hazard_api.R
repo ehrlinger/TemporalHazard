@@ -939,6 +939,7 @@ hazard <- function(formula = NULL,
   record <- .hzr_degraded_record(
     vcov = fit_state$vcov, weak = fit_state$weak, control = control,
     dist = dist, fitted = fit_ran,
+    fixed_mask = fit_state$fixed_mask, param_names = weak_names,
     not_fitted_cause = if (fit) {
       "no starting values (theta = NULL); the optimizer did not run"
     } else {
