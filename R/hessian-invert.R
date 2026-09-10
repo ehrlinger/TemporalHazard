@@ -24,13 +24,16 @@ NULL
 #'   \code{NA}); \code{rcond} (reciprocal condition number of the symmetrized
 #'   Hessian, \code{NA} if unavailable); \code{pd} (\code{TRUE} if the Hessian
 #'   was positive-definite, \code{FALSE} if inverted via fallback, \code{NA}
-#'   if not invertible).
+#'   if not invertible); \code{reason} (why \code{vcov} is \code{NA}:
+#'   \code{"Hessian has non-finite entries"} or \code{"Hessian not
+#'   invertible"}; \code{NA_character_} when a matrix was returned).
 #' @noRd
 .hzr_safe_solve <- function(H, tol = .hzr_rcond_tol) {
   # (1) Non-finite / non-matrix guard
   if (is.null(H) || !is.matrix(H) || anyNA(H) || any(!is.finite(H))) {
     warning("Hessian contains non-finite entries; standard errors unavailable")
-    return(list(vcov = NA, rcond = NA_real_, pd = NA))
+    return(list(vcov = NA, rcond = NA_real_, pd = NA,
+                reason = "Hessian has non-finite entries"))
   }
 
   # (2) Symmetrize (numDeriv Hessians are only symmetric to Richardson tol)
@@ -57,7 +60,8 @@ NULL
     vcov <- tryCatch(solve(H), error = function(e) NULL)
     if (is.null(vcov)) {
       warning("Hessian not invertible; standard errors unavailable")
-      return(list(vcov = NA, rcond = rc, pd = NA))
+      return(list(vcov = NA, rcond = rc, pd = NA,
+                  reason = "Hessian not invertible"))
     }
     warning("Hessian is not positive-definite at the optimum; standard errors may be unreliable")
   }
@@ -72,7 +76,7 @@ NULL
     vcov[, bad] <- NA_real_
   }
 
-  list(vcov = vcov, rcond = rc, pd = pd)
+  list(vcov = vcov, rcond = rc, pd = pd, reason = NA_character_)
 }
 
 
@@ -138,11 +142,18 @@ NULL
 #'   genuine trade-off is reported, so a ridge is still found when some larger
 #'   block of moderately correlated parameters carries more variance than it
 #'   does.
+#'
+#'   The \code{_impl} returns \code{list(weak, reason)}, where \code{reason}
+#'   names why \code{weak} is \code{NA}; \code{.hzr_weak_direction()} returns
+#'   \code{weak} alone, unchanged, for every existing caller.
 #' @noRd
-.hzr_weak_direction <- function(vcov, rcond, param_names = NULL,
-                                tol = .hzr_rcond_tol,
-                                cor_tol = .hzr_ridge_cor_tol,
-                                share = 0.9) {
+.hzr_weak_direction_impl <- function(vcov, rcond, param_names = NULL,
+                                     tol = .hzr_rcond_tol,
+                                     cor_tol = .hzr_ridge_cor_tol,
+                                     share = 0.9) {
+  na_because <- function(reason) list(weak = NA, reason = reason)
+  looked <- function(weak) list(weak = weak, reason = NA_character_)
+
   # (1) Gate on the existing ill-conditioning threshold. Each exit below is
   #     either NA ("could not look") or NULL ("looked, nothing there"); see
   #     the @return note on why the two must not be merged.
@@ -150,21 +161,24 @@ NULL
   #     An absent or unassessable rcond means no Hessian was obtained, so
   #     nothing was examined. A well-conditioned one is a real answer: the
   #     likelihood cannot be near-flat in any direction when it is.
-  if (length(rcond) != 1L || is.na(rcond)) return(NA)
-  if (rcond >= tol) return(NULL)
-  if (is.null(vcov) || !is.matrix(vcov)) return(NA)
+  if (length(rcond) != 1L || is.na(rcond)) {
+    return(na_because(if (is.matrix(vcov)) "Hessian condition number unavailable"
+                      else "standard errors unavailable"))
+  }
+  if (rcond >= tol) return(looked(NULL))
+  if (is.null(vcov) || !is.matrix(vcov)) return(na_because("standard errors unavailable"))
   # One parameter cannot trade off against another, so there is no ridge to
   # find. That is a conclusion, not a gap.
-  if (nrow(vcov) < 2L) return(NULL)
+  if (nrow(vcov) < 2L) return(looked(NULL))
 
   # (2) Drop parameters that were not estimated (fixed params carry NA rows).
   d <- diag(vcov)
   keep <- which(is.finite(d) & d > 0)
-  if (length(keep) < 2L) return(NULL)
+  if (length(keep) < 2L) return(looked(NULL))
   V <- vcov[keep, keep, drop = FALSE]
   # A non-finite entry among parameters that *were* estimated is a gap: the
   # covariance exists but cannot be decomposed.
-  if (anyNA(V) || any(!is.finite(V))) return(NA)
+  if (anyNA(V) || any(!is.finite(V))) return(na_because("covariance has non-finite entries"))
 
   nms <- if (length(param_names) == nrow(vcov)) {
     as.character(param_names)[keep]
@@ -175,7 +189,7 @@ NULL
   # (3) Standardise to a correlation matrix (see note above on scaling).
   s <- sqrt(diag(V))
   R <- V / outer(s, s)
-  if (anyNA(R) || any(!is.finite(R))) return(NA)
+  if (anyNA(R) || any(!is.finite(R))) return(na_because("covariance has non-finite entries"))
 
   # (4) Scan the standardised directions from flattest to stiffest, rather
   #     than gating only the leading one. Taking just the top eigenvector
@@ -189,7 +203,7 @@ NULL
   #     reports "well identified" for a fit that is not, which is the exact
   #     failure this function exists to prevent.
   e <- tryCatch(eigen(R, symmetric = TRUE), error = function(e) NULL)
-  if (is.null(e)) return(NA)
+  if (is.null(e)) return(na_because("eigendecomposition failed"))
 
   # eigen() returns values in decreasing order, so this walks flattest first
   # and the first direction that is a genuine trade-off wins. No separate
@@ -242,11 +256,19 @@ NULL
     }
   }
 
-  if (is.null(found)) return(NULL)
+  if (is.null(found)) return(looked(NULL))
   found$n_directions <- length(seen)
-  found
+  looked(found)
 }
 
+# The shape every existing caller relies on: list / NULL / NA, unchanged.
+.hzr_weak_direction <- function(vcov, rcond, param_names = NULL,
+                                tol = .hzr_rcond_tol,
+                                cor_tol = .hzr_ridge_cor_tol,
+                                share = 0.9) {
+  .hzr_weak_direction_impl(vcov, rcond, param_names = param_names,
+                           tol = tol, cor_tol = cor_tol, share = share)$weak
+}
 
 #' Warning text for a detected ridge direction
 #'

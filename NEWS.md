@@ -30,6 +30,29 @@
   not a `PROC HAZARD` refusal, so it is kept apart from the existing
   "selects no phase" stop.
 
+## New features
+
+* **Every fit now says what it did not do** (#242, following #197). A
+  `hazard` object carries `degraded`, the steps the fit did not perform, and
+  `degraded_causes`, the reason for each. `print()` and `summary()` always
+  show them as a "Not done in this run" block, and the block reads "none"
+  when nothing was lost: a line that appears only on bad news cannot be told
+  from one that was never written. Five steps are recorded:
+  - fitting itself: `fit = FALSE`, or a fit imported from SAS output;
+  - standard errors, naming whether numDeriv was missing, `numDeriv::hessian()`
+    failed, or the Hessian was non-finite or singular, and, when a covariance
+    was computed, which estimated parameters were left without a usable
+    variance;
+  - the variance of the phase that Conservation of Events conserves;
+  - the weak-direction check;
+  - Conservation of Events itself.
+
+  The block replaces two notes that could name the wrong cause: "not examined
+  for a weakly identified direction" and "standard errors unavailable; the
+  Hessian could not be inverted". `fit$fit$weak` keeps its meaning, and is
+  `NA` exactly when `"weak_direction_check"` is listed. An object saved by an
+  earlier version prints "not recorded" rather than "none".
+
 ## Bug fixes
 
 * **A Weibull fit with one masked variance reported the others on the wrong

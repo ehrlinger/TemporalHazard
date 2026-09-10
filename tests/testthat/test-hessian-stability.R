@@ -119,10 +119,13 @@ test_that("summary reports when standard errors are unavailable", {
                     converged = TRUE, objective = -1,
                     rcond = NA_real_, pd = NA),
          data = list(time = 1:5, x = NULL),
-         call = quote(hazard())),
+         call = quote(hazard()),
+         degraded = c("standard_errors", "weak_direction_check"),
+         degraded_causes = c(standard_errors = "Hessian not invertible",
+                             weak_direction_check = "standard errors unavailable")),
     class = "hazard"))
   out <- capture.output(print(s))
-  expect_true(any(grepl("standard errors unavailable", out)))
+  expect_true("    standard_errors: Hessian not invertible" %in% out)
 })
 
 test_that("clean fit reports no standard-errors-unavailable note", {
