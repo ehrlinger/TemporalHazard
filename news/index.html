@@ -13,7 +13,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.10</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.11</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -55,6 +55,17 @@
       <small>Source: <a href="https://github.com/ehrlinger/TemporalHazard/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="1.2.11" id="temporalhazard-1211">TemporalHazard 1.2.11<a class="anchor" aria-label="anchor" href="#temporalhazard-1211"></a></h2>
+<div class="section level3">
+<h3 id="breaking-changes-1-2-11">Breaking changes<a class="anchor" aria-label="anchor" href="#breaking-changes-1-2-11"></a></h3>
+<ul><li>
+<p><strong><code>hazard(fit = TRUE)</code> without <code>theta</code> is now an error for the single-distribution models.</strong> For <code>dist = "weibull"</code>, <code>"exponential"</code>, <code>"loglogistic"</code> and <code>"lognormal"</code>, the optimizer ran only when <code>theta</code> was supplied, so a call that left it out returned an unfitted object – <code>NULL</code> coefficients, an <code>NA</code> objective – with no error and no warning. <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code> gave no sign of it. The call now stops and asks for starting values, as it does for a zero-length <code>theta</code>, which used to fail inside <code><a href="https://rdrr.io/r/stats/optim.html" class="external-link">optim()</a></code> with a message that did not name the cause. <code>dist = "multiphase"</code> is unaffected: it assembles its own start from <code>phases</code>. <code>fit = FALSE</code> without <code>theta</code> still builds an unfitted model.</p>
+<p>Code that relied on the old behaviour was getting no fit. Two tests in this package were: they compared <code>NULL</code> coefficients with <code>NULL</code> coefficients, so the counting-process equivalence and epoch-split invariance they claimed for the Weibull were never checked. Both now fit, and both pass.</p>
+</li>
+<li><p><strong><code><a href="../reference/hzr_translate_sas.html">hzr_translate_sas()</a></code> now emits a <code><a href="https://rdrr.io/r/base/stop.html" class="external-link">stop()</a></code> in place of the fit when a <code>PARMS</code> statement builds no phase it could use.</strong> Operands the translator could not read (a template’s <code>MUE=?</code>, or <code>MUE = 0.2</code> written with spaces around <code>=</code>, which <code>PROC HAZARD</code> accepts) or could not use (a <code>MUE</code> or <code>MUL</code> with no shape operand) are recorded in <code>$untranslated</code>, but the fit chunk used to be emitted anyway, as <code>hazard(fit = TRUE, theta = c())</code> under the default Weibull. That chunk rendered an unfitted object, and would now fail on the error above with a message about <code>theta</code> that does not name the real cause. The emitted <code><a href="https://rdrr.io/r/base/stop.html" class="external-link">stop()</a></code> names it. This is a limit of the translation, not a <code>PROC HAZARD</code> refusal, so it is kept apart from the existing “selects no phase” stop.</p></li>
+</ul></div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="1.2.10" id="temporalhazard-1210">TemporalHazard 1.2.10<a class="anchor" aria-label="anchor" href="#temporalhazard-1210"></a></h2>
 <div class="section level3">

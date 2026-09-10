@@ -19,7 +19,7 @@ optimize to produce fitted estimates."></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.10</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.11</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -166,7 +166,11 @@ coefficient.</p></dd>
 
 
 <dt id="arg-theta">theta<a class="anchor" aria-label="anchor" href="#arg-theta"></a></dt>
-<dd><p>Optional numeric coefficient vector (starting values for optimization).</p></dd>
+<dd><p>Numeric starting values for optimization: the shape
+parameters, then one coefficient per column of the design matrix.
+Required when <code>fit = TRUE</code> with a single-distribution <code>dist</code>; optional for
+<code>dist = "multiphase"</code>, which assembles its own starting values from
+<code>phases</code> when <code>theta</code> is <code>NULL</code>.</p></dd>
 
 
 <dt id="arg-dist">dist<a class="anchor" aria-label="anchor" href="#arg-dist"></a></dt>

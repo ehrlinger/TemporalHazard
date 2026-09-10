@@ -110,8 +110,11 @@ hazard(
 
 - theta:
 
-  Optional numeric coefficient vector (starting values for
-  optimization).
+  Numeric starting values for optimization: the shape parameters, then
+  one coefficient per column of the design matrix. Required when
+  `fit = TRUE` with a single-distribution `dist`; optional for
+  `dist = "multiphase"`, which assembles its own starting values from
+  `phases` when `theta` is `NULL`.
 
 - dist:
 
