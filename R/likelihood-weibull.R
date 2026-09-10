@@ -637,13 +637,27 @@ NULL
   #   dmu/dalpha = mu / nu             dmu/dpsi = -mu alpha / nu
   #   dnu/dalpha = 0                 dnu/dpsi = nu
   #   dbeta/dalpha = 0                 dbeta/dpsi = 0         dbeta/dbeta = I
-  if (is.matrix(result$vcov) && !anyNA(result$vcov)) {
+  #
+  # .hzr_safe_solve() masks a non-positive variance by setting its row and
+  # column to NA. Transform the finite block and carry the mask through J: a
+  # reported parameter is unavailable when it depends on any masked internal
+  # one. Skipping the transform instead would leave the surviving entries on
+  # the (alpha, psi) scale beside (mu, nu) estimates.
+  if (is.matrix(result$vcov)) {
     J <- diag(p)
     J[1, 1] <- mu_hat / nu_hat
     J[1, 2] <- -mu_hat * alpha_hat / nu_hat
     J[2, 1] <- 0
     J[2, 2] <- nu_hat
-    result$vcov <- J %*% result$vcov %*% t(J)
+    bad_int <- !is.finite(diag(result$vcov))
+    v_int <- result$vcov
+    v_int[bad_int, ] <- 0
+    v_int[, bad_int] <- 0
+    v_nat <- J %*% v_int %*% t(J)
+    bad_nat <- as.vector((J != 0) %*% bad_int) > 0
+    v_nat[bad_nat, ] <- NA_real_
+    v_nat[, bad_nat] <- NA_real_
+    result$vcov <- v_nat
   }
 
   result
