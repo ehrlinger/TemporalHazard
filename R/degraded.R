@@ -110,8 +110,11 @@
     }
   }
 
-  # No state marks a failed recompute (the conserved log_mu simply keeps an NA
-  # variance), so this one entry is keyed on its reason.
+  # A failed recompute leaves the conserved log_mu fixed in fixed_mask, but
+  # the object does not store which position is conserved, so this one entry
+  # is keyed on its reason. The producer always sets one on a failed
+  # recompute, falling back to "cause not recorded", so the entry cannot
+  # vanish.
   cv <- reasons$conserved_variance
   if (isTRUE(control$conserve_applied) && length(cv) == 1L && !is.na(cv)) {
     causes["conserved_phase_variance"] <- cv

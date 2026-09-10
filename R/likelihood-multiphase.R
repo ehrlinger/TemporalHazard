@@ -2208,7 +2208,7 @@
           "Conservation-of-Events-conserved phase 'log_mu' (", cv_reason,
           "). Its standard error stays NA and downstream standard errors / ",
           "confidence limits for that phase may be understated.", call. = FALSE)
-        best_result$conserved_variance_reason <- cv_reason
+        best_result$conserved_variance_reason <- .hzr_reason_or_unrecorded(cv_reason)
       }
     }
   }

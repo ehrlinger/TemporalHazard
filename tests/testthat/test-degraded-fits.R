@@ -174,3 +174,19 @@ test_that("under CoE, a recompute that masks a variance is not reported as none"
                "^no finite positive variance for: ")
   expect_false("cause not recorded" %in% fit$degraded_causes)
 })
+
+test_that("a recompute Hessian that will not invert names why", {
+  skip_on_cran()
+  # A non-finite Hessian reaches the recompute as a matrix, so the cause must
+  # come from .hzr_safe_solve()'s reason, not from the no-Hessian branch.
+  local_mocked_bindings(
+    .hzr_hessian_multiphase = function(theta, ...) {
+      matrix(NaN, length(theta), length(theta))
+    }
+  )
+  fit <- mp_fit(c(1, 0))
+  expect_true(fit$spec$control$conserve_applied)   # guard: the recompute ran
+  expect_identical(fit$degraded_causes[["conserved_phase_variance"]],
+                   "Hessian has non-finite entries")
+  expect_false("cause not recorded" %in% fit$degraded_causes)
+})
