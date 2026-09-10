@@ -9,6 +9,12 @@ NULL
 # this module handles the objective wrapping, optim() call, and post-fit
 # Hessian/vcov computation.
 
+# numDeriv is a Suggests. Wrapped so tests can simulate an install without it:
+# requireNamespace() is base R and cannot be mocked directly.
+.hzr_numderiv_available <- function() {
+  requireNamespace("numDeriv", quietly = TRUE)
+}
+
 #' Generic optimizer for parametric hazard likelihoods
 #'
 #' Maximises a log-likelihood by minimising its negation via \code{stats::optim}.
@@ -46,7 +52,7 @@ NULL
 #'   also falls back to the numerical Hessian.
 #'
 #' @return List with par, value (log-likelihood), convergence, counts, message,
-#'   hessian, vcov.
+#'   hessian, vcov. Includes \code{se_unavailable_reason}.
 #' @noRd
 .hzr_optim_generic <- function(
     logl_fn,
@@ -161,6 +167,10 @@ NULL
       hess_result <- NULL
     }
   }
+  # Why standard errors are unavailable, when they are, for the record that
+  # print() and summary() show (#242). Set beside each warning below, so the
+  # warning and the record name the same cause.
+  se_reason <- NA_character_
   if (is.null(hess_result)) {
     # Reached when no analytic Hessian was supplied, or the hook declined by
     # returning NULL, or it returned something non-conformant, or it errored.
@@ -176,13 +186,14 @@ NULL
     # vcov() returned a bare logical, with nothing anywhere naming numDeriv.
     # The user-visible symptom was diag(vcov(fit)) complaining about an
     # invalid 'nrow', which is unrecognisable from the cause.
-    if (!requireNamespace("numDeriv", quietly = TRUE)) {
+    if (!.hzr_numderiv_available()) {
       warning("No analytic Hessian was obtained for this fit, and the ",
               "'numDeriv' fallback is not installed, so standard errors ",
               "cannot be computed. Install it with ",
               "install.packages(\"numDeriv\"); note numDeriv is a Suggests ",
               "dependency, so install.packages() and install_github() do ",
               "not pull it by default.", call. = FALSE)
+      se_reason <- "numDeriv not installed and no analytic Hessian"
     } else {
       hess_result <- tryCatch(
         numDeriv::hessian(objective, result$par),
@@ -192,6 +203,7 @@ NULL
           NULL
         }
       )
+      if (is.null(hess_result)) se_reason <- "numDeriv::hessian() failed"
     }
   }
 
@@ -205,7 +217,7 @@ NULL
     # returns NA diagnostics mutely.
     warning("No Hessian could be computed for this fit; standard errors, ",
             "rcond and pd are all NA.", call. = FALSE)
-    list(vcov = NA, rcond = NA_real_, pd = NA)
+    list(vcov = NA, rcond = NA_real_, pd = NA, reason = se_reason)
   }
 
   list(
@@ -217,6 +229,7 @@ NULL
     hessian = hess_result,
     vcov = inv$vcov,
     rcond = inv$rcond,
-    pd = inv$pd
+    pd = inv$pd,
+    se_unavailable_reason = if (is.matrix(inv$vcov)) NA_character_ else inv$reason
   )
 }
