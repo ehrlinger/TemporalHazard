@@ -38,7 +38,7 @@
   `(alpha, psi)` scale to the reported `(mu, nu)` scale was then skipped for
   the whole matrix, so the surviving standard errors stayed on the internal
   scale beside `(mu, nu)` estimates, with no error. A masked `alpha` printed
-  `SE(psi)` as the standard error of `nu`, low by a factor of `nu`; a masked
+  `SE(psi)` as the standard error of `nu`, off by a factor of `nu`; a masked
   `psi` printed `SE(alpha)` as the standard error of `mu`, which depends on
   `psi` and has no valid standard error there. The transform now runs on the
   finite block and carries the mask through the Jacobian: a reported

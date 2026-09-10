@@ -134,28 +134,28 @@ test_that("a masked internal variance keeps the weibull vcov on the (mu, nu) sca
     hazard(survival::Surv(time, status) ~ z, data = dat, dist = "weibull",
            theta = c(mu = 1, nu = 1, z = 0), fit = TRUE)
   }
-  se_ref <- unname(sqrt(diag(fit_weibull()$fit$vcov)))
+  v_ref <- unname(fit_weibull()$fit$vcov)
   real_solve <- .hzr_safe_solve
-  se_masked <- function(k) {
+  vcov_masked <- function(k) {
     local_mocked_bindings(.hzr_safe_solve = function(H, ...) {
       res <- real_solve(H, ...)
       res$vcov[k, ] <- NA_real_
       res$vcov[, k] <- NA_real_
       res
     })
-    unname(sqrt(diag(fit_weibull()$fit$vcov)))
+    unname(fit_weibull()$fit$vcov)
   }
 
-  # alpha masked: nu = exp(psi) depends on psi alone, so SE(nu) survives and
-  # must equal the unmasked value, not SE(psi) = SE(nu) / nu.
-  se1 <- se_masked(1)
-  expect_equal(is.na(se1), c(TRUE, FALSE, FALSE))
-  expect_equal(se1[2:3], se_ref[2:3])
+  # alpha masked: nu = exp(psi) depends on psi alone, so the (nu, z) block
+  # survives and must equal the unmasked one -- SE(nu), not SE(psi) = SE(nu) / nu.
+  v1 <- vcov_masked(1)
+  expect_equal(is.na(v1), outer(1:3, 1:3, function(i, j) i == 1 | j == 1))
+  expect_equal(v1[2:3, 2:3], v_ref[2:3, 2:3])
 
   # psi masked: mu depends on psi through dmu/dpsi, so it is masked as well.
-  se2 <- se_masked(2)
-  expect_equal(is.na(se2), c(TRUE, TRUE, FALSE))
-  expect_equal(se2[3], se_ref[3])
+  v2 <- vcov_masked(2)
+  expect_equal(is.na(v2), outer(1:3, 1:3, function(i, j) i <= 2 | j <= 2))
+  expect_equal(v2[3, 3], v_ref[3, 3])
 })
 
 test_that("weibull SEs are invariant to covariate rescaling", {

@@ -654,7 +654,11 @@ NULL
     v_int[bad_int, ] <- 0
     v_int[, bad_int] <- 0
     v_nat <- J %*% v_int %*% t(J)
-    bad_nat <- as.vector((J != 0) %*% bad_int) > 0
+    # Dependence is structural, not read off J's values: mu depends on alpha
+    # and psi even where mu_hat underflows to 0 or alpha_hat is exactly 0.
+    depends <- diag(p) != 0
+    depends[1, 2] <- TRUE
+    bad_nat <- as.vector(depends %*% bad_int) > 0
     v_nat[bad_nat, ] <- NA_real_
     v_nat[, bad_nat] <- NA_real_
     result$vcov <- v_nat
