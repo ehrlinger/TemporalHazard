@@ -442,7 +442,17 @@ NULL
 #'   the suggested \pkg{numDeriv}. Test with \code{is.list(fit$fit$weak)},
 #'   not \code{!is.null()}: the \code{NA} case has not been examined and
 #'   must not be read as a clean result),
-#'   and \code{engine} (implementation tag, \code{"native-r-m2"}).
+#'   \code{engine} (implementation tag, \code{"native-r-m2"}), and two
+#'   fields recording what the fit did not do: \code{degraded}, a character
+#'   vector of the steps not performed, in the fixed order
+#'   \code{"fitting"}, \code{"standard_errors"},
+#'   \code{"conserved_phase_variance"}, \code{"weak_direction_check"},
+#'   \code{"conservation_of_events"}, and empty when nothing was lost; and
+#'   \code{degraded_causes}, a character vector with the same names giving
+#'   the reason for each. \code{print()} and \code{summary()} always show
+#'   them as a "Not done in this run" block, which reads "none" when nothing
+#'   was lost. \code{fit$fit$weak} is \code{NA} exactly when
+#'   \code{"weak_direction_check"} is listed.
 #' @export
 hazard <- function(formula = NULL,
                    data = NULL,
@@ -1500,7 +1510,8 @@ predict.hazard <- function(object, newdata = NULL,
 #' Print method for fitted hazard models
 #'
 #' Compact one-block summary of a fitted `hazard` object: sample size,
-#' number of predictors, distribution, theta vector, and log-likelihood.
+#' number of predictors, distribution, theta vector, and log-likelihood,
+#' followed by the "Not done in this run" block described in [hazard()].
 #' S3 dispatch only -- users call `print(fit)` rather than invoking this
 #' directly.
 #'
@@ -1644,11 +1655,11 @@ summary.hazard <- function(object, ...) {
 #' Formatted console display of [summary.hazard()] output: distribution,
 #' phase list (for multiphase), coefficient table with standard errors,
 #' and log-likelihood.  When the post-fit Hessian is ill-conditioned or not
-#' positive-definite, a note warns that the standard errors may be unreliable;
-#' when the Hessian could not be inverted at all, a note reports that standard
-#' errors are unavailable.  A further note names the parameters spanning a
-#' weakly identified direction when one was found, or records that the check
-#' could not run when no Hessian was available.  S3 dispatch only -- users
+#' positive-definite, a note warns that the standard errors may be unreliable,
+#' and a further note names the parameters spanning a weakly identified
+#' direction when one was found.  A "Not done in this run" block is always
+#' printed: it lists each step this fit did not perform, with the reason, and
+#' reads "none" when nothing was lost.  S3 dispatch only -- users
 #' call `print(summary(fit))` rather than invoking this directly.
 #'
 #' @param x A `summary.hazard` object returned by [summary.hazard()].
