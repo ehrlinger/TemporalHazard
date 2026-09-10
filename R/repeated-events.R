@@ -408,6 +408,14 @@
 #' event nor an absence, and rows are ordered with missing times first, as SAS
 #' sorts them.
 #'
+#' The result can contain segments of zero length, where `iv_start` is not
+#' less than `time`: for example, an event that shares its time with the
+#' subject's previous row. They are kept, as the macro keeps them. A model
+#' that treats `iv_start` as the time a subject enters the risk set needs each
+#' segment to end after it starts, so adjust or remove these rows before such
+#' a fit. The SAS jobs this function reproduces moved `time` forward by about
+#' one hour on each.
+#'
 #' `data` may not already contain a column named `rcensor`, `first`, `last`,
 #' `event`, `event_no`, `iv_start`, `iv_seg` or `renewal`: this function
 #' creates all eight and would silently overwrite an existing one of the same

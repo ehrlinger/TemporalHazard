@@ -61,6 +61,14 @@ indicator code that is neither 0, 1 nor missing is treated as neither an
 event nor an absence, and rows are ordered with missing times first, as SAS
 sorts them.
 
+The result can contain segments of zero length, where \code{iv_start} is not
+less than \code{time}: for example, an event that shares its time with the
+subject's previous row. They are kept, as the macro keeps them. A model
+that treats \code{iv_start} as the time a subject enters the risk set needs each
+segment to end after it starts, so adjust or remove these rows before such
+a fit. The SAS jobs this function reproduces moved \code{time} forward by about
+one hour on each.
+
 \code{data} may not already contain a column named \code{rcensor}, \code{first}, \code{last},
 \code{event}, \code{event_no}, \code{iv_start}, \code{iv_seg} or \code{renewal}: this function
 creates all eight and would silently overwrite an existing one of the same
