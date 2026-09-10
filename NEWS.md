@@ -1,5 +1,20 @@
 # TemporalHazard 1.2.10
 
+## New features
+
+* New `hzr_repeated_events()` rebuilds the input to a repeated-events hazard
+  model. From a long data set with one row per candidate event per subject, it
+  returns one row per inter-event segment, with the segment's start time,
+  duration and running event count. It reproduces the SAS macro `%repeat`,
+  which built this input for the repeated-events `HAZARD` jobs and whose output
+  was never saved, so those jobs can now be run again in R. It refuses input
+  that would otherwise give a plausible but wrong result -- a non-numeric time,
+  follow-up or indicator column, a factor `id`, a missing `followup` value, or
+  an empty data frame -- and warns, naming the subjects, when an event falls
+  after the end of follow-up, when `followup` varies within a subject, or when
+  a missing time leaves a segment undefined. As in the macro, `rcensor` and
+  `event` can both be 1 on the same row; see `?hzr_repeated_events`.
+
 ## Bug fixes
 
 * **`hzr_translate_sas()` now starts an unspecified shape parameter where
