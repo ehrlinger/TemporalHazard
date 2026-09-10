@@ -923,7 +923,7 @@ Expected: `NAMESPACE` gains `export(hzr_repeated_events)`, `man/hzr_repeated_eve
 Rscript -e 'devtools::load_all(quiet = TRUE); print(example("hzr_repeated_events", package = "TemporalHazard", character.only = TRUE, give.lines = FALSE))'
 ```
 
-Expected: a data frame, four subjects represented, no error and no warning. A roxygen example that has never been
+Expected: a data frame, three subjects represented, no error and no warning. A roxygen example that has never been
 run is not evidence that it works.
 
 - [ ] **Step 6: Lint and commit**

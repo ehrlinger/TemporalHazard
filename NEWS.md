@@ -1,3 +1,14 @@
+# TemporalHazard 1.2.11
+
+## New features
+
+* `hzr_repeated_events()` builds repeated-event segments from a long data set
+  of candidate event times, reproducing the SAS `%repeat` macro used by the
+  repeated-events HAZARD jobs. It validates its inputs and refuses ones that
+  would produce a wrong answer silently -- a missing `followup` value, a
+  non-numeric indicator column, or a factor `id` -- rather than returning a
+  plausible-looking but wrong result.
+
 # TemporalHazard 1.2.10
 
 ## Bug fixes

@@ -91,6 +91,27 @@ correctly whether or not the column is returned. Omitting the column while keepi
 machinery would be the worst of both. It also makes the corpus renewal variant
 (`hz.te123.OMC.renewal`) a second parity target at no extra cost.
 
+## Missing-value semantics
+
+SAS numeric missing is an ordered value that compares EQUAL TO ITSELF, so `if . = . then` is
+true. A row with both event time and end of follow-up missing therefore counts as at end of
+follow-up and gets `rcensor = 1`. The internal stage (`.hzr_re_stage3()`) preserves this: it
+tests `event_time == followup` with both sides possibly `NA`, and treats the both-missing
+case as the solo/nonevent branch, matching the macro rather than propagating `NA`.
+
+The exported function nonetheless REJECTS a missing `followup` value, because carrying it
+through scrambles row order downstream: the appended censored row (stage 4) sorts before the
+event it terminates, and `iv_start` comes out missing. This is a deliberate deviation from the
+macro, chosen because a plausible-wrong data frame is worse than a refusal. Note that SAS's
+own macro header assumes end of follow-up is present.
+
+The exported function also rejects a non-numeric indicator column and a factor `id`, and warns
+when no indicator value equals 1. A character indicator matches neither the event test nor the
+non-event test, so every row is dropped and censored rows backfilled, producing a frame
+indistinguishable from a legitimately all-censored cohort -- silently, with no error. A factor
+`id` sorts by level order rather than value, which can give a different subject ordering than
+SAS's `proc sort`.
+
 ## Column-count discrepancy, asserted not hidden
 
 SAS's macro output is 367 columns. Two of them, `lag_iv` and `number`, are pure DATA-step
