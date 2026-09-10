@@ -269,9 +269,12 @@ test_that("a PARMS this parser cannot read is recorded but NOT refused", {
   # yields "MUE", "=", "0.2" and nothing parses -- while HAZARD's own lexer
   # discards whitespace unconditionally (hazard_l.l:32, rule at :50), making
   # this a well-formed parmsopt (hazard_y.y:138) whose job RUNS with an active
-  # early phase. Refusing it would stop a job PROC HAZARD accepts, which is
-  # worse than translating it imperfectly: $untranslated still records every
-  # operand that was not understood.
+  # early phase. Attributing a refusal to PROC HAZARD here would be false.
+  #
+  # Nor can it be fitted: with no phase built there are no starting values,
+  # and the fit chunk this used to emit -- hazard(fit = TRUE, theta = c())
+  # under the default Weibull -- bound an unfitted object, and now errors.
+  # So the translator stops in place of the fit, saying the limit is its own.
   f <- withr::local_tempfile(fileext = ".sas")
   writeLines(paste("PROC HAZARD DATA=D; TIME FU; EVENT DEAD;",
                    "PARMS MUE = 0.2 THALF = 1 NU = 1; RUN;"), f)
@@ -279,7 +282,11 @@ test_that("a PARMS this parser cannot read is recorded but NOT refused", {
 
   expect_false(any(grepl("No phase selected", job$untranslated$reason,
                          fixed = TRUE)))
-  expect_true(any(vapply(job$calls, .is_hazard_fit, logical(1))))
+  expect_false(any(vapply(job$calls, .is_hazard_fit, logical(1))))
+  says_limit <- function(x) {
+    any(grepl("not a PROC HAZARD refusal", as.character(x), fixed = TRUE))
+  }
+  expect_true(any(vapply(job$calls, says_limit, logical(1))))
   # ... and the operands it could not read are still reported, so declining to
   # refuse is not the same as declaring the job fine.
   expect_true("MUE" %in% job$untranslated$construct)

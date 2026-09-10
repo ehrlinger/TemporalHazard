@@ -26,6 +26,36 @@ test_that("hazard() validates core dimensions", {
   )
 })
 
+test_that("fit = TRUE without theta is refused for single-distribution models", {
+  # Only the multiphase optimizer assembles its own start. This call used to
+  # return an unfitted object -- NULL coefficients, NA objective -- silently.
+  tt <- c(1, 2, 3, 4, 5, 6)
+  st <- c(1, 0, 1, 1, 0, 1)
+  for (d in c("weibull", "exponential", "loglogistic", "lognormal")) {
+    expect_error(hazard(time = tt, status = st, dist = d, fit = TRUE),
+                 paste0("needs starting values for dist = \"", d, "\""))
+  }
+  df <- data.frame(tt = tt, st = st, z = c(0, 1, 0, 1, 1, 0))
+  expect_error(hazard(survival::Surv(tt, st) ~ z, data = df,
+                      dist = "weibull", fit = TRUE),
+               "needs starting values")
+  # `fit` is tested the way the optimizer dispatch tests it, so a truthy
+  # non-logical cannot slip past the guard into the unfitted path.
+  expect_error(hazard(time = tt, status = st, fit = 1), "needs starting values")
+  # `dist` is validated before the guard reads it.
+  expect_error(hazard(time = tt, status = st, dist = NULL, fit = TRUE),
+               "non-empty character scalar")
+
+  # Neither neighbour of the refused call is affected: fit = FALSE still
+  # builds an unfitted model, and supplying theta still fits.
+  unfitted <- hazard(time = tt, status = st, dist = "weibull")
+  expect_null(unfitted$fit$counts)
+  fitted <- hazard(time = tt, status = st, dist = "weibull", fit = TRUE,
+                   theta = c(0.3, 1))
+  expect_false(is.null(fitted$fit$counts))
+  expect_length(fitted$fit$theta, 2L)
+})
+
 test_that("predict.hazard returns linear predictor and hazard scale", {
   x <- matrix(c(1, 0, 0, 1), ncol = 2)
   fit <- hazard(time = c(1, 2), status = c(1, 0), x = x, theta = c(0.3, -0.2))

@@ -1,3 +1,33 @@
+# TemporalHazard 1.2.11
+
+## Breaking changes
+
+* **`hazard(fit = TRUE)` without `theta` is now an error for the
+  single-distribution models.** For `dist = "weibull"`, `"exponential"`,
+  `"loglogistic"` and `"lognormal"`, the optimizer ran only when `theta` was
+  supplied, so a call that left it out returned an unfitted object -- `NULL`
+  coefficients, an `NA` objective -- with no error and no warning. `print()`
+  gave no sign of it. The call now stops and asks for starting values.
+  `dist = "multiphase"` is unaffected: it assembles its own start from
+  `phases`. `fit = FALSE` without `theta` still builds an unfitted model.
+
+  Code that relied on the old behaviour was getting no fit. Two tests in this
+  package were: they compared `NULL` coefficients with `NULL` coefficients,
+  so the counting-process equivalence and epoch-split invariance they claimed
+  for the Weibull were never checked. Both now fit, and both pass.
+
+* **`hzr_translate_sas()` now emits a `stop()` in place of the fit when a
+  `PARMS` statement builds no phase it could use.** Operands the translator
+  could not read (a template's `MUE=?`, or `MUE = 0.2` written with spaces
+  around `=`, which `PROC HAZARD` accepts) or could not use (a `MUE` or `MUL`
+  with no shape operand) are recorded in `$untranslated`, but the fit chunk
+  used to be emitted anyway, as `hazard(fit = TRUE, theta = c())` under the
+  default Weibull. That chunk rendered an unfitted object, and would now fail
+  on the error above with a message about `theta` that does not name the real
+  cause. The emitted `stop()` names it. This is a limit of the translation,
+  not a `PROC HAZARD` refusal, so it is kept apart from the existing
+  "selects no phase" stop.
+
 # TemporalHazard 1.2.10
 
 ## Bug fixes
