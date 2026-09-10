@@ -47,13 +47,16 @@ Four details there are load bearing:
 - **Lint runs before tests** because it is seconds against about a minute for the suite. Cheap
   failures first.
 - **`R CMD check` does not run the whole suite.** It runs with `NOT_CRAN` false, so
-  `skip_on_cran()` tests are skipped: 193 skips and 2679 passes under check, against 6 skips
-  and **3703** passes locally (both measured 2026-09-05 at `fe57e60`, the `v1.2.9` release
-  artifact, with no environment variables set; the local figure needs the SAS fixture
-  checkouts present under `~/Documents/GitHub/hazard`). **That gap is now 1,024 passes**, up
-  from about 900 when it was last measured on 2026-08-31, so the check covers proportionally
-  less of the suite than it did. A green check is **not**
-  evidence that those tests pass; only the local `devtools::test()` line is.
+  `skip_on_cran()` tests are skipped: 193 skips and 2765 passes under check, against 6 skips
+  and **3796** passes locally (both measured 2026-09-09 at `bd75f9f`, with no environment
+  variables set; the local figure needs the SAS fixture checkouts present under
+  `~/Documents/GitHub/hazard`). **That gap is 1,031 passes**, against 1,024 on 2026-09-05 and
+  about 900 on 2026-08-31. Note the gap barely moved this cycle while the suite grew by 93
+  passes: the skip count held at 193 and `skip_on_cran()` calls held at 173, so this cycle's
+  new tests run *under* the check rather than being skipped out of it. That is a statement
+  about coverage only — it says nothing about the check's wall time, and must not be used to
+  explain one (see "Where the check's time actually goes"). A green check is **not** evidence
+  that the skipped tests pass; only the local `devtools::test()` line is.
 - **Commit before you `git archive`.** It exports the committed tree, so an uncommitted fix is
   silently absent and the check answers a question about the wrong code. This has already
   cost one wrong conclusion. Nothing in the output tells you.
@@ -222,21 +225,22 @@ Rscript ~/Documents/GitHub/house-style/compose-house-style.R --repo TemporalHaza
 - **The score criterion is an *entry* criterion.** The drop path never refits per candidate
   under either criterion: removals are tested on the current model's Wald p-value against
   `slstay`, as SAS does, and only the accepted drop is refitted.
-- Anything slow gets `skip_on_cran()`. There are 173 calls today (2026-09-05, `fe57e60`).
+- Anything slow gets `skip_on_cran()`. There are 173 calls today (2026-09-09, `bd75f9f` --
+  unchanged from `fe57e60`, so nothing added this cycle was skipped).
 - No `browser()`, no bare `print()`, no `library()` inside `R/`. `cat()` belongs only in a
   `print.*` method.
 
 ### Where the check's time actually goes
 
-Overall `R CMD check --as-cran` with the manual: **3m 32s** (212s), tarball **2.91 MB**
-(measured 2026-09-05 at `fe57e60`, the `v1.2.9` release artifact). CRAN's ceiling is about 10
+Overall `R CMD check --as-cran` with the manual: **3m 41s** (221s), tarball **2.93 MB**
+(measured 2026-09-09 at `bd75f9f`). CRAN's ceiling is about 10
 minutes and it rejects on that even at 0/0/0, which is what got ggRandomForests archived in
 June 2026.
 
 | Component | Time |
 |---|---|
-| Tests | 87s / 93s |
-| Vignette rebuild | 42s / 46s |
+| Tests | 90s / 96s |
+| Vignette rebuild | 47s / 52s |
 | Everything else | the remainder |
 
 Re-measure these when you change them, and stamp the commit.
@@ -255,19 +259,38 @@ by more than a release cycle's real growth, so read the dated series, not the la
 | 2026-08-23 | `c9f6c28` | 3m 29s | 84s |
 | 2026-09-02 | `f790c73` | 3m 33s | 91s |
 | 2026-09-05 | `fe57e60` | 3m 32s | 87s |
+| 2026-09-09 | `bd75f9f` | 3m 41s | 90s |
 
-Across those four the total moved about 40 seconds and the tests about 34, nearly all of it in
-tests, over three release cycles. Real, slow, and still a wide margin against CRAN. The
+Across those five the total moved about 49 seconds and the tests about 37, nearly all of it in
+tests, over four release cycles. Real, slow, and still a wide margin against CRAN. The
 2026-08-23 entry read the 2026-08-22 delta as a 37-second jump that "nothing flagged"; against
 a 46-second spread on unchanged code, a delta that size can be entirely the machine. The direction is what is
 worth watching, and it only shows against several dated points.
 
-⚠️ **The 2026-09-05 row went DOWN while the suite grew by 330 passes, and that is not a
-speedup.** Five end-to-end `hazard()` fits added that cycle carry `skip_on_cran()`, so the
-check now measures less work than it did, not the same work faster. A falling number in this
-column can mean the tests moved out of the check rather than got cheaper -- read it against the
-under-check pass count in **Definition of done**, which is the figure that says how much the
-check is actually running.
+⚠️ **Assertion counts and seconds are two different measurements. Neither explains the
+other.** Track both, and keep the claims apart.
+
+**What the assertion counts establish (coverage):**
+
+- **2026-09-05: coverage fell proportionally.** The suite grew by 330 passes locally, and the
+  five end-to-end `hazard()` fits added that cycle carry `skip_on_cran()`. Adding skipped
+  tests does **not** reduce the work the check performs — those tests never ran under it in
+  the first place. What fell is the *proportion* of the suite the check covers.
+- **2026-09-09: coverage largely held.** Under-check passes rose 2679 -> 2765 while the skip
+  count held at 193 and `skip_on_cran()` calls held at 173, so this cycle's additions ran
+  inside the check. The check's own workload grew.
+
+**What the seconds do NOT establish (timing):** the overall moved 212s -> 221s and the tests
+87s -> 90s. Both sit far inside the 46-second spread measured above on effectively unchanged
+code, so **neither can be attributed to the coverage change, or to anything else.** Record
+them; do not explain them. The same applies looking backwards: the 2026-09-05 "fall" was 213s
+-> 212s — **one second** — and an earlier version of this paragraph built a causal story on
+it.
+
+The reason to keep both series is that they answer different questions. The seconds say
+whether CRAN's ceiling is in danger. The under-check pass count in **Definition of done** says
+how much of the suite the check is actually running, which is the only thing that can tell a
+cheaper suite from a smaller one — and it cannot be read off the clock.
 
 Both dominant costs are the ones that grow silently. Watch the budget when adding a vignette
 chunk or an unskipped slow test.

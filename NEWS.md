@@ -20,6 +20,145 @@
 
 ## Bug fixes
 
+* **`hzr_translate_sas()` now starts an unspecified shape parameter where
+  `PROC HAZARD` starts it, not where `hzr_phase()` does.** A `PARMS` statement
+  that named only some of a phase's shape operands had the rest filled from
+  `hzr_phase()`'s defaults, and three of them disagree with the reference C
+  (`src/hazard/stmtprc.c`): `NU` starts at 2 rather than 1, `M` at 1 rather
+  than 0, and `ETA` at 2 rather than 1. Since the multiphase likelihood is
+  multimodal, a different starting vector can reach a different optimum, so
+  this was a fidelity divergence rather than a cosmetic one. The defaults are
+  now `PROC HAZARD`'s, and the emitted `hzr_phase()` call names every shape
+  argument explicitly so that what is printed and what reaches the optimizer
+  cannot disagree. `TAU` is the exception, because `PROC HAZARD` derives it
+  from the data: an unspecified `TAU` becomes `0.75 * Tmax`
+  (`src/hazard/readobs.c`) and one written as non-positive becomes
+  `2 * Tmax / 3` (`SETG3()`). Neither can be reproduced at parse time, so such
+  a phase is emitted at `tau = 1` and recorded in `$untranslated`, naming
+  whichever rule applies -- unless `SETG3_ignore_tau()` does, which pins `TAU`
+  at 1 anyway. No job in the *public corpus* is partially specified, so no corpus
+  translation changes; the package's own end-to-end fits test does carry a
+  partial block (`MUE THALF NU MUC`, no `M`), and its early phase now starts at
+  `m = 1`.
+
+* **`hzr_translate_sas()` now pins `TAU` where `SETG3_ignore_tau()` pins it.**
+  When `ALPHA` is fixed at 1, `setg3.c:378-379` sets `TAU` to 1 *and* fixes
+  it; the emitted `hzr_phase()` call mirrored neither, leaving `TAU` free. At
+  `alpha = 1` the `G3` form collapses to `(t/tau)^(gamma*eta)`, so `log_mu`
+  and `log_tau` are exactly aliased: the translated fit converged onto a flat
+  ridge and returned no standard errors for either, with nothing in
+  `$untranslated` to say so. The emitted call now carries `tau = 1` and
+  `"tau"` in `fixed`, which identifies `log_mu` again. Jobs whose `PARMS`
+  named a different `TAU` additionally record a row, since that value is used
+  by neither `PROC HAZARD` nor the translation. No corpus translation changes:
+  every late-phase block in the public corpus already writes `TAU=1 FIXTAU`,
+  so the emitted calls are byte-identical before and after (checked by running
+  the parser over all of them). What changes there is that those jobs no
+  longer need a warning.
+
+  The same branch's `ETA` fix (`setg3.c:405`) is mirrored too: with `GAMMA` and
+  `ETA` both free at `alpha = 1` the pair is exactly singular, and
+  `hzr_phase()` previously left both free and fitted the ridge. On the
+  package's own fixture that moves `gamma`'s standard error from 7.5 to 0.02.
+  This replaces an `$untranslated` row with a faithful translation.
+
+* **`hzr_translate_sas()` now reports the whole of what `SETG3()` would do to
+  a late phase, and mirrors only the part that has to be mirrored.**
+  `PROC HAZARD` does not optimize from the operands `PARMS` supplies: `SETG3()`
+  rewrites them first, and refuses some jobs outright. The translator now walks
+  that function (`src/model/setg3.c`) and records both, splitting them on a
+  single principle:
+
+  - A rewrite that resolves an **exact non-identifiability** is *mirrored*,
+    because the degeneracy is algebra and is just as real in R. There are two,
+    both in `SETG3_ignore_tau()`: the `TAU` pin and the `ETA` fix, described
+    above.
+  - Every other rewrite keeps `PROC HAZARD` inside a numerical branch it can
+    evaluate -- the role `g3flag` plays, which `hzr_decompos_g3()` does not
+    need because it carries the general four-parameter `G3` form. Copying those
+    would import a SAS limitation into R, and reaching a late shape the
+    reference implementation cannot is a purpose of this package. They are
+    *recorded* in `$untranslated`, so a SAS parity run knows why the starting
+    values differ.
+
+  In practice this covers `SETG3_verify_ge_2()`'s push of `GAMMA * ETA` clear
+  of 2 (which the `PROC HAZARD` defaults `gamma = 1`, `eta = 2` trip exactly,
+  so it applied to every defaulted non-`WEIBULL` late phase), the value
+  substitutions in all eight sign branches, and `SETG3_alpha_fixup()` /
+  `SETG3_alpha_gener()` deriving `ALPHA` from `GAMMA * ETA`.
+
+  Nine refusal codes can now be recorded rather than emitted as runnable fits,
+  where previously only `SETG3980` was -- and that one only for `alpha = 0`,
+  not for the negative `ALPHA` that raises it too. (All sixteen are mirrored
+  from the C, but seven guard conditions the entry checks at `setg3.c:269-284`
+  have already refused, so no input reaches them; an exhaustive search in the
+  tests pins which nine are live.)
+
+  One correction to a rule this package had recorded wrongly: an **unspecified**
+  `TAU` does not reach `SETG3()` as the value `stmtprc.c` starts it at, 0.
+  `src/hazard/readobs.c:153-154` replaces it with `0.75 * Tmax` on an active
+  late phase, and `readobs()` runs before `SETG3()` (`hazard.c:276` against
+  `:292`). So an absent `TAU` starts at `0.75 * Tmax`, not `2 * Tmax / 3` --
+  that rule (`setg3.c:317`) governs only a `TAU` the job wrote as non-positive
+  -- and a bare `FIXTAU` cannot raise `SETG3900`. `ALPHA = 0` **with**
+  `FIXALPHA` is the limiting exponential in both implementations and still
+  translates cleanly; left free, `SETG3` derives an `ALPHA` instead, which is
+  now reported.
+
+  No corpus job is affected: every late-phase block in the public corpus
+  carries `WEIBULL`, which returns at `setg3.c:347` before the sign dispatch,
+  and all of them write `TAU=1 FIXTAU ALPHA=1 FIXALPHA` with a positive `GAMMA`
+  and `ETA`. Verified by running the parser over all of them before and after.
+* **`hzr_translate_sas()` no longer builds a phase that `PROC HAZARD` would
+  not.** A `PARMS` statement names its phases with `MUE`, `MUC` and `MUL`; the
+  shape operands (`THALF`/`NU`/`M` early, `TAU`/`GAMMA`/`ALPHA`/`ETA` late)
+  only shape a phase that already exists. The translator had this the other way
+  round and keyed on the shape operands, so
+  `PARMS MUE=0.2 THALF=1 NU=1 TAU=2 GAMMA=1.5` emitted a two-phase model
+  against `PROC HAZARD`'s one -- carrying an invented `mu` starting value of
+  0.1 for the phase that should not have been there, and offering nothing in
+  `$untranslated` to say so. In the reference C only `setparmno()` sets
+  `C->phase[n]`, and only when that `MU` is greater than zero
+  (`src/hazard/setparmno.c`); the seven shape operands are registered by
+  `setprmf()`, which never touches it. A phase is now built only when its own
+  `MU` was specified and positive -- so a `MUC` of exactly zero no longer
+  builds a constant phase either, where before the translator tested only
+  whether the keyword was present. Shape operands belonging to a phase that
+  never activated are recorded in `$untranslated` rather than dropped, since
+  `PROC HAZARD` zeroes them (`src/hazard/stmtprc.c`) and skips their covariates
+  (`src/hazard/setstat.c`). A job that activates no phase at all is now
+  **refused** rather than translated -- whether its `PARMS` named no positive
+  `MU`, or it carried no `PARMS` statement whatsoever. `PROC HAZARD` does not
+  run such a job: `src/hazard/modterm.c` raises `ERROR 1001: No phase
+  selected` and the procedure exits before computing any results, so there is
+  no fit for a translation to be faithful to. The translator previously
+  emitted a runnable single-distribution fit and reported full token coverage;
+  it now emits a `stop()` in place of the `hazard()` call, as it already did
+  for `LCENSOR` combined with `ICENSOR`. The two cases are one state rather
+  than two: `src/hazard/stmtprc.c` zeroes all three phases at initialization
+  and only `setparmno()` turns one back on, so a job with no `PARMS` has no
+  active phase for the same reason a `PARMS` naming `MUE=0` does. `modterm()`
+  is reached on every job, not only once a multiphase model has been selected
+  -- its one call site in `outmods()` is unconditional in the procedure's main
+  sequence.
+
+  The refusal fires only when every `PARMS` operand was understood. A
+  statement this parser could not read is recorded, operand by operand, but
+  never refused: `PARMS MUE = 0.2 THALF = 1` (spaces around `=`) parses to
+  nothing here while `PROC HAZARD`'s own lexer discards whitespace and runs
+  the job with an active early phase, so refusing it would stop a job the
+  reference accepts. A second `PARMS` statement also now adds to the first
+  rather than replacing it, matching the single field table `parmprc()` reads
+  once after all statements are processed.
+
+  One job in the public `hazard` corpus changes, and only to drop a claim that
+  was wrong: the second `%HAZARD` block of
+  `dist/examples/hm.dthar.TGA.sas` is a documentation template carrying
+  literal `?` placeholders, which the reference would reject as a syntax
+  error rather than as `ERROR 1001`. (That file's first block is a valid
+  `PARMS` activating two phases and is unaffected.) Its per-operand rows are
+  unchanged. No corpus job is refused.
+
 * **`hzr_translate_sas()` no longer discards the `ALPHA` and `ETA` a `PARMS`
   statement specified alongside `WEIBULL`.** The translator read the bare
   `WEIBULL` keyword as a request to constrain the late phase to

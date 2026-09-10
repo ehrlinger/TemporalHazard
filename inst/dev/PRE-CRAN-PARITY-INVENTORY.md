@@ -91,12 +91,25 @@ step reproduced in `.hzr_derive_primisol()`; raw file discovered at
 `~/Documents/GitHub/hazard/examples/data/omc`; n_obs=382 / n_events=44
 verified against SAS.
 
-**Parity tests** at `tests/testthat/test-sas-parity.R` — **63/63 PASS**.
+**Parity tests** at `tests/testthat/test-sas-parity.R`.  The six prototype
+fits listed below are **63/63 PASS** and are a SUBSET of that file, not all of
+it: the file now holds **18 tests / 194 expectations**, 0 failing.  Read 63 as
+"these six", never as the file total — it was the file total in May 2026 and
+has not been since.
+
 Counts below are `testthat`'s own per-test expectation counts, so they can be
 re-derived rather than tallied by eye:
-`as.data.frame(testthat::test_local(filter = "sas-parity"))[, c("test", "passed")]`
-(measured 2026-09-08).  The previous total of 54 had drifted by 2 before this
-PR, and two of the per-test counts with it.
+`as.data.frame(testthat::test_local(filter = "^sas-parity$"))[, c("test", "passed")]`
+(measured 2026-09-09 at `bd75f9f`; all six per-test counts unchanged from
+2026-09-08).
+
+⚠️ **The anchors in that filter are load bearing.** Bare `"sas-parity"` is a
+regex, and it also matches `test-bhdead-sas-parity.R` (3 tests) and
+`test-weights-sas-parity.R` (4 tests) — 25 tests / 196 expectations, which
+reconciles with neither 63 nor 194.  This file carried the unanchored form
+until 2026-09-09, so anyone who ran it as written got a number that matched
+nothing here and no way to see why.  The previous total of 54 had drifted by 2
+before the 2026-09-08 pass, and two of the per-test counts with it.
 - `hz.deadp.KUL` (3-phase all-fixed, 3 free): LL=−3740.52, MUE/MUC/MUL
   natural-scale, SE(E0/C0/L0), 3 off-diagonal vcov entries (14 expectations).
 - `hz.death.AVC` (2-phase free-shape Early): LL=−210.501,
