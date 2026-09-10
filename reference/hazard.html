@@ -257,7 +257,17 @@ available – which includes an unfitted object and an install without
 the suggested <span class="pkg">numDeriv</span>. Test with <code>is.list(fit$fit$weak)</code>,
 not <code>!is.null()</code>: the <code>NA</code> case has not been examined and
 must not be read as a clean result),
-and <code>engine</code> (implementation tag, <code>"native-r-m2"</code>).</p>
+<code>engine</code> (implementation tag, <code>"native-r-m2"</code>), and two
+fields recording what the fit did not do: <code>degraded</code>, a character
+vector of the steps not performed, in the fixed order
+<code>"fitting"</code>, <code>"standard_errors"</code>,
+<code>"conserved_phase_variance"</code>, <code>"weak_direction_check"</code>,
+<code>"conservation_of_events"</code>, and empty when nothing was lost; and
+<code>degraded_causes</code>, a character vector with the same names giving
+the reason for each. <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code> and <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> always show
+them as a "Not done in this run" block, which reads "none" when nothing
+was lost. <code>fit$fit$weak</code> is <code>NA</code> exactly when
+<code>"weak_direction_check"</code> is listed.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
@@ -454,6 +464,7 @@ nonlinear temporal decomposition mixed effects model. <em>Stat Methods Med Res.<
 <span class="r-out co"><span class="r-pr">#&gt;</span>   engine:       native-r-m2 </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   converged:    TRUE </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   log-lik:      -89.5173 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Not done in this run: none</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   evaluations: fn=23, gr=7</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Coefficients:</span>
@@ -488,6 +499,7 @@ nonlinear temporal decomposition mixed effects model. <em>Stat Methods Med Res.<
 <span class="r-out co"><span class="r-pr">#&gt;</span>   engine:       native-r-m2 </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   converged:    TRUE </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   log-lik:      -293.553 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Not done in this run: none</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   evaluations: fn=36, gr=8</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Coefficients:</span>
@@ -557,6 +569,7 @@ nonlinear temporal decomposition mixed effects model. <em>Stat Methods Med Res.<
 <span class="r-out co"><span class="r-pr">#&gt;</span>   engine:       native-r-m2 </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   converged:    TRUE </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   log-lik:      -321.926 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Not done in this run: none</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   evaluations: fn=21, gr=6</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Coefficients (internal scale):</span>

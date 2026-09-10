@@ -124,7 +124,8 @@
 <span><span class="co">#&gt;   dist:         weibull </span></span>
 <span><span class="co">#&gt;   engine:       native-r-m2 </span></span>
 <span><span class="co">#&gt;   log-lik:      -3935.72 </span></span>
-<span><span class="co">#&gt;   converged:    TRUE</span></span></code></pre></div>
+<span><span class="co">#&gt;   converged:    TRUE </span></span>
+<span><span class="co">#&gt;   Not done in this run: none</span></span></code></pre></div>
 </div>
 <p>The summary tells us where the optimizer landed; the picture tells us whether that landing point matches the data. Plot the fitted survival curve on a fine time grid and overlay the Kaplan-Meier step function from the raw cohort.</p>
 <div class="cell">
@@ -203,7 +204,8 @@ Figure 1: Weibull parametric survival vs. Kaplan-Meier (CABG, KU Leuven)
 <span><span class="co">#&gt;   dist:         weibull </span></span>
 <span><span class="co">#&gt;   engine:       native-r-m2 </span></span>
 <span><span class="co">#&gt;   log-lik:      -197.159 </span></span>
-<span><span class="co">#&gt;   converged:    TRUE</span></span></code></pre></div>
+<span><span class="co">#&gt;   converged:    TRUE </span></span>
+<span><span class="co">#&gt;   Not done in this run: none</span></span></code></pre></div>
 </div>
 <p>Each coefficient is a log-hazard-ratio: positive means higher risk, negative means lower, zero means no effect. The large positive coefficients on <code>mal</code> (anatomical malalignment) and <code>com_iv</code> (grade IV post-operative complications) flag these as the dominant risk markers in this cohort. The standard errors and Wald z-statistics in the summary tell you which effects are well identified and which are noise — a coefficient with a z-statistic near zero contributes essentially nothing the data can defend.</p>
 </section><section class="level2" data-number="3"><h2 data-number="3" id="multiphase-model-additive-hazard-decomposition">
@@ -238,6 +240,7 @@ Figure 1: Weibull parametric survival vs. Kaplan-Meier (CABG, KU Leuven)
 <span><span class="co">#&gt;   engine:       native-r-m2 </span></span>
 <span><span class="co">#&gt;   converged:    TRUE </span></span>
 <span><span class="co">#&gt;   log-lik:      -228.029 </span></span>
+<span><span class="co">#&gt;   Not done in this run: none</span></span>
 <span><span class="co">#&gt;   evaluations: fn=32, gr=10</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Coefficients (internal scale):</span></span>
@@ -327,7 +330,8 @@ Figure 2: Single-phase Weibull vs. multiphase model against Kaplan-Meier (AVC)
 <span><span class="co">#&gt;   dist:         weibull </span></span>
 <span><span class="co">#&gt;   engine:       native-r-m2 </span></span>
 <span><span class="co">#&gt;   log-lik:      -1820.55 </span></span>
-<span><span class="co">#&gt;   converged:    TRUE</span></span></code></pre></div>
+<span><span class="co">#&gt;   converged:    TRUE </span></span>
+<span><span class="co">#&gt;   Not done in this run: none</span></span></code></pre></div>
 </div>
 <p>Switch endpoints. Same data, same package, but now we model time to prosthetic valve endocarditis instead of death. The covariate list shifts to match the clinical question: <code>nve</code> (native-valve endocarditis history) replaces <code>nyha</code> because functional class is less informative for infection risk than prior endocarditis exposure. The fit returns its own MLE, coefficients, and standard errors completely independent of the death model.</p>
 <div class="cell">
@@ -348,7 +352,8 @@ Figure 2: Single-phase Weibull vs. multiphase model against Kaplan-Meier (AVC)
 <span><span class="co">#&gt;   dist:         weibull </span></span>
 <span><span class="co">#&gt;   engine:       native-r-m2 </span></span>
 <span><span class="co">#&gt;   log-lik:      -391.125 </span></span>
-<span><span class="co">#&gt;   converged:    TRUE</span></span></code></pre></div>
+<span><span class="co">#&gt;   converged:    TRUE </span></span>
+<span><span class="co">#&gt;   Not done in this run: none</span></span></code></pre></div>
 </div>
 <p>Each endpoint gets its own model with its own covariates, but the hazard model structure — temporal shape plus covariate effects — stays the same whatever the clinical endpoint. Repeating the workflow for a third endpoint (reoperation, for example) is mechanical: swap the <code>Surv(...)</code> columns, swap the covariates, refit. The advantage over running three separate analyses in different tools is that the predictions, diagnostics, and uncertainty quantification all come from the same package — there’s no risk of subtle differences in censoring handling or estimator choice between endpoints.</p>
 </section><section class="level2" data-number="5"><h2 data-number="5" id="interval-and-left-censoring">
@@ -475,7 +480,8 @@ Figure 2: Single-phase Weibull vs. multiphase model against Kaplan-Meier (AVC)
 <span><span class="co">#&gt;   dist:         weibull </span></span>
 <span><span class="co">#&gt;   engine:       native-r-m2 </span></span>
 <span><span class="co">#&gt;   log-lik:      -674.374 </span></span>
-<span><span class="co">#&gt;   converged:    TRUE</span></span></code></pre></div>
+<span><span class="co">#&gt;   converged:    TRUE </span></span>
+<span><span class="co">#&gt;   Not done in this run: none</span></span></code></pre></div>
 </div>
 </section><section class="level3" data-number="5.3"><h3 data-number="5.3" id="interval-censored-vs-naive-right-censored">
 <span class="header-section-number">5.3</span> Interval-censored vs naive right-censored<a class="anchor" aria-label="anchor" href="#interval-censored-vs-naive-right-censored"></a>

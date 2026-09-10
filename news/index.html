@@ -65,6 +65,18 @@
 </li>
 <li><p><strong><code><a href="../reference/hzr_translate_sas.html">hzr_translate_sas()</a></code> now emits a <code><a href="https://rdrr.io/r/base/stop.html" class="external-link">stop()</a></code> in place of the fit when a <code>PARMS</code> statement builds no phase it could use.</strong> Operands the translator could not read (a template’s <code>MUE=?</code>, or <code>MUE = 0.2</code> written with spaces around <code>=</code>, which <code>PROC HAZARD</code> accepts) or could not use (a <code>MUE</code> or <code>MUL</code> with no shape operand) are recorded in <code>$untranslated</code>, but the fit chunk used to be emitted anyway, as <code>hazard(fit = TRUE, theta = c())</code> under the default Weibull. That chunk rendered an unfitted object, and would now fail on the error above with a message about <code>theta</code> that does not name the real cause. The emitted <code><a href="https://rdrr.io/r/base/stop.html" class="external-link">stop()</a></code> names it. This is a limit of the translation, not a <code>PROC HAZARD</code> refusal, so it is kept apart from the existing “selects no phase” stop.</p></li>
 </ul></div>
+<div class="section level3">
+<h3 id="new-features-1-2-11">New features<a class="anchor" aria-label="anchor" href="#new-features-1-2-11"></a></h3>
+<ul><li>
+<strong>Every fit now says what it did not do</strong> (<a href="https://github.com/ehrlinger/TemporalHazard/issues/242" class="external-link">#242</a>, following <a href="https://github.com/ehrlinger/TemporalHazard/issues/197" class="external-link">#197</a>). A <code>hazard</code> object carries <code>degraded</code>, the steps the fit did not perform, and <code>degraded_causes</code>, the reason for each. <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code> and <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> always show them as a “Not done in this run” block, and the block reads “none” when nothing was lost: a line that appears only on bad news cannot be told from one that was never written. Five steps are recorded:
+<ul><li>fitting itself: <code>fit = FALSE</code>, or a fit imported from SAS output;</li>
+<li>standard errors, naming whether numDeriv was missing, <code><a href="https://rdrr.io/pkg/numDeriv/man/hessian.html" class="external-link">numDeriv::hessian()</a></code> failed, or the Hessian was non-finite or singular, and, when a covariance was computed, which estimated parameters were left without a usable variance;</li>
+<li>the variance of the phase that Conservation of Events conserves;</li>
+<li>the weak-direction check;</li>
+<li>Conservation of Events itself.</li>
+</ul>
+The block replaces two notes that could name the wrong cause: “not examined for a weakly identified direction” and “standard errors unavailable; the Hessian could not be inverted”. <code>fit$fit$weak</code> keeps its meaning, and is <code>NA</code> exactly when <code>"weak_direction_check"</code> is listed. An object saved by an earlier version prints “not recorded” rather than “none”.</li>
+</ul></div>
 </div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="1.2.10" id="temporalhazard-1210">TemporalHazard 1.2.10<a class="anchor" aria-label="anchor" href="#temporalhazard-1210"></a></h2>

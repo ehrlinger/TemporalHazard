@@ -5,12 +5,12 @@ Formatted console display of
 output: distribution, phase list (for multiphase), coefficient table
 with standard errors, and log-likelihood. When the post-fit Hessian is
 ill-conditioned or not positive-definite, a note warns that the standard
-errors may be unreliable; when the Hessian could not be inverted at all,
-a note reports that standard errors are unavailable. A further note
-names the parameters spanning a weakly identified direction when one was
-found, or records that the check could not run when no Hessian was
-available. S3 dispatch only – users call `print(summary(fit))` rather
-than invoking this directly.
+errors may be unreliable, and a further note names the parameters
+spanning a weakly identified direction when one was found. A "Not done
+in this run" block is always printed: it lists each step this fit did
+not perform, with the reason, and reads "none" when nothing was lost. S3
+dispatch only – users call `print(summary(fit))` rather than invoking
+this directly.
 
 ## Usage
 

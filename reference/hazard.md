@@ -198,8 +198,17 @@ found; `NULL` when the fit was examined and is well identified; and `NA`
 when the check could not run because no usable Hessian was available –
 which includes an unfitted object and an install without the suggested
 numDeriv. Test with `is.list(fit$fit$weak)`, not `!is.null()`: the `NA`
-case has not been examined and must not be read as a clean result), and
-`engine` (implementation tag, `"native-r-m2"`).
+case has not been examined and must not be read as a clean result),
+`engine` (implementation tag, `"native-r-m2"`), and two fields recording
+what the fit did not do: `degraded`, a character vector of the steps not
+performed, in the fixed order `"fitting"`, `"standard_errors"`,
+`"conserved_phase_variance"`, `"weak_direction_check"`,
+`"conservation_of_events"`, and empty when nothing was lost; and
+`degraded_causes`, a character vector with the same names giving the
+reason for each. [`print()`](https://rdrr.io/r/base/print.html) and
+[`summary()`](https://rdrr.io/r/base/summary.html) always show them as a
+"Not done in this run" block, which reads "none" when nothing was lost.
+`fit$fit$weak` is `NA` exactly when `"weak_direction_check"` is listed.
 
 ## Details
 
@@ -434,6 +443,7 @@ summary(fit)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
 #>   log-lik:      -89.5173 
+#>   Not done in this run: none
 #>   evaluations: fn=23, gr=7
 #> 
 #> Coefficients:
@@ -468,6 +478,7 @@ summary(fit2)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
 #>   log-lik:      -293.553 
+#>   Not done in this run: none
 #>   evaluations: fn=36, gr=8
 #> 
 #> Coefficients:
@@ -537,6 +548,7 @@ summary(fit_mp)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
 #>   log-lik:      -321.926 
+#>   Not done in this run: none
 #>   evaluations: fn=21, gr=6
 #> 
 #> Coefficients (internal scale):

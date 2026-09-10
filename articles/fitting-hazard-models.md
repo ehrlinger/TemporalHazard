@@ -66,7 +66,8 @@ fit_kul
 #>   dist:         weibull 
 #>   engine:       native-r-m2 
 #>   log-lik:      -3935.72 
-#>   converged:    TRUE
+#>   converged:    TRUE 
+#>   Not done in this run: none
 ```
 
 The summary tells us where the optimizer landed; the picture tells us
@@ -161,7 +162,8 @@ fit_avc
 #>   dist:         weibull 
 #>   engine:       native-r-m2 
 #>   log-lik:      -197.159 
-#>   converged:    TRUE
+#>   converged:    TRUE 
+#>   Not done in this run: none
 ```
 
 Each coefficient is a log-hazard-ratio: positive means higher risk,
@@ -225,6 +227,7 @@ summary(fit_mp)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
 #>   log-lik:      -228.029 
+#>   Not done in this run: none
 #>   evaluations: fn=32, gr=10
 #> 
 #> Coefficients (internal scale):
@@ -329,7 +332,8 @@ fit_death
 #>   dist:         weibull 
 #>   engine:       native-r-m2 
 #>   log-lik:      -1820.55 
-#>   converged:    TRUE
+#>   converged:    TRUE 
+#>   Not done in this run: none
 ```
 
 Switch endpoints. Same data, same package, but now we model time to
@@ -358,7 +362,8 @@ fit_pve
 #>   dist:         weibull 
 #>   engine:       native-r-m2 
 #>   log-lik:      -391.125 
-#>   converged:    TRUE
+#>   converged:    TRUE 
+#>   Not done in this run: none
 ```
 
 Each endpoint gets its own model with its own covariates, but the hazard
@@ -511,7 +516,8 @@ fit_ic
 #>   dist:         weibull 
 #>   engine:       native-r-m2 
 #>   log-lik:      -674.374 
-#>   converged:    TRUE
+#>   converged:    TRUE 
+#>   Not done in this run: none
 ```
 
 ### 5.3 Interval-censored vs naive right-censored

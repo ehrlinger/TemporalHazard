@@ -51,6 +51,7 @@ summary(fit)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
 #>   log-lik:      -49.8926 
+#>   Not done in this run: none
 #>   evaluations: fn=15, gr=6
 #> 
 #> Coefficients:
@@ -89,6 +90,7 @@ summary(fit_mp)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
 #>   log-lik:      -428.716 
+#>   Not done in this run: none
 #>   evaluations: fn=30, gr=6
 #> 
 #> Coefficients (internal scale):

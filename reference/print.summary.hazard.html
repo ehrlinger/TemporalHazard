@@ -5,23 +5,23 @@
       fontURL: "https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/output/chtml/fonts/woff-v2"
     }
   };
-</script><script src="../deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"><link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet"><script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet"><link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet"><script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Print method for hazard summary objects — print.summary.hazard"><meta name="description" content="Formatted console display of summary.hazard() output: distribution,
+</script><script src="../deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"><link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet"><script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet"><link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet"><script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Print method for hazard summary objects — print.summary.hazard"><meta name="description" content='Formatted console display of summary.hazard() output: distribution,
 phase list (for multiphase), coefficient table with standard errors,
 and log-likelihood.  When the post-fit Hessian is ill-conditioned or not
-positive-definite, a note warns that the standard errors may be unreliable;
-when the Hessian could not be inverted at all, a note reports that standard
-errors are unavailable.  A further note names the parameters spanning a
-weakly identified direction when one was found, or records that the check
-could not run when no Hessian was available.  S3 dispatch only – users
-call print(summary(fit)) rather than invoking this directly."><meta property="og:description" content="Formatted console display of summary.hazard() output: distribution,
+positive-definite, a note warns that the standard errors may be unreliable,
+and a further note names the parameters spanning a weakly identified
+direction when one was found.  A "Not done in this run" block is always
+printed: it lists each step this fit did not perform, with the reason, and
+reads "none" when nothing was lost.  S3 dispatch only – users
+call print(summary(fit)) rather than invoking this directly.'><meta property="og:description" content='Formatted console display of summary.hazard() output: distribution,
 phase list (for multiphase), coefficient table with standard errors,
 and log-likelihood.  When the post-fit Hessian is ill-conditioned or not
-positive-definite, a note warns that the standard errors may be unreliable;
-when the Hessian could not be inverted at all, a note reports that standard
-errors are unavailable.  A further note names the parameters spanning a
-weakly identified direction when one was found, or records that the check
-could not run when no Hessian was available.  S3 dispatch only – users
-call print(summary(fit)) rather than invoking this directly."></head><body>
+positive-definite, a note warns that the standard errors may be unreliable,
+and a further note names the parameters spanning a weakly identified
+direction when one was found.  A "Not done in this run" block is always
+printed: it lists each step this fit did not perform, with the reason, and
+reads "none" when nothing was lost.  S3 dispatch only – users
+call print(summary(fit)) rather than invoking this directly.'></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -76,11 +76,11 @@ call print(summary(fit)) rather than invoking this directly."></head><body>
     <p>Formatted console display of <code><a href="summary.hazard.html">summary.hazard()</a></code> output: distribution,
 phase list (for multiphase), coefficient table with standard errors,
 and log-likelihood.  When the post-fit Hessian is ill-conditioned or not
-positive-definite, a note warns that the standard errors may be unreliable;
-when the Hessian could not be inverted at all, a note reports that standard
-errors are unavailable.  A further note names the parameters spanning a
-weakly identified direction when one was found, or records that the check
-could not run when no Hessian was available.  S3 dispatch only – users
+positive-definite, a note warns that the standard errors may be unreliable,
+and a further note names the parameters spanning a weakly identified
+direction when one was found.  A "Not done in this run" block is always
+printed: it lists each step this fit did not perform, with the reason, and
+reads "none" when nothing was lost.  S3 dispatch only – users
 call <code>print(summary(fit))</code> rather than invoking this directly.</p>
     </div>
 

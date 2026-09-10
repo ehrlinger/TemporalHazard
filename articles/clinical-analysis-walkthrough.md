@@ -175,6 +175,7 @@ summary(fit_weib)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
 #>   log-lik:      -234.775 
+#>   Not done in this run: none
 #>   evaluations: fn=34, gr=9
 #> 
 #> Coefficients:
@@ -247,6 +248,7 @@ summary(fit_mp)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
 #>   log-lik:      -228.029 
+#>   Not done in this run: none
 #>   evaluations: fn=32, gr=10
 #> 
 #> Coefficients (internal scale):
@@ -486,6 +488,7 @@ summary(fit_mv)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
 #>   log-lik:      -190.541 
+#>   Not done in this run: none
 #>   evaluations: fn=12, gr=1
 #> 
 #> Coefficients (internal scale):

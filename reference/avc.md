@@ -120,6 +120,7 @@ summary(fit)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
 #>   log-lik:      -211.468 
+#>   Not done in this run: none
 #>   evaluations: fn=4, gr=1
 #> 
 #> Coefficients (internal scale):
