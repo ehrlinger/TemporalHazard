@@ -77,7 +77,7 @@ builder itself is wrong.
 | Capability | Listed when (state) | Causes (exact strings) |
 |---|---|---|
 | `fitting` | the optimizer did not run, or the object was imported from SAS | `"not requested (fit = FALSE)"`; `"no starting values (theta = NULL); the optimizer did not run"`; `"imported from SAS output; not fitted in R"` |
-| `standard_errors` | `fit$fit$vcov` is not a matrix | `"numDeriv not installed and no analytic Hessian"`; `"numDeriv::hessian() failed"`; `"Hessian has non-finite entries"`; `"Hessian not invertible"`; `"model not fitted"`; `"covariance not imported"` |
+| `standard_errors` | `fit$fit$vcov` is not a matrix, **or** it is a matrix in which an estimated (not fixed) parameter has no finite, positive variance (Amendment 7) | `"no finite positive variance for: <names>"` (the matrix case); `"numDeriv not installed and no analytic Hessian"`; `"numDeriv::hessian() failed"`; `"Hessian has non-finite entries"`; `"Hessian not invertible"`; `"model not fitted"`; `"covariance not imported"` |
 | `conserved_phase_variance` | CoE applied **and** the full-information recompute failed | `"numDeriv not installed"`; `"Hessian could not be computed"`; `"Hessian has non-finite entries"`; `"Hessian not invertible"` |
 | `weak_direction_check` | `fit$fit$weak` is `NA`, exactly | `"model not fitted"`; `"imported from SAS output; no R Hessian"`; `"standard errors unavailable"`; `"Hessian condition number unavailable"`; `"covariance has non-finite entries"`; `"eigendecomposition failed"` |
 | `conservation_of_events` | `dist = "multiphase"` and `isFALSE(spec$control$conserve_applied)` | from `conserve_disabled_reason`: `not_requested` → `"not requested (conserve = FALSE)"`; `unsupported_censoring` → `"status outside {0, 1} (left or interval censoring)"`; `single_phase` → `"fewer than two phases"`; `no_events` → `"no events"`; `setup_failed` → `"setup did not complete"` |
@@ -222,3 +222,38 @@ Found while tracing the code for the implementation plan
    is base R and cannot be mocked, and no input is known to make it fail on a
    finite symmetric matrix. Its cause string exists and is untested; the PR
    says so.
+
+## Amendment 7: partial standard-error loss (2026-09-10, after review)
+
+Found by the `r-reviewer` pass over the finished branch; the maintainer chose
+to fix the whole class in this PR.
+
+`.hzr_safe_solve()`'s non-positive-variance guard sets the offending row and
+column of the covariance to `NA`, but still returns a matrix with
+`reason = NA`. So an estimated parameter can finish with no standard error
+while `vcov` is a matrix, and "`vcov` is not a matrix" misses it. The block
+then prints "none" above a coefficient row whose SE is `NA`, which is the
+defect this feature exists to prevent. The sharpest case is Conservation of
+Events: a full-information recompute that "succeeds" can mask the conserved
+`log_mu`'s own variance, and the recompute counts as a success, so
+`conserved_phase_variance` is not listed either.
+
+**Rule.** `standard_errors` is listed when `vcov` is not a matrix, *or* when
+some **estimated** parameter has no finite, positive variance on the
+diagonal. "Estimated" means not fixed: `fit$fit$fixed_mask` is `TRUE` for a
+fixed parameter, and a fixed parameter's `NA` row is by design, not a loss.
+Without a `fixed_mask` of the right length, every parameter counts as
+estimated. The cause names the parameters:
+`"no finite positive variance for: early.log_mu, late.nu"`, using the fit's
+parameter names, or `par1`, `par2`, ... when none are available.
+
+One internal helper, `.hzr_params_missing_variance(vcov, fixed_mask,
+param_names)`, computes the set. The builder uses it for the entry and the
+cause; the validator uses it for the state check. It is state-derived, so it
+needs no carried-up reason.
+
+**Conservation of Events follows from the mask.** After a successful
+recompute the conserved `log_mu` is estimated (`fixed_mask <- !free_unc`),
+so a masked variance there lists `standard_errors`. After a failed recompute
+it stays fixed in the mask, and `conserved_phase_variance` records it, as
+before. Nothing is counted twice.
