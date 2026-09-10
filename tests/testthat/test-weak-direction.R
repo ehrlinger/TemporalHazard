@@ -361,7 +361,7 @@ test_that("summary() says so when the ridge check could not run", {
   n <- 50
   fit0 <- hazard(time = stats::rweibull(n, 1.4, 2),
                  status = rep(1L, n), dist = "weibull", fit = FALSE)
-  out <- paste(capture.output(print(summary(fit0))), collapse = " ")
-  out <- gsub("\\s+", " ", out)
-  expect_match(out, "not examined for a weakly identified direction")
+  out <- capture.output(print(summary(fit0)))
+  expect_true("    weak_direction_check: model not fitted" %in% out)
+  expect_identical(.hzr_check_not_done_output(out, fit0), character(0))
 })
