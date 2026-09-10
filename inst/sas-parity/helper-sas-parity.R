@@ -1237,3 +1237,78 @@
 
   list(te = te, te_mod = te_mod, tm = tm)
 }
+
+# ---------------------------------------------------------------------------
+# Maze permanent AF, repeated cardioversion: bd_card derivation
+# ---------------------------------------------------------------------------
+# hz.ce_cardioversion_repeated.ehb.sas builds bd_card -- the input to its
+# %repeat call -- in SAS WORK and never saves it. .hzr_derive_bd_card()
+# rebuilds it from the two permanent datasets the job reads, so
+# hzr_repeated_events() can be checked against the job's .log and .lst.
+#
+# The data are PHI. They stay on the study volume and nothing here is a
+# fixture: the directory is found at run time and is NA when not mounted.
+
+.hzr_maze_datasets_dir <- function() {
+  env <- Sys.getenv("HAZARD_MAZE_DATASETS", "")
+  if (nzchar(env) && dir.exists(env)) return(env)
+  default <- "/Volumes/qhsstudies/cardiac/rhythm/maze/permanent/datasets"
+  if (dir.exists(default)) return(default)
+  NA_character_
+}
+
+# Reproduces the job's statements from `data built; set library.ce_built`
+# through `data bd_card`, plus the lines of the %vars macro
+# (maze/datasets/2004/vars.sas) that define af_ge6m. Returns bd_card with
+# lower-case names.
+#
+# One vars.sas line is deliberately NOT reproduced: it sets duraf missing for
+# a single subject named by ccfid, and copying it would put a patient
+# identifier in the repository. The parity test asserts the 3246-row cohort,
+# which is what shows that line changes nothing for this job.
+.hzr_derive_bd_card <- function(dir) {
+  read <- function(member) {
+    d <- haven::read_sas(file.path(dir, paste0(member, ".sas7bdat")))
+    d <- as.data.frame(haven::zap_labels(haven::zap_formats(d)))
+    names(d) <- tolower(names(d))
+    d
+  }
+  ce <- read("ce_built")
+  built <- read("built")
+
+  # data built; set library.ce_built; where iv_card ge 0; drop ...;
+  # A SAS missing sorts below every number, so `ge 0` excludes it.
+  drops <- c("preop_coum", "preop_ar1", "preop_ar2", "preop_ar3", "preop_ar4", "ekg_place")
+  b <- ce[!is.na(ce$iv_card) & ce$iv_card >= 0, setdiff(names(ce), drops), drop = FALSE]
+
+  # %vars: if duraf=0 then duraf=.;  af_ge6m=0;
+  #        if duraf ge 6 then af_ge6m=1;  if duraf=. then af_ge6m=.;
+  duraf <- built$duraf
+  duraf[!is.na(duraf) & duraf == 0] <- NA
+  af_ge6m <- ifelse(is.na(duraf), NA_real_, as.numeric(duraf >= 6))
+
+  # proc sql: built left join bd on ccfid and dt_surg. The join is one-to-one
+  # only if library.built has one row per key; a duplicate would multiply rows
+  # without any error, so refuse it.
+  key_ce <- paste(b$ccfid, b$dt_surg)
+  key_built <- paste(built$ccfid, built$dt_surg)
+  if (anyDuplicated(key_built)) {
+    stop("library.built has duplicate (ccfid, dt_surg) keys; the job's join would not be one-to-one.",
+         call. = FALSE)
+  }
+  b$af_ge6m <- af_ge6m[match(key_ce, key_built)]
+
+  # data built; set built; where af_ge6m=1;
+  b <- b[!is.na(b$af_ge6m) & b$af_ge6m == 1, , drop = FALSE]
+
+  # data bd_card; iv_event=iv_card; if iv_event=0 and ce_card=1 then
+  # iv_event=(1/24)/365.2425; if iv_end=0 then iv_end=(23/24)/365.2425;
+  b$iv_event <- b$iv_card
+  impute <- !is.na(b$iv_event) & b$iv_event == 0 & !is.na(b$ce_card) & b$ce_card == 1
+  b$iv_event[impute] <- (1 / 24) / 365.2425
+  zero_end <- !is.na(b$iv_end) & b$iv_end == 0
+  b$iv_end[zero_end] <- (23 / 24) / 365.2425
+
+  row.names(b) <- NULL
+  b
+}
