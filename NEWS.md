@@ -1,22 +1,19 @@
-# TemporalHazard 1.2.11
+# TemporalHazard 1.2.10
 
 ## New features
 
-* `hzr_repeated_events()` builds repeated-event segments from a long data set
-  of candidate event times, reproducing the SAS `%repeat` macro used by the
-  repeated-events HAZARD jobs. It validates its inputs and refuses ones that
-  would produce a wrong answer silently -- a missing `followup` value, a
-  non-numeric indicator column, or a factor `id` -- rather than returning a
-  plausible-looking but wrong result. `\value` and a `@note` now document that
-  `rcensor` and `event` can both be 1 on the same row, matching the SAS
-  macro's own warning that this combination is not compatible with a
-  `HAZARD`-style fit. It now also rejects a `Date` (or otherwise non-numeric)
-  `time` or `followup` column and a zero-row `data`, and warns, naming the
-  affected subjects, when a missing `time` value leaves `iv_start`/`iv_seg`
-  missing, when an event time exceeds `followup`, or when `followup` is not
-  constant within a subject.
-
-# TemporalHazard 1.2.10
+* New `hzr_repeated_events()` rebuilds the input to a repeated-events hazard
+  model. From a long data set with one row per candidate event per subject, it
+  returns one row per inter-event segment, with the segment's start time,
+  duration and running event count. It reproduces the SAS macro `%repeat`,
+  which built this input for the repeated-events `HAZARD` jobs and whose output
+  was never saved, so those jobs can now be run again in R. It refuses input
+  that would otherwise give a plausible but wrong result -- a non-numeric time,
+  follow-up or indicator column, a factor `id`, a missing `followup` value, or
+  an empty data frame -- and warns, naming the subjects, when an event falls
+  after the end of follow-up, when `followup` varies within a subject, or when
+  a missing time leaves a segment undefined. As in the macro, `rcensor` and
+  `event` can both be 1 on the same row; see `?hzr_repeated_events`.
 
 ## Bug fixes
 

@@ -20,9 +20,10 @@ shaped around.
 - **Never push to `main`.** Branch, commit, push the branch, open a PR, stop. Branch is `feat/hzr-repeated-events`,
   already cut from `main` at `f93d00c`.
 - **No new dependency.** Base R only. `numDeriv`-style Suggests additions are not in scope here.
-- **Version:** `DESCRIPTION` is at `1.2.10`. Bump the **patch** digit only, to `1.2.11`, and update the `NEWS.md`
-  top heading to match **by hand** — nothing in this repo greps for the mismatch. Never a fourth digit, never
-  `.9000`, never roll minor or major.
+- **Version: do not bump.** `main` is at `1.2.10`, untagged, and every PR in a patch cycle shares that version. Add
+  the `NEWS.md` entry under the existing `# TemporalHazard 1.2.10` heading and expect a trivial `NEWS.md` rebase.
+  Never a fourth digit, never `.9000`, never roll minor or major. (The first draft of this plan said to bump to
+  `1.2.11`. That contradicted the repo's release convention and was reverted when `main` was merged in.)
 - **`stats::` prefixing is the house style** for any `stats` generic.
 - **Line length 120** (`.lintr`). `object_usage_linter` and `indentation_linter` are off; `assignment_linter`
   permits `<<-`.
@@ -44,7 +45,7 @@ shaped around.
 | `tests/testthat/test-repeated-events.R` (create) | Unconditional synthetic tests, one fixture per macro branch |
 | `NAMESPACE`, `man/` (generated) | via `devtools::document()` |
 | `inst/WORDLIST` (modify) | SAS identifiers introduced into roxygen prose |
-| `DESCRIPTION`, `NEWS.md` (modify) | patch bump to 1.2.11 |
+| `NEWS.md` (modify) | entry under the current `1.2.10` heading; `DESCRIPTION` unchanged |
 
 ## Stage-to-macro map
 
@@ -939,14 +940,13 @@ git commit -m "feat(repeated-events): stage 7 and the exported hzr_repeated_even
 ### Task 6: Version bump, spelling, and the full gate
 
 **Files:**
-- Modify: `DESCRIPTION:3`
 - Modify: `NEWS.md:1`
 - Modify: `inst/WORDLIST`
 
-- [ ] **Step 1: Bump the patch version in both places**
+- [ ] **Step 1: Add the NEWS entry, without a version bump**
 
-Edit `DESCRIPTION` line 3 to `Version: 1.2.11`. Edit the `NEWS.md` top heading to `# TemporalHazard 1.2.11` and add,
-under a `## New features` section:
+Leave `DESCRIPTION` at the version `main` carries. Under the existing `NEWS.md` top heading, add a `## New features`
+section above `## Bug fixes`:
 
 ```markdown
 * `hzr_repeated_events()` builds repeated-event segments from a long data set
@@ -992,13 +992,13 @@ and skip counts — do not report "tests pass" without them.
 
 ```bash
 git add DESCRIPTION NEWS.md inst/WORDLIST
-git commit -m "chore(repeated-events): bump to 1.2.11, add SAS identifiers to the wordlist"
+git commit -m "chore(repeated-events): NEWS entry, SAS identifiers in the wordlist"
 
 TREE="$(mktemp -d)/tree"
 mkdir -p "$TREE"
 git archive HEAD | tar -x -C "$TREE"
 R CMD build "$TREE"
-R CMD check --as-cran TemporalHazard_1.2.11.tar.gz
+R CMD check --as-cran TemporalHazard_1.2.10.tar.gz
 ```
 
 Expected: `Status: OK`. Build from the archive, not the working tree — an empty `inst/doc` fabricates two vignette
@@ -1008,7 +1008,7 @@ instead of `AGENTS.md`'s `$TMPDIR/tree` because that fixed path collides across 
 - [ ] **Step 6: Confirm developer files stayed out of the tarball**
 
 ```bash
-tar tzf TemporalHazard_1.2.11.tar.gz | grep -iE 'CLAUDE|AGENTS|inst/dev' || echo "clean"
+tar tzf TemporalHazard_1.2.10.tar.gz | grep -iE 'CLAUDE|AGENTS|inst/dev' || echo "clean"
 ```
 
 Expected: `clean`.
