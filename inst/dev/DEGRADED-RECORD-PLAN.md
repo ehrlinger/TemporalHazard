@@ -23,6 +23,10 @@ with the raw record, never through the formatter.
 section). **Issue:** #242. **Branch:** `feat/degraded-record` (already cut from
 `origin/main` at `84931a7`, upstream unset).
 
+> Note (2026-09-10): the `"no starting values (theta = NULL)..."` cause
+> quoted in Tasks 1, 4 and 8 was dropped after #243 made that call `stop()`;
+> see spec Amendment 1.
+
 ## Global Constraints
 
 - Base R only. **No new dependency** (numDeriv stays a Suggests).

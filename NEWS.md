@@ -38,9 +38,7 @@
   show them as a "Not done in this run" block, and the block reads "none"
   when nothing was lost: a line that appears only on bad news cannot be told
   from one that was never written. Five steps are recorded:
-  - fitting itself: `fit = FALSE`; a single-distribution `fit = TRUE` call
-    with no `theta`, which skips the optimizer without an error or warning;
-    or a fit imported from SAS output;
+  - fitting itself: `fit = FALSE`, or a fit imported from SAS output;
   - standard errors, naming whether numDeriv was missing, `numDeriv::hessian()`
     failed, or the Hessian was non-finite or singular, and, when a covariance
     was computed, which estimated parameters were left without a usable

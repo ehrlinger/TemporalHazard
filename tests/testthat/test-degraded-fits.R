@@ -46,17 +46,6 @@ test_that("an unfitted object records that it was not fitted, and why", {
   expect_false("cause not recorded" %in% fit0$degraded_causes)
 })
 
-test_that("fit = TRUE without theta says the optimizer did not run", {
-  # hazard() runs the single-distribution optimizer only when theta is given,
-  # and has never said so. If this call errors or fits, the premise has
-  # changed: stop and report, do not adjust the test.
-  dat <- weib_data()
-  fit1 <- hazard(time = dat$t, status = dat$d, dist = "weibull", fit = TRUE)
-  expect_null(fit1$fit$counts)                     # guard: no optimizer ran
-  expect_identical(fit1$degraded_causes[["fitting"]],
-                   "no starting values (theta = NULL); the optimizer did not run")
-})
-
 test_that("CoE switched off by the user is listed as not requested", {
   skip_on_cran()
   fit <- mp_fit(c(1, 0), conserve = FALSE)

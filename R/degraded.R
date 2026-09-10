@@ -72,7 +72,6 @@
 #' @param dist Distribution name.
 #' @param fitted Whether the optimizer ran.
 #' @param imported Whether the object was read from SAS output.
-#' @param not_fitted_cause The `fitting` cause when `fitted` is `FALSE`.
 #' @param reasons List of carried-up reasons: `se`, `weak`,
 #'   `conserved_variance`, each a single string or `NA`.
 #' @param fixed_mask Logical, `TRUE` for a parameter held fixed; its missing
@@ -82,14 +81,13 @@
 #' @noRd
 .hzr_degraded_record <- function(vcov, weak, control, dist,
                                  fitted = TRUE, imported = FALSE,
-                                 not_fitted_cause = "not requested (fit = FALSE)",
                                  reasons = list(),
                                  fixed_mask = NULL, param_names = NULL) {
   # Entries are added in canonical order, so names(causes) is already ordered.
   causes <- character(0)
 
   if (!fitted) {
-    causes["fitting"] <- not_fitted_cause
+    causes["fitting"] <- "not requested (fit = FALSE)"
   } else if (imported) {
     causes["fitting"] <- "imported from SAS output; not fitted in R"
   }

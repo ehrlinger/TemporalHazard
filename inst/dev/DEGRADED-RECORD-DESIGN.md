@@ -76,7 +76,7 @@ builder itself is wrong.
 
 | Capability | Listed when (state) | Causes (exact strings) |
 |---|---|---|
-| `fitting` | the optimizer did not run, or the object was imported from SAS | `"not requested (fit = FALSE)"`; `"no starting values (theta = NULL); the optimizer did not run"`; `"imported from SAS output; not fitted in R"` |
+| `fitting` | the optimizer did not run, or the object was imported from SAS | `"not requested (fit = FALSE)"`; `"imported from SAS output; not fitted in R"` |
 | `standard_errors` | `fit$fit$vcov` is not a matrix, **or** it is a matrix in which an estimated (not fixed) parameter has no finite, positive variance (Amendment 7) | `"no finite positive variance for: <names>"` (the matrix case); `"numDeriv not installed and no analytic Hessian"`; `"numDeriv::hessian() failed"`; `"Hessian has non-finite entries"`; `"Hessian not invertible"`; `"model not fitted"`; `"covariance not imported"` |
 | `conserved_phase_variance` | CoE applied **and** the full-information recompute failed | `"numDeriv not installed"`; `"Hessian could not be computed"`; `"Hessian has non-finite entries"`; `"Hessian not invertible"` |
 | `weak_direction_check` | `fit$fit$weak` is `NA`, exactly | `"model not fitted"`; `"imported from SAS output; no R Hessian"`; `"standard errors unavailable"`; `"Hessian condition number unavailable"`; `"covariance has non-finite entries"`; `"eigendecomposition failed"` |
@@ -204,6 +204,10 @@ Found while tracing the code for the implementation plan
    error and no warning. This change leaves that behaviour alone and records
    it, under its own cause rather than "fit = FALSE". Whether it should error
    is a separate decision.
+
+   **Superseded 2026-09-10 by #243**, which makes that call `stop()`. The
+   cause was dropped from #244 at the maintainer's request; `fit_ran` is now
+   FALSE exactly when `fit = FALSE`.
 2. **Objects without a record.** Fits saved with `saveRDS()` by an earlier
    version, and `hazard` objects that tests build by hand, have no
    `degraded`. Printing "none" for them would be the defect itself, so they

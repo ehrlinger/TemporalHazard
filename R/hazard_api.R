@@ -797,9 +797,9 @@ hazard <- function(formula = NULL,
   }
 
   # Filled by whichever optimizer branch runs, and read by the record of what
-  # this fit did not do (#242). fit_ran stays FALSE when fit = TRUE but the
-  # single-distribution branch below is skipped because theta is NULL -- a
-  # skip that raises no error, and that the record is now the only report of.
+  # this fit did not do (#242). fit_ran is FALSE exactly when fit = FALSE;
+  # a single-distribution fit = TRUE call with no theta now stops (#243)
+  # rather than reaching this point unfitted.
   fit_ran <- FALSE
   degraded_reasons <- list()
 
@@ -959,11 +959,6 @@ hazard <- function(formula = NULL,
     vcov = fit_state$vcov, weak = fit_state$weak, control = control,
     dist = dist, fitted = fit_ran,
     fixed_mask = fit_state$fixed_mask, param_names = weak_names,
-    not_fitted_cause = if (fit) {
-      "no starting values (theta = NULL); the optimizer did not run"
-    } else {
-      "not requested (fit = FALSE)"
-    },
     reasons = degraded_reasons
   )
   obj$degraded <- record$degraded
