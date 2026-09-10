@@ -171,6 +171,20 @@ expect_matches_listing <- function(fit, sas, ll) {
   expect_true(is.matrix(f$vcov))
   se <- sqrt(diag(f$vcov))
   expect_true(all(is.finite(se) & se > 0))
+
+  # The log likelihood at the listing's own estimates, with no optimizer
+  # involved, so a failure here is the likelihood and not the search. log|x|
+  # drops the sign; every logged parameter in this job is positive.
+  expect_true(all(f$theta[sas$logged] > 0))
+  d <- fit$data
+  ll_at_sas <- .hzr_logl_multiphase( # nolint: object_usage_linter.
+    theta = ifelse(sas$logged, exp(sas$est), sas$est),
+    time = d$time, status = d$status, time_lower = d$time_lower,
+    time_upper = d$time_upper, weights = d$weights,
+    phases = f$phases, covariate_counts = f$covariate_counts, x_list = f$x_list
+  )
+  expect_lt(abs(ll_at_sas - ll), 5e-4)
+
   est <- ifelse(sas$logged, log(abs(f$theta)), f$theta)
   se <- ifelse(sas$logged, se / abs(f$theta), se)
   expect_lt(max(abs(est - sas$est) / sas$se), 1e-3)

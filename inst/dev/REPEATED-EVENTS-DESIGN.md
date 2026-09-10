@@ -294,13 +294,21 @@ and still reports a standard error for.
 **The likelihoods agree at a point, not only at an optimum.** R's log likelihood at the first
 model's `PARMS`, at SAS's final estimates and at R's own optimum is -267.8850808 each time.
 At the second model's final estimates from the listing it is -242.2541227. So a gap in a fit
-can only come from the optimizer, and one did.
+can only come from the optimizer, and one did. The test asserts the log likelihood at the
+listing's estimates for both models, so this holds for as long as the test passes, not only
+on the day it was measured.
 
-**The second model needs `reltol` tightened.** Under default control the translated call
-reports `converged = TRUE` at -242.2675, 0.013 short of the listing. Its estimates are up to
+**The second model needs `reltol` tightened.** With `reltol` at its default, from one start
+or five, the translated call reports `converged = TRUE` at -242.2675, 0.013 short of the listing. Its estimates are up to
 0.16 SE away, and its standard errors up to 10% off. `.hzr_optim_generic()` defaults
 `reltol` to 1e-5, and BFGS stops when an iteration gains less than about `reltol * |LL|`,
-here about 0.0024, which a flat ridge in the late shapes does not provide. With
+here about 0.0024, which a flat ridge in the late shapes does not provide.
+
+The first model passing at the default is not evidence that the default is enough, because
+the two models take different paths. `CONSERVE` fixes one `log_mu`, and with any parameter
+fixed and between 2 and 10 free the engine runs a Nelder-Mead warm-up at `reltol = 1e-10`
+before BFGS (`R/likelihood-multiphase.R`). The second model fixes nothing and goes straight
+to BFGS at 1e-5. With
 `reltol = 1e-12` it reaches the listing's optimum from the same start. The parity test sets
 that explicitly. Whether the default should change is a separate question, because it
 touches every fit and the check-time budget.
@@ -308,8 +316,9 @@ touches every fit and the check-time budget.
 **One start, and why.** The default five starts give the first model the same fit from
 start 1. The perturbed starts end at worse local optima, LL -267.914, -268.175 and -274.368,
 and their Hessians raise the not-invertible warnings, which are about those starts and not
-about the reported fit. The test fits from `PARMS` alone, and agreement rests on the log
-likelihood at SAS's point rather than on `n_starts`.
+about the reported fit. The test fits from `PARMS` alone. For the first model that start is
+SAS's optimum, so the fit alone cannot tell the likelihood from the search; the assertion
+at the listing's estimates can, and agreement rests on it rather than on `n_starts`.
 
 Each tolerance in the test fails the stopped-short fit above: half a unit in the listing's
 third decimal of log likelihood, 1e-3 SE per estimate, 2e-3 relative per standard error.
