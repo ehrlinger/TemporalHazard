@@ -109,8 +109,10 @@ change.
 **`renewal` is in scope for v1.** It is two lines inside a stage we write regardless,
 and the hard part — the stale `first`/`last` carry-forward, below — must be implemented
 correctly whether or not the column is returned. Omitting the column while keeping the
-machinery would be the worst of both. It also makes the corpus renewal variant
-(`hz.te123.OMC.renewal`) a second parity target at no extra cost.
+machinery would be the worst of both. (This paragraph first named the corpus job
+`hz.te123.OMC.renewal` as a second parity target. It is not one: the OMC jobs never call
+`%repeat`, and their renewal fit reads a `NOPREVTE` count from the raw input. The SAS
+evidence for `renewal` is `ac.reintervention`; see Acceptance.)
 
 ## Missing-value semantics
 
@@ -238,6 +240,50 @@ censored, `IV_EVENT` in [0.0001140795, 12.99137] and `IV_START` in
 [0.0001140795, 9.716832]. The exported function raises none of its input warnings on this
 data. Fitting it and reproducing LL -267.885 is out of scope; see below.
 
+### Second job: `renewal`, against `ac.reintervention`
+
+The cardioversion job never reads `renewal`. Searching the study volume for jobs that call
+`%repeat` and then use its output (2026-09-10) found three groups:
+- the consulting `tp.*` templates, which read `renewal` but were never run;
+- the cardioversion jobs, which read `iv_seg` and `event_no` only;
+- several thoracic jobs that print `renewal`.
+
+Of those, `ac.reintervention.sas` (achalasia; `thoracic/esophagus/benign/achalasia/outcomes/clinical`)
+is the one to use. It prints `ev_rein` by `renewal` directly after the macro, then saves the
+macro's output unchanged as `library.bdrein`. So every returned column can be compared with
+SAS's own, row by row.
+
+Verified 2026-09-10 with the volume mounted, by `.hzr_derive_bdmult1()` and
+`tests/testthat/test-repeated-events-renewal-parity.R`:
+- **Rebuild:** `pndil1` 29 x 7, `reint1` 15 x 7, `cmb` 44 x 9, `bdmult` 425 x 218 and
+  `bdmult1` 425 x 219, each as the `.log` records it.
+- **`%repeat` stages:** 425 x 220 through stage 3, then 464 x 222 at stages 4 and 5 and
+  464 x 228 at stages 6 and 7 (SAS; R's widths differ as the test states).
+- **Crosstab:** the `.lst` table of `ev_rein` by `renewal`, cell for cell.
+- **`bdrein`:** 464 rows over 420 subjects, in the same order, with no mismatch in
+  `iv_rein`, `iv_fup`, `iv_start`, `iv_seg`, `event`, `rcensor`, `event_no`, `renewal`,
+  `first` or `last`.
+
+Two points of detail:
+- **The job aliases the indicator.** It passes `event=ev_rein`, the same column as
+  `eventype=`, so SAS overwrites its input indicator. R's `event` is compared with SAS's
+  `ev_rein`.
+- **One input line names a patient.** The job overrides `iv_fup` for one subject named by
+  `ccfid`, and that subject has an event. The helper reads the identifier from the job's
+  source on the volume at run time, so it never enters the repository.
+
+What this settles, and what it does not. `bdrein`'s saved `first` and `last` are the
+stage-4 flags, and they differ from recomputed flags on 75 rows. R matches SAS on all 75,
+which is SAS evidence that the flags are carried forward.
+
+But renewal gives the same answer on this data from stale flags or fresh ones:
+- **The 36 stale `first` rows** are censored rows appended after a subject's only event, so
+  they have `event_no = 1`. The first-row bump needs `event_no = 0`.
+- **The 39 stale `last` rows** are each subject's last event, so they have `event = 1`. The
+  last-row bump needs `event = 0`.
+
+So the stale-flag branch of `renewal` is still pinned only by the synthetic fixture below.
+
 ### PHI constraint
 
 The cardioversion data is PHI. It stays on the study volume and never enters the repo.
@@ -266,6 +312,12 @@ unless the maze study datasets are mounted (overridable with `HAZARD_MAZE_DATASE
 `haven` is installed. It rebuilds `bd_card`, asserts every shape in the table under
 Acceptance **before** comparing any value, then the tallies and ranges, then that the
 result does not depend on input row order.
+
+**Volume-gated `renewal` parity test** (`tests/testthat/test-repeated-events-renewal-parity.R`):
+it skips unless the achalasia datasets are mounted (overridable with
+`HAZARD_ACHALASIA_DIR`). It rebuilds `bdmult1`, asserts every shape, then the `.lst`
+crosstab, then `library.bdrein` row by row. Its failure output is counts only: no row and no
+`ccfid`.
 
 Because a gated test prints green when it never ran, it is not evidence. The synthetic
 set must be able to fail on its own.

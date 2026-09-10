@@ -1312,3 +1312,117 @@
   row.names(b) <- NULL
   b
 }
+
+# ---------------------------------------------------------------------------
+# Achalasia reintervention: bdmult1 derivation
+# ---------------------------------------------------------------------------
+# ac.reintervention.sas builds bdmult1 -- the input to its %repeat call -- in
+# SAS WORK, then saves the macro's output unchanged as library.bdrein. That
+# saved dataset is SAS's own renewal column, row by row, and it is the only
+# SAS evidence for renewal in the job corpus: the maze cardioversion job never
+# reads the column.
+#
+# PHI, as above: the directory is found at run time and is NA when not mounted.
+
+.hzr_achalasia_dir <- function() {
+  env <- Sys.getenv("HAZARD_ACHALASIA_DIR", "")
+  if (nzchar(env) && dir.exists(env)) return(env)
+  default <- "/Volumes/qhsstudies/thoracic/esophagus/benign/achalasia/outcomes/clinical"
+  if (dir.exists(default)) return(default)
+  NA_character_
+}
+
+# The job overrides iv_fup for one subject named by ccfid. Copying that line
+# would put a patient identifier in the repository, and unlike the maze job's
+# duraf line it changes the answer: the subject has an event. So the
+# identifier is read from the job's own source on the volume, and nothing is
+# returned unless exactly one such line is found. The error never names it.
+.hzr_achalasia_override_id <- function(root) {
+  src <- readLines(file.path(root, "distributions", "ac.reintervention.sas"), warn = FALSE)
+  pat <- "^\\s*if\\s+ccfid\\s*=\\s*'([^']+)'\\s+then\\s+iv_fup\\s*=\\s*iv_rein\\s*\\+\\s*\\.0001\\s*;"
+  hit <- grep(pat, src, ignore.case = TRUE, perl = TRUE)
+  if (length(hit) != 1L) {
+    stop(sprintf("Expected one iv_fup override line in ac.reintervention.sas, found %d.",
+                 length(hit)), call. = FALSE)
+  }
+  sub(paste0(pat, ".*"), "\\1", src[hit], ignore.case = TRUE, perl = TRUE)
+}
+
+# Reproduces the job's statements from `data pndil` through `data bdmult1`
+# (library.reops is read by the job but never used, so it is not read here).
+# Returns every intermediate whose shape the .log records, so each can be
+# checked, with lower-case names.
+.hzr_derive_bdmult1 <- function(root) {
+  read <- function(member) {
+    d <- haven::read_sas(file.path(root, "datasets", paste0(member, ".sas7bdat")))
+    d <- as.data.frame(haven::zap_labels(haven::zap_formats(d)))
+    names(d) <- tolower(names(d))
+    d
+  }
+  # SAS subtracts day counts. R's Date counts from a different origin, which
+  # cancels in every difference taken here.
+  day <- function(x) as.numeric(x)
+  built <- read("built")
+
+  # data pndil; set library.bdrpndil; ev_rein = 1;
+  # data pndil1; set pndil; where sz_dilator_pneum_dilations >= 30;
+  #   rename dt_rpndil = dt_rein; keep ...;
+  pndil <- read("bdrpndil")
+  pndil$ev_rein <- 1
+  pndil <- pndil[!is.na(pndil$sz_dilator_pneum_dilations) &
+                   pndil$sz_dilator_pneum_dilations >= 30, , drop = FALSE]
+  names(pndil)[names(pndil) == "dt_rpndil"] <- "dt_rein"
+  pndil1 <- pndil[c("ccfid", "dt_surg", "dt_rein", "ev_rein", "rec_id", "record_id", "iv_rpndil")]
+
+  # data reint; set library.bdreinv; ev_rein = 1;
+  # data reint1; set reint; rename dt_reinv = dt_rein; keep ...;
+  # The keep list also names `o`, which does not exist (a .log WARNING).
+  reint <- read("bdreinv")
+  reint$ev_rein <- 1
+  names(reint)[names(reint) == "dt_reinv"] <- "dt_rein"
+  reint1 <- reint[c("ccfid", "dt_surg", "dt_rein", "ev_rein", "rec_id", "record_id", "iv_reinv")]
+
+  # data cmb; set pndil1 reint1; iv_rein = max(iv_reinv, iv_rpndil);
+  # SET stacks the two and fills each one's missing column with missing; SAS
+  # max() skips missing values.
+  pndil1$iv_reinv <- NA_real_
+  reint1$iv_rpndil <- NA_real_
+  cmb <- rbind(pndil1, reint1[names(pndil1)])
+  cmb$iv_rein <- pmax(cmb$iv_reinv, cmb$iv_rpndil, na.rm = TRUE)
+  row.names(cmb) <- NULL
+
+  # proc sql: select * from built as a left join cmb as d
+  #   on a.ccfid = d.ccfid and a.dt_surg = d.dt_surg;
+  # A left join keeps every built row, once per match. select * keeps the
+  # first of a duplicated name, so cmb's ccfid, dt_surg and rec_id are dropped
+  # (the .log's three "already exists" warnings).
+  key_built <- paste(built$ccfid, day(built$dt_surg))
+  key_cmb <- paste(cmb$ccfid, day(cmb$dt_surg))
+  if (anyDuplicated(key_built)) {
+    stop("library.built has duplicate (ccfid, dt_surg) keys; the job's join would not be one-to-many.",
+         call. = FALSE)
+  }
+  hits <- lapply(key_built, function(k) which(key_cmb == k))
+  bi <- rep(seq_along(hits), pmax(lengths(hits), 1L))
+  ci <- unlist(lapply(hits, function(h) if (length(h)) h else NA_integer_))
+  bdmult <- cbind(built[bi, , drop = FALSE],
+                  cmb[ci, setdiff(names(cmb), names(built)), drop = FALSE])
+  row.names(bdmult) <- NULL
+
+  # data bdmult1; set bdmult;
+  #   iv_fup = (dt_fup - dt_surg)/365.2425 + .0001;
+  #   if dt_fup = . then iv_fup = (dt_disch - dt_surg)/365.2425 + .0001;
+  #   if ccfid = <one subject> then iv_fup = iv_rein + .0001;
+  bdmult1 <- bdmult
+  bdmult1$iv_fup <- (day(bdmult1$dt_fup) - day(bdmult1$dt_surg)) / 365.2425 + .0001
+  no_fup <- is.na(bdmult1$dt_fup)
+  bdmult1$iv_fup[no_fup] <- (day(bdmult1$dt_disch[no_fup]) - day(bdmult1$dt_surg[no_fup])) /
+    365.2425 + .0001
+  over <- bdmult1$ccfid == .hzr_achalasia_override_id(root)
+  if (!any(over)) stop("The iv_fup override matches no subject in library.built.", call. = FALSE)
+  bdmult1$iv_fup[over] <- bdmult1$iv_rein[over] + .0001
+
+  list(pndil1 = pndil1[setdiff(names(pndil1), "iv_reinv")],
+       reint1 = reint1[setdiff(names(reint1), "iv_rpndil")],
+       cmb = cmb, bdmult = bdmult, bdmult1 = bdmult1)
+}
