@@ -256,7 +256,7 @@ hzr_read_outhaz <- function(path) {
     fit$se <- sqrt(diag(fit$vcov))
   }
 
-  structure(
+  obj <- structure(
     list(
       call = NULL, call_env = NULL,
       spec = list(dist = "multiphase", control = list(),
@@ -269,6 +269,18 @@ hzr_read_outhaz <- function(path) {
     ),
     class = "hazard"
   )
+
+  # What was not done in R, and why (#242). An import was never fitted or
+  # examined here, so the record says so rather than printing "none" over a
+  # SAS fit.
+  record <- .hzr_degraded_record(
+    vcov = fit$vcov, weak = fit$weak, control = obj$spec$control,
+    dist = "multiphase", fitted = TRUE, imported = TRUE
+  )
+  obj$degraded <- record$degraded
+  obj$degraded_causes <- record$degraded_causes
+  .hzr_validate_degraded(obj, fitted = TRUE, imported = TRUE)
+  obj
 }
 
 #' What scale PROC HAZARD estimated each late shape on

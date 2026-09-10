@@ -111,3 +111,25 @@ test_that("a failed full-information recompute under CoE is recorded", {
                    "numDeriv not installed")
   expect_false("cause not recorded" %in% fit$degraded_causes)
 })
+
+outhaz_fixture <- function() {
+  system.file("extdata", "outhaz-fixture.rds", package = "TemporalHazard")
+}
+
+test_that("an imported SAS fit records that R did not fit or examine it", {
+  obj <- .hzr_outhaz_to_spec(hzr_read_outhaz(outhaz_fixture()), need_vcov = TRUE)
+  expect_true(is.matrix(obj$fit$vcov))             # guard: covariance was read
+  expect_identical(
+    obj$degraded_causes,
+    c(fitting = "imported from SAS output; not fitted in R",
+      weak_direction_check = "imported from SAS output; no R Hessian"))
+})
+
+test_that("an import read without its covariance also lists standard errors", {
+  obj <- .hzr_outhaz_to_spec(hzr_read_outhaz(outhaz_fixture()), need_vcov = FALSE)
+  expect_false(is.matrix(obj$fit$vcov))            # guard
+  expect_identical(obj$degraded,
+                   c("fitting", "standard_errors", "weak_direction_check"))
+  expect_identical(obj$degraded_causes[["standard_errors"]],
+                   "covariance not imported")
+})
