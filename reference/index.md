@@ -88,6 +88,11 @@
 - [`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
   : Translate a SAS HAZARD job into a Quarto document
 
+- [`hzr_repeated_events()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_repeated_events.md)
+  :
+
+  Build repeated-event segments, reproducing the SAS `%repeat` macro
+
 ## Numerical Primitives
 
 - [`hzr_log1pexp()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_log1pexp.md)
