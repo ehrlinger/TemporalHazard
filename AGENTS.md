@@ -106,7 +106,7 @@ The rest run and report but do not block.
 | `R-CMD-check.yaml` | PR, push, release | **yes**, all five | ubuntu devel/release/oldrel-1, macOS, Windows |
 | `test-coverage.yaml` | PR, push, release | no | coverage upload |
 | `pkgdown.yaml` → `build-and-deploy` | PR, push, release | no | docs site |
-| `check-manual.yaml` | push to `main`, release | **cannot** | the PDF manual — the only thing that catches raw Unicode in `Rd` |
+| `check-manual.yaml` | push to `main` | **cannot** | the PDF manual — the only thing that catches raw Unicode in `Rd` |
 | `check-release.yaml` | release published | no | `R CMD check --as-cran` |
 
 `check-manual` says *cannot* rather than *no*: it deliberately does not run on pull requests,
