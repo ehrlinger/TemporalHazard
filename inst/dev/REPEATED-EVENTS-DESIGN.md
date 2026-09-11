@@ -3,7 +3,8 @@
 - **Date:** 2026-09-09
 - **Status:** implemented on this branch. SAS parity verified 2026-09-10 against the reference
   job's log and listing -- see Acceptance. The post-macro step once planned as stage 8 does not
-  exist as specified -- see Open Items 2.
+  exist as specified -- see Open Items 2. Both of the job's fits reproduce the listing,
+  verified 2026-09-10 -- see Fit parity.
 - **Branch:** `feat/hzr-repeated-events`, cut from `main` at `f93d00c`
 
 ## Purpose
@@ -238,7 +239,7 @@ step, which change no shape. After the job's line 65, the fit input matches the 
 independent tallies exactly: 962 observations, 388 events, 574 right censored, 387 left
 censored, `IV_EVENT` in [0.0001140795, 12.99137] and `IV_START` in
 [0.0001140795, 9.716832]. The exported function raises none of its input warnings on this
-data. Fitting it and reproducing LL -267.885 is out of scope; see below.
+data. The fits on it are recorded under Fit parity, below.
 
 ### PHI constraint
 
@@ -271,6 +272,60 @@ result does not depend on input row order.
 
 Because a gated test prints green when it never ran, it is not evidence. The synthetic
 set must be able to fail on its own.
+
+## Fit parity
+
+Verified 2026-09-10 with the study volume mounted. The job's two `PROC HAZARD` statements
+were put through `hzr_translate_sas()`, and the emitted status and fit calls were evaluated
+over the input above. The translator leaves out only `STEEPEST`, SAS's steepest-descent
+warm-up (#145). Both fits start at the job's `PARMS`.
+
+| | SAS log likelihood | R | largest estimate gap | largest SE gap |
+|---|---|---|---|---|
+| first model: `CONSERVE`, 9 parameters | -267.885 | -267.8850808 | 8.3e-05 SE | 8.9e-04 relative |
+| second: `NOCONSERVE`, `maze_prc` and `iso_pvi` in both phases, 13 parameters | -242.254 | -242.2541227 | 4.0e-05 SE | 5.5e-04 relative |
+
+The comparison is made on SAS's scale. `PROC HAZARD` estimates every shape parameter on the
+log scale (`E3 = Ln(|Nu|)` and so on), so R's `nu`, `m`, `gamma`, `alpha` and `eta` are
+logged, and their standard errors converted by the delta method, `se(x) / |x|`. An estimate
+gap is measured in the listing's own standard errors. The standard errors agree to about
+three figures rather than the seven printed, which is what SAS's numeric Hessian supports.
+For the first model this includes `MUL`, which the listing marks as estimated in closed form
+and still reports a standard error for.
+
+**The likelihoods agree at a point, not only at an optimum.** R's log likelihood at the first
+model's `PARMS`, at SAS's final estimates and at R's own optimum is -267.8850808 each time.
+At the second model's final estimates from the listing it is -242.2541227. So a gap in a fit
+can only come from the optimizer, and one did. The test asserts the log likelihood at the
+listing's estimates for both models, so this holds for as long as the test passes, not only
+on the day it was measured.
+
+**The second model needs `reltol` tightened.** With `reltol` at its default, from one start
+or five, the translated call reports `converged = TRUE` at -242.2675, 0.013 short of the listing. Its estimates are up to
+0.16 SE away, and its standard errors up to 10% off. `.hzr_optim_generic()` defaults
+`reltol` to 1e-5, and BFGS stops when an iteration gains less than about `reltol * |LL|`,
+here about 0.0024, which a flat ridge in the late shapes does not provide.
+
+The first model passing at the default is not evidence that the default is enough, because
+the two models take different paths. `CONSERVE` fixes one `log_mu`, and with any parameter
+fixed and between 2 and 10 free the engine runs a Nelder-Mead warm-up at `reltol = 1e-10`
+before BFGS (`R/likelihood-multiphase.R`). The second model fixes nothing and goes straight
+to BFGS at 1e-5. With
+`reltol = 1e-12` it reaches the listing's optimum from the same start. The parity test sets
+that explicitly. Whether the default should change is a separate question, because it
+touches every fit and the check-time budget.
+
+**One start, and why.** The default five starts give the first model the same fit from
+start 1. The perturbed starts end at worse local optima, LL -267.914, -268.175 and -274.368,
+and their Hessians raise the not-invertible warnings, which are about those starts and not
+about the reported fit. The test fits from `PARMS` alone. For the first model that start is
+SAS's optimum, so the fit alone cannot tell the likelihood from the search; the assertion
+at the listing's estimates can, and agreement rests on it rather than on `n_starts`.
+
+Each tolerance in the test fails the stopped-short fit above: half a unit in the listing's
+third decimal of log likelihood, 1e-3 SE per estimate, 2e-3 relative per standard error.
+The fits are in `tests/testthat/test-repeated-events-parity.R` and skip without the volume,
+so CI has never run them.
 
 ## Open items, resolved 2026-09-10
 
@@ -327,5 +382,5 @@ manual from a clean `git archive` export of a **committed** tree.
 - Wiring `hzr_repeated_events()` into `hzr_translate_sas()`. The translator will need to
   recognise a `%repeat` call and emit this function, but that is a separate change with
   its own parity evidence.
-- Running the cardioversion fit itself and reproducing LL -267.885. That is the payoff,
-  and it is the *next* piece of work; this spec covers building the input it needs.
+- Changing the optimizer's default `reltol`. Fit parity shows the default stops the second
+  model short; the fix belongs to the optimizer, not to this function.

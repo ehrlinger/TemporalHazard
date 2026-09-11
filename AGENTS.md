@@ -168,8 +168,22 @@ That matters mostly for how you read a red CI. The previous text here claimed CI
 those tests, which would lead you to dismiss a CI-only test failure as impossible --- and the
 CI-only failures are the valuable ones, because they are the platform differences a single
 machine cannot show you. CI does skip more than the local run (42 against 6 on that
-commit), but those are the SAS fixture-availability skips: the local machine has the
-checkouts under `~/Documents/GitHub/hazard` and the runners do not.
+commit). Most of those were SAS fixture-availability skips: the local machine has the
+checkouts under `~/Documents/GitHub/hazard`, and the runners did not.
+
+**Since 2026-09-10, one runner has them.** The **ubuntu-latest / release** job checks out
+`ehrlinger/hazard` at a pinned commit and points `HAZARD_REPO` and `HAZARD_EXAMPLES_DIR` at
+it (`R-CMD-check.yaml`), so the SAS parity tests and the translator corpus test run there,
+and only there. The other four platforms still skip them. Moving the pin is a deliberate PR,
+because the corpus test's floors are measured against that commit. A step fails the job if
+the files those tests read are missing, so a moved path fails CI instead of turning back
+into silent skips.
+
+The remaining CI-only skips are ones no runner can satisfy:
+- the `bh.dead` parity helpers, which live in `inst/dev/`, and the built tarball excludes it;
+- the C `hazard` binary;
+- the private maze datasets;
+- the generated weighted-parity fixture.
 
 CI is still not a substitute for the local suite, for the opposite reason to the one
 previously given: it exercises *more* of the suite than a local `--as-cran` check does, and
