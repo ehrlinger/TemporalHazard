@@ -45,9 +45,12 @@ test_that("hz.ce_cardioversion_repeated.ehb: %repeat reproduces the SAS log and 
   expect_equal(shapes[, 2], c(358L, 358L, 358L, 360L, 361L, 367L - 2L, 367L - 2L))
 
   # The exported function is the same seven stages, and this data trips none of
-  # its input warnings.
-  expect_no_warning(events <- hzr_repeated_events(bd_card, id, tm, fu, ind))
-  expect_equal(events, `row.names<-`(s7, NULL))
+  # its input warnings. Those warnings name subjects, so they are counted here,
+  # never printed; and the comparison with the stages reports a bare FALSE
+  # rather than a diff of patient rows.
+  warned <- testthat::capture_warnings(events <- hzr_repeated_events(bd_card, id, tm, fu, ind))
+  expect_length(warned, 0L)
+  expect_true(isTRUE(all.equal(events, `row.names<-`(s7, NULL))))
 
   # The job's line 65, after the macro. It moves an event time that does not
   # exceed its start; it removes no rows (.log line 315: 962 in, 962 out).
@@ -94,10 +97,16 @@ test_that("hz.ce_cardioversion_repeated.ehb: the result does not depend on input
     row.names(x) <- NULL
     x
   }
-  run <- function(d) hzr_repeated_events(d, "ccfid", "iv_event", "iv_end", "ce_card")
+  # Its warnings name subjects, and would print without failing the test.
+  run <- function(d) {
+    warned <- testthat::capture_warnings(out <- hzr_repeated_events(d, "ccfid", "iv_event", "iv_end", "ce_card"))
+    expect_length(warned, 0L)
+    out
+  }
   base <- canon(run(bd_card))
+  # `canon()` keeps ccfid, so a failure must not print a diff.
   for (k in 1:5) {
     shuffled <- withr::with_seed(k, bd_card[sample(nrow(bd_card)), , drop = FALSE])
-    expect_equal(canon(run(shuffled)), base, label = paste("shuffle", k))
+    expect_true(isTRUE(all.equal(canon(run(shuffled)), base)), label = paste("shuffle", k))
   }
 })
