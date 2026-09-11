@@ -21,8 +21,10 @@ NULL
 # `sign_bounded` -- the multiphase shape m -- never straddle 0, where the cdf
 # and hazard families meet in a cusp (#251), and follow the rule of
 # .hzr_phase_derivatives(): one-sided second order forward from m >= 0; from
-# m < 0 a step capped at 1% of |m| (floored at 1e-10), one-sided backward if
-# it would still reach 0.
+# m < 0 a step capped at 1% of |m|, one-sided backward if it would still reach
+# 0. The floor on that step is 1e-8, not the decomposition's 1e-10: these
+# differences are of the whole log-likelihood, whose rounding error relative
+# to |f| is about eps / h, and at 1e-10 that is already near SAS's gradtl.
 .hzr_fd_gradient <- function(objective, theta, sign_bounded = integer(0)) {
   f0 <- NULL
   vapply(seq_along(theta), function(i) {
@@ -30,7 +32,7 @@ NULL
     h <- .Machine$double.eps^(1 / 3) * max(abs(x), 1)
     side <- 0
     if (i %in% sign_bounded) {
-      if (x < 0) h <- min(h, max(0.01 * abs(x), 1e-10))
+      if (x < 0) h <- min(h, max(0.01 * abs(x), 1e-8))
       side <- if (x >= 0 && x - h < 0) {
         1
       } else if (x < 0 && x + h >= 0) {
