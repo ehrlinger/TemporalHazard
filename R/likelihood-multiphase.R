@@ -1780,15 +1780,19 @@
       }
 
       gradient_fn_pre_coe <- gradient_fn
+      # Same formals as the base gradient_fn, sanitize included: R CMD check
+      # flags local redefinitions whose formal arguments differ.
       gradient_fn <- function(theta, time, status, time_lower,
-                              time_upper, x, weights = NULL, ...) {
+                              time_upper, x, weights = NULL,
+                              sanitize = TRUE, ...) {
         theta <- .hzr_conserve_events(
           theta, fixmu_phase, fixmu_pos,
           time, status, phases, covariate_counts, x_list, total_events,
           weights = weights, time_lower = time_lower
         )
         gradient_fn_pre_coe(theta, time, status, time_lower,
-                            time_upper, x, weights = weights, ...)
+                            time_upper, x, weights = weights,
+                            sanitize = sanitize, ...)
       }
     } else {
       use_conserve <- FALSE
@@ -1831,11 +1835,13 @@
     }
 
     gradient_fn_full <- gradient_fn
+    # Same formals as the base gradient_fn; see the CoE wrapper above.
     gradient_fn <- function(theta, time, status, time_lower, time_upper, x,
-                            weights = NULL, ...) {
+                            weights = NULL, sanitize = TRUE, ...) {
       grad_full <- gradient_fn_full(expand_theta(theta), time, status,
                                      time_lower, time_upper, x,
-                                     weights = weights, ...)
+                                     weights = weights, sanitize = sanitize,
+                                     ...)
       grad_full[free_idx]
     }
 
