@@ -217,7 +217,12 @@ phase flat across the event times may still be identified through the
 bounds. The measured shares are
 kept on the fit as \code{fit$fit$phase_share}. Raise it to catch marginal
 phases, set it to 0 to silence the check.
-\item \code{reltol}: Relative parameter change tolerance (default 1e-5)
+\item \code{reltol}: Relative convergence tolerance on the objective, the negative
+log-likelihood (default 1e-5). BFGS stops when an iteration reduces it by
+less than \verb{reltol * (|objective| + reltol)}, so the stopping gap grows
+with the size of the log-likelihood: about 0.0024 at a log-likelihood of
+-240. On a flat surface a fit can stop that far short of the optimum and
+still report convergence.
 \item \code{abstol}: Absolute gradient norm tolerance (default 1e-6)
 \item \code{method}: Optimization method: "bfgs" or "nm" (default "bfgs").
 SAS \verb{PROC HAZARD} jobs write \verb{STEEPEST QUASI} together -- steepest
