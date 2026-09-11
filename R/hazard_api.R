@@ -67,6 +67,27 @@ NULL
 #' and transformed back for reporting; see
 #' `vignette("mf-mathematical-foundations")`.
 #'
+#' @section Convergence:
+#'
+#' The optimizer stops when an iteration improves the log-likelihood by less
+#' than `control$reltol` relative to its size, and on a flat ridge that can
+#' happen well short of the maximum. SAS/C HAZARD accepts an optimum only on a
+#' different test, the relative gradient
+#' \eqn{\max_i |g_i| \max(|x_i|, 1) / \max(|\ell|, 1) \le \epsilon^{1/3}}{max_i
+#' |g_i| max(|x_i|, 1) / max(|l|, 1) <= eps^(1/3)}, about 6e-6, and `hazard()`
+#' applies it too: when the optimizer reports convergence and the test fails,
+#' the fit is continued with [stats::nlm()] at SAS's tolerances, and the
+#' continued point is kept if it improves the log-likelihood.
+#'
+#' Every fit records the result in `fit$fit$rel_gradient` and, when the
+#' continuation ran, its termination code in `fit$fit$polish_code`. `print()`
+#' and `summary()` show both. A warning is raised only for code 4, the
+#' iteration limit (raise `control$maxit`), and code 5, where the
+#' log-likelihood kept rising along some direction and the model may have no
+#' maximum. Codes 2 and 3, where SAS/C prints a caution, are recorded without
+#' one. The test is relative to the size of the log-likelihood, so a fit that
+#' meets it is within SAS's tolerance of the maximum, not exactly at it.
+#'
 #' @section Baseline distributions:
 #'
 #' The `dist` argument selects the parametric form of the baseline hazard.  The
@@ -244,9 +265,13 @@ NULL
 #'   log-likelihood (default 1e-5). BFGS stops when an iteration reduces it by
 #'   less than `reltol * (|objective| + reltol)`, so the stopping gap grows
 #'   with the size of the log-likelihood: about 0.0024 at a log-likelihood of
-#'   -240. On a flat surface a fit can stop that far short of the optimum and
-#'   still report convergence.
-#' - `abstol`: Absolute gradient norm tolerance (default 1e-6)
+#'   -240. On a flat surface plain BFGS can stop that far short of the optimum
+#'   and still report convergence, so `hazard()` then applies SAS/C HAZARD's
+#'   relative-gradient test and, when the stop fails it, continues with
+#'   [stats::nlm()]; see the "Convergence" section.
+#' - `abstol`: Projected-gradient tolerance, used only by the bounded
+#'   (L-BFGS-B) optimizer (default 1e-6). The fits `hazard()` runs use BFGS
+#'   and ignore it.
 #' - `method`: Optimization method: "bfgs" or "nm" (default "bfgs").
 #'   SAS `PROC HAZARD` jobs write `STEEPEST QUASI` together -- steepest
 #'   descent first, then quasi-Newton. `QUASI`/`QUASINEWTON` is `"bfgs"`;
@@ -428,7 +453,9 @@ NULL
 #'   \code{data} (input data: \code{time}, \code{status}, \code{x},
 #'   \code{weights}, etc.),
 #'   \code{fit} (optimisation results: \code{theta}, \code{objective},
-#'   \code{converged}, \code{se}, \code{vcov}, \code{counts}, \code{message};
+#'   \code{converged}, \code{se}, \code{vcov}, \code{counts}, \code{message},
+#'   and \code{rel_gradient} and \code{polish_code}, the SAS/C acceptance
+#'   test described under "Convergence";
 #'   all \code{NULL} when \code{fit = FALSE}; multiphase fits add
 #'   \code{starts}, one row per optimisation start with its \code{status}
 #'   (\code{"ok"}, \code{"nonconverged"}, \code{"infeasible"},
@@ -875,6 +902,38 @@ hazard <- function(formula = NULL,
     fit_state$message <- optim_result$message
     fit_ran <- TRUE
     degraded_reasons$se <- optim_result$se_unavailable_reason
+  }
+
+  # SAS/C's acceptance test, applied by .hzr_optim_generic() and polished
+  # towards when BFGS stopped short of it. Both results are recorded on
+  # every fit and shown by print() and summary(). Only the polish's two hard
+  # failures warn -- the ones SAS/C reports as "reached no convergence"
+  # (nlm code 4) and "unbounded ... or has a finite asymptote" (code 5). A
+  # code 2 or 3 stop (step too small, or no lower point found) is where SAS
+  # prints a caution and retries; on the test suite about a third of stops
+  # end there, mostly on deliberately awkward fixtures, and warning on each
+  # would bury the two that matter.
+  if (fit_ran) {
+    fit_state$rel_gradient <- optim_result$rel_gradient
+    fit_state$polish_code  <- optim_result$polish_code
+    if (isTRUE(fit_state$converged) &&
+        isTRUE(fit_state$polish_code %in% c(4L, 5L))) {
+      warning(
+        "The optimizer reported convergence, but the relative gradient at ",
+        "the estimates is ", signif(fit_state$rel_gradient, 3), ", above ",
+        "the ", signif(.Machine$double.eps^(1 / 3), 3), " that SAS/C ",
+        "HAZARD requires. ",
+        if (identical(fit_state$polish_code, 5L)) {
+          paste0("The likelihood kept rising along a direction in which no ",
+                 "maximum was found; the model may not have one.")
+        } else {
+          paste0("Further optimization stopped at its iteration limit; ",
+                 "the estimates may not be at the maximum. Raise ",
+                 "control$maxit to continue.")
+        },
+        call. = FALSE
+      )
+    }
   }
 
   # An ill-conditioned Hessian already warns that standard errors are
@@ -1527,6 +1586,23 @@ predict.hazard <- function(object, newdata = NULL,
 }
 
 
+# The SAS/C acceptance test's result, for print() and summary(). NULL when the
+# test was not evaluated: an unfitted or imported model, a bounded
+# (L-BFGS-B) fit, or a BFGS run that did not converge.
+.hzr_format_gradient_test <- function(rel_gradient, polish_code) {
+  if (length(rel_gradient) != 1L || is.na(rel_gradient)) return(NULL)
+  gradtl <- .Machine$double.eps^(1 / 3)
+  verdict <- if (rel_gradient <= gradtl) {
+    "met"
+  } else if (length(polish_code) == 1L && !is.na(polish_code)) {
+    paste0("not met, nlm code ", polish_code)
+  } else {
+    "not met"
+  }
+  paste0("  gradient:     relative ", signif(rel_gradient, 3),
+         " (SAS/C requires <= ", signif(gradtl, 3), "; ", verdict, ")")
+}
+
 #' Print method for fitted hazard models
 #'
 #' Compact one-block summary of a fitted `hazard` object: sample size,
@@ -1558,6 +1634,8 @@ print.hazard <- function(x, ...) {
   if (!anyNA(x$fit$objective)) {
     cat("  log-lik:     ", format(x$fit$objective, digits = 6), "\n")
     cat("  converged:   ", x$fit$converged, "\n")
+    cat(.hzr_format_gradient_test(x$fit$rel_gradient, x$fit$polish_code),
+        sep = "\n")
   }
   # Always printed, "none" included (#242).
   cat(.hzr_format_not_done(x$degraded, x$degraded_causes), sep = "\n")
@@ -1653,6 +1731,8 @@ summary.hazard <- function(object, ...) {
     dist = object$spec$dist,
     engine = object$engine,
     converged = object$fit$converged,
+    rel_gradient = object$fit$rel_gradient,
+    polish_code = object$fit$polish_code,
     log_lik = object$fit$objective,
     counts = object$fit$counts,
     message = object$fit$message,
@@ -1714,6 +1794,7 @@ print.summary.hazard <- function(x, ...) {
 
   if (!is.null(x$converged) && !is.na(x$converged)) {
     cat("  converged:   ", x$converged, "\n")
+    cat(.hzr_format_gradient_test(x$rel_gradient, x$polish_code), sep = "\n")
   }
   if (!is.null(x$log_lik) && !is.na(x$log_lik)) {
     cat("  log-lik:     ", format(x$log_lik, digits = 6), "\n")

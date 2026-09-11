@@ -261,9 +261,13 @@ test_that("alpha = 1 fixed with GAMMA and ETA both free fixes ETA, as SAS does",
 
 test_that("fixing ETA at alpha = 1 is what makes GAMMA estimable", {
   # Two-sided, because "the standard error is finite" alone could come from
-  # anything: fit the SAME phase with ETA left free and show the ridge. The
-  # emitted (fixed) form gives gamma an SE around 0.02; leaving ETA free gives
-  # 7.5 on gamma and 13.7 on eta -- the flat direction, not a tighter fit.
+  # anything: fit the SAME phase with ETA left free and show the ridge. At
+  # alpha = 1, tau = 1 only gamma * eta is identified, so the free fit must
+  # reach the same log-likelihood and the same product, and its gamma must
+  # be undetermined: a standard error at least 100 times the fixed fit's
+  # (about 0.02), or none at all. It was 7.5 when BFGS stopped partway along
+  # the ridge; an optimizer that follows the ridge further, as the SAS/C
+  # acceptance test makes it do, reaches a singular Hessian and reports none.
   skip_on_cran()
   got <- .hzr_parse_parms(c("MUL=0.01", "TAU=1", "ALPHA=1", "GAMMA=2",
                             "ETA=3", "FIXALPHA"))
@@ -271,17 +275,26 @@ test_that("fixing ETA at alpha = 1 is what makes GAMMA estimable", {
   n <- 400
   d <- data.frame(t = stats::rexp(n, 0.3), s = rep(c(1, 0), length.out = n))
   fit_one <- function(phases) {
-    f <- suppressWarnings(hazard(
+    suppressWarnings(hazard(
       time = d$t, status = d$s, dist = "multiphase",
       phases = phases, theta = eval(got$theta), fit = TRUE
     ))
-    sqrt(diag(stats::vcov(f)))[["phase_1.gamma"]]
   }
-  se_fixed <- fit_one(eval(got$phases))
-  se_free <- fit_one(list(hzr_phase("g3", tau = 1, gamma = 2, alpha = 1,
-                                    eta = 3, fixed = c("tau", "alpha"))))
-  expect_true(is.finite(se_fixed))
-  expect_lt(se_fixed, se_free / 100)
+  se_gamma <- function(f) {
+    v <- stats::vcov(f)
+    if (is.matrix(v)) sqrt(diag(v))[["phase_1.gamma"]] else NA_real_
+  }
+  product <- function(f) {
+    f$fit$theta[["phase_1.gamma"]] * f$fit$theta[["phase_1.eta"]]
+  }
+  fixed <- fit_one(eval(got$phases))
+  free <- fit_one(list(hzr_phase("g3", tau = 1, gamma = 2, alpha = 1,
+                                 eta = 3, fixed = c("tau", "alpha"))))
+  expect_true(is.finite(se_gamma(fixed)))
+  expect_true(!is.finite(se_gamma(free)) ||
+                se_gamma(free) > 100 * se_gamma(fixed))
+  expect_lt(abs(free$fit$objective - fixed$fit$objective), 1e-4)
+  expect_lt(abs(product(free) / product(fixed) - 1), 1e-3)
 })
 
 test_that("alpha = 1 fixed with GAMMA fixed is not recorded", {

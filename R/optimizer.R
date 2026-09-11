@@ -142,6 +142,50 @@ NULL
     )
   }
 
+  # SAS/C's acceptance test (src/optim/umstop.c): the optimum is accepted
+  # only when the relative gradient max_i |g_i| * max(|x_i|, 1) / max(|f|, 1)
+  # is at most gradtl = eps^(1/3).  optim()'s BFGS stops on the relative
+  # change in the objective instead, and at the default reltol = 1e-5 that
+  # accepts a flat ridge well short of the optimum while reporting
+  # convergence 0: on the test suite, 70% of converged BFGS stops failed
+  # SAS's test.  When BFGS reports convergence and the test fails, polish
+  # with stats::nlm() -- R's Dennis-Schnabel UNCMIN, the algorithm SAS/C's
+  # optimizer was ported from -- at SAS's tolerances; its typsize = 1 and
+  # fscale = 1 defaults are SAS's typx and typf.  The polished point is kept
+  # only when it improves the objective.  L-BFGS-B stops on a projected
+  # gradient already, so the bounded path is left alone.
+  gradtl <- .Machine$double.eps^(1 / 3)
+  rel_gradient <- function(theta, value) {
+    max(abs(gradient(theta)) * pmax(abs(theta), 1)) / max(abs(value), 1)
+  }
+  rel_grad <- NA_real_
+  polish_code <- NA_integer_
+  if (!use_bounds && result$convergence == 0L) {
+    rel_grad <- rel_gradient(result$par, result$value)
+    if (is.finite(rel_grad) && rel_grad > gradtl) {
+      f_nlm <- function(theta) {
+        v <- objective(theta)
+        attr(v, "gradient") <- gradient(theta)
+        v
+      }
+      polish <- tryCatch(
+        suppressWarnings(stats::nlm(
+          f_nlm, result$par, gradtol = gradtl,
+          steptol = .Machine$double.eps^(2 / 3), iterlim = control$maxit,
+          check.analyticals = FALSE
+        )),
+        error = function(e) NULL
+      )
+      if (!is.null(polish) && is.finite(polish$minimum) &&
+          polish$minimum <= result$value) {
+        result$par   <- polish$estimate
+        result$value <- polish$minimum
+        polish_code  <- as.integer(polish$code)
+        rel_grad     <- rel_gradient(result$par, result$value)
+      }
+    }
+  }
+
   # Post-fit Hessian for standard errors.  Prefer the caller's analytic Hessian
   # (on the objective / negative-log-likelihood scale) when supplied; otherwise,
   # or when it declines by returning NULL, fall back to a numerical Hessian.
@@ -230,6 +274,11 @@ NULL
     vcov = inv$vcov,
     rcond = inv$rcond,
     pd = inv$pd,
-    se_unavailable_reason = if (is.matrix(inv$vcov)) NA_character_ else inv$reason
+    se_unavailable_reason = if (is.matrix(inv$vcov)) NA_character_ else inv$reason,
+    # SAS/C's relative gradient at the returned point, after any polish; NA
+    # when not evaluated (the bounded path, or BFGS did not converge).
+    rel_gradient = rel_grad,
+    # stats::nlm()'s termination code when the polish ran and was kept.
+    polish_code = polish_code
   )
 }

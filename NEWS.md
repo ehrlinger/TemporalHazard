@@ -86,6 +86,37 @@
   point: it estimates `log|M|` with the sign fixed by the starting value, so
   `M` cannot reach or cross 0. `hazard()` estimates `m` directly and can.
 
+* **A fit that reports convergence now meets SAS/C HAZARD's own test for
+  it.** `hazard()`'s BFGS optimizer stops on the relative change in the
+  log-likelihood (`control$reltol`, default 1e-5), which lets a flat ridge
+  end short of the maximum with `converged = TRUE`: a 13-parameter
+  early-CDF plus late-G3 model stopped 0.013 below the SAS listing's
+  log-likelihood, and synthetic fits of the same shape up to 5 units below.
+  SAS/C accepts an optimum only when the relative gradient,
+  `max |g_i| * max(|x_i|, 1) / max(|f|, 1)`, is at most `eps^(1/3)`, about
+  6e-6. When BFGS reports convergence and that test fails, every
+  distribution's fit is now continued with `stats::nlm()`, the
+  Dennis-Schnabel algorithm SAS/C's optimizer was ported from, at SAS's
+  tolerances, and the continued point is kept only if the log-likelihood
+  improves. The default `reltol` is unchanged: tightening it instead cost
+  30% to 60% more time on the test suite and broke eight or nine tests.
+
+  Every fit records the test in `fit$fit$rel_gradient` and
+  `fit$fit$polish_code` (`nlm()`'s termination code), and `print()` and
+  `summary()` show it. Only SAS/C's two hard failures warn: code 4, the
+  iteration limit, and code 5, where the likelihood kept rising along some
+  direction and may have no maximum. Codes 2 and 3, where SAS/C prints a
+  caution and retries, are recorded without a warning. The test is relative
+  to the size of the log-likelihood, so a fit that meets it is within SAS's
+  tolerance of the maximum rather than exactly at it.
+
+  Estimates of fits that used to stop short now change. One test depended
+  on that: it showed `gamma` and `eta` non-identified at `alpha = 1` by a
+  large standard error at the point BFGS happened to stop. Followed further
+  along the ridge the Hessian is singular and there is no standard error, so
+  the test now also checks that both fits reach the same log-likelihood and
+  the same `gamma * eta`.
+
 * **A Weibull fit with one masked variance reported the others on the wrong
   scale.** When the Hessian inverse has a non-positive variance, its row and
   column are set to `NA`. The delta-method transform from the internal
