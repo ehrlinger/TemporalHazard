@@ -107,7 +107,10 @@
   covariates alone, so `predict()` found no `mal` column and stopped before
   the expected-event tally. The curve is now evaluated at the column means
   of each phase's own design matrix, for global, phase-formula and mixed
-  covariates alike. Separately, the `par_cumhaz_<phase>` columns were chosen
+  covariates alike. With `time_windows`, a multiphase fit's output had twice
+  as many rows as grid times. The mean patient now carries the covariate
+  means in the window that contains each time. Separately, the
+  `par_cumhaz_<phase>` columns were chosen
   by dropping `total` from the decomposition, which let its `time` column
   through as a phase; they are now chosen by phase name.
 

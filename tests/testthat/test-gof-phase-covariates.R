@@ -131,6 +131,42 @@ test_that("multiphase fit with only global covariates: curve at their means", {
   expect_equal(unname(gof$par_cumhaz), unname(at_mean), tolerance = 1e-10)
 })
 
+test_that("multiphase fit with time_windows: curve switches windows with time", {
+  # time_windows expands the global x into one column per window, each on
+  # only while the row's time is in that window. Column means of the
+  # expanded matrix would switch every window on at once. The mean patient
+  # has mean(age) in the window active at each grid time.
+  d <- .gof_pc_avc
+  fit <- suppressWarnings(hazard(
+    time = d$int_dead, status = d$dead, x = cbind(age = d$age),
+    time_windows = 1,
+    dist   = "multiphase",
+    phases = list(
+      early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                           fixed = "shapes"),
+      constant = hzr_phase("constant")
+    ),
+    fit    = TRUE
+  ))
+  expect_true(isTRUE(fit$fit$converged))
+  expect_identical(colnames(fit$fit$x_list$constant), c("age_w1", "age_w2"))
+
+  gof <- hzr_gof(fit)
+  n <- length(gof$time)
+  x_mean <- .hzr_expand_time_varying_design(
+    x = matrix(mean(d$age), nrow = n, ncol = 1,
+               dimnames = list(NULL, "age")),
+    time = gof$time, time_windows = 1
+  )
+  # Both windows are visited, so a wrong window would show.
+  expect_true(any(gof$time <= 1) && any(gof$time > 1))
+  ref <- .hzr_multiphase_cumhaz(
+    gof$time, fit$fit$theta, fit$fit$phases, fit$fit$covariate_counts,
+    list(early = x_mean, constant = x_mean)
+  )
+  expect_equal(unname(gof$par_cumhaz), ref, tolerance = 1e-10)
+})
+
 test_that("global and phase covariates together: curve at both sets of means", {
   # age enters globally (so data$x is set and reaches the constant phase);
   # mal enters only through the early phase's formula.  A newdata built from

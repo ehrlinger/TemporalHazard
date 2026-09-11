@@ -338,6 +338,8 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #' agree.  The means are those of the design-matrix columns, taken phase by
 #' phase when a multiphase fit's covariates enter through the phase
 #' formulas, so a factor enters as the proportion of patients in each level.
+#' With `time_windows`, the mean patient carries the covariate means in the
+#' window that contains each time.
 #'
 #' For a weighted fit both tallies carry the case weights: observed events
 #' are \eqn{\sum_i w_i d_i} and expected events \eqn{\sum_i w_i H_i}, the
@@ -493,12 +495,31 @@ hzr_gof <- function(object, time_grid = NULL) {
     # puts every covariate at 0. Put each phase's design matrix at its column
     # means and the stored times at the grid; predict() without newdata then
     # evaluates that stored design.
-    curve_obj$data$time <- time_grid
-    curve_obj$fit$x_list <- lapply(object$fit$x_list, function(m) {
-      if (is.null(m) || ncol(m) == 0) return(m)
+    # With time_windows, a phase without a formula carries data$x expanded
+    # into one column per window, each on only in its own window. Its column
+    # means would switch every window on at once, so expand the means of
+    # data$x by the grid times instead.
+    phases <- object$fit$phases
+    if (is.null(phases)) phases <- object$spec$phases
+    time_windows <- object$spec$time_windows
+    x_bar <- function(m) {
       matrix(colMeans(m), nrow = length(time_grid), ncol = ncol(m),
              byrow = TRUE, dimnames = list(NULL, colnames(m)))
-    })
+    }
+    curve_obj$data$time <- time_grid
+    curve_obj$fit$x_list <- lapply(
+      stats::setNames(nm = names(object$fit$x_list)), function(nm) {
+        m <- object$fit$x_list[[nm]]
+        if (is.null(m) || ncol(m) == 0) return(m)
+        if (!is.null(time_windows) && is.null(phases[[nm]]$formula)) {
+          return(.hzr_expand_time_varying_design(
+            x = x_bar(object$data$x), time = time_grid,
+            time_windows = time_windows
+          ))
+        }
+        x_bar(m)
+      }
+    )
     nd <- NULL
   } else if (!is.null(object$data$x) && ncol(object$data$x) > 0) {
     # For covariate models, evaluate at covariate means (baseline patient)
