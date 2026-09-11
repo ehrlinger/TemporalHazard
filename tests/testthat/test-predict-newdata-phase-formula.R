@@ -138,6 +138,30 @@ test_that("a factor's non-default contrasts are the fit's, not the default", {
   }
 })
 
+test_that("a missing phase covariate is not filled from the workspace (#268)", {
+  data(avc, package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc)
+  fit <- hazard(
+    survival::Surv(int_dead, dead) ~ age, data = d, dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                        fixed = "shapes"),
+      constant = hzr_phase("constant", formula = ~ mal)
+    ),
+    fit = TRUE
+  )
+  # A same-named object where the formula's environment chain can see it.
+  assign("mal", 1, envir = globalenv())
+  tryCatch(
+    expect_error(
+      predict(fit, newdata = data.frame(time = 2, age = 60),
+              type = "cumulative_hazard"),
+      "lacks the covariate column\\(s\\) 'mal' that phase 'constant' uses"
+    ),
+    finally = rm("mal", envir = globalenv())
+  )
+})
+
 test_that("a fit without the stored phase design still predicts", {
   fit <- phase_formula_fit()
   fit$fit$x_design <- NULL
