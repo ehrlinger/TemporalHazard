@@ -869,6 +869,7 @@ hazard <- function(formula = NULL,
     fit_state$phases <- optim_result$phases
     fit_state$covariate_counts <- optim_result$covariate_counts
     fit_state$x_list <- optim_result$x_list
+    fit_state$x_design <- optim_result$x_design
     fit_state$fixed_mask <- optim_result$fixed_mask
     fit_state$starts <- optim_result$starts
     # Applied CoE state, recorded next to the requested one in spec$control
@@ -1430,7 +1431,8 @@ predict.hazard <- function(object, newdata = NULL,
         for (nm in names(phases)) {
           ph <- phases[[nm]]
           if (!is.null(ph$formula) && ncol(nd_covs) > 0) {
-            x_list[[nm]] <- stats::model.matrix(ph$formula, data = newdata)[, -1L, drop = FALSE]
+            # The fit's levels, contrasts and columns, not newdata's.
+            x_list[[nm]] <- .hzr_phase_newdata_design(object, nm, ph, newdata)
           } else if (cov_counts[[nm]] > 0 && ncol(nd_covs) > 0) {
             x_list[[nm]] <- as.matrix(nd_covs)
           } else {

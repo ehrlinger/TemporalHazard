@@ -65,6 +65,19 @@
 
 ## Bug fixes
 
+* **`predict(newdata = )` on a multiphase fit now codes a phase formula's
+  factors as the fit did.** It rebuilt a phase's design with a bare
+  `model.matrix()` at `newdata`, with no stored levels or contrasts, so a
+  factor given as one label (`grp = "young"`) stopped with "contrasts can be
+  applied only to factors with 2 or more levels", and a factor whose levels
+  were in another order was coded against the wrong level with no error: a
+  wrong cumulative hazard. The fit now stores each phase formula's terms,
+  factor levels and contrasts (`fit$x_design`), and `predict()` rebuilds the
+  phase's columns from them, matched by name. A level the fit never saw is an
+  error, as is a covariate the phase uses and `newdata` lacks. `newdata`
+  carrying the phase's design columns by name (`grpyoung`) is taken as it
+  is. A fit saved by an earlier version rebuilds as before.
+
 * **The multiphase gradient and Hessian are now right when an early phase's
   `m` is near 0.** Both differentiate in `m` by finite differences, and
   their stencils straddled 0: the gradient's (half-width about 6e-6)

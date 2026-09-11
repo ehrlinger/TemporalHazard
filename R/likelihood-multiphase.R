@@ -1498,6 +1498,51 @@
 }
 
 
+#' Rebuild one phase's formula design matrix at new rows
+#'
+#' Used by `predict(newdata = )` for a multiphase phase with its own formula.
+#' Returns the fit's columns for that phase, in the fit's order, built with
+#' the factor levels and contrasts stored at fit time, so a factor given as a
+#' single label, or with its levels in another order, codes as it did in the
+#' fit.
+#'
+#' @param object A fitted multiphase `hazard` object.
+#' @param nm Phase name.
+#' @param ph The phase's `hzr_phase` object.
+#' @param newdata Data frame of new rows.
+#' @return Numeric matrix with `nrow(newdata)` rows.
+#' @keywords internal
+#' @noRd
+.hzr_phase_newdata_design <- function(object, nm, ph, newdata) {
+  cols <- colnames(object$fit$x_list[[nm]])
+  design <- object$fit$x_design[[nm]]
+
+  # newdata that already carries the phase's design columns by name (as
+  # hzr_gof() passes a design built from stored matrices) is taken as it is.
+  if (!is.null(cols) && all(cols %in% names(newdata))) {
+    return(as.matrix(newdata[, cols, drop = FALSE]))
+  }
+
+  # A fit made before the phase design was stored: rebuild as it did then.
+  if (is.null(design)) {
+    return(stats::model.matrix(ph$formula, data = newdata)[, -1L, drop = FALSE])
+  }
+
+  missing <- setdiff(design$data_vars, names(newdata))
+  if (length(missing) > 0L) {
+    stop("'newdata' lacks the covariate column(s) ",
+         paste0("'", missing, "'", collapse = ", "),
+         " that phase '", nm, "' uses. Columns are matched by name.",
+         call. = FALSE)
+  }
+  mf <- stats::model.frame(design$terms, data = newdata,
+                           xlev = design$xlevels, na.action = stats::na.pass)
+  mm <- stats::model.matrix(design$terms, data = mf,
+                            contrasts.arg = design$contrasts)
+  mm[, cols, drop = FALSE]
+}
+
+
 #' Fit a multiphase additive hazard model via maximum likelihood
 #'
 #' Assembles starting values from phase specifications, resolves per-phase
@@ -1548,6 +1593,8 @@
   x_list <- vector("list", length(phases))
   names(x_list) <- names(phases)
   covariate_counts <- setNames(integer(length(phases)), names(phases))
+  # Per-phase design metadata; stays NULL for a phase without a formula.
+  x_design <- setNames(vector("list", length(phases)), names(phases))
 
   for (nm in names(phases)) {
     ph <- phases[[nm]]
@@ -1559,10 +1606,20 @@
       # rows with NA covariates.
       mf_j <- stats::model.frame(ph$formula, data = data,
                                    na.action = stats::na.pass)
-      x_j <- stats::model.matrix(ph$formula, data = mf_j)[, -1L,
-                                                           drop = FALSE]
+      mm_j <- stats::model.matrix(ph$formula, data = mf_j)
+      x_j <- mm_j[, -1L, drop = FALSE]
       x_list[[nm]] <- x_j
       covariate_counts[[nm]] <- ncol(x_j)
+      # What predict(newdata = ) needs to rebuild x_j from new rows: the
+      # terms (carrying predvars), the factor levels and the contrasts seen
+      # here, and the formula's variables that were columns of `data`.
+      terms_j <- attr(mf_j, "terms")
+      x_design[[nm]] <- list(
+        terms = terms_j,
+        xlevels = stats::.getXlevels(terms_j, mf_j),
+        contrasts = attr(mm_j, "contrasts"),
+        data_vars = intersect(all.vars(terms_j), names(data))
+      )
     } else if (!is.null(x)) {
       # Inherit global design matrix
       x_list[[nm]] <- x
@@ -2238,6 +2295,7 @@
   best_result$phases <- phases
   best_result$covariate_counts <- covariate_counts
   best_result$x_list <- x_list
+  best_result$x_design <- x_design
 
   # Which starts survived, and which one the reported fit came from.
   best_result$starts <- starts
