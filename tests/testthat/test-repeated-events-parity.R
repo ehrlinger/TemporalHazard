@@ -118,10 +118,20 @@ test_that("hz.ce_cardioversion_repeated.ehb: the result does not depend on input
 cardioversion_job <- function(dir) {
   path <- file.path(dirname(dir), "distributions", "hz.ce_cardioversion_repeated.ehb.sas")
   testthat::skip_if_not(file.exists(path), "cardioversion job not found beside the datasets")
-  # STEEPEST, in both blocks, is the one construct the translator leaves out:
-  # SAS's steepest-descent warm-up (issue #145). Nothing else may go missing.
+  # STEEPEST, in both blocks, is SAS's steepest-descent warm-up (issue #145),
+  # which the translator leaves out. The other two rows come from its
+  # fail-closed scan of steps that may change the %repeat output EVENTS
+  # before a fit reads it. The first is the job's line 65 nudge, a genuine
+  # rewrite, which this file applies itself in cardioversion_events(). The
+  # second is %HAZPLOT(IN=EVENTS, ...) before the stratified fit. It only
+  # reads EVENTS, but a macro call naming the output stops by design, since
+  # a false stop costs a deleted chunk and a miss fits the wrong data.
+  # Nothing else may go missing.
   expect_warning(job <- hzr_translate_sas(path), "STEEPEST")
-  expect_equal(job$untranslated$construct, c("STEEPEST", "STEEPEST"))
+  expect_equal(
+    job$untranslated$construct,
+    c("EVENTS changed after %repeat", "STEEPEST", "EVENTS changed after %repeat", "STEEPEST")
+  )
   job
 }
 
