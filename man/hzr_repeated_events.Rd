@@ -46,7 +46,7 @@ subject can have two rows with \code{last == 1} together, or two with
 Converts a long data set of candidate event times into one row per
 inter-event segment, ready to fit as a repeated-events model. This is a
 native R implementation of the SAS macro \verb{\%repeat} used by the
-repeated-events HAZARD jobs, whose fit input was never saved.
+repeated-events HAZARD jobs, whose fit input was seldom saved.
 }
 \details{
 The input holds one row per candidate event per subject, with an indicator
