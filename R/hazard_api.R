@@ -525,6 +525,7 @@ hazard <- function(formula = NULL,
          "other distribution here is a PROC HAZARD target. Got dist = \"",
          dist, "\".", call. = FALSE)
   }
+  x_design <- NULL
   # Formula dispatch: if formula is provided, parse it and extract time/status/x from data
   if (!is.null(formula)) {
     if (is.null(data)) {
@@ -553,6 +554,7 @@ hazard <- function(formula = NULL,
     time_lower <- parsed$time_lower
     time_upper <- parsed$time_upper
     x <- parsed$x
+    x_design <- parsed$x_design
 
   }
 
@@ -1015,6 +1017,9 @@ hazard <- function(formula = NULL,
       time_upper = time_upper,
       status = as.numeric(status),
       x = x,
+      # Terms, factor levels and contrasts of the formula RHS that built `x`
+      # (formula path; NULL otherwise), so predict(newdata = ) can rebuild it.
+      x_design = x_design,
       weights = weights,
       # The evaluated `data` argument as passed to hazard() (formula path; NULL
       # when called with raw vectors). This is the user's data frame, not a
@@ -1432,7 +1437,10 @@ predict.hazard <- function(object, newdata = NULL,
           if (!is.null(ph$formula) && ncol(nd_covs) > 0) {
             x_list[[nm]] <- stats::model.matrix(ph$formula, data = newdata)[, -1L, drop = FALSE]
           } else if (cov_counts[[nm]] > 0 && ncol(nd_covs) > 0) {
-            x_list[[nm]] <- as.matrix(nd_covs)
+            # A formula-less phase inherits the global design: rebuild that,
+            # not every non-time column of newdata (which also carries the
+            # phase formulas' variables).
+            x_list[[nm]] <- .hzr_global_design(object, newdata)
           } else {
             x_list[[nm]] <- NULL
           }

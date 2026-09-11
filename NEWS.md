@@ -65,6 +65,23 @@
 
 ## Bug fixes
 
+* **`predict(newdata = )` now evaluates a multiphase fit that has both a
+  global covariate and phase-formula covariates.** A phase without its own
+  formula inherits the global design, but at `newdata` it was built from
+  every non-time column, so the global phase received the phase formulas'
+  variables as well as its own. No `newdata` could satisfy both kinds of
+  phase: `hazard(Surv(t, d) ~ age, phases = list(early = hzr_phase(...,
+  formula = ~ mal), constant = hzr_phase("constant")))` stopped with
+  "non-conformable arguments" for every prediction type, and a factor global
+  covariate stopped with a different error. Extra or reordered columns
+  failed the same way. Such a phase is now rebuilt from the global formula's
+  own terms, factor levels and contrasts, as `predict.lm()` does, so a
+  factor can be given as a single label. `hazard()` stores these in
+  `object$data$x_design`. Fits made through the vector interface select
+  their columns by name, or by position when `x` was unnamed. Point
+  predictions, `se.fit = TRUE` and `decompose = TRUE` are each checked
+  against `exp(x beta_j) H0_j(t)` per phase.
+
 * **The multiphase gradient and Hessian are now right when an early phase's
   `m` is near 0.** Both differentiate in `m` by finite differences, and
   their stencils straddled 0: the gradient's (half-width about 6e-6)

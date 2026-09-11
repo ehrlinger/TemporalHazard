@@ -109,6 +109,7 @@
     rhs_formula <- formula(paste("~", deparse(rhs)))
     tryCatch({
       x <- stats::model.matrix(rhs_formula, data = data)
+      x_contrasts <- attr(x, "contrasts")
       # Remove intercept column if present
       if (ncol(x) > 0 && colnames(x)[1L] == "(Intercept)") {
         x <- x[, -1L, drop = FALSE]
@@ -121,14 +122,78 @@
     })
   }
 
+  # What predict(newdata = ) needs to rebuild `x` from new rows: the terms,
+  # the factor levels and the contrasts seen at fit time (as predict.lm()
+  # keeps them). The terms take the user's formula environment, so they do
+  # not capture this frame and its copy of `data`.
+  x_design <- NULL
+  if (!is.null(x)) {
+    x_terms <- stats::terms(rhs_formula)
+    environment(x_terms) <- environment(formula)
+    x_design <- list(
+      terms = x_terms,
+      xlevels = stats::.getXlevels(x_terms,
+                                   stats::model.frame(x_terms, data = data)),
+      contrasts = x_contrasts
+    )
+  }
+
   list(
     time = time,
     status = status,
     time_lower = time_lower,
     time_upper = time_upper,
     x = x,
+    x_design = x_design,
     surv_type = surv_type
   )
+}
+
+
+#' Rebuild the global design matrix at new rows
+#'
+#' Used by `predict()` for a multiphase phase without its own formula, which
+#' inherits the global design. Returns the fit's global columns, in the fit's
+#' order, whatever other columns `newdata` carries.
+#'
+#' @param object A fitted `hazard` object.
+#' @param newdata Data frame of new rows.
+#' @return Numeric matrix with `nrow(newdata)` rows and the columns of
+#'   `object$data$x`.
+#' @keywords internal
+#' @noRd
+.hzr_global_design <- function(object, newdata) {
+  x_fit <- object$data$x
+  cols <- colnames(x_fit)
+  design <- object$data$x_design
+
+  needed <- if (!is.null(design)) all.vars(design$terms) else cols
+  missing <- setdiff(needed, names(newdata))
+  if (length(missing) > 0L) {
+    stop("'newdata' is missing the global covariate(s) ",
+         paste0("'", missing, "'", collapse = ", "), ".", call. = FALSE)
+  }
+
+  if (!is.null(design)) {
+    # Formula interface: the same terms, levels and contrasts as the fit, so
+    # a factor given as a single label still codes to the fit's columns.
+    mf <- stats::model.frame(design$terms, data = newdata,
+                             xlev = design$xlevels, na.action = stats::na.pass)
+    mm <- stats::model.matrix(design$terms, data = mf,
+                              contrasts.arg = design$contrasts)
+    return(mm[, cols, drop = FALSE])
+  }
+  if (!is.null(cols)) {
+    # Vector interface with a named `x`: select by name.
+    return(as.matrix(newdata[, cols, drop = FALSE]))
+  }
+  # Vector interface with an unnamed `x`: position is all there is.
+  nd <- newdata[, names(newdata) != "time", drop = FALSE]
+  if (ncol(nd) != ncol(x_fit)) {
+    stop("The fit's global design has ", ncol(x_fit), " unnamed column(s); ",
+         "'newdata' has ", ncol(nd), " covariate column(s).", call. = FALSE)
+  }
+  as.matrix(nd)
 }
 
 
