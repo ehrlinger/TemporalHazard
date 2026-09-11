@@ -173,14 +173,57 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
   loaded_ext <- list()       # raw INHAZ string -> loaded chunk's slot name
   first_unresolved_inhaz <- NULL
   n_unresolved_inhaz <- 0L
+  repeat_scan <- list()      # %repeat OUT= -> offset its rewrite scan resumes from
 
   for (b in blocks) {
-    if (identical(b$proc, "REPEAT")) next # translated in Task 3
-    if (identical(b$proc, "HAZARD")) {
+    if (identical(b$proc, "REPEAT")) {
+      r <- .hzr_parse_repeat(b)
+      # The macro's input is built by the job's own DATA steps, which this
+      # translator does not translate: the same loud guard a PROC HAZARD
+      # DATA= gets, once per name.
+      if (!is.null(r$in_name) && !(r$in_name %in% guarded_data)) {
+        calls[[.hzr_next_call_name(calls, "data")]] <- bquote(
+          if (!exists(.(r$in_name))) {
+            stop("This job built ", .(r$in_name), " in SAS DATA steps, which ",
+                 "hzr_translate_sas() does not translate. Assign ", .(r$in_name),
+                 " as it stood at the job's %repeat call, with its columns named ",
+                 "as the job spells them, in upper case, before rendering.")
+          }
+        )
+        guarded_data <- c(guarded_data, r$in_name)
+      }
+      calls[[.hzr_next_call_name(calls, "repeated")]] <- r$call
+      # OUT= is now built by a chunk, so a fit reading it needs no guard.
+      if (!is.null(r$out_name)) {
+        guarded_data <- c(guarded_data, r$out_name)
+        repeat_scan[[r$out_name]] <- b$end
+      }
+    } else if (identical(b$proc, "HAZARD")) {
       r <- tryCatch(.hzr_parse_hazard(b), error = function(e) {
         stop("failed to parse PROC HAZARD block in ", basename(path), ": ",
              conditionMessage(e), call. = FALSE)
       })
+
+      # A DATA step between %repeat and this fit that rewrites the macro's
+      # OUT= is job code this translator does not fold in. Fitting without it
+      # fits data SAS did not fit, so stop here -- ahead of the status chunk,
+      # which writes into the same data frame. The scan resumes where the
+      # last one ended, so one rewrite stops once however many fits follow.
+      dname <- if (is.null(r$call[["data"]])) NULL else as.character(r$call[["data"]])
+      if (!is.null(dname) && !is.null(repeat_scan[[dname]])) {
+        seg <- substring(txt, repeat_scan[[dname]] + 1L, b$start - 1L)
+        for (step in .hzr_repeat_rewrites(seg, dname)) {
+          calls[[.hzr_next_call_name(calls, "rewrite")]] <- bquote(stop(.(paste0(
+            "This job changes ", dname, " after %repeat, in a SAS DATA step that ",
+            "hzr_translate_sas() does not translate: ", step, " Replace this chunk ",
+            "with R code that makes the same change to ", dname, "."
+          ))))
+          untr <- rbind(untr, .hzr_untranslated_frame(
+            NA_integer_, paste0("DATA ", dname, " after %repeat"), step
+          ))
+        }
+        repeat_scan[[dname]] <- b$end
+      }
 
       # A hazard() call that reads a SAS DATA= dataset by name cannot
       # actually run: the DATA step that built it is out of scope for this

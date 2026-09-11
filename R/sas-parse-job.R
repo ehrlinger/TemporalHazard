@@ -1357,3 +1357,35 @@
        tokens_seen = length(parts), tokens_mapped = length(parts),
        in_name = in_name, out_name = out_name)
 }
+
+#' Steps between a `%repeat` call and a fit that rewrite the macro's `OUT=`.
+#'
+#' `segment` is the normalised source between the two. A hit is a `DATA`
+#' statement naming `out` among its output datasets (options in parentheses
+#' ignored) or a `PROC SQL` `CREATE TABLE out`. Each is returned quoted, from
+#' that statement up to the next `DATA`, `PROC`, `%HAZ`, `%REPEAT` or `RUN`.
+#' `PROC SORT` is not a rewrite: reordering rows does not change the
+#' likelihood.
+#' @noRd
+.hzr_repeat_rewrites <- function(segment, out) {
+  stmts <- trimws(strsplit(segment, ";", fixed = TRUE)[[1L]])
+  stmts <- stmts[nzchar(stmts)]
+  boundary <- "^(DATA |PROC |%HAZ|%REPEAT|RUN$)"
+  hits <- character(0)
+  for (i in seq_along(stmts)) {
+    s <- stmts[i]
+    tok <- strsplit(s, " ", fixed = TRUE)[[1L]]
+    writes <- if (startsWith(s, "DATA ")) {
+      out %in% strsplit(trimws(gsub("[(][^)]*[)]", " ", substring(s, 6L))), " +")[[1L]]
+    } else {
+      j <- which(tok == "CREATE")
+      any(tok[j + 1L] %in% "TABLE" & tok[j + 2L] %in% out)
+    }
+    if (writes) {
+      last <- i
+      while (last < length(stmts) && !grepl(boundary, stmts[last + 1L])) last <- last + 1L
+      hits <- c(hits, paste0(paste(stmts[i:last], collapse = "; "), ";"))
+    }
+  }
+  hits
+}

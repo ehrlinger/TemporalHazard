@@ -124,3 +124,98 @@ test_that("uncallable %repeat arguments are refused, each with its reason", {
     expect_equal(r$tokens_mapped, 0L)
   }
 })
+
+repeat_call <- paste0("%repeat(", cardio_args, ");")
+hz_block <- c("%hazard( proc hazard data=events condition=14;",
+              "lcensor iv_start; event ce_card; time iv_event; parms muc=0.5; );")
+
+eval_upto <- function(job, env, last) {
+  for (nm in names(job$calls)[seq_len(match(last, names(job$calls)))]) {
+    eval(job$calls[[nm]], env)
+  }
+  env
+}
+
+test_that("a %repeat job emits guard, macro, status and fit, in that order", {
+  job <- translate_lines(c(repeat_call, hz_block))
+  expect_equal(names(job$calls), c("data", "repeated", "status", "fit"))
+  # The guard is on the macro's input; EVENTS is built by a chunk, so it gets none.
+  expect_error(eval(job$calls$data, new.env(parent = globalenv())), "Assign BD_CARD")
+  env <- new.env(parent = globalenv())
+  env$BD_CARD <- bd_card()
+  eval_upto(job, env, "repeated")
+  expect_equal(env$EVENTS, expected_events())
+})
+
+test_that("the translated fit reads the renamed IV_START: mu is 4 events over 15 units", {
+  skip_on_cran()
+  job <- translate_lines(c(repeat_call, hz_block))
+  env <- new.env(parent = globalenv())
+  env$BD_CARD <- bd_card()
+  eval_upto(job, env, "fit")
+  expect_true(env$fit$fit$converged)
+  # 4/15 needs time_lower = IV_START; without it the exposure is sum(IV_EVENT) = 20.
+  expect_equal(unname(exp(coef(env$fit))) / (4 / 15), 1, tolerance = 1e-4)
+})
+
+test_that("a non-default output name is what the job's fit reads", {
+  job <- translate_lines(c(
+    "%repeat(in=bd_card, id=ccfid, eventype=ce_card, event=ev_x);",
+    "%hazard( proc hazard data=events; event ev_x; time iv_event; parms muc=0.5; );"
+  ))
+  env <- new.env(parent = globalenv())
+  env$BD_CARD <- bd_card()
+  eval_upto(job, env, "repeated")
+  expect_false("event" %in% names(env$EVENTS))
+  expect_equal(env$EVENTS$EV_X, c(1, 1, 0, 0, 1, 1))
+})
+
+test_that("a DATA step rewriting OUT= stops the document before the fit, quoted", {
+  job <- translate_lines(c(
+    repeat_call,
+    "data events; set events; if iv_start ge iv_event then iv_event=iv_event+0.0001;",
+    hz_block
+  ))
+  expect_equal(names(job$calls), c("data", "repeated", "rewrite", "status", "fit"))
+  env <- new.env(parent = globalenv())
+  env$BD_CARD <- bd_card()
+  eval_upto(job, env, "repeated")
+  expect_error(
+    eval(job$calls$rewrite, env),
+    "DATA EVENTS; SET EVENTS; IF IV_START GE IV_EVENT THEN IV_EVENT=IV_EVENT+0.0001;",
+    fixed = TRUE
+  )
+  expect_true("DATA EVENTS after %repeat" %in% job$untranslated$construct)
+})
+
+test_that("steps that do not rewrite OUT= emit no rewrite stop", {
+  job <- translate_lines(c(
+    repeat_call,
+    "data other; set events; x=1;",
+    "proc sort data=events; by ccfid;",
+    hz_block
+  ))
+  expect_equal(names(job$calls), c("data", "repeated", "status", "fit"))
+})
+
+test_that("CREATE TABLE OUT is a rewrite too", {
+  job <- translate_lines(c(
+    # `select ccfid`, not `select *`: a `*` risks the normaliser's comment stripping.
+    repeat_call, "proc sql; create table events as select ccfid from events; quit;", hz_block
+  ))
+  expect_equal(names(job$calls), c("data", "repeated", "rewrite", "status", "fit"))
+})
+
+test_that("one rewrite stops once, however many fits read OUT= after it", {
+  job <- translate_lines(c(
+    repeat_call, "data events; set events; x=1;", hz_block, hz_block
+  ))
+  expect_equal(sum(grepl("^rewrite", names(job$calls))), 1L)
+  expect_equal(which(names(job$calls) == "rewrite"), 3L)
+})
+
+test_that("a refused %repeat still leaves a guard on the fit's DATA=", {
+  job <- translate_lines(c("%repeat(in=bd_card, eventype=rcensor);", hz_block))
+  expect_equal(names(job$calls), c("repeated", "data", "status", "fit"))
+  expect_error(eval(job$calls[["repeated"]], new.env()), "RCENSOR is also an output", fixed = TRUE)
+})
