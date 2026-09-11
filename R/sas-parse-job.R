@@ -424,7 +424,10 @@
     }
     mapped <- mapped + 1L
     switch(token,
-      DATA        = data_name <- val,
+      # A WORK. libref names the same dataset as the bare name. Dropping it
+      # here makes the emitted data =, the status chunk and the guard use the
+      # bare name, which is also how a %repeat OUT= is recorded.
+      DATA        = data_name <- sub("^WORK[.]", "", val),
       OUTHAZ      = outhaz <- val,
       MAXITER     = {
         val_num <- suppressWarnings(as.numeric(val))
@@ -1273,11 +1276,11 @@
 #' keyword, a positional argument, a value that is not a plain SAS name (a
 #' `&macro` reference, say), an input column that is also an output
 #' (`EVENTYPE=RCENSOR`: SAS zeroes that indicator before reading it, so the job's
-#' own answer is not the model it describes), and two outputs with one name. So
-#' are a keyword given twice, which SAS rejects, and an output named `LAG_IV` or
-#' `NUMBER`, the macro's own loop counters. The body is split on every comma; a
-#' value holding parentheses, where a comma could be nested, is refused as not a
-#' plain name either way.
+#' own answer is not the model it describes), and two outputs with one name. A
+#' keyword given twice, which SAS rejects, is refused too, and so is an output
+#' named `LAG_IV` or `NUMBER`, the macro's own loop counters. The body is split
+#' on every comma; a value holding parentheses, where a comma could be nested, is
+#' refused as not a plain name either way.
 #' @noRd
 .hzr_parse_repeat <- function(block) {
   parts <- if (nzchar(block$text)) trimws(strsplit(block$text, ",", fixed = TRUE)[[1L]]) else character(0)

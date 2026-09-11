@@ -298,3 +298,18 @@ test_that("a WORK. libref on IN= and OUT= names the same dataset as the bare nam
   eval_upto(job, env, "repeated")
   expect_equal(env$EVENTS, expected_events())
 })
+
+test_that("a WORK. libref on the fit's DATA= reads the %repeat OUT= (Copilot, #256)", {
+  hz_work <- c(sub("data=events", "data=work.events", hz_block[1L], fixed = TRUE), hz_block[2L])
+  job <- translate_lines(c(
+    paste("%repeat(in=work.bd_card, out=work.events, id=ccfid, eventype=ce_card,",
+          "iv_end=iv_end, rcensor=cn_card, event=ev_card);"),
+    hz_work
+  ))
+  # No "Assign WORK.EVENTS" guard: the fit reads the EVENTS the macro chunk built.
+  expect_equal(names(job$calls), c("data", "repeated", "status", "fit"))
+  expect_identical(job$calls$fit[[3L]][["data"]], as.name("EVENTS"))
+  # The rewrite scan matches it too, so a step changing WORK.EVENTS still stops.
+  job <- translate_lines(c(repeat_call, "data work.events; set events; x=1;", hz_work))
+  expect_equal(names(job$calls), c("data", "repeated", "rewrite", "status", "fit"))
+})
