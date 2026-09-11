@@ -339,8 +339,10 @@ Those fields are additive, so existing callers are unaffected. A job with `%repe
 `HAZARD`/`HAZPRED` block still errors ("no HAZARD or HAZPRED block found"); the `tp.bd.*`
 dataset builders are out of scope.
 
-`.hzr_parse_repeat()` (in `R/sas-parse-job.R`) splits the body on depth-0 commas into
-`KEY=VALUE` pairs and fills the macro's twelve defaults, upper-cased. It returns the same
+`.hzr_parse_repeat()` (in `R/sas-parse-job.R`) splits the body on every comma into
+`KEY=VALUE` pairs. That is equivalent to splitting on depth-0 commas for every call it
+accepts, because a value containing parentheses, where a comma could be nested, is refused
+as not a plain name either way. It then fills the macro's twelve defaults, upper-cased. It returns the same
 shape as `.hzr_parse_hazard()` (`call`, `untranslated`, `tokens_seen`, `tokens_mapped`)
 plus `in` and `out`. Each argument counts as one token seen and, if accepted, one mapped.
 
@@ -363,7 +365,7 @@ iv_end=iv_end, rcensor=cn_card, event=ev_card)`:
 # label: data -- the existing guard, once per distinct IN=
 if (!exists("BD_CARD")) stop("This job read BD_CARD from a SAS DATA step, ...")
 
-# label: repeat
+# label: repeated -- not `repeat`, a reserved word: job$calls$repeat does not parse
 EVENTS <- local({
   d <- BD_CARD
   drop <- intersect(names(d), c("EV_CARD", "EVENT_NO", "CN_CARD", "IV_START",
