@@ -45,9 +45,12 @@ test_that("hz.ce_cardioversion_repeated.ehb: %repeat reproduces the SAS log and 
   expect_equal(shapes[, 2], c(358L, 358L, 358L, 360L, 361L, 367L - 2L, 367L - 2L))
 
   # The exported function is the same seven stages, and this data trips none of
-  # its input warnings.
-  expect_no_warning(events <- hzr_repeated_events(bd_card, id, tm, fu, ind))
-  expect_equal(events, `row.names<-`(s7, NULL))
+  # its input warnings. Those warnings name subjects, so they are counted here,
+  # never printed; and the comparison with the stages reports a bare FALSE
+  # rather than a diff of patient rows.
+  warned <- testthat::capture_warnings(events <- hzr_repeated_events(bd_card, id, tm, fu, ind))
+  expect_length(warned, 0L)
+  expect_true(isTRUE(all.equal(events, `row.names<-`(s7, NULL))))
 
   # The job's line 65, after the macro. It moves an event time that does not
   # exceed its start; it removes no rows (.log line 315: 962 in, 962 out).
@@ -94,12 +97,179 @@ test_that("hz.ce_cardioversion_repeated.ehb: the result does not depend on input
     row.names(x) <- NULL
     x
   }
-  run <- function(d) hzr_repeated_events(d, "ccfid", "iv_event", "iv_end", "ce_card")
+  # Its warnings name subjects, and would print without failing the test.
+  run <- function(d) {
+    warned <- testthat::capture_warnings(out <- hzr_repeated_events(d, "ccfid", "iv_event", "iv_end", "ce_card"))
+    expect_length(warned, 0L)
+    out
+  }
   base <- canon(run(bd_card))
+  # `canon()` keeps ccfid, so a failure must not print a diff.
   for (k in 1:5) {
     shuffled <- withr::with_seed(k, bd_card[sample(nrow(bd_card)), , drop = FALSE])
-    expect_equal(canon(run(shuffled)), base, label = paste("shuffle", k))
+    expect_true(isTRUE(all.equal(canon(run(shuffled)), base)), label = paste("shuffle", k))
   }
+})
+
+# The fits. The job's PROC HAZARD statements go through hzr_translate_sas(),
+# and the calls it emits are evaluated over the rebuilt input, so the model
+# specification comes from the translator rather than from this file.
+
+cardioversion_job <- function(dir) {
+  path <- file.path(dirname(dir), "distributions", "hz.ce_cardioversion_repeated.ehb.sas")
+  testthat::skip_if_not(file.exists(path), "cardioversion job not found beside the datasets")
+  # STEEPEST, in both blocks, is the one construct the translator leaves out:
+  # SAS's steepest-descent warm-up (issue #145). Nothing else may go missing.
+  expect_warning(job <- hzr_translate_sas(path), "STEEPEST")
+  expect_equal(job$untranslated$construct, c("STEEPEST", "STEEPEST"))
+  job
+}
+
+# The fit input: %repeat and then the job's line 65, as in the first test,
+# which checks it against the listing's tallies.
+cardioversion_events <- function(dir) {
+  events <- hzr_repeated_events(.hzr_derive_bd_card(dir), "ccfid", "iv_event", "iv_end", "ce_card")
+  nudge <- which(events$iv_start >= events$iv_event)
+  events$iv_event[nudge] <- events$iv_event[nudge] + 0.0001141553
+  events
+}
+
+# Evaluates one emitted status chunk and fit chunk, changing only the control
+# entries named in `control`. SAS names are case-insensitive, and the
+# translator writes them in upper case.
+fit_translated <- function(job, events, fit_slot, status_slot, control) {
+  env <- new.env()
+  env$EVENTS <- stats::setNames(events, toupper(names(events)))
+  eval(job$calls[[status_slot]], env)
+  cl <- job$calls[[fit_slot]][[3L]]
+  cl$control[names(control)] <- control
+  eval(cl, env)
+}
+
+# Row coverage: the fit saw what the listing's Initial Summary counted. The
+# two status counts sum to 962, so no row carries any other code.
+expect_listing_rows <- function(fit) {
+  d <- fit$data
+  expect_equal(length(d$time), 962L)
+  expect_equal(sum(d$status == 1), 388L)
+  expect_equal(sum(d$status == 0), 574L)
+  expect_equal(sum(d$time_lower > 0), 387L)
+}
+
+# `sas` is the listing's Parameter Estimate Summary in R's theta order, named
+# by R's parameter names. SAS estimates every shape on the log scale, so for
+# the rows marked `logged` R's estimate is logged and its standard error
+# converted by the delta method, se(log|x|) = se(x) / |x|.
+#
+# Tolerances, all measured 2026-09-10 against a fit that stopped short (model
+# 2 under default control, 0.013 below the listing's log likelihood), which
+# fails every one of them:
+# - log likelihood: half a unit in the listing's third decimal;
+# - estimates: 1e-3 of the listing's standard error. Both optimizers stop on a
+#   tolerance on a flat surface, so the printed digits are not all fixed by
+#   the data; a thousandth of a standard error is agreement for any purpose.
+# - standard errors: 2e-3 relative. SAS's Hessian is numeric.
+expect_matches_listing <- function(fit, sas, ll) {
+  f <- fit$fit
+  # Not a hollow fit: .hzr_optim_generic() clamps a non-finite objective to
+  # 1e10 and still reports convergence, so the log likelihood is checked
+  # against the listing, never taken from `converged`.
+  expect_true(f$converged)
+  expect_lt(abs(f$objective - ll), 5e-4)
+  expect_equal(names(f$theta), row.names(sas))
+  expect_true(is.matrix(f$vcov))
+  se <- sqrt(diag(f$vcov))
+  expect_true(all(is.finite(se) & se > 0))
+
+  # The log likelihood at the listing's own estimates, with no optimizer
+  # involved, so a failure here is the likelihood and not the search. log|x|
+  # drops the sign; every logged parameter in this job is positive.
+  expect_true(all(f$theta[sas$logged] > 0))
+  d <- fit$data
+  ll_at_sas <- .hzr_logl_multiphase( # nolint: object_usage_linter.
+    theta = ifelse(sas$logged, exp(sas$est), sas$est),
+    time = d$time, status = d$status, time_lower = d$time_lower,
+    time_upper = d$time_upper, weights = d$weights,
+    phases = f$phases, covariate_counts = f$covariate_counts, x_list = f$x_list
+  )
+  expect_lt(abs(ll_at_sas - ll), 5e-4)
+
+  est <- ifelse(sas$logged, log(abs(f$theta)), f$theta)
+  se <- ifelse(sas$logged, se / abs(f$theta), se)
+  expect_lt(max(abs(est - sas$est) / sas$se), 1e-3)
+  expect_lt(max(abs(se / sas$se - 1)), 2e-3)
+}
+
+sas_table <- function(names, logged, est, se) {
+  data.frame(logged = logged, est = est, se = se, row.names = names)
+}
+
+test_that("hz.ce_cardioversion_repeated.ehb: the first model reproduces the listing", {
+  testthat::skip_on_cran()
+  testthat::skip_if_not_installed("haven")
+  dir <- skip_if_no_maze_datasets()
+  job <- cardioversion_job(dir)
+
+  # One start, at the job's PARMS. SAS's iteration 0 already sits at the
+  # optimum, and the listing's LL is from that point. The default five starts
+  # return this same fit from start 1, but the perturbed starts end at worse
+  # local optima (LL -267.914, -268.175, -274.368) and their Hessians warn --
+  # noise that says nothing about this fit.
+  expect_no_warning(
+    fit <- fit_translated(job, cardioversion_events(dir), "fit", "status", list(n_starts = 1L))
+  )
+  expect_listing_rows(fit)
+  # CONSERVE: "Conservation of events: Invoked at each iteration".
+  expect_true(fit$spec$control$conserve_applied)
+
+  # .lst lines 100 and 116-125.
+  sas <- sas_table(
+    c("phase_1.log_mu", "phase_1.log_t_half", "phase_1.nu", "phase_1.m",
+      "phase_2.log_mu", "phase_2.log_tau", "phase_2.gamma", "phase_2.alpha", "phase_2.eta"),
+    logged = c(FALSE, FALSE, TRUE, TRUE, FALSE, FALSE, TRUE, TRUE, TRUE),
+    #      E0        E2        E3        E4        L0         L1        L2        L3        L4
+    est = c(-1.19976, -4.56749, -1.76693, 1.761105, -1.40628, -0.609944, 1.863922, 0.916978,
+            -1.99124),
+    se = c(0.09400547, 0.06371024, 0.2689927, 0.3089678, 0.2012175, 0.3764006, 0.6892761,
+           0.3171719, 0.8600162)
+  )
+  expect_matches_listing(fit, sas, ll = -267.885)
+})
+
+test_that("hz.ce_cardioversion_repeated.ehb: the stratified model reproduces the listing", {
+  testthat::skip_on_cran()
+  testthat::skip_if_not_installed("haven")
+  dir <- skip_if_no_maze_datasets()
+  job <- cardioversion_job(dir)
+  events <- cardioversion_events(dir)
+  expect_false(anyNA(events[c("maze_prc", "iso_pvi")]))
+
+  # reltol is tightened on purpose. Under the default (1e-5) BFGS stops at LL
+  # -242.2675 and reports convergence; R's log likelihood at the listing's own
+  # estimates is -242.2541, so the likelihoods agree and the default optimizer
+  # tolerance stopped 0.013 short on a flat ridge in the late shapes.
+  ctl <- list(n_starts = 1L, reltol = 1e-12, maxit = 5000L)
+  expect_no_warning(fit <- fit_translated(job, events, "fit_2", "status_2", ctl))
+  expect_listing_rows(fit)
+  # NOCONSERVE: "Conservation of events: Not invoked".
+  expect_false(fit$spec$control$conserve_applied)
+
+  # .lst lines 2760 and 2772-2793.
+  sas <- sas_table(
+    c("phase_1.log_mu", "phase_1.log_t_half", "phase_1.nu", "phase_1.m",
+      "phase_1.MAZE_PRC", "phase_1.ISO_PVI",
+      "phase_2.log_mu", "phase_2.log_tau", "phase_2.gamma", "phase_2.alpha", "phase_2.eta",
+      "phase_2.MAZE_PRC", "phase_2.ISO_PVI"),
+    logged = c(FALSE, FALSE, TRUE, TRUE, FALSE, FALSE,
+               FALSE, FALSE, TRUE, TRUE, TRUE, FALSE, FALSE),
+    #      E0        E2        E3        E4        MAZE_PRC  ISO_PVI
+    est = c(-1.02384, -4.56614, -1.77136, 1.770403, -0.54922, 0.1504561,
+            #  L0        L1         L2        L3         L4        MAZE_PRC   ISO_PVI
+            -1.16547, -0.692292, 2.014376, 0.7332091, -2.11007, -0.938336, -0.461191),
+    se = c(0.1162237, 0.06331743, 0.2646996, 0.3068885, 0.1807944, 0.2205966,
+           0.2346658, 0.3799748, 0.8113678, 0.2687002, 0.9540579, 0.1622002, 0.2525617)
+  )
+  expect_matches_listing(fit, sas, ll = -242.254)
 })
 
 test_that("hzr_translate_sas() on the cardioversion job builds EVENTS, then stops at line 65", {
