@@ -56,9 +56,11 @@
 * **`hzr_translate_sas()` translates a `%repeat` call** into
   `hzr_repeated_events()` (#241), renaming its outputs to the names the job
   gives them so the job's fit reads them. The macro's input is still the
-  reader's to supply. A DATA step that changes the macro's output before the
-  fit now stops the document with the step quoted; the translation no longer
-  fits data that SAS did not fit.
+  reader's to supply. Any step between the macro and the fit that names the
+  macro's output, other than a plain `PROC SORT`, stops the document with the
+  step quoted, rather than fitting data the job changed. A step that changes
+  the output without naming it, such as a macro that writes it internally, is
+  not detected.
 
 # TemporalHazard 1.2.10
 

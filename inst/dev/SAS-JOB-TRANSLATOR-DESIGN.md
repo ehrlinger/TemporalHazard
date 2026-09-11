@@ -316,9 +316,9 @@ Designed 2026-09-10, branch `feat/translate-repeat`. `hzr_repeated_events()` (#2
 reimplements the macro; see `inst/dev/REPEATED-EVENTS-DESIGN.md`. This section covers only
 how a job's `%repeat(...)` call reaches it.
 
-**Evidence.** A scan of `/Volumes/qhsstudies` on 2026-09-10 found **at least 1684** `.sas`
-files calling `%repeat(`, 384 of them `hz.*` or `tp.hz.*` HAZARD jobs. The scan was still
-running when these counts were read (2026-09-10 22:20), so they are floors. The public corpus has none. Three
+**Evidence.** A scan of `/Volumes/qhsstudies` on 2026-09-10 found **1733** `.sas`
+files calling `%repeat(`, 403 of them `hz.*` or `tp.hz.*` HAZARD jobs. The scan finished on
+2026-09-11. The public corpus has none. Three
 consulting templates recur, eight copies each; among the copies checked, seven of each are
 identical and one differs:
 
@@ -342,7 +342,9 @@ dataset builders are out of scope.
 `.hzr_parse_repeat()` (in `R/sas-parse-job.R`) splits the body on every comma into
 `KEY=VALUE` pairs. That is equivalent to splitting on depth-0 commas for every call it
 accepts, because a value containing parentheses, where a comma could be nested, is refused
-as not a plain name either way. It then fills the macro's twelve defaults, upper-cased. It returns the same
+as not a plain name either way. It then fills the macro's twelve defaults, upper-cased. A
+`WORK.` libref on `IN=` or `OUT=` is stripped, because it names the same dataset as the bare
+name. It returns the same
 shape as `.hzr_parse_hazard()` (`call`, `untranslated`, `tokens_seen`, `tokens_mapped`)
 plus `in` and `out`. Each argument counts as one token seen and, if accepted, one mapped.
 
@@ -354,7 +356,9 @@ plus an `$untranslated` row:
 - an argument column (`ID`, `EVENTYPE`, `IV_EVENT`, `IV_END`) equal to one of the
   eight output names, for example `EVENTYPE=RCENSOR`. SAS zeroes that indicator at its
   first DATA step, so the job's own answer is garbage, and the call text alone shows it;
-- two output names that are equal to each other.
+- two output names that are equal to each other;
+- a keyword given twice, which SAS rejects;
+- an output named `LAG_IV` or `NUMBER`, the names of the macro's own `RETAIN` loop counters.
 
 #### Emitted code
 
@@ -363,7 +367,7 @@ iv_end=iv_end, rcensor=cn_card, event=ev_card)`:
 
 ```r
 # label: data -- the existing guard, once per distinct IN=
-if (!exists("BD_CARD")) stop("This job read BD_CARD from a SAS DATA step, ...")
+if (!exists("BD_CARD")) stop("This job built BD_CARD in SAS DATA steps, ...")
 
 # label: repeated -- not `repeat`, a reserved word: job$calls$repeat does not parse
 EVENTS <- local({
@@ -408,20 +412,34 @@ which is loud.
 
 The maintainer decided on 2026-09-10 that a job's post-macro statements are not folded into
 the function. Before each `PROC HAZARD` whose `DATA=` is an earlier `%repeat`'s `OUT=`, the
-text between that macro's `end` and the fit's `start` is scanned for a `DATA` statement that
-names `OUT`, or for `CREATE TABLE OUT`. Each hit emits one `stop()` chunk, directly before
-the first such fit that follows it; a later fit reading the same `OUT=` gets no second copy,
-since the first stop already halts the render. The chunk quotes the step: the normalised text, cut at the next `DATA`, `PROC`, `%HAZ`,
-`%REPEAT` or `RUN;`. It tells the reader to replace the chunk with R code that makes the same
-change. The hit is also recorded in `$untranslated`, which the translate-time warning
-reports.
+text between that macro's `end` and the fit's `start` is scanned with a fail-closed rule: a
+`DATA` step is a hit when its output list names `OUT`; a step that only reads it (`SET OUT`)
+is not. Any other step or statement that names `OUT` is a hit as well -- `PROC SQL`, `PROC
+APPEND`, `PROC DATASETS`, a sort with `NODUPKEY`, `OUT=` or `WHERE=`, a macro call -- because
+a false stop costs the reader one deleted chunk and a missed rewrite fits data SAS did not
+fit. The one exception is the plain `PROC SORT DATA=OUT`, which only reorders rows and so
+cannot change the likelihood. A `WORK.` prefix names the same dataset as the bare name, and
+`QUIT` joins `DATA`, `PROC`, `%HAZ`, `%REPEAT` and `RUN` as a statement boundary. The
+r-reviewer found the earlier enumerated detector (a `DATA` statement naming `OUT`, or `CREATE
+TABLE OUT`) missed `WORK.EVENTS`, `NODUPKEY`, SQL `DELETE`/`UPDATE`/`INSERT`, `PROC APPEND`
+and `PROC DATASETS`; the maintainer chose to fail closed on 2026-09-11. Each hit emits one
+`stop()` chunk, directly before the first such fit that follows it; a later fit reading the
+same `OUT=` gets no second copy, since the first stop already halts the render. The chunk
+quotes the step: the normalised text, cut at the next `DATA`, `PROC`, `%HAZ`, `%REPEAT`,
+`RUN` or `QUIT`. It tells the reader to replace the chunk with R code that makes the same
+change, or delete it if the step leaves the output unchanged. The hit is also recorded in
+`$untranslated`, which the translate-time warning reports.
 
 A silently skipped rewrite would be the house failure mode: a fit that converges over data
 SAS never fitted. In the cardioversion job that means 15 zero-length segments left
 un-nudged. Placing the stop at the fit, rather than right after the macro, still catches a
-rewrite that follows an intervening block. `PROC SORT` is not treated as a rewrite, because
-reordering rows does not change the likelihood. The quote carries no line number: every
+rewrite that follows an intervening block. The quote carries no line number: every
 `$untranslated` row today has `line = NA`, since the parser sees only normalised text.
+
+A wrapper macro that encloses both the `%repeat` call and `PROC HAZARD` needs no guard of its
+own. The fit's parse reads the PROC options from the block's first statement, which is then
+the macro call, so `DATA=` is lost and the document stops at its status chunk before any fit
+exists (the r-reviewer's Low 4, found unreachable on 2026-09-11 and pinned by a test).
 
 #### The input dataset
 
@@ -444,7 +462,7 @@ own lag. `hzr_repeated_events()` has no such coupling, so the translated documen
 disagree with the SAS listing without saying so. Here SAS is the one that is wrong: this is
 a finding to document, not behaviour to reproduce. The cardioversion input has neither
 column; SAS's jump from 361 to 367 columns at that step is exactly the six variables the
-step adds. **Decided:** the `repeat` chunk warns at render, naming the column and saying
+step adds. **Decided:** the `repeated` chunk warns at render, naming the column and saying
 that SAS's `iv_start`/`event_no` for this job are not comparable. R's result, which is the
 macro's intent, stands; the column is neither dropped nor used.
 
@@ -454,7 +472,7 @@ A new file, `tests/testthat/test-sas-translate-repeat.R`, evaluates the emitted 
 `eval()` into an environment that holds a small synthetic `BD_CARD`. It compares against
 vectors derived by hand from the macro, never from the function:
 
-1. End to end: the chunk names are exactly `c("data", "repeat", ..., "fit")`; `EV_CARD`,
+1. End to end: the chunk names are exactly `c("data", "repeated", ..., "fit")`; `EV_CARD`,
    `CN_CARD`, `IV_START` and `IV_EVENT` equal hand-derived vectors; and a fit that uses
    `LCENSOR IV_START` runs (`skip_on_cran()`). This test fails if the rename is removed.
 2. A non-default output name read by `EVENT EV_X`: the lower-case `event` is absent, and
@@ -474,6 +492,12 @@ vectors derived by hand from the macro, never from the function:
 8. `BD_CARD` carrying a `NUMBER` column: expect a warning naming it, and `EVENT_NO` exactly
    equal to the hand-derived vector. A negative control with no such column expects no
    such warning.
+9. The rewrite scan fails closed: 9 stop forms (`WORK.EVENTS`, `NODUPKEY`, a sort's `OUT=`
+   or `WHERE=`, SQL `DELETE`/`CREATE TABLE`, `PROC APPEND`, `PROC DATASETS`, a macro call)
+   and 5 pass forms (`DATA OTHER`, `DATA _NULL_`, a plain `PROC SORT` bare or `WORK.`-
+   prefixed, a sort on an unrelated dataset).
+10. A wrapper-enclosed job cannot render a fit: the fit's parsed `data =` argument is absent,
+    and evaluating the job's calls in order errors before a `fit` object is ever assigned.
 
 A volume-gated case in `test-repeated-events-parity.R` translates the real cardioversion
 `.sas` file. It binds `BD_CARD` from `.hzr_derive_bd_card()`, with names upper-cased, and
