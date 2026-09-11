@@ -162,6 +162,39 @@ test_that("a fit saved before the design was stored matches design columns", {
   )
 })
 
+test_that("se.fit = TRUE matches by name too, all four families", {
+  # se.fit needs a fitted covariance, so these fit.  Reordered columns, a
+  # junk column and a factor given as a label must give the same fit and
+  # the same standard error as the in-order design.
+  starts <- list(
+    weibull     = c(mu = 0.01, nu = 0.5, 0, 0, 0),
+    exponential = c(log_lambda = -4, 0, 0, 0),
+    loglogistic = c(a = -4, b = -0.5, 0, 0, 0),
+    lognormal   = c(mu = 4, log_sigma = 0.8, 0, 0, 0)
+  )
+  in_order <- data.frame(time = c(1, 5), age = 60, mal = 1,
+                         grp = factor("young", levels = c("old", "young")))
+  scrambled <- data.frame(junk = 7, grp = "young", mal = 1, time = c(1, 5),
+                          age = 60)
+  for (dist in names(starts)) {
+    obj <- hazard(survival::Surv(int_dead, dead) ~ age + mal + grp,
+                  data = .sd_avc, dist = dist, theta = starts[[dist]],
+                  fit = TRUE)
+    expect_true(isTRUE(obj$fit$converged), label = dist)
+    for (type in c("linear_predictor", "hazard", "survival",
+                   "cumulative_hazard")) {
+      a <- predict(obj, newdata = in_order, type = type, se.fit = TRUE)
+      b <- predict(obj, newdata = scrambled, type = type, se.fit = TRUE)
+      expect_equal(b$fit, a$fit, tolerance = 1e-12,
+                   label = paste(dist, type))
+      expect_equal(b$se.fit, a$se.fit, tolerance = 1e-12,
+                   label = paste(dist, type))
+      expect_true(all(is.finite(a$se.fit) & a$se.fit > 0),
+                  label = paste(dist, type))
+    }
+  }
+})
+
 test_that("a column the model does not use is ignored", {
   obj <- .sd_obj("exponential")
   base <- predict(obj, newdata = .sd_in_order, type = "cumulative_hazard")
