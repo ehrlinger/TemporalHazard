@@ -55,7 +55,7 @@ layout <- data.frame(
     rep("User API", 2),
     rep("Multiphase engine", 3),
     rep("Single-phase likelihoods", 4),
-    rep("Shared infrastructure", 5)
+    rep("Shared infrastructure", 4)
   ),
   File = c(
     "hazard_api.R", "argument_mapping.R",
@@ -63,7 +63,7 @@ layout <- data.frame(
     "likelihood-weibull.R", "likelihood-exponential.R",
     "likelihood-loglogistic.R", "likelihood-lognormal.R",
     "optimizer.R", "math_primitives.R", "formula-helpers.R",
-    "golden_fixtures.R", "parity-helpers.R"
+    "parity-helpers.R"
   ),
   Purpose = c(
     "hazard(), predict.hazard(), print/summary/coef/vcov S3 methods",
@@ -78,11 +78,10 @@ layout <- data.frame(
     "Generic L-BFGS-B/BFGS optimizer with Hessian-based vcov",
     "Numerically stable log1pexp, log1mexp, clamp_prob",
     "Surv() formula parsing for right/left/interval censoring",
-    "Synthetic fixture generators (.rds reference outputs)",
     "Stubs for cross-validating against C HAZARD binary"
   )
 )
-knitr::kable(layout, caption = "R source files by architectural layer")
+knitr::kable(layout, caption = "Selected R source files by architectural layer")
 ```
 
 
@@ -181,8 +180,14 @@ optima that are common in multiphase models.
 
 The optimizer delegates to `.hzr_optim_generic()`, which wraps
 `stats::optim()` with method `"BFGS"` (unconstrained; all scale
-parameters are log-transformed). The Hessian is computed numerically
-at the converged point for variance-covariance estimation.
+parameters are log-transformed). The Hessian at the converged point,
+inverted for the variance-covariance matrix, is analytic when every row
+is an exact event or right-censored (counting-process start times
+included): `.hzr_hessian_multiphase()` for multiphase fits and a
+closed-form Hessian for each single-phase distribution. When any row is
+left- or interval-censored, the analytic Hessian declines and
+`numDeriv::hessian()` computes it numerically. `numDeriv` is a Suggests,
+so without it those fits have no standard errors.
 
 
 # Golden fixture system
@@ -327,7 +332,7 @@ against the C HAZARD binary output for the KUL CABG dataset:
    saturation at the C reference parameter values.
 
 3. **Conservation of events**: checks that the model-implied expected
-   events ($\sum [1 - \exp(-H(t_i))]$) matches the observed event count
+   events ($\sum [1 - \exp(-H(t_i))]$) match the observed event count
    (545), as reported by the C binary (544.9993).
 
 4. **Profile standard errors**: computes a numerical Hessian varying
@@ -404,7 +409,7 @@ covariates for multivariable analysis.
 avc_vars <- data.frame(
   Variable = c("study", "status", "inc_surg", "opmos", "age", "mal",
                "com_iv", "orifice", "dead", "int_dead", "op_age"),
-  Label = c("Study number", "NYHA functional class (I-V)", "Surgical grade of AV valve incompetence",
+  Label = c("Study number", "NYHA functional class (I-IV)", "Surgical grade of AV valve incompetence",
             "Date of operation (months since Jan 1967)", "Age (months) at repair",
             "Important associated cardiac anomaly", "Interventricular communication",
             "Accessory left AV valve orifice", "Death (event indicator)",
@@ -431,9 +436,14 @@ fixed-width file with 6 columns), but only the death endpoint
 
 The OMC dataset contains 339 patients and is unique in the collection
 because it involves **repeated thromboembolic events** (up to 3 per
-patient) with **left censoring**. The SAS analysis transforms the
-dataset into a repeated-events format using STARTTME and CENSORED
-indicators, exercising the interval censoring likelihood.
+patient). The SAS analysis transforms the dataset into a
+repeated-events format in which each interval starts at the previous
+event (STARTTME) and ends at the next event or censoring (CENSORED).
+The SAS job names STARTTME in its `LCENSOR` statement, and the HAZARD
+documentation calls that left censoring, but it records delayed entry
+(left truncation). The analysis therefore exercises the counting-process
+start-time term of the likelihood, not the left- or interval-censoring
+terms.
 
 ### TGA (transposition of great arteries)
 
@@ -474,8 +484,10 @@ These collapse onto the three-parameter decompos family:
 - **DELTA**: time transformation `B(t) = (exp(delta*t) - 1)/delta`.
   When DELTA = 0 (the common case), `B(t) = t` and the transformation
   is absorbed. Non-zero DELTA is not currently supported.
-- **RHO / THALF**: scale parameter. `RHO = NU * THALF * ((2^M - 1)/M)^NU`.
-  Maps directly to `t_half` in `hzr_phase()`.
+- **RHO / THALF**: scale parameter. THALF maps directly to `t_half` in
+  `hzr_phase()`. RHO has no argument of its own in R: it is fixed by NU,
+  THALF and M, and for M > 0 and NU > 0 it is
+  `RHO = NU * THALF * ((2^M - 1)/M)^NU`.
 - **NU**: time exponent. Maps directly.
 - **M**: shape exponent. Maps directly.
 
@@ -494,13 +506,13 @@ $G_3(t) = \left(\left((t/\tau)^\gamma + 1\right)^{1/\alpha} - 1\right)^\eta$
 
 Unlike G1, G3 is unbounded: it can grow without limit, making it
 suitable for late-phase rising hazards. For the KUL benchmark with
-`gamma = 3, alpha = 1, eta = 1`, this simplifies to $G_3(t) = t^3$.
+`tau = 1, gamma = 3, alpha = 1, eta = 1`, this simplifies to $G_3(t) = t^3$.
 
 
 # Version history
 
-The package follows semantic versioning with a prerelease qualifier
-during active development:
+Versions are plain three-part numbers (major.minor.patch). The early
+milestones were:
 
 - **v0.1.0** (single-phase engine): Weibull, exponential, log-logistic,
   log-normal distributions with formula interface, predict, and golden
@@ -508,9 +520,12 @@ during active development:
 - **v0.9.0** (multiphase engine): N-phase additive cumulative hazard,
   `hzr_phase()` specification, decomposition engine, C binary parity
   tests, dataset catalog.
-- **v0.9.1** (current): vignette suite, roxygen multiphase examples,
+- **v0.9.1**: vignette suite, roxygen multiphase examples,
   CI workflow fixes (load_pkgload), SAS missing-value handling
   (`na.strings`), print.hazard phase labels, and README refresh.
+
+Every release since, up to the installed version, is listed in the
+package NEWS: `news(package = "TemporalHazard")`.
 
 
 # References {.unnumbered}

@@ -61,7 +61,7 @@ parameter names. For the full translation table, see
 
 Every temporal phase in TemporalHazard is built from a single parametric
 family, `decompos(t; t_half, nu, m)`, introduced by Blackstone, Naftel, and
-Turner (1986) that produces three linked quantities from just three parameters:
+Turner (1986), which produces three linked quantities from just three parameters:
 
 - $G(t)$: cumulative distribution function (CDF), bounded $[0, 1]$
 - $g(t) = dG/dt$: probability density function
@@ -84,8 +84,9 @@ The original C code used different parameter names per phase:
 - **Late phase (G3):** `TAU`, `GAMMA`, `ALPHA`, `ETA` $\to$ `t_half`, `nu`, `m`
 
 Both collapse onto the same 3-parameter decomposition family.  The C `DELTA`
-parameter controlled a time transformation $B(t) = (\exp(\delta t) - 1)/\delta$
-that is absorbed into the shape.
+parameter controlled a time transformation $B(t) = (\exp(\delta t) - 1)/\delta$.
+When $\delta = 0$ (the common case), $B(t) = t$ and the transformation drops
+out. Non-zero `DELTA` is not supported.
 :::
 
 In R, `hzr_decompos()` computes all three quantities:
@@ -241,7 +242,7 @@ The classic three-phase HAZARD model used:
 - **G2** (constant) $\to$ `hzr_phase("constant")`
 - **G3** (late) $\to$ `hzr_phase("hazard", ...)`
 
-TemporalHazard generalizes this to $N$ phases of any type.
+TemporalHazard generalizes this to $J$ phases of any type.
 :::
 
 
@@ -461,10 +462,12 @@ scale, wrapped by `.hzr_optim_generic()`.  Key features:
   `control$n_starts`).  The run with the highest log-likelihood is kept.
 - **Feasibility guard**: any parameter vector where $m < 0$ **and**
   $\nu < 0$ for the same phase returns $-\infty$ immediately.
-- **Post-fit Hessian**: the numerical Hessian of the negative
+- **Post-fit Hessian**: the Hessian of the negative
   log-likelihood at the solution is inverted to produce the
   variance-covariance matrix $\hat{V}$, with standard errors
-  $\sqrt{\text{diag}(\hat{V})}$.  The inversion is hardened against the
+  $\sqrt{\text{diag}(\hat{V})}$.  The Hessian is analytic when every row
+  is an exact event or right-censored, and is computed numerically with
+  `numDeriv::hessian()` when any row is left- or interval-censored.  The inversion is hardened against the
   ill-conditioning that arises at high parameter counts: the Hessian is
   symmetrized, its reciprocal condition number is checked, and it is
   inverted via a Cholesky factorization, with a general `solve()` fallback
@@ -597,8 +600,9 @@ likelihood surfaces.  Practical guidelines:
 
 1. **Fix shape parameters when possible.**  If clinical knowledge suggests a
    specific temporal pattern (e.g. early mortality follows a Weibull shape
-   with $m = 0$), fix `m` in the `hzr_phase()` starting values and inspect
-   whether the optimizer moves it.
+   with $m = 0$), hold `m` at that value with
+   `hzr_phase(..., m = 0, fixed = "m")`; the optimizer then estimates only
+   the remaining parameters.
 
 2. **Start from the SAS/C estimates.**  If legacy results are available,
    translate them using `hzr_argument_mapping()` and supply as starting values.
@@ -621,8 +625,11 @@ The decomposition engine applies several guards:
 - Left- and interval-censored contributions use `hzr_log1mexp()` to avoid
   $\log(0)$ when $H(t)$ is very small
 
-Together these keep the gradients finite throughout the optimization, even in
-regions of parameter space far from the optimum.
+These guards remove the common sources of non-finite values, but not all of
+them: an infeasible trial point returns $-\infty$. For those,
+`.hzr_optim_generic()` replaces a non-finite objective with a large finite
+value (`1e10`) and a non-finite gradient component with zero, so the search
+backs away from that region.
 
 
 # Summary of Key Functions {#sec-api}

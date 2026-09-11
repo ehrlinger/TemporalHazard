@@ -32,8 +32,9 @@ phase temporal pattern.}
 \description{
 Computes the cumulative distribution \eqn{G(t)}, density \eqn{g(t)}, and
 hazard \eqn{h(t) = g(t)/(1 - G(t))} for the parametric family defined by
-half-life, time exponent, and shape.  This single function generates all
-temporal phase shapes used in multiphase hazard models.
+half-life, time exponent, and shape.  It supplies the \code{"cdf"} and
+\code{"hazard"} phase shapes of a multiphase hazard model; the \code{"g3"} late phase
+comes from \code{\link[=hzr_decompos_g3]{hzr_decompos_g3()}}, and the \code{"constant"} phase is linear in time.
 }
 \section{Parameter mapping from SAS/C HAZARD}{
 

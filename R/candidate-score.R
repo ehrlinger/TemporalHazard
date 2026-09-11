@@ -61,11 +61,11 @@
 }
 
 
-#' Score a stepwise candidate under Wald or AIC criterion
+#' Score a stepwise candidate under the score, Wald or AIC criterion
 #'
 #' Produces a unified "smaller is better" score for either adding new
 #' coefficients to a model (`mode = "entry"`) or dropping coefficients
-#' from the current model (`mode = "drop"`), under a Wald or AIC
+#' from the current model (`mode = "drop"`), under the score, Wald or AIC
 #' criterion.
 #'
 #' @param criterion One of `"score"`, `"wald"`, or `"aic"`.  `"score"` is

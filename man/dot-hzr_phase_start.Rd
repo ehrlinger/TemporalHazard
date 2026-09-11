@@ -14,10 +14,12 @@
 \item{mu_start}{Numeric scalar; initial scale parameter (default 0.1).}
 }
 \value{
-Named numeric vector of starting values.
+Unnamed numeric vector of starting values.
 }
 \description{
 Returns initial theta sub-vector on the estimation (internal) scale:
-log(mu), log(t_half), nu, m, followed by zeros for covariate coefficients.
+log(mu), then log(t_half), nu, m for \code{"cdf"}/\code{"hazard"} phases or
+log(tau), gamma, alpha, eta for \code{"g3"} (nothing for \code{"constant"}),
+followed by zeros for covariate coefficients.
 }
 \keyword{internal}

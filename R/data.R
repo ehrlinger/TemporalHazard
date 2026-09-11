@@ -8,7 +8,8 @@
 #' @format A data frame with 310 rows and 11 variables:
 #' \describe{
 #'   \item{study}{Patient identifier}
-#'   \item{status}{NYHA functional class (1--4)}
+#'   \item{status}{NYHA functional class (1--4). A covariate, not a censoring
+#'     status: the event indicator is `dead`.}
 #'   \item{inc_surg}{Surgical grade of AV valve incompetence}
 #'   \item{opmos}{Date of operation (months since January 1967)}
 #'   \item{age}{Age at repair (months)}
@@ -101,9 +102,8 @@ utils::globalVariables("cabgkul")
 #' OMC: Open Mitral Commissurotomy
 #'
 #' Data for 339 patients who underwent open mitral commissurotomy at the
-#' University of Alabama Birmingham. Contains repeated thromboembolic events
-#' (up to 3 per patient) with left censoring, exercising the interval
-#' censoring likelihood.
+#' University of Alabama Birmingham. Records repeated thromboembolic events
+#' (up to 3 per patient) as indicators; the event dates are not included.
 #'
 #' @format A data frame with 339 rows and 7 variables:
 #' \describe{

@@ -116,7 +116,9 @@ ggplot() +
 
 A single Weibull captures the broad trend but misses the distinct early
 operative risk and late attrition that the KM curve reveals.  This motivates
-the multiphase approach below.
+the multiphase approach: `vignette("getting-started")` fits a three-phase
+model to this same cohort, and the multiphase section below walks the
+workflow on AVC.
 
 
 ## Multivariable model: AVC repair
@@ -429,9 +431,12 @@ time for right-censored and exact-event rows (`status %in% c(0, 1)`): when
 `0 < time_lower < time`, the row contributes H(stop) − H(start), the
 counting-process form used for epoch-decomposed repeated events.  For an
 ordinary right-censored or event row with no entry time, leave `time_lower`
-at `0` or omit it.  Setting `time_lower = time` is treated as *no entry*:
-`time_lower` acts as an entry time only when strictly less than `time`, so
-it no longer zeroes the row's contribution.  The exponential, log-logistic,
+at `0` or omit it.  Don't set `time_lower = time` to mean "no entry time";
+`hazard()` warns when you do, and the two likelihoods read it differently.
+The Weibull likelihood uses `time_lower` as an entry time only when it is
+strictly less than `time`, so there it changes nothing.  The multiphase
+likelihood takes it at its word: the row enters the risk set at the moment
+it leaves, and it drops out of the likelihood.  The exponential, log-logistic,
 and log-normal likelihoods do not use `time_lower` as an entry time and are
 unaffected.
 :::
@@ -483,8 +488,9 @@ rbind(
 The interval-censored fit recovers both parameters accurately.  The naive
 fit estimates $\mu$ comparably but introduces a substantial positive bias
 in $\nu$; it sees events consistently appearing at visit times (every 6
-months) and infers a sharper, more periodic hazard shape that doesn't
-match the underlying exponential structure.
+months) and infers a hazard that rises with time ($\hat\nu \approx 1.46$
+against a true $\nu = 1$), a shape that doesn't match the underlying
+exponential structure.
 
 
 ## Convergence troubleshooting
@@ -545,7 +551,8 @@ ggplot(data.frame(time = nel$time, cumhaz = nel$cumhaz),
 ```
 
 The early steep rise, the mid-range roughly-linear section, and the late
-upward acceleration map directly onto the three phases in the CABGKUL model.
+upward acceleration map directly onto the three phases of the CABGKUL model
+fitted in `vignette("getting-started")`.
 
 ### When to fix shape parameters
 
@@ -562,10 +569,14 @@ want in two situations:
   is 50 or more events per free shape parameter. Below that threshold the
   shapes are weakly identified and the optimizer wanders.
 
-Estimate shapes freely (`fixed = "none"`, the default) only when you are
-exploring a new dataset for the first time and have no prior on the temporal
-structure. Even then, start with `fixed = "shapes"` and release the
-shapes one at a time if the fixed-shapes fit shows systematic misfit.
+Estimate shapes freely (leave `fixed` at its default, `character(0)`, which
+fixes nothing) only when you are exploring a new dataset for the first time
+and have no prior on the temporal structure. Even then, start with
+`fixed = "shapes"` and release the shapes one at a time if the fixed-shapes
+fit shows systematic misfit. To fix only some shapes, name them: `fixed`
+takes `"t_half"`, `"nu"` and `"m"` for a `"cdf"` phase, `"tau"`, `"gamma"`,
+`"alpha"` and `"eta"` for a `"g3"` phase, or `"shapes"` for all of them.
+There is no `"none"`; `hzr_phase()` rejects it.
 
 ### Signs of overparameterization
 
@@ -606,16 +617,23 @@ log_mu_idx <- grep("log_mu", names(coef(fit_3ph)))
 round(exp(coef(fit_3ph)[log_mu_idx]), 6)
 ```
 
-The constant and late phase scales are both near zero: the optimizer
-found no evidence in the AVC data for either of those temporal shapes over
-this follow-up window. The early phase is absorbing all the identifiable
-structure. Any phase whose fitted scale is $\mu \lesssim 10^{-4}$ is not
-contributing meaningful hazard and is a candidate for removal. The
+The constant phase scale has collapsed to zero
+($\mu \approx 7 \times 10^{-13}$), and `hazard()` warns that the phase is
+not identified. The late phase scale looks just as small
+($\mu \approx 6 \times 10^{-6}$), but $\mu$ multiplies the phase's own
+shape, and $G_3$ with `tau = 5` and `gamma = 3` grows as $(t/5)^3$. By the
+end of follow-up (170.6 months) the late phase carries 0.23 of the 0.48
+total cumulative hazard. With both phases available, the optimizer drops
+the constant phase and hands the slow post-recovery attrition, which the
+two-phase fit gave the constant phase, to the late phase instead. So judge
+a phase by its contribution, from
+`predict(..., type = "cumulative_hazard", decompose = TRUE)`, not by the
+size of its $\mu$. The
 right diagnostic question is not "did the AIC improve?" but "does this
 phase represent real clinical biology?" Late deterioration after AVC
 repair requires long follow-up to observe; this dataset doesn't have it.
 
-When shapes are also free (`fixed = "none"`), a redundant phase can make
+When shapes are also free (no `fixed` argument), a redundant phase can make
 the Hessian rank-deficient and `vcov()` will return `NA` (the Hessian
 inversion failed). Fix by adding `fixed = "shapes"` to each phase to
 reduce the free-parameter count, then release shapes one at a time if the
@@ -626,9 +644,12 @@ fixed-shapes fit shows systematic misfit.
 Three `control` arguments address most remaining convergence problems:
 
 **`n_starts`** (default 5 for multiphase; single-distribution models run
-one optimizer call and ignore this parameter) runs the optimizer from
-`n_starts` randomly jittered copies of the initial `theta`, then keeps the
-best solution. The default of 5 is sufficient for two-phase models; increase
+one optimizer call and ignore this parameter) runs the optimizer from the
+initial `theta` and from `n_starts - 1` perturbed copies of it, then keeps
+the best solution. The perturbations come from a fixed internal seed
+(`control$start_seed`), so the same call returns the same fit whatever
+`set.seed()` you used, and your session's random-number stream is left
+untouched. The default of 5 is sufficient for two-phase models; increase
 to 8–10 for three or more phases where the likelihood surface has more local
 minima.
 
@@ -666,14 +687,15 @@ overparameterized (fix by fixing shapes or dropping a phase). Raising
 
 ## Phase types reference
 
-You've now seen each phase type in use: a `"cdf"` early phase for AVC
-operative mortality, a `"constant"` phase for AVC background rate, and
-the implicit single shape of every Weibull fit. The package supports
-three phase types in total, summarized here for quick reference:
+You've now seen three phase types in use: a `"cdf"` early phase for AVC
+operative mortality, a `"constant"` phase for the AVC background rate, and
+a `"g3"` late phase in the overparameterization example. The package
+supports four phase types in total, summarized here for quick reference:
 
 | Type | Description | Typical use |
 |------|-------------|-------------|
 | `"cdf"` | Sigmoidal CDF shape (parameterized by `t_half`, `nu`, `m`) | Early or late phases with transient risk |
+| `"hazard"` | Unbounded cumulative hazard from the same family, $\Phi(t) = -\log(1 - G(t))$ (parameterized by `t_half`, `nu`, `m`) | Risk that keeps rising as patients age |
 | `"constant"` | Flat hazard (no temporal shape parameters) | Ongoing background risk |
 | `"g3"` | Late-phase G3 parameterization (4 parameters: `tau`, `gamma`, `alpha`, `eta`) | Late-rising risk matching C/SAS G3 output |
 

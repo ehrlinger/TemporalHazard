@@ -45,9 +45,8 @@ a caller variable wins, and because that silently discards the caller's
 vector (the way a wrapper forwarding its own argument by name does),
 such a name raises a warning naming the symbol and the argument.
 Masked arguments are validated like any other, so an \code{NA} in a
-masked column now errors: an \code{NA} count on the SAS \code{ICENSOR}
-path reaches \code{weights} and stops with \verb{'weights' must be non-negative and finite}, where it was previously accepted
-silently.}
+masked column errors: an \code{NA} count on the SAS \code{ICENSOR}
+path reaches \code{weights} and stops with \verb{'weights' must be non-negative and finite}.}
 
 \item{time}{Numeric follow-up time vector.}
 
@@ -249,7 +248,9 @@ applied;
 
 Read \code{fit$spec$control$conserve_applied}, not
 \code{fit$spec$control$conserve}: the latter says only what you asked for.
-\item \code{nocov}, \code{nocor}: Suppress covariance/correlation output (legacy; no-op in M2)
+\item \code{nocov}, \code{nocor}: Accepted for compatibility with the SAS \verb{PROC HAZARD}
+options of the same names. They change neither the fitted object nor its
+printed summary.
 }
 
 Censoring status coding:

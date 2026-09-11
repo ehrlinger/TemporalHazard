@@ -144,7 +144,8 @@
 #'   \item{score}{Winning score (p or dAIC), or `NA_real_`.}
 #'   \item{p_value}{Winning p-value.}
 #'   \item{delta_aic}{Winning dAIC.}
-#'   \item{stat, df}{Wald statistic / df of the winner.}
+#'   \item{stat, stat_type, df}{Test statistic of the winner, what it is
+#'     (`"score_q"`, `"wald_z"` or `"wald_chisq"`), and its df.}
 #'   \item{all_scores}{Tibble-like data frame of every candidate
 #'     considered and its score.}
 #'   \item{refit_failures}{Character vector of `"var@phase"` tokens for

@@ -212,13 +212,12 @@
 #' \code{formula[[3L]]}) and returns \code{TRUE} if any call node has a
 #' function symbol that exactly matches one of \code{phase_names}.
 #'
-#' This is stricter than a string-regex approach: a phase named \code{"log"}
-#' will NOT produce a false positive when the formula contains \code{log(age)},
-#' because \code{log} would also appear in \code{phase_names} only if the user
-#' deliberately named a phase \code{"log"}.  Conversely, the function only
-#' fires when the call head is an exact match to a known phase name; standard
-#' R functions that happen to share names with phases do not trigger the check
-#' unless those names are actually phase names.
+#' This is stricter than a string-regex approach.  A call such as
+#' \code{log(age)} triggers the check only when a phase is actually named
+#' \code{"log"}; with phases named \code{"early"} and \code{"constant"} it
+#' does not.  The function fires only when a call head exactly matches a
+#' known phase name, so a variable such as \code{early_age}, or a bare
+#' symbol \code{early} that is not called, does not trigger it.
 #'
 #' @param rhs  A language object (the RHS of a formula, typically
 #'   \code{formula[[3L]]}).

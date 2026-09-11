@@ -37,7 +37,7 @@ NULL
 
 #' Log-likelihood for Weibull hazard with covariates
 #'
-#' Computes the negative log-likelihood for a sample under the Weibull
+#' Computes the log-likelihood for a sample under the Weibull
 #' parametric hazard model with optional linear-predictor covariates.
 #'
 #' @param theta Vector of parameters:
@@ -75,9 +75,9 @@ NULL
 #' The log-likelihood for right-censored data is:
 #'
 #' \deqn{\ell(\theta) = \sum_{i: \delta_i = 1} \log h(t_i | x_i)
-#'   - \sum_i S(t_i | x_i)}
+#'   - \sum_i H(t_i | x_i)}
 #'
-#' where S is the survival function (1 - CDF).
+#' where H is the cumulative hazard, \eqn{H = -\log S}.
 #'
 #' Mixed censoring status coding:
 #' - 1: exact event at time
@@ -234,9 +234,6 @@ NULL
 #'
 #' Computes the score vector (gradient) of the Weibull log-likelihood w.r.t. all parameters.
 #'
-#' @param time_lower Optional lower bounds for interval-censored rows.
-#' @param time_upper Optional upper bounds for left/interval-censored rows.
-#'
 #' The log-likelihood is:
 #'   L = sum(delta_i * log h(t_i)) - sum(H(t_i))
 #'
@@ -247,6 +244,9 @@ NULL
 #' dL/dnu  = sum(delta_i / nu) + sum(delta_i) * log(mu) + sum(delta_i * log(t_i))
 #'           - sum(log(mu * t_i) * H(t_i))
 #' dL/dbeta_j = sum(delta_i * x_ij) - sum(H(t_i) * x_ij)  = t(X) %*% (delta - H)
+#'
+#' @param time_lower Optional lower bounds for interval-censored rows.
+#' @param time_upper Optional upper bounds for left/interval-censored rows.
 #'
 #' @noRd
 .hzr_gradient_weibull <- function(

@@ -145,10 +145,9 @@ NULL
 #'   vector (the way a wrapper forwarding its own argument by name does),
 #'   such a name raises a warning naming the symbol and the argument.
 #'   Masked arguments are validated like any other, so an `NA` in a
-#'   masked column now errors: an `NA` count on the SAS `ICENSOR`
+#'   masked column errors: an `NA` count on the SAS `ICENSOR`
 #'   path reaches `weights` and stops with `'weights' must be
-#'   non-negative and finite`, where it was previously accepted
-#'   silently.
+#'   non-negative and finite`.
 #' @param time_windows Optional numeric vector of strictly positive cut points for
 #'   piecewise time-varying coefficients. When provided, each predictor column in
 #'   `x` is expanded into one column per time window so each window gets its own
@@ -270,7 +269,9 @@ NULL
 #'
 #'   Read `fit$spec$control$conserve_applied`, not
 #'   `fit$spec$control$conserve`: the latter says only what you asked for.
-#' - `nocov`, `nocor`: Suppress covariance/correlation output (legacy; no-op in M2)
+#' - `nocov`, `nocor`: Accepted for compatibility with the SAS `PROC HAZARD`
+#'   options of the same names. They change neither the fitted object nor its
+#'   printed summary.
 #'
 #' Censoring status coding:
 #' - 1: Exact event at time

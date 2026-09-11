@@ -141,12 +141,11 @@
 #'       an unscored candidate as a bad one: `information_indefinite` marks
 #'       candidates whose effect is too large for the score test's
 #'       approximation at zero, which are typically the strongest variables
-#'       on offer rather than degenerate ones. Those are now refit and tested
-#'       by Wald automatically, counted in `n_wald_fallbacks`; a candidate
-#'       still reaches `uncomputable_reasons` only when that refit itself
-#'       fails, or when the cause is one no refit can rescue, which is
-#'       every cause except `information_indefinite` and
-#'       `coefficient_diverging`, the two a refit exists to rescue. Read
+#'       on offer rather than degenerate ones. Candidates with that cause,
+#'       or with `coefficient_diverging`, are refit and tested by Wald
+#'       automatically, counted in `n_wald_fallbacks`. A candidate still
+#'       reaches `uncomputable_reasons` when that refit fails, or when its
+#'       cause is any other, which no refit can rescue. Read
 #'       `uncomputable_reasons` for which one it was in any given run.  For
 #'       every criterion it also carries
 #'       `refit_failures` (the `"var"` / `"var@phase"` tokens of candidate

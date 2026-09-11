@@ -51,7 +51,7 @@ and extrapolation.
 | Repeating events (epoch decomposition via `Surv(start, stop, event)`) | :white_check_mark: |
 | Time-varying covariates (piecewise windows) | :white_check_mark: |
 | Weighted events across all distributions | :white_check_mark: |
-| Automatic stepwise covariate selection (forward, backward, stepwise; Wald or AIC) | :white_check_mark: |
+| Automatic stepwise covariate selection (forward, backward, stepwise; score (default), Wald or AIC) | :white_check_mark: |
 | Conservation of Events theorem for numerically stable parameter estimation | :white_check_mark: |
 | Covariance and correlation matrix estimation | :white_check_mark: |
 | Delta-method confidence limits on `predict()` (`se.fit = TRUE`) | :white_check_mark: |
@@ -73,8 +73,9 @@ install.packages("TemporalHazard")
 remotes::install_github("ehrlinger/TemporalHazard")
 ```
 
-TemporalHazard requires R >= 4.1.0 and depends on the
-[survival](https://CRAN.R-project.org/package=survival) package.
+TemporalHazard requires R >= 4.1.0 and imports the
+[survival](https://CRAN.R-project.org/package=survival) package. It does not
+attach it, which is why the examples below call `survival::Surv()`.
 Optional packages for visualization and vignettes include ggplot2, numDeriv,
 and quarto.
 
@@ -150,4 +151,3 @@ devtools::check()
 GitHub Actions runs multi-platform `R CMD check` on every push and pull request. Coverage is published to Codecov and the pkgdown site deploys automatically from `main`.
 
 See the development plan in `inst/dev/DEVELOPMENT-PLAN.md` for the full roadmap covering the C/SAS migration, multiphase implementation, CRAN release, and planned feature parity work.
-See `.github/BRANCH_PROTECTION.md` for recommended required-check settings that block merges when CI fails.

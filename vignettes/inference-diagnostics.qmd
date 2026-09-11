@@ -76,7 +76,8 @@ candidates <- c("age", "status", "mal", "com_iv", "inc_surg", "orifice")
 Fit a univariable logistic regression for each candidate against the
 death indicator. The p-values that come out are not the final word on
 whether a covariate matters (they ignore the joint structure of the
-hazard model and they treat the event time as a binary outcome), but
+hazard model, and they model the death indicator as a plain binary
+outcome with no follow-up time), but
 they do tell you which covariates have no chance of mattering, and
 which deserve closer inspection.
 
@@ -394,8 +395,7 @@ statistically meaningful.
 
 The pieces in this vignette chain together into a single analytical
 workflow that goes from raw covariates to a defensible,
-uncertainty-quantified, well-calibrated fitted model. The complete sequence, with the SAS HAZARD
-correspondences each piece descends from:
+uncertainty-quantified, well-calibrated fitted model. The complete sequence:
 
 1. **Exploratory screening** (`glm`, `hzr_calibrate()`): identify
    covariate transformations and functional forms

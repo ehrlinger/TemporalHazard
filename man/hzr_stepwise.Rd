@@ -103,12 +103,11 @@ settings actually applied, plus, under \code{criterion = "score"},
 an unscored candidate as a bad one: \code{information_indefinite} marks
 candidates whose effect is too large for the score test's
 approximation at zero, which are typically the strongest variables
-on offer rather than degenerate ones. Those are now refit and tested
-by Wald automatically, counted in \code{n_wald_fallbacks}; a candidate
-still reaches \code{uncomputable_reasons} only when that refit itself
-fails, or when the cause is one no refit can rescue, which is
-every cause except \code{information_indefinite} and
-\code{coefficient_diverging}, the two a refit exists to rescue. Read
+on offer rather than degenerate ones. Candidates with that cause,
+or with \code{coefficient_diverging}, are refit and tested by Wald
+automatically, counted in \code{n_wald_fallbacks}. A candidate still
+reaches \code{uncomputable_reasons} when that refit fails, or when its
+cause is any other, which no refit can rescue. Read
 \code{uncomputable_reasons} for which one it was in any given run.  For
 every criterion it also carries
 \code{refit_failures} (the \code{"var"} / \code{"var@phase"} tokens of candidate

@@ -351,11 +351,11 @@ is_hzr_phase <- function(x) {
 
 #' Number of shape parameters for a phase
 #'
-#' Returns 3 (t_half, nu, m) for `"cdf"` and `"hazard"` phases, 0 for
-#' `"constant"`.
+#' Returns 3 (t_half, nu, m) for `"cdf"` and `"hazard"` phases, 4 (tau,
+#' gamma, alpha, eta) for `"g3"`, and 0 for `"constant"`.
 #'
 #' @param phase An `hzr_phase` object.
-#' @return Integer: 3 or 0.
+#' @return Integer: 3, 4 or 0.
 #' @keywords internal
 .hzr_phase_n_shape <- function(phase) {
   stopifnot(is_hzr_phase(phase))
@@ -374,6 +374,7 @@ is_hzr_phase <- function(x) {
 #'
 #' \itemize{
 #'   \item For `"cdf"`/`"hazard"`: `[log_mu, log_t_half, nu, m, beta_1, ..., beta_p]`
+#'   \item For `"g3"`:             `[log_mu, log_tau, gamma, alpha, eta, beta_1, ..., beta_p]`
 #'   \item For `"constant"`:       `[log_mu, beta_1, ..., beta_p]`
 #' }
 #'
@@ -564,12 +565,14 @@ hzr_theta_names <- function(phases, covariates = NULL) {
 #' Extract starting values from a phase specification
 #'
 #' Returns initial theta sub-vector on the estimation (internal) scale:
-#' log(mu), log(t_half), nu, m, followed by zeros for covariate coefficients.
+#' log(mu), then log(t_half), nu, m for `"cdf"`/`"hazard"` phases or
+#' log(tau), gamma, alpha, eta for `"g3"` (nothing for `"constant"`),
+#' followed by zeros for covariate coefficients.
 #'
 #' @param phase An `hzr_phase` object.
 #' @param n_covariates Integer; number of covariate columns.
 #' @param mu_start Numeric scalar; initial scale parameter (default 0.1).
-#' @return Named numeric vector of starting values.
+#' @return Unnamed numeric vector of starting values.
 #' @keywords internal
 .hzr_phase_start <- function(phase, n_covariates = 0L, mu_start = 0.1) {
   stopifnot(is_hzr_phase(phase))

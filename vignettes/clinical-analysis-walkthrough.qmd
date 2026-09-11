@@ -111,11 +111,12 @@ The returned data frame is the life table: one row per event time with
 `n_risk`, `n_event`, `survival`, logit-transformed 95% CLs
 (`cl_lower` / `cl_upper`), and a KM-based cumulative hazard
 (`-log(survival)`; use `hzr_nelson()` if you need the Nelson-Aalen
-estimator instead).  Plotting just requires the survival column:
+estimator instead).  The plot uses the survival column for the step
+curve and the two confidence limits for the band:
 
 ```{r}
 #| label: fig-km-baseline
-#| fig-cap: "Kaplan-Meier survival estimate for AVC patients (n = 310)"
+#| fig-cap: "Kaplan-Meier survival estimate for AVC patients (n = 305)"
 #| eval: !expr requireNamespace("TemporalHazard", quietly = TRUE) && requireNamespace("ggplot2", quietly = TRUE)
 km_df <- data.frame(
   time     = km$time,
@@ -289,9 +290,10 @@ The cheapest screening tool we have is a univariable logistic
 regression of the event indicator on each covariate. It throws away
 the time-to-event structure but it answers a binary question
 quickly: does this covariate have *any* association with mortality
-at all? Covariates whose univariable p-value is huge will not
-suddenly become significant in the multivariable hazard model
-either, so those can be deprioritized. Covariates with small
+at all? Covariates whose univariable p-value is huge can be
+deprioritized, but not discarded outright, because adjusting for
+other covariates can reveal an association the univariable test
+misses. Covariates with small
 univariable p-values deserve closer functional-form inspection
 before they enter the formula.
 
@@ -357,7 +359,7 @@ ggplot(cal_age, aes(mean, link_value)) +
   theme_minimal()
 ```
 
-The blue points are the observed decile logits; the dashed red line is a
+The blue points are the observed decile logits; the dashed orange line is a
 linear reference.  Deviations from linearity flag where a transform is
 warranted.
 
@@ -401,7 +403,7 @@ The manual approach works when screening has already narrowed the
 candidate pool, but with a larger pool it helps to let the model
 choose.  `hzr_stepwise()` runs forward, backward, or two-way
 selection against an existing `hazard` fit, scoring candidates with
-Wald p-values or delta-AIC.  Defaults match SAS `PROC HAZARD`
+the score statistic, Wald p-values or delta-AIC.  Defaults match SAS `PROC HAZARD`
 (`SLENTRY = 0.30`, `SLSTAY = 0.20`).
 
 We start from a baseline with no covariates, offer the same screened
@@ -412,10 +414,11 @@ per `(variable, phase)` pair, letting a covariate enter one phase
 and not another.  Single-distribution models accept either a flat
 one-sided formula or a character vector of names.
 
-`hzr_stepwise()` now defaults to `criterion = "score"`, which reproduces
+`hzr_stepwise()` defaults to `criterion = "score"`, which reproduces
 SAS's `SELECTION` Q statistic by testing each candidate at the current
 estimates without a per-candidate refit.  Here we pass `criterion = "wald"`
-deliberately, so the trace below reports the refit-based Wald statistic.
+deliberately, so the `$steps` table below reports the refit-based Wald
+p-values.
 
 ```{r}
 #| label: stepwise-forward
@@ -469,9 +472,14 @@ c(manual = logLik_manual, stepwise = logLik_step,
   aic_step   = 2 * length(fit_step$fit$theta) - 2 * logLik_step)
 ```
 
-When the screening and stepwise agree on the same covariate set the
-log-likelihoods match exactly; when stepwise selects a leaner model
-AIC drops.  For an AIC-driven run use `criterion = "aic"`; for a
+The two models need not agree.  Here stepwise enters `status` in both
+phases but `age`, `mal` and `com_iv` in the early phase only, so it
+carries fewer coefficients than the manual fit.  Its log-likelihood is
+lower and its AIC is lower too, because the dropped constant-phase
+coefficients cost more in parameters than they bought in fit.  Even on
+an identical covariate set the two log-likelihoods can differ, since
+the fits use different `n_starts` and the multiphase likelihood can
+have more than one optimum.  For an AIC-driven run use `criterion = "aic"`; for a
 forward-only sweep `direction = "forward"`.  See `?hzr_stepwise` for
 the full argument surface including `force_in`, `force_out`, and the
 `max_move` oscillation guard.
@@ -539,7 +547,7 @@ recognizes.
 
 ```{r}
 #| label: fig-sensitivity
-#| fig-cap: "Survival by risk profile: low-risk (blue) vs. high-risk (red)"
+#| fig-cap: "Survival by risk profile: low-risk (blue) vs. high-risk (orange)"
 #| eval: !expr requireNamespace("TemporalHazard", quietly = TRUE) && requireNamespace("ggplot2", quietly = TRUE)
 low_risk <- data.frame(
   time   = t_grid,
@@ -708,7 +716,7 @@ The complete analytical workflow follows a disciplined sequence:
 
 1. **Kaplan-Meier baseline**: establish the empirical survival pattern
 2. **Shape fitting**: match the temporal shape, simple to complex
-3. **Variable screening**: logistic screening, LOESS functional form
+3. **Variable screening**: logistic screening, decile-logit functional form
 4. **Multivariable model**: enter covariates with fixed shapes
 5. **Prediction**: reference curves, sensitivity analysis
 6. **Validation**: decile calibration, conservation-of-events check

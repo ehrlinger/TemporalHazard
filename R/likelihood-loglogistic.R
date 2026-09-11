@@ -51,7 +51,7 @@ NULL
 
 #' Log-likelihood for log-logistic hazard with covariates
 #'
-#' Computes the negative log-likelihood for right-censored data under the log-logistic
+#' Computes the log-likelihood for right-censored data under the log-logistic
 #' parametric hazard model with optional linear-predictor covariates.
 #'
 #' @param theta Vector of parameters:
@@ -74,12 +74,13 @@ NULL
 #' @details
 #' The log-logistic hazard model is parameterized as:
 #'
-#' \deqn{h(t | x) = \frac{\alpha \beta t^{\beta - 1}}{1 + \alpha t^{\beta} \exp(\eta)}}
+#' \deqn{h(t | x) = \frac{\alpha \beta t^{\beta - 1} \exp(\eta)}{1 + \alpha t^{\beta} \exp(\eta)}}
 #'
 #' where:
 #' - \eqn{\alpha > 0} is scale parameter
 #' - \eqn{\beta > 0} is shape parameter
-#' - \eqn{\eta = x \beta} is covariate effect (linear on log-scale)
+#' - \eqn{\eta = x b} is covariate effect (linear on log-scale), with
+#'   coefficient vector \eqn{b} = theta\[3:length\], not the shape \eqn{\beta}
 #'
 #' The survival function is:
 #'
@@ -92,10 +93,10 @@ NULL
 #' The log-likelihood for right-censored data is:
 #'
 #' \deqn{\ell(\theta) = \sum_{\delta_i = 1} [\log(\alpha \beta) + (\beta - 1)
-#'   \log(t_i) - \log(1 + \alpha t_i^{\beta} \exp(\eta_i))] + \sum_{i}
+#'   \log(t_i) + \eta_i - \log(1 + \alpha t_i^{\beta} \exp(\eta_i))] - \sum_{i}
 #'   \log(1 + \alpha t_i^{\beta} \exp(\eta_i))}
 #'
-#' Reparameterization: \u03b8\[1\] = log(\u03b1), \u03b8\[2\] = log(\u03b2) avoids constrained optimization.
+#' Reparameterization: theta\[1\] = log(alpha), theta\[2\] = log(beta) avoids constrained optimization.
 #'
 #' Mixed censoring status coding:
 #' - 1: exact event at time
@@ -235,25 +236,20 @@ NULL
 #'
 #' Computes the score vector of the log-logistic log-likelihood w.r.t. all parameters.
 #'
-#' The log-likelihood is:
+#' The log-likelihood, with term_i = alpha*t_i^beta*exp(eta_i), is:
 #'   \eqn{L = \sum(\delta_i * [\log(\alpha) + \log(\beta) + (\beta-1)
-#'   *\log(t_i)]) - \sum(\log(1 + \alpha*t_i^\beta*\exp(\eta_i)))}
+#'   *\log(t_i) + \eta_i]) - \sum((1 + \delta_i) * \log(1 + term_i))}
 #'
-#' Let p_i = alpha*t_i^beta*exp(eta_i) / (1 + alpha*t_i^beta*exp(eta_i)) = probability of event at t_i
+#' Let p_i = term_i / (1 + term_i) and w_i = (1 + delta_i) * p_i. An event
+#' carries log(1 + term_i) twice, once from log h and once from log S.
 #'
 #' Derivatives (using chain rule and reparameterization):
-#' dL/d(log alpha) = sum(delta_i) - alpha * sum(t_i^beta * exp(eta_i) / (1 + alpha*t_i^beta*exp(eta_i)))
-#'             = sum(delta_i) - sum(alpha * t_i^beta * exp(eta_i) / (1 + term))
+#' dL/d(log alpha) = sum(delta_i) - sum(w_i)
 #'
-#' dL/d(log beta) = sum(delta_i) + sum(delta_i * log(t_i))
-#'                  - beta * sum(alpha*t_i^beta*log(t_i)*exp(eta_i)
-#'                                 /(1 + alpha*t_i^beta*exp(eta_i)))
-#'                = sum(delta_i) + sum(delta_i * log(t_i))
-#'                  - beta * sum(t_i^beta*log(t_i)
-#'                                 /(1 + 1/(alpha*t_i^beta*exp(eta_i))))
+#' dL/d(log beta) = sum(delta_i)
+#'                  + beta * [sum(delta_i * log(t_i)) - sum(w_i * log(t_i))]
 #'
-#' dL/dbeta_j = sum(delta_i * x_ij) - sum(alpha*t_i^beta*exp(eta_i)*x_ij / (1 + alpha*t_i^beta*exp(eta_i)))
-#'         = t(X) %*% (delta - p)
+#' dL/db_j = sum(delta_i * x_ij) - sum(w_i * x_ij) = t(X) %*% (delta - w)
 #'
 #' @noRd
 .hzr_gradient_loglogistic <- function(

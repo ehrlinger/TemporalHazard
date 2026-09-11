@@ -105,8 +105,9 @@
 #'
 #' Computes the cumulative distribution \eqn{G(t)}, density \eqn{g(t)}, and
 #' hazard \eqn{h(t) = g(t)/(1 - G(t))} for the parametric family defined by
-#' half-life, time exponent, and shape.  This single function generates all
-#' temporal phase shapes used in multiphase hazard models.
+#' half-life, time exponent, and shape.  It supplies the `"cdf"` and
+#' `"hazard"` phase shapes of a multiphase hazard model; the `"g3"` late phase
+#' comes from [hzr_decompos_g3()], and the `"constant"` phase is linear in time.
 #'
 #' @section Parameter mapping from SAS/C HAZARD:
 #'

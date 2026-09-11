@@ -102,8 +102,9 @@ through `...` as named arguments and stored in `fit$legacy_args`.
 ### `TIME`
 
 Names the follow-up time variable. In SAS HAZARD this is a separate
-statement; in R it's the first argument to `Surv()` inside the
-formula.
+statement; in R it is the `time` argument of the vector interface
+shown here, or the first argument to `Surv()` if you use the formula
+interface.
 
 ```sas
 TIME INT_DEAD;
@@ -128,7 +129,8 @@ fit <- hazard(
 ### `EVENT`
 
 Names the event-indicator variable. Like `TIME`, this is a separate
-statement in SAS HAZARD but enters the R formula through `Surv()`.
+statement in SAS HAZARD; in R it is the `status` argument shown here,
+or the second argument to `Surv()` in the formula interface.
 
 ```sas
 EVENT DEAD;
@@ -460,9 +462,9 @@ fit
 | `$data$time`          | Follow-up time vector                                       |
 | `$data$status`        | Event indicator (numeric)                                   |
 | `$data$x`             | Design matrix                                               |
-| `$fit$theta`          | Coefficient vector (starting values at M1; fitted at M2+)  |
-| `$fit$converged`      | `NA` at M1; `TRUE`/`FALSE` from M2 optimizer               |
-| `$fit$objective`      | Log-likelihood at convergence (M2+)                        |
+| `$fit$theta`          | Coefficient vector: estimates when `fit = TRUE`, the starting values when `fit = FALSE` |
+| `$fit$converged`      | `TRUE`/`FALSE` from the optimizer; `NA` when `fit = FALSE`  |
+| `$fit$objective`      | Log-likelihood at convergence; `NA` when `fit = FALSE`      |
 | `$legacy_args`        | Named pass-through arguments for parity                     |
 
 > **Note:** `$fit$objective` above is a *number*: the log-likelihood the
@@ -653,8 +655,12 @@ makes the document runnable: a later `predict()` chunk from a
 `CONSERVE` becomes `control$conserve = TRUE`, `QUASI` becomes
 `control$method = "bfgs"`, `CONDITION=14` becomes `control$condition
 = 14`, and the `PARMS` early-phase shape (`MUE`/`THALF`/`NU`/`M FIXM`)
-becomes a `hzr_phase("cdf", ...)` with `m` fixed. These are exactly the
-mappings covered statement-by-statement above, applied automatically.
+becomes a `hzr_phase("cdf", ...)` with `m` fixed. Two of these differ
+from the hand translation above, and the translator's forms are the
+ones `hazard()` acts on. `FIXM` holds `m` only through `fixed = "m"` on
+the phase; the fitting path does not read `control$fix`. `QUASI`
+becomes the optimizer choice `control$method = "bfgs"`, which is also
+the default; `control$quasi` is not read either.
 `dist = "multiphase"` is emitted whenever `phases` is, and `theta`
 carries the full interleaved multiphase start vector (early scale,
 then every early-phase shape parameter in phase order, then the
@@ -692,7 +698,7 @@ gaps are common enough in production jobs to know about going in:
 ## Known limitations vs. SAS HAZARD
 
 A SAS HAZARD veteran migrating to `TemporalHazard` should be aware of
-the following scope limits as of v1.2.2.  Detailed status per feature is
+the following scope limits as of v1.2.11.  Detailed status per feature is
 tracked in `inst/dev/SAS-PARITY-GAP-ANALYSIS.md` and
 `inst/dev/DEVELOPMENT-PLAN.md`.
 

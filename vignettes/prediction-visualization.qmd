@@ -121,7 +121,7 @@ fit <- hazard(
 ```
 
 Pick a representative patient (here a median-aged, mid-status,
-no-malalignment, no-grade-IV-complication profile) and evaluate the
+no-malalignment, no-interventricular-communication profile) and evaluate the
 prediction types over a fine time grid. The result is a data frame
 with one row per time point, ready for plotting or downstream
 analysis.
@@ -191,7 +191,7 @@ a survival probability of 0.85 with a 0.4–0.97 band around it, even
 though both round to "85%". Delta-method confidence limits let you
 plot the second case honestly instead of pretending it's the first.
 
-As of v0.9.8, `predict.hazard()` accepts `se.fit = TRUE` (default
+`predict.hazard()` accepts `se.fit = TRUE` (default
 `FALSE`) and `level = 0.95` to return delta-method standard errors
 and confidence limits alongside the point estimate. The return value
 changes shape: a plain numeric vector with `se.fit = FALSE`, a data
@@ -347,9 +347,11 @@ constant (blue) phase represents the ongoing background mortality
 that persists once patients are past the operative window. The late
 (pink) phase captures the gradually increasing risk of late
 attrition (graft failure, comorbidity progression, the aging cohort).
-None of these shapes was specified by hand; the optimizer
-landed on them given the data and the phase-type choices we made up
-front. If a phase looked wrong here (a constant phase dominating
+The early and late shapes were set by hand: `fixed = "shapes"` holds
+`t_half`, `nu` and `m` for the early phase and `tau`, `gamma`,
+`alpha` and `eta` for the late phase at the values in the
+`hzr_phase()` calls. The optimizer estimated only the three scales,
+one per phase, which set how much each phase contributes. If a phase looked wrong here (a constant phase dominating
 where we expected an early peak, or a late phase that never rose)
 that would be a signal to revisit either the starting values, the
 shape parameters, or the data itself.
@@ -360,22 +362,26 @@ shape parameters, or the data itself.
 The decomposed-hazard plot above tells us the model has the right
 *shape* per phase. To check that the *total* fit also tracks the
 data, we collapse back to the overall survival curve and overlay it
-on the KM estimate. This is the same diagnostic as the single-Weibull case
-earlier in this vignette, but now against a model that has the
-structural flexibility to follow the cohort's actual mortality
-pattern.
+on the Kaplan-Meier estimate for the same CABGKUL cohort. This is the
+same diagnostic as the single-Weibull case earlier in this vignette,
+but on the CABG data the multiphase model was fit to, and against a
+model that has the structural flexibility to follow the cohort's
+actual mortality pattern.
 
 ```{r}
 #| label: fig-mp-surv
-#| fig-cap: "Multiphase parametric survival vs. Kaplan-Meier"
+#| fig-cap: "Multiphase parametric survival vs. Kaplan-Meier (CABGKUL death)"
 #| fig-width: 7
 #| fig-height: 4.5
-surv_mp <- predict(fit_mp, newdata = nd, type = "survival") * 100
+km_cabg    <- survfit(Surv(int_dead, dead) ~ 1, data = cabgkul)
+km_cabg_df <- data.frame(time = km_cabg$time, survival = km_cabg$surv * 100)
+surv_mp    <- predict(fit_mp, newdata = nd, type = "survival") * 100
 
 ggplot() +
-  geom_step(data = km_df, aes(time, survival, colour = "Kaplan-Meier"),
+  geom_step(data = km_cabg_df,
+            aes(time, survival, colour = "Kaplan-Meier"),
             linewidth = 0.5) +
-  geom_line(data = data.frame(time = t_grid, survival = surv_mp),
+  geom_line(data = data.frame(time = t_mp, survival = surv_mp),
             aes(time, survival, colour = "Multiphase (3-phase)"),
             linewidth = 1) +
   scale_colour_manual(
@@ -383,7 +389,7 @@ ggplot() +
                "Kaplan-Meier"         = "#D55E00")
   ) +
   scale_y_continuous(limits = c(0, 100)) +
-  labs(x = "Months after AVC repair", y = "Freedom from death (%)",
+  labs(x = "Months after CABG", y = "Freedom from death (%)",
        colour = NULL) +
   theme_minimal() +
   theme(legend.position = "bottom")
@@ -400,9 +406,9 @@ Holding the fitted model fixed and varying the covariate profile
 generates patient-specific survival curves you can show side by side.
 Below we score three plausible profiles drawn from the cohort's own
 quantiles: a low-risk patient (young, mild status, no malalignment,
-no grade-IV complications), a median patient, and a high-risk patient
-(older, severe status, with both adverse anatomical and
-post-operative findings).
+no interventricular communication), a median patient, and a high-risk
+patient (older, severe status, with both malalignment and
+interventricular communication).
 
 ```{r}
 #| label: fig-risk-profiles
@@ -454,9 +460,10 @@ When a cohort has multiple clinical endpoints (death, valve
 endocarditis, reoperation), putting them on the same survival axis
 gives an immediate comparative picture of which event the cohort is
 most at risk for, and over what time horizon. The `valves` dataset
-has separate event-time pairs for each endpoint, so we can plot all
-of them as Kaplan-Meier curves on shared axes without needing a
-parametric fit at all. (You'd parametrize them in the next step, one
+has separate event-time pairs for each endpoint, so any of them can
+go on shared axes as a Kaplan-Meier curve without needing a
+parametric fit at all. Below we plot two: death and prosthetic valve
+endocarditis (PVE). (You'd parametrize them in the next step, one
 endpoint per `hazard()` call, as we did in
 `vignette("fitting-hazard-models")`.)
 
