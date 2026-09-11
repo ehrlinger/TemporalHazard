@@ -111,18 +111,21 @@ NULL
 #'   * `status == 2` (interval-censored): the lower bound of the censoring
 #'     interval, defaulting to `time`. Every `dist` reads it this way.
 #'   * `status %in% c(0, 1)` (right-censored or event): the counting-process
-#'     **entry time**, so the row contributes `H(time) - H(time_lower)`.
-#'     Only `dist = "weibull"` and `dist = "multiphase"` use this role, and
-#'     `"weibull"` only where `time_lower < time`. The `"exponential"`,
-#'     `"loglogistic"` and `"lognormal"` families ignore `time_lower` on these
-#'     rows. Left `NULL`, the entry time is **`0`**, not `time`.
+#'     **entry time** when `0 < time_lower < time`, so the row contributes
+#'     `H(time) - H(time_lower)`. Every `dist` reads it this way. A value of
+#'     `0`, or equal to `time`, means no entry time, and left `NULL` the
+#'     entry time is **`0`**.
 #'   * `status == -1` (left-censored): not used; the bound is `time_upper`.
 #'
-#'   Passing `time_lower = time` therefore states that every subject entered
-#'   the risk set at the instant it left. `hazard()` accepts it with a
-#'   warning. Under `"multiphase"` those rows lose their cumulative-hazard
-#'   term and the fit it returns is meaningless; `"weibull"` reads them as
-#'   entering at time 0, and the other families ignore the argument there.
+#'   `time_lower = time` on the status 0 and 1 rows is the mixed-interval
+#'   layout: exact and right-censored rows carry their own time, and only
+#'   the status-2 rows carry a real lower bound. A subject cannot enter the
+#'   risk set after the moment it leaves, so `hazard()` stops with an error
+#'   when a status 0 or 1 row has `time_lower > time`, as SAS HAZARD rejects
+#'   a start time after the exit time. It also stops when rows with
+#'   `time_lower == time > 0` sit beside rows with genuine entry times: in
+#'   counting-process data those are zero-length epochs, which
+#'   [hzr_repeated_events()] can emit and which must be adjusted first.
 #' @param time_upper Optional numeric upper bound vector for censoring intervals.
 #'   Used when `status %in% c(-1, 2)`; defaults to `time` if NULL.
 #' @param x Optional design matrix (or data frame coercible to matrix).
@@ -627,30 +630,42 @@ hazard <- function(formula = NULL,
     }
   }
 
-  # For status 0/1 rows `time_lower` is the counting-process ENTRY time, not a
-  # censoring bound, so `time_lower >= time` says the subject left the risk set
-  # at or before it entered.  Under "multiphase" such a row contributes
-  # H(time) - H(time_lower), which is zero or negative: it drops out of the
-  # likelihood, or worse ("weibull" reads it as entry at 0, and the other
-  # families ignore time_lower on status 0/1 rows; issue #253).  With
-  # every row like that the objective is unbounded above and the optimizer
-  # returns a large positive "log-likelihood", converged = TRUE and rcond = 0,
-  # with nothing naming the cause.  Reported as issue #136, where the argument
-  # had been supplied in the belief that it was a no-op.
+  # For status 0/1 rows `time_lower` is the counting-process ENTRY time when
+  # 0 < time_lower < time, and every family forms H(time) - H(time_lower)
+  # there (the entry rule lives in each likelihood, e.g.
+  # .hzr_multiphase_entry()).  time_lower == time means no entry: that is the
+  # mixed-interval layout, where only status-2 rows carry a real lower bound.
+  # Multiphase used to read it as an entry at exit, and the objective became
+  # unbounded (+47915.76, converged = TRUE, issue #136/#253).
+  # An entry AFTER exit is a data error.  SAS HAZARD refuses STIME >= TIME
+  # (SETCOE960 in setcoe_obs_loop.c), but its STIME is only ever an entry
+  # time; here time_lower doubles as the interval bound, so only
+  # time_lower > time is refused (issue #253).
   if (!is.null(time_lower)) {
-    degenerate <- status %in% c(0, 1) & time_lower >= time
-    if (any(degenerate)) {
-      warning(sum(degenerate), " of ", n, " row(s) have 'time_lower' >= 'time' ",
-              "with status 0 or 1. On these rows 'time_lower' is not a ",
-              "censoring bound (that role belongs to status 2). ",
-              "dist = \"multiphase\" reads it as the counting-process entry ",
-              "time, so the rows enter the risk set at or after they leave ",
-              "it, their cumulative-hazard term vanishes or turns negative, ",
-              "and the fit is meaningless. dist = \"weibull\" treats them as ",
-              "entering at time 0, and the other families ignore ",
-              "'time_lower' on these rows. For entry at time 0, leave ",
-              "'time_lower' as NULL.",
-              call. = FALSE)
+    bad_entry <- status %in% c(0, 1) & time_lower > time
+    if (any(bad_entry)) {
+      stop(sum(bad_entry), " of ", n, " row(s) with status 0 or 1 have ",
+           "'time_lower' > 'time'. On these rows 'time_lower' is the ",
+           "counting-process entry time, and a subject cannot enter the ",
+           "risk set after it leaves (SAS HAZARD rejects this too). For no ",
+           "entry time, leave 'time_lower' as NULL or set it to 0 or to ",
+           "'time'.",
+           call. = FALSE)
+    }
+    # time_lower == time > 0 reads as "no entry" only in the mixed-interval
+    # layout. Beside genuine entries it is a zero-length counting-process
+    # epoch (hzr_repeated_events() emits them), and "no entry" would charge
+    # the row its full H(0, time], so the mix is refused (r-reviewer, #253).
+    genuine  <- status %in% c(0, 1) & time_lower > 0 & time_lower < time
+    zero_len <- status %in% c(0, 1) & time_lower > 0 & time_lower == time
+    if (any(genuine) && any(zero_len)) {
+      stop(sum(zero_len), " of ", n, " row(s) with status 0 or 1 have ",
+           "'time_lower' equal to 'time' while other rows carry genuine ",
+           "entry times. These are zero-length counting-process epochs, ",
+           "entering and leaving the risk set at the same moment; remove ",
+           "or adjust them before fitting (see ?hzr_repeated_events). SAS ",
+           "HAZARD refuses them too.",
+           call. = FALSE)
     }
   }
 

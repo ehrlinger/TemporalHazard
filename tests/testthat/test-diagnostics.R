@@ -226,16 +226,16 @@ test_that("hzr_gof cumulative hazard is non-negative and increasing", {
   expect_true(all(diff(gof$par_cumhaz) >= -1e-10))
 })
 
-test_that("hzr_gof conservation ratio is reasonable", {
+test_that("hzr_gof conservation ratio is near 1 for a converged Weibull fit", {
   fit <- .fit_avc_weibull()
   gof <- hzr_gof(fit)
 
   s <- attr(gof, "summary")
   ratio <- s$total_expected / s$total_observed
-  # For a reasonable fit, E/O should be in the ballpark (0.5 to 2.0)
-  expect_true(ratio > 0.2 && ratio < 5.0,
-              label = paste("conservation ratio", round(ratio, 3),
-                            "should be between 0.2 and 5.0"))
+  # Expected events are per subject, so a Weibull MLE conserves events up to
+  # how far short of the maximum the optimizer stopped (1.0018 here). The
+  # pre-#254 covariate-mean tally gave 0.82 on this fit.
+  expect_equal(ratio, 1, tolerance = 0.01)
 })
 
 test_that("hzr_gof works with custom time grid", {

@@ -292,42 +292,54 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 
 #' Goodness-of-fit: observed vs. predicted events
 #'
-#' Compare a fitted hazard model against the nonparametric Kaplan-Meier
-#' estimate by computing observed and expected (parametric) event counts
-#' at each distinct event time.  This is the R equivalent of the SAS
-#' `hazplot.sas` macro and implements the conservation-of-events
-#' diagnostic.
+#' Compare a fitted hazard model with the data two ways: its survival curve
+#' against the nonparametric Kaplan-Meier estimate, and the number of events
+#' it expects against the number observed, tallied over follow-up.  This is
+#' the R equivalent of the SAS `hazplot.sas` macro and implements the
+#' conservation-of-events diagnostic.
 #'
-#' At each observed event time the function computes:
+#' At each time point the function computes:
 #' \itemize{
 #'   \item The Kaplan-Meier survival and cumulative hazard.
 #'   \item The parametric survival and cumulative hazard from the fitted
-#'     model (and per-phase components for multiphase models).
-#'   \item Cumulative observed events vs. cumulative expected events
-#'     (the parametric cumulative hazard at each time, times the number
-#'     of observations leaving the risk set then).
+#'     model at the covariate means (and per-phase components for
+#'     multiphase models).  This is the curve to plot against the
+#'     Kaplan-Meier estimate.
+#'   \item Cumulative observed events vs. cumulative expected events.  Each
+#'     patient's expected count is their own cumulative hazard, from their
+#'     own covariates, at the end of their follow-up, less their cumulative
+#'     hazard at entry when the fit is left truncated (`time_lower` on a
+#'     status 0 or 1 row).  These are summed over the patients leaving
+#'     follow-up at each time.
 #'   \item The running residual (expected minus observed).
 #' }
 #'
-#' For an intercept-only model every patient shares one curve, so the
-#' expected count is the sum of each patient's cumulative hazard at their
-#' own exit time.  At the maximum likelihood estimate that sum equals the
-#' number of observed events (the conservation-of-events identity): the
-#' final residual is zero and the printed "Conservation ratio (E/O)" is 1.
+#' The conservation-of-events principle says a model fit by maximum
+#' likelihood predicts as many events as were observed: add up every
+#' patient's cumulative hazard over their follow-up and you get the event
+#' count back.  The final residual is then zero and the printed
+#' "Conservation ratio (E/O)" is 1.  A multiphase fit with Conservation of
+#' Events applied (`control = list(conserve = TRUE)`, the default) meets the
+#' identity by construction.  Weibull and exponential fits meet it at the
+#' exact maximum, so at a converged fit E/O sits close to 1, off only by how
+#' far short of the maximum the optimizer stopped.  The log-logistic and
+#' log-normal models carry no such identity, and for them E/O is a check of
+#' calibration in total.
 #'
-#' A model with covariates is different.  The parametric curve, and so the
-#' expected count, is evaluated at the covariate means, one "mean patient"
-#' standing in for everyone.  The mean patient's cumulative hazard is not
-#' the average of the patients' cumulative hazards, so the printed E/O is
-#' not the conservation-of-events identity and need not be near 1 at a
-#' correct fit.  Read it as a mean-patient check: how closely the curve
-#' for a patient with average covariates follows the whole cohort.
+#' The parametric curve is a different quantity.  For a model with
+#' covariates it belongs to one "mean patient" with average covariates, and
+#' the mean patient's cumulative hazard is not the average of the patients'
+#' cumulative hazards, so `par_cumhaz` does not enter the expected count.
+#' For an intercept-only model every patient shares that curve and the two
+#' agree.
 #'
-#' To check conservation of events for a covariate model, sum each
-#' patient's own cumulative hazard at their follow-up time and compare the
-#' total with the event count.  Pass the covariate columns plus a `time`
-#' column to [predict.hazard()] with `type = "cumulative_hazard"`; the
-#' Examples show how.
+#' For a weighted fit both tallies carry the case weights: observed events
+#' are \eqn{\sum_i w_i d_i} and expected events \eqn{\sum_i w_i H_i}, the
+#' form in which a weighted fit conserves events.  The `n_risk`, `n_event`,
+#' `n_censor` and Kaplan-Meier columns are unweighted.
+#'
+#' With a custom `time_grid`, a patient is counted in both tallies only if
+#' their follow-up time falls on a grid point.
 #'
 #' @param object A fitted `hazard` object (with `fit = TRUE`).
 #' @param time_grid Optional numeric vector of time points at which to
@@ -338,26 +350,32 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #' @return A data frame with one row per time point and columns:
 #' \describe{
 #'   \item{time}{Evaluation time.}
-#'   \item{n_risk}{Number at risk (Kaplan-Meier).}
+#'   \item{n_risk}{Number at risk (Kaplan-Meier). A subject with an entry
+#'     time is at risk only from that time on.}
 #'   \item{n_event}{Number of events at this time.}
 #'   \item{n_censor}{Number censored at this time.}
-#'   \item{km_surv}{Kaplan-Meier survival estimate.}
+#'   \item{km_surv}{Kaplan-Meier survival estimate, using the
+#'     counting-process risk set when the fit has entry times.}
 #'   \item{km_cumhaz}{Kaplan-Meier cumulative hazard
 #'     (\eqn{-\log(\text{km\_surv})}).}
 #'   \item{par_surv}{Parametric survival from the fitted model, at the
-#'     covariate means for a model with covariates.}
+#'     covariate means for a model with covariates.  For plotting against
+#'     \code{km_surv}; not used for \code{cum_expected}.}
 #'   \item{par_cumhaz}{Parametric cumulative hazard, at the covariate
-#'     means for a model with covariates.}
-#'   \item{cum_observed}{Cumulative observed events to this time.}
-#'   \item{cum_expected}{Cumulative expected events: \code{par_cumhaz}
-#'     times the number of observations exiting the risk set, summed to
-#'     this time.}
+#'     means for a model with covariates.  For plotting; not used for
+#'     \code{cum_expected}.}
+#'   \item{cum_observed}{Cumulative observed events to this time, weighted
+#'     by the case weights for a weighted fit.}
+#'   \item{cum_expected}{Cumulative expected events: over the patients
+#'     leaving follow-up by this time, the sum of each patient's own
+#'     cumulative hazard at exit minus that at entry, weighted by the case
+#'     weights for a weighted fit.}
 #'   \item{residual}{Expected minus observed
 #'     (\code{cum_expected - cum_observed}).}
 #' }
 #'
 #' For multiphase models, additional columns are appended for each
-#' phase: \code{par_cumhaz_<phase>}.
+#' phase: \code{par_cumhaz_<phase>}, also at the covariate means.
 #'
 #' An attribute `"summary"` is attached with scalar diagnostics:
 #' total observed events, total expected events, and the final residual.
@@ -376,13 +394,12 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #' gof <- hzr_gof(fit)
 #' print(gof)
 #'
-#' # With covariates, hzr_gof() uses the covariate means, so its E/O is a
-#' # mean-patient check.  The conservation-of-events check sums each
-#' # patient's own cumulative hazard at their follow-up time:
+#' # Expected events are summed per patient, so the total is the sum of
+#' # each patient's own cumulative hazard at their follow-up time:
 #' nd <- avc[, c("age", "mal")]
 #' nd$time <- avc$int_dead
-#' c(expected = sum(predict(fit, newdata = nd, type = "cumulative_hazard")),
-#'   observed = sum(avc$dead))
+#' c(hzr_gof = attr(gof, "summary")$total_expected,
+#'   predict = sum(predict(fit, newdata = nd, type = "cumulative_hazard")))
 #'
 #' # Plot observed vs expected events
 #' if (requireNamespace("ggplot2", quietly = TRUE)) {
@@ -427,7 +444,20 @@ hzr_gof <- function(object, time_grid = NULL) {
   }
 
   # --- Kaplan-Meier via survival::survfit -----------------------------------
-  km_fit <- survival::survfit(survival::Surv(obs_time, obs_status) ~ 1)
+  # Same entry rule as the expected count below: a subject with a genuine
+  # entry time (0 < time_lower < time) is not at risk before it, so the
+  # product-limit estimate and n_risk use the counting-process risk set.
+  km_entry <- object$data$time_lower
+  km_entry <- if (is.null(km_entry)) {
+    rep(0, n_total)
+  } else {
+    ifelse(km_entry > 0 & km_entry < obs_time, km_entry, 0)
+  }
+  km_fit <- if (any(km_entry > 0)) {
+    survival::survfit(survival::Surv(km_entry, obs_time, obs_status) ~ 1)
+  } else {
+    survival::survfit(survival::Surv(obs_time, obs_status) ~ 1)
+  }
 
   # survfit output: time, n.risk, n.event, n.censor, surv
   km_times   <- km_fit$time
@@ -441,7 +471,8 @@ hzr_gof <- function(object, time_grid = NULL) {
     time_grid <- km_times
   }
 
-  # --- Parametric predictions at each time point ----------------------------
+  # --- Parametric curve at each time point (for the KM overlay) -------------
+  # This curve is for plotting only; expected events are per subject below.
   is_multiphase <- (object$spec$dist == "multiphase")
 
   if (!is.null(object$data$x) && ncol(object$data$x) > 0) {
@@ -479,31 +510,79 @@ hzr_gof <- function(object, time_grid = NULL) {
   # Interpolate n.risk, n.event, n.censor at grid times
   # For event counts, sum events at matching times; 0 otherwise
   km_n_risk_grid <- stats::approx(
-    x = c(0, km_times), y = c(n_total, km_n_risk),
+    x = c(0, km_times), y = c(sum(km_entry == 0), km_n_risk),
     xout = time_grid, method = "constant", f = 0, rule = 2
   )$y
+  # A time belongs to the first grid point within this tolerance, or to none.
+  # Counts, observed events and expected events all use this one rule, so for
+  # a custom time_grid the two tallies cover the same subjects.
+  grid_index <- function(t) {
+    match_idx <- which(abs(time_grid - t) < .Machine$double.eps * 100)
+    if (length(match_idx) > 0) match_idx[1] else NA_integer_
+  }
   km_n_event_grid <- rep(0, length(time_grid))
   km_n_censor_grid <- rep(0, length(time_grid))
   for (i in seq_along(km_times)) {
-    match_idx <- which(abs(time_grid - km_times[i]) < .Machine$double.eps * 100)
-    if (length(match_idx) > 0) {
-      km_n_event_grid[match_idx[1]] <- km_n_event[i]
-      km_n_censor_grid[match_idx[1]] <- km_n_censor[i]
+    g <- grid_index(km_times[i])
+    if (!is.na(g)) {
+      km_n_event_grid[g] <- km_n_event[i]
+      km_n_censor_grid[g] <- km_n_censor[i]
     }
   }
 
   # --- Conservation of Events accounting ------------------------------------
-  # At each event time, accumulate:
-  #   cum_observed: running sum of observed events
-  #   cum_expected: running sum of individual cumulative hazards for
-  #                 observations exiting the risk set (events + censored)
+  # Each subject's expected events are its own cumulative hazard at exit, less
+  # its cumulative hazard at the counting-process entry time (time_lower on a
+  # status 0/1 row with 0 < time_lower < time), the quantity a maximum
+  # likelihood fit conserves. The covariate-mean curve above cannot stand in
+  # for it: the mean patient's H is not the mean of the patients' H (#254).
   #
-  # The expected events for observations leaving at time t is:
-  #   (n_event + n_censor) * parametric_cumhaz(t)
-  # This is the SAS hazplot approach: total * _CUMHAZ at that interval.
+  # predict() without newdata evaluates the stored design (x, or the
+  # per-phase x_list for multiphase) at the stored time, for either interface.
+  # Swapping the stored time for the entry time gives H(entry) the same way.
+  obs_weights <- object$data$weights
+  if (is.null(obs_weights)) obs_weights <- rep(1, n_total)
 
-  cum_observed <- cumsum(km_n_event_grid)
-  interval_expected <- (km_n_event_grid + km_n_censor_grid) * par_cumhaz
+  h_exit <- predict(object, type = "cumulative_hazard")
+  if (length(h_exit) != n_total) {
+    stop("predict() returned ", length(h_exit), " cumulative hazards for ",
+         n_total, " subjects.", call. = FALSE)
+  }
+  entry <- object$data$time_lower
+  has_entry <- if (is.null(entry)) {
+    rep(FALSE, n_total)
+  } else {
+    entry > 0 & entry < obs_time
+  }
+  h_entry <- rep(0, n_total)
+  if (any(has_entry)) {
+    at_entry <- object
+    at_entry$data$time <- ifelse(has_entry, entry, obs_time)
+    h_entry[has_entry] <-
+      predict(at_entry, type = "cumulative_hazard")[has_entry]
+  }
+
+  # A weighted fit conserves weighted events, sum(w * H) = sum(w * d), so both
+  # tallies carry the case weights.
+  subject_expected <- obs_weights * (h_exit - h_entry)
+  subject_observed <- obs_weights * obs_status
+
+  uniq_time <- unique(obs_time)
+  subject_grid <- vapply(uniq_time, grid_index,
+                         integer(1))[match(obs_time, uniq_time)]
+  on_grid <- !is.na(subject_grid)
+  interval_observed <- rep(0, length(time_grid))
+  interval_expected <- rep(0, length(time_grid))
+  if (any(on_grid)) {
+    agg <- rowsum(cbind(subject_observed, subject_expected)[on_grid, ,
+                                                            drop = FALSE],
+                  subject_grid[on_grid])
+    g <- as.integer(rownames(agg))
+    interval_observed[g] <- agg[, 1]
+    interval_expected[g] <- agg[, 2]
+  }
+
+  cum_observed <- cumsum(interval_observed)
   cum_expected <- cumsum(interval_expected)
   residual <- cum_expected - cum_observed
 

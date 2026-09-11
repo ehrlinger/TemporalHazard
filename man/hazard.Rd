@@ -58,19 +58,22 @@ Supplying it explicitly is \strong{not} a no-op.
 \item \code{status == 2} (interval-censored): the lower bound of the censoring
 interval, defaulting to \code{time}. Every \code{dist} reads it this way.
 \item \code{status \%in\% c(0, 1)} (right-censored or event): the counting-process
-\strong{entry time}, so the row contributes \code{H(time) - H(time_lower)}.
-Only \code{dist = "weibull"} and \code{dist = "multiphase"} use this role, and
-\code{"weibull"} only where \code{time_lower < time}. The \code{"exponential"},
-\code{"loglogistic"} and \code{"lognormal"} families ignore \code{time_lower} on these
-rows. Left \code{NULL}, the entry time is \strong{\code{0}}, not \code{time}.
+\strong{entry time} when \verb{0 < time_lower < time}, so the row contributes
+\code{H(time) - H(time_lower)}. Every \code{dist} reads it this way. A value of
+\code{0}, or equal to \code{time}, means no entry time, and left \code{NULL} the
+entry time is \strong{\code{0}}.
 \item \code{status == -1} (left-censored): not used; the bound is \code{time_upper}.
 }
 
-Passing \code{time_lower = time} therefore states that every subject entered
-the risk set at the instant it left. \code{hazard()} accepts it with a
-warning. Under \code{"multiphase"} those rows lose their cumulative-hazard
-term and the fit it returns is meaningless; \code{"weibull"} reads them as
-entering at time 0, and the other families ignore the argument there.}
+\code{time_lower = time} on the status 0 and 1 rows is the mixed-interval
+layout: exact and right-censored rows carry their own time, and only
+the status-2 rows carry a real lower bound. A subject cannot enter the
+risk set after the moment it leaves, so \code{hazard()} stops with an error
+when a status 0 or 1 row has \code{time_lower > time}, as SAS HAZARD rejects
+a start time after the exit time. It also stops when rows with
+\verb{time_lower == time > 0} sit beside rows with genuine entry times: in
+counting-process data those are zero-length epochs, which
+\code{\link[=hzr_repeated_events]{hzr_repeated_events()}} can emit and which must be adjusted first.}
 
 \item{time_upper}{Optional numeric upper bound vector for censoring intervals.
 Used when \code{status \%in\% c(-1, 2)}; defaults to \code{time} if NULL.}

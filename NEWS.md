@@ -30,6 +30,28 @@
   not a `PROC HAZARD` refusal, so it is kept apart from the existing
   "selects no phase" stop.
 
+* **An entry time after the exit time is now an error, and
+  `time_lower = time` now means "no entry" in every family** (#253). On a
+  row with status 0 or 1, `time_lower` is the counting-process entry time
+  when `0 < time_lower < time`. `hazard()` used to warn when
+  `time_lower >= time` on such a row and fit anyway, and each family then
+  did something different. Multiphase returned a "log-likelihood" of
+  +47915.76 with `converged = TRUE` on the AVC data. The Weibull read the
+  rows as entering at time 0, and the other three families ignored
+  `time_lower` altogether.
+  - `time_lower > time` on a status 0/1 row now stops, as SAS HAZARD
+    rejects a start time after the exit time (error `SETCOE960`).
+  - `time_lower == time` on a status 0/1 row is read as no entry time, with
+    no warning, in all five families. This is the mixed-interval layout,
+    where exact and right-censored rows carry `time_lower = time` and only
+    interval-censored rows (status 2) carry a real lower bound. It was
+    already the Weibull rule; multiphase used to degenerate on it.
+  - `time_lower = 0` still means no entry time.
+  - Rows with `time_lower == time > 0` beside rows with a genuine entry
+    time now stop. In counting-process data they are zero-length epochs,
+    which `hzr_repeated_events()` can emit; read as "no entry", each would
+    be charged its full cumulative hazard from time 0.
+
 ## New features
 
 * **Every fit now says what it did not do** (#242, following #197). A
@@ -54,6 +76,29 @@
   earlier version prints "not recorded" rather than "none".
 
 ## Bug fixes
+
+* **Exponential, log-logistic and log-normal fits ignored left truncation**
+  (#253). On status 0/1 rows these three families used `time_lower` only as
+  a censoring bound, which applies to status 2, so a left-truncated fit was
+  silently fitted as if every subject had been at risk from time 0. They
+  now subtract the cumulative hazard at entry, H(time) - H(time_lower), as
+  the Weibull and multiphase likelihoods already did. The log-likelihood,
+  its gradient and the closed-form Hessian all carry the entry term.
+
+* **`hzr_gof()` reported a conservation ratio that was not one** (#254).
+  For a model with covariates it computed expected events from a single
+  curve at the covariate means, then printed the total as the
+  "Conservation ratio (E/O)". On the covariate model in the clinical
+  walkthrough vignette that printed 0.606, while the fit conserved events exactly (68.000 expected
+  against 68 observed). Expected events are now summed per subject, each
+  subject's cumulative hazard at exit minus that at entry, so E/O is the
+  conservation-of-events identity. For a weighted fit, both observed and
+  expected events now carry the case weights, since that is what a weighted
+  fit conserves (the sum of w·H equals the sum of w·d). The `par_surv` and
+  `par_cumhaz` columns are still the covariate-mean curve, for plotting
+  against Kaplan-Meier, and the risk-set counts and Kaplan-Meier columns stay
+  unweighted. Unweighted intercept-only fits without entry times are
+  unchanged.
 
 * **A Weibull fit with one masked variance reported the others on the wrong
   scale.** When the Hessian inverse has a non-positive variance, its row and
