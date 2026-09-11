@@ -101,3 +101,27 @@ test_that("hz.ce_cardioversion_repeated.ehb: the result does not depend on input
     expect_equal(canon(run(shuffled)), base, label = paste("shuffle", k))
   }
 })
+
+test_that("hzr_translate_sas() on the cardioversion job builds EVENTS, then stops at line 65", {
+  testthat::skip_on_cran()
+  testthat::skip_if_not_installed("haven")
+  dir <- skip_if_no_maze_datasets()
+  sas <- file.path(dirname(dir), "distributions", "hz.ce_cardioversion_repeated.ehb.sas")
+  testthat::skip_if_not(file.exists(sas), "hz.ce_cardioversion_repeated.ehb.sas not on the volume")
+
+  job <- suppressWarnings(hzr_translate_sas(sas))
+  expect_equal(names(job$calls)[1:5], c("data", "repeated", "rewrite", "status", "fit"))
+
+  bd_card <- .hzr_derive_bd_card(dir)
+  names(bd_card) <- toupper(names(bd_card))
+  env <- new.env(parent = globalenv())
+  env$BD_CARD <- bd_card
+  eval(job$calls$data, env)
+  expect_no_warning(eval(job$calls[["repeated"]], env))
+  # Shape first, then values: the .log's 962 rows, and 357 input columns plus
+  # the function's eight.
+  expect_equal(dim(env$EVENTS), c(962L, 365L))
+  expect_equal(sum(env$EVENTS$CE_CARD == 1), 388L)
+  # The job's line 65 is job code, not macro code; the document stops on it.
+  expect_error(eval(job$calls$rewrite, env), "IV_EVENT=IV_EVENT+0.0001141553", fixed = TRUE)
+})
