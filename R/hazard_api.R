@@ -85,9 +85,10 @@ NULL
 #' `rel_gradient` is `NA` when the test was not applied (the optimizer did
 #' not report convergence) or the gradient cannot be evaluated at the
 #' estimates; `NA` is never reported as a pass. Under Conservation of Events
-#' the test and the continuation use finite differences of the
-#' log-likelihood with the conserved scale re-solved, as SAS/C does, because
-#' the analytic score there omits how that scale moves. A warning is raised only for code 4, the
+#' the analytic score omits how the conserved scale moves, so the test is
+#' computed from finite differences of the log-likelihood with that scale
+#' re-solved, as SAS/C does; the continuation still uses the analytic score,
+#' so a CoE fit can honestly end with the test not met. A warning is raised only for code 4, the
 #' iteration limit (raise `control$maxit`), and code 5, where the
 #' log-likelihood kept rising along some direction and the model may have no
 #' maximum. Codes 2 and 3, where SAS/C prints a caution, are recorded without

@@ -140,14 +140,13 @@ test_that("rel_gradient is NA, never a pass, where the gradient cannot be truste
                                         nan_score$polish_code))
 })
 
-test_that("with an inexact score the test and the polish use the objective's own gradient", {
+test_that("with an inexact score the recorded test uses the objective's own gradient", {
   # Conservation of Events hands .hzr_optim_generic() the partial score at the
   # conserved theta, which omits how the conserved scale moves: a gradient
   # that is not the objective's. Model that with a score that is wrong in a
   # known way: a hundredth of the truth in its first component, which is the
   # one that sets SAS's maximum near this optimum, and right in its second.
-  # Judged by that score, a point can pass SAS's test while the objective's
-  # true gradient fails it.
+  # The continuation still follows that score; the recorded test must not.
   biased <- function(theta, ...) rosen_score(theta) * c(0.01, 1)
   rel_biased <- function(theta) {
     max(abs(biased(theta)) * pmax(abs(theta), 1)) /
@@ -162,11 +161,43 @@ test_that("with an inexact score the test and the polish use the objective's own
   # assertion can tell them apart. If this fails the fixture no longer
   # discriminates and must change.
   expect_gt(abs(rel_biased(fit$par) / rel_gradient(fit$par) - 1), 0.1)
-  # The returned point passes SAS's test under the true gradient...
-  expect_lte(rel_gradient(fit$par), gradtl)
-  # ...and the recorded statistic is that true one, to finite-difference
+  # The recorded statistic is the objective's own, to finite-difference
   # accuracy, not the biased score's.
   expect_lt(abs(fit$rel_gradient / rel_gradient(fit$par) - 1), 1e-3)
+})
+
+test_that("multiphase passes gradient_exact = FALSE exactly when CoE is applied", {
+  # The flag is set at .hzr_optim_multiphase()'s call; spy on it there, so
+  # reverting that one line fails this test.
+  set.seed(3)
+  n <- 300
+  tt <- c(stats::rexp(n / 2, 3), stats::rexp(n / 2, 0.15))
+  cens <- stats::runif(n, 1, 15)
+  d <- data.frame(time = pmin(tt, cens), status = as.integer(tt <= cens))
+  real <- .hzr_optim_generic
+  seen <- logical(0)
+  testthat::local_mocked_bindings(
+    .hzr_optim_generic = function(..., gradient_exact = TRUE) {
+      seen <<- c(seen, gradient_exact)
+      real(..., gradient_exact = gradient_exact)
+    }
+  )
+  fit_with <- function(conserve) {
+    seen <<- logical(0)
+    f <- suppressWarnings(hazard(
+      survival::Surv(time, status) ~ 1, data = d, dist = "multiphase",
+      phases = list(early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 0),
+                    constant = hzr_phase("constant")),
+      fit = TRUE, control = list(n_starts = 1, conserve = conserve)
+    ))
+    list(applied = isTRUE(f$spec$control$conserve_applied), seen = seen)
+  }
+  on <- fit_with(TRUE)
+  off <- fit_with(FALSE)
+  expect_true(on$applied)
+  expect_false(off$applied)
+  expect_true(length(on$seen) > 0 && !any(on$seen))
+  expect_true(length(off$seen) > 0 && all(off$seen))
 })
 
 test_that("the bounded (L-BFGS-B) path is not polished", {

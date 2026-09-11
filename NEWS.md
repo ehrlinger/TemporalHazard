@@ -107,8 +107,9 @@
   `nlm()`'s termination code in `fit$fit$polish_code`, and `print()` and
   `summary()` show it. Under Conservation of Events the analytic score omits
   how the conserved scale moves with the other parameters, so there the test
-  and the continuation use finite differences of the log-likelihood, as
-  SAS/C does. Only SAS/C's two hard failures warn: code 4, the
+  is computed from finite differences of the log-likelihood, as SAS/C does.
+  The continuation keeps the analytic score, so a CoE fit can honestly end
+  with the test not met. Only SAS/C's two hard failures warn: code 4, the
   iteration limit, and code 5, where the likelihood kept rising along some
   direction and may have no maximum. Codes 2 and 3, where SAS/C prints a
   caution and retries, are recorded without a warning. The test is relative

@@ -54,9 +54,11 @@ NULL
 #'   the gradient of the objective being maximised. Conservation of Events
 #'   passes `FALSE`: its `gradient_fn` is the partial score at the conserved
 #'   theta, which leaves out how the conserved `log_mu` moves with the free
-#'   parameters. SAS/C's acceptance test and the `nlm()` continuation then use
-#'   finite differences of the objective itself, as SAS/C does
-#'   (`setobj.c` re-solves the scale at every numerical-derivative step).
+#'   parameters. SAS/C's acceptance test is then computed from finite
+#'   differences of the objective itself, with the scale re-solved at every
+#'   step as SAS/C does (`setobj.c`). The `nlm()` continuation keeps the
+#'   analytic score: with finite differences it walks onto the CoE solve's
+#'   discontinuity where no events are left to conserve.
 #'
 #' @return List with par, value (log-likelihood), convergence, counts, message,
 #'   hessian, vcov. Includes \code{se_unavailable_reason}.
@@ -168,12 +170,18 @@ NULL
   # there would read as a pass; so this calls gradient_fn itself and refuses
   # the 1e10 sentinel, a non-finite point, and any non-finite component.
   # Central differences of the objective, for when gradient_fn is not its
-  # gradient (gradient_exact = FALSE).
+  # gradient (gradient_exact = FALSE). A side that lands on the 1e10 clamp
+  # would turn the difference into 1e10 / (2h) -- a number that looks like a
+  # measured gradient and is not -- so such a component is NA, and
+  # rel_gradient() then reports NA rather than a fabricated value.
   fd_gradient <- function(theta) {
     h <- .Machine$double.eps^(1 / 3) * pmax(abs(theta), 1)
     vapply(seq_along(theta), function(i) {
       e <- replace(numeric(length(theta)), i, h[i])
-      (objective(theta + e) - objective(theta - e)) / (2 * h[i])
+      up <- objective(theta + e)
+      down <- objective(theta - e)
+      if (up >= 1e10 || down >= 1e10) return(NA_real_)
+      (up - down) / (2 * h[i])
     }, numeric(1))
   }
   rel_gradient <- function(theta, value) {
@@ -204,7 +212,7 @@ NULL
     if (is.finite(rel_grad) && rel_grad > gradtl) {
       f_nlm <- function(theta) {
         v <- objective(theta)
-        if (gradient_exact) attr(v, "gradient") <- gradient(theta)
+        attr(v, "gradient") <- gradient(theta)
         v
       }
       polish <- tryCatch(
