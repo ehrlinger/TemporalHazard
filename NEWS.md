@@ -53,6 +53,16 @@
   `NA` exactly when `"weak_direction_check"` is listed. An object saved by an
   earlier version prints "not recorded" rather than "none".
 
+* **`hzr_translate_sas()` translates a `%repeat` call** into
+  `hzr_repeated_events()` (#241), renaming its outputs to the names the job
+  gives them so the job's fit reads them. The macro's input is still the
+  reader's to supply. Any step between the macro and the fit that names the
+  macro's output, or uses a macro variable that might, stops the document
+  with the step quoted, rather than fitting data the job changed; a plain
+  `PROC SORT` is the one step let through. A step that changes the output
+  without naming it, such as a macro that writes it internally, is not
+  detected.
+
 ## Bug fixes
 
 * **The multiphase gradient and Hessian are now right when an early phase's
