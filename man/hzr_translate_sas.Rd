@@ -79,6 +79,19 @@ confidence limits unless the SAS job says \code{NOCL}, so such a job stops at
 its \code{predict()} chunks.
 }
 
+\section{Repeated events}{
+
+A job that builds its fit input with the SAS macro \verb{\%repeat} has that call
+translated to \code{\link[=hzr_repeated_events]{hzr_repeated_events()}}. The emitted chunk renames the
+function's output columns to the names the job gives them, upper-cased like
+every name the translator emits, so the fit reads them. An input column named
+like one of those outputs is dropped first, with a warning, because the macro
+overwrites it. The macro's input is built by the job's own DATA steps, which
+are not translated, so the document stops until that input is assigned. A DATA
+step that changes the macro's output before the fit is not translated either.
+Its chunk stops and quotes the step, for the reader to replace with R code.
+}
+
 \section{Comparing a translated fit against a SAS listing}{
 
 The emitted \code{hzr_phase("g3", ...)} call carries the \code{TAU}, \code{GAMMA},

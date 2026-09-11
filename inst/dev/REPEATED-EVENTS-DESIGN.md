@@ -322,8 +322,7 @@ manual from a clean `git archive` export of a **committed** tree.
 ## Out of scope
 
 - Any change to the likelihood, the optimizer, or the existing `hzr_*` surface.
-- Wiring `hzr_repeated_events()` into `hzr_translate_sas()`. The translator will need to
-  recognise a `%repeat` call and emit this function, but that is a separate change with
-  its own parity evidence.
+- Wiring `hzr_repeated_events()` into `hzr_translate_sas()`. Done separately; see
+  `SAS-JOB-TRANSLATOR-DESIGN.md` §5.5.
 - Running the cardioversion fit itself and reproducing LL -267.885. That is the payoff,
   and it is the *next* piece of work; this spec covers building the input it needs.

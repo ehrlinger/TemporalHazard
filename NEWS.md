@@ -53,6 +53,13 @@
   `NA` exactly when `"weak_direction_check"` is listed. An object saved by an
   earlier version prints "not recorded" rather than "none".
 
+* **`hzr_translate_sas()` translates a `%repeat` call** into
+  `hzr_repeated_events()` (#241), renaming its outputs to the names the job
+  gives them so the job's fit reads them. The macro's input is still the
+  reader's to supply. A DATA step that changes the macro's output before the
+  fit now stops the document with the step quoted; the translation no longer
+  fits data that SAS did not fit.
+
 # TemporalHazard 1.2.10
 
 ## New features

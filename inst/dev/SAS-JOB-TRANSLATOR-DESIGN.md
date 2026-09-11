@@ -316,9 +316,9 @@ Designed 2026-09-10, branch `feat/translate-repeat`. `hzr_repeated_events()` (#2
 reimplements the macro; see `inst/dev/REPEATED-EVENTS-DESIGN.md`. This section covers only
 how a job's `%repeat(...)` call reaches it.
 
-**Evidence.** A scan of `/Volumes/qhsstudies` on 2026-09-10 found **at least 526** `.sas`
-files calling `%repeat(`, 138 of them `hz.*` or `tp.hz.*` HAZARD jobs. The scan was still
-running when this was written, so the count is a floor. The public corpus has none. Three
+**Evidence.** A scan of `/Volumes/qhsstudies` on 2026-09-10 found **at least 1684** `.sas`
+files calling `%repeat(`, 384 of them `hz.*` or `tp.hz.*` HAZARD jobs. The scan was still
+running when these counts were read (2026-09-10 22:20), so they are floors. The public corpus has none. Three
 consulting templates recur, eight copies each; among the copies checked, seven of each are
 identical and one differs:
 
