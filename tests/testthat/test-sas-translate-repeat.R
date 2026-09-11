@@ -112,7 +112,8 @@ test_that("uncallable %repeat arguments are refused, each with its reason", {
     list("event=x, rcensor=x", "two outputs are both named X"),
     list("bd_card", "`BD_CARD` is not a KEY=VALUE argument"),
     list("in=bd_card, event_no=number", "output NUMBER has the name of a %repeat loop counter"),
-    list("in=bd_card, id=a, id=b", "`ID=` is given more than once")
+    list("in=bd_card, id=a, id=b", "`ID=` is given more than once"),
+    list("in=bd_card, iv_start=lag_iv", "output LAG_IV has the name of a %repeat loop counter")
   )
   for (cs in cases) {
     r <- parse_repeat(cs[[1]])
@@ -232,7 +233,12 @@ test_that("the rewrite scan fails closed: any step naming OUT= stops, bar a plai
     "proc sql; create table work.events(drop=x) as select ccfid from events; quit;",
     "proc append base=events data=extra; run;",
     "proc datasets; modify events; rename a=b; quit;",
-    "%vars(in=bd, out=events);"
+    "%vars(in=bd, out=events);",
+    "proc sort data=events; by ccfid; where iv_seg > 0;",
+    "proc sort data=events; by ccfid; %fix(data=events);",
+    "data other; set events; x=1; %fix(data=events);",
+    "data &dsn; set &dsn; x=1;",
+    "proc sort data=&dsn nodupkey; by ccfid;"
   )
   for (s in stops) {
     job <- translate_lines(c(repeat_call, s, hz_block))
@@ -267,6 +273,17 @@ test_that("a fit whose block encloses the %repeat call cannot render a fit", {
   env$BD_CARD <- bd_card()
   expect_error(for (nm in names(job$calls)) eval(job$calls[[nm]], env), "CE_CARD")
   expect_false(exists("fit", envir = env, inherits = FALSE))
+})
+
+test_that("a step between chained %repeat calls that changes the first OUT= stops", {
+  first <- "%repeat(in=bd_card, out=ev1, id=ccfid, eventype=ce_card);"
+  second <- "%repeat(in=ev1, out=events, id=ccfid, eventype=ce_card);"
+  job <- translate_lines(c(first, "data ev1; set ev1; iv_event=iv_event+1;", second, hz_block))
+  expect_equal(names(job$calls), c("data", "repeated", "rewrite", "repeated_2", "status", "fit"))
+  expect_true("EV1 changed after %repeat" %in% job$untranslated$construct)
+  # Without a step between them, the chain emits no stop.
+  job <- translate_lines(c(first, second, hz_block))
+  expect_equal(names(job$calls), c("data", "repeated", "repeated_2", "status", "fit"))
 })
 
 test_that("a WORK. libref on IN= and OUT= names the same dataset as the bare name", {

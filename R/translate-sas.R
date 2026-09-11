@@ -193,6 +193,16 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
   for (b in blocks) {
     if (identical(b$proc, "REPEAT")) {
       r <- .hzr_parse_repeat(b)
+      # A %repeat whose IN= is an earlier %repeat's OUT= reads that dataset as
+      # the job left it, so a step between the two that changes it is the same
+      # untranslated rewrite a fit would read; stop on it here, ahead of the
+      # second macro's chunk.
+      if (!is.null(r$in_name) && !is.null(repeat_scan[[r$in_name]])) {
+        rs <- .hzr_rewrite_stops(substring(txt, repeat_scan[[r$in_name]] + 1L, b$start - 1L), r$in_name)
+        for (cl in rs$calls) calls[[.hzr_next_call_name(calls, "rewrite")]] <- cl
+        untr <- rbind(untr, rs$untranslated)
+        repeat_scan[[r$in_name]] <- b$end
+      }
       # The macro's input is built by the job's own DATA steps, which this
       # translator does not translate: the same loud guard a PROC HAZARD
       # DATA= gets, once per name.
@@ -226,18 +236,9 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
       # last one ended, so one rewrite stops once however many fits follow.
       dname <- if (is.null(r$call[["data"]])) NULL else as.character(r$call[["data"]])
       if (!is.null(dname) && !is.null(repeat_scan[[dname]])) {
-        seg <- substring(txt, repeat_scan[[dname]] + 1L, b$start - 1L)
-        for (step in .hzr_repeat_rewrites(seg, dname)) {
-          calls[[.hzr_next_call_name(calls, "rewrite")]] <- bquote(stop(.(paste0(
-            "This job may change ", dname, " after %repeat, in a SAS step that ",
-            "hzr_translate_sas() does not translate: ", step, " Replace this chunk ",
-            "with R code that makes the same change to ", dname, ", or delete it if ",
-            "the step leaves ", dname, " unchanged."
-          ))))
-          untr <- rbind(untr, .hzr_untranslated_frame(
-            NA_integer_, paste0(dname, " changed after %repeat"), step
-          ))
-        }
+        rs <- .hzr_rewrite_stops(substring(txt, repeat_scan[[dname]] + 1L, b$start - 1L), dname)
+        for (cl in rs$calls) calls[[.hzr_next_call_name(calls, "rewrite")]] <- cl
+        untr <- rbind(untr, rs$untranslated)
         repeat_scan[[dname]] <- b$end
       }
 

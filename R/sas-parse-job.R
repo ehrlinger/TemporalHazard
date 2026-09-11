@@ -1314,8 +1314,9 @@
     args[[key]] <- val
   }
 
-  # A WORK. libref names the same dataset as the bare name, which is how the
-  # job's own PROC HAZARD DATA= and the rewrite scan refer to it.
+  # A WORK. libref names the same dataset as the bare name, and the rewrite
+  # scan compares bare names. A fit written DATA=WORK.X keeps its libref, so it
+  # is not matched to this OUT= and gets the ordinary "Assign" guard instead.
   args[c("IN", "OUT")] <- sub("^WORK[.]", "", args[c("IN", "OUT")])
 
   inputs <- unname(args[c("ID", "EVENTYPE", "IV_EVENT", "IV_END")])
@@ -1389,13 +1390,17 @@
 #' the same dataset as the bare name. Each hit is returned quoted: the step's
 #' statements up to the next `DATA`, `PROC`, `%HAZ`, `%REPEAT`, `RUN` or `QUIT`.
 #' A step that changes `out` without naming it (a macro that writes it
-#' internally) cannot be seen from here.
+#' internally) cannot be seen from here. Any statement starting with `%` (a
+#' macro call) is a step of its own, so it cannot hide inside an exempt one.
+#' A sort counts as plain only when every statement after its PROC line is a
+#' `BY`: a `WHERE` statement subsets the data. A step that uses a macro
+#' variable (`&name`) is a hit, because the variable could name `out`.
 #' @noRd
 .hzr_repeat_rewrites <- function(segment, out) {
   out <- sub("^WORK[.]", "", out)
   stmts <- trimws(strsplit(segment, ";", fixed = TRUE)[[1L]])
   stmts <- stmts[nzchar(stmts)]
-  boundary <- "^(DATA |PROC |%HAZ|%REPEAT|RUN$|QUIT$)"
+  boundary <- "^(DATA |PROC |%|RUN$|QUIT$)"
   names_in <- function(s) sub("^WORK[.]", "", strsplit(s, "[^A-Z0-9_.]+")[[1L]])
   plain_sort <- paste0("PROC SORT DATA=", c(out, paste0("WORK.", out)))
   hits <- character(0)
@@ -1410,13 +1415,41 @@
     writes <- if (startsWith(s, "DATA ")) {
       targets <- strsplit(trimws(gsub("[(][^)]*[)]", " ", substring(s, 6L))), " +")[[1L]]
       out %in% sub("^WORK[.]", "", targets)
-    } else if (s %in% plain_sort) {
+    } else if (s %in% plain_sort && all(grepl("^BY ", step[-1L]))) {
       FALSE
     } else {
       any(vapply(step, function(x) out %in% names_in(x), logical(1L)))
     }
+    # A macro variable (&DSN) could name OUT; its value is not known here, so
+    # a step that uses one is treated as naming it -- the same call
+    # .hzr_parse_repeat() makes when it refuses IN=&DSN.
+    writes <- writes || any(grepl("&[A-Z_]", step))
     if (writes) hits <- c(hits, paste0(paste(step, collapse = "; "), ";"))
     i <- last + 1L
   }
   hits
+}
+
+#' The stop() chunks and $untranslated rows for steps that may change `out`.
+#'
+#' One chunk per step `.hzr_repeat_rewrites()` finds in `segment`, each quoting
+#' the step and telling the reader to replace it with R code, or delete it if
+#' the step leaves `out` unchanged.
+#' @noRd
+.hzr_rewrite_stops <- function(segment, out) {
+  steps <- .hzr_repeat_rewrites(segment, out)
+  stops <- lapply(steps, function(step) {
+    bquote(stop(.(paste0(
+      "This job may change ", out, " after %repeat, in a SAS step that ",
+      "hzr_translate_sas() does not translate: ", step, " Replace this chunk ",
+      "with R code that makes the same change to ", out, ", or delete it if ",
+      "the step leaves ", out, " unchanged."
+    ))))
+  })
+  list(
+    calls = stops,
+    untranslated = .hzr_untranslated_frame(
+      rep(NA_integer_, length(steps)), rep(paste0(out, " changed after %repeat"), length(steps)), steps
+    )
+  )
 }
