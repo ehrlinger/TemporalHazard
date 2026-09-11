@@ -21,7 +21,10 @@ NULL
 #' Computes the six unique mixed second partial derivatives of
 #' \eqn{\Phi_j(t)} (cumulative shape) and \eqn{\phi_j(t)} (instantaneous
 #' shape) with respect to the internal shape parameters
-#' \eqn{\{log\_t\_half, \nu, m\}} via second-order central differences.
+#' \eqn{\{log\_t\_half, \nu, m\}} via second-order central differences,
+#' except where a stencil would cross into an undefined region or reach
+#' across \eqn{m = 0}: there it steps one-sided, forward from \eqn{m \ge 0}
+#' and backward from \eqn{m < 0}.
 #'
 #' This is the second-derivative analogue of \code{.hzr_phase_derivatives()}.
 #'
@@ -61,7 +64,9 @@ NULL
   # they only stop the two branches being mixed. The two conditions hold
   # together only for m just below 0 with nu in [0, h), where the nu / m
   # cross term steps one-sided in both.
-  m_dir <- if (m >= 0 && m < h) 1 else if (m < 0 && m > -h) -1 else 0
+  # Inclusive below, as in the gradient (`m + h_m >= 0`): at m = -h exactly a
+  # central stencil would put m + h on 0 itself, the m >= 0 family.
+  m_dir <- if (m >= 0 && m < h) 1 else if (m < 0 && m >= -h) -1 else 0
   m_boundary  <- m_dir != 0
   nu_boundary <- m  < 0 && abs(nu) < h
 

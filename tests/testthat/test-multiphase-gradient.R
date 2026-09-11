@@ -441,6 +441,45 @@ test_that("Hessian second derivatives step backward, not across, below m = 0", {
   expect_true(within(sd2$d2Phi_dlog_thalf_dm, ref_tm),
               label = "d2Phi/dlog_thalf dm")
   expect_true(within(sd2$d2Phi_dnu_dm, ref_nm), label = "d2Phi/dnu dm")
+
+  # The same three terms for phi, which for the cdf type is the density g.
+  g <- function(th, n, mm) hzr_decompos(t_grid, th, n, mm)$g
+  gref_mm <- (g(t_half, nu, m + hm) - 2 * g(t_half, nu, m) +
+                g(t_half, nu, m - hm)) / hm^2
+  gref_tm <- (g(t_half * exp(ht), nu, m + hm) - g(t_half * exp(ht), nu, m - hm) -
+                g(t_half * exp(-ht), nu, m + hm) +
+                g(t_half * exp(-ht), nu, m - hm)) / (4 * ht * hm)
+  gref_nm <- (g(t_half, nu + hn, m + hm) - g(t_half, nu + hn, m - hm) -
+                g(t_half, nu - hn, m + hm) + g(t_half, nu - hn, m - hm)) /
+    (4 * hn * hm)
+  expect_true(within(sd2$d2phi_dm2, gref_mm), label = "d2phi/dm2")
+  expect_true(within(sd2$d2phi_dlog_thalf_dm, gref_tm),
+              label = "d2phi/dlog_thalf dm")
+  expect_true(within(sd2$d2phi_dnu_dm, gref_nm), label = "d2phi/dnu dm")
+})
+
+test_that("the Hessian's m stencil never reaches 0 from below, m = -h included", {
+  # At m = -h exactly a central stencil puts m + h on 0 itself, which belongs
+  # to the m >= 0 family. Record every m the Hessian evaluates Phi at and
+  # require all of them below 0. (A value comparison cannot see this: at
+  # nu = 2 both stencils are accurate there.)
+  h <- .hzr_h2
+  real <- .hzr_phase_derivatives
+  seen <- numeric(0)
+  testthat::local_mocked_bindings(
+    .hzr_phase_derivatives = function(time, t_half, nu, m, type) {
+      seen <<- c(seen, m)
+      real(time, t_half = t_half, nu = nu, m = m, type = type)
+    }
+  )
+  for (m in c(-h, -h / 2, -2 * h)) {
+    seen <- numeric(0)
+    .hzr_phase_second_derivatives(c(0.3, 2), t_half = 0.28, nu = 2, m = m,
+                                  type = "cdf")
+    expect_true(length(seen) > 0 && all(seen < 0),
+                label = sprintf("stencil points below 0 at m = %g; max %g",
+                                m, max(seen)))
+  }
 })
 
 test_that("Hessian second derivatives are finite with m and nu both at a boundary", {

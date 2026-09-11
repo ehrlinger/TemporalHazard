@@ -51,8 +51,9 @@ Returns a zero vector if any component is non-finite (guards optimizer).
 }
 \description{
 Computes the score vector \eqn{d\ell / d\theta} using analytic chain-rule
-formulas for \code{log_mu} and \code{beta} parameters, and central-difference
+formulas for \code{log_mu} and \code{beta} parameters, and finite-difference
 derivatives (via \code{.hzr_phase_derivatives()}) for shape parameters
-(\code{log_t_half}, \code{nu}, \code{m}).
+(\code{log_t_half}, \code{nu}, \code{m}): central, except that the \code{m} stencil stays on
+the side of \code{m} near \code{m = 0}, where the phase family has a cusp.
 }
 \keyword{internal}
