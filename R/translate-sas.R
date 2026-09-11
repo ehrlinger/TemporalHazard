@@ -113,13 +113,15 @@
 #' every name the translator emits, so the fit reads them. An input column named
 #' like one of those outputs is dropped first, with a warning, because the macro
 #' overwrites it. The macro's input is built by the job's own DATA steps, which
-#' are not translated, so the document stops until that input is assigned. Any
-#' step between the macro and the fit that names the macro's output is not
-#' translated either, apart from a plain `PROC SORT`, which only reorders rows.
-#' Its chunk stops and quotes the step, for the reader to replace with R code or
-#' to delete if the step leaves the output unchanged. A step that changes the
-#' output without naming it, such as a macro that writes it internally, is not
-#' detected.
+#' are not translated, so the document stops until that input is assigned.
+#' Any step between the macro and the fit that names the macro's output, or
+#' uses a macro variable that might, is not translated either; a plain
+#' `PROC SORT` that only reorders rows is the one step let through. Its chunk
+#' stops and quotes the step, for the reader to replace with R code or to delete
+#' if the step leaves the output unchanged. The same holds between two
+#' `%repeat` calls when the second reads the first's output. A step that changes
+#' the output without naming it, such as a macro that writes it internally, is
+#' not detected.
 #'
 #' @section Comparing a translated fit against a SAS listing:
 #' The emitted `hzr_phase("g3", ...)` call carries the `TAU`, `GAMMA`,

@@ -346,7 +346,8 @@ as not a plain name either way. It then fills the macro's twelve defaults, upper
 `WORK.` libref on `IN=` or `OUT=` is stripped, because it names the same dataset as the bare
 name. It returns the same
 shape as `.hzr_parse_hazard()` (`call`, `untranslated`, `tokens_seen`, `tokens_mapped`)
-plus `in` and `out`. Each argument counts as one token seen and, if accepted, one mapped.
+plus `in_name` and `out_name` (`in` is reserved in R). Each argument counts as one token seen
+and, if accepted, one mapped.
 
 These are refused at translate time. Each becomes a `stop()` chunk in place of the call,
 plus an `$untranslated` row:
@@ -422,7 +423,16 @@ cannot change the likelihood. A `WORK.` prefix names the same dataset as the bar
 `QUIT` joins `DATA`, `PROC`, `%HAZ`, `%REPEAT` and `RUN` as a statement boundary. The
 r-reviewer found the earlier enumerated detector (a `DATA` statement naming `OUT`, or `CREATE
 TABLE OUT`) missed `WORK.EVENTS`, `NODUPKEY`, SQL `DELETE`/`UPDATE`/`INSERT`, `PROC APPEND`
-and `PROC DATASETS`; the maintainer chose to fail closed on 2026-09-11. Each hit emits one
+and `PROC DATASETS`; the maintainer chose to fail closed on 2026-09-11. The final whole-branch
+review, 2026-09-11, found three more gaps and the maintainer closed them the same way: any
+statement starting with `%` (a macro call) is now a boundary of its own, so it cannot hide
+inside an exempt sort or a read-only `DATA` step; a sort counts as plain only when every
+statement after its `PROC SORT` line is a `BY` clause, because a `WHERE` statement subsets the
+data; and a step that uses a macro variable (`&name`) is a hit, since the variable's value is
+not known here and could name `OUT`. The scan also now runs between two chained `%repeat`
+calls, when the second's `IN=` is the first's `OUT=`: a step in between that changes the first
+macro's output is the same untranslated rewrite a fit would read, so it stops there too, ahead
+of the second macro's chunk. Each hit emits one
 `stop()` chunk, directly before the first such fit that follows it; a later fit reading the
 same `OUT=` gets no second copy, since the first stop already halts the render. The chunk
 quotes the step: the normalised text, cut at the next `DATA`, `PROC`, `%HAZ`, `%REPEAT`,
@@ -440,6 +450,10 @@ A wrapper macro that encloses both the `%repeat` call and `PROC HAZARD` needs no
 own. The fit's parse reads the PROC options from the block's first statement, which is then
 the macro call, so `DATA=` is lost and the document stops at its status chunk before any fit
 exists (the r-reviewer's Low 4, found unreachable on 2026-09-11 and pinned by a test).
+
+**Known limit (M2).** A step that changes `OUT=` after the fit but before a `PROC HAZPRED`
+reading it is not scanned. §5.5 covers fits only, and a prediction grid is rarely the macro's
+output.
 
 #### The input dataset
 
@@ -492,12 +506,17 @@ vectors derived by hand from the macro, never from the function:
 8. `BD_CARD` carrying a `NUMBER` column: expect a warning naming it, and `EVENT_NO` exactly
    equal to the hand-derived vector. A negative control with no such column expects no
    such warning.
-9. The rewrite scan fails closed: 9 stop forms (`WORK.EVENTS`, `NODUPKEY`, a sort's `OUT=`
-   or `WHERE=`, SQL `DELETE`/`CREATE TABLE`, `PROC APPEND`, `PROC DATASETS`, a macro call)
-   and 5 pass forms (`DATA OTHER`, `DATA _NULL_`, a plain `PROC SORT` bare or `WORK.`-
+9. The rewrite scan fails closed: 14 stop forms (`WORK.EVENTS`, `NODUPKEY`, a sort's `OUT=`
+   or `WHERE=`, SQL `DELETE`/`CREATE TABLE`, `PROC APPEND`, `PROC DATASETS`, a macro call, a
+   sort with a trailing `WHERE` statement, a plain sort followed by a macro call, a `DATA`
+   step followed by a macro call, and a `&name` macro variable on both a `DATA` step and a
+   sort) and 5 pass forms (`DATA OTHER`, `DATA _NULL_`, a plain `PROC SORT` bare or `WORK.`-
    prefixed, a sort on an unrelated dataset).
 10. A wrapper-enclosed job cannot render a fit: the fit's parsed `data =` argument is absent,
     and evaluating the job's calls in order errors before a `fit` object is ever assigned.
+11. A step between two chained `%repeat` calls that changes the first `OUT=` stops before the
+    second macro's chunk, quoting the step and naming the first `OUT=` in `$untranslated`; the
+    same two calls with no step in between emit no stop.
 
 A volume-gated case in `test-repeated-events-parity.R` translates the real cardioversion
 `.sas` file. It binds `BD_CARD` from `.hzr_derive_bd_card()`, with names upper-cased, and
