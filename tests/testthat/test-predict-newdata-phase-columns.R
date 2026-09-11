@@ -123,7 +123,7 @@ test_that("a newdata missing a global covariate is an error naming it", {
   expect_error(
     predict(fit, newdata = data.frame(time = 1, z = 1, g = "a"),
             type = "cumulative_hazard"),
-    "missing the global covariate\\(s\\) 'x'"
+    "lacks the covariate column\\(s\\) 'x'"
   )
 })
 
@@ -162,8 +162,10 @@ test_that("data-dependent terms keep the fit's parameters at newdata", {
 test_that("a variable from the formula's environment is not a newdata column", {
   cutoff <- 0.5
   obj <- .pn_unfitted(survival::Surv(time, status) ~ I(x > cutoff))
+  # 0.4 and 0.6 straddle only a cutoff in [0.4, 0.6), so this shows the
+  # variable's value was used, not merely that it was found.
   got <- TemporalHazard:::.hzr_global_design(
-    obj, data.frame(time = 1, x = c(0, 1), z = 0))
+    obj, data.frame(time = 1, x = c(0.4, 0.6), z = 0))
   expect_equal(unname(got[, 1]), c(0, 1))
 })
 

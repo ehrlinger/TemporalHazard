@@ -87,12 +87,61 @@ test_that("a missing covariate column is an error naming it", {
   expect_error(
     predict(obj, newdata = data.frame(time = 1, age = 60),
             type = "cumulative_hazard"),
-    "missing the global covariate\\(s\\) 'mal'"
+    "lacks the covariate column\\(s\\) 'mal'"
   )
   expect_error(
     predict(obj, newdata = data.frame(age = 60), type = "linear_predictor"),
-    "missing the global covariate\\(s\\) 'mal'"
+    "lacks the covariate column\\(s\\) 'mal'"
   )
+})
+
+test_that("a missing column is an error even when a same-named object exists", {
+  # The formula's environment holds a `mal`.  A newdata without the column
+  # must not pick that value up: it is a covariate of the fit's data, not a
+  # constant of the formula.
+  mal <- 0
+  obj <- hazard(survival::Surv(int_dead, dead) ~ age + mal, data = .sd_avc,
+                dist = "weibull", theta = .sd_theta$weibull)
+  expect_error(
+    predict(obj, newdata = data.frame(time = 1, age = 60),
+            type = "cumulative_hazard"),
+    "lacks the covariate column\\(s\\) 'mal'"
+  )
+})
+
+test_that("design-column newdata is taken by name, as the diagnostics pass it", {
+  # hzr_deciles() and hzr_gof() build newdata from the fitted design matrix,
+  # so a factor arrives as `grpyoung` and a transform as `log(age)`: design
+  # columns, not the formula's variables.
+  th <- c(mu = 0.01, nu = 0.5, b1 = 0.4, b2 = 0.7)
+  for (f in list(survival::Surv(int_dead, dead) ~ log(age) + grp,
+                 survival::Surv(int_dead, dead) ~ grp + log(age))) {
+    obj <- hazard(f, data = .sd_avc, dist = "weibull", theta = th)
+    x <- obj$data$x
+    nd <- as.data.frame(x[c(3, 1, 2), , drop = FALSE])
+    nd$time <- 2
+    nd <- nd[, rev(names(nd))]
+    want <- .sd_cumhaz("weibull", th, 2,
+                       eta = as.numeric(x[c(3, 1, 2), ] %*% th[3:4]))
+    expect_equal(predict(obj, newdata = nd, type = "cumulative_hazard"),
+                 want, tolerance = 1e-12)
+  }
+})
+
+test_that("hzr_deciles() and hzr_gof() run on factor and transformed fits", {
+  for (f in list(survival::Surv(int_dead, dead) ~ age + grp,
+                 survival::Surv(int_dead, dead) ~ log(age) + mal)) {
+    obj <- hazard(f, data = .sd_avc, dist = "weibull",
+                  theta = c(mu = 0.01, nu = 0.5, b1 = 0, b2 = 0), fit = TRUE)
+    th <- obj$fit$theta
+    expect_true(isTRUE(obj$fit$converged))
+    expect_no_error(hzr_deciles(obj, time = 60))
+    gof <- hzr_gof(obj)
+    # hzr_gof() evaluates at the design-matrix means.
+    eta <- sum(colMeans(obj$data$x) * th[3:4])
+    want <- .sd_cumhaz("weibull", th, gof$time, eta = eta)
+    expect_equal(unname(gof$par_cumhaz), want, tolerance = 1e-10)
+  }
 })
 
 test_that("a column the model does not use is ignored", {

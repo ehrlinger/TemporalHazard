@@ -77,11 +77,20 @@
   the time-varying expansion.
   Covariates are now matched by name, through the same design
   reconstruction as the multiphase fix below, so a factor can be given as
-  a level label. A column the model does not use is ignored, and one it
-  needs but `newdata` lacks is an error that names it. A fit made with an
-  unnamed `x` matrix still matches by position, since there is nothing
-  else to match on, and a `newdata` with only a `time` column still
-  evaluates the baseline (#267).
+  a level label. `newdata` may instead carry the fit's design-matrix
+  columns by name (`grpyoung`), which is how `hzr_deciles()` and
+  `hzr_gof()` call it. A column the model does not use is ignored, and one
+  it needs but `newdata` lacks is an error that names it, even when an
+  object of that name exists in the workspace. A fit made with an unnamed
+  `x` matrix still matches by position, since there is nothing else to
+  match on, and a `newdata` with only a `time` column still evaluates the
+  baseline (#267).
+
+  This rejects some `newdata` that used to be accepted. A fit made through
+  the vector interface with a named `x`, say `cbind(age = , mal = )`, now
+  needs `newdata` columns with those names. Before, any names, or a bare
+  matrix, were matched by position. That was correct only when the order
+  happened to agree, and nothing said when it did not.
 
 * **`predict(newdata = )` now evaluates a multiphase fit that has both a
   global covariate and phase-formula covariates.** A phase without its own

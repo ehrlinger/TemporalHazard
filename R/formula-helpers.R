@@ -137,7 +137,11 @@
     x_design <- list(
       terms = x_terms,
       xlevels = stats::.getXlevels(x_terms, mf),
-      contrasts = x_contrasts
+      contrasts = x_contrasts,
+      # The formula's variables that were columns of `data`: newdata must
+      # supply exactly these. Any other variable (`cutoff` in
+      # I(x > cutoff)) comes from the formula's environment.
+      data_vars = intersect(all.vars(x_terms), names(data))
     )
   }
 
@@ -196,21 +200,32 @@
   cols <- colnames(x_fit)
   design <- object$data$x_design
 
-  needed <- if (!is.null(design)) all.vars(design$terms) else cols
-  missing <- setdiff(needed, names(newdata))
-  if (!is.null(design)) {
-    # A variable the formula's environment supplies (`cutoff` in
-    # I(x > cutoff)) is not a covariate. A function of the same name is not
-    # a value, so it does not count.
-    env <- environment(design$terms)
-    missing <- missing[vapply(missing, function(v) {
-      val <- get0(v, envir = env)
-      is.null(val) || is.function(val)
-    }, logical(1))]
+  # newdata that already carries the fit's design columns by name is taken
+  # as it is. That is how hzr_deciles() and hzr_gof() pass it, built from
+  # object$data$x, so a factor arrives as `grpyoung` and a transform as
+  # `log(age)`. For a plain numeric covariate the design column and the
+  # variable are the same column, so both routes agree.
+  if (!is.null(cols) && all(cols %in% names(newdata))) {
+    return(as.matrix(newdata[, cols, drop = FALSE]))
   }
+
+  # Otherwise newdata gives the formula's variables. A covariate must come
+  # from newdata itself: were it looked up in the formula's environment, a
+  # stray `mal` in the workspace would silently stand in for a missing
+  # column. Fits saved before `data_vars` was recorded require every
+  # variable of the formula.
+  needed <- if (is.null(design)) {
+    cols
+  } else if (!is.null(design$data_vars)) {
+    design$data_vars
+  } else {
+    all.vars(design$terms)
+  }
+  missing <- setdiff(needed, names(newdata))
   if (length(missing) > 0L) {
-    stop("'newdata' is missing the global covariate(s) ",
-         paste0("'", missing, "'", collapse = ", "), ".", call. = FALSE)
+    stop("'newdata' lacks the covariate column(s) ",
+         paste0("'", missing, "'", collapse = ", "),
+         " that the model uses. Columns are matched by name.", call. = FALSE)
   }
 
   if (!is.null(design)) {
