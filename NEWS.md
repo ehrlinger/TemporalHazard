@@ -100,6 +100,17 @@
   unweighted. Unweighted intercept-only fits without entry times are
   unchanged.
 
+* **`hzr_gof()` stopped on a multiphase fit with both a global covariate and
+  phase-formula covariates, and every multiphase fit carried a
+  `par_cumhaz_time` column** (#263, #264). With `Surv(...) ~ age` and a phase
+  formula `~ mal`, the mean-patient curve was built from the global
+  covariates alone, so `predict()` found no `mal` column and stopped before
+  the expected-event tally. The curve is now evaluated at the column means
+  of each phase's own design matrix, for global, phase-formula and mixed
+  covariates alike. Separately, the `par_cumhaz_<phase>` columns were chosen
+  by dropping `total` from the decomposition, which let its `time` column
+  through as a phase; they are now chosen by phase name.
+
 * **A Weibull fit with one masked variance reported the others on the wrong
   scale.** When the Hessian inverse has a non-positive variance, its row and
   column are set to `NA`. The delta-method transform from the internal

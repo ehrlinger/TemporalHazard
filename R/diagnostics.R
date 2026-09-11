@@ -486,17 +486,13 @@ hzr_gof <- function(object, time_grid = NULL) {
   ))
 
   curve_obj <- object
-  if (!is.null(object$data$x) && ncol(object$data$x) > 0) {
-    # For covariate models, evaluate at covariate means (baseline patient)
-    x_means <- colMeans(object$data$x)
-    nd <- as.data.frame(t(x_means))
-    nd <- nd[rep(1, length(time_grid)), , drop = FALSE]
-    nd$time <- time_grid
-  } else if (has_phase_x) {
-    # Covariates entered only through the phase formulas, so data$x is NULL
-    # and a time-only newdata would put them at 0. Put each phase's design
-    # matrix at its column means and the stored times at the grid; predict()
-    # without newdata then evaluates that stored design.
+  if (has_phase_x) {
+    # A multiphase fit stores each phase's own design matrix: the phase
+    # formula's columns, or data$x for a phase without one. A newdata built
+    # from data$x lacks the phase-formula variables, and a time-only newdata
+    # puts every covariate at 0. Put each phase's design matrix at its column
+    # means and the stored times at the grid; predict() without newdata then
+    # evaluates that stored design.
     curve_obj$data$time <- time_grid
     curve_obj$fit$x_list <- lapply(object$fit$x_list, function(m) {
       if (is.null(m) || ncol(m) == 0) return(m)
@@ -504,6 +500,12 @@ hzr_gof <- function(object, time_grid = NULL) {
              byrow = TRUE, dimnames = list(NULL, colnames(m)))
     })
     nd <- NULL
+  } else if (!is.null(object$data$x) && ncol(object$data$x) > 0) {
+    # For covariate models, evaluate at covariate means (baseline patient)
+    x_means <- colMeans(object$data$x)
+    nd <- as.data.frame(t(x_means))
+    nd <- nd[rep(1, length(time_grid)), , drop = FALSE]
+    nd$time <- time_grid
   } else {
     nd <- data.frame(time = time_grid)
   }
@@ -515,8 +517,10 @@ hzr_gof <- function(object, time_grid = NULL) {
   if (is_multiphase) {
     decomp <- predict(curve_obj, newdata = nd, type = "cumulative_hazard",
                       decompose = TRUE)
-    # decomp is a matrix; first column is "total", rest are phase names
-    phase_cols <- colnames(decomp)[colnames(decomp) != "total"]
+    # decomp is a data frame: time, total, then one column per phase. Select
+    # by phase name, as predict() does, not by excluding the other columns.
+    phase_cols <- names(object$fit$phases)
+    if (is.null(phase_cols)) phase_cols <- names(object$spec$phases)
     phase_cumhaz <- as.data.frame(decomp[, phase_cols, drop = FALSE])
   }
 

@@ -45,6 +45,25 @@ test_that("phase-formula fit: par_cumhaz is at the covariate means, not at 0", {
   expect_equal(gof$par_cumhaz_constant, decomp$constant, tolerance = 1e-10)
 })
 
+test_that("multiphase fit: one par_cumhaz_<phase> column per phase, no others", {
+  d <- .gof_pc_avc
+  fit <- hazard(
+    survival::Surv(int_dead, dead) ~ 1,
+    data   = d,
+    dist   = "multiphase",
+    phases = list(
+      early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                           fixed = "shapes"),
+      constant = hzr_phase("constant")
+    ),
+    fit    = TRUE
+  )
+  gof <- hzr_gof(fit)
+  # decompose = TRUE also returns `time` and `total`; neither is a phase.
+  expect_identical(grep("^par_cumhaz_", names(gof), value = TRUE),
+                   c("par_cumhaz_early", "par_cumhaz_constant"))
+})
+
 test_that("global-covariate fit: par_cumhaz is at the design-matrix means", {
   d <- .gof_pc_avc
   fit <- hazard(
@@ -86,4 +105,75 @@ test_that("intercept-only multiphase fit: par_cumhaz is the one shared curve", {
                   type = "cumulative_hazard")
   expect_equal(unname(gof$par_cumhaz), unname(at_t), tolerance = 1e-10)
   expect_gt(max(gof$par_cumhaz), 0.1)
+})
+
+test_that("multiphase fit with only global covariates: curve at their means", {
+  d <- .gof_pc_avc
+  fit <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ age,
+    data   = d,
+    dist   = "multiphase",
+    phases = list(
+      early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                           fixed = "shapes"),
+      constant = hzr_phase("constant")
+    ),
+    fit    = TRUE
+  ))
+  expect_true(isTRUE(fit$fit$converged))
+
+  gof <- hzr_gof(fit)
+  nd_mean <- data.frame(time = gof$time, age = mean(d$age))
+  at_mean <- predict(fit, newdata = nd_mean, type = "cumulative_hazard")
+  at_zero <- predict(fit, newdata = data.frame(time = gof$time, age = 0),
+                     type = "cumulative_hazard")
+  expect_gt(max(abs(at_zero / at_mean - 1)), 0.5)
+  expect_equal(unname(gof$par_cumhaz), unname(at_mean), tolerance = 1e-10)
+})
+
+test_that("global and phase covariates together: curve at both sets of means", {
+  # age enters globally (so data$x is set and reaches the constant phase);
+  # mal enters only through the early phase's formula.  A newdata built from
+  # data$x alone has no mal column, and predict() needs it for that formula.
+  d <- .gof_pc_avc
+  fit <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ age,
+    data   = d,
+    dist   = "multiphase",
+    phases = list(
+      early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                           fixed = "shapes", formula = ~ mal),
+      constant = hzr_phase("constant")
+    ),
+    fit     = TRUE,
+    control = list(conserve = TRUE)
+  ))
+  expect_true(isTRUE(fit$fit$converged))
+  expect_true(isTRUE(fit$spec$control$conserve_applied))
+  expect_identical(colnames(fit$data$x), "age")
+  expect_identical(colnames(fit$fit$x_list$early), "mal")
+
+  gof <- hzr_gof(fit)
+  # The per-subject tally is reached, and conserves events.
+  s <- attr(gof, "summary")
+  expect_equal(s$total_observed, sum(d$dead))
+  expect_equal(s$total_expected / s$total_observed, 1, tolerance = 1e-6)
+
+  # predict() with a newdata cannot evaluate this fit, so build the reference
+  # from the model's structure instead: within a phase the covariates scale
+  # the baseline, H_j(t | x) = exp(x beta_j) H0_j(t). A time-only newdata
+  # gives each phase's baseline H0_j.
+  base <- predict(fit, newdata = data.frame(time = gof$time),
+                  type = "cumulative_hazard", decompose = TRUE)
+  th <- fit$fit$theta
+  early_ref <- base$early * exp(th[["early.mal"]] * mean(d$mal))
+  constant_ref <- base$constant * exp(th[["constant.age"]] * mean(d$age))
+  expect_gt(max(abs(base$total / (early_ref + constant_ref) - 1)), 0.1)
+
+  expect_equal(gof$par_cumhaz_early, early_ref, tolerance = 1e-10)
+  expect_equal(gof$par_cumhaz_constant, constant_ref, tolerance = 1e-10)
+  expect_equal(unname(gof$par_cumhaz), early_ref + constant_ref,
+               tolerance = 1e-10)
+  expect_identical(grep("^par_cumhaz_", names(gof), value = TRUE),
+                   c("par_cumhaz_early", "par_cumhaz_constant"))
 })
