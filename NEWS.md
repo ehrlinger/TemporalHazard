@@ -101,9 +101,10 @@
   improves. The default `reltol` is unchanged: tightening it instead cost
   30% to 60% more time on the test suite and broke eight or nine tests.
 
-  Every fit records the test in `fit$fit$rel_gradient` and
-  `fit$fit$polish_code` (`nlm()`'s termination code), and `print()` and
-  `summary()` show it. Only SAS/C's two hard failures warn: code 4, the
+  Every fit records the test in `fit$fit$rel_gradient` (`NA` where the
+  gradient cannot be evaluated at the estimates) and, when the continuation
+  improved the fit, `nlm()`'s termination code in `fit$fit$polish_code`, and
+  `print()` and `summary()` show it. Only SAS/C's two hard failures warn: code 4, the
   iteration limit, and code 5, where the likelihood kept rising along some
   direction and may have no maximum. Codes 2 and 3, where SAS/C prints a
   caution and retries, are recorded without a warning. The test is relative

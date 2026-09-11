@@ -323,9 +323,10 @@ applies it too: when the optimizer reports convergence and the test fails,
 the fit is continued with \code{\link[stats:nlm]{stats::nlm()}} at SAS's tolerances, and the
 continued point is kept if it improves the log-likelihood.
 
-Every fit records the result in \code{fit$fit$rel_gradient} and, when the
-continuation ran, its termination code in \code{fit$fit$polish_code}. \code{print()}
-and \code{summary()} show both. A warning is raised only for code 4, the
+Every fit records the result in \code{fit$fit$rel_gradient} (\code{NA} where the
+gradient cannot be evaluated at the estimates, which is never reported as
+a pass) and, when the continuation improved the fit, its termination code
+in \code{fit$fit$polish_code}. \code{print()} and \code{summary()} show both. A warning is raised only for code 4, the
 iteration limit (raise \code{control$maxit}), and code 5, where the
 log-likelihood kept rising along some direction and the model may have no
 maximum. Codes 2 and 3, where SAS/C prints a caution, are recorded without

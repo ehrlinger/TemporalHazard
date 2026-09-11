@@ -75,11 +75,12 @@ test_that("hazard() warns only on the polish's hard failures, and records every 
   df <- data.frame(time = stats::rexp(80, 0.4), status = rep(c(1, 1, 0), length.out = 80),
                    z = stats::rnorm(80))
   real <- .hzr_optim_exponential
-  fit_with <- function(code, rel = 1e-2) {
+  fit_with <- function(code, rel = 1e-2, conv = 0L) {
     testthat::local_mocked_bindings(.hzr_optim_exponential = function(...) {
       r <- real(...)
       r$polish_code <- code
       r$rel_gradient <- rel
+      r$convergence <- conv
       r
     })
     hazard(survival::Surv(time, status) ~ z, data = df, dist = "exponential",
@@ -90,6 +91,9 @@ test_that("hazard() warns only on the polish's hard failures, and records every 
   expect_identical(f5$fit$polish_code, 5L)
   # nlm code 4, SAS/C's "reached no convergence": warns and says how to go on.
   expect_warning(fit_with(4L), "iteration limit.*control\\$maxit")
+  # A fit that did not converge is not "converged over a failing point": no
+  # gradient warning even with a hard-failure code attached.
+  expect_no_warning(fit_with(4L, conv = 1L), message = "relative gradient")
   # nlm code 3, where SAS/C prints a caution and retries: recorded, not warned.
   expect_no_warning(f3 <- fit_with(3L), message = "relative gradient")
   expect_identical(f3$fit$polish_code, 3L)
@@ -99,6 +103,41 @@ test_that("hazard() warns only on the polish's hard failures, and records every 
   # A passing fit says so.
   f_ok <- fit_with(NA_integer_, rel = 1e-9)
   expect_output(print(f_ok), "relative 1e-09 .*; met\\)")
+})
+
+test_that("a polished fit keeps the caller's parameter names and says it went on", {
+  # nlm() returns an unnamed estimate; optim() keeps names, and the
+  # single-distribution fits return par as is, so a lost name surfaced as an
+  # unnamed coef() only on fits that happened to be polished.
+  fit <- .hzr_optim_generic(
+    logl_fn = rosen_logl, gradient_fn = rosen_score, time = 1, status = 1,
+    theta_start = c(a = -1.2, b = 1), hessian_fn = rosen_hessian
+  )
+  expect_equal(fit$polish_code, 1L)
+  expect_named(fit$par, c("a", "b"))
+  expect_match(fit$message, "continued with nlm\\(\\)")
+})
+
+test_that("rel_gradient is NA, never a pass, where the gradient cannot be trusted", {
+  # A likelihood that is -Inf everywhere: the objective is clamped to 1e10 and
+  # the wrapped gradient returns zeros, which read as a relative gradient of 0.
+  flat <- .hzr_optim_generic(
+    logl_fn = function(theta, ...) -Inf, gradient_fn = rosen_score,
+    time = 1, status = 1, theta_start = start,
+    hessian_fn = function(theta) diag(2)
+  )
+  expect_true(is.na(flat$rel_gradient))
+  # A score with a NaN component: the wrapper zeroes it, and BFGS stops far
+  # from the optimum with an apparently tiny gradient.
+  nan_score <- suppressWarnings(.hzr_optim_generic(
+    logl_fn = rosen_logl, gradient_fn = function(theta, ...) {
+      c(NaN, rosen_score(theta)[2])
+    },
+    time = 1, status = 1, theta_start = start, hessian_fn = rosen_hessian
+  ))
+  expect_true(is.na(nan_score$rel_gradient))
+  expect_null(.hzr_format_gradient_test(nan_score$rel_gradient,
+                                        nan_score$polish_code))
 })
 
 test_that("the bounded (L-BFGS-B) path is not polished", {

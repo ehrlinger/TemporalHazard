@@ -155,8 +155,26 @@ NULL
   # only when it improves the objective.  L-BFGS-B stops on a projected
   # gradient already, so the bounded path is left alone.
   gradtl <- .Machine$double.eps^(1 / 3)
+  # NA, never 0, wherever the gradient cannot be trusted. The wrapped
+  # gradient() above returns zeros at a clamped or failing point, and a zero
+  # there would read as a pass; so this calls gradient_fn itself and refuses
+  # the 1e10 sentinel, a non-finite point, and any non-finite component.
   rel_gradient <- function(theta, value) {
-    max(abs(gradient(theta)) * pmax(abs(theta), 1)) / max(abs(value), 1)
+    if (!all(is.finite(theta)) || !is.finite(value) || value >= 1e10) {
+      return(NA_real_)
+    }
+    g <- tryCatch(
+      gradient_fn(
+        theta = theta, time = time, status = status,
+        time_lower = time_lower, time_upper = time_upper,
+        x = x, weights = weights
+      ),
+      error = function(e) NULL
+    )
+    if (is.null(g) || length(g) != length(theta) || !all(is.finite(g))) {
+      return(NA_real_)
+    }
+    max(abs(g) * pmax(abs(theta), 1)) / max(abs(value), 1)
   }
   rel_grad <- NA_real_
   polish_code <- NA_integer_
@@ -178,10 +196,18 @@ NULL
       )
       if (!is.null(polish) && is.finite(polish$minimum) &&
           polish$minimum <= result$value) {
-        result$par   <- polish$estimate
+        # nlm() drops names; optim() keeps them, and the single-distribution
+        # fits hand par straight back to hazard().
+        result$par   <- stats::setNames(polish$estimate, names(result$par))
         result$value <- polish$minimum
         polish_code  <- as.integer(polish$code)
         rel_grad     <- rel_gradient(result$par, result$value)
+        # counts still describe the BFGS run alone, so say the fit went on.
+        result$message <- paste0(
+          if (length(result$message)) paste0(result$message, "; ") else "",
+          "continued with nlm() for ", polish$iterations,
+          " iterations (code ", polish$code, ")"
+        )
       }
     }
   }
