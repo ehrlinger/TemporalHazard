@@ -75,8 +75,13 @@
   "non-conformable arguments" for every prediction type, and a factor global
   covariate stopped with a different error. Extra or reordered columns
   failed the same way. Such a phase is now rebuilt from the global formula's
-  own terms, factor levels and contrasts, as `predict.lm()` does, so a
-  factor can be given as a single label. `hazard()` stores these in
+  own terms, factor levels and contrasts, as `predict.lm()` does. A factor
+  can be given as a single label, and data-dependent terms such as
+  `scale(x)` and `poly(x, 2)` reuse the fit's centre, scale and basis
+  instead of recomputing them from the new rows. The global formula now also
+  finds a non-column variable (`cutoff` in `I(x > cutoff)`) in the
+  environment the formula was written in, as `model.frame()` does; before,
+  only a global variable was found. `hazard()` stores these in
   `object$data$x_design`. Fits made through the vector interface select
   their columns by name, or by position when `x` was unnamed. Point
   predictions, `se.fit = TRUE` and `decompose = TRUE` are each checked

@@ -107,6 +107,9 @@
   if (!is.null(rhs)) {
     # Reconstruct as a formula for model.matrix()
     rhs_formula <- formula(paste("~", deparse(rhs)))
+    # Look up non-column variables where the user wrote the formula, as
+    # model.frame() does, not in this frame.
+    environment(rhs_formula) <- environment(formula)
     tryCatch({
       x <- stats::model.matrix(rhs_formula, data = data)
       x_contrasts <- attr(x, "contrasts")
@@ -124,16 +127,16 @@
 
   # What predict(newdata = ) needs to rebuild `x` from new rows: the terms,
   # the factor levels and the contrasts seen at fit time (as predict.lm()
-  # keeps them). The terms take the user's formula environment, so they do
-  # not capture this frame and its copy of `data`.
+  # keeps them). The terms come from model.frame() so that they carry
+  # `predvars`: scale(x) and poly(x, 2) then reuse the fit's centre, scale
+  # and basis at new rows instead of recomputing them from those rows.
   x_design <- NULL
   if (!is.null(x)) {
-    x_terms <- stats::terms(rhs_formula)
-    environment(x_terms) <- environment(formula)
+    mf <- stats::model.frame(rhs_formula, data = data)
+    x_terms <- attr(mf, "terms")
     x_design <- list(
       terms = x_terms,
-      xlevels = stats::.getXlevels(x_terms,
-                                   stats::model.frame(x_terms, data = data)),
+      xlevels = stats::.getXlevels(x_terms, mf),
       contrasts = x_contrasts
     )
   }
@@ -169,6 +172,16 @@
 
   needed <- if (!is.null(design)) all.vars(design$terms) else cols
   missing <- setdiff(needed, names(newdata))
+  if (!is.null(design)) {
+    # A variable the formula's environment supplies (`cutoff` in
+    # I(x > cutoff)) is not a covariate. A function of the same name is not
+    # a value, so it does not count.
+    env <- environment(design$terms)
+    missing <- missing[vapply(missing, function(v) {
+      val <- get0(v, envir = env)
+      is.null(val) || is.function(val)
+    }, logical(1))]
+  }
   if (length(missing) > 0L) {
     stop("'newdata' is missing the global covariate(s) ",
          paste0("'", missing, "'", collapse = ", "), ".", call. = FALSE)

@@ -123,8 +123,48 @@ test_that("a newdata missing a global covariate is an error naming it", {
   expect_error(
     predict(fit, newdata = data.frame(time = 1, z = 1, g = "a"),
             type = "cumulative_hazard"),
-    "'x'"
+    "missing the global covariate\\(s\\) 'x'"
   )
+})
+
+# The design helper needs only the stored design, so these use unfitted
+# objects: the fit is irrelevant to how the columns are rebuilt.
+.pn_unfitted <- function(formula, data = .pn_data()) {
+  hazard(formula, data = data, dist = "multiphase",
+         phases = list(
+           early    = hzr_phase("cdf", t_half = 0.3, nu = 1, m = 1,
+                                fixed = "shapes", formula = ~ z),
+           constant = hzr_phase("constant")
+         ))
+}
+
+test_that("data-dependent terms keep the fit's parameters at newdata", {
+  d <- .pn_data()
+  rows <- c(1, 7, 42)
+
+  # scale() and poly() are computed from the data they see.  At newdata they
+  # must reuse the fit's centre, scale and basis, or three rows would be
+  # rescaled among themselves -- a wrong design with no error.
+  for (f in list(survival::Surv(time, status) ~ scale(x),
+                 survival::Surv(time, status) ~ poly(x, 2))) {
+    obj <- .pn_unfitted(f, d)
+    nd <- data.frame(time = 1, x = d$x[rows], z = 0)
+    got <- TemporalHazard:::.hzr_global_design(obj, nd)
+    expect_equal(unname(got), unname(obj$data$x[rows, , drop = FALSE]),
+                 tolerance = 1e-12)
+    # A single row, where recomputing gives NaN or an error.
+    one <- TemporalHazard:::.hzr_global_design(obj, nd[1, ])
+    expect_equal(unname(one), unname(obj$data$x[rows[1], , drop = FALSE]),
+                 tolerance = 1e-12)
+  }
+})
+
+test_that("a variable from the formula's environment is not a newdata column", {
+  cutoff <- 0.5
+  obj <- .pn_unfitted(survival::Surv(time, status) ~ I(x > cutoff))
+  got <- TemporalHazard:::.hzr_global_design(
+    obj, data.frame(time = 1, x = c(0, 1), z = 0))
+  expect_equal(unname(got[, 1]), c(0, 1))
 })
 
 test_that("se.fit = TRUE is centred on the structural reference", {
