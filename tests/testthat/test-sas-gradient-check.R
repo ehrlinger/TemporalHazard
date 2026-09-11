@@ -231,6 +231,105 @@ test_that("a finite difference that lands on the clamp is NA, not a fabricated g
   expect_true(is.na(fit$rel_gradient))
 })
 
+test_that("the acceptance test asks for the unsanitised score", {
+  # A gradient that, like .hzr_gradient_multiphase(), zeroes a component it
+  # cannot evaluate unless asked not to. The optimizer needs the zero; the
+  # test must see the NaN and report NA, never a small gradient.
+  guarded <- function(theta, ..., sanitize = TRUE) {
+    g <- c(NaN, rosen_score(theta)[2])
+    if (sanitize) g[!is.finite(g)] <- 0
+    g
+  }
+  fit <- suppressWarnings(.hzr_optim_generic(
+    logl_fn = rosen_logl, gradient_fn = guarded, time = 1, status = 1,
+    theta_start = start, hessian_fn = rosen_hessian
+  ))
+  expect_equal(fit$convergence, 0L)
+  expect_true(is.na(fit$rel_gradient))
+})
+
+test_that(".hzr_gradient_multiphase returns NA, not zeros, when asked for the raw score", {
+  phases <- list(early = hzr_phase("cdf", t_half = 1, nu = 1, m = 0),
+                 const = hzr_phase("constant"))
+  set.seed(1)
+  tt <- stats::rexp(50) + 0.01
+  # m < 0 with nu < 0 is undefined: the gradient cannot be evaluated there.
+  args <- list(c(log(0.5), log(1), -1, -0.5, log(0.1)), tt, rep(1, 50),
+               phases = phases, covariate_counts = c(early = 0L, const = 0L),
+               x_list = list(early = NULL, const = NULL))
+  expect_true(all(do.call(.hzr_gradient_multiphase, args) == 0))
+  expect_true(all(is.na(do.call(.hzr_gradient_multiphase,
+                                c(args, sanitize = FALSE)))))
+})
+
+test_that("a multiphase fit's acceptance test reaches the gradient unsanitised", {
+  # Through the base closure and the fixed-mask wrapper: the test asks for the
+  # raw score at least once, and the optimizer still gets the sanitised one.
+  set.seed(3)
+  n <- 300
+  tt <- c(stats::rexp(n / 2, 3), stats::rexp(n / 2, 0.15))
+  cens <- stats::runif(n, 1, 15)
+  d <- data.frame(time = pmin(tt, cens), status = as.integer(tt <= cens))
+  real <- .hzr_gradient_multiphase
+  seen <- logical(0)
+  testthat::local_mocked_bindings(
+    .hzr_gradient_multiphase = function(..., sanitize = TRUE) {
+      seen <<- c(seen, sanitize)
+      real(..., sanitize = sanitize)
+    }
+  )
+  suppressWarnings(hazard(
+    survival::Surv(time, status) ~ 1, data = d, dist = "multiphase",
+    phases = list(early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 0),
+                  constant = hzr_phase("constant")),
+    fit = TRUE, control = list(n_starts = 1, conserve = FALSE)
+  ))
+  expect_true(any(!seen))
+  expect_true(any(seen))
+})
+
+test_that("the finite-difference check does not straddle m = 0", {
+  # A kink at theta[2] = 0 -- slope +5 above, -3 below -- standing in for the
+  # cusp where the cdf and hazard families meet.
+  kinked <- function(theta) {
+    (theta[1] - 1)^2 + ifelse(theta[2] >= 0, 5 * theta[2], -3 * theta[2])
+  }
+  h <- .Machine$double.eps^(1 / 3)
+  for (m in c(h / 3, 0, -h / 3)) {
+    g <- .hzr_fd_gradient(kinked, c(0.5, m), sign_bounded = 2L)
+    expect_equal(g[[2]], if (m >= 0) 5 else -3, tolerance = 1e-6,
+                 label = sprintf("slope at m = %g", m))
+  }
+  # Without the bound the central stencil mixes the two slopes (2.33 here).
+  expect_gt(abs(.hzr_fd_gradient(kinked, c(0.5, h / 3))[[2]] - 5), 1)
+})
+
+test_that("multiphase marks every free shape m, and only m, as sign-bounded", {
+  set.seed(3)
+  n <- 300
+  tt <- c(stats::rexp(n / 2, 3), stats::rexp(n / 2, 0.15))
+  cens <- stats::runif(n, 1, 15)
+  d <- data.frame(time = pmin(tt, cens), status = as.integer(tt <= cens),
+                  z = stats::rnorm(n))
+  real <- .hzr_optim_generic
+  got <- list()
+  testthat::local_mocked_bindings(
+    .hzr_optim_generic = function(..., theta_start, sign_bounded = integer(0)) {
+      got[[length(got) + 1L]] <<- names(theta_start)[sign_bounded]
+      real(..., theta_start = theta_start, sign_bounded = sign_bounded)
+    }
+  )
+  suppressWarnings(hazard(
+    survival::Surv(time, status) ~ 1, data = d, dist = "multiphase",
+    phases = list(early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 0,
+                                    formula = ~ z),
+                  constant = hzr_phase("constant")),
+    fit = TRUE, control = list(n_starts = 1)
+  ))
+  expect_true(length(got) > 0)
+  for (nm in got) expect_identical(nm, "early.m")
+})
+
 test_that("the bounded (L-BFGS-B) path is not polished", {
   fit <- .hzr_optim_generic(
     logl_fn = rosen_logl, gradient_fn = rosen_score,
