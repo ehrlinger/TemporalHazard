@@ -93,16 +93,20 @@ test_that("hazard() warns only on the polish's hard failures, and records every 
   expect_warning(fit_with(4L), "iteration limit.*control\\$maxit")
   # A fit that did not converge is not "converged over a failing point": no
   # gradient warning even with a hard-failure code attached.
-  expect_no_warning(fit_with(4L, conv = 1L), message = "relative gradient")
+  expect_no_warning(fit_with(4L, conv = 1L), message = "relative-gradient test")
   # nlm code 3, where SAS/C prints a caution and retries: recorded, not warned.
-  expect_no_warning(f3 <- fit_with(3L), message = "relative gradient")
+  expect_no_warning(f3 <- fit_with(3L), message = "relative-gradient test")
   expect_identical(f3$fit$polish_code, 3L)
   expect_equal(f3$fit$rel_gradient, 1e-2)
   expect_output(print(f3), "relative 0.01 .*not met, nlm code 3")
   expect_output(print(summary(f3)), "relative 0.01 .*not met, nlm code 3")
-  # A passing fit says so.
+  # A passing fit says so, and shows the nlm() code when there is one.
   f_ok <- fit_with(NA_integer_, rel = 1e-9)
   expect_output(print(f_ok), "relative 1e-09 .*; met\\)")
+  expect_output(print(fit_with(1L, rel = 1e-9)), "; met, nlm code 1\\)")
+  # Code 4 whose statistic nonetheless meets the test -- possible when
+  # nlm() stops on a partial score, as under CoE -- does not warn.
+  expect_no_warning(fit_with(4L, rel = 1e-9), message = "relative-gradient test")
 })
 
 test_that("a polished fit keeps the caller's parameter names and says it went on", {
@@ -136,8 +140,14 @@ test_that("rel_gradient is NA, never a pass, where the gradient cannot be truste
     time = 1, status = 1, theta_start = start, hessian_fn = rosen_hessian
   ))
   expect_true(is.na(nan_score$rel_gradient))
-  expect_null(.hzr_format_gradient_test(nan_score$rel_gradient,
-                                        nan_score$polish_code))
+  # Converged with no usable gradient: said, not left blank.
+  expect_match(.hzr_format_gradient_test(nan_score$rel_gradient,
+                                         nan_score$polish_code),
+               "not evaluated")
+  # Not converged, or no record at all: no line.
+  expect_null(.hzr_format_gradient_test(NA_real_, NA_integer_,
+                                        converged = FALSE))
+  expect_null(.hzr_format_gradient_test(NULL, NULL))
 })
 
 test_that("with an inexact score the recorded test uses the objective's own gradient", {
@@ -198,6 +208,27 @@ test_that("multiphase passes gradient_exact = FALSE exactly when CoE is applied"
   expect_false(off$applied)
   expect_true(length(on$seen) > 0 && !any(on$seen))
   expect_true(length(off$seen) > 0 && all(off$seen))
+})
+
+test_that("a finite difference that lands on the clamp is NA, not a fabricated gradient", {
+  # The maximum sits on the edge of the region where the likelihood is
+  # defined: beyond theta[1] = 1 it is -Inf, so the objective is clamped to
+  # 1e10 there, and a central difference taken at the edge has one side on
+  # the clamp. Without the guard that side makes a "gradient" of 1e10 / (2h).
+  edge_logl <- function(theta, ...) {
+    if (theta[1] > 1) -Inf else -(1e4 + (theta[1] - 2)^2 + theta[2]^2)
+  }
+  edge_score <- function(theta, ...) c(-2 * (theta[1] - 2), -2 * theta[2])
+  fit <- suppressWarnings(.hzr_optim_generic(
+    logl_fn = edge_logl, gradient_fn = edge_score, time = 1, status = 1,
+    theta_start = c(0, 0.5), hessian_fn = function(theta) diag(2),
+    gradient_exact = FALSE
+  ))
+  expect_equal(fit$convergence, 0L)
+  # Premise: the fit stopped within one difference step of the edge.
+  expect_true(fit$par[1] <= 1 &&
+                fit$par[1] > 1 - .Machine$double.eps^(1 / 3))
+  expect_true(is.na(fit$rel_gradient))
 })
 
 test_that("the bounded (L-BFGS-B) path is not polished", {

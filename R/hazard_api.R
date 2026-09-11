@@ -923,8 +923,11 @@ hazard <- function(formula = NULL,
   if (fit_ran) {
     fit_state$rel_gradient <- optim_result$rel_gradient
     fit_state$polish_code  <- optim_result$polish_code
+    # Codes 4 and 5 imply a failed test when nlm() and the statistic use the
+    # same gradient; under CoE they need not, so the statistic is checked too.
     if (isTRUE(fit_state$converged) &&
-        isTRUE(fit_state$polish_code %in% c(4L, 5L))) {
+        isTRUE(fit_state$polish_code %in% c(4L, 5L)) &&
+        !isTRUE(fit_state$rel_gradient <= .Machine$double.eps^(1 / 3))) {
       warning(
         "The optimizer reported convergence, but the estimates fail the ",
         "relative-gradient test SAS/C HAZARD requires (at most ",
@@ -1599,20 +1602,24 @@ predict.hazard <- function(object, newdata = NULL,
 
 
 # The SAS/C acceptance test's result, for print() and summary(). NULL when the
-# test was not evaluated: an unfitted or imported model, a bounded
-# (L-BFGS-B) fit, or a BFGS run that did not converge.
-.hzr_format_gradient_test <- function(rel_gradient, polish_code) {
-  if (length(rel_gradient) != 1L || is.na(rel_gradient)) return(NULL)
-  gradtl <- .Machine$double.eps^(1 / 3)
-  verdict <- if (rel_gradient <= gradtl) {
-    "met"
-  } else if (length(polish_code) == 1L && !is.na(polish_code)) {
-    paste0("not met, nlm code ", polish_code)
-  } else {
-    "not met"
+# test was not applied: a fit that did not report convergence, or an object
+# with no record of it (imported from SAS, or saved by an earlier version).
+# A converged fit whose gradient could not be evaluated says so, because
+# printing nothing would read as a test that never ran; the nlm() code is
+# shown whenever there is one.
+.hzr_format_gradient_test <- function(rel_gradient, polish_code,
+                                      converged = TRUE) {
+  if (!isTRUE(converged) || length(rel_gradient) != 1L) return(NULL)
+  has_code <- length(polish_code) == 1L && !is.na(polish_code)
+  if (is.na(rel_gradient)) {
+    return(paste0("  gradient:     not evaluated at the estimates",
+                  if (has_code) paste0(" (nlm code ", polish_code, ")")))
   }
+  gradtl <- .Machine$double.eps^(1 / 3)
+  verdict <- if (rel_gradient <= gradtl) "met" else "not met"
   paste0("  gradient:     relative ", signif(rel_gradient, 3),
-         " (SAS/C requires <= ", signif(gradtl, 3), "; ", verdict, ")")
+         " (SAS/C requires <= ", signif(gradtl, 3), "; ", verdict,
+         if (has_code) paste0(", nlm code ", polish_code), ")")
 }
 
 #' Print method for fitted hazard models
@@ -1646,7 +1653,8 @@ print.hazard <- function(x, ...) {
   if (!anyNA(x$fit$objective)) {
     cat("  log-lik:     ", format(x$fit$objective, digits = 6), "\n")
     cat("  converged:   ", x$fit$converged, "\n")
-    cat(.hzr_format_gradient_test(x$fit$rel_gradient, x$fit$polish_code),
+    cat(.hzr_format_gradient_test(x$fit$rel_gradient, x$fit$polish_code,
+                                  converged = x$fit$converged),
         sep = "\n")
   }
   # Always printed, "none" included (#242).
@@ -1806,7 +1814,8 @@ print.summary.hazard <- function(x, ...) {
 
   if (!is.null(x$converged) && !is.na(x$converged)) {
     cat("  converged:   ", x$converged, "\n")
-    cat(.hzr_format_gradient_test(x$rel_gradient, x$polish_code), sep = "\n")
+    cat(.hzr_format_gradient_test(x$rel_gradient, x$polish_code,
+                                  converged = x$converged), sep = "\n")
   }
   if (!is.null(x$log_lik) && !is.na(x$log_lik)) {
     cat("  log-lik:     ", format(x$log_lik, digits = 6), "\n")

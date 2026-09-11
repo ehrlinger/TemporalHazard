@@ -167,8 +167,9 @@ NULL
   gradtl <- .Machine$double.eps^(1 / 3)
   # NA, never 0, wherever the gradient cannot be trusted. The wrapped
   # gradient() above returns zeros at a clamped or failing point, and a zero
-  # there would read as a pass; so this calls gradient_fn itself and refuses
-  # the 1e10 sentinel, a non-finite point, and any non-finite component.
+  # there would read as a pass; so this calls gradient_fn itself (or, when
+  # gradient_exact is FALSE, differences the objective) and refuses the 1e10
+  # sentinel, a non-finite point, and any non-finite component.
   # Central differences of the objective, for when gradient_fn is not its
   # gradient (gradient_exact = FALSE). A side that lands on the 1e10 clamp
   # would turn the difference into 1e10 / (2h) -- a number that looks like a
