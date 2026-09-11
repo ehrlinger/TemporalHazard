@@ -71,17 +71,19 @@ summary(fit)
 #>   dist:         weibull 
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
+#>   gradient:     relative 3.9e-06 (SAS/C requires <= 6.06e-06; met, nlm code 1)
 #>   log-lik:      -293.553 
 #>   Not done in this run: none
 #>   evaluations: fn=36, gr=8
+#>   message:      continued with nlm() for 21 iterations (code 1) 
 #> 
 #> Coefficients:
-#>          estimate   std_error      z_stat      p_value
-#> mu    0.121860518 0.062260593  1.95726560 5.031625e-02
-#> nu    1.143730632 0.084302528 13.56697905 6.285984e-42
-#> beta1 0.001716551 0.008807986  0.19488579 8.454824e-01
-#> beta2 0.156208724 0.090597558  1.72420458 8.467092e-02
-#> beta3 0.017352702 0.362918430  0.04781433 9.618642e-01
+#>          estimate   std_error     z_stat      p_value
+#> mu    0.121938323 0.062299561  1.9572902 5.031335e-02
+#> nu    1.143693955 0.084297244 13.5673944 6.250475e-42
+#> beta1 0.001710112 0.008807807  0.1941586 8.460517e-01
+#> beta2 0.156102262 0.090593058  1.7231151 8.486772e-02
+#> beta3 0.017258365 0.362941256  0.0475514 9.620738e-01
 ```
 
 ## Prediction workflow
@@ -122,13 +124,13 @@ new_patients$cumulative_hazard <- predict(fit, newdata = pred_input, type = "cum
 
 new_patients
 #>   time age nyha shock linear_predictor hazard_multiplier  survival
-#> 1  0.5  50    1     0        0.2420363          1.273840 0.9494097
-#> 2  1.5  65    3     0        0.5802020          1.786399 0.7743185
-#> 3  3.0  75    4     1        0.7709289          2.161774 0.5046535
+#> 1  0.5  50    1     0        0.2416078          1.273295 0.9493898
+#> 2  1.5  65    3     0        0.5794640          1.785081 0.7743077
+#> 3  3.0  75    4     1        0.7699258          2.159606 0.5047351
 #>   cumulative_hazard
-#> 1        0.05191482
-#> 2        0.25577202
-#> 3        0.68388317
+#> 1         0.0519358
+#> 2         0.2557859
+#> 3         0.6837216
 ```
 
 ## Visualizing predicted survival
@@ -275,30 +277,32 @@ summary(fit_mp)
 #>   phase 3:      late - g3 (late risk)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
+#>   gradient:     relative 4.85e-06 (SAS/C requires <= 6.06e-06; met, nlm code 1)
 #>   log-lik:      -3740.52 
 #>   Not done in this run: none
 #>   evaluations: fn=5, gr=1
+#>   message:      continued with nlm() for 1 iterations (code 1) 
 #> 
 #> Coefficients (internal scale):
 #> 
 #>   Phase: early (cdf)
-#>               estimate  std_error   z_stat p_value
-#>   log_mu     -3.779544 0.09381199 -40.2885       0
-#>   log_t_half -1.609438         NA       NA      NA
-#>   nu          1.000000         NA       NA      NA
-#>   m           1.000000         NA       NA      NA
+#>               estimate  std_error    z_stat p_value
+#>   log_mu     -3.779551 0.09381236 -40.28841       0
+#>   log_t_half -1.609438         NA        NA      NA
+#>   nu          1.000000         NA        NA      NA
+#>   m           1.000000         NA        NA      NA
 #> 
 #>   Phase: constant (constant)
-#>           estimate  std_error    z_stat p_value
-#>   log_mu -7.225806 0.09312693 -77.59093       0
+#>           estimate std_error    z_stat p_value
+#>   log_mu -7.225785 0.0931256 -77.59182       0
 #> 
 #>   Phase: late (g3)
-#>           estimate std_error    z_stat p_value
-#>   log_mu  -16.6578 0.1157704 -143.8865       0
-#>   log_tau   0.0000        NA        NA      NA
-#>   gamma     3.0000        NA        NA      NA
-#>   alpha     1.0000        NA        NA      NA
-#>   eta       1.0000        NA        NA      NA
+#>            estimate std_error    z_stat p_value
+#>   log_mu  -16.65783  0.115773 -143.8836       0
+#>   log_tau   0.00000        NA        NA      NA
+#>   gamma     3.00000        NA        NA      NA
+#>   alpha     1.00000        NA        NA      NA
+#>   eta       1.00000        NA        NA      NA
 ```
 
 The summary marks most rows `NA` in the `std_error`, `z_stat`, and

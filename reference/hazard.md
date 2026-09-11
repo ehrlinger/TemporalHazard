@@ -180,32 +180,34 @@ An object of class `hazard`, a named list with components: `call` (the
 matched call), `spec` (model specification: `dist`, `control`,
 `time_windows`, `phases`), `data` (input data: `time`, `status`, `x`,
 `weights`, etc.), `fit` (optimisation results: `theta`, `objective`,
-`converged`, `se`, `vcov`, `counts`, `message`; all `NULL` when
-`fit = FALSE`; multiphase fits add `starts`, one row per optimisation
-start with its `status` (`"ok"`, `"nonconverged"`, `"infeasible"`,
-`"nonfinite"` or `"error"`), `objective` (`NA` unless the start reached
-a point where the likelihood is defined), `convergence` (the
-[`optim`](https://rdrr.io/r/stats/optim.html) code, `0` for success),
-whether it was the `best` and so the reported fit, and the `message` of
-any error. A start that stops at `maxit` has a finite `objective` and
-can win the selection, so `status` distinguishes it from one that
-converged. Every fit carries `weak`, which takes one of three values: a
-list, when the likelihood is near-flat along a parameter combination,
-giving the `params` spanning that direction, their squared loadings
-(`weights`), the strongest pairwise `correlation` among them, the
-Hessian `rcond` and `n_directions`, the number of near-flat directions
-found; `NULL` when the fit was examined and is well identified; and `NA`
-when the check could not run because no usable Hessian was available –
-which includes an unfitted object and an install without the suggested
-numDeriv. Test with `is.list(fit$fit$weak)`, not `!is.null()`: the `NA`
-case has not been examined and must not be read as a clean result),
-`engine` (implementation tag, `"native-r-m2"`), and two fields recording
-what the fit did not do: `degraded`, a character vector of the steps not
-performed, in the fixed order `"fitting"`, `"standard_errors"`,
-`"conserved_phase_variance"`, `"weak_direction_check"`,
-`"conservation_of_events"`, and empty when nothing was lost; and
-`degraded_causes`, a character vector with the same names giving the
-reason for each. [`print()`](https://rdrr.io/r/base/print.html) and
+`converged`, `se`, `vcov`, `counts`, `message`, and `rel_gradient` and
+`polish_code`, the SAS/C acceptance test described under "Convergence";
+all `NULL` when `fit = FALSE`; multiphase fits add `starts`, one row per
+optimisation start with its `status` (`"ok"`, `"nonconverged"`,
+`"infeasible"`, `"nonfinite"` or `"error"`), `objective` (`NA` unless
+the start reached a point where the likelihood is defined),
+`convergence` (the [`optim`](https://rdrr.io/r/stats/optim.html) code,
+`0` for success), whether it was the `best` and so the reported fit, and
+the `message` of any error. A start that stops at `maxit` has a finite
+`objective` and can win the selection, so `status` distinguishes it from
+one that converged. Every fit carries `weak`, which takes one of three
+values: a list, when the likelihood is near-flat along a parameter
+combination, giving the `params` spanning that direction, their squared
+loadings (`weights`), the strongest pairwise `correlation` among them,
+the Hessian `rcond` and `n_directions`, the number of near-flat
+directions found; `NULL` when the fit was examined and is well
+identified; and `NA` when the check could not run because no usable
+Hessian was available – which includes an unfitted object and an install
+without the suggested numDeriv. Test with `is.list(fit$fit$weak)`, not
+`!is.null()`: the `NA` case has not been examined and must not be read
+as a clean result), `engine` (implementation tag, `"native-r-m2"`), and
+two fields recording what the fit did not do: `degraded`, a character
+vector of the steps not performed, in the fixed order `"fitting"`,
+`"standard_errors"`, `"conserved_phase_variance"`,
+`"weak_direction_check"`, `"conservation_of_events"`, and empty when
+nothing was lost; and `degraded_causes`, a character vector with the
+same names giving the reason for each.
+[`print()`](https://rdrr.io/r/base/print.html) and
 [`summary()`](https://rdrr.io/r/base/summary.html) always show them as a
 "Not done in this run" block, which reads "none" when nothing was lost.
 `fit$fit$weak` is `NA` exactly when `"weak_direction_check"` is listed.
@@ -262,10 +264,16 @@ Control parameters:
   negative log-likelihood (default 1e-5). BFGS stops when an iteration
   reduces it by less than `reltol * (|objective| + reltol)`, so the
   stopping gap grows with the size of the log-likelihood: about 0.0024
-  at a log-likelihood of -240. On a flat surface a fit can stop that far
-  short of the optimum and still report convergence.
+  at a log-likelihood of -240. On a flat surface plain BFGS can stop
+  that far short of the optimum and still report convergence, so
+  `hazard()` then applies SAS/C HAZARD's relative-gradient test and,
+  when the stop fails it, continues with
+  [`stats::nlm()`](https://rdrr.io/r/stats/nlm.html); see the
+  "Convergence" section.
 
-- `abstol`: Absolute gradient norm tolerance (default 1e-6)
+- `abstol`: Projected-gradient tolerance, used only by the bounded
+  (L-BFGS-B) optimizer (default 1e-6). The fits `hazard()` runs use BFGS
+  and ignore it.
 
 - `method`: Optimization method: "bfgs" or "nm" (default "bfgs"). SAS
   `PROC HAZARD` jobs write `STEEPEST QUASI` together – steepest descent
@@ -352,6 +360,36 @@ parameterizations, not special cases of this additive form. Parameters
 are estimated on an unconstrained internal scale (e.g. \\\log\mu\\,
 \\\log t\_{1/2}\\) and transformed back for reporting; see
 [`vignette("mf-mathematical-foundations")`](https://ehrlinger.github.io/TemporalHazard/articles/mf-mathematical-foundations.md).
+
+## Convergence
+
+The optimizer stops when an iteration improves the log-likelihood by
+less than `control$reltol` relative to its size, and on a flat ridge
+that can happen well short of the maximum. SAS/C HAZARD accepts an
+optimum only on a different test, the relative gradient \\\max_i \|g_i\|
+\max(\|x_i\|, 1) / \max(\|\ell\|, 1) \le \epsilon^{1/3}\\, about 6e-6,
+and `hazard()` applies it too: when the optimizer reports convergence
+and the test fails, the fit is continued with
+[`stats::nlm()`](https://rdrr.io/r/stats/nlm.html) at SAS's tolerances,
+and the continued point is kept if it improves the log-likelihood.
+
+Every fit records the result in `fit$fit$rel_gradient` and, when the
+continuation improved the fit, its termination code in
+`fit$fit$polish_code`. [`print()`](https://rdrr.io/r/base/print.html)
+and [`summary()`](https://rdrr.io/r/base/summary.html) show both.
+`rel_gradient` is `NA` when the test was not applied (the optimizer did
+not report convergence) or the gradient cannot be evaluated at the
+estimates; `NA` is never reported as a pass. Under Conservation of
+Events the analytic score omits how the conserved scale moves, so the
+test is computed from finite differences of the log-likelihood with that
+scale re-solved, as SAS/C does; the continuation still uses the analytic
+score, so a CoE fit can honestly end with the test not met. A warning is
+raised only for code 4, the iteration limit (raise `control$maxit`), and
+code 5, where the log-likelihood kept rising along some direction and
+the model may have no maximum. Codes 2 and 3, where SAS/C prints a
+caution, are recorded without one. The test is relative to the size of
+the log-likelihood, so a fit that meets it is within SAS's tolerance of
+the maximum, not exactly at it.
 
 ## Baseline distributions
 
@@ -447,14 +485,16 @@ summary(fit)
 #>   dist:         weibull 
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
-#>   log-lik:      -89.5173 
+#>   gradient:     relative 1.24e-06 (SAS/C requires <= 6.06e-06; met, nlm code 1)
+#>   log-lik:      -89.5172 
 #>   Not done in this run: none
 #>   evaluations: fn=23, gr=7
+#>   message:      continued with nlm() for 3 iterations (code 1) 
 #> 
 #> Coefficients:
 #>     estimate  std_error   z_stat      p_value
-#> mu 0.2190092 0.02728228 8.027524 9.945983e-16
-#> nu 1.3389540 0.15829050 8.458840 2.700510e-17
+#> mu 0.2186394 0.02725028 8.023381 1.028736e-15
+#> nu 1.3394302 0.15858335 8.446222 3.008801e-17
 
 # -- Formula interface with covariates --------------------------------
 set.seed(1001)
@@ -482,17 +522,19 @@ summary(fit2)
 #>   dist:         weibull 
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
+#>   gradient:     relative 3.9e-06 (SAS/C requires <= 6.06e-06; met, nlm code 1)
 #>   log-lik:      -293.553 
 #>   Not done in this run: none
 #>   evaluations: fn=36, gr=8
+#>   message:      continued with nlm() for 21 iterations (code 1) 
 #> 
 #> Coefficients:
-#>          estimate   std_error      z_stat      p_value
-#> mu    0.121860518 0.062260593  1.95726560 5.031625e-02
-#> nu    1.143730632 0.084302528 13.56697905 6.285984e-42
-#> beta1 0.001716551 0.008807986  0.19488579 8.454824e-01
-#> beta2 0.156208724 0.090597558  1.72420458 8.467092e-02
-#> beta3 0.017352702 0.362918430  0.04781433 9.618642e-01
+#>          estimate   std_error     z_stat      p_value
+#> mu    0.121938323 0.062299561  1.9572902 5.031335e-02
+#> nu    1.143693955 0.084297244 13.5673944 6.250475e-42
+#> beta1 0.001710112 0.008807807  0.1941586 8.460517e-01
+#> beta2 0.156102262 0.090593058  1.7231151 8.486772e-02
+#> beta3 0.017258365 0.362941256  0.0475514 9.620738e-01
 
 # \donttest{
 # -- Parametric survival with Kaplan-Meier overlay -----------------
@@ -552,6 +594,7 @@ summary(fit_mp)
 #>   phase 2:      late - cdf (late risk)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
+#>   gradient:     relative 1.66e-09 (SAS/C requires <= 6.06e-06; met)
 #>   log-lik:      -321.926 
 #>   Not done in this run: none
 #>   evaluations: fn=21, gr=6

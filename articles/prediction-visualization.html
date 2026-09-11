@@ -170,12 +170,12 @@ Figure 1: Kaplan-Meier survival estimate: death after AVC repair
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">profile</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"time"</span>, <span class="st">"survival"</span>, <span class="st">"cumulative_hazard"</span><span class="op">)</span><span class="op">]</span><span class="op">)</span></span>
 <span><span class="co">#&gt;        time  survival cumulative_hazard</span></span>
-<span><span class="co">#&gt; 1 0.0100000 0.9840245        0.01610446</span></span>
-<span><span class="co">#&gt; 2 0.8242888 0.9552402        0.04579243</span></span>
-<span><span class="co">#&gt; 3 1.6385776 0.9475408        0.05388532</span></span>
-<span><span class="co">#&gt; 4 2.4528664 0.9424348        0.05928850</span></span>
-<span><span class="co">#&gt; 5 3.2671552 0.9385173        0.06345398</span></span>
-<span><span class="co">#&gt; 6 4.0814440 0.9352997        0.06688831</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 0.0100000 0.9840203        0.01610877</span></span>
+<span><span class="co">#&gt; 2 0.8242888 0.9552272        0.04580607</span></span>
+<span><span class="co">#&gt; 3 1.6385776 0.9475253        0.05390163</span></span>
+<span><span class="co">#&gt; 4 2.4528664 0.9424178        0.05930660</span></span>
+<span><span class="co">#&gt; 5 3.2671552 0.9384990        0.06347348</span></span>
+<span><span class="co">#&gt; 6 4.0814440 0.9352803        0.06690897</span></span></code></pre></div>
 </div>
 </section><section class="level2" data-number="3"><h2 data-number="3" id="parametric-survival-with-km-overlay">
 <span class="header-section-number">3</span> Parametric survival with KM overlay<a class="anchor" aria-label="anchor" href="#parametric-survival-with-km-overlay"></a>
@@ -229,12 +229,12 @@ Figure 2: Weibull parametric survival vs. Kaplan-Meier (AVC death)
 <span>                   type <span class="op">=</span> <span class="st">"survival"</span>, se.fit <span class="op">=</span> <span class="cn">TRUE</span>, level <span class="op">=</span> <span class="fl">0.95</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">surv_ci</span><span class="op">)</span></span>
 <span><span class="co">#&gt;         fit      se.fit     lower     upper</span></span>
-<span><span class="co">#&gt; 1 0.9840245 0.005670665 0.9683980 0.9919560</span></span>
-<span><span class="co">#&gt; 2 0.9552402 0.013469177 0.9217319 0.9745990</span></span>
-<span><span class="co">#&gt; 3 0.9475408 0.015528659 0.9095625 0.9698327</span></span>
-<span><span class="co">#&gt; 4 0.9424348 0.016905898 0.9015154 0.9666641</span></span>
-<span><span class="co">#&gt; 5 0.9385173 0.017970625 0.8953492 0.9642310</span></span>
-<span><span class="co">#&gt; 6 0.9352997 0.018851038 0.8902883 0.9622320</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 0.9840203 0.005671643 0.9683917 0.9919534</span></span>
+<span><span class="co">#&gt; 2 0.9552272 0.013471418 0.9217152 0.9745897</span></span>
+<span><span class="co">#&gt; 3 0.9475253 0.015531237 0.9095431 0.9698214</span></span>
+<span><span class="co">#&gt; 4 0.9424178 0.016908706 0.9014941 0.9666516</span></span>
+<span><span class="co">#&gt; 5 0.9384990 0.017973613 0.8953265 0.9642174</span></span>
+<span><span class="co">#&gt; 6 0.9352803 0.018854177 0.8902645 0.9622176</span></span></code></pre></div>
 </div>
 <p>Confidence limits use SAS-matched transformations chosen so the interval respects the natural range of each quantity: log-scale for <code>hazard</code> and <code>cumulative_hazard</code> (keeps the lower bound positive), and <code>log(-log(S))</code> for <code>survival</code> (keeps the interval inside <span class="math inline">\([0, 1]\)</span>). The linear predictor uses symmetric natural-scale CLs. The point isn’t notational fussiness — it’s that a symmetric CI on survival probability would frequently dip below 0 or rise above 1, giving nonsense values that the transformed form avoids by construction.</p>
 <div class="cell">

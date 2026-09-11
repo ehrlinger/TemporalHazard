@@ -119,6 +119,7 @@ summary(fit)
 #>   phase 2:      constant - constant (flat rate)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
+#>   gradient:     relative 1.95e-06 (SAS/C requires <= 6.06e-06; met)
 #>   log-lik:      -211.468 
 #>   Not done in this run: none
 #>   evaluations: fn=4, gr=1

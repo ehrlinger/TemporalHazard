@@ -342,13 +342,13 @@ sw <- hzr_stepwise(base, scope = ~ age + mal,
 #> Step 1: ENTER  mal   (p = 0.001)
 #> (no further action after 1 step)
 #> 
-#> Final model: 2 covariates, logLik = -223.55, AIC = 455.09
+#> Final model: 2 covariates, logLik = -218.60, AIC = 445.19
 print(sw)
 #> Stepwise selection (direction = forward, criterion = score, slentry = 0.30, slstay = 0.20)
 #> 
 #> Step 1: ENTER  mal   (p = 0.001)
 #> (no further action after 1 step)
 #> 
-#> Final model: 2 covariates, logLik = -223.55, AIC = 455.09
+#> Final model: 2 covariates, logLik = -218.60, AIC = 445.19
 # }
 ```

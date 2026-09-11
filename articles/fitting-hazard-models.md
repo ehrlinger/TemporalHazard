@@ -67,6 +67,7 @@ fit_kul
 #>   engine:       native-r-m2 
 #>   log-lik:      -3935.72 
 #>   converged:    TRUE 
+#>   gradient:     relative 3.13e-06 (SAS/C requires <= 6.06e-06; met, nlm code 1)
 #>   Not done in this run: none
 ```
 
@@ -163,6 +164,7 @@ fit_avc
 #>   engine:       native-r-m2 
 #>   log-lik:      -197.159 
 #>   converged:    TRUE 
+#>   gradient:     relative 4.87e-06 (SAS/C requires <= 6.06e-06; met, nlm code 1)
 #>   Not done in this run: none
 ```
 
@@ -226,6 +228,7 @@ summary(fit_mp)
 #>   phase 2:      constant - constant (flat rate)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
+#>   gradient:     relative 2.27e-08 (SAS/C requires <= 6.06e-06; met)
 #>   log-lik:      -228.029 
 #>   Not done in this run: none
 #>   evaluations: fn=32, gr=10
@@ -333,6 +336,7 @@ fit_death
 #>   engine:       native-r-m2 
 #>   log-lik:      -1820.55 
 #>   converged:    TRUE 
+#>   gradient:     relative 4.55e-06 (SAS/C requires <= 6.06e-06; met, nlm code 1)
 #>   Not done in this run: none
 ```
 
@@ -363,6 +367,7 @@ fit_pve
 #>   engine:       native-r-m2 
 #>   log-lik:      -391.125 
 #>   converged:    TRUE 
+#>   gradient:     relative 5.55e-06 (SAS/C requires <= 6.06e-06; met, nlm code 1)
 #>   Not done in this run: none
 ```
 
@@ -517,6 +522,7 @@ fit_ic
 #>   engine:       native-r-m2 
 #>   log-lik:      -674.374 
 #>   converged:    TRUE 
+#>   gradient:     relative 3.92e-07 (SAS/C requires <= 6.06e-06; met, nlm code 1)
 #>   Not done in this run: none
 ```
 
@@ -546,8 +552,8 @@ rbind(
   truth             = c(mu = 0.025, nu = 1.0)
 )
 #>                       mu     nu
-#> interval_censored 0.0251 1.0345
-#> naive_exact_upper 0.0259 1.4566
+#> interval_censored 0.0251 1.0350
+#> naive_exact_upper 0.0259 1.4665
 #> truth             0.0250 1.0000
 ```
 
@@ -654,7 +660,7 @@ recognizable:
 
 | Symptom | What it means |
 |----|----|
-| `fit$fit$converged == FALSE` | Optimizer hit `maxit` without satisfying the gradient tolerance |
+| `fit$fit$converged == FALSE` | Optimizer hit `maxit` before its stopping criterion was met |
 | [`vcov()`](https://rdrr.io/r/stats/vcov.html) returns `NA` | Hessian is singular — parameters are not jointly identified |
 | A phase scale (`log_mu`) at a boundary value | That phase is contributing essentially zero hazard; it isn’t needed |
 | Enormous standard errors on one or more parameters | Flat likelihood in that direction — weak identification |
@@ -681,8 +687,8 @@ fit_3ph <- hazard(
   fit = TRUE, control = list(n_starts = 5, maxit = 1000)
 )
 #> Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =
-#> 3.78e-11); standard errors may be unreliable
-#> Warning: Phase 'constant' contributes at most 2.75e-10 of the cumulative hazard
+#> 4.37e-12); standard errors may be unreliable
+#> Warning: Phase 'constant' contributes at most 3.18e-11 of the cumulative hazard
 #> at any observed time. Such a phase has not started by the end of follow-up, so
 #> neither its 'mu' nor its shape is identified: the fit converges and those
 #> parameters drift freely.
@@ -691,7 +697,7 @@ fit_3ph <- hazard(
 log_mu_idx <- grep("log_mu", names(coef(fit_3ph)))
 round(exp(coef(fit_3ph)[log_mu_idx]), 6)
 #>    early.log_mu constant.log_mu     late.log_mu 
-#>        0.248871        0.000000        0.000006
+#>        0.248869        0.000000        0.000006
 ```
 
 The constant and late phase scales are both near zero — the optimizer
@@ -748,10 +754,23 @@ basin, then BFGS polishes the solution. This warm-up is transparent — it
 happens automatically when the conditions are met and there is no
 user-facing control to switch it on or off.
 
-**`maxit`** (default 1000) sets the BFGS iteration cap. Hitting `maxit`
-without converging usually means either the starting values are far from
-the optimum (fix with better starts or `n_starts`) or the model is
-overparameterized (fix by fixing shapes or dropping a phase). Raising
+**Acceptance test (automatic).** BFGS stops when an iteration improves
+the log-likelihood by less than `reltol` relative to its size, which on
+a flat ridge can be short of the maximum.
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+then applies SAS/C HAZARD’s own test, a relative gradient of at most
+about 6e-6, and when a stop fails it continues with
+[`stats::nlm()`](https://rdrr.io/r/stats/nlm.html). The result is kept
+in `fit$fit$rel_gradient` and `fit$fit$polish_code`, and
+[`print()`](https://rdrr.io/r/base/print.html) shows it; see the
+“Convergence” section of
+[`?hazard`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md).
+
+**`maxit`** (default 1000) sets the iteration cap for BFGS and for the
+[`nlm()`](https://rdrr.io/r/stats/nlm.html) continuation. Hitting
+`maxit` without converging usually means either the starting values are
+far from the optimum (fix with better starts or `n_starts`) or the model
+is overparameterized (fix by fixing shapes or dropping a phase). Raising
 `maxit` beyond 2000 rarely helps if the optimizer is genuinely stuck.
 
 ## 7 Phase types reference

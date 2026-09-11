@@ -626,6 +626,8 @@ Figure 3: Three-phase additive cumulative hazard: total = early + constant + la
 <p>The optimizer uses <code><a href="https://rdrr.io/r/stats/optim.html" class="external-link">stats::optim()</a></code> with BFGS on the unconstrained internal scale, wrapped by <code>.hzr_optim_generic()</code>. Key features:</p>
 <ul>
 <li>
+<strong>Acceptance test</strong>: a BFGS stop is checked against SAS/C HAZARD’s relative gradient, <span class="math inline">\(\max_i |g_i| \max(|x_i|, 1) / \max(|\ell|, 1)\)</span>, which SAS/C requires to be at most <span class="math inline">\(\epsilon^{1/3}\)</span> (about <span class="math inline">\(6 \times 10^{-6}\)</span>). A stop that fails it is continued with <code><a href="https://rdrr.io/r/stats/nlm.html" class="external-link">stats::nlm()</a></code>, the Dennis-Schnabel algorithm SAS/C’s optimizer was ported from, and the continuation is kept when it improves the log-likelihood. The result is recorded either way: a fit can still end, and report convergence, without meeting the test.</li>
+<li>
 <strong>Multi-start</strong>: the optimizer runs from <span class="math inline">\(k\)</span> random perturbations around the user-supplied starting values (default <span class="math inline">\(k = 5\)</span>, controlled by <code>control$n_starts</code>). The run with the highest log-likelihood is kept.</li>
 <li>
 <strong>Feasibility guard</strong>: any parameter vector where <span class="math inline">\(m &lt; 0\)</span> <strong>and</strong> <span class="math inline">\(\nu &lt; 0\)</span> for the same phase returns <span class="math inline">\(-\infty\)</span> immediately.</li>

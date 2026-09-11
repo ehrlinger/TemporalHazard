@@ -124,9 +124,9 @@ print(gof)
 #> Distribution: weibull  | n = 305 
 #> 
 #> Total observed events: 68 
-#> Total expected events: 55.9 
-#> Final residual (E - O): -12.1 
-#> Conservation ratio (E/O): 0.822 
+#> Total expected events: 55.583 
+#> Final residual (E - O): -12.417 
+#> Conservation ratio (E/O): 0.817 
 #> 
 #> Use plot columns: time, km_surv, par_surv, cum_observed, cum_expected, residual
 

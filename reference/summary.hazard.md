@@ -50,14 +50,16 @@ summary(fit)
 #>   dist:         weibull 
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
+#>   gradient:     relative 1.27e-09 (SAS/C requires <= 6.06e-06; met, nlm code 1)
 #>   log-lik:      -49.8926 
 #>   Not done in this run: none
 #>   evaluations: fn=15, gr=6
+#>   message:      continued with nlm() for 3 iterations (code 1) 
 #> 
 #> Coefficients:
 #>     estimate std_error   z_stat      p_value
-#> mu 0.5284203 0.1084224 4.873719 1.095168e-06
-#> nu 0.9378551 0.1375396 6.818802 9.180267e-12
+#> mu 0.5284940 0.1084346 4.873851 1.094438e-06
+#> nu 0.9378488 0.1375304 6.819212 9.154120e-12
 
 # \donttest{
 # -- Multiphase model summary ----------------------------------------
@@ -89,22 +91,24 @@ summary(fit_mp)
 #>   phase 2:      late - cdf (late risk)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
+#>   gradient:     relative 3.78e-08 (SAS/C requires <= 6.06e-06; met, nlm code 1)
 #>   log-lik:      -428.716 
 #>   Not done in this run: none
-#>   evaluations: fn=30, gr=6
+#>   evaluations: fn=10, gr=4
+#>   message:      continued with nlm() for 2 iterations (code 1) 
 #> 
 #> Coefficients (internal scale):
 #> 
 #>   Phase: early (cdf)
 #>                estimate std_error    z_stat      p_value
-#>   log_mu     -2.1152885 0.2910719 -7.267238 3.669127e-13
+#>   log_mu     -2.1153147 0.2910764 -7.267214 3.669767e-13
 #>   log_t_half -0.6931472        NA        NA           NA
 #>   nu          2.0000000        NA        NA           NA
 #>   m           0.0000000        NA        NA           NA
 #> 
 #>   Phase: late (cdf)
 #>               estimate  std_error   z_stat      p_value
-#>   log_mu     0.5511614 0.09532828 5.781719 7.394105e-09
+#>   log_mu     0.5511652 0.09532806 5.781773 7.391723e-09
 #>   log_t_half 1.6094379         NA       NA           NA
 #>   nu         1.0000000         NA       NA           NA
 #>   m          0.0000000         NA       NA           NA

@@ -427,6 +427,15 @@ The optimizer uses
 unconstrained internal scale, wrapped by `.hzr_optim_generic()`. Key
 features:
 
+- **Acceptance test**: a BFGS stop is checked against SAS/C HAZARD’s
+  relative gradient, \\\max_i \|g_i\| \max(\|x_i\|, 1) / \max(\|\ell\|,
+  1)\\, which SAS/C requires to be at most \\\epsilon^{1/3}\\ (about \\6
+  \times 10^{-6}\\). A stop that fails it is continued with
+  [`stats::nlm()`](https://rdrr.io/r/stats/nlm.html), the
+  Dennis-Schnabel algorithm SAS/C’s optimizer was ported from, and the
+  continuation is kept when it improves the log-likelihood. The result
+  is recorded either way: a fit can still end, and report convergence,
+  without meeting the test.
 - **Multi-start**: the optimizer runs from \\k\\ random perturbations
   around the user-supplied starting values (default \\k = 5\\,
   controlled by `control$n_starts`). The run with the highest

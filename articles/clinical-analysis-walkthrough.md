@@ -174,14 +174,16 @@ summary(fit_weib)
 #>   dist:         weibull 
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
-#>   log-lik:      -234.775 
+#>   gradient:     relative 2.99e-06 (SAS/C requires <= 6.06e-06; met, nlm code 1)
+#>   log-lik:      -234.774 
 #>   Not done in this run: none
 #>   evaluations: fn=34, gr=9
+#>   message:      continued with nlm() for 4 iterations (code 1) 
 #> 
 #> Coefficients:
-#>        estimate   std_error   z_stat      p_value
-#> mu 3.498711e-05 0.000034554 1.012534 3.112826e-01
-#> nu 2.043444e-01 0.023324005 8.761118 1.933229e-18
+#>        estimate    std_error   z_stat      p_value
+#> mu 3.509006e-05 3.463678e-05 1.013087 3.110187e-01
+#> nu 2.043723e-01 2.332197e-02 8.763081 1.899849e-18
 ```
 
 The Weibull forces a monotone hazard shape. Let’s overlay it on the
@@ -247,6 +249,7 @@ summary(fit_mp)
 #>   phase 2:      constant - constant (flat rate)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
+#>   gradient:     relative 2.27e-08 (SAS/C requires <= 6.06e-06; met)
 #>   log-lik:      -228.029 
 #>   Not done in this run: none
 #>   evaluations: fn=32, gr=10
@@ -487,30 +490,32 @@ summary(fit_mv)
 #>   phase 2:      constant - constant (flat rate)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
-#>   log-lik:      -190.541 
+#>   gradient:     relative 0.0497 (SAS/C requires <= 6.06e-06; not met, nlm code 3)
+#>   log-lik:      -190.486 
 #>   Not done in this run: none
-#>   evaluations: fn=12, gr=1
+#>   evaluations: fn=11, gr=1
+#>   message:      continued with nlm() for 59 iterations (code 3) 
 #> 
 #> Coefficients (internal scale):
 #> 
 #>   Phase: early (cdf)
 #>                  estimate   std_error    z_stat      p_value
-#>   log_mu     -3.330323139 0.541000517 -6.155859 7.467143e-10
+#>   log_mu     -3.637989946 0.569514842 -6.387876 1.682061e-10
 #>   log_t_half -0.693147181          NA        NA           NA
 #>   nu          1.000000000          NA        NA           NA
 #>   m           1.000000000          NA        NA           NA
-#>   age        -0.003546142 0.002070197 -1.712949 8.672191e-02
-#>   status      0.603591374 0.151752499  3.977472 6.965171e-05
-#>   mal         0.573404364 0.270661888  2.118526 3.413051e-02
-#>   com_iv      0.875692489 0.361210109  2.424330 1.533666e-02
+#>   age        -0.002888002 0.001990154 -1.451145 1.467395e-01
+#>   status      0.591684485 0.154391427  3.832366 1.269166e-04
+#>   mal         0.630266086 0.270552115  2.329555 1.982967e-02
+#>   com_iv      1.207685702 0.405592627  2.977583 2.905310e-03
 #> 
 #>   Phase: constant (constant)
-#>               estimate   std_error     z_stat      p_value
-#>   log_mu -8.9670708393 1.316626704 -6.8106403 9.716533e-12
-#>   age    -0.0008946158 0.002769863 -0.3229820 7.467089e-01
-#>   status  0.7824539270 0.462773787  1.6907914 9.087666e-02
-#>   mal     1.1338858766 1.018304985  1.1135032 2.654924e-01
-#>   com_iv -4.0716415039 4.225880687 -0.9635013 3.352960e-01
+#>              estimate   std_error     z_stat      p_value
+#>   log_mu -9.386133161 1.358334714 -6.9100297 4.845524e-12
+#>   age    -0.001308306 0.002539827 -0.5151161 6.064719e-01
+#>   status  1.022440982 0.430754737  2.3736036 1.761545e-02
+#>   mal     0.440034467 1.135105996  0.3876594 6.982681e-01
+#>   com_iv -1.635241828 1.444470115 -1.1320704 2.576048e-01
 ```
 
 The coefficient table shows phase-specific covariate effects. A positive
@@ -612,7 +617,7 @@ fit_step <- hzr_stepwise(
 #> Warning in .hzr_safe_solve(hess_result): Non-positive variance estimates; the
 #> optimum may not be a proper maximum
 #> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
-#> 1.45e-13); standard errors may be unreliable
+#> 1.42e-13); standard errors may be unreliable
 fit_step
 #> Stepwise selection (direction = both, criterion = wald, slentry = 0.30, slstay = 0.20)
 #> 
@@ -637,8 +642,8 @@ fit_step$steps[, c("step_num", "action", "variable", "phase",
 #> 1        1  enter   status    early 1.967208e-09 424.9675
 #> 2        2  enter   com_iv    early 1.260359e-05 401.5605
 #> 3        3  enter   status constant 6.502167e-02 400.3834
-#> 4        4  enter      mal    early 1.094110e-01 399.8823
-#> 5        5  enter      age    early 1.174920e-01 398.2062
+#> 4        4  enter      mal    early 1.093379e-01 399.8823
+#> 5        5  enter      age    early 1.174941e-01 398.2062
 ```
 
 The final model is the fit at the top of the object, reachable through
@@ -652,7 +657,7 @@ c(manual = logLik_manual, stepwise = logLik_step,
   aic_manual = 2 * length(fit_mv$fit$theta) - 2 * logLik_manual,
   aic_step   = 2 * length(fit_step$fit$theta) - 2 * logLik_step)
 #>     manual   stepwise aic_manual   aic_step 
-#>  -190.5407  -192.1031   407.0813   404.2062
+#>  -190.4862  -192.1031   406.9724   404.2062
 ```
 
 When the screening and stepwise agree on the same covariate set the
@@ -800,30 +805,30 @@ print(cal)
 #> 305 subjects, all included.
 #> 10 groups, 68 observed events, 68 expected
 #> 
-#>  group  n events expected observed_rate expected_rate chi_sq p_value
-#>      1 31      0     1.51        0.0000        0.0488 1.5100 0.21900
-#>      2 30      0     1.88        0.0000        0.0627 1.8800 0.17000
-#>      3 31      3     2.72        0.0968        0.0878 0.0284 0.86600
-#>      4 30      2     3.37        0.0667        0.1120 0.5560 0.45600
-#>      5 31      3     5.16        0.0968        0.1660 0.9010 0.34200
-#>      6 30      8     6.48        0.2670        0.2160 0.3590 0.54900
-#>      7 31     14     6.76        0.4520        0.2180 7.7500 0.00537
-#>      8 30     15     8.67        0.5000        0.2890 4.6200 0.03160
-#>      9 31     11    11.80        0.3550        0.3820 0.0581 0.81000
-#>     10 30     12    19.60        0.4000        0.6540 2.9600 0.08540
+#>  group  n events expected observed_rate expected_rate  chi_sq  p_value
+#>      1 31      0     1.18        0.0000        0.0381  1.1800 0.277000
+#>      2 30      0     1.59        0.0000        0.0531  1.5900 0.207000
+#>      3 31      1     2.49        0.0323        0.0805  0.8960 0.344000
+#>      4 30      4     3.26        0.1330        0.1090  0.1670 0.683000
+#>      5 31      2     4.97        0.0645        0.1600  1.7700 0.183000
+#>      6 30      7     6.51        0.2330        0.2170  0.0368 0.848000
+#>      7 31     16     6.23        0.5160        0.2010 15.3000 0.000091
+#>      8 30     15     8.89        0.5000        0.2960  4.2100 0.040300
+#>      9 31     11    13.20        0.3550        0.4260  0.3660 0.545000
+#>     10 30     12    19.70        0.4000        0.6560  2.9900 0.083700
 #>  mean_survival mean_cumhaz
-#>          0.931      0.0488
-#>          0.908      0.0627
-#>          0.878      0.0878
-#>          0.845      0.1120
-#>          0.798      0.1660
-#>          0.758      0.2160
-#>          0.669      0.2180
-#>          0.610      0.2890
-#>          0.537      0.3820
-#>          0.334      0.6540
+#>          0.942      0.0381
+#>          0.924      0.0531
+#>          0.881      0.0805
+#>          0.852      0.1090
+#>          0.795      0.1600
+#>          0.744      0.2170
+#>          0.665      0.2010
+#>          0.582      0.2960
+#>          0.496      0.4260
+#>          0.286      0.6560
 #> 
-#> Overall: chi-sq = 20.6 on 9 df, p = 0.0144
+#> Overall: chi-sq = 28.5 on 9 df, p = 0.000778
 ```
 
 ``` r
@@ -867,8 +872,8 @@ print(gof)
 #> Distribution: multiphase  | n = 305 
 #> 
 #> Total observed events: 68 
-#> Total expected events: 41.231 
-#> Final residual (E - O): -26.769 
+#> Total expected events: 41.21 
+#> Final residual (E - O): -26.79 
 #> Conservation ratio (E/O): 0.606 
 #> 
 #> Use plot columns: time, km_surv, par_surv, cum_observed, cum_expected, residual

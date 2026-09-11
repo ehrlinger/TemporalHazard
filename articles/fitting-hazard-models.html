@@ -125,6 +125,7 @@
 <span><span class="co">#&gt;   engine:       native-r-m2 </span></span>
 <span><span class="co">#&gt;   log-lik:      -3935.72 </span></span>
 <span><span class="co">#&gt;   converged:    TRUE </span></span>
+<span><span class="co">#&gt;   gradient:     relative 3.13e-06 (SAS/C requires &lt;= 6.06e-06; met, nlm code 1)</span></span>
 <span><span class="co">#&gt;   Not done in this run: none</span></span></code></pre></div>
 </div>
 <p>The summary tells us where the optimizer landed; the picture tells us whether that landing point matches the data. Plot the fitted survival curve on a fine time grid and overlay the Kaplan-Meier step function from the raw cohort.</p>
@@ -205,6 +206,7 @@ Figure 1: Weibull parametric survival vs. Kaplan-Meier (CABG, KU Leuven)
 <span><span class="co">#&gt;   engine:       native-r-m2 </span></span>
 <span><span class="co">#&gt;   log-lik:      -197.159 </span></span>
 <span><span class="co">#&gt;   converged:    TRUE </span></span>
+<span><span class="co">#&gt;   gradient:     relative 4.87e-06 (SAS/C requires &lt;= 6.06e-06; met, nlm code 1)</span></span>
 <span><span class="co">#&gt;   Not done in this run: none</span></span></code></pre></div>
 </div>
 <p>Each coefficient is a log-hazard-ratio: positive means higher risk, negative means lower, zero means no effect. The large positive coefficients on <code>mal</code> (anatomical malalignment) and <code>com_iv</code> (grade IV post-operative complications) flag these as the dominant risk markers in this cohort. The standard errors and Wald z-statistics in the summary tell you which effects are well identified and which are noise — a coefficient with a z-statistic near zero contributes essentially nothing the data can defend.</p>
@@ -239,6 +241,7 @@ Figure 1: Weibull parametric survival vs. Kaplan-Meier (CABG, KU Leuven)
 <span><span class="co">#&gt;   phase 2:      constant - constant (flat rate)</span></span>
 <span><span class="co">#&gt;   engine:       native-r-m2 </span></span>
 <span><span class="co">#&gt;   converged:    TRUE </span></span>
+<span><span class="co">#&gt;   gradient:     relative 2.27e-08 (SAS/C requires &lt;= 6.06e-06; met)</span></span>
 <span><span class="co">#&gt;   log-lik:      -228.029 </span></span>
 <span><span class="co">#&gt;   Not done in this run: none</span></span>
 <span><span class="co">#&gt;   evaluations: fn=32, gr=10</span></span>
@@ -331,6 +334,7 @@ Figure 2: Single-phase Weibull vs. multiphase model against Kaplan-Meier (AVC)
 <span><span class="co">#&gt;   engine:       native-r-m2 </span></span>
 <span><span class="co">#&gt;   log-lik:      -1820.55 </span></span>
 <span><span class="co">#&gt;   converged:    TRUE </span></span>
+<span><span class="co">#&gt;   gradient:     relative 4.55e-06 (SAS/C requires &lt;= 6.06e-06; met, nlm code 1)</span></span>
 <span><span class="co">#&gt;   Not done in this run: none</span></span></code></pre></div>
 </div>
 <p>Switch endpoints. Same data, same package, but now we model time to prosthetic valve endocarditis instead of death. The covariate list shifts to match the clinical question: <code>nve</code> (native-valve endocarditis history) replaces <code>nyha</code> because functional class is less informative for infection risk than prior endocarditis exposure. The fit returns its own MLE, coefficients, and standard errors completely independent of the death model.</p>
@@ -353,6 +357,7 @@ Figure 2: Single-phase Weibull vs. multiphase model against Kaplan-Meier (AVC)
 <span><span class="co">#&gt;   engine:       native-r-m2 </span></span>
 <span><span class="co">#&gt;   log-lik:      -391.125 </span></span>
 <span><span class="co">#&gt;   converged:    TRUE </span></span>
+<span><span class="co">#&gt;   gradient:     relative 5.55e-06 (SAS/C requires &lt;= 6.06e-06; met, nlm code 1)</span></span>
 <span><span class="co">#&gt;   Not done in this run: none</span></span></code></pre></div>
 </div>
 <p>Each endpoint gets its own model with its own covariates, but the hazard model structure — temporal shape plus covariate effects — stays the same whatever the clinical endpoint. Repeating the workflow for a third endpoint (reoperation, for example) is mechanical: swap the <code>Surv(...)</code> columns, swap the covariates, refit. The advantage over running three separate analyses in different tools is that the predictions, diagnostics, and uncertainty quantification all come from the same package — there’s no risk of subtle differences in censoring handling or estimator choice between endpoints.</p>
@@ -481,6 +486,7 @@ Figure 2: Single-phase Weibull vs. multiphase model against Kaplan-Meier (AVC)
 <span><span class="co">#&gt;   engine:       native-r-m2 </span></span>
 <span><span class="co">#&gt;   log-lik:      -674.374 </span></span>
 <span><span class="co">#&gt;   converged:    TRUE </span></span>
+<span><span class="co">#&gt;   gradient:     relative 3.92e-07 (SAS/C requires &lt;= 6.06e-06; met, nlm code 1)</span></span>
 <span><span class="co">#&gt;   Not done in this run: none</span></span></code></pre></div>
 </div>
 </section><section class="level3" data-number="5.3"><h3 data-number="5.3" id="interval-censored-vs-naive-right-censored">
@@ -506,8 +512,8 @@ Figure 2: Single-phase Weibull vs. multiphase model against Kaplan-Meier (AVC)
 <span>  truth             <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>mu <span class="op">=</span> <span class="fl">0.025</span>, nu <span class="op">=</span> <span class="fl">1.0</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span><span class="co">#&gt;                       mu     nu</span></span>
-<span><span class="co">#&gt; interval_censored 0.0251 1.0345</span></span>
-<span><span class="co">#&gt; naive_exact_upper 0.0259 1.4566</span></span>
+<span><span class="co">#&gt; interval_censored 0.0251 1.0350</span></span>
+<span><span class="co">#&gt; naive_exact_upper 0.0259 1.4665</span></span>
 <span><span class="co">#&gt; truth             0.0250 1.0000</span></span></code></pre></div>
 </div>
 <p>The interval-censored fit recovers both parameters accurately. The naive fit estimates <span class="math inline">\(\mu\)</span> comparably but introduces a substantial positive bias in <span class="math inline">\(\nu\)</span> — it sees events consistently appearing at visit times (every 6 months) and infers a sharper, more periodic hazard shape that doesn’t match the underlying exponential structure.</p>
@@ -583,7 +589,7 @@ Figure 3: Nelson-Aalen cumulative hazard for CABGKUL — three-phase shape visi
 <tbody>
 <tr class="odd">
 <td><code>fit$fit$converged == FALSE</code></td>
-<td>Optimizer hit <code>maxit</code> without satisfying the gradient tolerance</td>
+<td>Optimizer hit <code>maxit</code> before its stopping criterion was met</td>
 </tr>
 <tr class="even">
 <td>
@@ -623,8 +629,8 @@ Figure 3: Nelson-Aalen cumulative hazard for CABGKUL — three-phase shape visi
 <span>  fit <span class="op">=</span> <span class="cn">TRUE</span>, control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_starts <span class="op">=</span> <span class="fl">5</span>, maxit <span class="op">=</span> <span class="fl">1000</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span><span class="co">#&gt; Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =</span></span>
-<span><span class="co">#&gt; 3.78e-11); standard errors may be unreliable</span></span>
-<span><span class="co">#&gt; Warning: Phase 'constant' contributes at most 2.75e-10 of the cumulative hazard</span></span>
+<span><span class="co">#&gt; 4.37e-12); standard errors may be unreliable</span></span>
+<span><span class="co">#&gt; Warning: Phase 'constant' contributes at most 3.18e-11 of the cumulative hazard</span></span>
 <span><span class="co">#&gt; at any observed time. Such a phase has not started by the end of follow-up, so</span></span>
 <span><span class="co">#&gt; neither its 'mu' nor its shape is identified: the fit converges and those</span></span>
 <span><span class="co">#&gt; parameters drift freely.</span></span>
@@ -633,7 +639,7 @@ Figure 3: Nelson-Aalen cumulative hazard for CABGKUL — three-phase shape visi
 <span><span class="va">log_mu_idx</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/grep.html" class="external-link">grep</a></span><span class="op">(</span><span class="st">"log_mu"</span>, <span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_3ph</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_3ph</span><span class="op">)</span><span class="op">[</span><span class="va">log_mu_idx</span><span class="op">]</span><span class="op">)</span>, <span class="fl">6</span><span class="op">)</span></span>
 <span><span class="co">#&gt;    early.log_mu constant.log_mu     late.log_mu </span></span>
-<span><span class="co">#&gt;        0.248871        0.000000        0.000006</span></span></code></pre></div>
+<span><span class="co">#&gt;        0.248869        0.000000        0.000006</span></span></code></pre></div>
 </div>
 <p>The constant and late phase scales are both near zero — the optimizer found no evidence in the AVC data for either of those temporal shapes over this follow-up window. The early phase is absorbing all the identifiable structure. Any phase whose fitted scale is <span class="math inline">\(\mu \lesssim 10^{-4}\)</span> is not contributing meaningful hazard and is a candidate for removal. The right diagnostic question is not “did the AIC improve?” but “does this phase represent real clinical biology?” — late deterioration after AVC repair requires long follow-up to observe; this dataset doesn’t have it.</p>
 <p>When shapes are also free (<code>fixed = "none"</code>), a redundant phase can make the Hessian rank-deficient and <code><a href="https://rdrr.io/r/stats/vcov.html" class="external-link">vcov()</a></code> will return <code>NA</code> (the Hessian inversion failed). Fix by adding <code>fixed = "shapes"</code> to each phase to reduce the free-parameter count, then release shapes one at a time if the fixed-shapes fit shows systematic misfit.</p>
@@ -661,7 +667,8 @@ Figure 3: Nelson-Aalen cumulative hazard for CABGKUL — three-phase shape visi
 <span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
 </div>
 <p><strong>Optimizer strategy (automatic).</strong> The package always uses BFGS as the primary optimizer. For fixed-shape multiphase models with 2–10 free parameters, a Nelder-Mead pass runs first on each start to find a good basin, then BFGS polishes the solution. This warm-up is transparent — it happens automatically when the conditions are met and there is no user-facing control to switch it on or off.</p>
-<p><strong><code>maxit</code></strong> (default 1000) sets the BFGS iteration cap. Hitting <code>maxit</code> without converging usually means either the starting values are far from the optimum (fix with better starts or <code>n_starts</code>) or the model is overparameterized (fix by fixing shapes or dropping a phase). Raising <code>maxit</code> beyond 2000 rarely helps if the optimizer is genuinely stuck.</p>
+<p><strong>Acceptance test (automatic).</strong> BFGS stops when an iteration improves the log-likelihood by less than <code>reltol</code> relative to its size, which on a flat ridge can be short of the maximum. <code><a href="../reference/hazard.html">hazard()</a></code> then applies SAS/C HAZARD’s own test, a relative gradient of at most about 6e-6, and when a stop fails it continues with <code><a href="https://rdrr.io/r/stats/nlm.html" class="external-link">stats::nlm()</a></code>. The result is kept in <code>fit$fit$rel_gradient</code> and <code>fit$fit$polish_code</code>, and <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code> shows it; see the “Convergence” section of <code><a href="../reference/hazard.html">?hazard</a></code>.</p>
+<p><strong><code>maxit</code></strong> (default 1000) sets the iteration cap for BFGS and for the <code><a href="https://rdrr.io/r/stats/nlm.html" class="external-link">nlm()</a></code> continuation. Hitting <code>maxit</code> without converging usually means either the starting values are far from the optimum (fix with better starts or <code>n_starts</code>) or the model is overparameterized (fix by fixing shapes or dropping a phase). Raising <code>maxit</code> beyond 2000 rarely helps if the optimizer is genuinely stuck.</p>
 </section></section><section class="level2" data-number="7"><h2 data-number="7" id="phase-types-reference">
 <span class="header-section-number">7</span> Phase types reference<a class="anchor" aria-label="anchor" href="#phase-types-reference"></a>
 </h2>

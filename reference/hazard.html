@@ -234,7 +234,9 @@ conventions.</p></dd>
 <code>data</code> (input data: <code>time</code>, <code>status</code>, <code>x</code>,
 <code>weights</code>, etc.),
 <code>fit</code> (optimisation results: <code>theta</code>, <code>objective</code>,
-<code>converged</code>, <code>se</code>, <code>vcov</code>, <code>counts</code>, <code>message</code>;
+<code>converged</code>, <code>se</code>, <code>vcov</code>, <code>counts</code>, <code>message</code>,
+and <code>rel_gradient</code> and <code>polish_code</code>, the SAS/C acceptance
+test described under "Convergence";
 all <code>NULL</code> when <code>fit = FALSE</code>; multiphase fits add
 <code>starts</code>, one row per optimisation start with its <code>status</code>
 (<code>"ok"</code>, <code>"nonconverged"</code>, <code>"infeasible"</code>,
@@ -313,9 +315,13 @@ phases, set it to 0 to silence the check.</p></li>
 log-likelihood (default 1e-5). BFGS stops when an iteration reduces it by
 less than <code>reltol * (|objective| + reltol)</code>, so the stopping gap grows
 with the size of the log-likelihood: about 0.0024 at a log-likelihood of
--240. On a flat surface a fit can stop that far short of the optimum and
-still report convergence.</p></li>
-<li><p><code>abstol</code>: Absolute gradient norm tolerance (default 1e-6)</p></li>
+-240. On a flat surface plain BFGS can stop that far short of the optimum
+and still report convergence, so <code>hazard()</code> then applies SAS/C HAZARD's
+relative-gradient test and, when the stop fails it, continues with
+<code><a href="https://rdrr.io/r/stats/nlm.html" class="external-link">stats::nlm()</a></code>; see the "Convergence" section.</p></li>
+<li><p><code>abstol</code>: Projected-gradient tolerance, used only by the bounded
+(L-BFGS-B) optimizer (default 1e-6). The fits <code>hazard()</code> runs use BFGS
+and ignore it.</p></li>
 <li><p><code>method</code>: Optimization method: "bfgs" or "nm" (default "bfgs").
 SAS <code>PROC HAZARD</code> jobs write <code>STEEPEST QUASI</code> together – steepest
 descent first, then quasi-Newton. <code>QUASI</code>/<code>QUASINEWTON</code> is <code>"bfgs"</code>;
@@ -382,6 +388,35 @@ of this additive form.  Parameters are estimated
 on an unconstrained internal scale (e.g. \(\log\mu\), \(\log t_{1/2}\))
 and transformed back for reporting; see
 <code><a href="../articles/mf-mathematical-foundations.html">vignette("mf-mathematical-foundations")</a></code>.</p>
+    </div>
+    <div class="section level2">
+    <h2 id="convergence">Convergence<a class="anchor" aria-label="anchor" href="#convergence"></a></h2>
+
+
+
+<p>The optimizer stops when an iteration improves the log-likelihood by less
+than <code>control$reltol</code> relative to its size, and on a flat ridge that can
+happen well short of the maximum. SAS/C HAZARD accepts an optimum only on a
+different test, the relative gradient
+\(\max_i |g_i| \max(|x_i|, 1) / \max(|\ell|, 1) \le \epsilon^{1/3}\), about 6e-6, and <code>hazard()</code>
+applies it too: when the optimizer reports convergence and the test fails,
+the fit is continued with <code><a href="https://rdrr.io/r/stats/nlm.html" class="external-link">stats::nlm()</a></code> at SAS's tolerances, and the
+continued point is kept if it improves the log-likelihood.</p>
+<p>Every fit records the result in <code>fit$fit$rel_gradient</code> and, when the
+continuation improved the fit, its termination code in
+<code>fit$fit$polish_code</code>. <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code> and <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> show both.
+<code>rel_gradient</code> is <code>NA</code> when the test was not applied (the optimizer did
+not report convergence) or the gradient cannot be evaluated at the
+estimates; <code>NA</code> is never reported as a pass. Under Conservation of Events
+the analytic score omits how the conserved scale moves, so the test is
+computed from finite differences of the log-likelihood with that scale
+re-solved, as SAS/C does; the continuation still uses the analytic score,
+so a CoE fit can honestly end with the test not met. A warning is raised only for code 4, the
+iteration limit (raise <code>control$maxit</code>), and code 5, where the
+log-likelihood kept rising along some direction and the model may have no
+maximum. Codes 2 and 3, where SAS/C prints a caution, are recorded without
+one. The test is relative to the size of the log-likelihood, so a fit that
+meets it is within SAS's tolerance of the maximum, not exactly at it.</p>
     </div>
     <div class="section level2">
     <h2 id="baseline-distributions">Baseline distributions<a class="anchor" aria-label="anchor" href="#baseline-distributions"></a></h2>
@@ -468,14 +503,16 @@ nonlinear temporal decomposition mixed effects model. <em>Stat Methods Med Res.<
 <span class="r-out co"><span class="r-pr">#&gt;</span>   dist:         weibull </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   engine:       native-r-m2 </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   converged:    TRUE </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   log-lik:      -89.5173 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   gradient:     relative 1.24e-06 (SAS/C requires &lt;= 6.06e-06; met, nlm code 1)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   log-lik:      -89.5172 </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   Not done in this run: none</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   evaluations: fn=23, gr=7</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   message:      continued with nlm() for 3 iterations (code 1) </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Coefficients:</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>     estimate  std_error   z_stat      p_value</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> mu 0.2190092 0.02728228 8.027524 9.945983e-16</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> nu 1.3389540 0.15829050 8.458840 2.700510e-17</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> mu 0.2186394 0.02725028 8.023381 1.028736e-15</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> nu 1.3394302 0.15858335 8.446222 3.008801e-17</span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="co"># -- Formula interface with covariates --------------------------------</span></span></span>
 <span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1001</span><span class="op">)</span></span></span>
@@ -503,17 +540,19 @@ nonlinear temporal decomposition mixed effects model. <em>Stat Methods Med Res.<
 <span class="r-out co"><span class="r-pr">#&gt;</span>   dist:         weibull </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   engine:       native-r-m2 </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   converged:    TRUE </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   gradient:     relative 3.9e-06 (SAS/C requires &lt;= 6.06e-06; met, nlm code 1)</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   log-lik:      -293.553 </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   Not done in this run: none</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   evaluations: fn=36, gr=8</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   message:      continued with nlm() for 21 iterations (code 1) </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Coefficients:</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>          estimate   std_error      z_stat      p_value</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> mu    0.121860518 0.062260593  1.95726560 5.031625e-02</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> nu    1.143730632 0.084302528 13.56697905 6.285984e-42</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> beta1 0.001716551 0.008807986  0.19488579 8.454824e-01</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> beta2 0.156208724 0.090597558  1.72420458 8.467092e-02</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> beta3 0.017352702 0.362918430  0.04781433 9.618642e-01</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>          estimate   std_error     z_stat      p_value</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> mu    0.121938323 0.062299561  1.9572902 5.031335e-02</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> nu    1.143693955 0.084297244 13.5673944 6.250475e-42</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> beta1 0.001710112 0.008807807  0.1941586 8.460517e-01</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> beta2 0.156102262 0.090593058  1.7231151 8.486772e-02</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> beta3 0.017258365 0.362941256  0.0475514 9.620738e-01</span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="co"># \donttest{</span></span></span>
 <span class="r-in"><span><span class="co"># -- Parametric survival with Kaplan-Meier overlay -----------------</span></span></span>
@@ -573,6 +612,7 @@ nonlinear temporal decomposition mixed effects model. <em>Stat Methods Med Res.<
 <span class="r-out co"><span class="r-pr">#&gt;</span>   phase 2:      late - cdf (late risk)</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   engine:       native-r-m2 </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   converged:    TRUE </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   gradient:     relative 1.66e-09 (SAS/C requires &lt;= 6.06e-06; met)</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   log-lik:      -321.926 </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   Not done in this run: none</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   evaluations: fn=21, gr=6</span>
