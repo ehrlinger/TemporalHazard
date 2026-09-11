@@ -243,8 +243,8 @@ data. Fitting it and reproducing LL -267.885 is out of scope; see below.
 ### Second job: `renewal`, against `ac.reintervention`
 
 The cardioversion job never reads `renewal`. A first search for jobs that call `%repeat` and
-then use its output (2026-09-10) covered only `general/` and `thoracic/`: it silently died
-before reaching `cardiac/`. What it found:
+then use its output (2026-09-10) was read while it was still running, so it covered only
+`general/` and `thoracic/`; it had not yet reached `cardiac/`. What it found:
 - the consulting `tp.*` templates, which read `renewal` but were never run (none of their
   108 listings prints it);
 - several thoracic jobs that print `renewal`.
@@ -262,8 +262,10 @@ was checked against its own output without an R rebuild. Its saved `bd_reop`, 24
 121 subjects, matches its `.lst` table of `renewal` by `ev_reop` cell for cell.
 
 The search tool itself caused two false negatives:
-- **A partial result that looked complete.** `grep` here is ugrep, and the first search died
-  without an error. It came back with zero `cardiac/` callers even though a known one exists.
+- **A partial result that looked complete.** The first search wrote its hit list as it went,
+  and the check for whether it was still running used a mis-escaped `pgrep` pattern that
+  matched nothing. So a list still being written read as final, with zero `cardiac/` callers
+  even though a known one exists.
 - **Silence on SAS listings.** ugrep treats some `.lst` files as binary and then prints
   nothing, not even a zero count, unless given `-a`.
 
