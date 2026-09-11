@@ -132,7 +132,7 @@
   per inter-event segment, with the segment’s start time, duration and
   running event count. It reproduces the SAS macro `%repeat`, which
   built this input for the repeated-events `HAZARD` jobs and whose
-  output was never saved, so those jobs can now be run again in R. It
+  output was seldom saved, so those jobs can now be run again in R. It
   refuses input that would otherwise give a plausible but wrong result –
   a non-numeric time, follow-up or indicator column, a factor `id`, a
   missing `followup` value, or an empty data frame – and warns, naming
