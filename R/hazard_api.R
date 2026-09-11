@@ -1060,6 +1060,13 @@ hazard <- function(formula = NULL,
 #' @param newdata Optional matrix or data frame of predictors. For types requiring
 #'   time (e.g., "survival", "cumulative_hazard"), newdata should include a `time`
 #'   column, or time will be taken from the fitted object's data.
+#'   Covariates are matched to the model by column name, so their order does
+#'   not matter. A formula fit rebuilds its design from the formula, so a
+#'   factor can be given as a level label. A column the model does not use is
+#'   ignored, and a covariate the model needs but `newdata` lacks is an error.
+#'   A fit made with an unnamed `x` matrix matches by position. For the types
+#'   requiring time, a `newdata` with only a `time` column evaluates the
+#'   baseline, with every covariate at 0.
 #' @param type Prediction type:
 #'   - `"linear_predictor"`: Linear predictor eta = x*beta (not available for multiphase)
 #'   - `"hazard"`: Instantaneous hazard. Single-distribution models return the
@@ -1313,13 +1320,8 @@ predict.hazard <- function(object, newdata = NULL,
       if ("time" %in% names(newdata)) {
         pred_time <- newdata$time
       }
-      # Remove time column if present (not needed for hazard/linear_predictor)
-      newdata <- newdata[, names(newdata) != "time", drop = FALSE]
-      if (ncol(newdata) > 0) {
-        x <- as.matrix(newdata)
-      } else {
-        x <- NULL
-      }
+      # Covariates by name, not position (#267); NULL when there are none.
+      x <- .hzr_newdata_design(object, newdata)
     }
 
     if (!is.null(time_windows)) {
@@ -1514,7 +1516,8 @@ predict.hazard <- function(object, newdata = NULL,
       newdata <- as.data.frame(newdata)
       if ("time" %in% names(newdata)) {
         time <- newdata$time
-        x <- as.matrix(newdata[, names(newdata) != "time", drop = FALSE])
+        # By name, before any time-varying expansion below (#267).
+        x <- .hzr_newdata_design(object, newdata)
       } else {
         stop("'newdata' must contain a 'time' column for '", type, "' predictions.", call. = FALSE)
       }

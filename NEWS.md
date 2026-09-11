@@ -65,6 +65,24 @@
 
 ## Bug fixes
 
+* **`predict(newdata = )` no longer matches a single-distribution model's
+  covariates by column position.** For `dist = "weibull"`,
+  `"exponential"`, `"loglogistic"` and `"lognormal"`, the covariates in
+  `newdata` were multiplied into the coefficients in the order they
+  appeared, whatever their names. Reordered columns gave a wrong answer
+  with no error: a Weibull fit of `~ age + mal` given `newdata` with `mal`
+  before `age` returned a cumulative hazard of 4.85e20 in place of 0.25,
+  and a survival of 0 in place of 0.78. A `newdata` missing a covariate
+  could also return a value. Every prediction type was affected, as was
+  the time-varying expansion.
+  Covariates are now matched by name, through the same design
+  reconstruction as the multiphase fix below, so a factor can be given as
+  a level label. A column the model does not use is ignored, and one it
+  needs but `newdata` lacks is an error that names it. A fit made with an
+  unnamed `x` matrix still matches by position, since there is nothing
+  else to match on, and a `newdata` with only a `time` column still
+  evaluates the baseline (#267).
+
 * **`predict(newdata = )` now evaluates a multiphase fit that has both a
   global covariate and phase-formula covariates.** A phase without its own
   formula inherits the global design, but at `newdata` it was built from

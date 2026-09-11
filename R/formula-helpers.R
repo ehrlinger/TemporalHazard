@@ -153,6 +153,32 @@
 }
 
 
+#' Covariate design for `predict(newdata = )` on a single-distribution fit
+#'
+#' Matches `newdata`'s covariates to the fit by name, through
+#' `.hzr_global_design()`, so their column order does not matter (#267).
+#'
+#' @param object A fitted `hazard` object.
+#' @param newdata Data frame of new rows, possibly with a `time` column.
+#' @return `NULL` when `newdata` has no covariate columns (the time-based
+#'   types then evaluate the baseline, every covariate at 0); otherwise a
+#'   numeric matrix of the fit's global columns. An object that stored no
+#'   `x` leaves position as the only mapping, so its columns are taken as
+#'   given.
+#' @keywords internal
+#' @noRd
+.hzr_newdata_design <- function(object, newdata) {
+  covs <- newdata[, names(newdata) != "time", drop = FALSE]
+  if (ncol(covs) == 0L) {
+    return(NULL)
+  }
+  if (is.null(object$data$x)) {
+    return(as.matrix(covs))
+  }
+  .hzr_global_design(object, newdata)
+}
+
+
 #' Rebuild the global design matrix at new rows
 #'
 #' Used by `predict()` for a multiphase phase without its own formula, which
