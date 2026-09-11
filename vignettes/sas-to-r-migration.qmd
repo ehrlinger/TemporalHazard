@@ -24,9 +24,9 @@ library(TemporalHazard)
 
 ## Overview
 
-If you've been running multiphase hazard analyses in SAS HAZARD —
-the macro suite that wraps the C HAZARD binary written by Blackstone,
-Naftel, and Turner at UAB — this vignette is the bridge to running
+If you've been running multiphase hazard analyses in SAS HAZARD
+(the macro suite that wraps the C HAZARD binary written by Blackstone,
+Naftel, and Turner at UAB), this vignette is the bridge to running
 the same analyses in R. Every SAS `HAZARD` statement, every common
 macro option, and every output field maps to something in
 `TemporalHazard`; this document spells out the correspondences and
@@ -43,7 +43,7 @@ when comparing the package's output against a SAS HAZARD reference
 fit for parity testing.
 
 The full formal argument mapping table is available programmatically
-and ships with the package — handy when you want to grep for a
+and ships with the package. It is handy when you want to grep for a
 specific SAS parameter name and find its R equivalent without
 scrolling through the prose below:
 
@@ -153,7 +153,7 @@ fit <- hazard(
 
 Supplies starting values for the optimizer and flags which
 parameters to hold fixed (`FIXM`, `FIXMU`, etc.). The starting
-values matter — for the multiphase optimizer in particular, a poor
+values matter. For the multiphase optimizer in particular, a poor
 starting point can park the fit at a local minimum well away from
 the global MLE.
 
@@ -188,8 +188,8 @@ fit <- hazard(
 These statements assign covariates to specific phases. In SAS HAZARD
 each block lists the covariates that affect that phase and their
 starting coefficients. Covariates can appear in multiple blocks with
-different starting values — same column, different phase-specific
-effect.
+different starting values (same column, different phase-specific
+effect).
 
 ```sas
 EARLY  AGE=-0.03205774, COM_IV=1.336675, MAL=0.6872028,
@@ -250,8 +250,8 @@ SELECTION SLE=0.2 SLS=0.1;
 backward, and two-way stepwise selection with SAS-style SLENTRY /
 SLSTAY thresholds, phase-specific entry for multiphase models, and a
 MOVE oscillation guard.  It now defaults to `criterion = "score"`, which
-reproduces SAS's `SELECTION` Q statistic --- a score test at the current
-estimates, with no per-candidate refit --- so entry decisions match SAS's
+reproduces SAS's `SELECTION` Q statistic (a score test at the current
+estimates, with no per-candidate refit), so entry decisions match SAS's
 directly.  Passing `criterion = "wald"` selects the older refit-based path,
 which fits each candidate before testing it.  See `?hzr_stepwise` for the
 full option list.
@@ -345,7 +345,7 @@ Statement-by-statement mapping is fine for reference, but the full
 gestalt only lands when you see a complete SAS HAZARD analysis and
 its R translation side by side. The example below is the final
 multivariable model from `examples/hm.death.AVC.sas` in the
-reference C repository — death after atrioventricular canal repair,
+reference C repository: death after atrioventricular canal repair,
 two-phase model with covariates assigned to specific phases. It's
 the canonical "this is what a real SAS HAZARD analysis looks like"
 specimen.
@@ -378,7 +378,7 @@ covariate list goes on the right; the `PARMS` starting values
 become the `theta` vector; phase-specific assignments use the
 `formula` argument inside each `hzr_phase()`; `FIXM` becomes
 `fixed = "shapes"` (or a subset of shape names). The line-by-line
-correspondence is the point — once you've translated one analysis
+correspondence is the point. Once you've translated one analysis
 this way, the pattern carries to every other.
 
 ```{r}
@@ -465,7 +465,7 @@ fit
 | `$fit$objective`      | Log-likelihood at convergence (M2+)                        |
 | `$legacy_args`        | Named pass-through arguments for parity                     |
 
-> **Note:** `$fit$objective` above is a *number* -- the log-likelihood the
+> **Note:** `$fit$objective` above is a *number*: the log-likelihood the
 > optimizer reached; `print()` and `summary()` label it `log-lik` and
 > `log_lik`, which are the names to prefer when writing about it. It is
 > unrelated to the `objective` *argument* of `hazard()`, which selects an
@@ -482,8 +482,8 @@ line writes predicted survival, hazard, and cumulative-hazard tables
 to the output dataset. In R the same predictions come from
 `predict.hazard()` on the fitted object, with the requested quantity
 chosen via the `type=` argument. `predict.hazard()` currently
-supports four output types — `"linear_predictor"`, `"hazard"`,
-`"survival"`, and `"cumulative_hazard"` — covering every quantity
+supports four output types (`"linear_predictor"`, `"hazard"`,
+`"survival"`, and `"cumulative_hazard"`), covering every quantity
 the SAS `P` option produces:
 
 ```{r}
@@ -510,7 +510,7 @@ applies it for you: point it at a `.sas` file and it parses the
 `PROC HAZARD` / `PROC HAZPRED` blocks and emits a `.qmd` document
 whose chunks are the `hazard()` / `predict.hazard()` calls those
 blocks describe. It is the same statement-by-statement mapping this
-vignette documents, run by the parser instead of by you -- useful
+vignette documents, run by the parser instead of by you. It is useful
 for a one-off job, and essential for migrating a corpus of hundreds.
 
 ::: {.callout-warning}
@@ -525,7 +525,7 @@ before you point it at a corpus.
 - **A `SELECTION` statement is refused, not translated.** The emitted
   chunk is a `stop()`. `hzr_stepwise()`'s refit path needs a
   formula-interface base fit and this translator emits the vector
-  interface, so a translated screen would report zero steps --
+  interface, so a translated screen would report zero steps,
   indistinguishable from "nothing met `slentry`". Run the selection by
   hand.
 - **`LCENSOR` combined with `ICENSOR` is refused.** `hazard()`'s single
@@ -534,19 +534,19 @@ before you point it at a corpus.
   express both. Either statement alone translates.
 - **Prediction grids the parser cannot resolve are refused whole**, and
   an unresolved `INHAZ=` stops the render on purpose. Both are covered
-  under "What it doesn't translate" below -- and note that resolving an
+  under "What it doesn't translate" below. Note that resolving an
   external `INHAZ=` at all requires you to pass `librefs=`.
 - **Confidence limits from a loaded `INHAZ=` fit may stop the render.**
   A translated `PROC HAZPRED` block asks for `se.fit = TRUE` unless the
   SAS job says `NOCL`, and `predict()` on an `hzr_outhaz` object refuses
   `se.fit = TRUE` when `PROC HAZARD` estimated a late shape parameter on
-  a composite scale -- `log(GAMMA*ETA - 2)` and friends, which is the
+  a composite scale (`log(GAMMA*ETA - 2)` and friends), which is the
   *generic* unconstrained three-phase case, not an exotic one. Point
   predictions are unaffected; drop `se.fit` from the emitted call to get
   them.
 
 Read `job$coverage` as a measure of how much of the SAS job the *parser
-recognised* -- not of whether the result runs. A job can report full
+recognised*, not of whether the result runs. A job can report full
 coverage with nothing in `$untranslated` and still error on render. The
 API and the emitted format will change as these limits close; the 1.2.2
 entry of `NEWS.md` carries the issue numbers.
@@ -653,12 +653,12 @@ makes the document runnable: a later `predict()` chunk from a
 `CONSERVE` becomes `control$conserve = TRUE`, `QUASI` becomes
 `control$method = "bfgs"`, `CONDITION=14` becomes `control$condition
 = 14`, and the `PARMS` early-phase shape (`MUE`/`THALF`/`NU`/`M FIXM`)
-becomes a `hzr_phase("cdf", ...)` with `m` fixed -- exactly the
+becomes a `hzr_phase("cdf", ...)` with `m` fixed. These are exactly the
 mappings covered statement-by-statement above, applied automatically.
 `dist = "multiphase"` is emitted whenever `phases` is, and `theta`
-carries the full interleaved multiphase start vector -- early scale,
+carries the full interleaved multiphase start vector (early scale,
 then every early-phase shape parameter in phase order, then the
-constant/late scale -- not just the phases' log(mu) starts.
+constant/late scale), not just the phases' log(mu) starts.
 
 ### What it doesn't translate
 
@@ -675,16 +675,16 @@ gaps are common enough in production jobs to know about going in:
   ... ;` with `DTY` assigned earlier in the same DATA step), but a
   bound read from `SET`, computed by a function call, or naming
   something the parser can't resolve is refused whole rather than
-  partially read -- a partial grid is a partial `newdata`, and
+  partially read: a partial grid is a partial `newdata`, and
   reporting predictions over a half-read grid would be worse than not
   reporting them. Such grids emit an `UNTRANSLATED` block; build the
   `newdata` grid by hand and pass it to `predict.hazard()` instead. On
   the public corpus, grid resolution is 19 of 55 (35%), up from 10 of
   55 (18%) before constant folding.
 - **An unresolved `INHAZ=` fails the render on purpose.** If a
-  `PROC HAZPRED` job's fitted-model dataset can't be found -- neither
+  `PROC HAZPRED` job's fitted-model dataset can't be found (neither
   from another translated job's `OUTHAZ=` nor from the `librefs=`
-  argument you pass in -- the document gets an `inhaz-unresolved` chunk
+  argument you pass in), the document gets an `inhaz-unresolved` chunk
   ahead of the grid and `predict()` chunks whose whole body is a
   `stop()` naming the libref, so rendering fails loudly instead of
   producing predictions against a model it never loaded.
@@ -735,15 +735,15 @@ tracked in `inst/dev/SAS-PARITY-GAP-ANALYSIS.md` and
 For users migrating from older TemporalHazard versions or reading
 older SAS parity notes:
 
-- **`weights` on all distributions** — shipped v0.9.6.  Weibull,
+- **`weights` on all distributions** (shipped v0.9.6).  Weibull,
   exponential, log-logistic, log-normal, and multiphase all honour
   observation weights end-to-end (LL + analytic gradient + multiphase
   Conservation of Events).
-- **`Surv(start, stop, event)` with `start > 0`** — shipped v0.9.7.
+- **`Surv(start, stop, event)` with `start > 0`** (shipped v0.9.7).
   Counting-process rows contribute `H(stop) - H(start)` for Weibull
   and multiphase.  The previous `hazard()` guard against non-zero
   starts is gone.
-- **Delta-method prediction confidence limits** — shipped v0.9.8.
+- **Delta-method prediction confidence limits** (shipped v0.9.8).
   Use `predict(..., se.fit = TRUE, level = 0.95)` to get a data frame
   with `fit`, `se.fit`, `lower`, and `upper` per row.  Closed-form
   Jacobian for Weibull and multiphase, `numDeriv::jacobian` fallback

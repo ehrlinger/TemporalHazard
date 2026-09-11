@@ -21,16 +21,16 @@ hzr_phase_hazard(
 
 \item{m}{Shape parameter.}
 
-\item{type}{Phase type: \code{"cdf"} (early -- uses \eqn{G(t)}),
-\code{"hazard"} (late -- uses cumulative hazard from \eqn{h(t)}), or
-\code{"constant"} (flat rate -- \eqn{\Phi = t}).}
+\item{type}{Phase type: \code{"cdf"} (early, uses \eqn{G(t)}),
+\code{"hazard"} (late, uses cumulative hazard from \eqn{h(t)}), or
+\code{"constant"} (flat rate, \eqn{\Phi = t}).}
 }
 \value{
 Numeric vector of instantaneous hazard contributions \eqn{\phi(t)},
 same length as \code{time}.
 }
 \description{
-Computes \eqn{\phi_j(t) = d\Phi_j/dt} for one phase -- the derivative of
+Computes \eqn{\phi_j(t) = d\Phi_j/dt} for one phase, the derivative of
 the cumulative hazard contribution returned by \code{\link[=hzr_phase_cumhaz]{hzr_phase_cumhaz()}}.
 }
 \details{

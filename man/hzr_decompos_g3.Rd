@@ -29,7 +29,7 @@ as \code{time}:
 Computes the cumulative intensity \eqn{G_3(t)} and its derivative
 \eqn{g_3(t) = dG_3/dt} for the late-phase parametric family used in the
 original Blackstone C/SAS HAZARD code.  Unlike \code{\link[=hzr_decompos]{hzr_decompos()}} (which
-computes the early-phase G1 -- a bounded CDF), this function can produce
+computes the early-phase G1, a bounded CDF), this function can produce
 \strong{unbounded} values, making it suitable for modelling increasing late risk.
 }
 \section{Mathematical form}{

@@ -37,14 +37,14 @@ predictions, and the ability to compare fitted hazard *shapes* across
 groups or models.
 
 This vignette walks the minimal workflow. We start with a
-single-distribution Weibull fit on simulated data — fit, summary,
-predict — then move to the multiphase fit on CABGKUL, the canonical
+single-distribution Weibull fit on simulated data (fit, summary,
+predict), then move to the multiphase fit on CABGKUL, the canonical
 three-phase cardiac-surgery example.
 
 ## A first Weibull fit
 
 The simulated data below has 180 patients with three plausible risk
-covariates — age, NYHA functional class, and cardiogenic shock. We fit
+covariates: age, NYHA functional class, and cardiogenic shock. We fit
 a single Weibull hazard: a scale parameter (`mu`) and a shape exponent
 (`nu`) that lets the hazard accelerate when `nu > 1`, decelerate when
 `nu < 1`, or stay flat at `nu = 1`. The Weibull is the natural starting
@@ -91,12 +91,12 @@ A fitted hazard model lets you score new patients without refitting.
 The `predict()` method takes a `newdata` frame and a `type` argument
 that selects which quantity to compute:
 
-- `"linear_predictor"` — the covariate-driven log-hazard-ratio for
+- `"linear_predictor"`: the covariate-driven log-hazard-ratio for
   each row, $x^\top \beta$.
-- `"hazard"` — the hazard multiplier, $\exp(x^\top \beta)$.
-- `"survival"` — the probability of surviving past each row's `time`,
+- `"hazard"`: the hazard multiplier, $\exp(x^\top \beta)$.
+- `"survival"`: the probability of surviving past each row's `time`,
   $S(t \mid x)$.
-- `"cumulative_hazard"` — the integrated hazard up to each row's
+- `"cumulative_hazard"`: the integrated hazard up to each row's
   `time`, $H(t \mid x) = -\log S(t \mid x)$.
 
 The three rows below are made-up patients spanning the covariate range
@@ -175,7 +175,7 @@ ggplot() +
 ## Multiphase models
 
 The Weibull fit above describes the hazard with one smooth, monotone
-curve — it can rise, fall, or stay flat over time, but it cannot change
+curve. It can rise, fall, or stay flat over time, but it cannot change
 direction. That's fine for some processes (light bulbs failing, parts
 wearing out). It breaks down quickly for clinical data.
 
@@ -215,8 +215,8 @@ Because the number of phases is the modeling lever that lets you match
 the data's actual structure. Some processes are well-described by two
 phases (early failure + steady-state). Most cardiac-surgery cohorts
 need three: early operative risk + constant background + late
-deterioration. A small handful — acute aortic dissection is the
-classic — need four (operative + subacute + constant + late). The
+deterioration. A small handful need four (operative + subacute +
+constant + late); acute aortic dissection is the classic. The
 framework is general; the *count* is a modeling choice driven by
 clinical knowledge and the shape of the Kaplan-Meier cumulative hazard
 curve.
@@ -292,7 +292,7 @@ total; we numerically differentiate each one (a coarse first-difference
 is fine here, since we just want to look) to get an instantaneous
 hazard rate.
 
-The plot that follows is the diagnostic that matters: it shows whether
+The plot that follows shows whether
 the model carved up the timeline the way we expected. The early phase
 should dominate near $t = 0$ and die off. The constant phase should be
 a flat floor. The late phase should be near zero early and rise after
@@ -391,19 +391,19 @@ Picking the right phase shape is the single biggest modeling decision
 in a multiphase fit. The package ships the canonical shapes from the
 SAS C HAZARD library:
 
-- **`"cdf"`** — a saturating curve $\Phi(t) \in [0, 1]$, parameterized
+- **`"cdf"`**: a saturating curve $\Phi(t) \in [0, 1]$, parameterized
   by `t_half` (the time at which $G(t_{1/2}) = 0.5$), `nu` (a time
   exponent), and `m` (a shape exponent). This is the SAS "early" or G1
   shape. Use it for the early phase, or for any phase whose accumulated
   hazard saturates rather than growing without bound.
-- **`"constant"`** — $\Phi(t) = t$. The phase's hazard rate is flat;
+- **`"constant"`**: $\Phi(t) = t$. The phase's hazard rate is flat;
   there are no shape parameters to estimate, only the scale $\mu$. This
   is the SAS G2 shape. Use it for a background plateau.
-- **`"g3"`** — the SAS "late" shape, parameterized by `tau` (a
+- **`"g3"`**: the SAS "late" shape, parameterized by `tau` (a
   time-scale), `gamma` (a time exponent), `alpha` (a shape parameter;
   $\alpha = 0$ gives an exponential limit), and `eta` (an outer
   exponent). Use it for a late phase that is near-zero early and
-  accelerates over time — graft deterioration over years is the
+  accelerates over time; graft deterioration over years is the
   archetype.
 
 See `?hzr_phase` for the additional `"hazard"` shape and the full

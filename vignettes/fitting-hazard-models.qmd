@@ -36,8 +36,8 @@ out: intercept-only fits to establish the baseline hazard shape, then
 covariates on top, then the multiphase decomposition, then
 multi-endpoint analyses on the same cohort. Every example uses a
 clinical dataset shipped with the package. If you haven't seen the
-basics — what a parametric hazard model is, why we use the
-`Surv(time, status)` formula — start with `vignette("getting-started")`
+basics (what a parametric hazard model is, why we use the
+`Surv(time, status)` formula), start with `vignette("getting-started")`
 first; this vignette assumes that context.
 
 The progression matters. Single-distribution intercept-only fits tell
@@ -46,7 +46,7 @@ or has structure that demands a multiphase decomposition.
 Multivariable fits add covariate effects on top of a shape you already
 trust. Multiphase fits split the baseline shape into clinically
 interpretable phases. Multi-endpoint analyses reuse all the above for
-separate clinical outcomes — death, reoperation, infection — on the
+separate clinical outcomes (death, reoperation, infection) on the
 same patient cohort.
 
 
@@ -54,7 +54,7 @@ same patient cohort.
 
 The `cabgkul` dataset contains 5,880 patients who underwent primary isolated
 coronary artery bypass grafting at KU Leuven between 1971 and 1987.  With only
-two columns --- follow-up time and death indicator --- it is the simplest
+two columns (follow-up time and death indicator), it is the simplest
 starting point.
 
 ```{r}
@@ -65,7 +65,7 @@ str(cabgkul)
 
 Fit an intercept-only Weibull. With no covariates on the right-hand
 side of the formula the model estimates only the baseline hazard
-shape — the scale `mu` and exponent `nu` of a Weibull curve fit to all
+shape: the scale `mu` and exponent `nu` of a Weibull curve fit to all
 5,880 patients pooled. This is the right starting point for any new
 dataset: before asking which covariates matter, ask whether a single
 monotone hazard even fits the population-level pattern.
@@ -140,7 +140,7 @@ Now we put covariates on the right-hand side of the formula and refit.
 The `theta` vector grows: two Weibull shape parameters (`mu`, `nu`) plus
 six covariate coefficients (`beta1`..`beta6`), each starting at zero.
 The optimizer estimates a log-hazard-ratio for every covariate jointly
-with the Weibull shape — so the shape and the covariate effects are
+with the Weibull shape, so the shape and the covariate effects are
 identified from the same likelihood, not sequentially.
 
 ```{r}
@@ -163,7 +163,7 @@ coefficients on `mal` (anatomical malalignment) and `com_iv`
 (grade IV post-operative complications) flag these as the dominant
 risk markers in this cohort. The standard errors and Wald
 z-statistics in the summary tell you which effects are well
-identified and which are noise — a coefficient with a z-statistic
+identified and which are noise; a coefficient with a z-statistic
 near zero contributes essentially nothing the data can defend.
 
 
@@ -181,12 +181,12 @@ $$H(t \mid x) = \sum_{j=1}^{J} \mu_j(x) \cdot \Phi_j(t)$$
 Each $\Phi_j(t)$ is a phase-specific unit-scaled curve (early-peaking
 saturating, flat constant, late-rising polynomial) and each $\mu_j(x)$
 is the phase-specific scale, possibly modulated by covariates. The
-phases overlap and add — no switching, no thresholds — so the total
+phases overlap and add (no switching, no thresholds), so the total
 instantaneous hazard at any $t$ is the sum of the per-phase rates.
 See `vignette("getting-started")` for the longer-form motivation; what
 follows here is the practical workflow for *fitting* one.
 
-For AVC we'll use two phases — an early phase to absorb the
+For AVC we'll use two phases: an early phase to absorb the
 operative-window mortality, and a constant phase for the background
 rate. AVC patients don't have a clear late-deterioration regime over
 this follow-up window, so a third (g3) phase would be unidentified.
@@ -257,7 +257,7 @@ ggplot() +
 ```
 
 The multiphase model tracks the KM curve much more closely than the
-single Weibull, especially across the steep early-mortality window —
+single Weibull, especially across the steep early-mortality window,
 which is exactly where the single Weibull was forced to compromise.
 The constant phase then carries the slow post-recovery attrition. The
 point isn't that multiphase always wins; it's that *when the data has
@@ -267,13 +267,13 @@ honest than averaging it away into one monotone curve.
 
 ## Multi-endpoint models: heart valve replacement
 
-The `valves` dataset (1,533 patients) has multiple time-to-event endpoints ---
-death, prosthetic valve endocarditis (PVE), and reoperation --- each with its
+The `valves` dataset (1,533 patients) has multiple time-to-event endpoints:
+death, prosthetic valve endocarditis (PVE), and reoperation, each with its
 own follow-up time and event indicator.  The same `hazard()` call fits each
-endpoint independently:
+endpoint independently.
 
 Start with the death endpoint. We use age at operation, NYHA class,
-and mechanical-valve indicator as covariates — the clinically
+and mechanical-valve indicator as covariates, the clinically
 canonical set for survival after valve replacement.
 
 ```{r}
@@ -316,20 +316,20 @@ fit_pve
 ```
 
 Each endpoint gets its own model with its own covariates, but the
-hazard model structure — temporal shape plus covariate effects — stays
+hazard model structure (temporal shape plus covariate effects) stays
 the same whatever the clinical endpoint. Repeating the workflow for a
 third endpoint (reoperation, for example) is mechanical: swap the
 `Surv(...)` columns, swap the covariates, refit. The advantage over
 running three separate analyses in different tools is that the
 predictions, diagnostics, and uncertainty quantification all come from
-the same package — there's no risk of subtle differences in censoring
+the same package; there's no risk of subtle differences in censoring
 handling or estimator choice between endpoints.
 
 
 ## Interval and left censoring
 
 Right censoring is by far the most common censoring type in clinical
-survival data — a patient is still alive at last follow-up, so all we
+survival data: a patient is still alive at last follow-up, so all we
 know is that their event time exceeds the observed window. Two other
 types arise frequently enough to warrant explicit handling.
 
@@ -342,7 +342,7 @@ or exactly observed at 24; both introduce bias.
 
 **Left censoring** is the mirror: the event occurred *before* the first
 observation time (time_upper), so it was already established at the
-moment of first contact — $T \leq t_{\text{upper}}$.
+moment of first contact: $T \leq t_{\text{upper}}$.
 
 ### Status codes
 
@@ -364,9 +364,9 @@ object instead: `Surv(lower, upper, event, type = "interval")` and
 
 One thing to watch, because the two interfaces do not use the same numbers.
 The table above is this package's coding, and it is what you pass to the
-`status` argument.  `Surv()` has its own scheme --- under
+`status` argument.  `Surv()` has its own scheme: under
 `type = "interval"` it reads `0` as right-censored, `1` as an exact event,
-`2` as left-censored and `3` as interval-censored --- and `hazard()`
+`2` as left-censored and `3` as interval-censored.  `hazard()`
 translates it for you when it parses the formula.  So use whichever coding
 belongs to the interface you are writing in, and don't carry one set of
 codes across to the other.
@@ -429,7 +429,7 @@ time for right-censored and exact-event rows (`status %in% c(0, 1)`): when
 `0 < time_lower < time`, the row contributes H(stop) − H(start), the
 counting-process form used for epoch-decomposed repeated events.  For an
 ordinary right-censored or event row with no entry time, leave `time_lower`
-at `0` or omit it.  Setting `time_lower = time` is treated as *no entry* —
+at `0` or omit it.  Setting `time_lower = time` is treated as *no entry*:
 `time_lower` acts as an entry time only when strictly less than `time`, so
 it no longer zeroes the row's contribution.  The exponential, log-logistic,
 and log-normal likelihoods do not use `time_lower` as an entry time and are
@@ -457,8 +457,8 @@ fit_ic
 
 A naive analyst who doesn't have visit-bracket data would record the death
 at the *discovery* visit (`time_upper`) rather than as an interval.
-This overstates the event time — the patient appears to have survived
-longer than they did — biasing the estimated hazard shape.
+This overstates the event time (the patient appears to have survived
+longer than they did), biasing the estimated hazard shape.
 
 ```{r}
 #| label: interval-vs-naive
@@ -482,7 +482,7 @@ rbind(
 
 The interval-censored fit recovers both parameters accurately.  The naive
 fit estimates $\mu$ comparably but introduces a substantial positive bias
-in $\nu$ — it sees events consistently appearing at visit times (every 6
+in $\nu$; it sees events consistently appearing at visit times (every 6
 months) and infers a sharper, more periodic hazard shape that doesn't
 match the underlying exponential structure.
 
@@ -520,8 +520,8 @@ c(mu = round(mu_hat, 4), nu = round(nu_hat, 4))
 ```
 
 Those values are the Weibull starting point the data itself suggests. They
-won't be the MLEs --- the log-log line uses every event time equally, whereas
-the MLE weights by the likelihood --- but they land the optimizer in a sensible
+won't be the MLEs (the log-log line uses every event time equally, whereas
+the MLE weights by the likelihood), but they land the optimizer in a sensible
 neighbourhood and prevent false-convergence to a degenerate solution.
 
 For multiphase models the reading is qualitative. Plot the KM cumulative hazard
@@ -534,7 +534,7 @@ phase scale mu to approximate the slope of the linear mid-section.
 
 ```{r}
 #| label: fig-cumhaz-shape
-#| fig-cap: "Nelson-Aalen cumulative hazard for CABGKUL — three-phase shape visible as two kinks"
+#| fig-cap: "Nelson-Aalen cumulative hazard for CABGKUL: three-phase shape visible as two kinks"
 #| fig-width: 7
 #| fig-height: 4
 ggplot(data.frame(time = nel$time, cumhaz = nel$cumhaz),
@@ -564,7 +564,7 @@ want in two situations:
 
 Estimate shapes freely (`fixed = "none"`, the default) only when you are
 exploring a new dataset for the first time and have no prior on the temporal
-structure — and even then, start with `fixed = "shapes"` and release the
+structure. Even then, start with `fixed = "shapes"` and release the
 shapes one at a time if the fixed-shapes fit shows systematic misfit.
 
 ### Signs of overparameterization
@@ -575,9 +575,9 @@ recognizable:
 | Symptom | What it means |
 |---------|--------------|
 | `fit$fit$converged == FALSE` | Optimizer hit `maxit` without satisfying the gradient tolerance |
-| `vcov()` returns `NA` | Hessian is singular — parameters are not jointly identified |
+| `vcov()` returns `NA` | Hessian is singular; parameters are not jointly identified |
 | A phase scale (`log_mu`) at a boundary value | That phase is contributing essentially zero hazard; it isn't needed |
-| Enormous standard errors on one or more parameters | Flat likelihood in that direction — weak identification |
+| Enormous standard errors on one or more parameters | Flat likelihood in that direction (weak identification) |
 | Two phases with nearly identical shapes | One can be collapsed into the other |
 
 The AVC dataset has a clear two-phase structure (early CDF plus constant).
@@ -606,13 +606,13 @@ log_mu_idx <- grep("log_mu", names(coef(fit_3ph)))
 round(exp(coef(fit_3ph)[log_mu_idx]), 6)
 ```
 
-The constant and late phase scales are both near zero — the optimizer
+The constant and late phase scales are both near zero: the optimizer
 found no evidence in the AVC data for either of those temporal shapes over
 this follow-up window. The early phase is absorbing all the identifiable
 structure. Any phase whose fitted scale is $\mu \lesssim 10^{-4}$ is not
 contributing meaningful hazard and is a candidate for removal. The
 right diagnostic question is not "did the AIC improve?" but "does this
-phase represent real clinical biology?" — late deterioration after AVC
+phase represent real clinical biology?" Late deterioration after AVC
 repair requires long follow-up to observe; this dataset doesn't have it.
 
 When shapes are also free (`fixed = "none"`), a redundant phase can make
@@ -653,7 +653,7 @@ fit_robust$fit$converged
 **Optimizer strategy (automatic).** The package always uses BFGS as the
 primary optimizer. For fixed-shape multiphase models with 2–10 free
 parameters, a Nelder-Mead pass runs first on each start to find a good
-basin, then BFGS polishes the solution. This warm-up is transparent —
+basin, then BFGS polishes the solution. This warm-up is transparent:
 it happens automatically when the conditions are met and there is no
 user-facing control to switch it on or off.
 

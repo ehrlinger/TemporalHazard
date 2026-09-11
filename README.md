@@ -13,8 +13,8 @@
 
 **TemporalHazard** is a pure-R implementation of the multiphase parametric
 hazard model of Blackstone, Naftel, and Turner (1986). It decomposes the
-overall hazard of an event into additive temporal phases --- early, constant,
-and late --- each governed by the generalized temporal decomposition family.
+overall hazard of an event into additive temporal phases (early, constant,
+and late), each governed by the generalized temporal decomposition family.
 This structure captures real clinical risk patterns that standard single-distribution
 models (Weibull, log-normal) cannot represent.
 
@@ -35,9 +35,9 @@ three regimes simultaneously.
 
 <img src="man/figures/readme-hazard-phases.png" width="100%" alt="Additive phase decomposition showing early, constant, and late hazard components summing to the total hazard curve (CABGKUL, n=5,880)" />
 
-The resulting survival curve closely tracks the nonparametric Kaplan-Meier estimate
-while providing a smooth, parametric representation that supports covariate
-adjustment, prediction, and extrapolation.
+The resulting survival curve closely tracks the nonparametric Kaplan-Meier estimate,
+and as a smooth parametric curve it supports covariate adjustment, prediction,
+and extrapolation.
 
 <img src="man/figures/readme-survival.png" width="100%" alt="Multiphase parametric survival curve overlaid on the Kaplan-Meier estimate from the CABGKUL dataset (n=5,880)" />
 
@@ -129,14 +129,14 @@ the formula interface (see `vignette("fitting-hazard-models")`).
 
 ## Documentation
 
-- **[Clinical Analysis Walkthrough](https://ehrlinger.github.io/TemporalHazard/articles/clinical-analysis-walkthrough.html)** --- complete end-to-end workflow from Kaplan-Meier baseline through validated multivariable model.
-- **[Getting Started](https://ehrlinger.github.io/TemporalHazard/articles/getting-started.html)** --- first fit-predict workflow with visualizations.
-- **[Fitting Hazard Models](https://ehrlinger.github.io/TemporalHazard/articles/fitting-hazard-models.html)** --- intercept-only through multiphase and multi-endpoint models.
-- **[Prediction & Visualization](https://ehrlinger.github.io/TemporalHazard/articles/prediction-visualization.html)** --- survival curves, decomposed hazard, patient-specific risk profiles.
-- **[Inference & Diagnostics](https://ehrlinger.github.io/TemporalHazard/articles/inference-diagnostics.html)** --- bootstrap CIs, decile-of-risk validation, sensitivity analysis.
-- **[Mathematical Foundations](https://ehrlinger.github.io/TemporalHazard/articles/mf-mathematical-foundations.html)** --- the generalized decomposition, additive hazard model, censoring likelihood, and time-varying covariates.
-- **[Package Architecture](https://ehrlinger.github.io/TemporalHazard/articles/ar-architecture.html)** --- internal design, golden fixtures, and dataset catalog.
-- **[SAS-to-R Migration](https://ehrlinger.github.io/TemporalHazard/articles/sas-to-r-migration.html)** --- statement-by-statement mapping from SAS HAZARD syntax.
+- **[Clinical Analysis Walkthrough](https://ehrlinger.github.io/TemporalHazard/articles/clinical-analysis-walkthrough.html)**: complete end-to-end workflow from Kaplan-Meier baseline through validated multivariable model.
+- **[Getting Started](https://ehrlinger.github.io/TemporalHazard/articles/getting-started.html)**: first fit-predict workflow with visualizations.
+- **[Fitting Hazard Models](https://ehrlinger.github.io/TemporalHazard/articles/fitting-hazard-models.html)**: intercept-only through multiphase and multi-endpoint models.
+- **[Prediction & Visualization](https://ehrlinger.github.io/TemporalHazard/articles/prediction-visualization.html)**: survival curves, decomposed hazard, patient-specific risk profiles.
+- **[Inference & Diagnostics](https://ehrlinger.github.io/TemporalHazard/articles/inference-diagnostics.html)**: bootstrap CIs, decile-of-risk validation, sensitivity analysis.
+- **[Mathematical Foundations](https://ehrlinger.github.io/TemporalHazard/articles/mf-mathematical-foundations.html)**: the generalized decomposition, additive hazard model, censoring likelihood, and time-varying covariates.
+- **[Package Architecture](https://ehrlinger.github.io/TemporalHazard/articles/ar-architecture.html)**: internal design, golden fixtures, and dataset catalog.
+- **[SAS-to-R Migration](https://ehrlinger.github.io/TemporalHazard/articles/sas-to-r-migration.html)**: statement-by-statement mapping from SAS HAZARD syntax.
 
 ## Development
 

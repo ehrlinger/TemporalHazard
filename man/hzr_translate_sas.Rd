@@ -32,8 +32,8 @@ emits a Quarto document of the equivalent \code{\link[=hazard]{hazard()}} and \c
 calls.
 }
 \details{
-\strong{Experimental:} a job that translates does render -- the emitted
-\code{hazard()} chunk binds its fit and asks for an actual fit -- but this is a
+\strong{Experimental:} a job that translates does render (the emitted
+\code{hazard()} chunk binds its fit and asks for an actual fit), but this is a
 translation aid, not a turnkey reproduction, and some SAS constructs are
 refused rather than translated. See the Experimental section below.
 
@@ -49,7 +49,7 @@ so on, so the emitted document contains every model, not just the last one
 seen. \code{job$outhaz} is therefore a character vector, one element per \verb{PROC HAZARD} block that set \verb{OUTHAZ=} (in the order the blocks appear). Each
 \verb{PROC HAZPRED} block's \verb{INHAZ=} is resolved independently against that
 vector, matching the most recently written \verb{OUTHAZ=} at that point in the
-file -- mirroring SAS itself, where a later \verb{OUTHAZ=} write overwrites the
+file, mirroring SAS itself, where a later \verb{OUTHAZ=} write overwrites the
 dataset an earlier one wrote under the same name. If a job's own \verb{OUTHAZ=}
 values don't cover it, \code{librefs} is tried next; distinct external
 \verb{INHAZ=} values each get their own loaded-fit chunk. When neither
@@ -73,8 +73,8 @@ builds. An unresolved \verb{INHAZ=} stops the render on purpose.
 
 On a fit loaded from an external \verb{INHAZ=} dataset, point predictions work
 but \code{se.fit = TRUE} is refused when \verb{PROC HAZARD} estimated a late shape
-parameter on a composite scale -- the generic unconstrained three-phase
-case, not an exotic one. A translated \verb{PROC HAZPRED} block asks for
+parameter on a composite scale (the generic unconstrained three-phase
+case, not an exotic one). A translated \verb{PROC HAZPRED} block asks for
 confidence limits unless the SAS job says \code{NOCL}, so such a job stops at
 its \code{predict()} chunks.
 }
@@ -97,9 +97,9 @@ separately, and expect \code{TAU} to read 1 and fixed. The log-likelihood,
 \code{MUL} and every prediction agree regardless. Most jobs are unaffected in
 practice: \verb{GAMMA = 1 FIXGAMMA} is the usual companion to \verb{ALPHA = 1 FIXALPHA}, and it makes the rewrite an identity.
 
-The one case that is a genuine model difference -- \code{ALPHA} fixed at 1 with
+The one case that is a genuine model difference (\code{ALPHA} fixed at 1 with
 \code{GAMMA} and \code{ETA} \emph{both} estimated, where \verb{PROC HAZARD} fixes \code{ETA} and
-fits one parameter fewer than \code{\link[=hazard]{hazard()}} would -- is recorded in
+fits one parameter fewer than \code{\link[=hazard]{hazard()}} would) is recorded in
 \verb{$untranslated} rather than left to be discovered in the comparison.
 
 \verb{$coverage} counts tokens the parser recognised; it is not evidence that

@@ -61,22 +61,22 @@
 #' the total hazard can fall, level off, and rise again.
 #'
 #' \describe{
-#'   \item{`"cdf"` --- early, resolving risk}{Named for the **c**umulative
+#'   \item{`"cdf"`: early, resolving risk}{Named for the **c**umulative
 #'     **d**istribution **f**unction: the phase contributes \eqn{\Phi(t) = G(t)},
 #'     the bounded CDF of the temporal decomposition (\eqn{0} at \eqn{t = 0},
 #'     rising to a ceiling of \eqn{1}).  Because it saturates, the *hazard* it
-#'     adds, \eqn{\mu\,g(t)}, peaks early and then decays toward zero --- the
+#'     adds, \eqn{\mu\,g(t)}, peaks early and then decays toward zero (the
 #'     signature of a one-time insult that patients either succumb to or survive
-#'     past, e.g. peri-operative mortality.  Shape set by `t_half`, `nu`, `m`.
+#'     past, e.g. peri-operative mortality).  Shape set by `t_half`, `nu`, `m`.
 #'     SAS/C equivalent: the Early (G1) phase.}
-#'   \item{`"hazard"` --- accumulating aging risk (G1 family)}{Named because the
+#'   \item{`"hazard"`: accumulating aging risk (G1 family)}{Named because the
 #'     phase contributes a **cumulative hazard** built from the same G1 family:
 #'     \eqn{\Phi(t) = -\log(1 - G(t))}, which is unbounded and monotone
 #'     increasing.  Its hazard \eqn{\mu\,h(t)} rises without leveling off, so it
 #'     models risk that grows as subjects age.  This is an alternative late-risk
 #'     form derived from G1; for the original SAS/C late phase prefer `"g3"`.
 #'     Shape set by `t_half`, `nu`, `m`.}
-#'   \item{`"g3"` --- late, rising risk (original C/SAS late phase)}{Named for
+#'   \item{`"g3"`: late, rising risk (original C/SAS late phase)}{Named for
 #'     the **G3** (third) decomposition family used by the original HAZARD
 #'     program for the late phase.  It contributes \eqn{\Phi(t) = G_3(t)} from
 #'     [hzr_decompos_g3()], an unbounded intensity with its own four-parameter
@@ -85,11 +85,11 @@
 #'     (e.g. structural valve deterioration years after surgery).  Use this when
 #'     reproducing classic three-phase HAZARD models.  SAS/C equivalent: the
 #'     Late (G3) phase.}
-#'   \item{`"constant"` --- flat background rate}{A time-invariant hazard:
+#'   \item{`"constant"`: flat background rate}{A time-invariant hazard:
 #'     \eqn{\Phi(t) = t}, so the added hazard \eqn{\mu} is constant (the
 #'     exponential model).  It represents the steady, ongoing risk present at all
 #'     follow-up times, independent of how long ago the time origin was.  Takes
-#'     no shape parameters --- only its scale \eqn{\mu} (and any covariates) is
+#'     no shape parameters; only its scale \eqn{\mu} (and any covariates) is
 #'     estimated.  SAS/C equivalent: the Constant (G2) phase.}
 #' }
 #'
@@ -98,7 +98,7 @@
 #' `"cdf"`, \eqn{h(t)} for `"hazard"`, \eqn{g_3(t)} for `"g3"`, and \eqn{1} for
 #' `"constant"`.
 #'
-#' @param type Character; the phase's temporal shape --- one of `"cdf"`
+#' @param type Character; the phase's temporal shape, one of `"cdf"`
 #'   (early resolving risk), `"hazard"` (accumulating G1 aging risk), `"g3"`
 #'   (late rising risk, the original C/SAS late phase), or `"constant"` (flat
 #'   background rate).  See the **Phase types** section for what each means and
@@ -510,7 +510,7 @@ hzr_theta_names <- function(phases, covariates = NULL) {
 #' The full theta vector needs one name per covariate column, and `x_list` may
 #' carry a matrix with no `colnames`.  Falling through with `character(0)`
 #' there produces FEWER names than the phase has parameters, and
-#' `names(theta) <- <short vector>` pads with `NA` rather than erroring --- so
+#' `names(theta) <- <short vector>` pads with `NA` rather than erroring, so
 #' the misalignment is silent.  Substitute positional labels instead.
 #'
 #' @param phases Named list of `hzr_phase` objects.
@@ -647,7 +647,7 @@ hzr_theta_names <- function(phases, covariates = NULL) {
 #'
 #' A `constant` phase is `mu` and nothing else. The saturated identifiability
 #' message says `mu` survives while the shape parameters go flat, which is
-#' vacuous for a phase that has none -- the wording defect in #211.
+#' vacuous for a phase that has none (the wording defect in #211).
 #'
 #' This asks whether the parameters *exist*, not whether they are free. A phase
 #' whose shapes are pinned with `hzr_phase(fixed = )` still has them, and the

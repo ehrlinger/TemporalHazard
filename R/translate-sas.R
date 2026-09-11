@@ -23,7 +23,7 @@
 
 #' Point a `predict()` call at a different fitted-model variable.
 #'
-#' `.hzr_parse_hazpred()` always builds `predict(fit, ...)` -- the literal
+#' `.hzr_parse_hazpred()` always builds `predict(fit, ...)`; the literal
 #' name `fit` is a placeholder, first positional argument. With more than
 #' one fit in a job, a given `PROC HAZPRED` block's `INHAZ=` may resolve to
 #' `fit_2` instead; this swaps the placeholder for the resolved name without
@@ -45,8 +45,8 @@
 #' emits a Quarto document of the equivalent [hazard()] and [predict.hazard()]
 #' calls.
 #'
-#' **Experimental:** a job that translates does render -- the emitted
-#' `hazard()` chunk binds its fit and asks for an actual fit -- but this is a
+#' **Experimental:** a job that translates does render (the emitted
+#' `hazard()` chunk binds its fit and asks for an actual fit), but this is a
 #' translation aid, not a turnkey reproduction, and some SAS constructs are
 #' refused rather than translated. See the Experimental section below.
 #'
@@ -63,7 +63,7 @@
 #' HAZARD` block that set `OUTHAZ=` (in the order the blocks appear). Each
 #' `PROC HAZPRED` block's `INHAZ=` is resolved independently against that
 #' vector, matching the most recently written `OUTHAZ=` at that point in the
-#' file -- mirroring SAS itself, where a later `OUTHAZ=` write overwrites the
+#' file, mirroring SAS itself, where a later `OUTHAZ=` write overwrites the
 #' dataset an earlier one wrote under the same name. If a job's own `OUTHAZ=`
 #' values don't cover it, `librefs` is tried next; distinct external
 #' `INHAZ=` values each get their own loaded-fit chunk. When neither
@@ -101,8 +101,8 @@
 #'
 #' On a fit loaded from an external `INHAZ=` dataset, point predictions work
 #' but `se.fit = TRUE` is refused when `PROC HAZARD` estimated a late shape
-#' parameter on a composite scale -- the generic unconstrained three-phase
-#' case, not an exotic one. A translated `PROC HAZPRED` block asks for
+#' parameter on a composite scale (the generic unconstrained three-phase
+#' case, not an exotic one). A translated `PROC HAZPRED` block asks for
 #' confidence limits unless the SAS job says `NOCL`, so such a job stops at
 #' its `predict()` chunks.
 #'
@@ -124,9 +124,9 @@
 #' practice: `GAMMA = 1 FIXGAMMA` is the usual companion to `ALPHA = 1
 #' FIXALPHA`, and it makes the rewrite an identity.
 #'
-#' The one case that is a genuine model difference -- `ALPHA` fixed at 1 with
+#' The one case that is a genuine model difference (`ALPHA` fixed at 1 with
 #' `GAMMA` and `ETA` *both* estimated, where `PROC HAZARD` fixes `ETA` and
-#' fits one parameter fewer than [hazard()] would -- is recorded in
+#' fits one parameter fewer than [hazard()] would) is recorded in
 #' `$untranslated` rather than left to be discovered in the comparison.
 #'
 #' `$coverage` counts tokens the parser recognised; it is not evidence that

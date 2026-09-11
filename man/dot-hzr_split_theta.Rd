@@ -7,11 +7,11 @@
 .hzr_split_theta(theta, phases, covariate_counts)
 }
 \arguments{
-\item{theta}{Numeric vector -- full parameter vector (internal scale).}
+\item{theta}{Numeric vector: full parameter vector (internal scale).}
 
 \item{phases}{Named list of validated \code{hzr_phase} objects.}
 
-\item{covariate_counts}{Named integer vector -- number of covariates per phase.}
+\item{covariate_counts}{Named integer vector: number of covariates per phase.}
 }
 \value{
 Named list of numeric vectors, one per phase.

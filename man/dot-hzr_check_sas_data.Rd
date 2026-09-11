@@ -19,18 +19,18 @@
 \code{NULL}, invisibly; called for its side effect.
 }
 \description{
-Both conditions \code{objective = "sas"} imposes -- no left-censored rows, and a
-positive width on every interval row -- are pure functions of the data, so
+Both conditions \code{objective = "sas"} imposes (no left-censored rows, and a
+positive width on every interval row) are pure functions of the data, so
 they hold or fail identically at every start.  Evaluated inside the
 objective they reach the user through \code{.hzr_optim_multiphase()}'s per-start
 \code{tryCatch}, which frames them as "produced no usable fit from N starts" and
-invites raising \code{n_starts} -- a remedy that cannot work.  \code{hazard()} calls
+invites raising \code{n_starts}, a remedy that cannot work.  \code{hazard()} calls
 this once, before any optimization, so a data defect is reported as one.
 }
 \details{
 This does \strong{not} replace the guards inside the objective and the gradient.
-Those remain because the gradient is reachable without \code{hazard()} -- the
-score test calls it directly -- so entry validation is not guaranteed to
+Those remain because the gradient is reachable without \code{hazard()} (the
+score test calls it directly), so entry validation is not guaranteed to
 have run.  See \code{.hzr_check_sas_status()}.
 
 Bounds are normalised here exactly as \code{.hzr_logl_multiphase()} normalises

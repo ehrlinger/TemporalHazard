@@ -206,7 +206,7 @@ utils::globalVariables("cabgkul")
 #' The published NCHS United States life table for 2023, expressed on a
 #' synthetic radix of 100,000, as a `PROC HAZARD` job consumes it: one
 #' interval-censored row per year of age, weighted by the number of deaths
-#' falling in that year. Aggregate published counts only -- no patient-level
+#' falling in that year. Aggregate published counts only: no patient-level
 #' data and no PHI.
 #'
 #' This is the reference fixture for `objective = "sas"`. It is the cleanest
@@ -217,7 +217,7 @@ utils::globalVariables("cabgkul")
 #' by itself the rival hypothesis that SAS bakes in a constant width divisor:
 #' that reading is off by 593,146 log-likelihood units here.
 #'
-#' Two rows of the source table -- ages 119--120 and 124--125 -- carry
+#' Two rows of the source table (ages 119--120 and 124--125) carry
 #' `d_all == 0` and are dropped by the SAS job's own
 #' `IF D_ALL=0 THEN DELETE`, leaving 124 of 126. The age grid is therefore not
 #' contiguous, which is why the fixture carries explicit `age_l`/`age_u`
@@ -229,9 +229,9 @@ utils::globalVariables("cabgkul")
 #'   \item{age_u}{Upper bound of the age interval, in years (integer);
 #'     `age_u - age_l` is exactly 1 on every row}
 #'   \item{d_all}{Deaths in the interval on a 100,000 radix. This is the
-#'     ICENSOR variable, and it is a *weight*, not an indicator -- a fact the
+#'     ICENSOR variable, and it is a *weight*, not an indicator (a fact the
 #'     weighted life table forces and 335 occurrences of
-#'     `icensor icens_wt=il_dead` across the SAS corpus corroborate.
+#'     `icensor icens_wt=il_dead` across the SAS corpus corroborate).
 #'     Sums to 100000.0125; ranges from 0.2352 to 3620.335}
 #' }
 #'

@@ -10,13 +10,13 @@
 
 #' Translate SAS censoring statements to this package's status coding.
 #'
-#' Builds an unevaluated `status` expression -- and, where needed, a
-#' `time_lower` expression -- from the `EVENT`/`ICENSOR`/`LCENSOR`/`RCENSOR`
+#' Builds an unevaluated `status` expression (and, where needed, a
+#' `time_lower` expression) from the `EVENT`/`ICENSOR`/`LCENSOR`/`RCENSOR`
 #' operands of a `PROC HAZARD` statements list, ready to drop into a
 #' `hazard()` call.
 #'
 #' **`LCENSOR` is left-*truncation*, not left-censoring.** Its operand is the
-#' counting-process *entry time* -- all four corpus uses are literally
+#' counting-process *entry time*: all four corpus uses are literally
 #' `LCENSOR STARTTME`, paired with `TIME INT_TE` (see
 #' `inst/dev/FIXTURE-GAP-LIST.md`, answered Q1). It never changes `status`:
 #' HAZARD has no left-censoring in this package's sense, so `status = -1` is
@@ -28,7 +28,7 @@
 #' `ICENSOR c3var '=' ctimevar;`, and the likelihood in `setlik.c` uses a
 #' Nelson-type approximation `C3 * ln([CF(T) - CF(CT)] / (T - CT))`, so a row
 #' is interval-censored where `C3 > 0`. The second operand (`CTIME`) is the
-#' interval's *lower* bound -- the interval runs `CTIME` -> `TIME` (see
+#' interval's *lower* bound; the interval runs `CTIME` -> `TIME` (see
 #' `FIXTURE-GAP-LIST.md` Q1). `EVENT` is optional: the reference `HAZARD`
 #' program (`src/hazard/varterm.c`) terminates only when *both* `EVENT` and
 #' `ICENSOR` are missing, so a job that specifies `ICENSOR` alone is
@@ -42,19 +42,19 @@
 #' `llike = -(c1c2c3) * (CH(T) - CH(ST)) + c1w * log h(T) + c3w * lct`. That
 #' decomposes into at most three independent contributions, each of which
 #' [hazard()] expresses as one row's status and weight:
-#' * `C1 > 0` -- an event row of weight `C1 * WT` (status `1`);
-#' * `C2 > 0` -- a right-censored row of weight `C2` (status `0`);
-#' * `C3 > 0` -- an interval row of weight `C3 * WT` (status `2`).
+#' * `C1 > 0`: an event row of weight `C1 * WT` (status `1`);
+#' * `C2 > 0`: a right-censored row of weight `C2` (status `0`);
+#' * `C3 > 0`: an interval row of weight `C3 * WT` (status `2`).
 #'
 #' `C2` is the one **not** multiplied by `WT`, and that is not an oversight in
 #' the reference: `readc2.c` sets `C2 = ONE` on exactly the rows where neither
 #' `C1` nor `C3` fires, so SAS weights a right-censored row `1` whatever the
 #' `WEIGHT` variable says. Emitting a bare `WT` there instead over- or
-#' under-weights every censored row -- and a `WEIGHT` that happens to be `0`
+#' under-weights every censored row, and a `WEIGHT` that happens to be `0`
 #' on censored rows deletes them from the fit outright, silently (#158).
 #'
-#' So `weights_expr` is emitted whenever `EVENT` or `ICENSOR` is present --
-#' which is always, since a job with neither is rejected -- as
+#' So `weights_expr` is emitted whenever `EVENT` or `ICENSOR` is present
+#' (which is always, since a job with neither is rejected) as
 #' `ifelse(EVENT > 0, EVENT * WT, ifelse(C3 > 0, C3 * WT, 1))`, dropping
 #' whichever branches the job does not have and dropping `* WT` when there is
 #' no `WEIGHT` statement. For the 0/1 `EVENT` and absent `WEIGHT` that most
@@ -64,15 +64,15 @@
 #' `status` therefore derives from `EVENT > 0`, never from `EVENT` itself
 #' (#157). This package codes status `-1` left, `0` right, `1` event, `2`
 #' interval, so a row recording two events (`EVENT = 2`) mapped straight onto
-#' `status` becomes *interval-censored* -- a different likelihood branch, not
-#' an under-count -- and `EVENT = 3` lands outside the coding altogether,
+#' `status` becomes *interval-censored* (a different likelihood branch, not
+#' an under-count), and `EVENT = 3` lands outside the coding altogether,
 #' which also disables Conservation of Events (`coe_supported_data`).
 #' `readc1.c` accepts any `C1 >= 0` and keeps a fractional count (`notintg`
 #' only raises a report flag), so `> 0` is the right test and a fractional
 #' count carries through as a fractional weight. A *negative* count SAS
 #' deletes (`c1del`, `del = 1`) and a *missing* one likewise (`mc1del`,
 #' `mdel = 1`); `readobs.c` then skips `setobs()` and subtracts the row from
-#' `Nobs`, so it contributes nothing at all -- it is emphatically not a
+#' `Nobs`, so it contributes nothing at all; it is emphatically not a
 #' right-censored row of weight 1. This translator has no way to drop a row,
 #' and dropping one silently would change `n` behind the reader's back, so the
 #' hoisted status chunk opens with a guard per named count that stops and
@@ -86,14 +86,14 @@
 #' text, so it cannot be refused at translation time the way `LCENSOR` +
 #' `ICENSOR` is; instead the hoisted status chunk opens with a guard that
 #' stops before the fit and names the by-hand remedy (split the row in two).
-#' Picking the event branch and discarding `c3w` -- what this translator did
-#' before -- converges and reports plausibly, which is the shape this package
+#' Picking the event branch and discarding `c3w` (what this translator did
+#' before) converges and reports plausibly, which is the shape this package
 #' exists to refuse. The same guard covers `EVENT` + `RCENSOR` and `ICENSOR`
 #' + `RCENSOR`; see the `RCENSOR` paragraph below.
 #'
 #' **`RCENSOR` names `C2` itself** (`hazard_y.y`:
 #' `rcensorstmt : RCENSOR NAME { setvar(13,$2); }`; `rcnsprc.c` sets `c2name`
-#' from statement field 13), and `C2` is likewise a *count* --
+#' from statement field 13), and `C2` is likewise a *count*:
 #' "COUNT OF CENSORED INDIVIDUALS AT TIME=T" in `setlik.c`'s header, and
 #' `OBS(3)`, "NUMBER OF CENSORED OBSERVATIONS AT T". The two branches of
 #' `readc2.c` are what decides the translation: when `c2name` is non-blank
@@ -116,15 +116,15 @@
 #' its rules are guarded by a blank-name test, `ic10 && ic20` only when
 #' `c3name` is blank and `ic30 && ic20` only when `c1name` is blank. So a row
 #' with every count zero is deleted for `EVENT` + `RCENSOR` and for `ICENSOR`
-#' + `RCENSOR`, and *kept* -- contributing `c1c2c3 = 0` -- when all three are
+#' + `RCENSOR`, and *kept* (contributing `c1c2c3 = 0`) when all three are
 #' named. There is no such rule at all for `EVENT` + `ICENSOR`, which is
 #' exactly the pairing with no `c2name`. This translator has no way to drop a
 #' row, so an all-zero row arrives with weight `0`: no contribution to the
 #' likelihood, which is what deletion means for the fit and what the
 #' all-three case does anyway, though the row still counts toward `n`.
 #' A *negative* `C2` SAS deletes (`c2del`) and a *missing* one it deletes too
-#' (`mc2del`) -- the same rule `readc1.c` and `readc3.c` apply to their own
-#' counts, guarded only by the name being non-blank -- so both are caught by
+#' (`mc2del`), the same rule `readc1.c` and `readc3.c` apply to their own
+#' counts (guarded only by the name being non-blank), so both are caught by
 #' the missing/negative guard above rather than by [hazard()]'s incidental
 #' "non-negative and finite" check.
 #'
@@ -132,8 +132,8 @@
 #' `RCENSOR` present this is no longer only the `EVENT` + `ICENSOR` pair:
 #' `readobs.c` deletes a row only when *both* of a pair are zero, so
 #' `C1 > 0 & C2 > 0` and `C3 > 0 & C2 > 0` reach `setlik.c` too and are
-#' summed there. Each such row is two observations at once -- an event of
-#' weight `C1 * WT` *and* a right-censored observation of weight `C2`, say --
+#' summed there. Each such row is two observations at once (an event of
+#' weight `C1 * WT` *and* a right-censored observation of weight `C2`, say),
 #' and [hazard()] carries one status and one weight per row. A guard is
 #' emitted for every pair of counts the job named, and only for named ones: a
 #' *derived* `C2` fires on exactly the rows where no other count does, so it
@@ -145,14 +145,14 @@
 #' interval's lower bound (`CTIME`), but for status 0/1 it is the
 #' counting-process *entry time* (default `0`), not a censoring bound. `TIME`
 #' is always the interval's upper bound, and that is exactly what
-#' `hazard()`'s `time_upper` already defaults to when left `NULL` -- so
+#' `hazard()`'s `time_upper` already defaults to when left `NULL`, so
 #' `time_upper` is never emitted by this translator; passing it would be
 #' redundant, and omitting it cannot drift out of sync with `TIME`.
 #' `time_lower` is therefore built as one of, depending on which statements
 #' are present:
 #' * `ICENSOR` only: `ifelse(status == 2, CTIME, 0)` (`0` is `hazard()`'s
 #'   documented default entry time for status 0/1 rows).
-#' * `LCENSOR` only: the `LCENSOR` variable directly -- it applies to every
+#' * `LCENSOR` only: the `LCENSOR` variable directly; it applies to every
 #'   row, not just interval ones, so no `ifelse()` gating is needed.
 #' * Neither: `time_lower` is omitted (`NULL`).
 #'
@@ -161,7 +161,7 @@
 #' meanings, so gating it on status hands the interval rows their lower bound
 #' and thereby drops their entry time, fitting a left-truncated
 #' interval-censored subject as at risk from time `0`. That converges and
-#' reports plausibly -- the exact failure mode this package exists to refuse.
+#' reports plausibly, the exact failure mode this package exists to refuse.
 #' The reference implementation carries three distinct times (`TIME`, `CTIME`,
 #' `STIME`) and subtracts `H(STIME)` for every row, interval rows included, so
 #' translating it faithfully needs an entry-time argument [hazard()] does not
@@ -170,8 +170,8 @@
 #' `refused` is set, and the caller emits a `stop()` in place of the fit.
 #'
 #' The `time_lower` `ifelse()` is gated on a `status_name` placeholder
-#' (`.hzr_status`) the caller assigns the `status_expr` to first -- never
-#' unconditionally, which would trip `hazard()`'s finite-value check off the
+#' (`.hzr_status`) the caller assigns the `status_expr` to first. It is never
+#' unconditional, which would trip `hazard()`'s finite-value check off the
 #' interval subset and, where populated, silently redefine event/right-censored
 #' rows' risk-set entry times. `weights_expr` gates on the count variables
 #' themselves, not on `status`, so it stays valid on the un-hoisted paths.
@@ -728,7 +728,7 @@
 #' Translate a SELECTION statement to hzr_stepwise() arguments.
 #'
 #' `hazard_y.y`'s `stepwisestmt` production is `STEPWISE stepwiseopts { setopt(33); }`,
-#' and `stepwiseopts` can be empty -- the *statement* is what turns stepwise
+#' and `stepwiseopts` can be empty: the *statement* is what turns stepwise
 #' on, not any particular direction keyword. So a bare `SELECTION;` (or one
 #' carrying only `SLENTRY`/`SLSTAY`) legitimately enables stepwise; the
 #' direction keywords only refine it. `ONEWAY` (aliases `NOSTEPWISE`/`NOSW`,
@@ -749,7 +749,7 @@
 #' When `ONEWAY`/`NOSTEPWISE`/`NOSW` disables stepwise, any `SLENTRY`/
 #' `SLSTAY` also given are meaningless (there is no entry/stay search to
 #' apply them to) and are moved into `untranslated` rather than silently
-#' dropped -- discarding a parsed value with nothing recorded is exactly
+#' dropped; discarding a parsed value with nothing recorded is exactly
 #' the defect this package guards against.
 #' @return `list(stepwise = <logical>, direction = <chr|NULL>,
 #'   slentry = <dbl|NULL>, slstay = <dbl|NULL>, untranslated = <data.frame>)`.
@@ -827,8 +827,8 @@
 #' Used to resolve explicit `DO` list elements such as `1*DTY`: `DTY` becomes
 #' a plain number only when it was already folded from an earlier
 #' `DTY=12/365.2425;` assignment in the *same* `DATA` step
-#' (`.hzr_sas_data_constants()`). Anything else -- a function call, a
-#' data-step variable, an unknown name -- must refuse rather than guess, so
+#' (`.hzr_sas_data_constants()`). Anything else (a function call, a
+#' data-step variable, an unknown name) must refuse rather than guess, so
 #' `text` is checked against a strict whitelist regex (digits, the four
 #' arithmetic operators, parentheses, whitespace, and known constant names)
 #' *before* `parse()`/`eval()` ever see it; text that fails the whitelist is
@@ -868,7 +868,7 @@
 #' statement): collects assignments in order, so a later constant may
 #' reference an earlier one (`INC=(5+LN_MAX)/99.9` after `LN_MAX=...`).
 #' Only assignments `.hzr_eval_sas_const()` can actually evaluate end up in
-#' the map -- an assignment whose right-hand side is not pure arithmetic
+#' the map. An assignment whose right-hand side is not pure arithmetic
 #' over already-known constants (a function call, an unresolved name) is
 #' silently skipped here, not stored; it simply never becomes foldable.
 #' @noRd
@@ -893,8 +893,8 @@
 #' read from the job rather than assumed.
 #'
 #' The numerator has to be the loop's own span, `log(hi) - lo`. Every corpus
-#' job writes that span in one of two spellings -- `(5 + LN_MAX)` where the
-#' loop starts at -5, or `(MAX - MIN)` -- and the two coincide only because
+#' job writes that span in one of two spellings: `(5 + LN_MAX)` where the
+#' loop starts at -5, or `(MAX - MIN)`. The two coincide only because
 #' `lo = -5`. A numerator that is *not* the span means the emitted
 #' `(log(hi) - lo)/denominator` step would not be the job's step, so this
 #' returns `NA_real_` and the caller refuses the grid.
@@ -937,7 +937,7 @@
 #' Returns an unevaluated `data.frame()` call, or `NULL` when the step is not
 #' one of the two stereotyped forms this package can read. `NULL` means
 #' untranslated, never "no grid": a `predict()` call with no `newdata` is a
-#' hollow result -- right shape, empty inside -- so the caller
+#' hollow result (right shape, empty inside), so the caller
 #' (`.hzr_parse_hazpred()`) must record it in `untranslated`, not treat it as
 #' nothing to translate.
 #' @noRd

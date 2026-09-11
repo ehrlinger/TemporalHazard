@@ -63,17 +63,17 @@ Every temporal phase in TemporalHazard is built from a single parametric
 family, `decompos(t; t_half, nu, m)`, introduced by Blackstone, Naftel, and
 Turner (1986) that produces three linked quantities from just three parameters:
 
-- $G(t)$ — cumulative distribution function (CDF), bounded $[0, 1]$
-- $g(t) = dG/dt$ — probability density function
-- $h(t) = g(t) / (1 - G(t))$ — hazard function
+- $G(t)$: cumulative distribution function (CDF), bounded $[0, 1]$
+- $g(t) = dG/dt$: probability density function
+- $h(t) = g(t) / (1 - G(t))$: hazard function
 
 The three parameters control the shape of the distribution:
 
 | Parameter | Meaning | Constraint |
 |-----------|---------|------------|
 | `t_half`  | Half-life: time at which $G(t_{1/2}) = 0.5$ | $> 0$ |
-| `nu`      | Time exponent — controls rate dynamics | any finite value |
-| `m`       | Shape exponent — controls distributional form | any finite value |
+| `nu`      | Time exponent (controls rate dynamics) | any finite value |
+| `m`       | Shape exponent (controls distributional form) | any finite value |
 
 ::: {.callout-note}
 ## SAS/C parameter bridge
@@ -339,7 +339,7 @@ if (has_ggplot) {
 ## Additive composition example
 
 To build intuition, here is how three phases combine into a total hazard.
-The key insight is that phases contribute additively to the **cumulative
+Phases contribute additively to the **cumulative
 hazard** $H(t)$, not to the survival directly.
 
 ```{r}

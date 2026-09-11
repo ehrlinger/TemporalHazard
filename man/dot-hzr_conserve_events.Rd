@@ -43,8 +43,8 @@ unit weights. Applied when summing per-phase cumhaz so Turner's adjustment
 is computed on the same scale as \code{total_events}.}
 
 \item{time_lower}{Optional numeric vector of counting-process entry (start)
-times. When supplied, conservation is enforced on the entry-time scale --
-\verb{Sum E = Sum [H(stop) - H(start)]} -- by subtracting the entry-time
+times. When supplied, conservation is enforced on the entry-time scale
+(\verb{Sum E = Sum [H(stop) - H(start)]}) by subtracting the entry-time
 cumulative hazard, matching the multiphase likelihood (and C HAZARD
 \code{setcoe} under \code{LCENSOR}/\code{STARTTME}). \code{NULL} (the default) means no
 truncation, i.e. \code{H(start) = 0}.}

@@ -46,7 +46,7 @@ rows are unaffected.}
 \item{...}{Ignored.}
 }
 \value{
-Numeric vector of length \code{length(theta)} -- the gradient.
+Numeric vector of length \code{length(theta)}: the gradient.
 Returns a zero vector if any component is non-finite (guards optimizer).
 }
 \description{

@@ -38,7 +38,7 @@
 #'
 #' For splitting *statements*, where a `;` embedded in a quoted string literal
 #' (e.g. `TITLE 'a; b';`) must not be treated as a statement terminator. This
-#' is NOT for finding where a `* ... ;` comment ends -- HAZARD's comment rule
+#' is NOT for finding where a `* ... ;` comment ends; HAZARD's comment rule
 #' is quote-agnostic, so using this for comment termination is a bug (see the
 #' file header). Nothing in this package calls this function today; it is
 #' kept for statement-splitting logic that may need it later.
@@ -132,7 +132,7 @@
 #' line-initial form. In these jobs a comment frequently follows a statement
 #' on the same line, which would otherwise be tokenised as a statement
 #' keyword. The comment's own terminating `;` is found with a plain
-#' first-`;` search (.idx()), not the quote-aware .first_semi() -- HAZARD's
+#' first-`;` search (.idx()), not the quote-aware .first_semi(); HAZARD's
 #' lexer rule (`<STMT>\*[^;]*;`) has no quote awareness, so an apostrophe in
 #' comment prose (e.g. "patient's") must not be read as an unclosed string.
 #'
@@ -166,19 +166,19 @@
 #' Extract PROC HAZARD / PROC HAZPRED blocks from normalised source.
 #'
 #' Blocks are delimited by parentheses, not by the macro call's name: HAZARD's
-#' own lexer treats `)` as whitespace, so a parenthesised group -- not the
-#' `%HAZARD(`/`%HAZPRED(` spelling -- is what owns delimitation. Anchoring on
+#' own lexer treats `)` as whitespace, so a parenthesised group (not the
+#' `%HAZARD(`/`%HAZPRED(` spelling) is what owns delimitation. Anchoring on
 #' the literal macro call text missed macro-argument fragments: files that are
 #' `%INCLUDE`d into a `%HAZARD(...)` call held in a different file, so the
 #' fragment itself begins with a bare `(` and the macro name is never present
 #' in this text at all. The fix locates each `PROC HAZARD `/`PROC HAZPRED `
 #' occurrence directly, then scans *backwards* for the nearest unmatched `(`
 #' that opens the group containing it, then forwards from that paren to its
-#' balancing `)` (unchanged balanced-paren logic -- the corpus confirms 0
+#' balancing `)` (unchanged balanced-paren logic; the corpus confirms 0
 #' unterminated). A PROC with no enclosing paren at all is still returned,
 #' never dropped: its text is bounded at the next `PROC `/`DATA `/`RUN;`
 #' boundary, whichever comes first. If none of those follow, the block
-#' extends to the end of the normalised text -- this is safe because this
+#' extends to the end of the normalised text. This is safe because this
 #' function only ever runs on output from `.hzr_sas_normalise()`, which has
 #' already stripped all comments, so there is no trailing comment prose left
 #' to sweep in.

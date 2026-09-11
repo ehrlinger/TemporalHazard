@@ -322,7 +322,7 @@ hzr_decompos <- function(time, t_half, nu, m) {
 #' Computes the cumulative intensity \eqn{G_3(t)} and its derivative
 #' \eqn{g_3(t) = dG_3/dt} for the late-phase parametric family used in the
 #' original Blackstone C/SAS HAZARD code.  Unlike [hzr_decompos()] (which
-#' computes the early-phase G1 -- a bounded CDF), this function can produce
+#' computes the early-phase G1, a bounded CDF), this function can produce
 #' **unbounded** values, making it suitable for modelling increasing late risk.
 #'
 #' @section Mathematical form:
@@ -514,9 +514,9 @@ hzr_decompos_g3 <- function(time, tau, gamma, alpha, eta) {
 #' @param t_half Half-life parameter (> 0).
 #' @param nu Time exponent.
 #' @param m Shape parameter.
-#' @param type Phase type: `"cdf"` (early -- uses \eqn{G(t)}),
-#'   `"hazard"` (late -- uses cumulative hazard from \eqn{h(t)}), or
-#'   `"constant"` (flat rate -- \eqn{\Phi = t}).
+#' @param type Phase type: `"cdf"` (early, uses \eqn{G(t)}),
+#'   `"hazard"` (late, uses cumulative hazard from \eqn{h(t)}), or
+#'   `"constant"` (flat rate, \eqn{\Phi = t}).
 #'
 #' @return Numeric vector of cumulative hazard contributions \eqn{\Phi(t)},
 #'   same length as `time`.
@@ -729,7 +729,7 @@ hzr_phase_cumhaz <- function(time, t_half = 1, nu = 1, m = 0,
 
 #' Instantaneous hazard contribution from a single phase
 #'
-#' Computes \eqn{\phi_j(t) = d\Phi_j/dt} for one phase -- the derivative of
+#' Computes \eqn{\phi_j(t) = d\Phi_j/dt} for one phase, the derivative of
 #' the cumulative hazard contribution returned by [hzr_phase_cumhaz()].
 #'
 #' @inheritParams hzr_phase_cumhaz

@@ -113,7 +113,7 @@
 #' candidate refit at all: each candidate is scored by `.hzr_score_q()` with
 #' its coefficient pinned at zero.  The reduced-model nuisance block is
 #' inverted ONCE per step by `.hzr_score_nuisance()` and reused for every
-#' candidate -- that reuse is what removes the optimizer from the loop, and
+#' candidate; that reuse is what removes the optimizer from the loop, and
 #' letting `.hzr_score_q()` recompute it per candidate would silently give
 #' most of the speedup back.  The best candidate is accepted if its score
 #' clears the entry threshold.
@@ -325,7 +325,7 @@
 #' Split out of `.hzr_stepwise_forward_step()` to keep the refit-based and
 #' refit-free paths readable side by side.  Returns the same list shape.
 #'
-#' The winner is refit ONCE, after the decision -- mirroring the backward
+#' The winner is refit ONCE, after the decision, mirroring the backward
 #' step, which has always worked this way.
 #'
 #' @param cands List of `list(var, phase)` pairs to score.
@@ -549,7 +549,7 @@
 #'
 #' `.hzr_score_q()` returns a silent `NA` for a non-numeric or absent
 #' candidate, which under `criterion = "score"` would mean the variable
-#' simply never enters -- no error, no warning, just absent from the
+#' simply never enters: no error, no warning, just absent from the
 #' selected model.  The Wald path surfaces both cases loudly: a factor
 #' candidate fails in `.hzr_candidate_coef_name()` (cannot find its expanded
 #' coefficient by name), and a candidate missing from `data` fails inside
@@ -558,7 +558,7 @@
 #' two criteria in agreement about what is selectable.
 #'
 #' A column absent from `data` warns (matching the Wald refit-failure
-#' warning's severity) and is left to the caller's normal `NA` handling --
+#' warning's severity) and is left to the caller's normal `NA` handling;
 #' the run continues past it. A present-but-non-numeric column still
 #' errors, unchanged.
 #'
@@ -784,8 +784,8 @@
 #' Name under which a newly-entered variable appears in coef(fit)
 #'
 #' Canonical naming differs between fit kinds:
-#'   multiphase  -- phase-prefixed formula names (e.g. `"early.age"`).
-#'   single-dist -- positional `"betaN"` from `.hzr_parameter_names()`,
+#'   multiphase: phase-prefixed formula names (e.g. `"early.age"`).
+#'   single-dist: positional `"betaN"` from `.hzr_parameter_names()`,
 #'     where N is the column index of `var` in `colnames(fit$data$x)`.
 #'
 #' This matches the naming `summary.hazard()` prints and the canonical
@@ -866,7 +866,7 @@
 }
 
 
-#' %||% -- NULL-coalesce for lazy defaults
+#' %||%: NULL-coalesce for lazy defaults
 #' @keywords internal
 #' @noRd
 `%||%` <- function(a, b) if (is.null(a)) b else a

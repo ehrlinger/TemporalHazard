@@ -45,12 +45,12 @@ fits, pass a named list of one-sided formulas keyed by phase.}
 \item{data}{Data frame the base fit was built on.  Required for
 refits.}
 
-\item{direction}{Search strategy --- one of \code{"both"} (default),
+\item{direction}{Search strategy: one of \code{"both"} (default),
 \code{"forward"}, or \code{"backward"}.  Controls whether variables may only
 enter, only leave, or both.  See the \strong{Selection direction and
 criterion} section.}
 
-\item{criterion}{Entry / retention rule --- one of \code{"score"} (default),
+\item{criterion}{Entry / retention rule: one of \code{"score"} (default),
 \code{"wald"}, or \code{"aic"}.  \code{"score"} and \code{"wald"} both apply SAS-style
 p-value thresholds (\code{slentry} / \code{slstay}) but score entry candidates
 differently, and can therefore select different variable sets; \code{"score"}
@@ -88,7 +88,7 @@ Default \code{TRUE}.}
 \item{object}{An \code{hzr_stepwise} object.}
 }
 \value{
-An object of class \code{c("hzr_stepwise", "hazard")} -- the
+An object of class \code{c("hzr_stepwise", "hazard")}, the
 final fit augmented with:
 \describe{
 \item{\code{steps}}{Data frame with one row per accepted /
@@ -106,16 +106,16 @@ approximation at zero, which are typically the strongest variables
 on offer rather than degenerate ones. Those are now refit and tested
 by Wald automatically, counted in \code{n_wald_fallbacks}; a candidate
 still reaches \code{uncomputable_reasons} only when that refit itself
-fails, or when the cause is one no refit can rescue --- which is
+fails, or when the cause is one no refit can rescue, which is
 every cause except \code{information_indefinite} and
 \code{coefficient_diverging}, the two a refit exists to rescue. Read
 \code{uncomputable_reasons} for which one it was in any given run.  For
 every criterion it also carries
 \code{refit_failures} (the \code{"var"} / \code{"var@phase"} tokens of candidate
 moves whose refit errored or failed to converge), \code{n_refit_failures},
-and \code{stopped_refit_failed} --- \code{TRUE} when the run ended on an
+and \code{stopped_refit_failed} (\code{TRUE} when the run ended on an
 iteration in which refits failed, which is a screen that could not
-test its candidates rather than one that tested them and liked none.
+test its candidates rather than one that tested them and liked none).
 Check it before reading a zero-row \code{steps} as an honest null result.}
 \item{\code{trace_msg}}{Character vector of the trace lines,
 captured regardless of the \code{trace} flag.}
@@ -147,7 +147,7 @@ The \code{steps} data frame has columns:
 \item{\code{action}}{\code{"enter"}, \code{"drop"}, or \code{"frozen"}.}
 \item{\code{variable}}{Variable affected.}
 \item{\code{phase}}{Phase name (multiphase) or \code{NA_character_}.}
-\item{\code{criterion}}{The criterion actually applied to this step ---
+\item{\code{criterion}}{The criterion actually applied to this step:
 \code{"score"}, \code{"wald"}, or \code{"aic"}.  Under \code{criterion = "score"} the drop
 rows read \code{"wald"}, because score is entry-only.}
 \item{\code{score}}{Winning score used for the decision.}
@@ -156,14 +156,14 @@ rows read \code{"wald"}, because score is entry-only.}
 reference distribution recomputes its p-value: \code{"score_q"}
 (chi-square on \code{df}), \code{"wald_z"} (standard normal) or
 \code{"wald_chisq"} (chi-square on \code{df}).  \code{df} alone does
-not distinguish them --- a scalar Wald is reported as a \emph{z}, not
+not distinguish them; a scalar Wald is reported as a \emph{z}, not
 as its square, so it and a score Q are both recorded at \code{df = 1}
 while calling for different distributions.  It also identifies the
 rows the Wald fallback rescued, but only among \emph{entry} rows:
 under \code{criterion = "score"} those are the rows with
 \code{action == "enter" & stat_type == "wald_z"}.  Drop rows are
-always Wald-tested under that criterion --- removal follows SAS and
-is tested on the current model's Wald p-value --- so they read
+always Wald-tested under that criterion (removal follows SAS and
+is tested on the current model's Wald p-value), so they read
 \code{"wald_z"} whether or not the fallback ever fired.  See
 \code{$criteria$n_wald_fallbacks} for the count.}
 \item{\code{p_value}, \code{delta_aic}}{Always populated when
@@ -181,10 +181,10 @@ and whether it is accepted.
 
 \describe{
 \item{\code{direction = "forward"}}{Start from the base model and only
-\emph{add} variables --- the best eligible candidate enters each step
+\emph{add} variables; the best eligible candidate enters each step
 until none clears the entry rule.  Variables never leave once in.}
 \item{\code{direction = "backward"}}{Start from the full candidate model and
-only \emph{drop} variables --- the weakest term leaves each step until all
+only \emph{drop} variables; the weakest term leaves each step until all
 survivors clear the retention rule.}
 \item{\code{direction = "both"} (default)}{Two-way stepwise: after each
 entry, already-selected variables are re-tested and may be dropped.
@@ -195,7 +195,7 @@ often a single variable may oscillate before it is frozen.}
 \describe{
 \item{\code{criterion = "score"} (default)}{Accept moves on SAS-style
 significance thresholds, using the score (Q) statistic of the candidate
-coefficient --- this reproduces C/SAS HAZARD's \code{SELECTION} statistic.
+coefficient; this reproduces C/SAS HAZARD's \code{SELECTION} statistic.
 Q is evaluated at the \emph{current} model's MLE with the candidate's
 coefficient pinned at zero, so \strong{no candidate refit is needed}: the
 reduced-model information is inverted once per step and reused across
@@ -212,8 +212,8 @@ errors with a clear message if it is not installed; a multiphase fit
 uses the analytic Hessian instead and does not need it.
 
 Following SAS, the variance used during \emph{selection} is approximate:
-shaping-parameter covariances are ignored.  This affects selection only
---- final-model standard errors are unchanged and still come from the
+shaping-parameter covariances are ignored.  This affects selection only;
+final-model standard errors are unchanged and still come from the
 full Hessian.  Candidates must be single-column numeric main-effect
 terms; a factor is rejected with an error rather than skipped.}
 \item{\code{criterion = "wald"}}{Accept moves on SAS-style
@@ -225,7 +225,7 @@ can be tested); drop candidates are scored from the \emph{current} model's
 Wald p-values without a per-candidate refit, and a single refit is run
 only after a drop is chosen.  This was the default before version 1.2.0.
 It differs algorithmically from C/SAS HAZARD, so the two criteria can
-take different step paths --- and select different variable sets ---
+take different step paths (and select different variable sets)
 even when they converge to a similar final model.}
 \item{\code{criterion = "aic"}}{Accept any move with
 \eqn{\Delta\mathrm{AIC} < 0} (a strictly better penalised fit), ignoring

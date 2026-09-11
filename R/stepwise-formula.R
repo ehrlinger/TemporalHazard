@@ -50,7 +50,7 @@
 #' Add or drop a variable from a formula's RHS
 #'
 #' @param formula Existing formula.  One-sided (`~ x`) or two-sided
-#'   (`Surv(time, status) ~ x`) -- the LHS is preserved verbatim.
+#'   (`Surv(time, status) ~ x`); the LHS is preserved verbatim.
 #' @param action Either `"add"` or `"drop"`.
 #' @param var Character scalar naming the variable to add / drop.
 #'
@@ -102,7 +102,7 @@
 #' Add or drop a variable from a phase's formula
 #'
 #' @param phase An `hzr_phase` object.  Its `formula` slot may be NULL
-#'   (no phase-specific covariates) -- in the add case a fresh
+#'   (no phase-specific covariates); in the add case a fresh
 #'   `~ var` formula is created.
 #' @param action Either `"add"` or `"drop"`.
 #' @param var Character scalar.
@@ -216,7 +216,7 @@
 #' will NOT produce a false positive when the formula contains \code{log(age)},
 #' because \code{log} would also appear in \code{phase_names} only if the user
 #' deliberately named a phase \code{"log"}.  Conversely, the function only
-#' fires when the call head is an exact match to a known phase name -- standard
+#' fires when the call head is an exact match to a known phase name; standard
 #' R functions that happen to share names with phases do not trigger the check
 #' unless those names are actually phase names.
 #'
@@ -325,8 +325,8 @@
 #' Coerce a candidate column to the numeric vector the screen models
 #'
 #' Logical columns are ordinary 0/1 predictors, and `.hzr_modellable_vars()`
-#' offers them as candidates under `scope = NULL`. Everything downstream -- the
-#' score statistic, the design-matrix column -- wants a numeric vector, so the
+#' offers them as candidates under `scope = NULL`. Everything downstream (the
+#' score statistic, the design-matrix column) wants a numeric vector, so the
 #' translation happens once here rather than teaching each site about logicals.
 #'
 #' Returns `NULL` for anything that is not modellable as a single numeric

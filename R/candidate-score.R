@@ -76,7 +76,7 @@
 #' @param candidate Fitted `hazard` object containing the proposed new
 #'   coefficient(s).  Required when `mode = "entry"` under the `"wald"` and
 #'   `"aic"` criteria; ignored otherwise.  The `"score"` criterion has no
-#'   candidate fit -- that is the point of it -- and takes `score` instead.
+#'   candidate fit (that is the point of it) and takes `score` instead.
 #' @param score Precomputed `.hzr_score_q()` result (`list(stat, df,
 #'   p_value)`).  Required when `criterion = "score"`; ignored otherwise.
 #' @param names Character vector of coefficient names being tested.
@@ -93,8 +93,8 @@
 #'   \item{stat_type}{What `stat` is, and so what reference distribution
 #'     recomputes its p-value: `"score_q"` (chi^2 on `df`), `"wald_z"`
 #'     (standard normal) or `"wald_chisq"` (chi^2 on `df`).  `df` alone does
-#'     not distinguish these -- a scalar Wald z and a score Q are both
-#'     recorded at `df = 1` -- so a caller recomputing from `stat` needs
+#'     not distinguish these (a scalar Wald z and a score Q are both
+#'     recorded at `df = 1`), so a caller recomputing from `stat` needs
 #'     this.}
 #'   \item{df}{Integer degrees of freedom.}
 #'   \item{p_value}{Always populated when computable.}

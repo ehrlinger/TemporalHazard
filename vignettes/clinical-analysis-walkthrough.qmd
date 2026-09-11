@@ -29,7 +29,7 @@ knitr::opts_chunk$set(
 ```
 
 The previous vignettes covered each piece of the analytical workflow
-in isolation — how to fit a model, how to predict from it, how to
+in isolation: how to fit a model, how to predict from it, how to
 validate it. This vignette runs all of those pieces together on a
 single dataset, in the order you'd actually run them in a real
 clinical analysis. The point isn't to introduce new functions; it's
@@ -40,19 +40,19 @@ The sequence mirrors the one in the original SAS HAZARD system, which
 codified what cardiothoracic-surgery biostatisticians had been doing
 informally for decades:
 
-1. **Nonparametric baseline** — Kaplan-Meier life table to see what
+1. **Nonparametric baseline**: Kaplan-Meier life table to see what
    the data is saying before any model intervenes.
-2. **Shape fitting** — start with a single-distribution Weibull,
+2. **Shape fitting**: Start with a single-distribution Weibull,
    build up to a multiphase decomposition when the KM curve
    demands it.
-3. **Variable screening** — univariable association tests and
+3. **Variable screening**: Univariable association tests and
    calibration plots to decide which covariates enter the model and
    in what functional form.
-4. **Multivariable model** — covariates layered onto a hazard shape
+4. **Multivariable model**: Covariates layered onto a hazard shape
    you already trust.
-5. **Prediction** — patient-specific risk profiles for clinical
+5. **Prediction**: Patient-specific risk profiles for clinical
    reporting and decision support.
-6. **Validation** — decile-of-risk calibration to verify the model
+6. **Validation**: Decile-of-risk calibration to verify the model
    is honest across the risk spectrum, not just on average.
 
 This corresponds to the SAS programs `ac.*` → `hz.*` → `lg.*` →
@@ -62,8 +62,8 @@ the canonical analytical sequence to follow on any new dataset.
 
 We use the **AVC** dataset (310 patients, atrioventricular canal
 repair) which has rich covariates and two identifiable hazard
-phases — fewer phases than the 3-phase CABG example you've seen in
-other vignettes, but with the covariate complexity needed to
+phases. That is fewer phases than the 3-phase CABG example you've seen in
+other vignettes, but AVC has the covariate complexity needed to
 exercise the screening, multivariable-fit, and validation steps.
 
 ## Data preparation
@@ -71,7 +71,7 @@ exercise the screening, multivariable-fit, and validation steps.
 Load the package and the AVC dataset, drop incomplete rows so the
 design matrix is rectangular for the multivariable fits to come, and
 inspect the resulting column types and ranges. The `na.omit()` step
-is conservative — losing rows is a real cost — but for a walkthrough
+is conservative (losing rows is a real cost), but for a walkthrough
 we want every later fit to use the same patient set so the comparisons
 are apples-to-apples.
 
@@ -97,7 +97,7 @@ using the Kaplan-Meier estimator.  This is the benchmark against which all
 parametric fits will be compared.
 
 `hzr_kaplan()` wraps `survival::survfit()` and adds logit-transformed exact
-confidence limits that respect the `[0, 1]` boundary --- more accurate in
+confidence limits that respect the `[0, 1]` boundary and are more accurate in
 the tails than the default Greenwood intervals.  This matches the SAS
 `kaplan.sas` macro output structure.
 
@@ -110,7 +110,7 @@ head(km)
 The returned data frame is the life table: one row per event time with
 `n_risk`, `n_event`, `survival`, logit-transformed 95% CLs
 (`cl_lower` / `cl_upper`), and a KM-based cumulative hazard
-(`-log(survival)` --- use `hzr_nelson()` if you need the Nelson-Aalen
+(`-log(survival)`; use `hzr_nelson()` if you need the Nelson-Aalen
 estimator instead).  Plotting just requires the survival column:
 
 ```{r}
@@ -135,9 +135,9 @@ ggplot(km_df, aes(time, survival)) +
 
 The KM curve shows a sharp early drop (operative mortality) followed by a
 roughly constant attrition rate.  This two-phase pattern suggests an early
-CDF phase plus a constant phase --- no obvious late rising hazard.
+CDF phase plus a constant phase, with no obvious late rising hazard.
 
-## Step 2: Shape fitting --- simple to complex
+## Step 2: Shape fitting (simple to complex)
 
 ### 2a. Single-phase Weibull
 
@@ -182,16 +182,16 @@ ggplot() +
   theme_minimal()
 ```
 
-The single Weibull typically misses the sharp early drop --- it compromises
+The single Weibull typically misses the sharp early drop; it compromises
 between the early and late time frames.
 
 ### 2b. Two-phase model (early CDF + constant)
 
-The KM curve drops steeply in the first few months — operative
-mortality — and then settles into a roughly linear decline. The
+The KM curve drops steeply in the first few months (operative
+mortality) and then settles into a roughly linear decline. The
 Weibull tried to capture both with one shape and ended up
 compromising. Splitting the hazard into two phases lets each
-mechanism have its own parameterization: an `"cdf"` early phase that
+mechanism have its own parameterization: a `"cdf"` early phase that
 saturates as operative risk resolves, plus a `"constant"` phase that
 carries the steady background attrition. Two phases is what AVC
 actually needs; CABG with longer follow-up would need a third
@@ -215,7 +215,7 @@ fit_mp <- hazard(
 summary(fit_mp)
 ```
 
-Note the use of `fixed = "shapes"` --- we fix the temporal shape parameters
+Note the use of `fixed = "shapes"`. We fix the temporal shape parameters
 and only estimate the scale (log_mu) for each phase.  This matches the
 standard HAZARD workflow: shapes are set from clinical knowledge or
 preliminary exploration, then scales and covariates are estimated.
@@ -291,7 +291,7 @@ the time-to-event structure but it answers a binary question
 quickly: does this covariate have *any* association with mortality
 at all? Covariates whose univariable p-value is huge will not
 suddenly become significant in the multivariable hazard model
-either — those can be deprioritized. Covariates with small
+either, so those can be deprioritized. Covariates with small
 univariable p-values deserve closer functional-form inspection
 before they enter the formula.
 
@@ -486,7 +486,7 @@ class 1, no malalignment, no interventricular communication).
 `predict(..., se.fit = TRUE)` adds a delta-method standard error and 95%
 confidence band around every prediction (log(-log) scale for survival so
 the band is guaranteed to lie in `[0, 1]`).  This is the parametric
-analogue of the KM confidence limits from Step 1 --- a patient-specific
+analogue of the KM confidence limits from Step 1, a patient-specific
 uncertainty estimate the nonparametric curve cannot provide.
 
 ```{r}
@@ -523,14 +523,14 @@ ggplot() +
   theme_minimal()
 ```
 
-### 5b. Sensitivity analysis --- risk factor comparison
+### 5b. Sensitivity analysis (risk factor comparison)
 
 Coefficient tables tell you about effect *direction and magnitude*
 on the log-hazard scale. They don't directly tell a clinician what
 to expect at the bedside. Sensitivity analysis closes that gap by
-scoring two clinically meaningful profiles — a low-risk patient
+scoring two clinically meaningful profiles (a low-risk patient
 drawn from the favorable end of each covariate, and a high-risk
-patient drawn from the unfavorable end — through the fitted model
+patient drawn from the unfavorable end) through the fitted model
 and plotting the resulting survival curves with delta-method
 confidence bands. The vertical and horizontal gaps between the two
 curves are the model's clinical-impact statement, in the units
@@ -590,7 +590,7 @@ risk-factor combination is well-identified; overlap around the bands'
 centre-of-mass flags where the model can't distinguish the profiles with
 the available sample size.
 
-## Step 6: Validation --- decile-of-risk calibration
+## Step 6: Validation (decile-of-risk calibration)
 
 Partition patients into deciles by predicted risk and compare observed
 vs. expected event rates.  Good calibration means the two track each
@@ -624,14 +624,14 @@ ggplot(cal, aes(x = group)) +
 ```
 
 A non-significant overall chi-square statistic (p > 0.05) indicates
-adequate calibration --- the model's predictions are consistent with
+adequate calibration, meaning the model's predictions are consistent with
 observed event rates across the risk spectrum.
 
 ### Conservation of events check
 
 The conservation-of-events principle states that a well-fitting model
 should predict the same total number of events as actually observed.
-`hzr_gof()` tracks this cumulatively over time --- the residual
+`hzr_gof()` tracks this cumulatively over time; the residual
 (expected minus observed) should stay near zero.
 
 ```{r}
@@ -706,12 +706,12 @@ covariate effects.
 
 The complete analytical workflow follows a disciplined sequence:
 
-1. **Kaplan-Meier baseline** --- establish the empirical survival pattern
-2. **Shape fitting** --- match the temporal shape, simple to complex
-3. **Variable screening** --- logistic screening, LOESS functional form
-4. **Multivariable model** --- enter covariates with fixed shapes
-5. **Prediction** --- reference curves, sensitivity analysis
-6. **Validation** --- decile calibration, conservation-of-events check
+1. **Kaplan-Meier baseline**: Establish the empirical survival pattern
+2. **Shape fitting**: Match the temporal shape, simple to complex
+3. **Variable screening**: Logistic screening, LOESS functional form
+4. **Multivariable model**: Enter covariates with fixed shapes
+5. **Prediction**: Reference curves, sensitivity analysis
+6. **Validation**: Decile calibration, conservation-of-events check
 
 This sequence ensures that the temporal shape is established before
 covariates are introduced, and that the final model is validated against

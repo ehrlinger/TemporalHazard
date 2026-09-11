@@ -60,8 +60,8 @@ NULL
 #' are the special case \eqn{J = 1}, with covariates acting multiplicatively on
 #' one temporal shape.  The `"loglogistic"` (proportional-odds) and
 #' `"lognormal"` (accelerated-failure-time) families place covariates
-#' differently --- on the odds of failure and the log-time location,
-#' respectively --- so they are separate parameterizations, not special cases
+#' differently (on the odds of failure and the log-time location,
+#' respectively), so they are separate parameterizations, not special cases
 #' of this additive form.  Parameters are estimated
 #' on an unconstrained internal scale (e.g. \eqn{\log\mu}, \eqn{\log t_{1/2}})
 #' and transformed back for reporting; see
@@ -76,28 +76,28 @@ NULL
 #' shapes coexist.
 #'
 #' \describe{
-#'   \item{`"weibull"` --- monotone rising or falling hazard (default)}{The
+#'   \item{`"weibull"`: monotone rising or falling hazard (default)}{The
 #'     workhorse parametric model: \eqn{H(t \mid \mathbf{x}) = (\mu t)^\nu
 #'     \exp(\eta)}, with hazard \eqn{h \propto t^{\nu - 1}}.  The single shape
 #'     \eqn{\nu} makes risk increase over time (\eqn{\nu > 1}), decrease
 #'     (\eqn{\nu < 1}), or stay flat (\eqn{\nu = 1}).  Use it as the default when
 #'     a single monotone trend describes the hazard.}
-#'   \item{`"exponential"` --- constant hazard}{The memoryless special case
+#'   \item{`"exponential"`: constant hazard}{The memoryless special case
 #'     \eqn{\nu = 1}: a time-invariant baseline rate, \eqn{H(t \mid \mathbf{x}) =
 #'     \mu t \exp(\eta)}.  Use it when the event rate does not change with
 #'     follow-up time (the constant background risk also appears as the
 #'     `"constant"` phase in a multiphase model).}
-#'   \item{`"loglogistic"` --- unimodal (rise-then-fall) hazard}{A log-logistic
+#'   \item{`"loglogistic"`: unimodal (rise-then-fall) hazard}{A log-logistic
 #'     proportional-odds form (covariates act multiplicatively on the odds of
 #'     failure, \eqn{\exp(\eta)}, not as an AFT time shift) whose hazard rises to
 #'     a single peak and then declines when the shape exceeds 1 (and is monotone
 #'     decreasing otherwise), with heavier tails than the log-normal.  Use it
 #'     when risk climbs to an early peak and then eases off.}
-#'   \item{`"lognormal"` --- early-peaking, resolving hazard}{An
+#'   \item{`"lognormal"`: early-peaking, resolving hazard}{An
 #'     accelerated-failure-time form in which \eqn{\log} time is Gaussian; the
 #'     hazard rises to an early peak and then decays toward zero.  Use it for
 #'     risk that is concentrated early and resolves over time.}
-#'   \item{`"multiphase"` --- additive N-phase hazard}{Sums several phase shapes
+#'   \item{`"multiphase"`: additive N-phase hazard}{Sums several phase shapes
 #'     into one model, \eqn{H = \sum_j \mu_j(\mathbf{x}) \Phi_j(t)}, so the
 #'     overall hazard can fall, level off, and rise again within one fit.
 #'     Requires `phases`; see [hzr_phase()] for the available phase shapes.  This
@@ -142,10 +142,10 @@ NULL
 #'   anything that is not a column (`df$col`, a local vector, a literal)
 #'   falls through to the calling environment. A column of the same name as
 #'   a caller variable wins, and because that silently discards the caller's
-#'   vector -- the way a wrapper forwarding its own argument by name does --
+#'   vector (the way a wrapper forwarding its own argument by name does),
 #'   such a name raises a warning naming the symbol and the argument.
 #'   Masked arguments are validated like any other, so an `NA` in a
-#'   masked column now errors -- an `NA` count on the SAS `ICENSOR`
+#'   masked column now errors: an `NA` count on the SAS `ICENSOR`
 #'   path reaches `weights` and stops with `'weights' must be
 #'   non-negative and finite`, where it was previously accepted
 #'   silently.
@@ -178,7 +178,7 @@ NULL
 #' @param objective Which interval-censored contribution the multiphase
 #'   likelihood accumulates. `"likelihood"` (default) uses the interval
 #'   probability \eqn{\log(S(l) - S(u))}. `"sas"` reproduces what
-#'   `PROC HAZARD` accumulates -- the event-density term with the instantaneous
+#'   `PROC HAZARD` accumulates: the event-density term with the instantaneous
 #'   hazard replaced by the interval-mean hazard over \eqn{(l, u]}. Applies
 #'   only to `dist = "multiphase"`; exact-event and right-censored rows are
 #'   unaffected either way.
@@ -187,12 +187,12 @@ NULL
 #'   HAZARD` has no left-censoring statement) and a positive width on every
 #'   interval-censored row (the interval-mean hazard divides by \eqn{u - l}).
 #'   Both are properties of the data rather than of the fit, so they are
-#'   checked when the argument is supplied -- including under `fit = FALSE`,
+#'   checked when the argument is supplied, including under `fit = FALSE`,
 #'   which therefore stops rather than returning an unusable object.
 #' @note `objective = "sas"` exists to reproduce legacy `PROC HAZARD` runs and
 #'   **must not be used for new analyses**. It is a density, not a probability:
 #'   it is inconsistent for wide intervals, where the two forms differ
-#'   materially -- 22 log-likelihood units on the esophagectomy reference fit.
+#'   materially (22 log-likelihood units on the esophagectomy reference fit).
 #'   The default is the statistically correct interval likelihood. See
 #'   `inst/dev/SAS-INTERVAL-OBJECTIVE-DESIGN.md` for the derivation and the
 #'   four-reference evidence.
@@ -218,10 +218,10 @@ NULL
 #' - `phase_share_tol`: Threshold for the multiphase identifiability warning
 #'   (default 1e-8). A phase is reported as having left the model when it
 #'   supplies less than this share of the cumulative hazard at every observed
-#'   time (it never started -- neither its `mu` nor its shape is identified),
+#'   time (it never started; neither its `mu` nor its shape is identified),
 #'   or when its contribution varies by less than this relative amount across
 #'   them (it finished before the first observation and acts as a constant
-#'   offset -- `mu` stays identified, the shape parameters do not). A third
+#'   offset; `mu` stays identified, the shape parameters do not). A third
 #'   condition is a property of the observed times rather than of any phase:
 #'   when their own relative range falls below this threshold and no phase's
 #'   contribution varies across them, they separate no phase from any other
@@ -248,8 +248,8 @@ NULL
 #'   still report convergence.
 #' - `abstol`: Absolute gradient norm tolerance (default 1e-6)
 #' - `method`: Optimization method: "bfgs" or "nm" (default "bfgs").
-#'   SAS `PROC HAZARD` jobs write `STEEPEST QUASI` together -- steepest
-#'   descent first, then quasi-Newton. `QUASI`/`QUASINEWTON` is `"bfgs"`;
+#'   SAS `PROC HAZARD` jobs write `STEEPEST QUASI` together (steepest
+#'   descent first, then quasi-Newton). `QUASI`/`QUASINEWTON` is `"bfgs"`;
 #'   **there is no steepest-descent option and no two-stage strategy**. The
 #'   multiphase likelihood is multimodal, so a different descent path can land
 #'   on a different optimum: a fit translated from a job using `STEEPEST` may
@@ -258,13 +258,13 @@ NULL
 #' - `condition`: Condition number control (default 14)
 #' - `conserve`: Apply Conservation of Events (**`dist = "multiphase"` only**;
 #'   default `TRUE`). CoE counts exact events, so it is **automatically
-#'   disabled** whenever any `status` falls outside \{0, 1\} -- which interval
-#'   or left censoring guarantees -- and whenever the model has fewer than two
+#'   disabled** whenever any `status` falls outside \{0, 1\} (which interval
+#'   or left censoring guarantees) and whenever the model has fewer than two
 #'   phases. On a fitted multiphase object the outcome is recorded next to the
 #'   request, both fields living under `fit$spec$control`:
-#'   - `fit$spec$control$conserve_applied` -- logical, whether CoE was actually
+#'   - `fit$spec$control$conserve_applied`: logical, whether CoE was actually
 #'     applied;
-#'   - `fit$spec$control$conserve_disabled_reason` -- one of
+#'   - `fit$spec$control$conserve_disabled_reason`: one of
 #'     `"not_requested"`, `"unsupported_censoring"`, `"single_phase"`,
 #'     `"no_events"`, `"setup_failed"`, or `NA` when CoE was applied.
 #'
@@ -406,9 +406,9 @@ NULL
 #' [hzr_phase()] for specifying multiphase temporal shapes.
 #'
 #' Vignettes with worked examples:
-#' \code{vignette("fitting-hazard-models")} --- single-phase through multiphase fitting,
-#' \code{vignette("prediction-visualization")} --- prediction types and decomposed hazard plots,
-#' \code{vignette("inference-diagnostics")} --- bootstrap CIs and model diagnostics.
+#' \code{vignette("fitting-hazard-models")}: single-phase through multiphase fitting,
+#' \code{vignette("prediction-visualization")}: prediction types and decomposed hazard plots,
+#' \code{vignette("inference-diagnostics")}: bootstrap CIs and model diagnostics.
 #'
 #' @references
 #' Blackstone EH, Naftel DC, Turner ME Jr. The decomposition of time-varying
@@ -447,7 +447,7 @@ NULL
 #'   \code{n_directions}, the number of near-flat directions found;
 #'   \code{NULL} when the fit was examined and is well identified; and
 #'   \code{NA} when the check could not run because no usable Hessian was
-#'   available -- which includes an unfitted object and an install without
+#'   available, which includes an unfitted object and an install without
 #'   the suggested \pkg{numDeriv}. Test with \code{is.list(fit$fit$weak)},
 #'   not \code{!is.null()}: the \code{NA} case has not been examined and
 #'   must not be read as a clean result),
@@ -1011,8 +1011,8 @@ hazard <- function(formula = NULL,
 #'   Only used when `se.fit = TRUE`.
 #'
 #'   **SAS draws narrower bands than this by default.** `PROC HAZPRED` takes
-#'   its width from `CLEVEL`, whose default is `0.68268948` --- documented in
-#'   the macro source as "(1 sd)" --- so its `T_ALPHA` multiplier is `1` to
+#'   its width from `CLEVEL`, whose default is `0.68268948`, documented in
+#'   the macro source as "(1 sd)", so its `T_ALPHA` multiplier is `1` to
 #'   seven decimals (the literal is truncated) and the band is one standard
 #'   error, 68.3%, not 95%. Reproducing a SAS figure at this
 #'   function's default therefore yields a band about 1.96 times wider than the
@@ -1532,7 +1532,7 @@ predict.hazard <- function(object, newdata = NULL,
 #' Compact one-block summary of a fitted `hazard` object: sample size,
 #' number of predictors, distribution, theta vector, and log-likelihood,
 #' followed by the "Not done in this run" block described in [hazard()].
-#' S3 dispatch only -- users call `print(fit)` rather than invoking this
+#' S3 dispatch only: users call `print(fit)` rather than invoking this
 #' directly.
 #'
 #' @param x A `hazard` object returned by [hazard()].
@@ -1679,7 +1679,7 @@ summary.hazard <- function(object, ...) {
 #' and a further note names the parameters spanning a weakly identified
 #' direction when one was found.  A "Not done in this run" block is always
 #' printed: it lists each step this fit did not perform, with the reason, and
-#' reads "none" when nothing was lost.  S3 dispatch only -- users
+#' reads "none" when nothing was lost.  S3 dispatch only: users
 #' call `print(summary(fit))` rather than invoking this directly.
 #'
 #' @param x A `summary.hazard` object returned by [summary.hazard()].
@@ -1853,7 +1853,7 @@ vcov.hazard <- function(object, ...) {
 #'
 #' Copies out of `envir` only the symbols `cl` actually refers to. Names that
 #' resolve from the model's data frame rather than the calling scope (formula
-#' column names such as `int_dead`/`dead`) simply do not exist in `envir` and
+#' column names such as `int_dead`/`dead`) do not exist in `envir` and
 #' are skipped.
 #'
 #' @param cl Matched call, as returned by `match.call()`.

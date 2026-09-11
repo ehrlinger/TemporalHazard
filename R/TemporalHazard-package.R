@@ -10,8 +10,8 @@
 #' Blackstone, Naftel, and Turner (1986), with a focus on behavioral parity,
 #' transparent numerics, and reproducible validation against the original
 #' \sQuote{C}/\sQuote{SAS} HAZARD program.  The package fits time-varying hazards
-#' as an additive sum of parametric *phases* --- early, constant, and late risk
-#' streams --- each carrying its own covariate effects.
+#' as an additive sum of parametric *phases* (early, constant, and late risk
+#' streams), each carrying its own covariate effects.
 #'
 #' @section The multiphase model:
 #'
@@ -67,20 +67,21 @@
 #' @section Main entry points:
 #'
 #' \describe{
-#'   \item{Model fitting}{[hazard()] --- build and fit single- or multiphase
-#'     models; [hzr_phase()] --- specify one phase; [hzr_stepwise()] --- forward,
-#'     backward, or bidirectional covariate selection.}
-#'   \item{Prediction}{`predict()` on a fitted `hazard` object --- survival,
-#'     cumulative hazard, and per-phase decomposed hazard; `summary()` ---
+#'   \item{Model fitting}{[hazard()] for building and fitting single- or
+#'     multiphase models; [hzr_phase()] for specifying one phase;
+#'     [hzr_stepwise()] for forward, backward, or bidirectional covariate
+#'     selection.}
+#'   \item{Prediction}{`predict()` on a fitted `hazard` object for survival,
+#'     cumulative hazard, and per-phase decomposed hazard; `summary()` for
 #'     coefficient tables with Wald inference.}
-#'   \item{Parametric family}{[hzr_decompos()] --- the early-phase (G1)
-#'     decomposition \eqn{G(t)}, \eqn{g(t)}, \eqn{h(t)}; [hzr_decompos_g3()] ---
-#'     the late-phase (G3) intensity; [hzr_phase_cumhaz()] and
-#'     [hzr_phase_hazard()] --- per-phase \eqn{\Phi(t)} and \eqn{\varphi(t)}.}
-#'   \item{Diagnostics}{[hzr_kaplan()], [hzr_nelson()] --- nonparametric
-#'     references; [hzr_gof()] --- goodness of fit; [hzr_calibrate()],
-#'     [hzr_deciles()] --- calibration; [hzr_bootstrap()] --- resampling CIs;
-#'     [hzr_competing_risks()] --- cumulative incidence.}
+#'   \item{Parametric family}{[hzr_decompos()] for the early-phase (G1)
+#'     decomposition \eqn{G(t)}, \eqn{g(t)}, \eqn{h(t)}; [hzr_decompos_g3()]
+#'     for the late-phase (G3) intensity; [hzr_phase_cumhaz()] and
+#'     [hzr_phase_hazard()] for per-phase \eqn{\Phi(t)} and \eqn{\varphi(t)}.}
+#'   \item{Diagnostics}{[hzr_kaplan()], [hzr_nelson()] for nonparametric
+#'     references; [hzr_gof()] for goodness of fit; [hzr_calibrate()],
+#'     [hzr_deciles()] for calibration; [hzr_bootstrap()] for resampling CIs;
+#'     [hzr_competing_risks()] for cumulative incidence.}
 #' }
 #'
 #' @section Vignettes:
