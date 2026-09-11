@@ -113,9 +113,13 @@
 #' every name the translator emits, so the fit reads them. An input column named
 #' like one of those outputs is dropped first, with a warning, because the macro
 #' overwrites it. The macro's input is built by the job's own DATA steps, which
-#' are not translated, so the document stops until that input is assigned. A DATA
-#' step that changes the macro's output before the fit is not translated either.
-#' Its chunk stops and quotes the step, for the reader to replace with R code.
+#' are not translated, so the document stops until that input is assigned. Any
+#' step between the macro and the fit that names the macro's output is not
+#' translated either, apart from a plain `PROC SORT`, which only reorders rows.
+#' Its chunk stops and quotes the step, for the reader to replace with R code or
+#' to delete if the step leaves the output unchanged. A step that changes the
+#' output without naming it, such as a macro that writes it internally, is not
+#' detected.
 #'
 #' @section Comparing a translated fit against a SAS listing:
 #' The emitted `hzr_phase("g3", ...)` call carries the `TAU`, `GAMMA`,
@@ -215,7 +219,7 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
              conditionMessage(e), call. = FALSE)
       })
 
-      # A DATA step between %repeat and this fit that rewrites the macro's
+      # A step between %repeat and this fit that may change the macro's
       # OUT= is job code this translator does not fold in. Fitting without it
       # fits data SAS did not fit, so stop here -- ahead of the status chunk,
       # which writes into the same data frame. The scan resumes where the
@@ -225,12 +229,13 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
         seg <- substring(txt, repeat_scan[[dname]] + 1L, b$start - 1L)
         for (step in .hzr_repeat_rewrites(seg, dname)) {
           calls[[.hzr_next_call_name(calls, "rewrite")]] <- bquote(stop(.(paste0(
-            "This job changes ", dname, " after %repeat, in a SAS DATA step that ",
+            "This job may change ", dname, " after %repeat, in a SAS step that ",
             "hzr_translate_sas() does not translate: ", step, " Replace this chunk ",
-            "with R code that makes the same change to ", dname, "."
+            "with R code that makes the same change to ", dname, ", or delete it if ",
+            "the step leaves ", dname, " unchanged."
           ))))
           untr <- rbind(untr, .hzr_untranslated_frame(
-            NA_integer_, paste0("DATA ", dname, " after %repeat"), step
+            NA_integer_, paste0(dname, " changed after %repeat"), step
           ))
         }
         repeat_scan[[dname]] <- b$end
@@ -242,8 +247,7 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
       # "object 'AVCS' not found", insert a chunk that fails loudly and
       # explains what the reader still has to supply, right before this
       # fit -- once per distinct dataset name, however many fits reference it.
-      if (!is.null(r$call[["data"]])) {
-        dname <- as.character(r$call[["data"]])
+      if (!is.null(dname)) {
         if (!(dname %in% guarded_data)) {
           guard_slot <- .hzr_next_call_name(calls, "data")
           calls[[guard_slot]] <- bquote(

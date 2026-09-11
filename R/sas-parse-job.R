@@ -1273,14 +1273,17 @@
 #' keyword, a positional argument, a value that is not a plain SAS name (a
 #' `&macro` reference, say), an input column that is also an output
 #' (`EVENTYPE=RCENSOR`: SAS zeroes that indicator before reading it, so the job's
-#' own answer is not the model it describes), and two outputs with one name. The
-#' body is split on every comma; a value holding parentheses, where a comma could
-#' be nested, is refused as not a plain name either way.
+#' own answer is not the model it describes), and two outputs with one name. So
+#' are a keyword given twice, which SAS rejects, and an output named `LAG_IV` or
+#' `NUMBER`, the macro's own loop counters. The body is split on every comma; a
+#' value holding parentheses, where a comma could be nested, is refused as not a
+#' plain name either way.
 #' @noRd
 .hzr_parse_repeat <- function(block) {
   parts <- if (nzchar(block$text)) trimws(strsplit(block$text, ",", fixed = TRUE)[[1L]]) else character(0)
   args <- .hzr_repeat_defaults
   problems <- character(0)
+  seen_keys <- character(0)
 
   for (p in parts) {
     kv <- regmatches(p, regexec("^([A-Z_][A-Z0-9_]*) ?= ?(.*)$", p))[[1L]]
@@ -1294,6 +1297,11 @@
       problems <- c(problems, sprintf("`%s=` is not a %%repeat parameter", key))
       next
     }
+    if (key %in% seen_keys) {
+      problems <- c(problems, sprintf("`%s=` is given more than once", key))
+      next
+    }
+    seen_keys <- c(seen_keys, key)
     name_re <- if (key %in% c("IN", "OUT")) {
       "^[A-Z_][A-Z0-9_]*([.][A-Z_][A-Z0-9_]*)?$"
     } else {
@@ -1306,6 +1314,10 @@
     args[[key]] <- val
   }
 
+  # A WORK. libref names the same dataset as the bare name, which is how the
+  # job's own PROC HAZARD DATA= and the rewrite scan refer to it.
+  args[c("IN", "OUT")] <- sub("^WORK[.]", "", args[c("IN", "OUT")])
+
   inputs <- unname(args[c("ID", "EVENTYPE", "IV_EVENT", "IV_END")])
   targets <- c(unname(args[.hzr_repeat_outputs]), "FIRST", "LAST")
   for (hit in intersect(inputs, targets)) {
@@ -1317,6 +1329,12 @@
   dup <- unique(targets[duplicated(targets)])
   if (length(dup)) {
     problems <- c(problems, sprintf("two outputs are both named %s", paste(dup, collapse = ", ")))
+  }
+  for (hit in intersect(targets, c("LAG_IV", "NUMBER"))) {
+    problems <- c(problems, sprintf(paste(
+      "output %s has the name of a %%repeat loop counter; SAS's RETAIN reads it,",
+      "so the job's own result is not the model it describes"
+    ), hit))
   }
 
   if (length(problems)) {
@@ -1358,34 +1376,47 @@
        in_name = in_name, out_name = out_name)
 }
 
-#' Steps between a `%repeat` call and a fit that rewrite the macro's `OUT=`.
+#' Steps between a `%repeat` call and a fit that may change the macro's `OUT=`.
 #'
-#' `segment` is the normalised source between the two. A hit is a `DATA`
-#' statement naming `out` among its output datasets (options in parentheses
-#' ignored) or a `PROC SQL` `CREATE TABLE out`. Each is returned quoted, from
-#' that statement up to the next `DATA`, `PROC`, `%HAZ`, `%REPEAT` or `RUN`.
-#' `PROC SORT` is not a rewrite: reordering rows does not change the
-#' likelihood.
+#' `segment` is the normalised source between the two, and the scan fails
+#' closed. A `DATA` step is a hit when its output list names `out`; a step that
+#' only reads it (`SET out`) is not. Any other step or statement that names
+#' `out` is a hit as well -- `PROC SQL`, `PROC APPEND`, `PROC DATASETS`, a sort
+#' with `NODUPKEY`, `OUT=` or `WHERE=`, a macro call -- because a false stop
+#' costs the reader one deleted chunk and a missed rewrite fits data SAS did
+#' not fit. The one exception is the plain `PROC SORT DATA=out`, which only
+#' reorders rows and so cannot change the likelihood. A `WORK.` prefix names
+#' the same dataset as the bare name. Each hit is returned quoted: the step's
+#' statements up to the next `DATA`, `PROC`, `%HAZ`, `%REPEAT`, `RUN` or `QUIT`.
+#' A step that changes `out` without naming it (a macro that writes it
+#' internally) cannot be seen from here.
 #' @noRd
 .hzr_repeat_rewrites <- function(segment, out) {
+  out <- sub("^WORK[.]", "", out)
   stmts <- trimws(strsplit(segment, ";", fixed = TRUE)[[1L]])
   stmts <- stmts[nzchar(stmts)]
-  boundary <- "^(DATA |PROC |%HAZ|%REPEAT|RUN$)"
+  boundary <- "^(DATA |PROC |%HAZ|%REPEAT|RUN$|QUIT$)"
+  names_in <- function(s) sub("^WORK[.]", "", strsplit(s, "[^A-Z0-9_.]+")[[1L]])
+  plain_sort <- paste0("PROC SORT DATA=", c(out, paste0("WORK.", out)))
   hits <- character(0)
-  for (i in seq_along(stmts)) {
-    s <- stmts[i]
-    tok <- strsplit(s, " ", fixed = TRUE)[[1L]]
-    writes <- if (startsWith(s, "DATA ")) {
-      out %in% strsplit(trimws(gsub("[(][^)]*[)]", " ", substring(s, 6L))), " +")[[1L]]
-    } else {
-      j <- which(tok == "CREATE")
-      any(tok[j + 1L] %in% "TABLE" & tok[j + 2L] %in% out)
-    }
-    if (writes) {
-      last <- i
+  i <- 1L
+  while (i <= length(stmts)) {
+    last <- i
+    if (grepl("^(DATA |PROC )", stmts[i])) {
       while (last < length(stmts) && !grepl(boundary, stmts[last + 1L])) last <- last + 1L
-      hits <- c(hits, paste0(paste(stmts[i:last], collapse = "; "), ";"))
     }
+    step <- stmts[i:last]
+    s <- stmts[i]
+    writes <- if (startsWith(s, "DATA ")) {
+      targets <- strsplit(trimws(gsub("[(][^)]*[)]", " ", substring(s, 6L))), " +")[[1L]]
+      out %in% sub("^WORK[.]", "", targets)
+    } else if (s %in% plain_sort) {
+      FALSE
+    } else {
+      any(vapply(step, function(x) out %in% names_in(x), logical(1L)))
+    }
+    if (writes) hits <- c(hits, paste0(paste(step, collapse = "; "), ";"))
+    i <- last + 1L
   }
   hits
 }

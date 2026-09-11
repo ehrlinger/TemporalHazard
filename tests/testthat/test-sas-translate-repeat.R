@@ -110,7 +110,9 @@ test_that("uncallable %repeat arguments are refused, each with its reason", {
     list("in=bd_card, foo=bar", "`FOO=` is not a %repeat parameter"),
     list("in=&dsn", "`IN=&DSN` is not a plain SAS name"),
     list("event=x, rcensor=x", "two outputs are both named X"),
-    list("bd_card", "`BD_CARD` is not a KEY=VALUE argument")
+    list("bd_card", "`BD_CARD` is not a KEY=VALUE argument"),
+    list("in=bd_card, event_no=number", "output NUMBER has the name of a %repeat loop counter"),
+    list("in=bd_card, id=a, id=b", "`ID=` is given more than once")
   )
   for (cs in cases) {
     r <- parse_repeat(cs[[1]])
@@ -185,7 +187,7 @@ test_that("a DATA step rewriting OUT= stops the document before the fit, quoted"
     "DATA EVENTS; SET EVENTS; IF IV_START GE IV_EVENT THEN IV_EVENT=IV_EVENT+0.0001;",
     fixed = TRUE
   )
-  expect_true("DATA EVENTS after %repeat" %in% job$untranslated$construct)
+  expect_true("EVENTS changed after %repeat" %in% job$untranslated$construct)
 })
 
 test_that("steps that do not rewrite OUT= emit no rewrite stop", {
@@ -218,4 +220,64 @@ test_that("a refused %repeat still leaves a guard on the fit's DATA=", {
   job <- translate_lines(c("%repeat(in=bd_card, eventype=rcensor);", hz_block))
   expect_equal(names(job$calls), c("repeated", "data", "status", "fit"))
   expect_error(eval(job$calls[["repeated"]], new.env()), "RCENSOR is also an output", fixed = TRUE)
+})
+
+test_that("the rewrite scan fails closed: any step naming OUT= stops, bar a plain sort or a read", {
+  stops <- c(
+    "data work.events; set events; x=1; run;",
+    "proc sort data=events nodupkey; by ccfid; run;",
+    "proc sort data=bd_card out=events; by ccfid;",
+    "proc sort data=events(where=(iv_seg>0)); by ccfid;",
+    "proc sql; delete from events where iv_seg=0; quit;",
+    "proc sql; create table work.events(drop=x) as select ccfid from events; quit;",
+    "proc append base=events data=extra; run;",
+    "proc datasets; modify events; rename a=b; quit;",
+    "%vars(in=bd, out=events);"
+  )
+  for (s in stops) {
+    job <- translate_lines(c(repeat_call, s, hz_block))
+    expect_equal(names(job$calls), c("data", "repeated", "rewrite", "status", "fit"), info = s)
+  }
+  passes <- c(
+    "data other; set events; x=1;",
+    "data _null_; set events; put ccfid;",
+    "proc sort data=events; by ccfid; run;",
+    "proc sort data=work.events; by ccfid;",
+    "proc sort data=bd_card; by ccfid; data x; set bd_card;"
+  )
+  for (s in passes) {
+    job <- translate_lines(c(repeat_call, s, hz_block))
+    expect_equal(names(job$calls), c("data", "repeated", "status", "fit"), info = s)
+  }
+})
+
+test_that("a fit whose block encloses the %repeat call cannot render a fit", {
+  # The fit's parse reads PROC HAZARD options from the block's first
+  # statement, which here is the %repeat call, so DATA= is lost and the
+  # rewrite scan never runs. That is loud, not silent: evaluation stops before
+  # a fit exists. If a parser change ever keeps DATA= here, the first
+  # assertion fails, and the rewrite scan must then handle an enclosing block.
+  job <- translate_lines(c(
+    "%run( %repeat(in=bd_card, id=ccfid, eventype=ce_card);",
+    "data events; set events; x=1;",
+    "proc hazard data=events; event ce_card; time iv_event; parms muc=0.5; );"
+  ))
+  expect_null(job$calls$fit[[3L]][["data"]])
+  env <- new.env(parent = globalenv())
+  env$BD_CARD <- bd_card()
+  expect_error(for (nm in names(job$calls)) eval(job$calls[[nm]], env), "CE_CARD")
+  expect_false(exists("fit", envir = env, inherits = FALSE))
+})
+
+test_that("a WORK. libref on IN= and OUT= names the same dataset as the bare name", {
+  job <- translate_lines(c(
+    paste("%repeat(in=work.bd_card, out=work.events, id=ccfid, eventype=ce_card,",
+          "iv_end=iv_end, rcensor=cn_card, event=ev_card);"),
+    hz_block
+  ))
+  expect_equal(names(job$calls), c("data", "repeated", "status", "fit"))
+  env <- new.env(parent = globalenv())
+  env$BD_CARD <- bd_card()
+  eval_upto(job, env, "repeated")
+  expect_equal(env$EVENTS, expected_events())
 })
