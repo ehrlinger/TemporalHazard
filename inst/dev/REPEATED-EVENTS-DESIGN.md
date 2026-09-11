@@ -242,14 +242,33 @@ data. Fitting it and reproducing LL -267.885 is out of scope; see below.
 
 ### Second job: `renewal`, against `ac.reintervention`
 
-The cardioversion job never reads `renewal`. Searching the study volume for jobs that call
-`%repeat` and then use its output (2026-09-10) found three groups:
-- the consulting `tp.*` templates, which read `renewal` but were never run;
-- the cardioversion jobs, which read `iv_seg` and `event_no` only;
+The cardioversion job never reads `renewal`. A first search for jobs that call `%repeat` and
+then use its output (2026-09-10) covered only `general/` and `thoracic/`: it silently died
+before reaching `cardiac/`. What it found:
+- the consulting `tp.*` templates, which read `renewal` but were never run (none of their
+  108 listings prints it);
 - several thoracic jobs that print `renewal`.
 
-Of those, `ac.reintervention.sas` (achalasia; `thoracic/esophagus/benign/achalasia/outcomes/clinical`)
-is the one to use. It prints `ev_rein` by `renewal` directly after the macro, then saves the
+A rescan of `cardiac/` found 1182 callers:
+- 496 read `renewal` in code, and 404 of those have a `.lst`;
+- 9 of those also save `%repeat` output to a library, and 7 of those datasets come from the
+  same run as their listing;
+- the maze cardioversion jobs are among the 1182, and read `iv_seg` and `event_no` only.
+
+So `ac.reintervention` is one usable reference among several, not the only one.
+
+The shones reoperation job (`cardiac/congenital/shones/outcomes/datasets/bd.repeated_reops.sas`)
+was checked against its own output without an R rebuild. Its saved `bd_reop`, 241 rows over
+121 subjects, matches its `.lst` table of `renewal` by `ev_reop` cell for cell.
+
+The search tool itself caused two false negatives:
+- **A partial result that looked complete.** `grep` here is ugrep, and the first search died
+  without an error. It came back with zero `cardiac/` callers even though a known one exists.
+- **Silence on SAS listings.** ugrep treats some `.lst` files as binary and then prints
+  nothing, not even a zero count, unless given `-a`.
+
+`ac.reintervention.sas` (achalasia; `thoracic/esophagus/benign/achalasia/outcomes/clinical`)
+is the one verified here. It prints `ev_rein` by `renewal` directly after the macro, then saves the
 macro's output unchanged as `library.bdrein`. So every returned column can be compared with
 SAS's own, row by row.
 
@@ -281,6 +300,10 @@ But renewal gives the same answer on this data from stale flags or fresh ones:
   they have `event_no = 1`. The first-row bump needs `event_no = 0`.
 - **The 39 stale `last` rows** are each subject's last event, so they have `event = 1`. The
   last-row bump needs `event = 0`.
+
+Shones shows the same from SAS's own saved columns. Stale and fresh flags differ on 122 of
+its 241 rows, and the bump rule gives identical `renewal` either way; SAS matches both. That
+makes two production jobs, and 705 rows, where the stale-flag branch changes nothing.
 
 So the stale-flag branch of `renewal` is still pinned only by the synthetic fixture below.
 
