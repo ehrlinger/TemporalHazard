@@ -106,18 +106,23 @@ NULL
 #'
 #' @param time Numeric follow-up time vector.
 #' @param status Numeric or logical event indicator vector.
-#' @param time_lower Optional numeric vector with two distinct roles, selected
-#'   by `status`. Supplying it explicitly is **not** a no-op.
+#' @param time_lower Optional numeric vector whose role depends on `status`.
+#'   Supplying it explicitly is **not** a no-op.
 #'   * `status == 2` (interval-censored): the lower bound of the censoring
-#'     interval, defaulting to `time`.
+#'     interval, defaulting to `time`. Every `dist` reads it this way.
 #'   * `status %in% c(0, 1)` (right-censored or event): the counting-process
 #'     **entry time**, so the row contributes `H(time) - H(time_lower)`.
-#'     Left `NULL`, the entry time is **`0`**, not `time`.
+#'     Only `dist = "weibull"` and `dist = "multiphase"` use this role, and
+#'     `"weibull"` only where `time_lower < time`. The `"exponential"`,
+#'     `"loglogistic"` and `"lognormal"` families ignore `time_lower` on these
+#'     rows. Left `NULL`, the entry time is **`0`**, not `time`.
+#'   * `status == -1` (left-censored): not used; the bound is `time_upper`.
 #'
 #'   Passing `time_lower = time` therefore states that every subject entered
-#'   the risk set at the instant it left, which contributes nothing and
-#'   removes the row from the likelihood. That is a valid specification and
-#'   the fit will not converge to anything meaningful; it warns.
+#'   the risk set at the instant it left. `hazard()` accepts it with a
+#'   warning. Under `"multiphase"` those rows lose their cumulative-hazard
+#'   term and the fit it returns is meaningless; `"weibull"` reads them as
+#'   entering at time 0, and the other families ignore the argument there.
 #' @param time_upper Optional numeric upper bound vector for censoring intervals.
 #'   Used when `status %in% c(-1, 2)`; defaults to `time` if NULL.
 #' @param x Optional design matrix (or data frame coercible to matrix).
@@ -622,8 +627,10 @@ hazard <- function(formula = NULL,
 
   # For status 0/1 rows `time_lower` is the counting-process ENTRY time, not a
   # censoring bound, so `time_lower >= time` says the subject left the risk set
-  # at or before it entered.  Such a row contributes H(time) - H(time_lower),
-  # which is zero or negative: it drops out of the likelihood, or worse.  With
+  # at or before it entered.  Under "multiphase" such a row contributes
+  # H(time) - H(time_lower), which is zero or negative: it drops out of the
+  # likelihood, or worse ("weibull" reads it as entry at 0, and the other
+  # families ignore time_lower on status 0/1 rows; issue #253).  With
   # every row like that the objective is unbounded above and the optimizer
   # returns a large positive "log-likelihood", converged = TRUE and rcond = 0,
   # with nothing naming the cause.  Reported as issue #136, where the argument
@@ -632,12 +639,15 @@ hazard <- function(formula = NULL,
     degenerate <- status %in% c(0, 1) & time_lower >= time
     if (any(degenerate)) {
       warning(sum(degenerate), " of ", n, " row(s) have 'time_lower' >= 'time' ",
-              "with status 0 or 1. For those rows 'time_lower' is the ",
-              "counting-process entry time, so they enter the risk set at or ",
-              "after they leave it and contribute nothing to the likelihood ",
-              "(it is not a censoring bound outside status 2). If you meant ",
-              "the default -- entry at time 0 -- leave 'time_lower' as NULL; ",
-              "passing 'time_lower = time' is not the same thing.",
+              "with status 0 or 1. On these rows 'time_lower' is not a ",
+              "censoring bound (that role belongs to status 2). ",
+              "dist = \"multiphase\" reads it as the counting-process entry ",
+              "time, so the rows enter the risk set at or after they leave ",
+              "it, their cumulative-hazard term vanishes or turns negative, ",
+              "and the fit is meaningless. dist = \"weibull\" treats them as ",
+              "entering at time 0, and the other families ignore ",
+              "'time_lower' on these rows. For entry at time 0, leave ",
+              "'time_lower' as NULL.",
               call. = FALSE)
     }
   }

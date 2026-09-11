@@ -52,20 +52,25 @@ path reaches \code{weights} and stops with \verb{'weights' must be non-negative 
 
 \item{status}{Numeric or logical event indicator vector.}
 
-\item{time_lower}{Optional numeric vector with two distinct roles, selected
-by \code{status}. Supplying it explicitly is \strong{not} a no-op.
+\item{time_lower}{Optional numeric vector whose role depends on \code{status}.
+Supplying it explicitly is \strong{not} a no-op.
 \itemize{
 \item \code{status == 2} (interval-censored): the lower bound of the censoring
-interval, defaulting to \code{time}.
+interval, defaulting to \code{time}. Every \code{dist} reads it this way.
 \item \code{status \%in\% c(0, 1)} (right-censored or event): the counting-process
 \strong{entry time}, so the row contributes \code{H(time) - H(time_lower)}.
-Left \code{NULL}, the entry time is \strong{\code{0}}, not \code{time}.
+Only \code{dist = "weibull"} and \code{dist = "multiphase"} use this role, and
+\code{"weibull"} only where \code{time_lower < time}. The \code{"exponential"},
+\code{"loglogistic"} and \code{"lognormal"} families ignore \code{time_lower} on these
+rows. Left \code{NULL}, the entry time is \strong{\code{0}}, not \code{time}.
+\item \code{status == -1} (left-censored): not used; the bound is \code{time_upper}.
 }
 
 Passing \code{time_lower = time} therefore states that every subject entered
-the risk set at the instant it left, which contributes nothing and
-removes the row from the likelihood. That is a valid specification and
-the fit will not converge to anything meaningful; it warns.}
+the risk set at the instant it left. \code{hazard()} accepts it with a
+warning. Under \code{"multiphase"} those rows lose their cumulative-hazard
+term and the fit it returns is meaningless; \code{"weibull"} reads them as
+entering at time 0, and the other families ignore the argument there.}
 
 \item{time_upper}{Optional numeric upper bound vector for censoring intervals.
 Used when \code{status \%in\% c(-1, 2)}; defaults to \code{time} if NULL.}

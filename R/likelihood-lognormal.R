@@ -96,7 +96,7 @@ NULL
 #' \deqn{\ell(\theta) = \sum_{\delta_i=1} [\log \phi(z_i) - \log \sigma - \log t_i]
 #'   + \sum_{\delta_i=0} \log \Phi(-z_i)}
 #'
-#' Reparameterization: \u03b8\[1\] = \u03bc, \u03b8\[2\] = log(\u03c3) avoids constraints.
+#' Reparameterization: theta\[1\] = mu, theta\[2\] = log(sigma) avoids constraints.
 #'
 #' Mixed censoring status coding:
 #' - 1: exact event at time

@@ -181,7 +181,7 @@ own temporal shape and its own scale:
 $$H(t \mid x) = \sum_{j=1}^{J} \mu_j(x) \cdot \Phi_j(t)$$
 
 Each $\Phi_j(t)$ is a phase-specific unit-scaled curve (early-peaking
-saturating, flat constant, late-rising polynomial) and each $\mu_j(x)$
+saturating, flat constant, late-rising power law) and each $\mu_j(x)$
 is the phase-specific scale, possibly modulated by covariates. The
 phases overlap and add (no switching, no thresholds), so the total
 instantaneous hazard at any $t$ is the sum of the per-phase rates.
@@ -275,8 +275,7 @@ own follow-up time and event indicator.  The same `hazard()` call fits each
 endpoint independently.
 
 Start with the death endpoint. We use age at operation, NYHA class,
-and mechanical-valve indicator as covariates, the clinically
-canonical set for survival after valve replacement.
+and mechanical-valve indicator as covariates.
 
 ```{r}
 #| label: valves-death
@@ -425,20 +424,22 @@ table(status)
 ```
 
 ::: {.callout-note}
-**`time_lower` as a counting-process entry time.**  In the Weibull and
-multiphase likelihoods, `time_lower` doubles as the *entry* (left-truncation)
-time for right-censored and exact-event rows (`status %in% c(0, 1)`): when
-`0 < time_lower < time`, the row contributes H(stop) − H(start), the
-counting-process form used for epoch-decomposed repeated events.  For an
-ordinary right-censored or event row with no entry time, leave `time_lower`
-at `0` or omit it.  Don't set `time_lower = time` to mean "no entry time";
-`hazard()` warns when you do, and the two likelihoods read it differently.
-The Weibull likelihood uses `time_lower` as an entry time only when it is
-strictly less than `time`, so there it changes nothing.  The multiphase
-likelihood takes it at its word: the row enters the risk set at the moment
-it leaves, and it drops out of the likelihood.  The exponential, log-logistic,
-and log-normal likelihoods do not use `time_lower` as an entry time and are
-unaffected.
+**`time_lower` as a counting-process entry time.**  The Weibull and
+multiphase likelihoods also read `time_lower` as the *entry*
+(left-truncation) time on right-censored and exact-event rows
+(`status %in% c(0, 1)`): when `0 < time_lower < time`, the row contributes
+H(stop) − H(start), the counting-process form used for epoch-decomposed
+repeated events.  The exponential, log-logistic, and log-normal likelihoods
+use `time_lower` only as the lower bound of a `status == 2` interval and
+ignore it on every other row.  For an ordinary right-censored or event row
+with no entry time, leave `time_lower` at `0` or omit it.  Don't set
+`time_lower = time` to mean "no entry time".  `hazard()` accepts it with a
+warning, and what it does next depends on the family.  The Weibull
+likelihood uses `time_lower` as an entry time only when it is strictly less
+than `time`, so those rows enter at 0 and nothing changes.  The multiphase
+likelihood takes it at its word.  Each row enters the risk set at the moment
+it leaves, its cumulative-hazard term vanishes, and the fit it returns is
+meaningless.  The other three families ignore it.
 :::
 
 Fit a Weibull model using both censoring types:
@@ -587,7 +588,7 @@ recognizable:
 |---------|--------------|
 | `fit$fit$converged == FALSE` | Optimizer hit `maxit` without satisfying the gradient tolerance |
 | `vcov()` returns `NA` | Hessian is singular; parameters are not jointly identified |
-| A phase scale (`log_mu`) at a boundary value | That phase is contributing essentially zero hazard; it isn't needed |
+| A phase scale (`log_mu`) at a boundary value | Possibly an unneeded phase, but a tiny scale alone does not show it; check the phase's contribution with `predict(..., decompose = TRUE)` |
 | Enormous standard errors on one or more parameters | Flat likelihood in that direction (weak identification) |
 | Two phases with nearly identical shapes | One can be collapsed into the other |
 
@@ -597,7 +598,6 @@ contain over this follow-up window:
 
 ```{r}
 #| label: overparameterized
-set.seed(42)
 fit_3ph <- hazard(
   Surv(int_dead, dead) ~ 1,
   data   = avc,
@@ -612,7 +612,8 @@ fit_3ph <- hazard(
   fit = TRUE, control = list(n_starts = 5, maxit = 1000)
 )
 
-# Scale magnitudes: exp(log_mu) ≈ 0 for any phase the data doesn't support
+# Scale magnitudes. A tiny exp(log_mu) does not by itself mark an unneeded
+# phase; judge each phase by its contribution, from predict(..., decompose = TRUE)
 log_mu_idx <- grep("log_mu", names(coef(fit_3ph)))
 round(exp(coef(fit_3ph)[log_mu_idx]), 6)
 ```
@@ -655,7 +656,6 @@ minima.
 
 ```{r}
 #| label: nstarts
-set.seed(42)
 fit_robust <- hazard(
   Surv(int_dead, dead) ~ 1,
   data   = avc,

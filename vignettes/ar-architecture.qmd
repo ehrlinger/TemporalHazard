@@ -479,11 +479,11 @@ knitr::kable(
 ## Early phase (G1) mapping
 
 The SAS early phase uses four parameters: DELTA, RHO (or THALF), NU, M.
-These collapse onto the three-parameter decompos family:
+With DELTA = 0 they reduce to the three-parameter decompos family:
 
 - **DELTA**: time transformation `B(t) = (exp(delta*t) - 1)/delta`.
   When DELTA = 0 (the common case), `B(t) = t` and the transformation
-  is absorbed. Non-zero DELTA is not currently supported.
+  drops out. Non-zero DELTA is not supported.
 - **RHO / THALF**: scale parameter. THALF maps directly to `t_half` in
   `hzr_phase()`. RHO has no argument of its own in R: it is fixed by NU,
   THALF and M, and for M > 0 and NU > 0 it is

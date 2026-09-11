@@ -461,21 +461,27 @@ fit_step$steps[, c("step_num", "action", "variable", "phase",
 ```
 
 The final model is the fit at the top of the object, reachable
-through the usual hazard accessors:
+through the usual hazard accessors.  AIC counts only the estimated
+parameters.  Both models hold the early phase's three shape parameters
+fixed (`fixed = "shapes"`), and `fit$fit$fixed_mask` flags them, so we
+leave them out of the count, as the `Final model` line of `fit_step`
+does:
 
 ```{r}
 #| eval: !expr requireNamespace("TemporalHazard", quietly = TRUE)
 logLik_manual <- fit_mv$fit$objective
 logLik_step   <- fit_step$fit$objective
+n_free <- function(fit) sum(!fit$fit$fixed_mask)
 c(manual = logLik_manual, stepwise = logLik_step,
-  aic_manual = 2 * length(fit_mv$fit$theta) - 2 * logLik_manual,
-  aic_step   = 2 * length(fit_step$fit$theta) - 2 * logLik_step)
+  aic_manual = 2 * n_free(fit_mv) - 2 * logLik_manual,
+  aic_step   = 2 * n_free(fit_step) - 2 * logLik_step)
 ```
 
 The two models need not agree.  Here stepwise enters `status` in both
 phases but `age`, `mal` and `com_iv` in the early phase only, so it
-carries fewer coefficients than the manual fit.  Its log-likelihood is
-lower and its AIC is lower too, because the dropped constant-phase
+carries fewer coefficients than the manual fit (seven free parameters
+against ten).  Its log-likelihood is lower and its AIC is lower too
+(398.2 against 401.1), because the dropped constant-phase
 coefficients cost more in parameters than they bought in fit.  Even on
 an identical covariate set the two log-likelihoods can differ, since
 the fits use different `n_starts` and the multiphase likelihood can
@@ -637,10 +643,18 @@ observed event rates across the risk spectrum.
 
 ### Conservation of events check
 
-The conservation-of-events principle states that a well-fitting model
-should predict the same total number of events as actually observed.
-`hzr_gof()` tracks this cumulatively over time; the residual
-(expected minus observed) should stay near zero.
+The conservation-of-events principle says a model fit by maximum
+likelihood predicts as many events as were observed: add up every
+patient's cumulative hazard at the end of their follow-up and you get
+the event count back.  `hzr_gof()` is the R version of the SAS
+`hazplot` display, a running tally of observed and expected events
+over time.
+
+For a model with covariates you need to know one thing before reading
+its output.  `hzr_gof()` evaluates the parametric curve at the covariate
+means, one "mean patient", and builds the expected count from that
+single curve.  The printed ratio is then a mean-patient check, not the
+conservation-of-events identity, and for `fit_mv` it is well short of 1.
 
 ```{r}
 #| label: gof-summary
@@ -649,9 +663,28 @@ gof <- hzr_gof(fit_mv)
 print(gof)
 ```
 
+The conservation-of-events check itself sums each patient's own
+cumulative hazard, from their own covariates, at their own follow-up
+time:
+
+```{r}
+#| label: coe-per-subject
+#| eval: !expr requireNamespace("TemporalHazard", quietly = TRUE)
+nd_coe <- avc[, c("age", "status", "mal", "com_iv")]
+nd_coe$time <- avc$int_dead
+c(expected = sum(predict(fit_mv, newdata = nd_coe,
+                         type = "cumulative_hazard")),
+  observed = sum(avc$dead))
+```
+
+Expected 68.0 against 68 observed, so the fit conserves events.  The
+gap in the `hzr_gof()` summary belongs to the mean patient, not to the
+fit.  For an intercept-only model every patient shares one curve, the
+two checks give the same answer, and `hzr_gof()` prints an E/O of 1.
+
 ```{r}
 #| label: fig-gof-survival
-#| fig-cap: "Parametric (blue) vs. Kaplan-Meier (orange) survival"
+#| fig-cap: "Parametric survival at the covariate means (blue) vs. Kaplan-Meier (orange)"
 #| eval: !expr requireNamespace("TemporalHazard", quietly = TRUE) && requireNamespace("ggplot2", quietly = TRUE)
 ggplot(gof, aes(x = time)) +
   geom_step(aes(y = km_surv * 100), colour = "#D55E00", linewidth = 0.6) +
@@ -685,9 +718,20 @@ ggplot(gof, aes(x = time, y = residual)) +
   theme_minimal()
 ```
 
-A residual that hovers near zero across the full time range indicates the
-model conserves events well.  Persistent positive residual means the model
-overpredicts risk; persistent negative means it underpredicts.
+Read these three plots as a picture of the mean patient.  The first sets
+that patient's survival curve against the Kaplan-Meier estimate for the
+whole cohort, and it runs above it from the first weeks on.  The other
+two tally the deaths the mean patient's hazard would predict for the
+patients leaving follow-up at each time.  Most of the deaths come in
+the first weeks, and the mean patient's curve accounts for few of them
+(45 observed by two weeks against about 1.4 expected), so the residual
+falls to about -55 by six months and then climbs back slowly, ending
+at -26.8.  That is the mean patient
+understating the cohort's early risk.  It is not the model
+underpredicting, which the per-subject check above rules out.  For an
+intercept-only model the same plots are the conservation-of-events
+picture, and there a residual that stays near zero is what a good fit
+looks like.
 
 ## Why not Cox regression?
 
@@ -699,9 +743,9 @@ several things that Cox proportional hazards does not:
 | Proportional hazards required | Yes | No |
 | Baseline hazard specified | No | Yes (parametric) |
 | Multiple hazard phases | No | Yes (additive) |
-| Patient-specific survival prediction | Approximate | Exact |
+| Patient-specific survival curve | Step function (Breslow baseline) | Smooth, parametric |
 | Smooth extrapolation beyond data | No | Yes |
-| Conservation of events check | No | Yes (`hzr_gof()`) |
+| Conservation of events | Yes (martingale residuals sum to 0) | Yes (per-subject cumulative hazards sum to the event count) |
 | Interval censoring | Not standard | Supported |
 
 Many clinical outcomes show **non-proportional

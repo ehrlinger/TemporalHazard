@@ -403,14 +403,14 @@ uncertainty-quantified, well-calibrated fitted model. The complete sequence:
    reference KM / Nelson cumulative hazard estimators
 3. **Fit hazard model** (`hazard()`): parametric shape + covariates
 4. **Predict & visualize** (`predict()`): survival, hazard, risk profiles
-5. **Goodness-of-fit overlay** (`hzr_gof()`): parametric vs. KM +
-   Conservation-of-Events check
-6. **Bootstrap CIs** (`hzr_bootstrap()`): uncertainty quantification
+5. **Bootstrap CIs** (`hzr_bootstrap()`): uncertainty quantification
    via resampling
-7. **Sensitivity analysis** (`predict()` on covariate profiles):
-   compare scenarios across risk factors
-8. **Decile calibration** (`hzr_deciles()`): chi-square observed
+6. **Goodness-of-fit overlay** (`hzr_gof()`): parametric vs. KM +
+   Conservation-of-Events check
+7. **Decile calibration** (`hzr_deciles()`): chi-square observed
    vs. expected by risk decile
+8. **Sensitivity analysis** (`predict()` on covariate profiles):
+   compare scenarios across risk factors
 
 See `vignette("getting-started")` for the minimal workflow and
 `vignette("fitting-hazard-models")` for the model-fitting details.

@@ -164,24 +164,31 @@ PARMS MUE=0.3504743 THALF=0.1905077 NU=1.437416 M=1 FIXM
       MUC=4.391673E-07;
 ```
 
-Maps to `theta` (coefficient/parameter vector) and `control` (fix flags):
+Maps to the phases in `phases`, the start vector `theta`, and, for
+`FIXM`, `fixed = "m"` on the early phase:
 
 ```{r}
 #| eval: false
 fit <- hazard(
-  theta   = c(MUE = 0.3504743, THALF = 0.1905077, NU = 1.437416,
-              M = 1,           MUC   = 4.391673e-07),
-  control = list(
-    fix = c("M")   # FIXM → freeze M during optimization
+  ...,
+  dist   = "multiphase",
+  phases = list(
+    early    = hzr_phase("cdf", t_half = 0.1905077, nu = 1.437416, m = 1,
+                         fixed = "m"),       # FIXM: hold M at its start
+    constant = hzr_phase("constant")
   ),
-  ...
+  theta = c(log(0.3504743),                  # MUE
+            log(0.1905077), 1.437416, 1,     # THALF, NU, M
+            log(4.391673e-07))               # MUC
 )
 ```
 
-> **Note:** Full SAS `PARMS` syntax is not mirrored one-for-one in the public API.
-> In the current package, supply the parameter vector directly via `theta` and
-> record fixed-parameter intent in `control$fix`. The legacy parity helpers do
-> generate SAS-style control text when comparing against the historical binaries.
+> **Note:** `theta` takes the `PARMS` values on the scale the optimizer
+> works on, which is not always the scale SAS prints. `MUE`, `MUC` and
+> `THALF` go in as logs; `NU` and `M` go in as written. A fixed parameter is
+> declared on the phase that owns it, so `FIXM` is `fixed = "m"` inside the
+> early `hzr_phase()`. `hazard()` does not read a `control$fix` entry: a fix
+> written there leaves `M` free, and nothing warns you.
 
 ---
 
@@ -199,38 +206,39 @@ EARLY  AGE=-0.03205774, COM_IV=1.336675, MAL=0.6872028,
 CONSTANT INC_SURG=1.375285, ORIFICE=3.11765, STATUS=1.054988;
 ```
 
-In HAZARD, `EARLY` and `CONSTANT` define phase-specific covariate coefficients.
-In `TemporalHazard` these are unified into a single design matrix `x` and
-coefficient vector `theta` during M1. Phase assignment will be formalised in
-M2 when the multi-phase likelihood is implemented.
+In `TemporalHazard` each block becomes the `formula` of the phase it
+names: the `EARLY` list goes on the early `hzr_phase("cdf", ...)`, the
+`CONSTANT` list on `hzr_phase("constant", ...)`. A covariate listed in
+both blocks, `STATUS` here, appears in both formulas and gets a separate
+coefficient in each phase, as it does in SAS. The model formula's right-hand
+side stays `~ 1` because every covariate belongs to a phase.
 
-**Current convention (M1):** combine all covariates into `x` and supply the
-corresponding starting coefficients in `theta`.
+The starting coefficients go into `theta` in phase order: the early
+phase's scale and shapes, then its covariates, then the constant phase's
+scale, then its covariates. In this chunk `avcs` is `data(avc)` with its
+missing `inc_surg` values filled, as in the worked example below.
 
 ```{r}
 #| eval: false
-# Build design matrix from the AVC data set
-X <- data.matrix(avcs[, c("AGE", "COM_IV", "MAL", "OPMOS", "OP_AGE",
-                           "STATUS", "INC_SURG", "ORIFICE")])
-
-# Starting values from SAS EARLY + CONSTANT blocks combined
-theta_start <- c(
-  AGE      = -0.03205774,
-  COM_IV   =  1.336675,
-  MAL      =  0.6872028,
-  OPMOS    = -0.01963377,
-  OP_AGE   =  0.0002086689,
-  STATUS   =  0.5169533,   # EARLY phase coefficient
-  INC_SURG =  1.375285,
-  ORIFICE  =  3.11765
-)
-
 fit <- hazard(
-  time   = avcs$INT_DEAD,
-  status = avcs$DEAD,
-  x      = X,
-  theta  = theta_start,
-  dist   = "weibull"
+  Surv(int_dead, dead) ~ 1,
+  data   = avcs,
+  dist   = "multiphase",
+  phases = list(
+    early    = hzr_phase("cdf", t_half = 0.1905077, nu = 1.437416, m = 1,
+                         formula = ~ age + com_iv + mal + opmos + op_age +
+                           status,
+                         fixed = "m"),
+    constant = hzr_phase("constant", formula = ~ inc_surg + orifice + status)
+  ),
+  theta = c(
+    log(0.3504743), log(0.1905077), 1.437416, 1,  # MUE, THALF, NU, M
+    -0.03205774, 1.336675, 0.6872028,             # EARLY: AGE, COM_IV, MAL,
+    -0.01963377, 0.0002086689, 0.5169533,         #   OPMOS, OP_AGE, STATUS
+    log(4.391673e-07),                            # MUC
+    1.375285, 3.11765, 1.054988                   # CONSTANT: INC_SURG,
+  ),                                              #   ORIFICE, STATUS
+  fit = TRUE
 )
 ```
 
@@ -371,70 +379,73 @@ PROC HAZARD DATA=AVCS P CONSERVE OUTHAZ=OUTEST CONDITION=14 QUASI;
 );
 ```
 
-### R equivalent (current runnable translation pattern)
+### R equivalent
 
-The same model in `TemporalHazard`. Every SAS statement above has a
-corresponding R argument here: `TIME` and `EVENT` collapse into
-`Surv(int_dead, dead)` on the left of the formula; the global
-covariate list goes on the right; the `PARMS` starting values
-become the `theta` vector; phase-specific assignments use the
-`formula` argument inside each `hzr_phase()`; `FIXM` becomes
-`fixed = "shapes"` (or a subset of shape names). The line-by-line
-correspondence is the point. Once you've translated one analysis
-this way, the pattern carries to every other.
+The same model in `TemporalHazard`, with one R argument for each SAS
+statement:
+
+- `TIME INT_DEAD` and `EVENT DEAD` become `Surv(int_dead, dead)` on the
+  left of the formula. In `avc`, `dead` is 0/1, so it is a status as it
+  stands. A job whose `EVENT` variable counts events also needs `weights`;
+  see the translator section below.
+- `PARMS` becomes the phase shapes and the `theta` start vector, and `FIXM`
+  becomes `fixed = "m"` on the early phase.
+- `EARLY` and `CONSTANT` become the `formula` of the matching
+  `hzr_phase()`.
+- `CONDITION=14`, `CONSERVE` and `QUASI` go into `control` as
+  `condition = 14`, `conserve = TRUE` and `method = "bfgs"`. BFGS is the
+  default optimizer, so the last one records the mapping and changes
+  nothing.
+- `PROC STANDARD REPLACE` from the SAS `DATA` steps becomes one line that
+  fills the missing `inc_surg` values with the column mean.
+
+Once you have translated one analysis this way, the pattern carries to
+every other.
 
 ```{r}
 #| label: avc-example
-#| eval: false
-# Assumed: avcs is a data.frame read from the AVC flat file
-# (same variables as the SAS DATA step)
+#| warning: false
+data(avc)   # reload: the diagnostics above dropped the incomplete rows
+avcs <- avc
 
-avcs <- avcs |>
-  transform(
-    LN_AGE   = log(AGE),
-    LN_OPMOS = log(OPMOS),
-    LN_INC   = ifelse(is.na(INC_SURG), NA, log(INC_SURG + 1)),
-    LN_NYHA  = log(STATUS)
-  )
-
-# Replace missing INC_SURG with column mean (mirrors PROC STANDARD REPLACE)
-avcs$INC_SURG[is.na(avcs$INC_SURG)] <- mean(avcs$INC_SURG, na.rm = TRUE)
-
-X <- data.matrix(avcs[, c("AGE", "COM_IV", "MAL", "OPMOS", "OP_AGE",
-                           "STATUS", "INC_SURG", "ORIFICE")])
+# PROC STANDARD REPLACE: fill missing INC_SURG with the column mean
+avcs$inc_surg[is.na(avcs$inc_surg)] <- mean(avcs$inc_surg, na.rm = TRUE)
 
 fit <- hazard(
-  time    = avcs$INT_DEAD,
-  status  = avcs$DEAD,
-  x       = X,
-  theta   = c(
-    # Hazard shape parameters (from PARMS)
-    MUE   = 0.3504743,
-    THALF = 0.1905077,
-    NU    = 1.437416,
-    M     = 1,
-    MUC   = 4.391673e-07,
-    # Covariate coefficients (from EARLY + CONSTANT blocks)
-    AGE      = -0.03205774,
-    COM_IV   =  1.336675,
-    MAL      =  0.6872028,
-    OPMOS    = -0.01963377,
-    OP_AGE   =  0.0002086689,
-    STATUS   =  0.5169533,
-    INC_SURG =  1.375285,
-    ORIFICE  =  3.11765
+  Surv(int_dead, dead) ~ 1,                        # TIME, EVENT
+  data   = avcs,
+  dist   = "multiphase",
+  phases = list(
+    early    = hzr_phase("cdf", t_half = 0.1905077, nu = 1.437416, m = 1,
+                         formula = ~ age + com_iv + mal + opmos + op_age +
+                           status,                 # EARLY
+                         fixed = "m"),             # FIXM
+    constant = hzr_phase("constant",
+                         formula = ~ inc_surg + orifice + status)  # CONSTANT
   ),
-  dist    = "weibull",
-  control = list(
-    condition = 14,
-    quasi     = TRUE,
-    conserve  = TRUE,
-    fix       = c("M")   # FIXM
-  )
+  theta = c(                                       # PARMS, EARLY, CONSTANT
+    log(0.3504743), log(0.1905077), 1.437416, 1,
+    -0.03205774, 1.336675, 0.6872028, -0.01963377, 0.0002086689, 0.5169533,
+    log(4.391673e-07),
+    1.375285, 3.11765, 1.054988
+  ),
+  control = list(condition = 14, conserve = TRUE, method = "bfgs"),
+  fit = TRUE
 )
 
-fit
+summary(fit)
 ```
+
+The `PARMS` and covariate values in this job are the estimates from an
+earlier SAS run of the same model, so both programs start at SAS's
+optimum. R agrees that it is one. The log-likelihood is -160.408, the
+value SAS prints for this model, and the standard errors agree with the
+SAS listing to within 0.31%: `AGE` is 0.009381 here against SAS's 0.009380, and the
+early-phase `log_mu` (SAS's `E0`) is 0.7527 against 0.7550. `summary()`
+notes an ill-conditioned Hessian (`rcond = 4.41e-12`); SAS reports the
+same condition for this fit as a log10 condition code of 11.12. Run
+interactively, the fit also raises `Hessian is ill-conditioned` warnings.
+The chunk hides them because `summary()` reports the same thing.
 
 ---
 
@@ -511,9 +522,16 @@ Everything above is a mapping you apply by hand. `hzr_translate_sas()`
 applies it for you: point it at a `.sas` file and it parses the
 `PROC HAZARD` / `PROC HAZPRED` blocks and emits a `.qmd` document
 whose chunks are the `hazard()` / `predict.hazard()` calls those
-blocks describe. It is the same statement-by-statement mapping this
-vignette documents, run by the parser instead of by you. It is useful
-for a one-off job, and essential for migrating a corpus of hundreds.
+blocks describe. It applies the statement-by-statement mapping this
+vignette documents, with differences of form you will see in its
+output: it writes the vector interface (`data =`, `time =`, `status =`)
+where this vignette writes a `Surv()` formula, it keeps the SAS job's
+upper-case column names, and it turns `EVENT` into a status and
+`weights` pair, covered below. The phases, `fixed = "m"`, `theta` and
+`control` it emits for the AVC model above are the ones the worked
+example uses, and on `avc` its call reaches the same estimates. It is
+useful for a one-off job, and essential for migrating a corpus of
+hundreds.
 
 ::: {.callout-warning}
 ## Experimental: what it will and will not translate
@@ -655,12 +673,11 @@ makes the document runnable: a later `predict()` chunk from a
 `CONSERVE` becomes `control$conserve = TRUE`, `QUASI` becomes
 `control$method = "bfgs"`, `CONDITION=14` becomes `control$condition
 = 14`, and the `PARMS` early-phase shape (`MUE`/`THALF`/`NU`/`M FIXM`)
-becomes a `hzr_phase("cdf", ...)` with `m` fixed. Two of these differ
-from the hand translation above, and the translator's forms are the
-ones `hazard()` acts on. `FIXM` holds `m` only through `fixed = "m"` on
-the phase; the fitting path does not read `control$fix`. `QUASI`
-becomes the optimizer choice `control$method = "bfgs"`, which is also
-the default; `control$quasi` is not read either.
+becomes a `hzr_phase("cdf", ...)` with `m` fixed. These are the forms
+the hand translation above uses. `FIXM` holds `m` only through
+`fixed = "m"` on the phase, and `QUASI` works only as the optimizer
+choice `control$method = "bfgs"`, which is also the default: the fitting
+path reads neither `control$fix` nor `control$quasi`.
 `dist = "multiphase"` is emitted whenever `phases` is, and `theta`
 carries the full interleaved multiphase start vector (early scale,
 then every early-phase shape parameter in phase order, then the
@@ -698,7 +715,7 @@ gaps are common enough in production jobs to know about going in:
 ## Known limitations vs. SAS HAZARD
 
 A SAS HAZARD veteran migrating to `TemporalHazard` should be aware of
-the following scope limits as of v1.2.11.  Detailed status per feature is
+the following scope limits.  Detailed status per feature is
 tracked in `inst/dev/SAS-PARITY-GAP-ANALYSIS.md` and
 `inst/dev/DEVELOPMENT-PLAN.md`.
 

@@ -81,9 +81,11 @@ The three parameters control the shape of the distribution:
 The original C code used different parameter names per phase:
 
 - **Early phase (G1):** `DELTA`, `RHO`/`THALF`, `NU`, `M` $\to$ `t_half`, `nu`, `m`
-- **Late phase (G3):** `TAU`, `GAMMA`, `ALPHA`, `ETA` $\to$ `t_half`, `nu`, `m`
+- **Late phase (G3):** `TAU`, `GAMMA`, `ALPHA`, `ETA` $\to$
+  `hzr_phase("g3", tau = , gamma = , alpha = , eta = )`
 
-Both collapse onto the same 3-parameter decomposition family.  The C `DELTA`
+The late phase is not a member of the three-parameter family above. It
+is a separate four-parameter shape, computed by `hzr_decompos_g3()`. The C `DELTA`
 parameter controlled a time transformation $B(t) = (\exp(\delta t) - 1)/\delta$.
 When $\delta = 0$ (the common case), $B(t) = t$ and the transformation drops
 out. Non-zero `DELTA` is not supported.
@@ -240,7 +242,7 @@ The classic three-phase HAZARD model used:
 
 - **G1** (early) $\to$ `hzr_phase("cdf", ...)`
 - **G2** (constant) $\to$ `hzr_phase("constant")`
-- **G3** (late) $\to$ `hzr_phase("hazard", ...)`
+- **G3** (late) $\to$ `hzr_phase("g3", tau = , gamma = , alpha = , eta = )`
 
 TemporalHazard generalizes this to $J$ phases of any type.
 :::

@@ -304,14 +304,30 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #'   \item The parametric survival and cumulative hazard from the fitted
 #'     model (and per-phase components for multiphase models).
 #'   \item Cumulative observed events vs. cumulative expected events
-#'     (sum of individual cumulative hazards for those exiting the risk
-#'     set at each time).
+#'     (the parametric cumulative hazard at each time, times the number
+#'     of observations leaving the risk set then).
 #'   \item The running residual (expected minus observed).
 #' }
 #'
-#' Perfect model fit implies the expected and observed event counts track
-#' each other (residual near zero).  This is the conservation-of-events
-#' principle.
+#' For an intercept-only model every patient shares one curve, so the
+#' expected count is the sum of each patient's cumulative hazard at their
+#' own exit time.  At the maximum likelihood estimate that sum equals the
+#' number of observed events (the conservation-of-events identity): the
+#' final residual is zero and the printed "Conservation ratio (E/O)" is 1.
+#'
+#' A model with covariates is different.  The parametric curve, and so the
+#' expected count, is evaluated at the covariate means, one "mean patient"
+#' standing in for everyone.  The mean patient's cumulative hazard is not
+#' the average of the patients' cumulative hazards, so the printed E/O is
+#' not the conservation-of-events identity and need not be near 1 at a
+#' correct fit.  Read it as a mean-patient check: how closely the curve
+#' for a patient with average covariates follows the whole cohort.
+#'
+#' To check conservation of events for a covariate model, sum each
+#' patient's own cumulative hazard at their follow-up time and compare the
+#' total with the event count.  Pass the covariate columns plus a `time`
+#' column to [predict.hazard()] with `type = "cumulative_hazard"`; the
+#' Examples show how.
 #'
 #' @param object A fitted `hazard` object (with `fit = TRUE`).
 #' @param time_grid Optional numeric vector of time points at which to
@@ -328,11 +344,14 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #'   \item{km_surv}{Kaplan-Meier survival estimate.}
 #'   \item{km_cumhaz}{Kaplan-Meier cumulative hazard
 #'     (\eqn{-\log(\text{km\_surv})}).}
-#'   \item{par_surv}{Parametric survival from the fitted model.}
-#'   \item{par_cumhaz}{Parametric cumulative hazard.}
+#'   \item{par_surv}{Parametric survival from the fitted model, at the
+#'     covariate means for a model with covariates.}
+#'   \item{par_cumhaz}{Parametric cumulative hazard, at the covariate
+#'     means for a model with covariates.}
 #'   \item{cum_observed}{Cumulative observed events to this time.}
-#'   \item{cum_expected}{Cumulative expected events (sum of individual
-#'     cumulative hazards for observations exiting the risk set).}
+#'   \item{cum_expected}{Cumulative expected events: \code{par_cumhaz}
+#'     times the number of observations exiting the risk set, summed to
+#'     this time.}
 #'   \item{residual}{Expected minus observed
 #'     (\code{cum_expected - cum_observed}).}
 #' }
@@ -356,6 +375,14 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #' )
 #' gof <- hzr_gof(fit)
 #' print(gof)
+#'
+#' # With covariates, hzr_gof() uses the covariate means, so its E/O is a
+#' # mean-patient check.  The conservation-of-events check sums each
+#' # patient's own cumulative hazard at their follow-up time:
+#' nd <- avc[, c("age", "mal")]
+#' nd$time <- avc$int_dead
+#' c(expected = sum(predict(fit, newdata = nd, type = "cumulative_hazard")),
+#'   observed = sum(avc$dead))
 #'
 #' # Plot observed vs expected events
 #' if (requireNamespace("ggplot2", quietly = TRUE)) {
