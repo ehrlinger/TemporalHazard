@@ -38,7 +38,10 @@
   order happened to agree, and nothing said when it did not (#267). Code
   that passed such `newdata` now gets an error naming the missing columns:
   rename the columns to match `x`. A fit made with an unnamed `x` still
-  matches by position.
+  matches by position. A formula fit saved by an earlier version stored no
+  formula design, so it is matched on its design-matrix columns: a factor
+  must be given as `grpyoung` and a transform as `log(age)`. Refit it to
+  give the formula's variables instead.
 
 ## New features
 

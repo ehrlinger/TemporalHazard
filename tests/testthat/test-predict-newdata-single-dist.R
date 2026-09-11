@@ -144,6 +144,24 @@ test_that("hzr_deciles() and hzr_gof() run on factor and transformed fits", {
   }
 })
 
+test_that("a fit saved before the design was stored matches design columns", {
+  th <- c(mu = 0.01, nu = 0.5, b_age = 0.004, b_young = 0.7)
+  obj <- .sd_obj("weibull", survival::Surv(int_dead, dead) ~ age + grp,
+                 theta = th)
+  obj$data$x_design <- NULL   # as saved by an earlier version
+  want <- .sd_cumhaz("weibull", th, 2, eta = th[["b_age"]] * 60 + th[[4]])
+  # unname(): at a single time the Weibull branch carries theta[1]'s name.
+  expect_equal(unname(predict(obj, newdata = data.frame(grpyoung = 1,
+                                                        time = 2, age = 60),
+                              type = "cumulative_hazard")),
+               want, tolerance = 1e-12)
+  expect_error(
+    predict(obj, newdata = data.frame(time = 2, age = 60, grp = "young"),
+            type = "cumulative_hazard"),
+    "lacks the covariate column\\(s\\) 'grpyoung'"
+  )
+})
+
 test_that("a column the model does not use is ignored", {
   obj <- .sd_obj("exponential")
   base <- predict(obj, newdata = .sd_in_order, type = "cumulative_hazard")

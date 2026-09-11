@@ -212,15 +212,9 @@
   # Otherwise newdata gives the formula's variables. A covariate must come
   # from newdata itself: were it looked up in the formula's environment, a
   # stray `mal` in the workspace would silently stand in for a missing
-  # column. Fits saved before `data_vars` was recorded require every
-  # variable of the formula.
-  needed <- if (is.null(design)) {
-    cols
-  } else if (!is.null(design$data_vars)) {
-    design$data_vars
-  } else {
-    all.vars(design$terms)
-  }
+  # column. A fit saved by an earlier version stored no design, so its
+  # design columns are all there is to match.
+  needed <- if (is.null(design)) cols else design$data_vars
   missing <- setdiff(needed, names(newdata))
   if (length(missing) > 0L) {
     stop("'newdata' lacks the covariate column(s) ",
