@@ -61,6 +61,11 @@ jobs:
           fi
 
   R-CMD-check:
+    # Named explicitly: without this, GitHub appends every matrix value to the
+    # job name, so sas_corpus turns the ubuntu-release job into
+    # "R-CMD-check (ubuntu-latest, release, true)" and the ruleset's required
+    # "R-CMD-check (ubuntu-latest, release)" never reports.
+    name: R-CMD-check (${{ matrix.config.os }}, ${{ matrix.config.r }})
     needs: changes
     runs-on: ${{ matrix.config.os }}
     strategy:
@@ -101,13 +106,21 @@ jobs:
           persist-credentials: false
 
       # Fail here if the files the tests look for are not where they look,
-      # rather than letting every one of those tests skip and pass.
+      # rather than letting every one of those tests skip and pass. The list
+      # is every fixture test-sas-parity.R reads, because each test there
+      # skips on its own file: a pin that keeps a few sentinels but drops one
+      # of these would turn that test green over nothing.
       - if: needs.changes.outputs.run == 'true' && matrix.config.sas_corpus
         shell: bash
         run: |
           mv hazard-corpus "$RUNNER_TEMP/hazard"
           for f in examples/hz.death.AVC.lst examples/hz.deadp.KUL.lst \
-                   examples/hz.te123.OMC.sas; do
+                   examples/hm.death.patient.lst examples/hm.death.AVC.deciles.lst \
+                   examples/ac.death.AVC.lst examples/hp.death.AVC.lst \
+                   examples/bs.death.AVC.lst examples/hp.death.AVC.hm1.lst \
+                   examples/hp.death.AVC.hm2.lst examples/hs.death.AVC.hm1.lst \
+                   examples/hz.te123.OMC.lst examples/hz.tm123.OMC.lst \
+                   examples/hz.te123.OMC.sas examples/data/omc; do
             test -f "$RUNNER_TEMP/hazard/$f" || { echo "missing: $f"; exit 1; }
           done
           echo "HAZARD_REPO=$RUNNER_TEMP/hazard" >> "$GITHUB_ENV"
