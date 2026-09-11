@@ -431,9 +431,9 @@ deliberately; the emitted code does not upper-case names for the reader. A data 
 by `haven` keeps the stored case (`ccfid`), and `hzr_repeated_events()`'s own error for a
 missing column names the one it wanted.
 
-#### ⚠️ Open: a `LAG_IV` or `NUMBER` column in `IN=`
+#### A `LAG_IV` or `NUMBER` column in `IN=`: warn, do not reproduce
 
-This was found while writing this section and is not part of the approved design. The
+This was found while writing this section, and the maintainer decided it on 2026-09-10. The
 macro's sixth DATA step keeps two loop variables with `RETAIN lag_iv 0 number 0`. A
 variable that also arrives through `SET` is re-read from the input on every iteration,
 which overwrites the value retained from the previous row. So if `IN=` has a `LAG_IV` or
@@ -442,8 +442,9 @@ own lag. `hzr_repeated_events()` has no such coupling, so the translated documen
 disagree with the SAS listing without saying so. Here SAS is the one that is wrong: this is
 a finding to document, not behaviour to reproduce. The cardioversion input has neither
 column; SAS's jump from 361 to 367 columns at that step is exactly the six variables the
-step adds. **Proposed:** the `repeat` chunk warns at render, naming the column and saying
-that SAS's `iv_start`/`event_no` for this job are not comparable.
+step adds. **Decided:** the `repeat` chunk warns at render, naming the column and saying
+that SAS's `iv_start`/`event_no` for this job are not comparable. R's result, which is the
+macro's intent, stands; the column is neither dropped nor used.
 
 #### Tests
 
@@ -468,6 +469,9 @@ vectors derived by hand from the macro, never from the function:
    `IV_END`.
 7. Extraction: a mixed fixture yields block kinds exactly `c("REPEAT", "HAZARD",
    "HAZPRED")`.
+8. `BD_CARD` carrying a `NUMBER` column: expect a warning naming it, and `EVENT_NO` exactly
+   equal to the hand-derived vector. A negative control with no such column expects no
+   such warning.
 
 A volume-gated case in `test-repeated-events-parity.R` translates the real cardioversion
 `.sas` file. It binds `BD_CARD` from `.hzr_derive_bd_card()`, with names upper-cased, and
