@@ -156,7 +156,9 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
 
   txt <- .hzr_sas_normalise(readLines(path, warn = FALSE))
   blocks <- .hzr_sas_blocks(txt)
-  if (!length(blocks)) {
+  # A %repeat call alone is a dataset-building job (the tp.bd.* templates),
+  # not a HAZARD job, and there is nothing to fit.
+  if (!any(vapply(blocks, function(b) b$proc != "REPEAT", logical(1L)))) {
     stop("no HAZARD or HAZPRED block found in ", path, call. = FALSE)
   }
 
@@ -173,6 +175,7 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
   n_unresolved_inhaz <- 0L
 
   for (b in blocks) {
+    if (identical(b$proc, "REPEAT")) next # translated in Task 3
     if (identical(b$proc, "HAZARD")) {
       r <- tryCatch(.hzr_parse_hazard(b), error = function(e) {
         stop("failed to parse PROC HAZARD block in ", basename(path), ": ",
