@@ -5,6 +5,10 @@ test_that("every public-corpus job either translates or fails loudly", {
 
   fs <- list.files(path.expand(repo), pattern = "[.]sas$",
                    recursive = TRUE, full.names = TRUE)
+  # dist/ is a local `make install --prefix=./dist` tree, gitignored by the
+  # hazard repo: not public corpus, and absent from a clean checkout such as
+  # the one CI uses. Counting it makes a local run measure a different corpus.
+  fs <- fs[!startsWith(fs, file.path(path.expand(repo), "dist", ""))]
   skip_if(length(fs) == 0L, "no .sas files found")
 
   out <- withr::local_tempdir()
@@ -22,10 +26,11 @@ test_that("every public-corpus job either translates or fails loudly", {
     n_ok <- n_ok + 1L
   }
   # Warn loudly if nothing translated: a pass over zero jobs is not a pass.
-  # Measured 2026-08-20: 57 successful translations across 110 .sas files (26
-  # distinct .qmd outputs -- fewer than 57 because examples/, dist/examples/
-  # and tests/ hold duplicate copies of the same jobs). A drop below this
+  # Measured 2026-09-10 on a clean checkout of the hazard commit CI pins
+  # (dad7978): 37 successful translations across 66 .sas files. examples/
+  # and tests/ hold duplicate copies of the same jobs. A drop below this
   # threshold that isn't explained by a corpus change is a real regression.
+  # (The 2026-08-20 figure, 57 across 110, also counted a local dist/ tree.)
   expect_gt(n_ok, 20L)
 })
 
@@ -38,6 +43,8 @@ test_that("public-corpus jobs that translate also render", {
   skip_if_not(dir.exists(path.expand(corpus)), "hazard checkout not available")
   fs <- list.files(path.expand(corpus),
                    pattern = "[.]sas$", full.names = TRUE, recursive = TRUE)
+  # Same exclusion as above: dist/ is a local install tree, not corpus.
+  fs <- fs[!startsWith(fs, file.path(path.expand(corpus), "dist", ""))]
   skip_if(length(fs) == 0L, "no .sas corpus available")
 
   n_trans <- 0L        # .sas files that translated at all
@@ -53,10 +60,10 @@ test_that("public-corpus jobs that translate also render", {
     if (is.null(job)) next
     n_trans <- n_trans + 1L
 
-    # The corpus holds the same jobs under examples/, dist/examples/ and
-    # tests/, so 57 translations are 22 distinct documents. Fitting each
-    # one once keeps the file inside its time budget; the duplicates would
-    # exercise byte-identical calls.
+    # The corpus holds the same jobs under examples/ and tests/, so 37
+    # translations are 21 distinct documents. Fitting each one once keeps
+    # the file inside its time budget; the duplicates would exercise
+    # byte-identical calls.
     key <- paste(vapply(job$calls, function(x) paste(deparse(x), collapse = " "), ""),
                  collapse = " ;; ")
     if (!is.null(seen[[key]])) next
@@ -131,13 +138,15 @@ test_that("public-corpus jobs that translate also render", {
   # quietly reducing what is tested. Floors, not equalities, so a corpus
   # that grows does not fail.
   #
-  # Re-measured 2026-09-10: 10 eligible, 12 partial. The eleventh eligible
-  # job, hm.dthar.TGA.sas, never rendered a fit: its second PARMS is a `?`
-  # template, so fit_2 was hazard(fit = TRUE, theta = c()) and bound an
-  # unfitted object, which this test counted as rendered. The translator
-  # now emits a stop() there, which makes the job partial.
+  # Re-measured 2026-09-10 on a clean checkout of the hazard commit CI pins
+  # (dad7978), dist/ excluded above: 37 translations, 21 distinct
+  # documents, 10 eligible and all 10 rendering, 11 partial. The 2026-08-22
+  # figures also counted a local dist/ install tree. That tree is the only
+  # place hm.dthar.TGA.sas exists, the job whose `?` PARMS template now emits
+  # a stop() instead of an unfitted fit; that shape is tested without the
+  # corpus in test-sas-translate-fits.R.
   expect_gt(n_trans, 20L)
   expect_gte(n_eligible, 10L)
-  expect_gte(n_partial, 12L)
+  expect_gte(n_partial, 11L)
   expect_equal(n_rendered, n_eligible)
 })
