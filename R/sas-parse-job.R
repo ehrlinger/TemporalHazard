@@ -160,8 +160,9 @@
 #' no expression that serves: `time_lower` is one column carrying two
 #' meanings, so gating it on status hands the interval rows their lower bound
 #' and thereby drops their entry time, fitting a left-truncated
-#' interval-censored subject as at risk from time `0`. That converges and
-#' reports plausibly, the exact failure mode this package exists to refuse.
+#' interval-censored subject as at risk from time `0`. That fit converges
+#' and looks plausible, which is the failure mode this package exists to
+#' refuse.
 #' The reference implementation carries three distinct times (`TIME`, `CTIME`,
 #' `STIME`) and subtracts `H(STIME)` for every row, interval rows included, so
 #' translating it faithfully needs an entry-time argument [hazard()] does not

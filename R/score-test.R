@@ -138,8 +138,8 @@
 
 #' Log-likelihood / gradient entry points for a single distribution
 #'
-#' SIGN CONVENTION: both return the POSITIVE log-likelihood scale, despite
-#' what some of their roxygen blocks say. `.hzr_optim_generic()` is what negates
+#' SIGN CONVENTION: both return the POSITIVE log-likelihood scale, as their
+#' roxygen blocks say. `.hzr_optim_generic()` is what negates
 #' them for minimisation, and the analytic `hessian_fn` hook it takes is on the
 #' negated (objective) scale. So the observed information is a Hessian of
 #' `-logl_fn`, not of `logl_fn`. Getting this backwards yields a negative

@@ -637,9 +637,11 @@ ggplot(cal, aes(x = group)) +
   theme_minimal()
 ```
 
-A non-significant overall chi-square statistic (p > 0.05) indicates
-adequate calibration, meaning the model's predictions are consistent with
-observed event rates across the risk spectrum.
+A non-significant overall chi-square statistic (p > 0.05) means the test
+found no evidence of poor calibration. It does not prove the model is
+calibrated: with ten groups and few events in each, the test has little
+power. Read the plot as well. Calibration is adequate when the observed and
+expected rates track each other across the deciles.
 
 ### Conservation of events check
 

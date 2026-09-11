@@ -592,9 +592,9 @@ recognizable:
 | Enormous standard errors on one or more parameters | Flat likelihood in that direction (weak identification) |
 | Two phases with nearly identical shapes | One can be collapsed into the other |
 
-The AVC dataset has a clear two-phase structure (early CDF plus constant).
-Adding a third late-rising phase asks the data for a pattern it doesn't
-contain over this follow-up window:
+Two phases (early CDF plus constant) describe the AVC data well. Adding a
+third, late-rising phase gives the optimizer two ways to describe the risk
+that remains after recovery:
 
 ```{r}
 #| label: overparameterized
