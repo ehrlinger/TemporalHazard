@@ -59,8 +59,8 @@ parameter names. For the full translation table, see
 
 ## The parametric family
 
-Every temporal phase in TemporalHazard is built from a single parametric
-family, `decompos(t; t_half, nu, m)`, introduced by Blackstone, Naftel, and
+The early (`"cdf"`) and `"hazard"` phases in TemporalHazard are built from
+a single parametric family, `decompos(t; t_half, nu, m)`, introduced by Blackstone, Naftel, and
 Turner (1986), which produces three linked quantities from just three parameters:
 
 - $G(t)$: cumulative distribution function (CDF), bounded $[0, 1]$
@@ -82,7 +82,7 @@ The original C code used different parameter names per phase:
 
 - **Early phase (G1):** `DELTA`, `RHO`/`THALF`, `NU`, `M` $\to$ `t_half`, `nu`, `m`
 - **Late phase (G3):** `TAU`, `GAMMA`, `ALPHA`, `ETA` $\to$
-  `hzr_phase("g3", tau = , gamma = , alpha = , eta = )`
+  `hzr_phase("g3", tau = 1, gamma = 3, alpha = 1, eta = 1)`
 
 The late phase is not a member of the three-parameter family above. It
 is a separate four-parameter shape, computed by `hzr_decompos_g3()`. The C `DELTA`
@@ -242,7 +242,7 @@ The classic three-phase HAZARD model used:
 
 - **G1** (early) $\to$ `hzr_phase("cdf", ...)`
 - **G2** (constant) $\to$ `hzr_phase("constant")`
-- **G3** (late) $\to$ `hzr_phase("g3", tau = , gamma = , alpha = , eta = )`
+- **G3** (late) $\to$ `hzr_phase("g3", tau = 1, gamma = 3, alpha = 1, eta = 1)`
 
 TemporalHazard generalizes this to $J$ phases of any type.
 :::
@@ -467,9 +467,11 @@ scale, wrapped by `.hzr_optim_generic()`.  Key features:
 - **Post-fit Hessian**: the Hessian of the negative
   log-likelihood at the solution is inverted to produce the
   variance-covariance matrix $\hat{V}$, with standard errors
-  $\sqrt{\text{diag}(\hat{V})}$.  The Hessian is analytic when every row
-  is an exact event or right-censored, and is computed numerically with
-  `numDeriv::hessian()` when any row is left- or interval-censored.  The inversion is hardened against the
+  $\sqrt{\text{diag}(\hat{V})}$.  When every row is an exact event or
+  right-censored the Hessian is assembled analytically, with the
+  multiphase phase-shape second derivatives inside it taken by finite
+  differences; when any row is left- or interval-censored the whole
+  Hessian is computed numerically with `numDeriv::hessian()`.  The inversion is hardened against the
   ill-conditioning that arises at high parameter counts: the Hessian is
   symmetrized, its reciprocal condition number is checked, and it is
   inverted via a Cholesky factorization, with a general `solve()` fallback

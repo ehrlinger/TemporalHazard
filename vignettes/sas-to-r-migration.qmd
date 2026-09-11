@@ -675,9 +675,11 @@ makes the document runnable: a later `predict()` chunk from a
 = 14`, and the `PARMS` early-phase shape (`MUE`/`THALF`/`NU`/`M FIXM`)
 becomes a `hzr_phase("cdf", ...)` with `m` fixed. These are the forms
 the hand translation above uses. `FIXM` holds `m` only through
-`fixed = "m"` on the phase, and `QUASI` works only as the optimizer
-choice `control$method = "bfgs"`, which is also the default: the fitting
-path reads neither `control$fix` nor `control$quasi`.
+`fixed = "m"` on the phase. `QUASI` changes nothing: `hazard()` does not
+read `control$method`, and the fitting path always uses BFGS (a
+multiphase fit may run a Nelder-Mead warm-up first), so the entry only
+records the SAS choice. The fitting path reads none of `control$fix`,
+`control$quasi` or `control$method`.
 `dist = "multiphase"` is emitted whenever `phases` is, and `theta`
 carries the full interleaved multiphase start vector (early scale,
 then every early-phase shape parameter in phase order, then the

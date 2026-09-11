@@ -228,7 +228,9 @@ with the size of the log-likelihood: about 0.0024 at a log-likelihood of
 -240. On a flat surface a fit can stop that far short of the optimum and
 still report convergence.
 \item \code{abstol}: Absolute gradient norm tolerance (default 1e-6)
-\item \code{method}: Optimization method: "bfgs" or "nm" (default "bfgs").
+\item \code{method}: Recorded but not used. The optimizer is always BFGS (a
+multiphase fit may run a Nelder-Mead warm-up first); the entry is
+accepted so that translated SAS jobs (\code{QUASI}) run unchanged.
 SAS \verb{PROC HAZARD} jobs write \verb{STEEPEST QUASI} together (steepest
 descent first, then quasi-Newton). \code{QUASI}/\code{QUASINEWTON} is \code{"bfgs"};
 \strong{there is no steepest-descent option and no two-stage strategy}. The

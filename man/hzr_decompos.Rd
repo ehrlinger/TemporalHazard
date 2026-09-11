@@ -40,8 +40,10 @@ comes from \code{\link[=hzr_decompos_g3]{hzr_decompos_g3()}}, and the \code{"con
 
 
 The original C code used separate parameterizations for early (DELTA,
-RHO/THALF, NU, M) and late (TAU, GAMMA, ALPHA, ETA) phases.  Both
-collapse onto the three parameters here.  See
+RHO/THALF, NU, M) and late (TAU, GAMMA, ALPHA, ETA) phases.  The early
+phase maps onto the three parameters here: DELTA must be 0, and RHO is
+fixed by THALF, NU and M.  The late phase does not: it is a separate
+four-parameter shape computed by \code{\link[=hzr_decompos_g3]{hzr_decompos_g3()}}.  See
 \code{\link[=hzr_argument_mapping]{hzr_argument_mapping()}} for the full translation table.
 }
 

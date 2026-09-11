@@ -32,8 +32,9 @@ The SAS/C code and this R package are currently developed and maintained at
 The Cleveland Clinic Foundation, and the R code was wholly developed at The
 Cleveland Clinic Foundation. The package provides a
 unified framework for fitting additive hazard models with an arbitrary
-number of temporal phases, each governed by the three-parameter
-`decompos(t; t_half, nu, m)` family. The generalized temporal
+number of temporal phases. The early (`"cdf"`) and `"hazard"` phases use
+the three-parameter `decompos(t; t_half, nu, m)` family, and the late
+(`"g3"`) phase its own four-parameter shape. The generalized temporal
 decomposition extends naturally to longitudinal mixed-effects settings
 (Rajeswaran et al. 2018).
 
@@ -181,9 +182,10 @@ optima that are common in multiphase models.
 The optimizer delegates to `.hzr_optim_generic()`, which wraps
 `stats::optim()` with method `"BFGS"` (unconstrained; all scale
 parameters are log-transformed). The Hessian at the converged point,
-inverted for the variance-covariance matrix, is analytic when every row
-is an exact event or right-censored (counting-process start times
-included): `.hzr_hessian_multiphase()` for multiphase fits and a
+inverted for the variance-covariance matrix, is assembled analytically
+when every row is an exact event or right-censored (counting-process start
+times included): `.hzr_hessian_multiphase()` for multiphase fits, whose
+phase-shape second derivatives inside it are finite differences, and a
 closed-form Hessian for each single-phase distribution. When any row is
 left- or interval-censored, the analytic Hessian declines and
 `numDeriv::hessian()` computes it numerically. `numDeriv` is a Suggests,

@@ -112,8 +112,10 @@
 #' @section Parameter mapping from SAS/C HAZARD:
 #'
 #' The original C code used separate parameterizations for early (DELTA,
-#' RHO/THALF, NU, M) and late (TAU, GAMMA, ALPHA, ETA) phases.  Both
-#' collapse onto the three parameters here.  See
+#' RHO/THALF, NU, M) and late (TAU, GAMMA, ALPHA, ETA) phases.  The early
+#' phase maps onto the three parameters here: DELTA must be 0, and RHO is
+#' fixed by THALF, NU and M.  The late phase does not: it is a separate
+#' four-parameter shape computed by [hzr_decompos_g3()].  See
 #' [hzr_argument_mapping()] for the full translation table.
 #'
 #' @section Valid parameter combinations:
