@@ -2003,7 +2003,10 @@
         weights     = weights,
         control     = control,
         use_bounds  = FALSE,
-        hessian_fn  = hessian_fn_mp
+        hessian_fn  = hessian_fn_mp,
+        # Under CoE gradient_fn is the partial score at the conserved theta,
+        # not the gradient of the objective being maximised.
+        gradient_exact = !(use_conserve && !is.null(fixmu_pos))
       ),
       error = function(e) e
     )
