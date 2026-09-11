@@ -27,7 +27,7 @@ concurrency:
   # fresh run while the superseded one keeps holding a runner, and the queue
   # grows faster than it drains -- one run sat queued for 410 minutes on
   # 2026-08-17 behind work that had already been replaced. Protected branches
-  # are exempt, so a run on main is never cancelled mid-flight.
+  # are exempt, main among them, so a run there is never cancelled mid-flight.
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ !github.ref_protected }}
 
