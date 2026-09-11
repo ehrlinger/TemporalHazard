@@ -10,7 +10,8 @@
 ## Purpose
 
 Repeated-events HAZARD jobs in the corpus build their fit input with the SAS macro
-`%repeat`. That input was never saved, so those jobs cannot be reproduced today. This
+`%repeat`. That input was seldom saved (the few jobs that keep it are counted under
+Acceptance), so most of those jobs cannot be reproduced today. This
 adds a native R implementation so they can be, which is TemporalHazard's remit: SAS
 reproduction.
 

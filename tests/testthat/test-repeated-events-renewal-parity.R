@@ -92,6 +92,41 @@ test_that("ac.reintervention: %repeat reproduces the SAS log, the .lst and libra
     expect_equal(sum(bad, na.rm = TRUE), 0L, label = paste(v, "value mismatches"))
   }
 
+  # Every other column too: those the job carried through the macro unchanged.
+  # Coverage first, so a comparison over no columns cannot pass. Only four
+  # names are on one side: R's `event` and `rcensor` are the job's ev_rein and
+  # cn_rein (compared above), and SAS keeps lag_iv and number, the macro's
+  # loop counters, which R does not return by design.
+  expect_equal(sort(setdiff(names(events), names(sas))), c("event", "rcensor"))
+  expect_equal(sort(setdiff(names(sas), names(events))), c("cn_rein", "lag_iv", "number"))
+
+  # ev_rein is on both sides but is not the same column. The job's event=
+  # alias made SAS overwrite its indicator with the 0/1 event flag, while R's
+  # keeps the input value, missing for a non-event. Its values were compared
+  # above as `event`; here, only that both sides mark the same rows as events.
+  expect_equal(sum(xor(!is.na(events$ev_rein) & events$ev_rein == 1, sas$ev_rein == 1)), 0L)
+
+  shared <- setdiff(intersect(names(events), names(sas)), c(names(pairs), "ev_rein"))
+  expect_equal(length(shared), 216L)
+  same_class <- vapply(shared, function(v) identical(class(events[[v]]), class(sas[[v]])), logical(1))
+  expect_equal(shared[!same_class], character(0))
+
+  # Dates, times and durations as numbers; character columns exactly. The
+  # failure output is column names only, never values.
+  as_value <- function(x) if (inherits(x, c("Date", "POSIXt", "difftime"))) as.numeric(x) else x
+  mismatches <- vapply(shared, function(v) {
+    got <- as_value(events[[v]])
+    want <- as_value(sas[[v]])
+    both <- !is.na(got) & !is.na(want)
+    differ <- if (is.numeric(want)) {
+      abs(got[both] - want[both]) > 1e-9 * abs(want[both])
+    } else {
+      got[both] != want[both]
+    }
+    sum(is.na(got) != is.na(want)) + sum(differ)
+  }, numeric(1))
+  expect_equal(shared[mismatches > 0], character(0))
+
   # bdrein's first and last are the stage-4 flags, carried stale into the
   # renewal step. On 75 rows they are not the subject's first or last row of
   # the output, and R matches SAS on every one of them above: SAS evidence that
