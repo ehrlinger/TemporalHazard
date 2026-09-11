@@ -232,6 +232,105 @@ test_that(".hzr_phase_derivatives works for all 6 decomposition cases", {
   }
 })
 
+# ============================================================================
+# The m derivative near m = 0
+# ============================================================================
+#
+# hzr_decompos() changes formula at m = 0, and Case 2 (m < 0) meets the
+# m >= 0 family in a |m|^nu cusp, so a difference stencil that straddles 0
+# mixes two branches. numerical_gradient() above straddles too -- its step is
+# eps^(1/3) * max(|theta|, 1), about 6e-6 for any |m| < 1 -- so it cannot be
+# the reference here. This one keeps every stencil point on the side of `x`
+# (the step is at most 1% of |x|) and Richardson-extrapolates; at x = 0 it
+# differences forward, the m >= 0 side.
+onside_derivative <- function(f, x, base = NULL) {
+  if (x == 0) {
+    h <- 1e-4 * 2^-(0:5)
+    d <- sapply(h, function(hh) (f(hh) - f(0)) / hh)
+    for (k in 1:4) d <- (2^k * d[-1] - d[-length(d)]) / (2^k - 1)
+    return(d[length(d)])
+  }
+  if (is.null(base)) base <- 1e-2 * abs(x)
+  h <- base * 2^-(0:3)
+  d <- sapply(h, function(hh) (f(x + hh) - f(x - hh)) / (2 * hh))
+  for (k in 1:3) d <- (4^k * d[-1] - d[-length(d)]) / (4^k - 1)
+  d[length(d)]
+}
+
+test_that(".hzr_phase_derivatives dPhi/dm does not straddle m = 0", {
+  t_grid <- c(0.05, 0.3, 2, 10)
+  t_half <- 0.28
+  for (nu in c(0.5, 0.905, 2)) for (m in c(-5e-6, 0, 5e-6)) {
+    for (type in c("cdf", "hazard")) {
+      pd <- .hzr_phase_derivatives(t_grid, t_half = t_half, nu = nu, m = m,
+                                   type = type)
+      cumhaz_at <- function(tt, z) {
+        hzr_phase_cumhaz(tt, t_half = t_half, nu = nu, m = z, type = type)
+      }
+      hazard_at <- function(tt, z) {
+        hzr_phase_hazard(tt, t_half = t_half, nu = nu, m = z, type = type)
+      }
+      ref_Phi <- sapply(t_grid, function(tt) {
+        onside_derivative(function(z) cumhaz_at(tt, z), m)
+      })
+      ref_phi <- sapply(t_grid, function(tt) {
+        onside_derivative(function(z) hazard_at(tt, z), m)
+      })
+      lab <- sprintf("nu = %g, m = %g, %s", nu, m, type)
+      # Relative to the largest reference entry: a straddling stencil misses
+      # by 10% to 100000% on this grid, the one-sided one by at most 7e-5.
+      expect_lt(max(abs(pd$dPhi_dm - ref_Phi)) / max(abs(ref_Phi)), 1e-3,
+                label = paste("dPhi/dm error,", lab))
+      expect_lt(max(abs(pd$dphi_dm - ref_phi)) / max(abs(ref_phi)), 1e-3,
+                label = paste("dphi/dm error,", lab))
+    }
+  }
+})
+
+test_that("multiphase gradient is right for m within 1e-5 of 0, both signs", {
+  set.seed(42)
+  n <- 200
+  time   <- rexp(n, rate = 0.3) + 0.01
+  status <- sample(0:1, n, replace = TRUE, prob = c(0.3, 0.7))
+  x_mat  <- matrix(rnorm(n * 2), ncol = 2, dimnames = list(NULL, c("age", "sex")))
+  phases <- list(
+    early = hzr_phase("cdf",    t_half = 0.3, nu = 0.9, m = 0),
+    late  = hzr_phase("hazard", t_half = 5,   nu = 1,   m = 1)
+  )
+  covariate_counts <- c(early = 2L, late = 2L)
+  x_list <- list(early = x_mat, late = x_mat)
+  ll <- function(th) {
+    .hzr_logl_multiphase(
+      th, time, status,
+      phases = phases, covariate_counts = covariate_counts, x_list = x_list
+    )
+  }
+
+  for (m in c(-5e-6, 5e-6)) {
+    # [log_mu, log_t_half, nu, m, beta1, beta2] per phase; early m is index 4.
+    theta <- c(log(0.1), log(0.3), 0.9, m, 0.5, -0.3,
+               log(0.01), log(5), 1, 1, 0.1, 0.2)
+    grad <- .hzr_gradient_multiphase(
+      theta, time, status,
+      phases = phases, covariate_counts = covariate_counts, x_list = x_list
+    )
+    ref <- vapply(seq_along(theta), function(i) {
+      f <- function(z) {
+        th <- theta
+        th[i] <- z
+        ll(th)
+      }
+      onside_derivative(f, theta[i],
+                        base = if (i == 4L) NULL else 1e-3 * max(abs(theta[i]), 1))
+    }, numeric(1))
+    # Per component, so one wrong entry cannot hide behind the others.
+    expect_true(all(abs(grad - ref) <= 1e-4 * pmax(abs(ref), 1)),
+                label = sprintf("gradient at m = %g; worst component %d, error %.3g",
+                                m, which.max(abs(grad - ref) / pmax(abs(ref), 1)),
+                                max(abs(grad - ref))))
+  }
+})
+
 
 # ============================================================================
 # Full gradient tests on KUL dataset

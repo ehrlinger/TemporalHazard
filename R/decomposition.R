@@ -692,11 +692,28 @@ hzr_phase_cumhaz <- function(time, t_half = 1, nu = 1, m = 0,
     dphi_dnu <- rep(0, n)
   }
 
-  # Derivative w.r.t. m
+  # Derivative w.r.t. m.  hzr_decompos() changes formula at m = 0, and the two
+  # sides do not join smoothly: m >= 0 is one smooth family (Case 1L is the
+  # m -> 0+ limit of Case 1), while Case 2 meets it in a |m|^nu cusp.  A
+  # stencil straddling 0 differences two branches and returns neither side's
+  # derivative -- +8.4 against a true -20.2 at m = 2.9e-6.  SAS/C never meets
+  # this: it estimates log|M| with the sign fixed at setup (hzd_early_t2p.c),
+  # so M cannot reach or cross 0.  Here the stencil keeps the sign of m
+  # instead.  For m < 0 the step is capped at 1% of |m|, because the cusp
+  # varies on the scale of |m|; for m >= 0 near 0 a one-sided second-order
+  # stencil is used, and m = 0 itself takes the m >= 0 side.
   h_m <- eps_rel * max(abs(m), 1)
+  if (m < 0) h_m <- min(h_m, 0.01 * abs(m))
+  forward_m <- m >= 0 && m - h_m < 0
   d_plus  <- perturb_decompos(t_half, nu, m + h_m)
-  d_minus <- perturb_decompos(t_half, nu, m - h_m)
-  if (!is.null(d_plus) && !is.null(d_minus)) {
+  d_minus <- if (forward_m) NULL else perturb_decompos(t_half, nu, m - h_m)
+  d_plus2 <- if (forward_m) perturb_decompos(t_half, nu, m + 2 * h_m) else NULL
+  if (!is.null(d_plus) && !is.null(d_plus2)) {
+    e_plus  <- extract(d_plus, type)
+    e_plus2 <- extract(d_plus2, type)
+    dPhi_dm <- (-3 * base$Phi + 4 * e_plus$Phi - e_plus2$Phi) / (2 * h_m)
+    dphi_dm <- (-3 * base$phi + 4 * e_plus$phi - e_plus2$phi) / (2 * h_m)
+  } else if (!is.null(d_plus) && !is.null(d_minus)) {
     e_plus  <- extract(d_plus, type)
     e_minus <- extract(d_minus, type)
     dPhi_dm <- (e_plus$Phi - e_minus$Phi) / (2 * h_m)

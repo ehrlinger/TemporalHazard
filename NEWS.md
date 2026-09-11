@@ -53,6 +53,25 @@
   `NA` exactly when `"weak_direction_check"` is listed. An object saved by an
   earlier version prints "not recorded" rather than "none".
 
+## Bug fixes
+
+* **The multiphase gradient is now right when an early phase's `m` is near
+  0.** The derivative with respect to `m` is a finite difference, and its
+  stencil, about 6e-6 wide, straddled 0 whenever `|m|` was smaller than
+  that. `hzr_decompos()` changes formula at `m = 0`, and the `m < 0` family
+  meets the `m >= 0` one in a cusp rather than continuing it, so the
+  difference mixed two branches and returned neither side's derivative: +8.4
+  where the true value was -20.2, on a 13-parameter fit that converged to
+  `m = 2.9e-6`. Every other parameter was unaffected. The stencil now keeps
+  the sign of `m`: one-sided on the `m >= 0` side, and no wider than 1% of
+  `|m|` below 0, where the cusp varies on that scale. Likelihood values are
+  unchanged.
+
+  The likelihood itself is still not differentiable at `m = 0`, so a fit
+  whose optimum sits there reports a nonzero gradient. SAS/C never meets the
+  point: it estimates `log|M|` with the sign fixed by the starting value, so
+  `M` cannot reach or cross 0. `hazard()` estimates `m` directly and can.
+
 # TemporalHazard 1.2.10
 
 ## New features
