@@ -42,17 +42,17 @@ informally for decades:
 
 1. **Nonparametric baseline**: Kaplan-Meier life table to see what
    the data is saying before any model intervenes.
-2. **Shape fitting**: Start with a single-distribution Weibull,
+2. **Shape fitting**: start with a single-distribution Weibull,
    build up to a multiphase decomposition when the KM curve
    demands it.
-3. **Variable screening**: Univariable association tests and
+3. **Variable screening**: univariable association tests and
    calibration plots to decide which covariates enter the model and
    in what functional form.
-4. **Multivariable model**: Covariates layered onto a hazard shape
+4. **Multivariable model**: covariates layered onto a hazard shape
    you already trust.
-5. **Prediction**: Patient-specific risk profiles for clinical
+5. **Prediction**: patient-specific risk profiles for clinical
    reporting and decision support.
-6. **Validation**: Decile-of-risk calibration to verify the model
+6. **Validation**: decile-of-risk calibration to verify the model
    is honest across the risk spectrum, not just on average.
 
 This corresponds to the SAS programs `ac.*` → `hz.*` → `lg.*` →
@@ -706,12 +706,12 @@ covariate effects.
 
 The complete analytical workflow follows a disciplined sequence:
 
-1. **Kaplan-Meier baseline**: Establish the empirical survival pattern
-2. **Shape fitting**: Match the temporal shape, simple to complex
-3. **Variable screening**: Logistic screening, LOESS functional form
-4. **Multivariable model**: Enter covariates with fixed shapes
-5. **Prediction**: Reference curves, sensitivity analysis
-6. **Validation**: Decile calibration, conservation-of-events check
+1. **Kaplan-Meier baseline**: establish the empirical survival pattern
+2. **Shape fitting**: match the temporal shape, simple to complex
+3. **Variable screening**: logistic screening, LOESS functional form
+4. **Multivariable model**: enter covariates with fixed shapes
+5. **Prediction**: reference curves, sensitivity analysis
+6. **Validation**: decile calibration, conservation-of-events check
 
 This sequence ensures that the temporal shape is established before
 covariates are introduced, and that the final model is validated against

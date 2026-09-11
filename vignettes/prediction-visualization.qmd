@@ -260,7 +260,8 @@ closed-form Jacobian for the delta-method calculation. Exponential,
 log-logistic, and log-normal fall back to `numDeriv::jacobian()` on a
 per-call cumulative-hazard closure. The results are identical; the
 fallback is only slightly slower because the Jacobian is computed
-numerically per prediction point. The user-facing API is the same regardless of distribution.
+numerically per prediction point. The user-facing API is the same
+regardless of distribution.
 
 ## Decomposed multiphase hazard
 

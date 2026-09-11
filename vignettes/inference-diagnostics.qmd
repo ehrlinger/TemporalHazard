@@ -185,8 +185,9 @@ parameters. Any of these is a strong signal to prefer the bootstrap.
 The last one means the individual estimates along that direction are
 not pinned down by the data, so it is not only the standard errors
 that are unreliable. Bootstrap resampling is the alternative: refit
-the model on each resampled dataset, collect the resulting parameter and prediction values, and read the
-empirical 2.5th / 97.5th percentiles as the 95% CI. It's
+the model on each resampled dataset, collect the resulting
+parameter and prediction values, and read the empirical
+2.5th / 97.5th percentiles as the 95% CI. It's
 computationally heavier but it doesn't assume the likelihood is
 locally quadratic, and it picks up the right tail behavior even
 when delta-method theory creaks.
@@ -382,7 +383,8 @@ ggplot(sens_curves, aes(time, survival, colour = Profile)) +
   theme(legend.position = "bottom")
 ```
 
-The gap between the curves quantifies the clinical impact of the risk factors.
+The gap between the curves quantifies the clinical impact of the
+risk factors.
 The sensitivity analysis is most informative when combined with bootstrap
 confidence intervals on each curve, showing whether the difference is
 statistically meaningful.
