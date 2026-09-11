@@ -51,6 +51,7 @@
   a “Not done in this run” block, and the block reads “none” when
   nothing was lost: a line that appears only on bad news cannot be told
   from one that was never written. Five steps are recorded:
+
   - fitting itself: `fit = FALSE`, or a fit imported from SAS output;
   - standard errors, naming whether numDeriv was missing,
     [`numDeriv::hessian()`](https://rdrr.io/pkg/numDeriv/man/hessian.html)
@@ -67,6 +68,18 @@
   its meaning, and is `NA` exactly when `"weak_direction_check"` is
   listed. An object saved by an earlier version prints “not recorded”
   rather than “none”.
+
+- **[`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
+  translates a `%repeat` call** into
+  [`hzr_repeated_events()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_repeated_events.md)
+  ([\#241](https://github.com/ehrlinger/TemporalHazard/issues/241)),
+  renaming its outputs to the names the job gives them so the job’s fit
+  reads them. The macro’s input is still the reader’s to supply. Any
+  step between the macro and the fit that names the macro’s output, or
+  uses a macro variable that might, stops the document with the step
+  quoted, rather than fitting data the job changed; a plain `PROC SORT`
+  is the one step let through. A step that changes the output without
+  naming it, such as a macro that writes it internally, is not detected.
 
 ### Bug fixes
 

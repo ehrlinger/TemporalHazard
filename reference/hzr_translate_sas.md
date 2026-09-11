@@ -98,6 +98,26 @@ three-phase case, not an exotic one. A translated `PROC HAZPRED` block
 asks for confidence limits unless the SAS job says `NOCL`, so such a job
 stops at its [`predict()`](https://rdrr.io/r/stats/predict.html) chunks.
 
+## Repeated events
+
+A job that builds its fit input with the SAS macro `%repeat` has that
+call translated to
+[`hzr_repeated_events()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_repeated_events.md).
+The emitted chunk renames the function's output columns to the names the
+job gives them, upper-cased like every name the translator emits, so the
+fit reads them. An input column named like one of those outputs is
+dropped first, with a warning, because the macro overwrites it. The
+macro's input is built by the job's own DATA steps, which are not
+translated, so the document stops until that input is assigned. Any step
+between the macro and the fit that names the macro's output, or uses a
+macro variable that might, is not translated either; a plain `PROC SORT`
+that only reorders rows is the one step let through. Its chunk stops and
+quotes the step, for the reader to replace with R code or to delete if
+the step leaves the output unchanged. The same holds between two
+`%repeat` calls when the second reads the first's output. A step that
+changes the output without naming it, such as a macro that writes it
+internally, is not detected.
+
 ## Comparing a translated fit against a SAS listing
 
 The emitted `hzr_phase("g3", ...)` call carries the `TAU`, `GAMMA`,
