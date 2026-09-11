@@ -6,12 +6,14 @@
     }
   };
 </script><script src="../deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"><link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet"><script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet"><link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet"><script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Gradient of the multiphase log-likelihood — .hzr_gradient_multiphase"><meta name="description" content="Computes the score vector \(d\ell / d\theta\) using analytic chain-rule
-formulas for log_mu and beta parameters, and central-difference
+formulas for log_mu and beta parameters, and finite-difference
 derivatives (via .hzr_phase_derivatives()) for shape parameters
-(log_t_half, nu, m)."><meta property="og:description" content="Computes the score vector \(d\ell / d\theta\) using analytic chain-rule
-formulas for log_mu and beta parameters, and central-difference
+(log_t_half, nu, m): central, except that the m stencil stays on
+the side of m near m = 0, where the phase family has a cusp."><meta property="og:description" content="Computes the score vector \(d\ell / d\theta\) using analytic chain-rule
+formulas for log_mu and beta parameters, and finite-difference
 derivatives (via .hzr_phase_derivatives()) for shape parameters
-(log_t_half, nu, m)."></head><body>
+(log_t_half, nu, m): central, except that the m stencil stays on
+the side of m near m = 0, where the phase family has a cusp."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -64,9 +66,10 @@ derivatives (via .hzr_phase_derivatives()) for shape parameters
 
     <div class="ref-description section level2">
     <p>Computes the score vector \(d\ell / d\theta\) using analytic chain-rule
-formulas for <code>log_mu</code> and <code>beta</code> parameters, and central-difference
+formulas for <code>log_mu</code> and <code>beta</code> parameters, and finite-difference
 derivatives (via <code><a href="dot-hzr_phase_derivatives.html">.hzr_phase_derivatives()</a></code>) for shape parameters
-(<code>log_t_half</code>, <code>nu</code>, <code>m</code>).</p>
+(<code>log_t_half</code>, <code>nu</code>, <code>m</code>): central, except that the <code>m</code> stencil stays on
+the side of <code>m</code> near <code>m = 0</code>, where the phase family has a cusp.</p>
     </div>
 
     <div class="section level2">
