@@ -1236,3 +1236,124 @@
     tokens_seen = seen, tokens_mapped = mapped
   )
 }
+
+# ---------------------------------------------------------------------------
+# %repeat -> hzr_repeated_events()
+# ---------------------------------------------------------------------------
+
+# %repeat's keyword parameters and defaults, as the macro declares them
+# (~/Documents/macro.library/repeat.sas), upper-cased as
+# .hzr_sas_normalise() leaves every name.
+.hzr_repeat_defaults <- c(
+  IN = "BUILT", OUT = "EVENTS", EVENTYPE = "EVENTYPE", IV_EVENT = "IV_EVENT",
+  IV_END = "IV_END", ID = "ID", EVENT = "EVENT", EVENT_NO = "EVENT_NO",
+  RCENSOR = "RCENSOR", IV_START = "IV_START", IV_SEG = "IV_SEG", RENEWAL = "RENEWAL"
+)
+
+# hzr_repeated_events()'s fixed output names, each mapped to the macro
+# parameter that renames it. first and last have no parameter: the macro
+# always writes them under those names.
+.hzr_repeat_outputs <- c(
+  event = "EVENT", event_no = "EVENT_NO", rcensor = "RCENSOR",
+  iv_start = "IV_START", iv_seg = "IV_SEG", renewal = "RENEWAL"
+)
+
+#' Translate one `%repeat(...)` call into an `hzr_repeated_events()` chunk.
+#'
+#' The emitted chunk renames the function's lower-case outputs to the names the
+#' job uses, upper-cased like every name this translator emits; without that the
+#' fit reads a column that does not exist. Before the call it drops any input
+#' column named like one of those outputs. SAS overwrites such a column, and the
+#' macro assigns each output on every row before reading it, so dropping is
+#' exactly what SAS does. Left in place, the rename would produce two columns of
+#' one name, and `$` would return the stale one.
+#'
+#' A call this cannot express is refused rather than guessed at: the chunk is a
+#' `stop()`, and each problem is an `$untranslated` row. That covers an unknown
+#' keyword, a positional argument, a value that is not a plain SAS name (a
+#' `&macro` reference, say), an input column that is also an output
+#' (`EVENTYPE=RCENSOR`: SAS zeroes that indicator before reading it, so the job's
+#' own answer is not the model it describes), and two outputs with one name. The
+#' body is split on every comma; a value holding parentheses, where a comma could
+#' be nested, is refused as not a plain name either way.
+#' @noRd
+.hzr_parse_repeat <- function(block) {
+  parts <- if (nzchar(block$text)) trimws(strsplit(block$text, ",", fixed = TRUE)[[1L]]) else character(0)
+  args <- .hzr_repeat_defaults
+  problems <- character(0)
+
+  for (p in parts) {
+    kv <- regmatches(p, regexec("^([A-Z_][A-Z0-9_]*) ?= ?(.*)$", p))[[1L]]
+    if (!length(kv)) {
+      problems <- c(problems, sprintf("`%s` is not a KEY=VALUE argument", p))
+      next
+    }
+    key <- kv[2L]
+    val <- trimws(kv[3L])
+    if (!key %in% names(args)) {
+      problems <- c(problems, sprintf("`%s=` is not a %%repeat parameter", key))
+      next
+    }
+    name_re <- if (key %in% c("IN", "OUT")) {
+      "^[A-Z_][A-Z0-9_]*([.][A-Z_][A-Z0-9_]*)?$"
+    } else {
+      "^[A-Z_][A-Z0-9_]*$"
+    }
+    if (!grepl(name_re, val)) {
+      problems <- c(problems, sprintf("`%s=%s` is not a plain SAS name", key, val))
+      next
+    }
+    args[[key]] <- val
+  }
+
+  inputs <- unname(args[c("ID", "EVENTYPE", "IV_EVENT", "IV_END")])
+  targets <- c(unname(args[.hzr_repeat_outputs]), "FIRST", "LAST")
+  for (hit in intersect(inputs, targets)) {
+    problems <- c(problems, sprintf(paste(
+      "input column %s is also an output %%repeat writes; SAS overwrites it before reading it,",
+      "so the job's own result is not the model it describes"
+    ), hit))
+  }
+  dup <- unique(targets[duplicated(targets)])
+  if (length(dup)) {
+    problems <- c(problems, sprintf("two outputs are both named %s", paste(dup, collapse = ", ")))
+  }
+
+  if (length(problems)) {
+    msg <- paste0("hzr_translate_sas() did not translate this job's %repeat call: ",
+                  paste(problems, collapse = "; "), ".")
+    return(list(
+      call = bquote(stop(.(msg))),
+      untranslated = .hzr_untranslated_frame(rep(NA_integer_, length(problems)),
+                                             rep("%repeat", length(problems)), problems),
+      tokens_seen = length(parts), tokens_mapped = 0L, in_name = NULL, out_name = NULL
+    ))
+  }
+
+  in_name <- args[["IN"]]
+  out_name <- args[["OUT"]]
+  from <- c(names(.hzr_repeat_outputs), "first", "last")
+  overwrite_msg <- paste0(" in ", in_name, ": %repeat writes columns of these names, so they were dropped ",
+                          "before the call, as SAS overwrites them.")
+  loop_msg <- paste0(" in ", in_name, ": SAS's %repeat reads a LAG_IV or NUMBER column in place of its ",
+                     "own loop counters, so for this job the SAS listing's segment starts and event ",
+                     "counts are not comparable with these.")
+  call <- bquote(.(as.name(out_name)) <- local({
+    d <- .(as.name(in_name))
+    drop <- intersect(names(d), .(targets))
+    if (length(drop)) {
+      warning(paste(drop, collapse = ", "), .(overwrite_msg), call. = FALSE)
+      d <- d[setdiff(names(d), drop)]
+    }
+    loop <- intersect(names(d), c("LAG_IV", "NUMBER"))
+    if (length(loop)) warning(paste(loop, collapse = ", "), .(loop_msg), call. = FALSE)
+    out <- hzr_repeated_events(d, id = .(args[["ID"]]), time = .(args[["IV_EVENT"]]),
+                               followup = .(args[["IV_END"]]), indicator = .(args[["EVENTYPE"]]))
+    names(out)[match(.(from), names(out))] <- .(targets)
+    out
+  }))
+
+  list(call = call, untranslated = .hzr_untranslated_frame(),
+       tokens_seen = length(parts), tokens_mapped = length(parts),
+       in_name = in_name, out_name = out_name)
+}
