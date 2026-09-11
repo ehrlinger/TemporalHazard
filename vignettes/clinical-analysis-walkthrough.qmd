@@ -727,8 +727,8 @@ the first weeks, and the mean patient's curve accounts for few of them
 (45 observed by two weeks against about 1.4 expected), so the residual
 falls to about -55 by six months and then climbs back slowly, ending
 at -26.8.  That is the mean patient
-understating the cohort's early risk.  It is not the model
-underpredicting, which the per-subject check above rules out.  For an
+understating the cohort's early risk.  The model itself predicts the
+right number of deaths, as the per-subject check above shows.  For an
 intercept-only model the same plots are the conservation-of-events
 picture, and there a residual that stays near zero is what a good fit
 looks like.
