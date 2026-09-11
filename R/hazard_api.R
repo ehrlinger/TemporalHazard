@@ -597,9 +597,35 @@ hazard <- function(formula = NULL,
     stop("'status' must have the same length as 'time'.", call. = FALSE)
   }
 
-  # Convert Surv object status to numeric if needed (after formula parsing)
+  # A Surv object passed as `status` is read exactly as the formula path reads
+  # it (#226). Its codes are not this package's, and under "interval" and
+  # "counting" its second column is not the status at all, so taking that
+  # column unchanged fitted left-censored rows as right-censored. The Surv
+  # defines the bounds it carries; `time` and any bound the caller also gave
+  # must agree with it rather than be silently overridden.
   if (inherits(status, "Surv")) {
-    status <- unclass(status)[, 2L]
+    resp <- .hzr_surv_response(status)
+    if (!identical(as.numeric(time), as.numeric(resp$time))) {
+      stop("'time' does not match the times in the Surv object passed as ",
+           "'status'. Pass time = unclass(status)[, 1] -- the stop column, ",
+           "[, 2], for Surv(start, stop, event) -- or use the formula ",
+           "interface.", call. = FALSE)
+    }
+    surv_bound <- function(given, from_surv, arg) {
+      if (is.null(from_surv)) {
+        return(given)
+      }
+      if (!is.null(given) &&
+            !identical(as.numeric(given), as.numeric(from_surv))) {
+        stop("'", arg, "' does not match the Surv object passed as ",
+             "'status'. Omit it and the bound is taken from the Surv.",
+             call. = FALSE)
+      }
+      from_surv
+    }
+    time_lower <- surv_bound(time_lower, resp$time_lower, "time_lower")
+    time_upper <- surv_bound(time_upper, resp$time_upper, "time_upper")
+    status <- resp$status
   }
 
   # Optional censoring bounds:

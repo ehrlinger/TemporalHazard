@@ -100,6 +100,21 @@
   log-logistic and log-normal fits are unaffected; they report on the scale
   they are optimised on.
 
+* **A `survival::Surv()` object passed as `status` is now translated, as the
+  formula interface always did** (#226). `Surv()` codes censoring with
+  different integers from this package, and the vector interface took the
+  object's second column unchanged. Under `type = "left"` a left-censored row
+  was fitted as right-censored; under `"interval"` and `"counting"` the
+  second column is not the status at all, so the fit read `time2` or `stop`
+  as status codes. There was no error and no warning, and
+  `objective = "sas"` could not see a left-censored row to refuse it. Both
+  interfaces now read the `Surv` through one internal helper, driven by its
+  `type`, so they store the same status and bounds and give the same fit.
+  The bounds a `Surv` carries are taken from it; a `time`, `time_lower` or
+  `time_upper` that disagrees with them is an error rather than being
+  silently replaced. `hzr_bootstrap()` resamples those bounds too, although
+  they never appear in the stored call.
+
 # TemporalHazard 1.2.10
 
 ## New features

@@ -1558,7 +1558,12 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     # evaluate against the original data, so row i's time gets paired with
     # row j's status or interval bound. That is silent corruption producing
     # plausible numbers, not an error.
-    passed <- vec_args[vapply(vec_args, function(a) !is.null(cl[[a]]), logical(1))]
+    # A Surv passed as `status` supplies its bounds without naming them in
+    # the call (#226), so a stored bound counts as passed too. Leaving it out
+    # refits every replicate with no censoring bounds at all.
+    passed <- vec_args[vapply(vec_args, function(a) {
+      !is.null(cl[[a]]) || !is.null(object$data[[a]])
+    }, logical(1))]
     have   <- vapply(vec_orig, function(v) !is.null(v) && length(v) == n_obs,
                      logical(1))
     missing_vecs <- passed[!have[passed]]

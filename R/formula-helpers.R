@@ -55,6 +55,58 @@
     stop("Formula LHS must return a Surv object.", call. = FALSE)
   }
 
+  resp <- .hzr_surv_response(surv_obj)
+
+  # Parse RHS (predictors)
+  x <- NULL
+  if (!is.null(rhs)) {
+    # Reconstruct as a formula for model.matrix()
+    rhs_formula <- formula(paste("~", deparse(rhs)))
+    tryCatch({
+      x <- stats::model.matrix(rhs_formula, data = data)
+      # Remove intercept column if present
+      if (ncol(x) > 0 && colnames(x)[1L] == "(Intercept)") {
+        x <- x[, -1L, drop = FALSE]
+      }
+      if (ncol(x) == 0) {
+        x <- NULL
+      }
+    }, error = function(e) {
+      stop("Failed to parse formula RHS: ", e$message, call. = FALSE)
+    })
+  }
+
+  list(
+    time = resp$time,
+    status = resp$status,
+    time_lower = resp$time_lower,
+    time_upper = resp$time_upper,
+    x = x,
+    surv_type = resp$surv_type
+  )
+}
+
+
+#' Read a Surv object into this package's response vectors
+#'
+#' The one place a `survival::Surv()` object is translated, called by both
+#' interfaces: `.hzr_parse_formula()` for the formula's left-hand side, and
+#' `hazard()` when a `Surv` is passed as `status`. Keeping a single copy is
+#' the point -- the vector path used to take the second column unchanged,
+#' which misread left-censored rows as right-censored, and for `"interval"`
+#' and `"counting"` is not the status column at all (#226).
+#'
+#' The translation is driven by `attr(surv_obj, "type")`, never by the codes
+#' observed: a right-censored vector and a `"left"` one both hold only 0 and
+#' 1, with different meanings. `type = "interval2"` arrives here as
+#' `"interval"`, because `Surv()` converts it.
+#'
+#' @param surv_obj A `Surv` object.
+#' @return A list with `time`, `status`, `time_lower`, `time_upper` (either
+#'   bound may be `NULL`) and `surv_type`.
+#' @keywords internal
+#' @noRd
+.hzr_surv_response <- function(surv_obj) {
   surv_type <- attr(surv_obj, "type")
   surv_mat <- unclass(surv_obj)
 
@@ -102,31 +154,11 @@
     stop("Unsupported Surv() type: ", surv_type, call. = FALSE)
   }
 
-  # Parse RHS (predictors)
-  x <- NULL
-  if (!is.null(rhs)) {
-    # Reconstruct as a formula for model.matrix()
-    rhs_formula <- formula(paste("~", deparse(rhs)))
-    tryCatch({
-      x <- stats::model.matrix(rhs_formula, data = data)
-      # Remove intercept column if present
-      if (ncol(x) > 0 && colnames(x)[1L] == "(Intercept)") {
-        x <- x[, -1L, drop = FALSE]
-      }
-      if (ncol(x) == 0) {
-        x <- NULL
-      }
-    }, error = function(e) {
-      stop("Failed to parse formula RHS: ", e$message, call. = FALSE)
-    })
-  }
-
   list(
     time = time,
     status = status,
     time_lower = time_lower,
     time_upper = time_upper,
-    x = x,
     surv_type = surv_type
   )
 }
