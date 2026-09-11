@@ -30,6 +30,16 @@
   not a `PROC HAZARD` refusal, so it is kept apart from the existing
   "selects no phase" stop.
 
+* **`predict(newdata = )` matches covariates by name, so `newdata` with
+  other names now stops.** A fit made through the vector interface with a
+  named `x`, say `x = cbind(age = , mal = )`, needs `newdata` columns
+  called `age` and `mal`. Before, `predict()` matched any names, or a bare
+  matrix, to the coefficients by position. That was right only when the
+  order happened to agree, and nothing said when it did not (#267). Code
+  that passed such `newdata` now gets an error naming the missing columns:
+  rename the columns to match `x`. A fit made with an unnamed `x` still
+  matches by position.
+
 ## New features
 
 * **Every fit now says what it did not do** (#242, following #197). A
@@ -84,13 +94,8 @@
   object of that name exists in the workspace. A fit made with an unnamed
   `x` matrix still matches by position, since there is nothing else to
   match on, and a `newdata` with only a `time` column still evaluates the
-  baseline (#267).
-
-  This rejects some `newdata` that used to be accepted. A fit made through
-  the vector interface with a named `x`, say `cbind(age = , mal = )`, now
-  needs `newdata` columns with those names. Before, any names, or a bare
-  matrix, were matched by position. That was correct only when the order
-  happened to agree, and nothing said when it did not.
+  baseline (#267). This rejects some `newdata` that was accepted before;
+  see Breaking changes.
 
 * **`predict(newdata = )` now evaluates a multiphase fit that has both a
   global covariate and phase-formula covariates.** A phase without its own
