@@ -21,7 +21,10 @@ NULL
 #' Computes the six unique mixed second partial derivatives of
 #' \eqn{\Phi_j(t)} (cumulative shape) and \eqn{\phi_j(t)} (instantaneous
 #' shape) with respect to the internal shape parameters
-#' \eqn{\{log\_t\_half, \nu, m\}} via second-order central differences.
+#' \eqn{\{log\_t\_half, \nu, m\}} via second-order central differences,
+#' except where a stencil would cross into an undefined region or reach
+#' across \eqn{m = 0}: there it steps one-sided, forward from \eqn{m \ge 0}
+#' and backward from \eqn{m < 0}.
 #'
 #' This is the second-derivative analogue of \code{.hzr_phase_derivatives()}.
 #'
@@ -50,10 +53,21 @@ NULL
   # step below would probe the OTHER parameter's -h side, which crosses into
   # that undefined region. Detect it and fall back to a forward-only
   # (one-sided) difference in just that one direction; every other
-  # direction/pair keeps the ordinary central-difference formula. (The two
-  # conditions can't both hold: that would require m < 0 && nu < 0
-  # simultaneously, which d00 above would already have rejected.)
-  m_boundary  <- nu < 0 && abs(m)  < h
+  # direction/pair keeps the ordinary central-difference formula.
+  #
+  # m's stencil must not reach across m = 0 whatever the sign of nu, either:
+  # hzr_decompos() changes formula there, and the m < 0 family meets the
+  # m >= 0 one in a cusp, so a central difference mixes two branches. It put
+  # -4.8e5 on the m diagonal at m = 5e-6, where the value is O(1). m_dir is
+  # the side the one-sided stencil steps to: forward from m >= 0, backward
+  # from m < 0. Backward steps of h cannot resolve the cusp when |m| << h;
+  # they only stop the two branches being mixed. The two conditions hold
+  # together only for m just below 0 with nu in [0, h), where the nu / m
+  # cross term steps one-sided in both.
+  # Inclusive below, as in the gradient (`m + h_m >= 0`): at m = -h exactly a
+  # central stencil would put m + h on 0 itself, the m >= 0 family.
+  m_dir <- if (m >= 0 && m < h) 1 else if (m < 0 && m >= -h) -1 else 0
+  m_boundary  <- m_dir != 0
   nu_boundary <- m  < 0 && abs(nu) < h
 
   # Perturbed values on each internal scale:
@@ -63,7 +77,8 @@ NULL
   t_m  <- t_half * exp(-h)
   nu_p <- nu + h
   nu_m <- if (nu_boundary) NA_real_ else nu - h
-  m_p  <- m  + h
+  # Under m_boundary, m_p is the near point on the m_dir side.
+  m_p  <- if (m_boundary) m + m_dir * h else m + h
   m_m  <- if (m_boundary)  NA_real_ else m  - h
 
   # Six single-parameter perturbations for diagonal second differences
@@ -77,9 +92,10 @@ NULL
 
   h2 <- h * h
 
-  # Diagonal second differences. At a boundary, use the forward second
-  # difference (f(x+2h) - 2f(x+h) + f(x)) / h^2 -- valid but O(h) rather
-  # than O(h^2) locally, exactly at these two named limiting cases.
+  # Diagonal second differences. At a boundary, use the one-sided second
+  # difference (f(x+2sh) - 2f(x+sh) + f(x)) / h^2, s = +1 except for a
+  # backward step in m (s = m_dir) -- valid but O(h) rather than O(h^2)
+  # locally, and used only at the boundaries above.
   d2Phi_tt <- (d_tp$Phi - 2 * d00$Phi + d_tm$Phi) / h2
   d2phi_tt <- (d_tp$phi - 2 * d00$phi + d_tm$phi) / h2
 
@@ -93,7 +109,7 @@ NULL
   }
 
   if (m_boundary) {
-    d_mp2 <- eval_at(t_half, nu, m + 2 * h)
+    d_mp2 <- eval_at(t_half, nu, m + 2 * m_dir * h)
     d2Phi_mm_ <- (d_mp2$Phi - 2 * d_mp$Phi + d00$Phi) / h2
     d2phi_mm_ <- (d_mp2$phi - 2 * d_mp$phi + d00$phi) / h2
   } else {
@@ -122,16 +138,17 @@ NULL
   }
 
   # t_half / m cross: corners (t_p, m_p), (t_p, m_m), (t_m, m_p), (t_m, m_m).
-  # Under m_boundary, use forward-in-m / central-in-t_half instead (drops
-  # the m_m corners).
+  # Under m_boundary, use one-sided-in-m (toward m_dir) / central-in-t_half
+  # instead (drops the m_m corners); m_dir restores the sign of a backward
+  # step.
   if (m_boundary) {
     # d_tp/d_tm (= eval_at(t_p/t_m, nu, m)) already computed above
     e_tm_pp <- eval_at(t_p, nu, m_p)
     e_tm_mp <- eval_at(t_m, nu, m_p)
-    d2_tm_Phi <- ((e_tm_pp$Phi - d_tp$Phi) -
-                    (e_tm_mp$Phi - d_tm$Phi)) / (2 * h2)
-    d2_tm_phi <- ((e_tm_pp$phi - d_tp$phi) -
-                    (e_tm_mp$phi - d_tm$phi)) / (2 * h2)
+    d2_tm_Phi <- m_dir * ((e_tm_pp$Phi - d_tp$Phi) -
+                            (e_tm_mp$Phi - d_tm$Phi)) / (2 * h2)
+    d2_tm_phi <- m_dir * ((e_tm_pp$phi - d_tp$phi) -
+                            (e_tm_mp$phi - d_tm$phi)) / (2 * h2)
   } else {
     e_tm_pp <- eval_at(t_p, nu, m_p)
     e_tm_pm <- eval_at(t_p, nu, m_m)
@@ -142,17 +159,23 @@ NULL
   }
 
   # nu / m cross: corners (nu_p, m_p), (nu_p, m_m), (nu_m, m_p), (nu_m, m_m).
-  # Under m_boundary, use forward-in-m / central-in-nu (nu_m is valid here --
-  # only m is boundary-restricted). Under nu_boundary, use forward-in-nu /
-  # central-in-m (m_m is valid here -- only nu is boundary-restricted).
-  if (m_boundary) {
+  # Under m_boundary, use one-sided-in-m (toward m_dir) / central-in-nu (nu_m
+  # is valid here -- only m is boundary-restricted). Under nu_boundary, use
+  # forward-in-nu /
+  # central-in-m (m_m is valid here -- only nu is boundary-restricted). Under
+  # both, step one-sided in each: forward in nu, toward m_dir in m.
+  if (m_boundary && nu_boundary) {
+    e_nm_pp <- eval_at(t_half, nu_p, m_p)
+    d2_nm_Phi <- m_dir * (e_nm_pp$Phi - d_np$Phi - d_mp$Phi + d00$Phi) / h2
+    d2_nm_phi <- m_dir * (e_nm_pp$phi - d_np$phi - d_mp$phi + d00$phi) / h2
+  } else if (m_boundary) {
     # d_np/d_nm (= eval_at(t_half, nu_p/nu_m, m)) already computed above
     e_nm_pp <- eval_at(t_half, nu_p, m_p)
     e_nm_mp <- eval_at(t_half, nu_m, m_p)
-    d2_nm_Phi <- ((e_nm_pp$Phi - d_np$Phi) -
-                    (e_nm_mp$Phi - d_nm$Phi)) / (2 * h2)
-    d2_nm_phi <- ((e_nm_pp$phi - d_np$phi) -
-                    (e_nm_mp$phi - d_nm$phi)) / (2 * h2)
+    d2_nm_Phi <- m_dir * ((e_nm_pp$Phi - d_np$Phi) -
+                            (e_nm_mp$Phi - d_nm$Phi)) / (2 * h2)
+    d2_nm_phi <- m_dir * ((e_nm_pp$phi - d_np$phi) -
+                            (e_nm_mp$phi - d_nm$phi)) / (2 * h2)
   } else if (nu_boundary) {
     # d_mp/d_mm (= eval_at(t_half, nu, m_p/m_m)) already computed above
     e_nm_pp <- eval_at(t_half, nu_p, m_p)

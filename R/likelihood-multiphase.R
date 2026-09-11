@@ -772,9 +772,10 @@
 #' Gradient of the multiphase log-likelihood
 #'
 #' Computes the score vector \eqn{d\ell / d\theta} using analytic chain-rule
-#' formulas for `log_mu` and `beta` parameters, and central-difference
+#' formulas for `log_mu` and `beta` parameters, and finite-difference
 #' derivatives (via `.hzr_phase_derivatives()`) for shape parameters
-#' (`log_t_half`, `nu`, `m`).
+#' (`log_t_half`, `nu`, `m`): central, except that the `m` stencil stays on
+#' the side of `m` near `m = 0`, where the phase family has a cusp.
 #'
 #' @inheritParams .hzr_logl_multiphase
 #' @return Numeric vector of length `length(theta)` -- the gradient.
