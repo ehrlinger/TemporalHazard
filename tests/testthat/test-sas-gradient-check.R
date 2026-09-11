@@ -140,6 +140,35 @@ test_that("rel_gradient is NA, never a pass, where the gradient cannot be truste
                                         nan_score$polish_code))
 })
 
+test_that("with an inexact score the test and the polish use the objective's own gradient", {
+  # Conservation of Events hands .hzr_optim_generic() the partial score at the
+  # conserved theta, which omits how the conserved scale moves: a gradient
+  # that is not the objective's. Model that with a score that is wrong in a
+  # known way: a hundredth of the truth in its first component, which is the
+  # one that sets SAS's maximum near this optimum, and right in its second.
+  # Judged by that score, a point can pass SAS's test while the objective's
+  # true gradient fails it.
+  biased <- function(theta, ...) rosen_score(theta) * c(0.01, 1)
+  rel_biased <- function(theta) {
+    max(abs(biased(theta)) * pmax(abs(theta), 1)) /
+      max(abs(rosen_logl(theta)), 1)
+  }
+  fit <- .hzr_optim_generic(
+    logl_fn = rosen_logl, gradient_fn = biased, time = 1, status = 1,
+    theta_start = start, hessian_fn = rosen_hessian, gradient_exact = FALSE
+  )
+  expect_equal(fit$convergence, 0L)
+  # Premise: at the returned point the two statistics differ, so the next
+  # assertion can tell them apart. If this fails the fixture no longer
+  # discriminates and must change.
+  expect_gt(abs(rel_biased(fit$par) / rel_gradient(fit$par) - 1), 0.1)
+  # The returned point passes SAS's test under the true gradient...
+  expect_lte(rel_gradient(fit$par), gradtl)
+  # ...and the recorded statistic is that true one, to finite-difference
+  # accuracy, not the biased score's.
+  expect_lt(abs(fit$rel_gradient / rel_gradient(fit$par) - 1), 1e-3)
+})
+
 test_that("the bounded (L-BFGS-B) path is not polished", {
   fit <- .hzr_optim_generic(
     logl_fn = rosen_logl, gradient_fn = rosen_score,

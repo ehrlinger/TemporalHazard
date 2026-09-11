@@ -265,9 +265,9 @@ test_that("fixing ETA at alpha = 1 is what makes GAMMA estimable", {
   # alpha = 1, tau = 1 only gamma * eta is identified, so the free fit must
   # reach the same log-likelihood and the same product, and its gamma must
   # be undetermined: a standard error at least 100 times the fixed fit's
-  # (about 0.02), or none at all. It was 7.5 when BFGS stopped partway along
-  # the ridge; an optimizer that follows the ridge further, as the SAS/C
-  # acceptance test makes it do, reaches a singular Hessian and reports none.
+  # (about 0.02), or none at all. On an exactly flat ridge the Hessian is
+  # singular in theory, so which of the two comes out is numerical noise:
+  # 7.5 where plain BFGS stopped, none 4e-6 away after the polish.
   skip_on_cran()
   got <- .hzr_parse_parms(c("MUL=0.01", "TAU=1", "ALPHA=1", "GAMMA=2",
                             "ETA=3", "FIXALPHA"))

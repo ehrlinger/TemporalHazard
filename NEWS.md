@@ -101,10 +101,14 @@
   improves. The default `reltol` is unchanged: tightening it instead cost
   30% to 60% more time on the test suite and broke eight or nine tests.
 
-  Every fit records the test in `fit$fit$rel_gradient` (`NA` where the
-  gradient cannot be evaluated at the estimates) and, when the continuation
-  improved the fit, `nlm()`'s termination code in `fit$fit$polish_code`, and
-  `print()` and `summary()` show it. Only SAS/C's two hard failures warn: code 4, the
+  Every fit records the test in `fit$fit$rel_gradient` (`NA` when the test
+  was not applied, because the optimizer did not report convergence, or the
+  gradient cannot be evaluated) and, when the continuation improved the fit,
+  `nlm()`'s termination code in `fit$fit$polish_code`, and `print()` and
+  `summary()` show it. Under Conservation of Events the analytic score omits
+  how the conserved scale moves with the other parameters, so there the test
+  and the continuation use finite differences of the log-likelihood, as
+  SAS/C does. Only SAS/C's two hard failures warn: code 4, the
   iteration limit, and code 5, where the likelihood kept rising along some
   direction and may have no maximum. Codes 2 and 3, where SAS/C prints a
   caution and retries, are recorded without a warning. The test is relative
@@ -112,11 +116,13 @@
   tolerance of the maximum rather than exactly at it.
 
   Estimates of fits that used to stop short now change. One test depended
-  on that: it showed `gamma` and `eta` non-identified at `alpha = 1` by a
-  large standard error at the point BFGS happened to stop. Followed further
-  along the ridge the Hessian is singular and there is no standard error, so
-  the test now also checks that both fits reach the same log-likelihood and
-  the same `gamma * eta`.
+  on a detail of where BFGS stopped: it showed `gamma` and `eta`
+  non-identified at `alpha = 1` by a large standard error. On that exactly
+  flat ridge the Hessian is singular in theory, so whether a finite standard
+  error comes out at all is numerical noise, and at the polished point it
+  does not. The test now accepts either a missing or a 100-fold larger
+  standard error, and also checks that both fits reach the same
+  log-likelihood and the same `gamma * eta`.
 
 * **A Weibull fit with one masked variance reported the others on the wrong
   scale.** When the Hessian inverse has a non-positive variance, its row and

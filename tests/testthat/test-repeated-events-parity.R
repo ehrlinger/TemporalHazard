@@ -244,11 +244,13 @@ test_that("hz.ce_cardioversion_repeated.ehb: the stratified model reproduces the
   events <- cardioversion_events(dir)
   expect_false(anyNA(events[c("maze_prc", "iso_pvi")]))
 
-  # reltol is tightened on purpose. Under the default (1e-5) BFGS stops at LL
-  # -242.2675 and reports convergence; R's log likelihood at the listing's own
-  # estimates is -242.2541, so the likelihoods agree and the default optimizer
-  # tolerance stopped 0.013 short on a flat ridge in the late shapes.
-  ctl <- list(n_starts = 1L, reltol = 1e-12, maxit = 5000L)
+  # Default optimizer tolerance on purpose: this is the fit that showed the
+  # defect. Plain BFGS at reltol = 1e-5 stops at LL -242.2675 and reports
+  # convergence, 0.013 short of R's own log likelihood at the listing's
+  # estimates (-242.2541). hazard() now applies SAS/C's relative-gradient
+  # test and continues with nlm() when a stop fails it, so the default must
+  # reach the listing.
+  ctl <- list(n_starts = 1L)
   expect_no_warning(fit <- fit_translated(job, events, "fit_2", "status_2", ctl))
   expect_listing_rows(fit)
   # NOCONSERVE: "Conservation of events: Not invoked".

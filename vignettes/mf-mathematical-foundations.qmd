@@ -456,6 +456,11 @@ concatenation of all phase sub-vectors.
 The optimizer uses `stats::optim()` with BFGS on the unconstrained internal
 scale, wrapped by `.hzr_optim_generic()`.  Key features:
 
+- **Acceptance test**: a BFGS stop is accepted only when SAS/C HAZARD's
+  relative gradient, $\max_i |g_i| \max(|x_i|, 1) / \max(|\ell|, 1)$, is at
+  most $\epsilon^{1/3}$ (about $6 \times 10^{-6}$); otherwise the fit
+  continues with `stats::nlm()`, the Dennis-Schnabel algorithm SAS/C's
+  optimizer was ported from.
 - **Multi-start**: the optimizer runs from $k$ random perturbations around
   the user-supplied starting values (default $k = 5$, controlled by
   `control$n_starts`).  The run with the highest log-likelihood is kept.

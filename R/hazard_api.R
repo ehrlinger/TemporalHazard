@@ -79,10 +79,15 @@ NULL
 #' the fit is continued with [stats::nlm()] at SAS's tolerances, and the
 #' continued point is kept if it improves the log-likelihood.
 #'
-#' Every fit records the result in `fit$fit$rel_gradient` (`NA` where the
-#' gradient cannot be evaluated at the estimates, which is never reported as
-#' a pass) and, when the continuation improved the fit, its termination code
-#' in `fit$fit$polish_code`. `print()` and `summary()` show both. A warning is raised only for code 4, the
+#' Every fit records the result in `fit$fit$rel_gradient` and, when the
+#' continuation improved the fit, its termination code in
+#' `fit$fit$polish_code`. `print()` and `summary()` show both.
+#' `rel_gradient` is `NA` when the test was not applied (the optimizer did
+#' not report convergence) or the gradient cannot be evaluated at the
+#' estimates; `NA` is never reported as a pass. Under Conservation of Events
+#' the test and the continuation use finite differences of the
+#' log-likelihood with the conserved scale re-solved, as SAS/C does, because
+#' the analytic score there omits how that scale moves. A warning is raised only for code 4, the
 #' iteration limit (raise `control$maxit`), and code 5, where the
 #' log-likelihood kept rising along some direction and the model may have no
 #' maximum. Codes 2 and 3, where SAS/C prints a caution, are recorded without
@@ -920,10 +925,15 @@ hazard <- function(formula = NULL,
     if (isTRUE(fit_state$converged) &&
         isTRUE(fit_state$polish_code %in% c(4L, 5L))) {
       warning(
-        "The optimizer reported convergence, but the relative gradient at ",
-        "the estimates is ", signif(fit_state$rel_gradient, 3), ", above ",
-        "the ", signif(.Machine$double.eps^(1 / 3), 3), " that SAS/C ",
-        "HAZARD requires. ",
+        "The optimizer reported convergence, but the estimates fail the ",
+        "relative-gradient test SAS/C HAZARD requires (at most ",
+        signif(.Machine$double.eps^(1 / 3), 3), "; ",
+        if (is.finite(fit_state$rel_gradient)) {
+          paste0("here ", signif(fit_state$rel_gradient, 3))
+        } else {
+          "here the gradient could not be evaluated"
+        },
+        "). ",
         if (identical(fit_state$polish_code, 5L)) {
           paste0("The likelihood kept rising along a direction in which no ",
                  "maximum was found; the model may not have one.")

@@ -50,6 +50,13 @@ NULL
 #'   \code{NULL} (e.g. a censoring branch it does not cover analytically), or
 #'   when it errors.  A non-NULL, non-conformant return raises a warning and
 #'   also falls back to the numerical Hessian.
+#' @param gradient_exact Logical; `TRUE` (the default) when `gradient_fn` is
+#'   the gradient of the objective being maximised. Conservation of Events
+#'   passes `FALSE`: its `gradient_fn` is the partial score at the conserved
+#'   theta, which leaves out how the conserved `log_mu` moves with the free
+#'   parameters. SAS/C's acceptance test and the `nlm()` continuation then use
+#'   finite differences of the objective itself, as SAS/C does
+#'   (`setobj.c` re-solves the scale at every numerical-derivative step).
 #'
 #' @return List with par, value (log-likelihood), convergence, counts, message,
 #'   hessian, vcov. Includes \code{se_unavailable_reason}.
@@ -67,7 +74,8 @@ NULL
     control = list(),
     use_bounds = FALSE,
     lower_bounds = NULL,
-    hessian_fn = NULL) {
+    hessian_fn = NULL,
+    gradient_exact = TRUE) {
 
   control <- utils::modifyList(
     list(maxit = 1000, reltol = 1e-5, abstol = 1e-6),
@@ -159,18 +167,31 @@ NULL
   # gradient() above returns zeros at a clamped or failing point, and a zero
   # there would read as a pass; so this calls gradient_fn itself and refuses
   # the 1e10 sentinel, a non-finite point, and any non-finite component.
+  # Central differences of the objective, for when gradient_fn is not its
+  # gradient (gradient_exact = FALSE).
+  fd_gradient <- function(theta) {
+    h <- .Machine$double.eps^(1 / 3) * pmax(abs(theta), 1)
+    vapply(seq_along(theta), function(i) {
+      e <- replace(numeric(length(theta)), i, h[i])
+      (objective(theta + e) - objective(theta - e)) / (2 * h[i])
+    }, numeric(1))
+  }
   rel_gradient <- function(theta, value) {
     if (!all(is.finite(theta)) || !is.finite(value) || value >= 1e10) {
       return(NA_real_)
     }
-    g <- tryCatch(
-      gradient_fn(
-        theta = theta, time = time, status = status,
-        time_lower = time_lower, time_upper = time_upper,
-        x = x, weights = weights
-      ),
-      error = function(e) NULL
-    )
+    g <- if (gradient_exact) {
+      tryCatch(
+        gradient_fn(
+          theta = theta, time = time, status = status,
+          time_lower = time_lower, time_upper = time_upper,
+          x = x, weights = weights
+        ),
+        error = function(e) NULL
+      )
+    } else {
+      fd_gradient(theta)
+    }
     if (is.null(g) || length(g) != length(theta) || !all(is.finite(g))) {
       return(NA_real_)
     }
@@ -183,7 +204,7 @@ NULL
     if (is.finite(rel_grad) && rel_grad > gradtl) {
       f_nlm <- function(theta) {
         v <- objective(theta)
-        attr(v, "gradient") <- gradient(theta)
+        if (gradient_exact) attr(v, "gradient") <- gradient(theta)
         v
       }
       polish <- tryCatch(
@@ -195,7 +216,7 @@ NULL
         error = function(e) NULL
       )
       if (!is.null(polish) && is.finite(polish$minimum) &&
-          polish$minimum <= result$value) {
+          polish$minimum < result$value) {
         # nlm() drops names; optim() keeps them, and the single-distribution
         # fits hand par straight back to hazard().
         result$par   <- stats::setNames(polish$estimate, names(result$par))
