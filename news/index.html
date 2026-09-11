@@ -77,6 +77,11 @@
 </ul>
 The block replaces two notes that could name the wrong cause: “not examined for a weakly identified direction” and “standard errors unavailable; the Hessian could not be inverted”. <code>fit$fit$weak</code> keeps its meaning, and is <code>NA</code> exactly when <code>"weak_direction_check"</code> is listed. An object saved by an earlier version prints “not recorded” rather than “none”.</li>
 </ul></div>
+<div class="section level3">
+<h3 id="bug-fixes-1-2-11">Bug fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-1-2-11"></a></h3>
+<ul><li>
+<strong>A Weibull fit with one masked variance reported the others on the wrong scale.</strong> When the Hessian inverse has a non-positive variance, its row and column are set to <code>NA</code>. The delta-method transform from the internal <code>(alpha, psi)</code> scale to the reported <code>(mu, nu)</code> scale was then skipped for the whole matrix, so the surviving standard errors stayed on the internal scale beside <code>(mu, nu)</code> estimates, with no error. A masked <code>alpha</code> printed <code>SE(psi)</code> as the standard error of <code>nu</code>, off by a factor of <code>nu</code>; a masked <code>psi</code> printed <code>SE(alpha)</code> as the standard error of <code>mu</code>, which depends on <code>psi</code> and has no valid standard error there. The transform now runs on the finite block and carries the mask through the Jacobian: a reported parameter is <code>NA</code> exactly when it depends on a masked one. Exponential, log-logistic and log-normal fits are unaffected; they report on the scale they are optimised on.</li>
+</ul></div>
 </div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="1.2.10" id="temporalhazard-1210">TemporalHazard 1.2.10<a class="anchor" aria-label="anchor" href="#temporalhazard-1210"></a></h2>
