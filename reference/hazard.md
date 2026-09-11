@@ -258,7 +258,12 @@ Control parameters:
   kept on the fit as `fit$fit$phase_share`. Raise it to catch marginal
   phases, set it to 0 to silence the check.
 
-- `reltol`: Relative parameter change tolerance (default 1e-5)
+- `reltol`: Relative convergence tolerance on the objective, the
+  negative log-likelihood (default 1e-5). BFGS stops when an iteration
+  reduces it by less than `reltol * (|objective| + reltol)`, so the
+  stopping gap grows with the size of the log-likelihood: about 0.0024
+  at a log-likelihood of -240. On a flat surface a fit can stop that far
+  short of the optimum and still report convergence.
 
 - `abstol`: Absolute gradient norm tolerance (default 1e-6)
 
