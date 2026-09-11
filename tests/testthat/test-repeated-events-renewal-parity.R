@@ -106,6 +106,13 @@ test_that("ac.reintervention: %repeat reproduces the SAS log, the .lst and libra
   # above as `event`; here, only that both sides mark the same rows as events.
   expect_equal(sum(xor(!is.na(events$ev_rein) & events$ev_rein == 1, sas$ev_rein == 1)), 0L)
 
+  # The ten paired columns are excluded from `shared` below, so their classes
+  # are checked here: an integer against a double passes the value comparison
+  # above without complaint. All ten are double on both sides.
+  pair_class <- vapply(names(pairs), function(v) identical(class(events[[v]]), class(sas[[pairs[[v]]]])),
+                       logical(1))
+  expect_equal(names(pairs)[!pair_class], character(0))
+
   shared <- setdiff(intersect(names(events), names(sas)), c(names(pairs), "ev_rein"))
   expect_equal(length(shared), 216L)
   same_class <- vapply(shared, function(v) identical(class(events[[v]]), class(sas[[v]])), logical(1))
