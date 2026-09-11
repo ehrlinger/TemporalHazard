@@ -86,6 +86,20 @@
   point: it estimates `log|M|` with the sign fixed by the starting value, so
   `M` cannot reach or cross 0. `hazard()` estimates `m` directly and can.
 
+* **A Weibull fit with one masked variance reported the others on the wrong
+  scale.** When the Hessian inverse has a non-positive variance, its row and
+  column are set to `NA`. The delta-method transform from the internal
+  `(alpha, psi)` scale to the reported `(mu, nu)` scale was then skipped for
+  the whole matrix, so the surviving standard errors stayed on the internal
+  scale beside `(mu, nu)` estimates, with no error. A masked `alpha` printed
+  `SE(psi)` as the standard error of `nu`, off by a factor of `nu`; a masked
+  `psi` printed `SE(alpha)` as the standard error of `mu`, which depends on
+  `psi` and has no valid standard error there. The transform now runs on the
+  finite block and carries the mask through the Jacobian: a reported
+  parameter is `NA` exactly when it depends on a masked one. Exponential,
+  log-logistic and log-normal fits are unaffected; they report on the scale
+  they are optimised on.
+
 # TemporalHazard 1.2.10
 
 ## New features
