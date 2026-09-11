@@ -260,7 +260,9 @@ onside_derivative <- function(f, x, base = NULL) {
 test_that(".hzr_phase_derivatives dPhi/dm does not straddle m = 0", {
   t_grid <- c(0.05, 0.3, 2, 10)
   t_half <- 0.28
-  # nu = -1 is Case 3L at m = 0 and Case 3 above it; m < 0 is undefined there.
+  # nu = -1 is Case 3L at m = 0 and Case 3 above it; m < 0 is undefined there,
+  # so the old stencil already fell back to a forward difference and these
+  # rows guard the new one-sided stencil rather than the original straddle.
   # Only the cdf type: the hazard type's Phi = -log(1 - G) loses digits to
   # cancellation at large t when nu < 0, which is a property of Phi, not of
   # the stencil.
@@ -403,6 +405,54 @@ test_that("multiphase Hessian m row does not straddle m = 0", {
     expect_true(all(abs(H[4, ] - ref) <= 1e-2 * pmax(abs(ref), 1)),
                 label = sprintf("Hessian m row at m = %g; worst error %.3g",
                                 m, max(abs(H[4, ] - ref))))
+  }
+})
+
+test_that("Hessian second derivatives step backward, not across, below m = 0", {
+  # At m = -5e-5 the Hessian's 1.2e-4 step would cross 0, so it steps
+  # backward (m_dir = -1). At nu = 2 the m < 0 side is smooth enough for that
+  # to be accurate, which makes it the place to pin the sign of every m term:
+  # dropping or flipping m_dir errs by about 200% here. (At nu < 2 the cusp
+  # varies on the scale of |m| and a 1.2e-4 step understates the curvature;
+  # that limit is documented, not tested.) The references difference Phi with
+  # an m step of 0.1 * |m|, so they stay below 0.
+  t_grid <- c(0.3, 2)
+  t_half <- 0.28
+  nu <- 2
+  m <- -5e-5
+  P <- function(th, n, mm) hzr_decompos(t_grid, th, n, mm)$G
+  hm <- 0.1 * abs(m)
+  ht <- 1e-3
+  hn <- 1e-3
+  ref_mm <- (P(t_half, nu, m + hm) - 2 * P(t_half, nu, m) +
+               P(t_half, nu, m - hm)) / hm^2
+  ref_tm <- (P(t_half * exp(ht), nu, m + hm) - P(t_half * exp(ht), nu, m - hm) -
+               P(t_half * exp(-ht), nu, m + hm) +
+               P(t_half * exp(-ht), nu, m - hm)) / (4 * ht * hm)
+  ref_nm <- (P(t_half, nu + hn, m + hm) - P(t_half, nu + hn, m - hm) -
+               P(t_half, nu - hn, m + hm) + P(t_half, nu - hn, m - hm)) /
+    (4 * hn * hm)
+  sd2 <- .hzr_phase_second_derivatives(t_grid, t_half = t_half, nu = nu,
+                                       m = m, type = "cdf")
+  within <- function(v, r) {
+    all(abs(v - r) <= 0.05 * pmax(abs(r), 1e-2 * max(abs(r))))
+  }
+  expect_true(within(sd2$d2Phi_dm2, ref_mm), label = "d2Phi/dm2")
+  expect_true(within(sd2$d2Phi_dlog_thalf_dm, ref_tm),
+              label = "d2Phi/dlog_thalf dm")
+  expect_true(within(sd2$d2Phi_dnu_dm, ref_nm), label = "d2Phi/dnu dm")
+})
+
+test_that("Hessian second derivatives are finite with m and nu both at a boundary", {
+  # m just below 0 with nu in [0, h): the nu / m cross term steps one-sided
+  # in both. Only finiteness is checked -- the cusp below 0 is not resolved
+  # at this step size (see above) -- but before this branch existed the same
+  # point read a nu - h corner that does not exist.
+  for (nu in c(0, .hzr_h2 / 2)) {
+    sd2 <- .hzr_phase_second_derivatives(c(0.3, 2), t_half = 0.28, nu = nu,
+                                         m = -5e-6, type = "cdf")
+    expect_true(all(vapply(sd2, function(v) all(is.finite(v)), logical(1))),
+                label = sprintf("all second derivatives finite at nu = %g", nu))
   }
 })
 

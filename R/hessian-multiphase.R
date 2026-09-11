@@ -154,8 +154,9 @@ NULL
   }
 
   # nu / m cross: corners (nu_p, m_p), (nu_p, m_m), (nu_m, m_p), (nu_m, m_m).
-  # Under m_boundary, use forward-in-m / central-in-nu (nu_m is valid here --
-  # only m is boundary-restricted). Under nu_boundary, use forward-in-nu /
+  # Under m_boundary, use one-sided-in-m (toward m_dir) / central-in-nu (nu_m
+  # is valid here -- only m is boundary-restricted). Under nu_boundary, use
+  # forward-in-nu /
   # central-in-m (m_m is valid here -- only nu is boundary-restricted). Under
   # both, step one-sided in each: forward in nu, toward m_dir in m.
   if (m_boundary && nu_boundary) {
