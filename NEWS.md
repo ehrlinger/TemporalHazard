@@ -80,7 +80,7 @@
   `object$data$x_design`. Fits made through the vector interface select
   their columns by name, or by position when `x` was unnamed. Point
   predictions, `se.fit = TRUE` and `decompose = TRUE` are each checked
-  against `exp(x beta_j) H0_j(t)` per phase.
+  against `exp(x beta_j) H0_j(t)` per phase (#266).
 
 * **The multiphase gradient and Hessian are now right when an early phase's
   `m` is near 0.** Both differentiate in `m` by finite differences, and
