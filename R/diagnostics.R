@@ -298,6 +298,10 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #' the R equivalent of the SAS `hazplot.sas` macro and implements the
 #' conservation-of-events diagnostic.
 #'
+#' The diagnostic is for right-censored data: every stored status must be 0
+#' (censored) or 1 (event).  A fit with any left-censored (status -1) or
+#' interval-censored (status 2) row is refused with an error.
+#'
 #' At each time point the function computes:
 #' \itemize{
 #'   \item The Kaplan-Meier survival and cumulative hazard.
@@ -331,7 +335,9 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #' the mean patient's cumulative hazard is not the average of the patients'
 #' cumulative hazards, so `par_cumhaz` does not enter the expected count.
 #' For an intercept-only model every patient shares that curve and the two
-#' agree.
+#' agree.  The means are those of the design-matrix columns, taken phase by
+#' phase when a multiphase fit's covariates enter through the phase
+#' formulas, so a factor enters as the proportion of patients in each level.
 #'
 #' For a weighted fit both tallies carry the case weights: observed events
 #' are \eqn{\sum_i w_i d_i} and expected events \eqn{\sum_i w_i H_i}, the
@@ -344,8 +350,8 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #' @param object A fitted `hazard` object (with `fit = TRUE`).
 #' @param time_grid Optional numeric vector of time points at which to
 #'   evaluate the parametric model.
-#'   If `NULL` (default), uses the sorted unique event times from the
-#'   fitted data.
+#'   If `NULL` (default), uses the distinct Kaplan-Meier times of the
+#'   fitted data, which are the event times and the censoring times.
 #'
 #' @return A data frame with one row per time point and columns:
 #' \describe{
@@ -394,8 +400,9 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #' gof <- hzr_gof(fit)
 #' print(gof)
 #'
-#' # Expected events are summed per patient, so the total is the sum of
-#' # each patient's own cumulative hazard at their follow-up time:
+#' # Expected events are summed per patient.  This fit has no entry times,
+#' # so the total is the sum of each patient's own cumulative hazard at
+#' # their follow-up time:
 #' nd <- avc[, c("age", "mal")]
 #' nd$time <- avc$int_dead
 #' c(hzr_gof = attr(gof, "summary")$total_expected,
@@ -474,23 +481,39 @@ hzr_gof <- function(object, time_grid = NULL) {
   # --- Parametric curve at each time point (for the KM overlay) -------------
   # This curve is for plotting only; expected events are per subject below.
   is_multiphase <- (object$spec$dist == "multiphase")
+  has_phase_x <- is_multiphase && any(vapply(
+    object$fit$x_list, function(m) !is.null(m) && ncol(m) > 0, logical(1)
+  ))
 
+  curve_obj <- object
   if (!is.null(object$data$x) && ncol(object$data$x) > 0) {
     # For covariate models, evaluate at covariate means (baseline patient)
     x_means <- colMeans(object$data$x)
     nd <- as.data.frame(t(x_means))
     nd <- nd[rep(1, length(time_grid)), , drop = FALSE]
     nd$time <- time_grid
+  } else if (has_phase_x) {
+    # Covariates entered only through the phase formulas, so data$x is NULL
+    # and a time-only newdata would put them at 0. Put each phase's design
+    # matrix at its column means and the stored times at the grid; predict()
+    # without newdata then evaluates that stored design.
+    curve_obj$data$time <- time_grid
+    curve_obj$fit$x_list <- lapply(object$fit$x_list, function(m) {
+      if (is.null(m) || ncol(m) == 0) return(m)
+      matrix(colMeans(m), nrow = length(time_grid), ncol = ncol(m),
+             byrow = TRUE, dimnames = list(NULL, colnames(m)))
+    })
+    nd <- NULL
   } else {
     nd <- data.frame(time = time_grid)
   }
 
-  par_cumhaz <- predict(object, newdata = nd, type = "cumulative_hazard")
+  par_cumhaz <- predict(curve_obj, newdata = nd, type = "cumulative_hazard")
 
   # Phase decomposition for multiphase models
   phase_cumhaz <- NULL
   if (is_multiphase) {
-    decomp <- predict(object, newdata = nd, type = "cumulative_hazard",
+    decomp <- predict(curve_obj, newdata = nd, type = "cumulative_hazard",
                       decompose = TRUE)
     # decomp is a matrix; first column is "total", rest are phase names
     phase_cols <- colnames(decomp)[colnames(decomp) != "total"]

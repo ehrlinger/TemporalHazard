@@ -11,8 +11,8 @@ hzr_gof(object, time_grid = NULL)
 
 \item{time_grid}{Optional numeric vector of time points at which to
 evaluate the parametric model.
-If \code{NULL} (default), uses the sorted unique event times from the
-fitted data.}
+If \code{NULL} (default), uses the distinct Kaplan-Meier times of the
+fitted data, which are the event times and the censoring times.}
 }
 \value{
 A data frame with one row per time point and columns:
@@ -56,6 +56,10 @@ the R equivalent of the SAS \code{hazplot.sas} macro and implements the
 conservation-of-events diagnostic.
 }
 \details{
+The diagnostic is for right-censored data: every stored status must be 0
+(censored) or 1 (event).  A fit with any left-censored (status -1) or
+interval-censored (status 2) row is refused with an error.
+
 At each time point the function computes:
 \itemize{
 \item The Kaplan-Meier survival and cumulative hazard.
@@ -89,7 +93,9 @@ covariates it belongs to one "mean patient" with average covariates, and
 the mean patient's cumulative hazard is not the average of the patients'
 cumulative hazards, so \code{par_cumhaz} does not enter the expected count.
 For an intercept-only model every patient shares that curve and the two
-agree.
+agree.  The means are those of the design-matrix columns, taken phase by
+phase when a multiphase fit's covariates enter through the phase
+formulas, so a factor enters as the proportion of patients in each level.
 
 For a weighted fit both tallies carry the case weights: observed events
 are \eqn{\sum_i w_i d_i} and expected events \eqn{\sum_i w_i H_i}, the
@@ -113,8 +119,9 @@ fit <- hazard(
 gof <- hzr_gof(fit)
 print(gof)
 
-# Expected events are summed per patient, so the total is the sum of
-# each patient's own cumulative hazard at their follow-up time:
+# Expected events are summed per patient.  This fit has no entry times,
+# so the total is the sum of each patient's own cumulative hazard at
+# their follow-up time:
 nd <- avc[, c("age", "mal")]
 nd$time <- avc$int_dead
 c(hzr_gof = attr(gof, "summary")$total_expected,
