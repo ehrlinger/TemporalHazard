@@ -74,9 +74,11 @@
   wrong cumulative hazard. The fit now stores each phase formula's terms,
   factor levels and contrasts (`fit$x_design`), and `predict()` rebuilds the
   phase's columns from them, matched by name. A level the fit never saw is an
-  error, as is a covariate the phase uses and `newdata` lacks. `newdata`
-  carrying the phase's design columns by name (`grpyoung`) is taken as it
-  is. A fit saved by an earlier version rebuilds as before.
+  error. So is a covariate the phase uses that `newdata` lacks, where it was
+  silently taken from a same-named object in the workspace; a `newdata` with
+  only a `time` column still evaluates the baseline, every covariate at 0.
+  `newdata` carrying the phase's design columns by name (`grpyoung`) is taken
+  as it is. A fit saved by an earlier version rebuilds as before.
 
 * **The multiphase gradient and Hessian are now right when an early phase's
   `m` is near 0.** Both differentiate in `m` by finite differences, and
