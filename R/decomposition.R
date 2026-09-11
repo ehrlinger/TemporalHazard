@@ -700,19 +700,31 @@ hzr_phase_cumhaz <- function(time, t_half = 1, nu = 1, m = 0,
   # this: it estimates log|M| with the sign fixed at setup (hzd_early_t2p.c),
   # so M cannot reach or cross 0.  Here the stencil keeps the sign of m
   # instead.  For m < 0 the step is capped at 1% of |m|, because the cusp
-  # varies on the scale of |m|; for m >= 0 near 0 a one-sided second-order
-  # stencil is used, and m = 0 itself takes the m >= 0 side.
+  # varies on the scale of |m|, and floored at 1e-10 so rounding stays
+  # bounded as m -> 0-.  A stencil that would still reach 0 goes one-sided
+  # and second order: forward from m >= 0 (m = 0 itself takes that side),
+  # backward from m < 0.
   h_m <- eps_rel * max(abs(m), 1)
-  if (m < 0) h_m <- min(h_m, 0.01 * abs(m))
-  forward_m <- m >= 0 && m - h_m < 0
-  d_plus  <- perturb_decompos(t_half, nu, m + h_m)
-  d_minus <- if (forward_m) NULL else perturb_decompos(t_half, nu, m - h_m)
-  d_plus2 <- if (forward_m) perturb_decompos(t_half, nu, m + 2 * h_m) else NULL
-  if (!is.null(d_plus) && !is.null(d_plus2)) {
-    e_plus  <- extract(d_plus, type)
-    e_plus2 <- extract(d_plus2, type)
-    dPhi_dm <- (-3 * base$Phi + 4 * e_plus$Phi - e_plus2$Phi) / (2 * h_m)
-    dphi_dm <- (-3 * base$phi + 4 * e_plus$phi - e_plus2$phi) / (2 * h_m)
+  if (m < 0) h_m <- min(h_m, max(0.01 * abs(m), 1e-10))
+  # +1: forward from m >= 0; -1: backward from m < 0; 0: central.
+  side <- if (m >= 0 && m - h_m < 0) {
+    1
+  } else if (m < 0 && m + h_m >= 0) {
+    -1
+  } else {
+    0
+  }
+  d_plus  <- if (side < 0) NULL else perturb_decompos(t_half, nu, m + h_m)
+  d_minus <- if (side > 0) NULL else perturb_decompos(t_half, nu, m - h_m)
+  d_far   <- if (side != 0) {
+    perturb_decompos(t_half, nu, m + 2 * side * h_m)
+  }
+  d_near  <- if (side > 0) d_plus else d_minus
+  if (side != 0 && !is.null(d_near) && !is.null(d_far)) {
+    e_near  <- extract(d_near, type)
+    e_far   <- extract(d_far, type)
+    dPhi_dm <- side * (-3 * base$Phi + 4 * e_near$Phi - e_far$Phi) / (2 * h_m)
+    dphi_dm <- side * (-3 * base$phi + 4 * e_near$phi - e_far$phi) / (2 * h_m)
   } else if (!is.null(d_plus) && !is.null(d_minus)) {
     e_plus  <- extract(d_plus, type)
     e_minus <- extract(d_minus, type)

@@ -55,17 +55,25 @@
 
 ## Bug fixes
 
-* **The multiphase gradient is now right when an early phase's `m` is near
-  0.** The derivative with respect to `m` is a finite difference, and its
-  stencil, about 6e-6 wide, straddled 0 whenever `|m|` was smaller than
-  that. `hzr_decompos()` changes formula at `m = 0`, and the `m < 0` family
-  meets the `m >= 0` one in a cusp rather than continuing it, so the
-  difference mixed two branches and returned neither side's derivative: +8.4
-  where the true value was -20.2, on a 13-parameter fit that converged to
-  `m = 2.9e-6`. Every other parameter was unaffected. The stencil now keeps
-  the sign of `m`: one-sided on the `m >= 0` side, and no wider than 1% of
-  `|m|` below 0, where the cusp varies on that scale. Likelihood values are
-  unchanged.
+* **The multiphase gradient and Hessian are now right when an early phase's
+  `m` is near 0.** Both differentiate in `m` by finite differences, and
+  their stencils straddled 0: the gradient's (half-width about 6e-6)
+  whenever `|m|` was smaller than that, the Hessian's (half-width 1.2e-4)
+  whenever `nu > 0` and `|m|` was below 1.2e-4. `hzr_decompos()` changes
+  formula at `m = 0`, and the `m < 0` family meets the `m >= 0` one in a cusp
+  rather than continuing it, so each difference mixed two branches and
+  returned neither side's derivative. The gradient gave +8.4 where the true
+  value was -20.2, on a 13-parameter fit that converged to `m = 2.9e-6`; the
+  Hessian put -4.8e5 on the `m` diagonal where the value is about 0.7, so
+  standard errors of such fits were wrong too. Every other parameter's
+  gradient was unaffected.
+
+  Both stencils now keep the sign of `m`: one-sided on the `m >= 0` side,
+  where the family is smooth. Below 0 the gradient's step is at most 1% of
+  `|m|`, because the cusp varies on that scale, floored at 1e-10 so rounding
+  stays bounded. The Hessian's steps below 0 are one-sided but still 1.2e-4
+  wide, so they stop the branches mixing without resolving the cusp.
+  Likelihood values are unchanged.
 
   The likelihood itself is still not differentiable at `m = 0`, so a fit
   whose optimum sits there reports a nonzero gradient. SAS/C never meets the

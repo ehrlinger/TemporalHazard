@@ -260,30 +260,64 @@ onside_derivative <- function(f, x, base = NULL) {
 test_that(".hzr_phase_derivatives dPhi/dm does not straddle m = 0", {
   t_grid <- c(0.05, 0.3, 2, 10)
   t_half <- 0.28
-  for (nu in c(0.5, 0.905, 2)) for (m in c(-5e-6, 0, 5e-6)) {
-    for (type in c("cdf", "hazard")) {
-      pd <- .hzr_phase_derivatives(t_grid, t_half = t_half, nu = nu, m = m,
-                                   type = type)
-      cumhaz_at <- function(tt, z) {
-        hzr_phase_cumhaz(tt, t_half = t_half, nu = nu, m = z, type = type)
-      }
-      hazard_at <- function(tt, z) {
-        hzr_phase_hazard(tt, t_half = t_half, nu = nu, m = z, type = type)
-      }
-      ref_Phi <- sapply(t_grid, function(tt) {
-        onside_derivative(function(z) cumhaz_at(tt, z), m)
-      })
-      ref_phi <- sapply(t_grid, function(tt) {
-        onside_derivative(function(z) hazard_at(tt, z), m)
-      })
-      lab <- sprintf("nu = %g, m = %g, %s", nu, m, type)
-      # Relative to the largest reference entry: a straddling stencil misses
-      # by 10% to 100000% on this grid, the one-sided one by at most 7e-5.
-      expect_lt(max(abs(pd$dPhi_dm - ref_Phi)) / max(abs(ref_Phi)), 1e-3,
-                label = paste("dPhi/dm error,", lab))
-      expect_lt(max(abs(pd$dphi_dm - ref_phi)) / max(abs(ref_phi)), 1e-3,
-                label = paste("dphi/dm error,", lab))
+  # nu = -1 is Case 3L at m = 0 and Case 3 above it; m < 0 is undefined there.
+  # Only the cdf type: the hazard type's Phi = -log(1 - G) loses digits to
+  # cancellation at large t when nu < 0, which is a property of Phi, not of
+  # the stencil.
+  grid <- rbind(
+    expand.grid(nu = c(0.5, 0.905, 2), m = c(-5e-6, 0, 5e-6),
+                type = c("cdf", "hazard"), stringsAsFactors = FALSE),
+    expand.grid(nu = -1, m = c(0, 5e-6), type = "cdf",
+                stringsAsFactors = FALSE)
+  )
+  # Per entry, so a wrong small entry cannot hide behind a large one; the
+  # floor stops an entry near zero demanding more than the reference can
+  # deliver. A straddling stencil misses by 10% to 100000% on this grid.
+  within <- function(v, r) {
+    all(abs(v - r) <= 1e-3 * pmax(abs(r), 1e-2 * max(abs(r))))
+  }
+  for (k in seq_len(nrow(grid))) {
+    nu <- grid$nu[k]
+    m <- grid$m[k]
+    type <- grid$type[k]
+    pd <- .hzr_phase_derivatives(t_grid, t_half = t_half, nu = nu, m = m,
+                                 type = type)
+    cumhaz_at <- function(tt, z) {
+      hzr_phase_cumhaz(tt, t_half = t_half, nu = nu, m = z, type = type)
     }
+    hazard_at <- function(tt, z) {
+      hzr_phase_hazard(tt, t_half = t_half, nu = nu, m = z, type = type)
+    }
+    ref_Phi <- sapply(t_grid, function(tt) {
+      onside_derivative(function(z) cumhaz_at(tt, z), m)
+    })
+    ref_phi <- sapply(t_grid, function(tt) {
+      onside_derivative(function(z) hazard_at(tt, z), m)
+    })
+    lab <- sprintf("nu = %g, m = %g, %s", nu, m, type)
+    expect_true(within(pd$dPhi_dm, ref_Phi), label = paste("dPhi/dm,", lab))
+    expect_true(within(pd$dphi_dm, ref_phi), label = paste("dphi/dm,", lab))
+  }
+})
+
+test_that(".hzr_phase_derivatives dPhi/dm stays bounded as m -> 0 from below", {
+  # For m < 0 the step is 1% of |m|, floored at 1e-10. Without the floor,
+  # rounding grew without bound: dPhi/dm was 36 at m = -1e-15 where it should
+  # be 0.151, and NA at -1e-300. At nu = 2 the derivative is flat in m this
+  # close to 0, so it must hold its value. At nu = 0.9 it grows like
+  # |m|^(nu - 1) toward the cusp, so it is only required to stay finite.
+  d_at <- function(nu, m) {
+    .hzr_phase_derivatives(c(0.05, 2), t_half = 0.28, nu = nu, m = m,
+                           type = "cdf")$dPhi_dm
+  }
+  ref <- d_at(2, -1e-8)
+  for (m in c(-1e-10, -1e-13, -1e-15)) {
+    expect_true(all(abs(d_at(2, m) - ref) <= 1e-2 * abs(ref)),
+                label = sprintf("nu = 2, m = %g", m))
+  }
+  for (m in c(-1e-13, -1e-15, -1e-300)) {
+    expect_true(all(is.finite(d_at(0.9, m))),
+                label = sprintf("nu = 0.9, m = %g", m))
   }
 })
 
@@ -328,6 +362,47 @@ test_that("multiphase gradient is right for m within 1e-5 of 0, both signs", {
                 label = sprintf("gradient at m = %g; worst component %d, error %.3g",
                                 m, which.max(abs(grad - ref) / pmax(abs(ref), 1)),
                                 max(abs(grad - ref))))
+  }
+})
+
+test_that("multiphase Hessian m row does not straddle m = 0", {
+  set.seed(42)
+  n <- 200
+  time   <- rexp(n, rate = 0.3) + 0.01
+  status <- sample(0:1, n, replace = TRUE, prob = c(0.3, 0.7))
+  x_mat  <- matrix(rnorm(n * 2), ncol = 2, dimnames = list(NULL, c("age", "sex")))
+  phases <- list(
+    early = hzr_phase("cdf",    t_half = 0.3, nu = 0.9, m = 0),
+    late  = hzr_phase("hazard", t_half = 5,   nu = 1,   m = 1)
+  )
+  covariate_counts <- c(early = 2L, late = 2L)
+  x_list <- list(early = x_mat, late = x_mat)
+
+  for (m in c(0, 5e-6)) {
+    theta <- c(log(0.1), log(0.3), 0.9, m, 0.5, -0.3,
+               log(0.01), log(5), 1, 1, 0.1, 0.2)
+    H <- .hzr_hessian_multiphase(
+      theta, time = time, status = status, time_lower = NULL,
+      time_upper = NULL, x = NULL, weights = NULL, phases = phases,
+      covariate_counts = covariate_counts, x_list = x_list
+    )
+    # H is the Hessian of the negative log-likelihood, so its m row is minus
+    # the derivative of the score in m. m >= 0 is the smooth side, so the
+    # reference differences the (corrected) score forward from m.
+    score_at <- function(z) {
+      th <- theta
+      th[4] <- m + z
+      .hzr_gradient_multiphase(
+        th, time, status,
+        phases = phases, covariate_counts = covariate_counts, x_list = x_list
+      )
+    }
+    ref <- -vapply(seq_along(theta), function(j) {
+      onside_derivative(function(z) score_at(z)[j], 0)
+    }, numeric(1))
+    expect_true(all(abs(H[4, ] - ref) <= 1e-2 * pmax(abs(ref), 1)),
+                label = sprintf("Hessian m row at m = %g; worst error %.3g",
+                                m, max(abs(H[4, ] - ref))))
   }
 })
 
