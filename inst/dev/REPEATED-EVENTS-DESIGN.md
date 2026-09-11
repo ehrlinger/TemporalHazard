@@ -255,6 +255,9 @@ A rescan of `cardiac/` found 1182 callers:
   same run as their listing;
 - the maze cardioversion jobs are among the 1182, and read `iv_seg` and `event_no` only.
 
+A scan of `vascular/` found 45 more callers: 32 read `renewal`, 24 of those have a `.lst`,
+and 5 also save the macro output.
+
 So `ac.reintervention` is one usable reference among several, not the only one.
 
 The shones reoperation job (`cardiac/congenital/shones/outcomes/datasets/bd.repeated_reops.sas`)
