@@ -180,14 +180,19 @@
   # The symbols a formula looks up; .hzr_mask_symbols() skips the name after
   # `$`, so cfg$time is not a variable `time`.
   rhs_symbols <- function(f) .hzr_mask_symbols(f[[length(f)]])
-  used <- if (is.null(design)) {
+  used <- if (is.null(design) || .hzr_uses_design_columns(object, newdata)) {
+    # Design columns are used as they are and nothing is evaluated, so only
+    # a design column literally named `time` collides.
     x_cols
-  } else if (.hzr_uses_design_columns(object, newdata)) {
-    # The global design is taken from newdata's design columns by name, so
-    # its formula constants are never evaluated and cannot be masked.
-    from_data
   } else {
-    rhs_symbols(stats::formula(design$terms))
+    # What model.frame() evaluates: the predvars the fit recorded (where
+    # scale()'s centre is already a number), otherwise the formula.
+    pv <- attr(design$terms, "predvars")
+    if (is.null(pv)) {
+      rhs_symbols(stats::formula(design$terms))
+    } else {
+      .hzr_mask_symbols(pv)
+    }
   }
   phases <- object$fit$phases
   if (is.null(phases)) phases <- object$spec$phases

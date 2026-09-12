@@ -106,6 +106,57 @@ test_that("design-column newdata never re-evaluates a time constant", {
                hzr_deciles(lit, time = 60)$expected, tolerance = 1e-10)
 })
 
+test_that("hzr_gof() on log(time) uses the design column, not newdata's time", {
+  # The design column is `log(time)`, taken by name and never evaluated,
+  # so follow-up time cannot overwrite it: it must match a refit on the
+  # precomputed column.
+  d <- .tc_avc
+  d$la <- log(d$time)
+  th <- c(mu = 0.01, nu = 0.5, 0, 0)
+  w <- hazard(survival::Surv(int_dead, dead) ~ log(time) + mal, data = d,
+              dist = "weibull", theta = th, fit = TRUE)
+  ref <- hazard(survival::Surv(int_dead, dead) ~ la + mal, data = d,
+                dist = "weibull", theta = th, fit = TRUE)
+  expect_equal(unname(w$fit$theta), unname(ref$fit$theta), tolerance = 1e-10)
+  expect_equal(hzr_gof(w)$par_cumhaz, hzr_gof(ref)$par_cumhaz,
+               tolerance = 1e-10)
+})
+
+test_that("a constant baked into predvars is not read from newdata", {
+  # scale(age, center = time) stores the centre at fit time, so `time` is
+  # never evaluated at newdata.
+  d <- .tc_avc
+  d$time <- NULL
+  time <- 50
+  th <- c(mu = 0.01, nu = 0.5, b = 0.01)
+  w <- hazard(survival::Surv(int_dead, dead) ~
+                scale(age, center = time, scale = FALSE),
+              data = d, dist = "weibull", theta = th)
+  expect_equal(unname(predict(w, newdata = data.frame(time = 2, age = 60),
+                              type = "cumulative_hazard")),
+               (0.01 * 2)^0.5 * exp(0.01 * (60 - 50)), tolerance = 1e-12)
+})
+
+test_that("a phase formula still counts when the global design is design-level", {
+  # Global I(age > time) arrives as design columns and is not evaluated,
+  # but the phase formula I(mal > time) is, and newdata's `time` would
+  # mask its constant: this must stop (2e71588 returned masked values).
+  d <- .tc_avc
+  d$time <- NULL
+  time <- 0.5
+  fit <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ I(age > time), data = d,
+    dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes"),
+      constant = hzr_phase("constant", formula = ~ I(mal > time))),
+    fit = TRUE))
+  nd <- data.frame(time = c(1, 2), check.names = FALSE,
+                   `I(age > time)TRUE` = 1, mal = 1)
+  expect_error(predict(fit, newdata = nd, type = "cumulative_hazard"),
+               .tc_msg)
+})
+
 test_that("a list element named time (cfg$time) is not the variable time", {
   d <- .tc_avc
   d$time <- NULL
