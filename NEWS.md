@@ -62,8 +62,9 @@
   follow-up time used to overwrite silently, or for a multiphase phase
   formula that uses `time`. `log(time)`, a constant such as
   `I(age > time)` and a list element such as `cfg$time` do not stop them.
-  Nor does a value that `scale()` stored at fit time, in `predict()`
-  either.
+  In the global formula, neither does a value that `scale()` stored at
+  fit time, in `predict()` either. A phase formula is re-evaluated as
+  written, so a `time` constant there stops even inside `scale()`.
   `"linear_predictor"` and single-distribution `"hazard"` have no
   prediction time, so they read a `time` column as the covariate, now
   also when it is the only one (it used to stop with "Predictors are

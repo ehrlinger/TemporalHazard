@@ -52,6 +52,7 @@ test_that("with time windows, time is the prediction time for every type", {
 })
 
 test_that("a phase formula's constant named time is refused: newdata masks it", {
+  skip_on_cran()  # a multiphase fit
   # model.matrix() looks symbols up in newdata first, so newdata's `time`
   # would silently replace the formula constant: I(30 > 1) instead of
   # I(30 > 50).  Refusing is the only safe answer.
@@ -138,21 +139,25 @@ test_that("a constant baked into predvars is not read from newdata", {
 })
 
 test_that("a phase formula still counts when the global design is design-level", {
-  # Global I(age > time) arrives as design columns and is not evaluated,
-  # but the phase formula I(mal > time) is, and newdata's `time` would
-  # mask its constant: this must stop (2e71588 returned masked values).
+  skip_on_cran()  # a multiphase fit
+  # Global I(age / 100 > time) arrives as design columns and is not
+  # evaluated, but the phase formula I(mal > time) is, and newdata's `time`
+  # would mask its constant: this must stop (2e71588 returned masked
+  # values).  time = 0.5 keeps both indicators varying in the data.
   d <- .tc_avc
   d$time <- NULL
   time <- 0.5
   fit <- suppressWarnings(hazard(
-    survival::Surv(int_dead, dead) ~ I(age > time), data = d,
+    survival::Surv(int_dead, dead) ~ I(age / 100 > time), data = d,
     dist = "multiphase",
     phases = list(
       early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes"),
       constant = hzr_phase("constant", formula = ~ I(mal > time))),
     fit = TRUE))
   nd <- data.frame(time = c(1, 2), check.names = FALSE,
-                   `I(age > time)TRUE` = 1, mal = 1)
+                   `I(age/100 > time)TRUE` = 1, mal = 1)
+  # The design-column name must match, or this would test the other route.
+  expect_true(all(colnames(fit$data$x) %in% names(nd)))
   expect_error(predict(fit, newdata = nd, type = "cumulative_hazard"),
                .tc_msg)
 })
@@ -202,6 +207,7 @@ test_that("a vector-interface x column named time stops predict(newdata)", {
 })
 
 test_that("a multiphase global or phase covariate named time stops it too", {
+  skip_on_cran()  # two multiphase fits
   # Multiphase needs a fit to have coefficients.  Its Hessian warnings
   # concern standard errors, which these predictions do not use.
   glob <- suppressWarnings(hazard(
