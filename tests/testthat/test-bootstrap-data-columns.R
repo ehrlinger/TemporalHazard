@@ -90,6 +90,39 @@ test_that("a select-mode scope variable outside `data` is refused", {
   }
 })
 
+test_that("a multiphase scope is checked where its phase refit reads it", {
+  # A phase's scope is refit into that phase's own formula, so a per-row
+  # vector written beside the phase formula reaches the refit even though
+  # the base formula cannot see it. A phase with no formula gets a fresh
+  # one whose lookups reach the search path.
+  mk_phases <- function() {
+    zz <- avc_278$age + sin(seq_len(nrow(avc_278))) # nolint: object_usage_linter.
+    list(
+      early    = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1,
+                           fixed = "m", formula = ~ mal),
+      constant = hzr_phase("constant")
+    )
+  }
+  base <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = avc_278, dist = "multiphase",
+    phases = mk_phases(), fit = TRUE,
+    control = list(n_starts = 1L, conserve = FALSE)
+  ))
+  expect_error(
+    hzr_bootstrap(base, n_boot = 3, seed = 1, scope = list(early = ~ zz),
+                  criterion = "wald", slentry = 0.99),
+    "uses 'zz', which is not a column"
+  )
+  assign("zz_mp_278", avc_278$age, envir = globalenv())
+  withr::defer(rm("zz_mp_278", envir = globalenv()))
+  expect_error(
+    hzr_bootstrap(base, n_boot = 3, seed = 1,
+                  scope = list(constant = ~ zz_mp_278),
+                  criterion = "wald", slentry = 0.99),
+    "uses 'zz_mp_278', which is not a column"
+  )
+})
+
 test_that("constants outside `data` are not refused", {
   # One value, or a few, is the same in every replicate by design: only a
   # per-row vector is data the resample would miss.

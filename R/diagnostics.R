@@ -1515,9 +1515,6 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       all.vars(scope)
     } else if (is.character(scope) && length(scope) > 0L) {
       all.vars(stats::reformulate(scope))
-    } else if (is.list(scope)) {
-      unlist(lapply(Filter(function(f) inherits(f, "formula"), scope),
-                    all.vars))
     }
     phase_formulas <- Filter(function(f) inherits(f, "formula"),
                              lapply(object$spec$phases, function(ph) {
@@ -1535,7 +1532,23 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       unlist(lapply(phase_formulas, function(f) {
         outside_in(all.vars(f), environment(f) %||% call_env)
       })),
-      outside_in(scope_vars, base_env %||% call_env)
+      outside_in(scope_vars, base_env %||% call_env),
+      # A multiphase scope is refit through .hzr_phase_update_formula(): into
+      # the phase's own formula, keeping its environment, or, for a phase
+      # without one, into a fresh formula whose lookups reach this package's
+      # namespace and the search path. Each phase's scope is checked there.
+      if (is.list(scope)) {
+        unlist(lapply(names(scope), function(p) {
+          sc <- scope[[p]]
+          if (!inherits(sc, "formula")) return(character())
+          pf <- object$spec$phases[[p]]$formula
+          outside_in(all.vars(sc), if (is.null(pf)) {
+            environment(.hzr_parse_formula)
+          } else {
+            environment(pf)
+          })
+        }))
+      }
     )
     outside <- unique(outside)
     if (length(outside) > 0L) {
