@@ -469,11 +469,22 @@ hzr_gof <- function(object, time_grid = NULL) {
   } else {
     ifelse(km_entry > 0 & km_entry < obs_time, km_entry, 0)
   }
-  km_fit <- if (any(km_entry > 0)) {
-    survival::survfit(survival::Surv(km_entry, obs_time, obs_status) ~ 1)
+  km_y <- if (any(km_entry > 0)) {
+    survival::Surv(km_entry, obs_time, obs_status)
   } else {
-    survival::survfit(survival::Surv(obs_time, obs_status) ~ 1)
+    survival::Surv(obs_time, obs_status)
   }
+  km_fit <- survival::survfit(km_y ~ 1)
+  # survfit() applies timefix: exit times closer together than its tolerance
+  # are merged into one Kaplan-Meier time. The per-subject tallies below
+  # place each subject by those same adjusted times, or a
+  # subject merged onto a neighbour's time matches no grid point and drops
+  # out of both tallies (#286). Expected events still use the raw times,
+  # which are what the likelihood fits.
+  km_adj <- unclass(survival::aeqSurv(km_y))
+  counting <- ncol(km_adj) == 3
+  tally_exit <- km_adj[, if (counting) "stop" else "time"]
+  tally_exit[is.na(tally_exit)] <- obs_time[is.na(tally_exit)]
 
   # survfit output: time, n.risk, n.event, n.censor, surv
   km_times   <- km_fit$time
@@ -482,6 +493,7 @@ hzr_gof <- function(object, time_grid = NULL) {
   km_surv    <- km_fit$surv
 
   # --- Decide time grid -----------------------------------------------------
+  default_grid <- is.null(time_grid)
   if (is.null(time_grid)) {
     time_grid <- km_times
   } else {
@@ -634,10 +646,24 @@ hzr_gof <- function(object, time_grid = NULL) {
   subject_expected <- obs_weights * (h_exit - h_entry)
   subject_observed <- obs_weights * obs_status
 
-  uniq_time <- unique(obs_time)
-  subject_grid <- vapply(uniq_time, grid_index,
-                         integer(1))[match(obs_time, uniq_time)]
+  # Each subject is placed by its timefix-adjusted exit time, which is a
+  # Kaplan-Meier time, or by its raw time when a custom grid holds the raw
+  # value instead.
+  grid_of <- function(t) {
+    u <- unique(t)
+    vapply(u, grid_index, integer(1))[match(t, u)]
+  }
+  subject_grid <- grid_of(tally_exit)
+  off <- is.na(subject_grid)
+  subject_grid[off] <- grid_of(obs_time[off])
   on_grid <- !is.na(subject_grid)
+  # On the default grid every subject should land on its Kaplan-Meier time;
+  # say so rather than drop anyone from the tallies silently.
+  if (default_grid && !all(on_grid)) {
+    warning("hzr_gof(): ", sum(!on_grid), " of ", n_total, " subjects did ",
+            "not match a Kaplan-Meier time and are left out of ",
+            "cum_observed and cum_expected.", call. = FALSE)
+  }
   interval_observed <- rep(0, length(time_grid))
   interval_expected <- rep(0, length(time_grid))
   if (any(on_grid)) {
