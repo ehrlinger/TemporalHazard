@@ -55,6 +55,18 @@
   cutoff or a knots vector, is still allowed. The error names the
   variables; add them to `data` and refit.
 
+* **`hzr_stepwise()` now refuses a base fit written as `Surv(...) ~ .`**
+  (#279). It read the base model's terms without the data, which cannot
+  expand `.`, and treated the failure as a model with no terms: the screen
+  reported zero steps, which looks the same as finding nothing to drop. It
+  now stops before printing anything and asks for the base model's terms to
+  be written out. A `scope` of `~ .`, which used to give a screen with no
+  candidates, stops the same way, and so does a multiphase base fit whose
+  global formula uses `.` while a phase has no formula of its own and so
+  inherits it. A screen whose base model has its terms written out is
+  unchanged, as is a multiphase screen in which every phase has its own
+  formula.
+
 ## New features
 
 * **Every fit now says what it did not do** (#242, following #197). A

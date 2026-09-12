@@ -39,6 +39,15 @@
   if (!inherits(formula, "formula")) {
     stop("formula must be a `formula` object.", call. = FALSE)
   }
+  # `.` can only be expanded against data, and this reader has none. terms()
+  # errors on it, and the tryCatch() below turned that into "no terms", so a
+  # `~ .` base model reported a finished screen of zero steps (#279).
+  if ("." %in% all.vars(formula)) {
+    stop("hzr_stepwise() cannot expand `.` in `",
+         paste(deparse(formula), collapse = " "), "`: write the terms out, ",
+         "as in `~ age + mal`. A base model written with `.` must be refit ",
+         "that way; a `scope` can list its variables.", call. = FALSE)
+  }
   # terms() needs a formula with no empty LHS/RHS; ~ 1 has one intercept term.
   tt <- tryCatch(stats::terms(formula),
                  error = function(e) NULL)
@@ -212,13 +221,12 @@
 #' \code{formula[[3L]]}) and returns \code{TRUE} if any call node has a
 #' function symbol that exactly matches one of \code{phase_names}.
 #'
-#' This is stricter than a string-regex approach: a phase named \code{"log"}
-#' will NOT produce a false positive when the formula contains \code{log(age)},
-#' because \code{log} would also appear in \code{phase_names} only if the user
-#' deliberately named a phase \code{"log"}.  Conversely, the function only
-#' fires when the call head is an exact match to a known phase name -- standard
-#' R functions that happen to share names with phases do not trigger the check
-#' unless those names are actually phase names.
+#' This is stricter than a string-regex approach, which would fire on any
+#' \code{log(} in the text: the walk fires only when a call's head exactly
+#' matches a phase name, so \code{log(age)} is not taken for a phase unless a
+#' phase is actually named \code{"log"}.  When one is, \code{log(age)} does
+#' match, and \code{hazard()} refuses the formula (#275); write
+#' \code{base::log(age)} to use the function.
 #'
 #' @param rhs  A language object (the RHS of a formula, typically
 #'   \code{formula[[3L]]}).
