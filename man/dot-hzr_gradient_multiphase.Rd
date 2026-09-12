@@ -16,6 +16,7 @@
   covariate_counts,
   x_list,
   objective = c("likelihood", "sas"),
+  sanitize = TRUE,
   ...
 )
 }
@@ -43,11 +44,17 @@
 see \code{.hzr_logl_interval()}. Exact-event, right-censored and left-censored
 rows are unaffected.}
 
+\item{sanitize}{Logical; \code{FALSE} returns \code{NA} where the default returns 0.
+Used by SAS/C's acceptance test, which must not read a zero it could not
+compute as a small gradient.}
+
 \item{...}{Ignored.}
 }
 \value{
 Numeric vector of length \code{length(theta)} -- the gradient.
-Returns a zero vector if any component is non-finite (guards optimizer).
+With \code{sanitize = TRUE} (the default) a component that cannot be evaluated
+is 0, and so is the whole vector at an infeasible point (guards the
+optimizer); with \code{sanitize = FALSE} those are \code{NA}.
 }
 \description{
 Computes the score vector \eqn{d\ell / d\theta} using analytic chain-rule

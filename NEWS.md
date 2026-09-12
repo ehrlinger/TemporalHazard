@@ -96,8 +96,9 @@
   point: it estimates `log|M|` with the sign fixed by the starting value, so
   `M` cannot reach or cross 0. `hazard()` estimates `m` directly and can.
 
-* **A fit that reports convergence now meets SAS/C HAZARD's own test for
-  it.** `hazard()`'s BFGS optimizer stops on the relative change in the
+* **A fit that reports convergence is now checked against SAS/C HAZARD's
+  own test for it, and continued with `stats::nlm()` when it fails the
+  test.** `hazard()`'s BFGS optimizer stops on the relative change in the
   log-likelihood (`control$reltol`, default 1e-5), which lets a flat ridge
   end short of the maximum with `converged = TRUE`: a 13-parameter
   early-CDF plus late-G3 model stopped 0.013 below the SAS listing's
