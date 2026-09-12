@@ -53,7 +53,88 @@
   `NA` exactly when `"weak_direction_check"` is listed. An object saved by an
   earlier version prints "not recorded" rather than "none".
 
+* **`hzr_translate_sas()` translates a `%repeat` call** into
+  `hzr_repeated_events()` (#241), renaming its outputs to the names the job
+  gives them so the job's fit reads them. The macro's input is still the
+  reader's to supply. Any step between the macro and the fit that names the
+  macro's output, or uses a macro variable that might, stops the document
+  with the step quoted, rather than fitting data the job changed; a plain
+  `PROC SORT` is the one step let through. A step that changes the output
+  without naming it, such as a macro that writes it internally, is not
+  detected.
+
 ## Bug fixes
+
+* **The multiphase gradient and Hessian are now right when an early phase's
+  `m` is near 0.** Both differentiate in `m` by finite differences, and
+  their stencils straddled 0: the gradient's (half-width about 6e-6)
+  whenever `|m|` was smaller than that, the analytic Hessian's (half-width
+  1.2e-4) whenever `nu > 0` and `|m|` was below 1.2e-4. `hzr_decompos()`
+  changes formula at `m = 0`, and the `m < 0` family meets the `m >= 0` one
+  in a cusp rather than continuing it, so each difference mixed two
+  branches and returned neither side's derivative. The gradient gave +8.4
+  where the true value was -20.2, on a 13-parameter fit that converged to
+  `m = 2.9e-6`; the Hessian put -4.8e5 on the `m` diagonal where the value
+  is about 0.7, so the standard errors of such fits were wrong too. Every
+  other parameter's gradient was unaffected.
+
+  Both stencils now keep the sign of `m`, one-sided on the `m >= 0` side,
+  where the family is smooth: there the gradient and the analytic Hessian
+  are now right. Below 0 the gradient's step is at most 1% of `|m|`, because
+  the cusp varies on that scale, floored at 1e-10 so rounding stays bounded.
+  The Hessian's steps below 0 are one-sided but still 1.2e-4 wide: they stop
+  the branches mixing, but for `m` within about 1e-4 below 0 and `nu < 2`
+  they understate the curvature, so the standard error of `m` there is too
+  large (about five times, on the fit the tests use). At `nu = 0` that path
+  used to stop with an error; it now returns these values. Fits whose
+  standard errors come from `numDeriv` -- those with left- or
+  interval-censored rows -- and the score test's information still
+  difference across 0. Likelihood values are unchanged.
+
+  The likelihood itself is still not differentiable at `m = 0`, so a fit
+  whose optimum sits there reports a nonzero gradient. SAS/C never meets the
+  point: it estimates `log|M|` with the sign fixed by the starting value, so
+  `M` cannot reach or cross 0. `hazard()` estimates `m` directly and can.
+
+* **A fit that reports convergence is now checked against SAS/C HAZARD's
+  own test for it, and continued with `stats::nlm()` when it fails the
+  test.** `hazard()`'s BFGS optimizer stops on the relative change in the
+  log-likelihood (`control$reltol`, default 1e-5), which lets a flat ridge
+  end short of the maximum with `converged = TRUE`: a 13-parameter
+  early-CDF plus late-G3 model stopped 0.013 below the SAS listing's
+  log-likelihood, and synthetic fits of the same shape up to 5 units below.
+  SAS/C accepts an optimum only when the relative gradient,
+  `max |g_i| * max(|x_i|, 1) / max(|f|, 1)`, is at most `eps^(1/3)`, about
+  6e-6. When BFGS reports convergence and that test fails, every
+  distribution's fit is now continued with `stats::nlm()`, the
+  Dennis-Schnabel algorithm SAS/C's optimizer was ported from, at SAS's
+  tolerances, and the continued point is kept only if the log-likelihood
+  improves. The default `reltol` is unchanged: tightening it instead cost
+  30% to 60% more time on the test suite and broke eight or nine tests.
+
+  Every fit records the test in `fit$fit$rel_gradient` (`NA` when the test
+  was not applied, because the optimizer did not report convergence, or the
+  gradient cannot be evaluated) and, when the continuation improved the fit,
+  `nlm()`'s termination code in `fit$fit$polish_code`, and `print()` and
+  `summary()` show it. Under Conservation of Events the analytic score omits
+  how the conserved scale moves with the other parameters, so there the test
+  is computed from finite differences of the log-likelihood, as SAS/C does.
+  The continuation keeps the analytic score, so a CoE fit can honestly end
+  with the test not met. Only SAS/C's two hard failures warn: code 4, the
+  iteration limit, and code 5, where the likelihood kept rising along some
+  direction and may have no maximum. Codes 2 and 3, where SAS/C prints a
+  caution and retries, are recorded without a warning. The test is relative
+  to the size of the log-likelihood, so a fit that meets it is within SAS's
+  tolerance of the maximum rather than exactly at it.
+
+  Estimates of fits that used to stop short now change. One test depended
+  on a detail of where BFGS stopped: it showed `gamma` and `eta`
+  non-identified at `alpha = 1` by a large standard error. On that exactly
+  flat ridge the Hessian is singular in theory, so whether a finite standard
+  error comes out at all is numerical noise, and at the polished point it
+  does not. The test now accepts either a missing or a 100-fold larger
+  standard error, and also checks that both fits reach the same
+  log-likelihood and the same `gamma * eta`.
 
 * **A Weibull fit with one masked variance reported the others on the wrong
   scale.** When the Hessian inverse has a non-positive variance, its row and
@@ -85,7 +166,7 @@
   returns one row per inter-event segment, with the segment's start time,
   duration and running event count. It reproduces the SAS macro `%repeat`,
   which built this input for the repeated-events `HAZARD` jobs and whose output
-  was never saved, so those jobs can now be run again in R. It refuses input
+  was seldom saved, so those jobs can now be run again in R. It refuses input
   that would otherwise give a plausible but wrong result -- a non-numeric time,
   follow-up or indicator column, a factor `id`, a missing `followup` value, or
   an empty data frame -- and warns, naming the subjects, when an event falls

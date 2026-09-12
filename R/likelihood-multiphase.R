@@ -772,21 +772,32 @@
 #' Gradient of the multiphase log-likelihood
 #'
 #' Computes the score vector \eqn{d\ell / d\theta} using analytic chain-rule
-#' formulas for `log_mu` and `beta` parameters, and central-difference
+#' formulas for `log_mu` and `beta` parameters, and finite-difference
 #' derivatives (via `.hzr_phase_derivatives()`) for shape parameters
-#' (`log_t_half`, `nu`, `m`).
+#' (`log_t_half`, `nu`, `m`): central, except that the `m` stencil stays on
+#' the side of `m` near `m = 0`, where the phase family has a cusp.
 #'
 #' @inheritParams .hzr_logl_multiphase
 #' @return Numeric vector of length `length(theta)`: the gradient.
-#'   Returns a zero vector if any component is non-finite (guards optimizer).
+#'   With `sanitize = TRUE` (the default) a component that cannot be evaluated
+#'   is 0, and so is the whole vector at an infeasible point (guards the
+#'   optimizer); with `sanitize = FALSE` those are `NA`.
+#' @param sanitize Logical; `FALSE` returns `NA` where the default returns 0.
+#'   Used by SAS/C's acceptance test, which must not read a zero it could not
+#'   compute as a small gradient.
 #' @keywords internal
 .hzr_gradient_multiphase <- function(theta, time, status,
                                       time_lower = NULL, time_upper = NULL,
                                       x = NULL, weights = NULL,
                                       phases, covariate_counts, x_list,
                                       objective = c("likelihood", "sas"),
+                                      sanitize = TRUE,
                                       ...) {
   objective <- match.arg(objective)
+  # A gradient that cannot be evaluated is zeros for the optimizer, which
+  # needs a finite vector to keep moving, and NA for anything that must not
+  # read it as a measurement (the SAS acceptance test asks with sanitize =
+  # FALSE).
   .hzr_check_sas_status(status, objective)
   n <- length(time)
   p <- length(theta)
@@ -798,10 +809,12 @@
   for (nm in names(phases)) {
     pars <- .hzr_unpack_phase_theta(theta_split[[nm]], phases[[nm]])
     if (phases[[nm]]$type %in% c("cdf", "hazard")) {
-      if (pars$m < 0 && pars$nu < 0) return(grad)
+      if (pars$m < 0 && pars$nu < 0) return(if (sanitize) grad else grad * NA)
     }
     if (phases[[nm]]$type == "g3") {
-      if (pars$gamma <= 0 || pars$eta <= 0 || pars$alpha < 0) return(grad)
+      if (pars$gamma <= 0 || pars$eta <= 0 || pars$alpha < 0) {
+        return(if (sanitize) grad else grad * NA)
+      }
     }
   }
 
@@ -927,7 +940,9 @@
   }
 
   # Guard: if total hazard or cumhaz is non-finite, return zero gradient
-  if (any(!is.finite(H_t)) || any(!is.finite(h_t))) return(grad)
+  if (any(!is.finite(H_t)) || any(!is.finite(h_t))) {
+    return(if (sanitize) grad else grad * NA)
+  }
 
   # -- Per-observation weight vectors ----------------------------------------
   # dLogl/dH(t_i) depends on observation type:
@@ -1197,8 +1212,9 @@
     }
   }
 
-  # Safety: zero out non-finite entries
-  grad[!is.finite(grad)] <- 0
+  # Non-finite entries: 0 for the optimizer; NA for the acceptance test, which
+  # must report a component it could not evaluate, not a NaN or an Inf.
+  grad[!is.finite(grad)] <- if (sanitize) 0 else NA_real_
 
   grad
 }
@@ -1646,18 +1662,19 @@
   logl_fn_unwrapped <- logl_fn
 
   gradient_fn <- function(theta, time, status, time_lower, time_upper, x,
-                          weights = NULL, ...) {
+                          weights = NULL, sanitize = TRUE, ...) {
     grad <- .hzr_gradient_multiphase(
       theta = theta, time = time, status = status,
       time_lower = time_lower, time_upper = time_upper, x = x,
       weights = weights,
       phases = phases, covariate_counts = covariate_counts, x_list = x_list,
-      objective = objective
+      objective = objective, sanitize = sanitize
     )
 
     # Fallback: if gradient is all zero (e.g. at infeasible point), try
-    # numerical gradient of the *weighted* LL to keep optimizer moving.
-    if (all(grad == 0)) {
+    # numerical gradient of the *weighted* LL to keep optimizer moving. Not
+    # when the raw score was asked for: its NAs are the answer.
+    if (sanitize && isTRUE(all(grad == 0))) {
       eps_rel <- sqrt(.Machine$double.eps)
       p <- length(theta)
       ll0 <- logl_fn_unwrapped(theta, time, status, time_lower,
@@ -1764,15 +1781,19 @@
       }
 
       gradient_fn_pre_coe <- gradient_fn
+      # Same formals as the base gradient_fn, sanitize included: R CMD check
+      # flags local redefinitions whose formal arguments differ.
       gradient_fn <- function(theta, time, status, time_lower,
-                              time_upper, x, weights = NULL, ...) {
+                              time_upper, x, weights = NULL,
+                              sanitize = TRUE, ...) {
         theta <- .hzr_conserve_events(
           theta, fixmu_phase, fixmu_pos,
           time, status, phases, covariate_counts, x_list, total_events,
           weights = weights, time_lower = time_lower
         )
         gradient_fn_pre_coe(theta, time, status, time_lower,
-                            time_upper, x, weights = weights, ...)
+                            time_upper, x, weights = weights,
+                            sanitize = sanitize, ...)
       }
     } else {
       use_conserve <- FALSE
@@ -1815,11 +1836,13 @@
     }
 
     gradient_fn_full <- gradient_fn
+    # Same formals as the base gradient_fn; see the CoE wrapper above.
     gradient_fn <- function(theta, time, status, time_lower, time_upper, x,
-                            weights = NULL, ...) {
+                            weights = NULL, sanitize = TRUE, ...) {
       grad_full <- gradient_fn_full(expand_theta(theta), time, status,
                                      time_lower, time_upper, x,
-                                     weights = weights, ...)
+                                     weights = weights, sanitize = sanitize,
+                                     ...)
       grad_full[free_idx]
     }
 
@@ -1828,6 +1851,17 @@
     free_idx_eff <- seq_along(theta_start)
     theta_start_optim <- theta_start
   }
+
+  # Positions, in the optimizer's vector, of each free shape m. The
+  # finite-difference acceptance check (gradient_exact = FALSE) must not
+  # straddle m = 0, where the cdf and hazard families meet in a cusp (#251).
+  # Taken from the layout -- log_mu, log_t_half, nu, m, then covariates --
+  # not from names, which a covariate called m would collide with.
+  mu_pos <- .hzr_log_mu_positions(phases, covariate_counts)
+  m_full <- unlist(lapply(names(phases), function(nm) {
+    if (phases[[nm]]$type %in% c("cdf", "hazard")) mu_pos[[nm]] + 3L
+  }), use.names = FALSE)
+  m_free_idx <- if (any_fixed) which(free_idx %in% m_full) else m_full
 
   # --- Multi-start optimization -----------------------------------------------
   n_starts <- if (!is.null(control$n_starts)) control$n_starts else 5L
@@ -2002,7 +2036,11 @@
         weights     = weights,
         control     = control,
         use_bounds  = FALSE,
-        hessian_fn  = hessian_fn_mp
+        hessian_fn  = hessian_fn_mp,
+        # Under CoE gradient_fn is the partial score at the conserved theta,
+        # not the gradient of the objective being maximised.
+        gradient_exact = !(use_conserve && !is.null(fixmu_pos)),
+        sign_bounded = m_free_idx
       ),
       error = function(e) e
     )

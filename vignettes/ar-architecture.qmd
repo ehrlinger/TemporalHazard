@@ -181,7 +181,8 @@ optima that are common in multiphase models.
 
 The optimizer delegates to `.hzr_optim_generic()`, which wraps
 `stats::optim()` with method `"BFGS"` (unconstrained; all scale
-parameters are log-transformed). The Hessian at the converged point,
+parameters are log-transformed) and, when a BFGS stop fails SAS/C
+HAZARD's relative-gradient test, continues with `stats::nlm()`. The Hessian at the converged point,
 inverted for the variance-covariance matrix, is assembled analytically
 when every row is an exact event or right-censored (counting-process start
 times included): `.hzr_hessian_multiphase()` for multiphase fits, whose
