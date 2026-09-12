@@ -334,8 +334,10 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #' covariates it belongs to one "mean patient" with average covariates, and
 #' the mean patient's cumulative hazard is not the average of the patients'
 #' cumulative hazards, so `par_cumhaz` does not enter the expected count.
-#' For an intercept-only model every patient shares that curve and the two
-#' agree.  The means are those of the design-matrix columns, taken phase by
+#' For an intercept-only model every patient shares that curve.  Without
+#' entry times each patient's expected count is the curve at their exit time;
+#' with entry times it is the curve's rise from entry to exit, so the two
+#' differ.  The means are those of the design-matrix columns, taken phase by
 #' phase when a multiphase fit's covariates enter only through the phase
 #' formulas, so a factor enters as the proportion of patients in each level.
 #' A multiphase fit with both global and phase-formula covariates is not yet
@@ -354,12 +356,14 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #'   evaluate the parametric model.
 #'   If `NULL` (default), uses the distinct Kaplan-Meier times of the
 #'   fitted data, which are the event times and the censoring times.
+#'   A supplied grid is sorted and repeated times dropped, because the
+#'   cumulative columns accumulate in time order.
 #'
 #' @return A data frame with one row per time point and columns:
 #' \describe{
 #'   \item{time}{Evaluation time.}
-#'   \item{n_risk}{Number at risk (Kaplan-Meier). A subject with an entry
-#'     time is at risk only from that time on.}
+#'   \item{n_risk}{Number at risk at this time: subjects still in
+#'     follow-up. A subject with an entry time is at risk only after it.}
 #'   \item{n_event}{Number of events at this time.}
 #'   \item{n_censor}{Number censored at this time.}
 #'   \item{km_surv}{Kaplan-Meier survival estimate, using the
@@ -377,7 +381,9 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #'   \item{cum_expected}{Cumulative expected events: over the patients
 #'     leaving follow-up by this time, the sum of each patient's own
 #'     cumulative hazard at exit minus that at entry, weighted by the case
-#'     weights for a weighted fit.}
+#'     weights for a weighted fit.  With \code{time_windows}, both cumulative
+#'     hazards use the patient's covariate window at exit, as the likelihood
+#'     does.}
 #'   \item{residual}{Expected minus observed
 #'     (\code{cum_expected - cum_observed}).}
 #' }
@@ -470,7 +476,6 @@ hzr_gof <- function(object, time_grid = NULL) {
 
   # survfit output: time, n.risk, n.event, n.censor, surv
   km_times   <- km_fit$time
-  km_n_risk  <- km_fit$n.risk
   km_n_event <- km_fit$n.event
   km_n_censor <- km_fit$n.censor
   km_surv    <- km_fit$surv
@@ -478,6 +483,15 @@ hzr_gof <- function(object, time_grid = NULL) {
   # --- Decide time grid -----------------------------------------------------
   if (is.null(time_grid)) {
     time_grid <- km_times
+  } else {
+    if (!is.numeric(time_grid) || length(time_grid) == 0 ||
+        any(!is.finite(time_grid))) {
+      stop("'time_grid' must be a non-empty numeric vector of finite times.",
+           call. = FALSE)
+    }
+    # The cumulative columns accumulate in grid order, so the grid must run
+    # forward in time, once.
+    time_grid <- sort(unique(time_grid))
   }
 
   # --- Parametric curve at each time point (for the KM overlay) -------------
@@ -525,19 +539,25 @@ hzr_gof <- function(object, time_grid = NULL) {
   par_surv <- exp(-par_cumhaz)
 
   # --- Interpolate KM at the time grid --------------------------------------
-  # Use stepfun-style interpolation for KM (right-continuous)
-  km_surv_at_grid <- stats::approx(
-    x = c(0, km_times), y = c(1, km_surv),
-    xout = time_grid, method = "constant", f = 0, rule = 2
-  )$y
+  # A right-continuous step function, 1 before the first Kaplan-Meier time.
+  # approx() with a (0, 1) sentinel prepended duplicated x = 0 when a time was
+  # exactly 0, and then averaged the two values there.
+  km_surv_at_grid <- stats::stepfun(km_times, c(1, km_surv))(time_grid)
   km_cumhaz_at_grid <- -log(pmax(km_surv_at_grid, .Machine$double.xmin))
 
-  # Interpolate n.risk, n.event, n.censor at grid times
+  # The risk set at each grid time, counted directly. A subject followed from
+  # 0 is at risk at t while t <= exit; one with an entry time only while
+  # entry < t <= exit. That is survfit's n.risk at its own times, and it stays
+  # right between them, where carrying survfit's count forward had kept
+  # subjects who had left and missed ones who had entered. Count every
+  # subject with exit >= t, less the late entrants not yet in (entry >= t,
+  # whose exit is later still).
+  n_at_or_after <- function(v, t) {
+    length(v) - findInterval(t, sort(v), left.open = TRUE)
+  }
+  km_n_risk_grid <- n_at_or_after(obs_time, time_grid) -
+    n_at_or_after(km_entry[km_entry > 0], time_grid)
   # For event counts, sum events at matching times; 0 otherwise
-  km_n_risk_grid <- stats::approx(
-    x = c(0, km_times), y = c(sum(km_entry == 0), km_n_risk),
-    xout = time_grid, method = "constant", f = 0, rule = 2
-  )$y
   # A time belongs to the first grid point within this tolerance, or to none.
   # Counts, observed events and expected events all use this one rule, so for
   # a custom time_grid the two tallies cover the same subjects.
@@ -583,6 +603,16 @@ hzr_gof <- function(object, time_grid = NULL) {
   if (any(has_entry)) {
     at_entry <- object
     at_entry$data$time <- ifelse(has_entry, entry, obs_time)
+    tw <- object$spec$time_windows
+    if (!is_multiphase && !is.null(tw) && !is.null(object$data$x) &&
+        ncol(object$data$x) > 0) {
+      # The likelihood takes H(entry) with each row's design expanded at its
+      # exit time. predict() would re-expand at the entry time, so hand it
+      # the exit-time design, already expanded, and no windows.
+      at_entry$data$x <- .hzr_expand_time_varying_design(
+        x = object$data$x, time = obs_time, time_windows = tw)
+      at_entry$spec$time_windows <- NULL
+    }
     h_entry[has_entry] <-
       stats::predict(at_entry, type = "cumulative_hazard")[has_entry]
   }

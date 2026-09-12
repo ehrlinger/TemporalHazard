@@ -233,6 +233,20 @@
   means, so a factor enters as the proportion of patients in each level.
   A fit with both global and phase-formula covariates is #264.
 
+* **`hzr_gof()` had four smaller errors**, all found by Copilot's review of
+  #285.
+  - With a custom `time_grid`, `n_risk` between Kaplan-Meier times carried
+    the previous count forward, so it kept subjects who had left and
+    missed ones who had entered. It now counts the risk set at each grid
+    time.
+  - An unsorted grid made the cumulative columns non-cumulative. The grid
+    is now sorted, with repeated times dropped.
+  - With an event at time 0, `km_surv` at 0 was averaged with 1.
+  - For a fit with both `time_windows` and entry times, expected events
+    took H(entry) in the entry-time covariate window, while the likelihood
+    uses the exit-time window. E/O came out 1.052 on a Weibull fit that
+    conserves events.
+
 * **A Weibull fit with one masked variance reported the others on the wrong
   scale.** When the Hessian inverse has a non-positive variance, its row and
   column are set to `NA`. The delta-method transform from the internal

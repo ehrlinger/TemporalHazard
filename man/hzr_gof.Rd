@@ -12,14 +12,16 @@ hzr_gof(object, time_grid = NULL)
 \item{time_grid}{Optional numeric vector of time points at which to
 evaluate the parametric model.
 If \code{NULL} (default), uses the distinct Kaplan-Meier times of the
-fitted data, which are the event times and the censoring times.}
+fitted data, which are the event times and the censoring times.
+A supplied grid is sorted and repeated times dropped, because the
+cumulative columns accumulate in time order.}
 }
 \value{
 A data frame with one row per time point and columns:
 \describe{
 \item{time}{Evaluation time.}
-\item{n_risk}{Number at risk (Kaplan-Meier). A subject with an entry
-time is at risk only from that time on.}
+\item{n_risk}{Number at risk at this time: subjects still in
+follow-up. A subject with an entry time is at risk only after it.}
 \item{n_event}{Number of events at this time.}
 \item{n_censor}{Number censored at this time.}
 \item{km_surv}{Kaplan-Meier survival estimate, using the
@@ -37,7 +39,9 @@ by the case weights for a weighted fit.}
 \item{cum_expected}{Cumulative expected events: over the patients
 leaving follow-up by this time, the sum of each patient's own
 cumulative hazard at exit minus that at entry, weighted by the case
-weights for a weighted fit.}
+weights for a weighted fit.  With \code{time_windows}, both cumulative
+hazards use the patient's covariate window at exit, as the likelihood
+does.}
 \item{residual}{Expected minus observed
 (\code{cum_expected - cum_observed}).}
 }
@@ -92,8 +96,10 @@ The parametric curve is a different quantity.  For a model with
 covariates it belongs to one "mean patient" with average covariates, and
 the mean patient's cumulative hazard is not the average of the patients'
 cumulative hazards, so \code{par_cumhaz} does not enter the expected count.
-For an intercept-only model every patient shares that curve and the two
-agree.  The means are those of the design-matrix columns, taken phase by
+For an intercept-only model every patient shares that curve.  Without
+entry times each patient's expected count is the curve at their exit time;
+with entry times it is the curve's rise from entry to exit, so the two
+differ.  The means are those of the design-matrix columns, taken phase by
 phase when a multiphase fit's covariates enter only through the phase
 formulas, so a factor enters as the proportion of patients in each level.
 A multiphase fit with both global and phase-formula covariates is not yet
