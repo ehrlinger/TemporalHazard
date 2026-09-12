@@ -171,7 +171,11 @@ test_that("(f) genuine left truncation is unchanged", {
                                 x_list = k$x_list)
   expect_equal(g, c(12.238301562562, 1.483456049285, -9.365029543009,
                     -3.310708925120, 24.591058283363), tolerance = 1e-10)
-  expect_equal(g, numDeriv::grad(ll, th), tolerance = 1e-6)
+  # numDeriv is a Suggests; the pins above and below run without it.
+  has_numderiv <- requireNamespace("numDeriv", quietly = TRUE)
+  if (has_numderiv) {
+    expect_equal(g, numDeriv::grad(ll, th), tolerance = 1e-6)
+  }
   hs <- .hzr_hessian_multiphase(th, time, status, time_lower = entry,
                                 phases = k$phases_v,
                                 covariate_counts = k$counts,
@@ -181,8 +185,10 @@ test_that("(f) genuine left truncation is unchanged", {
     1.467275795528, -7.003725435493, 1.041266887820, 2.387702552874,
     0.144978579487, -0.987020763633, 8.920178183938, 1.818804685909,
     -6.336448265620, -1.983477842486, -2.385362400030), tolerance = 1e-10)
-  expect_equal(unname(hs), numDeriv::hessian(function(p) -ll(p), th),
-               tolerance = 1e-4)
+  if (has_numderiv) {
+    expect_equal(unname(hs), numDeriv::hessian(function(p) -ll(p), th),
+                 tolerance = 1e-4)
+  }
 
   ft <- suppressWarnings(
     .hzr_optim_multiphase(time, status, time_lower = entry, phases = ph))
