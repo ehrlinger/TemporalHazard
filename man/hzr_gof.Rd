@@ -94,8 +94,10 @@ the mean patient's cumulative hazard is not the average of the patients'
 cumulative hazards, so \code{par_cumhaz} does not enter the expected count.
 For an intercept-only model every patient shares that curve and the two
 agree.  The means are those of the design-matrix columns, taken phase by
-phase when a multiphase fit's covariates enter through the phase
+phase when a multiphase fit's covariates enter only through the phase
 formulas, so a factor enters as the proportion of patients in each level.
+A multiphase fit with both global and phase-formula covariates is not yet
+handled here (#264).
 
 For a weighted fit both tallies carry the case weights: observed events
 are \eqn{\sum_i w_i d_i} and expected events \eqn{\sum_i w_i H_i}, the

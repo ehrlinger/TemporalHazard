@@ -214,14 +214,24 @@
   "Conservation ratio (E/O)". On the covariate model in the clinical
   walkthrough vignette that printed 0.606, while the fit conserved events exactly (68.000 expected
   against 68 observed). Expected events are now summed per subject, each
-  subject's cumulative hazard at exit minus that at entry, so E/O is the
-  conservation-of-events identity. For a weighted fit, both observed and
+  subject's cumulative hazard at exit minus that at entry. For Weibull,
+  exponential and multiphase fits with conservation of events, E/O is then
+  the conservation-of-events identity; for log-logistic and log-normal fits
+  it checks calibration in total. For a weighted fit, both observed and
   expected events now carry the case weights, since that is what a weighted
   fit conserves (the sum of w·H equals the sum of w·d). The `par_surv` and
   `par_cumhaz` columns are still the covariate-mean curve, for plotting
   against Kaplan-Meier, and the risk-set counts and Kaplan-Meier columns stay
   unweighted. Unweighted intercept-only fits without entry times are
   unchanged.
+
+* **`hzr_gof()` drew the mean-patient curve at covariates of 0** for a
+  multiphase fit whose covariates enter only through the phase formulas.
+  Such a fit has no global design matrix, so the `par_surv` and
+  `par_cumhaz` columns were predicted from time alone, which set every
+  phase covariate to 0. They now use each phase's design-matrix column
+  means, so a factor enters as the proportion of patients in each level.
+  A fit with both global and phase-formula covariates is #264.
 
 * **A Weibull fit with one masked variance reported the others on the wrong
   scale.** When the Hessian inverse has a non-positive variance, its row and

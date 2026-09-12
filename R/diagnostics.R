@@ -336,8 +336,10 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #' cumulative hazards, so `par_cumhaz` does not enter the expected count.
 #' For an intercept-only model every patient shares that curve and the two
 #' agree.  The means are those of the design-matrix columns, taken phase by
-#' phase when a multiphase fit's covariates enter through the phase
+#' phase when a multiphase fit's covariates enter only through the phase
 #' formulas, so a factor enters as the proportion of patients in each level.
+#' A multiphase fit with both global and phase-formula covariates is not yet
+#' handled here (#264).
 #'
 #' For a weighted fit both tallies carry the case weights: observed events
 #' are \eqn{\sum_i w_i d_i} and expected events \eqn{\sum_i w_i H_i}, the
@@ -508,12 +510,12 @@ hzr_gof <- function(object, time_grid = NULL) {
     nd <- data.frame(time = time_grid)
   }
 
-  par_cumhaz <- predict(curve_obj, newdata = nd, type = "cumulative_hazard")
+  par_cumhaz <- stats::predict(curve_obj, newdata = nd, type = "cumulative_hazard")
 
   # Phase decomposition for multiphase models
   phase_cumhaz <- NULL
   if (is_multiphase) {
-    decomp <- predict(curve_obj, newdata = nd, type = "cumulative_hazard",
+    decomp <- stats::predict(curve_obj, newdata = nd, type = "cumulative_hazard",
                       decompose = TRUE)
     # decomp is a matrix; first column is "total", rest are phase names
     phase_cols <- colnames(decomp)[colnames(decomp) != "total"]
@@ -566,7 +568,7 @@ hzr_gof <- function(object, time_grid = NULL) {
   obs_weights <- object$data$weights
   if (is.null(obs_weights)) obs_weights <- rep(1, n_total)
 
-  h_exit <- predict(object, type = "cumulative_hazard")
+  h_exit <- stats::predict(object, type = "cumulative_hazard")
   if (length(h_exit) != n_total) {
     stop("predict() returned ", length(h_exit), " cumulative hazards for ",
          n_total, " subjects.", call. = FALSE)
@@ -582,7 +584,7 @@ hzr_gof <- function(object, time_grid = NULL) {
     at_entry <- object
     at_entry$data$time <- ifelse(has_entry, entry, obs_time)
     h_entry[has_entry] <-
-      predict(at_entry, type = "cumulative_hazard")[has_entry]
+      stats::predict(at_entry, type = "cumulative_hazard")[has_entry]
   }
 
   # A weighted fit conserves weighted events, sum(w * H) = sum(w * d), so both
