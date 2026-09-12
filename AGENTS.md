@@ -118,10 +118,10 @@ merge until they pass. The rest run and report but do not block.
 | `lint.yaml` → `house-style` | PR, push | **yes** | fails when `.claude/house-style.md` has drifted from its vault sources |
 | `lint.yaml` → `docs-current` | PR, push | no | `git diff --exit-code man/ NAMESPACE DESCRIPTION` after `document()` |
 | `spelling.yaml` | PR, push | **yes** | `spelling::spell_check_package(use_wordlist = TRUE)` |
-| `R-CMD-check.yaml` | PR, push, release | **yes**, all five | ubuntu devel/release/oldrel-1, macOS, Windows |
-| `test-coverage.yaml` | PR, push, release | no | coverage upload |
-| `pkgdown.yaml` → `build-and-deploy` | PR, push, release | no | docs site |
-| `check-manual.yaml` | push to `main`, release | **cannot** | the PDF manual — the only thing that catches raw Unicode in `Rd` |
+| `R-CMD-check.yaml` | PR, push | **yes**, all five | ubuntu devel/release/oldrel-1, macOS, Windows |
+| `test-coverage.yaml` | PR, push | no | coverage upload |
+| `pkgdown.yaml` → `build-and-deploy` | PR, push | no | docs site |
+| `check-manual.yaml` | push to `main` | **cannot** | the PDF manual — the only thing that catches raw Unicode in `Rd` |
 | `check-release.yaml` | release published | no | `R CMD check --as-cran` |
 
 `check-manual` says *cannot* rather than *no*: it deliberately does not
