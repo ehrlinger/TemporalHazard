@@ -93,6 +93,12 @@ test_that("a custom grid of the raw exit times still counts every event", {
   grid <- sort(unique(d$time[d$time != 1]))
   g <- hzr_gof(fit, time_grid = grid)
   expect_equal(attr(g, "summary")$total_observed, sum(d$status) - 1)
+  # A grid holding only the merged time 1 counts both near-tied subjects,
+  # once each, where survfit put them; n_event agrees. Matching the custom
+  # grid on raw times alone would count 1 of these 2 events.
+  g <- hzr_gof(fit, time_grid = 1)
+  expect_equal(attr(g, "summary")$total_observed, 2)
+  expect_equal(g$n_event, 2)
 })
 
 test_that("a subject the default grid cannot place is reported, not dropped silently", {

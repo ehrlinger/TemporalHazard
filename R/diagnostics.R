@@ -348,14 +348,19 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #' form in which a weighted fit conserves events.  The `n_risk`, `n_event`,
 #' `n_censor` and Kaplan-Meier columns are unweighted.
 #'
-#' With a custom `time_grid`, a patient is counted in both tallies only if
-#' their follow-up time falls on a grid point.
+#' Each patient is placed at the Kaplan-Meier time [survival::survfit()]
+#' gives them, which merges exit times closer together than its tolerance.
+#' On the default grid every patient lands on a grid point, and `hzr_gof()`
+#' warns if one cannot be placed.  With a custom `time_grid`, a patient is
+#' counted in both tallies only if that time, or failing it their own
+#' follow-up time, falls on a grid point.
 #'
 #' @param object A fitted `hazard` object (with `fit = TRUE`).
 #' @param time_grid Optional numeric vector of time points at which to
 #'   evaluate the parametric model.
 #'   If `NULL` (default), uses the distinct Kaplan-Meier times of the
-#'   fitted data, which are the event times and the censoring times.
+#'   fitted data: the event and censoring times, with any closer together
+#'   than [survival::survfit()]'s tolerance merged into one.
 #'   A supplied grid must hold finite, non-negative times.  It is sorted
 #'   and exact repeats dropped, because the cumulative columns accumulate in
 #'   time order.

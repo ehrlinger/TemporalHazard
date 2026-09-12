@@ -12,7 +12,8 @@ hzr_gof(object, time_grid = NULL)
 \item{time_grid}{Optional numeric vector of time points at which to
 evaluate the parametric model.
 If \code{NULL} (default), uses the distinct Kaplan-Meier times of the
-fitted data, which are the event times and the censoring times.
+fitted data: the event and censoring times, with any closer together
+than \code{\link[survival:survfit]{survival::survfit()}}'s tolerance merged into one.
 A supplied grid must hold finite, non-negative times.  It is sorted
 and exact repeats dropped, because the cumulative columns accumulate in
 time order.}
@@ -111,8 +112,12 @@ are \eqn{\sum_i w_i d_i} and expected events \eqn{\sum_i w_i H_i}, the
 form in which a weighted fit conserves events.  The \code{n_risk}, \code{n_event},
 \code{n_censor} and Kaplan-Meier columns are unweighted.
 
-With a custom \code{time_grid}, a patient is counted in both tallies only if
-their follow-up time falls on a grid point.
+Each patient is placed at the Kaplan-Meier time \code{\link[survival:survfit]{survival::survfit()}}
+gives them, which merges exit times closer together than its tolerance.
+On the default grid every patient lands on a grid point, and \code{hzr_gof()}
+warns if one cannot be placed.  With a custom \code{time_grid}, a patient is
+counted in both tallies only if that time, or failing it their own
+follow-up time, falls on a grid point.
 }
 \examples{
 \donttest{
