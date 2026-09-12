@@ -90,6 +90,16 @@
   `NA` exactly when `"weak_direction_check"` is listed. An object saved by an
   earlier version prints "not recorded" rather than "none".
 
+* **`hzr_translate_sas()` translates a `%repeat` call** into
+  `hzr_repeated_events()` (#241), renaming its outputs to the names the job
+  gives them so the job's fit reads them. The macro's input is still the
+  reader's to supply. Any step between the macro and the fit that names the
+  macro's output, or uses a macro variable that might, stops the document
+  with the step quoted, rather than fitting data the job changed; a plain
+  `PROC SORT` is the one step let through. A step that changes the output
+  without naming it, such as a macro that writes it internally, is not
+  detected.
+
 ## Bug fixes
 
 * **The multiphase gradient and Hessian are now right when an early phase's
@@ -122,6 +132,46 @@
   whose optimum sits there reports a nonzero gradient. SAS/C never meets the
   point: it estimates `log|M|` with the sign fixed by the starting value, so
   `M` cannot reach or cross 0. `hazard()` estimates `m` directly and can.
+
+* **A fit that reports convergence is now checked against SAS/C HAZARD's
+  own test for it, and continued with `stats::nlm()` when it fails the
+  test.** `hazard()`'s BFGS optimizer stops on the relative change in the
+  log-likelihood (`control$reltol`, default 1e-5), which lets a flat ridge
+  end short of the maximum with `converged = TRUE`: a 13-parameter
+  early-CDF plus late-G3 model stopped 0.013 below the SAS listing's
+  log-likelihood, and synthetic fits of the same shape up to 5 units below.
+  SAS/C accepts an optimum only when the relative gradient,
+  `max |g_i| * max(|x_i|, 1) / max(|f|, 1)`, is at most `eps^(1/3)`, about
+  6e-6. When BFGS reports convergence and that test fails, every
+  distribution's fit is now continued with `stats::nlm()`, the
+  Dennis-Schnabel algorithm SAS/C's optimizer was ported from, at SAS's
+  tolerances, and the continued point is kept only if the log-likelihood
+  improves. The default `reltol` is unchanged: tightening it instead cost
+  30% to 60% more time on the test suite and broke eight or nine tests.
+
+  Every fit records the test in `fit$fit$rel_gradient` (`NA` when the test
+  was not applied, because the optimizer did not report convergence, or the
+  gradient cannot be evaluated) and, when the continuation improved the fit,
+  `nlm()`'s termination code in `fit$fit$polish_code`, and `print()` and
+  `summary()` show it. Under Conservation of Events the analytic score omits
+  how the conserved scale moves with the other parameters, so there the test
+  is computed from finite differences of the log-likelihood, as SAS/C does.
+  The continuation keeps the analytic score, so a CoE fit can honestly end
+  with the test not met. Only SAS/C's two hard failures warn: code 4, the
+  iteration limit, and code 5, where the likelihood kept rising along some
+  direction and may have no maximum. Codes 2 and 3, where SAS/C prints a
+  caution and retries, are recorded without a warning. The test is relative
+  to the size of the log-likelihood, so a fit that meets it is within SAS's
+  tolerance of the maximum rather than exactly at it.
+
+  Estimates of fits that used to stop short now change. One test depended
+  on a detail of where BFGS stopped: it showed `gamma` and `eta`
+  non-identified at `alpha = 1` by a large standard error. On that exactly
+  flat ridge the Hessian is singular in theory, so whether a finite standard
+  error comes out at all is numerical noise, and at the polished point it
+  does not. The test now accepts either a missing or a 100-fold larger
+  standard error, and also checks that both fits reach the same
+  log-likelihood and the same `gamma * eta`.
 
 * **A Weibull fit with one masked variance reported the others on the wrong
   scale.** When the Hessian inverse has a non-positive variance, its row and
@@ -157,17 +207,17 @@
   including `int_dead` and `dead`, so the outcome was fitted as a predictor.
   With starting values sized for those extra columns the fit converged, with
   no error and a log-likelihood far above the correct model's. With starting
-  values sized for the
-  real covariates it stopped with "non-conformable arguments", which did not
+  values sized for the real covariates it stopped with "non-conformable
+  arguments", which did not
   name the cause, and `predict(newdata = )` demanded the response columns.
   `.` now means every column the `Surv()` term does not use, as in
   `survival::coxph()`, so a `~ .` fit gives the same design and estimates as
   the formula written out in full. A `data` with no other column gives a
   model with no covariates, and there `.` beside other terms is an error.
   **Estimates from an earlier `~ .` fit change**, and so does the length of
-  `theta` it needs. A `.` in
-  `hzr_phase(formula = )` is fixed separately (#277). A right-hand-side variable that is not
-  a column of `data` is now looked up where the formula was written, so a
+  `theta` it needs. A `.` in `hzr_phase(formula = )` is fixed separately
+  (#277). A right-hand-side variable that is not a column of `data` is now
+  looked up where the formula was written, so a
   variable local to the calling function resolves instead of failing with
   "object not found". `hzr_bootstrap()`, which resamples only the rows
   of `data`, refuses such a fit (#278).
@@ -184,6 +234,13 @@
   columns hold the response, so a phase formula with `.` is now an error
   there; write the phase's terms out. **Estimates from an earlier fit with
   `.` in a phase formula change.**
+
+* **`hzr_argument_mapping()` listed DELTA as implemented.** Its
+  `implementation_status` was `"implemented"` and its `r_parameter` read
+  "(absorbed by decompos)", while the row's own notes say a non-zero DELTA
+  is refused or flagged and never fitted (#181). The row is now
+  `"planned"` with `r_parameter` "(not implemented)", so
+  `hzr_argument_mapping(include_planned = FALSE)` no longer includes it.
 
 # TemporalHazard 1.2.10
 

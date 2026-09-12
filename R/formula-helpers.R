@@ -205,8 +205,8 @@
 #' Like [base::all.vars()], but skips the `name` operand of `$` and `@`, which
 #' `all.vars()` reports as a variable: `all.vars(quote(df$tt))` is
 #' `c("df", "tt")` even though `tt` is never looked up. Counting it makes the
-#' ambiguity warning name a column the fit did not use, and makes `data$col`
-#' -- the remedy that warning prescribes -- trigger the warning.
+#' ambiguity warning name a column the fit did not use, and makes `data$col`,
+#' the remedy that warning prescribes, trigger the warning.
 #'
 #' @param e A language object, symbol or constant.
 #' @return Character vector of symbol names, possibly empty.
@@ -234,8 +234,8 @@
 #' Is a name bound anywhere between a frame and the global environment?
 #'
 #' `exists(inherits = FALSE)` sees only the immediate frame, so a wrapper that
-#' forwards its own argument -- `g <- function(d) hazard(data = d, time = tt)`
-#' with `tt` bound one frame out -- looks unambiguous when it is not.
+#' forwards its own argument (`g <- function(d) hazard(data = d, time = tt)`
+#' with `tt` bound one frame out) looks unambiguous when it is not.
 #' `inherits = TRUE` goes too far the other way, reaching package namespaces
 #' and base, where a column named `c`, `t` or `df` would match on every call.
 #' This walks the lexical parents up to and including [globalenv()] and stops

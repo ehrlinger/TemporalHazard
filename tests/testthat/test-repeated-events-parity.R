@@ -118,10 +118,20 @@ test_that("hz.ce_cardioversion_repeated.ehb: the result does not depend on input
 cardioversion_job <- function(dir) {
   path <- file.path(dirname(dir), "distributions", "hz.ce_cardioversion_repeated.ehb.sas")
   testthat::skip_if_not(file.exists(path), "cardioversion job not found beside the datasets")
-  # STEEPEST, in both blocks, is the one construct the translator leaves out:
-  # SAS's steepest-descent warm-up (issue #145). Nothing else may go missing.
+  # STEEPEST, in both blocks, is SAS's steepest-descent warm-up (issue #145),
+  # which the translator leaves out. The other two rows come from its
+  # fail-closed scan of steps that may change the %repeat output EVENTS
+  # before a fit reads it. The first is the job's line 65 nudge, a genuine
+  # rewrite, which this file applies itself in cardioversion_events(). The
+  # second is %HAZPLOT(IN=EVENTS, ...) before the stratified fit. It only
+  # reads EVENTS, but a macro call naming the output stops by design, since
+  # a false stop costs a deleted chunk and a miss fits the wrong data.
+  # Nothing else may go missing.
   expect_warning(job <- hzr_translate_sas(path), "STEEPEST")
-  expect_equal(job$untranslated$construct, c("STEEPEST", "STEEPEST"))
+  expect_equal(
+    job$untranslated$construct,
+    c("EVENTS changed after %repeat", "STEEPEST", "EVENTS changed after %repeat", "STEEPEST")
+  )
   job
 }
 
@@ -244,11 +254,13 @@ test_that("hz.ce_cardioversion_repeated.ehb: the stratified model reproduces the
   events <- cardioversion_events(dir)
   expect_false(anyNA(events[c("maze_prc", "iso_pvi")]))
 
-  # reltol is tightened on purpose. Under the default (1e-5) BFGS stops at LL
-  # -242.2675 and reports convergence; R's log likelihood at the listing's own
-  # estimates is -242.2541, so the likelihoods agree and the default optimizer
-  # tolerance stopped 0.013 short on a flat ridge in the late shapes.
-  ctl <- list(n_starts = 1L, reltol = 1e-12, maxit = 5000L)
+  # Default optimizer tolerance on purpose: this is the fit that showed the
+  # defect. Plain BFGS at reltol = 1e-5 stops at LL -242.2675 and reports
+  # convergence, 0.013 short of R's own log likelihood at the listing's
+  # estimates (-242.2541). hazard() now applies SAS/C's relative-gradient
+  # test and continues with nlm() when a stop fails it, so the default must
+  # reach the listing.
+  ctl <- list(n_starts = 1L)
   expect_no_warning(fit <- fit_translated(job, events, "fit_2", "status_2", ctl))
   expect_listing_rows(fit)
   # NOCONSERVE: "Conservation of events: Not invoked".
@@ -270,4 +282,28 @@ test_that("hz.ce_cardioversion_repeated.ehb: the stratified model reproduces the
            0.2346658, 0.3799748, 0.8113678, 0.2687002, 0.9540579, 0.1622002, 0.2525617)
   )
   expect_matches_listing(fit, sas, ll = -242.254)
+})
+
+test_that("hzr_translate_sas() on the cardioversion job builds EVENTS, then stops at line 65", {
+  testthat::skip_on_cran()
+  testthat::skip_if_not_installed("haven")
+  dir <- skip_if_no_maze_datasets()
+  sas <- file.path(dirname(dir), "distributions", "hz.ce_cardioversion_repeated.ehb.sas")
+  testthat::skip_if_not(file.exists(sas), "hz.ce_cardioversion_repeated.ehb.sas not on the volume")
+
+  job <- suppressWarnings(hzr_translate_sas(sas))
+  expect_equal(names(job$calls)[1:5], c("data", "repeated", "rewrite", "status", "fit"))
+
+  bd_card <- .hzr_derive_bd_card(dir)
+  names(bd_card) <- toupper(names(bd_card))
+  env <- new.env(parent = globalenv())
+  env$BD_CARD <- bd_card
+  eval(job$calls$data, env)
+  expect_no_warning(eval(job$calls[["repeated"]], env))
+  # Shape first, then values: the .log's 962 rows, and 357 input columns plus
+  # the function's eight.
+  expect_equal(dim(env$EVENTS), c(962L, 365L))
+  expect_equal(sum(env$EVENTS$CE_CARD == 1), 388L)
+  # The job's line 65 is job code, not macro code; the document stops on it.
+  expect_error(eval(job$calls$rewrite, env), "IV_EVENT=IV_EVENT+0.0001141553", fixed = TRUE)
 })

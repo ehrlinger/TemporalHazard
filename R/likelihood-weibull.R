@@ -37,7 +37,7 @@ NULL
 
 #' Log-likelihood for Weibull hazard with covariates
 #'
-#' Computes the negative log-likelihood for a sample under the Weibull
+#' Computes the log-likelihood for a sample under the Weibull
 #' parametric hazard model with optional linear-predictor covariates.
 #'
 #' @param theta Vector of parameters:
@@ -72,12 +72,15 @@ NULL
 #' - \eqn{\nu > 0} is shape (NU)
 #' - \eqn{\eta = x \beta} is log-relative-hazard (covariates)
 #'
-#' The log-likelihood for right-censored data is:
+#' The log-likelihood for right-censored data, with optional
+#' counting-process entry times, is:
 #'
 #' \deqn{\ell(\theta) = \sum_{i: \delta_i = 1} \log h(t_i | x_i)
-#'   - \sum_i S(t_i | x_i)}
+#'   - \sum_i \left[H(t_i | x_i) - H(s_i | x_i)\right]}
 #'
-#' where S is the survival function (1 - CDF).
+#' where H is the cumulative hazard, \eqn{H = -\log S}, and \eqn{s_i} is
+#' the entry time: `time_lower` on a status 0 or 1 row with
+#' `time_lower < time`, and 0 otherwise (so \eqn{H(s_i) = 0}).
 #'
 #' Mixed censoring status coding:
 #' - 1: exact event at time
@@ -234,19 +237,22 @@ NULL
 #'
 #' Computes the score vector (gradient) of the Weibull log-likelihood w.r.t. all parameters.
 #'
-#' @param time_lower Optional lower bounds for interval-censored rows.
-#' @param time_upper Optional upper bounds for left/interval-censored rows.
-#'
 #' The log-likelihood is:
-#'   L = sum(delta_i * log h(t_i)) - sum(H(t_i))
+#'   L = sum(delta_i * log h(t_i)) - sum(H(t_i) - H(s_i))
 #'
-#' where h(t) = nu * mu^nu * t^(nu-1) * exp(eta) and H(t) = (mu*t)^nu * exp(eta)
-#' (so log h = log(nu) + nu*log(mu) + (nu-1)*log(t) + eta). Derivatives are:
+#' where h(t) = nu * mu^nu * t^(nu-1) * exp(eta), H(t) = (mu*t)^nu * exp(eta)
+#' (so log h = log(nu) + nu*log(mu) + (nu-1)*log(t) + eta), and s_i is the
+#' entry time: time_lower on a status 0/1 row with time_lower < time, else 0.
+#' Terms at s_i = 0 are zero. Derivatives are:
 #'
-#' dL/dmu  = (nu / mu) * sum(delta_i) - (nu / mu) * sum(H(t_i))
+#' dL/dmu  = (nu / mu) * sum(delta_i) - (nu / mu) * sum(H(t_i) - H(s_i))
 #' dL/dnu  = sum(delta_i / nu) + sum(delta_i) * log(mu) + sum(delta_i * log(t_i))
-#'           - sum(log(mu * t_i) * H(t_i))
-#' dL/dbeta_j = sum(delta_i * x_ij) - sum(H(t_i) * x_ij)  = t(X) %*% (delta - H)
+#'           - sum(log(mu * t_i) * H(t_i) - log(mu * s_i) * H(s_i))
+#' dL/dbeta_j = sum(delta_i * x_ij) - sum((H(t_i) - H(s_i)) * x_ij)
+#'
+#' @param time_lower Optional: the entry time on status 0/1 rows (when less
+#'   than `time`), and the lower bound on interval-censored rows.
+#' @param time_upper Optional upper bounds for left/interval-censored rows.
 #'
 #' @noRd
 .hzr_gradient_weibull <- function(

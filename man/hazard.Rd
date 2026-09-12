@@ -44,31 +44,35 @@ and \code{weights} are evaluated in its scope, the way \code{\link[base:subset]{
 anything that is not a column (\code{df$col}, a local vector, a literal)
 falls through to the calling environment. A column of the same name as
 a caller variable wins, and because that silently discards the caller's
-vector -- the way a wrapper forwarding its own argument by name does --
+vector (the way a wrapper forwarding its own argument by name does),
 such a name raises a warning naming the symbol and the argument.
 Masked arguments are validated like any other, so an \code{NA} in a
-masked column now errors -- an \code{NA} count on the SAS \code{ICENSOR}
-path reaches \code{weights} and stops with \verb{'weights' must be non-negative and finite}, where it was previously accepted
-silently.}
+masked column errors: an \code{NA} count on the SAS \code{ICENSOR}
+path reaches \code{weights} and stops with \verb{'weights' must be non-negative and finite}.}
 
 \item{time}{Numeric follow-up time vector.}
 
 \item{status}{Numeric or logical event indicator vector.}
 
-\item{time_lower}{Optional numeric vector with two distinct roles, selected
-by \code{status}. Supplying it explicitly is \strong{not} a no-op.
+\item{time_lower}{Optional numeric vector whose role depends on \code{status}.
+Supplying it explicitly is \strong{not} a no-op.
 \itemize{
 \item \code{status == 2} (interval-censored): the lower bound of the censoring
-interval, defaulting to \code{time}.
+interval, defaulting to \code{time}. Every \code{dist} reads it this way.
 \item \code{status \%in\% c(0, 1)} (right-censored or event): the counting-process
 \strong{entry time}, so the row contributes \code{H(time) - H(time_lower)}.
-Left \code{NULL}, the entry time is \strong{\code{0}}, not \code{time}.
+Only \code{dist = "weibull"} and \code{dist = "multiphase"} use this role, and
+\code{"weibull"} only where \code{time_lower < time}. The \code{"exponential"},
+\code{"loglogistic"} and \code{"lognormal"} families ignore \code{time_lower} on these
+rows. Left \code{NULL}, the entry time is \strong{\code{0}}, not \code{time}.
+\item \code{status == -1} (left-censored): not used; the bound is \code{time_upper}.
 }
 
 Passing \code{time_lower = time} therefore states that every subject entered
-the risk set at the instant it left, which contributes nothing and
-removes the row from the likelihood. That is a valid specification and
-the fit will not converge to anything meaningful; it warns.}
+the risk set at the instant it left. \code{hazard()} accepts it with a
+warning. Under \code{"multiphase"} those rows lose their cumulative-hazard
+term and the fit it returns is meaningless; \code{"weibull"} reads them as
+entering at time 0, and the other families ignore the argument there.}
 
 \item{time_upper}{Optional numeric upper bound vector for censoring intervals.
 Used when \code{status \%in\% c(-1, 2)}; defaults to \code{time} if NULL.}
@@ -115,7 +119,7 @@ Implements the SAS \code{WEIGHT} statement.}
 \item{objective}{Which interval-censored contribution the multiphase
 likelihood accumulates. \code{"likelihood"} (default) uses the interval
 probability \eqn{\log(S(l) - S(u))}. \code{"sas"} reproduces what
-\verb{PROC HAZARD} accumulates -- the event-density term with the instantaneous
+\verb{PROC HAZARD} accumulates: the event-density term with the instantaneous
 hazard replaced by the interval-mean hazard over \eqn{(l, u]}. Applies
 only to \code{dist = "multiphase"}; exact-event and right-censored rows are
 unaffected either way.
@@ -123,7 +127,7 @@ unaffected either way.
 \code{"sas"} requires data it can represent: no left-censored rows (\verb{PROC HAZARD} has no left-censoring statement) and a positive width on every
 interval-censored row (the interval-mean hazard divides by \eqn{u - l}).
 Both are properties of the data rather than of the fit, so they are
-checked when the argument is supplied -- including under \code{fit = FALSE},
+checked when the argument is supplied, including under \code{fit = FALSE},
 which therefore stops rather than returning an unusable object.}
 
 \item{...}{Additional named arguments retained for parity with legacy calling
@@ -137,7 +141,9 @@ An object of class \code{hazard}, a named list with components:
 \code{data} (input data: \code{time}, \code{status}, \code{x},
 \code{weights}, etc.),
 \code{fit} (optimisation results: \code{theta}, \code{objective},
-\code{converged}, \code{se}, \code{vcov}, \code{counts}, \code{message};
+\code{converged}, \code{se}, \code{vcov}, \code{counts}, \code{message},
+and \code{rel_gradient} and \code{polish_code}, the SAS/C acceptance
+test described under "Convergence";
 all \code{NULL} when \code{fit = FALSE}; multiphase fits add
 \code{starts}, one row per optimisation start with its \code{status}
 (\code{"ok"}, \code{"nonconverged"}, \code{"infeasible"},
@@ -156,7 +162,7 @@ squared loadings (\code{weights}), the strongest pairwise
 \code{n_directions}, the number of near-flat directions found;
 \code{NULL} when the fit was examined and is well identified; and
 \code{NA} when the check could not run because no usable Hessian was
-available -- which includes an unfitted object and an install without
+available, which includes an unfitted object and an install without
 the suggested \pkg{numDeriv}. Test with \code{is.list(fit$fit$weak)},
 not \code{!is.null()}: the \code{NA} case has not been examined and
 must not be read as a clean result),
@@ -197,10 +203,10 @@ ensemble without saying so.
 \item \code{phase_share_tol}: Threshold for the multiphase identifiability warning
 (default 1e-8). A phase is reported as having left the model when it
 supplies less than this share of the cumulative hazard at every observed
-time (it never started -- neither its \code{mu} nor its shape is identified),
+time (it never started; neither its \code{mu} nor its shape is identified),
 or when its contribution varies by less than this relative amount across
 them (it finished before the first observation and acts as a constant
-offset -- \code{mu} stays identified, the shape parameters do not). A third
+offset; \code{mu} stays identified, the shape parameters do not). A third
 condition is a property of the observed times rather than of any phase:
 when their own relative range falls below this threshold and no phase's
 contribution varies across them, they separate no phase from any other
@@ -223,12 +229,19 @@ phases, set it to 0 to silence the check.
 log-likelihood (default 1e-5). BFGS stops when an iteration reduces it by
 less than \verb{reltol * (|objective| + reltol)}, so the stopping gap grows
 with the size of the log-likelihood: about 0.0024 at a log-likelihood of
--240. On a flat surface a fit can stop that far short of the optimum and
-still report convergence.
-\item \code{abstol}: Absolute gradient norm tolerance (default 1e-6)
-\item \code{method}: Optimization method: "bfgs" or "nm" (default "bfgs").
-SAS \verb{PROC HAZARD} jobs write \verb{STEEPEST QUASI} together -- steepest
-descent first, then quasi-Newton. \code{QUASI}/\code{QUASINEWTON} is \code{"bfgs"};
+-240. On a flat surface plain BFGS can stop that far short of the optimum
+and still report convergence, so \code{hazard()} then applies SAS/C HAZARD's
+relative-gradient test and, when the stop fails it, continues with
+\code{\link[stats:nlm]{stats::nlm()}}; see the "Convergence" section.
+\item \code{abstol}: Projected-gradient tolerance, used only by the bounded
+(L-BFGS-B) optimizer (default 1e-6). The fits \code{hazard()} runs use BFGS
+and ignore it.
+\item \code{method}: Recorded but not used. The fits \code{hazard()} runs use BFGS (a
+multiphase fit may run a Nelder-Mead warm-up first, and a stop that
+fails SAS's gradient test continues with \code{\link[stats:nlm]{stats::nlm()}}); the entry is
+accepted so that translated SAS jobs (\code{QUASI}) run unchanged.
+SAS \verb{PROC HAZARD} jobs write \verb{STEEPEST QUASI} together (steepest
+descent first, then quasi-Newton). \code{QUASI}/\code{QUASINEWTON} is \code{"bfgs"};
 \strong{there is no steepest-descent option and no two-stage strategy}. The
 multiphase likelihood is multimodal, so a different descent path can land
 on a different optimum: a fit translated from a job using \code{STEEPEST} may
@@ -237,21 +250,23 @@ keyword as untranslated rather than dropping it.
 \item \code{condition}: Condition number control (default 14)
 \item \code{conserve}: Apply Conservation of Events (\strong{\code{dist = "multiphase"} only};
 default \code{TRUE}). CoE counts exact events, so it is \strong{automatically
-disabled} whenever any \code{status} falls outside \{0, 1\} -- which interval
-or left censoring guarantees -- and whenever the model has fewer than two
+disabled} whenever any \code{status} falls outside \{0, 1\} (which interval
+or left censoring guarantees) and whenever the model has fewer than two
 phases. On a fitted multiphase object the outcome is recorded next to the
 request, both fields living under \code{fit$spec$control}:
 \itemize{
-\item \code{fit$spec$control$conserve_applied} -- logical, whether CoE was actually
+\item \code{fit$spec$control$conserve_applied}: logical, whether CoE was actually
 applied;
-\item \code{fit$spec$control$conserve_disabled_reason} -- one of
+\item \code{fit$spec$control$conserve_disabled_reason}: one of
 \code{"not_requested"}, \code{"unsupported_censoring"}, \code{"single_phase"},
 \code{"no_events"}, \code{"setup_failed"}, or \code{NA} when CoE was applied.
 }
 
 Read \code{fit$spec$control$conserve_applied}, not
 \code{fit$spec$control$conserve}: the latter says only what you asked for.
-\item \code{nocov}, \code{nocor}: Suppress covariance/correlation output (legacy; no-op in M2)
+\item \code{nocov}, \code{nocor}: Accepted for compatibility with the SAS \verb{PROC HAZARD}
+options of the same names. They change neither the fitted object nor its
+printed summary.
 }
 
 Censoring status coding:
@@ -274,7 +289,7 @@ engines remain unchanged.
 \code{objective = "sas"} exists to reproduce legacy \verb{PROC HAZARD} runs and
 \strong{must not be used for new analyses}. It is a density, not a probability:
 it is inconsistent for wide intervals, where the two forms differ
-materially -- 22 log-likelihood units on the esophagectomy reference fit.
+materially (22 log-likelihood units on the esophagectomy reference fit).
 The default is the statistically correct interval likelihood. See
 \code{inst/dev/SAS-INTERVAL-OBJECTIVE-DESIGN.md} for the derivation and the
 four-reference evidence.
@@ -298,12 +313,42 @@ proportional-hazards single-phase families (\code{"weibull"}, \code{"exponential
 are the special case \eqn{J = 1}, with covariates acting multiplicatively on
 one temporal shape.  The \code{"loglogistic"} (proportional-odds) and
 \code{"lognormal"} (accelerated-failure-time) families place covariates
-differently --- on the odds of failure and the log-time location,
-respectively --- so they are separate parameterizations, not special cases
+differently (on the odds of failure and the log-time location,
+respectively), so they are separate parameterizations, not special cases
 of this additive form.  Parameters are estimated
 on an unconstrained internal scale (e.g. \eqn{\log\mu}, \eqn{\log t_{1/2}})
 and transformed back for reporting; see
 \code{vignette("mf-mathematical-foundations")}.
+}
+
+\section{Convergence}{
+
+
+The optimizer stops when an iteration improves the log-likelihood by less
+than \code{control$reltol} relative to its size, and on a flat ridge that can
+happen well short of the maximum. SAS/C HAZARD accepts an optimum only on a
+different test, the relative gradient
+\eqn{\max_i |g_i| \max(|x_i|, 1) / \max(|\ell|, 1) \le \epsilon^{1/3}}{max_i
+|g_i| max(|x_i|, 1) / max(|l|, 1) <= eps^(1/3)}, about 6e-6, and \code{hazard()}
+applies it too: when the optimizer reports convergence and the test fails,
+the fit is continued with \code{\link[stats:nlm]{stats::nlm()}} at SAS's tolerances, and the
+continued point is kept if it improves the log-likelihood.
+
+Every fit records the result in \code{fit$fit$rel_gradient} and, when the
+continuation improved the fit, its termination code in
+\code{fit$fit$polish_code}. \code{print()} and \code{summary()} show both.
+\code{rel_gradient} is \code{NA} when the test was not applied (the optimizer did
+not report convergence) or the gradient cannot be evaluated at the
+estimates; \code{NA} is never reported as a pass. Under Conservation of Events
+the analytic score omits how the conserved scale moves, so the test is
+computed from finite differences of the log-likelihood with that scale
+re-solved, as SAS/C does; the continuation still uses the analytic score,
+so a CoE fit can honestly end with the test not met. A warning is raised only for code 4, the
+iteration limit (raise \code{control$maxit}), and code 5, where the
+log-likelihood kept rising along some direction and the model may have no
+maximum. Codes 2 and 3, where SAS/C prints a caution, are recorded without
+one. The test is relative to the size of the log-likelihood, so a fit that
+meets it is within SAS's tolerance of the maximum, not exactly at it.
 }
 
 \section{Baseline distributions}{
@@ -316,28 +361,28 @@ time.  \code{"multiphase"} is the general additive model that lets several such
 shapes coexist.
 
 \describe{
-\item{\code{"weibull"} --- monotone rising or falling hazard (default)}{The
+\item{\code{"weibull"}: monotone rising or falling hazard (default)}{The
 workhorse parametric model: \eqn{H(t \mid \mathbf{x}) = (\mu t)^\nu
     \exp(\eta)}, with hazard \eqn{h \propto t^{\nu - 1}}.  The single shape
 \eqn{\nu} makes risk increase over time (\eqn{\nu > 1}), decrease
 (\eqn{\nu < 1}), or stay flat (\eqn{\nu = 1}).  Use it as the default when
 a single monotone trend describes the hazard.}
-\item{\code{"exponential"} --- constant hazard}{The memoryless special case
+\item{\code{"exponential"}: constant hazard}{The memoryless special case
 \eqn{\nu = 1}: a time-invariant baseline rate, \eqn{H(t \mid \mathbf{x}) =
     \mu t \exp(\eta)}.  Use it when the event rate does not change with
 follow-up time (the constant background risk also appears as the
 \code{"constant"} phase in a multiphase model).}
-\item{\code{"loglogistic"} --- unimodal (rise-then-fall) hazard}{A log-logistic
+\item{\code{"loglogistic"}: unimodal (rise-then-fall) hazard}{A log-logistic
 proportional-odds form (covariates act multiplicatively on the odds of
 failure, \eqn{\exp(\eta)}, not as an AFT time shift) whose hazard rises to
 a single peak and then declines when the shape exceeds 1 (and is monotone
 decreasing otherwise), with heavier tails than the log-normal.  Use it
 when risk climbs to an early peak and then eases off.}
-\item{\code{"lognormal"} --- early-peaking, resolving hazard}{An
+\item{\code{"lognormal"}: early-peaking, resolving hazard}{An
 accelerated-failure-time form in which \eqn{\log} time is Gaussian; the
 hazard rises to an early peak and then decays toward zero.  Use it for
 risk that is concentrated early and resolves over time.}
-\item{\code{"multiphase"} --- additive N-phase hazard}{Sums several phase shapes
+\item{\code{"multiphase"}: additive N-phase hazard}{Sums several phase shapes
 into one model, \eqn{H = \sum_j \mu_j(\mathbf{x}) \Phi_j(t)}, so the
 overall hazard can fall, level off, and rise again within one fit.
 Requires \code{phases}; see \code{\link[=hzr_phase]{hzr_phase()}} for the available phase shapes.  This
@@ -479,7 +524,7 @@ nonlinear temporal decomposition mixed effects model. \emph{Stat Methods Med Res
 \code{\link[=hzr_phase]{hzr_phase()}} for specifying multiphase temporal shapes.
 
 Vignettes with worked examples:
-\code{vignette("fitting-hazard-models")} --- single-phase through multiphase fitting,
-\code{vignette("prediction-visualization")} --- prediction types and decomposed hazard plots,
-\code{vignette("inference-diagnostics")} --- bootstrap CIs and model diagnostics.
+\code{vignette("fitting-hazard-models")}: single-phase through multiphase fitting,
+\code{vignette("prediction-visualization")}: prediction types and decomposed hazard plots,
+\code{vignette("inference-diagnostics")}: bootstrap CIs and model diagnostics.
 }

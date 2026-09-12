@@ -25,13 +25,13 @@
 
 \item{x_list}{Named list of per-phase design matrices.}
 
-\item{tol}{Threshold for all three tests -- the minimum share of \eqn{\Lambda} a
+\item{tol}{Threshold for all three tests: the minimum share of \eqn{\Lambda} a
 phase must reach somewhere, and the minimum relative variation its
 contribution must show. Default 1e-8: far above double precision, and
 orders of magnitude below any real contribution, so it fires on dead
 phases rather than merely small ones.}
 
-\item{other_times}{Further times the likelihood evaluates beyond \code{time} --
+\item{other_times}{Further times the likelihood evaluates beyond \code{time}:
 counting-process entry times and interval bounds. The share and variation
 measures are taken over \code{time} alone, so when they are degenerate but
 these vary, the shapes still enter the likelihood and the measures are
@@ -43,7 +43,7 @@ The share \code{data.frame}, invisibly; called for the warning.
 \description{
 Warns rather than stops: the fit is arithmetically fine and the other
 phases' estimates are usable. It is the unidentified parameters that must
-not be read as estimates -- and which ones those are differs by mode, so
+not be read as estimates, and which ones those are differs by mode, so
 the message says which.
 }
 \details{

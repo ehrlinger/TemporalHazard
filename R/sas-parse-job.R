@@ -10,13 +10,13 @@
 
 #' Translate SAS censoring statements to this package's status coding.
 #'
-#' Builds an unevaluated `status` expression -- and, where needed, a
-#' `time_lower` expression -- from the `EVENT`/`ICENSOR`/`LCENSOR`/`RCENSOR`
+#' Builds an unevaluated `status` expression (and, where needed, a
+#' `time_lower` expression) from the `EVENT`/`ICENSOR`/`LCENSOR`/`RCENSOR`
 #' operands of a `PROC HAZARD` statements list, ready to drop into a
 #' `hazard()` call.
 #'
 #' **`LCENSOR` is left-*truncation*, not left-censoring.** Its operand is the
-#' counting-process *entry time* -- all four corpus uses are literally
+#' counting-process *entry time*: all four corpus uses are literally
 #' `LCENSOR STARTTME`, paired with `TIME INT_TE` (see
 #' `inst/dev/FIXTURE-GAP-LIST.md`, answered Q1). It never changes `status`:
 #' HAZARD has no left-censoring in this package's sense, so `status = -1` is
@@ -28,7 +28,7 @@
 #' `ICENSOR c3var '=' ctimevar;`, and the likelihood in `setlik.c` uses a
 #' Nelson-type approximation `C3 * ln([CF(T) - CF(CT)] / (T - CT))`, so a row
 #' is interval-censored where `C3 > 0`. The second operand (`CTIME`) is the
-#' interval's *lower* bound -- the interval runs `CTIME` -> `TIME` (see
+#' interval's *lower* bound; the interval runs `CTIME` -> `TIME` (see
 #' `FIXTURE-GAP-LIST.md` Q1). `EVENT` is optional: the reference `HAZARD`
 #' program (`src/hazard/varterm.c`) terminates only when *both* `EVENT` and
 #' `ICENSOR` are missing, so a job that specifies `ICENSOR` alone is
@@ -42,19 +42,19 @@
 #' `llike = -(c1c2c3) * (CH(T) - CH(ST)) + c1w * log h(T) + c3w * lct`. That
 #' decomposes into at most three independent contributions, each of which
 #' [hazard()] expresses as one row's status and weight:
-#' * `C1 > 0` -- an event row of weight `C1 * WT` (status `1`);
-#' * `C2 > 0` -- a right-censored row of weight `C2` (status `0`);
-#' * `C3 > 0` -- an interval row of weight `C3 * WT` (status `2`).
+#' * `C1 > 0`: an event row of weight `C1 * WT` (status `1`);
+#' * `C2 > 0`: a right-censored row of weight `C2` (status `0`);
+#' * `C3 > 0`: an interval row of weight `C3 * WT` (status `2`).
 #'
 #' `C2` is the one **not** multiplied by `WT`, and that is not an oversight in
 #' the reference: `readc2.c` sets `C2 = ONE` on exactly the rows where neither
 #' `C1` nor `C3` fires, so SAS weights a right-censored row `1` whatever the
 #' `WEIGHT` variable says. Emitting a bare `WT` there instead over- or
-#' under-weights every censored row -- and a `WEIGHT` that happens to be `0`
+#' under-weights every censored row, and a `WEIGHT` that happens to be `0`
 #' on censored rows deletes them from the fit outright, silently (#158).
 #'
-#' So `weights_expr` is emitted whenever `EVENT` or `ICENSOR` is present --
-#' which is always, since a job with neither is rejected -- as
+#' So `weights_expr` is emitted whenever `EVENT` or `ICENSOR` is present
+#' (which is always, since a job with neither is rejected) as
 #' `ifelse(EVENT > 0, EVENT * WT, ifelse(C3 > 0, C3 * WT, 1))`, dropping
 #' whichever branches the job does not have and dropping `* WT` when there is
 #' no `WEIGHT` statement. For the 0/1 `EVENT` and absent `WEIGHT` that most
@@ -64,15 +64,15 @@
 #' `status` therefore derives from `EVENT > 0`, never from `EVENT` itself
 #' (#157). This package codes status `-1` left, `0` right, `1` event, `2`
 #' interval, so a row recording two events (`EVENT = 2`) mapped straight onto
-#' `status` becomes *interval-censored* -- a different likelihood branch, not
-#' an under-count -- and `EVENT = 3` lands outside the coding altogether,
+#' `status` becomes *interval-censored* (a different likelihood branch, not
+#' an under-count), and `EVENT = 3` lands outside the coding altogether,
 #' which also disables Conservation of Events (`coe_supported_data`).
 #' `readc1.c` accepts any `C1 >= 0` and keeps a fractional count (`notintg`
 #' only raises a report flag), so `> 0` is the right test and a fractional
 #' count carries through as a fractional weight. A *negative* count SAS
 #' deletes (`c1del`, `del = 1`) and a *missing* one likewise (`mc1del`,
 #' `mdel = 1`); `readobs.c` then skips `setobs()` and subtracts the row from
-#' `Nobs`, so it contributes nothing at all -- it is emphatically not a
+#' `Nobs`, so it contributes nothing at all; it is emphatically not a
 #' right-censored row of weight 1. This translator has no way to drop a row,
 #' and dropping one silently would change `n` behind the reader's back, so the
 #' hoisted status chunk opens with a guard per named count that stops and
@@ -86,14 +86,14 @@
 #' text, so it cannot be refused at translation time the way `LCENSOR` +
 #' `ICENSOR` is; instead the hoisted status chunk opens with a guard that
 #' stops before the fit and names the by-hand remedy (split the row in two).
-#' Picking the event branch and discarding `c3w` -- what this translator did
-#' before -- converges and reports plausibly, which is the shape this package
+#' Picking the event branch and discarding `c3w` (what this translator did
+#' before) converges and reports plausibly, which is the shape this package
 #' exists to refuse. The same guard covers `EVENT` + `RCENSOR` and `ICENSOR`
 #' + `RCENSOR`; see the `RCENSOR` paragraph below.
 #'
 #' **`RCENSOR` names `C2` itself** (`hazard_y.y`:
 #' `rcensorstmt : RCENSOR NAME { setvar(13,$2); }`; `rcnsprc.c` sets `c2name`
-#' from statement field 13), and `C2` is likewise a *count* --
+#' from statement field 13), and `C2` is likewise a *count*:
 #' "COUNT OF CENSORED INDIVIDUALS AT TIME=T" in `setlik.c`'s header, and
 #' `OBS(3)`, "NUMBER OF CENSORED OBSERVATIONS AT T". The two branches of
 #' `readc2.c` are what decides the translation: when `c2name` is non-blank
@@ -116,15 +116,15 @@
 #' its rules are guarded by a blank-name test, `ic10 && ic20` only when
 #' `c3name` is blank and `ic30 && ic20` only when `c1name` is blank. So a row
 #' with every count zero is deleted for `EVENT` + `RCENSOR` and for `ICENSOR`
-#' + `RCENSOR`, and *kept* -- contributing `c1c2c3 = 0` -- when all three are
+#' + `RCENSOR`, and *kept* (contributing `c1c2c3 = 0`) when all three are
 #' named. There is no such rule at all for `EVENT` + `ICENSOR`, which is
 #' exactly the pairing with no `c2name`. This translator has no way to drop a
 #' row, so an all-zero row arrives with weight `0`: no contribution to the
 #' likelihood, which is what deletion means for the fit and what the
 #' all-three case does anyway, though the row still counts toward `n`.
 #' A *negative* `C2` SAS deletes (`c2del`) and a *missing* one it deletes too
-#' (`mc2del`) -- the same rule `readc1.c` and `readc3.c` apply to their own
-#' counts, guarded only by the name being non-blank -- so both are caught by
+#' (`mc2del`), the same rule `readc1.c` and `readc3.c` apply to their own
+#' counts (guarded only by the name being non-blank), so both are caught by
 #' the missing/negative guard above rather than by [hazard()]'s incidental
 #' "non-negative and finite" check.
 #'
@@ -132,8 +132,8 @@
 #' `RCENSOR` present this is no longer only the `EVENT` + `ICENSOR` pair:
 #' `readobs.c` deletes a row only when *both* of a pair are zero, so
 #' `C1 > 0 & C2 > 0` and `C3 > 0 & C2 > 0` reach `setlik.c` too and are
-#' summed there. Each such row is two observations at once -- an event of
-#' weight `C1 * WT` *and* a right-censored observation of weight `C2`, say --
+#' summed there. Each such row is two observations at once (an event of
+#' weight `C1 * WT` *and* a right-censored observation of weight `C2`, say),
 #' and [hazard()] carries one status and one weight per row. A guard is
 #' emitted for every pair of counts the job named, and only for named ones: a
 #' *derived* `C2` fires on exactly the rows where no other count does, so it
@@ -145,14 +145,14 @@
 #' interval's lower bound (`CTIME`), but for status 0/1 it is the
 #' counting-process *entry time* (default `0`), not a censoring bound. `TIME`
 #' is always the interval's upper bound, and that is exactly what
-#' `hazard()`'s `time_upper` already defaults to when left `NULL` -- so
+#' `hazard()`'s `time_upper` already defaults to when left `NULL`, so
 #' `time_upper` is never emitted by this translator; passing it would be
 #' redundant, and omitting it cannot drift out of sync with `TIME`.
 #' `time_lower` is therefore built as one of, depending on which statements
 #' are present:
 #' * `ICENSOR` only: `ifelse(status == 2, CTIME, 0)` (`0` is `hazard()`'s
 #'   documented default entry time for status 0/1 rows).
-#' * `LCENSOR` only: the `LCENSOR` variable directly -- it applies to every
+#' * `LCENSOR` only: the `LCENSOR` variable directly; it applies to every
 #'   row, not just interval ones, so no `ifelse()` gating is needed.
 #' * Neither: `time_lower` is omitted (`NULL`).
 #'
@@ -160,8 +160,9 @@
 #' no expression that serves: `time_lower` is one column carrying two
 #' meanings, so gating it on status hands the interval rows their lower bound
 #' and thereby drops their entry time, fitting a left-truncated
-#' interval-censored subject as at risk from time `0`. That converges and
-#' reports plausibly -- the exact failure mode this package exists to refuse.
+#' interval-censored subject as at risk from time `0`. That fit converges
+#' and looks plausible, which is the failure mode this package exists to
+#' refuse.
 #' The reference implementation carries three distinct times (`TIME`, `CTIME`,
 #' `STIME`) and subtracts `H(STIME)` for every row, interval rows included, so
 #' translating it faithfully needs an entry-time argument [hazard()] does not
@@ -170,8 +171,8 @@
 #' `refused` is set, and the caller emits a `stop()` in place of the fit.
 #'
 #' The `time_lower` `ifelse()` is gated on a `status_name` placeholder
-#' (`.hzr_status`) the caller assigns the `status_expr` to first -- never
-#' unconditionally, which would trip `hazard()`'s finite-value check off the
+#' (`.hzr_status`) the caller assigns the `status_expr` to first. It is never
+#' unconditional, which would trip `hazard()`'s finite-value check off the
 #' interval subset and, where populated, silently redefine event/right-censored
 #' rows' risk-set entry times. `weights_expr` gates on the count variables
 #' themselves, not on `status`, so it stays valid on the un-hoisted paths.
@@ -424,7 +425,10 @@
     }
     mapped <- mapped + 1L
     switch(token,
-      DATA        = data_name <- val,
+      # A WORK. libref names the same dataset as the bare name. Dropping it
+      # here makes the emitted data =, the status chunk and the guard use the
+      # bare name, which is also how a %repeat OUT= is recorded.
+      DATA        = data_name <- sub("^WORK[.]", "", val),
       OUTHAZ      = outhaz <- val,
       MAXITER     = {
         val_num <- suppressWarnings(as.numeric(val))
@@ -728,7 +732,7 @@
 #' Translate a SELECTION statement to hzr_stepwise() arguments.
 #'
 #' `hazard_y.y`'s `stepwisestmt` production is `STEPWISE stepwiseopts { setopt(33); }`,
-#' and `stepwiseopts` can be empty -- the *statement* is what turns stepwise
+#' and `stepwiseopts` can be empty: the *statement* is what turns stepwise
 #' on, not any particular direction keyword. So a bare `SELECTION;` (or one
 #' carrying only `SLENTRY`/`SLSTAY`) legitimately enables stepwise; the
 #' direction keywords only refine it. `ONEWAY` (aliases `NOSTEPWISE`/`NOSW`,
@@ -749,7 +753,7 @@
 #' When `ONEWAY`/`NOSTEPWISE`/`NOSW` disables stepwise, any `SLENTRY`/
 #' `SLSTAY` also given are meaningless (there is no entry/stay search to
 #' apply them to) and are moved into `untranslated` rather than silently
-#' dropped -- discarding a parsed value with nothing recorded is exactly
+#' dropped; discarding a parsed value with nothing recorded is exactly
 #' the defect this package guards against.
 #' @return `list(stepwise = <logical>, direction = <chr|NULL>,
 #'   slentry = <dbl|NULL>, slstay = <dbl|NULL>, untranslated = <data.frame>)`.
@@ -827,8 +831,8 @@
 #' Used to resolve explicit `DO` list elements such as `1*DTY`: `DTY` becomes
 #' a plain number only when it was already folded from an earlier
 #' `DTY=12/365.2425;` assignment in the *same* `DATA` step
-#' (`.hzr_sas_data_constants()`). Anything else -- a function call, a
-#' data-step variable, an unknown name -- must refuse rather than guess, so
+#' (`.hzr_sas_data_constants()`). Anything else (a function call, a
+#' data-step variable, an unknown name) must refuse rather than guess, so
 #' `text` is checked against a strict whitelist regex (digits, the four
 #' arithmetic operators, parentheses, whitespace, and known constant names)
 #' *before* `parse()`/`eval()` ever see it; text that fails the whitelist is
@@ -868,7 +872,7 @@
 #' statement): collects assignments in order, so a later constant may
 #' reference an earlier one (`INC=(5+LN_MAX)/99.9` after `LN_MAX=...`).
 #' Only assignments `.hzr_eval_sas_const()` can actually evaluate end up in
-#' the map -- an assignment whose right-hand side is not pure arithmetic
+#' the map. An assignment whose right-hand side is not pure arithmetic
 #' over already-known constants (a function call, an unresolved name) is
 #' silently skipped here, not stored; it simply never becomes foldable.
 #' @noRd
@@ -893,8 +897,8 @@
 #' read from the job rather than assumed.
 #'
 #' The numerator has to be the loop's own span, `log(hi) - lo`. Every corpus
-#' job writes that span in one of two spellings -- `(5 + LN_MAX)` where the
-#' loop starts at -5, or `(MAX - MIN)` -- and the two coincide only because
+#' job writes that span in one of two spellings: `(5 + LN_MAX)` where the
+#' loop starts at -5, or `(MAX - MIN)`. The two coincide only because
 #' `lo = -5`. A numerator that is *not* the span means the emitted
 #' `(log(hi) - lo)/denominator` step would not be the job's step, so this
 #' returns `NA_real_` and the caller refuses the grid.
@@ -937,7 +941,7 @@
 #' Returns an unevaluated `data.frame()` call, or `NULL` when the step is not
 #' one of the two stereotyped forms this package can read. `NULL` means
 #' untranslated, never "no grid": a `predict()` call with no `newdata` is a
-#' hollow result -- right shape, empty inside -- so the caller
+#' hollow result (right shape, empty inside), so the caller
 #' (`.hzr_parse_hazpred()`) must record it in `untranslated`, not treat it as
 #' nothing to translate.
 #' @noRd
@@ -1234,5 +1238,222 @@
     call_haz = if (want_surv && want_haz) mk("hazard") else NULL,
     inhaz = inhaz, grid = grid, untranslated = untr,
     tokens_seen = seen, tokens_mapped = mapped
+  )
+}
+
+# ---------------------------------------------------------------------------
+# %repeat -> hzr_repeated_events()
+# ---------------------------------------------------------------------------
+
+# %repeat's keyword parameters and defaults, as the macro declares them
+# (~/Documents/macro.library/repeat.sas), upper-cased as
+# .hzr_sas_normalise() leaves every name.
+.hzr_repeat_defaults <- c(
+  IN = "BUILT", OUT = "EVENTS", EVENTYPE = "EVENTYPE", IV_EVENT = "IV_EVENT",
+  IV_END = "IV_END", ID = "ID", EVENT = "EVENT", EVENT_NO = "EVENT_NO",
+  RCENSOR = "RCENSOR", IV_START = "IV_START", IV_SEG = "IV_SEG", RENEWAL = "RENEWAL"
+)
+
+# hzr_repeated_events()'s fixed output names, each mapped to the macro
+# parameter that renames it. first and last have no parameter: the macro
+# always writes them under those names.
+.hzr_repeat_outputs <- c(
+  event = "EVENT", event_no = "EVENT_NO", rcensor = "RCENSOR",
+  iv_start = "IV_START", iv_seg = "IV_SEG", renewal = "RENEWAL"
+)
+
+#' Translate one `%repeat(...)` call into an `hzr_repeated_events()` chunk.
+#'
+#' The emitted chunk renames the function's lower-case outputs to the names the
+#' job uses, upper-cased like every name this translator emits; without that the
+#' fit reads a column that does not exist. Before the call it drops any input
+#' column named like one of those outputs. SAS overwrites such a column, and the
+#' macro assigns each output on every row before reading it, so dropping is
+#' exactly what SAS does. Left in place, the rename would produce two columns of
+#' one name, and `$` would return the stale one.
+#'
+#' A call this cannot express is refused rather than guessed at: the chunk is a
+#' `stop()`, and each problem is an `$untranslated` row. That covers an unknown
+#' keyword, a positional argument, a value that is not a plain SAS name (a
+#' `&macro` reference, say), an input column that is also an output
+#' (`EVENTYPE=RCENSOR`: SAS zeroes that indicator before reading it, so the job's
+#' own answer is not the model it describes), and two outputs with one name. A
+#' keyword given twice, which SAS rejects, is refused too, and so is an output
+#' named `LAG_IV` or `NUMBER`, the macro's own loop counters. The body is split
+#' on every comma; a value holding parentheses, where a comma could be nested, is
+#' refused as not a plain name either way.
+#' @noRd
+.hzr_parse_repeat <- function(block) {
+  parts <- if (nzchar(block$text)) trimws(strsplit(block$text, ",", fixed = TRUE)[[1L]]) else character(0)
+  args <- .hzr_repeat_defaults
+  problems <- character(0)
+  seen_keys <- character(0)
+
+  for (p in parts) {
+    kv <- regmatches(p, regexec("^([A-Z_][A-Z0-9_]*) ?= ?(.*)$", p))[[1L]]
+    if (!length(kv)) {
+      problems <- c(problems, sprintf("`%s` is not a KEY=VALUE argument", p))
+      next
+    }
+    key <- kv[2L]
+    val <- trimws(kv[3L])
+    if (!key %in% names(args)) {
+      problems <- c(problems, sprintf("`%s=` is not a %%repeat parameter", key))
+      next
+    }
+    if (key %in% seen_keys) {
+      problems <- c(problems, sprintf("`%s=` is given more than once", key))
+      next
+    }
+    seen_keys <- c(seen_keys, key)
+    name_re <- if (key %in% c("IN", "OUT")) {
+      "^[A-Z_][A-Z0-9_]*([.][A-Z_][A-Z0-9_]*)?$"
+    } else {
+      "^[A-Z_][A-Z0-9_]*$"
+    }
+    if (!grepl(name_re, val)) {
+      problems <- c(problems, sprintf("`%s=%s` is not a plain SAS name", key, val))
+      next
+    }
+    args[[key]] <- val
+  }
+
+  # A WORK. libref names the same dataset as the bare name, and the rewrite
+  # scan compares bare names. A fit written DATA=WORK.X keeps its libref, so it
+  # is not matched to this OUT= and gets the ordinary "Assign" guard instead.
+  args[c("IN", "OUT")] <- sub("^WORK[.]", "", args[c("IN", "OUT")])
+
+  inputs <- unname(args[c("ID", "EVENTYPE", "IV_EVENT", "IV_END")])
+  targets <- c(unname(args[.hzr_repeat_outputs]), "FIRST", "LAST")
+  for (hit in intersect(inputs, targets)) {
+    problems <- c(problems, sprintf(paste(
+      "input column %s is also an output %%repeat writes; SAS overwrites it before reading it,",
+      "so the job's own result is not the model it describes"
+    ), hit))
+  }
+  dup <- unique(targets[duplicated(targets)])
+  if (length(dup)) {
+    problems <- c(problems, sprintf("two outputs are both named %s", paste(dup, collapse = ", ")))
+  }
+  for (hit in intersect(targets, c("LAG_IV", "NUMBER"))) {
+    problems <- c(problems, sprintf(paste(
+      "output %s has the name of a %%repeat loop counter; SAS's RETAIN reads it,",
+      "so the job's own result is not the model it describes"
+    ), hit))
+  }
+
+  if (length(problems)) {
+    msg <- paste0("hzr_translate_sas() did not translate this job's %repeat call: ",
+                  paste(problems, collapse = "; "), ".")
+    return(list(
+      call = bquote(stop(.(msg))),
+      untranslated = .hzr_untranslated_frame(rep(NA_integer_, length(problems)),
+                                             rep("%repeat", length(problems)), problems),
+      tokens_seen = length(parts), tokens_mapped = 0L, in_name = NULL, out_name = NULL
+    ))
+  }
+
+  in_name <- args[["IN"]]
+  out_name <- args[["OUT"]]
+  from <- c(names(.hzr_repeat_outputs), "first", "last")
+  overwrite_msg <- paste0(" in ", in_name, ": %repeat writes columns of these names, so they were dropped ",
+                          "before the call, as SAS overwrites them.")
+  loop_msg <- paste0(" in ", in_name, ": SAS's %repeat reads a LAG_IV or NUMBER column in place of its ",
+                     "own loop counters, so for this job the SAS listing's segment starts and event ",
+                     "counts are not comparable with these.")
+  call <- bquote(.(as.name(out_name)) <- local({
+    d <- .(as.name(in_name))
+    drop <- intersect(names(d), .(targets))
+    if (length(drop)) {
+      warning(paste(drop, collapse = ", "), .(overwrite_msg), call. = FALSE)
+      d <- d[setdiff(names(d), drop)]
+    }
+    loop <- intersect(names(d), c("LAG_IV", "NUMBER"))
+    if (length(loop)) warning(paste(loop, collapse = ", "), .(loop_msg), call. = FALSE)
+    out <- hzr_repeated_events(d, id = .(args[["ID"]]), time = .(args[["IV_EVENT"]]),
+                               followup = .(args[["IV_END"]]), indicator = .(args[["EVENTYPE"]]))
+    names(out)[match(.(from), names(out))] <- .(targets)
+    out
+  }))
+
+  list(call = call, untranslated = .hzr_untranslated_frame(),
+       tokens_seen = length(parts), tokens_mapped = length(parts),
+       in_name = in_name, out_name = out_name)
+}
+
+#' Steps between a `%repeat` call and a fit that may change the macro's `OUT=`.
+#'
+#' `segment` is the normalised source between the two, and the scan fails
+#' closed. A `DATA` step is a hit when its output list names `out`; a step that
+#' only reads it (`SET out`) is not. Any other step or statement that names
+#' `out` is a hit as well -- `PROC SQL`, `PROC APPEND`, `PROC DATASETS`, a sort
+#' with `NODUPKEY`, `OUT=` or `WHERE=`, a macro call -- because a false stop
+#' costs the reader one deleted chunk and a missed rewrite fits data SAS did
+#' not fit. The one exception is the plain `PROC SORT DATA=out`, which only
+#' reorders rows and so cannot change the likelihood. A `WORK.` prefix names
+#' the same dataset as the bare name. Each hit is returned quoted: the step's
+#' statements up to the next `DATA`, `PROC`, `%HAZ`, `%REPEAT`, `RUN` or `QUIT`.
+#' A step that changes `out` without naming it (a macro that writes it
+#' internally) cannot be seen from here. Any statement starting with `%` (a
+#' macro call) is a step of its own, so it cannot hide inside an exempt one.
+#' A sort counts as plain only when every statement after its PROC line is a
+#' `BY`: a `WHERE` statement subsets the data. A step that uses a macro
+#' variable (`&name`) is a hit, because the variable could name `out`.
+#' @noRd
+.hzr_repeat_rewrites <- function(segment, out) {
+  out <- sub("^WORK[.]", "", out)
+  stmts <- trimws(strsplit(segment, ";", fixed = TRUE)[[1L]])
+  stmts <- stmts[nzchar(stmts)]
+  boundary <- "^(DATA |PROC |%|RUN$|QUIT$)"
+  names_in <- function(s) sub("^WORK[.]", "", strsplit(s, "[^A-Z0-9_.]+")[[1L]])
+  plain_sort <- paste0("PROC SORT DATA=", c(out, paste0("WORK.", out)))
+  hits <- character(0)
+  i <- 1L
+  while (i <= length(stmts)) {
+    last <- i
+    if (grepl("^(DATA |PROC )", stmts[i])) {
+      while (last < length(stmts) && !grepl(boundary, stmts[last + 1L])) last <- last + 1L
+    }
+    step <- stmts[i:last]
+    s <- stmts[i]
+    writes <- if (startsWith(s, "DATA ")) {
+      targets <- strsplit(trimws(gsub("[(][^)]*[)]", " ", substring(s, 6L))), " +")[[1L]]
+      out %in% sub("^WORK[.]", "", targets)
+    } else if (s %in% plain_sort && all(grepl("^BY ", step[-1L]))) {
+      FALSE
+    } else {
+      any(vapply(step, function(x) out %in% names_in(x), logical(1L)))
+    }
+    # A macro variable (&DSN) could name OUT; its value is not known here, so
+    # a step that uses one is treated as naming it -- the same call
+    # .hzr_parse_repeat() makes when it refuses IN=&DSN.
+    writes <- writes || any(grepl("&[A-Z_]", step))
+    if (writes) hits <- c(hits, paste0(paste(step, collapse = "; "), ";"))
+    i <- last + 1L
+  }
+  hits
+}
+
+#' The stop() chunks and $untranslated rows for steps that may change `out`.
+#'
+#' One chunk per step `.hzr_repeat_rewrites()` finds in `segment`, each quoting
+#' the step and telling the reader to replace it with R code, or delete it if
+#' the step leaves `out` unchanged.
+#' @noRd
+.hzr_rewrite_stops <- function(segment, out) {
+  steps <- .hzr_repeat_rewrites(segment, out)
+  stops <- lapply(steps, function(step) {
+    bquote(stop(.(paste0(
+      "This job may change ", out, " after %repeat, in a SAS step that ",
+      "hzr_translate_sas() does not translate: ", step, " Replace this chunk ",
+      "with R code that makes the same change to ", out, ", or delete it if ",
+      "the step leaves ", out, " unchanged."
+    ))))
+  })
+  list(
+    calls = stops,
+    untranslated = .hzr_untranslated_frame(
+      rep(NA_integer_, length(steps)), rep(paste0(out, " changed after %repeat"), length(steps)), steps
+    )
   )
 }

@@ -24,6 +24,7 @@ phase in the full theta vector.  The block layout is:
 \details{
 \itemize{
 \item For \code{"cdf"}/\code{"hazard"}: \verb{[log_mu, log_t_half, nu, m, beta_1, ..., beta_p]}
+\item For \code{"g3"}:             \verb{[log_mu, log_tau, gamma, alpha, eta, beta_1, ..., beta_p]}
 \item For \code{"constant"}:       \verb{[log_mu, beta_1, ..., beta_p]}
 }
 }

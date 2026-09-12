@@ -59,7 +59,7 @@
 #' Add or drop a variable from a formula's RHS
 #'
 #' @param formula Existing formula.  One-sided (`~ x`) or two-sided
-#'   (`Surv(time, status) ~ x`) -- the LHS is preserved verbatim.
+#'   (`Surv(time, status) ~ x`); the LHS is preserved verbatim.
 #' @param action Either `"add"` or `"drop"`.
 #' @param var Character scalar naming the variable to add / drop.
 #'
@@ -111,7 +111,7 @@
 #' Add or drop a variable from a phase's formula
 #'
 #' @param phase An `hzr_phase` object.  Its `formula` slot may be NULL
-#'   (no phase-specific covariates) -- in the add case a fresh
+#'   (no phase-specific covariates); in the add case a fresh
 #'   `~ var` formula is created.
 #' @param action Either `"add"` or `"drop"`.
 #' @param var Character scalar.
@@ -221,12 +221,15 @@
 #' \code{formula[[3L]]}) and returns \code{TRUE} if any call node has a
 #' function symbol that exactly matches one of \code{phase_names}.
 #'
-#' This is stricter than a string-regex approach, which would fire on any
-#' \code{log(} in the text: the walk fires only when a call's head exactly
-#' matches a phase name, so \code{log(age)} is not taken for a phase unless a
-#' phase is actually named \code{"log"}.  When one is, \code{log(age)} does
-#' match, and \code{hazard()} refuses the formula (#275); write
-#' \code{base::log(age)} to use the function.
+#' This is stricter than a string-regex approach.  A call such as
+#' \code{log(age)} triggers the check only when a phase is actually named
+#' \code{"log"}; with phases named \code{"early"} and \code{"constant"} it
+#' does not.  When a phase is named \code{"log"}, \code{log(age)} does
+#' trigger it and \code{hazard()} refuses the formula (#275); write
+#' \code{base::log(age)} to use the function.  The function fires only when a
+#' call head exactly matches a known phase name, so a variable such as
+#' \code{early_age}, or a bare symbol \code{early} that is not called, does
+#' not trigger it.
 #'
 #' @param rhs  A language object (the RHS of a formula, typically
 #'   \code{formula[[3L]]}).
@@ -333,8 +336,8 @@
 #' Coerce a candidate column to the numeric vector the screen models
 #'
 #' Logical columns are ordinary 0/1 predictors, and `.hzr_modellable_vars()`
-#' offers them as candidates under `scope = NULL`. Everything downstream -- the
-#' score statistic, the design-matrix column -- wants a numeric vector, so the
+#' offers them as candidates under `scope = NULL`. Everything downstream (the
+#' score statistic, the design-matrix column) wants a numeric vector, so the
 #' translation happens once here rather than teaching each site about logicals.
 #'
 #' Returns `NULL` for anything that is not modellable as a single numeric

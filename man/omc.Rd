@@ -24,9 +24,8 @@ omc
 }
 \description{
 Data for 339 patients who underwent open mitral commissurotomy at the
-University of Alabama Birmingham. Contains repeated thromboembolic events
-(up to 3 per patient) with left censoring, exercising the interval
-censoring likelihood.
+University of Alabama Birmingham. Records repeated thromboembolic events
+(up to 3 per patient) as indicators; the event dates are not included.
 }
 \seealso{
 Other datasets:

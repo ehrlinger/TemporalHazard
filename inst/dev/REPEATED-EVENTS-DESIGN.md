@@ -10,7 +10,8 @@
 ## Purpose
 
 Repeated-events HAZARD jobs in the corpus build their fit input with the SAS macro
-`%repeat`. That input was never saved, so those jobs cannot be reproduced today. This
+`%repeat`. That input was seldom saved (the few jobs that keep it are counted under
+Acceptance), so most of those jobs cannot be reproduced today. This
 adds a native R implementation so they can be, which is TemporalHazard's remit: SAS
 reproduction.
 
@@ -459,8 +460,7 @@ manual from a clean `git archive` export of a **committed** tree.
 ## Out of scope
 
 - Any change to the likelihood, the optimizer, or the existing `hzr_*` surface.
-- Wiring `hzr_repeated_events()` into `hzr_translate_sas()`. The translator will need to
-  recognise a `%repeat` call and emit this function, but that is a separate change with
-  its own parity evidence.
+- Wiring `hzr_repeated_events()` into `hzr_translate_sas()`. Done separately; see
+  `SAS-JOB-TRANSLATOR-DESIGN.md` §5.5.
 - Changing the optimizer's default `reltol`. Fit parity shows the default stops the second
   model short; the fix belongs to the optimizer, not to this function.

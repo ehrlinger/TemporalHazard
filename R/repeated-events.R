@@ -4,8 +4,8 @@
 # -------
 # Repeated-events HAZARD jobs build their fit input with the SAS macro
 # %repeat (~/Documents/macro.library/repeat.sas, 161 lines, 2003-10-17).
-# That input was never saved, so those jobs cannot be reproduced without
-# rebuilding it.  This file rebuilds it in R.
+# That input was seldom saved, so most of those jobs cannot be reproduced
+# without rebuilding it.  This file rebuilds it in R.
 #
 # The macro is long-in, long-out: its input is already one row per
 # candidate event per subject.  The transform is gap-filling and
@@ -393,7 +393,7 @@
 #' Converts a long data set of candidate event times into one row per
 #' inter-event segment, ready to fit as a repeated-events model. This is a
 #' native R implementation of the SAS macro `%repeat` used by the
-#' repeated-events HAZARD jobs, whose fit input was never saved.
+#' repeated-events HAZARD jobs, whose fit input was seldom saved.
 #'
 #' @details
 #' The input holds one row per candidate event per subject, with an indicator
@@ -438,7 +438,7 @@
 #'     \item{`event_no`}{Running count of event repeats within the subject.}
 #'     \item{`rcensor`}{1 when the row is right censored at the end of follow-up,
 #'       otherwise 0. This is set both for a genuine censoring row and for an event
-#'       row whose event time equals the end of follow-up -- `rcensor` and `event`
+#'       row whose event time equals the end of follow-up. `rcensor` and `event`
 #'       are therefore not mutually exclusive; see the Note below.}
 #'     \item{`iv_start`}{Interval from time zero to the start of the segment.}
 #'     \item{`iv_seg`}{Duration of the segment, `time` minus `iv_start`.}

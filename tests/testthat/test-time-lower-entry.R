@@ -103,6 +103,12 @@ test_that("entry at or after exit warns, and names the NULL default", {
   expect_match(w, paste0(n, " of ", n), all = FALSE)
   # The remedy has to be in the message: NULL is not the same as `time`.
   expect_match(w, "leave 'time_lower' as NULL", all = FALSE)
+  # The warning fires for every `dist`, so its account of the consequence
+  # has to hold for every family: only multiphase honours the entry time on
+  # these rows, and "contribute nothing" was true for multiphase alone.
+  expect_match(w, "dist = \"weibull\" treats them as entering at time 0",
+               fixed = TRUE, all = FALSE)
+  expect_false(any(grepl("contribute nothing", w, fixed = TRUE)))
 })
 
 test_that("genuine left truncation does not warn", {
