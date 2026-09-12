@@ -43,6 +43,16 @@
   must be given as `grpyoung` and a transform as `log(age)`. Refit it to
   give the formula's variables instead.
 
+* **`predict(newdata = )` stops for a model with a covariate named `time`.**
+  In `newdata` the column `time` is the prediction time, so such a
+  covariate could not be given its own value. It was dropped from the
+  covariates, and the survival and cumulative-hazard predictions silently
+  came back at the baseline: a Weibull fit of `~ time` gave 0.1414 where
+  the covariate made it 0.1420, with no error. The call now stops and asks
+  for the covariate to be renamed and the model refitted. That applies to
+  the global formula, a named `x`, and a multiphase phase formula alike.
+  `predict()` without `newdata` is unaffected (#270).
+
 ## New features
 
 * **Every fit now says what it did not do** (#242, following #197). A

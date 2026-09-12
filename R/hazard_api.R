@@ -1068,7 +1068,9 @@ hazard <- function(formula = NULL,
 #'   ignored, and a covariate the model needs but `newdata` lacks is an error.
 #'   A fit made with an unnamed `x` matrix matches by position. For the types
 #'   requiring time, a `newdata` with only a `time` column evaluates the
-#'   baseline, with every covariate at 0.
+#'   baseline, with every covariate at 0. Because `time` is the prediction
+#'   time, a model with a covariate named `time` cannot be predicted at
+#'   `newdata`; rename that covariate and refit.
 #' @param type Prediction type:
 #'   - `"linear_predictor"`: Linear predictor eta = x*beta (not available for multiphase)
 #'   - `"hazard"`: Instantaneous hazard. Single-distribution models return the
@@ -1292,6 +1294,10 @@ predict.hazard <- function(object, newdata = NULL,
            "Got type = \"", type, "\".", call. = FALSE)
     }
   }
+
+  # `time` in newdata is the prediction time; a covariate of that name
+  # cannot also be given there (#270).
+  if (!is.null(newdata)) .hzr_check_time_covariate(object)
 
   # -----------------------------------------------------------------------
   # Predictions that do NOT need time (linear_predictor, hazard)

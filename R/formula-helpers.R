@@ -157,6 +157,36 @@
 }
 
 
+#' Refuse `predict(newdata = )` for a model with a covariate named `time`
+#'
+#' In `newdata` the column `time` is the prediction time, so a covariate of
+#' that name cannot be given its own value there. It used to be dropped from
+#' the covariates, and the time-based types silently returned the baseline
+#' (#270). Called only when `newdata` is supplied; predictions at the fitted
+#' data are unaffected.
+#'
+#' @param object A fitted `hazard` object.
+#' @return `NULL`, invisibly; stops if the model has such a covariate.
+#' @keywords internal
+#' @noRd
+.hzr_check_time_covariate <- function(object) {
+  design <- object$data$x_design
+  vars <- if (!is.null(design)) design$data_vars else colnames(object$data$x)
+  phases <- object$fit$phases
+  if (is.null(phases)) phases <- object$spec$phases
+  for (ph in phases) {
+    if (!is.null(ph$formula)) vars <- c(vars, all.vars(ph$formula))
+  }
+  if ("time" %in% vars) {
+    stop("The model has a covariate named 'time', but in 'newdata' the ",
+         "column 'time' is the prediction time, so that covariate cannot ",
+         "be given a value there. Rename the covariate in the data and ",
+         "refit.", call. = FALSE)
+  }
+  invisible(NULL)
+}
+
+
 #' Covariate design for `predict(newdata = )` on a single-distribution fit
 #'
 #' Matches `newdata`'s covariates to the fit by name, through
