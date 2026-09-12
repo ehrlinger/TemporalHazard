@@ -76,12 +76,18 @@
 #' records as having shipped a wrong-answer bug.
 #'
 #' @param fit A fitted `hazard` object.
+#' @param stepped Names of the multiphase phases a step can change, or
+#'   `NULL` for all of them; passed to `.hzr_inherit_blocker()`.
 #' @return `NULL` when the fit can be refit, otherwise a character scalar
 #'   naming the obstruction, phrased to follow "... because".
 #'
 #' @keywords internal
 #' @noRd
-.hzr_refit_blocker <- function(fit) {
+.hzr_refit_blocker <- function(fit, stepped = NULL) {
+  inherit_blocker <- .hzr_inherit_blocker(fit, stepped = stepped)
+  if (!is.null(inherit_blocker)) {
+    return(inherit_blocker)
+  }
   if (!is.null(fit$call$formula)) {
     return(NULL)
   }
@@ -108,6 +114,85 @@
   }
 
   NULL
+}
+
+
+#' Why a multiphase fit's inherited design cannot be stepped
+#'
+#' A phase with no formula of its own inherits the global design, and a
+#' stepwise step on it rebuilds that design as a phase formula from the
+#' global formula's terms (#284). The rebuild is exact only for plain
+#' one-column terms, so three cases are refused here, before any fitting:
+#' a design matrix passed directly as `x`, which has no terms at all;
+#' time-varying coefficients (`time_windows`), which a phase formula would
+#' fit as one constant effect; and a term that expands to more than one
+#' column, such as a factor, which a step cannot add or drop as one
+#' coefficient. Each silently changed the phase's design before.
+#'
+#' @param fit A fitted `hazard` object.
+#' @param stepped Names of the phases a step can change, or `NULL` for all
+#'   of them. The `time_windows` and multi-column checks apply only to these;
+#'   a direct `x` is refused for any inheriting phase.
+#' @return `NULL`, or a character scalar phrased to follow "... because",
+#'   carrying its own remedy.
+#' @keywords internal
+#' @noRd
+.hzr_inherit_blocker <- function(fit, stepped = NULL) {
+  if (!identical(fit$spec$dist, "multiphase")) {
+    return(NULL)
+  }
+  inherits <- vapply(fit$spec$phases, function(ph) is.null(ph$formula),
+                     logical(1))
+  if (!any(inherits)) {
+    return(NULL)
+  }
+  name_phases <- function(p) {
+    paste0(if (length(p) > 1L) "phases " else "phase ",
+           paste0("'", p, "'", collapse = ", "),
+           if (length(p) > 1L) " inherit" else " inherits")
+  }
+  inheriting <- names(fit$spec$phases)[inherits]
+  who <- name_phases(inheriting)
+  fix <- paste0(". Give each phase its covariates with ",
+                "hzr_phase(formula = ~ ...), with the columns in `data`")
+
+  if (is.null(fit$call$formula)) {
+    if (!is.null(fit$call$x)) {
+      return(paste0(who, " a design matrix passed directly as `x`, and a ",
+                    "refit has no terms to rebuild it from", fix))
+    }
+    return(NULL)
+  }
+
+  # A global `.` is left to hzr_stepwise()'s own refusal (#279).
+  tt <- tryCatch(stats::terms(.hzr_stored_formula(fit)),
+                 error = function(e) NULL)
+  labels <- if (is.null(tt)) character() else attr(tt, "term.labels")
+  if (length(labels) == 0L) {
+    return(NULL)
+  }
+  # A refit hands an inheriting phase that is not stepped the same global
+  # design back, so these two checks apply only to a phase being stepped.
+  # (A direct `x`, above, is lost by every inheriting phase, stepped or not.)
+  if (!is.null(stepped)) {
+    inheriting <- intersect(stepped, inheriting)
+    if (length(inheriting) == 0L) {
+      return(NULL)
+    }
+    who <- name_phases(inheriting)
+  }
+  reason <- if (!is.null(fit$spec$time_windows)) {
+    paste0("time-varying coefficients (`time_windows`), which a phase ",
+           "formula would fit as one constant effect")
+  } else if (!is.null(fit$data$x) && ncol(fit$data$x) != length(labels)) {
+    paste0("a term that expands to more than one column, such as a factor ",
+           "with more than two levels or `poly()`, which a step cannot add ",
+           "or drop as one coefficient")
+  }
+  if (is.null(reason)) {
+    return(NULL)
+  }
+  paste0(who, " a global design with ", reason, fix)
 }
 
 
@@ -187,7 +272,7 @@
   extra_args <- user_args[!names(user_args) %in%
                             c("weights", "time_windows", "objective")]
 
-  blocker <- .hzr_refit_blocker(current)
+  blocker <- .hzr_refit_blocker(current, stepped = phase)
   if (!is.null(blocker)) {
     stop("`current` cannot be refit because ", blocker, ".", call. = FALSE)
   }
@@ -213,8 +298,13 @@
     }
 
     new_phases <- current$spec$phases
+    # A phase with no formula inherits the global terms, and the step starts
+    # from them (#284). Read only for such a phase.
+    inherited <- if (is.null(new_phases[[phase]]$formula)) {
+      .hzr_inherited_rhs(current)
+    }
     new_phases[[phase]] <- .hzr_phase_update_formula(
-      new_phases[[phase]], action = action, var = var
+      new_phases[[phase]], action = action, var = var, inherited = inherited
     )
 
     # The scope change above rewrote the PHASE formula; the global formula

@@ -111,16 +111,21 @@
 #' Add or drop a variable from a phase's formula
 #'
 #' @param phase An `hzr_phase` object.  Its `formula` slot may be NULL
-#'   (no phase-specific covariates); in the add case a fresh
-#'   `~ var` formula is created.
+#'   (no phase-specific covariates), in which case the phase inherits the
+#'   global design: the step starts from `inherited` when that is given, and
+#'   otherwise the add case creates a fresh `~ var` formula.
 #' @param action Either `"add"` or `"drop"`.
 #' @param var Character scalar.
+#' @param inherited One-sided formula of the global terms a phase with no
+#'   formula inherits (see `.hzr_inherited_rhs()`), or `NULL` when there are
+#'   none. Ignored for a phase with a formula of its own.
 #'
 #' @return An updated `hzr_phase` object with the new formula.
 #'
 #' @keywords internal
 #' @noRd
-.hzr_phase_update_formula <- function(phase, action = c("add", "drop"), var) {
+.hzr_phase_update_formula <- function(phase, action = c("add", "drop"), var,
+                                      inherited = NULL) {
   action <- match.arg(action)
   if (!inherits(phase, "hzr_phase")) {
     stop("`phase` must be an `hzr_phase` object.", call. = FALSE)
@@ -130,6 +135,14 @@
   }
 
   f <- phase$formula
+  if (is.null(f) && !is.null(inherited)) {
+    # A phase with no formula of its own carries the global terms, so a step
+    # starts from them: adding `mal` to a phase inheriting `age` gives
+    # `~ age + mal`, not `~ mal` (#284). An emptied result stays `~ 1`
+    # rather than NULL, which would inherit the global terms again.
+    phase$formula <- .hzr_formula_update(inherited, action, var)
+    return(phase)
+  }
   if (is.null(f)) {
     if (action == "drop") {
       return(phase)   # nothing to drop
@@ -143,16 +156,37 @@
     return(phase)
   }
 
+  # A drop that empties the RHS leaves `~ 1`, never NULL: a NULL phase
+  # formula inherits the global design, so the phase would take back the
+  # global covariates the step table says it no longer has (#284).
   phase$formula <- .hzr_formula_update(f, action, var)
-
-  # If dropping emptied the RHS (`~ 1`), null the slot out for
-  # consistency with hzr_phase(formula = NULL) construction.
-  if (action == "drop" &&
-        identical(.hzr_formula_rhs_terms(phase$formula), character())) {
-    phase$formula <- NULL
-  }
-
   phase
+}
+
+
+#' The global terms a phase with no formula of its own inherits
+#'
+#' A multiphase phase whose `formula` is `NULL` uses the global design: the
+#' right-hand side of the fit's formula. A stepwise step on such a phase has
+#' to start from those terms (#284). A vector-interface fit has no formula,
+#' so nothing here can say what a directly passed `x` holds;
+#' `.hzr_refit_blocker()` refuses the case where a phase inherits one.
+#'
+#' @param fit A fitted `hazard` object.
+#' @return A one-sided formula in the stored formula's environment, or `NULL`
+#'   when the global design has no terms.
+#' @keywords internal
+#' @noRd
+.hzr_inherited_rhs <- function(fit) {
+  f <- .hzr_stored_formula(fit)
+  if (is.null(f) || length(f) < 3L) {
+    return(NULL)
+  }
+  rhs_terms <- .hzr_formula_rhs_terms(f)
+  if (length(rhs_terms) == 0L) {
+    return(NULL)
+  }
+  stats::reformulate(rhs_terms, env = environment(f))
 }
 
 
@@ -194,9 +228,18 @@
     return(.hzr_formula_rhs_terms(f))
   }
 
-  # Multiphase
+  # Multiphase. A phase with no formula of its own carries the global terms
+  # it inherits (#284); they are read only when some phase does inherit, so
+  # a global `.` beside phases that all have formulas is never parsed here.
+  inherits_global <- vapply(fit$spec$phases, function(ph) is.null(ph$formula),
+                            logical(1))
+  inherited_terms <- character()
+  if (any(inherits_global)) {
+    rhs <- .hzr_inherited_rhs(fit)
+    if (!is.null(rhs)) inherited_terms <- .hzr_formula_rhs_terms(rhs)
+  }
   per_phase <- lapply(fit$spec$phases, function(ph) {
-    if (is.null(ph$formula)) character() else .hzr_formula_rhs_terms(ph$formula)
+    if (is.null(ph$formula)) inherited_terms else .hzr_formula_rhs_terms(ph$formula)
   })
 
   if (is.null(phase)) return(per_phase)
