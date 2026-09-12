@@ -1533,6 +1533,13 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
         outside_in(all.vars(f), environment(f) %||% call_env)
       })),
       outside_in(scope_vars, base_env %||% call_env),
+      # A scope variable that only the scope formula's own frame can see
+      # never reaches the refit, so the screen could not test it: that was
+      # reported once, up front, then silently absent from every replicate.
+      # It is refused too.
+      if (inherits(scope, "formula")) {
+        outside_in(scope_vars, environment(scope) %||% call_env)
+      },
       # A multiphase scope is refit through .hzr_phase_update_formula(): into
       # the phase's own formula, keeping its environment, or, for a phase
       # without one, into a fresh formula whose lookups reach this package's
@@ -1542,11 +1549,12 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
           sc <- scope[[p]]
           if (!inherits(sc, "formula")) return(character())
           pf <- object$spec$phases[[p]]$formula
-          outside_in(all.vars(sc), if (is.null(pf)) {
+          c(outside_in(all.vars(sc), if (is.null(pf)) {
             environment(.hzr_parse_formula)
           } else {
             environment(pf)
-          })
+          }),
+          outside_in(all.vars(sc), environment(sc) %||% call_env))
         }))
       }
     )
@@ -1562,7 +1570,21 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     }
   }
 
-  # Seeded after the refusal above, so a refused call leaves the caller's
+  # A design matrix passed directly as `x` on the vector interface is never
+  # resampled. A fixed refit re-evaluated it without resampling in every
+  # replicate, pairing resampled outcomes with the original design; a
+  # select-mode refit reused it for the base model and dropped it from the
+  # candidates. Every replicate reported success either way, so it is
+  # refused.
+  if (is.null(cl$formula) && !is.null(cl$time) && !is.null(cl$x)) {
+    stop("hzr_bootstrap(): this fit's design matrix was passed directly as ",
+         "`x`, which replicates cannot resample with the rows: each would ",
+         "pair resampled outcomes with the original design. Refit with the ",
+         "formula interface (Surv(...) ~ ..., data = ...) and bootstrap ",
+         "that.", call. = FALSE)
+  }
+
+  # Seeded after the refusals above, so a refused call leaves the caller's
   # random number stream alone.
   if (!is.null(seed)) set.seed(seed)
 
@@ -1647,8 +1669,8 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   #
   # The evaluated vectors are already stored on the object, so they can be
   # resampled by the same index and rewired the same way `data` and `weights`
-  # are. `x` is excluded deliberately: a design matrix supplied that way is
-  # rebuilt from `data`/`scope` per replicate.
+  # are. `x` is not among them: a design matrix passed directly is refused
+  # above, before seeding.
   vector_interface <- is.null(cl$formula) && !is.null(cl$time)
   vec_args <- c("time", "status", "time_lower", "time_upper")
   vec_orig <- if (vector_interface) {

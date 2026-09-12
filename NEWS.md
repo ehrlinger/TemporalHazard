@@ -53,7 +53,12 @@
   select-mode `scope`, and reads variables from the terms, so `log(age)`
   needs only the column `age`. A constant outside `data`, such as `pi`, a
   cutoff or a knots vector, is still allowed. The error names the
-  variables; add them to `data` and refit.
+  variables; add them to `data` and refit. A scope variable that only the
+  scope formula's own frame can see, which the refits could never test, is
+  refused the same way. So is a vector-interface fit whose design matrix
+  was passed directly as `x`: it was re-evaluated without resampling in
+  every replicate, or in select mode dropped from the candidate refits, so
+  all of them succeeded and the interval was wrong.
 
 * **`hzr_stepwise()` now refuses a base fit written as `Surv(...) ~ .`**
   (#279). It read the base model's terms without the data, which cannot

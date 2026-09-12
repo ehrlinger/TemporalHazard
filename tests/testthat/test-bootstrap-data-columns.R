@@ -123,6 +123,71 @@ test_that("a multiphase scope is checked where its phase refit reads it", {
   )
 })
 
+test_that("a scope variable only the scope's own frame can see is refused", {
+  # The refit cannot resolve `zl`, so the screen could never test it: after
+  # one warning up front, it silently dropped out of every replicate's
+  # candidates.
+  mk_scope <- function() {
+    zl <- avc_278$age # nolint: object_usage_linter.
+    ~ zl + mal
+  }
+  base <- weibull_278(survival::Surv(int_dead, dead) ~ 1, theta = c(0.3, 1))
+  expect_error(hzr_bootstrap(base, n_boot = 3, seed = 1, scope = mk_scope(),
+                             criterion = "wald"),
+               "uses 'zl', which is not a column")
+
+  # The same for a phase with no formula of its own.
+  mp <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = avc_278, dist = "multiphase",
+    phases = list(
+      early    = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1,
+                           fixed = "m"),
+      constant = hzr_phase("constant")
+    ),
+    fit = TRUE, control = list(n_starts = 1L, conserve = FALSE)
+  ))
+  mk_mscope <- function() {
+    zl <- avc_278$age # nolint: object_usage_linter.
+    list(constant = ~ zl)
+  }
+  expect_error(hzr_bootstrap(mp, n_boot = 2, seed = 1, scope = mk_mscope(),
+                             criterion = "wald", slentry = 0.99),
+               "uses 'zl', which is not a column")
+})
+
+test_that("a vector-interface fit with a direct `x` is refused", {
+  # `x` was re-evaluated unresampled in every replicate: 20 of 20 succeeded,
+  # and the interval for `age` excluded its own estimate.
+  fit <- hazard(data = avc_278, time = int_dead, status = dead,
+                x = as.matrix(avc_278["age"]), dist = "weibull",
+                theta = c(0.3, 1, 0), fit = TRUE)
+  # Refused before seeding, so the caller's random number stream is left
+  # alone.
+  set.seed(42)
+  before <- .Random.seed
+  expect_error(hzr_bootstrap(fit, n_boot = 3, seed = 1),
+               "passed directly as `x`")
+  expect_identical(.Random.seed, before)
+
+  # Select mode too: the base refits reused the original `x` and the
+  # candidate refits dropped it, so the `age` terms vanished from every
+  # replicate while all of them reported success.
+  mp <- suppressWarnings(hazard(
+    data = avc_278, time = int_dead, status = dead,
+    x = as.matrix(avc_278["age"]), dist = "multiphase",
+    phases = list(
+      early    = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1,
+                           fixed = "m"),
+      constant = hzr_phase("constant")
+    ),
+    fit = TRUE, control = list(n_starts = 1L, conserve = FALSE)
+  ))
+  expect_error(hzr_bootstrap(mp, n_boot = 3, seed = 1,
+                             scope = list(early = ~ mal),
+                             criterion = "wald", slentry = 0.99),
+               "passed directly as `x`")
+})
+
 test_that("constants outside `data` are not refused", {
   # One value, or a few, is the same in every replicate by design: only a
   # per-row vector is data the resample would miss.
