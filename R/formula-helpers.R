@@ -60,27 +60,9 @@
   # Parse RHS (predictors)
   x <- NULL
   if (!is.null(rhs)) {
-    # One-sided formula for model.matrix(), with `.` expanded here, against
-    # `data` without the Surv() variables, as survival::coxph() does:
-    # terms() drops every column the left-hand side uses. Pasting the RHS
-    # into `~ ...` expanded `.` to every column, so the response was fitted
-    # as a predictor (#273).
-    rhs_formula <- stats::formula(
-      stats::delete.response(stats::terms(formula, data = data))
-    )
-    # When the response uses every column, terms() has nothing to put in
-    # place of `.` and leaves it, and model.matrix() would then expand it
-    # against all of `data`, response included. Alone, `.` then stands for
-    # no column and the model has no covariates. Beside other terms it is
-    # refused: replacing the RHS would drop those terms without a word.
-    if ("." %in% all.vars(rhs_formula)) {
-      if (!identical(all.vars(rhs_formula), ".")) {
-        stop("`.` in the formula stands for no column: `data` holds only ",
-             "the variables of the Surv() response. Remove `.`, or add the ",
-             "covariates to `data`.", call. = FALSE)
-      }
-      rhs_formula <- stats::reformulate("1", env = environment(rhs_formula))
-    }
+    # One-sided formula for model.matrix(), with `.` expanded against `data`
+    # without the Surv() variables (#273). See .hzr_expand_rhs().
+    rhs_formula <- .hzr_expand_rhs(formula, data)
     tryCatch({
       x <- stats::model.matrix(rhs_formula, data = data)
       # Remove intercept column if present
@@ -103,6 +85,41 @@
     x = x,
     surv_type = resp$surv_type
   )
+}
+
+
+#' Write out `.` in a model formula's right-hand side
+#'
+#' Returns the right-hand side of a two-sided `Surv(...) ~ ...` formula as a
+#' one-sided formula, with `.` expanded to every column of `data` that the
+#' left-hand side does not use, as `survival::coxph()` does: `terms()` drops
+#' those columns itself. Both the global formula (`.hzr_parse_formula()`,
+#' #273) and each `hzr_phase(formula = )` (`hazard()`, #277) go through here,
+#' so `.` means the same thing in both.
+#'
+#' @param formula A two-sided formula with the `Surv()` term on the left.
+#' @param data The data frame `.` is expanded against.
+#' @return A one-sided formula in `environment(formula)`, with no `.` left.
+#' @keywords internal
+#' @noRd
+.hzr_expand_rhs <- function(formula, data) {
+  rhs_formula <- stats::formula(
+    stats::delete.response(stats::terms(formula, data = data))
+  )
+  # When the response uses every column, terms() has nothing to put in
+  # place of `.` and leaves it, and model.matrix() would then expand it
+  # against all of `data`, response included. Alone, `.` then stands for
+  # no column and the model has no covariates. Beside other terms it is
+  # refused: replacing the RHS would drop those terms without a word.
+  if ("." %in% all.vars(rhs_formula)) {
+    if (!identical(all.vars(rhs_formula), ".")) {
+      stop("`.` in the formula stands for no column: `data` holds only ",
+           "the variables of the Surv() response. Remove `.`, or add the ",
+           "covariates to `data`.", call. = FALSE)
+    }
+    rhs_formula <- stats::reformulate("1", env = environment(rhs_formula))
+  }
+  rhs_formula
 }
 
 

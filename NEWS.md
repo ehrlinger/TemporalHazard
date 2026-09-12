@@ -141,13 +141,26 @@
   the formula written out in full. A `data` with no other column gives a
   model with no covariates, and there `.` beside other terms is an error.
   **Estimates from an earlier `~ .` fit change**, and so does the length of
-  `theta` it needs. `hzr_phase(formula
-  = ~ .)` is not changed by this fix. A right-hand-side variable that is not
+  `theta` it needs. A `.` in
+  `hzr_phase(formula = )` is fixed separately (#277). A right-hand-side variable that is not
   a column of `data` is now looked up where the formula was written, so a
   variable local to the calling function resolves instead of failing with
   "object not found". `hzr_bootstrap()` resamples only the rows of `data`,
   not such a variable: at `fraction = 1` its interval is wrong, and below 1
   every replicate fails. Keep every covariate you will bootstrap in `data`.
+
+* **`hzr_phase(formula = ~ .)` no longer puts the response in the phase
+  design** (#277). A phase formula's `.` was expanded by `model.frame()`
+  against every column of `data`, including the columns of the `Surv()`
+  term, so the outcome was fitted as a phase covariate and the fit
+  converged with no error. `hazard()` now writes `.` out once, before
+  fitting, the same way as for the global formula (#273): every column the
+  `Surv()` term does not use. The fitted object stores the written-out
+  formula, so `predict(newdata = )` no longer needs the response columns.
+  On the vector interface (`time =`, `status =`) no `Surv()` term says which
+  columns hold the response, so a phase formula with `.` is now an error
+  there; write the phase's terms out. **Estimates from an earlier fit with
+  `.` in a phase formula change.**
 
 # TemporalHazard 1.2.10
 

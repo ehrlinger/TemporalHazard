@@ -757,6 +757,28 @@ hazard <- function(formula = NULL,
            "Supply a list of hzr_phase() specifications.", call. = FALSE)
     }
     phases <- .hzr_validate_phases(phases)
+    # `.` in a phase formula is written out here, once, before anything reads
+    # it (#277). The likelihood, the score test, predict() and the stored
+    # spec all build the phase design with model.frame(ph$formula, data),
+    # which would expand `.` to every column, response included. It is
+    # expanded as the global formula's is, against `data` without the Surv()
+    # variables. The vector interface has no Surv() term to name those
+    # columns, so there `.` is refused.
+    for (nm in names(phases)) {
+      pf <- phases[[nm]]$formula
+      if (is.null(pf) || !"." %in% all.vars(pf)) next
+      if (is.null(formula)) {
+        stop("Phase '", nm, "' uses `.` in its formula, which needs the ",
+             "formula interface: with `time =` and `status =`, hazard() ",
+             "cannot tell which columns of `data` hold the response. Write ",
+             "the phase's terms out, or use hazard(Surv(...) ~ ..., ",
+             "data = ...).", call. = FALSE)
+      }
+      two_sided <- stats::as.formula(
+        call("~", formula[[2L]], pf[[length(pf)]]), env = environment(pf)
+      )
+      phases[[nm]]$formula <- .hzr_expand_rhs(two_sided, data)
+    }
   } else if (!is.null(phases)) {
     warning("'phases' is ignored when dist != 'multiphase'.")
     phases <- NULL

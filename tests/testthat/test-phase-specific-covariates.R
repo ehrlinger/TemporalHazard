@@ -315,3 +315,77 @@ test_that("a plain global covariate in a multiphase fit is unchanged", {
   expect_equal(fit$fit$objective, ref$fit$objective, tolerance = 1e-8)
   expect_equal(unname(coef(fit) / coef(ref)), rep(1, 7), tolerance = 1e-6)
 })
+
+# ---------------------------------------------------------------------------
+# `.` in a phase formula (#277)
+# ---------------------------------------------------------------------------
+# hzr_phase(formula = ~ .) was expanded against every column of `data`, so the
+# response entered the phase design and the fit converged on it. hazard() now
+# writes `.` out once, before fitting, against `data` without the Surv()
+# variables, so every later reader of the phase formula sees explicit terms.
+
+fit_277 <- function(phase_formula, data = avc_275) {
+  hazard(survival::Surv(int_dead, dead) ~ 1, data = data, dist = "multiphase",
+         phases = list(
+           early    = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1,
+                                fixed = "m", formula = phase_formula),
+           constant = hzr_phase("constant")
+         ),
+         fit = TRUE, control = list(n_starts = 1L, conserve = FALSE))
+}
+
+test_that("`.` in a phase formula excludes the Surv() response columns", {
+  fit <- fit_277(~ .)
+  expect_identical(colnames(fit$fit$x_list$early), c("age", "mal"))
+  expect_identical(all.vars(fit$spec$phases$early$formula), c("age", "mal"))
+})
+
+test_that("a `~ .` phase fit is the explicit phase fit", {
+  fit_dot <- fit_277(~ .)
+  fit_exp <- fit_277(~ age + mal)
+  expect_true(fit_exp$fit$converged)
+  expect_equal(fit_dot$fit$objective, fit_exp$fit$objective,
+               tolerance = 1e-8)
+  expect_equal(unname(coef(fit_dot) / coef(fit_exp)),
+               rep(1, length(coef(fit_exp))), tolerance = 1e-6)
+})
+
+test_that("`. - mal` in a phase formula gives the `~ age` phase design", {
+  fit <- fit_277(~ . - mal)
+  expect_identical(colnames(fit$fit$x_list$early), "age")
+})
+
+test_that("predict() on a `~ .` phase fit needs no response columns", {
+  fit_dot <- fit_277(~ .)
+  fit_exp <- fit_277(~ age + mal)
+  nd <- data.frame(time = 1, age = 60, mal = 1)
+  s_dot <- predict(fit_dot, newdata = nd, type = "survival")
+  expect_length(s_dot, 1L)
+  expect_equal(s_dot, predict(fit_exp, newdata = nd, type = "survival"),
+               tolerance = 1e-8)
+})
+
+test_that("`.` in a phase formula over response-only data", {
+  d0 <- avc_275[, c("int_dead", "dead")]
+  fit <- fit_277(~ ., data = d0)
+  expect_identical(unname(fit$fit$covariate_counts[["early"]]), 0L)
+  age <- avc_275$age
+  expect_error(suppressWarnings(fit_277(~ . + age, data = d0)),
+               "stands for no column")
+})
+
+test_that("`.` in a phase formula is refused on the vector interface", {
+  # With `time =` and `status =` there is no Surv() term to say which columns
+  # of `data` hold the response, so `.` cannot be expanded safely.
+  expect_error(
+    hazard(time = int_dead, status = dead, data = avc_275,
+           dist = "multiphase",
+           phases = list(
+             early    = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1,
+                                  fixed = "m", formula = ~ .),
+             constant = hzr_phase("constant")
+           ),
+           fit = TRUE, control = list(n_starts = 1L, conserve = FALSE)),
+    "formula interface"
+  )
+})
