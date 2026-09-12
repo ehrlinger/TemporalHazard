@@ -512,10 +512,10 @@ hzr_gof <- function(object, time_grid = NULL) {
   }, logical(1))
   if (is_multiphase && any(short)) {
     stop("hzr_gof() needs one design row per subject, but the fit dropped ",
-         "rows with missing covariates from phase ",
+         "the rows where a covariate was missing, so phase ",
          paste0("'", names(short)[short], "'", collapse = ", "),
-         ". Refit on complete cases, e.g. data = na.omit(data).",
-         call. = FALSE)
+         " has fewer rows than the data. Refit on complete cases, e.g. ",
+         "data = na.omit(data).", call. = FALSE)
   }
 
   curve_obj <- object
