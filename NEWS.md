@@ -43,14 +43,21 @@
   must be given as `grpyoung` and a transform as `log(age)`. Refit it to
   give the formula's variables instead.
 
-* **`predict(newdata = )` stops for a model with a covariate named `time`.**
-  In `newdata` the column `time` is the prediction time, so such a
-  covariate could not be given its own value. It was dropped from the
-  covariates, and the survival and cumulative-hazard predictions silently
-  came back at the baseline: a Weibull fit of `~ time` gave 0.1414 where
-  the covariate made it 0.1420, with no error. The call now stops and asks
-  for the covariate to be renamed and the model refitted. That applies to
-  the global formula, a named `x`, and a multiphase phase formula alike.
+* **`predict(newdata = )` stops for the time-based predictions of a model
+  with a covariate named `time`.** In `newdata` the column `time` is the
+  prediction time for `"survival"`, `"cumulative_hazard"`, every multiphase
+  type and any fit with `time_windows`, so such a covariate could not be
+  given its own value. When it was the only covariate it was dropped, and
+  the prediction silently came back at the baseline: a Weibull fit of
+  `~ time` gave 0.1414 where the covariate made it 0.1420. Beside other
+  covariates, the one column served as both, so the covariate was always
+  set to the prediction time. Neither gave an error. These calls now stop
+  and ask for the covariate to be renamed and the model refitted, whether
+  it is in the global formula, a named `x` or a multiphase phase formula.
+  `hzr_deciles()` and `hzr_gof()` build such a `newdata` themselves and
+  stop too; before, they silently overwrote the covariate with follow-up
+  time. `"linear_predictor"` and single-distribution `"hazard"`, which
+  have no prediction time, still read `time` as the covariate, and
   `predict()` without `newdata` is unaffected (#270).
 
 ## New features

@@ -1068,9 +1068,9 @@ hazard <- function(formula = NULL,
 #'   ignored, and a covariate the model needs but `newdata` lacks is an error.
 #'   A fit made with an unnamed `x` matrix matches by position. For the types
 #'   requiring time, a `newdata` with only a `time` column evaluates the
-#'   baseline, with every covariate at 0. Because `time` is the prediction
-#'   time, a model with a covariate named `time` cannot be predicted at
-#'   `newdata`; rename that covariate and refit.
+#'   baseline, with every covariate at 0. Because `time` is then the
+#'   prediction time, a model with a covariate named `time` cannot be given
+#'   those types at `newdata`; rename that covariate and refit.
 #' @param type Prediction type:
 #'   - `"linear_predictor"`: Linear predictor eta = x*beta (not available for multiphase)
 #'   - `"hazard"`: Instantaneous hazard. Single-distribution models return the
@@ -1295,9 +1295,13 @@ predict.hazard <- function(object, newdata = NULL,
     }
   }
 
-  # `time` in newdata is the prediction time; a covariate of that name
-  # cannot also be given there (#270).
-  if (!is.null(newdata)) .hzr_check_time_covariate(object)
+  # Where `time` in newdata is the prediction time, a covariate of that name
+  # cannot also be given there (#270). The eta-based types have no
+  # prediction time unless there are time windows, so there it can only be
+  # the covariate, and it is read as one.
+  time_based <- type %in% c("survival", "cumulative_hazard") ||
+    identical(object$spec$dist, "multiphase") || !is.null(time_windows)
+  if (!is.null(newdata) && time_based) .hzr_check_time_covariate(object)
 
   # -----------------------------------------------------------------------
   # Predictions that do NOT need time (linear_predictor, hazard)

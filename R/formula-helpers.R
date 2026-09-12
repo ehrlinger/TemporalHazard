@@ -175,13 +175,22 @@
   phases <- object$fit$phases
   if (is.null(phases)) phases <- object$spec$phases
   for (ph in phases) {
-    if (!is.null(ph$formula)) vars <- c(vars, all.vars(ph$formula))
+    if (is.null(ph$formula)) next
+    ph_vars <- all.vars(ph$formula)
+    # As for the global formula, only a column of the fit's data is a
+    # covariate; `time` in I(age > time) may be a formula constant.
+    if (!is.null(object$data$frame)) {
+      ph_vars <- intersect(ph_vars, names(object$data$frame))
+    }
+    vars <- c(vars, ph_vars)
   }
   if ("time" %in% vars) {
     stop("The model has a covariate named 'time', but in 'newdata' the ",
          "column 'time' is the prediction time, so that covariate cannot ",
-         "be given a value there. Rename the covariate in the data and ",
-         "refit.", call. = FALSE)
+         "be given a value there. This stops the survival, cumulative ",
+         "hazard and multiphase predictions, and hzr_deciles() and ",
+         "hzr_gof(), which build 'newdata' themselves. Rename the ",
+         "covariate in the data and refit.", call. = FALSE)
   }
   invisible(NULL)
 }
