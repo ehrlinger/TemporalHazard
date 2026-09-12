@@ -60,8 +60,27 @@
   # Parse RHS (predictors)
   x <- NULL
   if (!is.null(rhs)) {
-    # Reconstruct as a formula for model.matrix()
-    rhs_formula <- formula(paste("~", deparse(rhs)))
+    # One-sided formula for model.matrix(), with `.` expanded here, against
+    # `data` without the Surv() variables, as survival::coxph() does:
+    # terms() drops every column the left-hand side uses. Pasting the RHS
+    # into `~ ...` expanded `.` to every column, so the response was fitted
+    # as a predictor (#273).
+    rhs_formula <- stats::formula(
+      stats::delete.response(stats::terms(formula, data = data))
+    )
+    # When the response uses every column, terms() has nothing to put in
+    # place of `.` and leaves it, and model.matrix() would then expand it
+    # against all of `data`, response included. Alone, `.` then stands for
+    # no column and the model has no covariates. Beside other terms it is
+    # refused: replacing the RHS would drop those terms without a word.
+    if ("." %in% all.vars(rhs_formula)) {
+      if (!identical(all.vars(rhs_formula), ".")) {
+        stop("`.` in the formula stands for no column: `data` holds only ",
+             "the variables of the Surv() response. Remove `.`, or add the ",
+             "covariates to `data`.", call. = FALSE)
+      }
+      rhs_formula <- stats::reformulate("1", env = environment(rhs_formula))
+    }
     tryCatch({
       x <- stats::model.matrix(rhs_formula, data = data)
       # Remove intercept column if present

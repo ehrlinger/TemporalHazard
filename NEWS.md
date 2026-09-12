@@ -115,6 +115,27 @@
   silently replaced. `hzr_bootstrap()` resamples those bounds too, although
   they never appear in the stored call.
 
+* **`.` in a `hazard()` formula no longer puts the response in the design**
+  (#273). `Surv(int_dead, dead) ~ .` expanded `.` to every column of `data`,
+  including `int_dead` and `dead`, so the outcome was fitted as a predictor.
+  With starting values sized for those extra columns the fit converged, with
+  no error and a log-likelihood far above the correct model's. With starting
+  values sized for the
+  real covariates it stopped with "non-conformable arguments", which did not
+  name the cause, and `predict(newdata = )` demanded the response columns.
+  `.` now means every column the `Surv()` term does not use, as in
+  `survival::coxph()`, so a `~ .` fit gives the same design and estimates as
+  the formula written out in full. A `data` with no other column gives a
+  model with no covariates, and there `.` beside other terms is an error.
+  **Estimates from an earlier `~ .` fit change**, and so does the length of
+  `theta` it needs. `hzr_phase(formula
+  = ~ .)` is not changed by this fix. A right-hand-side variable that is not
+  a column of `data` is now looked up where the formula was written, so a
+  variable local to the calling function resolves instead of failing with
+  "object not found". `hzr_bootstrap()` resamples only the rows of `data`,
+  not such a variable: at `fraction = 1` its interval is wrong, and below 1
+  every replicate fails. Keep every covariate you will bootstrap in `data`.
+
 # TemporalHazard 1.2.10
 
 ## New features

@@ -133,6 +133,8 @@ NULL
 #'   censoring status with different integers than this package does; the
 #'   formula path translates them, so write `Surv()`'s codes here and this
 #'   package's codes when passing `status` directly.
+#'   A `.` on the right-hand side stands for every column of `data` that the
+#'   `Surv()` term does not use, as in `survival::coxph()`.
 #'   When provided, overrides direct time/status/x arguments and extracts from data.
 #'   Example: `hazard(Surv(time, status) ~ x1 + x2, data = df, dist = "weibull", fit = TRUE)`.
 #' @param data Optional data frame. On the formula path it supplies the model

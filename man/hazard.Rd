@@ -32,6 +32,8 @@ Right-censored (\code{Surv(time, status)}), left-censored
 censoring status with different integers than this package does; the
 formula path translates them, so write \code{Surv()}'s codes here and this
 package's codes when passing \code{status} directly.
+A \code{.} on the right-hand side stands for every column of \code{data} that the
+\code{Surv()} term does not use, as in \code{survival::coxph()}.
 When provided, overrides direct time/status/x arguments and extracts from data.
 Example: \code{hazard(Surv(time, status) ~ x1 + x2, data = df, dist = "weibull", fit = TRUE)}.}
 
