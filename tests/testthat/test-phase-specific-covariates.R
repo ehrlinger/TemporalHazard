@@ -241,3 +241,77 @@ test_that("formula with base-R function name matching phase name is not wrongly 
     label = "early() call correctly detected as phase scope"
   )
 })
+
+# ---------------------------------------------------------------------------
+# Phase-scoped terms in the global formula are refused (#275)
+# ---------------------------------------------------------------------------
+# `constant(age)` in the global formula was stripped with the rest of the
+# right-hand side and never reached its phase, so the fit converged without
+# it. hazard() now stops instead of routing the term.
+
+avc_275 <- na.omit(avc[, c("int_dead", "dead", "age", "mal")])
+
+fit_275 <- function(formula, phase_formula = NULL) {
+  hazard(formula, data = avc_275, dist = "multiphase",
+         phases = list(
+           early    = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1,
+                                fixed = "m", formula = phase_formula),
+           constant = hzr_phase("constant", formula = phase_formula)
+         ),
+         fit = TRUE, control = list(n_starts = 1L, conserve = FALSE))
+}
+
+test_that("a phase-scoped term in the global formula stops, naming the phase", {
+  expect_error(fit_275(survival::Surv(int_dead, dead) ~ constant(age)),
+               "phase 'constant'.*hzr_phase\\(.*formula = ~")
+  expect_error(
+    fit_275(survival::Surv(int_dead, dead) ~ early(age) + constant(mal)),
+    "phases 'early', 'constant'"
+  )
+})
+
+test_that("the refusal does not fire when `phases` is ignored", {
+  # Outside dist = "multiphase" the phases are dropped with a warning, so a
+  # phase named `log` must not stop `log(age)` from being a covariate.
+  expect_warning(
+    fit <- hazard(survival::Surv(int_dead, dead) ~ log(age),
+                  data = avc_275, dist = "weibull",
+                  phases = list(log = hzr_phase("constant")),
+                  theta = c(0.3, 1, 0), fit = TRUE),
+    "'phases' is ignored"
+  )
+  expect_identical(colnames(fit$data$x), "log(age)")
+})
+
+# The next two guard the fits the refusal must leave alone. Each global-formula
+# fit is compared with the same model written through hzr_phase(formula = ),
+# an independent route to the same design, not with a recorded number: from
+# these starts BFGS stops short of the optimum, so a pinned log-likelihood
+# would record where it stopped rather than a property of the model.
+
+test_that("`~ log(age)`, with no phase named `log`, fits as a covariate", {
+  fit <- fit_275(survival::Surv(int_dead, dead) ~ log(age))
+  ref <- fit_275(survival::Surv(int_dead, dead) ~ 1,
+                 phase_formula = ~ log(age))
+  expect_true(fit$fit$converged)
+  expect_identical(
+    names(coef(fit)),
+    c("early.log_mu", "early.log_t_half", "early.nu", "early.m",
+      "early.log(age)", "constant.log_mu", "constant.log(age)")
+  )
+  expect_equal(fit$fit$objective, ref$fit$objective, tolerance = 1e-8)
+  expect_equal(unname(coef(fit) / coef(ref)), rep(1, 7), tolerance = 1e-6)
+})
+
+test_that("a plain global covariate in a multiphase fit is unchanged", {
+  fit <- fit_275(survival::Surv(int_dead, dead) ~ age)
+  ref <- fit_275(survival::Surv(int_dead, dead) ~ 1, phase_formula = ~ age)
+  expect_true(fit$fit$converged)
+  expect_identical(
+    names(coef(fit)),
+    c("early.log_mu", "early.log_t_half", "early.nu", "early.m",
+      "early.age", "constant.log_mu", "constant.age")
+  )
+  expect_equal(fit$fit$objective, ref$fit$objective, tolerance = 1e-8)
+  expect_equal(unname(coef(fit) / coef(ref)), rep(1, 7), tolerance = 1e-6)
+})

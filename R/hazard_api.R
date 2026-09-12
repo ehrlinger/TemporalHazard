@@ -499,23 +499,31 @@ hazard <- function(formula = NULL,
       stop("'data' is required when 'formula' is provided.", call. = FALSE)
     }
 
-    # For multiphase models, the formula RHS may contain phase-scoped terms of
-    # the form `phase_name(var1 + var2)`.  These are not valid R expressions
-    # so model.matrix() would fail.  Strip them here: replace the RHS with `1`
-    # (no global predictors) so that .hzr_parse_formula only extracts
-    # time/status from the LHS.  Covariate routing is handled per-phase via
-    # hzr_phase(formula = ...) and resolved inside .hzr_optim_multiphase().
-    formula_for_parse <- formula
-    if (!is.null(phases) && length(formula) >= 3L) {
-      # Check if RHS contains phase-scoped calls of the form `phase_name(...)`.
-      # Use a parse-tree walk (not string regex) to avoid false positives when
-      # a phase name coincides with a base-R function (e.g., "log", "exp").
-      if (.hzr_formula_has_phase_scope(formula[[3L]], names(phases))) {
-        formula_for_parse <- stats::reformulate("1", response = formula[[2L]])
+    # A multiphase formula RHS may name a phase as a function, as in
+    # `constant(age)`. Such a term is refused, not routed (#275): it used to
+    # be stripped with the rest of the RHS and never reached its phase, so
+    # the fit converged without it. A phase's covariates belong in
+    # hzr_phase(formula = ...). The parse-tree walk (not a string regex)
+    # keeps a base-R call such as `log(age)` from matching.
+    if (identical(dist, "multiphase") && !is.null(phases) &&
+          length(formula) >= 3L) {
+      scoped <- Filter(
+        function(nm) .hzr_formula_has_phase_scope(formula[[3L]], nm),
+        names(phases)
+      )
+      if (length(scoped) > 0L) {
+        stop("The formula names ",
+             if (length(scoped) > 1L) "phases " else "phase ",
+             paste0("'", scoped, "'", collapse = ", "),
+             " as a function, as in `", scoped[[1L]], "(var)`. hazard() ",
+             "does not route such terms to a phase, so they would be ",
+             "dropped. Give the phase its covariates with ",
+             "hzr_phase(..., formula = ~ var) instead, and leave them out ",
+             "of the formula.", call. = FALSE)
       }
     }
 
-    parsed <- .hzr_parse_formula(formula = formula_for_parse, data = data)
+    parsed <- .hzr_parse_formula(formula = formula, data = data)
     time <- parsed$time
     status <- parsed$status
     time_lower <- parsed$time_lower

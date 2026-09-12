@@ -30,6 +30,19 @@
   not a `PROC HAZARD` refusal, so it is kept apart from the existing
   "selects no phase" stop.
 
+* **A multiphase formula that names a phase as a function is now an error**
+  (#275). `hazard(Surv(int_dead, dead) ~ constant(age), dist = "multiphase",
+  phases = ...)` read `constant(age)` as a phase-scoped term, then replaced
+  the whole right-hand side with `~ 1`, and nothing sent the term to its
+  phase. The fit converged without an `age` coefficient, with no error and
+  no warning. `hazard()` now stops, names the phase or phases it found, and points to
+  `hzr_phase(..., formula = ~ var)`, which is where a phase's covariates
+  belong. Code that relied on the old behaviour was fitting a model without
+  those covariates; drop the terms from the formula to keep that model, or
+  move them into `hzr_phase()` to get the one the formula described.
+  Formulas that call an ordinary function such as `log()`, and plain global
+  covariates, are unaffected.
+
 ## New features
 
 * **Every fit now says what it did not do** (#242, following #197). A
