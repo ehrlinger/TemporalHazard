@@ -13,8 +13,9 @@ hzr_gof(object, time_grid = NULL)
 evaluate the parametric model.
 If \code{NULL} (default), uses the distinct Kaplan-Meier times of the
 fitted data, which are the event times and the censoring times.
-A supplied grid is sorted and repeated times dropped, because the
-cumulative columns accumulate in time order.}
+A supplied grid must hold finite, non-negative times.  It is sorted
+and exact repeats dropped, because the cumulative columns accumulate in
+time order.}
 }
 \value{
 A data frame with one row per time point and columns:

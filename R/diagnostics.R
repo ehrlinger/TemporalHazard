@@ -356,8 +356,9 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #'   evaluate the parametric model.
 #'   If `NULL` (default), uses the distinct Kaplan-Meier times of the
 #'   fitted data, which are the event times and the censoring times.
-#'   A supplied grid is sorted and repeated times dropped, because the
-#'   cumulative columns accumulate in time order.
+#'   A supplied grid must hold finite, non-negative times.  It is sorted
+#'   and exact repeats dropped, because the cumulative columns accumulate in
+#'   time order.
 #'
 #' @return A data frame with one row per time point and columns:
 #' \describe{
@@ -485,9 +486,9 @@ hzr_gof <- function(object, time_grid = NULL) {
     time_grid <- km_times
   } else {
     if (!is.numeric(time_grid) || length(time_grid) == 0 ||
-        any(!is.finite(time_grid))) {
-      stop("'time_grid' must be a non-empty numeric vector of finite times.",
-           call. = FALSE)
+        any(!is.finite(time_grid)) || any(time_grid < 0)) {
+      stop("'time_grid' must be a non-empty numeric vector of finite, ",
+           "non-negative times.", call. = FALSE)
     }
     # The cumulative columns accumulate in grid order, so the grid must run
     # forward in time, once.
@@ -555,14 +556,23 @@ hzr_gof <- function(object, time_grid = NULL) {
   n_at_or_after <- function(v, t) {
     length(v) - findInterval(t, sort(v), left.open = TRUE)
   }
-  km_n_risk_grid <- n_at_or_after(obs_time, time_grid) -
-    n_at_or_after(km_entry[km_entry > 0], time_grid)
+  # A grid time within time_tol of a Kaplan-Meier time is counted at that
+  # time, the rule grid_index() applies to the event tallies below, so n_risk
+  # agrees with n_event and n_censor there. seq(0.1, 1, by = 0.1)[3] is
+  # 0.30000000000000004, and an exact count at it drops the exits at 0.3.
+  time_tol <- .Machine$double.eps * 100
+  risk_time <- vapply(time_grid, function(g) {
+    k <- which(abs(km_times - g) < time_tol)
+    if (length(k) > 0) km_times[k[1]] else g
+  }, numeric(1))
+  km_n_risk_grid <- n_at_or_after(obs_time, risk_time) -
+    n_at_or_after(km_entry[km_entry > 0], risk_time)
   # For event counts, sum events at matching times; 0 otherwise
   # A time belongs to the first grid point within this tolerance, or to none.
   # Counts, observed events and expected events all use this one rule, so for
   # a custom time_grid the two tallies cover the same subjects.
   grid_index <- function(t) {
-    match_idx <- which(abs(time_grid - t) < .Machine$double.eps * 100)
+    match_idx <- which(abs(time_grid - t) < time_tol)
     if (length(match_idx) > 0) match_idx[1] else NA_integer_
   }
   km_n_event_grid <- rep(0, length(time_grid))

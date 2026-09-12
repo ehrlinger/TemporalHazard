@@ -34,6 +34,22 @@ test_that("n_risk at a custom time_grid is the risk set at that time", {
   }
 })
 
+test_that("n_risk at a seq() grid counts the exits tied at each grid time", {
+  set.seed(2854)
+  n <- 200
+  stop_t <- pmax(round(stats::rexp(n, 0.8), 1), 0.1)
+  fit <- suppressWarnings(hazard(time = stop_t,
+                                 status = stats::rbinom(n, 1, 0.7),
+                                 dist = "weibull", theta = c(0.3, 1),
+                                 fit = TRUE))
+  grid <- seq(0.1, 1, by = 0.1)
+  # seq() lands some points a few ulps off the data (0.30000000000000004).
+  expect_false(all(grid %in% stop_t))
+  g <- hzr_gof(fit, time_grid = grid)
+  expect_equal(g$n_risk, .brute_n_risk(round(grid, 10), rep(0, n), stop_t))
+  expect_gt(sum(g$n_event), 0)
+})
+
 test_that("an unsorted or repeated time_grid is sorted and de-duplicated", {
   d <- .gof_grid_data()
   fit <- suppressWarnings(hazard(time = d$stop, status = d$event,
@@ -46,6 +62,7 @@ test_that("an unsorted or repeated time_grid is sorted and de-duplicated", {
   expect_equal(shuffled$cum_observed, sorted$cum_observed)
   expect_equal(shuffled$cum_expected, sorted$cum_expected)
   expect_error(hzr_gof(fit, time_grid = c(1, NA)), "time_grid")
+  expect_error(hzr_gof(fit, time_grid = c(-1, 1)), "time_grid")
 })
 
 test_that("km_surv at time 0 is the Kaplan-Meier value when an event is at 0", {
