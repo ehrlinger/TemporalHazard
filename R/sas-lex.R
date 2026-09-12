@@ -163,7 +163,22 @@
   trimws(.hzr_sas_strip_inline_comments(s))
 }
 
-#' Extract PROC HAZARD / PROC HAZPRED blocks from normalised source.
+#' Offset of the `)` that balances the `(` at `open_at`, or NA if none does.
+#' @noRd
+.hzr_sas_close_paren <- function(txt, open_at) {
+  depth <- 0L
+  for (i in seq(open_at, nchar(txt))) {
+    ch <- substr(txt, i, i)
+    if (ch == "(") depth <- depth + 1L
+    if (ch == ")") {
+      depth <- depth - 1L
+      if (depth == 0L) return(i)
+    }
+  }
+  NA_integer_
+}
+
+#' Extract PROC HAZARD / PROC HAZPRED blocks and %repeat calls from normalised source.
 #'
 #' Blocks are delimited by parentheses, not by the macro call's name: HAZARD's
 #' own lexer treats `)` as whitespace, so a parenthesised group (not the
@@ -182,15 +197,35 @@
 #' function only ever runs on output from `.hzr_sas_normalise()`, which has
 #' already stripped all comments, so there is no trailing comment prose left
 #' to sweep in.
+#'
+#' A `%REPEAT(` call is returned as a third kind, `proc = "REPEAT"`, whose text
+#' is its argument list. It is an ordinary macro call, so its group is the one
+#' that opens right after the name and no backwards search is needed. Every
+#' block also carries `start` and `end`, offsets into `txt`, so the caller can
+#' read the source text between two blocks.
 #' @noRd
 .hzr_sas_blocks <- function(txt) {
   out <- list()
-  procs <- gregexpr("PROC HAZ(ARD|PRED) ", txt)[[1L]]
+  procs <- gregexpr("PROC HAZ(ARD|PRED) |%REPEAT *[(]", txt)[[1L]]
   if (procs[1L] == -1L) return(out)
   proc_lens <- attr(procs, "match.length")
 
   for (k in seq_along(procs)) {
     proc_at <- procs[k]
+
+    if (identical(substring(txt, proc_at, proc_at + 6L), "%REPEAT")) {
+      open_at <- proc_at + proc_lens[k] - 1L
+      close_at <- .hzr_sas_close_paren(txt, open_at)
+      end_at <- if (is.na(close_at)) nchar(txt) else close_at
+      body_end <- if (is.na(close_at)) end_at else close_at - 1L
+      out[[length(out) + 1L]] <- list(
+        proc = "REPEAT", text = trimws(substring(txt, open_at + 1L, body_end)),
+        terminator = if (is.na(close_at)) "none" else "paren",
+        start = proc_at, end = end_at
+      )
+      next
+    }
+
     proc <- if (identical(substring(txt, proc_at, proc_at + 10L), "PROC HAZARD")) {
       "HAZARD"
     } else {
@@ -227,33 +262,22 @@
       search_from <- proc_at + proc_lens[k]
       rest <- substring(txt, search_from)
       b <- regexpr("PROC |DATA |RUN;", rest)
-      body <- if (b == -1L) {
-        substring(txt, proc_at)
-      } else {
-        substring(txt, proc_at, search_from + b - 2L)
-      }
+      end_at <- if (b == -1L) nchar(txt) else search_from + b - 2L
+      body <- substring(txt, proc_at, end_at)
       term <- "none"
+      start_at <- proc_at
     } else {
-      depth <- 0L
-      close_at <- NA_integer_
-      for (i in seq(open_at, nchar(txt))) {
-        ch <- substr(txt, i, i)
-        if (ch == "(") depth <- depth + 1L
-        if (ch == ")") {
-          depth <- depth - 1L
-          if (depth == 0L) {
-            close_at <- i
-            break
-          }
-        }
-      }
+      close_at <- .hzr_sas_close_paren(txt, open_at)
       term <- if (is.na(close_at)) "none" else "paren"
       body <- substring(txt, open_at + 1L,
                         if (is.na(close_at)) nchar(txt) else close_at - 1L)
+      start_at <- open_at
+      end_at <- if (is.na(close_at)) nchar(txt) else close_at
     }
 
     out[[length(out) + 1L]] <- list(proc = proc, text = trimws(body),
-                                    terminator = term)
+                                    terminator = term,
+                                    start = start_at, end = end_at)
   }
   out
 }

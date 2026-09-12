@@ -67,6 +67,34 @@ NULL
 #' and transformed back for reporting; see
 #' `vignette("mf-mathematical-foundations")`.
 #'
+#' @section Convergence:
+#'
+#' The optimizer stops when an iteration improves the log-likelihood by less
+#' than `control$reltol` relative to its size, and on a flat ridge that can
+#' happen well short of the maximum. SAS/C HAZARD accepts an optimum only on a
+#' different test, the relative gradient
+#' \eqn{\max_i |g_i| \max(|x_i|, 1) / \max(|\ell|, 1) \le \epsilon^{1/3}}{max_i
+#' |g_i| max(|x_i|, 1) / max(|l|, 1) <= eps^(1/3)}, about 6e-6, and `hazard()`
+#' applies it too: when the optimizer reports convergence and the test fails,
+#' the fit is continued with [stats::nlm()] at SAS's tolerances, and the
+#' continued point is kept if it improves the log-likelihood.
+#'
+#' Every fit records the result in `fit$fit$rel_gradient` and, when the
+#' continuation improved the fit, its termination code in
+#' `fit$fit$polish_code`. `print()` and `summary()` show both.
+#' `rel_gradient` is `NA` when the test was not applied (the optimizer did
+#' not report convergence) or the gradient cannot be evaluated at the
+#' estimates; `NA` is never reported as a pass. Under Conservation of Events
+#' the analytic score omits how the conserved scale moves, so the test is
+#' computed from finite differences of the log-likelihood with that scale
+#' re-solved, as SAS/C does; the continuation still uses the analytic score,
+#' so a CoE fit can honestly end with the test not met. A warning is raised only for code 4, the
+#' iteration limit (raise `control$maxit`), and code 5, where the
+#' log-likelihood kept rising along some direction and the model may have no
+#' maximum. Codes 2 and 3, where SAS/C prints a caution, are recorded without
+#' one. The test is relative to the size of the log-likelihood, so a fit that
+#' meets it is within SAS's tolerance of the maximum, not exactly at it.
+#'
 #' @section Baseline distributions:
 #'
 #' The `dist` argument selects the parametric form of the baseline hazard.  The
@@ -105,7 +133,10 @@ NULL
 #' }
 #'
 #' @param time Numeric follow-up time vector.
-#' @param status Numeric or logical event indicator vector.
+#' @param status Numeric or logical event indicator vector, or a
+#'   [survival::Surv()] object. A `Surv` is read by its `type`, exactly as the
+#'   formula interface reads it, and a `time`, `time_lower` or `time_upper`
+#'   that disagrees with it is an error.
 #' @param time_lower Optional numeric vector whose role depends on `status`.
 #'   Supplying it explicitly is **not** a no-op.
 #'   * `status == 2` (interval-censored): the lower bound of the censoring
@@ -139,8 +170,11 @@ NULL
 #'   (`type = "interval"` or `"interval2"`) and counting-process
 #'   (`Surv(start, stop, event)`) forms are all accepted. `Surv()` codes
 #'   censoring status with different integers than this package does; the
-#'   formula path translates them, so write `Surv()`'s codes here and this
-#'   package's codes when passing `status` directly.
+#'   formula path translates them, so write `Surv()`'s codes here. A plain
+#'   `status` vector takes this package's codes; a `Surv` passed as `status`
+#'   is translated the same way as here.
+#'   A `.` on the right-hand side stands for every column of `data` that the
+#'   `Surv()` term does not use, as in `survival::coxph()`.
 #'   When provided, overrides direct time/status/x arguments and extracts from data.
 #'   Example: `hazard(Surv(time, status) ~ x1 + x2, data = df, dist = "weibull", fit = TRUE)`.
 #' @param data Optional data frame. On the formula path it supplies the model
@@ -251,11 +285,16 @@ NULL
 #'   log-likelihood (default 1e-5). BFGS stops when an iteration reduces it by
 #'   less than `reltol * (|objective| + reltol)`, so the stopping gap grows
 #'   with the size of the log-likelihood: about 0.0024 at a log-likelihood of
-#'   -240. On a flat surface a fit can stop that far short of the optimum and
-#'   still report convergence.
-#' - `abstol`: Absolute gradient norm tolerance (default 1e-6)
-#' - `method`: Recorded but not used. The optimizer is always BFGS (a
-#'   multiphase fit may run a Nelder-Mead warm-up first); the entry is
+#'   -240. On a flat surface plain BFGS can stop that far short of the optimum
+#'   and still report convergence, so `hazard()` then applies SAS/C HAZARD's
+#'   relative-gradient test and, when the stop fails it, continues with
+#'   [stats::nlm()]; see the "Convergence" section.
+#' - `abstol`: Projected-gradient tolerance, used only by the bounded
+#'   (L-BFGS-B) optimizer (default 1e-6). The fits `hazard()` runs use BFGS
+#'   and ignore it.
+#' - `method`: Recorded but not used. The fits `hazard()` runs use BFGS (a
+#'   multiphase fit may run a Nelder-Mead warm-up first, and a stop that
+#'   fails SAS's gradient test continues with [stats::nlm()]); the entry is
 #'   accepted so that translated SAS jobs (`QUASI`) run unchanged.
 #'   SAS `PROC HAZARD` jobs write `STEEPEST QUASI` together (steepest
 #'   descent first, then quasi-Newton). `QUASI`/`QUASINEWTON` is `"bfgs"`;
@@ -439,7 +478,9 @@ NULL
 #'   \code{data} (input data: \code{time}, \code{status}, \code{x},
 #'   \code{weights}, etc.),
 #'   \code{fit} (optimisation results: \code{theta}, \code{objective},
-#'   \code{converged}, \code{se}, \code{vcov}, \code{counts}, \code{message};
+#'   \code{converged}, \code{se}, \code{vcov}, \code{counts}, \code{message},
+#'   and \code{rel_gradient} and \code{polish_code}, the SAS/C acceptance
+#'   test described under "Convergence";
 #'   all \code{NULL} when \code{fit = FALSE}; multiphase fits add
 #'   \code{starts}, one row per optimisation start with its \code{status}
 #'   (\code{"ok"}, \code{"nonconverged"}, \code{"infeasible"},
@@ -508,23 +549,31 @@ hazard <- function(formula = NULL,
       stop("'data' is required when 'formula' is provided.", call. = FALSE)
     }
 
-    # For multiphase models, the formula RHS may contain phase-scoped terms of
-    # the form `phase_name(var1 + var2)`.  These are not valid R expressions
-    # so model.matrix() would fail.  Strip them here: replace the RHS with `1`
-    # (no global predictors) so that .hzr_parse_formula only extracts
-    # time/status from the LHS.  Covariate routing is handled per-phase via
-    # hzr_phase(formula = ...) and resolved inside .hzr_optim_multiphase().
-    formula_for_parse <- formula
-    if (!is.null(phases) && length(formula) >= 3L) {
-      # Check if RHS contains phase-scoped calls of the form `phase_name(...)`.
-      # Use a parse-tree walk (not string regex) to avoid false positives when
-      # a phase name coincides with a base-R function (e.g., "log", "exp").
-      if (.hzr_formula_has_phase_scope(formula[[3L]], names(phases))) {
-        formula_for_parse <- stats::reformulate("1", response = formula[[2L]])
+    # A multiphase formula RHS may name a phase as a function, as in
+    # `constant(age)`. Such a term is refused, not routed (#275): it used to
+    # be stripped with the rest of the RHS and never reached its phase, so
+    # the fit converged without it. A phase's covariates belong in
+    # hzr_phase(formula = ...). The parse-tree walk (not a string regex)
+    # keeps a base-R call such as `log(age)` from matching.
+    if (identical(dist, "multiphase") && !is.null(phases) &&
+          length(formula) >= 3L) {
+      scoped <- Filter(
+        function(nm) .hzr_formula_has_phase_scope(formula[[3L]], nm),
+        names(phases)
+      )
+      if (length(scoped) > 0L) {
+        stop("The formula names ",
+             if (length(scoped) > 1L) "phases " else "phase ",
+             paste0("'", scoped, "'", collapse = ", "),
+             " as a function, as in `", scoped[[1L]], "(var)`. hazard() ",
+             "does not route such terms to a phase, so they would be ",
+             "dropped. Give the phase its covariates with ",
+             "hzr_phase(..., formula = ~ var) instead, and leave them out ",
+             "of the formula.", call. = FALSE)
       }
     }
 
-    parsed <- .hzr_parse_formula(formula = formula_for_parse, data = data)
+    parsed <- .hzr_parse_formula(formula = formula, data = data)
     time <- parsed$time
     status <- parsed$status
     time_lower <- parsed$time_lower
@@ -608,9 +657,35 @@ hazard <- function(formula = NULL,
     stop("'status' must have the same length as 'time'.", call. = FALSE)
   }
 
-  # Convert Surv object status to numeric if needed (after formula parsing)
+  # A Surv object passed as `status` is read exactly as the formula path reads
+  # it (#226). Its codes are not this package's, and under "interval" and
+  # "counting" its second column is not the status at all, so taking that
+  # column unchanged fitted left-censored rows as right-censored. The Surv
+  # defines the bounds it carries; `time` and any bound the caller also gave
+  # must agree with it rather than be silently overridden.
   if (inherits(status, "Surv")) {
-    status <- unclass(status)[, 2L]
+    resp <- .hzr_surv_response(status)
+    if (!identical(as.numeric(time), as.numeric(resp$time))) {
+      stop("'time' does not match the times in the Surv object passed as ",
+           "'status'. Pass time = unclass(status)[, 1] -- the stop column, ",
+           "[, 2], for Surv(start, stop, event) -- or use the formula ",
+           "interface.", call. = FALSE)
+    }
+    surv_bound <- function(given, from_surv, arg) {
+      if (is.null(from_surv)) {
+        return(given)
+      }
+      if (!is.null(given) &&
+            !identical(as.numeric(given), as.numeric(from_surv))) {
+        stop("'", arg, "' does not match the Surv object passed as ",
+             "'status'. Omit it and the bound is taken from the Surv.",
+             call. = FALSE)
+      }
+      from_surv
+    }
+    time_lower <- surv_bound(time_lower, resp$time_lower, "time_lower")
+    time_upper <- surv_bound(time_upper, resp$time_upper, "time_upper")
+    status <- resp$status
   }
 
   # Optional censoring bounds:
@@ -749,6 +824,28 @@ hazard <- function(formula = NULL,
            "Supply a list of hzr_phase() specifications.", call. = FALSE)
     }
     phases <- .hzr_validate_phases(phases)
+    # `.` in a phase formula is written out here, once, before anything reads
+    # it (#277). The likelihood, the score test, predict() and the stored
+    # spec all build the phase design with model.frame(ph$formula, data),
+    # which would expand `.` to every column, response included. It is
+    # expanded as the global formula's is, against `data` without the Surv()
+    # variables. The vector interface has no Surv() term to name those
+    # columns, so there `.` is refused.
+    for (nm in names(phases)) {
+      pf <- phases[[nm]]$formula
+      if (is.null(pf) || !"." %in% all.vars(pf)) next
+      if (is.null(formula)) {
+        stop("Phase '", nm, "' uses `.` in its formula, which needs the ",
+             "formula interface: with `time =` and `status =`, hazard() ",
+             "cannot tell which columns of `data` hold the response. Write ",
+             "the phase's terms out, or use hazard(Surv(...) ~ ..., ",
+             "data = ...).", call. = FALSE)
+      }
+      two_sided <- stats::as.formula(
+        call("~", formula[[2L]], pf[[length(pf)]]), env = environment(pf)
+      )
+      phases[[nm]]$formula <- .hzr_expand_rhs(two_sided, data)
+    }
   } else if (!is.null(phases)) {
     warning("'phases' is ignored when dist != 'multiphase'.")
     phases <- NULL
@@ -903,6 +1000,46 @@ hazard <- function(formula = NULL,
     fit_state$message <- optim_result$message
     fit_ran <- TRUE
     degraded_reasons$se <- optim_result$se_unavailable_reason
+  }
+
+  # SAS/C's acceptance test, applied by .hzr_optim_generic() and polished
+  # towards when BFGS stopped short of it. Both results are recorded on
+  # every fit and shown by print() and summary(). Only the polish's two hard
+  # failures warn -- the ones SAS/C reports as "reached no convergence"
+  # (nlm code 4) and "unbounded ... or has a finite asymptote" (code 5). A
+  # code 2 or 3 stop (step too small, or no lower point found) is where SAS
+  # prints a caution and retries; on the test suite about a third of stops
+  # end there, mostly on deliberately awkward fixtures, and warning on each
+  # would bury the two that matter.
+  if (fit_ran) {
+    fit_state$rel_gradient <- optim_result$rel_gradient
+    fit_state$polish_code  <- optim_result$polish_code
+    # Codes 4 and 5 imply a failed test when nlm() and the statistic use the
+    # same gradient; under CoE they need not, so the statistic is checked too.
+    if (isTRUE(fit_state$converged) &&
+        isTRUE(fit_state$polish_code %in% c(4L, 5L)) &&
+        !isTRUE(fit_state$rel_gradient <= .Machine$double.eps^(1 / 3))) {
+      warning(
+        "The optimizer reported convergence, but the estimates fail the ",
+        "relative-gradient test SAS/C HAZARD requires (at most ",
+        signif(.Machine$double.eps^(1 / 3), 3), "; ",
+        if (is.finite(fit_state$rel_gradient)) {
+          paste0("here ", signif(fit_state$rel_gradient, 3))
+        } else {
+          "here the gradient could not be evaluated"
+        },
+        "). ",
+        if (identical(fit_state$polish_code, 5L)) {
+          paste0("The likelihood kept rising along a direction in which no ",
+                 "maximum was found; the model may not have one.")
+        } else {
+          paste0("Further optimization stopped at its iteration limit; ",
+                 "the estimates may not be at the maximum. Raise ",
+                 "control$maxit to continue.")
+        },
+        call. = FALSE
+      )
+    }
   }
 
   # An ill-conditioned Hessian already warns that standard errors are
@@ -1555,6 +1692,27 @@ predict.hazard <- function(object, newdata = NULL,
 }
 
 
+# The SAS/C acceptance test's result, for print() and summary(). NULL when the
+# test was not applied: a fit that did not report convergence, or an object
+# with no record of it (imported from SAS, or saved by an earlier version).
+# A converged fit whose gradient could not be evaluated says so, because
+# printing nothing would read as a test that never ran; the nlm() code is
+# shown whenever there is one.
+.hzr_format_gradient_test <- function(rel_gradient, polish_code,
+                                      converged = TRUE) {
+  if (!isTRUE(converged) || length(rel_gradient) != 1L) return(NULL)
+  has_code <- length(polish_code) == 1L && !is.na(polish_code)
+  if (is.na(rel_gradient)) {
+    return(paste0("  gradient:     not evaluated at the estimates",
+                  if (has_code) paste0(" (nlm code ", polish_code, ")")))
+  }
+  gradtl <- .Machine$double.eps^(1 / 3)
+  verdict <- if (rel_gradient <= gradtl) "met" else "not met"
+  paste0("  gradient:     relative ", signif(rel_gradient, 3),
+         " (SAS/C requires <= ", signif(gradtl, 3), "; ", verdict,
+         if (has_code) paste0(", nlm code ", polish_code), ")")
+}
+
 #' Print method for fitted hazard models
 #'
 #' Compact one-block summary of a fitted `hazard` object: sample size,
@@ -1586,6 +1744,9 @@ print.hazard <- function(x, ...) {
   if (!anyNA(x$fit$objective)) {
     cat("  log-lik:     ", format(x$fit$objective, digits = 6), "\n")
     cat("  converged:   ", x$fit$converged, "\n")
+    cat(.hzr_format_gradient_test(x$fit$rel_gradient, x$fit$polish_code,
+                                  converged = x$fit$converged),
+        sep = "\n")
   }
   # Always printed, "none" included (#242).
   cat(.hzr_format_not_done(x$degraded, x$degraded_causes), sep = "\n")
@@ -1681,6 +1842,8 @@ summary.hazard <- function(object, ...) {
     dist = object$spec$dist,
     engine = object$engine,
     converged = object$fit$converged,
+    rel_gradient = object$fit$rel_gradient,
+    polish_code = object$fit$polish_code,
     log_lik = object$fit$objective,
     counts = object$fit$counts,
     message = object$fit$message,
@@ -1742,6 +1905,8 @@ print.summary.hazard <- function(x, ...) {
 
   if (!is.null(x$converged) && !is.na(x$converged)) {
     cat("  converged:   ", x$converged, "\n")
+    cat(.hzr_format_gradient_test(x$rel_gradient, x$polish_code,
+                                  converged = x$converged), sep = "\n")
   }
   if (!is.null(x$log_lik) && !is.na(x$log_lik)) {
     cat("  log-lik:     ", format(x$log_lik, digits = 6), "\n")

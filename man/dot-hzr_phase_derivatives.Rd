@@ -38,8 +38,14 @@ Named list:
 }
 \description{
 Computes \eqn{\Phi_j(t)}, \eqn{\phi_j(t)}, and their derivatives with
-respect to \code{t_half}, \code{nu}, and \code{m} using central finite differences on
-\code{\link[=hzr_decompos]{hzr_decompos()}}.  The \code{log_t_half} derivative is obtained via the chain
+respect to \code{t_half}, \code{nu}, and \code{m} using finite differences on
+\code{\link[=hzr_decompos]{hzr_decompos()}}: central in \code{t_half} and \code{nu}, and in \code{m} central except
+near \code{m = 0}, where the stencil keeps the sign of \code{m}.  \code{\link[=hzr_decompos]{hzr_decompos()}}
+changes formula at \code{m = 0} and the two sides meet in a cusp, so for
+\code{m >= 0} a stencil that would reach 0 becomes one-sided forward (second
+order), and for \code{m < 0} the step is capped at 1\% of \verb{|m|} (floored at
+1e-10) and becomes one-sided backward if it would still reach 0.  The
+\code{log_t_half} derivative is obtained via the chain
 rule: \eqn{d\Phi/d(\log t_{1/2}) = t_{1/2} \cdot d\Phi/dt_{1/2}}.
 }
 \keyword{internal}

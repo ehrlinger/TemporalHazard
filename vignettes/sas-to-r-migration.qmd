@@ -676,8 +676,9 @@ makes the document runnable: a later `predict()` chunk from a
 becomes a `hzr_phase("cdf", ...)` with `m` fixed. These are the forms
 the hand translation above uses. `FIXM` holds `m` only through
 `fixed = "m"` on the phase. `QUASI` changes nothing: `hazard()` does not
-read `control$method`, and the fitting path always uses BFGS (a
-multiphase fit may run a Nelder-Mead warm-up first), so the entry only
+read `control$method`, and the fitting path uses BFGS regardless (a
+multiphase fit may run a Nelder-Mead warm-up first, and a stop that fails
+SAS's gradient test continues with `stats::nlm()`), so the entry only
 records the SAS choice. The fitting path reads none of `control$fix`,
 `control$quasi` or `control$method`.
 `dist = "multiphase"` is emitted whenever `phases` is, and `theta`

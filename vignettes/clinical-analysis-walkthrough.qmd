@@ -473,17 +473,16 @@ logLik_manual <- fit_mv$fit$objective
 logLik_step   <- fit_step$fit$objective
 n_free <- function(fit) sum(!fit$fit$fixed_mask)
 c(manual = logLik_manual, stepwise = logLik_step,
+  free_manual = n_free(fit_mv), free_step = n_free(fit_step),
   aic_manual = 2 * n_free(fit_mv) - 2 * logLik_manual,
   aic_step   = 2 * n_free(fit_step) - 2 * logLik_step)
 ```
 
 The two models need not agree.  Here stepwise enters `status` in both
 phases but `age`, `mal` and `com_iv` in the early phase only, so it
-carries fewer coefficients than the manual fit (`r n_free(fit_step)`
-free parameters against `r n_free(fit_mv)`).  Its log-likelihood is lower
-and its AIC is lower too
-(`r round(2 * n_free(fit_step) - 2 * logLik_step, 1)` against
-`r round(2 * n_free(fit_mv) - 2 * logLik_manual, 1)`), because the dropped constant-phase
+carries fewer free parameters than the manual fit (`free_step` against
+`free_manual` above).  Its log-likelihood is lower and its AIC is lower
+too (`aic_step` against `aic_manual`), because the dropped constant-phase
 coefficients cost more in parameters than they bought in fit.  Even on
 an identical covariate set the two log-likelihoods can differ, since
 the fits use different `n_starts` and the multiphase likelihood can

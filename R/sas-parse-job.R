@@ -425,7 +425,10 @@
     }
     mapped <- mapped + 1L
     switch(token,
-      DATA        = data_name <- val,
+      # A WORK. libref names the same dataset as the bare name. Dropping it
+      # here makes the emitted data =, the status chunk and the guard use the
+      # bare name, which is also how a %repeat OUT= is recorded.
+      DATA        = data_name <- sub("^WORK[.]", "", val),
       OUTHAZ      = outhaz <- val,
       MAXITER     = {
         val_num <- suppressWarnings(as.numeric(val))
@@ -1235,5 +1238,222 @@
     call_haz = if (want_surv && want_haz) mk("hazard") else NULL,
     inhaz = inhaz, grid = grid, untranslated = untr,
     tokens_seen = seen, tokens_mapped = mapped
+  )
+}
+
+# ---------------------------------------------------------------------------
+# %repeat -> hzr_repeated_events()
+# ---------------------------------------------------------------------------
+
+# %repeat's keyword parameters and defaults, as the macro declares them
+# (~/Documents/macro.library/repeat.sas), upper-cased as
+# .hzr_sas_normalise() leaves every name.
+.hzr_repeat_defaults <- c(
+  IN = "BUILT", OUT = "EVENTS", EVENTYPE = "EVENTYPE", IV_EVENT = "IV_EVENT",
+  IV_END = "IV_END", ID = "ID", EVENT = "EVENT", EVENT_NO = "EVENT_NO",
+  RCENSOR = "RCENSOR", IV_START = "IV_START", IV_SEG = "IV_SEG", RENEWAL = "RENEWAL"
+)
+
+# hzr_repeated_events()'s fixed output names, each mapped to the macro
+# parameter that renames it. first and last have no parameter: the macro
+# always writes them under those names.
+.hzr_repeat_outputs <- c(
+  event = "EVENT", event_no = "EVENT_NO", rcensor = "RCENSOR",
+  iv_start = "IV_START", iv_seg = "IV_SEG", renewal = "RENEWAL"
+)
+
+#' Translate one `%repeat(...)` call into an `hzr_repeated_events()` chunk.
+#'
+#' The emitted chunk renames the function's lower-case outputs to the names the
+#' job uses, upper-cased like every name this translator emits; without that the
+#' fit reads a column that does not exist. Before the call it drops any input
+#' column named like one of those outputs. SAS overwrites such a column, and the
+#' macro assigns each output on every row before reading it, so dropping is
+#' exactly what SAS does. Left in place, the rename would produce two columns of
+#' one name, and `$` would return the stale one.
+#'
+#' A call this cannot express is refused rather than guessed at: the chunk is a
+#' `stop()`, and each problem is an `$untranslated` row. That covers an unknown
+#' keyword, a positional argument, a value that is not a plain SAS name (a
+#' `&macro` reference, say), an input column that is also an output
+#' (`EVENTYPE=RCENSOR`: SAS zeroes that indicator before reading it, so the job's
+#' own answer is not the model it describes), and two outputs with one name. A
+#' keyword given twice, which SAS rejects, is refused too, and so is an output
+#' named `LAG_IV` or `NUMBER`, the macro's own loop counters. The body is split
+#' on every comma; a value holding parentheses, where a comma could be nested, is
+#' refused as not a plain name either way.
+#' @noRd
+.hzr_parse_repeat <- function(block) {
+  parts <- if (nzchar(block$text)) trimws(strsplit(block$text, ",", fixed = TRUE)[[1L]]) else character(0)
+  args <- .hzr_repeat_defaults
+  problems <- character(0)
+  seen_keys <- character(0)
+
+  for (p in parts) {
+    kv <- regmatches(p, regexec("^([A-Z_][A-Z0-9_]*) ?= ?(.*)$", p))[[1L]]
+    if (!length(kv)) {
+      problems <- c(problems, sprintf("`%s` is not a KEY=VALUE argument", p))
+      next
+    }
+    key <- kv[2L]
+    val <- trimws(kv[3L])
+    if (!key %in% names(args)) {
+      problems <- c(problems, sprintf("`%s=` is not a %%repeat parameter", key))
+      next
+    }
+    if (key %in% seen_keys) {
+      problems <- c(problems, sprintf("`%s=` is given more than once", key))
+      next
+    }
+    seen_keys <- c(seen_keys, key)
+    name_re <- if (key %in% c("IN", "OUT")) {
+      "^[A-Z_][A-Z0-9_]*([.][A-Z_][A-Z0-9_]*)?$"
+    } else {
+      "^[A-Z_][A-Z0-9_]*$"
+    }
+    if (!grepl(name_re, val)) {
+      problems <- c(problems, sprintf("`%s=%s` is not a plain SAS name", key, val))
+      next
+    }
+    args[[key]] <- val
+  }
+
+  # A WORK. libref names the same dataset as the bare name, and the rewrite
+  # scan compares bare names. A fit written DATA=WORK.X keeps its libref, so it
+  # is not matched to this OUT= and gets the ordinary "Assign" guard instead.
+  args[c("IN", "OUT")] <- sub("^WORK[.]", "", args[c("IN", "OUT")])
+
+  inputs <- unname(args[c("ID", "EVENTYPE", "IV_EVENT", "IV_END")])
+  targets <- c(unname(args[.hzr_repeat_outputs]), "FIRST", "LAST")
+  for (hit in intersect(inputs, targets)) {
+    problems <- c(problems, sprintf(paste(
+      "input column %s is also an output %%repeat writes; SAS overwrites it before reading it,",
+      "so the job's own result is not the model it describes"
+    ), hit))
+  }
+  dup <- unique(targets[duplicated(targets)])
+  if (length(dup)) {
+    problems <- c(problems, sprintf("two outputs are both named %s", paste(dup, collapse = ", ")))
+  }
+  for (hit in intersect(targets, c("LAG_IV", "NUMBER"))) {
+    problems <- c(problems, sprintf(paste(
+      "output %s has the name of a %%repeat loop counter; SAS's RETAIN reads it,",
+      "so the job's own result is not the model it describes"
+    ), hit))
+  }
+
+  if (length(problems)) {
+    msg <- paste0("hzr_translate_sas() did not translate this job's %repeat call: ",
+                  paste(problems, collapse = "; "), ".")
+    return(list(
+      call = bquote(stop(.(msg))),
+      untranslated = .hzr_untranslated_frame(rep(NA_integer_, length(problems)),
+                                             rep("%repeat", length(problems)), problems),
+      tokens_seen = length(parts), tokens_mapped = 0L, in_name = NULL, out_name = NULL
+    ))
+  }
+
+  in_name <- args[["IN"]]
+  out_name <- args[["OUT"]]
+  from <- c(names(.hzr_repeat_outputs), "first", "last")
+  overwrite_msg <- paste0(" in ", in_name, ": %repeat writes columns of these names, so they were dropped ",
+                          "before the call, as SAS overwrites them.")
+  loop_msg <- paste0(" in ", in_name, ": SAS's %repeat reads a LAG_IV or NUMBER column in place of its ",
+                     "own loop counters, so for this job the SAS listing's segment starts and event ",
+                     "counts are not comparable with these.")
+  call <- bquote(.(as.name(out_name)) <- local({
+    d <- .(as.name(in_name))
+    drop <- intersect(names(d), .(targets))
+    if (length(drop)) {
+      warning(paste(drop, collapse = ", "), .(overwrite_msg), call. = FALSE)
+      d <- d[setdiff(names(d), drop)]
+    }
+    loop <- intersect(names(d), c("LAG_IV", "NUMBER"))
+    if (length(loop)) warning(paste(loop, collapse = ", "), .(loop_msg), call. = FALSE)
+    out <- hzr_repeated_events(d, id = .(args[["ID"]]), time = .(args[["IV_EVENT"]]),
+                               followup = .(args[["IV_END"]]), indicator = .(args[["EVENTYPE"]]))
+    names(out)[match(.(from), names(out))] <- .(targets)
+    out
+  }))
+
+  list(call = call, untranslated = .hzr_untranslated_frame(),
+       tokens_seen = length(parts), tokens_mapped = length(parts),
+       in_name = in_name, out_name = out_name)
+}
+
+#' Steps between a `%repeat` call and a fit that may change the macro's `OUT=`.
+#'
+#' `segment` is the normalised source between the two, and the scan fails
+#' closed. A `DATA` step is a hit when its output list names `out`; a step that
+#' only reads it (`SET out`) is not. Any other step or statement that names
+#' `out` is a hit as well -- `PROC SQL`, `PROC APPEND`, `PROC DATASETS`, a sort
+#' with `NODUPKEY`, `OUT=` or `WHERE=`, a macro call -- because a false stop
+#' costs the reader one deleted chunk and a missed rewrite fits data SAS did
+#' not fit. The one exception is the plain `PROC SORT DATA=out`, which only
+#' reorders rows and so cannot change the likelihood. A `WORK.` prefix names
+#' the same dataset as the bare name. Each hit is returned quoted: the step's
+#' statements up to the next `DATA`, `PROC`, `%HAZ`, `%REPEAT`, `RUN` or `QUIT`.
+#' A step that changes `out` without naming it (a macro that writes it
+#' internally) cannot be seen from here. Any statement starting with `%` (a
+#' macro call) is a step of its own, so it cannot hide inside an exempt one.
+#' A sort counts as plain only when every statement after its PROC line is a
+#' `BY`: a `WHERE` statement subsets the data. A step that uses a macro
+#' variable (`&name`) is a hit, because the variable could name `out`.
+#' @noRd
+.hzr_repeat_rewrites <- function(segment, out) {
+  out <- sub("^WORK[.]", "", out)
+  stmts <- trimws(strsplit(segment, ";", fixed = TRUE)[[1L]])
+  stmts <- stmts[nzchar(stmts)]
+  boundary <- "^(DATA |PROC |%|RUN$|QUIT$)"
+  names_in <- function(s) sub("^WORK[.]", "", strsplit(s, "[^A-Z0-9_.]+")[[1L]])
+  plain_sort <- paste0("PROC SORT DATA=", c(out, paste0("WORK.", out)))
+  hits <- character(0)
+  i <- 1L
+  while (i <= length(stmts)) {
+    last <- i
+    if (grepl("^(DATA |PROC )", stmts[i])) {
+      while (last < length(stmts) && !grepl(boundary, stmts[last + 1L])) last <- last + 1L
+    }
+    step <- stmts[i:last]
+    s <- stmts[i]
+    writes <- if (startsWith(s, "DATA ")) {
+      targets <- strsplit(trimws(gsub("[(][^)]*[)]", " ", substring(s, 6L))), " +")[[1L]]
+      out %in% sub("^WORK[.]", "", targets)
+    } else if (s %in% plain_sort && all(grepl("^BY ", step[-1L]))) {
+      FALSE
+    } else {
+      any(vapply(step, function(x) out %in% names_in(x), logical(1L)))
+    }
+    # A macro variable (&DSN) could name OUT; its value is not known here, so
+    # a step that uses one is treated as naming it -- the same call
+    # .hzr_parse_repeat() makes when it refuses IN=&DSN.
+    writes <- writes || any(grepl("&[A-Z_]", step))
+    if (writes) hits <- c(hits, paste0(paste(step, collapse = "; "), ";"))
+    i <- last + 1L
+  }
+  hits
+}
+
+#' The stop() chunks and $untranslated rows for steps that may change `out`.
+#'
+#' One chunk per step `.hzr_repeat_rewrites()` finds in `segment`, each quoting
+#' the step and telling the reader to replace it with R code, or delete it if
+#' the step leaves `out` unchanged.
+#' @noRd
+.hzr_rewrite_stops <- function(segment, out) {
+  steps <- .hzr_repeat_rewrites(segment, out)
+  stops <- lapply(steps, function(step) {
+    bquote(stop(.(paste0(
+      "This job may change ", out, " after %repeat, in a SAS step that ",
+      "hzr_translate_sas() does not translate: ", step, " Replace this chunk ",
+      "with R code that makes the same change to ", out, ", or delete it if ",
+      "the step leaves ", out, " unchanged."
+    ))))
+  })
+  list(
+    calls = stops,
+    untranslated = .hzr_untranslated_frame(
+      rep(NA_integer_, length(steps)), rep(paste0(out, " changed after %repeat"), length(steps)), steps
+    )
   )
 }

@@ -1567,8 +1567,6 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
          call. = FALSE)
   }
 
-  if (!is.null(seed)) set.seed(seed)
-
   # hzr_stepwise() is always called below with trace = FALSE (per-step
   # stepwise output would be too noisy across n_boot replicates; `verbose`
   # controls bootstrap-level progress instead). Strip `trace` from `...`
@@ -1590,6 +1588,108 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   } else {
     eval(cl$data, envir = parent.frame())
   }
+  # A per-row variable that is not a column of `data` is never resampled:
+  # each replicate paired the original vector with resampled rows, so the
+  # interval was wrong while every replicate reported success (#278). Refuse
+  # it, naming the variables. They come from the terms of the global formula
+  # (response included), the phase formulas and a select-mode `scope`, so
+  # `log(age)` reads the column `age`. A name outside `data` that does not
+  # hold one value per row -- `pi`, a cutoff, a knots vector -- is a constant,
+  # rightly the same in every replicate, and is left alone.
+  if (is.data.frame(orig_data)) {
+    per_row <- function(v, env) {
+      val <- get0(v, envir = env, inherits = TRUE)
+      !is.null(val) && !is.function(val) && NROW(val) == nrow(orig_data)
+    }
+    outside_in <- function(vars, env) {
+      vars <- setdiff(vars, c(names(orig_data), "."))
+      vars[vapply(vars, per_row, logical(1), env = env)]
+    }
+    call_env <- object$call_env %||% parent.frame()
+    stored <- .hzr_stored_formula(object, "`object`")
+    # Candidate refits build their formulas in the stored formula's
+    # environment (.hzr_formula_update()), so covariates and `scope`
+    # variables resolve there. The Surv() term does not: .hzr_parse_formula()
+    # evaluates it in `data`, then this package's namespace and the search
+    # path, so the response is looked up that way.
+    base_env <- if (is.null(stored)) call_env else environment(stored)
+    scope_vars <- if (inherits(scope, "formula")) {
+      all.vars(scope)
+    } else if (is.character(scope) && length(scope) > 0L) {
+      all.vars(stats::reformulate(scope))
+    }
+    phase_formulas <- Filter(function(f) inherits(f, "formula"),
+                             lapply(object$spec$phases, function(ph) {
+                               ph$formula
+                             }))
+    outside <- c(
+      if (length(stored) == 3L) {
+        outside_in(all.vars(stored[[2L]]), environment(.hzr_parse_formula))
+      },
+      if (!is.null(stored)) {
+        outside_in(all.vars(stats::delete.response(
+          stats::terms(stored, data = orig_data)
+        )), base_env %||% call_env)
+      },
+      unlist(lapply(phase_formulas, function(f) {
+        outside_in(all.vars(f), environment(f) %||% call_env)
+      })),
+      outside_in(scope_vars, base_env %||% call_env),
+      # A scope variable that only the scope formula's own frame can see
+      # never reaches the refit, so the screen could not test it: that was
+      # reported once, up front, then silently absent from every replicate.
+      # It is refused too.
+      if (inherits(scope, "formula")) {
+        outside_in(scope_vars, environment(scope) %||% call_env)
+      },
+      # A multiphase scope is refit through .hzr_phase_update_formula(): into
+      # the phase's own formula, keeping its environment, or, for a phase
+      # without one, into a fresh formula whose lookups reach this package's
+      # namespace and the search path. Each phase's scope is checked there.
+      if (is.list(scope)) {
+        unlist(lapply(names(scope), function(p) {
+          sc <- scope[[p]]
+          if (!inherits(sc, "formula")) return(character())
+          pf <- object$spec$phases[[p]]$formula
+          c(outside_in(all.vars(sc), if (is.null(pf)) {
+            environment(.hzr_parse_formula)
+          } else {
+            environment(pf)
+          }),
+          outside_in(all.vars(sc), environment(sc) %||% call_env))
+        }))
+      }
+    )
+    outside <- unique(outside)
+    if (length(outside) > 0L) {
+      one <- length(outside) == 1L
+      stop("hzr_bootstrap() resamples the rows of the fit's `data`, but the ",
+           "model uses ", paste0("'", outside, "'", collapse = ", "),
+           if (one) ", which is not a column" else ", which are not columns",
+           " of it. Each replicate would hold ", if (one) "it" else "them",
+           " fixed, and the interval would be wrong. Add ",
+           if (one) "it" else "them", " to `data` and refit.", call. = FALSE)
+    }
+  }
+
+  # A design matrix passed directly as `x` on the vector interface is never
+  # resampled. A fixed refit re-evaluated it without resampling in every
+  # replicate, pairing resampled outcomes with the original design; a
+  # select-mode refit reused it for the base model and dropped it from the
+  # candidates. Every replicate reported success either way, so it is
+  # refused.
+  if (is.null(cl$formula) && !is.null(cl$time) && !is.null(cl$x)) {
+    stop("hzr_bootstrap(): this fit's design matrix was passed directly as ",
+         "`x`, which replicates cannot resample with the rows: each would ",
+         "pair resampled outcomes with the original design. Refit with the ",
+         "formula interface (Surv(...) ~ ..., data = ...) and bootstrap ",
+         "that.", call. = FALSE)
+  }
+
+  # Seeded after the refusals above, so a refused call leaves the caller's
+  # random number stream alone.
+  if (!is.null(seed)) set.seed(seed)
+
   n_obs <- nrow(orig_data)
   sample_size <- max(1L, as.integer(n_obs * fraction))
 
@@ -1671,8 +1771,8 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   #
   # The evaluated vectors are already stored on the object, so they can be
   # resampled by the same index and rewired the same way `data` and `weights`
-  # are. `x` is excluded deliberately: a design matrix supplied that way is
-  # rebuilt from `data`/`scope` per replicate.
+  # are. `x` is not among them: a design matrix passed directly is refused
+  # above, before seeding.
   vector_interface <- is.null(cl$formula) && !is.null(cl$time)
   vec_args <- c("time", "status", "time_lower", "time_upper")
   vec_orig <- if (vector_interface) {
@@ -1687,7 +1787,12 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     # evaluate against the original data, so row i's time gets paired with
     # row j's status or interval bound. That is silent corruption producing
     # plausible numbers, not an error.
-    passed <- vec_args[vapply(vec_args, function(a) !is.null(cl[[a]]), logical(1))]
+    # A Surv passed as `status` supplies its bounds without naming them in
+    # the call (#226), so a stored bound counts as passed too. Leaving it out
+    # refits every replicate with no censoring bounds at all.
+    passed <- vec_args[vapply(vec_args, function(a) {
+      !is.null(cl[[a]]) || !is.null(object$data[[a]])
+    }, logical(1))]
     have   <- vapply(vec_orig, function(v) !is.null(v) && length(v) == n_obs,
                      logical(1))
     missing_vecs <- passed[!have[passed]]

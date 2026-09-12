@@ -583,7 +583,7 @@ recognizable:
 
 | Symptom | What it means |
 |---------|--------------|
-| `fit$fit$converged == FALSE` | Optimizer hit `maxit` without satisfying the gradient tolerance |
+| `fit$fit$converged == FALSE` | Optimizer hit `maxit` before its stopping criterion was met |
 | `vcov()` returns `NA` | Hessian is singular; parameters are not jointly identified |
 | A phase scale (`log_mu`) at a boundary value | Possibly an unneeded phase, but a tiny scale alone does not show it; check the phase's contribution with `predict(..., decompose = TRUE)` |
 | Enormous standard errors on one or more parameters | Flat likelihood in that direction (weak identification) |
@@ -675,7 +675,16 @@ basin, then BFGS polishes the solution. This warm-up is transparent:
 it happens automatically when the conditions are met and there is no
 user-facing control to switch it on or off.
 
-**`maxit`** (default 1000) sets the BFGS iteration cap. Hitting `maxit`
+**Acceptance test (automatic).** BFGS stops when an iteration improves the
+log-likelihood by less than `reltol` relative to its size, which on a flat
+ridge can be short of the maximum. `hazard()` then applies SAS/C HAZARD's
+own test, a relative gradient of at most about 6e-6, and when a stop fails
+it continues with `stats::nlm()`. The result is kept in
+`fit$fit$rel_gradient` and `fit$fit$polish_code`, and `print()` shows it;
+see the "Convergence" section of `?hazard`.
+
+**`maxit`** (default 1000) sets the iteration cap for BFGS and for the
+`nlm()` continuation. Hitting `maxit`
 without converging usually means either the starting values are far from
 the optimum (fix with better starts or `n_starts`) or the model is
 overparameterized (fix by fixing shapes or dropping a phase). Raising
