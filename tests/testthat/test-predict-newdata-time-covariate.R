@@ -14,7 +14,7 @@
   d
 })
 
-.tc_msg <- "covariate named 'time'"
+.tc_msg <- "variable named 'time'"
 
 test_that("a single-distribution covariate named time stops the time-based types", {
   w <- hazard(survival::Surv(int_dead, dead) ~ time, data = .tc_avc,
@@ -51,8 +51,10 @@ test_that("with time windows, time is the prediction time for every type", {
                        type = "linear_predictor"), .tc_msg)
 })
 
-test_that("a phase formula's constant named time is not a covariate", {
-  # `time` here is a value in the formula's environment, not a data column.
+test_that("a phase formula's constant named time is refused: newdata masks it", {
+  # model.matrix() looks symbols up in newdata first, so newdata's `time`
+  # would silently replace the formula constant: I(30 > 1) instead of
+  # I(30 > 50).  Refusing is the only safe answer.
   d <- .tc_avc
   d$time <- NULL
   time <- 50
@@ -62,9 +64,37 @@ test_that("a phase formula's constant named time is not a covariate", {
       early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes"),
       constant = hzr_phase("constant", formula = ~ I(age > time))),
     fit = TRUE))
-  got <- predict(fit, newdata = data.frame(time = c(1, 2), age = 60),
-                 type = "cumulative_hazard")
-  expect_true(all(is.finite(got) & got > 0))
+  expect_error(predict(fit, newdata = data.frame(time = c(1, 2), age = 30),
+                       type = "cumulative_hazard"), .tc_msg)
+})
+
+test_that("a global formula's constant named time is masked the same way", {
+  d <- .tc_avc
+  d$time <- NULL
+  time <- 50
+  th <- c(mu = 0.01, nu = 0.5, b_gt = 0.4, b_mal = 0.3)
+  w <- hazard(survival::Surv(int_dead, dead) ~ I(age > time) + mal, data = d,
+              dist = "weibull", theta = th)
+  # Time-based: newdata's time is the prediction time, so refuse.
+  expect_error(predict(w, newdata = data.frame(time = 2, age = 30, mal = 1),
+                       type = "cumulative_hazard"), .tc_msg)
+  # Eta-based with a `time` column: it would mask the constant, so refuse.
+  expect_error(predict(w, newdata = data.frame(time = 2, age = 30, mal = 1),
+                       type = "linear_predictor"), .tc_msg)
+  # Eta-based without one: the constant is used, I(30 > 50) = FALSE.
+  expect_equal(predict(w, newdata = data.frame(age = c(30, 60), mal = 1),
+                       type = "linear_predictor"),
+               c(0, 0.4) + 0.3, tolerance = 1e-12)
+})
+
+test_that("time as the only covariate works for linear_predictor and hazard", {
+  w <- hazard(survival::Surv(int_dead, dead) ~ time, data = .tc_avc,
+              dist = "weibull", theta = c(mu = 0.01, nu = 0.5, b = 0.002))
+  nd <- data.frame(time = c(2, 50))
+  expect_equal(predict(w, newdata = nd, type = "linear_predictor"),
+               0.002 * c(2, 50), tolerance = 1e-12)
+  expect_equal(predict(w, newdata = nd, type = "hazard"),
+               exp(0.002 * c(2, 50)), tolerance = 1e-12)
 })
 
 test_that("hzr_deciles() and hzr_gof() stop on such a model, saying why", {

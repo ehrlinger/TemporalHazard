@@ -51,14 +51,20 @@
   the prediction silently came back at the baseline: a Weibull fit of
   `~ time` gave 0.1414 where the covariate made it 0.1420. Beside other
   covariates, the one column served as both, so the covariate was always
-  set to the prediction time. Neither gave an error. These calls now stop
-  and ask for the covariate to be renamed and the model refitted, whether
-  it is in the global formula, a named `x` or a multiphase phase formula.
-  `hzr_deciles()` and `hzr_gof()` build such a `newdata` themselves and
-  stop too; before, they silently overwrote the covariate with follow-up
-  time. `"linear_predictor"` and single-distribution `"hazard"`, which
-  have no prediction time, still read `time` as the covariate, and
-  `predict()` without `newdata` is unaffected (#270).
+  set to the prediction time. A formula constant named `time`, as in
+  `I(age > time)`, was replaced the same way, because a formula looks its
+  symbols up in `newdata` first. None of this gave an error. These calls
+  now stop and ask for the variable to be renamed and the model refitted,
+  whether it is in the global formula, a named `x` or a multiphase phase
+  formula. `hzr_gof()`, and `hzr_deciles()` for a single-distribution
+  model, build such a `newdata` themselves and stop too; before, they
+  silently overwrote the covariate with follow-up time.
+  `"linear_predictor"` and single-distribution `"hazard"` have no
+  prediction time, so they read a `time` column as the covariate, now
+  also when it is the only one (it used to stop with "Predictors are
+  required"). They refuse only a `time` constant that a `time` column in
+  `newdata` would mask. `predict()` without `newdata` is unaffected
+  (#270).
 
 ## New features
 

@@ -157,40 +157,45 @@
 }
 
 
-#' Refuse `predict(newdata = )` for a model with a covariate named `time`
+#' Refuse `predict(newdata = )` where `newdata`'s `time` would be misread
 #'
-#' In `newdata` the column `time` is the prediction time, so a covariate of
-#' that name cannot be given its own value there. It used to be dropped from
-#' the covariates, and the time-based types silently returned the baseline
-#' (#270). Called only when `newdata` is supplied; predictions at the fitted
-#' data are unaffected.
+#' A formula symbol is looked up in `newdata` first, so a model whose
+#' formula uses a variable named `time` -- a data column or a constant such
+#' as `I(age > time)` -- would read `newdata$time` for it (#270). For the
+#' time-based types that column is the prediction time, so any such variable
+#' is refused. For the eta-based types (no prediction time) a `time` data
+#' column is a genuine covariate and is read as one; only a `time` constant
+#' is refused, and only when `newdata` has a `time` column to mask it.
 #'
 #' @param object A fitted `hazard` object.
-#' @return `NULL`, invisibly; stops if the model has such a covariate.
+#' @param newdata The `newdata` data frame.
+#' @param time_based `TRUE` when `newdata$time` is the prediction time.
+#' @return `NULL`, invisibly; stops when `newdata$time` would be misread.
 #' @keywords internal
 #' @noRd
-.hzr_check_time_covariate <- function(object) {
+.hzr_check_time_covariate <- function(object, newdata, time_based) {
   design <- object$data$x_design
-  vars <- if (!is.null(design)) design$data_vars else colnames(object$data$x)
+  x_cols <- colnames(object$data$x)
+  used <- if (!is.null(design)) all.vars(design$terms) else x_cols
+  from_data <- if (!is.null(design)) design$data_vars else x_cols
   phases <- object$fit$phases
   if (is.null(phases)) phases <- object$spec$phases
   for (ph in phases) {
-    if (is.null(ph$formula)) next
-    ph_vars <- all.vars(ph$formula)
-    # As for the global formula, only a column of the fit's data is a
-    # covariate; `time` in I(age > time) may be a formula constant.
-    if (!is.null(object$data$frame)) {
-      ph_vars <- intersect(ph_vars, names(object$data$frame))
-    }
-    vars <- c(vars, ph_vars)
+    if (!is.null(ph$formula)) used <- c(used, all.vars(ph$formula))
   }
-  if ("time" %in% vars) {
-    stop("The model has a covariate named 'time', but in 'newdata' the ",
-         "column 'time' is the prediction time, so that covariate cannot ",
-         "be given a value there. This stops the survival, cumulative ",
-         "hazard and multiphase predictions, and hzr_deciles() and ",
-         "hzr_gof(), which build 'newdata' themselves. Rename the ",
-         "covariate in the data and refit.", call. = FALSE)
+  misread <- if (time_based) {
+    "time" %in% used
+  } else {
+    "time" %in% names(newdata) && "time" %in% setdiff(used, from_data)
+  }
+  if (misread) {
+    stop("The model uses a variable named 'time', but in 'newdata' the ",
+         "column 'time' is the prediction time or would stand in for that ",
+         "variable, so the model cannot be evaluated there. This stops ",
+         "the survival, cumulative hazard and multiphase predictions, and ",
+         "hzr_gof() and (for a single-distribution model) hzr_deciles(), ",
+         "which build 'newdata' themselves. Rename the variable and refit.",
+         call. = FALSE)
   }
   invisible(NULL)
 }
@@ -210,13 +215,16 @@
 #'   given.
 #' @keywords internal
 #' @noRd
-.hzr_newdata_design <- function(object, newdata) {
+.hzr_newdata_design <- function(object, newdata, drop_time = TRUE) {
   covs <- newdata[, names(newdata) != "time", drop = FALSE]
+  if (is.null(object$data$x)) {
+    return(if (ncol(covs) == 0L) NULL else as.matrix(covs))
+  }
+  # Where `time` is not the prediction time (the eta-based types without
+  # time windows), it may itself be the covariate.
+  if (!drop_time) covs <- newdata
   if (ncol(covs) == 0L) {
     return(NULL)
-  }
-  if (is.null(object$data$x)) {
-    return(as.matrix(covs))
   }
   .hzr_global_design(object, newdata)
 }

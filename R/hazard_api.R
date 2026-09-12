@@ -1069,8 +1069,9 @@ hazard <- function(formula = NULL,
 #'   A fit made with an unnamed `x` matrix matches by position. For the types
 #'   requiring time, a `newdata` with only a `time` column evaluates the
 #'   baseline, with every covariate at 0. Because `time` is then the
-#'   prediction time, a model with a covariate named `time` cannot be given
-#'   those types at `newdata`; rename that covariate and refit.
+#'   prediction time, a model whose formula uses a variable named `time`
+#'   (a covariate, or a constant such as `I(age > time)`) cannot be given
+#'   those types at `newdata`; rename it and refit.
 #' @param type Prediction type:
 #'   - `"linear_predictor"`: Linear predictor eta = x*beta (not available for multiphase)
 #'   - `"hazard"`: Instantaneous hazard. Single-distribution models return the
@@ -1295,13 +1296,14 @@ predict.hazard <- function(object, newdata = NULL,
     }
   }
 
-  # Where `time` in newdata is the prediction time, a covariate of that name
-  # cannot also be given there (#270). The eta-based types have no
-  # prediction time unless there are time windows, so there it can only be
-  # the covariate, and it is read as one.
+  # newdata's `time` is the prediction time for the time-based types; a
+  # model variable of that name would be misread there (#270). The
+  # eta-based types have no prediction time unless there are time windows.
   time_based <- type %in% c("survival", "cumulative_hazard") ||
     identical(object$spec$dist, "multiphase") || !is.null(time_windows)
-  if (!is.null(newdata) && time_based) .hzr_check_time_covariate(object)
+  if (!is.null(newdata)) {
+    .hzr_check_time_covariate(object, as.data.frame(newdata), time_based)
+  }
 
   # -----------------------------------------------------------------------
   # Predictions that do NOT need time (linear_predictor, hazard)
@@ -1333,7 +1335,10 @@ predict.hazard <- function(object, newdata = NULL,
         pred_time <- newdata$time
       }
       # Covariates by name, not position (#267); NULL when there are none.
-      x <- .hzr_newdata_design(object, newdata)
+      # Without time windows `time` is no prediction time here, so it may
+      # be a covariate (#270).
+      x <- .hzr_newdata_design(object, newdata,
+                               drop_time = !is.null(time_windows))
     }
 
     if (!is.null(time_windows)) {

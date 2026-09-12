@@ -30,8 +30,9 @@ ignored, and a covariate the model needs but \code{newdata} lacks is an error.
 A fit made with an unnamed \code{x} matrix matches by position. For the types
 requiring time, a \code{newdata} with only a \code{time} column evaluates the
 baseline, with every covariate at 0. Because \code{time} is then the
-prediction time, a model with a covariate named \code{time} cannot be given
-those types at \code{newdata}; rename that covariate and refit.}
+prediction time, a model whose formula uses a variable named \code{time}
+(a covariate, or a constant such as \code{I(age > time)}) cannot be given
+those types at \code{newdata}; rename it and refit.}
 
 \item{type}{Prediction type:
 \itemize{
