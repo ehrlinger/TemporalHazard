@@ -233,8 +233,14 @@
   means, so a factor enters as the proportion of patients in each level.
   A fit with both global and phase-formula covariates is #264.
 
-* **`hzr_gof()` had four smaller errors**, all found by Copilot's review of
-  #285.
+* **`hzr_gof()` had five smaller errors**, found by Copilot's and
+  r-reviewer's reviews of #285.
+  - `seq()` builds grid times that differ from the data times in the last
+    binary digits, and they were matched with a fixed tolerance of 100
+    machine epsilons. Above 128 that is smaller than the gap between
+    adjacent doubles, so at times in days or months events fell off the
+    grid: 180 of 197 were counted on a `seq(150, 300, by = 0.1)` grid. The
+    tolerance now scales with the time.
   - With a custom `time_grid`, `n_risk` between Kaplan-Meier times carried
     the previous count forward, so it kept subjects who had left and
     missed ones who had entered. It now counts the risk set at each grid

@@ -560,9 +560,11 @@ hzr_gof <- function(object, time_grid = NULL) {
   # time, the rule grid_index() applies to the event tallies below, so n_risk
   # agrees with n_event and n_censor there. seq(0.1, 1, by = 0.1)[3] is
   # 0.30000000000000004, and an exact count at it drops the exits at 0.3.
+  # The tolerance is relative above 1: 100 * eps is under one ulp above 128,
+  # so an absolute one matched nothing at times in days or months.
   time_tol <- .Machine$double.eps * 100
   risk_time <- vapply(time_grid, function(g) {
-    k <- which(abs(km_times - g) < time_tol)
+    k <- which(abs(km_times - g) < time_tol * max(1, abs(g)))
     if (length(k) > 0) km_times[k[1]] else g
   }, numeric(1))
   km_n_risk_grid <- n_at_or_after(obs_time, risk_time) -
@@ -572,7 +574,7 @@ hzr_gof <- function(object, time_grid = NULL) {
   # Counts, observed events and expected events all use this one rule, so for
   # a custom time_grid the two tallies cover the same subjects.
   grid_index <- function(t) {
-    match_idx <- which(abs(time_grid - t) < time_tol)
+    match_idx <- which(abs(time_grid - t) < time_tol * max(1, abs(t)))
     if (length(match_idx) > 0) match_idx[1] else NA_integer_
   }
   km_n_event_grid <- rep(0, length(time_grid))

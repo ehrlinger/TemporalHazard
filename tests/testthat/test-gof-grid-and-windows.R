@@ -50,6 +50,25 @@ test_that("n_risk at a seq() grid counts the exits tied at each grid time", {
   expect_gt(sum(g$n_event), 0)
 })
 
+test_that("a seq() grid matches tied exits at large times too", {
+  # An absolute tolerance of 100 * eps is under one ulp above 128, so the
+  # grid-to-data match has to scale with the time.
+  set.seed(2855)
+  n <- 300
+  stop_t <- round(stats::runif(n, 150, 300), 1)
+  status <- stats::rbinom(n, 1, 0.7)
+  fit <- suppressWarnings(hazard(time = stop_t, status = status,
+                                 dist = "weibull", theta = c(0.005, 2),
+                                 fit = TRUE))
+  grid <- seq(150, 300, by = 0.1)
+  snapped <- round(grid, 1)
+  expect_true(any(grid != snapped & snapped %in% stop_t))
+  g <- hzr_gof(fit, time_grid = grid)
+  expect_equal(g$n_risk, .brute_n_risk(snapped, rep(0, n), stop_t))
+  expect_equal(sum(g$n_event), sum(status))
+  expect_equal(g$cum_observed[nrow(g)], sum(status))
+})
+
 test_that("an unsorted or repeated time_grid is sorted and de-duplicated", {
   d <- .gof_grid_data()
   fit <- suppressWarnings(hazard(time = d$stop, status = d$event,
