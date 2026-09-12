@@ -1212,8 +1212,9 @@
     }
   }
 
-  # Safety: zero out non-finite entries (for the optimizer only)
-  if (sanitize) grad[!is.finite(grad)] <- 0
+  # Non-finite entries: 0 for the optimizer; NA for the acceptance test, which
+  # must report a component it could not evaluate, not a NaN or an Inf.
+  grad[!is.finite(grad)] <- if (sanitize) 0 else NA_real_
 
   grad
 }

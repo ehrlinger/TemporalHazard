@@ -289,7 +289,8 @@ test_that(".hzr_gradient_multiphase returns NA, not zeros, when asked for the ra
   g_sane <- do.call(.hzr_gradient_multiphase, ok)
   g_raw <- do.call(.hzr_gradient_multiphase, c(ok, sanitize = FALSE))
   expect_true(all(is.finite(g_sane)))
-  expect_true(any(!is.finite(g_raw)))
+  # NA exactly, as documented: a NaN passes is.na() but is not NA_real_.
+  expect_identical(g_raw[4], NA_real_)
   expect_true(all(is.finite(g_raw[-4])))
 })
 

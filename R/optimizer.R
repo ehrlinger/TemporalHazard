@@ -26,37 +26,38 @@ NULL
 # differences are of the whole log-likelihood, whose rounding error relative
 # to |f| is about eps / h, and at 1e-10 that is already near SAS's gradtl.
 .hzr_fd_gradient <- function(objective, theta, sign_bounded = integer(0)) {
-  f0 <- NULL
-  vapply(seq_along(theta), function(i) {
+  n <- length(theta)
+  h <- .Machine$double.eps^(1 / 3) * pmax(abs(theta), 1)
+  side <- numeric(n)
+  for (i in intersect(sign_bounded, seq_len(n))) {
     x <- theta[i]
-    h <- .Machine$double.eps^(1 / 3) * max(abs(x), 1)
-    side <- 0
-    if (i %in% sign_bounded) {
-      if (x < 0) h <- min(h, max(0.01 * abs(x), 1e-8))
-      side <- if (x >= 0 && x - h < 0) {
-        1
-      } else if (x < 0 && x + h >= 0) {
-        -1
-      } else {
-        0
-      }
+    if (x < 0) h[i] <- min(h[i], max(0.01 * abs(x), 1e-8))
+    side[i] <- if (x >= 0 && x - h[i] < 0) {
+      1
+    } else if (x < 0 && x + h[i] >= 0) {
+      -1
+    } else {
+      0
     }
-    at <- function(step) {
-      z <- theta
-      z[i] <- x + step
-      objective(z)
-    }
-    if (side == 0) {
-      up <- at(h)
-      down <- at(-h)
+  }
+  # The centre point is needed only by a one-sided stencil; evaluate it once.
+  f0 <- if (any(side != 0)) objective(theta) else NA_real_
+  at <- function(i, step) {
+    z <- theta
+    z[i] <- theta[i] + step
+    objective(z)
+  }
+  vapply(seq_len(n), function(i) {
+    if (side[i] == 0) {
+      up <- at(i, h[i])
+      down <- at(i, -h[i])
       if (up >= 1e10 || down >= 1e10) return(NA_real_)
-      return((up - down) / (2 * h))
+      return((up - down) / (2 * h[i]))
     }
-    if (is.null(f0)) f0 <<- objective(theta)
-    near <- at(side * h)
-    far <- at(2 * side * h)
+    near <- at(i, side[i] * h[i])
+    far <- at(i, 2 * side[i] * h[i])
     if (f0 >= 1e10 || near >= 1e10 || far >= 1e10) return(NA_real_)
-    side * (-3 * f0 + 4 * near - far) / (2 * h)
+    side[i] * (-3 * f0 + 4 * near - far) / (2 * h[i])
   }, numeric(1))
 }
 
