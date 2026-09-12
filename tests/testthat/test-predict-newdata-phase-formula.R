@@ -141,6 +141,9 @@ test_that("a factor's non-default contrasts are the fit's, not the default", {
 test_that("a missing phase covariate is not filled from the workspace (#268)", {
   data(avc, package = "TemporalHazard", envir = environment())
   d <- stats::na.omit(avc)
+  # A same-named object in the phase formula's own environment, which is
+  # where a rebuild without the guard would look it up.
+  mal <- 1
   fit <- hazard(
     survival::Surv(int_dead, dead) ~ age, data = d, dist = "multiphase",
     phases = list(
@@ -150,16 +153,64 @@ test_that("a missing phase covariate is not filled from the workspace (#268)", {
     ),
     fit = TRUE
   )
-  # A same-named object where the formula's environment chain can see it.
-  assign("mal", 1, envir = globalenv())
-  tryCatch(
-    expect_error(
-      predict(fit, newdata = data.frame(time = 2, age = 60),
-              type = "cumulative_hazard"),
-      "lacks the covariate column\\(s\\) 'mal' that phase 'constant' uses"
-    ),
-    finally = rm("mal", envir = globalenv())
+  expect_error(
+    predict(fit, newdata = data.frame(time = 2, age = 60),
+            type = "cumulative_hazard"),
+    "lacks the covariate column\\(s\\) 'mal' that phase 'constant' uses"
   )
+})
+
+test_that("a phase formula's environment constant still reaches newdata", {
+  data(avc, package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc)
+  cutoff <- 100
+  fit <- hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                        fixed = "shapes", formula = ~ I(age > cutoff)),
+      constant = hzr_phase("constant")
+    ),
+    fit = TRUE
+  )
+  expect_true(fit$fit$converged)
+  tt <- c(0.5, 2)
+  base <- predict(fit, newdata = data.frame(time = tt),
+                  type = "cumulative_hazard", decompose = TRUE)
+  beta <- fit$fit$theta[["early.I(age > cutoff)TRUE"]]
+  expect_gt(abs(beta), 0.5)
+  got <- predict(fit, newdata = data.frame(time = tt, age = c(150, 50)),
+                 type = "cumulative_hazard")
+  expect_equal(got / (exp(beta * c(1, 0)) * base$early + base$constant),
+               c(1, 1), tolerance = 1e-10, ignore_attr = TRUE)
+})
+
+test_that("all columns present: predictions unchanged from main 8a26c0e", {
+  # Two numeric phase formulas, every covariate supplied: a case the old
+  # rebuild got right. Values computed on main at 8a26c0e, before this fix.
+  data(avc, package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc)
+  fit <- hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                        fixed = "shapes", formula = ~ mal),
+      constant = hzr_phase("constant", formula = ~ age)
+    ),
+    fit = TRUE
+  )
+  expect_true(fit$fit$converged)
+  nd <- data.frame(time = c(0.5, 2, 6), mal = c(0, 1, 1), age = c(30, 60, 120))
+  # Optimizer results, so a tolerance well above the optimizer's noise.
+  expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard"),
+               c(0.08822505274, 0.42642619050, 0.49399211094),
+               tolerance = 1e-6, ignore_attr = TRUE)
+  expect_equal(predict(fit, newdata = nd, type = "survival"),
+               c(0.9155548054, 0.6528380494, 0.6101855969),
+               tolerance = 1e-6, ignore_attr = TRUE)
+  expect_equal(predict(fit, newdata = nd, type = "hazard"),
+               c(0.088515938428, 0.043098312832, 0.006837292565),
+               tolerance = 1e-6, ignore_attr = TRUE)
 })
 
 test_that("a fit without the stored phase design still predicts", {
