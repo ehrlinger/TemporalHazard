@@ -23,6 +23,7 @@ family has a cusp.
   covariate_counts,
   x_list,
   objective = c("likelihood", "sas"),
+  sanitize = TRUE,
   ...
 )
 ```
@@ -72,11 +73,19 @@ family has a cusp.
   [`.hzr_logl_interval()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_logl_interval.md).
   Exact-event, right-censored and left-censored rows are unaffected.
 
+- sanitize:
+
+  Logical; `FALSE` returns `NA` where the default returns 0. Used by
+  SAS/C's acceptance test, which must not read a zero it could not
+  compute as a small gradient.
+
 - ...:
 
   Ignored.
 
 ## Value
 
-Numeric vector of length `length(theta)` – the gradient. Returns a zero
-vector if any component is non-finite (guards optimizer).
+Numeric vector of length `length(theta)` – the gradient. With
+`sanitize = TRUE` (the default) a component that cannot be evaluated is
+0, and so is the whole vector at an infeasible point (guards the
+optimizer); with `sanitize = FALSE` those are `NA`.

@@ -119,8 +119,10 @@
   [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   estimates `m` directly and can.
 
-- **A fit that reports convergence now meets SAS/C HAZARD’s own test for
-  it.**
+- **A fit that reports convergence is now checked against SAS/C HAZARD’s
+  own test for it, and continued with
+  [`stats::nlm()`](https://rdrr.io/r/stats/nlm.html) when it fails the
+  test.**
   [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)’s
   BFGS optimizer stops on the relative change in the log-likelihood
   (`control$reltol`, default 1e-5), which lets a flat ridge end short of
