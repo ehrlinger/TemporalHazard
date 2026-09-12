@@ -31,7 +31,7 @@ The log-likelihood is \emph{not} stored here; take it from the \code{.lst}.
 
 This function is experimental and its return shape is expected to change.
 The result carries the fitted model, so \code{\link[=predict.hzr_outhaz]{predict.hzr_outhaz()}} predicts
-from it -- that is what the \code{hzr_translate_sas(librefs = )} path emits --
+from it (that is what the \code{hzr_translate_sas(librefs = )} path emits),
 but it is not a \code{hazard} object and none of the other \code{hazard} methods
 apply to it. The \verb{_STATUS_} coding is asserted against a synthetic fixture,
 so a real \verb{OUTHAZ=} file using a different convention would yield an empty

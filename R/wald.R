@@ -28,7 +28,7 @@
 #'
 #' @return A list with elements:
 #' \describe{
-#'   \item{stat}{Test statistic -- `z` if `length(names) == 1L`,
+#'   \item{stat}{Test statistic: `z` if `length(names) == 1L`,
 #'     chi-square otherwise.}
 #'   \item{df}{Degrees of freedom (1 for scalar, `length(names)` joint).}
 #'   \item{p_value}{Two-sided p-value, or `NA_real_` if the test could

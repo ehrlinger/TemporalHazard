@@ -36,7 +36,7 @@ NULL
 
 #' Log-likelihood for exponential hazard with covariates
 #'
-#' Computes the negative log-likelihood for right-censored data under the exponential
+#' Computes the log-likelihood for right-censored data under the exponential
 #' parametric hazard model with optional linear-predictor covariates.
 #'
 #' @param theta Vector of parameters:
@@ -73,7 +73,7 @@ NULL
 #' \deqn{\ell(\theta) = \sum_{i: \delta_i = 1} [\log\lambda + \eta_i]
 #'   - \lambda \sum_i t_i \exp(\eta_i)}
 #'
-#' Reparameterization: \u03b8\[1\] = log(\u03bb) avoids constrained optimization.
+#' Reparameterization: theta\[1\] = log(lambda) avoids constrained optimization.
 #'
 #' Mixed censoring status coding:
 #' - 1: exact event at time

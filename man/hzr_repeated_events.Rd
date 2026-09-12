@@ -29,7 +29,7 @@ alters them, and the following columns added:
 \item{\code{event_no}}{Running count of event repeats within the subject.}
 \item{\code{rcensor}}{1 when the row is right censored at the end of follow-up,
 otherwise 0. This is set both for a genuine censoring row and for an event
-row whose event time equals the end of follow-up -- \code{rcensor} and \code{event}
+row whose event time equals the end of follow-up. \code{rcensor} and \code{event}
 are therefore not mutually exclusive; see the Note below.}
 \item{\code{iv_start}}{Interval from time zero to the start of the segment.}
 \item{\code{iv_seg}}{Duration of the segment, \code{time} minus \code{iv_start}.}

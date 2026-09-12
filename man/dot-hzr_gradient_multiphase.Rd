@@ -51,7 +51,7 @@ compute as a small gradient.}
 \item{...}{Ignored.}
 }
 \value{
-Numeric vector of length \code{length(theta)} -- the gradient.
+Numeric vector of length \code{length(theta)}: the gradient.
 With \code{sanitize = TRUE} (the default) a component that cannot be evaluated
 is 0, and so is the whole vector at an infeasible point (guards the
 optimizer); with \code{sanitize = FALSE} those are \code{NA}.

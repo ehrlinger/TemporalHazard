@@ -55,9 +55,9 @@
 
 #' Split the full theta vector into per-phase sub-vectors
 #'
-#' @param theta Numeric vector -- full parameter vector (internal scale).
+#' @param theta Numeric vector: full parameter vector (internal scale).
 #' @param phases Named list of validated `hzr_phase` objects.
-#' @param covariate_counts Named integer vector -- number of covariates per phase.
+#' @param covariate_counts Named integer vector: number of covariates per phase.
 #' @return Named list of numeric vectors, one per phase.
 #' @keywords internal
 .hzr_split_theta <- function(theta, phases, covariate_counts) {
@@ -389,8 +389,8 @@
 #'   unit weights. Applied when summing per-phase cumhaz so Turner's adjustment
 #'   is computed on the same scale as `total_events`.
 #' @param time_lower Optional numeric vector of counting-process entry (start)
-#'   times. When supplied, conservation is enforced on the entry-time scale --
-#'   `Sum E = Sum [H(stop) - H(start)]` -- by subtracting the entry-time
+#'   times. When supplied, conservation is enforced on the entry-time scale
+#'   (`Sum E = Sum [H(stop) - H(start)]`) by subtracting the entry-time
 #'   cumulative hazard, matching the multiphase likelihood (and C HAZARD
 #'   `setcoe` under `LCENSOR`/`STARTTME`). `NULL` (the default) means no
 #'   truncation, i.e. `H(start) = 0`.
@@ -458,7 +458,7 @@
 #'
 #' Called from BOTH `.hzr_logl_multiphase()` and `.hzr_gradient_multiphase()`.
 #' Guarding only the objective would leave the gradient computing happily for
-#' data the objective refuses -- and the gradient is reachable on its own, for
+#' data the objective refuses. The gradient is reachable on its own, for
 #' instance from `.hzr_score_test()`, so the objective's refusal is not
 #' guaranteed to come first.
 #'
@@ -477,17 +477,17 @@
 
 #' Check the SAS objective's data preconditions at entry
 #'
-#' Both conditions `objective = "sas"` imposes -- no left-censored rows, and a
-#' positive width on every interval row -- are pure functions of the data, so
+#' Both conditions `objective = "sas"` imposes (no left-censored rows, and a
+#' positive width on every interval row) are pure functions of the data, so
 #' they hold or fail identically at every start.  Evaluated inside the
 #' objective they reach the user through `.hzr_optim_multiphase()`'s per-start
 #' `tryCatch`, which frames them as "produced no usable fit from N starts" and
-#' invites raising `n_starts` -- a remedy that cannot work.  `hazard()` calls
+#' invites raising `n_starts`, a remedy that cannot work.  `hazard()` calls
 #' this once, before any optimization, so a data defect is reported as one.
 #'
 #' This does **not** replace the guards inside the objective and the gradient.
-#' Those remain because the gradient is reachable without `hazard()` -- the
-#' score test calls it directly -- so entry validation is not guaranteed to
+#' Those remain because the gradient is reachable without `hazard()` (the
+#' score test calls it directly), so entry validation is not guaranteed to
 #' have run.  See `.hzr_check_sas_status()`.
 #'
 #' Bounds are normalised here exactly as `.hzr_logl_multiphase()` normalises
@@ -560,8 +560,8 @@
 #' `.hzr_gradient_multiphase()` delegate here, so the optimizer cannot step by
 #' the gradient of a different objective than the one it evaluates.
 #'
-#' Callers pass **only the interval rows** -- already subset by `status == 2`
-#' -- so this helper never sees the status mask and cannot disagree with a
+#' Callers pass **only the interval rows**, already subset by `status == 2`,
+#' so this helper never sees the status mask and cannot disagree with a
 #' caller about which rows are intervals.
 #'
 #' @param cumhaz_lower Cumulative hazard at the interval lower bounds,
@@ -573,8 +573,8 @@
 #' @param weights Case weights. In a SAS parity run these are the ICENSOR
 #'   variable, which is a weight (a death count in an aggregated study), not
 #'   merely an indicator.
-#' @param objective `"likelihood"` for the interval probability -- the default,
-#'   and the only statistically consistent form -- or `"sas"` for the
+#' @param objective `"likelihood"` for the interval probability (the default,
+#'   and the only statistically consistent form) or `"sas"` for the
 #'   interval-mean-hazard density term `PROC HAZARD` accumulates. See
 #'   `inst/dev/SAS-INTERVAL-OBJECTIVE-DESIGN.md`.
 #' @return Scalar summed contribution; `-Inf` for infeasible parameters.
@@ -778,7 +778,7 @@
 #' the side of `m` near `m = 0`, where the phase family has a cusp.
 #'
 #' @inheritParams .hzr_logl_multiphase
-#' @return Numeric vector of length `length(theta)` -- the gradient.
+#' @return Numeric vector of length `length(theta)`: the gradient.
 #'   With `sanitize = TRUE` (the default) a component that cannot be evaluated
 #'   is 0, and so is the whole vector at an infeasible point (guards the
 #'   optimizer); with `sanitize = FALSE` those are `NA`.
@@ -1230,10 +1230,10 @@
 #'
 #' \describe{
 #'   \item{`"absent"`}{The phase contributes essentially none of
-#'     \eqn{\Lambda} at any observed time -- it has not started by the end of
+#'     \eqn{\Lambda} at any observed time; it has not started by the end of
 #'     follow-up. Its `mu` **and** its shape are unidentified.}
 #'   \item{`"saturated"`}{The phase's \eqn{\Phi} is effectively constant across
-#'     the observed times -- a `cdf` phase whose half-life is far shorter than
+#'     the observed times: a `cdf` phase whose half-life is far shorter than
 #'     the first observation has already finished. It then contributes
 #'     \eqn{\mu \cdot \Phi \approx \mu}, a constant offset, so **`mu` stays
 #'     well identified** while the shape parameters (`t_half`, `nu`, `m`) go
@@ -1244,7 +1244,7 @@
 #' Share is taken of \eqn{\Lambda}, not of \eqn{h}, because every row type's
 #' contribution runs through \eqn{\Lambda(t)}. A phase can supply almost none
 #' of the instantaneous hazard late in follow-up and still be perfectly well
-#' identified through the offset it already contributed -- which is why the
+#' identified through the offset it already contributed, which is why the
 #' hazard is the wrong basis for this test.
 #'
 #' The **maximum** over times is the right summary rather than the mean: a
@@ -1255,7 +1255,7 @@
 #' @return `data.frame` with one row per phase: `share` (largest share of
 #'   \eqn{\Lambda} at any observed time) and `variation` (relative range of the
 #'   phase's contribution across observed times, `NA` when the phase carries
-#'   covariates -- `mu` then varies by row and the two sources of variation
+#'   covariates; `mu` then varies by row and the two sources of variation
 #'   cannot be separated from the contribution alone).
 #'
 #'   The shape is the same whatever happens: if no observed time carries a
@@ -1313,7 +1313,7 @@
 #'
 #' Warns rather than stops: the fit is arithmetically fine and the other
 #' phases' estimates are usable. It is the unidentified parameters that must
-#' not be read as estimates -- and which ones those are differs by mode, so
+#' not be read as estimates, and which ones those are differs by mode, so
 #' the message says which.
 #'
 #' Three conditions, not two. `absent` and `saturated` are per-phase. The
@@ -1328,12 +1328,12 @@
 #' `other_times` vary, since the measures here cannot see those.
 #'
 #' @inheritParams .hzr_logl_multiphase
-#' @param tol Threshold for all three tests -- the minimum share of \eqn{\Lambda} a
+#' @param tol Threshold for all three tests: the minimum share of \eqn{\Lambda} a
 #'   phase must reach somewhere, and the minimum relative variation its
 #'   contribution must show. Default 1e-8: far above double precision, and
 #'   orders of magnitude below any real contribution, so it fires on dead
 #'   phases rather than merely small ones.
-#' @param other_times Further times the likelihood evaluates beyond `time` --
+#' @param other_times Further times the likelihood evaluates beyond `time`:
 #'   counting-process entry times and interval bounds. The share and variation
 #'   measures are taken over `time` alone, so when they are degenerate but
 #'   these vary, the shapes still enter the likelihood and the measures are

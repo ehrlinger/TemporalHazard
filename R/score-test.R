@@ -43,7 +43,7 @@
 #' Each phase's block is `[log_mu, shapes..., betas...]` (see
 #' `.hzr_unpack_phase_theta()`), so the shape slots are known by position:
 #' `.hzr_phase_n_shape()` of them, immediately after `log_mu`. A name-based
-#' rule cannot do this -- a covariate called `m`, `nu`, `gamma`, `alpha` or
+#' rule cannot do this: a covariate called `m`, `nu`, `gamma`, `alpha` or
 #' `eta` produces a theta name like `constant.m` that is indistinguishable
 #' from a shape by name alone (a `constant` phase has no shapes at all), and
 #' dropping it silently under-adjusts `V_beta` for every other candidate.
@@ -85,8 +85,8 @@
 
 #' Size of a single distribution's leading baseline block in theta
 #'
-#' `.hzr_shape_parameter_count()` returns the size of the WHOLE leading block --
-#' intercept and shapes together -- so within it the intercept is always slot 1
+#' `.hzr_shape_parameter_count()` returns the size of the WHOLE leading block
+#' (intercept and shapes together), so within it the intercept is always slot 1
 #' and the genuine shape slots are `2:n_base`. The documented layouts are
 #' `[log_lambda, betas...]` (exponential, so no shape at all), `[mu, nu,
 #' betas...]` (weibull), `[log_alpha, log_beta, betas...]` (log-logistic) and
@@ -111,7 +111,7 @@
 #'
 #' Keeps the intercept and every covariate beta; drops ONLY the shape slots.
 #' The intercept is a nuisance parameter like any other and must stay in the
-#' block -- dropping it under-adjusts `V_beta`, which makes `Q` too small and
+#' block; dropping it under-adjusts `V_beta`, which makes `Q` too small and
 #' silently keeps real candidates out of the model. Exponential is the clearest
 #' case: it has no shape parameter, so nothing is dropped.
 #'
@@ -138,8 +138,8 @@
 
 #' Log-likelihood / gradient entry points for a single distribution
 #'
-#' SIGN CONVENTION -- both return the POSITIVE log-likelihood scale, despite
-#' what some of their roxygen blocks say. `.hzr_optim_generic()` is what negates
+#' SIGN CONVENTION: both return the POSITIVE log-likelihood scale, as their
+#' roxygen blocks say. `.hzr_optim_generic()` is what negates
 #' them for minimisation, and the analytic `hessian_fn` hook it takes is on the
 #' negated (objective) scale. So the observed information is a Hessian of
 #' `-logl_fn`, not of `logl_fn`. Getting this backwards yields a negative
@@ -174,7 +174,7 @@
 
 #' Negative log-likelihood of a single-distribution model at `theta`
 #'
-#' `x` is the design matrix to evaluate against -- the fit's own for the current
+#' `x` is the design matrix to evaluate against: the fit's own for the current
 #' model, or the expanded one when a candidate is pinned at zero.
 #'
 #' @noRd
@@ -192,7 +192,7 @@
 #' `(mu, nu, beta)` scale theta is stored on, and there is no analytic Hessian
 #' on the expanded design for the others either. A numeric Hessian of the
 #' negative log-likelihood is the one form that is uniform across all four
-#' families -- and it is the same oracle the analytic Hessians are themselves
+#' families, and it is the same oracle the analytic Hessians are themselves
 #' tested against.
 #'
 #' @noRd
@@ -226,7 +226,7 @@
 #' interval-censored (`status` in `{-1, 2}`): the analytic second derivative
 #' is not defined for those contributions. Before this fallback existed the
 #' `NULL` propagated to `nuisance$ok = FALSE` and every candidate scored `NA`,
-#' so the screen stopped having tested nothing -- and said so in the language
+#' so the screen stopped having tested nothing, and said so in the language
 #' of a degenerate column, which is a different fault entirely.
 #'
 #' This costs a numeric Hessian per candidate, which is the per-candidate work
@@ -433,7 +433,7 @@
 #'
 #' Mirrors `.hzr_refit_with_scope()`'s single-distribution path: the candidate
 #' becomes the formula's last term, so `model.matrix()` puts its column last and
-#' its coefficient takes the last slot of theta -- exactly where the refit's
+#' its coefficient takes the last slot of theta, exactly where the refit's
 #' `c(theta_old, 0)` warm start puts it. Here it stays pinned at zero.
 #'
 #' @noRd

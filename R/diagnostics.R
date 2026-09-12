@@ -17,7 +17,7 @@ NULL
 #' each subject's predicted cumulative hazard at its *own* follow-up time, and
 #' the **observed** count is its number of events; under conservation of events
 #' the group totals sum to the total observed events. The horizon therefore only
-#' stratifies subjects into risk groups -- it does not restrict or exclude any
+#' stratifies subjects into risk groups; it does not restrict or exclude any
 #' subject, and the expected/observed totals are independent of it.
 #'
 #' @param object A fitted `hazard` object (with `fit = TRUE`).
@@ -304,14 +304,30 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #'   \item The parametric survival and cumulative hazard from the fitted
 #'     model (and per-phase components for multiphase models).
 #'   \item Cumulative observed events vs. cumulative expected events
-#'     (sum of individual cumulative hazards for those exiting the risk
-#'     set at each time).
+#'     (the parametric cumulative hazard at each time, times the number
+#'     of observations leaving the risk set then).
 #'   \item The running residual (expected minus observed).
 #' }
 #'
-#' Perfect model fit implies the expected and observed event counts track
-#' each other (residual near zero).  This is the conservation-of-events
-#' principle.
+#' For an intercept-only model every patient shares one curve, so the
+#' expected count is the sum of each patient's cumulative hazard at their
+#' own exit time.  At the maximum likelihood estimate that sum equals the
+#' number of observed events (the conservation-of-events identity): the
+#' final residual is zero and the printed "Conservation ratio (E/O)" is 1.
+#'
+#' A model with covariates is different.  The parametric curve, and so the
+#' expected count, is evaluated at the covariate means, one "mean patient"
+#' standing in for everyone.  The mean patient's cumulative hazard is not
+#' the average of the patients' cumulative hazards, so the printed E/O is
+#' not the conservation-of-events identity and need not be near 1 at a
+#' correct fit.  Read it as a mean-patient check: how closely the curve
+#' for a patient with average covariates follows the whole cohort.
+#'
+#' To check conservation of events for a covariate model, sum each
+#' patient's own cumulative hazard at their follow-up time and compare the
+#' total with the event count.  Pass the covariate columns plus a `time`
+#' column to [predict.hazard()] with `type = "cumulative_hazard"`; the
+#' Examples show how.
 #'
 #' @param object A fitted `hazard` object (with `fit = TRUE`).
 #' @param time_grid Optional numeric vector of time points at which to
@@ -328,11 +344,14 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #'   \item{km_surv}{Kaplan-Meier survival estimate.}
 #'   \item{km_cumhaz}{Kaplan-Meier cumulative hazard
 #'     (\eqn{-\log(\text{km\_surv})}).}
-#'   \item{par_surv}{Parametric survival from the fitted model.}
-#'   \item{par_cumhaz}{Parametric cumulative hazard.}
+#'   \item{par_surv}{Parametric survival from the fitted model, at the
+#'     covariate means for a model with covariates.}
+#'   \item{par_cumhaz}{Parametric cumulative hazard, at the covariate
+#'     means for a model with covariates.}
 #'   \item{cum_observed}{Cumulative observed events to this time.}
-#'   \item{cum_expected}{Cumulative expected events (sum of individual
-#'     cumulative hazards for observations exiting the risk set).}
+#'   \item{cum_expected}{Cumulative expected events: \code{par_cumhaz}
+#'     times the number of observations exiting the risk set, summed to
+#'     this time.}
 #'   \item{residual}{Expected minus observed
 #'     (\code{cum_expected - cum_observed}).}
 #' }
@@ -356,6 +375,14 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #' )
 #' gof <- hzr_gof(fit)
 #' print(gof)
+#'
+#' # With covariates, hzr_gof() uses the covariate means, so its E/O is a
+#' # mean-patient check.  The conservation-of-events check sums each
+#' # patient's own cumulative hazard at their follow-up time:
+#' nd <- avc[, c("age", "mal")]
+#' nd$time <- avc$int_dead
+#' c(expected = sum(predict(fit, newdata = nd, type = "cumulative_hazard")),
+#'   observed = sum(avc$dead))
 #'
 #' # Plot observed vs expected events
 #' if (requireNamespace("ggplot2", quietly = TRUE)) {
@@ -1196,7 +1223,7 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'
 #' Shape parameters are already named in `theta`; covariate betas often
 #' come through with empty names. Covariate coefficients occupy the last
-#' `ncol(x)` positions of theta -- fill any blanks within that block from
+#' `ncol(x)` positions of theta; fill any blanks within that block from
 #' the design matrix column names by relative index, so downstream pivots
 #' (e.g. `reshape(wide)`) get a distinct column per covariate, even when
 #' some betas are already named and others are not.
@@ -1255,9 +1282,9 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   supplied, `set.seed(seed)` is called at function entry, jumping the
 #'   global RNG to the seeded state; it is not restored on exit. Pass
 #'   `NULL` (the default) to skip the `set.seed()` call and start from
-#'   the caller's current RNG state. Note that the bootstrap consumes
+#'   the caller's current RNG state. The bootstrap consumes
 #'   random numbers either way, so the global RNG state will advance
-#'   during the call -- `seed = NULL` avoids the *reset* at entry, not
+#'   during the call; `seed = NULL` avoids the *reset* at entry, not
 #'   the advance during resampling.
 #' @param verbose Logical; if `TRUE`, display a text progress bar over the
 #'   `n_boot` replicates (via [utils::txtProgressBar()]).
@@ -1268,7 +1295,7 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   preserves the
 #'   original fixed-formula bootstrap: every replicate refits `object`'s
 #'   exact model, and `summary$pct` is always ~100. When supplied (a
-#'   one-sided formula, character vector, or -- for multiphase fits -- a
+#'   one-sided formula, character vector, or, for multiphase fits, a
 #'   named list of one-sided formulas keyed by phase, matching
 #'   [hzr_stepwise()]'s `scope`), each replicate runs a fresh
 #'   [hzr_stepwise()] selection instead; see Details.
@@ -1294,8 +1321,8 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'
 #' @section Selection mode is experimental:
 #'
-#' Everything reached through `scope` -- the selection arguments, and the
-#' `summary$pct` selection frequencies they produce -- is new and should be
+#' Everything reached through `scope` (the selection arguments, and the
+#' `summary$pct` selection frequencies they produce) is new and should be
 #' treated as unstable. The fixed-formula bootstrap (`scope = NULL`) is not
 #' affected and has been stable since 0.9.3.
 #'
@@ -1309,7 +1336,7 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #' until its final replicate, so a run that dies late loses everything. There
 #' is no built-in way to split one screen across processes and combine the
 #' parts. If you are running at that scale, drive `hzr_bootstrap()` in chunks
-#' from your own script and pool the replicates yourself -- deriving each
+#' from your own script and pool the replicates yourself: deriving each
 #' chunk's seed from its chunk number, offsetting replicate ids so a variable
 #' selected in two chunks is not counted once, and recomputing frequencies
 #' from the pooled replicates rather than averaging across chunks. Whatever
@@ -1319,9 +1346,9 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #' @return A list with class `"hzr_bootstrap"` containing:
 #' \describe{
 #'   \item{replicates}{Data frame with columns `replicate`, `parameter`,
-#'     and `estimate` -- one row per parameter per successful replicate.}
+#'     and `estimate`, one row per parameter per successful replicate.}
 #'   \item{summary}{Data frame with columns `parameter`, `n`, `pct`,
-#'     `mean`, `sd`, `min`, `max`, `ci_lower`, `ci_upper` -- one row per
+#'     `mean`, `sd`, `min`, `max`, `ci_lower`, `ci_upper`, one row per
 #'     parameter. In `mode = "select"`, `pct` is the selection frequency
 #'     and the other statistics are conditional on selection.}
 #'   \item{n_success}{Number of successfully converged replicates.}
@@ -1336,7 +1363,7 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     counting *why* candidate scores were unavailable, summed over every
 #'     replicate. `information_indefinite` is the one to read first: it marks
 #'     candidates whose effect is too large for the score test's approximation
-#'     at zero -- typically strong variables. Those are refit and Wald-tested
+#'     at zero, typically strong variables. Those are refit and Wald-tested
 #'     automatically, so a candidate reaching this count is one whose refit
 #'     also failed and which therefore went untested, understating its
 #'     selection frequency. Empty in refit mode.}
@@ -1351,7 +1378,7 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     variable on a Wald test instead of the score statistic, and the total
 #'     number of such entries across all replicates. The score criterion
 #'     declines a candidate whose observed information is indefinite at
-#'     `beta = 0` -- which happens when the effect is *large* -- so those
+#'     `beta = 0` (which happens when the effect is *large*), so those
 #'     candidates are refit and Wald-tested rather than dropped. A high count
 #'     means much of the selection was decided by a different criterion from
 #'     the one requested, which matters most here: these entries drive the

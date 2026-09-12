@@ -22,7 +22,7 @@ parameter infeasibility, so it stops rather than returning \code{-Inf}.
 \details{
 Called from BOTH \code{.hzr_logl_multiphase()} and \code{.hzr_gradient_multiphase()}.
 Guarding only the objective would leave the gradient computing happily for
-data the objective refuses -- and the gradient is reachable on its own, for
+data the objective refuses. The gradient is reachable on its own, for
 instance from \code{.hzr_score_test()}, so the objective's refusal is not
 guaranteed to come first.
 }

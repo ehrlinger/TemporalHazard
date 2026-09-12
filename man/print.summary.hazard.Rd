@@ -22,7 +22,7 @@ positive-definite, a note warns that the standard errors may be unreliable,
 and a further note names the parameters spanning a weakly identified
 direction when one was found.  A "Not done in this run" block is always
 printed: it lists each step this fit did not perform, with the reason, and
-reads "none" when nothing was lost.  S3 dispatch only -- users
+reads "none" when nothing was lost.  S3 dispatch only: users
 call \code{print(summary(fit))} rather than invoking this directly.
 }
 \keyword{internal}
