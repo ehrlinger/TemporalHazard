@@ -133,7 +133,10 @@ NULL
 #' }
 #'
 #' @param time Numeric follow-up time vector.
-#' @param status Numeric or logical event indicator vector.
+#' @param status Numeric or logical event indicator vector, or a
+#'   [survival::Surv()] object. A `Surv` is read by its `type`, exactly as the
+#'   formula interface reads it, and a `time`, `time_lower` or `time_upper`
+#'   that disagrees with it is an error.
 #' @param time_lower Optional numeric vector whose role depends on `status`.
 #'   Supplying it explicitly is **not** a no-op.
 #'   * `status == 2` (interval-censored): the lower bound of the censoring
@@ -164,8 +167,11 @@ NULL
 #'   (`type = "interval"` or `"interval2"`) and counting-process
 #'   (`Surv(start, stop, event)`) forms are all accepted. `Surv()` codes
 #'   censoring status with different integers than this package does; the
-#'   formula path translates them, so write `Surv()`'s codes here and this
-#'   package's codes when passing `status` directly.
+#'   formula path translates them, so write `Surv()`'s codes here. A plain
+#'   `status` vector takes this package's codes; a `Surv` passed as `status`
+#'   is translated the same way as here.
+#'   A `.` on the right-hand side stands for every column of `data` that the
+#'   `Surv()` term does not use, as in `survival::coxph()`.
 #'   When provided, overrides direct time/status/x arguments and extracts from data.
 #'   Example: `hazard(Surv(time, status) ~ x1 + x2, data = df, dist = "weibull", fit = TRUE)`.
 #' @param data Optional data frame. On the formula path it supplies the model
@@ -540,23 +546,31 @@ hazard <- function(formula = NULL,
       stop("'data' is required when 'formula' is provided.", call. = FALSE)
     }
 
-    # For multiphase models, the formula RHS may contain phase-scoped terms of
-    # the form `phase_name(var1 + var2)`.  These are not valid R expressions
-    # so model.matrix() would fail.  Strip them here: replace the RHS with `1`
-    # (no global predictors) so that .hzr_parse_formula only extracts
-    # time/status from the LHS.  Covariate routing is handled per-phase via
-    # hzr_phase(formula = ...) and resolved inside .hzr_optim_multiphase().
-    formula_for_parse <- formula
-    if (!is.null(phases) && length(formula) >= 3L) {
-      # Check if RHS contains phase-scoped calls of the form `phase_name(...)`.
-      # Use a parse-tree walk (not string regex) to avoid false positives when
-      # a phase name coincides with a base-R function (e.g., "log", "exp").
-      if (.hzr_formula_has_phase_scope(formula[[3L]], names(phases))) {
-        formula_for_parse <- stats::reformulate("1", response = formula[[2L]])
+    # A multiphase formula RHS may name a phase as a function, as in
+    # `constant(age)`. Such a term is refused, not routed (#275): it used to
+    # be stripped with the rest of the RHS and never reached its phase, so
+    # the fit converged without it. A phase's covariates belong in
+    # hzr_phase(formula = ...). The parse-tree walk (not a string regex)
+    # keeps a base-R call such as `log(age)` from matching.
+    if (identical(dist, "multiphase") && !is.null(phases) &&
+          length(formula) >= 3L) {
+      scoped <- Filter(
+        function(nm) .hzr_formula_has_phase_scope(formula[[3L]], nm),
+        names(phases)
+      )
+      if (length(scoped) > 0L) {
+        stop("The formula names ",
+             if (length(scoped) > 1L) "phases " else "phase ",
+             paste0("'", scoped, "'", collapse = ", "),
+             " as a function, as in `", scoped[[1L]], "(var)`. hazard() ",
+             "does not route such terms to a phase, so they would be ",
+             "dropped. Give the phase its covariates with ",
+             "hzr_phase(..., formula = ~ var) instead, and leave them out ",
+             "of the formula.", call. = FALSE)
       }
     }
 
-    parsed <- .hzr_parse_formula(formula = formula_for_parse, data = data)
+    parsed <- .hzr_parse_formula(formula = formula, data = data)
     time <- parsed$time
     status <- parsed$status
     time_lower <- parsed$time_lower
@@ -640,9 +654,35 @@ hazard <- function(formula = NULL,
     stop("'status' must have the same length as 'time'.", call. = FALSE)
   }
 
-  # Convert Surv object status to numeric if needed (after formula parsing)
+  # A Surv object passed as `status` is read exactly as the formula path reads
+  # it (#226). Its codes are not this package's, and under "interval" and
+  # "counting" its second column is not the status at all, so taking that
+  # column unchanged fitted left-censored rows as right-censored. The Surv
+  # defines the bounds it carries; `time` and any bound the caller also gave
+  # must agree with it rather than be silently overridden.
   if (inherits(status, "Surv")) {
-    status <- unclass(status)[, 2L]
+    resp <- .hzr_surv_response(status)
+    if (!identical(as.numeric(time), as.numeric(resp$time))) {
+      stop("'time' does not match the times in the Surv object passed as ",
+           "'status'. Pass time = unclass(status)[, 1] -- the stop column, ",
+           "[, 2], for Surv(start, stop, event) -- or use the formula ",
+           "interface.", call. = FALSE)
+    }
+    surv_bound <- function(given, from_surv, arg) {
+      if (is.null(from_surv)) {
+        return(given)
+      }
+      if (!is.null(given) &&
+            !identical(as.numeric(given), as.numeric(from_surv))) {
+        stop("'", arg, "' does not match the Surv object passed as ",
+             "'status'. Omit it and the bound is taken from the Surv.",
+             call. = FALSE)
+      }
+      from_surv
+    }
+    time_lower <- surv_bound(time_lower, resp$time_lower, "time_lower")
+    time_upper <- surv_bound(time_upper, resp$time_upper, "time_upper")
+    status <- resp$status
   }
 
   # Optional censoring bounds:
@@ -769,6 +809,28 @@ hazard <- function(formula = NULL,
            "Supply a list of hzr_phase() specifications.", call. = FALSE)
     }
     phases <- .hzr_validate_phases(phases)
+    # `.` in a phase formula is written out here, once, before anything reads
+    # it (#277). The likelihood, the score test, predict() and the stored
+    # spec all build the phase design with model.frame(ph$formula, data),
+    # which would expand `.` to every column, response included. It is
+    # expanded as the global formula's is, against `data` without the Surv()
+    # variables. The vector interface has no Surv() term to name those
+    # columns, so there `.` is refused.
+    for (nm in names(phases)) {
+      pf <- phases[[nm]]$formula
+      if (is.null(pf) || !"." %in% all.vars(pf)) next
+      if (is.null(formula)) {
+        stop("Phase '", nm, "' uses `.` in its formula, which needs the ",
+             "formula interface: with `time =` and `status =`, hazard() ",
+             "cannot tell which columns of `data` hold the response. Write ",
+             "the phase's terms out, or use hazard(Surv(...) ~ ..., ",
+             "data = ...).", call. = FALSE)
+      }
+      two_sided <- stats::as.formula(
+        call("~", formula[[2L]], pf[[length(pf)]]), env = environment(pf)
+      )
+      phases[[nm]]$formula <- .hzr_expand_rhs(two_sided, data)
+    }
   } else if (!is.null(phases)) {
     warning("'phases' is ignored when dist != 'multiphase'.")
     phases <- NULL

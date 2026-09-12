@@ -30,8 +30,11 @@ Right-censored (\code{Surv(time, status)}), left-censored
 (\code{type = "interval"} or \code{"interval2"}) and counting-process
 (\code{Surv(start, stop, event)}) forms are all accepted. \code{Surv()} codes
 censoring status with different integers than this package does; the
-formula path translates them, so write \code{Surv()}'s codes here and this
-package's codes when passing \code{status} directly.
+formula path translates them, so write \code{Surv()}'s codes here. A plain
+\code{status} vector takes this package's codes; a \code{Surv} passed as \code{status}
+is translated the same way as here.
+A \code{.} on the right-hand side stands for every column of \code{data} that the
+\code{Surv()} term does not use, as in \code{survival::coxph()}.
 When provided, overrides direct time/status/x arguments and extracts from data.
 Example: \code{hazard(Surv(time, status) ~ x1 + x2, data = df, dist = "weibull", fit = TRUE)}.}
 
@@ -50,7 +53,10 @@ path reaches \code{weights} and stops with \verb{'weights' must be non-negative 
 
 \item{time}{Numeric follow-up time vector.}
 
-\item{status}{Numeric or logical event indicator vector.}
+\item{status}{Numeric or logical event indicator vector, or a
+\code{\link[survival:Surv]{survival::Surv()}} object. A \code{Surv} is read by its \code{type}, exactly as the
+formula interface reads it, and a \code{time}, \code{time_lower} or \code{time_upper}
+that disagrees with it is an error.}
 
 \item{time_lower}{Optional numeric vector whose role depends on \code{status}.
 Supplying it explicitly is \strong{not} a no-op.

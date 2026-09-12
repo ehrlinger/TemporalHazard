@@ -220,10 +220,12 @@ Rscript ~/Documents/GitHub/house-style/compose-house-style.R --repo TemporalHaza
 
 - **Censoring status is coded `-1` left, `0` right, `1` event, `2` interval.** `survival::Surv()`
   uses *different* integers for the same meanings — under `type = "interval"` it is `0`/`1`/`2`/`3`
-  for right/event/left/interval. The formula path translates in `.hzr_parse_formula()`; the
-  vector path does not. Never carry one coding into the other. Passing them through unchanged
-  is a real bug this package shipped: `Surv(type = "left")` read left-censored rows as
-  *right*-censored, a wrong answer with no error.
+  for right/event/left/interval. Both interfaces translate through `.hzr_surv_response()`: the
+  formula path for its `Surv()` left-hand side, and the vector path when `status` is a `Surv`
+  (#226). A plain `status` vector is read as this package's codes. Never carry one coding into
+  the other. Passing them through unchanged is a real bug this package shipped:
+  `Surv(type = "left")` read left-censored rows as *right*-censored, a wrong answer with no
+  error.
 - **Two interfaces, not interchangeable in the details.** `hazard(formula, data)` stores an
   unevaluated call; `hazard(time =, status =)` stores evaluated vectors. Anything that
   rewrites or resamples a stored call has to handle both — this asymmetry has produced three

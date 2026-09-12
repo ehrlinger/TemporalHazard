@@ -39,6 +39,15 @@
   if (!inherits(formula, "formula")) {
     stop("formula must be a `formula` object.", call. = FALSE)
   }
+  # `.` can only be expanded against data, and this reader has none. terms()
+  # errors on it, and the tryCatch() below turned that into "no terms", so a
+  # `~ .` base model reported a finished screen of zero steps (#279).
+  if ("." %in% all.vars(formula)) {
+    stop("hzr_stepwise() cannot expand `.` in `",
+         paste(deparse(formula), collapse = " "), "`: write the terms out, ",
+         "as in `~ age + mal`. A base model written with `.` must be refit ",
+         "that way; a `scope` can list its variables.", call. = FALSE)
+  }
   # terms() needs a formula with no empty LHS/RHS; ~ 1 has one intercept term.
   tt <- tryCatch(stats::terms(formula),
                  error = function(e) NULL)
@@ -215,9 +224,12 @@
 #' This is stricter than a string-regex approach.  A call such as
 #' \code{log(age)} triggers the check only when a phase is actually named
 #' \code{"log"}; with phases named \code{"early"} and \code{"constant"} it
-#' does not.  The function fires only when a call head exactly matches a
-#' known phase name, so a variable such as \code{early_age}, or a bare
-#' symbol \code{early} that is not called, does not trigger it.
+#' does not.  When a phase is named \code{"log"}, \code{log(age)} does
+#' trigger it and \code{hazard()} refuses the formula (#275); write
+#' \code{base::log(age)} to use the function.  The function fires only when a
+#' call head exactly matches a known phase name, so a variable such as
+#' \code{early_age}, or a bare symbol \code{early} that is not called, does
+#' not trigger it.
 #'
 #' @param rhs  A language object (the RHS of a formula, typically
 #'   \code{formula[[3L]]}).

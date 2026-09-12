@@ -55,6 +55,94 @@
     stop("Formula LHS must return a Surv object.", call. = FALSE)
   }
 
+  resp <- .hzr_surv_response(surv_obj)
+
+  # Parse RHS (predictors)
+  x <- NULL
+  if (!is.null(rhs)) {
+    # One-sided formula for model.matrix(), with `.` expanded against `data`
+    # without the Surv() variables (#273). See .hzr_expand_rhs().
+    rhs_formula <- .hzr_expand_rhs(formula, data)
+    tryCatch({
+      x <- stats::model.matrix(rhs_formula, data = data)
+      # Remove intercept column if present
+      if (ncol(x) > 0 && colnames(x)[1L] == "(Intercept)") {
+        x <- x[, -1L, drop = FALSE]
+      }
+      if (ncol(x) == 0) {
+        x <- NULL
+      }
+    }, error = function(e) {
+      stop("Failed to parse formula RHS: ", e$message, call. = FALSE)
+    })
+  }
+
+  list(
+    time = resp$time,
+    status = resp$status,
+    time_lower = resp$time_lower,
+    time_upper = resp$time_upper,
+    x = x,
+    surv_type = resp$surv_type
+  )
+}
+
+
+#' Write out `.` in a model formula's right-hand side
+#'
+#' Returns the right-hand side of a two-sided `Surv(...) ~ ...` formula as a
+#' one-sided formula, with `.` expanded to every column of `data` that the
+#' left-hand side does not use, as `survival::coxph()` does: `terms()` drops
+#' those columns itself. Both the global formula (`.hzr_parse_formula()`,
+#' #273) and each `hzr_phase(formula = )` (`hazard()`, #277) go through here,
+#' so `.` means the same thing in both.
+#'
+#' @param formula A two-sided formula with the `Surv()` term on the left.
+#' @param data The data frame `.` is expanded against.
+#' @return A one-sided formula in `environment(formula)`, with no `.` left.
+#' @keywords internal
+#' @noRd
+.hzr_expand_rhs <- function(formula, data) {
+  rhs_formula <- stats::formula(
+    stats::delete.response(stats::terms(formula, data = data))
+  )
+  # When the response uses every column, terms() has nothing to put in
+  # place of `.` and leaves it, and model.matrix() would then expand it
+  # against all of `data`, response included. Alone, `.` then stands for
+  # no column and the model has no covariates. Beside other terms it is
+  # refused: replacing the RHS would drop those terms without a word.
+  if ("." %in% all.vars(rhs_formula)) {
+    if (!identical(all.vars(rhs_formula), ".")) {
+      stop("`.` in the formula stands for no column: `data` holds only ",
+           "the variables of the Surv() response. Remove `.`, or add the ",
+           "covariates to `data`.", call. = FALSE)
+    }
+    rhs_formula <- stats::reformulate("1", env = environment(rhs_formula))
+  }
+  rhs_formula
+}
+
+
+#' Read a Surv object into this package's response vectors
+#'
+#' The one place a `survival::Surv()` object is translated, called by both
+#' interfaces: `.hzr_parse_formula()` for the formula's left-hand side, and
+#' `hazard()` when a `Surv` is passed as `status`. Keeping a single copy is
+#' the point -- the vector path used to take the second column unchanged,
+#' which misread left-censored rows as right-censored, and for `"interval"`
+#' and `"counting"` is not the status column at all (#226).
+#'
+#' The translation is driven by `attr(surv_obj, "type")`, never by the codes
+#' observed: a right-censored vector and a `"left"` one both hold only 0 and
+#' 1, with different meanings. `type = "interval2"` arrives here as
+#' `"interval"`, because `Surv()` converts it.
+#'
+#' @param surv_obj A `Surv` object.
+#' @return A list with `time`, `status`, `time_lower`, `time_upper` (either
+#'   bound may be `NULL`) and `surv_type`.
+#' @keywords internal
+#' @noRd
+.hzr_surv_response <- function(surv_obj) {
   surv_type <- attr(surv_obj, "type")
   surv_mat <- unclass(surv_obj)
 
@@ -102,31 +190,11 @@
     stop("Unsupported Surv() type: ", surv_type, call. = FALSE)
   }
 
-  # Parse RHS (predictors)
-  x <- NULL
-  if (!is.null(rhs)) {
-    # Reconstruct as a formula for model.matrix()
-    rhs_formula <- formula(paste("~", deparse(rhs)))
-    tryCatch({
-      x <- stats::model.matrix(rhs_formula, data = data)
-      # Remove intercept column if present
-      if (ncol(x) > 0 && colnames(x)[1L] == "(Intercept)") {
-        x <- x[, -1L, drop = FALSE]
-      }
-      if (ncol(x) == 0) {
-        x <- NULL
-      }
-    }, error = function(e) {
-      stop("Failed to parse formula RHS: ", e$message, call. = FALSE)
-    })
-  }
-
   list(
     time = time,
     status = status,
     time_lower = time_lower,
     time_upper = time_upper,
-    x = x,
     surv_type = surv_type
   )
 }

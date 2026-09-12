@@ -261,6 +261,19 @@ hzr_stepwise <- function(fit,
          call. = FALSE)
   }
 
+  # Read the base model's terms once, before any output, so a `~ .` base
+  # formula stops here with its remedy rather than after the header (#279).
+  # A multiphase screen is exempt only when every phase has its own formula,
+  # which hazard() has already written out (#277). A phase without one
+  # inherits the global design, and each candidate refit would re-expand a
+  # global `.` against the screen's data.
+  own_formulas <- identical(fit$spec$dist, "multiphase") &&
+    all(vapply(fit$spec$phases, function(ph) !is.null(ph$formula),
+               logical(1)))
+  if (!own_formulas) {
+    .hzr_formula_rhs_terms(.hzr_stored_formula(fit))
+  }
+
   # The score (Q) statistic is evaluated at the base model's fitted MLE, so a
   # base that did not converge (or was never fitted, leaving an empty theta)
   # has nothing to score.  Catch that here with an actionable message rather

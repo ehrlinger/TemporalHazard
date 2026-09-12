@@ -228,3 +228,79 @@ test_that("unknown predictor in RHS raises an informative error", {
     "Failed to parse formula RHS"
   )
 })
+
+# ---------------------------------------------------------------------------
+# `.` on the right-hand side (#273)
+# ---------------------------------------------------------------------------
+# `.` stands for every column the Surv() response does not use, as in
+# survival::coxph(). It used to expand to every column of `data`, so the
+# outcome entered the design as a predictor and the fit still converged.
+
+avc_dot <- na.omit(avc[, c("int_dead", "dead", "age", "mal")])
+
+fit_avc_dot <- function(formula) {
+  hazard(formula, data = avc_dot, dist = "weibull",
+         theta = c(0.3, 1, 0, 0), fit = TRUE)
+}
+
+test_that("`.` excludes the Surv() response columns from the design", {
+  dot <- parse(survival::Surv(int_dead, dead) ~ ., data = avc_dot)
+  explicit <- parse(survival::Surv(int_dead, dead) ~ age + mal,
+                    data = avc_dot)
+  expect_identical(colnames(dot$x), c("age", "mal"))
+  expect_identical(dot$x, explicit$x)
+})
+
+test_that("`. - mal` gives the `~ age` design", {
+  dot <- parse(survival::Surv(int_dead, dead) ~ . - mal, data = avc_dot)
+  explicit <- parse(survival::Surv(int_dead, dead) ~ age, data = avc_dot)
+  expect_identical(colnames(dot$x), "age")
+  expect_identical(dot$x, explicit$x)
+})
+
+test_that("`.` over a data frame holding only the response adds nothing", {
+  # terms() leaves `.` unexpanded here; model.matrix() must not expand it.
+  df <- data.frame(t = c(1, 2, 3, 4), d = c(1, 0, 1, 1))
+  out <- parse(survival::Surv(t, d) ~ ., data = df)
+  expect_null(out$x)
+})
+
+test_that("an empty `.` beside other terms stops rather than dropping them", {
+  df <- data.frame(t = c(1, 2, 3, 4), d = c(1, 0, 1, 1))
+  age <- c(50, 60, 70, 80)
+  # terms() itself warns on this shape; the error is what matters here.
+  expect_error(
+    suppressWarnings(parse(survival::Surv(t, d) ~ . + age, data = df)),
+    "stands for no column"
+  )
+})
+
+test_that("a `~ .` fit is the explicit fit, not one on the response", {
+  fit_dot <- fit_avc_dot(survival::Surv(int_dead, dead) ~ .)
+  fit_exp <- fit_avc_dot(survival::Surv(int_dead, dead) ~ age + mal)
+
+  expect_identical(colnames(fit_dot$data$x), c("age", "mal"))
+  expect_true(fit_exp$fit$converged)
+  expect_true(fit_dot$fit$converged)
+  expect_equal(fit_dot$fit$objective, fit_exp$fit$objective,
+               tolerance = 1e-8)
+  # A ratio, not a difference: mu is about 2e-4, small enough that
+  # expect_equal() would compare it on an absolute scale and pass anything.
+  expect_equal(unname(coef(fit_dot) / coef(fit_exp)), rep(1, 4),
+               tolerance = 1e-6)
+  # With the outcome as a predictor the log-likelihood rose to about -37.
+  expect_lt(fit_dot$fit$objective, -200)
+})
+
+test_that("predict() on a `~ .` fit needs no response columns in newdata", {
+  fit_dot <- fit_avc_dot(survival::Surv(int_dead, dead) ~ .)
+  fit_exp <- fit_avc_dot(survival::Surv(int_dead, dead) ~ age + mal)
+  nd <- data.frame(time = 1, age = 60, mal = 1)
+
+  s_dot <- predict(fit_dot, newdata = nd, type = "survival")
+  expect_length(s_dot, 1L)
+  expect_gt(s_dot, 0)
+  expect_lt(s_dot, 1)
+  expect_equal(s_dot, predict(fit_exp, newdata = nd, type = "survival"),
+               tolerance = 1e-8)
+})
