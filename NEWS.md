@@ -43,6 +43,18 @@
   Formulas that call an ordinary function such as `log()`, and plain global
   covariates, are unaffected.
 
+* **`hzr_bootstrap()` now refuses a fit whose formula uses a per-row
+  variable that is not a column of its `data`** (#278). Replicates resample
+  the rows of `data`, so such a variable was held fixed while the rows moved
+  under it. The interval was wrong, and every replicate still reported
+  success, with no warning: on `avc`, a copy of `age` kept outside `data`
+  gave an interval that excluded its own estimate. The check covers the
+  response, the covariates of the global and phase formulas, and a
+  select-mode `scope`, and reads variables from the terms, so `log(age)`
+  needs only the column `age`. A constant outside `data`, such as `pi`, a
+  cutoff or a knots vector, is still allowed. The error names the
+  variables; add them to `data` and refit.
+
 ## New features
 
 * **Every fit now says what it did not do** (#242, following #197). A
@@ -145,9 +157,8 @@
   `hzr_phase(formula = )` is fixed separately (#277). A right-hand-side variable that is not
   a column of `data` is now looked up where the formula was written, so a
   variable local to the calling function resolves instead of failing with
-  "object not found". `hzr_bootstrap()` resamples only the rows of `data`,
-  not such a variable: at `fraction = 1` its interval is wrong, and below 1
-  every replicate fails. Keep every covariate you will bootstrap in `data`.
+  "object not found". `hzr_bootstrap()`, which resamples only the rows
+  of `data`, refuses such a fit (#278).
 
 * **`hzr_phase(formula = ~ .)` no longer puts the response in the phase
   design** (#277). A phase formula's `.` was expanded by `model.frame()`

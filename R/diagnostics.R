@@ -1438,8 +1438,6 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
          call. = FALSE)
   }
 
-  if (!is.null(seed)) set.seed(seed)
-
   # hzr_stepwise() is always called below with trace = FALSE (per-step
   # stepwise output would be too noisy across n_boot replicates; `verbose`
   # controls bootstrap-level progress instead). Strip `trace` from `...`
@@ -1461,6 +1459,73 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   } else {
     eval(cl$data, envir = parent.frame())
   }
+  # A per-row variable that is not a column of `data` is never resampled:
+  # each replicate paired the original vector with resampled rows, so the
+  # interval was wrong while every replicate reported success (#278). Refuse
+  # it, naming the variables. They come from the terms of the global formula
+  # (response included), the phase formulas and a select-mode `scope`, so
+  # `log(age)` reads the column `age`. A name outside `data` that does not
+  # hold one value per row -- `pi`, a cutoff, a knots vector -- is a constant,
+  # rightly the same in every replicate, and is left alone.
+  if (is.data.frame(orig_data)) {
+    per_row <- function(v, env) {
+      val <- get0(v, envir = env, inherits = TRUE)
+      !is.null(val) && !is.function(val) && NROW(val) == nrow(orig_data)
+    }
+    outside_in <- function(vars, env) {
+      vars <- setdiff(vars, c(names(orig_data), "."))
+      vars[vapply(vars, per_row, logical(1), env = env)]
+    }
+    call_env <- object$call_env %||% parent.frame()
+    stored <- .hzr_stored_formula(object, "`object`")
+    # Candidate refits build their formulas in the stored formula's
+    # environment (.hzr_formula_update()), so covariates and `scope`
+    # variables resolve there. The Surv() term does not: .hzr_parse_formula()
+    # evaluates it in `data`, then this package's namespace and the search
+    # path, so the response is looked up that way.
+    base_env <- if (is.null(stored)) call_env else environment(stored)
+    scope_vars <- if (inherits(scope, "formula")) {
+      all.vars(scope)
+    } else if (is.character(scope) && length(scope) > 0L) {
+      all.vars(stats::reformulate(scope))
+    } else if (is.list(scope)) {
+      unlist(lapply(Filter(function(f) inherits(f, "formula"), scope),
+                    all.vars))
+    }
+    phase_formulas <- Filter(function(f) inherits(f, "formula"),
+                             lapply(object$spec$phases, function(ph) {
+                               ph$formula
+                             }))
+    outside <- c(
+      if (length(stored) == 3L) {
+        outside_in(all.vars(stored[[2L]]), environment(.hzr_parse_formula))
+      },
+      if (!is.null(stored)) {
+        outside_in(all.vars(stats::delete.response(
+          stats::terms(stored, data = orig_data)
+        )), base_env %||% call_env)
+      },
+      unlist(lapply(phase_formulas, function(f) {
+        outside_in(all.vars(f), environment(f) %||% call_env)
+      })),
+      outside_in(scope_vars, base_env %||% call_env)
+    )
+    outside <- unique(outside)
+    if (length(outside) > 0L) {
+      one <- length(outside) == 1L
+      stop("hzr_bootstrap() resamples the rows of the fit's `data`, but the ",
+           "model uses ", paste0("'", outside, "'", collapse = ", "),
+           if (one) ", which is not a column" else ", which are not columns",
+           " of it. Each replicate would hold ", if (one) "it" else "them",
+           " fixed, and the interval would be wrong. Add ",
+           if (one) "it" else "them", " to `data` and refit.", call. = FALSE)
+    }
+  }
+
+  # Seeded after the refusal above, so a refused call leaves the caller's
+  # random number stream alone.
+  if (!is.null(seed)) set.seed(seed)
+
   n_obs <- nrow(orig_data)
   sample_size <- max(1L, as.integer(n_obs * fraction))
 
