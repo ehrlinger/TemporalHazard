@@ -56,9 +56,12 @@
   symbols up in `newdata` first. None of this gave an error. These calls
   now stop and ask for the variable to be renamed and the model refitted,
   whether it is in the global formula, a named `x` or a multiphase phase
-  formula. `hzr_gof()`, and `hzr_deciles()` for a single-distribution
-  model, build such a `newdata` themselves and stop too; before, they
-  silently overwrote the covariate with follow-up time.
+  formula. For a `time` covariate, `hzr_gof()` and, for a
+  single-distribution model, `hzr_deciles()` stop too: they build
+  `newdata` themselves, and before, they silently overwrote the covariate
+  with follow-up time. A `time` constant does not stop them, since they
+  pass the fitted design columns and the formula is not re-evaluated; nor
+  does a list element such as `cfg$time`.
   `"linear_predictor"` and single-distribution `"hazard"` have no
   prediction time, so they read a `time` column as the covariate, now
   also when it is the only one (it used to stop with "Predictors are

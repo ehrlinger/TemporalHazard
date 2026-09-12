@@ -176,12 +176,23 @@
 .hzr_check_time_covariate <- function(object, newdata, time_based) {
   design <- object$data$x_design
   x_cols <- colnames(object$data$x)
-  used <- if (!is.null(design)) all.vars(design$terms) else x_cols
   from_data <- if (!is.null(design)) design$data_vars else x_cols
+  # The symbols a formula looks up; .hzr_mask_symbols() skips the name after
+  # `$`, so cfg$time is not a variable `time`.
+  rhs_symbols <- function(f) .hzr_mask_symbols(f[[length(f)]])
+  used <- if (is.null(design)) {
+    x_cols
+  } else if (.hzr_uses_design_columns(object, newdata)) {
+    # The global design is taken from newdata's design columns by name, so
+    # its formula constants are never evaluated and cannot be masked.
+    from_data
+  } else {
+    rhs_symbols(stats::formula(design$terms))
+  }
   phases <- object$fit$phases
   if (is.null(phases)) phases <- object$spec$phases
   for (ph in phases) {
-    if (!is.null(ph$formula)) used <- c(used, all.vars(ph$formula))
+    if (!is.null(ph$formula)) used <- c(used, rhs_symbols(ph$formula))
   }
   misread <- if (time_based) {
     "time" %in% used
@@ -230,6 +241,24 @@
 }
 
 
+#' Is the global design taken from `newdata`'s design columns?
+#'
+#' TRUE when `newdata` carries every column of the fitted global design by
+#' name (as `hzr_deciles()` and `hzr_gof()` pass it). The design is then
+#' used as it is and the formula is not re-evaluated. Shared by the rebuild
+#' and the `time` check so the two cannot disagree about the route.
+#'
+#' @param object A fitted `hazard` object.
+#' @param newdata Data frame of new rows.
+#' @return A single logical.
+#' @keywords internal
+#' @noRd
+.hzr_uses_design_columns <- function(object, newdata) {
+  cols <- colnames(object$data$x)
+  !is.null(cols) && all(cols %in% names(newdata))
+}
+
+
 #' Rebuild the global design matrix at new rows
 #'
 #' Used by `predict()` for a multiphase phase without its own formula, which
@@ -252,7 +281,7 @@
   # object$data$x, so a factor arrives as `grpyoung` and a transform as
   # `log(age)`. For a plain numeric covariate the design column and the
   # variable are the same column, so both routes agree.
-  if (!is.null(cols) && all(cols %in% names(newdata))) {
+  if (.hzr_uses_design_columns(object, newdata)) {
     return(as.matrix(newdata[, cols, drop = FALSE]))
   }
 

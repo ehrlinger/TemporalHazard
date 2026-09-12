@@ -87,6 +87,40 @@ test_that("a global formula's constant named time is masked the same way", {
                c(0, 0.4) + 0.3, tolerance = 1e-12)
 })
 
+test_that("design-column newdata never re-evaluates a time constant", {
+  # hzr_gof() and hzr_deciles() pass the fitted design columns, which are
+  # taken by name, so a formula constant named `time` is never looked up
+  # and nothing is masked.  They must match a fit written with the literal.
+  d <- .tc_avc
+  d$time <- NULL
+  time <- 50
+  th <- c(mu = 0.01, nu = 0.5, 0, 0)
+  w <- hazard(survival::Surv(int_dead, dead) ~ I(age > time) + mal, data = d,
+              dist = "weibull", theta = th, fit = TRUE)
+  lit <- hazard(survival::Surv(int_dead, dead) ~ I(age > 50) + mal, data = d,
+                dist = "weibull", theta = th, fit = TRUE)
+  expect_equal(unname(w$fit$theta), unname(lit$fit$theta), tolerance = 1e-10)
+  expect_equal(hzr_gof(w)$par_cumhaz, hzr_gof(lit)$par_cumhaz,
+               tolerance = 1e-10)
+  expect_equal(hzr_deciles(w, time = 60)$expected,
+               hzr_deciles(lit, time = 60)$expected, tolerance = 1e-10)
+})
+
+test_that("a list element named time (cfg$time) is not the variable time", {
+  d <- .tc_avc
+  d$time <- NULL
+  cfg <- list(time = 50)
+  th <- c(mu = 0.01, nu = 0.5, b_gt = 0.4, b_mal = 0.3)
+  w <- hazard(survival::Surv(int_dead, dead) ~ I(age > cfg$time) + mal,
+              data = d, dist = "weibull", theta = th)
+  nd <- data.frame(time = c(1, 2), age = 30, mal = 1)
+  # I(30 > 50) is FALSE, so only mal contributes.
+  expect_equal(predict(w, newdata = nd, type = "linear_predictor"),
+               c(0.3, 0.3), tolerance = 1e-12)
+  expect_equal(predict(w, newdata = nd, type = "cumulative_hazard"),
+               (0.01 * c(1, 2))^0.5 * exp(0.3), tolerance = 1e-12)
+})
+
 test_that("time as the only covariate works for linear_predictor and hazard", {
   w <- hazard(survival::Surv(int_dead, dead) ~ time, data = .tc_avc,
               dist = "weibull", theta = c(mu = 0.01, nu = 0.5, b = 0.002))
