@@ -86,21 +86,23 @@ hazard(
     interval, defaulting to `time`. Every `dist` reads it this way.
 
   - `status %in% c(0, 1)` (right-censored or event): the
-    counting-process **entry time**, so the row contributes
-    `H(time) - H(time_lower)`. Only `dist = "weibull"` and
-    `dist = "multiphase"` use this role, and `"weibull"` only where
-    `time_lower < time`. The `"exponential"`, `"loglogistic"` and
-    `"lognormal"` families ignore `time_lower` on these rows. Left
-    `NULL`, the entry time is **`0`**, not `time`.
+    counting-process **entry time** when `0 < time_lower < time`, so the
+    row contributes `H(time) - H(time_lower)`. Every `dist` reads it
+    this way. A value of `0`, or equal to `time`, means no entry time,
+    and left `NULL` the entry time is **`0`**.
 
   - `status == -1` (left-censored): not used; the bound is `time_upper`.
 
-  Passing `time_lower = time` therefore states that every subject
-  entered the risk set at the instant it left. `hazard()` accepts it
-  with a warning. Under `"multiphase"` those rows lose their
-  cumulative-hazard term and the fit it returns is meaningless;
-  `"weibull"` reads them as entering at time 0, and the other families
-  ignore the argument there.
+  `time_lower = time` on the status 0 and 1 rows is the mixed-interval
+  layout: exact and right-censored rows carry their own time, and only
+  the status-2 rows carry a real lower bound. A subject cannot enter the
+  risk set after the moment it leaves, so `hazard()` stops with an error
+  when a status 0 or 1 row has `time_lower > time`, as SAS HAZARD
+  rejects a start time after the exit time. It also stops when rows with
+  `time_lower == time > 0` sit beside rows with genuine entry times: in
+  counting-process data those are zero-length epochs, which
+  [`hzr_repeated_events()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_repeated_events.md)
+  can emit and which must be adjusted first.
 
 - time_upper:
 

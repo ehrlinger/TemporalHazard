@@ -91,6 +91,34 @@
   out is unchanged, as is a multiphase screen in which every phase has
   its own formula.
 
+- **An entry time after the exit time is now an error, and
+  `time_lower = time` now means “no entry” in every family**
+  ([\#253](https://github.com/ehrlinger/TemporalHazard/issues/253)). On
+  a row with status 0 or 1, `time_lower` is the counting-process entry
+  time when `0 < time_lower < time`.
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  used to warn when `time_lower >= time` on such a row and fit anyway,
+  and each family then did something different. Multiphase returned a
+  “log-likelihood” of +47915.76 with `converged = TRUE` on the AVC data.
+  The Weibull read the rows as entering at time 0, and the other three
+  families ignored `time_lower` altogether.
+
+  - `time_lower > time` on a status 0/1 row now stops, as SAS HAZARD
+    rejects a start time after the exit time (error `SETCOE960`).
+  - `time_lower == time` on a status 0/1 row is read as no entry time,
+    with no warning, in all five families. This is the mixed-interval
+    layout, where exact and right-censored rows carry
+    `time_lower = time` and only interval-censored rows (status 2) carry
+    a real lower bound. It was already the Weibull rule; multiphase used
+    to degenerate on it.
+  - `time_lower = 0` still means no entry time.
+  - Rows with `time_lower == time > 0` beside rows with a genuine entry
+    time now stop. In counting-process data they are zero-length epochs,
+    which
+    [`hzr_repeated_events()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_repeated_events.md)
+    can emit; read as “no entry”, each would be charged its full
+    cumulative hazard from time 0.
+
 ### New features
 
 - **Every fit now says what it did not do**
@@ -221,6 +249,70 @@
   polished point it does not. The test now accepts either a missing or a
   100-fold larger standard error, and also checks that both fits reach
   the same log-likelihood and the same `gamma * eta`.
+
+- **Exponential, log-logistic and log-normal fits ignored left
+  truncation**
+  ([\#253](https://github.com/ehrlinger/TemporalHazard/issues/253)). On
+  status 0/1 rows these three families used `time_lower` only as a
+  censoring bound, which applies to status 2, so a left-truncated fit
+  was silently fitted as if every subject had been at risk from time 0.
+  They now subtract the cumulative hazard at entry, H(time) -
+  H(time_lower), as the Weibull and multiphase likelihoods already did.
+  The log-likelihood, its gradient and the closed-form Hessian all carry
+  the entry term.
+
+- **[`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
+  reported a conservation ratio that was not one**
+  ([\#254](https://github.com/ehrlinger/TemporalHazard/issues/254)). For
+  a model with covariates it computed expected events from a single
+  curve at the covariate means, then printed the total as the
+  “Conservation ratio (E/O)”. On the covariate model in the clinical
+  walkthrough vignette that printed 0.606, while the fit conserved
+  events exactly (68.000 expected against 68 observed). Expected events
+  are now summed per subject, each subject’s cumulative hazard at exit
+  minus that at entry. For Weibull, exponential and multiphase fits with
+  conservation of events, E/O is then the conservation-of-events
+  identity; for log-logistic and log-normal fits it checks calibration
+  in total. For a weighted fit, both observed and expected events now
+  carry the case weights, since that is what a weighted fit conserves
+  (the sum of w·H equals the sum of w·d). The `par_surv` and
+  `par_cumhaz` columns are still the covariate-mean curve, for plotting
+  against Kaplan-Meier, and the risk-set counts and Kaplan-Meier columns
+  stay unweighted. Unweighted intercept-only fits without entry times
+  are unchanged.
+
+- **[`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
+  drew the mean-patient curve at covariates of 0** for a multiphase fit
+  whose covariates enter only through the phase formulas. Such a fit has
+  no global design matrix, so the `par_surv` and `par_cumhaz` columns
+  were predicted from time alone, which set every phase covariate to 0.
+  They now use each phase’s design-matrix column means, so a factor
+  enters as the proportion of patients in each level. A fit with both
+  global and phase-formula covariates is
+  [\#264](https://github.com/ehrlinger/TemporalHazard/issues/264).
+
+- **[`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
+  had five smaller errors**, found by Copilot’s and r-reviewer’s reviews
+  of [\#285](https://github.com/ehrlinger/TemporalHazard/issues/285).
+
+  - [`seq()`](https://rdrr.io/r/base/seq.html) builds grid times that
+    differ from the data times in the last binary digits, and they were
+    matched with a fixed tolerance of 100 machine epsilons. Above 128
+    that is smaller than the gap between adjacent doubles, so at times
+    in days or months events fell off the grid: 180 of 197 were counted
+    on a `seq(150, 300, by = 0.1)` grid. The tolerance now scales with
+    the time.
+  - With a custom `time_grid`, `n_risk` between Kaplan-Meier times
+    carried the previous count forward, so it kept subjects who had left
+    and missed ones who had entered. It now counts the risk set at each
+    grid time.
+  - An unsorted grid made the cumulative columns non-cumulative. The
+    grid is now sorted, with repeated times dropped.
+  - With an event at time 0, `km_surv` at 0 was averaged with 1.
+  - For a fit with both `time_windows` and entry times, expected events
+    took H(entry) in the entry-time covariate window, while the
+    likelihood uses the exit-time window. E/O came out 1.052 on a
+    Weibull fit that conserves events.
 
 - **A Weibull fit with one masked variance reported the others on the
   wrong scale.** When the Hessian inverse has a non-positive variance,

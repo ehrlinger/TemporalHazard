@@ -375,9 +375,9 @@ head(hzr_gof(fit), 4)
 #> Distribution: weibull  | n = 305 
 #> 
 #> Total observed events: 68 
-#> Total expected events: 50.435 
-#> Final residual (E - O): -17.565 
-#> Conservation ratio (E/O): 0.742 
+#> Total expected events: 68 
+#> Final residual (E - O): 0 
+#> Conservation ratio (E/O): 1 
 #> 
 #> Use plot columns: time, km_surv, par_surv, cum_observed, cum_expected, residual
 ```

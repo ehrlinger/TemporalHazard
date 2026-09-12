@@ -488,25 +488,21 @@ table(status)
 
 > **Note**
 >
-> **`time_lower` as a counting-process entry time.** The Weibull and
-> multiphase likelihoods also read `time_lower` as the *entry*
-> (left-truncation) time on right-censored and exact-event rows
-> (`status %in% c(0, 1)`): when `0 < time_lower < time`, the row
-> contributes H(stop) − H(start), the counting-process form used for
-> epoch-decomposed repeated events. The exponential, log-logistic, and
-> log-normal likelihoods use `time_lower` only as the lower bound of a
-> `status == 2` interval and ignore it on every other row. For an
-> ordinary right-censored or event row with no entry time, leave
-> `time_lower` at `0` or omit it. Don’t set `time_lower = time` to mean
-> “no entry time”.
+> **`time_lower` as a counting-process entry time.** On right-censored
+> and exact-event rows (`status %in% c(0, 1)`), every family reads
+> `time_lower` as the *entry* (left-truncation) time, not as a censoring
+> bound. A row with `0 < time_lower < time` contributes H(time) −
+> H(time_lower), the counting-process form used for delayed entry and
+> for epoch-decomposed repeated events. An entry time of `0` means the
+> subject was at risk from time zero, so for an ordinary right-censored
+> or event row leave `time_lower` at `0`, as the code above does, or
+> omit it. Setting `time_lower = time` on those rows also means “no
+> entry time”: that is the mixed-interval layout, where only the
+> interval-censored rows carry a real lower bound. A subject can’t enter
+> the risk set after it leaves, so
 > [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
-> accepts it with a warning, and what it does next depends on the
-> family. The Weibull likelihood uses `time_lower` as an entry time only
-> when it is strictly less than `time`, so those rows enter at 0 and
-> nothing changes. The multiphase likelihood takes it at its word. Each
-> row enters the risk set at the moment it leaves, its cumulative-hazard
-> term vanishes, and the fit it returns is meaningless. The other three
-> families ignore it.
+> stops with an error when a status 0 or 1 row has `time_lower > time`.
+> SAS HAZARD refuses those rows too.
 
 Fit a Weibull model using both censoring types:
 

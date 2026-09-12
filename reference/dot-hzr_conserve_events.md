@@ -68,12 +68,14 @@ log_mu so that total predicted events = total observed events.
 
 - time_lower:
 
-  Optional numeric vector of counting-process entry (start) times. When
-  supplied, conservation is enforced on the entry-time scale
+  Optional numeric vector. On a status 0/1 row with 0 \< time_lower \<
+  time it is the counting-process entry (start) time, and conservation
+  is enforced on the entry-time scale
   (`Sum E = Sum [H(stop) - H(start)]`) by subtracting the entry-time
   cumulative hazard, matching the multiphase likelihood (and C HAZARD
-  `setcoe` under `LCENSOR`/`STARTTME`). `NULL` (the default) means no
-  truncation, i.e. `H(start) = 0`.
+  `setcoe` under `LCENSOR`/`STARTTME`). Any other row has no entry
+  (`H(start) = 0`); see `.hzr_multiphase_entry()`. `NULL` (the default)
+  means no truncation.
 
 ## Value
 

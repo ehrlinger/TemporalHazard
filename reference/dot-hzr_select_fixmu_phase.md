@@ -52,10 +52,12 @@ hazard at the current theta, matching the C HAZARD SETCOE strategy.
 
 - time_lower:
 
-  Optional numeric vector of counting-process entry (start) times. When
-  supplied, phases are ranked by entry-time cumulative hazard
-  `H(stop) - H(start)`, the scale on which events are conserved. `NULL`
-  (the default) means no truncation, i.e. `H(start) = 0`.
+  Optional numeric vector. On a status 0/1 row with 0 \< time_lower \<
+  time it is the counting-process entry (start) time, and phases are
+  ranked by entry-time cumulative hazard `H(stop) - H(start)`, the scale
+  on which events are conserved. Any other row has no entry
+  (`H(start) = 0`); see `.hzr_multiphase_entry()`. `NULL` (the default)
+  means no truncation.
 
 ## Value
 

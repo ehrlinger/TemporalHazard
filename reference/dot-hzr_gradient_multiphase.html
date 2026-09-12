@@ -109,7 +109,11 @@ the side of <code>m</code> near <code>m = 0</code>, where the phase family has a
 
 
 <dt id="arg-time-lower">time_lower<a class="anchor" aria-label="anchor" href="#arg-time-lower"></a></dt>
-<dd><p>Optional lower bounds for interval censoring.</p></dd>
+<dd><p>Optional numeric vector: the interval lower bound on
+status-2 rows, and the counting-process entry time on status 0/1 rows
+with <code>0 &lt; time_lower &lt; time</code>. <code>time_lower == time</code> on a status 0/1 row
+means no entry (the mixed-interval layout); see
+<code>.hzr_multiphase_entry()</code>.</p></dd>
 
 
 <dt id="arg-time-upper">time_upper<a class="anchor" aria-label="anchor" href="#arg-time-upper"></a></dt>

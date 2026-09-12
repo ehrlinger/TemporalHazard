@@ -816,8 +816,7 @@ Figure 8: Decile calibration: observed (bars) vs. expected (points) event rate
 <section class="level3" data-number="7.1"><h3 data-number="7.1" id="conservation-of-events-check">
 <span class="header-section-number">7.1</span> Conservation of events check<a class="anchor" aria-label="anchor" href="#conservation-of-events-check"></a>
 </h3>
-<p>The conservation-of-events principle says a model fit by maximum likelihood predicts as many events as were observed: add up every patient’s cumulative hazard at the end of their follow-up and you get the event count back. <code><a href="../reference/hzr_gof.html">hzr_gof()</a></code> is the R version of the SAS <code>hazplot</code> display, a running tally of observed and expected events over time.</p>
-<p>For a model with covariates you need to know one thing before reading its output. <code><a href="../reference/hzr_gof.html">hzr_gof()</a></code> evaluates the parametric curve at the covariate means, one “mean patient”, and builds the expected count from that single curve. The printed ratio is then a mean-patient check, not the conservation-of-events identity, and for <code>fit_mv</code> it is well short of 1.</p>
+<p>The conservation-of-events principle says a model fit by maximum likelihood predicts as many events as were observed: add up every patient’s cumulative hazard at the end of their follow-up and you get the event count back. <code><a href="../reference/hzr_gof.html">hzr_gof()</a></code> is the R version of the SAS <code>hazplot</code> display, a running tally of observed and expected events over time. Each patient’s expected count is their own cumulative hazard, from their own covariates, at the time they leave follow-up.</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb20"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">gof</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/hzr_gof.html">hzr_gof</a></span><span class="op">(</span><span class="va">fit_mv</span><span class="op">)</span></span>
@@ -826,26 +825,15 @@ Figure 8: Decile calibration: observed (bars) vs. expected (points) event rate
 <span><span class="co">#&gt; Distribution: multiphase  | n = 305 </span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Total observed events: 68 </span></span>
-<span><span class="co">#&gt; Total expected events: 41.21 </span></span>
-<span><span class="co">#&gt; Final residual (E - O): -26.79 </span></span>
-<span><span class="co">#&gt; Conservation ratio (E/O): 0.606 </span></span>
+<span><span class="co">#&gt; Total expected events: 68 </span></span>
+<span><span class="co">#&gt; Final residual (E - O): 0 </span></span>
+<span><span class="co">#&gt; Conservation ratio (E/O): 1 </span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Use plot columns: time, km_surv, par_surv, cum_observed, cum_expected, residual</span></span></code></pre></div>
 </div>
-<p>The conservation-of-events check itself sums each patient’s own cumulative hazard, from their own covariates, at their own follow-up time:</p>
+<p>Expected 68.0 against 68 observed, an E/O of 1, so the fit conserves events. <code>fit_mv</code> is a multiphase fit with Conservation of Events applied (the default), which holds the total to the event count exactly. A Weibull fit gets there at its maximum, to within the optimizer’s tolerance.</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb21"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">nd_coe</span> <span class="op">&lt;-</span> <span class="va">avc</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"status"</span>, <span class="st">"mal"</span>, <span class="st">"com_iv"</span><span class="op">)</span><span class="op">]</span></span>
-<span><span class="va">nd_coe</span><span class="op">$</span><span class="va">time</span> <span class="op">&lt;-</span> <span class="va">avc</span><span class="op">$</span><span class="va">int_dead</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>expected <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit_mv</span>, newdata <span class="op">=</span> <span class="va">nd_coe</span>,</span>
-<span>                         type <span class="op">=</span> <span class="st">"cumulative_hazard"</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  observed <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">avc</span><span class="op">$</span><span class="va">dead</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; expected observed </span></span>
-<span><span class="co">#&gt;       68       68</span></span></code></pre></div>
-</div>
-<p>Expected 68.0 against 68 observed, so the fit conserves events. The gap in the <code><a href="../reference/hzr_gof.html">hzr_gof()</a></code> summary belongs to the mean patient, not to the fit. For an intercept-only model every patient shares one curve, the two checks give the same answer, and <code><a href="../reference/hzr_gof.html">hzr_gof()</a></code> prints an E/O of 1.</p>
-<div class="cell">
-<div class="sourceCode cell-code" id="cb22"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/ggplot.html" class="external-link">ggplot</a></span><span class="op">(</span><span class="va">gof</span>, <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span>x <span class="op">=</span> <span class="va">time</span><span class="op">)</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_path.html" class="external-link">geom_step</a></span><span class="op">(</span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">km_surv</span> <span class="op">*</span> <span class="fl">100</span><span class="op">)</span>, colour <span class="op">=</span> <span class="st">"#D55E00"</span>, linewidth <span class="op">=</span> <span class="fl">0.6</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_path.html" class="external-link">geom_line</a></span><span class="op">(</span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">par_surv</span> <span class="op">*</span> <span class="fl">100</span><span class="op">)</span>, colour <span class="op">=</span> <span class="st">"#0072B2"</span>, linewidth <span class="op">=</span> <span class="fl">0.8</span><span class="op">)</span> <span class="op">+</span></span>
@@ -864,7 +852,7 @@ Figure 9: Parametric survival at the covariate means (blue) vs. Kaplan-Meier (
 </div>
 </div>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb23"><pre class="downlit sourceCode r">
+<div class="sourceCode cell-code" id="cb22"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/ggplot.html" class="external-link">ggplot</a></span><span class="op">(</span><span class="va">gof</span>, <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span>x <span class="op">=</span> <span class="va">time</span><span class="op">)</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_path.html" class="external-link">geom_line</a></span><span class="op">(</span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">cum_observed</span><span class="op">)</span>, colour <span class="op">=</span> <span class="st">"#D55E00"</span>, linewidth <span class="op">=</span> <span class="fl">0.8</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_path.html" class="external-link">geom_line</a></span><span class="op">(</span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">cum_expected</span><span class="op">)</span>, colour <span class="op">=</span> <span class="st">"#0072B2"</span>,</span>
@@ -883,7 +871,7 @@ Figure 10: Cumulative observed (orange) vs. expected (blue) events
 </div>
 </div>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb24"><pre class="downlit sourceCode r">
+<div class="sourceCode cell-code" id="cb23"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/ggplot.html" class="external-link">ggplot</a></span><span class="op">(</span><span class="va">gof</span>, <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span>x <span class="op">=</span> <span class="va">time</span>, y <span class="op">=</span> <span class="va">residual</span><span class="op">)</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_path.html" class="external-link">geom_line</a></span><span class="op">(</span>linewidth <span class="op">=</span> <span class="fl">0.7</span>, colour <span class="op">=</span> <span class="st">"grey30"</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_abline.html" class="external-link">geom_hline</a></span><span class="op">(</span>yintercept <span class="op">=</span> <span class="fl">0</span>, linetype <span class="op">=</span> <span class="st">"dashed"</span>, colour <span class="op">=</span> <span class="st">"grey60"</span><span class="op">)</span> <span class="op">+</span></span>
@@ -901,7 +889,8 @@ Figure 11: Conservation-of-events residual (expected minus observed) over time
 </div>
 </div>
 </div>
-<p>Read these three plots as a picture of the mean patient. The first sets that patient’s survival curve against the Kaplan-Meier estimate for the whole cohort, and it runs above it from the first weeks on. The other two tally the deaths the mean patient’s hazard would predict for the patients leaving follow-up at each time. Most of the deaths come in the first weeks, and the mean patient’s curve accounts for few of them (45 observed by two weeks against about 1.4 expected), so the residual falls to about -55 by six months and then climbs back slowly, ending at -26.8. That is the mean patient understating the cohort’s early risk. The model itself predicts the right number of deaths, as the per-subject check above shows. For an intercept-only model the same plots are the conservation-of-events picture, and there a residual that stays near zero is what a good fit looks like.</p>
+<p>The first plot is the one place the mean patient appears. It sets the survival curve for a patient with average covariates against the Kaplan-Meier estimate for the whole cohort, and that curve runs above it from the first weeks on. The mean patient fares better than the cohort, because the mean patient’s cumulative hazard is not the average of the patients’ cumulative hazards. That is why <code><a href="../reference/hzr_gof.html">hzr_gof()</a></code> builds its expected count patient by patient rather than from this curve.</p>
+<p>The other two plots tally events as patients leave follow-up. A patient adds their expected count when they leave, by death or censoring, and that count is the hazard they built up over their whole follow-up. Most deaths come in the first weeks, to patients who had little time to build up hazard: 47 deaths in the first half month against about 4.8 expected. The residual bottoms out near -47.5 at about two months. The patients followed longest, most of them censored, carry the rest of the expected count, and it arrives only as they leave follow-up years later, so the residual climbs back and ends at zero. Read the shape of the curve as a record of when deaths and follow-up happen in this cohort, not as a month-by-month calibration check. The end point is the conservation-of-events identity, and the decile table above is the calibration check.</p>
 </section></section><section class="level2" data-number="8"><h2 data-number="8" id="why-not-cox-regression">
 <span class="header-section-number">8</span> Why not Cox regression?<a class="anchor" aria-label="anchor" href="#why-not-cox-regression"></a>
 </h2>

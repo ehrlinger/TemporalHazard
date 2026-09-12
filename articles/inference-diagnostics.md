@@ -361,10 +361,9 @@ The Kaplan-Meier overlay in the prediction-visualization vignette is the
 [`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
 is the *quantitative* complement: it tabulates parametric predictions
 side by side with the nonparametric KM estimate at each event time, and
-computes the Conservation-of-Events observed-vs-expected ratio across
-the whole follow-up window. The ratio compresses everything the model is
-doing into a single number, which makes it the right summary statistic
-to report alongside coefficient tables.
+adds up observed and expected events over the follow-up. Each patient
+contributes the cumulative hazard the model assigns to their own
+follow-up, so the expected total is a sum over patients.
 ([`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
 corresponds to the SAS `hazplot.sas` macro.)
 
@@ -376,26 +375,30 @@ print(gof)
 #> Distribution: weibull  | n = 305 
 #> 
 #> Total observed events: 68 
-#> Total expected events: 50.435 
-#> Final residual (E - O): -17.565 
-#> Conservation ratio (E/O): 0.742 
+#> Total expected events: 68 
+#> Final residual (E - O): 0 
+#> Conservation ratio (E/O): 1 
 #> 
 #> Use plot columns: time, km_surv, par_surv, cum_observed, cum_expected, residual
 ```
 
-The observed vs. expected ratio (printed at the bottom) is the
-Conservation-of-Events check: a well-specified model recovers the event
-count exactly, so a ratio close to 1 is what we want. Ratios well above
-or below 1 flag either a misspecified shape or a covariate that isn’t
-really linear on the log-hazard scale.
+The observed vs. expected ratio printed at the bottom rounds to 1 here
+(67.995 expected against 68 observed), and for this model that is
+guaranteed rather than earned. For a Weibull or exponential fit, and for
+a multiphase fit with conservation of events, the likelihood equations
+force the expected total to equal the observed count at the maximum. A
+ratio away from 1 on those models means the optimizer stopped short, not
+that the shape is wrong. Only for a log-logistic or log-normal fit does
+the ratio say anything about calibration in total. To judge the shape,
+compare the Kaplan-Meier and parametric columns over time, and use the
+decile check below.
 
 ## 5 Decile-of-risk calibration
 
-The conservation-of-events ratio above tells you whether the model is
-calibrated *on average*. That’s necessary but not sufficient: a model
-can hit the right total event count while systematically over-predicting
-risk for one part of the cohort and under-predicting for another, with
-the errors cancelling in aggregate.
+The ratio above checks the total. A right total is necessary but not
+sufficient: a model can hit the right total event count while
+systematically over-predicting risk for one part of the cohort and
+under-predicting for another, with the errors cancelling in aggregate.
 [`hzr_deciles()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_deciles.md)
 is the check that catches that failure mode: it partitions patients into
 deciles of predicted risk at a chosen time point and compares observed

@@ -1,10 +1,10 @@
 # Goodness-of-fit: observed vs. predicted events
 
-Compare a fitted hazard model against the nonparametric Kaplan-Meier
-estimate by computing observed and expected (parametric) event counts at
-each distinct event time. This is the R equivalent of the SAS
-`hazplot.sas` macro and implements the conservation-of-events
-diagnostic.
+Compare a fitted hazard model with the data two ways: its survival curve
+against the nonparametric Kaplan-Meier estimate, and the number of
+events it expects against the number observed, tallied over follow-up.
+This is the R equivalent of the SAS `hazplot.sas` macro and implements
+the conservation-of-events diagnostic.
 
 ## Usage
 
@@ -21,8 +21,11 @@ hzr_gof(object, time_grid = NULL)
 - time_grid:
 
   Optional numeric vector of time points at which to evaluate the
-  parametric model. If `NULL` (default), uses the sorted unique event
-  times from the fitted data.
+  parametric model. If `NULL` (default), uses the distinct Kaplan-Meier
+  times of the fitted data, which are the event times and the censoring
+  times. A supplied grid must hold finite, non-negative times. It is
+  sorted and exact repeats dropped, because the cumulative columns
+  accumulate in time order.
 
 ## Value
 
@@ -34,7 +37,8 @@ A data frame with one row per time point and columns:
 
 - n_risk:
 
-  Number at risk (Kaplan-Meier).
+  Number at risk at this time: subjects still in follow-up. A subject
+  with an entry time is at risk only after it.
 
 - n_event:
 
@@ -46,7 +50,8 @@ A data frame with one row per time point and columns:
 
 - km_surv:
 
-  Kaplan-Meier survival estimate.
+  Kaplan-Meier survival estimate, using the counting-process risk set
+  when the fit has entry times.
 
 - km_cumhaz:
 
@@ -55,67 +60,92 @@ A data frame with one row per time point and columns:
 - par_surv:
 
   Parametric survival from the fitted model, at the covariate means for
-  a model with covariates.
+  a model with covariates. For plotting against `km_surv`; not used for
+  `cum_expected`.
 
 - par_cumhaz:
 
   Parametric cumulative hazard, at the covariate means for a model with
-  covariates.
+  covariates. For plotting; not used for `cum_expected`.
 
 - cum_observed:
 
-  Cumulative observed events to this time.
+  Cumulative observed events to this time, weighted by the case weights
+  for a weighted fit.
 
 - cum_expected:
 
-  Cumulative expected events: `par_cumhaz` times the number of
-  observations exiting the risk set, summed to this time.
+  Cumulative expected events: over the patients leaving follow-up by
+  this time, the sum of each patient's own cumulative hazard at exit
+  minus that at entry, weighted by the case weights for a weighted fit.
+  With `time_windows`, both cumulative hazards use the patient's
+  covariate window at exit, as the likelihood does.
 
 - residual:
 
   Expected minus observed (`cum_expected - cum_observed`).
 
 For multiphase models, additional columns are appended for each phase:
-`par_cumhaz_<phase>`.
+`par_cumhaz_<phase>`, also at the covariate means.
 
 An attribute `"summary"` is attached with scalar diagnostics: total
 observed events, total expected events, and the final residual.
 
 ## Details
 
-At each observed event time the function computes:
+The diagnostic is for right-censored data: every stored status must be 0
+(censored) or 1 (event). A fit with any left-censored (status -1) or
+interval-censored (status 2) row is refused with an error.
+
+At each time point the function computes:
 
 - The Kaplan-Meier survival and cumulative hazard.
 
-- The parametric survival and cumulative hazard from the fitted model
-  (and per-phase components for multiphase models).
+- The parametric survival and cumulative hazard from the fitted model at
+  the covariate means (and per-phase components for multiphase models).
+  This is the curve to plot against the Kaplan-Meier estimate.
 
-- Cumulative observed events vs. cumulative expected events (the
-  parametric cumulative hazard at each time, times the number of
-  observations leaving the risk set then).
+- Cumulative observed events vs. cumulative expected events. Each
+  patient's expected count is their own cumulative hazard, from their
+  own covariates, at the end of their follow-up, less their cumulative
+  hazard at entry when the fit is left truncated (`time_lower` on a
+  status 0 or 1 row). These are summed over the patients leaving
+  follow-up at each time.
 
 - The running residual (expected minus observed).
 
-For an intercept-only model every patient shares one curve, so the
-expected count is the sum of each patient's cumulative hazard at their
-own exit time. At the maximum likelihood estimate that sum equals the
-number of observed events (the conservation-of-events identity): the
-final residual is zero and the printed "Conservation ratio (E/O)" is 1.
+The conservation-of-events principle says a model fit by maximum
+likelihood predicts as many events as were observed: add up every
+patient's cumulative hazard over their follow-up and you get the event
+count back. The final residual is then zero and the printed
+"Conservation ratio (E/O)" is 1. A multiphase fit with Conservation of
+Events applied (`control = list(conserve = TRUE)`, the default) meets
+the identity by construction. Weibull and exponential fits meet it at
+the exact maximum, so at a converged fit E/O sits close to 1, off only
+by how far short of the maximum the optimizer stopped. The log-logistic
+and log-normal models carry no such identity, and for them E/O is a
+check of calibration in total.
 
-A model with covariates is different. The parametric curve, and so the
-expected count, is evaluated at the covariate means, one "mean patient"
-standing in for everyone. The mean patient's cumulative hazard is not
-the average of the patients' cumulative hazards, so the printed E/O is
-not the conservation-of-events identity and need not be near 1 at a
-correct fit. Read it as a mean-patient check: how closely the curve for
-a patient with average covariates follows the whole cohort.
+The parametric curve is a different quantity. For a model with
+covariates it belongs to one "mean patient" with average covariates, and
+the mean patient's cumulative hazard is not the average of the patients'
+cumulative hazards, so `par_cumhaz` does not enter the expected count.
+For an intercept-only model every patient shares that curve. Without
+entry times each patient's expected count is the curve at their exit
+time; with entry times it is the curve's rise from entry to exit, so the
+two differ. The means are those of the design-matrix columns, taken
+phase by phase when a multiphase fit's covariates enter only through the
+phase formulas, so a factor enters as the proportion of patients in each
+level. A multiphase fit with both global and phase-formula covariates is
+not yet handled here (#264).
 
-To check conservation of events for a covariate model, sum each
-patient's own cumulative hazard at their follow-up time and compare the
-total with the event count. Pass the covariate columns plus a `time`
-column to
-[`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)
-with `type = "cumulative_hazard"`; the Examples show how.
+For a weighted fit both tallies carry the case weights: observed events
+are \\\sum_i w_i d_i\\ and expected events \\\sum_i w_i H_i\\, the form
+in which a weighted fit conserves events. The `n_risk`, `n_event`,
+`n_censor` and Kaplan-Meier columns are unweighted.
+
+With a custom `time_grid`, a patient is counted in both tallies only if
+their follow-up time falls on a grid point.
 
 ## See also
 
@@ -143,21 +173,21 @@ print(gof)
 #> Distribution: weibull  | n = 305 
 #> 
 #> Total observed events: 68 
-#> Total expected events: 55.583 
-#> Final residual (E - O): -12.417 
-#> Conservation ratio (E/O): 0.817 
+#> Total expected events: 67.999 
+#> Final residual (E - O): -0.001 
+#> Conservation ratio (E/O): 1 
 #> 
 #> Use plot columns: time, km_surv, par_surv, cum_observed, cum_expected, residual
 
-# With covariates, hzr_gof() uses the covariate means, so its E/O is a
-# mean-patient check.  The conservation-of-events check sums each
-# patient's own cumulative hazard at their follow-up time:
+# Expected events are summed per patient.  This fit has no entry times,
+# so the total is the sum of each patient's own cumulative hazard at
+# their follow-up time:
 nd <- avc[, c("age", "mal")]
 nd$time <- avc$int_dead
-c(expected = sum(predict(fit, newdata = nd, type = "cumulative_hazard")),
-  observed = sum(avc$dead))
-#> expected observed 
-#>  67.9993  68.0000 
+c(hzr_gof = attr(gof, "summary")$total_expected,
+  predict = sum(predict(fit, newdata = nd, type = "cumulative_hazard")))
+#> hzr_gof predict 
+#> 67.9993 67.9993 
 
 # Plot observed vs expected events
 if (requireNamespace("ggplot2", quietly = TRUE)) {

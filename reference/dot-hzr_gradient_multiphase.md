@@ -45,7 +45,11 @@ family has a cusp.
 
 - time_lower:
 
-  Optional lower bounds for interval censoring.
+  Optional numeric vector: the interval lower bound on status-2 rows,
+  and the counting-process entry time on status 0/1 rows with
+  `0 < time_lower < time`. `time_lower == time` on a status 0/1 row
+  means no entry (the mixed-interval layout); see
+  `.hzr_multiphase_entry()`.
 
 - time_upper:
 

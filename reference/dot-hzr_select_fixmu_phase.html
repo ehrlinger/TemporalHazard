@@ -112,10 +112,12 @@ happens on the same scale as the (weighted) observed event count.</p></dd>
 
 
 <dt id="arg-time-lower">time_lower<a class="anchor" aria-label="anchor" href="#arg-time-lower"></a></dt>
-<dd><p>Optional numeric vector of counting-process entry (start)
-times. When supplied, phases are ranked by entry-time cumulative hazard
-<code>H(stop) - H(start)</code>, the scale on which events are conserved. <code>NULL</code> (the
-default) means no truncation, i.e. <code>H(start) = 0</code>.</p></dd>
+<dd><p>Optional numeric vector. On a status 0/1 row with
+0 &lt; time_lower &lt; time it is the counting-process entry (start) time, and
+phases are ranked by entry-time cumulative hazard <code>H(stop) - H(start)</code>,
+the scale on which events are conserved. Any other row has no entry
+(<code>H(start) = 0</code>); see <code>.hzr_multiphase_entry()</code>. <code>NULL</code> (the default)
+means no truncation.</p></dd>
 
 </dl></div>
     <div class="section level2">

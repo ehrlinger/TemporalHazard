@@ -335,7 +335,7 @@ Figure 1: Exploratory: age vs. mortality with LOESS smooth
 </section><section class="level2" data-number="4"><h2 data-number="4" id="goodness-of-fit-overlay">
 <span class="header-section-number">4</span> Goodness-of-fit overlay<a class="anchor" aria-label="anchor" href="#goodness-of-fit-overlay"></a>
 </h2>
-<p>The Kaplan-Meier overlay in the prediction-visualization vignette is the <em>visual</em> goodness-of-fit check. <code><a href="../reference/hzr_gof.html">hzr_gof()</a></code> is the <em>quantitative</em> complement: it tabulates parametric predictions side by side with the nonparametric KM estimate at each event time, and computes the Conservation-of-Events observed-vs-expected ratio across the whole follow-up window. The ratio compresses everything the model is doing into a single number, which makes it the right summary statistic to report alongside coefficient tables. (<code><a href="../reference/hzr_gof.html">hzr_gof()</a></code> corresponds to the SAS <code>hazplot.sas</code> macro.)</p>
+<p>The Kaplan-Meier overlay in the prediction-visualization vignette is the <em>visual</em> goodness-of-fit check. <code><a href="../reference/hzr_gof.html">hzr_gof()</a></code> is the <em>quantitative</em> complement: it tabulates parametric predictions side by side with the nonparametric KM estimate at each event time, and adds up observed and expected events over the follow-up. Each patient contributes the cumulative hazard the model assigns to their own follow-up, so the expected total is a sum over patients. (<code><a href="../reference/hzr_gof.html">hzr_gof()</a></code> corresponds to the SAS <code>hazplot.sas</code> macro.)</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">gof</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/hzr_gof.html">hzr_gof</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
@@ -344,17 +344,17 @@ Figure 1: Exploratory: age vs. mortality with LOESS smooth
 <span><span class="co">#&gt; Distribution: weibull  | n = 305 </span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Total observed events: 68 </span></span>
-<span><span class="co">#&gt; Total expected events: 50.435 </span></span>
-<span><span class="co">#&gt; Final residual (E - O): -17.565 </span></span>
-<span><span class="co">#&gt; Conservation ratio (E/O): 0.742 </span></span>
+<span><span class="co">#&gt; Total expected events: 68 </span></span>
+<span><span class="co">#&gt; Final residual (E - O): 0 </span></span>
+<span><span class="co">#&gt; Conservation ratio (E/O): 1 </span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Use plot columns: time, km_surv, par_surv, cum_observed, cum_expected, residual</span></span></code></pre></div>
 </div>
-<p>The observed vs. expected ratio (printed at the bottom) is the Conservation-of-Events check: a well-specified model recovers the event count exactly, so a ratio close to 1 is what we want. Ratios well above or below 1 flag either a misspecified shape or a covariate that isn’t really linear on the log-hazard scale.</p>
+<p>The observed vs. expected ratio printed at the bottom rounds to 1 here (67.995 expected against 68 observed), and for this model that is guaranteed rather than earned. For a Weibull or exponential fit, and for a multiphase fit with conservation of events, the likelihood equations force the expected total to equal the observed count at the maximum. A ratio away from 1 on those models means the optimizer stopped short, not that the shape is wrong. Only for a log-logistic or log-normal fit does the ratio say anything about calibration in total. To judge the shape, compare the Kaplan-Meier and parametric columns over time, and use the decile check below.</p>
 </section><section class="level2" data-number="5"><h2 data-number="5" id="decile-of-risk-calibration">
 <span class="header-section-number">5</span> Decile-of-risk calibration<a class="anchor" aria-label="anchor" href="#decile-of-risk-calibration"></a>
 </h2>
-<p>The conservation-of-events ratio above tells you whether the model is calibrated <em>on average</em>. That’s necessary but not sufficient: a model can hit the right total event count while systematically over-predicting risk for one part of the cohort and under-predicting for another, with the errors cancelling in aggregate. <code><a href="../reference/hzr_deciles.html">hzr_deciles()</a></code> is the check that catches that failure mode: it partitions patients into deciles of predicted risk at a chosen time point and compares observed with expected event counts within each decile, returning a chi-square goodness-of-fit test. A well-calibrated model has observed-vs-expected close in every decile; a model that’s globally calibrated but locally biased will show large residuals in the extreme deciles. (Corresponds to the SAS <code>deciles.hazard.sas</code> macro.)</p>
+<p>The ratio above checks the total. A right total is necessary but not sufficient: a model can hit the right total event count while systematically over-predicting risk for one part of the cohort and under-predicting for another, with the errors cancelling in aggregate. <code><a href="../reference/hzr_deciles.html">hzr_deciles()</a></code> is the check that catches that failure mode: it partitions patients into deciles of predicted risk at a chosen time point and compares observed with expected event counts within each decile, returning a chi-square goodness-of-fit test. A well-calibrated model has observed-vs-expected close in every decile; a model that’s globally calibrated but locally biased will show large residuals in the extreme deciles. (Corresponds to the SAS <code>deciles.hazard.sas</code> macro.)</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">deciles</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/hzr_deciles.html">hzr_deciles</a></span><span class="op">(</span><span class="va">fit</span>, time <span class="op">=</span> <span class="fl">120</span>, groups <span class="op">=</span> <span class="fl">10</span><span class="op">)</span></span>

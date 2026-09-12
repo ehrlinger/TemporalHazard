@@ -881,15 +881,9 @@ patient’s cumulative hazard at the end of their follow-up and you get
 the event count back.
 [`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
 is the R version of the SAS `hazplot` display, a running tally of
-observed and expected events over time.
-
-For a model with covariates you need to know one thing before reading
-its output.
-[`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
-evaluates the parametric curve at the covariate means, one “mean
-patient”, and builds the expected count from that single curve. The
-printed ratio is then a mean-patient check, not the
-conservation-of-events identity, and for `fit_mv` it is well short of 1.
+observed and expected events over time. Each patient’s expected count is
+their own cumulative hazard, from their own covariates, at the time they
+leave follow-up.
 
 ``` r
 
@@ -899,36 +893,18 @@ print(gof)
 #> Distribution: multiphase  | n = 305 
 #> 
 #> Total observed events: 68 
-#> Total expected events: 41.21 
-#> Final residual (E - O): -26.79 
-#> Conservation ratio (E/O): 0.606 
+#> Total expected events: 68 
+#> Final residual (E - O): 0 
+#> Conservation ratio (E/O): 1 
 #> 
 #> Use plot columns: time, km_surv, par_surv, cum_observed, cum_expected, residual
 ```
 
-The conservation-of-events check itself sums each patient’s own
-cumulative hazard, from their own covariates, at their own follow-up
-time:
-
-``` r
-
-nd_coe <- avc[, c("age", "status", "mal", "com_iv")]
-nd_coe$time <- avc$int_dead
-c(expected = sum(predict(fit_mv, newdata = nd_coe,
-                         type = "cumulative_hazard")),
-  observed = sum(avc$dead))
-#> expected observed 
-#>       68       68
-```
-
-Expected 68.0 against 68 observed, so the fit conserves events. The gap
-in the
-[`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
-summary belongs to the mean patient, not to the fit. For an
-intercept-only model every patient shares one curve, the two checks give
-the same answer, and
-[`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
-prints an E/O of 1.
+Expected 68.0 against 68 observed, an E/O of 1, so the fit conserves
+events. `fit_mv` is a multiphase fit with Conservation of Events applied
+(the default), which holds the total to the event count exactly. A
+Weibull fit gets there at its maximum, to within the optimizer’s
+tolerance.
 
 ``` r
 
@@ -974,19 +950,29 @@ ggplot(gof, aes(x = time, y = residual)) +
 Figure 11: Conservation-of-events residual (expected minus observed)
 over time
 
-Read these three plots as a picture of the mean patient. The first sets
-that patient’s survival curve against the Kaplan-Meier estimate for the
-whole cohort, and it runs above it from the first weeks on. The other
-two tally the deaths the mean patient’s hazard would predict for the
-patients leaving follow-up at each time. Most of the deaths come in the
-first weeks, and the mean patient’s curve accounts for few of them (45
-observed by two weeks against about 1.4 expected), so the residual falls
-to about -55 by six months and then climbs back slowly, ending at -26.8.
-That is the mean patient understating the cohort’s early risk. The model
-itself predicts the right number of deaths, as the per-subject check
-above shows. For an intercept-only model the same plots are the
-conservation-of-events picture, and there a residual that stays near
-zero is what a good fit looks like.
+The first plot is the one place the mean patient appears. It sets the
+survival curve for a patient with average covariates against the
+Kaplan-Meier estimate for the whole cohort, and that curve runs above it
+from the first weeks on. The mean patient fares better than the cohort,
+because the mean patient’s cumulative hazard is not the average of the
+patients’ cumulative hazards. That is why
+[`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
+builds its expected count patient by patient rather than from this
+curve.
+
+The other two plots tally events as patients leave follow-up. A patient
+adds their expected count when they leave, by death or censoring, and
+that count is the hazard they built up over their whole follow-up. Most
+deaths come in the first weeks, to patients who had little time to build
+up hazard: 47 deaths in the first half month against about 4.8 expected.
+The residual bottoms out near -47.5 at about two months. The patients
+followed longest, most of them censored, carry the rest of the expected
+count, and it arrives only as they leave follow-up years later, so the
+residual climbs back and ends at zero. Read the shape of the curve as a
+record of when deaths and follow-up happen in this cohort, not as a
+month-by-month calibration check. The end point is the
+conservation-of-events identity, and the decile table above is the
+calibration check.
 
 ## 8 Why not Cox regression?
 

@@ -142,17 +142,20 @@ that disagrees with it is an error.</p></dd>
 Supplying it explicitly is <strong>not</strong> a no-op.</p><ul><li><p><code>status == 2</code> (interval-censored): the lower bound of the censoring
 interval, defaulting to <code>time</code>. Every <code>dist</code> reads it this way.</p></li>
 <li><p><code>status %in% c(0, 1)</code> (right-censored or event): the counting-process
-<strong>entry time</strong>, so the row contributes <code>H(time) - H(time_lower)</code>.
-Only <code>dist = "weibull"</code> and <code>dist = "multiphase"</code> use this role, and
-<code>"weibull"</code> only where <code>time_lower &lt; time</code>. The <code>"exponential"</code>,
-<code>"loglogistic"</code> and <code>"lognormal"</code> families ignore <code>time_lower</code> on these
-rows. Left <code>NULL</code>, the entry time is <strong><code>0</code></strong>, not <code>time</code>.</p></li>
+<strong>entry time</strong> when <code>0 &lt; time_lower &lt; time</code>, so the row contributes
+<code>H(time) - H(time_lower)</code>. Every <code>dist</code> reads it this way. A value of
+<code>0</code>, or equal to <code>time</code>, means no entry time, and left <code>NULL</code> the
+entry time is <strong><code>0</code></strong>.</p></li>
 <li><p><code>status == -1</code> (left-censored): not used; the bound is <code>time_upper</code>.</p></li>
-</ul><p>Passing <code>time_lower = time</code> therefore states that every subject entered
-the risk set at the instant it left. <code>hazard()</code> accepts it with a
-warning. Under <code>"multiphase"</code> those rows lose their cumulative-hazard
-term and the fit it returns is meaningless; <code>"weibull"</code> reads them as
-entering at time 0, and the other families ignore the argument there.</p></dd>
+</ul><p><code>time_lower = time</code> on the status 0 and 1 rows is the mixed-interval
+layout: exact and right-censored rows carry their own time, and only
+the status-2 rows carry a real lower bound. A subject cannot enter the
+risk set after the moment it leaves, so <code>hazard()</code> stops with an error
+when a status 0 or 1 row has <code>time_lower &gt; time</code>, as SAS HAZARD rejects
+a start time after the exit time. It also stops when rows with
+<code>time_lower == time &gt; 0</code> sit beside rows with genuine entry times: in
+counting-process data those are zero-length epochs, which
+<code><a href="hzr_repeated_events.html">hzr_repeated_events()</a></code> can emit and which must be adjusted first.</p></dd>
 
 
 <dt id="arg-time-upper">time_upper<a class="anchor" aria-label="anchor" href="#arg-time-upper"></a></dt>

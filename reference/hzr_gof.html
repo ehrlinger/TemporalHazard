@@ -5,15 +5,15 @@
       fontURL: "https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/output/chtml/fonts/woff-v2"
     }
   };
-</script><script src="../deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"><link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet"><script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet"><link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet"><script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Goodness-of-fit: observed vs. predicted events — hzr_gof"><meta name="description" content="Compare a fitted hazard model against the nonparametric Kaplan-Meier
-estimate by computing observed and expected (parametric) event counts
-at each distinct event time.  This is the R equivalent of the SAS
-hazplot.sas macro and implements the conservation-of-events
-diagnostic."><meta property="og:description" content="Compare a fitted hazard model against the nonparametric Kaplan-Meier
-estimate by computing observed and expected (parametric) event counts
-at each distinct event time.  This is the R equivalent of the SAS
-hazplot.sas macro and implements the conservation-of-events
-diagnostic."></head><body>
+</script><script src="../deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"><link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet"><script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet"><link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet"><script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Goodness-of-fit: observed vs. predicted events — hzr_gof"><meta name="description" content="Compare a fitted hazard model with the data two ways: its survival curve
+against the nonparametric Kaplan-Meier estimate, and the number of events
+it expects against the number observed, tallied over follow-up.  This is
+the R equivalent of the SAS hazplot.sas macro and implements the
+conservation-of-events diagnostic."><meta property="og:description" content="Compare a fitted hazard model with the data two ways: its survival curve
+against the nonparametric Kaplan-Meier estimate, and the number of events
+it expects against the number observed, tallied over follow-up.  This is
+the R equivalent of the SAS hazplot.sas macro and implements the
+conservation-of-events diagnostic."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -65,11 +65,11 @@ diagnostic."></head><body>
     </div>
 
     <div class="ref-description section level2">
-    <p>Compare a fitted hazard model against the nonparametric Kaplan-Meier
-estimate by computing observed and expected (parametric) event counts
-at each distinct event time.  This is the R equivalent of the SAS
-<code>hazplot.sas</code> macro and implements the conservation-of-events
-diagnostic.</p>
+    <p>Compare a fitted hazard model with the data two ways: its survival curve
+against the nonparametric Kaplan-Meier estimate, and the number of events
+it expects against the number observed, tallied over follow-up.  This is
+the R equivalent of the SAS <code>hazplot.sas</code> macro and implements the
+conservation-of-events diagnostic.</p>
     </div>
 
     <div class="section level2">
@@ -88,8 +88,11 @@ diagnostic.</p>
 <dt id="arg-time-grid">time_grid<a class="anchor" aria-label="anchor" href="#arg-time-grid"></a></dt>
 <dd><p>Optional numeric vector of time points at which to
 evaluate the parametric model.
-If <code>NULL</code> (default), uses the sorted unique event times from the
-fitted data.</p></dd>
+If <code>NULL</code> (default), uses the distinct Kaplan-Meier times of the
+fitted data, which are the event times and the censoring times.
+A supplied grid must hold finite, non-negative times.  It is sorted
+and exact repeats dropped, because the cumulative columns accumulate in
+time order.</p></dd>
 
 </dl></div>
     <div class="section level2">
@@ -98,7 +101,8 @@ fitted data.</p></dd>
 <dd><p>Evaluation time.</p></dd>
 
 <dt>n_risk</dt>
-<dd><p>Number at risk (Kaplan-Meier).</p></dd>
+<dd><p>Number at risk at this time: subjects still in
+follow-up. A subject with an entry time is at risk only after it.</p></dd>
 
 <dt>n_event</dt>
 <dd><p>Number of events at this time.</p></dd>
@@ -107,7 +111,8 @@ fitted data.</p></dd>
 <dd><p>Number censored at this time.</p></dd>
 
 <dt>km_surv</dt>
-<dd><p>Kaplan-Meier survival estimate.</p></dd>
+<dd><p>Kaplan-Meier survival estimate, using the
+counting-process risk set when the fit has entry times.</p></dd>
 
 <dt>km_cumhaz</dt>
 <dd><p>Kaplan-Meier cumulative hazard
@@ -115,19 +120,25 @@ fitted data.</p></dd>
 
 <dt>par_surv</dt>
 <dd><p>Parametric survival from the fitted model, at the
-covariate means for a model with covariates.</p></dd>
+covariate means for a model with covariates.  For plotting against
+<code>km_surv</code>; not used for <code>cum_expected</code>.</p></dd>
 
 <dt>par_cumhaz</dt>
 <dd><p>Parametric cumulative hazard, at the covariate
-means for a model with covariates.</p></dd>
+means for a model with covariates.  For plotting; not used for
+<code>cum_expected</code>.</p></dd>
 
 <dt>cum_observed</dt>
-<dd><p>Cumulative observed events to this time.</p></dd>
+<dd><p>Cumulative observed events to this time, weighted
+by the case weights for a weighted fit.</p></dd>
 
 <dt>cum_expected</dt>
-<dd><p>Cumulative expected events: <code>par_cumhaz</code>
-times the number of observations exiting the risk set, summed to
-this time.</p></dd>
+<dd><p>Cumulative expected events: over the patients
+leaving follow-up by this time, the sum of each patient's own
+cumulative hazard at exit minus that at entry, weighted by the case
+weights for a weighted fit.  With <code>time_windows</code>, both cumulative
+hazards use the patient's covariate window at exit, as the likelihood
+does.</p></dd>
 
 <dt>residual</dt>
 <dd><p>Expected minus observed
@@ -135,36 +146,56 @@ this time.</p></dd>
 
 
 </dl><p>For multiphase models, additional columns are appended for each
-phase: <code>par_cumhaz_&lt;phase&gt;</code>.</p>
+phase: <code>par_cumhaz_&lt;phase&gt;</code>, also at the covariate means.</p>
 <p>An attribute <code>"summary"</code> is attached with scalar diagnostics:
 total observed events, total expected events, and the final residual.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
-    <p>At each observed event time the function computes:</p><ul><li><p>The Kaplan-Meier survival and cumulative hazard.</p></li>
+    <p>The diagnostic is for right-censored data: every stored status must be 0
+(censored) or 1 (event).  A fit with any left-censored (status -1) or
+interval-censored (status 2) row is refused with an error.</p>
+<p>At each time point the function computes:</p><ul><li><p>The Kaplan-Meier survival and cumulative hazard.</p></li>
 <li><p>The parametric survival and cumulative hazard from the fitted
-model (and per-phase components for multiphase models).</p></li>
-<li><p>Cumulative observed events vs. cumulative expected events
-(the parametric cumulative hazard at each time, times the number
-of observations leaving the risk set then).</p></li>
+model at the covariate means (and per-phase components for
+multiphase models).  This is the curve to plot against the
+Kaplan-Meier estimate.</p></li>
+<li><p>Cumulative observed events vs. cumulative expected events.  Each
+patient's expected count is their own cumulative hazard, from their
+own covariates, at the end of their follow-up, less their cumulative
+hazard at entry when the fit is left truncated (<code>time_lower</code> on a
+status 0 or 1 row).  These are summed over the patients leaving
+follow-up at each time.</p></li>
 <li><p>The running residual (expected minus observed).</p></li>
-</ul><p>For an intercept-only model every patient shares one curve, so the
-expected count is the sum of each patient's cumulative hazard at their
-own exit time.  At the maximum likelihood estimate that sum equals the
-number of observed events (the conservation-of-events identity): the
-final residual is zero and the printed "Conservation ratio (E/O)" is 1.</p>
-<p>A model with covariates is different.  The parametric curve, and so the
-expected count, is evaluated at the covariate means, one "mean patient"
-standing in for everyone.  The mean patient's cumulative hazard is not
-the average of the patients' cumulative hazards, so the printed E/O is
-not the conservation-of-events identity and need not be near 1 at a
-correct fit.  Read it as a mean-patient check: how closely the curve
-for a patient with average covariates follows the whole cohort.</p>
-<p>To check conservation of events for a covariate model, sum each
-patient's own cumulative hazard at their follow-up time and compare the
-total with the event count.  Pass the covariate columns plus a <code>time</code>
-column to <code><a href="predict.hazard.html">predict.hazard()</a></code> with <code>type = "cumulative_hazard"</code>; the
-Examples show how.</p>
+</ul><p>The conservation-of-events principle says a model fit by maximum
+likelihood predicts as many events as were observed: add up every
+patient's cumulative hazard over their follow-up and you get the event
+count back.  The final residual is then zero and the printed
+"Conservation ratio (E/O)" is 1.  A multiphase fit with Conservation of
+Events applied (<code>control = list(conserve = TRUE)</code>, the default) meets the
+identity by construction.  Weibull and exponential fits meet it at the
+exact maximum, so at a converged fit E/O sits close to 1, off only by how
+far short of the maximum the optimizer stopped.  The log-logistic and
+log-normal models carry no such identity, and for them E/O is a check of
+calibration in total.</p>
+<p>The parametric curve is a different quantity.  For a model with
+covariates it belongs to one "mean patient" with average covariates, and
+the mean patient's cumulative hazard is not the average of the patients'
+cumulative hazards, so <code>par_cumhaz</code> does not enter the expected count.
+For an intercept-only model every patient shares that curve.  Without
+entry times each patient's expected count is the curve at their exit time;
+with entry times it is the curve's rise from entry to exit, so the two
+differ.  The means are those of the design-matrix columns, taken phase by
+phase when a multiphase fit's covariates enter only through the phase
+formulas, so a factor enters as the proportion of patients in each level.
+A multiphase fit with both global and phase-formula covariates is not yet
+handled here (#264).</p>
+<p>For a weighted fit both tallies carry the case weights: observed events
+are \(\sum_i w_i d_i\) and expected events \(\sum_i w_i H_i\), the
+form in which a weighted fit conserves events.  The <code>n_risk</code>, <code>n_event</code>,
+<code>n_censor</code> and Kaplan-Meier columns are unweighted.</p>
+<p>With a custom <code>time_grid</code>, a patient is counted in both tallies only if
+their follow-up time falls on a grid point.</p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
@@ -190,21 +221,21 @@ Examples show how.</p>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Distribution: weibull  | n = 305 </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Total observed events: 68 </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> Total expected events: 55.583 </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> Final residual (E - O): -12.417 </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> Conservation ratio (E/O): 0.817 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Total expected events: 67.999 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Final residual (E - O): -0.001 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Conservation ratio (E/O): 1 </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Use plot columns: time, km_surv, par_surv, cum_observed, cum_expected, residual</span>
 <span class="r-in"><span></span></span>
-<span class="r-in"><span><span class="co"># With covariates, hzr_gof() uses the covariate means, so its E/O is a</span></span></span>
-<span class="r-in"><span><span class="co"># mean-patient check.  The conservation-of-events check sums each</span></span></span>
-<span class="r-in"><span><span class="co"># patient's own cumulative hazard at their follow-up time:</span></span></span>
+<span class="r-in"><span><span class="co"># Expected events are summed per patient.  This fit has no entry times,</span></span></span>
+<span class="r-in"><span><span class="co"># so the total is the sum of each patient's own cumulative hazard at</span></span></span>
+<span class="r-in"><span><span class="co"># their follow-up time:</span></span></span>
 <span class="r-in"><span><span class="va">nd</span> <span class="op">&lt;-</span> <span class="va">avc</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"mal"</span><span class="op">)</span><span class="op">]</span></span></span>
 <span class="r-in"><span><span class="va">nd</span><span class="op">$</span><span class="va">time</span> <span class="op">&lt;-</span> <span class="va">avc</span><span class="op">$</span><span class="va">int_dead</span></span></span>
-<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>expected <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, newdata <span class="op">=</span> <span class="va">nd</span>, type <span class="op">=</span> <span class="st">"cumulative_hazard"</span><span class="op">)</span><span class="op">)</span>,</span></span>
-<span class="r-in"><span>  observed <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">avc</span><span class="op">$</span><span class="va">dead</span><span class="op">)</span><span class="op">)</span></span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> expected observed </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>  67.9993  68.0000 </span>
+<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>hzr_gof <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/attr.html" class="external-link">attr</a></span><span class="op">(</span><span class="va">gof</span>, <span class="st">"summary"</span><span class="op">)</span><span class="op">$</span><span class="va">total_expected</span>,</span></span>
+<span class="r-in"><span>  predict <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, newdata <span class="op">=</span> <span class="va">nd</span>, type <span class="op">=</span> <span class="st">"cumulative_hazard"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> hzr_gof predict </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 67.9993 67.9993 </span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="co"># Plot observed vs expected events</span></span></span>
 <span class="r-in"><span><span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/ns-load.html" class="external-link">requireNamespace</a></span><span class="op">(</span><span class="st">"ggplot2"</span>, quietly <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span></span>
