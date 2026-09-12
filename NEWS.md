@@ -65,6 +65,21 @@
 
 ## Bug fixes
 
+* **`predict(type = "survival", se.fit = TRUE)` now reports the standard
+  error of the survival probability.** The `se.fit` column held the standard
+  error of the cumulative hazard, `se(H)`, bit-identical to the column that
+  `type = "cumulative_hazard"` returns, under a survival label. It now holds
+  `S * se(H)`, the delta-method standard error of `S = exp(-H)`, which is
+  what `summary.survfit()` reports as `std.err`. For a Weibull fit of
+  `Surv(int_dead, dead) ~ age + mal` to `na.omit(avc)`, at `time = 5`,
+  `age = 60`, `mal = 1`, where `S = 0.700`, the old column read 0.0706
+  against the correct 0.0495.
+  Every path was affected: all four single distributions, multiphase fits,
+  and `hzr_read_outhaz()` objects. The confidence limits were already right
+  and have not changed, so the `PROC HAZPRED` parity of `lower` and `upper`
+  still holds. `PROC HAZPRED` prints no standard error, so there was no SAS
+  value for this column to reproduce.
+
 * **The multiphase gradient and Hessian are now right when an early phase's
   `m` is near 0.** Both differentiate in `m` by finite differences, and
   their stencils straddled 0: the gradient's (half-width about 6e-6)

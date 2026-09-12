@@ -1123,7 +1123,12 @@ hazard <- function(formula = NULL,
 #' @return When `se.fit = FALSE` (default), a numeric vector of predictions.
 #'   When `se.fit = TRUE`, a data frame with columns `fit`, `se.fit`, `lower`,
 #'   `upper` (delta-method point estimate, standard error, and confidence
-#'   limits at `level`). For multiphase `type = "cumulative_hazard"` with
+#'   limits at `level`). `se.fit` is always the standard error of `fit` on
+#'   its own scale: for `type = "survival"` that is `S * se(H)`, the delta
+#'   method applied to `S = exp(-H)`. The survival limits are built from
+#'   `se(H)` on the `conf.type` scale, so they are not `fit +/- z * se.fit`.
+#'   `PROC HAZPRED` prints no standard error, only the limits.
+#'   For multiphase `type = "cumulative_hazard"` with
 #'   `decompose = TRUE`, a long data frame (`time`, `component`, `fit`,
 #'   `se.fit`, `lower`, `upper`); with `decompose = TRUE` and `se.fit = FALSE`,
 #'   a wide data frame of per-phase contributions.
