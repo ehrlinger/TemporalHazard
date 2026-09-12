@@ -140,8 +140,13 @@ test_that("(e) gradient and Hessian match numDeriv on the mixed layout", {
 })
 
 test_that("(f) genuine left truncation is unchanged", {
-  # Values computed on the code before the #253 fix, where every entry was
-  # already 0 < time_lower < time and so read as an entry under both rules.
+  # Every entry here is 0 < time_lower < time, so it reads as an entry under
+  # both the old rule and #253's. The anchors below were computed on 9fd3dba,
+  # the commit before the #253 fix, and re-checked identical on c0d4cfd, on
+  # main (76d3e99) and on the merge. The gradient and Hessian are pinned at
+  # m = 0.5, not at m = 0: log L has a kink in m at 0 (slopes +/-3.9557), so
+  # a derivative there depends on the finite-difference stencil (#251, #260
+  # made it one-sided). numDeriv checks each derivative independently.
   set.seed(1)
   n <- 60
   time <- stats::rexp(n, 0.5) + 0.2
@@ -153,37 +158,42 @@ test_that("(f) genuine left truncation is unchanged", {
   k <- list(time = time, phases_v = .hzr_validate_phases(ph),
             counts = c(early = 0L, constant = 0L),
             x_list = list(early = NULL, constant = NULL))
-  th <- c(log(0.3), log(1), 1, 0, log(0.1))
+  ll <- function(th) .mp_logl(k, th, entry, status = status)
 
-  expect_equal(.mp_logl(k, th, entry, status = status),
-               -95.187915824809963, tolerance = 1e-12)
-  expect_equal(
-    .hzr_gradient_multiphase(th, time, status, time_lower = entry,
-                             phases = k$phases_v, covariate_counts = k$counts,
-                             x_list = k$x_list),
-    c(12.729520416962995, 2.8494490333870264, -9.2012662706668422,
-      -7.3753385293653607e-10, 23.589652067548901),
-    tolerance = 1e-10)
+  # The log-likelihood is well defined at m = 0.
+  th0 <- c(log(0.3), log(1), 1, 0, log(0.1))
+  expect_equal(ll(th0), -95.187915824810, tolerance = 1e-12)
+
+  th <- c(log(0.3), log(1), 1, 0.5, log(0.1))
+  g <- .hzr_gradient_multiphase(th, time, status, time_lower = entry,
+                                phases = k$phases_v,
+                                covariate_counts = k$counts,
+                                x_list = k$x_list)
+  expect_equal(g, c(12.238301562562, 1.483456049285, -9.365029543009,
+                    -3.310708925120, 24.591058283363), tolerance = 1e-10)
+  # numDeriv is a Suggests; the pins above and below run without it.
+  has_numderiv <- requireNamespace("numDeriv", quietly = TRUE)
+  if (has_numderiv) {
+    expect_equal(g, numDeriv::grad(ll, th), tolerance = 1e-6)
+  }
   hs <- .hzr_hessian_multiphase(th, time, status, time_lower = entry,
                                 phases = k$phases_v,
                                 covariate_counts = k$counts,
                                 x_list = k$x_list)
-  expect_equal(unname(hs[c(1, 2, 3, 5), c(1, 2, 3, 5)]), matrix(c(
-    -4.6719823126998747, -2.7924372244408859, 3.2186923025249516,
-    8.817994044279871,
-    -2.7924372244408859, 9.0112847085199377, 0.31747818316771581,
-    2.9159313448562774,
-    3.2186923025249516, 0.3174781831677157, -3.5861506233469047,
-    -5.6510355499695004,
-    8.817994044279871, 2.9159313448562765, -5.6510355499694995,
-    -2.2831782603717627), 4, 4), tolerance = 1e-10)
-  expect_equal(hs[4, 4], 64807.040011232821, tolerance = 1e-10)
+  expect_equal(hs[upper.tri(hs, diag = TRUE)], c(
+    -5.284353813771, -1.801259348636, 6.218739881821, 3.866407104660,
+    1.467275795528, -7.003725435493, 1.041266887820, 2.387702552874,
+    0.144978579487, -0.987020763633, 8.920178183938, 1.818804685909,
+    -6.336448265620, -1.983477842486, -2.385362400030), tolerance = 1e-10)
+  if (has_numderiv) {
+    expect_equal(unname(hs), numDeriv::hessian(function(p) -ll(p), th),
+                 tolerance = 1e-4)
+  }
 
   ft <- suppressWarnings(
     .hzr_optim_multiphase(time, status, time_lower = entry, phases = ph))
   # Optimizer end points are pinned loosely: BFGS can stop at slightly
-  # different points on the five CI platforms. The fixed-theta pins above
-  # (logl, gradient, Hessian) carry the tight checks.
+  # different points on the five CI platforms.
   expect_equal(ft$value, -61.048341005835724, tolerance = 1e-6)
   # log_mu, log_t_half, nu and log_mu: m sits at ~6e-10, where a relative
   # comparison is meaningless, so it is checked on its own absolute scale.

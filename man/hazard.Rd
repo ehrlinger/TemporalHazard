@@ -30,8 +30,11 @@ Right-censored (\code{Surv(time, status)}), left-censored
 (\code{type = "interval"} or \code{"interval2"}) and counting-process
 (\code{Surv(start, stop, event)}) forms are all accepted. \code{Surv()} codes
 censoring status with different integers than this package does; the
-formula path translates them, so write \code{Surv()}'s codes here and this
-package's codes when passing \code{status} directly.
+formula path translates them, so write \code{Surv()}'s codes here. A plain
+\code{status} vector takes this package's codes; a \code{Surv} passed as \code{status}
+is translated the same way as here.
+A \code{.} on the right-hand side stands for every column of \code{data} that the
+\code{Surv()} term does not use, as in \code{survival::coxph()}.
 When provided, overrides direct time/status/x arguments and extracts from data.
 Example: \code{hazard(Surv(time, status) ~ x1 + x2, data = df, dist = "weibull", fit = TRUE)}.}
 
@@ -50,7 +53,10 @@ path reaches \code{weights} and stops with \verb{'weights' must be non-negative 
 
 \item{time}{Numeric follow-up time vector.}
 
-\item{status}{Numeric or logical event indicator vector.}
+\item{status}{Numeric or logical event indicator vector, or a
+\code{\link[survival:Surv]{survival::Surv()}} object. A \code{Surv} is read by its \code{type}, exactly as the
+formula interface reads it, and a \code{time}, \code{time_lower} or \code{time_upper}
+that disagrees with it is an error.}
 
 \item{time_lower}{Optional numeric vector whose role depends on \code{status}.
 Supplying it explicitly is \strong{not} a no-op.
@@ -142,7 +148,9 @@ An object of class \code{hazard}, a named list with components:
 \code{data} (input data: \code{time}, \code{status}, \code{x},
 \code{weights}, etc.),
 \code{fit} (optimisation results: \code{theta}, \code{objective},
-\code{converged}, \code{se}, \code{vcov}, \code{counts}, \code{message};
+\code{converged}, \code{se}, \code{vcov}, \code{counts}, \code{message},
+and \code{rel_gradient} and \code{polish_code}, the SAS/C acceptance
+test described under "Convergence";
 all \code{NULL} when \code{fit = FALSE}; multiphase fits add
 \code{starts}, one row per optimisation start with its \code{status}
 (\code{"ok"}, \code{"nonconverged"}, \code{"infeasible"},
@@ -228,11 +236,16 @@ phases, set it to 0 to silence the check.
 log-likelihood (default 1e-5). BFGS stops when an iteration reduces it by
 less than \verb{reltol * (|objective| + reltol)}, so the stopping gap grows
 with the size of the log-likelihood: about 0.0024 at a log-likelihood of
--240. On a flat surface a fit can stop that far short of the optimum and
-still report convergence.
-\item \code{abstol}: Absolute gradient norm tolerance (default 1e-6)
-\item \code{method}: Recorded but not used. The optimizer is always BFGS (a
-multiphase fit may run a Nelder-Mead warm-up first); the entry is
+-240. On a flat surface plain BFGS can stop that far short of the optimum
+and still report convergence, so \code{hazard()} then applies SAS/C HAZARD's
+relative-gradient test and, when the stop fails it, continues with
+\code{\link[stats:nlm]{stats::nlm()}}; see the "Convergence" section.
+\item \code{abstol}: Projected-gradient tolerance, used only by the bounded
+(L-BFGS-B) optimizer (default 1e-6). The fits \code{hazard()} runs use BFGS
+and ignore it.
+\item \code{method}: Recorded but not used. The fits \code{hazard()} runs use BFGS (a
+multiphase fit may run a Nelder-Mead warm-up first, and a stop that
+fails SAS's gradient test continues with \code{\link[stats:nlm]{stats::nlm()}}); the entry is
 accepted so that translated SAS jobs (\code{QUASI}) run unchanged.
 SAS \verb{PROC HAZARD} jobs write \verb{STEEPEST QUASI} together (steepest
 descent first, then quasi-Newton). \code{QUASI}/\code{QUASINEWTON} is \code{"bfgs"};
@@ -313,6 +326,36 @@ of this additive form.  Parameters are estimated
 on an unconstrained internal scale (e.g. \eqn{\log\mu}, \eqn{\log t_{1/2}})
 and transformed back for reporting; see
 \code{vignette("mf-mathematical-foundations")}.
+}
+
+\section{Convergence}{
+
+
+The optimizer stops when an iteration improves the log-likelihood by less
+than \code{control$reltol} relative to its size, and on a flat ridge that can
+happen well short of the maximum. SAS/C HAZARD accepts an optimum only on a
+different test, the relative gradient
+\eqn{\max_i |g_i| \max(|x_i|, 1) / \max(|\ell|, 1) \le \epsilon^{1/3}}{max_i
+|g_i| max(|x_i|, 1) / max(|l|, 1) <= eps^(1/3)}, about 6e-6, and \code{hazard()}
+applies it too: when the optimizer reports convergence and the test fails,
+the fit is continued with \code{\link[stats:nlm]{stats::nlm()}} at SAS's tolerances, and the
+continued point is kept if it improves the log-likelihood.
+
+Every fit records the result in \code{fit$fit$rel_gradient} and, when the
+continuation improved the fit, its termination code in
+\code{fit$fit$polish_code}. \code{print()} and \code{summary()} show both.
+\code{rel_gradient} is \code{NA} when the test was not applied (the optimizer did
+not report convergence) or the gradient cannot be evaluated at the
+estimates; \code{NA} is never reported as a pass. Under Conservation of Events
+the analytic score omits how the conserved scale moves, so the test is
+computed from finite differences of the log-likelihood with that scale
+re-solved, as SAS/C does; the continuation still uses the analytic score,
+so a CoE fit can honestly end with the test not met. A warning is raised only for code 4, the
+iteration limit (raise \code{control$maxit}), and code 5, where the
+log-likelihood kept rising along some direction and the model may have no
+maximum. Codes 2 and 3, where SAS/C prints a caution, are recorded without
+one. The test is relative to the size of the log-likelihood, so a fit that
+meets it is within SAS's tolerance of the maximum, not exactly at it.
 }
 
 \section{Baseline distributions}{

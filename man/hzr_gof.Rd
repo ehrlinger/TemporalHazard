@@ -94,8 +94,9 @@ the mean patient's cumulative hazard is not the average of the patients'
 cumulative hazards, so \code{par_cumhaz} does not enter the expected count.
 For an intercept-only model every patient shares that curve and the two
 agree.  The means are those of the design-matrix columns, taken phase by
-phase when a multiphase fit's covariates enter through the phase
-formulas, so a factor enters as the proportion of patients in each level.
+phase for a multiphase fit, whether its covariates enter globally, through
+the phase formulas or both, so a factor enters as the proportion of
+patients in each level.
 With \code{time_windows}, the mean patient carries the covariate means in the
 window that contains each time.
 

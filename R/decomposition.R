@@ -574,8 +574,14 @@ hzr_phase_cumhaz <- function(time, t_half = 1, nu = 1, m = 0,
 #' Derivatives of phase cumulative and instantaneous hazard w.r.t. shape params
 #'
 #' Computes \eqn{\Phi_j(t)}, \eqn{\phi_j(t)}, and their derivatives with
-#' respect to `t_half`, `nu`, and `m` using central finite differences on
-#' [hzr_decompos()].  The `log_t_half` derivative is obtained via the chain
+#' respect to `t_half`, `nu`, and `m` using finite differences on
+#' [hzr_decompos()]: central in `t_half` and `nu`, and in `m` central except
+#' near `m = 0`, where the stencil keeps the sign of `m`.  [hzr_decompos()]
+#' changes formula at `m = 0` and the two sides meet in a cusp, so for
+#' `m >= 0` a stencil that would reach 0 becomes one-sided forward (second
+#' order), and for `m < 0` the step is capped at 1% of `|m|` (floored at
+#' 1e-10) and becomes one-sided backward if it would still reach 0.  The
+#' `log_t_half` derivative is obtained via the chain
 #' rule: \eqn{d\Phi/d(\log t_{1/2}) = t_{1/2} \cdot d\Phi/dt_{1/2}}.
 #'
 #' @param time Numeric vector of positive times.
@@ -695,11 +701,40 @@ hzr_phase_cumhaz <- function(time, t_half = 1, nu = 1, m = 0,
     dphi_dnu <- rep(0, n)
   }
 
-  # Derivative w.r.t. m
+  # Derivative w.r.t. m.  hzr_decompos() changes formula at m = 0, and the two
+  # sides do not join smoothly: m >= 0 is one smooth family (Case 1L is the
+  # m -> 0+ limit of Case 1), while Case 2 meets it in a |m|^nu cusp.  A
+  # stencil straddling 0 differences two branches and returns neither side's
+  # derivative -- +8.4 against a true -20.2 at m = 2.9e-6.  SAS/C never meets
+  # this: it estimates log|M| with the sign fixed at setup (hzd_early_t2p.c),
+  # so M cannot reach or cross 0.  Here the stencil keeps the sign of m
+  # instead.  For m < 0 the step is capped at 1% of |m|, because the cusp
+  # varies on the scale of |m|, and floored at 1e-10 so rounding stays
+  # bounded as m -> 0-.  A stencil that would still reach 0 goes one-sided
+  # and second order: forward from m >= 0 (m = 0 itself takes that side),
+  # backward from m < 0.
   h_m <- eps_rel * max(abs(m), 1)
-  d_plus  <- perturb_decompos(t_half, nu, m + h_m)
-  d_minus <- perturb_decompos(t_half, nu, m - h_m)
-  if (!is.null(d_plus) && !is.null(d_minus)) {
+  if (m < 0) h_m <- min(h_m, max(0.01 * abs(m), 1e-10))
+  # +1: forward from m >= 0; -1: backward from m < 0; 0: central.
+  side <- if (m >= 0 && m - h_m < 0) {
+    1
+  } else if (m < 0 && m + h_m >= 0) {
+    -1
+  } else {
+    0
+  }
+  d_plus  <- if (side < 0) NULL else perturb_decompos(t_half, nu, m + h_m)
+  d_minus <- if (side > 0) NULL else perturb_decompos(t_half, nu, m - h_m)
+  d_far   <- if (side != 0) {
+    perturb_decompos(t_half, nu, m + 2 * side * h_m)
+  }
+  d_near  <- if (side > 0) d_plus else d_minus
+  if (side != 0 && !is.null(d_near) && !is.null(d_far)) {
+    e_near  <- extract(d_near, type)
+    e_far   <- extract(d_far, type)
+    dPhi_dm <- side * (-3 * base$Phi + 4 * e_near$Phi - e_far$Phi) / (2 * h_m)
+    dphi_dm <- side * (-3 * base$phi + 4 * e_near$phi - e_far$phi) / (2 * h_m)
+  } else if (!is.null(d_plus) && !is.null(d_minus)) {
     e_plus  <- extract(d_plus, type)
     e_minus <- extract(d_minus, type)
     dPhi_dm <- (e_plus$Phi - e_minus$Phi) / (2 * h_m)

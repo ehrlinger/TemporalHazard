@@ -15,6 +15,52 @@ NULL
   requireNamespace("numDeriv", quietly = TRUE)
 }
 
+# Central differences of an objective, for when the analytic gradient is not
+# the objective's own (Conservation of Events). A point on the 1e10 clamp makes
+# that component NA rather than a number that looks measured. Components in
+# `sign_bounded` -- the multiphase shape m -- never straddle 0, where the cdf
+# and hazard families meet in a cusp (#251), and follow the rule of
+# .hzr_phase_derivatives(): one-sided second order forward from m >= 0; from
+# m < 0 a step capped at 1% of |m|, one-sided backward if it would still reach
+# 0. The floor on that step is 1e-8, not the decomposition's 1e-10: these
+# differences are of the whole log-likelihood, whose rounding error relative
+# to |f| is about eps / h, and at 1e-10 that is already near SAS's gradtl.
+.hzr_fd_gradient <- function(objective, theta, sign_bounded = integer(0)) {
+  n <- length(theta)
+  h <- .Machine$double.eps^(1 / 3) * pmax(abs(theta), 1)
+  side <- numeric(n)
+  for (i in intersect(sign_bounded, seq_len(n))) {
+    x <- theta[i]
+    if (x < 0) h[i] <- min(h[i], max(0.01 * abs(x), 1e-8))
+    side[i] <- if (x >= 0 && x - h[i] < 0) {
+      1
+    } else if (x < 0 && x + h[i] >= 0) {
+      -1
+    } else {
+      0
+    }
+  }
+  # The centre point is needed only by a one-sided stencil; evaluate it once.
+  f0 <- if (any(side != 0)) objective(theta) else NA_real_
+  at <- function(i, step) {
+    z <- theta
+    z[i] <- theta[i] + step
+    objective(z)
+  }
+  vapply(seq_len(n), function(i) {
+    if (side[i] == 0) {
+      up <- at(i, h[i])
+      down <- at(i, -h[i])
+      if (up >= 1e10 || down >= 1e10) return(NA_real_)
+      return((up - down) / (2 * h[i]))
+    }
+    near <- at(i, side[i] * h[i])
+    far <- at(i, 2 * side[i] * h[i])
+    if (f0 >= 1e10 || near >= 1e10 || far >= 1e10) return(NA_real_)
+    side[i] * (-3 * f0 + 4 * near - far) / (2 * h[i])
+  }, numeric(1))
+}
+
 #' Generic optimizer for parametric hazard likelihoods
 #'
 #' Maximises a log-likelihood by minimising its negation via \code{stats::optim}.
@@ -50,6 +96,19 @@ NULL
 #'   \code{NULL} (e.g. a censoring branch it does not cover analytically), or
 #'   when it errors.  A non-NULL, non-conformant return raises a warning and
 #'   also falls back to the numerical Hessian.
+#' @param gradient_exact Logical; `TRUE` (the default) when `gradient_fn` is
+#'   the gradient of the objective being maximised. Conservation of Events
+#'   passes `FALSE`: its `gradient_fn` is the partial score at the conserved
+#'   theta, which leaves out how the conserved `log_mu` moves with the free
+#'   parameters. SAS/C's acceptance test is then computed from finite
+#'   differences of the objective itself, with the scale re-solved at every
+#'   step as SAS/C does (`setobj.c`). The `nlm()` continuation keeps the
+#'   analytic score: with finite differences it walks onto the CoE solve's
+#'   discontinuity where no events are left to conserve.
+#' @param sign_bounded Integer positions in `theta_start` whose
+#'   finite-difference stencil must not cross 0 (the multiphase shape `m`,
+#'   where the phase families meet in a cusp). Used only when
+#'   `gradient_exact = FALSE`.
 #'
 #' @return List with par, value (log-likelihood), convergence, counts, message,
 #'   hessian, vcov. Includes \code{se_unavailable_reason}.
@@ -67,7 +126,9 @@ NULL
     control = list(),
     use_bounds = FALSE,
     lower_bounds = NULL,
-    hessian_fn = NULL) {
+    hessian_fn = NULL,
+    gradient_exact = TRUE,
+    sign_bounded = integer(0)) {
 
   control <- utils::modifyList(
     list(maxit = 1000, reltol = 1e-5, abstol = 1e-6),
@@ -140,6 +201,93 @@ NULL
       control = list(maxit = control$maxit, reltol = control$reltol),
       hessian = FALSE
     )
+  }
+
+  # SAS/C's acceptance test (src/optim/umstop.c): the optimum is accepted
+  # only when the relative gradient max_i |g_i| * max(|x_i|, 1) / max(|f|, 1)
+  # is at most gradtl = eps^(1/3).  optim()'s BFGS stops on the relative
+  # change in the objective instead, and at the default reltol = 1e-5 that
+  # accepts a flat ridge well short of the optimum while reporting
+  # convergence 0: on the test suite, 70% of converged BFGS stops failed
+  # SAS's test.  When BFGS reports convergence and the test fails, polish
+  # with stats::nlm() -- R's Dennis-Schnabel UNCMIN, the algorithm SAS/C's
+  # optimizer was ported from -- at SAS's tolerances; its typsize = 1 and
+  # fscale = 1 defaults are SAS's typx and typf.  The polished point is kept
+  # only when it improves the objective.  L-BFGS-B stops on a projected
+  # gradient already, so the bounded path is left alone.
+  gradtl <- .Machine$double.eps^(1 / 3)
+  # NA, never 0, wherever the gradient cannot be trusted. The wrapped
+  # gradient() above returns zeros at a clamped or failing point, and a zero
+  # there would read as a pass; so this calls gradient_fn itself (or, when
+  # gradient_exact is FALSE, differences the objective) and refuses the 1e10
+  # sentinel, a non-finite point, and any non-finite component.
+  # The acceptance test needs the unsanitised score. The multiphase gradient
+  # zeroes components it cannot evaluate, which the optimizer needs and this
+  # test must not see: a zero there reads as a pass over a point that was not
+  # scored. Asked only of a gradient_fn that can take the request (it names
+  # `sanitize` or `...`); the single-distribution gradients take neither and
+  # do not sanitise.
+  raw_score_arg <- if (any(c("sanitize", "...") %in% names(formals(gradient_fn)))) {
+    list(sanitize = FALSE)
+  } else {
+    list()
+  }
+  rel_gradient <- function(theta, value) {
+    if (!all(is.finite(theta)) || !is.finite(value) || value >= 1e10) {
+      return(NA_real_)
+    }
+    g <- if (gradient_exact) {
+      tryCatch(
+        do.call(gradient_fn, c(
+          list(theta = theta, time = time, status = status,
+               time_lower = time_lower, time_upper = time_upper,
+               x = x, weights = weights),
+          raw_score_arg
+        )),
+        error = function(e) NULL
+      )
+    } else {
+      .hzr_fd_gradient(objective, theta, sign_bounded)
+    }
+    if (is.null(g) || length(g) != length(theta) || !all(is.finite(g))) {
+      return(NA_real_)
+    }
+    max(abs(g) * pmax(abs(theta), 1)) / max(abs(value), 1)
+  }
+  rel_grad <- NA_real_
+  polish_code <- NA_integer_
+  if (!use_bounds && result$convergence == 0L) {
+    rel_grad <- rel_gradient(result$par, result$value)
+    if (is.finite(rel_grad) && rel_grad > gradtl) {
+      f_nlm <- function(theta) {
+        v <- objective(theta)
+        attr(v, "gradient") <- gradient(theta)
+        v
+      }
+      polish <- tryCatch(
+        suppressWarnings(stats::nlm(
+          f_nlm, result$par, gradtol = gradtl,
+          steptol = .Machine$double.eps^(2 / 3), iterlim = control$maxit,
+          check.analyticals = FALSE
+        )),
+        error = function(e) NULL
+      )
+      if (!is.null(polish) && is.finite(polish$minimum) &&
+          polish$minimum < result$value) {
+        # nlm() drops names; optim() keeps them, and the single-distribution
+        # fits hand par straight back to hazard().
+        result$par   <- stats::setNames(polish$estimate, names(result$par))
+        result$value <- polish$minimum
+        polish_code  <- as.integer(polish$code)
+        rel_grad     <- rel_gradient(result$par, result$value)
+        # counts still describe the BFGS run alone, so say the fit went on.
+        result$message <- paste0(
+          if (length(result$message)) paste0(result$message, "; ") else "",
+          "continued with nlm() for ", polish$iterations,
+          " iterations (code ", polish$code, ")"
+        )
+      }
+    }
   }
 
   # Post-fit Hessian for standard errors.  Prefer the caller's analytic Hessian
@@ -230,6 +378,11 @@ NULL
     vcov = inv$vcov,
     rcond = inv$rcond,
     pd = inv$pd,
-    se_unavailable_reason = if (is.matrix(inv$vcov)) NA_character_ else inv$reason
+    se_unavailable_reason = if (is.matrix(inv$vcov)) NA_character_ else inv$reason,
+    # SAS/C's relative gradient at the returned point, after any polish; NA
+    # when not evaluated (the bounded path, or BFGS did not converge).
+    rel_gradient = rel_grad,
+    # stats::nlm()'s termination code when the polish ran and was kept.
+    polish_code = polish_code
   )
 }
