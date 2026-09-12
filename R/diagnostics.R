@@ -503,6 +503,21 @@ hzr_gof <- function(object, time_grid = NULL) {
     object$fit$x_list, function(m) !is.null(m) && ncol(m) > 0, logical(1)
   ))
 
+  # A multiphase fit drops rows with a missing phase covariate from that
+  # phase's design matrix but keeps every row's time and status. A
+  # per-subject prediction would then recycle the shorter design across the
+  # subjects, so refuse rather than tally over it.
+  short <- vapply(object$fit$x_list, function(m) {
+    !is.null(m) && NROW(m) != n_total
+  }, logical(1))
+  if (is_multiphase && any(short)) {
+    stop("hzr_gof() needs one design row per subject, but the fit dropped ",
+         "rows with missing covariates from phase ",
+         paste0("'", names(short)[short], "'", collapse = ", "),
+         ". Refit on complete cases, e.g. data = na.omit(data).",
+         call. = FALSE)
+  }
+
   curve_obj <- object
   if (has_phase_x) {
     # A multiphase fit stores each phase's own design matrix: the phase
@@ -511,13 +526,19 @@ hzr_gof <- function(object, time_grid = NULL) {
     # puts every covariate at 0. Put each phase's design matrix at its column
     # means and the stored times at the grid; predict() without newdata then
     # evaluates that stored design.
-    # With time_windows, a phase without a formula carries data$x expanded
-    # into one column per window, each on only in its own window. Its column
-    # means would switch every window on at once, so expand the means of
-    # data$x by the grid times instead.
-    phases <- object$fit$phases
-    if (is.null(phases)) phases <- object$spec$phases
+    # With time_windows, a phase that took the global x carries data$x
+    # expanded into one column per window, each on only in its own window.
+    # Its column means would switch every window on at once, so expand the
+    # means of data$x by the grid times instead. Such a phase is recognised
+    # by its columns, not by whether a formula was written: a phase formula
+    # the fit could not evaluate (no `data`) leaves the phase on data$x.
     time_windows <- object$spec$time_windows
+    window_cols <- if (!is.null(time_windows)) {
+      colnames(.hzr_expand_time_varying_design(
+        x = object$data$x[1, , drop = FALSE], time = 0,
+        time_windows = time_windows
+      ))
+    }
     x_bar <- function(m) {
       matrix(colMeans(m), nrow = length(time_grid), ncol = ncol(m),
              byrow = TRUE, dimnames = list(NULL, colnames(m)))
@@ -527,7 +548,7 @@ hzr_gof <- function(object, time_grid = NULL) {
       stats::setNames(nm = names(object$fit$x_list)), function(nm) {
         m <- object$fit$x_list[[nm]]
         if (is.null(m) || ncol(m) == 0) return(m)
-        if (!is.null(time_windows) && is.null(phases[[nm]]$formula)) {
+        if (!is.null(time_windows) && identical(colnames(m), window_cols)) {
           return(.hzr_expand_time_varying_design(
             x = x_bar(object$data$x), time = time_grid,
             time_windows = time_windows

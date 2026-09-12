@@ -131,6 +131,21 @@ test_that("multiphase fit with only global covariates: curve at their means", {
   expect_equal(unname(gof$par_cumhaz), unname(at_mean), tolerance = 1e-10)
 })
 
+# The mean patient's curve under time_windows = 1, built by hand: each phase's
+# baseline (a time-only newdata) times exp(beta * mean(age)), using the w1
+# coefficient up to time 1 and the w2 coefficient after it.
+.gof_pc_window_ref <- function(fit, gof, d) {
+  base <- predict(fit, newdata = data.frame(time = gof$time),
+                  type = "cumulative_hazard", decompose = TRUE)
+  th <- fit$fit$theta
+  beta <- function(ph) {
+    ifelse(gof$time <= 1, th[[paste0(ph, ".age_w1")]],
+           th[[paste0(ph, ".age_w2")]])
+  }
+  base$early * exp(beta("early") * mean(d$age)) +
+    base$constant * exp(beta("constant") * mean(d$age))
+}
+
 test_that("multiphase fit with time_windows: curve switches windows with time", {
   # time_windows expands the global x into one column per window, each on
   # only while the row's time is in that window. Column means of the
@@ -152,19 +167,54 @@ test_that("multiphase fit with time_windows: curve switches windows with time", 
   expect_identical(colnames(fit$fit$x_list$constant), c("age_w1", "age_w2"))
 
   gof <- hzr_gof(fit)
-  n <- length(gof$time)
-  x_mean <- .hzr_expand_time_varying_design(
-    x = matrix(mean(d$age), nrow = n, ncol = 1,
-               dimnames = list(NULL, "age")),
-    time = gof$time, time_windows = 1
-  )
   # Both windows are visited, so a wrong window would show.
   expect_true(any(gof$time <= 1) && any(gof$time > 1))
-  ref <- .hzr_multiphase_cumhaz(
-    gof$time, fit$fit$theta, fit$fit$phases, fit$fit$covariate_counts,
-    list(early = x_mean, constant = x_mean)
+  expect_equal(unname(gof$par_cumhaz), .gof_pc_window_ref(fit, gof, d),
+               tolerance = 1e-10)
+})
+
+test_that("time_windows: a phase formula ignored at fit time gets the windows", {
+  # Without `data`, the fit cannot evaluate a phase formula, so the phase
+  # takes the window-expanded global x like any other. The curve has to
+  # follow what the fit built, not whether a formula was written.
+  d <- .gof_pc_avc
+  fit <- suppressWarnings(hazard(
+    time = d$int_dead, status = d$dead, x = cbind(age = d$age),
+    time_windows = 1,
+    dist   = "multiphase",
+    phases = list(
+      early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                           fixed = "shapes", formula = ~ age),
+      constant = hzr_phase("constant")
+    ),
+    fit    = TRUE
+  ))
+  expect_identical(colnames(fit$fit$x_list$early), c("age_w1", "age_w2"))
+  expect_false(is.null(fit$fit$phases$early$formula))
+
+  gof <- hzr_gof(fit)
+  expect_equal(unname(gof$par_cumhaz), .gof_pc_window_ref(fit, gof, d),
+               tolerance = 1e-10)
+})
+
+test_that("a phase covariate with missing values is refused, not recycled", {
+  # The fit drops rows with a missing phase covariate from that phase's
+  # design matrix but keeps every row's time and status, so a per-subject
+  # prediction would recycle the shorter design across the longer data.
+  d <- .gof_pc_avc
+  d$mal[1:5] <- NA
+  phases <- list(
+    early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                         fixed = "shapes", formula = ~ mal),
+    constant = hzr_phase("constant")
   )
-  expect_equal(unname(gof$par_cumhaz), ref, tolerance = 1e-10)
+  for (f in list(survival::Surv(int_dead, dead) ~ age,
+                 survival::Surv(int_dead, dead) ~ 1)) {
+    fit <- suppressWarnings(hazard(f, data = d, dist = "multiphase",
+                                   phases = phases, fit = TRUE))
+    expect_identical(nrow(fit$fit$x_list$early), nrow(d) - 5L)
+    expect_error(hzr_gof(fit), "one design row per subject")
+  }
 })
 
 test_that("global and phase covariates together: curve at both sets of means", {

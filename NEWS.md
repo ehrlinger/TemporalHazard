@@ -241,7 +241,12 @@
   of each phase's own design matrix, for global, phase-formula and mixed
   covariates alike. With `time_windows`, a multiphase fit's output had twice
   as many rows as grid times. The mean patient now carries the covariate
-  means in the window that contains each time. Separately, the
+  means in the window that contains each time, for every phase built on the
+  global covariates, including one whose formula the fit could not evaluate
+  without `data`. A multiphase fit that dropped rows with a missing phase
+  covariate is now refused: its design matrix is shorter than the data, and
+  the per-subject tally recycled it and gave a wrong total with only a
+  length warning. Separately, the
   `par_cumhaz_<phase>` columns were chosen
   by dropping `total` from the decomposition, which let its `time` column
   through as a phase; they are now chosen by phase name.
