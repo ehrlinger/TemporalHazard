@@ -38,10 +38,14 @@ hazard(
   (`type = "interval"` or `"interval2"`) and counting-process
   (`Surv(start, stop, event)`) forms are all accepted. `Surv()` codes
   censoring status with different integers than this package does; the
-  formula path translates them, so write `Surv()`'s codes here and this
-  package's codes when passing `status` directly. When provided,
-  overrides direct time/status/x arguments and extracts from data.
-  Example:
+  formula path translates them, so write `Surv()`'s codes here. A plain
+  `status` vector takes this package's codes; a `Surv` passed as
+  `status` is translated the same way as here. A `.` on the right-hand
+  side stands for every column of `data` that the `Surv()` term does not
+  use, as in
+  [`survival::coxph()`](https://rdrr.io/pkg/survival/man/coxph.html).
+  When provided, overrides direct time/status/x arguments and extracts
+  from data. Example:
   `hazard(Surv(time, status) ~ x1 + x2, data = df, dist = "weibull", fit = TRUE)`.
 
 - data:
@@ -67,7 +71,11 @@ hazard(
 
 - status:
 
-  Numeric or logical event indicator vector.
+  Numeric or logical event indicator vector, or a
+  [`survival::Surv()`](https://rdrr.io/pkg/survival/man/Surv.html)
+  object. A `Surv` is read by its `type`, exactly as the formula
+  interface reads it, and a `time`, `time_lower` or `time_upper` that
+  disagrees with it is an error.
 
 - time_lower:
 

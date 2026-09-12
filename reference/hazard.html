@@ -102,8 +102,11 @@ Right-censored (<code>Surv(time, status)</code>), left-censored
 (<code>type = "interval"</code> or <code>"interval2"</code>) and counting-process
 (<code>Surv(start, stop, event)</code>) forms are all accepted. <code>Surv()</code> codes
 censoring status with different integers than this package does; the
-formula path translates them, so write <code>Surv()</code>'s codes here and this
-package's codes when passing <code>status</code> directly.
+formula path translates them, so write <code>Surv()</code>'s codes here. A plain
+<code>status</code> vector takes this package's codes; a <code>Surv</code> passed as <code>status</code>
+is translated the same way as here.
+A <code>.</code> on the right-hand side stands for every column of <code>data</code> that the
+<code>Surv()</code> term does not use, as in <code><a href="https://rdrr.io/pkg/survival/man/coxph.html" class="external-link">survival::coxph()</a></code>.
 When provided, overrides direct time/status/x arguments and extracts from data.
 Example: <code>hazard(Surv(time, status) ~ x1 + x2, data = df, dist = "weibull", fit = TRUE)</code>.</p></dd>
 
@@ -128,7 +131,10 @@ path reaches <code>weights</code> and stops with <code>'weights' must be non-neg
 
 
 <dt id="arg-status">status<a class="anchor" aria-label="anchor" href="#arg-status"></a></dt>
-<dd><p>Numeric or logical event indicator vector.</p></dd>
+<dd><p>Numeric or logical event indicator vector, or a
+<code><a href="https://rdrr.io/pkg/survival/man/Surv.html" class="external-link">survival::Surv()</a></code> object. A <code>Surv</code> is read by its <code>type</code>, exactly as the
+formula interface reads it, and a <code>time</code>, <code>time_lower</code> or <code>time_upper</code>
+that disagrees with it is an error.</p></dd>
 
 
 <dt id="arg-time-lower">time_lower<a class="anchor" aria-label="anchor" href="#arg-time-lower"></a></dt>

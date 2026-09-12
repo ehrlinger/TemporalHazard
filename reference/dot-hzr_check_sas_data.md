@@ -53,20 +53,3 @@ Bounds are normalised here exactly as
 normalises them, so the check cannot disagree with the objective about
 which rows are offenders. Indices are reported against the **data**, not
 against the interval subset the inner guard sees.
-
-**This guards the codes it is given, not the ones the user meant.** On
-the vector interface a
-[`survival::Surv()`](https://rdrr.io/pkg/survival/man/Surv.html) object
-is unclassed without translation, so its codes reach here meaning
-something else entirely, and what goes wrong depends on `type`: under
-`type = "left"` a left-censored row is coded `0` and so arrives as this
-package's *right-censored*, and is fitted as one; under
-`type = "interval"` it is coded `2` and arrives as *interval*, where
-this check rejects it for having zero width. A genuine interval row is
-coded `3`, which no branch of
-[`.hzr_logl_multiphase()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_logl_multiphase.md)
-matches, so it contributes nothing at all. The formula path translates
-in
-[`.hzr_parse_formula()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_parse_formula.md)
-and is guarded correctly. That asymmetry is a pre-existing defect of the
-vector path, not of this check; see \#226.

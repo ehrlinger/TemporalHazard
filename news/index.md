@@ -38,6 +38,59 @@
   refusal, so it is kept apart from the existing “selects no phase”
   stop.
 
+- **A multiphase formula that names a phase as a function is now an
+  error**
+  ([\#275](https://github.com/ehrlinger/TemporalHazard/issues/275)).
+  `hazard(Surv(int_dead, dead) ~ constant(age), dist = "multiphase", phases = ...)`
+  read `constant(age)` as a phase-scoped term, then replaced the whole
+  right-hand side with `~ 1`, and nothing sent the term to its phase.
+  The fit converged without an `age` coefficient, with no error and no
+  warning.
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  now stops, names the phase or phases it found, and points to
+  `hzr_phase(..., formula = ~ var)`, which is where a phase’s covariates
+  belong. Code that relied on the old behaviour was fitting a model
+  without those covariates; drop the terms from the formula to keep that
+  model, or move them into
+  [`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
+  to get the one the formula described. Formulas that call an ordinary
+  function such as [`log()`](https://rdrr.io/r/base/Log.html), and plain
+  global covariates, are unaffected.
+
+- **[`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
+  now refuses a fit whose formula uses a per-row variable that is not a
+  column of its `data`**
+  ([\#278](https://github.com/ehrlinger/TemporalHazard/issues/278)).
+  Replicates resample the rows of `data`, so such a variable was held
+  fixed while the rows moved under it. The interval was wrong, and every
+  replicate still reported success, with no warning: on `avc`, a copy of
+  `age` kept outside `data` gave an interval that excluded its own
+  estimate. The check covers the response, the covariates of the global
+  and phase formulas, and a select-mode `scope`, and reads variables
+  from the terms, so `log(age)` needs only the column `age`. A constant
+  outside `data`, such as `pi`, a cutoff or a knots vector, is still
+  allowed. The error names the variables; add them to `data` and refit.
+  A scope variable that only the scope formula’s own frame can see,
+  which the refits could never test, is refused the same way. So is a
+  vector-interface fit whose design matrix was passed directly as `x`:
+  it was re-evaluated without resampling in every replicate, or in
+  select mode dropped from the candidate refits, so all of them
+  succeeded and the interval was wrong.
+
+- **[`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  now refuses a base fit written as `Surv(...) ~ .`**
+  ([\#279](https://github.com/ehrlinger/TemporalHazard/issues/279)). It
+  read the base model’s terms without the data, which cannot expand `.`,
+  and treated the failure as a model with no terms: the screen reported
+  zero steps, which looks the same as finding nothing to drop. It now
+  stops before printing anything and asks for the base model’s terms to
+  be written out. A `scope` of `~ .`, which used to give a screen with
+  no candidates, stops the same way, and so does a multiphase base fit
+  whose global formula uses `.` while a phase has no formula of its own
+  and so inherits it. A screen whose base model has its terms written
+  out is unchanged, as is a multiphase screen in which every phase has
+  its own formula.
+
 ### New features
 
 - **Every fit now says what it did not do**
@@ -183,6 +236,77 @@
   exactly when it depends on a masked one. Exponential, log-logistic and
   log-normal fits are unaffected; they report on the scale they are
   optimised on.
+
+- **A [`survival::Surv()`](https://rdrr.io/pkg/survival/man/Surv.html)
+  object passed as `status` is now translated, as the formula interface
+  always did**
+  ([\#226](https://github.com/ehrlinger/TemporalHazard/issues/226)).
+  [`Surv()`](https://rdrr.io/pkg/survival/man/Surv.html) codes censoring
+  with different integers from this package, and the vector interface
+  took the object’s second column unchanged. Under `type = "left"` a
+  left-censored row was fitted as right-censored; under `"interval"` and
+  `"counting"` the second column is not the status at all, so the fit
+  read `time2` or `stop` as status codes. There was no error and no
+  warning, and `objective = "sas"` could not see a left-censored row to
+  refuse it. Both interfaces now read the `Surv` through one internal
+  helper, driven by its `type`, so they store the same status and bounds
+  and give the same fit. The bounds a `Surv` carries are taken from it;
+  a `time`, `time_lower` or `time_upper` that disagrees with them is an
+  error rather than being silently replaced.
+  [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
+  resamples those bounds too, although they never appear in the stored
+  call.
+
+- **`.` in a
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  formula no longer puts the response in the design**
+  ([\#273](https://github.com/ehrlinger/TemporalHazard/issues/273)).
+  `Surv(int_dead, dead) ~ .` expanded `.` to every column of `data`,
+  including `int_dead` and `dead`, so the outcome was fitted as a
+  predictor. With starting values sized for those extra columns the fit
+  converged, with no error and a log-likelihood far above the correct
+  model’s. With starting values sized for the real covariates it stopped
+  with “non-conformable arguments”, which did not name the cause, and
+  `predict(newdata = )` demanded the response columns. `.` now means
+  every column the
+  [`Surv()`](https://rdrr.io/pkg/survival/man/Surv.html) term does not
+  use, as in
+  [`survival::coxph()`](https://rdrr.io/pkg/survival/man/coxph.html), so
+  a `~ .` fit gives the same design and estimates as the formula written
+  out in full. A `data` with no other column gives a model with no
+  covariates, and there `.` beside other terms is an error. **Estimates
+  from an earlier `~ .` fit change**, and so does the length of `theta`
+  it needs. A `.` in `hzr_phase(formula = )` is fixed separately
+  ([\#277](https://github.com/ehrlinger/TemporalHazard/issues/277)). A
+  right-hand-side variable that is not a column of `data` is now looked
+  up where the formula was written, so a variable local to the calling
+  function resolves instead of failing with “object not found”.
+  [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md),
+  which resamples only the rows of `data`, refuses such a fit
+  ([\#278](https://github.com/ehrlinger/TemporalHazard/issues/278)).
+
+- **`hzr_phase(formula = ~ .)` no longer puts the response in the phase
+  design**
+  ([\#277](https://github.com/ehrlinger/TemporalHazard/issues/277)). A
+  phase formula’s `.` was expanded by
+  [`model.frame()`](https://rdrr.io/r/stats/model.frame.html) against
+  every column of `data`, including the columns of the
+  [`Surv()`](https://rdrr.io/pkg/survival/man/Surv.html) term, so the
+  outcome was fitted as a phase covariate and the fit converged with no
+  error.
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  now writes `.` out once, before fitting, the same way as for the
+  global formula
+  ([\#273](https://github.com/ehrlinger/TemporalHazard/issues/273)):
+  every column the
+  [`Surv()`](https://rdrr.io/pkg/survival/man/Surv.html) term does not
+  use. The fitted object stores the written-out formula, so
+  `predict(newdata = )` no longer needs the response columns. On the
+  vector interface (`time =`, `status =`) no
+  [`Surv()`](https://rdrr.io/pkg/survival/man/Surv.html) term says which
+  columns hold the response, so a phase formula with `.` is now an error
+  there; write the phase’s terms out. **Estimates from an earlier fit
+  with `.` in a phase formula change.**
 
 - **[`hzr_argument_mapping()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_argument_mapping.md)
   listed DELTA as implemented.** Its `implementation_status` was
