@@ -180,11 +180,16 @@ test_that("(f) genuine left truncation is unchanged", {
                                 phases = k$phases_v,
                                 covariate_counts = k$counts,
                                 x_list = k$x_list)
-  expect_equal(hs[upper.tri(hs, diag = TRUE)], c(
+  # Entries in the shape parameters carry finite-difference error, and on CI
+  # they differ from these macOS values by up to 1.8e-7 relative (Ubuntu), so
+  # each entry is compared relatively at 1e-5. An entry-time change moves
+  # them by order 1. No pinned entry is near 0.
+  hs_pin <- c(
     -5.284353813771, -1.801259348636, 6.218739881821, 3.866407104660,
     1.467275795528, -7.003725435493, 1.041266887820, 2.387702552874,
     0.144978579487, -0.987020763633, 8.920178183938, 1.818804685909,
-    -6.336448265620, -1.983477842486, -2.385362400030), tolerance = 1e-10)
+    -6.336448265620, -1.983477842486, -2.385362400030)
+  expect_lt(max(abs(hs[upper.tri(hs, diag = TRUE)] / hs_pin - 1)), 1e-5)
   if (has_numderiv) {
     expect_equal(unname(hs), numDeriv::hessian(function(p) -ll(p), th),
                  tolerance = 1e-4)
