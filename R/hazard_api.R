@@ -133,7 +133,10 @@ NULL
 #' }
 #'
 #' @param time Numeric follow-up time vector.
-#' @param status Numeric or logical event indicator vector.
+#' @param status Numeric or logical event indicator vector, or a
+#'   [survival::Surv()] object. A `Surv` is read by its `type`, exactly as the
+#'   formula interface reads it, and a `time`, `time_lower` or `time_upper`
+#'   that disagrees with it is an error.
 #' @param time_lower Optional numeric vector whose role depends on `status`.
 #'   Supplying it explicitly is **not** a no-op.
 #'   * `status == 2` (interval-censored): the lower bound of the censoring

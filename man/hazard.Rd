@@ -52,7 +52,10 @@ path reaches \code{weights} and stops with \verb{'weights' must be non-negative 
 
 \item{time}{Numeric follow-up time vector.}
 
-\item{status}{Numeric or logical event indicator vector.}
+\item{status}{Numeric or logical event indicator vector, or a
+\code{\link[survival:Surv]{survival::Surv()}} object. A \code{Surv} is read by its \code{type}, exactly as the
+formula interface reads it, and a \code{time}, \code{time_lower} or \code{time_upper}
+that disagrees with it is an error.}
 
 \item{time_lower}{Optional numeric vector whose role depends on \code{status}.
 Supplying it explicitly is \strong{not} a no-op.
