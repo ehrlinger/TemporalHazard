@@ -61,8 +61,10 @@ NULL
 #'
 #' @param time Numeric vector of follow-up times (n)
 #' @param status Numeric vector of event indicators: 1 = event, 0 = censored (n)
-#' @param time_lower Optional numeric lower bound vector for interval-censored rows.
-#'   Defaults to time if NULL.
+#' @param time_lower Optional numeric vector. For status 0/1 rows it is the
+#'   counting-process entry (left-truncation) time, used where
+#'   \code{time_lower < time}; for status 2 rows it is the interval lower
+#'   bound. Defaults to time if NULL (no entry time).
 #' @param time_upper Optional numeric upper bound vector for left/interval-censored rows.
 #'   Defaults to time if NULL.
 #' @param x Design matrix of covariates (n x p_coef); NULL for no covariates
@@ -90,11 +92,16 @@ NULL
 #'
 #' \deqn{H(t | x) = \log(1 + \alpha t^{\beta} \exp(\eta))}
 #'
-#' The log-likelihood for right-censored data is:
+#' The log-likelihood for right-censored data with entry times \eqn{s_i} is:
 #'
 #' \deqn{\ell(\theta) = \sum_{\delta_i = 1} [\log(\alpha \beta) + (\beta - 1)
 #'   \log(t_i) + \eta_i - \log(1 + \alpha t_i^{\beta} \exp(\eta_i))] - \sum_{i}
-#'   \log(1 + \alpha t_i^{\beta} \exp(\eta_i))}
+#'   [\log(1 + \alpha t_i^{\beta} \exp(\eta_i)) -
+#'   \log(1 + \alpha s_i^{\beta} \exp(\eta_i))]}
+#'
+#' that is, each status 0/1 row contributes \eqn{H(t_i) - H(s_i)}. The entry
+#' time is \eqn{s_i} = time_lower where time_lower < time on status 0/1 rows,
+#' and \eqn{s_i = 0} otherwise, where \eqn{H(0) = 0} and the entry term vanishes.
 #'
 #' Reparameterization: theta\[1\] = log(alpha), theta\[2\] = log(beta) avoids constrained optimization.
 #'
@@ -211,7 +218,25 @@ NULL
     0
   }
 
-  logl <- ll_event + ll_right + ll_left + ll_interval
+  # Counting-process entry (left truncation), as in the Weibull likelihood:
+  # status 0/1 rows with time_lower < time contribute H(time) - H(start), so
+  # each adds back w * H(start) = w * log(1 + term(start)).  Status -1/2 rows
+  # keep start = 0; for status 2, time_lower is the interval lower bound.
+  start_vec <- rep(0, n)
+  if (!is.null(time_lower)) {
+    epoch_idx <- status %in% c(0L, 1L) & time_lower < time
+    start_vec[epoch_idx] <- time_lower[epoch_idx]
+  }
+  idx_start <- start_vec > 0
+  ll_entry <- if (any(idx_start)) {
+    sum(weights[idx_start] *
+          log1p(exp(log_alpha + beta * log(start_vec[idx_start]) +
+                      eta[idx_start])))
+  } else {
+    0
+  }
+
+  logl <- ll_event + ll_right + ll_left + ll_interval + ll_entry
 
   if (!is.finite(logl)) {
     return(Inf)
@@ -315,9 +340,25 @@ NULL
   grad[2] <- sum(w_status) +
              beta * (sum(w_status * log_t) - sum(wm * log_t))
 
-  # dL/dbeta_j = t(X) %*% (w * delta - wm)
+  # Entry term + w * log(1 + term_s), with term_s = alpha s^beta exp(eta) at
+  # the entry time s.  Its derivatives are w * p_s * (1, beta * log s, x) with
+  # p_s = term_s / (1 + term_s).  Rows without entry (s = 0) get p_s = 0 and
+  # log s = 0 exactly, so they contribute 0 and never 0 * -Inf = NaN.
+  start_vec <- rep(0, n)
+  if (!is.null(time_lower)) {
+    epoch_idx <- status %in% c(0L, 1L) & time_lower < time
+    start_vec[epoch_idx] <- time_lower[epoch_idx]
+  }
+  idx_start <- start_vec > 0
+  log_s <- ifelse(idx_start, log(pmax(start_vec, .Machine$double.xmin)), 0)
+  term_s <- ifelse(idx_start, alpha * exp(beta * log_s + eta), 0)
+  ws <- weights * term_s / (1 + term_s)
+  grad[1] <- grad[1] + sum(ws)
+  grad[2] <- grad[2] + beta * sum(ws * log_s)
+
+  # dL/dbeta_j = t(X) %*% (w * delta - wm + ws)
   if (p > 2 && !is.null(x)) {
-    residual <- w_status - wm
+    residual <- w_status - wm + ws
     grad[3:p] <- as.numeric(crossprod(x, residual))
   }
 
@@ -382,6 +423,25 @@ NULL
   hess <- crossprod(u, d_wt * u)
   hess[2L, 2L] <- hess[2L, 2L] +
     beta * sum(weights * log_t * ((1 + delta) * pr - delta))
+
+  # Entry term: the objective carries -w * log(1 + term_s) at the entry time
+  # s, i.e. the right-censored term at s with the sign flipped.  Rows without
+  # entry have p_s = 0 and log s = 0 and so contribute nothing.
+  start_vec <- rep(0, n)
+  if (!is.null(time_lower)) {
+    epoch_idx <- status %in% c(0L, 1L) & time_lower < time
+    start_vec[epoch_idx] <- time_lower[epoch_idx]
+  }
+  idx_start <- start_vec > 0
+  if (any(idx_start)) {
+    log_s <- ifelse(idx_start, log(pmax(start_vec, .Machine$double.xmin)), 0)
+    term_s <- ifelse(idx_start, exp(log_alpha + beta * log_s + eta), 0)
+    pr_s <- term_s / (1 + term_s)
+    u_s <- cbind(1, beta * log_s)
+    if (has_cov) u_s <- cbind(u_s, x)
+    hess <- hess - crossprod(u_s, (weights * pr_s * (1 - pr_s)) * u_s)
+    hess[2L, 2L] <- hess[2L, 2L] - beta * sum(weights * log_s * pr_s)
+  }
   dimnames(hess) <- list(names(theta), names(theta))
   hess
 }
