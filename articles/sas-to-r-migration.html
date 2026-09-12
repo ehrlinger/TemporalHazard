@@ -92,9 +92,9 @@
 </div>
 <section class="level2"><h2 id="overview">Overview<a class="anchor" aria-label="anchor" href="#overview"></a>
 </h2>
-<p>If you’ve been running multiphase hazard analyses in SAS HAZARD — the macro suite that wraps the C HAZARD binary written by Blackstone, Naftel, and Turner at UAB — this vignette is the bridge to running the same analyses in R. Every SAS <code>HAZARD</code> statement, every common macro option, and every output field maps to something in <code>TemporalHazard</code>; this document spells out the correspondences and flags the small handful of features the R port doesn’t yet cover.</p>
+<p>If you’ve been running multiphase hazard analyses in SAS HAZARD (the macro suite that wraps the C HAZARD binary written by Blackstone, Naftel, and Turner at UAB), this vignette is the bridge to running the same analyses in R. Every SAS <code>HAZARD</code> statement, every common macro option, and every output field maps to something in <code>TemporalHazard</code>; this document spells out the correspondences and flags the small handful of features the R port doesn’t yet cover.</p>
 <p>The mapping is faithful, not literal. SAS HAZARD is a step-driven DSL: you write a <code>PROC HAZARD</code> block with separate <code>TIME</code>, <code>EVENT</code>, <code>PARMS</code>, <code>EARLY</code>, <code>CONSTANT</code>, and <code>SELECTION</code> statements, and the macro assembles them into a binary call. R is function-driven: you write a single <code><a href="../reference/hazard.html">hazard()</a></code> call with named arguments. The conceptual pieces are identical; the syntactic ergonomics differ. Use this vignette to translate an existing SAS analysis, or as a reference when comparing the package’s output against a SAS HAZARD reference fit for parity testing.</p>
-<p>The full formal argument mapping table is available programmatically and ships with the package — handy when you want to grep for a specific SAS parameter name and find its R equivalent without scrolling through the prose below:</p>
+<p>The full formal argument mapping table is available programmatically and ships with the package. It is handy when you want to grep for a specific SAS parameter name and find its R equivalent without scrolling through the prose below:</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu">knitr</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/knitr/man/kable.html" class="external-link">kable</a></span><span class="op">(</span></span>
@@ -116,9 +116,9 @@
 <col style="width: 5%">
 <col style="width: 1%">
 <col style="width: 5%">
-<col style="width: 18%">
+<col style="width: 19%">
 <col style="width: 2%">
-<col style="width: 52%">
+<col style="width: 51%">
 </colgroup>
 <thead><tr class="header">
 <th style="text-align: left;">SAS Statement</th>
@@ -312,11 +312,11 @@
 <td style="text-align: left;">G1</td>
 <td style="text-align: left;">DELTA (early)</td>
 <td style="text-align: left;">early time transform</td>
-<td style="text-align: left;">(absorbed by decompos)</td>
+<td style="text-align: left;">(not implemented)</td>
 <td style="text-align: left;">FALSE</td>
 <td style="text-align: left;">numeric scalar</td>
-<td style="text-align: left;">time transform B(t) = (exp(delta*t)-1)/delta absorbed into decompos shape</td>
-<td style="text-align: left;">implemented</td>
+<td style="text-align: left;">time transform B(t) = (exp(delta*t)-1)/delta; drops out at DELTA = 0, non-zero DELTA not implemented</td>
+<td style="text-align: left;">planned</td>
 <td style="text-align: left;">NOT IMPLEMENTED, not absorbed. The C DELTA controls B(t) = (exp(delta*t)-1)/delta, which enters rho, the time argument and the density Jacobian separately; R computes the delta=0 branch of each. A job with DELTA != 0 is refused or flagged, never fitted silently.</td>
 </tr>
 <tr class="even">
@@ -402,7 +402,7 @@
 <hr></section><section class="level3"><h3 id="time">
 <code>TIME</code><a class="anchor" aria-label="anchor" href="#time"></a>
 </h3>
-<p>Names the follow-up time variable. In SAS HAZARD this is a separate statement; in R it’s the first argument to <code><a href="https://rdrr.io/pkg/survival/man/Surv.html" class="external-link">Surv()</a></code> inside the formula.</p>
+<p>Names the follow-up time variable. In SAS HAZARD this is a separate statement; in R it is the <code>time</code> argument of the vector interface shown here, or the first argument to <code><a href="https://rdrr.io/pkg/survival/man/Surv.html" class="external-link">Surv()</a></code> if you use the formula interface.</p>
 <pre class="sas"><code>TIME INT_DEAD;</code></pre>
 <p>Maps directly to <code>time</code>:</p>
 <div class="cell">
@@ -419,7 +419,7 @@
 <hr></section><section class="level3"><h3 id="event">
 <code>EVENT</code><a class="anchor" aria-label="anchor" href="#event"></a>
 </h3>
-<p>Names the event-indicator variable. Like <code>TIME</code>, this is a separate statement in SAS HAZARD but enters the R formula through <code><a href="https://rdrr.io/pkg/survival/man/Surv.html" class="external-link">Surv()</a></code>.</p>
+<p>Names the event-indicator variable. Like <code>TIME</code>, this is a separate statement in SAS HAZARD; in R it is the <code>status</code> argument shown here, or the second argument to <code><a href="https://rdrr.io/pkg/survival/man/Surv.html" class="external-link">Surv()</a></code> in the formula interface.</p>
 <pre class="sas"><code>EVENT DEAD;</code></pre>
 <p>Maps to <code>status</code>:</p>
 <div class="cell">
@@ -437,57 +437,58 @@
 <hr></section><section class="level3"><h3 id="parms">
 <code>PARMS</code><a class="anchor" aria-label="anchor" href="#parms"></a>
 </h3>
-<p>Supplies starting values for the optimizer and flags which parameters to hold fixed (<code>FIXM</code>, <code>FIXMU</code>, etc.). The starting values matter — for the multiphase optimizer in particular, a poor starting point can park the fit at a local minimum well away from the global MLE.</p>
+<p>Supplies starting values for the optimizer and flags which parameters to hold fixed (<code>FIXM</code>, <code>FIXMU</code>, etc.). The starting values matter. For the multiphase optimizer in particular, a poor starting point can park the fit at a local minimum well away from the global MLE.</p>
 <pre class="sas"><code>PARMS MUE=0.3504743 THALF=0.1905077 NU=1.437416 M=1 FIXM
       MUC=4.391673E-07;</code></pre>
-<p>Maps to <code>theta</code> (coefficient/parameter vector) and <code>control</code> (fix flags):</p>
+<p>Maps to the phases in <code>phases</code>, the start vector <code>theta</code>, and, for <code>FIXM</code>, <code>fixed = "m"</code> on the early phase:</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/hazard.html">hazard</a></span><span class="op">(</span></span>
-<span>  theta   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>MUE <span class="op">=</span> <span class="fl">0.3504743</span>, THALF <span class="op">=</span> <span class="fl">0.1905077</span>, NU <span class="op">=</span> <span class="fl">1.437416</span>,</span>
-<span>              M <span class="op">=</span> <span class="fl">1</span>,           MUC   <span class="op">=</span> <span class="fl">4.391673e-07</span><span class="op">)</span>,</span>
-<span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
-<span>    fix <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"M"</span><span class="op">)</span>   <span class="co"># FIXM → freeze M during optimization</span></span>
+<span>  <span class="va">...</span>,</span>
+<span>  dist   <span class="op">=</span> <span class="st">"multiphase"</span>,</span>
+<span>  phases <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
+<span>    early    <span class="op">=</span> <span class="fu"><a href="../reference/hzr_phase.html">hzr_phase</a></span><span class="op">(</span><span class="st">"cdf"</span>, t_half <span class="op">=</span> <span class="fl">0.1905077</span>, nu <span class="op">=</span> <span class="fl">1.437416</span>, m <span class="op">=</span> <span class="fl">1</span>,</span>
+<span>                         fixed <span class="op">=</span> <span class="st">"m"</span><span class="op">)</span>,       <span class="co"># FIXM: hold M at its start</span></span>
+<span>    constant <span class="op">=</span> <span class="fu"><a href="../reference/hzr_phase.html">hzr_phase</a></span><span class="op">(</span><span class="st">"constant"</span><span class="op">)</span></span>
 <span>  <span class="op">)</span>,</span>
-<span>  <span class="va">...</span></span>
+<span>  theta <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="fl">0.3504743</span><span class="op">)</span>,                  <span class="co"># MUE</span></span>
+<span>            <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="fl">0.1905077</span><span class="op">)</span>, <span class="fl">1.437416</span>, <span class="fl">1</span>,     <span class="co"># THALF, NU, M</span></span>
+<span>            <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="fl">4.391673e-07</span><span class="op">)</span><span class="op">)</span>               <span class="co"># MUC</span></span>
 <span><span class="op">)</span></span></code></pre></div>
 </div>
 <blockquote>
-<p><strong>Note:</strong> Full SAS <code>PARMS</code> syntax is not mirrored one-for-one in the public API. In the current package, supply the parameter vector directly via <code>theta</code> and record fixed-parameter intent in <code>control$fix</code>. The legacy parity helpers do generate SAS-style control text when comparing against the historical binaries.</p>
+<p><strong>Note:</strong> <code>theta</code> takes the <code>PARMS</code> values on the scale the optimizer works on, which is not always the scale SAS prints. <code>MUE</code>, <code>MUC</code> and <code>THALF</code> go in as logs; <code>NU</code> and <code>M</code> go in as written. A fixed parameter is declared on the phase that owns it, so <code>FIXM</code> is <code>fixed = "m"</code> inside the early <code><a href="../reference/hzr_phase.html">hzr_phase()</a></code>. <code><a href="../reference/hazard.html">hazard()</a></code> does not read a <code>control$fix</code> entry: a fix written there leaves <code>M</code> free, and nothing warns you.</p>
 </blockquote>
 <hr></section><section class="level3"><h3 id="early-and-constant-covariate-blocks">
 <code>EARLY</code> and <code>CONSTANT</code> covariate blocks<a class="anchor" aria-label="anchor" href="#early-and-constant-covariate-blocks"></a>
 </h3>
-<p>These statements assign covariates to specific phases. In SAS HAZARD each block lists the covariates that affect that phase and their starting coefficients. Covariates can appear in multiple blocks with different starting values — same column, different phase-specific effect.</p>
+<p>These statements assign covariates to specific phases. In SAS HAZARD each block lists the covariates that affect that phase and their starting coefficients. Covariates can appear in multiple blocks with different starting values (same column, different phase-specific effect).</p>
 <pre class="sas"><code>EARLY  AGE=-0.03205774, COM_IV=1.336675, MAL=0.6872028,
        OPMOS=-0.01963377, OP_AGE=0.0002086689, STATUS=0.5169533;
 CONSTANT INC_SURG=1.375285, ORIFICE=3.11765, STATUS=1.054988;</code></pre>
-<p>In HAZARD, <code>EARLY</code> and <code>CONSTANT</code> define phase-specific covariate coefficients. In <code>TemporalHazard</code> these are unified into a single design matrix <code>x</code> and coefficient vector <code>theta</code> during M1. Phase assignment will be formalised in M2 when the multi-phase likelihood is implemented.</p>
-<p><strong>Current convention (M1):</strong> combine all covariates into <code>x</code> and supply the corresponding starting coefficients in <code>theta</code>.</p>
+<p>In <code>TemporalHazard</code> each block becomes the <code>formula</code> of the phase it names: the <code>EARLY</code> list goes on the early <code>hzr_phase("cdf", ...)</code>, the <code>CONSTANT</code> list on <code>hzr_phase("constant", ...)</code>. A covariate listed in both blocks, <code>STATUS</code> here, appears in both formulas and gets a separate coefficient in each phase, as it does in SAS. The model formula’s right-hand side stays <code>~ 1</code> because every covariate belongs to a phase.</p>
+<p>The starting coefficients go into <code>theta</code> in phase order: the early phase’s scale and shapes, then its covariates, then the constant phase’s scale, then its covariates. In this chunk <code>avcs</code> is <code>data(avc)</code> with its missing <code>inc_surg</code> values filled, as in the worked example below.</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb12"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Build design matrix from the AVC data set</span></span>
-<span><span class="va">X</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.matrix.html" class="external-link">data.matrix</a></span><span class="op">(</span><span class="va">avcs</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"AGE"</span>, <span class="st">"COM_IV"</span>, <span class="st">"MAL"</span>, <span class="st">"OPMOS"</span>, <span class="st">"OP_AGE"</span>,</span>
-<span>                           <span class="st">"STATUS"</span>, <span class="st">"INC_SURG"</span>, <span class="st">"ORIFICE"</span><span class="op">)</span><span class="op">]</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Starting values from SAS EARLY + CONSTANT blocks combined</span></span>
-<span><span class="va">theta_start</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
-<span>  AGE      <span class="op">=</span> <span class="op">-</span><span class="fl">0.03205774</span>,</span>
-<span>  COM_IV   <span class="op">=</span>  <span class="fl">1.336675</span>,</span>
-<span>  MAL      <span class="op">=</span>  <span class="fl">0.6872028</span>,</span>
-<span>  OPMOS    <span class="op">=</span> <span class="op">-</span><span class="fl">0.01963377</span>,</span>
-<span>  OP_AGE   <span class="op">=</span>  <span class="fl">0.0002086689</span>,</span>
-<span>  STATUS   <span class="op">=</span>  <span class="fl">0.5169533</span>,   <span class="co"># EARLY phase coefficient</span></span>
-<span>  INC_SURG <span class="op">=</span>  <span class="fl">1.375285</span>,</span>
-<span>  ORIFICE  <span class="op">=</span>  <span class="fl">3.11765</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/hazard.html">hazard</a></span><span class="op">(</span></span>
-<span>  time   <span class="op">=</span> <span class="va">avcs</span><span class="op">$</span><span class="va">INT_DEAD</span>,</span>
-<span>  status <span class="op">=</span> <span class="va">avcs</span><span class="op">$</span><span class="va">DEAD</span>,</span>
-<span>  x      <span class="op">=</span> <span class="va">X</span>,</span>
-<span>  theta  <span class="op">=</span> <span class="va">theta_start</span>,</span>
-<span>  dist   <span class="op">=</span> <span class="st">"weibull"</span></span>
+<code class="sourceCode R"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/hazard.html">hazard</a></span><span class="op">(</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/pkg/survival/man/Surv.html" class="external-link">Surv</a></span><span class="op">(</span><span class="va">int_dead</span>, <span class="va">dead</span><span class="op">)</span> <span class="op">~</span> <span class="fl">1</span>,</span>
+<span>  data   <span class="op">=</span> <span class="va">avcs</span>,</span>
+<span>  dist   <span class="op">=</span> <span class="st">"multiphase"</span>,</span>
+<span>  phases <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
+<span>    early    <span class="op">=</span> <span class="fu"><a href="../reference/hzr_phase.html">hzr_phase</a></span><span class="op">(</span><span class="st">"cdf"</span>, t_half <span class="op">=</span> <span class="fl">0.1905077</span>, nu <span class="op">=</span> <span class="fl">1.437416</span>, m <span class="op">=</span> <span class="fl">1</span>,</span>
+<span>                         formula <span class="op">=</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">com_iv</span> <span class="op">+</span> <span class="va">mal</span> <span class="op">+</span> <span class="va">opmos</span> <span class="op">+</span> <span class="va">op_age</span> <span class="op">+</span></span>
+<span>                           <span class="va">status</span>,</span>
+<span>                         fixed <span class="op">=</span> <span class="st">"m"</span><span class="op">)</span>,</span>
+<span>    constant <span class="op">=</span> <span class="fu"><a href="../reference/hzr_phase.html">hzr_phase</a></span><span class="op">(</span><span class="st">"constant"</span>, formula <span class="op">=</span> <span class="op">~</span> <span class="va">inc_surg</span> <span class="op">+</span> <span class="va">orifice</span> <span class="op">+</span> <span class="va">status</span><span class="op">)</span></span>
+<span>  <span class="op">)</span>,</span>
+<span>  theta <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="fl">0.3504743</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="fl">0.1905077</span><span class="op">)</span>, <span class="fl">1.437416</span>, <span class="fl">1</span>,  <span class="co"># MUE, THALF, NU, M</span></span>
+<span>    <span class="op">-</span><span class="fl">0.03205774</span>, <span class="fl">1.336675</span>, <span class="fl">0.6872028</span>,             <span class="co"># EARLY: AGE, COM_IV, MAL,</span></span>
+<span>    <span class="op">-</span><span class="fl">0.01963377</span>, <span class="fl">0.0002086689</span>, <span class="fl">0.5169533</span>,         <span class="co">#   OPMOS, OP_AGE, STATUS</span></span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="fl">4.391673e-07</span><span class="op">)</span>,                            <span class="co"># MUC</span></span>
+<span>    <span class="fl">1.375285</span>, <span class="fl">3.11765</span>, <span class="fl">1.054988</span>                   <span class="co"># CONSTANT: INC_SURG,</span></span>
+<span>  <span class="op">)</span>,                                              <span class="co">#   ORIFICE, STATUS</span></span>
+<span>  fit <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
 </div>
 <hr></section><section class="level3"><h3 id="selection">
@@ -495,7 +496,7 @@ CONSTANT INC_SURG=1.375285, ORIFICE=3.11765, STATUS=1.054988;</code></pre>
 </h3>
 <p>Triggers stepwise covariate selection inside the hazard fit. <code>SLE</code> is the significance level for entry, <code>SLS</code> for staying. SAS HAZARD embedded this in the same <code>PROC HAZARD</code> call; in R the stepwise loop is a separate <code><a href="../reference/hzr_stepwise.html">hzr_stepwise()</a></code> function that wraps a fitted <code><a href="../reference/hazard.html">hazard()</a></code> object.</p>
 <pre class="sas"><code>SELECTION SLE=0.2 SLS=0.1;</code></pre>
-<p><code>TemporalHazard</code> now ships <code><a href="../reference/hzr_stepwise.html">hzr_stepwise()</a></code>, which implements forward, backward, and two-way stepwise selection with SAS-style SLENTRY / SLSTAY thresholds, phase-specific entry for multiphase models, and a MOVE oscillation guard. It now defaults to <code>criterion = "score"</code>, which reproduces SAS’s <code>SELECTION</code> Q statistic — a score test at the current estimates, with no per-candidate refit — so entry decisions match SAS’s directly. Passing <code>criterion = "wald"</code> selects the older refit-based path, which fits each candidate before testing it. See <code><a href="../reference/hzr_stepwise.html">?hzr_stepwise</a></code> for the full option list.</p>
+<p><code>TemporalHazard</code> now ships <code><a href="../reference/hzr_stepwise.html">hzr_stepwise()</a></code>, which implements forward, backward, and two-way stepwise selection with SAS-style SLENTRY / SLSTAY thresholds, phase-specific entry for multiphase models, and a MOVE oscillation guard. It now defaults to <code>criterion = "score"</code>, which reproduces SAS’s <code>SELECTION</code> Q statistic (a score test at the current estimates, with no per-candidate refit), so entry decisions match SAS’s directly. Passing <code>criterion = "wald"</code> selects the older refit-based path, which fits each candidate before testing it. See <code><a href="../reference/hzr_stepwise.html">?hzr_stepwise</a></code> for the full option list.</p>
 <hr></section></section><section class="level2"><h2 id="sas-macro-equivalents">SAS macro equivalents<a class="anchor" aria-label="anchor" href="#sas-macro-equivalents"></a>
 </h2>
 <p>The legacy SAS distribution ships a suite of macros for nonparametric baselines, goodness-of-fit diagnostics, bootstrap inference, and variable calibration that sit alongside <code>PROC HAZARD</code>. Each has an R equivalent in <code>TemporalHazard</code>:</p>
@@ -711,7 +712,7 @@ CONSTANT INC_SURG=1.375285, ORIFICE=3.11765, STATUS=1.054988;</code></pre>
 </div>
 <hr></section><section class="level2"><h2 id="full-worked-example-avc-death-after-repair">Full worked example: AVC death after repair<a class="anchor" aria-label="anchor" href="#full-worked-example-avc-death-after-repair"></a>
 </h2>
-<p>Statement-by-statement mapping is fine for reference, but the full gestalt only lands when you see a complete SAS HAZARD analysis and its R translation side by side. The example below is the final multivariable model from <code>examples/hm.death.AVC.sas</code> in the reference C repository — death after atrioventricular canal repair, two-phase model with covariates assigned to specific phases. It’s the canonical “this is what a real SAS HAZARD analysis looks like” specimen.</p>
+<p>Statement-by-statement mapping is fine for reference, but the full gestalt only lands when you see a complete SAS HAZARD analysis and its R translation side by side. The example below is the final multivariable model from <code>examples/hm.death.AVC.sas</code> in the reference C repository: death after atrioventricular canal repair, two-phase model with covariates assigned to specific phases. It’s the canonical “this is what a real SAS HAZARD analysis looks like” specimen.</p>
 <section class="level3"><h3 id="sas-original">SAS (original)<a class="anchor" aria-label="anchor" href="#sas-original"></a>
 </h3>
 <p>The original SAS code, exactly as it appears in the reference distribution. Notice how the statements stack inside a single <code>%HAZARD()</code> macro call.</p>
@@ -725,60 +726,91 @@ PROC HAZARD DATA=AVCS P CONSERVE OUTHAZ=OUTEST CONDITION=14 QUASI;
              OPMOS=-0.01963377, OP_AGE=0.0002086689, STATUS=0.5169533;
      CONSTANT INC_SURG=1.375285, ORIFICE=3.11765, STATUS=1.054988;
 );</code></pre>
-</section><section class="level3"><h3 id="r-equivalent-current-runnable-translation-pattern">R equivalent (current runnable translation pattern)<a class="anchor" aria-label="anchor" href="#r-equivalent-current-runnable-translation-pattern"></a>
+</section><section class="level3"><h3 id="r-equivalent">R equivalent<a class="anchor" aria-label="anchor" href="#r-equivalent"></a>
 </h3>
-<p>The same model in <code>TemporalHazard</code>. Every SAS statement above has a corresponding R argument here: <code>TIME</code> and <code>EVENT</code> collapse into <code>Surv(int_dead, dead)</code> on the left of the formula; the global covariate list goes on the right; the <code>PARMS</code> starting values become the <code>theta</code> vector; phase-specific assignments use the <code>formula</code> argument inside each <code><a href="../reference/hzr_phase.html">hzr_phase()</a></code>; <code>FIXM</code> becomes <code>fixed = "shapes"</code> (or a subset of shape names). The line-by-line correspondence is the point — once you’ve translated one analysis this way, the pattern carries to every other.</p>
+<p>The same model in <code>TemporalHazard</code>, with one R argument for each SAS statement:</p>
+<ul>
+<li>
+<code>TIME INT_DEAD</code> and <code>EVENT DEAD</code> become <code>Surv(int_dead, dead)</code> on the left of the formula. In <code>avc</code>, <code>dead</code> is 0/1, so it is a status as it stands. A job whose <code>EVENT</code> variable counts events also needs <code>weights</code>; see the translator section below.</li>
+<li>
+<code>PARMS</code> becomes the phase shapes and the <code>theta</code> start vector, and <code>FIXM</code> becomes <code>fixed = "m"</code> on the early phase.</li>
+<li>
+<code>EARLY</code> and <code>CONSTANT</code> become the <code>formula</code> of the matching <code><a href="../reference/hzr_phase.html">hzr_phase()</a></code>.</li>
+<li>
+<code>CONDITION=14</code>, <code>CONSERVE</code> and <code>QUASI</code> go into <code>control</code> as <code>condition = 14</code>, <code>conserve = TRUE</code> and <code>method = "bfgs"</code>. BFGS is the default optimizer, so the last one records the mapping and changes nothing.</li>
+<li>
+<code>PROC STANDARD REPLACE</code> from the SAS <code>DATA</code> steps becomes one line that fills the missing <code>inc_surg</code> values with the column mean.</li>
+</ul>
+<p>Once you have translated one analysis this way, the pattern carries to every other.</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb23"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Assumed: avcs is a data.frame read from the AVC flat file</span></span>
-<span><span class="co"># (same variables as the SAS DATA step)</span></span>
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/data.html" class="external-link">data</a></span><span class="op">(</span><span class="va">avc</span><span class="op">)</span>   <span class="co"># reload: the diagnostics above dropped the incomplete rows</span></span>
+<span><span class="va">avcs</span> <span class="op">&lt;-</span> <span class="va">avc</span></span>
 <span></span>
-<span><span class="va">avcs</span> <span class="op">&lt;-</span> <span class="va">avcs</span> <span class="op">|&gt;</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/transform.html" class="external-link">transform</a></span><span class="op">(</span></span>
-<span>    LN_AGE   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="va">AGE</span><span class="op">)</span>,</span>
-<span>    LN_OPMOS <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="va">OPMOS</span><span class="op">)</span>,</span>
-<span>    LN_INC   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/ifelse.html" class="external-link">ifelse</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/NA.html" class="external-link">is.na</a></span><span class="op">(</span><span class="va">INC_SURG</span><span class="op">)</span>, <span class="cn">NA</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="va">INC_SURG</span> <span class="op">+</span> <span class="fl">1</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>    LN_NYHA  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="va">STATUS</span><span class="op">)</span></span>
-<span>  <span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Replace missing INC_SURG with column mean (mirrors PROC STANDARD REPLACE)</span></span>
-<span><span class="va">avcs</span><span class="op">$</span><span class="va">INC_SURG</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/NA.html" class="external-link">is.na</a></span><span class="op">(</span><span class="va">avcs</span><span class="op">$</span><span class="va">INC_SURG</span><span class="op">)</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">avcs</span><span class="op">$</span><span class="va">INC_SURG</span>, na.rm <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">X</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.matrix.html" class="external-link">data.matrix</a></span><span class="op">(</span><span class="va">avcs</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"AGE"</span>, <span class="st">"COM_IV"</span>, <span class="st">"MAL"</span>, <span class="st">"OPMOS"</span>, <span class="st">"OP_AGE"</span>,</span>
-<span>                           <span class="st">"STATUS"</span>, <span class="st">"INC_SURG"</span>, <span class="st">"ORIFICE"</span><span class="op">)</span><span class="op">]</span><span class="op">)</span></span>
+<span><span class="co"># PROC STANDARD REPLACE: fill missing INC_SURG with the column mean</span></span>
+<span><span class="va">avcs</span><span class="op">$</span><span class="va">inc_surg</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/NA.html" class="external-link">is.na</a></span><span class="op">(</span><span class="va">avcs</span><span class="op">$</span><span class="va">inc_surg</span><span class="op">)</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">avcs</span><span class="op">$</span><span class="va">inc_surg</span>, na.rm <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/hazard.html">hazard</a></span><span class="op">(</span></span>
-<span>  time    <span class="op">=</span> <span class="va">avcs</span><span class="op">$</span><span class="va">INT_DEAD</span>,</span>
-<span>  status  <span class="op">=</span> <span class="va">avcs</span><span class="op">$</span><span class="va">DEAD</span>,</span>
-<span>  x       <span class="op">=</span> <span class="va">X</span>,</span>
-<span>  theta   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
-<span>    <span class="co"># Hazard shape parameters (from PARMS)</span></span>
-<span>    MUE   <span class="op">=</span> <span class="fl">0.3504743</span>,</span>
-<span>    THALF <span class="op">=</span> <span class="fl">0.1905077</span>,</span>
-<span>    NU    <span class="op">=</span> <span class="fl">1.437416</span>,</span>
-<span>    M     <span class="op">=</span> <span class="fl">1</span>,</span>
-<span>    MUC   <span class="op">=</span> <span class="fl">4.391673e-07</span>,</span>
-<span>    <span class="co"># Covariate coefficients (from EARLY + CONSTANT blocks)</span></span>
-<span>    AGE      <span class="op">=</span> <span class="op">-</span><span class="fl">0.03205774</span>,</span>
-<span>    COM_IV   <span class="op">=</span>  <span class="fl">1.336675</span>,</span>
-<span>    MAL      <span class="op">=</span>  <span class="fl">0.6872028</span>,</span>
-<span>    OPMOS    <span class="op">=</span> <span class="op">-</span><span class="fl">0.01963377</span>,</span>
-<span>    OP_AGE   <span class="op">=</span>  <span class="fl">0.0002086689</span>,</span>
-<span>    STATUS   <span class="op">=</span>  <span class="fl">0.5169533</span>,</span>
-<span>    INC_SURG <span class="op">=</span>  <span class="fl">1.375285</span>,</span>
-<span>    ORIFICE  <span class="op">=</span>  <span class="fl">3.11765</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/pkg/survival/man/Surv.html" class="external-link">Surv</a></span><span class="op">(</span><span class="va">int_dead</span>, <span class="va">dead</span><span class="op">)</span> <span class="op">~</span> <span class="fl">1</span>,                        <span class="co"># TIME, EVENT</span></span>
+<span>  data   <span class="op">=</span> <span class="va">avcs</span>,</span>
+<span>  dist   <span class="op">=</span> <span class="st">"multiphase"</span>,</span>
+<span>  phases <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
+<span>    early    <span class="op">=</span> <span class="fu"><a href="../reference/hzr_phase.html">hzr_phase</a></span><span class="op">(</span><span class="st">"cdf"</span>, t_half <span class="op">=</span> <span class="fl">0.1905077</span>, nu <span class="op">=</span> <span class="fl">1.437416</span>, m <span class="op">=</span> <span class="fl">1</span>,</span>
+<span>                         formula <span class="op">=</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">com_iv</span> <span class="op">+</span> <span class="va">mal</span> <span class="op">+</span> <span class="va">opmos</span> <span class="op">+</span> <span class="va">op_age</span> <span class="op">+</span></span>
+<span>                           <span class="va">status</span>,                 <span class="co"># EARLY</span></span>
+<span>                         fixed <span class="op">=</span> <span class="st">"m"</span><span class="op">)</span>,             <span class="co"># FIXM</span></span>
+<span>    constant <span class="op">=</span> <span class="fu"><a href="../reference/hzr_phase.html">hzr_phase</a></span><span class="op">(</span><span class="st">"constant"</span>,</span>
+<span>                         formula <span class="op">=</span> <span class="op">~</span> <span class="va">inc_surg</span> <span class="op">+</span> <span class="va">orifice</span> <span class="op">+</span> <span class="va">status</span><span class="op">)</span>  <span class="co"># CONSTANT</span></span>
 <span>  <span class="op">)</span>,</span>
-<span>  dist    <span class="op">=</span> <span class="st">"weibull"</span>,</span>
-<span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
-<span>    condition <span class="op">=</span> <span class="fl">14</span>,</span>
-<span>    quasi     <span class="op">=</span> <span class="cn">TRUE</span>,</span>
-<span>    conserve  <span class="op">=</span> <span class="cn">TRUE</span>,</span>
-<span>    fix       <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"M"</span><span class="op">)</span>   <span class="co"># FIXM</span></span>
-<span>  <span class="op">)</span></span>
+<span>  theta <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>                                       <span class="co"># PARMS, EARLY, CONSTANT</span></span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="fl">0.3504743</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="fl">0.1905077</span><span class="op">)</span>, <span class="fl">1.437416</span>, <span class="fl">1</span>,</span>
+<span>    <span class="op">-</span><span class="fl">0.03205774</span>, <span class="fl">1.336675</span>, <span class="fl">0.6872028</span>, <span class="op">-</span><span class="fl">0.01963377</span>, <span class="fl">0.0002086689</span>, <span class="fl">0.5169533</span>,</span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="fl">4.391673e-07</span><span class="op">)</span>,</span>
+<span>    <span class="fl">1.375285</span>, <span class="fl">3.11765</span>, <span class="fl">1.054988</span></span>
+<span>  <span class="op">)</span>,</span>
+<span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>condition <span class="op">=</span> <span class="fl">14</span>, conserve <span class="op">=</span> <span class="cn">TRUE</span>, method <span class="op">=</span> <span class="st">"bfgs"</span><span class="op">)</span>,</span>
+<span>  fit <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">fit</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Multiphase hazard model (2 phases)</span></span>
+<span><span class="co">#&gt;   observations: 310 </span></span>
+<span><span class="co">#&gt;   predictors:   0 </span></span>
+<span><span class="co">#&gt;   dist:         multiphase </span></span>
+<span><span class="co">#&gt;   phase 1:      early - cdf (early risk)</span></span>
+<span><span class="co">#&gt;   phase 2:      constant - constant (flat rate)</span></span>
+<span><span class="co">#&gt;   engine:       native-r-m2 </span></span>
+<span><span class="co">#&gt;   converged:    TRUE </span></span>
+<span><span class="co">#&gt;   gradient:     relative 49.6 (SAS/C requires &lt;= 6.06e-06; not met, nlm code 2)</span></span>
+<span><span class="co">#&gt;   log-lik:      -160.408 </span></span>
+<span><span class="co">#&gt;   Note: Hessian ill-conditioned (rcond = 4.41e-12); standard errors may be unreliable.</span></span>
+<span><span class="co">#&gt;   Not done in this run: none</span></span>
+<span><span class="co">#&gt;   evaluations: fn=17, gr=1</span></span>
+<span><span class="co">#&gt;   message:      continued with nlm() for 1 iterations (code 2) </span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; Coefficients (internal scale):</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;   Phase: early (cdf)</span></span>
+<span><span class="co">#&gt;                   estimate    std_error    z_stat      p_value</span></span>
+<span><span class="co">#&gt;   log_mu     -1.0484675629 7.527000e-01 -1.392942 1.636373e-01</span></span>
+<span><span class="co">#&gt;   log_t_half -1.6580626653 3.631463e-01 -4.565826 4.975318e-06</span></span>
+<span><span class="co">#&gt;   nu          1.4374160000 1.770559e-01  8.118432 4.722462e-16</span></span>
+<span><span class="co">#&gt;   m           1.0000000000           NA        NA           NA</span></span>
+<span><span class="co">#&gt;   age        -0.0320577400 9.381015e-03 -3.417300 6.324561e-04</span></span>
+<span><span class="co">#&gt;   com_iv      1.3366750000 4.173461e-01  3.202798 1.360995e-03</span></span>
+<span><span class="co">#&gt;   mal         0.6872028000 2.671643e-01  2.572210 1.010514e-02</span></span>
+<span><span class="co">#&gt;   opmos      -0.0196337700 4.367582e-03 -4.495341 6.945864e-06</span></span>
+<span><span class="co">#&gt;   op_age      0.0002086688 5.904656e-05  3.533971 4.093655e-04</span></span>
+<span><span class="co">#&gt;   status      0.5169533000 1.571565e-01  3.289417 1.003951e-03</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;   Phase: constant (constant)</span></span>
+<span><span class="co">#&gt;              estimate std_error    z_stat      p_value</span></span>
+<span><span class="co">#&gt;   log_mu   -14.638385 3.0330321 -4.826321 1.390786e-06</span></span>
+<span><span class="co">#&gt;   inc_surg   1.375285 0.6222371  2.210226 2.708945e-02</span></span>
+<span><span class="co">#&gt;   orifice    3.117650 0.8999963  3.464070 5.320686e-04</span></span>
+<span><span class="co">#&gt;   status     1.054988 0.5030359  2.097242 3.597215e-02</span></span></code></pre></div>
 </div>
+<p>The <code>PARMS</code> and covariate values in this job are the estimates from an earlier SAS run of the same model, so both programs start at SAS’s optimum. R agrees that it is one. The log-likelihood is -160.408, the value SAS prints for this model, and the standard errors agree with the SAS listing to within 0.31%: <code>AGE</code> is 0.009381 here against SAS’s 0.009380, and the early-phase <code>log_mu</code> (SAS’s <code>E0</code>) is 0.7527 against 0.7550. <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> notes an ill-conditioned Hessian (<code>rcond = 4.41e-12</code>); SAS reports the same condition for this fit as a log10 condition code of 11.12. Run interactively, the fit also raises <code>Hessian is ill-conditioned</code> warnings. The chunk hides them because <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> reports the same thing.</p>
 <hr></section></section><section class="level2"><h2 id="data-preparation-differences">Data preparation differences<a class="anchor" aria-label="anchor" href="#data-preparation-differences"></a>
 </h2>
 <table class="table caption-top">
@@ -860,16 +892,19 @@ PROC HAZARD DATA=AVCS P CONSERVE OUTHAZ=OUTEST CONDITION=14 QUASI;
 </tr>
 <tr class="odd">
 <td><code>$fit$theta</code></td>
-<td>Coefficient vector (starting values at M1; fitted at M2+)</td>
+<td>Coefficient vector: estimates when <code>fit = TRUE</code>, the starting values when <code>fit = FALSE</code>
+</td>
 </tr>
 <tr class="even">
 <td><code>$fit$converged</code></td>
 <td>
-<code>NA</code> at M1; <code>TRUE</code>/<code>FALSE</code> from M2 optimizer</td>
+<code>TRUE</code>/<code>FALSE</code> from the optimizer; <code>NA</code> when <code>fit = FALSE</code>
+</td>
 </tr>
 <tr class="odd">
 <td><code>$fit$objective</code></td>
-<td>Log-likelihood at convergence (M2+)</td>
+<td>Log-likelihood at convergence; <code>NA</code> when <code>fit = FALSE</code>
+</td>
 </tr>
 <tr class="even">
 <td><code>$legacy_args</code></td>
@@ -878,11 +913,11 @@ PROC HAZARD DATA=AVCS P CONSERVE OUTHAZ=OUTEST CONDITION=14 QUASI;
 </tbody>
 </table>
 <blockquote>
-<p><strong>Note:</strong> <code>$fit$objective</code> above is a <em>number</em> – the log-likelihood the optimizer reached; <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code> and <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> label it <code>log-lik</code> and <code>log_lik</code>, which are the names to prefer when writing about it. It is unrelated to the <code>objective</code> <em>argument</em> of <code><a href="../reference/hazard.html">hazard()</a></code>, which selects an estimand: <code>"likelihood"</code> (the default) or <code>"sas"</code>, reproducing what <code>PROC HAZARD</code> accumulates for an interval-censored row. See <code><a href="../reference/hazard.html">?hazard</a></code>; the SAS objective exists to reproduce legacy runs, not for new analyses.</p>
+<p><strong>Note:</strong> <code>$fit$objective</code> above is a <em>number</em>: the log-likelihood the optimizer reached; <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code> and <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> label it <code>log-lik</code> and <code>log_lik</code>, which are the names to prefer when writing about it. It is unrelated to the <code>objective</code> <em>argument</em> of <code><a href="../reference/hazard.html">hazard()</a></code>, which selects an estimand: <code>"likelihood"</code> (the default) or <code>"sas"</code>, reproducing what <code>PROC HAZARD</code> accumulates for an interval-censored row. See <code><a href="../reference/hazard.html">?hazard</a></code>; the SAS objective exists to reproduce legacy runs, not for new analyses.</p>
 </blockquote>
 <hr></section><section class="level2"><h2 id="prediction">Prediction<a class="anchor" aria-label="anchor" href="#prediction"></a>
 </h2>
-<p>In SAS HAZARD the <code>P</code> (predict / print) option on the <code>PROC HAZARD</code> line writes predicted survival, hazard, and cumulative-hazard tables to the output dataset. In R the same predictions come from <code><a href="../reference/predict.hazard.html">predict.hazard()</a></code> on the fitted object, with the requested quantity chosen via the <code>type=</code> argument. <code><a href="../reference/predict.hazard.html">predict.hazard()</a></code> currently supports four output types — <code>"linear_predictor"</code>, <code>"hazard"</code>, <code>"survival"</code>, and <code>"cumulative_hazard"</code> — covering every quantity the SAS <code>P</code> option produces:</p>
+<p>In SAS HAZARD the <code>P</code> (predict / print) option on the <code>PROC HAZARD</code> line writes predicted survival, hazard, and cumulative-hazard tables to the output dataset. In R the same predictions come from <code><a href="../reference/predict.hazard.html">predict.hazard()</a></code> on the fitted object, with the requested quantity chosen via the <code>type=</code> argument. <code><a href="../reference/predict.hazard.html">predict.hazard()</a></code> currently supports four output types (<code>"linear_predictor"</code>, <code>"hazard"</code>, <code>"survival"</code>, and <code>"cumulative_hazard"</code>), covering every quantity the SAS <code>P</code> option produces:</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb24"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Linear predictor (X %*% theta)</span></span>
@@ -895,22 +930,22 @@ PROC HAZARD DATA=AVCS P CONSERVE OUTHAZ=OUTEST CONDITION=14 QUASI;
 <hr></section><section class="level2"><h2 id="automated-translation-with-hzr_translate_sas">Automated translation with <code>hzr_translate_sas()</code>
 <a class="anchor" aria-label="anchor" href="#automated-translation-with-hzr_translate_sas"></a>
 </h2>
-<p>Everything above is a mapping you apply by hand. <code><a href="../reference/hzr_translate_sas.html">hzr_translate_sas()</a></code> applies it for you: point it at a <code>.sas</code> file and it parses the <code>PROC HAZARD</code> / <code>PROC HAZPRED</code> blocks and emits a <code>.qmd</code> document whose chunks are the <code><a href="../reference/hazard.html">hazard()</a></code> / <code><a href="../reference/predict.hazard.html">predict.hazard()</a></code> calls those blocks describe. It is the same statement-by-statement mapping this vignette documents, run by the parser instead of by you – useful for a one-off job, and essential for migrating a corpus of hundreds.</p>
+<p>Everything above is a mapping you apply by hand. <code><a href="../reference/hzr_translate_sas.html">hzr_translate_sas()</a></code> applies it for you: point it at a <code>.sas</code> file and it parses the <code>PROC HAZARD</code> / <code>PROC HAZPRED</code> blocks and emits a <code>.qmd</code> document whose chunks are the <code><a href="../reference/hazard.html">hazard()</a></code> / <code><a href="../reference/predict.hazard.html">predict.hazard()</a></code> calls those blocks describe. It applies the statement-by-statement mapping this vignette documents, with differences of form you will see in its output: it writes the vector interface (<code>data =</code>, <code>time =</code>, <code>status =</code>) where this vignette writes a <code><a href="https://rdrr.io/pkg/survival/man/Surv.html" class="external-link">Surv()</a></code> formula, it keeps the SAS job’s upper-case column names, and it turns <code>EVENT</code> into a status and <code>weights</code> pair, covered below. The phases, <code>fixed = "m"</code>, <code>theta</code> and <code>control</code> it emits for the AVC model above are the ones the worked example uses, and on <code>avc</code> its call reaches the same estimates. It is useful for a one-off job, and essential for migrating a corpus of hundreds.</p>
 <div>
 <blockquote>
 <p><strong>Experimental: what it will and will not translate</strong></p>
 <p>The emitted document renders. The <code><a href="../reference/hazard.html">hazard()</a></code> chunk binds its fit to a name and passes <code>fit = TRUE</code>, so the <code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> chunks have something to predict from. What you should not read into that is “the translator works”: it is a translation aid, and four limits are worth knowing before you point it at a corpus.</p>
 <ul>
 <li>
-<strong>A <code>SELECTION</code> statement is refused, not translated.</strong> The emitted chunk is a <code><a href="https://rdrr.io/r/base/stop.html" class="external-link">stop()</a></code>. <code><a href="../reference/hzr_stepwise.html">hzr_stepwise()</a></code>’s refit path needs a formula-interface base fit and this translator emits the vector interface, so a translated screen would report zero steps – indistinguishable from “nothing met <code>slentry</code>”. Run the selection by hand.</li>
+<strong>A <code>SELECTION</code> statement is refused, not translated.</strong> The emitted chunk is a <code><a href="https://rdrr.io/r/base/stop.html" class="external-link">stop()</a></code>. <code><a href="../reference/hzr_stepwise.html">hzr_stepwise()</a></code>’s refit path needs a formula-interface base fit and this translator emits the vector interface, so a translated screen would report zero steps, indistinguishable from “nothing met <code>slentry</code>”. Run the selection by hand.</li>
 <li>
 <strong><code>LCENSOR</code> combined with <code>ICENSOR</code> is refused.</strong> <code><a href="../reference/hazard.html">hazard()</a></code>’s single <code>time_lower</code> argument carries the entry time for status 0/1 rows and the interval’s lower bound for status 2 rows; one column cannot express both. Either statement alone translates.</li>
 <li>
-<strong>Prediction grids the parser cannot resolve are refused whole</strong>, and an unresolved <code>INHAZ=</code> stops the render on purpose. Both are covered under “What it doesn’t translate” below – and note that resolving an external <code>INHAZ=</code> at all requires you to pass <code>librefs=</code>.</li>
+<strong>Prediction grids the parser cannot resolve are refused whole</strong>, and an unresolved <code>INHAZ=</code> stops the render on purpose. Both are covered under “What it doesn’t translate” below. Note that resolving an external <code>INHAZ=</code> at all requires you to pass <code>librefs=</code>.</li>
 <li>
-<strong>Confidence limits from a loaded <code>INHAZ=</code> fit may stop the render.</strong> A translated <code>PROC HAZPRED</code> block asks for <code>se.fit = TRUE</code> unless the SAS job says <code>NOCL</code>, and <code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> on an <code>hzr_outhaz</code> object refuses <code>se.fit = TRUE</code> when <code>PROC HAZARD</code> estimated a late shape parameter on a composite scale – <code>log(GAMMA*ETA - 2)</code> and friends, which is the <em>generic</em> unconstrained three-phase case, not an exotic one. Point predictions are unaffected; drop <code>se.fit</code> from the emitted call to get them.</li>
+<strong>Confidence limits from a loaded <code>INHAZ=</code> fit may stop the render.</strong> A translated <code>PROC HAZPRED</code> block asks for <code>se.fit = TRUE</code> unless the SAS job says <code>NOCL</code>, and <code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> on an <code>hzr_outhaz</code> object refuses <code>se.fit = TRUE</code> when <code>PROC HAZARD</code> estimated a late shape parameter on a composite scale (<code>log(GAMMA*ETA - 2)</code> and friends), which is the <em>generic</em> unconstrained three-phase case, not an exotic one. Point predictions are unaffected; drop <code>se.fit</code> from the emitted call to get them.</li>
 </ul>
-<p>Read <code>job$coverage</code> as a measure of how much of the SAS job the <em>parser recognised</em> – not of whether the result runs. A job can report full coverage with nothing in <code>$untranslated</code> and still error on render. The API and the emitted format will change as these limits close; the 1.2.2 entry of <code>NEWS.md</code> carries the issue numbers.</p>
+<p>Read <code>job$coverage</code> as a measure of how much of the SAS job the <em>parser recognised</em>, not of whether the result runs. A job can report full coverage with nothing in <code>$untranslated</code> and still error on render. The API and the emitted format will change as these limits close; the 1.2.2 entry of <code>NEWS.md</code> carries the issue numbers.</p>
 </blockquote>
 </div>
 <p>Take the <code>PROC HAZARD</code> block shipped as <code>system.file("extdata", "hz-example.sas", package = "TemporalHazard")</code> (de-identified from the public <code>hazard</code> examples):</p>
@@ -966,18 +1001,18 @@ PROC HAZARD DATA=AVCS CONSERVE OUTHAZ=EXAMPLES.HZDEATH
 <p><code>EVENT DEAD</code> names a <strong>count</strong>, not a flag. In the reference program a row with <code>DEAD = 2</code> is two events, and <code>setlik.c</code> weights its contribution accordingly. <code><a href="../reference/hazard.html">hazard()</a></code> takes a 0/1 status and a separate <code>weights</code> argument, so the one SAS statement translates into two: the status derives from <code>DEAD &gt; 0</code>, and the count carries into <code>weights</code>. Read <code>status = .hzr_status</code> and <code>weights = ifelse(DEAD &gt; 0, DEAD, 1)</code> as a pair and they are your <code>EVENT</code> statement, not two new modelling choices. If you have translated this job before version 1.2.2, note that <code>DEAD = 2</code> used to map straight onto <code>status = 2</code> and be fitted as interval-censored, which is a different likelihood branch rather than an under-count.</p>
 <p>The guard in front of it refuses the rows SAS would have deleted. A missing or negative count is dropped outright by the reference program: <code>readc1.c</code> sets <code>mdel</code> on a missing count and <code>del</code> on a negative one, and <code>readobs.c</code> then skips the row and subtracts it from <code>Nobs</code>, so it contributes nothing to the likelihood. <code><a href="../reference/hazard.html">hazard()</a></code> has no equivalent of that deletion, and translating such a row as censored would change the fit without saying so, so the chunk stops instead and asks you to drop the rows yourself. When it fires, subset to <code>!is.na(DEAD) &amp; DEAD &gt;= 0</code> and check your row count against the deletion tallies SAS printed for the job.</p>
 <p>The fit is bound to <code>fit</code> and <code>fit = TRUE</code> is emitted, which is what makes the document runnable: a later <code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> chunk from a <code>PROC HAZPRED</code> block in the same job refers to that name.</p>
-<p><code>CONSERVE</code> becomes <code>control$conserve = TRUE</code>, <code>QUASI</code> becomes <code>control$method = "bfgs"</code>, <code>CONDITION=14</code> becomes <code>control$condition = 14</code>, and the <code>PARMS</code> early-phase shape (<code>MUE</code>/<code>THALF</code>/<code>NU</code>/<code>M FIXM</code>) becomes a <code>hzr_phase("cdf", ...)</code> with <code>m</code> fixed – exactly the mappings covered statement-by-statement above, applied automatically. <code>dist = "multiphase"</code> is emitted whenever <code>phases</code> is, and <code>theta</code> carries the full interleaved multiphase start vector – early scale, then every early-phase shape parameter in phase order, then the constant/late scale – not just the phases’ log(mu) starts.</p>
+<p><code>CONSERVE</code> becomes <code>control$conserve = TRUE</code>, <code>QUASI</code> becomes <code>control$method = "bfgs"</code>, <code>CONDITION=14</code> becomes <code>control$condition = 14</code>, and the <code>PARMS</code> early-phase shape (<code>MUE</code>/<code>THALF</code>/<code>NU</code>/<code>M FIXM</code>) becomes a <code>hzr_phase("cdf", ...)</code> with <code>m</code> fixed. These are the forms the hand translation above uses. <code>FIXM</code> holds <code>m</code> only through <code>fixed = "m"</code> on the phase. <code>QUASI</code> changes nothing: <code><a href="../reference/hazard.html">hazard()</a></code> does not read <code>control$method</code>, and the fitting path uses BFGS regardless (a multiphase fit may run a Nelder-Mead warm-up first, and a stop that fails SAS’s gradient test continues with <code><a href="https://rdrr.io/r/stats/nlm.html" class="external-link">stats::nlm()</a></code>), so the entry only records the SAS choice. The fitting path reads none of <code>control$fix</code>, <code>control$quasi</code> or <code>control$method</code>. <code>dist = "multiphase"</code> is emitted whenever <code>phases</code> is, and <code>theta</code> carries the full interleaved multiphase start vector (early scale, then every early-phase shape parameter in phase order, then the constant/late scale), not just the phases’ log(mu) starts.</p>
 <section class="level3"><h3 id="what-it-doesnt-translate">What it doesn’t translate<a class="anchor" aria-label="anchor" href="#what-it-doesnt-translate"></a>
 </h3>
 <p>Constructs the parser can’t resolve are never silently dropped: they land on the returned <code>hzr_sas_job</code> object and render as visible <code>UNTRANSLATED</code> callouts in the <code>.qmd</code>, so a translated document shows its own gaps instead of quietly under-reporting the original job. Two gaps are common enough in production jobs to know about going in:</p>
 <ul>
 <li>
-<strong><code>PROC HAZPRED</code> prediction grids built from <code>SET</code>-derived values, function calls, or unknown names are not translated.</strong> The parser resolves a grid’s <code>DO</code> loop bounds when they are literal numbers or DATA-step constants it can fold (e.g. <code>DO MONTHS = 1*DTY, 2*DTY, ... ;</code> with <code>DTY</code> assigned earlier in the same DATA step), but a bound read from <code>SET</code>, computed by a function call, or naming something the parser can’t resolve is refused whole rather than partially read – a partial grid is a partial <code>newdata</code>, and reporting predictions over a half-read grid would be worse than not reporting them. Such grids emit an <code>UNTRANSLATED</code> block; build the <code>newdata</code> grid by hand and pass it to <code><a href="../reference/predict.hazard.html">predict.hazard()</a></code> instead. On the public corpus, grid resolution is 19 of 55 (35%), up from 10 of 55 (18%) before constant folding.</li>
+<strong><code>PROC HAZPRED</code> prediction grids built from <code>SET</code>-derived values, function calls, or unknown names are not translated.</strong> The parser resolves a grid’s <code>DO</code> loop bounds when they are literal numbers or DATA-step constants it can fold (e.g. <code>DO MONTHS = 1*DTY, 2*DTY, ... ;</code> with <code>DTY</code> assigned earlier in the same DATA step), but a bound read from <code>SET</code>, computed by a function call, or naming something the parser can’t resolve is refused whole rather than partially read: a partial grid is a partial <code>newdata</code>, and reporting predictions over a half-read grid would be worse than not reporting them. Such grids emit an <code>UNTRANSLATED</code> block; build the <code>newdata</code> grid by hand and pass it to <code><a href="../reference/predict.hazard.html">predict.hazard()</a></code> instead. On the public corpus, grid resolution is 19 of 55 (35%), up from 10 of 55 (18%) before constant folding.</li>
 <li>
-<strong>An unresolved <code>INHAZ=</code> fails the render on purpose.</strong> If a <code>PROC HAZPRED</code> job’s fitted-model dataset can’t be found – neither from another translated job’s <code>OUTHAZ=</code> nor from the <code>librefs=</code> argument you pass in – the document gets an <code>inhaz-unresolved</code> chunk ahead of the grid and <code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> chunks whose whole body is a <code><a href="https://rdrr.io/r/base/stop.html" class="external-link">stop()</a></code> naming the libref, so rendering fails loudly instead of producing predictions against a model it never loaded.</li>
+<strong>An unresolved <code>INHAZ=</code> fails the render on purpose.</strong> If a <code>PROC HAZPRED</code> job’s fitted-model dataset can’t be found (neither from another translated job’s <code>OUTHAZ=</code> nor from the <code>librefs=</code> argument you pass in), the document gets an <code>inhaz-unresolved</code> chunk ahead of the grid and <code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> chunks whose whole body is a <code><a href="https://rdrr.io/r/base/stop.html" class="external-link">stop()</a></code> naming the libref, so rendering fails loudly instead of producing predictions against a model it never loaded.</li>
 </ul></section></section><section class="level2"><h2 id="known-limitations-vs--sas-hazard">Known limitations vs. SAS HAZARD<a class="anchor" aria-label="anchor" href="#known-limitations-vs--sas-hazard"></a>
 </h2>
-<p>A SAS HAZARD veteran migrating to <code>TemporalHazard</code> should be aware of the following scope limits as of v1.2.2. Detailed status per feature is tracked in <code>inst/dev/SAS-PARITY-GAP-ANALYSIS.md</code> and <code>inst/dev/DEVELOPMENT-PLAN.md</code>.</p>
+<p>A SAS HAZARD veteran migrating to <code>TemporalHazard</code> should be aware of the following scope limits. Detailed status per feature is tracked in <code>inst/dev/SAS-PARITY-GAP-ANALYSIS.md</code> and <code>inst/dev/DEVELOPMENT-PLAN.md</code>.</p>
 <section class="level3"><h3 id="stepwise-variable-selection-selection-statement">Stepwise variable selection (<code>SELECTION</code> statement)<a class="anchor" aria-label="anchor" href="#stepwise-variable-selection-selection-statement"></a>
 </h3>
 <ul>
@@ -1006,11 +1041,11 @@ PROC HAZARD DATA=AVCS CONSERVE OUTHAZ=EXAMPLES.HZDEATH
 <p>For users migrating from older TemporalHazard versions or reading older SAS parity notes:</p>
 <ul>
 <li>
-<strong><code>weights</code> on all distributions</strong> — shipped v0.9.6. Weibull, exponential, log-logistic, log-normal, and multiphase all honour observation weights end-to-end (LL + analytic gradient + multiphase Conservation of Events).</li>
+<strong><code>weights</code> on all distributions</strong> (shipped v0.9.6). Weibull, exponential, log-logistic, log-normal, and multiphase all honour observation weights end-to-end (LL + analytic gradient + multiphase Conservation of Events).</li>
 <li>
-<strong><code>Surv(start, stop, event)</code> with <code>start &gt; 0</code></strong> — shipped v0.9.7. Counting-process rows contribute <code>H(stop) - H(start)</code> for Weibull and multiphase. The previous <code><a href="../reference/hazard.html">hazard()</a></code> guard against non-zero starts is gone.</li>
+<strong><code>Surv(start, stop, event)</code> with <code>start &gt; 0</code></strong> (shipped v0.9.7). Counting-process rows contribute <code>H(stop) - H(start)</code> for Weibull and multiphase. The previous <code><a href="../reference/hazard.html">hazard()</a></code> guard against non-zero starts is gone.</li>
 <li>
-<strong>Delta-method prediction confidence limits</strong> — shipped v0.9.8. Use <code>predict(..., se.fit = TRUE, level = 0.95)</code> to get a data frame with <code>fit</code>, <code>se.fit</code>, <code>lower</code>, and <code>upper</code> per row. Closed-form Jacobian for Weibull and multiphase, <code><a href="https://rdrr.io/pkg/numDeriv/man/jacobian.html" class="external-link">numDeriv::jacobian</a></code> fallback for exponential / log-logistic / log-normal.</li>
+<strong>Delta-method prediction confidence limits</strong> (shipped v0.9.8). Use <code>predict(..., se.fit = TRUE, level = 0.95)</code> to get a data frame with <code>fit</code>, <code>se.fit</code>, <code>lower</code>, and <code>upper</code> per row. Closed-form Jacobian for Weibull and multiphase, <code><a href="https://rdrr.io/pkg/numDeriv/man/jacobian.html" class="external-link">numDeriv::jacobian</a></code> fallback for exponential / log-logistic / log-normal.</li>
 </ul>
 <hr></section></section><section class="level2"><h2 id="rcpp-acceleration-note">Rcpp acceleration note<a class="anchor" aria-label="anchor" href="#rcpp-acceleration-note"></a>
 </h2>

@@ -12,8 +12,8 @@ intercept-only fits to establish the baseline hazard shape, then
 covariates on top, then the multiphase decomposition, then
 multi-endpoint analyses on the same cohort. Every example uses a
 clinical dataset shipped with the package. If you haven’t seen the
-basics — what a parametric hazard model is, why we use the
-`Surv(time, status)` formula — start with
+basics (what a parametric hazard model is, why we use the
+`Surv(time, status)` formula), start with
 [`vignette("getting-started")`](https://ehrlinger.github.io/TemporalHazard/articles/getting-started.md)
 first; this vignette assumes that context.
 
@@ -23,14 +23,14 @@ has structure that demands a multiphase decomposition. Multivariable
 fits add covariate effects on top of a shape you already trust.
 Multiphase fits split the baseline shape into clinically interpretable
 phases. Multi-endpoint analyses reuse all the above for separate
-clinical outcomes — death, reoperation, infection — on the same patient
+clinical outcomes (death, reoperation, infection) on the same patient
 cohort.
 
 ## 1 Intercept-only model: CABG survival (KU Leuven)
 
 The `cabgkul` dataset contains 5,880 patients who underwent primary
 isolated coronary artery bypass grafting at KU Leuven between 1971 and
-1987. With only two columns — follow-up time and death indicator — it is
+1987. With only two columns (follow-up time and death indicator), it is
 the simplest starting point.
 
 ``` r
@@ -43,7 +43,7 @@ str(cabgkul)
 ```
 
 Fit an intercept-only Weibull. With no covariates on the right-hand side
-of the formula the model estimates only the baseline hazard shape — the
+of the formula the model estimates only the baseline hazard shape: the
 scale `mu` and exponent `nu` of a Weibull curve fit to all 5,880
 patients pooled. This is the right starting point for any new dataset:
 before asking which covariates matter, ask whether a single monotone
@@ -105,7 +105,10 @@ Figure 1: Weibull parametric survival vs. Kaplan-Meier (CABG, KU Leuven)
 
 A single Weibull captures the broad trend but misses the distinct early
 operative risk and late attrition that the KM curve reveals. This
-motivates the multiphase approach below.
+motivates the multiphase approach:
+[`vignette("getting-started")`](https://ehrlinger.github.io/TemporalHazard/articles/getting-started.md)
+fits a three-phase model to this same cohort, and the multiphase section
+below walks the workflow on AVC.
 
 ## 2 Multivariable model: AVC repair
 
@@ -142,7 +145,7 @@ Now we put covariates on the right-hand side of the formula and refit.
 The `theta` vector grows: two Weibull shape parameters (`mu`, `nu`) plus
 six covariate coefficients (`beta1`..`beta6`), each starting at zero.
 The optimizer estimates a log-hazard-ratio for every covariate jointly
-with the Weibull shape — so the shape and the covariate effects are
+with the Weibull shape, so the shape and the covariate effects are
 identified from the same likelihood, not sequentially.
 
 ``` r
@@ -173,7 +176,7 @@ negative means lower, zero means no effect. The large positive
 coefficients on `mal` (anatomical malalignment) and `com_iv` (grade IV
 post-operative complications) flag these as the dominant risk markers in
 this cohort. The standard errors and Wald z-statistics in the summary
-tell you which effects are well identified and which are noise — a
+tell you which effects are well identified and which are noise; a
 coefficient with a z-statistic near zero contributes essentially nothing
 the data can defend.
 
@@ -189,15 +192,15 @@ shape and its own scale:
 \\H(t \mid x) = \sum\_{j=1}^{J} \mu_j(x) \cdot \Phi_j(t)\\
 
 Each \\\Phi_j(t)\\ is a phase-specific unit-scaled curve (early-peaking
-saturating, flat constant, late-rising polynomial) and each \\\mu_j(x)\\
+saturating, flat constant, late-rising power law) and each \\\mu_j(x)\\
 is the phase-specific scale, possibly modulated by covariates. The
-phases overlap and add — no switching, no thresholds — so the total
+phases overlap and add (no switching, no thresholds), so the total
 instantaneous hazard at any \\t\\ is the sum of the per-phase rates. See
 [`vignette("getting-started")`](https://ehrlinger.github.io/TemporalHazard/articles/getting-started.md)
 for the longer-form motivation; what follows here is the practical
 workflow for *fitting* one.
 
-For AVC we’ll use two phases — an early phase to absorb the
+For AVC we’ll use two phases: an early phase to absorb the
 operative-window mortality, and a constant phase for the background
 rate. AVC patients don’t have a clear late-deterioration regime over
 this follow-up window, so a third (g3) phase would be unidentified. We
@@ -295,7 +298,7 @@ Figure 2: Single-phase Weibull vs. multiphase model against Kaplan-Meier
 (AVC)
 
 The multiphase model tracks the KM curve much more closely than the
-single Weibull, especially across the steep early-mortality window —
+single Weibull, especially across the steep early-mortality window,
 which is exactly where the single Weibull was forced to compromise. The
 constant phase then carries the slow post-recovery attrition. The point
 isn’t that multiphase always wins; it’s that *when the data has phase
@@ -305,14 +308,13 @@ than averaging it away into one monotone curve.
 ## 4 Multi-endpoint models: heart valve replacement
 
 The `valves` dataset (1,533 patients) has multiple time-to-event
-endpoints — death, prosthetic valve endocarditis (PVE), and reoperation
-— each with its own follow-up time and event indicator. The same
+endpoints: death, prosthetic valve endocarditis (PVE), and reoperation,
+each with its own follow-up time and event indicator. The same
 [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
-call fits each endpoint independently:
+call fits each endpoint independently.
 
 Start with the death endpoint. We use age at operation, NYHA class, and
-mechanical-valve indicator as covariates — the clinically canonical set
-for survival after valve replacement.
+mechanical-valve indicator as covariates.
 
 ``` r
 
@@ -372,19 +374,19 @@ fit_pve
 ```
 
 Each endpoint gets its own model with its own covariates, but the hazard
-model structure — temporal shape plus covariate effects — stays the same
+model structure (temporal shape plus covariate effects) stays the same
 whatever the clinical endpoint. Repeating the workflow for a third
 endpoint (reoperation, for example) is mechanical: swap the `Surv(...)`
 columns, swap the covariates, refit. The advantage over running three
 separate analyses in different tools is that the predictions,
 diagnostics, and uncertainty quantification all come from the same
-package — there’s no risk of subtle differences in censoring handling or
+package; there’s no risk of subtle differences in censoring handling or
 estimator choice between endpoints.
 
 ## 5 Interval and left censoring
 
 Right censoring is by far the most common censoring type in clinical
-survival data — a patient is still alive at last follow-up, so all we
+survival data: a patient is still alive at last follow-up, so all we
 know is that their event time exceeds the observed window. Two other
 types arise frequently enough to warrant explicit handling.
 
@@ -397,7 +399,7 @@ or exactly observed at 24; both introduce bias.
 
 **Left censoring** is the mirror: the event occurred *before* the first
 observation time (time_upper), so it was already established at the
-moment of first contact — \\T \leq t\_{\text{upper}}\\.
+moment of first contact: \\T \leq t\_{\text{upper}}\\.
 
 ### 5.1 Status codes
 
@@ -423,9 +425,8 @@ One thing to watch, because the two interfaces do not use the same
 numbers. The table above is this package’s coding, and it is what you
 pass to the `status` argument.
 [`Surv()`](https://rdrr.io/pkg/survival/man/Surv.html) has its own
-scheme — under `type = "interval"` it reads `0` as right-censored, `1`
-as an exact event, `2` as left-censored and `3` as interval-censored —
-and
+scheme: under `type = "interval"` it reads `0` as right-censored, `1` as
+an exact event, `2` as left-censored and `3` as interval-censored.
 [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 translates it for you when it parses the formula. So use whichever
 coding belongs to the interface you are writing in, and don’t carry one
@@ -487,18 +488,25 @@ table(status)
 
 > **Note**
 >
-> **`time_lower` as a counting-process entry time.** In the Weibull and
-> multiphase likelihoods, `time_lower` doubles as the *entry*
-> (left-truncation) time for right-censored and exact-event rows
+> **`time_lower` as a counting-process entry time.** The Weibull and
+> multiphase likelihoods also read `time_lower` as the *entry*
+> (left-truncation) time on right-censored and exact-event rows
 > (`status %in% c(0, 1)`): when `0 < time_lower < time`, the row
 > contributes H(stop) − H(start), the counting-process form used for
-> epoch-decomposed repeated events. For an ordinary right-censored or
-> event row with no entry time, leave `time_lower` at `0` or omit it.
-> Setting `time_lower = time` is treated as *no entry* — `time_lower`
-> acts as an entry time only when strictly less than `time`, so it no
-> longer zeroes the row’s contribution. The exponential, log-logistic,
-> and log-normal likelihoods do not use `time_lower` as an entry time
-> and are unaffected.
+> epoch-decomposed repeated events. The exponential, log-logistic, and
+> log-normal likelihoods use `time_lower` only as the lower bound of a
+> `status == 2` interval and ignore it on every other row. For an
+> ordinary right-censored or event row with no entry time, leave
+> `time_lower` at `0` or omit it. Don’t set `time_lower = time` to mean
+> “no entry time”.
+> [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+> accepts it with a warning, and what it does next depends on the
+> family. The Weibull likelihood uses `time_lower` as an entry time only
+> when it is strictly less than `time`, so those rows enter at 0 and
+> nothing changes. The multiphase likelihood takes it at its word. Each
+> row enters the risk set at the moment it leaves, its cumulative-hazard
+> term vanishes, and the fit it returns is meaningless. The other three
+> families ignore it.
 
 Fit a Weibull model using both censoring types:
 
@@ -530,8 +538,8 @@ fit_ic
 
 A naive analyst who doesn’t have visit-bracket data would record the
 death at the *discovery* visit (`time_upper`) rather than as an
-interval. This overstates the event time — the patient appears to have
-survived longer than they did — biasing the estimated hazard shape.
+interval. This overstates the event time (the patient appears to have
+survived longer than they did), biasing the estimated hazard shape.
 
 ``` r
 
@@ -559,9 +567,10 @@ rbind(
 
 The interval-censored fit recovers both parameters accurately. The naive
 fit estimates \\\mu\\ comparably but introduces a substantial positive
-bias in \\\nu\\ — it sees events consistently appearing at visit times
-(every 6 months) and infers a sharper, more periodic hazard shape that
-doesn’t match the underlying exponential structure.
+bias in \\\nu\\; it sees events consistently appearing at visit times
+(every 6 months) and infers a hazard that rises with time (\\\hat\nu
+\approx 1.46\\ against a true \\\nu = 1\\), a shape that doesn’t match
+the underlying exponential structure.
 
 ## 6 Convergence troubleshooting
 
@@ -600,8 +609,8 @@ c(mu = round(mu_hat, 4), nu = round(nu_hat, 4))
 ```
 
 Those values are the Weibull starting point the data itself suggests.
-They won’t be the MLEs — the log-log line uses every event time equally,
-whereas the MLE weights by the likelihood — but they land the optimizer
+They won’t be the MLEs (the log-log line uses every event time equally,
+whereas the MLE weights by the likelihood), but they land the optimizer
 in a sensible neighbourhood and prevent false-convergence to a
 degenerate solution.
 
@@ -625,12 +634,13 @@ ggplot(data.frame(time = nel$time, cumhaz = nel$cumhaz),
 
 ![](fitting-hazard-models_files/figure-html/fig-cumhaz-shape-1.png)
 
-Figure 3: Nelson-Aalen cumulative hazard for CABGKUL — three-phase shape
+Figure 3: Nelson-Aalen cumulative hazard for CABGKUL: three-phase shape
 visible as two kinks
 
 The early steep rise, the mid-range roughly-linear section, and the late
-upward acceleration map directly onto the three phases in the CABGKUL
-model.
+upward acceleration map directly onto the three phases of the CABGKUL
+model fitted in
+[`vignette("getting-started")`](https://ehrlinger.github.io/TemporalHazard/articles/getting-started.md).
 
 ### 6.2 When to fix shape parameters
 
@@ -647,11 +657,16 @@ always what you want in two situations:
   guide is 50 or more events per free shape parameter. Below that
   threshold the shapes are weakly identified and the optimizer wanders.
 
-Estimate shapes freely (`fixed = "none"`, the default) only when you are
-exploring a new dataset for the first time and have no prior on the
-temporal structure — and even then, start with `fixed = "shapes"` and
-release the shapes one at a time if the fixed-shapes fit shows
-systematic misfit.
+Estimate shapes freely (leave `fixed` at its default, `character(0)`,
+which fixes nothing) only when you are exploring a new dataset for the
+first time and have no prior on the temporal structure. Even then, start
+with `fixed = "shapes"` and release the shapes one at a time if the
+fixed-shapes fit shows systematic misfit. To fix only some shapes, name
+them: `fixed` takes `"t_half"`, `"nu"` and `"m"` for a `"cdf"` phase,
+`"tau"`, `"gamma"`, `"alpha"` and `"eta"` for a `"g3"` phase, or
+`"shapes"` for all of them. There is no `"none"`;
+[`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
+rejects it.
 
 ### 6.3 Signs of overparameterization
 
@@ -661,18 +676,17 @@ recognizable:
 | Symptom | What it means |
 |----|----|
 | `fit$fit$converged == FALSE` | Optimizer hit `maxit` before its stopping criterion was met |
-| [`vcov()`](https://rdrr.io/r/stats/vcov.html) returns `NA` | Hessian is singular — parameters are not jointly identified |
-| A phase scale (`log_mu`) at a boundary value | That phase is contributing essentially zero hazard; it isn’t needed |
-| Enormous standard errors on one or more parameters | Flat likelihood in that direction — weak identification |
+| [`vcov()`](https://rdrr.io/r/stats/vcov.html) returns `NA` | Hessian is singular; parameters are not jointly identified |
+| A phase scale (`log_mu`) at a boundary value | Possibly an unneeded phase, but a tiny scale alone does not show it; check the phase’s contribution with `predict(..., decompose = TRUE)` |
+| Enormous standard errors on one or more parameters | Flat likelihood in that direction (weak identification) |
 | Two phases with nearly identical shapes | One can be collapsed into the other |
 
-The AVC dataset has a clear two-phase structure (early CDF plus
-constant). Adding a third late-rising phase asks the data for a pattern
-it doesn’t contain over this follow-up window:
+Two phases (early CDF plus constant) describe the AVC data well. Adding
+a third, late-rising phase gives the optimizer two ways to describe the
+risk that remains after recovery:
 
 ``` r
 
-set.seed(42)
 fit_3ph <- hazard(
   Surv(int_dead, dead) ~ 1,
   data   = avc,
@@ -693,25 +707,33 @@ fit_3ph <- hazard(
 #> neither its 'mu' nor its shape is identified: the fit converges and those
 #> parameters drift freely.
 
-# Scale magnitudes: exp(log_mu) ≈ 0 for any phase the data doesn't support
+# Scale magnitudes. A tiny exp(log_mu) does not by itself mark an unneeded
+# phase; judge each phase by its contribution, from predict(..., decompose = TRUE)
 log_mu_idx <- grep("log_mu", names(coef(fit_3ph)))
 round(exp(coef(fit_3ph)[log_mu_idx]), 6)
 #>    early.log_mu constant.log_mu     late.log_mu 
 #>        0.248869        0.000000        0.000006
 ```
 
-The constant and late phase scales are both near zero — the optimizer
-found no evidence in the AVC data for either of those temporal shapes
-over this follow-up window. The early phase is absorbing all the
-identifiable structure. Any phase whose fitted scale is \\\mu \lesssim
-10^{-4}\\ is not contributing meaningful hazard and is a candidate for
-removal. The right diagnostic question is not “did the AIC improve?” but
-“does this phase represent real clinical biology?” — late deterioration
-after AVC repair requires long follow-up to observe; this dataset
-doesn’t have it.
+The constant phase scale has collapsed to zero (\\\mu \approx 7 \times
+10^{-13}\\), and
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+warns that the phase is not identified. The late phase scale looks just
+as small (\\\mu \approx 6 \times 10^{-6}\\), but \\\mu\\ multiplies the
+phase’s own shape, and \\G_3\\ with `tau = 5` and `gamma = 3` grows as
+\\(t/5)^3\\. By the end of follow-up (170.6 months) the late phase
+carries 0.23 of the 0.48 total cumulative hazard. With both phases
+available, the optimizer drops the constant phase and hands the slow
+post-recovery attrition, which the two-phase fit gave the constant
+phase, to the late phase instead. So judge a phase by its contribution,
+from `predict(..., type = "cumulative_hazard", decompose = TRUE)`, not
+by the size of its \\\mu\\. The right diagnostic question is not “did
+the AIC improve?” but “does this phase represent real clinical biology?”
+Late deterioration after AVC repair requires long follow-up to observe;
+this dataset doesn’t have it.
 
-When shapes are also free (`fixed = "none"`), a redundant phase can make
-the Hessian rank-deficient and
+When shapes are also free (no `fixed` argument), a redundant phase can
+make the Hessian rank-deficient and
 [`vcov()`](https://rdrr.io/r/stats/vcov.html) will return `NA` (the
 Hessian inversion failed). Fix by adding `fixed = "shapes"` to each
 phase to reduce the free-parameter count, then release shapes one at a
@@ -723,14 +745,16 @@ Three `control` arguments address most remaining convergence problems:
 
 **`n_starts`** (default 5 for multiphase; single-distribution models run
 one optimizer call and ignore this parameter) runs the optimizer from
-`n_starts` randomly jittered copies of the initial `theta`, then keeps
-the best solution. The default of 5 is sufficient for two-phase models;
-increase to 8–10 for three or more phases where the likelihood surface
-has more local minima.
+the initial `theta` and from `n_starts - 1` perturbed copies of it, then
+keeps the best solution. The perturbations come from a fixed internal
+seed (`control$start_seed`), so the same call returns the same fit
+whatever [`set.seed()`](https://rdrr.io/r/base/Random.html) you used,
+and your session’s random-number stream is left untouched. The default
+of 5 is sufficient for two-phase models; increase to 8–10 for three or
+more phases where the likelihood surface has more local minima.
 
 ``` r
 
-set.seed(42)
 fit_robust <- hazard(
   Surv(int_dead, dead) ~ 1,
   data   = avc,
@@ -750,7 +774,7 @@ fit_robust$fit$converged
 **Optimizer strategy (automatic).** The package always uses BFGS as the
 primary optimizer. For fixed-shape multiphase models with 2–10 free
 parameters, a Nelder-Mead pass runs first on each start to find a good
-basin, then BFGS polishes the solution. This warm-up is transparent — it
+basin, then BFGS polishes the solution. This warm-up is transparent: it
 happens automatically when the conditions are met and there is no
 user-facing control to switch it on or off.
 
@@ -775,14 +799,15 @@ is overparameterized (fix by fixing shapes or dropping a phase). Raising
 
 ## 7 Phase types reference
 
-You’ve now seen each phase type in use: a `"cdf"` early phase for AVC
-operative mortality, a `"constant"` phase for AVC background rate, and
-the implicit single shape of every Weibull fit. The package supports
-three phase types in total, summarized here for quick reference:
+You’ve now seen three phase types in use: a `"cdf"` early phase for AVC
+operative mortality, a `"constant"` phase for the AVC background rate,
+and a `"g3"` late phase in the overparameterization example. The package
+supports four phase types in total, summarized here for quick reference:
 
 | Type | Description | Typical use |
 |----|----|----|
 | `"cdf"` | Sigmoidal CDF shape (parameterized by `t_half`, `nu`, `m`) | Early or late phases with transient risk |
+| `"hazard"` | Unbounded cumulative hazard from the same family, \\\Phi(t) = -\log(1 - G(t))\\ (parameterized by `t_half`, `nu`, `m`) | Risk that keeps rising as patients age |
 | `"constant"` | Flat hazard (no temporal shape parameters) | Ongoing background risk |
 | `"g3"` | Late-phase G3 parameterization (4 parameters: `tau`, `gamma`, `alpha`, `eta`) | Late-rising risk matching C/SAS G3 output |
 

@@ -131,8 +131,8 @@ survival is not additive).</p></dd>
 <dd><p>Numeric confidence level in <code>(0, 1)</code>; default <code>0.95</code>.
 Only used when <code>se.fit = TRUE</code>.</p>
 <p><strong>SAS draws narrower bands than this by default.</strong> <code>PROC HAZPRED</code> takes
-its width from <code>CLEVEL</code>, whose default is <code>0.68268948</code> — documented in
-the macro source as "(1 sd)" — so its <code>T_ALPHA</code> multiplier is <code>1</code> to
+its width from <code>CLEVEL</code>, whose default is <code>0.68268948</code>, documented in
+the macro source as "(1 sd)", so its <code>T_ALPHA</code> multiplier is <code>1</code> to
 seven decimals (the literal is truncated) and the band is one standard
 error, 68.3%, not 95%. Reproducing a SAS figure at this
 function's default therefore yields a band about 1.96 times wider than the

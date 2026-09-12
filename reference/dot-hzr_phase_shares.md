@@ -35,7 +35,7 @@ Two distinct failure modes, with different consequences, both silent:
 `data.frame` with one row per phase: `share` (largest share of
 \\\Lambda\\ at any observed time) and `variation` (relative range of the
 phase's contribution across observed times, `NA` when the phase carries
-covariates – `mu` then varies by row and the two sources of variation
+covariates; `mu` then varies by row and the two sources of variation
 cannot be separated from the contribution alone).
 
 The shape is the same whatever happens: if no observed time carries a
@@ -48,13 +48,13 @@ two, and "could not be measured" stays distinct from "measured as zero".
 - `"absent"`:
 
   The phase contributes essentially none of \\\Lambda\\ at any observed
-  time – it has not started by the end of follow-up. Its `mu` **and**
-  its shape are unidentified.
+  time; it has not started by the end of follow-up. Its `mu` **and** its
+  shape are unidentified.
 
 - `"saturated"`:
 
-  The phase's \\\Phi\\ is effectively constant across the observed times
-  – a `cdf` phase whose half-life is far shorter than the first
+  The phase's \\\Phi\\ is effectively constant across the observed
+  times: a `cdf` phase whose half-life is far shorter than the first
   observation has already finished. It then contributes \\\mu \cdot \Phi
   \approx \mu\\, a constant offset, so **`mu` stays well identified**
   while the shape parameters (`t_half`, `nu`, `m`) go exactly flat: the
@@ -63,7 +63,7 @@ two, and "could not be measured" stays distinct from "measured as zero".
 Share is taken of \\\Lambda\\, not of \\h\\, because every row type's
 contribution runs through \\\Lambda(t)\\. A phase can supply almost none
 of the instantaneous hazard late in follow-up and still be perfectly
-well identified through the offset it already contributed – which is why
+well identified through the offset it already contributed, which is why
 the hazard is the wrong basis for this test.
 
 The **maximum** over times is the right summary rather than the mean: a

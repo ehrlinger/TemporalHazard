@@ -78,8 +78,8 @@ predict(
   `se.fit = TRUE`.
 
   **SAS draws narrower bands than this by default.** `PROC HAZPRED`
-  takes its width from `CLEVEL`, whose default is `0.68268948` —
-  documented in the macro source as "(1 sd)" — so its `T_ALPHA`
+  takes its width from `CLEVEL`, whose default is `0.68268948`,
+  documented in the macro source as "(1 sd)", so its `T_ALPHA`
   multiplier is `1` to seven decimals (the literal is truncated) and the
   band is one standard error, 68.3%, not 95%. Reproducing a SAS figure
   at this function's default therefore yields a band about 1.96 times

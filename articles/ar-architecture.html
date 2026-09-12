@@ -89,8 +89,8 @@
     <section class="section level2" data-number="1"><h2 data-number="1" id="overview">
 <span class="header-section-number">1</span> Overview<a class="anchor" aria-label="anchor" href="#overview"></a>
 </h2>
-<p>TemporalHazard is a pure-R reimplementation of the C/SAS HAZARD procedure originally developed at the University of Alabama at Birmingham (UAB) for multi-phase parametric hazard modeling (Blackstone, Naftel, and Turner 1986). The SAS/C code and this R package are currently developed and maintained at The Cleveland Clinic Foundation, and the R code was wholly developed at The Cleveland Clinic Foundation. The package provides a unified framework for fitting additive hazard models with an arbitrary number of temporal phases, each governed by the three-parameter <code>decompos(t; t_half, nu, m)</code> family. The generalized temporal decomposition extends naturally to longitudinal mixed-effects settings (Rajeswaran et al. 2018).</p>
-<p>This vignette documents the internal architecture: how source files are organized, how functions compose into the fitting pipeline, how golden fixtures ensure regression-free development, and what reference datasets ship with the package.</p>
+<p>TemporalHazard is a pure-R reimplementation of the C/SAS HAZARD procedure originally developed at the University of Alabama at Birmingham (UAB) for multi-phase parametric hazard modeling (Blackstone, Naftel, and Turner 1986). The SAS/C code and this R package are currently developed and maintained at The Cleveland Clinic Foundation, and the R code was wholly developed at The Cleveland Clinic Foundation. The package provides a unified framework for fitting additive hazard models with an arbitrary number of temporal phases. The early (<code>"cdf"</code>) and <code>"hazard"</code> phases use the three-parameter <code>decompos(t; t_half, nu, m)</code> family, and the late (<code>"g3"</code>) phase its own four-parameter shape. The generalized temporal decomposition extends naturally to longitudinal mixed-effects settings (Rajeswaran et al. 2018).</p>
+<p>This vignette documents the internal architecture: how source files are organized, how functions compose into the fitting pipeline, how golden fixtures catch regressions, and what reference datasets ship with the package.</p>
 </section><section class="section level2" data-number="2"><h2 data-number="2" id="source-file-organization">
 <span class="header-section-number">2</span> Source file organization<a class="anchor" aria-label="anchor" href="#source-file-organization"></a>
 </h2>
@@ -98,7 +98,7 @@
 <div class="cell">
 <div class="cell-output-display">
 <table class="table caption-top">
-<caption>R source files by architectural layer</caption>
+<caption>Selected R source files by architectural layer</caption>
 <colgroup>
 <col style="width: 19%">
 <col style="width: 19%">
@@ -171,11 +171,6 @@
 <td style="text-align: left;">Surv() formula parsing for right/left/interval censoring</td>
 </tr>
 <tr class="odd">
-<td style="text-align: left;">Shared infrastructure</td>
-<td style="text-align: left;">golden_fixtures.R</td>
-<td style="text-align: left;">Synthetic fixture generators (.rds reference outputs)</td>
-</tr>
-<tr class="even">
 <td style="text-align: left;">Shared infrastructure</td>
 <td style="text-align: left;">parity-helpers.R</td>
 <td style="text-align: left;">Stubs for cross-validating against C HAZARD binary</td>
@@ -290,11 +285,11 @@ hazard(dist='multiphase')
 <span class="header-section-number">3.1.4</span> Multi-start optimization<a class="anchor" aria-label="anchor" href="#multi-start-optimization"></a>
 </h4>
 <p><code><a href="../reference/dot-hzr_optim_multiphase.html">.hzr_optim_multiphase()</a></code> runs a multi-start strategy: the first start uses the assembled starting values (from <code>theta</code> or <code>hzr_phase</code> specs); subsequent starts perturb randomly (sd = 0.5). The best log-likelihood across all starts is kept. This helps the optimizer escape the shallow local optima that are common in multiphase models.</p>
-<p>The optimizer delegates to <code>.hzr_optim_generic()</code>, which wraps <code><a href="https://rdrr.io/r/stats/optim.html" class="external-link">stats::optim()</a></code> with method <code>"BFGS"</code> (unconstrained; all scale parameters are log-transformed). The Hessian is computed numerically at the converged point for variance-covariance estimation.</p>
+<p>The optimizer delegates to <code>.hzr_optim_generic()</code>, which wraps <code><a href="https://rdrr.io/r/stats/optim.html" class="external-link">stats::optim()</a></code> with method <code>"BFGS"</code> (unconstrained; all scale parameters are log-transformed) and, when a BFGS stop fails SAS/C HAZARD’s relative-gradient test, continues with <code><a href="https://rdrr.io/r/stats/nlm.html" class="external-link">stats::nlm()</a></code>. The Hessian at the converged point, inverted for the variance-covariance matrix, is assembled analytically when every row is an exact event or right-censored (counting-process start times included): <code>.hzr_hessian_multiphase()</code> for multiphase fits, whose phase-shape second derivatives inside it are finite differences, and a closed-form Hessian for each single-phase distribution. When any row is left- or interval-censored, the analytic Hessian declines and <code><a href="https://rdrr.io/pkg/numDeriv/man/hessian.html" class="external-link">numDeriv::hessian()</a></code> computes it numerically. <code>numDeriv</code> is a Suggests, so without it those fits have no standard errors.</p>
 </section></section></section><section class="section level2" data-number="4"><h2 data-number="4" id="golden-fixture-system">
 <span class="header-section-number">4</span> Golden fixture system<a class="anchor" aria-label="anchor" href="#golden-fixture-system"></a>
 </h2>
-<p>Golden fixtures are pre-fitted model results saved as <code>.rds</code> files in <code>inst/fixtures/</code>. They serve as <strong>regression anchors</strong>: each test run refits the model on the same data and compares estimates to the stored values. This catches regressions when the likelihood, gradient, or optimizer changes.</p>
+<p>Golden fixtures are pre-fitted model results saved as <code>.rds</code> files in <code>inst/fixtures/</code>. They are <strong>regression anchors</strong>: each test run refits the model on the same data and compares estimates to the stored values. This catches regressions when the likelihood, gradient, or optimizer changes.</p>
 <section class="level2" data-number="4.1"><h3 data-number="4.1" id="fixture-format">
 <span class="header-section-number">4.1</span> Fixture format<a class="anchor" aria-label="anchor" href="#fixture-format"></a>
 </h3>
@@ -448,11 +443,11 @@ hazard(dist='multiphase')
 </h4>
 <p>The multiphase parity tests (<code>test-multiphase-parity.R</code>) validate against the C HAZARD binary output for the KUL CABG dataset:</p>
 <ol type="1">
-<li><p><strong>Likelihood evaluation</strong> —Evaluates the R log-likelihood at the C converged parameters and asserts it matches the C output (-3740.52).</p></li>
-<li><p><strong>Decomposition consistency</strong> —Verifies phase additivity and CDF saturation at the C reference parameter values.</p></li>
-<li><p><strong>Conservation of events</strong> —Checks that the model-implied expected events (<span class="math inline">\(\sum [1 - \exp(-H(t_i))]\)</span>) matches the observed event count (545), as reported by the C binary (544.9993).</p></li>
-<li><p><strong>Profile standard errors</strong> —Computes a numerical Hessian varying only the 3 log(mu) parameters (shapes held fixed), matching the C binary’s estimation strategy, and compares standard errors.</p></li>
-<li><p><strong>Full fit convergence</strong> —Fits the R multiphase optimizer on the full dataset with informed starting values and checks that the log-likelihood meets or exceeds the C reference.</p></li>
+<li><p><strong>Likelihood evaluation</strong>: evaluates the R log-likelihood at the C converged parameters and asserts it matches the C output (-3740.52).</p></li>
+<li><p><strong>Decomposition consistency</strong>: verifies phase additivity and CDF saturation at the C reference parameter values.</p></li>
+<li><p><strong>Conservation of events</strong>: checks that the model-implied expected events (<span class="math inline">\(\sum [1 - \exp(-H(t_i))]\)</span>) match the observed event count (545), as reported by the C binary (544.9993).</p></li>
+<li><p><strong>Profile standard errors</strong>: computes a numerical Hessian varying only the 3 log(mu) parameters (shapes held fixed), matching the C binary’s estimation strategy, and compares standard errors.</p></li>
+<li><p><strong>Full fit convergence</strong>: fits the R multiphase optimizer on the full dataset with informed starting values and checks that the log-likelihood meets or exceeds the C reference.</p></li>
 </ol></section></section><section class="section level2" data-number="6"><h2 data-number="6" id="sec-datasets">
 <span class="header-section-number">6</span> Dataset catalog<a class="anchor" aria-label="anchor" href="#sec-datasets"></a>
 </h2>
@@ -577,7 +572,7 @@ hazard(dist='multiphase')
 </tr>
 <tr class="even">
 <td style="text-align: left;">status</td>
-<td style="text-align: left;">NYHA functional class (I-V)</td>
+<td style="text-align: left;">NYHA functional class (I-IV)</td>
 <td style="text-align: left;">numeric</td>
 </tr>
 <tr class="odd">
@@ -632,12 +627,12 @@ hazard(dist='multiphase')
 </section><section class="level3" data-number="6.2.2"><h4 data-number="6.2.2" id="cabgkul-coronary-artery-bypass-grafting">
 <span class="header-section-number">6.2.2</span> CABG/KUL (coronary artery bypass grafting)<a class="anchor" aria-label="anchor" href="#cabgkul-coronary-artery-bypass-grafting"></a>
 </h4>
-<p>The KUL dataset is a large series of 5880 primary isolated CABG patients from KU Leuven (1971–July 1987). It serves as the primary benchmark for C binary parity testing because it has the simplest structure (intercept-only, right-censored) combined with a large sample size that exercises all three temporal phases.</p>
+<p>The KUL dataset is a large series of 5880 primary isolated CABG patients from KU Leuven (1971–July 1987). It is the primary benchmark for C binary parity testing because it has the simplest structure (intercept-only, right-censored) combined with a large sample size that exercises all three temporal phases.</p>
 <p>The original SAS analysis (<code>hz.deadp.KUL.sas</code>) also includes return-of-angina and reintervention endpoints (recorded in the original fixed-width file with 6 columns), but only the death endpoint (<code>int_dead</code>, <code>dead</code>) is extracted for parity testing.</p>
 </section><section class="level3" data-number="6.2.3"><h4 data-number="6.2.3" id="omc-open-mitral-commissurotomy">
 <span class="header-section-number">6.2.3</span> OMC (open mitral commissurotomy)<a class="anchor" aria-label="anchor" href="#omc-open-mitral-commissurotomy"></a>
 </h4>
-<p>The OMC dataset contains 339 patients and is unique in the collection because it involves <strong>repeated thromboembolic events</strong> (up to 3 per patient) with <strong>left censoring</strong>. The SAS analysis transforms the dataset into a repeated-events format using STARTTME and CENSORED indicators, exercising the interval censoring likelihood.</p>
+<p>The OMC dataset contains 339 patients and is unique in the collection because it involves <strong>repeated thromboembolic events</strong> (up to 3 per patient). The SAS analysis transforms the dataset into a repeated-events format in which each interval starts at the previous event (STARTTME) and ends at the next event or censoring (CENSORED). The SAS job names STARTTME in its <code>LCENSOR</code> statement, and the HAZARD documentation calls that left censoring, but it records delayed entry (left truncation). The analysis therefore exercises the counting-process start-time term of the likelihood, not the left- or interval-censoring terms.</p>
 </section><section class="level3" data-number="6.2.4"><h4 data-number="6.2.4" id="tga-transposition-of-great-arteries">
 <span class="header-section-number">6.2.4</span> TGA (transposition of great arteries)<a class="anchor" aria-label="anchor" href="#tga-transposition-of-great-arteries"></a>
 </h4>
@@ -771,8 +766,8 @@ hazard(dist='multiphase')
 </tr>
 <tr class="odd">
 <td style="text-align: left;">DELTA (early)</td>
-<td style="text-align: left;">(absorbed by decompos)</td>
-<td style="text-align: left;">implemented</td>
+<td style="text-align: left;">(not implemented)</td>
+<td style="text-align: left;">planned</td>
 <td style="text-align: left;">NOT IMPLEMENTED, not absorbed. The C DELTA controls B(t) = (exp(delta*t)-1)/delta, which enters rho, the time argument and the density Jacobian separately; R computes the delta=0 branch of each. A job with DELTA != 0 is refused or flagged, never fitted silently.</td>
 </tr>
 <tr class="even">
@@ -812,16 +807,16 @@ hazard(dist='multiphase')
 <section class="level2" data-number="7.1"><h3 data-number="7.1" id="early-phase-g1-mapping">
 <span class="header-section-number">7.1</span> Early phase (G1) mapping<a class="anchor" aria-label="anchor" href="#early-phase-g1-mapping"></a>
 </h3>
-<p>The SAS early phase uses four parameters: DELTA, RHO (or THALF), NU, M. These collapse onto the three-parameter decompos family:</p>
+<p>The SAS early phase uses four parameters: DELTA, RHO (or THALF), NU, M. With DELTA = 0 they reduce to the three-parameter decompos family:</p>
 <ul>
 <li>
-<strong>DELTA</strong> —Time transformation <code>B(t) = (exp(delta*t) - 1)/delta</code>. When DELTA = 0 (the common case), <code>B(t) = t</code> and the transformation is absorbed. Non-zero DELTA is not currently supported.</li>
+<strong>DELTA</strong>: time transformation <code>B(t) = (exp(delta*t) - 1)/delta</code>. When DELTA = 0 (the common case), <code>B(t) = t</code> and the transformation drops out. Non-zero DELTA is not supported.</li>
 <li>
-<strong>RHO / THALF</strong> —Scale parameter. <code>RHO = NU * THALF * ((2^M - 1)/M)^NU</code>. Maps directly to <code>t_half</code> in <code><a href="../reference/hzr_phase.html">hzr_phase()</a></code>.</li>
+<strong>RHO / THALF</strong>: scale parameter. THALF maps directly to <code>t_half</code> in <code><a href="../reference/hzr_phase.html">hzr_phase()</a></code>. RHO has no argument of its own in R: it is fixed by NU, THALF and M, and for M &gt; 0 and NU &gt; 0 it is <code>RHO = NU * THALF * ((2^M - 1)/M)^NU</code>.</li>
 <li>
-<strong>NU</strong> —Time exponent. Maps directly.</li>
+<strong>NU</strong>: time exponent. Maps directly.</li>
 <li>
-<strong>M</strong> —Shape exponent. Maps directly.</li>
+<strong>M</strong>: shape exponent. Maps directly.</li>
 </ul></section><section class="level2" data-number="7.2"><h3 data-number="7.2" id="late-phase-g3-mapping">
 <span class="header-section-number">7.2</span> Late phase (G3) mapping<a class="anchor" aria-label="anchor" href="#late-phase-g3-mapping"></a>
 </h3>
@@ -837,19 +832,21 @@ hazard(dist='multiphase')
 <strong>ETA</strong> –&gt; <code>eta</code> (outer exponent)</li>
 </ul>
 <p>The G3 formula (for <code>alpha &gt; 0</code>) is: <span class="math inline">\(G_3(t) = \left(\left((t/\tau)^\gamma + 1\right)^{1/\alpha} - 1\right)^\eta\)</span></p>
-<p>Unlike G1, G3 is unbounded —it can grow without limit, making it suitable for late-phase rising hazards. For the KUL benchmark with <code>gamma = 3, alpha = 1, eta = 1</code>, this simplifies to <span class="math inline">\(G_3(t) = t^3\)</span>.</p>
+<p>Unlike G1, G3 is unbounded: it can grow without limit, making it suitable for late-phase rising hazards. For the KUL benchmark with <code>tau = 1, gamma = 3, alpha = 1, eta = 1</code>, this simplifies to <span class="math inline">\(G_3(t) = t^3\)</span>.</p>
 </section></section><section class="section level2" data-number="8"><h2 data-number="8" id="version-history">
 <span class="header-section-number">8</span> Version history<a class="anchor" aria-label="anchor" href="#version-history"></a>
 </h2>
-<p>The package follows semantic versioning with a prerelease qualifier during active development:</p>
+<p>Versions are plain three-part numbers (major.minor.patch). The early milestones were:</p>
 <ul>
 <li>
-<strong>v0.1.0</strong> —Single-phase engine: Weibull, exponential, log-logistic, log-normal distributions with formula interface, predict, and golden fixture testing.</li>
+<strong>v0.1.0</strong> (single-phase engine): Weibull, exponential, log-logistic, log-normal distributions with formula interface, predict, and golden fixture testing.</li>
 <li>
-<strong>v0.9.0</strong> —Multiphase engine: N-phase additive cumulative hazard, <code><a href="../reference/hzr_phase.html">hzr_phase()</a></code> specification, decomposition engine, C binary parity tests, dataset catalog.</li>
+<strong>v0.9.0</strong> (multiphase engine): N-phase additive cumulative hazard, <code><a href="../reference/hzr_phase.html">hzr_phase()</a></code> specification, decomposition engine, C binary parity tests, dataset catalog.</li>
 <li>
-<strong>v0.9.1</strong> (current) —Vignette suite, roxygen multiphase examples, CI workflow fixes (load_pkgload), SAS missing-value handling (<code>na.strings</code>), print.hazard phase labels, and README refresh.</li>
-</ul></section><section class="section level2"><h2 class="unnumbered" id="references">References<a class="anchor" aria-label="anchor" href="#references"></a>
+<strong>v0.9.1</strong>: vignette suite, roxygen multiphase examples, CI workflow fixes (load_pkgload), SAS missing-value handling (<code>na.strings</code>), print.hazard phase labels, and README refresh.</li>
+</ul>
+<p>Every release since, up to the installed version, is listed in the package NEWS: <code>news(package = "TemporalHazard")</code>.</p>
+</section><section class="section level2"><h2 class="unnumbered" id="references">References<a class="anchor" aria-label="anchor" href="#references"></a>
 </h2>
 <p>Blackstone EH, Naftel DC, Turner ME Jr. The decomposition of time-varying hazard into phases, each incorporating a separate stream of concomitant information. <em>J Am Stat Assoc.</em> 1986;81(395):615-624. doi: <a href="https://doi.org/10.1080/01621459.1986.10478314" class="external-link">10.1080/01621459.1986.10478314</a></p>
 <p>Rajeswaran J, Blackstone EH, Ehrlinger J, Li L, Ishwaran H, Parides MK. Probability of atrial fibrillation after ablation: Using a parametric nonlinear temporal decomposition mixed effects model. <em>Stat Methods Med Res.</em> 2018;27(1):126-141. doi: <a href="https://doi.org/10.1177/0962280215623583" class="external-link">10.1177/0962280215623583</a></p>

@@ -99,15 +99,15 @@
 <section class="level2" data-number="1.1"><h3 data-number="1.1" id="the-parametric-family">
 <span class="header-section-number">1.1</span> The parametric family<a class="anchor" aria-label="anchor" href="#the-parametric-family"></a>
 </h3>
-<p>Every temporal phase in TemporalHazard is built from a single parametric family, <code>decompos(t; t_half, nu, m)</code>, introduced by Blackstone, Naftel, and Turner (1986) that produces three linked quantities from just three parameters:</p>
+<p>The early (<code>"cdf"</code>) and <code>"hazard"</code> phases in TemporalHazard are built from a single parametric family, <code>decompos(t; t_half, nu, m)</code>, introduced by Blackstone, Naftel, and Turner (1986), which produces three linked quantities from just three parameters:</p>
 <ul>
 <li>
-<span class="math inline">\(G(t)\)</span> — cumulative distribution function (CDF), bounded <span class="math inline">\([0, 1]\)</span>
+<span class="math inline">\(G(t)\)</span>: cumulative distribution function (CDF), bounded <span class="math inline">\([0, 1]\)</span>
 </li>
 <li>
-<span class="math inline">\(g(t) = dG/dt\)</span> — probability density function</li>
+<span class="math inline">\(g(t) = dG/dt\)</span>: probability density function</li>
 <li>
-<span class="math inline">\(h(t) = g(t) / (1 - G(t))\)</span> — hazard function</li>
+<span class="math inline">\(h(t) = g(t) / (1 - G(t))\)</span>: hazard function</li>
 </ul>
 <p>The three parameters control the shape of the distribution:</p>
 <table class="table caption-top">
@@ -130,12 +130,12 @@
 </tr>
 <tr class="even">
 <td><code>nu</code></td>
-<td>Time exponent — controls rate dynamics</td>
+<td>Time exponent (controls rate dynamics)</td>
 <td>any finite value</td>
 </tr>
 <tr class="odd">
 <td><code>m</code></td>
-<td>Shape exponent — controls distributional form</td>
+<td>Shape exponent (controls distributional form)</td>
 <td>any finite value</td>
 </tr>
 </tbody>
@@ -149,10 +149,10 @@
 <strong>Early phase (G1):</strong> <code>DELTA</code>, <code>RHO</code>/<code>THALF</code>, <code>NU</code>, <code>M</code> <span class="math inline">\(\to\)</span> <code>t_half</code>, <code>nu</code>, <code>m</code>
 </li>
 <li>
-<strong>Late phase (G3):</strong> <code>TAU</code>, <code>GAMMA</code>, <code>ALPHA</code>, <code>ETA</code> <span class="math inline">\(\to\)</span> <code>t_half</code>, <code>nu</code>, <code>m</code>
+<strong>Late phase (G3):</strong> <code>TAU</code>, <code>GAMMA</code>, <code>ALPHA</code>, <code>ETA</code> <span class="math inline">\(\to\)</span> <code>hzr_phase("g3", tau = 1, gamma = 3, alpha = 1, eta = 1)</code>
 </li>
 </ul>
-<p>Both collapse onto the same 3-parameter decomposition family. The C <code>DELTA</code> parameter controlled a time transformation <span class="math inline">\(B(t) = (\exp(\delta t) - 1)/\delta\)</span> that is absorbed into the shape.</p>
+<p>The late phase is not a member of the three-parameter family above. It is a separate four-parameter shape, computed by <code><a href="../reference/hzr_decompos_g3.html">hzr_decompos_g3()</a></code>. The C <code>DELTA</code> parameter controlled a time transformation <span class="math inline">\(B(t) = (\exp(\delta t) - 1)/\delta\)</span>. When <span class="math inline">\(\delta = 0\)</span> (the common case), <span class="math inline">\(B(t) = t\)</span> and the transformation drops out. Non-zero <code>DELTA</code> is not supported.</p>
 </blockquote>
 </div>
 <p>In R, <code><a href="../reference/hzr_decompos.html">hzr_decompos()</a></code> computes all three quantities:</p>
@@ -361,10 +361,10 @@ H(t \mid \mathbf{x}) = \sum_{j=1}^{J} \mu_j(\mathbf{x}) \cdot \Phi_j(t;\, t_{1/2
 <strong>G2</strong> (constant) <span class="math inline">\(\to\)</span> <code>hzr_phase("constant")</code>
 </li>
 <li>
-<strong>G3</strong> (late) <span class="math inline">\(\to\)</span> <code>hzr_phase("hazard", ...)</code>
+<strong>G3</strong> (late) <span class="math inline">\(\to\)</span> <code>hzr_phase("g3", tau = 1, gamma = 3, alpha = 1, eta = 1)</code>
 </li>
 </ul>
-<p>TemporalHazard generalizes this to <span class="math inline">\(N\)</span> phases of any type.</p>
+<p>TemporalHazard generalizes this to <span class="math inline">\(J\)</span> phases of any type.</p>
 </blockquote>
 </div>
 </section><section class="level2" data-number="2.2"><h3 data-number="2.2" id="derived-quantities">
@@ -462,7 +462,7 @@ Figure 2: Phi(t) and phi(t) for each phase type
 </section><section class="level2" data-number="2.4"><h3 data-number="2.4" id="additive-composition-example">
 <span class="header-section-number">2.4</span> Additive composition example<a class="anchor" aria-label="anchor" href="#additive-composition-example"></a>
 </h3>
-<p>To build intuition, here is how three phases combine into a total hazard. The key insight is that phases contribute additively to the <strong>cumulative hazard</strong> <span class="math inline">\(H(t)\)</span>, not to the survival directly.</p>
+<p>To build intuition, here is how three phases combine into a total hazard. Phases contribute additively to the <strong>cumulative hazard</strong> <span class="math inline">\(H(t)\)</span>, not to the survival directly.</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw">if</span> <span class="op">(</span><span class="va">has_ggplot</span><span class="op">)</span> <span class="op">{</span></span>
@@ -632,7 +632,7 @@ Figure 3: Three-phase additive cumulative hazard: total = early + constant + la
 <li>
 <strong>Feasibility guard</strong>: any parameter vector where <span class="math inline">\(m &lt; 0\)</span> <strong>and</strong> <span class="math inline">\(\nu &lt; 0\)</span> for the same phase returns <span class="math inline">\(-\infty\)</span> immediately.</li>
 <li>
-<strong>Post-fit Hessian</strong>: the numerical Hessian of the negative log-likelihood at the solution is inverted to produce the variance-covariance matrix <span class="math inline">\(\hat{V}\)</span>, with standard errors <span class="math inline">\(\sqrt{\text{diag}(\hat{V})}\)</span>. The inversion is hardened against the ill-conditioning that arises at high parameter counts: the Hessian is symmetrized, its reciprocal condition number is checked, and it is inverted via a Cholesky factorization, with a general <code><a href="https://rdrr.io/r/base/solve.html" class="external-link">solve()</a></code> fallback when the Hessian is not positive-definite. Non-positive variance estimates are flagged rather than silently returned as <code>NaN</code> standard errors. Each fit carries <code>rcond</code> (reciprocal condition number) and <code>pd</code> (positive-definiteness) diagnostics; <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> prints a note, and a warning is raised, when a fit is ill-conditioned or not positive-definite.</li>
+<strong>Post-fit Hessian</strong>: the Hessian of the negative log-likelihood at the solution is inverted to produce the variance-covariance matrix <span class="math inline">\(\hat{V}\)</span>, with standard errors <span class="math inline">\(\sqrt{\text{diag}(\hat{V})}\)</span>. When every row is an exact event or right-censored the Hessian is assembled analytically, with the multiphase phase-shape second derivatives inside it taken by finite differences; when any row is left- or interval-censored the whole Hessian is computed numerically with <code><a href="https://rdrr.io/pkg/numDeriv/man/hessian.html" class="external-link">numDeriv::hessian()</a></code>. The inversion is hardened against the ill-conditioning that arises at high parameter counts: the Hessian is symmetrized, its reciprocal condition number is checked, and it is inverted via a Cholesky factorization, with a general <code><a href="https://rdrr.io/r/base/solve.html" class="external-link">solve()</a></code> fallback when the Hessian is not positive-definite. Non-positive variance estimates are flagged rather than silently returned as <code>NaN</code> standard errors. Each fit carries <code>rcond</code> (reciprocal condition number) and <code>pd</code> (positive-definiteness) diagnostics; <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> prints a note, and a warning is raised, when a fit is ill-conditioned or not positive-definite.</li>
 </ul></section></section><section class="section level2" data-number="4"><h2 data-number="4" id="sec-covariates">
 <span class="header-section-number">4</span> Covariates and Phase-Specific Formulas<a class="anchor" aria-label="anchor" href="#sec-covariates"></a>
 </h2>
@@ -717,7 +717,7 @@ Figure 3: Three-phase additive cumulative hazard: total = early + constant + la
 </h3>
 <p>Multiphase models with many free parameters can have flat or multi-modal likelihood surfaces. Practical guidelines:</p>
 <ol type="1">
-<li><p><strong>Fix shape parameters when possible.</strong> If clinical knowledge suggests a specific temporal pattern (e.g. early mortality follows a Weibull shape with <span class="math inline">\(m = 0\)</span>), fix <code>m</code> in the <code><a href="../reference/hzr_phase.html">hzr_phase()</a></code> starting values and inspect whether the optimizer moves it.</p></li>
+<li><p><strong>Fix shape parameters when possible.</strong> If clinical knowledge suggests a specific temporal pattern (e.g. early mortality follows a Weibull shape with <span class="math inline">\(m = 0\)</span>), hold <code>m</code> at that value with <code>hzr_phase(..., m = 0, fixed = "m")</code>; the optimizer then estimates only the remaining parameters.</p></li>
 <li><p><strong>Start from the SAS/C estimates.</strong> If legacy results are available, translate them using <code><a href="../reference/hzr_argument_mapping.html">hzr_argument_mapping()</a></code> and supply as starting values.</p></li>
 <li><p><strong>Use multi-start optimization.</strong> The default <code>control$n_starts = 5</code> helps escape local optima, but complex models may benefit from more starts.</p></li>
 <li><p><strong>Phase-specific covariates improve identifiability.</strong> Restricting each phase to clinically relevant predictors reduces the parameter count and sharpens the likelihood surface.</p></li>
@@ -733,7 +733,7 @@ Figure 3: Three-phase additive cumulative hazard: total = early + constant + la
 </li>
 <li>Left- and interval-censored contributions use <code><a href="../reference/hzr_log1mexp.html">hzr_log1mexp()</a></code> to avoid <span class="math inline">\(\log(0)\)</span> when <span class="math inline">\(H(t)\)</span> is very small</li>
 </ul>
-<p>Together these keep the gradients finite throughout the optimization, even in regions of parameter space far from the optimum.</p>
+<p>These guards remove the common sources of non-finite values, but not all of them: an infeasible trial point returns <span class="math inline">\(-\infty\)</span>. For those, <code>.hzr_optim_generic()</code> replaces a non-finite objective with a large finite value (<code>1e10</code>) and a non-finite gradient component with zero, so the search backs away from that region.</p>
 </section></section><section class="section level2" data-number="6"><h2 data-number="6" id="sec-api">
 <span class="header-section-number">6</span> Summary of Key Functions<a class="anchor" aria-label="anchor" href="#sec-api"></a>
 </h2>

@@ -33,4 +33,7 @@ Character vector of parameter names.
 - For `"cdf"`/`"hazard"`:
   `[log_mu, log_t_half, nu, m, beta_1, ..., beta_p]`
 
+- For `"g3"`:
+  `[log_mu, log_tau, gamma, alpha, eta, beta_1, ..., beta_p]`
+
 - For `"constant"`: `[log_mu, beta_1, ..., beta_p]`

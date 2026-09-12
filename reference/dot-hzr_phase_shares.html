@@ -94,7 +94,7 @@
     <p><code>data.frame</code> with one row per phase: <code>share</code> (largest share of
 \(\Lambda\) at any observed time) and <code>variation</code> (relative range of the
 phase's contribution across observed times, <code>NA</code> when the phase carries
-covariates – <code>mu</code> then varies by row and the two sources of variation
+covariates; <code>mu</code> then varies by row and the two sources of variation
 cannot be separated from the contribution alone).</p>
 <p>The shape is the same whatever happens: if no observed time carries a
 usable total, both columns are <code>NA</code> rather than the frame being <code>NULL</code>.
@@ -106,12 +106,12 @@ and "could not be measured" stays distinct from "measured as zero".</p>
 
 <dl><dt><code>"absent"</code></dt>
 <dd><p>The phase contributes essentially none of
-\(\Lambda\) at any observed time – it has not started by the end of
+\(\Lambda\) at any observed time; it has not started by the end of
 follow-up. Its <code>mu</code> <strong>and</strong> its shape are unidentified.</p></dd>
 
 <dt><code>"saturated"</code></dt>
 <dd><p>The phase's \(\Phi\) is effectively constant across
-the observed times – a <code>cdf</code> phase whose half-life is far shorter than
+the observed times: a <code>cdf</code> phase whose half-life is far shorter than
 the first observation has already finished. It then contributes
 \(\mu \cdot \Phi \approx \mu\), a constant offset, so <strong><code>mu</code> stays
 well identified</strong> while the shape parameters (<code>t_half</code>, <code>nu</code>, <code>m</code>) go
@@ -122,7 +122,7 @@ fitted.</p></dd>
 </dl><p>Share is taken of \(\Lambda\), not of \(h\), because every row type's
 contribution runs through \(\Lambda(t)\). A phase can supply almost none
 of the instantaneous hazard late in follow-up and still be perfectly well
-identified through the offset it already contributed – which is why the
+identified through the offset it already contributed, which is why the
 hazard is the wrong basis for this test.</p>
 <p>The <strong>maximum</strong> over times is the right summary rather than the mean: a
 phase mattering only in the first week is identified, and a mean over long

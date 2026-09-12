@@ -85,7 +85,7 @@ family has a cusp.
 
 ## Value
 
-Numeric vector of length `length(theta)` – the gradient. With
+Numeric vector of length `length(theta)`: the gradient. With
 `sanitize = TRUE` (the default) a component that cannot be evaluated is
 0, and so is the whole vector at an infeasible point (guards the
 optimizer); with `sanitize = FALSE` those are `NA`.

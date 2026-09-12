@@ -35,23 +35,22 @@ or call
 
 ### 1.1 The parametric family
 
-Every temporal phase in TemporalHazard is built from a single parametric
-family, `decompos(t; t_half, nu, m)`, introduced by Blackstone, Naftel,
-and Turner (1986) that produces three linked quantities from just three
-parameters:
+The early (`"cdf"`) and `"hazard"` phases in TemporalHazard are built
+from a single parametric family, `decompos(t; t_half, nu, m)`,
+introduced by Blackstone, Naftel, and Turner (1986), which produces
+three linked quantities from just three parameters:
 
-- \\G(t)\\ — cumulative distribution function (CDF), bounded \\\[0,
-  1\]\\
-- \\g(t) = dG/dt\\ — probability density function
-- \\h(t) = g(t) / (1 - G(t))\\ — hazard function
+- \\G(t)\\: cumulative distribution function (CDF), bounded \\\[0, 1\]\\
+- \\g(t) = dG/dt\\: probability density function
+- \\h(t) = g(t) / (1 - G(t))\\: hazard function
 
 The three parameters control the shape of the distribution:
 
 | Parameter | Meaning                                        | Constraint       |
 |-----------|------------------------------------------------|------------------|
 | `t_half`  | Half-life: time at which \\G(t\_{1/2}) = 0.5\\ | \\\> 0\\         |
-| `nu`      | Time exponent — controls rate dynamics         | any finite value |
-| `m`       | Shape exponent — controls distributional form  | any finite value |
+| `nu`      | Time exponent (controls rate dynamics)         | any finite value |
+| `m`       | Shape exponent (controls distributional form)  | any finite value |
 
 > **SAS/C parameter bridge**
 >
@@ -60,11 +59,15 @@ The three parameters control the shape of the distribution:
 > - **Early phase (G1):** `DELTA`, `RHO`/`THALF`, `NU`, `M` \\\to\\
 >   `t_half`, `nu`, `m`
 > - **Late phase (G3):** `TAU`, `GAMMA`, `ALPHA`, `ETA` \\\to\\
->   `t_half`, `nu`, `m`
+>   `hzr_phase("g3", tau = 1, gamma = 3, alpha = 1, eta = 1)`
 >
-> Both collapse onto the same 3-parameter decomposition family. The C
-> `DELTA` parameter controlled a time transformation \\B(t) =
-> (\exp(\delta t) - 1)/\delta\\ that is absorbed into the shape.
+> The late phase is not a member of the three-parameter family above. It
+> is a separate four-parameter shape, computed by
+> [`hzr_decompos_g3()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos_g3.md).
+> The C `DELTA` parameter controlled a time transformation \\B(t) =
+> (\exp(\delta t) - 1)/\delta\\. When \\\delta = 0\\ (the common case),
+> \\B(t) = t\\ and the transformation drops out. Non-zero `DELTA` is not
+> supported.
 
 In R,
 [`hzr_decompos()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos.md)
@@ -209,9 +212,10 @@ output:
 >
 > - **G1** (early) \\\to\\ `hzr_phase("cdf", ...)`
 > - **G2** (constant) \\\to\\ `hzr_phase("constant")`
-> - **G3** (late) \\\to\\ `hzr_phase("hazard", ...)`
+> - **G3** (late) \\\to\\
+>   `hzr_phase("g3", tau = 1, gamma = 3, alpha = 1, eta = 1)`
 >
-> TemporalHazard generalizes this to \\N\\ phases of any type.
+> TemporalHazard generalizes this to \\J\\ phases of any type.
 
 ### 2.2 Derived quantities
 
@@ -310,8 +314,8 @@ Figure 2: Phi(t) and phi(t) for each phase type
 ### 2.4 Additive composition example
 
 To build intuition, here is how three phases combine into a total
-hazard. The key insight is that phases contribute additively to the
-**cumulative hazard** \\H(t)\\, not to the survival directly.
+hazard. Phases contribute additively to the **cumulative hazard**
+\\H(t)\\, not to the survival directly.
 
 ``` r
 
@@ -442,13 +446,19 @@ features:
   log-likelihood is kept.
 - **Feasibility guard**: any parameter vector where \\m \< 0\\ **and**
   \\\nu \< 0\\ for the same phase returns \\-\infty\\ immediately.
-- **Post-fit Hessian**: the numerical Hessian of the negative
-  log-likelihood at the solution is inverted to produce the
-  variance-covariance matrix \\\hat{V}\\, with standard errors
-  \\\sqrt{\text{diag}(\hat{V})}\\. The inversion is hardened against the
-  ill-conditioning that arises at high parameter counts: the Hessian is
-  symmetrized, its reciprocal condition number is checked, and it is
-  inverted via a Cholesky factorization, with a general
+- **Post-fit Hessian**: the Hessian of the negative log-likelihood at
+  the solution is inverted to produce the variance-covariance matrix
+  \\\hat{V}\\, with standard errors \\\sqrt{\text{diag}(\hat{V})}\\.
+  When every row is an exact event or right-censored the Hessian is
+  assembled analytically, with the multiphase phase-shape second
+  derivatives inside it taken by finite differences; when any row is
+  left- or interval-censored the whole Hessian is computed numerically
+  with
+  [`numDeriv::hessian()`](https://rdrr.io/pkg/numDeriv/man/hessian.html).
+  The inversion is hardened against the ill-conditioning that arises at
+  high parameter counts: the Hessian is symmetrized, its reciprocal
+  condition number is checked, and it is inverted via a Cholesky
+  factorization, with a general
   [`solve()`](https://rdrr.io/r/base/solve.html) fallback when the
   Hessian is not positive-definite. Non-positive variance estimates are
   flagged rather than silently returned as `NaN` standard errors. Each
@@ -570,9 +580,9 @@ likelihood surfaces. Practical guidelines:
 
 1.  **Fix shape parameters when possible.** If clinical knowledge
     suggests a specific temporal pattern (e.g. early mortality follows a
-    Weibull shape with \\m = 0\\), fix `m` in the
-    [`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
-    starting values and inspect whether the optimizer moves it.
+    Weibull shape with \\m = 0\\), hold `m` at that value with
+    `hzr_phase(..., m = 0, fixed = "m")`; the optimizer then estimates
+    only the remaining parameters.
 
 2.  **Start from the SAS/C estimates.** If legacy results are available,
     translate them using
@@ -599,8 +609,11 @@ The decomposition engine applies several guards:
   [`hzr_log1mexp()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_log1mexp.md)
   to avoid \\\log(0)\\ when \\H(t)\\ is very small
 
-Together these keep the gradients finite throughout the optimization,
-even in regions of parameter space far from the optimum.
+These guards remove the common sources of non-finite values, but not all
+of them: an infeasible trial point returns \\-\infty\\. For those,
+`.hzr_optim_generic()` replaces a non-finite objective with a large
+finite value (`1e10`) and a non-finite gradient component with zero, so
+the search backs away from that region.
 
 ## 6 Summary of Key Functions
 

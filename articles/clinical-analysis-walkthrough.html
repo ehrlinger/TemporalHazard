@@ -86,28 +86,28 @@
 
 
 
-    <p>The previous vignettes covered each piece of the analytical workflow in isolation — how to fit a model, how to predict from it, how to validate it. This vignette runs all of those pieces together on a single dataset, in the order you’d actually run them in a real clinical analysis. The point isn’t to introduce new functions; it’s to show how the pieces chain into a disciplined sequence that turns raw covariates into a fitted, validated, defensible hazard model.</p>
+    <p>The previous vignettes covered each piece of the analytical workflow in isolation: how to fit a model, how to predict from it, how to validate it. This vignette runs all of those pieces together on a single dataset, in the order you’d actually run them in a real clinical analysis. The point isn’t to introduce new functions; it’s to show how the pieces chain into a disciplined sequence that turns raw covariates into a fitted, validated, defensible hazard model.</p>
 <p>The sequence mirrors the one in the original SAS HAZARD system, which codified what cardiothoracic-surgery biostatisticians had been doing informally for decades:</p>
 <ol type="1">
 <li>
-<strong>Nonparametric baseline</strong> — Kaplan-Meier life table to see what the data is saying before any model intervenes.</li>
+<strong>Nonparametric baseline</strong>: Kaplan-Meier life table to see what the data is saying before any model intervenes.</li>
 <li>
-<strong>Shape fitting</strong> — start with a single-distribution Weibull, build up to a multiphase decomposition when the KM curve demands it.</li>
+<strong>Shape fitting</strong>: start with a single-distribution Weibull, build up to a multiphase decomposition when the KM curve demands it.</li>
 <li>
-<strong>Variable screening</strong> — univariable association tests and calibration plots to decide which covariates enter the model and in what functional form.</li>
+<strong>Variable screening</strong>: univariable association tests and calibration plots to decide which covariates enter the model and in what functional form.</li>
 <li>
-<strong>Multivariable model</strong> — covariates layered onto a hazard shape you already trust.</li>
+<strong>Multivariable model</strong>: covariates layered onto a hazard shape you already trust.</li>
 <li>
-<strong>Prediction</strong> — patient-specific risk profiles for clinical reporting and decision support.</li>
+<strong>Prediction</strong>: patient-specific risk profiles for clinical reporting and decision support.</li>
 <li>
-<strong>Validation</strong> — decile-of-risk calibration to verify the model is honest across the risk spectrum, not just on average.</li>
+<strong>Validation</strong>: decile-of-risk calibration to verify the model is honest across the risk spectrum, not just on average.</li>
 </ol>
 <p>This corresponds to the SAS programs <code>ac.*</code> → <code>hz.*</code> → <code>lg.*</code> → <code>hm.*</code> → <code>hp.*</code> → <code>hs.*</code>. If you’re familiar with the SAS workflow, the section structure should feel familiar; if not, treat this as the canonical analytical sequence to follow on any new dataset.</p>
-<p>We use the <strong>AVC</strong> dataset (310 patients, atrioventricular canal repair) which has rich covariates and two identifiable hazard phases — fewer phases than the 3-phase CABG example you’ve seen in other vignettes, but with the covariate complexity needed to exercise the screening, multivariable-fit, and validation steps.</p>
+<p>We use the <strong>AVC</strong> dataset (310 patients, atrioventricular canal repair) which has rich covariates and two identifiable hazard phases. That is fewer phases than the 3-phase CABG example you’ve seen in other vignettes, but AVC has the covariate complexity needed to exercise the screening, multivariable-fit, and validation steps.</p>
 <section class="level2" data-number="1"><h2 data-number="1" id="data-preparation">
 <span class="header-section-number">1</span> Data preparation<a class="anchor" aria-label="anchor" href="#data-preparation"></a>
 </h2>
-<p>Load the package and the AVC dataset, drop incomplete rows so the design matrix is rectangular for the multivariable fits to come, and inspect the resulting column types and ranges. The <code><a href="https://rdrr.io/r/stats/na.fail.html" class="external-link">na.omit()</a></code> step is conservative — losing rows is a real cost — but for a walkthrough we want every later fit to use the same patient set so the comparisons are apples-to-apples.</p>
+<p>Load the package and the AVC dataset, drop incomplete rows so the design matrix is rectangular for the multivariable fits to come, and inspect the resulting column types and ranges. The <code><a href="https://rdrr.io/r/stats/na.fail.html" class="external-link">na.omit()</a></code> step is conservative (losing rows is a real cost), but for a walkthrough we want every later fit to use the same patient set so the comparisons are apples-to-apples.</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb1"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://ehrlinger.github.io/TemporalHazard/">TemporalHazard</a></span><span class="op">)</span></span>
@@ -136,7 +136,7 @@
 <span class="header-section-number">2</span> Step 1: Nonparametric baseline<a class="anchor" aria-label="anchor" href="#step-1-nonparametric-baseline"></a>
 </h2>
 <p>Before fitting any parametric model, establish the empirical survival curve using the Kaplan-Meier estimator. This is the benchmark against which all parametric fits will be compared.</p>
-<p><code><a href="../reference/hzr_kaplan.html">hzr_kaplan()</a></code> wraps <code><a href="https://rdrr.io/pkg/survival/man/survfit.html" class="external-link">survival::survfit()</a></code> and adds logit-transformed exact confidence limits that respect the <code>[0, 1]</code> boundary — more accurate in the tails than the default Greenwood intervals. This matches the SAS <code>kaplan.sas</code> macro output structure.</p>
+<p><code><a href="../reference/hzr_kaplan.html">hzr_kaplan()</a></code> wraps <code><a href="https://rdrr.io/pkg/survival/man/survfit.html" class="external-link">survival::survfit()</a></code> and adds logit-transformed exact confidence limits that respect the <code>[0, 1]</code> boundary and are more accurate in the tails than the default Greenwood intervals. This matches the SAS <code>kaplan.sas</code> macro output structure.</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">km</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/hzr_kaplan.html">hzr_kaplan</a></span><span class="op">(</span>time <span class="op">=</span> <span class="va">avc</span><span class="op">$</span><span class="va">int_dead</span>, status <span class="op">=</span> <span class="va">avc</span><span class="op">$</span><span class="va">dead</span><span class="op">)</span></span>
@@ -161,7 +161,7 @@
 <span><span class="co">#&gt;   0.6308  0.5988 0.0317</span></span>
 <span><span class="co">#&gt;   0.2117  0.1996 0.0472</span></span></code></pre></div>
 </div>
-<p>The returned data frame is the life table: one row per event time with <code>n_risk</code>, <code>n_event</code>, <code>survival</code>, logit-transformed 95% CLs (<code>cl_lower</code> / <code>cl_upper</code>), and a KM-based cumulative hazard (<code>-log(survival)</code> — use <code><a href="../reference/hzr_nelson.html">hzr_nelson()</a></code> if you need the Nelson-Aalen estimator instead). Plotting just requires the survival column:</p>
+<p>The returned data frame is the life table: one row per event time with <code>n_risk</code>, <code>n_event</code>, <code>survival</code>, logit-transformed 95% CLs (<code>cl_lower</code> / <code>cl_upper</code>), and a KM-based cumulative hazard (<code>-log(survival)</code>; use <code><a href="../reference/hzr_nelson.html">hzr_nelson()</a></code> if you need the Nelson-Aalen estimator instead). The plot uses the survival column for the step curve and the two confidence limits for the band:</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">km_df</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
@@ -184,14 +184,14 @@
 <img src="clinical-analysis-walkthrough_files/figure-html/fig-km-baseline-1.png" width="672">
 </div>
 <figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-km-baseline-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure 1: Kaplan-Meier survival estimate for AVC patients (n = 310)
+Figure 1: Kaplan-Meier survival estimate for AVC patients (n = 305)
 </figcaption></figure>
 </div>
 </div>
 </div>
-<p>The KM curve shows a sharp early drop (operative mortality) followed by a roughly constant attrition rate. This two-phase pattern suggests an early CDF phase plus a constant phase — no obvious late rising hazard.</p>
+<p>The KM curve shows a sharp early drop (operative mortality) followed by a roughly constant attrition rate. This two-phase pattern suggests an early CDF phase plus a constant phase, with no obvious late rising hazard.</p>
 </section><section class="level2" data-number="3"><h2 data-number="3" id="step-2-shape-fitting-simple-to-complex">
-<span class="header-section-number">3</span> Step 2: Shape fitting — simple to complex<a class="anchor" aria-label="anchor" href="#step-2-shape-fitting-simple-to-complex"></a>
+<span class="header-section-number">3</span> Step 2: Shape fitting (simple to complex)<a class="anchor" aria-label="anchor" href="#step-2-shape-fitting-simple-to-complex"></a>
 </h2>
 <section class="level3" data-number="3.1"><h3 data-number="3.1" id="a--single-phase-weibull">
 <span class="header-section-number">3.1</span> 2a. Single-phase Weibull<a class="anchor" aria-label="anchor" href="#a--single-phase-weibull"></a>
@@ -251,11 +251,11 @@ Figure 2: Single Weibull vs. Kaplan-Meier
 </div>
 </div>
 </div>
-<p>The single Weibull typically misses the sharp early drop — it compromises between the early and late time frames.</p>
+<p>The single Weibull typically misses the sharp early drop; it compromises between the early and late time frames.</p>
 </section><section class="level3" data-number="3.2"><h3 data-number="3.2" id="b--two-phase-model-early-cdf-constant">
 <span class="header-section-number">3.2</span> 2b. Two-phase model (early CDF + constant)<a class="anchor" aria-label="anchor" href="#b--two-phase-model-early-cdf-constant"></a>
 </h3>
-<p>The KM curve drops steeply in the first few months — operative mortality — and then settles into a roughly linear decline. The Weibull tried to capture both with one shape and ended up compromising. Splitting the hazard into two phases lets each mechanism have its own parameterization: an <code>"cdf"</code> early phase that saturates as operative risk resolves, plus a <code>"constant"</code> phase that carries the steady background attrition. Two phases is what AVC actually needs; CABG with longer follow-up would need a third late-rising phase to handle graft deterioration, but the AVC follow-up window doesn’t extend far enough to identify one.</p>
+<p>The KM curve drops steeply in the first few months (operative mortality) and then settles into a roughly linear decline. The Weibull tried to capture both with one shape and ended up compromising. Splitting the hazard into two phases lets each mechanism have its own parameterization: a <code>"cdf"</code> early phase that saturates as operative risk resolves, plus a <code>"constant"</code> phase that carries the steady background attrition. Two phases is what AVC actually needs; CABG with longer follow-up would need a third late-rising phase to handle graft deterioration, but the AVC follow-up window doesn’t extend far enough to identify one.</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit_mp</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/hazard.html">hazard</a></span><span class="op">(</span></span>
@@ -297,7 +297,7 @@ Figure 2: Single Weibull vs. Kaplan-Meier
 <span><span class="co">#&gt;           estimate std_error    z_stat      p_value</span></span>
 <span><span class="co">#&gt;   log_mu -7.609476 0.4495827 -16.92564 2.911483e-64</span></span></code></pre></div>
 </div>
-<p>Note the use of <code>fixed = "shapes"</code> — we fix the temporal shape parameters and only estimate the scale (log_mu) for each phase. This matches the standard HAZARD workflow: shapes are set from clinical knowledge or preliminary exploration, then scales and covariates are estimated.</p>
+<p>Note the use of <code>fixed = "shapes"</code>. We fix the temporal shape parameters and only estimate the scale (log_mu) for each phase. This matches the standard HAZARD workflow: shapes are set from clinical knowledge or preliminary exploration, then scales and covariates are estimated.</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">surv_mp</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit_mp</span>,</span>
@@ -368,7 +368,7 @@ Figure 4: Phase decomposition of cumulative hazard
 <section class="level3" data-number="4.1"><h3 data-number="4.1" id="a--univariable-logistic-screening">
 <span class="header-section-number">4.1</span> 3a. Univariable logistic screening<a class="anchor" aria-label="anchor" href="#a--univariable-logistic-screening"></a>
 </h3>
-<p>The cheapest screening tool we have is a univariable logistic regression of the event indicator on each covariate. It throws away the time-to-event structure but it answers a binary question quickly: does this covariate have <em>any</em> association with mortality at all? Covariates whose univariable p-value is huge will not suddenly become significant in the multivariable hazard model either — those can be deprioritized. Covariates with small univariable p-values deserve closer functional-form inspection before they enter the formula.</p>
+<p>The cheapest screening tool we have is a univariable logistic regression of the event indicator on each covariate. It throws away the time-to-event structure but it answers a binary question quickly: does this covariate have <em>any</em> association with mortality at all? Covariates whose univariable p-value is huge can be deprioritized, but not discarded outright, because adjusting for other covariates can reveal an association the univariable test misses. Covariates with small univariable p-values deserve closer functional-form inspection before they enter the formula.</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">covariates</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"status"</span>, <span class="st">"mal"</span>, <span class="st">"com_iv"</span>, <span class="st">"orifice"</span>,</span>
@@ -449,7 +449,7 @@ Figure 5: Decile calibration: age vs. logit(P(death))
 </div>
 </div>
 </div>
-<p>The blue points are the observed decile logits; the dashed red line is a linear reference. Deviations from linearity flag where a transform is warranted.</p>
+<p>The blue points are the observed decile logits; the dashed orange line is a linear reference. Deviations from linearity flag where a transform is warranted.</p>
 </section></section><section class="level2" data-number="5"><h2 data-number="5" id="step-4-multivariable-model">
 <span class="header-section-number">5</span> Step 4: Multivariable model<a class="anchor" aria-label="anchor" href="#step-4-multivariable-model"></a>
 </h2>
@@ -525,9 +525,9 @@ Figure 5: Decile calibration: age vs. logit(P(death))
 </section><section class="level3" data-number="5.2"><h3 data-number="5.2" id="b--automated-stepwise-selection">
 <span class="header-section-number">5.2</span> 4b. Automated stepwise selection<a class="anchor" aria-label="anchor" href="#b--automated-stepwise-selection"></a>
 </h3>
-<p>The manual approach works when screening has already narrowed the candidate pool, but with a larger pool it helps to let the model choose. <code><a href="../reference/hzr_stepwise.html">hzr_stepwise()</a></code> runs forward, backward, or two-way selection against an existing <code>hazard</code> fit, scoring candidates with Wald p-values or delta-AIC. Defaults match SAS <code>PROC HAZARD</code> (<code>SLENTRY = 0.30</code>, <code>SLSTAY = 0.20</code>).</p>
+<p>The manual approach works when screening has already narrowed the candidate pool, but with a larger pool it helps to let the model choose. <code><a href="../reference/hzr_stepwise.html">hzr_stepwise()</a></code> runs forward, backward, or two-way selection against an existing <code>hazard</code> fit, scoring candidates with the score statistic, Wald p-values or delta-AIC. Defaults match SAS <code>PROC HAZARD</code> (<code>SLENTRY = 0.30</code>, <code>SLSTAY = 0.20</code>).</p>
 <p>We start from a baseline with no covariates, offer the same screened candidate pool, and let the algorithm decide. For multiphase models the scope is a named list of one-sided formulas keyed by phase, so each phase can advertise its own candidate set; stepping operates per <code>(variable, phase)</code> pair, letting a covariate enter one phase and not another. Single-distribution models accept either a flat one-sided formula or a character vector of names.</p>
-<p><code><a href="../reference/hzr_stepwise.html">hzr_stepwise()</a></code> now defaults to <code>criterion = "score"</code>, which reproduces SAS’s <code>SELECTION</code> Q statistic by testing each candidate at the current estimates without a per-candidate refit. Here we pass <code>criterion = "wald"</code> deliberately, so the trace below reports the refit-based Wald statistic.</p>
+<p><code><a href="../reference/hzr_stepwise.html">hzr_stepwise()</a></code> defaults to <code>criterion = "score"</code>, which reproduces SAS’s <code>SELECTION</code> Q statistic by testing each candidate at the current estimates without a per-candidate refit. Here we pass <code>criterion = "wald"</code> deliberately, so the <code>$steps</code> table below reports the refit-based Wald p-values.</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb13"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">base_mp</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/hazard.html">hazard</a></span><span class="op">(</span></span>
@@ -623,18 +623,20 @@ Figure 5: Decile calibration: age vs. logit(P(death))
 <span><span class="co">#&gt; 4        4  enter      mal    early 1.093379e-01 399.8823</span></span>
 <span><span class="co">#&gt; 5        5  enter      age    early 1.174941e-01 398.2062</span></span></code></pre></div>
 </div>
-<p>The final model is the fit at the top of the object, reachable through the usual hazard accessors:</p>
+<p>The final model is the fit at the top of the object, reachable through the usual hazard accessors. AIC counts only the estimated parameters. Both models hold the early phase’s three shape parameters fixed (<code>fixed = "shapes"</code>), and <code>fit$fit$fixed_mask</code> flags them, so we leave them out of the count, as the <code>Final model</code> line of <code>fit_step</code> does:</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb15"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">logLik_manual</span> <span class="op">&lt;-</span> <span class="va">fit_mv</span><span class="op">$</span><span class="va">fit</span><span class="op">$</span><span class="va">objective</span></span>
 <span><span class="va">logLik_step</span>   <span class="op">&lt;-</span> <span class="va">fit_step</span><span class="op">$</span><span class="va">fit</span><span class="op">$</span><span class="va">objective</span></span>
+<span><span class="va">n_free</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">fit</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="op">!</span><span class="va">fit</span><span class="op">$</span><span class="va">fit</span><span class="op">$</span><span class="va">fixed_mask</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>manual <span class="op">=</span> <span class="va">logLik_manual</span>, stepwise <span class="op">=</span> <span class="va">logLik_step</span>,</span>
-<span>  aic_manual <span class="op">=</span> <span class="fl">2</span> <span class="op">*</span> <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">fit_mv</span><span class="op">$</span><span class="va">fit</span><span class="op">$</span><span class="va">theta</span><span class="op">)</span> <span class="op">-</span> <span class="fl">2</span> <span class="op">*</span> <span class="va">logLik_manual</span>,</span>
-<span>  aic_step   <span class="op">=</span> <span class="fl">2</span> <span class="op">*</span> <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">fit_step</span><span class="op">$</span><span class="va">fit</span><span class="op">$</span><span class="va">theta</span><span class="op">)</span> <span class="op">-</span> <span class="fl">2</span> <span class="op">*</span> <span class="va">logLik_step</span><span class="op">)</span></span>
-<span><span class="co">#&gt;     manual   stepwise aic_manual   aic_step </span></span>
-<span><span class="co">#&gt;  -190.4862  -192.1031   406.9724   404.2062</span></span></code></pre></div>
+<span>  free_manual <span class="op">=</span> <span class="fu">n_free</span><span class="op">(</span><span class="va">fit_mv</span><span class="op">)</span>, free_step <span class="op">=</span> <span class="fu">n_free</span><span class="op">(</span><span class="va">fit_step</span><span class="op">)</span>,</span>
+<span>  aic_manual <span class="op">=</span> <span class="fl">2</span> <span class="op">*</span> <span class="fu">n_free</span><span class="op">(</span><span class="va">fit_mv</span><span class="op">)</span> <span class="op">-</span> <span class="fl">2</span> <span class="op">*</span> <span class="va">logLik_manual</span>,</span>
+<span>  aic_step   <span class="op">=</span> <span class="fl">2</span> <span class="op">*</span> <span class="fu">n_free</span><span class="op">(</span><span class="va">fit_step</span><span class="op">)</span> <span class="op">-</span> <span class="fl">2</span> <span class="op">*</span> <span class="va">logLik_step</span><span class="op">)</span></span>
+<span><span class="co">#&gt;      manual    stepwise free_manual   free_step  aic_manual    aic_step </span></span>
+<span><span class="co">#&gt;   -190.4862   -192.1031     10.0000      7.0000    400.9724    398.2062</span></span></code></pre></div>
 </div>
-<p>When the screening and stepwise agree on the same covariate set the log-likelihoods match exactly; when stepwise selects a leaner model AIC drops. For an AIC-driven run use <code>criterion = "aic"</code>; for a forward-only sweep <code>direction = "forward"</code>. See <code><a href="../reference/hzr_stepwise.html">?hzr_stepwise</a></code> for the full argument surface including <code>force_in</code>, <code>force_out</code>, and the <code>max_move</code> oscillation guard.</p>
+<p>The two models need not agree. Here stepwise enters <code>status</code> in both phases but <code>age</code>, <code>mal</code> and <code>com_iv</code> in the early phase only, so it carries fewer free parameters than the manual fit (<code>free_step</code> against <code>free_manual</code> above). Its log-likelihood is lower and its AIC is lower too (<code>aic_step</code> against <code>aic_manual</code>), because the dropped constant-phase coefficients cost more in parameters than they bought in fit. Even on an identical covariate set the two log-likelihoods can differ, since the fits use different <code>n_starts</code> and the multiphase likelihood can have more than one optimum. For an AIC-driven run use <code>criterion = "aic"</code>; for a forward-only sweep <code>direction = "forward"</code>. See <code><a href="../reference/hzr_stepwise.html">?hzr_stepwise</a></code> for the full argument surface including <code>force_in</code>, <code>force_out</code>, and the <code>max_move</code> oscillation guard.</p>
 </section></section><section class="level2" data-number="6"><h2 data-number="6" id="step-5-prediction">
 <span class="header-section-number">6</span> Step 5: Prediction<a class="anchor" aria-label="anchor" href="#step-5-prediction"></a>
 </h2>
@@ -642,7 +644,7 @@ Figure 5: Decile calibration: age vs. logit(P(death))
 <span class="header-section-number">6.1</span> 5a. Baseline survival curve<a class="anchor" aria-label="anchor" href="#a--baseline-survival-curve"></a>
 </h3>
 <p>Generate the survival curve for a reference patient (median age, NYHA class 1, no malalignment, no interventricular communication).</p>
-<p><code>predict(..., se.fit = TRUE)</code> adds a delta-method standard error and 95% confidence band around every prediction (log(-log) scale for survival so the band is guaranteed to lie in <code>[0, 1]</code>). This is the parametric analogue of the KM confidence limits from Step 1 — a patient-specific uncertainty estimate the nonparametric curve cannot provide.</p>
+<p><code>predict(..., se.fit = TRUE)</code> adds a delta-method standard error and 95% confidence band around every prediction (log(-log) scale for survival so the band is guaranteed to lie in <code>[0, 1]</code>). This is the parametric analogue of the KM confidence limits from Step 1, a patient-specific uncertainty estimate the nonparametric curve cannot provide.</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb16"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">ref_patient</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
@@ -685,9 +687,9 @@ Figure 6: Reference patient survival with 95% delta-method CI and KM overlay
 </div>
 </div>
 </section><section class="level3" data-number="6.2"><h3 data-number="6.2" id="b--sensitivity-analysis-risk-factor-comparison">
-<span class="header-section-number">6.2</span> 5b. Sensitivity analysis — risk factor comparison<a class="anchor" aria-label="anchor" href="#b--sensitivity-analysis-risk-factor-comparison"></a>
+<span class="header-section-number">6.2</span> 5b. Sensitivity analysis (risk factor comparison)<a class="anchor" aria-label="anchor" href="#b--sensitivity-analysis-risk-factor-comparison"></a>
 </h3>
-<p>Coefficient tables tell you about effect <em>direction and magnitude</em> on the log-hazard scale. They don’t directly tell a clinician what to expect at the bedside. Sensitivity analysis closes that gap by scoring two clinically meaningful profiles — a low-risk patient drawn from the favorable end of each covariate, and a high-risk patient drawn from the unfavorable end — through the fitted model and plotting the resulting survival curves with delta-method confidence bands. The vertical and horizontal gaps between the two curves are the model’s clinical-impact statement, in the units (survival probability and time) that the audience actually recognizes.</p>
+<p>Coefficient tables tell you about effect <em>direction and magnitude</em> on the log-hazard scale. They don’t directly tell a clinician what to expect at the bedside. Sensitivity analysis closes that gap by scoring two clinically meaningful profiles (a low-risk patient drawn from the favorable end of each covariate, and a high-risk patient drawn from the unfavorable end) through the fitted model and plotting the resulting survival curves with delta-method confidence bands. The vertical and horizontal gaps between the two curves are the model’s clinical-impact statement, in the units (survival probability and time) that the audience actually recognizes.</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb17"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">low_risk</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
@@ -742,14 +744,14 @@ Figure 6: Reference patient survival with 95% delta-method CI and KM overlay
 <img src="clinical-analysis-walkthrough_files/figure-html/fig-sensitivity-1.png" width="672">
 </div>
 <figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-sensitivity-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure 7: Survival by risk profile: low-risk (blue) vs. high-risk (red)
+Figure 7: Survival by risk profile: low-risk (blue) vs. high-risk (orange)
 </figcaption></figure>
 </div>
 </div>
 </div>
 <p>Non-overlapping confidence bands between the two profiles indicate the risk-factor combination is well-identified; overlap around the bands’ centre-of-mass flags where the model can’t distinguish the profiles with the available sample size.</p>
 </section></section><section class="level2" data-number="7"><h2 data-number="7" id="step-6-validation-decile-of-risk-calibration">
-<span class="header-section-number">7</span> Step 6: Validation — decile-of-risk calibration<a class="anchor" aria-label="anchor" href="#step-6-validation-decile-of-risk-calibration"></a>
+<span class="header-section-number">7</span> Step 6: Validation (decile-of-risk calibration)<a class="anchor" aria-label="anchor" href="#step-6-validation-decile-of-risk-calibration"></a>
 </h2>
 <p>Partition patients into deciles by predicted risk and compare observed vs. expected event rates. Good calibration means the two track each other. This implements the workflow of the SAS <code>deciles.hazard.sas</code> macro.</p>
 <div class="cell">
@@ -810,11 +812,12 @@ Figure 8: Decile calibration: observed (bars) vs. expected (points) event rate
 </div>
 </div>
 </div>
-<p>A non-significant overall chi-square statistic (p &gt; 0.05) indicates adequate calibration — the model’s predictions are consistent with observed event rates across the risk spectrum.</p>
+<p>A non-significant overall chi-square statistic (p &gt; 0.05) means the test found no evidence of poor calibration. It does not prove the model is calibrated: with ten groups and few events in each, the test has little power. Read the plot as well. Calibration is adequate when the observed and expected rates track each other across the deciles.</p>
 <section class="level3" data-number="7.1"><h3 data-number="7.1" id="conservation-of-events-check">
 <span class="header-section-number">7.1</span> Conservation of events check<a class="anchor" aria-label="anchor" href="#conservation-of-events-check"></a>
 </h3>
-<p>The conservation-of-events principle states that a well-fitting model should predict the same total number of events as actually observed. <code><a href="../reference/hzr_gof.html">hzr_gof()</a></code> tracks this cumulatively over time — the residual (expected minus observed) should stay near zero.</p>
+<p>The conservation-of-events principle says a model fit by maximum likelihood predicts as many events as were observed: add up every patient’s cumulative hazard at the end of their follow-up and you get the event count back. <code><a href="../reference/hzr_gof.html">hzr_gof()</a></code> is the R version of the SAS <code>hazplot</code> display, a running tally of observed and expected events over time.</p>
+<p>For a model with covariates you need to know one thing before reading its output. <code><a href="../reference/hzr_gof.html">hzr_gof()</a></code> evaluates the parametric curve at the covariate means, one “mean patient”, and builds the expected count from that single curve. The printed ratio is then a mean-patient check, not the conservation-of-events identity, and for <code>fit_mv</code> it is well short of 1.</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb20"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">gof</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/hzr_gof.html">hzr_gof</a></span><span class="op">(</span><span class="va">fit_mv</span><span class="op">)</span></span>
@@ -829,8 +832,20 @@ Figure 8: Decile calibration: observed (bars) vs. expected (points) event rate
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Use plot columns: time, km_surv, par_surv, cum_observed, cum_expected, residual</span></span></code></pre></div>
 </div>
+<p>The conservation-of-events check itself sums each patient’s own cumulative hazard, from their own covariates, at their own follow-up time:</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb21"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">nd_coe</span> <span class="op">&lt;-</span> <span class="va">avc</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"status"</span>, <span class="st">"mal"</span>, <span class="st">"com_iv"</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="va">nd_coe</span><span class="op">$</span><span class="va">time</span> <span class="op">&lt;-</span> <span class="va">avc</span><span class="op">$</span><span class="va">int_dead</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>expected <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit_mv</span>, newdata <span class="op">=</span> <span class="va">nd_coe</span>,</span>
+<span>                         type <span class="op">=</span> <span class="st">"cumulative_hazard"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  observed <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">avc</span><span class="op">$</span><span class="va">dead</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; expected observed </span></span>
+<span><span class="co">#&gt;       68       68</span></span></code></pre></div>
+</div>
+<p>Expected 68.0 against 68 observed, so the fit conserves events. The gap in the <code><a href="../reference/hzr_gof.html">hzr_gof()</a></code> summary belongs to the mean patient, not to the fit. For an intercept-only model every patient shares one curve, the two checks give the same answer, and <code><a href="../reference/hzr_gof.html">hzr_gof()</a></code> prints an E/O of 1.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb22"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/ggplot.html" class="external-link">ggplot</a></span><span class="op">(</span><span class="va">gof</span>, <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span>x <span class="op">=</span> <span class="va">time</span><span class="op">)</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_path.html" class="external-link">geom_step</a></span><span class="op">(</span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">km_surv</span> <span class="op">*</span> <span class="fl">100</span><span class="op">)</span>, colour <span class="op">=</span> <span class="st">"#D55E00"</span>, linewidth <span class="op">=</span> <span class="fl">0.6</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_path.html" class="external-link">geom_line</a></span><span class="op">(</span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">par_surv</span> <span class="op">*</span> <span class="fl">100</span><span class="op">)</span>, colour <span class="op">=</span> <span class="st">"#0072B2"</span>, linewidth <span class="op">=</span> <span class="fl">0.8</span><span class="op">)</span> <span class="op">+</span></span>
@@ -843,13 +858,13 @@ Figure 8: Decile calibration: observed (bars) vs. expected (points) event rate
 <img src="clinical-analysis-walkthrough_files/figure-html/fig-gof-survival-1.png" width="672">
 </div>
 <figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-gof-survival-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure 9: Parametric (blue) vs. Kaplan-Meier (orange) survival
+Figure 9: Parametric survival at the covariate means (blue) vs. Kaplan-Meier (orange)
 </figcaption></figure>
 </div>
 </div>
 </div>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb22"><pre class="downlit sourceCode r">
+<div class="sourceCode cell-code" id="cb23"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/ggplot.html" class="external-link">ggplot</a></span><span class="op">(</span><span class="va">gof</span>, <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span>x <span class="op">=</span> <span class="va">time</span><span class="op">)</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_path.html" class="external-link">geom_line</a></span><span class="op">(</span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">cum_observed</span><span class="op">)</span>, colour <span class="op">=</span> <span class="st">"#D55E00"</span>, linewidth <span class="op">=</span> <span class="fl">0.8</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_path.html" class="external-link">geom_line</a></span><span class="op">(</span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">cum_expected</span><span class="op">)</span>, colour <span class="op">=</span> <span class="st">"#0072B2"</span>,</span>
@@ -868,7 +883,7 @@ Figure 10: Cumulative observed (orange) vs. expected (blue) events
 </div>
 </div>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb23"><pre class="downlit sourceCode r">
+<div class="sourceCode cell-code" id="cb24"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/ggplot.html" class="external-link">ggplot</a></span><span class="op">(</span><span class="va">gof</span>, <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span>x <span class="op">=</span> <span class="va">time</span>, y <span class="op">=</span> <span class="va">residual</span><span class="op">)</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_path.html" class="external-link">geom_line</a></span><span class="op">(</span>linewidth <span class="op">=</span> <span class="fl">0.7</span>, colour <span class="op">=</span> <span class="st">"grey30"</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_abline.html" class="external-link">geom_hline</a></span><span class="op">(</span>yintercept <span class="op">=</span> <span class="fl">0</span>, linetype <span class="op">=</span> <span class="st">"dashed"</span>, colour <span class="op">=</span> <span class="st">"grey60"</span><span class="op">)</span> <span class="op">+</span></span>
@@ -886,12 +901,17 @@ Figure 11: Conservation-of-events residual (expected minus observed) over time
 </div>
 </div>
 </div>
-<p>A residual that hovers near zero across the full time range indicates the model conserves events well. Persistent positive residual means the model overpredicts risk; persistent negative means it underpredicts.</p>
+<p>Read these three plots as a picture of the mean patient. The first sets that patient’s survival curve against the Kaplan-Meier estimate for the whole cohort, and it runs above it from the first weeks on. The other two tally the deaths the mean patient’s hazard would predict for the patients leaving follow-up at each time. Most of the deaths come in the first weeks, and the mean patient’s curve accounts for few of them (45 observed by two weeks against about 1.4 expected), so the residual falls to about -55 by six months and then climbs back slowly, ending at -26.8. That is the mean patient understating the cohort’s early risk. The model itself predicts the right number of deaths, as the per-subject check above shows. For an intercept-only model the same plots are the conservation-of-events picture, and there a residual that stays near zero is what a good fit looks like.</p>
 </section></section><section class="level2" data-number="8"><h2 data-number="8" id="why-not-cox-regression">
 <span class="header-section-number">8</span> Why not Cox regression?<a class="anchor" aria-label="anchor" href="#why-not-cox-regression"></a>
 </h2>
 <p>For this kind of analysis the temporal parametric approach buys you several things that Cox proportional hazards does not:</p>
 <table class="table caption-top">
+<colgroup>
+<col style="width: 28%">
+<col style="width: 35%">
+<col style="width: 35%">
+</colgroup>
 <thead><tr class="header">
 <th style="text-align: left;">Feature</th>
 <th style="text-align: center;">Cox (<code>coxph</code>)</th>
@@ -914,9 +934,9 @@ Figure 11: Conservation-of-events residual (expected minus observed) over time
 <td style="text-align: center;">Yes (additive)</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">Patient-specific survival prediction</td>
-<td style="text-align: center;">Approximate</td>
-<td style="text-align: center;">Exact</td>
+<td style="text-align: left;">Patient-specific survival curve</td>
+<td style="text-align: center;">Step function (Breslow baseline)</td>
+<td style="text-align: center;">Smooth, parametric</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Smooth extrapolation beyond data</td>
@@ -924,9 +944,9 @@ Figure 11: Conservation-of-events residual (expected minus observed) over time
 <td style="text-align: center;">Yes</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">Conservation of events check</td>
-<td style="text-align: center;">No</td>
-<td style="text-align: center;">Yes (<code><a href="../reference/hzr_gof.html">hzr_gof()</a></code>)</td>
+<td style="text-align: left;">Conservation of events</td>
+<td style="text-align: center;">Yes (martingale residuals sum to 0)</td>
+<td style="text-align: center;">Yes (per-subject cumulative hazards sum to the event count)</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Interval censoring</td>
@@ -942,17 +962,17 @@ Figure 11: Conservation-of-events residual (expected minus observed) over time
 <p>The complete analytical workflow follows a disciplined sequence:</p>
 <ol type="1">
 <li>
-<strong>Kaplan-Meier baseline</strong> — establish the empirical survival pattern</li>
+<strong>Kaplan-Meier baseline</strong>: establish the empirical survival pattern</li>
 <li>
-<strong>Shape fitting</strong> — match the temporal shape, simple to complex</li>
+<strong>Shape fitting</strong>: match the temporal shape, simple to complex</li>
 <li>
-<strong>Variable screening</strong> — logistic screening, LOESS functional form</li>
+<strong>Variable screening</strong>: logistic screening, decile-logit functional form</li>
 <li>
-<strong>Multivariable model</strong> — enter covariates with fixed shapes</li>
+<strong>Multivariable model</strong>: enter covariates with fixed shapes</li>
 <li>
-<strong>Prediction</strong> — reference curves, sensitivity analysis</li>
+<strong>Prediction</strong>: reference curves, sensitivity analysis</li>
 <li>
-<strong>Validation</strong> — decile calibration, conservation-of-events check</li>
+<strong>Validation</strong>: decile calibration, conservation-of-events check</li>
 </ol>
 <p>This sequence ensures that the temporal shape is established before covariates are introduced, and that the final model is validated against the observed data. See <code><a href="../articles/getting-started.html">vignette("getting-started")</a></code> for the minimal API workflow and <code><a href="../articles/mf-mathematical-foundations.html">vignette("mf-mathematical-foundations")</a></code> for the mathematical details.</p>
 </section><script id="quarto-html-after-body" type="application/javascript">

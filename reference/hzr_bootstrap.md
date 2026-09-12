@@ -52,10 +52,10 @@ print(x, digits = 4, ...)
   to the seeded state; it is not restored on exit. Pass `NULL` (the
   default) to skip the
   [`set.seed()`](https://rdrr.io/r/base/Random.html) call and start from
-  the caller's current RNG state. Note that the bootstrap consumes
-  random numbers either way, so the global RNG state will advance during
-  the call – `seed = NULL` avoids the *reset* at entry, not the advance
-  during resampling.
+  the caller's current RNG state. The bootstrap consumes random numbers
+  either way, so the global RNG state will advance during the call;
+  `seed = NULL` avoids the *reset* at entry, not the advance during
+  resampling.
 
 - verbose:
 
@@ -71,8 +71,8 @@ print(x, digits = 4, ...)
   "Selection mode is experimental" section below. `NULL` (default)
   preserves the original fixed-formula bootstrap: every replicate refits
   `object`'s exact model, and `summary$pct` is always ~100. When
-  supplied (a one-sided formula, character vector, or – for multiphase
-  fits – a named list of one-sided formulas keyed by phase, matching
+  supplied (a one-sided formula, character vector, or, for multiphase
+  fits, a named list of one-sided formulas keyed by phase, matching
   [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)'s
   `scope`), each replicate runs a fresh
   [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
@@ -125,13 +125,13 @@ A list with class `"hzr_bootstrap"` containing:
 
 - replicates:
 
-  Data frame with columns `replicate`, `parameter`, and `estimate` – one
+  Data frame with columns `replicate`, `parameter`, and `estimate`, one
   row per parameter per successful replicate.
 
 - summary:
 
   Data frame with columns `parameter`, `n`, `pct`, `mean`, `sd`, `min`,
-  `max`, `ci_lower`, `ci_upper` – one row per parameter. In
+  `max`, `ci_lower`, `ci_upper`, one row per parameter. In
   `mode = "select"`, `pct` is the selection frequency and the other
   statistics are conditional on selection.
 
@@ -156,7 +156,7 @@ A list with class `"hzr_bootstrap"` containing:
   Select mode only: named integer vector counting *why* candidate scores
   were unavailable, summed over every replicate.
   `information_indefinite` is the one to read first: it marks candidates
-  whose effect is too large for the score test's approximation at zero –
+  whose effect is too large for the score test's approximation at zero,
   typically strong variables. Those are refit and Wald-tested
   automatically, so a candidate reaching this count is one whose refit
   also failed and which therefore went untested, understating its
@@ -176,7 +176,7 @@ A list with class `"hzr_bootstrap"` containing:
   entered at least one variable on a Wald test instead of the score
   statistic, and the total number of such entries across all replicates.
   The score criterion declines a candidate whose observed information is
-  indefinite at `beta = 0` – which happens when the effect is *large* –
+  indefinite at `beta = 0` (which happens when the effect is *large*),
   so those candidates are refit and Wald-tested rather than dropped. A
   high count means much of the selection was decided by a different
   criterion from the one requested, which matters most here: these
@@ -207,8 +207,8 @@ distribution conditional on selection.
 
 ## Selection mode is experimental
 
-Everything reached through `scope` – the selection arguments, and the
-`summary$pct` selection frequencies they produce – is new and should be
+Everything reached through `scope` (the selection arguments, and the
+`summary$pct` selection frequencies they produce) is new and should be
 treated as unstable. The fixed-formula bootstrap (`scope = NULL`) is not
 affected and has been stable since 0.9.3.
 
@@ -223,7 +223,7 @@ until its final replicate, so a run that dies late loses everything.
 There is no built-in way to split one screen across processes and
 combine the parts. If you are running at that scale, drive
 `hzr_bootstrap()` in chunks from your own script and pool the replicates
-yourself – deriving each chunk's seed from its chunk number, offsetting
+yourself: deriving each chunk's seed from its chunk number, offsetting
 replicate ids so a variable selected in two chunks is not counted once,
 and recomputing frequencies from the pooled replicates rather than
 averaging across chunks. Whatever eventually covers that inside the

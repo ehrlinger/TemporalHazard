@@ -2,8 +2,11 @@
 
 Computes the cumulative distribution \\G(t)\\, density \\g(t)\\, and
 hazard \\h(t) = g(t)/(1 - G(t))\\ for the parametric family defined by
-half-life, time exponent, and shape. This single function generates all
-temporal phase shapes used in multiphase hazard models.
+half-life, time exponent, and shape. It supplies the `"cdf"` and
+`"hazard"` phase shapes of a multiphase hazard model; the `"g3"` late
+phase comes from
+[`hzr_decompos_g3()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos_g3.md),
+and the `"constant"` phase is linear in time.
 
 ## Usage
 
@@ -51,8 +54,12 @@ A named list with three numeric vectors, each the same length as `time`:
 ## Parameter mapping from SAS/C HAZARD
 
 The original C code used separate parameterizations for early (DELTA,
-RHO/THALF, NU, M) and late (TAU, GAMMA, ALPHA, ETA) phases. Both
-collapse onto the three parameters here. See
+RHO/THALF, NU, M) and late (TAU, GAMMA, ALPHA, ETA) phases. The early
+phase maps onto the three parameters here: DELTA must be 0, and RHO is
+fixed by THALF, NU and M. The late phase does not: it is a separate
+four-parameter shape computed by
+[`hzr_decompos_g3()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos_g3.md).
+See
 [`hzr_argument_mapping()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_argument_mapping.md)
 for the full translation table.
 

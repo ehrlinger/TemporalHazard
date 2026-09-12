@@ -8,11 +8,11 @@
 </script><script src="../deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"><link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet"><script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet"><link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet"><script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="US Life Table 2023: All-Interval-Censored SAS Parity Anchor — uslife2023"><meta name="description" content="The published NCHS United States life table for 2023, expressed on a
 synthetic radix of 100,000, as a PROC HAZARD job consumes it: one
 interval-censored row per year of age, weighted by the number of deaths
-falling in that year. Aggregate published counts only – no patient-level
+falling in that year. Aggregate published counts only: no patient-level
 data and no PHI."><meta property="og:description" content="The published NCHS United States life table for 2023, expressed on a
 synthetic radix of 100,000, as a PROC HAZARD job consumes it: one
 interval-censored row per year of age, weighted by the number of deaths
-falling in that year. Aggregate published counts only – no patient-level
+falling in that year. Aggregate published counts only: no patient-level
 data and no PHI."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
@@ -68,7 +68,7 @@ data and no PHI."></head><body>
     <p>The published NCHS United States life table for 2023, expressed on a
 synthetic radix of 100,000, as a <code>PROC HAZARD</code> job consumes it: one
 interval-censored row per year of age, weighted by the number of deaths
-falling in that year. Aggregate published counts only – no patient-level
+falling in that year. Aggregate published counts only: no patient-level
 data and no PHI.</p>
     </div>
 
@@ -88,9 +88,9 @@ data and no PHI.</p>
 
 <dt>d_all</dt>
 <dd><p>Deaths in the interval on a 100,000 radix. This is the
-ICENSOR variable, and it is a <em>weight</em>, not an indicator – a fact the
+ICENSOR variable, and it is a <em>weight</em>, not an indicator (a fact the
 weighted life table forces and 335 occurrences of
-<code>icensor icens_wt=il_dead</code> across the SAS corpus corroborate.
+<code>icensor icens_wt=il_dead</code> across the SAS corpus corroborate).
 Sums to 100000.0125; ranges from 0.2352 to 3620.335</p></dd>
 
 
@@ -111,7 +111,7 @@ is exactly one year wide, so \(\log(u - l) = 0\) and the width term
 switches off, isolating the \(S(u)\,\Delta\Lambda\) core. It also settles
 by itself the rival hypothesis that SAS bakes in a constant width divisor:
 that reading is off by 593,146 log-likelihood units here.</p>
-<p>Two rows of the source table – ages 119–120 and 124–125 – carry
+<p>Two rows of the source table (ages 119–120 and 124–125) carry
 <code>d_all == 0</code> and are dropped by the SAS job's own
 <code>IF D_ALL=0 THEN DELETE</code>, leaving 124 of 126. The age grid is therefore not
 contiguous, which is why the fixture carries explicit <code>age_l</code>/<code>age_u</code>

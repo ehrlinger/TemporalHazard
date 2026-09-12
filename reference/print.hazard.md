@@ -4,7 +4,7 @@ Compact one-block summary of a fitted `hazard` object: sample size,
 number of predictors, distribution, theta vector, and log-likelihood,
 followed by the "Not done in this run" block described in
 [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md).
-S3 dispatch only – users call `print(fit)` rather than invoking this
+S3 dispatch only: users call `print(fit)` rather than invoking this
 directly.
 
 ## Usage

@@ -75,7 +75,7 @@
 </h1></div>
 <!-- badges: start -->
 
-<p><strong>TemporalHazard</strong> is a pure-R implementation of the multiphase parametric hazard model of Blackstone, Naftel, and Turner (1986). It decomposes the overall hazard of an event into additive temporal phases — early, constant, and late — each governed by the generalized temporal decomposition family. This structure captures real clinical risk patterns that standard single-distribution models (Weibull, log-normal) cannot represent.</p>
+<p><strong>TemporalHazard</strong> is a pure-R implementation of the multiphase parametric hazard model of Blackstone, Naftel, and Turner (1986). It decomposes the overall hazard of an event into additive temporal phases (early, constant, and late), each governed by the generalized temporal decomposition family. This structure captures real clinical risk patterns that standard single-distribution models (Weibull, log-normal) cannot represent.</p>
 <div class="section level2">
 <h2 id="provenance-and-maintenance">Provenance and maintenance<a class="anchor" aria-label="anchor" href="#provenance-and-maintenance"></a>
 </h2>
@@ -86,7 +86,7 @@
 </h2>
 <p>After cardiac surgery, the risk of death is not constant. It starts high in the immediate post-operative period (early phase), settles to a low background rate (constant phase), and eventually rises again as patients age (late phase). A single Weibull curve forces a monotone shape; a multiphase model captures all three regimes simultaneously.</p>
 <p><img src="reference/figures/readme-hazard-phases.png" width="100%" alt="Additive phase decomposition showing early, constant, and late hazard components summing to the total hazard curve (CABGKUL, n=5,880)"></p>
-<p>The resulting survival curve closely tracks the nonparametric Kaplan-Meier estimate while providing a smooth, parametric representation that supports covariate adjustment, prediction, and extrapolation.</p>
+<p>The resulting survival curve closely tracks the nonparametric Kaplan-Meier estimate, and as a smooth parametric curve it supports covariate adjustment, prediction, and extrapolation.</p>
 <p><img src="reference/figures/readme-survival.png" width="100%" alt="Multiphase parametric survival curve overlaid on the Kaplan-Meier estimate from the CABGKUL dataset (n=5,880)"></p>
 </div>
 <div class="section level2">
@@ -128,7 +128,7 @@
 <td align="center"><span class="emoji" data-emoji="white_check_mark">✅</span></td>
 </tr>
 <tr>
-<td align="left">Automatic stepwise covariate selection (forward, backward, stepwise; Wald or AIC)</td>
+<td align="left">Automatic stepwise covariate selection (forward, backward, stepwise; score (default), Wald or AIC)</td>
 <td align="center"><span class="emoji" data-emoji="white_check_mark">✅</span></td>
 </tr>
 <tr>
@@ -167,7 +167,7 @@
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Or install the development version from GitHub</span></span>
 <span><span class="fu">remotes</span><span class="fu">::</span><span class="fu">install_github</span><span class="op">(</span><span class="st">"ehrlinger/TemporalHazard"</span><span class="op">)</span></span></code></pre></div>
-<p>TemporalHazard requires R &gt;= 4.1.0 and depends on the <a href="https://CRAN.R-project.org/package=survival" class="external-link">survival</a> package. Optional packages for visualization and vignettes include ggplot2, numDeriv, and quarto.</p>
+<p>TemporalHazard requires R &gt;= 4.1.0 and imports the <a href="https://CRAN.R-project.org/package=survival" class="external-link">survival</a> package. It does not attach it, which is why the examples below call <code><a href="https://rdrr.io/pkg/survival/man/Surv.html" class="external-link">survival::Surv()</a></code>. Optional packages for visualization and vignettes include ggplot2, numDeriv, and quarto.</p>
 </div>
 <div class="section level2">
 <h2 id="quick-start">Quick start<a class="anchor" aria-label="anchor" href="#quick-start"></a>
@@ -221,21 +221,21 @@
 </h2>
 <ul>
 <li>
-<strong><a href="https://ehrlinger.github.io/TemporalHazard/articles/clinical-analysis-walkthrough.html">Clinical Analysis Walkthrough</a></strong> — complete end-to-end workflow from Kaplan-Meier baseline through validated multivariable model.</li>
+<strong><a href="https://ehrlinger.github.io/TemporalHazard/articles/clinical-analysis-walkthrough.html">Clinical Analysis Walkthrough</a></strong>: complete end-to-end workflow from Kaplan-Meier baseline through validated multivariable model.</li>
 <li>
-<strong><a href="https://ehrlinger.github.io/TemporalHazard/articles/getting-started.html">Getting Started</a></strong> — first fit-predict workflow with visualizations.</li>
+<strong><a href="https://ehrlinger.github.io/TemporalHazard/articles/getting-started.html">Getting Started</a></strong>: first fit-predict workflow with visualizations.</li>
 <li>
-<strong><a href="https://ehrlinger.github.io/TemporalHazard/articles/fitting-hazard-models.html">Fitting Hazard Models</a></strong> — intercept-only through multiphase and multi-endpoint models.</li>
+<strong><a href="https://ehrlinger.github.io/TemporalHazard/articles/fitting-hazard-models.html">Fitting Hazard Models</a></strong>: intercept-only through multiphase and multi-endpoint models.</li>
 <li>
-<strong><a href="https://ehrlinger.github.io/TemporalHazard/articles/prediction-visualization.html">Prediction &amp; Visualization</a></strong> — survival curves, decomposed hazard, patient-specific risk profiles.</li>
+<strong><a href="https://ehrlinger.github.io/TemporalHazard/articles/prediction-visualization.html">Prediction &amp; Visualization</a></strong>: survival curves, decomposed hazard, patient-specific risk profiles.</li>
 <li>
-<strong><a href="https://ehrlinger.github.io/TemporalHazard/articles/inference-diagnostics.html">Inference &amp; Diagnostics</a></strong> — bootstrap CIs, decile-of-risk validation, sensitivity analysis.</li>
+<strong><a href="https://ehrlinger.github.io/TemporalHazard/articles/inference-diagnostics.html">Inference &amp; Diagnostics</a></strong>: bootstrap CIs, decile-of-risk validation, sensitivity analysis.</li>
 <li>
-<strong><a href="https://ehrlinger.github.io/TemporalHazard/articles/mf-mathematical-foundations.html">Mathematical Foundations</a></strong> — the generalized decomposition, additive hazard model, censoring likelihood, and time-varying covariates.</li>
+<strong><a href="https://ehrlinger.github.io/TemporalHazard/articles/mf-mathematical-foundations.html">Mathematical Foundations</a></strong>: the generalized decomposition, additive hazard model, censoring likelihood, and time-varying covariates.</li>
 <li>
-<strong><a href="https://ehrlinger.github.io/TemporalHazard/articles/ar-architecture.html">Package Architecture</a></strong> — internal design, golden fixtures, and dataset catalog.</li>
+<strong><a href="https://ehrlinger.github.io/TemporalHazard/articles/ar-architecture.html">Package Architecture</a></strong>: internal design, golden fixtures, and dataset catalog.</li>
 <li>
-<strong><a href="https://ehrlinger.github.io/TemporalHazard/articles/sas-to-r-migration.html">SAS-to-R Migration</a></strong> — statement-by-statement mapping from SAS HAZARD syntax.</li>
+<strong><a href="https://ehrlinger.github.io/TemporalHazard/articles/sas-to-r-migration.html">SAS-to-R Migration</a></strong>: statement-by-statement mapping from SAS HAZARD syntax.</li>
 </ul>
 </div>
 <div class="section level2">
@@ -247,7 +247,7 @@
 <span><span class="fu">devtools</span><span class="fu">::</span><span class="fu">test</span><span class="op">(</span><span class="op">)</span></span>
 <span><span class="fu">devtools</span><span class="fu">::</span><span class="fu">check</span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
 <p>GitHub Actions runs multi-platform <code>R CMD check</code> on every push and pull request. Coverage is published to Codecov and the pkgdown site deploys automatically from <code>main</code>.</p>
-<p>See the development plan in <code>inst/dev/DEVELOPMENT-PLAN.md</code> for the full roadmap covering the C/SAS migration, multiphase implementation, CRAN release, and planned feature parity work. See <code>.github/BRANCH_PROTECTION.md</code> for recommended required-check settings that block merges when CI fails.</p>
+<p>See the development plan in <code>inst/dev/DEVELOPMENT-PLAN.md</code> for the full roadmap covering the C/SAS migration, multiphase implementation, CRAN release, and planned feature parity work.</p>
 </div>
 </div>
   </main><aside class="col-md-3"><div class="links">

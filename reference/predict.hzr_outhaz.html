@@ -5,10 +5,10 @@
       fontURL: "https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/output/chtml/fonts/woff-v2"
     }
   };
-</script><script src="../deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"><link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet"><script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet"><link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet"><script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Predictions from a fit loaded out of a SAS OUTHAZ= dataset — predict.hzr_outhaz"><meta name="description" content="Rebuilds the multiphase model the OUTHAZ= dataset describes – which
-phases are in it, their shapes, and the fitted parameter vector – and then
-predicts exactly as predict.hazard() does."><meta property="og:description" content="Rebuilds the multiphase model the OUTHAZ= dataset describes – which
-phases are in it, their shapes, and the fitted parameter vector – and then
+</script><script src="../deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"><link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet"><script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet"><link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet"><script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Predictions from a fit loaded out of a SAS OUTHAZ= dataset — predict.hzr_outhaz"><meta name="description" content="Rebuilds the multiphase model the OUTHAZ= dataset describes (which
+phases are in it, their shapes, and the fitted parameter vector) and then
+predicts exactly as predict.hazard() does."><meta property="og:description" content="Rebuilds the multiphase model the OUTHAZ= dataset describes (which
+phases are in it, their shapes, and the fitted parameter vector) and then
 predicts exactly as predict.hazard() does."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
@@ -61,8 +61,8 @@ predicts exactly as predict.hazard() does."></head><body>
     </div>
 
     <div class="ref-description section level2">
-    <p>Rebuilds the multiphase model the <code>OUTHAZ=</code> dataset describes – which
-phases are in it, their shapes, and the fitted parameter vector – and then
+    <p>Rebuilds the multiphase model the <code>OUTHAZ=</code> dataset describes (which
+phases are in it, their shapes, and the fitted parameter vector) and then
 predicts exactly as <code><a href="predict.hazard.html">predict.hazard()</a></code> does.</p>
     </div>
 
@@ -115,8 +115,8 @@ limits, as <code><a href="predict.hazard.html">predict.hazard()</a></code> does.
 <dd><p>Numeric confidence level in <code>(0, 1)</code>; default <code>0.95</code>.
 Only used when <code>se.fit = TRUE</code>.</p>
 <p><strong>SAS draws narrower bands than this by default.</strong> <code>PROC HAZPRED</code> takes
-its width from <code>CLEVEL</code>, whose default is <code>0.68268948</code> — documented in
-the macro source as "(1 sd)" — so its <code>T_ALPHA</code> multiplier is <code>1</code> to
+its width from <code>CLEVEL</code>, whose default is <code>0.68268948</code>, documented in
+the macro source as "(1 sd)", so its <code>T_ALPHA</code> multiplier is <code>1</code> to
 seven decimals (the literal is truncated) and the band is one standard
 error, 68.3%, not 95%. Reproducing a SAS figure at this
 function's default therefore yields a band about 1.96 times wider than the
@@ -177,7 +177,7 @@ disagrees with the signs of the <code>M</code> and <code>NU</code> estimates.</p
 <p>With <code>se.fit = TRUE</code> there are three more, because the stored covariance is
 on SAS's estimation scale and has to be mapped onto this package's:</p><ul><li><p>a fit constrained by <code>FIXMNU1</code>, which ties <code>M</code> to <code>1/NU</code>;</p></li>
 <li><p>a fit estimating <code>GAMMA</code>, <code>ALPHA</code> or <code>ETA</code> on one of PROC HAZARD's
-<em>composite</em> late-phase scales – <code>log(GAMMA*ETA - 2)</code> or
+<em>composite</em> late-phase scales, <code>log(GAMMA*ETA - 2)</code> or
 <code>log(GAMMA*ETA/ALPHA - 2)</code> rather than <code><a href="https://rdrr.io/r/base/Log.html" class="external-link">log()</a></code> of the parameter. This is
 the ordinary unconstrained late phase, not an exotic case: with
 <code>G3FLAG = 1</code> and no <code>FIXGE2</code>/<code>FIXGAE2</code>, <code>ETA</code> and <code>ALPHA</code> are always on a

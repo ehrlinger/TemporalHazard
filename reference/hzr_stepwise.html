@@ -123,14 +123,14 @@ refits.</p></dd>
 
 
 <dt id="arg-direction">direction<a class="anchor" aria-label="anchor" href="#arg-direction"></a></dt>
-<dd><p>Search strategy — one of <code>"both"</code> (default),
+<dd><p>Search strategy: one of <code>"both"</code> (default),
 <code>"forward"</code>, or <code>"backward"</code>.  Controls whether variables may only
 enter, only leave, or both.  See the <strong>Selection direction and
 criterion</strong> section.</p></dd>
 
 
 <dt id="arg-criterion">criterion<a class="anchor" aria-label="anchor" href="#arg-criterion"></a></dt>
-<dd><p>Entry / retention rule — one of <code>"score"</code> (default),
+<dd><p>Entry / retention rule: one of <code>"score"</code> (default),
 <code>"wald"</code>, or <code>"aic"</code>.  <code>"score"</code> and <code>"wald"</code> both apply SAS-style
 p-value thresholds (<code>slentry</code> / <code>slstay</code>) but score entry candidates
 differently, and can therefore select different variable sets; <code>"score"</code>
@@ -190,7 +190,7 @@ Default <code>TRUE</code>.</p></dd>
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>An object of class <code>c("hzr_stepwise", "hazard")</code> – the
+    <p>An object of class <code>c("hzr_stepwise", "hazard")</code>, the
 final fit augmented with:</p><dl><dt><code>steps</code></dt>
 <dd><p>Data frame with one row per accepted /
 frozen action; see Details.</p></dd>
@@ -208,19 +208,18 @@ settings actually applied, plus, under <code>criterion = "score"</code>,
 an unscored candidate as a bad one: <code>information_indefinite</code> marks
 candidates whose effect is too large for the score test's
 approximation at zero, which are typically the strongest variables
-on offer rather than degenerate ones. Those are now refit and tested
-by Wald automatically, counted in <code>n_wald_fallbacks</code>; a candidate
-still reaches <code>uncomputable_reasons</code> only when that refit itself
-fails, or when the cause is one no refit can rescue — which is
-every cause except <code>information_indefinite</code> and
-<code>coefficient_diverging</code>, the two a refit exists to rescue. Read
+on offer rather than degenerate ones. Candidates with that cause,
+or with <code>coefficient_diverging</code>, are refit and tested by Wald
+automatically, counted in <code>n_wald_fallbacks</code>. A candidate still
+reaches <code>uncomputable_reasons</code> when that refit fails, or when its
+cause is any other, which no refit can rescue. Read
 <code>uncomputable_reasons</code> for which one it was in any given run.  For
 every criterion it also carries
 <code>refit_failures</code> (the <code>"var"</code> / <code>"var@phase"</code> tokens of candidate
 moves whose refit errored or failed to converge), <code>n_refit_failures</code>,
-and <code>stopped_refit_failed</code> — <code>TRUE</code> when the run ended on an
+and <code>stopped_refit_failed</code> (<code>TRUE</code> when the run ended on an
 iteration in which refits failed, which is a screen that could not
-test its candidates rather than one that tested them and liked none.
+test its candidates rather than one that tested them and liked none).
 Check it before reading a zero-row <code>steps</code> as an honest null result.</p></dd>
 
 <dt><code>trace_msg</code></dt>
@@ -257,7 +256,7 @@ appended.</p>
 <dd><p>Phase name (multiphase) or <code>NA_character_</code>.</p></dd>
 
 <dt><code>criterion</code></dt>
-<dd><p>The criterion actually applied to this step —
+<dd><p>The criterion actually applied to this step:
 <code>"score"</code>, <code>"wald"</code>, or <code>"aic"</code>.  Under <code>criterion = "score"</code> the drop
 rows read <code>"wald"</code>, because score is entry-only.</p></dd>
 
@@ -272,14 +271,14 @@ rows read <code>"wald"</code>, because score is entry-only.</p></dd>
 reference distribution recomputes its p-value: <code>"score_q"</code>
 (chi-square on <code>df</code>), <code>"wald_z"</code> (standard normal) or
 <code>"wald_chisq"</code> (chi-square on <code>df</code>).  <code>df</code> alone does
-not distinguish them — a scalar Wald is reported as a <em>z</em>, not
+not distinguish them; a scalar Wald is reported as a <em>z</em>, not
 as its square, so it and a score Q are both recorded at <code>df = 1</code>
 while calling for different distributions.  It also identifies the
 rows the Wald fallback rescued, but only among <em>entry</em> rows:
 under <code>criterion = "score"</code> those are the rows with
 <code>action == "enter" &amp; stat_type == "wald_z"</code>.  Drop rows are
-always Wald-tested under that criterion — removal follows SAS and
-is tested on the current model's Wald p-value — so they read
+always Wald-tested under that criterion (removal follows SAS and
+is tested on the current model's Wald p-value), so they read
 <code>"wald_z"</code> whether or not the fallback ever fired.  See
 <code>$criteria$n_wald_fallbacks</code> for the count.</p></dd>
 
@@ -303,12 +302,12 @@ allowed at each step; <code>criterion</code> decides how a candidate move is sco
 and whether it is accepted.</p>
 <dl><dt><code>direction = "forward"</code></dt>
 <dd><p>Start from the base model and only
-<em>add</em> variables — the best eligible candidate enters each step
+<em>add</em> variables; the best eligible candidate enters each step
 until none clears the entry rule.  Variables never leave once in.</p></dd>
 
 <dt><code>direction = "backward"</code></dt>
 <dd><p>Start from the full candidate model and
-only <em>drop</em> variables — the weakest term leaves each step until all
+only <em>drop</em> variables; the weakest term leaves each step until all
 survivors clear the retention rule.</p></dd>
 
 <dt><code>direction = "both"</code> (default)</dt>
@@ -321,7 +320,7 @@ often a single variable may oscillate before it is frozen.</p></dd>
 </dl><dl><dt><code>criterion = "score"</code> (default)</dt>
 <dd><p>Accept moves on SAS-style
 significance thresholds, using the score (Q) statistic of the candidate
-coefficient — this reproduces C/SAS HAZARD's <code>SELECTION</code> statistic.
+coefficient; this reproduces C/SAS HAZARD's <code>SELECTION</code> statistic.
 Q is evaluated at the <em>current</em> model's MLE with the candidate's
 coefficient pinned at zero, so <strong>no candidate refit is needed</strong>: the
 reduced-model information is inverted once per step and reused across
@@ -335,8 +334,8 @@ information numerically via the suggested <span class="pkg">numDeriv</span> pack
 errors with a clear message if it is not installed; a multiphase fit
 uses the analytic Hessian instead and does not need it.</p>
 <p>Following SAS, the variance used during <em>selection</em> is approximate:
-shaping-parameter covariances are ignored.  This affects selection only
-— final-model standard errors are unchanged and still come from the
+shaping-parameter covariances are ignored.  This affects selection only;
+final-model standard errors are unchanged and still come from the
 full Hessian.  Candidates must be single-column numeric main-effect
 terms; a factor is rejected with an error rather than skipped.</p></dd>
 
@@ -350,7 +349,7 @@ can be tested); drop candidates are scored from the <em>current</em> model's
 Wald p-values without a per-candidate refit, and a single refit is run
 only after a drop is chosen.  This was the default before version 1.2.0.
 It differs algorithmically from C/SAS HAZARD, so the two criteria can
-take different step paths — and select different variable sets —
+take different step paths (and select different variable sets)
 even when they converge to a similar final model.</p></dd>
 
 <dt><code>criterion = "aic"</code></dt>

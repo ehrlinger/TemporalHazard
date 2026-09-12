@@ -114,17 +114,20 @@ fitted data.</p></dd>
 (\(-\log(\text{km\_surv})\)).</p></dd>
 
 <dt>par_surv</dt>
-<dd><p>Parametric survival from the fitted model.</p></dd>
+<dd><p>Parametric survival from the fitted model, at the
+covariate means for a model with covariates.</p></dd>
 
 <dt>par_cumhaz</dt>
-<dd><p>Parametric cumulative hazard.</p></dd>
+<dd><p>Parametric cumulative hazard, at the covariate
+means for a model with covariates.</p></dd>
 
 <dt>cum_observed</dt>
 <dd><p>Cumulative observed events to this time.</p></dd>
 
 <dt>cum_expected</dt>
-<dd><p>Cumulative expected events (sum of individual
-cumulative hazards for observations exiting the risk set).</p></dd>
+<dd><p>Cumulative expected events: <code>par_cumhaz</code>
+times the number of observations exiting the risk set, summed to
+this time.</p></dd>
 
 <dt>residual</dt>
 <dd><p>Expected minus observed
@@ -142,12 +145,26 @@ total observed events, total expected events, and the final residual.</p>
 <li><p>The parametric survival and cumulative hazard from the fitted
 model (and per-phase components for multiphase models).</p></li>
 <li><p>Cumulative observed events vs. cumulative expected events
-(sum of individual cumulative hazards for those exiting the risk
-set at each time).</p></li>
+(the parametric cumulative hazard at each time, times the number
+of observations leaving the risk set then).</p></li>
 <li><p>The running residual (expected minus observed).</p></li>
-</ul><p>Perfect model fit implies the expected and observed event counts track
-each other (residual near zero).  This is the conservation-of-events
-principle.</p>
+</ul><p>For an intercept-only model every patient shares one curve, so the
+expected count is the sum of each patient's cumulative hazard at their
+own exit time.  At the maximum likelihood estimate that sum equals the
+number of observed events (the conservation-of-events identity): the
+final residual is zero and the printed "Conservation ratio (E/O)" is 1.</p>
+<p>A model with covariates is different.  The parametric curve, and so the
+expected count, is evaluated at the covariate means, one "mean patient"
+standing in for everyone.  The mean patient's cumulative hazard is not
+the average of the patients' cumulative hazards, so the printed E/O is
+not the conservation-of-events identity and need not be near 1 at a
+correct fit.  Read it as a mean-patient check: how closely the curve
+for a patient with average covariates follows the whole cohort.</p>
+<p>To check conservation of events for a covariate model, sum each
+patient's own cumulative hazard at their follow-up time and compare the
+total with the event count.  Pass the covariate columns plus a <code>time</code>
+column to <code><a href="predict.hazard.html">predict.hazard()</a></code> with <code>type = "cumulative_hazard"</code>; the
+Examples show how.</p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
@@ -178,6 +195,16 @@ principle.</p>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Conservation ratio (E/O): 0.817 </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Use plot columns: time, km_surv, par_surv, cum_observed, cum_expected, residual</span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="co"># With covariates, hzr_gof() uses the covariate means, so its E/O is a</span></span></span>
+<span class="r-in"><span><span class="co"># mean-patient check.  The conservation-of-events check sums each</span></span></span>
+<span class="r-in"><span><span class="co"># patient's own cumulative hazard at their follow-up time:</span></span></span>
+<span class="r-in"><span><span class="va">nd</span> <span class="op">&lt;-</span> <span class="va">avc</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"mal"</span><span class="op">)</span><span class="op">]</span></span></span>
+<span class="r-in"><span><span class="va">nd</span><span class="op">$</span><span class="va">time</span> <span class="op">&lt;-</span> <span class="va">avc</span><span class="op">$</span><span class="va">int_dead</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>expected <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, newdata <span class="op">=</span> <span class="va">nd</span>, type <span class="op">=</span> <span class="st">"cumulative_hazard"</span><span class="op">)</span><span class="op">)</span>,</span></span>
+<span class="r-in"><span>  observed <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">avc</span><span class="op">$</span><span class="va">dead</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> expected observed </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  67.9993  68.0000 </span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="co"># Plot observed vs expected events</span></span></span>
 <span class="r-in"><span><span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/ns-load.html" class="external-link">requireNamespace</a></span><span class="op">(</span><span class="st">"ggplot2"</span>, quietly <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span></span>

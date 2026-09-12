@@ -46,9 +46,9 @@ different objective than the one it evaluates.
 
 - objective:
 
-  `"likelihood"` for the interval probability – the default, and the
-  only statistically consistent form – or `"sas"` for the
-  interval-mean-hazard density term `PROC HAZARD` accumulates. See
+  `"likelihood"` for the interval probability (the default, and the only
+  statistically consistent form) or `"sas"` for the interval-mean-hazard
+  density term `PROC HAZARD` accumulates. See
   `inst/dev/SAS-INTERVAL-OBJECTIVE-DESIGN.md`.
 
 ## Value
@@ -57,6 +57,6 @@ Scalar summed contribution; `-Inf` for infeasible parameters.
 
 ## Details
 
-Callers pass **only the interval rows** – already subset by
-`status == 2` – so this helper never sees the status mask and cannot
+Callers pass **only the interval rows**, already subset by
+`status == 2`, so this helper never sees the status mask and cannot
 disagree with a caller about which rows are intervals.

@@ -1,7 +1,7 @@
 # Jacobian of multiphase cumulative-hazard predictions
 
-Only `cumulative_hazard` and `survival` are delegated here – `hazard`
-and `linear_predictor` are rejected upstream for multiphase models.
+Only `cumulative_hazard` and `survival` are delegated here; `hazard` and
+`linear_predictor` are rejected upstream for multiphase models.
 
 ## Usage
 

@@ -17,8 +17,8 @@ calibration), and probe its behavior under different covariate scenarios
 inferential tools the package ships for each of those steps.
 
 These pieces correspond directly to steps in the classic SAS HAZARD
-workflow — the `lg.*` logistic-screening macros, the `bs.*` bootstrap
-macros, the `hs.*` hazard-sensitivity macros — re-implemented as
+workflow: the `lg.*` logistic-screening macros, the `bs.*` bootstrap
+macros and the `hs.*` hazard-sensitivity macros, re-implemented as
 first-class R functions
 ([`hzr_calibrate()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_calibrate.md),
 [`hzr_kaplan()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_kaplan.md),
@@ -38,7 +38,7 @@ covariate with a simple logistic regression against the event indicator.
 This is much cheaper than fitting the full hazard model and answers two
 distinct questions: which covariates carry signal at all (rough
 significance triage), and what *functional form* each covariate enters
-with — linear, log, polynomial, or something non-monotone that needs
+with: linear, log, polynomial, or something non-monotone that needs
 binning. The screening step is what stops you from blindly throwing
 every column at
 [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
@@ -56,10 +56,10 @@ candidates <- c("age", "status", "mal", "com_iv", "inc_surg", "orifice")
 
 Fit a univariable logistic regression for each candidate against the
 death indicator. The p-values that come out are not the final word on
-whether a covariate matters — they ignore the joint structure of the
-hazard model and they treat the event time as a binary outcome — but
-they do tell you which covariates have no chance of mattering, and which
-deserve closer inspection.
+whether a covariate matters (they ignore the joint structure of the
+hazard model, and they model the death indicator as a plain binary
+outcome with no follow-up time), but they do tell you which covariates
+have no chance of mattering, and which deserve closer inspection.
 
 ``` r
 
@@ -150,7 +150,7 @@ example, polynomial or log).
 
 A parametric fit has to be compared against *something*. The natural
 something is the nonparametric estimate of the same quantity from the
-same data — Kaplan-Meier for survival, Nelson-Aalen for cumulative
+same data: Kaplan-Meier for survival, Nelson-Aalen for cumulative
 hazard. The package’s
 [`hzr_kaplan()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_kaplan.md)
 and
@@ -164,7 +164,7 @@ tails than the standard Greenwood limits, which can stray outside \\\[0,
 restricted-mean-survival-time scalar.
 [`hzr_nelson()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_nelson.md)
 returns the Wayne Nelson cumulative hazard estimator with log-normal
-confidence limits — the right reference when you care about the
+confidence limits. It is the right reference when you care about the
 integrated intensity rather than the survival probability.
 
 ``` r
@@ -277,23 +277,22 @@ print(nel)
 
 The delta-method CIs `predict(se.fit = TRUE)` returns are fast and
 asymptotically correct, but they lean on the Hessian-derived parameter
-vcov — which can mislead when the likelihood surface is poorly behaved
+vcov, which can mislead when the likelihood surface is poorly behaved
 near the MLE (boundary fits, near-degenerate parameter combinations,
 small samples). The package flags these cases for you: each fit carries
 `rcond`, `pd` and `weak` diagnostics, and
 [`summary()`](https://rdrr.io/r/base/summary.html) prints a note (with a
 matching warning at fit time) when the Hessian is ill-conditioned, is
 not positive-definite, could not be inverted at all, or is flat along
-some combination of parameters — any of which is a strong signal to
-prefer the bootstrap. That last one is worth reading closely: it means
-the individual estimates along that direction are not pinned down by the
-data, so it is not only the standard errors that are unreliable.
-Bootstrap resampling is the robust alternative: refit the model on each
-resampled dataset, collect the resulting parameter and prediction
-values, and read the empirical 2.5th / 97.5th percentiles as the 95% CI.
-It’s computationally heavier but it doesn’t assume the likelihood is
-locally quadratic, and it picks up the right tail behavior even when
-delta-method theory creaks.
+some combination of parameters. Any of these is a strong signal to
+prefer the bootstrap. The last one means the individual estimates along
+that direction are not pinned down by the data, so it is not only the
+standard errors that are unreliable. Bootstrap resampling is the
+alternative: refit the model on each resampled dataset, collect the
+resulting parameter and prediction values, and read the empirical 2.5th
+/ 97.5th percentiles as the 95% CI. It’s computationally heavier but it
+doesn’t assume the likelihood is locally quadratic, and it picks up the
+right tail behavior even when delta-method theory creaks.
 
 [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
 wraps the resample-and-refit loop and corresponds to the SAS
@@ -325,7 +324,7 @@ surv_point <- predict(fit, newdata = base_nd, type = "survival")
 returns a long data frame of per-replicate coefficient estimates
 (`$replicates`) and a parameter-level summary (mean, SD, 95% percentile
 CI) in `$summary`. We use `n_boot = 30` here purely so the vignette
-renders in reasonable time — for a real analysis you’d want 200 or more
+renders in reasonable time; for a real analysis you’d want 200 or more
 replicates. The `set.seed(42)` call before
 [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
 makes the resample sequence reproducible.
@@ -393,7 +392,7 @@ really linear on the log-hazard scale.
 ## 5 Decile-of-risk calibration
 
 The conservation-of-events ratio above tells you whether the model is
-calibrated *on average*. That’s necessary but not sufficient — a model
+calibrated *on average*. That’s necessary but not sufficient: a model
 can hit the right total event count while systematically over-predicting
 risk for one part of the cohort and under-predicting for another, with
 the errors cancelling in aggregate.
@@ -477,8 +476,8 @@ Coefficient estimates tell you the *direction and magnitude* of a
 covariate’s effect on the hazard scale, but they don’t directly answer
 the clinical question of *what survival difference this implies* for a
 real patient. Sensitivity analysis closes that gap. You define two or
-more covariate profiles — typically a reference profile and one or more
-high-risk profiles — score each through
+more covariate profiles (typically a reference profile and one or more
+high-risk profiles), score each through
 [`predict()`](https://rdrr.io/r/stats/predict.html), and plot the
 resulting survival curves on shared axes. The horizontal and vertical
 gaps between curves translate the model’s coefficients into the
@@ -546,37 +545,36 @@ difference is statistically meaningful.
 
 ## 7 Analysis workflow summary
 
-The pieces in this vignette aren’t independent diagnostics — they chain
-together into a single analytical workflow that goes from raw covariates
-to a defensible, uncertainty-quantified, well-calibrated fitted model.
-The complete sequence, with the SAS HAZARD correspondences each piece
-descends from:
+The pieces in this vignette chain together into a single analytical
+workflow that goes from raw covariates to a defensible,
+uncertainty-quantified, well-calibrated fitted model. The complete
+sequence:
 
 1.  **Exploratory screening** (`glm`,
-    [`hzr_calibrate()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_calibrate.md))
-    — identify covariate transformations and functional forms
+    [`hzr_calibrate()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_calibrate.md)):
+    identify covariate transformations and functional forms
 2.  **Nonparametric baselines**
     ([`hzr_kaplan()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_kaplan.md),
-    [`hzr_nelson()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_nelson.md))
-    — reference KM / Nelson cumulative hazard estimators
+    [`hzr_nelson()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_nelson.md)):
+    reference KM / Nelson cumulative hazard estimators
 3.  **Fit hazard model**
-    ([`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md))
-    — parametric shape + covariates
+    ([`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)):
+    parametric shape + covariates
 4.  **Predict & visualize**
-    ([`predict()`](https://rdrr.io/r/stats/predict.html)) — survival,
+    ([`predict()`](https://rdrr.io/r/stats/predict.html)): survival,
     hazard, risk profiles
-5.  **Goodness-of-fit overlay**
-    ([`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md))
-    — parametric vs. KM + Conservation-of-Events check
-6.  **Bootstrap CIs**
-    ([`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md))
-    — uncertainty quantification via resampling
-7.  **Sensitivity analysis**
+5.  **Bootstrap CIs**
+    ([`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)):
+    uncertainty quantification via resampling
+6.  **Goodness-of-fit overlay**
+    ([`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)):
+    parametric vs. KM + Conservation-of-Events check
+7.  **Decile calibration**
+    ([`hzr_deciles()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_deciles.md)):
+    chi-square observed vs. expected by risk decile
+8.  **Sensitivity analysis**
     ([`predict()`](https://rdrr.io/r/stats/predict.html) on covariate
-    profiles) — compare scenarios across risk factors
-8.  **Decile calibration**
-    ([`hzr_deciles()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_deciles.md))
-    — chi-square observed vs. expected by risk decile
+    profiles): compare scenarios across risk factors
 
 See
 [`vignette("getting-started")`](https://ehrlinger.github.io/TemporalHazard/articles/getting-started.md)

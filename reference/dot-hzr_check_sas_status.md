@@ -31,6 +31,6 @@ Called from BOTH
 and
 [`.hzr_gradient_multiphase()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_gradient_multiphase.md).
 Guarding only the objective would leave the gradient computing happily
-for data the objective refuses – and the gradient is reachable on its
-own, for instance from `.hzr_score_test()`, so the objective's refusal
-is not guaranteed to come first.
+for data the objective refuses. The gradient is reachable on its own,
+for instance from `.hzr_score_test()`, so the objective's refusal is not
+guaranteed to come first.

@@ -110,8 +110,8 @@ merely an indicator.</p></dd>
 
 
 <dt id="arg-objective">objective<a class="anchor" aria-label="anchor" href="#arg-objective"></a></dt>
-<dd><p><code>"likelihood"</code> for the interval probability – the default,
-and the only statistically consistent form – or <code>"sas"</code> for the
+<dd><p><code>"likelihood"</code> for the interval probability (the default,
+and the only statistically consistent form) or <code>"sas"</code> for the
 interval-mean-hazard density term <code>PROC HAZARD</code> accumulates. See
 <code>inst/dev/SAS-INTERVAL-OBJECTIVE-DESIGN.md</code>.</p></dd>
 
@@ -122,8 +122,8 @@ interval-mean-hazard density term <code>PROC HAZARD</code> accumulates. See
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
-    <p>Callers pass <strong>only the interval rows</strong> – already subset by <code>status == 2</code>
-– so this helper never sees the status mask and cannot disagree with a
+    <p>Callers pass <strong>only the interval rows</strong>, already subset by <code>status == 2</code>,
+so this helper never sees the status mask and cannot disagree with a
 caller about which rows are intervals.</p>
     </div>
 

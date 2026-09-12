@@ -1,8 +1,9 @@
 # Extract starting values from a phase specification
 
 Returns initial theta sub-vector on the estimation (internal) scale:
-log(mu), log(t_half), nu, m, followed by zeros for covariate
-coefficients.
+log(mu), then log(t_half), nu, m for `"cdf"`/`"hazard"` phases or
+log(tau), gamma, alpha, eta for `"g3"` (nothing for `"constant"`),
+followed by zeros for covariate coefficients.
 
 ## Usage
 
@@ -26,4 +27,4 @@ coefficients.
 
 ## Value
 
-Named numeric vector of starting values.
+Unnamed numeric vector of starting values.

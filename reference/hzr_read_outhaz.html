@@ -104,7 +104,7 @@ flags). When no parameter is free, <code>vcov</code> is a 0x0 matrix rather than
 
 <p>This function is experimental and its return shape is expected to change.
 The result carries the fitted model, so <code><a href="predict.hzr_outhaz.html">predict.hzr_outhaz()</a></code> predicts
-from it – that is what the <code>hzr_translate_sas(librefs = )</code> path emits –
+from it (that is what the <code>hzr_translate_sas(librefs = )</code> path emits),
 but it is not a <code>hazard</code> object and none of the other <code>hazard</code> methods
 apply to it. The <code>_STATUS_</code> coding is asserted against a synthetic fixture,
 so a real <code>OUTHAZ=</code> file using a different convention would yield an empty

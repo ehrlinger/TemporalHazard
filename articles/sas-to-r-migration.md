@@ -7,9 +7,9 @@ library(TemporalHazard)
 
 ## Overview
 
-If you’ve been running multiphase hazard analyses in SAS HAZARD — the
+If you’ve been running multiphase hazard analyses in SAS HAZARD (the
 macro suite that wraps the C HAZARD binary written by Blackstone,
-Naftel, and Turner at UAB — this vignette is the bridge to running the
+Naftel, and Turner at UAB), this vignette is the bridge to running the
 same analyses in R. Every SAS `HAZARD` statement, every common macro
 option, and every output field maps to something in `TemporalHazard`;
 this document spells out the correspondences and flags the small handful
@@ -26,9 +26,9 @@ SAS analysis, or as a reference when comparing the package’s output
 against a SAS HAZARD reference fit for parity testing.
 
 The full formal argument mapping table is available programmatically and
-ships with the package — handy when you want to grep for a specific SAS
-parameter name and find its R equivalent without scrolling through the
-prose below:
+ships with the package. It is handy when you want to grep for a specific
+SAS parameter name and find its R equivalent without scrolling through
+the prose below:
 
 ``` r
 
@@ -61,7 +61,7 @@ knitr::kable(
 | G1 | THALF / RHO (early) | early half-life | hzr_phase(t_half=) | FALSE | positive scalar | maps directly to hzr_phase(t_half=) starting value | implemented | Half-life: time at which G(t_half) = 0.5. Same concept as SAS RHO/THALF. |
 | G1 | NU (early) | early time exponent | hzr_phase(nu=) | FALSE | numeric scalar | maps directly to hzr_phase(nu=) starting value | implemented | Time exponent controlling rate dynamics. Same parameter name as SAS early NU. |
 | G1 | M (early) | early shape | hzr_phase(m=) | FALSE | numeric scalar | maps directly to hzr_phase(m=) starting value | implemented | Shape exponent controlling distributional form. Same parameter name as SAS early M. |
-| G1 | DELTA (early) | early time transform | (absorbed by decompos) | FALSE | numeric scalar | time transform B(t) = (exp(delta\*t)-1)/delta absorbed into decompos shape | implemented | NOT IMPLEMENTED, not absorbed. The C DELTA controls B(t) = (exp(delta\*t)-1)/delta, which enters rho, the time argument and the density Jacobian separately; R computes the delta=0 branch of each. A job with DELTA != 0 is refused or flagged, never fitted silently. |
+| G1 | DELTA (early) | early time transform | (not implemented) | FALSE | numeric scalar | time transform B(t) = (exp(delta\*t)-1)/delta; drops out at DELTA = 0, non-zero DELTA not implemented | planned | NOT IMPLEMENTED, not absorbed. The C DELTA controls B(t) = (exp(delta\*t)-1)/delta, which enters rho, the time argument and the density Jacobian separately; R computes the delta=0 branch of each. A job with DELTA != 0 is refused or flagged, never fitted silently. |
 | G2 | G2 constant phase | constant hazard rate phase | hzr_phase(‘constant’) | FALSE | hzr_phase(‘constant’) | hzr_phase(‘constant’) with no shape parameters | implemented | Flat background rate. No shape parameters estimated. SAS G2 equivalent. |
 | G3 | TAU (late) | late G3 scale | hzr_phase(‘g3’, tau=) | FALSE | positive scalar | maps directly to hzr_phase(‘g3’, tau=) for late phase | implemented | Late-phase G3 scale parameter. Maps directly to hzr_phase(‘g3’, tau=). |
 | G3 | GAMMA (late) | late G3 time exponent | hzr_phase(‘g3’, gamma=) | FALSE | numeric scalar | maps directly to hzr_phase(‘g3’, gamma=) for late phase | implemented | Late-phase G3 time exponent. Maps directly to hzr_phase(‘g3’, gamma=). |
@@ -113,9 +113,10 @@ passed through `...` as named arguments and stored in `fit$legacy_args`.
 ### `TIME`
 
 Names the follow-up time variable. In SAS HAZARD this is a separate
-statement; in R it’s the first argument to
-[`Surv()`](https://rdrr.io/pkg/survival/man/Surv.html) inside the
-formula.
+statement; in R it is the `time` argument of the vector interface shown
+here, or the first argument to
+[`Surv()`](https://rdrr.io/pkg/survival/man/Surv.html) if you use the
+formula interface.
 
 ``` sas
 TIME INT_DEAD;
@@ -140,8 +141,10 @@ fit <- hazard(
 ### `EVENT`
 
 Names the event-indicator variable. Like `TIME`, this is a separate
-statement in SAS HAZARD but enters the R formula through
-[`Surv()`](https://rdrr.io/pkg/survival/man/Surv.html).
+statement in SAS HAZARD; in R it is the `status` argument shown here, or
+the second argument to
+[`Surv()`](https://rdrr.io/pkg/survival/man/Surv.html) in the formula
+interface.
 
 ``` sas
 EVENT DEAD;
@@ -167,7 +170,7 @@ fit <- hazard(
 ### `PARMS`
 
 Supplies starting values for the optimizer and flags which parameters to
-hold fixed (`FIXM`, `FIXMU`, etc.). The starting values matter — for the
+hold fixed (`FIXM`, `FIXMU`, etc.). The starting values matter. For the
 multiphase optimizer in particular, a poor starting point can park the
 fit at a local minimum well away from the global MLE.
 
@@ -176,26 +179,34 @@ PARMS MUE=0.3504743 THALF=0.1905077 NU=1.437416 M=1 FIXM
       MUC=4.391673E-07;
 ```
 
-Maps to `theta` (coefficient/parameter vector) and `control` (fix
-flags):
+Maps to the phases in `phases`, the start vector `theta`, and, for
+`FIXM`, `fixed = "m"` on the early phase:
 
 ``` r
 
 fit <- hazard(
-  theta   = c(MUE = 0.3504743, THALF = 0.1905077, NU = 1.437416,
-              M = 1,           MUC   = 4.391673e-07),
-  control = list(
-    fix = c("M")   # FIXM → freeze M during optimization
+  ...,
+  dist   = "multiphase",
+  phases = list(
+    early    = hzr_phase("cdf", t_half = 0.1905077, nu = 1.437416, m = 1,
+                         fixed = "m"),       # FIXM: hold M at its start
+    constant = hzr_phase("constant")
   ),
-  ...
+  theta = c(log(0.3504743),                  # MUE
+            log(0.1905077), 1.437416, 1,     # THALF, NU, M
+            log(4.391673e-07))               # MUC
 )
 ```
 
-> **Note:** Full SAS `PARMS` syntax is not mirrored one-for-one in the
-> public API. In the current package, supply the parameter vector
-> directly via `theta` and record fixed-parameter intent in
-> `control$fix`. The legacy parity helpers do generate SAS-style control
-> text when comparing against the historical binaries.
+> **Note:** `theta` takes the `PARMS` values on the scale the optimizer
+> works on, which is not always the scale SAS prints. `MUE`, `MUC` and
+> `THALF` go in as logs; `NU` and `M` go in as written. A fixed
+> parameter is declared on the phase that owns it, so `FIXM` is
+> `fixed = "m"` inside the early
+> [`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md).
+> [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+> does not read a `control$fix` entry: a fix written there leaves `M`
+> free, and nothing warns you.
 
 ------------------------------------------------------------------------
 
@@ -204,8 +215,8 @@ fit <- hazard(
 These statements assign covariates to specific phases. In SAS HAZARD
 each block lists the covariates that affect that phase and their
 starting coefficients. Covariates can appear in multiple blocks with
-different starting values — same column, different phase-specific
-effect.
+different starting values (same column, different phase-specific
+effect).
 
 ``` sas
 EARLY  AGE=-0.03205774, COM_IV=1.336675, MAL=0.6872028,
@@ -213,38 +224,39 @@ EARLY  AGE=-0.03205774, COM_IV=1.336675, MAL=0.6872028,
 CONSTANT INC_SURG=1.375285, ORIFICE=3.11765, STATUS=1.054988;
 ```
 
-In HAZARD, `EARLY` and `CONSTANT` define phase-specific covariate
-coefficients. In `TemporalHazard` these are unified into a single design
-matrix `x` and coefficient vector `theta` during M1. Phase assignment
-will be formalised in M2 when the multi-phase likelihood is implemented.
+In `TemporalHazard` each block becomes the `formula` of the phase it
+names: the `EARLY` list goes on the early `hzr_phase("cdf", ...)`, the
+`CONSTANT` list on `hzr_phase("constant", ...)`. A covariate listed in
+both blocks, `STATUS` here, appears in both formulas and gets a separate
+coefficient in each phase, as it does in SAS. The model formula’s
+right-hand side stays `~ 1` because every covariate belongs to a phase.
 
-**Current convention (M1):** combine all covariates into `x` and supply
-the corresponding starting coefficients in `theta`.
+The starting coefficients go into `theta` in phase order: the early
+phase’s scale and shapes, then its covariates, then the constant phase’s
+scale, then its covariates. In this chunk `avcs` is `data(avc)` with its
+missing `inc_surg` values filled, as in the worked example below.
 
 ``` r
 
-# Build design matrix from the AVC data set
-X <- data.matrix(avcs[, c("AGE", "COM_IV", "MAL", "OPMOS", "OP_AGE",
-                           "STATUS", "INC_SURG", "ORIFICE")])
-
-# Starting values from SAS EARLY + CONSTANT blocks combined
-theta_start <- c(
-  AGE      = -0.03205774,
-  COM_IV   =  1.336675,
-  MAL      =  0.6872028,
-  OPMOS    = -0.01963377,
-  OP_AGE   =  0.0002086689,
-  STATUS   =  0.5169533,   # EARLY phase coefficient
-  INC_SURG =  1.375285,
-  ORIFICE  =  3.11765
-)
-
 fit <- hazard(
-  time   = avcs$INT_DEAD,
-  status = avcs$DEAD,
-  x      = X,
-  theta  = theta_start,
-  dist   = "weibull"
+  Surv(int_dead, dead) ~ 1,
+  data   = avcs,
+  dist   = "multiphase",
+  phases = list(
+    early    = hzr_phase("cdf", t_half = 0.1905077, nu = 1.437416, m = 1,
+                         formula = ~ age + com_iv + mal + opmos + op_age +
+                           status,
+                         fixed = "m"),
+    constant = hzr_phase("constant", formula = ~ inc_surg + orifice + status)
+  ),
+  theta = c(
+    log(0.3504743), log(0.1905077), 1.437416, 1,  # MUE, THALF, NU, M
+    -0.03205774, 1.336675, 0.6872028,             # EARLY: AGE, COM_IV, MAL,
+    -0.01963377, 0.0002086689, 0.5169533,         #   OPMOS, OP_AGE, STATUS
+    log(4.391673e-07),                            # MUC
+    1.375285, 3.11765, 1.054988                   # CONSTANT: INC_SURG,
+  ),                                              #   ORIFICE, STATUS
+  fit = TRUE
 )
 ```
 
@@ -270,8 +282,8 @@ SELECTION SLE=0.2 SLS=0.1;
 which implements forward, backward, and two-way stepwise selection with
 SAS-style SLENTRY / SLSTAY thresholds, phase-specific entry for
 multiphase models, and a MOVE oscillation guard. It now defaults to
-`criterion = "score"`, which reproduces SAS’s `SELECTION` Q statistic —
-a score test at the current estimates, with no per-candidate refit — so
+`criterion = "score"`, which reproduces SAS’s `SELECTION` Q statistic (a
+score test at the current estimates, with no per-candidate refit), so
 entry decisions match SAS’s directly. Passing `criterion = "wald"`
 selects the older refit-based path, which fits each candidate before
 testing it. See
@@ -472,7 +484,7 @@ head(hzr_competing_risks(valves$int_dead, valves$ev), 4)
 Statement-by-statement mapping is fine for reference, but the full
 gestalt only lands when you see a complete SAS HAZARD analysis and its R
 translation side by side. The example below is the final multivariable
-model from `examples/hm.death.AVC.sas` in the reference C repository —
+model from `examples/hm.death.AVC.sas` in the reference C repository:
 death after atrioventricular canal repair, two-phase model with
 covariates assigned to specific phases. It’s the canonical “this is what
 a real SAS HAZARD analysis looks like” specimen.
@@ -496,70 +508,111 @@ PROC HAZARD DATA=AVCS P CONSERVE OUTHAZ=OUTEST CONDITION=14 QUASI;
 );
 ```
 
-### R equivalent (current runnable translation pattern)
+### R equivalent
 
-The same model in `TemporalHazard`. Every SAS statement above has a
-corresponding R argument here: `TIME` and `EVENT` collapse into
-`Surv(int_dead, dead)` on the left of the formula; the global covariate
-list goes on the right; the `PARMS` starting values become the `theta`
-vector; phase-specific assignments use the `formula` argument inside
-each
-[`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md);
-`FIXM` becomes `fixed = "shapes"` (or a subset of shape names). The
-line-by-line correspondence is the point — once you’ve translated one
-analysis this way, the pattern carries to every other.
+The same model in `TemporalHazard`, with one R argument for each SAS
+statement:
+
+- `TIME INT_DEAD` and `EVENT DEAD` become `Surv(int_dead, dead)` on the
+  left of the formula. In `avc`, `dead` is 0/1, so it is a status as it
+  stands. A job whose `EVENT` variable counts events also needs
+  `weights`; see the translator section below.
+- `PARMS` becomes the phase shapes and the `theta` start vector, and
+  `FIXM` becomes `fixed = "m"` on the early phase.
+- `EARLY` and `CONSTANT` become the `formula` of the matching
+  [`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md).
+- `CONDITION=14`, `CONSERVE` and `QUASI` go into `control` as
+  `condition = 14`, `conserve = TRUE` and `method = "bfgs"`. BFGS is the
+  default optimizer, so the last one records the mapping and changes
+  nothing.
+- `PROC STANDARD REPLACE` from the SAS `DATA` steps becomes one line
+  that fills the missing `inc_surg` values with the column mean.
+
+Once you have translated one analysis this way, the pattern carries to
+every other.
 
 ``` r
 
-# Assumed: avcs is a data.frame read from the AVC flat file
-# (same variables as the SAS DATA step)
+data(avc)   # reload: the diagnostics above dropped the incomplete rows
+avcs <- avc
 
-avcs <- avcs |>
-  transform(
-    LN_AGE   = log(AGE),
-    LN_OPMOS = log(OPMOS),
-    LN_INC   = ifelse(is.na(INC_SURG), NA, log(INC_SURG + 1)),
-    LN_NYHA  = log(STATUS)
-  )
-
-# Replace missing INC_SURG with column mean (mirrors PROC STANDARD REPLACE)
-avcs$INC_SURG[is.na(avcs$INC_SURG)] <- mean(avcs$INC_SURG, na.rm = TRUE)
-
-X <- data.matrix(avcs[, c("AGE", "COM_IV", "MAL", "OPMOS", "OP_AGE",
-                           "STATUS", "INC_SURG", "ORIFICE")])
+# PROC STANDARD REPLACE: fill missing INC_SURG with the column mean
+avcs$inc_surg[is.na(avcs$inc_surg)] <- mean(avcs$inc_surg, na.rm = TRUE)
 
 fit <- hazard(
-  time    = avcs$INT_DEAD,
-  status  = avcs$DEAD,
-  x       = X,
-  theta   = c(
-    # Hazard shape parameters (from PARMS)
-    MUE   = 0.3504743,
-    THALF = 0.1905077,
-    NU    = 1.437416,
-    M     = 1,
-    MUC   = 4.391673e-07,
-    # Covariate coefficients (from EARLY + CONSTANT blocks)
-    AGE      = -0.03205774,
-    COM_IV   =  1.336675,
-    MAL      =  0.6872028,
-    OPMOS    = -0.01963377,
-    OP_AGE   =  0.0002086689,
-    STATUS   =  0.5169533,
-    INC_SURG =  1.375285,
-    ORIFICE  =  3.11765
+  Surv(int_dead, dead) ~ 1,                        # TIME, EVENT
+  data   = avcs,
+  dist   = "multiphase",
+  phases = list(
+    early    = hzr_phase("cdf", t_half = 0.1905077, nu = 1.437416, m = 1,
+                         formula = ~ age + com_iv + mal + opmos + op_age +
+                           status,                 # EARLY
+                         fixed = "m"),             # FIXM
+    constant = hzr_phase("constant",
+                         formula = ~ inc_surg + orifice + status)  # CONSTANT
   ),
-  dist    = "weibull",
-  control = list(
-    condition = 14,
-    quasi     = TRUE,
-    conserve  = TRUE,
-    fix       = c("M")   # FIXM
-  )
+  theta = c(                                       # PARMS, EARLY, CONSTANT
+    log(0.3504743), log(0.1905077), 1.437416, 1,
+    -0.03205774, 1.336675, 0.6872028, -0.01963377, 0.0002086689, 0.5169533,
+    log(4.391673e-07),
+    1.375285, 3.11765, 1.054988
+  ),
+  control = list(condition = 14, conserve = TRUE, method = "bfgs"),
+  fit = TRUE
 )
 
-fit
+summary(fit)
+#> Multiphase hazard model (2 phases)
+#>   observations: 310 
+#>   predictors:   0 
+#>   dist:         multiphase 
+#>   phase 1:      early - cdf (early risk)
+#>   phase 2:      constant - constant (flat rate)
+#>   engine:       native-r-m2 
+#>   converged:    TRUE 
+#>   gradient:     relative 49.6 (SAS/C requires <= 6.06e-06; not met, nlm code 2)
+#>   log-lik:      -160.408 
+#>   Note: Hessian ill-conditioned (rcond = 4.41e-12); standard errors may be unreliable.
+#>   Not done in this run: none
+#>   evaluations: fn=17, gr=1
+#>   message:      continued with nlm() for 1 iterations (code 2) 
+#> 
+#> Coefficients (internal scale):
+#> 
+#>   Phase: early (cdf)
+#>                   estimate    std_error    z_stat      p_value
+#>   log_mu     -1.0484675629 7.527000e-01 -1.392942 1.636373e-01
+#>   log_t_half -1.6580626653 3.631463e-01 -4.565826 4.975318e-06
+#>   nu          1.4374160000 1.770559e-01  8.118432 4.722462e-16
+#>   m           1.0000000000           NA        NA           NA
+#>   age        -0.0320577400 9.381015e-03 -3.417300 6.324561e-04
+#>   com_iv      1.3366750000 4.173461e-01  3.202798 1.360995e-03
+#>   mal         0.6872028000 2.671643e-01  2.572210 1.010514e-02
+#>   opmos      -0.0196337700 4.367582e-03 -4.495341 6.945864e-06
+#>   op_age      0.0002086688 5.904656e-05  3.533971 4.093655e-04
+#>   status      0.5169533000 1.571565e-01  3.289417 1.003951e-03
+#> 
+#>   Phase: constant (constant)
+#>              estimate std_error    z_stat      p_value
+#>   log_mu   -14.638385 3.0330321 -4.826321 1.390786e-06
+#>   inc_surg   1.375285 0.6222371  2.210226 2.708945e-02
+#>   orifice    3.117650 0.8999963  3.464070 5.320686e-04
+#>   status     1.054988 0.5030359  2.097242 3.597215e-02
 ```
+
+The `PARMS` and covariate values in this job are the estimates from an
+earlier SAS run of the same model, so both programs start at SAS’s
+optimum. R agrees that it is one. The log-likelihood is -160.408, the
+value SAS prints for this model, and the standard errors agree with the
+SAS listing to within 0.31%: `AGE` is 0.009381 here against SAS’s
+0.009380, and the early-phase `log_mu` (SAS’s `E0`) is 0.7527 against
+0.7550. [`summary()`](https://rdrr.io/r/base/summary.html) notes an
+ill-conditioned Hessian (`rcond = 4.41e-12`); SAS reports the same
+condition for this fit as a log10 condition code of 11.12. Run
+interactively, the fit also raises `Hessian is ill-conditioned`
+warnings. The chunk hides them because
+[`summary()`](https://rdrr.io/r/base/summary.html) reports the same
+thing.
 
 ------------------------------------------------------------------------
 
@@ -588,16 +641,16 @@ returns a list of class `hazard`:
 | `$data$time` | Follow-up time vector |
 | `$data$status` | Event indicator (numeric) |
 | `$data$x` | Design matrix |
-| `$fit$theta` | Coefficient vector (starting values at M1; fitted at M2+) |
-| `$fit$converged` | `NA` at M1; `TRUE`/`FALSE` from M2 optimizer |
-| `$fit$objective` | Log-likelihood at convergence (M2+) |
+| `$fit$theta` | Coefficient vector: estimates when `fit = TRUE`, the starting values when `fit = FALSE` |
+| `$fit$converged` | `TRUE`/`FALSE` from the optimizer; `NA` when `fit = FALSE` |
+| `$fit$objective` | Log-likelihood at convergence; `NA` when `fit = FALSE` |
 | `$legacy_args` | Named pass-through arguments for parity |
 
-> **Note:** `$fit$objective` above is a *number* – the log-likelihood
-> the optimizer reached; [`print()`](https://rdrr.io/r/base/print.html)
-> and [`summary()`](https://rdrr.io/r/base/summary.html) label it
-> `log-lik` and `log_lik`, which are the names to prefer when writing
-> about it. It is unrelated to the `objective` *argument* of
+> **Note:** `$fit$objective` above is a *number*: the log-likelihood the
+> optimizer reached; [`print()`](https://rdrr.io/r/base/print.html) and
+> [`summary()`](https://rdrr.io/r/base/summary.html) label it `log-lik`
+> and `log_lik`, which are the names to prefer when writing about it. It
+> is unrelated to the `objective` *argument* of
 > [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md),
 > which selects an estimand: `"likelihood"` (the default) or `"sas"`,
 > reproducing what `PROC HAZARD` accumulates for an interval-censored
@@ -617,8 +670,8 @@ output dataset. In R the same predictions come from
 on the fitted object, with the requested quantity chosen via the `type=`
 argument.
 [`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)
-currently supports four output types — `"linear_predictor"`, `"hazard"`,
-`"survival"`, and `"cumulative_hazard"` — covering every quantity the
+currently supports four output types (`"linear_predictor"`, `"hazard"`,
+`"survival"`, and `"cumulative_hazard"`), covering every quantity the
 SAS `P` option produces:
 
 ``` r
@@ -647,9 +700,16 @@ chunks are the
 [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 /
 [`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)
-calls those blocks describe. It is the same statement-by-statement
-mapping this vignette documents, run by the parser instead of by you –
-useful for a one-off job, and essential for migrating a corpus of
+calls those blocks describe. It applies the statement-by-statement
+mapping this vignette documents, with differences of form you will see
+in its output: it writes the vector interface (`data =`, `time =`,
+`status =`) where this vignette writes a
+[`Surv()`](https://rdrr.io/pkg/survival/man/Surv.html) formula, it keeps
+the SAS job’s upper-case column names, and it turns `EVENT` into a
+status and `weights` pair, covered below. The phases, `fixed = "m"`,
+`theta` and `control` it emits for the AVC model above are the ones the
+worked example uses, and on `avc` its call reaches the same estimates.
+It is useful for a one-off job, and essential for migrating a corpus of
 hundreds.
 
 > **Experimental: what it will and will not translate**
@@ -667,7 +727,7 @@ hundreds.
 >   [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)’s
 >   refit path needs a formula-interface base fit and this translator
 >   emits the vector interface, so a translated screen would report zero
->   steps – indistinguishable from “nothing met `slentry`”. Run the
+>   steps, indistinguishable from “nothing met `slentry`”. Run the
 >   selection by hand.
 > - **`LCENSOR` combined with `ICENSOR` is refused.**
 >   [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)’s
@@ -676,21 +736,20 @@ hundreds.
 >   cannot express both. Either statement alone translates.
 > - **Prediction grids the parser cannot resolve are refused whole**,
 >   and an unresolved `INHAZ=` stops the render on purpose. Both are
->   covered under “What it doesn’t translate” below – and note that
->   resolving an external `INHAZ=` at all requires you to pass
->   `librefs=`.
+>   covered under “What it doesn’t translate” below. Note that resolving
+>   an external `INHAZ=` at all requires you to pass `librefs=`.
 > - **Confidence limits from a loaded `INHAZ=` fit may stop the
 >   render.** A translated `PROC HAZPRED` block asks for `se.fit = TRUE`
 >   unless the SAS job says `NOCL`, and
 >   [`predict()`](https://rdrr.io/r/stats/predict.html) on an
 >   `hzr_outhaz` object refuses `se.fit = TRUE` when `PROC HAZARD`
->   estimated a late shape parameter on a composite scale –
->   `log(GAMMA*ETA - 2)` and friends, which is the *generic*
+>   estimated a late shape parameter on a composite scale
+>   (`log(GAMMA*ETA - 2)` and friends), which is the *generic*
 >   unconstrained three-phase case, not an exotic one. Point predictions
 >   are unaffected; drop `se.fit` from the emitted call to get them.
 >
 > Read `job$coverage` as a measure of how much of the SAS job the
-> *parser recognised* – not of whether the result runs. A job can report
+> *parser recognised*, not of whether the result runs. A job can report
 > full coverage with nothing in `$untranslated` and still error on
 > render. The API and the emitted format will change as these limits
 > close; the 1.2.2 entry of `NEWS.md` carries the issue numbers.
@@ -800,12 +859,19 @@ makes the document runnable: a later
 `control$method = "bfgs"`, `CONDITION=14` becomes
 `control$condition = 14`, and the `PARMS` early-phase shape
 (`MUE`/`THALF`/`NU`/`M FIXM`) becomes a `hzr_phase("cdf", ...)` with `m`
-fixed – exactly the mappings covered statement-by-statement above,
-applied automatically. `dist = "multiphase"` is emitted whenever
-`phases` is, and `theta` carries the full interleaved multiphase start
-vector – early scale, then every early-phase shape parameter in phase
-order, then the constant/late scale – not just the phases’ log(mu)
-starts.
+fixed. These are the forms the hand translation above uses. `FIXM` holds
+`m` only through `fixed = "m"` on the phase. `QUASI` changes nothing:
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+does not read `control$method`, and the fitting path uses BFGS
+regardless (a multiphase fit may run a Nelder-Mead warm-up first, and a
+stop that fails SAS’s gradient test continues with
+[`stats::nlm()`](https://rdrr.io/r/stats/nlm.html)), so the entry only
+records the SAS choice. The fitting path reads none of `control$fix`,
+`control$quasi` or `control$method`. `dist = "multiphase"` is emitted
+whenever `phases` is, and `theta` carries the full interleaved
+multiphase start vector (early scale, then every early-phase shape
+parameter in phase order, then the constant/late scale), not just the
+phases’ log(mu) starts.
 
 ### What it doesn’t translate
 
@@ -822,7 +888,7 @@ gaps are common enough in production jobs to know about going in:
   (e.g. `DO MONTHS = 1*DTY, 2*DTY, ... ;` with `DTY` assigned earlier in
   the same DATA step), but a bound read from `SET`, computed by a
   function call, or naming something the parser can’t resolve is refused
-  whole rather than partially read – a partial grid is a partial
+  whole rather than partially read: a partial grid is a partial
   `newdata`, and reporting predictions over a half-read grid would be
   worse than not reporting them. Such grids emit an `UNTRANSLATED`
   block; build the `newdata` grid by hand and pass it to
@@ -830,20 +896,20 @@ gaps are common enough in production jobs to know about going in:
   instead. On the public corpus, grid resolution is 19 of 55 (35%), up
   from 10 of 55 (18%) before constant folding.
 - **An unresolved `INHAZ=` fails the render on purpose.** If a
-  `PROC HAZPRED` job’s fitted-model dataset can’t be found – neither
-  from another translated job’s `OUTHAZ=` nor from the `librefs=`
-  argument you pass in – the document gets an `inhaz-unresolved` chunk
-  ahead of the grid and
-  [`predict()`](https://rdrr.io/r/stats/predict.html) chunks whose whole
-  body is a [`stop()`](https://rdrr.io/r/base/stop.html) naming the
-  libref, so rendering fails loudly instead of producing predictions
-  against a model it never loaded.
+  `PROC HAZPRED` job’s fitted-model dataset can’t be found (neither from
+  another translated job’s `OUTHAZ=` nor from the `librefs=` argument
+  you pass in), the document gets an `inhaz-unresolved` chunk ahead of
+  the grid and [`predict()`](https://rdrr.io/r/stats/predict.html)
+  chunks whose whole body is a
+  [`stop()`](https://rdrr.io/r/base/stop.html) naming the libref, so
+  rendering fails loudly instead of producing predictions against a
+  model it never loaded.
 
 ## Known limitations vs. SAS HAZARD
 
 A SAS HAZARD veteran migrating to `TemporalHazard` should be aware of
-the following scope limits as of v1.2.2. Detailed status per feature is
-tracked in `inst/dev/SAS-PARITY-GAP-ANALYSIS.md` and
+the following scope limits. Detailed status per feature is tracked in
+`inst/dev/SAS-PARITY-GAP-ANALYSIS.md` and
 `inst/dev/DEVELOPMENT-PLAN.md`.
 
 ### Stepwise variable selection (`SELECTION` statement)
@@ -890,16 +956,16 @@ tracked in `inst/dev/SAS-PARITY-GAP-ANALYSIS.md` and
 For users migrating from older TemporalHazard versions or reading older
 SAS parity notes:
 
-- **`weights` on all distributions** — shipped v0.9.6. Weibull,
+- **`weights` on all distributions** (shipped v0.9.6). Weibull,
   exponential, log-logistic, log-normal, and multiphase all honour
   observation weights end-to-end (LL + analytic gradient + multiphase
   Conservation of Events).
-- **`Surv(start, stop, event)` with `start > 0`** — shipped v0.9.7.
+- **`Surv(start, stop, event)` with `start > 0`** (shipped v0.9.7).
   Counting-process rows contribute `H(stop) - H(start)` for Weibull and
   multiphase. The previous
   [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   guard against non-zero starts is gone.
-- **Delta-method prediction confidence limits** — shipped v0.9.8. Use
+- **Delta-method prediction confidence limits** (shipped v0.9.8). Use
   `predict(..., se.fit = TRUE, level = 0.95)` to get a data frame with
   `fit`, `se.fit`, `lower`, and `upper` per row. Closed-form Jacobian
   for Weibull and multiphase,

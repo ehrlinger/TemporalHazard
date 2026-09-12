@@ -53,7 +53,7 @@ them, and the following columns added:
 
   1 when the row is right censored at the end of follow-up, otherwise 0.
   This is set both for a genuine censoring row and for an event row
-  whose event time equals the end of follow-up – `rcensor` and `event`
+  whose event time equals the end of follow-up. `rcensor` and `event`
   are therefore not mutually exclusive; see the Note below.
 
 - `iv_start`:

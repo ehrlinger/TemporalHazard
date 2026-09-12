@@ -9,13 +9,13 @@
 Blackstone, Naftel, and Turner (1986), with a focus on behavioral parity,
 transparent numerics, and reproducible validation against the original
 &amp;#8216;C&amp;#8217;/&amp;#8216;SAS&amp;#8217; HAZARD program.  The package fits time-varying hazards
-as an additive sum of parametric phases — early, constant, and late risk
-streams — each carrying its own covariate effects."><meta property="og:description" content="Native R implementation of the multiphase parametric hazard model of
+as an additive sum of parametric phases (early, constant, and late risk
+streams), each carrying its own covariate effects."><meta property="og:description" content="Native R implementation of the multiphase parametric hazard model of
 Blackstone, Naftel, and Turner (1986), with a focus on behavioral parity,
 transparent numerics, and reproducible validation against the original
 &amp;#8216;C&amp;#8217;/&amp;#8216;SAS&amp;#8217; HAZARD program.  The package fits time-varying hazards
-as an additive sum of parametric phases — early, constant, and late risk
-streams — each carrying its own covariate effects."></head><body>
+as an additive sum of parametric phases (early, constant, and late risk
+streams), each carrying its own covariate effects."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -71,8 +71,8 @@ streams — each carrying its own covariate effects."></head><body>
 Blackstone, Naftel, and Turner (1986), with a focus on behavioral parity,
 transparent numerics, and reproducible validation against the original
 ‘C’/‘SAS’ HAZARD program.  The package fits time-varying hazards
-as an additive sum of parametric <em>phases</em> — early, constant, and late risk
-streams — each carrying its own covariate effects.</p>
+as an additive sum of parametric <em>phases</em> (early, constant, and late risk
+streams), each carrying its own covariate effects.</p>
     </div>
 
 
@@ -122,26 +122,27 @@ table between the SAS/C parameterization and the R arguments.</p>
 
 
 <dl><dt>Model fitting</dt>
-<dd><p><code><a href="hazard.html">hazard()</a></code> — build and fit single- or multiphase
-models; <code><a href="hzr_phase.html">hzr_phase()</a></code> — specify one phase; <code><a href="hzr_stepwise.html">hzr_stepwise()</a></code> — forward,
-backward, or bidirectional covariate selection.</p></dd>
+<dd><p><code><a href="hazard.html">hazard()</a></code> for building and fitting single- or
+multiphase models; <code><a href="hzr_phase.html">hzr_phase()</a></code> for specifying one phase;
+<code><a href="hzr_stepwise.html">hzr_stepwise()</a></code> for forward, backward, or bidirectional covariate
+selection.</p></dd>
 
 <dt>Prediction</dt>
-<dd><p><code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> on a fitted <code>hazard</code> object — survival,
-cumulative hazard, and per-phase decomposed hazard; <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> —
+<dd><p><code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> on a fitted <code>hazard</code> object for survival,
+cumulative hazard, and per-phase decomposed hazard; <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> for
 coefficient tables with Wald inference.</p></dd>
 
 <dt>Parametric family</dt>
-<dd><p><code><a href="hzr_decompos.html">hzr_decompos()</a></code> — the early-phase (G1)
-decomposition \(G(t)\), \(g(t)\), \(h(t)\); <code><a href="hzr_decompos_g3.html">hzr_decompos_g3()</a></code> —
-the late-phase (G3) intensity; <code><a href="hzr_phase_cumhaz.html">hzr_phase_cumhaz()</a></code> and
-<code><a href="hzr_phase_hazard.html">hzr_phase_hazard()</a></code> — per-phase \(\Phi(t)\) and \(\varphi(t)\).</p></dd>
+<dd><p><code><a href="hzr_decompos.html">hzr_decompos()</a></code> for the early-phase (G1)
+decomposition \(G(t)\), \(g(t)\), \(h(t)\); <code><a href="hzr_decompos_g3.html">hzr_decompos_g3()</a></code>
+for the late-phase (G3) intensity; <code><a href="hzr_phase_cumhaz.html">hzr_phase_cumhaz()</a></code> and
+<code><a href="hzr_phase_hazard.html">hzr_phase_hazard()</a></code> for per-phase \(\Phi(t)\) and \(\varphi(t)\).</p></dd>
 
 <dt>Diagnostics</dt>
-<dd><p><code><a href="hzr_kaplan.html">hzr_kaplan()</a></code>, <code><a href="hzr_nelson.html">hzr_nelson()</a></code> — nonparametric
-references; <code><a href="hzr_gof.html">hzr_gof()</a></code> — goodness of fit; <code><a href="hzr_calibrate.html">hzr_calibrate()</a></code>,
-<code><a href="hzr_deciles.html">hzr_deciles()</a></code> — calibration; <code><a href="hzr_bootstrap.html">hzr_bootstrap()</a></code> — resampling CIs;
-<code><a href="hzr_competing_risks.html">hzr_competing_risks()</a></code> — cumulative incidence.</p></dd>
+<dd><p><code><a href="hzr_kaplan.html">hzr_kaplan()</a></code>, <code><a href="hzr_nelson.html">hzr_nelson()</a></code> for nonparametric
+references; <code><a href="hzr_gof.html">hzr_gof()</a></code> for goodness of fit; <code><a href="hzr_calibrate.html">hzr_calibrate()</a></code>,
+<code><a href="hzr_deciles.html">hzr_deciles()</a></code> for calibration; <code><a href="hzr_bootstrap.html">hzr_bootstrap()</a></code> for resampling CIs;
+<code><a href="hzr_competing_risks.html">hzr_competing_risks()</a></code> for cumulative incidence.</p></dd>
 
 
 </dl></div>

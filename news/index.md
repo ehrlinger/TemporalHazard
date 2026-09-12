@@ -184,6 +184,15 @@
   log-normal fits are unaffected; they report on the scale they are
   optimised on.
 
+- **[`hzr_argument_mapping()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_argument_mapping.md)
+  listed DELTA as implemented.** Its `implementation_status` was
+  `"implemented"` and its `r_parameter` read “(absorbed by decompos)”,
+  while the row’s own notes say a non-zero DELTA is refused or flagged
+  and never fitted
+  ([\#181](https://github.com/ehrlinger/TemporalHazard/issues/181)). The
+  row is now `"planned"` with `r_parameter` “(not implemented)”, so
+  `hzr_argument_mapping(include_planned = FALSE)` no longer includes it.
+
 ## TemporalHazard 1.2.10
 
 ### New features

@@ -1,7 +1,7 @@
 # Instantaneous hazard contribution from a single phase
 
-Computes \\\phi_j(t) = d\Phi_j/dt\\ for one phase – the derivative of
-the cumulative hazard contribution returned by
+Computes \\\phi_j(t) = d\Phi_j/dt\\ for one phase, the derivative of the
+cumulative hazard contribution returned by
 [`hzr_phase_cumhaz()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase_cumhaz.md).
 
 ## Usage
@@ -36,9 +36,9 @@ hzr_phase_hazard(
 
 - type:
 
-  Phase type: `"cdf"` (early – uses \\G(t)\\), `"hazard"` (late – uses
-  cumulative hazard from \\h(t)\\), or `"constant"` (flat rate – \\\Phi
-  = t\\).
+  Phase type: `"cdf"` (early, uses \\G(t)\\), `"hazard"` (late, uses
+  cumulative hazard from \\h(t)\\), or `"constant"` (flat rate, \\\Phi =
+  t\\).
 
 ## Value
 

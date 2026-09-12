@@ -4,8 +4,8 @@ Native R implementation of the multiphase parametric hazard model of
 Blackstone, Naftel, and Turner (1986), with a focus on behavioral
 parity, transparent numerics, and reproducible validation against the
 original ‘C’/‘SAS’ HAZARD program. The package fits time-varying hazards
-as an additive sum of parametric *phases* — early, constant, and late
-risk streams — each carrying its own covariate effects.
+as an additive sum of parametric *phases* (early, constant, and late
+risk streams), each carrying its own covariate effects.
 
 ## The multiphase model
 
@@ -72,44 +72,44 @@ parameterization and the R arguments.
 - Model fitting:
 
   [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
-  — build and fit single- or multiphase models;
+  for building and fitting single- or multiphase models;
   [`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
-  — specify one phase;
+  for specifying one phase;
   [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
-  — forward, backward, or bidirectional covariate selection.
+  for forward, backward, or bidirectional covariate selection.
 
 - Prediction:
 
   [`predict()`](https://rdrr.io/r/stats/predict.html) on a fitted
-  `hazard` object — survival, cumulative hazard, and per-phase
+  `hazard` object for survival, cumulative hazard, and per-phase
   decomposed hazard; [`summary()`](https://rdrr.io/r/base/summary.html)
-  — coefficient tables with Wald inference.
+  for coefficient tables with Wald inference.
 
 - Parametric family:
 
   [`hzr_decompos()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos.md)
-  — the early-phase (G1) decomposition \\G(t)\\, \\g(t)\\, \\h(t)\\;
+  for the early-phase (G1) decomposition \\G(t)\\, \\g(t)\\, \\h(t)\\;
   [`hzr_decompos_g3()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos_g3.md)
-  — the late-phase (G3) intensity;
+  for the late-phase (G3) intensity;
   [`hzr_phase_cumhaz()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase_cumhaz.md)
   and
   [`hzr_phase_hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase_hazard.md)
-  — per-phase \\\Phi(t)\\ and \\\varphi(t)\\.
+  for per-phase \\\Phi(t)\\ and \\\varphi(t)\\.
 
 - Diagnostics:
 
   [`hzr_kaplan()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_kaplan.md),
   [`hzr_nelson()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_nelson.md)
-  — nonparametric references;
+  for nonparametric references;
   [`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
-  — goodness of fit;
+  for goodness of fit;
   [`hzr_calibrate()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_calibrate.md),
   [`hzr_deciles()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_deciles.md)
-  — calibration;
+  for calibration;
   [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
-  — resampling CIs;
+  for resampling CIs;
   [`hzr_competing_risks()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_competing_risks.md)
-  — cumulative incidence.
+  for cumulative incidence.
 
 ## Vignettes
 

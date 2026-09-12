@@ -131,35 +131,35 @@ parameter-level early/late translations.</p></div>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 14            hzr_phase(t_half=)    FALSE              positive scalar</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 15                hzr_phase(nu=)    FALSE               numeric scalar</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 16                 hzr_phase(m=)    FALSE               numeric scalar</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 17        (absorbed by decompos)    FALSE               numeric scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17             (not implemented)    FALSE               numeric scalar</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 18         hzr_phase('constant')    FALSE        hzr_phase('constant')</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 19         hzr_phase('g3', tau=)    FALSE              positive scalar</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 20       hzr_phase('g3', gamma=)    FALSE               numeric scalar</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 21       hzr_phase('g3', alpha=)    FALSE               numeric scalar</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 22         hzr_phase('g3', eta=)    FALSE               numeric scalar</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>                                                                                transform_rule</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1                                                                     pass through as numeric</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 2                                                                       coerce to numeric 0/1</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 3                                                                   data.frame -&gt; data.matrix</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 4                                                 length must equal ncol(x) when x is present</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 5                                                                 normalized lower-case label</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 6                                                                      stored in spec$control</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 7                                                            stored in legacy_args for parity</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 8                                                                                pass through</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 9                                                                           coerce to numeric</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 10                                                                 map PARMS/INITIAL to theta</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 11                                                                          map DIST= to dist</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 12 list(early=hzr_phase('cdf',...), constant=hzr_phase('constant'), late=hzr_phase('g3',...))</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 13                          exp(alpha_j) in internal parameterization; estimated on log scale</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 14                                         maps directly to hzr_phase(t_half=) starting value</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 15                                             maps directly to hzr_phase(nu=) starting value</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 16                                              maps directly to hzr_phase(m=) starting value</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 17                  time transform B(t) = (exp(delta*t)-1)/delta absorbed into decompos shape</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 18                                             hzr_phase('constant') with no shape parameters</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 19                                      maps directly to hzr_phase('g3', tau=) for late phase</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 20                                    maps directly to hzr_phase('g3', gamma=) for late phase</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 21                                    maps directly to hzr_phase('g3', alpha=) for late phase</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 22                                      maps directly to hzr_phase('g3', eta=) for late phase</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                                                                                          transform_rule</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1                                                                               pass through as numeric</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2                                                                                 coerce to numeric 0/1</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3                                                                             data.frame -&gt; data.matrix</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4                                                           length must equal ncol(x) when x is present</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5                                                                           normalized lower-case label</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6                                                                                stored in spec$control</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7                                                                      stored in legacy_args for parity</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8                                                                                          pass through</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 9                                                                                     coerce to numeric</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10                                                                           map PARMS/INITIAL to theta</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 11                                                                                    map DIST= to dist</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 12           list(early=hzr_phase('cdf',...), constant=hzr_phase('constant'), late=hzr_phase('g3',...))</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 13                                    exp(alpha_j) in internal parameterization; estimated on log scale</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 14                                                   maps directly to hzr_phase(t_half=) starting value</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15                                                       maps directly to hzr_phase(nu=) starting value</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16                                                        maps directly to hzr_phase(m=) starting value</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17 time transform B(t) = (exp(delta*t)-1)/delta; drops out at DELTA = 0, non-zero DELTA not implemented</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18                                                       hzr_phase('constant') with no shape parameters</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 19                                                maps directly to hzr_phase('g3', tau=) for late phase</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 20                                              maps directly to hzr_phase('g3', gamma=) for late phase</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 21                                              maps directly to hzr_phase('g3', alpha=) for late phase</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 22                                                maps directly to hzr_phase('g3', eta=) for late phase</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>    implementation_status</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 1            implemented</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 2            implemented</span>
@@ -177,7 +177,7 @@ parameter-level early/late translations.</p></div>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 14           implemented</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 15           implemented</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 16           implemented</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 17           implemented</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17               planned</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 18           implemented</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 19           implemented</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 20           implemented</span>
@@ -223,12 +223,11 @@ parameter-level early/late translations.</p></div>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 13            G1        THALF / RHO (early)             early half-life</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 14            G1                 NU (early)         early time exponent</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 15            G1                  M (early)                 early shape</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 16            G1              DELTA (early)        early time transform</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 17            G2          G2 constant phase  constant hazard rate phase</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 18            G3                 TAU (late)               late G3 scale</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 19            G3               GAMMA (late)       late G3 time exponent</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 20            G3               ALPHA (late)               late G3 shape</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 21            G3                 ETA (late)      late G3 outer exponent</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16            G2          G2 constant phase  constant hazard rate phase</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17            G3                 TAU (late)               late G3 scale</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18            G3               GAMMA (late)       late G3 time exponent</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 19            G3               ALPHA (late)               late G3 shape</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 20            G3                 ETA (late)      late G3 outer exponent</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>                      r_parameter required                expected_type</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 1                           time     TRUE               numeric vector</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 2                         status     TRUE       numeric/logical vector</span>
@@ -245,12 +244,11 @@ parameter-level early/late translations.</p></div>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 13            hzr_phase(t_half=)    FALSE              positive scalar</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 14                hzr_phase(nu=)    FALSE               numeric scalar</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 15                 hzr_phase(m=)    FALSE               numeric scalar</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 16        (absorbed by decompos)    FALSE               numeric scalar</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 17         hzr_phase('constant')    FALSE        hzr_phase('constant')</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 18         hzr_phase('g3', tau=)    FALSE              positive scalar</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 19       hzr_phase('g3', gamma=)    FALSE               numeric scalar</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 20       hzr_phase('g3', alpha=)    FALSE               numeric scalar</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 21         hzr_phase('g3', eta=)    FALSE               numeric scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16         hzr_phase('constant')    FALSE        hzr_phase('constant')</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17         hzr_phase('g3', tau=)    FALSE              positive scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18       hzr_phase('g3', gamma=)    FALSE               numeric scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 19       hzr_phase('g3', alpha=)    FALSE               numeric scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 20         hzr_phase('g3', eta=)    FALSE               numeric scalar</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>                                                                                transform_rule</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 1                                                                     pass through as numeric</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 2                                                                       coerce to numeric 0/1</span>
@@ -267,12 +265,11 @@ parameter-level early/late translations.</p></div>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 13                                         maps directly to hzr_phase(t_half=) starting value</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 14                                             maps directly to hzr_phase(nu=) starting value</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 15                                              maps directly to hzr_phase(m=) starting value</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 16                  time transform B(t) = (exp(delta*t)-1)/delta absorbed into decompos shape</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 17                                             hzr_phase('constant') with no shape parameters</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 18                                      maps directly to hzr_phase('g3', tau=) for late phase</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 19                                    maps directly to hzr_phase('g3', gamma=) for late phase</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 20                                    maps directly to hzr_phase('g3', alpha=) for late phase</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 21                                      maps directly to hzr_phase('g3', eta=) for late phase</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16                                             hzr_phase('constant') with no shape parameters</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17                                      maps directly to hzr_phase('g3', tau=) for late phase</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18                                    maps directly to hzr_phase('g3', gamma=) for late phase</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 19                                    maps directly to hzr_phase('g3', alpha=) for late phase</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 20                                      maps directly to hzr_phase('g3', eta=) for late phase</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>    implementation_status</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 1            implemented</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 2            implemented</span>
@@ -294,29 +291,27 @@ parameter-level early/late translations.</p></div>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 18           implemented</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 19           implemented</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 20           implemented</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 21           implemented</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>                                                                                                                                                                                                                                                                     notes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1                                                                                                                                                                                                                                            Core observation time input.</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 2                                                                                                                                                                                                    Event indicator currently retained as numeric in object$data$status.</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 3                                                                                                                                                                                                            Future versions will support richer design encoding helpers.</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 4                                                                                                                                                                                                                           Used by predict.hazard as coefficient vector.</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 5                                                                                                                                                                                                                     Current default is 'weibull'; more options planned.</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 6                                                                                                                                                                                                               Control list is stored and reserved for optimizer parity.</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 7                                                                                                                                                                                                            Supports legacy-style pass-through options during migration.</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 8                                                                                                                                                                                                                             Canonical SAS migration uses TIME= mapping.</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 9                                                                                                                                                                                                                            Canonical SAS migration uses EVENT= mapping.</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 10                                                                                                                                                                                                                                SAS DIST keyword maps directly to dist.</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 11                                                                                                                                                                            Use dist='multiphase' with phases argument. N-phase generalization of legacy 3-phase model.</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 12                                                                                                                                                                        Each phase has its own scale mu_j(x) = exp(alpha_j + x*beta_j). Starting value via hzr_phase().</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 13                                                                                                                                                                                               Half-life: time at which G(t_half) = 0.5. Same concept as SAS RHO/THALF.</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 14                                                                                                                                                                                          Time exponent controlling rate dynamics. Same parameter name as SAS early NU.</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 15                                                                                                                                                                                    Shape exponent controlling distributional form. Same parameter name as SAS early M.</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 16 NOT IMPLEMENTED, not absorbed. The C DELTA controls B(t) = (exp(delta*t)-1)/delta, which enters rho, the time argument and the density Jacobian separately; R computes the delta=0 branch of each. A job with DELTA != 0 is refused or flagged, never fitted silently.</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 17                                                                                                                                                                                                Flat background rate. No shape parameters estimated. SAS G2 equivalent.</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 18                                                                                                                                                                                                 Late-phase G3 scale parameter. Maps directly to hzr_phase('g3', tau=).</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 19                                                                                                                                                                                                 Late-phase G3 time exponent. Maps directly to hzr_phase('g3', gamma=).</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 20                                                                                                                                                               Late-phase G3 shape parameter. alpha=0 gives exponential case. Maps directly to hzr_phase('g3', alpha=).</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 21                                                                                                                                                                                                  Late-phase G3 outer exponent. Maps directly to hzr_phase('g3', eta=).</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                                                                                                       notes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1                                                                              Core observation time input.</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2                                      Event indicator currently retained as numeric in object$data$status.</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3                                              Future versions will support richer design encoding helpers.</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4                                                             Used by predict.hazard as coefficient vector.</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5                                                       Current default is 'weibull'; more options planned.</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6                                                 Control list is stored and reserved for optimizer parity.</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7                                              Supports legacy-style pass-through options during migration.</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8                                                               Canonical SAS migration uses TIME= mapping.</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 9                                                              Canonical SAS migration uses EVENT= mapping.</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10                                                                  SAS DIST keyword maps directly to dist.</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 11              Use dist='multiphase' with phases argument. N-phase generalization of legacy 3-phase model.</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 12          Each phase has its own scale mu_j(x) = exp(alpha_j + x*beta_j). Starting value via hzr_phase().</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 13                                 Half-life: time at which G(t_half) = 0.5. Same concept as SAS RHO/THALF.</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 14                            Time exponent controlling rate dynamics. Same parameter name as SAS early NU.</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15                      Shape exponent controlling distributional form. Same parameter name as SAS early M.</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16                                  Flat background rate. No shape parameters estimated. SAS G2 equivalent.</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17                                   Late-phase G3 scale parameter. Maps directly to hzr_phase('g3', tau=).</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18                                   Late-phase G3 time exponent. Maps directly to hzr_phase('g3', gamma=).</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 19 Late-phase G3 shape parameter. alpha=0 gives exponential case. Maps directly to hzr_phase('g3', alpha=).</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 20                                    Late-phase G3 outer exponent. Maps directly to hzr_phase('g3', eta=).</span>
 </code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

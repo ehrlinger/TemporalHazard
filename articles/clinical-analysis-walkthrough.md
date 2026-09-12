@@ -1,7 +1,7 @@
 # Complete Clinical Analysis Walkthrough
 
 The previous vignettes covered each piece of the analytical workflow in
-isolation — how to fit a model, how to predict from it, how to validate
+isolation: how to fit a model, how to predict from it, how to validate
 it. This vignette runs all of those pieces together on a single dataset,
 in the order you’d actually run them in a real clinical analysis. The
 point isn’t to introduce new functions; it’s to show how the pieces
@@ -12,18 +12,18 @@ The sequence mirrors the one in the original SAS HAZARD system, which
 codified what cardiothoracic-surgery biostatisticians had been doing
 informally for decades:
 
-1.  **Nonparametric baseline** — Kaplan-Meier life table to see what the
+1.  **Nonparametric baseline**: Kaplan-Meier life table to see what the
     data is saying before any model intervenes.
-2.  **Shape fitting** — start with a single-distribution Weibull, build
+2.  **Shape fitting**: start with a single-distribution Weibull, build
     up to a multiphase decomposition when the KM curve demands it.
-3.  **Variable screening** — univariable association tests and
+3.  **Variable screening**: univariable association tests and
     calibration plots to decide which covariates enter the model and in
     what functional form.
-4.  **Multivariable model** — covariates layered onto a hazard shape you
+4.  **Multivariable model**: covariates layered onto a hazard shape you
     already trust.
-5.  **Prediction** — patient-specific risk profiles for clinical
+5.  **Prediction**: patient-specific risk profiles for clinical
     reporting and decision support.
-6.  **Validation** — decile-of-risk calibration to verify the model is
+6.  **Validation**: decile-of-risk calibration to verify the model is
     honest across the risk spectrum, not just on average.
 
 This corresponds to the SAS programs `ac.*` → `hz.*` → `lg.*` → `hm.*` →
@@ -32,10 +32,10 @@ structure should feel familiar; if not, treat this as the canonical
 analytical sequence to follow on any new dataset.
 
 We use the **AVC** dataset (310 patients, atrioventricular canal repair)
-which has rich covariates and two identifiable hazard phases — fewer
-phases than the 3-phase CABG example you’ve seen in other vignettes, but
-with the covariate complexity needed to exercise the screening,
-multivariable-fit, and validation steps.
+which has rich covariates and two identifiable hazard phases. That is
+fewer phases than the 3-phase CABG example you’ve seen in other
+vignettes, but AVC has the covariate complexity needed to exercise the
+screening, multivariable-fit, and validation steps.
 
 ## 1 Data preparation
 
@@ -43,7 +43,7 @@ Load the package and the AVC dataset, drop incomplete rows so the design
 matrix is rectangular for the multivariable fits to come, and inspect
 the resulting column types and ranges. The
 [`na.omit()`](https://rdrr.io/r/stats/na.fail.html) step is conservative
-— losing rows is a real cost — but for a walkthrough we want every later
+(losing rows is a real cost), but for a walkthrough we want every later
 fit to use the same patient set so the comparisons are apples-to-apples.
 
 ``` r
@@ -85,7 +85,7 @@ which all parametric fits will be compared.
 wraps
 [`survival::survfit()`](https://rdrr.io/pkg/survival/man/survfit.html)
 and adds logit-transformed exact confidence limits that respect the
-`[0, 1]` boundary — more accurate in the tails than the default
+`[0, 1]` boundary and are more accurate in the tails than the default
 Greenwood intervals. This matches the SAS `kaplan.sas` macro output
 structure.
 
@@ -116,10 +116,11 @@ head(km)
 
 The returned data frame is the life table: one row per event time with
 `n_risk`, `n_event`, `survival`, logit-transformed 95% CLs (`cl_lower` /
-`cl_upper`), and a KM-based cumulative hazard (`-log(survival)` — use
+`cl_upper`), and a KM-based cumulative hazard (`-log(survival)`; use
 [`hzr_nelson()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_nelson.md)
-if you need the Nelson-Aalen estimator instead). Plotting just requires
-the survival column:
+if you need the Nelson-Aalen estimator instead). The plot uses the
+survival column for the step curve and the two confidence limits for the
+band:
 
 ``` r
 
@@ -141,13 +142,14 @@ ggplot(km_df, aes(time, survival)) +
 
 ![](clinical-analysis-walkthrough_files/figure-html/fig-km-baseline-1.png)
 
-Figure 1: Kaplan-Meier survival estimate for AVC patients (n = 310)
+Figure 1: Kaplan-Meier survival estimate for AVC patients (n = 305)
 
 The KM curve shows a sharp early drop (operative mortality) followed by
 a roughly constant attrition rate. This two-phase pattern suggests an
-early CDF phase plus a constant phase — no obvious late rising hazard.
+early CDF phase plus a constant phase, with no obvious late rising
+hazard.
 
-## 3 Step 2: Shape fitting — simple to complex
+## 3 Step 2: Shape fitting (simple to complex)
 
 ### 3.1 2a. Single-phase Weibull
 
@@ -210,19 +212,19 @@ ggplot() +
 
 Figure 2: Single Weibull vs. Kaplan-Meier
 
-The single Weibull typically misses the sharp early drop — it
-compromises between the early and late time frames.
+The single Weibull typically misses the sharp early drop; it compromises
+between the early and late time frames.
 
 ### 3.2 2b. Two-phase model (early CDF + constant)
 
-The KM curve drops steeply in the first few months — operative mortality
-— and then settles into a roughly linear decline. The Weibull tried to
+The KM curve drops steeply in the first few months (operative mortality)
+and then settles into a roughly linear decline. The Weibull tried to
 capture both with one shape and ended up compromising. Splitting the
 hazard into two phases lets each mechanism have its own
-parameterization: an `"cdf"` early phase that saturates as operative
-risk resolves, plus a `"constant"` phase that carries the steady
-background attrition. Two phases is what AVC actually needs; CABG with
-longer follow-up would need a third late-rising phase to handle graft
+parameterization: a `"cdf"` early phase that saturates as operative risk
+resolves, plus a `"constant"` phase that carries the steady background
+attrition. Two phases is what AVC actually needs; CABG with longer
+follow-up would need a third late-rising phase to handle graft
 deterioration, but the AVC follow-up window doesn’t extend far enough to
 identify one.
 
@@ -268,11 +270,10 @@ summary(fit_mp)
 #>   log_mu -7.609476 0.4495827 -16.92564 2.911483e-64
 ```
 
-Note the use of `fixed = "shapes"` — we fix the temporal shape
-parameters and only estimate the scale (log_mu) for each phase. This
-matches the standard HAZARD workflow: shapes are set from clinical
-knowledge or preliminary exploration, then scales and covariates are
-estimated.
+Note the use of `fixed = "shapes"`. We fix the temporal shape parameters
+and only estimate the scale (log_mu) for each phase. This matches the
+standard HAZARD workflow: shapes are set from clinical knowledge or
+preliminary exploration, then scales and covariates are estimated.
 
 ``` r
 
@@ -346,10 +347,11 @@ The cheapest screening tool we have is a univariable logistic regression
 of the event indicator on each covariate. It throws away the
 time-to-event structure but it answers a binary question quickly: does
 this covariate have *any* association with mortality at all? Covariates
-whose univariable p-value is huge will not suddenly become significant
-in the multivariable hazard model either — those can be deprioritized.
-Covariates with small univariable p-values deserve closer
-functional-form inspection before they enter the formula.
+whose univariable p-value is huge can be deprioritized, but not
+discarded outright, because adjusting for other covariates can reveal an
+association the univariable test misses. Covariates with small
+univariable p-values deserve closer functional-form inspection before
+they enter the formula.
 
 ``` r
 
@@ -437,9 +439,9 @@ ggplot(cal_age, aes(mean, link_value)) +
 
 Figure 5: Decile calibration: age vs. logit(P(death))
 
-The blue points are the observed decile logits; the dashed red line is a
-linear reference. Deviations from linearity flag where a transform is
-warranted.
+The blue points are the observed decile logits; the dashed orange line
+is a linear reference. Deviations from linearity flag where a transform
+is warranted.
 
 ## 5 Step 4: Multivariable model
 
@@ -529,8 +531,9 @@ The manual approach works when screening has already narrowed the
 candidate pool, but with a larger pool it helps to let the model choose.
 [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
 runs forward, backward, or two-way selection against an existing
-`hazard` fit, scoring candidates with Wald p-values or delta-AIC.
-Defaults match SAS `PROC HAZARD` (`SLENTRY = 0.30`, `SLSTAY = 0.20`).
+`hazard` fit, scoring candidates with the score statistic, Wald p-values
+or delta-AIC. Defaults match SAS `PROC HAZARD` (`SLENTRY = 0.30`,
+`SLSTAY = 0.20`).
 
 We start from a baseline with no covariates, offer the same screened
 candidate pool, and let the algorithm decide. For multiphase models the
@@ -541,11 +544,10 @@ another. Single-distribution models accept either a flat one-sided
 formula or a character vector of names.
 
 [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
-now defaults to `criterion = "score"`, which reproduces SAS’s
-`SELECTION` Q statistic by testing each candidate at the current
-estimates without a per-candidate refit. Here we pass
-`criterion = "wald"` deliberately, so the trace below reports the
-refit-based Wald statistic.
+defaults to `criterion = "score"`, which reproduces SAS’s `SELECTION` Q
+statistic by testing each candidate at the current estimates without a
+per-candidate refit. Here we pass `criterion = "wald"` deliberately, so
+the `$steps` table below reports the refit-based Wald p-values.
 
 ``` r
 
@@ -647,23 +649,35 @@ fit_step$steps[, c("step_num", "action", "variable", "phase",
 ```
 
 The final model is the fit at the top of the object, reachable through
-the usual hazard accessors:
+the usual hazard accessors. AIC counts only the estimated parameters.
+Both models hold the early phase’s three shape parameters fixed
+(`fixed = "shapes"`), and `fit$fit$fixed_mask` flags them, so we leave
+them out of the count, as the `Final model` line of `fit_step` does:
 
 ``` r
 
 logLik_manual <- fit_mv$fit$objective
 logLik_step   <- fit_step$fit$objective
+n_free <- function(fit) sum(!fit$fit$fixed_mask)
 c(manual = logLik_manual, stepwise = logLik_step,
-  aic_manual = 2 * length(fit_mv$fit$theta) - 2 * logLik_manual,
-  aic_step   = 2 * length(fit_step$fit$theta) - 2 * logLik_step)
-#>     manual   stepwise aic_manual   aic_step 
-#>  -190.4862  -192.1031   406.9724   404.2062
+  free_manual = n_free(fit_mv), free_step = n_free(fit_step),
+  aic_manual = 2 * n_free(fit_mv) - 2 * logLik_manual,
+  aic_step   = 2 * n_free(fit_step) - 2 * logLik_step)
+#>      manual    stepwise free_manual   free_step  aic_manual    aic_step 
+#>   -190.4862   -192.1031     10.0000      7.0000    400.9724    398.2062
 ```
 
-When the screening and stepwise agree on the same covariate set the
-log-likelihoods match exactly; when stepwise selects a leaner model AIC
-drops. For an AIC-driven run use `criterion = "aic"`; for a forward-only
-sweep `direction = "forward"`. See
+The two models need not agree. Here stepwise enters `status` in both
+phases but `age`, `mal` and `com_iv` in the early phase only, so it
+carries fewer free parameters than the manual fit (`free_step` against
+`free_manual` above). Its log-likelihood is lower and its AIC is lower
+too (`aic_step` against `aic_manual`), because the dropped
+constant-phase coefficients cost more in parameters than they bought in
+fit. Even on an identical covariate set the two log-likelihoods can
+differ, since the fits use different `n_starts` and the multiphase
+likelihood can have more than one optimum. For an AIC-driven run use
+`criterion = "aic"`; for a forward-only sweep `direction = "forward"`.
+See
 [`?hzr_stepwise`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
 for the full argument surface including `force_in`, `force_out`, and the
 `max_move` oscillation guard.
@@ -678,7 +692,7 @@ class 1, no malalignment, no interventricular communication).
 `predict(..., se.fit = TRUE)` adds a delta-method standard error and 95%
 confidence band around every prediction (log(-log) scale for survival so
 the band is guaranteed to lie in `[0, 1]`). This is the parametric
-analogue of the KM confidence limits from Step 1 — a patient-specific
+analogue of the KM confidence limits from Step 1, a patient-specific
 uncertainty estimate the nonparametric curve cannot provide.
 
 ``` r
@@ -718,14 +732,14 @@ ggplot() +
 Figure 6: Reference patient survival with 95% delta-method CI and KM
 overlay
 
-### 6.2 5b. Sensitivity analysis — risk factor comparison
+### 6.2 5b. Sensitivity analysis (risk factor comparison)
 
 Coefficient tables tell you about effect *direction and magnitude* on
 the log-hazard scale. They don’t directly tell a clinician what to
 expect at the bedside. Sensitivity analysis closes that gap by scoring
-two clinically meaningful profiles — a low-risk patient drawn from the
+two clinically meaningful profiles (a low-risk patient drawn from the
 favorable end of each covariate, and a high-risk patient drawn from the
-unfavorable end — through the fitted model and plotting the resulting
+unfavorable end) through the fitted model and plotting the resulting
 survival curves with delta-method confidence bands. The vertical and
 horizontal gaps between the two curves are the model’s clinical-impact
 statement, in the units (survival probability and time) that the
@@ -783,14 +797,15 @@ ggplot(sens_df, aes(time, survival, colour = profile, fill = profile)) +
 
 ![](clinical-analysis-walkthrough_files/figure-html/fig-sensitivity-1.png)
 
-Figure 7: Survival by risk profile: low-risk (blue) vs. high-risk (red)
+Figure 7: Survival by risk profile: low-risk (blue) vs. high-risk
+(orange)
 
 Non-overlapping confidence bands between the two profiles indicate the
 risk-factor combination is well-identified; overlap around the bands’
 centre-of-mass flags where the model can’t distinguish the profiles with
 the available sample size.
 
-## 7 Step 6: Validation — decile-of-risk calibration
+## 7 Step 6: Validation (decile-of-risk calibration)
 
 Partition patients into deciles by predicted risk and compare observed
 vs. expected event rates. Good calibration means the two track each
@@ -852,17 +867,29 @@ ggplot(cal, aes(x = group)) +
 Figure 8: Decile calibration: observed (bars) vs. expected (points)
 event rates
 
-A non-significant overall chi-square statistic (p \> 0.05) indicates
-adequate calibration — the model’s predictions are consistent with
-observed event rates across the risk spectrum.
+A non-significant overall chi-square statistic (p \> 0.05) means the
+test found no evidence of poor calibration. It does not prove the model
+is calibrated: with ten groups and few events in each, the test has
+little power. Read the plot as well. Calibration is adequate when the
+observed and expected rates track each other across the deciles.
 
 ### 7.1 Conservation of events check
 
-The conservation-of-events principle states that a well-fitting model
-should predict the same total number of events as actually observed.
+The conservation-of-events principle says a model fit by maximum
+likelihood predicts as many events as were observed: add up every
+patient’s cumulative hazard at the end of their follow-up and you get
+the event count back.
 [`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
-tracks this cumulatively over time — the residual (expected minus
-observed) should stay near zero.
+is the R version of the SAS `hazplot` display, a running tally of
+observed and expected events over time.
+
+For a model with covariates you need to know one thing before reading
+its output.
+[`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
+evaluates the parametric curve at the covariate means, one “mean
+patient”, and builds the expected count from that single curve. The
+printed ratio is then a mean-patient check, not the
+conservation-of-events identity, and for `fit_mv` it is well short of 1.
 
 ``` r
 
@@ -879,6 +906,30 @@ print(gof)
 #> Use plot columns: time, km_surv, par_surv, cum_observed, cum_expected, residual
 ```
 
+The conservation-of-events check itself sums each patient’s own
+cumulative hazard, from their own covariates, at their own follow-up
+time:
+
+``` r
+
+nd_coe <- avc[, c("age", "status", "mal", "com_iv")]
+nd_coe$time <- avc$int_dead
+c(expected = sum(predict(fit_mv, newdata = nd_coe,
+                         type = "cumulative_hazard")),
+  observed = sum(avc$dead))
+#> expected observed 
+#>       68       68
+```
+
+Expected 68.0 against 68 observed, so the fit conserves events. The gap
+in the
+[`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
+summary belongs to the mean patient, not to the fit. For an
+intercept-only model every patient shares one curve, the two checks give
+the same answer, and
+[`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
+prints an E/O of 1.
+
 ``` r
 
 ggplot(gof, aes(x = time)) +
@@ -891,7 +942,8 @@ ggplot(gof, aes(x = time)) +
 
 ![](clinical-analysis-walkthrough_files/figure-html/fig-gof-survival-1.png)
 
-Figure 9: Parametric (blue) vs. Kaplan-Meier (orange) survival
+Figure 9: Parametric survival at the covariate means (blue)
+vs. Kaplan-Meier (orange)
 
 ``` r
 
@@ -922,9 +974,19 @@ ggplot(gof, aes(x = time, y = residual)) +
 Figure 11: Conservation-of-events residual (expected minus observed)
 over time
 
-A residual that hovers near zero across the full time range indicates
-the model conserves events well. Persistent positive residual means the
-model overpredicts risk; persistent negative means it underpredicts.
+Read these three plots as a picture of the mean patient. The first sets
+that patient’s survival curve against the Kaplan-Meier estimate for the
+whole cohort, and it runs above it from the first weeks on. The other
+two tally the deaths the mean patient’s hazard would predict for the
+patients leaving follow-up at each time. Most of the deaths come in the
+first weeks, and the mean patient’s curve accounts for few of them (45
+observed by two weeks against about 1.4 expected), so the residual falls
+to about -55 by six months and then climbs back slowly, ending at -26.8.
+That is the mean patient understating the cohort’s early risk. The model
+itself predicts the right number of deaths, as the per-subject check
+above shows. For an intercept-only model the same plots are the
+conservation-of-events picture, and there a residual that stays near
+zero is what a good fit looks like.
 
 ## 8 Why not Cox regression?
 
@@ -936,9 +998,9 @@ several things that Cox proportional hazards does not:
 | Proportional hazards required | Yes | No |
 | Baseline hazard specified | No | Yes (parametric) |
 | Multiple hazard phases | No | Yes (additive) |
-| Patient-specific survival prediction | Approximate | Exact |
+| Patient-specific survival curve | Step function (Breslow baseline) | Smooth, parametric |
 | Smooth extrapolation beyond data | No | Yes |
-| Conservation of events check | No | Yes ([`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)) |
+| Conservation of events | Yes (martingale residuals sum to 0) | Yes (per-subject cumulative hazards sum to the event count) |
 | Interval censoring | Not standard | Supported |
 
 Many clinical outcomes show **non-proportional hazards**: the risk
@@ -950,12 +1012,13 @@ multiphase model captures this through phase-specific covariate effects.
 
 The complete analytical workflow follows a disciplined sequence:
 
-1.  **Kaplan-Meier baseline** — establish the empirical survival pattern
-2.  **Shape fitting** — match the temporal shape, simple to complex
-3.  **Variable screening** — logistic screening, LOESS functional form
-4.  **Multivariable model** — enter covariates with fixed shapes
-5.  **Prediction** — reference curves, sensitivity analysis
-6.  **Validation** — decile calibration, conservation-of-events check
+1.  **Kaplan-Meier baseline**: establish the empirical survival pattern
+2.  **Shape fitting**: match the temporal shape, simple to complex
+3.  **Variable screening**: logistic screening, decile-logit functional
+    form
+4.  **Multivariable model**: enter covariates with fixed shapes
+5.  **Prediction**: reference curves, sensitivity analysis
+6.  **Validation**: decile calibration, conservation-of-events check
 
 This sequence ensures that the temporal shape is established before
 covariates are introduced, and that the final model is validated against

@@ -116,12 +116,11 @@ and <code>weights</code> are evaluated in its scope, the way <code><a href="http
 anything that is not a column (<code>df$col</code>, a local vector, a literal)
 falls through to the calling environment. A column of the same name as
 a caller variable wins, and because that silently discards the caller's
-vector – the way a wrapper forwarding its own argument by name does –
+vector (the way a wrapper forwarding its own argument by name does),
 such a name raises a warning naming the symbol and the argument.
 Masked arguments are validated like any other, so an <code>NA</code> in a
-masked column now errors – an <code>NA</code> count on the SAS <code>ICENSOR</code>
-path reaches <code>weights</code> and stops with <code>'weights' must be non-negative and finite</code>, where it was previously accepted
-silently.</p></dd>
+masked column errors: an <code>NA</code> count on the SAS <code>ICENSOR</code>
+path reaches <code>weights</code> and stops with <code>'weights' must be non-negative and finite</code>.</p></dd>
 
 
 <dt id="arg-time">time<a class="anchor" aria-label="anchor" href="#arg-time"></a></dt>
@@ -133,16 +132,21 @@ silently.</p></dd>
 
 
 <dt id="arg-time-lower">time_lower<a class="anchor" aria-label="anchor" href="#arg-time-lower"></a></dt>
-<dd><p>Optional numeric vector with two distinct roles, selected
-by <code>status</code>. Supplying it explicitly is <strong>not</strong> a no-op.</p><ul><li><p><code>status == 2</code> (interval-censored): the lower bound of the censoring
-interval, defaulting to <code>time</code>.</p></li>
+<dd><p>Optional numeric vector whose role depends on <code>status</code>.
+Supplying it explicitly is <strong>not</strong> a no-op.</p><ul><li><p><code>status == 2</code> (interval-censored): the lower bound of the censoring
+interval, defaulting to <code>time</code>. Every <code>dist</code> reads it this way.</p></li>
 <li><p><code>status %in% c(0, 1)</code> (right-censored or event): the counting-process
 <strong>entry time</strong>, so the row contributes <code>H(time) - H(time_lower)</code>.
-Left <code>NULL</code>, the entry time is <strong><code>0</code></strong>, not <code>time</code>.</p></li>
+Only <code>dist = "weibull"</code> and <code>dist = "multiphase"</code> use this role, and
+<code>"weibull"</code> only where <code>time_lower &lt; time</code>. The <code>"exponential"</code>,
+<code>"loglogistic"</code> and <code>"lognormal"</code> families ignore <code>time_lower</code> on these
+rows. Left <code>NULL</code>, the entry time is <strong><code>0</code></strong>, not <code>time</code>.</p></li>
+<li><p><code>status == -1</code> (left-censored): not used; the bound is <code>time_upper</code>.</p></li>
 </ul><p>Passing <code>time_lower = time</code> therefore states that every subject entered
-the risk set at the instant it left, which contributes nothing and
-removes the row from the likelihood. That is a valid specification and
-the fit will not converge to anything meaningful; it warns.</p></dd>
+the risk set at the instant it left. <code>hazard()</code> accepts it with a
+warning. Under <code>"multiphase"</code> those rows lose their cumulative-hazard
+term and the fit it returns is meaningless; <code>"weibull"</code> reads them as
+entering at time 0, and the other families ignore the argument there.</p></dd>
 
 
 <dt id="arg-time-upper">time_upper<a class="anchor" aria-label="anchor" href="#arg-time-upper"></a></dt>
@@ -209,14 +213,14 @@ Implements the SAS <code>WEIGHT</code> statement.</p></dd>
 <dd><p>Which interval-censored contribution the multiphase
 likelihood accumulates. <code>"likelihood"</code> (default) uses the interval
 probability \(\log(S(l) - S(u))\). <code>"sas"</code> reproduces what
-<code>PROC HAZARD</code> accumulates – the event-density term with the instantaneous
+<code>PROC HAZARD</code> accumulates: the event-density term with the instantaneous
 hazard replaced by the interval-mean hazard over \((l, u]\). Applies
 only to <code>dist = "multiphase"</code>; exact-event and right-censored rows are
 unaffected either way.</p>
 <p><code>"sas"</code> requires data it can represent: no left-censored rows (<code>PROC HAZARD</code> has no left-censoring statement) and a positive width on every
 interval-censored row (the interval-mean hazard divides by \(u - l\)).
 Both are properties of the data rather than of the fit, so they are
-checked when the argument is supplied – including under <code>fit = FALSE</code>,
+checked when the argument is supplied, including under <code>fit = FALSE</code>,
 which therefore stops rather than returning an unusable object.</p></dd>
 
 
@@ -255,7 +259,7 @@ squared loadings (<code>weights</code>), the strongest pairwise
 <code>n_directions</code>, the number of near-flat directions found;
 <code>NULL</code> when the fit was examined and is well identified; and
 <code>NA</code> when the check could not run because no usable Hessian was
-available – which includes an unfitted object and an install without
+available, which includes an unfitted object and an install without
 the suggested <span class="pkg">numDeriv</span>. Test with <code>is.list(fit$fit$weak)</code>,
 not <code>!is.null()</code>: the <code>NA</code> case has not been examined and
 must not be read as a clean result),
@@ -289,10 +293,10 @@ ensemble without saying so.</p></li>
 <li><p><code>phase_share_tol</code>: Threshold for the multiphase identifiability warning
 (default 1e-8). A phase is reported as having left the model when it
 supplies less than this share of the cumulative hazard at every observed
-time (it never started – neither its <code>mu</code> nor its shape is identified),
+time (it never started; neither its <code>mu</code> nor its shape is identified),
 or when its contribution varies by less than this relative amount across
 them (it finished before the first observation and acts as a constant
-offset – <code>mu</code> stays identified, the shape parameters do not). A third
+offset; <code>mu</code> stays identified, the shape parameters do not). A third
 condition is a property of the observed times rather than of any phase:
 when their own relative range falls below this threshold and no phase's
 contribution varies across them, they separate no phase from any other
@@ -322,9 +326,12 @@ relative-gradient test and, when the stop fails it, continues with
 <li><p><code>abstol</code>: Projected-gradient tolerance, used only by the bounded
 (L-BFGS-B) optimizer (default 1e-6). The fits <code>hazard()</code> runs use BFGS
 and ignore it.</p></li>
-<li><p><code>method</code>: Optimization method: "bfgs" or "nm" (default "bfgs").
-SAS <code>PROC HAZARD</code> jobs write <code>STEEPEST QUASI</code> together – steepest
-descent first, then quasi-Newton. <code>QUASI</code>/<code>QUASINEWTON</code> is <code>"bfgs"</code>;
+<li><p><code>method</code>: Recorded but not used. The fits <code>hazard()</code> runs use BFGS (a
+multiphase fit may run a Nelder-Mead warm-up first, and a stop that
+fails SAS's gradient test continues with <code><a href="https://rdrr.io/r/stats/nlm.html" class="external-link">stats::nlm()</a></code>); the entry is
+accepted so that translated SAS jobs (<code>QUASI</code>) run unchanged.
+SAS <code>PROC HAZARD</code> jobs write <code>STEEPEST QUASI</code> together (steepest
+descent first, then quasi-Newton). <code>QUASI</code>/<code>QUASINEWTON</code> is <code>"bfgs"</code>;
 <strong>there is no steepest-descent option and no two-stage strategy</strong>. The
 multiphase likelihood is multimodal, so a different descent path can land
 on a different optimum: a fit translated from a job using <code>STEEPEST</code> may
@@ -333,17 +340,19 @@ keyword as untranslated rather than dropping it.</p></li>
 <li><p><code>condition</code>: Condition number control (default 14)</p></li>
 <li><p><code>conserve</code>: Apply Conservation of Events (<strong><code>dist = "multiphase"</code> only</strong>;
 default <code>TRUE</code>). CoE counts exact events, so it is <strong>automatically
-disabled</strong> whenever any <code>status</code> falls outside {0, 1} – which interval
-or left censoring guarantees – and whenever the model has fewer than two
+disabled</strong> whenever any <code>status</code> falls outside {0, 1} (which interval
+or left censoring guarantees) and whenever the model has fewer than two
 phases. On a fitted multiphase object the outcome is recorded next to the
-request, both fields living under <code>fit$spec$control</code>:</p><ul><li><p><code>fit$spec$control$conserve_applied</code> – logical, whether CoE was actually
+request, both fields living under <code>fit$spec$control</code>:</p><ul><li><p><code>fit$spec$control$conserve_applied</code>: logical, whether CoE was actually
 applied;</p></li>
-<li><p><code>fit$spec$control$conserve_disabled_reason</code> – one of
+<li><p><code>fit$spec$control$conserve_disabled_reason</code>: one of
 <code>"not_requested"</code>, <code>"unsupported_censoring"</code>, <code>"single_phase"</code>,
 <code>"no_events"</code>, <code>"setup_failed"</code>, or <code>NA</code> when CoE was applied.</p></li>
 </ul><p>Read <code>fit$spec$control$conserve_applied</code>, not
 <code>fit$spec$control$conserve</code>: the latter says only what you asked for.</p></li>
-<li><p><code>nocov</code>, <code>nocor</code>: Suppress covariance/correlation output (legacy; no-op in M2)</p></li>
+<li><p><code>nocov</code>, <code>nocor</code>: Accepted for compatibility with the SAS <code>PROC HAZARD</code>
+options of the same names. They change neither the fitted object nor its
+printed summary.</p></li>
 </ul><p>Censoring status coding:</p><ul><li><p>1: Exact event at time</p></li>
 <li><p>0: Right-censored at time</p></li>
 <li><p>-1: Left-censored with upper bound at time_upper \(or time\)</p></li>
@@ -358,7 +367,7 @@ engines remain unchanged.</p></li>
     <p><code>objective = "sas"</code> exists to reproduce legacy <code>PROC HAZARD</code> runs and
 <strong>must not be used for new analyses</strong>. It is a density, not a probability:
 it is inconsistent for wide intervals, where the two forms differ
-materially – 22 log-likelihood units on the esophagectomy reference fit.
+materially (22 log-likelihood units on the esophagectomy reference fit).
 The default is the statistically correct interval likelihood. See
 <code>inst/dev/SAS-INTERVAL-OBJECTIVE-DESIGN.md</code> for the derivation and the
 four-reference evidence.</p>
@@ -382,8 +391,8 @@ proportional-hazards single-phase families (<code>"weibull"</code>, <code>"expon
 are the special case \(J = 1\), with covariates acting multiplicatively on
 one temporal shape.  The <code>"loglogistic"</code> (proportional-odds) and
 <code>"lognormal"</code> (accelerated-failure-time) families place covariates
-differently — on the odds of failure and the log-time location,
-respectively — so they are separate parameterizations, not special cases
+differently (on the odds of failure and the log-time location,
+respectively), so they are separate parameterizations, not special cases
 of this additive form.  Parameters are estimated
 on an unconstrained internal scale (e.g. \(\log\mu\), \(\log t_{1/2}\))
 and transformed back for reporting; see
@@ -428,7 +437,7 @@ four single-distribution families differ in the <em>shape</em> the
 hazard traces over follow-up; choose by what the risk is expected to do over
 time.  <code>"multiphase"</code> is the general additive model that lets several such
 shapes coexist.</p>
-<dl><dt><code>"weibull"</code> — monotone rising or falling hazard (default)</dt>
+<dl><dt><code>"weibull"</code>: monotone rising or falling hazard (default)</dt>
 <dd><p>The
 workhorse parametric model: \(H(t \mid \mathbf{x}) = (\mu t)^\nu
     \exp(\eta)\), with hazard \(h \propto t^{\nu - 1}\).  The single shape
@@ -436,14 +445,14 @@ workhorse parametric model: \(H(t \mid \mathbf{x}) = (\mu t)^\nu
 (\(\nu &lt; 1\)), or stay flat (\(\nu = 1\)).  Use it as the default when
 a single monotone trend describes the hazard.</p></dd>
 
-<dt><code>"exponential"</code> — constant hazard</dt>
+<dt><code>"exponential"</code>: constant hazard</dt>
 <dd><p>The memoryless special case
 \(\nu = 1\): a time-invariant baseline rate, \(H(t \mid \mathbf{x}) =
     \mu t \exp(\eta)\).  Use it when the event rate does not change with
 follow-up time (the constant background risk also appears as the
 <code>"constant"</code> phase in a multiphase model).</p></dd>
 
-<dt><code>"loglogistic"</code> — unimodal (rise-then-fall) hazard</dt>
+<dt><code>"loglogistic"</code>: unimodal (rise-then-fall) hazard</dt>
 <dd><p>A log-logistic
 proportional-odds form (covariates act multiplicatively on the odds of
 failure, \(\exp(\eta)\), not as an AFT time shift) whose hazard rises to
@@ -451,13 +460,13 @@ a single peak and then declines when the shape exceeds 1 (and is monotone
 decreasing otherwise), with heavier tails than the log-normal.  Use it
 when risk climbs to an early peak and then eases off.</p></dd>
 
-<dt><code>"lognormal"</code> — early-peaking, resolving hazard</dt>
+<dt><code>"lognormal"</code>: early-peaking, resolving hazard</dt>
 <dd><p>An
 accelerated-failure-time form in which \(\log\) time is Gaussian; the
 hazard rises to an early peak and then decays toward zero.  Use it for
 risk that is concentrated early and resolves over time.</p></dd>
 
-<dt><code>"multiphase"</code> — additive N-phase hazard</dt>
+<dt><code>"multiphase"</code>: additive N-phase hazard</dt>
 <dd><p>Sums several phase shapes
 into one model, \(H = \sum_j \mu_j(\mathbf{x}) \Phi_j(t)\), so the
 overall hazard can fall, level off, and rise again within one fit.
@@ -483,9 +492,9 @@ nonlinear temporal decomposition mixed effects model. <em>Stat Methods Med Res.<
 <code><a href="summary.hazard.html">summary.hazard()</a></code> for model summaries,
 <code><a href="hzr_phase.html">hzr_phase()</a></code> for specifying multiphase temporal shapes.</p>
 <p>Vignettes with worked examples:
-<code><a href="../articles/fitting-hazard-models.html">vignette("fitting-hazard-models")</a></code> — single-phase through multiphase fitting,
-<code><a href="../articles/prediction-visualization.html">vignette("prediction-visualization")</a></code> — prediction types and decomposed hazard plots,
-<code><a href="../articles/inference-diagnostics.html">vignette("inference-diagnostics")</a></code> — bootstrap CIs and model diagnostics.</p></div>
+<code><a href="../articles/fitting-hazard-models.html">vignette("fitting-hazard-models")</a></code>: single-phase through multiphase fitting,
+<code><a href="../articles/prediction-visualization.html">vignette("prediction-visualization")</a></code>: prediction types and decomposed hazard plots,
+<code><a href="../articles/inference-diagnostics.html">vignette("inference-diagnostics")</a></code>: bootstrap CIs and model diagnostics.</p></div>
     </div>
 
     <div class="section level2">

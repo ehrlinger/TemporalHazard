@@ -54,13 +54,12 @@ hazard(
   bare column name resolves to that column, and anything that is not a
   column (`df$col`, a local vector, a literal) falls through to the
   calling environment. A column of the same name as a caller variable
-  wins, and because that silently discards the caller's vector – the way
-  a wrapper forwarding its own argument by name does – such a name
+  wins, and because that silently discards the caller's vector (the way
+  a wrapper forwarding its own argument by name does), such a name
   raises a warning naming the symbol and the argument. Masked arguments
-  are validated like any other, so an `NA` in a masked column now errors
-  – an `NA` count on the SAS `ICENSOR` path reaches `weights` and stops
-  with `'weights' must be non-negative and finite`, where it was
-  previously accepted silently.
+  are validated like any other, so an `NA` in a masked column errors: an
+  `NA` count on the SAS `ICENSOR` path reaches `weights` and stops with
+  `'weights' must be non-negative and finite`.
 
 - time:
 
@@ -72,21 +71,28 @@ hazard(
 
 - time_lower:
 
-  Optional numeric vector with two distinct roles, selected by `status`.
-  Supplying it explicitly is **not** a no-op.
+  Optional numeric vector whose role depends on `status`. Supplying it
+  explicitly is **not** a no-op.
 
   - `status == 2` (interval-censored): the lower bound of the censoring
-    interval, defaulting to `time`.
+    interval, defaulting to `time`. Every `dist` reads it this way.
 
   - `status %in% c(0, 1)` (right-censored or event): the
     counting-process **entry time**, so the row contributes
-    `H(time) - H(time_lower)`. Left `NULL`, the entry time is **`0`**,
-    not `time`.
+    `H(time) - H(time_lower)`. Only `dist = "weibull"` and
+    `dist = "multiphase"` use this role, and `"weibull"` only where
+    `time_lower < time`. The `"exponential"`, `"loglogistic"` and
+    `"lognormal"` families ignore `time_lower` on these rows. Left
+    `NULL`, the entry time is **`0`**, not `time`.
+
+  - `status == -1` (left-censored): not used; the bound is `time_upper`.
 
   Passing `time_lower = time` therefore states that every subject
-  entered the risk set at the instant it left, which contributes nothing
-  and removes the row from the likelihood. That is a valid specification
-  and the fit will not converge to anything meaningful; it warns.
+  entered the risk set at the instant it left. `hazard()` accepts it
+  with a warning. Under `"multiphase"` those rows lose their
+  cumulative-hazard term and the fit it returns is meaningless;
+  `"weibull"` reads them as entering at time 0, and the other families
+  ignore the argument there.
 
 - time_upper:
 
@@ -156,7 +162,7 @@ hazard(
   Which interval-censored contribution the multiphase likelihood
   accumulates. `"likelihood"` (default) uses the interval probability
   \\\log(S(l) - S(u))\\. `"sas"` reproduces what `PROC HAZARD`
-  accumulates – the event-density term with the instantaneous hazard
+  accumulates: the event-density term with the instantaneous hazard
   replaced by the interval-mean hazard over \\(l, u\]\\. Applies only to
   `dist = "multiphase"`; exact-event and right-censored rows are
   unaffected either way.
@@ -165,7 +171,7 @@ hazard(
   (`PROC HAZARD` has no left-censoring statement) and a positive width
   on every interval-censored row (the interval-mean hazard divides by
   \\u - l\\). Both are properties of the data rather than of the fit, so
-  they are checked when the argument is supplied – including under
+  they are checked when the argument is supplied, including under
   `fit = FALSE`, which therefore stops rather than returning an unusable
   object.
 
@@ -197,7 +203,7 @@ loadings (`weights`), the strongest pairwise `correlation` among them,
 the Hessian `rcond` and `n_directions`, the number of near-flat
 directions found; `NULL` when the fit was examined and is well
 identified; and `NA` when the check could not run because no usable
-Hessian was available – which includes an unfitted object and an install
+Hessian was available, which includes an unfitted object and an install
 without the suggested numDeriv. Test with `is.list(fit$fit$weak)`, not
 `!is.null()`: the `NA` case has not been examined and must not be read
 as a clean result), `engine` (implementation tag, `"native-r-m2"`), and
@@ -236,10 +242,10 @@ Control parameters:
 - `phase_share_tol`: Threshold for the multiphase identifiability
   warning (default 1e-8). A phase is reported as having left the model
   when it supplies less than this share of the cumulative hazard at
-  every observed time (it never started – neither its `mu` nor its shape
+  every observed time (it never started; neither its `mu` nor its shape
   is identified), or when its contribution varies by less than this
   relative amount across them (it finished before the first observation
-  and acts as a constant offset – `mu` stays identified, the shape
+  and acts as a constant offset; `mu` stays identified, the shape
   parameters do not). A third condition is a property of the observed
   times rather than of any phase: when their own relative range falls
   below this threshold and no phase's contribution varies across them,
@@ -275,9 +281,13 @@ Control parameters:
   (L-BFGS-B) optimizer (default 1e-6). The fits `hazard()` runs use BFGS
   and ignore it.
 
-- `method`: Optimization method: "bfgs" or "nm" (default "bfgs"). SAS
-  `PROC HAZARD` jobs write `STEEPEST QUASI` together – steepest descent
-  first, then quasi-Newton. `QUASI`/`QUASINEWTON` is `"bfgs"`; **there
+- `method`: Recorded but not used. The fits `hazard()` runs use BFGS (a
+  multiphase fit may run a Nelder-Mead warm-up first, and a stop that
+  fails SAS's gradient test continues with
+  [`stats::nlm()`](https://rdrr.io/r/stats/nlm.html)); the entry is
+  accepted so that translated SAS jobs (`QUASI`) run unchanged. SAS
+  `PROC HAZARD` jobs write `STEEPEST QUASI` together (steepest descent
+  first, then quasi-Newton). `QUASI`/`QUASINEWTON` is `"bfgs"`; **there
   is no steepest-descent option and no two-stage strategy**. The
   multiphase likelihood is multimodal, so a different descent path can
   land on a different optimum: a fit translated from a job using
@@ -290,23 +300,24 @@ Control parameters:
 - `conserve`: Apply Conservation of Events (**`dist = "multiphase"`
   only**; default `TRUE`). CoE counts exact events, so it is
   **automatically disabled** whenever any `status` falls outside {0, 1}
-  – which interval or left censoring guarantees – and whenever the model
+  (which interval or left censoring guarantees) and whenever the model
   has fewer than two phases. On a fitted multiphase object the outcome
   is recorded next to the request, both fields living under
   `fit$spec$control`:
 
-  - `fit$spec$control$conserve_applied` – logical, whether CoE was
+  - `fit$spec$control$conserve_applied`: logical, whether CoE was
     actually applied;
 
-  - `fit$spec$control$conserve_disabled_reason` – one of
+  - `fit$spec$control$conserve_disabled_reason`: one of
     `"not_requested"`, `"unsupported_censoring"`, `"single_phase"`,
     `"no_events"`, `"setup_failed"`, or `NA` when CoE was applied.
 
   Read `fit$spec$control$conserve_applied`, not
   `fit$spec$control$conserve`: the latter says only what you asked for.
 
-- `nocov`, `nocor`: Suppress covariance/correlation output (legacy;
-  no-op in M2)
+- `nocov`, `nocor`: Accepted for compatibility with the SAS
+  `PROC HAZARD` options of the same names. They change neither the
+  fitted object nor its printed summary.
 
 Censoring status coding:
 
@@ -331,8 +342,8 @@ Time-varying coefficients:
 `objective = "sas"` exists to reproduce legacy `PROC HAZARD` runs and
 **must not be used for new analyses**. It is a density, not a
 probability: it is inconsistent for wide intervals, where the two forms
-differ materially – 22 log-likelihood units on the esophagectomy
-reference fit. The default is the statistically correct interval
+differ materially (22 log-likelihood units on the esophagectomy
+reference fit). The default is the statistically correct interval
 likelihood. See `inst/dev/SAS-INTERVAL-OBJECTIVE-DESIGN.md` for the
 derivation and the four-reference evidence.
 
@@ -354,8 +365,8 @@ The proportional-hazards single-phase families (`"weibull"`,
 `"exponential"`) are the special case \\J = 1\\, with covariates acting
 multiplicatively on one temporal shape. The `"loglogistic"`
 (proportional-odds) and `"lognormal"` (accelerated-failure-time)
-families place covariates differently — on the odds of failure and the
-log-time location, respectively — so they are separate
+families place covariates differently (on the odds of failure and the
+log-time location, respectively), so they are separate
 parameterizations, not special cases of this additive form. Parameters
 are estimated on an unconstrained internal scale (e.g. \\\log\mu\\,
 \\\log t\_{1/2}\\) and transformed back for reporting; see
@@ -399,7 +410,7 @@ traces over follow-up; choose by what the risk is expected to do over
 time. `"multiphase"` is the general additive model that lets several
 such shapes coexist.
 
-- `"weibull"` — monotone rising or falling hazard (default):
+- `"weibull"`: monotone rising or falling hazard (default):
 
   The workhorse parametric model: \\H(t \mid \mathbf{x}) = (\mu t)^\nu
   \exp(\eta)\\, with hazard \\h \propto t^{\nu - 1}\\. The single shape
@@ -407,7 +418,7 @@ such shapes coexist.
   \< 1\\), or stay flat (\\\nu = 1\\). Use it as the default when a
   single monotone trend describes the hazard.
 
-- `"exponential"` — constant hazard:
+- `"exponential"`: constant hazard:
 
   The memoryless special case \\\nu = 1\\: a time-invariant baseline
   rate, \\H(t \mid \mathbf{x}) = \mu t \exp(\eta)\\. Use it when the
@@ -415,7 +426,7 @@ such shapes coexist.
   background risk also appears as the `"constant"` phase in a multiphase
   model).
 
-- `"loglogistic"` — unimodal (rise-then-fall) hazard:
+- `"loglogistic"`: unimodal (rise-then-fall) hazard:
 
   A log-logistic proportional-odds form (covariates act multiplicatively
   on the odds of failure, \\\exp(\eta)\\, not as an AFT time shift)
@@ -424,13 +435,13 @@ such shapes coexist.
   than the log-normal. Use it when risk climbs to an early peak and then
   eases off.
 
-- `"lognormal"` — early-peaking, resolving hazard:
+- `"lognormal"`: early-peaking, resolving hazard:
 
   An accelerated-failure-time form in which \\\log\\ time is Gaussian;
   the hazard rises to an early peak and then decays toward zero. Use it
   for risk that is concentrated early and resolves over time.
 
-- `"multiphase"` — additive N-phase hazard:
+- `"multiphase"`: additive N-phase hazard:
 
   Sums several phase shapes into one model, \\H = \sum_j
   \mu_j(\mathbf{x}) \Phi_j(t)\\, so the overall hazard can fall, level
@@ -462,12 +473,12 @@ for model summaries,
 for specifying multiphase temporal shapes.
 
 Vignettes with worked examples:
-[`vignette("fitting-hazard-models")`](https://ehrlinger.github.io/TemporalHazard/articles/fitting-hazard-models.md)
-— single-phase through multiphase fitting,
-[`vignette("prediction-visualization")`](https://ehrlinger.github.io/TemporalHazard/articles/prediction-visualization.md)
-— prediction types and decomposed hazard plots,
-[`vignette("inference-diagnostics")`](https://ehrlinger.github.io/TemporalHazard/articles/inference-diagnostics.md)
-— bootstrap CIs and model diagnostics.
+[`vignette("fitting-hazard-models")`](https://ehrlinger.github.io/TemporalHazard/articles/fitting-hazard-models.md):
+single-phase through multiphase fitting,
+[`vignette("prediction-visualization")`](https://ehrlinger.github.io/TemporalHazard/articles/prediction-visualization.md):
+prediction types and decomposed hazard plots,
+[`vignette("inference-diagnostics")`](https://ehrlinger.github.io/TemporalHazard/articles/inference-diagnostics.md):
+bootstrap CIs and model diagnostics.
 
 ## Examples
 

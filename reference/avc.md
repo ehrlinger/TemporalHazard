@@ -21,7 +21,8 @@ A data frame with 310 rows and 11 variables:
 
 - status:
 
-  NYHA functional class (1–4)
+  NYHA functional class (1–4). A covariate, not a censoring status: the
+  event indicator is `dead`.
 
 - inc_surg:
 

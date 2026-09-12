@@ -69,8 +69,8 @@ log_mu so that total predicted events = total observed events.
 - time_lower:
 
   Optional numeric vector of counting-process entry (start) times. When
-  supplied, conservation is enforced on the entry-time scale –
-  `Sum E = Sum [H(stop) - H(start)]` – by subtracting the entry-time
+  supplied, conservation is enforced on the entry-time scale
+  (`Sum E = Sum [H(stop) - H(start)]`) by subtracting the entry-time
   cumulative hazard, matching the multiphase likelihood (and C HAZARD
   `setcoe` under `LCENSOR`/`STARTTME`). `NULL` (the default) means no
   truncation, i.e. `H(start) = 0`.

@@ -5,18 +5,18 @@
       fontURL: "https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/output/chtml/fonts/woff-v2"
     }
   };
-</script><script src="../deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"><link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet"><script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet"><link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet"><script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Check the SAS objective's data preconditions at entry — .hzr_check_sas_data"><meta name="description" content="Both conditions objective = &quot;sas&quot; imposes – no left-censored rows, and a
-positive width on every interval row – are pure functions of the data, so
+</script><script src="../deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"><link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet"><script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet"><link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet"><script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Check the SAS objective's data preconditions at entry — .hzr_check_sas_data"><meta name="description" content="Both conditions objective = &quot;sas&quot; imposes (no left-censored rows, and a
+positive width on every interval row) are pure functions of the data, so
 they hold or fail identically at every start.  Evaluated inside the
 objective they reach the user through .hzr_optim_multiphase()'s per-start
 tryCatch, which frames them as &quot;produced no usable fit from N starts&quot; and
-invites raising n_starts – a remedy that cannot work.  hazard() calls
-this once, before any optimization, so a data defect is reported as one."><meta property="og:description" content="Both conditions objective = &quot;sas&quot; imposes – no left-censored rows, and a
-positive width on every interval row – are pure functions of the data, so
+invites raising n_starts, a remedy that cannot work.  hazard() calls
+this once, before any optimization, so a data defect is reported as one."><meta property="og:description" content="Both conditions objective = &quot;sas&quot; imposes (no left-censored rows, and a
+positive width on every interval row) are pure functions of the data, so
 they hold or fail identically at every start.  Evaluated inside the
 objective they reach the user through .hzr_optim_multiphase()'s per-start
 tryCatch, which frames them as &quot;produced no usable fit from N starts&quot; and
-invites raising n_starts – a remedy that cannot work.  hazard() calls
+invites raising n_starts, a remedy that cannot work.  hazard() calls
 this once, before any optimization, so a data defect is reported as one."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
@@ -69,12 +69,12 @@ this once, before any optimization, so a data defect is reported as one."></head
     </div>
 
     <div class="ref-description section level2">
-    <p>Both conditions <code>objective = "sas"</code> imposes – no left-censored rows, and a
-positive width on every interval row – are pure functions of the data, so
+    <p>Both conditions <code>objective = "sas"</code> imposes (no left-censored rows, and a
+positive width on every interval row) are pure functions of the data, so
 they hold or fail identically at every start.  Evaluated inside the
 objective they reach the user through <code><a href="dot-hzr_optim_multiphase.html">.hzr_optim_multiphase()</a></code>'s per-start
 <code>tryCatch</code>, which frames them as "produced no usable fit from N starts" and
-invites raising <code>n_starts</code> – a remedy that cannot work.  <code><a href="hazard.html">hazard()</a></code> calls
+invites raising <code>n_starts</code>, a remedy that cannot work.  <code><a href="hazard.html">hazard()</a></code> calls
 this once, before any optimization, so a data defect is reported as one.</p>
     </div>
 
@@ -110,8 +110,8 @@ this once, before any optimization, so a data defect is reported as one.</p>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
     <p>This does <strong>not</strong> replace the guards inside the objective and the gradient.
-Those remain because the gradient is reachable without <code><a href="hazard.html">hazard()</a></code> – the
-score test calls it directly – so entry validation is not guaranteed to
+Those remain because the gradient is reachable without <code><a href="hazard.html">hazard()</a></code> (the
+score test calls it directly), so entry validation is not guaranteed to
 have run.  See <code><a href="dot-hzr_check_sas_status.html">.hzr_check_sas_status()</a></code>.</p>
 <p>Bounds are normalised here exactly as <code><a href="dot-hzr_logl_multiphase.html">.hzr_logl_multiphase()</a></code> normalises
 them, so the check cannot disagree with the objective about which rows are

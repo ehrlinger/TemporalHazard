@@ -7,10 +7,10 @@
   };
 </script><script src="../deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"><link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet"><script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet"><link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet"><script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Warn when a phase has effectively left the model — .hzr_check_phase_identifiability"><meta name="description" content="Warns rather than stops: the fit is arithmetically fine and the other
 phases' estimates are usable. It is the unidentified parameters that must
-not be read as estimates – and which ones those are differs by mode, so
+not be read as estimates, and which ones those are differs by mode, so
 the message says which."><meta property="og:description" content="Warns rather than stops: the fit is arithmetically fine and the other
 phases' estimates are usable. It is the unidentified parameters that must
-not be read as estimates – and which ones those are differs by mode, so
+not be read as estimates, and which ones those are differs by mode, so
 the message says which."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
@@ -65,7 +65,7 @@ the message says which."></head><body>
     <div class="ref-description section level2">
     <p>Warns rather than stops: the fit is arithmetically fine and the other
 phases' estimates are usable. It is the unidentified parameters that must
-not be read as estimates – and which ones those are differs by mode, so
+not be read as estimates, and which ones those are differs by mode, so
 the message says which.</p>
     </div>
 
@@ -107,7 +107,7 @@ the message says which.</p>
 
 
 <dt id="arg-tol">tol<a class="anchor" aria-label="anchor" href="#arg-tol"></a></dt>
-<dd><p>Threshold for all three tests – the minimum share of \(\Lambda\) a
+<dd><p>Threshold for all three tests: the minimum share of \(\Lambda\) a
 phase must reach somewhere, and the minimum relative variation its
 contribution must show. Default 1e-8: far above double precision, and
 orders of magnitude below any real contribution, so it fires on dead
@@ -115,7 +115,7 @@ phases rather than merely small ones.</p></dd>
 
 
 <dt id="arg-other-times">other_times<a class="anchor" aria-label="anchor" href="#arg-other-times"></a></dt>
-<dd><p>Further times the likelihood evaluates beyond <code>time</code> –
+<dd><p>Further times the likelihood evaluates beyond <code>time</code>:
 counting-process entry times and interval bounds. The share and variation
 measures are taken over <code>time</code> alone, so when they are degenerate but
 these vary, the shapes still enter the likelihood and the measures are

@@ -1,7 +1,7 @@
 # Predictions from a fit loaded out of a SAS `OUTHAZ=` dataset
 
-Rebuilds the multiphase model the `OUTHAZ=` dataset describes – which
-phases are in it, their shapes, and the fitted parameter vector – and
+Rebuilds the multiphase model the `OUTHAZ=` dataset describes (which
+phases are in it, their shapes, and the fitted parameter vector) and
 then predicts exactly as
 [`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)
 does.
@@ -60,8 +60,8 @@ predict(
   `se.fit = TRUE`.
 
   **SAS draws narrower bands than this by default.** `PROC HAZPRED`
-  takes its width from `CLEVEL`, whose default is `0.68268948` —
-  documented in the macro source as "(1 sd)" — so its `T_ALPHA`
+  takes its width from `CLEVEL`, whose default is `0.68268948`,
+  documented in the macro source as "(1 sd)", so its `T_ALPHA`
   multiplier is `1` to seven decimals (the literal is truncated) and the
   band is one standard error, 68.3%, not 95%. Reproducing a SAS figure
   at this function's default therefore yields a band about 1.96 times
@@ -129,7 +129,7 @@ is on SAS's estimation scale and has to be mapped onto this package's:
 - a fit constrained by `FIXMNU1`, which ties `M` to `1/NU`;
 
 - a fit estimating `GAMMA`, `ALPHA` or `ETA` on one of PROC HAZARD's
-  *composite* late-phase scales – `log(GAMMA*ETA - 2)` or
+  *composite* late-phase scales, `log(GAMMA*ETA - 2)` or
   `log(GAMMA*ETA/ALPHA - 2)` rather than
   [`log()`](https://rdrr.io/r/base/Log.html) of the parameter. This is
   the ordinary unconstrained late phase, not an exotic case: with

@@ -103,8 +103,8 @@ counts.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
-    <p><strong>Experimental:</strong> a job that translates does render – the emitted
-<code><a href="hazard.html">hazard()</a></code> chunk binds its fit and asks for an actual fit – but this is a
+    <p><strong>Experimental:</strong> a job that translates does render (the emitted
+<code><a href="hazard.html">hazard()</a></code> chunk binds its fit and asks for an actual fit), but this is a
 translation aid, not a turnkey reproduction, and some SAS constructs are
 refused rather than translated. See the Experimental section below.</p>
 <p>Constructs the translator does not cover are recorded on the returned object
@@ -118,7 +118,7 @@ so on, so the emitted document contains every model, not just the last one
 seen. <code>job$outhaz</code> is therefore a character vector, one element per <code>PROC HAZARD</code> block that set <code>OUTHAZ=</code> (in the order the blocks appear). Each
 <code>PROC HAZPRED</code> block's <code>INHAZ=</code> is resolved independently against that
 vector, matching the most recently written <code>OUTHAZ=</code> at that point in the
-file – mirroring SAS itself, where a later <code>OUTHAZ=</code> write overwrites the
+file, mirroring SAS itself, where a later <code>OUTHAZ=</code> write overwrites the
 dataset an earlier one wrote under the same name. If a job's own <code>OUTHAZ=</code>
 values don't cover it, <code>librefs</code> is tried next; distinct external
 <code>INHAZ=</code> values each get their own loaded-fit chunk. When neither
@@ -143,8 +143,8 @@ naming it, rather than a <code>predict(newdata = )</code> over a name no chunk
 builds. An unresolved <code>INHAZ=</code> stops the render on purpose.</p>
 <p>On a fit loaded from an external <code>INHAZ=</code> dataset, point predictions work
 but <code>se.fit = TRUE</code> is refused when <code>PROC HAZARD</code> estimated a late shape
-parameter on a composite scale – the generic unconstrained three-phase
-case, not an exotic one. A translated <code>PROC HAZPRED</code> block asks for
+parameter on a composite scale (the generic unconstrained three-phase
+case, not an exotic one). A translated <code>PROC HAZPRED</code> block asks for
 confidence limits unless the SAS job says <code>NOCL</code>, so such a job stops at
 its <code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> chunks.</p>
     </div>
@@ -186,9 +186,9 @@ model. Compare the <strong>product</strong> \(\gamma\eta\), not the two paramete
 separately, and expect <code>TAU</code> to read 1 and fixed. The log-likelihood,
 <code>MUL</code> and every prediction agree regardless. Most jobs are unaffected in
 practice: <code>GAMMA = 1 FIXGAMMA</code> is the usual companion to <code>ALPHA = 1 FIXALPHA</code>, and it makes the rewrite an identity.</p>
-<p>The one case that is a genuine model difference – <code>ALPHA</code> fixed at 1 with
+<p>The one case that is a genuine model difference (<code>ALPHA</code> fixed at 1 with
 <code>GAMMA</code> and <code>ETA</code> <em>both</em> estimated, where <code>PROC HAZARD</code> fixes <code>ETA</code> and
-fits one parameter fewer than <code><a href="hazard.html">hazard()</a></code> would – is recorded in
+fits one parameter fewer than <code><a href="hazard.html">hazard()</a></code> would) is recorded in
 <code>$untranslated</code> rather than left to be discovered in the comparison.</p>
 <p><code>$coverage</code> counts tokens the parser recognised; it is not evidence that
 the emitted calls execute, and a job can report full coverage with an

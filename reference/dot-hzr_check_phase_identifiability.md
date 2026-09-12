@@ -2,8 +2,8 @@
 
 Warns rather than stops: the fit is arithmetically fine and the other
 phases' estimates are usable. It is the unidentified parameters that
-must not be read as estimates – and which ones those are differs by
-mode, so the message says which.
+must not be read as estimates, and which ones those are differs by mode,
+so the message says which.
 
 ## Usage
 
@@ -43,7 +43,7 @@ mode, so the message says which.
 
 - tol:
 
-  Threshold for all three tests – the minimum share of \\\Lambda\\ a
+  Threshold for all three tests: the minimum share of \\\Lambda\\ a
   phase must reach somewhere, and the minimum relative variation its
   contribution must show. Default 1e-8: far above double precision, and
   orders of magnitude below any real contribution, so it fires on dead
@@ -51,11 +51,11 @@ mode, so the message says which.
 
 - other_times:
 
-  Further times the likelihood evaluates beyond `time` –
-  counting-process entry times and interval bounds. The share and
-  variation measures are taken over `time` alone, so when they are
-  degenerate but these vary, the shapes still enter the likelihood and
-  the measures are withheld rather than reported.
+  Further times the likelihood evaluates beyond `time`: counting-process
+  entry times and interval bounds. The share and variation measures are
+  taken over `time` alone, so when they are degenerate but these vary,
+  the shapes still enter the likelihood and the measures are withheld
+  rather than reported.
 
 ## Value
 

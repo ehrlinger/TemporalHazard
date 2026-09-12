@@ -12,7 +12,7 @@ Split the full theta vector into per-phase sub-vectors
 
 - theta:
 
-  Numeric vector – full parameter vector (internal scale).
+  Numeric vector: full parameter vector (internal scale).
 
 - phases:
 
@@ -20,7 +20,7 @@ Split the full theta vector into per-phase sub-vectors
 
 - covariate_counts:
 
-  Named integer vector – number of covariates per phase.
+  Named integer vector: number of covariates per phase.
 
 ## Value
 

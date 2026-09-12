@@ -91,7 +91,7 @@ parameter infeasibility, so it stops rather than returning <code>-Inf</code>.</p
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
     <p>Called from BOTH <code><a href="dot-hzr_logl_multiphase.html">.hzr_logl_multiphase()</a></code> and <code><a href="dot-hzr_gradient_multiphase.html">.hzr_gradient_multiphase()</a></code>.
 Guarding only the objective would leave the gradient computing happily for
-data the objective refuses – and the gradient is reachable on its own, for
+data the objective refuses. The gradient is reachable on its own, for
 instance from <code>.hzr_score_test()</code>, so the objective's refusal is not
 guaranteed to come first.</p>
     </div>

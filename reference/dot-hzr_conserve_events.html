@@ -129,8 +129,8 @@ is computed on the same scale as <code>total_events</code>.</p></dd>
 
 <dt id="arg-time-lower">time_lower<a class="anchor" aria-label="anchor" href="#arg-time-lower"></a></dt>
 <dd><p>Optional numeric vector of counting-process entry (start)
-times. When supplied, conservation is enforced on the entry-time scale –
-<code>Sum E = Sum [H(stop) - H(start)]</code> – by subtracting the entry-time
+times. When supplied, conservation is enforced on the entry-time scale
+(<code>Sum E = Sum [H(stop) - H(start)]</code>) by subtracting the entry-time
 cumulative hazard, matching the multiphase likelihood (and C HAZARD
 <code>setcoe</code> under <code>LCENSOR</code>/<code>STARTTME</code>). <code>NULL</code> (the default) means no
 truncation, i.e. <code>H(start) = 0</code>.</p></dd>

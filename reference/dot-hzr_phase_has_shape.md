@@ -2,8 +2,8 @@
 
 A `constant` phase is `mu` and nothing else. The saturated
 identifiability message says `mu` survives while the shape parameters go
-flat, which is vacuous for a phase that has none – the wording defect in
-\#211.
+flat, which is vacuous for a phase that has none (the wording defect in
+\#211).
 
 ## Usage
 
