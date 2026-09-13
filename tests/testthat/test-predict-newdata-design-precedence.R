@@ -252,6 +252,40 @@ test_that("multiphase time_windows: the rebuilt global design is expanded", {
   expect_equal(unname(got), unname(want), tolerance = 1e-10)
 })
 
+test_that("a phase-formula factor with reordered levels codes as the fit did", {
+  skip_on_cran()  # a multiphase fit
+  # Global ~ age plus a phase formula ~ grp.  #292 makes this phase path
+  # reachable at newdata; before #290 kept the fit's levels, reversed
+  # levels came back swapped (0.213738/0.21485) with no error.  The answer
+  # must be the structural one, whatever order or type grp arrives in.
+  set.seed(1)
+  pf <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ age, data = .dp_avc, dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes",
+                        formula = ~ grp),
+      constant = hzr_phase("constant")),
+    fit = TRUE))
+  th <- pf$fit$theta
+  tt <- c(2, 20)
+  base <- predict(pf, newdata = data.frame(time = tt), type = "cumulative_hazard",
+                  decompose = TRUE)
+  # Row 1 is "old" (early: no grp effect), row 2 "young"; the constant
+  # phase inherits the global age effect at age 60.
+  ref <- base$early * exp(th[["early.grpyoung"]] * c(0, 1)) +
+    base$constant * exp(sum(th[grep("^constant\\.age", names(th))]) * 60)
+  expect_gt(abs(th[["early.grpyoung"]]), 0.5)          # levels matter here
+  for (g in list(factor(c("old", "young"), levels = c("young", "old")),
+                 c("old", "young"),
+                 factor(c("old", "young"), levels = c("old", "young")))) {
+    got <- predict(pf, newdata = data.frame(time = tt, age = 60, grp = g),
+                   type = "cumulative_hazard")
+    expect_equal(unname(got), ref, tolerance = 1e-10)
+  }
+  # The structural values, pinned (a fitted model: 1e-4, relative).
+  expect_equal(ref, c(0.05608905, 0.3599925), tolerance = 1e-4)
+})
+
 test_that("a multiphase global design takes the variable over its column", {
   skip_on_cran()  # a multiphase fit
   fit <- suppressWarnings(hazard(
