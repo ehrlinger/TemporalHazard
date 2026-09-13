@@ -253,32 +253,46 @@ test_that("time_windows: a phase formula whose columns share the window names", 
                base$constant * exp(beta_c * mean(d$age)), tolerance = 1e-10)
 })
 
-test_that("#263: a phase literally named `time` keeps its column", {
+test_that("#263/#224: a phase named `time` is refused; gof keeps its own grid", {
   # predict(decompose = TRUE) names its grid column `time`, so a phase named
-  # `time` collides with it there (the phase's values currently overwrite
-  # the grid column). Selecting phases by excluding "time" would drop this
-  # real phase; hzr_gof() selects by phase name and keeps its own grid.
+  # `time` collided with it there and overwrote the prediction times. #224
+  # reserves the name, so such a fit now stops before hzr_gof() can see it.
   d <- .gof_pc_avc
+  expect_error(
+    hazard(
+      survival::Surv(int_dead, dead) ~ 1,
+      data = d, dist = "multiphase",
+      phases = list(
+        early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                          fixed = "shapes"),
+        time  = hzr_phase("constant")
+      ),
+      fit = TRUE
+    ),
+    "'time' is a reserved phase name"
+  )
+
+  # With ordinary names, decompose's own `time` and `total` columns never
+  # become par_cumhaz_ columns, and every real phase gets exactly one.
   fit <- hazard(
     survival::Surv(int_dead, dead) ~ 1,
     data = d, dist = "multiphase",
     phases = list(
-      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
-                        fixed = "shapes"),
-      time  = hzr_phase("constant")
+      early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                           fixed = "shapes"),
+      constant = hzr_phase("constant")
     ),
     fit = TRUE
   )
   gof <- hzr_gof(fit)
   expect_identical(grep("^par_cumhaz_", names(gof), value = TRUE),
-                   c("par_cumhaz_early", "par_cumhaz_time"))
-  # The phases add up to the total, so the `time` phase's own contribution
-  # is the total less the early phase, independent of decompose's columns.
-  expect_equal(gof$par_cumhaz_time, gof$par_cumhaz - gof$par_cumhaz_early,
-               tolerance = 1e-12)
-  expect_gt(max(gof$par_cumhaz_time), 0.01)
-  # hzr_gof()'s time column is its Kaplan-Meier grid, not the collided
-  # column of decompose's output.
+                   c("par_cumhaz_early", "par_cumhaz_constant"))
+  expect_false(any(c("par_cumhaz_time", "par_cumhaz_total") %in% names(gof)))
+  # The phases add up to the total, so each column is a phase's own share.
+  expect_equal(gof$par_cumhaz_early + gof$par_cumhaz_constant,
+               gof$par_cumhaz, tolerance = 1e-12)
+  expect_gt(max(gof$par_cumhaz_constant), 0.01)
+  # hzr_gof()'s time column is its Kaplan-Meier grid.
   km <- survival::survfit(survival::Surv(d$int_dead, d$dead) ~ 1)
   expect_equal(gof$time, km$time)
 })
