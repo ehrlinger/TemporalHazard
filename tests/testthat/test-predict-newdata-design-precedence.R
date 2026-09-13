@@ -101,11 +101,29 @@ test_that("a fit saved before the design was stored refuses extra columns", {
     predict(w, type = "cumulative_hazard",
             newdata = data.frame(time = 2, age = 60, grp = c("old", "young"),
                                  grpyoung = c(1, 0))),
-    "saved before.*'grp'"
+    "earlier version.*also has 'grp'.*pass only the design columns"
   )
+  # Design-only newdata stays correct: the truth, which main also gave.
   got <- predict(w, type = "cumulative_hazard",
                  newdata = data.frame(grpyoung = c(0, 1), time = 2, age = 60))
-  expect_equal(unname(got), c(0.179782, 0.362036), tolerance = 1e-6)
+  expect_equal(unname(got), .dp_weibull(0.004 * 60 + 0.7 * c(0, 1), 2),
+               tolerance = 1e-12)
+})
+
+test_that("hzr_gof() and hzr_deciles() still run on a fit saved before x_design", {
+  # Their newdata is design-level and marked, so the legacy refusal must
+  # not touch it.  Values pinned from b0aa955 (before the refusal) on the
+  # same legacy object; a fitted model, so 1e-4 (relative: all >= 0.02).
+  w <- hazard(survival::Surv(int_dead, dead) ~ age + I(age^2) + grp,
+              data = .dp_avc, dist = "weibull",
+              theta = c(mu = 0.01, nu = 0.5, 0, 0, 0), fit = TRUE)
+  w$data$x_design <- NULL
+  g <- hzr_gof(w)
+  expect_length(g$par_cumhaz, 270L)
+  expect_equal(unname(g$par_cumhaz[c(1, 135, 270)]),
+               c(0.02289393213, 0.2218081341, 0.3079777839), tolerance = 1e-4)
+  expect_equal(sum(hzr_deciles(w, time = 60)$expected), 67.99999988,
+               tolerance = 1e-4)
 })
 
 test_that("a vector-interface fit still ignores a column it does not use", {
@@ -202,7 +220,7 @@ test_that("a multiphase fit saved before the design was stored refuses too", {
     predict(m, type = "cumulative_hazard",
             newdata = data.frame(time = 2, age = 60, grp = c("old", "young"),
                                  grpyoung = c(1, 0))),
-    "saved before.*'grp'"
+    "earlier version.*also has 'grp'.*pass only the design columns"
   )
   # Pinned from main at 4b68020 on the same object (a fitted model: 1e-4).
   got <- predict(m, type = "cumulative_hazard",

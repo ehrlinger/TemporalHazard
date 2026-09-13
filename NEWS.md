@@ -40,11 +40,18 @@
   rename the columns to match `x`. A fit made with an unnamed `x` still
   matches by position. A formula fit saved by an earlier version stored no
   formula design, so it is matched on its design-matrix columns: a factor
-  must be given as `grpyoung` and a transform as `log(age)`. Its `newdata`
-  may hold only those columns and `time`: any other column stops, as it
-  did before, because nothing can tell it from a formula variable that
-  contradicts a design column. Refit it to give the formula's variables
-  instead.
+  must be given as `grpyoung` and a transform as `log(age)`. Refit it to
+  give the formula's variables instead.
+
+* **A formula fit saved by an earlier version refuses `newdata` with
+  columns other than its design columns and `time`,** with
+  `This fit was saved by an earlier version of TemporalHazard, without a
+  stored formula design, ...; it also has '...'. Refit the model with the
+  current version, or pass only the design columns.` Without a stored
+  design nothing can tell such a column from a formula variable that
+  contradicts a design column, which would otherwise be ignored silently.
+  Before, such a column made the positional match fail, so this is as
+  loud as it was (#272).
 
 * **`predict(newdata = )` stops when `newdata` gives some of the formula's
   variables beside the fitted design columns, with others missing.** Say

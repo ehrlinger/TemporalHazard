@@ -351,11 +351,13 @@
     # when such a column made the positional match fail.
     extra <- setdiff(names(newdata), c(cols, "time"))
     if (!is.null(object$call$formula) && length(extra) > 0L) {
-      stop("This fit was saved before its formula design was stored, so ",
-           "'newdata' may hold only its design columns (",
-           paste0("'", cols, "'", collapse = ", "), ") and 'time'; it also ",
-           "has ", paste0("'", extra, "'", collapse = ", "), ". Refit the ",
-           "model to predict from the formula's variables.", call. = FALSE)
+      stop("This fit was saved by an earlier version of TemporalHazard, ",
+           "without a stored formula design, so 'newdata' may hold only its ",
+           "design columns (", paste0("'", cols, "'", collapse = ", "),
+           ") and 'time'; it also has ",
+           paste0("'", extra, "'", collapse = ", "), ". Refit the model ",
+           "with the current version, or pass only the design columns.",
+           call. = FALSE)
     }
     return(TRUE)
   }
