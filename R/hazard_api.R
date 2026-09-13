@@ -2163,7 +2163,37 @@ vcov.hazard <- function(object, ...) {
     stop("Predictor rows must match the length of 'time'.", call. = FALSE)
   }
 
+  .hzr_refuse_duplicate_columns(x)
   x
+}
+
+#' Refuse a design matrix whose column names repeat
+#'
+#' A factor's dummy columns are named `<factor><level>`, so a factor `g` with
+#' level `b` and a numeric column `gb` both produce a column `gb`. Coefficient
+#' names, predict() by name, the stepwise scope and the bootstrap all assume
+#' the names are unique, and a duplicate used to fit without a word.
+#'
+#' @param x Numeric design matrix.
+#' @param phase Phase name, for a multiphase phase-specific design; NULL for
+#'   the global design.
+#' @return `x`, invisibly, when its column names are unique.
+#' @noRd
+.hzr_refuse_duplicate_columns <- function(x, phase = NULL) {
+  nms <- colnames(x)
+  dup <- unique(nms[duplicated(nms)])
+  if (length(dup) == 0L) {
+    return(invisible(x))
+  }
+  where <- if (is.null(phase)) "" else paste0(" for phase '", phase, "'")
+  stop("In hazard(), the design matrix", where, " has a duplicated column ",
+       "name: ", paste0("'", dup, "'", collapse = ", "), ". Each covariate ",
+       "needs a unique name, because coefficients and predict(newdata =) ",
+       "match covariates by name. A factor's dummy columns are named ",
+       "<factor><level>, so factor `g` with level `b` collides with a numeric ",
+       "column `gb`: rename the numeric column, or relevel or rename the ",
+       "factor. For an 'x' matrix, give its columns unique names.",
+       call. = FALSE)
 }
 
 #' Expand predictors for piecewise time-varying coefficients

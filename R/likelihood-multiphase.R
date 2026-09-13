@@ -1595,6 +1595,7 @@
                                    na.action = stats::na.pass)
       x_j <- stats::model.matrix(ph$formula, data = mf_j)[, -1L,
                                                            drop = FALSE]
+      .hzr_refuse_duplicate_columns(x_j, phase = nm)
       x_list[[nm]] <- x_j
       covariate_counts[[nm]] <- ncol(x_j)
     } else if (!is.null(x)) {

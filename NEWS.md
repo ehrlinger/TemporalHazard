@@ -2,6 +2,16 @@
 
 ## Breaking changes
 
+* **`hazard()` now stops when two design columns share a name.** A factor's
+  dummy columns are named `<factor><level>`, so a factor `g` with level `b`
+  and a numeric column `gb` both produced a column `gb`. The fit ran without
+  a word: `coef()` carried two `gb` names, and `predict()` on a one-row
+  `newdata` returned two values. The check covers the global design, each
+  phase formula of a multiphase fit, and an `x` matrix passed to the vector
+  interface, and the error names the colliding columns. A fit that used to
+  run now stops: rename the numeric column, or rename the factor or change
+  its levels (`relevel()`, `levels<-`).
+
 * **`hazard(fit = TRUE)` without `theta` is now an error for the
   single-distribution models.** For `dist = "weibull"`, `"exponential"`,
   `"loglogistic"` and `"lognormal"`, the optimizer ran only when `theta` was
