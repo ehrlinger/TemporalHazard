@@ -52,6 +52,8 @@
   tt <- tryCatch(stats::terms(formula),
                  error = function(e) NULL)
   if (is.null(tt)) return(character())
+  # term.labels leaves an offset out, so a scope naming one lost it silently.
+  .hzr_refuse_offset(formula, "the stepwise formula")
   attr(tt, "term.labels")
 }
 

@@ -60,6 +60,7 @@
   # Parse RHS (predictors)
   x <- NULL
   if (!is.null(rhs)) {
+    .hzr_refuse_offset(formula, "the formula")
     # One-sided formula for model.matrix(), with `.` expanded against `data`
     # without the Surv() variables (#273). See .hzr_expand_rhs().
     rhs_formula <- .hzr_expand_rhs(formula, data)
@@ -120,6 +121,36 @@
     rhs_formula <- stats::reformulate("1", env = environment(rhs_formula))
   }
   rhs_formula
+}
+
+
+#' Stop on an offset() term in a model formula
+#'
+#' `model.matrix()` leaves an `offset()` term out of the design, and no
+#' caller reads it back, so a fit with one was the fit without it. Until
+#' there is a decided answer for how an offset enters each phase of the
+#' multiphase hazard, it is refused. Offsets are found the way `terms()`
+#' finds them, so `stats::offset(x)` -- which `terms()` reads as an ordinary
+#' covariate and `model.matrix()` keeps -- is not refused.
+#'
+#' @param formula A one- or two-sided formula. `.` is allowed unexpanded.
+#' @param where Where the formula came from, for the message.
+#' @return `NULL`, invisibly; called for its error.
+#' @keywords internal
+#' @noRd
+.hzr_refuse_offset <- function(formula, where) {
+  tt <- stats::terms(formula, allowDotAsName = TRUE)
+  off <- attr(tt, "offset")
+  if (is.null(off)) return(invisible(NULL))
+  # "variables" is list(v1, v2, ...), so variable i is element i + 1.
+  terms_txt <- vapply(
+    off,
+    function(i) paste(deparse(attr(tt, "variables")[[i + 1L]]), collapse = " "),
+    character(1L)
+  )
+  stop("`", paste(terms_txt, collapse = "`, `"), "` in ", where, " is an ",
+       "offset, and offsets are not supported: hazard() would fit the model ",
+       "without it. Remove the offset() term.", call. = FALSE)
 }
 
 
