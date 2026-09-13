@@ -91,6 +91,28 @@
   the phases its `scope` names, so an inheriting phase outside the scope
   is left alone; a backward or two-way screen can drop from any phase.
 
+* **An entry time after the exit time is now an error, and
+  `time_lower = time` now means "no entry" in every family** (#253). On a
+  row with status 0 or 1, `time_lower` is the counting-process entry time
+  when `0 < time_lower < time`. `hazard()` used to warn when
+  `time_lower >= time` on such a row and fit anyway, and each family then
+  did something different. Multiphase returned a "log-likelihood" of
+  +47915.76 with `converged = TRUE` on the AVC data. The Weibull read the
+  rows as entering at time 0, and the other three families ignored
+  `time_lower` altogether.
+  - `time_lower > time` on a status 0/1 row now stops, as SAS HAZARD
+    rejects a start time after the exit time (error `SETCOE960`).
+  - `time_lower == time` on a status 0/1 row is read as no entry time, with
+    no warning, in all five families. This is the mixed-interval layout,
+    where exact and right-censored rows carry `time_lower = time` and only
+    interval-censored rows (status 2) carry a real lower bound. It was
+    already the Weibull rule; multiphase used to degenerate on it.
+  - `time_lower = 0` still means no entry time.
+  - Rows with `time_lower == time > 0` beside rows with a genuine entry
+    time now stop. In counting-process data they are zero-length epochs,
+    which `hzr_repeated_events()` can emit; read as "no entry", each would
+    be charged its full cumulative hazard from time 0.
+
 ## New features
 
 * **Every fit now says what it did not do** (#242, following #197). A
@@ -196,6 +218,85 @@
   does not. The test now accepts either a missing or a 100-fold larger
   standard error, and also checks that both fits reach the same
   log-likelihood and the same `gamma * eta`.
+
+* **Exponential, log-logistic and log-normal fits ignored left truncation**
+  (#253). On status 0/1 rows these three families used `time_lower` only as
+  a censoring bound, which applies to status 2, so a left-truncated fit was
+  silently fitted as if every subject had been at risk from time 0. They
+  now subtract the cumulative hazard at entry, H(time) - H(time_lower), as
+  the Weibull and multiphase likelihoods already did. The log-likelihood,
+  its gradient and the closed-form Hessian all carry the entry term.
+
+* **`hzr_gof()` reported a conservation ratio that was not one** (#254).
+  For a model with covariates it computed expected events from a single
+  curve at the covariate means, then printed the total as the
+  "Conservation ratio (E/O)". On the covariate model in the clinical
+  walkthrough vignette that printed 0.606, while the fit conserved events exactly (68.000 expected
+  against 68 observed). Expected events are now summed per subject, each
+  subject's cumulative hazard at exit minus that at entry. For Weibull,
+  exponential and multiphase fits with conservation of events, E/O is then
+  the conservation-of-events identity; for log-logistic and log-normal fits
+  it checks calibration in total. For a weighted fit, both observed and
+  expected events now carry the case weights, since that is what a weighted
+  fit conserves (the sum of w·H equals the sum of w·d). The `par_surv` and
+  `par_cumhaz` columns are still the covariate-mean curve, for plotting
+  against Kaplan-Meier, and the risk-set counts and Kaplan-Meier columns stay
+  unweighted. Unweighted intercept-only fits without entry times are
+  unchanged.
+
+* **`hzr_gof()` drew the mean-patient curve at covariates of 0** for a
+  multiphase fit whose covariates enter only through the phase formulas.
+  Such a fit has no global design matrix, so the `par_surv` and
+  `par_cumhaz` columns were predicted from time alone, which set every
+  phase covariate to 0. They now use each phase's design-matrix column
+  means, so a factor enters as the proportion of patients in each level.
+
+* **`hzr_gof()` stopped on a multiphase fit with both a global covariate and
+  phase-formula covariates, and every multiphase fit carried a
+  `par_cumhaz_time` column** (#263, #264). With `Surv(...) ~ age` and a phase
+  formula `~ mal`, the mean-patient curve was built from the global
+  covariates alone, so `predict()` found no `mal` column and stopped before
+  the expected-event tally. The curve is now evaluated at the column means
+  of each phase's own design matrix, for global, phase-formula and mixed
+  covariates alike. With `time_windows`, a multiphase fit's output had twice
+  as many rows as grid times. The mean patient now carries the covariate
+  means in the window that contains each time, for every phase built on the
+  global covariates, including one whose formula the fit could not evaluate
+  without `data`. A multiphase fit that dropped rows with a missing phase
+  covariate is now refused: its design matrix is shorter than the data, and
+  the per-subject tally recycled it and gave a wrong total with only a
+  length warning. Separately, the `par_cumhaz_<phase>` columns were chosen
+  by dropping `total` from the decomposition, which let its `time` column
+  through as a phase; they are now chosen by phase name.
+
+* **`hzr_gof()` had five smaller errors**, found by Copilot's and
+  r-reviewer's reviews of #285.
+  - `seq()` builds grid times that differ from the data times in the last
+    binary digits, and they were matched with a fixed tolerance of 100
+    machine epsilons. Above 128 that is smaller than the gap between
+    adjacent doubles, so at times in days or months events fell off the
+    grid: 180 of 197 were counted on a `seq(150, 300, by = 0.1)` grid. The
+    tolerance now scales with the time.
+  - With a custom `time_grid`, `n_risk` between Kaplan-Meier times carried
+    the previous count forward, so it kept subjects who had left and
+    missed ones who had entered. It now counts the risk set at each grid
+    time.
+  - An unsorted grid made the cumulative columns non-cumulative. The grid
+    is now sorted, with repeated times dropped.
+  - With an event at time 0, `km_surv` at 0 was averaged with 1.
+  - For a fit with both `time_windows` and entry times, expected events
+    took H(entry) in the entry-time covariate window, while the likelihood
+    uses the exit-time window. E/O came out 1.052 on a Weibull fit that
+    conserves events.
+
+* **`hzr_gof()` places each subject at the Kaplan-Meier time `survfit()`
+  gave it** (#286). `survfit()` merges exit times that are closer together
+  than its tolerance. The per-subject tallies added above for #254 matched
+  each subject's raw time instead, so a merged subject fell off the default
+  grid and out of both tallies. On a fit with entry times, 55 of 68 events
+  were counted and E/O read 1.22. This came in with the #254 change and
+  never shipped. `hzr_gof()` now also warns when a subject cannot be placed
+  on the default grid, rather than leaving it out silently.
 
 * **A Weibull fit with one masked variance reported the others on the wrong
   scale.** When the Hessian inverse has a non-positive variance, its row and

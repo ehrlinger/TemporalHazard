@@ -68,10 +68,15 @@ NULL
 #'
 #' \deqn{S(t | x) = \exp(-\lambda t \exp(\eta))}
 #'
-#' The log-likelihood for right-censored data is:
+#' The log-likelihood for right-censored data with entry times \eqn{s_i} is:
 #'
 #' \deqn{\ell(\theta) = \sum_{i: \delta_i = 1} [\log\lambda + \eta_i]
-#'   - \lambda \sum_i t_i \exp(\eta_i)}
+#'   - \lambda \sum_i (t_i - s_i) \exp(\eta_i)}
+#'
+#' For status 0/1 rows, \eqn{s_i} is \code{time_lower} where
+#' \code{time_lower < time} (counting-process entry, left truncation) and 0
+#' otherwise, so each row contributes \eqn{H(t_i) - H(s_i)}. Status 2 rows
+#' use \code{time_lower} as the interval lower bound instead.
 #'
 #' Reparameterization: theta\[1\] = log(lambda) avoids constrained optimization.
 #'
@@ -130,22 +135,31 @@ NULL
   cumhaz_lower <- lambda * lower * exp(eta)
   cumhaz_upper <- lambda * upper * exp(eta)
 
+  # Counting-process entry-time cumulative hazard H(start) for status 0/1
+  # rows, as in .hzr_logl_weibull(): only genuine epoch rows (time_lower <
+  # time) get a non-zero start.  Status 2 rows keep start = 0 because their
+  # time_lower is the interval lower bound, used via cumhaz_lower.
+  start_vec <- .hzr_entry_start_exponential(time, status, time_lower)
+  cumhaz_start <- lambda * start_vec * exp(eta)
+
   idx_event <- status == 1
   idx_right <- status == 0
   idx_left <- status == -1
   idx_interval <- status == 2
 
-  # Event: w * [log h(t) + log S(t)] = w * [log(lambda)+eta - H(t)]
+  # Event: w * [log h(t) - (H(t) - H(start))]
   ll_event <- if (any(idx_event)) {
     sum(weights[idx_event] *
-          ((log_lambda + eta[idx_event]) - cumhaz_event[idx_event]))
+          ((log_lambda + eta[idx_event]) -
+             (cumhaz_event[idx_event] - cumhaz_start[idx_event])))
   } else {
     0
   }
 
-  # Right-censored: w * log S(t) = -w * H(t)
+  # Right-censored: w * [-(H(t) - H(start))]
   ll_right <- if (any(idx_right)) {
-    -sum(weights[idx_right] * cumhaz_event[idx_right])
+    -sum(weights[idx_right] *
+           (cumhaz_event[idx_right] - cumhaz_start[idx_right]))
   } else {
     0
   }
@@ -192,11 +206,12 @@ NULL
 #' Computes the score vector of the exponential log-likelihood w.r.t. all parameters.
 #'
 #' The log-likelihood is:
-#'   \eqn{L = \sum(\delta_i * [\log(\lambda) + \eta_i]) - \sum(\lambda * t_i * \exp(\eta_i))}
+#'   \eqn{L = \sum(\delta_i * [\log(\lambda) + \eta_i]) - \sum(\lambda * (t_i - s_i) * \exp(\eta_i))}
 #'
-#' Derivatives:
-#' dL/d(log lambda) = sum(delta_i) - sum(lambda * t_i * exp(eta_i)) = sum(delta_i) - sum(H_i)
-#' dL/dbeta_j    = sum(delta_i * x_ij) - sum(lambda * t_i * exp(eta_i) * x_ij) = t(X) %*% (delta - H)
+#' where \eqn{s_i} is the entry time (0 unless status 0/1 and time_lower < time).
+#' With \eqn{H_i = \lambda (t_i - s_i) \exp(\eta_i)}, the derivatives are:
+#' dL/d(log lambda) = sum(delta_i) - sum(H_i)
+#' dL/dbeta_j    = t(X) %*% (delta - H)
 #'
 #' @noRd
 .hzr_gradient_exponential <- function(
@@ -242,13 +257,19 @@ NULL
     cumhaz <- lambda * time * exp(eta)
   }
 
+  # Entry-time H(start); zero except for genuine epoch rows (status 0/1 with
+  # time_lower < time).  H is linear in lambda * exp(eta), so the entry term
+  # enters every derivative as H(t) -> H(t) - H(start).
+  cumhaz_start <- lambda * .hzr_entry_start_exponential(time, status,
+                                                        time_lower) * exp(eta)
+
   # Weighted building blocks: every term below is the unweighted form with
-  # `status` -> `w * status` and `cumhaz` -> `w * cumhaz`.
+  # `status` -> `w * status` and `cumhaz` -> `w * (H(t) - H(start))`.
   w_status <- weights * status
-  w_cumhaz <- weights * cumhaz
+  w_cumhaz <- weights * (cumhaz - cumhaz_start)
 
   # ===== Gradient w.r.t. log(lambda) =====
-  # dL/d(log lambda) = sum(w * delta) - sum(w * H)
+  # dL/d(log lambda) = sum(w * delta) - sum(w * (H(t) - H(start)))
   grad[1] <- sum(w_status) - sum(w_cumhaz)
 
   # ===== Gradient w.r.t. beta (covariate coefficients) =====
@@ -270,7 +291,8 @@ NULL
 #' row is left- or interval-censored (\code{status \%in\% c(-1, 2)}) it returns
 #' \code{NULL} to request the numerical-Hessian fallback.
 #'
-#' Derivation: with \eqn{H_i = \lambda t_i e^{\eta_i}} and design matrix
+#' Derivation: with \eqn{H_i = \lambda (t_i - s_i) e^{\eta_i}} (\eqn{s_i} the
+#' entry time, 0 unless status 0/1 and time_lower < time) and design matrix
 #' \eqn{\tilde X = [1 | X]}, the log-likelihood Hessian is
 #' \eqn{-\tilde X^\top \mathrm{diag}(w H) \tilde X}; the objective Hessian is its
 #' negation, \eqn{+\tilde X^\top \mathrm{diag}(w H) \tilde X}.
@@ -307,8 +329,9 @@ NULL
     eta <- rep(0, n)
   }
 
-  # Weighted cumulative hazard per row.
-  wH <- weights * lambda * time * exp(eta)
+  # Weighted cumulative hazard per row, net of the entry-time H(start).
+  start_vec <- .hzr_entry_start_exponential(time, status, time_lower)
+  wH <- weights * lambda * (time - start_vec) * exp(eta)
 
   # Design matrix augmented with the log(lambda) "intercept" column.
   x_tilde <- if (is.null(x)) matrix(1, nrow = n, ncol = 1L) else cbind(1, x)
@@ -339,6 +362,18 @@ NULL
     control = control, use_bounds = FALSE,
     hessian_fn = hessian_fn
   )
+}
+
+# Counting-process entry time per row: time_lower for status 0/1 rows with
+# time_lower < time, 0 otherwise (status -1/2 rows, or time_lower NULL).
+# Same rule as .hzr_logl_weibull().
+.hzr_entry_start_exponential <- function(time, status, time_lower) {
+  start_vec <- rep(0, length(time))
+  if (!is.null(time_lower)) {
+    epoch_idx <- status %in% c(0L, 1L) & time_lower < time
+    start_vec[epoch_idx] <- time_lower[epoch_idx]
+  }
+  start_vec
 }
 
 .hzr_numeric_grad_exponential <- function(theta, time, status,
