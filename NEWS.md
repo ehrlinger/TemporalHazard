@@ -180,8 +180,9 @@
   as before whenever they are all given, and refuses some of them beside its
   design columns, as it errored before. It also refuses a phase covariate
   missing from `newdata` rather than taking a same-named object, when it
-  kept its fitting data (1.1.0 and later); a fit saved without it cannot
-  tell a missing covariate from a formula constant and behaves as before.
+  kept its fitting data (saved by 1.1.0 or later). A fit saved by 1.0.3 or
+  earlier did not keep it, cannot tell a missing covariate from a formula
+  constant, and still takes a same-named object, as before.
 
 * **`predict(type = "survival", se.fit = TRUE)` now reports the standard
   error of the survival probability.** The `se.fit` column held the standard
