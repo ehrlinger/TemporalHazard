@@ -228,6 +228,30 @@ test_that("a multiphase fit saved before the design was stored refuses too", {
   expect_equal(unname(got), c(0.0140056, 0.320817), tolerance = 1e-4)
 })
 
+test_that("multiphase time_windows: the rebuilt global design is expanded", {
+  skip_on_cran()  # a multiphase fit
+  # The global design a formula-less phase inherits is window-expanded at
+  # fit time (age_w1, age_w2).  Rebuilt unexpanded at newdata, two rows met
+  # two per-window coefficients and %*% returned four values, silently.
+  # Reference: predict() at the fitted data, which uses the stored design.
+  d <- stats::na.omit(get("avc", envir = asNamespace("TemporalHazard")))
+  set.seed(1)
+  m <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ age, data = d, dist = "multiphase",
+    time_windows = 12,
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes"),
+      constant = hzr_phase("constant")),
+    fit = TRUE))
+  # One subject on each side of the cut, so both windows are exercised.
+  rows <- c(which(d$int_dead <= 12)[1], which(d$int_dead > 12)[1])
+  want <- predict(m, type = "cumulative_hazard")[rows]
+  nd <- data.frame(time = d$int_dead[rows], age = d$age[rows])
+  got <- predict(m, newdata = nd, type = "cumulative_hazard")
+  expect_length(got, 2L)
+  expect_equal(unname(got), unname(want), tolerance = 1e-10)
+})
+
 test_that("a multiphase global design takes the variable over its column", {
   skip_on_cran()  # a multiphase fit
   fit <- suppressWarnings(hazard(

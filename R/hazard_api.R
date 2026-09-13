@@ -1152,8 +1152,10 @@ hazard <- function(formula = NULL,
 #'   time (e.g., "survival", "cumulative_hazard"), newdata should include a `time`
 #'   column, or time will be taken from the fitted object's data.
 #'   Covariates are matched to the model by column name, so their order does
-#'   not matter. A formula fit rebuilds its design from the formula, so a
-#'   factor can be given as a level label. `newdata` may instead carry the
+#'   not matter. A formula fit rebuilds its global design from the formula,
+#'   so a factor there can be given as a level label (a multiphase phase's
+#'   own formula does not keep its levels yet; see #268). `newdata` may
+#'   instead carry the
 #'   fit's design-matrix columns by name (`grpyoung` for a factor `grp`);
 #'   these are used only when no formula variable is given (a numeric
 #'   variable that is itself a column counts only if another column, such
@@ -1556,7 +1558,16 @@ predict.hazard <- function(object, newdata = NULL,
             # A formula-less phase inherits the global design: rebuild that,
             # not every non-time column of newdata (which also carries the
             # phase formulas' variables).
-            x_list[[nm]] <- .hzr_global_design(object, newdata)
+            x_g <- .hzr_global_design(object, newdata)
+            # With time windows the fit expanded the inherited design per
+            # window (age_w1, age_w2); expand it the same way here, or the
+            # rows meet the per-window coefficients unexpanded.
+            if (!is.null(time_windows)) {
+              x_g <- .hzr_expand_time_varying_design(
+                x = x_g, time = pred_time, time_windows = time_windows
+              )
+            }
+            x_list[[nm]] <- x_g
           } else {
             x_list[[nm]] <- NULL
           }

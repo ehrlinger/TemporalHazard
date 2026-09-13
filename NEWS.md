@@ -82,11 +82,12 @@
   symbols up in `newdata` first. None of this gave an error. These calls
   now stop and ask for the variable to be renamed and the model refitted,
   whether it is in the global formula, a named `x` or a multiphase phase
-  formula. `hzr_gof()` and, for a single-distribution model,
+  formula. For a single-distribution model, `hzr_gof()` and
   `hzr_deciles()` pass the fitted design columns, which are used as they
-  are. So they stop only for a design column named `time` itself, which
-  follow-up time used to overwrite silently, or for a multiphase phase
-  formula that uses `time`. `log(time)`, a constant such as
+  are, so they stop only for a design column named `time` itself, which
+  follow-up time used to overwrite silently. For a multiphase fit they
+  use the fitted per-phase designs and re-evaluate no formula, so a
+  `time` variable does not stop them there. `log(time)`, a constant such as
   `I(age > time)` and a list element such as `cfg$time` do not stop them.
   In the global formula, neither does a value that `scale()` stored at
   fit time, in `predict()` either. A phase formula is re-evaluated as
@@ -288,6 +289,16 @@
   their columns by name, or by position when `x` was unnamed. Point
   predictions, `se.fit = TRUE` and `decompose = TRUE` are each checked
   against `exp(x beta_j) H0_j(t)` per phase (#266).
+
+* **`predict(newdata = )` on a multiphase fit with `time_windows` and a
+  global covariate now returns one value per row.** The fit expands the
+  design that a phase without its own formula inherits into one column
+  per window (`age_w1`, `age_w2`). At `newdata` that design was rebuilt
+  without that expansion, and meeting the per-window coefficients it
+  returned a
+  flattened matrix: four numbers for two rows, with no error. It is now
+  expanded at the prediction times, and matches `predict()` at the
+  fitted data.
 
 * **The multiphase gradient and Hessian are now right when an early phase's
   `m` is near 0.** Both differentiate in `m` by finite differences, and
