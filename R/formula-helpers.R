@@ -145,12 +145,18 @@
   # "variables" is list(v1, v2, ...), so variable i is element i + 1.
   terms_txt <- vapply(
     off,
-    function(i) paste(deparse(attr(tt, "variables")[[i + 1L]]), collapse = " "),
+    function(i) {
+      paste(deparse(attr(tt, "variables")[[i + 1L]], width.cutoff = 500L),
+            collapse = " ")
+    },
     character(1L)
   )
-  stop("`", paste(terms_txt, collapse = "`, `"), "` in ", where, " is an ",
-       "offset, and offsets are not supported: hazard() would fit the model ",
-       "without it. Remove the offset() term.", call. = FALSE)
+  one <- length(terms_txt) == 1L
+  stop("`", paste(terms_txt, collapse = "`, `"), "` in ", where,
+       if (one) " is an offset" else " are offsets",
+       ", and offsets are not supported: hazard() would fit the model ",
+       "without ", if (one) "it" else "them", ". Remove the offset() ",
+       if (one) "term." else "terms.", call. = FALSE)
 }
 
 

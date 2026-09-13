@@ -53,7 +53,10 @@
                  error = function(e) NULL)
   if (is.null(tt)) return(character())
   # term.labels leaves an offset out, so a scope naming one lost it silently.
-  .hzr_refuse_offset(formula, "the stepwise formula")
+  .hzr_refuse_offset(formula, paste0(
+    "the formula `",
+    paste(deparse(formula, width.cutoff = 500L), collapse = " "), "`"
+  ))
   attr(tt, "term.labels")
 }
 

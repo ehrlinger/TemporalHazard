@@ -360,9 +360,38 @@ test_that("an offset-free fit is unchanged by the offset guard", {
   f0 <- hazard(survival::Surv(int_dead, dead) ~ age, data = avc_off,
                dist = "weibull", theta = c(mu = 0.1, nu = 1, 0), fit = TRUE)
   expect_true(f0$fit$converged)
-  expect_equal(f0$fit$objective, -222.652224526755, tolerance = 1e-10)
+  expect_equal(f0$fit$objective, -222.652224526755, tolerance = 1e-8)
   # A ratio: mu is about 6e-4, where an absolute comparison is loose.
+  # 1e-4, not tighter: the optimizer stops at a relative gradient of
+  # eps^(1/3), about 6e-6, so platforms may differ past that. The offset
+  # moved survreg's age coefficient by 3%, far outside it.
   expect_equal(unname(coef(f0)) /
                  c(0.0005968534, 0.2124829995, -0.0058706368),
-               rep(1, 3), tolerance = 1e-6)
+               rep(1, 3), tolerance = 1e-4)
+})
+
+test_that("stats::offset() is a covariate, not a refused offset", {
+  # terms() does not mark it as an offset, and model.matrix() keeps it.
+  out <- parse(survival::Surv(int_dead, dead) ~ age +
+                 stats::offset(log(mal + 1)), data = avc_off)
+  expect_identical(colnames(out$x), c("age", "stats::offset(log(mal + 1))"))
+})
+
+test_that("every offset in a formula is named", {
+  expect_error(
+    parse(survival::Surv(int_dead, dead) ~ offset(age) + mal +
+            offset(log(mal + 1)), data = avc_off),
+    "`offset\\(age\\)`, `offset\\(log\\(mal \\+ 1\\)\\)` in the formula are offsets"
+  )
+})
+
+test_that("an offset in a character stepwise scope stops the screen", {
+  # A character scope never reaches terms(), so it needs its own check.
+  f0 <- hazard(survival::Surv(int_dead, dead) ~ age, data = avc_off,
+               dist = "weibull", theta = c(mu = 0.1, nu = 1, 0), fit = TRUE)
+  expect_error(
+    hzr_stepwise(f0, data = avc_off, scope = c("mal", "offset(mal)"),
+                 direction = "forward", criterion = "wald", trace = FALSE),
+    "`offset\\(mal\\)` in `scope` is an offset"
+  )
 })
