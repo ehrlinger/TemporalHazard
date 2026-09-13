@@ -54,6 +54,16 @@ test_that("a factor given as a single label codes to the fit's levels", {
                tolerance = 1e-10, ignore_attr = TRUE)
   expect_equal(old / reference_cumhaz(fit, tt, 0), rep(1, 3),
                tolerance = 1e-10, ignore_attr = TRUE)
+  # One row, one character label: the exact shape that stopped with
+  # "contrasts can be applied only to factors with 2 or more levels".
+  one_old <- predict(fit, newdata = data.frame(time = 2, grp = "old"),
+                     type = "cumulative_hazard")
+  one_young <- predict(fit, newdata = data.frame(time = 2, grp = "young"),
+                       type = "cumulative_hazard")
+  expect_equal(one_old / reference_cumhaz(fit, 2, 0), 1,
+               tolerance = 1e-10, ignore_attr = TRUE)
+  expect_equal(one_young / reference_cumhaz(fit, 2, 1), 1,
+               tolerance = 1e-10, ignore_attr = TRUE)
 })
 
 test_that("a full-level factor, in any level order, codes to the fit's levels", {
@@ -168,9 +178,46 @@ test_that("a fit without the stored design lets its variables win too (#272)", {
   tt <- c(1, 1)
   nd <- data.frame(time = tt, grp = factor(c("old", "young")),
                    grpyoung = c(1, 0))
+  # main's answer, computed on 4b68020 with the same fit: old, then young.
+  expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard"),
+               c(0.04647389634149, 0.23995615103791),
+               tolerance = 1e-6, ignore_attr = TRUE)
   expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard") /
                  reference_cumhaz(fit, tt, c(0, 1)),
                c(1, 1), tolerance = 1e-10, ignore_attr = TRUE)
+})
+
+test_that("a fit without the stored design refuses some variables beside its design columns (#272)", {
+  data(avc, package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc)
+  d$grp <- factor(ifelse(d$age > 100, "old", "young"))
+  d$sx <- factor(ifelse(d$mal == 1, "M", "F"))
+  fit <- hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                        fixed = "shapes", formula = ~ grp + sx),
+      constant = hzr_phase("constant")
+    ),
+    fit = TRUE
+  )
+  fit$fit$x_design <- NULL
+  # grp given, sx missing: main stopped ("object 'sx' not found"); taking
+  # the design columns instead would silently ignore grp = "old".
+  expect_error(
+    predict(fit, newdata = data.frame(time = 2, grp = "old", grpyoung = 1,
+                                      sxM = 0),
+            type = "cumulative_hazard"),
+    "gives the formula variable\\(s\\) 'grp'.*lacks 'sx'"
+  )
+  # Design columns only: nothing to contradict, so they are used.
+  base <- predict(fit, newdata = data.frame(time = 2),
+                  type = "cumulative_hazard", decompose = TRUE)
+  b <- fit$fit$theta[["early.grpyoung"]]
+  got <- predict(fit, newdata = data.frame(time = 2, grpyoung = 1, sxM = 0),
+                 type = "cumulative_hazard")
+  expect_equal(got / (exp(b) * base$early + base$constant), 1,
+               tolerance = 1e-10, ignore_attr = TRUE)
 })
 
 phase_age_fit <- function(formula) {

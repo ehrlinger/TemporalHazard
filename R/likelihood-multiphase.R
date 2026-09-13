@@ -1549,7 +1549,9 @@
 #' the design columns, with others missing, is an error: neither route could
 #' honour what was given. One difference from the global rule: a fit saved
 #' before the phase design was stored always rebuilt from its formula, so
-#' its variables win too whenever they are all given.
+#' its variables win too whenever they are all given, and some of them
+#' beside its design columns is refused, with the formula standing in for
+#' the stored design.
 #'
 #' @param object A fitted multiphase `hazard` object.
 #' @param nm Phase name.
@@ -1564,39 +1566,40 @@
 
   use_design <- !is.null(cols) && all(cols %in% names(newdata))
   if (use_design && !isTRUE(attr(newdata, "hzr_design_columns"))) {
+    # A fit saved before the phase design was stored has no data_vars; its
+    # formula's variables stand in. This differs from the global rule, which
+    # takes the design columns for such a fit: main's phase path always
+    # rebuilt from the formula, so taking them here would be a new swap.
     if (is.null(design)) {
-      # A fit made before the phase design was stored always rebuilt from
-      # its formula, so its variables still win whenever they are all given.
-      use_design <- !all(all.vars(ph$formula) %in% names(newdata))
+      vars <- all.vars(ph$formula)
+      labels <- attr(stats::terms(ph$formula), "term.labels")
     } else {
-      missing <- setdiff(design$data_vars, names(newdata))
-      if (length(missing) == 0L) {
-        use_design <- FALSE
-      } else {
-        # The design route would ignore any formula variable given beside
-        # the design columns, and without the missing ones the variables
-        # cannot be rebuilt, so a mix is refused rather than guessed. A
-        # variable that is itself a design column (numeric `age`) counts
-        # only if another term is built from it (I(age^2), age:grp): a
-        # changed `age` would leave those columns stale.
-        feeds_derived <- unlist(lapply(
-          attr(design$terms, "term.labels"),
-          function(label) {
-            v <- all.vars(parse(text = label)[[1L]])
-            if (identical(v, label)) character(0) else v
-          }
-        ))
-        counted <- union(setdiff(design$data_vars, cols),
-                         intersect(design$data_vars, feeds_derived))
-        given <- intersect(counted, names(newdata))
-        if (length(given) > 0L) {
-          stop("'newdata' gives the formula variable(s) ",
-               paste0("'", given, "'", collapse = ", "), " but lacks ",
-               paste0("'", missing, "'", collapse = ", "),
-               ", while carrying the fitted design columns of phase '", nm,
-               "'. Give all of the formula's variables, so the design can ",
-               "be rebuilt from them.", call. = FALSE)
-        }
+      vars <- design$data_vars
+      labels <- attr(design$terms, "term.labels")
+    }
+    missing <- setdiff(vars, names(newdata))
+    if (length(missing) == 0L) {
+      use_design <- FALSE
+    } else {
+      # The design route would ignore any formula variable given beside the
+      # design columns, and without the missing ones the variables cannot
+      # be rebuilt, so a mix is refused rather than guessed. A variable that
+      # is itself a design column (numeric `age`) counts only if another
+      # term is built from it (I(age^2), age:grp): a changed `age` would
+      # leave those columns stale.
+      feeds_derived <- unlist(lapply(labels, function(label) {
+        v <- all.vars(parse(text = label)[[1L]])
+        if (identical(v, label)) character(0) else v
+      }))
+      counted <- union(setdiff(vars, cols), intersect(vars, feeds_derived))
+      given <- intersect(counted, names(newdata))
+      if (length(given) > 0L) {
+        stop("'newdata' gives the formula variable(s) ",
+             paste0("'", given, "'", collapse = ", "), " but lacks ",
+             paste0("'", missing, "'", collapse = ", "),
+             ", while carrying the fitted design columns of phase '", nm,
+             "'. Give all of the formula's variables, so the design can ",
+             "be rebuilt from them.", call. = FALSE)
       }
     }
   }
