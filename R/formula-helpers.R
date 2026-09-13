@@ -343,6 +343,20 @@
   }
   design <- object$data$x_design
   if (is.null(design)) {
+    # No stored design: a vector-interface fit (no formula, so no variable a
+    # column could contradict), or a formula fit saved before the design was
+    # stored. For the latter an extra column cannot be told from a formula
+    # variable, and taking the design columns beside a contradicting one
+    # would be a silent wrong answer, so it is refused -- as it was before,
+    # when such a column made the positional match fail.
+    extra <- setdiff(names(newdata), c(cols, "time"))
+    if (!is.null(object$call$formula) && length(extra) > 0L) {
+      stop("This fit was saved before its formula design was stored, so ",
+           "'newdata' may hold only its design columns (",
+           paste0("'", cols, "'", collapse = ", "), ") and 'time'; it also ",
+           "has ", paste0("'", extra, "'", collapse = ", "), ". Refit the ",
+           "model to predict from the formula's variables.", call. = FALSE)
+    }
     return(TRUE)
   }
   missing <- setdiff(design$data_vars, names(newdata))

@@ -88,6 +88,38 @@ test_that("a variable that other columns are built from is not left stale", {
                .dp_weibull(0.004 * 60 + 0.7 + 0.01 * 60, 2), tolerance = 1e-12)
 })
 
+test_that("a fit saved before the design was stored refuses extra columns", {
+  # A formula fit from 1.2.10 or earlier has no x_design, so nothing can
+  # tell a formula variable from an unused column.  Taking the design
+  # columns beside a contradicting grp swapped the answer; main (4b68020)
+  # stopped instead ("Number of parameters insufficient ..."), and so does
+  # this now.  Values pinned from main at 4b68020 on the same object.
+  w <- hazard(survival::Surv(int_dead, dead) ~ age + grp, data = .dp_avc,
+              dist = "weibull", theta = .dp_th)
+  w$data$x_design <- NULL
+  expect_error(
+    predict(w, type = "cumulative_hazard",
+            newdata = data.frame(time = 2, age = 60, grp = c("old", "young"),
+                                 grpyoung = c(1, 0))),
+    "saved before.*'grp'"
+  )
+  got <- predict(w, type = "cumulative_hazard",
+                 newdata = data.frame(grpyoung = c(0, 1), time = 2, age = 60))
+  expect_equal(unname(got), c(0.179782, 0.362036), tolerance = 1e-6)
+})
+
+test_that("a vector-interface fit still ignores a column it does not use", {
+  # No formula, so no variable that could contradict: an extra column is
+  # just unused, as for a fit with a stored design.
+  d <- .dp_avc
+  v <- hazard(time = d$int_dead, status = d$dead,
+              x = cbind(age = d$age, mal = d$mal),
+              dist = "weibull", theta = c(mu = 0.01, nu = 0.5, 0.004, 0.3))
+  got <- predict(v, type = "cumulative_hazard",
+                 newdata = data.frame(time = 2, age = 60, mal = 1, junk = 9))
+  expect_equal(unname(got), .dp_weibull(0.004 * 60 + 0.3, 2), tolerance = 1e-12)
+})
+
 test_that("design columns alone are still taken by name", {
   w <- hazard(survival::Surv(int_dead, dead) ~ age + grp, data = .dp_avc,
               dist = "weibull", theta = .dp_th)
@@ -153,6 +185,29 @@ test_that("hzr_deciles() uses the fitted rows even if a formula constant changed
   expect_gt(sum(w$data$x[, 2]), 0)            # the fitted column is not all 0
   expect_equal(sum(hzr_deciles(w, time = 60)$expected), want,
                tolerance = 1e-8)
+})
+
+test_that("a multiphase fit saved before the design was stored refuses too", {
+  skip_on_cran()  # a multiphase fit
+  set.seed(1)
+  m <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ age + grp, data = .dp_avc,
+    dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes"),
+      constant = hzr_phase("constant")),
+    fit = TRUE))
+  m$data$x_design <- NULL
+  expect_error(
+    predict(m, type = "cumulative_hazard",
+            newdata = data.frame(time = 2, age = 60, grp = c("old", "young"),
+                                 grpyoung = c(1, 0))),
+    "saved before.*'grp'"
+  )
+  # Pinned from main at 4b68020 on the same object (a fitted model: 1e-4).
+  got <- predict(m, type = "cumulative_hazard",
+                 newdata = data.frame(time = 2, age = 60, grpyoung = c(0, 1)))
+  expect_equal(unname(got), c(0.0140056, 0.320817), tolerance = 1e-4)
 })
 
 test_that("a multiphase global design takes the variable over its column", {
