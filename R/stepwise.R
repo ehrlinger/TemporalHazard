@@ -240,12 +240,13 @@ hzr_stepwise <- function(fit,
   # refit's own predicate once, up front: one message, naming the remedy,
   # before any fitting happens.  Sharing .hzr_refit_blocker() with the refit
   # is what stops the two answers drifting apart.
-  # A forward screen steps only the phases its scope names; a backward or
+  # A forward screen steps only the phases its scope gives candidates; a
+  # NULL entry offers none, so its phase is never refit. A backward or
   # two-way screen can drop from any phase, so it steps them all (#284).
   stepped <- if (identical(fit$spec$dist, "multiphase") &&
                    direction == "forward" && is.list(scope) &&
                    !is.null(names(scope))) {
-    names(scope)
+    names(scope)[!vapply(scope, is.null, logical(1))]
   }
   refit_blocker <- .hzr_refit_blocker(fit, stepped = stepped)
   if (!is.null(refit_blocker)) {

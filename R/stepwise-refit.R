@@ -157,7 +157,9 @@
                 "hzr_phase(formula = ~ ...), with the columns in `data`")
 
   if (is.null(fit$call$formula)) {
-    if (!is.null(fit$call$x)) {
+    # Ask the design that was built, not the call: an `x` argument bound to
+    # NULL names `x` but built no columns, so an inheriting phase loses none.
+    if (!is.null(fit$data$x) && ncol(fit$data$x) > 0L) {
       return(paste0(who, " a design matrix passed directly as `x`, and a ",
                     "refit has no terms to rebuild it from", fix))
     }

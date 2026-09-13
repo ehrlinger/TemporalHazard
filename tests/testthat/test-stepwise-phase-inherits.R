@@ -295,6 +295,61 @@ test_that("a forward screen that never steps the inheriting phase still runs", {
   }
 })
 
+test_that("a NULL scope entry does not count as a stepped phase", {
+  # A forward screen draws no candidates from a NULL entry, so the phase it
+  # names is never refit and keeps its inherited design. Only a phase with
+  # a scope formula is held to the inherit refusals.
+  d7 <- avc_284
+  d7$grp <- cut(d7$age, 3)
+  base <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ grp, data = d7, dist = "multiphase",
+    phases = ph_284(fc = ~ age), fit = TRUE, control = ctl_284
+  ))
+  run <- function(scope) {
+    suppressWarnings(hzr_stepwise(base, data = d7, scope = scope,
+                                  direction = "forward", criterion = "wald",
+                                  slentry = 0.99, trace = FALSE,
+                                  control = ctl_284))
+  }
+  sw <- run(list(early = NULL, constant = ~ mal))
+  expect_identical(sw$steps$variable, "mal")
+  expect_identical(phase_covs(sw, "constant"),
+                   c("constant.age", "constant.mal"))
+  expect_length(phase_covs(sw, "early"), 2L)
+
+  # A formula entry still counts: `early` would be stepped, and its
+  # three-level inherited factor cannot be rebuilt one coefficient at a time.
+  expect_error(run(list(early = ~ mal, constant = ~ mal)),
+               "more than one column")
+})
+
+test_that("an `x` argument that evaluated to NULL is not refused", {
+  # The refusal protects columns a refit cannot rebuild. An `x` bound to a
+  # NULL built none: the call names `x`, but the design has no `x`, so the
+  # screen runs exactly as it does for a literal `x = NULL`.
+  no_x <- NULL
+  fit_x <- function(x_is_null_variable) {
+    if (x_is_null_variable) {
+      suppressWarnings(hazard(
+        data = avc_284, time = int_dead, status = dead, x = no_x,
+        dist = "multiphase", phases = ph_284(), fit = TRUE, control = ctl_284
+      ))
+    } else {
+      suppressWarnings(hazard(
+        data = avc_284, time = int_dead, status = dead, x = NULL,
+        dist = "multiphase", phases = ph_284(), fit = TRUE, control = ctl_284
+      ))
+    }
+  }
+  sw_lit <- step_284(fit_x(FALSE), list(early = ~ mal), criterion = "wald",
+                     slentry = 0.99)
+  sw_var <- step_284(fit_x(TRUE), list(early = ~ mal), criterion = "wald",
+                     slentry = 0.99)
+  expect_identical(sw_var$steps$variable, "mal")
+  expect_identical(phase_covs(sw_var, "early"), "early.mal")
+  expect_equal(coef(sw_var), coef(sw_lit))
+})
+
 test_that("the score expansion refuses rather than guess a column's slot", {
   # With no column names to match, the candidate's slot cannot be found; the
   # last slot is wrong after an interaction, so the expansion declines.
