@@ -1540,6 +1540,15 @@
 #' single label, or with its levels in another order, codes as it did in the
 #' fit.
 #'
+#' `newdata`'s design columns are taken as they are on the same rules
+#' `.hzr_uses_design_columns()` applies to the global design (#272): every
+#' fitted column present by name, and then either the caller declaring them
+#' design-level (the `hzr_design_columns` attribute), no stored design, or
+#' the formula's variables absent. Otherwise the variables win, so a
+#' design-named column that contradicts them cannot override them. Some
+#' formula variables beside the design columns, with others missing, is an
+#' error: neither route could honour what was given.
+#'
 #' @param object A fitted multiphase `hazard` object.
 #' @param nm Phase name.
 #' @param ph The phase's `hzr_phase` object.
@@ -1551,9 +1560,27 @@
   cols <- colnames(object$fit$x_list[[nm]])
   design <- object$fit$x_design[[nm]]
 
-  # newdata that already carries the phase's design columns by name (as
-  # hzr_gof() passes a design built from stored matrices) is taken as it is.
-  if (!is.null(cols) && all(cols %in% names(newdata))) {
+  use_design <- !is.null(cols) && all(cols %in% names(newdata))
+  if (use_design && !isTRUE(attr(newdata, "hzr_design_columns")) &&
+        !is.null(design)) {
+    missing <- setdiff(design$data_vars, names(newdata))
+    if (length(missing) == 0L) {
+      use_design <- FALSE
+    } else {
+      # A variable that is itself a design column (numeric `age`) is not a
+      # mix of the two routes.
+      given <- intersect(setdiff(design$data_vars, cols), names(newdata))
+      if (length(given) > 0L) {
+        stop("'newdata' gives the formula variable(s) ",
+             paste0("'", given, "'", collapse = ", "), " but lacks ",
+             paste0("'", missing, "'", collapse = ", "),
+             ", while carrying the fitted design columns of phase '", nm,
+             "'. Give all of the formula's variables, or only the design ",
+             "columns.", call. = FALSE)
+      }
+    }
+  }
+  if (use_design) {
     return(as.matrix(newdata[, cols, drop = FALSE]))
   }
 

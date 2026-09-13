@@ -104,6 +104,54 @@ test_that("newdata carrying the fit's design columns by name is accepted", {
                c(1, 1), tolerance = 1e-10, ignore_attr = TRUE)
 })
 
+test_that("a design column contradicting the phase variable does not win (#272)", {
+  fit <- phase_formula_fit()
+  tt <- c(0.5, 2)
+  nd <- data.frame(time = tt, grp = "old", grpyoung = 1)
+  # The variable wins: grp = "old" is the old value, whatever grpyoung says.
+  expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard") /
+                 reference_cumhaz(fit, tt, 0),
+               c(1, 1), tolerance = 1e-10, ignore_attr = TRUE)
+  # A caller that declares its columns design-level gets them as given.
+  attr(nd, "hzr_design_columns") <- TRUE
+  expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard") /
+                 reference_cumhaz(fit, tt, 1),
+               c(1, 1), tolerance = 1e-10, ignore_attr = TRUE)
+})
+
+test_that("some phase variables beside all design columns is refused (#272)", {
+  data(avc, package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc)
+  d$grp <- factor(ifelse(d$age > 100, "old", "young"))
+  d$sx <- factor(ifelse(d$mal == 1, "M", "F"))
+  fit <- hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                        fixed = "shapes", formula = ~ grp + sx),
+      constant = hzr_phase("constant")
+    ),
+    fit = TRUE
+  )
+  expect_identical(colnames(fit$fit$x_list$early), c("grpyoung", "sxM"))
+  # grp given, sx missing, both design columns present: neither route can
+  # honour grp = "old" and grpyoung = 1 at once, so it is an error.
+  expect_error(
+    predict(fit, newdata = data.frame(time = 2, grp = "old", grpyoung = 1,
+                                      sxM = 0),
+            type = "cumulative_hazard"),
+    "gives the formula variable\\(s\\) 'grp'.*lacks 'sx'"
+  )
+  # Control: design columns only is the design route, not an error.
+  base <- predict(fit, newdata = data.frame(time = 2),
+                  type = "cumulative_hazard", decompose = TRUE)
+  b <- fit$fit$theta[c("early.grpyoung", "early.sxM")]
+  got <- predict(fit, newdata = data.frame(time = 2, grpyoung = 1, sxM = 0),
+                 type = "cumulative_hazard")
+  expect_equal(got / (exp(b[[1]]) * base$early + base$constant), 1,
+               tolerance = 1e-10, ignore_attr = TRUE)
+})
+
 test_that("an unseen level or a missing covariate is an error", {
   fit <- phase_formula_fit()
   expect_error(

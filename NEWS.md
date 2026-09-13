@@ -169,8 +169,11 @@
   error. So is a covariate the phase uses that `newdata` lacks, where it was
   silently taken from a same-named object in the workspace; a `newdata` with
   only a `time` column still evaluates the baseline, every covariate at 0.
-  `newdata` carrying the phase's design columns by name (`grpyoung`) is taken
-  as it is. A fit saved by an earlier version rebuilds as before.
+  `newdata` carrying only the phase's design columns by name (`grpyoung`) is
+  taken as it is; when it also carries the formula's variables, the variables
+  win, so `grp = "old"` beside `grpyoung = 1` is the old value, not the young
+  one (#272). Some of the variables beside the design columns, with others
+  missing, is an error. A fit saved by an earlier version rebuilds as before.
 
 * **The multiphase gradient and Hessian are now right when an early phase's
   `m` is near 0.** Both differentiate in `m` by finite differences, and
