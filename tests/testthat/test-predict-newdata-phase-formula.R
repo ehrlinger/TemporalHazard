@@ -160,6 +160,74 @@ test_that("some phase variables beside all design columns is refused (#272)", {
                tolerance = 1e-10, ignore_attr = TRUE)
 })
 
+test_that("a fit without the stored design lets its variables win too (#272)", {
+  # Such a fit always rebuilt from its formula before #268, so a
+  # contradicting design column must not start winning for it now.
+  fit <- phase_formula_fit()
+  fit$fit$x_design <- NULL
+  tt <- c(1, 1)
+  nd <- data.frame(time = tt, grp = factor(c("old", "young")),
+                   grpyoung = c(1, 0))
+  expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard") /
+                 reference_cumhaz(fit, tt, c(0, 1)),
+               c(1, 1), tolerance = 1e-10, ignore_attr = TRUE)
+})
+
+phase_age_fit <- function(formula) {
+  data(avc, package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc)
+  d$grp <- factor(ifelse(d$age > 100, "old", "young"))
+  hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                        fixed = "shapes", formula = formula),
+      constant = hzr_phase("constant")
+    ),
+    fit = TRUE
+  )
+}
+
+test_that("a changed variable that feeds a derived phase column is refused (#272)", {
+  fit <- phase_age_fit(~ age * grp)
+  expect_identical(colnames(fit$fit$x_list$early),
+                   c("age", "grpyoung", "age:grpyoung"))
+  b <- fit$fit$theta
+  # The stale column must matter, or ignoring it would pass unseen.
+  expect_gt(abs(b[["early.age:grpyoung"]] * 60), 0.05)
+  # age changed, age:grpyoung left stale, grp missing: an error, not the
+  # stale design.
+  nd <- data.frame(time = 2, age = 60, grpyoung = 1, "age:grpyoung" = 0,
+                   check.names = FALSE)
+  expect_error(
+    predict(fit, newdata = nd, type = "cumulative_hazard"),
+    "gives the formula variable\\(s\\) 'age'.*lacks 'grp'"
+  )
+  # With grp as well, the design is rebuilt and the stale column ignored.
+  nd$grp <- "young"
+  base <- predict(fit, newdata = data.frame(time = 2),
+                  type = "cumulative_hazard", decompose = TRUE)
+  eta <- b[["early.age"]] * 60 + b[["early.grpyoung"]] +
+    b[["early.age:grpyoung"]] * 60
+  expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard") /
+                 (exp(eta) * base$early + base$constant),
+               1, tolerance = 1e-10, ignore_attr = TRUE)
+})
+
+test_that("design-only newdata with a bare numeric variable is not a mix (#272)", {
+  # age is both a formula variable and a design column; nothing is built
+  # from it, so age + grpyoung is design-only newdata, not a partial one.
+  fit <- phase_age_fit(~ age + grp)
+  b <- fit$fit$theta
+  base <- predict(fit, newdata = data.frame(time = 2),
+                  type = "cumulative_hazard", decompose = TRUE)
+  got <- predict(fit, newdata = data.frame(time = 2, age = 60, grpyoung = 1),
+                 type = "cumulative_hazard")
+  eta <- b[["early.age"]] * 60 + b[["early.grpyoung"]]
+  expect_equal(got / (exp(eta) * base$early + base$constant), 1,
+               tolerance = 1e-10, ignore_attr = TRUE)
+})
+
 test_that("an unseen level or a missing covariate is an error", {
   fit <- phase_formula_fit()
   expect_error(

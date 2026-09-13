@@ -173,7 +173,10 @@
   taken as it is; when it also carries the formula's variables, the variables
   win, so `grp = "old"` beside `grpyoung = 1` is the old value, not the young
   one (#272). Some of the variables beside the design columns, with others
-  missing, is an error. A fit saved by an earlier version rebuilds as before.
+  missing, is an error, and so is a changed variable that another design
+  column is built from (`age` beside a stale `age:grpyoung`) when the others
+  are missing. A fit saved by an earlier version rebuilds from its variables
+  as before whenever they are all given.
 
 * **The multiphase gradient and Hessian are now right when an early phase's
   `m` is near 0.** Both differentiate in `m` by finite differences, and

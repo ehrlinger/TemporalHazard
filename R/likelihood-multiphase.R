@@ -1540,14 +1540,16 @@
 #' single label, or with its levels in another order, codes as it did in the
 #' fit.
 #'
-#' `newdata`'s design columns are taken as they are on the same rules
+#' `newdata`'s design columns are taken as they are on the rules
 #' `.hzr_uses_design_columns()` applies to the global design (#272): every
 #' fitted column present by name, and then either the caller declaring them
-#' design-level (the `hzr_design_columns` attribute), no stored design, or
-#' the formula's variables absent. Otherwise the variables win, so a
-#' design-named column that contradicts them cannot override them. Some
-#' formula variables beside the design columns, with others missing, is an
-#' error: neither route could honour what was given.
+#' design-level (the `hzr_design_columns` attribute) or the formula's
+#' variables absent. Otherwise the variables win, so a design-named column
+#' that contradicts them cannot override them. Some formula variables beside
+#' the design columns, with others missing, is an error: neither route could
+#' honour what was given. One difference from the global rule: a fit saved
+#' before the phase design was stored always rebuilt from its formula, so
+#' its variables win too whenever they are all given.
 #'
 #' @param object A fitted multiphase `hazard` object.
 #' @param nm Phase name.
@@ -1561,22 +1563,40 @@
   design <- object$fit$x_design[[nm]]
 
   use_design <- !is.null(cols) && all(cols %in% names(newdata))
-  if (use_design && !isTRUE(attr(newdata, "hzr_design_columns")) &&
-        !is.null(design)) {
-    missing <- setdiff(design$data_vars, names(newdata))
-    if (length(missing) == 0L) {
-      use_design <- FALSE
+  if (use_design && !isTRUE(attr(newdata, "hzr_design_columns"))) {
+    if (is.null(design)) {
+      # A fit made before the phase design was stored always rebuilt from
+      # its formula, so its variables still win whenever they are all given.
+      use_design <- !all(all.vars(ph$formula) %in% names(newdata))
     } else {
-      # A variable that is itself a design column (numeric `age`) is not a
-      # mix of the two routes.
-      given <- intersect(setdiff(design$data_vars, cols), names(newdata))
-      if (length(given) > 0L) {
-        stop("'newdata' gives the formula variable(s) ",
-             paste0("'", given, "'", collapse = ", "), " but lacks ",
-             paste0("'", missing, "'", collapse = ", "),
-             ", while carrying the fitted design columns of phase '", nm,
-             "'. Give all of the formula's variables, or only the design ",
-             "columns.", call. = FALSE)
+      missing <- setdiff(design$data_vars, names(newdata))
+      if (length(missing) == 0L) {
+        use_design <- FALSE
+      } else {
+        # The design route would ignore any formula variable given beside
+        # the design columns, and without the missing ones the variables
+        # cannot be rebuilt, so a mix is refused rather than guessed. A
+        # variable that is itself a design column (numeric `age`) counts
+        # only if another term is built from it (I(age^2), age:grp): a
+        # changed `age` would leave those columns stale.
+        feeds_derived <- unlist(lapply(
+          attr(design$terms, "term.labels"),
+          function(label) {
+            v <- all.vars(parse(text = label)[[1L]])
+            if (identical(v, label)) character(0) else v
+          }
+        ))
+        counted <- union(setdiff(design$data_vars, cols),
+                         intersect(design$data_vars, feeds_derived))
+        given <- intersect(counted, names(newdata))
+        if (length(given) > 0L) {
+          stop("'newdata' gives the formula variable(s) ",
+               paste0("'", given, "'", collapse = ", "), " but lacks ",
+               paste0("'", missing, "'", collapse = ", "),
+               ", while carrying the fitted design columns of phase '", nm,
+               "'. Give all of the formula's variables, so the design can ",
+               "be rebuilt from them.", call. = FALSE)
+        }
       }
     }
   }
