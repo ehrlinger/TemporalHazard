@@ -344,8 +344,9 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #' phase for a multiphase fit, whether its covariates enter globally, through
 #' the phase formulas or both, so a factor enters as the proportion of
 #' patients in each level.
-#' With `time_windows`, the mean patient carries the covariate means in the
-#' window that contains each time.
+#' With `time_windows`, a phase built on the global covariates carries their
+#' means in the window that contains each time; a phase formula's own columns
+#' keep their plain means.
 #'
 #' For a weighted fit both tallies carry the case weights: observed events
 #' are \eqn{\sum_i w_i d_i} and expected events \eqn{\sum_i w_i H_i}, the
@@ -536,8 +537,9 @@ hzr_gof <- function(object, time_grid = NULL) {
          ngettext(sum(short), "phase ", "phases "),
          paste0("'", names(short)[short], "'", collapse = ", "),
          ngettext(sum(short), " has", " have"),
-         " fewer rows than the data. Refit on complete cases, e.g. ",
-         "data = na.omit(data).", call. = FALSE)
+         " fewer rows than the data. Refit on complete cases, dropping ",
+         "those rows from every input (data, or time, status and x).",
+         call. = FALSE)
   }
 
   curve_obj <- object
@@ -551,15 +553,22 @@ hzr_gof <- function(object, time_grid = NULL) {
     # With time_windows, a phase that took the global x carries data$x
     # expanded into one column per window, each on only in its own window.
     # Its column means would switch every window on at once, so expand the
-    # means of data$x by the grid times instead. Such a phase is recognised
-    # by its columns, not by whether a formula was written: a phase formula
-    # the fit could not evaluate (no `data`) leaves the phase on data$x.
+    # means of data$x by the grid times instead. Such a phase is known by the
+    # fit's own record of which designs came from a phase formula, not by
+    # whether a formula was written (the fit ignores one it cannot evaluate,
+    # without `data`) nor by column names (a phase formula's columns can share
+    # the expanded names). A fit from before that record falls back to names.
     time_windows <- object$spec$time_windows
+    from_formula <- attr(object$fit$x_list, "from_formula")
     window_cols <- if (!is.null(time_windows)) {
       colnames(.hzr_expand_time_varying_design(
         x = object$data$x[1, , drop = FALSE], time = 0,
         time_windows = time_windows
       ))
+    }
+    inherits_global <- function(nm, m) {
+      if (is.null(from_formula)) return(identical(colnames(m), window_cols))
+      !isTRUE(from_formula[nm])
     }
     x_bar <- function(m) {
       matrix(colMeans(m), nrow = length(time_grid), ncol = ncol(m),
@@ -570,7 +579,7 @@ hzr_gof <- function(object, time_grid = NULL) {
       stats::setNames(nm = names(object$fit$x_list)), function(nm) {
         m <- object$fit$x_list[[nm]]
         if (is.null(m) || ncol(m) == 0) return(m)
-        if (!is.null(time_windows) && identical(colnames(m), window_cols)) {
+        if (!is.null(time_windows) && inherits_global(nm, m)) {
           return(.hzr_expand_time_varying_design(
             x = x_bar(object$data$x), time = time_grid,
             time_windows = time_windows

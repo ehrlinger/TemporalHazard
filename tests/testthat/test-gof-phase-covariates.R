@@ -217,6 +217,68 @@ test_that("a phase covariate with missing values is refused, not recycled", {
   }
 })
 
+test_that("time_windows: a phase formula whose columns share the window names", {
+  # The global age expands to age_w1, age_w2; this phase formula uses data
+  # columns of the same names. The fit evaluates the formula, so the phase
+  # sits at its own columns' means, not at the windowed global age.
+  d <- .gof_pc_avc
+  set.seed(1)
+  d$age_w1 <- stats::rnorm(nrow(d), 5, 1)
+  d$age_w2 <- stats::rnorm(nrow(d), 50, 5)
+  fit <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ age,
+    data = d, time_windows = 1, dist = "multiphase",
+    phases = list(
+      early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                           fixed = "shapes", formula = ~ age_w1 + age_w2),
+      constant = hzr_phase("constant")
+    ),
+    fit = TRUE
+  ))
+  # The collision: both phases' designs carry the same column names.
+  expect_identical(colnames(fit$fit$x_list$early),
+                   colnames(fit$fit$x_list$constant))
+
+  gof <- hzr_gof(fit)
+  base <- predict(fit, newdata = data.frame(time = gof$time),
+                  type = "cumulative_hazard", decompose = TRUE)
+  th <- fit$fit$theta
+  early_ref <- base$early * exp(th[["early.age_w1"]] * mean(d$age_w1) +
+                                  th[["early.age_w2"]] * mean(d$age_w2))
+  expect_equal(gof$par_cumhaz_early, early_ref, tolerance = 1e-10)
+  # The inherited phase still switches windows with time.
+  beta_c <- ifelse(gof$time <= 1, th[["constant.age_w1"]],
+                   th[["constant.age_w2"]])
+  expect_equal(gof$par_cumhaz_constant,
+               base$constant * exp(beta_c * mean(d$age)), tolerance = 1e-10)
+})
+
+test_that("#263: a phase literally named `time` keeps its column", {
+  # decompose = TRUE returns a `time` column of its own; selecting phases by
+  # excluding "time" would drop this real phase.
+  d <- .gof_pc_avc
+  fit <- hazard(
+    survival::Surv(int_dead, dead) ~ 1,
+    data = d, dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                        fixed = "shapes"),
+      time  = hzr_phase("constant")
+    ),
+    fit = TRUE
+  )
+  gof <- hzr_gof(fit)
+  expect_identical(grep("^par_cumhaz_", names(gof), value = TRUE),
+                   c("par_cumhaz_early", "par_cumhaz_time"))
+  # The phases add up to the total, so the `time` phase's own contribution
+  # is the total less the early phase, independent of decompose's columns.
+  expect_equal(gof$par_cumhaz_time, gof$par_cumhaz - gof$par_cumhaz_early,
+               tolerance = 1e-12)
+  expect_gt(max(gof$par_cumhaz_time), 0.01)
+  # The grid column is still the grid.
+  expect_true(all(diff(gof$time) > 0))
+})
+
 test_that("global and phase covariates together: curve at both sets of means", {
   # age enters globally (so data$x is set and reaches the constant phase);
   # mal enters only through the early phase's formula.  A newdata built from

@@ -108,8 +108,9 @@ differ.  The means are those of the design-matrix columns, taken phase by
 phase for a multiphase fit, whether its covariates enter globally, through
 the phase formulas or both, so a factor enters as the proportion of
 patients in each level.
-With \code{time_windows}, the mean patient carries the covariate means in the
-window that contains each time.
+With \code{time_windows}, a phase built on the global covariates carries their
+means in the window that contains each time; a phase formula's own columns
+keep their plain means.
 
 For a weighted fit both tallies carry the case weights: observed events
 are \eqn{\sum_i w_i d_i} and expected events \eqn{\sum_i w_i H_i}, the
