@@ -240,14 +240,25 @@ hzr_stepwise <- function(fit,
   # refit's own predicate once, up front: one message, naming the remedy,
   # before any fitting happens.  Sharing .hzr_refit_blocker() with the refit
   # is what stops the two answers drifting apart.
-  refit_blocker <- .hzr_refit_blocker(fit)
+  # A forward screen steps only the phases its scope names; a backward or
+  # two-way screen can drop from any phase, so it steps them all (#284).
+  stepped <- if (identical(fit$spec$dist, "multiphase") &&
+                   direction == "forward" && is.list(scope) &&
+                   !is.null(names(scope))) {
+    names(scope)
+  }
+  refit_blocker <- .hzr_refit_blocker(fit, stepped = stepped)
   if (!is.null(refit_blocker)) {
     # The remedy is distribution-specific. Telling a multiphase caller to
     # "rebuild with the formula interface" would be wrong twice over: it is
     # not what blocked them, and for a translated SAS job it would force the
     # -1/0/1/2 -> Surv() 0/1/2/3 status round-trip this package has already
     # shipped a wrong answer through.
-    remedy <- if (identical(fit$spec$dist, "multiphase")) {
+    remedy <- if (!is.null(.hzr_inherit_blocker(fit, stepped = stepped))) {
+      # An inherited-design refusal names its own remedy; the generic one
+      # below would ask for `time` and `status` the caller already gave.
+      ""
+    } else if (identical(fit$spec$dist, "multiphase")) {
       paste0("Refit the base model with hazard(), supplying `time` and ",
              "`status` (or a formula), and retry.")
     } else {
@@ -256,8 +267,9 @@ hzr_stepwise <- function(fit,
              "hazard(Surv(time, status) ~ 1, data = df, ...) -- and retry.")
     }
     stop("`fit` cannot be used as a stepwise base model because ",
-         refit_blocker, ". Every candidate would fail to refit, so the ",
-         "screen could never enter or drop anything. ", remedy,
+         refit_blocker, ". No candidate could be refit as the step ",
+         "describes, so the screen cannot run.",
+         if (nzchar(remedy)) paste0(" ", remedy),
          call. = FALSE)
   }
 

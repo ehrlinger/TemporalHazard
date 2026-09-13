@@ -346,8 +346,13 @@
   }
 
   new_phases <- phases
+  # As in .hzr_refit_with_scope(): a phase with no formula inherits the
+  # global terms, and the candidate is added to them (#284).
+  inherited <- if (is.null(new_phases[[phase]]$formula)) {
+    .hzr_inherited_rhs(current)
+  }
   new_phases[[phase]] <- .hzr_phase_update_formula(
-    new_phases[[phase]], action = "add", var = var
+    new_phases[[phase]], action = "add", var = var, inherited = inherited
   )
 
   d <- current$data
@@ -370,9 +375,13 @@
       x_j <- stats::model.matrix(ph$formula, data = mf_j)[, -1L, drop = FALSE]
       x_list[[nm]] <- x_j
       cov_counts[[nm]] <- ncol(x_j)
-    } else if (!is.null(d$x)) {
-      x_list[[nm]] <- d$x
-      cov_counts[[nm]] <- ncol(d$x)
+    } else if (!is.null(current$fit$x_list[[nm]]) || !is.null(d$x)) {
+      # A phase with no formula uses the design the fit used, which under
+      # `time_windows` is the window-expanded one; `d$x` is the plain global
+      # matrix and would change the phase's columns (#284).
+      xm <- current$fit$x_list[[nm]] %||% d$x
+      x_list[[nm]] <- xm
+      cov_counts[[nm]] <- ncol(xm)
     } else {
       x_list[[nm]] <- NULL
       cov_counts[[nm]] <- 0L
@@ -386,10 +395,36 @@
     # one-zero-per-add layout; the refit path guards this upstream too.
     return(NULL)
   }
+  unchanged <- setdiff(nms, phase)
+  if (any(cov_counts[unchanged] != old_counts[unchanged])) {
+    # Every phase the step does not touch must keep the design the fit used;
+    # a different column count means the expansion rebuilt it wrongly.
+    return(NULL)
+  }
   for (nm in nms) {
     xm <- x_list[[nm]]
     if (is.null(xm) || ncol(xm) == 0L) next
     if (nrow(xm) != n_time || anyNA(xm)) return(NULL)
+  }
+
+  # The candidate's column is not always the phase's last: model.matrix()
+  # puts main effects before interactions, so a phase with `age * mal`
+  # gains `opmos` before `age:mal`. Find it by name among the phase's
+  # columns. A phase with no columns yet takes the only slot; one whose
+  # columns cannot be matched by name declines (a score of NA) rather than
+  # pin the zero on whichever coefficient happens to be last.
+  old_cols <- colnames(current$fit$x_list[[phase]])
+  new_cols <- colnames(x_list[[phase]])
+  new_col_pos <- cov_counts[[phase]]
+  if (old_counts[[phase]] > 0L) {
+    hit <- if (!is.null(new_cols) &&
+                 length(old_cols) == old_counts[[phase]]) {
+      which(!new_cols %in% old_cols)
+    } else {
+      integer()
+    }
+    if (length(hit) != 1L) return(NULL)
+    new_col_pos <- hit
   }
 
   parts <- .hzr_split_theta(current$fit$theta, phases, old_counts)
@@ -400,15 +435,22 @@
   pos <- 0L
   for (nm in nms) {
     part <- parts[[nm]]
-    theta_new <- c(theta_new, part)
-    theta_idx <- c(theta_idx, pos + seq_along(part))
-    pos <- pos + length(part)
     if (identical(nm, phase)) {
-      # The new covariate is the phase's last term, so its coefficient is the
-      # last slot of that phase's sub-vector -- matching model.matrix ordering.
-      theta_new <- c(theta_new, 0)
-      pos <- pos + 1L
-      beta_idx <- pos
+      # Old entries before the new slot: log_mu, the shapes, and the betas
+      # whose columns precede the candidate's. The pinned zero goes there,
+      # so every other coefficient keeps its own column.
+      at <- length(part) - old_counts[[phase]] + new_col_pos - 1L
+      after <- length(part) - at
+      theta_new <- c(theta_new, part[seq_len(at)], 0,
+                     part[at + seq_len(after)])
+      theta_idx <- c(theta_idx, pos + seq_len(at),
+                     pos + at + 1L + seq_len(after))
+      beta_idx <- pos + at + 1L
+      pos <- pos + length(part) + 1L
+    } else {
+      theta_new <- c(theta_new, part)
+      theta_idx <- c(theta_idx, pos + seq_along(part))
+      pos <- pos + length(part)
     }
   }
 

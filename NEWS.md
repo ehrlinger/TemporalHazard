@@ -72,6 +72,25 @@
   unchanged, as is a multiphase screen in which every phase has its own
   formula.
 
+* **`hzr_stepwise()` now refuses a vector-interface multiphase fit whose
+  phases inherit a design matrix passed directly as `x`** (#284). A phase
+  with no formula of its own uses that `x`, and a candidate refit had no
+  terms to rebuild it from, so every refit dropped its columns from every
+  such phase: on `avc`, entering `mal` into one phase took `age` out of
+  both, and the log-likelihood fell from -196.44 to -202.17 while the step
+  table reported a plain "enter". The only warning blamed a refit that "did
+  not converge". The screen now stops before printing anything. Give each
+  phase its covariates with `hzr_phase(formula = ~ ...)`, with the columns
+  in `data`; a fit whose phases all have their own formulas is unaffected.
+  It refuses the same way when a phase the screen can step inherits
+  time-varying coefficients (`time_windows`), which rebuilding the phase
+  from its terms would fit as one constant effect, or a term that expands
+  to more than one column, such as a factor with more than two levels or
+  `poly()`, which a step cannot add or drop as one coefficient. Both used
+  to change the phase's design without a word. A forward screen steps only
+  the phases its `scope` names, so an inheriting phase outside the scope
+  is left alone; a backward or two-way screen can drop from any phase.
+
 * **An entry time after the exit time is now an error, and
   `time_lower = time` now means "no entry" in every family** (#253). On a
   row with status 0 or 1, `time_lower` is the counting-process entry time
@@ -347,6 +366,31 @@
   is refused or flagged and never fitted (#181). The row is now
   `"planned"` with `r_parameter` "(not implemented)", so
   `hzr_argument_mapping(include_planned = FALSE)` no longer includes it.
+
+* **A multiphase stepwise step now adds to the covariates a phase inherits,
+  instead of replacing them** (#284). A phase with no formula of its own
+  uses the global formula's covariates. Entering a variable into such a
+  phase built a formula holding only the new variable, so `early.age`
+  became `early.mal`: the refitted model had lost a covariate, its
+  log-likelihood fell (-196.44 to -204.43 on `avc`, with the control the
+  tests use), and the step reported `mal` entering at p = 5.9e-05, a
+  p-value from that smaller model. The
+  model the step describes, `early ~ age + mal`, gives p = 5.4e-04. The
+  step now starts from the inherited terms, so it fits that model and
+  reports its p-value. Drops start from the inherited terms too, and the
+  inherited covariates are now drop candidates. The default score
+  criterion used to stop on this case, reporting that the candidate "could
+  not be added to the model"; it now scores it. Two related defects are
+  fixed with it. Dropping a phase's last covariate set its formula to
+  NULL, which made the phase inherit the global covariates again, so a
+  later "drop" could bring `age` back; it now leaves `~ 1`. And the score
+  test pinned a candidate in the phase's last slot, which is wrong after an
+  interaction: `model.matrix()` puts main effects first, so with
+  `age * mal` it scored `age:mal` in the candidate's place. It now finds
+  the candidate's column by name. That one affected phases with their own
+  formula too. **Selected models and p-values change** for any multiphase
+  screen that stepped a phase without a formula while the global formula
+  had covariates, or scored a candidate for a phase with an interaction.
 
 # TemporalHazard 1.2.10
 
