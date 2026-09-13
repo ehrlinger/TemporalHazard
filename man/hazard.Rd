@@ -110,9 +110,9 @@ each means and when to use it.}
 
 \item{phases}{Optional named list of \code{\link[=hzr_phase]{hzr_phase()}} objects specifying the
 phases for a multiphase model (\code{dist = "multiphase"}).  Names must be
-unique, and \code{"total"} is reserved: it labels the summed column in the
-decomposed output of \code{\link[=predict.hazard]{predict.hazard()}}, so a phase of that name is
-rejected.  See Examples.}
+unique, and \code{"total"} and \code{"time"} are reserved: they label the summed
+column and the column of prediction times in the decomposed output of
+\code{\link[=predict.hazard]{predict.hazard()}}, so a phase of either name is rejected.  See Examples.}
 
 \item{fit}{Logical; if TRUE, fit the model via maximum likelihood (default FALSE).}
 
