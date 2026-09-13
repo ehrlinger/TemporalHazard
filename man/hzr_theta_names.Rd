@@ -45,8 +45,9 @@ Phase names come from \code{names(phases)}; unnamed phases are labelled
 \code{phase_1}, \code{phase_2}, ... by the same validation \code{\link[=hazard]{hazard()}} applies, so the
 labels here are the labels a fit will use.
 
-Phase names must be unique, and \code{"total"} is reserved; this applies
-the same validation \code{\link[=hazard]{hazard()}} does, so both reject it identically.
+Phase names must be unique, and \code{"total"} and \code{"time"} are
+reserved; this applies the same validation \code{\link[=hazard]{hazard()}} does, so both reject
+them identically.
 }
 \examples{
 phases <- list(early = hzr_phase("cdf"), late = hzr_phase("g3"))

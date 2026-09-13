@@ -316,6 +316,63 @@ test_that("hzr_theta_names() rejects a phase named 'total'", {
   expect_error(hzr_theta_names(list(total = hzr_phase("cdf"))), "reserved")
 })
 
+# 'time' is reserved too (#224). predict(decompose = TRUE) builds its output as
+# data.frame(time = ...) and then stores each phase's cumulative hazard under
+# the phase's name, so a phase called `time` overwrote the requested times with
+# its own cumulative hazard, and the times vanished with no error.
+
+test_that("validate_phases rejects a phase named 'time'", {
+  phases <- list(time = hzr_phase("cdf"), late = hzr_phase("constant"))
+  expect_error(.hzr_validate_phases(phases),
+               "'time' is a reserved phase name")
+})
+
+test_that("hazard() rejects a phase named 'time' or 'total', naming it", {
+  dat <- data.frame(time = c(1, 2, 3, 4, 5), status = c(1, 1, 0, 1, 0))
+  for (nm in c("time", "total")) {
+    phases <- stats::setNames(list(hzr_phase("cdf"), hzr_phase("constant")),
+                              c(nm, "late"))
+    expect_error(
+      hazard(survival::Surv(time, status) ~ 1, data = dat,
+             dist = "multiphase", fit = TRUE, phases = phases),
+      paste0("'", nm, "' is a reserved phase name")
+    )
+  }
+})
+
+test_that("hzr_theta_names() rejects a phase named 'time'", {
+  expect_error(hzr_theta_names(list(time = hzr_phase("cdf"))),
+               "'time' is a reserved phase name")
+})
+
+test_that("an early/constant fit is unchanged, and its decomposition keeps time", {
+  d <- na.omit(avc[, c("int_dead", "dead")])
+  ph <- list(
+    early    = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1, fixed = "m"),
+    constant = hzr_phase("constant")
+  )
+  ctl <- list(n_starts = 1L, conserve = FALSE)
+  fit <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
+    phases = ph, fit = TRUE, control = ctl
+  ))
+  # The same model refitted from its own estimates lands on the same optimum,
+  # a comparison with the fit itself rather than a recorded number.
+  refit <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
+    phases = ph, theta = fit$fit$theta, fit = TRUE, control = ctl
+  ))
+  expect_true(fit$fit$converged)
+  expect_equal(refit$fit$objective, fit$fit$objective, tolerance = 1e-8)
+
+  times <- c(1, 5, 10)
+  dec <- predict(fit, newdata = data.frame(time = times),
+                 type = "cumulative_hazard", decompose = TRUE)
+  expect_identical(names(dec), c("time", "total", "early", "constant"))
+  expect_identical(dec$time, times)
+  expect_equal(dec$total, dec$early + dec$constant, tolerance = 1e-12)
+})
+
 test_that("'total' is still the name the cumhaz accumulator is stored under", {
   # Cross-check for the guard above. Asserting only that "reserved" is thrown
   # restates the guard's own string: rename the accumulator and that test stays
