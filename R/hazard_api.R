@@ -1556,20 +1556,14 @@ predict.hazard <- function(object, newdata = NULL,
       # If newdata has covariates, rebuild per-phase design matrices
       if (!is.null(newdata)) {
         nd_covs <- newdata[, names(newdata) != "time", drop = FALSE]
-        # Route each phase the way the fit built it. The fit uses a phase's
-        # own formula only on the formula interface (it has data); a
-        # vector-interface fit ignores hzr_phase(formula = ) and the phase
-        # inherits the global x. It records its choice in "from_formula",
-        # which hzr_gof() reads too. A fit without that record falls back to
-        # the fit's own rule: a phase formula and stored data.
-        from_formula <- attr(object$fit$x_list, "from_formula")
+        # Route each phase the way the fit built it: the fit uses a phase's
+        # own formula only on the formula interface, and a vector-interface
+        # fit ignores hzr_phase(formula = ). .hzr_phase_inherits_global()
+        # decides, from the fit's record or, for an older fit, its columns;
+        # hzr_gof() calls the same helper, so the two cannot disagree.
         for (nm in names(phases)) {
           ph <- phases[[nm]]
-          uses_formula <- if (is.null(from_formula)) {
-            !is.null(ph$formula) && !is.null(object$data$frame)
-          } else {
-            isTRUE(unname(from_formula[nm]))
-          }
+          uses_formula <- !.hzr_phase_inherits_global(object, nm)
           if (uses_formula && ncol(nd_covs) > 0) {
             # The fit's levels, contrasts and columns, not newdata's.
             x_list[[nm]] <- .hzr_phase_newdata_design(object, nm, ph, newdata)

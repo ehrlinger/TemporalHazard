@@ -310,7 +310,9 @@
   `age`: 0.046 0.206 0.525 0.525 where the fit gives 0.023 0.122 0.082
   0.153. Under `time_windows` it returned eight values for four rows.
   Neither gave an error. `predict()` now routes each phase the way the fit
-  built it, from the fit's own record, as `hzr_gof()` already did.
+  built it, from the fit's own record, as `hzr_gof()` already did; the two
+  share one rule. A fit saved before that record existed is routed by its
+  stored columns, so an old fit keeps the phase formula it was fitted with.
 
 * **`predict(newdata = )` on a multiphase fit now codes a phase formula's
   factors as the fit did.** It rebuilt a phase's design with a bare

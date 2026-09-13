@@ -311,6 +311,51 @@
 }
 
 
+#' Does a multiphase phase inherit the global design?
+#'
+#' The fit builds a phase from its own formula only on the formula
+#' interface; otherwise the phase takes the global `x` (window-expanded
+#' under `time_windows`). `predict(newdata = )` and `hzr_gof()` both need to
+#' know which, and both call this one helper so they cannot drift.
+#'
+#' The fit's record, `attr(fit$x_list, "from_formula")`, decides when it is
+#' there. A fit saved before that record (no tag through v1.2.9 has it)
+#' falls back to its columns: a phase with no formula inherits, and a phase
+#' with one inherits only if its stored columns are exactly the inherited
+#' ones -- the window-expanded names under `time_windows`, otherwise
+#' `colnames(data$x)`. That keeps a 1.0.3-era fit, which kept neither the
+#' record nor its data, on the phase formula it was fitted with. Known
+#' limit: a pre-record phase formula whose columns are literally the
+#' inherited names; without windows both routes then build the same design.
+#'
+#' @param object A fitted multiphase `hazard` object.
+#' @param nm Phase name.
+#' @return A single logical: `TRUE` if the phase inherits the global design.
+#' @keywords internal
+#' @noRd
+.hzr_phase_inherits_global <- function(object, nm) {
+  from_formula <- attr(object$fit$x_list, "from_formula")
+  if (!is.null(from_formula)) {
+    return(!isTRUE(unname(from_formula[nm])))
+  }
+  phases <- object$fit$phases
+  if (is.null(phases)) phases <- object$spec$phases
+  if (is.null(phases[[nm]]$formula)) {
+    return(TRUE)
+  }
+  time_windows <- object$spec$time_windows
+  inherited <- if (!is.null(time_windows) && !is.null(object$data$x)) {
+    colnames(.hzr_expand_time_varying_design(
+      x = object$data$x[1, , drop = FALSE], time = 0,
+      time_windows = time_windows
+    ))
+  } else {
+    colnames(object$data$x)
+  }
+  identical(colnames(object$fit$x_list[[nm]]), inherited)
+}
+
+
 #' Is the global design taken from `newdata`'s design columns?
 #'
 #' The design is then used as it is and the formula is not re-evaluated.

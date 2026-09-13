@@ -308,7 +308,9 @@ test_that("a phase formula the fit did not use is not rebuilt at newdata", {
                           fixed = "shapes", formula = ~ log(age)),
         constant = hzr_phase("constant")),
       fit = TRUE))
-    expect_false(any(attr(f$fit$x_list, "from_formula")))
+    # The fit recorded that it ignored the formula (not merely no record).
+    expect_identical(unname(attr(f$fit$x_list, "from_formula")),
+                     c(FALSE, FALSE))
     want <- predict(f, type = "cumulative_hazard")[rows]
     got <- predict(f, newdata = nd, type = "cumulative_hazard")
     label <- if (is.null(tw)) "no windows" else "time_windows = 12"
@@ -317,12 +319,13 @@ test_that("a phase formula the fit did not use is not rebuilt at newdata", {
   }
 })
 
-test_that("a fit without the from_formula record routes by formula and data", {
+test_that("a fit without the from_formula record routes by formula and columns", {
   skip_on_cran()  # multiphase fits
-  # An older fit has no from_formula record.  Then a phase counts as
-  # using its formula only if the fit had data (the formula interface):
-  # the vector fit still takes the global route, a formula fit still takes
-  # its phase formula.
+  # Every fit saved before the record existed (it is in no tag through
+  # v1.2.9) is routed by the fallback hzr_gof() shares: a phase uses its
+  # formula iff it has one AND its stored columns are not the inherited
+  # ones.  The vector fit still takes the global route, a formula fit
+  # still takes its phase formula.
   d <- stats::na.omit(get("avc", envir = asNamespace("TemporalHazard")))
   d$grp <- factor(ifelse(d$age > 100, "old", "young"))
   rows <- c(1, 50, 150)
@@ -358,6 +361,85 @@ test_that("a fit without the from_formula record routes by formula and data", {
     unname(predict(ff, type = "cumulative_hazard")[rows]), tolerance = 1e-10)
 })
 
+test_that("a 1.0.3-era fit (no record, no frame, no design) keeps its phase formula", {
+  skip_on_cran()  # a multiphase fit
+  # Fitted on its phase formula ~ log(age), but saved before x_design,
+  # data$frame (1.1.0) and the from_formula record existed.  A frame-based
+  # fallback sent it down the global route (age times a log(age)
+  # coefficient); the column test keeps it on its phase formula, as main
+  # 7e50e2b did.  Values pinned from main on the same stripped object.
+  d <- stats::na.omit(get("avc", envir = asNamespace("TemporalHazard")))
+  set.seed(1)
+  f <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ age, data = d, dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                        fixed = "shapes", formula = ~ log(age)),
+      constant = hzr_phase("constant")),
+    fit = TRUE))
+  f$data$x_design <- NULL
+  f$fit$x_design <- NULL
+  f$data$frame <- NULL
+  attr(f$fit$x_list, "from_formula") <- NULL
+  rows <- c(which(d$int_dead <= 12)[1:2], which(d$int_dead > 12)[1:2])
+  got <- predict(f, type = "cumulative_hazard",
+                 newdata = data.frame(time = d$int_dead[rows], age = d$age[rows]))
+  expect_equal(unname(got), unname(predict(f, type = "cumulative_hazard")[rows]),
+               tolerance = 1e-10)
+  expect_equal(unname(got),
+               c(0.01628361325, 0.08219660741, 0.1292144135, 0.1674520008),
+               tolerance = 1e-4)
+})
+
+test_that("time_windows: an unused phase formula without the record goes global", {
+  skip_on_cran()  # a multiphase fit
+  # The phase inherited the window-expanded global x (age_w1, age_w2).
+  # The fallback compares with those window names, not with data$x's age,
+  # so it keeps the phase on the global route: four values, matching.
+  d <- stats::na.omit(get("avc", envir = asNamespace("TemporalHazard")))
+  set.seed(1)
+  f <- suppressWarnings(hazard(
+    time = d$int_dead, status = d$dead, x = cbind(age = d$age),
+    dist = "multiphase", time_windows = 12,
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                        fixed = "shapes", formula = ~ log(age)),
+      constant = hzr_phase("constant")),
+    fit = TRUE))
+  attr(f$fit$x_list, "from_formula") <- NULL
+  rows <- c(which(d$int_dead <= 12)[1:2], which(d$int_dead > 12)[1:2])
+  got <- predict(f, type = "cumulative_hazard",
+                 newdata = data.frame(time = d$int_dead[rows], age = d$age[rows]))
+  expect_length(got, 4L)
+  expect_equal(unname(got), unname(predict(f, type = "cumulative_hazard")[rows]),
+               tolerance = 1e-10)
+})
+
+test_that("coinciding global and phase formulas give the same answer either way", {
+  skip_on_cran()  # a multiphase fit
+  # Global ~ age with phase ~ age: without the record the phase's columns
+  # equal the inherited ones, so the fallback takes the global route; with
+  # the record it takes the phase route.  Both must be the fitted answer.
+  d <- stats::na.omit(get("avc", envir = asNamespace("TemporalHazard")))
+  set.seed(1)
+  f <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ age, data = d, dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                        fixed = "shapes", formula = ~ age),
+      constant = hzr_phase("constant")),
+    fit = TRUE))
+  rows <- c(1, 50, 150, 250)
+  nd <- data.frame(time = d$int_dead[rows], age = d$age[rows])
+  want <- unname(predict(f, type = "cumulative_hazard")[rows])
+  via_phase <- unname(predict(f, newdata = nd, type = "cumulative_hazard"))
+  g <- f
+  attr(g$fit$x_list, "from_formula") <- NULL
+  via_global <- unname(predict(g, newdata = nd, type = "cumulative_hazard"))
+  expect_equal(via_phase, want, tolerance = 1e-10)
+  expect_equal(via_global, want, tolerance = 1e-10)
+})
+
 test_that("time_windows with a factor and several covariates matches the fit", {
   skip_on_cran()  # a multiphase fit
   d <- stats::na.omit(get("avc", envir = asNamespace("TemporalHazard")))
@@ -371,15 +453,17 @@ test_that("time_windows with a factor and several covariates matches the fit", {
       constant = hzr_phase("constant")),
     fit = TRUE))
   rows <- c(which(d$int_dead <= 12)[1:2], which(d$int_dead > 12)[1:2])
+  # grp arrives with its levels reversed, so ignoring the fit's levels
+  # would code it wrong; both levels are present among the rows.
   nd <- data.frame(time = d$int_dead[rows], age = d$age[rows],
-                   grp = as.character(d$grp[rows]))
+                   grp = factor(as.character(d$grp[rows]),
+                                levels = c("young", "old")))
+  expect_setequal(as.character(nd$grp), c("old", "young"))
   got <- predict(m, newdata = nd, type = "cumulative_hazard")
   expect_length(got, length(rows))
   expect_equal(unname(got),
                unname(predict(m, type = "cumulative_hazard")[rows]),
                tolerance = 1e-10)
-  expect_true(length(unique(d$grp[rows])) == 2L ||
-                any(grepl("grpyoung", colnames(m$fit$x_list$constant))))
 })
 
 test_that("a multiphase global design takes the variable over its column", {
