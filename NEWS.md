@@ -30,6 +30,48 @@
   not a `PROC HAZARD` refusal, so it is kept apart from the existing
   "selects no phase" stop.
 
+* **`predict(newdata = )` matches covariates by name, so `newdata` with
+  other names now stops.** A fit made through the vector interface with a
+  named `x`, say `x = cbind(age = , mal = )`, needs `newdata` columns
+  called `age` and `mal`. Before, `predict()` matched any names, or a bare
+  matrix, to the coefficients by position. That was right only when the
+  order happened to agree, and nothing said when it did not (#267). Code
+  that passed such `newdata` now gets an error naming the missing columns:
+  rename the columns to match `x`. A fit made with an unnamed `x` still
+  matches by position. A formula fit saved by an earlier version stored no
+  formula design, so it is matched on its design-matrix columns: a factor
+  must be given as `grpyoung` and a transform as `log(age)`. Refit it to
+  give the formula's variables instead.
+
+* **`predict(newdata = )` stops for the time-based predictions of a model
+  with a covariate named `time`.** In `newdata` the column `time` is the
+  prediction time for `"survival"`, `"cumulative_hazard"`, every multiphase
+  type and any fit with `time_windows`, so such a covariate could not be
+  given its own value. When it was the only covariate it was dropped, and
+  the prediction silently came back at the baseline: a Weibull fit of
+  `~ time` gave 0.1414 where the covariate made it 0.1420. Beside other
+  covariates, the one column served as both, so the covariate was always
+  set to the prediction time. A formula constant named `time`, as in
+  `I(age > time)`, was replaced the same way, because a formula looks its
+  symbols up in `newdata` first. None of this gave an error. These calls
+  now stop and ask for the variable to be renamed and the model refitted,
+  whether it is in the global formula, a named `x` or a multiphase phase
+  formula. `hzr_gof()` and, for a single-distribution model,
+  `hzr_deciles()` pass the fitted design columns, which are used as they
+  are. So they stop only for a design column named `time` itself, which
+  follow-up time used to overwrite silently, or for a multiphase phase
+  formula that uses `time`. `log(time)`, a constant such as
+  `I(age > time)` and a list element such as `cfg$time` do not stop them.
+  In the global formula, neither does a value that `scale()` stored at
+  fit time, in `predict()` either. A phase formula is re-evaluated as
+  written, so a `time` constant there stops even inside `scale()`.
+  `"linear_predictor"` and single-distribution `"hazard"` have no
+  prediction time, so they read a `time` column as the covariate, now
+  also when it is the only one (it used to stop with "Predictors are
+  required"). They refuse only a `time` constant that a `time` column in
+  `newdata` would mask. `predict()` without `newdata` is unaffected
+  (#270).
+
 * **A multiphase formula that names a phase as a function is now an error**
   (#275). `hazard(Surv(int_dead, dead) ~ constant(age), dist = "multiphase",
   phases = ...)` read `constant(age)` as a phase-scoped term, then replaced
@@ -128,6 +170,50 @@
   detected.
 
 ## Bug fixes
+
+* **`predict(newdata = )` no longer matches a single-distribution model's
+  covariates by column position.** For `dist = "weibull"`,
+  `"exponential"`, `"loglogistic"` and `"lognormal"`, the covariates in
+  `newdata` were multiplied into the coefficients in the order they
+  appeared, whatever their names. Reordered columns gave a wrong answer
+  with no error: a Weibull fit of `~ age + mal` given `newdata` with `mal`
+  before `age` returned a cumulative hazard of 4.85e20 in place of 0.25,
+  and a survival of 0 in place of 0.78. A `newdata` missing a covariate
+  could also return a value. Every prediction type was affected, as was
+  the time-varying expansion.
+  Covariates are now matched by name, through the same design
+  reconstruction as the multiphase fix below, so a factor can be given as
+  a level label. `newdata` may instead carry the fit's design-matrix
+  columns by name (`grpyoung`), which is how `hzr_deciles()` and
+  `hzr_gof()` call it. A column the model does not use is ignored, and one
+  it needs but `newdata` lacks is an error that names it, even when an
+  object of that name exists in the workspace. A fit made with an unnamed
+  `x` matrix still matches by position, since there is nothing else to
+  match on, and a `newdata` with only a `time` column still evaluates the
+  baseline (#267). This rejects some `newdata` that was accepted before;
+  see Breaking changes.
+
+* **`predict(newdata = )` now evaluates a multiphase fit that has both a
+  global covariate and phase-formula covariates.** A phase without its own
+  formula inherits the global design, but at `newdata` it was built from
+  every non-time column, so the global phase received the phase formulas'
+  variables as well as its own. No `newdata` could satisfy both kinds of
+  phase: `hazard(Surv(t, d) ~ age, phases = list(early = hzr_phase(...,
+  formula = ~ mal), constant = hzr_phase("constant")))` stopped with
+  "non-conformable arguments" for every prediction type, and a factor global
+  covariate stopped with a different error. Extra or reordered columns
+  failed the same way. Such a phase is now rebuilt from the global formula's
+  own terms, factor levels and contrasts, as `predict.lm()` does. A factor
+  can be given as a single label, and data-dependent terms such as
+  `scale(x)` and `poly(x, 2)` reuse the fit's centre, scale and basis
+  instead of recomputing them from the new rows. The global formula now also
+  finds a non-column variable (`cutoff` in `I(x > cutoff)`) in the
+  environment the formula was written in, as `model.frame()` does; before,
+  only a global variable was found. `hazard()` stores these in
+  `object$data$x_design`. Fits made through the vector interface select
+  their columns by name, or by position when `x` was unnamed. Point
+  predictions, `se.fit = TRUE` and `decompose = TRUE` are each checked
+  against `exp(x beta_j) H0_j(t)` per phase (#266).
 
 * **The multiphase gradient and Hessian are now right when an early phase's
   `m` is near 0.** Both differentiate in `m` by finite differences, and

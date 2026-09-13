@@ -20,7 +20,19 @@
 
 \item{newdata}{Optional matrix or data frame of predictors. For types requiring
 time (e.g., "survival", "cumulative_hazard"), newdata should include a \code{time}
-column, or time will be taken from the fitted object's data.}
+column, or time will be taken from the fitted object's data.
+Covariates are matched to the model by column name, so their order does
+not matter. A formula fit rebuilds its design from the formula, so a
+factor can be given as a level label. \code{newdata} may instead carry the
+fit's design-matrix columns by name (\code{grpyoung} for a factor \code{grp}), as
+\code{hzr_deciles()} and \code{hzr_gof()} pass it. A column the model does not use is
+ignored, and a covariate the model needs but \code{newdata} lacks is an error.
+A fit made with an unnamed \code{x} matrix matches by position. For the types
+requiring time, a \code{newdata} with only a \code{time} column evaluates the
+baseline, with every covariate at 0. Because \code{time} is then the
+prediction time, a model whose formula uses a variable named \code{time}
+(a covariate, or a constant such as \code{I(age > time)}) cannot be given
+those types at \code{newdata}; rename it and refit.}
 
 \item{type}{Prediction type:
 \itemize{
