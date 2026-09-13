@@ -79,6 +79,41 @@ test_that("multiphase hazard se.fit returns delta-method limits", {
   expect_true(all(out$lower >= 0))  # log-scale CL keeps hazard positive
 })
 
+test_that("multiphase predict returns unnamed vectors, like single-dist", {
+  # A phase without covariates builds its eta by rep()-ing the named log_mu
+  # element of theta, and that name leaked onto every prediction, e.g.
+  # c("constant.log_mu", "constant.log_mu").
+  d <- .ph_data()
+  nd <- data.frame(time = c(1, 2), x = c(-1, 1))
+  # .ph_fit()'s `formula` is the global one, so the phase formula that gives
+  # only `early` a covariate is spelt out here.
+  early_x <- hazard(survival::Surv(time, status) ~ 1, data = d,
+                    dist = "multiphase",
+                    phases = list(
+                      early    = hzr_phase("cdf", t_half = 0.3, nu = 1, m = 1,
+                                           fixed = "shapes", formula = ~ x),
+                      constant = hzr_phase("constant")),
+                    fit = TRUE,
+                    control = list(n_starts = 1, maxit = 500, conserve = TRUE))
+  fits <- list(no_covariates = .ph_fit(data = d), early_x = early_x)
+  # With one row every operand is length 1, so any named scalar -- t_half,
+  # the covariate branch's log_mu -- can name the result, not just rep().
+  nd1 <- nd[1, , drop = FALSE]
+  for (nm in names(fits)) {
+    for (ty in c("cumulative_hazard", "survival", "hazard")) {
+      p <- predict(fits[[nm]], newdata = nd, type = ty)
+      expect_length(p, 2L)
+      expect_null(names(p), label = paste(nm, ty))
+      p1 <- predict(fits[[nm]], newdata = nd1, type = ty)
+      expect_length(p1, 1L)
+      expect_null(names(p1), label = paste(nm, ty, "one row"))
+    }
+    dec <- predict(fits[[nm]], newdata = nd1, type = "cumulative_hazard",
+                   decompose = TRUE)
+    expect_identical(rownames(dec), "1", label = paste(nm, "decompose"))
+  }
+})
+
 test_that("multiphase hazard rejects decompose = TRUE", {
   d <- .ph_data()
   fit <- .ph_fit(data = d)
