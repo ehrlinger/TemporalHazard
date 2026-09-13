@@ -229,12 +229,12 @@ Figure 2: Weibull parametric survival vs. Kaplan-Meier (AVC death)
 <span>                   type <span class="op">=</span> <span class="st">"survival"</span>, se.fit <span class="op">=</span> <span class="cn">TRUE</span>, level <span class="op">=</span> <span class="fl">0.95</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">surv_ci</span><span class="op">)</span></span>
 <span><span class="co">#&gt;         fit      se.fit     lower     upper</span></span>
-<span><span class="co">#&gt; 1 0.9840203 0.005671643 0.9683917 0.9919534</span></span>
-<span><span class="co">#&gt; 2 0.9552272 0.013471418 0.9217152 0.9745897</span></span>
-<span><span class="co">#&gt; 3 0.9475253 0.015531237 0.9095431 0.9698214</span></span>
-<span><span class="co">#&gt; 4 0.9424178 0.016908706 0.9014941 0.9666516</span></span>
-<span><span class="co">#&gt; 5 0.9384990 0.017973613 0.8953265 0.9642174</span></span>
-<span><span class="co">#&gt; 6 0.9352803 0.018854177 0.8902645 0.9622176</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 0.9840203 0.005581011 0.9683917 0.9919534</span></span>
+<span><span class="co">#&gt; 2 0.9552272 0.012868265 0.9217152 0.9745897</span></span>
+<span><span class="co">#&gt; 3 0.9475253 0.014716241 0.9095431 0.9698214</span></span>
+<span><span class="co">#&gt; 4 0.9424178 0.015935065 0.9014941 0.9666516</span></span>
+<span><span class="co">#&gt; 5 0.9384990 0.016868218 0.8953265 0.9642174</span></span>
+<span><span class="co">#&gt; 6 0.9352803 0.017633941 0.8902645 0.9622176</span></span></code></pre></div>
 </div>
 <p>Confidence limits use SAS-matched transformations chosen so the interval respects the natural range of each quantity: log-scale for <code>hazard</code> and <code>cumulative_hazard</code> (keeps the lower bound positive), and <code>log(-log(S))</code> for <code>survival</code> (keeps the interval inside <span class="math inline">\([0, 1]\)</span>). The linear predictor uses symmetric natural-scale CLs. A symmetric CI on survival probability would frequently dip below 0 or rise above 1, giving nonsense values that the transformed form avoids by construction.</p>
 <div class="cell">

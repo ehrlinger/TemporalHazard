@@ -80,9 +80,10 @@ The quantity we actually differentiate depends on the prediction type
 and the CL scale the type uses:
 
 type = "cumulative_hazard" -\> target = H, log-scale CL type =
-"survival" -\> target = H, log-log-survival CL (final `fit` is exp(-H))
-type = "hazard" -\> target = exp(eta) (single-dist only), log-scale CL
-type = "linear_predictor" -\> target = eta, natural-scale CL
+"survival" -\> target = H, log-log-survival CL (final `fit` is exp(-H);
+reported `se.fit` is S \* se(H), the SE of S) type = "hazard" -\> target
+= exp(eta) (single-dist only), log-scale CL type = "linear_predictor"
+-\> target = eta, natural-scale CL
 
 The caller supplies `diff_fn(theta)` that returns the target vector of
 length n. For Weibull and multiphase we build J analytically; for exp /

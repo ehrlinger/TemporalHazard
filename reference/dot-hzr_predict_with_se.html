@@ -143,7 +143,8 @@ Only consulted when <code>type == "survival"</code>.</p></dd>
 the CL scale the type uses:</p>
 <p>type = "cumulative_hazard" -&gt; target = H, log-scale CL
 type = "survival"          -&gt; target = H, log-log-survival CL
-(final <code>fit</code> is exp(-H))
+(final <code>fit</code> is exp(-H); reported
+<code>se.fit</code> is S * se(H), the SE of S)
 type = "hazard"            -&gt; target = exp(eta) (single-dist only),
 log-scale CL
 type = "linear_predictor"  -&gt; target = eta, natural-scale CL</p>

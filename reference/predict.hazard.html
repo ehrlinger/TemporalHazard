@@ -163,7 +163,12 @@ HAZPRED). Only used when <code>se.fit = TRUE</code>.</p></dd>
     <p>When <code>se.fit = FALSE</code> (default), a numeric vector of predictions.
 When <code>se.fit = TRUE</code>, a data frame with columns <code>fit</code>, <code>se.fit</code>, <code>lower</code>,
 <code>upper</code> (delta-method point estimate, standard error, and confidence
-limits at <code>level</code>). For multiphase <code>type = "cumulative_hazard"</code> with
+limits at <code>level</code>). <code>se.fit</code> is always the standard error of <code>fit</code> on
+its own scale: for <code>type = "survival"</code> that is <code>S * se(H)</code>, the delta
+method applied to <code>S = exp(-H)</code>. The survival limits are built from
+<code>se(H)</code> on the <code>conf.type</code> scale, so they are not <code>fit +/- z * se.fit</code>.
+<code>PROC HAZPRED</code> prints no standard error, only the limits.
+For multiphase <code>type = "cumulative_hazard"</code> with
 <code>decompose = TRUE</code>, a long data frame (<code>time</code>, <code>component</code>, <code>fit</code>,
 <code>se.fit</code>, <code>lower</code>, <code>upper</code>); with <code>decompose = TRUE</code> and <code>se.fit = FALSE</code>,
 a wide data frame of per-phase contributions.</p>
