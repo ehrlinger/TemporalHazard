@@ -300,7 +300,10 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #'
 #' The diagnostic is for right-censored data: every stored status must be 0
 #' (censored) or 1 (event).  A fit with any left-censored (status -1) or
-#' interval-censored (status 2) row is refused with an error.
+#' interval-censored (status 2) row is refused with an error.  So is a
+#' multiphase fit that dropped the rows where a covariate was missing: its
+#' design matrices then hold fewer rows than there are patients, so no
+#' patient-by-patient tally can be formed.  Refit it on complete cases.
 #'
 #' At each time point the function computes:
 #' \itemize{
@@ -529,9 +532,11 @@ hzr_gof <- function(object, time_grid = NULL) {
   }, logical(1))
   if (is_multiphase && any(short)) {
     stop("hzr_gof() needs one design row per subject, but the fit dropped ",
-         "the rows where a covariate was missing, so phase ",
+         "the rows where any covariate was missing, from every phase: ",
+         ngettext(sum(short), "phase ", "phases "),
          paste0("'", names(short)[short], "'", collapse = ", "),
-         " has fewer rows than the data. Refit on complete cases, e.g. ",
+         ngettext(sum(short), " has", " have"),
+         " fewer rows than the data. Refit on complete cases, e.g. ",
          "data = na.omit(data).", call. = FALSE)
   }
 

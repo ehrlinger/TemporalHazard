@@ -64,7 +64,10 @@ conservation-of-events diagnostic.
 \details{
 The diagnostic is for right-censored data: every stored status must be 0
 (censored) or 1 (event).  A fit with any left-censored (status -1) or
-interval-censored (status 2) row is refused with an error.
+interval-censored (status 2) row is refused with an error.  So is a
+multiphase fit that dropped the rows where a covariate was missing: its
+design matrices then hold fewer rows than there are patients, so no
+patient-by-patient tally can be formed.  Refit it on complete cases.
 
 At each time point the function computes:
 \itemize{

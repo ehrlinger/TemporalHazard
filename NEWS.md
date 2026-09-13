@@ -246,8 +246,7 @@
   without `data`. A multiphase fit that dropped rows with a missing phase
   covariate is now refused: its design matrix is shorter than the data, and
   the per-subject tally recycled it and gave a wrong total with only a
-  length warning. Separately, the
-  `par_cumhaz_<phase>` columns were chosen
+  length warning. Separately, the `par_cumhaz_<phase>` columns were chosen
   by dropping `total` from the decomposition, which let its `time` column
   through as a phase; they are now chosen by phase name.
 
