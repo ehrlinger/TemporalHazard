@@ -55,9 +55,9 @@
 
 #' Split the full theta vector into per-phase sub-vectors
 #'
-#' @param theta Numeric vector -- full parameter vector (internal scale).
+#' @param theta Numeric vector: full parameter vector (internal scale).
 #' @param phases Named list of validated `hzr_phase` objects.
-#' @param covariate_counts Named integer vector -- number of covariates per phase.
+#' @param covariate_counts Named integer vector: number of covariates per phase.
 #' @return Named list of numeric vectors, one per phase.
 #' @keywords internal
 .hzr_split_theta <- function(theta, phases, covariate_counts) {
@@ -307,10 +307,12 @@
 #' @param weights Optional numeric vector of row weights (length n). Defaults to
 #'   unit weights. Applied when summing per-phase cumhaz so that selection
 #'   happens on the same scale as the (weighted) observed event count.
-#' @param time_lower Optional numeric vector of counting-process entry (start)
-#'   times. When supplied, phases are ranked by entry-time cumulative hazard
-#'   `H(stop) - H(start)`, the scale on which events are conserved. `NULL` (the
-#'   default) means no truncation, i.e. `H(start) = 0`.
+#' @param time_lower Optional numeric vector. On a status 0/1 row with
+#'   0 < time_lower < time it is the counting-process entry (start) time, and
+#'   phases are ranked by entry-time cumulative hazard `H(stop) - H(start)`,
+#'   the scale on which events are conserved. Any other row has no entry
+#'   (`H(start) = 0`); see `.hzr_multiphase_entry()`. `NULL` (the default)
+#'   means no truncation.
 #' @return Character: name of the phase to fix.
 #' @keywords internal
 .hzr_select_fixmu_phase <- function(theta, time, status,
@@ -322,8 +324,9 @@
   # Left truncation (counting-process entry times): rank phases by the cumulative
   # hazard accrued over follow-up, H(stop) - H(start), the same scale on which
   # events are conserved. See `.hzr_conserve_events`.
-  if (!is.null(time_lower)) {
-    decomp_start <- .hzr_multiphase_cumhaz(time_lower, theta, phases,
+  entry <- .hzr_multiphase_entry(time, status, time_lower)
+  if (!is.null(entry)) {
+    decomp_start <- .hzr_multiphase_cumhaz(entry, theta, phases,
                                             covariate_counts, x_list,
                                             per_phase = TRUE)
     for (nm in names(phases)) {
@@ -367,6 +370,32 @@
 }
 
 
+#' Counting-process entry times for the multiphase path
+#'
+#' The single place the multiphase likelihood, gradient, Hessian and
+#' Conservation of Events decide which rows have an entry time. On a status 0
+#' or 1 row, `time_lower` is the entry time only when
+#' `0 < time_lower < time`. `time_lower == time` means no entry: that is the
+#' mixed-interval layout, where exact and right-censored rows carry
+#' `time_lower = time` and only status-2 rows carry a real interval lower
+#' bound. On status -1 and 2 rows `time_lower` is a censoring bound, never an
+#' entry. This is the rule `dist = "weibull"` applies (issue #253).
+#'
+#' @param time Numeric vector of follow-up times.
+#' @param status Numeric event indicator.
+#' @param time_lower Optional numeric vector, or `NULL`.
+#' @return `NULL` when `time_lower` is `NULL`; otherwise a numeric vector of
+#'   length `length(time)` holding the entry time, `0` on rows without one.
+#' @noRd
+.hzr_multiphase_entry <- function(time, status, time_lower) {
+  if (is.null(time_lower)) return(NULL)
+  entry <- rep(0, length(time))
+  idx <- status %in% c(0L, 1L) & time_lower < time
+  entry[idx] <- time_lower[idx]
+  entry
+}
+
+
 #' Apply the Conservation of Events adjustment to one phase's log_mu
 #'
 #' Given the current theta vector, analytically solve the fixmu phase's
@@ -388,12 +417,14 @@
 #' @param weights Optional numeric vector of row weights (length n). Defaults to
 #'   unit weights. Applied when summing per-phase cumhaz so Turner's adjustment
 #'   is computed on the same scale as `total_events`.
-#' @param time_lower Optional numeric vector of counting-process entry (start)
-#'   times. When supplied, conservation is enforced on the entry-time scale --
-#'   `Sum E = Sum [H(stop) - H(start)]` -- by subtracting the entry-time
+#' @param time_lower Optional numeric vector. On a status 0/1 row with
+#'   0 < time_lower < time it is the counting-process entry (start) time, and
+#'   conservation is enforced on the entry-time scale
+#'   (`Sum E = Sum [H(stop) - H(start)]`) by subtracting the entry-time
 #'   cumulative hazard, matching the multiphase likelihood (and C HAZARD
-#'   `setcoe` under `LCENSOR`/`STARTTME`). `NULL` (the default) means no
-#'   truncation, i.e. `H(start) = 0`.
+#'   `setcoe` under `LCENSOR`/`STARTTME`). Any other row has no entry
+#'   (`H(start) = 0`); see `.hzr_multiphase_entry()`. `NULL` (the default)
+#'   means no truncation.
 #' @return Updated theta vector with fixmu phase's log_mu adjusted.
 #' @keywords internal
 .hzr_conserve_events <- function(theta, fixmu_phase, fixmu_pos,
@@ -410,8 +441,9 @@
   # conserved quantity is H(stop) - H(start), the same constraint the score
   # equation for mu satisfies. Without this, CoE conserves Sum H(stop) and the
   # fixmu phase absorbs the spurious Sum H(start), biasing its intercept.
-  if (!is.null(time_lower)) {
-    decomp_start <- .hzr_multiphase_cumhaz(time_lower, theta, phases,
+  entry <- .hzr_multiphase_entry(time, status, time_lower)
+  if (!is.null(entry)) {
+    decomp_start <- .hzr_multiphase_cumhaz(entry, theta, phases,
                                             covariate_counts, x_list,
                                             per_phase = TRUE)
     decomp$total <- decomp$total - decomp_start$total
@@ -458,7 +490,7 @@
 #'
 #' Called from BOTH `.hzr_logl_multiphase()` and `.hzr_gradient_multiphase()`.
 #' Guarding only the objective would leave the gradient computing happily for
-#' data the objective refuses -- and the gradient is reachable on its own, for
+#' data the objective refuses. The gradient is reachable on its own, for
 #' instance from `.hzr_score_test()`, so the objective's refusal is not
 #' guaranteed to come first.
 #'
@@ -477,35 +509,23 @@
 
 #' Check the SAS objective's data preconditions at entry
 #'
-#' Both conditions `objective = "sas"` imposes -- no left-censored rows, and a
-#' positive width on every interval row -- are pure functions of the data, so
+#' Both conditions `objective = "sas"` imposes (no left-censored rows, and a
+#' positive width on every interval row) are pure functions of the data, so
 #' they hold or fail identically at every start.  Evaluated inside the
 #' objective they reach the user through `.hzr_optim_multiphase()`'s per-start
 #' `tryCatch`, which frames them as "produced no usable fit from N starts" and
-#' invites raising `n_starts` -- a remedy that cannot work.  `hazard()` calls
+#' invites raising `n_starts`, a remedy that cannot work.  `hazard()` calls
 #' this once, before any optimization, so a data defect is reported as one.
 #'
 #' This does **not** replace the guards inside the objective and the gradient.
-#' Those remain because the gradient is reachable without `hazard()` -- the
-#' score test calls it directly -- so entry validation is not guaranteed to
+#' Those remain because the gradient is reachable without `hazard()` (the
+#' score test calls it directly), so entry validation is not guaranteed to
 #' have run.  See `.hzr_check_sas_status()`.
 #'
 #' Bounds are normalised here exactly as `.hzr_logl_multiphase()` normalises
 #' them, so the check cannot disagree with the objective about which rows are
 #' offenders.  Indices are reported against the **data**, not against the
 #' interval subset the inner guard sees.
-#'
-#' **This guards the codes it is given, not the ones the user meant.**  On the
-#' vector interface a `survival::Surv()` object is unclassed without
-#' translation, so its codes reach here meaning something else entirely, and
-#' what goes wrong depends on `type`:  under `type = "left"` a left-censored
-#' row is coded `0` and so arrives as this package's *right-censored*, and is
-#' fitted as one;  under `type = "interval"` it is coded `2` and arrives as
-#' *interval*, where this check rejects it for having zero width.  A genuine
-#' interval row is coded `3`, which no branch of `.hzr_logl_multiphase()`
-#' matches, so it contributes nothing at all.  The formula path translates in
-#' `.hzr_parse_formula()` and is guarded correctly.  That asymmetry is a
-#' pre-existing defect of the vector path, not of this check;  see #226.
 #'
 #' @param status Numeric event indicator.
 #' @param time Event/censoring times.
@@ -560,8 +580,8 @@
 #' `.hzr_gradient_multiphase()` delegate here, so the optimizer cannot step by
 #' the gradient of a different objective than the one it evaluates.
 #'
-#' Callers pass **only the interval rows** -- already subset by `status == 2`
-#' -- so this helper never sees the status mask and cannot disagree with a
+#' Callers pass **only the interval rows**, already subset by `status == 2`,
+#' so this helper never sees the status mask and cannot disagree with a
 #' caller about which rows are intervals.
 #'
 #' @param cumhaz_lower Cumulative hazard at the interval lower bounds,
@@ -573,8 +593,8 @@
 #' @param weights Case weights. In a SAS parity run these are the ICENSOR
 #'   variable, which is a weight (a death count in an aggregated study), not
 #'   merely an indicator.
-#' @param objective `"likelihood"` for the interval probability -- the default,
-#'   and the only statistically consistent form -- or `"sas"` for the
+#' @param objective `"likelihood"` for the interval probability (the default,
+#'   and the only statistically consistent form) or `"sas"` for the
 #'   interval-mean-hazard density term `PROC HAZARD` accumulates. See
 #'   `inst/dev/SAS-INTERVAL-OBJECTIVE-DESIGN.md`.
 #' @return Scalar summed contribution; `-Inf` for infeasible parameters.
@@ -646,7 +666,11 @@
 #' @param time Numeric vector of follow-up times (n).
 #' @param status Numeric event indicator: 1 = event, 0 = right-censored,
 #'   -1 = left-censored, 2 = interval-censored.
-#' @param time_lower Optional lower bounds for interval censoring.
+#' @param time_lower Optional numeric vector: the interval lower bound on
+#'   status-2 rows, and the counting-process entry time on status 0/1 rows
+#'   with `0 < time_lower < time`. `time_lower == time` on a status 0/1 row
+#'   means no entry (the mixed-interval layout); see
+#'   `.hzr_multiphase_entry()`.
 #' @param time_upper Optional upper bounds for left/interval censoring.
 #' @param x Design matrix (unused directly; kept for interface compatibility).
 #' @param phases Named list of validated `hzr_phase` objects.
@@ -699,14 +723,17 @@
   cumhaz <- .hzr_multiphase_cumhaz(time, theta, phases, covariate_counts, x_list)
   if (any(!is.finite(cumhaz))) return(-Inf)
 
-  # Counting-process entry-time cumulative hazard; H(start) = 0 when no
-  # `time_lower` supplied (plain right-censored data).  For status in
-  # {0, 1}, the contribution becomes H(stop) - H(start); for status == 2,
-  # this value is unused (interval-censoring handled separately below).
-  if (is.null(time_lower)) {
+  # Counting-process entry-time cumulative hazard. The entry is `time_lower` on
+  # a status 0/1 row with 0 < time_lower < time and 0 otherwise, so
+  # time_lower = time (the mixed-interval layout) is no entry; see
+  # `.hzr_multiphase_entry()`, issue #253. For status in {0, 1} the
+  # contribution becomes H(stop) - H(start); for status -1 and 2 the entry is
+  # 0 and this value is unused (those rows are handled separately below).
+  entry <- .hzr_multiphase_entry(time, status, time_lower)
+  if (is.null(entry)) {
     cumhaz_start <- rep(0, n)
   } else {
-    cumhaz_start <- .hzr_multiphase_cumhaz(time_lower, theta, phases,
+    cumhaz_start <- .hzr_multiphase_cumhaz(entry, theta, phases,
                                              covariate_counts, x_list)
     if (any(!is.finite(cumhaz_start))) return(-Inf)
   }
@@ -778,16 +805,26 @@
 #' the side of `m` near `m = 0`, where the phase family has a cusp.
 #'
 #' @inheritParams .hzr_logl_multiphase
-#' @return Numeric vector of length `length(theta)` -- the gradient.
-#'   Returns a zero vector if any component is non-finite (guards optimizer).
+#' @return Numeric vector of length `length(theta)`: the gradient.
+#'   With `sanitize = TRUE` (the default) a component that cannot be evaluated
+#'   is 0, and so is the whole vector at an infeasible point (guards the
+#'   optimizer); with `sanitize = FALSE` those are `NA`.
+#' @param sanitize Logical; `FALSE` returns `NA` where the default returns 0.
+#'   Used by SAS/C's acceptance test, which must not read a zero it could not
+#'   compute as a small gradient.
 #' @keywords internal
 .hzr_gradient_multiphase <- function(theta, time, status,
                                       time_lower = NULL, time_upper = NULL,
                                       x = NULL, weights = NULL,
                                       phases, covariate_counts, x_list,
                                       objective = c("likelihood", "sas"),
+                                      sanitize = TRUE,
                                       ...) {
   objective <- match.arg(objective)
+  # A gradient that cannot be evaluated is zeros for the optimizer, which
+  # needs a finite vector to keep moving, and NA for anything that must not
+  # read it as a measurement (the SAS acceptance test asks with sanitize =
+  # FALSE).
   .hzr_check_sas_status(status, objective)
   n <- length(time)
   p <- length(theta)
@@ -799,10 +836,12 @@
   for (nm in names(phases)) {
     pars <- .hzr_unpack_phase_theta(theta_split[[nm]], phases[[nm]])
     if (phases[[nm]]$type %in% c("cdf", "hazard")) {
-      if (pars$m < 0 && pars$nu < 0) return(grad)
+      if (pars$m < 0 && pars$nu < 0) return(if (sanitize) grad else grad * NA)
     }
     if (phases[[nm]]$type == "g3") {
-      if (pars$gamma <= 0 || pars$eta <= 0 || pars$alpha < 0) return(grad)
+      if (pars$gamma <= 0 || pars$eta <= 0 || pars$alpha < 0) {
+        return(if (sanitize) grad else grad * NA)
+      }
     }
   }
 
@@ -840,27 +879,19 @@
   phase_deriv      <- vector("list", n_phases)  # derivative list at time
   phase_Phi_start  <- vector("list", n_phases)  # Phi_j(start_i), if needed
   phase_deriv_start <- vector("list", n_phases) # derivative list at start
-  # The start time must be defined EXACTLY as the log-likelihood defines it:
-  # `.hzr_logl_multiphase()` subtracts H(time_lower) from every status 0/1 row
-  # whenever `time_lower` is supplied, with no further condition. An earlier
-  # `time_lower < time` filter here excluded rows entering at their own event
-  # or censoring time, so the derivative was taken of a different function from
-  # the one being evaluated: the reported gradient pointed somewhere the
-  # objective did not, and the optimizer followed it out of the region where
-  # the fit means anything. The
-  # `> 0` test is only a skip: H(0) = 0, so those rows contribute nothing
-  # either way, and it must match `has_start` below or the term is weighted in
-  # while its derivative is left at zero.
-  need_start <- !is.null(time_lower) &&
-                any(time_lower > 0 & status %in% c(0L, 1L))
-  start_vec <- if (need_start) {
-    sv <- rep(0, n)
-    epoch_idx <- status %in% c(0L, 1L)
-    sv[epoch_idx] <- time_lower[epoch_idx]
-    sv
-  } else {
-    NULL
-  }
+  # The start time must be defined EXACTLY as the log-likelihood defines it,
+  # so it comes from the same helper, `.hzr_multiphase_entry()`: the entry is
+  # `time_lower` on a status 0/1 row with 0 < time_lower < time, and 0
+  # otherwise (issue #253). When the gradient and the likelihood disagreed on
+  # which rows had an entry, the reported gradient pointed somewhere the
+  # objective did not and the optimizer followed it out of the region where
+  # the fit means anything (issue #136). The `> 0` test is only a skip:
+  # H(0) = 0, so a zero entry contributes nothing, and it must match
+  # `has_start` below or the term is weighted in while its derivative is left
+  # at zero.
+  entry <- .hzr_multiphase_entry(time, status, time_lower)
+  need_start <- !is.null(entry) && any(entry > 0)
+  start_vec <- if (need_start) entry else NULL
 
   for (j in seq_along(phases)) {
     nm <- names(phases)[j]
@@ -928,7 +959,9 @@
   }
 
   # Guard: if total hazard or cumhaz is non-finite, return zero gradient
-  if (any(!is.finite(H_t)) || any(!is.finite(h_t))) return(grad)
+  if (any(!is.finite(H_t)) || any(!is.finite(h_t))) {
+    return(if (sanitize) grad else grad * NA)
+  }
 
   # -- Per-observation weight vectors ----------------------------------------
   # dLogl/dH(t_i) depends on observation type:
@@ -959,7 +992,7 @@
   # H(start) contribution for counting-process rows (status in {0, 1}).
   # Per-row contribution is `+H(start_i)` inside the log-likelihood, so
   # the derivative w.r.t. theta picks up `+weights_i * dH(start)/dtheta`.
-  has_start <- !is.null(time_lower) && any(time_lower > 0 & status %in% c(0L, 1L))
+  has_start <- need_start
   w_H_start <- numeric(n)
   if (has_start) {
     w_H_start[idx_event] <- weights[idx_event]
@@ -1198,8 +1231,9 @@
     }
   }
 
-  # Safety: zero out non-finite entries
-  grad[!is.finite(grad)] <- 0
+  # Non-finite entries: 0 for the optimizer; NA for the acceptance test, which
+  # must report a component it could not evaluate, not a NaN or an Inf.
+  grad[!is.finite(grad)] <- if (sanitize) 0 else NA_real_
 
   grad
 }
@@ -1215,10 +1249,10 @@
 #'
 #' \describe{
 #'   \item{`"absent"`}{The phase contributes essentially none of
-#'     \eqn{\Lambda} at any observed time -- it has not started by the end of
+#'     \eqn{\Lambda} at any observed time; it has not started by the end of
 #'     follow-up. Its `mu` **and** its shape are unidentified.}
 #'   \item{`"saturated"`}{The phase's \eqn{\Phi} is effectively constant across
-#'     the observed times -- a `cdf` phase whose half-life is far shorter than
+#'     the observed times: a `cdf` phase whose half-life is far shorter than
 #'     the first observation has already finished. It then contributes
 #'     \eqn{\mu \cdot \Phi \approx \mu}, a constant offset, so **`mu` stays
 #'     well identified** while the shape parameters (`t_half`, `nu`, `m`) go
@@ -1229,7 +1263,7 @@
 #' Share is taken of \eqn{\Lambda}, not of \eqn{h}, because every row type's
 #' contribution runs through \eqn{\Lambda(t)}. A phase can supply almost none
 #' of the instantaneous hazard late in follow-up and still be perfectly well
-#' identified through the offset it already contributed -- which is why the
+#' identified through the offset it already contributed, which is why the
 #' hazard is the wrong basis for this test.
 #'
 #' The **maximum** over times is the right summary rather than the mean: a
@@ -1240,7 +1274,7 @@
 #' @return `data.frame` with one row per phase: `share` (largest share of
 #'   \eqn{\Lambda} at any observed time) and `variation` (relative range of the
 #'   phase's contribution across observed times, `NA` when the phase carries
-#'   covariates -- `mu` then varies by row and the two sources of variation
+#'   covariates; `mu` then varies by row and the two sources of variation
 #'   cannot be separated from the contribution alone).
 #'
 #'   The shape is the same whatever happens: if no observed time carries a
@@ -1298,7 +1332,7 @@
 #'
 #' Warns rather than stops: the fit is arithmetically fine and the other
 #' phases' estimates are usable. It is the unidentified parameters that must
-#' not be read as estimates -- and which ones those are differs by mode, so
+#' not be read as estimates, and which ones those are differs by mode, so
 #' the message says which.
 #'
 #' Three conditions, not two. `absent` and `saturated` are per-phase. The
@@ -1313,12 +1347,12 @@
 #' `other_times` vary, since the measures here cannot see those.
 #'
 #' @inheritParams .hzr_logl_multiphase
-#' @param tol Threshold for all three tests -- the minimum share of \eqn{\Lambda} a
+#' @param tol Threshold for all three tests: the minimum share of \eqn{\Lambda} a
 #'   phase must reach somewhere, and the minimum relative variation its
 #'   contribution must show. Default 1e-8: far above double precision, and
 #'   orders of magnitude below any real contribution, so it fires on dead
 #'   phases rather than merely small ones.
-#' @param other_times Further times the likelihood evaluates beyond `time` --
+#' @param other_times Further times the likelihood evaluates beyond `time`:
 #'   counting-process entry times and interval bounds. The share and variation
 #'   measures are taken over `time` alone, so when they are degenerate but
 #'   these vary, the shapes still enter the likelihood and the measures are
@@ -1603,6 +1637,14 @@
     }
   }
 
+  # Record which phases' designs came from their own formula, evaluated in
+  # `data`, rather than the inherited global x, by the rule the loop above
+  # applied. hzr_gof() reads it: under time_windows a phase formula's columns
+  # can carry the same names as the window-expanded global x.
+  attr(x_list, "from_formula") <- vapply(names(x_list), function(nm) {
+    !is.null(phases[[nm]]$formula) && !is.null(data)
+  }, logical(1))
+
   # --- Assemble starting values if not provided ------------------------------
   if (is.null(theta_start)) {
     theta_start <- unlist(lapply(names(phases), function(nm) {
@@ -1647,18 +1689,19 @@
   logl_fn_unwrapped <- logl_fn
 
   gradient_fn <- function(theta, time, status, time_lower, time_upper, x,
-                          weights = NULL, ...) {
+                          weights = NULL, sanitize = TRUE, ...) {
     grad <- .hzr_gradient_multiphase(
       theta = theta, time = time, status = status,
       time_lower = time_lower, time_upper = time_upper, x = x,
       weights = weights,
       phases = phases, covariate_counts = covariate_counts, x_list = x_list,
-      objective = objective
+      objective = objective, sanitize = sanitize
     )
 
     # Fallback: if gradient is all zero (e.g. at infeasible point), try
-    # numerical gradient of the *weighted* LL to keep optimizer moving.
-    if (all(grad == 0)) {
+    # numerical gradient of the *weighted* LL to keep optimizer moving. Not
+    # when the raw score was asked for: its NAs are the answer.
+    if (sanitize && isTRUE(all(grad == 0))) {
       eps_rel <- sqrt(.Machine$double.eps)
       p <- length(theta)
       ll0 <- logl_fn_unwrapped(theta, time, status, time_lower,
@@ -1717,11 +1760,13 @@
         time, theta_start, phases, covariate_counts, x_list,
         per_phase = TRUE
       )
-      # Entry-time scale under left truncation: conserve H(stop) - H(start).
+      # Entry-time scale under left truncation: conserve H(stop) - H(start),
+      # with the entry rule of `.hzr_multiphase_entry()`.
       init_total <- decomp_init$total
-      if (!is.null(time_lower)) {
+      init_entry <- .hzr_multiphase_entry(time, status, time_lower)
+      if (!is.null(init_entry)) {
         decomp_init_start <- .hzr_multiphase_cumhaz(
-          time_lower, theta_start, phases, covariate_counts, x_list,
+          init_entry, theta_start, phases, covariate_counts, x_list,
           per_phase = TRUE
         )
         init_total <- init_total - decomp_init_start$total
@@ -1765,15 +1810,19 @@
       }
 
       gradient_fn_pre_coe <- gradient_fn
+      # Same formals as the base gradient_fn, sanitize included: R CMD check
+      # flags local redefinitions whose formal arguments differ.
       gradient_fn <- function(theta, time, status, time_lower,
-                              time_upper, x, weights = NULL, ...) {
+                              time_upper, x, weights = NULL,
+                              sanitize = TRUE, ...) {
         theta <- .hzr_conserve_events(
           theta, fixmu_phase, fixmu_pos,
           time, status, phases, covariate_counts, x_list, total_events,
           weights = weights, time_lower = time_lower
         )
         gradient_fn_pre_coe(theta, time, status, time_lower,
-                            time_upper, x, weights = weights, ...)
+                            time_upper, x, weights = weights,
+                            sanitize = sanitize, ...)
       }
     } else {
       use_conserve <- FALSE
@@ -1816,11 +1865,13 @@
     }
 
     gradient_fn_full <- gradient_fn
+    # Same formals as the base gradient_fn; see the CoE wrapper above.
     gradient_fn <- function(theta, time, status, time_lower, time_upper, x,
-                            weights = NULL, ...) {
+                            weights = NULL, sanitize = TRUE, ...) {
       grad_full <- gradient_fn_full(expand_theta(theta), time, status,
                                      time_lower, time_upper, x,
-                                     weights = weights, ...)
+                                     weights = weights, sanitize = sanitize,
+                                     ...)
       grad_full[free_idx]
     }
 
@@ -1829,6 +1880,17 @@
     free_idx_eff <- seq_along(theta_start)
     theta_start_optim <- theta_start
   }
+
+  # Positions, in the optimizer's vector, of each free shape m. The
+  # finite-difference acceptance check (gradient_exact = FALSE) must not
+  # straddle m = 0, where the cdf and hazard families meet in a cusp (#251).
+  # Taken from the layout -- log_mu, log_t_half, nu, m, then covariates --
+  # not from names, which a covariate called m would collide with.
+  mu_pos <- .hzr_log_mu_positions(phases, covariate_counts)
+  m_full <- unlist(lapply(names(phases), function(nm) {
+    if (phases[[nm]]$type %in% c("cdf", "hazard")) mu_pos[[nm]] + 3L
+  }), use.names = FALSE)
+  m_free_idx <- if (any_fixed) which(free_idx %in% m_full) else m_full
 
   # --- Multi-start optimization -----------------------------------------------
   n_starts <- if (!is.null(control$n_starts)) control$n_starts else 5L
@@ -2006,7 +2068,8 @@
         hessian_fn  = hessian_fn_mp,
         # Under CoE gradient_fn is the partial score at the conserved theta,
         # not the gradient of the objective being maximised.
-        gradient_exact = !(use_conserve && !is.null(fixmu_pos))
+        gradient_exact = !(use_conserve && !is.null(fixmu_pos)),
+        sign_bounded = m_free_idx
       ),
       error = function(e) e
     )

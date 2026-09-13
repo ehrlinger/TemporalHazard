@@ -35,7 +35,7 @@
 #' esophagectomy reference the SAS interval density and the likelihood differ
 #' by about 22 log-likelihood units, which is larger than most single-variable
 #' effects. Anything that refits a stored fit, or evaluates its likelihood
-#' again, has to reuse the same one or it silently compares two estimands ---
+#' again, has to reuse the same one or it silently compares two estimands:
 #' a populated `delta_logLik` / `aic` computed against a model the base fit
 #' was never fitted to. Every such caller reads this one accessor so they
 #' cannot drift apart.
@@ -67,7 +67,7 @@
 #' single-distribution scope change adds or drops a term in the **global**
 #' formula, so without one there is nothing to mutate. A multiphase scope
 #' change rewrites the **phase** formula instead, and the global formula only
-#' ever carried the response --- so a vector-interface multiphase fit refits
+#' ever carried the response, so a vector-interface multiphase fit refits
 #' perfectly well from its stored response vectors (#160). Blocking it shut
 #' out every translated SAS `SELECTION` job, since SAS's censoring statements
 #' map onto this package's `-1/0/1/2` coding, which `survival::Surv()` does

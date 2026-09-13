@@ -17,7 +17,7 @@ NULL
 #' each subject's predicted cumulative hazard at its *own* follow-up time, and
 #' the **observed** count is its number of events; under conservation of events
 #' the group totals sum to the total observed events. The horizon therefore only
-#' stratifies subjects into risk groups -- it does not restrict or exclude any
+#' stratifies subjects into risk groups; it does not restrict or exclude any
 #' subject, and the expected/observed totals are independent of it.
 #'
 #' @param object A fitted `hazard` object (with `fit = TRUE`).
@@ -292,53 +292,115 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 
 #' Goodness-of-fit: observed vs. predicted events
 #'
-#' Compare a fitted hazard model against the nonparametric Kaplan-Meier
-#' estimate by computing observed and expected (parametric) event counts
-#' at each distinct event time.  This is the R equivalent of the SAS
-#' `hazplot.sas` macro and implements the conservation-of-events
-#' diagnostic.
+#' Compare a fitted hazard model with the data two ways: its survival curve
+#' against the nonparametric Kaplan-Meier estimate, and the number of events
+#' it expects against the number observed, tallied over follow-up.  This is
+#' the R equivalent of the SAS `hazplot.sas` macro and implements the
+#' conservation-of-events diagnostic.
 #'
-#' At each observed event time the function computes:
+#' The diagnostic is for right-censored data: every stored status must be 0
+#' (censored) or 1 (event).  A fit with any left-censored (status -1) or
+#' interval-censored (status 2) row is refused with an error.  So is a
+#' multiphase fit that dropped the rows where a covariate was missing: its
+#' design matrices then hold fewer rows than there are patients, so no
+#' patient-by-patient tally can be formed.  Refit it on complete cases.
+#'
+#' At each time point the function computes:
 #' \itemize{
 #'   \item The Kaplan-Meier survival and cumulative hazard.
 #'   \item The parametric survival and cumulative hazard from the fitted
-#'     model (and per-phase components for multiphase models).
-#'   \item Cumulative observed events vs. cumulative expected events
-#'     (sum of individual cumulative hazards for those exiting the risk
-#'     set at each time).
+#'     model at the covariate means (and per-phase components for
+#'     multiphase models).  This is the curve to plot against the
+#'     Kaplan-Meier estimate.
+#'   \item Cumulative observed events vs. cumulative expected events.  Each
+#'     patient's expected count is their own cumulative hazard, from their
+#'     own covariates, at the end of their follow-up, less their cumulative
+#'     hazard at entry when the fit is left truncated (`time_lower` on a
+#'     status 0 or 1 row).  These are summed over the patients leaving
+#'     follow-up at each time.
 #'   \item The running residual (expected minus observed).
 #' }
 #'
-#' Perfect model fit implies the expected and observed event counts track
-#' each other (residual near zero).  This is the conservation-of-events
-#' principle.
+#' The conservation-of-events principle says a model fit by maximum
+#' likelihood predicts as many events as were observed: add up every
+#' patient's cumulative hazard over their follow-up and you get the event
+#' count back.  The final residual is then zero and the printed
+#' "Conservation ratio (E/O)" is 1.  A multiphase fit with Conservation of
+#' Events applied (`control = list(conserve = TRUE)`, the default) meets the
+#' identity by construction.  Weibull and exponential fits meet it at the
+#' exact maximum, so at a converged fit E/O sits close to 1, off only by how
+#' far short of the maximum the optimizer stopped.  The log-logistic and
+#' log-normal models carry no such identity, and for them E/O is a check of
+#' calibration in total.
+#'
+#' The parametric curve is a different quantity.  For a model with
+#' covariates it belongs to one "mean patient" with average covariates, and
+#' the mean patient's cumulative hazard is not the average of the patients'
+#' cumulative hazards, so `par_cumhaz` does not enter the expected count.
+#' For an intercept-only model every patient shares that curve.  Without
+#' entry times each patient's expected count is the curve at their exit time;
+#' with entry times it is the curve's rise from entry to exit, so the two
+#' differ.  The means are those of the design-matrix columns, taken phase by
+#' phase for a multiphase fit, whether its covariates enter globally, through
+#' the phase formulas or both, so a factor enters as the proportion of
+#' patients in each level.
+#' With `time_windows`, a phase built on the global covariates carries their
+#' means in the window that contains each time; a phase formula's own columns
+#' keep their plain means.
+#'
+#' For a weighted fit both tallies carry the case weights: observed events
+#' are \eqn{\sum_i w_i d_i} and expected events \eqn{\sum_i w_i H_i}, the
+#' form in which a weighted fit conserves events.  The `n_risk`, `n_event`,
+#' `n_censor` and Kaplan-Meier columns are unweighted.
+#'
+#' Each patient is placed at the Kaplan-Meier time [survival::survfit()]
+#' gives them, which merges exit times closer together than its tolerance.
+#' On the default grid every patient lands on a grid point, and `hzr_gof()`
+#' warns if one cannot be placed.  With a custom `time_grid`, a patient is
+#' counted in both tallies only if that time, or failing it their own
+#' follow-up time, falls on a grid point.
 #'
 #' @param object A fitted `hazard` object (with `fit = TRUE`).
 #' @param time_grid Optional numeric vector of time points at which to
 #'   evaluate the parametric model.
-#'   If `NULL` (default), uses the sorted unique event times from the
-#'   fitted data.
+#'   If `NULL` (default), uses the distinct Kaplan-Meier times of the
+#'   fitted data: the event and censoring times, with any closer together
+#'   than [survival::survfit()]'s tolerance merged into one.
+#'   A supplied grid must hold finite, non-negative times.  It is sorted
+#'   and exact repeats dropped, because the cumulative columns accumulate in
+#'   time order.
 #'
 #' @return A data frame with one row per time point and columns:
 #' \describe{
 #'   \item{time}{Evaluation time.}
-#'   \item{n_risk}{Number at risk (Kaplan-Meier).}
+#'   \item{n_risk}{Number at risk at this time: subjects still in
+#'     follow-up. A subject with an entry time is at risk only after it.}
 #'   \item{n_event}{Number of events at this time.}
 #'   \item{n_censor}{Number censored at this time.}
-#'   \item{km_surv}{Kaplan-Meier survival estimate.}
+#'   \item{km_surv}{Kaplan-Meier survival estimate, using the
+#'     counting-process risk set when the fit has entry times.}
 #'   \item{km_cumhaz}{Kaplan-Meier cumulative hazard
 #'     (\eqn{-\log(\text{km\_surv})}).}
-#'   \item{par_surv}{Parametric survival from the fitted model.}
-#'   \item{par_cumhaz}{Parametric cumulative hazard.}
-#'   \item{cum_observed}{Cumulative observed events to this time.}
-#'   \item{cum_expected}{Cumulative expected events (sum of individual
-#'     cumulative hazards for observations exiting the risk set).}
+#'   \item{par_surv}{Parametric survival from the fitted model, at the
+#'     covariate means for a model with covariates.  For plotting against
+#'     \code{km_surv}; not used for \code{cum_expected}.}
+#'   \item{par_cumhaz}{Parametric cumulative hazard, at the covariate
+#'     means for a model with covariates.  For plotting; not used for
+#'     \code{cum_expected}.}
+#'   \item{cum_observed}{Cumulative observed events to this time, weighted
+#'     by the case weights for a weighted fit.}
+#'   \item{cum_expected}{Cumulative expected events: over the patients
+#'     leaving follow-up by this time, the sum of each patient's own
+#'     cumulative hazard at exit minus that at entry, weighted by the case
+#'     weights for a weighted fit.  With \code{time_windows}, both cumulative
+#'     hazards use the patient's covariate window at exit, as the likelihood
+#'     does.}
 #'   \item{residual}{Expected minus observed
 #'     (\code{cum_expected - cum_observed}).}
 #' }
 #'
 #' For multiphase models, additional columns are appended for each
-#' phase: \code{par_cumhaz_<phase>}.
+#' phase: \code{par_cumhaz_<phase>}, also at the covariate means.
 #'
 #' An attribute `"summary"` is attached with scalar diagnostics:
 #' total observed events, total expected events, and the final residual.
@@ -356,6 +418,14 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #' )
 #' gof <- hzr_gof(fit)
 #' print(gof)
+#'
+#' # Expected events are summed per patient.  This fit has no entry times,
+#' # so the total is the sum of each patient's own cumulative hazard at
+#' # their follow-up time:
+#' nd <- avc[, c("age", "mal")]
+#' nd$time <- avc$int_dead
+#' c(hzr_gof = attr(gof, "summary")$total_expected,
+#'   predict = sum(predict(fit, newdata = nd, type = "cumulative_hazard")))
 #'
 #' # Plot observed vs expected events
 #' if (requireNamespace("ggplot2", quietly = TRUE)) {
@@ -400,24 +470,126 @@ hzr_gof <- function(object, time_grid = NULL) {
   }
 
   # --- Kaplan-Meier via survival::survfit -----------------------------------
-  km_fit <- survival::survfit(survival::Surv(obs_time, obs_status) ~ 1)
+  # Same entry rule as the expected count below: a subject with a genuine
+  # entry time (0 < time_lower < time) is not at risk before it, so the
+  # product-limit estimate and n_risk use the counting-process risk set.
+  km_entry <- object$data$time_lower
+  km_entry <- if (is.null(km_entry)) {
+    rep(0, n_total)
+  } else {
+    ifelse(km_entry > 0 & km_entry < obs_time, km_entry, 0)
+  }
+  km_y <- if (any(km_entry > 0)) {
+    survival::Surv(km_entry, obs_time, obs_status)
+  } else {
+    survival::Surv(obs_time, obs_status)
+  }
+  km_fit <- survival::survfit(km_y ~ 1)
+  # survfit() applies timefix: exit times closer together than its tolerance
+  # are merged into one Kaplan-Meier time. The per-subject tallies below
+  # place each subject by those same adjusted times, or a
+  # subject merged onto a neighbour's time matches no grid point and drops
+  # out of both tallies (#286). Expected events still use the raw times,
+  # which are what the likelihood fits.
+  km_adj <- unclass(survival::aeqSurv(km_y))
+  counting <- ncol(km_adj) == 3
+  tally_exit <- km_adj[, if (counting) "stop" else "time"]
+  tally_exit[is.na(tally_exit)] <- obs_time[is.na(tally_exit)]
 
   # survfit output: time, n.risk, n.event, n.censor, surv
   km_times   <- km_fit$time
-  km_n_risk  <- km_fit$n.risk
   km_n_event <- km_fit$n.event
   km_n_censor <- km_fit$n.censor
   km_surv    <- km_fit$surv
 
   # --- Decide time grid -----------------------------------------------------
+  default_grid <- is.null(time_grid)
   if (is.null(time_grid)) {
     time_grid <- km_times
+  } else {
+    if (!is.numeric(time_grid) || length(time_grid) == 0 ||
+        any(!is.finite(time_grid)) || any(time_grid < 0)) {
+      stop("'time_grid' must be a non-empty numeric vector of finite, ",
+           "non-negative times.", call. = FALSE)
+    }
+    # The cumulative columns accumulate in grid order, so the grid must run
+    # forward in time, once.
+    time_grid <- sort(unique(time_grid))
   }
 
-  # --- Parametric predictions at each time point ----------------------------
+  # --- Parametric curve at each time point (for the KM overlay) -------------
+  # This curve is for plotting only; expected events are per subject below.
   is_multiphase <- (object$spec$dist == "multiphase")
+  has_phase_x <- is_multiphase && any(vapply(
+    object$fit$x_list, function(m) !is.null(m) && ncol(m) > 0, logical(1)
+  ))
 
-  if (!is.null(object$data$x) && ncol(object$data$x) > 0) {
+  # A multiphase fit drops rows with a missing phase covariate from that
+  # phase's design matrix but keeps every row's time and status. A
+  # per-subject prediction would then recycle the shorter design across the
+  # subjects, so refuse rather than tally over it.
+  short <- vapply(object$fit$x_list, function(m) {
+    !is.null(m) && NROW(m) != n_total
+  }, logical(1))
+  if (is_multiphase && any(short)) {
+    stop("hzr_gof() needs one design row per subject, but the fit dropped ",
+         "the rows where any covariate was missing, from every phase: ",
+         ngettext(sum(short), "phase ", "phases "),
+         paste0("'", names(short)[short], "'", collapse = ", "),
+         ngettext(sum(short), " has", " have"),
+         " fewer rows than the data. Refit on complete cases, dropping ",
+         "those rows from every input (data, or time, status and x).",
+         call. = FALSE)
+  }
+
+  curve_obj <- object
+  if (has_phase_x) {
+    # A multiphase fit stores each phase's own design matrix: the phase
+    # formula's columns, or data$x for a phase without one. A newdata built
+    # from data$x lacks the phase-formula variables, and a time-only newdata
+    # puts every covariate at 0. Put each phase's design matrix at its column
+    # means and the stored times at the grid; predict() without newdata then
+    # evaluates that stored design.
+    # With time_windows, a phase that took the global x carries data$x
+    # expanded into one column per window, each on only in its own window.
+    # Its column means would switch every window on at once, so expand the
+    # means of data$x by the grid times instead. Such a phase is known by the
+    # fit's own record of which designs came from a phase formula, not by
+    # whether a formula was written (the fit ignores one it cannot evaluate,
+    # without `data`) nor by column names (a phase formula's columns can share
+    # the expanded names). A fit from before that record falls back to names.
+    time_windows <- object$spec$time_windows
+    from_formula <- attr(object$fit$x_list, "from_formula")
+    window_cols <- if (!is.null(time_windows)) {
+      colnames(.hzr_expand_time_varying_design(
+        x = object$data$x[1, , drop = FALSE], time = 0,
+        time_windows = time_windows
+      ))
+    }
+    inherits_global <- function(nm, m) {
+      if (is.null(from_formula)) return(identical(colnames(m), window_cols))
+      !isTRUE(from_formula[nm])
+    }
+    x_bar <- function(m) {
+      matrix(colMeans(m), nrow = length(time_grid), ncol = ncol(m),
+             byrow = TRUE, dimnames = list(NULL, colnames(m)))
+    }
+    curve_obj$data$time <- time_grid
+    curve_obj$fit$x_list <- lapply(
+      stats::setNames(nm = names(object$fit$x_list)), function(nm) {
+        m <- object$fit$x_list[[nm]]
+        if (is.null(m) || ncol(m) == 0) return(m)
+        if (!is.null(time_windows) && inherits_global(nm, m)) {
+          return(.hzr_expand_time_varying_design(
+            x = x_bar(object$data$x), time = time_grid,
+            time_windows = time_windows
+          ))
+        }
+        x_bar(m)
+      }
+    )
+    nd <- NULL
+  } else if (!is.null(object$data$x) && ncol(object$data$x) > 0) {
     # For covariate models, evaluate at covariate means (baseline patient)
     x_means <- colMeans(object$data$x)
     nd <- as.data.frame(t(x_means))
@@ -427,56 +599,147 @@ hzr_gof <- function(object, time_grid = NULL) {
     nd <- data.frame(time = time_grid)
   }
 
-  par_cumhaz <- predict(object, newdata = nd, type = "cumulative_hazard")
+  par_cumhaz <- stats::predict(curve_obj, newdata = nd, type = "cumulative_hazard")
 
   # Phase decomposition for multiphase models
   phase_cumhaz <- NULL
   if (is_multiphase) {
-    decomp <- predict(object, newdata = nd, type = "cumulative_hazard",
+    decomp <- stats::predict(curve_obj, newdata = nd, type = "cumulative_hazard",
                       decompose = TRUE)
-    # decomp is a matrix; first column is "total", rest are phase names
-    phase_cols <- colnames(decomp)[colnames(decomp) != "total"]
+    # decomp is a data frame: time, total, then one column per phase. Select
+    # by phase name, as predict() does, not by excluding the other columns.
+    phase_cols <- names(object$fit$phases)
+    if (is.null(phase_cols)) phase_cols <- names(object$spec$phases)
     phase_cumhaz <- as.data.frame(decomp[, phase_cols, drop = FALSE])
   }
 
   par_surv <- exp(-par_cumhaz)
 
   # --- Interpolate KM at the time grid --------------------------------------
-  # Use stepfun-style interpolation for KM (right-continuous)
-  km_surv_at_grid <- stats::approx(
-    x = c(0, km_times), y = c(1, km_surv),
-    xout = time_grid, method = "constant", f = 0, rule = 2
-  )$y
+  # A right-continuous step function, 1 before the first Kaplan-Meier time.
+  # approx() with a (0, 1) sentinel prepended duplicated x = 0 when a time was
+  # exactly 0, and then averaged the two values there.
+  km_surv_at_grid <- stats::stepfun(km_times, c(1, km_surv))(time_grid)
   km_cumhaz_at_grid <- -log(pmax(km_surv_at_grid, .Machine$double.xmin))
 
-  # Interpolate n.risk, n.event, n.censor at grid times
+  # The risk set at each grid time, counted directly. A subject followed from
+  # 0 is at risk at t while t <= exit; one with an entry time only while
+  # entry < t <= exit. That is survfit's n.risk at its own times, and it stays
+  # right between them, where carrying survfit's count forward had kept
+  # subjects who had left and missed ones who had entered. Count every
+  # subject with exit >= t, less the late entrants not yet in (entry >= t,
+  # whose exit is later still).
+  n_at_or_after <- function(v, t) {
+    length(v) - findInterval(t, sort(v), left.open = TRUE)
+  }
+  # A grid time within time_tol of a Kaplan-Meier time is counted at that
+  # time, the rule grid_index() applies to the event tallies below, so n_risk
+  # agrees with n_event and n_censor there. seq(0.1, 1, by = 0.1)[3] is
+  # 0.30000000000000004, and an exact count at it drops the exits at 0.3.
+  # The tolerance is relative above 1: 100 * eps is under one ulp above 128,
+  # so an absolute one matched nothing at times in days or months.
+  time_tol <- .Machine$double.eps * 100
+  risk_time <- vapply(time_grid, function(g) {
+    k <- which(abs(km_times - g) < time_tol * max(1, abs(g)))
+    if (length(k) > 0) km_times[k[1]] else g
+  }, numeric(1))
+  km_n_risk_grid <- n_at_or_after(obs_time, risk_time) -
+    n_at_or_after(km_entry[km_entry > 0], risk_time)
   # For event counts, sum events at matching times; 0 otherwise
-  km_n_risk_grid <- stats::approx(
-    x = c(0, km_times), y = c(n_total, km_n_risk),
-    xout = time_grid, method = "constant", f = 0, rule = 2
-  )$y
+  # A time belongs to the first grid point within this tolerance, or to none.
+  # Counts, observed events and expected events all use this one rule, so for
+  # a custom time_grid the two tallies cover the same subjects.
+  grid_index <- function(t) {
+    match_idx <- which(abs(time_grid - t) < time_tol * max(1, abs(t)))
+    if (length(match_idx) > 0) match_idx[1] else NA_integer_
+  }
   km_n_event_grid <- rep(0, length(time_grid))
   km_n_censor_grid <- rep(0, length(time_grid))
   for (i in seq_along(km_times)) {
-    match_idx <- which(abs(time_grid - km_times[i]) < .Machine$double.eps * 100)
-    if (length(match_idx) > 0) {
-      km_n_event_grid[match_idx[1]] <- km_n_event[i]
-      km_n_censor_grid[match_idx[1]] <- km_n_censor[i]
+    g <- grid_index(km_times[i])
+    if (!is.na(g)) {
+      km_n_event_grid[g] <- km_n_event[i]
+      km_n_censor_grid[g] <- km_n_censor[i]
     }
   }
 
   # --- Conservation of Events accounting ------------------------------------
-  # At each event time, accumulate:
-  #   cum_observed: running sum of observed events
-  #   cum_expected: running sum of individual cumulative hazards for
-  #                 observations exiting the risk set (events + censored)
+  # Each subject's expected events are its own cumulative hazard at exit, less
+  # its cumulative hazard at the counting-process entry time (time_lower on a
+  # status 0/1 row with 0 < time_lower < time), the quantity a maximum
+  # likelihood fit conserves. The covariate-mean curve above cannot stand in
+  # for it: the mean patient's H is not the mean of the patients' H (#254).
   #
-  # The expected events for observations leaving at time t is:
-  #   (n_event + n_censor) * parametric_cumhaz(t)
-  # This is the SAS hazplot approach: total * _CUMHAZ at that interval.
+  # predict() without newdata evaluates the stored design (x, or the
+  # per-phase x_list for multiphase) at the stored time, for either interface.
+  # Swapping the stored time for the entry time gives H(entry) the same way.
+  obs_weights <- object$data$weights
+  if (is.null(obs_weights)) obs_weights <- rep(1, n_total)
 
-  cum_observed <- cumsum(km_n_event_grid)
-  interval_expected <- (km_n_event_grid + km_n_censor_grid) * par_cumhaz
+  h_exit <- stats::predict(object, type = "cumulative_hazard")
+  if (length(h_exit) != n_total) {
+    stop("predict() returned ", length(h_exit), " cumulative hazards for ",
+         n_total, " subjects.", call. = FALSE)
+  }
+  entry <- object$data$time_lower
+  has_entry <- if (is.null(entry)) {
+    rep(FALSE, n_total)
+  } else {
+    entry > 0 & entry < obs_time
+  }
+  h_entry <- rep(0, n_total)
+  if (any(has_entry)) {
+    at_entry <- object
+    at_entry$data$time <- ifelse(has_entry, entry, obs_time)
+    tw <- object$spec$time_windows
+    if (!is_multiphase && !is.null(tw) && !is.null(object$data$x) &&
+        ncol(object$data$x) > 0) {
+      # The likelihood takes H(entry) with each row's design expanded at its
+      # exit time. predict() would re-expand at the entry time, so hand it
+      # the exit-time design, already expanded, and no windows.
+      at_entry$data$x <- .hzr_expand_time_varying_design(
+        x = object$data$x, time = obs_time, time_windows = tw)
+      at_entry$spec$time_windows <- NULL
+    }
+    h_entry[has_entry] <-
+      stats::predict(at_entry, type = "cumulative_hazard")[has_entry]
+  }
+
+  # A weighted fit conserves weighted events, sum(w * H) = sum(w * d), so both
+  # tallies carry the case weights.
+  subject_expected <- obs_weights * (h_exit - h_entry)
+  subject_observed <- obs_weights * obs_status
+
+  # Each subject is placed by its timefix-adjusted exit time, which is a
+  # Kaplan-Meier time, or by its raw time when a custom grid holds the raw
+  # value instead.
+  grid_of <- function(t) {
+    u <- unique(t)
+    vapply(u, grid_index, integer(1))[match(t, u)]
+  }
+  subject_grid <- grid_of(tally_exit)
+  off <- is.na(subject_grid)
+  subject_grid[off] <- grid_of(obs_time[off])
+  on_grid <- !is.na(subject_grid)
+  # On the default grid every subject should land on its Kaplan-Meier time;
+  # say so rather than drop anyone from the tallies silently.
+  if (default_grid && !all(on_grid)) {
+    warning("hzr_gof(): ", sum(!on_grid), " of ", n_total, " subjects did ",
+            "not match a Kaplan-Meier time and are left out of ",
+            "cum_observed and cum_expected.", call. = FALSE)
+  }
+  interval_observed <- rep(0, length(time_grid))
+  interval_expected <- rep(0, length(time_grid))
+  if (any(on_grid)) {
+    agg <- rowsum(cbind(subject_observed, subject_expected)[on_grid, ,
+                                                            drop = FALSE],
+                  subject_grid[on_grid])
+    g <- as.integer(rownames(agg))
+    interval_observed[g] <- agg[, 1]
+    interval_expected[g] <- agg[, 2]
+  }
+
+  cum_observed <- cumsum(interval_observed)
   cum_expected <- cumsum(interval_expected)
   residual <- cum_expected - cum_observed
 
@@ -1196,7 +1459,7 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'
 #' Shape parameters are already named in `theta`; covariate betas often
 #' come through with empty names. Covariate coefficients occupy the last
-#' `ncol(x)` positions of theta -- fill any blanks within that block from
+#' `ncol(x)` positions of theta; fill any blanks within that block from
 #' the design matrix column names by relative index, so downstream pivots
 #' (e.g. `reshape(wide)`) get a distinct column per covariate, even when
 #' some betas are already named and others are not.
@@ -1255,9 +1518,9 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   supplied, `set.seed(seed)` is called at function entry, jumping the
 #'   global RNG to the seeded state; it is not restored on exit. Pass
 #'   `NULL` (the default) to skip the `set.seed()` call and start from
-#'   the caller's current RNG state. Note that the bootstrap consumes
+#'   the caller's current RNG state. The bootstrap consumes
 #'   random numbers either way, so the global RNG state will advance
-#'   during the call -- `seed = NULL` avoids the *reset* at entry, not
+#'   during the call; `seed = NULL` avoids the *reset* at entry, not
 #'   the advance during resampling.
 #' @param verbose Logical; if `TRUE`, display a text progress bar over the
 #'   `n_boot` replicates (via [utils::txtProgressBar()]).
@@ -1268,7 +1531,7 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   preserves the
 #'   original fixed-formula bootstrap: every replicate refits `object`'s
 #'   exact model, and `summary$pct` is always ~100. When supplied (a
-#'   one-sided formula, character vector, or -- for multiphase fits -- a
+#'   one-sided formula, character vector, or, for multiphase fits, a
 #'   named list of one-sided formulas keyed by phase, matching
 #'   [hzr_stepwise()]'s `scope`), each replicate runs a fresh
 #'   [hzr_stepwise()] selection instead; see Details.
@@ -1294,8 +1557,8 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'
 #' @section Selection mode is experimental:
 #'
-#' Everything reached through `scope` -- the selection arguments, and the
-#' `summary$pct` selection frequencies they produce -- is new and should be
+#' Everything reached through `scope` (the selection arguments, and the
+#' `summary$pct` selection frequencies they produce) is new and should be
 #' treated as unstable. The fixed-formula bootstrap (`scope = NULL`) is not
 #' affected and has been stable since 0.9.3.
 #'
@@ -1309,7 +1572,7 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #' until its final replicate, so a run that dies late loses everything. There
 #' is no built-in way to split one screen across processes and combine the
 #' parts. If you are running at that scale, drive `hzr_bootstrap()` in chunks
-#' from your own script and pool the replicates yourself -- deriving each
+#' from your own script and pool the replicates yourself: deriving each
 #' chunk's seed from its chunk number, offsetting replicate ids so a variable
 #' selected in two chunks is not counted once, and recomputing frequencies
 #' from the pooled replicates rather than averaging across chunks. Whatever
@@ -1319,9 +1582,9 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #' @return A list with class `"hzr_bootstrap"` containing:
 #' \describe{
 #'   \item{replicates}{Data frame with columns `replicate`, `parameter`,
-#'     and `estimate` -- one row per parameter per successful replicate.}
+#'     and `estimate`, one row per parameter per successful replicate.}
 #'   \item{summary}{Data frame with columns `parameter`, `n`, `pct`,
-#'     `mean`, `sd`, `min`, `max`, `ci_lower`, `ci_upper` -- one row per
+#'     `mean`, `sd`, `min`, `max`, `ci_lower`, `ci_upper`, one row per
 #'     parameter. In `mode = "select"`, `pct` is the selection frequency
 #'     and the other statistics are conditional on selection.}
 #'   \item{n_success}{Number of successfully converged replicates.}
@@ -1336,7 +1599,7 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     counting *why* candidate scores were unavailable, summed over every
 #'     replicate. `information_indefinite` is the one to read first: it marks
 #'     candidates whose effect is too large for the score test's approximation
-#'     at zero -- typically strong variables. Those are refit and Wald-tested
+#'     at zero, typically strong variables. Those are refit and Wald-tested
 #'     automatically, so a candidate reaching this count is one whose refit
 #'     also failed and which therefore went untested, understating its
 #'     selection frequency. Empty in refit mode.}
@@ -1351,7 +1614,7 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     variable on a Wald test instead of the score statistic, and the total
 #'     number of such entries across all replicates. The score criterion
 #'     declines a candidate whose observed information is indefinite at
-#'     `beta = 0` -- which happens when the effect is *large* -- so those
+#'     `beta = 0` (which happens when the effect is *large*), so those
 #'     candidates are refit and Wald-tested rather than dropped. A high count
 #'     means much of the selection was decided by a different criterion from
 #'     the one requested, which matters most here: these entries drive the
@@ -1438,8 +1701,6 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
          call. = FALSE)
   }
 
-  if (!is.null(seed)) set.seed(seed)
-
   # hzr_stepwise() is always called below with trace = FALSE (per-step
   # stepwise output would be too noisy across n_boot replicates; `verbose`
   # controls bootstrap-level progress instead). Strip `trace` from `...`
@@ -1461,6 +1722,108 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   } else {
     eval(cl$data, envir = parent.frame())
   }
+  # A per-row variable that is not a column of `data` is never resampled:
+  # each replicate paired the original vector with resampled rows, so the
+  # interval was wrong while every replicate reported success (#278). Refuse
+  # it, naming the variables. They come from the terms of the global formula
+  # (response included), the phase formulas and a select-mode `scope`, so
+  # `log(age)` reads the column `age`. A name outside `data` that does not
+  # hold one value per row -- `pi`, a cutoff, a knots vector -- is a constant,
+  # rightly the same in every replicate, and is left alone.
+  if (is.data.frame(orig_data)) {
+    per_row <- function(v, env) {
+      val <- get0(v, envir = env, inherits = TRUE)
+      !is.null(val) && !is.function(val) && NROW(val) == nrow(orig_data)
+    }
+    outside_in <- function(vars, env) {
+      vars <- setdiff(vars, c(names(orig_data), "."))
+      vars[vapply(vars, per_row, logical(1), env = env)]
+    }
+    call_env <- object$call_env %||% parent.frame()
+    stored <- .hzr_stored_formula(object, "`object`")
+    # Candidate refits build their formulas in the stored formula's
+    # environment (.hzr_formula_update()), so covariates and `scope`
+    # variables resolve there. The Surv() term does not: .hzr_parse_formula()
+    # evaluates it in `data`, then this package's namespace and the search
+    # path, so the response is looked up that way.
+    base_env <- if (is.null(stored)) call_env else environment(stored)
+    scope_vars <- if (inherits(scope, "formula")) {
+      all.vars(scope)
+    } else if (is.character(scope) && length(scope) > 0L) {
+      all.vars(stats::reformulate(scope))
+    }
+    phase_formulas <- Filter(function(f) inherits(f, "formula"),
+                             lapply(object$spec$phases, function(ph) {
+                               ph$formula
+                             }))
+    outside <- c(
+      if (length(stored) == 3L) {
+        outside_in(all.vars(stored[[2L]]), environment(.hzr_parse_formula))
+      },
+      if (!is.null(stored)) {
+        outside_in(all.vars(stats::delete.response(
+          stats::terms(stored, data = orig_data)
+        )), base_env %||% call_env)
+      },
+      unlist(lapply(phase_formulas, function(f) {
+        outside_in(all.vars(f), environment(f) %||% call_env)
+      })),
+      outside_in(scope_vars, base_env %||% call_env),
+      # A scope variable that only the scope formula's own frame can see
+      # never reaches the refit, so the screen could not test it: that was
+      # reported once, up front, then silently absent from every replicate.
+      # It is refused too.
+      if (inherits(scope, "formula")) {
+        outside_in(scope_vars, environment(scope) %||% call_env)
+      },
+      # A multiphase scope is refit through .hzr_phase_update_formula(): into
+      # the phase's own formula, keeping its environment, or, for a phase
+      # without one, into a fresh formula whose lookups reach this package's
+      # namespace and the search path. Each phase's scope is checked there.
+      if (is.list(scope)) {
+        unlist(lapply(names(scope), function(p) {
+          sc <- scope[[p]]
+          if (!inherits(sc, "formula")) return(character())
+          pf <- object$spec$phases[[p]]$formula
+          c(outside_in(all.vars(sc), if (is.null(pf)) {
+            environment(.hzr_parse_formula)
+          } else {
+            environment(pf)
+          }),
+          outside_in(all.vars(sc), environment(sc) %||% call_env))
+        }))
+      }
+    )
+    outside <- unique(outside)
+    if (length(outside) > 0L) {
+      one <- length(outside) == 1L
+      stop("hzr_bootstrap() resamples the rows of the fit's `data`, but the ",
+           "model uses ", paste0("'", outside, "'", collapse = ", "),
+           if (one) ", which is not a column" else ", which are not columns",
+           " of it. Each replicate would hold ", if (one) "it" else "them",
+           " fixed, and the interval would be wrong. Add ",
+           if (one) "it" else "them", " to `data` and refit.", call. = FALSE)
+    }
+  }
+
+  # A design matrix passed directly as `x` on the vector interface is never
+  # resampled. A fixed refit re-evaluated it without resampling in every
+  # replicate, pairing resampled outcomes with the original design; a
+  # select-mode refit reused it for the base model and dropped it from the
+  # candidates. Every replicate reported success either way, so it is
+  # refused.
+  if (is.null(cl$formula) && !is.null(cl$time) && !is.null(cl$x)) {
+    stop("hzr_bootstrap(): this fit's design matrix was passed directly as ",
+         "`x`, which replicates cannot resample with the rows: each would ",
+         "pair resampled outcomes with the original design. Refit with the ",
+         "formula interface (Surv(...) ~ ..., data = ...) and bootstrap ",
+         "that.", call. = FALSE)
+  }
+
+  # Seeded after the refusals above, so a refused call leaves the caller's
+  # random number stream alone.
+  if (!is.null(seed)) set.seed(seed)
+
   n_obs <- nrow(orig_data)
   sample_size <- max(1L, as.integer(n_obs * fraction))
 
@@ -1542,8 +1905,8 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   #
   # The evaluated vectors are already stored on the object, so they can be
   # resampled by the same index and rewired the same way `data` and `weights`
-  # are. `x` is excluded deliberately: a design matrix supplied that way is
-  # rebuilt from `data`/`scope` per replicate.
+  # are. `x` is not among them: a design matrix passed directly is refused
+  # above, before seeding.
   vector_interface <- is.null(cl$formula) && !is.null(cl$time)
   vec_args <- c("time", "status", "time_lower", "time_upper")
   vec_orig <- if (vector_interface) {
@@ -1558,7 +1921,12 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     # evaluate against the original data, so row i's time gets paired with
     # row j's status or interval bound. That is silent corruption producing
     # plausible numbers, not an error.
-    passed <- vec_args[vapply(vec_args, function(a) !is.null(cl[[a]]), logical(1))]
+    # A Surv passed as `status` supplies its bounds without naming them in
+    # the call (#226), so a stored bound counts as passed too. Leaving it out
+    # refits every replicate with no censoring bounds at all.
+    passed <- vec_args[vapply(vec_args, function(a) {
+      !is.null(cl[[a]]) || !is.null(object$data[[a]])
+    }, logical(1))]
     have   <- vapply(vec_orig, function(v) !is.null(v) && length(v) == n_obs,
                      logical(1))
     missing_vecs <- passed[!have[passed]]

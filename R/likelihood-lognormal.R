@@ -68,8 +68,10 @@ NULL
 #'
 #' @param time Numeric vector of follow-up times (n)
 #' @param status Numeric vector of event indicators: 1 = event, 0 = censored (n)
-#' @param time_lower Optional numeric lower bound vector for interval-censored rows.
-#'   Defaults to time if NULL.
+#' @param time_lower Optional numeric vector. For interval-censored rows
+#'   (status 2) the lower bound, defaulting to time if NULL. For event and
+#'   right-censored rows (status 1/0) the counting-process entry
+#'   (left-truncation) time, used where time_lower < time.
 #' @param time_upper Optional numeric upper bound vector for left/interval-censored rows.
 #'   Defaults to time if NULL.
 #' @param x Design matrix of covariates (n x p_coef); NULL for no covariates
@@ -96,7 +98,13 @@ NULL
 #' \deqn{\ell(\theta) = \sum_{\delta_i=1} [\log \phi(z_i) - \log \sigma - \log t_i]
 #'   + \sum_{\delta_i=0} \log \Phi(-z_i)}
 #'
-#' Reparameterization: \u03b8\[1\] = \u03bc, \u03b8\[2\] = log(\u03c3) avoids constraints.
+#' A row with status 0 or 1 and an entry time s_i = time_lower\[i\] with
+#' 0 < s_i < t_i (left truncation) adds the entry term
+#' \deqn{- \log \Phi(-z_{s,i}), \quad z_{s,i} = (\log(s_i) - \eta_i) / \sigma,}
+#' that is + H(s_i), so the row contributes over (s_i, t_i] only. Rows
+#' entering at 0 add nothing, since log S(0) = 0.
+#'
+#' Reparameterization: theta\[1\] = mu, theta\[2\] = log(sigma) avoids constraints.
 #'
 #' Mixed censoring status coding:
 #' - 1: exact event at time
@@ -192,7 +200,26 @@ NULL
     0
   }
 
-  logl <- ll_event + ll_right + ll_left + ll_interval
+  # Counting-process entry (left truncation) for event/right-censored rows:
+  # + w * H(start) = - w * log S(start).  Only rows with status 0/1 and
+  # time_lower < time are epochs; status -1/2 rows keep start = 0 because
+  # there time_lower is a censoring bound.  Rows entering at 0 contribute
+  # exactly 0 (log S(0) = 0), so the term is evaluated on start > 0 only,
+  # which keeps log(0) out of z.
+  start_vec <- rep(0, n)
+  if (!is.null(time_lower)) {
+    epoch_idx <- status %in% c(0L, 1L) & time_lower < time
+    start_vec[epoch_idx] <- time_lower[epoch_idx]
+  }
+  idx_entry <- start_vec > 0
+  ll_entry <- if (any(idx_entry)) {
+    z_s <- (log(start_vec[idx_entry]) - eta[idx_entry]) / sigma
+    -sum(weights[idx_entry] * pnorm(-z_s, log.p = TRUE))
+  } else {
+    0
+  }
+
+  logl <- ll_event + ll_right + ll_left + ll_interval + ll_entry
 
   if (!is.finite(logl)) {
     return(Inf)
@@ -302,6 +329,36 @@ NULL
     grad[3:p] <- as.numeric(crossprod(x, score_i))
   }
 
+  # ===== Counting-process entry term =====
+  # + w * H(start) is the right-censored term at `start` with the sign
+  # flipped, so its score is minus the right-censored score at z_s.
+  # Evaluated on start > 0 only (rows entering at 0 contribute 0).
+  start_vec <- rep(0, n)
+  if (!is.null(time_lower)) {
+    epoch_idx <- status %in% c(0L, 1L) & time_lower < time
+    start_vec[epoch_idx] <- time_lower[epoch_idx]
+  }
+  idx_entry <- start_vec > 0
+  if (any(idx_entry)) {
+    if (is.null(eta)) {
+      eta <- if (p > 2 && !is.null(x)) {
+        theta[1] + as.numeric(x %*% theta[3:p])
+      } else {
+        rep(theta[1], n)
+      }
+    }
+    z_s <- (log(start_vec[idx_entry]) - eta[idx_entry]) / sigma
+    mills_s <- pmin(exp(dnorm(z_s, log = TRUE) - pnorm(-z_s, log.p = TRUE)),
+                    1e6)
+    w_mills_s <- weights[idx_entry] * mills_s
+    grad[1] <- grad[1] - sum(w_mills_s) / sigma
+    grad[2] <- grad[2] - sum(w_mills_s * z_s)
+    if (p > 2 && !is.null(x)) {
+      grad[3:p] <- grad[3:p] -
+        as.numeric(crossprod(x[idx_entry, , drop = FALSE], w_mills_s)) / sigma
+    }
+  }
+
   grad
 }
 
@@ -362,6 +419,25 @@ NULL
   a_coef <- (delta + cens * m * (m - z)) / sigma^2                 # (eta, eta)
   b_coef <- (delta * 2 * z + cens * m * (z * (m - z) + 1)) / sigma # (eta, log_sigma)
   c_coef <- delta * 2 * z^2 + cens * m * z * (z * (m - z) + 1)     # (log_sigma)^2
+
+  # Counting-process entry: + w * H(start) is the right-censored term at
+  # `start` with the sign flipped, so subtract the right-censored
+  # coefficients evaluated at z_s.  Only start > 0 rows (start = 0 adds 0).
+  start_vec <- rep(0, n)
+  if (!is.null(time_lower)) {
+    epoch_idx <- status %in% c(0L, 1L) & time_lower < time
+    start_vec[epoch_idx] <- time_lower[epoch_idx]
+  }
+  idx_entry <- start_vec > 0
+  if (any(idx_entry)) {
+    z_s <- (log(start_vec[idx_entry]) - eta[idx_entry]) / sigma
+    m_s <- pmin(exp(dnorm(z_s, log = TRUE) - pnorm(-z_s, log.p = TRUE)), 1e6)
+    a_coef[idx_entry] <- a_coef[idx_entry] - m_s * (m_s - z_s) / sigma^2
+    b_coef[idx_entry] <- b_coef[idx_entry] -
+      m_s * (z_s * (m_s - z_s) + 1) / sigma
+    c_coef[idx_entry] <- c_coef[idx_entry] -
+      m_s * z_s * (z_s * (m_s - z_s) + 1)
+  }
 
   x_tilde <- if (has_cov) cbind(1, x) else matrix(1, nrow = n, ncol = 1L)
 

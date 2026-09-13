@@ -32,10 +32,12 @@
 unit weights. Applied when summing per-phase cumhaz so that selection
 happens on the same scale as the (weighted) observed event count.}
 
-\item{time_lower}{Optional numeric vector of counting-process entry (start)
-times. When supplied, phases are ranked by entry-time cumulative hazard
-\code{H(stop) - H(start)}, the scale on which events are conserved. \code{NULL} (the
-default) means no truncation, i.e. \code{H(start) = 0}.}
+\item{time_lower}{Optional numeric vector. On a status 0/1 row with
+0 < time_lower < time it is the counting-process entry (start) time, and
+phases are ranked by entry-time cumulative hazard \code{H(stop) - H(start)},
+the scale on which events are conserved. Any other row has no entry
+(\code{H(start) = 0}); see \code{.hzr_multiphase_entry()}. \code{NULL} (the default)
+means no truncation.}
 }
 \value{
 Character: name of the phase to fix.
