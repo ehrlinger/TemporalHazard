@@ -272,7 +272,7 @@ NULL
 #' dL/d(log alpha) = sum(delta_i) - sum(w_i)
 #'
 #' dL/d(log beta) = sum(delta_i)
-#'                  + beta * [sum(delta_i * log(t_i)) - sum(w_i * log(t_i))]
+#'                  + beta * (sum(delta_i * log(t_i)) - sum(w_i * log(t_i)))
 #'
 #' dL/db_j = sum(delta_i * x_ij) - sum(w_i * x_ij) = t(X) %*% (delta - w)
 #'
