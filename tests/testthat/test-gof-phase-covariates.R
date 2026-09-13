@@ -254,8 +254,10 @@ test_that("time_windows: a phase formula whose columns share the window names", 
 })
 
 test_that("#263: a phase literally named `time` keeps its column", {
-  # decompose = TRUE returns a `time` column of its own; selecting phases by
-  # excluding "time" would drop this real phase.
+  # predict(decompose = TRUE) names its grid column `time`, so a phase named
+  # `time` collides with it there (the phase's values currently overwrite
+  # the grid column). Selecting phases by excluding "time" would drop this
+  # real phase; hzr_gof() selects by phase name and keeps its own grid.
   d <- .gof_pc_avc
   fit <- hazard(
     survival::Surv(int_dead, dead) ~ 1,
@@ -275,8 +277,10 @@ test_that("#263: a phase literally named `time` keeps its column", {
   expect_equal(gof$par_cumhaz_time, gof$par_cumhaz - gof$par_cumhaz_early,
                tolerance = 1e-12)
   expect_gt(max(gof$par_cumhaz_time), 0.01)
-  # The grid column is still the grid.
-  expect_true(all(diff(gof$time) > 0))
+  # hzr_gof()'s time column is its Kaplan-Meier grid, not the collided
+  # column of decompose's output.
+  km <- survival::survfit(survival::Surv(d$int_dead, d$dead) ~ 1)
+  expect_equal(gof$time, km$time)
 })
 
 test_that("global and phase covariates together: curve at both sets of means", {
