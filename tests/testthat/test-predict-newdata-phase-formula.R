@@ -329,6 +329,16 @@ test_that("a missing phase covariate is not filled from the workspace (#268)", {
             type = "cumulative_hazard"),
     "lacks the covariate column\\(s\\) 'mal' that phase 'constant' uses"
   )
+  # A fit saved before the phase design was stored is covered too: its
+  # fitting data (fit$data$frame, kept since 1.1.0) says `mal` is a
+  # covariate, so the same-named local is not taken for it.
+  leg <- fit
+  leg$fit$x_design <- NULL
+  expect_error(
+    predict(leg, newdata = data.frame(time = 2, age = 60),
+            type = "cumulative_hazard"),
+    "lacks the covariate column\\(s\\) 'mal' that phase 'constant' uses"
+  )
 })
 
 test_that("a phase formula's environment constant still reaches newdata", {
@@ -351,6 +361,14 @@ test_that("a phase formula's environment constant still reaches newdata", {
   beta <- fit$fit$theta[["early.I(age > cutoff)TRUE"]]
   expect_gt(abs(beta), 0.5)
   got <- predict(fit, newdata = data.frame(time = tt, age = c(150, 50)),
+                 type = "cumulative_hazard")
+  expect_equal(got / (exp(beta * c(1, 0)) * base$early + base$constant),
+               c(1, 1), tolerance = 1e-10, ignore_attr = TRUE)
+  # A fit saved before the phase design was stored: `cutoff` is not a column
+  # of its fitting data, so it is a constant, not a missing covariate.
+  leg <- fit
+  leg$fit$x_design <- NULL
+  got <- predict(leg, newdata = data.frame(time = tt, age = c(150, 50)),
                  type = "cumulative_hazard")
   expect_equal(got / (exp(beta * c(1, 0)) * base$early + base$constant),
                c(1, 1), tolerance = 1e-10, ignore_attr = TRUE)

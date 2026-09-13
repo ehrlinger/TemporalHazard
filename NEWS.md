@@ -178,7 +178,10 @@
   column is built from (`age` beside a stale `age:grpyoung`) when the others
   are missing. A fit saved by an earlier version rebuilds from its variables
   as before whenever they are all given, and refuses some of them beside its
-  design columns, as it errored before.
+  design columns, as it errored before. It also refuses a phase covariate
+  missing from `newdata` rather than taking a same-named object, when it
+  kept its fitting data (1.1.0 and later); a fit saved without it cannot
+  tell a missing covariate from a formula constant and behaves as before.
 
 * **The multiphase gradient and Hessian are now right when an early phase's
   `m` is near 0.** Both differentiate in `m` by finite differences, and

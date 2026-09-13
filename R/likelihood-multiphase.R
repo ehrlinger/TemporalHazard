@@ -1564,19 +1564,28 @@
   cols <- colnames(object$fit$x_list[[nm]])
   design <- object$fit$x_design[[nm]]
 
+  # A fit saved before the phase design was stored has no data_vars. Its
+  # formula's variables that were columns of the fitting data stand in:
+  # hazard() has kept that data frame (object$data$frame) since 1.1.0, and
+  # a formula-environment constant (`cutoff` in I(age > cutoff)) is not one
+  # of them. Without the frame, every formula variable stands in, and a
+  # missing one cannot be told from a constant.
+  if (is.null(design)) {
+    vars <- all.vars(ph$formula)
+    known_vars <- !is.null(object$data$frame)
+    if (known_vars) vars <- intersect(vars, names(object$data$frame))
+    labels <- attr(stats::terms(ph$formula), "term.labels")
+  } else {
+    vars <- design$data_vars
+    known_vars <- TRUE
+    labels <- attr(design$terms, "term.labels")
+  }
+
   use_design <- !is.null(cols) && all(cols %in% names(newdata))
   if (use_design && !isTRUE(attr(newdata, "hzr_design_columns"))) {
-    # A fit saved before the phase design was stored has no data_vars; its
-    # formula's variables stand in. This differs from the global rule, which
-    # takes the design columns for such a fit: main's phase path always
-    # rebuilt from the formula, so taking them here would be a new swap.
-    if (is.null(design)) {
-      vars <- all.vars(ph$formula)
-      labels <- attr(stats::terms(ph$formula), "term.labels")
-    } else {
-      vars <- design$data_vars
-      labels <- attr(design$terms, "term.labels")
-    }
+    # For a fit without the stored design this differs from the global
+    # rule, which takes the design columns: main's phase path always rebuilt
+    # from the formula, so taking them here would be a new swap.
     missing <- setdiff(vars, names(newdata))
     if (length(missing) == 0L) {
       use_design <- FALSE
@@ -1607,17 +1616,20 @@
     return(as.matrix(newdata[, cols, drop = FALSE]))
   }
 
-  # A fit made before the phase design was stored: rebuild as it did then.
-  if (is.null(design)) {
-    return(stats::model.matrix(ph$formula, data = newdata)[, -1L, drop = FALSE])
-  }
-
-  missing <- setdiff(design$data_vars, names(newdata))
-  if (length(missing) > 0L) {
+  # A covariate missing from newdata is refused, not looked up in the
+  # formula's environment (#268), whenever the fit says which variables are
+  # covariates.
+  missing <- setdiff(vars, names(newdata))
+  if (known_vars && length(missing) > 0L) {
     stop("'newdata' lacks the covariate column(s) ",
          paste0("'", missing, "'", collapse = ", "),
          " that phase '", nm, "' uses. Columns are matched by name.",
          call. = FALSE)
+  }
+
+  # A fit made before the phase design was stored: rebuild as it did then.
+  if (is.null(design)) {
+    return(stats::model.matrix(ph$formula, data = newdata)[, -1L, drop = FALSE])
   }
   mf <- stats::model.frame(design$terms, data = newdata,
                            xlev = design$xlevels, na.action = stats::na.pass)
