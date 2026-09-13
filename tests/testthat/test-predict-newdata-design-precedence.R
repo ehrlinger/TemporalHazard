@@ -286,6 +286,102 @@ test_that("a phase-formula factor with reordered levels codes as the fit did", {
   expect_equal(ref, c(0.05608905, 0.3599925), tolerance = 1e-4)
 })
 
+test_that("a phase formula the fit did not use is not rebuilt at newdata", {
+  skip_on_cran()  # multiphase fits
+  # The fit uses a phase's own formula only on the formula interface; a
+  # vector-interface fit ignores hzr_phase(formula = ), the phase inherits
+  # the global x, and attr(fit$x_list, "from_formula") records FALSE.
+  # predict() routed on !is.null(ph$formula) alone and rebuilt the unused
+  # formula: log(age) times a coefficient fitted on age, and under
+  # time_windows eight values for four rows -- on main 7e50e2b as well.
+  # Reference: predict() at the fitted rows (the stored design).
+  d <- stats::na.omit(get("avc", envir = asNamespace("TemporalHazard")))
+  rows <- c(which(d$int_dead <= 12)[1:2], which(d$int_dead > 12)[1:2])
+  nd <- data.frame(time = d$int_dead[rows], age = d$age[rows])
+  for (tw in list(NULL, 12)) {
+    set.seed(1)
+    f <- suppressWarnings(hazard(
+      time = d$int_dead, status = d$dead, x = cbind(age = d$age),
+      dist = "multiphase", time_windows = tw,
+      phases = list(
+        early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                          fixed = "shapes", formula = ~ log(age)),
+        constant = hzr_phase("constant")),
+      fit = TRUE))
+    expect_false(any(attr(f$fit$x_list, "from_formula")))
+    want <- predict(f, type = "cumulative_hazard")[rows]
+    got <- predict(f, newdata = nd, type = "cumulative_hazard")
+    label <- if (is.null(tw)) "no windows" else "time_windows = 12"
+    expect_length(got, length(rows))
+    expect_equal(unname(got), unname(want), tolerance = 1e-10, label = label)
+  }
+})
+
+test_that("a fit without the from_formula record routes by formula and data", {
+  skip_on_cran()  # multiphase fits
+  # An older fit has no from_formula record.  Then a phase counts as
+  # using its formula only if the fit had data (the formula interface):
+  # the vector fit still takes the global route, a formula fit still takes
+  # its phase formula.
+  d <- stats::na.omit(get("avc", envir = asNamespace("TemporalHazard")))
+  d$grp <- factor(ifelse(d$age > 100, "old", "young"))
+  rows <- c(1, 50, 150)
+  set.seed(1)
+  vf <- suppressWarnings(hazard(
+    time = d$int_dead, status = d$dead, x = cbind(age = d$age),
+    dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                        fixed = "shapes", formula = ~ log(age)),
+      constant = hzr_phase("constant")),
+    fit = TRUE))
+  attr(vf$fit$x_list, "from_formula") <- NULL
+  expect_equal(
+    unname(predict(vf, type = "cumulative_hazard",
+                   newdata = data.frame(time = d$int_dead[rows],
+                                        age = d$age[rows]))),
+    unname(predict(vf, type = "cumulative_hazard")[rows]), tolerance = 1e-10)
+  set.seed(1)
+  ff <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ age, data = d, dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                        fixed = "shapes", formula = ~ grp),
+      constant = hzr_phase("constant")),
+    fit = TRUE))
+  attr(ff$fit$x_list, "from_formula") <- NULL
+  expect_equal(
+    unname(predict(ff, type = "cumulative_hazard",
+                   newdata = data.frame(time = d$int_dead[rows],
+                                        age = d$age[rows],
+                                        grp = d$grp[rows]))),
+    unname(predict(ff, type = "cumulative_hazard")[rows]), tolerance = 1e-10)
+})
+
+test_that("time_windows with a factor and several covariates matches the fit", {
+  skip_on_cran()  # a multiphase fit
+  d <- stats::na.omit(get("avc", envir = asNamespace("TemporalHazard")))
+  d$grp <- factor(ifelse(d$age > 100, "old", "young"))
+  set.seed(1)
+  m <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ age + grp, data = d,
+    dist = "multiphase", time_windows = 12,
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes"),
+      constant = hzr_phase("constant")),
+    fit = TRUE))
+  rows <- c(which(d$int_dead <= 12)[1:2], which(d$int_dead > 12)[1:2])
+  nd <- data.frame(time = d$int_dead[rows], age = d$age[rows],
+                   grp = as.character(d$grp[rows]))
+  got <- predict(m, newdata = nd, type = "cumulative_hazard")
+  expect_length(got, length(rows))
+  expect_equal(unname(got),
+               unname(predict(m, type = "cumulative_hazard")[rows]),
+               tolerance = 1e-10)
+  expect_true(length(unique(d$grp[rows])) == 2L ||
+                any(grepl("grpyoung", colnames(m$fit$x_list$constant))))
+})
+
 test_that("a multiphase global design takes the variable over its column", {
   skip_on_cran()  # a multiphase fit
   fit <- suppressWarnings(hazard(
