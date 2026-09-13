@@ -1637,6 +1637,14 @@
     }
   }
 
+  # Record which phases' designs came from their own formula, evaluated in
+  # `data`, rather than the inherited global x, by the rule the loop above
+  # applied. hzr_gof() reads it: under time_windows a phase formula's columns
+  # can carry the same names as the window-expanded global x.
+  attr(x_list, "from_formula") <- vapply(names(x_list), function(nm) {
+    !is.null(phases[[nm]]$formula) && !is.null(data)
+  }, logical(1))
+
   # --- Assemble starting values if not provided ------------------------------
   if (is.null(theta_start)) {
     theta_start <- unlist(lapply(names(phases), function(nm) {

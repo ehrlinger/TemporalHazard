@@ -300,7 +300,10 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #'
 #' The diagnostic is for right-censored data: every stored status must be 0
 #' (censored) or 1 (event).  A fit with any left-censored (status -1) or
-#' interval-censored (status 2) row is refused with an error.
+#' interval-censored (status 2) row is refused with an error.  So is a
+#' multiphase fit that dropped the rows where a covariate was missing: its
+#' design matrices then hold fewer rows than there are patients, so no
+#' patient-by-patient tally can be formed.  Refit it on complete cases.
 #'
 #' At each time point the function computes:
 #' \itemize{
@@ -338,10 +341,12 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #' entry times each patient's expected count is the curve at their exit time;
 #' with entry times it is the curve's rise from entry to exit, so the two
 #' differ.  The means are those of the design-matrix columns, taken phase by
-#' phase when a multiphase fit's covariates enter only through the phase
-#' formulas, so a factor enters as the proportion of patients in each level.
-#' A multiphase fit with both global and phase-formula covariates is not yet
-#' handled here (#264).
+#' phase for a multiphase fit, whether its covariates enter globally, through
+#' the phase formulas or both, so a factor enters as the proportion of
+#' patients in each level.
+#' With `time_windows`, a phase built on the global covariates carries their
+#' means in the window that contains each time; a phase formula's own columns
+#' keep their plain means.
 #'
 #' For a weighted fit both tallies carry the case weights: observed events
 #' are \eqn{\sum_i w_i d_i} and expected events \eqn{\sum_i w_i H_i}, the
@@ -519,25 +524,77 @@ hzr_gof <- function(object, time_grid = NULL) {
     object$fit$x_list, function(m) !is.null(m) && ncol(m) > 0, logical(1)
   ))
 
+  # A multiphase fit drops rows with a missing phase covariate from that
+  # phase's design matrix but keeps every row's time and status. A
+  # per-subject prediction would then recycle the shorter design across the
+  # subjects, so refuse rather than tally over it.
+  short <- vapply(object$fit$x_list, function(m) {
+    !is.null(m) && NROW(m) != n_total
+  }, logical(1))
+  if (is_multiphase && any(short)) {
+    stop("hzr_gof() needs one design row per subject, but the fit dropped ",
+         "the rows where any covariate was missing, from every phase: ",
+         ngettext(sum(short), "phase ", "phases "),
+         paste0("'", names(short)[short], "'", collapse = ", "),
+         ngettext(sum(short), " has", " have"),
+         " fewer rows than the data. Refit on complete cases, dropping ",
+         "those rows from every input (data, or time, status and x).",
+         call. = FALSE)
+  }
+
   curve_obj <- object
-  if (!is.null(object$data$x) && ncol(object$data$x) > 0) {
+  if (has_phase_x) {
+    # A multiphase fit stores each phase's own design matrix: the phase
+    # formula's columns, or data$x for a phase without one. A newdata built
+    # from data$x lacks the phase-formula variables, and a time-only newdata
+    # puts every covariate at 0. Put each phase's design matrix at its column
+    # means and the stored times at the grid; predict() without newdata then
+    # evaluates that stored design.
+    # With time_windows, a phase that took the global x carries data$x
+    # expanded into one column per window, each on only in its own window.
+    # Its column means would switch every window on at once, so expand the
+    # means of data$x by the grid times instead. Such a phase is known by the
+    # fit's own record of which designs came from a phase formula, not by
+    # whether a formula was written (the fit ignores one it cannot evaluate,
+    # without `data`) nor by column names (a phase formula's columns can share
+    # the expanded names). A fit from before that record falls back to names.
+    time_windows <- object$spec$time_windows
+    from_formula <- attr(object$fit$x_list, "from_formula")
+    window_cols <- if (!is.null(time_windows)) {
+      colnames(.hzr_expand_time_varying_design(
+        x = object$data$x[1, , drop = FALSE], time = 0,
+        time_windows = time_windows
+      ))
+    }
+    inherits_global <- function(nm, m) {
+      if (is.null(from_formula)) return(identical(colnames(m), window_cols))
+      !isTRUE(from_formula[nm])
+    }
+    x_bar <- function(m) {
+      matrix(colMeans(m), nrow = length(time_grid), ncol = ncol(m),
+             byrow = TRUE, dimnames = list(NULL, colnames(m)))
+    }
+    curve_obj$data$time <- time_grid
+    curve_obj$fit$x_list <- lapply(
+      stats::setNames(nm = names(object$fit$x_list)), function(nm) {
+        m <- object$fit$x_list[[nm]]
+        if (is.null(m) || ncol(m) == 0) return(m)
+        if (!is.null(time_windows) && inherits_global(nm, m)) {
+          return(.hzr_expand_time_varying_design(
+            x = x_bar(object$data$x), time = time_grid,
+            time_windows = time_windows
+          ))
+        }
+        x_bar(m)
+      }
+    )
+    nd <- NULL
+  } else if (!is.null(object$data$x) && ncol(object$data$x) > 0) {
     # For covariate models, evaluate at covariate means (baseline patient)
     x_means <- colMeans(object$data$x)
     nd <- as.data.frame(t(x_means))
     nd <- nd[rep(1, length(time_grid)), , drop = FALSE]
     nd$time <- time_grid
-  } else if (has_phase_x) {
-    # Covariates entered only through the phase formulas, so data$x is NULL
-    # and a time-only newdata would put them at 0. Put each phase's design
-    # matrix at its column means and the stored times at the grid; predict()
-    # without newdata then evaluates that stored design.
-    curve_obj$data$time <- time_grid
-    curve_obj$fit$x_list <- lapply(object$fit$x_list, function(m) {
-      if (is.null(m) || ncol(m) == 0) return(m)
-      matrix(colMeans(m), nrow = length(time_grid), ncol = ncol(m),
-             byrow = TRUE, dimnames = list(NULL, colnames(m)))
-    })
-    nd <- NULL
   } else {
     nd <- data.frame(time = time_grid)
   }
@@ -549,8 +606,10 @@ hzr_gof <- function(object, time_grid = NULL) {
   if (is_multiphase) {
     decomp <- stats::predict(curve_obj, newdata = nd, type = "cumulative_hazard",
                       decompose = TRUE)
-    # decomp is a matrix; first column is "total", rest are phase names
-    phase_cols <- colnames(decomp)[colnames(decomp) != "total"]
+    # decomp is a data frame: time, total, then one column per phase. Select
+    # by phase name, as predict() does, not by excluding the other columns.
+    phase_cols <- names(object$fit$phases)
+    if (is.null(phase_cols)) phase_cols <- names(object$spec$phases)
     phase_cumhaz <- as.data.frame(decomp[, phase_cols, drop = FALSE])
   }
 
