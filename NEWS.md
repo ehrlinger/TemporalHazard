@@ -43,6 +43,19 @@
   must be given as `grpyoung` and a transform as `log(age)`. Refit it to
   give the formula's variables instead.
 
+* **`predict(newdata = )` stops when `newdata` gives some of the formula's
+  variables beside the fitted design columns, with others missing.** Say
+  a fit of `~ age + grp + sex`, with `newdata` holding `grp = "old"`,
+  `grpyoung = 1` and `sexM = 0` but no `sex`. That used to return a value,
+  and silently the wrong one: the design columns were used, and the
+  `grp` it was given was ignored. It now stops with the error
+  `'newdata' gives the formula variable(s) 'grp' but lacks 'sex', while
+  carrying the fitted design columns. Give all of the formula's variables,
+  or only the design columns.` Pass all of the formula's variables (here `age`, `grp` and
+  `sex`), or only the design columns (`age`, `grpyoung`, `sexM`). A numeric
+  covariate such as `age` is both, so it never makes a mix. The
+  wrong-answer fix itself is under Bug fixes (#272).
+
 * **`predict(newdata = )` stops for the time-based predictions of a model
   with a covariate named `time`.** In `newdata` the column `time` is the
   prediction time for `"survival"`, `"cumulative_hazard"`, every multiphase
