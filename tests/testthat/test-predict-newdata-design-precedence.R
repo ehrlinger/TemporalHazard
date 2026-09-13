@@ -130,7 +130,10 @@ test_that("hzr_deciles() still evaluates each subject at its own design row", {
   h <- (th[[1]] * w$data$time)^th[[2]] *
     exp(as.numeric(w$data$x %*% th[3:4]))
   expect_equal(sum(dec$expected), sum(h), tolerance = 1e-8)
-  # Pinned from c4678f1, before #272 (a fitted, poorly scaled model: 1e-4).
+  # Pinned from c4678f1, before #272. 1e-4 (relative: the value is ~68)
+  # absorbs cross-platform optimizer noise on a poorly scaled fit. This
+  # pins the value; the check against the design rows above pins the route,
+  # since here the two routes happen to agree.
   expect_equal(sum(dec$expected), 67.99859561, tolerance = 1e-4)
 })
 
