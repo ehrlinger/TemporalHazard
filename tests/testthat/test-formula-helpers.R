@@ -395,3 +395,24 @@ test_that("an offset in a character stepwise scope stops the screen", {
     "`offset\\(mal\\)` in `scope` is an offset"
   )
 })
+
+test_that("an ordinary character scope screens as it did before the guard", {
+  # The guard refuses only a scope that names an offset. Pinned against main
+  # at 4b68020: `mal` entered at these p-values, under both criteria.
+  f0 <- hazard(survival::Surv(int_dead, dead) ~ age, data = avc_off,
+               dist = "weibull", theta = c(mu = 0.1, nu = 1, 0), fit = TRUE)
+  pinned <- c(score = 2.71143589662e-4, wald = 4.04419913005e-4)
+  for (crit in names(pinned)) {
+    sw <- suppressWarnings(hzr_stepwise(
+      f0, data = avc_off, scope = c("age", "mal"), direction = "forward",
+      criterion = crit, trace = FALSE
+    ))
+    steps <- as.data.frame(sw$steps)
+    expect_identical(steps$action, "enter", label = crit)
+    expect_identical(steps$variable, "mal", label = crit)
+    # A ratio: the p-values are about 3e-4. 1e-3 allows for the optimizer's
+    # eps^(1/3) stopping rule moving the statistic across platforms.
+    expect_equal(steps$p_value / pinned[[crit]], 1, tolerance = 1e-3,
+                 label = crit)
+  }
+})
