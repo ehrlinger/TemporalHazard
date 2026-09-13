@@ -107,6 +107,11 @@ test_that("multiphase predict returns unnamed vectors, like single-dist", {
       p1 <- predict(fits[[nm]], newdata = nd1, type = ty)
       expect_length(p1, 1L)
       expect_null(names(p1), label = paste(nm, ty, "one row"))
+      # .hzr_predict_with_se() hands its target to data.frame(), so a name
+      # on it becomes the se.fit frame's row name.
+      s1 <- predict(fits[[nm]], newdata = nd1, type = ty, se.fit = TRUE)
+      expect_identical(rownames(s1), "1",
+                       label = paste(nm, ty, "se.fit one row"))
     }
     dec <- predict(fits[[nm]], newdata = nd1, type = "cumulative_hazard",
                    decompose = TRUE)
