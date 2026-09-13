@@ -2180,8 +2180,10 @@ vcov.hazard <- function(object, ...) {
 #' @return `x`, invisibly, when its column names are unique.
 #' @noRd
 .hzr_refuse_duplicate_columns <- function(x, phase = NULL) {
+  # Empty and NA names are absent names, not a repeated one:
+  # cbind(a = v1, v2, v3) names its columns c("a", "", "").
   nms <- colnames(x)
-  dup <- unique(nms[duplicated(nms)])
+  dup <- unique(nms[duplicated(nms) & !is.na(nms) & nzchar(nms)])
   if (length(dup) == 0L) {
     return(invisible(x))
   }

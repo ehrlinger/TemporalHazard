@@ -51,6 +51,18 @@ test_that("the vector interface refuses an x with duplicated colnames", {
   )
 })
 
+test_that("unnamed columns of a vector-interface x are not a collision", {
+  # cbind(a = v1, v2, v3) names its columns c("a", "", ""); the empty names
+  # are absent names, not a repeated one, and this fit ran on main.
+  d <- .dup_data()
+  x <- cbind(a = d$gb, runif(nrow(d)), runif(nrow(d)))
+  expect_identical(colnames(x), c("a", "", ""))
+  f <- hazard(time = d$time, status = d$status, x = x, dist = "weibull",
+              theta = c(mu = 0.2, nu = 1, 0, 0, 0), fit = TRUE)
+  expect_true(isTRUE(f$fit$converged))
+  expect_length(stats::predict(f, type = "survival"), nrow(d))
+})
+
 test_that("a fit without a collision is unchanged", {
   # Coefficients pinned against origin/main 4b68020, before the refusal.
   f <- hazard(survival::Surv(time, status) ~ g + u, data = .dup_data("u"),

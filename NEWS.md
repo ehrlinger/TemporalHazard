@@ -6,9 +6,9 @@
   dummy columns are named `<factor><level>`, so a factor `g` with level `b`
   and a numeric column `gb` both produced a column `gb`. The fit ran without
   a word: `coef()` carried two `gb` names, and `predict()` on a one-row
-  `newdata` returned two values. The check covers the global design, each
-  phase formula of a multiphase fit, and an `x` matrix passed to the vector
-  interface, and the error names the colliding columns. A fit that used to
+  `newdata` returned two values. The check covers the global design, an `x`
+  matrix passed to the vector interface, and, when `fit = TRUE`, each phase
+  formula of a multiphase fit. The error names the colliding columns. A fit that used to
   run now stops: rename the numeric column, or rename the factor or change
   its levels (`relevel()`, `levels<-`).
 
