@@ -1778,8 +1778,10 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       },
       # A multiphase scope is refit through .hzr_phase_update_formula(): into
       # the phase's own formula, keeping its environment, or, for a phase
-      # without one, into a fresh formula whose lookups reach this package's
-      # namespace and the search path. Each phase's scope is checked there.
+      # without one, into the inherited global terms in the stored formula's
+      # environment (#284), or, with no global terms, into a fresh formula
+      # whose lookups reach this package's namespace and the search path.
+      # Each phase's scope is checked in every one of those places.
       if (is.list(scope)) {
         unlist(lapply(names(scope), function(p) {
           sc <- scope[[p]]
@@ -1790,6 +1792,7 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
           } else {
             environment(pf)
           }),
+          if (is.null(pf)) outside_in(all.vars(sc), base_env %||% call_env),
           outside_in(all.vars(sc), environment(sc) %||% call_env))
         }))
       }
