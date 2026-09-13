@@ -470,8 +470,9 @@ is_hzr_phase <- function(x) {
 #' @seealso [hzr_phase()] for building a specification, [hazard()] for the fit
 #'   whose `theta` this names.
 #' @export
-#' @details Phase names must be unique, and `"total"` is reserved; this applies
-#'   the same validation [hazard()] does, so both reject it identically.
+#' @details Phase names must be unique, and `"total"` and `"time"` are
+#'   reserved; this applies the same validation [hazard()] does, so both reject
+#'   them identically.
 hzr_theta_names <- function(phases, covariates = NULL) {
   # The same validation hazard() applies, so auto-named phases get the same
   # phase_1/phase_2 labels here as they will in the fit. Re-deriving them
@@ -707,6 +708,15 @@ hzr_theta_names <- function(phases, covariates = NULL) {
   if (any(nms == "total")) {
     stop("'total' is a reserved phase name. Rename the phase: it collides with ",
          "the accumulator holding the summed cumulative hazard.", call. = FALSE)
+  }
+
+  # 'time' is the first column of predict(decompose = TRUE)'s output, which then
+  # stores each phase's cumulative hazard under the phase's name, so a phase of
+  # that name overwrote the requested times with no error (#224).
+  if (any(nms == "time")) {
+    stop("'time' is a reserved phase name. Rename the phase: it collides with ",
+         "the column of prediction times in the decomposed output of ",
+         "predict().", call. = FALSE)
   }
 
   # Check for duplicate names
