@@ -271,6 +271,15 @@
     uses the exit-time window. E/O came out 1.052 on a Weibull fit that
     conserves events.
 
+* **`hzr_gof()` places each subject at the Kaplan-Meier time `survfit()`
+  gave it** (#286). `survfit()` merges exit times that are closer together
+  than its tolerance. The per-subject tallies added above for #254 matched
+  each subject's raw time instead, so a merged subject fell off the default
+  grid and out of both tallies. On a fit with entry times, 55 of 68 events
+  were counted and E/O read 1.22. This came in with the #254 change and
+  never shipped. `hzr_gof()` now also warns when a subject cannot be placed
+  on the default grid, rather than leaving it out silently.
+
 * **A Weibull fit with one masked variance reported the others on the wrong
   scale.** When the Hessian inverse has a non-positive variance, its row and
   column are set to `NA`. The delta-method transform from the internal
