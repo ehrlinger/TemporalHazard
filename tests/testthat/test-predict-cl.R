@@ -500,3 +500,73 @@ test_that("the SAS level narrows a band by the z ratio, on the CL's own scale", 
   # does not match it.
   expect_true(all(d95$upper > sas$upper))
 })
+
+# ---------------------------------------------------------------------------
+# (9) Survival se.fit is the SE of S, not of H
+# ---------------------------------------------------------------------------
+
+# `fit` is S = exp(-H), so its delta-method SE is |dS/dH| se(H) = S se(H).
+# The column used to carry se(H) itself -- bit-identical to the
+# cumulative-hazard se.fit -- under the survival label. The limits are still
+# built from se(H) on the conf.type scale, so they must not move.
+expect_survival_se_is_se_of_s <- function(fit, nd, info) {
+  ch <- predict(fit, newdata = nd, type = "cumulative_hazard", se.fit = TRUE)
+  z <- stats::qnorm(0.975)
+  for (ct in c("log-log", "logit")) {
+    sv <- predict(fit, newdata = nd, type = "survival", se.fit = TRUE,
+                  conf.type = ct)
+    s <- exp(-ch$fit)
+    expect_equal(sv$fit, s, tolerance = 1e-12, info = info)
+    expect_equal(sv$se.fit, s * ch$se.fit, tolerance = 1e-10, info = info)
+    # Not vacuous: S is well below 1 on the grid, so S se(H) != se(H).
+    expect_lt(min(sv$fit), 0.8, label = info)
+    expect_false(isTRUE(all.equal(sv$se.fit, ch$se.fit)), info = info)
+  }
+  # Both limit transforms still come from se(H): log-log through
+  # se(log H) = se(H) / H, logit through se(logit(1 - S)) = se(H) / (1 - S).
+  ll <- predict(fit, newdata = nd, type = "survival", se.fit = TRUE)
+  expect_equal(ll$lower, exp(-ch$fit * exp(z * ch$se.fit / ch$fit)),
+               tolerance = 1e-10, info = info)
+  expect_equal(ll$upper, exp(-ch$fit * exp(-z * ch$se.fit / ch$fit)),
+               tolerance = 1e-10, info = info)
+  lg <- predict(fit, newdata = nd, type = "survival", se.fit = TRUE,
+                conf.type = "logit")
+  zl <- log(expm1(ch$fit))
+  se_zl <- ch$se.fit / (1 - exp(-ch$fit))
+  expect_equal(lg$lower, stats::plogis(-(zl + z * se_zl)),
+               tolerance = 1e-10, info = info)
+  expect_equal(lg$upper, stats::plogis(-(zl - z * se_zl)),
+               tolerance = 1e-10, info = info)
+}
+
+test_that("survival se.fit is S * se(H) for the single distributions", {
+  skip_on_cran()
+  df <- make_toy()
+  nd <- data.frame(time = c(0.5, 2, 6), x = 0)
+  for (dist in c("weibull", "exponential", "loglogistic", "lognormal")) {
+    theta_init <- switch(
+      dist,
+      weibull = c(0.5, 1, 0),
+      exponential = c(log(0.3), 0),
+      loglogistic = c(0, 0, 0),
+      lognormal = c(0, 0, 0)
+    )
+    fit <- hazard(survival::Surv(time, status) ~ x, data = df, dist = dist,
+                  theta = theta_init, fit = TRUE)
+    expect_survival_se_is_se_of_s(fit, nd, info = dist)
+  }
+})
+
+test_that("survival se.fit is S * se(H) for a multiphase fit", {
+  skip_on_cran()
+  df <- make_toy()
+  phases <- list(
+    early = hzr_phase("cdf", t_half = 0.3, nu = 1, m = 1, fixed = "shapes"),
+    constant = hzr_phase("constant")
+  )
+  fit <- hazard(survival::Surv(time, status) ~ 1, data = df,
+                dist = "multiphase", phases = phases, fit = TRUE,
+                control = list(n_starts = 2))
+  expect_survival_se_is_se_of_s(fit, data.frame(time = c(0.5, 2, 6)),
+                                info = "multiphase")
+})

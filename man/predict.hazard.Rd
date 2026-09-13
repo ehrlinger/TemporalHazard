@@ -86,7 +86,12 @@ HAZPRED). Only used when \code{se.fit = TRUE}.}
 When \code{se.fit = FALSE} (default), a numeric vector of predictions.
 When \code{se.fit = TRUE}, a data frame with columns \code{fit}, \code{se.fit}, \code{lower},
 \code{upper} (delta-method point estimate, standard error, and confidence
-limits at \code{level}). For multiphase \code{type = "cumulative_hazard"} with
+limits at \code{level}). \code{se.fit} is always the standard error of \code{fit} on
+its own scale: for \code{type = "survival"} that is \code{S * se(H)}, the delta
+method applied to \code{S = exp(-H)}. The survival limits are built from
+\code{se(H)} on the \code{conf.type} scale, so they are not \verb{fit +/- z * se.fit}.
+\verb{PROC HAZPRED} prints no standard error, only the limits.
+For multiphase \code{type = "cumulative_hazard"} with
 \code{decompose = TRUE}, a long data frame (\code{time}, \code{component}, \code{fit},
 \code{se.fit}, \code{lower}, \code{upper}); with \code{decompose = TRUE} and \code{se.fit = FALSE},
 a wide data frame of per-phase contributions.

@@ -60,7 +60,8 @@ the CL scale the type uses:
 
 type = "cumulative_hazard" -> target = H, log-scale CL
 type = "survival"          -> target = H, log-log-survival CL
-(final \code{fit} is exp(-H))
+(final \code{fit} is exp(-H); reported
+\code{se.fit} is S * se(H), the SE of S)
 type = "hazard"            -> target = exp(eta) (single-dist only),
 log-scale CL
 type = "linear_predictor"  -> target = eta, natural-scale CL

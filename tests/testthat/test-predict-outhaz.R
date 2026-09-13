@@ -193,7 +193,9 @@ test_that("se.fit maps the OUTHAZ covariance onto this package's scale", {
                  se.fit = TRUE, conf.type = "logit")
   expect_s3_class(got, "data.frame")
   expect_equal(got$fit, exp(-fixture_cumhaz(tt, est)))
-  expect_equal(got$se.fit, want_se, tolerance = 1e-6)
+  # want_se is se(H); the survival column is se(S) = S * se(H).
+  expect_equal(got$se.fit, exp(-fixture_cumhaz(tt, est)) * want_se,
+               tolerance = 1e-6)
   expect_true(all(got$lower < got$fit & got$fit < got$upper))
 })
 
@@ -336,7 +338,9 @@ test_that("se.fit maps the late block's covariance onto this scale", {
   got <- predict(obj, newdata = data.frame(time = tt), type = "survival",
                  se.fit = TRUE, conf.type = "logit")
   expect_equal(got$fit, exp(-late_cumhaz(tt, est)))
-  expect_equal(got$se.fit, want_se, tolerance = 1e-6)
+  # want_se is se(H); the survival column is se(S) = S * se(H).
+  expect_equal(got$se.fit, exp(-late_cumhaz(tt, est)) * want_se,
+               tolerance = 1e-6)
 })
 
 test_that(".hzr_outhaz_late_composite() matches hzd_late_p2t.c", {
@@ -527,7 +531,9 @@ test_that("a plain-log late shape IS mapped -- the gate is not blanket refusal",
   got <- predict(obj, newdata = data.frame(time = tt), type = "survival",
                  se.fit = TRUE, conf.type = "logit")
   expect_equal(got$fit, exp(-late_cumhaz(tt, est)))
-  expect_equal(got$se.fit, want_se, tolerance = 1e-6)
+  # want_se is se(H); the survival column is se(S) = S * se(H).
+  expect_equal(got$se.fit, exp(-late_cumhaz(tt, est)) * want_se,
+               tolerance = 1e-6)
 })
 
 # predict.hzr_outhaz() and predict.hazard() are two methods of one generic in
