@@ -51,9 +51,12 @@
   `grp` it was given was ignored. It now stops with the error
   `'newdata' gives the formula variable(s) 'grp' but lacks 'sex', while
   carrying the fitted design columns. Give all of the formula's variables,
-  or only the design columns.` Pass all of the formula's variables (here `age`, `grp` and
-  `sex`), or only the design columns (`age`, `grpyoung`, `sexM`). A numeric
-  covariate such as `age` is both, so it never makes a mix. The
+  so the design can be rebuilt from them.` Pass all of the formula's
+  variables (here `age`, `grp` and `sex`), or the design columns alone
+  (`age`, `grpyoung`, `sexM`). A numeric covariate such as `age` is both a
+  variable and a column, so it makes a mix only when another column is
+  built from it, as in `~ age * grp` or `I(age^2)`: a changed `age` would
+  leave those columns stale. The
   wrong-answer fix itself is under Bug fixes (#272).
 
 * **`predict(newdata = )` stops for the time-based predictions of a model
@@ -223,7 +226,11 @@
   are used when no formula variable is given: a fit saved by an earlier
   version, or `newdata` given as design columns only. Some variables
   beside the design columns, with others missing, is now an error
-  rather than a guess, because either route would ignore part of it. `hzr_deciles()` and
+  rather than a guess, because either route would ignore part of it. That
+  includes a changed numeric `age` beside columns built from it, such as
+  `I(age^2)` or `age:grpyoung`, which would otherwise be used stale: a
+  copy of the fitted design with `age` edited gave 0.362 for
+  `~ age * grp` where the answer is 0.660. `hzr_deciles()` and
   `hzr_gof()`, which evaluate at fitted design rows or their means, declare
   that themselves, so `hzr_gof()` still reports the curve at `mean(age^2)`
   for an `I(age^2)` term, not at `mean(age)^2` (#272).

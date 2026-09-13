@@ -322,7 +322,9 @@
 #' newdata given as design columns only). Otherwise the variables win, so a
 #' design-named column that contradicts them cannot override them (#272).
 #' Some formula variables beside the design columns, with others missing,
-#' is an error: neither route could honour what was given.
+#' is an error: neither route could honour what was given. A variable that
+#' is itself a design column (numeric `age`) counts as given only when
+#' another column is built from it (`I(age^2)`, `age:grpyoung`).
 #' Shared by the rebuild and the `time` check so the two cannot disagree
 #' about the route.
 #'
@@ -350,14 +352,26 @@
   # The design route would ignore any formula variable given beside the
   # design columns, and without the missing ones the variables cannot be
   # rebuilt, so a mix is refused rather than guessed (#272). A variable
-  # that is itself a design column (numeric `age`) is not a mix.
-  given <- intersect(setdiff(design$data_vars, cols), names(newdata))
+  # that is itself a design column (numeric `age`) counts only if another
+  # term is built from it (I(age^2), age:grp): a changed `age` would leave
+  # those columns stale.
+  feeds_derived <- unlist(lapply(
+    attr(design$terms, "term.labels"),
+    function(label) {
+      v <- all.vars(parse(text = label)[[1L]])
+      if (identical(v, label)) character(0) else v
+    }
+  ))
+  counted <- union(setdiff(design$data_vars, cols),
+                   intersect(design$data_vars, feeds_derived))
+  given <- intersect(counted, names(newdata))
   if (length(given) > 0L) {
     stop("'newdata' gives the formula variable(s) ",
          paste0("'", given, "'", collapse = ", "), " but lacks ",
          paste0("'", missing, "'", collapse = ", "),
          ", while carrying the fitted design columns. Give all of the ",
-         "formula's variables, or only the design columns.", call. = FALSE)
+         "formula's variables, so the design can be rebuilt from them.",
+         call. = FALSE)
   }
   TRUE
 }

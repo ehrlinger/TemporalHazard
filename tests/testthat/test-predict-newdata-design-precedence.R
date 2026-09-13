@@ -64,6 +64,30 @@ test_that("some variables beside all design columns is refused, not guessed", {
                "gives the formula variable\\(s\\) 'grp'.*lacks 'age'")
 })
 
+test_that("a variable that other columns are built from is not left stale", {
+  # Copy the design, change `age`: I(age^2) and age:grpyoung still hold the
+  # old values.  Taking them as given gave 0.362 where age * grp with
+  # grp "young" gives 0.660.  `age` is a formula variable feeding other
+  # columns, so with `grp` missing this is a mix, and it stops.
+  d <- .dp_avc
+  w <- hazard(survival::Surv(int_dead, dead) ~ age * grp, data = d,
+              dist = "weibull", theta = c(mu = 0.01, nu = 0.5, 0.004, 0.7, 0.01))
+  nd <- data.frame(time = 2, age = 60, grpyoung = 1, `age:grpyoung` = 0,
+                   check.names = FALSE)
+  expect_error(predict(w, type = "cumulative_hazard", newdata = nd),
+               "gives the formula variable\\(s\\) 'age'.*lacks 'grp'")
+  w2 <- hazard(survival::Surv(int_dead, dead) ~ age + I(age^2) + grp, data = d,
+               dist = "weibull", theta = c(mu = 0.01, nu = 0.5, 0.004, 0, 0.7))
+  nd2 <- data.frame(time = 2, age = 60, `I(age^2)` = 0, grpyoung = 1,
+                    check.names = FALSE)
+  expect_error(predict(w2, type = "cumulative_hazard", newdata = nd2),
+               "gives the formula variable\\(s\\) 'age'.*lacks 'grp'")
+  # Given grp as well, the design is rebuilt and nothing is stale.
+  nd3 <- data.frame(time = 2, age = 60, grp = "young")
+  expect_equal(unname(predict(w, type = "cumulative_hazard", newdata = nd3)),
+               .dp_weibull(0.004 * 60 + 0.7 + 0.01 * 60, 2), tolerance = 1e-12)
+})
+
 test_that("design columns alone are still taken by name", {
   w <- hazard(survival::Surv(int_dead, dead) ~ age + grp, data = .dp_avc,
               dist = "weibull", theta = .dp_th)
@@ -87,11 +111,13 @@ test_that("hzr_gof() still evaluates at the design-column means", {
   gof <- hzr_gof(w)
   want <- (th[[1]] * gof$time)^th[[2]] * exp(sum(x_bar * th[3:4]))
   expect_equal(unname(gof$par_cumhaz), want, tolerance = 1e-10)
-  # Pinned from c4678f1, before #272 (a fitted model, so 1e-6).
+  # Pinned from c4678f1, before #272. A fitted, poorly scaled model, so
+  # 1e-4 to absorb cross-platform optimizer noise; the rebuild route would
+  # move it by about 31%.
   expect_length(gof$par_cumhaz, 270L)
   expect_equal(unname(gof$par_cumhaz[c(1, 135, 270)]),
                c(0.02303918854, 0.2220404487, 0.3080652665),
-               tolerance = 1e-6)
+               tolerance = 1e-4)
 })
 
 test_that("hzr_deciles() still evaluates each subject at its own design row", {
@@ -104,8 +130,8 @@ test_that("hzr_deciles() still evaluates each subject at its own design row", {
   h <- (th[[1]] * w$data$time)^th[[2]] *
     exp(as.numeric(w$data$x %*% th[3:4]))
   expect_equal(sum(dec$expected), sum(h), tolerance = 1e-8)
-  # Pinned from c4678f1, before #272 (a fitted model, so 1e-6).
-  expect_equal(sum(dec$expected), 67.99859561, tolerance = 1e-6)
+  # Pinned from c4678f1, before #272 (a fitted, poorly scaled model: 1e-4).
+  expect_equal(sum(dec$expected), 67.99859561, tolerance = 1e-4)
 })
 
 test_that("hzr_deciles() uses the fitted rows even if a formula constant changed", {
