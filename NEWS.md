@@ -206,9 +206,11 @@
   Weibull fit of `~ age + grp` returned the "young" cumulative hazard,
   0.362, for a row given `grp = "old"`, where the answer is 0.180. When
   the formula's variables are all present, `newdata` is now rebuilt from
-  them and a design-named column is an unused extra. Design columns are
-  used only when the variables are absent: a fit saved by an earlier
-  version, or `newdata` given as design columns alone. `hzr_deciles()` and
+  them and a design-named column is an unused extra. Design columns alone
+  are used when no formula variable is given: a fit saved by an earlier
+  version, or `newdata` given as design columns only. Some variables
+  beside the design columns, with others missing, is now an error
+  rather than a guess, because either route would ignore part of it. `hzr_deciles()` and
   `hzr_gof()`, which evaluate at fitted design rows or their means, declare
   that themselves, so `hzr_gof()` still reports the curve at `mean(age^2)`
   for an `I(age^2)` term, not at `mean(age)^2` (#272).

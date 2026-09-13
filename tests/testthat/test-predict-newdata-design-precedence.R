@@ -41,6 +41,29 @@ test_that("a contradicting design column does not override the variable", {
     0.004 * 60, tolerance = 1e-12)
 })
 
+test_that("some variables beside all design columns is refused, not guessed", {
+  # With `sex` missing the variables cannot be rebuilt, and taking the
+  # design columns would silently ignore grp = "old" (it gave 0.362, the
+  # "young" value).  Neither answer is safe, so it stops.
+  d <- .dp_avc
+  d$sex <- factor(ifelse(d$mal == 1, "M", "F"))
+  w <- hazard(survival::Surv(int_dead, dead) ~ age + grp + sex, data = d,
+              dist = "weibull", theta = c(mu = 0.01, nu = 0.5, 0.004, 0.7, 0.2))
+  expect_error(
+    predict(w, type = "cumulative_hazard",
+            newdata = data.frame(time = 2, age = 60, grp = "old",
+                                 grpyoung = 1, sexM = 0)),
+    "gives the formula variable\\(s\\) 'grp'.*lacks 'sex'"
+  )
+  # A transform: log(age) is a design column, age the missing variable.
+  w2 <- hazard(survival::Surv(int_dead, dead) ~ log(age) + grp, data = d,
+               dist = "weibull", theta = c(mu = 0.01, nu = 0.5, 0.2, 0.7))
+  nd2 <- data.frame(time = 2, check.names = FALSE, `log(age)` = log(60),
+                    grp = "old", grpyoung = 1)
+  expect_error(predict(w2, type = "cumulative_hazard", newdata = nd2),
+               "gives the formula variable\\(s\\) 'grp'.*lacks 'age'")
+})
+
 test_that("design columns alone are still taken by name", {
   w <- hazard(survival::Surv(int_dead, dead) ~ age + grp, data = .dp_avc,
               dist = "weibull", theta = .dp_th)
@@ -83,6 +106,24 @@ test_that("hzr_deciles() still evaluates each subject at its own design row", {
   expect_equal(sum(dec$expected), sum(h), tolerance = 1e-8)
   # Pinned from c4678f1, before #272 (a fitted model, so 1e-6).
   expect_equal(sum(dec$expected), 67.99859561, tolerance = 1e-6)
+})
+
+test_that("hzr_deciles() uses the fitted rows even if a formula constant changed", {
+  # ~ age + I(age > k): its design frame carries `age`, a formula variable,
+  # so without the design-level marker it would be rebuilt, and I(age > k)
+  # re-evaluated with the current k.  The fitted rows must win.
+  d <- .dp_avc
+  k <- 50
+  w <- hazard(survival::Surv(int_dead, dead) ~ age + I(age > k), data = d,
+              dist = "weibull", theta = c(mu = 0.01, nu = 0.5, 0, 0),
+              fit = TRUE)
+  th <- w$fit$theta
+  want <- sum((th[[1]] * w$data$time)^th[[2]] *
+                exp(as.numeric(w$data$x %*% th[3:4])))
+  k <- 500   # now every I(age > k) would be FALSE on a rebuild
+  expect_gt(sum(w$data$x[, 2]), 0)            # the fitted column is not all 0
+  expect_equal(sum(hzr_deciles(w, time = 60)$expected), want,
+               tolerance = 1e-8)
 })
 
 test_that("a multiphase global design takes the variable over its column", {

@@ -321,6 +321,8 @@
 #' the formula's variables being absent (a fit saved before `x_design`, or
 #' newdata given as design columns only). Otherwise the variables win, so a
 #' design-named column that contradicts them cannot override them (#272).
+#' Some formula variables beside the design columns, with others missing,
+#' is an error: neither route could honour what was given.
 #' Shared by the rebuild and the `time` check so the two cannot disagree
 #' about the route.
 #'
@@ -338,7 +340,26 @@
     return(TRUE)
   }
   design <- object$data$x_design
-  is.null(design) || !all(design$data_vars %in% names(newdata))
+  if (is.null(design)) {
+    return(TRUE)
+  }
+  missing <- setdiff(design$data_vars, names(newdata))
+  if (length(missing) == 0L) {
+    return(FALSE)
+  }
+  # The design route would ignore any formula variable given beside the
+  # design columns, and without the missing ones the variables cannot be
+  # rebuilt, so a mix is refused rather than guessed (#272). A variable
+  # that is itself a design column (numeric `age`) is not a mix.
+  given <- intersect(setdiff(design$data_vars, cols), names(newdata))
+  if (length(given) > 0L) {
+    stop("'newdata' gives the formula variable(s) ",
+         paste0("'", given, "'", collapse = ", "), " but lacks ",
+         paste0("'", missing, "'", collapse = ", "),
+         ", while carrying the fitted design columns. Give all of the ",
+         "formula's variables, or only the design columns.", call. = FALSE)
+  }
+  TRUE
 }
 
 

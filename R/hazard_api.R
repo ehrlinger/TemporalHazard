@@ -1155,8 +1155,10 @@ hazard <- function(formula = NULL,
 #'   not matter. A formula fit rebuilds its design from the formula, so a
 #'   factor can be given as a level label. `newdata` may instead carry the
 #'   fit's design-matrix columns by name (`grpyoung` for a factor `grp`);
-#'   these are used only when the formula's variables are absent, so a
-#'   variable always wins over a design column that contradicts it. A
+#'   these are used only when no formula variable is given. With all the
+#'   variables given, the design is rebuilt from them, so a design column
+#'   that contradicts one is ignored; some variables beside the design
+#'   columns, with others missing, is an error. A
 #'   column the model does not use is
 #'   ignored, and a covariate the model needs but `newdata` lacks is an error.
 #'   A fit made with an unnamed `x` matrix matches by position. For the types
