@@ -97,7 +97,10 @@ observed events, total expected events, and the final residual.
 
 The diagnostic is for right-censored data: every stored status must be 0
 (censored) or 1 (event). A fit with any left-censored (status -1) or
-interval-censored (status 2) row is refused with an error.
+interval-censored (status 2) row is refused with an error. So is a
+multiphase fit that dropped the rows where a covariate was missing: its
+design matrices then hold fewer rows than there are patients, so no
+patient-by-patient tally can be formed. Refit it on complete cases.
 
 At each time point the function computes:
 
@@ -136,10 +139,11 @@ For an intercept-only model every patient shares that curve. Without
 entry times each patient's expected count is the curve at their exit
 time; with entry times it is the curve's rise from entry to exit, so the
 two differ. The means are those of the design-matrix columns, taken
-phase by phase when a multiphase fit's covariates enter only through the
-phase formulas, so a factor enters as the proportion of patients in each
-level. A multiphase fit with both global and phase-formula covariates is
-not yet handled here (#264).
+phase by phase for a multiphase fit, whether its covariates enter
+globally, through the phase formulas or both, so a factor enters as the
+proportion of patients in each level. With `time_windows`, a phase built
+on the global covariates carries their means in the window that contains
+each time; a phase formula's own columns keep their plain means.
 
 For a weighted fit both tallies carry the case weights: observed events
 are \\\sum_i w_i d_i\\ and expected events \\\sum_i w_i H_i\\, the form
