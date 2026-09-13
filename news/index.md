@@ -119,6 +119,20 @@
     can emit; read as “no entry”, each would be charged its full
     cumulative hazard from time 0.
 
+- **`"time"` is now a reserved phase name, like `"total"`**
+  ([\#224](https://github.com/ehrlinger/TemporalHazard/issues/224)). The
+  decomposed output of `predict(decompose = TRUE)` starts with a `time`
+  column holding the prediction times, then adds one column per phase
+  under the phase’s name. A phase called `time` therefore overwrote the
+  requested times with its own cumulative hazard, and the times were
+  lost with no error.
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  and
+  [`hzr_theta_names()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_theta_names.md)
+  now stop on a phase named `time`, before any fitting, and ask for a
+  different name. Rename the phase; nothing else about the model
+  changes.
+
 ### New features
 
 - **Every fit now says what it did not do**

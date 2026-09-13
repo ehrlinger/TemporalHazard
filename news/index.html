@@ -77,6 +77,7 @@
 <code>time_lower = 0</code> still means no entry time.</li>
 <li>Rows with <code>time_lower == time &gt; 0</code> beside rows with a genuine entry time now stop. In counting-process data they are zero-length epochs, which <code><a href="../reference/hzr_repeated_events.html">hzr_repeated_events()</a></code> can emit; read as “no entry”, each would be charged its full cumulative hazard from time 0.</li>
 </ul></li>
+<li><p><strong><code>"time"</code> is now a reserved phase name, like <code>"total"</code></strong> (<a href="https://github.com/ehrlinger/TemporalHazard/issues/224" class="external-link">#224</a>). The decomposed output of <code>predict(decompose = TRUE)</code> starts with a <code>time</code> column holding the prediction times, then adds one column per phase under the phase’s name. A phase called <code>time</code> therefore overwrote the requested times with its own cumulative hazard, and the times were lost with no error. <code><a href="../reference/hazard.html">hazard()</a></code> and <code><a href="../reference/hzr_theta_names.html">hzr_theta_names()</a></code> now stop on a phase named <code>time</code>, before any fitting, and ask for a different name. Rename the phase; nothing else about the model changes.</p></li>
 </ul></div>
 <div class="section level3">
 <h3 id="new-features-1-2-11">New features<a class="anchor" aria-label="anchor" href="#new-features-1-2-11"></a></h3>

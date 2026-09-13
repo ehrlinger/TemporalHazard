@@ -55,10 +55,10 @@ Phase names come from `names(phases)`; unnamed phases are labelled
 [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 applies, so the labels here are the labels a fit will use.
 
-Phase names must be unique, and `"total"` is reserved; this applies the
-same validation
+Phase names must be unique, and `"total"` and `"time"` are reserved;
+this applies the same validation
 [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
-does, so both reject it identically.
+does, so both reject them identically.
 
 ## See also
 
