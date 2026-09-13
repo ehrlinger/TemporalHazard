@@ -48,6 +48,8 @@ test_that("design columns alone are still taken by name", {
                  newdata = data.frame(grpyoung = c(0, 1), time = 2, age = 60))
   expect_equal(unname(got),
                .dp_weibull(0.004 * 60 + 0.7 * c(0, 1), 2), tolerance = 1e-12)
+  # Pinned from c4678f1, before #272: this route is unchanged.
+  expect_equal(unname(got), c(0.179781779, 0.3620360441), tolerance = 1e-9)
 })
 
 test_that("hzr_gof() still evaluates at the design-column means", {
@@ -62,6 +64,11 @@ test_that("hzr_gof() still evaluates at the design-column means", {
   gof <- hzr_gof(w)
   want <- (th[[1]] * gof$time)^th[[2]] * exp(sum(x_bar * th[3:4]))
   expect_equal(unname(gof$par_cumhaz), want, tolerance = 1e-10)
+  # Pinned from c4678f1, before #272 (a fitted model, so 1e-6).
+  expect_length(gof$par_cumhaz, 270L)
+  expect_equal(unname(gof$par_cumhaz[c(1, 135, 270)]),
+               c(0.02303918854, 0.2220404487, 0.3080652665),
+               tolerance = 1e-6)
 })
 
 test_that("hzr_deciles() still evaluates each subject at its own design row", {
@@ -74,6 +81,8 @@ test_that("hzr_deciles() still evaluates each subject at its own design row", {
   h <- (th[[1]] * w$data$time)^th[[2]] *
     exp(as.numeric(w$data$x %*% th[3:4]))
   expect_equal(sum(dec$expected), sum(h), tolerance = 1e-8)
+  # Pinned from c4678f1, before #272 (a fitted model, so 1e-6).
+  expect_equal(sum(dec$expected), 67.99859561, tolerance = 1e-6)
 })
 
 test_that("a multiphase global design takes the variable over its column", {
