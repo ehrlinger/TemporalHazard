@@ -39,6 +39,15 @@
   if (!inherits(formula, "formula")) {
     stop("formula must be a `formula` object.", call. = FALSE)
   }
+  # `.` can only be expanded against data, and this reader has none. terms()
+  # errors on it, and the tryCatch() below turned that into "no terms", so a
+  # `~ .` base model reported a finished screen of zero steps (#279).
+  if ("." %in% all.vars(formula)) {
+    stop("hzr_stepwise() cannot expand `.` in `",
+         paste(deparse(formula), collapse = " "), "`: write the terms out, ",
+         "as in `~ age + mal`. A base model written with `.` must be refit ",
+         "that way; a `scope` can list its variables.", call. = FALSE)
+  }
   # terms() needs a formula with no empty LHS/RHS; ~ 1 has one intercept term.
   tt <- tryCatch(stats::terms(formula),
                  error = function(e) NULL)
@@ -50,7 +59,7 @@
 #' Add or drop a variable from a formula's RHS
 #'
 #' @param formula Existing formula.  One-sided (`~ x`) or two-sided
-#'   (`Surv(time, status) ~ x`) -- the LHS is preserved verbatim.
+#'   (`Surv(time, status) ~ x`); the LHS is preserved verbatim.
 #' @param action Either `"add"` or `"drop"`.
 #' @param var Character scalar naming the variable to add / drop.
 #'
@@ -102,16 +111,21 @@
 #' Add or drop a variable from a phase's formula
 #'
 #' @param phase An `hzr_phase` object.  Its `formula` slot may be NULL
-#'   (no phase-specific covariates) -- in the add case a fresh
-#'   `~ var` formula is created.
+#'   (no phase-specific covariates), in which case the phase inherits the
+#'   global design: the step starts from `inherited` when that is given, and
+#'   otherwise the add case creates a fresh `~ var` formula.
 #' @param action Either `"add"` or `"drop"`.
 #' @param var Character scalar.
+#' @param inherited One-sided formula of the global terms a phase with no
+#'   formula inherits (see `.hzr_inherited_rhs()`), or `NULL` when there are
+#'   none. Ignored for a phase with a formula of its own.
 #'
 #' @return An updated `hzr_phase` object with the new formula.
 #'
 #' @keywords internal
 #' @noRd
-.hzr_phase_update_formula <- function(phase, action = c("add", "drop"), var) {
+.hzr_phase_update_formula <- function(phase, action = c("add", "drop"), var,
+                                      inherited = NULL) {
   action <- match.arg(action)
   if (!inherits(phase, "hzr_phase")) {
     stop("`phase` must be an `hzr_phase` object.", call. = FALSE)
@@ -121,6 +135,14 @@
   }
 
   f <- phase$formula
+  if (is.null(f) && !is.null(inherited)) {
+    # A phase with no formula of its own carries the global terms, so a step
+    # starts from them: adding `mal` to a phase inheriting `age` gives
+    # `~ age + mal`, not `~ mal` (#284). An emptied result stays `~ 1`
+    # rather than NULL, which would inherit the global terms again.
+    phase$formula <- .hzr_formula_update(inherited, action, var)
+    return(phase)
+  }
   if (is.null(f)) {
     if (action == "drop") {
       return(phase)   # nothing to drop
@@ -134,16 +156,37 @@
     return(phase)
   }
 
+  # A drop that empties the RHS leaves `~ 1`, never NULL: a NULL phase
+  # formula inherits the global design, so the phase would take back the
+  # global covariates the step table says it no longer has (#284).
   phase$formula <- .hzr_formula_update(f, action, var)
-
-  # If dropping emptied the RHS (`~ 1`), null the slot out for
-  # consistency with hzr_phase(formula = NULL) construction.
-  if (action == "drop" &&
-        identical(.hzr_formula_rhs_terms(phase$formula), character())) {
-    phase$formula <- NULL
-  }
-
   phase
+}
+
+
+#' The global terms a phase with no formula of its own inherits
+#'
+#' A multiphase phase whose `formula` is `NULL` uses the global design: the
+#' right-hand side of the fit's formula. A stepwise step on such a phase has
+#' to start from those terms (#284). A vector-interface fit has no formula,
+#' so nothing here can say what a directly passed `x` holds;
+#' `.hzr_refit_blocker()` refuses the case where a phase inherits one.
+#'
+#' @param fit A fitted `hazard` object.
+#' @return A one-sided formula in the stored formula's environment, or `NULL`
+#'   when the global design has no terms.
+#' @keywords internal
+#' @noRd
+.hzr_inherited_rhs <- function(fit) {
+  f <- .hzr_stored_formula(fit)
+  if (is.null(f) || length(f) < 3L) {
+    return(NULL)
+  }
+  rhs_terms <- .hzr_formula_rhs_terms(f)
+  if (length(rhs_terms) == 0L) {
+    return(NULL)
+  }
+  stats::reformulate(rhs_terms, env = environment(f))
 }
 
 
@@ -185,9 +228,18 @@
     return(.hzr_formula_rhs_terms(f))
   }
 
-  # Multiphase
+  # Multiphase. A phase with no formula of its own carries the global terms
+  # it inherits (#284); they are read only when some phase does inherit, so
+  # a global `.` beside phases that all have formulas is never parsed here.
+  inherits_global <- vapply(fit$spec$phases, function(ph) is.null(ph$formula),
+                            logical(1))
+  inherited_terms <- character()
+  if (any(inherits_global)) {
+    rhs <- .hzr_inherited_rhs(fit)
+    if (!is.null(rhs)) inherited_terms <- .hzr_formula_rhs_terms(rhs)
+  }
   per_phase <- lapply(fit$spec$phases, function(ph) {
-    if (is.null(ph$formula)) character() else .hzr_formula_rhs_terms(ph$formula)
+    if (is.null(ph$formula)) inherited_terms else .hzr_formula_rhs_terms(ph$formula)
   })
 
   if (is.null(phase)) return(per_phase)
@@ -212,13 +264,15 @@
 #' \code{formula[[3L]]}) and returns \code{TRUE} if any call node has a
 #' function symbol that exactly matches one of \code{phase_names}.
 #'
-#' This is stricter than a string-regex approach: a phase named \code{"log"}
-#' will NOT produce a false positive when the formula contains \code{log(age)},
-#' because \code{log} would also appear in \code{phase_names} only if the user
-#' deliberately named a phase \code{"log"}.  Conversely, the function only
-#' fires when the call head is an exact match to a known phase name -- standard
-#' R functions that happen to share names with phases do not trigger the check
-#' unless those names are actually phase names.
+#' This is stricter than a string-regex approach.  A call such as
+#' \code{log(age)} triggers the check only when a phase is actually named
+#' \code{"log"}; with phases named \code{"early"} and \code{"constant"} it
+#' does not.  When a phase is named \code{"log"}, \code{log(age)} does
+#' trigger it and \code{hazard()} refuses the formula (#275); write
+#' \code{base::log(age)} to use the function.  The function fires only when a
+#' call head exactly matches a known phase name, so a variable such as
+#' \code{early_age}, or a bare symbol \code{early} that is not called, does
+#' not trigger it.
 #'
 #' @param rhs  A language object (the RHS of a formula, typically
 #'   \code{formula[[3L]]}).
@@ -325,8 +379,8 @@
 #' Coerce a candidate column to the numeric vector the screen models
 #'
 #' Logical columns are ordinary 0/1 predictors, and `.hzr_modellable_vars()`
-#' offers them as candidates under `scope = NULL`. Everything downstream -- the
-#' score statistic, the design-matrix column -- wants a numeric vector, so the
+#' offers them as candidates under `scope = NULL`. Everything downstream (the
+#' score statistic, the design-matrix column) wants a numeric vector, so the
 #' translation happens once here rather than teaching each site about logicals.
 #'
 #' Returns `NULL` for anything that is not modellable as a single numeric

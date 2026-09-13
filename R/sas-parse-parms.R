@@ -73,7 +73,7 @@
 #' The real grammar (`phasevaropt : phasevar phaseval phaseoptspec`, with
 #' `phaseoptspec : /*nothing*/ | '/' phaseopts`) is a comma-separated list of
 #' `VAR=startvalue` pairs or bare `VAR`s, optionally followed by `/ options`
-#' (the `PHOP` family -- `EXCLUDE`/`INCLUDE`/`MOVE`/`ORDER`/`START` --
+#' (the `PHOP` family, `EXCLUDE`/`INCLUDE`/`MOVE`/`ORDER`/`START`,
 #' deferred in v1 scope). `x` may be a single raw operand string (from the
 #' job parser) or an already-split character vector of bare names (the
 #' `.hzr_parse_parms()` `covars=` back-compat interface); both are handled by
@@ -136,7 +136,7 @@
 #'
 #' The one place a default is applied. Both the emitted `hzr_phase()` call and
 #' the `theta` starting vector are built from this function's result, so they
-#' cannot disagree about what an unspecified operand started at -- filling only
+#' cannot disagree about what an unspecified operand started at; filling only
 #' one of the two would be worse than defaulting neither, because the printed
 #' call would then describe a fit that did not happen.
 #'
@@ -462,7 +462,7 @@
 #' @return `list(phases = <call>, theta = <call>, has_phases = <logical>,
 #'   refused = <logical>, untranslated = <data.frame>)`. `has_phases` is
 #'   `TRUE` only when at least one phase was actually built from the operands
-#'   (i.e. `phases` is not the empty `list()` call) -- callers use it to decide
+#'   (i.e. `phases` is not the empty `list()` call); callers use it to decide
 #'   whether the job qualifies as multiphase at all. `refused` is `TRUE` only
 #'   when no phase is active AND every operand was understood, meaning
 #'   `PROC HAZARD` would raise `ERROR 1001` and run nothing

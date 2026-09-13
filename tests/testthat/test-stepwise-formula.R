@@ -93,10 +93,12 @@ test_that("phase_update_formula creates a formula when the phase had none", {
   expect_identical(.hzr_formula_rhs_terms(out$formula), "age")
 })
 
-test_that("phase_update_formula drops the only term, nulling the slot", {
+test_that("phase_update_formula drops the only term, leaving `~ 1`", {
+  # Not NULL: a NULL phase formula inherits the global design, so dropping a
+  # phase's last covariate would bring the global ones back (#284).
   ph <- hzr_phase("cdf", t_half = 1, nu = 1, m = 1, formula = ~ age)
   out <- .hzr_phase_update_formula(ph, "drop", "age")
-  expect_null(out$formula)
+  expect_identical(deparse(out$formula), "~1")
 })
 
 test_that("phase_update_formula on NULL-formula drop is a no-op", {

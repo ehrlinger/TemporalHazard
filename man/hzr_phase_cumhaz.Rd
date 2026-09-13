@@ -21,9 +21,9 @@ hzr_phase_cumhaz(
 
 \item{m}{Shape parameter.}
 
-\item{type}{Phase type: \code{"cdf"} (early -- uses \eqn{G(t)}),
-\code{"hazard"} (late -- uses cumulative hazard from \eqn{h(t)}), or
-\code{"constant"} (flat rate -- \eqn{\Phi = t}).}
+\item{type}{Phase type: \code{"cdf"} (early, uses \eqn{G(t)}),
+\code{"hazard"} (late, uses cumulative hazard from \eqn{h(t)}), or
+\code{"constant"} (flat rate, \eqn{\Phi = t}).}
 }
 \value{
 Numeric vector of cumulative hazard contributions \eqn{\Phi(t)},

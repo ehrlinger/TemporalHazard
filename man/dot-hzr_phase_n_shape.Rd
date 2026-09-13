@@ -10,10 +10,10 @@
 \item{phase}{An \code{hzr_phase} object.}
 }
 \value{
-Integer: 3 or 0.
+Integer: 3, 4 or 0.
 }
 \description{
-Returns 3 (t_half, nu, m) for \code{"cdf"} and \code{"hazard"} phases, 0 for
-\code{"constant"}.
+Returns 3 (t_half, nu, m) for \code{"cdf"} and \code{"hazard"} phases, 4 (tau,
+gamma, alpha, eta) for \code{"g3"}, and 0 for \code{"constant"}.
 }
 \keyword{internal}

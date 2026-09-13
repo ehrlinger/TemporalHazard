@@ -37,9 +37,9 @@ replicate (default 1.0 for full bootstrap; < 1 for bagging).}
 supplied, \code{set.seed(seed)} is called at function entry, jumping the
 global RNG to the seeded state; it is not restored on exit. Pass
 \code{NULL} (the default) to skip the \code{set.seed()} call and start from
-the caller's current RNG state. Note that the bootstrap consumes
+the caller's current RNG state. The bootstrap consumes
 random numbers either way, so the global RNG state will advance
-during the call -- \code{seed = NULL} avoids the \emph{reset} at entry, not
+during the call; \code{seed = NULL} avoids the \emph{reset} at entry, not
 the advance during resampling.}
 
 \item{verbose}{Logical; if \code{TRUE}, display a text progress bar over the
@@ -52,7 +52,7 @@ shape of the object it returns may change in a future release; see the
 preserves the
 original fixed-formula bootstrap: every replicate refits \code{object}'s
 exact model, and \code{summary$pct} is always ~100. When supplied (a
-one-sided formula, character vector, or -- for multiphase fits -- a
+one-sided formula, character vector, or, for multiphase fits, a
 named list of one-sided formulas keyed by phase, matching
 \code{\link[=hzr_stepwise]{hzr_stepwise()}}'s \code{scope}), each replicate runs a fresh
 \code{\link[=hzr_stepwise]{hzr_stepwise()}} selection instead; see Details.}
@@ -86,9 +86,9 @@ otherwise.}
 A list with class \code{"hzr_bootstrap"} containing:
 \describe{
 \item{replicates}{Data frame with columns \code{replicate}, \code{parameter},
-and \code{estimate} -- one row per parameter per successful replicate.}
+and \code{estimate}, one row per parameter per successful replicate.}
 \item{summary}{Data frame with columns \code{parameter}, \code{n}, \code{pct},
-\code{mean}, \code{sd}, \code{min}, \code{max}, \code{ci_lower}, \code{ci_upper} -- one row per
+\code{mean}, \code{sd}, \code{min}, \code{max}, \code{ci_lower}, \code{ci_upper}, one row per
 parameter. In \code{mode = "select"}, \code{pct} is the selection frequency
 and the other statistics are conditional on selection.}
 \item{n_success}{Number of successfully converged replicates.}
@@ -103,7 +103,7 @@ depressed. Always \code{0} in refit mode.}
 counting \emph{why} candidate scores were unavailable, summed over every
 replicate. \code{information_indefinite} is the one to read first: it marks
 candidates whose effect is too large for the score test's approximation
-at zero -- typically strong variables. Those are refit and Wald-tested
+at zero, typically strong variables. Those are refit and Wald-tested
 automatically, so a candidate reaching this count is one whose refit
 also failed and which therefore went untested, understating its
 selection frequency. Empty in refit mode.}
@@ -118,7 +118,7 @@ the number of otherwise successful replicates that entered at least one
 variable on a Wald test instead of the score statistic, and the total
 number of such entries across all replicates. The score criterion
 declines a candidate whose observed information is indefinite at
-\code{beta = 0} -- which happens when the effect is \emph{large} -- so those
+\code{beta = 0} (which happens when the effect is \emph{large}), so those
 candidates are refit and Wald-tested rather than dropped. A high count
 means much of the selection was decided by a different criterion from
 the one requested, which matters most here: these entries drive the
@@ -149,8 +149,8 @@ coefficient distribution conditional on selection.
 \section{Selection mode is experimental}{
 
 
-Everything reached through \code{scope} -- the selection arguments, and the
-\code{summary$pct} selection frequencies they produce -- is new and should be
+Everything reached through \code{scope} (the selection arguments, and the
+\code{summary$pct} selection frequencies they produce) is new and should be
 treated as unstable. The fixed-formula bootstrap (\code{scope = NULL}) is not
 affected and has been stable since 0.9.3.
 
@@ -164,7 +164,7 @@ large candidate pool runs for hours, and this function writes nothing
 until its final replicate, so a run that dies late loses everything. There
 is no built-in way to split one screen across processes and combine the
 parts. If you are running at that scale, drive \code{hzr_bootstrap()} in chunks
-from your own script and pool the replicates yourself -- deriving each
+from your own script and pool the replicates yourself: deriving each
 chunk's seed from its chunk number, offsetting replicate ids so a variable
 selected in two chunks is not counted once, and recomputing frequencies
 from the pooled replicates rather than averaging across chunks. Whatever

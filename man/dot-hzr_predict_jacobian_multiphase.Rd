@@ -36,7 +36,7 @@ Numeric \verb{n x p} Jacobian of \code{H(t|x)} (default), or a named list of
 per-phase \verb{n x p} Jacobians when \code{per_phase = TRUE}.
 }
 \description{
-Only \code{cumulative_hazard} and \code{survival} are delegated here -- \code{hazard}
+Only \code{cumulative_hazard} and \code{survival} are delegated here; \code{hazard}
 and \code{linear_predictor} are rejected upstream for multiphase models.
 }
 \keyword{internal}
