@@ -102,6 +102,14 @@ test_that("newdata carrying the fit's design columns by name is accepted", {
   expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard") /
                  reference_cumhaz(fit, tt, c(1, 0)),
                c(1, 1), tolerance = 1e-10, ignore_attr = TRUE)
+  # Design-only newdata is unchanged by #272: values computed at 7edcee6,
+  # before the rule changed. Optimizer results, so a loose tolerance.
+  expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard"),
+               c(0.1798473913724, 0.0561517857091),
+               tolerance = 1e-6, ignore_attr = TRUE)
+  expect_equal(predict(fit, newdata = nd, type = "hazard"),
+               c(0.18008683518445, 0.00599828867018),
+               tolerance = 1e-6, ignore_attr = TRUE)
 })
 
 test_that("a design column contradicting the phase variable does not win (#272)", {
