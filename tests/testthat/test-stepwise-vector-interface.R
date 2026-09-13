@@ -115,7 +115,9 @@ test_that("a vector-interface refit carries BOTH censoring bounds through", {
   D <- vec_data()
   n <- nrow(D)
   D$st <- rep(c(1, 0, 2), length.out = n)
-  D$lo <- ifelse(D$st == 2, D$tt, 0.05 + seq_len(n) / (20 * n))
+  # Entry must stay strictly before exit, or hazard() refuses the row (#253).
+  D$lo <- ifelse(D$st == 2, D$tt,
+                 pmin(0.05 + seq_len(n) / (20 * n), D$tt / 2))
   D$up <- ifelse(D$st == 2, D$tt + 0.75, D$tt)
 
   # Guard the guard: if the fixture degenerated to zero entry times or

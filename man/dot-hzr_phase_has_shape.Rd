@@ -15,7 +15,7 @@ Logical vector, one element per phase, in \code{phases} order.
 \description{
 A \code{constant} phase is \code{mu} and nothing else. The saturated identifiability
 message says \code{mu} survives while the shape parameters go flat, which is
-vacuous for a phase that has none -- the wording defect in #211.
+vacuous for a phase that has none (the wording defect in #211).
 }
 \details{
 This asks whether the parameters \emph{exist}, not whether they are free. A phase

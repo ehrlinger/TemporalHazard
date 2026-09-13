@@ -36,8 +36,8 @@ limits, as \code{\link[=predict.hazard]{predict.hazard()}} does.}
 Only used when \code{se.fit = TRUE}.
 
 \strong{SAS draws narrower bands than this by default.} \verb{PROC HAZPRED} takes
-its width from \code{CLEVEL}, whose default is \code{0.68268948} --- documented in
-the macro source as "(1 sd)" --- so its \code{T_ALPHA} multiplier is \code{1} to
+its width from \code{CLEVEL}, whose default is \code{0.68268948}, documented in
+the macro source as "(1 sd)", so its \code{T_ALPHA} multiplier is \code{1} to
 seven decimals (the literal is truncated) and the band is one standard
 error, 68.3\%, not 95\%. Reproducing a SAS figure at this
 function's default therefore yields a band about 1.96 times wider than the
@@ -72,8 +72,8 @@ return of \code{\link[=predict.hazard]{predict.hazard()}} is not reachable here,
 \code{decompose = TRUE} is refused.
 }
 \description{
-Rebuilds the multiphase model the \verb{OUTHAZ=} dataset describes -- which
-phases are in it, their shapes, and the fitted parameter vector -- and then
+Rebuilds the multiphase model the \verb{OUTHAZ=} dataset describes (which
+phases are in it, their shapes, and the fitted parameter vector) and then
 predicts exactly as \code{\link[=predict.hazard]{predict.hazard()}} does.
 }
 \details{
@@ -101,7 +101,7 @@ on SAS's estimation scale and has to be mapped onto this package's:
 \itemize{
 \item a fit constrained by \code{FIXMNU1}, which ties \code{M} to \code{1/NU};
 \item a fit estimating \code{GAMMA}, \code{ALPHA} or \code{ETA} on one of PROC HAZARD's
-\emph{composite} late-phase scales -- \code{log(GAMMA*ETA - 2)} or
+\emph{composite} late-phase scales, \code{log(GAMMA*ETA - 2)} or
 \code{log(GAMMA*ETA/ALPHA - 2)} rather than \code{log()} of the parameter. This is
 the ordinary unconstrained late phase, not an exotic case: with
 \code{G3FLAG = 1} and no \code{FIXGE2}/\code{FIXGAE2}, \code{ETA} and \code{ALPHA} are always on a

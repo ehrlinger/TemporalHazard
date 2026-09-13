@@ -60,7 +60,7 @@ risk groups. Within each group the \strong{expected} event count is the sum of
 each subject's predicted cumulative hazard at its \emph{own} follow-up time, and
 the \strong{observed} count is its number of events; under conservation of events
 the group totals sum to the total observed events. The horizon therefore only
-stratifies subjects into risk groups -- it does not restrict or exclude any
+stratifies subjects into risk groups; it does not restrict or exclude any
 subject, and the expected/observed totals are independent of it.
 }
 \examples{

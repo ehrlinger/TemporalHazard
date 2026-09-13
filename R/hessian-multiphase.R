@@ -369,8 +369,8 @@ NULL
 #' Returns the \eqn{p \times p} Hessian of the **objective** (negative
 #' log-likelihood) on the internal parameter scale, matching
 #' \code{numDeriv::hessian(objective)}.  Coverage: event + right-censored
-#' rows, with counting-process start-time corrections when
-#' \code{time_lower > 0}. Returns \code{NULL} for data containing
+#' rows, with counting-process start-time corrections on status 0/1 rows
+#' where \code{0 < time_lower < time}. Returns \code{NULL} for data containing
 #' left-censored (\code{status == -1}) or interval-censored
 #' (\code{status == 2}) rows; the caller falls back to numDeriv in that case.
 #'
@@ -399,25 +399,15 @@ NULL
   n_e       <- length(idx_event)
 
   # Counting-process start-time handling (mirrors gradient)
-  # The start time must be defined EXACTLY as the log-likelihood defines it:
-  # `.hzr_logl_multiphase()` subtracts H(time_lower) from every status 0/1 row
-  # whenever `time_lower` is supplied, with no further condition. An earlier
-  # `time_lower < time` filter here excluded rows entering at their own event
-  # or censoring time, so the derivative was taken of a different function from
-  # the one being evaluated -- the optimizer then walked off a cliff. The
-  # `> 0` test is only a skip: H(0) = 0, so those rows contribute nothing
-  # either way, and it must match `has_start` below or the term is weighted in
-  # while its derivative is left at zero.
-  need_start <- !is.null(time_lower) &&
-                any(time_lower > 0 & status %in% c(0L, 1L))
-  start_vec <- if (need_start) {
-    sv <- rep(0, n)
-    epoch_idx <- status %in% c(0L, 1L)
-    sv[epoch_idx] <- time_lower[epoch_idx]
-    sv
-  } else {
-    NULL
-  }
+  # The start time must be defined EXACTLY as the log-likelihood defines it,
+  # so it comes from the same helper, `.hzr_multiphase_entry()`: the entry is
+  # `time_lower` on a status 0/1 row with 0 < time_lower < time, and 0
+  # otherwise (issue #253). Differentiating a different function from the one
+  # being evaluated sent the optimizer off a cliff (issue #136). The `> 0` test
+  # is only a skip: H(0) = 0, so a zero entry contributes nothing.
+  entry <- .hzr_multiphase_entry(time, status, time_lower)
+  need_start <- !is.null(entry) && any(entry > 0)
+  start_vec <- if (need_start) entry else NULL
 
   theta_split <- .hzr_split_theta(theta, phases, covariate_counts)
 

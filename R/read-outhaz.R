@@ -19,7 +19,7 @@
 #' @section Experimental:
 #' This function is experimental and its return shape is expected to change.
 #' The result carries the fitted model, so [predict.hzr_outhaz()] predicts
-#' from it -- that is what the `hzr_translate_sas(librefs = )` path emits --
+#' from it (that is what the `hzr_translate_sas(librefs = )` path emits),
 #' but it is not a `hazard` object and none of the other `hazard` methods
 #' apply to it. The `_STATUS_` coding is asserted against a synthetic fixture,
 #' so a real `OUTHAZ=` file using a different convention would yield an empty
@@ -126,10 +126,10 @@ hzr_read_outhaz <- function(path) {
 #' untransformed. The mapping is the diagonal Jacobian `dtheta_R/dtheta_SAS`
 #' applied below. It is only valid where SAS's estimation variable is the
 #' plain `log()` of the parameter, and the late phase is often not: see
-#' `.hzr_outhaz_late_composite()`. Where the Jacobian is not determinable --
-#' a composite late-phase estimation scale, a late parameter derived from an
+#' `.hzr_outhaz_late_composite()`. Where the Jacobian is not determinable
+#' (a composite late-phase estimation scale, a late parameter derived from an
 #' estimated one under `FIXGE2`/`FIXGAE2`, or the `FIXMNU1` constraint that
-#' ties `m` to `nu` -- this refuses rather than return standard errors built
+#' ties `m` to `nu`), this refuses rather than return standard errors built
 #' on the wrong scale.
 #'
 #' @param object An `hzr_outhaz` object.
@@ -415,8 +415,8 @@ hzr_read_outhaz <- function(path) {
 
 #' Predictions from a fit loaded out of a SAS `OUTHAZ=` dataset
 #'
-#' Rebuilds the multiphase model the `OUTHAZ=` dataset describes -- which
-#' phases are in it, their shapes, and the fitted parameter vector -- and then
+#' Rebuilds the multiphase model the `OUTHAZ=` dataset describes (which
+#' phases are in it, their shapes, and the fitted parameter vector) and then
 #' predicts exactly as [predict.hazard()] does.
 #'
 #' `newdata` is required. An `OUTHAZ=` dataset holds a converged model and no
@@ -442,7 +442,7 @@ hzr_read_outhaz <- function(path) {
 #'
 #' * a fit constrained by `FIXMNU1`, which ties `M` to `1/NU`;
 #' * a fit estimating `GAMMA`, `ALPHA` or `ETA` on one of PROC HAZARD's
-#'   *composite* late-phase scales -- `log(GAMMA*ETA - 2)` or
+#'   *composite* late-phase scales, `log(GAMMA*ETA - 2)` or
 #'   `log(GAMMA*ETA/ALPHA - 2)` rather than `log()` of the parameter. This is
 #'   the ordinary unconstrained late phase, not an exotic case: with
 #'   `G3FLAG = 1` and no `FIXGE2`/`FIXGAE2`, `ETA` and `ALPHA` are always on a
@@ -469,8 +469,8 @@ hzr_read_outhaz <- function(path) {
 #'   Only used when `se.fit = TRUE`.
 #'
 #'   **SAS draws narrower bands than this by default.** `PROC HAZPRED` takes
-#'   its width from `CLEVEL`, whose default is `0.68268948` --- documented in
-#'   the macro source as "(1 sd)" --- so its `T_ALPHA` multiplier is `1` to
+#'   its width from `CLEVEL`, whose default is `0.68268948`, documented in
+#'   the macro source as "(1 sd)", so its `T_ALPHA` multiplier is `1` to
 #'   seven decimals (the literal is truncated) and the band is one standard
 #'   error, 68.3%, not 95%. Reproducing a SAS figure at this
 #'   function's default therefore yields a band about 1.96 times wider than the

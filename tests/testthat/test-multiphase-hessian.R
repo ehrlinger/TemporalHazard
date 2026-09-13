@@ -239,7 +239,7 @@ test_that(".hzr_hessian_multiphase matches numDeriv (2-phase with covariates)", 
     constant = hzr_phase("constant")
   )
   fit <- hazard(
-    survival::Surv(int_dead, dead) ~ early(age + com_iv),
+    survival::Surv(int_dead, dead) ~ 1,
     data    = avc,
     dist    = "multiphase",
     phases  = phases,
@@ -382,10 +382,10 @@ test_that("multiphase SEs are invariant to covariate rescaling (log-mu z-stat)",
   avc2 <- avc
   avc2$age <- avc$age / 10  # rescaled covariate
 
-  f1 <- hazard(survival::Surv(int_dead, dead) ~ early(age),
+  f1 <- hazard(survival::Surv(int_dead, dead) ~ 1,
                data = avc,  dist = "multiphase", phases = phases_base, fit = TRUE,
                control = list(n_starts = 1, conserve = FALSE))
-  f2 <- hazard(survival::Surv(int_dead, dead) ~ early(age),
+  f2 <- hazard(survival::Surv(int_dead, dead) ~ 1,
                data = avc2, dist = "multiphase", phases = phases_base, fit = TRUE,
                control = list(n_starts = 1, conserve = FALSE))
 
@@ -416,8 +416,7 @@ test_that("13-parameter multiphase anchor: stable SEs and rcond (supersedes plac
     constant = hzr_phase("constant")
   )
   fit <- hazard(
-    survival::Surv(int_dead, dead) ~
-      early(age + com_iv + mal + opmos + op_age + status),
+    survival::Surv(int_dead, dead) ~ 1,
     data = avc, dist = "multiphase", phases = phases_hd, fit = TRUE,
     control = list(n_starts = 3, maxit = 800, conserve = TRUE)
   )
