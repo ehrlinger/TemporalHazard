@@ -313,10 +313,16 @@
 
 #' Is the global design taken from `newdata`'s design columns?
 #'
-#' TRUE when `newdata` carries every column of the fitted global design by
-#' name (as `hzr_deciles()` and `hzr_gof()` pass it). The design is then
-#' used as it is and the formula is not re-evaluated. Shared by the rebuild
-#' and the `time` check so the two cannot disagree about the route.
+#' The design is then used as it is and the formula is not re-evaluated.
+#' That needs every fitted design column present by name, and then either
+#' the caller declaring the columns design-level (`hzr_deciles()` and
+#' `hzr_gof()` set the `hzr_design_columns` attribute: their rows are
+#' fitted design rows or their means, which the formula cannot rebuild), or
+#' the formula's variables being absent (a fit saved before `x_design`, or
+#' newdata given as design columns only). Otherwise the variables win, so a
+#' design-named column that contradicts them cannot override them (#272).
+#' Shared by the rebuild and the `time` check so the two cannot disagree
+#' about the route.
 #'
 #' @param object A fitted `hazard` object.
 #' @param newdata Data frame of new rows.
@@ -325,7 +331,14 @@
 #' @noRd
 .hzr_uses_design_columns <- function(object, newdata) {
   cols <- colnames(object$data$x)
-  !is.null(cols) && all(cols %in% names(newdata))
+  if (is.null(cols) || !all(cols %in% names(newdata))) {
+    return(FALSE)
+  }
+  if (isTRUE(attr(newdata, "hzr_design_columns"))) {
+    return(TRUE)
+  }
+  design <- object$data$x_design
+  is.null(design) || !all(design$data_vars %in% names(newdata))
 }
 
 
@@ -346,11 +359,10 @@
   cols <- colnames(x_fit)
   design <- object$data$x_design
 
-  # newdata that already carries the fit's design columns by name is taken
-  # as it is. That is how hzr_deciles() and hzr_gof() pass it, built from
-  # object$data$x, so a factor arrives as `grpyoung` and a transform as
-  # `log(age)`. For a plain numeric covariate the design column and the
-  # variable are the same column, so both routes agree.
+  # Design columns taken as they are: hzr_deciles() and hzr_gof() pass them
+  # (a factor as `grpyoung`, a transform as `log(age)`), and so does a
+  # newdata that lacks the formula's variables. When the variables are
+  # there, they are rebuilt below instead (#272).
   if (.hzr_uses_design_columns(object, newdata)) {
     return(as.matrix(newdata[, cols, drop = FALSE]))
   }

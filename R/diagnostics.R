@@ -136,6 +136,8 @@ hzr_deciles <- function(object, time, groups = 10L,
     } else if (!is.null(object$data$x) && ncol(object$data$x) > 0) {
       nd <- as.data.frame(object$data$x)
       nd$time <- times
+      # Fitted design rows: take them as they are, never rebuild (#272).
+      attr(nd, "hzr_design_columns") <- TRUE
       predict(object, newdata = nd, type = "cumulative_hazard")
     } else {
       predict(object, newdata = data.frame(time = times),
@@ -595,6 +597,9 @@ hzr_gof <- function(object, time_grid = NULL) {
     nd <- as.data.frame(t(x_means))
     nd <- nd[rep(1, length(time_grid)), , drop = FALSE]
     nd$time <- time_grid
+    # Design-column means (mean(age^2), not mean(age)^2): take them as they
+    # are, never rebuild them from the formula (#272).
+    attr(nd, "hzr_design_columns") <- TRUE
   } else {
     nd <- data.frame(time = time_grid)
   }

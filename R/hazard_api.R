@@ -1154,8 +1154,10 @@ hazard <- function(formula = NULL,
 #'   Covariates are matched to the model by column name, so their order does
 #'   not matter. A formula fit rebuilds its design from the formula, so a
 #'   factor can be given as a level label. `newdata` may instead carry the
-#'   fit's design-matrix columns by name (`grpyoung` for a factor `grp`), as
-#'   `hzr_deciles()` and `hzr_gof()` pass it. A column the model does not use is
+#'   fit's design-matrix columns by name (`grpyoung` for a factor `grp`);
+#'   these are used only when the formula's variables are absent, so a
+#'   variable always wins over a design column that contradicts it. A
+#'   column the model does not use is
 #'   ignored, and a covariate the model needs but `newdata` lacks is an error.
 #'   A fit made with an unnamed `x` matrix matches by position. For the types
 #'   requiring time, a `newdata` with only a `time` column evaluates the

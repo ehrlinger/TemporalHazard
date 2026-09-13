@@ -199,6 +199,20 @@
 
 ## Bug fixes
 
+* **`predict(newdata = )` no longer lets a design column override the
+  formula variable it contradicts.** `newdata` may give a factor as its
+  level (`grp = "old"`) or as the fit's design column (`grpyoung = 1`).
+  When it held both and they disagreed, the design column silently won: a
+  Weibull fit of `~ age + grp` returned the "young" cumulative hazard,
+  0.362, for a row given `grp = "old"`, where the answer is 0.180. When
+  the formula's variables are all present, `newdata` is now rebuilt from
+  them and a design-named column is an unused extra. Design columns are
+  used only when the variables are absent: a fit saved by an earlier
+  version, or `newdata` given as design columns alone. `hzr_deciles()` and
+  `hzr_gof()`, which evaluate at fitted design rows or their means, declare
+  that themselves, so `hzr_gof()` still reports the curve at `mean(age^2)`
+  for an `I(age^2)` term, not at `mean(age)^2` (#272).
+
 * **`predict(newdata = )` no longer matches a single-distribution model's
   covariates by column position.** For `dist = "weibull"`,
   `"exponential"`, `"loglogistic"` and `"lognormal"`, the covariates in
