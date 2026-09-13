@@ -43,7 +43,7 @@
 #' Each phase's block is `[log_mu, shapes..., betas...]` (see
 #' `.hzr_unpack_phase_theta()`), so the shape slots are known by position:
 #' `.hzr_phase_n_shape()` of them, immediately after `log_mu`. A name-based
-#' rule cannot do this -- a covariate called `m`, `nu`, `gamma`, `alpha` or
+#' rule cannot do this: a covariate called `m`, `nu`, `gamma`, `alpha` or
 #' `eta` produces a theta name like `constant.m` that is indistinguishable
 #' from a shape by name alone (a `constant` phase has no shapes at all), and
 #' dropping it silently under-adjusts `V_beta` for every other candidate.
@@ -85,8 +85,8 @@
 
 #' Size of a single distribution's leading baseline block in theta
 #'
-#' `.hzr_shape_parameter_count()` returns the size of the WHOLE leading block --
-#' intercept and shapes together -- so within it the intercept is always slot 1
+#' `.hzr_shape_parameter_count()` returns the size of the WHOLE leading block
+#' (intercept and shapes together), so within it the intercept is always slot 1
 #' and the genuine shape slots are `2:n_base`. The documented layouts are
 #' `[log_lambda, betas...]` (exponential, so no shape at all), `[mu, nu,
 #' betas...]` (weibull), `[log_alpha, log_beta, betas...]` (log-logistic) and
@@ -111,7 +111,7 @@
 #'
 #' Keeps the intercept and every covariate beta; drops ONLY the shape slots.
 #' The intercept is a nuisance parameter like any other and must stay in the
-#' block -- dropping it under-adjusts `V_beta`, which makes `Q` too small and
+#' block; dropping it under-adjusts `V_beta`, which makes `Q` too small and
 #' silently keeps real candidates out of the model. Exponential is the clearest
 #' case: it has no shape parameter, so nothing is dropped.
 #'
@@ -138,8 +138,8 @@
 
 #' Log-likelihood / gradient entry points for a single distribution
 #'
-#' SIGN CONVENTION -- both return the POSITIVE log-likelihood scale, despite
-#' what some of their roxygen blocks say. `.hzr_optim_generic()` is what negates
+#' SIGN CONVENTION: both return the POSITIVE log-likelihood scale, as their
+#' roxygen blocks say. `.hzr_optim_generic()` is what negates
 #' them for minimisation, and the analytic `hessian_fn` hook it takes is on the
 #' negated (objective) scale. So the observed information is a Hessian of
 #' `-logl_fn`, not of `logl_fn`. Getting this backwards yields a negative
@@ -174,7 +174,7 @@
 
 #' Negative log-likelihood of a single-distribution model at `theta`
 #'
-#' `x` is the design matrix to evaluate against -- the fit's own for the current
+#' `x` is the design matrix to evaluate against: the fit's own for the current
 #' model, or the expanded one when a candidate is pinned at zero.
 #'
 #' @noRd
@@ -192,7 +192,7 @@
 #' `(mu, nu, beta)` scale theta is stored on, and there is no analytic Hessian
 #' on the expanded design for the others either. A numeric Hessian of the
 #' negative log-likelihood is the one form that is uniform across all four
-#' families -- and it is the same oracle the analytic Hessians are themselves
+#' families, and it is the same oracle the analytic Hessians are themselves
 #' tested against.
 #'
 #' @noRd
@@ -226,7 +226,7 @@
 #' interval-censored (`status` in `{-1, 2}`): the analytic second derivative
 #' is not defined for those contributions. Before this fallback existed the
 #' `NULL` propagated to `nuisance$ok = FALSE` and every candidate scored `NA`,
-#' so the screen stopped having tested nothing -- and said so in the language
+#' so the screen stopped having tested nothing, and said so in the language
 #' of a degenerate column, which is a different fault entirely.
 #'
 #' This costs a numeric Hessian per candidate, which is the per-candidate work
@@ -346,8 +346,13 @@
   }
 
   new_phases <- phases
+  # As in .hzr_refit_with_scope(): a phase with no formula inherits the
+  # global terms, and the candidate is added to them (#284).
+  inherited <- if (is.null(new_phases[[phase]]$formula)) {
+    .hzr_inherited_rhs(current)
+  }
   new_phases[[phase]] <- .hzr_phase_update_formula(
-    new_phases[[phase]], action = "add", var = var
+    new_phases[[phase]], action = "add", var = var, inherited = inherited
   )
 
   d <- current$data
@@ -370,9 +375,13 @@
       x_j <- stats::model.matrix(ph$formula, data = mf_j)[, -1L, drop = FALSE]
       x_list[[nm]] <- x_j
       cov_counts[[nm]] <- ncol(x_j)
-    } else if (!is.null(d$x)) {
-      x_list[[nm]] <- d$x
-      cov_counts[[nm]] <- ncol(d$x)
+    } else if (!is.null(current$fit$x_list[[nm]]) || !is.null(d$x)) {
+      # A phase with no formula uses the design the fit used, which under
+      # `time_windows` is the window-expanded one; `d$x` is the plain global
+      # matrix and would change the phase's columns (#284).
+      xm <- current$fit$x_list[[nm]] %||% d$x
+      x_list[[nm]] <- xm
+      cov_counts[[nm]] <- ncol(xm)
     } else {
       x_list[[nm]] <- NULL
       cov_counts[[nm]] <- 0L
@@ -386,10 +395,36 @@
     # one-zero-per-add layout; the refit path guards this upstream too.
     return(NULL)
   }
+  unchanged <- setdiff(nms, phase)
+  if (any(cov_counts[unchanged] != old_counts[unchanged])) {
+    # Every phase the step does not touch must keep the design the fit used;
+    # a different column count means the expansion rebuilt it wrongly.
+    return(NULL)
+  }
   for (nm in nms) {
     xm <- x_list[[nm]]
     if (is.null(xm) || ncol(xm) == 0L) next
     if (nrow(xm) != n_time || anyNA(xm)) return(NULL)
+  }
+
+  # The candidate's column is not always the phase's last: model.matrix()
+  # puts main effects before interactions, so a phase with `age * mal`
+  # gains `opmos` before `age:mal`. Find it by name among the phase's
+  # columns. A phase with no columns yet takes the only slot; one whose
+  # columns cannot be matched by name declines (a score of NA) rather than
+  # pin the zero on whichever coefficient happens to be last.
+  old_cols <- colnames(current$fit$x_list[[phase]])
+  new_cols <- colnames(x_list[[phase]])
+  new_col_pos <- cov_counts[[phase]]
+  if (old_counts[[phase]] > 0L) {
+    hit <- if (!is.null(new_cols) &&
+                 length(old_cols) == old_counts[[phase]]) {
+      which(!new_cols %in% old_cols)
+    } else {
+      integer()
+    }
+    if (length(hit) != 1L) return(NULL)
+    new_col_pos <- hit
   }
 
   parts <- .hzr_split_theta(current$fit$theta, phases, old_counts)
@@ -400,15 +435,22 @@
   pos <- 0L
   for (nm in nms) {
     part <- parts[[nm]]
-    theta_new <- c(theta_new, part)
-    theta_idx <- c(theta_idx, pos + seq_along(part))
-    pos <- pos + length(part)
     if (identical(nm, phase)) {
-      # The new covariate is the phase's last term, so its coefficient is the
-      # last slot of that phase's sub-vector -- matching model.matrix ordering.
-      theta_new <- c(theta_new, 0)
-      pos <- pos + 1L
-      beta_idx <- pos
+      # Old entries before the new slot: log_mu, the shapes, and the betas
+      # whose columns precede the candidate's. The pinned zero goes there,
+      # so every other coefficient keeps its own column.
+      at <- length(part) - old_counts[[phase]] + new_col_pos - 1L
+      after <- length(part) - at
+      theta_new <- c(theta_new, part[seq_len(at)], 0,
+                     part[at + seq_len(after)])
+      theta_idx <- c(theta_idx, pos + seq_len(at),
+                     pos + at + 1L + seq_len(after))
+      beta_idx <- pos + at + 1L
+      pos <- pos + length(part) + 1L
+    } else {
+      theta_new <- c(theta_new, part)
+      theta_idx <- c(theta_idx, pos + seq_along(part))
+      pos <- pos + length(part)
     }
   }
 
@@ -433,7 +475,7 @@
 #'
 #' Mirrors `.hzr_refit_with_scope()`'s single-distribution path: the candidate
 #' becomes the formula's last term, so `model.matrix()` puts its column last and
-#' its coefficient takes the last slot of theta -- exactly where the refit's
+#' its coefficient takes the last slot of theta, exactly where the refit's
 #' `c(theta_old, 0)` warm start puts it. Here it stays pinned at zero.
 #'
 #' @noRd

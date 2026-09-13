@@ -97,8 +97,8 @@ NULL
 #' from the raw covariance.  Parameters in this package sit on very different
 #' scales (an \code{m} of 27 against a \code{nu} of 0.027), and in raw units a
 #' direction that moves both equally in statistical terms loads almost
-#' entirely on the larger one -- reporting a two-parameter ridge as a single
-#' unidentified parameter.  Standardising first makes the loadings comparable.
+#' entirely on the larger one, so a two-parameter ridge would be reported as a
+#' single unidentified parameter.  Standardising first makes the loadings comparable.
 #'
 #' A single imprecise but uncorrelated parameter is deliberately \emph{not}
 #' reported: that is ordinary low precision, already covered by the

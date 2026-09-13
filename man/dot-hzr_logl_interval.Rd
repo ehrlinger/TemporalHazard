@@ -28,8 +28,8 @@
 variable, which is a weight (a death count in an aggregated study), not
 merely an indicator.}
 
-\item{objective}{\code{"likelihood"} for the interval probability -- the default,
-and the only statistically consistent form -- or \code{"sas"} for the
+\item{objective}{\code{"likelihood"} for the interval probability (the default,
+and the only statistically consistent form) or \code{"sas"} for the
 interval-mean-hazard density term \verb{PROC HAZARD} accumulates. See
 \code{inst/dev/SAS-INTERVAL-OBJECTIVE-DESIGN.md}.}
 }
@@ -43,8 +43,8 @@ The single place the interval-censored contribution is written.  Both
 the gradient of a different objective than the one it evaluates.
 }
 \details{
-Callers pass \strong{only the interval rows} -- already subset by \code{status == 2}
--- so this helper never sees the status mask and cannot disagree with a
+Callers pass \strong{only the interval rows}, already subset by \code{status == 2},
+so this helper never sees the status mask and cannot disagree with a
 caller about which rows are intervals.
 }
 \keyword{internal}

@@ -15,6 +15,52 @@ NULL
   requireNamespace("numDeriv", quietly = TRUE)
 }
 
+# Central differences of an objective, for when the analytic gradient is not
+# the objective's own (Conservation of Events). A point on the 1e10 clamp makes
+# that component NA rather than a number that looks measured. Components in
+# `sign_bounded` -- the multiphase shape m -- never straddle 0, where the cdf
+# and hazard families meet in a cusp (#251), and follow the rule of
+# .hzr_phase_derivatives(): one-sided second order forward from m >= 0; from
+# m < 0 a step capped at 1% of |m|, one-sided backward if it would still reach
+# 0. The floor on that step is 1e-8, not the decomposition's 1e-10: these
+# differences are of the whole log-likelihood, whose rounding error relative
+# to |f| is about eps / h, and at 1e-10 that is already near SAS's gradtl.
+.hzr_fd_gradient <- function(objective, theta, sign_bounded = integer(0)) {
+  n <- length(theta)
+  h <- .Machine$double.eps^(1 / 3) * pmax(abs(theta), 1)
+  side <- numeric(n)
+  for (i in intersect(sign_bounded, seq_len(n))) {
+    x <- theta[i]
+    if (x < 0) h[i] <- min(h[i], max(0.01 * abs(x), 1e-8))
+    side[i] <- if (x >= 0 && x - h[i] < 0) {
+      1
+    } else if (x < 0 && x + h[i] >= 0) {
+      -1
+    } else {
+      0
+    }
+  }
+  # The centre point is needed only by a one-sided stencil; evaluate it once.
+  f0 <- if (any(side != 0)) objective(theta) else NA_real_
+  at <- function(i, step) {
+    z <- theta
+    z[i] <- theta[i] + step
+    objective(z)
+  }
+  vapply(seq_len(n), function(i) {
+    if (side[i] == 0) {
+      up <- at(i, h[i])
+      down <- at(i, -h[i])
+      if (up >= 1e10 || down >= 1e10) return(NA_real_)
+      return((up - down) / (2 * h[i]))
+    }
+    near <- at(i, side[i] * h[i])
+    far <- at(i, 2 * side[i] * h[i])
+    if (f0 >= 1e10 || near >= 1e10 || far >= 1e10) return(NA_real_)
+    side[i] * (-3 * f0 + 4 * near - far) / (2 * h[i])
+  }, numeric(1))
+}
+
 #' Generic optimizer for parametric hazard likelihoods
 #'
 #' Maximises a log-likelihood by minimising its negation via \code{stats::optim}.
@@ -59,6 +105,10 @@ NULL
 #'   step as SAS/C does (`setobj.c`). The `nlm()` continuation keeps the
 #'   analytic score: with finite differences it walks onto the CoE solve's
 #'   discontinuity where no events are left to conserve.
+#' @param sign_bounded Integer positions in `theta_start` whose
+#'   finite-difference stencil must not cross 0 (the multiphase shape `m`,
+#'   where the phase families meet in a cusp). Used only when
+#'   `gradient_exact = FALSE`.
 #'
 #' @return List with par, value (log-likelihood), convergence, counts, message,
 #'   hessian, vcov. Includes \code{se_unavailable_reason}.
@@ -77,7 +127,8 @@ NULL
     use_bounds = FALSE,
     lower_bounds = NULL,
     hessian_fn = NULL,
-    gradient_exact = TRUE) {
+    gradient_exact = TRUE,
+    sign_bounded = integer(0)) {
 
   control <- utils::modifyList(
     list(maxit = 1000, reltol = 1e-5, abstol = 1e-6),
@@ -170,20 +221,16 @@ NULL
   # there would read as a pass; so this calls gradient_fn itself (or, when
   # gradient_exact is FALSE, differences the objective) and refuses the 1e10
   # sentinel, a non-finite point, and any non-finite component.
-  # Central differences of the objective, for when gradient_fn is not its
-  # gradient (gradient_exact = FALSE). A side that lands on the 1e10 clamp
-  # would turn the difference into 1e10 / (2h) -- a number that looks like a
-  # measured gradient and is not -- so such a component is NA, and
-  # rel_gradient() then reports NA rather than a fabricated value.
-  fd_gradient <- function(theta) {
-    h <- .Machine$double.eps^(1 / 3) * pmax(abs(theta), 1)
-    vapply(seq_along(theta), function(i) {
-      e <- replace(numeric(length(theta)), i, h[i])
-      up <- objective(theta + e)
-      down <- objective(theta - e)
-      if (up >= 1e10 || down >= 1e10) return(NA_real_)
-      (up - down) / (2 * h[i])
-    }, numeric(1))
+  # The acceptance test needs the unsanitised score. The multiphase gradient
+  # zeroes components it cannot evaluate, which the optimizer needs and this
+  # test must not see: a zero there reads as a pass over a point that was not
+  # scored. Asked only of a gradient_fn that can take the request (it names
+  # `sanitize` or `...`); the single-distribution gradients take neither and
+  # do not sanitise.
+  raw_score_arg <- if (any(c("sanitize", "...") %in% names(formals(gradient_fn)))) {
+    list(sanitize = FALSE)
+  } else {
+    list()
   }
   rel_gradient <- function(theta, value) {
     if (!all(is.finite(theta)) || !is.finite(value) || value >= 1e10) {
@@ -191,15 +238,16 @@ NULL
     }
     g <- if (gradient_exact) {
       tryCatch(
-        gradient_fn(
-          theta = theta, time = time, status = status,
-          time_lower = time_lower, time_upper = time_upper,
-          x = x, weights = weights
-        ),
+        do.call(gradient_fn, c(
+          list(theta = theta, time = time, status = status,
+               time_lower = time_lower, time_upper = time_upper,
+               x = x, weights = weights),
+          raw_score_arg
+        )),
         error = function(e) NULL
       )
     } else {
-      fd_gradient(theta)
+      .hzr_fd_gradient(objective, theta, sign_bounded)
     }
     if (is.null(g) || length(g) != length(theta) || !all(is.finite(g))) {
       return(NA_real_)

@@ -10,8 +10,8 @@ Native R implementation of the multiphase parametric hazard model of
 Blackstone, Naftel, and Turner (1986), with a focus on behavioral parity,
 transparent numerics, and reproducible validation against the original
 \sQuote{C}/\sQuote{SAS} HAZARD program.  The package fits time-varying hazards
-as an additive sum of parametric \emph{phases} --- early, constant, and late risk
-streams --- each carrying its own covariate effects.
+as an additive sum of parametric \emph{phases} (early, constant, and late risk
+streams), each carrying its own covariate effects.
 }
 \section{The multiphase model}{
 
@@ -74,20 +74,21 @@ table between the SAS/C parameterization and the R arguments.
 
 
 \describe{
-\item{Model fitting}{\code{\link[=hazard]{hazard()}} --- build and fit single- or multiphase
-models; \code{\link[=hzr_phase]{hzr_phase()}} --- specify one phase; \code{\link[=hzr_stepwise]{hzr_stepwise()}} --- forward,
-backward, or bidirectional covariate selection.}
-\item{Prediction}{\code{predict()} on a fitted \code{hazard} object --- survival,
-cumulative hazard, and per-phase decomposed hazard; \code{summary()} ---
+\item{Model fitting}{\code{\link[=hazard]{hazard()}} for building and fitting single- or
+multiphase models; \code{\link[=hzr_phase]{hzr_phase()}} for specifying one phase;
+\code{\link[=hzr_stepwise]{hzr_stepwise()}} for forward, backward, or bidirectional covariate
+selection.}
+\item{Prediction}{\code{predict()} on a fitted \code{hazard} object for survival,
+cumulative hazard, and per-phase decomposed hazard; \code{summary()} for
 coefficient tables with Wald inference.}
-\item{Parametric family}{\code{\link[=hzr_decompos]{hzr_decompos()}} --- the early-phase (G1)
-decomposition \eqn{G(t)}, \eqn{g(t)}, \eqn{h(t)}; \code{\link[=hzr_decompos_g3]{hzr_decompos_g3()}} ---
-the late-phase (G3) intensity; \code{\link[=hzr_phase_cumhaz]{hzr_phase_cumhaz()}} and
-\code{\link[=hzr_phase_hazard]{hzr_phase_hazard()}} --- per-phase \eqn{\Phi(t)} and \eqn{\varphi(t)}.}
-\item{Diagnostics}{\code{\link[=hzr_kaplan]{hzr_kaplan()}}, \code{\link[=hzr_nelson]{hzr_nelson()}} --- nonparametric
-references; \code{\link[=hzr_gof]{hzr_gof()}} --- goodness of fit; \code{\link[=hzr_calibrate]{hzr_calibrate()}},
-\code{\link[=hzr_deciles]{hzr_deciles()}} --- calibration; \code{\link[=hzr_bootstrap]{hzr_bootstrap()}} --- resampling CIs;
-\code{\link[=hzr_competing_risks]{hzr_competing_risks()}} --- cumulative incidence.}
+\item{Parametric family}{\code{\link[=hzr_decompos]{hzr_decompos()}} for the early-phase (G1)
+decomposition \eqn{G(t)}, \eqn{g(t)}, \eqn{h(t)}; \code{\link[=hzr_decompos_g3]{hzr_decompos_g3()}}
+for the late-phase (G3) intensity; \code{\link[=hzr_phase_cumhaz]{hzr_phase_cumhaz()}} and
+\code{\link[=hzr_phase_hazard]{hzr_phase_hazard()}} for per-phase \eqn{\Phi(t)} and \eqn{\varphi(t)}.}
+\item{Diagnostics}{\code{\link[=hzr_kaplan]{hzr_kaplan()}}, \code{\link[=hzr_nelson]{hzr_nelson()}} for nonparametric
+references; \code{\link[=hzr_gof]{hzr_gof()}} for goodness of fit; \code{\link[=hzr_calibrate]{hzr_calibrate()}},
+\code{\link[=hzr_deciles]{hzr_deciles()}} for calibration; \code{\link[=hzr_bootstrap]{hzr_bootstrap()}} for resampling CIs;
+\code{\link[=hzr_competing_risks]{hzr_competing_risks()}} for cumulative incidence.}
 }
 }
 

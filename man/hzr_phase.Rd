@@ -21,7 +21,7 @@ hzr_phase(
 \method{print}{hzr_phase}(x, ...)
 }
 \arguments{
-\item{type}{Character; the phase's temporal shape --- one of \code{"cdf"}
+\item{type}{Character; the phase's temporal shape, one of \code{"cdf"}
 (early resolving risk), \code{"hazard"} (accumulating G1 aging risk), \code{"g3"}
 (late rising risk, the original C/SAS late phase), or \code{"constant"} (flat
 background rate).  See the \strong{Phase types} section for what each means and
@@ -112,22 +112,22 @@ clinical model combines an \emph{early}, a \emph{constant}, and a \emph{late} ph
 the total hazard can fall, level off, and rise again.
 
 \describe{
-\item{\code{"cdf"} --- early, resolving risk}{Named for the \strong{c}umulative
+\item{\code{"cdf"}: early, resolving risk}{Named for the \strong{c}umulative
 \strong{d}istribution \strong{f}unction: the phase contributes \eqn{\Phi(t) = G(t)},
 the bounded CDF of the temporal decomposition (\eqn{0} at \eqn{t = 0},
 rising to a ceiling of \eqn{1}).  Because it saturates, the \emph{hazard} it
-adds, \eqn{\mu\,g(t)}, peaks early and then decays toward zero --- the
+adds, \eqn{\mu\,g(t)}, peaks early and then decays toward zero (the
 signature of a one-time insult that patients either succumb to or survive
-past, e.g. peri-operative mortality.  Shape set by \code{t_half}, \code{nu}, \code{m}.
+past, e.g. peri-operative mortality).  Shape set by \code{t_half}, \code{nu}, \code{m}.
 SAS/C equivalent: the Early (G1) phase.}
-\item{\code{"hazard"} --- accumulating aging risk (G1 family)}{Named because the
+\item{\code{"hazard"}: accumulating aging risk (G1 family)}{Named because the
 phase contributes a \strong{cumulative hazard} built from the same G1 family:
 \eqn{\Phi(t) = -\log(1 - G(t))}, which is unbounded and monotone
 increasing.  Its hazard \eqn{\mu\,h(t)} rises without leveling off, so it
 models risk that grows as subjects age.  This is an alternative late-risk
 form derived from G1; for the original SAS/C late phase prefer \code{"g3"}.
 Shape set by \code{t_half}, \code{nu}, \code{m}.}
-\item{\code{"g3"} --- late, rising risk (original C/SAS late phase)}{Named for
+\item{\code{"g3"}: late, rising risk (original C/SAS late phase)}{Named for
 the \strong{G3} (third) decomposition family used by the original HAZARD
 program for the late phase.  It contributes \eqn{\Phi(t) = G_3(t)} from
 \code{\link[=hzr_decompos_g3]{hzr_decompos_g3()}}, an unbounded intensity with its own four-parameter
@@ -136,11 +136,11 @@ G1-derived \code{"hazard"} form for capturing accelerating late mortality
 (e.g. structural valve deterioration years after surgery).  Use this when
 reproducing classic three-phase HAZARD models.  SAS/C equivalent: the
 Late (G3) phase.}
-\item{\code{"constant"} --- flat background rate}{A time-invariant hazard:
+\item{\code{"constant"}: flat background rate}{A time-invariant hazard:
 \eqn{\Phi(t) = t}, so the added hazard \eqn{\mu} is constant (the
 exponential model).  It represents the steady, ongoing risk present at all
 follow-up times, independent of how long ago the time origin was.  Takes
-no shape parameters --- only its scale \eqn{\mu} (and any covariates) is
+no shape parameters; only its scale \eqn{\mu} (and any covariates) is
 estimated.  SAS/C equivalent: the Constant (G2) phase.}
 }
 
