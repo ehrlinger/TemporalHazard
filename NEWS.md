@@ -157,6 +157,25 @@
 
 ## Bug fixes
 
+* **`hzr_stepwise()` now tests an entering candidate on its own
+  coefficient.** The Wald criterion, and the Wald fallback the score
+  criterion uses for a candidate it cannot score, looked the new coefficient
+  up by the variable's bare name. `model.matrix()` names a logical `flag`'s
+  column `flagTRUE`, so when a factor already in the model had a dummy
+  column named `flag` (a factor `fla` with level `g`), the step tested that
+  dummy instead: a p-value for the wrong coefficient, with no error and no
+  warning. On a simulated example the screen reported p = 0.16 for a
+  candidate whose own p-value was below 1e-29, and did not enter it. The
+  candidate is now found as the design-matrix column its refit added, the
+  rule the score criterion already used. Single-distribution and multiphase
+  fits were both affected.
+
+  Single-distribution fits also now accept the one-column terms multiphase
+  fits already did. A logical, two-level factor or character candidate used
+  to stop under `criterion = "wald"` with "not found in the design matrix",
+  although the score criterion's refusal of such a column names
+  `criterion = "wald"` as the way to test it. It is now tested.
+
 * **`predict(newdata = )` on a multiphase fit now codes a phase formula's
   factors as the fit did.** It rebuilt a phase's design with a bare
   `model.matrix()` at `newdata`, with no stored levels or contrasts, so a
