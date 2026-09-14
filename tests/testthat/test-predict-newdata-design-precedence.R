@@ -266,16 +266,19 @@ test_that("a legacy formula calling the user's own function is not rebuilt", {
 })
 
 test_that("a legacy formula of R's design functions and literals is rebuilt", {
-  # splines::ns(), I() and `>` are R's own and 50 is written into the
-  # formula, so the design is rebuilt and the legacy fit answers as the
-  # same fit with its design (a pkg::fn term was refused by review 2's rule).
-  w <- hazard(survival::Surv(int_dead, dead) ~ splines::ns(age, df = 2) +
-                I(age > 50),
+  # splines::ns(), factor(), c(), I() and `>` are R's own, and the knots,
+  # levels and cutoff are written into the formula, so the design is rebuilt
+  # and the legacy fit answers as the same fit with its design (a pkg::fn
+  # term was refused by review 2's rule, and c() by review 4's).
+  w <- hazard(survival::Surv(int_dead, dead) ~
+                splines::ns(age, knots = c(40, 60)) +
+                factor(grp, levels = c("young", "old")) + I(age > 50),
               data = .dp_avc, dist = "weibull",
-              theta = c(mu = 0.01, nu = 0.5, 0.1, 0.2, 0.3))
+              theta = c(mu = 0.01, nu = 0.5, 0.1, 0.2, 0.3, 0.4, 0.5))
   leg <- w
   leg$data$x_design <- NULL
-  nd <- data.frame(time = 2, age = c(40, 60), junk = 1)
+  nd <- data.frame(time = 2, age = c(40, 60), grp = c("young", "old"),
+                   junk = 1)
   got <- unname(predict(leg, type = "cumulative_hazard", newdata = nd))
   expect_identical(
     got, unname(predict(w, type = "cumulative_hazard", newdata = nd))
@@ -309,6 +312,28 @@ test_that("a legacy formula constant read from the workspace is not trusted", {
   a <- c(40, (50 + k2) / 2)   # the second age lies between the cutoffs
   nd <- data.frame(time = 2, age = a, `I(age > k)TRUE` = c(0, 1),
                    check.names = FALSE)
+  expect_equal(unname(predict(leg, type = "cumulative_hazard", newdata = nd)),
+               .dp_weibull(0.004 * a + 0.3 * c(0, 1), 2), tolerance = 1e-12)
+})
+
+test_that("a function object pasted into a legacy formula is not trusted", {
+  # bquote() can put a function itself, not its name, into a formula.  The
+  # column name shows the function's code but not what its body reads, so
+  # a rebuild matched the fitted design after `k` moved and predicted with
+  # the new cutoff (#301 fifth review).
+  k2 <- (50 + min(.dp_avc$age[.dp_avc$age > 50])) / 2
+  k <- 50
+  thr <- function(x) x > k
+  f <- eval(bquote(survival::Surv(int_dead, dead) ~ age + I(.(thr)(age))))
+  w <- hazard(f, data = .dp_avc, dist = "weibull",
+              theta = c(mu = 0.01, nu = 0.5, 0.004, 0.3))
+  leg <- w
+  leg$data$x_design <- NULL
+  k <- k2
+  col <- colnames(leg$data$x)[2L]
+  a <- c(40, (50 + k2) / 2)   # the second age lies between the cutoffs
+  nd <- data.frame(time = 2, age = a, x = c(0, 1))
+  names(nd)[3] <- col
   expect_equal(unname(predict(leg, type = "cumulative_hazard", newdata = nd)),
                .dp_weibull(0.004 * a + 0.3 * c(0, 1), 2), tolerance = 1e-12)
 })

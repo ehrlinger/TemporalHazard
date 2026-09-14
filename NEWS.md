@@ -73,8 +73,9 @@
   computed in the call (`as.formula(...)`), which would be re-run; and for
   a formula that uses anything but the data's columns and a short list of
   R's own design functions (arithmetic and comparisons, `I()`, `log()`,
-  `exp()`, `sqrt()`, `abs()`, `pmin()`, `pmax()`, `factor()`, `relevel()`,
-  `scale()`, `poly()`, `splines::ns()` and `splines::bs()`). A constant
+  `exp()`, `sqrt()`, `abs()`, `pmin()`, `pmax()`, `c()`, `factor()`,
+  `relevel()`, `scale()`, `poly()`, `splines::ns()` and `splines::bs()`).
+  A constant
   such as `k` in `I(age > k)`, a function of the user's, or even `pi`
   could have changed since the fit without changing the fitted rows, so it
   is not trusted; a number written into the formula, as in

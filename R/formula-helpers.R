@@ -550,7 +550,7 @@
 .hzr_rebuild_functions <- list(
   base = c("+", "-", "*", "/", "^", ":", "%in%", "(", "==", "!=", "<", ">",
            "<=", ">=", "&", "|", "!", "I", "log", "log2", "log10", "log1p",
-           "exp", "expm1", "sqrt", "abs", "pmin", "pmax", "factor",
+           "exp", "expm1", "sqrt", "abs", "pmin", "pmax", "c", "factor",
            "as.factor", "as.numeric", "scale"),
   stats = c("poly", "relevel"),
   splines = c("ns", "bs")
@@ -605,7 +605,8 @@
 #' Like `.hzr_mask_symbols()`, but keeps the names called as functions
 #' (`thr` in `thr(age)`), which that helper leaves out, apart from the
 #' values. The operand after `$` or `@` is never looked up. A `pkg::fn`
-#' call adds the function name `"pkg::fn"`.
+#' call adds the function name `"pkg::fn"`, and an embedded object that is
+#' neither a name nor a constant adds `"<object>"`.
 #'
 #' @param e A language object, symbol or constant.
 #' @return A list of two character vectors, `values` and `functions`.
@@ -616,7 +617,12 @@
     return(list(values = as.character(e), functions = character(0)))
   }
   if (!is.call(e)) {
-    return(list(values = character(0), functions = character(0)))
+    # A constant looks nothing up. Any other object put into the formula
+    # (a function pasted in by bquote(), an environment) is not a name, so
+    # nothing here can vouch for what it reads: it is reported as a
+    # function no list holds, and the formula is not closed.
+    embedded <- if (is.atomic(e) || is.null(e)) character(0) else "<object>"
+    return(list(values = character(0), functions = embedded))
   }
   head <- e[[1L]]
   parts <- as.list(e)[-1L]
