@@ -287,6 +287,27 @@
   other candidate untested; the multiphase score path declined it as
   `not_expandable`.
 
+* **Backward `hzr_stepwise()` no longer stops when `theta` is named after
+  the covariates** (#304). A single-distribution fit started from
+  `theta = c(mu = 0.1, nu = 1, age = 0, mal = 0)` failed its first drop
+  test with "Unknown coefficient name(s): 'beta1'". The step names a
+  covariate's coefficient by its position (`beta1`, `beta2`, ...), while
+  the Wald test took the names from `theta` whenever all of them were set.
+  Unnamed and `beta`-named starting values ran, so the naming a user is
+  most likely to write was the one that failed. The Wald test now names
+  single-distribution coefficients by position, whatever `theta` is called.
+  That also matters for correctness: had the names been matched, a
+  covariate called `nu` would have been tested as the shape parameter.
+  A fit whose `theta` holds only the shape parameters (`c(mu = 0.2, nu = 1)`
+  for `~ gb + z`) fits without its covariates, and position would then test
+  `mu` and `nu` as `gb` and `z`. An unnamed `c(0.2, 1)` already did so,
+  reporting both covariates as highly significant. The Wald test now stops
+  with an error when `theta` does not hold one value per shape parameter and
+  per covariate column. It also refuses a `time_windows` fit by name. There
+  each covariate has a coefficient per window, and `beta1` tested only the
+  first window's, while `beta2` could be another window's coefficient of the
+  same covariate, a p-value for the wrong coefficient with no warning.
+
 * **`hzr_stepwise()` now tests an entering candidate on its own
   coefficient** (#305). The Wald criterion, and the Wald fallback the score
   criterion uses for a candidate it cannot score, looked the new coefficient
