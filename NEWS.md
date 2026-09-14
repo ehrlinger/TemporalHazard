@@ -241,6 +241,24 @@
 
 ## Bug fixes
 
+* **`predict(newdata = )` on a multiphase fit saved before this version no
+  longer gets `scale()`, `poly()` or `ns()` in a phase formula silently wrong
+  (#307).** Such a fit stored no phase design, so the phase was rebuilt from
+  `newdata` alone, and those terms took their centering, scaling or basis
+  from `newdata`'s own rows instead of the fitting data. At all of the
+  fitting rows that reproduces the fit; at any other `newdata` it does not.
+  At three of the fitting rows, `scale(age)` was off by up to 96%,
+  `poly(age, 2)` by a factor of 3e5, and `ns(age, df = 3)` by 66%. One row
+  of a `scale(age)` phase came back as a zero-length prediction. A fit saved
+  by 1.1.0 or later kept its fitting data, and its phase design is now
+  rebuilt from that data exactly as the fit built it. A fit saved by 1.0.3
+  or earlier kept neither, so such a term is refused with advice to refit,
+  as is one whose columns come from `newdata` (`cut(age, 3)`, or a
+  `factor()` with a fitted level missing from `newdata`); row-wise terms
+  (`log(age)`, `I(age > cutoff)`, a `factor()` with all its levels present)
+  still predict, and a missing value in `newdata` gives an NA row. A
+  current fit was not affected.
+
 * **`predict()` on a multiphase fit now returns an unnamed vector.** For
   `type = "cumulative_hazard"`, `"survival"` and `"hazard"`, every element
   was named after a parameter -- `"constant.log_mu"`, say, on each row --
