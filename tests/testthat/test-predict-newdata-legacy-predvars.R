@@ -117,6 +117,27 @@ test_that("a data-dependent term is refused whatever newdata's row order", {
   }
 })
 
+test_that("each probe row catches what the other cannot", {
+  data(avc, package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc)
+  # One row: a copy of it gives two identical rows, so scale() is NaN either
+  # way and only the moved row shows the dependence.
+  lf1 <- legacy_fit_on("scale(age)", d, keep_frame = FALSE)
+  expect_error(
+    predict(lf1$fit, newdata = rows_of(d, 50L), type = "cumulative_hazard"),
+    "refit"
+  )
+  # The moved row is a new factor level (inc_surg 5 becomes 11), so that
+  # probe is skipped and only the copy can catch scale().
+  lf2 <- legacy_fit_on("scale(age) + factor(inc_surg)", d, keep_frame = FALSE)
+  lv <- sort(unique(d$inc_surg), decreasing = TRUE)
+  rows <- vapply(lv, function(v) which(d$inc_surg == v)[1], integer(1))
+  expect_error(
+    predict(lf2$fit, newdata = rows_of(d, rows), type = "cumulative_hazard"),
+    "refit"
+  )
+})
+
 test_that("a legacy phase whose factor columns come from newdata is refused", {
   # cut(age, 3) takes its bins from newdata's range, so the rebuilt columns
   # are not the fitted ones.
