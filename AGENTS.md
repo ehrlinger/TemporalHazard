@@ -118,18 +118,45 @@ on `main`, not before it lands.
 The rules live in the repository **ruleset** `protect main`, not in the legacy branch-protection
 settings — the two are separate systems, and the `branches/main/protection` API returns 404 here
 even though `main` is protected. Alongside the required checks the ruleset blocks deletion and
-force-push, requires a pull request, auto-requests Copilot review, and requires **one approving
-review**.
+force-push, requires a pull request and auto-requests Copilot review. It does **not** require an
+approving review. Verified 2026-09-14:
 
-That last one is what actually blocks a merge, and it is easy to miss: a PR with all eight
-required checks green still sits at `mergeStateStatus: BLOCKED` and
-`reviewDecision: REVIEW_REQUIRED` until someone approves it. Copilot does not satisfy it — its
-reviews come back `COMMENTED`, never `APPROVED`.
+```bash
+gh api repos/ehrlinger/TemporalHazard/rulesets/15010037 \
+  --jq '.rules[] | select(.type == "pull_request") | .parameters.required_approving_review_count'
+# 0
+gh api repos/ehrlinger/TemporalHazard/rules/branches/main \
+  --jq '.[] | select(.type == "pull_request") | .parameters.required_approving_review_count'
+# 0
+gh api repos/ehrlinger/TemporalHazard/rulesets/15010037 \
+  --jq '.rules[] | select(.type == "required_status_checks") | .parameters.required_status_checks | length'
+# 8
+```
+
+Run the second command as well as the first. `rules/branches/main` returns the *effective* rules
+on the branch, combined across every ruleset that targets it, so it is the one that answers what
+a merge into `main` actually needs. The third confirms the table's count of eight.
+
+So the eight required checks are the whole gate: **a PR merges once they pass.** PR #295, at head
+`d3a6622` with every check green and no approving review, read `mergeStateStatus: CLEAN`,
+`mergeable: MERGEABLE` and an empty `reviewDecision`, and it then merged with a single
+`COMMENTED` review. Copilot's review is auto-requested, but it comes back `COMMENTED`, never
+`APPROVED`, and nothing waits for it.
+
+An earlier version of this section said the ruleset required one approving review, and that a
+green PR sat at `mergeStateStatus: BLOCKED` and `reviewDecision: REVIEW_REQUIRED` until someone
+approved it. The ruleset's `updated_at` is 2026-09-04, the day after the bypass check below was
+stamped, and the text was not updated with it.
+
+One parameter of the same `pull_request` rule is not explained here:
+`require_extra_approval_for_unattributed_changes` is `true`. What GitHub counts as an
+unattributed change has not been checked. It did not block #295. Do not read it as an approval
+requirement, or as the absence of one, until someone has checked.
 
 ⚠️ **The maintainer can bypass all of it.** An earlier version of this paragraph said there were
 no bypass actors and the rules therefore applied to the maintainer too. That was wrong on both
 halves, and it mattered, because "nobody can bypass this" is the sentence that makes *branch,
-PR, stop* feel non-negotiable. Verified 2026-09-03:
+PR, stop* feel non-negotiable. Verified 2026-09-03, and unchanged on 2026-09-14:
 
 ```bash
 gh api repos/ehrlinger/TemporalHazard/rulesets/15010037 \
@@ -146,9 +173,13 @@ write, so `5` is one of those four and which one is not checkable from here. Nam
 guess wearing the costume of a fact, which is the house failure mode. `current_user_can_bypass`
 answers the question that actually matters and is evaluated for whoever holds the token.
 
-It is not theoretical: PR #222 merged with **zero** approving reviews. So the rule is a matter of
+It is not theoretical: PR #222 merged on 2026-09-03 with **zero** approving reviews, a day
+before the ruleset's last edit. With no approval rule now there is not even a rule to bypass: anyone with
+write access can merge a PR the moment its checks go green. So the rule is a matter of
 practice, not of enforcement — which is the stronger reason to follow it, not a licence to skip
-it. **An agent still never merges and never bypasses**; the maintainer decides when to.
+it. **An agent never merges and never bypasses**, and that matters more now than when approval
+was a backstop: the maintainer's decision to merge is the only human review a PR is guaranteed
+to get.
 
 Required checks are *not* strict: a PR is not forced to re-run the matrix every time `main`
 moves. That is a deliberate trade against a roughly 45-minute Windows job, and it means a branch
