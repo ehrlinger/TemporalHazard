@@ -79,6 +79,106 @@ test_that("a legacy fit whose kept data no longer reproduces it is not trusted",
   )
 })
 
+legacy_fit_on <- function(term, d, keep_frame) {
+  fit <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes",
+                        formula = stats::as.formula(paste("~", term))),
+      constant = hzr_phase("constant")
+    ),
+    fit = TRUE
+  ))
+  current <- fit
+  fit$fit$x_design <- NULL
+  if (!keep_frame) fit$data$frame <- NULL
+  list(fit = fit, current = current)
+}
+
+rows_of <- function(d, rows) {
+  data.frame(time = d$int_dead[rows], age = d$age[rows],
+             opmos = d$opmos[rows], inc_surg = d$inc_surg[rows])
+}
+
+test_that("a data-dependent term is refused whatever newdata's row order", {
+  # The probe row moves every numeric value; if that puts it outside another
+  # term's range (opmos beyond cut()'s last break), the probe drops out, and
+  # scale() must still be caught by the second probe.
+  data(avc, package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc)
+  lf <- legacy_fit_on("scale(age) + cut(opmos, c(0, 50, 100, 200))", d,
+                      keep_frame = FALSE)
+  i <- which(d$opmos > 100 & d$opmos * 2 + 1 > 200)[1]
+  for (rows in list(c(i, 50, 200), c(200, 50, i))) {
+    expect_error(
+      predict(lf$fit, newdata = rows_of(d, rows), type = "cumulative_hazard"),
+      "refit"
+    )
+  }
+})
+
+test_that("a legacy phase whose factor columns come from newdata is refused", {
+  # cut(age, 3) takes its bins from newdata's range, so the rebuilt columns
+  # are not the fitted ones.
+  data(avc, package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc)
+  lf <- legacy_fit_on("cut(age, 3)", d, keep_frame = FALSE)
+  expect_error(
+    predict(lf$fit, newdata = rows_of(d, c(1, 50, 200)),
+            type = "cumulative_hazard"),
+    "refit"
+  )
+})
+
+test_that("a legacy factor() phase predicts with all its levels and refuses without", {
+  data(avc, package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc)
+  lf <- legacy_fit_on("factor(inc_surg)", d, keep_frame = FALSE)
+  fitted <- predict(lf$current, type = "cumulative_hazard")
+  lv <- sort(unique(d$inc_surg), decreasing = TRUE)
+  # The first row at the top level: the moved probe value is a new level.
+  rows <- vapply(lv, function(v) which(d$inc_surg == v)[1], integer(1))
+  got <- predict(lf$fit, newdata = rows_of(d, rows), type = "cumulative_hazard")
+  expect_length(got, length(rows))
+  expect_equal(got / fitted[rows], rep(1, length(rows)),
+               tolerance = 1e-8, ignore_attr = TRUE)
+  expect_error(
+    predict(lf$fit, newdata = rows_of(d, rows[1:3]),
+            type = "cumulative_hazard"),
+    "refit"
+  )
+})
+
+test_that("a missing value in newdata gives an NA row for a legacy fit", {
+  data(avc, package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc)
+  lf <- legacy_fit_on("log(age)", d, keep_frame = FALSE)
+  fitted <- predict(lf$current, type = "cumulative_hazard")
+  nd <- rows_of(d, c(1, 50, 200))
+  nd$age[2] <- NA
+  got <- predict(lf$fit, newdata = nd, type = "cumulative_hazard")
+  expect_length(got, 3L)
+  expect_true(is.na(got[2]))
+  expect_equal(got[c(1, 3)] / fitted[c(1, 200)], c(1, 1),
+               tolerance = 1e-8, ignore_attr = TRUE)
+})
+
+test_that("a legacy fit that dropped a missing row is checked against its data", {
+  # The fit dropped the NA row; its kept data still has it. Untouched, the
+  # rebuilt design matches the fit; altered afterwards, it is not trusted.
+  data(avc, package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc)
+  d$age[5] <- NA
+  lf <- legacy_fit_on("scale(age)", d, keep_frame = TRUE)
+  nd <- rows_of(d, c(1, 50, 200))
+  want <- predict(lf$current, newdata = nd, type = "cumulative_hazard")
+  expect_equal(predict(lf$fit, newdata = nd, type = "cumulative_hazard") / want,
+               rep(1, 3), tolerance = 1e-8, ignore_attr = TRUE)
+  lf$fit$data$frame$age[1] <- lf$fit$data$frame$age[1] + 50
+  expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
+               "refit")
+})
+
 test_that("a legacy fit keeps predicting plain row-wise phase terms", {
   for (keep in c(TRUE, FALSE)) {
     lf <- legacy_fit("log(age)", keep_frame = keep)

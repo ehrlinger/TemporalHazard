@@ -1575,7 +1575,9 @@
 #' with its fitting data (`data$frame`, kept since 1.1.0), is rebuilt from
 #' that data by the fit's own construction (#307). The recovered design is
 #' trusted only if it reproduces the phase's fitted columns: the same names,
-#' and the same values whenever the row counts match.
+#' and, once the rows with a missing value are dropped as the fit dropped
+#' them, the same rows and values. A fit that dropped rows for another
+#' phase's missing values does not match, and is treated as having no data.
 #'
 #' @param object A fitted multiphase `hazard` object.
 #' @param nm Phase name.
@@ -1592,8 +1594,9 @@
   if (is.null(built) || !identical(colnames(built$x), colnames(stored))) {
     return(NULL)
   }
-  if (nrow(built$x) == nrow(stored) &&
-        !isTRUE(all.equal(unname(built$x), unname(stored),
+  x <- built$x[stats::complete.cases(built$x), , drop = FALSE]
+  if (nrow(x) != nrow(stored) ||
+        !isTRUE(all.equal(unname(x), unname(stored),
                           check.attributes = FALSE))) {
     return(NULL)
   }
@@ -1606,42 +1609,61 @@
 #' For a fit saved without its phase design or its fitting data, a term such
 #' as scale(), poly() or ns() cannot be rebuilt: its centering, scaling or
 #' basis came from the fitting data, and rebuilding it from `newdata` takes
-#' them from `newdata`'s rows instead, silently (#307). Such a term changes
-#' the existing rows when a row is appended; a row-wise term (log(age), a
-#' factor, I(age > cutoff)) does not. So `newdata` is rebuilt with one more
-#' row, its numeric values moved, and any column whose existing rows change
-#' is refused, as is a design that loses rows (scale() of one row).
+#' them from `newdata`'s rows instead, silently (#307).
 #'
-#' A design with more rows than `newdata`, or one that cannot be built for
-#' the extra row, holds row-level values from outside `data` instead; that is
-#' left to `.hzr_check_design_rows()` and `.hzr_check_equivariant()`, whose
-#' message names it.
+#' Two checks. The rebuild must give the phase's fitted columns: a factor()
+#' missing a level, or cut() bins drawn from `newdata`'s range, give others.
+#' And a data-dependent term changes the existing rows when a row is
+#' appended, where a row-wise term (log(age), a factor, I(age > cutoff))
+#' does not. Two probe rows are tried: row 1 with its numeric values moved,
+#' and a plain copy of row 1. A probe that cannot be built, loses its row
+#' (a moved value outside another term's range) or changes the columns (a
+#' moved value that is a new factor level) says nothing, so the copy, which
+#' always stays in range, still runs.
+#'
+#' A design with more rows than `newdata`, or one that no probe can extend,
+#' holds row-level values from outside `data` instead; that is left to
+#' `.hzr_check_design_rows()` and `.hzr_check_equivariant()`, whose message
+#' names it.
 #'
 #' @param build Function of a data frame of new rows, returning the model
 #'   matrix with its `assign` attribute.
 #' @param newdata Data frame of new rows.
 #' @param labels The terms' labels, indexed by `assign`.
 #' @param where Text naming the design, for messages.
+#' @param cols The phase's fitted column names.
 #' @return `NULL`, invisibly; stops on a row-dependent term.
 #' @keywords internal
 #' @noRd
-.hzr_refuse_row_dependent <- function(build, newdata, labels, where) {
+.hzr_refuse_row_dependent <- function(build, newdata, labels, where, cols) {
+  refuse <- function(term, what) {
+    stop("term ", paste0("'", term, "'", collapse = ", "), " of ", where,
+         " ", what, ", and this fit was saved without its phase design or ",
+         "the data it was fitted to, so predict(newdata =) cannot rebuild ",
+         "it for new rows; refit the model with this version of ",
+         "TemporalHazard.", call. = FALSE)
+  }
   a <- build(newdata)
   n <- nrow(newdata)
   if (nrow(a) > n) {
     return(invisible(NULL))
   }
-  extra <- newdata[1L, , drop = FALSE]
-  for (v in names(extra)) {
-    if (is.numeric(extra[[v]])) extra[[v]] <- extra[[v]] * 2 + 1
+  if (nrow(a) < n || !identical(colnames(a), cols)) {
+    refuse(labels, paste0("does not rebuild the fitted columns (",
+                          paste0("'", cols, "'", collapse = ", "),
+                          ") from newdata: its levels or bins come from ",
+                          "the data"))
   }
-  b <- tryCatch(build(rbind(newdata, extra)), error = function(e) NULL)
-  if (nrow(a) == n && (is.null(b) || nrow(b) != n + 1L)) {
-    return(invisible(NULL))
+  moved <- newdata[1L, , drop = FALSE]
+  for (v in names(moved)) {
+    if (is.numeric(moved[[v]])) moved[[v]] <- moved[[v]] * 2 + 1
   }
-  if (nrow(a) < n) {
-    bad <- seq_len(ncol(a))
-  } else {
+  for (extra in list(moved, newdata[1L, , drop = FALSE])) {
+    b <- tryCatch(build(rbind(newdata, extra)), error = function(e) NULL)
+    if (is.null(b) || nrow(b) != n + 1L ||
+          !identical(colnames(b), colnames(a))) {
+      next
+    }
     b <- b[seq_len(n), , drop = FALSE]
     tol <- vapply(seq_len(ncol(a)), function(j) {
       f <- a[is.finite(a[, j]), j]
@@ -1655,15 +1677,10 @@
     same[is.na(a) & is.na(b)] <- TRUE
     same[is.na(same)] <- FALSE
     bad <- which(colSums(!same) > 0L)
-  }
-  if (length(bad) > 0L) {
-    term <- unique(labels[attr(a, "assign")[bad]])
-    stop("term ", paste0("'", term, "'", collapse = ", "), " of ", where,
-         " depends on the data the model was fitted to (its centering, ",
-         "scaling or basis), and this fit was saved without its phase ",
-         "design or that data, so predict(newdata =) cannot rebuild it for ",
-         "new rows; refit the model with this version of TemporalHazard.",
-         call. = FALSE)
+    if (length(bad) > 0L) {
+      refuse(unique(labels[attr(a, "assign")[bad]]),
+             "depends on the data the model was fitted to (its centering, scaling or basis)")
+    }
   }
   invisible(NULL)
 }
@@ -1786,13 +1803,17 @@
   if (is.null(design)) {
     build <- function(x) {
       nd <- .hzr_newdata_frame(x, vars)
-      m0 <- stats::model.matrix(ph$formula, data = nd)
+      # na.pass, as the stored-design rebuild: a missing value is an NA row,
+      # not a dropped one.
+      mf <- stats::model.frame(ph$formula, data = nd,
+                               na.action = stats::na.pass)
+      m0 <- stats::model.matrix(ph$formula, data = mf)
       m <- m0[, -1L, drop = FALSE]
       attr(m, "assign") <- attr(m0, "assign")[-1L]
       m
     }
     # Nothing to take a centering or basis from: refuse such a term (#307).
-    .hzr_refuse_row_dependent(build, newdata, labels, where)
+    .hzr_refuse_row_dependent(build, newdata, labels, where, cols)
     return(.hzr_check_equivariant(build, newdata, labels, where))
   }
   build <- function(x) {
