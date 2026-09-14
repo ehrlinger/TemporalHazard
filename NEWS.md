@@ -241,6 +241,15 @@
 
 ## Bug fixes
 
+* **`predict(newdata = )` on a model with no covariates now ignores
+  `newdata`'s unused columns**, as it already did for models with
+  covariates. For a `Surv(time, status) ~ 1` fit, or a vector-interface fit
+  without `x`, every column other than `time` was taken as a covariate.
+  The Weibull, log-logistic and log-normal fits then stopped with an error.
+  The exponential fit, whose single shape parameter was used as the
+  coefficient, returned `age` times the log rate as the linear predictor
+  with no error: -280 for `age = 70`, where the answer is 0 (#300).
+
 * **`predict(newdata = )` no longer lets a design column override the
   formula variable it contradicts.** `newdata` may give a factor as its
   level (`grp = "old"`) or as the fit's design column (`grpyoung = 1`).
