@@ -252,6 +252,15 @@
   single-distribution coefficients by position, whatever `theta` is called.
   That also matters for correctness: had the names been matched, a
   covariate called `nu` would have been tested as the shape parameter.
+  A fit whose `theta` holds only the shape parameters (`c(mu = 0.2, nu = 1)`
+  for `~ gb + z`) fits without its covariates, and position would then test
+  `mu` and `nu` as `gb` and `z`. An unnamed `c(0.2, 1)` already did so,
+  reporting both covariates as highly significant. The Wald test now stops
+  with an error when `theta` does not hold one value per shape parameter and
+  per covariate column. It also refuses a `time_windows` fit by name. There
+  each covariate has a coefficient per window, and `beta1` tested only the
+  first window's, while `beta2` could be another window's coefficient of the
+  same covariate, a p-value for the wrong coefficient with no warning.
 
 * **`hzr_stepwise()` now tests an entering candidate on its own
   coefficient** (#305). The Wald criterion, and the Wald fallback the score

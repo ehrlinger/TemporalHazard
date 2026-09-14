@@ -70,6 +70,48 @@ test_that("a covariate named like a shape parameter is tested as the covariate",
   expect_identical(step$variable, "nu")
 })
 
+test_that("a theta with no covariate coefficients is refused, not tested", {
+  # hazard() fits a shape-only theta and ignores the covariates; naming by
+  # position would then test mu and nu as if they were gb and z.
+  d <- bcn_data()
+  for (th in list(c(mu = 0.2, nu = 1), c(0.2, 1))) {
+    fit <- suppressWarnings(bcn_fit(survival::Surv(time, status) ~ gb + z,
+                                    d, th))
+    expect_length(stats::coef(fit), 2L)
+    expect_error(
+      .hzr_stepwise_backward_step(fit, data = d, criterion = "wald"),
+      "theta has 2 value\\(s\\), but a weibull fit with 2 covariate"
+    )
+  }
+  # The likelihood ignores a shape-count override, so the guard must too.
+  fit <- suppressWarnings(hazard(
+    survival::Surv(time, status) ~ gb + z, data = d, dist = "weibull",
+    theta = c(0.2, 1), control = list(shape_param_count = 0), fit = TRUE
+  ))
+  expect_error(
+    .hzr_stepwise_backward_step(fit, data = d, criterion = "wald"),
+    "theta has 2 value\\(s\\), but a weibull fit with 2 covariate"
+  )
+})
+
+test_that("a time_windows fit is refused by name", {
+  # Each covariate has a coefficient per window; `beta1` would test only the
+  # first window's, and `beta2` another window's coefficient of the same one.
+  d <- bcn_data()
+  fit <- suppressWarnings(hazard(
+    survival::Surv(time, status) ~ z + gb, data = d, dist = "weibull",
+    theta = c(0.1, 1, 0, 0, 0, 0), time_windows = 5, fit = TRUE
+  ))
+  expect_length(stats::coef(fit), 6L)
+  expect_error(
+    .hzr_stepwise_backward_step(fit, data = d, criterion = "wald"),
+    "do not support `time_windows` fits"
+  )
+})
+
+# The refit's start is c(theta_old, 0), whose blank last name already sent the
+# old lookup to positional names, so this guards the positional mapping on the
+# forward path rather than reproducing #304.
 test_that("forward Wald from a covariate-named theta tests the entered column", {
   d <- bcn_data()
   base <- bcn_fit(survival::Surv(time, status) ~ z, d,
