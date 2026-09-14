@@ -1627,14 +1627,31 @@
          call. = FALSE)
   }
 
+  # The same constants/outside-data rule as the global rebuild
+  # (.hzr_newdata_frame()), and the same row backstop.
+  where <- paste0("phase '", nm, "'")
+  n_fit <- .hzr_fit_rows(object)
+
   # A fit made before the phase design was stored: rebuild as it did then.
+  # When it kept its data it knows its data variables, so the rest can be
+  # classified; without it only the backstop applies.
   if (is.null(design)) {
-    return(stats::model.matrix(ph$formula, data = newdata)[, -1L, drop = FALSE])
+    nd <- if (known_vars) {
+      .hzr_newdata_frame(stats::terms(ph$formula), newdata, vars, n_fit, where)
+    } else {
+      newdata
+    }
+    mm <- stats::model.matrix(ph$formula, data = nd)[, -1L, drop = FALSE]
+    .hzr_check_design_rows(mm, newdata, where)
+    return(mm)
   }
-  mf <- stats::model.frame(design$terms, data = newdata,
+  nd <- .hzr_newdata_frame(design$terms, newdata, design$data_vars, n_fit,
+                           where)
+  mf <- stats::model.frame(design$terms, data = nd,
                            xlev = design$xlevels, na.action = stats::na.pass)
   mm <- stats::model.matrix(design$terms, data = mf,
                             contrasts.arg = design$contrasts)
+  .hzr_check_design_rows(mm, newdata, where)
   mm[, cols, drop = FALSE]
 }
 
@@ -1714,7 +1731,10 @@
         terms = terms_j,
         xlevels = stats::.getXlevels(terms_j, mf_j),
         contrasts = attr(mm_j, "contrasts"),
-        data_vars = intersect(all.vars(terms_j), names(data))
+        # As for the global formula: the name after `$` is never looked up.
+        data_vars = intersect(
+          .hzr_mask_symbols(stats::formula(terms_j)[[2L]]), names(data)
+        )
       )
     } else if (!is.null(x)) {
       # Inherit global design matrix

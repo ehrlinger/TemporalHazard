@@ -94,7 +94,11 @@
       # The formula's variables that were columns of `data`: newdata must
       # supply exactly these. Any other variable (`cutoff` in
       # I(x > cutoff)) comes from the formula's environment.
-      data_vars = intersect(all.vars(x_terms), names(data))
+      # .hzr_mask_symbols(), not all.vars(): the name after `$` is never
+      # looked up, so cfg$time must not make a `time` column required.
+      data_vars = intersect(
+        .hzr_mask_symbols(stats::formula(x_terms)[[2L]]), names(data)
+      )
     )
   }
 
@@ -261,8 +265,14 @@
   }
   phases <- object$fit$phases
   if (is.null(phases)) phases <- object$spec$phases
-  for (ph in phases) {
-    if (!is.null(ph$formula)) used <- c(used, rhs_symbols(ph$formula))
+  for (nm in names(phases)) {
+    # Only a phase the fit built from its own formula evaluates it; one the
+    # fit ignored (a vector-interface fit) cannot misread `time`. The
+    # routing helper decides, as it does for predict().
+    ph <- phases[[nm]]
+    if (!is.null(ph$formula) && !.hzr_phase_inherits_global(object, nm)) {
+      used <- c(used, rhs_symbols(ph$formula))
+    }
   }
   misread <- if (time_based) {
     "time" %in% used
@@ -308,6 +318,94 @@
     return(NULL)
   }
   .hzr_global_design(object, newdata)
+}
+
+
+#' Rows of the data a fit was made on
+#'
+#' @param object A fitted `hazard` object.
+#' @return A single integer: `nrow()` of the stored fitting data when the fit
+#'   kept it, otherwise the length of the fitted times.
+#' @keywords internal
+#' @noRd
+.hzr_fit_rows <- function(object) {
+  if (!is.null(object$data$frame)) {
+    nrow(object$data$frame)
+  } else {
+    length(object$data$time)
+  }
+}
+
+
+#' The newdata frame a formula design is rebuilt from
+#'
+#' Shared by the global and the per-phase rebuild, so the two follow one
+#' rule. A formula variable that is not a fitting-data column is classified
+#' by the length of its value in the formula's environment:
+#'
+#' * One value per fitting row: a covariate taken from outside `data` when
+#'   the model was fitted. It must come from `newdata`, and is refused if
+#'   missing; `model.frame()` would otherwise fill it with the fitting rows.
+#' * Any other length: a formula constant (`cutoff` in `I(age > cutoff)`,
+#'   spline knots). It is taken from the environment, and a same-named
+#'   `newdata` column is dropped so it cannot mask it.
+#'
+#' Fitting-data variables are checked by the callers.
+#'
+#' @param terms The stored terms; their environment is the formula's.
+#' @param newdata Data frame of new rows.
+#' @param data_vars The formula's fitting-data variables.
+#' @param n_fit Number of fitting rows (`.hzr_fit_rows()`).
+#' @param where Text naming the design, for messages.
+#' @return `newdata` without the constants' columns.
+#' @keywords internal
+#' @noRd
+.hzr_newdata_frame <- function(terms, newdata, data_vars, n_fit, where) {
+  f <- stats::formula(terms)
+  others <- setdiff(.hzr_mask_symbols(f[[length(f)]]), data_vars)
+  env <- environment(terms)
+  row_vars <- character(0)
+  constants <- character(0)
+  for (v in others) {
+    val <- get0(v, envir = env)
+    if (is.null(val) || is.function(val)) next
+    if (length(val) == n_fit) {
+      row_vars <- c(row_vars, v)
+    } else {
+      constants <- c(constants, v)
+    }
+  }
+  missing <- setdiff(row_vars, names(newdata))
+  if (length(missing) > 0L) {
+    stop("'newdata' lacks the covariate column(s) ",
+         paste0("'", missing, "'", collapse = ", "), " that ", where,
+         " uses (it was taken from outside `data` when the model was ",
+         "fitted). Supply it as a column of 'newdata'.", call. = FALSE)
+  }
+  newdata[, setdiff(names(newdata), constants), drop = FALSE]
+}
+
+
+#' Refuse a rebuilt design whose rows are not newdata's
+#'
+#' A backstop: a formula variable taken from anywhere but `newdata` (a
+#' fitting-length vector in the environment, say) would give the design the
+#' fitting rows, and every prediction would silently be for the wrong rows.
+#'
+#' @param mm The rebuilt model matrix.
+#' @param newdata Data frame of new rows.
+#' @param where Text naming the design, for messages.
+#' @return `NULL`, invisibly; stops on a row-count mismatch.
+#' @keywords internal
+#' @noRd
+.hzr_check_design_rows <- function(mm, newdata, where) {
+  if (nrow(mm) != nrow(newdata)) {
+    stop("The design rebuilt for ", where, " has ", nrow(mm), " rows for ",
+         nrow(newdata), " row(s) of 'newdata': a formula variable was taken ",
+         "from outside 'newdata'. Supply it as a column of 'newdata'.",
+         call. = FALSE)
+  }
+  invisible(NULL)
 }
 
 
@@ -479,16 +577,15 @@
   if (!is.null(design)) {
     # Formula interface: the same terms, levels and contrasts as the fit, so
     # a factor given as a single label still codes to the fit's columns.
-    # Only the fitting-data variables come from newdata: any other column
-    # is an unused extra, and handing it to model.frame() would let it mask
-    # a formula-environment constant (a `cutoff` column replacing the
-    # `cutoff` in I(age > cutoff)), silently.
-    nd_vars <- newdata[, intersect(names(newdata), design$data_vars),
-                       drop = FALSE]
-    mf <- stats::model.frame(design$terms, data = nd_vars,
+    # The frame is newdata with the formula's constants' columns removed and
+    # its outside-data row covariates required; see .hzr_newdata_frame().
+    nd <- .hzr_newdata_frame(design$terms, newdata, design$data_vars,
+                             .hzr_fit_rows(object), "the model")
+    mf <- stats::model.frame(design$terms, data = nd,
                              xlev = design$xlevels, na.action = stats::na.pass)
     mm <- stats::model.matrix(design$terms, data = mf,
                               contrasts.arg = design$contrasts)
+    .hzr_check_design_rows(mm, newdata, "the model")
     return(mm[, cols, drop = FALSE])
   }
   if (!is.null(cols)) {

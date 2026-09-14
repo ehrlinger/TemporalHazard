@@ -87,7 +87,8 @@
   are, so they stop only for a design column named `time` itself, which
   follow-up time used to overwrite silently. For a multiphase fit they
   use the fitted per-phase designs and re-evaluate no formula, so a
-  `time` variable does not stop them there. `log(time)`, a constant such as
+  `time` variable does not stop them there. Nor does a phase formula that
+  the fit did not use: a vector-interface fit ignores one. `log(time)`, a constant such as
   `I(age > time)` and a list element such as `cfg$time` do not stop them.
   In the global formula, neither does a value that `scale()` stored at
   fit time, in `predict()` either. A phase formula is re-evaluated as
@@ -316,6 +317,26 @@
   built it, from the fit's own record, as `hzr_gof()` already did; the two
   share one rule. A fit saved before that record existed is routed by its
   stored columns, so an old fit keeps the phase formula it was fitted with.
+
+* **`predict(newdata = )` keeps a formula's constants and outside-data
+  covariates apart from `newdata`'s columns.** A formula can use a variable
+  that is not a column of `data`. A constant, such as `cutoff` in
+  `I(age > cutoff)` or spline knots, has any length. A covariate supplied
+  from outside `data` has one value per fitting row. Both global and phase
+  designs were rebuilt from all of `newdata`, which caused two silent
+  errors:
+  - An extra column masked a constant. A `cutoff = 0` column turned
+    `I(30 > 50)` into `I(30 > 0)`: 0.425 for 0.191 on a Weibull fit, and
+    0.074 for 0.373 on a phase formula.
+  - An outside-data covariate missing from `newdata` was filled with the
+    fitting rows, in fitting order.
+
+  Such a variable is now classified by the length of its value in the
+  formula's environment. A constant is taken from there, and a same-named
+  `newdata` column is ignored. An outside-data covariate must be supplied
+  in `newdata`, and a missing one is an error naming it. A rebuilt design
+  whose row count differs from `newdata`'s is also refused. This backstop
+  covers old fits that cannot classify their variables.
 
 * **`predict(newdata = )` on a multiphase fit now codes a phase formula's
   factors as the fit did.** It rebuilt a phase's design with a bare

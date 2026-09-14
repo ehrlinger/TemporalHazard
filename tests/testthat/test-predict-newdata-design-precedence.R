@@ -487,6 +487,164 @@ test_that("an extra newdata column cannot mask a formula constant", {
                        type = "cumulative_hazard"), tolerance = 1e-12)
 })
 
+# ---- formula constants, outside-data row covariates, and the row backstop ---
+# One rule in both rebuild helpers.  A formula variable that is not a
+# fitting-data column is classified by the length of its value in the
+# formula's environment: one value per fitting row makes it a covariate taken
+# from outside `data`, which must then come from newdata; any other length
+# makes it a constant, which a same-named newdata column must never mask.
+# A rebuilt design with a row count other than newdata's is refused.
+
+.oc_avc <- function() {
+  stats::na.omit(get("avc", envir = asNamespace("TemporalHazard")))
+}
+
+test_that("an extra newdata column cannot mask a phase-formula constant", {
+  skip_on_cran()  # a multiphase fit
+  d <- .oc_avc()
+  cutoff <- 50
+  set.seed(1)
+  m <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes",
+                        formula = ~ I(age > cutoff)),
+      constant = hzr_phase("constant")),
+    fit = TRUE))
+  # I(30 > 50) is FALSE, so the answer is the covariate-free baseline.
+  base <- predict(m, newdata = data.frame(time = 2), type = "cumulative_hazard")
+  masked <- predict(m, type = "cumulative_hazard",
+                    newdata = data.frame(time = 2, age = 30, cutoff = 0))
+  expect_equal(unname(masked), unname(base), tolerance = 1e-10)
+  # The indicator matters, so a masked constant would have shown.
+  expect_gt(abs(m$fit$theta[[grep("^early\\.I", names(m$fit$theta))]]), 0.1)
+})
+
+test_that("a row covariate taken from outside data must come from newdata", {
+  skip_on_cran()  # multiphase fits
+  d <- .oc_avc()
+  set.seed(7)
+  zz <- d$age[sample(nrow(d))] / 100   # a row covariate, not a column of d
+  rows <- c(1, 50, 150)
+  nd_zz <- data.frame(time = d$int_dead[rows], zz = zz[rows])
+  nd_no <- data.frame(time = d$int_dead[rows], age = d$age[rows])
+
+  w <- hazard(survival::Surv(int_dead, dead) ~ zz, data = d, dist = "weibull",
+              theta = c(mu = 0.01, nu = 0.5, b = 0.4))
+  expect_error(predict(w, newdata = nd_no, type = "cumulative_hazard"),
+               "outside `data`")
+  expect_equal(unname(predict(w, newdata = nd_zz, type = "cumulative_hazard")),
+               (0.01 * d$int_dead[rows])^0.5 * exp(0.4 * zz[rows]),
+               tolerance = 1e-12)
+
+  e <- hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes")
+  set.seed(1)
+  mg <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ zz, data = d, dist = "multiphase",
+    phases = list(early = e, constant = hzr_phase("constant")), fit = TRUE))
+  set.seed(1)
+  mp <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes",
+                        formula = ~ zz),
+      constant = hzr_phase("constant")),
+    fit = TRUE))
+  for (f in list(mg, mp)) {
+    expect_error(predict(f, newdata = nd_no, type = "cumulative_hazard"),
+                 "outside `data`")
+    got <- predict(f, newdata = nd_zz, type = "cumulative_hazard")
+    expect_length(got, length(rows))
+    expect_equal(unname(got),
+                 unname(predict(f, type = "cumulative_hazard")[rows]),
+                 tolerance = 1e-10)
+  }
+})
+
+test_that("a rebuilt design never has more rows than newdata", {
+  skip_on_cran()  # a multiphase fit
+  # A 1.0.3-era fit (no stored design, frame or record) cannot classify zz,
+  # so its rebuild would take the 305-row fitting vector for a one-row
+  # newdata.  The backstop refuses instead of returning 305 values.
+  d <- .oc_avc()
+  set.seed(7)
+  zz <- d$age[sample(nrow(d))] / 100
+  set.seed(1)
+  f <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes",
+                        formula = ~ zz),
+      constant = hzr_phase("constant")),
+    fit = TRUE))
+  f$fit$x_design <- NULL
+  f$data$frame <- NULL
+  attr(f$fit$x_list, "from_formula") <- NULL
+  expect_error(predict(f, newdata = data.frame(time = 2, age = 60),
+                       type = "cumulative_hazard"),
+               "rows")
+})
+
+test_that("a vector formula constant (spline knots) still predicts", {
+  d <- .oc_avc()
+  k <- c(40, 120)
+  w <- hazard(survival::Surv(int_dead, dead) ~ splines::ns(age, knots = k),
+              data = d, dist = "weibull",
+              theta = c(mu = 0.01, nu = 0.5, 0.3, -0.2, 0.1))
+  rows <- c(1, 50, 150)
+  want <- unname(predict(w, type = "cumulative_hazard")[rows])
+  nd <- data.frame(time = d$int_dead[rows], age = d$age[rows])
+  expect_equal(unname(predict(w, newdata = nd, type = "cumulative_hazard")),
+               want, tolerance = 1e-10)
+  # A newdata column named like the knots is an unused extra.
+  nd$k <- 999
+  expect_equal(unname(predict(w, newdata = nd, type = "cumulative_hazard")),
+               want, tolerance = 1e-10)
+})
+
+test_that("data_vars skips `$` names and is unchanged for ordinary formulas", {
+  # data_vars feeds the route rule, so ordinary formulas must record exactly
+  # what they recorded at e61d602.  `cfg$time` names a list element, not the
+  # data column `time`, which must not become a required variable.
+  d <- .oc_avc()
+  d$grp <- factor(ifelse(d$age > 100, "old", "young"))
+  cutoff <- 50
+  dv <- function(f, dd = d) hazard(f, data = dd, dist = "weibull")$data$x_design$data_vars
+  expect_identical(dv(survival::Surv(int_dead, dead) ~ age + grp), c("age", "grp"))
+  expect_identical(dv(survival::Surv(int_dead, dead) ~ I(age > cutoff) + mal),
+                   c("age", "mal"))
+  expect_identical(dv(survival::Surv(int_dead, dead) ~ poly(age, 2)), "age")
+  d2 <- d
+  d2$time <- d2$int_dead
+  cfg <- list(time = 50)
+  expect_identical(dv(survival::Surv(int_dead, dead) ~ I(age > cfg$time) + mal, d2),
+                   c("age", "mal"))
+  w <- hazard(survival::Surv(int_dead, dead) ~ I(age > cfg$time) + mal,
+              data = d2, dist = "weibull",
+              theta = c(mu = 0.01, nu = 0.5, 0.8, 0.3))
+  expect_equal(predict(w, newdata = data.frame(age = 30, mal = 1),
+                       type = "linear_predictor"), 0.3, tolerance = 1e-12)
+})
+
+test_that("the time check ignores a phase formula the fit did not use", {
+  skip_on_cran()  # a multiphase fit
+  d <- .oc_avc()
+  set.seed(1)
+  f <- suppressWarnings(hazard(
+    time = d$int_dead, status = d$dead, x = cbind(age = d$age),
+    dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes",
+                        formula = ~ time),
+      constant = hzr_phase("constant")),
+    fit = TRUE))
+  rows <- c(1, 50, 150)
+  got <- predict(f, type = "cumulative_hazard",
+                 newdata = data.frame(time = d$int_dead[rows], age = d$age[rows]))
+  expect_equal(unname(got), unname(predict(f, type = "cumulative_hazard")[rows]),
+               tolerance = 1e-10)
+})
+
 test_that("a multiphase global design takes the variable over its column", {
   skip_on_cran()  # a multiphase fit
   fit <- suppressWarnings(hazard(
