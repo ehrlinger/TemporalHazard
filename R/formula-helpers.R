@@ -520,8 +520,31 @@
       return(object)
     }
     # Evaluating a literal `~` looks nothing up: it only makes the formula,
-    # with the captured bindings as its environment.
+    # with the captured bindings as its environment. (Parsing it below
+    # evaluates its terms, as hazard() did.)
     f <- eval(f, env)
+  }
+  # The same rule for what the formula itself looks up: every symbol that
+  # is not a data column (a cutoff `k`, knots) must come from bindings kept
+  # with the fit -- its environment's chain, short of the global and package
+  # environments. One read from the workspace means whatever it means now,
+  # and a cutoff moved to a value no fitted row separates from the old one
+  # reproduces `data$x` exactly.
+  saved <- function(nm) {
+    e <- environment(f)
+    while (!is.null(e) && !identical(e, globalenv()) &&
+             !identical(e, emptyenv()) && !identical(e, baseenv()) &&
+             !isNamespace(e)) {
+      if (exists(nm, envir = e, inherits = FALSE)) {
+        return(TRUE)
+      }
+      e <- parent.env(e)
+    }
+    FALSE
+  }
+  free <- setdiff(.hzr_mask_symbols(f[[length(f)]]), c(names(frame), "."))
+  if (!all(vapply(free, saved, logical(1)))) {
+    return(object)
   }
   # Warnings are muffled: whether the rebuild is right is decided by the
   # checks below, not by what re-parsing said on the way.

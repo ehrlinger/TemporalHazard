@@ -162,6 +162,36 @@ test_that("a legacy formula passed by name is rebuilt only from its own binding"
                "lacks the covariate column\\(s\\) 'I\\(age > k\\)TRUE'")
 })
 
+test_that("a legacy formula constant read from the workspace is not trusted", {
+  # A top-level fit keeps no binding for `k` in I(age > k): at predict()
+  # time it is whatever the workspace holds.  Moved to a value no fitted age
+  # separates from the old one, it reproduced the fitted design and was used
+  # silently, design-column newdata then being rebuilt from `age` with the
+  # new k (#301 second review).  Such a fit is not rebuilt, so the columns
+  # are taken as given, as on main at 9ec83e7.
+  had <- exists("k", envir = globalenv(), inherits = FALSE)
+  old <- if (had) get("k", envir = globalenv())
+  withr::defer(
+    if (had) assign("k", old, envir = globalenv())
+    else rm("k", envir = globalenv())
+  )
+  assign("k", 50, envir = globalenv())
+  w <- hazard(survival::Surv(int_dead, dead) ~ age + I(age > k),
+              data = .dp_avc, dist = "weibull",
+              theta = c(mu = 0.01, nu = 0.5, 0.004, 0.3))
+  expect_false(exists("k", envir = w$call_env, inherits = FALSE))
+  leg <- w
+  leg$data$x_design <- NULL
+  # No fitted age lies in (50, k2], so the fitted design cannot tell them apart.
+  k2 <- (50 + min(.dp_avc$age[.dp_avc$age > 50])) / 2
+  assign("k", k2, envir = globalenv())
+  a <- c(40, (50 + k2) / 2)   # the second age lies between the cutoffs
+  nd <- data.frame(time = 2, age = a, `I(age > k)TRUE` = c(0, 1),
+                   check.names = FALSE)
+  expect_equal(unname(predict(leg, type = "cumulative_hazard", newdata = nd)),
+               .dp_weibull(0.004 * a + 0.3 * c(0, 1), 2), tolerance = 1e-12)
+})
+
 test_that("a legacy formula computed in the call is not re-run", {
   # A computed `formula =` (as.formula(), reformulate(), maybe with
   # sample()) would run again, with its side effects and its current
