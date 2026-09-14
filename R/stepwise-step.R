@@ -883,7 +883,8 @@
     colnames(if (multiphase) f$fit$x_list[[phase]] else f$data$x)
   }
   new_cols <- design_cols(fit)
-  added <- which(!new_cols %in% design_cols(current))
+  old_cols <- design_cols(current)
+  added <- which(!new_cols %in% old_cols)
   where <- if (multiphase) paste0(" in phase ", sQuote(phase)) else ""
   if (length(added) > 1L) {
     stop(
@@ -892,6 +893,19 @@
       paste(sQuote(new_cols[added]), collapse = ", "),
       ").  Stepwise v1 supports main-effect terms only; ",
       "rebuild your candidate as pre-expanded main effects and retry.",
+      call. = FALSE
+    )
+  }
+  # One new NAME is not one new column: `z` added to `~ z:f` turns
+  # `z:fa, z:fb` into `z, z:fb`, the same column space and likelihood.  The
+  # score path requires the count to rise by one for the same reason.
+  if (length(new_cols) != length(old_cols) + 1L) {
+    stop(
+      "Variable ", sQuote(var), where, " does not add a column to the model: ",
+      "the refit's design (", paste(sQuote(new_cols), collapse = ", "),
+      ") reparameterises the current one (",
+      paste(sQuote(old_cols), collapse = ", "),
+      "), so there is no coefficient of its own to test.",
       call. = FALSE
     )
   }

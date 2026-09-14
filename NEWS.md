@@ -168,7 +168,10 @@
   candidate whose own p-value was below 1e-29, and did not enter it. The
   candidate is now found as the design-matrix column its refit added, the
   rule the score criterion already used. Single-distribution and multiphase
-  fits were both affected.
+  fits were both affected. A candidate that adds no column, such as `z`
+  added to `~ z:f` (the columns `z:fa, z:fb` become `z, z:fb`), leaves the
+  likelihood unchanged; it was reported with a small p-value and entered,
+  and is now an error.
 
   Single-distribution fits also now accept the one-column terms multiphase
   fits already did. A logical, two-level factor or character candidate used

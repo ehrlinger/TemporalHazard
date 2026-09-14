@@ -125,6 +125,58 @@ test_that("the score path's Wald fallback tests the candidate's column", {
   expect_true(step$accepted)
 })
 
+test_that("a candidate whose column is not the last is still found", {
+  # model.matrix() puts main effects before interactions, so a candidate `c`
+  # added to `~ a * b` lands third of four. Every fixture above has the
+  # candidate last, which "take the last column" would also pass.
+  set.seed(29L)
+  n <- 400L
+  d <- data.frame(a = stats::rnorm(n), b = stats::rnorm(n),
+                  c = stats::rnorm(n))
+  d$time <- stats::rexp(n) * exp(-0.5 * d$c)
+  d$status <- 1L
+  base <- hazard(survival::Surv(time, status) ~ a * b, data = d,
+                 dist = "weibull", theta = c(0.5, 1, 0, 0, 0), fit = TRUE)
+  direct <- hazard(survival::Surv(time, status) ~ a * b + c, data = d,
+                   dist = "weibull", theta = c(0.5, 1, 0, 0, 0, 0), fit = TRUE)
+  expect_identical(colnames(direct$data$x), c("a", "b", "c", "a:b"))
+  z_cand <- wald_z(direct, "beta3")
+  expect_gt(abs(z_cand - wald_z(direct, "beta4")), 5)
+
+  step <- .hzr_stepwise_forward_step(base, scope = ~ c, data = d,
+                                     criterion = "wald", slentry = 0.05)
+  expect_equal(scored_row(step, "c")$stat, z_cand, tolerance = 1e-3)
+})
+
+test_that("a candidate that only reparameterises the phase is refused", {
+  skip_on_cran()
+  # Adding `z` to `~ z:f` turns the columns `z:fa, z:fb` into `z, z:fb`: the
+  # same column space, the same likelihood. One name is new, so the column
+  # difference alone "found" the candidate, and the step reported a tiny
+  # p-value and accepted a variable that changed nothing. The score path
+  # requires the column count to rise by exactly one; so must this.
+  set.seed(5L)
+  n <- 300L
+  d <- data.frame(z = stats::rnorm(n),
+                  f = factor(sample(c("a", "b"), n, replace = TRUE)))
+  d$time <- stats::rexp(n) * exp(-0.6 * d$z)
+  d$status <- 1L
+  base <- hazard(survival::Surv(time, status) ~ 1, data = d,
+                 dist = "multiphase", phases = ccn_phases(~ z:f), fit = TRUE)
+  refit <- .hzr_refit_with_scope(base, "add", "z", phase = "constant",
+                                 data = d)
+  # The mechanism: one new name, no new column, no change in fit.
+  expect_identical(colnames(base$fit$x_list$constant), c("z:fa", "z:fb"))
+  expect_identical(colnames(refit$fit$x_list$constant), c("z", "z:fb"))
+  expect_equal(refit$fit$objective, base$fit$objective, tolerance = 1e-6)
+
+  expect_error(
+    .hzr_stepwise_forward_step(base, scope = list(constant = ~ z), data = d,
+                               criterion = "wald", slentry = 0.05),
+    "does not add a column"
+  )
+})
+
 test_that("a candidate that adds more than one column still errors", {
   set.seed(223L)
   n <- 200L
