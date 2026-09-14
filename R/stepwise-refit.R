@@ -127,7 +127,9 @@
 #' time-varying coefficients (`time_windows`), which a phase formula would
 #' fit as one constant effect; and a term that expands to more than one
 #' column, such as a factor, which a step cannot add or drop as one
-#' coefficient. Each silently changed the phase's design before.
+#' coefficient. Each silently changed the phase's design before. A fourth,
+#' checked first and for every phase: a phase formula the fit ignored because
+#' it was built without `data` (#299), which any refit would start using.
 #'
 #' @param fit A fitted `hazard` object.
 #' @param stepped Names of the phases a step can change, or `NULL` for all
@@ -140,6 +142,28 @@
 .hzr_inherit_blocker <- function(fit, stepped = NULL) {
   if (!identical(fit$spec$dist, "multiphase")) {
     return(NULL)
+  }
+  # A fit saved before #299 can carry a phase formula it never used: built
+  # without `data`, the phase took the global `x` or no columns. A refit is
+  # given `data`, so it would build that formula's columns into a model the
+  # base fit never had. The fit's record decides; a fit saved before the
+  # record is judged by its columns, and only when its call had no `data`.
+  # `~ 1` counts when the fit had a global `x`: it took `x`, and a refit given
+  # `data` would give the phase no columns.
+  record <- attr(fit$fit$x_list, "from_formula")
+  has_x <- !is.null(fit$data$x) && NCOL(fit$data$x) > 0L
+  for (nm in names(fit$spec$phases)) {
+    pf <- fit$spec$phases[[nm]]$formula
+    if (!is.null(pf) && (has_x || .hzr_phase_formula_has_terms(pf)) &&
+          (!is.null(record) || is.null(fit$call$data)) &&
+          .hzr_phase_inherits_global(fit, nm)) {
+      return(paste0(
+        "phase '", nm, "' has a formula, `",
+        paste(deparse(pf), collapse = " "), "`, that the fit ignored: it ",
+        "was built without `data`, and a refit given `data` would add that ",
+        "formula's columns. Refit the base model with `data =` and retry"
+      ))
+    }
   }
   inherits <- vapply(fit$spec$phases, function(ph) is.null(ph$formula),
                      logical(1))

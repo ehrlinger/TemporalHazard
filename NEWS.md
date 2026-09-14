@@ -2,6 +2,29 @@
 
 ## Breaking changes
 
+* **`hazard()` now refuses a multiphase phase formula with covariates when
+  no `data` is supplied (#299).** Such fits previously ignored the phase
+  formula. On the vector interface (`time =`, `status =`) without `data`, a
+  phase's own formula was never evaluated: the phase took the global `x`, or
+  no covariates at all, so `hzr_phase(formula = ~ mal)` fitted a model
+  without `mal`, with no warning and no message. The call now stops with an
+  error naming the phase and its formula, under `fit = FALSE` as well. Pass
+  `data =` with the phase's variables as columns, or use
+  `hazard(Surv(...) ~ ..., data = ...)`. A phase with no formula is
+  unaffected, and so is an intercept-only `~ 1` unless the call also has a
+  global `x` with at least one column. Beside such an `x`, a `~ 1` phase
+  is refused too: without `data` it silently took `x`, and with `data` it
+  has no columns, so the same call gave two different models. Pass
+  `data =`, use the formula interface, or drop `x`. A constant term such
+  as `~ log(2)`, which builds a column only in `data`, is refused as well.
+
+* **`hzr_stepwise()` now refuses a fit saved by an earlier version whose
+  phase formula was ignored this way (#299).** Given `data`, every refit
+  built the ignored formula's columns into a model whose base never had
+  them: a forward screen reported `ENTER age` over a final model that also
+  carried the ignored `mal`, with no warning. The error names the phase and
+  its formula. Refit the base model with `data =` and retry.
+
 * **`predict(newdata = )` now takes only the columns of the model's `data`
   from `newdata`.** A term that uses row-level values kept outside `data`
   (a vector, matrix, list or environment in the formula's environment, as
