@@ -31,6 +31,30 @@ predict(
   Optional matrix or data frame of predictors. For types requiring time
   (e.g., "survival", "cumulative_hazard"), newdata should include a
   `time` column, or time will be taken from the fitted object's data.
+  Covariates are matched to the model by column name, so their order
+  does not matter. A formula fit rebuilds its designs from the formulas,
+  global and per phase, with the factor levels and contrasts the fit
+  saw, so a factor can be given as a level label. `newdata` may instead
+  carry the fit's design-matrix columns by name (`grpyoung` for a factor
+  `grp`); these are used only when no formula variable is given (a
+  numeric variable that is itself a column counts only if another
+  column, such as `I(age^2)`, is built from it). With all the variables
+  given, the design is rebuilt from them, so a design column that
+  contradicts one is ignored; some variables beside the design columns,
+  with others missing, is an error. A column the model does not use is
+  ignored, and a covariate the model needs but `newdata` lacks is an
+  error. Only the columns of the model's `data` are taken from
+  `newdata`: a formula constant (`cutoff` in `I(age > cutoff)`, spline
+  knots) comes from the formula's environment, and a term that uses
+  row-level values kept outside `data` (`~ zz`, with `zz` a vector in
+  the workspace) is an error, even when `newdata` has a `zz` column;
+  move it into `data` and refit. A fit made with an unnamed `x` matrix
+  matches by position. For the types requiring time, a `newdata` with
+  only a `time` column evaluates the baseline, with every covariate
+  at 0. Because `time` is then the prediction time, a model whose
+  formula uses a variable named `time` (a covariate, or a constant such
+  as `I(age > time)`) cannot be given those types at `newdata`; rename
+  it and refit.
 
 - type:
 
@@ -137,6 +161,13 @@ object is used. For models fit with `time_windows`, predictions for
 `type = "linear_predictor"` or `"hazard"` also require time values (via
 `newdata$time` or fitted-time fallback) so window-specific coefficients
 can be selected.
+
+A term built by a transform that is not row-wise, such as
+`I(age - mean(age))` or `rank(age)`, is recomputed from `newdata`'s own
+rows, as in
+[`stats::predict.lm()`](https://rdrr.io/r/stats/predict.lm.html). It
+therefore differs from the fitted values unless `newdata` reproduces the
+fitting data.
 
 ## See also
 
