@@ -547,12 +547,14 @@
 # by the namespace each must come from: pure design functions whose result
 # depends on their arguments alone. scale(), poly(), ns() and bs() take
 # their centre, basis or knots from the data, which predict() reuses
-# through the recorded predvars.
+# through the recorded predvars. as.numeric() is left out: of a factor it
+# gives level codes, and a factor() nested inside it is rebuilt from
+# newdata's own levels, so one level codes 1 whatever it is (#301).
 .hzr_rebuild_functions <- list(
   base = c("+", "-", "*", "/", "^", ":", "%in%", "(", "==", "!=", "<", ">",
            "<=", ">=", "&", "|", "!", "I", "log", "log2", "log10", "log1p",
            "exp", "expm1", "sqrt", "abs", "pmin", "pmax", "c", "factor",
-           "as.factor", "as.numeric", "scale"),
+           "as.factor", "scale"),
   stats = c("poly", "relevel"),
   splines = c("ns", "bs")
 )

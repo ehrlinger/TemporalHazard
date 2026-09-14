@@ -390,6 +390,29 @@ test_that("a legacy formula whose constant its text cannot show is not used", {
                truth, tolerance = 1e-12)
 })
 
+test_that("as.numeric() of a factor is not rebuilt: its codes follow newdata", {
+  # factor(grp) inside as.numeric() is re-evaluated on newdata's rows
+  # alone, and the stored levels never reach it, so newdata of one level
+  # coded it 1 whatever the level (#301 seventh review; a fit with its
+  # design stored does the same, which is a separate defect).  Not
+  # rebuilt, the legacy fit refuses the variables and answers the columns.
+  w <- hazard(survival::Surv(int_dead, dead) ~ age + as.numeric(factor(grp)),
+              data = .dp_avc, dist = "weibull",
+              theta = c(mu = 0.01, nu = 0.5, 0.004, 0.3))
+  leg <- w
+  leg$data$x_design <- NULL
+  expect_identical(levels(factor(.dp_avc$grp)), c("old", "young"))
+  expect_error(
+    predict(leg, type = "cumulative_hazard",
+            newdata = data.frame(time = 2, age = 60, grp = "young")),
+    "lacks the covariate column\\(s\\) 'as.numeric\\(factor\\(grp\\)\\)'"
+  )
+  nd <- data.frame(time = 2, age = 60, x = 2)   # "young" is code 2
+  names(nd)[3] <- "as.numeric(factor(grp))"
+  expect_equal(unname(predict(leg, type = "cumulative_hazard", newdata = nd)),
+               .dp_weibull(0.004 * 60 + 0.3 * 2, 2), tolerance = 1e-12)
+})
+
 test_that("a legacy formula that looks a value up by string is not rebuilt", {
   # get("k") names no symbol a walker can see, and get() is not a design
   # function, so the formula is not closed.  Trusted as base R's own, it
