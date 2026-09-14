@@ -543,6 +543,7 @@ hazard <- function(formula = NULL,
          "other distribution here is a PROC HAZARD target. Got dist = \"",
          dist, "\".", call. = FALSE)
   }
+  x_design <- NULL
   # Formula dispatch: if formula is provided, parse it and extract time/status/x from data
   if (!is.null(formula)) {
     if (is.null(data)) {
@@ -579,6 +580,7 @@ hazard <- function(formula = NULL,
     time_lower <- parsed$time_lower
     time_upper <- parsed$time_upper
     x <- parsed$x
+    x_design <- parsed$x_design
 
   }
 
@@ -1107,6 +1109,9 @@ hazard <- function(formula = NULL,
       time_upper = time_upper,
       status = as.numeric(status),
       x = x,
+      # Terms, factor levels and contrasts of the formula RHS that built `x`
+      # (formula path; NULL otherwise), so predict(newdata = ) can rebuild it.
+      x_design = x_design,
       weights = weights,
       # The evaluated `data` argument as passed to hazard() (formula path; NULL
       # when called with raw vectors). This is the user's data frame, not a
@@ -1147,6 +1152,32 @@ hazard <- function(formula = NULL,
 #' @param newdata Optional matrix or data frame of predictors. For types requiring
 #'   time (e.g., "survival", "cumulative_hazard"), newdata should include a `time`
 #'   column, or time will be taken from the fitted object's data.
+#'   Covariates are matched to the model by column name, so their order does
+#'   not matter. A formula fit rebuilds its designs from the formulas,
+#'   global and per phase, with the factor levels and contrasts the fit
+#'   saw, so a factor can be given as a level label. `newdata` may
+#'   instead carry the
+#'   fit's design-matrix columns by name (`grpyoung` for a factor `grp`);
+#'   these are used only when no formula variable is given (a numeric
+#'   variable that is itself a column counts only if another column, such
+#'   as `I(age^2)`, is built from it). With all the
+#'   variables given, the design is rebuilt from them, so a design column
+#'   that contradicts one is ignored; some variables beside the design
+#'   columns, with others missing, is an error. A
+#'   column the model does not use is
+#'   ignored, and a covariate the model needs but `newdata` lacks is an error.
+#'   Only the columns of the model's `data` are taken from `newdata`: a
+#'   formula constant (`cutoff` in `I(age > cutoff)`, spline knots) comes
+#'   from the formula's environment, and a term that uses row-level values
+#'   kept outside `data` (`~ zz`, with `zz` a vector in the workspace) is an
+#'   error, even when `newdata` has a `zz` column; move it into `data` and
+#'   refit.
+#'   A fit made with an unnamed `x` matrix matches by position. For the types
+#'   requiring time, a `newdata` with only a `time` column evaluates the
+#'   baseline, with every covariate at 0. Because `time` is then the
+#'   prediction time, a model whose formula uses a variable named `time`
+#'   (a covariate, or a constant such as `I(age > time)`) cannot be given
+#'   those types at `newdata`; rename it and refit.
 #' @param type Prediction type:
 #'   - `"linear_predictor"`: Linear predictor eta = x*beta (not available for multiphase)
 #'   - `"hazard"`: Instantaneous hazard. Single-distribution models return the
@@ -1211,6 +1242,11 @@ hazard <- function(formula = NULL,
 #' For models fit with `time_windows`, predictions for `type = "linear_predictor"`
 #' or `"hazard"` also require time values (via `newdata$time` or fitted-time fallback)
 #' so window-specific coefficients can be selected.
+#'
+#' A term built by a transform that is not row-wise, such as
+#' `I(age - mean(age))` or `rank(age)`, is recomputed from `newdata`'s own
+#' rows, as in [stats::predict.lm()]. It therefore differs from the fitted
+#' values unless `newdata` reproduces the fitting data.
 #'
 #' @return When `se.fit = FALSE` (default), a numeric vector of predictions.
 #'   When `se.fit = TRUE`, a data frame with columns `fit`, `se.fit`, `lower`,
@@ -1376,6 +1412,15 @@ predict.hazard <- function(object, newdata = NULL,
     }
   }
 
+  # newdata's `time` is the prediction time for the time-based types; a
+  # model variable of that name would be misread there (#270). The
+  # eta-based types have no prediction time unless there are time windows.
+  time_based <- type %in% c("survival", "cumulative_hazard") ||
+    identical(object$spec$dist, "multiphase") || !is.null(time_windows)
+  if (!is.null(newdata)) {
+    .hzr_check_time_covariate(object, as.data.frame(newdata), time_based)
+  }
+
   # -----------------------------------------------------------------------
   # Predictions that do NOT need time (linear_predictor, hazard)
   # -----------------------------------------------------------------------
@@ -1405,13 +1450,11 @@ predict.hazard <- function(object, newdata = NULL,
       if ("time" %in% names(newdata)) {
         pred_time <- newdata$time
       }
-      # Remove time column if present (not needed for hazard/linear_predictor)
-      newdata <- newdata[, names(newdata) != "time", drop = FALSE]
-      if (ncol(newdata) > 0) {
-        x <- as.matrix(newdata)
-      } else {
-        x <- NULL
-      }
+      # Covariates by name, not position (#267); NULL when there are none.
+      # Without time windows `time` is no prediction time here, so it may
+      # be a covariate (#270).
+      x <- .hzr_newdata_design(object, newdata,
+                               drop_time = !is.null(time_windows))
     }
 
     if (!is.null(time_windows)) {
@@ -1524,13 +1567,31 @@ predict.hazard <- function(object, newdata = NULL,
       # If newdata has covariates, rebuild per-phase design matrices
       if (!is.null(newdata)) {
         nd_covs <- newdata[, names(newdata) != "time", drop = FALSE]
+        # Route each phase the way the fit built it: the fit uses a phase's
+        # own formula only on the formula interface, and a vector-interface
+        # fit ignores hzr_phase(formula = ). .hzr_phase_inherits_global()
+        # decides, from the fit's record or, for an older fit, its columns;
+        # hzr_gof() calls the same helper, so the two cannot disagree.
         for (nm in names(phases)) {
           ph <- phases[[nm]]
-          if (!is.null(ph$formula) && ncol(nd_covs) > 0) {
+          uses_formula <- !.hzr_phase_inherits_global(object, nm)
+          if (uses_formula && ncol(nd_covs) > 0) {
             # The fit's levels, contrasts and columns, not newdata's.
             x_list[[nm]] <- .hzr_phase_newdata_design(object, nm, ph, newdata)
           } else if (cov_counts[[nm]] > 0 && ncol(nd_covs) > 0) {
-            x_list[[nm]] <- as.matrix(nd_covs)
+            # A formula-less phase inherits the global design: rebuild that,
+            # not every non-time column of newdata (which also carries the
+            # phase formulas' variables).
+            x_g <- .hzr_global_design(object, newdata)
+            # With time windows the fit expanded the inherited design per
+            # window (age_w1, age_w2); expand it the same way here, or the
+            # rows meet the per-window coefficients unexpanded.
+            if (!is.null(time_windows)) {
+              x_g <- .hzr_expand_time_varying_design(
+                x = x_g, time = pred_time, time_windows = time_windows
+              )
+            }
+            x_list[[nm]] <- x_g
           } else {
             x_list[[nm]] <- NULL
           }
@@ -1604,7 +1665,8 @@ predict.hazard <- function(object, newdata = NULL,
       newdata <- as.data.frame(newdata)
       if ("time" %in% names(newdata)) {
         time <- newdata$time
-        x <- as.matrix(newdata[, names(newdata) != "time", drop = FALSE])
+        # By name, before any time-varying expansion below (#267).
+        x <- .hzr_newdata_design(object, newdata)
       } else {
         stop("'newdata' must contain a 'time' column for '", type, "' predictions.", call. = FALSE)
       }

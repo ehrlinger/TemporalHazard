@@ -136,6 +136,8 @@ hzr_deciles <- function(object, time, groups = 10L,
     } else if (!is.null(object$data$x) && ncol(object$data$x) > 0) {
       nd <- as.data.frame(object$data$x)
       nd$time <- times
+      # Fitted design rows: take them as they are, never rebuild (#272).
+      attr(nd, "hzr_design_columns") <- TRUE
       predict(object, newdata = nd, type = "cumulative_hazard")
     } else {
       predict(object, newdata = data.frame(time = times),
@@ -558,18 +560,9 @@ hzr_gof <- function(object, time_grid = NULL) {
     # whether a formula was written (the fit ignores one it cannot evaluate,
     # without `data`) nor by column names (a phase formula's columns can share
     # the expanded names). A fit from before that record falls back to names.
+    # Which phases inherit is decided by .hzr_phase_inherits_global(), which
+    # predict(newdata = ) calls too, so the two cannot disagree.
     time_windows <- object$spec$time_windows
-    from_formula <- attr(object$fit$x_list, "from_formula")
-    window_cols <- if (!is.null(time_windows)) {
-      colnames(.hzr_expand_time_varying_design(
-        x = object$data$x[1, , drop = FALSE], time = 0,
-        time_windows = time_windows
-      ))
-    }
-    inherits_global <- function(nm, m) {
-      if (is.null(from_formula)) return(identical(colnames(m), window_cols))
-      !isTRUE(from_formula[nm])
-    }
     x_bar <- function(m) {
       matrix(colMeans(m), nrow = length(time_grid), ncol = ncol(m),
              byrow = TRUE, dimnames = list(NULL, colnames(m)))
@@ -579,7 +572,7 @@ hzr_gof <- function(object, time_grid = NULL) {
       stats::setNames(nm = names(object$fit$x_list)), function(nm) {
         m <- object$fit$x_list[[nm]]
         if (is.null(m) || ncol(m) == 0) return(m)
-        if (!is.null(time_windows) && inherits_global(nm, m)) {
+        if (!is.null(time_windows) && .hzr_phase_inherits_global(object, nm)) {
           return(.hzr_expand_time_varying_design(
             x = x_bar(object$data$x), time = time_grid,
             time_windows = time_windows
@@ -595,6 +588,9 @@ hzr_gof <- function(object, time_grid = NULL) {
     nd <- as.data.frame(t(x_means))
     nd <- nd[rep(1, length(time_grid)), , drop = FALSE]
     nd$time <- time_grid
+    # Design-column means (mean(age^2), not mean(age)^2): take them as they
+    # are, never rebuild them from the formula (#272).
+    attr(nd, "hzr_design_columns") <- TRUE
   } else {
     nd <- data.frame(time = time_grid)
   }
