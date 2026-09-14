@@ -244,11 +244,12 @@
       next
     }
 
-    # Coefficient name(s) of the newly-entered variable in the candidate
-    # fit.  For single-dist this is `var` directly; for multiphase the
-    # coef is phase-prefixed.
+    # Coefficient name of the newly-entered variable in the candidate fit,
+    # resolved by the column the refit added rather than by `var`, which
+    # another term's column can carry (a factor dummy named `flag` beside a
+    # logical `flag`, whose own column is `flagTRUE`).
     coef_name <- .hzr_candidate_coef_name(candidate_fit, cand$var,
-                                           cand$phase)
+                                           cand$phase, current = current)
 
     s <- .hzr_candidate_score(
       criterion = criterion, mode = "entry",
@@ -415,7 +416,7 @@
     w <- .hzr_candidate_score(
       criterion = "wald", mode = "entry", current = current, candidate = refit,
       names = .hzr_candidate_coef_name(refit, all_scores$variable[i],
-                                       cand_phase)
+                                       cand_phase, current = current)
     )
     if (is.na(w$score)) {
       # The refit CONVERGED -- it returned a point estimate -- but its Hessian
@@ -797,9 +798,15 @@
 #' trigger an error so the caller can rebuild their formula with the
 #' expansion baked in rather than silently scoring just one coefficient.
 #'
+#' @param current For a forward step, the fit `fit` was refit from.  The
+#'   candidate is then resolved by the column the refit added, not by name.
+#'
 #' @keywords internal
 #' @noRd
-.hzr_candidate_coef_name <- function(fit, var, phase) {
+.hzr_candidate_coef_name <- function(fit, var, phase, current = NULL) {
+  if (!is.null(current)) {
+    return(.hzr_entered_coef_name(fit, current, var, phase))
+  }
   if (fit$spec$dist == "multiphase") {
     target <- paste0(phase, ".", var)
     coef_names <- names(stats::coef(fit))
@@ -855,6 +862,60 @@
          call. = FALSE)
   }
   paste0("beta", idx)
+}
+
+
+#' Name of the coefficient a forward step's refit added
+#'
+#' The refit's design differs from the current fit's by the candidate's
+#' column, so the difference names it, whatever `model.matrix()` called it.
+#' Looking the candidate up by its bare name finds the wrong column when
+#' another term's column carries that name: a logical `flag` becomes
+#' `flagTRUE`, while a factor `fla` with level `g` owns `flag`.  The score
+#' path places its pinned zero by the same difference
+#' (`.hzr_score_expand_multiphase()`).
+#'
+#' @keywords internal
+#' @noRd
+.hzr_entered_coef_name <- function(fit, current, var, phase) {
+  multiphase <- fit$spec$dist == "multiphase"
+  design_cols <- function(f) {
+    colnames(if (multiphase) f$fit$x_list[[phase]] else f$data$x)
+  }
+  new_cols <- design_cols(fit)
+  old_cols <- design_cols(current)
+  added <- which(!new_cols %in% old_cols)
+  where <- if (multiphase) paste0(" in phase ", sQuote(phase)) else ""
+  if (length(added) > 1L) {
+    stop(
+      "Variable ", sQuote(var), where,
+      " expands to multiple coefficients (",
+      paste(sQuote(new_cols[added]), collapse = ", "),
+      ").  Stepwise v1 supports main-effect terms only; ",
+      "rebuild your candidate as pre-expanded main effects and retry.",
+      call. = FALSE
+    )
+  }
+  # One new NAME is not one new column: `z` added to `~ z:f` turns
+  # `z:fa, z:fb` into `z, z:fb`, the same column space and likelihood.  The
+  # score path requires the count to rise by one for the same reason.
+  if (length(new_cols) != length(old_cols) + 1L) {
+    stop(
+      "Variable ", sQuote(var), where, " does not add a column to the model: ",
+      "the refit's design (", paste(sQuote(new_cols), collapse = ", "),
+      ") reparameterises the current one (",
+      paste(sQuote(old_cols), collapse = ", "),
+      "), so there is no coefficient of its own to test.",
+      call. = FALSE
+    )
+  }
+  if (length(added) == 0L) {
+    stop("Variable ", sQuote(var), where,
+         " added no design-matrix column the current fit lacks, so its ",
+         "coefficient cannot be identified.",
+         call. = FALSE)
+  }
+  if (multiphase) paste0(phase, ".", new_cols[added]) else paste0("beta", added)
 }
 
 

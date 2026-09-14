@@ -346,17 +346,25 @@ test_that("criterion = 'score' rejects a non-converged base up front", {
   expect_identical(res$steps$variable[res$steps$action == "enter"], "mal")
 })
 
-test_that("score and wald paths agree that a factor candidate is not selectable", {
+test_that("a two-level factor candidate is tested by wald and refused by score", {
   skip_if_not_installed("numDeriv")
   obj <- .fit_driver_base()
   obj$data$fac <- factor(ifelse(obj$data$x2 > 0, "hi", "lo"))
 
-  # Wald refits the candidate, then fails to locate its coefficient by name.
-  expect_error(
-    hzr_stepwise(obj$fit, scope = ~ fac, data = obj$data,
-                 criterion = "wald", direction = "forward", trace = FALSE),
-    "design matrix"
-  )
+  # Wald refits the candidate and tests its one column, `faclo`. It used to
+  # look the coefficient up as `fac`, find nothing, and stop -- while the
+  # score refusal below names `criterion = "wald"` as the way through.
+  direct <- hazard(Surv(time, status) ~ fac, data = obj$data,
+                   theta = c(0.5, 1, 0), dist = "weibull", fit = TRUE)
+  expect_identical(colnames(direct$data$x), "faclo")
+  z <- unname(stats::coef(direct)[3] / sqrt(stats::vcov(direct)[3, 3]))
+  step <- .hzr_stepwise_forward_step(obj$fit, scope = ~ fac, data = obj$data,
+                                     criterion = "wald", slentry = 0.05)
+  # The refit is warm-started and `direct` is not, so they stop at slightly
+  # different points on this near-null effect (about 2.5e-4 apart in z).
+  expect_equal(step$all_scores$stat[step$all_scores$variable == "fac"], z,
+               tolerance = 1e-3)
+
   # Score must not silently return NA and drop the candidate on the floor.
   expect_error(
     hzr_stepwise(obj$fit, scope = ~ fac, data = obj$data,
