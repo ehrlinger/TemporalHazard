@@ -135,6 +135,81 @@ test_that("a rebuilt legacy design resolves formula constants as the fit did", {
   )
 })
 
+test_that("a legacy formula passed by name is rebuilt only from its own binding", {
+  # hazard(f, data = ) stores the symbol `f`.  Looked up wherever `f` was
+  # bound when predict() ran, a later `f` with another cutoff reproduced
+  # the fitted design (no fitted age lies between the cutoffs) and was used
+  # silently, with the new cutoff at new rows (#301 review).  Only an `f`
+  # hazard() captured with the call is used.
+  mk <- function(k) survival::Surv(int_dead, dead) ~ age + I(age > k)
+  # No fitted age lies in (50, k2], so the fitted design cannot tell them apart.
+  k2 <- (50 + min(.dp_avc$age[.dp_avc$age > 50])) / 2
+  f <- mk(50)
+  w <- hazard(f, data = .dp_avc, dist = "weibull",
+              theta = c(mu = 0.01, nu = 0.5, 0.004, 0.3))
+  leg <- w
+  leg$data$x_design <- NULL
+  a <- c(40, (50 + k2) / 2, 60)   # the middle age lies between the cutoffs
+  nd <- data.frame(time = 2, age = a)
+  truth <- .dp_weibull(0.004 * a + 0.3 * c(0, 1, 1), 2)
+  expect_true(exists("f", envir = leg$call_env, inherits = FALSE))
+  expect_equal(unname(predict(leg, type = "cumulative_hazard", newdata = nd)),
+               truth, tolerance = 1e-12)
+  # `f` bound only beyond the captured bindings (as a top-level `f` is), and
+  # since redefined: the fit cannot tell 50 from k2, so it is not rebuilt.
+  leg$call_env <- new.env(parent = list2env(list(f = mk(k2))))
+  expect_error(predict(leg, type = "cumulative_hazard", newdata = nd),
+               "lacks the covariate column\\(s\\) 'I\\(age > k\\)TRUE'")
+})
+
+test_that("a legacy formula computed in the call is not re-run", {
+  # A computed `formula =` (as.formula(), reformulate(), maybe with
+  # sample()) would run again, with its side effects and its current
+  # inputs, on every predict().  It is not rebuilt; the refusal stands.
+  w <- hazard(stats::as.formula("survival::Surv(int_dead, dead) ~ grp"),
+              data = .dp_avc, dist = "weibull",
+              theta = c(mu = 0.01, nu = 0.5, b_young = 0.7))
+  w$data$x_design <- NULL
+  expect_error(
+    predict(w, type = "cumulative_hazard",
+            newdata = data.frame(time = 2, grp = c("old", "young"),
+                                 grpyoung = c(1, 0))),
+    "earlier version.*also has 'grp'.*pass only the design columns"
+  )
+})
+
+test_that("a legacy fit with a row-level vector outside `data` keeps its route", {
+  # ~ age + wv, `wv` a vector beside the data frame.  Its rebuild reproduces
+  # the fitted design, but wv's rows cannot follow newdata's, so it is not
+  # used, and design-column newdata is answered as on main at 9ec83e7
+  # (the rebuild gave a raw "variable lengths differ" error; #301 review).
+  wv <- seq_len(nrow(.dp_avc)) / nrow(.dp_avc)
+  w <- hazard(survival::Surv(int_dead, dead) ~ age + wv, data = .dp_avc,
+              dist = "weibull", theta = c(mu = 0.01, nu = 0.5, 0.004, 0.3))
+  w$data$x_design <- NULL
+  got <- predict(w, type = "cumulative_hazard",
+                 newdata = data.frame(time = 2, age = 60, wv = 1))
+  expect_equal(unname(got), .dp_weibull(0.004 * 60 + 0.3, 2), tolerance = 1e-12)
+})
+
+test_that("legacy design-column means follow the #272 rule, as a new fit's do", {
+  # age and I(age^2) at the design-column means: `age` is a formula
+  # variable, so the design is rebuilt from it and I(age^2) becomes
+  # mean(age)^2, as for the same fit with its design.  Main at 9ec83e7 took
+  # the columns as given (mean(age^2)); NEWS says so.
+  w <- hazard(survival::Surv(int_dead, dead) ~ age + I(age^2), data = .dp_avc,
+              dist = "weibull", theta = c(mu = 0.01, nu = 0.5, 0.004, 1e-4))
+  leg <- w
+  leg$data$x_design <- NULL
+  nd <- as.data.frame(t(colMeans(w$data$x)), check.names = FALSE)
+  nd$time <- 2
+  got <- unname(predict(leg, type = "cumulative_hazard", newdata = nd))
+  expect_identical(got,
+                   unname(predict(w, type = "cumulative_hazard", newdata = nd)))
+  m <- mean(.dp_avc$age)
+  expect_equal(got, .dp_weibull(0.004 * m + 1e-4 * m^2, 2), tolerance = 1e-12)
+})
+
 test_that("a legacy design that is not rebuilt exactly keeps the refusal", {
   # The rebuilt design is used only if it reproduces the fitted one, same
   # columns and same values.  Anything missing or different leaves #292's

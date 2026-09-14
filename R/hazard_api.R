@@ -1420,7 +1420,11 @@ predict.hazard <- function(object, newdata = NULL,
   if (!is.null(newdata)) {
     # A formula fit saved before its design was stored gets it rebuilt, when
     # the rebuild is exact, so the by-name rules below apply to it (#301).
-    object <- .hzr_recover_x_design(object)
+    # Design-level newdata (hzr_gof(), hzr_deciles()) never uses it, so it
+    # skips the rebuild's cost.
+    if (!isTRUE(attr(newdata, "hzr_design_columns"))) {
+      object <- .hzr_recover_x_design(object)
+    }
     .hzr_check_time_covariate(object, as.data.frame(newdata), time_based)
   }
 

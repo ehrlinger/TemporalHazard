@@ -64,9 +64,15 @@
   only if it reproduces the fitted design matrix exactly: the same columns
   with the same values. The fit then takes the formula's variables
   (`grp = "old"`), ignores unused columns, and lets a variable win over a
-  contradicting design column, all as a new fit does (#301). Where the
-  design cannot be rebuilt (a 1.0.3-era fit, which kept no data frame, or
-  a formula that no longer reproduces the fit), `newdata` with columns
+  contradicting design column, all as a new fit does (#301). One value
+  changes with it: `newdata` giving a numeric variable and a column built
+  from it, such as `age` and `I(age^2)` at the design-column means, is now
+  rebuilt from `age`, as for a new fit, where its columns used to be taken
+  as given. The design is not rebuilt for a 1.0.3-era fit, which kept no
+  data frame; for a formula that no longer reproduces the fit; for a
+  formula passed by a name that was not saved with the fit, or computed in
+  the call (`as.formula(...)`), which would be re-run; or for a term that
+  takes row-level values from outside `data`. For these, `newdata` with columns
   other than the design columns and `time` is refused, with
   `This fit was saved by an earlier version of TemporalHazard, without a
   stored formula design, ...; it also has '...'. Refit the model with the

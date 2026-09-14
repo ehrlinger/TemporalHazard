@@ -482,8 +482,18 @@
 #' since 1.1.0). The formula is parsed again against that frame, as
 #' `hazard()` parsed it, and the result is used only if it reproduces the
 #' fitted design `data$x`: the same columns, in the same order, with the
-#' same values. Anything missing, an error, or any difference leaves the
-#' fit as it was, so the refusal stands (#301).
+#' same values. A design with a term whose row-level values come from
+#' outside `data` reproduces the fitted rows but cannot follow new ones, so
+#' it is not used either (`.hzr_check_equivariant()` on the fitting frame).
+#' Anything missing, an error, or any difference leaves the fit as it was,
+#' so the refusal stands (#301).
+#'
+#' Only a formula the call itself fixes is used: a formula object stored in
+#' the call, a literal `~` expression, or a name bound in `call_env` itself.
+#' A name bound only beyond `call_env` (a top-level `f`) means whatever it
+#' means now, not what the fit used, and a cutoff with no fitted row between
+#' the old and new value reproduces `data$x` exactly. A computed formula
+#' (`as.formula(...)`) would run again, side effects and all.
 #'
 #' A vector-interface fit has no formula and is returned unchanged.
 #'
@@ -494,30 +504,68 @@
 .hzr_recover_x_design <- function(object) {
   x_fit <- object$data$x
   frame <- object$data$frame
-  if (!is.null(object$data$x_design) || is.null(x_fit) ||
-        is.null(object$call$formula) || is.null(object$call_env) ||
-        !is.data.frame(frame)) {
+  env <- object$call_env
+  f <- object$call$formula
+  if (!is.null(object$data$x_design) || is.null(x_fit) || is.null(f) ||
+        !is.environment(env) || !is.data.frame(frame)) {
     return(object)
   }
-  # eval() runs only the fit's own stored `formula` argument, in the
-  # bindings hazard() captured for it, as hzr_bootstrap() re-runs the call.
+  if (is.symbol(f)) {
+    if (!exists(as.character(f), envir = env, inherits = FALSE)) {
+      return(object)
+    }
+    f <- get(as.character(f), envir = env, inherits = FALSE)
+  } else if (!inherits(f, "formula")) {
+    if (!is.call(f) || !identical(f[[1L]], as.name("~"))) {
+      return(object)
+    }
+    # Evaluating a literal `~` looks nothing up: it only makes the formula,
+    # with the captured bindings as its environment.
+    f <- eval(f, env)
+  }
   # Warnings are muffled: whether the rebuild is right is decided by the
-  # comparison below, not by what re-parsing said on the way.
-  parsed <- tryCatch(
-    suppressWarnings(.hzr_parse_formula(
-      eval(object$call$formula, object$call_env), frame
-    )),
-    error = function(e) NULL
-  )
+  # checks below, not by what re-parsing said on the way.
+  parsed <- tryCatch(suppressWarnings(.hzr_parse_formula(f, frame)),
+                     error = function(e) NULL)
+  design <- parsed$x_design
   x <- parsed$x
-  reproduces <- !is.null(parsed$x_design) && is.matrix(x) &&
+  reproduces <- !is.null(design) && is.matrix(x) &&
     identical(dim(x), dim(x_fit)) &&
     identical(colnames(x), colnames(x_fit)) &&
     isTRUE(all(x == x_fit | (is.na(x) & is.na(x_fit))))
   if (reproduces) {
-    object$data$x_design <- parsed$x_design
+    reproduces <- tryCatch({
+      .hzr_check_equivariant(.hzr_design_builder(design), frame,
+                             attr(design$terms, "term.labels"), "the model")
+      TRUE
+    }, error = function(e) FALSE)
+  }
+  if (reproduces) {
+    object$data$x_design <- design
   }
   object
+}
+
+
+#' The function that builds a formula design at new rows
+#'
+#' The fit's terms, levels and contrasts, applied to `newdata`'s data
+#' columns only (`.hzr_newdata_frame()`). One builder, so a design rebuilt
+#' for a legacy fit is checked with the builder `predict()` then uses.
+#'
+#' @param design A stored `x_design`.
+#' @return A function of a data frame of new rows, returning the model
+#'   matrix with its `assign` attribute.
+#' @keywords internal
+#' @noRd
+.hzr_design_builder <- function(design) {
+  function(x) {
+    nd <- .hzr_newdata_frame(x, design$data_vars)
+    mf <- stats::model.frame(design$terms, data = nd, xlev = design$xlevels,
+                             na.action = stats::na.pass)
+    stats::model.matrix(design$terms, data = mf,
+                        contrasts.arg = design$contrasts)
+  }
 }
 
 
@@ -649,14 +697,7 @@
     # newdata supplies only the data columns, and a term that does not
     # follow its rows is refused; see .hzr_newdata_frame() and
     # .hzr_check_equivariant().
-    build <- function(x) {
-      nd <- .hzr_newdata_frame(x, design$data_vars)
-      mf <- stats::model.frame(design$terms, data = nd, xlev = design$xlevels,
-                               na.action = stats::na.pass)
-      stats::model.matrix(design$terms, data = mf,
-                          contrasts.arg = design$contrasts)
-    }
-    mm <- .hzr_check_equivariant(build, newdata,
+    mm <- .hzr_check_equivariant(.hzr_design_builder(design), newdata,
                                  attr(design$terms, "term.labels"),
                                  "the model")
     return(mm[, cols, drop = FALSE])
