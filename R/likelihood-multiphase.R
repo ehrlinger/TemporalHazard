@@ -1532,10 +1532,16 @@
 }
 
 
-#' Build a phase formula's design matrix, and what rebuilds it, from data
+#' Build a formula's design matrix, and what rebuilds it, from a data frame
 #'
-#' Shared by the fit and by `predict()` for a fit saved before the phase
-#' design was stored, so the rebuild is the fit's own construction. The frame
+#' The one frame-to-design core: a formula and a data frame in, the design
+#' and its rebuild recipe out, with no phase-specific logic. The multiphase
+#' fit builds each phase formula's design with it, and `predict()` rebuilds a
+#' legacy fit's phase design from its kept `data$frame` with it, so that
+#' rebuild is the fit's own construction (#307). A caller rebuilding another
+#' design from `data$frame` can use it too, but must check that the result
+#' reproduces what that fit stored: this construction is `na.pass`, where
+#' the global formula's is not. The frame
 #' goes through `model.frame(na.action = na.pass)` explicitly because
 #' `model.matrix()` consults `getOption("na.action")` when it constructs the
 #' frame internally, which defaults to `na.omit` and silently drops rows with
@@ -1550,7 +1556,7 @@
 #'   that were columns of `data`.
 #' @keywords internal
 #' @noRd
-.hzr_phase_formula_design <- function(formula, data) {
+.hzr_formula_design <- function(formula, data) {
   mf <- stats::model.frame(formula, data = data, na.action = stats::na.pass)
   mm <- stats::model.matrix(formula, data = mf)
   tt <- attr(mf, "terms")
@@ -1587,7 +1593,7 @@
 #' @noRd
 .hzr_phase_design_from_frame <- function(object, nm, ph) {
   built <- tryCatch(
-    .hzr_phase_formula_design(ph$formula, object$data$frame),
+    .hzr_formula_design(ph$formula, object$data$frame),
     error = function(e) NULL
   )
   stored <- object$fit$x_list[[nm]]
@@ -1885,7 +1891,7 @@
     ph <- phases[[nm]]
     if (!is.null(ph$formula) && !is.null(data)) {
       # Phase-specific formula: build design matrix from data.
-      built <- .hzr_phase_formula_design(ph$formula, data)
+      built <- .hzr_formula_design(ph$formula, data)
       x_list[[nm]] <- built$x
       covariate_counts[[nm]] <- ncol(built$x)
       x_design[[nm]] <- built$design
