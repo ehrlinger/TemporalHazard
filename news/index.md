@@ -4,6 +4,24 @@
 
 ### Breaking changes
 
+- **[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  now stops when two design columns share a name**
+  ([\#298](https://github.com/ehrlinger/TemporalHazard/issues/298)). A
+  factor’s dummy columns are named `<factor><level>`, so a factor `g`
+  with level `b` and a numeric column `gb` both produced a column `gb`.
+  The fit ran without a word:
+  [`coef()`](https://rdrr.io/r/stats/coef.html) carried two `gb` names,
+  and [`predict()`](https://rdrr.io/r/stats/predict.html) on a one-row
+  `newdata` returned two values. The check covers the global design, an
+  `x` matrix passed to the vector interface, the design after
+  `time_windows` expansion, and, when `fit = TRUE`, each phase formula
+  of a multiphase fit. The error names the colliding columns. Unnamed
+  columns of `x` are allowed, but not under `time_windows`: the
+  expansion names each window’s column `<name>_w<k>`, so two unnamed
+  columns both became `_w1`. A fit that used to run now stops: rename
+  the numeric column, or rename the factor or change its levels
+  ([`relevel()`](https://rdrr.io/r/stats/relevel.html), `levels<-`).
+
 - **An [`offset()`](https://rdrr.io/r/stats/offset.html) term in a
   formula is now an error.**
   [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
