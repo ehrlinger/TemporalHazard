@@ -143,6 +143,24 @@ test_that("the saved-fit helper rebuilds what hazard() returned before #299", {
   }
 })
 
+test_that("the blocker leaves alone a record-less fit that used its formula", {
+  skip_on_cran() # a multiphase fit
+  # A phase formula whose columns carry the inherited names looks inherited
+  # to the record-less fallback (its documented limit). The call's `data`
+  # is what clears it: that fit did evaluate its phase formulas.
+  d <- avc_299()
+  f <- hazard(survival::Surv(int_dead, dead) ~ age, data = d,
+              dist = "multiphase",
+              phases = list(
+                early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1,
+                                  fixed = "m", formula = ~ age),
+                constant = hzr_phase("constant", formula = ~ age)),
+              fit = TRUE, control = ctl_299)
+  attr(f$fit$x_list, "from_formula") <- NULL
+  expect_true(.hzr_phase_inherits_global(f, "early"))
+  expect_null(.hzr_inherit_blocker(f))
+})
+
 test_that("hzr_stepwise() refuses a saved fit whose phase formula was ignored", {
   skip_on_cran() # multiphase fits
   # Given `data`, every refit would build the ignored formula's columns into

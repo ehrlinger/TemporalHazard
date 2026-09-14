@@ -12,7 +12,8 @@
   `data =` with the phase's variables as columns, or use
   `hazard(Surv(...) ~ ..., data = ...)`. A phase with no formula is
   unaffected, and so is an intercept-only `~ 1` unless the call also has a
-  global `x`. Beside `x`, a `~ 1` phase took `x` without `data` and has no
+  global `x` with at least one column. Beside such an `x`, a `~ 1` phase
+  took `x` without `data` and has no
   columns with it, so it is refused too, as is a constant term such as
   `~ log(2)`, which builds a column only in `data`.
 

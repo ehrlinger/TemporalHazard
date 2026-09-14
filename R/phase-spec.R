@@ -121,7 +121,8 @@
 #'   SAS late: `ETA`.
 #' @param formula Optional one-sided formula (e.g. `~ age + nyha`) for
 #'   phase-specific covariates.  It is evaluated in the `data` given to
-#'   [hazard()], which refuses a phase formula when there is no `data`.
+#'   [hazard()], so without `data` [hazard()] refuses it, unless it builds
+#'   nothing either way: an intercept-only `~ 1` with no global `x`.
 #'   When `NULL` (default), the phase inherits the global design from
 #'   [hazard()]: the global formula's covariates, or `x` on the vector
 #'   interface.
