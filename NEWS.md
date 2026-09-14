@@ -167,6 +167,23 @@
 
 ## Bug fixes
 
+* **A stepwise refit failure now says why.** `hzr_stepwise()` catches each
+  candidate's refit error so one bad candidate cannot end the screen, and it
+  used to drop the message with it: the warning read `candidate refit failed
+  for gb.` and nothing more, even when `hazard()` had stopped with a message
+  naming the problem. The four refit warnings (candidate, Wald fallback,
+  post-entry, post-drop) now carry the refit's error message, or say that it
+  did not converge, and `$criteria$refit_failure_reasons` keeps each one,
+  named by its `refit_failures` token. `refit_failures` itself is unchanged.
+  Under `criterion = "score"`, which builds each candidate's design without
+  refitting, a candidate whose column name collides with a factor's dummy
+  column (numeric `gb` beside factor `g` with level `b`) is now declined with
+  the reason `duplicate_column`. The single-distribution score path used to
+  score it against a design with two `gb` columns, so it could win the step
+  and fail only at the post-entry refit, which stopped the screen with every
+  other candidate untested; the multiphase score path declined it as
+  `not_expandable`.
+
 * **The multiphase gradient and Hessian are now right when an early phase's
   `m` is near 0.** Both differentiate in `m` by finite differences, and
   their stencils straddled 0: the gradient's (half-width about 6e-6)
