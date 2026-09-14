@@ -371,7 +371,20 @@
   ms <- build(newdata[s, , drop = FALSE])
   .hzr_check_design_rows(ms, newdata, where)
   b <- mm[s, , drop = FALSE]
-  same <- abs(ms - b) <= sqrt(.Machine$double.eps) * pmax(1, abs(b))
+  # Each column's tolerance is scaled to its spread in newdata, so a small
+  # variation is still resolved, plus a few ulps of its magnitude for
+  # summation-order noise (scale(age) averages reordered rows). Variation
+  # below ~64 ulps of a column's magnitude is indistinguishable in double
+  # precision and not detected.
+  tol <- vapply(seq_len(ncol(b)), function(j) {
+    f <- b[is.finite(b[, j]), j]
+    if (length(f) == 0L) {
+      return(0)
+    }
+    sqrt(.Machine$double.eps) * (max(f) - min(f)) +
+      64 * .Machine$double.eps * max(abs(f))
+  }, numeric(1))
+  same <- abs(ms - b) <= rep(tol, each = nrow(b))
   same[is.na(ms) & is.na(b)] <- TRUE
   same[is.na(same)] <- FALSE
   bad <- which(colSums(!same) > 0L)

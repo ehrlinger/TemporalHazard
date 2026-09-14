@@ -138,6 +138,11 @@ it will be used; otherwise, the time vector from the fitted object is used.
 For models fit with \code{time_windows}, predictions for \code{type = "linear_predictor"}
 or \code{"hazard"} also require time values (via \code{newdata$time} or fitted-time fallback)
 so window-specific coefficients can be selected.
+
+A term built by a transform that is not row-wise, such as
+\code{I(age - mean(age))} or \code{rank(age)}, is recomputed from \code{newdata}'s own
+rows, as in \code{\link[stats:predict.lm]{stats::predict.lm()}}. It therefore differs from the fitted
+values unless \code{newdata} reproduces the fitting data.
 }
 \examples{
 # -- Basic predictions ------------------------------------------------

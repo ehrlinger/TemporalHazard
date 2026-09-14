@@ -1243,6 +1243,11 @@ hazard <- function(formula = NULL,
 #' or `"hazard"` also require time values (via `newdata$time` or fitted-time fallback)
 #' so window-specific coefficients can be selected.
 #'
+#' A term built by a transform that is not row-wise, such as
+#' `I(age - mean(age))` or `rank(age)`, is recomputed from `newdata`'s own
+#' rows, as in [stats::predict.lm()]. It therefore differs from the fitted
+#' values unless `newdata` reproduces the fitting data.
+#'
 #' @return When `se.fit = FALSE` (default), a numeric vector of predictions.
 #'   When `se.fit = TRUE`, a data frame with columns `fit`, `se.fit`, `lower`,
 #'   `upper` (delta-method point estimate, standard error, and confidence

@@ -671,6 +671,33 @@ test_that("the outside-data refusal at one row, duplicate rows, one fit row", {
   expect_equal(lp(w1, d[1:3, ]), truth(d[1:3, ]), tolerance = 1e-12)
 })
 
+test_that("the shift check scales its tolerance to each column's spread", {
+  # A tolerance floored at an absolute sqrt(eps) let an outside covariate
+  # that varies by less than that pass, and its fitting-order values were
+  # used silently (3.47 off here). Data-only designs at extreme scales must
+  # still predict.
+  d <- .oc_avc()
+  n <- nrow(d)
+  rv <- rev(seq_len(n))
+  set.seed(1)
+  zt <- 0.5 + rnorm(n) * 1e-9
+  w <- hazard(survival::Surv(int_dead, dead) ~ age + zt, data = d,
+              dist = "weibull", theta = c(mu = 0.01, nu = 0.5, 0.01, 1e9))
+  nd <- d[rv, ]
+  nd$zt <- zt[rv]
+  expect_error(predict(w, newdata = nd, type = "linear_predictor"),
+               "term 'zt' of the model uses row-level")
+  for (f in list(survival::Surv(int_dead, dead) ~ scale(age),
+                 survival::Surv(int_dead, dead) ~ I(age * 1e-12),
+                 survival::Surv(int_dead, dead) ~ I(age * 1e8))) {
+    wf <- hazard(f, data = d, dist = "weibull",
+                 theta = c(mu = 0.01, nu = 0.5, 0.1))
+    expect_equal(
+      unname(predict(wf, newdata = d[rv, ], type = "linear_predictor")),
+      unname(predict(wf, type = "linear_predictor"))[rv], tolerance = 1e-10)
+  }
+})
+
 test_that("data_vars skips `$` names and is unchanged for ordinary formulas", {
   # data_vars feeds the route rule, so ordinary formulas must record exactly
   # what they recorded at e61d602.  `cfg$time` names a list element, not the
