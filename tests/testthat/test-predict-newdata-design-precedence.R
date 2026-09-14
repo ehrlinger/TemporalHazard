@@ -300,7 +300,8 @@ test_that("a phase formula the fit did not use is not rebuilt at newdata", {
   nd <- data.frame(time = d$int_dead[rows], age = d$age[rows])
   for (tw in list(NULL, 12)) {
     set.seed(1)
-    f <- suppressWarnings(hazard(
+    # Simulates a fit saved before #299, which hazard() now refuses to make.
+    f <- suppressWarnings(hzr_saved_before_299(
       time = d$int_dead, status = d$dead, x = cbind(age = d$age),
       dist = "multiphase", time_windows = tw,
       phases = list(
@@ -330,7 +331,8 @@ test_that("a fit without the from_formula record routes by formula and columns",
   d$grp <- factor(ifelse(d$age > 100, "old", "young"))
   rows <- c(1, 50, 150)
   set.seed(1)
-  vf <- suppressWarnings(hazard(
+  # Simulates a fit saved before #299, which hazard() now refuses to make.
+  vf <- suppressWarnings(hzr_saved_before_299(
     time = d$int_dead, status = d$dead, x = cbind(age = d$age),
     dist = "multiphase",
     phases = list(
@@ -398,7 +400,8 @@ test_that("time_windows: an unused phase formula without the record goes global"
   # so it keeps the phase on the global route: four values, matching.
   d <- stats::na.omit(get("avc", envir = asNamespace("TemporalHazard")))
   set.seed(1)
-  f <- suppressWarnings(hazard(
+  # Simulates a fit saved before #299, which hazard() now refuses to make.
+  f <- suppressWarnings(hzr_saved_before_299(
     time = d$int_dead, status = d$dead, x = cbind(age = d$age),
     dist = "multiphase", time_windows = 12,
     phases = list(
@@ -726,7 +729,8 @@ test_that("the time check ignores a phase formula the fit did not use", {
   skip_on_cran()  # a multiphase fit
   d <- .oc_avc()
   set.seed(1)
-  f <- suppressWarnings(hazard(
+  # Simulates a fit saved before #299, which hazard() now refuses to make.
+  f <- suppressWarnings(hzr_saved_before_299(
     time = d$int_dead, status = d$dead, x = cbind(age = d$age),
     dist = "multiphase",
     phases = list(
