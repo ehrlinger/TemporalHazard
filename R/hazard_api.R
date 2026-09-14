@@ -960,6 +960,7 @@ hazard <- function(formula = NULL,
     fit_state$phases <- optim_result$phases
     fit_state$covariate_counts <- optim_result$covariate_counts
     fit_state$x_list <- optim_result$x_list
+    fit_state$x_design <- optim_result$x_design
     fit_state$fixed_mask <- optim_result$fixed_mask
     fit_state$starts <- optim_result$starts
     # Applied CoE state, recorded next to the requested one in spec$control
@@ -1214,7 +1215,12 @@ hazard <- function(formula = NULL,
 #' @return When `se.fit = FALSE` (default), a numeric vector of predictions.
 #'   When `se.fit = TRUE`, a data frame with columns `fit`, `se.fit`, `lower`,
 #'   `upper` (delta-method point estimate, standard error, and confidence
-#'   limits at `level`). For multiphase `type = "cumulative_hazard"` with
+#'   limits at `level`). `se.fit` is always the standard error of `fit` on
+#'   its own scale: for `type = "survival"` that is `S * se(H)`, the delta
+#'   method applied to `S = exp(-H)`. The survival limits are built from
+#'   `se(H)` on the `conf.type` scale, so they are not `fit +/- z * se.fit`.
+#'   `PROC HAZPRED` prints no standard error, only the limits.
+#'   For multiphase `type = "cumulative_hazard"` with
 #'   `decompose = TRUE`, a long data frame (`time`, `component`, `fit`,
 #'   `se.fit`, `lower`, `upper`); with `decompose = TRUE` and `se.fit = FALSE`,
 #'   a wide data frame of per-phase contributions.
@@ -1521,7 +1527,8 @@ predict.hazard <- function(object, newdata = NULL,
         for (nm in names(phases)) {
           ph <- phases[[nm]]
           if (!is.null(ph$formula) && ncol(nd_covs) > 0) {
-            x_list[[nm]] <- stats::model.matrix(ph$formula, data = newdata)[, -1L, drop = FALSE]
+            # The fit's levels, contrasts and columns, not newdata's.
+            x_list[[nm]] <- .hzr_phase_newdata_design(object, nm, ph, newdata)
           } else if (cov_counts[[nm]] > 0 && ncol(nd_covs) > 0) {
             x_list[[nm]] <- as.matrix(nd_covs)
           } else {

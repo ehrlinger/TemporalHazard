@@ -169,6 +169,48 @@
   Single-distribution `predict()` already returned unnamed vectors, and now
   both agree.
 
+* **`predict(newdata = )` on a multiphase fit now codes a phase formula's
+  factors as the fit did.** It rebuilt a phase's design with a bare
+  `model.matrix()` at `newdata`, with no stored levels or contrasts, so a
+  factor given as one label (`grp = "young"`, including a one-row `newdata`
+  with a single character label) stopped with "contrasts can be
+  applied only to factors with 2 or more levels", and a factor whose levels
+  were in another order was coded against the wrong level with no error: a
+  wrong cumulative hazard. The fit now stores each phase formula's terms,
+  factor levels and contrasts (`fit$x_design`), and `predict()` rebuilds the
+  phase's columns from them, matched by name. A level the fit never saw is an
+  error. So is a covariate the phase uses that `newdata` lacks, where it was
+  silently taken from a same-named object in the workspace; a `newdata` with
+  only a `time` column still evaluates the baseline, every covariate at 0.
+  `newdata` carrying only the phase's design columns by name (`grpyoung`) is
+  taken as it is; when it also carries the formula's variables, the variables
+  win, so `grp = "old"` beside `grpyoung = 1` is the old value, not the young
+  one (#272). Some of the variables beside the design columns, with others
+  missing, is an error, and so is a changed variable that another design
+  column is built from (`age` beside a stale `age:grpyoung`) when the others
+  are missing. A fit saved by an earlier version rebuilds from its variables
+  as before whenever they are all given, and refuses some of them beside its
+  design columns, as it errored before. It also refuses a phase covariate
+  missing from `newdata` rather than taking a same-named object, when it
+  kept its fitting data (saved by 1.1.0 or later). A fit saved by 1.0.3 or
+  earlier did not keep it, cannot tell a missing covariate from a formula
+  constant, and still takes a same-named object, as before.
+
+* **`predict(type = "survival", se.fit = TRUE)` now reports the standard
+  error of the survival probability.** The `se.fit` column held the standard
+  error of the cumulative hazard, `se(H)`, bit-identical to the column that
+  `type = "cumulative_hazard"` returns, under a survival label. It now holds
+  `S * se(H)`, the delta-method standard error of `S = exp(-H)`, which is
+  what `summary.survfit()` reports as `std.err`. For a Weibull fit of
+  `Surv(int_dead, dead) ~ age + mal` to `na.omit(avc)`, at `time = 5`,
+  `age = 60`, `mal = 1`, where `S = 0.700`, the old column read 0.0706
+  against the correct 0.0495.
+  Every path was affected: all four single distributions, multiphase fits,
+  and `hzr_read_outhaz()` objects. The confidence limits were already right
+  and have not changed, so the `PROC HAZPRED` parity of `lower` and `upper`
+  still holds. `PROC HAZPRED` prints no standard error, so there was no SAS
+  value for this column to reproduce.
+
 * **The multiphase gradient and Hessian are now right when an early phase's
   `m` is near 0.** Both differentiate in `m` by finite differences, and
   their stencils straddled 0: the gradient's (half-width about 6e-6)
