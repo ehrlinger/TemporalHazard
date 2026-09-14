@@ -389,7 +389,8 @@ NULL
 #'
 #'   type = "cumulative_hazard" -> target = H, log-scale CL
 #'   type = "survival"          -> target = H, log-log-survival CL
-#'                                 (final `fit` is exp(-H))
+#'                                 (final `fit` is exp(-H); reported
+#'                                 `se.fit` is S * se(H), the SE of S)
 #'   type = "hazard"            -> target = exp(eta) (single-dist only),
 #'                                 log-scale CL
 #'   type = "linear_predictor"  -> target = eta, natural-scale CL
@@ -472,7 +473,11 @@ NULL
   if (type == "survival") {
     fit <- exp(-target)
     surv_scale <- if (conf_type == "logit") "logit_survival" else "loglog_survival"
-    .hzr_predict_cl_from_se(fit, se_target, level, surv_scale)
+    res <- .hzr_predict_cl_from_se(fit, se_target, level, surv_scale)
+    # The limits need se(H); the reported SE is of `fit` = S itself.
+    # dS/dH = -S, so se(S) = S * se(H), as summary.survfit's std.err.
+    res$se.fit <- fit * se_target
+    res
   } else if (type == "cumulative_hazard" || type == "hazard") {
     .hzr_predict_cl_from_se(target, se_target, level, "log")
   } else if (type == "linear_predictor") {

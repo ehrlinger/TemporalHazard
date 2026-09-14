@@ -2,15 +2,29 @@
 
 ## Breaking changes
 
-* **`hazard()` now stops when two design columns share a name** (#298). A factor's
-  dummy columns are named `<factor><level>`, so a factor `g` with level `b`
-  and a numeric column `gb` both produced a column `gb`. The fit ran without
-  a word: `coef()` carried two `gb` names, and `predict()` on a one-row
-  `newdata` returned two values. The check covers the global design, an `x`
-  matrix passed to the vector interface, and, when `fit = TRUE`, each phase
-  formula of a multiphase fit. The error names the colliding columns. A fit that used to
-  run now stops: rename the numeric column, or rename the factor or change
-  its levels (`relevel()`, `levels<-`).
+* **`hazard()` now stops when two design columns share a name** (#298). A
+  factor's dummy columns are named `<factor><level>`, so a factor `g` with
+  level `b` and a numeric column `gb` both produced a column `gb`. The fit
+  ran without a word: `coef()` carried two `gb` names, and `predict()` on a
+  one-row `newdata` returned two values. The check covers the global design,
+  an `x` matrix passed to the vector interface, and, when `fit = TRUE`, each
+  phase formula of a multiphase fit. The error names the colliding columns.
+  A fit that used to run now stops: rename the numeric column, or rename the
+  factor or change its levels (`relevel()`, `levels<-`).
+
+* **`predict(newdata = )` now takes only the columns of the model's `data`
+  from `newdata`.** A term that uses row-level values kept outside `data`
+  (a vector, matrix, list or environment in the formula's environment, as
+  in `~ zz` or `~ ext$z`) is refused, even when `newdata` supplies the
+  object, with an error naming the term
+  (`term 'zz' of the model uses row-level values taken from outside`).
+  Such a term cannot be rebuilt for new rows. Move the variable
+  into `data` as a column and refit. Before, a supplied `zz` or matrix `M`
+  was used, but a missing or list-held one was silently read from the
+  fitting rows (see Bug fixes). Formula constants, such as `cutoff` in
+  `I(age > cutoff)` and spline knots, are unaffected. A fit saved by an
+  earlier version without its data still takes such a variable from
+  `newdata`, since it cannot tell it from a column.
 
 * **`hazard(fit = TRUE)` without `theta` is now an error for the
   single-distribution models.** For `dist = "weibull"`, `"exponential"`,
@@ -39,6 +53,76 @@
   cause. The emitted `stop()` names it. This is a limit of the translation,
   not a `PROC HAZARD` refusal, so it is kept apart from the existing
   "selects no phase" stop.
+
+* **`predict(newdata = )` matches covariates by name, so `newdata` with
+  other names now stops.** A fit made through the vector interface with a
+  named `x`, say `x = cbind(age = , mal = )`, needs `newdata` columns
+  called `age` and `mal`. Before, `predict()` matched any names, or a bare
+  matrix, to the coefficients by position. That was right only when the
+  order happened to agree, and nothing said when it did not (#267). Code
+  that passed such `newdata` now gets an error naming the missing columns:
+  rename the columns to match `x`. A fit made with an unnamed `x` still
+  matches by position. A formula fit saved by an earlier version stored no
+  formula design, so it is matched on its design-matrix columns: a factor
+  must be given as `grpyoung` and a transform as `log(age)`. Refit it to
+  give the formula's variables instead.
+
+* **A formula fit saved by an earlier version refuses `newdata` with
+  columns other than its design columns and `time`,** with
+  `This fit was saved by an earlier version of TemporalHazard, without a
+  stored formula design, ...; it also has '...'. Refit the model with the
+  current version, or pass only the design columns.` Without a stored
+  design nothing can tell such a column from a formula variable that
+  contradicts a design column, which would otherwise be ignored silently.
+  Before, such a column made the positional match fail, so this is as
+  loud as it was (#272).
+
+* **`predict(newdata = )` stops when `newdata` gives some of the formula's
+  variables beside the fitted design columns, with others missing.** Say
+  a fit of `~ age + grp + sex`, with `newdata` holding `grp = "old"`,
+  `grpyoung = 1` and `sexM = 0` but no `sex`. That used to return a value,
+  and silently the wrong one: the design columns were used, and the
+  `grp` it was given was ignored. It now stops with the error
+  `'newdata' gives the formula variable(s) 'grp' but lacks 'sex', while
+  carrying the fitted design columns. Give all of the formula's variables,
+  so the design can be rebuilt from them.` Pass all of the formula's
+  variables (here `age`, `grp` and `sex`), or the design columns alone
+  (`age`, `grpyoung`, `sexM`). A numeric covariate such as `age` is both a
+  variable and a column, so it makes a mix only when another column is
+  built from it, as in `~ age * grp` or `I(age^2)`: a changed `age` would
+  leave those columns stale. The
+  wrong-answer fix itself is under Bug fixes (#272).
+
+* **`predict(newdata = )` stops for the time-based predictions of a model
+  with a covariate named `time`.** In `newdata` the column `time` is the
+  prediction time for `"survival"`, `"cumulative_hazard"`, every multiphase
+  type and any fit with `time_windows`, so such a covariate could not be
+  given its own value. When it was the only covariate it was dropped, and
+  the prediction silently came back at the baseline: a Weibull fit of
+  `~ time` gave 0.1414 where the covariate made it 0.1420. Beside other
+  covariates, the one column served as both, so the covariate was always
+  set to the prediction time. A formula constant named `time`, as in
+  `I(age > time)`, was replaced the same way, because a formula looks its
+  symbols up in `newdata` first. None of this gave an error. These calls
+  now stop and ask for the variable to be renamed and the model refitted,
+  whether it is in the global formula, a named `x` or a multiphase phase
+  formula. For a single-distribution model, `hzr_gof()` and
+  `hzr_deciles()` pass the fitted design columns, which are used as they
+  are, so they stop only for a design column named `time` itself, which
+  follow-up time used to overwrite silently. For a multiphase fit they
+  use the fitted per-phase designs and re-evaluate no formula, so a
+  `time` variable does not stop them there. Nor does a phase formula that
+  the fit did not use: a vector-interface fit ignores one. `log(time)`, a constant such as
+  `I(age > time)` and a list element such as `cfg$time` do not stop them.
+  In the global formula, neither does a value that `scale()` stored at
+  fit time, in `predict()` either. A phase formula is re-evaluated as
+  written, so a `time` constant there stops even inside `scale()`.
+  `"linear_predictor"` and single-distribution `"hazard"` have no
+  prediction time, so they read a `time` column as the covariate, now
+  also when it is the only one (it used to stop with "Predictors are
+  required"). They refuse only a `time` constant that a `time` column in
+  `newdata` would mask. `predict()` without `newdata` is unaffected
+  (#270).
 
 * **A multiphase formula that names a phase as a function is now an error**
   (#275). `hazard(Surv(int_dead, dead) ~ constant(age), dist = "multiphase",
@@ -166,6 +250,159 @@
   detected.
 
 ## Bug fixes
+
+* **`predict(newdata = )` no longer lets a design column override the
+  formula variable it contradicts.** `newdata` may give a factor as its
+  level (`grp = "old"`) or as the fit's design column (`grpyoung = 1`).
+  When it held both and they disagreed, the design column silently won: a
+  Weibull fit of `~ age + grp` returned the "young" cumulative hazard,
+  0.362, for a row given `grp = "old"`, where the answer is 0.180. When
+  the formula's variables are all present, `newdata` is now rebuilt from
+  them and a design-named column is an unused extra. Design columns alone
+  are used when no formula variable is given: a fit saved by an earlier
+  version, or `newdata` given as design columns only. Some variables
+  beside the design columns, with others missing, is now an error
+  rather than a guess, because either route would ignore part of it. That
+  includes a changed numeric `age` beside columns built from it, such as
+  `I(age^2)` or `age:grpyoung`, which would otherwise be used stale: a
+  copy of the fitted design with `age` edited gave 0.362 for
+  `~ age * grp` where the answer is 0.660. `hzr_deciles()` and
+  `hzr_gof()`, which evaluate at fitted design rows or their means, declare
+  that themselves, so `hzr_gof()` still reports the curve at `mean(age^2)`
+  for an `I(age^2)` term, not at `mean(age)^2` (#272).
+
+* **`predict(newdata = )` no longer matches a single-distribution model's
+  covariates by column position.** For `dist = "weibull"`,
+  `"exponential"`, `"loglogistic"` and `"lognormal"`, the covariates in
+  `newdata` were multiplied into the coefficients in the order they
+  appeared, whatever their names. Reordered columns gave a wrong answer
+  with no error: a Weibull fit of `~ age + mal` given `newdata` with `mal`
+  before `age` returned a cumulative hazard of 4.85e20 in place of 0.25,
+  and a survival of 0 in place of 0.78. A `newdata` missing a covariate
+  could also return a value. Every prediction type was affected, as was
+  the time-varying expansion.
+  Covariates are now matched by name, through the same design
+  reconstruction as the multiphase fix below, so a factor can be given as
+  a level label. `newdata` may instead carry the fit's design-matrix
+  columns by name (`grpyoung`), which is how `hzr_deciles()` and
+  `hzr_gof()` call it. A column the model does not use is ignored, and one
+  it needs but `newdata` lacks is an error that names it, even when an
+  object of that name exists in the workspace. An unused column also
+  stays unused when it shares its name with a constant in the formula,
+  such as `cutoff` in `I(age > cutoff)`. It used to replace the constant
+  silently. A fit made with an unnamed
+  `x` matrix still matches by position, since there is nothing else to
+  match on, and a `newdata` with only a `time` column still evaluates the
+  baseline (#267). This rejects some `newdata` that was accepted before;
+  see Breaking changes.
+
+* **`predict(newdata = )` now evaluates a multiphase fit that has both a
+  global covariate and phase-formula covariates.** A phase without its own
+  formula inherits the global design, but at `newdata` it was built from
+  every non-time column, so the global phase received the phase formulas'
+  variables as well as its own. No `newdata` could satisfy both kinds of
+  phase: `hazard(Surv(t, d) ~ age, phases = list(early = hzr_phase(...,
+  formula = ~ mal), constant = hzr_phase("constant")))` stopped with
+  "non-conformable arguments" for every prediction type, and a factor global
+  covariate stopped with a different error. Extra or reordered columns
+  failed the same way. Such a phase is now rebuilt from the global formula's
+  own terms, factor levels and contrasts, as `predict.lm()` does. A factor
+  can be given as a single label, and data-dependent terms such as
+  `scale(x)` and `poly(x, 2)` reuse the fit's centre, scale and basis
+  instead of recomputing them from the new rows. The global formula now also
+  finds a non-column variable (`cutoff` in `I(x > cutoff)`) in the
+  environment the formula was written in, as `model.frame()` does; before,
+  only a global variable was found. `hazard()` stores these in
+  `object$data$x_design`. Fits made through the vector interface select
+  their columns by name, or by position when `x` was unnamed. Point
+  predictions, `se.fit = TRUE` and `decompose = TRUE` are each checked
+  against `exp(x beta_j) H0_j(t)` per phase (#266).
+
+* **`predict(newdata = )` on a multiphase fit with `time_windows` and a
+  global covariate now returns one value per row.** The fit expands the
+  design that a phase without its own formula inherits into one column
+  per window (`age_w1`, `age_w2`). At `newdata` that design was rebuilt
+  without that expansion, and meeting the per-window coefficients it
+  returned a
+  flattened matrix: four numbers for two rows, with no error. It is now
+  expanded at the prediction times, and matches `predict()` at the
+  fitted data.
+
+* **A multiphase fit made through the vector interface, given a phase
+  formula it did not use for fitting, now predicts from the design it was
+  fitted on.** Only the formula interface builds a phase from its own
+  formula. With `hazard(time =, status =, x =)` the phase inherits the
+  global `x`, and `hzr_phase(formula = )` is ignored. `predict(newdata = )`
+  rebuilt that unused formula anyway. With `formula = ~ log(age)` and
+  `x = cbind(age)` it multiplied `log(age)` by a coefficient fitted on
+  `age`: 0.046 0.206 0.525 0.525 where the fit gives 0.023 0.122 0.082
+  0.153. Under `time_windows` it returned eight values for four rows.
+  Neither gave an error. `predict()` now routes each phase the way the fit
+  built it, from the fit's own record, as `hzr_gof()` already did; the two
+  share one rule. A fit saved before that record existed is routed by its
+  stored columns, so an old fit keeps the phase formula it was fitted with.
+
+* **`predict(newdata = )` no longer lets `newdata` stand in for what a
+  formula takes from outside `data`.** A formula can use a variable that is
+  not a column of `data`: a constant, such as `cutoff` in `I(age > cutoff)`
+  or spline knots, or an object with one value per fitting row. Both global
+  and phase designs were rebuilt from all of `newdata`, which caused silent
+  errors:
+  - An extra column masked a constant. A `cutoff = 0` column turned
+    `I(30 > 50)` into `I(30 > 0)`: 0.425 for 0.191 on a Weibull fit, and
+    0.074 for 0.373 on a phase formula.
+  - A row-level object kept outside `data` and absent from `newdata` was
+    read from the fitting rows, in fitting order. That covered a vector,
+    and a list, environment or data frame read with `$`, as in `~ ext$z`.
+    With a one-row `newdata`, the prediction came back with one value per
+    fitting row.
+
+  `newdata` now supplies only the columns of `data`, so every other formula
+  symbol comes from the formula's environment, and a term that uses
+  row-level values from outside `data` is refused (see Breaking changes).
+  A rebuilt design whose row count differs from `newdata`'s is refused too.
+
+* **`predict(newdata = )` on a multiphase fit now codes a phase formula's
+  factors as the fit did.** It rebuilt a phase's design with a bare
+  `model.matrix()` at `newdata`, with no stored levels or contrasts, so a
+  factor given as one label (`grp = "young"`, including a one-row `newdata`
+  with a single character label) stopped with "contrasts can be
+  applied only to factors with 2 or more levels", and a factor whose levels
+  were in another order was coded against the wrong level with no error: a
+  wrong cumulative hazard. The fit now stores each phase formula's terms,
+  factor levels and contrasts (`fit$x_design`), and `predict()` rebuilds the
+  phase's columns from them, matched by name. A level the fit never saw is an
+  error. So is a covariate the phase uses that `newdata` lacks, where it was
+  silently taken from a same-named object in the workspace; a `newdata` with
+  only a `time` column still evaluates the baseline, every covariate at 0.
+  `newdata` carrying only the phase's design columns by name (`grpyoung`) is
+  taken as it is; when it also carries the formula's variables, the variables
+  win, so `grp = "old"` beside `grpyoung = 1` is the old value, not the young
+  one (#272). Some of the variables beside the design columns, with others
+  missing, is an error, and so is a changed variable that another design
+  column is built from (`age` beside a stale `age:grpyoung`) when the others
+  are missing. A fit saved by an earlier version rebuilds from its variables
+  as before whenever they are all given, and refuses some of them beside its
+  design columns, as it errored before. It also refuses a phase covariate
+  missing from `newdata` rather than taking a same-named object, when it
+  kept its fitting data (saved by 1.1.0 or later). A fit saved by 1.0.3 or
+  earlier did not keep it, cannot tell a missing covariate from a formula
+  constant, and still takes a same-named object, as before.
+
+* **`predict(type = "survival", se.fit = TRUE)` now reports the standard
+  error of the survival probability.** The `se.fit` column held the standard
+  error of the cumulative hazard, `se(H)`, bit-identical to the column that
+  `type = "cumulative_hazard"` returns, under a survival label. It now holds
+  `S * se(H)`, the delta-method standard error of `S = exp(-H)`, which is
+  what `summary.survfit()` reports as `std.err`. For a Weibull fit of
+  `Surv(int_dead, dead) ~ age + mal` to `na.omit(avc)`, at `time = 5`,
+  `age = 60`, `mal = 1`, where `S = 0.700`, the old column read 0.0706
+  against the correct 0.0495.
+  Every path was affected: all four single distributions, multiphase fits,
+  and `hzr_read_outhaz()` objects. The confidence limits were already right
+  and have not changed, so the `PROC HAZPRED` parity of `lower` and `upper`
+  still holds. `PROC HAZPRED` prints no standard error, so there was no SAS
+  value for this column to reproduce.
 
 * **The multiphase gradient and Hessian are now right when an early phase's
   `m` is near 0.** Both differentiate in `m` by finite differences, and
