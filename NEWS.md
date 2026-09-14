@@ -2,6 +2,20 @@
 
 ## Breaking changes
 
+* **`predict(newdata = )` now takes only the columns of the model's `data`
+  from `newdata`.** A term that uses row-level values kept outside `data`
+  (a vector, matrix, list or environment in the formula's environment, as
+  in `~ zz` or `~ ext$z`) is refused, even when `newdata` supplies the
+  object, with an error naming the term
+  (`term 'zz' of the model uses row-level values taken from outside`).
+  Such a term cannot be rebuilt for new rows. Move the variable
+  into `data` as a column and refit. Before, a supplied `zz` or matrix `M`
+  was used, but a missing or list-held one was silently read from the
+  fitting rows (see Bug fixes). Formula constants, such as `cutoff` in
+  `I(age > cutoff)` and spline knots, are unaffected. A fit saved by an
+  earlier version without its data still takes such a variable from
+  `newdata`, since it cannot tell it from a column.
+
 * **`hazard(fit = TRUE)` without `theta` is now an error for the
   single-distribution models.** For `dist = "weibull"`, `"exponential"`,
   `"loglogistic"` and `"lognormal"`, the optimizer ran only when `theta` was
@@ -318,25 +332,25 @@
   share one rule. A fit saved before that record existed is routed by its
   stored columns, so an old fit keeps the phase formula it was fitted with.
 
-* **`predict(newdata = )` keeps a formula's constants and outside-data
-  covariates apart from `newdata`'s columns.** A formula can use a variable
-  that is not a column of `data`. A constant, such as `cutoff` in
-  `I(age > cutoff)` or spline knots, has any length. A covariate supplied
-  from outside `data` has one value per fitting row. Both global and phase
-  designs were rebuilt from all of `newdata`, which caused two silent
+* **`predict(newdata = )` no longer lets `newdata` stand in for what a
+  formula takes from outside `data`.** A formula can use a variable that is
+  not a column of `data`: a constant, such as `cutoff` in `I(age > cutoff)`
+  or spline knots, or an object with one value per fitting row. Both global
+  and phase designs were rebuilt from all of `newdata`, which caused silent
   errors:
   - An extra column masked a constant. A `cutoff = 0` column turned
     `I(30 > 50)` into `I(30 > 0)`: 0.425 for 0.191 on a Weibull fit, and
     0.074 for 0.373 on a phase formula.
-  - An outside-data covariate missing from `newdata` was filled with the
-    fitting rows, in fitting order.
+  - A row-level object kept outside `data` and absent from `newdata` was
+    read from the fitting rows, in fitting order. That covered a vector,
+    and a list, environment or data frame read with `$`, as in `~ ext$z`.
+    With a one-row `newdata`, the prediction came back with one value per
+    fitting row.
 
-  Such a variable is now classified by the length of its value in the
-  formula's environment. A constant is taken from there, and a same-named
-  `newdata` column is ignored. An outside-data covariate must be supplied
-  in `newdata`, and a missing one is an error naming it. A rebuilt design
-  whose row count differs from `newdata`'s is also refused. This backstop
-  covers old fits that cannot classify their variables.
+  `newdata` now supplies only the columns of `data`, so every other formula
+  symbol comes from the formula's environment, and a term that uses
+  row-level values from outside `data` is refused (see Breaking changes).
+  A rebuilt design whose row count differs from `newdata`'s is refused too.
 
 * **`predict(newdata = )` on a multiphase fit now codes a phase formula's
   factors as the fit did.** It rebuilt a phase's design with a bare

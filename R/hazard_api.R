@@ -1166,6 +1166,12 @@ hazard <- function(formula = NULL,
 #'   columns, with others missing, is an error. A
 #'   column the model does not use is
 #'   ignored, and a covariate the model needs but `newdata` lacks is an error.
+#'   Only the columns of the model's `data` are taken from `newdata`: a
+#'   formula constant (`cutoff` in `I(age > cutoff)`, spline knots) comes
+#'   from the formula's environment, and a term that uses row-level values
+#'   kept outside `data` (`~ zz`, with `zz` a vector in the workspace) is an
+#'   error, even when `newdata` has a `zz` column; move it into `data` and
+#'   refit.
 #'   A fit made with an unnamed `x` matrix matches by position. For the types
 #'   requiring time, a `newdata` with only a `time` column evaluates the
 #'   baseline, with every covariate at 0. Because `time` is then the

@@ -1627,31 +1627,32 @@
          call. = FALSE)
   }
 
-  # The same constants/outside-data rule as the global rebuild
-  # (.hzr_newdata_frame()), and the same row backstop.
+  # The same rule as the global rebuild: newdata supplies only the data
+  # variables (.hzr_newdata_frame()), and a term that does not follow
+  # newdata's rows is refused (.hzr_check_equivariant()).
   where <- paste0("phase '", nm, "'")
-  n_fit <- .hzr_fit_rows(object)
 
-  # A fit made before the phase design was stored: rebuild as it did then.
-  # When it kept its data it knows its data variables, so the rest can be
-  # classified; without it only the backstop applies.
+  # A fit made before the phase design was stored: rebuild as it did then,
+  # from its formula. Without the kept data, `vars` is every formula
+  # variable, so an object kept outside `data` cannot be told from a column.
   if (is.null(design)) {
-    nd <- if (known_vars) {
-      .hzr_newdata_frame(stats::terms(ph$formula), newdata, vars, n_fit, where)
-    } else {
-      newdata
+    build <- function(x) {
+      nd <- .hzr_newdata_frame(x, vars)
+      m0 <- stats::model.matrix(ph$formula, data = nd)
+      m <- m0[, -1L, drop = FALSE]
+      attr(m, "assign") <- attr(m0, "assign")[-1L]
+      m
     }
-    mm <- stats::model.matrix(ph$formula, data = nd)[, -1L, drop = FALSE]
-    .hzr_check_design_rows(mm, newdata, where)
-    return(mm)
+    return(.hzr_check_equivariant(build, newdata, labels, where))
   }
-  nd <- .hzr_newdata_frame(design$terms, newdata, design$data_vars, n_fit,
-                           where)
-  mf <- stats::model.frame(design$terms, data = nd,
-                           xlev = design$xlevels, na.action = stats::na.pass)
-  mm <- stats::model.matrix(design$terms, data = mf,
-                            contrasts.arg = design$contrasts)
-  .hzr_check_design_rows(mm, newdata, where)
+  build <- function(x) {
+    nd <- .hzr_newdata_frame(x, design$data_vars)
+    mf <- stats::model.frame(design$terms, data = nd, xlev = design$xlevels,
+                             na.action = stats::na.pass)
+    stats::model.matrix(design$terms, data = mf,
+                        contrasts.arg = design$contrasts)
+  }
+  mm <- .hzr_check_equivariant(build, newdata, labels, where)
   mm[, cols, drop = FALSE]
 }
 

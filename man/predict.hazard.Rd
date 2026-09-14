@@ -35,6 +35,12 @@ that contradicts one is ignored; some variables beside the design
 columns, with others missing, is an error. A
 column the model does not use is
 ignored, and a covariate the model needs but \code{newdata} lacks is an error.
+Only the columns of the model's \code{data} are taken from \code{newdata}: a
+formula constant (\code{cutoff} in \code{I(age > cutoff)}, spline knots) comes
+from the formula's environment, and a term that uses row-level values
+kept outside \code{data} (\code{~ zz}, with \code{zz} a vector in the workspace) is an
+error, even when \code{newdata} has a \code{zz} column; move it into \code{data} and
+refit.
 A fit made with an unnamed \code{x} matrix matches by position. For the types
 requiring time, a \code{newdata} with only a \code{time} column evaluates the
 baseline, with every covariate at 0. Because \code{time} is then the

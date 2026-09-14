@@ -520,45 +520,77 @@ test_that("an extra newdata column cannot mask a phase-formula constant", {
   expect_gt(abs(m$fit$theta[[grep("^early\\.I", names(m$fit$theta))]]), 0.1)
 })
 
-test_that("a row covariate taken from outside data must come from newdata", {
+test_that("a term with row-level values from outside data is refused", {
+  # predict(newdata =) takes only the columns of the model's `data`. A term
+  # built from an object kept outside `data` cannot be rebuilt for new rows,
+  # even when newdata carries a column of the same name, so it is refused.
+  d <- .oc_avc()
+  n <- nrow(d)
+  set.seed(3)
+  zz <- rnorm(n)
+  M <- cbind(zz, zz^2)
+  Lz <- list(z = zz, k = 3)
+  en <- new.env()
+  en$z <- zz
+  ext <- data.frame(z = zz)
+  rv <- rev(seq_len(n))
+  nd <- d[rv, ]
+  nd$zz <- zz[rv]
+  nd$M <- M[rv, ]
+  msg <- "uses row-level values taken from outside `data`"
+  fit <- function(rhs, beta) {
+    hazard(stats::as.formula(paste("survival::Surv(int_dead, dead) ~", rhs)),
+           data = d, dist = "weibull", theta = c(mu = 0.01, nu = 0.5, beta))
+  }
+  lp <- function(w) predict(w, newdata = nd, type = "linear_predictor")
+  for (rhs in c("zz", "M[, 1]", "Lz$z", "en$z", "ext$z")) {
+    expect_error(lp(fit(rhs, 0.3)), msg)
+  }
+  expect_error(lp(fit("M", c(0.8, 0.3))), msg)
+  expect_error(lp(fit("poly(M[, 1], 2)", c(0.3, 0.1))), msg)
+  expect_error(lp(fit("age + zz", c(0.01, 0.3))), "term 'zz' of the model")
+})
+
+test_that("a phase term with row-level values from outside data is refused", {
   skip_on_cran()  # multiphase fits
   d <- .oc_avc()
   set.seed(7)
   zz <- d$age[sample(nrow(d))] / 100   # a row covariate, not a column of d
-  rows <- c(1, 50, 150)
-  nd_zz <- data.frame(time = d$int_dead[rows], zz = zz[rows])
-  nd_no <- data.frame(time = d$int_dead[rows], age = d$age[rows])
-
-  w <- hazard(survival::Surv(int_dead, dead) ~ zz, data = d, dist = "weibull",
-              theta = c(mu = 0.01, nu = 0.5, b = 0.4))
-  expect_error(predict(w, newdata = nd_no, type = "cumulative_hazard"),
-               "outside `data`")
-  expect_equal(unname(predict(w, newdata = nd_zz, type = "cumulative_hazard")),
-               (0.01 * d$int_dead[rows])^0.5 * exp(0.4 * zz[rows]),
-               tolerance = 1e-12)
-
-  e <- hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes")
-  set.seed(1)
-  mg <- suppressWarnings(hazard(
-    survival::Surv(int_dead, dead) ~ zz, data = d, dist = "multiphase",
-    phases = list(early = e, constant = hzr_phase("constant")), fit = TRUE))
-  set.seed(1)
-  mp <- suppressWarnings(hazard(
-    survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
-    phases = list(
-      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes",
-                        formula = ~ zz),
-      constant = hzr_phase("constant")),
-    fit = TRUE))
-  for (f in list(mg, mp)) {
-    expect_error(predict(f, newdata = nd_no, type = "cumulative_hazard"),
-                 "outside `data`")
-    got <- predict(f, newdata = nd_zz, type = "cumulative_hazard")
-    expect_length(got, length(rows))
-    expect_equal(unname(got),
-                 unname(predict(f, type = "cumulative_hazard")[rows]),
-                 tolerance = 1e-10)
+  Lz <- list(z = zz, k = 3)
+  rv <- rev(seq_len(nrow(d)))
+  nd <- data.frame(time = d$int_dead[rv], zz = zz[rv])
+  mp <- function(glob, form) {
+    set.seed(1)
+    suppressWarnings(hazard(
+      glob, data = d, dist = "multiphase",
+      phases = list(
+        early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                          fixed = "shapes", formula = form),
+        constant = hzr_phase("constant")),
+      fit = TRUE))
   }
+  f_zz <- mp(survival::Surv(int_dead, dead) ~ 1, ~ zz)
+  f_lz <- mp(survival::Surv(int_dead, dead) ~ 1, ~ Lz$z)
+  g_zz <- mp(survival::Surv(int_dead, dead) ~ zz, NULL)
+  ch <- function(f, x) predict(f, newdata = x, type = "cumulative_hazard")
+  expect_error(ch(f_zz, nd), "term 'zz' of phase 'early' uses row-level")
+  expect_error(ch(f_lz, nd), "term 'Lz\\$z' of phase 'early' uses row-level")
+  expect_error(ch(g_zz, nd), "term 'zz' of the model uses row-level")
+
+  # A fit saved without the phase design but with its data knows zz is not a
+  # data column, and refuses the same way.
+  f18 <- f_zz
+  f18$fit$x_design <- NULL
+  expect_error(ch(f18, nd), "term 'zz' of phase 'early' uses row-level")
+  # A 1.0.3-era fit (no design, frame or record) cannot tell zz from a data
+  # column, so it takes zz from newdata, as it did then.
+  f19 <- f18
+  f19$data$frame <- NULL
+  attr(f19$fit$x_list, "from_formula") <- NULL
+  rows <- c(1, 50, 150)
+  expect_equal(unname(ch(f19, nd[match(rows, rv), ])),
+               unname(predict(f_zz, type = "cumulative_hazard")[rows]),
+               tolerance = 1e-10)
 })
 
 test_that("a rebuilt design never has more rows than newdata", {
@@ -582,7 +614,7 @@ test_that("a rebuilt design never has more rows than newdata", {
   attr(f$fit$x_list, "from_formula") <- NULL
   expect_error(predict(f, newdata = data.frame(time = 2, age = 60),
                        type = "cumulative_hazard"),
-               "rows")
+               "rows for 1 row\\(s\\) of 'newdata': a term uses row-level")
 })
 
 test_that("a vector formula constant (spline knots) still predicts", {
@@ -600,6 +632,43 @@ test_that("a vector formula constant (spline knots) still predicts", {
   nd$k <- 999
   expect_equal(unname(predict(w, newdata = nd, type = "cumulative_hazard")),
                want, tolerance = 1e-10)
+})
+
+test_that("the outside-data refusal at one row, duplicate rows, one fit row", {
+  d <- .oc_avc()
+  n <- nrow(d)
+  set.seed(3)
+  zz <- rnorm(n)
+  Lz <- list(z = zz, k = 3)
+  cutoff <- 50
+  beta <- c(0.8, 0.3)
+  wb <- function(f, data = d, b = beta) {
+    hazard(f, data = data, dist = "weibull", theta = c(mu = 0.01, nu = 0.5, b))
+  }
+  w_zz <- wb(survival::Surv(int_dead, dead) ~ zz, b = 0.3)
+  w_lz <- wb(survival::Surv(int_dead, dead) ~ Lz$z, b = 0.3)
+  w_ct <- wb(survival::Surv(int_dead, dead) ~ I(age > cutoff) + mal)
+  truth <- function(x) drop(cbind(x$age > cutoff, x$mal) %*% beta)
+  lp <- function(w, x) unname(predict(w, newdata = x, type = "linear_predictor"))
+
+  # One row cannot be shifted, so the row-count backstop refuses.
+  one <- d[5, ]
+  one$zz <- zz[5]
+  backstop <- paste0("has ", n, " rows for 1 row")
+  expect_error(lp(w_zz, one), backstop)
+  expect_error(lp(w_lz, d[5, ]), backstop)
+  expect_equal(lp(w_ct, d[5, ]), truth(d[5, ]), tolerance = 1e-12)
+
+  # Duplicate rows: a design built from newdata's columns moves with its
+  # rows, so it passes; an outside term does not, however alike the rows.
+  dup <- d[c(1, 1, 2, 2, 3), ]
+  expect_equal(lp(w_ct, dup), truth(dup), tolerance = 1e-12)
+  expect_error(lp(w_lz, d[rep(1, n), ]), "uses row-level values")
+
+  # One fitting row: a scalar constant is still a constant.
+  w1 <- wb(survival::Surv(int_dead, dead) ~ I(age > cutoff) + mal,
+           data = d[1, , drop = FALSE])
+  expect_equal(lp(w1, d[1:3, ]), truth(d[1:3, ]), tolerance = 1e-12)
 })
 
 test_that("data_vars skips `$` names and is unchanged for ordinary formulas", {

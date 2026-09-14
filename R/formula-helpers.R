@@ -321,68 +321,68 @@
 }
 
 
-#' Rows of the data a fit was made on
-#'
-#' @param object A fitted `hazard` object.
-#' @return A single integer: `nrow()` of the stored fitting data when the fit
-#'   kept it, otherwise the length of the fitted times.
-#' @keywords internal
-#' @noRd
-.hzr_fit_rows <- function(object) {
-  if (!is.null(object$data$frame)) {
-    nrow(object$data$frame)
-  } else {
-    length(object$data$time)
-  }
-}
-
-
 #' The newdata frame a formula design is rebuilt from
 #'
 #' Shared by the global and the per-phase rebuild, so the two follow one
-#' rule. A formula variable that is not a fitting-data column is classified
-#' by the length of its value in the formula's environment:
+#' rule: `newdata` supplies only the model's `data` columns. Every other
+#' formula symbol (a constant such as `cutoff` in `I(age > cutoff)`, spline
+#' knots, or an object kept outside `data`) resolves from the formula's
+#' environment, so a same-named `newdata` column can never stand in for it.
+#' A term that took row-level values from outside `data` is then refused by
+#' `.hzr_check_equivariant()`.
 #'
-#' * One value per fitting row: a covariate taken from outside `data` when
-#'   the model was fitted. It must come from `newdata`, and is refused if
-#'   missing; `model.frame()` would otherwise fill it with the fitting rows.
-#' * Any other length: a formula constant (`cutoff` in `I(age > cutoff)`,
-#'   spline knots). It is taken from the environment, and a same-named
-#'   `newdata` column is dropped so it cannot mask it.
-#'
-#' Fitting-data variables are checked by the callers.
-#'
-#' @param terms The stored terms; their environment is the formula's.
 #' @param newdata Data frame of new rows.
 #' @param data_vars The formula's fitting-data variables.
-#' @param n_fit Number of fitting rows (`.hzr_fit_rows()`).
-#' @param where Text naming the design, for messages.
-#' @return `newdata` without the constants' columns.
+#' @return `newdata` with only the `data_vars` columns.
 #' @keywords internal
 #' @noRd
-.hzr_newdata_frame <- function(terms, newdata, data_vars, n_fit, where) {
-  f <- stats::formula(terms)
-  others <- setdiff(.hzr_mask_symbols(f[[length(f)]]), data_vars)
-  env <- environment(terms)
-  row_vars <- character(0)
-  constants <- character(0)
-  for (v in others) {
-    val <- get0(v, envir = env)
-    if (is.null(val) || is.function(val)) next
-    if (length(val) == n_fit) {
-      row_vars <- c(row_vars, v)
-    } else {
-      constants <- c(constants, v)
-    }
+.hzr_newdata_frame <- function(newdata, data_vars) {
+  newdata[, intersect(names(newdata), data_vars), drop = FALSE]
+}
+
+
+#' Build a newdata design, refusing terms that do not follow newdata's rows
+#'
+#' A term built from `newdata`'s columns is row-wise: shifting `newdata`'s
+#' rows shifts the design's rows the same way. A term that took row-level
+#' values from outside `data` (a vector, matrix, list or environment in the
+#' formula's environment) does not move with them, so the design is rebuilt
+#' with the rows cyclically shifted and any column that does not follow is
+#' refused, naming its term. This does not depend on the shape of the
+#' outside object. One row cannot be shifted; the row-count backstop
+#' (`.hzr_check_design_rows()`) covers it.
+#'
+#' @param build Function of a data frame of new rows, returning the model
+#'   matrix with its `assign` attribute.
+#' @param newdata Data frame of new rows.
+#' @param labels The terms' labels, indexed by `assign`.
+#' @param where Text naming the design, for messages.
+#' @return The model matrix built from `newdata`.
+#' @keywords internal
+#' @noRd
+.hzr_check_equivariant <- function(build, newdata, labels, where) {
+  mm <- build(newdata)
+  .hzr_check_design_rows(mm, newdata, where)
+  n <- nrow(newdata)
+  if (n < 2L) {
+    return(mm)
   }
-  missing <- setdiff(row_vars, names(newdata))
-  if (length(missing) > 0L) {
-    stop("'newdata' lacks the covariate column(s) ",
-         paste0("'", missing, "'", collapse = ", "), " that ", where,
-         " uses (it was taken from outside `data` when the model was ",
-         "fitted). Supply it as a column of 'newdata'.", call. = FALSE)
+  s <- c(2:n, 1L)
+  ms <- build(newdata[s, , drop = FALSE])
+  .hzr_check_design_rows(ms, newdata, where)
+  b <- mm[s, , drop = FALSE]
+  same <- abs(ms - b) <= sqrt(.Machine$double.eps) * pmax(1, abs(b))
+  same[is.na(ms) & is.na(b)] <- TRUE
+  same[is.na(same)] <- FALSE
+  bad <- which(colSums(!same) > 0L)
+  if (length(bad) > 0L) {
+    term <- unique(c("(Intercept)", labels)[attr(mm, "assign")[bad] + 1L])
+    stop("term ", paste0("'", term, "'", collapse = ", "), " of ", where,
+         " uses row-level values taken from outside `data`; ",
+         "predict(newdata =) cannot rebuild them for new rows. Move them ",
+         "into `data` as columns and refit.", call. = FALSE)
   }
-  newdata[, setdiff(names(newdata), constants), drop = FALSE]
+  mm
 }
 
 
@@ -401,8 +401,9 @@
 .hzr_check_design_rows <- function(mm, newdata, where) {
   if (nrow(mm) != nrow(newdata)) {
     stop("The design rebuilt for ", where, " has ", nrow(mm), " rows for ",
-         nrow(newdata), " row(s) of 'newdata': a formula variable was taken ",
-         "from outside 'newdata'. Supply it as a column of 'newdata'.",
+         nrow(newdata), " row(s) of 'newdata': a term uses row-level values ",
+         "taken from outside `data`, which predict(newdata =) cannot rebuild ",
+         "for new rows. Move them into `data` as columns and refit.",
          call. = FALSE)
   }
   invisible(NULL)
@@ -577,15 +578,19 @@
   if (!is.null(design)) {
     # Formula interface: the same terms, levels and contrasts as the fit, so
     # a factor given as a single label still codes to the fit's columns.
-    # The frame is newdata with the formula's constants' columns removed and
-    # its outside-data row covariates required; see .hzr_newdata_frame().
-    nd <- .hzr_newdata_frame(design$terms, newdata, design$data_vars,
-                             .hzr_fit_rows(object), "the model")
-    mf <- stats::model.frame(design$terms, data = nd,
-                             xlev = design$xlevels, na.action = stats::na.pass)
-    mm <- stats::model.matrix(design$terms, data = mf,
-                              contrasts.arg = design$contrasts)
-    .hzr_check_design_rows(mm, newdata, "the model")
+    # newdata supplies only the data columns, and a term that does not
+    # follow its rows is refused; see .hzr_newdata_frame() and
+    # .hzr_check_equivariant().
+    build <- function(x) {
+      nd <- .hzr_newdata_frame(x, design$data_vars)
+      mf <- stats::model.frame(design$terms, data = nd, xlev = design$xlevels,
+                               na.action = stats::na.pass)
+      stats::model.matrix(design$terms, data = mf,
+                          contrasts.arg = design$contrasts)
+    }
+    mm <- .hzr_check_equivariant(build, newdata,
+                                 attr(design$terms, "term.labels"),
+                                 "the model")
     return(mm[, cols, drop = FALSE])
   }
   if (!is.null(cols)) {
