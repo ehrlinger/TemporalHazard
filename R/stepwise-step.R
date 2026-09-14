@@ -88,6 +88,10 @@
       data_vars <- .hzr_formula_rhs_terms(scope)
     } else if (is.character(scope)) {
       data_vars <- scope
+      # A character scope never passes through terms(), so an offset in it
+      # reached a refit and failed there with a message that did not say why.
+      scope_f <- tryCatch(stats::reformulate(scope), error = function(e) NULL)
+      if (!is.null(scope_f)) .hzr_refuse_offset(scope_f, "`scope`")
     } else {
       stop("`scope` must be NULL, a one-sided formula, or a character vector.",
            call. = FALSE)

@@ -835,6 +835,9 @@ hazard <- function(formula = NULL,
     # columns, so there `.` is refused.
     for (nm in names(phases)) {
       pf <- phases[[nm]]$formula
+      if (!is.null(pf)) {
+        .hzr_refuse_offset(pf, paste0("the formula of phase '", nm, "'"))
+      }
       if (is.null(pf) || !"." %in% all.vars(pf)) next
       if (is.null(formula)) {
         stop("Phase '", nm, "' uses `.` in its formula, which needs the ",
