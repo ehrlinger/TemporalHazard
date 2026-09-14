@@ -88,26 +88,128 @@ test_that("a variable that other columns are built from is not left stale", {
                .dp_weibull(0.004 * 60 + 0.7 + 0.01 * 60, 2), tolerance = 1e-12)
 })
 
-test_that("a fit saved before the design was stored refuses extra columns", {
-  # A formula fit from 1.2.10 or earlier has no x_design, so nothing can
-  # tell a formula variable from an unused column.  Taking the design
-  # columns beside a contradicting grp swapped the answer; main (4b68020)
-  # stopped instead ("Number of parameters insufficient ..."), and so does
-  # this now.  Values pinned from main at 4b68020 on the same object.
-  w <- hazard(survival::Surv(int_dead, dead) ~ age + grp, data = .dp_avc,
-              dist = "weibull", theta = .dp_th)
-  w$data$x_design <- NULL
-  expect_error(
-    predict(w, type = "cumulative_hazard",
-            newdata = data.frame(time = 2, age = 60, grp = c("old", "young"),
-                                 grpyoung = c(1, 0))),
-    "earlier version.*also has 'grp'.*pass only the design columns"
-  )
-  # Design-only newdata stays correct: the truth, which main also gave.
-  got <- predict(w, type = "cumulative_hazard",
-                 newdata = data.frame(grpyoung = c(0, 1), time = 2, age = 60))
-  expect_equal(unname(got), .dp_weibull(0.004 * 60 + 0.7 * c(0, 1), 2),
+test_that("a fit saved before the design was stored rebuilds it (#301)", {
+  # A formula fit from 1.2.10 or earlier has no x_design.  Taking its design
+  # columns beside a contradicting grp swapped the answer, so #292 refused
+  # any column but the design columns (main at 9ec83e7 refused both newdata
+  # below).  The design is now rebuilt from the stored formula and data
+  # frame, and used once it reproduces the fitted design, so the legacy fit
+  # answers as a new one does.  Truth: (0.01 * 2)^0.5 for "old", times
+  # exp(0.7) for "young"; the swap gave them the other way round.
+  w <- hazard(survival::Surv(int_dead, dead) ~ grp, data = .dp_avc,
+              dist = "weibull", theta = c(mu = 0.01, nu = 0.5, b_young = 0.7))
+  leg <- w
+  leg$data$x_design <- NULL
+  truth <- c(0.141421356237, 0.284787639017)
+  nd_var <- data.frame(time = 2, grp = c("old", "young"))
+  nd_mix <- data.frame(time = 2, grp = c("old", "young"), grpyoung = c(1, 0))
+  for (nd in list(nd_var, nd_mix)) {
+    got <- unname(predict(leg, type = "cumulative_hazard", newdata = nd))
+    expect_equal(got, truth, tolerance = 1e-10)
+    expect_identical(
+      got, unname(predict(w, type = "cumulative_hazard", newdata = nd))
+    )
+  }
+  # An unused column beside the design columns is ignored, as for a new fit.
+  got <- predict(leg, type = "cumulative_hazard",
+                 newdata = data.frame(grpyoung = c(0, 1), time = 2, junk = 9))
+  expect_equal(unname(got), truth, tolerance = 1e-10)
+})
+
+test_that("a rebuilt legacy design resolves formula constants as the fit did", {
+  # `k` is not a column: the stored call's bindings supply it, as the
+  # formula's environment does for a new fit.  The two rows fall either
+  # side of k, so a wrong k or a dropped term would show.
+  k <- 50
+  w <- hazard(survival::Surv(int_dead, dead) ~ age + I(age > k),
+              data = .dp_avc, dist = "weibull",
+              theta = c(mu = 0.01, nu = 0.5, 0.004, 0.3))
+  leg <- w
+  leg$data$x_design <- NULL
+  nd <- data.frame(time = 2, age = c(40, 60), junk = 1)
+  got <- unname(predict(leg, type = "cumulative_hazard", newdata = nd))
+  expect_equal(got, .dp_weibull(0.004 * c(40, 60) + 0.3 * c(0, 1), 2),
                tolerance = 1e-12)
+  expect_identical(
+    got, unname(predict(w, type = "cumulative_hazard", newdata = nd))
+  )
+})
+
+test_that("a legacy design that is not rebuilt exactly keeps the refusal", {
+  # The rebuilt design is used only if it reproduces the fitted one, same
+  # columns and same values.  Anything missing or different leaves #292's
+  # refusal in place rather than guessing (#301).
+  w <- hazard(survival::Surv(int_dead, dead) ~ grp, data = .dp_avc,
+              dist = "weibull", theta = c(mu = 0.01, nu = 0.5, b_young = 0.7))
+  w$data$x_design <- NULL
+  nd_mix <- data.frame(time = 2, grp = c("old", "young"), grpyoung = c(1, 0))
+  broken <- list(
+    # Same columns, one value differs: the frame is not the fitted data.
+    value = function(f) {
+      f$data$x[1L, "grpyoung"] <- 1 - f$data$x[1L, "grpyoung"]
+      f
+    },
+    # Same values under another column name.
+    names = function(f) {
+      f$call$formula <- quote(survival::Surv(int_dead, dead) ~
+                                I(grp == "young"))
+      f
+    },
+    # The formula now builds other columns.
+    columns = function(f) {
+      f$call$formula <- quote(survival::Surv(int_dead, dead) ~ age + grp)
+      f
+    },
+    # The formula no longer evaluates against the frame.
+    error = function(f) {
+      f$call$formula <- quote(survival::Surv(int_dead, dead) ~ no_such_var)
+      f
+    },
+    # The frame has lost a row since the fit.
+    rows = function(f) {
+      f$data$frame <- f$data$frame[-1L, ]
+      f
+    },
+    # A 1.0.3-era fit kept no data frame.
+    frame = function(f) {
+      f$data$frame <- NULL
+      f
+    },
+    # A fit saved before call_env kept no bindings for its call.
+    call_env = function(f) {
+      f$call_env <- NULL
+      f
+    }
+  )
+  for (nm in names(broken)) {
+    b <- broken[[nm]](w)
+    expect_error(
+      predict(b, type = "cumulative_hazard", newdata = nd_mix),
+      "earlier version.*also has 'grp'.*pass only the design columns",
+      label = nm
+    )
+    # Design columns alone are still answered, by position-free name match.
+    got <- predict(b, type = "cumulative_hazard",
+                   newdata = data.frame(grpyoung = c(0, 1), time = 2))
+    expect_equal(unname(got), c(0.141421356237, 0.284787639017),
+                 tolerance = 1e-10, label = nm)
+  }
+})
+
+test_that("a vector-interface fit has no formula to rebuild (#301)", {
+  # Given data = (the masking path) it stores the frame, but no formula, so
+  # nothing is rebuilt and an extra column stays unused, as before.
+  d <- .dp_avc
+  v <- hazard(time = int_dead, status = dead,
+              x = cbind(age = d$age, mal = d$mal), data = d,
+              dist = "weibull", theta = c(mu = 0.01, nu = 0.5, 0.004, 0.3))
+  expect_true(is.data.frame(v$data$frame))
+  expect_null(v$call$formula)
+  expect_null(v$data$x_design)
+  got <- predict(v, type = "cumulative_hazard",
+                 newdata = data.frame(time = 2, age = 60, mal = 1,
+                                      grp = "old", junk = 9))
+  expect_equal(unname(got), .dp_weibull(0.004 * 60 + 0.3, 2), tolerance = 1e-12)
 })
 
 test_that("hzr_gof() and hzr_deciles() still run on a fit saved before x_design", {
@@ -205,7 +307,7 @@ test_that("hzr_deciles() uses the fitted rows even if a formula constant changed
                tolerance = 1e-8)
 })
 
-test_that("a multiphase fit saved before the design was stored refuses too", {
+test_that("a multiphase fit saved before the design was stored rebuilds it", {
   skip_on_cran()  # a multiphase fit
   set.seed(1)
   m <- suppressWarnings(hazard(
@@ -215,17 +317,26 @@ test_that("a multiphase fit saved before the design was stored refuses too", {
       early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes"),
       constant = hzr_phase("constant")),
     fit = TRUE))
-  m$data$x_design <- NULL
+  leg <- m
+  leg$data$x_design <- NULL
+  nd_mix <- data.frame(time = 2, age = 60, grp = c("old", "young"),
+                       grpyoung = c(1, 0))
+  # The global design is rebuilt (#301), so grp wins as it does for the
+  # same fit with its design; main at 9ec83e7 refused this newdata.
+  got <- unname(predict(leg, type = "cumulative_hazard", newdata = nd_mix))
+  expect_identical(
+    got, unname(predict(m, type = "cumulative_hazard", newdata = nd_mix))
+  )
+  # Pinned from main at 4b68020 on the same object (a fitted model: 1e-4),
+  # as design columns (grpyoung 0 then 1: "old" then "young").
+  expect_equal(got, c(0.0140056, 0.320817), tolerance = 1e-4)
+  # Without its data frame (a 1.0.3-era fit) nothing can be rebuilt, and
+  # the refusal stands.
+  leg$data$frame <- NULL
   expect_error(
-    predict(m, type = "cumulative_hazard",
-            newdata = data.frame(time = 2, age = 60, grp = c("old", "young"),
-                                 grpyoung = c(1, 0))),
+    predict(leg, type = "cumulative_hazard", newdata = nd_mix),
     "earlier version.*also has 'grp'.*pass only the design columns"
   )
-  # Pinned from main at 4b68020 on the same object (a fitted model: 1e-4).
-  got <- predict(m, type = "cumulative_hazard",
-                 newdata = data.frame(time = 2, age = 60, grpyoung = c(0, 1)))
-  expect_equal(unname(got), c(0.0140056, 0.320817), tolerance = 1e-4)
 })
 
 test_that("multiphase time_windows: the rebuilt global design is expanded", {

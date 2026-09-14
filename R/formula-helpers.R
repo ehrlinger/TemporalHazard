@@ -471,6 +471,56 @@
 }
 
 
+#' Rebuild the formula design of a fit saved before it was stored
+#'
+#' A formula fit from 1.2.10 or earlier kept no `data$x_design`, so
+#' `predict(newdata = )` cannot tell a formula variable from an unused
+#' column, and refuses any column but the design columns and `time`
+#' (`.hzr_uses_design_columns()`). Such a fit usually kept what the design
+#' is built from: the call's formula, the bindings that call references
+#' (`call_env`) and the data frame it was fitted on (`data$frame`, stored
+#' since 1.1.0). The formula is parsed again against that frame, as
+#' `hazard()` parsed it, and the result is used only if it reproduces the
+#' fitted design `data$x`: the same columns, in the same order, with the
+#' same values. Anything missing, an error, or any difference leaves the
+#' fit as it was, so the refusal stands (#301).
+#'
+#' A vector-interface fit has no formula and is returned unchanged.
+#'
+#' @param object A fitted `hazard` object.
+#' @return `object`, with `data$x_design` filled in when it was rebuilt.
+#' @keywords internal
+#' @noRd
+.hzr_recover_x_design <- function(object) {
+  x_fit <- object$data$x
+  frame <- object$data$frame
+  if (!is.null(object$data$x_design) || is.null(x_fit) ||
+        is.null(object$call$formula) || is.null(object$call_env) ||
+        !is.data.frame(frame)) {
+    return(object)
+  }
+  # eval() runs only the fit's own stored `formula` argument, in the
+  # bindings hazard() captured for it, as hzr_bootstrap() re-runs the call.
+  # Warnings are muffled: whether the rebuild is right is decided by the
+  # comparison below, not by what re-parsing said on the way.
+  parsed <- tryCatch(
+    suppressWarnings(.hzr_parse_formula(
+      eval(object$call$formula, object$call_env), frame
+    )),
+    error = function(e) NULL
+  )
+  x <- parsed$x
+  reproduces <- !is.null(parsed$x_design) && is.matrix(x) &&
+    identical(dim(x), dim(x_fit)) &&
+    identical(colnames(x), colnames(x_fit)) &&
+    isTRUE(all(x == x_fit | (is.na(x) & is.na(x_fit))))
+  if (reproduces) {
+    object$data$x_design <- parsed$x_design
+  }
+  object
+}
+
+
 #' Is the global design taken from `newdata`'s design columns?
 #'
 #' The design is then used as it is and the formula is not re-evaluated.
@@ -505,7 +555,9 @@
   if (is.null(design)) {
     # No stored design: a vector-interface fit (no formula, so no variable a
     # column could contradict), or a formula fit saved before the design was
-    # stored. For the latter an extra column cannot be told from a formula
+    # stored whose design predict() could not rebuild exactly
+    # (.hzr_recover_x_design()). For the latter an extra column cannot be
+    # told from a formula
     # variable, and taking the design columns beside a contradicting one
     # would be a silent wrong answer, so it is refused -- as it was before,
     # when such a column made the positional match fail.

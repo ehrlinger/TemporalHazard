@@ -1418,6 +1418,9 @@ predict.hazard <- function(object, newdata = NULL,
   time_based <- type %in% c("survival", "cumulative_hazard") ||
     identical(object$spec$dist, "multiphase") || !is.null(time_windows)
   if (!is.null(newdata)) {
+    # A formula fit saved before its design was stored gets it rebuilt, when
+    # the rebuild is exact, so the by-name rules below apply to it (#301).
+    object <- .hzr_recover_x_design(object)
     .hzr_check_time_covariate(object, as.data.frame(newdata), time_based)
   }
 
