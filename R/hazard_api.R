@@ -768,6 +768,9 @@ hazard <- function(formula = NULL,
   if (!is.null(time_windows) && !is.null(x)) {
     # Expand X -> [X_w1 | X_w2 | ...] where each row is active only in its window.
     x_fit <- .hzr_expand_time_varying_design(x = x, time = time, time_windows = time_windows)
+    # Absent names pass the check on `x`, but the expansion names each window
+    # column <name>_w<k>, so two of them become "_w1" (or "NA_w1") twice.
+    .hzr_refuse_duplicate_columns(x_fit)
   }
 
   if (!is.null(theta)) {

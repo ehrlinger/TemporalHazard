@@ -7,8 +7,11 @@
   level `b` and a numeric column `gb` both produced a column `gb`. The fit
   ran without a word: `coef()` carried two `gb` names, and `predict()` on a
   one-row `newdata` returned two values. The check covers the global design,
-  an `x` matrix passed to the vector interface, and, when `fit = TRUE`, each
-  phase formula of a multiphase fit. The error names the colliding columns.
+  an `x` matrix passed to the vector interface, the design after
+  `time_windows` expansion, and, when `fit = TRUE`, each phase formula of a
+  multiphase fit. The error names the colliding columns. Unnamed columns of
+  `x` are allowed, but not under `time_windows`: the expansion names each
+  window's column `<name>_w<k>`, so two unnamed columns both became `_w1`.
   A fit that used to run now stops: rename the numeric column, or rename the
   factor or change its levels (`relevel()`, `levels<-`).
 
