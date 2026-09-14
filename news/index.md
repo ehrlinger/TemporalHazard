@@ -4,6 +4,24 @@
 
 ### Breaking changes
 
+- **An [`offset()`](https://rdrr.io/r/stats/offset.html) term in a
+  formula is now an error.**
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  used to drop it without a word:
+  [`model.matrix()`](https://rdrr.io/r/stats/model.matrix.html) leaves
+  offsets out of the design and nothing read them back, so
+  `Surv(time, status) ~ age + offset(z)` gave the same log-likelihood
+  and the same coefficients as `Surv(time, status) ~ age`. **Fits
+  written with an offset ignored it**
+  ([\#297](https://github.com/ehrlinger/TemporalHazard/issues/297)). The
+  global formula, every `hzr_phase(formula = )`, and a
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  formula or scope now stop and name the offending term. Offsets are not
+  supported: how one should enter each phase of the additive multiphase
+  hazard is an open modelling question, not yet decided.
+  `stats::offset(z)` is not refused, because R reads it as an ordinary
+  covariate, not an offset, and fits a coefficient for it.
+
 - **`predict(newdata = )` now takes only the columns of the model’s
   `data` from `newdata`.** A term that uses row-level values kept
   outside `data` (a vector, matrix, list or environment in the formula’s
