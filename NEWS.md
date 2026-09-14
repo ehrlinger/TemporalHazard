@@ -69,16 +69,17 @@
   from it, such as `age` and `I(age^2)` at the design-column means, is now
   rebuilt from `age`, as for a new fit, where its columns used to be taken
   as given. The design is not rebuilt for a 1.0.3-era fit, which kept no
-  data frame; for a formula that no longer reproduces the fit; for a
-  formula passed by a name that was not saved with the fit, or computed in
-  the call (`as.formula(...)`), which would be re-run; for a formula that
-  looks up anything but data columns, R's and packages' own functions and
-  constants, and values written into the call itself (a cutoff `k` in
-  `I(age > k)` or a function of the user's, read from the workspace or a
-  function's frame, may have changed since the fit without changing the
-  fitted rows); or for a term that takes row-level values from outside
-  `data`. For these, `newdata` with columns other than the design columns
-  and `time` is refused, with
+  data frame; for a formula that no longer reproduces the fit; for one
+  computed in the call (`as.formula(...)`), which would be re-run; and for
+  a formula that uses anything but the data's columns and a short list of
+  R's own design functions (arithmetic and comparisons, `I()`, `log()`,
+  `exp()`, `sqrt()`, `abs()`, `pmin()`, `pmax()`, `factor()`, `relevel()`,
+  `scale()`, `poly()`, `splines::ns()` and `splines::bs()`). A constant
+  such as `k` in `I(age > k)`, a function of the user's, or even `pi`
+  could have changed since the fit without changing the fitted rows, so it
+  is not trusted; a number written into the formula, as in
+  `I(age > 50)`, is. For these, `newdata` with columns other than the
+  design columns and `time` is refused, with
   `This fit was saved by an earlier version of TemporalHazard, without a
   stored formula design, ...; it also has '...'. Refit the model with the
   current version, or pass only the design columns.` Without a design
