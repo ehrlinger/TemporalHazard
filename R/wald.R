@@ -23,8 +23,10 @@
 #' chi-square Wald test on the corresponding submatrix of the vcov.
 #'
 #' @param fit A fitted `hazard` object produced by [hazard()].
-#' @param names Character vector of coefficient names to test.  Must be
-#'   a subset of `names(coef(fit))`.
+#' @param names Character vector of coefficient names to test.  For a
+#'   multiphase fit, a subset of `names(coef(fit))`; for a
+#'   single-distribution fit, the positional names (`mu`, `nu`, `beta1`,
+#'   ...) whatever `theta` was named.
 #'
 #' @return A list with elements:
 #' \describe{
@@ -57,13 +59,16 @@
   }
 
   # Canonical coefficient names: multiphase stores them directly on
-  # theta; single-distribution fits are unnamed, so regenerate via the
-  # same helper summary.hazard() uses.
-  coef_names <- base::names(theta)
+  # theta.  A single-distribution theta carries whatever names the user
+  # gave its starting values (`c(mu =, nu =, age = 0)`), which the
+  # positional `beta<k>` from .hzr_candidate_coef_name() never matches, and
+  # a covariate named like a shape (`nu`) would match the shape (#304).  So
+  # name those by position, as summary.hazard() does for an unnamed theta.
+  coef_names <- if (fit$spec$dist == "multiphase") base::names(theta)
   if (is.null(coef_names) || !all(nzchar(coef_names))) {
     p <- if (is.null(fit$data$x)) 0L else ncol(fit$data$x)
     coef_names <- .hzr_parameter_names(
-      theta = theta,
+      theta = unname(theta),
       dist  = fit$spec$dist,
       p     = p
     )

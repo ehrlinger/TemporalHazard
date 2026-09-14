@@ -241,6 +241,18 @@
 
 ## Bug fixes
 
+* **Backward `hzr_stepwise()` no longer stops when `theta` is named after
+  the covariates** (#304). A single-distribution fit started from
+  `theta = c(mu = 0.1, nu = 1, age = 0, mal = 0)` failed its first drop
+  test with "Unknown coefficient name(s): 'beta1'". The step names a
+  covariate's coefficient by its position (`beta1`, `beta2`, ...), while
+  the Wald test took the names from `theta` whenever all of them were set.
+  Unnamed and `beta`-named starting values ran, so the naming a user is
+  most likely to write was the one that failed. The Wald test now names
+  single-distribution coefficients by position, whatever `theta` is called.
+  That also matters for correctness: had the names been matched, a
+  covariate called `nu` would have been tested as the shape parameter.
+
 * **`hzr_stepwise()` now tests an entering candidate on its own
   coefficient** (#305). The Wald criterion, and the Wald fallback the score
   criterion uses for a candidate it cannot score, looked the new coefficient
