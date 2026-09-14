@@ -148,10 +148,16 @@ green PR sat at `mergeStateStatus: BLOCKED` and `reviewDecision: REVIEW_REQUIRED
 approved it. The ruleset's `updated_at` is 2026-09-04, the day after the bypass check below was
 stamped, and the text was not updated with it.
 
-One parameter of the same `pull_request` rule is not explained here:
-`require_extra_approval_for_unattributed_changes` is `true`. What GitHub counts as an
-unattributed change has not been checked. It did not block #295. Do not read it as an approval
-requirement, or as the absence of one, until someone has checked.
+The same `pull_request` rule carries `require_extra_approval_for_unattributed_changes: true`.
+GitHub turns it on by default. It applies only when Copilot opens a pull request under its own
+identity rather than on behalf of a person, and such a PR then needs one more approval than the
+ruleset configures. At a count of 0 it does nothing, and GitHub's documentation says so
+directly: "This setting has no effect if the ruleset requires zero approvals." So the two
+statements above and below hold for every PR, including one Copilot opened for itself. The
+setting starts to bite only if the count is raised: at 1, such a PR would need 2. Source:
+[Available rules for
+rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets),
+section "Require a pull request before merging", read 2026-09-14.
 
 ⚠️ **The maintainer can bypass all of it.** An earlier version of this paragraph said there were
 no bypass actors and the rules therefore applied to the maintainer too. That was wrong on both
