@@ -246,3 +246,39 @@ test_that("the vector interface matches a named x by name", {
                        type = "cumulative_hazard"),
                want, tolerance = 1e-12)
 })
+
+test_that("a fit with no covariates ignores newdata's unused columns (#300)", {
+  # With no stored design, every non-time newdata column was taken as a
+  # covariate. The two-parameter families then errored; the exponential,
+  # whose one shape parameter doubled as the "coefficient", returned
+  # age * log_lambda as the linear predictor with no error.
+  d <- .sd_avc
+  for (dist in names(.sd_theta)) {
+    n_shape <- .hzr_shape_parameter_count(dist)
+    th <- .sd_theta[[dist]][seq_len(n_shape)]
+    objs <- list(
+      formula = hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
+                       dist = dist, theta = th),
+      vector = hazard(time = d$int_dead, status = d$dead, dist = dist,
+                      theta = th)
+    )
+    base <- list(cumulative_hazard = .sd_cumhaz(dist, th, .sd_time, eta = 0))
+    base$survival <- exp(-base$cumulative_hazard)
+    base$linear_predictor <- c(0, 0)
+    base$hazard <- c(1, 1)
+    for (iface in names(objs)) {
+      for (type in names(base)) {
+        label <- paste(dist, iface, type)
+        time_only <- predict(objs[[iface]], newdata = data.frame(time = .sd_time),
+                             type = type)
+        # unname(): the lognormal's location carries theta[1]'s name.
+        expect_equal(unname(time_only), base[[type]], tolerance = 1e-12,
+                     label = label)
+        expect_equal(predict(objs[[iface]],
+                             newdata = data.frame(time = .sd_time, age = 70),
+                             type = type),
+                     time_only, tolerance = 1e-12, label = label)
+      }
+    }
+  }
+})
