@@ -98,3 +98,94 @@ test_that("the multiphase score path names the collision, not 'not_expandable'",
   expect_match(TemporalHazard:::.hzr_score_reason_text("duplicate_column"),
                "<factor><level>", fixed = TRUE)
 })
+
+test_that("a logical candidate is checked under the name the refit gives it", {
+  # model.matrix() names a logical `flag` column `flagTRUE`, so it does not
+  # collide with factor `fla`'s dummy `flag`, and hazard() fits it. A check
+  # on the bare name declined this strong candidate (p ~ 1e-25) silently.
+  set.seed(11)
+  n <- 400
+  flag <- runif(n) > 0.5
+  d <- data.frame(time = rexp(n, 0.2 * exp(1.2 * flag)),
+                  status = rbinom(n, 1, 0.8),
+                  fla = factor(sample(c("f", "g"), n, TRUE)), flag = flag,
+                  w = rnorm(n))
+  fit <- hazard(survival::Surv(time, status) ~ fla, data = d, dist = "weibull",
+                theta = c(mu = 0.2, nu = 1, b = 0), fit = TRUE)
+  step <- .hzr_stepwise_forward_step(fit, scope = c("flag", "w"), data = d,
+                                     criterion = "score", slentry = 0.05)
+  row <- step$all_scores[step$all_scores$variable == "flag", ]
+  expect_true(is.na(row$reason))
+  expect_lt(row$p_value, 1e-10)
+  expect_true(step$accepted)
+  expect_identical(step$variable, "flag")
+})
+
+test_that("a score run that completes still warns about a declined collision", {
+  d <- .refit_reason_data()
+  fit <- .refit_reason_single(d)
+  msgs <- character()
+  sw <- withCallingHandlers(
+    # An impossible slentry ends the run on step 1 with `z` scored and
+    # declined on merit, so the screen completes rather than stopping on
+    # uncomputable scores, which has its own warning.
+    hzr_stepwise(fit, scope = c("gb", "z"), data = d, criterion = "score",
+                 direction = "forward", slentry = 1e-12, trace = FALSE),
+    warning = function(w) {
+      msgs <<- c(msgs, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_false(sw$criteria$stopped_uncomputable)
+  expect_identical(sw$criteria$uncomputable_reasons[["duplicate_column"]], 1L)
+  expect_true(any(grepl("declined 1 candidate score\\(s\\).*<factor><level>",
+                        msgs)))
+})
+
+test_that("the post-entry refit warning carries the refit's error", {
+  d <- .refit_reason_data()
+  fit <- .refit_reason_single(d)
+  local_mocked_bindings(.hzr_refit_with_scope = function(...) stop("boom"))
+  expect_warning(
+    step <- .hzr_stepwise_forward_step(fit, scope = "z", data = d,
+                                       criterion = "score", slentry = 1),
+    "post-entry refit failed for z: boom"
+  )
+  expect_identical(step$refit_failure_reasons, c(z = "boom"))
+})
+
+test_that("the Wald-fallback refit warning carries the refit's error", {
+  d <- .refit_reason_data()
+  fit <- .refit_reason_single(d)
+  local_mocked_bindings(
+    .hzr_score_q = function(...) {
+      list(stat = NA_real_, df = 1L, p_value = NA_real_,
+           reason = "information_indefinite")
+    },
+    .hzr_refit_with_scope = function(...) stop("boom")
+  )
+  expect_warning(
+    step <- .hzr_stepwise_forward_step(fit, scope = "z", data = d,
+                                       criterion = "score", slentry = 1),
+    "Wald-fallback refit failed for z: boom"
+  )
+  expect_identical(step$refit_failures, "z")
+  expect_identical(step$refit_failure_reasons, c(z = "boom"))
+})
+
+test_that("the post-drop refit warning carries the refit's error", {
+  d <- .refit_reason_data()
+  fit <- hazard(survival::Surv(time, status) ~ gb + z, data = d,
+                dist = "weibull", theta = c(0.2, 1, 0, 0),
+                fit = TRUE)
+  local_mocked_bindings(.hzr_refit_with_scope = function(...) stop("boom"))
+  # slstay = 0: every p-value exceeds it, so the weakest term is dropped.
+  expect_warning(
+    step <- .hzr_stepwise_backward_step(fit, data = d, criterion = "wald",
+                                        slstay = 0),
+    "post-drop refit failed for [a-z]+: boom"
+  )
+  expect_length(step$refit_failures, 1L)
+  expect_identical(names(step$refit_failure_reasons), step$refit_failures)
+  expect_identical(unname(step$refit_failure_reasons), "boom")
+})

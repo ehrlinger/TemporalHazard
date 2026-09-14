@@ -665,6 +665,17 @@ hzr_stepwise <- function(fit,
             "same way. See `$criteria$uncomputable_reasons` for which ",
             "mechanism applied.", call. = FALSE)
   }
+  # A completed run keeps the tally but says nothing about it, and a collision
+  # is a naming mistake the user can fix, not a property of the data. The
+  # stopped_uncomputable warning above already spells the reason out.
+  n_duplicate <- sum(uncomputable_reasons[names(uncomputable_reasons) ==
+                                            "duplicate_column"])
+  if (!stopped_uncomputable && n_duplicate > 0L) {
+    warning("Stepwise selection declined ", n_duplicate, " candidate ",
+            "score(s) without testing them: ",
+            .hzr_score_reason_text("duplicate_column"), ". See ",
+            "`$criteria$uncomputable_reasons`.", call. = FALSE)
+  }
   if (stopped_refit_failed) {
     warning("Stepwise selection stopped after ", nrow(steps_df),
             " accepted step(s), and the iteration it stopped on had ",

@@ -178,7 +178,10 @@
   Under `criterion = "score"`, which builds each candidate's design without
   refitting, a candidate whose column name collides with a factor's dummy
   column (numeric `gb` beside factor `g` with level `b`) is now declined with
-  the reason `duplicate_column`. The single-distribution score path used to
+  the reason `duplicate_column`, and a run that completes anyway warns about
+  it. The check uses the name the refit's `model.matrix()` would give the
+  column, so a logical `flag` (column `flagTRUE`) beside a factor dummy `flag`
+  is still scored. The single-distribution score path used to
   score it against a design with two `gb` columns, so it could win the step
   and fail only at the post-entry refit, which stopped the screen with every
   other candidate untested; the multiphase score path declined it as

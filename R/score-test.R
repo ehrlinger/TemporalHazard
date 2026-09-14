@@ -515,7 +515,11 @@
   new_col <- matrix(as.numeric(xcand), ncol = 1L,
                     dimnames = list(NULL, var))
   x_new <- if (is.null(d$x)) new_col else cbind(d$x, new_col)
-  if (.hzr_score_duplicate_columns(x_new)) {
+  # The refit builds its design with model.matrix(), which names a logical
+  # column <var>TRUE. Check the name the refit would create, not `var`: a
+  # logical `flag` beside factor `fla`'s dummy `flag` fits fine.
+  refit_name <- if (is.logical(data[[var]])) paste0(var, "TRUE") else var
+  if (refit_name %in% colnames(d$x)) {
     return(list(reason = "duplicate_column"))
   }
 
