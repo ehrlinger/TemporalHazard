@@ -277,8 +277,11 @@
   of the table: `flag` was being tested on the dummy (z = -1.40, against
   11.39 on its own column). The variable is now found by its term in the
   design the fit stored, for single-distribution and multiphase fits. A
-  fit with no stored design (the `time =` / `x =` interface, or a fit saved
-  by an earlier version) still uses the name. On a single-distribution fit,
+  fit with no stored design (the `time =` / `x =` interface, or a formula
+  fit saved by 1.2.10 or earlier) still uses the name, which is not safe
+  from this collision; there the factor's own "expands to multiple
+  coefficients" error still stops the run. Refit such a model with this
+  version before a backward screen. On a single-distribution fit,
   a logical or two-level factor with no colliding column used to stop with
   "not found in the design matrix"; it is now tested.
 

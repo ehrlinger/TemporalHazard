@@ -708,9 +708,9 @@
     cand <- cands[[i]]
     # Resolved by the variable's term in the stored design, not by name: a
     # factor `fla` with level `g` owns a column named `flag`, while a logical
-    # `flag` owns `flagTRUE` (#315).
-    coef_name <- .hzr_candidate_coef_name(current, cand$var, cand$phase,
-                                          data = data)
+    # `flag` owns `flagTRUE` (#315).  The design is rebuilt from the data the
+    # fit was built on, so a `data` whose column types differ cannot skew it.
+    coef_name <- .hzr_candidate_coef_name(current, cand$var, cand$phase)
 
     s <- .hzr_candidate_score(
       criterion = criterion, mode = "drop",
@@ -796,7 +796,9 @@
 #' Canonical naming differs between fit kinds:
 #'   multiphase: phase-prefixed formula names (e.g. `"early.age"`).
 #'   single-dist: positional `"betaN"` from `.hzr_parameter_names()`,
-#'     where N is the column index of `var` in `colnames(fit$data$x)`.
+#'     where N is the index in `colnames(fit$data$x)` of the column `var`'s
+#'     term builds (or of the column named `var`, for a fit with no stored
+#'     design).
 #'
 #' This matches the naming `summary.hazard()` prints and the canonical
 #' name `.hzr_wald_p()` uses for coefficient lookup.

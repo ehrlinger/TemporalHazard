@@ -123,6 +123,40 @@ test_that("a phase inheriting the global design is resolved by its term", {
                    "constant.flag")
 })
 
+test_that("a phase formula beside a global design reads its own design", {
+  # The phase has a term (`z`) the global formula lacks, so reading the
+  # global design for it cannot find its columns; and the two designs order
+  # the colliding columns differently.
+  d <- bnc_data()
+  d$z <- stats::rnorm(nrow(d))
+  # Only name resolution is tested here. An exponential sample under a cdf
+  # plus constant model has a singular Hessian, and hazard() says so.
+  fit <- suppressWarnings(hazard(
+    survival::Surv(time, status) ~ fla + flag, data = d,
+    dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 0,
+                        formula = ~ z + flag + fla),
+      constant = hzr_phase("constant")
+    ),
+    fit = TRUE
+  ))
+  expect_false(.hzr_phase_inherits_global(fit, "early"))
+  expect_true(.hzr_phase_inherits_global(fit, "constant"))
+  expect_identical(colnames(fit$fit$x_list$early),
+                   c("z", "flagTRUE", "flag"))
+  expect_identical(colnames(fit$fit$x_list$constant), c("flag", "flagTRUE"))
+  expect_identical(.hzr_candidate_coef_name(fit, "z", "early"), "early.z")
+  expect_identical(.hzr_candidate_coef_name(fit, "flag", "early"),
+                   "early.flagTRUE")
+  expect_identical(.hzr_candidate_coef_name(fit, "fla", "early"),
+                   "early.flag")
+  expect_identical(.hzr_candidate_coef_name(fit, "flag", "constant"),
+                   "constant.flagTRUE")
+  expect_identical(.hzr_candidate_coef_name(fit, "fla", "constant"),
+                   "constant.flag")
+})
+
 test_that("the whole backward run drops fla and keeps flag", {
   d <- bnc_data()
   fit <- bnc_single(~ fla + flag, d)
