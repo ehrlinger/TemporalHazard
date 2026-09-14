@@ -140,26 +140,115 @@ test_that("a legacy formula passed by name is rebuilt only from its own binding"
   # bound when predict() ran, a later `f` with another cutoff reproduced
   # the fitted design (no fitted age lies between the cutoffs) and was used
   # silently, with the new cutoff at new rows (#301 review).  Only an `f`
-  # hazard() captured with the call is used.
-  mk <- function(k) survival::Surv(int_dead, dead) ~ age + I(age > k)
+  # hazard() copied with the call is used.
+  f <- survival::Surv(int_dead, dead) ~ grp
+  w <- hazard(f, data = .dp_avc, dist = "weibull",
+              theta = c(mu = 0.01, nu = 0.5, b_young = 0.7))
+  leg <- w
+  leg$data$x_design <- NULL
+  nd <- data.frame(time = 2, grp = c("old", "young"))
+  expect_true(exists("f", envir = leg$call_env, inherits = FALSE))
+  expect_equal(unname(predict(leg, type = "cumulative_hazard", newdata = nd)),
+               c(0.141421356237, 0.284787639017), tolerance = 1e-10)
+  # `f` bound only beyond the copied bindings, as a top-level `f` is: it
+  # may have been redefined since, so it is not used.
+  leg$call_env <- new.env(parent = list2env(list(f = f)))
+  expect_error(predict(leg, type = "cumulative_hazard", newdata = nd),
+               "lacks the covariate column\\(s\\) 'grpyoung'")
+})
+
+test_that("a legacy formula's constant in a function frame is not trusted", {
+  # A formula made in a function keeps that frame as its environment, and
+  # the frame is saved as it stands when the object is saved, not when it
+  # was fitted: here the fit used k = 50 and the frame then moved on to k2.
+  # No fitted age separates them, so the rebuild reproduced the fitted
+  # design and predicted with k2, silently (#301 third review).
   # No fitted age lies in (50, k2], so the fitted design cannot tell them apart.
   k2 <- (50 + min(.dp_avc$age[.dp_avc$age > 50])) / 2
-  f <- mk(50)
-  w <- hazard(f, data = .dp_avc, dist = "weibull",
+  g <- function() {
+    k <- 50
+    f <- survival::Surv(int_dead, dead) ~ age + I(age > k)
+    fit <- hazard(f, data = .dp_avc, dist = "weibull",
+                  theta = c(mu = 0.01, nu = 0.5, 0.004, 0.3))
+    k <- k2
+    fit
+  }
+  leg <- g()
+  leg$data$x_design <- NULL
+  a <- c(40, (50 + k2) / 2)   # the second age lies between the cutoffs
+  nd <- data.frame(time = 2, age = a, `I(age > k)TRUE` = c(0, 1),
+                   check.names = FALSE)
+  expect_equal(unname(predict(leg, type = "cumulative_hazard", newdata = nd)),
+               .dp_weibull(0.004 * a + 0.3 * c(0, 1), 2), tolerance = 1e-12)
+})
+
+test_that("a closure copied with the call is not trusted as a value", {
+  # thr, given by value to vapply(), is copied into call_env with the call,
+  # but its body reads its own frame, which moved on after the fit (k = 50,
+  # then k2).  Trusted, it rebuilt the design with k2 (#301 third review).
+  k2 <- (50 + min(.dp_avc$age[.dp_avc$age > 50])) / 2
+  g <- function() {
+    k <- 50
+    thr <- function(x) x > k
+    fit <- hazard(survival::Surv(int_dead, dead) ~ age +
+                    I(vapply(age, thr, logical(1))),
+                  data = .dp_avc, dist = "weibull",
+                  theta = c(mu = 0.01, nu = 0.5, 0.004, 0.3))
+    k <- k2
+    fit
+  }
+  leg <- g()
+  leg$data$x_design <- NULL
+  expect_true(is.function(get0("thr", envir = leg$call_env, inherits = FALSE)))
+  col <- "I(vapply(age, thr, logical(1)))TRUE"
+  expect_identical(colnames(leg$data$x), c("age", col))
+  a <- c(40, (50 + k2) / 2)
+  nd <- data.frame(time = 2, age = a, x = c(0, 1))
+  names(nd)[3] <- col
+  expect_equal(unname(predict(leg, type = "cumulative_hazard", newdata = nd)),
+               .dp_weibull(0.004 * a + 0.3 * c(0, 1), 2), tolerance = 1e-12)
+})
+
+test_that("a legacy formula calling the user's own function is not rebuilt", {
+  # thr() in the workspace may have been redefined since the fit; moved to
+  # a cutoff no fitted age separates from the old one, the rebuild matched
+  # the fitted design and predicted with the new cutoff (#301 third review).
+  k2 <- (50 + min(.dp_avc$age[.dp_avc$age > 50])) / 2
+  had <- exists("thr", envir = globalenv(), inherits = FALSE)
+  old <- if (had) get("thr", envir = globalenv())
+  withr::defer(
+    if (had) assign("thr", old, envir = globalenv())
+    else rm("thr", envir = globalenv())
+  )
+  assign("thr", function(x) x > 50, envir = globalenv())
+  w <- hazard(survival::Surv(int_dead, dead) ~ age + thr(age),
+              data = .dp_avc, dist = "weibull",
               theta = c(mu = 0.01, nu = 0.5, 0.004, 0.3))
   leg <- w
   leg$data$x_design <- NULL
-  a <- c(40, (50 + k2) / 2, 60)   # the middle age lies between the cutoffs
-  nd <- data.frame(time = 2, age = a)
-  truth <- .dp_weibull(0.004 * a + 0.3 * c(0, 1, 1), 2)
-  expect_true(exists("f", envir = leg$call_env, inherits = FALSE))
+  assign("thr", function(x) x > k2, envir = globalenv())
+  a <- c(40, (50 + k2) / 2)
+  nd <- data.frame(time = 2, age = a, `thr(age)TRUE` = c(0, 1),
+                   check.names = FALSE)
   expect_equal(unname(predict(leg, type = "cumulative_hazard", newdata = nd)),
-               truth, tolerance = 1e-12)
-  # `f` bound only beyond the captured bindings (as a top-level `f` is), and
-  # since redefined: the fit cannot tell 50 from k2, so it is not rebuilt.
-  leg$call_env <- new.env(parent = list2env(list(f = mk(k2))))
-  expect_error(predict(leg, type = "cumulative_hazard", newdata = nd),
-               "lacks the covariate column\\(s\\) 'I\\(age > k\\)TRUE'")
+               .dp_weibull(0.004 * a + 0.3 * c(0, 1), 2), tolerance = 1e-12)
+})
+
+test_that("a legacy formula of package functions and base constants is rebuilt", {
+  # splines::ns() and pi are R's own, fixed since the fit, so the design is
+  # rebuilt and the legacy fit answers as the same fit with its design.
+  w <- hazard(survival::Surv(int_dead, dead) ~ splines::ns(age, df = 2) +
+                I(age > 16 * pi),
+              data = .dp_avc, dist = "weibull",
+              theta = c(mu = 0.01, nu = 0.5, 0.1, 0.2, 0.3))
+  leg <- w
+  leg$data$x_design <- NULL
+  nd <- data.frame(time = 2, age = c(40, 60), junk = 1)
+  got <- unname(predict(leg, type = "cumulative_hazard", newdata = nd))
+  expect_identical(
+    got, unname(predict(w, type = "cumulative_hazard", newdata = nd))
+  )
+  expect_gt(abs(got[2] / got[1] - 1), 0.01)   # the rows differ
 })
 
 test_that("a legacy formula constant read from the workspace is not trusted", {

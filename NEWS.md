@@ -71,11 +71,14 @@
   as given. The design is not rebuilt for a 1.0.3-era fit, which kept no
   data frame; for a formula that no longer reproduces the fit; for a
   formula passed by a name that was not saved with the fit, or computed in
-  the call (`as.formula(...)`), which would be re-run; for a formula whose
-  constant (`k` in `I(age > k)`) is read from the workspace rather than
-  kept with the fit, as for a model fitted at the top level of a script;
-  or for a term that takes row-level values from outside `data`. For these, `newdata` with columns
-  other than the design columns and `time` is refused, with
+  the call (`as.formula(...)`), which would be re-run; for a formula that
+  looks up anything but data columns, R's and packages' own functions and
+  constants, and values written into the call itself (a cutoff `k` in
+  `I(age > k)` or a function of the user's, read from the workspace or a
+  function's frame, may have changed since the fit without changing the
+  fitted rows); or for a term that takes row-level values from outside
+  `data`. For these, `newdata` with columns other than the design columns
+  and `time` is refused, with
   `This fit was saved by an earlier version of TemporalHazard, without a
   stored formula design, ...; it also has '...'. Refit the model with the
   current version, or pass only the design columns.` Without a design

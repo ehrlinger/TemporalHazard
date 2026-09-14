@@ -493,7 +493,8 @@
 #' A name bound only beyond `call_env` (a top-level `f`) means whatever it
 #' means now, not what the fit used, and a cutoff with no fitted row between
 #' the old and new value reproduces `data$x` exactly. A computed formula
-#' (`as.formula(...)`) would run again, side effects and all.
+#' (`as.formula(...)`) would run again, side effects and all. What the
+#' formula looks up is held to the same rule (`.hzr_formula_trusted()`).
 #'
 #' A vector-interface fit has no formula and is returned unchanged.
 #'
@@ -510,6 +511,7 @@
         !is.environment(env) || !is.data.frame(frame)) {
     return(object)
   }
+  literal <- FALSE
   if (is.symbol(f)) {
     if (!exists(as.character(f), envir = env, inherits = FALSE)) {
       return(object)
@@ -523,27 +525,11 @@
     # with the captured bindings as its environment. (Parsing it below
     # evaluates its terms, as hazard() did.)
     f <- eval(f, env)
+    literal <- TRUE
   }
-  # The same rule for what the formula itself looks up: every symbol that
-  # is not a data column (a cutoff `k`, knots) must come from bindings kept
-  # with the fit -- its environment's chain, short of the global and package
-  # environments. One read from the workspace means whatever it means now,
-  # and a cutoff moved to a value no fitted row separates from the old one
-  # reproduces `data$x` exactly.
-  saved <- function(nm) {
-    e <- environment(f)
-    while (!is.null(e) && !identical(e, globalenv()) &&
-             !identical(e, emptyenv()) && !identical(e, baseenv()) &&
-             !isNamespace(e)) {
-      if (exists(nm, envir = e, inherits = FALSE)) {
-        return(TRUE)
-      }
-      e <- parent.env(e)
-    }
-    FALSE
-  }
-  free <- setdiff(.hzr_mask_symbols(f[[length(f)]]), c(names(frame), "."))
-  if (!all(vapply(free, saved, logical(1)))) {
+  # The same rule for what the formula itself looks up: only what cannot
+  # have changed since the fit. See .hzr_formula_trusted().
+  if (!.hzr_formula_trusted(f, frame, if (literal) env)) {
     return(object)
   }
   # Warnings are muffled: whether the rebuild is right is decided by the
@@ -567,6 +553,102 @@
     object$data$x_design <- design
   }
   object
+}
+
+
+#' Does a formula look up only what cannot have changed since the fit?
+#'
+#' A rebuilt legacy design is checked against the fitted rows, and that
+#' check cannot see a lookup that moved between two fitted values: a cutoff
+#' `k` in `I(age > k)` moved to a value no fitted age separates from the
+#' old one, or a user's `thr()` redefined the same way, reproduces `data$x`
+#' exactly and then predicts with the new value at new rows. So every name
+#' the right-hand side looks up, other than a data column, must resolve to
+#' something fixed: a function or constant of R or a package (base, a
+#' namespace, an attached `package:` environment, or `pkg::fn`), or, for a
+#' formula written in the call, a value `hazard()` copied into `call_env`
+#' when it was fitted. A name found anywhere else -- the workspace, a
+#' function frame kept with the formula (saved as it stood when the object
+#' was saved, not when it was fitted), a user's function -- is not trusted.
+#'
+#' @param f A two-sided formula.
+#' @param frame The fitting data frame.
+#' @param call_env The fit's `call_env` when `f` was written in the call,
+#'   otherwise `NULL`.
+#' @return A single logical.
+#' @keywords internal
+#' @noRd
+.hzr_formula_trusted <- function(f, frame, call_env = NULL) {
+  fenv <- environment(f)
+  if (!is.environment(fenv)) {
+    return(FALSE)
+  }
+  where <- function(nm, mode) {
+    e <- fenv
+    while (!identical(e, emptyenv())) {
+      if (exists(nm, envir = e, mode = mode, inherits = FALSE)) {
+        return(e)
+      }
+      e <- parent.env(e)
+    }
+    NULL
+  }
+  from_r <- function(e) {
+    !is.null(e) && (identical(e, baseenv()) || isNamespace(e) ||
+                      startsWith(environmentName(e), "package:"))
+  }
+  ok_value <- function(nm) {
+    e <- where(nm, "any")
+    from_r(e) || (!is.null(call_env) && identical(e, call_env) &&
+                    !is.function(get(nm, envir = e, inherits = FALSE)))
+  }
+  ok_function <- function(nm) from_r(where(nm, "function"))
+  looks <- .hzr_formula_lookups(f[[length(f)]])
+  values <- setdiff(looks$values[nzchar(looks$values)], c(names(frame), "."))
+  all(vapply(values, ok_value, logical(1))) &&
+    all(vapply(looks$functions, ok_function, logical(1)))
+}
+
+
+#' The names a formula's right-hand side looks up, by kind
+#'
+#' Like `.hzr_mask_symbols()`, but keeps the names called as functions
+#' (`thr` in `thr(age)`), which that helper leaves out, apart from the
+#' values. The operand after `$` or `@` is never looked up. A `pkg::fn`
+#' call is a package's own function and adds no name.
+#'
+#' @param e A language object, symbol or constant.
+#' @return A list of two character vectors, `values` and `functions`.
+#' @keywords internal
+#' @noRd
+.hzr_formula_lookups <- function(e) {
+  if (is.symbol(e)) {
+    return(list(values = as.character(e), functions = character(0)))
+  }
+  if (!is.call(e)) {
+    return(list(values = character(0), functions = character(0)))
+  }
+  head <- e[[1L]]
+  parts <- as.list(e)[-1L]
+  functions <- character(0)
+  if (is.symbol(head)) {
+    h <- as.character(head)
+    if (h %in% c("::", ":::")) {
+      return(list(values = character(0), functions = character(0)))
+    }
+    functions <- h
+    if (h %in% c("$", "@") && length(e) >= 3L) {
+      parts <- parts[1L]
+    }
+  } else {
+    parts <- c(list(head), parts)
+  }
+  sub <- lapply(parts, .hzr_formula_lookups)
+  list(
+    values = unique(unlist(lapply(sub, `[[`, "values"), use.names = FALSE)),
+    functions = unique(c(functions, unlist(lapply(sub, `[[`, "functions"),
+                                           use.names = FALSE)))
+  )
 }
 
 
