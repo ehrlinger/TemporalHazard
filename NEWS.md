@@ -252,9 +252,12 @@
   of a `scale(age)` phase came back as a zero-length prediction. A fit saved
   by 1.1.0 or later kept its fitting data, and its phase design is now
   rebuilt from that data exactly as the fit built it. A fit saved by 1.0.3
-  or earlier kept neither, so such a term is refused with advice to refit;
-  plain row-wise terms (`log(age)`, a factor, `I(age > cutoff)`) still
-  predict. A current fit was not affected.
+  or earlier kept neither, so such a term is refused with advice to refit,
+  as is one whose columns come from `newdata` (`cut(age, 3)`, or a
+  `factor()` with a fitted level missing from `newdata`); row-wise terms
+  (`log(age)`, `I(age > cutoff)`, a `factor()` with all its levels present)
+  still predict, and a missing value in `newdata` gives an NA row. A
+  current fit was not affected.
 
 * **`predict(newdata = )` no longer lets a design column override the
   formula variable it contradicts.** `newdata` may give a factor as its
