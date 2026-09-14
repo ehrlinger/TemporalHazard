@@ -241,6 +241,21 @@
 
 ## Bug fixes
 
+* **`predict(newdata = )` on a multiphase fit saved before this version no
+  longer gets `scale()`, `poly()` or `ns()` in a phase formula silently wrong
+  (#307).** Such a fit stored no phase design, so the phase was rebuilt from
+  `newdata` alone, and those terms took their centering, scaling or basis
+  from `newdata`'s own rows instead of the fitting data. At all of the
+  fitting rows that reproduces the fit; at any other `newdata` it does not.
+  At three of the fitting rows, `scale(age)` was off by up to 96%,
+  `poly(age, 2)` by a factor of 3e5, and `ns(age, df = 3)` by 66%. One row
+  of a `scale(age)` phase came back as a zero-length prediction. A fit saved
+  by 1.1.0 or later kept its fitting data, and its phase design is now
+  rebuilt from that data exactly as the fit built it. A fit saved by 1.0.3
+  or earlier kept neither, so such a term is refused with advice to refit;
+  plain row-wise terms (`log(age)`, a factor, `I(age > cutoff)`) still
+  predict. A current fit was not affected.
+
 * **`predict(newdata = )` no longer lets a design column override the
   formula variable it contradicts.** `newdata` may give a factor as its
   level (`grp = "old"`) or as the fit's design column (`grpyoung = 1`).

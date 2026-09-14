@@ -2,7 +2,7 @@
 # stored (no fit$x_design), whose phase formula has a data-dependent term
 # (#307).
 #
-# scale(), poly() and ns() take their centring or basis from the fitting data.
+# scale(), poly() and ns() take their centering or basis from the fitting data.
 # Rebuilding such a phase from `newdata` alone recomputed them from newdata's
 # own rows: silently wrong for any newdata but the fitting rows, and a
 # zero-length prediction for one row of a scale() phase.
@@ -62,6 +62,21 @@ test_that("a legacy fit without its data refuses data-dependent phase terms", {
       label = term
     )
   }
+})
+
+test_that("a legacy fit whose kept data no longer reproduces it is not trusted", {
+  # The kept data is used only when it rebuilds the fitted columns. Altered
+  # after the fit (one row corrected, say), it would give scale() the wrong
+  # centering, silently; the term is refused as for a fit without its data
+  # instead. (A rescaling of `age` would not be seen: scale() of 2 * age is
+  # scale() of age, so the rebuilt columns still match.)
+  lf <- legacy_fit("scale(age)", keep_frame = TRUE)
+  lf$fit$data$frame$age[1] <- lf$fit$data$frame$age[1] + 50
+  expect_error(
+    predict(lf$fit, newdata = at_rows(lf$data, c(1, 50, 200)),
+            type = "cumulative_hazard"),
+    "refit"
+  )
 })
 
 test_that("a legacy fit keeps predicting plain row-wise phase terms", {
