@@ -281,4 +281,27 @@ test_that("a fit with no covariates ignores newdata's unused columns (#300)", {
       }
     }
   }
+  # Only a fit without coefficients drops the columns: one that stored no
+  # `x` but has a coefficient still takes them by position.
+  obj <- hazard(time = d$int_dead, status = d$dead, dist = "exponential",
+                theta = c(-4, 0.01))
+  expect_equal(predict(obj, newdata = data.frame(time = .sd_time, age = 70),
+                       type = "linear_predictor"),
+               c(0.7, 0.7), tolerance = 1e-12)
+})
+
+test_that("shape parameters are never taken as covariate coefficients", {
+  # The linear predictor used to fall back to the whole theta when it held
+  # no coefficients, which is how the exponential's log rate became the
+  # coefficient of an unused column (#300). A design reaching that point
+  # is now an internal error.
+  x <- cbind(age = c(60, 70))
+  expect_equal(.hzr_covariate_coef(c(mu = 0.01, nu = 0.5, b_age = 0.004),
+                                   n_shape = 2L, x = x),
+               c(b_age = 0.004))
+  expect_error(.hzr_covariate_coef(c(log_lambda = -4), n_shape = 1L, x = x),
+               "no covariate coefficients")
+  expect_error(.hzr_covariate_coef(c(mu = 0.01, nu = 0.5), n_shape = 2L,
+                                   x = cbind(x, mal = 1)),
+               "no covariate coefficients")
 })
