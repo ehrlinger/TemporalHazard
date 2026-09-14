@@ -493,8 +493,9 @@
 #' cutoff `k` in `I(age > k)`, a user's `thr()`, `get("k")`, a shadowed
 #' `pi` -- could have moved since the fit to a value no fitted row tells
 #' from the old one, reproduce `data$x` exactly, and then predict with the
-#' new value at new rows (#301 reviews). A closed formula carries every
-#' constant in its column names (`I(age > 50)TRUE`), so reproducing
+#' new value at new rows (#301 reviews). A closed formula is exactly its
+#' text and carries every constant in its column names
+#' (`I(age > 50)TRUE`), so reproducing
 #' `data$x`'s names and values makes it the fitted design, which is also
 #' why a formula found by name can be used wherever that name is bound
 #' now. A computed formula (`as.formula(...)`) is not re-run.
@@ -559,7 +560,10 @@
 
 #' Is a formula closed: data columns and R's own design functions only?
 #'
-#' See `.hzr_recover_x_design()` for why. Each function name, as called
+#' See `.hzr_recover_x_design()` for why. The right-hand side must be
+#' exactly its text: `deparse()` then `str2lang()` gives back an identical
+#' expression, so no constant hides behind how it prints. Each function
+#' name, as called
 #' (`log`) or qualified (`splines::ns`), must be on
 #' `.hzr_rebuild_functions`, and an unqualified one must resolve from the
 #' formula's environment to the identical object in its namespace, so a
@@ -575,7 +579,18 @@
   if (!is.environment(fenv)) {
     return(FALSE)
   }
-  looks <- .hzr_formula_lookups(f[[length(f)]])
+  # The column names are built from the formula's text, so every constant
+  # must be exactly what that text says. One the text cannot tell apart --
+  # -0 from 0, a value past deparse()'s 15 digits, one carrying a class, a
+  # function or list pasted in by bquote() -- would let another formula
+  # reproduce the fitted names and values, then differ at new rows.
+  rhs <- f[[length(f)]]
+  text <- tryCatch(str2lang(paste(deparse(rhs), collapse = "\n")),
+                   error = function(e) NULL)
+  if (!identical(text, rhs, num.eq = FALSE)) {
+    return(FALSE)
+  }
+  looks <- .hzr_formula_lookups(rhs)
   values <- looks$values[nzchar(looks$values)]
   if (!all(values %in% c(names(frame), "."))) {
     return(FALSE)
@@ -605,8 +620,7 @@
 #' Like `.hzr_mask_symbols()`, but keeps the names called as functions
 #' (`thr` in `thr(age)`), which that helper leaves out, apart from the
 #' values. The operand after `$` or `@` is never looked up. A `pkg::fn`
-#' call adds the function name `"pkg::fn"`, and an embedded object that is
-#' neither a name nor a constant adds `"<object>"`.
+#' call adds the function name `"pkg::fn"`.
 #'
 #' @param e A language object, symbol or constant.
 #' @return A list of two character vectors, `values` and `functions`.
@@ -617,12 +631,7 @@
     return(list(values = as.character(e), functions = character(0)))
   }
   if (!is.call(e)) {
-    # A constant looks nothing up. Any other object put into the formula
-    # (a function pasted in by bquote(), an environment) is not a name, so
-    # nothing here can vouch for what it reads: it is reported as a
-    # function no list holds, and the formula is not closed.
-    embedded <- if (is.atomic(e) || is.null(e)) character(0) else "<object>"
-    return(list(values = character(0), functions = embedded))
+    return(list(values = character(0), functions = character(0)))
   }
   head <- e[[1L]]
   parts <- as.list(e)[-1L]

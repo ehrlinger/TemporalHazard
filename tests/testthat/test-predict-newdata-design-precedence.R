@@ -338,6 +338,58 @@ test_that("a function object pasted into a legacy formula is not trusted", {
                .dp_weibull(0.004 * a + 0.3 * c(0, 1), 2), tolerance = 1e-12)
 })
 
+test_that("a classed constant pasted into a legacy formula is not trusted", {
+  # A constant carrying a class sends `>` to the user's method, which reads
+  # a `k` that moved; the column name drops the class (I(age > 0)TRUE), so
+  # a rebuild matched the fitted design (#301 sixth review).
+  k2 <- (50 + min(.dp_avc$age[.dp_avc$age > 50])) / 2
+  k <- 50
+  `>.thr` <- function(e1, e2) unclass(e1) > k
+  f <- eval(bquote(survival::Surv(int_dead, dead) ~
+                     age + I(age > .(structure(0, class = "thr")))))
+  w <- hazard(f, data = .dp_avc, dist = "weibull",
+              theta = c(mu = 0.01, nu = 0.5, 0.004, 0.3))
+  leg <- w
+  leg$data$x_design <- NULL
+  k <- k2
+  expect_identical(colnames(leg$data$x), c("age", "I(age > 0)TRUE"))
+  a <- c(40, (50 + k2) / 2)   # the second age lies between the cutoffs
+  nd <- data.frame(time = 2, age = a, `I(age > 0)TRUE` = c(0, 1),
+                   check.names = FALSE)
+  expect_equal(unname(predict(leg, type = "cumulative_hazard", newdata = nd)),
+               .dp_weibull(0.004 * a + 0.3 * c(0, 1), 2), tolerance = 1e-12)
+})
+
+test_that("a legacy formula whose constant its text cannot show is not used", {
+  # deparse(-0) is "0", so a name-passed formula rebound after the fit with
+  # -0 for 0 has the fit's column names, and no fitted row tells them apart:
+  # it was rebuilt and predicted with the new sign (#301 sixth review).
+  a1 <- min(.dp_avc$age[.dp_avc$age > 50])
+  c2 <- round((50 + a1) / 2, 2)   # a literal that deparses exactly
+  expect_true(c2 > 50 && c2 < a1)  # no fitted age lies in (50, c2)
+  make <- function(z) {
+    eval(bquote(survival::Surv(int_dead, dead) ~
+                  age + I((age > 50 & age < .(c2)) * (1 / .(z) > 0))))
+  }
+  f <- make(0)
+  w <- hazard(f, data = .dp_avc, dist = "weibull",
+              theta = c(mu = 0.01, nu = 0.5, 0.004, 0.3))
+  leg <- w
+  leg$data$x_design <- NULL
+  col <- colnames(leg$data$x)[2L]
+  a <- c(40, (50 + c2) / 2)       # the second age lies in the window
+  nd <- data.frame(time = 2, age = a, x = c(0, 1))
+  names(nd)[3] <- col
+  truth <- .dp_weibull(0.004 * a + 0.3 * c(0, 1), 2)
+  # As fitted, the formula is exactly its text, so it is rebuilt.
+  expect_equal(unname(predict(leg, type = "cumulative_hazard", newdata = nd)),
+               truth, tolerance = 1e-12)
+  # Rebound to -0 it is not.
+  leg$call_env <- new.env(parent = list2env(list(f = make(-0))))
+  expect_equal(unname(predict(leg, type = "cumulative_hazard", newdata = nd)),
+               truth, tolerance = 1e-12)
+})
+
 test_that("a legacy formula that looks a value up by string is not rebuilt", {
   # get("k") names no symbol a walker can see, and get() is not a design
   # function, so the formula is not closed.  Trusted as base R's own, it
