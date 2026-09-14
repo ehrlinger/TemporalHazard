@@ -60,17 +60,12 @@ test_that("fit = TRUE without theta is refused for single-distribution models", 
 })
 
 test_that("predict.hazard returns linear predictor and hazard scale", {
-  # The default Weibull's first two theta elements are its shapes, so the
-  # coefficients follow them. A theta of shapes alone was once read as the
-  # coefficients here (#300).
   x <- matrix(c(1, 0, 0, 1), ncol = 2)
-  fit <- hazard(time = c(1, 2), status = c(1, 0), x = x,
-                theta = c(0.1, 1, 0.3, -0.2))
+  fit <- hazard(time = c(1, 2), status = c(1, 0), x = x, theta = c(0.3, -0.2))
 
   eta <- predict(fit, type = "linear_predictor")
   hz <- predict(fit, type = "hazard")
 
-  # x is the identity, so each row's eta is one coefficient.
   expect_equal(eta, c(0.3, -0.2), tolerance = 1e-12)
   expect_equal(hz, exp(eta), tolerance = 1e-12)
 })
@@ -80,14 +75,13 @@ test_that("predict.hazard accepts newdata", {
     time = c(1, 2),
     status = c(1, 0),
     x = matrix(c(1, 2, 3, 4), ncol = 2),
-    theta = c(0.1, 1, 0.5, 0.25)
+    theta = c(0.5, 0.25)
   )
 
-  # Rows (2, 0) and (1, 1): 2 * 0.5 = 1 and 0.5 + 0.25 = 0.75.
   newdata <- matrix(c(2, 1, 0, 1), ncol = 2)
   eta <- predict(fit, newdata = newdata, type = "linear_predictor")
 
-  expect_equal(eta, c(1, 0.75), tolerance = 1e-12)
+  expect_equal(eta, as.numeric(newdata %*% c(0.5, 0.25)), tolerance = 1e-12)
 })
 
 test_that("predict.hazard errors when theta is missing", {

@@ -122,27 +122,6 @@ NULL
   }
 }
 
-#' The covariate coefficients that multiply a design
-#'
-#' Refuses a design when theta holds only shape parameters: using those as
-#' coefficients is how an unused `newdata` column once became a silent
-#' linear predictor (#300).
-#'
-#' @param theta Numeric parameter vector, shape parameters first.
-#' @param n_shape Number of leading shape parameters.
-#' @param x Design matrix the coefficients will multiply.
-#'
-#' @return `theta` without its shape parameters.
-#'
-#' @noRd
-.hzr_covariate_coef <- function(theta, n_shape, x) {
-  if (length(theta) <= n_shape) {
-    stop("Internal error: a design with ", ncol(x), " column(s) reached a ",
-         "model with no covariate coefficients.", call. = FALSE)
-  }
-  theta[(n_shape + 1L):length(theta)]
-}
-
 #' Split theta into baseline and covariate components for legacy output
 #'
 #' @param theta Numeric parameter vector

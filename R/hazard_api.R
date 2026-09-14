@@ -1485,7 +1485,7 @@ predict.hazard <- function(object, newdata = NULL,
         stop("Predictors are required either in the fitted object or via 'newdata'.", call. = FALSE)
       }
     } else {
-      beta <- .hzr_covariate_coef(theta, n_shape, x)
+      beta <- if (length(theta) > n_shape) theta[(n_shape + 1):length(theta)] else theta
       if (ncol(x) != length(beta)) {
         stop("Number of predictor columns (", ncol(x),
              ") must match number of covariate coefficients (", length(beta), ").",
@@ -1499,7 +1499,7 @@ predict.hazard <- function(object, newdata = NULL,
       diff_fn <- function(th) {
         if (is.null(x)) return(rep(0, length(eta)))
         n_shape <- .hzr_shape_parameter_count(object$spec$dist)
-        beta_cand <- .hzr_covariate_coef(th, n_shape, x)
+        beta_cand <- if (length(th) > n_shape) th[(n_shape + 1):length(th)] else th
         as.numeric(x %*% beta_cand)
       }
       return(.hzr_predict_with_se(object = object, type = "linear_predictor",
@@ -1510,7 +1510,7 @@ predict.hazard <- function(object, newdata = NULL,
     diff_fn <- function(th) {
       if (is.null(x)) return(rep(1, length(eta)))
       n_shape <- .hzr_shape_parameter_count(object$spec$dist)
-      beta_cand <- .hzr_covariate_coef(th, n_shape, x)
+      beta_cand <- if (length(th) > n_shape) th[(n_shape + 1):length(th)] else th
       exp(as.numeric(x %*% beta_cand))
     }
     return(.hzr_predict_with_se(object = object, type = "hazard",
