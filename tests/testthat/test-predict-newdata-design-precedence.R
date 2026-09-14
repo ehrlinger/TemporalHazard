@@ -466,6 +466,27 @@ test_that("time_windows with a factor and several covariates matches the fit", {
                tolerance = 1e-10)
 })
 
+test_that("an extra newdata column cannot mask a formula constant", {
+  # cutoff is a constant of the formula's environment, not a fitting-data
+  # variable, so a same-named newdata column is an unused extra.  Passing
+  # all of newdata to model.frame() let it replace the constant: an extra
+  # cutoff = 0 turned I(30 > 50) into I(30 > 0), silently (0.425 for 0.191).
+  cutoff <- 50
+  w <- hazard(survival::Surv(int_dead, dead) ~ I(age > cutoff) + mal,
+              data = .dp_avc, dist = "weibull",
+              theta = c(mu = 0.01, nu = 0.5, b_gt = 0.8, b_mal = 0.3))
+  want_eta <- 0.8 * (30 > 50) + 0.3
+  nd <- data.frame(time = 2, age = 30, mal = 1, cutoff = 0)
+  expect_equal(unname(predict(w, newdata = nd, type = "cumulative_hazard")),
+               .dp_weibull(want_eta, 2), tolerance = 1e-12)
+  expect_equal(predict(w, newdata = nd[, -1], type = "linear_predictor"),
+               want_eta, tolerance = 1e-12)
+  # The extra column is ignored, as documented: same as without it.
+  expect_equal(predict(w, newdata = nd, type = "cumulative_hazard"),
+               predict(w, newdata = nd[, c("time", "age", "mal")],
+                       type = "cumulative_hazard"), tolerance = 1e-12)
+})
+
 test_that("a multiphase global design takes the variable over its column", {
   skip_on_cran()  # a multiphase fit
   fit <- suppressWarnings(hazard(

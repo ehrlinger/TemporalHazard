@@ -22,9 +22,9 @@
 time (e.g., "survival", "cumulative_hazard"), newdata should include a \code{time}
 column, or time will be taken from the fitted object's data.
 Covariates are matched to the model by column name, so their order does
-not matter. A formula fit rebuilds its global design from the formula,
-so a factor there can be given as a level label (a multiphase phase's
-own formula does not keep its levels yet; see #268). \code{newdata} may
+not matter. A formula fit rebuilds its designs from the formulas,
+global and per phase, with the factor levels and contrasts the fit
+saw, so a factor can be given as a level label. \code{newdata} may
 instead carry the
 fit's design-matrix columns by name (\code{grpyoung} for a factor \code{grp});
 these are used only when no formula variable is given (a numeric

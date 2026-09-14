@@ -479,7 +479,13 @@
   if (!is.null(design)) {
     # Formula interface: the same terms, levels and contrasts as the fit, so
     # a factor given as a single label still codes to the fit's columns.
-    mf <- stats::model.frame(design$terms, data = newdata,
+    # Only the fitting-data variables come from newdata: any other column
+    # is an unused extra, and handing it to model.frame() would let it mask
+    # a formula-environment constant (a `cutoff` column replacing the
+    # `cutoff` in I(age > cutoff)), silently.
+    nd_vars <- newdata[, intersect(names(newdata), design$data_vars),
+                       drop = FALSE]
+    mf <- stats::model.frame(design$terms, data = nd_vars,
                              xlev = design$xlevels, na.action = stats::na.pass)
     mm <- stats::model.matrix(design$terms, data = mf,
                               contrasts.arg = design$contrasts)

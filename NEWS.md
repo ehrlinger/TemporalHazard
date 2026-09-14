@@ -262,7 +262,10 @@
   columns by name (`grpyoung`), which is how `hzr_deciles()` and
   `hzr_gof()` call it. A column the model does not use is ignored, and one
   it needs but `newdata` lacks is an error that names it, even when an
-  object of that name exists in the workspace. A fit made with an unnamed
+  object of that name exists in the workspace. An unused column also
+  stays unused when it shares its name with a constant in the formula,
+  such as `cutoff` in `I(age > cutoff)`. It used to replace the constant
+  silently. A fit made with an unnamed
   `x` matrix still matches by position, since there is nothing else to
   match on, and a `newdata` with only a `time` column still evaluates the
   baseline (#267). This rejects some `newdata` that was accepted before;
