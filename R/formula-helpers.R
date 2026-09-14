@@ -373,9 +373,12 @@
   b <- mm[s, , drop = FALSE]
   # Each column's tolerance is scaled to its spread in newdata, so a small
   # variation is still resolved, plus a few ulps of its magnitude for
-  # summation-order noise (scale(age) averages reordered rows). Variation
-  # below ~64 ulps of a column's magnitude is indistinguishable in double
-  # precision and not detected.
+  # summation-order noise (scale(age) averages reordered rows). The limit:
+  # outside-data variation in a column below sqrt(eps) times its spread
+  # plus ~64 ulps of its magnitude is not detected (a column wholly from
+  # outside `data` is caught down to the ulps; one mixing a data column
+  # with an outside part, as in I(age + zt), only down to sqrt(eps) of the
+  # spread). The error then left in that column is within the same band.
   tol <- vapply(seq_len(ncol(b)), function(j) {
     f <- b[is.finite(b[, j]), j]
     if (length(f) == 0L) {
