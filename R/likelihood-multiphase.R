@@ -190,7 +190,10 @@
                                   m = pars$m, type = phases[[nm]]$type)
     }
 
-    contrib <- mu_j * phi_j
+    # unname(): the phase parameters are named elements of theta, and R
+    # carries such a name onto the product -- through rep() for every n, and
+    # through any length-1 operand when n == 1 -- and so into predict().
+    contrib <- unname(mu_j * phi_j)
     total <- total + contrib
 
     if (per_phase) phase_contributions[[i]] <- contrib
@@ -242,7 +245,7 @@
                                    m = pars$m, type = phases[[nm]]$type)
     }
 
-    total <- total + mu_j * dphi_j
+    total <- total + unname(mu_j * dphi_j)  # see .hzr_multiphase_cumhaz()
   }
 
   total
@@ -1532,6 +1535,131 @@
 }
 
 
+#' Rebuild one phase's formula design matrix at new rows
+#'
+#' Used by `predict(newdata = )` for a multiphase phase with its own formula.
+#' Returns the fit's columns for that phase, in the fit's order, built with
+#' the factor levels and contrasts stored at fit time, so a factor given as a
+#' single label, or with its levels in another order, codes as it did in the
+#' fit.
+#'
+#' `newdata`'s design columns are taken as they are on the rules
+#' `.hzr_uses_design_columns()` applies to the global design (#272): every
+#' fitted column present by name, and then either the caller declaring them
+#' design-level (the `hzr_design_columns` attribute) or the formula's
+#' variables absent. Otherwise the variables win, so a design-named column
+#' that contradicts them cannot override them. Some formula variables beside
+#' the design columns, with others missing, is an error: neither route could
+#' honour what was given. One difference from the global rule: a fit saved
+#' before the phase design was stored always rebuilt from its formula, so
+#' its variables win too whenever they are all given, and some of them
+#' beside its design columns is refused, with the formula standing in for
+#' the stored design.
+#'
+#' @param object A fitted multiphase `hazard` object.
+#' @param nm Phase name.
+#' @param ph The phase's `hzr_phase` object.
+#' @param newdata Data frame of new rows.
+#' @return Numeric matrix with `nrow(newdata)` rows.
+#' @keywords internal
+#' @noRd
+.hzr_phase_newdata_design <- function(object, nm, ph, newdata) {
+  cols <- colnames(object$fit$x_list[[nm]])
+  design <- object$fit$x_design[[nm]]
+
+  # A fit saved before the phase design was stored has no data_vars. Its
+  # formula's variables that were columns of the fitting data stand in:
+  # hazard() has kept that data frame (object$data$frame) since 1.1.0, and
+  # a formula-environment constant (`cutoff` in I(age > cutoff)) is not one
+  # of them. Without the frame, every formula variable stands in, and a
+  # missing one cannot be told from a constant.
+  if (is.null(design)) {
+    vars <- all.vars(ph$formula)
+    known_vars <- !is.null(object$data$frame)
+    if (known_vars) vars <- intersect(vars, names(object$data$frame))
+    labels <- attr(stats::terms(ph$formula), "term.labels")
+  } else {
+    vars <- design$data_vars
+    known_vars <- TRUE
+    labels <- attr(design$terms, "term.labels")
+  }
+
+  use_design <- !is.null(cols) && all(cols %in% names(newdata))
+  if (use_design && !isTRUE(attr(newdata, "hzr_design_columns"))) {
+    # For a fit without the stored design this differs from the global
+    # rule, which takes the design columns: main's phase path always rebuilt
+    # from the formula, so taking them here would be a new swap.
+    missing <- setdiff(vars, names(newdata))
+    if (length(missing) == 0L) {
+      use_design <- FALSE
+    } else {
+      # The design route would ignore any formula variable given beside the
+      # design columns, and without the missing ones the variables cannot
+      # be rebuilt, so a mix is refused rather than guessed. A variable that
+      # is itself a design column (numeric `age`) counts only if another
+      # term is built from it (I(age^2), age:grp): a changed `age` would
+      # leave those columns stale.
+      feeds_derived <- unlist(lapply(labels, function(label) {
+        v <- all.vars(parse(text = label)[[1L]])
+        if (identical(v, label)) character(0) else v
+      }))
+      counted <- union(setdiff(vars, cols), intersect(vars, feeds_derived))
+      given <- intersect(counted, names(newdata))
+      if (length(given) > 0L) {
+        stop("'newdata' gives the formula variable(s) ",
+             paste0("'", given, "'", collapse = ", "), " but lacks ",
+             paste0("'", missing, "'", collapse = ", "),
+             ", while carrying the fitted design columns of phase '", nm,
+             "'. Give all of the formula's variables, so the design can ",
+             "be rebuilt from them.", call. = FALSE)
+      }
+    }
+  }
+  if (use_design) {
+    return(as.matrix(newdata[, cols, drop = FALSE]))
+  }
+
+  # A covariate missing from newdata is refused, not looked up in the
+  # formula's environment (#268), whenever the fit says which variables are
+  # covariates.
+  missing <- setdiff(vars, names(newdata))
+  if (known_vars && length(missing) > 0L) {
+    stop("'newdata' lacks the covariate column(s) ",
+         paste0("'", missing, "'", collapse = ", "),
+         " that phase '", nm, "' uses. Columns are matched by name.",
+         call. = FALSE)
+  }
+
+  # The same rule as the global rebuild: newdata supplies only the data
+  # variables (.hzr_newdata_frame()), and a term that does not follow
+  # newdata's rows is refused (.hzr_check_equivariant()).
+  where <- paste0("phase '", nm, "'")
+
+  # A fit made before the phase design was stored: rebuild as it did then,
+  # from its formula. Without the kept data, `vars` is every formula
+  # variable, so an object kept outside `data` cannot be told from a column.
+  if (is.null(design)) {
+    build <- function(x) {
+      nd <- .hzr_newdata_frame(x, vars)
+      m0 <- stats::model.matrix(ph$formula, data = nd)
+      m <- m0[, -1L, drop = FALSE]
+      attr(m, "assign") <- attr(m0, "assign")[-1L]
+      m
+    }
+    return(.hzr_check_equivariant(build, newdata, labels, where))
+  }
+  build <- function(x) {
+    nd <- .hzr_newdata_frame(x, design$data_vars)
+    mf <- stats::model.frame(design$terms, data = nd, xlev = design$xlevels,
+                             na.action = stats::na.pass)
+    stats::model.matrix(design$terms, data = mf,
+                        contrasts.arg = design$contrasts)
+  }
+  mm <- .hzr_check_equivariant(build, newdata, labels, where)
+  mm[, cols, drop = FALSE]
+}
+
+
 #' Fit a multiphase additive hazard model via maximum likelihood
 #'
 #' Assembles starting values from phase specifications, resolves per-phase
@@ -1582,6 +1710,8 @@
   x_list <- vector("list", length(phases))
   names(x_list) <- names(phases)
   covariate_counts <- setNames(integer(length(phases)), names(phases))
+  # Per-phase design metadata; stays NULL for a phase without a formula.
+  x_design <- setNames(vector("list", length(phases)), names(phases))
 
   for (nm in names(phases)) {
     ph <- phases[[nm]]
@@ -1593,11 +1723,24 @@
       # rows with NA covariates.
       mf_j <- stats::model.frame(ph$formula, data = data,
                                    na.action = stats::na.pass)
-      x_j <- stats::model.matrix(ph$formula, data = mf_j)[, -1L,
-                                                           drop = FALSE]
+      mm_j <- stats::model.matrix(ph$formula, data = mf_j)
+      x_j <- mm_j[, -1L, drop = FALSE]
       .hzr_refuse_duplicate_columns(x_j, phase = nm)
       x_list[[nm]] <- x_j
       covariate_counts[[nm]] <- ncol(x_j)
+      # What predict(newdata = ) needs to rebuild x_j from new rows: the
+      # terms (carrying predvars), the factor levels and the contrasts seen
+      # here, and the formula's variables that were columns of `data`.
+      terms_j <- attr(mf_j, "terms")
+      x_design[[nm]] <- list(
+        terms = terms_j,
+        xlevels = stats::.getXlevels(terms_j, mf_j),
+        contrasts = attr(mm_j, "contrasts"),
+        # As for the global formula: the name after `$` is never looked up.
+        data_vars = intersect(
+          .hzr_mask_symbols(stats::formula(terms_j)[[2L]]), names(data)
+        )
+      )
     } else if (!is.null(x)) {
       # Inherit global design matrix
       x_list[[nm]] <- x
@@ -2302,6 +2445,7 @@
   best_result$phases <- phases
   best_result$covariate_counts <- covariate_counts
   best_result$x_list <- x_list
+  best_result$x_design <- x_design
 
   # Which starts survived, and which one the reported fit came from.
   best_result$starts <- starts

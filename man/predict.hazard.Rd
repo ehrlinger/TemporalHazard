@@ -20,7 +20,33 @@
 
 \item{newdata}{Optional matrix or data frame of predictors. For types requiring
 time (e.g., "survival", "cumulative_hazard"), newdata should include a \code{time}
-column, or time will be taken from the fitted object's data.}
+column, or time will be taken from the fitted object's data.
+Covariates are matched to the model by column name, so their order does
+not matter. A formula fit rebuilds its designs from the formulas,
+global and per phase, with the factor levels and contrasts the fit
+saw, so a factor can be given as a level label. \code{newdata} may
+instead carry the
+fit's design-matrix columns by name (\code{grpyoung} for a factor \code{grp});
+these are used only when no formula variable is given (a numeric
+variable that is itself a column counts only if another column, such
+as \code{I(age^2)}, is built from it). With all the
+variables given, the design is rebuilt from them, so a design column
+that contradicts one is ignored; some variables beside the design
+columns, with others missing, is an error. A
+column the model does not use is
+ignored, and a covariate the model needs but \code{newdata} lacks is an error.
+Only the columns of the model's \code{data} are taken from \code{newdata}: a
+formula constant (\code{cutoff} in \code{I(age > cutoff)}, spline knots) comes
+from the formula's environment, and a term that uses row-level values
+kept outside \code{data} (\code{~ zz}, with \code{zz} a vector in the workspace) is an
+error, even when \code{newdata} has a \code{zz} column; move it into \code{data} and
+refit.
+A fit made with an unnamed \code{x} matrix matches by position. For the types
+requiring time, a \code{newdata} with only a \code{time} column evaluates the
+baseline, with every covariate at 0. Because \code{time} is then the
+prediction time, a model whose formula uses a variable named \code{time}
+(a covariate, or a constant such as \code{I(age > time)}) cannot be given
+those types at \code{newdata}; rename it and refit.}
 
 \item{type}{Prediction type:
 \itemize{
@@ -86,7 +112,12 @@ HAZPRED). Only used when \code{se.fit = TRUE}.}
 When \code{se.fit = FALSE} (default), a numeric vector of predictions.
 When \code{se.fit = TRUE}, a data frame with columns \code{fit}, \code{se.fit}, \code{lower},
 \code{upper} (delta-method point estimate, standard error, and confidence
-limits at \code{level}). For multiphase \code{type = "cumulative_hazard"} with
+limits at \code{level}). \code{se.fit} is always the standard error of \code{fit} on
+its own scale: for \code{type = "survival"} that is \code{S * se(H)}, the delta
+method applied to \code{S = exp(-H)}. The survival limits are built from
+\code{se(H)} on the \code{conf.type} scale, so they are not \verb{fit +/- z * se.fit}.
+\verb{PROC HAZPRED} prints no standard error, only the limits.
+For multiphase \code{type = "cumulative_hazard"} with
 \code{decompose = TRUE}, a long data frame (\code{time}, \code{component}, \code{fit},
 \code{se.fit}, \code{lower}, \code{upper}); with \code{decompose = TRUE} and \code{se.fit = FALSE},
 a wide data frame of per-phase contributions.
@@ -107,6 +138,11 @@ it will be used; otherwise, the time vector from the fitted object is used.
 For models fit with \code{time_windows}, predictions for \code{type = "linear_predictor"}
 or \code{"hazard"} also require time values (via \code{newdata$time} or fitted-time fallback)
 so window-specific coefficients can be selected.
+
+A term built by a transform that is not row-wise, such as
+\code{I(age - mean(age))} or \code{rank(age)}, is recomputed from \code{newdata}'s own
+rows, as in \code{\link[stats:predict.lm]{stats::predict.lm()}}. It therefore differs from the fitted
+values unless \code{newdata} reproduces the fitting data.
 }
 \examples{
 # -- Basic predictions ------------------------------------------------

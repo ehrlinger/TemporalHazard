@@ -63,6 +63,45 @@ test_that("unnamed columns of a vector-interface x are not a collision", {
   expect_length(stats::predict(f, type = "survival"), nrow(d))
 })
 
+test_that("NA column names of a vector-interface x are not a collision", {
+  d <- .dup_data()
+  x <- cbind(d$gb, runif(nrow(d)), runif(nrow(d)))
+  colnames(x) <- c("a", NA_character_, NA_character_)
+  f <- hazard(time = d$time, status = d$status, x = x, dist = "weibull",
+              theta = c(mu = 0.2, nu = 1, 0, 0, 0), fit = TRUE)
+  expect_true(isTRUE(f$fit$converged))
+})
+
+test_that("time_windows expansion of unnamed columns is refused", {
+  # The expansion names each window's column <name>_w<k>, so absent names,
+  # accepted above, become "_w1" or "NA_w1" twice: a duplicate the check on
+  # `x` cannot see. The check runs on the expanded design as well.
+  d <- .dup_data()
+  x <- cbind(a = d$gb, runif(nrow(d)), runif(nrow(d)))
+  expect_error(
+    hazard(time = d$time, status = d$status, x = x, dist = "weibull",
+           theta = c(mu = 0.2, nu = 1, rep(0, 6)), time_windows = 2,
+           fit = TRUE),
+    "duplicated column name.*'_w1'"
+  )
+  colnames(x) <- c("a", NA_character_, NA_character_)
+  expect_error(
+    hazard(time = d$time, status = d$status, x = x, dist = "weibull",
+           theta = c(mu = 0.2, nu = 1, rep(0, 6)), time_windows = 2,
+           fit = TRUE),
+    "duplicated column name.*'NA_w1'"
+  )
+})
+
+test_that("time_windows expansion of unique names is not refused", {
+  d <- .dup_data()
+  x <- cbind(a = d$gb, b = runif(nrow(d)), c = runif(nrow(d)))
+  f <- hazard(time = d$time, status = d$status, x = x, dist = "weibull",
+              theta = c(mu = 0.2, nu = 1, rep(0, 6)), time_windows = 2,
+              fit = TRUE)
+  expect_true(isTRUE(f$fit$converged))
+})
+
 test_that("a fit without a collision is unchanged", {
   # Coefficients pinned against origin/main 4b68020, before the refusal.
   f <- hazard(survival::Surv(time, status) ~ g + u, data = .dup_data("u"),
