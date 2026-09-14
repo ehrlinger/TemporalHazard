@@ -738,7 +738,8 @@
       stat_type = NA_character_,
       df        = NA_integer_,
       all_scores     = all_scores,
-      refit_failures = character()
+      refit_failures = character(),
+      refit_failure_reasons = character()
     )
   }
 
@@ -827,7 +828,8 @@
     stat_type = best$stat_type,
     df        = best$df,
     all_scores     = all_scores,
-    refit_failures = character()
+    refit_failures = character(),
+    refit_failure_reasons = character()
   )
 }
 

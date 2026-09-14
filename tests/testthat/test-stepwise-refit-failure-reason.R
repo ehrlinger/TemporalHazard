@@ -189,3 +189,37 @@ test_that("the post-drop refit warning carries the refit's error", {
   expect_identical(names(step$refit_failure_reasons), step$refit_failures)
   expect_identical(unname(step$refit_failure_reasons), "boom")
 })
+
+test_that("every step return carries refit_failures and its reasons", {
+  # hzr_stepwise() reads both with `%||%`, which hid the backward step's
+  # no-op and success returns omitting `refit_failure_reasons` (Copilot on
+  # #302). A direct caller got a different shape from each step function.
+  d <- .refit_reason_data()
+  one <- hazard(survival::Surv(time, status) ~ gb, data = d, dist = "weibull",
+                theta = c(0.2, 1, 0), fit = TRUE)
+  two <- hazard(survival::Surv(time, status) ~ gb + z, data = d,
+                dist = "weibull", theta = c(0.2, 1, 0, 0), fit = TRUE)
+  wald_none <- .hzr_stepwise_forward_step(one, scope = character(), data = d,
+                                          criterion = "wald")
+  wald_add  <- .hzr_stepwise_forward_step(one, scope = "z", data = d,
+                                          criterion = "wald", slentry = 1)
+  score_add <- .hzr_stepwise_forward_step(one, scope = "z", data = d,
+                                          criterion = "score", slentry = 1)
+  bwd_none  <- .hzr_stepwise_backward_step(two, data = d, criterion = "wald",
+                                           slstay = 1)
+  bwd_drop  <- .hzr_stepwise_backward_step(two, data = d, criterion = "wald",
+                                           slstay = 0)
+  expect_true(wald_add$accepted)
+  expect_true(bwd_drop$accepted)
+  expect_false(bwd_none$accepted)
+
+  # The backward step and the refit-based forward step share one shape; the
+  # score path adds its own diagnostics on top of it.
+  expect_identical(names(bwd_none), names(wald_none))
+  expect_identical(names(bwd_drop), names(wald_add))
+  expect_true(all(names(wald_add) %in% names(score_add)))
+  for (s in list(wald_none, wald_add, score_add, bwd_none, bwd_drop)) {
+    expect_identical(s$refit_failure_reasons, character())
+    expect_identical(s$refit_failures, character())
+  }
+})
