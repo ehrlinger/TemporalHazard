@@ -6,7 +6,8 @@
   drop it without a word: `model.matrix()` leaves offsets out of the design
   and nothing read them back, so `Surv(time, status) ~ age + offset(z)`
   gave the same log-likelihood and the same coefficients as
-  `Surv(time, status) ~ age`. **Fits written with an offset ignored it.**
+  `Surv(time, status) ~ age`. **Fits written with an offset ignored it**
+  (#297).
   The global formula, every `hzr_phase(formula = )`, and a
   `hzr_stepwise()` formula or scope now stop and name the offending term.
   Offsets are not supported: how one should enter each phase of the
