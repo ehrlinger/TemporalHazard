@@ -254,6 +254,40 @@
 
 ## Bug fixes
 
+* **`hzr_stepwise()` now tests an entering candidate on its own
+  coefficient** (#305). The Wald criterion, and the Wald fallback the score
+  criterion uses for a candidate it cannot score, looked the new coefficient
+  up by the variable's bare name. `model.matrix()` names a logical `flag`'s
+  column `flagTRUE`, so when a factor already in the model had a dummy
+  column named `flag` (a factor `fla` with level `g`), the step tested that
+  dummy instead: a p-value for the wrong coefficient, with no error and no
+  warning. On a simulated example the screen reported p = 0.16 for a
+  candidate whose own p-value was below 1e-29, and did not enter it. The
+  candidate is now found as the design-matrix column its refit added, the
+  rule the score criterion already used. Single-distribution and multiphase
+  fits were both affected. A candidate that adds no column, such as `z`
+  added to `~ z:f` (the columns `z:fa, z:fb` become `z, z:fb`), leaves the
+  likelihood unchanged; it was reported with a small p-value and entered,
+  and is now an error.
+
+  Single-distribution fits also now accept the one-column terms multiphase
+  fits already did. A logical, two-level factor or character candidate used
+  to stop under `criterion = "wald"` with "not found in the design matrix",
+  although the score criterion's refusal of such a column names
+  `criterion = "wald"` as the way to test it. It is now tested.
+
+* **`predict()` on a multiphase fit now returns an unnamed vector.** For
+  `type = "cumulative_hazard"`, `"survival"` and `"hazard"`, every element
+  was named after a parameter -- `"constant.log_mu"`, say, on each row --
+  because the phase parameters are named elements of `theta` and R carried
+  a name onto the prediction: from any phase without covariates, and, for a
+  single row of `newdata`, from almost any phase parameter. The values were
+  right; the names were meaningless, and they followed the result into
+  anything built from it. With one row, the `decompose = TRUE` and
+  `se.fit = TRUE` data frames also took such a name as their row name.
+  Single-distribution `predict()` already returned unnamed vectors, and now
+  both agree.
+
 * **`predict(newdata = )` no longer lets a design column override the
   formula variable it contradicts.** `newdata` may give a factor as its
   level (`grp = "old"`) or as the fit's design column (`grpyoung = 1`).
