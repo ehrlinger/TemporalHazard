@@ -158,7 +158,7 @@
 ## Bug fixes
 
 * **`hzr_stepwise()` now tests an entering candidate on its own
-  coefficient.** The Wald criterion, and the Wald fallback the score
+  coefficient** (#305). The Wald criterion, and the Wald fallback the score
   criterion uses for a candidate it cannot score, looked the new coefficient
   up by the variable's bare name. `model.matrix()` names a logical `flag`'s
   column `flagTRUE`, so when a factor already in the model had a dummy
