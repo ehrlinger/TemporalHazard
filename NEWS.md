@@ -13,9 +13,10 @@
   `hazard(Surv(...) ~ ..., data = ...)`. A phase with no formula is
   unaffected, and so is an intercept-only `~ 1` unless the call also has a
   global `x` with at least one column. Beside such an `x`, a `~ 1` phase
-  took `x` without `data` and has no
-  columns with it, so it is refused too, as is a constant term such as
-  `~ log(2)`, which builds a column only in `data`.
+  is refused too: without `data` it silently took `x`, and with `data` it
+  has no columns, so the same call gave two different models. Pass
+  `data =`, use the formula interface, or drop `x`. A constant term such
+  as `~ log(2)`, which builds a column only in `data`, is refused as well.
 
 * **`hzr_stepwise()` now refuses a fit saved by an earlier version whose
   phase formula was ignored this way (#299).** Given `data`, every refit

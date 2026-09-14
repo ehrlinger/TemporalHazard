@@ -50,7 +50,7 @@ test_that("`~ 1` beside a global `x`, or a constant term, is refused too", {
   expect_error(
     hazard(time = d$int_dead, status = d$dead, x = cbind(age = d$age),
            dist = "multiphase", phases = phases_299(~ 1), fit = FALSE),
-    "Phase 'early' has the formula `~1`"
+    "Phase 'early' has the formula `~1`.*take the global `x`.*drop `x`"
   )
   expect_error(
     hazard(time = d$int_dead, status = d$dead, dist = "multiphase",

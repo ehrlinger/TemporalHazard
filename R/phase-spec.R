@@ -771,13 +771,17 @@ hzr_theta_names <- function(phases, covariates = NULL) {
   has_x <- !is.null(x) && NCOL(x) > 0L
   for (nm in names(phases)) {
     pf <- phases[[nm]]$formula
-    if (is.null(pf) || !(has_x || .hzr_phase_formula_has_terms(pf))) next
+    has_terms <- !is.null(pf) && .hzr_phase_formula_has_terms(pf)
+    if (is.null(pf) || !(has_x || has_terms)) next
     stop("Phase '", nm, "' has the formula `",
          paste(deparse(pf), collapse = " "), "`, but no `data` was ",
          "supplied, and a phase formula is evaluated only in `data`: ",
-         "the formula would be ignored. Pass `data =` with the phase's ",
-         "variables as columns, or use hazard(Surv(...) ~ ..., ",
-         "data = ...).", call. = FALSE)
+         "the formula would be ignored",
+         if (has_x) ", and the phase would take the global `x` instead",
+         ". Pass `data =` with the phase's variables as columns, or use ",
+         "hazard(Surv(...) ~ ..., data = ...)",
+         if (has_x && !has_terms) ", or drop `x`",
+         ".", call. = FALSE)
   }
   invisible(NULL)
 }
