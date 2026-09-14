@@ -2,7 +2,7 @@
 
 ## Breaking changes
 
-* **`hazard()` now stops when two design columns share a name.** A factor's
+* **`hazard()` now stops when two design columns share a name** (#298). A factor's
   dummy columns are named `<factor><level>`, so a factor `g` with level `b`
   and a numeric column `gb` both produced a column `gb`. The fit ran without
   a word: `coef()` carried two `gb` names, and `predict()` on a one-row
