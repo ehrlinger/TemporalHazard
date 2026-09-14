@@ -267,6 +267,21 @@
 
 ## Bug fixes
 
+* **Backward `hzr_stepwise()` now tests a dropped variable on its own
+  coefficient** (#315). The drop test looked a variable's coefficient up
+  by its bare name. `model.matrix()` names a logical `flag`'s column
+  `flagTRUE`, while a factor `fla` with level `g` owns a column named
+  `flag`, so in `~ fla + flag` the name `flag` found the factor's dummy.
+  The run stopped with "expands to multiple coefficients" on `fla` before
+  it decided anything, and that error is all that kept a wrong p-value out
+  of the table: `flag` was being tested on the dummy (z = -1.40, against
+  11.39 on its own column). The variable is now found by its term in the
+  design the fit stored, for single-distribution and multiphase fits. A
+  fit with no stored design (the `time =` / `x =` interface, or a fit saved
+  by an earlier version) still uses the name. On a single-distribution fit,
+  a logical or two-level factor with no colliding column used to stop with
+  "not found in the design matrix"; it is now tested.
+
 * **Backward `hzr_stepwise()` no longer stops when `theta` is named after
   the covariates** (#304). A single-distribution fit started from
   `theta = c(mu = 0.1, nu = 1, age = 0, mal = 0)` failed its first drop
