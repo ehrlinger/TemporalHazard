@@ -303,40 +303,21 @@ nd     <- data.frame(time = t_grid)
 
 # Overall survival
 predict(fit_mp, newdata = nd, type = "survival")
-#> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.9991035    0.9506796    0.9308166    0.8914476    0.8319970    0.7661086 
-#> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.7030015    0.6464731    0.5973335    0.5551220    0.5189605    0.4879204 
-#> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.4611598    0.4379618    0.4177322    0.3999851    0.3843242    0.3704264 
-#> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.3580274    0.3469101    0.3368952    0.3278337    0.3196013    0.3120935 
-#> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.3052220    0.2989119    0.2930992    0.2877290    0.2827541    0.2781333 
-#> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.2738313    0.2698167    0.2660625    0.2625445    0.2592416    0.2561350 
-#> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.2532080    0.2504458    0.2478350    0.2453638    0.2430213    0.2407979 
-#> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.2386849    0.2366744    0.2347592    0.2329327    0.2311890    0.2295226 
-#> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.2279286    0.2264024    0.2249398    0.2235370    0.2221903    0.2208966 
-#> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.2196527    0.2184559    0.2173036    0.2161933    0.2151228    0.2140900 
-#> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.2130930    0.2121300    0.2111993    0.2102992    0.2094283    0.2085852 
-#> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.2077686    0.2069773    0.2062101    0.2054659    0.2047438    0.2040428 
-#> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.2033619    0.2027003    0.2020572    0.2014319    0.2008235    0.2002315 
-#> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.1996552    0.1990940    0.1985473    0.1980145    0.1974951    0.1969886 
-#> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.1964946    0.1960125    0.1955420    0.1950827    0.1946341    0.1941959 
-#> early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.1937677    0.1933492    0.1929401    0.1925400    0.1921487    0.1917659 
-#> early.log_mu early.log_mu early.log_mu early.log_mu 
-#>    0.1913913    0.1910246    0.1906656    0.1903140 
+#>   [1] 0.9991035 0.9506796 0.9308166 0.8914476 0.8319970 0.7661086 0.7030015
+#>   [8] 0.6464731 0.5973335 0.5551220 0.5189605 0.4879204 0.4611598 0.4379618
+#>  [15] 0.4177322 0.3999851 0.3843242 0.3704264 0.3580274 0.3469101 0.3368952
+#>  [22] 0.3278337 0.3196013 0.3120935 0.3052220 0.2989119 0.2930992 0.2877290
+#>  [29] 0.2827541 0.2781333 0.2738313 0.2698167 0.2660625 0.2625445 0.2592416
+#>  [36] 0.2561350 0.2532080 0.2504458 0.2478350 0.2453638 0.2430213 0.2407979
+#>  [43] 0.2386849 0.2366744 0.2347592 0.2329327 0.2311890 0.2295226 0.2279286
+#>  [50] 0.2264024 0.2249398 0.2235370 0.2221903 0.2208966 0.2196527 0.2184559
+#>  [57] 0.2173036 0.2161933 0.2151228 0.2140900 0.2130930 0.2121300 0.2111993
+#>  [64] 0.2102992 0.2094283 0.2085852 0.2077686 0.2069773 0.2062101 0.2054659
+#>  [71] 0.2047438 0.2040428 0.2033619 0.2027003 0.2020572 0.2014319 0.2008235
+#>  [78] 0.2002315 0.1996552 0.1990940 0.1985473 0.1980145 0.1974951 0.1969886
+#>  [85] 0.1964946 0.1960125 0.1955420 0.1950827 0.1946341 0.1941959 0.1937677
+#>  [92] 0.1933492 0.1929401 0.1925400 0.1921487 0.1917659 0.1913913 0.1910246
+#>  [99] 0.1906656 0.1903140
 
 # Per-phase decomposed cumulative hazard
 decomp <- predict(fit_mp, newdata = nd,
