@@ -1630,14 +1630,32 @@
          call. = FALSE)
   }
 
-  # A fit made before the phase design was stored: rebuild as it did then.
+  # The same rule as the global rebuild: newdata supplies only the data
+  # variables (.hzr_newdata_frame()), and a term that does not follow
+  # newdata's rows is refused (.hzr_check_equivariant()).
+  where <- paste0("phase '", nm, "'")
+
+  # A fit made before the phase design was stored: rebuild as it did then,
+  # from its formula. Without the kept data, `vars` is every formula
+  # variable, so an object kept outside `data` cannot be told from a column.
   if (is.null(design)) {
-    return(stats::model.matrix(ph$formula, data = newdata)[, -1L, drop = FALSE])
+    build <- function(x) {
+      nd <- .hzr_newdata_frame(x, vars)
+      m0 <- stats::model.matrix(ph$formula, data = nd)
+      m <- m0[, -1L, drop = FALSE]
+      attr(m, "assign") <- attr(m0, "assign")[-1L]
+      m
+    }
+    return(.hzr_check_equivariant(build, newdata, labels, where))
   }
-  mf <- stats::model.frame(design$terms, data = newdata,
-                           xlev = design$xlevels, na.action = stats::na.pass)
-  mm <- stats::model.matrix(design$terms, data = mf,
-                            contrasts.arg = design$contrasts)
+  build <- function(x) {
+    nd <- .hzr_newdata_frame(x, design$data_vars)
+    mf <- stats::model.frame(design$terms, data = nd, xlev = design$xlevels,
+                             na.action = stats::na.pass)
+    stats::model.matrix(design$terms, data = mf,
+                        contrasts.arg = design$contrasts)
+  }
+  mm <- .hzr_check_equivariant(build, newdata, labels, where)
   mm[, cols, drop = FALSE]
 }
 
@@ -1717,7 +1735,10 @@
         terms = terms_j,
         xlevels = stats::.getXlevels(terms_j, mf_j),
         contrasts = attr(mm_j, "contrasts"),
-        data_vars = intersect(all.vars(terms_j), names(data))
+        # As for the global formula: the name after `$` is never looked up.
+        data_vars = intersect(
+          .hzr_mask_symbols(stats::formula(terms_j)[[2L]]), names(data)
+        )
       )
     } else if (!is.null(x)) {
       # Inherit global design matrix
