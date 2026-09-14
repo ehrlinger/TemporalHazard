@@ -263,6 +263,18 @@
   although the score criterion's refusal of such a column names
   `criterion = "wald"` as the way to test it. It is now tested.
 
+* **`predict()` on a multiphase fit now returns an unnamed vector.** For
+  `type = "cumulative_hazard"`, `"survival"` and `"hazard"`, every element
+  was named after a parameter -- `"constant.log_mu"`, say, on each row --
+  because the phase parameters are named elements of `theta` and R carried
+  a name onto the prediction: from any phase without covariates, and, for a
+  single row of `newdata`, from almost any phase parameter. The values were
+  right; the names were meaningless, and they followed the result into
+  anything built from it. With one row, the `decompose = TRUE` and
+  `se.fit = TRUE` data frames also took such a name as their row name.
+  Single-distribution `predict()` already returned unnamed vectors, and now
+  both agree.
+
 * **`predict(newdata = )` no longer lets a design column override the
   formula variable it contradicts.** `newdata` may give a factor as its
   level (`grp = "old"`) or as the fit's design column (`grpyoung = 1`).
