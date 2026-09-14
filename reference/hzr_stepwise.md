@@ -152,8 +152,10 @@ augmented with:
   `uncomputable_reasons` for which one it was in any given run. For
   every criterion it also carries `refit_failures` (the `"var"` /
   `"var@phase"` tokens of candidate moves whose refit errored or failed
-  to converge), `n_refit_failures`, and `stopped_refit_failed` (`TRUE`
-  when the run ended on an iteration in which refits failed, which is a
+  to converge), `refit_failure_reasons` (why each one failed: the
+  refit's error message, or that it did not converge; named by the same
+  tokens), `n_refit_failures`, and `stopped_refit_failed` (`TRUE` when
+  the run ended on an iteration in which refits failed, which is a
   screen that could not test its candidates rather than one that tested
   them and liked none). Check it before reading a zero-row `steps` as an
   honest null result.
