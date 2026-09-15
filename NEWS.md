@@ -267,6 +267,26 @@
 
 ## Bug fixes
 
+* **A stepwise refit failure now says why.** `hzr_stepwise()` catches each
+  candidate's refit error so one bad candidate cannot end the screen, and it
+  used to drop the message with it: the warning read `candidate refit failed
+  for gb.` and nothing more, even when `hazard()` had stopped with a message
+  naming the problem. The four refit warnings (candidate, Wald fallback,
+  post-entry, post-drop) now carry the refit's error message, or say that it
+  did not converge, and `$criteria$refit_failure_reasons` keeps each one,
+  named by its `refit_failures` token. `refit_failures` itself is unchanged.
+  Under `criterion = "score"`, which builds each candidate's design without
+  refitting, a candidate whose column name collides with a factor's dummy
+  column (numeric `gb` beside factor `g` with level `b`) is now declined with
+  the reason `duplicate_column`, and a run that completes anyway warns about
+  it. The check uses the name the refit's `model.matrix()` would give the
+  column, so a logical `flag` (column `flagTRUE`) beside a factor dummy `flag`
+  is still scored. The single-distribution score path used to
+  score it against a design with two `gb` columns, so it could win the step
+  and fail only at the post-entry refit, which stopped the screen with every
+  other candidate untested; the multiphase score path declined it as
+  `not_expandable`.
+
 * **Backward `hzr_stepwise()` now tests a dropped variable on its own
   coefficient** (#315). The drop test looked a variable's coefficient up
   by its bare name. `model.matrix()` names a logical `flag`'s column

@@ -154,6 +154,9 @@
 #'     considered and its score.}
 #'   \item{refit_failures}{Character vector of `"var@phase"` tokens for
 #'     candidates whose refit diverged.}
+#'   \item{refit_failure_reasons}{Why each of those refits failed: the
+#'     refit's error message, or that it did not converge. Named by the same
+#'     tokens, in the same order.}
 #' }
 #'
 #' @keywords internal
@@ -194,7 +197,8 @@
         df        = integer(),
         stringsAsFactors = FALSE
       ),
-      refit_failures = character()
+      refit_failures = character(),
+      refit_failure_reasons = character()
     )
   }
 
@@ -204,6 +208,7 @@
 
   rows     <- vector("list", length(cands))
   failures <- character()
+  failure_reasons <- character()
 
   if (criterion == "score") {
     return(.hzr_stepwise_forward_step_score(
@@ -231,9 +236,12 @@
 
     if (inherits(candidate_fit, "error") ||
           isFALSE(candidate_fit$fit$converged)) {
+      reason <- .hzr_refit_failure_reason(candidate_fit)
       warning("Stepwise forward: candidate refit failed for ",
-              failure_token, ".", call. = FALSE)
+              failure_token, ": ", reason, call. = FALSE)
       failures <- c(failures, failure_token)
+      failure_reasons <- c(failure_reasons,
+                           stats::setNames(reason, failure_token))
       rows[[i]] <- data.frame(
         variable  = cand$var,
         phase     = cand$phase %||% NA_character_,
@@ -286,6 +294,7 @@
     out <- null_result()
     out$all_scores <- all_scores
     out$refit_failures <- failures
+    out$refit_failure_reasons <- failure_reasons
     return(out)
   }
 
@@ -302,6 +311,7 @@
     out <- null_result()
     out$all_scores <- all_scores
     out$refit_failures <- failures
+    out$refit_failure_reasons <- failure_reasons
     return(out)
   }
 
@@ -317,7 +327,8 @@
     stat_type = best$stat_type,
     df        = best$df,
     all_scores = all_scores,
-    refit_failures = failures
+    refit_failures = failures,
+    refit_failure_reasons = failure_reasons
   )
 }
 
@@ -385,6 +396,7 @@
   # actually rescue qualify -- see .hzr_score_fallback_reasons.
   all_scores$fallback <- FALSE
   fallback_failures <- character()
+  fallback_reasons  <- character()
   # Keep each fallback's refit, keyed by row, the way the Wald path keeps its
   # candidate fits. The acceptance step below refits the winner with exactly
   # the same arguments, so without this a rescued candidate that goes on to
@@ -398,7 +410,7 @@
       .hzr_refit_with_scope(current, action = "add",
                             var = all_scores$variable[i], phase = cand_phase,
                             data = data, ...),
-      error = function(e) NULL
+      error = function(e) e
     )
     # A refit that fails or does not converge leaves the row NA with its
     # original reason, so it still counts as uncomputable below rather than
@@ -406,15 +418,19 @@
     # other refit failure in the package does: without this the row is
     # byte-identical to one that was never refit at all, and the only signal
     # left is an uncomputable_reasons count that now means the opposite.
-    if (is.null(refit) || isFALSE(refit$fit$converged)) {
+    if (is.null(refit) || inherits(refit, "error") ||
+          isFALSE(refit$fit$converged)) {
       fallback_token <- if (is.null(cand_phase)) {
         all_scores$variable[i]
       } else {
         paste0(all_scores$variable[i], "@", cand_phase)
       }
+      reason <- .hzr_refit_failure_reason(refit)
       warning("Stepwise forward: Wald-fallback refit failed for ",
-              fallback_token, ".", call. = FALSE)
+              fallback_token, ": ", reason, call. = FALSE)
       fallback_failures <- c(fallback_failures, fallback_token)
+      fallback_reasons  <- c(fallback_reasons,
+                             stats::setNames(reason, fallback_token))
       next
     }
     w <- .hzr_candidate_score(
@@ -473,6 +489,7 @@
     out$uncomputable_reasons <- uncomputable_reasons
     out$n_wald_fallbacks <- n_wald_fallbacks
     out$refit_failures <- fallback_failures
+    out$refit_failure_reasons <- fallback_reasons
     out$stop_reason    <- if (n_uncomputable > 0L) {
       "scores_uncomputable"
     } else {
@@ -491,6 +508,7 @@
     out$uncomputable_reasons <- uncomputable_reasons
     out$n_wald_fallbacks <- n_wald_fallbacks
     out$refit_failures <- fallback_failures
+    out$refit_failure_reasons <- fallback_reasons
     out$stop_reason    <- "no_candidate_met_slentry"
     return(out)
   }
@@ -518,11 +536,14 @@
   if (inherits(refitted, "error") || isFALSE(refitted$fit$converged)) {
     # The candidate won on Q but the model that would realise it will not fit.
     # Entering it anyway would put a non-converged fit into the chain.
+    reason <- .hzr_refit_failure_reason(refitted)
     warning("Stepwise forward: post-entry refit failed for ",
-            failure_token, ".", call. = FALSE)
+            failure_token, ": ", reason, call. = FALSE)
     out <- null_result()
     out$all_scores     <- all_scores
     out$refit_failures <- c(fallback_failures, failure_token)
+    out$refit_failure_reasons <- c(fallback_reasons,
+                                   stats::setNames(reason, failure_token))
     out$n_uncomputable <- n_uncomputable
     out$uncomputable_reasons <- uncomputable_reasons
     out$n_wald_fallbacks <- n_wald_fallbacks
@@ -543,11 +564,33 @@
     df        = best$df,
     all_scores = all_scores,
     refit_failures = fallback_failures,
+    refit_failure_reasons = fallback_reasons,
     n_uncomputable = n_uncomputable,
     uncomputable_reasons = uncomputable_reasons,
     n_wald_fallbacks = n_wald_fallbacks,
     stop_reason    = "accepted"
   )
+}
+
+
+#' Why a stepwise refit failed, for its warning and `refit_failure_reasons`
+#'
+#' The refit sites catch the error so one bad candidate cannot end the screen.
+#' Catching it used to discard the message too, so a refit that hazard()
+#' refused by name (a duplicated design column, a variable missing from
+#' `data`) was reported as "refit failed for <var>" and nothing more.
+#'
+#' @param refit What the refit's `tryCatch()` returned.
+#' @return A one-line character string.
+#' @noRd
+.hzr_refit_failure_reason <- function(refit) {
+  if (inherits(refit, "error")) {
+    return(conditionMessage(refit))
+  }
+  if (is.null(refit)) {
+    return("the refit returned no fit")
+  }
+  "the refit did not converge"
 }
 
 
@@ -695,7 +738,8 @@
       stat_type = NA_character_,
       df        = NA_integer_,
       all_scores     = all_scores,
-      refit_failures = character()
+      refit_failures = character(),
+      refit_failure_reasons = character()
     )
   }
 
@@ -767,10 +811,12 @@
   }
 
   if (inherits(refitted, "error") || isFALSE(refitted$fit$converged)) {
+    reason <- .hzr_refit_failure_reason(refitted)
     warning("Stepwise backward: post-drop refit failed for ",
-            failure_token, ".", call. = FALSE)
+            failure_token, ": ", reason, call. = FALSE)
     out <- null_result(all_scores)
     out$refit_failures <- failure_token
+    out$refit_failure_reasons <- stats::setNames(reason, failure_token)
     return(out)
   }
 
@@ -786,7 +832,8 @@
     stat_type = best$stat_type,
     df        = best$df,
     all_scores     = all_scores,
-    refit_failures = character()
+    refit_failures = character(),
+    refit_failure_reasons = character()
   )
 }
 
