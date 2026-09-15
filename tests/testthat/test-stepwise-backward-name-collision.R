@@ -157,6 +157,35 @@ test_that("a phase formula beside a global design reads its own design", {
                    "constant.flag")
 })
 
+test_that("the design is rebuilt from the fit's data, not the step's", {
+  # The stored design is rebuilt against fit$data$frame. Rebuilt against the
+  # step's `data` instead, a `flag` that arrives as numeric 0/1 no longer
+  # codes as the logical the design was built from. slstay is set so nothing
+  # is dropped: no refit ever reads the numeric column, so every statistic
+  # comes from the fitted model alone.
+  d <- bnc_data()
+  d_num <- d
+  d_num$flag <- as.numeric(d_num$flag)
+  fits <- list(single = bnc_single(~ fla + flag, d),
+               multi = bnc_multi(~ fla + flag, d))
+  for (nm in names(fits)) {
+    fit <- fits[[nm]]
+    k <- if (nm == "single") {
+      c(fla = 3L, flag = 4L)
+    } else {
+      cn <- names(stats::coef(fit))
+      c(fla = match("constant.flag", cn), flag = match("constant.flagTRUE", cn))
+    }
+    step <- .hzr_stepwise_backward_step(fit, data = d_num, criterion = "wald",
+                                        slstay = 0.99)
+    expect_false(step$accepted, label = nm)
+    expect_equal(bnc_stat(step, "flag"), bnc_z(fit, k[["flag"]]),
+                 tolerance = 1e-8, label = nm)
+    expect_equal(bnc_stat(step, "fla"), bnc_z(fit, k[["fla"]]),
+                 tolerance = 1e-8, label = nm)
+  }
+})
+
 test_that("the whole backward run drops fla and keeps flag", {
   d <- bnc_data()
   fit <- bnc_single(~ fla + flag, d)
