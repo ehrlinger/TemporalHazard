@@ -1819,6 +1819,16 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
          "that.", call. = FALSE)
   }
 
+  # Replicates resample the rows of `data`, so it must have rows. hazard()
+  # also accepts a list, whose nrow() is NULL: the row count below then
+  # compared against nothing and named the vectors 'NA'.
+  if (!is.null(orig_data) && !is.data.frame(orig_data)) {
+    stop("hzr_bootstrap() resamples the rows of the fit's `data =`, which ",
+         "must be a data frame, and this fit's is a ", class(orig_data)[1L],
+         ". Refit with `data = as.data.frame(...)` and bootstrap that.",
+         call. = FALSE)
+  }
+
   # A select-mode screen draws its candidate columns from the fit's `data`. A
   # vector fit made without `data =` has none, so its candidates would be read
   # from the environment and never resampled with the rows.
@@ -1944,16 +1954,30 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     passed <- vec_args[vapply(vec_args, function(a) {
       !is.null(cl[[a]]) || !is.null(object$data[[a]])
     }, logical(1))]
-    have   <- vapply(vec_orig, function(v) !is.null(v) && length(v) == n_obs,
-                     logical(1))
-    missing_vecs <- passed[!have[passed]]
-    if (length(missing_vecs)) {
+    # An absent vector and a wrong-sized one need different remedies, and
+    # only an absent one may be called "not stored": counting rows from a
+    # missing `time` would otherwise report every vector missing.
+    absent <- passed[vapply(vec_orig[passed], is.null, logical(1))]
+    if (length(absent)) {
       stop("hzr_bootstrap(): this fit was built with the vector interface, ",
            "but the evaluated vector(s) ",
-           paste0("`", missing_vecs, "`", collapse = ", "),
+           paste0("`", absent, "`", collapse = ", "),
            " are not stored on the object, so replicates cannot be resampled ",
            "consistently. The object predates storing them: refit it and ",
            "bootstrap the new fit.", call. = FALSE)
+    }
+    # Without `data =`, n_obs is length(time) and hazard() refuses vectors of
+    # unequal length, so a mismatch here needs a `data` with other rows.
+    wrong_len <- passed[lengths(vec_orig[passed]) != n_obs]
+    if (length(wrong_len)) {
+      stop("hzr_bootstrap(): the vector(s) ",
+           paste0("`", wrong_len, "` (", lengths(vec_orig[wrong_len]), ")",
+                  collapse = ", "),
+           " passed to this vector-interface fit do not have one value per ",
+           "row of its `data =` (", n_obs, " rows), so replicates cannot ",
+           "resample them by the same index. Refit with a `data =` that has ",
+           "one row per observation, or without `data =`, and bootstrap ",
+           "that.", call. = FALSE)
     }
     vec_orig <- vec_orig[passed]
   }

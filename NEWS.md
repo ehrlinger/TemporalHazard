@@ -275,7 +275,10 @@
   now resampled together, and the replicates match those of the same model
   fitted with a formula and `data =`. Select mode (`scope =`) on such a fit
   still stops, now saying why: its candidate columns have no data frame to
-  be resampled with. An object missing a stored vector names the argument.
+  be resampled with. The other refusals now give their real reason too: a
+  `data =` that is a list rather than a data frame, vectors that do not have
+  one value per row of `data =`, and an object missing a stored vector, which
+  names the missing argument.
 
 * **A stepwise refit failure now says why.** `hzr_stepwise()` catches each
   candidate's refit error so one bad candidate cannot end the screen, and it

@@ -192,11 +192,73 @@ test_that("a no-data vector fit missing a stored vector names it, not NA", {
   expect_no_match(msg, "NA", fixed = TRUE)
   expect_match(msg, "refit", fixed = TRUE)
 
+  # With `time` gone there is no row count; the stored `status` must not be
+  # reported missing along with it.
+  no_time <- vf
+  no_time$data$time <- NULL
+  msg <- tryCatch(hzr_bootstrap(no_time, n_boot = 2, seed = 1),
+                  error = conditionMessage)
+  expect_match(msg, "`time`", fixed = TRUE)
+  expect_no_match(msg, "`status`", fixed = TRUE)
+
   both <- vf
   both$data$time <- NULL
   both$data$status <- NULL
   msg <- tryCatch(hzr_bootstrap(both, n_boot = 2, seed = 1),
                   error = conditionMessage)
   expect_match(msg, "`time`, `status`", fixed = TRUE)
+  expect_no_match(msg, "NA", fixed = TRUE)
+})
+
+test_that("a weighted vector fit made without `data =` resamples its weights with the rows", {
+  # The oracle is a hand-drawn replicate, not another bootstrap: comparing
+  # two bootstraps would share the resampling code under test.
+  d <- avc_fixture()
+  w <- seq(0.5, 1.5, length.out = nrow(d))
+  fit <- hazard(time = d$int_dead, status = d$dead, weights = w,
+                dist = "weibull", theta = c(0.1, 1), fit = TRUE)
+  expect_null(fit$data$frame)
+
+  b <- hzr_bootstrap(fit, n_boot = 6, seed = 1)
+  expect_equal(b$n_success, 6L)
+  for (p in unique(b$replicates$parameter)) {
+    expect_gt(stats::sd(b$replicates$estimate[b$replicates$parameter == p]),
+              0, label = p)
+  }
+
+  # Replicate 1 is the first draw after set.seed(1).
+  set.seed(1)
+  idx <- sample.int(nrow(d), size = nrow(d), replace = TRUE)
+  by_hand <- hazard(time = d$int_dead[idx], status = d$dead[idx],
+                    weights = w[idx], dist = "weibull", theta = c(0.1, 1),
+                    fit = TRUE)
+  expect_equal(b$replicates$estimate[b$replicates$replicate == 1L],
+               unname(by_hand$fit$theta), tolerance = 1e-8)
+})
+
+test_that("a `data =` that is not a data frame is refused, naming its class", {
+  d <- avc_fixture()
+  fit <- hazard(time = d$int_dead, status = d$dead, data = as.list(d),
+                dist = "weibull", theta = c(0.1, 1), fit = TRUE)
+  msg <- tryCatch(hzr_bootstrap(fit, n_boot = 2, seed = 1),
+                  error = conditionMessage)
+  expect_match(msg, "must be a data frame", fixed = TRUE)
+  expect_match(msg, "is a list", fixed = TRUE)
+  expect_no_match(msg, "NA", fixed = TRUE)
+})
+
+test_that("vectors that do not match the rows of `data =` are refused as such", {
+  # The vectors are stored, so "not stored ... refit" would be false, and
+  # refitting the same call would be refused again.
+  d <- avc_fixture()
+  fit <- hazard(time = d$int_dead, status = d$dead, data = d[1:100, ],
+                dist = "weibull", theta = c(0.1, 1), fit = TRUE)
+  msg <- tryCatch(hzr_bootstrap(fit, n_boot = 2, seed = 1),
+                  error = conditionMessage)
+  n <- nrow(d)
+  expect_match(msg, paste0("`time` (", n, "), `status` (", n, ")"),
+               fixed = TRUE)
+  expect_match(msg, "(100 rows)", fixed = TRUE)
+  expect_no_match(msg, "not stored", fixed = TRUE)
   expect_no_match(msg, "NA", fixed = TRUE)
 })
