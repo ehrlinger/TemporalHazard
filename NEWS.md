@@ -275,10 +275,12 @@
   now resampled together, and the replicates match those of the same model
   fitted with a formula and `data =`. Select mode (`scope =`) on such a fit
   still stops, now saying why: its candidate columns have no data frame to
-  be resampled with. The other refusals now give their real reason too: a
-  `data =` that is a list rather than a data frame, vectors that do not have
-  one value per row of `data =`, and an object missing a stored vector, which
-  names the missing argument.
+  be resampled with. The other refusals now give their real reason too:
+  vectors that do not have one value per row of `data =`, an object missing
+  a stored vector, which names the missing argument, and a `data =` that is
+  a list rather than a data frame. Only the vector interface accepts a list,
+  and its bootstrap already stopped with the same `'NA'` message, so a list
+  `data =` still does not bootstrap; only the message is new.
 
 * **A stepwise refit failure now says why.** `hzr_stepwise()` catches each
   candidate's refit error so one bad candidate cannot end the screen, and it
