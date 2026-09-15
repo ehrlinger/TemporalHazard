@@ -1819,11 +1819,29 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
          "that.", call. = FALSE)
   }
 
+  # A select-mode screen draws its candidate columns from the fit's `data`. A
+  # vector fit made without `data =` has none, so its candidates would be read
+  # from the environment and never resampled with the rows.
+  vector_interface <- is.null(cl$formula) && !is.null(cl$time)
+  if (select_mode && vector_interface && is.null(orig_data)) {
+    stop("hzr_bootstrap(): `scope` selection draws its candidate columns ",
+         "from the fit's `data =`, and this vector-interface fit was made ",
+         "without one, so the candidates could not be resampled with the ",
+         "rows. Refit with `data =` and bootstrap that.", call. = FALSE)
+  }
+
   # Seeded after the refusals above, so a refused call leaves the caller's
   # random number stream alone.
   if (!is.null(seed)) set.seed(seed)
 
-  n_obs <- nrow(orig_data)
+  # A vector fit made without `data =` has no frame to count rows in, and
+  # nrow(NULL) is NULL: every such fit was refused, naming its vectors 'NA'
+  # (#259, #312). Its stored `time` holds one value per row.
+  n_obs <- if (vector_interface && is.null(orig_data)) {
+    length(object$data$time)
+  } else {
+    nrow(orig_data)
+  }
   sample_size <- max(1L, as.integer(n_obs * fraction))
 
   # Observation weights, if any, must be resampled in lockstep with the data.
@@ -1905,8 +1923,8 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # The evaluated vectors are already stored on the object, so they can be
   # resampled by the same index and rewired the same way `data` and `weights`
   # are. `x` is not among them: a design matrix passed directly is refused
-  # above, before seeding.
-  vector_interface <- is.null(cl$formula) && !is.null(cl$time)
+  # above, before seeding. For a fit made without `data =` they are all there
+  # is to resample.
   vec_args <- c("time", "status", "time_lower", "time_upper")
   vec_orig <- if (vector_interface) {
     stats::setNames(lapply(vec_args, function(a) object$data[[a]]), vec_args)
@@ -1932,10 +1950,10 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     if (length(missing_vecs)) {
       stop("hzr_bootstrap(): this fit was built with the vector interface, ",
            "but the evaluated vector(s) ",
-           paste(sQuote(missing_vecs), collapse = ", "),
+           paste0("`", missing_vecs, "`", collapse = ", "),
            " are not stored on the object, so replicates cannot be resampled ",
-           "consistently. Refit with the formula interface ",
-           "(Surv(...) ~ ., data = ...) and bootstrap that.", call. = FALSE)
+           "consistently. The object predates storing them: refit it and ",
+           "bootstrap the new fit.", call. = FALSE)
     }
     vec_orig <- vec_orig[passed]
   }

@@ -267,6 +267,16 @@
 
 ## Bug fixes
 
+* **`hzr_bootstrap()` now bootstraps a vector-interface fit made without
+  `data =`** (#259, #312). It counted the rows to resample in the fit's data
+  frame, and such a fit has none, so every one was refused with a message
+  that named its vectors `'NA', 'NA'` and sent you to the formula interface.
+  The stored `time`, `status`, `time_lower`, `time_upper` and `weights` are
+  now resampled together, and the replicates match those of the same model
+  fitted with a formula and `data =`. Select mode (`scope =`) on such a fit
+  still stops, now saying why: its candidate columns have no data frame to
+  be resampled with. An object missing a stored vector names the argument.
+
 * **A stepwise refit failure now says why.** `hzr_stepwise()` catches each
   candidate's refit error so one bad candidate cannot end the screen, and it
   used to drop the message with it: the warning read `candidate refit failed
