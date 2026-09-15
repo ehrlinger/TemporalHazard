@@ -247,6 +247,23 @@ test_that("a `data =` that is not a data frame is refused, naming its class", {
   expect_no_match(msg, "NA", fixed = TRUE)
 })
 
+test_that("a data.frame subclass is not refused: is.data.frame, not an exact class test", {
+  # A tibble is a data.frame subclass, and it bootstraps correctly, so the
+  # refusal above must not catch one. `class(x) == "data.frame"`, or an
+  # exact-class inherits() test, would. The class is stamped on here rather
+  # than taken from tibble, which is not a dependency of this package.
+  d <- avc_fixture()
+  sub <- structure(d, class = c("tbl_df", "tbl", "data.frame"))
+  fit <- hazard(survival::Surv(int_dead, dead) ~ age, data = sub,
+                dist = "weibull", theta = c(0.1, 1, 0), fit = TRUE)
+  expect_s3_class(fit$data$frame, "tbl_df")
+
+  b <- hzr_bootstrap(fit, n_boot = 5, seed = 1)
+  expect_equal(b$n_success, 5L)
+  expect_gt(stats::sd(b$replicates$estimate[b$replicates$parameter == "age"]),
+            0)
+})
+
 test_that("vectors that do not match the rows of `data =` are refused as such", {
   # The vectors are stored, so "not stored ... refit" would be false, and
   # refitting the same call would be refused again.
