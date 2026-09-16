@@ -750,6 +750,10 @@
   rows <- vector("list", length(cands))
   for (i in seq_along(cands)) {
     cand <- cands[[i]]
+    # Resolved by the variable's term in the stored design, not by name: a
+    # factor `fla` with level `g` owns a column named `flag`, while a logical
+    # `flag` owns `flagTRUE` (#315).  The design is rebuilt from the data the
+    # fit was built on, so a `data` whose column types differ cannot skew it.
     coef_name <- .hzr_candidate_coef_name(current, cand$var, cand$phase)
 
     s <- .hzr_candidate_score(
@@ -839,7 +843,9 @@
 #' Canonical naming differs between fit kinds:
 #'   multiphase: phase-prefixed formula names (e.g. `"early.age"`).
 #'   single-dist: positional `"betaN"` from `.hzr_parameter_names()`,
-#'     where N is the column index of `var` in `colnames(fit$data$x)`.
+#'     where N is the index in `colnames(fit$data$x)` of the column `var`'s
+#'     term builds (or of the column named `var`, for a fit with no stored
+#'     design).
 #'
 #' This matches the naming `summary.hazard()` prints and the canonical
 #' name `.hzr_wald_p()` uses for coefficient lookup.
@@ -851,13 +857,23 @@
 #'
 #' @param current For a forward step, the fit `fit` was refit from.  The
 #'   candidate is then resolved by the column the refit added, not by name.
+#' @param data Data frame the fit's stored design is rebuilt against to
+#'   resolve `var` by its term (`.hzr_term_coef_name()`).  Only a fit with no
+#'   stored design falls back to looking `var` up by name.
 #'
 #' @keywords internal
 #' @noRd
-.hzr_candidate_coef_name <- function(fit, var, phase, current = NULL) {
+.hzr_candidate_coef_name <- function(fit, var, phase, current = NULL,
+                                     data = fit$data$frame) {
   if (!is.null(current)) {
     return(.hzr_entered_coef_name(fit, current, var, phase))
   }
+  by_term <- .hzr_term_coef_name(fit, var, phase, data)
+  if (!is.null(by_term)) {
+    return(by_term)
+  }
+  # No stored design (the `time =` / `x =` interface, or a fit saved before
+  # the design was kept): the bare name is all there is to go on.
   if (fit$spec$dist == "multiphase") {
     target <- paste0(phase, ".", var)
     coef_names <- names(stats::coef(fit))
@@ -913,6 +929,79 @@
          call. = FALSE)
   }
   paste0("beta", idx)
+}
+
+
+#' Name of an in-model variable's coefficient, found by its term
+#'
+#' A drop has no refit to compare columns against, so the variable is found
+#' through the design the fit stored: rebuilt against `data`, the model
+#' matrix's `assign` attribute maps each column to its term, and `var` is a
+#' term label.  Looking `var` up among the column names instead finds another
+#' term's column when that column carries the name: a logical `flag` becomes
+#' `flagTRUE`, while a factor `fla` with level `g` owns `flag` (#315).
+#'
+#' @return The coefficient name (`beta<k>` for a single distribution,
+#'   `<phase>.<column>` for multiphase), or `NULL` when the fit stored no
+#'   design, which leaves only the name lookup.
+#'
+#' @keywords internal
+#' @noRd
+.hzr_term_coef_name <- function(fit, var, phase, data) {
+  multiphase <- fit$spec$dist == "multiphase"
+  if (multiphase) {
+    design <- if (.hzr_phase_inherits_global(fit, phase)) {
+      fit$data$x_design
+    } else {
+      fit$fit$x_design[[phase]]
+    }
+    cols <- colnames(fit$fit$x_list[[phase]])
+  } else {
+    design <- fit$data$x_design
+    cols <- colnames(fit$data$x)
+  }
+  if (is.null(design) || is.null(data)) {
+    return(NULL)
+  }
+  where <- if (multiphase) paste0(" in phase ", sQuote(phase)) else ""
+
+  mf <- stats::model.frame(design$terms, data = data, xlev = design$xlevels,
+                           na.action = stats::na.pass)
+  mm <- stats::model.matrix(design$terms, data = mf,
+                            contrasts.arg = design$contrasts)
+  # Column names are unique within a design (.hzr_refuse_duplicate_columns()),
+  # so the stored columns can be found in the rebuild by name.  The stored
+  # set lacks the intercept, and under `time_windows` it is window-expanded.
+  pos <- match(cols, colnames(mm))
+  if (length(cols) == 0L || anyNA(pos)) {
+    stop("Cannot map variable ", sQuote(var), where, " to its coefficient: ",
+         "the fit's design columns (", paste(sQuote(cols), collapse = ", "),
+         ") are not those its stored formula builds (",
+         paste(sQuote(colnames(mm)), collapse = ", "), ").",
+         call. = FALSE)
+  }
+  term <- match(var, attr(design$terms, "term.labels"))
+  if (is.na(term)) {
+    stop("Variable ", sQuote(var), where, " is not a term of the fitted ",
+         "model's formula.", call. = FALSE)
+  }
+  idx <- which(attr(mm, "assign")[pos] == term)
+  if (length(idx) > 1L) {
+    stop(
+      "Variable ", sQuote(var), where,
+      " expands to multiple coefficients (",
+      paste(sQuote(cols[idx]), collapse = ", "),
+      ").  Stepwise v1 supports main-effect terms only; ",
+      "rebuild your candidate as pre-expanded main effects and retry.",
+      call. = FALSE
+    )
+  }
+  if (length(idx) == 0L) {
+    stop("Variable ", sQuote(var), where, " has no column in the fitted ",
+         "model's design, so its coefficient cannot be identified.",
+         call. = FALSE)
+  }
+  if (multiphase) paste0(phase, ".", cols[idx]) else paste0("beta", idx)
 }
 
 
