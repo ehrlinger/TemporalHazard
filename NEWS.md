@@ -270,7 +270,8 @@
   is a `cut()` coded other than by treatment contrasts under another
   `contrasts` option. A closed formula still predicts, and a missing value
   gives an NA row; one that cannot be built from `newdata` alone, or does
-  not give the fitted columns, is refused. Current fits recompute such statistics from `newdata` as `lm()`
+  not give the fitted columns, is refused. Current fits still recompute a
+  statistic such as `mean()` inside a formula from `newdata`, as `lm()`
   does; that is #331.
 
 * **`predict()` on a multiphase fit now returns an unnamed vector.** For
