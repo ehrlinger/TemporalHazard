@@ -190,7 +190,10 @@
                                   m = pars$m, type = phases[[nm]]$type)
     }
 
-    contrib <- mu_j * phi_j
+    # unname(): the phase parameters are named elements of theta, and R
+    # carries such a name onto the product -- through rep() for every n, and
+    # through any length-1 operand when n == 1 -- and so into predict().
+    contrib <- unname(mu_j * phi_j)
     total <- total + contrib
 
     if (per_phase) phase_contributions[[i]] <- contrib
@@ -242,7 +245,7 @@
                                    m = pars$m, type = phases[[nm]]$type)
     }
 
-    total <- total + mu_j * dphi_j
+    total <- total + unname(mu_j * dphi_j)  # see .hzr_multiphase_cumhaz()
   }
 
   total
@@ -1722,6 +1725,7 @@
                                    na.action = stats::na.pass)
       mm_j <- stats::model.matrix(ph$formula, data = mf_j)
       x_j <- mm_j[, -1L, drop = FALSE]
+      .hzr_refuse_duplicate_columns(x_j, phase = nm)
       x_list[[nm]] <- x_j
       covariate_counts[[nm]] <- ncol(x_j)
       # What predict(newdata = ) needs to rebuild x_j from new rows: the
