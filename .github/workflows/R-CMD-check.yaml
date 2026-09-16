@@ -169,3 +169,24 @@ jobs:
         uses: r-lib/actions/check-r-package@v2
         with:
           upload-snapshots: true
+
+      # The testthat totals, where the log can be read. check-r-package prints
+      # tests/testthat.Rout only when the check fails, so a green run otherwise
+      # shows no pass count at all, and a run that silently tested less looks
+      # the same as one that tested everything.
+      - if: always() && needs.changes.outputs.run == 'true' && env.full_check == 'true'
+        shell: bash
+        run: |
+          f="$(find check -path '*.Rcheck/tests/testthat.Rout*' 2>/dev/null | head -n 1)"
+          if [ -z "$f" ]; then
+            echo "::warning title=testthat totals::no tests/testthat.Rout under check/"
+            exit 0
+          fi
+          lines="$(grep -E 'Starting [0-9]+ test process|\[ FAIL [0-9]+ \| WARN [0-9]+ \| SKIP [0-9]+ \| PASS [0-9]+ \]' "$f" | tail -n 2)"
+          if [ -z "$lines" ]; then
+            echo "::warning title=testthat totals::no totals line in $f"
+            exit 0
+          fi
+          echo "$lines"
+          printf '%s\n' "$lines" | sed 's/^/    /' >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=testthat totals::$(printf '%s' "$lines" | tr '\n' ' ')"
