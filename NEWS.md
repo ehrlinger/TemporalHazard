@@ -282,7 +282,11 @@
   drop that does not reduce the design is refused with a reason in
   `$criteria$refit_failure_reasons`, as a failed refit already was. The
   forward step has refused the mirror of this, a candidate that adds no
-  column, since #306.
+  column, since #306. The check is multiphase-only: a single-distribution
+  refit warm-starts from a `theta` one element shorter than such a design
+  needs, so the refit fails to conform first and is reported as a refit
+  failure ("non-conformable arguments"), which names the symptom and not the
+  cause.
 
 * **A stepwise refit failure now says why.** `hzr_stepwise()` catches each
   candidate's refit error so one bad candidate cannot end the screen, and it

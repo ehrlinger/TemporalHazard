@@ -47,11 +47,17 @@ test_that("a multiphase drop that removes no column is refused, not accepted", {
 
   expect_false(step$accepted)
   expect_true(is.na(step$variable))
+  # The returned fit still carries `z`. Under the bug it is the refitted,
+  # reparameterised model, whose coefficients are `constant.z:fa`/`:fb`, so
+  # these fail there. (`null_result()` returns `fit = current`, so comparing
+  # that object with `fit` would compare it with itself and could not fail.)
+  # They come before the reasons lookup below, which errors under the bug --
+  # an error ends the block, and assertions after it would never run.
+  expect_true("constant.z" %in% names(stats::coef(step$fit)))
+  expect_identical(.hzr_scope_current_vars(step$fit, "constant"),
+                   c("z", "z:f"))
   expect_identical(step$refit_failures, "z@constant")
   expect_match(step$refit_failure_reasons[["z@constant"]], "removes no column")
-  # The returned fit is the model it started from, untouched.
-  expect_identical(colnames(step$fit$fit$x_list$constant), c("z", "z:fb"))
-  expect_equal(step$fit$fit$objective, fit$fit$objective)
 })
 
 test_that("a capped run records no drop and returns the unchanged model", {
@@ -64,8 +70,10 @@ test_that("a capped run records no drop and returns the unchanged model", {
                                       max_steps = 1L, trace = FALSE))
   expect_equal(sum(sw$steps$action == "drop"), 0L)
   expect_identical(colnames(sw$fit$x_list$constant), c("z", "z:fb"))
-  expect_equal(sw$fit$objective, fit$fit$objective)
-  expect_equal(length(sw$fit$theta), length(fit$fit$theta))
+  # The phase formula still holds both terms. Equal objective and equal
+  # coefficient count are the SIGNATURE of this bug, so asserting them would
+  # hold whether or not the guard fired; the surviving term does not.
+  expect_identical(.hzr_scope_current_vars(sw, "constant"), c("z", "z:f"))
 })
 
 test_that("an uncapped run stops on the guard, not on the next step's term", {
@@ -102,8 +110,11 @@ test_that("a drop that does remove a column still happens", {
 })
 
 test_that("the single-distribution path keeps its refit-failure report", {
-  # There the warm-started refit fails before any design comparison, and #302's
-  # reason is what the caller sees. Unchanged by this guard.
+  # The guard is multiphase-only by construction. Here the warm start is
+  # `theta_old[-drop_idx]`, one element shorter than the design a no-op drop
+  # would need, so the refit fails to conform first and #302's reason is what
+  # the caller sees -- naming a linear-algebra symptom, not the cause. Tracked
+  # as a follow-up; the message is pinned so a change to it is not silent.
   d <- nod_data()
   fit <- hazard(survival::Surv(time, status) ~ z + z:f, data = d,
                 dist = "weibull", theta = c(0.5, 1, 0, 0), fit = TRUE)
@@ -115,5 +126,5 @@ test_that("the single-distribution path keeps its refit-failure report", {
   )
   expect_false(step$accepted)
   expect_identical(step$refit_failures, "z")
-  expect_true(nzchar(step$refit_failure_reasons[["z"]]))
+  expect_match(step$refit_failure_reasons[["z"]], "non-conformable")
 })
