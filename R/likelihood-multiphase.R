@@ -1883,8 +1883,9 @@
       m <- m0[, -1L, drop = FALSE]
       attr(m, "assign") <- attr(m0, "assign")[-1L]
       attr(m, "contrasts") <- attr(m0, "contrasts")
-      attr(m, "categorical") <- names(mf)[vapply(mf, function(v)
-        is.factor(v) || is.character(v), logical(1))]
+      attr(m, "categorical") <- names(mf)[vapply(mf, function(v) {
+        is.factor(v) || is.character(v)
+      }, logical(1))]
       m
     }
     # Nothing to check a rebuild against: rebuild only a closed formula (#307).

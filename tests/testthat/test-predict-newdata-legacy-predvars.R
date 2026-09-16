@@ -269,8 +269,9 @@ test_that("without its data, a categorical term is refused unless its levels are
                "refit")
   # factor() of numbers: every level present is still not enough.
   lf <- legacy_fit_on("factor(inc_surg)", d, keep_frame = FALSE)
-  all_levels <- rows_of(d, vapply(sort(unique(d$inc_surg)), function(v)
-    which(d$inc_surg == v)[1], integer(1)))
+  all_levels <- rows_of(d, vapply(sort(unique(d$inc_surg)), function(v) {
+    which(d$inc_surg == v)[1]
+  }, integer(1)))
   expect_error(predict(lf$fit, newdata = all_levels,
                        type = "cumulative_hazard"), "refit")
   # A logical column and cut() at literal breaks predict as fitted.
