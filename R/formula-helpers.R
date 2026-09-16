@@ -582,7 +582,8 @@
     return(FALSE)
   }
   # The column names are built from the formula's text, so every constant
-  # must be exactly what that text says. One the text cannot tell apart --
+  # must be exactly what that text says. A constant the text cannot tell
+  # apart --
   # -0 from 0, a value past deparse()'s 15 digits, one carrying a class, a
   # function or list pasted in by bquote() -- would let another formula
   # reproduce the fitted names and values, then differ at new rows.
