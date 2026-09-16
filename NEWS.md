@@ -256,20 +256,21 @@
   neither, so nothing is left to check a rebuild against: its phase is
   rebuilt only when the phase formula is closed, meaning built from
   `newdata`'s columns, literals, arithmetic and comparisons, `I()`, `log()`,
-  `exp()`, `sqrt()`, `abs()`, `factor()` of one column, and `cut()` at
-  literal breaks. Any other phase formula is refused with advice to refit.
+  `exp()`, `sqrt()`, `abs()`, logical columns, and `cut()` at literal
+  breaks. Any other phase formula is refused with advice to refit.
   That includes terms that read their data (`scale()`, `poly()`, `ns()`,
   `bs()`, `cut(age, 3)`, and `mean()`, `min()`, `median()`, factor codes or
   a date origin inside `I()`), and also fully specified ones such as
   `I(age > cutoff)` or `poly(raw = TRUE)`, which cannot be told apart
   from them without the fitting data. So is a `newdata` column named like a
   value the formula can see (`T`, `pi`, a workspace vector), which the fit
-  may have used instead, and a `factor()` coded other than by treatment
-  contrasts (an ordered factor, or another `contrasts` option), whose
-  column names do not show its levels. A closed formula still predicts; a
-  `factor()` with a fitted level missing from `newdata`, or one that cannot
-  be built from `newdata` alone, is refused, and a missing value gives an NA
-  row. Current fits recompute such statistics from `newdata` as `lm()`
+  may have used instead. So is any other categorical term (a character or
+  factor column, `factor()`): the fitted columns show only its non-reference
+  levels, so a level the fit never saw would be scored as the reference. So
+  is a `cut()` coded other than by treatment contrasts under another
+  `contrasts` option. A closed formula still predicts, and a missing value
+  gives an NA row; one that cannot be built from `newdata` alone, or does
+  not give the fitted columns, is refused. Current fits recompute such statistics from `newdata` as `lm()`
   does; that is #331.
 
 * **`predict()` on a multiphase fit now returns an unnamed vector.** For
