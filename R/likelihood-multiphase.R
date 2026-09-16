@@ -1627,8 +1627,8 @@
 #' unchanged, so no object hides behind how it prints, and is built only
 #' from:
 #'
-#' * columns of `newdata`, so a constant from the formula's environment
-#'   (`cutoff` in I(age > cutoff)) is refused;
+#' * columns of `newdata` that no value the formula can see shares a name
+#'   with, so `cutoff` in I(age > cutoff), or `T` and `pi`, are refused;
 #' * single numeric, logical or character literals;
 #' * `+ - * / ^ ( : == != < > <= >= & | !`, `I()`, `log()`, `exp()`, `sqrt()`
 #'   and `abs()`;
@@ -1643,7 +1643,9 @@
 #'
 #' A closed formula must then build from `newdata` alone (factor() of one
 #' row cannot be) and give the phase's fitted columns (a factor() missing a
-#' level does not).
+#' level does not), coded by treatment contrasts, whose column names carry
+#' the levels (an ordered factor's polynomial columns, or Helmert or sum
+#' coding under another session's contrasts option, do not).
 #'
 #' @param formula The phase formula.
 #' @param build Function of a data frame of new rows, returning the model
@@ -1676,7 +1678,11 @@
                    "abs", "factor", "cut")
   closed <- function(e) {
     if (is.symbol(e)) {
-      return(as.character(e) %in% names(newdata))
+      # A value of that name the formula can see (T, pi, a `cutoff`) may be
+      # what the fit used; without the data, a column cannot be told from it.
+      v <- get0(as.character(e), envir = env)
+      return(as.character(e) %in% names(newdata) &&
+               (is.null(v) || is.function(v)))
     }
     if (!is.call(e)) {
       # A single literal: the text round-trip rules out any other object.
@@ -1727,6 +1733,14 @@
     refuse(labels, paste0("does not rebuild the fitted columns (",
                           paste0("'", cols, "'", collapse = ", "),
                           ") from newdata: its levels come from the data"))
+  }
+  # Treatment coding names each column after its level; polynomial, Helmert
+  # or sum coding does not, so reordered levels or another session's
+  # contrasts would pass the name check with other values.
+  coding <- attr(a, "contrasts")
+  if (!all(vapply(coding, identical, logical(1), "contr.treatment"))) {
+    refuse(labels, paste0("codes a factor by contrasts whose column names do ",
+                          "not carry its levels"))
   }
   invisible(NULL)
 }
@@ -1856,6 +1870,7 @@
       m0 <- stats::model.matrix(ph$formula, data = mf)
       m <- m0[, -1L, drop = FALSE]
       attr(m, "assign") <- attr(m0, "assign")[-1L]
+      attr(m, "contrasts") <- attr(m0, "contrasts")
       m
     }
     # Nothing to check a rebuild against: rebuild only a closed formula (#307).

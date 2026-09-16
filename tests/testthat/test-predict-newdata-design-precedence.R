@@ -583,14 +583,13 @@ test_that("a phase term with row-level values from outside data is refused", {
   f18$fit$x_design <- NULL
   expect_error(ch(f18, nd), "term 'zz' of phase 'early' uses row-level")
   # A 1.0.3-era fit (no design, frame or record) cannot tell zz from a data
-  # column, so it takes zz from newdata, as it did then.
+  # column, and the formula sees a zz outside newdata, so it is refused
+  # rather than taken from newdata (#307).
   f19 <- f18
   f19$data$frame <- NULL
   attr(f19$fit$x_list, "from_formula") <- NULL
-  rows <- c(1, 50, 150)
-  expect_equal(unname(ch(f19, nd[match(rows, rv), ])),
-               unname(predict(f_zz, type = "cumulative_hazard")[rows]),
-               tolerance = 1e-10)
+  expect_error(ch(f19, nd[1:3, ]),
+               "term 'zz' of phase 'early' is not closed.*refit")
 })
 
 test_that("a rebuilt design never has more rows than newdata", {

@@ -305,3 +305,36 @@ test_that("a legacy fit keeps predicting plain row-wise phase terms", {
                  tolerance = 1e-8, ignore_attr = TRUE)
   }
 })
+
+test_that("without its data, a column shadowing a constant or a coding the names do not carry is refused", {
+  skip_on_cran()  # multiphase fits
+  # Each passes the column-name check with different values.
+  d <- legacy_data()
+  d$og <- ordered(d$grp, levels = c("A", "B", "C"))
+  nd <- legacy_nd()
+  # T and pi were base R's in the fit; newdata's columns of those names
+  # would take their place.
+  nd$T <- FALSE
+  nd$pi <- 1
+  # Every level present, so a missing level is not what refuses.
+  nd$grp <- c("A", "B", "C", "A", "B", "C")
+  for (term in c("I(age > 50 & T)", "I(age * pi)")) {
+    lf <- legacy_fit_on(term, d, keep_frame = FALSE)
+    expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
+                 "refit", label = term)
+  }
+  # An ordered factor codes by polynomial contrasts, whose columns (.L, .Q)
+  # do not name the levels, so reversed levels would pass.
+  nd$og <- factor(nd$grp, levels = c("C", "B", "A"), ordered = TRUE)
+  lf <- legacy_fit_on("factor(og)", d, keep_frame = FALSE)
+  expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
+               "refit")
+  # A fit made under other contrasts: Helmert and sum coding both name the
+  # columns 1 and 2, and a legacy fit does not record which it used.
+  old <- options(contrasts = c("contr.helmert", "contr.poly"))
+  on.exit(options(old), add = TRUE)
+  lf <- legacy_fit_on("factor(grp)", d, keep_frame = FALSE)
+  options(contrasts = c("contr.sum", "contr.poly"))
+  expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
+               "refit")
+})
