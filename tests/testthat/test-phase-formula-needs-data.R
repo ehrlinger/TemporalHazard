@@ -196,3 +196,54 @@ test_that("hzr_stepwise() refuses a saved fit whose phase formula was ignored", 
   expect_error(hzr_bootstrap(hollow, n_boot = 2L), "vector interface")
   expect_error(hzr_bootstrap(beside_x, n_boot = 2L), "`x`")
 })
+
+test_that("the blocker reads the stored frame, not the call's `data`", {
+  skip_on_cran() # multiphase fits
+  # A call written `data = dd` records the symbol `dd` even when `dd` was
+  # NULL, so a test on the call's syntax let a record-less hollow fit through
+  # (Copilot, #310). On 310e1c5 the screen then entered constant.mal with
+  # delta_logLik 8.33 where the stated base gives 0.061: the ignored
+  # `early ~ mal` entered every refit. Simulates a fit saved after `hazard()`
+  # stored its data frame but before the from_formula record.
+  d <- avc_299()
+  dd <- NULL
+  f <- suppressWarnings(hzr_saved_before_299(
+    phases_299(~ mal), time = d$int_dead, status = d$dead, data = dd,
+    dist = "multiphase", fit = TRUE, control = ctl_299))
+  attr(f$fit$x_list, "from_formula") <- NULL
+  # The fixture is the case: the call names `data`, the stored frame is NULL.
+  expect_false(is.null(f$call$data))
+  expect_true("frame" %in% names(f$data))
+  expect_null(f$data$frame)
+  screen <- function(fit) {
+    hzr_stepwise(fit, scope = list(constant = ~ mal), data = d,
+                 direction = "forward", criterion = "wald", trace = FALSE)
+  }
+  refusal <- "phase 'early' has a formula, `~mal`, that the fit ignored"
+  expect_error(screen(f), refusal)
+  # An object saved before the frame was stored is judged by its call.
+  old <- f
+  old$data["frame"] <- NULL
+  old$call$data <- NULL
+  expect_false("frame" %in% names(old$data))
+  expect_error(screen(old), refusal)
+})
+
+test_that("the blocker names the dropped `x` for an ignored `~ 1` beside `x`", {
+  skip_on_cran() # multiphase fits
+  # There is no formula column to add: a refit given `data` builds the phase
+  # with no columns, so it drops the global `x` the base was fitted with.
+  d <- avc_299()
+  f <- suppressWarnings(hzr_saved_before_299(
+    phases_299(~ 1), time = d$int_dead, status = d$dead,
+    x = cbind(age = d$age), dist = "multiphase", fit = TRUE,
+    control = ctl_299))
+  msg <- tryCatch(
+    hzr_stepwise(f, scope = list(early = ~ mal), data = d,
+                 direction = "forward", criterion = "wald", trace = FALSE),
+    error = conditionMessage)
+  expect_match(msg, "phase 'early' has a formula, `~1`, that the fit ignored",
+               fixed = TRUE)
+  expect_match(msg, "would drop the global `x` columns", fixed = TRUE)
+  expect_no_match(msg, "would add that formula's columns", fixed = TRUE)
+})
