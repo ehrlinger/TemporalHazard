@@ -170,7 +170,7 @@ test_that("without its data, a phase term that is not closed is refused", {
                  "I(as.numeric(factor(grp)))",
                  "factor(ni) + I(ni - mean(ni))",
                  "I(age > cutoff)", "factor(age > mean(age))", "sqrt(age)",
-                 "cut(opmos, c(0, cutoff, 1000))",
+                 "cut(opmos, c(0, cutoff, 1000))", "cut(age, 3, labels = FALSE)",
                  "poly(age, 2, raw = TRUE)",
                  "splines::ns(age, knots = 50, Boundary.knots = c(0, 400))")) {
     lf <- legacy_fit_on(term, d, keep_frame = FALSE)
