@@ -403,6 +403,10 @@ hzr_decompos_g3 <- function(time, tau, gamma, alpha, eta) {
   # --- Common terms ----------------------------------------------------------
   # Work on log scale for numerical stability, mirroring the C implementation
   ln_t_tau  <- log(time / tau)                    # ln(T/tau)
+  # If the quotient itself underflows (tiny time, huge tau), take the log
+  # ratio as a difference instead of -Inf.
+  lost <- !is.finite(ln_t_tau)
+  ln_t_tau[lost] <- log(time[lost]) - log(tau)
   ln_t_tau_g <- gamma * ln_t_tau                   # gamma * ln(T/tau)
 
   # --- Case dispatch: alpha > 0 vs alpha = 0 --------------------------------
@@ -417,6 +421,16 @@ hzr_decompos_g3 <- function(time, tau, gamma, alpha, eta) {
     tGamma <- .log1pexp(ln_t_tau_g)   # ln((t/tau)^gamma + 1)
     inner  <- tGamma / alpha           # ln((t/tau)^gamma + 1) / alpha
     tEta   <- .log_expm1(inner)        # ln(exp(inner) - 1)
+    # Where inner is tiny, tEta = ln(inner) to within inner / 2. Compute that
+    # log directly: once inner underflows, .log_expm1() clamps to double.xmin,
+    # which freezes G3 and puts g3 wrong by orders of magnitude (the C code's
+    # ln(e^x + 1) returns 0 there too). ln(tGamma) = ln_t_tau_g below -35, and
+    # testing on the log scale also catches an alpha large enough to
+    # underflow the division.
+    ln_inner <- ifelse(ln_t_tau_g <= -35, ln_t_tau_g, log(tGamma)) - log(alpha)
+    # A non-finite log (e.g. gamma = Inf) keeps the old path.
+    deep <- is.finite(ln_inner) & ln_inner <= log(1e-10)
+    tEta[deep] <- ln_inner[deep]
     lnG3   <- eta * tEta
 
     G3 <- exp(lnG3)
@@ -442,6 +456,10 @@ hzr_decompos_g3 <- function(time, tau, gamma, alpha, eta) {
 
     t_tau_g <- exp(ln_t_tau_g)         # (t/tau)^gamma
     tGamma  <- .log_expm1(t_tau_g)     # ln(exp((t/tau)^gamma) - 1)
+    # As above: for tiny (t/tau)^gamma, tGamma = ln_t_tau_g, and the direct
+    # form survives the underflow of exp(ln_t_tau_g).
+    deep <- is.finite(ln_t_tau_g) & t_tau_g <= 1e-10
+    tGamma[deep] <- ln_t_tau_g[deep]
     lnG3    <- eta * tGamma
 
     G3 <- exp(lnG3)

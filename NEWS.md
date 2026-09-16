@@ -323,6 +323,59 @@
   statistic such as `mean()` inside a formula from `newdata`, as `lm()`
   does; that is #331.
 
+* **`hzr_bootstrap()` now bootstraps a vector-interface fit made without
+  `data =`** (#259, #312). It counted the rows to resample in the fit's data
+  frame, and such a fit has none, so every one was refused with a message
+  that named its vectors `'NA', 'NA'` and sent you to the formula interface.
+  The stored `time`, `status`, `time_lower`, `time_upper` and `weights` are
+  now resampled together, and the replicates match those of the same model
+  fitted with a formula and `data =`. Select mode (`scope =`) on such a fit
+  still stops, now saying why: its candidate columns have no data frame to
+  be resampled with. The other refusals now give their real reason too:
+  vectors that do not have one value per row of `data =`, an object missing
+  a stored vector, which names the missing argument, and a `data =` that is
+  a list rather than a data frame. Only the vector interface accepts a list,
+  and its bootstrap already stopped with the same `'NA'` message, so a list
+  `data =` still does not bootstrap; only the message is new. One kind of fit
+  is still refused, for its real reason: a multiphase fit saved before
+  `hazard()` refused a phase formula without `data =`, whose formula was
+  ignored. Its stored call can no longer be refit, and resampling it
+  returned no replicates and no error, so `hzr_bootstrap()` now refuses it
+  with the message `hzr_stepwise()` gives. That refusal takes only the
+  ignored-formula check: a fit `hzr_stepwise()` declines to step for other
+  reasons, such as a phase inheriting a factor with more than two levels,
+  still bootstraps.
+
+* **`hzr_bootstrap()` now says why replicates failed, and warns when every
+  one did.** Each replicate catches its own error so one bad resample cannot
+  end the run, and it used to drop the message: a run could fail every
+  replicate and return an empty `replicates` table with only `n_failed` to
+  show for it. The result gains `failure_reasons`, a named integer vector
+  counting each failure by its error message, or by
+  `"non-finite objective (did not converge)"`, most common first. It sums to
+  `n_failed`, and is empty but present when nothing failed. When no
+  replicate succeeds, `hzr_bootstrap()` warns, naming the most common
+  reason. Partial failure does not warn; its reasons are in
+  `failure_reasons`.
+
+* **The G3 late-phase shape is now accurate where `(t/tau)^gamma`
+  underflows.** With a large `gamma`, event times well below `tau` take
+  `(t/tau)^gamma` past double-precision underflow (about `exp(-708)`), and
+  a very large `alpha` can underflow the same quantity divided by `alpha`.
+  `hzr_decompos_g3()` then clamped the value to the smallest double, which
+  froze `G3` below that time and put the log of `g3` wrong by more than
+  100. The likelihood of those events was wrong, and the analytic Hessian,
+  which differences the shape across that cliff, read a `log_tau` diagonal
+  of 1.4e6 against a true 5.1e3, with no warning. Once the quantity falls
+  below 1e-10, both logs are now computed in their limiting form, linear in
+  `log(t/tau)`, which is accurate to about 1e-10. Fits with no time in that
+  region are unchanged, and fits with one change only in the last digits
+  unless they reached the old clamp. The SAS/C `HAZARD` code has a cliff
+  here too: for `alpha > 0` its `ln(e^x + 1)` returns 0 below underflow,
+  and for `alpha = 0` it already breaks down once `(t/tau)^gamma` is below
+  about 1e-16. Fits that reach this region can differ from `HAZARD`; this
+  package takes the accurate value.
+
 * **`predict(newdata = )` on a model with no covariates now ignores
   `newdata`'s unused columns**, as it already did for models with
   covariates. For a `Surv(time, status) ~ 1` fit, or a vector-interface fit
@@ -332,6 +385,27 @@
   `log_lambda` and which has no shape parameter, used that log rate as the
   coefficient: it returned `age` times the log rate as the linear predictor
   with no error, -280 for `age = 70`, where the answer is 0 (#300).
+
+* **A backward `hzr_stepwise()` drop now has to remove a column** (#320).
+  Under treatment contrasts, `model.matrix()` codes an interaction whose main
+  effect is absent with a full set of dummies: `~ z:f` gives `z:fa, z:fb`,
+  which spans what `z, z:fb` spans. So dropping `z` from `~ z + z:f` removed
+  no column, and the "reduced" model was the model it started from: the same
+  coefficient count, the same column space, the same likelihood. The step
+  accepted that drop and reported a p-value for it, while the fit still
+  carried the variable. An uncapped run then stopped at the next step, where
+  the interaction had become two columns, so the wrong step was masked by an
+  unrelated error; a run that ended right after the drop (`max_steps`)
+  returned it as a result, with `$steps` and the final model disagreeing.
+  The post-drop refit is now checked against the model it came from, and a
+  drop that does not reduce the design is refused with a reason in
+  `$criteria$refit_failure_reasons`, as a failed refit already was. The
+  forward step has refused the mirror of this, a candidate that adds no
+  column, since #306. The check is multiphase-only: a single-distribution
+  refit warm-starts from a `theta` one element shorter than such a design
+  needs, so the refit fails to conform first and is reported as a refit
+  failure ("non-conformable arguments"), which names the symptom and not the
+  cause.
 
 * **A stepwise refit failure now says why.** `hzr_stepwise()` catches each
   candidate's refit error so one bad candidate cannot end the screen, and it

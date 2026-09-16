@@ -1584,7 +1584,15 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     parameter. In `mode = "select"`, `pct` is the selection frequency
 #'     and the other statistics are conditional on selection.}
 #'   \item{n_success}{Number of successfully converged replicates.}
-#'   \item{n_failed}{Number of replicates that failed to converge.}
+#'   \item{n_failed}{Number of replicates that failed: the refit stopped with
+#'     an error, or returned a non-finite objective.}
+#'   \item{failure_reasons}{Named integer vector counting why replicates
+#'     failed, most common first: the refit's error message (or
+#'     `"error with an empty message"`), or
+#'     `"non-finite objective (did not converge)"`. It sums to `n_failed`, and
+#'     is an empty named integer vector, never `NULL`, when none failed. When
+#'     every replicate fails, `hzr_bootstrap()` also warns, naming the most
+#'     common reason.}
 #'   \item{n_uncomputable_replicates}{Select mode only: number of otherwise
 #'     successful replicates whose screen stopped because no remaining
 #'     candidate's score statistic could be computed, rather than because no
@@ -1819,11 +1827,50 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
          "that.", call. = FALSE)
   }
 
+  # Replicates resample the rows of `data`, so it must have rows. hazard()
+  # also accepts a list, whose nrow() is NULL: the row count below then
+  # compared against nothing and named the vectors 'NA'.
+  if (!is.null(orig_data) && !is.data.frame(orig_data)) {
+    stop("hzr_bootstrap() resamples the rows of the fit's `data =`, which ",
+         "must be a data frame, and this fit's is a ", class(orig_data)[1L],
+         ". Refit with `data = as.data.frame(...)` and bootstrap that.",
+         call. = FALSE)
+  }
+
+  # A multiphase fit saved before #299 can carry a phase formula it ignored.
+  # Its stored call cannot be refit: every replicate failed, and the result
+  # held no replicates and no error. Refused as hzr_stepwise() refuses it, with
+  # only that check: the stepping-only refusals do not apply to a refit of the
+  # exact call.
+  ignored <- .hzr_ignored_phase_formula(object)
+  if (!is.null(ignored)) {
+    stop("hzr_bootstrap(): cannot resample this fit: ", ignored, ".",
+         call. = FALSE)
+  }
+
+  # A select-mode screen draws its candidate columns from the fit's `data`. A
+  # vector fit made without `data =` has none, so its candidates would be read
+  # from the environment and never resampled with the rows.
+  vector_interface <- is.null(cl$formula) && !is.null(cl$time)
+  if (select_mode && vector_interface && is.null(orig_data)) {
+    stop("hzr_bootstrap(): `scope` selection draws its candidate columns ",
+         "from the fit's `data =`, and this vector-interface fit was made ",
+         "without one, so the candidates could not be resampled with the ",
+         "rows. Refit with `data =` and bootstrap that.", call. = FALSE)
+  }
+
   # Seeded after the refusals above, so a refused call leaves the caller's
   # random number stream alone.
   if (!is.null(seed)) set.seed(seed)
 
-  n_obs <- nrow(orig_data)
+  # A vector fit made without `data =` has no frame to count rows in, and
+  # nrow(NULL) is NULL: every such fit was refused, naming its vectors 'NA'
+  # (#259, #312). Its stored `time` holds one value per row.
+  n_obs <- if (vector_interface && is.null(orig_data)) {
+    length(object$data$time)
+  } else {
+    nrow(orig_data)
+  }
   sample_size <- max(1L, as.integer(n_obs * fraction))
 
   # Observation weights, if any, must be resampled in lockstep with the data.
@@ -1905,8 +1952,8 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # The evaluated vectors are already stored on the object, so they can be
   # resampled by the same index and rewired the same way `data` and `weights`
   # are. `x` is not among them: a design matrix passed directly is refused
-  # above, before seeding.
-  vector_interface <- is.null(cl$formula) && !is.null(cl$time)
+  # above, before seeding. For a fit made without `data =` they are all there
+  # is to resample.
   vec_args <- c("time", "status", "time_lower", "time_upper")
   vec_orig <- if (vector_interface) {
     stats::setNames(lapply(vec_args, function(a) object$data[[a]]), vec_args)
@@ -1926,16 +1973,30 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     passed <- vec_args[vapply(vec_args, function(a) {
       !is.null(cl[[a]]) || !is.null(object$data[[a]])
     }, logical(1))]
-    have   <- vapply(vec_orig, function(v) !is.null(v) && length(v) == n_obs,
-                     logical(1))
-    missing_vecs <- passed[!have[passed]]
-    if (length(missing_vecs)) {
+    # An absent vector and a wrong-sized one need different remedies, and
+    # only an absent one may be called "not stored": counting rows from a
+    # missing `time` would otherwise report every vector missing.
+    absent <- passed[vapply(vec_orig[passed], is.null, logical(1))]
+    if (length(absent)) {
       stop("hzr_bootstrap(): this fit was built with the vector interface, ",
            "but the evaluated vector(s) ",
-           paste(sQuote(missing_vecs), collapse = ", "),
+           paste0("`", absent, "`", collapse = ", "),
            " are not stored on the object, so replicates cannot be resampled ",
-           "consistently. Refit with the formula interface ",
-           "(Surv(...) ~ ., data = ...) and bootstrap that.", call. = FALSE)
+           "consistently. The object predates storing them: refit it and ",
+           "bootstrap the new fit.", call. = FALSE)
+    }
+    # Without `data =`, n_obs is length(time) and hazard() refuses vectors of
+    # unequal length, so a mismatch here needs a `data` with other rows.
+    wrong_len <- passed[lengths(vec_orig[passed]) != n_obs]
+    if (length(wrong_len)) {
+      stop("hzr_bootstrap(): the vector(s) ",
+           paste0("`", wrong_len, "` (", lengths(vec_orig[wrong_len]), ")",
+                  collapse = ", "),
+           " passed to this vector-interface fit do not have one value per ",
+           "row of its `data =` (", n_obs, " rows), so replicates cannot ",
+           "resample them by the same index. Refit with a `data =` that has ",
+           "one row per observation, or without `data =`, and bootstrap ",
+           "that.", call. = FALSE)
     }
     vec_orig <- vec_orig[passed]
   }
@@ -1958,6 +2019,11 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   rep_list <- vector("list", n_boot)
   n_success <- 0L
   n_failed <- 0L
+  # Why each failed replicate failed, counted by reason. The replicates catch
+  # their errors so one bad resample cannot end the run, and they used to drop
+  # the message with it: a run could fail every replicate and say only that
+  # they failed. Named integer(0), never NULL, when nothing fails.
+  failure_reasons <- stats::setNames(integer(0), character(0))
   # Replicates whose stepwise screen stopped because no candidate's score
   # could be computed.  Each replicate runs under suppressWarnings(), so the
   # step-level warning never reaches the user here; the count has to be read
@@ -2043,7 +2109,8 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
             extra_args
           ))
         }),
-        error = function(e) NULL
+        # Keep the condition: its message is the replicate's failure reason.
+        error = function(e) e
       )
     } else {
       # Refit using the same call but with resampled data (and weights, if any)
@@ -2059,11 +2126,24 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
           cl_boot$fit <- TRUE
           eval(cl_boot, envir = rep_env)
         }),
-        error = function(e) NULL
+        # Keep the condition: its message is the replicate's failure reason.
+        error = function(e) e
       )
     }
 
-    if (!is.null(boot_fit) && is.finite(boot_fit$fit$objective)) {
+    # A replicate fails when its refit stopped with an error, or ran and came
+    # back with a non-finite objective. isTRUE() also counts a missing
+    # objective as non-finite, where `&&` would have met if (NA).
+    failure <- if (inherits(boot_fit, "error")) {
+      # A reason is a name in the tally, and R cannot index by the name "":
+      # a bare stop() would drop out, and the tally would stop summing to
+      # n_failed.
+      msg <- conditionMessage(boot_fit)
+      if (nzchar(msg)) msg else "error with an empty message"
+    } else if (!isTRUE(is.finite(boot_fit$fit$objective))) {
+      "non-finite objective (did not converge)"
+    }
+    if (is.null(failure)) {
       n_success <- n_success + 1L
       if (select_mode) {
         if (isTRUE(boot_fit$criteria$stopped_uncomputable)) {
@@ -2095,6 +2175,9 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       )
     } else {
       n_failed <- n_failed + 1L
+      failure_reasons <- .hzr_merge_reasons(
+        failure_reasons, stats::setNames(1L, failure)
+      )
     }
 
     if (verbose) utils::setTxtProgressBar(pb, b)
@@ -2220,11 +2303,22 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
             "everything else. See `$n_wald_fallbacks`.", call. = FALSE)
   }
 
+  # Every replicate failed. The result holds no replicates and an empty
+  # summary, and said so only in its counts. Partial failure is not warned
+  # about here; its reasons are still in `failure_reasons`.
+  if (n_success == 0L) {
+    warning("hzr_bootstrap(): no replicate succeeded out of n_boot = ",
+            n_boot, ". The most common failure (", failure_reasons[[1L]],
+            " of ", n_failed, "): ", names(failure_reasons)[1L],
+            ". See `$failure_reasons` for every reason.", call. = FALSE)
+  }
+
   result <- list(
     replicates = replicates,
     summary    = summary_df,
     n_success  = n_success,
     n_failed   = n_failed,
+    failure_reasons = failure_reasons,
     n_uncomputable_replicates = n_uncomputable_reps,
     uncomputable_reasons      = uncomputable_reasons,
     n_nonmonotone_replicates  = n_nonmonotone_reps,

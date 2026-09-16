@@ -111,13 +111,19 @@ cause is any other, which no refit can rescue. Read
 \code{uncomputable_reasons} for which one it was in any given run.  For
 every criterion it also carries
 \code{refit_failures} (the \code{"var"} / \code{"var@phase"} tokens of candidate
-moves whose refit errored or failed to converge),
-\code{refit_failure_reasons} (why each one failed: the refit's error
-message, or that it did not converge; named by the same tokens),
+moves whose refit errored, failed to converge, or was refused
+because the move would not change the model -- a drop that removes
+no design column, #320),
+\code{refit_failure_reasons} (why each one failed or was refused: the
+refit's error message, that it did not converge, or that the move
+changes nothing; named by the same tokens),
 \code{n_refit_failures},
 and \code{stopped_refit_failed} (\code{TRUE} when the run ended on an
-iteration in which refits failed, which is a screen that could not
-test its candidates rather than one that tested them and liked none).
+iteration in which a refit failed or a move was refused.  A refit
+failure is a screen that could not test its candidates, rather than
+one that tested them and liked none; a refusal is determinate -- the
+move was tested and would have left the model as it was.  Read
+\code{refit_failure_reasons} for which it was).
 Check it before reading a zero-row \code{steps} as an honest null result.}
 \item{\code{trace_msg}}{Character vector of the trace lines,
 captured regardless of the \code{trace} flag.}
