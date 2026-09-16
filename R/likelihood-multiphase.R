@@ -1705,7 +1705,6 @@
         which(nms == "")[2L]
       b <- if (is.na(at[1L])) NULL else args[[at[1L]]]
       if (!is.call(b) || !identical(b[[1L]], as.name("c")) ||
-            !identical(get0("c", envir = env, mode = "function"), c) ||
             length(b) < 3L ||
             !all(vapply(as.list(b)[-1L], is.numeric, logical(1)))) {
         return(FALSE)
