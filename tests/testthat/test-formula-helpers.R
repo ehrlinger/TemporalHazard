@@ -304,3 +304,115 @@ test_that("predict() on a `~ .` fit needs no response columns in newdata", {
   expect_equal(s_dot, predict(fit_exp, newdata = nd, type = "survival"),
                tolerance = 1e-8)
 })
+
+# ---------------------------------------------------------------------------
+# offset() is refused, not dropped
+# ---------------------------------------------------------------------------
+# model.matrix() leaves an offset() term out of the design, and nothing read
+# it back, so a fit with one was the fit without it: same objective, same
+# coefficients, no warning. hazard() now stops instead.
+
+avc_off <- stats::na.omit(avc[, c("int_dead", "dead", "age", "mal")])
+
+test_that("an offset in a single-distribution formula stops the fit", {
+  expect_error(
+    hazard(survival::Surv(int_dead, dead) ~ age + offset(log(mal + 1)),
+           data = avc_off, dist = "weibull",
+           theta = c(mu = 0.1, nu = 1, 0), fit = TRUE),
+    "`offset\\(log\\(mal \\+ 1\\)\\)`.*not supported"
+  )
+})
+
+test_that("an offset in a multiphase global formula stops the fit", {
+  phases <- list(early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1),
+                 constant = hzr_phase("constant"))
+  expect_error(
+    hazard(survival::Surv(int_dead, dead) ~ age + offset(log(mal + 1)),
+           data = avc_off, dist = "multiphase", phases = phases,
+           fit = TRUE, control = list(n_starts = 1L)),
+    "`offset\\(log\\(mal \\+ 1\\)\\)`.*not supported"
+  )
+})
+
+test_that("an offset in a phase formula stops the fit and names the phase", {
+  phases <- list(
+    early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                      formula = ~ age + offset(log(mal + 1))),
+    constant = hzr_phase("constant")
+  )
+  expect_error(
+    hazard(survival::Surv(int_dead, dead) ~ 1,
+           data = avc_off, dist = "multiphase", phases = phases,
+           fit = TRUE, control = list(n_starts = 1L)),
+    "`offset\\(log\\(mal \\+ 1\\)\\)` in the formula of phase 'early'.*not supported"
+  )
+})
+
+test_that("an offset in a stepwise scope stops rather than vanishing", {
+  expect_error(
+    TemporalHazard:::.hzr_formula_rhs_terms(~ age + offset(mal)),
+    "`offset\\(mal\\)`.*not supported"
+  )
+})
+
+test_that("an offset-free fit is unchanged by the offset guard", {
+  # Pinned against main at 4b68020, before the guard existed.
+  f0 <- hazard(survival::Surv(int_dead, dead) ~ age, data = avc_off,
+               dist = "weibull", theta = c(mu = 0.1, nu = 1, 0), fit = TRUE)
+  expect_true(f0$fit$converged)
+  expect_equal(f0$fit$objective, -222.652224526755, tolerance = 1e-8)
+  # A ratio: mu is about 6e-4, where an absolute comparison is loose.
+  # 1e-4, not tighter: the optimizer stops at a relative gradient of
+  # eps^(1/3), about 6e-6, so platforms may differ past that. The offset
+  # moved survreg's age coefficient by 3%, far outside it.
+  expect_equal(unname(coef(f0)) /
+                 c(0.0005968534, 0.2124829995, -0.0058706368),
+               rep(1, 3), tolerance = 1e-4)
+})
+
+test_that("stats::offset() is a covariate, not a refused offset", {
+  # terms() does not mark it as an offset, and model.matrix() keeps it.
+  out <- parse(survival::Surv(int_dead, dead) ~ age +
+                 stats::offset(log(mal + 1)), data = avc_off)
+  expect_identical(colnames(out$x), c("age", "stats::offset(log(mal + 1))"))
+})
+
+test_that("every offset in a formula is named", {
+  expect_error(
+    parse(survival::Surv(int_dead, dead) ~ offset(age) + mal +
+            offset(log(mal + 1)), data = avc_off),
+    "`offset\\(age\\)`, `offset\\(log\\(mal \\+ 1\\)\\)` in the formula are offsets"
+  )
+})
+
+test_that("an offset in a character stepwise scope stops the screen", {
+  # A character scope never reaches terms(), so it needs its own check.
+  f0 <- hazard(survival::Surv(int_dead, dead) ~ age, data = avc_off,
+               dist = "weibull", theta = c(mu = 0.1, nu = 1, 0), fit = TRUE)
+  expect_error(
+    hzr_stepwise(f0, data = avc_off, scope = c("mal", "offset(mal)"),
+                 direction = "forward", criterion = "wald", trace = FALSE),
+    "`offset\\(mal\\)` in `scope` is an offset"
+  )
+})
+
+test_that("an ordinary character scope screens as it did before the guard", {
+  # The guard refuses only a scope that names an offset. Pinned against main
+  # at 4b68020: `mal` entered at these p-values, under both criteria.
+  f0 <- hazard(survival::Surv(int_dead, dead) ~ age, data = avc_off,
+               dist = "weibull", theta = c(mu = 0.1, nu = 1, 0), fit = TRUE)
+  pinned <- c(score = 2.71143589662e-4, wald = 4.04419913005e-4)
+  for (crit in names(pinned)) {
+    sw <- suppressWarnings(hzr_stepwise(
+      f0, data = avc_off, scope = c("age", "mal"), direction = "forward",
+      criterion = crit, trace = FALSE
+    ))
+    steps <- as.data.frame(sw$steps)
+    expect_identical(steps$action, "enter", label = crit)
+    expect_identical(steps$variable, "mal", label = crit)
+    # A ratio: the p-values are about 3e-4. 1e-3 allows for the optimizer's
+    # eps^(1/3) stopping rule moving the statistic across platforms.
+    expect_equal(steps$p_value / pinned[[crit]], 1, tolerance = 1e-3,
+                 label = crit)
+  }
+})

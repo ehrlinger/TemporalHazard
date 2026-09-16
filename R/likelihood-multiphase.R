@@ -1725,6 +1725,7 @@
                                    na.action = stats::na.pass)
       mm_j <- stats::model.matrix(ph$formula, data = mf_j)
       x_j <- mm_j[, -1L, drop = FALSE]
+      .hzr_refuse_duplicate_columns(x_j, phase = nm)
       x_list[[nm]] <- x_j
       covariate_counts[[nm]] <- ncol(x_j)
       # What predict(newdata = ) needs to rebuild x_j from new rows: the
