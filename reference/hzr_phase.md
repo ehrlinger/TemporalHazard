@@ -73,9 +73,15 @@ print(x, ...)
 - formula:
 
   Optional one-sided formula (e.g. `~ age + nyha`) for phase-specific
-  covariates. When `NULL` (default), the phase inherits the global
-  formula from
-  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md).
+  covariates. It is evaluated in the `data` given to
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md),
+  so without `data`
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  refuses it, unless it builds nothing either way: an intercept-only
+  `~ 1` with no global `x`. When `NULL` (default), the phase inherits
+  the global design from
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md):
+  the global formula's covariates, or `x` on the vector interface.
 
 - fixed:
 

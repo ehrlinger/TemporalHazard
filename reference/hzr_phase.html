@@ -136,8 +136,12 @@ SAS late: <code>ETA</code>.</p></dd>
 
 <dt id="arg-formula">formula<a class="anchor" aria-label="anchor" href="#arg-formula"></a></dt>
 <dd><p>Optional one-sided formula (e.g. <code>~ age + nyha</code>) for
-phase-specific covariates.  When <code>NULL</code> (default), the phase inherits
-the global formula from <code><a href="hazard.html">hazard()</a></code>.</p></dd>
+phase-specific covariates.  It is evaluated in the <code>data</code> given to
+<code><a href="hazard.html">hazard()</a></code>, so without <code>data</code> <code><a href="hazard.html">hazard()</a></code> refuses it, unless it builds
+nothing either way: an intercept-only <code>~ 1</code> with no global <code>x</code>.
+When <code>NULL</code> (default), the phase inherits the global design from
+<code><a href="hazard.html">hazard()</a></code>: the global formula's covariates, or <code>x</code> on the vector
+interface.</p></dd>
 
 
 <dt id="arg-fixed">fixed<a class="anchor" aria-label="anchor" href="#arg-fixed"></a></dt>
