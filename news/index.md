@@ -440,6 +440,34 @@
   answer is 0
   ([\#300](https://github.com/ehrlinger/TemporalHazard/issues/300)).
 
+- **A backward
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  drop now has to remove a column**
+  ([\#320](https://github.com/ehrlinger/TemporalHazard/issues/320)).
+  Under treatment contrasts,
+  [`model.matrix()`](https://rdrr.io/r/stats/model.matrix.html) codes an
+  interaction whose main effect is absent with a full set of dummies:
+  `~ z:f` gives `z:fa, z:fb`, which spans what `z, z:fb` spans. So
+  dropping `z` from `~ z + z:f` removed no column, and the “reduced”
+  model was the model it started from: the same coefficient count, the
+  same column space, the same likelihood. The step accepted that drop
+  and reported a p-value for it, while the fit still carried the
+  variable. An uncapped run then stopped at the next step, where the
+  interaction had become two columns, so the wrong step was masked by an
+  unrelated error; a run that ended right after the drop (`max_steps`)
+  returned it as a result, with `$steps` and the final model
+  disagreeing. The post-drop refit is now checked against the model it
+  came from, and a drop that does not reduce the design is refused with
+  a reason in `$criteria$refit_failure_reasons`, as a failed refit
+  already was. The forward step has refused the mirror of this, a
+  candidate that adds no column, since
+  [\#306](https://github.com/ehrlinger/TemporalHazard/issues/306). The
+  check is multiphase-only: a single-distribution refit warm-starts from
+  a `theta` one element shorter than such a design needs, so the refit
+  fails to conform first and is reported as a refit failure
+  (“non-conformable arguments”), which names the symptom and not the
+  cause.
+
 - **A stepwise refit failure now says why.**
   [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   catches each candidate’s refit error so one bad candidate cannot end
