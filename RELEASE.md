@@ -163,18 +163,37 @@ main (X.Y.Z) accumulates, patch-bumping as fixes land
    tarball is < 5 MB. The built tarball must contain `build/vignette.rds` — if
    it is missing you get a "no prebuilt vignette index" NOTE (do **not** re-add
    `^build$` to `.Rbuildignore`; that strips the index).
-7. `devtools::check_win_devel()` (and optionally `rhub::rhub_check()`).
+7. **Run the cross-platform release check by hand, and wait for it to go green.**
+
+   ```sh
+   gh workflow run check-release.yaml --ref main
+   gh run list --workflow check-release.yaml --limit 1
+   ```
+
+   It runs `R CMD check --as-cran` with the manual on Windows release and devel, macOS release
+   and Ubuntu release and devel. All five must pass before you submit or publish a release.
+
+   Do not wait for it to run on its own. It also fires on `release: published`, but a release
+   is tagged after CRAN accepts it, so that run comes after the decision it was meant to
+   inform.
+
+   This matters more since 2026-09-16, when macOS and Windows stopped checking pull requests
+   (`AGENTS.md`, "The automated gates"). They check `main` after each merge, so also confirm
+   that the latest `R-CMD-check` run on `main` is green on all five jobs. A red one there was
+   meant to block the queue when it appeared; if it is still red at release time, it blocks the
+   release.
+8. `devtools::check_win_devel()` (and optionally `rhub::rhub_check()`).
    **This is the source of truth for the aspell NOTE** — the local `--as-cran`
    does *not* run the CRAN incoming aspell step unless `aspell` is installed,
    so it under-reports. Reconcile the `## NOTE disposition` section of
    `cran-comments.md` against the *win-builder* `00check.log`. See "Known
    benign NOTE" below.
-8. `urlchecker::url_check()` and `tools::package_dependencies(reverse = TRUE)`
+9. `urlchecker::url_check()` and `tools::package_dependencies(reverse = TRUE)`
    (revdeps must be handled; currently 0). doi.org links may 403 to automated
    checkers but resolve in browsers — note, don't chase.
-9. Submit: `devtools::submit_cran()` (writes `CRAN-SUBMISSION`). Submit from a
-   checkout of `main` at the release number — the shipped tarball content is
-   what matters, not which branch the working tree was on.
+10. Submit: `devtools::submit_cran()` (writes `CRAN-SUBMISSION`). Submit from a
+    checkout of `main` at the release number — the shipped tarball content is
+    what matters, not which branch the working tree was on.
 
 ### Known benign NOTE
 

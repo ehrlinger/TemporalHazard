@@ -103,17 +103,45 @@ The rest run and report but do not block.
 | `lint.yaml` → `house-style` | PR, push | **yes** | fails when `.claude/house-style.md` has drifted from its vault sources |
 | `lint.yaml` → `docs-current` | PR, push | no | `git diff --exit-code man/ NAMESPACE DESCRIPTION` after `document()` |
 | `spelling.yaml` | PR, push | **yes** | `spelling::spell_check_package(use_wordlist = TRUE)` |
-| `R-CMD-check.yaml` | PR, push | **yes**, all five | ubuntu devel/release/oldrel-1, macOS, Windows |
-| `test-coverage.yaml` | PR, push | no | coverage upload |
-| `pkgdown.yaml` → `build-and-deploy` | PR, push | no | docs site |
+| `R-CMD-check.yaml`, Linux | PR, push, manual | **yes** | ubuntu devel/release/oldrel-1 |
+| `R-CMD-check.yaml`, macOS and Windows | push to `main`, manual | **yes**, but see below | macOS release, Windows release |
+| `test-coverage.yaml` | push to `main` | no | coverage upload |
+| `pkgdown.yaml` → `build-and-deploy` | push to `main`, manual | no | docs site |
 | `check-manual.yaml` | push to `main` | **cannot** | the PDF manual — the only thing that catches raw Unicode in `Rd` |
-| `check-release.yaml` | release published | no | `R CMD check --as-cran` |
+| `check-release.yaml` | manual, before submitting; release published | no | `R CMD check --as-cran` with the manual, on Windows release and devel, macOS and Ubuntu |
 
 `check-manual` says *cannot* rather than *no*: it deliberately does not run on pull requests,
 because building the manual is slow and a check that makes every PR wait is one people learn to
 route around. A check that never reports on a PR can never be required — making it one would
 block every merge permanently. It runs after the merge instead, so a raw-Unicode `Rd` is caught
 on `main`, not before it lands.
+
+**macOS and Windows do not check a pull request.** Their contexts are still required, so the
+jobs still run, but on a pull request they skip every step and pass in seconds, with a notice
+reading "NOT CHECKED on pull requests" in the job summary. A green macOS or Windows tick on a PR
+means nothing was checked. They do the full check after each merge to `main`, and on a manual
+run of the workflow. That was the maintainer's call on 2026-09-16: the package is used on Linux,
+and those two jobs took a median 14 and 45 minutes a run, against 18 to 19 for each Linux job.
+
+They are not taken out of the matrix. Removing them would need the two contexts deleted from
+the ruleset at the moment of the merge, or every open PR blocks. And the gating is per step, not
+per job, because a matrix job skipped by a job-level `if:` reports under its unexpanded name, so
+the required context never appears (#207).
+
+What this costs: a macOS- or Windows-only failure now surfaces one merge later, on `main`, and
+not on the PR that caused it. PR #200 is that shape: its `skip_on_cran()` test passed locally and
+failed on Linux and Windows. Under this arrangement Linux still catches that one, but a
+Windows-only version of it would land. **A red macOS or Windows run on `main` blocks the queue**
+until someone understands it: the next PR's author checks the latest `main` run before merging,
+because every later PR merges on top of the break.
+
+test-coverage and pkgdown no longer run on a pull request either. Neither blocks a merge. The
+cost is that a pkgdown failure, such as an exported topic missing from `_pkgdown.yml`, is seen
+after the merge.
+
+`check-release.yaml` still fires when a release is published, but releases are tagged after CRAN
+accepts the package, so that run gates nothing. The release gate is a **manual** run of it on
+`main` before submitting: `RELEASE.md`, pre-submission checklist.
 
 The rules live in the repository **ruleset** `protect main`, not in the legacy branch-protection
 settings — the two are separate systems, and the `branches/main/protection` API returns 404 here
@@ -198,7 +226,7 @@ your behalf. The definition of done above is entirely manual — run it yourself
 
 **CI does not skip `skip_on_cran()` tests, whatever a local `--as-cran` run does.**
 `r-lib/actions/check-r-package` sets `NOT_CRAN: true` itself, so every one of them runs on
-all five platforms. This was verified the hard way on 2026-09-01: a `skip_on_cran()` test
+every platform the job checks: the three Linux jobs on a PR, all five after a merge. This was verified the hard way on 2026-09-01: a `skip_on_cran()` test
 added in PR #200 passed locally and *failed* on Linux and Windows.
 
 That matters mostly for how you read a red CI. The previous text here claimed CI skipped
@@ -211,7 +239,7 @@ checkouts under `~/Documents/GitHub/hazard`, and the runners did not.
 **Since 2026-09-10, one runner has them.** The **ubuntu-latest / release** job checks out
 `ehrlinger/hazard` at a pinned commit and points `HAZARD_REPO` and `HAZARD_EXAMPLES_DIR` at
 it (`R-CMD-check.yaml`), so the SAS parity tests and the translator corpus test run there,
-and only there. The other four platforms still skip them. Moving the pin is a deliberate PR,
+and only there. The other four jobs still skip them. Moving the pin is a deliberate PR,
 because the corpus test's floors are measured against that commit. A step fails the job if
 the files those tests read are missing, so a moved path fails CI instead of turning back
 into silent skips.
