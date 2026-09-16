@@ -8,6 +8,8 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+  # The release gate for macOS and Windows: see `full_check` below.
+  workflow_dispatch:
 
 concurrency:
   # One in-flight run per workflow per ref. Without this every push starts a
@@ -72,17 +74,36 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - {os: ubuntu-latest, r: 'devel'}
-          - {os: ubuntu-latest, r: 'release', sas_corpus: true}
-          - {os: ubuntu-latest, r: 'oldrel-1'}
+          - {os: ubuntu-latest, r: 'devel', per_pr: true}
+          - {os: ubuntu-latest, r: 'release', per_pr: true, sas_corpus: true}
+          - {os: ubuntu-latest, r: 'oldrel-1', per_pr: true}
           - {os: macos-latest,  r: 'release'}
           - {os: windows-latest, r: 'release'}
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      # Whether this entry does the check or only reports. The Linux entries
+      # check every pull request. macOS and Windows check after each merge to
+      # main and on a manual run, never on a pull request: they took 14 and
+      # 45 minutes a run, and the maintainer's use is Linux.
+      #
+      # They stay in the matrix because main's ruleset requires their
+      # contexts. A job-level `if:` cannot do this: a skipped matrix job
+      # reports under its unexpanded name, the required context never
+      # reports, and every pull request blocks (#207 again).
+      full_check: ${{ matrix.config.per_pr || github.event_name != 'pull_request' }}
 
     steps:
-      - if: needs.changes.outputs.run == 'true'
+      # A green tick here on a pull request means nothing was checked. Say so
+      # where the tick is read, not only in this file.
+      - if: env.full_check != 'true'
+        shell: bash
+        run: |
+          msg="NOT CHECKED on pull requests: ${{ matrix.config.os }} runs after each merge to main and on workflow_dispatch."
+          echo "::notice title=R-CMD-check not run::$msg"
+          echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+
+      - if: needs.changes.outputs.run == 'true' && env.full_check == 'true'
         uses: actions/checkout@v4
 
       # The SAS reference corpus (ehrlinger/hazard, public) that the SAS
@@ -97,7 +118,7 @@ jobs:
       # Checked out beside the package, then moved out of the workspace:
       # anything left in the package root is packed into the tarball by
       # R CMD build.
-      - if: needs.changes.outputs.run == 'true' && matrix.config.sas_corpus
+      - if: needs.changes.outputs.run == 'true' && env.full_check == 'true' && matrix.config.sas_corpus
         uses: actions/checkout@v4
         with:
           repository: ehrlinger/hazard
@@ -110,7 +131,7 @@ jobs:
       # is every fixture test-sas-parity.R reads, because each test there
       # skips on its own file: a pin that keeps a few sentinels but drops one
       # of these would turn that test green over nothing.
-      - if: needs.changes.outputs.run == 'true' && matrix.config.sas_corpus
+      - if: needs.changes.outputs.run == 'true' && env.full_check == 'true' && matrix.config.sas_corpus
         shell: bash
         run: |
           mv hazard-corpus "$RUNNER_TEMP/hazard"
@@ -126,25 +147,25 @@ jobs:
           echo "HAZARD_REPO=$RUNNER_TEMP/hazard" >> "$GITHUB_ENV"
           echo "HAZARD_EXAMPLES_DIR=$RUNNER_TEMP/hazard/examples" >> "$GITHUB_ENV"
 
-      - if: needs.changes.outputs.run == 'true'
+      - if: needs.changes.outputs.run == 'true' && env.full_check == 'true'
         uses: r-lib/actions/setup-r@v2
         with:
           r-version: ${{ matrix.config.r }}
           use-public-rspm: true
 
-      - if: needs.changes.outputs.run == 'true'
+      - if: needs.changes.outputs.run == 'true' && env.full_check == 'true'
         uses: r-lib/actions/setup-pandoc@v2
 
-      - if: needs.changes.outputs.run == 'true'
+      - if: needs.changes.outputs.run == 'true' && env.full_check == 'true'
         uses: quarto-dev/quarto-actions/setup@v2
 
-      - if: needs.changes.outputs.run == 'true'
+      - if: needs.changes.outputs.run == 'true' && env.full_check == 'true'
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
           extra-packages: any::rcmdcheck
           needs: check
 
-      - if: needs.changes.outputs.run == 'true'
+      - if: needs.changes.outputs.run == 'true' && env.full_check == 'true'
         uses: r-lib/actions/check-r-package@v2
         with:
           upload-snapshots: true
