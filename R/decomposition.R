@@ -417,6 +417,13 @@ hzr_decompos_g3 <- function(time, tau, gamma, alpha, eta) {
     tGamma <- .log1pexp(ln_t_tau_g)   # ln((t/tau)^gamma + 1)
     inner  <- tGamma / alpha           # ln((t/tau)^gamma + 1) / alpha
     tEta   <- .log_expm1(inner)        # ln(exp(inner) - 1)
+    # Where (t/tau)^gamma is tiny, tGamma = exp(ln_t_tau_g) and
+    # tEta = ln_t_tau_g - ln(alpha) to double precision. Take that form
+    # directly: once exp() underflows, .log_expm1() clamps to double.xmin,
+    # which freezes G3 and puts g3 wrong by orders of magnitude (the C
+    # code's ln(e^x + 1) returns 0 there too).
+    deep <- ln_t_tau_g <= -35 & inner <= 1e-10
+    tEta[deep] <- ln_t_tau_g[deep] - log(alpha)
     lnG3   <- eta * tEta
 
     G3 <- exp(lnG3)
@@ -442,6 +449,10 @@ hzr_decompos_g3 <- function(time, tau, gamma, alpha, eta) {
 
     t_tau_g <- exp(ln_t_tau_g)         # (t/tau)^gamma
     tGamma  <- .log_expm1(t_tau_g)     # ln(exp((t/tau)^gamma) - 1)
+    # As above: for tiny (t/tau)^gamma, tGamma = ln_t_tau_g, and the direct
+    # form survives the underflow of exp(ln_t_tau_g).
+    deep <- t_tau_g <= 1e-10
+    tGamma[deep] <- ln_t_tau_g[deep]
     lnG3    <- eta * tGamma
 
     G3 <- exp(lnG3)

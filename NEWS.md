@@ -290,6 +290,20 @@
 
 ## Bug fixes
 
+* **The G3 late-phase shape is now exact where `(t/tau)^gamma` underflows.**
+  With a large `gamma`, event times well below `tau` take `(t/tau)^gamma`
+  past double-precision underflow (about `exp(-708)`). `hzr_decompos_g3()`
+  then clamped the value to the smallest double, which froze `G3` below that
+  time and put the log of `g3` wrong by more than 100. The likelihood of
+  those events was wrong, and the analytic Hessian, which differences the
+  shape across that cliff, read a `log_tau` diagonal of 1.4e6 against a true
+  5.1e3, with no warning. Below the underflow both logs are now computed in
+  their exact linear form in `log(t/tau)`. The SAS/C `HAZARD` code has the
+  same cliff, because its `ln(e^x + 1)` returns 0 there, so fits that reach
+  this region can differ from `HAZARD`. This package takes the exact value.
+  Fits whose `(t/tau)^gamma` stays representable at every time are
+  unchanged.
+
 * **`predict(newdata = )` on a model with no covariates now ignores
   `newdata`'s unused columns**, as it already did for models with
   covariates. For a `Surv(time, status) ~ 1` fit, or a vector-interface fit
