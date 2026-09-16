@@ -149,13 +149,19 @@
 #'       `uncomputable_reasons` for which one it was in any given run.  For
 #'       every criterion it also carries
 #'       `refit_failures` (the `"var"` / `"var@phase"` tokens of candidate
-#'       moves whose refit errored or failed to converge),
-#'       `refit_failure_reasons` (why each one failed: the refit's error
-#'       message, or that it did not converge; named by the same tokens),
+#'       moves whose refit errored, failed to converge, or was refused
+#'       because the move would not change the model -- a drop that removes
+#'       no design column, #320),
+#'       `refit_failure_reasons` (why each one failed or was refused: the
+#'       refit's error message, that it did not converge, or that the move
+#'       changes nothing; named by the same tokens),
 #'       `n_refit_failures`,
 #'       and `stopped_refit_failed` (`TRUE` when the run ended on an
-#'       iteration in which refits failed, which is a screen that could not
-#'       test its candidates rather than one that tested them and liked none).
+#'       iteration in which a refit failed or a move was refused.  A refit
+#'       failure is a screen that could not test its candidates, rather than
+#'       one that tested them and liked none; a refusal is determinate -- the
+#'       move was tested and would have left the model as it was.  Read
+#'       `refit_failure_reasons` for which it was).
 #'       Check it before reading a zero-row `steps` as an honest null result.}
 #'     \item{\code{trace_msg}}{Character vector of the trace lines,
 #'       captured regardless of the `trace` flag.}
@@ -558,7 +564,9 @@ hzr_stepwise <- function(fit,
       if (length(iter_refit_failures) > 0L) {
         stopped_refit_failed <- TRUE
         emit(sprintf(
-          "(stopped after %s: %d candidate refit%s FAILED and could not be tested -- %s)",
+          paste0("(stopped after %s: %d candidate move%s could not be ",
+                 "completed -- a refit FAILED, or the move was REFUSED as ",
+                 "changing nothing -- %s)"),
           step_txt, length(iter_refit_failures),
           if (length(iter_refit_failures) == 1L) "" else "s",
           paste(iter_refit_failures, collapse = ", ")
@@ -682,9 +690,11 @@ hzr_stepwise <- function(fit,
             "candidate refit failure(s) (", length(refit_failures),
             " across the run: ",
             paste(unique(refit_failures), collapse = ", "),
-            "). Those candidates were never tested, so stopping here is ",
-            "NOT evidence that nothing met the entry or retention rule. ",
-            "See `$criteria$refit_failures`.", call. = FALSE)
+            "). A candidate whose refit FAILED was never tested, so stopping ",
+            "here is NOT evidence that nothing met the entry or retention ",
+            "rule; a move that was REFUSED was tested and would not have ",
+            "changed the model. See `$criteria$refit_failure_reasons` for ",
+            "which each one was.", call. = FALSE)
   }
   result$trace_msg  <- trace_msg
   result$elapsed    <- elapsed
