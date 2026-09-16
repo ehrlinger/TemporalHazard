@@ -262,11 +262,15 @@
   `bs()`, `cut(age, 3)`, and `mean()`, `min()`, `median()`, factor codes or
   a date origin inside `I()`), and also fully specified ones such as
   `I(age > cutoff)` or `poly(raw = TRUE)`, which cannot be told apart
-  from them without the fitting data. A closed formula still predicts; a `factor()` with a
-  fitted level missing from `newdata`, or one that cannot be built from
-  `newdata` alone, is refused, and a missing value gives an NA row. Current
-  fits recompute such statistics from `newdata` as `lm()` does; that is
-  #331.
+  from them without the fitting data. So is a `newdata` column named like a
+  value the formula can see (`T`, `pi`, a workspace vector), which the fit
+  may have used instead, and a `factor()` coded other than by treatment
+  contrasts (an ordered factor, or another `contrasts` option), whose
+  column names do not show its levels. A closed formula still predicts; a
+  `factor()` with a fitted level missing from `newdata`, or one that cannot
+  be built from `newdata` alone, is refused, and a missing value gives an NA
+  row. Current fits recompute such statistics from `newdata` as `lm()`
+  does; that is #331.
 
 * **`predict()` on a multiphase fit now returns an unnamed vector.** For
   `type = "cumulative_hazard"`, `"survival"` and `"hazard"`, every element
