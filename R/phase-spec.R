@@ -120,8 +120,12 @@
 #' @param eta Positive scalar; outer exponent for `"g3"` phases.
 #'   SAS late: `ETA`.
 #' @param formula Optional one-sided formula (e.g. `~ age + nyha`) for
-#'   phase-specific covariates.  When `NULL` (default), the phase inherits
-#'   the global formula from [hazard()].
+#'   phase-specific covariates.  It is evaluated in the `data` given to
+#'   [hazard()], so without `data` [hazard()] refuses it, unless it builds
+#'   nothing either way: an intercept-only `~ 1` with no global `x`.
+#'   When `NULL` (default), the phase inherits the global design from
+#'   [hazard()]: the global formula's covariates, or `x` on the vector
+#'   interface.
 #' @param fixed Character vector naming shape parameters to hold fixed during
 #'   optimization.  Valid names for `"cdf"`/`"hazard"`: `"t_half"`, `"nu"`,
 #'   `"m"`, or `"shapes"` (shorthand for all three).  Valid names for `"g3"`:
@@ -727,4 +731,57 @@ hzr_theta_names <- function(phases, covariates = NULL) {
 
   names(phases) <- nms
   invisible(phases)
+}
+
+
+#' Would a phase formula build any columns in `data`?
+#'
+#' `FALSE` only for an intercept-only formula such as `~ 1`: no variable, and
+#' no term (a constant term such as `log(2)` still builds a column).
+#'
+#' @param pf A one-sided phase formula.
+#' @return A single logical.
+#' @keywords internal
+#' @noRd
+.hzr_phase_formula_has_terms <- function(pf) {
+  length(all.vars(pf)) > 0L ||
+    length(attr(stats::terms(pf), "term.labels")) > 0L
+}
+
+
+#' Refuse a phase formula that has no `data` to be evaluated in
+#'
+#' A phase formula is evaluated in `data` and nowhere else, so without
+#' `data` it used to be ignored: the phase took the global `x`, or no columns
+#' at all, and the fit was a different model with no warning (#299). That
+#' covers `~ 1` beside a global `x` too: the phase took `x`, where with
+#' `data` it has no columns. Only an intercept-only formula with no `x`
+#' builds the same design either way, and it is left alone.
+#'
+#' @param phases A list of validated `hzr_phase` objects.
+#' @param data The `data` argument of [hazard()], possibly `NULL`.
+#' @param x The global design matrix, possibly `NULL`.
+#' @return `NULL`, invisibly; called for its error.
+#' @keywords internal
+#' @noRd
+.hzr_check_phase_formula_data <- function(phases, data, x = NULL) {
+  if (!is.null(data)) {
+    return(invisible(NULL))
+  }
+  has_x <- !is.null(x) && NCOL(x) > 0L
+  for (nm in names(phases)) {
+    pf <- phases[[nm]]$formula
+    has_terms <- !is.null(pf) && .hzr_phase_formula_has_terms(pf)
+    if (is.null(pf) || !(has_x || has_terms)) next
+    stop("Phase '", nm, "' has the formula `",
+         paste(deparse(pf), collapse = " "), "`, but no `data` was ",
+         "supplied, and a phase formula is evaluated only in `data`: ",
+         "the formula would be ignored",
+         if (has_x) ", and the phase would take the global `x` instead",
+         ". Pass `data =` with the phase's variables as columns, or use ",
+         "hazard(Surv(...) ~ ..., data = ...)",
+         if (has_x && !has_terms) ", or drop `x`",
+         ".", call. = FALSE)
+  }
+  invisible(NULL)
 }
