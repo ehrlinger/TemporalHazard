@@ -854,6 +854,7 @@ hazard <- function(formula = NULL,
       )
       phases[[nm]]$formula <- .hzr_expand_rhs(two_sided, data)
     }
+    .hzr_check_phase_formula_data(phases, data, x)
   } else if (!is.null(phases)) {
     warning("'phases' is ignored when dist != 'multiphase'.")
     phases <- NULL
