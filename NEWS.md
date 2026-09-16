@@ -408,8 +408,18 @@
   right; the names were meaningless, and they followed the result into
   anything built from it. With one row, the `decompose = TRUE` and
   `se.fit = TRUE` data frames also took such a name as their row name.
-  Single-distribution `predict()` already returned unnamed vectors, and now
-  both agree.
+  Single-distribution `predict()` carried names the same way; see the next
+  item (#309).
+
+* **`predict()` on a single-distribution fit now returns an unnamed vector
+  too.** For `type = "survival"` and `"cumulative_hazard"`, a lognormal fit
+  named every value `"mu"`, and a Weibull, exponential or log-logistic fit
+  did the same for a single row of `newdata` (#309). As above, `mu` is a
+  named element of `theta`, and R carried the name onto the prediction,
+  through `rep()` for the lognormal and through any length-1 operand when
+  there is one row. With one row, the `se.fit = TRUE` data frame also took
+  `"mu"` as its row name. The values were right. `type = "hazard"` and
+  `"linear_predictor"` were already unnamed.
 
 * **`predict(newdata = )` no longer lets a design column override the
   formula variable it contradicts.** `newdata` may give a factor as its
