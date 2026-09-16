@@ -34,3 +34,6 @@ vignettes/*.R
 CRAN-SUBMISSION
 .worktrees/
 .superpowers/
+
+# Local findings reports; may quote PHI-adjacent content, never commit
+reports/

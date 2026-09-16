@@ -1961,6 +1961,7 @@
     if (!is.null(ph$formula) && !is.null(data)) {
       # Phase-specific formula: build design matrix from data.
       built <- .hzr_formula_design(ph$formula, data)
+      .hzr_refuse_duplicate_columns(built$x, phase = nm)
       x_list[[nm]] <- built$x
       covariate_counts[[nm]] <- ncol(built$x)
       x_design[[nm]] <- built$design

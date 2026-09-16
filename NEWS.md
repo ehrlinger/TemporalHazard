@@ -2,6 +2,55 @@
 
 ## Breaking changes
 
+* **`hazard()` now refuses a multiphase phase formula with covariates when
+  no `data` is supplied (#299).** Such fits previously ignored the phase
+  formula. On the vector interface (`time =`, `status =`) without `data`, a
+  phase's own formula was never evaluated: the phase took the global `x`, or
+  no covariates at all, so `hzr_phase(formula = ~ mal)` fitted a model
+  without `mal`, with no warning and no message. The call now stops with an
+  error naming the phase and its formula, under `fit = FALSE` as well. Pass
+  `data =` with the phase's variables as columns, or use
+  `hazard(Surv(...) ~ ..., data = ...)`. A phase with no formula is
+  unaffected, and so is an intercept-only `~ 1` unless the call also has a
+  global `x` with at least one column. Beside such an `x`, a `~ 1` phase
+  is refused too: without `data` it silently took `x`, and with `data` it
+  has no columns, so the same call gave two different models. Pass
+  `data =`, use the formula interface, or drop `x`. A constant term such
+  as `~ log(2)`, which builds a column only in `data`, is refused as well.
+
+* **`hzr_stepwise()` now refuses a fit saved by an earlier version whose
+  phase formula was ignored this way (#299).** Given `data`, every refit
+  built the ignored formula's columns into a model whose base never had
+  them: a forward screen reported `ENTER age` over a final model that also
+  carried the ignored `mal`, with no warning. The error names the phase and
+  its formula. Refit the base model with `data =` and retry.
+
+* **`hazard()` now stops when two design columns share a name** (#298). A
+  factor's dummy columns are named `<factor><level>`, so a factor `g` with
+  level `b` and a numeric column `gb` both produced a column `gb`. The fit
+  ran without a word: `coef()` carried two `gb` names, and `predict()` on a
+  one-row `newdata` returned two values. The check covers the global design,
+  an `x` matrix passed to the vector interface, the design after
+  `time_windows` expansion, and, when `fit = TRUE`, each phase formula of a
+  multiphase fit. The error names the colliding columns. Unnamed columns of
+  `x` are allowed, but not under `time_windows`: the expansion names each
+  window's column `<name>_w<k>`, so two unnamed columns both became `_w1`.
+  A fit that used to run now stops: rename the numeric column, or rename the
+  factor or change its levels (`relevel()`, `levels<-`).
+
+* **An `offset()` term in a formula is now an error.** `hazard()` used to
+  drop it without a word: `model.matrix()` leaves offsets out of the design
+  and nothing read them back, so `Surv(time, status) ~ age + offset(z)`
+  gave the same log-likelihood and the same coefficients as
+  `Surv(time, status) ~ age`. **Fits written with an offset ignored it**
+  (#297).
+  The global formula, every `hzr_phase(formula = )`, and a
+  `hzr_stepwise()` formula or scope now stop and name the offending term.
+  Offsets are not supported: how one should enter each phase of the
+  additive multiphase hazard is an open modelling question, not yet
+  decided. `stats::offset(z)` is not refused, because R reads it as an
+  ordinary covariate, not an offset, and fits a coefficient for it.
+
 * **`predict(newdata = )` now takes only the columns of the model's `data`
   from `newdata`.** A term that uses row-level values kept outside `data`
   (a vector, matrix, list or environment in the formula's environment, as
@@ -274,6 +323,97 @@
   statistic such as `mean()` inside a formula from `newdata`, as `lm()`
   does; that is #331.
 
+* **`predict(newdata = )` on a model with no covariates now ignores
+  `newdata`'s unused columns**, as it already did for models with
+  covariates. For a `Surv(time, status) ~ 1` fit, or a vector-interface fit
+  without `x`, every column other than `time` was taken as a covariate.
+  The Weibull, log-logistic and log-normal fits then stopped with an error.
+  The exponential fit, whose only baseline parameter is the log rate
+  `log_lambda` and which has no shape parameter, used that log rate as the
+  coefficient: it returned `age` times the log rate as the linear predictor
+  with no error, -280 for `age = 70`, where the answer is 0 (#300).
+
+* **A stepwise refit failure now says why.** `hzr_stepwise()` catches each
+  candidate's refit error so one bad candidate cannot end the screen, and it
+  used to drop the message with it: the warning read `candidate refit failed
+  for gb.` and nothing more, even when `hazard()` had stopped with a message
+  naming the problem. The four refit warnings (candidate, Wald fallback,
+  post-entry, post-drop) now carry the refit's error message, or say that it
+  did not converge, and `$criteria$refit_failure_reasons` keeps each one,
+  named by its `refit_failures` token. `refit_failures` itself is unchanged.
+  Under `criterion = "score"`, which builds each candidate's design without
+  refitting, a candidate whose column name collides with a factor's dummy
+  column (numeric `gb` beside factor `g` with level `b`) is now declined with
+  the reason `duplicate_column`, and a run that completes anyway warns about
+  it. The check uses the name the refit's `model.matrix()` would give the
+  column, so a logical `flag` (column `flagTRUE`) beside a factor dummy `flag`
+  is still scored. The single-distribution score path used to
+  score it against a design with two `gb` columns, so it could win the step
+  and fail only at the post-entry refit, which stopped the screen with every
+  other candidate untested; the multiphase score path declined it as
+  `not_expandable`.
+
+* **Backward `hzr_stepwise()` now tests a dropped variable on its own
+  coefficient** (#315). The drop test looked a variable's coefficient up
+  by its bare name. `model.matrix()` names a logical `flag`'s column
+  `flagTRUE`, while a factor `fla` with level `g` owns a column named
+  `flag`, so in `~ fla + flag` the name `flag` found the factor's dummy.
+  The run stopped with "expands to multiple coefficients" on `fla` before
+  it decided anything, and that error is all that kept a wrong p-value out
+  of the table: `flag` was being tested on the dummy (z = -1.40, against
+  11.39 on its own column). The variable is now found by its term in the
+  design the fit stored, for single-distribution and multiphase fits. A
+  fit with no stored design (the `time =` / `x =` interface, or a formula
+  fit saved by 1.2.10 or earlier) still uses the name, which is not safe
+  from this collision; there the factor's own "expands to multiple
+  coefficients" error still stops the run. Refit such a model with this
+  version before a backward screen. On a single-distribution fit,
+  a logical or two-level factor with no colliding column used to stop with
+  "not found in the design matrix"; it is now tested.
+
+* **Backward `hzr_stepwise()` no longer stops when `theta` is named after
+  the covariates** (#304). A single-distribution fit started from
+  `theta = c(mu = 0.1, nu = 1, age = 0, mal = 0)` failed its first drop
+  test with "Unknown coefficient name(s): 'beta1'". The step names a
+  covariate's coefficient by its position (`beta1`, `beta2`, ...), while
+  the Wald test took the names from `theta` whenever all of them were set.
+  Unnamed and `beta`-named starting values ran, so the naming a user is
+  most likely to write was the one that failed. The Wald test now names
+  single-distribution coefficients by position, whatever `theta` is called.
+  That also matters for correctness: had the names been matched, a
+  covariate called `nu` would have been tested as the shape parameter.
+  A fit whose `theta` holds only the shape parameters (`c(mu = 0.2, nu = 1)`
+  for `~ gb + z`) fits without its covariates, and position would then test
+  `mu` and `nu` as `gb` and `z`. An unnamed `c(0.2, 1)` already did so,
+  reporting both covariates as highly significant. The Wald test now stops
+  with an error when `theta` does not hold one value per shape parameter and
+  per covariate column. It also refuses a `time_windows` fit by name. There
+  each covariate has a coefficient per window, and `beta1` tested only the
+  first window's, while `beta2` could be another window's coefficient of the
+  same covariate, a p-value for the wrong coefficient with no warning.
+
+* **`hzr_stepwise()` now tests an entering candidate on its own
+  coefficient** (#305). The Wald criterion, and the Wald fallback the score
+  criterion uses for a candidate it cannot score, looked the new coefficient
+  up by the variable's bare name. `model.matrix()` names a logical `flag`'s
+  column `flagTRUE`, so when a factor already in the model had a dummy
+  column named `flag` (a factor `fla` with level `g`), the step tested that
+  dummy instead: a p-value for the wrong coefficient, with no error and no
+  warning. On a simulated example the screen reported p = 0.16 for a
+  candidate whose own p-value was below 1e-29, and did not enter it. The
+  candidate is now found as the design-matrix column its refit added, the
+  rule the score criterion already used. Single-distribution and multiphase
+  fits were both affected. A candidate that adds no column, such as `z`
+  added to `~ z:f` (the columns `z:fa, z:fb` become `z, z:fb`), leaves the
+  likelihood unchanged; it was reported with a small p-value and entered,
+  and is now an error.
+
+  Single-distribution fits also now accept the one-column terms multiphase
+  fits already did. A logical, two-level factor or character candidate used
+  to stop under `criterion = "wald"` with "not found in the design matrix",
+  although the score criterion's refusal of such a column names
+  `criterion = "wald"` as the way to test it. It is now tested.
+
 * **`predict()` on a multiphase fit now returns an unnamed vector.** For
   `type = "cumulative_hazard"`, `"survival"` and `"hazard"`, every element
   was named after a parameter -- `"constant.log_mu"`, say, on each row --
@@ -283,8 +423,18 @@
   right; the names were meaningless, and they followed the result into
   anything built from it. With one row, the `decompose = TRUE` and
   `se.fit = TRUE` data frames also took such a name as their row name.
-  Single-distribution `predict()` already returned unnamed vectors, and now
-  both agree.
+  Single-distribution `predict()` carried names the same way; see the next
+  item (#309).
+
+* **`predict()` on a single-distribution fit now returns an unnamed vector
+  too.** For `type = "survival"` and `"cumulative_hazard"`, a lognormal fit
+  named every value `"mu"`, and a Weibull, exponential or log-logistic fit
+  did the same for a single row of `newdata` (#309). As above, `mu` is a
+  named element of `theta`, and R carried the name onto the prediction,
+  through `rep()` for the lognormal and through any length-1 operand when
+  there is one row. With one row, the `se.fit = TRUE` data frame also took
+  `"mu"` as its row name. The values were right. `type = "hazard"` and
+  `"linear_predictor"` were already unnamed.
 
 * **`predict(newdata = )` no longer lets a design column override the
   formula variable it contradicts.** `newdata` may give a factor as its

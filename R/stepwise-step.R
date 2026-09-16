@@ -88,6 +88,10 @@
       data_vars <- .hzr_formula_rhs_terms(scope)
     } else if (is.character(scope)) {
       data_vars <- scope
+      # A character scope never passes through terms(), so an offset in it
+      # reached a refit and failed there with a message that did not say why.
+      scope_f <- tryCatch(stats::reformulate(scope), error = function(e) NULL)
+      if (!is.null(scope_f)) .hzr_refuse_offset(scope_f, "`scope`")
     } else {
       stop("`scope` must be NULL, a one-sided formula, or a character vector.",
            call. = FALSE)
@@ -150,6 +154,9 @@
 #'     considered and its score.}
 #'   \item{refit_failures}{Character vector of `"var@phase"` tokens for
 #'     candidates whose refit diverged.}
+#'   \item{refit_failure_reasons}{Why each of those refits failed: the
+#'     refit's error message, or that it did not converge. Named by the same
+#'     tokens, in the same order.}
 #' }
 #'
 #' @keywords internal
@@ -190,7 +197,8 @@
         df        = integer(),
         stringsAsFactors = FALSE
       ),
-      refit_failures = character()
+      refit_failures = character(),
+      refit_failure_reasons = character()
     )
   }
 
@@ -200,6 +208,7 @@
 
   rows     <- vector("list", length(cands))
   failures <- character()
+  failure_reasons <- character()
 
   if (criterion == "score") {
     return(.hzr_stepwise_forward_step_score(
@@ -227,9 +236,12 @@
 
     if (inherits(candidate_fit, "error") ||
           isFALSE(candidate_fit$fit$converged)) {
+      reason <- .hzr_refit_failure_reason(candidate_fit)
       warning("Stepwise forward: candidate refit failed for ",
-              failure_token, ".", call. = FALSE)
+              failure_token, ": ", reason, call. = FALSE)
       failures <- c(failures, failure_token)
+      failure_reasons <- c(failure_reasons,
+                           stats::setNames(reason, failure_token))
       rows[[i]] <- data.frame(
         variable  = cand$var,
         phase     = cand$phase %||% NA_character_,
@@ -244,11 +256,12 @@
       next
     }
 
-    # Coefficient name(s) of the newly-entered variable in the candidate
-    # fit.  For single-dist this is `var` directly; for multiphase the
-    # coef is phase-prefixed.
+    # Coefficient name of the newly-entered variable in the candidate fit,
+    # resolved by the column the refit added rather than by `var`, which
+    # another term's column can carry (a factor dummy named `flag` beside a
+    # logical `flag`, whose own column is `flagTRUE`).
     coef_name <- .hzr_candidate_coef_name(candidate_fit, cand$var,
-                                           cand$phase)
+                                           cand$phase, current = current)
 
     s <- .hzr_candidate_score(
       criterion = criterion, mode = "entry",
@@ -281,6 +294,7 @@
     out <- null_result()
     out$all_scores <- all_scores
     out$refit_failures <- failures
+    out$refit_failure_reasons <- failure_reasons
     return(out)
   }
 
@@ -297,6 +311,7 @@
     out <- null_result()
     out$all_scores <- all_scores
     out$refit_failures <- failures
+    out$refit_failure_reasons <- failure_reasons
     return(out)
   }
 
@@ -312,7 +327,8 @@
     stat_type = best$stat_type,
     df        = best$df,
     all_scores = all_scores,
-    refit_failures = failures
+    refit_failures = failures,
+    refit_failure_reasons = failure_reasons
   )
 }
 
@@ -380,6 +396,7 @@
   # actually rescue qualify -- see .hzr_score_fallback_reasons.
   all_scores$fallback <- FALSE
   fallback_failures <- character()
+  fallback_reasons  <- character()
   # Keep each fallback's refit, keyed by row, the way the Wald path keeps its
   # candidate fits. The acceptance step below refits the winner with exactly
   # the same arguments, so without this a rescued candidate that goes on to
@@ -393,7 +410,7 @@
       .hzr_refit_with_scope(current, action = "add",
                             var = all_scores$variable[i], phase = cand_phase,
                             data = data, ...),
-      error = function(e) NULL
+      error = function(e) e
     )
     # A refit that fails or does not converge leaves the row NA with its
     # original reason, so it still counts as uncomputable below rather than
@@ -401,21 +418,25 @@
     # other refit failure in the package does: without this the row is
     # byte-identical to one that was never refit at all, and the only signal
     # left is an uncomputable_reasons count that now means the opposite.
-    if (is.null(refit) || isFALSE(refit$fit$converged)) {
+    if (is.null(refit) || inherits(refit, "error") ||
+          isFALSE(refit$fit$converged)) {
       fallback_token <- if (is.null(cand_phase)) {
         all_scores$variable[i]
       } else {
         paste0(all_scores$variable[i], "@", cand_phase)
       }
+      reason <- .hzr_refit_failure_reason(refit)
       warning("Stepwise forward: Wald-fallback refit failed for ",
-              fallback_token, ".", call. = FALSE)
+              fallback_token, ": ", reason, call. = FALSE)
       fallback_failures <- c(fallback_failures, fallback_token)
+      fallback_reasons  <- c(fallback_reasons,
+                             stats::setNames(reason, fallback_token))
       next
     }
     w <- .hzr_candidate_score(
       criterion = "wald", mode = "entry", current = current, candidate = refit,
       names = .hzr_candidate_coef_name(refit, all_scores$variable[i],
-                                       cand_phase)
+                                       cand_phase, current = current)
     )
     if (is.na(w$score)) {
       # The refit CONVERGED -- it returned a point estimate -- but its Hessian
@@ -468,6 +489,7 @@
     out$uncomputable_reasons <- uncomputable_reasons
     out$n_wald_fallbacks <- n_wald_fallbacks
     out$refit_failures <- fallback_failures
+    out$refit_failure_reasons <- fallback_reasons
     out$stop_reason    <- if (n_uncomputable > 0L) {
       "scores_uncomputable"
     } else {
@@ -486,6 +508,7 @@
     out$uncomputable_reasons <- uncomputable_reasons
     out$n_wald_fallbacks <- n_wald_fallbacks
     out$refit_failures <- fallback_failures
+    out$refit_failure_reasons <- fallback_reasons
     out$stop_reason    <- "no_candidate_met_slentry"
     return(out)
   }
@@ -513,11 +536,14 @@
   if (inherits(refitted, "error") || isFALSE(refitted$fit$converged)) {
     # The candidate won on Q but the model that would realise it will not fit.
     # Entering it anyway would put a non-converged fit into the chain.
+    reason <- .hzr_refit_failure_reason(refitted)
     warning("Stepwise forward: post-entry refit failed for ",
-            failure_token, ".", call. = FALSE)
+            failure_token, ": ", reason, call. = FALSE)
     out <- null_result()
     out$all_scores     <- all_scores
     out$refit_failures <- c(fallback_failures, failure_token)
+    out$refit_failure_reasons <- c(fallback_reasons,
+                                   stats::setNames(reason, failure_token))
     out$n_uncomputable <- n_uncomputable
     out$uncomputable_reasons <- uncomputable_reasons
     out$n_wald_fallbacks <- n_wald_fallbacks
@@ -538,11 +564,33 @@
     df        = best$df,
     all_scores = all_scores,
     refit_failures = fallback_failures,
+    refit_failure_reasons = fallback_reasons,
     n_uncomputable = n_uncomputable,
     uncomputable_reasons = uncomputable_reasons,
     n_wald_fallbacks = n_wald_fallbacks,
     stop_reason    = "accepted"
   )
+}
+
+
+#' Why a stepwise refit failed, for its warning and `refit_failure_reasons`
+#'
+#' The refit sites catch the error so one bad candidate cannot end the screen.
+#' Catching it used to discard the message too, so a refit that hazard()
+#' refused by name (a duplicated design column, a variable missing from
+#' `data`) was reported as "refit failed for <var>" and nothing more.
+#'
+#' @param refit What the refit's `tryCatch()` returned.
+#' @return A one-line character string.
+#' @noRd
+.hzr_refit_failure_reason <- function(refit) {
+  if (inherits(refit, "error")) {
+    return(conditionMessage(refit))
+  }
+  if (is.null(refit)) {
+    return("the refit returned no fit")
+  }
+  "the refit did not converge"
 }
 
 
@@ -690,7 +738,8 @@
       stat_type = NA_character_,
       df        = NA_integer_,
       all_scores     = all_scores,
-      refit_failures = character()
+      refit_failures = character(),
+      refit_failure_reasons = character()
     )
   }
 
@@ -701,6 +750,10 @@
   rows <- vector("list", length(cands))
   for (i in seq_along(cands)) {
     cand <- cands[[i]]
+    # Resolved by the variable's term in the stored design, not by name: a
+    # factor `fla` with level `g` owns a column named `flag`, while a logical
+    # `flag` owns `flagTRUE` (#315).  The design is rebuilt from the data the
+    # fit was built on, so a `data` whose column types differ cannot skew it.
     coef_name <- .hzr_candidate_coef_name(current, cand$var, cand$phase)
 
     s <- .hzr_candidate_score(
@@ -758,10 +811,12 @@
   }
 
   if (inherits(refitted, "error") || isFALSE(refitted$fit$converged)) {
+    reason <- .hzr_refit_failure_reason(refitted)
     warning("Stepwise backward: post-drop refit failed for ",
-            failure_token, ".", call. = FALSE)
+            failure_token, ": ", reason, call. = FALSE)
     out <- null_result(all_scores)
     out$refit_failures <- failure_token
+    out$refit_failure_reasons <- stats::setNames(reason, failure_token)
     return(out)
   }
 
@@ -777,7 +832,8 @@
     stat_type = best$stat_type,
     df        = best$df,
     all_scores     = all_scores,
-    refit_failures = character()
+    refit_failures = character(),
+    refit_failure_reasons = character()
   )
 }
 
@@ -787,7 +843,9 @@
 #' Canonical naming differs between fit kinds:
 #'   multiphase: phase-prefixed formula names (e.g. `"early.age"`).
 #'   single-dist: positional `"betaN"` from `.hzr_parameter_names()`,
-#'     where N is the column index of `var` in `colnames(fit$data$x)`.
+#'     where N is the index in `colnames(fit$data$x)` of the column `var`'s
+#'     term builds (or of the column named `var`, for a fit with no stored
+#'     design).
 #'
 #' This matches the naming `summary.hazard()` prints and the canonical
 #' name `.hzr_wald_p()` uses for coefficient lookup.
@@ -797,9 +855,25 @@
 #' trigger an error so the caller can rebuild their formula with the
 #' expansion baked in rather than silently scoring just one coefficient.
 #'
+#' @param current For a forward step, the fit `fit` was refit from.  The
+#'   candidate is then resolved by the column the refit added, not by name.
+#' @param data Data frame the fit's stored design is rebuilt against to
+#'   resolve `var` by its term (`.hzr_term_coef_name()`).  Only a fit with no
+#'   stored design falls back to looking `var` up by name.
+#'
 #' @keywords internal
 #' @noRd
-.hzr_candidate_coef_name <- function(fit, var, phase) {
+.hzr_candidate_coef_name <- function(fit, var, phase, current = NULL,
+                                     data = fit$data$frame) {
+  if (!is.null(current)) {
+    return(.hzr_entered_coef_name(fit, current, var, phase))
+  }
+  by_term <- .hzr_term_coef_name(fit, var, phase, data)
+  if (!is.null(by_term)) {
+    return(by_term)
+  }
+  # No stored design (the `time =` / `x =` interface, or a fit saved before
+  # the design was kept): the bare name is all there is to go on.
   if (fit$spec$dist == "multiphase") {
     target <- paste0(phase, ".", var)
     coef_names <- names(stats::coef(fit))
@@ -855,6 +929,133 @@
          call. = FALSE)
   }
   paste0("beta", idx)
+}
+
+
+#' Name of an in-model variable's coefficient, found by its term
+#'
+#' A drop has no refit to compare columns against, so the variable is found
+#' through the design the fit stored: rebuilt against `data`, the model
+#' matrix's `assign` attribute maps each column to its term, and `var` is a
+#' term label.  Looking `var` up among the column names instead finds another
+#' term's column when that column carries the name: a logical `flag` becomes
+#' `flagTRUE`, while a factor `fla` with level `g` owns `flag` (#315).
+#'
+#' @return The coefficient name (`beta<k>` for a single distribution,
+#'   `<phase>.<column>` for multiphase), or `NULL` when the fit stored no
+#'   design, which leaves only the name lookup.
+#'
+#' @keywords internal
+#' @noRd
+.hzr_term_coef_name <- function(fit, var, phase, data) {
+  multiphase <- fit$spec$dist == "multiphase"
+  if (multiphase) {
+    design <- if (.hzr_phase_inherits_global(fit, phase)) {
+      fit$data$x_design
+    } else {
+      fit$fit$x_design[[phase]]
+    }
+    cols <- colnames(fit$fit$x_list[[phase]])
+  } else {
+    design <- fit$data$x_design
+    cols <- colnames(fit$data$x)
+  }
+  if (is.null(design) || is.null(data)) {
+    return(NULL)
+  }
+  where <- if (multiphase) paste0(" in phase ", sQuote(phase)) else ""
+
+  mf <- stats::model.frame(design$terms, data = data, xlev = design$xlevels,
+                           na.action = stats::na.pass)
+  mm <- stats::model.matrix(design$terms, data = mf,
+                            contrasts.arg = design$contrasts)
+  # Column names are unique within a design (.hzr_refuse_duplicate_columns()),
+  # so the stored columns can be found in the rebuild by name.  The stored
+  # set lacks the intercept, and under `time_windows` it is window-expanded.
+  pos <- match(cols, colnames(mm))
+  if (length(cols) == 0L || anyNA(pos)) {
+    stop("Cannot map variable ", sQuote(var), where, " to its coefficient: ",
+         "the fit's design columns (", paste(sQuote(cols), collapse = ", "),
+         ") are not those its stored formula builds (",
+         paste(sQuote(colnames(mm)), collapse = ", "), ").",
+         call. = FALSE)
+  }
+  term <- match(var, attr(design$terms, "term.labels"))
+  if (is.na(term)) {
+    stop("Variable ", sQuote(var), where, " is not a term of the fitted ",
+         "model's formula.", call. = FALSE)
+  }
+  idx <- which(attr(mm, "assign")[pos] == term)
+  if (length(idx) > 1L) {
+    stop(
+      "Variable ", sQuote(var), where,
+      " expands to multiple coefficients (",
+      paste(sQuote(cols[idx]), collapse = ", "),
+      ").  Stepwise v1 supports main-effect terms only; ",
+      "rebuild your candidate as pre-expanded main effects and retry.",
+      call. = FALSE
+    )
+  }
+  if (length(idx) == 0L) {
+    stop("Variable ", sQuote(var), where, " has no column in the fitted ",
+         "model's design, so its coefficient cannot be identified.",
+         call. = FALSE)
+  }
+  if (multiphase) paste0(phase, ".", cols[idx]) else paste0("beta", idx)
+}
+
+
+#' Name of the coefficient a forward step's refit added
+#'
+#' The refit's design differs from the current fit's by the candidate's
+#' column, so the difference names it, whatever `model.matrix()` called it.
+#' Looking the candidate up by its bare name finds the wrong column when
+#' another term's column carries that name: a logical `flag` becomes
+#' `flagTRUE`, while a factor `fla` with level `g` owns `flag`.  The score
+#' path places its pinned zero by the same difference
+#' (`.hzr_score_expand_multiphase()`).
+#'
+#' @keywords internal
+#' @noRd
+.hzr_entered_coef_name <- function(fit, current, var, phase) {
+  multiphase <- fit$spec$dist == "multiphase"
+  design_cols <- function(f) {
+    colnames(if (multiphase) f$fit$x_list[[phase]] else f$data$x)
+  }
+  new_cols <- design_cols(fit)
+  old_cols <- design_cols(current)
+  added <- which(!new_cols %in% old_cols)
+  where <- if (multiphase) paste0(" in phase ", sQuote(phase)) else ""
+  if (length(added) > 1L) {
+    stop(
+      "Variable ", sQuote(var), where,
+      " expands to multiple coefficients (",
+      paste(sQuote(new_cols[added]), collapse = ", "),
+      ").  Stepwise v1 supports main-effect terms only; ",
+      "rebuild your candidate as pre-expanded main effects and retry.",
+      call. = FALSE
+    )
+  }
+  # One new NAME is not one new column: `z` added to `~ z:f` turns
+  # `z:fa, z:fb` into `z, z:fb`, the same column space and likelihood.  The
+  # score path requires the count to rise by one for the same reason.
+  if (length(new_cols) != length(old_cols) + 1L) {
+    stop(
+      "Variable ", sQuote(var), where, " does not add a column to the model: ",
+      "the refit's design (", paste(sQuote(new_cols), collapse = ", "),
+      ") reparameterises the current one (",
+      paste(sQuote(old_cols), collapse = ", "),
+      "), so there is no coefficient of its own to test.",
+      call. = FALSE
+    )
+  }
+  if (length(added) == 0L) {
+    stop("Variable ", sQuote(var), where,
+         " added no design-matrix column the current fit lacks, so its ",
+         "coefficient cannot be identified.",
+         call. = FALSE)
+  }
+  if (multiphase) paste0(phase, ".", new_cols[added]) else paste0("beta", added)
 }
 
 
