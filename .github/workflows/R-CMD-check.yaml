@@ -53,6 +53,19 @@ jobs:
             exit 0
           fi
           base="${{ github.event.pull_request.base.sha }}"
+          # On a push, diff everything the push brought in, not only its last
+          # commit. A rebase merge lands a PR as several commits, and HEAD^
+          # would see only the last: if that one touched only .claude/, the
+          # whole check -- and main is where macOS and Windows are checked --
+          # would be skipped. `before` is all zeros for a new branch, and can
+          # be unreachable after a force-push; fall back to HEAD^ for those.
+          if [ -z "$base" ]; then
+            before="${{ github.event.before }}"
+            if [ -n "$before" ] && [ "$before" != "0000000000000000000000000000000000000000" ] \
+               && git cat-file -e "${before}^{commit}" 2>/dev/null; then
+              base="$before"
+            fi
+          fi
           if [ -z "$base" ]; then
             base="$(git rev-parse HEAD^ 2>/dev/null || echo '')"
           fi

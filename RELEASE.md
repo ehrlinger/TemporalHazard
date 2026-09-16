@@ -166,17 +166,31 @@ main (X.Y.Z) accumulates, patch-bumping as fixes land
 7. **Run the cross-platform release check by hand, and wait for it to go green.**
 
    ```sh
-   gh workflow run check-release.yaml --ref main
-   gh run list --workflow check-release.yaml --event workflow_dispatch --branch main \
-     --limit 1 --json databaseId,createdAt,headSha
-   gh run watch <databaseId> --exit-status
+   wf=check-release.yaml
+   sha=$(git ls-remote origin refs/heads/main | cut -f1)
+   since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+   gh workflow run "$wf" --ref main
+   id=""
+   for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+     sleep 5
+     id=$(gh run list --workflow "$wf" --event workflow_dispatch --branch main \
+            --json databaseId,createdAt,headSha --limit 5 \
+            --jq "[.[] | select(.headSha == \"$sha\" and .createdAt >= \"$since\")][0].databaseId // empty")
+     [ -n "$id" ] && break
+   done
+   if [ -z "$id" ]; then
+     echo "NOT GATED: no $wf run for $sha dispatched after $since" >&2
+   else
+     echo "watching run $id for main at $sha"
+     gh run watch "$id" --exit-status && echo "GATE PASSED: run $id"
+   fi
    ```
 
-   Check that `createdAt` is the moment you dispatched and `headSha` is `main`'s
-   current commit before you watch it. `gh run list` returns the latest run it
-   knows about, which for a few seconds after dispatch is the previous one, and a
-   green previous run says nothing about this `main`. `--exit-status` makes the
-   watch fail when any job fails.
+   The run is identified by all three of the event, `main`'s commit and a timestamp taken
+   *before* dispatching. `gh run list --limit 1` alone returns whichever run it knows about
+   latest, which for a few seconds after dispatch is the previous one, and a green previous run
+   says nothing about this `main`. If no run matches it prints `NOT GATED` rather than watching
+   the wrong one; only `GATE PASSED` means the gate passed. `--exit-status` makes the watch fail when any job fails.
 
    It runs `R CMD check --as-cran` with the manual on Windows release and devel, macOS release
    and Ubuntu release and devel. All five must pass before you submit or publish a release.
