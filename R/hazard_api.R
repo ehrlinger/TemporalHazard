@@ -1710,6 +1710,10 @@ predict.hazard <- function(object, newdata = NULL,
     # closure `cumhaz_of` that computes H for any candidate theta -- this
     # is the delta-method target for both "cumulative_hazard" and
     # "survival" predictions.
+    # unname() each result: the shape parameters are named elements of
+    # theta, and R carries such a name onto the product, through rep() for
+    # every n and through any length-1 operand when n == 1, and so into
+    # predict() (#309; the multiphase path does the same, #289).
     dist_lbl <- object$spec$dist
     has_cov <- !is.null(x) && ncol(x) > 0
 
@@ -1726,19 +1730,19 @@ predict.hazard <- function(object, newdata = NULL,
         if (th[1] <= 0 || th[2] <= 0) return(rep(NA_real_, length(time)))
         beta_cand <- if (length(th) > 2) th[3:length(th)] else numeric(0)
         eta_cand <- if (has_cov) as.numeric(x %*% beta_cand) else rep(0, length(time))
-        (th[1] * time) ^ th[2] * exp(eta_cand)
+        unname((th[1] * time) ^ th[2] * exp(eta_cand))
       }
     } else if (dist_lbl == "exponential") {
       function(th) {
         beta_cand <- if (length(th) > 1) th[2:length(th)] else numeric(0)
         eta_cand <- if (has_cov) as.numeric(x %*% beta_cand) else rep(0, length(time))
-        exp(th[1]) * time * exp(eta_cand)
+        unname(exp(th[1]) * time * exp(eta_cand))
       }
     } else if (dist_lbl == "loglogistic") {
       function(th) {
         beta_cand <- if (length(th) > 2) th[3:length(th)] else numeric(0)
         eta_cand <- if (has_cov) as.numeric(x %*% beta_cand) else rep(0, length(time))
-        log(1 + exp(th[1]) * (time ^ exp(th[2])) * exp(eta_cand))
+        unname(log(1 + exp(th[1]) * (time ^ exp(th[2])) * exp(eta_cand)))
       }
     } else if (dist_lbl == "lognormal") {
       function(th) {
@@ -1746,7 +1750,7 @@ predict.hazard <- function(object, newdata = NULL,
         # AFT: covariates shift the location.
         eta_aft <- if (has_cov) th[1] + as.numeric(x %*% beta_cand) else rep(th[1], length(time))
         z <- (log(time) - eta_aft) / exp(th[2])
-        -pnorm(-z, log.p = TRUE)
+        unname(-pnorm(-z, log.p = TRUE))
       }
     } else {
       stop("Unknown distribution '", dist_lbl, "'.", call. = FALSE)
