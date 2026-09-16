@@ -400,3 +400,19 @@ test_that("a bootstrap whose every replicate fails warns, and still returns its 
   expect_match(names(b$failure_reasons), "theta", fixed = TRUE)
   expect_equal(nrow(b$replicates), 0L)
 })
+
+test_that("a refit error with an empty message is still counted", {
+  # R cannot index a tally by the name "", so a bare stop() used to vanish
+  # from failure_reasons and the tally no longer summed to n_failed.
+  vf <- no_data_weibull(avc_fixture())
+  env <- new.env(parent = vf$call_env %||% globalenv())
+  assign("silent_refit", function(...) stop(""), envir = env)
+  vf$call[[1L]] <- as.name("silent_refit")
+  vf$call_env <- env
+
+  b <- suppressWarnings(hzr_bootstrap(vf, n_boot = 3L, seed = 1L))
+  expect_equal(b$n_failed, 3L)
+  expect_equal(sum(b$failure_reasons), b$n_failed)
+  expect_identical(b$failure_reasons,
+                   c("error with an empty message" = 3L))
+})

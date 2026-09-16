@@ -1587,7 +1587,8 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   \item{n_failed}{Number of replicates that failed: the refit stopped with
 #'     an error, or returned a non-finite objective.}
 #'   \item{failure_reasons}{Named integer vector counting why replicates
-#'     failed, most common first: the refit's error message, or
+#'     failed, most common first: the refit's error message (or
+#'     `"error with an empty message"`), or
 #'     `"non-finite objective (did not converge)"`. It sums to `n_failed`, and
 #'     is an empty named integer vector, never `NULL`, when none failed. When
 #'     every replicate fails, `hzr_bootstrap()` also warns, naming the most
@@ -2134,7 +2135,11 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     # back with a non-finite objective. isTRUE() also counts a missing
     # objective as non-finite, where `&&` would have met if (NA).
     failure <- if (inherits(boot_fit, "error")) {
-      conditionMessage(boot_fit)
+      # A reason is a name in the tally, and R cannot index by the name "":
+      # a bare stop() would drop out, and the tally would stop summing to
+      # n_failed.
+      msg <- conditionMessage(boot_fit)
+      if (nzchar(msg)) msg else "error with an empty message"
     } else if (!isTRUE(is.finite(boot_fit$fit$objective))) {
       "non-finite objective (did not converge)"
     }
