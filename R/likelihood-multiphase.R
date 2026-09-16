@@ -1632,8 +1632,11 @@
 #' * single numeric, logical or character literals;
 #' * `+ - * / ^ ( : == != < > <= >= & | !`, `I()`, `log()`, `exp()`, `sqrt()`
 #'   and `abs()`;
-#' * `factor()` of one column, and `cut()` at a literal vector of breaks
-#'   (`c(0, 50, 100)`).
+#' * `cut()` at a literal vector of breaks (`c(0, 50, 100)`), the only
+#'   categorical term allowed: any other (a character or factor column)
+#'   takes its levels from the data, and the fitted column names show only
+#'   the non-reference levels, so a level the fit never saw could be scored
+#'   as the reference. A logical is not categorical here.
 #'
 #' A function name must resolve from the formula's environment to base R's
 #' own. The list is narrower than the global rebuild's
@@ -1641,11 +1644,11 @@
 #' rebuild against and so can allow scale(), poly() and ns(); folding the two
 #' is #271.
 #'
-#' A closed formula must then build from `newdata` alone (factor() of one
-#' row cannot be) and give the phase's fitted columns (a factor() missing a
-#' level does not), coded by treatment contrasts, whose column names carry
-#' the levels (an ordered factor's polynomial columns, or Helmert or sum
-#' coding under another session's contrasts option, do not).
+#' A closed formula must then build from `newdata` alone (log() of a
+#' character column cannot be), give the phase's fitted columns, hold no
+#' categorical term but cut(), and be coded by treatment contrasts, whose
+#' column names carry the levels (Helmert or sum coding under another
+#' session's contrasts option does not).
 #'
 #' @param formula The phase formula.
 #' @param build Function of a data frame of new rows, returning the model
@@ -1675,7 +1678,7 @@
   if (is.null(env)) env <- baseenv()
   elementwise <- c("+", "-", "*", "/", "^", "(", ":", "==", "!=", "<", ">",
                    "<=", ">=", "&", "|", "!", "I", "log", "exp", "sqrt",
-                   "abs", "factor", "cut")
+                   "abs", "cut")
   closed <- function(e) {
     if (is.symbol(e)) {
       # A value of that name the formula can see (T, pi, a `cutoff`) may be
@@ -1701,10 +1704,6 @@
     args <- as.list(e)[-1L]
     nms <- names(args)
     if (is.null(nms)) nms <- character(length(args))
-    if (fn == "factor") {
-      return(length(args) == 1L && nms == "" && is.symbol(args[[1L]]) &&
-               closed(args[[1L]]))
-    }
     if (fn == "cut") {
       # The breaks as a literal vector: a number of breaks reads the range.
       at <- if (any(nms == "breaks")) which(nms == "breaks") else
@@ -1733,6 +1732,19 @@
     refuse(labels, paste0("does not rebuild the fitted columns (",
                           paste0("'", cols, "'", collapse = ", "),
                           ") from newdata: its levels come from the data"))
+  }
+  # Column names show only the non-reference levels, so a level the fit
+  # never saw, sorting first in newdata, would be scored as the reference.
+  # Only cut() at literal breaks fixes its levels without the data (a
+  # logical is not categorical here).
+  fixed <- vapply(attr(a, "categorical"), function(v) {
+    e <- str2lang(v)
+    is.call(e) && identical(e[[1L]], as.name("cut"))
+  }, logical(1))
+  if (!all(fixed)) {
+    refuse(names(fixed)[!fixed], paste0("has levels that come from the ",
+                                        "data, whose reference level ",
+                                        "cannot be checked"))
   }
   # Treatment coding names each column after its level; polynomial, Helmert
   # or sum coding does not, so reordered levels or another session's
@@ -1871,6 +1883,8 @@
       m <- m0[, -1L, drop = FALSE]
       attr(m, "assign") <- attr(m0, "assign")[-1L]
       attr(m, "contrasts") <- attr(m0, "contrasts")
+      attr(m, "categorical") <- names(mf)[vapply(mf, function(v)
+        is.factor(v) || is.character(v), logical(1))]
       m
     }
     # Nothing to check a rebuild against: rebuild only a closed formula (#307).

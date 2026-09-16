@@ -234,34 +234,54 @@ test_that("a column with one distinct value is refused or predicted by the formu
 
 test_that("a closed term that cannot be built from newdata alone gets the refit advice", {
   skip_on_cran()  # multiphase fits
-  # factor() of one row has one level, so its contrasts cannot be built; the
-  # refusal says why rather than the model matrix's own error.
+  # log() of a character column fails; the refusal says why rather than
+  # only the model frame's own error.
   data(avc, package = "TemporalHazard", envir = environment())
   d <- stats::na.omit(avc)
-  lf <- legacy_fit_on("factor(inc_surg)", d, keep_frame = FALSE)
+  lf <- legacy_fit_on("log(age)", d, keep_frame = FALSE)
+  nd <- rows_of(d, 50L)
+  nd$age <- "old"
   expect_error(
-    predict(lf$fit, newdata = rows_of(d, 50L), type = "cumulative_hazard"),
+    predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
     "refit"
   )
 })
 
-test_that("a legacy factor() phase predicts with all its levels and refuses without", {
+test_that("without its data, a categorical term is refused unless its levels are fixed", {
   skip_on_cran()  # multiphase fits
-  data(avc, package = "TemporalHazard", envir = environment())
-  d <- stats::na.omit(avc)
+  # Column names show only the non-reference levels, so a level the fit
+  # never saw that sorts first in newdata would be scored as the reference.
+  # Only cut() at literal breaks and a logical have levels that do not come
+  # from the data.
+  d <- legacy_data()
+  rows <- c(1, 2, 3, 4, 50, 200)
+  nd <- data.frame(time = d$int_dead[rows], grp = d$grp[rows],
+                   inc_surg = d$inc_surg[rows], male = d$male[rows],
+                   opmos = d$opmos[rows])
+  # Every level of grp present, and one relabelled to a level never seen.
+  nd$grp <- c("B", "A", "C", "A", "B", "B")
+  seen_not <- nd
+  seen_not$grp[nd$grp == "A"] <- "0"
+  lf <- legacy_fit_on("grp", d, keep_frame = FALSE)
+  expect_error(predict(lf$fit, newdata = seen_not, type = "cumulative_hazard"),
+               "refit")
+  expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
+               "refit")
+  # factor() of numbers: every level present is still not enough.
   lf <- legacy_fit_on("factor(inc_surg)", d, keep_frame = FALSE)
-  fitted <- predict(lf$current, type = "cumulative_hazard")
-  lv <- sort(unique(d$inc_surg), decreasing = TRUE)
-  rows <- vapply(lv, function(v) which(d$inc_surg == v)[1], integer(1))
-  got <- predict(lf$fit, newdata = rows_of(d, rows), type = "cumulative_hazard")
-  expect_length(got, length(rows))
-  expect_equal(got / fitted[rows], rep(1, length(rows)),
-               tolerance = 1e-8, ignore_attr = TRUE)
-  expect_error(
-    predict(lf$fit, newdata = rows_of(d, rows[1:3]),
-            type = "cumulative_hazard"),
-    "refit"
-  )
+  all_levels <- rows_of(d, vapply(sort(unique(d$inc_surg)), function(v)
+    which(d$inc_surg == v)[1], integer(1)))
+  expect_error(predict(lf$fit, newdata = all_levels,
+                       type = "cumulative_hazard"), "refit")
+  # A logical column and cut() at literal breaks predict as fitted.
+  for (term in c("male", "cut(opmos, c(0, 50, 100, 200))")) {
+    lf <- legacy_fit_on(term, d, keep_frame = FALSE)
+    want <- predict(lf$current, newdata = nd, type = "cumulative_hazard")
+    got <- predict(lf$fit, newdata = nd, type = "cumulative_hazard")
+    expect_length(got, nrow(nd))
+    expect_equal(got / want, rep(1, nrow(nd)), tolerance = 1e-8,
+                 ignore_attr = TRUE, label = term)
+  }
 })
 
 test_that("a missing value in newdata gives an NA row for a legacy fit", {
@@ -334,10 +354,11 @@ test_that("without its data, a column shadowing a constant or a coding the names
   expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
                "refit")
   # A fit made under other contrasts: Helmert and sum coding both name the
-  # columns 1 and 2, and a legacy fit does not record which it used.
+  # columns 1 and 2, and a legacy fit does not record which it used. cut()
+  # at literal breaks is otherwise rebuilt, so the coding is what refuses.
   old <- options(contrasts = c("contr.helmert", "contr.poly"))
   on.exit(options(old), add = TRUE)
-  lf <- legacy_fit_on("factor(grp)", d, keep_frame = FALSE)
+  lf <- legacy_fit_on("cut(opmos, c(0, 50, 100, 200))", d, keep_frame = FALSE)
   options(contrasts = c("contr.sum", "contr.poly"))
   expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
                "refit")
