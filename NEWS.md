@@ -252,12 +252,17 @@
   of a `scale(age)` phase came back as a zero-length prediction. A fit saved
   by 1.1.0 or later kept its fitting data, and its phase design is now
   rebuilt from that data exactly as the fit built it. A fit saved by 1.0.3
-  or earlier kept neither, so such a term is refused with advice to refit,
-  as is one whose columns come from `newdata` (`cut(age, 3)`, or a
-  `factor()` with a fitted level missing from `newdata`); row-wise terms
-  (`log(age)`, `I(age > cutoff)`, a `factor()` with all its levels present)
-  still predict, and a missing value in `newdata` gives an NA row. A
-  current fit was not affected.
+  or earlier kept neither, so any term that reads the data it is built from
+  is refused with advice to refit: its range, mean, SD or median
+  (`scale()`, `poly()`, `ns()` and `bs()`, including boundary knots taken
+  from the range, and `min()`, `max()` or `median()` inside `I()`), columns
+  that come from `newdata` (`cut(age, 3)`, a `factor()` with a fitted level
+  missing), or a term that cannot be built from `newdata` alone (`poly()` of
+  one row). Row-wise and fully specified terms (`log(age)`,
+  `I(age > cutoff)`, a fixed-break `cut()`, `poly(raw = TRUE)`, an `ns()`
+  with its knots and boundary knots given, a `factor()` with all its levels
+  present) still predict, and a missing value in `newdata` gives an NA row.
+  A current fit was not affected.
 
 * **`predict()` on a multiphase fit now returns an unnamed vector.** For
   `type = "cumulative_hazard"`, `"survival"` and `"hazard"`, every element
