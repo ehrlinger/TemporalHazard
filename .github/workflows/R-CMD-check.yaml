@@ -45,6 +45,13 @@ jobs:
       - id: filter
         shell: bash
         run: |
+          # A manual run is the macOS and Windows release gate: it always does
+          # the work. Diffing HEAD^ here would skip every step after a
+          # .claude/-only commit and report a green gate over nothing.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           base="${{ github.event.pull_request.base.sha }}"
           if [ -z "$base" ]; then
             base="$(git rev-parse HEAD^ 2>/dev/null || echo '')"
@@ -182,7 +189,9 @@ jobs:
             echo "::warning title=testthat totals::no tests/testthat.Rout under check/"
             exit 0
           fi
-          lines="$(grep -E 'Starting [0-9]+ test process|\[ FAIL [0-9]+ \| WARN [0-9]+ \| SKIP [0-9]+ \| PASS [0-9]+ \]' "$f" | tail -n 2)"
+          # `|| true`: the step shell runs with -e -o pipefail, so a grep that
+          # matches nothing would end the step before the warning below.
+          lines="$({ grep -E 'Starting [0-9]+ test process|\[ FAIL [0-9]+ \| WARN [0-9]+ \| SKIP [0-9]+ \| PASS [0-9]+ \]' "$f" || true; } | tail -n 2)"
           if [ -z "$lines" ]; then
             echo "::warning title=testthat totals::no totals line in $f"
             exit 0

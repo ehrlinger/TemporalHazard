@@ -167,8 +167,16 @@ main (X.Y.Z) accumulates, patch-bumping as fixes land
 
    ```sh
    gh workflow run check-release.yaml --ref main
-   gh run list --workflow check-release.yaml --limit 1
+   gh run list --workflow check-release.yaml --event workflow_dispatch --branch main \
+     --limit 1 --json databaseId,createdAt,headSha
+   gh run watch <databaseId> --exit-status
    ```
+
+   Check that `createdAt` is the moment you dispatched and `headSha` is `main`'s
+   current commit before you watch it. `gh run list` returns the latest run it
+   knows about, which for a few seconds after dispatch is the previous one, and a
+   green previous run says nothing about this `main`. `--exit-status` makes the
+   watch fail when any job fails.
 
    It runs `R CMD check --as-cran` with the manual on Windows release and devel, macOS release
    and Ubuntu release and devel. All five must pass before you submit or publish a release.

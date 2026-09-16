@@ -135,6 +135,11 @@ Windows-only version of it would land. **A red macOS or Windows run on `main` bl
 until someone understands it: the next PR's author checks the latest `main` run before merging,
 because every later PR merges on top of the break.
 
+This departs from the portfolio house style, whose workflow table in `.claude/house-style.md`
+still lists `pull_request` for `R-CMD-check`, `test-coverage` and `pkgdown`. That file is
+generated from vault sources, so it is not edited here; where the two disagree for this repo,
+the workflow files and this section are what runs.
+
 test-coverage and pkgdown no longer run on a pull request either. Neither blocks a merge. The
 cost is that a pkgdown failure, such as an exported topic missing from `_pkgdown.yml`, is seen
 after the merge.
