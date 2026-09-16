@@ -189,9 +189,13 @@ test_that("without its data, a closed phase formula still predicts as fitted", {
   # are built on, so a current fit's prediction is the reference.
   d <- legacy_data()
   nd <- legacy_nd()
+  # A column named like a function (sd) is still a column: only a value
+  # the formula can see could have stood in for it.
+  d$sd <- d$opmos / 100
+  nd$sd <- nd$opmos / 100
   for (term in c("log(age)", "I(2 * age + 1)", "I(age > 50)",
                  "sqrt(age) + exp(-opmos / 100)",
-                 "cut(opmos, c(0, 50, 100, 200))")) {
+                 "cut(opmos, c(0, 50, 100, 200))", "I(age + sd)")) {
     lf <- legacy_fit_on(term, d, keep_frame = FALSE)
     want <- predict(lf$current, newdata = nd, type = "cumulative_hazard")
     got <- predict(lf$fit, newdata = nd, type = "cumulative_hazard")
