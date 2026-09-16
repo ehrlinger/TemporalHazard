@@ -337,16 +337,21 @@
 #' @param object A fitted `hazard` object.
 #' @param newdata Data frame of new rows, possibly with a `time` column.
 #' @return `NULL` when `newdata` has no covariate columns (the time-based
-#'   types then evaluate the baseline, every covariate at 0); otherwise a
-#'   numeric matrix of the fit's global columns. An object that stored no
-#'   `x` leaves position as the only mapping, so its columns are taken as
-#'   given.
+#'   types then evaluate the baseline, every covariate at 0) or the fit has
+#'   no covariates; otherwise a numeric matrix of the fit's global columns.
+#'   An object that stored no `x` but has covariate coefficients leaves
+#'   position as the only mapping, so its columns are taken as given.
 #' @keywords internal
 #' @noRd
 .hzr_newdata_design <- function(object, newdata, drop_time = TRUE) {
   covs <- newdata[, names(newdata) != "time", drop = FALSE]
   if (is.null(object$data$x)) {
-    return(if (ncol(covs) == 0L) NULL else as.matrix(covs))
+    # A fit with no covariates uses none of newdata's other columns (#300).
+    n_shape <- .hzr_shape_parameter_count(object$spec$dist)
+    if (ncol(covs) == 0L || length(object$fit$theta) <= n_shape) {
+      return(NULL)
+    }
+    return(as.matrix(covs))
   }
   # Where `time` is not the prediction time (the eta-based types without
   # time windows), it may itself be the covariate.

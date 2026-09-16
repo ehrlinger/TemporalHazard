@@ -2,6 +2,29 @@
 
 ## Breaking changes
 
+* **`hazard()` now refuses a multiphase phase formula with covariates when
+  no `data` is supplied (#299).** Such fits previously ignored the phase
+  formula. On the vector interface (`time =`, `status =`) without `data`, a
+  phase's own formula was never evaluated: the phase took the global `x`, or
+  no covariates at all, so `hzr_phase(formula = ~ mal)` fitted a model
+  without `mal`, with no warning and no message. The call now stops with an
+  error naming the phase and its formula, under `fit = FALSE` as well. Pass
+  `data =` with the phase's variables as columns, or use
+  `hazard(Surv(...) ~ ..., data = ...)`. A phase with no formula is
+  unaffected, and so is an intercept-only `~ 1` unless the call also has a
+  global `x` with at least one column. Beside such an `x`, a `~ 1` phase
+  is refused too: without `data` it silently took `x`, and with `data` it
+  has no columns, so the same call gave two different models. Pass
+  `data =`, use the formula interface, or drop `x`. A constant term such
+  as `~ log(2)`, which builds a column only in `data`, is refused as well.
+
+* **`hzr_stepwise()` now refuses a fit saved by an earlier version whose
+  phase formula was ignored this way (#299).** Given `data`, every refit
+  built the ignored formula's columns into a model whose base never had
+  them: a forward screen reported `ENTER age` over a final model that also
+  carried the ignored `mal`, with no warning. The error names the phase and
+  its formula. Refit the base model with `data =` and retry.
+
 * **`hazard()` now stops when two design columns share a name** (#298). A
   factor's dummy columns are named `<factor><level>`, so a factor `g` with
   level `b` and a numeric column `gb` both produced a column `gb`. The fit
@@ -282,6 +305,34 @@
   and its bootstrap already stopped with the same `'NA'` message, so a list
   `data =` still does not bootstrap; only the message is new.
 
+* **The G3 late-phase shape is now accurate where `(t/tau)^gamma`
+  underflows.** With a large `gamma`, event times well below `tau` take
+  `(t/tau)^gamma` past double-precision underflow (about `exp(-708)`), and
+  a very large `alpha` can underflow the same quantity divided by `alpha`.
+  `hzr_decompos_g3()` then clamped the value to the smallest double, which
+  froze `G3` below that time and put the log of `g3` wrong by more than
+  100. The likelihood of those events was wrong, and the analytic Hessian,
+  which differences the shape across that cliff, read a `log_tau` diagonal
+  of 1.4e6 against a true 5.1e3, with no warning. Once the quantity falls
+  below 1e-10, both logs are now computed in their limiting form, linear in
+  `log(t/tau)`, which is accurate to about 1e-10. Fits with no time in that
+  region are unchanged, and fits with one change only in the last digits
+  unless they reached the old clamp. The SAS/C `HAZARD` code has a cliff
+  here too: for `alpha > 0` its `ln(e^x + 1)` returns 0 below underflow,
+  and for `alpha = 0` it already breaks down once `(t/tau)^gamma` is below
+  about 1e-16. Fits that reach this region can differ from `HAZARD`; this
+  package takes the accurate value.
+
+* **`predict(newdata = )` on a model with no covariates now ignores
+  `newdata`'s unused columns**, as it already did for models with
+  covariates. For a `Surv(time, status) ~ 1` fit, or a vector-interface fit
+  without `x`, every column other than `time` was taken as a covariate.
+  The Weibull, log-logistic and log-normal fits then stopped with an error.
+  The exponential fit, whose only baseline parameter is the log rate
+  `log_lambda` and which has no shape parameter, used that log rate as the
+  coefficient: it returned `age` times the log rate as the linear predictor
+  with no error, -280 for `age = 70`, where the answer is 0 (#300).
+
 * **A stepwise refit failure now says why.** `hzr_stepwise()` catches each
   candidate's refit error so one bad candidate cannot end the screen, and it
   used to drop the message with it: the warning read `candidate refit failed
@@ -301,6 +352,24 @@
   and fail only at the post-entry refit, which stopped the screen with every
   other candidate untested; the multiphase score path declined it as
   `not_expandable`.
+
+* **Backward `hzr_stepwise()` now tests a dropped variable on its own
+  coefficient** (#315). The drop test looked a variable's coefficient up
+  by its bare name. `model.matrix()` names a logical `flag`'s column
+  `flagTRUE`, while a factor `fla` with level `g` owns a column named
+  `flag`, so in `~ fla + flag` the name `flag` found the factor's dummy.
+  The run stopped with "expands to multiple coefficients" on `fla` before
+  it decided anything, and that error is all that kept a wrong p-value out
+  of the table: `flag` was being tested on the dummy (z = -1.40, against
+  11.39 on its own column). The variable is now found by its term in the
+  design the fit stored, for single-distribution and multiphase fits. A
+  fit with no stored design (the `time =` / `x =` interface, or a formula
+  fit saved by 1.2.10 or earlier) still uses the name, which is not safe
+  from this collision; there the factor's own "expands to multiple
+  coefficients" error still stops the run. Refit such a model with this
+  version before a backward screen. On a single-distribution fit,
+  a logical or two-level factor with no colliding column used to stop with
+  "not found in the design matrix"; it is now tested.
 
 * **Backward `hzr_stepwise()` no longer stops when `theta` is named after
   the covariates** (#304). A single-distribution fit started from
@@ -354,8 +423,18 @@
   right; the names were meaningless, and they followed the result into
   anything built from it. With one row, the `decompose = TRUE` and
   `se.fit = TRUE` data frames also took such a name as their row name.
-  Single-distribution `predict()` already returned unnamed vectors, and now
-  both agree.
+  Single-distribution `predict()` carried names the same way; see the next
+  item (#309).
+
+* **`predict()` on a single-distribution fit now returns an unnamed vector
+  too.** For `type = "survival"` and `"cumulative_hazard"`, a lognormal fit
+  named every value `"mu"`, and a Weibull, exponential or log-logistic fit
+  did the same for a single row of `newdata` (#309). As above, `mu` is a
+  named element of `theta`, and R carried the name onto the prediction,
+  through `rep()` for the lognormal and through any length-1 operand when
+  there is one row. With one row, the `se.fit = TRUE` data frame also took
+  `"mu"` as its row name. The values were right. `type = "hazard"` and
+  `"linear_predictor"` were already unnamed.
 
 * **`predict(newdata = )` no longer lets a design column override the
   formula variable it contradicts.** `newdata` may give a factor as its
