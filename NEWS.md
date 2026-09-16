@@ -272,9 +272,10 @@
   covariates. For a `Surv(time, status) ~ 1` fit, or a vector-interface fit
   without `x`, every column other than `time` was taken as a covariate.
   The Weibull, log-logistic and log-normal fits then stopped with an error.
-  The exponential fit, whose single shape parameter was used as the
-  coefficient, returned `age` times the log rate as the linear predictor
-  with no error: -280 for `age = 70`, where the answer is 0 (#300).
+  The exponential fit, whose only baseline parameter is the log rate
+  `log_lambda` and which has no shape parameter, used that log rate as the
+  coefficient: it returned `age` times the log rate as the linear predictor
+  with no error, -280 for `age = 70`, where the answer is 0 (#300).
 
 * **A stepwise refit failure now says why.** `hzr_stepwise()` catches each
   candidate's refit error so one bad candidate cannot end the screen, and it

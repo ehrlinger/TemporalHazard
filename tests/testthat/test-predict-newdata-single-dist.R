@@ -250,7 +250,8 @@ test_that("the vector interface matches a named x by name", {
 test_that("a fit with no covariates ignores newdata's unused columns (#300)", {
   # With no stored design, every non-time newdata column was taken as a
   # covariate. The two-parameter families then errored; the exponential,
-  # whose one shape parameter doubled as the "coefficient", returned
+  # whose baseline block is the single log-rate slot `log_lambda` (slot 1,
+  # no shape parameter), used it as the "coefficient" and returned
   # age * log_lambda as the linear predictor with no error.
   d <- .sd_avc
   for (dist in names(.sd_theta)) {
