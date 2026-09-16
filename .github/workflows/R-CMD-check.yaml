@@ -74,9 +74,9 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - {os: ubuntu-latest, r: 'devel', per_pr: true, test_workers: 4}
-          - {os: ubuntu-latest, r: 'release', per_pr: true, test_workers: 4, sas_corpus: true}
-          - {os: ubuntu-latest, r: 'oldrel-1', per_pr: true, test_workers: 4}
+          - {os: ubuntu-latest, r: 'devel', per_pr: true}
+          - {os: ubuntu-latest, r: 'release', per_pr: true, sas_corpus: true}
+          - {os: ubuntu-latest, r: 'oldrel-1', per_pr: true}
           - {os: macos-latest,  r: 'release'}
           - {os: windows-latest, r: 'release'}
 
@@ -92,15 +92,6 @@ jobs:
       # reports under its unexpanded name, the required context never
       # reports, and every pull request blocks (#207 again).
       full_check: ${{ matrix.config.per_pr || github.event_name != 'pull_request' }}
-      # Test files run in parallel on the Linux entries only (4 vCPU runners).
-      # Set here and not in DESCRIPTION, so a local or CRAN `R CMD check` stays
-      # serial: testthat reads TESTTHAT_PARALLEL before the DESCRIPTION field.
-      # The worker count is `getOption("Ncpus")` if set, else TESTTHAT_CPUS,
-      # and setup-r writes `options(Ncpus = 1)` unless told otherwise, so both
-      # are set from the same value (setup-r's `Ncpus` input below). The log
-      # line "Starting N test processes" is the check that it took.
-      TESTTHAT_PARALLEL: ${{ matrix.config.test_workers && 'true' || 'false' }}
-      TESTTHAT_CPUS: ${{ matrix.config.test_workers || 1 }}
 
     steps:
       # A green tick here on a pull request means nothing was checked. Say so
@@ -161,7 +152,6 @@ jobs:
         with:
           r-version: ${{ matrix.config.r }}
           use-public-rspm: true
-          Ncpus: ${{ matrix.config.test_workers || 1 }}
 
       - if: needs.changes.outputs.run == 'true' && env.full_check == 'true'
         uses: r-lib/actions/setup-pandoc@v2
