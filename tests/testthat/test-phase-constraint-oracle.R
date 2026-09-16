@@ -112,17 +112,25 @@ for (constraint in names(oracle_cases)) {
     expect_equal(fit$fit$objective, -ref$minimum, tolerance = 1e-8)
     # Estimates are looser than the likelihood by construction: near the
     # optimum a shift of about sqrt(2 * dLL / curvature) along the flattest
-    # direction costs nothing measurable.
-    expect_equal(got, ref_shapes, tolerance = 1e-3)
+    # direction costs nothing measurable (measured up to 5e-4 here). Each
+    # element is held to that on its own scale, as a ratio, and the worst one
+    # is tested: expect_equal() would average over the vector, and would
+    # compare a small element on an absolute scale it cannot fail.
+    ratio <- unlist(got) / unlist(ref_shapes)
+    expect_lt(max(abs(ratio - 1)), 1e-3)
     # The package's objective is the oracle's likelihood at the package's own
     # estimates, not only at the oracle's.
     expect_equal(fit$fit$objective, do.call(oracle_loglik, c(list(d), got)),
                  tolerance = 1e-10)
 
+    # Cumulative hazard, not survival: survival sits near 1 at early times,
+    # where a difference in H barely moves it. Worst element, as a ratio;
+    # measured up to 2.2e-4, with H as small as 2e-6 at t = 1.
     grid <- c(1, 3, 5, 10, 15)
-    surv <- predict(fit, newdata = data.frame(time = grid), type = "survival")
-    expect_equal(as.numeric(surv),
-                 exp(-do.call(oracle_cumhaz, c(list(grid), ref_shapes))),
-                 tolerance = 1e-5)
+    cumhaz <- predict(fit, newdata = data.frame(time = grid),
+                      type = "cumulative_hazard")
+    ref_cumhaz <- do.call(oracle_cumhaz, c(list(grid), ref_shapes))
+    expect_true(all(ref_cumhaz > 0))
+    expect_lt(max(abs(as.numeric(cumhaz) / ref_cumhaz - 1)), 1e-3)
   })
 }
