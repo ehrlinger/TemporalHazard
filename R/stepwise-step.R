@@ -697,6 +697,12 @@
 #'   * `all_scores` gains a logical `force_in` column.
 #'   * The action this represents is a drop, so `accepted = TRUE` means
 #'     the variable was removed from the model.
+#'   * `refit_failures` and `refit_failure_reasons` carry one more case than
+#'     the forward step's: a drop this step REFUSED because the refit, which
+#'     converged, left the design no smaller -- an interaction whose main
+#'     effect has gone is recoded, so the "reduced" model is the model it
+#'     started from (#320).  The reason then says the drop removes no
+#'     column, and `accepted` is `FALSE` with the current fit returned.
 #'
 #' @keywords internal
 #' @noRd
@@ -818,6 +824,44 @@
     out$refit_failures <- failure_token
     out$refit_failure_reasons <- stats::setNames(reason, failure_token)
     return(out)
+  }
+
+  # A drop must remove a column.  Under treatment contrasts an interaction
+  # whose main effect has gone is coded with a full set of dummies, so
+  # dropping `z` from `~ z + z:f` turns `z, z:fb` into `z:fa, z:fb`: the same
+  # column space and the same likelihood, a "reduced" model that is the model
+  # it started from (#320).  Accepting it recorded a drop whose p-value
+  # described a variable the fit still carries.  The forward step refuses the
+  # mirror of this, a candidate that adds no column
+  # (`.hzr_entered_coef_name()`, #306).
+  #
+  # Multiphase only, by construction.  A single-distribution refit warm-starts
+  # from `theta_old[-drop_idx]`, one element shorter than the design it would
+  # need, so a drop that removes no column fails to conform and is reported by
+  # the refit-failure branch above, never reaching here.  A branch for it could
+  # not fire, and a guard no test can kill does not stay.
+  if (!is.na(best$phase)) {
+    old_cols <- colnames(current$fit$x_list[[best$phase]])
+    new_cols <- colnames(refitted$fit$x_list[[best$phase]])
+    if (is.null(old_cols)) {
+      stop("Internal: phase ", sQuote(best$phase), " has no design columns, ",
+           "so a drop from it cannot be checked.", call. = FALSE)
+    }
+    if (length(new_cols) >= length(old_cols)) {
+      reason <- paste0(
+        "removes no column: the refit's design (",
+        paste(sQuote(new_cols), collapse = ", "),
+        ") has no fewer columns than the current one (",
+        paste(sQuote(old_cols), collapse = ", "),
+        "), so the model is not reduced"
+      )
+      warning("Stepwise backward: dropping ", failure_token, " ", reason, ".",
+              call. = FALSE)
+      out <- null_result(all_scores)
+      out$refit_failures <- failure_token
+      out$refit_failure_reasons <- stats::setNames(reason, failure_token)
+      return(out)
+    }
   }
 
   list(
