@@ -1584,7 +1584,14 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     parameter. In `mode = "select"`, `pct` is the selection frequency
 #'     and the other statistics are conditional on selection.}
 #'   \item{n_success}{Number of successfully converged replicates.}
-#'   \item{n_failed}{Number of replicates that failed to converge.}
+#'   \item{n_failed}{Number of replicates that failed: the refit stopped with
+#'     an error, or returned a non-finite objective.}
+#'   \item{failure_reasons}{Named integer vector counting why replicates
+#'     failed, most common first: the refit's error message, or
+#'     `"non-finite objective (did not converge)"`. It sums to `n_failed`, and
+#'     is an empty named integer vector, never `NULL`, when none failed. When
+#'     every replicate fails, `hzr_bootstrap()` also warns, naming the most
+#'     common reason.}
 #'   \item{n_uncomputable_replicates}{Select mode only: number of otherwise
 #'     successful replicates whose screen stopped because no remaining
 #'     candidate's score statistic could be computed, rather than because no
@@ -1829,6 +1836,17 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
          call. = FALSE)
   }
 
+  # A multiphase fit saved before #299 can carry a phase formula it ignored.
+  # Its stored call cannot be refit: every replicate failed, and the result
+  # held no replicates and no error. Refused as hzr_stepwise() refuses it, with
+  # only that check: the stepping-only refusals do not apply to a refit of the
+  # exact call.
+  ignored <- .hzr_ignored_phase_formula(object)
+  if (!is.null(ignored)) {
+    stop("hzr_bootstrap(): cannot resample this fit: ", ignored, ".",
+         call. = FALSE)
+  }
+
   # A select-mode screen draws its candidate columns from the fit's `data`. A
   # vector fit made without `data =` has none, so its candidates would be read
   # from the environment and never resampled with the rows.
@@ -2000,6 +2018,11 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   rep_list <- vector("list", n_boot)
   n_success <- 0L
   n_failed <- 0L
+  # Why each failed replicate failed, counted by reason. The replicates catch
+  # their errors so one bad resample cannot end the run, and they used to drop
+  # the message with it: a run could fail every replicate and say only that
+  # they failed. Named integer(0), never NULL, when nothing fails.
+  failure_reasons <- stats::setNames(integer(0), character(0))
   # Replicates whose stepwise screen stopped because no candidate's score
   # could be computed.  Each replicate runs under suppressWarnings(), so the
   # step-level warning never reaches the user here; the count has to be read
@@ -2085,7 +2108,8 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
             extra_args
           ))
         }),
-        error = function(e) NULL
+        # Keep the condition: its message is the replicate's failure reason.
+        error = function(e) e
       )
     } else {
       # Refit using the same call but with resampled data (and weights, if any)
@@ -2101,11 +2125,20 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
           cl_boot$fit <- TRUE
           eval(cl_boot, envir = rep_env)
         }),
-        error = function(e) NULL
+        # Keep the condition: its message is the replicate's failure reason.
+        error = function(e) e
       )
     }
 
-    if (!is.null(boot_fit) && is.finite(boot_fit$fit$objective)) {
+    # A replicate fails when its refit stopped with an error, or ran and came
+    # back with a non-finite objective. isTRUE() also counts a missing
+    # objective as non-finite, where `&&` would have met if (NA).
+    failure <- if (inherits(boot_fit, "error")) {
+      conditionMessage(boot_fit)
+    } else if (!isTRUE(is.finite(boot_fit$fit$objective))) {
+      "non-finite objective (did not converge)"
+    }
+    if (is.null(failure)) {
       n_success <- n_success + 1L
       if (select_mode) {
         if (isTRUE(boot_fit$criteria$stopped_uncomputable)) {
@@ -2137,6 +2170,9 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       )
     } else {
       n_failed <- n_failed + 1L
+      failure_reasons <- .hzr_merge_reasons(
+        failure_reasons, stats::setNames(1L, failure)
+      )
     }
 
     if (verbose) utils::setTxtProgressBar(pb, b)
@@ -2262,11 +2298,22 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
             "everything else. See `$n_wald_fallbacks`.", call. = FALSE)
   }
 
+  # Every replicate failed. The result holds no replicates and an empty
+  # summary, and said so only in its counts. Partial failure is not warned
+  # about here; its reasons are still in `failure_reasons`.
+  if (n_success == 0L) {
+    warning("hzr_bootstrap(): no replicate succeeded out of n_boot = ",
+            n_boot, ". The most common failure (", failure_reasons[[1L]],
+            " of ", n_failed, "): ", names(failure_reasons)[1L],
+            ". See `$failure_reasons` for every reason.", call. = FALSE)
+  }
+
   result <- list(
     replicates = replicates,
     summary    = summary_df,
     n_success  = n_success,
     n_failed   = n_failed,
+    failure_reasons = failure_reasons,
     n_uncomputable_replicates = n_uncomputable_reps,
     uncomputable_reasons      = uncomputable_reasons,
     n_nonmonotone_replicates  = n_nonmonotone_reps,

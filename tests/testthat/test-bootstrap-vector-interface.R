@@ -126,6 +126,8 @@ test_that("a vector fit made without `data =` resamples like the formula fit (#2
   bv <- hzr_bootstrap(vf, n_boot = 10, seed = 1)
   bf <- hzr_bootstrap(ff, n_boot = 10, seed = 1)
   expect_equal(bv$n_success, 10L)
+  # Nothing failed: the tally is present and empty, not NULL.
+  expect_identical(bv$failure_reasons, stats::setNames(integer(0), character(0)))
 
   # The known positive the equality below needs: replicates vary on every
   # parameter, so matching replicates cannot be two constant sets.
@@ -278,4 +280,123 @@ test_that("vectors that do not match the rows of `data =` are refused as such", 
   expect_match(msg, "(100 rows)", fixed = TRUE)
   expect_no_match(msg, "not stored", fixed = TRUE)
   expect_no_match(msg, "NA", fixed = TRUE)
+})
+
+# A separate fixture, so the rows the earlier tests keep are not changed by
+# na.omit() over an extra column.
+avc_fixture_mal <- function() {
+  e <- new.env()
+  utils::data("avc", package = "TemporalHazard", envir = e)
+  stats::na.omit(e$avc[, c("int_dead", "dead", "age", "mal")])
+}
+
+mp_phases <- function(early_formula = NULL) {
+  list(
+    early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1, fixed = "m",
+                      formula = early_formula),
+    constant = hzr_phase("constant")
+  )
+}
+
+test_that("a saved fit whose phase formula was ignored is refused before seeding", {
+  skip_on_cran() # multiphase fit
+  # Saved before #299: built without `data`, so `~ mal` was never used. Its
+  # stored call cannot be refit, and every replicate used to fail, returning
+  # no replicates and no error.
+  d <- avc_fixture_mal()
+  hollow <- suppressWarnings(hzr_saved_before_299(
+    mp_phases(~ mal), time = d$int_dead, status = d$dead,
+    dist = "multiphase", fit = TRUE,
+    control = list(n_starts = 1L, conserve = FALSE)))
+  expect_false(any(grepl("mal", names(hollow$fit$theta))))
+
+  set.seed(7)
+  before <- get(".Random.seed", envir = globalenv())
+  msg <- tryCatch(hzr_bootstrap(hollow, n_boot = 3L, seed = 1L),
+                  error = conditionMessage)
+  expect_match(msg, "^hzr_bootstrap\\(\\): cannot resample this fit: ")
+  expect_match(msg, "phase 'early' has a formula, `~mal`, that the fit ignored",
+               fixed = TRUE)
+  expect_identical(get(".Random.seed", envir = globalenv()), before)
+})
+
+test_that("stepping-only refusals do not reach the bootstrap: a 3-level factor still resamples", {
+  skip_on_cran() # multiphase fit and replicates
+  # hzr_stepwise() refuses to step a phase that inherits a factor with more
+  # than two levels. A bootstrap refits the exact call, which is fine, so it
+  # must take only the ignored-formula check, not the whole blocker.
+  d <- avc_fixture_mal()
+  d$ageg <- cut(d$age, 3, labels = c("lo", "mid", "hi"))
+  fit <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ ageg, data = d, dist = "multiphase",
+    phases = mp_phases(), fit = TRUE,
+    control = list(n_starts = 1L, conserve = FALSE)))
+  # The known positive: the whole blocker would refuse this fit.
+  expect_match(.hzr_inherit_blocker(fit),
+               "a term that expands to more than one column", fixed = TRUE)
+
+  b <- suppressWarnings(hzr_bootstrap(fit, n_boot = 3L, seed = 1L))
+  expect_equal(b$n_success, 3L)
+  ageg <- grep("ageg", unique(b$replicates$parameter), value = TRUE)
+  expect_gt(length(ageg), 0L)
+  for (p in ageg) {
+    expect_gt(stats::sd(b$replicates$estimate[b$replicates$parameter == p]),
+              0, label = p)
+  }
+})
+
+# Replace a fit's stored refit with one that cycles, per replicate, through a
+# non-finite objective, a success and an error. Deterministic, and it reaches
+# both failure branches without depending on which resamples happen to fail.
+with_flaky_refit <- function(fit) {
+  state <- new.env()
+  state$calls <- 0L
+  flaky <- function(...) {
+    state$calls <- state$calls + 1L
+    switch(state$calls %% 3L + 1L,
+           stop("synthetic refit failure"),
+           list(fit = list(objective = NaN, theta = fit$fit$theta)),
+           fit)
+  }
+  env <- new.env(parent = fit$call_env %||% globalenv())
+  assign("flaky_refit", flaky, envir = env)
+  fit$call[[1L]] <- as.name("flaky_refit")
+  fit$call_env <- env
+  fit
+}
+
+test_that("failure_reasons tallies every failed replicate, by reason, without warning on partial failure", {
+  vf <- with_flaky_refit(no_data_weibull(avc_fixture()))
+  expect_no_warning(b <- hzr_bootstrap(vf, n_boot = 6L, seed = 1L))
+  expect_equal(b$n_success, 2L)
+  expect_equal(b$n_failed, 4L)
+  expect_identical(
+    b$failure_reasons[sort(names(b$failure_reasons))],
+    c("non-finite objective (did not converge)" = 2L,
+      "synthetic refit failure" = 2L)
+  )
+  expect_equal(sum(b$failure_reasons), b$n_failed)
+})
+
+test_that("a bootstrap whose every replicate fails warns, and still returns its reasons", {
+  # A real refit failure: the captured `theta` no longer holds finite values,
+  # so hazard() refuses every replicate's refit.
+  d <- avc_fixture()
+  th <- c(0.1, 1)
+  vf <- hazard(time = d$int_dead, status = d$dead, dist = "weibull",
+               theta = th, fit = TRUE)
+  expect_true(exists("th", envir = vf$call_env, inherits = FALSE))
+  assign("th", c(NA_real_, 1), envir = vf$call_env)
+
+  expect_warning(
+    b <- hzr_bootstrap(vf, n_boot = 3L, seed = 1L),
+    "no replicate succeeded out of n_boot = 3. The most common failure (3 of 3)",
+    fixed = TRUE
+  )
+  expect_equal(b$n_success, 0L)
+  expect_equal(b$n_failed, 3L)
+  expect_equal(sum(b$failure_reasons), b$n_failed)
+  expect_length(b$failure_reasons, 1L)
+  expect_match(names(b$failure_reasons), "theta", fixed = TRUE)
+  expect_equal(nrow(b$replicates), 0L)
 })

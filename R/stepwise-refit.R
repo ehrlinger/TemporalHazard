@@ -117,29 +117,20 @@
 }
 
 
-#' Why a multiphase fit's inherited design cannot be stepped
+#' A phase formula the fit ignored
 #'
-#' A phase with no formula of its own inherits the global design, and a
-#' stepwise step on it rebuilds that design as a phase formula from the
-#' global formula's terms (#284). The rebuild is exact only for plain
-#' one-column terms, so three cases are refused here, before any fitting:
-#' a design matrix passed directly as `x`, which has no terms at all;
-#' time-varying coefficients (`time_windows`), which a phase formula would
-#' fit as one constant effect; and a term that expands to more than one
-#' column, such as a factor, which a step cannot add or drop as one
-#' coefficient. Each silently changed the phase's design before. A fourth,
-#' checked first and for every phase: a phase formula the fit ignored because
-#' it was built without `data` (#299), which any refit would start using.
+#' A multiphase fit saved before #299 and built without `data` can carry a
+#' phase formula it never used. Any refit, a stepwise step or a bootstrap
+#' replicate, would start using it, so both refuse such a fit. This is the
+#' first check of `.hzr_inherit_blocker()`, kept apart so `hzr_bootstrap()`
+#' can apply it without the blocker's stepping-only checks.
 #'
 #' @param fit A fitted `hazard` object.
-#' @param stepped Names of the phases a step can change, or `NULL` for all
-#'   of them. The `time_windows` and multi-column checks apply only to these;
-#'   a direct `x` is refused for any inheriting phase.
-#' @return `NULL`, or a character scalar phrased to follow "... because",
+#' @return `NULL`, or a character scalar naming the phase and its formula,
 #'   carrying its own remedy.
 #' @keywords internal
 #' @noRd
-.hzr_inherit_blocker <- function(fit, stepped = NULL) {
+.hzr_ignored_phase_formula <- function(fit) {
   if (!identical(fit$spec$dist, "multiphase")) {
     return(NULL)
   }
@@ -180,6 +171,40 @@
         ". Refit the base model with `data =` and retry"
       ))
     }
+  }
+  NULL
+}
+
+
+#' Why a multiphase fit's inherited design cannot be stepped
+#'
+#' A phase with no formula of its own inherits the global design, and a
+#' stepwise step on it rebuilds that design as a phase formula from the
+#' global formula's terms (#284). The rebuild is exact only for plain
+#' one-column terms, so three cases are refused here, before any fitting:
+#' a design matrix passed directly as `x`, which has no terms at all;
+#' time-varying coefficients (`time_windows`), which a phase formula would
+#' fit as one constant effect; and a term that expands to more than one
+#' column, such as a factor, which a step cannot add or drop as one
+#' coefficient. Each silently changed the phase's design before. A fourth,
+#' checked first and for every phase: a phase formula the fit ignored because
+#' it was built without `data` (#299), which any refit would start using.
+#'
+#' @param fit A fitted `hazard` object.
+#' @param stepped Names of the phases a step can change, or `NULL` for all
+#'   of them. The `time_windows` and multi-column checks apply only to these;
+#'   a direct `x` is refused for any inheriting phase.
+#' @return `NULL`, or a character scalar phrased to follow "... because",
+#'   carrying its own remedy.
+#' @keywords internal
+#' @noRd
+.hzr_inherit_blocker <- function(fit, stepped = NULL) {
+  if (!identical(fit$spec$dist, "multiphase")) {
+    return(NULL)
+  }
+  ignored <- .hzr_ignored_phase_formula(fit)
+  if (!is.null(ignored)) {
+    return(ignored)
   }
   inherits <- vapply(fit$spec$phases, function(ph) is.null(ph$formula),
                      logical(1))

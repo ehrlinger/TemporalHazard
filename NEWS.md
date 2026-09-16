@@ -303,7 +303,27 @@
   a stored vector, which names the missing argument, and a `data =` that is
   a list rather than a data frame. Only the vector interface accepts a list,
   and its bootstrap already stopped with the same `'NA'` message, so a list
-  `data =` still does not bootstrap; only the message is new.
+  `data =` still does not bootstrap; only the message is new. One kind of fit
+  is still refused, for its real reason: a multiphase fit saved before
+  `hazard()` refused a phase formula without `data =`, whose formula was
+  ignored. Its stored call can no longer be refit, and resampling it
+  returned no replicates and no error, so `hzr_bootstrap()` now refuses it
+  with the message `hzr_stepwise()` gives. That refusal takes only the
+  ignored-formula check: a fit `hzr_stepwise()` declines to step for other
+  reasons, such as a phase inheriting a factor with more than two levels,
+  still bootstraps.
+
+* **`hzr_bootstrap()` now says why replicates failed, and warns when every
+  one did.** Each replicate catches its own error so one bad resample cannot
+  end the run, and it used to drop the message: a run could fail every
+  replicate and return an empty `replicates` table with only `n_failed` to
+  show for it. The result gains `failure_reasons`, a named integer vector
+  counting each failure by its error message, or by
+  `"non-finite objective (did not converge)"`, most common first. It sums to
+  `n_failed`, and is empty but present when nothing failed. When no
+  replicate succeeds, `hzr_bootstrap()` warns, naming the most common
+  reason. Partial failure does not warn; its reasons are in
+  `failure_reasons`.
 
 * **The G3 late-phase shape is now accurate where `(t/tau)^gamma`
   underflows.** With a large `gamma`, event times well below `tau` take
