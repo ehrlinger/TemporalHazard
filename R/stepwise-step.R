@@ -697,6 +697,12 @@
 #'   * `all_scores` gains a logical `force_in` column.
 #'   * The action this represents is a drop, so `accepted = TRUE` means
 #'     the variable was removed from the model.
+#'   * `refit_failures` and `refit_failure_reasons` carry one more case than
+#'     the forward step's: a drop this step REFUSED because the refit, which
+#'     converged, left the design no smaller -- an interaction whose main
+#'     effect has gone is recoded, so the "reduced" model is the model it
+#'     started from (#320).  The reason then says the drop removes no
+#'     column, and `accepted` is `FALSE` with the current fit returned.
 #'
 #' @keywords internal
 #' @noRd
@@ -845,9 +851,9 @@
       reason <- paste0(
         "removes no column: the refit's design (",
         paste(sQuote(new_cols), collapse = ", "),
-        ") reparameterises the current one (",
+        ") has no fewer columns than the current one (",
         paste(sQuote(old_cols), collapse = ", "),
-        "), so the model is unchanged"
+        "), so the model is not reduced"
       )
       warning("Stepwise backward: dropping ", failure_token, " ", reason, ".",
               call. = FALSE)
