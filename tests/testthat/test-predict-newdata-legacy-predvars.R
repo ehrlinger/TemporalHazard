@@ -282,6 +282,13 @@ test_that("without its data, a categorical term is refused unless its levels are
     expect_equal(got / want, rep(1, nrow(nd)), tolerance = 1e-8,
                  ignore_attr = TRUE, label = term)
   }
+  # The fitted columns must come back: a logical given as a number codes
+  # as the number, not as TRUE, and is refused.
+  lf <- legacy_fit_on("male", d, keep_frame = FALSE)
+  as_number <- nd
+  as_number$male <- 2 * nd$male
+  expect_error(predict(lf$fit, newdata = as_number,
+                       type = "cumulative_hazard"), "refit")
 })
 
 test_that("a missing value in newdata gives an NA row for a legacy fit", {
