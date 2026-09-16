@@ -143,19 +143,26 @@
 <td>PR, push</td>
 <td><strong>yes</strong></td>
 <td><code>spelling::spell_check_package(use_wordlist = TRUE)</code></td>
-</tr><tr><td><code>R-CMD-check.yaml</code></td>
-<td>PR, push</td>
+</tr><tr><td>
+<code>R-CMD-check.yaml</code>, Linux</td>
+<td>PR, push, manual</td>
+<td><strong>yes</strong></td>
+<td>ubuntu devel/release/oldrel-1</td>
+</tr><tr><td>
+<code>R-CMD-check.yaml</code>, macOS and Windows</td>
+<td>push to <code>main</code>, manual</td>
 <td>
-<strong>yes</strong>, all five</td>
-<td>ubuntu devel/release/oldrel-1, macOS, Windows</td>
+<strong>yes</strong>, but see below</td>
+<td>macOS release, Windows release</td>
 </tr><tr><td><code>test-coverage.yaml</code></td>
-<td>PR, push</td>
+<td>push to <code>main</code>
+</td>
 <td>no</td>
 <td>coverage upload</td>
 </tr><tr><td>
 <code>pkgdown.yaml</code> → <code>build-and-deploy</code>
 </td>
-<td>PR, push</td>
+<td>push to <code>main</code>, manual</td>
 <td>no</td>
 <td>docs site</td>
 </tr><tr><td><code>check-manual.yaml</code></td>
@@ -165,10 +172,17 @@
 <td>the PDF manual — the only thing that catches raw Unicode in <code>Rd</code>
 </td>
 </tr><tr><td><code>check-release.yaml</code></td>
-<td>release published</td>
+<td>manual, before submitting; release published</td>
 <td>no</td>
-<td><code>R CMD check --as-cran</code></td>
+<td>
+<code>R CMD check --as-cran</code> with the manual, on Windows release and devel, macOS and Ubuntu</td>
 </tr></tbody></table><p><code>check-manual</code> says <em>cannot</em> rather than <em>no</em>: it deliberately does not run on pull requests, because building the manual is slow and a check that makes every PR wait is one people learn to route around. A check that never reports on a PR can never be required — making it one would block every merge permanently. It runs after the merge instead, so a raw-Unicode <code>Rd</code> is caught on <code>main</code>, not before it lands.</p>
+<p><strong>macOS and Windows do not check a pull request.</strong> Their contexts are still required, so the jobs still run, but on a pull request they skip every step and pass in seconds, with a notice reading “NOT CHECKED on pull requests” in the job summary. A green macOS or Windows tick on a PR means nothing was checked. They do the full check after each merge to <code>main</code>, and on a manual run of the workflow. That was the maintainer’s call on 2026-09-16: the package is used on Linux, and those two jobs took a median 14 and 45 minutes a run, against 18 to 19 for each Linux job.</p>
+<p>They are not taken out of the matrix. Removing them would need the two contexts deleted from the ruleset at the moment of the merge, or every open PR blocks. And the gating is per step, not per job, because a matrix job skipped by a job-level <code>if:</code> reports under its unexpanded name, so the required context never appears (#207).</p>
+<p>What this costs: a macOS- or Windows-only failure now surfaces one merge later, on <code>main</code>, and not on the PR that caused it. PR #200 is that shape: its <code>skip_on_cran()</code> test passed locally and failed on Linux and Windows. Under this arrangement Linux still catches that one, but a Windows-only version of it would land. <strong>A red macOS or Windows run on <code>main</code> blocks the queue</strong> until someone understands it: the next PR’s author checks the latest <code>main</code> run before merging, because every later PR merges on top of the break.</p>
+<p>This departs from the portfolio house style, whose workflow table in <code>.claude/house-style.md</code> still lists <code>pull_request</code> for <code>R-CMD-check</code>, <code>test-coverage</code> and <code>pkgdown</code>. That file is generated from vault sources, so it is not edited here; where the two disagree for this repo, the workflow files and this section are what runs.</p>
+<p>test-coverage and pkgdown no longer run on a pull request either. Neither blocks a merge. The cost is that a pkgdown failure, such as an exported topic missing from <code>_pkgdown.yml</code>, is seen after the merge.</p>
+<p><code>check-release.yaml</code> still fires when a release is published, but releases are tagged after CRAN accepts the package, so that run gates nothing. The release gate is a <strong>manual</strong> run of it on <code>main</code> before submitting: <code>RELEASE.md</code>, pre-submission checklist.</p>
 <p>The rules live in the repository <strong>ruleset</strong> <code>protect main</code>, not in the legacy branch-protection settings — the two are separate systems, and the <code>branches/main/protection</code> API returns 404 here even though <code>main</code> is protected. Alongside the required checks the ruleset blocks deletion and force-push, requires a pull request and auto-requests Copilot review. It does <strong>not</strong> require an approving review. Verified 2026-09-14:</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="ex">gh</span> api repos/ehrlinger/TemporalHazard/rulesets/15010037 <span class="dt">\</span></span>
 <span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>  <span class="at">--jq</span> <span class="st">'.rules[] | select(.type == "pull_request") | .parameters.required_approving_review_count'</span></span>
@@ -192,9 +206,9 @@
 <p>It is not theoretical: PR #222 merged on 2026-09-03 with <strong>zero</strong> approving reviews, a day before the ruleset’s last edit. With no approval rule now there is not even a rule to bypass: anyone with write access can merge a PR the moment its checks go green. So the rule is a matter of practice, not of enforcement — which is the stronger reason to follow it, not a licence to skip it. <strong>An agent never merges and never bypasses</strong>, and that matters more now than when approval was a backstop: the maintainer’s decision to merge is the only human review a PR is guaranteed to get.</p>
 <p>Required checks are <em>not</em> strict: a PR is not forced to re-run the matrix every time <code>main</code> moves. That is a deliberate trade against a roughly 45-minute Windows job, and it means a branch can merge green having never been tested against the current <code>main</code>. When a change depends on something <code>main</code> gained after the branch was cut, merge <code>main</code> in and re-run rather than trusting the badge.</p>
 <p><strong>There are no git hooks and no Claude Code hooks in this repo.</strong> Nothing runs locally on your behalf. The definition of done above is entirely manual — run it yourself.</p>
-<p><strong>CI does not skip <code>skip_on_cran()</code> tests, whatever a local <code>--as-cran</code> run does.</strong> <code>r-lib/actions/check-r-package</code> sets <code>NOT_CRAN: true</code> itself, so every one of them runs on all five platforms. This was verified the hard way on 2026-09-01: a <code>skip_on_cran()</code> test added in PR #200 passed locally and <em>failed</em> on Linux and Windows.</p>
+<p><strong>CI does not skip <code>skip_on_cran()</code> tests, whatever a local <code>--as-cran</code> run does.</strong> <code>r-lib/actions/check-r-package</code> sets <code>NOT_CRAN: true</code> itself, so every one of them runs on every platform the job checks: the three Linux jobs on a PR, all five after a merge. This was verified the hard way on 2026-09-01: a <code>skip_on_cran()</code> test added in PR #200 passed locally and <em>failed</em> on Linux and Windows.</p>
 <p>That matters mostly for how you read a red CI. The previous text here claimed CI skipped those tests, which would lead you to dismiss a CI-only test failure as impossible — and the CI-only failures are the valuable ones, because they are the platform differences a single machine cannot show you. CI does skip more than the local run (42 against 6 on that commit). Most of those were SAS fixture-availability skips: the local machine has the checkouts under <code>~/Documents/GitHub/hazard</code>, and the runners did not.</p>
-<p><strong>Since 2026-09-10, one runner has them.</strong> The <strong>ubuntu-latest / release</strong> job checks out <code>ehrlinger/hazard</code> at a pinned commit and points <code>HAZARD_REPO</code> and <code>HAZARD_EXAMPLES_DIR</code> at it (<code>R-CMD-check.yaml</code>), so the SAS parity tests and the translator corpus test run there, and only there. The other four platforms still skip them. Moving the pin is a deliberate PR, because the corpus test’s floors are measured against that commit. A step fails the job if the files those tests read are missing, so a moved path fails CI instead of turning back into silent skips.</p>
+<p><strong>Since 2026-09-10, one runner has them.</strong> The <strong>ubuntu-latest / release</strong> job checks out <code>ehrlinger/hazard</code> at a pinned commit and points <code>HAZARD_REPO</code> and <code>HAZARD_EXAMPLES_DIR</code> at it (<code>R-CMD-check.yaml</code>), so the SAS parity tests and the translator corpus test run there, and only there. The other four jobs still skip them. Moving the pin is a deliberate PR, because the corpus test’s floors are measured against that commit. A step fails the job if the files those tests read are missing, so a moved path fails CI instead of turning back into silent skips.</p>
 <p>The remaining CI-only skips are ones no runner can satisfy: - the <code>bh.dead</code> parity helpers, which live in <code>inst/dev/</code>, and the built tarball excludes it; - the C <code>hazard</code> binary; - the private maze datasets; - the generated weighted-parity fixture.</p>
 <p>CI is still not a substitute for the local suite, for the opposite reason to the one previously given: it exercises <em>more</em> of the suite than a local <code>--as-cran</code> check does, and runs it on platforms you do not have — so a green local check and a green CI answer different questions, and you want both.</p>
 </div>
