@@ -170,12 +170,19 @@ test_that("G3 and g3 stay accurate where (t/tau)^gamma underflows", {
   # G3 must still move with t below the underflow
   expect_true(all(diff(d$G3) > 0))
 
-  # t / tau underflowing to 0 must not turn g3 into NaN
-  for (a in c(1, 0)) {
-    d_zero <- hzr_decompos_g3(c(0, 1), tau = 1e20, gamma = 2, alpha = a,
-                              eta = if (a == 0) 1 else 0.5)
-    expect_false(anyNA(d_zero$g3), label = paste("g3 at t = 0, alpha =", a))
-  }
+  # t / tau underflowing to exactly 0 (t = 0 is clamped to double.xmin).
+  # With gamma = 2, alpha = 1, eta = 0.5, G3 = t / tau exactly, so g3 is
+  # 1 / tau at every t. With alpha = 0, eta = 1, g3 = 2 t / tau^2 while
+  # (t / tau)^2 is tiny.
+  t_tiny <- c(0, .Machine$double.xmin, 1e-300, 1)
+  d_lin <- hzr_decompos_g3(t_tiny, tau = 1e20, gamma = 2, alpha = 1, eta = 0.5)
+  # Compare ratios to 1: expect_equal() goes absolute when the expected
+  # value is below the tolerance, and 0 would pass against 1e-20.
+  expect_equal(d_lin$g3 * 1e20, rep(1, 4), tolerance = 1e-12)
+  # (t / tau)^2 underflows at t = 1e-150 while g3 = 2e-190 does not
+  t_a0 <- c(1e-150, 1)
+  d_a0 <- hzr_decompos_g3(t_a0, tau = 1e20, gamma = 2, alpha = 0, eta = 1)
+  expect_equal(d_a0$g3 / (2 * t_a0 / 1e40), c(1, 1), tolerance = 1e-12)
 
   # alpha large enough that the division underflows while (t/tau)^gamma
   # does not
