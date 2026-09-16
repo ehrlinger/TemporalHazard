@@ -357,6 +357,28 @@
 
 - **Backward
   [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  now tests a dropped variable on its own coefficient**
+  ([\#315](https://github.com/ehrlinger/TemporalHazard/issues/315)). The
+  drop test looked a variable’s coefficient up by its bare name.
+  [`model.matrix()`](https://rdrr.io/r/stats/model.matrix.html) names a
+  logical `flag`’s column `flagTRUE`, while a factor `fla` with level
+  `g` owns a column named `flag`, so in `~ fla + flag` the name `flag`
+  found the factor’s dummy. The run stopped with “expands to multiple
+  coefficients” on `fla` before it decided anything, and that error is
+  all that kept a wrong p-value out of the table: `flag` was being
+  tested on the dummy (z = -1.40, against 11.39 on its own column). The
+  variable is now found by its term in the design the fit stored, for
+  single-distribution and multiphase fits. A fit with no stored design
+  (the `time =` / `x =` interface, or a formula fit saved by 1.2.10 or
+  earlier) still uses the name, which is not safe from this collision;
+  there the factor’s own “expands to multiple coefficients” error still
+  stops the run. Refit such a model with this version before a backward
+  screen. On a single-distribution fit, a logical or two-level factor
+  with no colliding column used to stop with “not found in the design
+  matrix”; it is now tested.
+
+- **Backward
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   no longer stops when `theta` is named after the covariates**
   ([\#304](https://github.com/ehrlinger/TemporalHazard/issues/304)). A
   single-distribution fit started from
