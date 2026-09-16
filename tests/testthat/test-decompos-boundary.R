@@ -170,6 +170,13 @@ test_that("G3 and g3 stay accurate where (t/tau)^gamma underflows", {
   # G3 must still move with t below the underflow
   expect_true(all(diff(d$G3) > 0))
 
+  # t / tau underflowing to 0 must not turn g3 into NaN
+  for (a in c(1, 0)) {
+    d_zero <- hzr_decompos_g3(c(0, 1), tau = 1e20, gamma = 2, alpha = a,
+                              eta = if (a == 0) 1 else 0.5)
+    expect_false(anyNA(d_zero$g3), label = paste("g3 at t = 0, alpha =", a))
+  }
+
   # alpha large enough that the division underflows while (t/tau)^gamma
   # does not
   t_near <- 10 * exp(-1 / 220)

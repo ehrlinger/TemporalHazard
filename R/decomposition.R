@@ -424,7 +424,8 @@ hzr_decompos_g3 <- function(time, tau, gamma, alpha, eta) {
     # testing on the log scale also catches an alpha large enough to
     # underflow the division.
     ln_inner <- ifelse(ln_t_tau_g <= -35, ln_t_tau_g, log(tGamma)) - log(alpha)
-    deep <- ln_inner <= log(1e-10)
+    # A -Inf (t/tau underflowed to 0) keeps the old path, whose g3 is 0.
+    deep <- is.finite(ln_inner) & ln_inner <= log(1e-10)
     tEta[deep] <- ln_inner[deep]
     lnG3   <- eta * tEta
 
@@ -453,7 +454,7 @@ hzr_decompos_g3 <- function(time, tau, gamma, alpha, eta) {
     tGamma  <- .log_expm1(t_tau_g)     # ln(exp((t/tau)^gamma) - 1)
     # As above: for tiny (t/tau)^gamma, tGamma = ln_t_tau_g, and the direct
     # form survives the underflow of exp(ln_t_tau_g).
-    deep <- t_tau_g <= 1e-10
+    deep <- is.finite(ln_t_tau_g) & t_tau_g <= 1e-10
     tGamma[deep] <- ln_t_tau_g[deep]
     lnG3    <- eta * tGamma
 
