@@ -51,8 +51,12 @@ exponential limiting case.  SAS late: \code{ALPHA}.}
 SAS late: \code{ETA}.}
 
 \item{formula}{Optional one-sided formula (e.g. \code{~ age + nyha}) for
-phase-specific covariates.  When \code{NULL} (default), the phase inherits
-the global formula from \code{\link[=hazard]{hazard()}}.}
+phase-specific covariates.  It is evaluated in the \code{data} given to
+\code{\link[=hazard]{hazard()}}, so without \code{data} \code{\link[=hazard]{hazard()}} refuses it, unless it builds
+nothing either way: an intercept-only \code{~ 1} with no global \code{x}.
+When \code{NULL} (default), the phase inherits the global design from
+\code{\link[=hazard]{hazard()}}: the global formula's covariates, or \code{x} on the vector
+interface.}
 
 \item{fixed}{Character vector naming shape parameters to hold fixed during
 optimization.  Valid names for \code{"cdf"}/\code{"hazard"}: \code{"t_half"}, \code{"nu"},

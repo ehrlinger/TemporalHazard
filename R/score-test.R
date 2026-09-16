@@ -320,6 +320,18 @@
   list(inv = inv, idx = idx, ok = !is.null(inv))
 }
 
+#' Would hazard() refuse this design for a repeated column name?
+#'
+#' The score path builds each candidate's design itself rather than refitting,
+#' so it never meets hazard()'s refusal. Ask the same helper hazard() uses, so
+#' the two agree on what counts as a duplicate.
+#'
+#' @noRd
+.hzr_score_duplicate_columns <- function(x) {
+  inherits(tryCatch(.hzr_refuse_duplicate_columns(x), error = function(e) e),
+           "error")
+}
+
 #' Expand the current model's design and theta with one pinned candidate
 #'
 #' Mirrors `.hzr_optim_multiphase()`'s construction of `x_list` /
@@ -330,7 +342,9 @@
 #' @return For multiphase, `list(theta, beta_idx, theta_idx, phases, x_list,
 #'   covariate_counts)`; for a single distribution, `list(theta, beta_idx,
 #'   theta_idx, x)`. `NULL` when the candidate cannot be expanded (already in
-#'   scope, unknown phase, row misalignment).
+#'   scope, unknown phase, row misalignment), and `list(reason =
+#'   "duplicate_column")` when the expanded design repeats a column name,
+#'   which hazard() would refuse.
 #' @noRd
 .hzr_score_expand <- function(current, var, phase, data) {
   if (current$spec$dist != "multiphase") {
@@ -386,6 +400,11 @@
       x_list[[nm]] <- NULL
       cov_counts[[nm]] <- 0L
     }
+  }
+
+  if (!is.null(x_list[[phase]]) &&
+        .hzr_score_duplicate_columns(x_list[[phase]])) {
+    return(list(reason = "duplicate_column"))
   }
 
   old_counts <- current$fit$covariate_counts
@@ -496,6 +515,13 @@
   new_col <- matrix(as.numeric(xcand), ncol = 1L,
                     dimnames = list(NULL, var))
   x_new <- if (is.null(d$x)) new_col else cbind(d$x, new_col)
+  # The refit builds its design with model.matrix(), which names a logical
+  # column <var>TRUE. Check the name the refit would create, not `var`: a
+  # logical `flag` beside factor `fla`'s dummy `flag` fits fine.
+  refit_name <- if (is.logical(data[[var]])) paste0(var, "TRUE") else var
+  if (refit_name %in% colnames(d$x)) {
+    return(list(reason = "duplicate_column"))
+  }
 
   # theta is UNNAMED on these fits (see R/wald.R); index positionally and do
   # not attach names that the rest of the package would not have produced.
@@ -623,6 +649,7 @@
 
   exp_ <- .hzr_score_expand(current, var, phase, data)
   if (is.null(exp_)) return(na_result("not_expandable"))
+  if (!is.null(exp_$reason)) return(na_result(exp_$reason))
 
   grad <- .hzr_score_gradient(current, exp_)
   info <- .hzr_score_information_expanded(current, exp_)
@@ -806,6 +833,13 @@
     ),
     no_information = "no observed information was available for the candidate",
     not_expandable = "the candidate could not be added to the model",
+    duplicate_column = paste(
+      "the candidate's design column has the same name as one already in the",
+      "model, and hazard() refuses a design whose column names repeat. A",
+      "factor's dummy columns are named <factor><level>, so a numeric `gb`",
+      "collides with factor `g`'s level `b`: rename the column, or rename or",
+      "relevel the factor"
+    ),
     nonfinite = "the score or its variance was not finite"
   )
   out <- unname(txt[reason])
