@@ -37,6 +37,7 @@ at_rows <- function(d, rows) {
 }
 
 test_that("a legacy fit that kept its data rebuilds data-dependent phase terms as fitted", {
+  skip_on_cran()  # multiphase fits
   for (term in c("scale(age)", "poly(age, 2)", "splines::ns(age, df = 3)")) {
     lf <- legacy_fit(term, keep_frame = TRUE)
     fitted <- predict(lf$fit, type = "cumulative_hazard")
@@ -53,6 +54,7 @@ test_that("a legacy fit that kept its data rebuilds data-dependent phase terms a
 })
 
 test_that("a legacy fit without its data refuses data-dependent phase terms", {
+  skip_on_cran()  # multiphase fits
   for (term in c("scale(age)", "poly(age, 2)", "splines::ns(age, df = 3)")) {
     lf <- legacy_fit(term, keep_frame = FALSE)
     expect_error(
@@ -65,6 +67,7 @@ test_that("a legacy fit without its data refuses data-dependent phase terms", {
 })
 
 test_that("a legacy fit whose kept data no longer reproduces it is not trusted", {
+  skip_on_cran()  # multiphase fits
   # The kept data is used only when it rebuilds the fitted columns. Altered
   # after the fit (one row corrected, say), it would give scale() the wrong
   # centering, silently; the term is refused as for a fit without its data
@@ -79,12 +82,15 @@ test_that("a legacy fit whose kept data no longer reproduces it is not trusted",
   )
 })
 
-legacy_fit_on <- function(term, d, keep_frame) {
+legacy_fit_on <- function(term, d, keep_frame, env = parent.frame()) {
+  # `env` is where the formula is made, as a user's formula would be, so a
+  # constant such as `cutoff` resolves from the calling test.
   fit <- suppressWarnings(hazard(
     survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
     phases = list(
       early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes",
-                        formula = stats::as.formula(paste("~", term))),
+                        formula = stats::as.formula(paste("~", term),
+                                                    env = env)),
       constant = hzr_phase("constant")
     ),
     fit = TRUE
@@ -101,9 +107,10 @@ rows_of <- function(d, rows) {
 }
 
 test_that("a data-dependent term is refused whatever newdata's row order", {
-  # The probe row moves every numeric value; if that puts it outside another
-  # term's range (opmos beyond cut()'s last break), the probe drops out, and
-  # scale() must still be caught by the second probe.
+  skip_on_cran()  # multiphase fits
+  # A probe row moves one column past its range; for opmos that is beyond
+  # cut()'s last break, an NA cell, and scale() must still be caught by the
+  # probes on age.
   data(avc, package = "TemporalHazard", envir = environment())
   d <- stats::na.omit(avc)
   lf <- legacy_fit_on("scale(age) + cut(opmos, c(0, 50, 100, 200))", d,
@@ -117,19 +124,22 @@ test_that("a data-dependent term is refused whatever newdata's row order", {
   }
 })
 
-test_that("each probe row catches what the other cannot", {
+test_that("the range probes and the copy probe each catch what the other cannot", {
+  skip_on_cran()  # multiphase fits
   data(avc, package = "TemporalHazard", envir = environment())
   d <- stats::na.omit(avc)
   # One row: a copy of it gives two identical rows, so scale() is NaN either
-  # way and only the moved row shows the dependence.
+  # way; the range probes set age one below and one above its single value.
   lf1 <- legacy_fit_on("scale(age)", d, keep_frame = FALSE)
   expect_error(
     predict(lf1$fit, newdata = rows_of(d, 50L), type = "cumulative_hazard"),
     "refit"
   )
-  # The moved row is a new factor level (inc_surg 5 becomes 11), so that
-  # probe is skipped and only the copy can catch scale().
-  lf2 <- legacy_fit_on("scale(age) + factor(inc_surg)", d, keep_frame = FALSE)
+  # The same column feeds factor() and scale(): a range probe on inc_surg is
+  # a new factor level, so both are skipped, and only the copy of row 1 moves
+  # scale()'s centering.
+  lf2 <- legacy_fit_on("factor(inc_surg) + scale(inc_surg)", d,
+                       keep_frame = FALSE)
   lv <- sort(unique(d$inc_surg), decreasing = TRUE)
   rows <- vapply(lv, function(v) which(d$inc_surg == v)[1], integer(1))
   expect_error(
@@ -138,7 +148,83 @@ test_that("each probe row catches what the other cannot", {
   )
 })
 
+adversarial_nd <- data.frame(time = c(1, 2, 3), age = c(10, 20, 30),
+                             opmos = c(30, 60, 90), inc_surg = c(1, 2, 3))
+
+test_that("a data-dependent term is refused however it reads the data", {
+  skip_on_cran()  # multiphase fits
+  # Each reads the data a different way: its minimum, its maximum, its
+  # median, bins over its range, its mean alone, and boundary knots from its
+  # range. A probe past only one end, or a copy of a row, misses some.
+  data(avc, package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc)
+  for (term in c("I(age - min(age))", "I(age / max(age))",
+                 "I(age > median(age))", "cut(age, 3)",
+                 "scale(age, scale = FALSE)",
+                 "splines::ns(age, knots = numeric(0))",
+                 "splines::bs(age, df = 3)")) {
+    lf <- legacy_fit_on(term, d, keep_frame = FALSE)
+    expect_error(
+      predict(lf$fit, newdata = adversarial_nd, type = "cumulative_hazard"),
+      "refit",
+      label = term
+    )
+  }
+})
+
+test_that("row-wise and fully specified phase terms still predict as fitted", {
+  skip_on_cran()  # multiphase fits
+  # These take nothing from the data they are built on, so a current fit's
+  # prediction is the reference.
+  data(avc, package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc)
+  cutoff <- 100
+  for (term in c("log(age)", "I(age > cutoff)",
+                 "cut(opmos, c(0, 50, 100, 200))",
+                 "poly(age, 2, raw = TRUE)",
+                 "splines::ns(age, knots = 50, Boundary.knots = c(0, 400))")) {
+    lf <- legacy_fit_on(term, d, keep_frame = FALSE)
+    want <- predict(lf$current, newdata = adversarial_nd,
+                    type = "cumulative_hazard")
+    got <- predict(lf$fit, newdata = adversarial_nd,
+                   type = "cumulative_hazard")
+    expect_length(got, 3L)
+    expect_equal(got / want, rep(1, 3), tolerance = 1e-8, ignore_attr = TRUE,
+                 label = term)
+  }
+})
+
+test_that("a column with one distinct value is still probed", {
+  skip_on_cran()  # multiphase fits
+  # The range probes set it one below and one above its single value.
+  data(avc, package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc)
+  nd <- adversarial_nd
+  nd$age <- 20
+  lf <- legacy_fit_on("scale(age)", d, keep_frame = FALSE)
+  expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
+               "refit")
+  lf <- legacy_fit_on("log(age)", d, keep_frame = FALSE)
+  want <- predict(lf$current, newdata = nd, type = "cumulative_hazard")
+  expect_equal(predict(lf$fit, newdata = nd, type = "cumulative_hazard") / want,
+               rep(1, 3), tolerance = 1e-8, ignore_attr = TRUE)
+})
+
+test_that("a term that cannot be built from newdata alone gets the refit advice", {
+  skip_on_cran()  # multiphase fits
+  # poly() needs more unique points than its degree, so one row cannot be
+  # built at all; the refusal says why rather than the transform's own error.
+  data(avc, package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc)
+  lf <- legacy_fit_on("poly(age, 2)", d, keep_frame = FALSE)
+  expect_error(
+    predict(lf$fit, newdata = rows_of(d, 50L), type = "cumulative_hazard"),
+    "refit"
+  )
+})
+
 test_that("a legacy phase whose factor columns come from newdata is refused", {
+  skip_on_cran()  # multiphase fits
   # cut(age, 3) takes its bins from newdata's range, so the rebuilt columns
   # are not the fitted ones.
   data(avc, package = "TemporalHazard", envir = environment())
@@ -152,12 +238,13 @@ test_that("a legacy phase whose factor columns come from newdata is refused", {
 })
 
 test_that("a legacy factor() phase predicts with all its levels and refuses without", {
+  skip_on_cran()  # multiphase fits
   data(avc, package = "TemporalHazard", envir = environment())
   d <- stats::na.omit(avc)
   lf <- legacy_fit_on("factor(inc_surg)", d, keep_frame = FALSE)
   fitted <- predict(lf$current, type = "cumulative_hazard")
   lv <- sort(unique(d$inc_surg), decreasing = TRUE)
-  # The first row at the top level: the moved probe value is a new level.
+  # The range probes on inc_surg are new levels, so they are skipped.
   rows <- vapply(lv, function(v) which(d$inc_surg == v)[1], integer(1))
   got <- predict(lf$fit, newdata = rows_of(d, rows), type = "cumulative_hazard")
   expect_length(got, length(rows))
@@ -171,6 +258,7 @@ test_that("a legacy factor() phase predicts with all its levels and refuses with
 })
 
 test_that("a missing value in newdata gives an NA row for a legacy fit", {
+  skip_on_cran()  # multiphase fits
   data(avc, package = "TemporalHazard", envir = environment())
   d <- stats::na.omit(avc)
   lf <- legacy_fit_on("log(age)", d, keep_frame = FALSE)
@@ -185,6 +273,7 @@ test_that("a missing value in newdata gives an NA row for a legacy fit", {
 })
 
 test_that("a legacy fit that dropped a missing row is checked against its data", {
+  skip_on_cran()  # multiphase fits
   # The fit dropped the NA row; its kept data still has it. Untouched, the
   # rebuilt design matches the fit; altered afterwards, it is not trusted.
   data(avc, package = "TemporalHazard", envir = environment())
@@ -201,6 +290,7 @@ test_that("a legacy fit that dropped a missing row is checked against its data",
 })
 
 test_that("a legacy fit keeps predicting plain row-wise phase terms", {
+  skip_on_cran()  # multiphase fits
   for (keep in c(TRUE, FALSE)) {
     lf <- legacy_fit("log(age)", keep_frame = keep)
     fitted <- predict(lf$fit, type = "cumulative_hazard")

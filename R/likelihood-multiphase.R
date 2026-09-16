@@ -1620,20 +1620,28 @@
 #' basis came from the fitting data, and rebuilding it from `newdata` takes
 #' them from `newdata`'s rows instead, silently (#307).
 #'
-#' Two checks. The rebuild must give the phase's fitted columns: a factor()
-#' missing a level, or cut() bins drawn from `newdata`'s range, give others.
-#' And a data-dependent term changes the existing rows when a row is
-#' appended, where a row-wise term (log(age), a factor, I(age > cutoff))
-#' does not. Two probe rows are tried: row 1 with its numeric values moved,
-#' and a plain copy of row 1. A probe that cannot be built, loses its row
-#' (a moved value outside another term's range) or changes the columns (a
-#' moved value that is a new factor level) says nothing, so the copy, which
-#' always stays in range, still runs.
+#' The rebuild must first be possible from `newdata` alone (poly() of one row
+#' is not), and must give the phase's fitted columns: a factor() missing a
+#' level, or cut() bins drawn from `newdata`'s range, give others. Then a
+#' data-dependent term changes the existing rows when a row is appended,
+#' where a row-wise term (log(age), I(age > cutoff), a fixed-break cut(), a
+#' fully specified ns()) does not. Probe rows are appended to `newdata` one
+#' at a time; none replaces a row:
 #'
-#' A design with more rows than `newdata`, or one that no probe can extend,
-#' holds row-level values from outside `data` instead; that is left to
-#' `.hzr_check_design_rows()` and `.hzr_check_equivariant()`, whose message
-#' names it.
+#' * for each numeric formula variable with a finite value, two copies of
+#'   row 1 with only that variable changed, one to `min - span - 1` and one
+#'   to `max + span + 1`, where `span` is its range in `newdata` (a single
+#'   distinct value is probed one below and one above). Between them they
+#'   move the variable's minimum, maximum, mean and SD, so a term reading
+#'   any of these, its median, or boundary knots from its range changes;
+#' * a plain copy of row 1, for a variable that also feeds a factor(), where
+#'   the range probes are new levels and are skipped.
+#'
+#' A probe that cannot be built, loses its row or changes the columns (a new
+#' factor level) is skipped. A design with more rows than `newdata`, or one
+#' that no probe can extend, holds row-level values from outside `data`
+#' instead; that is left to `.hzr_check_design_rows()` and
+#' `.hzr_check_equivariant()`, whose message names it.
 #'
 #' @param build Function of a data frame of new rows, returning the model
 #'   matrix with its `assign` attribute.
@@ -1641,10 +1649,12 @@
 #' @param labels The terms' labels, indexed by `assign`.
 #' @param where Text naming the design, for messages.
 #' @param cols The phase's fitted column names.
+#' @param vars The formula's variables taken from `newdata`.
 #' @return `NULL`, invisibly; stops on a row-dependent term.
 #' @keywords internal
 #' @noRd
-.hzr_refuse_row_dependent <- function(build, newdata, labels, where, cols) {
+.hzr_refuse_row_dependent <- function(build, newdata, labels, where, cols,
+                                      vars) {
   refuse <- function(term, what) {
     stop("term ", paste0("'", term, "'", collapse = ", "), " of ", where,
          " ", what, ", and this fit was saved without its phase design or ",
@@ -1652,7 +1662,11 @@
          "it for new rows; refit the model with this version of ",
          "TemporalHazard.", call. = FALSE)
   }
-  a <- build(newdata)
+  a <- tryCatch(build(newdata), error = function(e) e)
+  if (inherits(a, "error")) {
+    refuse(labels, paste0("cannot be built from newdata alone (",
+                          conditionMessage(a), ")"))
+  }
   n <- nrow(newdata)
   if (nrow(a) > n) {
     return(invisible(NULL))
@@ -1663,11 +1677,23 @@
                           ") from newdata: its levels or bins come from ",
                           "the data"))
   }
-  moved <- newdata[1L, , drop = FALSE]
-  for (v in names(moved)) {
-    if (is.numeric(moved[[v]])) moved[[v]] <- moved[[v]] * 2 + 1
+  row1 <- newdata[1L, , drop = FALSE]
+  probes <- list()
+  for (v in intersect(vars, names(newdata))) {
+    x <- newdata[[v]]
+    if (!is.numeric(x) || !any(is.finite(x))) {
+      next
+    }
+    r <- range(x[is.finite(x)])
+    span <- r[2L] - r[1L]
+    for (value in c(r[1L] - span - 1, r[2L] + span + 1)) {
+      probe <- row1
+      probe[[v]] <- value
+      probes[[length(probes) + 1L]] <- probe
+    }
   }
-  for (extra in list(moved, newdata[1L, , drop = FALSE])) {
+  probes[[length(probes) + 1L]] <- row1
+  for (extra in probes) {
     b <- tryCatch(build(rbind(newdata, extra)), error = function(e) NULL)
     if (is.null(b) || nrow(b) != n + 1L ||
           !identical(colnames(b), colnames(a))) {
@@ -1822,7 +1848,7 @@
       m
     }
     # Nothing to take a centering or basis from: refuse such a term (#307).
-    .hzr_refuse_row_dependent(build, newdata, labels, where, cols)
+    .hzr_refuse_row_dependent(build, newdata, labels, where, cols, vars)
     return(.hzr_check_equivariant(build, newdata, labels, where))
   }
   build <- function(x) {
