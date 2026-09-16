@@ -389,13 +389,15 @@ test_that("a phase formula's environment constant still reaches newdata", {
                  type = "cumulative_hazard")
   expect_equal(got / (exp(beta * c(1, 0)) * base$early + base$constant),
                c(1, 1), tolerance = 1e-10, ignore_attr = TRUE)
-  # Nor for a fit that kept no fitting data either (1.0.3 and earlier):
-  # with nothing to tell a constant from a covariate, it rebuilds as main.
+  # A fit that kept no fitting data either (1.0.3 and earlier) has nothing
+  # to tell a constant from a covariate, or to check `cutoff` against, so its
+  # phase is refused rather than rebuilt from the environment (#307).
   leg$data$frame <- NULL
-  got <- predict(leg, newdata = data.frame(time = tt, age = c(150, 50)),
-                 type = "cumulative_hazard")
-  expect_equal(got / (exp(beta * c(1, 0)) * base$early + base$constant),
-               c(1, 1), tolerance = 1e-10, ignore_attr = TRUE)
+  expect_error(
+    predict(leg, newdata = data.frame(time = tt, age = c(150, 50)),
+            type = "cumulative_hazard"),
+    "term 'I\\(age > cutoff\\)' of phase 'early' is not closed.*refit"
+  )
 })
 
 test_that("all columns present: predictions unchanged from main 8a26c0e", {

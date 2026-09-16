@@ -597,7 +597,8 @@ test_that("a rebuilt design never has more rows than newdata", {
   skip_on_cran()  # a multiphase fit
   # A 1.0.3-era fit (no stored design, frame or record) cannot classify zz,
   # so its rebuild would take the 305-row fitting vector for a one-row
-  # newdata.  The backstop refuses instead of returning 305 values.
+  # newdata. zz is not a column of newdata, so the phase formula is not
+  # closed, and it is refused before any rows are built (#307).
   d <- .oc_avc()
   set.seed(7)
   zz <- d$age[sample(nrow(d))] / 100
@@ -614,7 +615,7 @@ test_that("a rebuilt design never has more rows than newdata", {
   attr(f$fit$x_list, "from_formula") <- NULL
   expect_error(predict(f, newdata = data.frame(time = 2, age = 60),
                        type = "cumulative_hazard"),
-               "rows for 1 row\\(s\\) of 'newdata': a term uses row-level")
+               "term 'zz' of phase 'early' is not closed.*refit")
 })
 
 test_that("a vector formula constant (spline knots) still predicts", {

@@ -1613,48 +1613,50 @@
 }
 
 
-#' Refuse a legacy phase term that depends on the rows it is built from
+#' Refuse a legacy phase formula that is not closed
 #'
-#' For a fit saved without its phase design or its fitting data, a term such
-#' as scale(), poly() or ns() cannot be rebuilt: its centering, scaling or
-#' basis came from the fitting data, and rebuilding it from `newdata` takes
-#' them from `newdata`'s rows instead, silently (#307).
+#' For a fit saved without its phase design or its fitting data, nothing is
+#' left to check a rebuild against. A term that reads the data it is built
+#' on (scale(), poly(), ns(), or mean(), min(), median(), factor codes or a
+#' date origin inside I()) takes that from `newdata`'s rows, silently (#307).
+#' Detecting such a term by how it behaves failed one form per review round,
+#' so the phase is rebuilt only when its formula is closed, and every other
+#' formula is refused with advice to refit.
 #'
-#' The rebuild must first be possible from `newdata` alone (poly() of one row
-#' is not), and must give the phase's fitted columns: a factor() missing a
-#' level, or cut() bins drawn from `newdata`'s range, give others. Then a
-#' data-dependent term changes the existing rows when a row is appended,
-#' where a row-wise term (log(age), I(age > cutoff), a fixed-break cut(), a
-#' fully specified ns()) does not. Probe rows are appended to `newdata` one
-#' at a time; none replaces a row:
+#' Closed means the right-hand side survives `deparse()` then `str2lang()`
+#' unchanged, so no object hides behind how it prints, and is built only
+#' from:
 #'
-#' * for each numeric formula variable with a finite value, two copies of
-#'   row 1 with only that variable changed, one to `min - span - 1` and one
-#'   to `max + span + 1`, where `span` is its range in `newdata` (a single
-#'   distinct value is probed one below and one above). Between them they
-#'   move the variable's minimum, maximum, mean and SD, so a term reading
-#'   any of these, its median, or boundary knots from its range changes;
-#' * a plain copy of row 1, for a variable that also feeds a factor(), where
-#'   the range probes are new levels and are skipped.
+#' * columns of `newdata`, so a constant from the formula's environment
+#'   (`cutoff` in I(age > cutoff)) is refused;
+#' * single numeric, logical or character literals;
+#' * `+ - * / ^ ( : == != < > <= >= & | !`, `I()`, `log()`, `exp()`, `sqrt()`
+#'   and `abs()`;
+#' * `factor()` of one column, and `cut()` at a literal vector of breaks
+#'   (`c(0, 50, 100)`).
 #'
-#' A probe that cannot be built, loses its row or changes the columns (a new
-#' factor level) is skipped. A design with more rows than `newdata`, or one
-#' that no probe can extend, holds row-level values from outside `data`
-#' instead; that is left to `.hzr_check_design_rows()` and
-#' `.hzr_check_equivariant()`, whose message names it.
+#' A function name must resolve from the formula's environment to base R's
+#' own. The list is narrower than the global rebuild's
+#' (`.hzr_rebuild_functions`, #314), which has the fitting data to check a
+#' rebuild against and so can allow scale(), poly() and ns(); folding the two
+#' is #271.
 #'
+#' A closed formula must then build from `newdata` alone (factor() of one
+#' row cannot be) and give the phase's fitted columns (a factor() missing a
+#' level does not).
+#'
+#' @param formula The phase formula.
 #' @param build Function of a data frame of new rows, returning the model
-#'   matrix with its `assign` attribute.
+#'   matrix.
 #' @param newdata Data frame of new rows.
-#' @param labels The terms' labels, indexed by `assign`.
+#' @param labels The terms' labels.
 #' @param where Text naming the design, for messages.
 #' @param cols The phase's fitted column names.
-#' @param vars The formula's variables taken from `newdata`.
-#' @return `NULL`, invisibly; stops on a row-dependent term.
+#' @return `NULL`, invisibly; stops on a formula that cannot be rebuilt.
 #' @keywords internal
 #' @noRd
-.hzr_refuse_row_dependent <- function(build, newdata, labels, where, cols,
-                                      vars) {
+.hzr_refuse_not_closed <- function(formula, build, newdata, labels, where,
+                                   cols) {
   refuse <- function(term, what) {
     stop("term ", paste0("'", term, "'", collapse = ", "), " of ", where,
          " ", what, ", and this fit was saved without its phase design or ",
@@ -1662,60 +1664,70 @@
          "it for new rows; refit the model with this version of ",
          "TemporalHazard.", call. = FALSE)
   }
+  rhs <- formula[[length(formula)]]
+  text <- paste(deparse(rhs, width.cutoff = 500L), collapse = " ")
+  if (!identical(str2lang(text), rhs)) {
+    refuse(labels, "holds an object that its text does not carry")
+  }
+  env <- environment(formula)
+  if (is.null(env)) env <- baseenv()
+  elementwise <- c("+", "-", "*", "/", "^", "(", ":", "==", "!=", "<", ">",
+                   "<=", ">=", "&", "|", "!", "I", "log", "exp", "sqrt",
+                   "abs", "factor", "cut")
+  closed <- function(e) {
+    if (is.symbol(e)) {
+      return(as.character(e) %in% names(newdata))
+    }
+    if (!is.call(e)) {
+      # A single literal: the text round-trip rules out any other object.
+      return(TRUE)
+    }
+    fn <- e[[1L]]
+    if (!is.symbol(fn) || !as.character(fn) %in% elementwise) {
+      return(FALSE)
+    }
+    fn <- as.character(fn)
+    # The formula's own function, not a user's of the same name.
+    if (!identical(get0(fn, envir = env, mode = "function"),
+                   get(fn, envir = baseenv()))) {
+      return(FALSE)
+    }
+    args <- as.list(e)[-1L]
+    nms <- names(args)
+    if (is.null(nms)) nms <- character(length(args))
+    if (fn == "factor") {
+      return(length(args) == 1L && nms == "" && is.symbol(args[[1L]]) &&
+               closed(args[[1L]]))
+    }
+    if (fn == "cut") {
+      # The breaks as a literal vector: a number of breaks reads the range.
+      at <- if (any(nms == "breaks")) which(nms == "breaks") else
+        which(nms == "")[2L]
+      b <- if (is.na(at[1L])) NULL else args[[at[1L]]]
+      if (!is.call(b) || !identical(b[[1L]], as.name("c")) ||
+            !identical(get0("c", envir = env, mode = "function"), c) ||
+            length(b) < 3L ||
+            !all(vapply(as.list(b)[-1L], is.numeric, logical(1)))) {
+        return(FALSE)
+      }
+      args <- args[-at[1L]]
+    }
+    all(vapply(args, closed, logical(1)))
+  }
+  if (!closed(rhs)) {
+    refuse(labels, paste0("is not closed (only newdata's columns, literals ",
+                          "and elementwise operations are rebuilt)"))
+  }
   a <- tryCatch(build(newdata), error = function(e) e)
   if (inherits(a, "error")) {
     refuse(labels, paste0("cannot be built from newdata alone (",
                           conditionMessage(a), ")"))
   }
   n <- nrow(newdata)
-  if (nrow(a) > n) {
-    return(invisible(NULL))
-  }
-  if (nrow(a) < n || !identical(colnames(a), cols)) {
+  if (nrow(a) != n || !identical(colnames(a), cols)) {
     refuse(labels, paste0("does not rebuild the fitted columns (",
                           paste0("'", cols, "'", collapse = ", "),
-                          ") from newdata: its levels or bins come from ",
-                          "the data"))
-  }
-  row1 <- newdata[1L, , drop = FALSE]
-  probes <- list()
-  for (v in intersect(vars, names(newdata))) {
-    x <- newdata[[v]]
-    if (!is.numeric(x) || !any(is.finite(x))) {
-      next
-    }
-    r <- range(x[is.finite(x)])
-    span <- r[2L] - r[1L]
-    for (value in c(r[1L] - span - 1, r[2L] + span + 1)) {
-      probe <- row1
-      probe[[v]] <- value
-      probes[[length(probes) + 1L]] <- probe
-    }
-  }
-  probes[[length(probes) + 1L]] <- row1
-  for (extra in probes) {
-    b <- tryCatch(build(rbind(newdata, extra)), error = function(e) NULL)
-    if (is.null(b) || nrow(b) != n + 1L ||
-          !identical(colnames(b), colnames(a))) {
-      next
-    }
-    b <- b[seq_len(n), , drop = FALSE]
-    tol <- vapply(seq_len(ncol(a)), function(j) {
-      f <- a[is.finite(a[, j]), j]
-      if (length(f) == 0L) {
-        return(0)
-      }
-      sqrt(.Machine$double.eps) * (max(f) - min(f)) +
-        64 * .Machine$double.eps * max(abs(f))
-    }, numeric(1))
-    same <- abs(a - b) <= rep(tol, each = n)
-    same[is.na(a) & is.na(b)] <- TRUE
-    same[is.na(same)] <- FALSE
-    bad <- which(colSums(!same) > 0L)
-    if (length(bad) > 0L) {
-      refuse(unique(labels[attr(a, "assign")[bad]]),
-             "depends on the data the model was fitted to (its centering, scaling or basis)")
-    }
+                          ") from newdata: its levels come from the data"))
   }
   invisible(NULL)
 }
@@ -1745,8 +1757,8 @@
 #' Such a fit that kept its fitting data has its design recovered from that
 #' data first (`.hzr_phase_design_from_frame()`), so scale(), poly() and ns()
 #' keep the fit's centering and basis; without the data, those terms are
-#' refused (`.hzr_refuse_row_dependent()`) rather than rebuilt from
-#' `newdata`'s rows (#307).
+#' refused unless its formula is closed (`.hzr_refuse_not_closed()`), rather
+#' than rebuilt from `newdata`'s rows (#307).
 #'
 #' @param object A fitted multiphase `hazard` object.
 #' @param nm Phase name.
@@ -1847,8 +1859,8 @@
       attr(m, "assign") <- attr(m0, "assign")[-1L]
       m
     }
-    # Nothing to take a centering or basis from: refuse such a term (#307).
-    .hzr_refuse_row_dependent(build, newdata, labels, where, cols, vars)
+    # Nothing to check a rebuild against: rebuild only a closed formula (#307).
+    .hzr_refuse_not_closed(ph$formula, build, newdata, labels, where, cols)
     return(.hzr_check_equivariant(build, newdata, labels, where))
   }
   build <- function(x) {
