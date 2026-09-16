@@ -820,6 +820,39 @@
     return(out)
   }
 
+  # A drop must remove a column.  Under treatment contrasts an interaction
+  # whose main effect has gone is coded with a full set of dummies, so
+  # dropping `z` from `~ z + z:f` turns `z, z:fb` into `z:fa, z:fb`: the same
+  # column space and the same likelihood, a "reduced" model that is the model
+  # it started from (#320).  Accepting it recorded a drop whose p-value
+  # described a variable the fit still carries.  The forward step refuses the
+  # mirror of this, a candidate that adds no column
+  # (`.hzr_entered_coef_name()`, #306).
+  design_cols <- function(f) {
+    if (is.na(best$phase)) {
+      colnames(f$data$x)
+    } else {
+      colnames(f$fit$x_list[[best$phase]])
+    }
+  }
+  old_cols <- design_cols(current)
+  new_cols <- design_cols(refitted)
+  if (length(new_cols) >= length(old_cols)) {
+    reason <- paste0(
+      "removes no column: the refit's design (",
+      paste(sQuote(new_cols), collapse = ", "),
+      ") reparameterises the current one (",
+      paste(sQuote(old_cols), collapse = ", "),
+      "), so the model is unchanged"
+    )
+    warning("Stepwise backward: dropping ", failure_token, " ", reason, ".",
+            call. = FALSE)
+    out <- null_result(all_scores)
+    out$refit_failures <- failure_token
+    out$refit_failure_reasons <- stats::setNames(reason, failure_token)
+    return(out)
+  }
+
   list(
     accepted  = TRUE,
     fit       = refitted,
