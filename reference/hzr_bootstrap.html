@@ -191,7 +191,17 @@ and the other statistics are conditional on selection.</p></dd>
 <dd><p>Number of successfully converged replicates.</p></dd>
 
 <dt>n_failed</dt>
-<dd><p>Number of replicates that failed to converge.</p></dd>
+<dd><p>Number of replicates that failed: the refit stopped with
+an error, or returned a non-finite objective.</p></dd>
+
+<dt>failure_reasons</dt>
+<dd><p>Named integer vector counting why replicates
+failed, most common first: the refit's error message (or
+<code>"error with an empty message"</code>), or
+<code>"non-finite objective (did not converge)"</code>. It sums to <code>n_failed</code>, and
+is an empty named integer vector, never <code>NULL</code>, when none failed. When
+every replicate fails, <code>hzr_bootstrap()</code> also warns, naming the most
+common reason.</p></dd>
 
 <dt>n_uncomputable_replicates</dt>
 <dd><p>Select mode only: number of otherwise

@@ -361,6 +361,51 @@
 
 ### Bug fixes
 
+- **[`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
+  now bootstraps a vector-interface fit made without `data =`**
+  ([\#259](https://github.com/ehrlinger/TemporalHazard/issues/259),
+  [\#312](https://github.com/ehrlinger/TemporalHazard/issues/312)). It
+  counted the rows to resample in the fit’s data frame, and such a fit
+  has none, so every one was refused with a message that named its
+  vectors `'NA', 'NA'` and sent you to the formula interface. The stored
+  `time`, `status`, `time_lower`, `time_upper` and `weights` are now
+  resampled together, and the replicates match those of the same model
+  fitted with a formula and `data =`. Select mode (`scope =`) on such a
+  fit still stops, now saying why: its candidate columns have no data
+  frame to be resampled with. The other refusals now give their real
+  reason too: vectors that do not have one value per row of `data =`, an
+  object missing a stored vector, which names the missing argument, and
+  a `data =` that is a list rather than a data frame. Only the vector
+  interface accepts a list, and its bootstrap already stopped with the
+  same `'NA'` message, so a list `data =` still does not bootstrap; only
+  the message is new. One kind of fit is still refused, for its real
+  reason: a multiphase fit saved before
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  refused a phase formula without `data =`, whose formula was ignored.
+  Its stored call can no longer be refit, and resampling it returned no
+  replicates and no error, so
+  [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
+  now refuses it with the message
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  gives. That refusal takes only the ignored-formula check: a fit
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  declines to step for other reasons, such as a phase inheriting a
+  factor with more than two levels, still bootstraps.
+
+- **[`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
+  now says why replicates failed, and warns when every one did.** Each
+  replicate catches its own error so one bad resample cannot end the
+  run, and it used to drop the message: a run could fail every replicate
+  and return an empty `replicates` table with only `n_failed` to show
+  for it. The result gains `failure_reasons`, a named integer vector
+  counting each failure by its error message, or by
+  `"non-finite objective (did not converge)"`, most common first. It
+  sums to `n_failed`, and is empty but present when nothing failed. When
+  no replicate succeeds,
+  [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
+  warns, naming the most common reason. Partial failure does not warn;
+  its reasons are in `failure_reasons`.
+
 - **The G3 late-phase shape is now accurate where `(t/tau)^gamma`
   underflows.** With a large `gamma`, event times well below `tau` take
   `(t/tau)^gamma` past double-precision underflow (about `exp(-708)`),

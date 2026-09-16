@@ -141,7 +141,17 @@ A list with class `"hzr_bootstrap"` containing:
 
 - n_failed:
 
-  Number of replicates that failed to converge.
+  Number of replicates that failed: the refit stopped with an error, or
+  returned a non-finite objective.
+
+- failure_reasons:
+
+  Named integer vector counting why replicates failed, most common
+  first: the refit's error message (or `"error with an empty message"`),
+  or `"non-finite objective (did not converge)"`. It sums to `n_failed`,
+  and is an empty named integer vector, never `NULL`, when none failed.
+  When every replicate fails, `hzr_bootstrap()` also warns, naming the
+  most common reason.
 
 - n_uncomputable_replicates:
 
