@@ -257,6 +257,31 @@
 
 ## New features
 
+* **`hzr_phase()` can derive one late-phase shape from the others (#325).**
+  The new `constraint` argument covers SAS/C's two late-phase constraints:
+  - `"alpha_gamma_eta"` holds `alpha = gamma * eta / 2` (`FIXGAE2`);
+  - `"eta_gamma"` holds `eta = 2 / gamma` (`FIXGE2`).
+
+  The derived shape is recomputed from the others at every step of the fit.
+  It is not estimated, and it cannot be fixed. A value supplied for it,
+  through `hzr_phase()` or in `hazard(theta = )`, is replaced with a warning
+  when it differs. Its standard error is the delta-method one, so `predict()`
+  confidence limits carry its uncertainty; `summary()` shows it but does not
+  test it against zero.
+
+  Before this, `hzr_translate_sas()` recorded both flags as untranslated but
+  still emitted a runnable fit, which estimated the derived shape freely.
+  That is a different model. On a production `FIXGAE2` job it came out 2
+  log-likelihood units above the SAS fit, with shapes 2 to 4 times SAS's and
+  a Hessian that was not positive definite. The translator now maps both
+  flags onto `constraint` for a `WEIBULL` late phase, following the rules in
+  `setg3.c`. That job now reproduces PROC HAZARD's log-likelihood and
+  estimates to about 2e-5. Other combinations of the flags stay recorded as
+  untranslated, with the reason:
+  - either flag without `WEIBULL`;
+  - both flags together;
+  - a combination PROC HAZARD refuses (`SETG3990`, `SETG31000`).
+
 * **Every fit now says what it did not do** (#242, following #197). A
   `hazard` object carries `degraded`, the steps the fit did not perform, and
   `degraded_causes`, the reason for each. `print()` and `summary()` always

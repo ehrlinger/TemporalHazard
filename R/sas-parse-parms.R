@@ -192,7 +192,8 @@
 
 #' Build one `hzr_phase(...)` call.
 #' @noRd
-.hzr_parms_phase_call <- function(type, shape, covars, fixed) {
+.hzr_parms_phase_call <- function(type, shape, covars, fixed,
+                                  constraint = "none") {
   call_args <- c(list(quote(hzr_phase), type), shape)
   if (length(covars)) {
     call_args <- c(call_args,
@@ -200,6 +201,9 @@
   }
   fixed_call <- .hzr_parms_fixed_call(fixed)
   if (!is.null(fixed_call)) call_args <- c(call_args, list(fixed = fixed_call))
+  if (constraint != "none") {
+    call_args <- c(call_args, list(constraint = constraint))
+  }
   as.call(call_args)
 }
 
@@ -229,10 +233,10 @@
 # a result and is not.
 #
 # g_two/ga_two (the GAMMA*ETA = 2 and GAMMA*ETA/ALPHA = 2 constraint flags)
-# are driven by FIXGE2/FIXGAE2, which .hzr_sas_token() leaves unresolved and
-# records as untranslated -- so a job carrying either is never reported clean,
-# and this trace takes both as FALSE rather than guessing. Every branch below
-# is therefore the !g_two && !ga_two column of the C's own tables.
+# are driven by FIXGE2/FIXGAE2. .hzr_parse_parms() maps them onto
+# hzr_phase(constraint = ) itself, for WEIBULL only, and records every other
+# case -- so this trace takes both as FALSE rather than guessing. Every branch
+# below is therefore the !g_two && !ga_two column of the C's own tables.
 
 # What each SETG3 refusal code objects to. The code alone is greppable but
 # opaque; a caller reading $untranslated needs to know which operand to change.
@@ -478,6 +482,8 @@
   fixed_early <- character(0)
   fixed_late <- character(0)
   saw_weibull <- FALSE
+  saw_ge2 <- FALSE
+  saw_gae2 <- FALSE
   bad_construct <- character(0)
   bad_reason <- character(0)
   # Set when an operand could not be read at all -- an unresolved keyword, a
@@ -557,9 +563,12 @@
       # g3flag itself has no R counterpart: it selects a numerical branch, and
       # hzr_decompos_g3() handles the general form directly. The GAMMA*ETA = 2
       # and GAMMA*ETA/ALPHA = 2 constraint flags SETG3_weibull() also honours
-      # are driven by separate PARMS keywords that this parser does not yet
-      # resolve -- they are recorded as untranslated, not assumed absent.
+      # are separate PARMS keywords, FIXGE2 and FIXGAE2, handled below.
       saw_weibull <- TRUE
+    } else if (token == "FIXGE2") {
+      saw_ge2 <- TRUE
+    } else if (token == "FIXGAE2") {
+      saw_gae2 <- TRUE
     } else if (token %in% names(.hzr_parms_fix_map)) {
       param <- .hzr_parms_fix_map[[token]]
       if (param %in% .hzr_parms_early_arg) {
@@ -676,6 +685,104 @@
     late_full[["tau"]] <- .hzr_parms_late_sas_default[["tau"]]
   }
 
+  # FIXGE2 (GAMMA*ETA = 2) and FIXGAE2 (GAMMA*ETA/ALPHA = 2), as
+  # SETG3_weibull() applies them (setg3.c:444-481, and SETG3_alpha_fixup() at
+  # :815-834), with hzd_late_t2p.c deciding which parameter is derived at each
+  # step. Only that branch is traced. Outside WEIBULL the flags go through
+  # SETG3_verify_ge_2() and SETG3_alpha_gener(), and together, or with ALPHA
+  # fixed at 1, SETG3_ignore_tau() fixes TAU, GAMMA and ETA (setg3.c:392-399);
+  # those stay recorded rather than guessed at.
+  late_constraint <- "none"
+  constraint_flags <- c("FIXGE2", "FIXGAE2")[c(saw_ge2, saw_gae2)]
+  if (length(constraint_flags) && !(has_late && length(late))) {
+    for (flag in constraint_flags) {
+      flag_bad(flag, "PARMS token has no phase target")
+    }
+  } else if (length(constraint_flags)) {
+    not_traced <- if (length(constraint_flags) == 2L || ignore_tau) {
+      paste0("SETG3_ignore_tau() then fixes TAU, GAMMA and ETA and sets ",
+             "ALPHA = 1 (setg3.c:392-399); hzr_phase() carries one ",
+             "constraint per phase, so write those fixed values directly")
+    } else if (!saw_weibull) {
+      paste0("without WEIBULL, SETG3 applies it through SETG3_verify_ge_2() ",
+             "and SETG3_alpha_gener(), which this translator does not trace")
+    }
+    fx <- function(param) param %in% fixed_late
+    gamma_ <- late_full[["gamma"]]
+    eta_ <- late_full[["eta"]]
+    alpha_ <- late_full[["alpha"]]
+    # SETG3_weibull() refuses on the operands as written (setg3.c:430-440)
+    # BEFORE either constraint moves one, so rewriting first would repair a
+    # job PROC HAZARD does not run. .hzr_setg3_notes() reports these refusals
+    # below, from the unrewritten values, with one exception it cannot see:
+    # it takes ga_two as FALSE, so a fixed ALPHA = 0 reads as g3flag 2 + 2 =
+    # 4 there, while under FIXGAE2 g3flag is 1 + 2 = 3 and SETG3980 fires.
+    alpha_zero_gae2 <- saw_gae2 && isTRUE(alpha_ == 0) && fx("alpha")
+    setg3_refuses <- !isTRUE(gamma_ > 0) || !isTRUE(eta_ > 0) ||
+      !isTRUE(alpha_ >= 0) || (isTRUE(alpha_ == 0) && !fx("alpha")) ||
+      alpha_zero_gae2
+    if (is.null(not_traced) && alpha_zero_gae2) {
+      flag_bad("FIXGAE2", paste0(
+        "PROC HAZARD refuses this job: SETG3 raises (SETG3980) -- ",
+        .hzr_setg3_refusal_reason("(SETG3980)"),
+        "; under FIXGAE2 a fixed ALPHA = 0 does not select the exponential ",
+        "case (setg3.c:333-335)"))
+    }
+    if (is.null(not_traced) && setg3_refuses) {
+      # Recorded by the SETG3 trace or just above; nothing to translate.
+      NULL
+    } else if (!is.null(not_traced)) {
+      for (flag in constraint_flags) {
+        flag_bad(flag, paste0(flag, " is not translated: ", not_traced))
+      }
+    } else if (saw_ge2) {
+      # setg3.c:444-472: make GAMMA*ETA = 2 by moving the operand that is not
+      # fixed; if either is fixed both become fixed, and if both are free ETA
+      # is marked fixed and hzd_late_t2p.c:37-39 derives it as 2/GAMMA.
+      # Exact, as the C is (`gte!=TWO`, setg3.c:450): a product a few ulps
+      # from 2 is moved, or refused, there too.
+      if (!isTRUE(gamma_ * eta_ == 2)) {
+        if (fx("gamma") && fx("eta")) {
+          flag_bad("FIXGE2", paste0(
+            "PROC HAZARD refuses this job: SETG3 raises (SETG3990) -- GAMMA ",
+            "and ETA are both fixed and GAMMA*ETA = ", sprintf("%g", gamma_ * eta_),
+            ", not 2, so neither can be adjusted"))
+        } else if (fx("gamma")) {
+          late_full[["eta"]] <- 2 / gamma_
+        } else {
+          late_full[["gamma"]] <- 2 / eta_
+        }
+      }
+      if (fx("gamma") || fx("eta")) {
+        fixed_late <- union(fixed_late, c("gamma", "eta"))
+      } else {
+        late_constraint <- "eta_gamma"
+      }
+    } else if (fx("alpha") &&
+                 !isTRUE(gamma_ * eta_ / late_full[["alpha"]] == 2)) {
+      # SETG3_alpha_fixup() (setg3.c:817-826) tests a fixed ALPHA against the
+      # constraint before it asks whether GAMMA or ETA is free, so this
+      # refusal holds whatever else is fixed.
+      flag_bad("FIXGAE2", paste0(
+        "PROC HAZARD refuses this job: SETG3 raises (SETG31000) -- ALPHA is ",
+        "fixed at ", sprintf("%g", late_full[["alpha"]]), " where FIXGAE2 ",
+        "must move it to GAMMA*ETA/2 = ", sprintf("%g", gamma_ * eta_ / 2)))
+    } else if (fx("gamma") && fx("eta")) {
+      # SETG3_alpha_fixup(): with no free GAMMA or ETA to derive from, ALPHA is
+      # only moved onto the constraint as a starting value and stays free
+      # (hzr_parms_ge_1estim() is FALSE, so :832-833 never fixes it). A fixed
+      # ALPHA reaching here already sits on the constraint.
+      if (!fx("alpha")) late_full[["alpha"]] <- gamma_ * eta_ / 2
+    } else {
+      # ALPHA is marked fixed and hzd_late_t2p.c:90-94 recomputes it as
+      # GAMMA*ETA/2 from theta at every step: derived, not held.
+      late_full[["alpha"]] <- gamma_ * eta_ / 2
+      fixed_late <- setdiff(fixed_late, "alpha")
+      late_constraint <- "alpha_gamma_eta"
+    }
+    fixed_late <- intersect(unname(.hzr_parms_late_arg), fixed_late)
+  }
+
   # EARLY/CONSTANT/LATE operand text: comma-separated VAR=VALUE pairs (or
   # bare VARs), optionally followed by a "/ options" tail. Non-numeric values
   # and the options tail are recorded to untranslated, never guessed at; see
@@ -741,7 +848,7 @@
   }
   if (has_late && length(late)) {
     phase_calls[[length(phase_calls) + 1L]] <- .hzr_parms_phase_call(
-      "g3", late_full, phase_covars$late, fixed_late
+      "g3", late_full, phase_covars$late, fixed_late, late_constraint
     )
     theta_blocks <- c(theta_blocks,
       .hzr_parms_theta_block("late", mu[["MUL"]], late_full,

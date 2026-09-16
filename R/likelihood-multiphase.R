@@ -1660,6 +1660,100 @@
 }
 
 
+#' Analytic Hessian of the objective, through any shape constraints
+#'
+#' `.hzr_hessian_multiphase()` differentiates the likelihood as though every
+#' theta entry were its own coordinate. A derived shape
+#' (`hzr_phase(constraint = )`) is not: it is a function of its sources, so the
+#' Hessian of the objective along the constrained surface is
+#' `J' H J + sum_k g_k * d2(theta_k)`, with `g` the objective's gradient
+#' (`.hzr_constraint_jacobian()`, `.hzr_constraint_curvature()`). Without a
+#' constraint this is `.hzr_hessian_multiphase()` unchanged.
+#'
+#' @inheritParams .hzr_hessian_multiphase
+#' @return The full-dimension matrix, or `NULL` where the analytic Hessian
+#'   declines or the score it needs cannot be evaluated; callers then fall back
+#'   to a numerical Hessian, as they already do.
+#' @noRd
+.hzr_constrained_hessian <- function(theta, time, status,
+                                     time_lower = NULL, time_upper = NULL,
+                                     x = NULL, weights = NULL,
+                                     phases, covariate_counts, x_list) {
+  H <- .hzr_hessian_multiphase(
+    theta, time = time, status = status,
+    time_lower = time_lower, time_upper = time_upper,
+    x = x, weights = weights,
+    phases = phases, covariate_counts = covariate_counts, x_list = x_list
+  )
+  terms <- .hzr_constraint_terms(theta, phases, covariate_counts)
+  if (is.null(H) || length(terms) == 0L) return(H)
+  # The chain rule mixes rows, so an unresolved entry would spread; decline
+  # instead and let the caller's numerical Hessian answer.
+  if (!all(is.finite(H))) return(NULL)
+
+  # The Hessian is of the objective, the negative log-likelihood, so its
+  # gradient is the negative score.
+  score <- .hzr_gradient_multiphase(
+    theta = theta, time = time, status = status,
+    time_lower = time_lower, time_upper = time_upper, x = x,
+    weights = weights, phases = phases,
+    covariate_counts = covariate_counts, x_list = x_list,
+    sanitize = FALSE
+  )
+  derived <- vapply(terms, function(term) term$pos, integer(1))
+  if (!all(is.finite(score[derived]))) return(NULL)
+
+  jac <- .hzr_constraint_jacobian(theta, phases, covariate_counts)
+  out <- crossprod(jac, H %*% jac) +
+    .hzr_constraint_curvature(theta, -score, phases, covariate_counts)
+  dimnames(out) <- dimnames(H)
+  out
+}
+
+
+#' Carry a covariance over the searched parameters to the full theta
+#'
+#' A fixed parameter gets an `NA` row and column, as before. A derived shape
+#' gets the delta-method variance `J V J'` from the parameters it is derived
+#' from, so a prediction's standard error includes it; one derived only from
+#' fixed parameters has nothing to carry and stays `NA`.
+#'
+#' @param vcov Covariance over `theta[idx]`.
+#' @param idx Positions in the full theta that `vcov` covers.
+#' @param theta The full (constrained) theta.
+#' @noRd
+.hzr_expand_vcov <- function(vcov, idx, theta, phases, covariate_counts) {
+  p <- length(theta)
+  out <- matrix(NA_real_, p, p)
+  out[idx, idx] <- vcov
+
+  # Written entry by entry rather than as one J V J' product: a single NA in
+  # vcov (a parameter the Hessian could not resolve) would otherwise turn
+  # every entry NA through 0 * NA.
+  weights <- list()
+  for (term in .hzr_constraint_terms(theta, phases, covariate_counts)) {
+    at <- match(term$src, idx)
+    keep <- !is.na(at)
+    if (any(keep)) {
+      weights[[length(weights) + 1L]] <- list(pos = term$pos, at = at[keep],
+                                              d1 = term$d1[keep])
+    }
+  }
+  for (w in weights) {
+    cov_row <- as.vector(w$d1 %*% vcov[w$at, , drop = FALSE])
+    out[w$pos, idx] <- cov_row
+    out[idx, w$pos] <- cov_row
+  }
+  for (w in weights) {
+    for (v in weights) {
+      out[w$pos, v$pos] <- as.numeric(
+        w$d1 %*% vcov[w$at, v$at, drop = FALSE] %*% v$d1)
+    }
+  }
+  out
+}
+
+
 #' Fit a multiphase additive hazard model via maximum likelihood
 #'
 #' Assembles starting values from phase specifications, resolves per-phase
@@ -1803,6 +1897,12 @@
     phases, .hzr_phase_cov_names(phases, covariate_counts, x_list))
 
   names(theta_start) <- theta_names
+  # A derived shape (hzr_phase(constraint = )) starts at its rule's value
+  # whatever theta supplied. Applied before the CoE setup below, which scales
+  # and selects the conserved phase from this start; the fixed-parameter mask
+  # further down then leaves the derived slot out of the search.
+  theta_start <- .hzr_constrain_supplied_theta(theta_start, phases,
+                                               covariate_counts)
 
   # --- Likelihood wrapper matching .hzr_optim_generic() signature -----------
   # NOTE: `weights` is an explicit formal so that .hzr_optim_generic can pass
@@ -1998,7 +2098,7 @@
     expand_theta <- function(theta_free) {
       theta_full <- theta_fixed
       theta_full[free_idx] <- theta_free
-      theta_full
+      .hzr_apply_constraints(theta_full, phases, covariate_counts)
     }
 
     logl_fn_full <- logl_fn
@@ -2012,10 +2112,14 @@
     # Same formals as the base gradient_fn; see the CoE wrapper above.
     gradient_fn <- function(theta, time, status, time_lower, time_upper, x,
                             weights = NULL, sanitize = TRUE, ...) {
-      grad_full <- gradient_fn_full(expand_theta(theta), time, status,
+      theta_full <- expand_theta(theta)
+      grad_full <- gradient_fn_full(theta_full, time, status,
                                      time_lower, time_upper, x,
                                      weights = weights, sanitize = sanitize,
                                      ...)
+      # A derived shape moves with its sources, so its score is theirs too.
+      grad_full <- .hzr_constraint_score(theta_full, grad_full, phases,
+                                         covariate_counts)
       grad_full[free_idx]
     }
 
@@ -2139,11 +2243,11 @@
     theta_full <- if (any_fixed) {
       th <- theta_fixed
       th[free_idx_eff] <- theta_free
-      th
+      .hzr_apply_constraints(th, phases, covariate_counts)
     } else {
       theta_free
     }
-    H_full <- .hzr_hessian_multiphase(
+    H_full <- .hzr_constrained_hessian(
       theta_full, time = time, status = status,
       time_lower = time_lower, time_upper = time_upper,
       x = x, weights = weights,
@@ -2310,9 +2414,7 @@
 
   # Expand optimized free params back to full theta vector
   if (any_fixed) {
-    theta_full <- theta_fixed
-    theta_full[free_idx] <- best_result$par
-    best_result$par <- theta_full
+    best_result$par <- expand_theta(best_result$par)
 
     # Final CoE adjustment: solve fixmu log_mu at the optimum. Must pass
     # time_lower so the conserved log_mu in the returned coefficients is solved
@@ -2328,10 +2430,8 @@
 
     # Expand vcov to full dimension (NA for fixed params -- not estimated)
     if (!is.null(best_result$vcov) && is.matrix(best_result$vcov)) {
-      p_full <- length(theta_fixed)
-      vcov_full <- matrix(NA_real_, p_full, p_full)
-      vcov_full[free_idx, free_idx] <- best_result$vcov
-      best_result$vcov <- vcov_full
+      best_result$vcov <- .hzr_expand_vcov(
+        best_result$vcov, free_idx, best_result$par, phases, covariate_counts)
     }
 
     best_result$fixed_mask <- !free_mask
@@ -2355,12 +2455,13 @@
       neg_ll_unc <- function(th_free) {
         th <- base_theta
         th[idx_unc] <- th_free
+        th <- .hzr_apply_constraints(th, phases, covariate_counts)
         -logl_fn_pre_coe(th, time, status, time_lower, time_upper, x,
                          weights = weights, return_gradient = FALSE)
       }
       # Analytic Hessian attempt -- no numDeriv dependency
       H_unc <- tryCatch(
-        .hzr_hessian_multiphase(
+        .hzr_constrained_hessian(
           base_theta, time = time, status = status,
           time_lower = time_lower, time_upper = time_upper,
           x = x, weights = weights,
@@ -2392,10 +2493,8 @@
       if (is.matrix(H_unc)) {
         inv_unc <- .hzr_safe_solve(H_unc)
         if (is.matrix(inv_unc$vcov)) {
-          p_full <- length(base_theta)
-          vcov_full <- matrix(NA_real_, p_full, p_full)
-          vcov_full[idx_unc, idx_unc] <- inv_unc$vcov
-          best_result$vcov  <- vcov_full
+          best_result$vcov  <- .hzr_expand_vcov(
+            inv_unc$vcov, idx_unc, base_theta, phases, covariate_counts)
           best_result$rcond <- inv_unc$rcond
           best_result$pd    <- inv_unc$pd
           # The conserved log_mu now carries a variance; it is fixed only for

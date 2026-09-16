@@ -1187,3 +1187,137 @@ test_that("FIX tokens of a phase that is not built are recorded", {
                                     eta = 2, fixed = "tau"))))
   expect_true("THALF=1 NU=1 FIXTHALF" %in% got$untranslated$construct)
 })
+
+# ---------------------------------------------------------------------------
+# FIXGAE2 / FIXGE2 onto hzr_phase(constraint = ) (#325)
+# ---------------------------------------------------------------------------
+# Each case is SETG3_weibull() (setg3.c:444-481, SETG3_alpha_fixup() at
+# :815-834) read for which parameter hzd_late_t2p.c then derives or holds.
+
+test_that("FIXGAE2 on a WEIBULL late phase derives alpha", {
+  got <- .hzr_parse_parms(c("MUL=5.64297E-05", "TAU=14", "ALPHA=2", "GAMMA=22",
+                            "ETA=0.18", "FIXGAE2", "WEIBULL"))
+  expect_equal(nrow(got$untranslated), 0L)
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("g3", tau = 14, gamma = 22, alpha = 1.98, eta = 0.18,
+                         constraint = "alpha_gamma_eta")))
+  )
+  # The theta block starts alpha where the phase does, as SAS's listing does
+  # ("ALPHA 2 used 1.98").
+  expect_equal(eval(got$theta)[[4]], 22 * 0.18 / 2)
+})
+
+test_that("FIXGE2 with gamma and eta free derives eta, moving gamma onto 2/eta", {
+  got <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
+                            "FIXGE2", "WEIBULL"))
+  expect_equal(nrow(got$untranslated), 0L)
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("g3", tau = 1, gamma = 8, alpha = 1, eta = 0.25,
+                         constraint = "eta_gamma")))
+  )
+})
+
+test_that("FIXGE2 with one of gamma, eta fixed fixes both on the constraint", {
+  got <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
+                            "FIXGAMMA", "FIXGE2", "WEIBULL"))
+  expect_equal(nrow(got$untranslated), 0L)
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("g3", tau = 1, gamma = 4, alpha = 1, eta = 0.5,
+                         fixed = c("gamma", "eta"))))
+  )
+  got_eta <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
+                                "FIXETA", "FIXGE2", "WEIBULL"))
+  expect_equal(
+    got_eta$phases,
+    quote(list(hzr_phase("g3", tau = 1, gamma = 8, alpha = 1, eta = 0.25,
+                         fixed = c("gamma", "eta"))))
+  )
+})
+
+test_that("FIXGE2 with both fixed off the constraint is PROC HAZARD's refusal", {
+  got <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
+                            "FIXGAMMA", "FIXETA", "FIXGE2", "WEIBULL"))
+  expect_equal(got$untranslated$construct, "FIXGE2")
+  expect_match(got$untranslated$reason, "(SETG3990)", fixed = TRUE)
+})
+
+test_that("FIXGAE2 against a fixed alpha off the constraint is a refusal", {
+  got <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
+                            "ALPHA=3", "FIXALPHA", "FIXGAE2", "WEIBULL"))
+  expect_equal(got$untranslated$construct, "FIXGAE2")
+  expect_match(got$untranslated$reason, "(SETG31000)", fixed = TRUE)
+})
+
+test_that("FIXGAE2 with gamma and eta both fixed only moves alpha's start", {
+  got <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
+                            "FIXGAMMA", "FIXETA", "FIXGAE2", "WEIBULL"))
+  expect_equal(nrow(got$untranslated), 0L)
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("g3", tau = 1, gamma = 4, alpha = 0.5, eta = 0.25,
+                         fixed = c("gamma", "eta"))))
+  )
+})
+
+test_that("constraint flags outside the traced branch stay recorded", {
+  # No WEIBULL: SETG3_verify_ge_2() / SETG3_alpha_gener(), not traced.
+  no_weibull <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.5",
+                                   "FIXGAE2"))
+  expect_true("FIXGAE2" %in% no_weibull$untranslated$construct)
+  expect_false(grepl("constraint", deparse1(no_weibull$phases), fixed = TRUE))
+
+  # Both flags: SETG3_ignore_tau(), one row per flag.
+  both <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.5",
+                             "FIXGAE2", "FIXGE2", "WEIBULL"))
+  expect_equal(both$untranslated$construct, c("FIXGE2", "FIXGAE2"))
+  expect_false(grepl("constraint", deparse1(both$phases), fixed = TRUE))
+})
+
+test_that("SETG3_weibull() refusals are judged before a constraint moves a shape", {
+  # setg3.c:430-440 refuse on the operands as written; rewriting first would
+  # translate a job PROC HAZARD does not run.
+  gamma0 <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=0", "ETA=0.25",
+                               "FIXGE2", "WEIBULL"))
+  expect_equal(nrow(gamma0$untranslated), 1L)
+  expect_match(gamma0$untranslated$reason, "(SETG3960)", fixed = TRUE)
+  expect_false(grepl("constraint", deparse1(gamma0$phases), fixed = TRUE))
+
+  alpha0 <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
+                               "ALPHA=0", "FIXGAE2", "WEIBULL"))
+  expect_equal(nrow(alpha0$untranslated), 1L)
+  expect_match(alpha0$untranslated$reason, "(SETG3980)", fixed = TRUE)
+
+  # Fixed ALPHA = 0: under FIXGAE2, g3flag is 3, so SETG3980 -- not the
+  # SETG31000 the constraint check would otherwise report.
+  fixed0 <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
+                               "ALPHA=0", "FIXALPHA", "FIXGAE2", "WEIBULL"))
+  expect_equal(fixed0$untranslated$construct, "FIXGAE2")
+  expect_match(fixed0$untranslated$reason, "(SETG3980)", fixed = TRUE)
+})
+
+test_that("FIXGAE2 refuses a fixed alpha off the constraint even with gamma and eta fixed", {
+  # SETG3_alpha_fixup() (setg3.c:817-826) tests the fixed ALPHA first.
+  got <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
+                            "ALPHA=3", "FIXGAMMA", "FIXETA", "FIXALPHA",
+                            "FIXGAE2", "WEIBULL"))
+  expect_equal(got$untranslated$construct, "FIXGAE2")
+  expect_match(got$untranslated$reason, "(SETG31000)", fixed = TRUE)
+
+  # On the constraint, all three fixed is a job PROC HAZARD runs.
+  on <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
+                           "ALPHA=0.5", "FIXGAMMA", "FIXETA", "FIXALPHA",
+                           "FIXGAE2", "WEIBULL"))
+  expect_equal(nrow(on$untranslated), 0L)
+})
+
+test_that("the constraint is tested exactly, as the C tests it", {
+  # 3 * 0.666666666666667 is not 2 in double precision, so SETG3990 fires
+  # in PROC HAZARD (setg3.c:450 compares with !=).
+  got <- .hzr_parse_parms(c("MUL=0.1", "TAU=8", "GAMMA=3",
+                            "ETA=0.666666666666667", "FIXGAMMA", "FIXETA",
+                            "FIXGE2", "WEIBULL"))
+  expect_match(got$untranslated$reason, "(SETG3990)", fixed = TRUE)
+})
