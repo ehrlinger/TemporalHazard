@@ -417,13 +417,15 @@ hzr_decompos_g3 <- function(time, tau, gamma, alpha, eta) {
     tGamma <- .log1pexp(ln_t_tau_g)   # ln((t/tau)^gamma + 1)
     inner  <- tGamma / alpha           # ln((t/tau)^gamma + 1) / alpha
     tEta   <- .log_expm1(inner)        # ln(exp(inner) - 1)
-    # Where (t/tau)^gamma is tiny, tGamma = exp(ln_t_tau_g) and
-    # tEta = ln_t_tau_g - ln(alpha) to double precision. Take that form
-    # directly: once exp() underflows, .log_expm1() clamps to double.xmin,
-    # which freezes G3 and puts g3 wrong by orders of magnitude (the C
-    # code's ln(e^x + 1) returns 0 there too).
-    deep <- ln_t_tau_g <= -35 & inner <= 1e-10
-    tEta[deep] <- ln_t_tau_g[deep] - log(alpha)
+    # Where inner is tiny, tEta = ln(inner) to within inner / 2. Compute that
+    # log directly: once inner underflows, .log_expm1() clamps to double.xmin,
+    # which freezes G3 and puts g3 wrong by orders of magnitude (the C code's
+    # ln(e^x + 1) returns 0 there too). ln(tGamma) = ln_t_tau_g below -35, and
+    # testing on the log scale also catches an alpha large enough to
+    # underflow the division.
+    ln_inner <- ifelse(ln_t_tau_g <= -35, ln_t_tau_g, log(tGamma)) - log(alpha)
+    deep <- ln_inner <= log(1e-10)
+    tEta[deep] <- ln_inner[deep]
     lnG3   <- eta * tEta
 
     G3 <- exp(lnG3)

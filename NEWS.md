@@ -290,19 +290,23 @@
 
 ## Bug fixes
 
-* **The G3 late-phase shape is now exact where `(t/tau)^gamma` underflows.**
-  With a large `gamma`, event times well below `tau` take `(t/tau)^gamma`
-  past double-precision underflow (about `exp(-708)`). `hzr_decompos_g3()`
-  then clamped the value to the smallest double, which froze `G3` below that
-  time and put the log of `g3` wrong by more than 100. The likelihood of
-  those events was wrong, and the analytic Hessian, which differences the
-  shape across that cliff, read a `log_tau` diagonal of 1.4e6 against a true
-  5.1e3, with no warning. Below the underflow both logs are now computed in
-  their exact linear form in `log(t/tau)`. The SAS/C `HAZARD` code has the
-  same cliff, because its `ln(e^x + 1)` returns 0 there, so fits that reach
-  this region can differ from `HAZARD`. This package takes the exact value.
-  Fits whose `(t/tau)^gamma` stays representable at every time are
-  unchanged.
+* **The G3 late-phase shape is now accurate where `(t/tau)^gamma`
+  underflows.** With a large `gamma`, event times well below `tau` take
+  `(t/tau)^gamma` past double-precision underflow (about `exp(-708)`), and
+  a very large `alpha` can underflow the same quantity divided by `alpha`.
+  `hzr_decompos_g3()` then clamped the value to the smallest double, which
+  froze `G3` below that time and put the log of `g3` wrong by more than
+  100. The likelihood of those events was wrong, and the analytic Hessian,
+  which differences the shape across that cliff, read a `log_tau` diagonal
+  of 1.4e6 against a true 5.1e3, with no warning. Once the quantity falls
+  below 1e-10, both logs are now computed in their limiting form, linear in
+  `log(t/tau)`, which is accurate to about 1e-10. Fits with no time in that
+  region are unchanged, and fits with one change only in the last digits
+  unless they reached the old clamp. The SAS/C `HAZARD` code has a cliff
+  here too: for `alpha > 0` its `ln(e^x + 1)` returns 0 below underflow,
+  and for `alpha = 0` it already breaks down once `(t/tau)^gamma` is below
+  about 1e-16. Fits that reach this region can differ from `HAZARD`; this
+  package takes the accurate value.
 
 * **`predict(newdata = )` on a model with no covariates now ignores
   `newdata`'s unused columns**, as it already did for models with

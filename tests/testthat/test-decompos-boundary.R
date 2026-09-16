@@ -149,7 +149,7 @@ test_that("Case 3 (m>0, nu<0) matches the C HAZARD g1flag=5 G1 evaluator", {
 # g3 wrong by more than 100 on the log scale, with no warning. Below the
 # underflow the exact log forms reduce to linear functions of ln(t/tau), so
 # compare against those.
-test_that("G3 and g3 stay exact where (t/tau)^gamma underflows", {
+test_that("G3 and g3 stay accurate where (t/tau)^gamma underflows", {
   tau <- exp(2.6238)
   gamma <- 220.08
   eta <- 0.0090875
@@ -169,6 +169,14 @@ test_that("G3 and g3 stay exact where (t/tau)^gamma underflows", {
   )
   # G3 must still move with t below the underflow
   expect_true(all(diff(d$G3) > 0))
+
+  # alpha large enough that the division underflows while (t/tau)^gamma
+  # does not
+  t_near <- 10 * exp(-1 / 220)
+  d_big <- hzr_decompos_g3(t_near, 10, 220, 1e308, 0.5)
+  expect_equal(log(d_big$G3),
+               0.5 * (log(log1p(exp(-1))) - log(1e308)),
+               tolerance = 1e-12)
 
   # alpha = 0: ln G3 = eta * x
   d0 <- hzr_decompos_g3(t, tau, gamma, 0, eta)
