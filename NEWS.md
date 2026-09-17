@@ -304,7 +304,8 @@
   starting values as a converged fit. A logical `status` is still accepted.
   A classed numeric such as `bit64::integer64`, which `data.table::fread()`
   and `arrow` produce, is now read as its values in `time`, `status`,
-  `time_lower`, `time_upper` and `weights`: before, those same fits read
+  `time_lower`, `time_upper` and `weights`, and as a column of `data`,
+  where `Surv()` and the model formulas read it. Before, those fits read
   its stored bits and returned their starting values as converged.
 
 ## New features

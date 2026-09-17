@@ -109,6 +109,29 @@ test_that("hazard() refuses zero rows on every path (#231)", {
   expect_false(isTRUE(all.equal(unname(ref), c(1, 1))))
   expect_equal(fit5(tt5, wrap(st5)), ref)
   expect_equal(fit5(wrap(tt5), st5), ref)
+  # The same inside `data`, where Surv() and the phase formula read it.
+  df5 <- data.frame(tt = wrap(tt5), st = wrap(st5), z = wrap(c(0, 1, 0, 1, 1)))
+  df5_plain <- data.frame(tt = tt5, st = st5, z = c(0, 1, 0, 1, 1))
+  fitf <- function(d) {
+    suppressWarnings(hazard(survival::Surv(tt, st) ~ z, data = d,
+                            dist = "weibull", theta = c(1, 1, 0),
+                            fit = TRUE))$fit$theta
+  }
+  expect_equal(fitf(df5), fitf(df5_plain))
+  # And the other numeric inputs: weights and both bounds.
+  w5 <- c(1, 2, 1, 1, 2)
+  lo5 <- c(0, 1, 0, 2, 0)
+  fitw <- function(w, lo, up) {
+    suppressWarnings(hazard(time = tt5, status = c(1, 0, 2, 1, 0),
+                            weights = w, time_lower = lo, time_upper = up,
+                            dist = "weibull", theta = c(1, 1),
+                            fit = TRUE))$fit$theta
+  }
+  up5 <- tt5 + 1
+  ref_w <- fitw(w5, lo5, up5)
+  expect_equal(fitw(wrap(w5), lo5, up5), ref_w)
+  expect_equal(fitw(w5, wrap(lo5), up5), ref_w)
+  expect_equal(fitw(w5, lo5, wrap(up5)), ref_w)
   # NA status still reaches the completeness check that names it.
   expect_error(hazard(time = c(0, 0), status = c(NA, NA),
                        dist = "exponential", theta = 0.1, fit = TRUE),

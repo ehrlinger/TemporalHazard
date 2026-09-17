@@ -545,6 +545,15 @@ hazard <- function(formula = NULL,
   }
   x_design <- NULL
   # Formula dispatch: if formula is provided, parse it and extract time/status/x from data
+  # The same for columns of `data`, read before any argument is: Surv() and
+  # model.matrix() take a classed numeric's stored doubles too, so an
+  # integer64 response or covariate fitted its starting values (#231).
+  if (is.list(data)) {
+    data[] <- lapply(data, function(v) {
+      if (is.object(v) && is.numeric(v) && is.null(dim(v))) as.numeric(v) else v
+    })
+  }
+
   if (!is.null(formula)) {
     if (is.null(data)) {
       stop("'data' is required when 'formula' is provided.", call. = FALSE)
