@@ -17,9 +17,14 @@
     Where the data leave a shape unidentified, `vcov()` gave finite
     standard errors for a direction the likelihood does not determine.
   - **Estimates could stop short of the optimum.** At `0 < alpha <= 1e-5`
-    the gradient in `alpha`, which the optimizer uses, was 50-70% off. A
-    fit started there could stop a full log-likelihood unit below the
-    likelihood it could reach, and report `converged = TRUE`.
+    the gradient in `alpha`, which the optimizer uses, was about 50% off at
+    `alpha = 1e-5` and approached 100% as `alpha` fell. On one weakly
+    identified data set, fits started there stopped a full log-likelihood
+    unit below what was attainable and reported `converged = TRUE`. Such
+    likelihoods are often multimodal, so a corrected fit is not guaranteed
+    to end higher from every start. At such an `alpha` the Hessian is now
+    evaluated, and is usually too ill-conditioned to invert: standard
+    errors are unavailable, with a warning.
 
   Each shape is now stepped in proportion to itself. Standard errors, Wald
   statistics, confidence intervals, the condition warnings and the score
