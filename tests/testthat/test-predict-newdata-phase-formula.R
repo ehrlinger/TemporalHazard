@@ -181,12 +181,12 @@ test_that("a fit without the stored design lets its variables win too (#272)", {
   nd <- data.frame(time = tt, grp = factor(c("old", "young")),
                    grpyoung = c(1, 0))
   expect_error(predict(fit, newdata = nd, type = "cumulative_hazard"),
-               "term 'grp' of phase 'early' is coded by contrasts.*refit")
+               "phase 'early' of this fit was saved without its design.*refit")
 })
 
 test_that("a fit with neither the stored design nor its data predicts from design columns only", {
-  # Such a fit (saved by 1.0.3 or earlier) cannot check how its factor was
-  # coded, so rebuilding grp is refused (#307); its design columns alone still
+  # Such a fit (saved by 1.0.3 or earlier) cannot say which of its formula's
+  # names were data columns, so rebuilding grp is refused (#307); its design columns alone still
   # predict as main did. Values computed on main 4b68020 with the same fit,
   # design and frame removed.
   fit <- phase_formula_fit()
@@ -194,7 +194,7 @@ test_that("a fit with neither the stored design nor its data predicts from desig
   fit$data$frame <- NULL
   nd <- data.frame(time = c(1, 1), grp = factor(c("old", "young")))
   expect_error(predict(fit, newdata = nd, type = "cumulative_hazard"),
-               "term 'grp' of phase 'early' is coded by contrasts.*refit")
+               "phase 'early' of this fit was saved without its design.*refit")
   nd <- data.frame(time = c(1, 1))
   nd$grpyoung <- c(0, 1)
   expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard"),
@@ -388,13 +388,13 @@ test_that("a phase formula's environment constant still reaches newdata", {
   expect_error(
     predict(leg, newdata = data.frame(time = tt, age = c(150, 50)),
             type = "cumulative_hazard"),
-    "term 'I\\(age > cutoff\\)' of phase 'early' is not closed.*refit"
+    "phase 'early' of this fit was saved without its design.*refit"
   )
   leg$data$frame <- NULL
   expect_error(
     predict(leg, newdata = data.frame(time = tt, age = c(150, 50)),
             type = "cumulative_hazard"),
-    "term 'I\\(age > cutoff\\)' of phase 'early' is not closed.*refit"
+    "phase 'early' of this fit was saved without its design.*refit"
   )
 })
 
@@ -436,7 +436,7 @@ test_that("a fit without the stored phase design predicts from its design column
   nd <- data.frame(time = tt,
                    grp = factor(c("old", "young"), levels = c("old", "young")))
   expect_error(predict(fit, newdata = nd, type = "cumulative_hazard"),
-               "term 'grp' of phase 'early' is coded by contrasts.*refit")
+               "phase 'early' of this fit was saved without its design.*refit")
   nd <- data.frame(time = tt, grpyoung = c(0, 1))
   expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard") /
                  reference_cumhaz(fit, tt, c(0, 1)),

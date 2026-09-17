@@ -301,31 +301,23 @@
   of a `scale(age)` phase came back as a zero-length prediction.
 
   Such a fit's phase is now rebuilt only when that can be checked, and is
-  otherwise refused with advice to refit. A fit saved by 1.1.0 or later kept
-  its fitting data, and its phase design is rebuilt from that data exactly
-  as the fit built it. Reproducing the fitted rows is not enough, since a
-  `cutoff` moved between two fitted ages changes no fitted row. So the phase
-  formula must use only the kept data's columns and R's own design functions
-  (a user's function of the same name is not one), and the rebuild must
-  match the fitted columns exactly; otherwise the fit is treated as having
-  no data. A fit saved by 1.0.3 or earlier kept neither, so its phase is
-  rebuilt only from `newdata`'s columns, literals, arithmetic and
-  comparisons, `I()`, `log()`, `exp()`, `sqrt()` and `abs()`. That refuses
-  terms that read their data (`scale()`, `poly()`, `ns()`, `bs()`, and
-  `mean()`, `min()`, `median()`, factor codes or a date origin inside
-  `I()`), fully specified ones such as `I(age > cutoff)` or
-  `poly(raw = TRUE)`, which cannot be told apart from them without the
-  data, and a `newdata` column named like a value the formula can see
-  (`T`, `pi`), which the fit may have used instead.
-
-  On both routes, a term coded by contrasts (a factor, character or logical
-  column, `cut()`) is refused: the fit did not record its contrasts, so
-  this session could code a level differently, and a level no fitted value
-  shows would be scored silently. A fit made before duplicated design column
+  otherwise refused with advice to give `newdata` the fitted design columns
+  or to refit. A fit saved by 1.1.0 or later kept its fitting data, and its
+  phase design is rebuilt from that data exactly as the fit built it.
+  Reproducing the fitted rows is not enough, since a `cutoff` moved between
+  two fitted ages changes no fitted row. So the phase formula must use only
+  the kept data's columns and R's own design functions (a user's function
+  of the same name is not one), hold no term coded by contrasts (a factor,
+  character or logical column, `cut()`), whose coding the fit did not
+  record, and rebuild the fitted columns exactly. A fit saved by 1.0.3 or
+  earlier kept neither design nor data, so it cannot say which of its
+  formula's names were data columns: a constant `k` in `I(age * k)` that is
+  gone at predict time would be taken from a `newdata` column named `k`.
+  Its phase is refused at `newdata`; it still predicts without `newdata`,
+  and from its design columns. A fit made before duplicated design column
   names were refused (#296) is refused at `newdata` too, since no selection
-  by name can tell its columns apart. A missing value in `newdata` gives an
-  NA row. Current fits still evaluate a formula against `newdata` and their
-  environment, as `lm()` does; that is #331.
+  by name can tell its columns apart. Current fits still evaluate a formula
+  against `newdata` and their environment, as `lm()` does; that is #331.
 
 * **`hzr_bootstrap()` now bootstraps a vector-interface fit made without
   `data =`** (#259, #312). It counted the rows to resample in the fit's data

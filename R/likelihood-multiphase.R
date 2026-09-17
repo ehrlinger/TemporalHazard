@@ -1603,7 +1603,7 @@
 .hzr_phase_design_from_frame <- function(object, nm, ph) {
   frame <- object$data$frame
   if (!.hzr_phase_formula_closed(ph$formula, names(frame),
-                                 .hzr_phase_rebuild_functions$kept)) {
+                                 .hzr_phase_rebuild_functions)) {
     return(NULL)
   }
   built <- tryCatch(
@@ -1634,25 +1634,18 @@
 
 
 # The functions a legacy phase formula may call for its design to be
-# rebuilt, by the namespace each must come from (#307). With the fitting
-# data kept, the list follows the global rebuild's (`.hzr_rebuild_functions`,
-# #314): scale(), poly(), ns() and bs() are then checked against the fitted
-# columns (a factor term, though listed, is refused as coded by contrasts).
-# Without the data, only elementwise operations. Folding the two lists is
-# #271.
+# rebuilt from the data it kept, by the namespace each must come from (#307).
+# The list follows the global rebuild's (`.hzr_rebuild_functions`, #314):
+# scale(), poly(), ns() and bs() are checked against the fitted columns, and
+# a factor term, though listed, is refused as coded by contrasts. Folding
+# the two lists is #271.
 .hzr_phase_rebuild_functions <- list(
-  kept = list(
-    base = c("+", "-", "*", "/", "^", ":", "%in%", "(", "==", "!=", "<", ">",
-             "<=", ">=", "&", "|", "!", "I", "log", "log2", "log10", "log1p",
-             "exp", "expm1", "sqrt", "abs", "pmin", "pmax", "c", "factor",
-             "as.factor", "scale"),
-    stats = c("poly", "relevel"),
-    splines = c("ns", "bs")
-  ),
-  none = list(
-    base = c("+", "-", "*", "/", "^", "(", ":", "==", "!=", "<", ">", "<=",
-             ">=", "&", "|", "!", "I", "log", "exp", "sqrt", "abs")
-  )
+  base = c("+", "-", "*", "/", "^", ":", "%in%", "(", "==", "!=", "<", ">",
+           "<=", ">=", "&", "|", "!", "I", "log", "log2", "log10", "log1p",
+           "exp", "expm1", "sqrt", "abs", "pmin", "pmax", "c", "factor",
+           "as.factor", "scale"),
+  stats = c("poly", "relevel"),
+  splines = c("ns", "bs")
 )
 
 
@@ -1662,9 +1655,7 @@
 #' `str2lang()` gives back an identical expression, compared with
 #' `num.eq = FALSE`, so no constant hides behind how it prints (-0 prints as
 #' 0; a classed or pasted-in object prints as a call). Every value it looks
-#' up must be one of `columns`; with `shadow`, also one that no value the
-#' formula's environment can see shares a name with (`T`, `pi`), since the
-#' fit may have used that value instead. Every function called unqualified
+#' up must be one of `columns`. Every function called unqualified
 #' must be on `functions` and resolve from the formula's environment to the
 #' identical object in its namespace, so a user's function of that name,
 #' whose state can move, is not taken for it; `c` included. A qualified
@@ -1674,13 +1665,10 @@
 #' @param formula A phase formula.
 #' @param columns The names a value may take.
 #' @param functions A list of function names by namespace.
-#' @param shadow Whether a value visible from the formula's environment
-#'   excludes a column of its name.
 #' @return A single logical.
 #' @keywords internal
 #' @noRd
-.hzr_phase_formula_closed <- function(formula, columns, functions,
-                                      shadow = FALSE) {
+.hzr_phase_formula_closed <- function(formula, columns, functions) {
   env <- environment(formula)
   if (!is.environment(env)) {
     return(FALSE)
@@ -1708,11 +1696,7 @@
   closed <- function(e) {
     if (is.symbol(e)) {
       nm <- as.character(e)
-      if (!nm %in% columns) {
-        return(FALSE)
-      }
-      v <- if (shadow) get0(nm, envir = env) else NULL
-      return(is.null(v) || is.function(v))
+      return(nm %in% columns)
     }
     if (!is.call(e)) {
       # A single literal: the text round-trip rules out any other object.
@@ -1734,87 +1718,6 @@
     all(vapply(args, closed, logical(1)))
   }
   closed(rhs)
-}
-
-
-#' Refuse a legacy phase formula that is not closed
-#'
-#' For a fit saved without its phase design or its fitting data, nothing is
-#' left to check a rebuild against. A term that reads the data it is built
-#' on (scale(), poly(), ns(), or mean(), min(), median(), factor codes or a
-#' date origin inside I()) takes that from `newdata`'s rows, silently (#307).
-#' Detecting such a term by how it behaves failed one form per review round,
-#' so the phase is rebuilt only when its formula is closed, and every other
-#' formula is refused with advice to refit.
-#'
-#' Closed (`.hzr_phase_formula_closed()`, with `shadow`) means built only
-#' from:
-#'
-#' * columns of `newdata` that no value the formula can see shares a name
-#'   with, so `cutoff` in I(age > cutoff), or `T` and `pi`, are refused;
-#' * literals that its text carries exactly;
-#' * `+ - * / ^ ( : == != < > <= >= & | !`, `I()`, `log()`, `exp()`, `sqrt()`
-#'   and `abs()`, each base R's own.
-#'
-#' The list is narrower than the one for a fit that kept its data
-#' (`.hzr_phase_rebuild_functions`), which can check scale(), poly() and ns()
-#' against the fitted columns.
-#'
-#' A closed formula must then build from `newdata` alone (log() of a
-#' character column cannot be), give the phase's fitted columns, and hold no
-#' term coded by contrasts (a factor, character or logical column, `cut()`):
-#' its column names show only the non-reference levels, so a level the fit
-#' never saw could be scored as the reference, and the fit's contrasts
-#' option was not recorded, so this session may code any level differently.
-#'
-#' @param formula The phase formula.
-#' @param build Function of a data frame of new rows, returning the model
-#'   matrix.
-#' @param newdata Data frame of new rows.
-#' @param labels The terms' labels.
-#' @param where Text naming the design, for messages.
-#' @param cols The phase's fitted column names.
-#' @return `NULL`, invisibly; stops on a formula that cannot be rebuilt.
-#' @keywords internal
-#' @noRd
-.hzr_refuse_not_closed <- function(formula, build, newdata, labels, where,
-                                   cols) {
-  refuse <- function(term, what) {
-    stop("term ", paste0("'", term, "'", collapse = ", "), " of ", where,
-         " ", what, ", and this fit was saved without its phase design or ",
-         "the data it was fitted to, so predict(newdata =) cannot rebuild ",
-         "it for new rows; refit the model with this version of ",
-         "TemporalHazard.", call. = FALSE)
-  }
-  if (!.hzr_phase_formula_closed(formula, names(newdata),
-                                 .hzr_phase_rebuild_functions$none,
-                                 shadow = TRUE)) {
-    refuse(labels, paste0("is not closed (only newdata's columns, literals ",
-                          "and elementwise operations are rebuilt)"))
-  }
-  a <- tryCatch(build(newdata), error = function(e) e)
-  if (inherits(a, "error")) {
-    refuse(labels, paste0("cannot be built from newdata alone (",
-                          conditionMessage(a), ")"))
-  }
-  n <- nrow(newdata)
-  if (nrow(a) != n || !identical(colnames(a), cols)) {
-    refuse(labels, paste0("does not rebuild the fitted columns (",
-                          paste0("'", cols, "'", collapse = ", "),
-                          ") from newdata: its levels come from the data"))
-  }
-  # A term coded by contrasts (a factor, character or logical column, cut())
-  # is refused. Column names show only the non-reference levels, so a level
-  # the fit never saw that sorts first in newdata would be scored as the
-  # reference; and the fit's contrasts option was not recorded, so this
-  # session may code any level differently.
-  coding <- attr(a, "contrasts")
-  if (length(coding) > 0L) {
-    refuse(names(coding), paste0("is coded by contrasts, which the fit did ",
-                                 "not record and this session may code ",
-                                 "differently"))
-  }
-  invisible(NULL)
 }
 
 
@@ -1841,9 +1744,10 @@
 #'
 #' Such a fit that kept its fitting data has its design recovered from that
 #' data first (`.hzr_phase_design_from_frame()`), so scale(), poly() and ns()
-#' keep the fit's centering and basis; without the data, those terms are
-#' refused unless its formula is closed (`.hzr_refuse_not_closed()`), rather
-#' than rebuilt from `newdata`'s rows (#307).
+#' keep the fit's centering and basis. A fit whose design cannot be recovered
+#' that way, including every one saved without its data, is refused at
+#' newdata unless newdata gives its design columns, rather than rebuilt from
+#' `newdata`'s rows (#307).
 #'
 #' @param object A fitted multiphase `hazard` object.
 #' @param nm Phase name.
@@ -1938,25 +1842,26 @@
   # newdata's rows is refused (.hzr_check_equivariant()).
   where <- paste0("phase '", nm, "'")
 
-  # A fit made before the phase design was stored: rebuild as it did then,
-  # from its formula. Without the kept data, `vars` is every formula
-  # variable, so an object kept outside `data` cannot be told from a column.
+  # A fit made before the phase design was stored, whose design could not be
+  # recovered from kept data (#307). Without that data it cannot say which
+  # of its formula's names were data columns: a constant that is gone at
+  # predict time would be taken from a newdata column of its name. With the
+  # data, the recovery declined to vouch for the rebuild. Its design columns
+  # (above) still predict.
   if (is.null(design)) {
-    build <- function(x) {
-      nd <- .hzr_newdata_frame(x, vars)
-      # na.pass, as the stored-design rebuild: a missing value is an NA row,
-      # not a dropped one.
-      mf <- stats::model.frame(ph$formula, data = nd,
-                               na.action = stats::na.pass)
-      m0 <- stats::model.matrix(ph$formula, data = mf)
-      m <- m0[, -1L, drop = FALSE]
-      attr(m, "assign") <- attr(m0, "assign")[-1L]
-      attr(m, "contrasts") <- attr(m0, "contrasts")
-      m
+    why <- if (is.null(object$data$frame)) {
+      "without the data it was fitted to"
+    } else {
+      paste0("with data that cannot vouch for rebuilding its formula (it ",
+             "reads values outside that data, holds a term coded by ",
+             "contrasts, or no longer reproduces the fit)")
     }
-    # Nothing to check a rebuild against: rebuild only a closed formula (#307).
-    .hzr_refuse_not_closed(ph$formula, build, newdata, labels, where, cols)
-    return(.hzr_check_equivariant(build, newdata, labels, where))
+    stop(where, " of this fit was saved without its design, and ", why,
+         ", so predict(newdata =) cannot rebuild it for new rows. Give ",
+         "'newdata' the fitted design columns (",
+         paste0("'", cols, "'", collapse = ", "),
+         "), or refit the model with this version of TemporalHazard.",
+         call. = FALSE)
   }
   build <- function(x) {
     nd <- .hzr_newdata_frame(x, design$data_vars)
