@@ -89,3 +89,45 @@ test_that("a lognormal right-censored row at 0 needs no interval rows (#341)", {
   expect_true(all(is.finite(with$fit$vcov)))
   expect_equal(with$fit$vcov, without$fit$vcov, tolerance = 1e-6)
 })
+
+test_that("one time-0 row leaves every family's fit intact (#341)", {
+  skip_on_cran()
+  # #336's own event-at-0 control is exponential only, and the issue #341
+  # names lognormal. The families do NOT behave alike here, so one family
+  # cannot stand for the rest: before this fix, a single right-censored row
+  # at time 0, or one (0, u] interval, drove lognormal to the optimizer's
+  # -1e10 clamp -- a fit reported `converged` over no likelihood -- while
+  # exponential, weibull and loglogistic were unaffected. Testing only the
+  # families that already worked would have shown a clean sweep.
+  t_ok <- c(0.5, 1.2, 2.3, 3.1, 4.7, 5.5)
+  s_ok <- c(1, 1, 0, 1, 0, 1)
+  thetas <- list(exponential = 0.1, weibull = c(0.1, 1),
+                 lognormal = c(0.1, 1), loglogistic = c(0.1, 1))
+  for (d in names(thetas)) {
+    fit <- function(...) {
+      suppressWarnings(hazard(dist = d, theta = thetas[[d]], fit = TRUE, ...))
+    }
+    base <- fit(time = t_ok, status = s_ok)
+    cens0 <- fit(time = c(0, t_ok), status = c(0, s_ok))
+    ivl0 <- fit(time = c(1, t_ok), status = c(2, s_ok),
+                time_lower = c(0, t_ok), time_upper = c(1, t_ok))
+
+    # Never the clamp. abs(obj) >= 1e10 is .hzr_optim_generic()'s sentinel
+    # for a non-finite objective, and it arrives with converged = TRUE, so
+    # a finiteness check alone would pass on exactly the broken case.
+    for (f in list(base, cens0, ivl0)) {
+      expect_true(is.finite(f$fit$objective), info = d)
+      expect_lt(abs(f$fit$objective), 1e10)
+    }
+
+    # A right-censored row at time 0 contributes H(0) = 0: the objective is
+    # not merely finite, it is UNCHANGED. This is the assertion that says
+    # the row was handled rather than silently dropping the other six.
+    expect_equal(cens0$fit$objective, base$fit$objective, info = d)
+
+    # The (0, u] interval is real information, so it must MOVE the
+    # objective. Asserting it is finite would also pass if the row were
+    # dropped; asserting it differs is what proves it was used.
+    expect_false(isTRUE(all.equal(ivl0$fit$objective, base$fit$objective)))
+  }
+})
