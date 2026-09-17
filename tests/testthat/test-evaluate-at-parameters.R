@@ -503,3 +503,63 @@ test_that("the unfitted-prediction warning is on by DEFAULT (#144)", {
   )
   expect_true(nzchar(src))
 })
+
+test_that("every single-distribution family predicts unfitted and warns once (#144)", {
+  # The ruling for #144 is that only multiphase refuses: the other four
+  # families keep predicting from supplied parameters and say where the
+  # numbers came from. Until now that was asserted for weibull alone, via
+  # eval_spec()'s default, even though eval_spec() takes a `dist` for
+  # exactly this. The warning is raised on `converged` being unset rather
+  # than on the family, so a family-specific regression would not be caught
+  # by the weibull case.
+  data("avc", package = "TemporalHazard", envir = environment())
+  withr::local_options(TemporalHazard.warn_unfitted_prediction = TRUE)
+  # exponential with an intercept-only formula takes ONE parameter; passing
+  # two makes predict() look for a covariate and fail on its absence.
+  thetas <- list(weibull = c(1, 1), exponential = 1,
+                 lognormal = c(1, 1), loglogistic = c(1, 1))
+  for (d in names(thetas)) {
+    spec <- hazard(survival::Surv(int_dead, dead) ~ 1, data = avc,
+                   dist = d, theta = thetas[[d]], fit = FALSE)
+    expect_warning(p <- predict(spec, type = "hazard"),
+                   class = "hzr_unfitted_prediction",
+                   info = d)
+    expect_true(all(is.finite(p)), info = d)
+    # One per call, for each family, not one per row.
+    expect_length(capture_warnings(predict(spec, type = "hazard")), 1L)
+  }
+})
+
+test_that("hzr_evaluate() does not nag that the model is unfitted (#144)", {
+  # hzr_evaluate() IS the sanctioned way to score a model at supplied
+  # parameters, so telling its caller that the model is not a fit is noise
+  # about something they chose. It is quiet today because it computes the
+  # curve itself rather than routing through predict(); this assertion is
+  # what notices if it ever starts routing through predict() and inherits
+  # the warning. The option is forced ON, or the suite-wide silencing in
+  # helper-unfitted-predictions.R would make this pass over nothing.
+  data("avc", package = "TemporalHazard", envir = environment())
+  withr::local_options(TemporalHazard.warn_unfitted_prediction = TRUE)
+  phases <- list(
+    early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1, fixed = "m"),
+    constant = hzr_phase("constant")
+  )
+  theta <- c(log(0.05), log(0.15), 1.4, 1, log(0.03))
+  spec <- hazard(survival::Surv(int_dead, dead) ~ 1, data = avc,
+                 dist = "multiphase", phases = phases, theta = theta,
+                 fit = FALSE)
+  ev <- expect_no_warning(hzr_evaluate(spec, theta = theta))
+  expect_s3_class(ev, "hzr_evaluation")
+  # With `times`, which is a DIFFERENT path: the curve is built only when
+  # times is supplied, so an assertion that omits it leaves the branch a
+  # refactor is most likely to route through predict() uncovered. A mutant
+  # that warned inside .hzr_evaluate_curve() survived the times-free call.
+  ev_t <- expect_no_warning(hzr_evaluate(spec, theta = theta, times = c(1, 5)))
+  expect_false(is.null(ev_t$curve))
+  # The known positive: predict() on the SAME unfitted object, with the
+  # same option set, does warn. Without this the test above could pass
+  # because nothing warns anywhere.
+  single <- eval_spec()
+  expect_warning(predict(single, type = "hazard"),
+                 class = "hzr_unfitted_prediction")
+})
