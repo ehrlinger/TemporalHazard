@@ -60,7 +60,9 @@ replicate runs a fresh
 
 \item{direction, slentry, slstay, max_steps, max_move, force_in, force_out}{Passed through to \code{\link[=hzr_stepwise]{hzr_stepwise()}} on each replicate when \code{scope} is
 supplied. With \code{scope = NULL} nothing reads them, so a value other than
-the default is an error; the default itself is accepted.
+the default is an error; the default's own value is accepted, whether or
+not it was passed, so that a wrapper forwarding its defaults still
+works.
 \code{direction = "backward"} with a non-empty \code{scope} is an error too: a
 backward screen does not read \code{scope}. For a backward screen on each
 replicate, pass an empty scope such as \code{~ 1}. See \code{\link[=hzr_stepwise]{hzr_stepwise()}} for

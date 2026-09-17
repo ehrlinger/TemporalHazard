@@ -23,7 +23,9 @@
   returned a fixed-model bootstrap with every term at `pct = 100` and no
   message. A value other than the argument's default is now an error, so a
   wrapper that passes the defaults on still works. Pass `scope` to screen,
-  or omit the argument to refit the exact model.
+  or omit the argument to refit the exact model. A value equal to the
+  default is accepted whether or not it was passed: without `scope` it asks
+  for nothing, and nothing reads it.
 
 * **A two-sided `scope` formula is now an error in `hzr_stepwise()` and
   `hzr_bootstrap()` (#343).** Only the right-hand side was read, so

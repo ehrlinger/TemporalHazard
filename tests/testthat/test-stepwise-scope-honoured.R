@@ -202,7 +202,8 @@ test_that("an empty scope under direction = backward is honoured, not refused (#
   # enter, so the two agree.
   d <- avc_343()
   base <- weibull_343(d)
-  for (sc in list(~ 1, ~ 0, character(0), list())) {
+  for (sc in list(~ 1, ~ 0, character(0), list(), list(character(0)),
+                  list(early = NULL, late = character(0)))) {
     sw <- suppressWarnings(
       hzr_stepwise(base, scope = sc, data = d, direction = "backward",
                    criterion = "wald", slstay = 1e-300, trace = FALSE)

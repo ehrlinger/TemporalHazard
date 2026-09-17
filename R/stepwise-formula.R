@@ -431,8 +431,11 @@
       is.null(attr(tt, "offset"))
   }
   empty <- if (is.list(scope) && !inherits(scope, "formula")) {
-    all(vapply(scope, function(sc) is.null(sc) || empty_formula(sc),
-               logical(1)))
+    # A zero-length element offers nothing to enter, as `character()` does for
+    # a whole scope; refusing one while accepting the other was arbitrary.
+    all(vapply(scope, function(sc) {
+      is.null(sc) || length(sc) == 0L || empty_formula(sc)
+    }, logical(1)))
   } else {
     length(scope) == 0L || empty_formula(scope)
   }

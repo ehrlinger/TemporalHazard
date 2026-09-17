@@ -1548,7 +1548,9 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #' @param direction,slentry,slstay,max_steps,max_move,force_in,force_out
 #'   Passed through to [hzr_stepwise()] on each replicate when `scope` is
 #'   supplied. With `scope = NULL` nothing reads them, so a value other than
-#'   the default is an error; the default itself is accepted.
+#'   the default is an error; the default's own value is accepted, whether or
+#'   not it was passed, so that a wrapper forwarding its defaults still
+#'   works.
 #'   `direction = "backward"` with a non-empty `scope` is an error too: a
 #'   backward screen does not read `scope`. For a backward screen on each
 #'   replicate, pass an empty scope such as `~ 1`. See [hzr_stepwise()] for
@@ -1700,9 +1702,14 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # Selection arguments whose value differs from the default. Without `scope`
   # none of them is read, so a default passed on by a wrapper asks for
   # nothing; any other value is a selection setting that would be ignored.
+  # Compared AFTER match.arg, so a wrapper forwarding the whole
+  # c("both", "forward", "backward") choices vector counts as the default: it
+  # is not a caller asking for a direction.
   given <- c(
     direction = direction != "both",
     criterion = criterion != "score",
+    # as.numeric() so a 50L and a 50 compare equal; a caller passing the
+    # default's value, however typed, is asking for nothing.
     slentry   = !identical(as.numeric(slentry), 0.30),
     slstay    = !identical(as.numeric(slstay), 0.20),
     max_steps = !identical(as.numeric(max_steps), 50),
