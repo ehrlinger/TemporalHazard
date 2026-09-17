@@ -576,6 +576,27 @@
   fit locates it, so an on-constraint `theta` passes silently and an
   off-constraint one is replaced with a warning.
 
+- **`predict(newdata = )` now warns when `newdata` is evaluated
+  differently from the fitting data
+  ([\#331](https://github.com/ehrlinger/TemporalHazard/issues/331),
+  [\#334](https://github.com/ehrlinger/TemporalHazard/issues/334),
+  [\#335](https://github.com/ehrlinger/TemporalHazard/issues/335)).**
+  Predicted values are unchanged; the warning names the cause. It fires
+  for a term that computes a statistic over the rows, such as
+  `I(age - mean(age))`, `I(scale(age)^2)` or a
+  [`factor()`](https://rdrr.io/r/base/factor.html) nested inside another
+  call, and for a column whose type differs from the fitting data’s,
+  such as a numeric column given as character or a `difftime` in other
+  units. It also fires when a fit saved by 1.2.10 or earlier has its
+  design rebuilt under a contrasts function other than `contr.treatment`
+  or `contr.poly`, which that fit did not record. The new section “How
+  `newdata` is evaluated” in
+  [`?predict.hazard`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)
+  describes these cases and two that are not detected: a
+  formula-environment constant changed since the fit, and collation in
+  string comparisons. Fits saved before 1.1.0 kept no fitting data, and
+  their column types are not checked.
+
 - **`predict(newdata = )` on a multiphase fit saved before this version
   no longer gets [`scale()`](https://rdrr.io/r/base/scale.html),
   [`poly()`](https://rdrr.io/r/stats/poly.html) or `ns()` in a phase
@@ -599,9 +620,12 @@
   functions (a user’s function of the same name is not one), hold no
   term coded by contrasts (a factor, character or logical column,
   [`cut()`](https://rdrr.io/r/base/cut.html)), whose coding the fit did
-  not record, and rebuild the fitted columns exactly. A fit saved by
-  1.0.3 or earlier kept neither design nor data, so it cannot say which
-  of its formula’s names were data columns: a constant `k` in
+  not record, and rebuild the fitted columns exactly. Each function must
+  be written as a plain name or as `pkg::fn` with both parts written as
+  names; a quoted spelling such as `base::"log"(age)` is not recognised,
+  and such a phase is refused at `newdata` rather than rebuilt. A fit
+  saved by 1.0.3 or earlier kept neither design nor data, so it cannot
+  say which of its formula’s names were data columns: a constant `k` in
   `I(age * k)` that is gone at predict time would be taken from a
   `newdata` column named `k`. Its phase is refused at `newdata`; it
   still predicts without `newdata`, and from its design columns. A fit

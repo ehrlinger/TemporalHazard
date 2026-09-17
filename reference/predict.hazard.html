@@ -101,7 +101,12 @@ variable that is itself a column counts only if another column, such
 as <code>I(age^2)</code>, is built from it). With all the
 variables given, the design is rebuilt from them, so a design column
 that contradicts one is ignored; some variables beside the design
-columns, with others missing, is an error. A
+columns, with others missing, is an error. That error is conservative
+in two cases where nothing contradicts: <code><a href="https://rdrr.io/r/stats/poly.html" class="external-link">poly()</a></code> design columns given
+with the variable they are built from but without another variable,
+and a non-syntactic name such as <code>my age</code> given both as the design
+column <code>`my age`</code> and as the variable. Give all of the formula's
+variables, or only the design columns. A
 column the model does not use is
 ignored, and a covariate the model needs but <code>newdata</code> lacks is an error.
 Only the columns of the model's <code>data</code> are taken from <code>newdata</code>: a
@@ -110,6 +115,10 @@ from the formula's environment, and a term that uses row-level values
 kept outside <code>data</code> (<code>~ zz</code>, with <code>zz</code> a vector in the workspace) is an
 error, even when <code>newdata</code> has a <code>zz</code> column; move it into <code>data</code> and
 refit.
+A term that computes a statistic over <code>newdata</code>'s rows warns only for
+the functions the check knows (see "How <code>newdata</code> is evaluated"). Any
+other function, including one you write, is still recomputed from
+<code>newdata</code>'s rows, silently: no warning means undetected, not safe.
 A fit made with an unnamed <code>x</code> matrix matches by position. For the types
 requiring time, a <code>newdata</code> with only a <code>time</code> column evaluates the
 baseline, with every covariate at 0. Because <code>time</code> is then the
@@ -208,11 +217,51 @@ it will be used; otherwise, the time vector from the fitted object is used.
 For models fit with <code>time_windows</code>, predictions for <code>type = "linear_predictor"</code>
 or <code>"hazard"</code> also require time values (via <code>newdata$time</code> or fitted-time fallback)
 so window-specific coefficients can be selected.</p>
-<p>A term built by a transform that is not row-wise, such as
-<code>I(age - mean(age))</code> or <code>rank(age)</code>, is recomputed from <code>newdata</code>'s own
-rows, as in <code><a href="https://rdrr.io/r/stats/predict.lm.html" class="external-link">stats::predict.lm()</a></code>. It therefore differs from the fitted
-values unless <code>newdata</code> reproduces the fitting data.</p>
+<p>See the section "How <code>newdata</code> is evaluated" for what is recomputed from
+<code>newdata</code> and when <code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> warns.</p>
     </div>
+    <div class="section level2">
+    <h2 id="how-newdata-is-evaluated">How <code>newdata</code> is evaluated<a class="anchor" aria-label="anchor" href="#how-newdata-is-evaluated"></a></h2>
+
+
+<p><code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> evaluates the model's formulas on <code>newdata</code> as given, as
+<code><a href="https://rdrr.io/r/stats/predict.lm.html" class="external-link">stats::predict.lm()</a></code> does. It uses the fit's factor levels and
+contrasts, and the centering, basis and knots that a top-level <code><a href="https://rdrr.io/r/base/scale.html" class="external-link">scale()</a></code>,
+<code><a href="https://rdrr.io/r/stats/poly.html" class="external-link">poly()</a></code>, <code>ns()</code> or <code>bs()</code> term recorded. Everything else is recomputed
+from <code>newdata</code>, so a prediction can differ from the fit without any
+error. <code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> warns, naming the cause, in three such cases. The
+predicted values are the same with or without the warning.</p><ul><li><p><strong>A term that computes a statistic over the rows.</strong> In
+<code>I(age - mean(age))</code>, <code>I(scale(age)^2)</code> or
+<code>I(as.integer(factor(grp)))</code>, the mean, the scaling or the factor
+coding comes from <code>newdata</code>'s rows, so a row's prediction depends on
+which other rows are given. Compute such a variable in the data before
+fitting, and supply it in <code>newdata</code>. The check knows a fixed list of
+R's functions, among them <code><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean()</a></code>, <code><a href="https://rdrr.io/r/stats/median.html" class="external-link">median()</a></code>, <code><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">min()</a></code>, <code><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max()</a></code>,
+<code><a href="https://rdrr.io/r/stats/quantile.html" class="external-link">quantile()</a></code>, <code><a href="https://rdrr.io/r/stats/sd.html" class="external-link">sd()</a></code>, <code><a href="https://rdrr.io/r/stats/IQR.html" class="external-link">IQR()</a></code>, <code><a href="https://rdrr.io/r/stats/ave.html" class="external-link">ave()</a></code>, <code><a href="https://rdrr.io/r/base/rank.html" class="external-link">rank()</a></code>, <code><a href="https://rdrr.io/r/base/length.html" class="external-link">length()</a></code>,
+<code><a href="https://rdrr.io/r/base/scale.html" class="external-link">scale()</a></code>, <code><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor()</a></code> and <code><a href="https://rdrr.io/r/base/cut.html" class="external-link">cut()</a></code> with a count of breaks. A function
+not on it, including one you write, is recomputed from <code>newdata</code>'s
+rows just the same, with no warning: the list is a floor, not a
+boundary.</p></li>
+<li><p><strong>A column of another type than the fit saw.</strong> A numeric column given
+as character compares as text (<code>"154.6" &gt; 50</code> is <code>FALSE</code>), and a
+<code>difftime</code> in other units is used in those units. The check compares
+against the fitting data the fit kept, which fits saved before
+TemporalHazard 1.1.0 do not have, so those fits are not checked. A
+factor given as its level labels, or an integer for a double, is not
+a mismatch.</p></li>
+<li><p><strong>A design rebuilt under this session's contrasts.</strong> A formula fit
+saved by version 1.2.10 or earlier kept no record of its contrasts,
+and its design is rebuilt under <code>options(contrasts =)</code>. <code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code>
+warns when that option names a function other than <code>contr.treatment</code>
+or <code>contr.poly</code> and the rebuilt design is used. A redefined
+<code>contr.treatment</code> is not detected.</p></li>
+</ul><p>Two cases are not detected:</p><ul><li><p>A constant the formula reads from its environment, such as <code>cutoff</code>
+in <code>I(age &gt; cutoff)</code>, is read when you predict, so a value changed
+since the fit is used.</p></li>
+<li><p>A comparison of strings, such as <code>I(grp &gt; "b")</code>, follows the session's
+collation (<code>LC_COLLATE</code>), which can order strings differently from the
+session that fitted the model.</p></li>
+</ul></div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
     <div class="dont-index"><p><code><a href="hazard.html">hazard()</a></code> for model fitting,
