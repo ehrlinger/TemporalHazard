@@ -89,14 +89,74 @@ test_that("a non-numeric phase-statement value is untranslated, not guessed", {
   expect_true("NOBS=NUM" %in% got$untranslated$construct)
 })
 
-test_that("a phase '/ options' tail is untranslated, not parsed", {
+test_that("phase covariate options attach to their own variable (#342)", {
+  # SAS's grammar puts `/ options` on each covariate, and a comma returns to
+  # the next one (hazard_y.y phasevaropt; hazard_l.l <PHOP>\\,). The parser
+  # used to cut the whole list at the first "/", dropping every later
+  # covariate from the model.
   ops <- c("MUE=0.2", "THALF=1", "NU=1")
-  got <- .hzr_parse_parms(ops, covars = list(early = "AGE=1.2 / EXCLUDE=(SEX)"))
+  got <- .hzr_parse_parms(ops, covars = list(early = "AGE, MAL/I, OPMOS"))
   expect_equal(
     got$phases,
-    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1, formula = ~AGE)))
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1,
+                         formula = ~AGE + MAL + OPMOS)))
   )
-  expect_true(any(grepl("phase options", got$untranslated$reason, fixed = TRUE)))
+  expect_false(any(grepl("deferred", got$untranslated$reason)))
+
+  # /S and /I leave the variable in the model; /E, alone or spelled out,
+  # leaves it out (setstat.c, no SELECTION), along with its starting value.
+  got <- .hzr_parse_parms(ops, covars = list(
+    early = "AGE=1.5/E, MAL=0.5 / S, OPMOS=2/INCLUDE, SEX=3 / EXCLUDE"
+  ))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1,
+                         formula = ~MAL + OPMOS)))
+  )
+  expect_equal(unname(tail(eval(got$theta), 2L)), c(0.5, 2))
+
+  # Per-variable MOVE= and ORDER=, and a word that is not an option, go to
+  # $untranslated under that variable's name; the variable stays in.
+  got <- .hzr_parse_parms(ops, covars = list(
+    early = "AGE/MOVE=2 ORDER = 1, MAL / FOO"
+  ))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1,
+                         formula = ~AGE + MAL)))
+  )
+  u <- got$untranslated
+  expect_true(all(c("AGE/MOVE=2", "AGE/ORDER=1", "MAL/FOO") %in% u$construct))
+
+  # Text SAS's lexer rejects is recorded, not read as something it is not: a
+  # second "/" in one item, and an option with no variable before it.
+  got <- .hzr_parse_parms(ops, covars = list(early = "AGE/E/I, MAL, /S, Y/"))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1, formula = ~MAL)))
+  )
+  expect_true(all(c("AGE/E/I", "/S", "Y/") %in% got$untranslated$construct))
+
+  # A repeated covariate is ONE parameter: setconc.c maps every occurrence to
+  # the same slot and setstat.c runs for each, so the last occurrence sets
+  # its start value and options, and an omitted value resets it to 0. Two
+  # entries used to go into theta, shifting every later starting value.
+  got <- .hzr_parse_parms(c(ops, "MUC=0.01"), covars = list(
+    early = c("AGE=0.1, MAL", "AGE=0.2, OPMOS/E", "OPMOS")
+  ))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1,
+                         formula = ~AGE + MAL + OPMOS),
+               hzr_phase("constant")))
+  )
+  expect_equal(unname(eval(got$theta)),
+               c(log(0.2), log(1), 1, 1, 0.2, 0, 0, log(0.01)))
+  got <- .hzr_parse_parms(ops, covars = list(early = c("AGE=0.3, MAL", "AGE/E")))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1, formula = ~MAL)))
+  )
 })
 
 test_that("phase covariate starting values map into theta, in covariate order", {
