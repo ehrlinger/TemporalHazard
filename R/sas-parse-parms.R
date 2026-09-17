@@ -915,9 +915,14 @@
     for (param in names(shape)) {
       value <- shape[[param]]
       if (is.numeric(value) && length(value) == 1L && !is.finite(value)) {
+        # After SETG3's rewrites, not as written: an operand that is infinite
+        # as written but replaced by a rewrite is not flagged, because PROC
+        # HAZARD reads it the same way (hazard_l.l:53 scans with sscanf and
+        # no range check) and applies the same rewrite, so the emitted model
+        # is the one it fits.
         flag_bad(sprintf("%s=%g", toupper(param), value), paste0(
-          toupper(param), " is not a finite number, as written or after ",
-          "SETG3's rewrite, so the emitted hzr_phase() call cannot be built"))
+          toupper(param), " is not a finite number after SETG3's rewrites, ",
+          "so the emitted hzr_phase() call cannot be built"))
       }
     }
   }
