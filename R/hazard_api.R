@@ -1717,10 +1717,11 @@ predict.hazard <- function(object, newdata = NULL,
     # closure `cumhaz_of` that computes H for any candidate theta -- this
     # is the delta-method target for both "cumulative_hazard" and
     # "survival" predictions.
-    # unname() each result: the shape parameters are named elements of
-    # theta, and R carries such a name onto the product, through rep() for
-    # every n and through any length-1 operand when n == 1, and so into
-    # predict() (#309; the multiphase path does the same, #289).
+    # unname() each result: theta's elements are named (mu, the leading one,
+    # is a log rate, a scale or a location, not a shape), and R carries such
+    # a name onto the product, through rep() for every n and through any
+    # length-1 operand when n == 1, and so into predict() (#309; the
+    # multiphase path does the same, #289).
     dist_lbl <- object$spec$dist
     has_cov <- !is.null(x) && ncol(x) > 0
 
