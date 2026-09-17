@@ -410,6 +410,13 @@
   one; a stored call rewritten to another function can. The refusal of a
   `data =` that is not a data frame now names `data` in its message.
 
+* **A single-distribution `hzr_bootstrap()` screen that selects nothing now
+  warns.** The "selected no covariate" warning compared the replicates'
+  parameters with `names(coef())`, which are `NULL` for a single-distribution
+  fit, so its shape parameters `param_1` and `param_2` counted as selected
+  covariates. Such a screen returned a summary of only those parameters, each
+  at `pct = 100`, and said nothing. Multiphase screens already warned.
+
 * **The G3 late-phase shape is now accurate where `(t/tau)^gamma`
   underflows.** With a large `gamma`, event times well below `tau` take
   `(t/tau)^gamma` past double-precision underflow (about `exp(-708)`), and

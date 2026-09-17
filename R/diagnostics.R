@@ -2250,8 +2250,11 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # fill the summary at pct = 100 and the table looks like a set of perfectly
   # reliable variables.
   if (select_mode && n_success > 0L) {
+    # Named by the helper that names the replicates' parameters: coef() of a
+    # single-distribution fit has no names, so against it every base
+    # parameter counted as selected and this never fired.
     selected <- setdiff(unique(replicates$parameter),
-                        names(stats::coef(object)))
+                        .hzr_bootstrap_param_names(object))
     if (length(selected) == 0L) {
       warning("Bootstrap selection selected no covariate in any of the ",
               n_success, " successful replicates. The summary holds only the ",
