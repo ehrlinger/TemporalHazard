@@ -31,9 +31,24 @@ test_that("predict() names what an unfitted multiphase model lacks (#144)", {
                      tryCatch(predict(spec, type = "hazard"),
                               error = conditionMessage)))
 
-  # A single-distribution model built with fit = FALSE still predicts.
+  # A single-distribution model built with fit = FALSE still predicts -- an
+  # intended, tested capability -- but it says where the numbers come from.
+  # The suite silences this warning wholesale (helper-unfitted-predictions.R);
+  # switch it back on here, or the assertions below would have nothing to
+  # catch.
+  withr::local_options(TemporalHazard.warn_unfitted_prediction = TRUE)
   single <- eval_spec()
-  expect_true(all(is.finite(predict(single, type = "hazard"))))
+  expect_warning(p <- predict(single, type = "hazard"),
+                 class = "hzr_unfitted_prediction")
+  expect_true(all(is.finite(p)))
+  expect_match(
+    capture_warnings(predict(single, type = "hazard")),
+    "come from the starting values"
+  )
+  # One warning per call, not one per row or per type.
+  expect_length(capture_warnings(predict(single, type = "survival")), 1L)
+  # A fitted model says nothing.
+  expect_no_warning(predict(eval_spec(fit = TRUE), type = "hazard"))
 })
 
 test_that("a fitted model still predicts (#144)", {

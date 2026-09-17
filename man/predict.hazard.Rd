@@ -16,7 +16,16 @@
 )
 }
 \arguments{
-\item{object}{A \code{hazard} object.}
+\item{object}{A \code{hazard} object. One built with \code{fit = FALSE} holds the
+starting values it was given rather than estimates, so predicting from
+it warns (condition class \code{hzr_unfitted_prediction}); under
+\code{dist = "multiphase"} it is an error instead, because the per-phase
+designs are resolved only when the model is fitted. To evaluate a model
+at parameters you supply, use \code{\link[=hzr_evaluate]{hzr_evaluate()}}. The warning is governed
+by \code{options(TemporalHazard.warn_unfitted_prediction = )}, which this
+package's own tests set to \code{FALSE} where they exercise that capability
+deliberately; leaving it on is what tells a reader that a number came
+from a starting value.}
 
 \item{newdata}{Optional matrix or data frame of predictors. For types requiring
 time (e.g., "survival", "cumulative_hazard"), newdata should include a \code{time}

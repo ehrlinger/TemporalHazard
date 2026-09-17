@@ -364,6 +364,15 @@
 
 ## Bug fixes
 
+* **`predict()` on a model built with `fit = FALSE` now says so (#144).**
+  Its numbers come from the starting values the model was given, not from
+  estimates, and it said nothing: predicting from non-estimates in silence
+  is the defect a `fit = FALSE` object invites. It now warns, under the
+  condition class `hzr_unfitted_prediction`, which
+  `options(TemporalHazard.warn_unfitted_prediction = FALSE)` switches off
+  for code that means it. Predicting from such a model remains supported
+  for every distribution but `"multiphase"`.
+
 * **`predict()` on an unfitted multiphase model now says what is missing
   (#144).** It failed with `argument of length 0`, from an internal helper
   looking up a parameter position that an unfitted object does not carry.

@@ -1186,7 +1186,16 @@ hazard <- function(formula = NULL,
 #' Produces prediction outputs from a `hazard` object. Supports multiple prediction
 #' types including linear predictor, hazard, survival probability, and cumulative hazard.
 #'
-#' @param object A `hazard` object.
+#' @param object A `hazard` object. One built with `fit = FALSE` holds the
+#'   starting values it was given rather than estimates, so predicting from
+#'   it warns (condition class `hzr_unfitted_prediction`); under
+#'   `dist = "multiphase"` it is an error instead, because the per-phase
+#'   designs are resolved only when the model is fitted. To evaluate a model
+#'   at parameters you supply, use [hzr_evaluate()]. The warning is governed
+#'   by `options(TemporalHazard.warn_unfitted_prediction = )`, which this
+#'   package's own tests set to `FALSE` where they exercise that capability
+#'   deliberately; leaving it on is what tells a reader that a number came
+#'   from a starting value.
 #' @param newdata Optional matrix or data frame of predictors. For types requiring
 #'   time (e.g., "survival", "cumulative_hazard"), newdata should include a `time`
 #'   column, or time will be taken from the fitted object's data.
@@ -1452,6 +1461,20 @@ predict.hazard <- function(object, newdata = NULL,
          "fitted, and predict() cannot rebuild the phases without them. ",
          "Refit with fit = TRUE, or use hzr_evaluate() to evaluate the ",
          "model at parameters you supply.", call. = FALSE)
+  }
+  # The other families predict from an unfitted object perfectly well, and
+  # that is an intended, tested capability -- but the numbers come from the
+  # starting values, not from estimates, and saying nothing is the
+  # fit = FALSE hollow-chunk defect (#144). Classed, so a caller that meant
+  # to supply parameters can muffle exactly this.
+  if ((is.null(object$fit$converged) || is.na(object$fit$converged)) &&
+        isTRUE(getOption("TemporalHazard.warn_unfitted_prediction", TRUE))) {
+    warning(warningCondition(paste0(
+      "This model was built with fit = FALSE: these predictions come from ",
+      "the starting values it was given, not from estimates. Refit with ",
+      "fit = TRUE for a fitted model's predictions, or use hzr_evaluate() ",
+      "to evaluate a model at parameters you supply."
+    ), class = "hzr_unfitted_prediction"))
   }
   if (se.fit) {
     if (!is.numeric(level) || length(level) != 1L ||
