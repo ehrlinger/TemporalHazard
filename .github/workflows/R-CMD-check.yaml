@@ -112,6 +112,14 @@ jobs:
       # reports under its unexpanded name, the required context never
       # reports, and every pull request blocks (#207 again).
       full_check: ${{ matrix.config.per_pr || github.event_name != 'pull_request' }}
+      # Run test files in 4 worker processes on Linux only, the one OS this
+      # was measured on (#330). Three matched pairs, each serial then
+      # parallel on one runner and one commit, took 2.01x to 2.17x less test
+      # wall time with identical per-test results. The totals step below
+      # prints "Starting 4 test processes", so a run that fell back to serial
+      # shows it.
+      TESTTHAT_PARALLEL: ${{ matrix.config.os == 'ubuntu-latest' }}
+      TESTTHAT_CPUS: 4
 
     steps:
       # A green tick here on a pull request means nothing was checked. Say so
