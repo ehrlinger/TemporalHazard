@@ -707,7 +707,35 @@ test_that("a MUL with no late shape operand records what a written phase would (
   expect_equal(got$untranslated$reason, written$untranslated$reason)
   expect_equal(sum(grepl("0.75*Tmax", got$untranslated$reason, fixed = TRUE)),
                1L)
-  expect_false(any(grepl("shape operand", got$untranslated$reason)))
+})
+
+test_that("the TAU row says a different start can mean different estimates", {
+  # The multiphase likelihood is multimodal, so starting TAU elsewhere is not
+  # only a different path: the fit can converge to a different optimum. The
+  # row, which is also the emitted document's callout, has to say so.
+  got <- .hzr_parse_parms(c("MUL=0.05", "GAMMA=2", "ETA=1", "WEIBULL"))
+  tau_row <- got$untranslated$reason[grepl("0.75*Tmax",
+                                           got$untranslated$reason,
+                                           fixed = TRUE)]
+  expect_length(tau_row, 1L)
+  expect_match(tau_row, "estimates, not only the path to them, may differ",
+               fixed = TRUE)
+})
+
+test_that("FIXTAU on an unwritten TAU is recorded as a different model", {
+  # readobs.c:153-154 sets the unwritten TAU to 0.75*Tmax and FIXTAU holds it
+  # there, so PROC HAZARD fits a fixed data-dependent TAU. The emitted phase
+  # fixes tau = 1: a different model, not a different start.
+  for (ops in list(c("MUL=0.2", "FIXTAU"),
+                   c("MUL=0.2", "GAMMA=1", "FIXTAU", "WEIBULL"))) {
+    got <- .hzr_parse_parms(ops)
+    tau_row <- got$untranslated$reason[grepl("0.75*Tmax",
+                                             got$untranslated$reason,
+                                             fixed = TRUE)]
+    expect_length(tau_row, 1L)
+    expect_match(tau_row, "fixes TAU at 0.75*Tmax", fixed = TRUE)
+    expect_match(tau_row, "a different model", fixed = TRUE)
+  }
 })
 
 # ---------------------------------------------------------------------------

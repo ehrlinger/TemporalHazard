@@ -1100,19 +1100,36 @@
     # so the expression would look exact while being a guess.
     # An active MUL with no shape operand now builds its phase (#345), so this
     # row is the only record of its data-dependent TAU start.
+    #
+    # Two consequences, and the row names the one that applies. With TAU free,
+    # the start differs, and because the multiphase likelihood is multimodal
+    # that can change where the fit converges, not only how it gets there.
+    # With FIXTAU (reachable only for an unwritten TAU: a written non-positive
+    # one is refused as SETG3900), PROC HAZARD holds TAU at that
+    # data-dependent value while the emitted phase holds it at 1, which is a
+    # different model outright.
+    tau_fixed <- "tau" %in% fixed_late
     flag_bad(
       if (tau_absent) "TAU (unspecified)" else
         paste0("TAU=", sprintf("%g", late[["tau"]])),
-      paste0("PROC HAZARD starts TAU at ",
+      paste0("PROC HAZARD ", if (tau_fixed) "fixes" else "starts", " TAU at ",
              if (tau_absent) {
                "0.75*Tmax (readobs.c:153-154, applied to an unspecified TAU "
              } else {
                "2*Tmax/3 (setg3.c:317, applied to a non-positive TAU "
              },
              "before SETG3 runs), which depends on the data and cannot be ",
-             "reproduced at parse time; the emitted phase starts at tau = 1, ",
-             "so this fit begins somewhere PROC HAZARD would not and the ",
-             "multiphase likelihood is multimodal")
+             "reproduced at parse time. ",
+             if (tau_fixed) {
+               paste0("The emitted phase fixes tau = 1 instead, so this is ",
+                      "a different model, not only a different start: the ",
+                      "estimates will differ from PROC HAZARD's")
+             } else {
+               paste0("The emitted phase starts at tau = 1. The multiphase ",
+                      "likelihood is multimodal, so a different start can ",
+                      "converge to a different optimum: the estimates, not ",
+                      "only the path to them, may differ from PROC HAZARD's")
+             })
     )
   }
 

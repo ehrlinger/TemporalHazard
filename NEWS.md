@@ -345,7 +345,11 @@
   `ETA` 2), which do not depend on the data, so the translation now builds it
   the same way. The late `TAU` start (0.75 of the longest follow-up) is the one
   value that depends on the data, and it is recorded, as it already was for a
-  late phase written without `TAU`.
+  late phase written without `TAU`. That record now says what it means:
+  because the multiphase likelihood is multimodal, a different start can
+  change the estimates, not only the path to them; and with `FIXTAU` on an
+  unwritten `TAU`, PROC HAZARD holds `TAU` at that data-dependent value while
+  the translation holds it at 1, a different model.
 
 * **`hzr_translate_sas()` now mirrors PROC HAZARD when `FIXGE2` or `FIXGAE2`
   meets `SETG3_ignore_tau()`** (#328, #329 review). That branch runs when

@@ -315,26 +315,37 @@ test_that("the emitted HAZPRED call produces logit bounds, not the default", {
   expect_true(all(got$lower >= 0 & got$upper <= 1))
 })
 
-test_that("an orphan MUE and MUL translate to a fit that runs (#345)", {
+test_that("an orphan MUE and MUL translate to the fit of their written defaults (#345)", {
   skip_on_cran()
   # Execute the emitted chunks, not their text: PARMS names both phases by
-  # scale only, and PROC HAZARD runs them on its shape defaults.
-  f <- withr::local_tempfile(fileext = ".sas")
-  writeLines(paste(
-    "%HAZARD( PROC HAZARD DATA=D NOCONSERVE;",
-    "EVENT DEAD; TIME TT;", "PARMS MUE=0.2 MUL=0.05;", ");"
-  ), f)
-  job <- suppressWarnings(hzr_translate_sas(f))
-  expect_false(any(grepl("shape operand", job$untranslated$reason)))
+  # scale only, and PROC HAZARD runs them on its shape defaults. The fit must
+  # be the one the same defaults written out produce -- same model, same
+  # start -- and a real likelihood, not the optimizer's 1e10 penalty.
+  translate_and_fit <- function(parms, data) {
+    f <- withr::local_tempfile(fileext = ".sas")
+    writeLines(paste(
+      "%HAZARD( PROC HAZARD DATA=D NOCONSERVE;",
+      "EVENT DEAD; TIME TT;", parms, ");"
+    ), f)
+    job <- suppressWarnings(hzr_translate_sas(f))
+    env <- new.env(parent = asNamespace("TemporalHazard"))
+    env$D <- data
+    for (nm in names(job$calls)) suppressWarnings(eval(job$calls[[nm]], env))
+    list(job = job, fit = env$fit)
+  }
   withr::local_seed(345)
   n <- 400
-  env <- new.env(parent = asNamespace("TemporalHazard"))
-  env$D <- data.frame(TT = stats::rweibull(n, 0.8, 5),
-                      DEAD = stats::rbinom(n, 1, 0.7))
-  for (nm in names(job$calls)) suppressWarnings(eval(job$calls[[nm]], env))
-  fit <- env$fit
-  expect_s3_class(fit, "hazard")
-  expect_true(fit$fit$converged)
-  expect_equal(length(fit$spec$phases), 2L)
-  expect_true(is.finite(fit$fit$objective))
+  dat <- data.frame(TT = stats::rweibull(n, 0.8, 5),
+                    DEAD = stats::rbinom(n, 1, 0.7))
+  orphan <- translate_and_fit("PARMS MUE=0.2 MUL=0.05;", dat)
+  written <- translate_and_fit(
+    "PARMS MUE=0.2 THALF=1 NU=2 M=1 MUL=0.05 GAMMA=1 ALPHA=1 ETA=2;", dat
+  )
+  expect_s3_class(orphan$fit, "hazard")
+  expect_equal(length(orphan$fit$spec$phases), 2L)
+  expect_true(orphan$fit$fit$converged)
+  expect_gt(orphan$fit$fit$objective, -1e9)
+  expect_identical(orphan$fit$fit$theta, written$fit$fit$theta)
+  expect_identical(orphan$fit$fit$objective, written$fit$fit$objective)
+  expect_equal(orphan$job$untranslated$reason, written$job$untranslated$reason)
 })
