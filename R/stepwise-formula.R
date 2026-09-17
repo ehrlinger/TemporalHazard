@@ -399,32 +399,41 @@
   NULL
 }
 
-
 #' Refuse a `scope` the screen would not honour
 #'
 #' A backward screen only drops terms the base model already has, so it
 #' never reads `scope`: the variables it leaves out are still dropped, and the
 #' ones the base lacks are never tested. A two-sided scope formula is read by
-#' its right-hand side only, so its left-hand side is never a candidate. Both
-#' ran to a result with no message (#343). `hzr_stepwise()` and
-#' `hzr_bootstrap()` call this before any fitting or seeding.
+#' its right-hand side only, so its left-hand side is never a candidate, and a
+#' phase named twice in a scope list is read at its first entry only. Each ran
+#' to a result with no message (#343). `hzr_stepwise()` and `hzr_bootstrap()`
+#' call this before any fitting or seeding.
 #'
 #' @param scope The `scope` argument as given.
 #' @param direction The matched `direction`.
+#' @param caller `"hzr_stepwise"` or `"hzr_bootstrap"`, which need different
+#'   remedies for a backward screen.
 #' @return `NULL`, invisibly; otherwise stops.
 #' @keywords internal
 #' @noRd
-.hzr_refuse_unhonoured_scope <- function(scope, direction) {
+.hzr_refuse_unhonoured_scope <- function(scope, direction,
+                                         caller = "hzr_stepwise") {
   if (is.null(scope)) {
     return(invisible(NULL))
   }
   if (direction == "backward") {
+    remedy <- if (caller == "hzr_bootstrap") {
+      paste0("A bootstrap selection screen needs `direction = \"both\"` or ",
+             "`\"forward\"`; with `scope` unset, hzr_bootstrap() does not ",
+             "select at all.")
+    } else {
+      paste0("Pass the full model as the base fit, protect terms with ",
+             "`force_in`, and leave `scope` unset.")
+    }
     stop("`scope` has no effect when `direction = \"backward\"`: a backward ",
          "screen only drops terms the base model already has, so a variable ",
          "left out of `scope` is still dropped and one the base lacks is ",
-         "never tested. Pass the full model as the base fit, protect terms ",
-         "with `force_in`, and leave `scope` unset; or use ",
-         "`direction = \"both\"`.", call. = FALSE)
+         "never tested. ", remedy, call. = FALSE)
   }
   one_sided <- function(sc, what) {
     if (inherits(sc, "formula") && length(sc) == 3L) {
@@ -436,7 +445,15 @@
     }
   }
   if (is.list(scope) && !inherits(scope, "formula")) {
-    for (nm in names(scope)) one_sided(scope[[nm]], paste0("`scope$", nm, "`"))
+    dup <- unique(names(scope)[duplicated(names(scope)) & nzchar(names(scope))])
+    if (length(dup)) {
+      stop("`scope` names ", paste0("`", dup, "`", collapse = ", "),
+           " more than once; only the first entry would be read. Give each ",
+           "phase one formula listing all its candidates.", call. = FALSE)
+    }
+    for (i in seq_along(scope)) {
+      one_sided(scope[[i]], paste0("`scope$", names(scope)[i], "`"))
+    }
   } else {
     one_sided(scope, "`scope`")
   }

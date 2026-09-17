@@ -9,14 +9,23 @@
   and a scope variable the base lacked was never tested. The result was the
   same as with no scope, and nothing said so. Such a call is now an error:
   pass the full model as the base, protect terms with `force_in`, and leave
-  `scope` unset, or use `direction = "both"`, where `scope` keeps its
-  meaning. `hzr_bootstrap()` refuses the combination before seeding.
+  `scope` unset. Under `direction = "both"`, `scope` names what may enter;
+  as in SAS, the drop half still considers every term in the model except
+  `force_in`. `hzr_bootstrap()` refuses the combination before seeding.
+
+* **`hzr_bootstrap()` now refuses a selection argument passed without
+  `scope` (#343).** Without `scope` there is no screen, and `direction`,
+  `criterion`, `slentry`, `slstay`, `max_steps`, `max_move`, `force_in` and
+  `force_out` were ignored: `direction = "backward", force_in = "age"`
+  returned a fixed-model bootstrap with every term at `pct = 100` and no
+  message. Pass `scope` to screen, or drop the argument.
 
 * **A two-sided `scope` formula is now an error in `hzr_stepwise()` and
   `hzr_bootstrap()` (#343).** Only the right-hand side was read, so
   `scope = com_iv ~ age + mal` screened `age` and `mal` and never tested
   `com_iv`, with no message. The error names the left-hand side. The same
-  applies to each element of a multiphase `scope` list.
+  applies to each element of a multiphase `scope` list, and a list that
+  names a phase twice, whose second entry was never read, is refused too.
 
 * **`hazard()` now refuses a multiphase phase formula with covariates when
   no `data` is supplied (#299).** Such fits previously ignored the phase

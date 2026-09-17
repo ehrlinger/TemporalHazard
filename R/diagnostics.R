@@ -1529,11 +1529,13 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   exact model, and `summary$pct` is always ~100. When supplied (a
 #'   one-sided formula, character vector, or, for multiphase fits, a
 #'   named list of one-sided formulas keyed by phase, matching
-#'   [hzr_stepwise()]'s `scope`), each replicate runs a fresh
+#'   [hzr_stepwise()]'s `scope`; a two-sided formula is an error), each
+#'   replicate runs a fresh
 #'   [hzr_stepwise()] selection instead; see Details.
 #' @param criterion Entry / retention rule passed through to
-#'   [hzr_stepwise()] on each replicate when `scope` is supplied; ignored
-#'   when `scope = NULL`. One of `"score"` (default), `"wald"`, or `"aic"`.
+#'   [hzr_stepwise()] on each replicate when `scope` is supplied, and
+#'   an error when `scope = NULL`. One of `"score"` (default), `"wald"`, or
+#'   `"aic"`.
 #'   `"score"` reproduces C/SAS HAZARD's `SELECTION` statistic and needs no
 #'   per-candidate refit, which is what makes a bootstrap screen over many
 #'   candidates tractable. Following SAS, the variance used during
@@ -1545,7 +1547,9 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   See [hzr_stepwise()].
 #' @param direction,slentry,slstay,max_steps,max_move,force_in,force_out
 #'   Passed through to [hzr_stepwise()] on each replicate when `scope` is
-#'   supplied; ignored when `scope = NULL`. See [hzr_stepwise()] for
+#'   supplied, and an error when `scope = NULL`, since nothing would use
+#'   them. `direction = "backward"` with a `scope` is an error too: a
+#'   backward screen does not read `scope`. See [hzr_stepwise()] for
 #'   definitions and defaults.
 #' @param ... Additional arguments forwarded to [hzr_stepwise()] (e.g.
 #'   `control = list(n_starts = 1)`) when `scope` is supplied; ignored
@@ -1688,11 +1692,29 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     stop("'fraction' must be in (0, 1].", call. = FALSE)
   }
 
+  # Read before match.arg() reassigns `direction` and `criterion`, after which
+  # missing() no longer reports whether the caller supplied them.
+  given <- c("direction", "criterion", "slentry", "slstay", "max_steps",
+             "max_move", "force_in", "force_out")[c(
+    !missing(direction), !missing(criterion), !missing(slentry),
+    !missing(slstay), !missing(max_steps), !missing(max_move),
+    !missing(force_in), !missing(force_out)
+  )]
   direction <- match.arg(direction)
   criterion <- match.arg(criterion)
   select_mode <- !is.null(scope)
   # Before seeding, so a refused call leaves the random number stream alone.
-  .hzr_refuse_unhonoured_scope(scope, direction)
+  .hzr_refuse_unhonoured_scope(scope, direction, caller = "hzr_bootstrap")
+  # Without `scope` there is no screen, so a selection argument would be
+  # silently ignored and every term reported at pct = 100 (#343).
+  if (!select_mode && length(given)) {
+    stop("hzr_bootstrap(): ", paste0("`", given, "`", collapse = ", "),
+         " only take effect in a selection screen, which needs `scope`; ",
+         "without it every replicate refits the fit's exact model. Pass ",
+         "`scope` to screen, or drop ",
+         if (length(given) > 1L) "those arguments." else "that argument.",
+         call. = FALSE)
+  }
 
   # `...` exists only to forward stepwise-control arguments (e.g. `control=`)
   # to hzr_stepwise() in select-mode; fixed-refit mode (scope = NULL) has no

@@ -103,3 +103,69 @@ test_that("a two-sided multiphase scope element is refused, naming its phase (#3
     fixed = TRUE
   )
 })
+
+test_that("hzr_bootstrap()'s backward refusal points at a screen it can run (#343)", {
+  d <- avc_343()
+  b0 <- weibull_343(d, survival::Surv(int_dead, dead) ~ 1, c(0.1, 1))
+  msg <- tryCatch(hzr_bootstrap(b0, n_boot = 2L, scope = ~ age,
+                                direction = "backward"),
+                  error = conditionMessage)
+  expect_match(msg, "needs `direction = \"both\"` or `\"forward\"`",
+               fixed = TRUE)
+  expect_no_match(msg, "leave `scope` unset", fixed = TRUE)
+})
+
+test_that("hzr_bootstrap() refuses selection arguments without a scope (#343)", {
+  # Without `scope` there is no screen: these were ignored, and every term
+  # came back at pct = 100.
+  d <- avc_343()
+  full <- weibull_343(d, survival::Surv(int_dead, dead) ~ age + mal + com_iv,
+                      c(0.1, 1, 0, 0, 0))
+  set.seed(7)
+  before <- .Random.seed
+  expect_error(
+    hzr_bootstrap(full, n_boot = 3L, seed = 1L, direction = "backward",
+                  force_in = "age", slstay = 1e-300),
+    paste0("hzr_bootstrap(): `direction`, `slstay`, `force_in` only take ",
+           "effect in a selection screen, which needs `scope`"),
+    fixed = TRUE
+  )
+  expect_identical(.Random.seed, before)
+  for (a in list(list(criterion = "wald"), list(slentry = 0.5),
+                 list(max_steps = 2L), list(max_move = 1L),
+                 list(force_out = "mal"))) {
+    expect_error(do.call(hzr_bootstrap, c(list(full, n_boot = 2L), a)),
+                 paste0("`", names(a), "` only take"), fixed = TRUE,
+                 label = names(a))
+  }
+  # The fixed-model bootstrap itself is unchanged.
+  b <- suppressWarnings(hzr_bootstrap(full, n_boot = 2L, seed = 1L))
+  expect_equal(b$n_success, 2L)
+})
+
+test_that("a scope list naming a phase twice is refused (#343)", {
+  expect_error(
+    .hzr_refuse_unhonoured_scope(list(early = ~ age, early = ~ mal), "both"),
+    "`scope` names `early` more than once", fixed = TRUE
+  )
+  expect_null(.hzr_refuse_unhonoured_scope(list(early = ~ age, late = ~ mal),
+                                           "both"))
+})
+
+test_that("under direction = both, scope limits entry, not drops, as documented (#343)", {
+  # SAS STEPWISE re-tests every term in the model. `mal` is outside the
+  # scope and still leaves; only force_in keeps a term.
+  d <- avc_343()
+  base <- weibull_343(d)
+  sw <- suppressWarnings(
+    hzr_stepwise(base, scope = ~ age, data = d, direction = "both",
+                 criterion = "wald", slstay = 1e-300, trace = FALSE)
+  )
+  expect_true("mal" %in% sw$steps$variable[sw$steps$action == "drop"])
+  kept <- suppressWarnings(
+    hzr_stepwise(base, scope = ~ age, data = d, direction = "both",
+                 criterion = "wald", slstay = 1e-300, force_in = "mal",
+                 trace = FALSE)
+  )
+  expect_false("mal" %in% kept$steps$variable[kept$steps$action == "drop"])
+})
