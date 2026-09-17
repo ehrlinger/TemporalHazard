@@ -143,3 +143,54 @@ test_that("the score test declines a phase saved with the old design (#303)", {
   expect_null(.hzr_score_expand(old, "com_iv", "early", d))
   expect_false(is.finite(.hzr_score_q(old, "com_iv", "early", d)$stat))
 })
+
+test_that("nothing after hzr_phase() repeats the intercept warning (#303)", {
+  skip_on_cran()
+  # The warning belongs to hzr_phase(), which a user calls once. Everything
+  # downstream must stay quiet -- and "downstream" is not obvious here,
+  # because the score test rebuilds every non-candidate phase FROM ITS
+  # STORED FORMULA, so a scoring loop is a re-parse of `~ 0 + mal` once per
+  # candidate. That is the shape that made #337 repeat the global-formula
+  # warning across stepwise refits, and this is its mirror. #337 could fix
+  # it by muffling a condition CLASS; this warning is unclassed, so the
+  # only thing keeping it quiet is that the phase object carries its design
+  # rather than its formula. Nothing was pinning that.
+  d <- na.omit(avc[, c("int_dead", "dead", "age", "mal", "orifice")])
+  seen <- 0L
+  count <- function(w) {
+    if (grepl("removes the intercept", conditionMessage(w))) seen <<- seen + 1L
+    invokeRestart("muffleWarning")
+  }
+
+  # Known positive: the same handler over the call that DOES warn counts it.
+  # Without this, every zero below is equally consistent with "the handler
+  # never fires".
+  ph <- withCallingHandlers(
+    list(early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1,
+                           fixed = "m", formula = ~ 0 + age),
+         constant = hzr_phase("constant")),
+    warning = count
+  )
+  expect_identical(seen, 1L)
+
+  seen <- 0L
+  base <- withCallingHandlers(
+    hazard(survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
+           phases = ph, fit = TRUE,
+           control = list(n_starts = 1L, conserve = FALSE)),
+    warning = count
+  )
+  expect_identical(seen, 0L)
+
+  seen <- 0L
+  sw <- withCallingHandlers(
+    suppressMessages(hzr_stepwise(base, scope = list(early = ~ mal,
+                                                     constant = ~ orifice),
+                                  data = d, trace = FALSE, max_steps = 2L)),
+    warning = count
+  )
+  # The steps are the evidence the scoring loop ran at all: a screen that
+  # scored nothing would report zero warnings for the wrong reason.
+  expect_gte(nrow(sw$steps), 1L)
+  expect_identical(seen, 0L)
+})
