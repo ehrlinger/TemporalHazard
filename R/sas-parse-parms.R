@@ -892,6 +892,22 @@
   # has no shape operand is recorded rather than built, because PROC HAZARD
   # would supply its own shape defaults and they are not this parser's -- see
   # the orphan branches below.
+  # A shape that is not finite, as written (GAMMA=1e400 reads as Inf) or after
+  # a rewrite above (2/ETA, GAMMA*ETA/2), cannot be built: hzr_phase() refuses
+  # it. Say so here rather than let the translation read clean over a call
+  # that stops.
+  for (shape in list(if (has_early && length(early)) early_full,
+                     if (has_late && length(late)) late_full)) {
+    for (param in names(shape)) {
+      value <- shape[[param]]
+      if (is.numeric(value) && length(value) == 1L && !is.finite(value)) {
+        flag_bad(sprintf("%s=%g", toupper(param), value), paste0(
+          toupper(param), " is not a finite number, as written or after ",
+          "SETG3's rewrite, so the emitted hzr_phase() call cannot be built"))
+      }
+    }
+  }
+
   phase_calls <- list()
   theta_blocks <- list()
   if (has_early && length(early)) {

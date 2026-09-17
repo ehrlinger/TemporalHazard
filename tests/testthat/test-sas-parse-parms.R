@@ -1403,3 +1403,26 @@ test_that("FIXGAE2 with ALPHA fixed on the constraint and one shape free derives
                          fixed = "eta", constraint = "alpha_gamma_eta")))
   )
 })
+
+test_that("a non-finite shape, as written or after a rewrite, is recorded (#329 review)", {
+  # hzr_phase() now refuses these, so a translation that reads clean over one
+  # would emit a call that cannot be built.
+  cases <- list(
+    written = c("MUL=0.2", "TAU=1", "GAMMA=1e400", "ETA=0.5", "WEIBULL"),
+    written_tau = c("MUL=0.2", "TAU=1e400", "GAMMA=2", "ETA=0.5", "WEIBULL"),
+    ge2_rewrite = c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=1e-320", "FIXGE2",
+                    "WEIBULL"),
+    gae2_start = c("MUL=0.2", "TAU=1", "GAMMA=1e300", "ETA=1e300", "FIXGAE2",
+                   "WEIBULL")
+  )
+  for (nm in names(cases)) {
+    got <- .hzr_parse_parms(cases[[nm]])
+    expect_true(any(grepl("not a finite number", got$untranslated$reason,
+                          fixed = TRUE)), label = nm)
+  }
+  # Finite extremes are not flagged.
+  ok <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=1e300", "ETA=1e-300",
+                           "FIXGAE2", "WEIBULL"))
+  expect_false(any(grepl("not a finite number", ok$untranslated$reason,
+                         fixed = TRUE)))
+})

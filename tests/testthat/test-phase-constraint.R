@@ -479,16 +479,58 @@ test_that("a theta off the constraint is replaced, with a warning, fitted or not
   )
   expect_equal(unname(coef(unfitted))[4], 2.5)
 
-  # With a phase formula the slot cannot be located unfitted: say so.
+  # With covariates the slots are located from the design, as the optimizer
+  # locates them (#328 item 1): a phase formula against data, else the global
+  # design. A theta already on the constraint is left alone, silently.
   dat <- data.frame(time = d$time, status = d$status,
-                    z = seq_along(d$time) %% 2)
+                    z = seq_along(d$time) %% 2, w = seq_along(d$time) %% 3)
   covaried <- list(late = hzr_phase("g3", tau = 8, gamma = 5, eta = 1,
                                     formula = ~ z,
                                     constraint = "alpha_gamma_eta"))
+  on <- c(log(0.2), log(8), 5, 2.5, 1, 0.3)
+  expect_no_warning(
+    kept <- hazard(time = time, status = status, data = dat,
+                   dist = "multiphase", phases = covaried, theta = on,
+                   fit = FALSE)
+  )
+  expect_equal(unname(coef(kept)), on)
+  expect_warning(
+    moved <- hazard(time = time, status = status, data = dat,
+                    dist = "multiphase", phases = covaried,
+                    theta = c(off, 0.3), fit = FALSE),
+    "was replaced by 2.5"
+  )
+  expect_equal(unname(coef(moved)), on)
+
+  # Global design inherited by a formula-less phase: the late block follows
+  # an early phase with two covariates, so the derived slot is not where a
+  # covariate-free layout would put it.
+  two_phase <- list(early = hzr_phase("cdf"),
+                    late = hzr_phase("g3", tau = 8, gamma = 5, eta = 1,
+                                     constraint = "alpha_gamma_eta"))
+  global_on <- c(log(0.1), 0, 1, 0, 0.1, 0.2,
+                 log(0.2), log(8), 5, 2.5, 1, 0.3, 0.4)
+  expect_no_warning(
+    g_kept <- hazard(survival::Surv(time, status) ~ z + w, data = dat,
+                     dist = "multiphase", phases = two_phase,
+                     theta = global_on, fit = FALSE)
+  )
+  expect_equal(unname(coef(g_kept)), global_on)
+  global_off <- global_on
+  global_off[10] <- 7
+  expect_warning(
+    g_moved <- hazard(survival::Surv(time, status) ~ z + w, data = dat,
+                      dist = "multiphase", phases = two_phase,
+                      theta = global_off, fit = FALSE),
+    "was replaced by 2.5"
+  )
+  expect_equal(unname(coef(g_moved)), global_on)
+
+  # A theta of the wrong length cannot be read either way; that is said.
   expect_warning(
     hazard(time = time, status = status, data = dat, dist = "multiphase",
-           phases = covaried, theta = c(off, 0), fit = FALSE),
-    "applied only under fit = TRUE"
+           phases = covaried, theta = on[-6], fit = FALSE),
+    "theta has 5 entries"
   )
 
   skip_on_cran()

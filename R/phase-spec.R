@@ -321,8 +321,11 @@ hzr_phase <- function(type = c("cdf", "hazard", "constant", "g3"),
       eta <- 2 / gamma
     }
     # The checks above saw the sources, not the derived value. Finite sources
-    # can still overflow (alpha = Inf) or underflow (alpha = 0, which would
-    # silently select the exponential limiting case), so check it too.
+    # can still overflow (alpha = Inf) or underflow, so check it too. A
+    # derived alpha must be > 0 even though a supplied one may be 0: alpha = 0
+    # selects the exponential limiting case, which a user can choose by
+    # fixing it, but reaching it through gamma * eta / 2 underflowing is a
+    # silent switch of model family, not a choice, so it is refused.
     if (constraint != "none") {
       value <- if (constraint == "alpha_gamma_eta") alpha else eta
       if (!(is.finite(value) && value > 0)) {
