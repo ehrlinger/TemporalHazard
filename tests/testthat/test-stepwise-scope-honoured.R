@@ -212,8 +212,28 @@ test_that("an empty scope under direction = backward is honoured, not refused (#
   }
   expect_null(.hzr_refuse_unhonoured_scope(list(early = NULL, late = ~ 1),
                                            "backward"))
+  # An offset is not empty: "both" refuses it, so backward must not pass it.
+  expect_error(.hzr_refuse_unhonoured_scope(~ offset(age), "backward"),
+               "`scope` has no effect", fixed = TRUE)
   expect_error(
     .hzr_refuse_unhonoured_scope(list(early = NULL, late = ~ age), "backward"),
     "`scope` has no effect", fixed = TRUE
   )
+})
+
+test_that("hzr_bootstrap() with an empty scope under backward runs a real backward screen (#343)", {
+  skip_on_cran() # eight replicate screens
+  d <- avc_343()
+  full <- weibull_343(d, survival::Surv(int_dead, dead) ~ age + mal + com_iv,
+                      c(0.1, 1, 0, 0, 0))
+  b <- suppressWarnings(
+    hzr_bootstrap(full, n_boot = 8L, seed = 2L, scope = ~ 1,
+                  direction = "backward", criterion = "wald", slstay = 0.05)
+  )
+  expect_identical(b$mode, "select")
+  expect_equal(b$n_success, 8L)
+  pct <- b$summary$pct[b$summary$parameter %in% c("age", "mal", "com_iv")]
+  # A screen, not a refit: some term was dropped in some replicate.
+  expect_length(pct, 3L)
+  expect_true(any(pct < 100))
 })

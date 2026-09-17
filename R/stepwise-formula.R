@@ -422,10 +422,13 @@
     return(invisible(NULL))
   }
   # An empty scope offers nothing to enter, which a backward screen honours.
+  # An offset is no candidate, but it is refused under "both", so it is not
+  # treated as empty here either.
   empty_formula <- function(sc) {
-    inherits(sc, "formula") && length(sc) == 2L &&
-      length(tryCatch(attr(stats::terms(sc), "term.labels"),
-                      error = function(e) "unreadable")) == 0L
+    if (!inherits(sc, "formula") || length(sc) != 2L) return(FALSE)
+    tt <- tryCatch(stats::terms(sc), error = function(e) NULL)
+    !is.null(tt) && length(attr(tt, "term.labels")) == 0L &&
+      is.null(attr(tt, "offset"))
   }
   empty <- if (is.list(scope) && !inherits(scope, "formula")) {
     all(vapply(scope, function(sc) is.null(sc) || empty_formula(sc),
