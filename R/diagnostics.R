@@ -1466,28 +1466,6 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   `fit_obj$fit$theta`.
 #' @keywords internal
 #' @noRd
-#' Why a bootstrap refit's return value is not a fit, if it is not
-#'
-#' `hzr_bootstrap()` reads `$fit$objective` and `$fit$theta` off each
-#' replicate's refit. `$` on an atomic vector is an error, and a list without
-#' `fit` reads as a missing objective, so both are named here instead (#333,
-#' #343). `hazard()` never returns either; a stored call rewritten to another
-#' function can.
-#'
-#' @param x The refit's return value.
-#' @return `NULL`, or a character scalar naming what `x` is.
-#' @keywords internal
-#' @noRd
-.hzr_bootstrap_not_a_fit <- function(x) {
-  if (!is.list(x)) {
-    return(paste0("refit returned a ", class(x)[1L], ", not a fit object"))
-  }
-  if (!is.list(x$fit)) {
-    return(paste0("refit returned a ", class(x)[1L],
-                  " with no `fit`, not a fit object"))
-  }
-  NULL
-}
 
 .hzr_bootstrap_param_names <- function(fit_obj) {
   theta <- fit_obj$fit$theta
@@ -1510,6 +1488,29 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
     param_names[still_blank] <- paste0("param_", which(still_blank))
   }
   param_names
+}
+
+#' Why a bootstrap refit's return value is not a fit, if it is not
+#'
+#' `hzr_bootstrap()` reads `$fit$objective` and `$fit$theta` off each
+#' replicate's refit. `$` on an atomic vector is an error, and a list without
+#' `fit` reads as a missing objective, so both are named here instead (#333,
+#' #343). `hazard()` never returns either; a stored call rewritten to another
+#' function can.
+#'
+#' @param x The refit's return value.
+#' @return `NULL`, or a character scalar naming what `x` is.
+#' @keywords internal
+#' @noRd
+.hzr_bootstrap_not_a_fit <- function(x) {
+  if (!is.list(x)) {
+    return(paste0("refit returned a ", class(x)[1L], ", not a fit object"))
+  }
+  if (!is.list(x$fit)) {
+    return(paste0("refit returned a ", class(x)[1L],
+                  " with no `fit`, not a fit object"))
+  }
+  NULL
 }
 
 #' Bootstrap resampling for hazard model coefficients
