@@ -382,6 +382,8 @@ test_that("a phase variable outside the model still deletes its missing rows (#3
   expect_true(res$ok, info = paste(res$results, collapse = "; "))
   expect_true(all(c("phase_1.AGE", "phase_1.Y") %in%
                     names(stats::coef(res$env$fit))))
+})
+
 test_that("a job with no DATA= and phase covariates emits a stop(), not a fit (#311)", {
   # With no DATA= the fit chunk has no `data`, and hazard() refuses a phase
   # formula with nothing to evaluate it in (#299): the chunk stopped with
