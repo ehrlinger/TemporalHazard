@@ -338,6 +338,21 @@
 
 ## Bug fixes
 
+* **`predict(newdata = )` now warns when `newdata` is evaluated differently
+  from the fitting data (#331, #334, #335).** Predicted values are
+  unchanged; the warning names the cause. It fires for a term that computes
+  a statistic over the rows, such as `I(age - mean(age))`,
+  `I(scale(age)^2)` or a `factor()` nested inside another call, and for a
+  column whose type differs from the fitting data's, such as a numeric
+  column given as character or a `difftime` in other units. It also fires
+  when a fit saved by 1.2.10 or earlier has its design rebuilt under a
+  contrasts function other than `contr.treatment` or `contr.poly`, which
+  that fit did not record. The new section "How `newdata` is evaluated" in
+  `?predict.hazard` describes these cases and two that are not detected: a
+  formula-environment constant changed since the fit, and collation in
+  string comparisons. Fits saved before 1.1.0 kept no fitting data, and
+  their column types are not checked.
+
 * **`predict(newdata = )` on a multiphase fit saved before this version no
   longer gets `scale()`, `poly()` or `ns()` in a phase formula silently wrong
   (#307).** Such a fit stored no phase design, so the phase was rebuilt from

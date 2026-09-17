@@ -1281,10 +1281,45 @@ hazard <- function(formula = NULL,
 #' or `"hazard"` also require time values (via `newdata$time` or fitted-time fallback)
 #' so window-specific coefficients can be selected.
 #'
-#' A term built by a transform that is not row-wise, such as
-#' `I(age - mean(age))` or `rank(age)`, is recomputed from `newdata`'s own
-#' rows, as in [stats::predict.lm()]. It therefore differs from the fitted
-#' values unless `newdata` reproduces the fitting data.
+#' See the section "How `newdata` is evaluated" for what is recomputed from
+#' `newdata` and when `predict()` warns.
+#'
+#' @section How `newdata` is evaluated:
+#' `predict()` evaluates the model's formulas on `newdata` as given, as
+#' [stats::predict.lm()] does. It uses the fit's factor levels and
+#' contrasts, and the centering, basis and knots that a top-level `scale()`,
+#' `poly()`, `ns()` or `bs()` term recorded. Everything else is recomputed
+#' from `newdata`, so a prediction can differ from the fit without any
+#' error. `predict()` warns, naming the cause, in three such cases. The
+#' predicted values are the same with or without the warning.
+#'
+#' - **A term that computes a statistic over the rows.** In
+#'   `I(age - mean(age))`, `I(scale(age)^2)` or
+#'   `I(as.integer(factor(grp)))`, the mean, the scaling or the factor
+#'   coding comes from `newdata`'s rows, so a row's prediction depends on
+#'   which other rows are given. Compute such a variable in the data before
+#'   fitting, and supply it in `newdata`.
+#' - **A column of another type than the fit saw.** A numeric column given
+#'   as character compares as text (`"154.6" > 50` is `FALSE`), and a
+#'   `difftime` in other units is used in those units. The check compares
+#'   against the fitting data the fit kept, which fits saved before
+#'   TemporalHazard 1.1.0 do not have, so those fits are not checked. A
+#'   factor given as its level labels, or an integer for a double, is not
+#'   a mismatch.
+#' - **A design rebuilt under this session's contrasts.** A formula fit
+#'   saved by version 1.2.10 or earlier kept no record of its contrasts,
+#'   and its design is rebuilt under `options(contrasts =)`. `predict()`
+#'   warns when that option names a function other than `contr.treatment`
+#'   or `contr.poly`. A redefined `contr.treatment` is not detected.
+#'
+#' Two cases are not detected:
+#'
+#' - A constant the formula reads from its environment, such as `cutoff`
+#'   in `I(age > cutoff)`, is read when you predict, so a value changed
+#'   since the fit is used.
+#' - A comparison of strings, such as `I(grp > "b")`, follows the session's
+#'   collation (`LC_COLLATE`), which can order strings differently from the
+#'   session that fitted the model.
 #'
 #' @return When `se.fit = FALSE` (default), a numeric vector of predictions.
 #'   When `se.fit = TRUE`, a data frame with columns `fit`, `se.fit`, `lower`,
@@ -1462,6 +1497,9 @@ predict.hazard <- function(object, newdata = NULL,
     # skips the rebuild's cost.
     if (!isTRUE(attr(newdata, "hzr_design_columns"))) {
       object <- .hzr_recover_x_design(object)
+      # A column of another type than the fit saw is evaluated as given;
+      # warn once per call, naming it (#334).
+      .hzr_warn_newdata_types(object, as.data.frame(newdata))
     }
     .hzr_check_time_covariate(object, as.data.frame(newdata), time_based)
   }
@@ -1617,6 +1655,9 @@ predict.hazard <- function(object, newdata = NULL,
         # fit ignores hzr_phase(formula = ). .hzr_phase_inherits_global()
         # decides, from the fit's record or, for an older fit, its columns;
         # hzr_gof() calls the same helper, so the two cannot disagree.
+        # Built once for every phase that inherits it, so its warnings are
+        # given once per call.
+        x_global <- NULL
         for (nm in names(phases)) {
           ph <- phases[[nm]]
           uses_formula <- !.hzr_phase_inherits_global(object, nm)
@@ -1627,7 +1668,10 @@ predict.hazard <- function(object, newdata = NULL,
             # A formula-less phase inherits the global design: rebuild that,
             # not every non-time column of newdata (which also carries the
             # phase formulas' variables).
-            x_g <- .hzr_global_design(object, newdata)
+            if (is.null(x_global)) {
+              x_global <- .hzr_global_design(object, newdata)
+            }
+            x_g <- x_global
             # With time windows the fit expanded the inherited design per
             # window (age_w1, age_w2); expand it the same way here, or the
             # rows meet the per-window coefficients unexpanded.
