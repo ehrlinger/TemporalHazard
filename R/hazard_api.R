@@ -1201,7 +1201,12 @@ hazard <- function(formula = NULL,
 #'   as `I(age^2)`, is built from it). With all the
 #'   variables given, the design is rebuilt from them, so a design column
 #'   that contradicts one is ignored; some variables beside the design
-#'   columns, with others missing, is an error. A
+#'   columns, with others missing, is an error. That error is conservative
+#'   in two cases where nothing contradicts: `poly()` design columns given
+#'   with the variable they are built from but without another variable,
+#'   and a non-syntactic name such as `my age` given both as the design
+#'   column `` `my age` `` and as the variable. Give all of the formula's
+#'   variables, or only the design columns. A
 #'   column the model does not use is
 #'   ignored, and a covariate the model needs but `newdata` lacks is an error.
 #'   Only the columns of the model's `data` are taken from `newdata`: a
