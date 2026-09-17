@@ -93,10 +93,12 @@ parameter. In \code{mode = "select"}, \code{pct} is the selection frequency
 and the other statistics are conditional on selection.}
 \item{n_success}{Number of successfully converged replicates.}
 \item{n_failed}{Number of replicates that failed: the refit stopped with
-an error, or returned a non-finite objective.}
+an error, returned something other than a fit, or returned a
+non-finite objective.}
 \item{failure_reasons}{Named integer vector counting why replicates
 failed, most common first: the refit's error message (or
-\code{"error with an empty message"}), or
+\code{"error with an empty message"}),
+\code{"refit returned a <class>, not a fit object"}, or
 \code{"non-finite objective (did not converge)"}. It sums to \code{n_failed}, and
 is an empty named integer vector, never \code{NULL}, when none failed. When
 every replicate fails, \code{hzr_bootstrap()} also warns, naming the most

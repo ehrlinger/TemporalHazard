@@ -1585,10 +1585,12 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     and the other statistics are conditional on selection.}
 #'   \item{n_success}{Number of successfully converged replicates.}
 #'   \item{n_failed}{Number of replicates that failed: the refit stopped with
-#'     an error, or returned a non-finite objective.}
+#'     an error, returned something other than a fit, or returned a
+#'     non-finite objective.}
 #'   \item{failure_reasons}{Named integer vector counting why replicates
 #'     failed, most common first: the refit's error message (or
-#'     `"error with an empty message"`), or
+#'     `"error with an empty message"`),
+#'     `"refit returned a <class>, not a fit object"`, or
 #'     `"non-finite objective (did not converge)"`. It sums to `n_failed`, and
 #'     is an empty named integer vector, never `NULL`, when none failed. When
 #'     every replicate fails, `hzr_bootstrap()` also warns, naming the most
@@ -1832,7 +1834,8 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # compared against nothing and named the vectors 'NA'.
   if (!is.null(orig_data) && !is.data.frame(orig_data)) {
     stop("hzr_bootstrap() resamples the rows of the fit's `data =`, which ",
-         "must be a data frame, and this fit's is a ", class(orig_data)[1L],
+         "must be a data frame, and this fit's `data` is a ",
+         class(orig_data)[1L],
          ". Refit with `data = as.data.frame(...)` and bootstrap that.",
          call. = FALSE)
   }
@@ -2094,6 +2097,12 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
           }
           cl_base$fit <- TRUE
           base_boot <- eval(cl_base, envir = rep_env)
+          # The same reason refit mode records below, rather than whatever
+          # `$` on a non-list says.
+          if (!is.list(base_boot)) {
+            stop("refit returned a ", class(base_boot)[1L],
+                 ", not a fit object")
+          }
           if (!is.finite(base_boot$fit$objective)) {
             stop("base refit did not converge")
           }
@@ -2140,6 +2149,10 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       # n_failed.
       msg <- conditionMessage(boot_fit)
       if (nzchar(msg)) msg else "error with an empty message"
+    } else if (!is.list(boot_fit)) {
+      # `$` on an atomic vector is an error outside the tryCatch() above, which
+      # ended the whole run. hazard() never returns one.
+      paste0("refit returned a ", class(boot_fit)[1L], ", not a fit object")
     } else if (!isTRUE(is.finite(boot_fit$fit$objective))) {
       "non-finite objective (did not converge)"
     }
@@ -2237,8 +2250,11 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # fill the summary at pct = 100 and the table looks like a set of perfectly
   # reliable variables.
   if (select_mode && n_success > 0L) {
+    # Named by the helper that names the replicates' parameters: coef() of a
+    # single-distribution fit has no names, so against it every base
+    # parameter counted as selected and this never fired.
     selected <- setdiff(unique(replicates$parameter),
-                        names(stats::coef(object)))
+                        .hzr_bootstrap_param_names(object))
     if (length(selected) == 0L) {
       warning("Bootstrap selection selected no covariate in any of the ",
               n_success, " successful replicates. The summary holds only the ",
