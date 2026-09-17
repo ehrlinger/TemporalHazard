@@ -52,6 +52,11 @@ test_that("a fit without a global intercept is the fit with one (#337)", {
   expect_identical(fit$fit$theta, control$fit$theta)
   expect_identical(fit$fit$vcov, control$fit$vcov)
   expect_true(all(is.finite(diag(fit$fit$vcov))))
+  nd_w <- data.frame(time = c(0.5, 2), age = c(40, 70),
+                     grp = factor(c("1", "3"), levels = levels(d$grp)))
+  expect_identical(predict(fit, newdata = nd_w, type = "cumulative_hazard"),
+                   predict(control, newdata = nd_w,
+                           type = "cumulative_hazard"))
 
   phases <- list(early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1,
                                    fixed = "m"),
