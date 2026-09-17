@@ -2,6 +2,22 @@
 
 ## Breaking changes
 
+* **Standard errors of a late (`"g3"`) phase's free shapes are no longer
+  wrong at extreme shapes (#332).** The Hessian stepped each shape by a
+  fixed amount, about 1.2e-4: far too small a fraction of a large `gamma`,
+  where rounding took over, and too large a fraction of a small `eta` or
+  `alpha`. There was no warning. At a fitted `gamma` of 219 and `eta` of
+  0.010, `vcov()` gave standard errors of 52 for `gamma` and 0.0028 for
+  `eta`, against about 750 and 0.035: an order of magnitude too confident.
+  Where the data leave a shape unidentified, it reported finite standard
+  errors for a direction the likelihood does not determine. Each shape is
+  now stepped in proportion to itself. Estimates are unchanged, because
+  the optimizer never uses this Hessian; standard errors, Wald statistics,
+  confidence intervals, the condition warnings and the score test that
+  `hzr_stepwise()` uses to enter a variable can all change for a fit with
+  a free `"g3"` shape. A fit whose `"g3"` shapes are all fixed, and any fit
+  without a `"g3"` phase, is unaffected.
+
 * **`hazard()` now refuses a multiphase phase formula with covariates when
   no `data` is supplied (#299).** Such fits previously ignored the phase
   formula. On the vector interface (`time =`, `status =`) without `data`, a
