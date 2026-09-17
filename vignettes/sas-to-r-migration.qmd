@@ -10,6 +10,9 @@ vignette: >
 ```{r}
 #| include: false
 has_pkg <- requireNamespace("TemporalHazard", quietly = TRUE)
+# On CI a package that cannot load must fail the build, not skip every
+# chunk and pass over nothing (#276). loadNamespace() says why it failed.
+if (nzchar(Sys.getenv("CI"))) loadNamespace("TemporalHazard")
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>",
