@@ -1385,12 +1385,21 @@ test_that("both flags with ALPHA fixed away from 1 is PROC HAZARD's SETG3940", {
                              "FIXGAE2"))
   expect_equal(nrow(bare$untranslated), 1L)
   expect_match(bare$untranslated$reason, "(SETG3940)", fixed = TRUE)
-  # Both the WEIBULL case above and the bare case below: a refused job must
-  # not come back as the mirrored all-fixed phase.
-  for (phases in list(got$phases, bare$phases)) {
-    expect_false(grepl("fixed = c(\"tau\", \"gamma\", \"alpha\", \"eta\")",
-                       deparse1(phases), fixed = TRUE))
-  }
+  # Assert the phase each case actually emits, not the absence of one string:
+  # neither object contains that string whatever the code does, so an
+  # expect_false() on it could not fail. A refused job keeps the operands as
+  # written, with only the job's own FIXALPHA, and is never the mirrored
+  # all-fixed phase.
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("g3", tau = 1, gamma = 4, alpha = 3, eta = 0.5,
+                         fixed = "alpha")))
+  )
+  expect_equal(
+    bare$phases,
+    quote(list(hzr_phase("g3", tau = 1, gamma = 1, alpha = 0, eta = 2,
+                         fixed = "alpha")))
+  )
 
 })
 
@@ -1409,9 +1418,12 @@ test_that("FIXGAE2 with ALPHA fixed on the constraint and one shape free derives
   )
 })
 
-test_that("a non-finite shape, as written or after a rewrite, is recorded (#329 review)", {
+test_that("a shape that is not finite after SETG3's rewrites is recorded (#329 review)", {
   # hzr_phase() now refuses these, so a translation that reads clean over one
-  # would emit a call that cannot be built.
+  # would emit a call that cannot be built. An operand that is infinite as
+  # WRITTEN but replaced by a rewrite is deliberately not flagged: PROC
+  # HAZARD reads it the same way (hazard_l.l:53) and applies the same
+  # rewrite, so the emitted model is the one it fits (#346 review).
   cases <- list(
     written = c("MUL=0.2", "TAU=1", "GAMMA=1e400", "ETA=0.5", "WEIBULL"),
     written_tau = c("MUL=0.2", "TAU=1e400", "GAMMA=2", "ETA=0.5", "WEIBULL"),
