@@ -1590,7 +1590,8 @@
 #' Then the recovered design is trusted only if it reproduces the phase's
 #' fitted columns exactly: the same names and, once the rows with a missing
 #' value are dropped as the fit dropped them, the same rows and values, with
-#' every factor level occurring in those rows. A fit that dropped rows for
+#' every factor coded by treatment contrasts and each of its levels occurring
+#' in those rows. A fit that dropped rows for
 #' another phase's missing values does not match, and is treated as having
 #' no data.
 #'
@@ -1619,6 +1620,14 @@
   s <- unname(stored)
   if (!identical(dim(x), dim(s)) ||
         !isTRUE(all(x == s | (is.na(x) & is.na(s))))) {
+    return(NULL)
+  }
+  # Treatment coding names each column after its level. Numbered contrasts
+  # (sum, Helmert, a session's own) do not, and a level whose rows a term
+  # multiplies by 0 (g in x:g) has its code checked by no fitted value, so
+  # another contrasts option at predict time would recode it silently.
+  coding <- built$design$contrasts
+  if (!all(vapply(coding, identical, logical(1), "contr.treatment"))) {
     return(NULL)
   }
   # The fitted values check a level's code only where the level occurs. One

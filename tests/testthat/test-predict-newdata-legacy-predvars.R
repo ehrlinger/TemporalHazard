@@ -497,3 +497,27 @@ test_that("kept data whose factor levels appear only in dropped rows is not trus
   expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
                "refit")
 })
+
+test_that("kept data is trusted only under treatment contrasts", {
+  skip_on_cran()  # multiphase fits
+  # Numbered contrasts do not name their levels. In x:g beside x, a level
+  # whose rows all have x = 0 has its code checked by no fitted value, so
+  # another contrasts option at predict time recodes it silently.
+  d <- legacy_data()
+  d$g <- c("a", "b", "c", "z")[(seq_len(nrow(d)) %% 4) + 1]
+  d$x <- ifelse(d$g == "z", d$age / 100, 0)
+  old <- options(contrasts = c("contr.sum", "contr.poly"))
+  on.exit(options(old), add = TRUE)
+  lf <- legacy_fit_on("x + x:g", d, keep_frame = TRUE)
+  nd <- data.frame(time = 12, g = c("a", "b", "c", "z"), x = 1)
+  contr.recoded <- function(n, contrasts = TRUE, sparse = FALSE) {
+    m <- stats::contr.sum(n)
+    m[1, ] <- 2
+    m
+  }
+  assign("contr.recoded", contr.recoded, envir = globalenv())
+  on.exit(rm("contr.recoded", envir = globalenv()), add = TRUE)
+  options(contrasts = c("contr.recoded", "contr.poly"))
+  expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
+               "refit")
+})
