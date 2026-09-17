@@ -28,6 +28,9 @@ jobs:
           res <- try(pkgbuild::build(".", dest_path = "D:/a/pb", args = "--no-manual"))
           print(res)
           cat(if (file.exists("D:/a/diag276.txt")) readLines("D:/a/diag276.txt") else "NO DIAG FILE", sep = "\n")
+          stopifnot(!inherits(res, "try-error"))
+          untar(res, exdir = "D:/a/pbx")
+          for (f in Sys.glob("D:/a/pbx/TemporalHazard/inst/doc/*.html")) cat("PB_OUTPUT_MARKERS", basename(f), sum(lengths(regmatches(readLines(f, warn = FALSE), gregexpr("#&gt;", readLines(f, warn = FALSE))))), "\n")
       - name: D. Plain R CMD build, same env dump (control)
         shell: bash
         run: |
