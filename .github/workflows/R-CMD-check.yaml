@@ -212,11 +212,22 @@ jobs:
           fi
           # `|| true`: the step shell runs with -e -o pipefail, so a grep that
           # matches nothing would end the step before the warning below.
-          lines="$({ grep -E 'Starting [0-9]+ test process|\[ FAIL [0-9]+ \| WARN [0-9]+ \| SKIP [0-9]+ \| PASS [0-9]+ \]' "$f" || true; } | tail -n 2)"
-          if [ -z "$lines" ]; then
+          #
+          # The two greps are separate because testthat prints the totals line
+          # twice: one `tail -n 2` over both patterns kept two copies of the
+          # totals and dropped "Starting N test processes", so a Linux job that
+          # had fallen back to serial looked exactly like one that had not
+          # (#330). The worker line is what says parallel actually engaged.
+          workers="$({ grep -E 'Starting [0-9]+ test process' "$f" || true; } | tail -n 1)"
+          totals="$({ grep -E '\[ FAIL [0-9]+ \| WARN [0-9]+ \| SKIP [0-9]+ \| PASS [0-9]+ \]' "$f" || true; } | tail -n 1)"
+          # Keyed on the totals, not on the combined text: the worker fallback
+          # below is never empty, so testing the pair would report a green
+          # summary over a run whose totals were never found.
+          if [ -z "$totals" ]; then
             echo "::warning title=testthat totals::no totals line in $f"
             exit 0
           fi
+          lines="$(printf '%s\n%s' "${workers:-serial (no worker line)}" "$totals")"
           echo "$lines"
           printf '%s\n' "$lines" | sed 's/^/    /' >> "$GITHUB_STEP_SUMMARY"
           echo "::notice title=testthat totals::$(printf '%s' "$lines" | tr '\n' ' ')"
