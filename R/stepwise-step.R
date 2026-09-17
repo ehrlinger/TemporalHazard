@@ -701,9 +701,15 @@
 #'     the forward step's: a drop this step REFUSED because it leaves the
 #'     design no smaller -- an interaction whose main effect has gone is
 #'     recoded, so the "reduced" model is the model it started from (#320).
-#'     A multiphase drop is judged on the converged refit; a
-#'     single-distribution drop on its reduced design, before any refit
-#'     (#323).  The reason then says the drop removes no
+#'     A multiphase drop is judged on the converged refit.  A
+#'     single-distribution drop is judged on its reduced design, before any
+#'     refit, WHEN that design can be built: the fit stores a formula and
+#'     the mutated formula parses against `data` (#323).  Otherwise the
+#'     refit runs and reports the failure itself -- a vector-interface fit
+#'     has no formula to mutate, and such a base is refused by
+#'     `hzr_stepwise()` before any step, while a design that cannot be
+#'     built (an unusable factor, say) fails in the refit with its own
+#'     message.  The reason then says the drop removes no
 #'     column, and `accepted` is `FALSE` with the current fit returned.
 #'
 #' @keywords internal
