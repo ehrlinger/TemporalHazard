@@ -13,14 +13,15 @@
   data leave a shape undetermined the fit reported finite standard errors
   for a direction the likelihood does not determine at all.
 
-  **The fit itself is unchanged**: the estimates and the log-likelihood are
-  identical, and so is every fit without a `"g3"` phase and every fit whose
-  `"g3"` shapes are fixed. What moves is the Hessian and everything read
-  from it -- standard errors, Wald statistics, confidence intervals, the
-  condition warnings, and the score test `hzr_stepwise()` uses to enter a
-  variable. The one exception is a free `alpha` reaching `(0, 1e-5]`, where
-  the optimizer's own gradient was wrong and the estimates can move too;
-  see below.
+  **The fit itself is unchanged unless its search passed through a small
+  `alpha`.** For every fit without a `"g3"` phase, every fit whose `"g3"`
+  shapes are fixed, and every free-shape fit whose search never took `alpha`
+  to `1e-5` or below, the estimates and the log-likelihood are identical.
+  What moves is the Hessian and everything read from it -- standard errors,
+  Wald statistics, confidence intervals, the condition warnings, and the
+  score test `hzr_stepwise()` uses to enter a variable. Where the search did
+  pass through that region the optimizer's own gradient was wrong, and the
+  estimates can move too; see below.
 
   The cause was numerical: the G3 second derivatives stepped every shape by
   a fixed amount, about 1.2e-4, and the score stepped a small `alpha` by
@@ -32,11 +33,25 @@
   that into an order of magnitude in the standard errors, which is why the
   entry error alone is not the number to judge this by.
 
-  - **Estimates could stop short of the optimum.** At `0 < alpha <= 1e-5`
-    the gradient in `alpha`, which the optimizer uses, was about 50% off at
-    `alpha = 1e-5` and approached 100% as `alpha` fell. On one weakly
-    identified data set, fits started there stopped a full log-likelihood
-    unit below what was attainable and reported `converged = TRUE`. Such
+  - **If a fit has a free `alpha`, refit it under this version and compare
+    -- its final `alpha` does not tell you whether this applies.** At
+    `0 < alpha <= 1e-5` the gradient in `alpha`, which the optimizer uses,
+    was about 50% off at `alpha = 1e-5` and approached 100% as `alpha` fell.
+    A search only has to pass through that region for the difference to
+    steer it. On the package's own `avc` data a free-shape fit started at
+    `gamma = 0.1` went below `alpha = 1e-5` on its way, finished with `alpha`
+    between 0.015 and 0.02 -- far outside the region -- and still stopped at
+    `gamma` 100.9 where it used to stop at 94.4.
+
+    Both versions stopped short of an optimum there, and both said so: the
+    fit warns that its estimates fail the relative-gradient test SAS/C
+    HAZARD requires (0.121 before this change, 0.482 after, against a limit
+    of 6.06e-06). **If your fit carries that warning, its estimates were not
+    a reliable optimum before this release either** -- refit with more
+    starts or other starting values rather than reading a change in them as
+    an improvement. On one weakly identified data set, fits started at such
+    an `alpha` stopped a full log-likelihood unit below what was attainable
+    and reported `converged = TRUE`. Such
     likelihoods are often multimodal, so a corrected fit is not guaranteed
     to end higher from every start. At such an `alpha` the Hessian is now
     evaluated, and is usually too ill-conditioned to invert: standard
