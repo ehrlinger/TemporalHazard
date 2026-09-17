@@ -338,6 +338,15 @@
 
 ## Bug fixes
 
+* **The vignettes no longer skip every chunk in silence when the rendering
+  session cannot see the installed package (#276).** Each vignette gates its
+  chunks on `requireNamespace("TemporalHazard")`, so a render session that
+  could not load the package produced a complete-looking document with no
+  computed output and no error. Rebuilding the vignettes now puts the
+  library that `R CMD build` installs the package into back on
+  `.libPaths()`, and under continuous integration a package that will not
+  load stops the build and says why.
+
 * **`predict(newdata = )` on a multiphase fit saved before this version no
   longer gets `scale()`, `poly()` or `ns()` in a phase formula silently wrong
   (#307).** Such a fit stored no phase design, so the phase was rebuilt from
