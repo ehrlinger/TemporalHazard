@@ -40,7 +40,10 @@ hzr_stepwise(
 column not already in the model for every phase.  For
 single-distribution fits, pass a one-sided formula
 (\code{~ age + nyha}) or a character vector of names.  For multiphase
-fits, pass a named list of one-sided formulas keyed by phase.}
+fits, pass a named list of one-sided formulas keyed by phase.  A
+two-sided formula is an error, since its left-hand side would never be
+a candidate, and so is any \code{scope} under \code{direction = "backward"},
+which does not read it.}
 
 \item{data}{Data frame the base fit was built on.  Required for
 refits.}
@@ -191,9 +194,11 @@ and whether it is accepted.
 \item{\code{direction = "forward"}}{Start from the base model and only
 \emph{add} variables; the best eligible candidate enters each step
 until none clears the entry rule.  Variables never leave once in.}
-\item{\code{direction = "backward"}}{Start from the full candidate model and
-only \emph{drop} variables; the weakest term leaves each step until all
-survivors clear the retention rule.}
+\item{\code{direction = "backward"}}{Start from the base model, which must
+already hold every candidate, and only \emph{drop} variables; the weakest
+term leaves each step until all survivors clear the retention rule.
+\code{scope} is not read, so passing one is an error: protect terms with
+\code{force_in}.}
 \item{\code{direction = "both"} (default)}{Two-way stepwise: after each
 entry, already-selected variables are re-tested and may be dropped.
 This is the SAS \code{SELECTION = STEPWISE} strategy.  \code{max_move} caps how

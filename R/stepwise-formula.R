@@ -398,3 +398,47 @@
   if (is.numeric(x)) return(x)
   NULL
 }
+
+
+#' Refuse a `scope` the screen would not honour
+#'
+#' A backward screen only drops terms the base model already has, so it
+#' never reads `scope`: the variables it leaves out are still dropped, and the
+#' ones the base lacks are never tested. A two-sided scope formula is read by
+#' its right-hand side only, so its left-hand side is never a candidate. Both
+#' ran to a result with no message (#343). `hzr_stepwise()` and
+#' `hzr_bootstrap()` call this before any fitting or seeding.
+#'
+#' @param scope The `scope` argument as given.
+#' @param direction The matched `direction`.
+#' @return `NULL`, invisibly; otherwise stops.
+#' @keywords internal
+#' @noRd
+.hzr_refuse_unhonoured_scope <- function(scope, direction) {
+  if (is.null(scope)) {
+    return(invisible(NULL))
+  }
+  if (direction == "backward") {
+    stop("`scope` has no effect when `direction = \"backward\"`: a backward ",
+         "screen only drops terms the base model already has, so a variable ",
+         "left out of `scope` is still dropped and one the base lacks is ",
+         "never tested. Pass the full model as the base fit, protect terms ",
+         "with `force_in`, and leave `scope` unset; or use ",
+         "`direction = \"both\"`.", call. = FALSE)
+  }
+  one_sided <- function(sc, what) {
+    if (inherits(sc, "formula") && length(sc) == 3L) {
+      stop(what, " must be one-sided: its left-hand side (`",
+           paste(deparse(sc[[2L]]), collapse = " "), "`) would be ignored, ",
+           "so it would never be a candidate. Write every candidate on the ",
+           "right, as in `~ ", paste(deparse(sc[[3L]]), collapse = " "), "`.",
+           call. = FALSE)
+    }
+  }
+  if (is.list(scope) && !inherits(scope, "formula")) {
+    for (nm in names(scope)) one_sided(scope[[nm]], paste0("`scope$", nm, "`"))
+  } else {
+    one_sided(scope, "`scope`")
+  }
+  invisible(NULL)
+}

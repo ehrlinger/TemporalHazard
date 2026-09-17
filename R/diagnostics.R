@@ -1691,6 +1691,8 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   direction <- match.arg(direction)
   criterion <- match.arg(criterion)
   select_mode <- !is.null(scope)
+  # Before seeding, so a refused call leaves the random number stream alone.
+  .hzr_refuse_unhonoured_scope(scope, direction)
 
   # `...` exists only to forward stepwise-control arguments (e.g. `control=`)
   # to hzr_stepwise() in select-mode; fixed-refit mode (scope = NULL) has no

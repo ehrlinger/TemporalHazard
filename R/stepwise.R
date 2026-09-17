@@ -32,9 +32,11 @@
 #'   \item{`direction = "forward"`}{Start from the base model and only
 #'     *add* variables; the best eligible candidate enters each step
 #'     until none clears the entry rule.  Variables never leave once in.}
-#'   \item{`direction = "backward"`}{Start from the full candidate model and
-#'     only *drop* variables; the weakest term leaves each step until all
-#'     survivors clear the retention rule.}
+#'   \item{`direction = "backward"`}{Start from the base model, which must
+#'     already hold every candidate, and only *drop* variables; the weakest
+#'     term leaves each step until all survivors clear the retention rule.
+#'     `scope` is not read, so passing one is an error: protect terms with
+#'     `force_in`.}
 #'   \item{`direction = "both"` (default)}{Two-way stepwise: after each
 #'     entry, already-selected variables are re-tested and may be dropped.
 #'     This is the SAS `SELECTION = STEPWISE` strategy.  `max_move` caps how
@@ -93,7 +95,10 @@
 #'   column not already in the model for every phase.  For
 #'   single-distribution fits, pass a one-sided formula
 #'   (`~ age + nyha`) or a character vector of names.  For multiphase
-#'   fits, pass a named list of one-sided formulas keyed by phase.
+#'   fits, pass a named list of one-sided formulas keyed by phase.  A
+#'   two-sided formula is an error, since its left-hand side would never be
+#'   a candidate, and so is any `scope` under `direction = "backward"`,
+#'   which does not read it.
 #' @param data Data frame the base fit was built on.  Required for
 #'   refits.
 #' @param direction Search strategy: one of `"both"` (default),
@@ -241,6 +246,7 @@ hzr_stepwise <- function(fit,
     stop("`data` must be a data frame (typically the frame used for the base fit).",
          call. = FALSE)
   }
+  .hzr_refuse_unhonoured_scope(scope, direction)
 
   # Every accepted step goes through .hzr_refit_with_scope(), so a base fit
   # it cannot refit makes the entire screen a no-op.  Left to fail
