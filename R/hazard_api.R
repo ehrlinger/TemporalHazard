@@ -804,12 +804,16 @@ hazard <- function(formula = NULL,
     if (any(weights < 0) || any(!is.finite(weights))) {
       stop("'weights' must be non-negative and finite.", call. = FALSE)
     }
-    # All-zero weights leave no observation in the likelihood: the fit
-    # returned its starting values with converged = TRUE, as zero rows did.
-    if (all(weights == 0)) {
-      stop("hazard() was given no observations: every 'weights' value is ",
-           "0, so no row contributes to the likelihood.", call. = FALSE)
-    }
+  }
+  # A row adds nothing to the likelihood when its weight is 0, or when it is
+  # right-censored at time 0 (H(0) = 0). With no other row the fit returned
+  # its starting values, objective 0 and converged = TRUE, as zero rows did.
+  contributes <- !(status == 0 & time == 0)
+  if (!is.null(weights)) contributes <- contributes & weights > 0
+  if (!any(contributes)) {
+    stop("hazard() was given no observations that contribute to the ",
+         "likelihood: every row has weight 0 or is right-censored at time 0.",
+         call. = FALSE)
   }
 
   if (!is.character(dist) || length(dist) != 1 || !nzchar(dist)) {

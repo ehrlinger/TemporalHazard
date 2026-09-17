@@ -58,10 +58,24 @@ test_that("hazard() refuses zero rows on every path (#231)", {
                       dist = "weibull", theta = c(0.5, 1), fit = TRUE), msg)
   expect_error(hazard(time = tt, status = st, weights = rep(0, 6),
                       dist = "multiphase", phases = ph, fit = TRUE), msg)
-  # One positive weight is enough to be data.
-  w1 <- hazard(time = tt, status = st, weights = c(0, 0, 1, 0, 0, 0),
-               dist = "weibull", theta = c(0.5, 1))
-  expect_s3_class(w1, "hazard")
+  # Right-censored at time 0 adds H(0) = 0: no information either, with or
+  # without weights.
+  expect_error(hazard(time = c(0, 0, 0), status = c(0, 0, 0),
+                      dist = "weibull", theta = c(0.5, 1), fit = TRUE), msg)
+  expect_error(hazard(time = c(0, 0, 3, 4), status = c(0, 0, 1, 1),
+                      weights = c(1, 1, 0, 0), dist = "multiphase",
+                      phases = ph, fit = TRUE), msg)
+
+  # Controls that FIT, not merely build: one positive weight on an event, and
+  # an event at time 0, are data.
+  w1 <- suppressWarnings(hazard(time = tt, status = st,
+                                weights = c(0, 0, 1, 0, 0, 0),
+                                dist = "exponential", theta = 0.1, fit = TRUE))
+  expect_true(is.finite(w1$fit$objective))
+  expect_false(w1$fit$objective == 0)
+  e0 <- suppressWarnings(hazard(time = c(0, 0, 2), status = c(0, 0, 1),
+                                dist = "exponential", theta = 0.1, fit = TRUE))
+  expect_false(e0$fit$objective == 0)
 })
 
 test_that("fit = TRUE without theta is refused for single-distribution models", {

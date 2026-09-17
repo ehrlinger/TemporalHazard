@@ -284,10 +284,12 @@
   `converged = TRUE`. The warnings were about the Hessian (`rcond = 0`, not
   invertible), which read as a conditioning problem rather than as no data.
   The call now errors before any fitting, under `fit = FALSE` as well. The
-  same holds when every `weights` value is 0: no row then contributes to
-  the likelihood, and the fit came back converged at its starting values
-  with an objective of 0. Check that the data frame, or the subset passed
-  to `data`, has rows, and that some weight is positive.
+  same holds when no row contributes to the likelihood: every row has
+  weight 0, or is right-censored at time 0, where the cumulative hazard is
+  0. Such a fit came back converged at its starting values with an
+  objective of 0. Check that the data frame, or the subset passed to
+  `data`, has rows, and that some row with positive weight is an event or
+  is followed past time 0.
 
 ## New features
 
