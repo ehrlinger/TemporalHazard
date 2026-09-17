@@ -18,7 +18,7 @@ screen_324 <- function(fit, d) {
   hzr_stepwise(fit, scope = list(constant = ~ mal), data = d,
                direction = "forward", criterion = "wald", trace = FALSE)
 }
-undecidable <- "saved by a version before 1.1.0"
+undecidable <- "nor a record of whether a phase formula was used"
 
 test_that("a pre-1.1.0 fit whose `data =` symbol was NULL is refused (#324)", {
   skip_on_cran() # multiphase fits
@@ -107,4 +107,45 @@ test_that("the same fits with a stored frame, or on the formula interface, are n
     phases = phases, fit = TRUE, control = ctl_324))
   expect_true(.hzr_phase_inherits_global(formula_fit, "early"))
   expect_null(.hzr_ignored_phase_formula(formula_fit))
+})
+
+test_that("a newer fit with its frame removed is described as such, not dated (#343)", {
+  skip_on_cran() # a multiphase fit
+  # Removing `data$frame`, for example to drop data before saving, makes a
+  # fit look pre-1.1.0. The refusal must not claim the fit is that old.
+  d <- avc_324()
+  f <- pre_110(hazard(
+    time = d$int_dead, status = d$dead, x = cbind(mal = d$mal), data = d,
+    dist = "multiphase",
+    phases = list(early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1,
+                                    fixed = "m", formula = ~ mal),
+                  constant = hzr_phase("constant", formula = ~ age)),
+    fit = TRUE, control = ctl_324))
+  msg <- .hzr_ignored_phase_formula(f)
+  expect_match(msg, "or one whose `data$frame` was removed", fixed = TRUE)
+  expect_no_match(msg, "was saved by a version before 1.1.0", fixed = TRUE)
+})
+
+test_that("the pre-1.1.0 refusal also covers `~ 1` beside `x` and time windows (#343)", {
+  skip_on_cran() # multiphase fits
+  d <- avc_324()
+  dd <- NULL
+  saved <- function(early_formula, ...) {
+    f <- pre_110(suppressWarnings(hzr_saved_before_299(
+      list(early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1,
+                             fixed = "m", formula = early_formula),
+           constant = hzr_phase("constant")),
+      time = d$int_dead, status = d$dead, data = dd,
+      dist = "multiphase", fit = TRUE, control = ctl_324, ...)))
+    f$call$data <- quote(dd)
+    f
+  }
+  one_beside_x <- saved(~ 1, x = cbind(age = d$age))
+  expect_match(.hzr_ignored_phase_formula(one_beside_x), undecidable,
+               fixed = TRUE)
+  windowed <- saved(~ mal, x = cbind(mal = d$mal), time_windows = 1)
+  expect_identical(colnames(windowed$fit$x_list$early),
+                   c("mal_w1", "mal_w2"))
+  expect_match(.hzr_ignored_phase_formula(windowed), undecidable,
+               fixed = TRUE)
 })
