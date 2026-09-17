@@ -288,6 +288,28 @@ test_that("SELECTION constructs with no faithful translation are refused (#160)"
   refused("SELECTION; EARLY STRONG, NOISE; RESTRICT STRONG;", "RESTRICT")
 })
 
+test_that("every mapped SELECTION option reaches the emitted call (#160)", {
+  # A line-by-line check of the approved mapping against what is emitted.
+  # RESTRICT was implemented as "record" where the design said "refuse",
+  # which no behavioural test could catch, so each item is pinned here.
+  cl <- function(j) j$calls$fit[[3L]]
+  expect_equal(cl(.sel_job("SELECTION MAXSTEPS=7; EARLY A, B;"))[["max_steps"]], 7)
+  expect_equal(cl(.sel_job("SELECTION MOVE=3; EARLY A, B;"))[["max_move"]], 3)
+  d <- .sel_job("SELECTION; EARLY A, B;")
+  expect_equal(cl(d)[["criterion"]], "score")
+  expect_equal(cl(d)[["direction"]], "both")
+  expect_equal(cl(d)[["slentry"]], 0.3)
+  expect_equal(cl(d)[["slstay"]], 0.2)
+  expect_equal(cl(d)[["max_move"]], 1)
+
+  # /E under SELECTION: out of the base AND out of scope, but still in the
+  # listwise guard, because PROC HAZARD deletes rows where it is missing.
+  j <- .sel_job("SELECTION; EARLY A, B/E, C/S;")
+  expect_equal(deparse(j$calls$fit_base[[3L]][["phases"]][[2L]][["formula"]]), "~C")
+  expect_equal(deparse(cl(j)[["scope"]]), "list(phase_1 = ~A)")
+  expect_true(any(grepl("\\bB\\b", deparse(j$calls$status))))
+})
+
 test_that("printing options are recorded, not refused (#160)", {
   job <- .sel_job("SELECTION NOPRINTS NOPRINTQ; EARLY STRONG, NOISE;")
   expect_identical(job$calls$fit[[3L]][[1L]], as.name("hzr_stepwise"))
