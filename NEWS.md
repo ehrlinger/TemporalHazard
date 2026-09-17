@@ -300,8 +300,13 @@
   `poly(age, 2)` by a factor of 3e5, and `ns(age, df = 3)` by 66%. One row
   of a `scale(age)` phase came back as a zero-length prediction. A fit saved
   by 1.1.0 or later kept its fitting data, and its phase design is now
-  rebuilt from that data exactly as the fit built it, and trusted only if it
-  reproduces the fitted columns. A fit saved by 1.0.3 or earlier kept
+  rebuilt from that data exactly as the fit built it. Reproducing the fitted
+  rows is not enough, since a `cutoff` moved between two fitted ages changes
+  no fitted row, so that phase formula must also use only the kept data's
+  columns and R's own design functions (a user's function of the same name
+  is not one), and the rebuild must match the fitted columns exactly;
+  otherwise it is treated as a fit without its data. A fit saved by 1.0.3
+  or earlier kept
   neither, so nothing is left to check a rebuild against: its phase is
   rebuilt only when the phase formula is closed, meaning built from
   `newdata`'s columns, literals, arithmetic and comparisons, `I()`, `log()`,
@@ -319,9 +324,11 @@
   is a `cut()` coded other than by treatment contrasts under another
   `contrasts` option. A closed formula still predicts, and a missing value
   gives an NA row; one that cannot be built from `newdata` alone, or does
-  not give the fitted columns, is refused. Current fits still recompute a
-  statistic such as `mean()` inside a formula from `newdata`, as `lm()`
-  does; that is #331.
+  not give the fitted columns, is refused. A fit made before duplicated
+  design column names were refused, holding two columns of one name, is
+  refused at `newdata` too, since no selection by name can tell them apart.
+  Current fits still recompute a statistic such as `mean()` inside a formula
+  from `newdata`, as `lm()` does; that is #331.
 
 * **`hzr_bootstrap()` now bootstraps a vector-interface fit made without
   `data =`** (#259, #312). It counted the rows to resample in the fit's data
