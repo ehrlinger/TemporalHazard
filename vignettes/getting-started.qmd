@@ -12,17 +12,6 @@ vignette: >
 
 ```{r}
 #| include: false
-# DIAG #276 -- throwaway
-cat(file = stderr(), "DIAG276 R.home=", R.home(), "\n",
-    "DIAG276 libPaths=", paste(.libPaths(), collapse = " | "), "\n",
-    "DIAG276 R_LIBS=", Sys.getenv("R_LIBS"), "\n",
-    "DIAG276 R_BUILD_TEMPLIB=", Sys.getenv("R_BUILD_TEMPLIB"), "\n",
-    "DIAG276 CI=", Sys.getenv("CI"), "\n",
-    "DIAG276 load=", tryCatch({loadNamespace("TemporalHazard"); "ok"}, error = conditionMessage), "\n")
-```
-
-```{r}
-#| include: false
 has_pkg    <- requireNamespace("TemporalHazard", quietly = TRUE)
 has_ggplot2 <- requireNamespace("ggplot2",       quietly = TRUE)
 # On CI a package that cannot load must fail the build, not skip every

@@ -22,18 +22,28 @@ jobs:
         with:
           extra-packages: any::rcmdcheck
           needs: check
-      - name: Where R and quarto are
+      - name: A. Normal build; count executed output in each built vignette
         shell: bash
         run: |
-          echo "CI=$CI"; which -a R Rscript quarto || true; quarto --version
-          Rscript -e 'cat(R.home(), "\n"); print(.libPaths()); print(Sys.getenv(c("R_LIBS","R_LIBS_USER","R_LIBS_SITE","QUARTO_R")))'
-          reg query "HKLM\\SOFTWARE\\R-core\\R" /s || true
-          ls "/c/Program Files/R" || true
-      - name: R CMD build (vignettes only, getting-started)
+          R CMD build . 2>&1 | tail -n 15
+          mkdir -p out && tar -xzf TemporalHazard_*.tar.gz -C out
+          fail=0
+          for f in out/TemporalHazard/inst/doc/*.html; do
+            n=$(grep -c '#&gt;' "$f" || true)
+            echo "OUTPUT_MARKERS $(basename "$f") $n"
+            [ "$n" -gt 0 ] || fail=1
+          done
+          ls out/TemporalHazard/inst/doc/*.html >/dev/null
+          exit $fail
+      - name: B. Known positive, the CI guard must fail the build
         shell: bash
         run: |
-          R CMD build . 2>&1 | tee build.log || true
-          cat "$R_QUARTO_LOG_FILE" || echo "no quarto debug log"
+          rm -f TemporalHazard_*.tar.gz
+          sed -i 's/^if (nzchar(Sys.getenv("CI"))) for (p in c("TemporalHazard", "ggplot2")) loadNamespace(p)$/if (nzchar(Sys.getenv("CI"))) for (p in c("TemporalHazard", "NoSuchPkg276")) loadNamespace(p)/' vignettes/getting-started.qmd
+          grep -c NoSuchPkg276 vignettes/getting-started.qmd
+          if R CMD build . > probe.log 2>&1; then echo "PROBE BUILD PASSED: guard did not fire"; tail -n 30 probe.log; exit 1; fi
+          grep -n "NoSuchPkg276" probe.log || { echo "failed for another reason"; tail -n 40 probe.log; exit 1; }
+          echo "PROBE OK: guard fired on Windows"
       - if: always()
         uses: actions/upload-artifact@v4
         with:
