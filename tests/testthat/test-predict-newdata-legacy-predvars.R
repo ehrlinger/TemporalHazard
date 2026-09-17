@@ -319,3 +319,27 @@ test_that("a legacy fit without its data refuses to rebuild any phase formula", 
   expect_equal(got / fitted[rows], rep(1, length(rows)), tolerance = 1e-8,
                ignore_attr = TRUE)
 })
+
+test_that("kept data is not trusted for a qualified function off the list or reading outside it", {
+  skip_on_cran()  # multiphase fits
+  d <- legacy_data()
+  gap <- age_gap(d)
+  nd <- data.frame(time = 2, age = mean(gap))
+  # A namespace with no entry in the list (utils) gives the refit advice,
+  # not an internal error.
+  lf <- legacy_fit_on("utils::head(age, 1e6)", d, keep_frame = TRUE)
+  expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
+               "saved without its design.*refit")
+  # A listed qualified function still has its arguments checked: a cutoff
+  # moved within the age gap, inside stats::poly(raw = TRUE) of degree 1.
+  e <- new.env()
+  e$cutoff <- gap[1] + 0.25 * diff(gap)
+  f <- stats::as.formula(
+    "~ stats::poly(I(age * (age > cutoff)), 1, raw = TRUE)", env = e)
+  lf <- legacy_fit_on(f, d, keep_frame = TRUE)
+  e$cutoff <- gap[1] + 0.75 * diff(gap)
+  expect_identical(unname(lf$fit$fit$x_list$early[, 1L]),
+                   d$age * (d$age > e$cutoff))
+  expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
+               "refit")
+})
