@@ -386,7 +386,9 @@
         error = function(e) NULL
       )
       if (is.null(mf_j)) return(NULL)
-      x_j <- stats::model.matrix(ph$formula, data = mf_j)[, -1L, drop = FALSE]
+      # The fit's own construction, so an intercept-free formula builds as
+      # it did at fit time (#303).
+      x_j <- .hzr_formula_design(ph$formula, data)$x
       x_list[[nm]] <- x_j
       cov_counts[[nm]] <- ncol(x_j)
     } else if (!is.null(current$fit$x_list[[nm]]) || !is.null(d$x)) {

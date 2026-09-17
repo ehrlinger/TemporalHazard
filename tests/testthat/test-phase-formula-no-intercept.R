@@ -37,22 +37,22 @@ test_that("an intercept-free phase formula keeps its first term (#303)", {
 test_that("an intercept-free phase fits and predicts as its control (#303)", {
   skip_on_cran()
   d <- na.omit(avc[, c("int_dead", "dead", "age", "mal")])
-  fitp <- function(fe) {
+  early <- function(fe) {
+    hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1, fixed = "m", formula = fe)
+  }
+  fitp <- function(early) {
     hazard(survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
-           phases = list(
-             early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1,
-                               fixed = "m", formula = fe),
-             constant = hzr_phase("constant")
-           ),
+           phases = list(early = early, constant = hzr_phase("constant")),
            fit = TRUE, control = list(n_starts = 1L, conserve = FALSE))
   }
-  control <- fitp(~ age)
+  control <- fitp(early(~ age))
   expect_identical(colnames(control$fit$x_list$early), "age")
   nd <- data.frame(time = c(0.5, 2, 5), age = c(40, 60, 80))
   p_control <- predict(control, newdata = nd, type = "cumulative_hazard")
 
   for (fe in list(~ 0 + age, ~ age - 1)) {
-    fit <- fitp(fe)
+    expect_warning(ph <- early(fe), "removes the intercept")
+    fit <- fitp(ph)
     expect_identical(colnames(fit$fit$x_list$early), "age")
     expect_identical(fit$fit$theta, control$fit$theta)
     expect_identical(fit$fit$objective, control$fit$objective)
@@ -63,6 +63,53 @@ test_that("an intercept-free phase fits and predicts as its control (#303)", {
 
   # The control is not the covariate-free model, so the equalities above
   # compare a fitted covariate and not two empty designs.
-  none <- fitp(NULL)
+  none <- fitp(early(NULL))
   expect_gt(control$fit$objective - none$fit$objective, 1)
+})
+
+test_that("hzr_phase() warns once that an intercept removal is ignored (#303)", {
+  for (f in list(~ 0 + age, ~ age - 1, ~ -1 + age, ~ 0 + .)) {
+    expect_warning(hzr_phase("constant", formula = f), "removes the intercept",
+                   info = deparse(f))
+  }
+  for (f in list(~ age, ~ 1, ~ age + mal, ~ .)) {
+    expect_no_warning(hzr_phase("constant", formula = f))
+  }
+})
+
+test_that("the score test builds an intercept-free phase as the fit did (#303)", {
+  skip_on_cran()
+  # The score test rebuilds every phase but the candidate's from its stored
+  # formula, so it must build that formula as the fit did.
+  d <- na.omit(avc[, c("int_dead", "dead", "age", "mal", "com_iv", "inc_surg")])
+  d$grp <- factor(ifelse(d$inc_surg > 2, "high", "low"),
+                  levels = c("low", "high"))
+  fitc <- function(constant) {
+    hazard(survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
+           phases = list(
+             early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1,
+                               fixed = "m", formula = ~ age),
+             constant = constant
+           ),
+           fit = TRUE, control = list(n_starts = 1L, conserve = FALSE))
+  }
+  control <- fitc(hzr_phase("constant", formula = ~ mal + grp))
+  expect_warning(ph <- hzr_phase("constant", formula = ~ 0 + mal + grp),
+                 "removes the intercept")
+  fit <- fitc(ph)
+
+  x <- .hzr_score_expand(fit, "com_iv", "early", d)$x_list$constant
+  expect_identical(colnames(x), c("mal", "grphigh"))
+  q <- .hzr_score_q(fit, "com_iv", "early", d)
+  q_control <- .hzr_score_q(control, "com_iv", "early", d)
+  expect_true(is.finite(q_control$stat))
+  expect_identical(q$stat, q_control$stat)
+
+  # A single-term phase lost its only column, so candidates in every other
+  # phase could not be scored.
+  expect_warning(ph <- hzr_phase("constant", formula = ~ 0 + age),
+                 "removes the intercept")
+  q <- .hzr_score_q(fitc(ph), "mal", "early", d)
+  expect_true(is.na(q$reason))
+  expect_true(is.finite(q$stat))
 })
