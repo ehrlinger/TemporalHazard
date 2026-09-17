@@ -27,6 +27,12 @@ test_that("an out-of-range time scale is infeasible, not an error (#262)", {
     counts <- stats::setNames(c(0L, 0L), names(ph))
     x_list <- stats::setNames(list(NULL, NULL), names(ph))
     conserved <- length(layouts[[nm]]$theta(0))
+    # Which cells were what on the previous version: cdf/-800 (t_half = 0)
+    # raised "t_half must be a positive scalar" on all three paths, the
+    # defect #262 was filed for. cdf/+800 and g3/-800 already returned -Inf
+    # from the objective; the score raised at cdf/+800 and returned zeros at
+    # g3/-800. g3/+800 returned a finite objective (the late phase switched
+    # off) with a score that raised, and is the deliberate new refusal.
     for (ls in c(800, -800)) {
       th <- layouts[[nm]]$theta(ls)
       info <- paste(nm, ls)

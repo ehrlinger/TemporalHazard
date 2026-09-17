@@ -403,8 +403,13 @@
 #'
 #' `t_half` and `tau` are carried as `log_t_half` and `log_tau`, and an
 #' optimizer step can take them past what `exp()` represents: the scale is
-#' then `Inf` or `0`, where the decomposition refuses to evaluate. That is an
-#' infeasible point, to be penalised like any other, not an error (#262).
+#' then `0` or `Inf`. At `t_half = 0` the decomposition refuses to evaluate,
+#' which is the error #262 was filed for. The other cells disagreed among
+#' themselves: the score could not be evaluated at a scale of `Inf`, where
+#' the objective returned `-Inf` for `t_half` and, for `tau`, the finite
+#' value of the phase switched off. All are now one infeasible point, to be
+#' penalised like any other rather than raising or, at `tau = Inf`, being
+#' optimized over a value the score cannot support (#262).
 #'
 #' @param pars A phase's unpacked parameters (`.hzr_unpack_phase_theta()`).
 #' @param type The phase type.
