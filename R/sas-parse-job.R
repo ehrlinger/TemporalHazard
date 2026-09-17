@@ -613,6 +613,35 @@
     ))
   }
 
+  # A phase covariate is evaluated only in `data`, and with no DATA= there is
+  # none: hazard() refuses the call (#299) and tells the reader to pass
+  # `data =`, which the SAS job never had. Read the emitted phase calls rather
+  # than the SAS text, so this tracks what the chunk would carry (#311).
+  phase_has_formula <- vapply(
+    as.list(parms$phases)[-1L],
+    function(ph) is.call(ph) && !is.null(ph[["formula"]]),
+    logical(1)
+  )
+  if (is.null(data_name) && any(phase_has_formula)) {
+    untr <- rbind(untr, .hzr_untranslated_frame(
+      NA_integer_, "DATA=",
+      paste("the job names no DATA= dataset, but a phase has covariates,",
+            "which hazard() evaluates only in `data`. Add DATA= to the job",
+            "and translate again, or fit it by hand (#311).")
+    ))
+    return(list(
+      call = quote(stop(
+        "This PROC HAZARD job names no DATA= dataset, but a phase has ",
+        "covariates, and hazard() evaluates a phase's covariates only in ",
+        "`data`. Name the dataset with DATA= and translate the job again, ",
+        "or fit the model by hand.",
+        call. = FALSE
+      )),
+      status_call = NULL, outhaz = outhaz, untranslated = untr,
+      tokens_seen = seen, tokens_mapped = mapped
+    ))
+  }
+
   # The status expression is hoisted into its own chunk, named .hzr_status so
   # it cannot collide with a SAS variable, because every job carries at least
   # one guard that must run, and be seen to run, ahead of the fit: the
