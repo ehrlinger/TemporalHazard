@@ -64,6 +64,25 @@
     # One-sided formula for model.matrix(), with `.` expanded against `data`
     # without the Surv() variables (#273). See .hzr_expand_rhs().
     rhs_formula <- .hzr_expand_rhs(formula, data)
+    # Every distribution carries its own intercept (its scale), so the design
+    # always drops one. Without an intercept in the formula, a factor would
+    # code every level, collinear with that scale (#337). Build the design
+    # as if the intercept were present, and say so. The phase-formula
+    # counterpart is .hzr_formula_design() (#303).
+    rhs_terms <- stats::terms(rhs_formula, data = data)
+    if (attr(rhs_terms, "intercept") == 0L &&
+          length(attr(rhs_terms, "term.labels")) > 0L) {
+      # Classed so that a refit of an already-warned fit can muffle it.
+      warning(warningCondition(paste0(
+        "The formula `", paste(deparse(formula), collapse = " "),
+        "` removes the intercept, which a hazard model cannot do: the ",
+        "distribution's scale parameter plays the intercept role. The ",
+        "design is built as if the intercept were present, so factors are ",
+        "coded as they would be with it."
+      ), class = "hzr_intercept_removed"))
+      attr(rhs_terms, "intercept") <- 1L
+      rhs_formula <- rhs_terms
+    }
     tryCatch({
       x <- stats::model.matrix(rhs_formula, data = data)
       x_contrasts <- attr(x, "contrasts")

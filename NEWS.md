@@ -2,6 +2,19 @@
 
 ## Breaking changes
 
+* **A model formula without an intercept now builds the design of the same
+  formula with one, with a warning (#337).** Every distribution carries its
+  own intercept, its scale parameter. Without one in the formula,
+  `Surv(time, dead) ~ 0 + grp` coded a column for every level of a factor
+  `grp`, collinear with that scale. A Weibull fit lost its standard errors
+  (`Hessian not invertible`). A multiphase fit inheriting the design
+  stopped 9.5 log-likelihood units below the fit with the intercept, with
+  warnings but wrong estimates. The formula now fits as
+  `Surv(time, dead) ~ grp`, and factors are coded as they would be with the
+  intercept. A numeric term fits as before (`~ 0 + age` is `~ age`), apart
+  from the new warning, which a `hzr_stepwise()` refit does not repeat. The
+  phase-formula counterpart is #303.
+
 * **`hazard()` now refuses a multiphase phase formula with covariates when
   no `data` is supplied (#299).** Such fits previously ignored the phase
   formula. On the vector interface (`time =`, `status =`) without `data`, a

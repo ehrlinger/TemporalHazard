@@ -172,7 +172,10 @@ NULL
 #'   censoring status with different integers than this package does; the
 #'   formula path translates them, so write `Surv()`'s codes here. A plain
 #'   `status` vector takes this package's codes; a `Surv` passed as `status`
-#'   is translated the same way as here.
+#'   is translated the same way as here. Every distribution carries its own
+#'   intercept, its scale parameter, so the design never has one: removing
+#'   it (`~ 0 + age`, `~ age - 1`) is ignored with a warning, and builds the
+#'   design of `~ age`.
 #'   A `.` on the right-hand side stands for every column of `data` that the
 #'   `Surv()` term does not use, as in `survival::coxph()`.
 #'   When provided, overrides direct time/status/x arguments and extracts from data.
