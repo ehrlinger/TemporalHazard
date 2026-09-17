@@ -560,6 +560,18 @@
   if (length(idx_interval) > 0) {
     lower <- if (is.null(time_lower)) time else time_lower
     upper <- if (is.null(time_upper)) time else time_upper
+    # An NA bound makes the width comparison NA, which then stood in for the
+    # row index in the message below (#232). Name it as its own defect.
+    na_bound <- idx_interval[is.na(lower[idx_interval]) |
+                               is.na(upper[idx_interval])]
+    if (length(na_bound) > 0) {
+      stop("objective = \"sas\" requires both bounds on every ",
+           "interval-censored row. ", length(na_bound), " of ",
+           length(idx_interval), " interval row(s) have an NA bound, at ",
+           "index/indices ", paste(utils::head(na_bound, 10L), collapse = ", "),
+           if (length(na_bound) > 10L) ", ..." else "", ".",
+           call. = FALSE)
+    }
     bad <- idx_interval[!(upper[idx_interval] > lower[idx_interval])]
     if (length(bad) > 0) {
       stop("objective = \"sas\" requires upper > lower on every ",
@@ -1585,7 +1597,7 @@
 #' that data by the fit's own construction (#307). Reproducing the fitted
 #' rows proves nothing about a new row: a `cutoff` moved within a gap between
 #' fitted ages codes every fitted row the same. So the phase formula must
-#' first be closed over the kept data (`.hzr_phase_formula_closed()`): no
+#' first be closed over the kept data (`.hzr_formula_closed()`): no
 #' value from outside it, and no function but R's own design functions.
 #' Then the recovered design is trusted only if it reproduces the phase's
 #' fitted columns exactly: the same names and, once the rows with a missing
@@ -1602,8 +1614,8 @@
 #' @noRd
 .hzr_phase_design_from_frame <- function(object, nm, ph) {
   frame <- object$data$frame
-  if (!.hzr_phase_formula_closed(ph$formula, names(frame),
-                                 .hzr_phase_rebuild_functions)) {
+  if (!.hzr_formula_closed(ph$formula, names(frame),
+                           .hzr_rebuild_functions)) {
     return(NULL)
   }
   built <- tryCatch(
@@ -1630,94 +1642,6 @@
     return(NULL)
   }
   built$design
-}
-
-
-# The functions a legacy phase formula may call for its design to be
-# rebuilt from the data it kept, by the namespace each must come from (#307).
-# The list follows the global rebuild's (`.hzr_rebuild_functions`, #314):
-# scale(), poly(), ns() and bs() are checked against the fitted columns, and
-# a factor term, though listed, is refused as coded by contrasts. Folding
-# the two lists is #271.
-.hzr_phase_rebuild_functions <- list(
-  base = c("+", "-", "*", "/", "^", ":", "%in%", "(", "==", "!=", "<", ">",
-           "<=", ">=", "&", "|", "!", "I", "log", "log2", "log10", "log1p",
-           "exp", "expm1", "sqrt", "abs", "pmin", "pmax", "c", "factor",
-           "as.factor", "scale"),
-  stats = c("poly", "relevel"),
-  splines = c("ns", "bs")
-)
-
-
-#' Is a legacy phase formula closed over the given columns?
-#'
-#' The right-hand side must be exactly its text: `deparse()` then
-#' `str2lang()` gives back an identical expression, compared with
-#' `num.eq = FALSE`, so no constant hides behind how it prints (-0 prints as
-#' 0; a classed or pasted-in object prints as a call). Every value it looks
-#' up must be one of `columns`. Every function called unqualified
-#' must be on `functions` and resolve from the formula's environment to the
-#' identical object in its namespace, so a user's function of that name,
-#' whose state can move, is not taken for it; `c` included. A qualified
-#' `pkg::fn` needs only to be on the list: `::` reads the namespace itself,
-#' which the formula's environment cannot mask.
-#'
-#' @param formula A phase formula.
-#' @param columns The names a value may take.
-#' @param functions A list of function names by namespace.
-#' @return A single logical.
-#' @keywords internal
-#' @noRd
-.hzr_phase_formula_closed <- function(formula, columns, functions) {
-  env <- environment(formula)
-  if (!is.environment(env)) {
-    return(FALSE)
-  }
-  rhs <- formula[[length(formula)]]
-  text <- tryCatch(
-    str2lang(paste(deparse(rhs, width.cutoff = 500L), collapse = " ")),
-    error = function(e) NULL
-  )
-  if (!identical(text, rhs, num.eq = FALSE)) {
-    return(FALSE)
-  }
-  canonical <- function(fn) {
-    pkg <- names(Filter(function(fns) fn %in% fns, functions))
-    if (length(pkg) != 1L) {
-      return(FALSE)
-    }
-    want <- if (pkg == "base") {
-      get(fn, envir = baseenv())
-    } else {
-      tryCatch(getExportedValue(pkg, fn), error = function(e) NULL)
-    }
-    identical(get0(fn, envir = env, mode = "function"), want)
-  }
-  closed <- function(e) {
-    if (is.symbol(e)) {
-      nm <- as.character(e)
-      return(nm %in% columns)
-    }
-    if (!is.call(e)) {
-      # A single literal: the text round-trip rules out any other object.
-      return(TRUE)
-    }
-    fn <- e[[1L]]
-    args <- as.list(e)[-1L]
-    if (is.call(fn) && identical(fn[[1L]], as.name("::")) &&
-          length(fn) == 3L) {
-      # Membership only: `::` reads the namespace, which no binding in the
-      # formula's environment can mask.
-      return(as.character(fn[[3L]]) %in%
-               functions[[as.character(fn[[2L]])]] &&
-               all(vapply(args, closed, logical(1))))
-    }
-    if (!is.symbol(fn) || !canonical(as.character(fn))) {
-      return(FALSE)
-    }
-    all(vapply(args, closed, logical(1)))
-  }
-  closed(rhs)
 }
 
 
@@ -1800,26 +1724,8 @@
     if (length(missing) == 0L) {
       use_design <- FALSE
     } else {
-      # The design route would ignore any formula variable given beside the
-      # design columns, and without the missing ones the variables cannot
-      # be rebuilt, so a mix is refused rather than guessed. A variable that
-      # is itself a design column (numeric `age`) counts only if another
-      # term is built from it (I(age^2), age:grp): a changed `age` would
-      # leave those columns stale.
-      feeds_derived <- unlist(lapply(labels, function(label) {
-        v <- all.vars(parse(text = label)[[1L]])
-        if (identical(v, label)) character(0) else v
-      }))
-      counted <- union(setdiff(vars, cols), intersect(vars, feeds_derived))
-      given <- intersect(counted, names(newdata))
-      if (length(given) > 0L) {
-        stop("'newdata' gives the formula variable(s) ",
-             paste0("'", given, "'", collapse = ", "), " but lacks ",
-             paste0("'", missing, "'", collapse = ", "),
-             ", while carrying the fitted design columns of phase '", nm,
-             "'. Give all of the formula's variables, so the design can ",
-             "be rebuilt from them.", call. = FALSE)
-      }
+      .hzr_refuse_variable_mix(vars, cols, labels, newdata,
+                               paste0(" of phase '", nm, "'"))
     }
   }
   if (use_design) {
@@ -1830,11 +1736,8 @@
   # formula's environment (#268), whenever the fit says which variables are
   # covariates.
   missing <- setdiff(vars, names(newdata))
-  if (known_vars && length(missing) > 0L) {
-    stop("'newdata' lacks the covariate column(s) ",
-         paste0("'", missing, "'", collapse = ", "),
-         " that phase '", nm, "' uses. Columns are matched by name.",
-         call. = FALSE)
+  if (known_vars) {
+    .hzr_refuse_missing_vars(missing, paste0("phase '", nm, "'"))
   }
 
   # The same rule as the global rebuild: newdata supplies only the data
@@ -1863,15 +1766,7 @@
          "), or refit the model with this version of TemporalHazard.",
          call. = FALSE)
   }
-  build <- function(x) {
-    nd <- .hzr_newdata_frame(x, design$data_vars)
-    mf <- stats::model.frame(design$terms, data = nd, xlev = design$xlevels,
-                             na.action = stats::na.pass)
-    stats::model.matrix(design$terms, data = mf,
-                        contrasts.arg = design$contrasts)
-  }
-  mm <- .hzr_check_equivariant(build, newdata, labels, where)
-  mm[, cols, drop = FALSE]
+  .hzr_rebuild_design(design, newdata, cols, where)
 }
 
 
