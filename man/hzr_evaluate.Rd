@@ -25,10 +25,14 @@ writing their hazards out here would duplicate \code{predict()}; \code{times} is
 refused for them rather than mirrored.}
 }
 \value{
-An object of class \code{hzr_evaluation}: a list with \code{theta} (the
-parameters supplied), \code{logLik} (the log-likelihood there), \code{dist},
-\code{n_obs}, \code{n_events}, and, when \code{times} was given, \code{curve}, a data frame
-of \code{time}, \code{hazard} and \code{cumulative_hazard}.
+An object of class \code{hzr_evaluation}: a list with \code{theta}, the
+parameters the likelihood was evaluated at -- the vector supplied, with
+any constrained entry replaced by the value its phase derives, which is
+warned about as \code{\link[=hazard]{hazard()}} warns; \code{logLik}, the log-likelihood there;
+\code{dist}; \code{n_obs} and \code{n_events}, the rows the likelihood scored and the
+exact events among them (a left- or interval-censored row counts in
+\code{n_obs}, not in \code{n_events}); and, when \code{times} was given, \code{curve}, a
+data frame of \code{time}, \code{hazard} and \code{cumulative_hazard}.
 }
 \description{
 Computes a model's log-likelihood, and optionally its hazard and

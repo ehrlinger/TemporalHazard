@@ -47,10 +47,14 @@
 #'   writing their hazards out here would duplicate `predict()`; `times` is
 #'   refused for them rather than mirrored.
 #'
-#' @return An object of class `hzr_evaluation`: a list with `theta` (the
-#'   parameters supplied), `logLik` (the log-likelihood there), `dist`,
-#'   `n_obs`, `n_events`, and, when `times` was given, `curve`, a data frame
-#'   of `time`, `hazard` and `cumulative_hazard`.
+#' @return An object of class `hzr_evaluation`: a list with `theta`, the
+#'   parameters the likelihood was evaluated at -- the vector supplied, with
+#'   any constrained entry replaced by the value its phase derives, which is
+#'   warned about as [hazard()] warns; `logLik`, the log-likelihood there;
+#'   `dist`; `n_obs` and `n_events`, the rows the likelihood scored and the
+#'   exact events among them (a left- or interval-censored row counts in
+#'   `n_obs`, not in `n_events`); and, when `times` was given, `curve`, a
+#'   data frame of `time`, `hazard` and `cumulative_hazard`.
 #'
 #' @seealso [hazard()] to fit a model, [hzr_theta_names()] for the parameter
 #'   order.
@@ -92,18 +96,24 @@ hzr_evaluate <- function(object, theta, times = NULL) {
   if (!length(prepared$time)) {
     # A log-likelihood of 0 over no rows is the best value there is, and it
     # reads as a parity success (#144 review).
-    stop("No rows are left to evaluate: every observation was dropped for a ",
-         "missing value in a phase's design. There is no likelihood to ",
-         "report.", call. = FALSE)
+    stop(if (length(object$data$time)) {
+           paste0("No rows are left to evaluate: all ",
+                  length(object$data$time), " were dropped for a missing ",
+                  "value in a phase's design.")
+         } else {
+           "This model carries no observations to evaluate."
+         },
+         " There is no likelihood to report.", call. = FALSE)
   }
   if (length(theta) != prepared$n_par) {
     stored <- length(object$fit$theta)
-    stop(if (stored && stored != prepared$n_par) {
+    stop(if (identical(dist, "multiphase") && stored &&
+               stored < prepared$n_par) {
            paste0("This model needs ", prepared$n_par, " parameters, and ",
                   "the object's own stored theta has ", stored,
                   ": hazard(fit = FALSE) does not resolve phase designs, so ",
-                  "a specification with covariates stores fewer than a fit ",
-                  "would use. Supply the full vector. ")
+                  "a specification whose phases carry covariates stores ",
+                  "fewer than a fit would use. Supply the full vector. ")
          } else {
            ""
          },
@@ -125,6 +135,17 @@ hzr_evaluate <- function(object, theta, times = NULL) {
   }
   if (is.null(names(theta)) && !is.null(prepared$names)) {
     names(theta) <- prepared$names
+  }
+
+  if (identical(dist, "multiphase")) {
+    # As hazard(fit = FALSE) does with a supplied theta: derive the
+    # constrained entries and say which moved, so the vector reported is the
+    # vector scored (#144 review).
+    constrained <- .hzr_constrain_supplied_theta(
+      unname(theta), prepared$phases, prepared$covariate_counts
+    )
+    names(constrained) <- names(theta)
+    theta <- constrained
   }
 
   logl <- .hzr_logl_at(object, theta, prepared)
@@ -202,9 +223,13 @@ hzr_evaluate <- function(object, theta, times = NULL) {
     out$phases <- phases_v
     return(out)
   }
-  out$names <- names(object$fit$theta)
   out$n_par <- .hzr_shape_parameter_count(dist, control = object$spec$control) +
     (if (is.null(x)) 0L else ncol(x))
+  # Only if they describe THIS model: a stored theta of the wrong length
+  # would otherwise be pasted onto a vector of another, and `names<-` errors
+  # with a base-R message about attribute lengths (#144 review).
+  stored_names <- names(object$fit$theta)
+  out$names <- if (length(stored_names) == out$n_par) stored_names else NULL
   out
 }
 
@@ -227,12 +252,6 @@ hzr_evaluate <- function(object, theta, times = NULL) {
                status = prepared$status, time_lower = prepared$time_lower,
                time_upper = prepared$time_upper, weights = prepared$weights)
   if (identical(dist, "multiphase")) {
-    # A derived shape is a function of its sources: the fit re-applies the
-    # rule on every evaluation, and hazard(fit = FALSE) applies it to a
-    # supplied theta, so honouring the user's value here would score a model
-    # the package cannot fit (#144 review).
-    theta <- .hzr_apply_constraints(unname(theta), prepared$phases,
-                                    prepared$covariate_counts)
     return(.hzr_logl_multiphase(
       unname(theta), prepared$time, prepared$status,
       time_lower = prepared$time_lower, time_upper = prepared$time_upper,
@@ -291,7 +310,6 @@ hzr_evaluate <- function(object, theta, times = NULL) {
     k <- counts[[nm]] %||% 0L
     if (k > 0L) matrix(0, nrow = length(times), ncol = k) else NULL
   }), names(phases))
-  theta <- .hzr_apply_constraints(unname(theta), phases, counts)
   data.frame(
     time = times,
     hazard = as.numeric(.hzr_multiphase_hazard(times, theta, phases, counts,

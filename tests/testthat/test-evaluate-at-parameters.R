@@ -320,20 +320,47 @@ test_that("hzr_evaluate() applies a phase constraint to the supplied theta (#144
   # on every evaluation, so honouring a contradictory value here would score
   # a model the package cannot fit (r-reviewer).
   data("avc", package = "TemporalHazard", envir = environment())
+  # hzr_phase() derives alpha at construction and says so.
+  expect_warning(
+    late <- hzr_phase("g3", tau = 5, gamma = 1, alpha = 1, eta = 1,
+                      constraint = "alpha_gamma_eta"),
+    "was replaced by"
+  )
   phases <- list(
     early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1, fixed = "m"),
-    late = hzr_phase("g3", tau = 5, gamma = 1, alpha = 1, eta = 1,
-                     constraint = "alpha_gamma_eta")
+    late = late
   )
   theta <- c(log(0.05), log(0.15), 1.4, 1, log(0.03), log(5), 1, 99, 1)
-  spec <- hazard(survival::Surv(int_dead, dead) ~ 1, data = avc,
-                 dist = "multiphase", phases = phases, theta = theta,
-                 fit = FALSE)
+  # hazard() warns about the same replacement when it builds the object.
+  expect_warning(
+    spec <- hazard(survival::Surv(int_dead, dead) ~ 1, data = avc,
+                   dist = "multiphase", phases = phases, theta = theta,
+                   fit = FALSE),
+    "was replaced by"
+  )
   # hazard() derived alpha = gamma * eta / 2 = 0.5, discarding the 99.
   expect_equal(spec$fit$theta[[8]], 0.5, tolerance = 1e-12)
-  # The evaluation must agree with that, not with the 99.
-  expect_identical(hzr_evaluate(spec, theta = theta)$logLik,
-                   hzr_evaluate(spec, theta = unname(spec$fit$theta))$logLik)
+  # The evaluation must agree with that, not with the 99, and it must warn
+  # and report the vector it scored rather than the one handed in: the
+  # parity user's SAS alpha will not be exactly gamma*eta/2 after rounding.
+  expect_warning(ev <- hzr_evaluate(spec, theta = theta),
+                 "the value its phase's constraint derives")
+  expect_identical(ev$logLik,
+                   suppressWarnings(
+                     hzr_evaluate(spec,
+                                  theta = unname(spec$fit$theta))$logLik))
+  expect_equal(ev$theta[[8]], 0.5, tolerance = 1e-12)
+  expect_false(isTRUE(all.equal(ev$theta[[8]], 99)))
+  # An unconstrained model is not warned about and is reported unchanged.
+  plain <- list(early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1,
+                                  fixed = "m"),
+                constant = hzr_phase("constant"))
+  th_plain <- c(log(0.05), log(0.15), 1.4, 1, log(0.03))
+  spec2 <- hazard(survival::Surv(int_dead, dead) ~ 1, data = avc,
+                  dist = "multiphase", phases = plain, theta = th_plain,
+                  fit = FALSE)
+  expect_no_warning(ev2 <- hzr_evaluate(spec2, theta = th_plain))
+  expect_identical(unname(ev2$theta), th_plain)
 })
 
 test_that("the curve matches predict() when the model has covariates (#144)", {
@@ -404,4 +431,35 @@ test_that("the count error says which count is meant (#144)", {
   # The full vector is accepted and scores.
   full <- c(log(0.05), log(0.15), 1.4, 1, 0, log(0.03))
   expect_true(is.finite(hzr_evaluate(spec, theta = full)$logLik))
+})
+
+test_that("the refusals describe the model in front of them (#144)", {
+  skip_on_cran()
+  data("avc", package = "TemporalHazard", envir = environment())
+  d <- na.omit(avc[, c("int_dead", "dead", "age")])
+  x <- matrix(d$age, ncol = 1, dimnames = list(NULL, "age"))
+  # A single-distribution model has no phases, and here the stored vector is
+  # LONGER than the model's count: the multiphase explanation must not fire.
+  w <- hazard(time = d$int_dead, status = d$dead, x = x, dist = "weibull",
+              theta = c(0.05, 0.9, 0.01, 99), fit = FALSE)
+  msg <- tryCatch(hzr_evaluate(w, theta = w$fit$theta),
+                  error = conditionMessage)
+  expect_match(msg, "has 4 parameters, but this weibull model has 3")
+  expect_false(grepl("phase designs", msg))
+  # A stored theta of the wrong length must not be pasted onto another
+  # vector's names: that failed with base R's "'names' attribute [4] must be
+  # the same length as the vector [3]". The correct theta evaluates, and its
+  # names are simply not taken from the mismatched stored vector.
+  wn <- hazard(time = d$int_dead, status = d$dead, x = x, dist = "weibull",
+               theta = c(a = 0.05, b = 0.9, c = 0.01, d = 99), fit = FALSE)
+  ev <- hzr_evaluate(wn, theta = c(0.05, 0.9, 0.01))
+  expect_true(is.finite(ev$logLik))
+  expect_null(names(ev$theta))
+
+  # A model with no observations says that, rather than blaming a phase
+  # design it does not have.
+  z <- hazard(time = numeric(0), status = numeric(0), dist = "weibull",
+              theta = c(0.05, 0.9), fit = FALSE)
+  expect_error(hzr_evaluate(z, theta = c(0.05, 0.9)),
+               "carries no observations")
 })
