@@ -304,8 +304,8 @@
   rows is not enough, since a `cutoff` moved between two fitted ages changes
   no fitted row, so that phase formula must also use only the kept data's
   columns and R's own design functions (a user's function of the same name
-  is not one), and the rebuild must match the fitted columns exactly, with
-  every factor level occurring in the rows the fit kept;
+  is not one), and the rebuild must match the fitted columns exactly under
+  treatment contrasts, whose column names carry a factor's levels;
   otherwise it is treated as a fit without its data. A fit saved by 1.0.3
   or earlier kept
   neither, so nothing is left to check a rebuild against: its phase is

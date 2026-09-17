@@ -473,12 +473,13 @@ test_that("kept data changed by a hair after the fit is not trusted", {
   )
 })
 
-test_that("kept data whose factor levels appear only in dropped rows is not trusted", {
+test_that("kept data under numbered contrasts is not trusted when levels move in dropped rows", {
   skip_on_cran()  # multiphase fits
   # Under numbered contrasts (contr.sum), a level order that changed after
   # the fit (another locale, or a factor releveled in the kept data) moves
   # no fitted row when the swapped levels appear only in rows the fit
-  # dropped for a missing value, yet it swaps their codes at newdata.
+  # dropped for a missing value, yet it swaps their codes at newdata. Only
+  # treatment contrasts, whose column names carry the levels, are trusted.
   old <- options(contrasts = c("contr.sum", "contr.poly"))
   on.exit(options(old), add = TRUE)
   d <- legacy_data()
