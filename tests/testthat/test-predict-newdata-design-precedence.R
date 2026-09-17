@@ -795,7 +795,8 @@ test_that("a phase formula the fit did not use is not rebuilt at newdata", {
   nd <- data.frame(time = d$int_dead[rows], age = d$age[rows])
   for (tw in list(NULL, 12)) {
     set.seed(1)
-    f <- suppressWarnings(hazard(
+    # Simulates a fit saved before #299, which hazard() now refuses to make.
+    f <- suppressWarnings(hzr_saved_before_299(
       time = d$int_dead, status = d$dead, x = cbind(age = d$age),
       dist = "multiphase", time_windows = tw,
       phases = list(
@@ -825,7 +826,8 @@ test_that("a fit without the from_formula record routes by formula and columns",
   d$grp <- factor(ifelse(d$age > 100, "old", "young"))
   rows <- c(1, 50, 150)
   set.seed(1)
-  vf <- suppressWarnings(hazard(
+  # Simulates a fit saved before #299, which hazard() now refuses to make.
+  vf <- suppressWarnings(hzr_saved_before_299(
     time = d$int_dead, status = d$dead, x = cbind(age = d$age),
     dist = "multiphase",
     phases = list(
@@ -877,11 +879,14 @@ test_that("a 1.0.3-era fit (no record, no frame, no design) keeps its phase form
   f$data$frame <- NULL
   attr(f$fit$x_list, "from_formula") <- NULL
   rows <- c(which(d$int_dead <= 12)[1:2], which(d$int_dead > 12)[1:2])
-  got <- predict(f, type = "cumulative_hazard",
-                 newdata = data.frame(time = d$int_dead[rows], age = d$age[rows]))
-  expect_equal(unname(got), unname(predict(f, type = "cumulative_hazard")[rows]),
-               tolerance = 1e-10)
-  expect_equal(unname(got),
+  # Without its design or data it can no longer rebuild the phase at newdata
+  # (#307); it is refused rather than sent down the global route, and it
+  # still predicts at its own rows as main did.
+  expect_error(
+    predict(f, type = "cumulative_hazard",
+            newdata = data.frame(time = d$int_dead[rows], age = d$age[rows])),
+    "phase 'early' of this fit was saved without its design.*refit")
+  expect_equal(unname(predict(f, type = "cumulative_hazard")[rows]),
                c(0.01628361325, 0.08219660741, 0.1292144135, 0.1674520008),
                tolerance = 1e-4)
 })
@@ -893,7 +898,8 @@ test_that("time_windows: an unused phase formula without the record goes global"
   # so it keeps the phase on the global route: four values, matching.
   d <- stats::na.omit(get("avc", envir = asNamespace("TemporalHazard")))
   set.seed(1)
-  f <- suppressWarnings(hazard(
+  # Simulates a fit saved before #299, which hazard() now refuses to make.
+  f <- suppressWarnings(hzr_saved_before_299(
     time = d$int_dead, status = d$dead, x = cbind(age = d$age),
     dist = "multiphase", time_windows = 12,
     phases = list(
@@ -1073,26 +1079,26 @@ test_that("a phase term with row-level values from outside data is refused", {
   expect_error(ch(g_zz, nd), "term 'zz' of the model uses row-level")
 
   # A fit saved without the phase design but with its data knows zz is not a
-  # data column, and refuses the same way.
+  # data column, so its phase formula is not closed and is refused (#307).
   f18 <- f_zz
   f18$fit$x_design <- NULL
-  expect_error(ch(f18, nd), "term 'zz' of phase 'early' uses row-level")
+  expect_error(ch(f18, nd),
+               "phase 'early' of this fit was saved without its design.*refit")
   # A 1.0.3-era fit (no design, frame or record) cannot tell zz from a data
-  # column, so it takes zz from newdata, as it did then.
+  # column, so it is refused rather than taken from newdata (#307).
   f19 <- f18
   f19$data$frame <- NULL
   attr(f19$fit$x_list, "from_formula") <- NULL
-  rows <- c(1, 50, 150)
-  expect_equal(unname(ch(f19, nd[match(rows, rv), ])),
-               unname(predict(f_zz, type = "cumulative_hazard")[rows]),
-               tolerance = 1e-10)
+  expect_error(ch(f19, nd[1:3, ]),
+               "phase 'early' of this fit was saved without its design.*refit")
 })
 
 test_that("a rebuilt design never has more rows than newdata", {
   skip_on_cran()  # a multiphase fit
   # A 1.0.3-era fit (no stored design, frame or record) cannot classify zz,
   # so its rebuild would take the 305-row fitting vector for a one-row
-  # newdata.  The backstop refuses instead of returning 305 values.
+  # newdata. Without its design or data, it is refused at newdata before
+  # any rows are built (#307).
   d <- .oc_avc()
   set.seed(7)
   zz <- d$age[sample(nrow(d))] / 100
@@ -1109,7 +1115,7 @@ test_that("a rebuilt design never has more rows than newdata", {
   attr(f$fit$x_list, "from_formula") <- NULL
   expect_error(predict(f, newdata = data.frame(time = 2, age = 60),
                        type = "cumulative_hazard"),
-               "rows for 1 row\\(s\\) of 'newdata': a term uses row-level")
+               "phase 'early' of this fit was saved without its design.*refit")
 })
 
 test_that("a vector formula constant (spline knots) still predicts", {
@@ -1221,7 +1227,8 @@ test_that("the time check ignores a phase formula the fit did not use", {
   skip_on_cran()  # a multiphase fit
   d <- .oc_avc()
   set.seed(1)
-  f <- suppressWarnings(hazard(
+  # Simulates a fit saved before #299, which hazard() now refuses to make.
+  f <- suppressWarnings(hzr_saved_before_299(
     time = d$int_dead, status = d$dead, x = cbind(age = d$age),
     dist = "multiphase",
     phases = list(

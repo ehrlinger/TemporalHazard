@@ -149,10 +149,19 @@
 #'       `uncomputable_reasons` for which one it was in any given run.  For
 #'       every criterion it also carries
 #'       `refit_failures` (the `"var"` / `"var@phase"` tokens of candidate
-#'       moves whose refit errored or failed to converge), `n_refit_failures`,
+#'       moves whose refit errored, failed to converge, or was refused
+#'       because the move would not change the model -- a drop that removes
+#'       no design column, #320),
+#'       `refit_failure_reasons` (why each one failed or was refused: the
+#'       refit's error message, that it did not converge, or that the move
+#'       changes nothing; named by the same tokens),
+#'       `n_refit_failures`,
 #'       and `stopped_refit_failed` (`TRUE` when the run ended on an
-#'       iteration in which refits failed, which is a screen that could not
-#'       test its candidates rather than one that tested them and liked none).
+#'       iteration in which a refit failed or a move was refused.  A refit
+#'       failure is a screen that could not test its candidates, rather than
+#'       one that tested them and liked none; a refusal is determinate -- the
+#'       move was tested and would have left the model as it was.  Read
+#'       `refit_failure_reasons` for which it was).
 #'       Check it before reading a zero-row `steps` as an honest null result.}
 #'     \item{\code{trace_msg}}{Character vector of the trace lines,
 #'       captured regardless of the `trace` flag.}
@@ -365,6 +374,7 @@ hzr_stepwise <- function(fit,
   # functions have returned `refit_failures` since v1; this is the caller
   # finally reading it.
   refit_failures       <- character()
+  refit_failure_reasons <- character()
   stopped_refit_failed <- FALSE
 
   # `crit` is the criterion actually applied to THIS step, which is not always
@@ -460,6 +470,7 @@ hzr_stepwise <- function(fit,
     # Per-ITERATION, not per-run: what stopped the screen is what the last
     # iteration did, and a failure three steps back is not why it ended.
     iter_refit_failures <- character()
+    iter_refit_reasons  <- character()
     iter_uncomputable   <- FALSE
 
     effective_force_out <- unique(c(force_out, frozen))
@@ -487,6 +498,8 @@ hzr_stepwise <- function(fit,
       }
       iter_refit_failures <- c(iter_refit_failures,
                                fwd$refit_failures %||% character())
+      iter_refit_reasons <- c(iter_refit_reasons,
+                              fwd$refit_failure_reasons %||% character())
 
       if (fwd$accepted) {
         # Nested models: the entered model contains the current one, so at the
@@ -529,6 +542,8 @@ hzr_stepwise <- function(fit,
 
       iter_refit_failures <- c(iter_refit_failures,
                                bwd$refit_failures %||% character())
+      iter_refit_reasons <- c(iter_refit_reasons,
+                              bwd$refit_failure_reasons %||% character())
 
       if (bwd$accepted) {
         current <- bwd$fit
@@ -539,6 +554,7 @@ hzr_stepwise <- function(fit,
     }
 
     refit_failures <- c(refit_failures, iter_refit_failures)
+    refit_failure_reasons <- c(refit_failure_reasons, iter_refit_reasons)
 
     if (!add_happened && !drop_happened) {
       step_txt <- sprintf("%d step%s", step_no,
@@ -548,7 +564,9 @@ hzr_stepwise <- function(fit,
       if (length(iter_refit_failures) > 0L) {
         stopped_refit_failed <- TRUE
         emit(sprintf(
-          "(stopped after %s: %d candidate refit%s FAILED and could not be tested -- %s)",
+          paste0("(stopped after %s: %d candidate move%s could not be ",
+                 "completed -- a refit FAILED, or the move was REFUSED as ",
+                 "changing nothing -- %s)"),
           step_txt, length(iter_refit_failures),
           if (length(iter_refit_failures) == 1L) "" else "s",
           paste(iter_refit_failures, collapse = ", ")
@@ -613,6 +631,7 @@ hzr_stepwise <- function(fit,
     stopped_uncomputable  = stopped_uncomputable,
     n_refit_failures      = length(refit_failures),
     refit_failures        = refit_failures,
+    refit_failure_reasons = refit_failure_reasons,
     stopped_refit_failed  = stopped_refit_failed,
     n_nonmonotone_entries = n_nonmonotone_entries
   )
@@ -654,15 +673,28 @@ hzr_stepwise <- function(fit,
             "same way. See `$criteria$uncomputable_reasons` for which ",
             "mechanism applied.", call. = FALSE)
   }
+  # A completed run keeps the tally but says nothing about it, and a collision
+  # is a naming mistake the user can fix, not a property of the data. The
+  # stopped_uncomputable warning above already spells the reason out.
+  n_duplicate <- sum(uncomputable_reasons[names(uncomputable_reasons) ==
+                                            "duplicate_column"])
+  if (!stopped_uncomputable && n_duplicate > 0L) {
+    warning("Stepwise selection declined ", n_duplicate, " candidate ",
+            "score(s) without testing them: ",
+            .hzr_score_reason_text("duplicate_column"), ". See ",
+            "`$criteria$uncomputable_reasons`.", call. = FALSE)
+  }
   if (stopped_refit_failed) {
     warning("Stepwise selection stopped after ", nrow(steps_df),
             " accepted step(s), and the iteration it stopped on had ",
             "candidate refit failure(s) (", length(refit_failures),
             " across the run: ",
             paste(unique(refit_failures), collapse = ", "),
-            "). Those candidates were never tested, so stopping here is ",
-            "NOT evidence that nothing met the entry or retention rule. ",
-            "See `$criteria$refit_failures`.", call. = FALSE)
+            "). A candidate whose refit FAILED was never tested, so stopping ",
+            "here is NOT evidence that nothing met the entry or retention ",
+            "rule; a move that was REFUSED was tested and would not have ",
+            "changed the model. See `$criteria$refit_failure_reasons` for ",
+            "which each one was.", call. = FALSE)
   }
   result$trace_msg  <- trace_msg
   result$elapsed    <- elapsed

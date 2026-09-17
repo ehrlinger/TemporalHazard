@@ -768,6 +768,9 @@ hazard <- function(formula = NULL,
   if (!is.null(time_windows) && !is.null(x)) {
     # Expand X -> [X_w1 | X_w2 | ...] where each row is active only in its window.
     x_fit <- .hzr_expand_time_varying_design(x = x, time = time, time_windows = time_windows)
+    # Absent names pass the check on `x`, but the expansion names each window
+    # column <name>_w<k>, so two of them become "_w1" (or "NA_w1") twice.
+    .hzr_refuse_duplicate_columns(x_fit)
   }
 
   if (!is.null(theta)) {
@@ -835,6 +838,9 @@ hazard <- function(formula = NULL,
     # columns, so there `.` is refused.
     for (nm in names(phases)) {
       pf <- phases[[nm]]$formula
+      if (!is.null(pf)) {
+        .hzr_refuse_offset(pf, paste0("the formula of phase '", nm, "'"))
+      }
       if (is.null(pf) || !"." %in% all.vars(pf)) next
       if (is.null(formula)) {
         stop("Phase '", nm, "' uses `.` in its formula, which needs the ",
@@ -848,6 +854,7 @@ hazard <- function(formula = NULL,
       )
       phases[[nm]]$formula <- .hzr_expand_rhs(two_sided, data)
     }
+    .hzr_check_phase_formula_data(phases, data, x)
   } else if (!is.null(phases)) {
     warning("'phases' is ignored when dist != 'multiphase'.")
     phases <- NULL
@@ -1710,6 +1717,10 @@ predict.hazard <- function(object, newdata = NULL,
     # closure `cumhaz_of` that computes H for any candidate theta -- this
     # is the delta-method target for both "cumulative_hazard" and
     # "survival" predictions.
+    # unname() each result: the shape parameters are named elements of
+    # theta, and R carries such a name onto the product, through rep() for
+    # every n and through any length-1 operand when n == 1, and so into
+    # predict() (#309; the multiphase path does the same, #289).
     dist_lbl <- object$spec$dist
     has_cov <- !is.null(x) && ncol(x) > 0
 
@@ -1726,19 +1737,19 @@ predict.hazard <- function(object, newdata = NULL,
         if (th[1] <= 0 || th[2] <= 0) return(rep(NA_real_, length(time)))
         beta_cand <- if (length(th) > 2) th[3:length(th)] else numeric(0)
         eta_cand <- if (has_cov) as.numeric(x %*% beta_cand) else rep(0, length(time))
-        (th[1] * time) ^ th[2] * exp(eta_cand)
+        unname((th[1] * time) ^ th[2] * exp(eta_cand))
       }
     } else if (dist_lbl == "exponential") {
       function(th) {
         beta_cand <- if (length(th) > 1) th[2:length(th)] else numeric(0)
         eta_cand <- if (has_cov) as.numeric(x %*% beta_cand) else rep(0, length(time))
-        exp(th[1]) * time * exp(eta_cand)
+        unname(exp(th[1]) * time * exp(eta_cand))
       }
     } else if (dist_lbl == "loglogistic") {
       function(th) {
         beta_cand <- if (length(th) > 2) th[3:length(th)] else numeric(0)
         eta_cand <- if (has_cov) as.numeric(x %*% beta_cand) else rep(0, length(time))
-        log(1 + exp(th[1]) * (time ^ exp(th[2])) * exp(eta_cand))
+        unname(log(1 + exp(th[1]) * (time ^ exp(th[2])) * exp(eta_cand)))
       }
     } else if (dist_lbl == "lognormal") {
       function(th) {
@@ -1746,7 +1757,7 @@ predict.hazard <- function(object, newdata = NULL,
         # AFT: covariates shift the location.
         eta_aft <- if (has_cov) th[1] + as.numeric(x %*% beta_cand) else rep(th[1], length(time))
         z <- (log(time) - eta_aft) / exp(th[2])
-        -pnorm(-z, log.p = TRUE)
+        unname(-pnorm(-z, log.p = TRUE))
       }
     } else {
       stop("Unknown distribution '", dist_lbl, "'.", call. = FALSE)
@@ -2239,7 +2250,39 @@ vcov.hazard <- function(object, ...) {
     stop("Predictor rows must match the length of 'time'.", call. = FALSE)
   }
 
+  .hzr_refuse_duplicate_columns(x)
   x
+}
+
+#' Refuse a design matrix whose column names repeat
+#'
+#' A factor's dummy columns are named `<factor><level>`, so a factor `g` with
+#' level `b` and a numeric column `gb` both produce a column `gb`. Coefficient
+#' names, predict() by name, the stepwise scope and the bootstrap all assume
+#' the names are unique, and a duplicate used to fit without a word.
+#'
+#' @param x Numeric design matrix.
+#' @param phase Phase name, for a multiphase phase-specific design; NULL for
+#'   the global design.
+#' @return `x`, invisibly, when its column names are unique.
+#' @noRd
+.hzr_refuse_duplicate_columns <- function(x, phase = NULL) {
+  # Empty and NA names are absent names, not a repeated one:
+  # cbind(a = v1, v2, v3) names its columns c("a", "", "").
+  nms <- colnames(x)
+  dup <- unique(nms[duplicated(nms) & !is.na(nms) & nzchar(nms)])
+  if (length(dup) == 0L) {
+    return(invisible(x))
+  }
+  where <- if (is.null(phase)) "" else paste0(" for phase '", phase, "'")
+  stop("In hazard(), the design matrix", where, " has a duplicated column ",
+       "name: ", paste0("'", dup, "'", collapse = ", "), ". Each covariate ",
+       "needs a unique name, because coefficients and predict(newdata =) ",
+       "match covariates by name. A factor's dummy columns are named ",
+       "<factor><level>, so factor `g` with level `b` collides with a numeric ",
+       "column `gb`: rename the numeric column, or relevel or rename the ",
+       "factor. For an 'x' matrix, give its columns unique names.",
+       call. = FALSE)
 }
 
 #' Expand predictors for piecewise time-varying coefficients

@@ -103,11 +103,12 @@ The rest run and report but do not block.
 | `lint.yaml` → `house-style` | PR, push | **yes** | fails when `.claude/house-style.md` has drifted from its vault sources |
 | `lint.yaml` → `docs-current` | PR, push | no | `git diff --exit-code man/ NAMESPACE DESCRIPTION` after `document()` |
 | `spelling.yaml` | PR, push | **yes** | `spelling::spell_check_package(use_wordlist = TRUE)` |
-| `R-CMD-check.yaml` | PR, push | **yes**, all five | ubuntu devel/release/oldrel-1, macOS, Windows |
-| `test-coverage.yaml` | PR, push | no | coverage upload |
-| `pkgdown.yaml` → `build-and-deploy` | PR, push | no | docs site |
+| `R-CMD-check.yaml`, Linux | PR, push, manual | **yes** | ubuntu devel/release/oldrel-1 |
+| `R-CMD-check.yaml`, macOS and Windows | push to `main`, manual | **yes**, but see below | macOS release, Windows release |
+| `test-coverage.yaml` | push to `main` | no | coverage upload |
+| `pkgdown.yaml` → `build-and-deploy` | push to `main`, manual | no | docs site |
 | `check-manual.yaml` | push to `main` | **cannot** | the PDF manual — the only thing that catches raw Unicode in `Rd` |
-| `check-release.yaml` | release published | no | `R CMD check --as-cran` |
+| `check-release.yaml` | manual, before submitting; release published | no | `R CMD check --as-cran` with the manual, on Windows release and devel, macOS and Ubuntu |
 
 `check-manual` says *cannot* rather than *no*: it deliberately does not run on pull requests,
 because building the manual is slow and a check that makes every PR wait is one people learn to
@@ -115,21 +116,86 @@ route around. A check that never reports on a PR can never be required — makin
 block every merge permanently. It runs after the merge instead, so a raw-Unicode `Rd` is caught
 on `main`, not before it lands.
 
+**macOS and Windows do not check a pull request.** Their contexts are still required, so the
+jobs still run, but on a pull request they skip every step and pass in seconds, with a notice
+reading "NOT CHECKED on pull requests" in the job summary. A green macOS or Windows tick on a PR
+means nothing was checked. They do the full check after each merge to `main`, and on a manual
+run of the workflow. That was the maintainer's call on 2026-09-16: the package is used on Linux,
+and those two jobs took a median 14 and 45 minutes a run, against 18 to 19 for each Linux job.
+
+They are not taken out of the matrix. Removing them would need the two contexts deleted from
+the ruleset at the moment of the merge, or every open PR blocks. And the gating is per step, not
+per job, because a matrix job skipped by a job-level `if:` reports under its unexpanded name, so
+the required context never appears (#207).
+
+What this costs: a macOS- or Windows-only failure now surfaces one merge later, on `main`, and
+not on the PR that caused it. PR #200 is that shape: its `skip_on_cran()` test passed locally and
+failed on Linux and Windows. Under this arrangement Linux still catches that one, but a
+Windows-only version of it would land. **A red macOS or Windows run on `main` blocks the queue**
+until someone understands it: the next PR's author checks the latest `main` run before merging,
+because every later PR merges on top of the break.
+
+This departs from the portfolio house style, whose workflow table in `.claude/house-style.md`
+still lists `pull_request` for `R-CMD-check`, `test-coverage` and `pkgdown`. That file is
+generated from vault sources, so it is not edited here; where the two disagree for this repo,
+the workflow files and this section are what runs.
+
+test-coverage and pkgdown no longer run on a pull request either. Neither blocks a merge. The
+cost is that a pkgdown failure, such as an exported topic missing from `_pkgdown.yml`, is seen
+after the merge.
+
+`check-release.yaml` still fires when a release is published, but releases are tagged after CRAN
+accepts the package, so that run gates nothing. The release gate is a **manual** run of it on
+`main` before submitting: `RELEASE.md`, pre-submission checklist.
+
 The rules live in the repository **ruleset** `protect main`, not in the legacy branch-protection
 settings — the two are separate systems, and the `branches/main/protection` API returns 404 here
 even though `main` is protected. Alongside the required checks the ruleset blocks deletion and
-force-push, requires a pull request, auto-requests Copilot review, and requires **one approving
-review**.
+force-push, requires a pull request and auto-requests Copilot review. It does **not** require an
+approving review. Verified 2026-09-14:
 
-That last one is what actually blocks a merge, and it is easy to miss: a PR with all eight
-required checks green still sits at `mergeStateStatus: BLOCKED` and
-`reviewDecision: REVIEW_REQUIRED` until someone approves it. Copilot does not satisfy it — its
-reviews come back `COMMENTED`, never `APPROVED`.
+```bash
+gh api repos/ehrlinger/TemporalHazard/rulesets/15010037 \
+  --jq '.rules[] | select(.type == "pull_request") | .parameters.required_approving_review_count'
+# 0
+gh api repos/ehrlinger/TemporalHazard/rules/branches/main \
+  --jq '.[] | select(.type == "pull_request") | .parameters.required_approving_review_count'
+# 0
+gh api repos/ehrlinger/TemporalHazard/rulesets/15010037 \
+  --jq '.rules[] | select(.type == "required_status_checks") | .parameters.required_status_checks | length'
+# 8
+```
+
+Run the second command as well as the first. `rules/branches/main` returns the *effective* rules
+on the branch, combined across every ruleset that targets it, so it is the one that answers what
+a merge into `main` actually needs. The third confirms the table's count of eight.
+
+So the eight required checks are the whole gate: **a PR merges once they pass.** PR #295, at head
+`d3a6622` with every check green and no approving review, read `mergeStateStatus: CLEAN`,
+`mergeable: MERGEABLE` and an empty `reviewDecision`, and it then merged with a single
+`COMMENTED` review. Copilot's review is auto-requested, but it comes back `COMMENTED`, never
+`APPROVED`, and nothing waits for it.
+
+An earlier version of this section said the ruleset required one approving review, and that a
+green PR sat at `mergeStateStatus: BLOCKED` and `reviewDecision: REVIEW_REQUIRED` until someone
+approved it. The ruleset's `updated_at` is 2026-09-04, the day after the bypass check below was
+stamped, and the text was not updated with it.
+
+The same `pull_request` rule carries `require_extra_approval_for_unattributed_changes: true`.
+GitHub turns it on by default. It applies only when Copilot opens a pull request under its own
+identity rather than on behalf of a person, and such a PR then needs one more approval than the
+ruleset configures. At a count of 0 it does nothing, and GitHub's documentation says so
+directly: "This setting has no effect if the ruleset requires zero approvals." So the two
+statements above and below hold for every PR, including one Copilot opened for itself. The
+setting starts to bite only if the count is raised: at 1, such a PR would need 2. Source:
+[Available rules for
+rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets),
+section "Require a pull request before merging", read 2026-09-14.
 
 ⚠️ **The maintainer can bypass all of it.** An earlier version of this paragraph said there were
 no bypass actors and the rules therefore applied to the maintainer too. That was wrong on both
 halves, and it mattered, because "nobody can bypass this" is the sentence that makes *branch,
-PR, stop* feel non-negotiable. Verified 2026-09-03:
+PR, stop* feel non-negotiable. Verified 2026-09-03, and unchanged on 2026-09-14:
 
 ```bash
 gh api repos/ehrlinger/TemporalHazard/rulesets/15010037 \
@@ -146,9 +212,13 @@ write, so `5` is one of those four and which one is not checkable from here. Nam
 guess wearing the costume of a fact, which is the house failure mode. `current_user_can_bypass`
 answers the question that actually matters and is evaluated for whoever holds the token.
 
-It is not theoretical: PR #222 merged with **zero** approving reviews. So the rule is a matter of
+It is not theoretical: PR #222 merged on 2026-09-03 with **zero** approving reviews, a day
+before the ruleset's last edit. With no approval rule now there is not even a rule to bypass: anyone with
+write access can merge a PR the moment its checks go green. So the rule is a matter of
 practice, not of enforcement — which is the stronger reason to follow it, not a licence to skip
-it. **An agent still never merges and never bypasses**; the maintainer decides when to.
+it. **An agent never merges and never bypasses**, and that matters more now than when approval
+was a backstop: the maintainer's decision to merge is the only human review a PR is guaranteed
+to get.
 
 Required checks are *not* strict: a PR is not forced to re-run the matrix every time `main`
 moves. That is a deliberate trade against a roughly 45-minute Windows job, and it means a branch
@@ -161,7 +231,7 @@ your behalf. The definition of done above is entirely manual — run it yourself
 
 **CI does not skip `skip_on_cran()` tests, whatever a local `--as-cran` run does.**
 `r-lib/actions/check-r-package` sets `NOT_CRAN: true` itself, so every one of them runs on
-all five platforms. This was verified the hard way on 2026-09-01: a `skip_on_cran()` test
+every platform the job checks: the three Linux jobs on a PR, all five after a merge. This was verified the hard way on 2026-09-01: a `skip_on_cran()` test
 added in PR #200 passed locally and *failed* on Linux and Windows.
 
 That matters mostly for how you read a red CI. The previous text here claimed CI skipped
@@ -174,7 +244,7 @@ checkouts under `~/Documents/GitHub/hazard`, and the runners did not.
 **Since 2026-09-10, one runner has them.** The **ubuntu-latest / release** job checks out
 `ehrlinger/hazard` at a pinned commit and points `HAZARD_REPO` and `HAZARD_EXAMPLES_DIR` at
 it (`R-CMD-check.yaml`), so the SAS parity tests and the translator corpus test run there,
-and only there. The other four platforms still skip them. Moving the pin is a deliberate PR,
+and only there. The other four jobs still skip them. Moving the pin is a deliberate PR,
 because the corpus test's floors are measured against that commit. A step fails the job if
 the files those tests read are missing, so a moved path fails CI instead of turning back
 into silent skips.

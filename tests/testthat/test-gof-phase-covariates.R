@@ -177,8 +177,9 @@ test_that("time_windows: a phase formula ignored at fit time gets the windows", 
   # Without `data`, the fit cannot evaluate a phase formula, so the phase
   # takes the window-expanded global x like any other. The curve has to
   # follow what the fit built, not whether a formula was written.
+  # Simulates a fit saved before #299, which hazard() now refuses to make.
   d <- .gof_pc_avc
-  fit <- suppressWarnings(hazard(
+  fit <- suppressWarnings(hzr_saved_before_299(
     time = d$int_dead, status = d$dead, x = cbind(age = d$age),
     time_windows = 1,
     dist   = "multiphase",
