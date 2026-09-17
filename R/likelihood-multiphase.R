@@ -1589,10 +1589,10 @@
 #' value from outside it, and no function but R's own design functions.
 #' Then the recovered design is trusted only if it reproduces the phase's
 #' fitted columns exactly: the same names and, once the rows with a missing
-#' value are dropped as the fit dropped them, the same rows and values, with
-#' every factor coded by treatment contrasts, whose column names carry its
-#' levels. A fit that dropped rows for another phase's missing values does
-#' not match, and is treated as having no data.
+#' value are dropped as the fit dropped them, the same rows and values, and
+#' only if no term is coded by contrasts, which the fit did not record. A fit
+#' that dropped rows for another phase's missing values does not match, and
+#' is treated as having no data.
 #'
 #' @param object A fitted multiphase `hazard` object.
 #' @param nm Phase name.
@@ -1620,12 +1620,13 @@
         !isTRUE(all(x == s | (is.na(x) & is.na(s))))) {
     return(NULL)
   }
-  # Treatment coding names each column after its level. Numbered contrasts
-  # (sum, Helmert, a session's own) do not, and a level whose rows a term
-  # multiplies by 0 (g in x:g) has its code checked by no fitted value, so
-  # another contrasts option at predict time would recode it silently.
-  coding <- built$design$contrasts
-  if (!all(vapply(coding, identical, logical(1), "contr.treatment"))) {
+  # A term coded by contrasts (a factor, character or logical column, cut())
+  # is rebuilt under this session's contrasts option, which the fit did not
+  # record. A level whose rows a term multiplies by 0 (g in x:g) has its
+  # code checked by no fitted value, so a different option, or a contrasts
+  # function that names its columns as treatment coding does, would recode
+  # it silently.
+  if (length(built$design$contrasts) > 0L) {
     return(NULL)
   }
   built$design
@@ -1636,20 +1637,21 @@
 # rebuilt, by the namespace each must come from (#307). With the fitting
 # data kept, the list follows the global rebuild's (`.hzr_rebuild_functions`,
 # #314): scale(), poly(), ns() and bs() are then checked against the fitted
-# columns. Without the data, only elementwise operations and cut(). Folding
-# the two lists is #271.
+# columns (a factor term, though listed, is refused as coded by contrasts).
+# Without the data, only elementwise operations. Folding the two lists is
+# #271.
 .hzr_phase_rebuild_functions <- list(
   kept = list(
     base = c("+", "-", "*", "/", "^", ":", "%in%", "(", "==", "!=", "<", ">",
              "<=", ">=", "&", "|", "!", "I", "log", "log2", "log10", "log1p",
              "exp", "expm1", "sqrt", "abs", "pmin", "pmax", "c", "factor",
-             "as.factor", "scale", "cut"),
+             "as.factor", "scale"),
     stats = c("poly", "relevel"),
     splines = c("ns", "bs")
   ),
   none = list(
     base = c("+", "-", "*", "/", "^", "(", ":", "==", "!=", "<", ">", "<=",
-             ">=", "&", "|", "!", "I", "log", "exp", "sqrt", "abs", "cut")
+             ">=", "&", "|", "!", "I", "log", "exp", "sqrt", "abs")
   )
 )
 
@@ -1665,11 +1667,9 @@
 #' fit may have used that value instead. Every function called unqualified
 #' must be on `functions` and resolve from the formula's environment to the
 #' identical object in its namespace, so a user's function of that name,
-#' whose state can move, is not taken for it; `c` in cut()'s breaks
-#' included. A qualified `pkg::fn` needs only to be on the list: `::` reads
-#' the namespace itself, which the formula's environment cannot mask. cut()
-#' must have a literal vector of breaks, since a number of breaks reads the
-#' range.
+#' whose state can move, is not taken for it; `c` included. A qualified
+#' `pkg::fn` needs only to be on the list: `::` reads the namespace itself,
+#' which the formula's environment cannot mask.
 #'
 #' @param formula A phase formula.
 #' @param columns The names a value may take.
@@ -1731,20 +1731,6 @@
     if (!is.symbol(fn) || !canonical(as.character(fn))) {
       return(FALSE)
     }
-    if (identical(fn, as.name("cut"))) {
-      nms <- names(args)
-      if (is.null(nms)) nms <- character(length(args))
-      at <- if (any(nms == "breaks")) which(nms == "breaks") else
-        which(nms == "")[2L]
-      b <- if (is.na(at[1L])) NULL else args[[at[1L]]]
-      if (!is.call(b) || !identical(b[[1L]], as.name("c")) ||
-            !identical(get0("c", envir = env, mode = "function"), base::c) ||
-            length(b) < 3L ||
-            !all(vapply(as.list(b)[-1L], is.numeric, logical(1)))) {
-        return(FALSE)
-      }
-      args <- args[-at[1L]]
-    }
     all(vapply(args, closed, logical(1)))
   }
   closed(rhs)
@@ -1768,22 +1754,18 @@
 #'   with, so `cutoff` in I(age > cutoff), or `T` and `pi`, are refused;
 #' * literals that its text carries exactly;
 #' * `+ - * / ^ ( : == != < > <= >= & | !`, `I()`, `log()`, `exp()`, `sqrt()`
-#'   and `abs()`, each base R's own;
-#' * `cut()` at a literal vector of breaks (`c(0, 50, 100)`), the only
-#'   categorical term allowed: any other (a character or factor column)
-#'   takes its levels from the data, and the fitted column names show only
-#'   the non-reference levels, so a level the fit never saw could be scored
-#'   as the reference. A logical is not categorical here.
+#'   and `abs()`, each base R's own.
 #'
 #' The list is narrower than the one for a fit that kept its data
 #' (`.hzr_phase_rebuild_functions`), which can check scale(), poly() and ns()
 #' against the fitted columns.
 #'
 #' A closed formula must then build from `newdata` alone (log() of a
-#' character column cannot be), give the phase's fitted columns, hold no
-#' categorical term but cut(), and be coded by treatment contrasts, whose
-#' column names carry the levels (Helmert or sum coding under another
-#' session's contrasts option does not).
+#' character column cannot be), give the phase's fitted columns, and hold no
+#' term coded by contrasts (a factor, character or logical column, `cut()`):
+#' its column names show only the non-reference levels, so a level the fit
+#' never saw could be scored as the reference, and the fit's contrasts
+#' option was not recorded, so this session may code any level differently.
 #'
 #' @param formula The phase formula.
 #' @param build Function of a data frame of new rows, returning the model
@@ -1821,26 +1803,16 @@
                           paste0("'", cols, "'", collapse = ", "),
                           ") from newdata: its levels come from the data"))
   }
-  # Column names show only the non-reference levels, so a level the fit
-  # never saw, sorting first in newdata, would be scored as the reference.
-  # Only cut() at literal breaks fixes its levels without the data (a
-  # logical is not categorical here).
-  fixed <- vapply(attr(a, "categorical"), function(v) {
-    e <- str2lang(v)
-    is.call(e) && identical(e[[1L]], as.name("cut"))
-  }, logical(1))
-  if (!all(fixed)) {
-    refuse(names(fixed)[!fixed], paste0("has levels that come from the ",
-                                        "data, whose reference level ",
-                                        "cannot be checked"))
-  }
-  # Treatment coding names each column after its level; polynomial, Helmert
-  # or sum coding does not, so reordered levels or another session's
-  # contrasts would pass the name check with other values.
+  # A term coded by contrasts (a factor, character or logical column, cut())
+  # is refused. Column names show only the non-reference levels, so a level
+  # the fit never saw that sorts first in newdata would be scored as the
+  # reference; and the fit's contrasts option was not recorded, so this
+  # session may code any level differently.
   coding <- attr(a, "contrasts")
-  if (!all(vapply(coding, identical, logical(1), "contr.treatment"))) {
-    refuse(labels, paste0("codes a factor by contrasts whose column names do ",
-                          "not carry its levels"))
+  if (length(coding) > 0L) {
+    refuse(names(coding), paste0("is coded by contrasts, which the fit did ",
+                                 "not record and this session may code ",
+                                 "differently"))
   }
   invisible(NULL)
 }
@@ -1980,9 +1952,6 @@
       m <- m0[, -1L, drop = FALSE]
       attr(m, "assign") <- attr(m0, "assign")[-1L]
       attr(m, "contrasts") <- attr(m0, "contrasts")
-      attr(m, "categorical") <- names(mf)[vapply(mf, function(v) {
-        is.factor(v) || is.character(v)
-      }, logical(1))]
       m
     }
     # Nothing to check a rebuild against: rebuild only a closed formula (#307).

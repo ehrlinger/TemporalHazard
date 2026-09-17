@@ -172,24 +172,21 @@ test_that("some phase variables beside all design columns is refused (#272)", {
 
 test_that("a fit without the stored design lets its variables win too (#272)", {
   # Such a fit always rebuilt from its formula before #268, so a
-  # contradicting design column must not start winning for it now.
+  # contradicting design column must not start winning for it now. Its
+  # factor is coded by contrasts the fit did not record, so the rebuild is
+  # refused rather than taken from the design column (#307).
   fit <- phase_formula_fit()
   fit$fit$x_design <- NULL
   tt <- c(1, 1)
   nd <- data.frame(time = tt, grp = factor(c("old", "young")),
                    grpyoung = c(1, 0))
-  # main's answer, computed on 4b68020 with the same fit: old, then young.
-  expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard"),
-               c(0.04647389634149, 0.23995615103791),
-               tolerance = 1e-6, ignore_attr = TRUE)
-  expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard") /
-                 reference_cumhaz(fit, tt, c(0, 1)),
-               c(1, 1), tolerance = 1e-10, ignore_attr = TRUE)
+  expect_error(predict(fit, newdata = nd, type = "cumulative_hazard"),
+               "term 'grp' of phase 'early' is coded by contrasts.*refit")
 })
 
 test_that("a fit with neither the stored design nor its data predicts from design columns only", {
-  # Such a fit (saved by 1.0.3 or earlier) cannot check a factor's reference
-  # level, so rebuilding grp is refused (#307); its design columns alone still
+  # Such a fit (saved by 1.0.3 or earlier) cannot check how its factor was
+  # coded, so rebuilding grp is refused (#307); its design columns alone still
   # predict as main did. Values computed on main 4b68020 with the same fit,
   # design and frame removed.
   fit <- phase_formula_fit()
@@ -197,7 +194,7 @@ test_that("a fit with neither the stored design nor its data predicts from desig
   fit$data$frame <- NULL
   nd <- data.frame(time = c(1, 1), grp = factor(c("old", "young")))
   expect_error(predict(fit, newdata = nd, type = "cumulative_hazard"),
-               "term 'grp' of phase 'early' has levels that come from the data.*refit")
+               "term 'grp' of phase 'early' is coded by contrasts.*refit")
   nd <- data.frame(time = c(1, 1))
   nd$grpyoung <- c(0, 1)
   expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard"),
@@ -429,12 +426,18 @@ test_that("all columns present: predictions unchanged from main 8a26c0e", {
                tolerance = 1e-6, ignore_attr = TRUE)
 })
 
-test_that("a fit without the stored phase design still predicts", {
+test_that("a fit without the stored phase design predicts from its design columns", {
+  # Its data is kept, but its factor is coded by contrasts the fit did not
+  # record, so rebuilding grp is refused (#307); the design columns alone
+  # still predict.
   fit <- phase_formula_fit()
   fit$fit$x_design <- NULL
   tt <- c(1, 1)
   nd <- data.frame(time = tt,
                    grp = factor(c("old", "young"), levels = c("old", "young")))
+  expect_error(predict(fit, newdata = nd, type = "cumulative_hazard"),
+               "term 'grp' of phase 'early' is coded by contrasts.*refit")
+  nd <- data.frame(time = tt, grpyoung = c(0, 1))
   expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard") /
                  reference_cumhaz(fit, tt, c(0, 1)),
                c(1, 1), tolerance = 1e-10, ignore_attr = TRUE)

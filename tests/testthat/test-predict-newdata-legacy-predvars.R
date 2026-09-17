@@ -193,9 +193,8 @@ test_that("without its data, a closed phase formula still predicts as fitted", {
   # the formula can see could have stood in for it.
   d$sd <- d$opmos / 100
   nd$sd <- nd$opmos / 100
-  for (term in c("log(age)", "I(2 * age + 1)", "I(age > 50)",
-                 "sqrt(age) + exp(-opmos / 100)",
-                 "cut(opmos, c(0, 50, 100, 200))", "I(age + sd)")) {
+  for (term in c("log(age)", "I(2 * age + 1)",
+                 "sqrt(age) + exp(-opmos / 100)", "I(age + sd)")) {
     lf <- legacy_fit_on(term, d, keep_frame = FALSE)
     want <- predict(lf$current, newdata = nd, type = "cumulative_hazard")
     got <- predict(lf$fit, newdata = nd, type = "cumulative_hazard")
@@ -247,17 +246,17 @@ test_that("a closed term that cannot be built from newdata alone gets the refit 
   )
 })
 
-test_that("without its data, a categorical term is refused unless its levels are fixed", {
+test_that("without its data, a term coded by contrasts is refused", {
   skip_on_cran()  # multiphase fits
   # Column names show only the non-reference levels, so a level the fit
   # never saw that sorts first in newdata would be scored as the reference.
-  # Only cut() at literal breaks and a logical have levels that do not come
-  # from the data.
+  # And the fit's contrasts option is not kept, so even a logical or cut()
+  # at literal breaks could be coded another way in this session.
   d <- legacy_data()
   rows <- c(1, 2, 3, 4, 50, 200)
   nd <- data.frame(time = d$int_dead[rows], grp = d$grp[rows],
                    inc_surg = d$inc_surg[rows], male = d$male[rows],
-                   opmos = d$opmos[rows])
+                   opmos = d$opmos[rows], age = d$age[rows])
   # Every level of grp present, and one relabelled to a level never seen.
   nd$grp <- c("B", "A", "C", "A", "B", "B")
   seen_not <- nd
@@ -274,14 +273,12 @@ test_that("without its data, a categorical term is refused unless its levels are
   }, integer(1)))
   expect_error(predict(lf$fit, newdata = all_levels,
                        type = "cumulative_hazard"), "refit")
-  # A logical column and cut() at literal breaks predict as fitted.
-  for (term in c("male", "cut(opmos, c(0, 50, 100, 200))")) {
+  # A logical column, a logical I() term and cut() at literal breaks are
+  # refused too.
+  for (term in c("male", "I(age > 50)", "cut(opmos, c(0, 50, 100, 200))")) {
     lf <- legacy_fit_on(term, d, keep_frame = FALSE)
-    want <- predict(lf$current, newdata = nd, type = "cumulative_hazard")
-    got <- predict(lf$fit, newdata = nd, type = "cumulative_hazard")
-    expect_length(got, nrow(nd))
-    expect_equal(got / want, rep(1, nrow(nd)), tolerance = 1e-8,
-                 ignore_attr = TRUE, label = term)
+    expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
+                 "refit", label = term)
   }
   # The fitted columns must come back: a logical given as a number codes
   # as the number, not as TRUE, and is refused.
@@ -427,7 +424,7 @@ test_that("a legacy fit with duplicated phase column names is refused", {
   }
 })
 
-test_that("an inlined -0, a classed constant or a user's c() in cut() breaks is refused", {
+test_that("an inlined -0, a classed constant or a user's function of a listed name is refused", {
   skip_on_cran()  # multiphase fits
   d <- legacy_data()
   nd <- legacy_nd()
@@ -443,21 +440,28 @@ test_that("an inlined -0, a classed constant or a user's c() in cut() breaks is 
   lf <- legacy_fit_on(f, d, keep_frame = TRUE)
   expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
                "refit", label = "classed constant, keep_frame = TRUE")
-  # A c() reading outside state moves the breaks while the labels print the
-  # same: a row at 100.004 changes bin.
+  # A user's log() reading outside state, changed only between two fitted
+  # ages: every fitted row, and so the rebuilt design, is unchanged, while a
+  # row in the gap is not.
+  ages <- sort(unique(d$age))
+  i <- which(ages > 100)[1L]
+  lo <- ages[i - 1L]
+  hi <- ages[i]
   e <- new.env()
-  e$k <- 1
-  e$c <- function(...) base::c(...) * k
-  environment(e$c) <- e
-  f <- stats::as.formula("~ cut(opmos, c(0, 50, 100, 1000))", env = e)
+  e$k <- hi
+  e$log <- function(x) base::log(x) + (x > k & x < hi)
+  environment(e$log) <- e
+  e$hi <- hi
+  f <- stats::as.formula("~ log(age)", env = e)
   for (keep in c(TRUE, FALSE)) {
-    e$k <- 1
+    e$k <- hi
     lf <- legacy_fit_on(f, d, keep_frame = keep)
-    e$k <- 1.0001
+    e$k <- lo
+    expect_identical(unname(lf$fit$fit$x_list$early[, 1L]), e$log(d$age))
     expect_error(
-      predict(lf$fit, newdata = data.frame(time = 2, opmos = 100.004),
+      predict(lf$fit, newdata = data.frame(time = 2, age = (lo + hi) / 2),
               type = "cumulative_hazard"),
-      "refit", label = paste("shadowed c(), keep_frame =", keep))
+      "refit", label = paste("user's log(), keep_frame =", keep))
   }
 })
 
@@ -521,4 +525,33 @@ test_that("kept data is trusted only under treatment contrasts", {
   options(contrasts = c("contr.recoded", "contr.poly"))
   expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
                "refit")
+})
+
+test_that("a contrasts function the fit used and this session lacks is not trusted", {
+  skip_on_cran()  # multiphase fits
+  # A contrasts function can name its columns as treatment coding does and
+  # code a level another way. When that level's rows are all multiplied by
+  # 0, no fitted value shows its code, and the kept data cannot say which
+  # contrasts the fit used.
+  d <- legacy_data()
+  d$x <- d$age / 100
+  d$x[d$opmos > 100] <- 0
+  recode <- function(n, contrasts = TRUE, sparse = FALSE) {
+    m <- stats::contr.treatment(n)
+    m[3, ] <- c(1, 1)
+    m
+  }
+  assign("contr.recode307", recode, envir = globalenv())
+  on.exit(rm("contr.recode307", envir = globalenv()), add = TRUE)
+  old <- options(contrasts = c("contr.recode307", "contr.poly"))
+  on.exit(options(old), add = TRUE)
+  f <- "x + x:cut(opmos, c(0, 50, 100, 1000))"
+  nd <- data.frame(time = 1, x = 2, opmos = c(30, 75, 150))
+  for (keep in c(TRUE, FALSE)) {
+    options(contrasts = c("contr.recode307", "contr.poly"))
+    lf <- legacy_fit_on(f, d, keep_frame = keep)
+    options(contrasts = c("contr.treatment", "contr.poly"))
+    expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
+                 "refit", label = paste("keep_frame =", keep))
+  }
 })
