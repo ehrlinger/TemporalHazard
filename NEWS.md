@@ -317,6 +317,32 @@
 
 ## New features
 
+* **`hzr_translate_sas()` now translates a `SELECTION` statement into an
+  `hzr_stepwise()` call** (#160). Such a job used to emit a `stop()`: the
+  refit path needed a formula-interface base fit, so every candidate refit
+  would have failed and the screen would have reported zero steps, which
+  reads exactly like "nothing met `slentry`". The refit is phase-aware now,
+  so the job translates into two chunks, the shape-fixed base fit and the
+  screen, carrying the job's own candidates, per-variable flags and
+  thresholds: a bare phase variable is a candidate offered through `scope`
+  and withheld from the base model, `/S` starts in the model, `/I` becomes
+  `force_in`, and `/E` appears nowhere. `PROC HAZARD`'s defaults are always
+  written out (`SLE` 0.3, `SLS` 0.2, or 0.05 under `BACKWARD`, `MOVE` 1), so
+  the call never inherits a different default from `hzr_stepwise()`. A
+  `BACKWARD` job gets no `scope` and a base carrying every candidate, which
+  is where `PROC HAZARD` starts one.
+
+  **The screen may select a different model than `PROC HAZARD` did**, and
+  the rendered document says so in a callout above the chunk: `PROC HAZARD`
+  uses approximate variances during selection while this package uses the
+  full Hessian, and `force_in` is keyed by variable name across phases where
+  SAS's `/I` holds a variable in one phase. Read the result as this
+  package's screen of the job's candidates, not as a reproduction of the SAS
+  run. A `SELECTION` this translator cannot run faithfully is still refused
+  outright: `FAST`, `MAXVARS`, `ROBUST` and `SEMIROBUST` (which change the
+  variance the removal test uses), a per-variable `MOVE=` or `ORDER=`, and a
+  variable held by `/I` in one phase but movable in another.
+
 * **`hzr_phase()` can derive one late-phase shape from the others (#325).**
   The new `constraint` argument covers SAS/C's two late-phase constraints:
   - `"alpha_gamma_eta"` holds `alpha = gamma * eta / 2` (`FIXGAE2`);

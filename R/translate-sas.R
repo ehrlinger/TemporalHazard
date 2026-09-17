@@ -181,6 +181,8 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
 
   calls <- list()
   untr <- .hzr_untranslated_frame()
+  # Callouts attached to a named chunk, rendered immediately ABOVE it.
+  notes <- list()
   seen <- 0L
   mapped <- 0L
   grid <- NULL
@@ -273,7 +275,26 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
       # a bare hazard(...) call binds nothing, so those chunks failed with
       # "object 'fit' not found" -- or worse, silently used an unrelated
       # object of that name already in the rendering session (#151).
-      calls[[fit_slot]] <- call("<-", as.name(fit_slot), r$call)
+      if (is.null(r$stepwise_call)) {
+        calls[[fit_slot]] <- call("<-", as.name(fit_slot), r$call)
+      } else {
+        # A SELECTION job is two chunks: the shape-fixed base fit, then the
+        # screen. `fit <- hzr_stepwise(fit, ...)` would be self-referential,
+        # so the base is bound under <slot>_base and the screen's RESULT
+        # takes the slot name every predict() chunk already references.
+        base_slot <- paste0(fit_slot, "_base")
+        calls[[base_slot]] <- call("<-", as.name(base_slot), r$call)
+        sw <- r$stepwise_call
+        sw[[2L]] <- as.name(base_slot)
+        calls[[fit_slot]] <- call("<-", as.name(fit_slot), sw)
+        notes[[fit_slot]] <- .hzr_selection_divergence_note()
+        if (!is.null(r$screen_check_call)) {
+          chk <- do.call(substitute,
+                         list(r$screen_check_call,
+                              list(fit = as.name(fit_slot))))
+          calls[[.hzr_next_call_name(calls, "screen_check")]] <- chk
+        }
+      }
       fits[[length(fits) + 1L]] <- list(slot = fit_slot, outhaz = r$outhaz)
     } else {
       r <- tryCatch(.hzr_parse_hazpred(b, txt), error = function(e) {
@@ -376,7 +397,8 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
                   checksum = unname(tools::md5sum(path))),
     calls = calls, grid = grid, inhaz = first_unresolved_inhaz,
     outhaz = outhaz_vec, untranslated = untr,
-    coverage = list(tokens_seen = seen, tokens_mapped = mapped)
+    coverage = list(tokens_seen = seen, tokens_mapped = mapped),
+    notes = notes
   )
   job$inhaz_resolved <- is.null(first_unresolved_inhaz)
   .hzr_validate_sas_job(job)
@@ -406,4 +428,40 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
     )
   }
   invisible(job)
+}
+
+
+#' The callout a translated SELECTION job carries, above its screen.
+#'
+#' `hzr_stepwise()` runs the job's own candidates, flags and thresholds, but
+#' it cannot be expected to reach `PROC HAZARD`'s selected set: SAS uses
+#' approximate variances during selection while this package uses the full
+#' Hessian, and `force_in` is not phase-keyed where SAS's `/I` is. The
+#' divergence is recorded against a real fixture in
+#' `tests/testthat/test-sas-parity.R` (hm.death.AVC). The reader meets this
+#' before the code, which is why it is a note on the chunk rather than a row
+#' in `$untranslated` (#160).
+#' @noRd
+.hzr_selection_divergence_note <- function() {
+  list(
+    title = paste("SELECTION: this screen may select a different model than",
+                  "PROC HAZARD did"),
+    body = paste(
+      "This job's SELECTION statement is translated into hzr_stepwise() with",
+      "the job's own candidates, per-variable flags and SLENTRY/SLSTAY",
+      "thresholds. The screen is real, and the selected model may still",
+      "differ from the one PROC HAZARD chose, for two reasons that cannot be",
+      "tuned away: PROC HAZARD uses approximate variances during selection",
+      "(it ignores the shaping-parameter covariances), while hzr_stepwise()",
+      "uses the full Hessian, so the statistics driving each enter and drop",
+      "decision are not the same; and SAS's /I holds a variable in ONE phase,",
+      "while hzr_stepwise()'s force_in is keyed by variable name across every",
+      "phase. The divergence is recorded against the hm.death.AVC fixture in",
+      "tests/testthat/test-sas-parity.R. Read the selected model as this",
+      "package's screen of this job's candidates, not as a reproduction of",
+      "the SAS run, and compare it against the SAS listing before relying on",
+      "it. Any candidate the screen could not score is reported by the",
+      "uncomputable-score check below it."
+    )
+  )
 }

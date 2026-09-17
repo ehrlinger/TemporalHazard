@@ -528,6 +528,11 @@
 #'
 #' @param operands Character vector of `PARMS` tokens, e.g.
 #'   `c("MUE=0.2", "THALF=0.15", "NU=1.4", "M=1", "FIXM", "MUC=0.0005")`.
+#' @param selection `FALSE` for a job with no `SELECTION` statement,
+#'   `"screen"` for a forward or two-way screen (bare variables are
+#'   candidates, withheld from the phase formulas), or `"backward"` (bare
+#'   variables start in the model, as `setstat.c` puts them there when
+#'   `H->sw` is 0).
 #' @param covars Optional named list of phase covariates, e.g.
 #'   `list(early = c("X1", "X2"), constant = , late = )`, from the operands of
 #'   the `EARLY` / `CONSTANT` / `LATE` statements.
@@ -543,7 +548,7 @@
 #'   could not read is recorded but not refused, because the refusal is a
 #'   claim about the reference and not about this parser.
 #' @noRd
-.hzr_parse_parms <- function(operands, covars = list()) {
+.hzr_parse_parms <- function(operands, covars = list(), selection = FALSE) {
   mu <- list()
   early <- list()
   late <- list()
@@ -923,6 +928,13 @@
   phase_covars <- list()
   phase_covar_vals <- list()
   phase_vars <- character(0)
+  # Under SELECTION a bare variable starts OUT of the model and is a
+  # candidate; /S starts in and may move; /I starts in and never moves
+  # (setstat.c with H->sw == 1). Without SELECTION every non-/E variable is
+  # simply in the model, which is the `selection = FALSE` path.
+  sel_candidates <- list()
+  sel_movable <- list()
+  sel_force_in <- character(0)
   for (ph in c("early", "constant", "late")) {
     raw <- covars[[ph]]
     if (is.null(raw)) {
@@ -931,8 +943,19 @@
       next
     }
     parsed <- .hzr_parse_phase_covars(raw)
-    phase_covars[[ph]] <- parsed$names
-    phase_covar_vals[[ph]] <- parsed$values
+    # Candidates are withheld only from a FORWARD or two-way screen. Under
+    # BACKWARD, stpwprc.c leaves H->sw at 0, so setstat.c puts a bare
+    # variable IN the model and the screen drops from the full set.
+    withhold <- identical(selection, "screen")
+    keep <- if (withhold) parsed$flags %in% c("I", "S") else
+      rep(TRUE, length(parsed$names))
+    if (!isFALSE(selection)) {
+      sel_candidates[[ph]] <- parsed$names[parsed$flags == ""]
+      sel_movable[[ph]] <- parsed$names[parsed$flags %in% c("", "S")]
+      sel_force_in <- c(sel_force_in, parsed$names[parsed$flags == "I"])
+    }
+    phase_covars[[ph]] <- parsed$names[keep]
+    phase_covar_vals[[ph]] <- parsed$values[keep]
     phase_vars <- c(phase_vars, parsed$names, parsed$excluded)
     for (i in seq_along(parsed$untranslated_construct)) {
       flag_bad(parsed$untranslated_construct[[i]], parsed$untranslated_reason[[i]])
@@ -1317,10 +1340,29 @@
     if (has_muc) phase_covars$constant,
     if (has_late && length(late)) phase_covars$late
   )
+  # Scope is keyed by the name the BASE FIT will carry. The emitted phases
+  # list is unnamed, so hazard() auto-names them phase_1, phase_2, ... in
+  # build order: keying on "early"/"constant" fails with "Unknown phase(s)
+  # in scope". Only built phases have a key.
+  built <- c(
+    if (has_early && length(early)) "early",
+    if (has_muc) "constant",
+    if (has_late && length(late)) "late"
+  )
+  selection_spec <- if (isFALSE(selection)) NULL else list(
+    scope = stats::setNames(
+      lapply(built, function(ph) sel_candidates[[ph]] %||% character(0)),
+      paste0("phase_", seq_along(built))),
+    movable = stats::setNames(
+      lapply(built, function(ph) sel_movable[[ph]] %||% character(0)),
+      paste0("phase_", seq_along(built))),
+    force_in = unique(sel_force_in)
+  )
   list(
     phases = as.call(c(quote(list), phase_calls)),
     theta = as.call(c(quote(c), theta_blocks)),
     listwise_only = setdiff(unique(phase_vars), modelled),
+    selection = selection_spec,
     has_phases = length(phase_calls) > 0L,
     refused = refused,
     untranslated = .hzr_untranslated_frame(

@@ -27,16 +27,14 @@ test_that("BACKWARD and ONEWAY are distinct from stepwise", {
   }
 })
 
-test_that("a SELECTION block is refused, not emitted as hzr_stepwise", {
-  # This test used to assert got$call[[1L]] == as.name("hzr_stepwise") and
-  # got$call[["direction"]] == "both". It does not any more: hzr_stepwise()'s
-  # refit path (.hzr_refit_with_scope(), R/stepwise-refit.R) requires a
-  # formula-interface base fit, and this translator only ever emits the
-  # vector interface, so every candidate refit would error, the forward step
-  # downgrades those errors to warnings, and the run would silently report
-  # zero steps -- indistinguishable from "nothing met slentry" (#159, #160).
-  # Refuse loudly instead, mirroring .hzr_censor_spec()'s LCENSOR + ICENSOR
-  # refusal.
+test_that("a SELECTION block emits a screen, not a refusal (#160)", {
+  # This test used to assert a stop() chunk. The refusal existed because the
+  # refit path required a formula-interface base fit, so every candidate
+  # refit errored and the screen reported zero steps -- indistinguishable
+  # from "nothing met slentry" (#159). .hzr_refit_blocker() is phase-aware
+  # now, so a vector-interface multiphase fit refits, and #160 translates
+  # the statement instead. What must NOT come back is a screen that cannot
+  # screen, which the executed tests below pin.
   txt <- .hzr_sas_normalise(paste(
     "%HAZARD( PROC HAZARD DATA=A CONDITION=14;",
     "EVENT D; TIME T; EARLY X1=1, X2=1, X3=1;",
@@ -44,18 +42,22 @@ test_that("a SELECTION block is refused, not emitted as hzr_stepwise", {
     "SELECTION FORWARD SLENTRY=0.05 SLSTAY=0.1; );"
   ))
   got <- .hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]])
-  expect_true(any(grepl("SELECTION", got$untranslated$construct, fixed = TRUE)))
-  # The callout alone is not enough -- a reader who renders past it would
-  # still get a fit. The emitted call must itself refuse.
-  expect_identical(got$call[[1L]], as.name("stop"))
-  expect_error(eval(got$call), "SELECTION")
-  expect_null(got$call[["direction"]])
+  expect_identical(got$call[[1L]], as.name("hazard"))
+  expect_identical(got$stepwise_call[[1L]], as.name("hzr_stepwise"))
+  expect_equal(got$stepwise_call[["slentry"]], 0.05)
+  expect_equal(got$stepwise_call[["slstay"]], 0.1)
+  # FORWARD is SAS option 21, which is two-way (see .hzr_selection_spec()).
+  expect_equal(got$stepwise_call[["direction"]], "both")
+  expect_false(any(grepl("SELECTION", got$untranslated$construct, fixed = TRUE)))
 })
 
 test_that("a non-numeric SLENTRY value is untranslated, not coerced to NA silently", {
   got <- .hzr_selection_spec(c("STEPWISE", "SLENTRY=oops"))
-  expect_null(got$slentry)
   expect_true(any(grepl("SLENTRY", got$untranslated$construct)))
+  # The value is discarded and PROC HAZARD's own default stands in its
+  # place, so the emitted call never inherits hzr_stepwise()'s different
+  # default (stpwprc.c: SLE 0.3).
+  expect_equal(got$slentry, 0.3)
 })
 
 test_that("an unknown SELECTION option is recorded, not dropped", {
@@ -86,10 +88,13 @@ test_that("NOSTEPWISE keeps its entry threshold, because it still screens", {
   expect_false(any(grepl("SLENTRY", got$untranslated$construct)))
 })
 
-test_that("a NOSTEPWISE job is refused, not fitted with every candidate in (#342)", {
+test_that("a NOSTEPWISE job screens forward, with candidates out of the base (#342, #160)", {
   # Under SELECTION a bare phase variable starts OUT of the model
-  # (setstat.c), so emitting ~AGE + X + Z as a plain fit was a wrong model
-  # with an empty $untranslated. Executed, not shape-asserted.
+  # (setstat.c), so emitting ~AGE + X + Z as a plain fit was a wrong model.
+  # #342 refused the job; #160 translates it: NOSTEPWISE is a forward-only
+  # screen, because the SELECTION statement sets sw = 1 and nosw only caps
+  # moves. The assertion that matters is unchanged -- the candidates are not
+  # forced into the base model.
   f <- withr::local_tempfile(fileext = ".sas")
   writeLines(paste(
     "%HAZARD( PROC HAZARD DATA=D CONDITION=14; EVENT DEAD; TIME TT;",
@@ -97,22 +102,19 @@ test_that("a NOSTEPWISE job is refused, not fitted with every candidate in (#342
     "EARLY AGE, X/I, Z/S; );"
   ), f)
   job <- suppressWarnings(hzr_translate_sas(f))
-  expect_true(any(job$untranslated$construct == "SELECTION"))
-  set.seed(5)
-  n <- 60
-  D <- data.frame(TT = stats::rexp(n, 0.2), DEAD = rep(c(1, 0), length.out = n),
-                  AGE = stats::rnorm(n), X = stats::rnorm(n), Z = stats::rnorm(n))
-  res <- suppressWarnings(render_sim(job, list(D = D)))
-  expect_match(res$results[["fit"]], "^ERROR: .*SELECTION")
-  expect_false(exists("fit", envir = res$env, inherits = FALSE))
+  cl <- job$calls$fit[[3L]]
+  expect_identical(cl[[1L]], as.name("hzr_stepwise"))
+  expect_equal(cl[["direction"]], "forward")
+  # AGE is a bare candidate: offered as scope, absent from the base.
+  expect_equal(deparse(as.list(cl[["scope"]])$phase_1), "~AGE")
+  base_formula <- job$calls$fit_base[[3L]][["phases"]][[2L]][["formula"]]
+  expect_equal(deparse(base_formula), "~X + Z")
+  expect_equal(eval(cl[["force_in"]]), "X")
 })
 
-test_that("a directionless SELECTION block is refused too", {
-  # This test used to assert got$call[[1L]] == as.name("hzr_stepwise") and
-  # got$call[["slentry"]]/["slstay"] == 0.05/0.1 -- i.e. that a bare
-  # SELECTION (stepwisestmt with empty stepwiseopts, still enables stepwise)
-  # translated cleanly. It does not any more, for the same reason as the
-  # directed case above: refused, not translated (#159, #160).
+test_that("a directionless SELECTION block emits a screen too (#160)", {
+  # A bare SELECTION (stepwisestmt with empty stepwiseopts) still enables
+  # stepwise, so it translates like any other; it used to be refused.
   txt <- .hzr_sas_normalise(paste(
     "%HAZARD( PROC HAZARD DATA=A CONDITION=14;",
     "EVENT D; TIME T; EARLY X1=0.5, X2=0.25;",
@@ -120,13 +122,16 @@ test_that("a directionless SELECTION block is refused too", {
     "SELECTION SLENTRY=0.05 SLSTAY=0.1; );"
   ))
   got <- .hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]])
-  expect_true(any(grepl("SELECTION", got$untranslated$construct, fixed = TRUE)))
-  expect_identical(got$call[[1L]], as.name("stop"))
-  expect_null(got$call[["slentry"]])
-  expect_null(got$call[["slstay"]])
+  expect_identical(got$stepwise_call[[1L]], as.name("hzr_stepwise"))
+  expect_equal(got$stepwise_call[["slentry"]], 0.05)
+  expect_equal(got$stepwise_call[["slstay"]], 0.1)
 })
 
-test_that("a SELECTION job is refused, not translated into a no-op screen", {
+test_that("a SELECTION job emits a screen that is not a no-op (#160)", {
+  # The refusal this replaces existed to prevent a screen that runs and
+  # selects nothing, which reads exactly like an honest "nothing met
+  # slentry" (#159). So assert the emitted call carries what a screen needs:
+  # a scope with candidates in it, and the thresholds the job asked for.
   f <- withr::local_tempfile(fileext = ".sas")
   writeLines(paste(
     "%HAZARD( PROC HAZARD DATA=A CONDITION=14;",
@@ -135,14 +140,13 @@ test_that("a SELECTION job is refused, not translated into a no-op screen", {
     "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
   ), f)
   job <- suppressWarnings(hzr_translate_sas(f))
-  expect_true(any(grepl("SELECTION", job$untranslated$construct, fixed = TRUE)))
-  # No hzr_stepwise() call may be emitted at all: one that runs and screens
-  # nothing is the defect this refusal exists to avoid (#159, #160).
-  deparsed <- paste(vapply(job$calls, function(c0) {
-    paste(deparse(c0), collapse = " ")
-  }, character(1)), collapse = " ")
-  expect_false(grepl("hzr_stepwise", deparsed, fixed = TRUE))
-  expect_true(grepl("stop(", deparsed, fixed = TRUE))
+  expect_false(any(grepl("SELECTION", job$untranslated$construct, fixed = TRUE)))
+  cl <- job$calls$fit[[3L]]
+  expect_identical(cl[[1L]], as.name("hzr_stepwise"))
+  expect_equal(deparse(as.list(cl[["scope"]])$phase_1), "~X1 + X2 + X3")
+  # The candidates are NOT also baked into the base model, which would
+  # invert the statement's meaning: the base is intercept-only here.
+  expect_null(job$calls$fit_base[[3L]][["phases"]][[2L]][["formula"]])
 })
 
 test_that("a job with no SELECTION statement is unaffected", {
