@@ -1589,9 +1589,10 @@
 #' value from outside it, and no function but R's own design functions.
 #' Then the recovered design is trusted only if it reproduces the phase's
 #' fitted columns exactly: the same names and, once the rows with a missing
-#' value are dropped as the fit dropped them, the same rows and values. A
-#' fit that dropped rows for another phase's missing values does not match,
-#' and is treated as having no data.
+#' value are dropped as the fit dropped them, the same rows and values, with
+#' every factor level occurring in those rows. A fit that dropped rows for
+#' another phase's missing values does not match, and is treated as having
+#' no data.
 #'
 #' @param object A fitted multiphase `hazard` object.
 #' @param nm Phase name.
@@ -1613,11 +1614,27 @@
   if (is.null(built) || !identical(colnames(built$x), colnames(stored))) {
     return(NULL)
   }
-  x <- unname(built$x[stats::complete.cases(built$x), , drop = FALSE])
+  keep <- stats::complete.cases(built$x)
+  x <- unname(built$x[keep, , drop = FALSE])
   s <- unname(stored)
   if (!identical(dim(x), dim(s)) ||
         !isTRUE(all(x == s | (is.na(x) & is.na(s))))) {
     return(NULL)
+  }
+  # The fitted values check a level's code only where the level occurs. One
+  # found only in rows the fit dropped could have changed places (another
+  # locale's sort, a releveled factor) without moving a fitted value, under
+  # contrasts whose column names do not show the levels.
+  xlevels <- built$design$xlevels
+  if (length(xlevels) > 0L) {
+    mf <- stats::model.frame(built$design$terms, data = frame,
+                             na.action = stats::na.pass)[keep, , drop = FALSE]
+    seen <- vapply(names(xlevels), function(v) {
+      all(xlevels[[v]] %in% as.character(mf[[v]]))
+    }, logical(1))
+    if (!all(seen)) {
+      return(NULL)
+    }
   }
   built$design
 }

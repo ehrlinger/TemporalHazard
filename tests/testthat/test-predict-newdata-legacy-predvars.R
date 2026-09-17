@@ -472,3 +472,28 @@ test_that("kept data changed by a hair after the fit is not trusted", {
     "refit"
   )
 })
+
+test_that("kept data whose factor levels appear only in dropped rows is not trusted", {
+  skip_on_cran()  # multiphase fits
+  # Under numbered contrasts (contr.sum), a level order that changed after
+  # the fit (another locale, or a factor releveled in the kept data) moves
+  # no fitted row when the swapped levels appear only in rows the fit
+  # dropped for a missing value, yet it swaps their codes at newdata.
+  old <- options(contrasts = c("contr.sum", "contr.poly"))
+  on.exit(options(old), add = TRUE)
+  d <- legacy_data()
+  set.seed(1)
+  d$z <- d$age
+  d$g <- sample(c("c", "d", "e"), nrow(d), replace = TRUE)
+  d$g[1:4] <- c("a", "a", "b", "b")
+  d$z[1:4] <- NA
+  d$g <- factor(d$g, levels = c("a", "b", "c", "d", "e"))
+  lf <- legacy_fit_on("g + z", d, keep_frame = TRUE)
+  nd <- data.frame(time = 5, g = c("a", "b", "c"), z = 100)
+  want <- predict(lf$current, newdata = nd, type = "cumulative_hazard")
+  expect_false(isTRUE(all.equal(want[1], want[2])))
+  lf$fit$data$frame$g <- factor(as.character(d$g),
+                                levels = c("b", "a", "c", "d", "e"))
+  expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
+               "refit")
+})
