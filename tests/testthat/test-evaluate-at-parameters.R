@@ -335,3 +335,73 @@ test_that("hzr_evaluate() applies a phase constraint to the supplied theta (#144
   expect_identical(hzr_evaluate(spec, theta = theta)$logLik,
                    hzr_evaluate(spec, theta = unname(spec$fit$theta))$logLik)
 })
+
+test_that("the curve matches predict() when the model has covariates (#144)", {
+  skip_on_cran()
+  # theta carries one slot per covariate per phase. Splitting it as though
+  # the model had none read the constant phase's scale out of the early
+  # phase's coefficient: 18 to 23 times wrong, monotone and finite, no
+  # warning (r-reviewer). predict() at covariate 0 is the oracle.
+  data("avc", package = "TemporalHazard", envir = environment())
+  d <- na.omit(avc[, c("int_dead", "dead", "age")])
+  phases <- list(
+    early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1, fixed = "m"),
+    constant = hzr_phase("constant")
+  )
+  fit <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ age, data = d, dist = "multiphase",
+    phases = phases, fit = TRUE,
+    control = list(n_starts = 1L, conserve = FALSE, maxit = 100)
+  ))
+  times <- c(1, 10)
+  curve <- hzr_evaluate(fit, theta = fit$fit$theta, times = times)$curve
+  at_zero <- data.frame(time = times, age = 0)
+  expect_equal(curve$hazard,
+               as.numeric(predict(fit, newdata = at_zero, type = "hazard")),
+               tolerance = 1e-10)
+  expect_equal(curve$cumulative_hazard,
+               as.numeric(predict(fit, newdata = at_zero,
+                                  type = "cumulative_hazard")),
+               tolerance = 1e-10)
+})
+
+test_that("hzr_evaluate() refuses data whose rows were all dropped (#144)", {
+  skip_on_cran()
+  # A log-likelihood of 0 over no rows is the best value there is, and it
+  # reads as a parity success.
+  data("avc", package = "TemporalHazard", envir = environment())
+  d <- avc[, c("int_dead", "dead", "age")]
+  d$age <- NA_real_
+  phases <- list(
+    early = hzr_phase("cdf", t_half = 0.2, nu = 1, m = -0.4, formula = ~ age),
+    constant = hzr_phase("constant")
+  )
+  spec <- hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
+                 dist = "multiphase", phases = phases, fit = FALSE)
+  theta <- c(log(0.05), log(0.2), 1, -0.4, 0, log(0.03))
+  expect_error(hzr_evaluate(spec, theta = theta), "No rows are left")
+})
+
+test_that("the count error says which count is meant (#144)", {
+  skip_on_cran()
+  # hazard(fit = FALSE) does not resolve phase designs, so a specification
+  # with covariates stores fewer parameters than a fit would use. Refusing
+  # the object's own theta with a bare count is confusing; say why.
+  data("avc", package = "TemporalHazard", envir = environment())
+  d <- na.omit(avc[, c("int_dead", "dead", "age")])
+  phases <- list(
+    early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1, fixed = "m",
+                      formula = ~ age),
+    constant = hzr_phase("constant")
+  )
+  spec <- hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
+                 dist = "multiphase", phases = phases,
+                 theta = c(log(0.05), log(0.15), 1.4, 1, log(0.03)),
+                 fit = FALSE)
+  expect_length(spec$fit$theta, 5L)
+  expect_error(hzr_evaluate(spec, theta = spec$fit$theta),
+               "hazard\\(fit = FALSE\\) does not resolve phase designs")
+  # The full vector is accepted and scores.
+  full <- c(log(0.05), log(0.15), 1.4, 1, 0, log(0.03))
+  expect_true(is.finite(hzr_evaluate(spec, theta = full)$logLik))
+})

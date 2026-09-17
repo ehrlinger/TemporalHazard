@@ -89,8 +89,25 @@ hzr_evaluate <- function(object, theta, times = NULL) {
 
   prepared <- .hzr_evaluate_prepare(object)
   dist <- object$spec$dist
+  if (!length(prepared$time)) {
+    # A log-likelihood of 0 over no rows is the best value there is, and it
+    # reads as a parity success (#144 review).
+    stop("No rows are left to evaluate: every observation was dropped for a ",
+         "missing value in a phase's design. There is no likelihood to ",
+         "report.", call. = FALSE)
+  }
   if (length(theta) != prepared$n_par) {
-    stop("'theta' has ", length(theta), " parameter",
+    stored <- length(object$fit$theta)
+    stop(if (stored && stored != prepared$n_par) {
+           paste0("This model needs ", prepared$n_par, " parameters, and ",
+                  "the object's own stored theta has ", stored,
+                  ": hazard(fit = FALSE) does not resolve phase designs, so ",
+                  "a specification with covariates stores fewer than a fit ",
+                  "would use. Supply the full vector. ")
+         } else {
+           ""
+         },
+         "'theta' has ", length(theta), " parameter",
          if (length(theta) == 1L) "" else "s", ", but this ", dist,
          " model has ", prepared$n_par,
          if (is.null(prepared$names)) "." else
@@ -111,6 +128,11 @@ hzr_evaluate <- function(object, theta, times = NULL) {
   }
 
   logl <- .hzr_logl_at(object, theta, prepared)
+  curve <- if (is.null(times)) {
+    NULL
+  } else {
+    .hzr_evaluate_curve(object, theta, times, prepared)
+  }
 
   out <- list(
     theta = theta,
@@ -120,8 +142,7 @@ hzr_evaluate <- function(object, theta, times = NULL) {
     # carries: a phase design with an NA drops rows (#144 review).
     n_obs = length(prepared$time),
     n_events = sum(prepared$status == 1),
-    curve = if (is.null(times)) NULL else .hzr_evaluate_curve(object, theta,
-                                                              times)
+    curve = curve
   )
   structure(out, class = "hzr_evaluation")
 }
@@ -236,28 +257,24 @@ hzr_evaluate <- function(object, theta, times = NULL) {
 
 #' Hazard and cumulative hazard at supplied parameters, for a baseline subject
 #'
-#' Every covariate at 0, so the curve is the shape the parameters describe
-#' rather than a prediction for a row of the data. That keeps the result from
-#' reading as `predict()` output for a fit.
+#' Every covariate is held at 0, so the curve is the shape the parameters
+#' describe rather than a prediction for a row of the data. The covariate
+#' COUNTS are the model's own: `theta` carries one slot per covariate per
+#' phase, and splitting it as though the model had none read a later phase's
+#' scale out of an earlier phase's coefficient -- 18 to 23 times wrong,
+#' monotone and finite, with no warning (#144 review). Zero-valued designs
+#' give a covariate-free subject without changing the split.
 #'
 #' @param object A `hazard` object.
 #' @param theta Parameters, on the internal scale.
 #' @param times Times to evaluate at.
+#' @param prepared The result of `.hzr_evaluate_prepare()`.
 #' @return A data frame of `time`, `hazard`, `cumulative_hazard`.
 #' @keywords internal
 #' @noRd
-.hzr_evaluate_curve <- function(object, theta, times) {
+.hzr_evaluate_curve <- function(object, theta, times, prepared) {
   dist <- object$spec$dist
-  if (identical(dist, "multiphase")) {
-    phases <- .hzr_validate_phases(object$spec$phases)
-    counts <- stats::setNames(integer(length(phases)), names(phases))
-    x_list <- stats::setNames(vector("list", length(phases)), names(phases))
-    theta <- .hzr_apply_constraints(unname(theta), phases, counts)
-    haz <- .hzr_multiphase_hazard(times, unname(theta), phases, counts,
-                                  x_list)
-    cum <- .hzr_multiphase_cumhaz(times, unname(theta), phases, counts,
-                                  x_list)
-  } else {
+  if (!identical(dist, "multiphase")) {
     # Only the multiphase model has internal shape functions that take
     # parameters directly. Writing the other families' hazards out here
     # would duplicate what predict() computes inline, and two copies of the
@@ -268,8 +285,21 @@ hzr_evaluate <- function(object, theta, times = NULL) {
          "is returned either way. For a curve, fit the model and use ",
          "predict(), or evaluate the distribution directly.", call. = FALSE)
   }
-  data.frame(time = times, hazard = as.numeric(haz),
-             cumulative_hazard = as.numeric(cum))
+  phases <- prepared$phases
+  counts <- prepared$covariate_counts
+  x_list <- stats::setNames(lapply(names(phases), function(nm) {
+    k <- counts[[nm]] %||% 0L
+    if (k > 0L) matrix(0, nrow = length(times), ncol = k) else NULL
+  }), names(phases))
+  theta <- .hzr_apply_constraints(unname(theta), phases, counts)
+  data.frame(
+    time = times,
+    hazard = as.numeric(.hzr_multiphase_hazard(times, theta, phases, counts,
+                                               x_list)),
+    cumulative_hazard = as.numeric(.hzr_multiphase_cumhaz(times, theta,
+                                                          phases, counts,
+                                                          x_list))
+  )
 }
 
 
