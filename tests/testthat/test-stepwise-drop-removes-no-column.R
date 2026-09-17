@@ -146,3 +146,21 @@ test_that("a single-distribution drop that does remove a column still happens", 
   expect_identical(colnames(step$fit$data$x), "z")
   expect_length(step$refit_failures, 0L)
 })
+
+test_that("a design the pre-check cannot build is left to the refit to report (#323)", {
+  # A one-level `f` cannot be coded, so neither design builds. The pre-check
+  # must not abort the step; the refit fails loudly with its own reason.
+  d <- nod_data()
+  fit <- hazard(survival::Surv(time, status) ~ z + z:f, data = d,
+                dist = "weibull", theta = c(0.5, 1, 0, 0), fit = TRUE)
+  d1 <- d
+  d1$f <- factor(rep("a", nrow(d1)))
+  step <- NULL
+  expect_warning(
+    step <- .hzr_stepwise_backward_step(fit, data = d1, criterion = "wald",
+                                        slstay = 0.2),
+    "post-drop refit failed for z", fixed = TRUE
+  )
+  expect_false(step$accepted)
+  expect_identical(step$refit_failures, "z")
+})

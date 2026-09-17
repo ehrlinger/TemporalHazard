@@ -698,10 +698,12 @@
 #'   * The action this represents is a drop, so `accepted = TRUE` means
 #'     the variable was removed from the model.
 #'   * `refit_failures` and `refit_failure_reasons` carry one more case than
-#'     the forward step's: a drop this step REFUSED because the refit, which
-#'     converged, left the design no smaller -- an interaction whose main
-#'     effect has gone is recoded, so the "reduced" model is the model it
-#'     started from (#320).  The reason then says the drop removes no
+#'     the forward step's: a drop this step REFUSED because it leaves the
+#'     design no smaller -- an interaction whose main effect has gone is
+#'     recoded, so the "reduced" model is the model it started from (#320).
+#'     A multiphase drop is judged on the converged refit; a
+#'     single-distribution drop on its reduced design, before any refit
+#'     (#323).  The reason then says the drop removes no
 #'     column, and `accepted` is `FALSE` with the current fit returned.
 #'
 #' @keywords internal
