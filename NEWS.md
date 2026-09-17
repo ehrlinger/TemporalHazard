@@ -10,19 +10,26 @@
   the same design, so its results agreed with the wrong fit. A phase has no
   free intercept of its own (its scale parameter plays that role), so such
   a formula now builds exactly the design of the same formula with an
-  intercept: `~ 0 + age` fits as `~ age`, and a factor is coded against its
-  reference level rather than with a column per level. `hzr_phase()` now
-  warns that the removal is ignored, once, when the phase is created.
-  Refit a model whose phase formula had no intercept; its estimates will
-  change. A formula whose first term is a main-effect factor was already
-  coded this way, and is unaffected.
+  intercept: `~ 0 + age` fits as `~ age`, and factors are coded as they
+  would be with the intercept present, not with a column per level.
+  `hzr_phase()` now warns that the removal is ignored, once, when the phase
+  is created. Refit a model whose phase formula had no intercept: its
+  estimates will change. The one such formula that fits as before starts
+  with an unordered factor under the default treatment contrasts, which
+  already built the design of the formula with an intercept. An ordered
+  factor, or any factor under other `contrasts`, is now coded as it would
+  be with the intercept (for an ordered factor, `o.L` and `o.Q` rather
+  than `om` and `oh`), so its coefficients change meaning. An interaction
+  first, such as `~ 0 + g:age`, lost a column and now keeps it.
 
   The score test in `hzr_stepwise()` rebuilt the other phases of the model
   the old way, so once the fit was corrected they would have disagreed:
   a candidate's score was computed against a design the model was not
   fitted with, silently when the column counts matched, and otherwise every
   candidate in the other phases could not be scored. It now builds them as
-  the fit does.
+  the fit does, and declines to score (a score of `NA`) when a phase the
+  step does not change rebuilds with different columns than the fit
+  stored, as a model saved by an earlier version with such a formula can.
 
 * **`hazard()` now refuses a multiphase phase formula with covariates when
   no `data` is supplied (#299).** Such fits previously ignored the phase

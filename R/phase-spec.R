@@ -273,12 +273,13 @@ hzr_phase <- function(type = c("cdf", "hazard", "constant", "g3"),
     # The design is built as if the intercept were present (#303), so say
     # so here, once, rather than on every refit that builds the design.
     tt <- stats::terms(formula, allowDotAsName = TRUE)
-    if (attr(tt, "intercept") == 0L) {
+    # `~ 0` alone builds no columns either way, so there is nothing to say.
+    if (attr(tt, "intercept") == 0L && length(attr(tt, "term.labels")) > 0L) {
       warning("Phase formula `", paste(deparse(formula), collapse = " "),
               "` removes the intercept, which a phase formula cannot do: ",
               "the phase's scale parameter plays the intercept role. The ",
-              "design is built as if the intercept were present, so a ",
-              "factor is coded against its reference level.", call. = FALSE)
+              "design is built as if the intercept were present, so factors ",
+              "are coded as they would be with it.", call. = FALSE)
     }
   }
 

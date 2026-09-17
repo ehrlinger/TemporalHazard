@@ -422,6 +422,16 @@
     # a different column count means the expansion rebuilt it wrongly.
     return(NULL)
   }
+  for (nm in unchanged) {
+    # The same count can still be a different design: a fit saved before
+    # #303 holds `~ 0 + o`, for an ordered `o`, as dummies `om`, `oh`, which
+    # now rebuild as `o.L`, `o.Q`.
+    if (cov_counts[[nm]] > 0L &&
+          !identical(colnames(x_list[[nm]]),
+                     colnames(current$fit$x_list[[nm]]))) {
+      return(NULL)
+    }
+  }
   for (nm in nms) {
     xm <- x_list[[nm]]
     if (is.null(xm) || ncol(xm) == 0L) next

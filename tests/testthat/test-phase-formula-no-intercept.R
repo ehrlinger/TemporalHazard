@@ -72,7 +72,7 @@ test_that("hzr_phase() warns once that an intercept removal is ignored (#303)", 
     expect_warning(hzr_phase("constant", formula = f), "removes the intercept",
                    info = deparse(f))
   }
-  for (f in list(~ age, ~ 1, ~ age + mal, ~ .)) {
+  for (f in list(~ age, ~ 1, ~ age + mal, ~ ., ~ 0)) {
     expect_no_warning(hzr_phase("constant", formula = f))
   }
 })
@@ -112,4 +112,34 @@ test_that("the score test builds an intercept-free phase as the fit did (#303)",
   q <- .hzr_score_q(fitc(ph), "mal", "early", d)
   expect_true(is.na(q$reason))
   expect_true(is.finite(q$stat))
+})
+
+test_that("the score test declines a phase saved with the old design (#303)", {
+  skip_on_cran()
+  # A fit saved before #303 holds `~ 0 + o`, for an ordered `o`, as the
+  # dummies `om`, `oh`. It now rebuilds as `o.L`, `o.Q`: the same count, so
+  # without a name check the old coefficients were scored against the new
+  # columns.
+  d <- na.omit(avc[, c("int_dead", "dead", "age", "com_iv", "inc_surg")])
+  d$o <- factor(cut(d$inc_surg, c(-Inf, 2, 4, Inf),
+                    labels = c("l", "m", "h")), ordered = TRUE)
+  expect_warning(ph <- hzr_phase("constant", formula = ~ 0 + o),
+                 "removes the intercept")
+  fit <- hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
+                dist = "multiphase",
+                phases = list(
+                  early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1,
+                                    fixed = "m", formula = ~ age),
+                  constant = ph
+                ),
+                fit = TRUE, control = list(n_starts = 1L, conserve = FALSE))
+  expect_identical(colnames(fit$fit$x_list$constant), c("o.L", "o.Q"))
+  expect_true(is.na(.hzr_score_q(fit, "com_iv", "early", d)$reason))
+
+  old <- fit
+  old$fit$x_list$constant <-
+    stats::model.matrix(~ 0 + o, data = d)[, -1L, drop = FALSE]
+  expect_identical(colnames(old$fit$x_list$constant), c("om", "oh"))
+  expect_null(.hzr_score_expand(old, "com_iv", "early", d))
+  expect_false(is.finite(.hzr_score_q(old, "com_iv", "early", d)$stat))
 })
