@@ -148,11 +148,18 @@
   # syntax, not values: `data = d` with `d` NULL still names `d`, so a test
   # on the call let such a fit through (#310). The call is read only for an
   # object saved before the frame was stored.
-  no_data <- if ("frame" %in% names(fit$data)) {
-    is.null(fit$data$frame)
-  } else {
-    is.null(fit$call$data)
-  }
+  pre_frame <- !"frame" %in% names(fit$data)
+  no_data <- if (pre_frame) is.null(fit$call$data) else is.null(fit$data$frame)
+  # An object saved before 1.1.0 has neither the frame nor the record, so a
+  # vector-interface call that names `data` cannot be judged without
+  # evaluating it: `data = dd` reads the same whether `dd` was a data frame or
+  # NULL, and by the time a saved object is reloaded `dd` may be gone or
+  # rebound. Such a fit is refused whenever its phase looks inherited, which
+  # also refuses a fit that genuinely used a phase formula whose columns are
+  # the inherited names: a refit request, not a wrong number (#324). A fit
+  # with a record, or with no `data` in its call, is decided by the check
+  # before it.
+  undecidable <- pre_frame && is.null(fit$call$formula)
   for (nm in names(fit$spec$phases)) {
     pf <- fit$spec$phases[[nm]]$formula
     has_terms <- !is.null(pf) && .hzr_phase_formula_has_terms(pf)
@@ -169,6 +176,18 @@
         paste(deparse(pf), collapse = " "), "`, that the fit ignored: it ",
         "was built without `data`, and a refit given `data` ", consequence,
         ". Refit the base model with `data =` and retry"
+      ))
+    }
+    if (!is.null(pf) && (has_x || has_terms) && undecidable &&
+          .hzr_phase_inherits_global(fit, nm)) {
+      return(paste0(
+        "phase '", nm, "' has a formula, `",
+        paste(deparse(pf), collapse = " "), "`, and the fit was saved by a ",
+        "version before 1.1.0, which did not record whether a phase formula ",
+        "was used. Its columns are the ones the phase would inherit, so the ",
+        "fit could be either model, and a refit given `data` could be the ",
+        "other one. Refit the base model with the current version, passing ",
+        "`data =`, and retry"
       ))
     }
   }
