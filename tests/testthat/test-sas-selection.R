@@ -209,7 +209,8 @@ test_that("a SELECTION job translates to a screen that TAKES a step (#160)", {
   expect_equal(cl[["slstay"]], 0.1)
   expect_equal(cl[["criterion"]], "score")
   expect_equal(cl[["direction"]], "both")
-  expect_equal(cl[["max_move"]], 1)
+  # max_move is deliberately NOT emitted: see the MOVE test below.
+  expect_null(cl[["max_move"]])
 
   res <- suppressWarnings(render_sim(job, list(D = .sel_data())))
   expect_true(res$ok, info = paste(res$results, collapse = "; "))
@@ -239,6 +240,9 @@ test_that("the divergence callout sits above the stepwise chunk (#160)", {
   expect_match(txt, "full Hessian")
   expect_match(txt, "force_in")
   expect_match(txt, "hm[.]death[.]AVC")
+  # The MOVE divergence is named too: a variable can be frozen here that
+  # PROC HAZARD would still move.
+  expect_match(txt, "still move")
   # It must not claim reproduction.
   expect_no_match(txt, "reproduces PROC HAZARD")
 
@@ -294,13 +298,16 @@ test_that("every mapped SELECTION option reaches the emitted call (#160)", {
   # which no behavioural test could catch, so each item is pinned here.
   cl <- function(j) j$calls$fit[[3L]]
   expect_equal(cl(.sel_job("SELECTION MAXSTEPS=7; EARLY A, B;"))[["max_steps"]], 7)
-  expect_equal(cl(.sel_job("SELECTION MOVE=3; EARLY A, B;"))[["max_move"]], 3)
+  # PROC HAZARD's MAXSTEPS default is INT_MAX (stpwprc.c:73-74), not
+  # hzr_stepwise()'s 50, so it is written out like the other defaults.
+  expect_equal(cl(.sel_job("SELECTION; EARLY A, B;"))[["max_steps"]],
+               .Machine$integer.max)
   d <- .sel_job("SELECTION; EARLY A, B;")
   expect_equal(cl(d)[["criterion"]], "score")
   expect_equal(cl(d)[["direction"]], "both")
   expect_equal(cl(d)[["slentry"]], 0.3)
   expect_equal(cl(d)[["slstay"]], 0.2)
-  expect_equal(cl(d)[["max_move"]], 1)
+  expect_null(cl(d)[["max_move"]])
 
   # /E under SELECTION: out of the base AND out of scope, but still in the
   # listwise guard, because PROC HAZARD deletes rows where it is missing.
@@ -348,6 +355,53 @@ test_that("the callout names ROBUST when the job asks for it (#160)", {
     .sel_job("SELECTION SLE=0.2; EARLY STRONG, NOISE;"))
   expect_length(grep("asks for a ROBUST", plain), 0L)
   expect_length(grep("asks for a SEMIROBUST", plain), 0L)
+})
+
+test_that("MOVE= is recorded, not mapped onto max_move (#160)", {
+  # The two count different things: PROC HAZARD counts DELETIONS only
+  # (hazrd4.c:361-377) per (variable, PHASE) slot (setstat.c:15), while
+  # hzr_stepwise()'s max_move counts entries AND exits keyed by variable
+  # name across phases, and a frozen variable is pinned both in and out.
+  # Emitting SAS's MOVE = 1 froze a variable that merely entered two
+  # phases, which PROC HAZARD leaves movable.
+  for (stmts in c("SELECTION MOVE=3; EARLY A, B;", "SELECTION; EARLY A, B;")) {
+    job <- .sel_job(stmts)
+    expect_null(job$calls$fit[[3L]][["max_move"]], info = stmts)
+    u <- job$untranslated
+    expect_true(any(grepl("^MOVE=", u$construct)), info = stmts)
+    expect_match(u$reason[grepl("^MOVE=", u$construct)][1L],
+                 "deletions, separately for each phase", info = stmts)
+  }
+})
+
+test_that("a negative MAXSTEPS is refused, as PROC HAZARD refuses the job (#160)", {
+  # stpwprc.c:76-79 logs an ERROR and exits, so there is no run to
+  # translate; passing it through gave hzr_stepwise() a budget that ends
+  # the screen on its first test.
+  job <- .sel_job("SELECTION MAXSTEPS=-3; EARLY A, B;")
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"))
+  expect_error(eval(job$calls$fit), "MAXSTEPS")
+})
+
+test_that("a /I in a phase this job does not build is not a cross-phase pin (#160)", {
+  # force_in was collected over all three phase statements while movable
+  # covered only built phases, so a /I naming an unbuilt phase refused a
+  # job that has no phase for it to conflict with.
+  job <- .sel_job("SELECTION; EARLY STRONG; LATE STRONG/I;")
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hzr_stepwise"))
+})
+
+test_that("RESTRICT without a SELECTION stays a recorded gap (#160)", {
+  # Recording it under a saw_restrict flag counted it as MAPPED and dropped
+  # its $untranslated row, inflating coverage for a statement nothing
+  # implements.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste("%HAZARD( PROC HAZARD DATA=D CONDITION=14; EVENT DEAD;",
+                   "TIME TT; PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005;",
+                   "EARLY A, B; RESTRICT A; );"), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  expect_true(any(job$untranslated$construct == "RESTRICT"))
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
 })
 
 test_that("printing options are recorded, not refused (#160)", {

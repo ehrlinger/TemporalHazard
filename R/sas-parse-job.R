@@ -525,7 +525,14 @@
       # (hazrd4.c's rsttbl). It is recorded here and refused below when the
       # job also has a SELECTION: a screen that ignored it would select by a
       # different rule than the job asked for.
-      RESTRICT   = saw_restrict <- TRUE,
+      RESTRICT   = {
+        saw_restrict <- TRUE
+        # Without a SELECTION there is no screen for it to constrain, and
+        # nothing here implements it, so it stays a recorded gap rather than
+        # a mapped token. With one, the refusal below names it.
+        mapped <- mapped - 1L
+        note(kw, "no R equivalent")
+      },
       # A second statement for a phase adds to its list (hazard_y.y appends
       # every phasevar); assigning replaced it and dropped the first (#342).
       EARLY      = covars$early <- c(covars$early, ops_text),
@@ -775,9 +782,14 @@
     # force_in has no phase, so a variable held by /I in one phase and
     # movable in another would be pinned in BOTH. That is a wrong model,
     # not a path difference, which is where this draws the refuse line.
+    # Both sides restricted to BUILT phases: a /I naming a phase this job
+    # does not select has no phase to conflict with, and the discarded
+    # phase's covariates are already recorded.
     movable_all <- unique(unlist(parms$selection$movable %||% list()))
-    cross_pinned <- intersect(parms$selection$force_in %||% character(0),
-                              movable_all)
+    in_model_all <- unique(unlist(parms$selection$in_model %||% list()))
+    cross_pinned <- intersect(
+      intersect(parms$selection$force_in %||% character(0), in_model_all),
+      movable_all)
     refusals <- c(sel$refuse,
                   if (saw_restrict) "RESTRICT",
                   if (length(per_var_opts)) per_var_opts,
@@ -817,7 +829,8 @@
       untr <- rbind(untr, .hzr_untranslated_frame(NA_integer_, "SELECTION",
                                                   reason))
       return(list(
-        call = as.call(c(quote(stop), as.list(c(reason, ".")), list(call. = FALSE))),
+        call = as.call(c(quote(stop), list(paste0(reason, ".")),
+                        list(call. = FALSE))),
         status_call = NULL, outhaz = outhaz, untranslated = untr,
         tokens_seen = seen, tokens_mapped = mapped
       ))
@@ -845,8 +858,19 @@
     sw_args$criterion <- "score"
     sw_args$slentry <- sel$slentry
     sw_args$slstay <- sel$slstay
-    sw_args$max_move <- sel$max_move
-    if (!is.null(sel$max_steps)) sw_args$max_steps <- sel$max_steps
+    # MOVE= is NOT mapped onto max_move: they count different things.
+    # PROC HAZARD counts DELETIONS only (hazrd4.c:361-377, an addition counts
+    # only under NOSTEPWISE) and keys the counter per (variable, PHASE) theta
+    # slot (setstat.c:15). hzr_stepwise() counts entries AND exits, keyed by
+    # variable NAME across phases, and a frozen variable is then pinned both
+    # in and out. Emitting SAS's MOVE = 1 therefore froze a variable that
+    # simply entered two phases, which PROC HAZARD leaves movable (#160
+    # review). Recorded rather than translated into a value that is not the
+    # same quantity.
+    # MAXSTEPS: PROC HAZARD's default is INT_MAX (stpwprc.c:73-74), not
+    # hzr_stepwise()'s 50, so the default is written out like the others.
+    sw_args$max_steps <- if (is.null(sel$max_steps)) .Machine$integer.max else
+      sel$max_steps
     # Only a variable a BUILT phase carries: sel_force_in is collected
     # across all three phases, and hzr_stepwise() ignores a name no phase
     # has, silently.
@@ -885,7 +909,7 @@
                 "$criteria$uncomputable_reasons. A screen that could not ",
                 "score a candidate did not test it.", call. = FALSE)
       }
-      n_unscored
+      invisible(n_unscored)
     })
   }
 
@@ -968,7 +992,16 @@
       ONEWAY   = saw_oneway <- TRUE,
       SLENTRY  = out$slentry <- num_opt(val_txt, key, "SLENTRY") %||% out$slentry,
       SLSTAY   = out$slstay <- num_opt(val_txt, key, "SLSTAY") %||% out$slstay,
-      MAXSTEPS = out$max_steps <- num_opt(val_txt, key, "MAXSTEPS") %||% out$max_steps,
+      MAXSTEPS = {
+        v <- num_opt(val_txt, key, "MAXSTEPS")
+        # stpwprc.c:76-79 exits the job on a negative MAXSTEPS, so there is
+        # no run to translate.
+        if (!is.null(v) && v < 0) {
+          out$refuse <- c(out$refuse, paste0("MAXSTEPS=", format(v)))
+        } else if (!is.null(v)) {
+          out$max_steps <- v
+        }
+      },
       MOVE     = out$max_move <- num_opt(val_txt, key, "MOVE") %||% out$max_move,
       # Printing only (H->nps / H->npq), so the fit and the screen are the
       # same with or without them: recorded, not refused.
@@ -1043,6 +1076,16 @@
             "resets MOVE to 1 (stpwprc.c:54-58, przconc.c:25)")))
     out$max_move <- 1
   }
+  # Recorded for EVERY screen, not only a job that wrote MOVE=: the two
+  # counters differ whatever the value, and PROC HAZARD's own default of 1
+  # does not map onto hzr_stepwise()'s 4 either.
+  out$untranslated <- rbind(out$untranslated, .hzr_untranslated_frame(
+    NA_integer_, paste0("MOVE=", format(out$max_move)), paste(
+      "PROC HAZARD counts a variable's MOVEs as deletions, separately for",
+      "each phase; hzr_stepwise()'s max_move counts entries and exits",
+      "together across every phase, so the two cannot be mapped onto each",
+      "other. The screen runs with hzr_stepwise()'s own oscillation guard,",
+      "and a variable may be frozen where PROC HAZARD would still move it")))
   out
 }
 

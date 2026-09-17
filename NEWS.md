@@ -388,6 +388,14 @@
   `SELECTION` jobs translate**; the two refusals are a cross-phase `/I` and
   a `RESTRICT` statement.
 
+  **`MOVE=` is recorded rather than translated.** `PROC HAZARD` counts a
+  variable's moves as *deletions*, separately for each phase;
+  `hzr_stepwise()`'s `max_move` counts entries and exits together across
+  every phase, and a frozen variable is then held both in and out. The two
+  are not the same quantity, so the emitted call carries no `max_move` and
+  the screen runs with this package's own oscillation guard: a variable may
+  be frozen where `PROC HAZARD` would still move it. The callout says so.
+
 * **`hzr_phase()` can derive one late-phase shape from the others (#325).**
   The new `constraint` argument covers SAS/C's two late-phase constraints:
   - `"alpha_gamma_eta"` holds `alpha = gamma * eta / 2` (`FIXGAE2`);
