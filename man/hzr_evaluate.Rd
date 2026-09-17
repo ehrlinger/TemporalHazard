@@ -43,6 +43,16 @@ standard errors, no convergence status and no covariance matrix, because
 nothing was estimated: \code{\link[=print]{print()}} says so on its first line, and the
 parameters are labelled as supplied. Where a fitted model is what you
 want, use \code{hazard(..., fit = TRUE)}.
+
+A phase built with \code{hzr_phase(constraint = )} derives one of its shapes
+from the others, and that rule is applied to \code{theta} here as the fit
+applies it, so the derived entry you pass is replaced rather than
+used as given. At a fitted model's own estimates this returns that fit's
+objective, with one exception: under Conservation of Events the fit
+re-solves the conserved scale after recording its objective, so a fit
+whose likelihood is steep in that scale can report a value it is not at.
+Then this function returns the likelihood at the estimates, and the two
+differ.
 }
 \examples{
 data(avc, package = "TemporalHazard")

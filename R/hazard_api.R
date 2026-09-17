@@ -1433,14 +1433,17 @@ predict.hazard <- function(object, newdata = NULL,
   if (is.null(theta)) {
     stop("No coefficients ('theta') are available in 'object'.", call. = FALSE)
   }
+
+  if (!is.logical(se.fit) || length(se.fit) != 1L || is.na(se.fit)) {
+    stop("'se.fit' must be TRUE or FALSE.", call. = FALSE)
+  }
   # A multiphase model built with fit = FALSE has no per-phase designs: they
   # are resolved at fit time, and without them .hzr_split_theta() looked up a
   # position that is not there and died with "argument of length 0" (#144).
-  # Say what happened. Other distributions predict from supplied parameters
-  # perfectly well and are left alone -- their designs are the global `x`,
-  # which an unfitted object already carries.
-  # Not for linear_predictor: multiphase refuses that type for a fitted model
-  # too, and that refusal is the true reason, so it must not be masked.
+  # After the argument checks, so a bad `se.fit` still reports itself, and
+  # not for linear_predictor, which multiphase refuses for a fitted model too
+  # and whose remedy is not "fit it". Other distributions predict from
+  # supplied parameters perfectly well and are left alone.
   if (identical(object$spec$dist, "multiphase") &&
         !identical(type, "linear_predictor") &&
         is.null(object$fit$covariate_counts)) {
@@ -1449,10 +1452,6 @@ predict.hazard <- function(object, newdata = NULL,
          "fitted, and predict() cannot rebuild the phases without them. ",
          "Refit with fit = TRUE, or use hzr_evaluate() to evaluate the ",
          "model at parameters you supply.", call. = FALSE)
-  }
-
-  if (!is.logical(se.fit) || length(se.fit) != 1L || is.na(se.fit)) {
-    stop("'se.fit' must be TRUE or FALSE.", call. = FALSE)
   }
   if (se.fit) {
     if (!is.numeric(level) || length(level) != 1L ||

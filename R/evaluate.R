@@ -22,6 +22,16 @@
 #' parameters are labelled as supplied. Where a fitted model is what you
 #' want, use `hazard(..., fit = TRUE)`.
 #'
+#' A phase built with `hzr_phase(constraint = )` derives one of its shapes
+#' from the others, and that rule is applied to `theta` here as the fit
+#' applies it, so the derived entry you pass is replaced rather than
+#' used as given. At a fitted model's own estimates this returns that fit's
+#' objective, with one exception: under Conservation of Events the fit
+#' re-solves the conserved scale after recording its objective, so a fit
+#' whose likelihood is steep in that scale can report a value it is not at.
+#' Then this function returns the likelihood at the estimates, and the two
+#' differ.
+#'
 #' @param object A `hazard` object, fitted or built with `fit = FALSE`. Its
 #'   data, distribution and phase specification are used; its own `theta` is
 #'   not.
@@ -68,9 +78,13 @@ hzr_evaluate <- function(object, theta, times = NULL) {
   }
   if (!is.null(times) &&
         (!is.numeric(times) || !length(times) || any(!is.finite(times)) ||
-           any(times < 0))) {
-    stop("'times' must be a numeric vector of finite non-negative times, ",
-         "or NULL.", call. = FALSE)
+           any(times <= 0))) {
+    # Strictly positive: every phase's cumulative hazard at 0 is 0, and a
+    # shape's hazard there need not be finite, so a curve including 0 reads
+    # as a number where there is none (#144 review).
+    stop("'times' must be a numeric vector of finite positive times, or ",
+         "NULL. Every phase's cumulative hazard at time 0 is 0.",
+         call. = FALSE)
   }
 
   prepared <- .hzr_evaluate_prepare(object)
@@ -153,16 +167,18 @@ hzr_evaluate <- function(object, theta, times = NULL) {
                    "weights")]
     out$x_list <- built$x_list
     out$covariate_counts <- built$covariate_counts
-    out$names <- tryCatch(
-      hzr_theta_names(object$spec$phases,
-                      covariates = lapply(built$x_list, colnames)),
-      error = function(e) NULL
+    # The fit's own naming, not hzr_theta_names() over colnames(): a design
+    # from the vector interface has no column names, and that route fell back
+    # to the stored theta's length -- the vacuous check again (#144 review).
+    # .hzr_phase_cov_names() synthesises x1, x2, ... for exactly that case.
+    phases_v <- .hzr_validate_phases(object$spec$phases)
+    out$names <- .hzr_theta_names_list(
+      phases_v,
+      cov_names = .hzr_phase_cov_names(phases_v, built$covariate_counts,
+                                       built$x_list)
     )
-    out$n_par <- if (is.null(out$names)) {
-      length(object$fit$theta)
-    } else {
-      length(out$names)
-    }
+    out$n_par <- length(out$names)
+    out$phases <- phases_v
     return(out)
   }
   out$names <- names(object$fit$theta)
@@ -190,6 +206,12 @@ hzr_evaluate <- function(object, theta, times = NULL) {
                status = prepared$status, time_lower = prepared$time_lower,
                time_upper = prepared$time_upper, weights = prepared$weights)
   if (identical(dist, "multiphase")) {
+    # A derived shape is a function of its sources: the fit re-applies the
+    # rule on every evaluation, and hazard(fit = FALSE) applies it to a
+    # supplied theta, so honouring the user's value here would score a model
+    # the package cannot fit (#144 review).
+    theta <- .hzr_apply_constraints(unname(theta), prepared$phases,
+                                    prepared$covariate_counts)
     return(.hzr_logl_multiphase(
       unname(theta), prepared$time, prepared$status,
       time_lower = prepared$time_lower, time_upper = prepared$time_upper,
@@ -230,6 +252,7 @@ hzr_evaluate <- function(object, theta, times = NULL) {
     phases <- .hzr_validate_phases(object$spec$phases)
     counts <- stats::setNames(integer(length(phases)), names(phases))
     x_list <- stats::setNames(vector("list", length(phases)), names(phases))
+    theta <- .hzr_apply_constraints(unname(theta), phases, counts)
     haz <- .hzr_multiphase_hazard(times, unname(theta), phases, counts,
                                   x_list)
     cum <- .hzr_multiphase_cumhaz(times, unname(theta), phases, counts,

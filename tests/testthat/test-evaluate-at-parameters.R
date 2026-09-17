@@ -119,7 +119,11 @@ test_that("hzr_evaluate() refuses what it cannot evaluate (#144)", {
   expect_error(hzr_evaluate(spec, theta = c(1, 1, 1)), "has 3 parameters")
   expect_error(hzr_evaluate(spec, theta = c(NA_real_, 1)), "finite numeric")
   expect_error(hzr_evaluate(spec, theta = c(1, 1), times = -1),
-               "non-negative times")
+               "finite positive times")
+  # 0 is refused too: every phase's cumulative hazard is 0 there, and a
+  # shape's hazard at 0 need not be finite.
+  expect_error(hzr_evaluate(spec, theta = c(1, 1), times = 0),
+               "finite positive times")
   expect_error(hzr_evaluate(structure(list(), class = "hazard"),
                             theta = c(1, 1)), "carries no data")
   expect_error(hzr_evaluate(list(a = 1), theta = c(1, 1)),
@@ -275,4 +279,59 @@ test_that("predict() still gives multiphase's own reason for linear_predictor (#
   expect_false(grepl("fit = TRUE",
                      tryCatch(predict(spec, type = "linear_predictor"),
                               error = conditionMessage)))
+})
+
+test_that("hzr_evaluate() counts parameters without column names (#144)", {
+  skip_on_cran()
+  # The vector interface -- the parity interface -- has an unnamed design.
+  # Deriving names from colnames() then fell back to the stored theta's
+  # length, which is the vacuous check again: an 8-vector was accepted for a
+  # 7-parameter model and its last entry silently dropped (r-reviewer).
+  data("avc", package = "TemporalHazard", envir = environment())
+  d <- na.omit(avc[, c("int_dead", "dead", "age")])
+  x <- matrix(as.numeric(d$age), ncol = 1)
+  expect_null(colnames(x))
+  phases <- list(
+    early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1, fixed = "m"),
+    constant = hzr_phase("constant")
+  )
+  theta7 <- c(log(0.05), log(0.15), 1.4, 1, 0, log(0.03), 0)
+  spec <- hazard(time = d$int_dead, status = d$dead, x = x,
+                 dist = "multiphase", phases = phases, theta = theta7,
+                 fit = FALSE)
+  expect_true(is.finite(hzr_evaluate(spec, theta = theta7)$logLik))
+  expect_error(hzr_evaluate(spec, theta = c(theta7, 99)),
+               "has 8 parameters, but this multiphase model has 7")
+  # And the synthesised names are the fit's own, so a named theta works.
+  nm <- names(hzr_evaluate(spec, theta = theta7)$theta)
+  expect_length(nm, 7L)
+  expect_identical(
+    hzr_evaluate(spec, theta = stats::setNames(theta7, nm))$logLik,
+    hzr_evaluate(spec, theta = theta7)$logLik
+  )
+  expect_error(hzr_evaluate(spec, theta = stats::setNames(theta7,
+                                                          paste0("junk", 1:7))),
+               "not the model's parameter names")
+})
+
+test_that("hzr_evaluate() applies a phase constraint to the supplied theta (#144)", {
+  skip_on_cran()
+  # A derived shape is a function of its sources. The fit re-applies the rule
+  # on every evaluation, so honouring a contradictory value here would score
+  # a model the package cannot fit (r-reviewer).
+  data("avc", package = "TemporalHazard", envir = environment())
+  phases <- list(
+    early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1, fixed = "m"),
+    late = hzr_phase("g3", tau = 5, gamma = 1, alpha = 1, eta = 1,
+                     constraint = "alpha_gamma_eta")
+  )
+  theta <- c(log(0.05), log(0.15), 1.4, 1, log(0.03), log(5), 1, 99, 1)
+  spec <- hazard(survival::Surv(int_dead, dead) ~ 1, data = avc,
+                 dist = "multiphase", phases = phases, theta = theta,
+                 fit = FALSE)
+  # hazard() derived alpha = gamma * eta / 2 = 0.5, discarding the 99.
+  expect_equal(spec$fit$theta[[8]], 0.5, tolerance = 1e-12)
+  # The evaluation must agree with that, not with the 99.
+  expect_identical(hzr_evaluate(spec, theta = theta)$logLik,
+                   hzr_evaluate(spec, theta = unname(spec$fit$theta))$logLik)
 })

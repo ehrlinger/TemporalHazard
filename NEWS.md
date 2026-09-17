@@ -299,7 +299,12 @@
   and cumulative hazard there for a covariate-free subject. The result is
   not a fit and does not read as one: it carries no standard errors, no
   convergence status and no covariance, and `print()` says so on its first
-  line. At a fit's own estimates it reproduces that fit's objective.
+  line. A phase built with `hzr_phase(constraint = )` has its derived shape
+  re-derived here, as the fit re-derives it, so a contradictory value passed
+  in `theta` is replaced rather than used as given. At a fitted model's own
+  estimates it returns that fit's objective, except where the fit reports an
+  objective it is not at: under Conservation of Events the conserved scale is
+  re-solved after the objective is recorded (#362), and the two then differ.
 
 * **`hzr_phase()` can derive one late-phase shape from the others (#325).**
   The new `constraint` argument covers SAS/C's two late-phase constraints:
