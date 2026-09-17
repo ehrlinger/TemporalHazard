@@ -2,6 +2,17 @@
 
 ## Breaking changes
 
+* **One row at time 0 no longer empties an exponential, Weibull or
+  log-normal fit (#341).** A row right-censored at time 0, as
+  `Surv(0, NA, type = "interval2")` gives, contributes nothing to the
+  likelihood. With any left- or interval-censored row in the data, these
+  three families refused the whole fit instead: the objective was clamped,
+  and `hazard()` reported `converged = TRUE` at the starting values, with
+  no warning about the data. The log-normal refused such a row on any data,
+  and also refused an interval opening at 0, `(0, u]`, which is left
+  censoring at `u`. Each is now evaluated as the row it is, matching the
+  log-logistic and multiphase fits. Fits without such rows are unchanged.
+
 * **`hazard()` now refuses a multiphase phase formula with covariates when
   no `data` is supplied (#299).** Such fits previously ignored the phase
   formula. On the vector interface (`time =`, `status =`) without `data`, a
