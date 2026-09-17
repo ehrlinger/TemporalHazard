@@ -315,3 +315,72 @@ test_that("legacy contrasts do not warn when the design columns are used", {
                                               grp = "old")),
                  "contr\\.same")
 })
+
+# ---- predict() must not assign into newdata ---------------------------------
+
+# A guard class whose assignment methods stop. It catches ANY assignment into
+# newdata on these routes, not only one that a reference-semantics object such
+# as a data.table would carry back to the caller.
+`[[<-.hzrtest_noassign` <- function(x, i, value) stop("assigned into newdata")
+`$<-.hzrtest_noassign` <- function(x, i, value) stop("assigned into newdata")
+
+sw_guard <- function(df) {
+  registerS3method("[[<-", "hzrtest_noassign", `[[<-.hzrtest_noassign`)
+  registerS3method("$<-", "hzrtest_noassign", `$<-.hzrtest_noassign`)
+  structure(df, class = c("hzrtest_noassign", "data.frame"))
+}
+
+test_that("the newdata guard class stops an assignment", {
+  # Known positive: without this, the tests below could pass over a guard
+  # that never fires.
+  nd <- sw_guard(data.frame(x = 1))
+  expect_error(nd$x <- 2, "assigned into newdata")
+  expect_error(nd[["x"]] <- 2, "assigned into newdata")
+})
+
+test_that("no warning route assigns into newdata", {
+  plain_chr <- data.frame(time = c(1, 2), age = c("60", "90"),
+                          grp = c("old", "young"))
+  plain_num <- data.frame(time = c(1, 2), age = c(60, 90),
+                          grp = c("old", "young"))
+
+  types <- .sw_weibull("I(age > 50) + grp", c(0.4, 0.7))
+  expect_warning(want <- predict(types, newdata = plain_chr,
+                                 type = "cumulative_hazard"), "'age'")
+  expect_warning(got <- predict(types, newdata = sw_guard(plain_chr),
+                                type = "cumulative_hazard"), "'age'")
+  expect_equal(got, want, tolerance = 1e-12)
+
+  rows <- .sw_weibull("I(age - mean(age)) + grp", c(0.004, 0.7))
+  expect_warning(want <- predict(rows, newdata = plain_num,
+                                 type = "cumulative_hazard"), "mean\\(\\)")
+  expect_warning(got <- predict(rows, newdata = sw_guard(plain_num),
+                                type = "cumulative_hazard"), "mean\\(\\)")
+  expect_equal(got, want, tolerance = 1e-12)
+
+  phase <- .sw_multiphase("I(age - mean(age))")
+  nd <- data.frame(time = c(1, 2), age = c(60, 90))
+  expect_warning(want <- predict(phase, newdata = nd,
+                                 type = "cumulative_hazard"), "mean\\(\\)")
+  expect_warning(got <- predict(phase, newdata = sw_guard(nd),
+                                type = "cumulative_hazard"), "mean\\(\\)")
+  expect_equal(got, want, tolerance = 1e-12)
+
+  legacy <- .sw_weibull("age + grp", c(0.004, 0.7))
+  legacy$data$x_design <- NULL
+  contr.custom <- function(n, contrasts = TRUE, sparse = FALSE) {
+    m <- stats::contr.treatment(n, contrasts = contrasts, sparse = sparse)
+    m[nrow(m), ] <- 1
+    m
+  }
+  assign("contr.custom", contr.custom, envir = globalenv())
+  withr::defer(rm("contr.custom", envir = globalenv()))
+  withr::local_options(contrasts = c(unordered = "contr.custom",
+                                     ordered = "contr.poly"))
+  one <- data.frame(time = 2, age = 60, grp = "old")
+  expect_warning(want <- predict(legacy, newdata = one,
+                                 type = "cumulative_hazard"), "contr\\.custom")
+  expect_warning(got <- predict(legacy, newdata = sw_guard(one),
+                                type = "cumulative_hazard"), "contr\\.custom")
+  expect_equal(got, want, tolerance = 1e-12)
+})
