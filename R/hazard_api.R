@@ -545,14 +545,9 @@ hazard <- function(formula = NULL,
   }
   x_design <- NULL
   # Formula dispatch: if formula is provided, parse it and extract time/status/x from data
-  # The same for columns of `data`, read before any argument is: Surv() and
-  # model.matrix() take a classed numeric's stored doubles too, so an
-  # integer64 response or covariate fitted its starting values (#231).
-  if (is.list(data)) {
-    data[] <- lapply(data, function(v) {
-      if (is.object(v) && is.numeric(v) && is.null(dim(v))) as.numeric(v) else v
-    })
-  }
+  # Columns of `data` are read before any argument is: Surv() and
+  # model.matrix() take a classed numeric's stored doubles too (#231).
+  data <- .hzr_numeric_frame_values(data)
 
   if (!is.null(formula)) {
     if (is.null(data)) {
@@ -659,11 +654,9 @@ hazard <- function(formula = NULL,
   if (is.null(time) || is.null(status)) {
     stop("'time' and 'status' are required (either directly or via 'formula').", call. = FALSE)
   }
-  # A classed numeric such as bit64's integer64 passes is.numeric() but its
-  # stored doubles are not its values, and the single-distribution
-  # likelihoods read them raw: the fit returned its starting values as
-  # converged (#231). Take the plain values once, here.
-  if (is.object(time) && is.numeric(time)) time <- as.numeric(time)
+  # See .hzr_numeric_values(): a classed numeric's stored doubles are not its
+  # values, and the likelihoods read them raw (#231).
+  time <- .hzr_numeric_values(time)
   if (!is.numeric(time) || any(!is.finite(time)) || any(time < 0)) {
     stop("'time' must be a numeric vector of finite non-negative values.", call. = FALSE)
   }
@@ -717,18 +710,14 @@ hazard <- function(formula = NULL,
   # - status = -1 (left-censored): upper bound in `time` (or `time_upper`)
   # - status = 2 (interval-censored): [time_lower, time_upper] required
   if (!is.null(time_lower)) {
-    if (is.object(time_lower) && is.numeric(time_lower)) {
-      time_lower <- as.numeric(time_lower)
-    }
+    time_lower <- .hzr_numeric_values(time_lower)
     if (!is.numeric(time_lower) || length(time_lower) != n || any(!is.finite(time_lower)) || any(time_lower < 0)) {
       stop("'time_lower' must be a numeric vector of finite non-negative values matching length(time).", call. = FALSE)
     }
   }
 
   if (!is.null(time_upper)) {
-    if (is.object(time_upper) && is.numeric(time_upper)) {
-      time_upper <- as.numeric(time_upper)
-    }
+    time_upper <- .hzr_numeric_values(time_upper)
     if (!is.numeric(time_upper) || length(time_upper) != n || any(!is.finite(time_upper)) || any(time_upper < 0)) {
       stop("'time_upper' must be a numeric vector of finite non-negative values matching length(time).", call. = FALSE)
     }
@@ -817,9 +806,7 @@ hazard <- function(formula = NULL,
   # --- Validate and normalize weights ----------------------------------------
   n_obs <- length(time)
   if (!is.null(weights)) {
-    if (is.object(weights) && is.numeric(weights)) {
-      weights <- as.numeric(weights)
-    }
+    weights <- .hzr_numeric_values(weights)
     if (!is.numeric(weights) || length(weights) != n_obs) {
       stop("'weights' must be a numeric vector of length ", n_obs, ".",
            call. = FALSE)
@@ -841,7 +828,7 @@ hazard <- function(formula = NULL,
          "for a factor.", call. = FALSE)
   }
   # After any Surv translation above, so a Surv is never flattened here.
-  if (is.object(status) && is.numeric(status)) status <- as.numeric(status)
+  status <- .hzr_numeric_values(status)
   bad_status <- !is.na(status) & !(status %in% c(-1, 0, 1, 2))
   if (any(bad_status)) {
     stop("'status' must be coded -1 (left-censored), 0 (right-censored), ",
@@ -2447,4 +2434,40 @@ vcov.hazard <- function(object, ...) {
 
   colnames(out) <- out_names
   out
+}
+
+
+#' The values of a classed numeric vector
+#'
+#' A classed numeric such as `bit64::integer64` passes `is.numeric()`, but its
+#' stored doubles are not its values: `unclass()` of an integer64 1 is
+#' 4.94e-324. Arithmetic, `Surv()` and `model.matrix()` read the stored
+#' doubles, so a fit over such input returned its starting values as
+#' converged (#231). The rule, applied identically wherever the package reads
+#' numbers a caller supplied (fitting, and prediction via `newdata`):
+#' an object (`is.object()`) that is numeric (`is.numeric()`) and has no
+#' `dim` is replaced by `as.numeric()`, which dispatches to the class's own
+#' method. Everything else is returned unchanged: plain numerics, factors,
+#' `Date`/`POSIXct`/`difftime` (not `is.numeric()`), and objects with a `dim`
+#' such as a `Surv` or a matrix column.
+#'
+#' @param x Any object.
+#' @return `x`, or `as.numeric(x)` when the rule applies.
+#' @noRd
+.hzr_numeric_values <- function(x) {
+  if (is.object(x) && is.numeric(x) && is.null(dim(x))) as.numeric(x) else x
+}
+
+#' Apply `.hzr_numeric_values()` to every column of a data frame or list
+#'
+#' Columns are replaced in a local copy (`data[] <-`), so a caller's
+#' `data.table` is not modified by reference. Anything that is not a list is
+#' returned unchanged.
+#'
+#' @param data A data frame, list, or `NULL`.
+#' @return `data` with each column passed through `.hzr_numeric_values()`.
+#' @noRd
+.hzr_numeric_frame_values <- function(data) {
+  if (is.list(data)) data[] <- lapply(data, .hzr_numeric_values)
+  data
 }

@@ -118,6 +118,22 @@ test_that("hazard() refuses zero rows on every path (#231)", {
                             fit = TRUE))$fit$theta
   }
   expect_equal(fitf(df5), fitf(df5_plain))
+  # The rule touches only numeric objects without a dim. A factor column
+  # (not numeric) must keep its dummy coding, and an I(matrix) column (has a
+  # dim) must not be flattened: each fit equals one on explicit columns.
+  set.seed(2)
+  dg <- data.frame(t = stats::rexp(80, 0.3), s = stats::rbinom(80, 1, 0.6),
+                   g = factor(sample(c("a", "b", "c"), 80, TRUE)),
+                   p = stats::rnorm(80), q = stats::rnorm(80))
+  dg$gb <- as.numeric(dg$g == "b")
+  dg$gc <- as.numeric(dg$g == "c")
+  dg$m <- I(cbind(p = dg$p, q = dg$q))
+  obj <- function(f) {
+    suppressWarnings(hazard(f, data = dg, dist = "weibull",
+                            theta = c(0.5, 1, 0, 0), fit = TRUE))$fit$objective
+  }
+  expect_equal(obj(survival::Surv(t, s) ~ g), obj(survival::Surv(t, s) ~ gb + gc))
+  expect_equal(obj(survival::Surv(t, s) ~ m), obj(survival::Surv(t, s) ~ p + q))
   # And the other numeric inputs: weights and both bounds.
   w5 <- c(1, 2, 1, 1, 2)
   lo5 <- c(0, 1, 0, 2, 0)
