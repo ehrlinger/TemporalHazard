@@ -94,7 +94,10 @@
 
   Two related fixes. A second `EARLY`, `CONSTANT` or `LATE` statement for
   the same phase now adds to that phase's covariates rather than replacing
-  them. And a phase variable that is not in the fitted model (an `/E`
+  them. A covariate named twice in a phase is one parameter, as in
+  `PROC HAZARD`, whose last mention sets its starting value and options;
+  within one statement it used to put two starting values in `theta` for
+  one column, shifting every later one. And a phase variable that is not in the fitted model (an `/E`
   variable, or a covariate of a phase the job does not select) still
   deletes its missing rows in `PROC HAZARD`, which `hazard()` cannot do
   for a variable it never sees, so the translated status chunk now stops

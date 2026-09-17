@@ -136,6 +136,27 @@ test_that("phase covariate options attach to their own variable (#342)", {
     quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1, formula = ~MAL)))
   )
   expect_true(all(c("AGE/E/I", "/S") %in% got$untranslated$construct))
+
+  # A repeated covariate is ONE parameter: setconc.c maps every occurrence to
+  # the same slot and setstat.c runs for each, so the last occurrence sets
+  # its start value and options, and an omitted value resets it to 0. Two
+  # entries used to go into theta, shifting every later starting value.
+  got <- .hzr_parse_parms(c(ops, "MUC=0.01"), covars = list(
+    early = c("AGE=0.1, MAL", "AGE=0.2, OPMOS/E", "OPMOS")
+  ))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1,
+                         formula = ~AGE + MAL + OPMOS),
+               hzr_phase("constant")))
+  )
+  expect_equal(unname(eval(got$theta)),
+               c(log(0.2), log(1), 1, 1, 0.2, 0, 0, log(0.01)))
+  got <- .hzr_parse_parms(ops, covars = list(early = c("AGE=0.3, MAL", "AGE/E")))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1, formula = ~MAL)))
+  )
 })
 
 test_that("phase covariate starting values map into theta, in covariate order", {

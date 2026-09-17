@@ -96,7 +96,6 @@
   names_out <- character(0)
   values_out <- numeric(0)
   flags_out <- character(0)
-  excluded <- character(0)
   bad_construct <- character(0)
   bad_reason <- character(0)
   bad <- function(construct, reason) {
@@ -157,15 +156,27 @@
                             "covariate %s"), o, var))
         }
       }
-      if (flag == "E") {
-        excluded <- c(excluded, var)
-        next
-      }
       names_out <- c(names_out, var)
       values_out <- c(values_out, val)
       flags_out <- c(flags_out, flag)
     }
   }
+
+  # A repeated covariate is one parameter: setconc.c maps every occurrence to
+  # the same slot, and setstat.c runs for each in turn, so the LAST occurrence
+  # sets its start value (0 when omitted) and its options. It keeps its first
+  # position. Emitting it twice put two entries in theta for one column.
+  last <- !duplicated(names_out, fromLast = TRUE)
+  first_pos <- match(names_out[last], names_out)
+  ord <- order(first_pos)
+  names_out <- names_out[last][ord]
+  values_out <- values_out[last][ord]
+  flags_out <- flags_out[last][ord]
+  excluded <- names_out[flags_out == "E"]
+  keep <- flags_out != "E"
+  names_out <- names_out[keep]
+  values_out <- values_out[keep]
+  flags_out <- flags_out[keep]
 
   list(names = names_out, values = values_out, flags = flags_out,
        excluded = excluded, untranslated_construct = bad_construct,
