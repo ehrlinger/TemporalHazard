@@ -698,10 +698,18 @@
 #'   * The action this represents is a drop, so `accepted = TRUE` means
 #'     the variable was removed from the model.
 #'   * `refit_failures` and `refit_failure_reasons` carry one more case than
-#'     the forward step's: a drop this step REFUSED because the refit, which
-#'     converged, left the design no smaller -- an interaction whose main
-#'     effect has gone is recoded, so the "reduced" model is the model it
-#'     started from (#320).  The reason then says the drop removes no
+#'     the forward step's: a drop this step REFUSED because it leaves the
+#'     design no smaller -- an interaction whose main effect has gone is
+#'     recoded, so the "reduced" model is the model it started from (#320).
+#'     A multiphase drop is judged on the converged refit.  A
+#'     single-distribution drop is judged on its reduced design, before any
+#'     refit, WHEN that design can be built: the fit stores a formula and
+#'     the mutated formula parses against `data` (#323).  Otherwise the
+#'     refit runs and reports the failure itself -- a vector-interface fit
+#'     has no formula to mutate, and such a base is refused by
+#'     `hzr_stepwise()` before any step, while a design that cannot be
+#'     built (an unusable factor, say) fails in the refit with its own
+#'     message.  The reason then says the drop removes no
 #'     column, and `accepted` is `FALSE` with the current fit returned.
 #'
 #' @keywords internal
@@ -800,6 +808,56 @@
     return(null_result(all_scores))
   }
 
+  failure_token <- if (is.na(best$phase)) {
+    best$variable
+  } else {
+    paste0(best$variable, "@", best$phase)
+  }
+
+  # A drop must remove a column.  Under treatment contrasts an interaction
+  # whose main effect has gone is coded with a full set of dummies, so
+  # dropping `z` from `~ z + z:f` turns `z, z:fb` into `z:fa, z:fb`: the same
+  # column space and the same likelihood, a "reduced" model that is the model
+  # it started from (#320).  Accepting it recorded a drop whose p-value
+  # described a variable the fit still carries.  The forward step refuses the
+  # mirror of this, a candidate that adds no column
+  # (`.hzr_entered_coef_name()`, #306).
+  refuse_no_column <- function(old_cols, new_cols) {
+    reason <- paste0(
+      "removes no column: the refit's design (",
+      paste(sQuote(new_cols), collapse = ", "),
+      ") has no fewer columns than the current one (",
+      paste(sQuote(old_cols), collapse = ", "),
+      "), so the model is not reduced"
+    )
+    warning("Stepwise backward: dropping ", failure_token, " ", reason, ".",
+            call. = FALSE)
+    out <- null_result(all_scores)
+    out$refit_failures <- failure_token
+    out$refit_failure_reasons <- stats::setNames(reason, failure_token)
+    out
+  }
+
+  # A single-distribution refit warm-starts from `theta_old[-drop_idx]`, one
+  # element shorter than the design a drop that removes no column leaves, so
+  # that refit fails to conform and would report the arithmetic rather than
+  # the cause (#323).  Its reduced design is therefore decided here, before
+  # refitting, from the same formula parse `hazard()` uses.  Both designs are
+  # built on `data`, so a factor level absent from it cannot pass for a
+  # removed column.  A design that cannot be built is left to the refit,
+  # which reports why.
+  if (is.na(best$phase) && !is.null(current$call$formula)) {
+    designs <- tryCatch({
+      old_formula <- .hzr_stored_formula(current, "`current`")
+      new_formula <- .hzr_formula_update(old_formula, "drop", best$variable)
+      list(old = colnames(.hzr_parse_formula(old_formula, data)$x),
+           new = colnames(.hzr_parse_formula(new_formula, data)$x))
+    }, error = function(e) NULL)
+    if (!is.null(designs) && length(designs$new) >= length(designs$old)) {
+      return(refuse_no_column(designs$old, designs$new))
+    }
+  }
+
   refitted <- tryCatch(
     .hzr_refit_with_scope(
       current, action = "drop",
@@ -809,12 +867,6 @@
     ),
     error = function(e) e
   )
-
-  failure_token <- if (is.na(best$phase)) {
-    best$variable
-  } else {
-    paste0(best$variable, "@", best$phase)
-  }
 
   if (inherits(refitted, "error") || isFALSE(refitted$fit$converged)) {
     reason <- .hzr_refit_failure_reason(refitted)
@@ -826,20 +878,8 @@
     return(out)
   }
 
-  # A drop must remove a column.  Under treatment contrasts an interaction
-  # whose main effect has gone is coded with a full set of dummies, so
-  # dropping `z` from `~ z + z:f` turns `z, z:fb` into `z:fa, z:fb`: the same
-  # column space and the same likelihood, a "reduced" model that is the model
-  # it started from (#320).  Accepting it recorded a drop whose p-value
-  # described a variable the fit still carries.  The forward step refuses the
-  # mirror of this, a candidate that adds no column
-  # (`.hzr_entered_coef_name()`, #306).
-  #
-  # Multiphase only, by construction.  A single-distribution refit warm-starts
-  # from `theta_old[-drop_idx]`, one element shorter than the design it would
-  # need, so a drop that removes no column fails to conform and is reported by
-  # the refit-failure branch above, never reaching here.  A branch for it could
-  # not fire, and a guard no test can kill does not stay.
+  # The same check on the multiphase path, where the refit conforms and its
+  # phase design is read off the result.
   if (!is.na(best$phase)) {
     old_cols <- colnames(current$fit$x_list[[best$phase]])
     new_cols <- colnames(refitted$fit$x_list[[best$phase]])
@@ -848,19 +888,7 @@
            "so a drop from it cannot be checked.", call. = FALSE)
     }
     if (length(new_cols) >= length(old_cols)) {
-      reason <- paste0(
-        "removes no column: the refit's design (",
-        paste(sQuote(new_cols), collapse = ", "),
-        ") has no fewer columns than the current one (",
-        paste(sQuote(old_cols), collapse = ", "),
-        "), so the model is not reduced"
-      )
-      warning("Stepwise backward: dropping ", failure_token, " ", reason, ".",
-              call. = FALSE)
-      out <- null_result(all_scores)
-      out$refit_failures <- failure_token
-      out$refit_failure_reasons <- stats::setNames(reason, failure_token)
-      return(out)
+      return(refuse_no_column(old_cols, new_cols))
     }
   }
 
