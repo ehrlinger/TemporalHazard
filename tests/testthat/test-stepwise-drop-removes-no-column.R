@@ -109,12 +109,11 @@ test_that("a drop that does remove a column still happens", {
   expect_length(step$refit_failures, 0L)
 })
 
-test_that("the single-distribution path keeps its refit-failure report", {
-  # The guard is multiphase-only by construction. Here the warm start is
-  # `theta_old[-drop_idx]`, one element shorter than the design a no-op drop
-  # would need, so the refit fails to conform first and #302's reason is what
-  # the caller sees -- naming a linear-algebra symptom, not the cause. Tracked
-  # as a follow-up; the message is pinned so a change to it is not silent.
+test_that("the single-distribution path refuses the same drop for the same reason (#323)", {
+  # The single-distribution refit warm-starts from `theta_old[-drop_idx]`, one
+  # element shorter than a no-op drop's design, so it used to fail to conform
+  # first and report "non-conformable arguments": a linear-algebra symptom,
+  # not the cause. The reduced design is now decided before the refit.
   d <- nod_data()
   fit <- hazard(survival::Surv(time, status) ~ z + z:f, data = d,
                 dist = "weibull", theta = c(0.5, 1, 0, 0), fit = TRUE)
@@ -122,9 +121,28 @@ test_that("the single-distribution path keeps its refit-failure report", {
   expect_warning(
     step <- .hzr_stepwise_backward_step(fit, data = d, criterion = "wald",
                                         slstay = 0.2),
-    "post-drop refit failed for z"
+    "Stepwise backward: dropping z removes no column", fixed = TRUE
   )
   expect_false(step$accepted)
   expect_identical(step$refit_failures, "z")
-  expect_match(step$refit_failure_reasons[["z"]], "non-conformable")
+
+  mp_step <- suppressWarnings(
+    .hzr_stepwise_backward_step(nod_multi(d), data = d, criterion = "wald",
+                                slstay = 0.2)
+  )
+  expect_identical(unname(step$refit_failure_reasons[["z"]]),
+                   unname(mp_step$refit_failure_reasons[["z@constant"]]))
+})
+
+test_that("a single-distribution drop that does remove a column still happens", {
+  d <- nod_data()
+  d$w <- stats::rnorm(nrow(d))
+  fit <- hazard(survival::Surv(time, status) ~ z + w, data = d,
+                dist = "weibull", theta = c(0.5, 1, 0, 0), fit = TRUE)
+  step <- .hzr_stepwise_backward_step(fit, data = d, criterion = "wald",
+                                      slstay = 0.2)
+  expect_true(step$accepted)
+  expect_identical(step$variable, "w")
+  expect_identical(colnames(step$fit$data$x), "z")
+  expect_length(step$refit_failures, 0L)
 })
