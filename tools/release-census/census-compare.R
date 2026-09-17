@@ -13,12 +13,45 @@
 ## anything if they did not fire.
 
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) != 3L) {
-  stop("usage: census-compare.R <old.rds> <new.rds> <out.txt>", call. = FALSE)
+if (length(args) < 3L || length(args) > 4L) {
+  stop("usage: census-compare.R <old.rds> <new.rds> <out.txt> [cases.R]",
+       call. = FALSE)
 }
 old <- readRDS(args[[1]])
 new <- readRDS(args[[2]])
 out <- args[[3]]
+
+# Which cases are DECLARED as the gate's known positive.
+#
+# Read from the cases file, not from the run records. The declaration is a
+# property of the case definition, and a comparator that depends on the runner
+# having copied the field forward has an extra failure mode -- which is not
+# hypothetical: the first gated run reported "no case is declared as the gate's
+# known positive" and exited 1 because census-run.R stored `kp` but not
+# `gate_kp`. The gate was working; the assertion about the gate could not see
+# its own declaration. Reading the source of truth removes that link entirely,
+# and makes the comparison a pure function of the saved probes plus the
+# declarations.
+#
+# Sourcing the cases file is safe without the package loaded: `census_cases()`
+# only builds a list of closures, and the package is touched inside their
+# bodies, which are not evaluated here.
+declared_gate_kp <- character()
+cases_file <- if (length(args) == 4L) args[[4]] else {
+  f <- file.path(dirname(sub("^--file=", "", grep("^--file=",
+                 commandArgs(trailingOnly = FALSE), value = TRUE)[1])),
+                 "census-cases.R")
+  if (length(f) == 1L && !is.na(f) && file.exists(f)) f else NA_character_
+}
+if (!is.na(cases_file) && file.exists(cases_file)) {
+  local({
+    e <- new.env(parent = globalenv())
+    sys.source(cases_file, envir = e)
+    cs <- e$census_cases()
+    declared_gate_kp <<- names(cs)[vapply(cs, function(c) !is.null(c$gate_kp),
+                                          logical(1))]
+  })
+}
 
 con <- file(out, open = "wt")
 say <- function(...) {
@@ -89,16 +122,72 @@ say("")
 # Component comparison
 # ---------------------------------------------------------------------------
 
+# `gate` carries optimum-quality evidence, not a result. It is dropped before
+# comparing, so its presence cannot change any verdict -- and in particular
+# cannot change the verdict of a case that does not use it.
+GATE_KEY <- "gate"
+
 compare_probe <- function(a, b) {
   # Returns a character vector of differing component names, or character(0).
+  a[[GATE_KEY]] <- NULL
+  b[[GATE_KEY]] <- NULL
   if (identical(a, b)) return(character())
-  ka <- union(names(a), names(b))
+  ka <- setdiff(union(names(a), names(b)), GATE_KEY)
   diffs <- character()
   for (k in ka) {
     if (!identical(a[[k]], b[[k]])) diffs <- c(diffs, k)
   }
   if (!length(diffs)) diffs <- "(identical components, differing structure)"
   diffs
+}
+
+# SAS/C accepts an optimum only when the relative gradient is at most
+# eps^(1/3), about 6.06e-06. That is the criterion the package itself applies.
+GRADIENT_TOL <- 6.06e-06
+RCOND_FLOOR <- 1e-8
+
+gate_verdict <- function(g) {
+  # Why this is in two parts: `fit$fit$rel_gradient` DOES NOT EXIST before
+  # 1.2.11, so a gate that simply required the field would mark every row
+  # uninterpretable on any older baseline regardless of how good the fit was.
+  #
+  #   part 1, version-independent: converged, every standard error finite,
+  #           rcond above a floor. An NA standard error means the Hessian
+  #           could not be inverted, so the point is not a proper interior
+  #           maximum whatever `converged` reports.
+  #   part 2, where the field exists: the relative-gradient test itself.
+  #
+  # Absent or NA is always "cannot confirm", never "passed".
+  if (is.null(g)) {
+    return(list(ok = FALSE, why = "no gate data recorded"))
+  }
+  why <- character()
+  if (!isTRUE(g$converged)) why <- c(why, "converged is not TRUE")
+  if (!isTRUE(g$se_finite)) why <- c(why, "a standard error is NA (Hessian not invertible)")
+  rc <- g$rcond
+  if (!is.numeric(rc) || !is.finite(rc) || rc <= RCOND_FLOOR) {
+    why <- c(why, paste0("rcond ", format(rc, digits = 3), " at or below ",
+                         format(RCOND_FLOOR)))
+  }
+  if (isTRUE(g$rel_gradient_present)) {
+    rg <- g$rel_gradient
+    if (!is.numeric(rg) || !is.finite(rg) || rg > GRADIENT_TOL) {
+      why <- c(why, paste0("rel_gradient ", format(rg, digits = 3),
+                           " fails the SAS/C test (<= ",
+                           format(GRADIENT_TOL), ")"))
+    }
+  }
+  list(ok = !length(why), why = paste(why, collapse = "; "))
+}
+
+fmt_gate <- function(g) {
+  if (is.null(g)) return("gate: none")
+  paste0("converged ", isTRUE(g$converged),
+         ", se finite ", isTRUE(g$se_finite),
+         ", rcond ", format(g$rcond, digits = 3),
+         ", rel_gradient ",
+         if (isTRUE(g$rel_gradient_present)) format(g$rel_gradient, digits = 3)
+         else "ABSENT (version predates the gradient test)")
 }
 
 max_disc <- function(a, b) {
@@ -158,6 +247,7 @@ for (nm in all_names) {
     next
   }
   kp <- if (!is.null(n$kp)) n$kp else o$kp
+  kp_gate <- if (!is.null(n$gate_kp)) n$gate_kp else o$gate_kp
   os <- o$status
   ns <- n$status
 
@@ -181,6 +271,47 @@ for (nm in all_names) {
     rows[[nm]] <- list(name = nm, outcome = "NOW-ERRORS",
                        detail = paste0("new errors: ", n$message),
                        kp = kp)
+  } else if (!is.null(o$probe[[GATE_KEY]]) || !is.null(n$probe[[GATE_KEY]])) {
+    # A gated row. Both sides must reach a proper optimum or the row is NOT
+    # classified: comparing two fits that are not at an optimum compares two
+    # arbitrary stopping points, and "differs" is not a fact about the model.
+    # This is the structural fix for the withdrawn mp_cov_formula finding.
+    go <- gate_verdict(o$probe[[GATE_KEY]])
+    gn <- gate_verdict(n$probe[[GATE_KEY]])
+    gates <- paste0("old gate [", fmt_gate(o$probe[[GATE_KEY]]), "]",
+                    " | new gate [", fmt_gate(n$probe[[GATE_KEY]]), "]")
+    if (!go$ok || !gn$ok) {
+      rows[[nm]] <- list(
+        name = nm, outcome = "UNINTERPRETABLE",
+        detail = paste0(
+          "NOT CLASSIFIED -- ",
+          if (!go$ok) paste0("old side: ", go$why, ". ") else "",
+          if (!gn$ok) paste0("new side: ", gn$why, ". ") else "",
+          "Comparing fits that are not at an optimum compares stopping ",
+          "points, not models. ", gates),
+        gate_kp = kp_gate, kp = kp)
+    } else {
+      d <- compare_probe(o$probe, n$probe)
+      md <- max_disc(o$probe[d], n$probe[d])
+      oo <- o$probe$objective
+      no <- n$probe$objective
+      obj <- if (is.numeric(oo) && is.numeric(no) && length(oo) == 1L &&
+                 length(no) == 1L && identical(oo, no)) {
+        "; objective identical"
+      } else if (is.numeric(oo) && is.numeric(no) && length(oo) == 1L &&
+                 length(no) == 1L) {
+        sprintf("; objective moved by %.3g", no - oo)
+      } else ""
+      rows[[nm]] <- list(
+        name = nm,
+        outcome = if (!length(d)) "IDENTICAL-GATED" else "DIFFERS-GATED",
+        detail = paste0(
+          if (length(d)) paste0("components: ", paste(d, collapse = ", "),
+                                "; ", fmt_disc(md), obj, ". ") else "",
+          "BOTH SIDES AT A PROPER OPTIMUM, so this verdict is about the ",
+          "model. ", gates),
+        gate_kp = kp_gate, kp = kp)
+    }
   } else {
     d <- compare_probe(o$probe, n$probe)
     if (!length(d)) {
@@ -251,6 +382,51 @@ if (length(kp_fail)) {
   quit(status = 1L, save = "no")
 }
 say("  PASS: every planted change was detected. Verdicts below are meaningful.")
+say("")
+
+# ---------------------------------------------------------------------------
+# THE GATE'S OWN KNOWN POSITIVE
+# ---------------------------------------------------------------------------
+# A gate that refuses to classify uninterpretable rows is worth nothing unless
+# some row actually trips it. Same discipline as the planted changes above.
+
+gated <- Filter(function(r) r$outcome %in%
+                  c("UNINTERPRETABLE", "DIFFERS-GATED", "IDENTICAL-GATED"),
+                rows)
+say("## Gradient gate on the appended multiphase cases")
+if (!length(gated)) {
+  say("  no gated cases in this run (an older cases file?)")
+} else {
+  for (r in gated) {
+    say(sprintf("  %-28s %s", r$name, r$outcome))
+  }
+  say("")
+  # Declared in the cases file (authoritative), with the run record as a
+  # fallback for an rds written before census-run.R propagated the field.
+  gate_kps <- Filter(function(r) !is.null(r$gate_kp) ||
+                       r$name %in% declared_gate_kp, gated)
+  if (!length(gate_kps)) {
+    say("  FAIL: no case is declared as the gate's known positive, so the")
+    say("  gate is untested. A gate no row trips cannot be trusted to stop")
+    say("  the next uninterpretable row.")
+    close(con)
+    quit(status = 1L, save = "no")
+  }
+  bad <- Filter(function(r) r$outcome != "UNINTERPRETABLE", gate_kps)
+  for (r in gate_kps) {
+    say(sprintf("  known positive %-26s %-18s %s", r$name, r$outcome,
+                if (r$outcome == "UNINTERPRETABLE") "CORRECTLY REFUSED"
+                else "*** GATE FAILED TO REFUSE ***"))
+  }
+  if (length(bad)) {
+    say("")
+    say("  FAIL: a case built to be unidentifiable was classified anyway.")
+    say("  The gate does not work, so every gated verdict here is suspect.")
+    close(con)
+    quit(status = 1L, save = "no")
+  }
+  say("  PASS: the gate refused the case built to be unidentifiable.")
+}
 say("")
 
 # ---------------------------------------------------------------------------

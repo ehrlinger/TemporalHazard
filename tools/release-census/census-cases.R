@@ -102,6 +102,45 @@ census_data <- function() {
   d$weighted <- d$basic
   d$weighted$w <- sample(c(1, 1, 2, 3), nrow(d$basic), replace = TRUE)
 
+  # -------------------------------------------------------------------------
+  # APPENDED 2026-09-17: data with GENUINE phase structure.
+  #
+  # The `basic` cohort above is plain exponential draws and cannot identify a
+  # multiphase model, which is why every original multiphase case fails the
+  # gradient test. These cohorts are simulated from an actual multiphase
+  # cumulative hazard, inverted numerically:
+  #
+  #   H(t) = mu_e * (1 - exp(-t / tau_e))  +  mu_bg * t
+  #          \_______ early, saturating _/    \_ background _/
+  #
+  # so the early hazard is (mu_e/tau_e) * exp(-t/tau_e), decaying on timescale
+  # tau_e, against a flat background: two genuinely separated timescales. The
+  # parameters were chosen by sweeping n, mu_e, tau_e and t_half and keeping a
+  # configuration whose fit MEETS SAS/C's relative-gradient test, rather than
+  # assumed to work.
+  # -------------------------------------------------------------------------
+  sim_phased <- function(n, mu_e, tau_e, mu_bg, fu, seed) {
+    set.seed(seed)
+    grid <- seq(0, fu * 3, length.out = 200000)
+    hh <- mu_e * (1 - exp(-grid / tau_e)) + mu_bg * grid
+    u <- stats::runif(n)
+    # hh is increasing in grid, so approx() inverts it directly.
+    t_event <- stats::approx(hh, grid, xout = -log(u), rule = 2)$y
+    t_cens <- stats::runif(n, 0.5 * fu, 1.5 * fu)
+    data.frame(
+      time = pmin(t_event, t_cens),
+      status = as.integer(t_event <= t_cens),
+      z = stats::rnorm(n),
+      w = sample(c(1, 1, 2, 3), n, replace = TRUE)
+    )
+  }
+  # Meets the gradient test on main (rel_gradient 1.06e-06) and passes the
+  # version-independent optimum check on v1.2.9.
+  d$phased <- sim_phased(400L, 0.8, 0.3, 0.05, 15, seed = 7001L)
+  # Three phases on two timescales: deliberately NOT identifiable, and kept as
+  # the GATE'S OWN known positive -- see mpc_3phase_unidentified below.
+  d$phased3 <- sim_phased(800L, 1.2, 0.2, 0.04, 20, seed = 7003L)
+
   # Stepwise candidate pool: a few real signals and a few null ones.
   set.seed(1005)
   n <- 220
@@ -137,6 +176,34 @@ probe_fit <- function(fit) {
     vcov = v,
     rcond = fit$fit$rcond
   )
+}
+
+probe_fit_gated <- function(fit) {
+  # probe_fit() plus a `gate` element carrying optimum-quality evidence.
+  #
+  # `gate` is deliberately NOT a compared component: census-compare.R drops
+  # the key before comparing, so adding it here cannot change the verdict of
+  # any case that does not use it. That matters -- putting `rel_gradient`
+  # into the compared probe would have turned every existing IDENTICAL row
+  # into a DIFFERS row, because the field does not exist before 1.2.11, and
+  # would have silently invalidated results already measured.
+  p <- probe_fit(fit)
+  se <- fit$fit$se
+  rc <- fit$fit$rcond
+  rg <- fit$fit$rel_gradient
+  p$gate <- list(
+    converged = isTRUE(fit$fit$converged),
+    # An NA standard error means the Hessian could not be inverted, so the
+    # point is not a proper interior maximum whatever `converged` says.
+    se_finite = !is.null(se) && is.numeric(se) && length(se) > 0L &&
+      !any(is.na(se)),
+    rcond = if (is.numeric(rc) && length(rc) == 1L) rc else NA_real_,
+    # NULL where the version predates the gradient test; NA where the test
+    # was not applied. Both are "cannot confirm", never "passed".
+    rel_gradient = if (is.numeric(rg) && length(rg) == 1L) rg else NA_real_,
+    rel_gradient_present = is.numeric(rg) && length(rg) == 1L
+  )
+  p
 }
 
 probe_num <- function(x) {
@@ -582,10 +649,33 @@ census_cases <- function() {
       f <- tempfile(fileext = ".sas")
       on.exit(unlink(f), add = TRUE)
       writeLines(src, f)
-      tr <- hzr_translate_sas(f)
-      txt <- utils::capture.output(print(tr))
-      txt <- gsub(f, "<TMPFILE>", txt, fixed = TRUE)
-      probe_chr(gsub(basename(f), "<TMPFILE>", txt, fixed = TRUE))
+      scrub <- function(x) {
+        gsub(basename(f), "<TMPFILE>", gsub(f, "<TMPFILE>", x, fixed = TRUE),
+             fixed = TRUE)
+      }
+      # The ERROR path has to be scrubbed too, not just the printed output.
+      # The translator names the file in its error message, so an un-scrubbed
+      # failure records a different message on every run: two runs that behave
+      # identically then compare as ERROR-BOTH-DIFFERENT purely because of a
+      # random tempfile name, which fabricates a behavioural difference.
+      #
+      # Found by the Group 1 integrity check, which flagged this case as the
+      # single row that moved between two runs of the SAME code -- probe
+      # identical, warnings identical, message differing only in
+      # "file842353d00f3c.sas" vs "file49174a18b25d.sas".
+      # Warnings carry the path too ("14 untranslated construct(s) in
+      # fileXXXX.sas"), and the runner captures warnings outside this function,
+      # so they are muffled here and re-raised scrubbed.
+      tr <- withCallingHandlers(
+        tryCatch(hzr_translate_sas(f),
+                 error = function(e) stop(scrub(conditionMessage(e)),
+                                          call. = FALSE)),
+        warning = function(w) {
+          warning(scrub(conditionMessage(w)), call. = FALSE)
+          invokeRestart("muffleWarning")
+        }
+      )
+      probe_chr(scrub(utils::capture.output(print(tr))))
     }),
     argument_mapping = list(needs = "hzr_argument_mapping", fn = function(d) {
       probe_chr(utils::capture.output(print(hzr_argument_mapping())))
@@ -635,6 +725,80 @@ census_cases <- function() {
       }
       # Sorted so the same fixture is read under both versions.
       probe_chr(utils::capture.output(str(hzr_read_outhaz(sort(f)[[1]]))))
+    }),
+
+    ## =====================================================================
+    ## GROUP 2, APPENDED 2026-09-17: gradient-gated multiphase cases.
+    ##
+    ## Every case ABOVE this line is GROUP 1 and is unchanged, byte for byte,
+    ## from the runs already measured -- so their verdicts stay comparable
+    ## across those runs and nothing already reported is re-interpreted.
+    ##
+    ## These cases differ from Group 1's multiphase rows in two ways:
+    ##   - they run on `phased`, which has genuine early/background structure;
+    ##   - they carry `gate = TRUE`, so census-compare.R REFUSES to classify
+    ##     them as DIFFERS or IDENTICAL unless both sides reach a proper
+    ##     optimum. A row that cannot be interpreted says so in the output
+    ##     instead of appearing as a verdict.
+    ##
+    ## So a DIFFERS or IDENTICAL verdict on an `mpc_` row means something that
+    ## the same verdict on a Group 1 multiphase row does not.
+    ## =====================================================================
+
+    mpc_2phase = list(needs = c("hazard", "hzr_phase"), gate = TRUE,
+                      group = "appended", fn = function(d) {
+      probe_fit_gated(hazard(
+        time = d$phased$time, status = d$phased$status, dist = "multiphase",
+        phases = list(early = hzr_phase("cdf", t_half = 1, nu = 1, m = 0),
+                      bg = hzr_phase("constant")),
+        fit = TRUE))
+    }),
+    mpc_2phase_cov = list(needs = c("hazard", "hzr_phase"), gate = TRUE,
+                          group = "appended", fn = function(d) {
+      probe_fit_gated(hazard(
+        time = d$phased$time, status = d$phased$status,
+        x = cbind(z = d$phased$z), dist = "multiphase",
+        phases = list(early = hzr_phase("cdf", t_half = 1, nu = 1, m = 0),
+                      bg = hzr_phase("constant")),
+        fit = TRUE))
+    }),
+    mpc_2phase_weighted = list(needs = c("hazard", "hzr_phase"), gate = TRUE,
+                               group = "appended", fn = function(d) {
+      probe_fit_gated(hazard(
+        time = d$phased$time, status = d$phased$status,
+        weights = d$phased$w, dist = "multiphase",
+        phases = list(early = hzr_phase("cdf", t_half = 1, nu = 1, m = 0),
+                      bg = hzr_phase("constant")),
+        fit = TRUE))
+    }),
+    mpc_2phase_formula = list(needs = c("hazard", "hzr_phase"), gate = TRUE,
+                              group = "appended", fn = function(d) {
+      probe_fit_gated(hazard(
+        survival::Surv(time, status) ~ z, data = d$phased, dist = "multiphase",
+        phases = list(early = hzr_phase("cdf", t_half = 1, nu = 1, m = 0),
+                      bg = hzr_phase("constant")),
+        fit = TRUE))
+    }),
+
+    ## THE GATE'S OWN KNOWN POSITIVE.
+    ##
+    ## Three phases on data with only two timescales: not identifiable, and
+    ## deliberately so. On main it reaches rcond 2.4e-21, an NA standard error
+    ## and rel_gradient 2.34 against a required 6.06e-06. It MUST come out as
+    ## UNINTERPRETABLE rather than as DIFFERS or IDENTICAL, and
+    ## census-compare.R fails if it does not -- the same discipline as the
+    ## planted behavioural changes. A gate with no case that trips it is an
+    ## untested gate.
+    mpc_3phase_unidentified = list(needs = c("hazard", "hzr_phase"),
+                                   gate = TRUE, group = "appended",
+                                   gate_kp = "3 phases, 2 timescales",
+                                   fn = function(d) {
+      probe_fit_gated(hazard(
+        time = d$phased3$time, status = d$phased3$status, dist = "multiphase",
+        phases = list(early = hzr_phase("cdf", t_half = 0.4, nu = 1, m = 0),
+                      mid = hzr_phase("cdf", t_half = 4, nu = 1, m = 0),
+                      bg = hzr_phase("constant")),
+        fit = TRUE))
     })
   )
 }

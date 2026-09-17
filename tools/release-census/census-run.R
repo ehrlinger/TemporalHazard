@@ -111,7 +111,7 @@ for (nm in names(cases)) {
 
   if (length(missing)) {
     results[[nm]] <- list(status = "absent", missing = missing,
-                          kp = case$kp)
+                          kp = case$kp, gate_kp = case$gate_kp)
     n_absent <- n_absent + 1L
     cat(sprintf("[ABSENT] %-28s needs %s\n", nm, paste(missing, collapse = ",")))
     next
@@ -130,13 +130,13 @@ for (nm in names(cases)) {
 
   if (inherits(val, "census_error")) {
     results[[nm]] <- list(status = "error", message = val$message,
-                          warnings = warns, kp = case$kp)
+                          warnings = warns, kp = case$kp, gate_kp = case$gate_kp)
     n_error <- n_error + 1L
     cat(sprintf("[ERROR ] %-28s %s\n", nm,
                 substr(gsub("\\s+", " ", val$message), 1, 110)))
   } else {
     results[[nm]] <- list(status = "ok", probe = val, warnings = warns,
-                          kp = case$kp)
+                          kp = case$kp, gate_kp = case$gate_kp)
     n_ok <- n_ok + 1L
     cat(sprintf("[OK    ] %-28s %s\n", nm,
                 if (length(warns)) sprintf("(%d warning(s))", length(warns)) else ""))
