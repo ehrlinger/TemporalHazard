@@ -650,6 +650,11 @@ hazard <- function(formula = NULL,
   if (is.null(time) || is.null(status)) {
     stop("'time' and 'status' are required (either directly or via 'formula').", call. = FALSE)
   }
+  # A classed numeric such as bit64's integer64 passes is.numeric() but its
+  # stored doubles are not its values, and the single-distribution
+  # likelihoods read them raw: the fit returned its starting values as
+  # converged (#231). Take the plain values once, here.
+  if (is.object(time) && is.numeric(time)) time <- as.numeric(time)
   if (!is.numeric(time) || any(!is.finite(time)) || any(time < 0)) {
     stop("'time' must be a numeric vector of finite non-negative values.", call. = FALSE)
   }
@@ -703,12 +708,18 @@ hazard <- function(formula = NULL,
   # - status = -1 (left-censored): upper bound in `time` (or `time_upper`)
   # - status = 2 (interval-censored): [time_lower, time_upper] required
   if (!is.null(time_lower)) {
+    if (is.object(time_lower) && is.numeric(time_lower)) {
+      time_lower <- as.numeric(time_lower)
+    }
     if (!is.numeric(time_lower) || length(time_lower) != n || any(!is.finite(time_lower)) || any(time_lower < 0)) {
       stop("'time_lower' must be a numeric vector of finite non-negative values matching length(time).", call. = FALSE)
     }
   }
 
   if (!is.null(time_upper)) {
+    if (is.object(time_upper) && is.numeric(time_upper)) {
+      time_upper <- as.numeric(time_upper)
+    }
     if (!is.numeric(time_upper) || length(time_upper) != n || any(!is.finite(time_upper)) || any(time_upper < 0)) {
       stop("'time_upper' must be a numeric vector of finite non-negative values matching length(time).", call. = FALSE)
     }
@@ -797,6 +808,9 @@ hazard <- function(formula = NULL,
   # --- Validate and normalize weights ----------------------------------------
   n_obs <- length(time)
   if (!is.null(weights)) {
+    if (is.object(weights) && is.numeric(weights)) {
+      weights <- as.numeric(weights)
+    }
     if (!is.numeric(weights) || length(weights) != n_obs) {
       stop("'weights' must be a numeric vector of length ", n_obs, ".",
            call. = FALSE)
@@ -817,6 +831,8 @@ hazard <- function(formula = NULL,
          ". Convert it, for example with as.numeric(as.character(status)) ",
          "for a factor.", call. = FALSE)
   }
+  # After any Surv translation above, so a Surv is never flattened here.
+  if (is.object(status) && is.numeric(status)) status <- as.numeric(status)
   bad_status <- !is.na(status) & !(status %in% c(-1, 0, 1, 2))
   if (any(bad_status)) {
     stop("'status' must be coded -1 (left-censored), 0 (right-censored), ",

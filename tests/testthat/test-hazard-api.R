@@ -92,6 +92,23 @@ test_that("hazard() refuses zero rows on every path (#231)", {
                                  dist = "exponential", theta = 0.1,
                                  fit = TRUE))
   expect_equal(lgl$fit$theta, num$fit$theta)
+  # A classed numeric whose stored doubles are not its values, as with
+  # bit64's integer64: read raw, time or status gave a fit at its start.
+  registerS3method("as.double", "hzr_test_wrapped",
+                   function(x, ...) attr(x, "values"))
+  wrap <- function(v) {
+    structure(rep(9e-300, length(v)), values = v, class = "hzr_test_wrapped")
+  }
+  tt5 <- c(2, 5, 3, 8, 4)
+  st5 <- c(1, 0, 1, 1, 0)
+  fit5 <- function(time, status) {
+    suppressWarnings(hazard(time = time, status = status, dist = "weibull",
+                            theta = c(1, 1), fit = TRUE))$fit$theta
+  }
+  ref <- fit5(tt5, st5)
+  expect_false(isTRUE(all.equal(unname(ref), c(1, 1))))
+  expect_equal(fit5(tt5, wrap(st5)), ref)
+  expect_equal(fit5(wrap(tt5), st5), ref)
   # NA status still reaches the completeness check that names it.
   expect_error(hazard(time = c(0, 0), status = c(NA, NA),
                        dist = "exponential", theta = 0.1, fit = TRUE),
