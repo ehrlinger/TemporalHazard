@@ -49,6 +49,19 @@ test_that("hazard() refuses zero rows on every path (#231)", {
   # One row is data: the guard is on zero, not on "small".
   one <- hazard(time = 2, status = 1, dist = "exponential", theta = 0.1)
   expect_s3_class(one, "hazard")
+
+  # All-zero weights are no observations too: the fit came back converged
+  # at its starting values, objective 0.
+  tt <- c(1, 2, 3, 4, 5, 6)
+  st <- c(1, 0, 1, 1, 0, 1)
+  expect_error(hazard(time = tt, status = st, weights = rep(0, 6),
+                      dist = "weibull", theta = c(0.5, 1), fit = TRUE), msg)
+  expect_error(hazard(time = tt, status = st, weights = rep(0, 6),
+                      dist = "multiphase", phases = ph, fit = TRUE), msg)
+  # One positive weight is enough to be data.
+  w1 <- hazard(time = tt, status = st, weights = c(0, 0, 1, 0, 0, 0),
+               dist = "weibull", theta = c(0.5, 1))
+  expect_s3_class(w1, "hazard")
 })
 
 test_that("fit = TRUE without theta is refused for single-distribution models", {

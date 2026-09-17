@@ -804,6 +804,12 @@ hazard <- function(formula = NULL,
     if (any(weights < 0) || any(!is.finite(weights))) {
       stop("'weights' must be non-negative and finite.", call. = FALSE)
     }
+    # All-zero weights leave no observation in the likelihood: the fit
+    # returned its starting values with converged = TRUE, as zero rows did.
+    if (all(weights == 0)) {
+      stop("hazard() was given no observations: every 'weights' value is ",
+           "0, so no row contributes to the likelihood.", call. = FALSE)
+    }
   }
 
   if (!is.character(dist) || length(dist) != 1 || !nzchar(dist)) {
