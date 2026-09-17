@@ -372,7 +372,10 @@
   the kept data's columns and R's own design functions (a user's function
   of the same name is not one), hold no term coded by contrasts (a factor,
   character or logical column, `cut()`), whose coding the fit did not
-  record, and rebuild the fitted columns exactly. A fit saved by 1.0.3 or
+  record, and rebuild the fitted columns exactly. Each function must be
+  written as a plain name or as `pkg::fn` with both parts written as names;
+  a quoted spelling such as `base::"log"(age)` is not recognised, and such a
+  phase is refused at `newdata` rather than rebuilt. A fit saved by 1.0.3 or
   earlier kept neither design nor data, so it cannot say which of its
   formula's names were data columns: a constant `k` in `I(age * k)` that is
   gone at predict time would be taken from a `newdata` column named `k`.
