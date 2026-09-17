@@ -247,3 +247,71 @@ test_that("hzr_gof() and hzr_deciles() on such a fit do not warn", {
             type = "cumulative_hazard")
   ), 1L)
 })
+
+# ---- r-reviewer round 1 ------------------------------------------------------
+
+test_that("two phase formulas computing over the rows warn once per call", {
+  m <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = .sw_data, dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes",
+                        formula = ~ I(age - mean(age))),
+      constant = hzr_phase("constant", formula = ~ I(age - mean(age)))
+    ),
+    fit = TRUE
+  ))
+  nd <- data.frame(time = c(1, 20), age = c(60, 90))
+  got <- newdata_warnings(predict(m, newdata = nd, type = "cumulative_hazard"))
+  expect_length(got, 1L)
+  expect_match(got, "phase 'early'")
+  expect_match(got, "phase 'constant'")
+})
+
+test_that("raw poly() and an unscaled scale() term do not warn", {
+  nd <- data.frame(time = c(1, 2), age = c(60, 90))
+  raw <- .sw_weibull("poly(age, 2, raw = TRUE)", c(0.01, 0.01))
+  expect_no_warning(predict(raw, newdata = nd, type = "cumulative_hazard"))
+  unscaled <- .sw_weibull("scale(age, center = FALSE, scale = FALSE)", 0.01)
+  expect_no_warning(
+    predict(unscaled, newdata = nd, type = "cumulative_hazard")
+  )
+})
+
+test_that("ave(), IQR(), mad() and cut() with a named break count warn", {
+  nd <- data.frame(time = c(1, 2), age = c(60, 90))
+  for (rhs in c("I(age - ave(age))", "I(age / IQR(age))",
+                "I(age / mad(age))")) {
+    w <- .sw_weibull(rhs, 0.001)
+    expect_warning(predict(w, newdata = nd, type = "cumulative_hazard"),
+                   "over the rows", label = rhs)
+  }
+  kk <- 3
+  assign("kk", kk, envir = globalenv())
+  withr::defer(rm("kk", envir = globalenv()))
+  w <- .sw_weibull("I(as.integer(cut(age, kk)))", 0.01)
+  expect_warning(predict(w, newdata = nd, type = "cumulative_hazard"),
+                 "cut\\(\\)")
+  fixed <- .sw_weibull("I(as.integer(cut(age, c(-Inf, 100, Inf))))", 0.01)
+  expect_no_warning(predict(fixed, newdata = nd, type = "cumulative_hazard"))
+})
+
+test_that("legacy contrasts do not warn when the design columns are used", {
+  d <- .sw_data
+  w <- eval(bquote(hazard(survival::Surv(int_dead, dead) ~ age + grp,
+                          data = .(d), dist = "weibull",
+                          theta = c(mu = 0.01, nu = 0.5, 0.004, 0.7))))
+  leg <- w
+  leg$data$x_design <- NULL
+  assign("contr.same", stats::contr.treatment, envir = globalenv())
+  withr::defer(rm("contr.same", envir = globalenv()))
+  withr::local_options(contrasts = c(unordered = "contr.same",
+                                     ordered = "contr.poly"))
+  expect_no_warning(predict(leg, type = "cumulative_hazard",
+                            newdata = data.frame(time = 1, age = 60,
+                                                 grpyoung = 0)))
+  # Known positive: the same session warns when the design is rebuilt.
+  expect_warning(predict(leg, type = "cumulative_hazard",
+                         newdata = data.frame(time = 1, age = 60,
+                                              grp = "old")),
+                 "contr\\.same")
+})

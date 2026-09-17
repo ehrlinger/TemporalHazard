@@ -157,7 +157,11 @@ predicted values are the same with or without the warning.
 \code{I(as.integer(factor(grp)))}, the mean, the scaling or the factor
 coding comes from \code{newdata}'s rows, so a row's prediction depends on
 which other rows are given. Compute such a variable in the data before
-fitting, and supply it in \code{newdata}.
+fitting, and supply it in \code{newdata}. The check knows a fixed list of
+R's functions, among them \code{mean()}, \code{median()}, \code{min()}, \code{max()},
+\code{quantile()}, \code{sd()}, \code{IQR()}, \code{ave()}, \code{rank()}, \code{length()},
+\code{scale()}, \code{factor()} and \code{cut()} with a count of breaks. A function
+not on it, including one you write, is not detected.
 \item \strong{A column of another type than the fit saw.} A numeric column given
 as character compares as text (\code{"154.6" > 50} is \code{FALSE}), and a
 \code{difftime} in other units is used in those units. The check compares
@@ -169,7 +173,8 @@ a mismatch.
 saved by version 1.2.10 or earlier kept no record of its contrasts,
 and its design is rebuilt under \code{options(contrasts =)}. \code{predict()}
 warns when that option names a function other than \code{contr.treatment}
-or \code{contr.poly}. A redefined \code{contr.treatment} is not detected.
+or \code{contr.poly} and the rebuilt design is used. A redefined
+\code{contr.treatment} is not detected.
 }
 
 Two cases are not detected:

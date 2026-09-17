@@ -420,10 +420,11 @@
 # predict(newdata = ) evaluates them over newdata's rows, as predict.lm()
 # does, unless model.frame()'s predvars fixed them at fit time (#331).
 .hzr_row_dependent_functions <- c(
-  "mean", "median", "min", "max", "range", "quantile", "sd", "var", "sum",
-  "prod", "length", "nrow", "NROW", "rank", "order", "sort", "rev",
-  "cumsum", "cumprod", "cummin", "cummax", "diff", "scale", "poly", "ns",
-  "bs", "factor", "as.factor", "droplevels", "cut"
+  "mean", "weighted.mean", "median", "min", "max", "range", "quantile",
+  "fivenum", "IQR", "mad", "sd", "var", "sum", "prod", "ave", "length",
+  "nrow", "NROW", "rank", "order", "sort", "rev", "cumsum", "cumprod",
+  "cummin", "cummax", "diff", "scale", "poly", "ns", "bs", "factor",
+  "as.factor", "droplevels", "cut"
 )
 
 
@@ -433,8 +434,11 @@
 #' `newdata`'s rows, so its value at a row depends on which rows are given
 #' (#331). A top-level `scale()`, `poly()`, `ns()` or `bs()` term is not:
 #' `model.frame()` rewrites it in the terms' `predvars` with the fit's centre,
-#' basis or knots. A top-level `factor()` term takes the fit's levels through
-#' `xlev`. `cut()` counts only with a single number of breaks.
+#' basis or knots, or leaves it unchanged when it takes nothing from the rows
+#' (raw `poly()`, `scale(center = FALSE, scale = FALSE)`). A top-level
+#' `factor()` term takes the fit's levels through `xlev`. `cut()` counts
+#' unless its breaks are written as several numbers. The list of functions
+#' is closed: a function not on it, including a user's, is not detected.
 #'
 #' @param terms The design's terms, carrying `predvars`.
 #' @param where Text naming the design, for messages.
@@ -464,7 +468,10 @@
     hit <- nm %in% .hzr_row_dependent_functions
     if (nm == "cut") {
       breaks <- if ("breaks" %in% names(e)) e[["breaks"]] else e[3L][[1L]]
-      hit <- is.numeric(breaks) && length(breaks) == 1L
+      several <- (is.numeric(breaks) && length(breaks) > 1L) ||
+        (is.call(breaks) && identical(breaks[[1L]], as.name("c")) &&
+           length(breaks) > 2L)
+      hit <- !several
     }
     c(if (hit) nm, unlist(lapply(as.list(e)[-1L], found)))
   }
@@ -474,7 +481,9 @@
     v <- vars[[i]]
     p <- pv[[i]]
     fixed <- is.call(p) &&
-      (!identical(v, p) || head_name(p) %in% c("factor", "as.factor"))
+      (!identical(v, p) ||
+         head_name(p) %in% c("factor", "as.factor", "scale", "poly", "ns",
+                             "bs"))
     f <- if (fixed) unlist(lapply(as.list(p)[-1L], found)) else found(p)
     if (length(f) > 0L) {
       terms_hit <- c(terms_hit, paste(deparse(v), collapse = " "))
@@ -482,12 +491,16 @@
     }
   }
   if (length(terms_hit) > 0L) {
-    warning("predict(newdata =): ",
-            paste0("'", terms_hit, "'", collapse = ", "), " of ", where,
-            " computes ", paste0(unique(fns), "()", collapse = ", "),
-            " over the rows of 'newdata', not the data the model was ",
-            "fitted to, so a row's prediction depends on the other rows ",
-            "given. See ?predict.hazard.", call. = FALSE)
+    msg <- paste0(
+      "predict(newdata =): ", paste0("'", terms_hit, "'", collapse = ", "),
+      " of ", where, " computes ", paste0(unique(fns), "()", collapse = ", "),
+      " over the rows of 'newdata', not the data the model was fitted to, ",
+      "so a row's prediction depends on the other rows given. See ",
+      "?predict.hazard."
+    )
+    # Classed, so predict() can gather one per phase into one warning.
+    warning(structure(class = c("hzr_row_dependent", "warning", "condition"),
+                      list(message = msg, call = NULL)))
   }
   invisible(NULL)
 }
@@ -831,7 +844,6 @@
     isTRUE(all(x == x_fit | (is.na(x) & is.na(x_fit))))
   if (reproduces) {
     object$data$x_design <- parsed$x_design
-    .hzr_warn_rebuilt_contrasts(parsed$x_design$contrasts)
   }
   object
 }

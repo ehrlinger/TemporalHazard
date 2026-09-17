@@ -1298,7 +1298,11 @@ hazard <- function(formula = NULL,
 #'   `I(as.integer(factor(grp)))`, the mean, the scaling or the factor
 #'   coding comes from `newdata`'s rows, so a row's prediction depends on
 #'   which other rows are given. Compute such a variable in the data before
-#'   fitting, and supply it in `newdata`.
+#'   fitting, and supply it in `newdata`. The check knows a fixed list of
+#'   R's functions, among them `mean()`, `median()`, `min()`, `max()`,
+#'   `quantile()`, `sd()`, `IQR()`, `ave()`, `rank()`, `length()`,
+#'   `scale()`, `factor()` and `cut()` with a count of breaks. A function
+#'   not on it, including one you write, is not detected.
 #' - **A column of another type than the fit saw.** A numeric column given
 #'   as character compares as text (`"154.6" > 50` is `FALSE`), and a
 #'   `difftime` in other units is used in those units. The check compares
@@ -1310,7 +1314,8 @@ hazard <- function(formula = NULL,
 #'   saved by version 1.2.10 or earlier kept no record of its contrasts,
 #'   and its design is rebuilt under `options(contrasts =)`. `predict()`
 #'   warns when that option names a function other than `contr.treatment`
-#'   or `contr.poly`. A redefined `contr.treatment` is not detected.
+#'   or `contr.poly` and the rebuilt design is used. A redefined
+#'   `contr.treatment` is not detected.
 #'
 #' Two cases are not detected:
 #'
@@ -1496,10 +1501,23 @@ predict.hazard <- function(object, newdata = NULL,
     # Design-level newdata (hzr_gof(), hzr_deciles()) never uses it, so it
     # skips the rebuild's cost.
     if (!isTRUE(attr(newdata, "hzr_design_columns"))) {
+      recovered <- is.null(object$data$x_design)
       object <- .hzr_recover_x_design(object)
+      recovered <- recovered && !is.null(object$data$x_design)
+      # A legacy design rebuilt under this session's contrasts warns, but
+      # only when the rebuild is used: newdata giving the design columns
+      # uses them as they are (#335). A newdata the design route refuses
+      # stops later, with its own message.
+      nd_frame <- as.data.frame(newdata)
+      if (recovered && !isTRUE(tryCatch(
+        .hzr_uses_design_columns(object, nd_frame),
+        error = function(e) TRUE
+      ))) {
+        .hzr_warn_rebuilt_contrasts(object$data$x_design$contrasts)
+      }
       # A column of another type than the fit saw is evaluated as given;
       # warn once per call, naming it (#334).
-      .hzr_warn_newdata_types(object, as.data.frame(newdata))
+      .hzr_warn_newdata_types(object, nd_frame)
     }
     .hzr_check_time_covariate(object, as.data.frame(newdata), time_based)
   }
@@ -1658,32 +1676,44 @@ predict.hazard <- function(object, newdata = NULL,
         # Built once for every phase that inherits it, so its warnings are
         # given once per call.
         x_global <- NULL
-        for (nm in names(phases)) {
-          ph <- phases[[nm]]
-          uses_formula <- !.hzr_phase_inherits_global(object, nm)
-          if (uses_formula && ncol(nd_covs) > 0) {
-            # The fit's levels, contrasts and columns, not newdata's.
-            x_list[[nm]] <- .hzr_phase_newdata_design(object, nm, ph, newdata)
-          } else if (cov_counts[[nm]] > 0 && ncol(nd_covs) > 0) {
-            # A formula-less phase inherits the global design: rebuild that,
-            # not every non-time column of newdata (which also carries the
-            # phase formulas' variables).
-            if (is.null(x_global)) {
-              x_global <- .hzr_global_design(object, newdata)
+        # A design computing over the rows warns once per call, naming
+        # every phase, not once per phase.
+        row_dependent <- character(0)
+        withCallingHandlers({
+          for (nm in names(phases)) {
+            ph <- phases[[nm]]
+            uses_formula <- !.hzr_phase_inherits_global(object, nm)
+            if (uses_formula && ncol(nd_covs) > 0) {
+              # The fit's levels, contrasts and columns, not newdata's.
+              x_list[[nm]] <- .hzr_phase_newdata_design(object, nm, ph,
+                                                        newdata)
+            } else if (cov_counts[[nm]] > 0 && ncol(nd_covs) > 0) {
+              # A formula-less phase inherits the global design: rebuild that,
+              # not every non-time column of newdata (which also carries the
+              # phase formulas' variables).
+              if (is.null(x_global)) {
+                x_global <- .hzr_global_design(object, newdata)
+              }
+              x_g <- x_global
+              # With time windows the fit expanded the inherited design per
+              # window (age_w1, age_w2); expand it the same way here, or the
+              # rows meet the per-window coefficients unexpanded.
+              if (!is.null(time_windows)) {
+                x_g <- .hzr_expand_time_varying_design(
+                  x = x_g, time = pred_time, time_windows = time_windows
+                )
+              }
+              x_list[[nm]] <- x_g
+            } else {
+              x_list[[nm]] <- NULL
             }
-            x_g <- x_global
-            # With time windows the fit expanded the inherited design per
-            # window (age_w1, age_w2); expand it the same way here, or the
-            # rows meet the per-window coefficients unexpanded.
-            if (!is.null(time_windows)) {
-              x_g <- .hzr_expand_time_varying_design(
-                x = x_g, time = pred_time, time_windows = time_windows
-              )
-            }
-            x_list[[nm]] <- x_g
-          } else {
-            x_list[[nm]] <- NULL
           }
+        }, hzr_row_dependent = function(w) {
+          row_dependent <<- c(row_dependent, conditionMessage(w))
+          invokeRestart("muffleWarning")
+        })
+        if (length(row_dependent) > 0L) {
+          warning(paste(row_dependent, collapse = "\n"), call. = FALSE)
         }
       }
 
