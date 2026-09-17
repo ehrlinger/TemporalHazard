@@ -1713,6 +1713,8 @@
     args <- as.list(e)[-1L]
     if (is.call(fn) && identical(fn[[1L]], as.name("::")) &&
           length(fn) == 3L) {
+      # Membership only: `::` reads the namespace, which no binding in the
+      # formula's environment can mask.
       return(as.character(fn[[3L]]) %in%
                functions[[as.character(fn[[2L]])]] &&
                all(vapply(args, closed, logical(1))))

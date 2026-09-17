@@ -427,7 +427,7 @@ test_that("a legacy fit with duplicated phase column names is refused", {
   }
 })
 
-test_that("an inlined -0 or a user's c() in cut() breaks is refused", {
+test_that("an inlined -0, a classed constant or a user's c() in cut() breaks is refused", {
   skip_on_cran()  # multiphase fits
   d <- legacy_data()
   nd <- legacy_nd()
@@ -438,6 +438,11 @@ test_that("an inlined -0 or a user's c() in cut() breaks is refused", {
     expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
                  "refit", label = paste("-0, keep_frame =", keep))
   }
+  # A classed constant prints as a call, not as itself.
+  f <- eval(bquote(~ I(opdate > .(as.Date("1975-06-01")))))
+  lf <- legacy_fit_on(f, d, keep_frame = TRUE)
+  expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
+               "refit", label = "classed constant, keep_frame = TRUE")
   # A c() reading outside state moves the breaks while the labels print the
   # same: a row at 100.004 changes bin.
   e <- new.env()
