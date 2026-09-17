@@ -14,9 +14,10 @@
   would be with the intercept present, not with a column per level.
   `hzr_phase()` now warns that the removal is ignored, once, when the phase
   is created. Refit a model whose phase formula had no intercept: its
-  estimates will change. The one such formula that fits as before starts
-  with an unordered factor under the default treatment contrasts, which
-  already built the design of the formula with an intercept. An ordered
+  estimates will change. A formula that fits as before starts with an
+  unordered factor, character or logical column under the default
+  treatment contrasts, which already built the design of the formula with
+  an intercept. An ordered
   factor, or any factor under other `contrasts`, is now coded as it would
   be with the intercept (for an ordered factor, `o.L` and `o.Q` rather
   than `om` and `oh`), so its coefficients change meaning. An interaction
