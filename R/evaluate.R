@@ -28,8 +28,8 @@
 #' @param theta Numeric vector of parameters to evaluate at, on the internal
 #'   scale the model uses (see [hzr_theta_names()]). Its length must match
 #'   the model's parameter count. Names, when supplied, must match too.
-#' @param times Optional numeric vector of times, for `dist =
-#'   `"multiphase"` only. When given, the hazard and cumulative hazard at
+#' @param times Optional numeric vector of times, for multiphase models
+#'   only. When given, the hazard and cumulative hazard at
 #'   those times are returned for a covariate-free ("baseline") subject:
 #'   every covariate at 0, so the curve is the shape the supplied parameters
 #'   describe, not a prediction for any row of the data. The other families
@@ -73,42 +73,39 @@ hzr_evaluate <- function(object, theta, times = NULL) {
          "or NULL.", call. = FALSE)
   }
 
-  d <- object$data
+  prepared <- .hzr_evaluate_prepare(object)
   dist <- object$spec$dist
-  expected <- object$fit$theta
-  if (!is.null(expected) && length(theta) != length(expected)) {
+  if (length(theta) != prepared$n_par) {
     stop("'theta' has ", length(theta), " parameter",
          if (length(theta) == 1L) "" else "s", ", but this ", dist,
-         " model has ", length(expected), ". See hzr_theta_names().",
+         " model has ", prepared$n_par,
+         if (is.null(prepared$names)) "." else
+           paste0(": ", paste(utils::head(prepared$names, 3L),
+                              collapse = ", "),
+                  if (length(prepared$names) > 3L) ", ..." else "", "."),
          call. = FALSE)
   }
-  known <- names(expected)
-  if (is.null(known) && identical(dist, "multiphase")) {
-    known <- tryCatch(
-      hzr_theta_names(object$spec$phases,
-                      covariates = lapply(object$fit$x_list, colnames)),
-      error = function(e) NULL
-    )
-  }
-  if (!is.null(names(theta)) && !is.null(known) &&
-        !identical(names(theta), known)) {
+  if (!is.null(names(theta)) && !is.null(prepared$names) &&
+        !identical(names(theta), prepared$names)) {
     stop("'theta' is named, and its names are not the model's parameter ",
-         "names (", paste(utils::head(known, 3L), collapse = ", "),
-         if (length(known) > 3L) ", ..." else "",
+         "names (", paste(utils::head(prepared$names, 3L), collapse = ", "),
+         if (length(prepared$names) > 3L) ", ..." else "",
          "). Supply it unnamed, or in that order.", call. = FALSE)
   }
-  if (is.null(names(theta)) && !is.null(names(expected))) {
-    names(theta) <- names(expected)
+  if (is.null(names(theta)) && !is.null(prepared$names)) {
+    names(theta) <- prepared$names
   }
 
-  logl <- .hzr_logl_at(object, theta)
+  logl <- .hzr_logl_at(object, theta, prepared)
 
   out <- list(
     theta = theta,
     logLik = logl,
     dist = dist,
-    n_obs = length(d$time),
-    n_events = sum(d$status == 1),
+    # The rows the likelihood actually scored, not the rows the object
+    # carries: a phase design with an NA drops rows (#144 review).
+    n_obs = length(prepared$time),
+    n_events = sum(prepared$status == 1),
     curve = if (is.null(times)) NULL else .hzr_evaluate_curve(object, theta,
                                                               times)
   )
@@ -116,36 +113,89 @@ hzr_evaluate <- function(object, theta, times = NULL) {
 }
 
 
-#' The log-likelihood of a model's data at supplied parameters
+#' What a model would be fitted with: designs, rows and parameter count
 #'
-#' One dispatcher for every distribution, so `hzr_evaluate()` scores with the
-#' same likelihood the fit maximises. The multiphase designs come from
-#' `.hzr_multiphase_designs()`, the function the optimizer itself uses, so an
-#' unfitted object is evaluated against the design a fit would have built.
+#' `hazard()` expands the design for `time_windows` before fitting and
+#' resolves per-phase designs at fit time, so an object built with
+#' `fit = FALSE` does not carry either. Evaluating against what the object
+#' happens to store scored a different model: on a `time_windows` fit the
+#' log-likelihood came back -26390.82 where the fit reported -191.83, with
+#' no warning (#144 review). This rebuilds what the fit would have used, by
+#' the same functions the fit uses.
 #'
 #' @param object A `hazard` object.
-#' @param theta Parameters, on the internal scale.
-#' @return A single log-likelihood.
+#' @return A list with `time`, `status`, `time_lower`, `time_upper`, `x`,
+#'   `weights` (row-aligned, window-expanded), `x_list` and
+#'   `covariate_counts` for a multiphase model, `n_par`, the model's
+#'   parameter count, and `names`, the parameter names where the model has
+#'   them.
 #' @keywords internal
 #' @noRd
-.hzr_logl_at <- function(object, theta) {
+.hzr_evaluate_prepare <- function(object) {
   d <- object$data
   dist <- object$spec$dist
-  args <- list(theta = unname(theta), time = d$time, status = d$status,
-               time_lower = d$time_lower, time_upper = d$time_upper,
-               weights = d$weights)
+  x <- d$x
+  if (!is.null(object$spec$time_windows) && !is.null(x)) {
+    # As hazard() does before fitting.
+    x <- .hzr_expand_time_varying_design(
+      x = x, time = d$time, time_windows = object$spec$time_windows
+    )
+  }
+  out <- list(time = d$time, status = d$status, time_lower = d$time_lower,
+              time_upper = d$time_upper, x = x, weights = d$weights)
   if (identical(dist, "multiphase")) {
     built <- .hzr_multiphase_designs(
       d$time, d$status, time_lower = d$time_lower, time_upper = d$time_upper,
-      x = d$x, weights = d$weights, phases = object$spec$phases,
+      x = x, weights = d$weights, phases = object$spec$phases,
       data = d$frame
     )
+    out <- built[c("time", "status", "time_lower", "time_upper", "x",
+                   "weights")]
+    out$x_list <- built$x_list
+    out$covariate_counts <- built$covariate_counts
+    out$names <- tryCatch(
+      hzr_theta_names(object$spec$phases,
+                      covariates = lapply(built$x_list, colnames)),
+      error = function(e) NULL
+    )
+    out$n_par <- if (is.null(out$names)) {
+      length(object$fit$theta)
+    } else {
+      length(out$names)
+    }
+    return(out)
+  }
+  out$names <- names(object$fit$theta)
+  out$n_par <- .hzr_shape_parameter_count(dist, control = object$spec$control) +
+    (if (is.null(x)) 0L else ncol(x))
+  out
+}
+
+
+#' The log-likelihood of a model's data at supplied parameters
+#'
+#' One dispatcher for every distribution, so `hzr_evaluate()` scores with the
+#' same likelihood the fit maximises, over the rows and designs
+#' `.hzr_evaluate_prepare()` rebuilt.
+#'
+#' @param object A `hazard` object.
+#' @param theta Parameters, on the internal scale.
+#' @param prepared The result of `.hzr_evaluate_prepare()`.
+#' @return A single log-likelihood.
+#' @keywords internal
+#' @noRd
+.hzr_logl_at <- function(object, theta, prepared) {
+  dist <- object$spec$dist
+  args <- list(theta = unname(theta), time = prepared$time,
+               status = prepared$status, time_lower = prepared$time_lower,
+               time_upper = prepared$time_upper, weights = prepared$weights)
+  if (identical(dist, "multiphase")) {
     return(.hzr_logl_multiphase(
-      unname(theta), built$time, built$status,
-      time_lower = built$time_lower, time_upper = built$time_upper,
-      x = built$x, weights = built$weights,
+      unname(theta), prepared$time, prepared$status,
+      time_lower = prepared$time_lower, time_upper = prepared$time_upper,
+      x = prepared$x, weights = prepared$weights,
       phases = .hzr_validate_phases(object$spec$phases),
-      covariate_counts = built$covariate_counts, x_list = built$x_list,
+      covariate_counts = prepared$covariate_counts, x_list = prepared$x_list,
       objective = object$spec$objective %||% "likelihood"
     ))
   }
@@ -158,7 +208,7 @@ hzr_evaluate <- function(object, theta, times = NULL) {
     stop("hzr_evaluate() does not know how to evaluate dist = '", dist, "'.",
          call. = FALSE)
   )
-  do.call(fn, c(args, list(x = d$x)))
+  do.call(fn, c(args, list(x = prepared$x)))
 }
 
 

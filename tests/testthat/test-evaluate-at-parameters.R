@@ -170,3 +170,109 @@ test_that("hzr_evaluate() scores the covariates, not just the shape (#144)", {
   expect_false(isTRUE(all.equal(hzr_evaluate(fit, theta = no_beta)$logLik,
                                 fit$fit$objective)))
 })
+
+test_that("hzr_evaluate() scores the window-expanded design (#144)", {
+  skip_on_cran()
+  # hazard() expands the design for time_windows before fitting, and the
+  # object stores the UNEXPANDED x. Scoring that gave -26390.82 where the
+  # fit reported -191.83, with no warning, because a 310x1 design against a
+  # length-2 beta recycles cleanly (r-reviewer).
+  data("avc", package = "TemporalHazard", envir = environment())
+  d <- na.omit(avc[, c("int_dead", "dead", "age")])
+  fit <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ age, data = d, dist = "weibull",
+    theta = c(0.05, 1, 0, 0), time_windows = 1, fit = TRUE,
+    control = list(n_starts = 1L)
+  ))
+  expect_length(fit$fit$theta, 4L)
+  expect_equal(hzr_evaluate(fit, theta = fit$fit$theta)$logLik,
+               fit$fit$objective, tolerance = 1e-10)
+
+  # And multiphase, where the wrong design also splits theta at the wrong
+  # offsets while the length check still passes.
+  phases <- list(
+    early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1, fixed = "m"),
+    constant = hzr_phase("constant")
+  )
+  mp <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ age, data = d, dist = "multiphase",
+    phases = phases, time_windows = 1, fit = TRUE,
+    control = list(n_starts = 1L, conserve = FALSE, maxit = 200)
+  ))
+  expect_equal(hzr_evaluate(mp, theta = mp$fit$theta)$logLik,
+               mp$fit$objective, tolerance = 1e-8)
+})
+
+test_that("hzr_evaluate() counts the rows it scored (#144)", {
+  skip_on_cran()
+  # A phase design with an NA drops rows from the likelihood. Reporting the
+  # object's row count beside that log-likelihood is a wrong denominator.
+  data("avc", package = "TemporalHazard", envir = environment())
+  d <- avc
+  d$age[1:40] <- NA
+  phases <- list(
+    early = hzr_phase("cdf", t_half = 0.2, nu = 1, m = -0.4, formula = ~ age),
+    constant = hzr_phase("constant")
+  )
+  theta <- c(log(0.05), log(0.2), 1, -0.4, 0, log(0.03))
+  spec <- hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
+                 dist = "multiphase", phases = phases, theta = theta,
+                 fit = FALSE)
+  ev <- hzr_evaluate(spec, theta = theta)
+  kept <- !is.na(d$age)
+  expect_identical(ev$n_obs, sum(kept))
+  expect_identical(ev$n_events, sum(d$dead[kept] == 1))
+  expect_lt(ev$n_obs, nrow(d))
+})
+
+test_that("hzr_evaluate() checks theta against the model, not against itself (#144)", {
+  skip_on_cran()
+  # An unfitted object built without `theta` has no fit$theta to compare
+  # against, and that is exactly the object this feature exists for: the
+  # count must come from the model's own parameter list.
+  data("avc", package = "TemporalHazard", envir = environment())
+  phases <- list(
+    early = hzr_phase("cdf", t_half = 0.2, nu = 1, m = -0.4),
+    constant = hzr_phase("constant")
+  )
+  spec <- hazard(survival::Surv(int_dead, dead) ~ 1, data = avc,
+                 dist = "multiphase", phases = phases, fit = FALSE)
+  expect_null(spec$fit$theta)
+  theta <- c(log(0.05), log(0.2), 1, -0.4, log(0.03))
+  expect_true(is.finite(hzr_evaluate(spec, theta = theta)$logLik))
+  expect_error(hzr_evaluate(spec, theta = c(theta, 99, -99)),
+               "has 7 parameters, but this multiphase model has 5")
+  expect_error(hzr_evaluate(spec, theta = theta[1:4]), "has 4 parameters")
+
+  # With covariates, the model's names include them, so a correctly named
+  # theta is accepted rather than refused.
+  d <- na.omit(avc[, c("int_dead", "dead", "age")])
+  spec_cov <- hazard(survival::Surv(int_dead, dead) ~ age, data = d,
+                     dist = "multiphase", phases = phases, fit = FALSE)
+  nm <- hzr_theta_names(phases, covariates = list(early = "age",
+                                                  constant = "age"))
+  theta_cov <- c(log(0.05), log(0.2), 1, -0.4, 0, log(0.03), 0)
+  expect_identical(
+    hzr_evaluate(spec_cov, theta = stats::setNames(theta_cov, nm))$logLik,
+    hzr_evaluate(spec_cov, theta = theta_cov)$logLik
+  )
+})
+
+test_that("predict() still gives multiphase's own reason for linear_predictor (#144)", {
+  data("avc", package = "TemporalHazard", envir = environment())
+  phases <- list(
+    early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1, fixed = "m"),
+    constant = hzr_phase("constant")
+  )
+  theta <- c(log(0.05), log(0.15), 1.4, 1, log(0.03))
+  spec <- hazard(survival::Surv(int_dead, dead) ~ 1, data = avc,
+                 dist = "multiphase", phases = phases, theta = theta,
+                 fit = FALSE)
+  # The unfitted guard must not mask a refusal that is true of fitted models
+  # too, and whose remedy is not "fit it".
+  expect_error(predict(spec, type = "linear_predictor"),
+               "linear_predictor")
+  expect_false(grepl("fit = TRUE",
+                     tryCatch(predict(spec, type = "linear_predictor"),
+                              error = conditionMessage)))
+})

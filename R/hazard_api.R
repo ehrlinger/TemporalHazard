@@ -1439,7 +1439,10 @@ predict.hazard <- function(object, newdata = NULL,
   # Say what happened. Other distributions predict from supplied parameters
   # perfectly well and are left alone -- their designs are the global `x`,
   # which an unfitted object already carries.
+  # Not for linear_predictor: multiphase refuses that type for a fitted model
+  # too, and that refusal is the true reason, so it must not be masked.
   if (identical(object$spec$dist, "multiphase") &&
+        !identical(type, "linear_predictor") &&
         is.null(object$fit$covariate_counts)) {
     stop("This multiphase model was built with fit = FALSE, so it has no ",
          "per-phase design matrices: they are resolved when the model is ",

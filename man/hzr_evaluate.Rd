@@ -15,7 +15,13 @@ not.}
 scale the model uses (see \code{\link[=hzr_theta_names]{hzr_theta_names()}}). Its length must match
 the model's parameter count. Names, when supplied, must match too.}
 
-\item{times}{Optional numeric vector of times, for \verb{dist = }"multiphase"\verb{only. When given, the hazard and cumulative hazard at those times are returned for a covariate-free ("baseline") subject: every covariate at 0, so the curve is the shape the supplied parameters describe, not a prediction for any row of the data. The other families have no internal shape function that takes parameters directly, and writing their hazards out here would duplicate}predict()\verb{; }times` is
+\item{times}{Optional numeric vector of times, for multiphase models
+only. When given, the hazard and cumulative hazard at
+those times are returned for a covariate-free ("baseline") subject:
+every covariate at 0, so the curve is the shape the supplied parameters
+describe, not a prediction for any row of the data. The other families
+have no internal shape function that takes parameters directly, and
+writing their hazards out here would duplicate \code{predict()}; \code{times} is
 refused for them rather than mirrored.}
 }
 \value{
