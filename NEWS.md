@@ -81,6 +81,33 @@
   so the counting-process equivalence and epoch-split invariance they claimed
   for the Weibull were never checked. Both now fit, and both pass.
 
+* **`hzr_translate_sas()` no longer drops phase covariates that follow a
+  `/` option (#342).** SAS attaches `/ options` to one covariate at a
+  time, so `EARLY AGE, MAL/I, OPMOS;` is three covariates. The translator
+  cut the list at the first `/`, fitted `~AGE + MAL`, and recorded only
+  that phase options were deferred, not that `OPMOS` was gone. Each
+  covariate now keeps its own options: `/E` (`EXCLUDE`) leaves it out of
+  the model, as `PROC HAZARD` does without a `SELECTION` statement; `/I`
+  and `/S` leave it in; and a per-variable `MOVE=` or `ORDER=`, or any other
+  option, is recorded in `$untranslated` under the
+  variable's name.
+
+  Two related fixes. A second `EARLY`, `CONSTANT` or `LATE` statement for
+  the same phase now adds to that phase's covariates rather than replacing
+  them. A covariate named twice in a phase is one parameter, as in
+  `PROC HAZARD`, whose last mention sets its starting value and options;
+  within one statement it used to put two starting values in `theta` for
+  one column, shifting every later one.
+
+  A `SELECTION NOSTEPWISE` (or `NOSW`) job is now refused like every other
+  `SELECTION` job. It was read as no screen at all and translated to a
+  plain fit with every candidate in the model, but `PROC HAZARD` still
+  screens, forward only, with each candidate starting out of the model. And a phase variable that is not in the fitted model (an `/E`
+  variable, or a covariate of a phase the job does not select) still
+  deletes its missing rows in `PROC HAZARD`, which `hazard()` cannot do
+  for a variable it never sees, so the translated status chunk now stops
+  when such a variable is missing and asks for those rows to be dropped.
+
 * **`hzr_translate_sas()` now emits a `stop()` in place of the fit when a
   `PARMS` statement builds no phase it could use.** Operands the translator
   could not read (a template's `MUE=?`, or `MUE = 0.2` written with spaces
@@ -92,6 +119,16 @@
   cause. The emitted `stop()` names it. This is a limit of the translation,
   not a `PROC HAZARD` refusal, so it is kept apart from the existing
   "selects no phase" stop.
+
+* **`hzr_translate_sas()` now emits a `stop()` in place of the fit when a
+  job has no `DATA=` and a phase has covariates (#311).** A phase's
+  covariates are evaluated only in `data`, and such a job's fit chunk has
+  none, so `hazard()` stopped with advice to pass `data =`, an argument the
+  SAS job never had. Before the refusal above (#299) the same chunk fitted
+  the phase without its covariates. The job is now recorded in
+  `$untranslated` with the reason, and the emitted `stop()` says to add
+  `DATA=` and translate again. A job with no `DATA=` and no phase
+  covariates still translates to a fit.
 
 * **`predict(newdata = )` matches covariates by name, so `newdata` with
   other names now stops.** A fit made through the vector interface with a
@@ -278,6 +315,36 @@
   `time`, before any fitting, and ask for a different name. Rename the
   phase; nothing else about the model changes.
 
+* **`hazard()` now stops on zero observations** (#231). Given a `time` of
+  length 0, or a formula whose `data` has no rows, every distribution
+  returned a `hazard` object anyway, and with `fit = TRUE` it reported
+  `converged = TRUE`. The warnings were about the Hessian (`rcond = 0`, not
+  invertible), which read as a conditioning problem rather than as no data.
+  The call now errors before any fitting, under `fit = FALSE` as well. The
+  same holds when no row contributes to the likelihood: every row has
+  weight 0, or is right-censored at time 0, where the cumulative hazard is
+  0. Such a fit came back converged at its starting values with an
+  objective of 0. Check that the data frame, or the subset passed to
+  `data`, has rows, and that some row with positive weight is an event or
+  is followed past time 0.
+
+* **`hazard()` now stops on a status code other than -1, 0, 1 or 2**
+  (#231). Every likelihood branches on those four codes, so a row coded
+  anything else fell through all of them and contributed nothing, with no
+  warning. The likeliest way in was `survival::Surv(type = "interval")`'s
+  own codes passed as a plain vector, where 3 means interval-censored: those
+  rows were silently dropped, and data coded only that way returned its
+  starting values with `converged = TRUE`. The error names the rows. Pass
+  a `Surv` object as the response, or as `status`, and it is translated.
+  A character or factor `status` is refused too: it passed as text, and the
+  exponential, Weibull, lognormal and log-logistic fits then returned their
+  starting values as a converged fit. A logical `status` is still accepted.
+  A classed numeric such as `bit64::integer64`, which `data.table::fread()`
+  and `arrow` produce, is now read as its values in `time`, `status`,
+  `time_lower`, `time_upper` and `weights`, and as a column of `data`,
+  where `Surv()` and the model formulas read it. Before, those fits read
+  its stored bits and returned their starting values as converged.
+
 ## New features
 
 * **`hzr_phase()` can derive one late-phase shape from the others (#325).**
@@ -337,6 +404,45 @@
   detected.
 
 ## Bug fixes
+
+* **A fit made with `survival::Surv()`'s own status codes was wrong, not
+  empty, and said nothing (#231).** `Surv()` codes interval-censored rows
+  `3`, and this package codes them `2`. Passing survival's integers as a
+  plain `status` vector -- what `unclass(sv)[, "status"]` or `sv[, 2]` gives
+  -- left those rows out of the log-likelihood while the analytic gradient
+  still counted them, so the fit converged to the optimum of neither model.
+  On 200 rows with 50 interval-censored, the scale parameter came out 14.6%
+  away from the same data coded correctly, with no error and no warning. If
+  you have fitted interval- or left-censored data by passing `Surv()`'s
+  codes through, re-run it: either pass the `Surv` object itself, which is
+  translated, or use this package's codes (`-1` left, `0` right, `1` event,
+  `2` interval). Such a `status` is now refused, naming the offending rows.
+* **`hzr_translate_sas()` now mirrors PROC HAZARD when `FIXGE2` or `FIXGAE2`
+  meets `SETG3_ignore_tau()`** (#328, #329 review). That branch runs when
+  both flags are set, or when either is set with `ALPHA` fixed at 1. PROC
+  HAZARD then fixes all four late shapes: `TAU` = 1, `ALPHA` = 1, and `GAMMA`
+  and `ETA` at 2 and 1 (or 1 and 2 when the job wrote `ETA = 2`). The
+  translation used to record these jobs as untranslated and still emit a
+  phase with `GAMMA` free. It now emits the fixed phase, records any value
+  the job wrote that neither program uses, and records `SETG3940` when
+  `ALPHA` is fixed at anything other than 1.
+
+* **`hzr_phase("g3")` now refuses an infinite `tau`, `gamma` or `eta`, and a
+  derived shape that is not a finite positive number** (#329 review). An
+  infinite shape was accepted and failed only inside the optimizer. Under
+  `constraint`, finite sources could still overflow to an infinite derived
+  shape, or underflow to `alpha = 0`, which would silently select the
+  exponential limiting case. `hzr_translate_sas()` now records a job whose
+  late shape is not finite as written (`GAMMA=1e400` reads as `Inf`) or after
+  a `FIXGE2`/`FIXGAE2` rewrite, since its emitted `hzr_phase()` call can no
+  longer be built.
+
+* **`hazard(fit = FALSE)` applies a phase constraint to a supplied `theta`
+  when phases carry covariates** (#328). It used to warn that the derived
+  slot could not be located, even for a `theta` already on the constraint.
+  The slot is now located the way the fit locates it, so an on-constraint
+  `theta` passes silently and an off-constraint one is replaced with a
+  warning.
 
 * **`predict(newdata = )` on a multiphase fit saved before this version no
   longer gets `scale()`, `poly()` or `ns()` in a phase formula silently wrong

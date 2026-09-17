@@ -545,6 +545,10 @@ hazard <- function(formula = NULL,
   }
   x_design <- NULL
   # Formula dispatch: if formula is provided, parse it and extract time/status/x from data
+  # Columns of `data` are read before any argument is: Surv() and
+  # model.matrix() take a classed numeric's stored doubles too (#231).
+  data <- .hzr_numeric_frame_values(data)
+
   if (!is.null(formula)) {
     if (is.null(data)) {
       stop("'data' is required when 'formula' is provided.", call. = FALSE)
@@ -650,6 +654,9 @@ hazard <- function(formula = NULL,
   if (is.null(time) || is.null(status)) {
     stop("'time' and 'status' are required (either directly or via 'formula').", call. = FALSE)
   }
+  # See .hzr_numeric_values(): a classed numeric's stored doubles are not its
+  # values, and the likelihoods read them raw (#231).
+  time <- .hzr_numeric_values(time)
   if (!is.numeric(time) || any(!is.finite(time)) || any(time < 0)) {
     stop("'time' must be a numeric vector of finite non-negative values.", call. = FALSE)
   }
@@ -657,6 +664,13 @@ hazard <- function(formula = NULL,
   n <- length(time)
   if (length(status) != n) {
     stop("'status' must have the same length as 'time'.", call. = FALSE)
+  }
+  # Over zero rows every path returned an object, fitted or not, with nothing
+  # behind it; a fit even reported converged = TRUE (#231).
+  if (n == 0L) {
+    stop("hazard() was given no observations: 'time' has length 0. ",
+         "Check that `data` (or the subset passed to it) has rows.",
+         call. = FALSE)
   }
 
   # A Surv object passed as `status` is read exactly as the formula path reads
@@ -696,12 +710,14 @@ hazard <- function(formula = NULL,
   # - status = -1 (left-censored): upper bound in `time` (or `time_upper`)
   # - status = 2 (interval-censored): [time_lower, time_upper] required
   if (!is.null(time_lower)) {
+    time_lower <- .hzr_numeric_values(time_lower)
     if (!is.numeric(time_lower) || length(time_lower) != n || any(!is.finite(time_lower)) || any(time_lower < 0)) {
       stop("'time_lower' must be a numeric vector of finite non-negative values matching length(time).", call. = FALSE)
     }
   }
 
   if (!is.null(time_upper)) {
+    time_upper <- .hzr_numeric_values(time_upper)
     if (!is.numeric(time_upper) || length(time_upper) != n || any(!is.finite(time_upper)) || any(time_upper < 0)) {
       stop("'time_upper' must be a numeric vector of finite non-negative values matching length(time).", call. = FALSE)
     }
@@ -790,6 +806,7 @@ hazard <- function(formula = NULL,
   # --- Validate and normalize weights ----------------------------------------
   n_obs <- length(time)
   if (!is.null(weights)) {
+    weights <- .hzr_numeric_values(weights)
     if (!is.numeric(weights) || length(weights) != n_obs) {
       stop("'weights' must be a numeric vector of length ", n_obs, ".",
            call. = FALSE)
@@ -797,6 +814,40 @@ hazard <- function(formula = NULL,
     if (any(weights < 0) || any(!is.finite(weights))) {
       stop("'weights' must be non-negative and finite.", call. = FALSE)
     }
+  }
+  # Every likelihood branches on these four codes, and a row with any other
+  # code falls through all of them and adds nothing: survival's interval
+  # code 3, passed as a plain vector, was silently dropped (#231). NA is left
+  # to the completeness check, which names the rows.
+  # %in% compares as text, so a character or factor status passed that
+  # check, and the single-distribution likelihoods then returned their
+  # starting values as a converged fit.
+  if (!is.numeric(status) && !is.logical(status)) {
+    stop("'status' must be numeric (or logical), not ", class(status)[1L],
+         ". Convert it, for example with as.numeric(as.character(status)) ",
+         "for a factor.", call. = FALSE)
+  }
+  # After any Surv translation above, so a Surv is never flattened here.
+  status <- .hzr_numeric_values(status)
+  bad_status <- !is.na(status) & !(status %in% c(-1, 0, 1, 2))
+  if (any(bad_status)) {
+    stop("'status' must be coded -1 (left-censored), 0 (right-censored), ",
+         "1 (event) or 2 (interval-censored); ", sum(bad_status), " of ", n,
+         " row(s) are not, at index/indices ",
+         paste(utils::head(which(bad_status), 10L), collapse = ", "),
+         if (sum(bad_status) > 10L) ", ..." else "", ". A Surv object's ",
+         "codes differ from these: pass it as the response, or as 'status', ",
+         "and it is translated.", call. = FALSE)
+  }
+  # A row adds nothing to the likelihood when its weight is 0, or when it is
+  # right-censored at time 0 (H(0) = 0). With no other row the fit returned
+  # its starting values, objective 0 and converged = TRUE, as zero rows did.
+  contributes <- !(status == 0 & time == 0)
+  if (!is.null(weights)) contributes <- contributes & weights > 0
+  if (!anyNA(status) && !any(contributes)) {
+    stop("hazard() was given no observations that contribute to the ",
+         "likelihood: every row has weight 0 or is right-censored at time 0.",
+         call. = FALSE)
   }
 
   if (!is.character(dist) || length(dist) != 1 || !nzchar(dist)) {
@@ -888,21 +939,29 @@ hazard <- function(formula = NULL,
   #   message   -- convergence message string from optim()
   # Under fit = TRUE the optimizer derives a constrained shape from the rest
   # of theta. Unfitted, nothing would, and predict() would evaluate a model
-  # off its own constraint. The slots are only locatable without a design
-  # when no phase carries covariates, so apply the rule there and say so
-  # otherwise.
+  # off its own constraint. The slots are located the way the optimizer
+  # locates them (.hzr_optim_multiphase()): a phase formula against `data`,
+  # else the global design, else no covariates (#328).
   if (!fit && dist == "multiphase" && !is.null(theta) &&
       any(vapply(phases, function(ph) .hzr_phase_constraint(ph) != "none",
                  logical(1)))) {
-    n_base <- sum(vapply(phases, function(ph) 1L + .hzr_phase_n_shape(ph),
-                         integer(1)))
-    if (length(theta) == n_base) {
-      theta <- .hzr_constrain_supplied_theta(
-        theta, phases, stats::setNames(integer(length(phases)), names(phases)))
+    counts <- vapply(phases, function(ph) {
+      if (!is.null(ph$formula) && !is.null(data)) {
+        ncol(.hzr_formula_design(ph$formula, data)$x)
+      } else if (!is.null(x_fit)) {
+        ncol(x_fit)
+      } else {
+        0L
+      }
+    }, integer(1))
+    n_theta <- sum(vapply(phases, function(ph) 1L + .hzr_phase_n_shape(ph),
+                          integer(1))) + sum(counts)
+    if (length(theta) == n_theta) {
+      theta <- .hzr_constrain_supplied_theta(theta, phases, counts)
     } else {
-      warning("theta was used as supplied: with phase covariates, the ",
-              "constrained shapes cannot be located in it without fitting, ",
-              "so hzr_phase(constraint = ) is applied only under fit = TRUE.",
+      warning("theta has ", length(theta), " entries but these phases take ",
+              n_theta, ", so hzr_phase(constraint = ) could not be applied ",
+              "to it; the unfitted object carries theta as supplied.",
               call. = FALSE)
     }
   }
@@ -2383,4 +2442,52 @@ vcov.hazard <- function(object, ...) {
 
   colnames(out) <- out_names
   out
+}
+
+
+#' The values of a classed numeric
+#'
+#' A classed numeric such as `bit64::integer64` passes `is.numeric()`, but its
+#' stored doubles are not its values: `unclass()` of an integer64 1 is
+#' 4.94e-324. Arithmetic, `Surv()` and `model.matrix()` read the stored
+#' doubles, so a fit over such input returned its starting values as
+#' converged (#231). The rule, applied identically wherever the package reads
+#' numbers a caller supplied (fitting, and prediction via `newdata`): an
+#' object (`is.object()`) that is numeric (`is.numeric()`) is replaced by
+#' `as.numeric()`, which dispatches to the class's own method. Everything
+#' else is returned unchanged: plain numerics, factors, and
+#' `Date`/`POSIXct`/`difftime` (not `is.numeric()`).
+#'
+#' A `dim` matters only for a column of a data frame, where a matrix column
+#' (`I(cbind(p, q))`, a `Surv`) is legitimate and flattening it would change
+#' the model: `.hzr_numeric_frame_values()` passes `keep_dim = TRUE`. A
+#' single argument such as `time` is one vector whatever its shape, so by
+#' default a classed numeric with a `dim` is read as its values too.
+#'
+#' @param x Any object.
+#' @param keep_dim If `TRUE`, leave an object with a `dim` unchanged.
+#' @return `x`, or `as.numeric(x)` when the rule applies.
+#' @noRd
+.hzr_numeric_values <- function(x, keep_dim = FALSE) {
+  if (is.object(x) && is.numeric(x) && !(keep_dim && !is.null(dim(x)))) {
+    as.numeric(x)
+  } else {
+    x
+  }
+}
+
+#' Apply `.hzr_numeric_values()` to every column of a data frame or list
+#'
+#' Columns with a `dim` are left alone (`keep_dim = TRUE`). Columns are
+#' replaced in a local copy (`data[] <-`), so a caller's `data.table` is not
+#' modified by reference. Anything that is not a list is returned unchanged.
+#'
+#' @param data A data frame, list, or `NULL`.
+#' @return `data` with each column passed through `.hzr_numeric_values()`.
+#' @noRd
+.hzr_numeric_frame_values <- function(data) {
+  if (is.list(data)) {
+    data[] <- lapply(data, .hzr_numeric_values, keep_dim = TRUE)
+  }
+  data
 }
