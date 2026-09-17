@@ -419,8 +419,8 @@
 
 * **`hzr_bootstrap()` names two more kinds of refit that are not a fit
   (#343).** A refit returning a list with no `fit` was tallied as a
-  convergence failure; it is now `"refit returned a <class> with no \`fit\`,
-  not a fit object"`, in both modes. A refit whose fit held a finite
+  convergence failure; it is now ``"refit returned a <class> with no `fit`, not a
+  fit object"``, in both modes. A refit whose fit held a finite
   objective but no estimates counted as a success and then ended the run
   building its replicate row; it is now a failed replicate,
   `"refit returned no parameter estimates"`. `hazard()` returns neither. A
