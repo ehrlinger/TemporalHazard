@@ -290,6 +290,35 @@
 
 ## Bug fixes
 
+* **`predict(newdata = )` on a multiphase fit saved before this version no
+  longer gets `scale()`, `poly()` or `ns()` in a phase formula silently wrong
+  (#307).** Such a fit stored no phase design, so the phase was rebuilt from
+  `newdata` alone, and those terms took their centering, scaling or basis
+  from `newdata`'s own rows instead of the fitting data. At all of the
+  fitting rows that reproduces the fit; at any other `newdata` it does not.
+  At three of the fitting rows, `scale(age)` was off by up to 96%,
+  `poly(age, 2)` by a factor of 3e5, and `ns(age, df = 3)` by 66%. One row
+  of a `scale(age)` phase came back as a zero-length prediction.
+
+  Such a fit's phase is now rebuilt only when that can be checked, and is
+  otherwise refused with advice to give `newdata` the fitted design columns
+  or to refit. A fit saved by 1.1.0 or later kept its fitting data, and its
+  phase design is rebuilt from that data exactly as the fit built it.
+  Reproducing the fitted rows is not enough, since a `cutoff` moved between
+  two fitted ages changes no fitted row. So the phase formula must use only
+  the kept data's columns and R's own design functions (a user's function
+  of the same name is not one), hold no term coded by contrasts (a factor,
+  character or logical column, `cut()`), whose coding the fit did not
+  record, and rebuild the fitted columns exactly. A fit saved by 1.0.3 or
+  earlier kept neither design nor data, so it cannot say which of its
+  formula's names were data columns: a constant `k` in `I(age * k)` that is
+  gone at predict time would be taken from a `newdata` column named `k`.
+  Its phase is refused at `newdata`; it still predicts without `newdata`,
+  and from its design columns. A fit made before duplicated design column
+  names were refused (#296) is refused at `newdata` too, since no selection
+  by name can tell its columns apart. Current fits still evaluate a formula
+  against `newdata` and their environment, as `lm()` does; that is #331.
+
 * **`hzr_bootstrap()` now bootstraps a vector-interface fit made without
   `data =`** (#259, #312). It counted the rows to resample in the fit's data
   frame, and such a fit has none, so every one was refused with a message
