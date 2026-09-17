@@ -368,6 +368,19 @@
 
 ## Bug fixes
 
+* **A fit made with `survival::Surv()`'s own status codes was wrong, not
+  empty, and said nothing (#231).** `Surv()` codes interval-censored rows
+  `3`, and this package codes them `2`. Passing survival's integers as a
+  plain `status` vector -- what `unclass(sv)[, "status"]` or `sv[, 2]` gives
+  -- left those rows out of the log-likelihood while the analytic gradient
+  still counted them, so the fit converged to the optimum of neither model.
+  On 200 rows with 50 interval-censored, the scale parameter came out 14.6%
+  away from the same data coded correctly, with no error and no warning. If
+  you have fitted interval- or left-censored data by passing `Surv()`'s
+  codes through, re-run it: either pass the `Surv` object itself, which is
+  translated, or use this package's codes (`-1` left, `0` right, `1` event,
+  `2` interval). Such a `status` is now refused, naming the offending rows.
+
 * **`predict(newdata = )` on a multiphase fit saved before this version no
   longer gets `scale()`, `poly()` or `ns()` in a phase formula silently wrong
   (#307).** Such a fit stored no phase design, so the phase was rebuilt from
