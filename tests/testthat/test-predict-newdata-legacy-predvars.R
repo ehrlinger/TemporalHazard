@@ -179,6 +179,25 @@ test_that("kept data is not trusted when the formula reads outside it", {
   expect_identical(unname(lf$fit$fit$x_list$early[, 1L]), e2$log(d$age))
   expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
                "refit")
+  # A function not on the list, the user's own or R's, qualified or not: its
+  # rebuild from the kept data matches the fit, but it may read state, or
+  # newdata's rows, at predict time.
+  e3 <- new.env()
+  e3$k <- gap[2]
+  e3$thr <- function(x) x * (x > k)
+  environment(e3$thr) <- e3
+  lf <- legacy_fit_on(stats::as.formula("~ I(thr(age))", env = e3), d,
+                      keep_frame = TRUE)
+  e3$k <- gap[1]
+  expect_identical(unname(lf$fit$fit$x_list$early[, 1L]), e3$thr(d$age))
+  expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
+               "refit", label = "user's thr()")
+  for (term in c("I(age - mean(age))", "I(age - stats::median(age))")) {
+    lf <- legacy_fit_on(term, d, keep_frame = TRUE)
+    expect_error(predict(lf$fit, newdata = at_rows(d, c(1, 50, 200)),
+                         type = "cumulative_hazard"),
+                 "refit", label = term)
+  }
 })
 
 test_that("kept data is not trusted for a formula its text does not carry", {
