@@ -2,20 +2,36 @@
 
 ## Breaking changes
 
-* **A late (`"g3"`) phase with free shapes now reports correct standard
-  errors, and a small free `alpha` a correct gradient (#332).** Both used
-  numerical derivatives whose step was a fixed amount, about 1.2e-4 for
-  the Hessian and 1e-5 for `alpha` in the gradient. Neither warned.
+* **Standard errors were too small for a late (`"g3"`) phase with free
+  shapes: re-run any you have reported (#332).** At realistic optima the
+  standard errors this package reported for such a fit were **12 to 14
+  times too small**, so confidence intervals were far too narrow and Wald
+  p-values far too significant. Anyone who has published or acted on a
+  standard error, a confidence interval or a Wald test from a fit with a
+  free `"g3"` shape should re-run it. Near the exponential limit (a fitted
+  `alpha` of 0.0021) they were about four times too small, and where the
+  data leave a shape undetermined the fit reported finite standard errors
+  for a direction the likelihood does not determine at all.
 
-  - **Standard errors were too small, and are now larger.** The fixed step
-    was far too small a fraction of a large `gamma`, where rounding took
-    over, and too large a fraction of a small `eta` or `alpha`. At a
-    fitted `gamma` of 219 and `eta` of 0.010, `vcov()` gave standard
-    errors of 52 for `gamma` and 0.0028 for `eta`, against about 750 and
-    0.035: an order of magnitude too confident. Near the exponential limit
-    (a fitted `alpha` of 0.0021) they were about four times too small.
-    Where the data leave a shape unidentified, `vcov()` gave finite
-    standard errors for a direction the likelihood does not determine.
+  **The fit itself is unchanged**: the estimates and the log-likelihood are
+  identical, and so is every fit without a `"g3"` phase and every fit whose
+  `"g3"` shapes are fixed. What moves is the Hessian and everything read
+  from it -- standard errors, Wald statistics, confidence intervals, the
+  condition warnings, and the score test `hzr_stepwise()` uses to enter a
+  variable. The one exception is a free `alpha` reaching `(0, 1e-5]`, where
+  the optimizer's own gradient was wrong and the estimates can move too;
+  see below.
+
+  The cause was numerical: the G3 second derivatives stepped every shape by
+  a fixed amount, about 1.2e-4, and the score stepped a small `alpha` by
+  1e-5. That is far too small a fraction of a large `gamma`, where rounding
+  takes over, and far too large a fraction of a small `eta` or `alpha`,
+  where truncation does. Each shape is now stepped in proportion to itself.
+  Nothing warned, and the individual Hessian entries were never off by more
+  than 0.77% -- it is the inversion of an ill-conditioned matrix that turned
+  that into an order of magnitude in the standard errors, which is why the
+  entry error alone is not the number to judge this by.
+
   - **Estimates could stop short of the optimum.** At `0 < alpha <= 1e-5`
     the gradient in `alpha`, which the optimizer uses, was about 50% off at
     `alpha = 1e-5` and approached 100% as `alpha` fell. On one weakly
@@ -25,15 +41,6 @@
     to end higher from every start. At such an `alpha` the Hessian is now
     evaluated, and is usually too ill-conditioned to invert: standard
     errors are unavailable, with a warning.
-
-  Each shape is now stepped in proportion to itself. Standard errors, Wald
-  statistics, confidence intervals, the condition warnings and the score
-  test `hzr_stepwise()` uses to enter a variable change for a fit with a
-  free `"g3"` shape; estimates change only where a free `alpha` reaches
-  `(0, 1e-5]`. A fit without a `"g3"` phase is unaffected. A fit whose
-  `"g3"` shapes are all fixed is unaffected unless `alpha` is below about
-  1.2e-4, where the Hessian used to fall back to a numerical one and is now
-  analytic; the two agree to about 1e-10.
 
 * **`hazard()` now refuses a multiphase phase formula with covariates when
   no `data` is supplied (#299).** Such fits previously ignored the phase
