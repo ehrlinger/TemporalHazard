@@ -110,8 +110,7 @@ test_that("hzr_bootstrap()'s backward refusal points at a screen it can run (#34
   msg <- tryCatch(hzr_bootstrap(b0, n_boot = 2L, scope = ~ age,
                                 direction = "backward"),
                   error = conditionMessage)
-  expect_match(msg, "needs `direction = \"both\"` or `\"forward\"`",
-               fixed = TRUE)
+  expect_match(msg, "pass an empty `scope` such as `~ 1`", fixed = TRUE)
   expect_no_match(msg, "leave `scope` unset", fixed = TRUE)
 })
 
@@ -170,4 +169,51 @@ test_that("under direction = both, scope limits entry, not drops, as documented 
                  trace = FALSE)
   )
   expect_false("mal" %in% kept$steps$variable[kept$steps$action == "drop"])
+})
+
+test_that("a wrapper forwarding the selection defaults without a scope still bootstraps (#343)", {
+  # Every selection argument is unread without `scope`, so its default value
+  # changes nothing and asks for nothing. Only a value that differs from the
+  # default is a selection setting that would be ignored.
+  d <- avc_343()
+  full <- weibull_343(d)
+  my_boot <- function(fit, direction = c("both", "forward", "backward"),
+                      criterion = "score", slentry = 0.3, slstay = 0.2,
+                      max_steps = 50, max_move = 4L,
+                      force_in = character(), force_out = NULL) {
+    hzr_bootstrap(fit, n_boot = 2L, seed = 1L, direction = direction,
+                  criterion = criterion, slentry = slentry, slstay = slstay,
+                  max_steps = max_steps, max_move = max_move,
+                  force_in = force_in, force_out = force_out)
+  }
+  b <- suppressWarnings(my_boot(full))
+  expect_equal(b$n_success, 2L)
+  expect_identical(b$mode, "refit")
+  expect_error(my_boot(full, direction = "forward"),
+               "`direction` only takes effect", fixed = TRUE)
+  expect_error(my_boot(full, slstay = 0.05),
+               "`slstay` only takes effect", fixed = TRUE)
+  expect_error(my_boot(full, force_out = "mal"),
+               "`force_out` only takes effect", fixed = TRUE)
+})
+
+test_that("an empty scope under direction = backward is honoured, not refused (#343)", {
+  # A backward screen enters nothing, and an empty scope offers nothing to
+  # enter, so the two agree.
+  d <- avc_343()
+  base <- weibull_343(d)
+  for (sc in list(~ 1, ~ 0, character(0), list())) {
+    sw <- suppressWarnings(
+      hzr_stepwise(base, scope = sc, data = d, direction = "backward",
+                   criterion = "wald", slstay = 1e-300, trace = FALSE)
+    )
+    expect_identical(sw$steps$variable, c("age", "mal"),
+                     label = deparse(sc))
+  }
+  expect_null(.hzr_refuse_unhonoured_scope(list(early = NULL, late = ~ 1),
+                                           "backward"))
+  expect_error(
+    .hzr_refuse_unhonoured_scope(list(early = NULL, late = ~ age), "backward"),
+    "`scope` has no effect", fixed = TRUE
+  )
 })

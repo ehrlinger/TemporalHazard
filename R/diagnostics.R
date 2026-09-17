@@ -1533,8 +1533,8 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   replicate runs a fresh
 #'   [hzr_stepwise()] selection instead; see Details.
 #' @param criterion Entry / retention rule passed through to
-#'   [hzr_stepwise()] on each replicate when `scope` is supplied, and
-#'   an error when `scope = NULL`. One of `"score"` (default), `"wald"`, or
+#'   [hzr_stepwise()] on each replicate when `scope` is supplied; with
+#'   `scope = NULL`, a value other than the default is an error. One of `"score"` (default), `"wald"`, or
 #'   `"aic"`.
 #'   `"score"` reproduces C/SAS HAZARD's `SELECTION` statistic and needs no
 #'   per-candidate refit, which is what makes a bootstrap screen over many
@@ -1547,9 +1547,11 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   See [hzr_stepwise()].
 #' @param direction,slentry,slstay,max_steps,max_move,force_in,force_out
 #'   Passed through to [hzr_stepwise()] on each replicate when `scope` is
-#'   supplied, and an error when `scope = NULL`, since nothing would use
-#'   them. `direction = "backward"` with a `scope` is an error too: a
-#'   backward screen does not read `scope`. See [hzr_stepwise()] for
+#'   supplied. With `scope = NULL` nothing reads them, so a value other than
+#'   the default is an error; the default itself is accepted.
+#'   `direction = "backward"` with a non-empty `scope` is an error too: a
+#'   backward screen does not read `scope`. For a backward screen on each
+#'   replicate, pass an empty scope such as `~ 1`. See [hzr_stepwise()] for
 #'   definitions and defaults.
 #' @param ... Additional arguments forwarded to [hzr_stepwise()] (e.g.
 #'   `control = list(n_starts = 1)`) when `scope` is supplied; ignored
@@ -1692,17 +1694,23 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     stop("'fraction' must be in (0, 1].", call. = FALSE)
   }
 
-  # Read before match.arg() reassigns `direction` and `criterion`, after which
-  # missing() no longer reports whether the caller supplied them.
-  given <- c("direction", "criterion", "slentry", "slstay", "max_steps",
-             "max_move", "force_in", "force_out")[c(
-    !missing(direction), !missing(criterion), !missing(slentry),
-    !missing(slstay), !missing(max_steps), !missing(max_move),
-    !missing(force_in), !missing(force_out)
-  )]
   direction <- match.arg(direction)
   criterion <- match.arg(criterion)
   select_mode <- !is.null(scope)
+  # Selection arguments whose value differs from the default. Without `scope`
+  # none of them is read, so a default passed on by a wrapper asks for
+  # nothing; any other value is a selection setting that would be ignored.
+  given <- c(
+    direction = direction != "both",
+    criterion = criterion != "score",
+    slentry   = !identical(as.numeric(slentry), 0.30),
+    slstay    = !identical(as.numeric(slstay), 0.20),
+    max_steps = !identical(as.numeric(max_steps), 50),
+    max_move  = !identical(as.numeric(max_move), 4),
+    force_in  = length(force_in) > 0L,
+    force_out = length(force_out) > 0L
+  )
+  given <- names(given)[given]
   # Before seeding, so a refused call leaves the random number stream alone.
   .hzr_refuse_unhonoured_scope(scope, direction, caller = "hzr_bootstrap")
   # Without `scope` there is no screen, so a selection argument would be

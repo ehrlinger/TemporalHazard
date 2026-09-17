@@ -43,8 +43,10 @@ single-distribution fits, pass a one-sided formula
 fits, pass a named list of one-sided formulas keyed by phase, naming
 each phase once.  \code{scope} lists what may enter; a drop considers every
 term in the model except \code{force_in} and terms frozen by \code{max_move}.  A two-sided formula is an error,
-since its left-hand side would never be a candidate, and so is any
-\code{scope} under \code{direction = "backward"}, which does not read it.}
+since its left-hand side would never be a candidate, and so is a
+non-empty \code{scope} under \code{direction = "backward"}, which does not read
+it.  An empty scope (\code{~ 1}, \code{character()}, or a list of \code{NULL}s and
+\code{~ 1}s) is accepted there.}
 
 \item{data}{Data frame the base fit was built on.  Required for
 refits.}
@@ -198,8 +200,8 @@ until none clears the entry rule.  Variables never leave once in.}
 \item{\code{direction = "backward"}}{Start from the base model, which must
 already hold every candidate, and only \emph{drop} variables; the weakest
 term leaves each step until all survivors clear the retention rule.
-\code{scope} is not read, so passing one is an error: protect terms with
-\code{force_in}.}
+\code{scope} is not read, so a non-empty one is an error: protect terms
+with \code{force_in}.}
 \item{\code{direction = "both"} (default)}{Two-way stepwise: on every
 iteration, whether or not a variable entered, every term in the model,
 the base model's included, is re-tested and may be dropped unless it

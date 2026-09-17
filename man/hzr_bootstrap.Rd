@@ -59,14 +59,16 @@ replicate runs a fresh
 \code{\link[=hzr_stepwise]{hzr_stepwise()}} selection instead; see Details.}
 
 \item{direction, slentry, slstay, max_steps, max_move, force_in, force_out}{Passed through to \code{\link[=hzr_stepwise]{hzr_stepwise()}} on each replicate when \code{scope} is
-supplied, and an error when \code{scope = NULL}, since nothing would use
-them. \code{direction = "backward"} with a \code{scope} is an error too: a
-backward screen does not read \code{scope}. See \code{\link[=hzr_stepwise]{hzr_stepwise()}} for
+supplied. With \code{scope = NULL} nothing reads them, so a value other than
+the default is an error; the default itself is accepted.
+\code{direction = "backward"} with a non-empty \code{scope} is an error too: a
+backward screen does not read \code{scope}. For a backward screen on each
+replicate, pass an empty scope such as \code{~ 1}. See \code{\link[=hzr_stepwise]{hzr_stepwise()}} for
 definitions and defaults.}
 
 \item{criterion}{Entry / retention rule passed through to
-\code{\link[=hzr_stepwise]{hzr_stepwise()}} on each replicate when \code{scope} is supplied, and
-an error when \code{scope = NULL}. One of \code{"score"} (default), \code{"wald"}, or
+\code{\link[=hzr_stepwise]{hzr_stepwise()}} on each replicate when \code{scope} is supplied; with
+\code{scope = NULL}, a value other than the default is an error. One of \code{"score"} (default), \code{"wald"}, or
 \code{"aic"}.
 \code{"score"} reproduces C/SAS HAZARD's \code{SELECTION} statistic and needs no
 per-candidate refit, which is what makes a bootstrap screen over many

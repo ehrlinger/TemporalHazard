@@ -9,7 +9,10 @@
   and a scope variable the base lacked was never tested. The result was the
   same as with no scope, and nothing said so. Such a call is now an error:
   pass the full model as the base, protect terms with `force_in`, and leave
-  `scope` unset. Under `direction = "both"`, `scope` names what may enter;
+  `scope` unset or empty (`~ 1`), since an empty scope offers nothing to
+  enter and so agrees with a backward screen. In `hzr_bootstrap()`, an empty
+  scope with `direction = "backward"` runs a backward screen on each
+  replicate. Under `direction = "both"`, `scope` names what may enter;
   as in SAS, the drop half still considers every term in the model except
   `force_in`. `hzr_bootstrap()` refuses the combination before seeding.
 
@@ -18,7 +21,9 @@
   `criterion`, `slentry`, `slstay`, `max_steps`, `max_move`, `force_in` and
   `force_out` were ignored: `direction = "backward", force_in = "age"`
   returned a fixed-model bootstrap with every term at `pct = 100` and no
-  message. Pass `scope` to screen, or drop the argument.
+  message. A value other than the argument's default is now an error, so a
+  wrapper that passes the defaults on still works. Pass `scope` to screen,
+  or omit the argument to refit the exact model.
 
 * **A two-sided `scope` formula is now an error in `hzr_stepwise()` and
   `hzr_bootstrap()` (#343).** Only the right-hand side was read, so

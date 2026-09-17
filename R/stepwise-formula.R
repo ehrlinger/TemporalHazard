@@ -421,14 +421,27 @@
   if (is.null(scope)) {
     return(invisible(NULL))
   }
-  if (direction == "backward") {
+  # An empty scope offers nothing to enter, which a backward screen honours.
+  empty_formula <- function(sc) {
+    inherits(sc, "formula") && length(sc) == 2L &&
+      length(tryCatch(attr(stats::terms(sc), "term.labels"),
+                      error = function(e) "unreadable")) == 0L
+  }
+  empty <- if (is.list(scope) && !inherits(scope, "formula")) {
+    all(vapply(scope, function(sc) is.null(sc) || empty_formula(sc),
+               logical(1)))
+  } else {
+    length(scope) == 0L || empty_formula(scope)
+  }
+  if (direction == "backward" && !empty) {
     remedy <- if (caller == "hzr_bootstrap") {
-      paste0("A bootstrap selection screen needs `direction = \"both\"` or ",
-             "`\"forward\"`; with `scope` unset, hzr_bootstrap() does not ",
-             "select at all.")
+      paste0("For a backward screen on each replicate, pass an empty ",
+             "`scope` such as `~ 1`; to screen a candidate set, use ",
+             "`direction = \"both\"` or `\"forward\"`. With `scope` unset, ",
+             "hzr_bootstrap() does not select at all.")
     } else {
       paste0("Pass the full model as the base fit, protect terms with ",
-             "`force_in`, and leave `scope` unset.")
+             "`force_in`, and leave `scope` unset or empty.")
     }
     stop("`scope` has no effect when `direction = \"backward\"`: a backward ",
          "screen only drops terms the base model already has, so a variable ",
