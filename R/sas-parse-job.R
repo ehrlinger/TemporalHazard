@@ -806,10 +806,10 @@
     switch(token,
       STEPWISE = out$direction <- "both",
       BACKWARD = out$direction <- "backward",
-      ONEWAY   = {
-        out$direction <- NULL
-        out$stepwise <- FALSE
-      },
+      # NOSTEPWISE still screens: the SELECTION statement sets sw = 1
+      # (hazard_y.y setopt(33), stpwprc.c) and NOSTEPWISE only sets nosw,
+      # capping each variable at one move -- forward only (#342 review).
+      ONEWAY   = out$direction <- "forward",
       SLENTRY  = {
         val <- suppressWarnings(as.numeric(val_txt))
         if (is.na(val)) {
@@ -836,22 +836,6 @@
         ))
       }
     )
-  }
-  if (!out$stepwise) {
-    if (!is.null(out$slentry)) {
-      out$untranslated <- rbind(out$untranslated, .hzr_untranslated_frame(
-        NA_integer_, "SLENTRY",
-        "stepwise disabled by ONEWAY/NOSTEPWISE/NOSW; SLENTRY has no effect"
-      ))
-      out$slentry <- NULL
-    }
-    if (!is.null(out$slstay)) {
-      out$untranslated <- rbind(out$untranslated, .hzr_untranslated_frame(
-        NA_integer_, "SLSTAY",
-        "stepwise disabled by ONEWAY/NOSTEPWISE/NOSW; SLSTAY has no effect"
-      ))
-      out$slstay <- NULL
-    }
   }
   out
 }
