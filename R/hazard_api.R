@@ -889,21 +889,29 @@ hazard <- function(formula = NULL,
   #   message   -- convergence message string from optim()
   # Under fit = TRUE the optimizer derives a constrained shape from the rest
   # of theta. Unfitted, nothing would, and predict() would evaluate a model
-  # off its own constraint. The slots are only locatable without a design
-  # when no phase carries covariates, so apply the rule there and say so
-  # otherwise.
+  # off its own constraint. The slots are located the way the optimizer
+  # locates them (.hzr_optim_multiphase()): a phase formula against `data`,
+  # else the global design, else no covariates (#328).
   if (!fit && dist == "multiphase" && !is.null(theta) &&
       any(vapply(phases, function(ph) .hzr_phase_constraint(ph) != "none",
                  logical(1)))) {
-    n_base <- sum(vapply(phases, function(ph) 1L + .hzr_phase_n_shape(ph),
-                         integer(1)))
-    if (length(theta) == n_base) {
-      theta <- .hzr_constrain_supplied_theta(
-        theta, phases, stats::setNames(integer(length(phases)), names(phases)))
+    counts <- vapply(phases, function(ph) {
+      if (!is.null(ph$formula) && !is.null(data)) {
+        ncol(.hzr_formula_design(ph$formula, data)$x)
+      } else if (!is.null(x_fit)) {
+        ncol(x_fit)
+      } else {
+        0L
+      }
+    }, integer(1))
+    n_theta <- sum(vapply(phases, function(ph) 1L + .hzr_phase_n_shape(ph),
+                          integer(1))) + sum(counts)
+    if (length(theta) == n_theta) {
+      theta <- .hzr_constrain_supplied_theta(theta, phases, counts)
     } else {
-      warning("theta was used as supplied: with phase covariates, the ",
-              "constrained shapes cannot be located in it without fitting, ",
-              "so hzr_phase(constraint = ) is applied only under fit = TRUE.",
+      warning("theta has ", length(theta), " entries but these phases take ",
+              n_theta, ", so hzr_phase(constraint = ) could not be applied ",
+              "to it; the unfitted object carries theta as supplied.",
               call. = FALSE)
     }
   }
