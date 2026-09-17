@@ -471,6 +471,35 @@ test_that("a rebuilt legacy design carries the fit's predvars to unseen rows", {
   }
 })
 
+test_that("a legacy design with duplicated column names is not rebuilt", {
+  # hazard() refuses duplicated names now (#296), but a fit saved before
+  # could carry factor g's dummy gB beside a numeric gB.  They match the
+  # rebuild, and predict() selects columns by name, so both read the dummy:
+  # 0.1414 for 0.1909 at g = "A", gB = 1 (#314).  Not rebuilt, the fit keeps
+  # main's refusal.  hazard() cannot make such a fit, so it is renamed here.
+  d <- .dp_avc
+  d$g <- factor(ifelse(d$age > 100, "A", "B"))
+  d$gB2 <- d$mal
+  w <- hazard(survival::Surv(int_dead, dead) ~ g + gB2, data = d,
+              dist = "weibull", theta = c(mu = 0.01, nu = 0.5, 0.7, 0.3))
+  leg <- w
+  leg$data$x_design <- NULL
+  names(leg$data$frame)[names(leg$data$frame) == "gB2"] <- "gB"
+  leg$call$formula <- quote(survival::Surv(int_dead, dead) ~ g + gB)
+  colnames(leg$data$x) <- c("gB", "gB")
+  # The rebuild would reproduce data$x exactly, so only the guard stops it.
+  expect_identical(
+    colnames(.hzr_parse_formula(eval(leg$call$formula), leg$data$frame)$x),
+    c("gB", "gB")
+  )
+  expect_null(.hzr_recover_x_design(leg)$data$x_design)
+  expect_error(
+    predict(leg, type = "cumulative_hazard",
+            newdata = data.frame(time = 2, g = c("A", "B"), gB = c(1, 0))),
+    "earlier version.*also has 'g'"
+  )
+})
+
 test_that("a legacy formula computed in the call is not re-run", {
   # A computed `formula =` (as.formula(), reformulate(), maybe with
   # sample()) would run again, with its side effects and its current

@@ -553,8 +553,13 @@
   frame <- object$data$frame
   env <- object$call_env
   f <- object$call$formula
+  # A fit saved before duplicated names were refused (#296) can carry two
+  # columns of one name (factor g's dummy gB beside a numeric gB). They match
+  # the rebuild, but predict() selects columns by name, so both would read
+  # the first; it is not rebuilt.
   if (!is.null(object$data$x_design) || is.null(x_fit) || is.null(f) ||
-        !is.environment(env) || !is.data.frame(frame)) {
+        !is.environment(env) || !is.data.frame(frame) ||
+        anyDuplicated(colnames(x_fit)) > 0L) {
     return(object)
   }
   if (is.symbol(f)) {
@@ -643,6 +648,8 @@
   allowed <- function(nm) {
     qualified <- strsplit(nm, "::", fixed = TRUE)[[1L]]
     if (length(qualified) == 2L) {
+      # Membership only: `::` reads the namespace itself, which no binding in
+      # the formula's environment can mask, so there is nothing to compare.
       return(qualified[2L] %in% .hzr_rebuild_functions[[qualified[1L]]])
     }
     pkg <- names(Filter(function(fns) nm %in% fns, .hzr_rebuild_functions))
