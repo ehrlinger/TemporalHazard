@@ -109,6 +109,14 @@ test_that("hazard() refuses zero rows on every path (#231)", {
   expect_false(isTRUE(all.equal(unname(ref), c(1, 1))))
   expect_equal(fit5(tt5, wrap(st5)), ref)
   expect_equal(fit5(wrap(tt5), st5), ref)
+  # The same with a dim: an argument is one vector whatever its shape, so a
+  # one-column classed matrix is read as its values too.
+  wrapm <- function(v) {
+    structure(matrix(rep(9e-300, length(v)), ncol = 1), values = v,
+              class = "hzr_test_wrapped")
+  }
+  expect_equal(fit5(tt5, wrapm(st5)), ref)
+  expect_equal(fit5(wrapm(tt5), st5), ref)
   # The same inside `data`, where Surv() and the phase formula read it.
   df5 <- data.frame(tt = wrap(tt5), st = wrap(st5), z = wrap(c(0, 1, 0, 1, 1)))
   df5_plain <- data.frame(tt = tt5, st = st5, z = c(0, 1, 0, 1, 1))

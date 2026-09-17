@@ -2437,37 +2437,49 @@ vcov.hazard <- function(object, ...) {
 }
 
 
-#' The values of a classed numeric vector
+#' The values of a classed numeric
 #'
 #' A classed numeric such as `bit64::integer64` passes `is.numeric()`, but its
 #' stored doubles are not its values: `unclass()` of an integer64 1 is
 #' 4.94e-324. Arithmetic, `Surv()` and `model.matrix()` read the stored
 #' doubles, so a fit over such input returned its starting values as
 #' converged (#231). The rule, applied identically wherever the package reads
-#' numbers a caller supplied (fitting, and prediction via `newdata`):
-#' an object (`is.object()`) that is numeric (`is.numeric()`) and has no
-#' `dim` is replaced by `as.numeric()`, which dispatches to the class's own
-#' method. Everything else is returned unchanged: plain numerics, factors,
-#' `Date`/`POSIXct`/`difftime` (not `is.numeric()`), and objects with a `dim`
-#' such as a `Surv` or a matrix column.
+#' numbers a caller supplied (fitting, and prediction via `newdata`): an
+#' object (`is.object()`) that is numeric (`is.numeric()`) is replaced by
+#' `as.numeric()`, which dispatches to the class's own method. Everything
+#' else is returned unchanged: plain numerics, factors, and
+#' `Date`/`POSIXct`/`difftime` (not `is.numeric()`).
+#'
+#' A `dim` matters only for a column of a data frame, where a matrix column
+#' (`I(cbind(p, q))`, a `Surv`) is legitimate and flattening it would change
+#' the model: `.hzr_numeric_frame_values()` passes `keep_dim = TRUE`. A
+#' single argument such as `time` is one vector whatever its shape, so by
+#' default a classed numeric with a `dim` is read as its values too.
 #'
 #' @param x Any object.
+#' @param keep_dim If `TRUE`, leave an object with a `dim` unchanged.
 #' @return `x`, or `as.numeric(x)` when the rule applies.
 #' @noRd
-.hzr_numeric_values <- function(x) {
-  if (is.object(x) && is.numeric(x) && is.null(dim(x))) as.numeric(x) else x
+.hzr_numeric_values <- function(x, keep_dim = FALSE) {
+  if (is.object(x) && is.numeric(x) && !(keep_dim && !is.null(dim(x)))) {
+    as.numeric(x)
+  } else {
+    x
+  }
 }
 
 #' Apply `.hzr_numeric_values()` to every column of a data frame or list
 #'
-#' Columns are replaced in a local copy (`data[] <-`), so a caller's
-#' `data.table` is not modified by reference. Anything that is not a list is
-#' returned unchanged.
+#' Columns with a `dim` are left alone (`keep_dim = TRUE`). Columns are
+#' replaced in a local copy (`data[] <-`), so a caller's `data.table` is not
+#' modified by reference. Anything that is not a list is returned unchanged.
 #'
 #' @param data A data frame, list, or `NULL`.
 #' @return `data` with each column passed through `.hzr_numeric_values()`.
 #' @noRd
 .hzr_numeric_frame_values <- function(data) {
-  if (is.list(data)) data[] <- lapply(data, .hzr_numeric_values)
+  if (is.list(data)) {
+    data[] <- lapply(data, .hzr_numeric_values, keep_dim = TRUE)
+  }
   data
 }
