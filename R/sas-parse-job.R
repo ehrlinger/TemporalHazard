@@ -520,9 +520,11 @@
       # reference runs -- because only the trailing statement survived.
       PARAMETERS = parms_ops <- c(parms_ops, ops),
       STEPWISE   = sel_ops <- ops,
-      EARLY      = covars$early <- ops_text,
-      CONSTANT   = covars$constant <- ops_text,
-      LATE       = covars$late <- ops_text,
+      # A second statement for a phase adds to its list (hazard_y.y appends
+      # every phasevar); assigning replaced it and dropped the first (#342).
+      EARLY      = covars$early <- c(covars$early, ops_text),
+      CONSTANT   = covars$constant <- c(covars$constant, ops_text),
+      LATE       = covars$late <- c(covars$late, ops_text),
       {
         mapped <- mapped - 1L
         note(kw, "no R equivalent")
@@ -678,6 +680,34 @@
     names(derive) <- c("", "", as.character(cens$status_name))
     call("<-", as.name(data_name), derive)
   }
+  # Phase variables outside every fitted formula still delete their missing
+  # rows in PROC HAZARD (see .hzr_parse_parms()), and hazard() cannot see
+  # them. Stop in the status chunk, ahead of the fit, rather than fit more
+  # rows than SAS did.
+  if (length(parms$listwise_only)) {
+    lw <- lapply(parms$listwise_only, as.name)
+    any_na <- Reduce(function(a, b) call("|", a, b),
+                     lapply(lw, function(v) call("is.na", v)))
+    msg <- paste(
+      "This job has rows where a phase variable that is not in the fitted",
+      "model --", paste(parms$listwise_only, collapse = ", "), "-- is",
+      "missing. PROC HAZARD still deletes those rows (getrisk.c lists every",
+      "phase variable, and readobs.c drops a row where any is missing), but",
+      "hazard() never sees these variables and would fit the rows. Drop",
+      "the rows before fitting, subsetting to complete values of those",
+      "variables."
+    )
+    guarded <- bquote({
+      if (any(.(any_na))) stop(.(msg), call. = FALSE)
+      .(cens$status_expr)
+    })
+    status_call[[3L]] <- if (is.null(data_name)) {
+      guarded
+    } else {
+      status_call[[3L]][[3L]] <- guarded
+      status_call[[3L]]
+    }
+  }
   args$status <- cens$status_name
   if (!is.null(cens$time_lower)) args$time_lower <- cens$time_lower
   # Without fit = TRUE the emitted call returns an unfitted object: converged
@@ -764,8 +794,11 @@
 #' and `stepwiseopts` can be empty: the *statement* is what turns stepwise
 #' on, not any particular direction keyword. So a bare `SELECTION;` (or one
 #' carrying only `SLENTRY`/`SLSTAY`) legitimately enables stepwise; the
-#' direction keywords only refine it. `ONEWAY` (aliases `NOSTEPWISE`/`NOSW`,
-#' option 34) is the one option that turns stepwise back off.
+#' direction keywords only refine it. `NOSTEPWISE`/`NOSW` (token `ONEWAY`,
+#' option 34) does NOT turn it off: `stpwprc.c` leaves `sw = 1` and sets only
+#' `nosw`, which caps each variable at one move, so it is a forward-only
+#' screen (`direction = "forward"`). `stepwise` is therefore `TRUE` for every
+#' SELECTION statement; the field is kept for the caller's refusal test.
 #'
 #' HAZARD's lexer also collapses FORWARD, FW, SW, SELECT and STEPWISE into
 #' one token, which `hazard_y.y` maps to option 21; BACKWARD is option 22.
@@ -779,12 +812,9 @@
 #' alias for the statement keyword itself), so a `STEP`-context miss falls
 #' back to `STMT` before being recorded as untranslated.
 #'
-#' When `ONEWAY`/`NOSTEPWISE`/`NOSW` disables stepwise, any `SLENTRY`/
-#' `SLSTAY` also given are meaningless (there is no entry/stay search to
-#' apply them to) and are moved into `untranslated` rather than silently
-#' dropped; discarding a parsed value with nothing recorded is exactly
-#' the defect this package guards against.
-#' @return `list(stepwise = <logical>, direction = <chr|NULL>,
+#' `SLENTRY` and `SLSTAY` are kept under `NOSTEPWISE` too: the forward
+#' screen still applies its entry threshold.
+#' @return `list(stepwise = TRUE, direction = <chr>,
 #'   slentry = <dbl|NULL>, slstay = <dbl|NULL>, untranslated = <data.frame>)`.
 #' @noRd
 .hzr_selection_spec <- function(operands) {
@@ -805,10 +835,10 @@
     switch(token,
       STEPWISE = out$direction <- "both",
       BACKWARD = out$direction <- "backward",
-      ONEWAY   = {
-        out$direction <- NULL
-        out$stepwise <- FALSE
-      },
+      # NOSTEPWISE still screens: the SELECTION statement sets sw = 1
+      # (hazard_y.y setopt(33), stpwprc.c) and NOSTEPWISE only sets nosw,
+      # capping each variable at one move -- forward only (#342 review).
+      ONEWAY   = out$direction <- "forward",
       SLENTRY  = {
         val <- suppressWarnings(as.numeric(val_txt))
         if (is.na(val)) {
@@ -835,22 +865,6 @@
         ))
       }
     )
-  }
-  if (!out$stepwise) {
-    if (!is.null(out$slentry)) {
-      out$untranslated <- rbind(out$untranslated, .hzr_untranslated_frame(
-        NA_integer_, "SLENTRY",
-        "stepwise disabled by ONEWAY/NOSTEPWISE/NOSW; SLENTRY has no effect"
-      ))
-      out$slentry <- NULL
-    }
-    if (!is.null(out$slstay)) {
-      out$untranslated <- rbind(out$untranslated, .hzr_untranslated_frame(
-        NA_integer_, "SLSTAY",
-        "stepwise disabled by ONEWAY/NOSTEPWISE/NOSW; SLSTAY has no effect"
-      ))
-      out$slstay <- NULL
-    }
   }
   out
 }
