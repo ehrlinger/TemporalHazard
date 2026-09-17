@@ -402,6 +402,14 @@
   reason. Partial failure does not warn; its reasons are in
   `failure_reasons`.
 
+* **`hzr_bootstrap()` no longer stops the whole run when a replicate's refit
+  returns something other than a fit (#333).** Reading the objective off a
+  bare vector was an error outside the replicate's own error handling. Such
+  a replicate now counts as failed, under the reason
+  `"refit returned a <class>, not a fit object"`. `hazard()` never returns
+  one; a stored call rewritten to another function can. The refusal of a
+  `data =` that is not a data frame now names `data` in its message.
+
 * **The G3 late-phase shape is now accurate where `(t/tau)^gamma`
   underflows.** With a large `gamma`, event times well below `tau` take
   `(t/tau)^gamma` past double-precision underflow (about `exp(-708)`), and

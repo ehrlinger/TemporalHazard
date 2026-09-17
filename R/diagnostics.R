@@ -1832,7 +1832,8 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # compared against nothing and named the vectors 'NA'.
   if (!is.null(orig_data) && !is.data.frame(orig_data)) {
     stop("hzr_bootstrap() resamples the rows of the fit's `data =`, which ",
-         "must be a data frame, and this fit's is a ", class(orig_data)[1L],
+         "must be a data frame, and this fit's `data` is a ",
+         class(orig_data)[1L],
          ". Refit with `data = as.data.frame(...)` and bootstrap that.",
          call. = FALSE)
   }
@@ -2140,6 +2141,10 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       # n_failed.
       msg <- conditionMessage(boot_fit)
       if (nzchar(msg)) msg else "error with an empty message"
+    } else if (!is.list(boot_fit)) {
+      # `$` on an atomic vector is an error outside the tryCatch() above, which
+      # ended the whole run. hazard() never returns one.
+      paste0("refit returned a ", class(boot_fit)[1L], ", not a fit object")
     } else if (!isTRUE(is.finite(boot_fit$fit$objective))) {
       "non-finite objective (did not converge)"
     }

@@ -245,7 +245,7 @@ test_that("a `data =` that is not a data frame is refused, naming its class", {
   msg <- tryCatch(hzr_bootstrap(fit, n_boot = 2, seed = 1),
                   error = conditionMessage)
   expect_match(msg, "must be a data frame", fixed = TRUE)
-  expect_match(msg, "is a list", fixed = TRUE)
+  expect_match(msg, "this fit's `data` is a list", fixed = TRUE)
   expect_no_match(msg, "NA", fixed = TRUE)
 })
 
@@ -415,4 +415,59 @@ test_that("a refit error with an empty message is still counted", {
   expect_equal(sum(b$failure_reasons), b$n_failed)
   expect_identical(b$failure_reasons,
                    c("error with an empty message" = 3L))
+})
+
+# Select mode (`scope =`) catches its replicate errors in a second handler. If
+# that handler dropped the condition, a failed replicate would still count,
+# but its reason would read "non-finite objective" for every failure (#333).
+# The per-replicate base refit evaluates the stored call; hzr_stepwise()'s own
+# refits and the up-front validation screen call hazard() directly, so
+# replacing the call's function fails the replicates and nothing else.
+test_that("select mode tallies each failed replicate under its own reason (#333)", {
+  d <- avc_fixture()
+  base <- hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
+                 dist = "weibull", theta = c(0.1, 1), fit = TRUE)
+  state <- new.env()
+  state$calls <- 0L
+  flaky <- function(...) {
+    state$calls <- state$calls + 1L
+    switch(state$calls %% 3L + 1L,
+           stop("synthetic base refit failure"),
+           list(fit = list(objective = NaN, theta = base$fit$theta)),
+           {
+             mc <- match.call()
+             mc[[1L]] <- quote(hazard)
+             eval(mc, parent.frame())
+           })
+  }
+  env <- new.env(parent = base$call_env %||% globalenv())
+  assign("flaky_base", flaky, envir = env)
+  base$call[[1L]] <- as.name("flaky_base")
+  base$call_env <- env
+
+  b <- suppressWarnings(hzr_bootstrap(base, n_boot = 6L, seed = 1L,
+                                      scope = ~ age, criterion = "wald"))
+  expect_equal(b$mode, "select")
+  expect_equal(b$n_success, 2L)
+  expect_equal(b$n_failed, 4L)
+  expect_identical(
+    b$failure_reasons[sort(names(b$failure_reasons))],
+    c("base refit did not converge" = 2L,
+      "synthetic base refit failure" = 2L)
+  )
+  expect_equal(sum(b$failure_reasons), b$n_failed)
+})
+
+test_that("a refit that returns a bare vector is a failed replicate, not a crash (#333)", {
+  vf <- no_data_weibull(avc_fixture())
+  env <- new.env(parent = vf$call_env %||% globalenv())
+  assign("atomic_refit", function(...) c(1, 2), envir = env)
+  vf$call[[1L]] <- as.name("atomic_refit")
+  vf$call_env <- env
+
+  b <- suppressWarnings(hzr_bootstrap(vf, n_boot = 3L, seed = 1L))
+  expect_equal(b$n_success, 0L)
+  expect_equal(b$n_failed, 3L)
+  expect_identical(b$failure_reasons,
+                   c("refit returned a numeric, not a fit object" = 3L))
 })
