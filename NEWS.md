@@ -351,6 +351,16 @@
   unwritten `TAU`, PROC HAZARD holds `TAU` at that data-dependent value while
   the translation holds it at 1, a different model.
 
+* **Two `hzr_translate_sas()` rows now state their consequence** (#345 review).
+  - `FIXMNU1` on an active early phase is a real PROC HAZARD constraint
+    (`M*NU = 1`) that the translation does not apply. It was recorded as "PARMS
+    token has no phase target", which read as a parsing gap; the row now says
+    the constraint is not applied and the emitted phase is a different model.
+  - A `PARMS` keyword that is not in PROC HAZARD's grammar (for example
+    `FIXG1` or `FIXG3`, which are internal flags, not options) is one PROC
+    HAZARD rejects, so its job does not run. The row keeps its "unresolved
+    PARMS keyword" prefix and now says that.
+
 * **`hzr_translate_sas()` now mirrors PROC HAZARD when `FIXGE2` or `FIXGAE2`
   meets `SETG3_ignore_tau()`** (#328, #329 review). That branch runs when
   both flags are set, or when either is set with `ALPHA` fixed at 1. PROC

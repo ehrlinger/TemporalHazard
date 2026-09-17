@@ -26,6 +26,17 @@
 # the order the PARMS operands appeared in, so the result is deterministic.
 .hzr_parms_early_arg <- c(THALF = "t_half", NU = "nu", M = "m")
 .hzr_parms_late_arg  <- c(TAU = "tau", GAMMA = "gamma", ALPHA = "alpha", ETA = "eta")
+
+# The grammar table (.hzr_sas_grammar) is generated from HAZARD's own lexer
+# (data-raw/hazard-grammar.R), so a PARMS keyword it does not know is one
+# PROC HAZARD's lexer rejects: the job does not run. FIXG1 and FIXG3, for
+# instance, are internal flags shape.c:34-41 sets, not options. The prefix is
+# kept for callers that grep it.
+.hzr_parms_unresolved_reason <- paste0(
+  "unresolved PARMS keyword: not in PROC HAZARD's grammar (hazard_l.l), so ",
+  "PROC HAZARD rejects this job with a syntax error and it does not run; ",
+  "whatever is emitted here translates a job that does not run"
+)
 .hzr_parms_mu_order  <- c("MUE", "MUC", "MUL")
 
 # PROC HAZARD's OWN shape defaults (src/hazard/stmtprc.c:34-37), used for any
@@ -487,6 +498,7 @@
   saw_weibull <- FALSE
   saw_ge2 <- FALSE
   saw_gae2 <- FALSE
+  saw_mnu1 <- FALSE
   bad_construct <- character(0)
   bad_reason <- character(0)
   # Set when an operand could not be read at all -- an unresolved keyword, a
@@ -512,7 +524,7 @@
       token <- .hzr_sas_token(key, "HAZARD", "PARM")
       if (is.na(token)) {
         unreadable <- TRUE
-        flag_bad(op, "unresolved PARMS keyword")
+        flag_bad(op, .hzr_parms_unresolved_reason)
       } else if (is.na(val)) {
         unreadable <- TRUE
         flag_bad(op, sprintf("PARMS value for %s is not numeric", key))
@@ -551,7 +563,7 @@
     token <- .hzr_sas_token(op, "HAZARD", "PARM")
     if (is.na(token)) {
       unreadable <- TRUE
-      flag_bad(op, "unresolved PARMS keyword")
+      flag_bad(op, .hzr_parms_unresolved_reason)
     } else if (token == "WEIBULL") {
       # setopt(6) -> SETG3_weibull() (setg3.c:427) is the GENERALIZED Weibull:
       # "NOW HANDLE THE SPECIAL SITUATION OF THE GENERALIZED WEIBULL, WHERE WE
@@ -572,6 +584,9 @@
       saw_ge2 <- TRUE
     } else if (token == "FIXGAE2") {
       saw_gae2 <- TRUE
+    } else if (token == "FIXMNU1") {
+      # Recorded below, once whether an early phase is active is known.
+      saw_mnu1 <- TRUE
     } else if (token %in% names(.hzr_parms_fix_map)) {
       param <- .hzr_parms_fix_map[[token]]
       if (param %in% .hzr_parms_early_arg) {
@@ -1241,6 +1256,22 @@
              "(modterm.c:18-22 raises ERROR 1001, \"No phase selected\"; ",
              "hazard.c:299-302 then exits before results())")
     )
+  }
+
+  # FIXMNU1 is a real PROC HAZARD constraint (hazard_y.y:153; parmprc.c:29-38;
+  # hzd_early_t2p.c:65-77 derives M = +/-1/NU or NU = +/-1/M at every step)
+  # that this translation does not apply. On an active early phase that makes
+  # the emitted phase a different model, and the row says the consequence
+  # rather than a parse state. Mirroring it is separate work.
+  if (saw_mnu1) {
+    flag_bad("FIXMNU1", if (has_early) {
+      paste0("FIXMNU1 constrains M*NU = 1 in PROC HAZARD (hzd_early_t2p.c:",
+             "65-77), but that constraint is not applied here: the emitted ",
+             "early phase estimates M and NU freely, a different model from ",
+             "PROC HAZARD's")
+    } else {
+      "PARMS token has no phase target"
+    })
   }
 
   # (4) An active MU whose phase carries no shape operand is built above, on

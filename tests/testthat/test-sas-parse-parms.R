@@ -1486,3 +1486,44 @@ test_that("a non-finite shape, as written or after a rewrite, is recorded (#329 
   expect_false(any(grepl("not a finite number", ok$untranslated$reason,
                          fixed = TRUE)))
 })
+
+# ---------------------------------------------------------------------------
+# Rows that say the consequence, not the parse state (#345 review)
+# ---------------------------------------------------------------------------
+
+test_that("FIXMNU1 with an early phase says the constraint is not applied", {
+  # hazard_y.y:153 makes FIXMNU1 a real PARMS option, and hzd_early_t2p.c:65-77
+  # then derives M = 1/NU (or NU = 1/M) at every step. The translation does
+  # not apply it, so the early phase it emits is a different model.
+  for (ops in list(c("MUE=0.2", "FIXMNU1"),
+                   c("MUE=0.2", "THALF=1", "NU=2", "M=0.5", "FIXMNU1"))) {
+    got <- .hzr_parse_parms(ops)
+    row <- got$untranslated$reason[got$untranslated$construct == "FIXMNU1"]
+    expect_length(row, 1L)
+    expect_match(row, "not applied", fixed = TRUE)
+    expect_match(row, "different model", fixed = TRUE)
+    expect_false(grepl("no phase target", row, fixed = TRUE))
+  }
+  # With no early phase there is genuinely nothing for it to act on.
+  none <- .hzr_parse_parms(c("MUL=0.2", "GAMMA=2", "FIXMNU1"))
+  expect_match(none$untranslated$reason[none$untranslated$construct ==
+                                           "FIXMNU1"],
+               "no phase target", fixed = TRUE)
+})
+
+test_that("a keyword outside PROC HAZARD's grammar says the job does not run", {
+  # FIXG1 and FIXG3 are not PARMS options: HZRstr.fixg1/fixg3 are internal
+  # flags shape.c:34-41 sets when every shape is fixed. The lexer has no such
+  # token, so PROC HAZARD rejects the job; the row has to say so, and keeps
+  # its "unresolved PARMS keyword" prefix for callers that grep it.
+  for (ops in list(c("MUE=0.2", "THALF=1", "FIXG1"),
+                   c("MUL=0.2", "GAMMA=2", "FIXG3"),
+                   c("MUE=0.2", "THALF=1", "BOGUS=3"))) {
+    got <- .hzr_parse_parms(ops)
+    row <- got$untranslated$reason[grepl("unresolved PARMS keyword",
+                                         got$untranslated$reason,
+                                         fixed = TRUE)]
+    expect_length(row, 1L)
+    expect_match(row, "does not run", fixed = TRUE)
+  }
+})
