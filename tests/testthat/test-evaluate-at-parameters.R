@@ -478,3 +478,28 @@ test_that("the refusals describe the model in front of them (#144)", {
   expect_error(hzr_evaluate(z, theta = c(0.05, 0.9)),
                "carries no observations")
 })
+
+test_that("the unfitted-prediction warning is on by DEFAULT (#144)", {
+  # The suite switches this warning off wholesale
+  # (helper-unfitted-predictions.R), and the tests that assert it switch it
+  # back on for their own scope. Between those two, nothing would notice if
+  # the shipped default flipped to FALSE: every test would stay green while
+  # users stopped being told that a number came from a starting value. This
+  # is the assertion that notices.
+  withr::local_options(TemporalHazard.warn_unfitted_prediction = NULL)
+  expect_null(getOption("TemporalHazard.warn_unfitted_prediction"))
+  expect_warning(predict(eval_spec(), type = "hazard"),
+                 class = "hzr_unfitted_prediction")
+
+  # And the code's own fallback is TRUE, so "unset" means "warn" rather than
+  # depending on something else having set it.
+  src <- paste(deparse(args(predict.hazard)), collapse = " ")
+  body_src <- paste(deparse(body(predict.hazard)), collapse = " ")
+  body_src <- gsub("[[:space:]]+", " ", body_src)
+  expect_match(
+    body_src,
+    'getOption("TemporalHazard.warn_unfitted_prediction", TRUE)',
+    fixed = TRUE
+  )
+  expect_true(nzchar(src))
+})
