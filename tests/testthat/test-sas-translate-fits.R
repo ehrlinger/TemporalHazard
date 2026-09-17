@@ -313,3 +313,31 @@ test_that("the emitted HAZPRED call produces logit bounds, not the default", {
   expect_true(all(got$lower <= got$fit & got$fit <= got$upper))
   expect_true(all(got$lower >= 0 & got$upper <= 1))
 })
+
+test_that("every covariate after a '/' option reaches the fitted model (#342)", {
+  skip_on_cran()
+  # Executed, not shape-asserted: the fit must carry OPMOS and Y, and must
+  # not carry the excluded X. Before #342 the chunk fitted ~AGE + MAL only.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste(
+    "%HAZARD( PROC HAZARD DATA=D CONDITION=14;",
+    "EVENT DEAD; TIME TT;",
+    "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005;",
+    "EARLY AGE, MAL/I, OPMOS;",
+    "CONSTANT X/E, Y; );"
+  ), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  set.seed(3)
+  n <- 150
+  D <- data.frame(TT = stats::rexp(n, 0.2),
+                  DEAD = rep(c(1, 0, 1), length.out = n),
+                  AGE = stats::rnorm(n), MAL = rep(0:1, length.out = n),
+                  OPMOS = stats::runif(n), X = stats::rnorm(n),
+                  Y = stats::rnorm(n))
+  res <- suppressWarnings(render_sim(job, list(D = D)))
+  expect_true(res$ok, info = paste(res$results, collapse = "; "))
+  cf <- names(stats::coef(res$env$fit))
+  expect_true(all(c("phase_1.AGE", "phase_1.MAL", "phase_1.OPMOS",
+                    "phase_2.Y") %in% cf), info = paste(cf, collapse = " "))
+  expect_false(any(grepl("\\.X$", cf)), info = paste(cf, collapse = " "))
+})
