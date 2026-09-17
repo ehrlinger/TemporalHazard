@@ -886,6 +886,27 @@ hazard <- function(formula = NULL,
   #   vcov      -- variance-covariance matrix; NA if Hessian not invertible
   #   counts    -- c(fn, gr) evaluation counts from optim()
   #   message   -- convergence message string from optim()
+  # Under fit = TRUE the optimizer derives a constrained shape from the rest
+  # of theta. Unfitted, nothing would, and predict() would evaluate a model
+  # off its own constraint. The slots are only locatable without a design
+  # when no phase carries covariates, so apply the rule there and say so
+  # otherwise.
+  if (!fit && dist == "multiphase" && !is.null(theta) &&
+      any(vapply(phases, function(ph) .hzr_phase_constraint(ph) != "none",
+                 logical(1)))) {
+    n_base <- sum(vapply(phases, function(ph) 1L + .hzr_phase_n_shape(ph),
+                         integer(1)))
+    if (length(theta) == n_base) {
+      theta <- .hzr_constrain_supplied_theta(
+        theta, phases, stats::setNames(integer(length(phases)), names(phases)))
+    } else {
+      warning("theta was used as supplied: with phase covariates, the ",
+              "constrained shapes cannot be located in it without fitting, ",
+              "so hzr_phase(constraint = ) is applied only under fit = TRUE.",
+              call. = FALSE)
+    }
+  }
+
   fit_state <- list(
     theta = theta,
     converged = NA,
@@ -1075,7 +1096,17 @@ hazard <- function(formula = NULL,
   # look at all (no Hessian, or a non-finite covariance among the estimated
   # parameters), and NULL only when it looked and found nothing. Testing for
   # non-NULL would warn on the NA and print a message built from empty fields.
-  weak_check <- .hzr_weak_direction_impl(fit_state$vcov, fit_state$rcond,
+  # A shape derived by hzr_phase(constraint = ) has a delta-method variance
+  # but is an exact function of its sources, so it would read as a ridge the
+  # constraint itself created. Only estimated parameters can trade off; every
+  # other masked row is NA already.
+  weak_vcov <- fit_state$vcov
+  masked <- fit_state$fixed_mask
+  if (is.matrix(weak_vcov) && length(masked) == nrow(weak_vcov)) {
+    weak_vcov[which(masked), ] <- NA_real_
+    weak_vcov[, which(masked)] <- NA_real_
+  }
+  weak_check <- .hzr_weak_direction_impl(weak_vcov, fit_state$rcond,
                                          weak_names)
   fit_state$weak <- weak_check$weak
   degraded_reasons$weak <- weak_check$reason
@@ -1909,6 +1940,10 @@ summary.hazard <- function(object, ...) {
       d <- diag(vcov_mat)
       std_error <- sqrt(d)            # NA for fixed params, finite for free
       valid <- is.finite(std_error) & std_error > 0
+      # A shape derived by hzr_phase(constraint = ) keeps its delta-method
+      # standard error but was not estimated, so it is not tested against 0.
+      masked <- object$fit$fixed_mask
+      if (length(masked) == length(valid)) valid <- valid & !(masked %in% TRUE)
       z_stat[valid] <- theta[valid] / std_error[valid]
       p_value[valid] <- 2 * pnorm(-abs(z_stat[valid]))
     }

@@ -15,7 +15,8 @@ hzr_phase(
   alpha = 1,
   eta = 1,
   formula = NULL,
-  fixed = character(0)
+  fixed = character(0),
+  constraint = c("none", "alpha_gamma_eta", "eta_gamma")
 )
 
 \method{print}{hzr_phase}(x, ...)
@@ -67,6 +68,29 @@ four).  Fixed parameters are held at their starting values; only \code{mu}
 This mirrors the SAS/C HAZARD workflow where shapes are typically fixed
 and only scale parameters are estimated.}
 
+\item{constraint}{For \code{"g3"} phases, a rule that \emph{derives} one shape from
+the others rather than estimating it:
+\describe{
+\item{\code{"none"}}{(default) every shape is estimated or fixed.}
+\item{\code{"alpha_gamma_eta"}}{\eqn{\alpha = \gamma\eta/2}, so that
+\eqn{\gamma\eta/\alpha = 2}. SAS/C: \code{FIXGAE2}.}
+\item{\code{"eta_gamma"}}{\eqn{\eta = 2/\gamma}, so that
+\eqn{\gamma\eta = 2}. SAS/C: \code{FIXGE2}.}
+}
+The derived parameter follows the others at every step of the
+optimization, so it is not a free parameter and cannot be named in
+\code{fixed}; \code{"shapes"} leaves it out. Its starting value is computed from the
+others, and a value you supply for it, here or in the \code{theta} given to
+\code{\link[=hazard]{hazard()}}, is replaced, with a warning when it differs. Under
+\code{hazard(fit = FALSE)} that replacement is made only when no phase carries
+covariates, since otherwise its slot in \code{theta} is not known until the
+design is built; \code{hazard()} warns when it could not be made. Its
+standard error in \code{\link[=vcov]{vcov()}} is the delta-method one, carried from the
+parameters it is derived from, so confidence limits from \code{\link[=predict]{predict()}}
+include its uncertainty. Only one constraint per phase: SAS's
+\code{FIXGE2} and \code{FIXGAE2} together force \eqn{\alpha = 1} and fix \code{tau},
+\code{gamma} and \code{eta}, which is better written as those fixed values.}
+
 \item{x}{An \code{hzr_phase} object (for \code{print.hzr_phase()}).}
 
 \item{...}{Additional arguments (ignored).}
@@ -84,6 +108,7 @@ An S3 object of class \code{"hzr_phase"} with elements:
 \item{eta}{Outer exponent (g3 phases).}
 \item{formula}{Phase-specific formula or \code{NULL}.}
 \item{fixed}{Character vector of fixed parameter names (may be empty).}
+\item{constraint}{The shape constraint (g3 phases).}
 }
 }
 \description{
@@ -165,6 +190,10 @@ early_fixed <- hzr_phase("cdf", t_half = 0.5, nu = 2, m = 0,
                           fixed = "shapes")
 late_fixed  <- hzr_phase("g3", tau = 1, gamma = 3, alpha = 1, eta = 1,
                           fixed = "shapes")
+
+# Derive alpha from gamma and eta (SAS/C FIXGAE2)
+late_gae2 <- hzr_phase("g3", tau = 14, gamma = 22, eta = 0.18,
+                        constraint = "alpha_gamma_eta")
 
 # Fix only some parameters
 early_partial <- hzr_phase("cdf", t_half = 0.5, nu = 2, m = 0,

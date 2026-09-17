@@ -134,6 +134,28 @@
 #'   (and covariates) are estimated.  Ignored for `"constant"` phases.
 #'   This mirrors the SAS/C HAZARD workflow where shapes are typically fixed
 #'   and only scale parameters are estimated.
+#' @param constraint For `"g3"` phases, a rule that *derives* one shape from
+#'   the others rather than estimating it:
+#'   \describe{
+#'     \item{`"none"`}{(default) every shape is estimated or fixed.}
+#'     \item{`"alpha_gamma_eta"`}{\eqn{\alpha = \gamma\eta/2}, so that
+#'       \eqn{\gamma\eta/\alpha = 2}. SAS/C: `FIXGAE2`.}
+#'     \item{`"eta_gamma"`}{\eqn{\eta = 2/\gamma}, so that
+#'       \eqn{\gamma\eta = 2}. SAS/C: `FIXGE2`.}
+#'   }
+#'   The derived parameter follows the others at every step of the
+#'   optimization, so it is not a free parameter and cannot be named in
+#'   `fixed`; `"shapes"` leaves it out. Its starting value is computed from the
+#'   others, and a value you supply for it, here or in the `theta` given to
+#'   [hazard()], is replaced, with a warning when it differs. Under
+#'   `hazard(fit = FALSE)` that replacement is made only when no phase carries
+#'   covariates, since otherwise its slot in `theta` is not known until the
+#'   design is built; `hazard()` warns when it could not be made. Its
+#'   standard error in [vcov()] is the delta-method one, carried from the
+#'   parameters it is derived from, so confidence limits from [predict()]
+#'   include its uncertainty. Only one constraint per phase: SAS's
+#'   `FIXGE2` and `FIXGAE2` together force \eqn{\alpha = 1} and fix `tau`,
+#'   `gamma` and `eta`, which is better written as those fixed values.
 #'
 #' @return An S3 object of class `"hzr_phase"` with elements:
 #' \describe{
@@ -147,6 +169,7 @@
 #'   \item{eta}{Outer exponent (g3 phases).}
 #'   \item{formula}{Phase-specific formula or `NULL`.}
 #'   \item{fixed}{Character vector of fixed parameter names (may be empty).}
+#'   \item{constraint}{The shape constraint (g3 phases).}
 #' }
 #'
 #' @examples
@@ -160,6 +183,10 @@
 #'                           fixed = "shapes")
 #' late_fixed  <- hzr_phase("g3", tau = 1, gamma = 3, alpha = 1, eta = 1,
 #'                           fixed = "shapes")
+#'
+#' # Derive alpha from gamma and eta (SAS/C FIXGAE2)
+#' late_gae2 <- hzr_phase("g3", tau = 14, gamma = 22, eta = 0.18,
+#'                         constraint = "alpha_gamma_eta")
 #'
 #' # Fix only some parameters
 #' early_partial <- hzr_phase("cdf", t_half = 0.5, nu = 2, m = 0,
@@ -187,9 +214,15 @@ hzr_phase <- function(type = c("cdf", "hazard", "constant", "g3"),
                       t_half = 1, nu = 1, m = 0,
                       tau = 1, gamma = 1, alpha = 1, eta = 1,
                       formula = NULL,
-                      fixed = character(0)) {
+                      fixed = character(0),
+                      constraint = c("none", "alpha_gamma_eta", "eta_gamma")) {
 
   type <- match.arg(type)
+  constraint <- match.arg(constraint)
+  if (constraint != "none" && type != "g3") {
+    stop("constraint = \"", constraint, "\" applies only to g3 phases.",
+         call. = FALSE)
+  }
 
   # --- Validate shape parameters based on type ------------------------------
   if (type == "g3") {
@@ -243,9 +276,17 @@ hzr_phase <- function(type = c("cdf", "hazard", "constant", "g3"),
   }
   if (length(fixed) > 0) {
     if (type == "g3") {
-      # G3: expand "shapes" to tau, gamma, alpha, eta
+      # G3: expand "shapes" to tau, gamma, alpha, eta -- less a derived one,
+      # which is computed rather than held (see `constraint`).
+      derived <- .hzr_constraint_derived(constraint)
       if ("shapes" %in% fixed) {
-        fixed <- union(setdiff(fixed, "shapes"), c("tau", "gamma", "alpha", "eta"))
+        fixed <- union(setdiff(fixed, "shapes"),
+                       setdiff(c("tau", "gamma", "alpha", "eta"), derived))
+      }
+      if (length(derived) && derived %in% fixed) {
+        stop(derived, " cannot be fixed under constraint = \"", constraint,
+             "\": it is derived from the other shapes. Fix the parameter(s) ",
+             "it is derived from instead.", call. = FALSE)
       }
       valid_fixed <- c("tau", "gamma", "alpha", "eta")
     } else {
@@ -266,14 +307,35 @@ hzr_phase <- function(type = c("cdf", "hazard", "constant", "g3"),
   }
 
   if (type == "g3") {
+    # The derived starting value is computed, as PROC HAZARD's SETG3 does
+    # (it rewrote a specified ALPHA = 2 to 1.98 under FIXGAE2). Say so only
+    # when the caller supplied a value that the rule then replaced.
+    if (constraint == "alpha_gamma_eta") {
+      supplied <- if (missing(alpha)) NULL else alpha
+      alpha <- gamma * eta / 2
+    } else if (constraint == "eta_gamma") {
+      supplied <- if (missing(eta)) NULL else eta
+      eta <- 2 / gamma
+    }
+    if (constraint != "none" && !is.null(supplied)) {
+      derived <- .hzr_constraint_derived(constraint)
+      value <- if (derived == "alpha") alpha else eta
+      if (!isTRUE(all.equal(supplied, value))) {
+        warning(derived, " = ", format(supplied, digits = 6),
+                " was replaced by ", format(value, digits = 6),
+                ", the value constraint = \"", constraint, "\" derives.",
+                call. = FALSE)
+      }
+    }
     obj <- list(
-      type    = type,
-      tau     = tau,
-      gamma   = gamma,
-      alpha   = alpha,
-      eta     = eta,
-      formula = formula,
-      fixed   = fixed
+      type       = type,
+      tau        = tau,
+      gamma      = gamma,
+      alpha      = alpha,
+      eta        = eta,
+      formula    = formula,
+      fixed      = fixed,
+      constraint = constraint
     )
   } else {
     obj <- list(
@@ -321,6 +383,9 @@ print.hzr_phase <- function(x, ...) {
   if (x$type != "constant" && length(x$fixed) > 0) {
     cat("  fixed:", paste(x$fixed, collapse = ", "), "\n")
   }
+
+  rule <- .hzr_constraint_rule(.hzr_phase_constraint(x))
+  if (length(rule)) cat("  derived:", rule, "\n")
 
   if (!is.null(x$formula)) {
     cat("  covariates:", deparse(x$formula), "\n")
@@ -625,7 +690,10 @@ hzr_theta_names <- function(phases, covariates = NULL) {
 
     # Shape parameters
     if (ph$type == "g3") {
-      fixed <- if (is.null(ph$fixed)) character(0) else ph$fixed
+      # A derived shape is not searched over; it is recomputed from the others
+      # (.hzr_apply_constraints()), so it is masked like a fixed one.
+      fixed <- c(if (is.null(ph$fixed)) character(0) else ph$fixed,
+                 .hzr_constraint_derived(.hzr_phase_constraint(ph)))
       mask <- c(mask,
         !("tau"   %in% fixed),  # log_tau
         !("gamma" %in% fixed),  # gamma
@@ -648,6 +716,162 @@ hzr_theta_names <- function(phases, covariates = NULL) {
   }
 
   mask
+}
+
+
+# ============================================================================
+# Shape constraints (SAS/C FIXGAE2, FIXGE2)
+# ============================================================================
+#
+# A constrained g3 phase keeps its full theta slot for the derived shape, so
+# the layout, the names and every consumer of a full theta are unchanged. The
+# optimizer masks the derived slot like a fixed one and recomputes it from the
+# free shapes whenever it expands a reduced vector (.hzr_apply_constraints()).
+# What a fixed mask alone would get wrong is the calculus: the derived slot
+# moves with its sources, so the score, the Hessian and the covariance all
+# carry its derivatives (.hzr_constraint_jacobian(),
+# .hzr_constraint_curvature()). SAS/C does the same thing in hzd_late_t2p.c,
+# which recomputes ALPHA = GAMMA*ETA/2 (or ETA = 2/GAMMA) from theta each time.
+
+#' The constraint a phase carries; `"none"` for one built before the argument
+#' existed, so a fit saved by an earlier version still reads.
+#' @noRd
+.hzr_phase_constraint <- function(ph) {
+  if (is.null(ph$constraint)) "none" else ph$constraint
+}
+
+#' The shape a constraint derives (`character(0)` for `"none"`).
+#' @noRd
+.hzr_constraint_derived <- function(constraint) {
+  switch(constraint,
+         alpha_gamma_eta = "alpha",
+         eta_gamma       = "eta",
+         character(0))
+}
+
+#' The derivation as text, for print methods.
+#' @noRd
+.hzr_constraint_rule <- function(constraint) {
+  switch(constraint,
+         alpha_gamma_eta = "alpha = gamma * eta / 2",
+         eta_gamma       = "eta = 2 / gamma",
+         character(0))
+}
+
+#' Each derived theta entry at `theta`, with its first and second derivatives
+#'
+#' Positions come from the layout (`[log_mu, log_tau, gamma, alpha, eta,
+#' betas...]` for g3, see `.hzr_unpack_phase_theta()`), never from names.
+#'
+#' @return A list with one element per constrained phase: `pos` (the derived
+#'   slot), `value`, `src` (the slots it is derived from), `d1` (its gradient
+#'   over `src`) and `d2` (its Hessian over `src`).
+#' @noRd
+.hzr_constraint_terms <- function(theta, phases, covariate_counts) {
+  starts <- .hzr_log_mu_positions(phases, covariate_counts)
+  terms <- list()
+  for (nm in names(phases)) {
+    constraint <- .hzr_phase_constraint(phases[[nm]])
+    if (constraint == "none") next
+    gamma_pos <- starts[[nm]] + 2L
+    gamma_ <- theta[[gamma_pos]]
+    if (constraint == "alpha_gamma_eta") {
+      eta_pos <- starts[[nm]] + 4L
+      eta_ <- theta[[eta_pos]]
+      terms[[nm]] <- list(
+        pos = starts[[nm]] + 3L, value = gamma_ * eta_ / 2,
+        src = c(gamma_pos, eta_pos), d1 = c(eta_ / 2, gamma_ / 2),
+        d2 = matrix(c(0, 0.5, 0.5, 0), 2L, 2L)
+      )
+    } else {
+      terms[[nm]] <- list(
+        pos = starts[[nm]] + 4L, value = 2 / gamma_,
+        src = gamma_pos, d1 = -2 / gamma_^2,
+        d2 = matrix(4 / gamma_^3, 1L, 1L)
+      )
+    }
+  }
+  terms
+}
+
+#' Recompute every derived entry of a full theta from its sources
+#' @noRd
+.hzr_apply_constraints <- function(theta, phases, covariate_counts) {
+  for (term in .hzr_constraint_terms(theta, phases, covariate_counts)) {
+    theta[term$pos] <- term$value
+  }
+  theta
+}
+
+#' Apply the constraints to a supplied theta, saying what was replaced
+#'
+#' `hzr_phase()` warns when a value passed for a derived shape is replaced;
+#' a `theta` passed to [hazard()] deserves the same, or its derived entry
+#' would change without a word.
+#' @noRd
+.hzr_constrain_supplied_theta <- function(theta, phases, covariate_counts) {
+  out <- .hzr_apply_constraints(theta, phases, covariate_counts)
+  moved <- which(!mapply(function(a, b) isTRUE(all.equal(a, b)), theta, out))
+  if (length(moved)) {
+    labels <- if (is.null(names(theta))) paste0("theta[", moved, "]") else
+      names(theta)[moved]
+    warning("theta ", paste(sprintf("%s = %s was replaced by %s", labels,
+                                    format(theta[moved], digits = 6),
+                                    format(out[moved], digits = 6)),
+                            collapse = "; "),
+            ", the value its phase's constraint derives.", call. = FALSE)
+  }
+  out
+}
+
+#' Jacobian of the constrained full theta with respect to itself
+#'
+#' The identity, except that a derived row holds its derivatives over its
+#' sources and a derived column is zero (nothing depends on the derived slot
+#' directly). `crossprod(J, score)` is then the score with each derived
+#' entry's contribution folded into its sources, and `J V J'` carries a
+#' covariance over the searched parameters onto the derived ones.
+#' @noRd
+.hzr_constraint_jacobian <- function(theta, phases, covariate_counts) {
+  jac <- diag(length(theta))
+  for (term in .hzr_constraint_terms(theta, phases, covariate_counts)) {
+    jac[term$pos, ] <- 0
+    jac[term$pos, term$src] <- term$d1
+  }
+  jac
+}
+
+#' Fold each derived entry's score into its sources
+#'
+#' `crossprod(.hzr_constraint_jacobian(), grad)` element by element, written
+#' out so that an `NA` in an unrelated component (the unsanitised score) stays
+#' where it is rather than spreading through the zeros of the matrix product.
+#' The derived entry itself is left as it was: callers read only free slots.
+#' @noRd
+.hzr_constraint_score <- function(theta, grad, phases, covariate_counts) {
+  for (term in .hzr_constraint_terms(theta, phases, covariate_counts)) {
+    grad[term$src] <- grad[term$src] + grad[[term$pos]] * term$d1
+  }
+  grad
+}
+
+#' Second-order term of the constrained Hessian
+#'
+#' The Hessian of `f(c(theta))` is `J' H J + sum_k df/dtheta_k * d2(theta_k)`,
+#' summed over the derived entries `k`. The second part is zero only where the
+#' derived entry's own gradient vanishes, which it does not at a constrained
+#' optimum, so leaving it out would misstate the curvature the covariance is
+#' built from.
+#'
+#' @param grad Gradient of the same function `H` is the Hessian of.
+#' @noRd
+.hzr_constraint_curvature <- function(theta, grad, phases, covariate_counts) {
+  out <- matrix(0, length(theta), length(theta))
+  for (term in .hzr_constraint_terms(theta, phases, covariate_counts)) {
+    out[term$src, term$src] <- out[term$src, term$src] +
+      grad[[term$pos]] * term$d2
+  }
+  out
 }
 
 
