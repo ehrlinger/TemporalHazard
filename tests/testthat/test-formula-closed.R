@@ -77,3 +77,18 @@ test_that("both legacy rebuild routes check against the one function list", {
   expect_identical(seen[[1L]], .hzr_rebuild_functions)
   expect_identical(seen[[2L]], .hzr_rebuild_functions)
 })
+
+test_that("a legacy global `~ .` fit is closed over its frame and rebuilt", {
+  data(avc, package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc)[, c("int_dead", "dead", "age", "mal")]
+  w <- hazard(survival::Surv(int_dead, dead) ~ ., data = d, dist = "weibull",
+              theta = c(mu = 0.01, nu = 0.5, 0.004, 0.2))
+  leg <- w
+  leg$data$x_design <- NULL
+  rebuilt <- .hzr_recover_x_design(leg)
+  expect_false(is.null(rebuilt$data$x_design))
+  nd <- data.frame(time = c(1, 5), age = c(30, 200), mal = c(0, 1))
+  want <- predict(w, newdata = nd, type = "cumulative_hazard")
+  expect_equal(predict(leg, newdata = nd, type = "cumulative_hazard"), want,
+               tolerance = 1e-12)
+})
