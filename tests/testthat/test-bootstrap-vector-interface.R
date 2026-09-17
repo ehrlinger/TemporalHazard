@@ -470,4 +470,19 @@ test_that("a refit that returns a bare vector is a failed replicate, not a crash
   expect_equal(b$n_failed, 3L)
   expect_identical(b$failure_reasons,
                    c("refit returned a numeric, not a fit object" = 3L))
+
+  # Select mode reads its base refit inside the replicate's handler, so it
+  # reports the same reason rather than the `$` error.
+  d <- avc_fixture()
+  base <- hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
+                 dist = "weibull", theta = c(0.1, 1), fit = TRUE)
+  env <- new.env(parent = base$call_env %||% globalenv())
+  assign("atomic_refit", function(...) c(1, 2), envir = env)
+  base$call[[1L]] <- as.name("atomic_refit")
+  base$call_env <- env
+  bs <- suppressWarnings(hzr_bootstrap(base, n_boot = 3L, seed = 1L,
+                                       scope = ~ age, criterion = "wald"))
+  expect_equal(bs$n_failed, 3L)
+  expect_identical(bs$failure_reasons,
+                   c("refit returned a numeric, not a fit object" = 3L))
 })

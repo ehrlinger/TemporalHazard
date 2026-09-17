@@ -2097,6 +2097,12 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
           }
           cl_base$fit <- TRUE
           base_boot <- eval(cl_base, envir = rep_env)
+          # The same reason refit mode records below, rather than whatever
+          # `$` on a non-list says.
+          if (!is.list(base_boot)) {
+            stop("refit returned a ", class(base_boot)[1L],
+                 ", not a fit object")
+          }
           if (!is.finite(base_boot$fit$objective)) {
             stop("base refit did not converge")
           }
