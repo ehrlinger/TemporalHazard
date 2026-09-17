@@ -278,6 +278,15 @@
   `time`, before any fitting, and ask for a different name. Rename the
   phase; nothing else about the model changes.
 
+* **`hazard()` now stops on zero observations** (#231). Given a `time` of
+  length 0, or a formula whose `data` has no rows, every distribution
+  returned a `hazard` object anyway, and with `fit = TRUE` it reported
+  `converged = TRUE`. The only sign of trouble was a warning that the
+  Hessian had `rcond = 0`, which reads as a conditioning problem rather
+  than as no data. The call now errors before any fitting, under
+  `fit = FALSE` as well. Check that the data frame, or the subset passed
+  to `data`, has rows.
+
 ## New features
 
 * **`hzr_phase()` can derive one late-phase shape from the others (#325).**

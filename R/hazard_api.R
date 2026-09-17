@@ -658,6 +658,13 @@ hazard <- function(formula = NULL,
   if (length(status) != n) {
     stop("'status' must have the same length as 'time'.", call. = FALSE)
   }
+  # Over zero rows every path returned an object, fitted or not, with nothing
+  # behind it; a fit even reported converged = TRUE (#231).
+  if (n == 0L) {
+    stop("hazard() was given no observations: 'time' has length 0. ",
+         "Check that `data` (or the subset passed to it) has rows.",
+         call. = FALSE)
+  }
 
   # A Surv object passed as `status` is read exactly as the formula path reads
   # it (#226). Its codes are not this package's, and under "interval" and

@@ -26,6 +26,31 @@ test_that("hazard() validates core dimensions", {
   )
 })
 
+test_that("hazard() refuses zero rows on every path (#231)", {
+  # Over no data every path used to return a hazard object with
+  # converged = TRUE, warning only that the Hessian had rcond = 0.
+  ph <- list(early = hzr_phase("cdf"), constant = hzr_phase("constant"))
+  msg <- "no observations"
+  expect_error(hazard(time = numeric(0), status = numeric(0),
+                      dist = "multiphase", phases = ph, fit = TRUE), msg)
+  # Refused before fitting: an unfitted object over no data is hollow too.
+  expect_error(hazard(time = numeric(0), status = numeric(0),
+                      dist = "multiphase", phases = ph), msg)
+  for (d in c("weibull", "exponential", "loglogistic", "lognormal")) {
+    expect_error(hazard(time = numeric(0), status = numeric(0), dist = d,
+                        theta = c(0.5, 1), fit = TRUE), msg)
+  }
+  df0 <- data.frame(t = c(1, 2), s = c(1, 0), x = c(1, 2))[0, ]
+  expect_error(hazard(survival::Surv(t, s) ~ x, data = df0, dist = "weibull",
+                      theta = c(0.5, 1, 0), fit = TRUE), msg)
+  expect_error(hazard(survival::Surv(t, s) ~ 1, data = df0,
+                      dist = "multiphase", phases = ph, fit = TRUE), msg)
+
+  # One row is data: the guard is on zero, not on "small".
+  one <- hazard(time = 2, status = 1, dist = "exponential", theta = 0.1)
+  expect_s3_class(one, "hazard")
+})
+
 test_that("fit = TRUE without theta is refused for single-distribution models", {
   # Only the multiphase optimizer assembles its own start. This call used to
   # return an unfitted object -- NULL coefficients, NA objective -- silently.
