@@ -383,3 +383,53 @@ test_that("a phase variable outside the model still deletes its missing rows (#3
   expect_true(all(c("phase_1.AGE", "phase_1.Y") %in%
                     names(stats::coef(res$env$fit))))
 })
+
+test_that("a job with no DATA= and phase covariates emits a stop(), not a fit (#311)", {
+  # With no DATA= the fit chunk has no `data`, and hazard() refuses a phase
+  # formula with nothing to evaluate it in (#299): the chunk stopped with
+  # advice to pass `data =`, an argument the SAS job never had.
+  translate <- function(src) {
+    f <- withr::local_tempfile(fileext = ".sas", .local_envir = parent.frame())
+    writeLines(src, f)
+    suppressWarnings(hzr_translate_sas(f))
+  }
+  parms <- "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005;"
+  set.seed(1)
+  n <- 60
+  D <- data.frame(TT = stats::rexp(n, 0.2),
+                  DEAD = rep(c(1, 0), length.out = n),
+                  MAL = rep(c(0, 1, 1), length.out = n))
+
+  for (cov in c("EARLY MAL=0;", "CONSTANT MAL=0;")) {
+    job <- translate(paste("%HAZARD( PROC HAZARD CONDITION=14;",
+                           "EVENT DEAD; TIME TT;", parms, cov, ");"))
+    expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"), info = cov)
+    expect_true(any(job$untranslated$construct == "DATA="), info = cov)
+    # Executed where the variables exist as vectors, the way a reader who
+    # binds them would render it: the chunk must fail with the translator's
+    # reason, not hazard()'s advice to pass `data =`.
+    res <- render_sim(job, as.list(D))
+    expect_false(res$ok, info = cov)
+    expect_match(res$results[["fit"]], "no DATA=", info = cov)
+  }
+
+  # Paired controls. No covariates: no DATA= is fine, the chunk fits from
+  # the bound vectors.
+  job <- translate(paste("%HAZARD( PROC HAZARD CONDITION=14;",
+                         "EVENT DEAD; TIME TT;", parms, ");"))
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
+  expect_false(any(job$untranslated$construct == "DATA="))
+  res <- suppressWarnings(render_sim(job, as.list(D)))
+  expect_true(res$ok, info = paste(res$results, collapse = "; "))
+  expect_s3_class(res$env$fit, "hazard")
+
+  # DATA= with the same covariate: still a fit, and the phase carries MAL.
+  skip_on_cran()
+  job <- translate(paste("%HAZARD( PROC HAZARD DATA=D CONDITION=14;",
+                         "EVENT DEAD; TIME TT;", parms, "EARLY MAL=0; );"))
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
+  expect_false(any(job$untranslated$construct == "DATA="))
+  res <- suppressWarnings(render_sim(job, list(D = D)))
+  expect_true(res$ok, info = paste(res$results, collapse = "; "))
+  expect_true("phase_1.MAL" %in% names(stats::coef(res$env$fit)))
+})
