@@ -46,6 +46,10 @@ from the formula's environment, and a term that uses row-level values
 kept outside \code{data} (\code{~ zz}, with \code{zz} a vector in the workspace) is an
 error, even when \code{newdata} has a \code{zz} column; move it into \code{data} and
 refit.
+A term that computes a statistic over \code{newdata}'s rows warns only for
+the functions the check knows (see "How \code{newdata} is evaluated"). Any
+other function, including one you write, is still recomputed from
+\code{newdata}'s rows, silently: no warning means undetected, not safe.
 A fit made with an unnamed \code{x} matrix matches by position. For the types
 requiring time, a \code{newdata} with only a \code{time} column evaluates the
 baseline, with every covariate at 0. Because \code{time} is then the
@@ -166,7 +170,9 @@ fitting, and supply it in \code{newdata}. The check knows a fixed list of
 R's functions, among them \code{mean()}, \code{median()}, \code{min()}, \code{max()},
 \code{quantile()}, \code{sd()}, \code{IQR()}, \code{ave()}, \code{rank()}, \code{length()},
 \code{scale()}, \code{factor()} and \code{cut()} with a count of breaks. A function
-not on it, including one you write, is not detected.
+not on it, including one you write, is recomputed from \code{newdata}'s
+rows just the same, with no warning: the list is a floor, not a
+boundary.
 \item \strong{A column of another type than the fit saw.} A numeric column given
 as character compares as text (\code{"154.6" > 50} is \code{FALSE}), and a
 \code{difftime} in other units is used in those units. The check compares

@@ -1215,6 +1215,10 @@ hazard <- function(formula = NULL,
 #'   kept outside `data` (`~ zz`, with `zz` a vector in the workspace) is an
 #'   error, even when `newdata` has a `zz` column; move it into `data` and
 #'   refit.
+#'   A term that computes a statistic over `newdata`'s rows warns only for
+#'   the functions the check knows (see "How `newdata` is evaluated"). Any
+#'   other function, including one you write, is still recomputed from
+#'   `newdata`'s rows, silently: no warning means undetected, not safe.
 #'   A fit made with an unnamed `x` matrix matches by position. For the types
 #'   requiring time, a `newdata` with only a `time` column evaluates the
 #'   baseline, with every covariate at 0. Because `time` is then the
@@ -1307,7 +1311,9 @@ hazard <- function(formula = NULL,
 #'   R's functions, among them `mean()`, `median()`, `min()`, `max()`,
 #'   `quantile()`, `sd()`, `IQR()`, `ave()`, `rank()`, `length()`,
 #'   `scale()`, `factor()` and `cut()` with a count of breaks. A function
-#'   not on it, including one you write, is not detected.
+#'   not on it, including one you write, is recomputed from `newdata`'s
+#'   rows just the same, with no warning: the list is a floor, not a
+#'   boundary.
 #' - **A column of another type than the fit saw.** A numeric column given
 #'   as character compares as text (`"154.6" > 50` is `FALSE`), and a
 #'   `difftime` in other units is used in those units. The check compares
