@@ -92,6 +92,18 @@
 <div class="section level3">
 <h3 id="new-features-1-2-11">New features<a class="anchor" aria-label="anchor" href="#new-features-1-2-11"></a></h3>
 <ul><li>
+<p><strong><code><a href="../reference/hzr_phase.html">hzr_phase()</a></code> can derive one late-phase shape from the others (<a href="https://github.com/ehrlinger/TemporalHazard/issues/325" class="external-link">#325</a>).</strong> The new <code>constraint</code> argument covers SAS/C’s two late-phase constraints:</p>
+<ul><li>
+<code>"alpha_gamma_eta"</code> holds <code>alpha = gamma * eta / 2</code> (<code>FIXGAE2</code>);</li>
+<li>
+<code>"eta_gamma"</code> holds <code>eta = 2 / gamma</code> (<code>FIXGE2</code>).</li>
+</ul><p>The derived shape is recomputed from the others at every step of the fit. It is not estimated, and it cannot be fixed. A value supplied for it, through <code><a href="../reference/hzr_phase.html">hzr_phase()</a></code> or in <code>hazard(theta = )</code>, is replaced with a warning when it differs. Its standard error is the delta-method one, so <code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> confidence limits carry its uncertainty; <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> shows it but does not test it against zero.</p>
+<p>Before this, <code><a href="../reference/hzr_translate_sas.html">hzr_translate_sas()</a></code> recorded both flags as untranslated but still emitted a runnable fit, which estimated the derived shape freely. That is a different model. On a production <code>FIXGAE2</code> job it came out 2 log-likelihood units above the SAS fit, with shapes 2 to 4 times SAS’s and a Hessian that was not positive definite. The translator now maps both flags onto <code>constraint</code> for a <code>WEIBULL</code> late phase, following the rules in <code>setg3.c</code>. That job now reproduces PROC HAZARD’s log-likelihood and estimates to about 2e-5. Other combinations of the flags stay recorded as untranslated, with the reason:</p>
+<ul><li>either flag without <code>WEIBULL</code>;</li>
+<li>both flags together;</li>
+<li>a combination PROC HAZARD refuses (<code>SETG3990</code>, <code>SETG31000</code>).</li>
+</ul></li>
+<li>
 <p><strong>Every fit now says what it did not do</strong> (<a href="https://github.com/ehrlinger/TemporalHazard/issues/242" class="external-link">#242</a>, following <a href="https://github.com/ehrlinger/TemporalHazard/issues/197" class="external-link">#197</a>). A <code>hazard</code> object carries <code>degraded</code>, the steps the fit did not perform, and <code>degraded_causes</code>, the reason for each. <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code> and <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> always show them as a “Not done in this run” block, and the block reads “none” when nothing was lost: a line that appears only on bad news cannot be told from one that was never written. Five steps are recorded:</p>
 <ul><li>fitting itself: <code>fit = FALSE</code>, or a fit imported from SAS output;</li>
 <li>standard errors, naming whether numDeriv was missing, <code><a href="https://rdrr.io/pkg/numDeriv/man/hessian.html" class="external-link">numDeriv::hessian()</a></code> failed, or the Hessian was non-finite or singular, and, when a covariance was computed, which estimated parameters were left without a usable variance;</li>

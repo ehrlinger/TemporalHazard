@@ -78,7 +78,8 @@ cumulative hazard model.  Pass a list of these to the <code>phases</code> argume
 <span>  alpha <span class="op">=</span> <span class="fl">1</span>,</span>
 <span>  eta <span class="op">=</span> <span class="fl">1</span>,</span>
 <span>  formula <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  fixed <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">character</a></span><span class="op">(</span><span class="fl">0</span><span class="op">)</span></span>
+<span>  fixed <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">character</a></span><span class="op">(</span><span class="fl">0</span><span class="op">)</span>,</span>
+<span>  constraint <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"none"</span>, <span class="st">"alpha_gamma_eta"</span>, <span class="st">"eta_gamma"</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># S3 method for class 'hzr_phase'</span></span>
@@ -155,6 +156,35 @@ This mirrors the SAS/C HAZARD workflow where shapes are typically fixed
 and only scale parameters are estimated.</p></dd>
 
 
+<dt id="arg-constraint">constraint<a class="anchor" aria-label="anchor" href="#arg-constraint"></a></dt>
+<dd><p>For <code>"g3"</code> phases, a rule that <em>derives</em> one shape from
+the others rather than estimating it:</p><dl><dt><code>"none"</code></dt>
+<dd><p>(default) every shape is estimated or fixed.</p></dd>
+
+<dt><code>"alpha_gamma_eta"</code></dt>
+<dd><p>\(\alpha = \gamma\eta/2\), so that
+\(\gamma\eta/\alpha = 2\). SAS/C: <code>FIXGAE2</code>.</p></dd>
+
+<dt><code>"eta_gamma"</code></dt>
+<dd><p>\(\eta = 2/\gamma\), so that
+\(\gamma\eta = 2\). SAS/C: <code>FIXGE2</code>.</p></dd>
+
+
+</dl><p>The derived parameter follows the others at every step of the
+optimization, so it is not a free parameter and cannot be named in
+<code>fixed</code>; <code>"shapes"</code> leaves it out. Its starting value is computed from the
+others, and a value you supply for it, here or in the <code>theta</code> given to
+<code><a href="hazard.html">hazard()</a></code>, is replaced, with a warning when it differs. Under
+<code>hazard(fit = FALSE)</code> that replacement is made only when no phase carries
+covariates, since otherwise its slot in <code>theta</code> is not known until the
+design is built; <code><a href="hazard.html">hazard()</a></code> warns when it could not be made. Its
+standard error in <code><a href="https://rdrr.io/r/stats/vcov.html" class="external-link">vcov()</a></code> is the delta-method one, carried from the
+parameters it is derived from, so confidence limits from <code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code>
+include its uncertainty. Only one constraint per phase: SAS's
+<code>FIXGE2</code> and <code>FIXGAE2</code> together force \(\alpha = 1\) and fix <code>tau</code>,
+<code>gamma</code> and <code>eta</code>, which is better written as those fixed values.</p></dd>
+
+
 <dt id="arg-x">x<a class="anchor" aria-label="anchor" href="#arg-x"></a></dt>
 <dd><p>An <code>hzr_phase</code> object (for <code>print.hzr_phase()</code>).</p></dd>
 
@@ -194,6 +224,9 @@ and only scale parameters are estimated.</p></dd>
 
 <dt>fixed</dt>
 <dd><p>Character vector of fixed parameter names (may be empty).</p></dd>
+
+<dt>constraint</dt>
+<dd><p>The shape constraint (g3 phases).</p></dd>
 
 
 </dl></div>
@@ -287,6 +320,10 @@ instantaneous hazard contribution \(\mu_j\,\varphi_j(t)\)) is \(g(t)\) for
 <span class="r-in"><span>                          fixed <span class="op">=</span> <span class="st">"shapes"</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="va">late_fixed</span>  <span class="op">&lt;-</span> <span class="fu">hzr_phase</span><span class="op">(</span><span class="st">"g3"</span>, tau <span class="op">=</span> <span class="fl">1</span>, gamma <span class="op">=</span> <span class="fl">3</span>, alpha <span class="op">=</span> <span class="fl">1</span>, eta <span class="op">=</span> <span class="fl">1</span>,</span></span>
 <span class="r-in"><span>                          fixed <span class="op">=</span> <span class="st">"shapes"</span><span class="op">)</span></span></span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="co"># Derive alpha from gamma and eta (SAS/C FIXGAE2)</span></span></span>
+<span class="r-in"><span><span class="va">late_gae2</span> <span class="op">&lt;-</span> <span class="fu">hzr_phase</span><span class="op">(</span><span class="st">"g3"</span>, tau <span class="op">=</span> <span class="fl">14</span>, gamma <span class="op">=</span> <span class="fl">22</span>, eta <span class="op">=</span> <span class="fl">0.18</span>,</span></span>
+<span class="r-in"><span>                        constraint <span class="op">=</span> <span class="st">"alpha_gamma_eta"</span><span class="op">)</span></span></span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="co"># Fix only some parameters</span></span></span>
 <span class="r-in"><span><span class="va">early_partial</span> <span class="op">&lt;-</span> <span class="fu">hzr_phase</span><span class="op">(</span><span class="st">"cdf"</span>, t_half <span class="op">=</span> <span class="fl">0.5</span>, nu <span class="op">=</span> <span class="fl">2</span>, m <span class="op">=</span> <span class="fl">0</span>,</span></span>

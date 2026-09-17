@@ -19,7 +19,8 @@ hzr_phase(
   alpha = 1,
   eta = 1,
   formula = NULL,
-  fixed = character(0)
+  fixed = character(0),
+  constraint = c("none", "alpha_gamma_eta", "eta_gamma")
 )
 
 # S3 method for class 'hzr_phase'
@@ -94,6 +95,43 @@ print(x, ...)
   `"constant"` phases. This mirrors the SAS/C HAZARD workflow where
   shapes are typically fixed and only scale parameters are estimated.
 
+- constraint:
+
+  For `"g3"` phases, a rule that *derives* one shape from the others
+  rather than estimating it:
+
+  `"none"`
+
+  :   (default) every shape is estimated or fixed.
+
+  `"alpha_gamma_eta"`
+
+  :   \\\alpha = \gamma\eta/2\\, so that \\\gamma\eta/\alpha = 2\\.
+      SAS/C: `FIXGAE2`.
+
+  `"eta_gamma"`
+
+  :   \\\eta = 2/\gamma\\, so that \\\gamma\eta = 2\\. SAS/C: `FIXGE2`.
+
+  The derived parameter follows the others at every step of the
+  optimization, so it is not a free parameter and cannot be named in
+  `fixed`; `"shapes"` leaves it out. Its starting value is computed from
+  the others, and a value you supply for it, here or in the `theta`
+  given to
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md),
+  is replaced, with a warning when it differs. Under
+  `hazard(fit = FALSE)` that replacement is made only when no phase
+  carries covariates, since otherwise its slot in `theta` is not known
+  until the design is built;
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  warns when it could not be made. Its standard error in
+  [`vcov()`](https://rdrr.io/r/stats/vcov.html) is the delta-method one,
+  carried from the parameters it is derived from, so confidence limits
+  from [`predict()`](https://rdrr.io/r/stats/predict.html) include its
+  uncertainty. Only one constraint per phase: SAS's `FIXGE2` and
+  `FIXGAE2` together force \\\alpha = 1\\ and fix `tau`, `gamma` and
+  `eta`, which is better written as those fixed values.
+
 - x:
 
   An `hzr_phase` object (for `print.hzr_phase()`).
@@ -145,6 +183,10 @@ An S3 object of class `"hzr_phase"` with elements:
 - fixed:
 
   Character vector of fixed parameter names (may be empty).
+
+- constraint:
+
+  The shape constraint (g3 phases).
 
 ## Role in the multiphase model
 
@@ -244,6 +286,10 @@ early_fixed <- hzr_phase("cdf", t_half = 0.5, nu = 2, m = 0,
                           fixed = "shapes")
 late_fixed  <- hzr_phase("g3", tau = 1, gamma = 3, alpha = 1, eta = 1,
                           fixed = "shapes")
+
+# Derive alpha from gamma and eta (SAS/C FIXGAE2)
+late_gae2 <- hzr_phase("g3", tau = 14, gamma = 22, eta = 0.18,
+                        constraint = "alpha_gamma_eta")
 
 # Fix only some parameters
 early_partial <- hzr_phase("cdf", t_half = 0.5, nu = 2, m = 0,
