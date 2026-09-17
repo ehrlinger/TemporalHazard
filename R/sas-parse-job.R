@@ -765,8 +765,11 @@
 #' and `stepwiseopts` can be empty: the *statement* is what turns stepwise
 #' on, not any particular direction keyword. So a bare `SELECTION;` (or one
 #' carrying only `SLENTRY`/`SLSTAY`) legitimately enables stepwise; the
-#' direction keywords only refine it. `ONEWAY` (aliases `NOSTEPWISE`/`NOSW`,
-#' option 34) is the one option that turns stepwise back off.
+#' direction keywords only refine it. `NOSTEPWISE`/`NOSW` (token `ONEWAY`,
+#' option 34) does NOT turn it off: `stpwprc.c` leaves `sw = 1` and sets only
+#' `nosw`, which caps each variable at one move, so it is a forward-only
+#' screen (`direction = "forward"`). `stepwise` is therefore `TRUE` for every
+#' SELECTION statement; the field is kept for the caller's refusal test.
 #'
 #' HAZARD's lexer also collapses FORWARD, FW, SW, SELECT and STEPWISE into
 #' one token, which `hazard_y.y` maps to option 21; BACKWARD is option 22.
@@ -780,12 +783,9 @@
 #' alias for the statement keyword itself), so a `STEP`-context miss falls
 #' back to `STMT` before being recorded as untranslated.
 #'
-#' When `ONEWAY`/`NOSTEPWISE`/`NOSW` disables stepwise, any `SLENTRY`/
-#' `SLSTAY` also given are meaningless (there is no entry/stay search to
-#' apply them to) and are moved into `untranslated` rather than silently
-#' dropped; discarding a parsed value with nothing recorded is exactly
-#' the defect this package guards against.
-#' @return `list(stepwise = <logical>, direction = <chr|NULL>,
+#' `SLENTRY` and `SLSTAY` are kept under `NOSTEPWISE` too: the forward
+#' screen still applies its entry threshold.
+#' @return `list(stepwise = TRUE, direction = <chr>,
 #'   slentry = <dbl|NULL>, slstay = <dbl|NULL>, untranslated = <data.frame>)`.
 #' @noRd
 .hzr_selection_spec <- function(operands) {

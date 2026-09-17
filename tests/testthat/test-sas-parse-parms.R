@@ -130,12 +130,12 @@ test_that("phase covariate options attach to their own variable (#342)", {
 
   # Text SAS's lexer rejects is recorded, not read as something it is not: a
   # second "/" in one item, and an option with no variable before it.
-  got <- .hzr_parse_parms(ops, covars = list(early = "AGE/E/I, MAL, /S"))
+  got <- .hzr_parse_parms(ops, covars = list(early = "AGE/E/I, MAL, /S, Y/"))
   expect_equal(
     got$phases,
     quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1, formula = ~MAL)))
   )
-  expect_true(all(c("AGE/E/I", "/S") %in% got$untranslated$construct))
+  expect_true(all(c("AGE/E/I", "/S", "Y/") %in% got$untranslated$construct))
 
   # A repeated covariate is ONE parameter: setconc.c maps every occurrence to
   # the same slot and setstat.c runs for each, so the last occurrence sets

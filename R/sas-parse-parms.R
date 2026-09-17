@@ -120,6 +120,12 @@
         opt_txt <- gsub("\\s*=\\s*", "=", substr(p, slash + 1L, nchar(p)))
         opts <- strsplit(trimws(opt_txt), "[[:space:]/]+")[[1L]]
         opts <- toupper(opts[nzchar(opts)])
+        # phaseopts needs at least one option (hazard_y.y), so a bare "/" is
+        # a syntax error PROC HAZARD rejects, not an option-free covariate.
+        if (!length(opts)) {
+          bad(p, "phase-statement item PROC HAZARD would reject as a syntax error")
+          next
+        }
         p <- trimws(substr(p, 1L, slash - 1L))
       }
       eq <- .idx(p, "=")
