@@ -383,6 +383,95 @@
 }
 
 
+#' Rebuild a stored formula design at new rows
+#'
+#' The one rebuild both `predict(newdata = )` routes use, the global design
+#' (`.hzr_global_design()`) and a phase's own formula
+#' (`.hzr_phase_newdata_design()`) (#271): the fit's terms, factor levels and
+#' contrasts, so a factor given as a single label still codes to the fit's
+#' columns. `newdata` supplies only the data columns, and a term that does
+#' not follow its rows is refused; see `.hzr_newdata_frame()` and
+#' `.hzr_check_equivariant()`.
+#'
+#' @param design A stored design: `terms`, `xlevels`, `contrasts`,
+#'   `data_vars`.
+#' @param newdata Data frame of new rows.
+#' @param cols The fit's column names, selected in the fit's order.
+#' @param where Text naming the design, for messages.
+#' @return Numeric matrix with `nrow(newdata)` rows and columns `cols`.
+#' @keywords internal
+#' @noRd
+.hzr_rebuild_design <- function(design, newdata, cols, where) {
+  build <- function(x) {
+    nd <- .hzr_newdata_frame(x, design$data_vars)
+    mf <- stats::model.frame(design$terms, data = nd, xlev = design$xlevels,
+                             na.action = stats::na.pass)
+    stats::model.matrix(design$terms, data = mf,
+                        contrasts.arg = design$contrasts)
+  }
+  mm <- .hzr_check_equivariant(build, newdata,
+                               attr(design$terms, "term.labels"), where)
+  mm[, cols, drop = FALSE]
+}
+
+
+#' Refuse formula variables given beside the design columns with some missing
+#'
+#' The design route would ignore any formula variable given beside the
+#' design columns, and without the missing ones the variables cannot be
+#' rebuilt, so a mix is refused rather than guessed (#272). A variable that
+#' is itself a design column (numeric `age`) counts only if another term is
+#' built from it (`I(age^2)`, `age:grp`): a changed `age` would leave those
+#' columns stale. Shared by the global and the phase route (#271).
+#'
+#' @param vars The formula's data variables.
+#' @param cols The fit's design column names.
+#' @param labels The terms' labels.
+#' @param newdata Data frame of new rows.
+#' @param of Text naming the design after "design columns", for messages.
+#' @return `NULL`, invisibly; stops on a mix.
+#' @keywords internal
+#' @noRd
+.hzr_refuse_variable_mix <- function(vars, cols, labels, newdata, of = "") {
+  missing <- setdiff(vars, names(newdata))
+  feeds_derived <- unlist(lapply(labels, function(label) {
+    v <- all.vars(parse(text = label)[[1L]])
+    if (identical(v, label)) character(0) else v
+  }))
+  counted <- union(setdiff(vars, cols), intersect(vars, feeds_derived))
+  given <- intersect(counted, names(newdata))
+  if (length(given) > 0L) {
+    stop("'newdata' gives the formula variable(s) ",
+         paste0("'", given, "'", collapse = ", "), " but lacks ",
+         paste0("'", missing, "'", collapse = ", "),
+         ", while carrying the fitted design columns", of, ". Give all of ",
+         "the formula's variables, so the design can be rebuilt from them.",
+         call. = FALSE)
+  }
+  invisible(NULL)
+}
+
+
+#' Refuse newdata that lacks a covariate column
+#'
+#' A covariate must come from `newdata` itself: looked up in the formula's
+#' environment, a stray object of its name would silently stand in for it.
+#'
+#' @param missing The covariate names `newdata` lacks.
+#' @param who Text naming the design, for messages.
+#' @return `NULL`, invisibly; stops when any is missing.
+#' @keywords internal
+#' @noRd
+.hzr_refuse_missing_vars <- function(missing, who) {
+  if (length(missing) > 0L) {
+    stop("'newdata' lacks the covariate column(s) ",
+         paste0("'", missing, "'", collapse = ", "),
+         " that ", who, " uses. Columns are matched by name.", call. = FALSE)
+  }
+  invisible(NULL)
+}
+
+
 #' Build a newdata design, refusing terms that do not follow newdata's rows
 #'
 #' A term built from `newdata`'s columns is row-wise: shifting `newdata`'s
@@ -571,7 +660,9 @@
     # Evaluating a literal `~` looks nothing up: it only makes the formula.
     f <- eval(f, env)
   }
-  if (!inherits(f, "formula") || !.hzr_formula_closed(f, frame)) {
+  closed <- inherits(f, "formula") &&
+    .hzr_formula_closed(f, c(names(frame), "."), .hzr_rebuild_functions)
+  if (!closed) {
     return(object)
   }
   # Warnings are muffled: whether the rebuild is right is decided by the
@@ -597,6 +688,12 @@
 # through the recorded predvars. as.numeric() is left out: of a factor it
 # gives level codes, and a factor() nested inside it is rebuilt from
 # newdata's own levels, so one level codes 1 whatever it is (#301).
+#
+# One list serves both legacy rebuilds, the global design (#301) and a
+# phase design from kept data (#307): since b2b2eec (#313) the phase route
+# without kept data refuses instead of rebuilding, so no route needs a
+# narrower list. On the phase route a factor term, though listed, is still
+# refused as coded by contrasts.
 .hzr_rebuild_functions <- list(
   base = c("+", "-", "*", "/", "^", ":", "%in%", "(", "==", "!=", "<", ">",
            "<=", ">=", "&", "|", "!", "I", "log", "log2", "log10", "log1p",
@@ -607,106 +704,79 @@
 )
 
 
-#' Is a formula closed: data columns and R's own design functions only?
+#' Is a formula closed: given columns and R's own design functions only?
 #'
-#' See `.hzr_recover_x_design()` for why. The right-hand side must be
-#' exactly its text: `deparse()` then `str2lang()` gives back an identical
-#' expression, so no constant hides behind how it prints. Each function
-#' name, as called
-#' (`log`) or qualified (`splines::ns`), must be on
-#' `.hzr_rebuild_functions`, and an unqualified one must resolve from the
-#' formula's environment to the identical object in its namespace, so a
-#' user's function of the same name is not taken for it.
+#' The one check both legacy rebuilds use before trusting a formula rebuilt
+#' from a fit's kept data: the global design (`.hzr_recover_x_design()`,
+#' #301) and a phase design (`.hzr_phase_design_from_frame()`, #307). Each
+#' passes its own `functions` list.
 #'
-#' @param f A two-sided formula.
-#' @param frame The fitting data frame.
+#' The right-hand side must be exactly its text: `deparse()` then
+#' `str2lang()` gives back an identical expression, compared with
+#' `num.eq = FALSE`, so no constant hides behind how it prints (-0 prints as
+#' 0; a classed or pasted-in object prints as a call). Every value it looks
+#' up must be one of `columns`. Every function called unqualified must be on
+#' `functions` and resolve from the formula's environment to the identical
+#' object in its namespace, so a user's function of that name, whose state
+#' can move, is not taken for it; `c` included. A qualified `pkg::fn`, with
+#' both names written as symbols, needs only to be on the list: `::` reads
+#' the namespace itself, which the formula's environment cannot mask. `:::`
+#' reaches a namespace's internals and is never closed.
+#'
+#' @param formula A formula.
+#' @param columns The names a value may take.
+#' @param functions A list of function names by namespace.
 #' @return A single logical.
 #' @keywords internal
 #' @noRd
-.hzr_formula_closed <- function(f, frame) {
-  fenv <- environment(f)
-  if (!is.environment(fenv)) {
+.hzr_formula_closed <- function(formula, columns, functions) {
+  env <- environment(formula)
+  if (!is.environment(env)) {
     return(FALSE)
   }
-  # The column names are built from the formula's text, so every constant
-  # must be exactly what that text says. A constant the text cannot tell
-  # apart --
-  # -0 from 0, a value past deparse()'s 15 digits, one carrying a class, a
-  # function or list pasted in by bquote() -- would let another formula
-  # reproduce the fitted names and values, then differ at new rows.
-  rhs <- f[[length(f)]]
-  text <- tryCatch(str2lang(paste(deparse(rhs), collapse = "\n")),
-                   error = function(e) NULL)
+  rhs <- formula[[length(formula)]]
+  text <- tryCatch(
+    str2lang(paste(deparse(rhs, width.cutoff = 500L), collapse = " ")),
+    error = function(e) NULL
+  )
   if (!identical(text, rhs, num.eq = FALSE)) {
     return(FALSE)
   }
-  looks <- .hzr_formula_lookups(rhs)
-  values <- looks$values[nzchar(looks$values)]
-  if (!all(values %in% c(names(frame), "."))) {
-    return(FALSE)
-  }
-  allowed <- function(nm) {
-    qualified <- strsplit(nm, "::", fixed = TRUE)[[1L]]
-    if (length(qualified) == 2L) {
-      # Membership only: `::` reads the namespace itself, which no binding in
-      # the formula's environment can mask, so there is nothing to compare.
-      return(qualified[2L] %in% .hzr_rebuild_functions[[qualified[1L]]])
-    }
-    pkg <- names(Filter(function(fns) nm %in% fns, .hzr_rebuild_functions))
+  canonical <- function(fn) {
+    pkg <- names(Filter(function(fns) fn %in% fns, functions))
     if (length(pkg) != 1L) {
       return(FALSE)
     }
-    canonical <- if (pkg == "base") {
-      get(nm, envir = baseenv())
+    want <- if (pkg == "base") {
+      get(fn, envir = baseenv())
     } else {
-      tryCatch(getExportedValue(pkg, nm), error = function(e) NULL)
+      tryCatch(getExportedValue(pkg, fn), error = function(e) NULL)
     }
-    identical(get0(nm, envir = fenv, mode = "function"), canonical)
+    identical(get0(fn, envir = env, mode = "function"), want)
   }
-  all(vapply(looks$functions, allowed, logical(1)))
-}
-
-
-#' The names a formula's right-hand side looks up, by kind
-#'
-#' Like `.hzr_mask_symbols()`, but keeps the names called as functions
-#' (`thr` in `thr(age)`), which that helper leaves out, apart from the
-#' values. The operand after `$` or `@` is never looked up. A `pkg::fn`
-#' call adds the function name `"pkg::fn"`.
-#'
-#' @param e A language object, symbol or constant.
-#' @return A list of two character vectors, `values` and `functions`.
-#' @keywords internal
-#' @noRd
-.hzr_formula_lookups <- function(e) {
-  if (is.symbol(e)) {
-    return(list(values = as.character(e), functions = character(0)))
-  }
-  if (!is.call(e)) {
-    return(list(values = character(0), functions = character(0)))
-  }
-  head <- e[[1L]]
-  parts <- as.list(e)[-1L]
-  functions <- character(0)
-  if (is.symbol(head)) {
-    h <- as.character(head)
-    if (h %in% c("::", ":::")) {
-      return(list(values = character(0),
-                  functions = paste0(deparse(e[[2L]]), h, deparse(e[[3L]]))))
+  closed <- function(e) {
+    if (is.symbol(e)) {
+      return(as.character(e) %in% columns)
     }
-    functions <- h
-    if (h %in% c("$", "@") && length(e) >= 3L) {
-      parts <- parts[1L]
+    if (!is.call(e)) {
+      # A single literal: the text round-trip rules out any other object.
+      return(TRUE)
     }
-  } else {
-    parts <- c(list(head), parts)
+    fn <- e[[1L]]
+    args <- as.list(e)[-1L]
+    if (is.call(fn) && identical(fn[[1L]], as.name("::")) &&
+          length(fn) == 3L) {
+      return(is.symbol(fn[[2L]]) && is.symbol(fn[[3L]]) &&
+               as.character(fn[[3L]]) %in%
+                 functions[[as.character(fn[[2L]])]] &&
+               all(vapply(args, closed, logical(1))))
+    }
+    if (!is.symbol(fn) || !canonical(as.character(fn))) {
+      return(FALSE)
+    }
+    all(vapply(args, closed, logical(1)))
   }
-  sub <- lapply(parts, .hzr_formula_lookups)
-  list(
-    values = unique(unlist(lapply(sub, `[[`, "values"), use.names = FALSE)),
-    functions = unique(c(functions, unlist(lapply(sub, `[[`, "functions"),
-                                           use.names = FALSE)))
-  )
+  closed(rhs)
 }
 
 
@@ -766,30 +836,8 @@
   if (length(missing) == 0L) {
     return(FALSE)
   }
-  # The design route would ignore any formula variable given beside the
-  # design columns, and without the missing ones the variables cannot be
-  # rebuilt, so a mix is refused rather than guessed (#272). A variable
-  # that is itself a design column (numeric `age`) counts only if another
-  # term is built from it (I(age^2), age:grp): a changed `age` would leave
-  # those columns stale.
-  feeds_derived <- unlist(lapply(
-    attr(design$terms, "term.labels"),
-    function(label) {
-      v <- all.vars(parse(text = label)[[1L]])
-      if (identical(v, label)) character(0) else v
-    }
-  ))
-  counted <- union(setdiff(design$data_vars, cols),
-                   intersect(design$data_vars, feeds_derived))
-  given <- intersect(counted, names(newdata))
-  if (length(given) > 0L) {
-    stop("'newdata' gives the formula variable(s) ",
-         paste0("'", given, "'", collapse = ", "), " but lacks ",
-         paste0("'", missing, "'", collapse = ", "),
-         ", while carrying the fitted design columns. Give all of the ",
-         "formula's variables, so the design can be rebuilt from them.",
-         call. = FALSE)
-  }
+  .hzr_refuse_variable_mix(design$data_vars, cols,
+                           attr(design$terms, "term.labels"), newdata)
   TRUE
 }
 
@@ -826,11 +874,7 @@
   # design columns are all there is to match.
   needed <- if (is.null(design)) cols else design$data_vars
   missing <- setdiff(needed, names(newdata))
-  if (length(missing) > 0L) {
-    stop("'newdata' lacks the covariate column(s) ",
-         paste0("'", missing, "'", collapse = ", "),
-         " that the model uses. Columns are matched by name.", call. = FALSE)
-  }
+  .hzr_refuse_missing_vars(missing, "the model")
 
   if (!is.null(design)) {
     # Formula interface: the same terms, levels and contrasts as the fit, so
@@ -838,17 +882,7 @@
     # newdata supplies only the data columns, and a term that does not
     # follow its rows is refused; see .hzr_newdata_frame() and
     # .hzr_check_equivariant().
-    build <- function(x) {
-      nd <- .hzr_newdata_frame(x, design$data_vars)
-      mf <- stats::model.frame(design$terms, data = nd, xlev = design$xlevels,
-                               na.action = stats::na.pass)
-      stats::model.matrix(design$terms, data = mf,
-                          contrasts.arg = design$contrasts)
-    }
-    mm <- .hzr_check_equivariant(build, newdata,
-                                 attr(design$terms, "term.labels"),
-                                 "the model")
-    return(mm[, cols, drop = FALSE])
+    return(.hzr_rebuild_design(design, newdata, cols, "the model"))
   }
   if (!is.null(cols)) {
     # Vector interface with a named `x`: select by name.
