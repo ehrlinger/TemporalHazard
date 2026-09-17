@@ -16,6 +16,15 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
+```{r diag276, include=FALSE}
+f <- "D:/a/diag276.txt"
+v <- c("R_LIBS","R_LIBS_USER","R_LIBS_SITE","R_PROFILE_USER","R_ENVIRON_USER","R_PROFILE","R_ENVIRON","CALLR_CHILD_R_LIBS","CALLR_CHILD_R_LIBS_USER","CALLR_CHILD_R_LIBS_SITE","R_BUILD_TEMPLIB","R_HOME","QUARTO_R","CI")
+cat("R.home=", R.home(), "\n", "libPaths=", paste(.libPaths(), collapse=" | "), "\n",
+    paste0(v, "=", Sys.getenv(v), collapse = "\n"), "\n",
+    "profile_user_content:\n", if (nzchar(Sys.getenv("R_PROFILE_USER")) && file.exists(Sys.getenv("R_PROFILE_USER"))) paste(readLines(Sys.getenv("R_PROFILE_USER")), collapse="\n") else "<none>", "\n",
+    file = f, append = TRUE)
+```
+
 ```{r setup, include=FALSE}
 has_pkg <- requireNamespace("TemporalHazard", quietly = TRUE)
 if (has_pkg) library(TemporalHazard)
