@@ -527,3 +527,18 @@ test_that("a refit with an objective but no estimates fails its replicate, not t
   )
   expect_equal(nrow(b$replicates), 0L)
 })
+
+test_that("a fit whose call names a NULL formula and no data says why it cannot resample (#343)", {
+  # A wrapper that forwarded `formula = fml` with `fml` NULL made a vector fit
+  # whose call still names a formula. With no `data` frame either, there was
+  # nothing to count rows in, and the run stopped inside sample.int() with
+  # "length(n) == 1L is not TRUE".
+  d <- avc_fixture()
+  vf <- no_data_weibull(d)
+  fml <- NULL
+  vf$call$formula <- quote(fml)
+  msg <- tryCatch(hzr_bootstrap(vf, n_boot = 2L, seed = 1L),
+                  error = conditionMessage)
+  expect_match(msg, "cannot count the rows to resample", fixed = TRUE)
+  expect_no_match(msg, "length(n)", fixed = TRUE)
+})

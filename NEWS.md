@@ -423,7 +423,11 @@
   not a fit object"`, in both modes. A refit whose fit held a finite
   objective but no estimates counted as a success and then ended the run
   building its replicate row; it is now a failed replicate,
-  `"refit returned no parameter estimates"`. `hazard()` returns neither.
+  `"refit returned no parameter estimates"`. `hazard()` returns neither. A
+  fit with no `data` frame whose call names a formula that was `NULL` when
+  it ran, as a wrapper forwarding `formula = fml` can leave, now stops with
+  a message saying there are no rows to count, instead of
+  `length(n) == 1L is not TRUE`.
 
 * **The G3 late-phase shape is now accurate where `(t/tau)^gamma`
   underflows.** With a large `gamma`, event times well below `tau` take

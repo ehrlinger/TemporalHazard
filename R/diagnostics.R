@@ -1899,6 +1899,18 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   } else {
     nrow(orig_data)
   }
+  # A call can name a formula that was NULL when it ran (a wrapper forwarding
+  # `formula = fml`), which makes a vector fit the test above does not
+  # recognise. With no `data` frame either there are no rows to count, and
+  # sample.int() stopped with "length(n) == 1L is not TRUE" (#343).
+  if (!is.numeric(n_obs) || length(n_obs) != 1L) {
+    stop("hzr_bootstrap() cannot count the rows to resample: this fit ",
+         "stores no `data` frame, and its call names a `formula` (",
+         paste(deparse(cl$formula), collapse = " "), ") rather than the ",
+         "`time` and `status` vectors it was fitted from. Refit with ",
+         "`data =`, or call hazard() with `time =` and `status =` and no ",
+         "`formula`, and bootstrap that.", call. = FALSE)
+  }
   sample_size <- max(1L, as.integer(n_obs * fraction))
 
   # Observation weights, if any, must be resampled in lockstep with the data.
