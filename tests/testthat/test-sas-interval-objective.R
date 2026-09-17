@@ -714,3 +714,38 @@ test_that("an NA status names the argument and the row, under any objective", {
   expect_match(err2, "'status' must be complete")
   expect_no_match(err2, "no usable fit")
 })
+
+test_that("an NA interval bound is named as such, at its real row (#232)", {
+  # An NA bound made the width comparison NA, so the NA itself was reported
+  # as the offending row: "at index/indices NA."
+  tt <- c(1, 2, 3, 4, 5, 6)
+  st <- c(1, 0, 2, 1, 2, 1)
+  check <- function(lo, up) {
+    tryCatch({
+      TemporalHazard:::.hzr_check_sas_data(st, tt, lo, up, "sas")
+      "no error"
+    }, error = conditionMessage)
+  }
+  lo <- c(0, 0, 1, 0, 2, 0)
+  up <- c(1, 2, 3, 4, 5, 6)
+
+  lo_na <- lo
+  lo_na[5] <- NA
+  err <- check(lo_na, up)
+  expect_match(err, "NA bound")
+  expect_match(err, "at index/indices 5\\.")
+  expect_no_match(err, "indices NA")
+
+  up_na <- up
+  up_na[3] <- NA
+  err <- check(lo, up_na)
+  expect_match(err, "NA bound")
+  expect_match(err, "at index/indices 3\\.")
+
+  # An NA on a row that is not interval-censored is not this check's
+  # business, and complete bounds still pass.
+  lo_other <- lo
+  lo_other[2] <- NA
+  expect_identical(check(lo_other, up), "no error")
+  expect_identical(check(lo, up), "no error")
+})

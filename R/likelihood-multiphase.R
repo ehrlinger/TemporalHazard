@@ -560,6 +560,18 @@
   if (length(idx_interval) > 0) {
     lower <- if (is.null(time_lower)) time else time_lower
     upper <- if (is.null(time_upper)) time else time_upper
+    # An NA bound makes the width comparison NA, which then stood in for the
+    # row index in the message below (#232). Name it as its own defect.
+    na_bound <- idx_interval[is.na(lower[idx_interval]) |
+                               is.na(upper[idx_interval])]
+    if (length(na_bound) > 0) {
+      stop("objective = \"sas\" requires both bounds on every ",
+           "interval-censored row. ", length(na_bound), " of ",
+           length(idx_interval), " interval row(s) have an NA bound, at ",
+           "index/indices ", paste(utils::head(na_bound, 10L), collapse = ", "),
+           if (length(na_bound) > 10L) ", ..." else "", ".",
+           call. = FALSE)
+    }
     bad <- idx_interval[!(upper[idx_interval] > lower[idx_interval])]
     if (length(bad) > 0) {
       stop("objective = \"sas\" requires upper > lower on every ",
