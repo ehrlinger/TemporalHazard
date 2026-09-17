@@ -59,18 +59,12 @@ resolves and the job holds more than one local fit, which fit a
 back to referencing \code{fit} and the ambiguity is recorded in
 \code{untranslated}, never guessed at silently.
 }
-\section{Emitted code runs in the reader's session}{
+\section{What the emitted document needs to run}{
 
-Anything this translator emits is evaluated where the rendered document
-is rendered, not here, so it must be valid under the OLDEST R this
-package declares (\code{DESCRIPTION}'s \code{Depends}), and it may use only what a
-reader's session has: base R and this package's exports. The package's
-own internals are not available to it. \verb{\%||\%} is the worked example: this
-package defines its own, so internal uses are fine, but base R gained it
-only in 4.4 while \code{Depends} says 4.1, so an emitted chunk using it would
-have errored for a reader on 4.1 to 4.3 (#160 review). Nothing checks
-this automatically; it is a rule for whoever adds the next emitted
-construct.
+Base R at the version this package declares in \code{DESCRIPTION} (\code{Depends}),
+plus TemporalHazard itself. The emitted chunks never reach into this
+package's internals, so the document renders in your session, and in a
+colleague's, without anything further installed.
 }
 
 \section{Experimental}{

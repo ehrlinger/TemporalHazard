@@ -88,17 +88,11 @@
 #'   counts, and `$notes` any callout attached to a chunk by label, emitted
 #'   immediately above that chunk in the rendered document.
 #'
-#' @section Emitted code runs in the reader's session:
-#' Anything this translator emits is evaluated where the rendered document
-#' is rendered, not here, so it must be valid under the OLDEST R this
-#' package declares (`DESCRIPTION`'s `Depends`), and it may use only what a
-#' reader's session has: base R and this package's exports. The package's
-#' own internals are not available to it. `%||%` is the worked example: this
-#' package defines its own, so internal uses are fine, but base R gained it
-#' only in 4.4 while `Depends` says 4.1, so an emitted chunk using it would
-#' have errored for a reader on 4.1 to 4.3 (#160 review). Nothing checks
-#' this automatically; it is a rule for whoever adds the next emitted
-#' construct.
+#' @section What the emitted document needs to run:
+#' Base R at the version this package declares in `DESCRIPTION` (`Depends`),
+#' plus TemporalHazard itself. The emitted chunks never reach into this
+#' package's internals, so the document renders in your session, and in a
+#' colleague's, without anything further installed.
 #'
 #' @section Experimental:
 #' The emitted document renders: the `hazard()` chunk binds its fit to a name

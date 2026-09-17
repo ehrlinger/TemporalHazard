@@ -863,8 +863,17 @@
     # `fit` is substituted for this block's own slot name by the caller, in
     # the message string as well as the code: a second SELECTION block used
     # to tell the reader to look at `fit`, which in that document is a
-    # different object. %||% is base R only since 4.4 and DESCRIPTION
-    # declares 4.1, so the emitted chunk cannot use it.
+    # different object.
+    #
+    # AUTHORING RULE for anything emitted from here: it runs in the READER'S
+    # session, so it may use only base R at the version DESCRIPTION declares
+    # plus this package's exports -- never this package's internals. %||% is
+    # the worked example (#160 review): this package defines its own, so the
+    # 62 internal uses are fine, but base R gained it in 4.4 while Depends
+    # says 4.1, and an emitted chunk using it errored for a reader on 4.1 to
+    # 4.3. A grep for the construct mostly finds those false positives; the
+    # question is always which side of the namespace boundary the code runs
+    # on. Nothing checks this automatically.
     screen_check_call <- bquote({
       n_unscored <- fit$criteria$n_uncomputable_scores
       if (is.null(n_unscored)) n_unscored <- 0L
