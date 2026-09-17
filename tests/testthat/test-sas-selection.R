@@ -200,8 +200,10 @@ test_that("a SELECTION job translates to a screen that TAKES a step (#160)", {
   base_call <- job$calls$fit_base[[3L]]
   ph1 <- base_call[["phases"]][[2L]]
   expect_equal(deparse(ph1[["formula"]]), "~MAL")
-  expect_equal(names(as.list(cl[["scope"]])[-1L]), "phase_1")
+  # scope is always explicit, with a NULL for a phase offering nothing.
+  expect_equal(names(as.list(cl[["scope"]])[-1L]), c("phase_1", "phase_2"))
   expect_equal(deparse(as.list(cl[["scope"]])$phase_1), "~STRONG + NOISE")
+  expect_null(as.list(cl[["scope"]])$phase_2)
   expect_equal(eval(cl[["force_in"]]), "MAL")
   expect_equal(cl[["slentry"]], 0.2)
   expect_equal(cl[["slstay"]], 0.1)
@@ -306,7 +308,7 @@ test_that("every mapped SELECTION option reaches the emitted call (#160)", {
   # listwise guard, because PROC HAZARD deletes rows where it is missing.
   j <- .sel_job("SELECTION; EARLY A, B/E, C/S;")
   expect_equal(deparse(j$calls$fit_base[[3L]][["phases"]][[2L]][["formula"]]), "~C")
-  expect_equal(deparse(cl(j)[["scope"]]), "list(phase_1 = ~A)")
+  expect_equal(deparse(cl(j)[["scope"]]), "list(phase_1 = ~A, phase_2 = NULL)")
   expect_true(any(grepl("\\bB\\b", deparse(j$calls$status))))
 })
 
@@ -323,4 +325,126 @@ test_that("the emitted screen reports candidates it could not score (#160)", {
   # that stopped without testing anything is not read as "nothing qualified".
   doc <- TemporalHazard:::.hzr_render_qmd(job)
   expect_true(any(grepl("uncomputable", doc, ignore.case = TRUE)))
+})
+
+# --- #160 r-reviewer findings ------------------------------------------------
+
+test_that("scope is always emitted, so the screen never ranges over the data (#160)", {
+  skip_on_cran()
+  # hzr_stepwise(scope = NULL) enumerates EVERY data-frame column not already
+  # in the model. Omitting the argument when no phase offers a candidate
+  # therefore handed the screen the whole SAS dataset: the reviewer's run
+  # entered DEAD, the EVENT count, as a covariate, under a callout saying
+  # the screen used this job's candidates.
+  job <- .sel_job("SELECTION SLE=0.5; EARLY STRONG/S, MAL/I;")
+  cl <- job$calls$fit[[3L]]
+  expect_false(is.null(cl[["scope"]]))
+  sc <- as.list(cl[["scope"]])[-1L]
+  expect_true(all(names(sc) %in% c("phase_1", "phase_2")))
+  res <- suppressWarnings(render_sim(job, list(D = .sel_data())))
+  expect_true(res$ok, info = paste(res$results, collapse = "; "))
+  steps <- as.data.frame(res$env$fit)
+  entered <- steps$variable[steps$action == "enter"]
+  expect_false(any(c("DEAD", "TT", ".hzr_status") %in% entered),
+               info = paste(entered, collapse = ","))
+  expect_length(entered, 0L)
+})
+
+test_that("BACKWARD wins over any other direction keyword, in any order (#160)", {
+  # stpwprc.c:16-22 is order-independent: STEPWISE sets sw = 1, and BACKWARD
+  # then sets sw = 0 and bw = 1 whatever the order. A switch() over the
+  # operands made it last-wins, so "SELECTION BACKWARD STEPWISE;" ran a
+  # two-way screen from a base SAS never uses, at the wrong slstay.
+  for (ops in list(c("BACKWARD", "STEPWISE"), c("STEPWISE", "BACKWARD"),
+                   c("BACKWARD", "NOSTEPWISE"), c("NOSTEPWISE", "BACKWARD"))) {
+    got <- .hzr_selection_spec(ops)
+    expect_equal(got$direction, "backward", info = paste(ops, collapse = " "))
+    expect_equal(got$slstay, 0.05, info = paste(ops, collapse = " "))
+  }
+})
+
+test_that("out-of-range SELECTION thresholds fall back to SAS's defaults (#160)", {
+  # stpwprc.c:27-35 clamps an SLE outside (0,1) to 0.3 and drops an
+  # out-of-range SLS back to its default; przconc.c:25 clamps MOVE to 1
+  # under NOSTEPWISE. Passing them through meant slstay = 0 (nothing is ever
+  # removed) or slentry = 5 (everything enters), silently.
+  got <- .hzr_selection_spec(c("SLENTRY=5", "SLSTAY=0"))
+  expect_equal(got$slentry, 0.3)
+  expect_equal(got$slstay, 0.2)
+  expect_true(any(grepl("SLENTRY", got$untranslated$construct)))
+  expect_true(any(grepl("SLSTAY", got$untranslated$construct)))
+  got <- .hzr_selection_spec(c("NOSTEPWISE", "MOVE=3"))
+  expect_equal(got$max_move, 1)
+  expect_true(any(grepl("MOVE", got$untranslated$construct)))
+})
+
+test_that("each refusal names only what actually fired (#160)", {
+  # The reason was one boilerplate string naming every refusable construct,
+  # so a test asserting "FAST" passed for a MAXVARS job: the assertions
+  # could not discriminate and a swap of the switch arms survived.
+  reason <- function(stmts) {
+    u <- .sel_job(stmts)$untranslated
+    u$reason[u$construct == "SELECTION"][1L]
+  }
+  r <- reason("SELECTION FAST; EARLY A, B;")
+  expect_match(r, "FAST")
+  expect_no_match(r, "MAXVARS")
+  expect_no_match(r, "ROBUST")
+  r <- reason("SELECTION MAXVARS=2; EARLY A, B;")
+  expect_match(r, "MAXVARS")
+  expect_no_match(r, "FAST")
+  r <- reason("SELECTION; EARLY A/ORDER=1, B;")
+  expect_match(r, "ORDER")
+  expect_no_match(r, "FAST")
+})
+
+test_that("a phase option PROC HAZARD rejects is refused, not screened (#160)", {
+  # hazard_y.y is `phaseopt : MOVE '=' NUMBER`, so a bare /MOVE is a syntax
+  # error. The refusal grepped for "/MOVE=" and missed it, and the job got a
+  # running screen.
+  job <- .sel_job("SELECTION; EARLY STRONG/MOVE, NOISE;")
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"))
+})
+
+test_that("force_in names only variables a built phase carries (#160)", {
+  # sel_force_in was collected across all three phases while scope and
+  # movable were keyed to BUILT phases, so a /I in a phase with no shape
+  # operand reached force_in, where hzr_stepwise() ignores it silently.
+  job <- .sel_job("SELECTION; EARLY A, B/I; LATE ZZZ/I;")
+  fi <- eval(job$calls$fit[[3L]][["force_in"]])
+  expect_equal(fi, "B")
+})
+
+test_that("the screen check names its own fit and avoids %||% (#160)", {
+  # do.call(substitute) rewrites the symbol but not a string literal, so a
+  # second block's check told the reader to look at `fit`, which in that
+  # document is a DIFFERENT object. %||% is base R only since 4.4 and this
+  # package supports 4.1, so an emitted chunk must not use it.
+  f <- withr::local_tempfile(fileext = ".sas")
+  one <- paste("PROC HAZARD DATA=D CONDITION=14; EVENT DEAD; TIME TT;",
+               "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; SELECTION SLE=0.2;",
+               "EARLY STRONG, NOISE;")
+  writeLines(paste0("%HAZARD( ", one, " );\n%HAZARD( ", one, " );"), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  chk <- grep("^screen_check", names(job$calls), value = TRUE)
+  expect_length(chk, 2L)
+  # Executed, because the label is pasted from pieces in the source: what
+  # matters is the message the reader sees.
+  env <- new.env(parent = baseenv())
+  env$fit_2 <- list(criteria = list(n_uncomputable_scores = 2L))
+  expect_warning(eval(job$calls[[chk[2L]]], env),
+                 "fit_2\\$criteria\\$uncomputable_reasons")
+  all_src <- paste(vapply(job$calls, function(c0) {
+    paste(deparse(c0), collapse = " ")
+  }, character(1)), collapse = " ")
+  expect_no_match(all_src, "%||%", fixed = TRUE)
+})
+
+test_that("the listwise guard says what a candidate actually is (#160)", {
+  # Candidates are outside the BASE model but the screen does see them, so
+  # the guard's "hazard() never sees these variables" was false for them.
+  job <- .sel_job("SELECTION; EARLY STRONG, NOISE;")
+  msg <- paste(deparse(job$calls$status), collapse = " ")
+  expect_no_match(msg, "never sees these variables")
+  expect_match(msg, "candidate")
 })

@@ -1356,6 +1356,9 @@
     movable = stats::setNames(
       lapply(built, function(ph) sel_movable[[ph]] %||% character(0)),
       paste0("phase_", seq_along(built))),
+    in_model = stats::setNames(
+      lapply(built, function(ph) phase_covars[[ph]] %||% character(0)),
+      paste0("phase_", seq_along(built))),
     force_in = unique(sel_force_in)
   )
   list(

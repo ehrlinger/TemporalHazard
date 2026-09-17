@@ -84,15 +84,22 @@
 #' @return An `hzr_sas_job` object, invisibly. `$calls` holds the emitted
 #'   calls keyed by chunk label, `$grid` the last prediction grid seen and
 #'   `$inhaz` the first unresolved `INHAZ=` (not all of each, when a job has
-#'   several), `$untranslated` the recorded gaps and `$coverage` the token
-#'   counts.
+#'   several), `$untranslated` the recorded gaps, `$coverage` the token
+#'   counts, and `$notes` any callout attached to a chunk by label, emitted
+#'   immediately above that chunk in the rendered document.
 #'
 #' @section Experimental:
 #' The emitted document renders: the `hazard()` chunk binds its fit to a name
 #' and passes `fit = TRUE`, so the `predict()` chunks have something to
-#' predict from. Two SAS constructs are refused outright rather than
-#' mistranslated, each emitting a `stop()` in place of the fit: a `SELECTION`
-#' statement requesting a stepwise screen (#152, #160), and `LCENSOR`
+#' predict from. A `SELECTION` statement is translated into an
+#' `hzr_stepwise()` call carrying the job's own candidates, per-variable
+#' flags and thresholds (#160); the screen is real, and may select a
+#' different model than `PROC HAZARD` did, which the emitted document says
+#' in a callout above the chunk. `SELECTION` options with no faithful
+#' translation are refused outright rather than mistranslated, emitting a
+#' `stop()` in place of the fit: `FAST`, `MAXVARS`, `RESTRICT`, `ROBUST` and
+#' `SEMIROBUST`, a per-variable `MOVE=` or `ORDER=`, and a variable held by
+#' `/I` in one phase but movable in another. So is `LCENSOR`
 #' combined with `ICENSOR`, which one `time_lower` argument cannot express
 #' (#155). Prediction grids the parser cannot resolve are refused whole, and
 #' the `predict()` chunks that would have read such a grid become a `stop()`
@@ -291,7 +298,8 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
         if (!is.null(r$screen_check_call)) {
           chk <- do.call(substitute,
                          list(r$screen_check_call,
-                              list(fit = as.name(fit_slot))))
+                              list(fit = as.name(fit_slot),
+                                   fit_label = fit_slot)))
           calls[[.hzr_next_call_name(calls, "screen_check")]] <- chk
         }
       }
@@ -456,7 +464,9 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
       "uses the full Hessian, so the statistics driving each enter and drop",
       "decision are not the same; and SAS's /I holds a variable in ONE phase,",
       "while hzr_stepwise()'s force_in is keyed by variable name across every",
-      "phase. The divergence is recorded against the hm.death.AVC fixture in",
+      "phase, which is why a job whose /I variable is movable in another",
+      "phase is refused rather than screened here. The divergence is",
+      "recorded against the hm.death.AVC fixture in",
       "tests/testthat/test-sas-parity.R. Read the selected model as this",
       "package's screen of this job's candidates, not as a reproduction of",
       "the SAS run, and compare it against the SAS listing before relying on",

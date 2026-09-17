@@ -542,12 +542,19 @@ to predict from. What you should not read into that is "the translator
 works": it is a translation aid, and four limits are worth knowing
 before you point it at a corpus.
 
-- **A `SELECTION` statement is refused, not translated.** The emitted
-  chunk is a `stop()`. `hzr_stepwise()`'s refit path needs a
-  formula-interface base fit and this translator emits the vector
-  interface, so a translated screen would report zero steps,
-  indistinguishable from "nothing met `slentry`". Run the selection by
-  hand.
+- **A `SELECTION` statement is translated into a real screen, and the
+  screen may choose a different model than `PROC HAZARD` did.** The job's
+  candidates, per-variable flags (`/S`, `/I`, `/E`) and `SLE`/`SLS`
+  thresholds are carried into an `hzr_stepwise()` call. `PROC HAZARD` uses
+  approximate variances while selecting and this package uses the full
+  Hessian, so the statistics driving each enter and drop decision differ;
+  the emitted document says so in a callout above the chunk. Compare the
+  selected model against the SAS listing before relying on it. Options
+  with no faithful translation are still refused, each emitting a
+  `stop()`: `FAST`, `MAXVARS`, `RESTRICT`, `ROBUST`, `SEMIROBUST`, a
+  per-variable `MOVE=` or `ORDER=`, and a variable held by `/I` in one
+  phase but movable in another. On the reference corpus one job in four
+  translates, `ROBUST` accounting for most of the rest.
 - **`LCENSOR` combined with `ICENSOR` is refused.** `hazard()`'s single
   `time_lower` argument carries the entry time for status 0/1 rows and
   the interval's lower bound for status 2 rows; one column cannot
