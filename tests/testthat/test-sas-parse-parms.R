@@ -216,24 +216,49 @@ test_that("WEIBULL alongside FIXALPHA fixes alpha and only alpha", {
   )
 })
 
-test_that("a MUL with no late shape operand is recorded, not dropped", {
-  # PARMS names a late phase by giving it a scale. Building the phase only
-  # when a *shape* operand appeared meant MUL could vanish with the phase --
-  # a one-phase R model against SAS's two, reported as fully translated. The
-  # starting values SAS would default to here (stmtprc.c: tau = 2*Tmax/3,
-  # gamma = 1, alpha = 1, eta = 2) are not this parser's defaults, so the MU
-  # is recorded as untranslated rather than guessed at.
-  got <- .hzr_parse_parms(c("MUE=0.2", "THALF=1", "NU=1", "MUL=0.05", "WEIBULL"))
+test_that("a MUL with no late shape operand builds the phase on SAS's defaults (#345)", {
+  # PARMS names a late phase by giving it a scale; PROC HAZARD runs it on the
+  # shape defaults stmtprc.c:34-37 sets (gamma 1, alpha 1, eta 2), with TAU
+  # started at 0.75*Tmax by readobs.c:154 before SETG3 runs. gamma, alpha and
+  # eta are data-free, so the phase is mirrored; only the TAU start depends on
+  # the data, and that is recorded exactly as for a written phase with no TAU.
+  got <- .hzr_parse_parms(c("MUE=0.2", "THALF=1", "NU=1", "MUL=0.05",
+                            "WEIBULL"))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1),
+               hzr_phase("g3", tau = 1, gamma = 1, alpha = 1, eta = 2)))
+  )
+  expect_equal(
+    got$theta,
+    quote(c(log(0.2), log(1), 1, 1, log(0.05), log(1), 1, 1, 2))
+  )
   expect_equal(nrow(got$untranslated), 1L)
-  expect_equal(got$untranslated$construct, "MUL=0.05")
-  expect_match(got$untranslated$reason, "no late phase")
+  expect_equal(got$untranslated$construct, "TAU (unspecified)")
+  expect_match(got$untranslated$reason, "0.75*Tmax", fixed = TRUE)
 })
 
-test_that("a MUE with no early shape operand is recorded, not dropped", {
+test_that("a MUE with no early shape operand builds the phase on SAS's defaults (#345)", {
+  # stmtprc.c:30-32: tHalf 1, nu 2, m 1, all data-free (setg1.c:342-348
+  # substitutes 1 only for a non-positive tHalf), so this is an exact mirror.
   got <- .hzr_parse_parms(c("MUE=0.2", "MUL=0.05", "TAU=2", "GAMMA=1.5"))
-  expect_equal(nrow(got$untranslated), 1L)
-  expect_equal(got$untranslated$construct, "MUE=0.2")
-  expect_match(got$untranslated$reason, "no early phase")
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 2, m = 1),
+               hzr_phase("g3", tau = 2, gamma = 1.5, alpha = 1, eta = 2)))
+  )
+  expect_equal(nrow(got$untranslated), 0L)
+})
+
+test_that("an orphan MUL with FIXGE2 and FIXGAE2 takes SETG3_ignore_tau() on the defaults (#345)", {
+  # The default ETA is 2, so setg3.c:394-396 keeps gamma 1, eta 2.
+  got <- .hzr_parse_parms(c("MUL=0.2", "FIXGE2", "FIXGAE2"))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("g3", tau = 1, gamma = 1, alpha = 1, eta = 2,
+                         fixed = c("tau", "gamma", "alpha", "eta"))))
+  )
+  expect_equal(nrow(got$untranslated), 0L)
 })
 
 test_that("alpha = 1 fixed with GAMMA and ETA both free fixes ETA, as SAS does", {
@@ -670,13 +695,19 @@ test_that("the TAU guard does not fire without a positive MUL", {
   expect_false(any(grepl("Tmax", got$untranslated$reason, fixed = TRUE)))
 })
 
-test_that("a MUL with no late shape operand records the MU, not TAU as well", {
-  # The whole phase is missing and the MUL row already says so; a second row
-  # about that phase's TAU would be noise on $untranslated, which is how a
-  # caller decides whether a translation can be trusted.
+test_that("a MUL with no late shape operand records what a written phase would (#345)", {
+  # Built on SAS's defaults, the phase gets exactly the rows the same values
+  # written out would: the data-dependent TAU start, and, without WEIBULL, the
+  # SETG3 start rewrite that is recorded rather than mirrored. Nothing about a
+  # missing shape operand.
   got <- .hzr_parse_parms(c("MUE=0.2", "THALF=1", "NU=1", "MUL=0.05"))
-  expect_equal(nrow(got$untranslated), 1L)
-  expect_match(got$untranslated$reason, "no late phase")
+  written <- .hzr_parse_parms(c("MUE=0.2", "THALF=1", "NU=1", "MUL=0.05",
+                                "GAMMA=1", "ALPHA=1", "ETA=2"))
+  expect_equal(got$phases, written$phases)
+  expect_equal(got$untranslated$reason, written$untranslated$reason)
+  expect_equal(sum(grepl("0.75*Tmax", got$untranslated$reason, fixed = TRUE)),
+               1L)
+  expect_false(any(grepl("shape operand", got$untranslated$reason)))
 })
 
 # ---------------------------------------------------------------------------
@@ -1076,12 +1107,13 @@ test_that("no active MU at all is recorded as the refusal PROC HAZARD raises", {
   expect_true(any(grepl("modterm.c", got$untranslated$reason, fixed = TRUE)))
 
   # The paired case that must NOT be refused: MUE is positive, so PROC HAZARD
-  # does select phase 1 and does run the job -- this parser declines to
-  # translate it for a different reason (no shape operand), and saying
-  # "no phase selected" there would be a false positive.
+  # does select phase 1 and runs it on its early defaults, as this parser now
+  # does too (#345); saying "no phase selected" there would be a false
+  # positive.
   ok <- .hzr_parse_parms(c("MUE=0.2"))
   expect_false(any(grepl("modterm.c", ok$untranslated$reason, fixed = TRUE)))
-  expect_equal(ok$untranslated$construct, "MUE=0.2")
+  expect_true(ok$has_phases)
+  expect_equal(nrow(ok$untranslated), 0L)
 })
 
 test_that("a job with no PARMS operands at all is refused, not defaulted", {

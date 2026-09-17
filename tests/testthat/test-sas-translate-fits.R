@@ -146,12 +146,13 @@ test_that("a plain EVENT/TIME job's emitted call fits with no time_lower/time_up
 })
 
 test_that("a PARMS that builds no usable phase emits a stop(), not a fit", {
-  # Both shapes build no phase and are not refused: the parser could not use
-  # MUE without a shape operand, nor read a template's `?`. The fit chunk
+  # A template's `?` builds no phase and is not refused: the parser cannot
+  # read it. (A MUE without a shape operand used to be here too; it now
+  # builds on SAS's defaults, #345, and is executed in the test below.) The fit chunk
   # used to be hazard(fit = TRUE, theta = c()) under the default Weibull,
   # which rendered an unfitted object. The test above is the paired case: a
   # usable PARMS still emits hazard().
-  for (parms in c("PARMS MUE=0.2;", "PARMS MUE=? THALF=? NU=? MUC=?;")) {
+  for (parms in c("PARMS MUE=? THALF=? NU=? MUC=?;")) {
     f <- withr::local_tempfile(fileext = ".sas")
     writeLines(paste(
       "%HAZARD( PROC HAZARD DATA=AVCS CONDITION=14;",
@@ -312,4 +313,28 @@ test_that("the emitted HAZPRED call produces logit bounds, not the default", {
   expect_false(isTRUE(all.equal(logit$upper, loglog$upper)))
   expect_true(all(got$lower <= got$fit & got$fit <= got$upper))
   expect_true(all(got$lower >= 0 & got$upper <= 1))
+})
+
+test_that("an orphan MUE and MUL translate to a fit that runs (#345)", {
+  skip_on_cran()
+  # Execute the emitted chunks, not their text: PARMS names both phases by
+  # scale only, and PROC HAZARD runs them on its shape defaults.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste(
+    "%HAZARD( PROC HAZARD DATA=D NOCONSERVE;",
+    "EVENT DEAD; TIME TT;", "PARMS MUE=0.2 MUL=0.05;", ");"
+  ), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  expect_false(any(grepl("shape operand", job$untranslated$reason)))
+  withr::local_seed(345)
+  n <- 400
+  env <- new.env(parent = asNamespace("TemporalHazard"))
+  env$D <- data.frame(TT = stats::rweibull(n, 0.8, 5),
+                      DEAD = stats::rbinom(n, 1, 0.7))
+  for (nm in names(job$calls)) suppressWarnings(eval(job$calls[[nm]], env))
+  fit <- env$fit
+  expect_s3_class(fit, "hazard")
+  expect_true(fit$fit$converged)
+  expect_equal(length(fit$spec$phases), 2L)
+  expect_true(is.finite(fit$fit$objective))
 })

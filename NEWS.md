@@ -338,6 +338,15 @@
 
 ## Bug fixes
 
+* **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
+  (#345). An active `MUE` or `MUL` with no shape operand used to be recorded
+  as untranslated and build no phase. PROC HAZARD runs that phase on its own
+  shape defaults (early `THALF` 1, `NU` 2, `M` 1; late `GAMMA` 1, `ALPHA` 1,
+  `ETA` 2), which do not depend on the data, so the translation now builds it
+  the same way. The late `TAU` start (0.75 of the longest follow-up) is the one
+  value that depends on the data, and it is recorded, as it already was for a
+  late phase written without `TAU`.
+
 * **`hzr_translate_sas()` now mirrors PROC HAZARD when `FIXGE2` or `FIXGAE2`
   meets `SETG3_ignore_tau()`** (#328, #329 review). That branch runs when
   both flags are set, or when either is set with `ALPHA` fixed at 1. PROC
