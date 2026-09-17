@@ -399,6 +399,26 @@
 }
 
 
+#' Is a phase's time scale inside exp()'s range?
+#'
+#' `t_half` and `tau` are carried as `log_t_half` and `log_tau`, and an
+#' optimizer step can take them past what `exp()` represents: the scale is
+#' then `Inf` or `0`, where the decomposition refuses to evaluate. That is an
+#' infeasible point, to be penalised like any other, not an error (#262).
+#'
+#' @param pars A phase's unpacked parameters (`.hzr_unpack_phase_theta()`).
+#' @param type The phase type.
+#' @return A single logical.
+#' @keywords internal
+#' @noRd
+.hzr_phase_scale_feasible <- function(pars, type) {
+  log_scale <- switch(type, cdf = , hazard = pars$log_t_half,
+                      g3 = pars$log_tau, NULL)
+  if (is.null(log_scale)) return(TRUE)
+  scale <- exp(log_scale)
+  is.finite(scale) && scale > 0
+}
+
 #' Apply the Conservation of Events adjustment to one phase's log_mu
 #'
 #' Given the current theta vector, analytically solve the fixmu phase's
@@ -435,6 +455,14 @@
                                   phases, covariate_counts, x_list,
                                   total_events, weights = NULL,
                                   time_lower = NULL) {
+  # An infeasible time scale has no cumulative hazard to solve against; leave
+  # theta for the likelihood, which penalises it (#262).
+  theta_split <- .hzr_split_theta(theta, phases, covariate_counts)
+  for (nm in names(phases)) {
+    pars <- .hzr_unpack_phase_theta(theta_split[[nm]], phases[[nm]])
+    if (!.hzr_phase_scale_feasible(pars, phases[[nm]]$type)) return(theta)
+  }
+
   # Compute per-phase cumulative hazard contributions
   decomp <- .hzr_multiphase_cumhaz(time, theta, phases,
                                      covariate_counts, x_list,
@@ -706,6 +734,7 @@
   theta_split <- .hzr_split_theta(theta, phases, covariate_counts)
   for (nm in names(phases)) {
     pars <- .hzr_unpack_phase_theta(theta_split[[nm]], phases[[nm]])
+    if (!.hzr_phase_scale_feasible(pars, phases[[nm]]$type)) return(-Inf)
     if (phases[[nm]]$type %in% c("cdf", "hazard")) {
       if (pars$m < 0 && pars$nu < 0) return(-Inf)
     }
@@ -838,6 +867,9 @@
   theta_split <- .hzr_split_theta(theta, phases, covariate_counts)
   for (nm in names(phases)) {
     pars <- .hzr_unpack_phase_theta(theta_split[[nm]], phases[[nm]])
+    if (!.hzr_phase_scale_feasible(pars, phases[[nm]]$type)) {
+      return(if (sanitize) grad else grad * NA)
+    }
     if (phases[[nm]]$type %in% c("cdf", "hazard")) {
       if (pars$m < 0 && pars$nu < 0) return(if (sanitize) grad else grad * NA)
     }

@@ -338,6 +338,17 @@
 
 ## Bug fixes
 
+* **A multiphase fit no longer stops with "t_half must be a positive
+  scalar" when the optimizer steps a phase's time scale out of range
+  (#262).** `t_half` and `tau` are carried on the log scale, and a step
+  can take them past what `exp()` represents, to `Inf` or `0`. The
+  log-likelihood, its gradient and the Conservation of Events solve each
+  raised an error there instead of treating the point as infeasible, so a
+  single-start fit (`control = list(n_starts = 1)`) failed outright, and
+  with several starts that start was lost. Such a point is now penalised,
+  and the optimizer backs away from it. Fits that never reach it are
+  unchanged.
+
 * **`predict(newdata = )` on a multiphase fit saved before this version no
   longer gets `scale()`, `poly()` or `ns()` in a phase formula silently wrong
   (#307).** Such a fit stored no phase design, so the phase was rebuilt from
