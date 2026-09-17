@@ -581,10 +581,10 @@ test_that("a phase term with row-level values from outside data is refused", {
   expect_error(ch(g_zz, nd), "term 'zz' of the model uses row-level")
 
   # A fit saved without the phase design but with its data knows zz is not a
-  # data column, and refuses the same way.
+  # data column, so its phase formula is not closed and is refused (#307).
   f18 <- f_zz
   f18$fit$x_design <- NULL
-  expect_error(ch(f18, nd), "term 'zz' of phase 'early' uses row-level")
+  expect_error(ch(f18, nd), "term 'zz' of phase 'early' is not closed.*refit")
   # A 1.0.3-era fit (no design, frame or record) cannot tell zz from a data
   # column, and the formula sees a zz outside newdata, so it is refused
   # rather than taken from newdata (#307).

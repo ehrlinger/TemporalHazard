@@ -1582,11 +1582,16 @@
 #'
 #' A fit saved before the phase design was stored (no `fit$x_design`), but
 #' with its fitting data (`data$frame`, kept since 1.1.0), is rebuilt from
-#' that data by the fit's own construction (#307). The recovered design is
-#' trusted only if it reproduces the phase's fitted columns: the same names,
-#' and, once the rows with a missing value are dropped as the fit dropped
-#' them, the same rows and values. A fit that dropped rows for another
-#' phase's missing values does not match, and is treated as having no data.
+#' that data by the fit's own construction (#307). Reproducing the fitted
+#' rows proves nothing about a new row: a `cutoff` moved within a gap between
+#' fitted ages codes every fitted row the same. So the phase formula must
+#' first be closed over the kept data (`.hzr_phase_formula_closed()`): no
+#' value from outside it, and no function but R's own design functions.
+#' Then the recovered design is trusted only if it reproduces the phase's
+#' fitted columns exactly: the same names and, once the rows with a missing
+#' value are dropped as the fit dropped them, the same rows and values. A
+#' fit that dropped rows for another phase's missing values does not match,
+#' and is treated as having no data.
 #'
 #' @param object A fitted multiphase `hazard` object.
 #' @param nm Phase name.
@@ -1595,21 +1600,143 @@
 #' @keywords internal
 #' @noRd
 .hzr_phase_design_from_frame <- function(object, nm, ph) {
+  frame <- object$data$frame
+  if (!.hzr_phase_formula_closed(ph$formula, names(frame),
+                                 .hzr_phase_rebuild_functions$kept)) {
+    return(NULL)
+  }
   built <- tryCatch(
-    .hzr_formula_design(ph$formula, object$data$frame),
+    .hzr_formula_design(ph$formula, frame),
     error = function(e) NULL
   )
   stored <- object$fit$x_list[[nm]]
   if (is.null(built) || !identical(colnames(built$x), colnames(stored))) {
     return(NULL)
   }
-  x <- built$x[stats::complete.cases(built$x), , drop = FALSE]
-  if (nrow(x) != nrow(stored) ||
-        !isTRUE(all.equal(unname(x), unname(stored),
-                          check.attributes = FALSE))) {
+  x <- unname(built$x[stats::complete.cases(built$x), , drop = FALSE])
+  s <- unname(stored)
+  if (!identical(dim(x), dim(s)) ||
+        !isTRUE(all(x == s | (is.na(x) & is.na(s))))) {
     return(NULL)
   }
   built$design
+}
+
+
+# The functions a legacy phase formula may call for its design to be
+# rebuilt, by the namespace each must come from (#307). With the fitting
+# data kept, the list follows the global rebuild's (`.hzr_rebuild_functions`,
+# #314): scale(), poly(), ns() and bs() are then checked against the fitted
+# columns. Without the data, only elementwise operations and cut(). Folding
+# the two lists is #271.
+.hzr_phase_rebuild_functions <- list(
+  kept = list(
+    base = c("+", "-", "*", "/", "^", ":", "%in%", "(", "==", "!=", "<", ">",
+             "<=", ">=", "&", "|", "!", "I", "log", "log2", "log10", "log1p",
+             "exp", "expm1", "sqrt", "abs", "pmin", "pmax", "c", "factor",
+             "as.factor", "scale", "cut"),
+    stats = c("poly", "relevel"),
+    splines = c("ns", "bs")
+  ),
+  none = list(
+    base = c("+", "-", "*", "/", "^", "(", ":", "==", "!=", "<", ">", "<=",
+             ">=", "&", "|", "!", "I", "log", "exp", "sqrt", "abs", "cut")
+  )
+)
+
+
+#' Is a legacy phase formula closed over the given columns?
+#'
+#' The right-hand side must be exactly its text: `deparse()` then
+#' `str2lang()` gives back an identical expression, compared with
+#' `num.eq = FALSE`, so no constant hides behind how it prints (-0 prints as
+#' 0; a classed or pasted-in object prints as a call). Every value it looks
+#' up must be one of `columns`; with `shadow`, also one that no value the
+#' formula's environment can see shares a name with (`T`, `pi`), since the
+#' fit may have used that value instead. Every function called unqualified
+#' must be on `functions` and resolve from the formula's environment to the
+#' identical object in its namespace, so a user's function of that name,
+#' whose state can move, is not taken for it; `c` in cut()'s breaks
+#' included. A qualified `pkg::fn` needs only to be on the list: `::` reads
+#' the namespace itself, which the formula's environment cannot mask. cut()
+#' must have a literal vector of breaks, since a number of breaks reads the
+#' range.
+#'
+#' @param formula A phase formula.
+#' @param columns The names a value may take.
+#' @param functions A list of function names by namespace.
+#' @param shadow Whether a value visible from the formula's environment
+#'   excludes a column of its name.
+#' @return A single logical.
+#' @keywords internal
+#' @noRd
+.hzr_phase_formula_closed <- function(formula, columns, functions,
+                                      shadow = FALSE) {
+  env <- environment(formula)
+  if (!is.environment(env)) {
+    return(FALSE)
+  }
+  rhs <- formula[[length(formula)]]
+  text <- tryCatch(
+    str2lang(paste(deparse(rhs, width.cutoff = 500L), collapse = " ")),
+    error = function(e) NULL
+  )
+  if (!identical(text, rhs, num.eq = FALSE)) {
+    return(FALSE)
+  }
+  canonical <- function(fn) {
+    pkg <- names(Filter(function(fns) fn %in% fns, functions))
+    if (length(pkg) != 1L) {
+      return(FALSE)
+    }
+    want <- if (pkg == "base") {
+      get(fn, envir = baseenv())
+    } else {
+      tryCatch(getExportedValue(pkg, fn), error = function(e) NULL)
+    }
+    identical(get0(fn, envir = env, mode = "function"), want)
+  }
+  closed <- function(e) {
+    if (is.symbol(e)) {
+      nm <- as.character(e)
+      if (!nm %in% columns) {
+        return(FALSE)
+      }
+      v <- if (shadow) get0(nm, envir = env) else NULL
+      return(is.null(v) || is.function(v))
+    }
+    if (!is.call(e)) {
+      # A single literal: the text round-trip rules out any other object.
+      return(TRUE)
+    }
+    fn <- e[[1L]]
+    args <- as.list(e)[-1L]
+    if (is.call(fn) && identical(fn[[1L]], as.name("::")) &&
+          length(fn) == 3L) {
+      return(as.character(fn[[3L]]) %in%
+               functions[[as.character(fn[[2L]])]] &&
+               all(vapply(args, closed, logical(1))))
+    }
+    if (!is.symbol(fn) || !canonical(as.character(fn))) {
+      return(FALSE)
+    }
+    if (identical(fn, as.name("cut"))) {
+      nms <- names(args)
+      if (is.null(nms)) nms <- character(length(args))
+      at <- if (any(nms == "breaks")) which(nms == "breaks") else
+        which(nms == "")[2L]
+      b <- if (is.na(at[1L])) NULL else args[[at[1L]]]
+      if (!is.call(b) || !identical(b[[1L]], as.name("c")) ||
+            !identical(get0("c", envir = env, mode = "function"), base::c) ||
+            length(b) < 3L ||
+            !all(vapply(as.list(b)[-1L], is.numeric, logical(1)))) {
+        return(FALSE)
+      }
+      args <- args[-at[1L]]
+    }
+    all(vapply(args, closed, logical(1)))
+  }
+  closed(rhs)
 }
 
 
@@ -1623,26 +1750,23 @@
 #' so the phase is rebuilt only when its formula is closed, and every other
 #' formula is refused with advice to refit.
 #'
-#' Closed means the right-hand side survives `deparse()` then `str2lang()`
-#' unchanged, so no object hides behind how it prints, and is built only
+#' Closed (`.hzr_phase_formula_closed()`, with `shadow`) means built only
 #' from:
 #'
 #' * columns of `newdata` that no value the formula can see shares a name
 #'   with, so `cutoff` in I(age > cutoff), or `T` and `pi`, are refused;
-#' * single numeric, logical or character literals;
+#' * literals that its text carries exactly;
 #' * `+ - * / ^ ( : == != < > <= >= & | !`, `I()`, `log()`, `exp()`, `sqrt()`
-#'   and `abs()`;
+#'   and `abs()`, each base R's own;
 #' * `cut()` at a literal vector of breaks (`c(0, 50, 100)`), the only
 #'   categorical term allowed: any other (a character or factor column)
 #'   takes its levels from the data, and the fitted column names show only
 #'   the non-reference levels, so a level the fit never saw could be scored
 #'   as the reference. A logical is not categorical here.
 #'
-#' A function name must resolve from the formula's environment to base R's
-#' own. The list is narrower than the global rebuild's
-#' (`.hzr_rebuild_functions`, #314), which has the fitting data to check a
-#' rebuild against and so can allow scale(), poly() and ns(); folding the two
-#' is #271.
+#' The list is narrower than the one for a fit that kept its data
+#' (`.hzr_phase_rebuild_functions`), which can check scale(), poly() and ns()
+#' against the fitted columns.
 #'
 #' A closed formula must then build from `newdata` alone (log() of a
 #' character column cannot be), give the phase's fitted columns, hold no
@@ -1669,56 +1793,9 @@
          "it for new rows; refit the model with this version of ",
          "TemporalHazard.", call. = FALSE)
   }
-  rhs <- formula[[length(formula)]]
-  text <- paste(deparse(rhs, width.cutoff = 500L), collapse = " ")
-  if (!identical(str2lang(text), rhs)) {
-    refuse(labels, "holds an object that its text does not carry")
-  }
-  env <- environment(formula)
-  if (is.null(env)) env <- baseenv()
-  elementwise <- c("+", "-", "*", "/", "^", "(", ":", "==", "!=", "<", ">",
-                   "<=", ">=", "&", "|", "!", "I", "log", "exp", "sqrt",
-                   "abs", "cut")
-  closed <- function(e) {
-    if (is.symbol(e)) {
-      # A value of that name the formula can see (T, pi, a `cutoff`) may be
-      # what the fit used; without the data, a column cannot be told from it.
-      v <- get0(as.character(e), envir = env)
-      return(as.character(e) %in% names(newdata) &&
-               (is.null(v) || is.function(v)))
-    }
-    if (!is.call(e)) {
-      # A single literal: the text round-trip rules out any other object.
-      return(TRUE)
-    }
-    fn <- e[[1L]]
-    if (!is.symbol(fn) || !as.character(fn) %in% elementwise) {
-      return(FALSE)
-    }
-    fn <- as.character(fn)
-    # The formula's own function, not a user's of the same name.
-    if (!identical(get0(fn, envir = env, mode = "function"),
-                   get(fn, envir = baseenv()))) {
-      return(FALSE)
-    }
-    args <- as.list(e)[-1L]
-    nms <- names(args)
-    if (is.null(nms)) nms <- character(length(args))
-    if (fn == "cut") {
-      # The breaks as a literal vector: a number of breaks reads the range.
-      at <- if (any(nms == "breaks")) which(nms == "breaks") else
-        which(nms == "")[2L]
-      b <- if (is.na(at[1L])) NULL else args[[at[1L]]]
-      if (!is.call(b) || !identical(b[[1L]], as.name("c")) ||
-            length(b) < 3L ||
-            !all(vapply(as.list(b)[-1L], is.numeric, logical(1)))) {
-        return(FALSE)
-      }
-      args <- args[-at[1L]]
-    }
-    all(vapply(args, closed, logical(1)))
-  }
-  if (!closed(rhs)) {
+  if (!.hzr_phase_formula_closed(formula, names(newdata),
+                                 .hzr_phase_rebuild_functions$none,
+                                 shadow = TRUE)) {
     refuse(labels, paste0("is not closed (only newdata's columns, literals ",
                           "and elementwise operations are rebuilt)"))
   }
@@ -1794,6 +1871,15 @@
 #' @noRd
 .hzr_phase_newdata_design <- function(object, nm, ph, newdata) {
   cols <- colnames(object$fit$x_list[[nm]])
+  # A fit made before duplicated names were refused (#296) may hold two
+  # columns of one name, which no selection by name can tell apart.
+  if (anyDuplicated(cols) > 0L) {
+    stop("phase '", nm, "' has the duplicated design column name(s) ",
+         paste0("'", unique(cols[duplicated(cols)]), "'", collapse = ", "),
+         ", so predict(newdata =) cannot tell its columns apart; refit the ",
+         "model with this version of TemporalHazard, which refuses such a ",
+         "design.", call. = FALSE)
+  }
   design <- object$fit$x_design[[nm]]
   # A fit saved before the phase design was stored, but with its fitting
   # data: rebuild the design from that data as the fit did (#307).

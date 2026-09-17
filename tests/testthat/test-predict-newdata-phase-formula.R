@@ -382,17 +382,17 @@ test_that("a phase formula's environment constant still reaches newdata", {
                  type = "cumulative_hazard")
   expect_equal(got / (exp(beta * c(1, 0)) * base$early + base$constant),
                c(1, 1), tolerance = 1e-10, ignore_attr = TRUE)
-  # A fit saved before the phase design was stored: `cutoff` is not a column
-  # of its fitting data, so it is a constant, not a missing covariate.
+  # A fit saved before the phase design was stored, with its data or
+  # without: `cutoff` is read from the environment, which may have moved
+  # since the fit without changing a fitted row, so the phase is refused
+  # rather than rebuilt from it (#307).
   leg <- fit
   leg$fit$x_design <- NULL
-  got <- predict(leg, newdata = data.frame(time = tt, age = c(150, 50)),
-                 type = "cumulative_hazard")
-  expect_equal(got / (exp(beta * c(1, 0)) * base$early + base$constant),
-               c(1, 1), tolerance = 1e-10, ignore_attr = TRUE)
-  # A fit that kept no fitting data either (1.0.3 and earlier) has nothing
-  # to tell a constant from a covariate, or to check `cutoff` against, so its
-  # phase is refused rather than rebuilt from the environment (#307).
+  expect_error(
+    predict(leg, newdata = data.frame(time = tt, age = c(150, 50)),
+            type = "cumulative_hazard"),
+    "term 'I\\(age > cutoff\\)' of phase 'early' is not closed.*refit"
+  )
   leg$data$frame <- NULL
   expect_error(
     predict(leg, newdata = data.frame(time = tt, age = c(150, 50)),

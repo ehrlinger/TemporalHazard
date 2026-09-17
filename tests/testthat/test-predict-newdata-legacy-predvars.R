@@ -371,3 +371,99 @@ test_that("without its data, a column shadowing a constant or a coding the names
   expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
                "refit")
 })
+
+test_that("a legacy fit that kept its data is refused when its formula reads outside the data", {
+  skip_on_cran()  # multiphase fits
+  # The kept data proves only the fitting rows. A cutoff moved within a gap
+  # between fitted ages leaves every fitted row the same, so the rebuild
+  # matches the fit and still scores a row in the gap with the new cutoff.
+  d <- legacy_data()
+  ages <- sort(unique(d$age))
+  k <- which(ages > 100)[1L]
+  lo <- ages[k - 1L]
+  hi <- ages[k]
+  e <- new.env()
+  e$cutoff <- lo + 0.25 * (hi - lo)
+  lf <- legacy_fit_on(stats::as.formula("~ I(age > cutoff)", env = e), d,
+                      keep_frame = TRUE)
+  e$cutoff <- lo + 0.75 * (hi - lo)
+  expect_identical(unname(lf$fit$fit$x_list$early[, 1L]),
+                   as.numeric(d$age > e$cutoff))
+  nd <- data.frame(time = 2, age = lo + 0.5 * (hi - lo))
+  expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
+               "refit")
+  # So is a user's function of a design function's name, whose state can
+  # move the same way.
+  e2 <- new.env()
+  e2$shift <- 0
+  e2$log <- function(x) base::log(x) + shift
+  environment(e2$log) <- e2
+  lf <- legacy_fit_on(stats::as.formula("~ log(age)", env = e2), d,
+                      keep_frame = TRUE)
+  e2$shift <- 1
+  expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
+               "refit")
+})
+
+test_that("a legacy fit with duplicated phase column names is refused", {
+  skip_on_cran()  # multiphase fits
+  # Fits made before duplicated names were refused (#296) can hold a factor
+  # dummy `gb` beside a numeric `gb`. Selecting the columns by name takes the
+  # first `gb` twice.
+  d <- legacy_data()
+  d$g <- factor(c("a", "b")[(d$inc_surg %% 2) + 1])
+  d$gb <- d$age / 100
+  local_mocked_bindings(.hzr_refuse_duplicate_columns =
+                          function(x, phase = NULL) invisible(NULL))
+  lf <- legacy_fit_on("g + gb", d, keep_frame = TRUE)
+  expect_identical(colnames(lf$current$fit$x_list$early), c("gb", "gb"))
+  rows <- c(1, 2, 3, 50)
+  nd <- data.frame(time = d$int_dead[rows], g = d$g[rows], gb = d$gb[rows])
+  none <- lf$fit
+  none$data$frame <- NULL
+  for (f in list(lf$current, lf$fit, none)) {
+    expect_error(predict(f, newdata = nd, type = "cumulative_hazard"),
+                 "duplicated")
+  }
+})
+
+test_that("an inlined -0 or a user's c() in cut() breaks is refused", {
+  skip_on_cran()  # multiphase fits
+  d <- legacy_data()
+  nd <- legacy_nd()
+  # -0 prints as 0, so its text rebuilds another formula.
+  f <- eval(bquote(~ I(age / .(-0) < 0)))
+  for (keep in c(TRUE, FALSE)) {
+    lf <- legacy_fit_on(f, d, keep_frame = keep)
+    expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
+                 "refit", label = paste("-0, keep_frame =", keep))
+  }
+  # A c() reading outside state moves the breaks while the labels print the
+  # same: a row at 100.004 changes bin.
+  e <- new.env()
+  e$k <- 1
+  e$c <- function(...) base::c(...) * k
+  environment(e$c) <- e
+  f <- stats::as.formula("~ cut(opmos, c(0, 50, 100, 1000))", env = e)
+  for (keep in c(TRUE, FALSE)) {
+    e$k <- 1
+    lf <- legacy_fit_on(f, d, keep_frame = keep)
+    e$k <- 1.0001
+    expect_error(
+      predict(lf$fit, newdata = data.frame(time = 2, opmos = 100.004),
+              type = "cumulative_hazard"),
+      "refit", label = paste("shadowed c(), keep_frame =", keep))
+  }
+})
+
+test_that("kept data changed by a hair after the fit is not trusted", {
+  skip_on_cran()  # multiphase fits
+  # An approximate comparison let a change to one age of 1.8e-4 through.
+  lf <- legacy_fit("scale(age)", keep_frame = TRUE)
+  lf$fit$data$frame$age[1] <- lf$fit$data$frame$age[1] + 1e-4
+  expect_error(
+    predict(lf$fit, newdata = at_rows(lf$data, c(1, 50, 200)),
+            type = "cumulative_hazard"),
+    "refit"
+  )
+})
