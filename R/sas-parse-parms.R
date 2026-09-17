@@ -110,6 +110,13 @@
       if (!nzchar(p)) next
       opts <- character(0)
       slash <- .idx(p, "/")
+      # hazard_l.l has no "/" rule in option state, and a "/" with no name
+      # before it is a syntax error, so PROC HAZARD rejects both. Record the
+      # item rather than read it as a covariate or an option it is not.
+      if (slash == 1L || (slash > 0L && .idx(substr(p, slash + 1L, nchar(p)), "/") > 0L)) {
+        bad(p, "phase-statement item PROC HAZARD would reject as a syntax error")
+        next
+      }
       if (slash > 0L) {
         opt_txt <- gsub("\\s*=\\s*", "=", substr(p, slash + 1L, nchar(p)))
         opts <- strsplit(trimws(opt_txt), "[[:space:]/]+")[[1L]]
@@ -833,6 +840,7 @@
   # matching .hzr_phase_start().
   phase_covars <- list()
   phase_covar_vals <- list()
+  phase_vars <- character(0)
   for (ph in c("early", "constant", "late")) {
     raw <- covars[[ph]]
     if (is.null(raw)) {
@@ -843,6 +851,7 @@
     parsed <- .hzr_parse_phase_covars(raw)
     phase_covars[[ph]] <- parsed$names
     phase_covar_vals[[ph]] <- parsed$values
+    phase_vars <- c(phase_vars, parsed$names, parsed$excluded)
     for (i in seq_along(parsed$untranslated_construct)) {
       flag_bad(parsed$untranslated_construct[[i]], parsed$untranslated_reason[[i]])
     }
@@ -1192,9 +1201,20 @@
              "MUL with no late phase shape operand (TAU/GAMMA/ALPHA/ETA)")
   }
 
+  # getrisk.c collects every phase-statement variable, of every phase and
+  # whatever its options, and readobs.c deletes a row where any is missing.
+  # hazard() drops missing rows only for variables in a formula it fits, so
+  # the rest -- /E variables, and covariates of a phase that is not built --
+  # are returned for the caller to guard.
+  modelled <- c(
+    if (has_early && length(early)) phase_covars$early,
+    if (has_muc) phase_covars$constant,
+    if (has_late && length(late)) phase_covars$late
+  )
   list(
     phases = as.call(c(quote(list), phase_calls)),
     theta = as.call(c(quote(c), theta_blocks)),
+    listwise_only = setdiff(unique(phase_vars), modelled),
     has_phases = length(phase_calls) > 0L,
     refused = refused,
     untranslated = .hzr_untranslated_frame(

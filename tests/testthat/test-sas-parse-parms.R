@@ -127,6 +127,15 @@ test_that("phase covariate options attach to their own variable (#342)", {
   )
   u <- got$untranslated
   expect_true(all(c("AGE/MOVE=2", "AGE/ORDER=1", "MAL/FOO") %in% u$construct))
+
+  # Text SAS's lexer rejects is recorded, not read as something it is not: a
+  # second "/" in one item, and an option with no variable before it.
+  got <- .hzr_parse_parms(ops, covars = list(early = "AGE/E/I, MAL, /S"))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1, formula = ~MAL)))
+  )
+  expect_true(all(c("AGE/E/I", "/S") %in% got$untranslated$construct))
 })
 
 test_that("phase covariate starting values map into theta, in covariate order", {
