@@ -290,6 +290,17 @@
 
 ## New features
 
+* **`hzr_evaluate()` evaluates a model at parameters you supply (#144).**
+  A parity check needs the likelihood at another program's converged
+  estimates, evaluated by this package's own likelihood, and there was no
+  way to ask for it. `hzr_evaluate(object, theta)` returns the
+  log-likelihood of the model's data at `theta`, for a fitted model or one
+  built with `fit = FALSE`, and with `times` (multiphase only) the hazard
+  and cumulative hazard there for a covariate-free subject. The result is
+  not a fit and does not read as one: it carries no standard errors, no
+  convergence status and no covariance, and `print()` says so on its first
+  line. At a fit's own estimates it reproduces that fit's objective.
+
 * **`hzr_phase()` can derive one late-phase shape from the others (#325).**
   The new `constraint` argument covers SAS/C's two late-phase constraints:
   - `"alpha_gamma_eta"` holds `alpha = gamma * eta / 2` (`FIXGAE2`);
@@ -347,6 +358,15 @@
   detected.
 
 ## Bug fixes
+
+* **`predict()` on an unfitted multiphase model now says what is missing
+  (#144).** It failed with `argument of length 0`, from an internal helper
+  looking up a parameter position that an unfitted object does not carry.
+  The error now says that a multiphase model built with `fit = FALSE` has no
+  per-phase design matrices, because they are resolved when the model is
+  fitted, and points at `fit = TRUE` or the new `hzr_evaluate()`. Models of
+  the other distributions built with `fit = FALSE` predict from their
+  supplied parameters as before; only multiphase ever failed.
 
 * **`predict(newdata = )` on a multiphase fit saved before this version no
   longer gets `scale()`, `poly()` or `ns()` in a phase formula silently wrong

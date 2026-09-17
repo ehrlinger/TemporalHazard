@@ -1852,45 +1852,24 @@
 }
 
 
-#' Fit a multiphase additive hazard model via maximum likelihood
+#' Build a multiphase fit's per-phase designs and align its rows
 #'
-#' Assembles starting values from phase specifications, resolves per-phase
-#' design matrices, and delegates to `.hzr_optim_generic()`.
+#' The one place a multiphase model's per-phase design matrices are built from
+#' its phases and data, and the only place rows are dropped for an NA in one
+#' of them. `.hzr_optim_multiphase()` calls it to fit; `hzr_evaluate()` calls
+#' it to evaluate an unfitted model at supplied parameters, so the two cannot
+#' build different designs for the same specification (#144).
 #'
-#' @param time Numeric vector of follow-up times.
-#' @param status Numeric event indicator vector.
-#' @param time_lower Optional lower bounds for interval censoring.
-#' @param time_upper Optional upper bounds for left/interval censoring.
-#' @param x Global design matrix (n x p) or NULL.
-#' @param theta_start Starting parameter vector (full internal scale).
-#'   If NULL, assembled automatically from phase specs.
-#' @param control Named list of control options.
-#' @param phases Named list of validated `hzr_phase` objects.
-#' @param formula_global The global formula (used when phases have no
-#'   phase-specific formula).
-#' @param data Data frame containing covariates (needed for phase-specific
-#'   formula evaluation).
-#' @param objective Which interval-censored contribution to accumulate;
-#'   see `.hzr_logl_interval()`.
-#' @return List with par (internal scale), value, convergence, vcov, etc.
+#' @inheritParams .hzr_optim_multiphase
+#' @return A list with the row-aligned `time`, `status`, `time_lower`,
+#'   `time_upper`, `x` and `weights`, plus `x_list` (per-phase designs,
+#'   carrying the `from_formula` attribute), `covariate_counts` and
+#'   `x_design`.
 #' @keywords internal
-.hzr_optim_multiphase <- function(time, status,
-                                   time_lower = NULL, time_upper = NULL,
-                                   x = NULL,
-                                   theta_start = NULL,
-                                   weights = NULL,
-                                   control = list(),
-                                   phases,
-                                   objective = c("likelihood", "sas"),
-                                   formula_global = NULL,
-                                   data = NULL) {
-
-  objective <- match.arg(objective)
-
-  if (is.null(weights)) weights <- rep(1, length(time))
-
-  phases <- .hzr_validate_phases(phases)
-
+#' @noRd
+.hzr_multiphase_designs <- function(time, status, time_lower = NULL,
+                                    time_upper = NULL, x = NULL,
+                                    weights = NULL, phases, data = NULL) {
   # --- Resolve per-phase design matrices and covariate counts ----------------
   # Build phase-specific design matrices with na.action = na.pass so that
   # rows with NA covariates are preserved (not silently dropped).  We then
@@ -1961,6 +1940,68 @@
   attr(x_list, "from_formula") <- vapply(names(x_list), function(nm) {
     !is.null(phases[[nm]]$formula) && !is.null(data)
   }, logical(1))
+  list(time = time, status = status, time_lower = time_lower,
+       time_upper = time_upper, x = x, weights = weights,
+       x_list = x_list, covariate_counts = covariate_counts,
+       x_design = x_design)
+}
+
+
+#' Fit a multiphase additive hazard model via maximum likelihood
+#'
+#' Assembles starting values from phase specifications, resolves per-phase
+#' design matrices, and delegates to `.hzr_optim_generic()`.
+#'
+#' @param time Numeric vector of follow-up times.
+#' @param status Numeric event indicator vector.
+#' @param time_lower Optional lower bounds for interval censoring.
+#' @param time_upper Optional upper bounds for left/interval censoring.
+#' @param x Global design matrix (n x p) or NULL.
+#' @param theta_start Starting parameter vector (full internal scale).
+#'   If NULL, assembled automatically from phase specs.
+#' @param control Named list of control options.
+#' @param phases Named list of validated `hzr_phase` objects.
+#' @param formula_global The global formula (used when phases have no
+#'   phase-specific formula).
+#' @param data Data frame containing covariates (needed for phase-specific
+#'   formula evaluation).
+#' @param objective Which interval-censored contribution to accumulate;
+#'   see `.hzr_logl_interval()`.
+#' @return List with par (internal scale), value, convergence, vcov, etc.
+
+
+#' @keywords internal
+.hzr_optim_multiphase <- function(time, status,
+                                   time_lower = NULL, time_upper = NULL,
+                                   x = NULL,
+                                   theta_start = NULL,
+                                   weights = NULL,
+                                   control = list(),
+                                   phases,
+                                   objective = c("likelihood", "sas"),
+                                   formula_global = NULL,
+                                   data = NULL) {
+
+  objective <- match.arg(objective)
+
+  if (is.null(weights)) weights <- rep(1, length(time))
+
+  phases <- .hzr_validate_phases(phases)
+
+  # --- Resolve per-phase design matrices and covariate counts ----------------
+  built_designs <- .hzr_multiphase_designs(
+    time, status, time_lower = time_lower, time_upper = time_upper, x = x,
+    weights = weights, phases = phases, data = data
+  )
+  time             <- built_designs$time
+  status           <- built_designs$status
+  time_lower       <- built_designs$time_lower
+  time_upper       <- built_designs$time_upper
+  x                <- built_designs$x
+  weights          <- built_designs$weights
+  x_list           <- built_designs$x_list
+  covariate_counts <- built_designs$covariate_counts
+  x_design         <- built_designs$x_design
 
   # --- Assemble starting values if not provided ------------------------------
   if (is.null(theta_start)) {
