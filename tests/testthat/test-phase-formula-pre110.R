@@ -90,6 +90,17 @@ test_that("the same fits with a stored frame, or on the formula interface, are n
   expect_false(.hzr_phase_inherits_global(no_x, "early"))
   expect_null(.hzr_ignored_phase_formula(no_x))
 
+  # `~ 1` with no global `x` gives the phase no columns either way, so there
+  # is nothing to tell apart and nothing to refuse.
+  intercept_only <- pre_110(hazard(
+    time = d$int_dead, status = d$dead, data = d, dist = "multiphase",
+    phases = list(early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1,
+                                    fixed = "m", formula = ~ 1),
+                  constant = hzr_phase("constant")),
+    fit = TRUE, control = ctl_324))
+  expect_true(.hzr_phase_inherits_global(intercept_only, "early"))
+  expect_null(.hzr_ignored_phase_formula(intercept_only))
+
   # A pre-1.1.0 formula-interface fit always had `data`.
   formula_fit <- pre_110(hazard(
     survival::Surv(int_dead, dead) ~ mal, data = d, dist = "multiphase",
