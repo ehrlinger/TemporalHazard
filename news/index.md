@@ -118,6 +118,22 @@
   refusal, so it is kept apart from the existing “selects no phase”
   stop.
 
+- **[`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
+  now emits a [`stop()`](https://rdrr.io/r/base/stop.html) in place of
+  the fit when a job has no `DATA=` and a phase has covariates
+  ([\#311](https://github.com/ehrlinger/TemporalHazard/issues/311)).** A
+  phase’s covariates are evaluated only in `data`, and such a job’s fit
+  chunk has none, so
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  stopped with advice to pass `data =`, an argument the SAS job never
+  had. Before the refusal above
+  ([\#299](https://github.com/ehrlinger/TemporalHazard/issues/299)) the
+  same chunk fitted the phase without its covariates. The job is now
+  recorded in `$untranslated` with the reason, and the emitted
+  [`stop()`](https://rdrr.io/r/base/stop.html) says to add `DATA=` and
+  translate again. A job with no `DATA=` and no phase covariates still
+  translates to a fit.
+
 - **`predict(newdata = )` matches covariates by name, so `newdata` with
   other names now stops.** A fit made through the vector interface with
   a named `x`, say `x = cbind(age = , mal = )`, needs `newdata` columns
