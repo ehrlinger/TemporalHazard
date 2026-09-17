@@ -61,6 +61,19 @@
              paste(sQuote(unknown), collapse = ", "),
              call. = FALSE)
       }
+      # Only the single-distribution scope takes a character vector; here one
+      # used to fail in the term reader with a message naming neither
+      # `scope` nor the phase (#328).
+      for (p in names(scope)) {
+        sc <- scope[[p]]
+        if (!is.null(sc) && !inherits(sc, "formula")) {
+          stop("`scope$", p, "` must be a one-sided formula such as ",
+               "`~ age + mal`, or NULL, not a ",
+               if (is.character(sc)) "character vector" else class(sc)[1L],
+               ". A multiphase `scope` is a named list of formulas keyed by ",
+               "phase.", call. = FALSE)
+        }
+      }
     }
 
     candidates <- list()
