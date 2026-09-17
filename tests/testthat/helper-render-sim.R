@@ -7,15 +7,17 @@
 # The render environment's parent. globalenv() is not one: an unrelated
 # global `fit`, or any leftover symbol from another test file, satisfies a
 # broken translation and this helper reports "ok" -- an oracle that ambient
-# state can satisfy is not an oracle. The attached package environment sits
-# AFTER globalenv() on the search path, so parenting on it reaches the
-# package's exports, stats and base, and nothing of the user's.
+# state can satisfy is not an oracle.
+#
+# Nor is the attached package environment. Name lookup from it walks the
+# rest of the search path, so `predict` resolved only when package:stats
+# happened to sit after it. testthat's parallel workers attach the package
+# in callr's load hook, before R attaches the default packages above it, so
+# there stats is not reached and every predict() chunk failed (#330). Build
+# the layer explicitly instead: the exports of stats and TemporalHazard over
+# baseenv(), whose parent is emptyenv(), so no search-path state can decide
+# the verdict in either direction.
 .render_parent <- function() {
-  if ("package:TemporalHazard" %in% search()) {
-    return(as.environment("package:TemporalHazard"))
-  }
-  # Belt and braces for a load path that does not attach: rebuild the same
-  # layer by hand rather than silently fall back to globalenv().
   e <- new.env(parent = baseenv())
   for (pkg in c("stats", "TemporalHazard")) {
     ns <- asNamespace(pkg)
