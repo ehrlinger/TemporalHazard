@@ -486,3 +486,44 @@ test_that("a refit that returns a bare vector is a failed replicate, not a crash
   expect_identical(bs$failure_reasons,
                    c("refit returned a numeric, not a fit object" = 3L))
 })
+
+# A refit that returns a list is not thereby a fit (#343). One with no `fit`
+# was tallied as a convergence failure, and one whose fit held an objective
+# but no estimates passed as a success and then ended the run building its
+# replicate row.
+with_refit_returning <- function(fit, value) {
+  env <- new.env(parent = fit$call_env %||% globalenv())
+  assign("odd_refit", function(...) value, envir = env)
+  fit$call[[1L]] <- as.name("odd_refit")
+  fit$call_env <- env
+  fit
+}
+
+test_that("a refit returning a list with no fit is named as such, in both modes (#343)", {
+  reason <- "refit returned a data.frame with no `fit`, not a fit object"
+  vf <- with_refit_returning(no_data_weibull(avc_fixture()),
+                             data.frame(a = 1))
+  b <- suppressWarnings(hzr_bootstrap(vf, n_boot = 3L, seed = 1L))
+  expect_identical(b$failure_reasons, stats::setNames(3L, reason))
+
+  d <- avc_fixture()
+  base <- hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
+                 dist = "weibull", theta = c(0.1, 1), fit = TRUE)
+  bs <- suppressWarnings(hzr_bootstrap(
+    with_refit_returning(base, data.frame(a = 1)), n_boot = 3L, seed = 1L,
+    scope = ~ age, criterion = "wald"
+  ))
+  expect_identical(bs$failure_reasons, stats::setNames(3L, reason))
+})
+
+test_that("a refit with an objective but no estimates fails its replicate, not the run (#343)", {
+  vf <- with_refit_returning(no_data_weibull(avc_fixture()),
+                             list(fit = list(objective = 1, theta = NULL)))
+  b <- suppressWarnings(hzr_bootstrap(vf, n_boot = 3L, seed = 1L))
+  expect_equal(b$n_success, 0L)
+  expect_identical(
+    b$failure_reasons,
+    c("refit returned no parameter estimates" = 3L)
+  )
+  expect_equal(nrow(b$replicates), 0L)
+})

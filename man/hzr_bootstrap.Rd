@@ -98,7 +98,7 @@ non-finite objective.}
 \item{failure_reasons}{Named integer vector counting why replicates
 failed, most common first: the refit's error message (or
 \code{"error with an empty message"}),
-\code{"refit returned a <class>, not a fit object"}, or
+\code{"refit returned a <class>, not a fit object"} (or \code{"... with no \code{fit}, not a fit object"}), \code{"refit returned no parameter estimates"}, or
 \code{"non-finite objective (did not converge)"}. It sums to \code{n_failed}, and
 is an empty named integer vector, never \code{NULL}, when none failed. When
 every replicate fails, \code{hzr_bootstrap()} also warns, naming the most

@@ -1466,6 +1466,29 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   `fit_obj$fit$theta`.
 #' @keywords internal
 #' @noRd
+#' Why a bootstrap refit's return value is not a fit, if it is not
+#'
+#' `hzr_bootstrap()` reads `$fit$objective` and `$fit$theta` off each
+#' replicate's refit. `$` on an atomic vector is an error, and a list without
+#' `fit` reads as a missing objective, so both are named here instead (#333,
+#' #343). `hazard()` never returns either; a stored call rewritten to another
+#' function can.
+#'
+#' @param x The refit's return value.
+#' @return `NULL`, or a character scalar naming what `x` is.
+#' @keywords internal
+#' @noRd
+.hzr_bootstrap_not_a_fit <- function(x) {
+  if (!is.list(x)) {
+    return(paste0("refit returned a ", class(x)[1L], ", not a fit object"))
+  }
+  if (!is.list(x$fit)) {
+    return(paste0("refit returned a ", class(x)[1L],
+                  " with no `fit`, not a fit object"))
+  }
+  NULL
+}
+
 .hzr_bootstrap_param_names <- function(fit_obj) {
   theta <- fit_obj$fit$theta
   param_names <- names(theta)
@@ -1590,7 +1613,9 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   \item{failure_reasons}{Named integer vector counting why replicates
 #'     failed, most common first: the refit's error message (or
 #'     `"error with an empty message"`),
-#'     `"refit returned a <class>, not a fit object"`, or
+#'     `"refit returned a <class>, not a fit object"` (or `"... with no
+#'     \code{fit}, not a fit object"`), `"refit returned no parameter
+#'     estimates"`, or
 #'     `"non-finite objective (did not converge)"`. It sums to `n_failed`, and
 #'     is an empty named integer vector, never `NULL`, when none failed. When
 #'     every replicate fails, `hzr_bootstrap()` also warns, naming the most
@@ -2098,11 +2123,10 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
           cl_base$fit <- TRUE
           base_boot <- eval(cl_base, envir = rep_env)
           # The same reason refit mode records below, rather than whatever
-          # `$` on a non-list says.
-          if (!is.list(base_boot)) {
-            stop("refit returned a ", class(base_boot)[1L],
-                 ", not a fit object")
-          }
+          # `$` on a non-list says, or a missing objective's "did not
+          # converge".
+          not_a_fit <- .hzr_bootstrap_not_a_fit(base_boot)
+          if (!is.null(not_a_fit)) stop(not_a_fit)
           if (!is.finite(base_boot$fit$objective)) {
             stop("base refit did not converge")
           }
@@ -2149,12 +2173,16 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       # n_failed.
       msg <- conditionMessage(boot_fit)
       if (nzchar(msg)) msg else "error with an empty message"
-    } else if (!is.list(boot_fit)) {
-      # `$` on an atomic vector is an error outside the tryCatch() above, which
-      # ended the whole run. hazard() never returns one.
-      paste0("refit returned a ", class(boot_fit)[1L], ", not a fit object")
+    } else if (!is.null(.hzr_bootstrap_not_a_fit(boot_fit))) {
+      # Read outside the tryCatch() above: `$` on an atomic vector ended the
+      # whole run.
+      .hzr_bootstrap_not_a_fit(boot_fit)
     } else if (!isTRUE(is.finite(boot_fit$fit$objective))) {
       "non-finite objective (did not converge)"
+    } else if (!is.numeric(boot_fit$fit$theta) ||
+                 length(boot_fit$fit$theta) == 0L) {
+      # A success with no estimates ended the run building its replicate row.
+      "refit returned no parameter estimates"
     }
     if (is.null(failure)) {
       n_success <- n_success + 1L
