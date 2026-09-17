@@ -805,12 +805,26 @@ hazard <- function(formula = NULL,
       stop("'weights' must be non-negative and finite.", call. = FALSE)
     }
   }
+  # Every likelihood branches on these four codes, and a row with any other
+  # code falls through all of them and adds nothing: survival's interval
+  # code 3, passed as a plain vector, was silently dropped (#231). NA is left
+  # to the completeness check, which names the rows.
+  bad_status <- !is.na(status) & !(status %in% c(-1, 0, 1, 2))
+  if (any(bad_status)) {
+    stop("'status' must be coded -1 (left-censored), 0 (right-censored), ",
+         "1 (event) or 2 (interval-censored); ", sum(bad_status), " of ", n,
+         " row(s) are not, at index/indices ",
+         paste(utils::head(which(bad_status), 10L), collapse = ", "),
+         if (sum(bad_status) > 10L) ", ..." else "", ". A Surv object's ",
+         "codes differ from these: pass it as the response, or as 'status', ",
+         "and it is translated.", call. = FALSE)
+  }
   # A row adds nothing to the likelihood when its weight is 0, or when it is
   # right-censored at time 0 (H(0) = 0). With no other row the fit returned
   # its starting values, objective 0 and converged = TRUE, as zero rows did.
   contributes <- !(status == 0 & time == 0)
   if (!is.null(weights)) contributes <- contributes & weights > 0
-  if (!any(contributes)) {
+  if (!anyNA(status) && !any(contributes)) {
     stop("hazard() was given no observations that contribute to the ",
          "likelihood: every row has weight 0 or is right-censored at time 0.",
          call. = FALSE)

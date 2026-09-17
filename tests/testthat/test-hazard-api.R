@@ -41,10 +41,13 @@ test_that("hazard() refuses zero rows on every path (#231)", {
                         theta = c(0.5, 1), fit = TRUE), msg)
   }
   df0 <- data.frame(t = c(1, 2), s = c(1, 0), x = c(1, 2))[0, ]
-  expect_error(hazard(survival::Surv(t, s) ~ x, data = df0, dist = "weibull",
-                      theta = c(0.5, 1, 0), fit = TRUE), msg)
-  expect_error(hazard(survival::Surv(t, s) ~ 1, data = df0,
-                      dist = "multiphase", phases = ph, fit = TRUE), msg)
+  # Surv() itself warns on zero rows ("no non-missing arguments to max").
+  expect_error(suppressWarnings(
+    hazard(survival::Surv(t, s) ~ x, data = df0, dist = "weibull",
+           theta = c(0.5, 1, 0), fit = TRUE)), msg)
+  expect_error(suppressWarnings(
+    hazard(survival::Surv(t, s) ~ 1, data = df0,
+           dist = "multiphase", phases = ph, fit = TRUE)), msg)
 
   # One row is data: the guard is on zero, not on "small".
   one <- hazard(time = 2, status = 1, dist = "exponential", theta = 0.1)
@@ -66,16 +69,35 @@ test_that("hazard() refuses zero rows on every path (#231)", {
                       weights = c(1, 1, 0, 0), dist = "multiphase",
                       phases = ph, fit = TRUE), msg)
 
-  # Controls that FIT, not merely build: one positive weight on an event, and
-  # an event at time 0, are data.
+  # Any other status code falls through every likelihood branch and adds
+  # nothing: all rows gave a hollow fit, some rows were silently dropped.
+  expect_error(hazard(time = c(1, 2, 3), status = c(3, 3, 3),
+                      dist = "exponential", theta = 0.1, fit = TRUE),
+               "must be coded -1")
+  expect_error(hazard(time = c(1, 2, 3, 4), status = c(1, 3, 1, 0.5),
+                      dist = "exponential", theta = 0.1, fit = TRUE),
+               "2 of 4 row\\(s\\) are not, at index/indices 2, 4\\.")
+  # NA status still reaches the completeness check that names it.
+  expect_error(hazard(time = c(0, 0), status = c(NA, NA),
+                       dist = "exponential", theta = 0.1, fit = TRUE),
+               "'status' must be complete")
+
+  # Controls that FIT, not merely build: one positive weight on an event, an
+  # event at time 0, and every valid code.
   w1 <- suppressWarnings(hazard(time = tt, status = st,
                                 weights = c(0, 0, 1, 0, 0, 0),
                                 dist = "exponential", theta = 0.1, fit = TRUE))
   expect_true(is.finite(w1$fit$objective))
   expect_false(w1$fit$objective == 0)
-  e0 <- suppressWarnings(hazard(time = c(0, 0, 2), status = c(0, 0, 1),
+  e0 <- suppressWarnings(hazard(time = c(0, 0, 0), status = c(1, 0, 0),
                                 dist = "exponential", theta = 0.1, fit = TRUE))
   expect_false(e0$fit$objective == 0)
+  codes <- suppressWarnings(hazard(time = c(1, 2, 3, 4, 5),
+                                   status = c(-1, 0, 1, 2, 1),
+                                   time_lower = c(0, 0, 0, 1, 0),
+                                   dist = "multiphase", phases = ph,
+                                   fit = TRUE))
+  expect_true(is.finite(codes$fit$objective))
 })
 
 test_that("fit = TRUE without theta is refused for single-distribution models", {
