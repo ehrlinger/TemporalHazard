@@ -205,7 +205,12 @@ jobs:
       - if: always() && needs.changes.outputs.run == 'true' && env.full_check == 'true'
         shell: bash
         run: |
-          f="$(find check -path '*.Rcheck/tests/testthat.Rout*' 2>/dev/null | head -n 1)"
+          # `|| true` on the find as well as 2>/dev/null: when the check step
+          # died before creating check/, find exits non-zero, and under
+          # `-e -o pipefail` that ended this step at the assignment, before the
+          # warning below could say why. The job then failed with no message,
+          # which is the opposite of what this step is for.
+          f="$({ find check -path '*.Rcheck/tests/testthat.Rout*' 2>/dev/null || true; } | head -n 1)"
           if [ -z "$f" ]; then
             echo "::warning title=testthat totals::no tests/testthat.Rout under check/"
             exit 0
@@ -223,9 +228,19 @@ jobs:
           # Keyed on the totals, not on the combined text: the worker fallback
           # below is never empty, so testing the pair would report a green
           # summary over a run whose totals were never found.
+          #
+          # The two absences are different events and are treated differently.
+          # A missing FILE only warns, above: there are benign causes, and this
+          # is a required context, so failing the job over a log that moved
+          # would block every merge for a reason that is not about the package
+          # (#207). A file that IS here and holds no totals line is an anomaly:
+          # the tests ran and said nothing about it, which is the state this
+          # whole step exists to catch, so it fails the job (#357 review). The
+          # worker line never blocks either way, because Windows runs serial by
+          # design and prints none.
           if [ -z "$totals" ]; then
-            echo "::warning title=testthat totals::no totals line in $f"
-            exit 0
+            echo "::error title=testthat totals::$f has no totals line; the tests ran but reported no counts"
+            exit 1
           fi
           lines="$(printf '%s\n%s' "${workers:-serial (no worker line)}" "$totals")"
           echo "$lines"
