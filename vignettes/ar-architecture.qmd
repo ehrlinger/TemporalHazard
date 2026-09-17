@@ -26,6 +26,11 @@ cat("R.home=", R.home(), "\n", "libPaths=", paste(.libPaths(), collapse=" | "), 
 ```
 
 ```{r setup, include=FALSE}
+# R CMD build installs the package into R_BUILD_TEMPLIB. A build launched
+# through callr (rcmdcheck, devtools) passes Quarto's R session a profile
+# that resets .libPaths() without it, and every chunk skipped (#276).
+templib <- Sys.getenv("R_BUILD_TEMPLIB")
+if (dir.exists(templib)) .libPaths(c(templib, .libPaths()))
 has_pkg <- requireNamespace("TemporalHazard", quietly = TRUE)
 if (has_pkg) library(TemporalHazard)
 # On CI a package that cannot load must fail the build, not skip every
