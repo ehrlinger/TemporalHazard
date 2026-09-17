@@ -16,6 +16,36 @@
 ## Each case declares `needs`: the exported names it requires. A case whose
 ## `needs` are absent under a version is recorded as ABSENT, which is a
 ## different outcome from an error, and is never silently dropped.
+##
+## ---------------------------------------------------------------------------
+## KNOWN LIMITATION OF THIS BATTERY: the multiphase cases run on data that
+## cannot identify a multiphase model.
+## ---------------------------------------------------------------------------
+##
+## `census_data()$basic` is plain exponential draws with no early/late/
+## background structure. Every multiphase case below therefore FAILS the SAS/C
+## relative-gradient test -- `mp_cov_formula` stops at rel_gradient 0.0181
+## against a required 6.06e-06, about 3000x outside tolerance, and across
+## `start_seed` 1:10, 42 and 2026 not one of 12 fits meets it. Several cases
+## also have a phase contributing 1e-9 or less of the cumulative hazard, and
+## the fits warn about exactly that.
+##
+## The consequence for reading this census, which cost one withdrawn finding
+## to learn: a multiphase DIFFERS row means **this fit's stopping point
+## moved**. It does NOT mean the optimum moved, and it is NOT evidence about
+## the likelihood. Comparing two fits that both fail the convergence criterion
+## compares two arbitrary stopping points, so neither "better" nor "worse" is
+## a property either one has.
+##
+## The single-distribution cases, the exported-pure-function cases and the
+## predict cases are unaffected: those fits converge, and their verdicts carry
+## their ordinary meaning.
+##
+## TO FIX, before the multiphase rows are leaned on: rebuild the multiphase
+## cases on data with genuine phase structure so the fits converge, then a
+## multiphase difference will mean something. Left undone on purpose -- it
+## changes the fixed case battery, and the value of a fixed battery is that it
+## does not drift mid-programme. Raise it with the maintainer first.
 
 # ---------------------------------------------------------------------------
 # Deterministic data
