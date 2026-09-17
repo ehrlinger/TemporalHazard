@@ -1,6 +1,7 @@
 # predict() on a single-distribution fit returns unnamed values (#309).
-# The shape parameters are named elements of theta, and R carries such a
-# name onto arithmetic through rep() and through any length-1 operand: a
+# theta's elements are named (mu, the leading one, is a log rate, a scale or
+# a location, depending on the family), and R carries such a name onto
+# arithmetic through rep() and through any length-1 operand: a
 # lognormal fit named every survival and cumulative-hazard value "mu", and
 # every family did so for one row of newdata. `expected` was produced by
 # predict() on main at e4059a5, before the fix, so these tests also check

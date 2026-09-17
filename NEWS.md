@@ -102,19 +102,42 @@
   that passed such `newdata` now gets an error naming the missing columns:
   rename the columns to match `x`. A fit made with an unnamed `x` still
   matches by position. A formula fit saved by an earlier version stored no
-  formula design, so it is matched on its design-matrix columns: a factor
-  must be given as `grpyoung` and a transform as `log(age)`. Refit it to
-  give the formula's variables instead.
+  formula design; `predict()` rebuilds it (see below), and a fit whose
+  design it cannot rebuild is matched on its design-matrix columns: a
+  factor must be given
+  as `grpyoung` and a transform as `log(age)`. Refit it to give the
+  formula's variables instead.
 
-* **A formula fit saved by an earlier version refuses `newdata` with
-  columns other than its design columns and `time`,** with
+* **A formula fit saved by an earlier version is matched by name, as a new
+  fit is.** Such a fit stored no formula design, so `predict(newdata = )`
+  rebuilds it from the fit's stored formula and data frame, and uses it
+  only if it reproduces the fitted design matrix exactly: the same columns
+  with the same values. The fit then takes the formula's variables
+  (`grp = "old"`), ignores unused columns, and lets a variable win over a
+  contradicting design column, all as a new fit does (#301). One value
+  changes with it: `newdata` giving a numeric variable and a column built
+  from it, such as `age` and `I(age^2)` at the design-column means, is now
+  rebuilt from `age`, as for a new fit, where its columns used to be taken
+  as given. The design is not rebuilt for a 1.0.3-era fit, which kept no
+  data frame; for a formula that no longer reproduces the fit; for one
+  computed in the call (`as.formula(...)`), which would be re-run; and for
+  a formula that uses anything but the data's columns and a short list of
+  R's own design functions (arithmetic and comparisons, `I()`, `log()`,
+  `exp()`, `sqrt()`, `abs()`, `pmin()`, `pmax()`, `c()`, `factor()`,
+  `relevel()`, `scale()`, `poly()`, `splines::ns()` and `splines::bs()`).
+  A constant
+  such as `k` in `I(age > k)`, a function of the user's, or even `pi`
+  could have changed since the fit without changing the fitted rows, so it
+  is not trusted; a number written into the formula, as in
+  `I(age > 50)`, is. For these, `newdata` with columns other than the
+  design columns and `time` is refused, with
   `This fit was saved by an earlier version of TemporalHazard, without a
   stored formula design, ...; it also has '...'. Refit the model with the
-  current version, or pass only the design columns.` Without a stored
-  design nothing can tell such a column from a formula variable that
-  contradicts a design column, which would otherwise be ignored silently.
-  Before, such a column made the positional match fail, so this is as
-  loud as it was (#272).
+  current version, or pass only the design columns.` Without a design
+  nothing can tell such a column from a formula variable that contradicts
+  a design column, which would otherwise be ignored silently. Before, such
+  a column made the positional match fail, so this is as loud as it was
+  (#272).
 
 * **`predict(newdata = )` stops when `newdata` gives some of the formula's
   variables beside the fitted design columns, with others missing.** Say
