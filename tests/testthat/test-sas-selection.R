@@ -282,6 +282,10 @@ test_that("SELECTION constructs with no faithful translation are refused (#160)"
   # /I in one phase and movable in another: force_in has no phase, so it
   # would be pinned in both, which is a wrong model, not a path difference.
   refused("SELECTION; EARLY MAL/I, STRONG; CONSTANT MAL, NOISE;", "MAL")
+  # RESTRICT constrains which variables the screen may select (hazrd4.c
+  # rsttbl). A screen that ignores it selects by a different rule than the
+  # job asked for, so it is refused rather than recorded.
+  refused("SELECTION; EARLY STRONG, NOISE; RESTRICT STRONG;", "RESTRICT")
 })
 
 test_that("printing options are recorded, not refused (#160)", {

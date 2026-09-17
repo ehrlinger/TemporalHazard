@@ -338,10 +338,19 @@
   full Hessian, and `force_in` is keyed by variable name across phases where
   SAS's `/I` holds a variable in one phase. Read the result as this
   package's screen of the job's candidates, not as a reproduction of the SAS
-  run. A `SELECTION` this translator cannot run faithfully is still refused
-  outright: `FAST`, `MAXVARS`, `ROBUST` and `SEMIROBUST` (which change the
-  variance the removal test uses), a per-variable `MOVE=` or `ORDER=`, and a
-  variable held by `/I` in one phase but movable in another.
+  run.
+
+  **What is refused, so you can tell in advance which of your jobs are
+  covered.** A `SELECTION` this translator cannot run faithfully still
+  emits a `stop()` rather than a screen: `FAST` (a different search),
+  `MAXVARS` (caps the selected set), `RESTRICT` (constrains which variables
+  may be selected), `ROBUST` and `SEMIROBUST` (they change the variance the
+  removal test is computed from, so the screen would make different removal
+  decisions and report them as this job's translation), a per-variable
+  `MOVE=` or `ORDER=`, and a variable held by `/I` in one phase but movable
+  in another (`force_in` is not phase-keyed, so it would be pinned in both).
+  On the reference corpus **1 of 4 `SELECTION` jobs translates**, with
+  `ROBUST` accounting for two of the three refusals.
 
 * **`hzr_phase()` can derive one late-phase shape from the others (#325).**
   The new `constraint` argument covers SAS/C's two late-phase constraints:

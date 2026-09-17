@@ -470,6 +470,7 @@
   statements <- list()
   parms_ops <- character(0)
   sel_ops <- NULL
+  saw_restrict <- FALSE
   covars <- list()
 
   for (i in seq_along(st)[-1L]) {
@@ -520,6 +521,11 @@
       # reference runs -- because only the trailing statement survived.
       PARAMETERS = parms_ops <- c(parms_ops, ops),
       STEPWISE   = sel_ops <- ops,
+      # RESTRICT constrains which variables the screen may select
+      # (hazrd4.c's rsttbl). It is recorded here and refused below when the
+      # job also has a SELECTION: a screen that ignored it would select by a
+      # different rule than the job asked for.
+      RESTRICT   = saw_restrict <- TRUE,
       # A second statement for a phase adds to its list (hazard_y.y appends
       # every phasevar); assigning replaced it and dropped the first (#342).
       EARLY      = covars$early <- c(covars$early, ops_text),
@@ -770,6 +776,7 @@
     cross_pinned <- intersect(parms$selection$force_in %||% character(0),
                               movable_all)
     refusals <- c(sel$refuse,
+                  if (saw_restrict) "RESTRICT",
                   if (length(per_var_opts)) per_var_opts,
                   if (length(cross_pinned)) {
                     paste0(cross_pinned, " (/I in one phase, movable in another)")
@@ -779,6 +786,7 @@
         "SELECTION carries ", paste(refusals, collapse = ", "),
         ", which this translator cannot run faithfully: ",
         "FAST is a different search, MAXVARS caps the selected set, ",
+        "RESTRICT constrains which variables may be selected, ",
         "ROBUST and SEMIROBUST change the variance the removal test uses, ",
         "a per-variable MOVE= or ORDER= has no hzr_stepwise() equivalent, ",
         "and a variable held by /I in one phase but movable in another ",
