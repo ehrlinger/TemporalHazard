@@ -206,10 +206,10 @@ test_that("without its data, a closed phase formula still predicts as fitted", {
 
 test_that("a formula that does not survive deparse is refused", {
   skip_on_cran()  # multiphase fits
-  # A Date inlined into the formula passes the symbol and function checks,
-  # but is not a literal the formula's text can carry.
+  # A classed constant inlined into the formula passes the symbol and
+  # function checks, but is not a literal the formula's text can carry.
   d <- legacy_data()
-  f <- eval(bquote(~ I(opdate > .(as.Date("1975-06-01")))))
+  f <- eval(bquote(~ I(age * .(structure(2, class = "myunit")))))
   lf <- legacy_fit_on(f, d, keep_frame = FALSE)
   expect_error(
     predict(lf$fit, newdata = legacy_nd(), type = "cumulative_hazard"),
@@ -381,11 +381,11 @@ test_that("a legacy fit that kept its data is refused when its formula reads out
   hi <- ages[k]
   e <- new.env()
   e$cutoff <- lo + 0.25 * (hi - lo)
-  lf <- legacy_fit_on(stats::as.formula("~ I(age > cutoff)", env = e), d,
-                      keep_frame = TRUE)
+  f <- stats::as.formula("~ I(age * (age > cutoff))", env = e)
+  lf <- legacy_fit_on(f, d, keep_frame = TRUE)
   e$cutoff <- lo + 0.75 * (hi - lo)
   expect_identical(unname(lf$fit$fit$x_list$early[, 1L]),
-                   as.numeric(d$age > e$cutoff))
+                   d$age * (d$age > e$cutoff))
   nd <- data.frame(time = 2, age = lo + 0.5 * (hi - lo))
   expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
                "refit")
@@ -429,14 +429,14 @@ test_that("an inlined -0, a classed constant or a user's function of a listed na
   d <- legacy_data()
   nd <- legacy_nd()
   # -0 prints as 0, so its text rebuilds another formula.
-  f <- eval(bquote(~ I(age / .(-0) < 0)))
+  f <- eval(bquote(~ I(age + exp(1 / .(-0)))))
   for (keep in c(TRUE, FALSE)) {
     lf <- legacy_fit_on(f, d, keep_frame = keep)
     expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
                  "refit", label = paste("-0, keep_frame =", keep))
   }
   # A classed constant prints as a call, not as itself.
-  f <- eval(bquote(~ I(opdate > .(as.Date("1975-06-01")))))
+  f <- eval(bquote(~ I(age * .(structure(2, class = "myunit")))))
   lf <- legacy_fit_on(f, d, keep_frame = TRUE)
   expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
                "refit", label = "classed constant, keep_frame = TRUE")
