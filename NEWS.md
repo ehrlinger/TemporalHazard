@@ -2,6 +2,18 @@
 
 ## Breaking changes
 
+* **A multiphase phase formula without an intercept no longer drops its
+  first term (#303).** `hzr_phase(formula = ~ 0 + age)` or `~ age - 1`
+  fitted the phase without `age`, and `~ 0 + age + mal` without `age`, with
+  no warning and no message. `~ 0 + age + grp`, for a factor `grp`, lost
+  `age` and kept a column for every level of `grp`; `predict()` repeated the same design, so its
+  results agreed with the wrong fit. A phase has no free intercept of its
+  own (its scale plays that role), so such a formula now builds exactly the
+  design of the same formula with an intercept: `~ 0 + age` fits as
+  `~ age`. Refit a model whose phase formula had no intercept; its
+  estimates will change. A formula whose first term is a factor was already
+  coded against the factor's reference level, and is unaffected.
+
 * **`hazard()` now refuses a multiphase phase formula with covariates when
   no `data` is supplied (#299).** Such fits previously ignored the phase
   formula. On the vector interface (`time =`, `status =`) without `data`, a
