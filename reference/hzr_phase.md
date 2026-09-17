@@ -55,11 +55,13 @@ print(x, ...)
 
 - tau:
 
-  Positive scalar; scale parameter for `"g3"` phases. SAS late: `TAU`.
+  Positive finite scalar; scale parameter for `"g3"` phases. SAS late:
+  `TAU`.
 
 - gamma:
 
-  Positive scalar; time exponent for `"g3"` phases. SAS late: `GAMMA`.
+  Positive finite scalar; time exponent for `"g3"` phases. SAS late:
+  `GAMMA`.
 
 - alpha:
 
@@ -69,7 +71,8 @@ print(x, ...)
 
 - eta:
 
-  Positive scalar; outer exponent for `"g3"` phases. SAS late: `ETA`.
+  Positive finite scalar; outer exponent for `"g3"` phases. SAS late:
+  `ETA`.
 
 - formula:
 

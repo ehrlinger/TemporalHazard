@@ -450,6 +450,42 @@
 
 ### Bug fixes
 
+- **[`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
+  now mirrors PROC HAZARD when `FIXGE2` or `FIXGAE2` meets
+  `SETG3_ignore_tau()`**
+  ([\#328](https://github.com/ehrlinger/TemporalHazard/issues/328),
+  [\#329](https://github.com/ehrlinger/TemporalHazard/issues/329)
+  review). That branch runs when both flags are set, or when either is
+  set with `ALPHA` fixed at 1. PROC HAZARD then fixes all four late
+  shapes: `TAU` = 1, `ALPHA` = 1, and `GAMMA` and `ETA` at 2 and 1 (or 1
+  and 2 when the job wrote `ETA = 2`). The translation used to record
+  these jobs as untranslated and still emit a phase with `GAMMA` free.
+  It now emits the fixed phase, records any value the job wrote that
+  neither program uses, and records `SETG3940` when `ALPHA` is fixed at
+  anything other than 1.
+
+- **`hzr_phase("g3")` now refuses an infinite `tau`, `gamma` or `eta`,
+  and a derived shape that is not a finite positive number**
+  ([\#329](https://github.com/ehrlinger/TemporalHazard/issues/329)
+  review). An infinite shape was accepted and failed only inside the
+  optimizer. Under `constraint`, finite sources could still overflow to
+  an infinite derived shape, or underflow to `alpha = 0`, which would
+  silently select the exponential limiting case.
+  [`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
+  now records a job whose late shape is not finite as written
+  (`GAMMA=1e400` reads as `Inf`) or after a `FIXGE2`/`FIXGAE2` rewrite,
+  since its emitted
+  [`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
+  call can no longer be built.
+
+- **`hazard(fit = FALSE)` applies a phase constraint to a supplied
+  `theta` when phases carry covariates**
+  ([\#328](https://github.com/ehrlinger/TemporalHazard/issues/328)). It
+  used to warn that the derived slot could not be located, even for a
+  `theta` already on the constraint. The slot is now located the way the
+  fit locates it, so an on-constraint `theta` passes silently and an
+  off-constraint one is replaced with a warning.
+
 - **`predict(newdata = )` on a multiphase fit saved before this version
   no longer gets [`scale()`](https://rdrr.io/r/base/scale.html),
   [`poly()`](https://rdrr.io/r/stats/poly.html) or `ns()` in a phase
