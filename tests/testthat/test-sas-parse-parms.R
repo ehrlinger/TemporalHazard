@@ -1385,8 +1385,13 @@ test_that("both flags with ALPHA fixed away from 1 is PROC HAZARD's SETG3940", {
                              "FIXGAE2"))
   expect_equal(nrow(bare$untranslated), 1L)
   expect_match(bare$untranslated$reason, "(SETG3940)", fixed = TRUE)
-  expect_false(grepl("fixed = c(\"tau\", \"gamma\", \"alpha\", \"eta\")",
-                     deparse1(got$phases), fixed = TRUE))
+  # Both the WEIBULL case above and the bare case below: a refused job must
+  # not come back as the mirrored all-fixed phase.
+  for (phases in list(got$phases, bare$phases)) {
+    expect_false(grepl("fixed = c(\"tau\", \"gamma\", \"alpha\", \"eta\")",
+                       deparse1(phases), fixed = TRUE))
+  }
+
 })
 
 test_that("FIXGAE2 with ALPHA fixed on the constraint and one shape free derives ALPHA", {
