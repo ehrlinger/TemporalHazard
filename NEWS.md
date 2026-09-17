@@ -370,17 +370,23 @@
   package's screen of the job's candidates, not as a reproduction of the SAS
   run.
 
+  **A job asking for a robust variance still translates, loudly.** `ROBUST`
+  and `SEMIROBUST` change the variance the removal test is computed from,
+  so which variables are removed, and at which step, can differ from the
+  SAS run. That is the same kind of divergence the translation already
+  carries, and such jobs are the common case rather than the exception, so
+  the statement is recorded in `$untranslated` and named in the callout
+  instead of refusing the job.
+
   **What is refused, so you can tell in advance which of your jobs are
-  covered.** A `SELECTION` this translator cannot run faithfully still
-  emits a `stop()` rather than a screen: `FAST` (a different search),
-  `MAXVARS` (caps the selected set), `RESTRICT` (constrains which variables
-  may be selected), `ROBUST` and `SEMIROBUST` (they change the variance the
-  removal test is computed from, so the screen would make different removal
-  decisions and report them as this job's translation), a per-variable
-  `MOVE=` or `ORDER=`, and a variable held by `/I` in one phase but movable
-  in another (`force_in` is not phase-keyed, so it would be pinned in both).
-  On the reference corpus **1 of 4 `SELECTION` jobs translates**, with
-  `ROBUST` accounting for two of the three refusals.
+  covered.** A `SELECTION` this translator cannot run faithfully emits a
+  `stop()` rather than a screen: `FAST` (a different search), `MAXVARS`
+  (caps the selected set), `RESTRICT` (constrains which variables may be
+  selected), a per-variable `MOVE=` or `ORDER=`, and a variable held by
+  `/I` in one phase but movable in another (`force_in` is not phase-keyed,
+  so it would be pinned in both). On the reference corpus **2 of 4
+  `SELECTION` jobs translate**; the two refusals are a cross-phase `/I` and
+  a `RESTRICT` statement.
 
 * **`hzr_phase()` can derive one late-phase shape from the others (#325).**
   The new `constraint` argument covers SAS/C's two late-phase constraints:

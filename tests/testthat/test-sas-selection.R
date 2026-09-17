@@ -277,8 +277,6 @@ test_that("SELECTION constructs with no faithful translation are refused (#160)"
   }
   refused("SELECTION FAST; EARLY STRONG, NOISE;", "FAST")
   refused("SELECTION MAXVARS=2; EARLY STRONG, NOISE;", "MAXVARS")
-  refused("SELECTION ROBUST; EARLY STRONG, NOISE;", "ROBUST")
-  refused("SELECTION SEMIROBUST; EARLY STRONG, NOISE;", "SEMIROBUST")
   refused("SELECTION; EARLY STRONG/MOVE=2, NOISE;", "MOVE=")
   refused("SELECTION; EARLY STRONG/ORDER=1, NOISE;", "ORDER=")
   # /I in one phase and movable in another: force_in has no phase, so it
@@ -310,6 +308,46 @@ test_that("every mapped SELECTION option reaches the emitted call (#160)", {
   expect_equal(deparse(j$calls$fit_base[[3L]][["phases"]][[2L]][["formula"]]), "~C")
   expect_equal(deparse(cl(j)[["scope"]]), "list(phase_1 = ~A, phase_2 = NULL)")
   expect_true(any(grepl("\\bB\\b", deparse(j$calls$status))))
+})
+
+test_that("ROBUST translates with a loud row, it does not refuse (#160)", {
+  skip_on_cran()
+  # This INVERTS an earlier test. ROBUST used to refuse, because it changes
+  # the variance the removal test is computed from. It is the same CLASS of
+  # divergence the translation already ships and documents (PROC HAZARD uses
+  # approximate variances while selecting; this package uses the full
+  # Hessian), and it is on 90.5% of the SELECTION jobs in the production
+  # corpus, so it is said loudly instead of refused. Executed, not just
+  # asserted on the row text.
+  for (kw in c("ROBUST", "SEMIROBUST")) {
+    job <- .sel_job(paste0("SELECTION ", kw, " SLE=0.2; EARLY STRONG, NOISE;"))
+    expect_identical(job$calls$fit[[3L]][[1L]], as.name("hzr_stepwise"),
+                     info = kw)
+    u <- job$untranslated
+    expect_true(any(u$construct == kw), info = kw)
+    expect_match(u$reason[u$construct == kw][1L], "removal tests", info = kw)
+    res <- suppressWarnings(render_sim(job, list(D = .sel_data())))
+    expect_true(res$ok, info = paste(kw, paste(res$results, collapse = "; ")))
+    expect_s3_class(res$env$fit, "hzr_stepwise")
+  }
+})
+
+test_that("the callout names ROBUST when the job asks for it (#160)", {
+  # The reason most likely to apply, so it is asserted like the others: this
+  # is the acceptance condition for translating ROBUST rather than refusing.
+  doc <- TemporalHazard:::.hzr_render_qmd(
+    .sel_job("SELECTION ROBUST SLE=0.2; EARLY STRONG, NOISE;"))
+  hit <- grep("asks for a ROBUST", doc)
+  expect_length(hit, 1L)
+  chunk <- grep("^#\\| label: fit$", doc)
+  expect_lt(hit, chunk)
+  expect_match(paste(doc, collapse = " "), "removed, and at which step")
+  expect_no_match(paste(doc, collapse = " "), "reproduces PROC HAZARD")
+  # Absent for a job that does not ask for it.
+  plain <- TemporalHazard:::.hzr_render_qmd(
+    .sel_job("SELECTION SLE=0.2; EARLY STRONG, NOISE;"))
+  expect_length(grep("asks for a ROBUST", plain), 0L)
+  expect_length(grep("asks for a SEMIROBUST", plain), 0L)
 })
 
 test_that("printing options are recorded, not refused (#160)", {
@@ -393,6 +431,7 @@ test_that("each refusal names only what actually fired (#160)", {
   r <- reason("SELECTION MAXVARS=2; EARLY A, B;")
   expect_match(r, "MAXVARS")
   expect_no_match(r, "FAST")
+  expect_no_match(r, "ROBUST")
   r <- reason("SELECTION; EARLY A/ORDER=1, B;")
   expect_match(r, "ORDER")
   expect_no_match(r, "FAST")

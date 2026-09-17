@@ -300,7 +300,8 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
         sw <- r$stepwise_call
         sw[[2L]] <- as.name(base_slot)
         calls[[fit_slot]] <- call("<-", as.name(fit_slot), sw)
-        notes[[fit_slot]] <- .hzr_selection_divergence_note()
+        notes[[fit_slot]] <- .hzr_selection_divergence_note(
+          robust = r$selection_robust)
         if (!is.null(r$screen_check_call)) {
           chk <- do.call(substitute,
                          list(r$screen_check_call,
@@ -456,11 +457,23 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
 #' before the code, which is why it is a note on the chunk rather than a row
 #' in `$untranslated` (#160).
 #' @noRd
-.hzr_selection_divergence_note <- function() {
+.hzr_selection_divergence_note <- function(robust = character(0)) {
+  # Named first when it applies, because it is the reason most likely to
+  # bite: ROBUST is on 90.5% of the SELECTION jobs in the production corpus
+  # (#160). The job asked for a robust variance while selecting and the
+  # screen uses the standard one.
+  robust_txt <- if (!length(robust)) "" else paste(
+    "This job's SELECTION statement asks for a",
+    if ("SEMIROBUST" %in% robust && !("ROBUST" %in% robust)) "SEMIROBUST" else "ROBUST",
+    "variance while selecting. The screen below computes its removal tests",
+    "from the standard variance instead, so which variables are removed,",
+    "and at which step, can differ from the SAS run."
+  )
   list(
     title = paste("SELECTION: this screen may select a different model than",
                   "PROC HAZARD did"),
     body = paste(
+      robust_txt,
       "This job's SELECTION statement is translated into hzr_stepwise() with",
       "the job's own candidates, per-variable flags and SLENTRY/SLSTAY",
       "thresholds. The screen is real, and the selected model may still",

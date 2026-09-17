@@ -762,6 +762,7 @@
   head <- quote(hazard)
   stepwise_call <- NULL
   screen_check_call <- NULL
+  selection_robust <- character(0)
   if (!is.null(sel)) {
     untr <- rbind(untr, sel$untranslated)
     # Constructs with no faithful translation. ROBUST/SEMIROBUST are here,
@@ -858,6 +859,7 @@
     }
     stepwise_call <- as.call(c(quote(hzr_stepwise),
                                Filter(Negate(is.null), sw_args)))
+    selection_robust <- sel$robust
     # A screen can stop because no candidate could be SCORED, which reads
     # exactly like "nothing met slentry" (#159). Say which it was.
     # `fit` is substituted for this block's own slot name by the caller, in
@@ -889,6 +891,7 @@
 
   list(call = as.call(c(head, args)), status_call = status_call,
        stepwise_call = stepwise_call, screen_check_call = screen_check_call,
+       selection_robust = selection_robust,
        outhaz = outhaz, untranslated = untr, tokens_seen = seen,
        tokens_mapped = mapped)
 }
@@ -925,7 +928,7 @@
 .hzr_selection_spec <- function(operands) {
   out <- list(stepwise = TRUE, direction = "both", slentry = NULL,
               slstay = NULL, max_steps = NULL, max_move = NULL,
-              refuse = character(0),
+              refuse = character(0), robust = character(0),
               untranslated = .hzr_untranslated_frame())
   saw_stepwise <- FALSE
   saw_backward <- FALSE
@@ -975,15 +978,19 @@
       NOPRINTQ = out$untranslated <- rbind(out$untranslated,
         .hzr_untranslated_frame(NA_integer_, key,
                                 "suppresses a PROC HAZARD printout only")),
-      # Refused, not recorded. FAST is a different search (H->f), MAXVARS
-      # caps the selected set with no hzr_stepwise() equivalent, and
-      # ROBUST/SEMIROBUST change the VARIANCE the drop path Wald-tests
-      # against `slstay`: recording either would run a different screen and
-      # report it as this job's translation.
+      # Refused: FAST is a different search (H->f) and MAXVARS caps the
+      # selected set, neither of which hzr_stepwise() can express.
       FAST       = out$refuse <- c(out$refuse, "FAST"),
       MAXVARS    = out$refuse <- c(out$refuse, "MAXVARS"),
-      ROBUST     = out$refuse <- c(out$refuse, "ROBUST"),
-      SEMIROBUST = out$refuse <- c(out$refuse, "SEMIROBUST"),
+      # Recorded, not refused. ROBUST and SEMIROBUST change the variance the
+      # removal test is computed from, so the screen's drop decisions can
+      # differ from PROC HAZARD's. That is the same CLASS of divergence the
+      # translation already carries and documents -- PROC HAZARD uses
+      # approximate variances while selecting, this package uses the full
+      # Hessian -- and refusing it would have refused 90.5% of the SELECTION
+      # jobs in the production corpus. Say it loudly instead (#160).
+      ROBUST     = out$robust <- c(out$robust, "ROBUST"),
+      SEMIROBUST = out$robust <- c(out$robust, "SEMIROBUST"),
       {
         out$untranslated <- rbind(out$untranslated, .hzr_untranslated_frame(
           NA_integer_, key, "no hzr_stepwise() equivalent"
@@ -991,6 +998,16 @@
       }
     )
   }
+  for (kw in out$robust) {
+    out$untranslated <- rbind(out$untranslated, .hzr_untranslated_frame(
+      NA_integer_, kw, paste0(
+        "this job asks PROC HAZARD for a ",
+        if (identical(kw, "ROBUST")) "robust" else "semi-robust",
+        " variance while selecting; the translated screen computes its ",
+        "removal tests from the standard variance, so which variables are ",
+        "removed, and at which step, can differ from the SAS run")))
+  }
+
   # BACKWARD wins over any other direction keyword, whatever the order
   # (stpwprc.c:16-22). NOSTEPWISE only caps moves, so it is forward.
   out$direction <- if (saw_backward) "backward" else
