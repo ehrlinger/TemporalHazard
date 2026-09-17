@@ -405,6 +405,17 @@
 
 ## Bug fixes
 
+* **A backward `hzr_stepwise()` drop's refusal now names the reduced design,
+  and its pre-check no longer repeats parse-time warnings (#343).** The
+  reason for refusing a drop that removes no column read "the refit's
+  design", but on the single-distribution path that design is built before
+  any refit, so it described something that did not exist; it now reads "the
+  reduced design", on both paths. The same pre-check parsed the current and
+  the reduced formula before the refit parsed the reduced one again, which
+  doubled any warning raised while building the design: 8 per step instead
+  of 4. It now parses quietly, since those warnings surface from the base fit
+  and from the refit.
+
 * **A fit made with `survival::Surv()`'s own status codes was wrong, not
   empty, and said nothing (#231).** `Surv()` codes interval-censored rows
   `3`, and this package codes them `2`. Passing survival's integers as a
