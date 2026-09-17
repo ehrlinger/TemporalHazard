@@ -77,6 +77,21 @@ test_that("hazard() refuses zero rows on every path (#231)", {
   expect_error(hazard(time = c(1, 2, 3, 4), status = c(1, 3, 1, 0.5),
                       dist = "exponential", theta = 0.1, fit = TRUE),
                "2 of 4 row\\(s\\) are not, at index/indices 2, 4\\.")
+  # A character or factor status passed that check as text, and the
+  # single-distribution fits returned their starting values.
+  expect_error(hazard(time = c(1, 2, 3), status = c("1", "0", "1"),
+                      dist = "weibull", theta = c(0.5, 1), fit = TRUE),
+               "must be numeric")
+  expect_error(hazard(time = c(1, 2, 3), status = factor(c(1, 0, 1)),
+                      dist = "exponential", theta = 0.1, fit = TRUE),
+               "must be numeric")
+  lgl <- suppressWarnings(hazard(time = tt, status = st == 1,
+                                 dist = "exponential", theta = 0.1,
+                                 fit = TRUE))
+  num <- suppressWarnings(hazard(time = tt, status = as.numeric(st == 1),
+                                 dist = "exponential", theta = 0.1,
+                                 fit = TRUE))
+  expect_equal(lgl$fit$theta, num$fit$theta)
   # NA status still reaches the completeness check that names it.
   expect_error(hazard(time = c(0, 0), status = c(NA, NA),
                        dist = "exponential", theta = 0.1, fit = TRUE),
@@ -98,6 +113,11 @@ test_that("hazard() refuses zero rows on every path (#231)", {
                                    dist = "multiphase", phases = ph,
                                    fit = TRUE))
   expect_true(is.finite(codes$fit$objective))
+  # The -1 and 2 rows must count: dropping them changes the likelihood.
+  fewer <- suppressWarnings(hazard(time = c(2, 3, 5), status = c(0, 1, 1),
+                                   dist = "multiphase", phases = ph,
+                                   fit = TRUE))
+  expect_gt(abs(codes$fit$objective - fewer$fit$objective), 1e-6)
 })
 
 test_that("fit = TRUE without theta is refused for single-distribution models", {

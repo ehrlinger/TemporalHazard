@@ -809,6 +809,14 @@ hazard <- function(formula = NULL,
   # code falls through all of them and adds nothing: survival's interval
   # code 3, passed as a plain vector, was silently dropped (#231). NA is left
   # to the completeness check, which names the rows.
+  # %in% compares as text, so a character or factor status passed that
+  # check, and the single-distribution likelihoods then returned their
+  # starting values as a converged fit.
+  if (!is.numeric(status) && !is.logical(status)) {
+    stop("'status' must be numeric (or logical), not ", class(status)[1L],
+         ". Convert it, for example with as.numeric(as.character(status)) ",
+         "for a factor.", call. = FALSE)
+  }
   bad_status <- !is.na(status) & !(status %in% c(-1, 0, 1, 2))
   if (any(bad_status)) {
     stop("'status' must be coded -1 (left-censored), 0 (right-censored), ",
