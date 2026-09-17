@@ -1376,7 +1376,15 @@ test_that("both flags with ALPHA fixed away from 1 is PROC HAZARD's SETG3940", {
   got <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.5",
                             "ALPHA=3", "FIXALPHA", "FIXGAE2", "FIXGE2",
                             "WEIBULL"))
-  expect_true(any(grepl("(SETG3940)", got$untranslated$reason, fixed = TRUE)))
+  expect_match(got$untranslated$reason, "(SETG3940)", fixed = TRUE)
+
+  # One row: the refusal. PROC HAZARD stops there, so no trace of a later
+  # branch belongs beside it. Without WEIBULL and with TAU unwritten, the
+  # no-flag trace would otherwise add a moved-shape row and a TAU-default row.
+  bare <- .hzr_parse_parms(c("MUL=0.2", "ALPHA=0", "FIXALPHA", "FIXGE2",
+                             "FIXGAE2"))
+  expect_equal(nrow(bare$untranslated), 1L)
+  expect_match(bare$untranslated$reason, "(SETG3940)", fixed = TRUE)
   expect_false(grepl("fixed = c(\"tau\", \"gamma\", \"alpha\", \"eta\")",
                      deparse1(got$phases), fixed = TRUE))
 })

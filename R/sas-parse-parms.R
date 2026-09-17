@@ -233,10 +233,13 @@
 # a result and is not.
 #
 # g_two/ga_two (the GAMMA*ETA = 2 and GAMMA*ETA/ALPHA = 2 constraint flags)
-# are driven by FIXGE2/FIXGAE2. .hzr_parse_parms() maps them onto
-# hzr_phase(constraint = ) itself, for WEIBULL only, and records every other
-# case -- so this trace takes both as FALSE rather than guessing. Every branch
-# below is therefore the !g_two && !ga_two column of the C's own tables.
+# are driven by FIXGE2/FIXGAE2, which .hzr_parse_parms() handles itself: it
+# maps them onto hzr_phase(constraint = ) for WEIBULL, mirrors (or refuses)
+# SETG3_ignore_tau() when that branch takes them, with or without WEIBULL, and
+# records every other case -- and does not call this trace for the
+# SETG3_ignore_tau() phases. So this trace takes both as FALSE rather than
+# guessing. Every branch below is therefore the !g_two && !ga_two column of
+# the C's own tables.
 
 # What each SETG3 refusal code objects to. The code alone is greppable but
 # opaque; a caller reading $untranslated needs to know which operand to change.
@@ -693,7 +696,7 @@
   # than guessed at. Together, or with ALPHA fixed at 1, they take
   # SETG3_ignore_tau() instead, which is mirrored below.
   late_constraint <- "none"
-  mirrored_ignore_tau <- FALSE
+  ignore_tau_handled <- FALSE
   constraint_flags <- c("FIXGE2", "FIXGAE2")[c(saw_ge2, saw_gae2)]
   if (length(constraint_flags) && !(has_late && length(late))) {
     for (flag in constraint_flags) {
@@ -723,6 +726,9 @@
       (isTRUE(written[["eta"]] <= 0) && fx_user("eta"))
     if (!entry_refused && fx_user("alpha") &&
           !isTRUE(written[["alpha"]] == 1)) {
+      # PROC HAZARD stops here, so nothing the trace below would describe
+      # is ever reached.
+      ignore_tau_handled <- TRUE
       flag_bad(paste(constraint_flags, collapse = " "), paste0(
         "PROC HAZARD refuses this job: SETG3 raises (SETG3940) -- ",
         "SETG3_ignore_tau() must set ALPHA to 1, but ALPHA is fixed at ",
@@ -734,7 +740,7 @@
       late_full[["gamma"]] <- if (eta_two) 1 else 2
       late_full[["eta"]] <- if (eta_two) 2 else 1
       fixed_late <- unname(.hzr_parms_late_arg)
-      mirrored_ignore_tau <- TRUE
+      ignore_tau_handled <- TRUE
       # A TAU the job wrote is already reported below when ALPHA is fixed at
       # 1; with both flags and ALPHA free nothing else says it.
       moved <- c(
@@ -950,8 +956,9 @@
   # while only the two identifiability fixes are mirrored.
   setg3_refused <- FALSE
   # The trace assumes neither constraint flag, so it does not describe a phase
-  # SETG3_ignore_tau() ran under one; that phase is fully determined above.
-  if (length(late) && has_late && !mirrored_ignore_tau) {
+  # SETG3_ignore_tau() ran under one: that phase is fully determined above, or
+  # refused there with SETG3940.
+  if (length(late) && has_late && !ignore_tau_handled) {
     setg3 <- .hzr_setg3_notes(
       tau_raw = if (tau_absent) NA_real_ else late[["tau"]],
       gamma = late_full[["gamma"]],
@@ -1062,7 +1069,7 @@
              "by neither PROC HAZARD nor the translation")
     )
   } else if (length(late) && has_late && !setg3_refused && tau_defaulted &&
-             !ignore_tau && !mirrored_ignore_tau) {
+             !ignore_tau && !ignore_tau_handled) {
     # Which data-dependent default applies depends on whether the job wrote a
     # TAU at all -- see the tau_absent/tau_nonpositive split above.
     # The other SETG3 branch (setg3.c:316-318), reached only when the
