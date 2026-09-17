@@ -104,6 +104,37 @@
   fit, and both pass.
 
 - **[`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
+  no longer drops phase covariates that follow a `/` option
+  ([\#342](https://github.com/ehrlinger/TemporalHazard/issues/342)).**
+  SAS attaches `/ options` to one covariate at a time, so
+  `EARLY AGE, MAL/I, OPMOS;` is three covariates. The translator cut the
+  list at the first `/`, fitted `~AGE + MAL`, and recorded only that
+  phase options were deferred, not that `OPMOS` was gone. Each covariate
+  now keeps its own options: `/E` (`EXCLUDE`) leaves it out of the
+  model, as `PROC HAZARD` does without a `SELECTION` statement; `/I` and
+  `/S` leave it in; and a per-variable `MOVE=` or `ORDER=`, or any other
+  option, is recorded in `$untranslated` under the variable’s name.
+
+  Two related fixes. A second `EARLY`, `CONSTANT` or `LATE` statement
+  for the same phase now adds to that phase’s covariates rather than
+  replacing them. A covariate named twice in a phase is one parameter,
+  as in `PROC HAZARD`, whose last mention sets its starting value and
+  options; within one statement it used to put two starting values in
+  `theta` for one column, shifting every later one.
+
+  A `SELECTION NOSTEPWISE` (or `NOSW`) job is now refused like every
+  other `SELECTION` job. It was read as no screen at all and translated
+  to a plain fit with every candidate in the model, but `PROC HAZARD`
+  still screens, forward only, with each candidate starting out of the
+  model. And a phase variable that is not in the fitted model (an `/E`
+  variable, or a covariate of a phase the job does not select) still
+  deletes its missing rows in `PROC HAZARD`, which
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  cannot do for a variable it never sees, so the translated status chunk
+  now stops when such a variable is missing and asks for those rows to
+  be dropped.
+
+- **[`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
   now emits a [`stop()`](https://rdrr.io/r/base/stop.html) in place of
   the fit when a `PARMS` statement builds no phase it could use.**
   Operands the translator could not read (a template’s `MUE=?`, or
