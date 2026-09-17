@@ -749,3 +749,40 @@ test_that("an NA interval bound is named as such, at its real row (#232)", {
   expect_identical(check(lo_other, up), "no error")
   expect_identical(check(lo, up), "no error")
 })
+
+test_that("hazard() refuses an NA interval bound before any likelihood sees it (#232)", {
+  # The objective's own interval guard, which(!(upper > lower)), drops a row
+  # whose bound is NA instead of stopping. That is safe only because no NA
+  # bound gets through hazard(): these are the refusals it relies on.
+  ph <- list(early = hzr_phase("cdf"), constant = hzr_phase("constant"))
+  tt <- c(1, 2, 3, 4, 5, 6)
+  st <- c(1, 0, 2, 1, 2, 1)
+  lo <- c(0, 0, 1, 0, 2, 0)
+  for (obj in c("likelihood", "sas")) {
+    lo_na <- lo
+    lo_na[3] <- NA
+    up_na <- tt
+    up_na[5] <- NA
+    expect_error(hazard(time = tt, status = st, time_lower = lo_na,
+                        time_upper = tt, dist = "multiphase", phases = ph,
+                        objective = obj), "'time_lower' must be", info = obj)
+    expect_error(hazard(time = tt, status = st, time_lower = lo,
+                        time_upper = up_na, dist = "multiphase", phases = ph,
+                        objective = obj), "'time_upper' must be", info = obj)
+    d <- data.frame(tt = tt, st = st, lo = lo_na, up = tt)
+    expect_error(hazard(time = tt, status = st, time_lower = lo,
+                        time_upper = up, data = d, dist = "multiphase",
+                        phases = ph, objective = obj),
+                 "'time_lower' must be", info = obj)
+  }
+
+  # Surv(type = "interval2") reads an NA bound as open-ended, so it arrives
+  # as right- or left-censoring with finite stored bounds, never as an
+  # interval row with an NA.
+  d2 <- data.frame(l = c(1, 2, 1, 4, 2, 6), u = c(1, NA, 3, 4, 5, 6))
+  fit <- suppressWarnings(hazard(survival::Surv(l, u, type = "interval2") ~ 1,
+                                 data = d2, dist = "multiphase", phases = ph))
+  expect_equal(fit$data$status, c(1, 0, 2, 1, 2, 1))
+  expect_false(anyNA(fit$data$time_lower))
+  expect_false(anyNA(fit$data$time_upper))
+})
