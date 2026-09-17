@@ -31,8 +31,11 @@ test_that("a global formula without an intercept builds the intercept design (#3
 test_that("the removal warns once, and only where it is ignored (#337)", {
   d <- global_ni_data()
   for (rhs in c("0 + grp", "grp - 1", "0 + age")) {
+    # By CLASS as well as message: stepwise's muffler keys on the class
+    # (stepwise-refit.R), so a warning that kept its wording and lost its
+    # class would break the muffling with every message assertion passing.
     expect_warning(global_ni_parse(rhs, d), "removes the intercept",
-                   info = rhs)
+                   class = "hzr_intercept_removed", info = rhs)
   }
   for (rhs in c("grp", "age + grp", "1", "0")) {
     expect_no_warning(global_ni_parse(rhs, d))
@@ -91,16 +94,37 @@ test_that("a stepwise refit does not repeat the warning (#337)", {
   )
   # A multiphase refit passes the global formula through unchanged, so
   # every step re-parses `~ 0 + age`: the steps taken are the refits.
+  # Count by MESSAGE, not by class. Counting the class alone cannot fail
+  # the way this test needs to: if the class were renamed, the muffler in
+  # stepwise-refit.R would stop muffling and the warning WOULD repeat --
+  # but a class counter would never see it, the count would stay 0, and
+  # the catch-all handler below would swallow the repeats. The test would
+  # pass while asserting the opposite of the truth. Matching the message
+  # catches a repeat however it is classed.
   repeated <- 0L
+  classed <- 0L
+  count_warnings <- function(w) {
+    if (grepl("removes the intercept", conditionMessage(w))) {
+      repeated <<- repeated + 1L
+      if (inherits(w, "hzr_intercept_removed")) classed <<- classed + 1L
+    }
+    invokeRestart("muffleWarning")
+  }
+  # Known positive: the same handler, on a call that DOES warn, must count
+  # one of each. Without this, `repeated == 0` below is equally consistent
+  # with "nothing repeated" and "this handler never fires at all".
+  invisible(withCallingHandlers(global_ni_parse("0 + age", d),
+                                warning = count_warnings))
+  expect_identical(repeated, 1L)
+  expect_identical(classed, 1L)
+
+  repeated <- 0L
+  classed <- 0L
   sw <- withCallingHandlers(
     suppressMessages(hzr_stepwise(base, scope = list(early = ~ mal,
                                                      constant = ~ orifice),
                                   data = d, trace = FALSE, max_steps = 2L)),
-    hzr_intercept_removed = function(w) {
-      repeated <<- repeated + 1L
-      invokeRestart("muffleWarning")
-    },
-    warning = function(w) invokeRestart("muffleWarning")
+    warning = count_warnings
   )
   expect_gte(nrow(sw$steps), 1L)
   expect_identical(repeated, 0L)
