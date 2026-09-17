@@ -1566,6 +1566,10 @@ predict.hazard <- function(object, newdata = NULL,
   time_based <- type %in% c("survival", "cumulative_hazard") ||
     identical(object$spec$dist, "multiphase") || !is.null(time_windows)
   if (!is.null(newdata)) {
+    # A classed numeric column, such as bit64's integer64, stores doubles
+    # that are not its values; read the values, as hazard() reads `data`
+    # (#347). One rule for fitting and prediction.
+    newdata <- .hzr_numeric_frame_values(newdata)
     # A formula fit saved before its design was stored gets it rebuilt, when
     # the rebuild is exact, so the by-name rules below apply to it (#301).
     # Design-level newdata (hzr_gof(), hzr_deciles()) never uses it, so it

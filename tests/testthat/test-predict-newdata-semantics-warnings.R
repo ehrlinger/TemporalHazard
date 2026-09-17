@@ -384,3 +384,35 @@ test_that("no warning route assigns into newdata", {
                                 type = "cumulative_hazard"), "contr\\.custom")
   expect_equal(got, want, tolerance = 1e-12)
 })
+
+# ---- #347: a classed numeric column is read as its values -------------------
+
+test_that("a classed numeric newdata column predicts as its values", {
+  # A classed numeric whose stored doubles are not its values, as with
+  # bit64's integer64 (#347). The class is local, so no dependency: its
+  # as.double() method returns the values the doubles do not hold.
+  registerS3method("as.double", "hzr_test_wrapped",
+                   function(x, ...) attr(x, "values"))
+  wrap <- function(v) {
+    structure(rep(9e-300, length(v)), values = v, class = "hzr_test_wrapped")
+  }
+  plain <- data.frame(time = c(1, 2, 5), age = c(60, 90, 30))
+  wrapped <- plain
+  wrapped$age <- wrap(plain$age)
+  wrapped_time <- plain
+  wrapped_time$time <- wrap(plain$time)
+
+  w <- .sw_weibull("age", 0.004)
+  m <- .sw_multiphase("age")
+  for (fit in list(w, m)) {
+    for (type in c("survival", "cumulative_hazard")) {
+      want <- predict(fit, newdata = plain, type = type)
+      # The rows differ from one another, so reading the stored doubles
+      # instead of the values cannot give this answer by accident.
+      expect_false(isTRUE(all.equal(want, rep(want[[1L]], 3L))))
+      expect_identical(predict(fit, newdata = wrapped, type = type), want)
+      expect_identical(predict(fit, newdata = wrapped_time, type = type),
+                       want)
+    }
+  }
+})
