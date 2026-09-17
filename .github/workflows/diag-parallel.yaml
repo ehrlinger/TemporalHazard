@@ -1,0 +1,66 @@
+# THROWAWAY: #330 timing, 3 matched serial/4-worker pairs on the helper fix. Not for merge.
+name: diag-parallel-timing
+on:
+  push:
+    branches: [diag/parallel-timing]
+jobs:
+  counts:
+    strategy:
+      fail-fast: false
+      matrix:
+        rep: [1, 2, 3]
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      NOT_CRAN: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ehrlinger/hazard
+          ref: dad7978277c2c60e258be3cd78029d4f4093e557
+          path: hazard-corpus
+          persist-credentials: false
+      - shell: bash
+        run: |
+          mv hazard-corpus "$RUNNER_TEMP/hazard"
+          echo "HAZARD_REPO=$RUNNER_TEMP/hazard" >> "$GITHUB_ENV"
+          echo "HAZARD_EXAMPLES_DIR=$RUNNER_TEMP/hazard/examples" >> "$GITHUB_ENV"
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-pandoc@v2
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::rcmdcheck, any::callr
+          needs: check
+      - name: Install the package
+        shell: bash
+        run: R CMD INSTALL .
+      # Launch the tests the way R CMD check does: a copy of tests/, R CMD
+      # BATCH --vanilla, LANGUAGE=C, R_TESTS=startup.Rs.
+      - name: Run serial and 4-worker
+        shell: bash
+        run: |
+          out="$RUNNER_TEMP/diag"; mkdir -p "$out"
+          for mode in serial parallel; do
+            w="$RUNNER_TEMP/tests-$mode"; rm -rf "$w"; cp -R tests "$w"
+            cp "$(Rscript -e 'cat(R.home("share"))')/R/tests-startup.R" "$w/startup.Rs"
+            cp .github/diag/run-tests.R "$w/run-tests.R"
+            par=false; [ "$mode" = parallel ] && par=true
+            start=$(date +%s)
+            ( cd "$w" && DIAG_MODE=$mode DIAG_OUT="$out" TESTTHAT_PARALLEL=$par TESTTHAT_CPUS=4 \
+                LANGUAGE=C R_TESTS=startup.Rs R CMD BATCH --vanilla run-tests.R run-tests.Rout ) || true
+            echo "WALL $mode $(( $(date +%s) - start ))s"
+            grep -E '^(MODE|SEARCH|CALLR_SEARCH|ENV|TOTALS)|Starting [0-9]+ test process|\[ FAIL' "$w/run-tests.Rout" || tail -n 40 "$w/run-tests.Rout"
+            cp "$w/run-tests.Rout" "$out/$mode.Rout"
+          done
+          test -s "$out/serial.csv" && test -s "$out/parallel.csv"
+          DIAG_OUT="$out" Rscript .github/diag/compare.R
+          nproc
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diag-parallel-timing
+          path: ${{ runner.temp }}/diag
