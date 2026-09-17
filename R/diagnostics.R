@@ -1585,10 +1585,12 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     and the other statistics are conditional on selection.}
 #'   \item{n_success}{Number of successfully converged replicates.}
 #'   \item{n_failed}{Number of replicates that failed: the refit stopped with
-#'     an error, or returned a non-finite objective.}
+#'     an error, returned something other than a fit, or returned a
+#'     non-finite objective.}
 #'   \item{failure_reasons}{Named integer vector counting why replicates
 #'     failed, most common first: the refit's error message (or
-#'     `"error with an empty message"`), or
+#'     `"error with an empty message"`),
+#'     `"refit returned a <class>, not a fit object"`, or
 #'     `"non-finite objective (did not converge)"`. It sums to `n_failed`, and
 #'     is an empty named integer vector, never `NULL`, when none failed. When
 #'     every replicate fails, `hzr_bootstrap()` also warns, naming the most
