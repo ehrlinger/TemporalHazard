@@ -2826,9 +2826,13 @@
     dphi_dgamma <- (d_plus$g3 - phi0) / eps_g
   }
 
-  # Central differences for alpha
-  if (alpha > h) {
-    eps_a <- max(abs(alpha) * h, 1e-10)
+  # Central differences for alpha, stepping in proportion to alpha so a
+  # small alpha stays positive. A forward step of h at alpha <= h moved
+  # alpha by 100% or more of itself and put this derivative, and the
+  # optimizer's gradient, 50-70% off (#332). Only alpha = 0, the exponential
+  # limit, needs the forward difference.
+  if (alpha > 0) {
+    eps_a <- alpha * h
     d_plus  <- hzr_decompos_g3(time, tau = tau, gamma = gamma,
                                  alpha = alpha + eps_a, eta = eta)
     d_minus <- hzr_decompos_g3(time, tau = tau, gamma = gamma,

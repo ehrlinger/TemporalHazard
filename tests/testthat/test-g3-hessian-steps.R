@@ -96,3 +96,53 @@ test_that("a fit at an extreme g3 shape reports the reference standard errors (#
   # confident. The reference itself moves about 5% with its step size.
   expect_lt(max(abs(se / se_ref - 1)), 0.2)
 })
+
+test_that("the g3 score is right for a small positive alpha (#332)", {
+  # A forward step of 1e-5 at alpha <= 1e-5 moved alpha by 100% or more of
+  # itself: dPhi/dalpha and the log-likelihood gradient in alpha were 50-70%
+  # off, and the optimizer used that gradient. The reference is a Richardson
+  # central difference on the closed form and on the log-likelihood, with a
+  # step of 1% of alpha, so it never crosses alpha = 0; at 0.1% it agrees to
+  # about 1e-8.
+  withr::local_seed(20260917)
+  tau <- 1e5
+  gamma <- 1.5
+  eta <- 0.8
+  grid <- 10^seq(-3, 2, length.out = 20000)
+  cumhaz <- 0.3 * hzr_decompos_g3(grid, tau, gamma, 1e-5, eta)$G3
+  t_event <- stats::approx(cumhaz, grid, xout = -log(stats::runif(800)),
+                           rule = 2, ties = "ordered")$y
+  cens <- stats::runif(800, 2, 25)
+  time <- pmin(t_event, cens)
+  status <- as.integer(t_event <= cens)
+  phases <- list(late = hzr_phase("g3"))
+  counts <- c(late = 0L)
+  x_list <- list(late = NULL)
+  loglik <- function(p) {
+    sum(log(.hzr_multiphase_hazard(time[status == 1], p, phases, counts,
+                                   x_list))) -
+      sum(.hzr_multiphase_cumhaz(time, p, phases, counts, x_list))
+  }
+  richardson <- function(f, x) {
+    h <- 0.01 * x
+    d1 <- (f(x + h) - f(x - h)) / (2 * h)
+    d2 <- (f(x + h / 2) - f(x - h / 2)) / h
+    (4 * d2 - d1) / 3
+  }
+  for (alpha in c(5e-6, 1e-5)) {
+    phi <- .hzr_g3_phase_derivatives(time[1:5], tau, gamma, alpha, eta)
+    ref <- vapply(time[1:5], function(t1) {
+      richardson(function(a) hzr_decompos_g3(t1, tau, gamma, a, eta)$G3, alpha)
+    }, numeric(1))
+    expect_lt(max(abs(phi$dPhi_dalpha / ref - 1)), 1e-6)
+
+    theta <- c(log(0.3), log(tau), gamma, alpha, eta)
+    score <- .hzr_gradient_multiphase(theta, time, status, phases = phases,
+                                      covariate_counts = counts,
+                                      x_list = x_list, sanitize = FALSE)
+    ref_score <- richardson(function(a) {
+      loglik(c(log(0.3), log(tau), gamma, a, eta))
+    }, alpha)
+    expect_lt(abs(score[4] / ref_score - 1), 1e-6)
+  }
+})
