@@ -92,7 +92,15 @@ and \code{estimate}, one row per parameter per successful replicate.}
 parameter. In \code{mode = "select"}, \code{pct} is the selection frequency
 and the other statistics are conditional on selection.}
 \item{n_success}{Number of successfully converged replicates.}
-\item{n_failed}{Number of replicates that failed to converge.}
+\item{n_failed}{Number of replicates that failed: the refit stopped with
+an error, or returned a non-finite objective.}
+\item{failure_reasons}{Named integer vector counting why replicates
+failed, most common first: the refit's error message (or
+\code{"error with an empty message"}), or
+\code{"non-finite objective (did not converge)"}. It sums to \code{n_failed}, and
+is an empty named integer vector, never \code{NULL}, when none failed. When
+every replicate fails, \code{hzr_bootstrap()} also warns, naming the most
+common reason.}
 \item{n_uncomputable_replicates}{Select mode only: number of otherwise
 successful replicates whose screen stopped because no remaining
 candidate's score statistic could be computed, rather than because no

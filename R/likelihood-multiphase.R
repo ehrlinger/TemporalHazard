@@ -1535,6 +1535,192 @@
 }
 
 
+#' Build a formula's design matrix, and what rebuilds it, from a data frame
+#'
+#' The one frame-to-design core: a formula and a data frame in, the design
+#' and its rebuild recipe out, with no phase-specific logic. The multiphase
+#' fit builds each phase formula's design with it, and `predict()` rebuilds a
+#' legacy fit's phase design from its kept `data$frame` with it, so that
+#' rebuild is the fit's own construction (#307). A caller rebuilding another
+#' design from `data$frame` can use it too, but must check that the result
+#' reproduces what that fit stored: this construction is `na.pass`, where
+#' the global formula's is not. The frame
+#' goes through `model.frame(na.action = na.pass)` explicitly because
+#' `model.matrix()` consults `getOption("na.action")` when it constructs the
+#' frame internally, which defaults to `na.omit` and silently drops rows with
+#' NA covariates.
+#'
+#' @param formula The phase's one-sided formula.
+#' @param data The fitting data frame.
+#' @return A list: `x`, the design matrix without its intercept, and `design`,
+#'   what `predict(newdata = )` needs to rebuild `x` from new rows: the terms
+#'   (carrying predvars, so scale(), poly() and ns() keep the fit's centering
+#'   and basis), the factor levels, the contrasts, and the formula's variables
+#'   that were columns of `data`.
+#' @keywords internal
+#' @noRd
+.hzr_formula_design <- function(formula, data) {
+  mf <- stats::model.frame(formula, data = data, na.action = stats::na.pass)
+  mm <- stats::model.matrix(formula, data = mf)
+  tt <- attr(mf, "terms")
+  list(
+    x = mm[, -1L, drop = FALSE],
+    design = list(
+      terms = tt,
+      xlevels = stats::.getXlevels(tt, mf),
+      contrasts = attr(mm, "contrasts"),
+      # As for the global formula: the name after `$` is never looked up.
+      data_vars = intersect(
+        .hzr_mask_symbols(stats::formula(tt)[[2L]]), names(data)
+      )
+    )
+  )
+}
+
+
+#' Recover a legacy fit's phase design from the data it kept
+#'
+#' A fit saved before the phase design was stored (no `fit$x_design`), but
+#' with its fitting data (`data$frame`, kept since 1.1.0), is rebuilt from
+#' that data by the fit's own construction (#307). Reproducing the fitted
+#' rows proves nothing about a new row: a `cutoff` moved within a gap between
+#' fitted ages codes every fitted row the same. So the phase formula must
+#' first be closed over the kept data (`.hzr_phase_formula_closed()`): no
+#' value from outside it, and no function but R's own design functions.
+#' Then the recovered design is trusted only if it reproduces the phase's
+#' fitted columns exactly: the same names and, once the rows with a missing
+#' value are dropped as the fit dropped them, the same rows and values, and
+#' only if no term is coded by contrasts, which the fit did not record. A fit
+#' that dropped rows for another phase's missing values does not match, and
+#' is treated as having no data.
+#'
+#' @param object A fitted multiphase `hazard` object.
+#' @param nm Phase name.
+#' @param ph The phase's `hzr_phase` object.
+#' @return The recovered design list, or `NULL` when it cannot be trusted.
+#' @keywords internal
+#' @noRd
+.hzr_phase_design_from_frame <- function(object, nm, ph) {
+  frame <- object$data$frame
+  if (!.hzr_phase_formula_closed(ph$formula, names(frame),
+                                 .hzr_phase_rebuild_functions)) {
+    return(NULL)
+  }
+  built <- tryCatch(
+    .hzr_formula_design(ph$formula, frame),
+    error = function(e) NULL
+  )
+  stored <- object$fit$x_list[[nm]]
+  if (is.null(built) || !identical(colnames(built$x), colnames(stored))) {
+    return(NULL)
+  }
+  x <- unname(built$x[stats::complete.cases(built$x), , drop = FALSE])
+  s <- unname(stored)
+  if (!identical(dim(x), dim(s)) ||
+        !isTRUE(all(x == s | (is.na(x) & is.na(s))))) {
+    return(NULL)
+  }
+  # A term coded by contrasts (a factor, character or logical column, cut())
+  # is rebuilt under this session's contrasts option, which the fit did not
+  # record. A level whose rows a term multiplies by 0 (g in x:g) has its
+  # code checked by no fitted value, so a different option, or a contrasts
+  # function that names its columns as treatment coding does, would recode
+  # it silently.
+  if (length(built$design$contrasts) > 0L) {
+    return(NULL)
+  }
+  built$design
+}
+
+
+# The functions a legacy phase formula may call for its design to be
+# rebuilt from the data it kept, by the namespace each must come from (#307).
+# The list follows the global rebuild's (`.hzr_rebuild_functions`, #314):
+# scale(), poly(), ns() and bs() are checked against the fitted columns, and
+# a factor term, though listed, is refused as coded by contrasts. Folding
+# the two lists is #271.
+.hzr_phase_rebuild_functions <- list(
+  base = c("+", "-", "*", "/", "^", ":", "%in%", "(", "==", "!=", "<", ">",
+           "<=", ">=", "&", "|", "!", "I", "log", "log2", "log10", "log1p",
+           "exp", "expm1", "sqrt", "abs", "pmin", "pmax", "c", "factor",
+           "as.factor", "scale"),
+  stats = c("poly", "relevel"),
+  splines = c("ns", "bs")
+)
+
+
+#' Is a legacy phase formula closed over the given columns?
+#'
+#' The right-hand side must be exactly its text: `deparse()` then
+#' `str2lang()` gives back an identical expression, compared with
+#' `num.eq = FALSE`, so no constant hides behind how it prints (-0 prints as
+#' 0; a classed or pasted-in object prints as a call). Every value it looks
+#' up must be one of `columns`. Every function called unqualified
+#' must be on `functions` and resolve from the formula's environment to the
+#' identical object in its namespace, so a user's function of that name,
+#' whose state can move, is not taken for it; `c` included. A qualified
+#' `pkg::fn` needs only to be on the list: `::` reads the namespace itself,
+#' which the formula's environment cannot mask.
+#'
+#' @param formula A phase formula.
+#' @param columns The names a value may take.
+#' @param functions A list of function names by namespace.
+#' @return A single logical.
+#' @keywords internal
+#' @noRd
+.hzr_phase_formula_closed <- function(formula, columns, functions) {
+  env <- environment(formula)
+  if (!is.environment(env)) {
+    return(FALSE)
+  }
+  rhs <- formula[[length(formula)]]
+  text <- tryCatch(
+    str2lang(paste(deparse(rhs, width.cutoff = 500L), collapse = " ")),
+    error = function(e) NULL
+  )
+  if (!identical(text, rhs, num.eq = FALSE)) {
+    return(FALSE)
+  }
+  canonical <- function(fn) {
+    pkg <- names(Filter(function(fns) fn %in% fns, functions))
+    if (length(pkg) != 1L) {
+      return(FALSE)
+    }
+    want <- if (pkg == "base") {
+      get(fn, envir = baseenv())
+    } else {
+      tryCatch(getExportedValue(pkg, fn), error = function(e) NULL)
+    }
+    identical(get0(fn, envir = env, mode = "function"), want)
+  }
+  closed <- function(e) {
+    if (is.symbol(e)) {
+      nm <- as.character(e)
+      return(nm %in% columns)
+    }
+    if (!is.call(e)) {
+      # A single literal: the text round-trip rules out any other object.
+      return(TRUE)
+    }
+    fn <- e[[1L]]
+    args <- as.list(e)[-1L]
+    if (is.call(fn) && identical(fn[[1L]], as.name("::")) &&
+          length(fn) == 3L) {
+      # Membership only: `::` reads the namespace, which no binding in the
+      # formula's environment can mask.
+      return(as.character(fn[[3L]]) %in%
+               functions[[as.character(fn[[2L]])]] &&
+               all(vapply(args, closed, logical(1))))
+    }
+    if (!is.symbol(fn) || !canonical(as.character(fn))) {
+      return(FALSE)
+    }
+    all(vapply(args, closed, logical(1)))
+  }
+  closed(rhs)
+}
+
+
 #' Rebuild one phase's formula design matrix at new rows
 #'
 #' Used by `predict(newdata = )` for a multiphase phase with its own formula.
@@ -1556,6 +1742,13 @@
 #' beside its design columns is refused, with the formula standing in for
 #' the stored design.
 #'
+#' Such a fit that kept its fitting data has its design recovered from that
+#' data first (`.hzr_phase_design_from_frame()`), so scale(), poly() and ns()
+#' keep the fit's centering and basis. A fit whose design cannot be recovered
+#' that way, including every one saved without its data, is refused at
+#' newdata unless newdata gives its design columns, rather than rebuilt from
+#' `newdata`'s rows (#307).
+#'
 #' @param object A fitted multiphase `hazard` object.
 #' @param nm Phase name.
 #' @param ph The phase's `hzr_phase` object.
@@ -1565,7 +1758,21 @@
 #' @noRd
 .hzr_phase_newdata_design <- function(object, nm, ph, newdata) {
   cols <- colnames(object$fit$x_list[[nm]])
+  # A fit made before duplicated names were refused (#296) may hold two
+  # columns of one name, which no selection by name can tell apart.
+  if (anyDuplicated(cols) > 0L) {
+    stop("phase '", nm, "' has the duplicated design column name(s) ",
+         paste0("'", unique(cols[duplicated(cols)]), "'", collapse = ", "),
+         ", so predict(newdata =) cannot tell its columns apart; refit the ",
+         "model with this version of TemporalHazard, which refuses such a ",
+         "design.", call. = FALSE)
+  }
   design <- object$fit$x_design[[nm]]
+  # A fit saved before the phase design was stored, but with its fitting
+  # data: rebuild the design from that data as the fit did (#307).
+  if (is.null(design) && !is.null(object$data$frame)) {
+    design <- .hzr_phase_design_from_frame(object, nm, ph)
+  }
 
   # A fit saved before the phase design was stored has no data_vars. Its
   # formula's variables that were columns of the fitting data stand in:
@@ -1635,18 +1842,26 @@
   # newdata's rows is refused (.hzr_check_equivariant()).
   where <- paste0("phase '", nm, "'")
 
-  # A fit made before the phase design was stored: rebuild as it did then,
-  # from its formula. Without the kept data, `vars` is every formula
-  # variable, so an object kept outside `data` cannot be told from a column.
+  # A fit made before the phase design was stored, whose design could not be
+  # recovered from kept data (#307). Without that data it cannot say which
+  # of its formula's names were data columns: a constant that is gone at
+  # predict time would be taken from a newdata column of its name. With the
+  # data, the recovery declined to vouch for the rebuild. Its design columns
+  # (above) still predict.
   if (is.null(design)) {
-    build <- function(x) {
-      nd <- .hzr_newdata_frame(x, vars)
-      m0 <- stats::model.matrix(ph$formula, data = nd)
-      m <- m0[, -1L, drop = FALSE]
-      attr(m, "assign") <- attr(m0, "assign")[-1L]
-      m
+    why <- if (is.null(object$data$frame)) {
+      "without the data it was fitted to"
+    } else {
+      paste0("with data that cannot vouch for rebuilding its formula (it ",
+             "reads values outside that data, holds a term coded by ",
+             "contrasts, or no longer reproduces the fit)")
     }
-    return(.hzr_check_equivariant(build, newdata, labels, where))
+    stop(where, " of this fit was saved without its design, and ", why,
+         ", so predict(newdata =) cannot rebuild it for new rows. Give ",
+         "'newdata' the fitted design columns (",
+         paste0("'", cols, "'", collapse = ", "),
+         "), or refit the model with this version of TemporalHazard.",
+         call. = FALSE)
   }
   build <- function(x) {
     nd <- .hzr_newdata_frame(x, design$data_vars)
@@ -1810,31 +2025,12 @@
   for (nm in names(phases)) {
     ph <- phases[[nm]]
     if (!is.null(ph$formula) && !is.null(data)) {
-      # Phase-specific formula: build design matrix from data.  We route
-      # through model.frame(na.action = na.pass) explicitly because
-      # model.matrix() consults getOption("na.action") when it constructs
-      # the frame internally, which defaults to na.omit and silently drops
-      # rows with NA covariates.
-      mf_j <- stats::model.frame(ph$formula, data = data,
-                                   na.action = stats::na.pass)
-      mm_j <- stats::model.matrix(ph$formula, data = mf_j)
-      x_j <- mm_j[, -1L, drop = FALSE]
-      .hzr_refuse_duplicate_columns(x_j, phase = nm)
-      x_list[[nm]] <- x_j
-      covariate_counts[[nm]] <- ncol(x_j)
-      # What predict(newdata = ) needs to rebuild x_j from new rows: the
-      # terms (carrying predvars), the factor levels and the contrasts seen
-      # here, and the formula's variables that were columns of `data`.
-      terms_j <- attr(mf_j, "terms")
-      x_design[[nm]] <- list(
-        terms = terms_j,
-        xlevels = stats::.getXlevels(terms_j, mf_j),
-        contrasts = attr(mm_j, "contrasts"),
-        # As for the global formula: the name after `$` is never looked up.
-        data_vars = intersect(
-          .hzr_mask_symbols(stats::formula(terms_j)[[2L]]), names(data)
-        )
-      )
+      # Phase-specific formula: build design matrix from data.
+      built <- .hzr_formula_design(ph$formula, data)
+      .hzr_refuse_duplicate_columns(built$x, phase = nm)
+      x_list[[nm]] <- built$x
+      covariate_counts[[nm]] <- ncol(built$x)
+      x_design[[nm]] <- built$design
     } else if (!is.null(x)) {
       # Inherit global design matrix
       x_list[[nm]] <- x

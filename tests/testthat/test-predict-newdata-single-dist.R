@@ -144,7 +144,7 @@ test_that("hzr_deciles() and hzr_gof() run on factor and transformed fits", {
   }
 })
 
-test_that("a fit saved before the design was stored matches design columns", {
+test_that("a fit saved before the design was stored matches by name", {
   th <- c(mu = 0.01, nu = 0.5, b_age = 0.004, b_young = 0.7)
   obj <- .sd_obj("weibull", survival::Surv(int_dead, dead) ~ age + grp,
                  theta = th)
@@ -155,11 +155,13 @@ test_that("a fit saved before the design was stored matches design columns", {
                                                         time = 2, age = 60),
                               type = "cumulative_hazard")),
                want, tolerance = 1e-12)
-  expect_error(
-    predict(obj, newdata = data.frame(time = 2, age = 60, grp = "young"),
-            type = "cumulative_hazard"),
-    "lacks the covariate column\\(s\\) 'grpyoung'"
-  )
+  # The formula's variables alone: the design is rebuilt from the stored
+  # formula and frame (#301). Main at 9ec83e7 stopped here for want of the
+  # design column 'grpyoung'.
+  expect_equal(unname(predict(obj, newdata = data.frame(time = 2, age = 60,
+                                                        grp = "young"),
+                              type = "cumulative_hazard")),
+               want, tolerance = 1e-12)
 })
 
 test_that("se.fit = TRUE matches by name too, all four families", {

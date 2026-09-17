@@ -513,6 +513,203 @@
 }
 
 
+#' Rebuild the formula design of a fit saved before it was stored
+#'
+#' A formula fit from 1.2.10 or earlier kept no `data$x_design`, so
+#' `predict(newdata = )` cannot tell a formula variable from an unused
+#' column, and refuses any column but the design columns and `time`
+#' (`.hzr_uses_design_columns()`). Such a fit usually kept what the design
+#' is built from: the call's formula, the bindings that call references
+#' (`call_env`) and the data frame it was fitted on (`data$frame`, stored
+#' since 1.1.0). The formula is parsed again against that frame, as
+#' `hazard()` parsed it, and the result is used only if the formula is
+#' closed and the result reproduces the fitted design `data$x`: the same
+#' columns, in the same order, with the same values. Anything missing, an
+#' error, or any difference leaves the fit as it was, so the refusal stands
+#' (#301).
+#'
+#' Closed (`.hzr_formula_closed()`): every value the right-hand side looks
+#' up is a data column, and every function it calls is one of a few pure
+#' design functions, the very object of base R, stats or splines. The check
+#' against `data$x` sees only the fitted rows, so any other lookup -- a
+#' cutoff `k` in `I(age > k)`, a user's `thr()`, `get("k")`, a shadowed
+#' `pi` -- could have moved since the fit to a value no fitted row tells
+#' from the old one, reproduce `data$x` exactly, and then predict with the
+#' new value at new rows (#301 reviews). A closed formula is exactly its
+#' text and carries every constant in its column names
+#' (`I(age > 50)TRUE`), so reproducing
+#' `data$x`'s names and values makes it the fitted design, which is also
+#' why a formula found by name can be used wherever that name is bound
+#' now. A computed formula (`as.formula(...)`) is not re-run.
+#'
+#' A vector-interface fit has no formula and is returned unchanged.
+#'
+#' @param object A fitted `hazard` object.
+#' @return `object`, with `data$x_design` filled in when it was rebuilt.
+#' @keywords internal
+#' @noRd
+.hzr_recover_x_design <- function(object) {
+  x_fit <- object$data$x
+  frame <- object$data$frame
+  env <- object$call_env
+  f <- object$call$formula
+  # A fit saved before duplicated names were refused (#296) can carry two
+  # columns of one name (factor g's dummy gB beside a numeric gB). They match
+  # the rebuild, but predict() selects columns by name, so both would read
+  # the first; it is not rebuilt.
+  if (!is.null(object$data$x_design) || is.null(x_fit) || is.null(f) ||
+        !is.environment(env) || !is.data.frame(frame) ||
+        anyDuplicated(colnames(x_fit)) > 0L) {
+    return(object)
+  }
+  if (is.symbol(f)) {
+    f <- get0(as.character(f), envir = env)
+  } else if (!inherits(f, "formula")) {
+    if (!is.call(f) || !identical(f[[1L]], as.name("~"))) {
+      return(object)
+    }
+    # Evaluating a literal `~` looks nothing up: it only makes the formula.
+    f <- eval(f, env)
+  }
+  if (!inherits(f, "formula") || !.hzr_formula_closed(f, frame)) {
+    return(object)
+  }
+  # Warnings are muffled: whether the rebuild is right is decided by the
+  # comparison below, not by what re-parsing said on the way.
+  parsed <- tryCatch(suppressWarnings(.hzr_parse_formula(f, frame)),
+                     error = function(e) NULL)
+  x <- parsed$x
+  reproduces <- !is.null(parsed$x_design) && is.matrix(x) &&
+    identical(dim(x), dim(x_fit)) &&
+    identical(colnames(x), colnames(x_fit)) &&
+    isTRUE(all(x == x_fit | (is.na(x) & is.na(x_fit))))
+  if (reproduces) {
+    object$data$x_design <- parsed$x_design
+  }
+  object
+}
+
+
+# The functions a legacy formula may call for its design to be rebuilt,
+# by the namespace each must come from: pure design functions whose result
+# depends on their arguments alone. scale(), poly(), ns() and bs() take
+# their centre, basis or knots from the data, which predict() reuses
+# through the recorded predvars. as.numeric() is left out: of a factor it
+# gives level codes, and a factor() nested inside it is rebuilt from
+# newdata's own levels, so one level codes 1 whatever it is (#301).
+.hzr_rebuild_functions <- list(
+  base = c("+", "-", "*", "/", "^", ":", "%in%", "(", "==", "!=", "<", ">",
+           "<=", ">=", "&", "|", "!", "I", "log", "log2", "log10", "log1p",
+           "exp", "expm1", "sqrt", "abs", "pmin", "pmax", "c", "factor",
+           "as.factor", "scale"),
+  stats = c("poly", "relevel"),
+  splines = c("ns", "bs")
+)
+
+
+#' Is a formula closed: data columns and R's own design functions only?
+#'
+#' See `.hzr_recover_x_design()` for why. The right-hand side must be
+#' exactly its text: `deparse()` then `str2lang()` gives back an identical
+#' expression, so no constant hides behind how it prints. Each function
+#' name, as called
+#' (`log`) or qualified (`splines::ns`), must be on
+#' `.hzr_rebuild_functions`, and an unqualified one must resolve from the
+#' formula's environment to the identical object in its namespace, so a
+#' user's function of the same name is not taken for it.
+#'
+#' @param f A two-sided formula.
+#' @param frame The fitting data frame.
+#' @return A single logical.
+#' @keywords internal
+#' @noRd
+.hzr_formula_closed <- function(f, frame) {
+  fenv <- environment(f)
+  if (!is.environment(fenv)) {
+    return(FALSE)
+  }
+  # The column names are built from the formula's text, so every constant
+  # must be exactly what that text says. A constant the text cannot tell
+  # apart --
+  # -0 from 0, a value past deparse()'s 15 digits, one carrying a class, a
+  # function or list pasted in by bquote() -- would let another formula
+  # reproduce the fitted names and values, then differ at new rows.
+  rhs <- f[[length(f)]]
+  text <- tryCatch(str2lang(paste(deparse(rhs), collapse = "\n")),
+                   error = function(e) NULL)
+  if (!identical(text, rhs, num.eq = FALSE)) {
+    return(FALSE)
+  }
+  looks <- .hzr_formula_lookups(rhs)
+  values <- looks$values[nzchar(looks$values)]
+  if (!all(values %in% c(names(frame), "."))) {
+    return(FALSE)
+  }
+  allowed <- function(nm) {
+    qualified <- strsplit(nm, "::", fixed = TRUE)[[1L]]
+    if (length(qualified) == 2L) {
+      # Membership only: `::` reads the namespace itself, which no binding in
+      # the formula's environment can mask, so there is nothing to compare.
+      return(qualified[2L] %in% .hzr_rebuild_functions[[qualified[1L]]])
+    }
+    pkg <- names(Filter(function(fns) nm %in% fns, .hzr_rebuild_functions))
+    if (length(pkg) != 1L) {
+      return(FALSE)
+    }
+    canonical <- if (pkg == "base") {
+      get(nm, envir = baseenv())
+    } else {
+      tryCatch(getExportedValue(pkg, nm), error = function(e) NULL)
+    }
+    identical(get0(nm, envir = fenv, mode = "function"), canonical)
+  }
+  all(vapply(looks$functions, allowed, logical(1)))
+}
+
+
+#' The names a formula's right-hand side looks up, by kind
+#'
+#' Like `.hzr_mask_symbols()`, but keeps the names called as functions
+#' (`thr` in `thr(age)`), which that helper leaves out, apart from the
+#' values. The operand after `$` or `@` is never looked up. A `pkg::fn`
+#' call adds the function name `"pkg::fn"`.
+#'
+#' @param e A language object, symbol or constant.
+#' @return A list of two character vectors, `values` and `functions`.
+#' @keywords internal
+#' @noRd
+.hzr_formula_lookups <- function(e) {
+  if (is.symbol(e)) {
+    return(list(values = as.character(e), functions = character(0)))
+  }
+  if (!is.call(e)) {
+    return(list(values = character(0), functions = character(0)))
+  }
+  head <- e[[1L]]
+  parts <- as.list(e)[-1L]
+  functions <- character(0)
+  if (is.symbol(head)) {
+    h <- as.character(head)
+    if (h %in% c("::", ":::")) {
+      return(list(values = character(0),
+                  functions = paste0(deparse(e[[2L]]), h, deparse(e[[3L]]))))
+    }
+    functions <- h
+    if (h %in% c("$", "@") && length(e) >= 3L) {
+      parts <- parts[1L]
+    }
+  } else {
+    parts <- c(list(head), parts)
+  }
+  sub <- lapply(parts, .hzr_formula_lookups)
+  list(
+    values = unique(unlist(lapply(sub, `[[`, "values"), use.names = FALSE)),
+    functions = unique(c(functions, unlist(lapply(sub, `[[`, "functions"),
+                                           use.names = FALSE)))
+  )
+}
+
+
 #' Is the global design taken from `newdata`'s design columns?
 #'
 #' The design is then used as it is and the formula is not re-evaluated.
@@ -547,7 +744,9 @@
   if (is.null(design)) {
     # No stored design: a vector-interface fit (no formula, so no variable a
     # column could contradict), or a formula fit saved before the design was
-    # stored. For the latter an extra column cannot be told from a formula
+    # stored whose design predict() could not rebuild exactly
+    # (.hzr_recover_x_design()). For the latter an extra column cannot be
+    # told from a formula
     # variable, and taking the design columns beside a contradicting one
     # would be a silent wrong answer, so it is refused -- as it was before,
     # when such a column made the positional match fail.

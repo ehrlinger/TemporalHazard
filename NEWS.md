@@ -102,19 +102,42 @@
   that passed such `newdata` now gets an error naming the missing columns:
   rename the columns to match `x`. A fit made with an unnamed `x` still
   matches by position. A formula fit saved by an earlier version stored no
-  formula design, so it is matched on its design-matrix columns: a factor
-  must be given as `grpyoung` and a transform as `log(age)`. Refit it to
-  give the formula's variables instead.
+  formula design; `predict()` rebuilds it (see below), and a fit whose
+  design it cannot rebuild is matched on its design-matrix columns: a
+  factor must be given
+  as `grpyoung` and a transform as `log(age)`. Refit it to give the
+  formula's variables instead.
 
-* **A formula fit saved by an earlier version refuses `newdata` with
-  columns other than its design columns and `time`,** with
+* **A formula fit saved by an earlier version is matched by name, as a new
+  fit is.** Such a fit stored no formula design, so `predict(newdata = )`
+  rebuilds it from the fit's stored formula and data frame, and uses it
+  only if it reproduces the fitted design matrix exactly: the same columns
+  with the same values. The fit then takes the formula's variables
+  (`grp = "old"`), ignores unused columns, and lets a variable win over a
+  contradicting design column, all as a new fit does (#301). One value
+  changes with it: `newdata` giving a numeric variable and a column built
+  from it, such as `age` and `I(age^2)` at the design-column means, is now
+  rebuilt from `age`, as for a new fit, where its columns used to be taken
+  as given. The design is not rebuilt for a 1.0.3-era fit, which kept no
+  data frame; for a formula that no longer reproduces the fit; for one
+  computed in the call (`as.formula(...)`), which would be re-run; and for
+  a formula that uses anything but the data's columns and a short list of
+  R's own design functions (arithmetic and comparisons, `I()`, `log()`,
+  `exp()`, `sqrt()`, `abs()`, `pmin()`, `pmax()`, `c()`, `factor()`,
+  `relevel()`, `scale()`, `poly()`, `splines::ns()` and `splines::bs()`).
+  A constant
+  such as `k` in `I(age > k)`, a function of the user's, or even `pi`
+  could have changed since the fit without changing the fitted rows, so it
+  is not trusted; a number written into the formula, as in
+  `I(age > 50)`, is. For these, `newdata` with columns other than the
+  design columns and `time` is refused, with
   `This fit was saved by an earlier version of TemporalHazard, without a
   stored formula design, ...; it also has '...'. Refit the model with the
-  current version, or pass only the design columns.` Without a stored
-  design nothing can tell such a column from a formula variable that
-  contradicts a design column, which would otherwise be ignored silently.
-  Before, such a column made the positional match fail, so this is as
-  loud as it was (#272).
+  current version, or pass only the design columns.` Without a design
+  nothing can tell such a column from a formula variable that contradicts
+  a design column, which would otherwise be ignored silently. Before, such
+  a column made the positional match fail, so this is as loud as it was
+  (#272).
 
 * **`predict(newdata = )` stops when `newdata` gives some of the formula's
   variables beside the fitted design columns, with others missing.** Say
@@ -315,6 +338,88 @@
 
 ## Bug fixes
 
+* **`predict(newdata = )` on a multiphase fit saved before this version no
+  longer gets `scale()`, `poly()` or `ns()` in a phase formula silently wrong
+  (#307).** Such a fit stored no phase design, so the phase was rebuilt from
+  `newdata` alone, and those terms took their centering, scaling or basis
+  from `newdata`'s own rows instead of the fitting data. At all of the
+  fitting rows that reproduces the fit; at any other `newdata` it does not.
+  At three of the fitting rows, `scale(age)` was off by up to 96%,
+  `poly(age, 2)` by a factor of 3e5, and `ns(age, df = 3)` by 66%. One row
+  of a `scale(age)` phase came back as a zero-length prediction.
+
+  Such a fit's phase is now rebuilt only when that can be checked, and is
+  otherwise refused with advice to give `newdata` the fitted design columns
+  or to refit. A fit saved by 1.1.0 or later kept its fitting data, and its
+  phase design is rebuilt from that data exactly as the fit built it.
+  Reproducing the fitted rows is not enough, since a `cutoff` moved between
+  two fitted ages changes no fitted row. So the phase formula must use only
+  the kept data's columns and R's own design functions (a user's function
+  of the same name is not one), hold no term coded by contrasts (a factor,
+  character or logical column, `cut()`), whose coding the fit did not
+  record, and rebuild the fitted columns exactly. A fit saved by 1.0.3 or
+  earlier kept neither design nor data, so it cannot say which of its
+  formula's names were data columns: a constant `k` in `I(age * k)` that is
+  gone at predict time would be taken from a `newdata` column named `k`.
+  Its phase is refused at `newdata`; it still predicts without `newdata`,
+  and from its design columns. A fit made before duplicated design column
+  names were refused (#296) is refused at `newdata` too, since no selection
+  by name can tell its columns apart. Current fits still evaluate a formula
+  against `newdata` and their environment, as `lm()` does; that is #331.
+
+* **`hzr_bootstrap()` now bootstraps a vector-interface fit made without
+  `data =`** (#259, #312). It counted the rows to resample in the fit's data
+  frame, and such a fit has none, so every one was refused with a message
+  that named its vectors `'NA', 'NA'` and sent you to the formula interface.
+  The stored `time`, `status`, `time_lower`, `time_upper` and `weights` are
+  now resampled together, and the replicates match those of the same model
+  fitted with a formula and `data =`. Select mode (`scope =`) on such a fit
+  still stops, now saying why: its candidate columns have no data frame to
+  be resampled with. The other refusals now give their real reason too:
+  vectors that do not have one value per row of `data =`, an object missing
+  a stored vector, which names the missing argument, and a `data =` that is
+  a list rather than a data frame. Only the vector interface accepts a list,
+  and its bootstrap already stopped with the same `'NA'` message, so a list
+  `data =` still does not bootstrap; only the message is new. One kind of fit
+  is still refused, for its real reason: a multiphase fit saved before
+  `hazard()` refused a phase formula without `data =`, whose formula was
+  ignored. Its stored call can no longer be refit, and resampling it
+  returned no replicates and no error, so `hzr_bootstrap()` now refuses it
+  with the message `hzr_stepwise()` gives. That refusal takes only the
+  ignored-formula check: a fit `hzr_stepwise()` declines to step for other
+  reasons, such as a phase inheriting a factor with more than two levels,
+  still bootstraps.
+
+* **`hzr_bootstrap()` now says why replicates failed, and warns when every
+  one did.** Each replicate catches its own error so one bad resample cannot
+  end the run, and it used to drop the message: a run could fail every
+  replicate and return an empty `replicates` table with only `n_failed` to
+  show for it. The result gains `failure_reasons`, a named integer vector
+  counting each failure by its error message, or by
+  `"non-finite objective (did not converge)"`, most common first. It sums to
+  `n_failed`, and is empty but present when nothing failed. When no
+  replicate succeeds, `hzr_bootstrap()` warns, naming the most common
+  reason. Partial failure does not warn; its reasons are in
+  `failure_reasons`.
+
+* **The G3 late-phase shape is now accurate where `(t/tau)^gamma`
+  underflows.** With a large `gamma`, event times well below `tau` take
+  `(t/tau)^gamma` past double-precision underflow (about `exp(-708)`), and
+  a very large `alpha` can underflow the same quantity divided by `alpha`.
+  `hzr_decompos_g3()` then clamped the value to the smallest double, which
+  froze `G3` below that time and put the log of `g3` wrong by more than
+  100. The likelihood of those events was wrong, and the analytic Hessian,
+  which differences the shape across that cliff, read a `log_tau` diagonal
+  of 1.4e6 against a true 5.1e3, with no warning. Once the quantity falls
+  below 1e-10, both logs are now computed in their limiting form, linear in
+  `log(t/tau)`, which is accurate to about 1e-10. Fits with no time in that
+  region are unchanged, and fits with one change only in the last digits
+  unless they reached the old clamp. The SAS/C `HAZARD` code has a cliff
+  here too: for `alpha > 0` its `ln(e^x + 1)` returns 0 below underflow,
+  and for `alpha = 0` it already breaks down once `(t/tau)^gamma` is below
+  about 1e-16. Fits that reach this region can differ from `HAZARD`; this
+  package takes the accurate value.
+
 * **`predict(newdata = )` on a model with no covariates now ignores
   `newdata`'s unused columns**, as it already did for models with
   covariates. For a `Surv(time, status) ~ 1` fit, or a vector-interface fit
@@ -324,6 +429,27 @@
   `log_lambda` and which has no shape parameter, used that log rate as the
   coefficient: it returned `age` times the log rate as the linear predictor
   with no error, -280 for `age = 70`, where the answer is 0 (#300).
+
+* **A backward `hzr_stepwise()` drop now has to remove a column** (#320).
+  Under treatment contrasts, `model.matrix()` codes an interaction whose main
+  effect is absent with a full set of dummies: `~ z:f` gives `z:fa, z:fb`,
+  which spans what `z, z:fb` spans. So dropping `z` from `~ z + z:f` removed
+  no column, and the "reduced" model was the model it started from: the same
+  coefficient count, the same column space, the same likelihood. The step
+  accepted that drop and reported a p-value for it, while the fit still
+  carried the variable. An uncapped run then stopped at the next step, where
+  the interaction had become two columns, so the wrong step was masked by an
+  unrelated error; a run that ended right after the drop (`max_steps`)
+  returned it as a result, with `$steps` and the final model disagreeing.
+  The post-drop refit is now checked against the model it came from, and a
+  drop that does not reduce the design is refused with a reason in
+  `$criteria$refit_failure_reasons`, as a failed refit already was. The
+  forward step has refused the mirror of this, a candidate that adds no
+  column, since #306. The check is multiphase-only: a single-distribution
+  refit warm-starts from a `theta` one element shorter than such a design
+  needs, so the refit fails to conform first and is reported as a refit
+  failure ("non-conformable arguments"), which names the symptom and not the
+  cause.
 
 * **A stepwise refit failure now says why.** `hzr_stepwise()` catches each
   candidate's refit error so one bad candidate cannot end the screen, and it
@@ -415,8 +541,18 @@
   right; the names were meaningless, and they followed the result into
   anything built from it. With one row, the `decompose = TRUE` and
   `se.fit = TRUE` data frames also took such a name as their row name.
-  Single-distribution `predict()` already returned unnamed vectors, and now
-  both agree.
+  Single-distribution `predict()` carried names the same way; see the next
+  item (#309).
+
+* **`predict()` on a single-distribution fit now returns an unnamed vector
+  too.** For `type = "survival"` and `"cumulative_hazard"`, a lognormal fit
+  named every value `"mu"`, and a Weibull, exponential or log-logistic fit
+  did the same for a single row of `newdata` (#309). As above, `mu` is a
+  named element of `theta`, and R carried the name onto the prediction,
+  through `rep()` for the lognormal and through any length-1 operand when
+  there is one row. With one row, the `se.fit = TRUE` data frame also took
+  `"mu"` as its row name. The values were right. `type = "hazard"` and
+  `"linear_predictor"` were already unnamed.
 
 * **`predict(newdata = )` no longer lets a design column override the
   formula variable it contradicts.** `newdata` may give a factor as its

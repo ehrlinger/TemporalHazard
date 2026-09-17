@@ -192,8 +192,12 @@ test_that("hzr_stepwise() refuses a saved fit whose phase formula was ignored", 
       "phase 'early' has a formula, `.+`, that the fit ignored"
     )
   }
-  # hzr_bootstrap() already refuses both: neither stores a `data` frame.
-  expect_error(hzr_bootstrap(hollow, n_boot = 2L), "vector interface")
+  # hzr_bootstrap() refuses both. It used to refuse `hollow` only by accident:
+  # a fit without a `data` frame was refused with its vectors named 'NA'
+  # (#259). Resampling such fits made `hollow` return no replicates and no
+  # error, so it is now refused for its ignored phase formula (#321).
+  # `beside_x` meets the direct-`x` refusal first.
+  expect_error(hzr_bootstrap(hollow, n_boot = 2L), "that the fit ignored")
   expect_error(hzr_bootstrap(beside_x, n_boot = 2L), "`x`")
 })
 

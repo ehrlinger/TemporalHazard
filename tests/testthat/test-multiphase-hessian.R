@@ -431,3 +431,49 @@ test_that("13-parameter multiphase anchor: stable SEs and rcond (supersedes plac
   expect_true(isTRUE(fit$fit$pd),
               label = "10-free-param fit is positive-definite at optimum")
 })
+
+# Analytic vs numerical Hessian where a G3 shape is extreme -------------------
+# A late phase fitted to gamma ~ 220, eta ~ 0.009 put several event times
+# below the underflow of (t/tau)^gamma, where hzr_decompos_g3() clamped and
+# the analytic Hessian's log_tau diagonal read 1.4e6 against about 5.1e3.
+# numDeriv's default d = 0.1 steps log_tau by 0.26, which at gamma = 220 is
+# far wider than the G3 transition, so the reference uses d = 1e-3. The
+# 5% bar allows for the fixed eta step, which leaves the log_tau/eta cross
+# term about 1% off here.
+test_that("g3 analytic Hessian matches numDeriv at an extreme shape", {
+  skip_if_not_installed("numDeriv")
+  withr::local_seed(20260916)
+  th0 <- c(log(0.3), log(10), 4, 1.5, 0.5)
+  n <- 1500
+  grid <- seq(0.001, 60, length.out = 20000)
+  cumhaz <- exp(th0[1]) *
+    hzr_decompos_g3(grid, exp(th0[2]), th0[3], th0[4], th0[5])$G3
+  t_event <- stats::approx(cumhaz, grid, xout = -log(stats::runif(n)),
+                           rule = 2, ties = "ordered")$y
+  cens <- stats::runif(n, 2, 25)
+  time <- pmin(t_event, cens)
+  status <- as.integer(t_event <= cens)
+
+  th <- c(late.log_mu = -0.91648, late.log_tau = 2.6238,
+          late.gamma = 220.08, late.alpha = 1.2174, late.eta = 0.0090875)
+  # The point is only interesting if some events sit below the underflow
+  expect_gt(sum(status == 1 & th[["late.gamma"]] *
+                  log(time / exp(th[["late.log_tau"]])) < -708), 0)
+
+  phases <- list(late = hzr_phase("g3"))
+  counts <- c(late = 0L)
+  x_list <- list(late = NULL)
+  loglik <- function(p) {
+    h <- .hzr_multiphase_hazard(time, p, phases, counts, x_list)
+    ch <- .hzr_multiphase_cumhaz(time, p, phases, counts, x_list)
+    sum(log(h[status == 1])) - sum(ch)
+  }
+  analytic <- .hzr_hessian_multiphase(th, time, status, phases = phases,
+                                      covariate_counts = counts,
+                                      x_list = x_list)
+  expect_false(is.null(analytic))
+  numeric <- -numDeriv::hessian(loglik, th,
+                                method.args = list(d = 1e-3, r = 6))
+  rel <- abs(analytic - numeric) / pmax(abs(numeric), 1)
+  expect_lt(max(rel), 0.05)
+})

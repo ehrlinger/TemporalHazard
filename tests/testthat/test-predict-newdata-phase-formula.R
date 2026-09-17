@@ -172,33 +172,31 @@ test_that("some phase variables beside all design columns is refused (#272)", {
 
 test_that("a fit without the stored design lets its variables win too (#272)", {
   # Such a fit always rebuilt from its formula before #268, so a
-  # contradicting design column must not start winning for it now.
+  # contradicting design column must not start winning for it now. Its
+  # factor is coded by contrasts the fit did not record, so the rebuild is
+  # refused rather than taken from the design column (#307).
   fit <- phase_formula_fit()
   fit$fit$x_design <- NULL
   tt <- c(1, 1)
   nd <- data.frame(time = tt, grp = factor(c("old", "young")),
                    grpyoung = c(1, 0))
-  # main's answer, computed on 4b68020 with the same fit: old, then young.
-  expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard"),
-               c(0.04647389634149, 0.23995615103791),
-               tolerance = 1e-6, ignore_attr = TRUE)
-  expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard") /
-                 reference_cumhaz(fit, tt, c(0, 1)),
-               c(1, 1), tolerance = 1e-10, ignore_attr = TRUE)
+  expect_error(predict(fit, newdata = nd, type = "cumulative_hazard"),
+               "phase 'early' of this fit was saved without its design.*refit")
 })
 
-test_that("a fit with neither the stored design nor its data predicts as main did", {
-  # Such a fit (saved by 1.0.3 or earlier) cannot say which formula
-  # variables are covariates, so it keeps main's rebuild. Values computed on
-  # main 4b68020 with the same fit, design and frame removed.
+test_that("a fit with neither the stored design nor its data predicts from design columns only", {
+  # Such a fit (saved by 1.0.3 or earlier) cannot say which of its formula's
+  # names were data columns, so rebuilding grp is refused (#307); its design columns alone still
+  # predict as main did. Values computed on main 4b68020 with the same fit,
+  # design and frame removed.
   fit <- phase_formula_fit()
   fit$fit$x_design <- NULL
   fit$data$frame <- NULL
   nd <- data.frame(time = c(1, 1), grp = factor(c("old", "young")))
-  expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard"),
-               c(0.04647389634149, 0.23995615103791),
-               tolerance = 1e-6, ignore_attr = TRUE)
-  nd$grpyoung <- c(1, 0)
+  expect_error(predict(fit, newdata = nd, type = "cumulative_hazard"),
+               "phase 'early' of this fit was saved without its design.*refit")
+  nd <- data.frame(time = c(1, 1))
+  nd$grpyoung <- c(0, 1)
   expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard"),
                c(0.04647389634149, 0.23995615103791),
                tolerance = 1e-6, ignore_attr = TRUE)
@@ -381,21 +379,23 @@ test_that("a phase formula's environment constant still reaches newdata", {
                  type = "cumulative_hazard")
   expect_equal(got / (exp(beta * c(1, 0)) * base$early + base$constant),
                c(1, 1), tolerance = 1e-10, ignore_attr = TRUE)
-  # A fit saved before the phase design was stored: `cutoff` is not a column
-  # of its fitting data, so it is a constant, not a missing covariate.
+  # A fit saved before the phase design was stored, with its data or
+  # without: `cutoff` is read from the environment, which may have moved
+  # since the fit without changing a fitted row, so the phase is refused
+  # rather than rebuilt from it (#307).
   leg <- fit
   leg$fit$x_design <- NULL
-  got <- predict(leg, newdata = data.frame(time = tt, age = c(150, 50)),
-                 type = "cumulative_hazard")
-  expect_equal(got / (exp(beta * c(1, 0)) * base$early + base$constant),
-               c(1, 1), tolerance = 1e-10, ignore_attr = TRUE)
-  # Nor for a fit that kept no fitting data either (1.0.3 and earlier):
-  # with nothing to tell a constant from a covariate, it rebuilds as main.
+  expect_error(
+    predict(leg, newdata = data.frame(time = tt, age = c(150, 50)),
+            type = "cumulative_hazard"),
+    "phase 'early' of this fit was saved without its design.*refit"
+  )
   leg$data$frame <- NULL
-  got <- predict(leg, newdata = data.frame(time = tt, age = c(150, 50)),
-                 type = "cumulative_hazard")
-  expect_equal(got / (exp(beta * c(1, 0)) * base$early + base$constant),
-               c(1, 1), tolerance = 1e-10, ignore_attr = TRUE)
+  expect_error(
+    predict(leg, newdata = data.frame(time = tt, age = c(150, 50)),
+            type = "cumulative_hazard"),
+    "phase 'early' of this fit was saved without its design.*refit"
+  )
 })
 
 test_that("all columns present: predictions unchanged from main 8a26c0e", {
@@ -426,12 +426,18 @@ test_that("all columns present: predictions unchanged from main 8a26c0e", {
                tolerance = 1e-6, ignore_attr = TRUE)
 })
 
-test_that("a fit without the stored phase design still predicts", {
+test_that("a fit without the stored phase design predicts from its design columns", {
+  # Its data is kept, but its factor is coded by contrasts the fit did not
+  # record, so rebuilding grp is refused (#307); the design columns alone
+  # still predict.
   fit <- phase_formula_fit()
   fit$fit$x_design <- NULL
   tt <- c(1, 1)
   nd <- data.frame(time = tt,
                    grp = factor(c("old", "young"), levels = c("old", "young")))
+  expect_error(predict(fit, newdata = nd, type = "cumulative_hazard"),
+               "phase 'early' of this fit was saved without its design.*refit")
+  nd <- data.frame(time = tt, grpyoung = c(0, 1))
   expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard") /
                  reference_cumhaz(fit, tt, c(0, 1)),
                c(1, 1), tolerance = 1e-10, ignore_attr = TRUE)

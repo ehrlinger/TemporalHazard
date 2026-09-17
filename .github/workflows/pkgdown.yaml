@@ -10,10 +10,8 @@ on:
     paths-ignore:
       - '.claude/**'
     branches: [main, master]
-  pull_request:
-    paths-ignore:
-      - '.claude/**'
-    branches: [main, master]
+  # Not on pull requests: this gates no merge, and on a pull request it only
+  # competes for runners with the checks that do. It runs after the merge.
   workflow_dispatch:
 
 concurrency:
