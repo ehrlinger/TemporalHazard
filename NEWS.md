@@ -93,6 +93,16 @@
   not a `PROC HAZARD` refusal, so it is kept apart from the existing
   "selects no phase" stop.
 
+* **`hzr_translate_sas()` now emits a `stop()` in place of the fit when a
+  job has no `DATA=` and a phase has covariates (#311).** A phase's
+  covariates are evaluated only in `data`, and such a job's fit chunk has
+  none, so `hazard()` stopped with advice to pass `data =`, an argument the
+  SAS job never had. Before the refusal above (#299) the same chunk fitted
+  the phase without its covariates. The job is now recorded in
+  `$untranslated` with the reason, and the emitted `stop()` says to add
+  `DATA=` and translate again. A job with no `DATA=` and no phase
+  covariates still translates to a fit.
+
 * **`predict(newdata = )` matches covariates by name, so `newdata` with
   other names now stops.** A fit made through the vector interface with a
   named `x`, say `x = cbind(age = , mal = )`, needs `newdata` columns
