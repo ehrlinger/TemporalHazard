@@ -123,10 +123,11 @@ test_that("print shows the derivation", {
 # The calculus, against numDeriv on the reduced likelihood
 # ---------------------------------------------------------------------------
 
-# Points across the shape range. Beyond gamma of about 30 the analytic g3
-# Hessian this builds on is itself inaccurate against numDeriv (a separate
-# defect in the unconstrained Hessian), so the range stops there; the score,
-# which does not depend on it, is exact well beyond.
+# Points across the shape range, held to 1e-3. Past these the analytic g3
+# Hessian this builds on is itself off against numDeriv (#327, #332), and the
+# constrained one inherits that through J'HJ; the extreme-gamma test below
+# checks the constraint adds nothing of its own there. The score, which does
+# not use the Hessian, is exact well beyond.
 calculus_points <- list(
   interior  = c(log(0.25), log(9), 5, 1.5, 0.9),
   low_gamma = c(log(0.25), log(9), 0.5, 0.7, 3),
@@ -144,10 +145,17 @@ for (constraint in c("alpha_gamma_eta", "eta_gamma")) {
     ll <- constraint_reduced_ll(d, phases, constraint)
     curvature_seen <- 0
 
-    for (point in names(calculus_points)) {
+    points <- calculus_points
+    # alpha_gamma_eta stays inside 1e-3 at gamma = 30 (measured 9e-5);
+    # eta_gamma does not (3.6e-3, all of it the base Hessian's).
+    if (constraint == "alpha_gamma_eta") {
+      points$gamma_30 <- c(log(0.25), log(9), 30, 1.5, 0.06)
+    }
+
+    for (point in names(points)) {
       # Arbitrary points, not optima: the curvature term is weighted by the
       # derived slot's own score, which none of these zero.
-      theta <- .hzr_apply_constraints(calculus_points[[point]], phases, counts)
+      theta <- .hzr_apply_constraints(points[[point]], phases, counts)
 
       score <- .hzr_gradient_multiphase(theta, d$time, d$status,
                                         phases = phases,
@@ -178,6 +186,49 @@ for (constraint in c("alpha_gamma_eta", "eta_gamma")) {
     expect_gt(curvature_seen, 1e-3)
   })
 }
+
+test_that("at extreme gamma the constraint adds no Hessian error of its own", {
+  skip_on_cran()
+  skip_if_not_installed("numDeriv")
+  # At gamma 100 and 200 the unconstrained analytic g3 Hessian disagrees with
+  # numDeriv (#332), by up to 160% of an entry here. Whatever of that reaches
+  # the constrained Hessian arrives through J'HJ, so subtract exactly that and
+  # hold what is left. Entries, not standard errors: these points are
+  # ill-conditioned (rcond about 1e-8), where an inverse amplifies noise.
+  d <- constraint_data(c(log(0.3), log(10), 6, 2.4, 0.8))
+  counts <- c(late = 0L)
+  nulls <- list(late = NULL)
+  plain <- list(late = hzr_phase("g3"))
+  ll_full <- function(theta) {
+    sum(log(.hzr_multiphase_hazard(d$time[d$status == 1], theta, plain, counts,
+                                   nulls))) -
+      sum(.hzr_multiphase_cumhaz(d$time, theta, plain, counts, nulls))
+  }
+  extreme <- list(gamma_100 = c(log(0.25), log(9), 100, 1.5, 0.02),
+                  gamma_200 = c(log(0.25), log(9), 200, 1.5, 0.01))
+  for (constraint in c("alpha_gamma_eta", "eta_gamma")) {
+    phases <- list(late = hzr_phase("g3", constraint = constraint))
+    free <- constraint_free(constraint)
+    ll <- constraint_reduced_ll(d, phases, constraint)
+    for (point in names(extreme)) {
+      theta <- .hzr_apply_constraints(extreme[[point]], phases, counts)
+      constrained <- unname(.hzr_constrained_hessian(
+        theta, d$time, d$status, phases = phases, covariate_counts = counts,
+        x_list = nulls)[free, free])
+      reference <- -numDeriv::hessian(ll, theta[free])
+      base_error <- .hzr_hessian_multiphase(
+        theta, d$time, d$status, phases = plain, covariate_counts = counts,
+        x_list = nulls) + numDeriv::hessian(ll_full, theta)
+      jac <- .hzr_constraint_jacobian(theta, phases, counts)
+      inherited <- crossprod(jac, base_error %*% jac)[free, free]
+      own <- (constrained - reference) - inherited
+      # Measured at most 4.2e-3 of an entry; the base error it sits beside
+      # reaches 1.6.
+      expect_lt(max(abs(own) / pmax(abs(reference), 1e-6)), 1e-2,
+                label = paste(constraint, point))
+    }
+  }
+})
 
 # ---------------------------------------------------------------------------
 # The covariance expansion
