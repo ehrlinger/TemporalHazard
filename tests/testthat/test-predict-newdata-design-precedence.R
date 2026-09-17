@@ -1291,3 +1291,26 @@ test_that("a multiphase global design takes the variable over its column", {
   expect_gt(max(abs(as_young / as_old - 1)), 0.05)
   expect_equal(both, as_old, tolerance = 1e-12)
 })
+
+test_that("the two documented conservative refusals still stop (#274)", {
+  d <- .dp_avc
+  d$`my age` <- d$age
+  w <- hazard(survival::Surv(int_dead, dead) ~ poly(age, 2) + grp, data = d,
+              dist = "weibull", theta = c(mu = 0.01, nu = 0.5, 0.1, 0.1, 0.7))
+  nd <- as.data.frame(w$data$x[1:2, ], check.names = FALSE)
+  nd$time <- 2
+  nd$age <- d$age[1:2]
+  expect_error(predict(w, newdata = nd, type = "cumulative_hazard"),
+               "gives the formula variable\\(s\\) 'age' but lacks 'grp'")
+  # Without `age` the design columns are used.
+  nd$age <- NULL
+  expect_no_error(predict(w, newdata = nd, type = "cumulative_hazard"))
+
+  w2 <- hazard(survival::Surv(int_dead, dead) ~ `my age` + grp, data = d,
+               dist = "weibull", theta = c(mu = 0.01, nu = 0.5, 0.004, 0.7))
+  nd2 <- data.frame(time = 2, `my age` = 60, grpyoung = 1,
+                    check.names = FALSE)
+  nd2[["`my age`"]] <- 60
+  expect_error(predict(w2, newdata = nd2, type = "cumulative_hazard"),
+               "gives the formula variable\\(s\\) 'my age' but lacks 'grp'")
+})
