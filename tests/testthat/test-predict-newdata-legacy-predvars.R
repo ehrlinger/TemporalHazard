@@ -183,12 +183,12 @@ test_that("kept data is not trusted when the formula reads outside it", {
   # rebuild from the kept data matches the fit, but it may read state, or
   # newdata's rows, at predict time.
   e3 <- new.env()
-  e3$k <- gap[2]
+  e3$k <- gap[1] + 0.25 * diff(gap)
   e3$thr <- function(x) x * (x > k)
   environment(e3$thr) <- e3
   lf <- legacy_fit_on(stats::as.formula("~ I(thr(age))", env = e3), d,
                       keep_frame = TRUE)
-  e3$k <- gap[1]
+  e3$k <- gap[1] + 0.75 * diff(gap)
   expect_identical(unname(lf$fit$fit$x_list$early[, 1L]), e3$thr(d$age))
   expect_error(predict(lf$fit, newdata = nd, type = "cumulative_hazard"),
                "refit", label = "user's thr()")
