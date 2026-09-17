@@ -338,6 +338,21 @@
 
 ## Bug fixes
 
+* **The saturated-phase warning no longer claims the likelihood is unchanged
+  when the fit evaluates the phase elsewhere (#228).** The warning reports a
+  phase whose contribution is constant across the event times, and said its
+  shape parameters were unidentified and "the likelihood is unchanged whether
+  they are pinned or fitted". An interval-censored or left-truncated
+  likelihood also evaluates the phase at the interval bounds and the
+  counting-process entry times, where a phase flat across the event times can
+  still be climbing: on one such fit the likelihood moves 103 units in a
+  parameter the message called unchanged. Where the fit has such points, the
+  warning now says how many there are and that the shapes may be identified
+  there. **The warning still fires on such a fit**: which phases are
+  reported, and `fit$fit$phase_share`, are unchanged, and what those further
+  points are worth is not measured. The diagnostic says less than it did,
+  not something different.
+
 * **`predict(newdata = )` on a multiphase fit saved before this version no
   longer gets `scale()`, `poly()` or `ns()` in a phase formula silently wrong
   (#307).** Such a fit stored no phase design, so the phase was rebuilt from
