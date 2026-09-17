@@ -405,6 +405,29 @@
 
 ## Bug fixes
 
+* **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
+  (#345). An active `MUE` or `MUL` with no shape operand used to be recorded
+  as untranslated and build no phase. PROC HAZARD runs that phase on its own
+  shape defaults (early `THALF` 1, `NU` 2, `M` 1; late `GAMMA` 1, `ALPHA` 1,
+  `ETA` 2), which do not depend on the data, so the translation now builds it
+  the same way. The late `TAU` start (0.75 of the longest follow-up) is the one
+  value that depends on the data, and it is recorded, as it already was for a
+  late phase written without `TAU`. That record now says what it means:
+  because the multiphase likelihood is multimodal, a different start can
+  change the estimates, not only the path to them; and with `FIXTAU` on an
+  unwritten `TAU`, PROC HAZARD holds `TAU` at that data-dependent value while
+  the translation holds it at 1, a different model.
+
+* **Two `hzr_translate_sas()` rows now state their consequence** (#345 review).
+  - `FIXMNU1` on an active early phase is a real PROC HAZARD constraint
+    (`M*NU = 1`) that the translation does not apply. It was recorded as "PARMS
+    token has no phase target", which read as a parsing gap; the row now says
+    the constraint is not applied and the emitted phase is a different model.
+  - A `PARMS` keyword that is not in PROC HAZARD's grammar (for example
+    `FIXG1` or `FIXG3`, which are internal flags, not options) is one PROC
+    HAZARD rejects, so its job does not run. The row keeps its "unresolved
+    PARMS keyword" prefix and now says that.
+
 * **A fit made with `survival::Surv()`'s own status codes was wrong, not
   empty, and said nothing (#231).** `Surv()` codes interval-censored rows
   `3`, and this package codes them `2`. Passing survival's integers as a
