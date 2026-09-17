@@ -338,6 +338,23 @@
 
 ## Bug fixes
 
+* **`hzr_translate_sas()` now mirrors PROC HAZARD when `FIXGE2` or `FIXGAE2`
+  meets `SETG3_ignore_tau()`** (#328, #329 review). That branch runs when
+  both flags are set, or when either is set with `ALPHA` fixed at 1. PROC
+  HAZARD then fixes all four late shapes: `TAU` = 1, `ALPHA` = 1, and `GAMMA`
+  and `ETA` at 2 and 1 (or 1 and 2 when the job wrote `ETA = 2`). The
+  translation used to record these jobs as untranslated and still emit a
+  phase with `GAMMA` free. It now emits the fixed phase, records any value
+  the job wrote that neither program uses, and records `SETG3940` when
+  `ALPHA` is fixed at anything other than 1.
+
+* **`hzr_phase("g3")` now refuses an infinite `tau`, `gamma` or `eta`, and a
+  derived shape that is not a finite positive number** (#329 review). An
+  infinite shape was accepted and failed only inside the optimizer. Under
+  `constraint`, finite sources could still overflow to an infinite derived
+  shape, or underflow to `alpha = 0`, which would silently select the
+  exponential limiting case.
+
 * **`predict(newdata = )` on a multiphase fit saved before this version no
   longer gets `scale()`, `poly()` or `ns()` in a phase formula silently wrong
   (#307).** Such a fit stored no phase design, so the phase was rebuilt from

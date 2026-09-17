@@ -501,3 +501,29 @@ test_that("a theta off the constraint is replaced, with a warning, fitted or not
   theta <- unname(coef(fitted))
   expect_equal(theta[4], theta[3] * theta[5] / 2)
 })
+
+test_that("hzr_phase() refuses a non-finite shape, given or derived (#329 review)", {
+  # Each of these built an object outside hzr_phase()'s own domain; fitting
+  # one then stopped only inside the optimizer.
+  expect_error(hzr_phase("g3", gamma = Inf), "gamma must be a positive scalar, and finite")
+  expect_error(hzr_phase("g3", tau = Inf), "tau must be a positive scalar, and finite")
+  expect_error(hzr_phase("g3", eta = Inf), "eta must be a positive scalar, and finite")
+  expect_error(hzr_phase("g3", gamma = Inf, constraint = "eta_gamma"),
+               "gamma must be a positive scalar, and finite")
+  # Overflow and underflow of the derived value.
+  expect_error(
+    hzr_phase("g3", gamma = 1e200, eta = 1e200,
+              constraint = "alpha_gamma_eta"),
+    "alpha = gamma * eta / 2 is not a finite positive number", fixed = TRUE
+  )
+  expect_error(
+    hzr_phase("g3", gamma = 1e-200, eta = 1e-200,
+              constraint = "alpha_gamma_eta"),
+    "alpha = gamma * eta / 2 is not a finite positive number", fixed = TRUE
+  )
+  expect_error(hzr_phase("g3", gamma = 1e-320, constraint = "eta_gamma"),
+               "eta = 2 / gamma is not a finite positive number", fixed = TRUE)
+  # In range, untouched.
+  expect_equal(hzr_phase("g3", gamma = 1e100, eta = 1e-100,
+                         constraint = "alpha_gamma_eta")$alpha, 0.5)
+})

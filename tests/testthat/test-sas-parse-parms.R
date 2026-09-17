@@ -1268,12 +1268,6 @@ test_that("constraint flags outside the traced branch stay recorded", {
                                    "FIXGAE2"))
   expect_true("FIXGAE2" %in% no_weibull$untranslated$construct)
   expect_false(grepl("constraint", deparse1(no_weibull$phases), fixed = TRUE))
-
-  # Both flags: SETG3_ignore_tau(), one row per flag.
-  both <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.5",
-                             "FIXGAE2", "FIXGE2", "WEIBULL"))
-  expect_equal(both$untranslated$construct, c("FIXGE2", "FIXGAE2"))
-  expect_false(grepl("constraint", deparse1(both$phases), fixed = TRUE))
 })
 
 test_that("SETG3_weibull() refusals are judged before a constraint moves a shape", {
@@ -1320,4 +1314,84 @@ test_that("the constraint is tested exactly, as the C tests it", {
                             "ETA=0.666666666666667", "FIXGAMMA", "FIXETA",
                             "FIXGE2", "WEIBULL"))
   expect_match(got$untranslated$reason, "(SETG3990)", fixed = TRUE)
+})
+
+# ---------------------------------------------------------------------------
+# SETG3_ignore_tau() under FIXGE2 / FIXGAE2 (#328 item 3, #329 review)
+# ---------------------------------------------------------------------------
+# setg3.c:312-314 takes SETG3_ignore_tau() when both flags are set, or when
+# ALPHA is fixed at 1. With either flag, :377-400 then fixes TAU at 1 and
+# ALPHA at 1 (SETG3940 when ALPHA is fixed at anything else) and fixes GAMMA
+# and ETA at 2 and 1 -- or 1 and 2 when the job wrote ETA = 2. At alpha = 1
+# the likelihood sees only (t/tau)^(gamma*eta), so all four are exact.
+
+all_four <- c("tau", "gamma", "alpha", "eta")
+
+test_that("FIXGE2 with ALPHA fixed at 1 mirrors SETG3_ignore_tau()", {
+  got <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
+                            "ALPHA=1", "FIXALPHA", "FIXGE2", "WEIBULL"))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("g3", tau = 1, gamma = 2, alpha = 1, eta = 1,
+                         fixed = c("tau", "gamma", "alpha", "eta"))))
+  )
+  expect_equal(eval(got$theta)[2:5], c(log(1), 2, 1, 1))
+  # The emitted call builds: every shape fixed, only mu left to estimate.
+  late <- eval(got$phases)[[1]]
+  expect_setequal(late$fixed, all_four)
+  # The job wrote GAMMA = 4, ETA = 0.25, which neither program runs; say so.
+  expect_equal(nrow(got$untranslated), 1L)
+  expect_match(got$untranslated$reason, "SETG3_ignore_tau()", fixed = TRUE)
+  expect_false(any(grepl("gamma*eta", got$untranslated$construct,
+                         fixed = TRUE)))
+})
+
+test_that("SETG3_ignore_tau() keeps ETA = 2 when the job wrote it", {
+  got <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=1", "ETA=2",
+                            "ALPHA=1", "FIXALPHA", "FIXGAE2"))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("g3", tau = 1, gamma = 1, alpha = 1, eta = 2,
+                         fixed = c("tau", "gamma", "alpha", "eta"))))
+  )
+  # Written exactly as SAS runs it: nothing to record.
+  expect_equal(nrow(got$untranslated), 0L)
+})
+
+test_that("both flags force ALPHA to 1 and fix every shape", {
+  got <- .hzr_parse_parms(c("MUL=0.2", "TAU=3", "GAMMA=4", "ETA=0.5",
+                            "ALPHA=2", "FIXGAE2", "FIXGE2", "WEIBULL"))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("g3", tau = 1, gamma = 2, alpha = 1, eta = 1,
+                         fixed = c("tau", "gamma", "alpha", "eta"))))
+  )
+  expect_true(any(grepl("SETG3_ignore_tau()", got$untranslated$reason,
+                        fixed = TRUE)))
+  expect_false(any(got$untranslated$construct %in% c("FIXGE2", "FIXGAE2") &
+                     grepl("not translated", got$untranslated$reason)))
+})
+
+test_that("both flags with ALPHA fixed away from 1 is PROC HAZARD's SETG3940", {
+  got <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.5",
+                            "ALPHA=3", "FIXALPHA", "FIXGAE2", "FIXGE2",
+                            "WEIBULL"))
+  expect_true(any(grepl("(SETG3940)", got$untranslated$reason, fixed = TRUE)))
+  expect_false(grepl("fixed = c(\"tau\", \"gamma\", \"alpha\", \"eta\")",
+                     deparse1(got$phases), fixed = TRUE))
+})
+
+test_that("FIXGAE2 with ALPHA fixed on the constraint and one shape free derives ALPHA", {
+  # hzd_late_t2p.c:90-94: a non-estimated ALPHA under FIXGAE2 is recomputed
+  # as GAMMA*ETA/2 from theta at every step, so it is derived, not held
+  # (#329 review, inline comment 4038970968: not a defect).
+  got <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
+                            "ALPHA=0.5", "FIXALPHA", "FIXETA", "FIXGAE2",
+                            "WEIBULL"))
+  expect_equal(nrow(got$untranslated), 0L)
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("g3", tau = 1, gamma = 4, alpha = 0.5, eta = 0.25,
+                         fixed = "eta", constraint = "alpha_gamma_eta")))
+  )
 })

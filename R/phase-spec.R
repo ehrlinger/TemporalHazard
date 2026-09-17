@@ -110,14 +110,14 @@
 #'   `"hazard"` phases.  SAS early: `NU`.
 #' @param m Numeric scalar; initial shape exponent.  Used for `"cdf"` and
 #'   `"hazard"` phases.  SAS early: `M`.
-#' @param tau Positive scalar; scale parameter for `"g3"` phases.
+#' @param tau Positive finite scalar; scale parameter for `"g3"` phases.
 #'   SAS late: `TAU`.
-#' @param gamma Positive scalar; time exponent for `"g3"` phases.
+#' @param gamma Positive finite scalar; time exponent for `"g3"` phases.
 #'   SAS late: `GAMMA`.
 #' @param alpha Non-negative scalar; shape parameter for `"g3"` phases.
 #'   When `alpha > 0`, the generic G3 formula is used; `alpha = 0` gives the
 #'   exponential limiting case.  SAS late: `ALPHA`.
-#' @param eta Positive scalar; outer exponent for `"g3"` phases.
+#' @param eta Positive finite scalar; outer exponent for `"g3"` phases.
 #'   SAS late: `ETA`.
 #' @param formula Optional one-sided formula (e.g. `~ age + nyha`) for
 #'   phase-specific covariates.  It is evaluated in the `data` given to
@@ -227,15 +227,18 @@ hzr_phase <- function(type = c("cdf", "hazard", "constant", "g3"),
   # --- Validate shape parameters based on type ------------------------------
   if (type == "g3") {
     # G3 late-phase decomposition: 4 parameters (tau, gamma, alpha, eta)
+    # Finite as well as positive: an infinite shape was accepted here and only
+    # failed later, inside the optimizer.
     stopifnot(
-      "tau must be a positive scalar" =
-        is.numeric(tau) && length(tau) == 1L && tau > 0,
-      "gamma must be a positive scalar" =
-        is.numeric(gamma) && length(gamma) == 1L && gamma > 0,
+      "tau must be a positive scalar, and finite" =
+        is.numeric(tau) && length(tau) == 1L && tau > 0 && is.finite(tau),
+      "gamma must be a positive scalar, and finite" =
+        is.numeric(gamma) && length(gamma) == 1L && gamma > 0 &&
+          is.finite(gamma),
       "alpha must be a non-negative scalar" =
         is.numeric(alpha) && length(alpha) == 1L && alpha >= 0 && is.finite(alpha),
-      "eta must be a positive scalar" =
-        is.numeric(eta) && length(eta) == 1L && eta > 0
+      "eta must be a positive scalar, and finite" =
+        is.numeric(eta) && length(eta) == 1L && eta > 0 && is.finite(eta)
     )
   } else if (type != "constant") {
     # G1 early-phase decomposition: 3 parameters (t_half, nu, m)
@@ -316,6 +319,22 @@ hzr_phase <- function(type = c("cdf", "hazard", "constant", "g3"),
     } else if (constraint == "eta_gamma") {
       supplied <- if (missing(eta)) NULL else eta
       eta <- 2 / gamma
+    }
+    # The checks above saw the sources, not the derived value. Finite sources
+    # can still overflow (alpha = Inf) or underflow (alpha = 0, which would
+    # silently select the exponential limiting case), so check it too.
+    if (constraint != "none") {
+      value <- if (constraint == "alpha_gamma_eta") alpha else eta
+      if (!(is.finite(value) && value > 0)) {
+        sources <- if (constraint == "alpha_gamma_eta") {
+          paste0("gamma = ", format(gamma, digits = 6), ", eta = ",
+                 format(eta, digits = 6))
+        } else {
+          paste0("gamma = ", format(gamma, digits = 6))
+        }
+        stop(.hzr_constraint_rule(constraint), " is not a finite positive ",
+             "number (", sources, ").", call. = FALSE)
+      }
     }
     if (constraint != "none" && !is.null(supplied)) {
       derived <- .hzr_constraint_derived(constraint)
