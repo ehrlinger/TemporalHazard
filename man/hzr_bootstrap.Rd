@@ -93,8 +93,9 @@ parameter. In \code{mode = "select"}, \code{pct} is the selection frequency
 and the other statistics are conditional on selection.}
 \item{n_success}{Number of successfully converged replicates.}
 \item{n_failed}{Number of replicates that failed: the refit stopped with
-an error, returned something other than a fit, or returned a
-non-finite objective.}
+an error, returned something other than a fit, returned a non-finite
+objective, or returned a finite objective but no parameter
+estimates.}
 \item{failure_reasons}{Named integer vector counting why replicates
 failed, most common first: the refit's error message (or
 \code{"error with an empty message"}),
