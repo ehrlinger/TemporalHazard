@@ -37,10 +37,11 @@
 #'     term leaves each step until all survivors clear the retention rule.
 #'     `scope` is not read, so passing one is an error: protect terms with
 #'     `force_in`.}
-#'   \item{`direction = "both"` (default)}{Two-way stepwise: after each
-#'     entry, every term in the model, the base model's included, is
-#'     re-tested and may be dropped unless it is in `force_in`.  `scope`
-#'     limits what may enter, not what may leave.
+#'   \item{`direction = "both"` (default)}{Two-way stepwise: on every
+#'     iteration, whether or not a variable entered, every term in the model,
+#'     the base model's included, is re-tested and may be dropped unless it
+#'     is in `force_in` or frozen by `max_move`.  `scope` limits what may
+#'     enter, not what may leave.
 #'     This is the SAS `SELECTION = STEPWISE` strategy.  `max_move` caps how
 #'     often a single variable may oscillate before it is frozen.}
 #' }
@@ -99,7 +100,7 @@
 #'   (`~ age + nyha`) or a character vector of names.  For multiphase
 #'   fits, pass a named list of one-sided formulas keyed by phase, naming
 #'   each phase once.  `scope` lists what may enter; a drop considers every
-#'   term in the model except `force_in`.  A two-sided formula is an error,
+#'   term in the model except `force_in` and terms frozen by `max_move`.  A two-sided formula is an error,
 #'   since its left-hand side would never be a candidate, and so is any
 #'   `scope` under `direction = "backward"`, which does not read it.
 #' @param data Data frame the base fit was built on.  Required for

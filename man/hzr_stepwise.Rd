@@ -42,7 +42,7 @@ single-distribution fits, pass a one-sided formula
 (\code{~ age + nyha}) or a character vector of names.  For multiphase
 fits, pass a named list of one-sided formulas keyed by phase, naming
 each phase once.  \code{scope} lists what may enter; a drop considers every
-term in the model except \code{force_in}.  A two-sided formula is an error,
+term in the model except \code{force_in} and terms frozen by \code{max_move}.  A two-sided formula is an error,
 since its left-hand side would never be a candidate, and so is any
 \code{scope} under \code{direction = "backward"}, which does not read it.}
 
@@ -200,10 +200,11 @@ already hold every candidate, and only \emph{drop} variables; the weakest
 term leaves each step until all survivors clear the retention rule.
 \code{scope} is not read, so passing one is an error: protect terms with
 \code{force_in}.}
-\item{\code{direction = "both"} (default)}{Two-way stepwise: after each
-entry, every term in the model, the base model's included, is
-re-tested and may be dropped unless it is in \code{force_in}.  \code{scope}
-limits what may enter, not what may leave.
+\item{\code{direction = "both"} (default)}{Two-way stepwise: on every
+iteration, whether or not a variable entered, every term in the model,
+the base model's included, is re-tested and may be dropped unless it
+is in \code{force_in} or frozen by \code{max_move}.  \code{scope} limits what may
+enter, not what may leave.
 This is the SAS \code{SELECTION = STEPWISE} strategy.  \code{max_move} caps how
 often a single variable may oscillate before it is frozen.}
 }

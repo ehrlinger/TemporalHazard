@@ -1708,12 +1708,12 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # Without `scope` there is no screen, so a selection argument would be
   # silently ignored and every term reported at pct = 100 (#343).
   if (!select_mode && length(given)) {
-    stop("hzr_bootstrap(): ", paste0("`", given, "`", collapse = ", "),
-         " only take effect in a selection screen, which needs `scope`; ",
-         "without it every replicate refits the fit's exact model. Pass ",
-         "`scope` to screen, or drop ",
-         if (length(given) > 1L) "those arguments." else "that argument.",
-         call. = FALSE)
+    named <- paste0("`", given, "`", collapse = ", ")
+    stop("hzr_bootstrap(): ", named,
+         if (length(given) > 1L) " only take" else " only takes",
+         " effect in a selection screen, which needs `scope`. Either pass ",
+         "`scope` to screen on each replicate, or omit ", named, " to refit ",
+         "the fit's exact model on each replicate.", call. = FALSE)
   }
 
   # `...` exists only to forward stepwise-control arguments (e.g. `control=`)

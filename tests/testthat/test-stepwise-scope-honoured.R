@@ -127,7 +127,9 @@ test_that("hzr_bootstrap() refuses selection arguments without a scope (#343)", 
     hzr_bootstrap(full, n_boot = 3L, seed = 1L, direction = "backward",
                   force_in = "age", slstay = 1e-300),
     paste0("hzr_bootstrap(): `direction`, `slstay`, `force_in` only take ",
-           "effect in a selection screen, which needs `scope`"),
+           "effect in a selection screen, which needs `scope`. Either pass ",
+           "`scope` to screen on each replicate, or omit `direction`, ",
+           "`slstay`, `force_in` to refit the fit's exact model"),
     fixed = TRUE
   )
   expect_identical(.Random.seed, before)
@@ -135,7 +137,7 @@ test_that("hzr_bootstrap() refuses selection arguments without a scope (#343)", 
                  list(max_steps = 2L), list(max_move = 1L),
                  list(force_out = "mal"))) {
     expect_error(do.call(hzr_bootstrap, c(list(full, n_boot = 2L), a)),
-                 paste0("`", names(a), "` only take"), fixed = TRUE,
+                 paste0("`", names(a), "` only takes effect"), fixed = TRUE,
                  label = names(a))
   }
   # The fixed-model bootstrap itself is unchanged.
