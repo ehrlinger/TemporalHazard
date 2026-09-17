@@ -342,8 +342,8 @@
   says so (#328).** `scope = list(late = c("age", "mal"))` stopped with
   "formula must be a `formula` object", which named neither `scope` nor the
   phase. It now names `scope$late` and says a multiphase `scope` is a named
-  list of one-sided formulas. A character vector remains a valid scope for a
-  single-distribution fit.
+  list of formulas keyed by phase. A character vector remains a valid scope
+  for a single-distribution fit.
 
 * **`predict(newdata = )` on a multiphase fit saved before this version no
   longer gets `scale()`, `poly()` or `ns()` in a phase formula silently wrong
