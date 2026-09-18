@@ -159,7 +159,12 @@
   # the inherited names: a refit request, not a wrong number (#324). A fit
   # with a record, or with no `data` in its call, is decided by the check
   # before it.
-  undecidable <- pre_frame && is.null(fit$call$formula)
+  # The vector interface is recognised by `time =` in the call, not by a
+  # missing formula: a wrapper writes `formula = fml`, a symbol even when
+  # `fml` was NULL, and without `call_env` (none before 1.2.2) a later
+  # binding of `fml` would decide the refit instead (#324).
+  vector_call <- is.null(fit$call$formula) || "time" %in% names(fit$call)
+  undecidable <- pre_frame && vector_call
   for (nm in names(fit$spec$phases)) {
     pf <- fit$spec$phases[[nm]]$formula
     has_terms <- !is.null(pf) && .hzr_phase_formula_has_terms(pf)

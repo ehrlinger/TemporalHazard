@@ -26,6 +26,164 @@ test_that("hazard() validates core dimensions", {
   )
 })
 
+test_that("hazard() refuses zero rows on every path (#231)", {
+  # Over no data every path used to return a hazard object with
+  # converged = TRUE, warning only that the Hessian had rcond = 0.
+  ph <- list(early = hzr_phase("cdf"), constant = hzr_phase("constant"))
+  msg <- "no observations"
+  expect_error(hazard(time = numeric(0), status = numeric(0),
+                      dist = "multiphase", phases = ph, fit = TRUE), msg)
+  # Refused before fitting: an unfitted object over no data is hollow too.
+  expect_error(hazard(time = numeric(0), status = numeric(0),
+                      dist = "multiphase", phases = ph), msg)
+  for (d in c("weibull", "exponential", "loglogistic", "lognormal")) {
+    expect_error(hazard(time = numeric(0), status = numeric(0), dist = d,
+                        theta = c(0.5, 1), fit = TRUE), msg)
+  }
+  df0 <- data.frame(t = c(1, 2), s = c(1, 0), x = c(1, 2))[0, ]
+  # Surv() itself warns on zero rows ("no non-missing arguments to max").
+  expect_error(suppressWarnings(
+    hazard(survival::Surv(t, s) ~ x, data = df0, dist = "weibull",
+           theta = c(0.5, 1, 0), fit = TRUE)), msg)
+  expect_error(suppressWarnings(
+    hazard(survival::Surv(t, s) ~ 1, data = df0,
+           dist = "multiphase", phases = ph, fit = TRUE)), msg)
+
+  # One row is data: the guard is on zero, not on "small".
+  one <- hazard(time = 2, status = 1, dist = "exponential", theta = 0.1)
+  expect_s3_class(one, "hazard")
+
+  # All-zero weights are no observations too: the fit came back converged
+  # at its starting values, objective 0.
+  tt <- c(1, 2, 3, 4, 5, 6)
+  st <- c(1, 0, 1, 1, 0, 1)
+  expect_error(hazard(time = tt, status = st, weights = rep(0, 6),
+                      dist = "weibull", theta = c(0.5, 1), fit = TRUE), msg)
+  expect_error(hazard(time = tt, status = st, weights = rep(0, 6),
+                      dist = "multiphase", phases = ph, fit = TRUE), msg)
+  # Right-censored at time 0 adds H(0) = 0: no information either, with or
+  # without weights.
+  expect_error(hazard(time = c(0, 0, 0), status = c(0, 0, 0),
+                      dist = "weibull", theta = c(0.5, 1), fit = TRUE), msg)
+  expect_error(hazard(time = c(0, 0, 3, 4), status = c(0, 0, 1, 1),
+                      weights = c(1, 1, 0, 0), dist = "multiphase",
+                      phases = ph, fit = TRUE), msg)
+
+  # Any other status code falls through every likelihood branch and adds
+  # nothing: all rows gave a hollow fit, some rows were silently dropped.
+  expect_error(hazard(time = c(1, 2, 3), status = c(3, 3, 3),
+                      dist = "exponential", theta = 0.1, fit = TRUE),
+               "must be coded -1")
+  expect_error(hazard(time = c(1, 2, 3, 4), status = c(1, 3, 1, 0.5),
+                      dist = "exponential", theta = 0.1, fit = TRUE),
+               "2 of 4 row\\(s\\) are not, at index/indices 2, 4\\.")
+  # A character or factor status passed that check as text, and the
+  # single-distribution fits returned their starting values.
+  expect_error(hazard(time = c(1, 2, 3), status = c("1", "0", "1"),
+                      dist = "weibull", theta = c(0.5, 1), fit = TRUE),
+               "must be numeric")
+  expect_error(hazard(time = c(1, 2, 3), status = factor(c(1, 0, 1)),
+                      dist = "exponential", theta = 0.1, fit = TRUE),
+               "must be numeric")
+  lgl <- suppressWarnings(hazard(time = tt, status = st == 1,
+                                 dist = "exponential", theta = 0.1,
+                                 fit = TRUE))
+  num <- suppressWarnings(hazard(time = tt, status = as.numeric(st == 1),
+                                 dist = "exponential", theta = 0.1,
+                                 fit = TRUE))
+  expect_equal(lgl$fit$theta, num$fit$theta)
+  # A classed numeric whose stored doubles are not its values, as with
+  # bit64's integer64: read raw, time or status gave a fit at its start.
+  registerS3method("as.double", "hzr_test_wrapped",
+                   function(x, ...) attr(x, "values"))
+  wrap <- function(v) {
+    structure(rep(9e-300, length(v)), values = v, class = "hzr_test_wrapped")
+  }
+  tt5 <- c(2, 5, 3, 8, 4)
+  st5 <- c(1, 0, 1, 1, 0)
+  fit5 <- function(time, status) {
+    suppressWarnings(hazard(time = time, status = status, dist = "weibull",
+                            theta = c(1, 1), fit = TRUE))$fit$theta
+  }
+  ref <- fit5(tt5, st5)
+  expect_false(isTRUE(all.equal(unname(ref), c(1, 1))))
+  expect_equal(fit5(tt5, wrap(st5)), ref)
+  expect_equal(fit5(wrap(tt5), st5), ref)
+  # The same with a dim: an argument is one vector whatever its shape, so a
+  # one-column classed matrix is read as its values too.
+  wrapm <- function(v) {
+    structure(matrix(rep(9e-300, length(v)), ncol = 1), values = v,
+              class = "hzr_test_wrapped")
+  }
+  expect_equal(fit5(tt5, wrapm(st5)), ref)
+  expect_equal(fit5(wrapm(tt5), st5), ref)
+  # The same inside `data`, where Surv() and the phase formula read it.
+  df5 <- data.frame(tt = wrap(tt5), st = wrap(st5), z = wrap(c(0, 1, 0, 1, 1)))
+  df5_plain <- data.frame(tt = tt5, st = st5, z = c(0, 1, 0, 1, 1))
+  fitf <- function(d) {
+    suppressWarnings(hazard(survival::Surv(tt, st) ~ z, data = d,
+                            dist = "weibull", theta = c(1, 1, 0),
+                            fit = TRUE))$fit$theta
+  }
+  expect_equal(fitf(df5), fitf(df5_plain))
+  # The rule touches only numeric objects without a dim. A factor column
+  # (not numeric) must keep its dummy coding, and an I(matrix) column (has a
+  # dim) must not be flattened: each fit equals one on explicit columns.
+  set.seed(2)
+  dg <- data.frame(t = stats::rexp(80, 0.3), s = stats::rbinom(80, 1, 0.6),
+                   g = factor(sample(c("a", "b", "c"), 80, TRUE)),
+                   p = stats::rnorm(80), q = stats::rnorm(80))
+  dg$gb <- as.numeric(dg$g == "b")
+  dg$gc <- as.numeric(dg$g == "c")
+  dg$m <- I(cbind(p = dg$p, q = dg$q))
+  obj <- function(f) {
+    suppressWarnings(hazard(f, data = dg, dist = "weibull",
+                            theta = c(0.5, 1, 0, 0), fit = TRUE))$fit$objective
+  }
+  expect_equal(obj(survival::Surv(t, s) ~ g), obj(survival::Surv(t, s) ~ gb + gc))
+  expect_equal(obj(survival::Surv(t, s) ~ m), obj(survival::Surv(t, s) ~ p + q))
+  # And the other numeric inputs: weights and both bounds.
+  w5 <- c(1, 2, 1, 1, 2)
+  lo5 <- c(0, 1, 0, 2, 0)
+  fitw <- function(w, lo, up) {
+    suppressWarnings(hazard(time = tt5, status = c(1, 0, 2, 1, 0),
+                            weights = w, time_lower = lo, time_upper = up,
+                            dist = "weibull", theta = c(1, 1),
+                            fit = TRUE))$fit$theta
+  }
+  up5 <- tt5 + 1
+  ref_w <- fitw(w5, lo5, up5)
+  expect_equal(fitw(wrap(w5), lo5, up5), ref_w)
+  expect_equal(fitw(w5, wrap(lo5), up5), ref_w)
+  expect_equal(fitw(w5, lo5, wrap(up5)), ref_w)
+  # NA status still reaches the completeness check that names it.
+  expect_error(hazard(time = c(0, 0), status = c(NA, NA),
+                       dist = "exponential", theta = 0.1, fit = TRUE),
+               "'status' must be complete")
+
+  # Controls that FIT, not merely build: one positive weight on an event, an
+  # event at time 0, and every valid code.
+  w1 <- suppressWarnings(hazard(time = tt, status = st,
+                                weights = c(0, 0, 1, 0, 0, 0),
+                                dist = "exponential", theta = 0.1, fit = TRUE))
+  expect_true(is.finite(w1$fit$objective))
+  expect_false(w1$fit$objective == 0)
+  e0 <- suppressWarnings(hazard(time = c(0, 0, 0), status = c(1, 0, 0),
+                                dist = "exponential", theta = 0.1, fit = TRUE))
+  expect_false(e0$fit$objective == 0)
+  codes <- suppressWarnings(hazard(time = c(1, 2, 3, 4, 5),
+                                   status = c(-1, 0, 1, 2, 1),
+                                   time_lower = c(0, 0, 0, 1, 0),
+                                   dist = "multiphase", phases = ph,
+                                   fit = TRUE))
+  expect_true(is.finite(codes$fit$objective))
+  # The -1 and 2 rows must count: dropping them changes the likelihood.
+  fewer <- suppressWarnings(hazard(time = c(2, 3, 5), status = c(0, 1, 1),
+                                   dist = "multiphase", phases = ph,
+                                   fit = TRUE))
+  expect_gt(abs(codes$fit$objective - fewer$fit$objective), 1e-6)
+})
+
 test_that("fit = TRUE without theta is refused for single-distribution models", {
   # Only the multiphase optimizer assembles its own start. This call used to
   # return an unfitted object -- NULL coefficients, NA objective -- silently.

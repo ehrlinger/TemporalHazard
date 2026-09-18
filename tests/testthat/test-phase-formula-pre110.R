@@ -43,6 +43,48 @@ test_that("a pre-1.1.0 fit whose `data =` symbol was NULL is refused (#324)", {
   expect_error(hzr_bootstrap(f, n_boot = 2L), undecidable, fixed = TRUE)
 })
 
+test_that("a pre-1.1.0 vector fit made through a wrapper is refused too (#324)", {
+  skip_on_cran() # multiphase fits
+  # A wrapper writes the formula argument as a variable, so the stored call
+  # carries `formula = fml` (a symbol, not NULL) beside `time =`. The check
+  # read "no formula" as "vector interface", so this fit passed it. With no
+  # `call_env` (none before 1.2.2) `fml` resolves in the global environment,
+  # and when it is rebound to a formula the screen RAN, refitting a model the
+  # fit never had: the silent route #324 closes (Copilot on #355).
+  d <- avc_324()
+  dd <- NULL
+  f <- pre_110(suppressWarnings(hzr_saved_before_299(
+    list(early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1,
+                           fixed = "m", formula = ~ mal),
+         constant = hzr_phase("constant")),
+    time = d$int_dead, status = d$dead, data = dd,
+    dist = "multiphase", fit = TRUE, control = ctl_324)))
+  f$call$data <- quote(dd)
+  f$call$formula <- quote(fml)
+  f$call_env <- NULL
+  expect_identical(f$call$formula, quote(fml))
+  expect_true("time" %in% names(f$call))
+
+  refused <- "phase 'early' has a formula, `~mal`"
+  # The binding at refit time is what used to decide it: unbound, NULL, or
+  # rebound to a formula. The refusal no longer depends on it.
+  if (exists("fml", envir = globalenv(), inherits = FALSE)) {
+    old <- get("fml", envir = globalenv())
+    withr::defer(assign("fml", old, envir = globalenv()))
+  } else {
+    withr::defer(if (exists("fml", envir = globalenv(), inherits = FALSE)) {
+      rm("fml", envir = globalenv())
+    })
+  }
+  for (binding in list(NULL, survival::Surv(int_dead, dead) ~ 1)) {
+    assign("fml", binding, envir = globalenv())
+    expect_error(screen_324(f, d), refused, fixed = TRUE)
+    expect_error(hzr_bootstrap(f, n_boot = 2L), refused, fixed = TRUE)
+  }
+  rm("fml", envir = globalenv())
+  expect_error(screen_324(f, d), refused, fixed = TRUE)
+})
+
 test_that("a pre-1.1.0 real-data fit whose phase columns are the inherited ones is refused too (#324)", {
   skip_on_cran() # a multiphase fit
   # The accepted false positive. This fit did use its phase formula, but its

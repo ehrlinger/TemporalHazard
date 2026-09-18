@@ -714,3 +714,118 @@ test_that("an NA status names the argument and the row, under any objective", {
   expect_match(err2, "'status' must be complete")
   expect_no_match(err2, "no usable fit")
 })
+
+test_that("an NA interval bound is named as such, at its real row (#232)", {
+  # An NA bound made the width comparison NA, so the NA itself was reported
+  # as the offending row: "at index/indices NA."
+  tt <- c(1, 2, 3, 4, 5, 6)
+  st <- c(1, 0, 2, 1, 2, 1)
+  check <- function(lo, up) {
+    tryCatch({
+      TemporalHazard:::.hzr_check_sas_data(st, tt, lo, up, "sas")
+      "no error"
+    }, error = conditionMessage)
+  }
+  lo <- c(0, 0, 1, 0, 2, 0)
+  up <- c(1, 2, 3, 4, 5, 6)
+
+  lo_na <- lo
+  lo_na[5] <- NA
+  err <- check(lo_na, up)
+  expect_match(err, "NA bound")
+  expect_match(err, "at index/indices 5\\.")
+  expect_no_match(err, "indices NA")
+
+  up_na <- up
+  up_na[3] <- NA
+  err <- check(lo, up_na)
+  expect_match(err, "NA bound")
+  expect_match(err, "at index/indices 3\\.")
+
+  # An NA on a row that is not interval-censored is not this check's
+  # business, and complete bounds still pass.
+  lo_other <- lo
+  lo_other[2] <- NA
+  expect_identical(check(lo_other, up), "no error")
+  expect_identical(check(lo, up), "no error")
+})
+
+test_that("hazard() refuses an NA interval bound before any likelihood sees it (#232)", {
+  # The objective's own interval guard, which(!(upper > lower)), drops a row
+  # whose bound is NA instead of stopping. That is safe only because no NA
+  # bound gets through hazard(): these are the refusals it relies on.
+  ph <- list(early = hzr_phase("cdf"), constant = hzr_phase("constant"))
+  tt <- c(1, 2, 3, 4, 5, 6)
+  st <- c(1, 0, 2, 1, 2, 1)
+  lo <- c(0, 0, 1, 0, 2, 0)
+  for (obj in c("likelihood", "sas")) {
+    lo_na <- lo
+    lo_na[3] <- NA
+    up_na <- tt
+    up_na[5] <- NA
+    expect_error(hazard(time = tt, status = st, time_lower = lo_na,
+                        time_upper = tt, dist = "multiphase", phases = ph,
+                        objective = obj), "'time_lower' must be", info = obj)
+    expect_error(hazard(time = tt, status = st, time_lower = lo,
+                        time_upper = up_na, dist = "multiphase", phases = ph,
+                        objective = obj), "'time_upper' must be", info = obj)
+    d <- data.frame(tt = tt, st = st, lo = lo_na, up = tt)
+    expect_error(hazard(time = tt, status = st, time_lower = lo,
+                        time_upper = up, data = d, dist = "multiphase",
+                        phases = ph, objective = obj),
+                 "'time_lower' must be", info = obj)
+  }
+
+  # Surv(type = "interval2") reads an NA bound as open-ended, so it arrives
+  # as right- or left-censoring with finite stored bounds, never as an
+  # interval row with an NA.
+  d2 <- data.frame(l = c(1, 2, 1, 4, 2, 6), u = c(1, NA, 3, 4, 5, 6))
+  fit <- suppressWarnings(hazard(survival::Surv(l, u, type = "interval2") ~ 1,
+                                 data = d2, dist = "multiphase", phases = ph))
+  expect_equal(fit$data$status, c(1, 0, 2, 1, 2, 1))
+  expect_false(anyNA(fit$data$time_lower))
+  expect_false(anyNA(fit$data$time_upper))
+})
+
+test_that("a bound shorter than status is named as a length mismatch (#340)", {
+  # Indexing past the end of time_lower returns NA, which the entry check
+  # used to report as "an NA bound" -- a true message about the wrong
+  # defect. hazard() validates lengths first, so only a direct call reaches
+  # this; the message should still name the real cause.
+  expect_error(
+    TemporalHazard:::.hzr_check_sas_data(c(1, 0, 2, 1, 2, 1), 1:6,
+                                         c(0, 0, 1, 0), 1:6, "sas"),
+    "time_lower has length 4, but status has length 6", fixed = TRUE)
+  expect_error(
+    TemporalHazard:::.hzr_check_sas_data(c(1, 0, 2, 1, 2, 1), 1:6,
+                                         rep(0, 6), 1:5, "sas"),
+    "time_upper has length 5, but status has length 6", fixed = TRUE)
+  # A bound left NULL is filled from `time`, so a short `time` is named as
+  # `time`, not as a time_lower the caller never passed (Copilot, #394).
+  msg <- tryCatch(
+    TemporalHazard:::.hzr_check_sas_data(c(1, 0, 2, 1, 2, 1), 1:4, NULL, NULL, "sas"),
+    error = conditionMessage)
+  expect_identical(msg, "time has length 4, but status has length 6.")
+  # Control: equal lengths reach the ordinary checks and pass.
+  expect_silent(TemporalHazard:::.hzr_check_sas_data(
+    c(1, 0, 2), c(1, 2, 3), c(0, 0, 1), c(1, 2, 3), "sas"))
+})
+
+test_that("the objective's own guard stops on an NA bound (#340)", {
+  # which() drops NA rows, so the inner guard let an NA bound through and
+  # the row became -Inf: a value the optimizer walks away from, where the
+  # entry check stops. The two guards are documented as unable to disagree.
+  expect_error(
+    TemporalHazard:::.hzr_logl_interval(c(0.1, NA), c(0.5, 1), c(1, NA),
+                                        c(2, 3), c(1, 1), "sas"),
+    "1 of 2 interval row(s) fail this, at index/indices 2", fixed = TRUE)
+  expect_error(
+    TemporalHazard:::.hzr_logl_interval(c(0.1, 0.2), c(0.5, 1), c(1, 1),
+                                        c(2, NA), c(1, 1), "sas"),
+    "at index/indices 2", fixed = TRUE)
+  # The likelihood objective has no such precondition and is unchanged.
+  expect_identical(
+    TemporalHazard:::.hzr_logl_interval(c(0.1, NA), c(0.5, 1), c(1, NA),
+                                        c(2, 3), c(1, 1), "likelihood"),
+    -Inf)
+})

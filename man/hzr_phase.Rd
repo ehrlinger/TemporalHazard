@@ -38,23 +38,26 @@ SAS early: \code{THALF}/\code{RHO}.}
 \item{m}{Numeric scalar; initial shape exponent.  Used for \code{"cdf"} and
 \code{"hazard"} phases.  SAS early: \code{M}.}
 
-\item{tau}{Positive scalar; scale parameter for \code{"g3"} phases.
+\item{tau}{Positive finite scalar; scale parameter for \code{"g3"} phases.
 SAS late: \code{TAU}.}
 
-\item{gamma}{Positive scalar; time exponent for \code{"g3"} phases.
+\item{gamma}{Positive finite scalar; time exponent for \code{"g3"} phases.
 SAS late: \code{GAMMA}.}
 
 \item{alpha}{Non-negative scalar; shape parameter for \code{"g3"} phases.
 When \code{alpha > 0}, the generic G3 formula is used; \code{alpha = 0} gives the
 exponential limiting case.  SAS late: \code{ALPHA}.}
 
-\item{eta}{Positive scalar; outer exponent for \code{"g3"} phases.
+\item{eta}{Positive finite scalar; outer exponent for \code{"g3"} phases.
 SAS late: \code{ETA}.}
 
 \item{formula}{Optional one-sided formula (e.g. \code{~ age + nyha}) for
 phase-specific covariates.  It is evaluated in the \code{data} given to
 \code{\link[=hazard]{hazard()}}, so without \code{data} \code{\link[=hazard]{hazard()}} refuses it, unless it builds
 nothing either way: an intercept-only \code{~ 1} with no global \code{x}.
+The phase's scale parameter plays the role of an intercept, so the
+design never has one: removing it (\code{~ 0 + age}, \code{~ age - 1}) is
+ignored with a warning, and builds the design of \code{~ age}.
 When \code{NULL} (default), the phase inherits the global design from
 \code{\link[=hazard]{hazard()}}: the global formula's covariates, or \code{x} on the vector
 interface.}
