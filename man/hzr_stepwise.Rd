@@ -69,7 +69,9 @@ Default \code{0.20} matches SAS \code{SLSTAY}.}
 
 \item{max_move}{Per-variable oscillation cap.  When a variable has
 entered + exited more than \code{max_move} times it is frozen for the
-remainder of the run.  Default \code{4}.}
+remainder of the run.  Default \code{4}.  A variable frozen on entry can
+still be dropped in the same iteration; see the
+\strong{Known limitation: the frozen set} section.}
 
 \item{force_in}{Character vector of variables that must remain in
 the model.  Such variables are still scored and reported in the
@@ -94,7 +96,9 @@ final fit augmented with:
 \item{\code{steps}}{Data frame with one row per accepted /
 frozen action; see Details.}
 \item{\code{scope}}{Record of the candidate scope, plus
-\code{force_in}, \code{force_out}, and the frozen set.}
+\code{force_in}, \code{force_out}, and the frozen set.  \code{frozen} can name
+a variable the final model does not contain; see the
+\strong{Known limitation: the frozen set} section.}
 \item{\code{criteria}}{Named list of the threshold / direction
 settings actually applied, plus, under \code{criterion = "score"},
 \code{n_uncomputable_scores} (how many candidate scores were \code{NA}),
@@ -245,6 +249,29 @@ current model without a per-candidate refit (the chosen drop is refit
 afterwards).  Use this for a non-significance-based,
 information-criterion search.}
 }
+}
+
+\section{Known limitation}{
+ the frozen set:
+
+\verb{$scope$frozen} can name a variable that the final model does not
+contain.  Each iteration makes a forward step and then a backward step,
+and the sets of protected variables are fixed at the start of the
+iteration.  A variable that the forward step freezes can therefore still
+be dropped by the backward step that follows it, so it is reported as
+frozen while the final model excludes it.  Nothing warns when this
+happens.
+
+\strong{When the two disagree, trust the final model and \verb{$steps}.}  The
+final model is what was selected, and \verb{$steps} records both the
+\code{"frozen"} row and the \code{"drop"} that followed it.  Read \verb{$scope$frozen}
+only as the list of variables that reached the \code{max_move} cap, not as a
+list of variables held in the model.
+
+This is a known limitation of this release.  The analysis, including why
+fixing it changes which variables are selected, is in
+\url{https://github.com/ehrlinger/TemporalHazard/issues/378} and
+\url{https://github.com/ehrlinger/TemporalHazard/issues/379}.
 }
 
 \examples{

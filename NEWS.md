@@ -1090,6 +1090,21 @@
   screen that stepped a phase without a formula while the global formula
   had covariates, or scored a candidate for a phase with an interaction.
 
+## Known limitations
+
+* **`hzr_stepwise()`'s `$scope$frozen` can name a variable the final model
+  excludes (#378).** Each iteration makes a forward step and then a backward
+  step, and the protected sets are fixed when the iteration starts, so a
+  variable that the forward step freezes can still be dropped by the backward
+  step that follows. It is then reported as frozen while the selected model
+  does not contain it, and nothing warns. When they disagree, **trust the
+  final model and `$steps`**, which records both the `"frozen"` row and the
+  `"drop"` after it; read `$scope$frozen` as the variables that reached the
+  `max_move` cap, not as variables held in the model. This release does not
+  change the behaviour: correcting the timing alone was measured to keep
+  variables above `slstay` at the default `max_move`, so it is deferred to
+  be fixed together with how moves are counted (#379).
+
 # TemporalHazard 1.2.10
 
 ## New features
