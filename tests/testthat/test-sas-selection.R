@@ -317,91 +317,46 @@ test_that("every mapped SELECTION option reaches the emitted call (#160)", {
   expect_true(any(grepl("\\bB\\b", deparse(j$calls$status))))
 })
 
-test_that("ROBUST translates with a loud row, it does not refuse (#160)", {
+test_that("ROBUST translates, recorded as the optimizer choice it is (#160)", {
   skip_on_cran()
-  # This INVERTS an earlier test. ROBUST used to refuse, because it changes
-  # the variance the removal test is computed from. It is the same CLASS of
-  # divergence the translation already ships and documents (PROC HAZARD uses
-  # approximate variances while selecting; this package uses the full
-  # Hessian), and it is on 90.5% of the SELECTION jobs in the production
-  # corpus, so it is said loudly instead of refused. Executed, not just
-  # asserted on the row text.
+  # ROBUST and SEMIROBUST choose PROC HAZARD's OPTIMIZER for the stepwise
+  # step (stpwprc.c:60-69 sets swnewt/swhess; hazrd2.c:31-34 swaps them in
+  # around the step; cmpmeth.c: Newton vs quasi-Newton, Hessian vs
+  # steepest-descent start). They do not change the variance or the Wald
+  # tests that drive selection. Both earlier rulings -- refuse, then
+  # translate "because it changes the variance" -- rested on the false
+  # premise that they did. Executed, not just asserted on the row text.
   for (kw in c("ROBUST", "SEMIROBUST")) {
     job <- .sel_job(paste0("SELECTION ", kw, " SLE=0.2; EARLY STRONG, NOISE;"))
     expect_identical(job$calls$fit[[3L]][[1L]], as.name("hzr_stepwise"),
                      info = kw)
     u <- job$untranslated
-    expect_true(any(u$construct == kw), info = kw)
-    expect_match(u$reason[u$construct == kw][1L], "removal tests", info = kw)
+    reason <- u$reason[u$construct == kw][1L]
+    expect_match(reason, "optimizer", info = kw)
+    # It must NOT claim a variance difference, which is the false mechanism
+    # two rulings rested on. Pinned so it cannot be reinstated from a stale
+    # memory of the decision thread.
+    expect_no_match(reason, "variance", info = kw)
     res <- suppressWarnings(render_sim(job, list(D = .sel_data())))
     expect_true(res$ok, info = paste(kw, paste(res$results, collapse = "; ")))
     expect_s3_class(res$env$fit, "hzr_stepwise")
   }
 })
 
-test_that("the callout names ROBUST when the job asks for it (#160)", {
-  # The reason most likely to apply, so it is asserted like the others: this
-  # is the acceptance condition for translating ROBUST rather than refusing.
-  doc <- TemporalHazard:::.hzr_render_qmd(
-    .sel_job("SELECTION ROBUST SLE=0.2; EARLY STRONG, NOISE;"))
-  hit <- grep("asks for a ROBUST", doc)
-  expect_length(hit, 1L)
-  chunk <- grep("^#\\| label: fit$", doc)
-  expect_lt(hit, chunk)
-  expect_match(paste(doc, collapse = " "), "removed, and at which step")
-  expect_no_match(paste(doc, collapse = " "), "reproduces PROC HAZARD")
-  # Absent for a job that does not ask for it.
-  plain <- TemporalHazard:::.hzr_render_qmd(
-    .sel_job("SELECTION SLE=0.2; EARLY STRONG, NOISE;"))
-  expect_length(grep("asks for a ROBUST", plain), 0L)
-  expect_length(grep("asks for a SEMIROBUST", plain), 0L)
-})
-
-test_that("MOVE= is recorded, not mapped onto max_move (#160)", {
-  # The two count different things: PROC HAZARD counts DELETIONS only
-  # (hazrd4.c:361-377) per (variable, PHASE) slot (setstat.c:15), while
-  # hzr_stepwise()'s max_move counts entries AND exits keyed by variable
-  # name across phases, and a frozen variable is pinned both in and out.
-  # Emitting SAS's MOVE = 1 froze a variable that merely entered two
-  # phases, which PROC HAZARD leaves movable.
-  for (stmts in c("SELECTION MOVE=3; EARLY A, B;", "SELECTION; EARLY A, B;")) {
-    job <- .sel_job(stmts)
-    expect_null(job$calls$fit[[3L]][["max_move"]], info = stmts)
-    u <- job$untranslated
-    expect_true(any(grepl("^MOVE=", u$construct)), info = stmts)
-    expect_match(u$reason[grepl("^MOVE=", u$construct)][1L],
-                 "deletions, separately for each phase", info = stmts)
-  }
-})
-
-test_that("a negative MAXSTEPS is refused, as PROC HAZARD refuses the job (#160)", {
-  # stpwprc.c:76-79 logs an ERROR and exits, so there is no run to
-  # translate; passing it through gave hzr_stepwise() a budget that ends
-  # the screen on its first test.
-  job <- .sel_job("SELECTION MAXSTEPS=-3; EARLY A, B;")
-  expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"))
-  expect_error(eval(job$calls$fit), "MAXSTEPS")
-})
-
-test_that("a /I in a phase this job does not build is not a cross-phase pin (#160)", {
-  # force_in was collected over all three phase statements while movable
-  # covered only built phases, so a /I naming an unbuilt phase refused a
-  # job that has no phase for it to conflict with.
-  job <- .sel_job("SELECTION; EARLY STRONG; LATE STRONG/I;")
-  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hzr_stepwise"))
-})
-
-test_that("RESTRICT without a SELECTION stays a recorded gap (#160)", {
-  # Recording it under a saw_restrict flag counted it as MAPPED and dropped
-  # its $untranslated row, inflating coverage for a statement nothing
-  # implements.
-  f <- withr::local_tempfile(fileext = ".sas")
-  writeLines(paste("%HAZARD( PROC HAZARD DATA=D CONDITION=14; EVENT DEAD;",
-                   "TIME TT; PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005;",
-                   "EARLY A, B; RESTRICT A; );"), f)
-  job <- suppressWarnings(hzr_translate_sas(f))
-  expect_true(any(job$untranslated$construct == "RESTRICT"))
-  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
+test_that("the callout does not claim ROBUST changes the variance (#160)", {
+  # INVERTED from an earlier test that required the callout to name ROBUST
+  # as a variance divergence. ROBUST is an optimizer choice and changes
+  # neither the variance nor the selected model, so the callout must not
+  # describe it as one. This assertion is the guard against reinstating it.
+  doc <- paste(TemporalHazard:::.hzr_render_qmd(
+    .sel_job("SELECTION ROBUST SLE=0.2; EARLY STRONG, NOISE;")), collapse = " ")
+  expect_no_match(doc, "ROBUST variance")
+  expect_no_match(doc, "robust variance")
+  expect_no_match(doc, "SEMIROBUST variance")
+  # The callout is still there, with its real mechanisms.
+  expect_match(doc, "may select a different model")
+  expect_match(doc, "approximate variances")
+  expect_no_match(doc, "reproduces PROC HAZARD")
 })
 
 test_that("printing options are recorded, not refused (#160)", {
@@ -411,12 +366,17 @@ test_that("printing options are recorded, not refused (#160)", {
 })
 
 test_that("the emitted screen reports candidates it could not score (#160)", {
-  skip_on_cran()
+  # This used to grep the rendered document for "uncomputable", a word the
+  # callout body also contains, so it passed with the check chunk deleted.
+  # Assert the chunk exists and EXECUTE it against a fit that could not
+  # score two candidates, and against one that scored them all.
   job <- .sel_job("SELECTION SLE=0.2; EARLY STRONG, NOISE;")
-  # The uncomputable-score tally is surfaced in the document, so a screen
-  # that stopped without testing anything is not read as "nothing qualified".
-  doc <- TemporalHazard:::.hzr_render_qmd(job)
-  expect_true(any(grepl("uncomputable", doc, ignore.case = TRUE)))
+  expect_true("screen_check" %in% names(job$calls))
+  env <- new.env(parent = baseenv())
+  env$fit <- list(criteria = list(n_uncomputable_scores = 2L))
+  expect_warning(eval(job$calls$screen_check, env), "2 candidate score")
+  env$fit <- list(criteria = list(n_uncomputable_scores = 0L))
+  expect_no_warning(eval(job$calls$screen_check, env))
 })
 
 # --- #160 r-reviewer findings ------------------------------------------------

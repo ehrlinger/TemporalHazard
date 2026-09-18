@@ -103,8 +103,8 @@
 #' different model than `PROC HAZARD` did, which the emitted document says
 #' in a callout above the chunk. `SELECTION` options with no faithful
 #' translation are refused outright rather than mistranslated, emitting a
-#' `stop()` in place of the fit: `FAST`, `MAXVARS`, `RESTRICT`, `ROBUST` and
-#' `SEMIROBUST`, a per-variable `MOVE=` or `ORDER=`, and a variable held by
+#' `stop()` in place of the fit: `FAST`, `MAXVARS`, `RESTRICT`, a
+#' per-variable `MOVE=` or `ORDER=`, and a variable held by
 #' `/I` in one phase but movable in another. So is `LCENSOR`
 #' combined with `ICENSOR`, which one `time_lower` argument cannot express
 #' (#155). Prediction grids the parser cannot resolve are refused whole, and
@@ -300,8 +300,7 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
         sw <- r$stepwise_call
         sw[[2L]] <- as.name(base_slot)
         calls[[fit_slot]] <- call("<-", as.name(fit_slot), sw)
-        notes[[fit_slot]] <- .hzr_selection_divergence_note(
-          robust = r$selection_robust)
+        notes[[fit_slot]] <- .hzr_selection_divergence_note()
         if (!is.null(r$screen_check_call)) {
           chk <- do.call(substitute,
                          list(r$screen_check_call,
@@ -457,38 +456,29 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
 #' before the code, which is why it is a note on the chunk rather than a row
 #' in `$untranslated` (#160).
 #' @noRd
-.hzr_selection_divergence_note <- function(robust = character(0)) {
-  # Named first when it applies, because it is the reason most likely to
-  # bite: ROBUST is on 90.5% of the SELECTION jobs in the production corpus
-  # (#160). The job asked for a robust variance while selecting and the
-  # screen uses the standard one.
-  robust_txt <- if (!length(robust)) "" else paste(
-    "This job's SELECTION statement asks for a",
-    if ("SEMIROBUST" %in% robust && !("ROBUST" %in% robust)) "SEMIROBUST" else "ROBUST",
-    "variance while selecting. The screen below computes its removal tests",
-    "from the standard variance instead, so which variables are removed,",
-    "and at which step, can differ from the SAS run."
-  )
+.hzr_selection_divergence_note <- function() {
   list(
     title = paste("SELECTION: this screen may select a different model than",
                   "PROC HAZARD did"),
     body = paste(
-      robust_txt,
       "This job's SELECTION statement is translated into hzr_stepwise() with",
       "the job's own candidates, per-variable flags and SLENTRY/SLSTAY",
       "thresholds. The screen is real, and the selected model may still",
-      "differ from the one PROC HAZARD chose, for two reasons that cannot be",
-      "tuned away: PROC HAZARD uses approximate variances during selection",
+      "differ from the one PROC HAZARD chose, for reasons that cannot be",
+      "tuned away. PROC HAZARD uses approximate variances during selection",
       "(it ignores the shaping-parameter covariances), while hzr_stepwise()",
       "uses the full Hessian, so the statistics driving each enter and drop",
       "decision are not the same; and SAS's /I holds a variable in ONE phase,",
       "while hzr_stepwise()'s force_in is keyed by variable name across every",
       "phase, which is why a job whose /I variable is movable in another",
-      "phase is refused rather than screened here; and PROC HAZARD's MOVE",
-      "counts a variable's DELETIONS separately for each phase, while this",
-      "package's oscillation guard counts entries and exits together across",
-      "every phase, so a variable may be frozen here that PROC HAZARD would",
-      "still move. The divergence is recorded against the hm.death.AVC",
+      "phase is refused rather than screened here. And PROC HAZARD's MOVE",
+      "limit counts a variable's DELETIONS, separately for each phase: at",
+      "its default of 1 a variable removed from a phase can never return to",
+      "it, while this package's oscillation guard counts entries and exits",
+      "together across every phase and lets a removed variable re-enter. So",
+      "the screen here can re-enter variables PROC HAZARD would have kept",
+      "out, and occasionally freeze one PROC HAZARD would still move. The",
+      "divergence is recorded against the hm.death.AVC",
       "fixture in",
       "tests/testthat/test-sas-parity.R. Read the selected model as this",
       "package's screen of this job's candidates, not as a reproduction of",

@@ -77,8 +77,8 @@ flags and thresholds (#160); the screen is real, and may select a
 different model than \verb{PROC HAZARD} did, which the emitted document says
 in a callout above the chunk. \code{SELECTION} options with no faithful
 translation are refused outright rather than mistranslated, emitting a
-\code{stop()} in place of the fit: \code{FAST}, \code{MAXVARS}, \code{RESTRICT}, \code{ROBUST} and
-\code{SEMIROBUST}, a per-variable \verb{MOVE=} or \verb{ORDER=}, and a variable held by
+\code{stop()} in place of the fit: \code{FAST}, \code{MAXVARS}, \code{RESTRICT}, a
+per-variable \verb{MOVE=} or \verb{ORDER=}, and a variable held by
 \verb{/I} in one phase but movable in another. So is \code{LCENSOR}
 combined with \code{ICENSOR}, which one \code{time_lower} argument cannot express
 (#155). Prediction grids the parser cannot resolve are refused whole, and

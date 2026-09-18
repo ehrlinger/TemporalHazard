@@ -551,10 +551,10 @@ before you point it at a corpus.
   the emitted document says so in a callout above the chunk. Compare the
   selected model against the SAS listing before relying on it. Options
   with no faithful translation are still refused, each emitting a
-  `stop()`: `FAST`, `MAXVARS`, `RESTRICT`, `ROBUST`, `SEMIROBUST`, a
+  `stop()`: `FAST`, `MAXVARS`, `RESTRICT`, a
   per-variable `MOVE=` or `ORDER=`, and a variable held by `/I` in one
-  phase but movable in another. On the reference corpus one job in four
-  translates, `ROBUST` accounting for most of the rest.
+  phase but movable in another. On the reference corpus two jobs in four
+  translate; the other two are a cross-phase `/I` and a `RESTRICT`.
 - **`LCENSOR` combined with `ICENSOR` is refused.** `hazard()`'s single
   `time_lower` argument carries the entry time for status 0/1 rows and
   the interval's lower bound for status 2 rows; one column cannot

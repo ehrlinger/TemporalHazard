@@ -769,13 +769,9 @@
   head <- quote(hazard)
   stepwise_call <- NULL
   screen_check_call <- NULL
-  selection_robust <- character(0)
   if (!is.null(sel)) {
     untr <- rbind(untr, sel$untranslated)
-    # Constructs with no faithful translation. ROBUST/SEMIROBUST are here,
-    # not in $untranslated, because they change the VARIANCE the drop path
-    # Wald-tests against `slstay`: recording them would run a different
-    # screen and report it as this job's translation. A per-variable MOVE=
+    # Constructs with no faithful translation. A per-variable MOVE=
     # or ORDER= has no hzr_stepwise() equivalent at all (its max_move is
     # per run), and ORDER= drives entry order.
     per_var_opts <- grep("/(MOVE|ORDER)", untr$construct, value = TRUE)
@@ -805,13 +801,7 @@
         MAXVARS = paste("MAXVARS caps the selected set and hzr_stepwise()",
                         "has no equivalent"),
         RESTRICT = paste("RESTRICT constrains which variables may be",
-                         "selected (hazrd4.c's rsttbl)"),
-        ROBUST = paste("ROBUST changes the variance the removal test is",
-                       "computed from, so the screen would make different",
-                       "removal decisions"),
-        SEMIROBUST = paste("SEMIROBUST changes the variance the removal test",
-                           "is computed from, so the screen would make",
-                           "different removal decisions"))
+                         "selected (hazrd4.c's rsttbl)"))
       explain <- function(item) {
         if (!is.na(why[item])) return(unname(why[item]))
         if (grepl("/(MOVE|ORDER)", item)) {
@@ -883,7 +873,6 @@
     }
     stepwise_call <- as.call(c(quote(hzr_stepwise),
                                Filter(Negate(is.null), sw_args)))
-    selection_robust <- sel$robust
     # A screen can stop because no candidate could be SCORED, which reads
     # exactly like "nothing met slentry" (#159). Say which it was.
     # `fit` is substituted for this block's own slot name by the caller, in
@@ -915,7 +904,6 @@
 
   list(call = as.call(c(head, args)), status_call = status_call,
        stepwise_call = stepwise_call, screen_check_call = screen_check_call,
-       selection_robust = selection_robust,
        outhaz = outhaz, untranslated = untr, tokens_seen = seen,
        tokens_mapped = mapped)
 }
@@ -955,6 +943,7 @@
               refuse = character(0), robust = character(0),
               untranslated = .hzr_untranslated_frame())
   saw_stepwise <- FALSE
+  move_written <- FALSE
   saw_backward <- FALSE
   saw_oneway <- FALSE
   num_opt <- function(val_txt, key, what) {
@@ -999,10 +988,14 @@
         if (!is.null(v) && v < 0) {
           out$refuse <- c(out$refuse, paste0("MAXSTEPS=", format(v)))
         } else if (!is.null(v)) {
-          out$max_steps <- v
+          # stpwprc.c:82 casts to int, so a fractional MAXSTEPS truncates.
+          out$max_steps <- trunc(v)
         }
       },
-      MOVE     = out$max_move <- num_opt(val_txt, key, "MOVE") %||% out$max_move,
+      MOVE     = {
+        out$max_move <- num_opt(val_txt, key, "MOVE") %||% out$max_move
+        move_written <- TRUE
+      },
       # Printing only (H->nps / H->npq), so the fit and the screen are the
       # same with or without them: recorded, not refused.
       NOPRINTS = out$untranslated <- rbind(out$untranslated,
@@ -1015,13 +1008,15 @@
       # selected set, neither of which hzr_stepwise() can express.
       FAST       = out$refuse <- c(out$refuse, "FAST"),
       MAXVARS    = out$refuse <- c(out$refuse, "MAXVARS"),
-      # Recorded, not refused. ROBUST and SEMIROBUST change the variance the
-      # removal test is computed from, so the screen's drop decisions can
-      # differ from PROC HAZARD's. That is the same CLASS of divergence the
-      # translation already carries and documents -- PROC HAZARD uses
-      # approximate variances while selecting, this package uses the full
-      # Hessian -- and refusing it would have refused 90.5% of the SELECTION
-      # jobs in the production corpus. Say it loudly instead (#160).
+      # Recorded, not refused. ROBUST and SEMIROBUST choose PROC HAZARD's
+      # OPTIMIZER for the stepwise step, nothing else: stpwprc.c:60-69 sets
+      # swnewt/swhess, hazrd2.c:31-34 swaps them into H->newton/H->truhes
+      # around the step and :87-88 restores them, and cmpmeth.c shows those
+      # flags pick Newton vs quasi-Newton and a Hessian vs steepest-descent
+      # start. They do not touch the variance, the converged estimates or
+      # the Wald tests that drive selection. Both earlier rulings on ROBUST
+      # (refuse, then translate "because it changes the variance") rested
+      # on the false premise that they did (#160 review, pass 3).
       ROBUST     = out$robust <- c(out$robust, "ROBUST"),
       SEMIROBUST = out$robust <- c(out$robust, "SEMIROBUST"),
       {
@@ -1034,11 +1029,12 @@
   for (kw in out$robust) {
     out$untranslated <- rbind(out$untranslated, .hzr_untranslated_frame(
       NA_integer_, kw, paste0(
-        "this job asks PROC HAZARD for a ",
-        if (identical(kw, "ROBUST")) "robust" else "semi-robust",
-        " variance while selecting; the translated screen computes its ",
-        "removal tests from the standard variance, so which variables are ",
-        "removed, and at which step, can differ from the SAS run")))
+        "chooses PROC HAZARD's optimizer for the stepwise step (quasi-Newton, ",
+        "started ", if (identical(kw, "ROBUST")) "by steepest descent" else
+          "from the Hessian", "; stpwprc.c:60-69, hazrd2.c:31-34). ",
+        "hzr_stepwise() uses its own optimizer. This affects the path to ",
+        "convergence, not the converged estimates or the tests that drive ",
+        "selection")))
   }
 
   # BACKWARD wins over any other direction keyword, whatever the order
@@ -1080,12 +1076,17 @@
   # counters differ whatever the value, and PROC HAZARD's own default of 1
   # does not map onto hzr_stepwise()'s 4 either.
   out$untranslated <- rbind(out$untranslated, .hzr_untranslated_frame(
-    NA_integer_, paste0("MOVE=", format(out$max_move)), paste(
-      "PROC HAZARD counts a variable's MOVEs as deletions, separately for",
-      "each phase; hzr_stepwise()'s max_move counts entries and exits",
-      "together across every phase, so the two cannot be mapped onto each",
-      "other. The screen runs with hzr_stepwise()'s own oscillation guard,",
-      "and a variable may be frozen where PROC HAZARD would still move it")))
+    NA_integer_,
+    if (move_written) paste0("MOVE=", format(out$max_move)) else
+      "MOVE (PROC HAZARD default 1)",
+    paste(
+      "PROC HAZARD's MOVE limit counts a variable's deletions, separately",
+      "for each phase (hazrd4.c:361-362, setstat.c:15): at the default of 1",
+      "a variable removed from a phase can never re-enter it",
+      "(swvari.c:159-160). hzr_stepwise()'s max_move counts entries and",
+      "exits together across every phase, so the two cannot be mapped onto",
+      "each other. The screen runs with hzr_stepwise()'s own oscillation",
+      "guard, so it can re-enter variables PROC HAZARD would keep out")))
   out
 }
 

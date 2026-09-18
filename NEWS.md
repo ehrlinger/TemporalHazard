@@ -99,10 +99,13 @@
   within one statement it used to put two starting values in `theta` for
   one column, shifting every later one.
 
-  A `SELECTION NOSTEPWISE` (or `NOSW`) job is now refused like every other
-  `SELECTION` job. It was read as no screen at all and translated to a
-  plain fit with every candidate in the model, but `PROC HAZARD` still
-  screens, forward only, with each candidate starting out of the model. And a phase variable that is not in the fitted model (an `/E`
+  A `SELECTION NOSTEPWISE` (or `NOSW`) job is no longer read as no screen
+  at all. It was translated to a plain fit with every candidate in the
+  model, but `PROC HAZARD` still screens, forward only, with each candidate
+  starting out of the model; it now translates as a forward-only screen
+  (see the `SELECTION` entry under New features).
+
+  A phase variable that is not in the fitted model (an `/E`
   variable, or a covariate of a phase the job does not select) still
   deletes its missing rows in `PROC HAZARD`, which `hazard()` cannot do
   for a variable it never sees, so the translated status chunk now stops
@@ -357,7 +360,7 @@
   thresholds: a bare phase variable is a candidate offered through `scope`
   and withheld from the base model, `/S` starts in the model, `/I` becomes
   `force_in`, and `/E` appears nowhere. `PROC HAZARD`'s defaults are always
-  written out (`SLE` 0.3, `SLS` 0.2, or 0.05 under `BACKWARD`, `MOVE` 1), so
+  written out (`SLE` 0.3, `SLS` 0.2, or 0.05 under `BACKWARD`), so
   the call never inherits a different default from `hzr_stepwise()`. A
   `BACKWARD` job gets no `scope` and a base carrying every candidate, which
   is where `PROC HAZARD` starts one.
@@ -370,13 +373,13 @@
   package's screen of the job's candidates, not as a reproduction of the SAS
   run.
 
-  **A job asking for a robust variance still translates, loudly.** `ROBUST`
-  and `SEMIROBUST` change the variance the removal test is computed from,
-  so which variables are removed, and at which step, can differ from the
-  SAS run. That is the same kind of divergence the translation already
-  carries, and such jobs are the common case rather than the exception, so
-  the statement is recorded in `$untranslated` and named in the callout
-  instead of refusing the job.
+  **`ROBUST` and `SEMIROBUST` translate: they choose an optimizer, not a
+  variance.** In `PROC HAZARD` they select the algorithm for the stepwise
+  step (quasi-Newton, started by steepest descent or from the Hessian); they
+  do not change the variance, the estimates or the tests that drive
+  selection. The option is recorded in `$untranslated`, and the screen uses
+  this package's own optimizer. They appear on 90.5% of the `SELECTION`
+  statements in the production corpus, so this is the common case.
 
   **What is refused, so you can tell in advance which of your jobs are
   covered.** A `SELECTION` this translator cannot run faithfully emits a
@@ -388,13 +391,15 @@
   `SELECTION` jobs translate**; the two refusals are a cross-phase `/I` and
   a `RESTRICT` statement.
 
-  **`MOVE=` is recorded rather than translated.** `PROC HAZARD` counts a
-  variable's moves as *deletions*, separately for each phase;
-  `hzr_stepwise()`'s `max_move` counts entries and exits together across
-  every phase, and a frozen variable is then held both in and out. The two
-  are not the same quantity, so the emitted call carries no `max_move` and
-  the screen runs with this package's own oscillation guard: a variable may
-  be frozen where `PROC HAZARD` would still move it. The callout says so.
+  **The screen can re-enter a variable `PROC HAZARD` would keep out.**
+  `PROC HAZARD`'s `MOVE` limit counts a variable's *deletions*, separately
+  for each phase, and at its default of 1 a variable removed from a phase
+  can never return to it. `hzr_stepwise()`'s `max_move` counts entries and
+  exits together across every phase and lets a removed variable re-enter.
+  The two are not the same quantity, so the emitted call carries no
+  `max_move`, `MOVE=` is recorded in `$untranslated`, and the callout names
+  the difference. On the one reference job that translates, an unbounded
+  screen re-entered five variables `PROC HAZARD` would have kept out.
 
 * **`hzr_phase()` can derive one late-phase shape from the others (#325).**
   The new `constraint` argument covers SAS/C's two late-phase constraints:
