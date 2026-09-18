@@ -101,10 +101,25 @@ frozen action; see Details.}
 screen, \code{frozen} can name a variable the final model does not
 contain; see the \strong{Known limitation (the frozen set)} section.}
 \item{\code{criteria}}{Named list of the threshold / direction
-settings actually applied, plus, under \code{criterion = "score"},
-\code{n_uncomputable_scores} (how many candidate scores were \code{NA}),
-\code{uncomputable_reasons} (a named integer vector of \emph{why}) and
-\code{stopped_uncomputable}. Read \code{uncomputable_reasons} before treating
+settings actually applied, plus
+\code{n_uncomputable_scores} (how many candidate scores were \code{NA},
+counted once per step: an entry the score test could not score
+under \code{criterion = "score"}; an entry under \code{criterion = "wald"}, or
+a removal under any criterion, whose Wald statistic could not be
+computed for want of a variance, \code{wald_no_variance}; or an entry
+under \code{criterion = "aic"} whose fit had no finite objective,
+\code{nonfinite}),
+\code{uncomputable_reasons} (a named integer vector of \emph{why}),
+\code{wald_untested_removals} and \code{wald_untested_entries} (the
+\code{"var"} / \code{"var@phase"} tokens of variables kept in, or left out,
+on a step whose Wald test for them could not be computed; a
+variable tested at a later step is not listed.  Entries are listed
+under \code{criterion = "wald"} only: under \code{"score"} an entry no test
+could reach is reported by its reason, such as
+\code{fallback_no_variance}) and
+\code{stopped_uncomputable} (\code{TRUE} when the last iteration had
+candidates for entry or for removal and could test none of them).
+Read \code{uncomputable_reasons} before treating
 an unscored candidate as a bad one: \code{information_indefinite} marks
 candidates whose effect is too large for the score test's
 approximation at zero, which are typically the strongest variables
