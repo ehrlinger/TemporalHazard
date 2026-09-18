@@ -46,8 +46,8 @@ test_that("a base fit that dropped rows stops the score screen, naming the cause
   expect_identical(NROW(base$fit$x_list$early), 295L)
   expect_length(base$data$time, 310L)
   expect_error(screen_372(base, x$d), "dropped 15 rows", fixed = TRUE)
-  expect_error(screen_372(base, x$d), "Refit the base model on complete cases",
-               fixed = TRUE)
+  expect_error(screen_372(base, x$d),
+               "Refit the base model on only the rows it used", fixed = TRUE)
 })
 
 test_that("passing complete-case data without refitting is refused the same way (#372)", {
@@ -79,4 +79,27 @@ test_that("refitting on complete cases scores normally, so the fixture is live (
   expect_identical(sw$steps$variable, "com_iv")
   expect_identical(sw$steps$phase, "early")
   expect_equal(sw$criteria$n_uncomputable_scores %||% 0L, 0L)
+})
+
+test_that("rows made missing by a transform are named, not blamed on the data (#372)", {
+  skip_on_cran() # multiphase fits
+  # The data has no NA, but sqrt() of a negative value yields NaN, and the
+  # fitter drops those rows too, so `na.omit()` alone cannot be the remedy.
+  d <- stats::na.omit(avc_372())
+  cut <- sort(d$age)[10]
+  base <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes",
+                        formula = ~ I(sqrt(age - cut))),
+      constant = hzr_phase("constant", formula = ~ I(sqrt(age - cut)))
+    ),
+    fit = TRUE, control = list(n_starts = 1L, maxit = 500L)
+  ))
+  expect_false(anyNA(d))
+  expect_identical(.hzr_fit_rows_used(base), 301L)
+  msg <- tryCatch(screen_372(base, d), error = conditionMessage)
+  expect_match(msg, "dropped 9 rows", fixed = TRUE)
+  expect_match(msg, "made missing by a transform", fixed = TRUE)
+  expect_match(msg, "`na.omit()` on the data does not catch", fixed = TRUE)
 })

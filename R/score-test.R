@@ -623,8 +623,9 @@
 #' @noRd
 .hzr_fit_rows_used <- function(fit) {
   xl <- Filter(function(x) !is.null(x) && NCOL(x) > 0L, fit$fit$x_list)
-  n <- unique(vapply(xl, NROW, integer(1)))
-  if (length(n) == 1L) n else length(fit$data$time)
+  # The fitter refuses phase designs of different lengths before it stores
+  # them, so the stored ones agree; none means nothing was dropped.
+  if (length(xl)) NROW(xl[[1L]]) else length(fit$data$time)
 }
 
 #' Score statistic for one entry candidate
@@ -662,12 +663,14 @@
   n_obs <- .hzr_fit_rows_used(current)
   if (n_obs != n_time) {
     stop(
-      "The base fit dropped ", n_time - n_obs, " rows with missing values ",
-      "in its covariates, so its stored response (", n_time, " rows) no ",
-      "longer lines up with the rows it was fitted on (", n_obs, "), and no ",
-      "candidate can be scored against it. Refit the base model on complete ",
-      "cases (for example `na.omit()` over the model's columns) and pass that ",
-      "same data frame.",
+      "The base fit dropped ", n_time - n_obs, " rows whose covariate ",
+      "values were missing or not finite, so its stored response (", n_time,
+      " rows) no longer lines up with the rows it was fitted on (", n_obs,
+      "), and no candidate can be scored against it. The values can be ",
+      "missing in the data, or made missing by a transform in a model ",
+      "formula, such as sqrt() or log() of a value outside its domain, which ",
+      "`na.omit()` on the data does not catch. Refit the base model on only ",
+      "the rows it used, and pass that same data frame.",
       call. = FALSE
     )
   }
