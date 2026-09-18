@@ -5,9 +5,10 @@
 * **`hazard()` now checks `control`, and refuses a name that nothing reads
   (#376).** `control` used to accept any name, so a mistyped one, such as
   `n_startz` for `n_starts`, left the default in force and said nothing.
-  The fit reads `maxit`, `reltol` and `shape_param_count` for every model,
-  and `n_starts`, `conserve`, `phase_share_tol` and `start_seed` for a
-  multiphase one. A name that nothing reads is now an error that names it
+  `hazard()` accepts `maxit`, `reltol` and `shape_param_count` for every
+  model, and `n_starts`, `conserve`, `phase_share_tol` and `start_seed` for
+  a multiphase one. The fit reads all of them except `shape_param_count`,
+  which the stepwise refit and the score test read back from the fit. A name that nothing reads is now an error that names it
   and lists the accepted ones. A real name that does nothing for this fit
   now warns, and the fit proceeds unchanged. That covers five names
   `?hazard` used to document as accepted although no fit read them, and a

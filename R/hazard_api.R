@@ -304,10 +304,10 @@ NULL
 #'   Read `fit$spec$control$conserve_applied`, not
 #'   `fit$spec$control$conserve`: the latter says only what you asked for.
 #' - `shape_param_count`: The number of shape parameters at the front of
-#'   `theta`, for the legacy SAS-parity helpers and the stepwise refit, which
-#'   read it back from `fit$spec$control`. The fit itself does not use it.
+#'   `theta`, read back from `fit$spec$control` by the stepwise refit and the
+#'   score test. The fit itself does not use it.
 #'
-#' The fit reads only the elements above: `maxit`, `reltol` and
+#' `hazard()` accepts only the elements above: `maxit`, `reltol` and
 #' `shape_param_count` for every model, and `n_starts`, `start_seed`,
 #' `phase_share_tol` and `conserve` for `dist = "multiphase"` (#376).
 #' - A name that nothing reads is an error that names it, rather than a

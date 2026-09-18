@@ -257,11 +257,11 @@ applied;
 Read \code{fit$spec$control$conserve_applied}, not
 \code{fit$spec$control$conserve}: the latter says only what you asked for.
 \item \code{shape_param_count}: The number of shape parameters at the front of
-\code{theta}, for the legacy SAS-parity helpers and the stepwise refit, which
-read it back from \code{fit$spec$control}. The fit itself does not use it.
+\code{theta}, read back from \code{fit$spec$control} by the stepwise refit and the
+score test. The fit itself does not use it.
 }
 
-The fit reads only the elements above: \code{maxit}, \code{reltol} and
+\code{hazard()} accepts only the elements above: \code{maxit}, \code{reltol} and
 \code{shape_param_count} for every model, and \code{n_starts}, \code{start_seed},
 \code{phase_share_tol} and \code{conserve} for \code{dist = "multiphase"} (#376).
 \itemize{
