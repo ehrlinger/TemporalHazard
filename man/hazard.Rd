@@ -267,21 +267,28 @@ reads it there.
 The elements above are accepted without a warning: \code{maxit} and \code{reltol}
 for every model, \code{shape_param_count} for a single-distribution model, and
 \code{n_starts}, \code{start_seed}, \code{phase_share_tol} and \code{conserve} for
-\code{dist = "multiphase"} (#376). Any other name either warns or is an error:
+\code{dist = "multiphase"} (#376). Any other element draws one warning that
+names it and says why it has no effect, and the fit proceeds unchanged,
+as \code{\link[stats:optim]{stats::optim()}} does for unknown \code{control} names. That covers:
 \itemize{
-\item A name that nothing reads is an error that names it, rather than a
-setting silently ignored: a misspelling such as \code{n_startz}, and \code{fix}
-and \code{quasi}, which no fit has ever read. A fit given \code{fix} was never
-constrained; hold a parameter with \code{hzr_phase(fixed = )} on a
-multiphase phase. A single-distribution model has no mechanism for
-fixing a parameter.
-\item A real name that does nothing for this fit warns, and the fit proceeds
-unchanged: \code{abstol} (read only by a bounded optimizer no fit uses),
-\code{method}, \code{condition}, \code{nocov} and \code{nocor}, which earlier versions
-documented as accepted without reading them; a multiphase element such
-as \code{n_starts} given to a single-distribution fit; and
-\code{shape_param_count} given to a multiphase fit.
+\item a name no fit reads, such as the misspelling \code{n_startz}, and an unnamed
+element;
+\item \code{abstol} (read only by a bounded optimizer no fit uses), \code{method},
+\code{condition}, \code{nocov} and \code{nocor}, which earlier versions documented as
+accepted without reading them;
+\item \code{fix} and \code{quasi}, which no fit has ever read. A fit given \code{fix} was
+never constrained, so results obtained with it may be affected; hold a
+parameter with \code{hzr_phase(fixed = )} on a multiphase phase. A
+single-distribution model has no mechanism for fixing a parameter.
+\item a multiphase element such as \code{n_starts} given to a single-distribution
+fit, and \code{shape_param_count} given to a multiphase one.
 }
+
+No name in \code{control} is an error; a bad value for an element the fit
+reads, such as \code{maxit = "a"}, still is. \code{\link[=hzr_stepwise]{hzr_stepwise()}} and
+\code{\link[=hzr_bootstrap]{hzr_bootstrap()}} pass \code{control} to every candidate refit, and an error
+there would count as a failed candidate, so a screen would report success
+having tested nothing.
 
 SAS \verb{PROC HAZARD} options with no \code{control} equivalent: \code{NOCOV} and \code{NOCOR}
 only suppress printed output, and \code{hazard()} prints nothing until asked.

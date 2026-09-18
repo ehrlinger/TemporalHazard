@@ -2,6 +2,9 @@
 # An element it would ignore used to be accepted silently: a typo such as
 # `n_startz` left the default in force, and `control$fix` returned a fit
 # identical to the unconstrained one, the "fixed" parameter having moved.
+# Every such element now warns and the fit proceeds, as stats::optim() does
+# for unknown control names. Nothing errors: an error inside a stepwise or
+# bootstrap candidate refit is recorded as a failed candidate.
 
 cv_data <- function() {
   data(avc, package = "TemporalHazard", envir = environment())
@@ -27,29 +30,58 @@ cv_multiphase <- function(control, fit = FALSE) {
   ))
 }
 
-test_that("an unknown control element is refused and named", {
-  expect_error(cv_weibull(list(n_startz = 99)),
-               "'n_startz'.*maxit, reltol, shape_param_count")
-  expect_error(cv_multiphase(list(n_startz = 99, nonsense = "x")),
-               "'n_startz', 'nonsense'")
+# cv_multiphase() suppresses warnings, so it cannot show a stray control
+# warning; these calls do not fit (fit = FALSE), so any warning is the
+# validator's.
+cv_multiphase_raw <- function(control, dist = "multiphase") {
+  hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = cv_data(), dist = dist,
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes"),
+      constant = hzr_phase("constant")
+    ),
+    control = control
+  )
+}
+
+test_that("an unknown control element warns, is named, and the fit proceeds", {
+  expect_warning(
+    obj <- cv_weibull(list(n_startz = 99)),
+    "control\\$n_startz \\(not an element any fit reads.*maxit, reltol, shape_param_count"
+  )
+  expect_s3_class(obj, "hazard")
+  w <- character()
+  withCallingHandlers(
+    cv_multiphase_raw(list(n_startz = 99, nonsense = "x")),
+    warning = function(x) {
+      w <<- c(w, conditionMessage(x))
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_length(w, 1L)
+  expect_match(w, "control\\$n_startz .*control\\$nonsense ")
   # The multiphase list names the multiphase elements too.
-  expect_error(cv_multiphase(list(n_startz = 99)), "n_starts, conserve")
+  expect_match(w, "n_starts, conserve")
+  # The fit is the fit without it.
+  want <- cv_weibull(list(maxit = 500), fit = TRUE)
+  got <- suppressWarnings(cv_weibull(list(maxit = 500, n_startz = 9), fit = TRUE))
+  expect_identical(got$fit$theta, want$fit$theta)
 })
-
-test_that("control$fix is refused, pointing at hzr_phase(fixed = )", {
-  for (make in list(cv_weibull, cv_multiphase)) {
-    expect_error(make(list(fix = 2L)), "hzr_phase\\(fixed = \\)")
-  }
+test_that("control$fix warns that it was never read, pointing at hzr_phase(fixed = )", {
+  expect_warning(cv_weibull(list(fix = 2L)), "hzr_phase\\(fixed = \\)")
+  expect_warning(cv_multiphase_raw(list(fix = 2L)), "hzr_phase\\(fixed = \\)")
   # It says what happened before, so a user of an old fit knows it was
-  # unconstrained, and it is not reported as a mere unknown element.
-  expect_error(cv_weibull(list(fix = 2L)), "never read")
-  expect_error(cv_weibull(list(fix = 2L, maxit = 50)), "control\\$fix")
+  # unconstrained and that results obtained with it may be affected.
+  expect_warning(cv_weibull(list(fix = 2L)), "never read.*unconstrained.*may be affected")
+  # And the fit proceeds, as the unconstrained fit it always was.
+  want <- cv_weibull(list(maxit = 500), fit = TRUE)
+  got <- suppressWarnings(cv_weibull(list(maxit = 500, fix = 2L), fit = TRUE))
+  expect_identical(got$fit$theta, want$fit$theta)
 })
-
-test_that("control$quasi is an error saying it was never read", {
-  expect_error(cv_multiphase(list(quasi = TRUE)), "control\\$quasi.*never read")
+test_that("control$quasi warns that it was never read", {
+  expect_warning(cv_multiphase_raw(list(quasi = TRUE)),
+                 "control\\$quasi \\(hazard\\(\\) has never read it")
 })
-
 test_that("a documented name that no fit reads warns, and the fit is unchanged", {
   # cv_weibull(), not cv_multiphase(): the latter suppresses warnings.
   reasons <- c(abstol = "bounded optimizer", method = "BFGS",
@@ -78,11 +110,10 @@ test_that("a documented name that no fit reads warns, and the fit is unchanged",
   expect_identical(got$fit$objective, want$fit$objective)
 })
 
-test_that("a name nothing reads is an error even beside a warned one", {
-  expect_error(cv_weibull(list(condition = 14, n_startz = 1)),
-               "no fit reads: 'n_startz'")
+test_that("an unknown name and a documented one share one warning", {
+  expect_warning(cv_weibull(list(condition = 14, n_startz = 1)),
+                 "control\\$condition .*control\\$n_startz \\(not an element")
 })
-
 test_that("a multiphase element on a single distribution warns and fits", {
   expect_warning(
     obj <- cv_weibull(list(n_starts = 3)),
@@ -107,10 +138,10 @@ test_that("a warned name forwarded by stepwise still lets the screen select", {
   expect_identical(sw$criteria$n_refit_failures, 0L)
 })
 
-test_that("a name nothing reads, forwarded by stepwise, still fails every candidate", {
-  # The other direction, pinned so the warn/error line cannot widen
-  # silently: an unknown name stays an error inside a refit, which stepwise
-  # records as a failed candidate (#386), leaving the screen empty.
+test_that("an unknown name forwarded by stepwise still lets the screen select", {
+  # The rejected policy made an unknown name an error inside every candidate
+  # refit, which stepwise records as a failed candidate (#386): 0 steps.
+  # A warning keeps the screen working; this fails if the error returns.
   data(avc, package = "TemporalHazard", envir = environment())
   d <- stats::na.omit(avc)
   base <- hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
@@ -119,15 +150,16 @@ test_that("a name nothing reads, forwarded by stepwise, still fails every candid
     base, scope = "age", data = d, direction = "forward",
     criterion = "wald", trace = FALSE, control = list(n_startz = 1L)
   ))
-  expect_identical(nrow(sw$steps), 0L)
-  expect_gt(sw$criteria$n_refit_failures, 0L)
-  expect_match(sw$criteria$refit_failure_reasons[["age"]], "n_startz")
+  expect_identical(sw$steps$variable, "age")
+  expect_identical(sw$criteria$n_refit_failures, 0L)
 })
-
-test_that("control must be a named list", {
-  expect_error(cv_weibull(list(200)), "named")
+test_that("an unnamed control element warns and the fit proceeds", {
+  # stats::optim() ignores an unnamed control element silently; hazard()
+  # says so, because an element it cannot read is one the user meant.
+  expect_warning(obj <- cv_weibull(list(200)), "1 unnamed element")
+  expect_s3_class(obj, "hazard")
+  expect_warning(cv_weibull(list(maxit = 500, 7)), "1 unnamed element")
 })
-
 test_that("the elements the fitter reads are accepted", {
   # Known positive: legitimate lists still construct and fit.
   expect_s3_class(cv_weibull(list(maxit = 200, reltol = 1e-8)), "hazard")
@@ -142,19 +174,6 @@ test_that("the elements the fitter reads are accepted", {
   expect_true(is.finite(fit$fit$objective))
 })
 
-# cv_multiphase() suppresses warnings, so it cannot show a stray control
-# warning; these calls do not fit (fit = FALSE), so any warning is the
-# validator's.
-cv_multiphase_raw <- function(control, dist = "multiphase") {
-  hazard(
-    survival::Surv(int_dead, dead) ~ 1, data = cv_data(), dist = dist,
-    phases = list(
-      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes"),
-      constant = hzr_phase("constant")
-    ),
-    control = control
-  )
-}
 
 test_that("the multiphase elements draw no warning on a multiphase fit", {
   expect_no_warning(cv_multiphase_raw(
@@ -212,11 +231,15 @@ test_that("a warned name forwarded by bootstrap select mode still lets replicate
   d <- stats::na.omit(avc)
   base <- hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
                  dist = "weibull", theta = c(mu = 0.01, nu = 0.5), fit = TRUE)
-  bs <- suppressWarnings(hzr_bootstrap(
-    base, n_boot = 10, seed = 321, scope = ~ age + mal + com_iv,
-    slentry = 0.3, slstay = 0.2, control = list(n_starts = 1)
-  ))
-  expect_gt(bs$n_success, 0)
-  covariates <- bs$summary[!bs$summary$parameter %in% c("mu", "nu"), ]
-  expect_gt(sum(covariates$n), 0)
+  # An off-path name and an unknown one: both were errors under a rejected
+  # policy, and either would empty every replicate's screen.
+  for (ctl in list(list(n_starts = 1), list(n_startz = 1))) {
+    bs <- suppressWarnings(hzr_bootstrap(
+      base, n_boot = 10, seed = 321, scope = ~ age + mal + com_iv,
+      slentry = 0.3, slstay = 0.2, control = ctl
+    ))
+    expect_gt(bs$n_success, 0)
+    covariates <- bs$summary[!bs$summary$parameter %in% c("mu", "nu"), ]
+    expect_gt(sum(covariates$n), 0, label = names(ctl))
+  }
 })

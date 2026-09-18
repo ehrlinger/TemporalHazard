@@ -2,40 +2,6 @@
 
 ## Breaking changes
 
-* **`hazard()` now checks `control`, and refuses a name that nothing reads
-  (#376).** `control` used to accept any name, so a mistyped one, such as
-  `n_startz` for `n_starts`, left the default in force and said nothing.
-  `hazard()` accepts `maxit` and `reltol` for every model,
-  `shape_param_count` for a single-distribution one, and `n_starts`,
-  `conserve`, `phase_share_tol` and `start_seed` for a multiphase one. The
-  fit reads all of them except `shape_param_count`, which the
-  single-distribution stepwise refit and score test read back from the fit.
-  A name that nothing reads is now an error that names it
-  and lists the accepted ones. A real name that does nothing for this fit
-  now warns, and the fit proceeds unchanged. That covers five names
-  `?hazard` used to document as accepted although no fit read them, a
-  multiphase element such as `n_starts` given to a single-distribution fit,
-  and `shape_param_count` given to a multiphase fit, where nothing reads it.
-  The five are `abstol` (read only by a bounded optimizer that no fit
-  uses), `method`, `condition`, `nocov` and `nocor`. A warning rather than
-  an error keeps a stepwise or bootstrap run working when it forwards such
-  a name to every candidate refit: an error there would fail each
-  candidate and empty the screen. The SAS options `CONDITION=`, `NOCOV`,
-  `NOCOR` and `QUASI`, which the SAS-to-R migration vignette used to show as
-  `control` elements, have no `control` equivalent.
-
-  **If you used `control$fix`, your fit was not constrained.** It was never
-  documented, and the fitting code never read it: a fit given
-  `control = list(fix = ...)` was the unconstrained fit, with its "fixed"
-  parameters free. It is now refused with a message saying so. To hold a
-  parameter at its starting value, use `hzr_phase(fixed = )` on a phase of a
-  multiphase model and re-run; a single-distribution model has no mechanism
-  for fixing a parameter. Unlike the other entries that ask you to re-check
-  results, this one has no known affected user: nothing in this package or
-  its tests passed `control$fix` to `hazard()`, so the exposure is limited
-  to anyone who found and used the undocumented name. `control$quasi` was
-  never read either, and is an error the same way.
-
 * **A named `dist` could skip the check on phase-scoped formula terms
   (#405).** `hazard()` accepts a named scalar such as
   `dist = c(model = "multiphase")`, but tested it with `identical()`, which a
@@ -622,6 +588,42 @@
   detected.
 
 ## Bug fixes
+
+* **`hazard()` now warns about every `control` element it does not read
+  (#376).** `control` used to accept any name silently, so a mistyped one,
+  such as `n_startz` for `n_starts`, left the default in force and said
+  nothing. `hazard()` accepts `maxit` and `reltol` for every model,
+  `shape_param_count` for a single-distribution one, and `n_starts`,
+  `conserve`, `phase_share_tol` and `start_seed` for a multiphase one. The
+  fit reads all of them except `shape_param_count`, which the
+  single-distribution stepwise refit and score test read back from the fit.
+  Any other element now draws one warning that names it and says why it
+  has no effect, and the fit proceeds unchanged, as `stats::optim()` does
+  for unknown `control` names. That covers a misspelling, an unnamed
+  element, five names `?hazard` used to document as accepted although no
+  fit read them (`abstol`, read only by a bounded optimizer that no fit
+  uses, and `method`, `condition`, `nocov` and `nocor`), `fix` and `quasi`,
+  a multiphase element such as `n_starts` given to a single-distribution
+  fit, and `shape_param_count` given to a multiphase fit, where nothing
+  reads it. No name is an error (a bad value for an element the fit reads
+  still is): `hzr_stepwise()` and
+  `hzr_bootstrap()` pass `control` to every candidate refit, and an error
+  there counts as a failed candidate, so a screen would report success
+  having tested nothing. The SAS options `CONDITION=`, `NOCOV`, `NOCOR` and
+  `QUASI`, which the SAS-to-R migration vignette used to show as `control`
+  elements, have no `control` equivalent.
+
+  **If you used `control$fix`, your fit was not constrained.** It was never
+  documented, and the fitting code never read it: a fit given
+  `control = list(fix = ...)` was the unconstrained fit, with its "fixed"
+  parameters free. It now draws a warning saying so. To hold a parameter at
+  its starting value, use `hzr_phase(fixed = )` on a phase of a multiphase
+  model and re-run; a single-distribution model has no mechanism for fixing
+  a parameter. Unlike the other entries that ask you to re-check results,
+  this one has no known affected user: nothing in this package or its tests
+  passed `control$fix` to `hazard()`, so the exposure is limited to anyone
+  who found and used the undocumented name. `control$quasi` was never read
+  either, and warns the same way.
 
 * **The `objective = "sas"` interval checks name the real defect (#340).**
   The objective's own guard let an interval row with an `NA` bound through:

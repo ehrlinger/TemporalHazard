@@ -104,9 +104,9 @@ The `control` settings that change a fit are `maxit` and `reltol` for
 every model, plus `n_starts`, `conserve`, `phase_share_tol` and
 `start_seed` for a multiphase one. If you pass `nocov`, `nocor` or
 `condition` anyway, `hazard()` warns that the option does nothing and fits
-the model unchanged. A name that nothing reads, such as a misspelling, is
-an error, so a mistyped setting cannot silently leave the default in
-force.
+the model unchanged. A name that nothing reads, such as a misspelling,
+draws the same warning, so a mistyped setting cannot silently leave the
+default in force.
 
 Additional `PROC HAZARD` options with no direct R equivalent yet are passed
 through `...` as named arguments and stored in `fit$legacy_args`.
