@@ -703,6 +703,22 @@
   Such a screen returned a summary of only those parameters, each at
   `pct = 100`, and said nothing. Multiphase screens already warned.
 
+- **[`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
+  names two more kinds of refit that are not a fit
+  ([\#343](https://github.com/ehrlinger/TemporalHazard/issues/343)).** A
+  refit returning a list with no `fit` was tallied as a convergence
+  failure; it is now
+  `` "refit returned a <class> with no `fit`, not a fit object" ``, in
+  both modes. A refit whose fit held a finite objective but no estimates
+  counted as a success and then ended the run building its replicate
+  row; it is now a failed replicate,
+  `"refit returned no parameter estimates"`.
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  returns neither. A fit with no `data` frame whose call names a formula
+  that was `NULL` when it ran, as a wrapper forwarding its own `formula`
+  argument can leave, now stops with a message saying there are no rows
+  to count, instead of `length(n) == 1L is not TRUE`.
+
 - **The G3 late-phase shape is now accurate where `(t/tau)^gamma`
   underflows.** With a large `gamma`, event times well below `tau` take
   `(t/tau)^gamma` past double-precision underflow (about `exp(-708)`),

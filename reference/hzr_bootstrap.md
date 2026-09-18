@@ -142,14 +142,16 @@ A list with class `"hzr_bootstrap"` containing:
 - n_failed:
 
   Number of replicates that failed: the refit stopped with an error,
-  returned something other than a fit, or returned a non-finite
-  objective.
+  returned something other than a fit, returned a non-finite objective,
+  or returned a finite objective but no parameter estimates.
 
 - failure_reasons:
 
   Named integer vector counting why replicates failed, most common
   first: the refit's error message (or `"error with an empty message"`),
-  `"refit returned a <class>, not a fit object"`, or
+  `"refit returned a <class>, not a fit object"` (or
+  `"... with no \code{fit}, not a fit object"`),
+  `"refit returned no parameter estimates"`, or
   `"non-finite objective (did not converge)"`. It sums to `n_failed`,
   and is an empty named integer vector, never `NULL`, when none failed.
   When every replicate fails, `hzr_bootstrap()` also warns, naming the

@@ -192,14 +192,15 @@ and the other statistics are conditional on selection.</p></dd>
 
 <dt>n_failed</dt>
 <dd><p>Number of replicates that failed: the refit stopped with
-an error, returned something other than a fit, or returned a
-non-finite objective.</p></dd>
+an error, returned something other than a fit, returned a non-finite
+objective, or returned a finite objective but no parameter
+estimates.</p></dd>
 
 <dt>failure_reasons</dt>
 <dd><p>Named integer vector counting why replicates
 failed, most common first: the refit's error message (or
 <code>"error with an empty message"</code>),
-<code>"refit returned a &lt;class&gt;, not a fit object"</code>, or
+<code>"refit returned a &lt;class&gt;, not a fit object"</code> (or <code>"... with no \code{fit}, not a fit object"</code>), <code>"refit returned no parameter estimates"</code>, or
 <code>"non-finite objective (did not converge)"</code>. It sums to <code>n_failed</code>, and
 is an empty named integer vector, never <code>NULL</code>, when none failed. When
 every replicate fails, <code>hzr_bootstrap()</code> also warns, naming the most
