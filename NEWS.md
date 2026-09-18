@@ -56,6 +56,23 @@
     to end higher from every start. At such an `alpha` the Hessian is now
     evaluated, and is usually too ill-conditioned to invert: standard
     errors are unavailable, with a warning.
+* **A formula fit given `weights = <name>` could silently use the wrong
+  weights: re-run any where that name was also a variable in your session
+  (#392).** On the formula interface, `hazard()` did not look `weights` up in
+  `data`. A name that was only a column of `data` failed with "object not
+  found", but a name that was both a column and a variable in the calling
+  frame (`wc <- d$wc`, a leftover from an earlier step) silently used the
+  variable, not the column, with no error and no warning. On a 40-row
+  example with a unit-weight `wc` beside the intended column, the
+  log-likelihood was -34.23592435 instead of -33.53365357; the size of the
+  error depends on how far the two vectors differ. `weights` is now looked
+  up in `data` first, then the calling frame, as `stats::lm()` does and as
+  the vector interface (`time =`, `status =`) already did. When a name is
+  both a column and a visible variable, the column is used and `hazard()`
+  now warns, naming it, on both interfaces. If you see that warning, the
+  fit may differ from one made by an earlier version. A name that is only a
+  column, or only a variable, does not warn.
+
 * **A multiphase phase formula without an intercept no longer drops its
   first term (#303).** `hzr_phase(formula = ~ 0 + age)` or `~ age - 1`
   fitted the phase without `age`, and `~ 0 + age + mal` without `age`, with

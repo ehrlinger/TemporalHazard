@@ -39,9 +39,9 @@ When provided, overrides direct time/status/x arguments and extracts from data.
 Example: \code{hazard(Surv(time, status) ~ x1 + x2, data = df, dist = "weibull", fit = TRUE)}.}
 
 \item{data}{Optional data frame. On the formula path it supplies the model
-frame. On the vector path \code{time}, \code{status}, \code{time_lower}, \code{time_upper}
-and \code{weights} are evaluated in its scope, the way \code{\link[base:subset]{base::subset()}} and
-\code{\link[base:transform]{base::transform()}} do: a bare column name resolves to that column, and
+frame, and \code{weights} is evaluated in its scope. On the vector path
+\code{time}, \code{status}, \code{time_lower}, \code{time_upper} and \code{weights} are evaluated
+in its scope, the way \code{\link[base:subset]{base::subset()}} and \code{\link[base:transform]{base::transform()}} do: a bare column name resolves to that column, and
 anything that is not a column (\code{df$col}, a local vector, a literal)
 falls through to the calling environment. A column of the same name as
 a caller variable wins, and because that silently discards the caller's
@@ -119,7 +119,10 @@ column and the column of prediction times in the decomposed output of
 \item{weights}{Optional numeric vector of observation weights (non-negative).
 Each observation's log-likelihood contribution is multiplied by its weight.
 Use for severity-weighted repeated events. Default \code{NULL} (unit weights).
-Implements the SAS \code{WEIGHT} statement.}
+Implements the SAS \code{WEIGHT} statement. With \code{data}, a bare name is looked
+up among its columns first and then in the calling environment, on both
+interfaces, as \code{\link[stats:lm]{stats::lm()}} does; see \code{data} for the warning raised
+when a name is both.}
 
 \item{control}{Named list of control options (see Details).}
 
