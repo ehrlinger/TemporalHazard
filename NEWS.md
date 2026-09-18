@@ -155,9 +155,13 @@
   it was testing, with no warning. Such fits are now refused, naming the
   phase and its formula. This also refuses a fit that did use a phase
   formula whose columns are exactly the inherited ones: without the record
-  the two cannot be told apart. Fits saved by 1.1.0 or later, and every
-  formula-interface fit, are unaffected. Refit the base model with the
-  current version, passing `data =`, and retry.
+  the two cannot be told apart. The check turns on the stored data frame,
+  not the version: a fit that kept `data$frame` (every fit from 1.1.0 on,
+  unless that element was removed) is unaffected, and so is a call without
+  `time =`. A call with `time =` is read as the vector interface even when
+  it also passes a formula, so a wrapper's `formula = fml` beside it is
+  judged here too. Refit the base model with the current version, passing
+  `data =`, and retry.
 
 * **`hazard()` now stops when two design columns share a name** (#298). A
   factor's dummy columns are named `<factor><level>`, so a factor `g` with
