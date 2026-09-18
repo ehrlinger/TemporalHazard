@@ -2649,8 +2649,10 @@ vcov.hazard <- function(object, ...) {
   abstol = paste0("it is read only by a bounded optimizer that no fit ",
                   "hazard() runs uses; `reltol` is the tolerance that ",
                   "applies"),
-  method = paste0("hazard() chooses its optimizer, which is quasi-Newton ",
-                  "(BFGS) already"),
+  method = paste0("hazard() chooses its optimizer: ",
+                  "BFGS, a quasi-Newton method (a multiphase fit may run a ",
+                  "Nelder-Mead warm-up first, and a stop that fails SAS's ",
+                  "gradient test continues with stats::nlm())"),
   condition = paste0("SAS's CONDITION= has no equivalent: hazard() has no ",
                      "condition-number stop, and reports the Hessian's ",
                      "conditioning after the fit instead"),
@@ -2663,7 +2665,9 @@ vcov.hazard <- function(object, ...) {
                "dist = \"multiphase\" model, since a single-distribution ",
                "model has no mechanism for fixing one"),
   quasi = paste0("hazard() has never read it; its optimizer is ",
-                 "quasi-Newton (BFGS) already")
+                 "BFGS, a quasi-Newton method (a multiphase fit may run a ",
+                 "Nelder-Mead warm-up first, and a stop that fails SAS's ",
+                 "gradient test continues with stats::nlm())")
 )
 
 
@@ -2726,7 +2730,7 @@ vcov.hazard <- function(object, ...) {
     },
     if (length(unknown) > 0L) {
       paste0("control$", unknown, " (not an element any fit reads; for dist",
-             " = \"", dist, "\" the elements read are ",
+             " = \"", dist, "\" the elements accepted without a warning are ",
              paste(accepted, collapse = ", "), ")")
     },
     if (any(unnamed)) {

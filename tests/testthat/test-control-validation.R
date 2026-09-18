@@ -303,3 +303,24 @@ test_that("the stored control keeps none of the ignored elements", {
   }
   expect_true("conserve_applied" %in% names(fitted$spec$control))
 })
+
+test_that("the warnings describe the fit as the documentation does", {
+  # The unknown-name warning lists the names accepted without a warning:
+  # shape_param_count is accepted but not read by the fit (#405 review).
+  expect_warning(
+    cv_weibull(list(n_startz = 1)),
+    "accepted without a warning are maxit, reltol, shape_param_count\\)"
+  )
+  expect_warning(
+    cv_multiphase_raw(list(n_startz = 1)),
+    "accepted without a warning are maxit, reltol, n_starts, conserve"
+  )
+  # method and quasi name the optimizer as ?hazard does, warm-up included.
+  for (nm in c("method", "quasi")) {
+    expect_warning(
+      cv_weibull(stats::setNames(list(TRUE), nm)),
+      "BFGS, a quasi-Newton method \\(a multiphase fit may run a Nelder-Mead warm-up first",
+      label = nm
+    )
+  }
+})
