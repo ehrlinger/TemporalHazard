@@ -636,15 +636,15 @@
   has no effect, and the fit proceeds unchanged, as `stats::optim()` does
   for unknown `control` names. The element is dropped before the fit: R's
   `$` matches a partial name, so `n_starts_extra` used to be read as
-  `n_starts`, and `fit$spec$control` now keeps only the elements the fit
-  reads. That covers a misspelling, an unnamed
+  `n_starts`, and `fit$spec$control` now keeps none of the ignored
+  elements. That covers a misspelling, an unnamed
   element, five names `?hazard` used to document as accepted although no
   fit read them (`abstol`, read only by a bounded optimizer that no fit
   uses, and `method`, `condition`, `nocov` and `nocor`), `fix` and `quasi`,
   a multiphase element such as `n_starts` given to a single-distribution
   fit, and `shape_param_count` given to a multiphase fit, where nothing
-  reads it. No name is an error (a bad value for an element the fit reads
-  still is): `hzr_stepwise()` and
+  reads it. No name is an error (a bad value for an element the fit reads,
+  such as `maxit = "a"`, still stops a fit that reads it): `hzr_stepwise()` and
   `hzr_bootstrap()` pass `control` to every candidate refit, and an error
   there counts as a failed candidate, so a screen would report success
   having tested nothing. The SAS options `CONDITION=`, `NOCOV`, `NOCOR` and

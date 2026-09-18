@@ -284,9 +284,22 @@ test_that("a misspelled maxit is ignored, not partial-matched", {
   expect_identical(got$fit$theta, plain$fit$theta)
 })
 
-test_that("the stored control holds only the names the fit reads", {
+test_that("the stored control keeps none of the ignored elements", {
   obj <- suppressWarnings(cv_weibull(
     list(maxit = 500, maxitt = 1, abstol = 1, n_starts = 2, 7)
   ))
   expect_identical(names(obj$spec$control), "maxit")
+  # A fitted multiphase object also records what Conservation of Events
+  # did, after the filter; the ignored name must be gone and that kept.
+  mp <- suppressWarnings(cv_multiphase_raw(
+    list(n_starts = 1L, n_starts_extra = 8L, abstol = 1)
+  ))
+  fitted <- suppressWarnings(cv_multiphase(
+    list(n_starts = 1L, n_starts_extra = 8L, abstol = 1), fit = TRUE
+  ))
+  for (o in list(mp, fitted)) {
+    expect_false(any(c("n_starts_extra", "abstol") %in% names(o$spec$control)))
+    expect_true("n_starts" %in% names(o$spec$control))
+  }
+  expect_true("conserve_applied" %in% names(fitted$spec$control))
 })

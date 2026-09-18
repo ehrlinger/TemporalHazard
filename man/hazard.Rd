@@ -271,8 +271,8 @@ for every model, \code{shape_param_count} for a single-distribution model, and
 names it and says why it has no effect, and the fit proceeds unchanged,
 as \code{\link[stats:optim]{stats::optim()}} does for unknown \code{control} names. The element is
 dropped before the fit, so a name such as \code{n_starts_extra} cannot be read
-as \code{n_starts}, and \code{fit$spec$control} keeps only the elements the fit
-reads. That covers:
+as \code{n_starts}, and \code{fit$spec$control} keeps none of the ignored
+elements. That covers:
 \itemize{
 \item a name no fit reads, such as the misspelling \code{n_startz}, and an unnamed
 element;
@@ -288,7 +288,8 @@ fit, and \code{shape_param_count} given to a multiphase one.
 }
 
 No name in \code{control} is an error; a bad value for an element the fit
-reads, such as \code{maxit = "a"}, still is. \code{\link[=hzr_stepwise]{hzr_stepwise()}} and
+reads, such as \code{maxit = "a"}, still stops a fit (\code{fit = TRUE}) where it
+is read. \code{\link[=hzr_stepwise]{hzr_stepwise()}} and
 \code{\link[=hzr_bootstrap]{hzr_bootstrap()}} pass \code{control} to every candidate refit, and an error
 there would count as a failed candidate, so a screen would report success
 having tested nothing.

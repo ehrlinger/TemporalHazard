@@ -317,8 +317,8 @@ NULL
 #' names it and says why it has no effect, and the fit proceeds unchanged,
 #' as [stats::optim()] does for unknown `control` names. The element is
 #' dropped before the fit, so a name such as `n_starts_extra` cannot be read
-#' as `n_starts`, and `fit$spec$control` keeps only the elements the fit
-#' reads. That covers:
+#' as `n_starts`, and `fit$spec$control` keeps none of the ignored
+#' elements. That covers:
 #' - a name no fit reads, such as the misspelling `n_startz`, and an unnamed
 #'   element;
 #' - `abstol` (read only by a bounded optimizer no fit uses), `method`,
@@ -332,7 +332,8 @@ NULL
 #'   fit, and `shape_param_count` given to a multiphase one.
 #'
 #' No name in `control` is an error; a bad value for an element the fit
-#' reads, such as `maxit = "a"`, still is. [hzr_stepwise()] and
+#' reads, such as `maxit = "a"`, still stops a fit (`fit = TRUE`) where it
+#' is read. [hzr_stepwise()] and
 #' [hzr_bootstrap()] pass `control` to every candidate refit, and an error
 #' there would count as a failed candidate, so a screen would report success
 #' having tested nothing.
