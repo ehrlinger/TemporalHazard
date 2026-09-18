@@ -982,20 +982,30 @@ hazard <- function(formula = NULL,
   # off its own constraint. The slots are located the way the optimizer
   # locates them (.hzr_optim_multiphase()): a phase formula against `data`,
   # else the global design, else no covariates (#328).
+  # A fit needs one theta entry per parameter. The check near the top only
+  # compares the length with the global design, and only as a lower bound,
+  # so a longer multiphase theta fitted with the extra entries carried along
+  # and a shorter one failed inside the fit on a names() mismatch (#408).
+  # Unfitted, theta is returned as supplied, so the constraint block below
+  # warns instead.
+  if (fit && dist == "multiphase" && !is.null(theta)) {
+    per_phase <- .hzr_phase_theta_counts(phases, data, x_fit)
+    if (length(theta) != sum(per_phase)) {
+      stop("'theta' has ", length(theta), " entries, but this model takes ",
+           sum(per_phase), " (",
+           paste(names(per_phase), per_phase, collapse = ", "), "): each ",
+           "phase takes its log_mu, then its shape parameters whether fixed ",
+           "or free (3 for a cdf or hazard phase, 4 for g3, none for ",
+           "constant), then one coefficient per column of its own formula's ",
+           "design, or of the global design it inherits. See ",
+           "hzr_theta_names().", call. = FALSE)
+    }
+  }
   if (!fit && dist == "multiphase" && !is.null(theta) &&
       any(vapply(phases, function(ph) .hzr_phase_constraint(ph) != "none",
                  logical(1)))) {
-    counts <- vapply(phases, function(ph) {
-      if (!is.null(ph$formula) && !is.null(data)) {
-        ncol(.hzr_formula_design(ph$formula, data)$x)
-      } else if (!is.null(x_fit)) {
-        ncol(x_fit)
-      } else {
-        0L
-      }
-    }, integer(1))
-    n_theta <- sum(vapply(phases, function(ph) 1L + .hzr_phase_n_shape(ph),
-                          integer(1))) + sum(counts)
+    counts <- .hzr_phase_covariate_counts(phases, data, x_fit)
+    n_theta <- sum(.hzr_phase_theta_counts(phases, data, x_fit))
     if (length(theta) == n_theta) {
       theta <- .hzr_constrain_supplied_theta(theta, phases, counts)
     } else {
