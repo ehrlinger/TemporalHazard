@@ -99,6 +99,41 @@
   step does not change rebuilds with different columns than the fit
   stored, as a model saved by an earlier version with such a formula can.
 
+* **`hzr_stepwise()` and `hzr_bootstrap()` now refuse a `scope` under
+  `direction = "backward"` (#343).** A backward screen only drops terms the
+  base model already has, and it never read `scope`. From `~ age + mal`,
+  `scope = ~ age` still dropped `mal`, the variable left out of the scope,
+  and a scope variable the base lacked was never tested. The result was the
+  same as with no scope, and nothing said so. Such a call is now an error:
+  pass the full model as the base and protect terms with `force_in`. In
+  `hzr_stepwise()`, leave `scope` unset or empty (`~ 1`), since an empty
+  scope offers nothing to enter and so agrees with a backward screen. In
+  `hzr_bootstrap()`, an unset `scope` means no screen at all, so pass an
+  empty scope such as `~ 1` with `direction = "backward"` to run a backward
+  screen on each replicate. Under `direction = "both"`, `scope` names what
+  may enter; as in SAS, the drop half still considers every term in the
+  model except those in `force_in` and those frozen by `max_move` before
+  the iteration began. `hzr_bootstrap()` refuses the combination before
+  seeding.
+
+* **`hzr_bootstrap()` now refuses a selection argument passed without
+  `scope` (#343).** Without `scope` there is no screen, and `direction`,
+  `criterion`, `slentry`, `slstay`, `max_steps`, `max_move`, `force_in` and
+  `force_out` were ignored: `direction = "backward", force_in = "age"`
+  returned a fixed-model bootstrap with every term at `pct = 100` and no
+  message. A value other than the argument's default is now an error, so a
+  wrapper that passes the defaults on still works. Pass `scope` to screen,
+  or omit the argument to refit the exact model. A value equal to the
+  default is accepted whether or not it was passed: without `scope` it asks
+  for nothing, and nothing reads it.
+
+* **A two-sided `scope` formula is now an error in `hzr_stepwise()` and
+  `hzr_bootstrap()` (#343).** Only the right-hand side was read, so
+  `scope = com_iv ~ age + mal` screened `age` and `mal` and never tested
+  `com_iv`, with no message. The error names the left-hand side. The same
+  applies to each element of a multiphase `scope` list, and a list that
+  names a phase twice, whose second entry was never read, is refused too.
+
 * **`hazard()` now refuses a multiphase phase formula with covariates when
   no `data` is supplied (#299).** Such fits previously ignored the phase
   formula. On the vector interface (`time =`, `status =`) without `data`, a
