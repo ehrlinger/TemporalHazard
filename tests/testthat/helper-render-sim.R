@@ -144,10 +144,21 @@ sas_synth_data <- function(job, n = 24L) {
       if (is.call(last) && identical(last[[1L]], as.name("{"))) {
         last <- last[[length(last)]]
       }
-      d <- if (identical(.sas_head(last), "transform")) {
-        as.character(.sas_strip_assign(last)[[2L]])
+      # Only two shapes are legitimate: `<data> <- transform(<data>, ...)`,
+      # or a bare `.hzr_status <- ...` for a job with no DATA=. Anything else
+      # used to fall through to "no dataset", and the synthetic columns went
+      # nowhere, surfacing two steps later as an unrelated failure. Say so.
+      no_data <- is.call(last) && identical(last[[1L]], as.name("<-")) &&
+        identical(last[[2L]], as.name(".hzr_status"))
+      if (identical(.sas_head(last), "transform")) {
+        d <- as.character(.sas_strip_assign(last)[[2L]])
+      } else if (no_data) {
+        d <- ""
       } else {
-        ""
+        stop("sas_synth_data(): cannot find the dataset in status chunk '",
+             nms[[k]], "'; its last expression is neither `<data> <- ",
+             "transform(<data>, ...)` nor `.hzr_status <- ...`.",
+             call. = FALSE)
       }
       add(d, "status", .sas_syms(rhs))
     }

@@ -197,9 +197,11 @@
           next
         }
         if ((is_flag && has_val) || (is_valued && !val_ok)) {
-          # A non-numeric value after "=" is itself unexpected text.
+          # A non-numeric word after "=" is unexpected text to the lexer; an
+          # empty value lexes fine and the grammar finds NUMBER missing.
+          val_txt <- sub("^[^=]*=", "", o)
           reject(paste0(var, "/", o),
-                 if (is_valued && has_val) bad_text else bad_form)
+                 if (is_valued && has_val && nzchar(val_txt)) bad_text else bad_form)
           next
         }
         if (key %in% c("O", "ORDER")) order_given <- TRUE

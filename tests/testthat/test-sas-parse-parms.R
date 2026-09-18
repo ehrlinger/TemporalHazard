@@ -1547,6 +1547,7 @@ test_that("each syntax-error form names its own source, not a shared one (#340)"
     "/S"          = "hazard_y.y:210",   # an option before any variable
     "Y/"          = "hazard_y.y:220-225", # "/" with no option after it
     "AGE/MOVE"    = "hazard_y.y:228-232", # MOVE needs = NUMBER
+    "AGE/MOVE="   = "hazard_y.y:228-232", # "=" lexes; the NUMBER is missing
     "AGE/E=2"     = "hazard_y.y:228-232") # E takes no value
   for (item in names(cases)) {
     got <- .hzr_parse_parms(ops, covars = list(early = paste0(item, ", Z")))
