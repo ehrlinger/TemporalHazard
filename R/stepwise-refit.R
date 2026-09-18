@@ -187,9 +187,10 @@
           .hzr_phase_inherits_global(fit, nm)) {
       return(paste0(
         "phase '", nm, "' has a formula, `",
-        paste(deparse(pf), collapse = " "), "`, and the fit was saved by a ",
-        "version before 1.1.0, which did not record whether a phase formula ",
-        "was used. Its columns are the ones the phase would inherit, so the ",
+        paste(deparse(pf), collapse = " "), "`, and the fit stores neither ",
+        "its data frame nor a record of whether a phase formula was used, as ",
+        "a fit saved before 1.1.0 does (or one whose `data$frame` was ",
+        "removed). Its columns are the ones the phase would inherit, so the ",
         "fit could be either model, and a refit given `data` could be the ",
         "other one. Refit the base model with the current version, passing ",
         "`data =`, and retry"
