@@ -164,10 +164,9 @@
   with its own `formula` is unaffected. To reuse a `theta` supplied for
   the old design, drop the first factor’s first-level coefficient from
   the global design, and from each phase that inherits it. Left
-  unchanged, a single-distribution fit stops with a
-  `non-conformable arguments` error. A multiphase fit does **not** stop:
-  the extra entries are carried along and only the standard errors are
-  flagged as unreliable, so check the length of any `theta` you supply
+  unchanged, the fit stops: a single-distribution fit with a
+  `non-conformable arguments` error, and a multiphase fit with an error
+  naming both lengths and each phase’s count
   ([\#408](https://github.com/ehrlinger/TemporalHazard/issues/408)). A
   numeric term fits as before (`~ 0 + age` is `~ age`), apart from the
   new warning, which a
@@ -875,6 +874,22 @@
   naming it, such as a macro that writes it internally, is not detected.
 
 ### Bug fixes
+
+- **A multiphase fit stops when `theta` does not have one entry per
+  parameter, instead of fitting with extra entries or failing obscurely
+  ([\#408](https://github.com/ehrlinger/TemporalHazard/issues/408)).**
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  compared a supplied `theta` only with the global design’s column
+  count, and only as a lower bound. A multiphase `theta` that was too
+  long therefore fitted with the extra entries carried along, and
+  reported `converged = TRUE` with a `theta` longer than the model; one
+  that was too short failed inside the fit with
+  `'names' attribute [9] must be the same length as the vector [7]`. The
+  fit now stops, naming both lengths and each phase’s share:
+  `'theta' has 11 entries, but this model takes 9 (early 6, constant 3)`.
+  A phase with its own `formula` is counted from that formula, every
+  other phase from the global design. Unfitted (`fit = FALSE`), `theta`
+  is still returned as supplied.
 
 - **A translated job’s missing-value guard no longer stops on rows
   [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
