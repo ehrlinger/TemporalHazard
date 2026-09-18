@@ -2,6 +2,90 @@
 
 ## Breaking changes
 
+* **Standard errors were too small for a late (`"g3"`) phase with free
+  shapes: re-run any you have reported (#332).** At realistic optima the
+  standard errors this package reported for such a fit were **12 to 14
+  times too small**, so confidence intervals were far too narrow and Wald
+  p-values far too significant. Anyone who has published or acted on a
+  standard error, a confidence interval or a Wald test from a fit with a
+  free `"g3"` shape should re-run it. Near the exponential limit (a fitted
+  `alpha` of 0.0021) they were about four times too small, and where the
+  data leave a shape undetermined the fit reported finite standard errors
+  for a direction the likelihood does not determine at all.
+
+  **The fit itself is unchanged unless its search passed through a small
+  `alpha`.** For every fit without a `"g3"` phase, every fit whose `"g3"`
+  shapes are fixed, and every free-shape fit whose search never took `alpha`
+  to `1e-5` or below, the estimates and the log-likelihood are identical.
+  What moves is the Hessian and everything read from it -- standard errors,
+  Wald statistics, confidence intervals, the condition warnings, and the
+  score test `hzr_stepwise()` uses to enter a variable. Where the search did
+  pass through that region the optimizer's own gradient was wrong, and the
+  estimates can move too; see below.
+
+  The cause was numerical: the G3 second derivatives stepped every shape by
+  a fixed amount, about 1.2e-4, and the score stepped a small `alpha` by
+  1e-5. That is far too small a fraction of a large `gamma`, where rounding
+  takes over, and far too large a fraction of a small `eta` or `alpha`,
+  where truncation does. Each shape is now stepped in proportion to itself.
+  Nothing warned, and the individual Hessian entries were never off by more
+  than 0.77% -- it is the inversion of an ill-conditioned matrix that turned
+  that into an order of magnitude in the standard errors, which is why the
+  entry error alone is not the number to judge this by.
+
+  - **If a fit has a free `alpha`, refit it under this version and compare
+    -- its final `alpha` does not tell you whether this applies.** At
+    `0 < alpha <= 1e-5` the gradient in `alpha`, which the optimizer uses,
+    was about 50% off at `alpha = 1e-5` and approached 100% as `alpha` fell.
+    A search only has to pass through that region for the difference to
+    steer it. On the package's own `avc` data a free-shape fit started at
+    `gamma = 0.1` went below `alpha = 1e-5` on its way, finished with `alpha`
+    between 0.015 and 0.02 -- far outside the region -- and still stopped at
+    `gamma` 100.9 where it used to stop at 94.4.
+
+    Both versions stopped short of an optimum there, and both said so: the
+    fit warns that its estimates fail the relative-gradient test SAS/C
+    HAZARD requires (0.121 before this change, 0.482 after, against a limit
+    of 6.06e-06). **If your fit carries that warning, its estimates were not
+    a reliable optimum before this release either** -- refit with more
+    starts or other starting values rather than reading a change in them as
+    an improvement. On one weakly identified data set, fits started at such
+    an `alpha` stopped a full log-likelihood unit below what was attainable
+    and reported `converged = TRUE`. Such
+    likelihoods are often multimodal, so a corrected fit is not guaranteed
+    to end higher from every start. At such an `alpha` the Hessian is now
+    evaluated, and is usually too ill-conditioned to invert: standard
+    errors are unavailable, with a warning.
+* **A multiphase phase formula without an intercept no longer drops its
+  first term (#303).** `hzr_phase(formula = ~ 0 + age)` or `~ age - 1`
+  fitted the phase without `age`, and `~ 0 + age + mal` without `age`, with
+  no warning and no message. `~ 0 + age + grp`, for a factor `grp`, lost
+  `age` and kept a column for every level of `grp`. `predict()` repeated
+  the same design, so its results agreed with the wrong fit. A phase has no
+  free intercept of its own (its scale parameter plays that role), so such
+  a formula now builds exactly the design of the same formula with an
+  intercept: `~ 0 + age` fits as `~ age`, and factors are coded as they
+  would be with the intercept present, not with a column per level.
+  `hzr_phase()` now warns that the removal is ignored, once, when the phase
+  is created. Refit a model whose phase formula had no intercept: its
+  estimates will change. A formula that fits as before starts with an
+  unordered factor, character or logical column under the default
+  treatment contrasts, which already built the design of the formula with
+  an intercept. An ordered
+  factor, or any factor under other `contrasts`, is now coded as it would
+  be with the intercept (for an ordered factor, `o.L` and `o.Q` rather
+  than `om` and `oh`), so its coefficients change meaning. An interaction
+  first, such as `~ 0 + g:age`, lost a column and now keeps it.
+
+  The score test in `hzr_stepwise()` rebuilt the other phases of the model
+  the old way, so once the fit was corrected they would have disagreed:
+  a candidate's score was computed against a design the model was not
+  fitted with, silently when the column counts matched, and otherwise every
+  candidate in the other phases could not be scored. It now builds them as
+  the fit does, and declines to score (a score of `NA`) when a phase the
+  step does not change rebuilds with different columns than the fit
+  stored, as a model saved by an earlier version with such a formula can.
+
 * **`hazard()` now refuses a multiphase phase formula with covariates when
   no `data` is supplied (#299).** Such fits previously ignored the phase
   formula. On the vector interface (`time =`, `status =`) without `data`, a
@@ -416,9 +500,26 @@
   of 4. It now parses quietly. When `data` is the frame the base was fitted
   on, the current formula's warnings already surfaced from the base fit, and
   the reduced formula's warnings surface again from the refit if the drop
-  goes ahead. When `data`
-  differs, the current formula's warnings on it are no longer shown; they
-  cannot change the pre-check's decision, which compares column counts.
+  goes ahead. When `data` differs, the current formula's warnings on it are
+  no longer shown; they cannot change the pre-check's decision, which
+  compares column counts.
+
+* **A classed numeric *matrix* column was read as its raw storage, when
+  fitting as well as predicting (#371).** `hazard()` and
+  `predict(newdata = )` read a classed numeric column as its values (#231,
+  #347), but a column carrying a `dim` was left alone entirely, because a
+  genuine matrix column (`I(cbind(p, q))`, a `Surv`) must not be flattened.
+  A `bit64::integer64` matrix column therefore reached the model as its
+  stored doubles. On 120 rows of `avc` with `age` as such a column, the fit
+  ran on 9e-300 in every row: the covariate coefficient stayed at its
+  starting 0.004 and the log-likelihood came out -93.05 against -92.45 for
+  the same numbers as a plain column, with no error and no warning. The same
+  column in `newdata` predicted 0.1, 0.1414 and 0.2236 where the values give
+  0.1271, 0.2027 and 0.2521. Such a column is now read as its values and
+  keeps its shape. Which classes need reading is decided by behaviour rather
+  than by a list: the class's own `as.numeric()` is compared with the stored
+  doubles, and the column is replaced only when they differ, so a `Surv`
+  column, whose stored doubles are its values, keeps its class.
 
 * **A fit made with `survival::Surv()`'s own status codes was wrong, not
   empty, and said nothing (#231).** `Surv()` codes interval-censored rows
@@ -473,6 +574,25 @@
   formula-environment constant changed since the fit, and collation in
   string comparisons. Fits saved before 1.1.0 kept no fitting data, and
   their column types are not checked.
+* **One row at time 0 no longer empties an exponential, Weibull or
+  log-normal fit (#341).** A row right-censored at time 0, as
+  `Surv(0, NA, type = "interval2")` gives, contributes nothing to the
+  likelihood. With any left- or interval-censored row in the data, these
+  three families refused the whole fit instead: the objective was clamped,
+  and `hazard()` reported `converged = TRUE` at the starting values, with
+  no warning about the data. The log-normal refused such a row on any data,
+  and also refused an interval opening at 0, `(0, u]`, which is left
+  censoring at `u`. Each is now evaluated as the row it is, matching the
+  log-logistic and multiphase fits. Fits without such rows are unchanged.
+
+* **The vignettes no longer skip every chunk in silence when the rendering
+  session cannot see the installed package (#276).** Each vignette gates its
+  chunks on `requireNamespace("TemporalHazard")`, so a render session that
+  could not load the package produced a complete-looking document with no
+  computed output and no error. Rebuilding the vignettes now puts the
+  library that `R CMD build` installs the package into back on
+  `.libPaths()`, and under continuous integration a package that will not
+  load stops the build and says why.
 
 * **`predict(newdata = )` on a multiphase fit saved before this version no
   longer gets `scale()`, `poly()` or `ns()` in a phase formula silently wrong
@@ -555,6 +675,18 @@
   fit, so its shape parameters `param_1` and `param_2` counted as selected
   covariates. Such a screen returned a summary of only those parameters, each
   at `pct = 100`, and said nothing. Multiphase screens already warned.
+
+* **`hzr_bootstrap()` names two more kinds of refit that are not a fit
+  (#343).** A refit returning a list with no `fit` was tallied as a
+  convergence failure; it is now ``"refit returned a <class> with no `fit`, not a
+  fit object"``, in both modes. A refit whose fit held a finite
+  objective but no estimates counted as a success and then ended the run
+  building its replicate row; it is now a failed replicate,
+  `"refit returned no parameter estimates"`. `hazard()` returns neither. A
+  fit with no `data` frame whose call names a formula that was `NULL` when
+  it ran, as a wrapper forwarding its own `formula` argument can leave, now
+  stops with a message saying there are no rows to count, instead of
+  `length(n) == 1L is not TRUE`.
 
 * **The G3 late-phase shape is now accurate where `(t/tau)^gamma`
   underflows.** With a large `gamma`, event times well below `tau` take
@@ -1104,6 +1236,24 @@
   formula too. **Selected models and p-values change** for any multiphase
   screen that stepped a phase without a formula while the global formula
   had covariates, or scored a candidate for a phase with an interaction.
+
+## Known limitations
+
+* **In a two-way `hzr_stepwise()` screen, `$scope$frozen` can name a
+  variable the final model excludes (#378).** With `direction = "both"`,
+  each iteration makes a forward step and then a backward step, and the
+  protected sets are fixed when the iteration starts, so a variable that the
+  forward step freezes can still be dropped by the backward step that
+  follows. Forward-only and backward-only screens are not affected: neither
+  makes both steps in one iteration, so their `$scope$frozen` and final model
+  agree. It is then reported as frozen while the selected model
+  does not contain it, and nothing warns. When they disagree, **trust the
+  final model and `$steps`**, which records both the `"frozen"` row and the
+  `"drop"` after it; read `$scope$frozen` as the variables that reached the
+  `max_move` cap, not as variables held in the model. This release does not
+  change the behaviour: correcting the timing alone was measured to keep
+  variables above `slstay` at the default `max_move`, so it is deferred to
+  be fixed together with how moves are counted (#379).
 
 # TemporalHazard 1.2.10
 

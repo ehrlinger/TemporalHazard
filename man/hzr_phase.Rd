@@ -55,6 +55,9 @@ SAS late: \code{ETA}.}
 phase-specific covariates.  It is evaluated in the \code{data} given to
 \code{\link[=hazard]{hazard()}}, so without \code{data} \code{\link[=hazard]{hazard()}} refuses it, unless it builds
 nothing either way: an intercept-only \code{~ 1} with no global \code{x}.
+The phase's scale parameter plays the role of an intercept, so the
+design never has one: removing it (\code{~ 0 + age}, \code{~ age - 1}) is
+ignored with a warning, and builds the design of \code{~ age}.
 When \code{NULL} (default), the phase inherits the global design from
 \code{\link[=hazard]{hazard()}}: the global formula's covariates, or \code{x} on the vector
 interface.}
