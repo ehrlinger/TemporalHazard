@@ -313,3 +313,123 @@ test_that("the emitted HAZPRED call produces logit bounds, not the default", {
   expect_true(all(got$lower <= got$fit & got$fit <= got$upper))
   expect_true(all(got$lower >= 0 & got$upper <= 1))
 })
+
+test_that("every covariate after a '/' option reaches the fitted model (#342)", {
+  skip_on_cran()
+  # Executed, not shape-asserted: the fit must carry OPMOS and Y, and must
+  # not carry the excluded X. Before #342 the chunk fitted ~AGE + MAL only.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste(
+    "%HAZARD( PROC HAZARD DATA=D CONDITION=14;",
+    "EVENT DEAD; TIME TT;",
+    "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005;",
+    "EARLY AGE, MAL/I, OPMOS;",
+    "CONSTANT X/E, Y; );"
+  ), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  set.seed(3)
+  n <- 150
+  D <- data.frame(TT = stats::rexp(n, 0.2),
+                  DEAD = rep(c(1, 0, 1), length.out = n),
+                  AGE = stats::rnorm(n), MAL = rep(0:1, length.out = n),
+                  OPMOS = stats::runif(n), X = stats::rnorm(n),
+                  Y = stats::rnorm(n))
+  res <- suppressWarnings(render_sim(job, list(D = D)))
+  expect_true(res$ok, info = paste(res$results, collapse = "; "))
+  cf <- names(stats::coef(res$env$fit))
+  expect_true(all(c("phase_1.AGE", "phase_1.MAL", "phase_1.OPMOS",
+                    "phase_2.Y") %in% cf), info = paste(cf, collapse = " "))
+  expect_false(any(grepl("\\.X$", cf)), info = paste(cf, collapse = " "))
+})
+
+test_that("a phase variable outside the model still deletes its missing rows (#342)", {
+  skip_on_cran()
+  # getrisk.c collects every phase-statement variable and readobs.c drops a
+  # row where any is missing, whether or not the variable is estimated. An
+  # /E variable is not in hazard()'s formula, so hazard() cannot drop those
+  # rows: the status chunk has to stop and say so rather than fit more rows
+  # than SAS did.
+  job_for <- function(stmts) {
+    f <- withr::local_tempfile(fileext = ".sas", .local_envir = parent.frame())
+    writeLines(paste(
+      "%HAZARD( PROC HAZARD DATA=D CONDITION=14; EVENT DEAD; TIME TT;",
+      "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005;", stmts, ");"), f)
+    suppressWarnings(hzr_translate_sas(f))
+  }
+  set.seed(4)
+  n <- 150
+  D <- data.frame(TT = stats::rexp(n, 0.2),
+                  DEAD = rep(c(1, 0, 1), length.out = n),
+                  AGE = stats::rnorm(n), X = stats::rnorm(n),
+                  Y = stats::rnorm(n))
+  D_na <- D
+  D_na$X[1:40] <- NA
+
+  job <- job_for("EARLY AGE; CONSTANT X/E, Y;")
+  res <- suppressWarnings(render_sim(job, list(D = D_na)))
+  expect_false(res$ok)
+  expect_match(res$results[["status"]], "X")
+  expect_match(res$results[["status"]], "missing")
+  expect_false(exists("fit", envir = res$env, inherits = FALSE))
+  # Complete X: nothing to delete, and the model still leaves X out.
+  res <- suppressWarnings(render_sim(job, list(D = D)))
+  expect_true(res$ok, info = paste(res$results, collapse = "; "))
+
+  # A second statement for a phase adds to the first (hazard_y.y appends),
+  # it does not replace it.
+  job <- job_for("EARLY AGE; EARLY Y;")
+  res <- suppressWarnings(render_sim(job, list(D = D)))
+  expect_true(res$ok, info = paste(res$results, collapse = "; "))
+  expect_true(all(c("phase_1.AGE", "phase_1.Y") %in%
+                    names(stats::coef(res$env$fit))))
+})
+
+test_that("a job with no DATA= and phase covariates emits a stop(), not a fit (#311)", {
+  # With no DATA= the fit chunk has no `data`, and hazard() refuses a phase
+  # formula with nothing to evaluate it in (#299): the chunk stopped with
+  # advice to pass `data =`, an argument the SAS job never had.
+  translate <- function(src) {
+    f <- withr::local_tempfile(fileext = ".sas", .local_envir = parent.frame())
+    writeLines(src, f)
+    suppressWarnings(hzr_translate_sas(f))
+  }
+  parms <- "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005;"
+  set.seed(1)
+  n <- 60
+  D <- data.frame(TT = stats::rexp(n, 0.2),
+                  DEAD = rep(c(1, 0), length.out = n),
+                  MAL = rep(c(0, 1, 1), length.out = n))
+
+  for (cov in c("EARLY MAL=0;", "CONSTANT MAL=0;")) {
+    job <- translate(paste("%HAZARD( PROC HAZARD CONDITION=14;",
+                           "EVENT DEAD; TIME TT;", parms, cov, ");"))
+    expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"), info = cov)
+    expect_true(any(job$untranslated$construct == "DATA="), info = cov)
+    # Executed where the variables exist as vectors, the way a reader who
+    # binds them would render it: the chunk must fail with the translator's
+    # reason, not hazard()'s advice to pass `data =`.
+    res <- render_sim(job, as.list(D))
+    expect_false(res$ok, info = cov)
+    expect_match(res$results[["fit"]], "no DATA=", info = cov)
+  }
+
+  # Paired controls. No covariates: no DATA= is fine, the chunk fits from
+  # the bound vectors.
+  job <- translate(paste("%HAZARD( PROC HAZARD CONDITION=14;",
+                         "EVENT DEAD; TIME TT;", parms, ");"))
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
+  expect_false(any(job$untranslated$construct == "DATA="))
+  res <- suppressWarnings(render_sim(job, as.list(D)))
+  expect_true(res$ok, info = paste(res$results, collapse = "; "))
+  expect_s3_class(res$env$fit, "hazard")
+
+  # DATA= with the same covariate: still a fit, and the phase carries MAL.
+  skip_on_cran()
+  job <- translate(paste("%HAZARD( PROC HAZARD DATA=D CONDITION=14;",
+                         "EVENT DEAD; TIME TT;", parms, "EARLY MAL=0; );"))
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
+  expect_false(any(job$untranslated$construct == "DATA="))
+  res <- suppressWarnings(render_sim(job, list(D = D)))
+  expect_true(res$ok, info = paste(res$results, collapse = "; "))
+  expect_true("phase_1.MAL" %in% names(stats::coef(res$env$fit)))
+})
