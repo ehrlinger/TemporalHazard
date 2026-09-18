@@ -786,3 +786,40 @@ test_that("hazard() refuses an NA interval bound before any likelihood sees it (
   expect_false(anyNA(fit$data$time_lower))
   expect_false(anyNA(fit$data$time_upper))
 })
+
+test_that("a bound shorter than status is named as a length mismatch (#340)", {
+  # Indexing past the end of time_lower returns NA, which the entry check
+  # used to report as "an NA bound" -- a true message about the wrong
+  # defect. hazard() validates lengths first, so only a direct call reaches
+  # this; the message should still name the real cause.
+  expect_error(
+    TemporalHazard:::.hzr_check_sas_data(c(1, 0, 2, 1, 2, 1), 1:6,
+                                         c(0, 0, 1, 0), 1:6, "sas"),
+    "time_lower has length 4, but status has length 6", fixed = TRUE)
+  expect_error(
+    TemporalHazard:::.hzr_check_sas_data(c(1, 0, 2, 1, 2, 1), 1:6,
+                                         rep(0, 6), 1:5, "sas"),
+    "time_upper has length 5, but status has length 6", fixed = TRUE)
+  # Control: equal lengths reach the ordinary checks and pass.
+  expect_silent(TemporalHazard:::.hzr_check_sas_data(
+    c(1, 0, 2), c(1, 2, 3), c(0, 0, 1), c(1, 2, 3), "sas"))
+})
+
+test_that("the objective's own guard stops on an NA bound (#340)", {
+  # which() drops NA rows, so the inner guard let an NA bound through and
+  # the row became -Inf: a value the optimizer walks away from, where the
+  # entry check stops. The two guards are documented as unable to disagree.
+  expect_error(
+    TemporalHazard:::.hzr_logl_interval(c(0.1, NA), c(0.5, 1), c(1, NA),
+                                        c(2, 3), c(1, 1), "sas"),
+    "1 of 2 interval row(s) fail this, at index/indices 2", fixed = TRUE)
+  expect_error(
+    TemporalHazard:::.hzr_logl_interval(c(0.1, 0.2), c(0.5, 1), c(1, 1),
+                                        c(2, NA), c(1, 1), "sas"),
+    "at index/indices 2", fixed = TRUE)
+  # The likelihood objective has no such precondition and is unchanged.
+  expect_identical(
+    TemporalHazard:::.hzr_logl_interval(c(0.1, NA), c(0.5, 1), c(1, NA),
+                                        c(2, 3), c(1, 1), "likelihood"),
+    -Inf)
+})
