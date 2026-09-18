@@ -417,7 +417,7 @@
     # under the likelihood while the base fit's `objective` is the SAS
     # density, so `delta_logLik` and `aic` would be differenced across two
     # estimands -- a full `$steps` table, no warning, wrong numbers.
-    do.call(hazard, c(
+    .hzr_muffle_intercept_warning(do.call(hazard, c(
       response_args,
       list(
         dist         = "multiphase",
@@ -428,7 +428,7 @@
         fit          = TRUE
       ),
       extra_args
-    ))
+    )))
   } else {
     # Single-distribution path: mutate the global formula, warm-start
     # theta by inserting / dropping the relevant beta slot. Unlike multiphase
@@ -470,7 +470,7 @@
       }
     }
 
-    do.call(hazard, c(
+    .hzr_muffle_intercept_warning(do.call(hazard, c(
       list(
         formula      = new_formula,
         data         = data,
@@ -481,6 +481,16 @@
         fit          = TRUE
       ),
       extra_args
-    ))
+    )))
   }
+}
+
+
+# A refit re-parses the base fit's formula, and the base fit already warned
+# that its intercept removal is ignored (#337); do not repeat it per step.
+.hzr_muffle_intercept_warning <- function(expr) {
+  withCallingHandlers(
+    expr,
+    hzr_intercept_removed = function(w) invokeRestart("muffleWarning")
+  )
 }
