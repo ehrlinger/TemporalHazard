@@ -953,6 +953,15 @@
                 "$criteria$uncomputable_reasons. A screen that could not ",
                 "score a candidate did not test it.", call. = FALSE)
       }
+      # Removal is tested on Wald p-values, which need standard errors. A
+      # multiphase ICENSOR fit without numDeriv has none, and the screen then
+      # removes nothing -- indistinguishable from "nothing met slstay".
+      if (!is.matrix(fit$fit$vcov)) {
+        warning("The screened model has no standard errors, so no Wald ",
+                "removal test could be computed and nothing could be ",
+                "removed. For an interval-censored job, install 'numDeriv'.",
+                call. = FALSE)
+      }
       invisible(n_unscored)
     })
   }
@@ -1087,9 +1096,9 @@
         "chooses PROC HAZARD's optimizer for the stepwise step (quasi-Newton, ",
         "started ", if (identical(kw, "ROBUST")) "by steepest descent" else
           "from the Hessian", "; stpwprc.c:60-69, hazrd2.c:31-34). ",
-        "hzr_stepwise() uses its own optimizer. This affects the path to ",
-        "convergence, not the converged estimates or the tests that drive ",
-        "selection")))
+        "hzr_stepwise() uses its own optimizer. This changes the path to ",
+        "convergence, and on a multimodal likelihood it can change the ",
+        "optimum reached, and with it the selection")))
   }
 
   # BACKWARD wins over any other direction keyword, whatever the order

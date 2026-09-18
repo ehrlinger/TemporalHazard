@@ -337,6 +337,9 @@ test_that("ROBUST translates, recorded as the optimizer choice it is (#160)", {
     # two rulings rested on. Pinned so it cannot be reinstated from a stale
     # memory of the decision thread.
     expect_no_match(reason, "variance", info = kw)
+    # Nor may it promise the same optimum: the likelihood is multimodal.
+    expect_no_match(reason, "not the converged estimates", info = kw)
+    expect_match(reason, "optimum", info = kw)
     res <- suppressWarnings(render_sim(job, list(D = .sel_data())))
     expect_true(res$ok, info = paste(kw, paste(res$results, collapse = "; ")))
     expect_s3_class(res$env$fit, "hzr_stepwise")
@@ -357,6 +360,10 @@ test_that("the callout does not claim ROBUST changes the variance (#160)", {
   expect_match(doc, "may select a different model")
   expect_match(doc, "approximate variances")
   expect_no_match(doc, "reproduces PROC HAZARD")
+  # The entry statistic reproduces SAS's approximate Q (score-test.R:15-18);
+  # only the Wald removal tests use the full Hessian. Say drops, not both.
+  expect_match(doc, "drop decisions", fixed = TRUE)
+  expect_no_match(doc, "each enter and drop", fixed = TRUE)
 })
 
 test_that("MOVE= is recorded, not mapped onto max_move (#160)", {
@@ -440,8 +447,15 @@ test_that("the emitted screen reports candidates it could not score (#160)", {
   env <- new.env(parent = baseenv())
   env$fit <- list(criteria = list(n_uncomputable_scores = 2L))
   expect_warning(eval(job$calls$screen_check, env), "2 candidate score")
-  env$fit <- list(criteria = list(n_uncomputable_scores = 0L))
+  env$fit <- list(criteria = list(n_uncomputable_scores = 0L),
+                  fit = list(vcov = diag(2)))
   expect_no_warning(eval(job$calls$screen_check, env))
+  # No standard errors means no Wald removal test could be computed (a
+  # multiphase ICENSOR fit without numDeriv): the screen then drops nothing
+  # and reads exactly like "nothing met slstay" (#160, Copilot on ce9211f7).
+  env$fit <- list(criteria = list(n_uncomputable_scores = 0L),
+                  fit = list(vcov = NULL))
+  expect_warning(eval(job$calls$screen_check, env), "no standard errors")
 })
 
 # --- #160 r-reviewer findings ------------------------------------------------

@@ -471,18 +471,18 @@
 
   **The screen may select a different model than `PROC HAZARD` did**, and
   the rendered document says so in a callout above the chunk: `PROC HAZARD`
-  uses approximate variances during selection while this package uses the
-  full Hessian, and `force_in` is keyed by variable name across phases where
+  uses approximate variances during selection, which the entry statistic
+  here reproduces but the Wald removal tests do not, and `force_in` is keyed by variable name across phases where
   SAS's `/I` holds a variable in one phase. Read the result as this
   package's screen of the job's candidates, not as a reproduction of the SAS
   run.
 
   **`ROBUST` and `SEMIROBUST` translate: they choose an optimizer, not a
   variance.** In `PROC HAZARD` they select the algorithm for the stepwise
-  step (quasi-Newton, started by steepest descent or from the Hessian); they
-  do not change the variance, the estimates or the tests that drive
-  selection. The option is recorded in `$untranslated`, and the screen uses
-  this package's own optimizer. They appear on 90.5% of the `SELECTION`
+  step (quasi-Newton, started by steepest descent or from the Hessian), not
+  the variance. The option is recorded in `$untranslated`, and the screen
+  uses this package's own optimizer. A different optimizer takes a different
+  path, and on a multimodal likelihood it can reach a different optimum. They appear on 90.5% of the `SELECTION`
   statements in the production corpus, so this is the common case.
 
   **What is refused, so you can tell in advance which of your jobs are

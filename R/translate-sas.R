@@ -93,10 +93,11 @@
 #' plus TemporalHazard itself. The emitted chunks never reach into this
 #' package's internals, so the document renders in your session, and in a
 #' colleague's, without anything further installed, with one exception. A
-#' translated `SELECTION` screen uses the score criterion, and for a
-#' multiphase job with interval- or left-censored rows (an `ICENSOR` or
-#' `LCENSOR` job) that needs the suggested package \pkg{numDeriv}: the
-#' screen stops and says so if it is not installed.
+#' translated `SELECTION` screen on a multiphase job with interval-censored
+#' rows (an `ICENSOR` job; `LCENSOR` is left truncation and does not need
+#' it) needs the suggested package \pkg{numDeriv}. Without it the score
+#' entry test stops and says so, and the emitted check warns that removals
+#' could not be tested.
 #'
 #' @section Experimental:
 #' The emitted document renders: the `hazard()` chunk binds its fit to a name
@@ -453,8 +454,9 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
 #'
 #' `hzr_stepwise()` runs the job's own candidates, flags and thresholds, but
 #' it cannot be expected to reach `PROC HAZARD`'s selected set: SAS uses
-#' approximate variances during selection while this package uses the full
-#' Hessian, and `force_in` is not phase-keyed where SAS's `/I` is. The
+#' approximate variances during selection, which the entry statistic here
+#' reproduces but the Wald removal tests do not, and `force_in` is not
+#' phase-keyed where SAS's `/I` is. The
 #' divergence is recorded against a real fixture in
 #' `tests/testthat/test-sas-parity.R` (hm.death.AVC). The reader meets this
 #' before the code, which is why it is a note on the chunk rather than a row
@@ -470,9 +472,10 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
       "thresholds. The screen is real, and the selected model may still",
       "differ from the one PROC HAZARD chose, for reasons that cannot be",
       "tuned away. PROC HAZARD uses approximate variances during selection",
-      "(it ignores the shaping-parameter covariances), while hzr_stepwise()",
-      "uses the full Hessian, so the statistics driving each enter and drop",
-      "decision are not the same; and SAS's /I holds a variable in ONE phase,",
+      "(it ignores the shaping-parameter covariances). The entry statistic",
+      "here reproduces that approximation, but the Wald tests behind the drop",
+      "decisions use the full Hessian, so removals can differ; and SAS's /I",
+      "holds a variable in ONE phase,",
       "while hzr_stepwise()'s force_in is keyed by variable name across every",
       "phase, which is why a job whose /I variable is movable in another",
       "phase is refused rather than screened here. And PROC HAZARD's MOVE",
