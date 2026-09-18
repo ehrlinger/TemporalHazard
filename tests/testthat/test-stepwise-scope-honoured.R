@@ -238,3 +238,71 @@ test_that("hzr_bootstrap() with an empty scope under backward runs a real backwa
   expect_length(pct, 3L)
   expect_true(any(pct < 100))
 })
+
+test_that("an empty-scope backward bootstrap reaches #389's untested-removal count", {
+  # Interaction of #343 (an empty scope runs a backward screen per replicate,
+  # and selection arguments without a scope are refused before seeding) with
+  # #389 (hzr_bootstrap() counts replicates that decided a variable without a
+  # Wald test). x3's removal test is NA while x2 is in the model: a replicate
+  # that drops x2 then tests x3; one that keeps x2 leaves x3 untested.
+  obj <- .fit_overfitted()
+  orig <- .hzr_candidate_score
+  local_mocked_bindings(
+    .hzr_candidate_score = function(...) {
+      a <- list(...)
+      s <- orig(...)
+      if (identical(a$mode, "drop")) {
+        cols <- colnames(a$current$data$x)
+        var <- cols[match(a$names, paste0("beta", seq_along(cols)))]
+        if (identical(var, "x3") && "x2" %in% cols) {
+          s$score <- NA_real_
+          s$p_value <- NA_real_
+          s$stat <- NA_real_
+        }
+      }
+      s
+    }
+  )
+  screens <- list()
+  orig_sw <- hzr_stepwise
+  local_mocked_bindings(
+    hzr_stepwise = function(...) {
+      r <- orig_sw(...)
+      screens[[length(screens) + 1L]] <<- list(
+        stopped = isTRUE(r$criteria$stopped_uncomputable),
+        listed = length(c(r$criteria$wald_untested_removals,
+                          r$criteria$wald_untested_entries)) > 0L
+      )
+      r
+    }
+  )
+  w <- testthat::capture_warnings(
+    boot <- hzr_bootstrap(obj$fit, n_boot = 4, seed = 1, scope = ~ 1,
+                          direction = "backward", slstay = 0.20)
+  )
+  expect_identical(boot$n_failed, 0L)
+  reps <- utils::tail(screens, boot$n_success)
+  expect_length(reps, boot$n_success)
+  stopped <- vapply(reps, `[[`, logical(1L), "stopped")
+  listed <- vapply(reps, `[[`, logical(1L), "listed")
+  expect_identical(boot$n_uncomputable_replicates, sum(stopped))
+  expect_gt(boot$uncomputable_reasons[["wald_no_variance"]], 0L)
+  hit <- grepl("successful replicates decided a variable without a Wald test",
+               w)
+  if (any(listed)) {
+    expect_true(any(grepl(paste0("^", sum(listed), " of ", boot$n_success,
+                                 " successful replicates decided"), w)))
+  } else {
+    expect_false(any(hit))
+  }
+
+  # The refusals come first: no replicate runs, so nothing is counted.
+  n_before <- length(screens)
+  expect_error(hzr_bootstrap(obj$fit, n_boot = 4, seed = 1,
+                             direction = "backward", slstay = 0.10),
+               "only take")
+  expect_error(hzr_bootstrap(obj$fit, n_boot = 4, seed = 1, scope = ~ x3,
+                             direction = "backward"),
+               "backward")
+  expect_identical(length(screens), n_before)
+})
