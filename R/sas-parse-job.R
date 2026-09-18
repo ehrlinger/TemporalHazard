@@ -470,6 +470,7 @@
   statements <- list()
   parms_ops <- character(0)
   sel_ops <- NULL
+  saw_restrict <- FALSE
   covars <- list()
 
   for (i in seq_along(st)[-1L]) {
@@ -519,7 +520,25 @@
       # below fire on `PARMS MUE=0.2 THALF=1; PARMS FIXNU;` -- a job the
       # reference runs -- because only the trailing statement survived.
       PARAMETERS = parms_ops <- c(parms_ops, ops),
-      STEPWISE   = sel_ops <- ops,
+      # SAS accepts `SLE = 0.2`. Splitting that on whitespace left three
+      # tokens, recorded as untranslated, and the screen ran at the DEFAULT
+      # threshold instead, so close the spaces around `=` first.
+      STEPWISE   = {
+        sel_ops <- strsplit(gsub("\\s*=\\s*", "=", ops_text), "\\s+")[[1L]]
+        sel_ops <- sel_ops[nzchar(sel_ops)]
+      },
+      # RESTRICT constrains which variables the screen may select
+      # (hazrd4.c's rsttbl). It is recorded here and refused below when the
+      # job also has a SELECTION: a screen that ignored it would select by a
+      # different rule than the job asked for.
+      RESTRICT   = {
+        saw_restrict <- TRUE
+        # Without a SELECTION there is no screen for it to constrain, and
+        # nothing here implements it, so it stays a recorded gap rather than
+        # a mapped token. With one, the refusal below names it.
+        mapped <- mapped - 1L
+        note(kw, "no R equivalent")
+      },
       # A second statement for a phase adds to its list (hazard_y.y appends
       # every phasevar); assigning replaced it and dropped the first (#342).
       EARLY      = covars$early <- c(covars$early, ops_text),
@@ -533,7 +552,14 @@
   }
 
   # --- assemble -----------------------------------------------------------
-  parms <- .hzr_parse_parms(parms_ops, covars = covars)
+  # The SELECTION spec is read BEFORE the PARMS block, because it decides
+  # what a bare phase variable means: a candidate outside the model under
+  # SELECTION, an ordinary covariate without it (setstat.c).
+  sel <- if (is.null(sel_ops)) NULL else .hzr_selection_spec(sel_ops)
+  parms <- .hzr_parse_parms(
+    parms_ops, covars = covars,
+    selection = if (is.null(sel)) FALSE else
+      if (identical(sel$direction, "backward")) "backward" else "screen")
   untr <- rbind(untr, parms$untranslated)
   cens <- .hzr_censor_spec(statements)
   untr <- rbind(untr, cens$untranslated)
@@ -615,30 +641,123 @@
     ))
   }
 
+  # Why this job's SELECTION cannot be run faithfully, or NULL when it can.
+  # A function because two paths need it: the screen below, and the no-DATA=
+  # refusal, which returns first and must still record this reason so a reader
+  # who adds DATA= as told does not meet a refusal the document never named.
+  selection_refusal <- function(untr) {
+    if (is.null(sel)) return(NULL)
+    # Constructs with no faithful translation. A per-variable MOVE=
+    # or ORDER= has no hzr_stepwise() equivalent at all (its max_move is
+    # per run), and ORDER= drives entry order.
+    per_var_opts <- grep("/(MOVE|ORDER)", untr$construct, value = TRUE)
+    # force_in has no phase, so a variable held by /I in one phase and
+    # movable in another would be pinned in BOTH. That is a wrong model,
+    # not a path difference, which is where this draws the refuse line.
+    # Both sides restricted to BUILT phases: a /I naming a phase this job
+    # does not select has no phase to conflict with, and the discarded
+    # phase's covariates are already recorded.
+    movable_all <- unique(unlist(parms$selection$movable %||% list()))
+    in_model_all <- unique(unlist(parms$selection$in_model %||% list()))
+    cross_pinned <- intersect(
+      intersect(parms$selection$force_in %||% character(0), in_model_all),
+      movable_all)
+    refusals <- c(sel$refuse,
+                  if (saw_restrict) "RESTRICT",
+                  if (length(per_var_opts)) per_var_opts,
+                  if (length(cross_pinned)) {
+                    paste0(cross_pinned, " (/I in one phase, movable in another)")
+                  })
+    if (!length(refusals)) return(NULL)
+    # Name ONLY what fired. One boilerplate string listing every refusable
+    # construct made the reason unreadable and, worse, made a test
+    # asserting "FAST" pass for a MAXVARS job.
+    why <- c(
+      FAST = "FAST is a different search (H->f), not a stepwise run",
+      MAXVARS = paste("MAXVARS caps the selected set and hzr_stepwise()",
+                      "has no equivalent"),
+      RESTRICT = paste("RESTRICT constrains which variables may be",
+                       "selected (hazrd4.c's rsttbl)"))
+    explain <- function(item) {
+      if (!is.na(why[item])) return(unname(why[item]))
+      if (startsWith(item, "MAXSTEPS=")) {
+        return(paste0(item, ": PROC HAZARD refuses a negative MAXSTEPS ",
+                      "(stpwprc.c:76-79), so there is no run to translate"))
+      }
+      if (grepl("/(MOVE|ORDER)", item)) {
+        return(paste0(item, ": a per-variable MOVE= or ORDER= has no ",
+                      "hzr_stepwise() equivalent (its max_move is per run)"))
+      }
+      paste0(item, ": force_in is keyed by variable name across phases, ",
+             "so it would be pinned in the phase SAS leaves movable")
+    }
+    paste0(
+      "SELECTION carries ", paste(refusals, collapse = ", "),
+      ", which this translator cannot run faithfully. ",
+      paste(vapply(refusals, explain, character(1)), collapse = "; ")
+    )
+  }
+
   # A phase covariate is evaluated only in `data`, and with no DATA= there is
   # none: hazard() refuses the call (#299) and tells the reader to pass
   # `data =`, which the SAS job never had. Read the emitted phase calls rather
   # than the SAS text, so this tracks what the chunk would carry (#311).
+  # The emitted phases are NOT the whole question, though: SELECTION withholds
+  # its candidates from them, and /E variables are never in them, yet the
+  # screen's scope and the listwise guard read both from `data` too. Reading
+  # only the phase calls made this refusal blind to exactly what SELECTION
+  # withholds (#160), so every phase-statement variable outside the base
+  # model (listwise_only) counts as well.
   phase_has_formula <- vapply(
     as.list(parms$phases)[-1L],
     function(ph) is.call(ph) && !is.null(ph[["formula"]]),
     logical(1)
   )
-  if (is.null(data_name) && any(phase_has_formula)) {
+  # A SELECTION job always needs `data`, even with no phase variable at all:
+  # hzr_stepwise() refits each candidate from it and stops without it.
+  if (is.null(data_name) &&
+      (any(phase_has_formula) || length(parms$listwise_only) ||
+         !is.null(sel))) {
+    # Say what is actually true of this job. "A phase has covariates" is
+    # false when every named variable sits outside the emitted phases: a
+    # SELECTION candidate, an /E variable, or a covariate of a phase that is
+    # not built. Those are read by the screen or by the missing-row guard.
+    why_data <- if (any(phase_has_formula)) {
+      paste0("but a phase has covariates, and hazard() evaluates a phase's ",
+             "covariates only in `data`.")
+    } else if (!is.null(sel)) {
+      paste0("but it carries a SELECTION statement, and hzr_stepwise() needs ",
+             "`data` to refit each candidate",
+             if (length(parms$listwise_only)) paste0(
+               " (this job's are ", paste(parms$listwise_only, collapse = ", "),
+               ")"),
+             ".")
+    } else {
+      paste0("but its phase statements name ",
+             paste(parms$listwise_only, collapse = ", "),
+             ", which are outside the fitted model. With no dataset the ",
+             "translation cannot say where to read them, and PROC HAZARD ",
+             "deletes rows where any is missing.")
+    }
     untr <- rbind(untr, .hzr_untranslated_frame(
       NA_integer_, "DATA=",
-      paste("the job names no DATA= dataset, but a phase has covariates,",
-            "which hazard() evaluates only in `data`. Add DATA= to the job",
-            "and translate again, or fit it by hand (#311).")
+      paste("the job names no DATA= dataset,", why_data, "Add DATA= to the",
+            "job and translate again, or fit it by hand (#311).")
     ))
+    if (!is.null(sel)) {
+      untr <- rbind(untr, sel$untranslated)
+      reason <- selection_refusal(untr)
+      if (!is.null(reason)) {
+        untr <- rbind(untr, .hzr_untranslated_frame(NA_integer_, "SELECTION",
+                                                    reason))
+      }
+    }
     return(list(
-      call = quote(stop(
-        "This PROC HAZARD job names no DATA= dataset, but a phase has ",
-        "covariates, and hazard() evaluates a phase's covariates only in ",
-        "`data`. Name the dataset with DATA= and translate the job again, ",
-        "or fit the model by hand.",
-        call. = FALSE
-      )),
+      call = as.call(list(quote(stop), paste(
+        "This PROC HAZARD job names no DATA= dataset,", why_data,
+        "Name the dataset with DATA= and translate the job again, or fit the",
+        "model by hand."
+      ), call. = FALSE)),
       status_call = NULL, outhaz = outhaz, untranslated = untr,
       tokens_seen = seen, tokens_mapped = mapped
     ))
@@ -689,13 +808,15 @@
     any_na <- Reduce(function(a, b) call("|", a, b),
                      lapply(lw, function(v) call("is.na", v)))
     msg <- paste(
-      "This job has rows where a phase variable that is not in the fitted",
+      "This job has rows where a phase variable outside the fitted base",
       "model --", paste(parms$listwise_only, collapse = ", "), "-- is",
-      "missing. PROC HAZARD still deletes those rows (getrisk.c lists every",
-      "phase variable, and readobs.c drops a row where any is missing), but",
-      "hazard() never sees these variables and would fit the rows. Drop",
-      "the rows before fitting, subsetting to complete values of those",
-      "variables."
+      "missing. Such a variable is excluded (/E), belongs to a phase this",
+      "job does not select, or is a SELECTION candidate the screen offers",
+      "rather than the base model carrying it. PROC HAZARD still deletes",
+      "those rows (getrisk.c lists every phase variable, and readobs.c drops",
+      "a row where any is missing), and hazard() cannot, because the base",
+      "model it fits does not contain the variable. Drop the rows before",
+      "fitting, subsetting to complete values of those variables."
     )
     guarded <- bquote({
       if (any(.(any_na))) stop(.(msg), call. = FALSE)
@@ -745,45 +866,143 @@
   if (length(ctl)) args$control <- as.call(c(quote(list), ctl))
 
   head <- quote(hazard)
-  if (!is.null(sel_ops)) {
-    sel <- .hzr_selection_spec(sel_ops)
+  stepwise_call <- NULL
+  screen_check_call <- NULL
+  if (!is.null(sel)) {
     untr <- rbind(untr, sel$untranslated)
-    # A SELECTION statement that requests stepwise cannot be translated into
-    # hzr_stepwise(): .hzr_refit_with_scope() (R/stepwise-refit.R) requires a
-    # formula-interface base fit, and this translator always emits the
-    # vector interface. Every candidate refit therefore errors, the forward
-    # step downgrades those errors to warnings, and the run silently returns
-    # zero steps -- indistinguishable from "nothing met slentry". That is
-    # exactly the shipped-defect shape AGENTS.md warns about, so refuse
-    # loudly instead, mirroring .hzr_censor_spec()'s LCENSOR + ICENSOR
-    # refusal above: record an untranslated row and emit a stop() chunk in
-    # place of the fit, rather than a hazard()/hzr_stepwise() call.
-    if (isTRUE(sel$stepwise)) {
-      untr <- rbind(untr, .hzr_untranslated_frame(
-        NA_integer_, "SELECTION",
-        paste("stepwise selection is not translated: hzr_stepwise()'s refit",
-              "path needs a formula-interface base fit, and this translator",
-              "emits the vector interface, so every candidate refit would",
-              "error and the screen would silently report zero steps. Run",
-              "this job's selection by hand (#160).")
-      ))
+    reason <- selection_refusal(untr)
+    if (!is.null(reason)) {
+      untr <- rbind(untr, .hzr_untranslated_frame(NA_integer_, "SELECTION",
+                                                  reason))
       return(list(
-        call = quote(stop(
-          "This job's SELECTION statement requests a stepwise screen, which ",
-          "is not translated: the stepwise-selection refit path needs a ",
-          "formula-interface base fit, and this translator emits the ",
-          "vector interface, so every candidate refit would error and the ",
-          "screen would silently report zero steps -- indistinguishable ",
-          "from \"nothing met slentry\". Run this job's selection by hand ",
-          "(#160)."
-        )),
+        call = as.call(c(quote(stop), list(paste0(reason, ".")),
+                        list(call. = FALSE))),
         status_call = NULL, outhaz = outhaz, untranslated = untr,
         tokens_seen = seen, tokens_mapped = mapped
+      ))
+    }
+
+    sw_args <- list(as.name("fit_base"))
+    # A backward screen takes no scope: hzr_stepwise() ignores it there
+    # (#343), and under BACKWARD a bare variable starts IN the model
+    # (setstat.c), so the base already carries the full candidate set.
+    if (!identical(sel$direction, "backward")) {
+      # ALWAYS emit scope, with an explicit NULL for a phase that offers no
+      # candidate. hzr_stepwise(scope = NULL) enumerates every data-frame
+      # column not already in the model, so omitting the argument handed the
+      # screen the whole SAS dataset -- the EVENT count and the time
+      # variable included.
+      scope <- parms$selection$scope %||% list()
+      sw_args$scope <- as.call(c(quote(list), lapply(scope, function(v) {
+        if (length(v)) str2lang(paste("~", paste(v, collapse = " + "))) else NULL
+      })))
+    }
+    sw_args$data <- args$data
+    # hzr_stepwise() forwards `...` to every refit. Without the job's control
+    # there, the selected model is refitted at hazard()'s defaults: a
+    # NOCONSERVE job's base ran without Conservation of Events and its
+    # selected model with it.
+    if (!is.null(args$control)) sw_args$control <- args$control
+    sw_args$direction <- sel$direction
+    # SAS enters on the score statistic and removes on Wald, which is what
+    # criterion = "score" does here.
+    sw_args$criterion <- "score"
+    sw_args$slentry <- sel$slentry
+    sw_args$slstay <- sel$slstay
+    # MOVE= is NOT mapped onto max_move: they count different things.
+    # PROC HAZARD counts DELETIONS only (hazrd4.c:361-377, an addition counts
+    # only under NOSTEPWISE) and keys the counter per (variable, PHASE) theta
+    # slot (setstat.c:15). hzr_stepwise() counts entries AND exits, keyed by
+    # variable NAME across phases, and a frozen variable is then pinned both
+    # in and out. Emitting SAS's MOVE = 1 therefore froze a variable that
+    # simply entered two phases, which PROC HAZARD leaves movable (#160
+    # review). Recorded rather than translated into a value that is not the
+    # same quantity.
+    # MAXSTEPS: PROC HAZARD's default is INT_MAX (stpwprc.c:73-74), not
+    # hzr_stepwise()'s 50, so the default is written out like the others.
+    sw_args$max_steps <- if (is.null(sel$max_steps)) .Machine$integer.max else
+      sel$max_steps
+    # Only a variable a BUILT phase carries: sel_force_in is collected
+    # across all three phases, and hzr_stepwise() ignores a name no phase
+    # has, silently.
+    built_vars <- unique(c(unlist(parms$selection$movable %||% list()),
+                           unlist(parms$selection$in_model %||% list())))
+    force_in <- intersect(parms$selection$force_in %||% character(0),
+                          built_vars)
+    if (length(force_in)) {
+      sw_args$force_in <- as.call(c(quote(c), as.list(force_in)))
+    }
+    stepwise_call <- as.call(c(quote(hzr_stepwise),
+                               Filter(Negate(is.null), sw_args)))
+    # A screen can stop because no candidate could be SCORED, which reads
+    # exactly like "nothing met slentry" (#159). Say which it was.
+    # `fit` is substituted for this block's own slot name by the caller, in
+    # the message string as well as the code: a second SELECTION block used
+    # to tell the reader to look at `fit`, which in that document is a
+    # different object.
+    #
+    # AUTHORING RULE for anything emitted from here: it runs in the READER'S
+    # session, so it may use only base R at the version DESCRIPTION declares
+    # plus this package's exports -- never this package's internals. %||% is
+    # the worked example (#160 review): this package defines its own, so the
+    # 62 internal uses are fine, but base R gained it in 4.4 while Depends
+    # says 4.1, and an emitted chunk using it errored for a reader on 4.1 to
+    # 4.3. A grep for the construct mostly finds those false positives; the
+    # question is always which side of the namespace boundary the code runs
+    # on. Nothing checks this automatically.
+    screen_check_call <- bquote({
+      n_unscored <- fit$criteria$n_uncomputable_scores
+      if (is.null(n_unscored)) n_unscored <- 0L
+      if (n_unscored > 0L) {
+        warning(n_unscored, " candidate score(s) were uncomputable in this ",
+                "screen; see ", .(quote(fit_label)),
+                "$criteria$uncomputable_reasons. A screen that could not ",
+                "score a candidate did not test it.", call. = FALSE)
+      }
+      invisible(n_unscored)
+    })
+    # Removal is tested on Wald p-values, which need a usable variance for
+    # the coefficient being tested. A multiphase ICENSOR fit without
+    # numDeriv has none at all, and a masked variance is NA inside an
+    # otherwise valid matrix; either way the screen cannot remove that
+    # variable, which reads exactly like "it met slstay". Only the
+    # variables the screen could remove are read: a FIXED shape has an NA
+    # variance by design. Matched EXACTLY, so a movable `A` does not claim a
+    # forced-in `AGE` (a factor candidate's dummy columns are therefore not
+    # read; SAS phase variables are numeric). A forward-only screen never removes, so it gets
+    # no such check. Indexed by string: the caller substitutes the SYMBOL
+    # `fit` with this block's slot name, and `fit$fit` would rename the
+    # component too.
+    removable <- unique(unlist(parms$selection$movable %||% list()))
+    if (!identical(sel$direction, "forward") && length(removable)) {
+      removable_re <- paste0("^phase_[0-9]+[.](",
+                             paste(removable, collapse = "|"), ")$")
+      removal_check <- bquote({
+        est <- names(stats::coef(fit))
+        v <- fit[["fit"]][["vcov"]]
+        var_ok <- if (is.matrix(v) && nrow(v) == length(est)) {
+          is.finite(diag(v)) & diag(v) > 0
+        } else {
+          rep(FALSE, length(est))
+        }
+        untestable <- est[grepl(.(removable_re), est) & !var_ok]
+        if (length(untestable)) {
+          warning("The screened model has no usable standard error for ",
+                  paste(untestable, collapse = ", "), ", so no Wald ",
+                  "removal test could be computed for it. For an ",
+                  "interval-censored job, install 'numDeriv'.", call. = FALSE)
+        }
+      })
+      screen_check_call <- as.call(c(
+        as.name("{"),
+        as.list(removal_check)[-1L],
+        as.list(screen_check_call)[-1L]
       ))
     }
   }
 
   list(call = as.call(c(head, args)), status_call = status_call,
+       stepwise_call = stepwise_call, screen_check_call = screen_check_call,
        outhaz = outhaz, untranslated = untr, tokens_seen = seen,
        tokens_mapped = mapped)
 }
@@ -819,7 +1038,23 @@
 #' @noRd
 .hzr_selection_spec <- function(operands) {
   out <- list(stepwise = TRUE, direction = "both", slentry = NULL,
-              slstay = NULL, untranslated = .hzr_untranslated_frame())
+              slstay = NULL, max_steps = NULL, max_move = NULL,
+              refuse = character(0), robust = character(0),
+              untranslated = .hzr_untranslated_frame())
+  saw_stepwise <- FALSE
+  move_written <- FALSE
+  saw_backward <- FALSE
+  saw_oneway <- FALSE
+  num_opt <- function(val_txt, key, what) {
+    val <- suppressWarnings(as.numeric(val_txt))
+    if (is.na(val)) {
+      out$untranslated <<- rbind(out$untranslated, .hzr_untranslated_frame(
+        NA_integer_, key, paste0("non-numeric value for ", what)
+      ))
+      return(NULL)
+    }
+    val
+  }
   for (op in operands) {
     eqp <- .idx(op, "=")
     key <- if (eqp > 0L) substring(op, 1L, eqp - 1L) else op
@@ -833,32 +1068,56 @@
       next
     }
     switch(token,
-      STEPWISE = out$direction <- "both",
-      BACKWARD = out$direction <- "backward",
+      # Direction is resolved AFTER the loop, because stpwprc.c:16-22 is
+      # order-independent: STEPWISE sets sw = 1 and BACKWARD then sets
+      # sw = 0 and bw = 1 whatever order they appear in. A last-wins switch
+      # ran a two-way screen for "SELECTION BACKWARD STEPWISE;".
+      STEPWISE = saw_stepwise <- TRUE,
+      BACKWARD = saw_backward <- TRUE,
       # NOSTEPWISE still screens: the SELECTION statement sets sw = 1
       # (hazard_y.y setopt(33), stpwprc.c) and NOSTEPWISE only sets nosw,
       # capping each variable at one move -- forward only (#342 review).
-      ONEWAY   = out$direction <- "forward",
-      SLENTRY  = {
-        val <- suppressWarnings(as.numeric(val_txt))
-        if (is.na(val)) {
-          out$untranslated <- rbind(out$untranslated, .hzr_untranslated_frame(
-            NA_integer_, key, "non-numeric value for SLENTRY"
-          ))
-        } else {
-          out$slentry <- val
+      ONEWAY   = saw_oneway <- TRUE,
+      SLENTRY  = out$slentry <- num_opt(val_txt, key, "SLENTRY") %||% out$slentry,
+      SLSTAY   = out$slstay <- num_opt(val_txt, key, "SLSTAY") %||% out$slstay,
+      MAXSTEPS = {
+        v <- num_opt(val_txt, key, "MAXSTEPS")
+        # stpwprc.c:76-79 exits the job on a negative MAXSTEPS, so there is
+        # no run to translate.
+        if (!is.null(v) && v < 0) {
+          out$refuse <- c(out$refuse, paste0("MAXSTEPS=", format(v)))
+        } else if (!is.null(v)) {
+          # stpwprc.c:82 casts to int, so a fractional MAXSTEPS truncates.
+          out$max_steps <- trunc(v)
         }
       },
-      SLSTAY   = {
-        val <- suppressWarnings(as.numeric(val_txt))
-        if (is.na(val)) {
-          out$untranslated <- rbind(out$untranslated, .hzr_untranslated_frame(
-            NA_integer_, key, "non-numeric value for SLSTAY"
-          ))
-        } else {
-          out$slstay <- val
-        }
+      MOVE     = {
+        out$max_move <- num_opt(val_txt, key, "MOVE") %||% out$max_move
+        move_written <- TRUE
       },
+      # Printing only (H->nps / H->npq), so the fit and the screen are the
+      # same with or without them: recorded, not refused.
+      NOPRINTS = out$untranslated <- rbind(out$untranslated,
+        .hzr_untranslated_frame(NA_integer_, key,
+                                "suppresses a PROC HAZARD printout only")),
+      NOPRINTQ = out$untranslated <- rbind(out$untranslated,
+        .hzr_untranslated_frame(NA_integer_, key,
+                                "suppresses a PROC HAZARD printout only")),
+      # Refused: FAST is a different search (H->f) and MAXVARS caps the
+      # selected set, neither of which hzr_stepwise() can express.
+      FAST       = out$refuse <- c(out$refuse, "FAST"),
+      MAXVARS    = out$refuse <- c(out$refuse, "MAXVARS"),
+      # Recorded, not refused. ROBUST and SEMIROBUST choose PROC HAZARD's
+      # OPTIMIZER for the stepwise step, nothing else: stpwprc.c:60-69 sets
+      # swnewt/swhess, hazrd2.c:31-34 swaps them into H->newton/H->truhes
+      # around the step and :87-88 restores them, and cmpmeth.c shows those
+      # flags pick Newton vs quasi-Newton and a Hessian vs steepest-descent
+      # start. They do not touch the variance, the converged estimates or
+      # the Wald tests that drive selection. Both earlier rulings on ROBUST
+      # (refuse, then translate "because it changes the variance") rested
+      # on the false premise that they did (#160 review, pass 3).
+      ROBUST     = out$robust <- c(out$robust, "ROBUST"),
+      SEMIROBUST = out$robust <- c(out$robust, "SEMIROBUST"),
       {
         out$untranslated <- rbind(out$untranslated, .hzr_untranslated_frame(
           NA_integer_, key, "no hzr_stepwise() equivalent"
@@ -866,6 +1125,67 @@
       }
     )
   }
+  for (kw in out$robust) {
+    out$untranslated <- rbind(out$untranslated, .hzr_untranslated_frame(
+      NA_integer_, kw, paste0(
+        "chooses PROC HAZARD's optimizer for the stepwise step (quasi-Newton, ",
+        "started ", if (identical(kw, "ROBUST")) "by steepest descent" else
+          "from the Hessian", "; stpwprc.c:60-69, hazrd2.c:31-34). ",
+        "hzr_stepwise() uses its own optimizer. This changes the path to ",
+        "convergence, and on a multimodal likelihood it can change the ",
+        "optimum reached, and with it the selection")))
+  }
+
+  # BACKWARD wins over any other direction keyword, whatever the order
+  # (stpwprc.c:16-22). NOSTEPWISE only caps moves, so it is forward.
+  out$direction <- if (saw_backward) "backward" else
+    if (saw_oneway) "forward" else "both"
+
+  # PROC HAZARD's own defaults and its clamping, so the emitted call never
+  # inherits hzr_stepwise()'s different defaults and never carries a value
+  # PROC HAZARD would have thrown away (stpwprc.c:27-56, przconc.c:25).
+  # An SLE outside (0, 1) is not an aggressive screen, it is a value SAS
+  # replaces: slstay = 0 removes nothing and slentry = 5 enters everything.
+  clamp <- function(val, key, lo_open, hi_open, default, why) {
+    if (is.null(val)) return(default)
+    if (val <= lo_open || val >= hi_open) {
+      out$untranslated <<- rbind(out$untranslated, .hzr_untranslated_frame(
+        NA_integer_, paste0(key, "=", format(val)), why))
+      return(default)
+    }
+    val
+  }
+  out$slentry <- clamp(out$slentry, "SLENTRY", 0, 1, 0.3,
+                       paste("PROC HAZARD ignores an SLENTRY outside (0, 1)",
+                             "and uses 0.3 (stpwprc.c:27-35)"))
+  sls_default <- if (identical(out$direction, "backward")) 0.05 else 0.2
+  out$slstay <- clamp(out$slstay, "SLSTAY", 0, 1, sls_default,
+                      paste("PROC HAZARD ignores an SLSTAY outside (0, 1)",
+                            "and uses its default (stpwprc.c:36-44)"))
+  if (is.null(out$max_move)) {
+    out$max_move <- 1
+  } else if (saw_oneway && out$max_move > 1) {
+    out$untranslated <- rbind(out$untranslated, .hzr_untranslated_frame(
+      NA_integer_, paste0("MOVE=", format(out$max_move)),
+      paste("NOSTEPWISE caps every variable at one move, so PROC HAZARD",
+            "resets MOVE to 1 (stpwprc.c:54-58, przconc.c:25)")))
+    out$max_move <- 1
+  }
+  # Recorded for EVERY screen, not only a job that wrote MOVE=: the two
+  # counters differ whatever the value, and PROC HAZARD's own default of 1
+  # does not map onto hzr_stepwise()'s 4 either.
+  out$untranslated <- rbind(out$untranslated, .hzr_untranslated_frame(
+    NA_integer_,
+    if (move_written) paste0("MOVE=", format(out$max_move)) else
+      "MOVE (PROC HAZARD default 1)",
+    paste(
+      "PROC HAZARD's MOVE limit counts a variable's deletions, separately",
+      "for each phase (hazrd4.c:361-362, setstat.c:15): at the default of 1",
+      "a variable removed from a phase can never re-enter it",
+      "(swvari.c:159-160). hzr_stepwise()'s max_move counts entries and",
+      "exits together across every phase, so the two cannot be mapped onto",
+      "each other. The screen runs with hzr_stepwise()'s own oscillation",
+      "guard, so it can re-enter variables PROC HAZARD would keep out")))
   out
 }
 
