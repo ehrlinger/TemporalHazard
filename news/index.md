@@ -619,6 +619,25 @@
 
 ### Bug fixes
 
+- **A backward
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  drop’s refusal now names the reduced design, and its pre-check no
+  longer repeats parse-time warnings
+  ([\#343](https://github.com/ehrlinger/TemporalHazard/issues/343)).**
+  The reason for refusing a drop that removes no column read “the
+  refit’s design”, but on the single-distribution path that design is
+  built before any refit, so it described something that did not exist;
+  it now reads “the reduced design”, on both paths. The same pre-check
+  parsed the current and the reduced formula before the refit parsed the
+  reduced one again, which doubled any warning raised while building the
+  design: 8 per step instead of 4. It now parses quietly. When `data` is
+  the frame the base was fitted on, the current formula’s warnings
+  already surfaced from the base fit, and the reduced formula’s warnings
+  surface again from the refit if the drop goes ahead. When `data`
+  differs, the current formula’s warnings on it are no longer shown;
+  they cannot change the pre-check’s decision, which compares column
+  counts.
+
 - **A classed numeric *matrix* column was read as its raw storage, when
   fitting as well as predicting
   ([\#371](https://github.com/ehrlinger/TemporalHazard/issues/371)).**
