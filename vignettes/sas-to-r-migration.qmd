@@ -100,7 +100,7 @@ instead. So the statement translates to:
 fit <- hazard(..., data = avcs)
 ```
 
-The `control` settings that change a fit are `maxit` and `reltol` for
+The `control` settings a fit reads are `maxit` and `reltol` for
 every model, plus `n_starts`, `conserve`, `phase_share_tol` and
 `start_seed` for a multiphase one. If you pass `nocov`, `nocor` or
 `condition` anyway, `hazard()` warns that the option does nothing and fits
@@ -202,7 +202,8 @@ fit <- hazard(
 > `THALF` go in as logs; `NU` and `M` go in as written. A fixed parameter is
 > declared on the phase that owns it, so `FIXM` is `fixed = "m"` inside the
 > early `hzr_phase()`. `hazard()` does not read a `control$fix` entry: a fix
-> written there leaves `M` free, and nothing warns you.
+> written there leaves `M` free, and `hazard()` warns that it never reads
+> `control$fix`.
 
 ---
 
