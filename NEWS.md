@@ -568,19 +568,19 @@
   dropped rows with missing covariates now stops and says so (#372).** Such a
   fit drops every row whose phase covariate is missing, `NA` or `NaN` (in the
   data, or made so by a transform such as `sqrt()` or `log()` of a negative
-  value), but keeps the full response in `$data`. The score test's row check counted that full
-  response, so it passed; every candidate then failed to line up with the
-  fit's design, and the screen stopped with no steps, blaming each candidate
-  as `not_expandable`. The check now counts the rows the fit was estimated on
-  and stops with an error naming how many rows the base dropped and the
-  remedy: refit the base model on only the rows it used and pass that data
-  frame. `hzr_bootstrap()` with `scope` and `criterion = "score"` on such a
-  base changes the same way: it used to run replicates that could score
-  nothing, and now stops before the first.
-  This was never a silent wrong answer (the screen always warned that nothing
-  could be scored), but it reported the wrong cause, and a screen that used
-  to finish with zero steps now stops with an error. A base fitted on
-  complete data is unaffected.
+  value), but keeps the full response in `$data`. The score test's row check
+  counted that full response, so it passed; every candidate then failed to
+  line up with the fit's design, and the screen stopped with no steps, blaming
+  each candidate as `not_expandable`. The check now counts the rows the fit
+  was estimated on and stops with an error naming how many rows the base
+  dropped and the remedy: refit the base model on only the rows it used and
+  pass that data frame. `hzr_bootstrap()` with `scope` and
+  `criterion = "score"` on such a base changes the same way: it used to run
+  replicates that could score nothing, and now stops before the first. This
+  was never a silent wrong answer (the screen always warned that nothing could
+  be scored), but it reported the wrong cause, and a screen that used to
+  finish with zero steps now stops with an error. A base fitted on complete
+  data is unaffected.
 
 * **`hzr_stepwise()` now says when it could not run a Wald test for an entry
   or a removal (#389).** A Wald test needs the model's variance for the
