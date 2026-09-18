@@ -92,13 +92,15 @@
   `scope = ~ age` still dropped `mal`, the variable left out of the scope,
   and a scope variable the base lacked was never tested. The result was the
   same as with no scope, and nothing said so. Such a call is now an error:
-  pass the full model as the base, protect terms with `force_in`, and leave
-  `scope` unset or empty (`~ 1`), since an empty scope offers nothing to
-  enter and so agrees with a backward screen. In `hzr_bootstrap()`, an empty
-  scope with `direction = "backward"` runs a backward screen on each
-  replicate. Under `direction = "both"`, `scope` names what may enter;
-  as in SAS, the drop half still considers every term in the model except
-  `force_in`. `hzr_bootstrap()` refuses the combination before seeding.
+  pass the full model as the base and protect terms with `force_in`. In
+  `hzr_stepwise()`, leave `scope` unset or empty (`~ 1`), since an empty
+  scope offers nothing to enter and so agrees with a backward screen. In
+  `hzr_bootstrap()`, an unset `scope` means no screen at all, so pass an
+  empty scope such as `~ 1` with `direction = "backward"` to run a backward
+  screen on each replicate. Under `direction = "both"`, `scope` names what
+  may enter; as in SAS, the drop half still considers every term in the
+  model except those in `force_in` and those frozen by `max_move`.
+  `hzr_bootstrap()` refuses the combination before seeding.
 
 * **`hzr_bootstrap()` now refuses a selection argument passed without
   `scope` (#343).** Without `scope` there is no screen, and `direction`,
