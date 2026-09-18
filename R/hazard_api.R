@@ -2603,7 +2603,7 @@ vcov.hazard <- function(object, ...) {
     # all.vars(quote(other$tt)) is c("other", "tt") and the warning names
     # `tt` -- a column that was never consulted -- while `data$tt`, the
     # remedy the warning itself prescribes, triggers it.
-    nms <- .hzr_mask_symbols(e)
+    nms <- .hzr_ambiguity_symbols(e)
     nms[nms %in% names(data) &
           vapply(nms, .hzr_bound_locally, logical(1), env = env)]
   })
@@ -2627,6 +2627,42 @@ vcov.hazard <- function(object, ...) {
     )
   }
   invisible(NULL)
+}
+
+
+#' The names a masked argument looks up, for the ambiguity warning
+#'
+#' As `.hzr_mask_symbols()`, which skips the name after `$` and `@`, but
+#' also skipping both operands of `::` and `:::`: `stats::runif(n)` looks up
+#' `n`, never a `stats` or `runif` column, so neither can be ambiguous (#401
+#' review). A namespace-qualified call's own arguments are still collected.
+#' `.hzr_mask_symbols()` is left as it is: it also feeds the formula's
+#' `data_vars` and the `time` check.
+#'
+#' @param e A language object, symbol or constant.
+#' @return Character vector of symbol names, possibly empty.
+#' @keywords internal
+#' @noRd
+.hzr_ambiguity_symbols <- function(e) {
+  if (is.symbol(e)) {
+    return(as.character(e))
+  }
+  if (!is.call(e)) {
+    return(character(0))
+  }
+  head <- e[[1L]]
+  if (is.symbol(head) && as.character(head) %in% c("::", ":::")) {
+    return(character(0))
+  }
+  if (is.symbol(head) && as.character(head) %in% c("$", "@") &&
+        length(e) >= 3L) {
+    return(.hzr_ambiguity_symbols(e[[2L]]))
+  }
+  parts <- as.list(e)[-1L]
+  if (!is.symbol(head)) {
+    parts <- c(list(head), parts)
+  }
+  unique(unlist(lapply(parts, .hzr_ambiguity_symbols), use.names = FALSE))
 }
 
 #' Apply `.hzr_numeric_values()` to every column of a data frame or list

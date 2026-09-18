@@ -71,7 +71,11 @@
   both a column and a visible variable, the column is used and `hazard()`
   now warns, naming it, on both interfaces. If you see that warning, the
   fit may differ from one made by an earlier version. A name that is only a
-  column, or only a variable, does not warn.
+  column, or only a variable, does not warn. Nor does the namespace or
+  function name in a qualified call such as `base::abs(w)`, which is never
+  looked up in `data`; that false warning had been raised on the vector
+  interface since 1.2.2 (#151), and only the call's own arguments are now
+  checked.
 
 * **A multiphase phase formula without an intercept no longer drops its
   first term (#303).** `hzr_phase(formula = ~ 0 + age)` or `~ age - 1`

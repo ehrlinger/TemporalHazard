@@ -83,3 +83,40 @@ test_that("both interfaces read the same vector and warn on the same ambiguous i
   expect_match(via_vector$msg, "or omit 'data' to use the calling frame's value\\.$")
   expect_match(via_formula$msg, "not a column of 'data'\\.$")
 })
+
+test_that("a namespace-qualified call does not raise a false ambiguity warning", {
+  # `::` names a namespace and an export; neither is looked up in data, so a
+  # column that happens to share either name is not ambiguous (#401 review).
+  # Found on the vector interface too, where it had shipped since #151.
+  d <- fw_data()
+  names(d)[names(d) == "wc"] <- "base"
+  base <- "a caller variable named base"
+  w_ok <- d$base
+  want <- hazard(survival::Surv(t, s) ~ x, data = d, weights = w_ok,
+                 dist = "weibull", theta = c(1, 1, 0), fit = TRUE)
+  expect_no_warning(
+    got <- hazard(survival::Surv(t, s) ~ x, data = d,
+                  weights = base::abs(w_ok), dist = "weibull",
+                  theta = c(1, 1, 0), fit = TRUE)
+  )
+  expect_identical(got$fit$objective, want$fit$objective)
+  expect_no_warning(
+    hazard(data = d, time = t, status = s, x = as.matrix(d["x"]),
+           weights = base::abs(w_ok), dist = "weibull", theta = c(1, 1, 0),
+           fit = TRUE)
+  )
+})
+
+test_that("an ambiguous argument inside a namespace-qualified call still warns", {
+  # The control: skipping the namespace and export names must not skip the
+  # call's own arguments, which ARE looked up in data.
+  d <- fw_data()
+  wc <- rep(1, 40)
+  base <- "a caller variable named base"
+  d$base <- 1
+  expect_warning(
+    hazard(survival::Surv(t, s) ~ x, data = d, weights = base::abs(wc),
+           dist = "weibull", theta = c(1, 1, 0), fit = TRUE),
+    "'wc' \\(weights\\): the name is both a column"
+  )
+})
