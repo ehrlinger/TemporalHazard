@@ -839,6 +839,29 @@ hzr_theta_names <- function(phases, covariates = NULL) {
   theta
 }
 
+#' Covariate columns each phase uses, located as the optimizer locates them
+#'
+#' A phase formula against `data`, else the global design, else none (#328).
+#' @noRd
+.hzr_phase_covariate_counts <- function(phases, data, x_fit) {
+  vapply(phases, function(ph) {
+    if (!is.null(ph$formula) && !is.null(data)) {
+      ncol(.hzr_formula_design(ph$formula, data)$x)
+    } else if (!is.null(x_fit)) {
+      ncol(x_fit)
+    } else {
+      0L
+    }
+  }, integer(1))
+}
+
+#' Theta entries each phase takes: log_mu, free shapes, covariates (#408)
+#' @noRd
+.hzr_phase_theta_counts <- function(phases, data, x_fit) {
+  vapply(phases, function(ph) 1L + .hzr_phase_n_shape(ph), integer(1)) +
+    .hzr_phase_covariate_counts(phases, data, x_fit)
+}
+
 #' Apply the constraints to a supplied theta, saying what was replaced
 #'
 #' `hzr_phase()` warns when a value passed for a derived shape is replaced;
