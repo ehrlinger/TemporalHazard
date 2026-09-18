@@ -4,6 +4,10 @@
 #   bash gate-slot.sh acquire <slug> <description>   -> prints the slot dir held
 #   bash gate-slot.sh release <slotdir>
 #
+# The gate root is TH_GATE_ROOT, defaulting to this machine's shared root
+# (/private/tmp/claude-504/th-heavy-gate-slots), which every session here
+# uses. Set TH_GATE_ROOT on any other machine.
+#
 # FIFO by ticket. Polls every 120 s and never shortens the interval: the
 # ticket order IS the fairness mechanism, and racing it is what the queue
 # was added to stop. Never removes another session's ticket or slot.
@@ -39,8 +43,10 @@ HEADSHA="$(git rev-parse HEAD)"
 WT="$(pwd)"
 
 mkdir -p "$QUEUE"
-# The pid makes a ticket unique when two sessions start in the same second.
-T="$(date +%s)-$SLUG-$$"
+# Microsecond arrival time, so two tickets in the same second still sort in
+# arrival order (the queue sorts on this first field, numerically); the pid
+# keeps the name unique.
+T="$(perl -MTime::HiRes=time -e 'printf "%.6f", time')-$SLUG-$$"
 echo "release-census | $WT | $HEADSHA | $DESC" > "$QUEUE/$T"
 echo "took ticket $T" >&2
 

@@ -144,8 +144,10 @@ compare_probe <- function(a, b) {
 }
 
 # SAS/C accepts an optimum only when the relative gradient is at most
-# eps^(1/3), about 6.06e-06. That is the criterion the package itself applies.
-GRADIENT_TOL <- 6.06e-06
+# eps^(1/3), about 6.055e-06. That is the criterion the package itself applies
+# (R/optimizer.R), so it is derived the same way, not copied as a rounded
+# literal that would accept gradients the package rejects.
+GRADIENT_TOL <- .Machine$double.eps^(1 / 3)
 RCOND_FLOOR <- 1e-8
 
 gate_verdict <- function(g) {

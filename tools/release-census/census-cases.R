@@ -634,8 +634,10 @@ census_cases <- function() {
     }),
 
     ## -- translator --------------------------------------------------------
-    # A translator-generated fit: the generated call is evaluated, so this
-    # compares the code the translator writes AND the fit it produces.
+    # The translator's printed result for a small job: the call names and the
+    # coverage it reports. The generated calls are NOT evaluated here (they
+    # need the job's data bound); the corpus test in tests/ executes emitted
+    # code. The case name is kept so it compares across versions.
     translate_sas_fit = list(needs = "hzr_translate_sas", fn = function(d) {
       src <- paste(
         "%hazard( proc hazard data = one;",

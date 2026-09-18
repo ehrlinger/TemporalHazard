@@ -73,9 +73,12 @@ for fn in $ADDED; do
     else
       echo "  \\examples     : present and run by CRAN"
     fi
-    # A Suggests used in an example must be guarded.
-    if grep -qE 'ggplot2|haven|withr|numDeriv|scales|knitr' "$RD"; then
-      if grep -q 'requireNamespace' "$RD"; then
+    # A Suggests used in an example must be guarded. Only the \examples{}
+    # block counts: a mention in prose is not a use, and a requireNamespace()
+    # in prose would not guard one.
+    EX="$(perl -0777 -ne 'print $1 if /\\examples(\{(?:[^{}]++|(?1))*\})/s' "$RD")"
+    if printf '%s' "$EX" | grep -qE 'ggplot2|haven|withr|numDeriv|scales|knitr'; then
+      if printf '%s' "$EX" | grep -q 'requireNamespace'; then
         echo "  Suggests use  : guarded by requireNamespace()"
       else
         echo "  Suggests use  : a Suggests package appears UNGUARDED in the Rd"
