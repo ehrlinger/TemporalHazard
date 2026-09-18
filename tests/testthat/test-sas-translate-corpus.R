@@ -54,11 +54,20 @@ test_that("public-corpus jobs that translate also render", {
   failures <- character(0)
   ineligible <- character(0)
   seen <- new.env(parent = emptyenv())
+  # Jobs refused because PROC HAZARD itself rejects their phase statements
+  # (#340). The corpus carries only single-flag options (/E, /I, /S), all
+  # valid SAS, so none may be refused: this is the false-refusal check the
+  # corpus can give that the unit tests cannot.
+  n_parse_rejected <- 0L
 
   for (f in fs) {
     job <- tryCatch(suppressWarnings(hzr_translate_sas(f)), error = function(e) NULL)
     if (is.null(job)) next
     n_trans <- n_trans + 1L
+    src <- paste(unlist(lapply(job$calls, deparse)), collapse = " ")
+    if (grepl("PROC HAZARD does not run this job", src, fixed = TRUE)) {
+      n_parse_rejected <- n_parse_rejected + 1L
+    }
 
     # The corpus holds the same jobs under examples/ and tests/, so 37
     # translations are 21 distinct documents. Fitting each one once keeps
@@ -146,6 +155,7 @@ test_that("public-corpus jobs that translate also render", {
   # a stop() instead of an unfitted fit; that shape is tested without the
   # corpus in test-sas-translate-fits.R.
   expect_gt(n_trans, 20L)
+  expect_identical(n_parse_rejected, 0L)
   expect_gte(n_eligible, 10L)
   expect_gte(n_partial, 11L)
   expect_equal(n_rendered, n_eligible)
