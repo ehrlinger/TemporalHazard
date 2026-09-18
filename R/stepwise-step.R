@@ -68,8 +68,11 @@
         sc <- scope[[p]]
         if (!is.null(sc) && !inherits(sc, "formula")) {
           stop("`scope$", p, "` must be a one-sided formula such as ",
-               "`~ age + mal`, or NULL, not a ",
-               if (is.character(sc)) "character vector" else class(sc)[1L],
+               "`~ age + mal`, or NULL, not ",
+               # The class follows a fixed article: "not a integer" was the
+               # interpolated form (ledger item 2).
+               if (is.character(sc)) "a character vector" else
+                 paste0("an object of class ", class(sc)[1L]),
                ". A multiphase `scope` is a named list of formulas keyed by ",
                "phase.", call. = FALSE)
         }
