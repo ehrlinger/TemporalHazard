@@ -1197,6 +1197,41 @@ test_that("hzr_bootstrap warns when a select-mode screen picks no covariate", {
   expect_length(setdiff(unique(boot$replicates$parameter), names(coef(fit))), 0L)
 })
 
+test_that("a single-distribution select-mode screen that picks nothing warns too", {
+  # coef() of a single-distribution fit has no names, while the replicates
+  # name its shape parameters param_1, param_2. Compared against coef(), both
+  # read as selected covariates, so the warning never fired and the summary
+  # showed only the base parameters at pct = 100 with no word of why.
+  d <- stats::na.omit(avc[, c("int_dead", "dead", "age")])
+  fit <- hazard(Surv(int_dead, dead) ~ 1, data = d, dist = "weibull",
+                theta = c(0.1, 1), fit = TRUE)
+  expect_warning(
+    boot <- hzr_bootstrap(fit, n_boot = 3, seed = 1, scope = ~ age,
+                          criterion = "wald", slentry = 1e-300),
+    "selected no covariate in any of the 3 successful replicates",
+    fixed = TRUE
+  )
+  expect_equal(boot$n_success, 3L)
+  expect_setequal(boot$summary$parameter, c("param_1", "param_2"))
+})
+
+test_that("a single-distribution screen that selects a covariate does not warn", {
+  d <- stats::na.omit(avc[, c("int_dead", "dead", "age")])
+  fit <- hazard(Surv(int_dead, dead) ~ 1, data = d, dist = "weibull",
+                theta = c(0.1, 1), fit = TRUE)
+  w <- character()
+  boot <- withCallingHandlers(
+    hzr_bootstrap(fit, n_boot = 3, seed = 1, scope = ~ age,
+                  criterion = "wald", slentry = 0.99),
+    warning = function(e) {
+      w <<- c(w, conditionMessage(e))
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_true("age" %in% boot$summary$parameter)
+  expect_false(any(grepl("selected no covariate", w, fixed = TRUE)))
+})
+
 test_that("hzr_bootstrap does not warn when a screen does select covariates", {
   data(avc)
   phases <- list(
