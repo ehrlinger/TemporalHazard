@@ -90,7 +90,11 @@ test_that("a hazard() call with data= gets a loud missing-data guard chunk, firs
 
 test_that("hzr_translate_sas parses the packaged example without writing when out_dir is NULL", {
   f <- system.file("extdata", "hz-example.sas", package = "TemporalHazard")
-  job <- hzr_translate_sas(f)
+  # The example carries QUASI and CONDITION=14, which hazard() has no
+  # equivalent for, so they are recorded and the translator says so (#384).
+  expect_warning(job <- hzr_translate_sas(f),
+                 "2 untranslated construct(s) in hz-example.sas: QUASINEWTON, CONDITION",
+                 fixed = TRUE)
   expect_s3_class(job, "hzr_sas_job")
   expect_true(job$coverage$tokens_seen > 0L)
 })
