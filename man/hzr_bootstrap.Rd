@@ -54,16 +54,24 @@ original fixed-formula bootstrap: every replicate refits \code{object}'s
 exact model, and \code{summary$pct} is always ~100. When supplied (a
 one-sided formula, character vector, or, for multiphase fits, a
 named list of one-sided formulas keyed by phase, matching
-\code{\link[=hzr_stepwise]{hzr_stepwise()}}'s \code{scope}), each replicate runs a fresh
+\code{\link[=hzr_stepwise]{hzr_stepwise()}}'s \code{scope}; a two-sided formula is an error), each
+replicate runs a fresh
 \code{\link[=hzr_stepwise]{hzr_stepwise()}} selection instead; see Details.}
 
 \item{direction, slentry, slstay, max_steps, max_move, force_in, force_out}{Passed through to \code{\link[=hzr_stepwise]{hzr_stepwise()}} on each replicate when \code{scope} is
-supplied; ignored when \code{scope = NULL}. See \code{\link[=hzr_stepwise]{hzr_stepwise()}} for
+supplied. With \code{scope = NULL} nothing reads them, so a value other than
+the default is an error; the default's own value is accepted, whether or
+not it was passed, so that a wrapper forwarding its defaults still
+works.
+\code{direction = "backward"} with a non-empty \code{scope} is an error too: a
+backward screen does not read \code{scope}. For a backward screen on each
+replicate, pass an empty scope such as \code{~ 1}. See \code{\link[=hzr_stepwise]{hzr_stepwise()}} for
 definitions and defaults.}
 
 \item{criterion}{Entry / retention rule passed through to
-\code{\link[=hzr_stepwise]{hzr_stepwise()}} on each replicate when \code{scope} is supplied; ignored
-when \code{scope = NULL}. One of \code{"score"} (default), \code{"wald"}, or \code{"aic"}.
+\code{\link[=hzr_stepwise]{hzr_stepwise()}} on each replicate when \code{scope} is supplied; with
+\code{scope = NULL}, a value other than the default is an error. One of \code{"score"} (default), \code{"wald"}, or
+\code{"aic"}.
 \code{"score"} reproduces C/SAS HAZARD's \code{SELECTION} statistic and needs no
 per-candidate refit, which is what makes a bootstrap screen over many
 candidates tractable. Following SAS, the variance used during
