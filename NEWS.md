@@ -134,11 +134,10 @@
   column, so `theta` is one entry shorter for each such phase; a phase
   with its own `formula` is unaffected. To reuse a `theta` supplied for the
   old design, drop the first factor's first-level coefficient from the
-  global design, and from each phase that inherits it. Left unchanged, a
-  single-distribution fit stops with a `non-conformable arguments` error.
-  A multiphase fit does **not** stop: the extra entries are carried along
-  and only the standard errors are flagged as unreliable, so check the
-  length of any `theta` you supply (#408). A numeric term fits as before
+  global design, and from each phase that inherits it. Left unchanged,
+  the fit stops: a single-distribution fit with a `non-conformable
+  arguments` error, and a multiphase fit with an error naming both
+  lengths and each phase's count (#408). A numeric term fits as before
   (`~ 0 + age` is `~ age`), apart from the new warning, which a
   `hzr_stepwise()` refit does not repeat. The phase-formula counterpart is
   #303.
@@ -687,6 +686,19 @@
 
 ## Bug fixes
 
+* **A multiphase fit stops when `theta` does not have one entry per
+  parameter, instead of fitting with extra entries or failing obscurely
+  (#408).** `hazard()` compared a supplied `theta` only with the global
+  design's column count, and only as a lower bound. A multiphase `theta`
+  that was too long therefore fitted with the extra entries carried along,
+  and reported `converged = TRUE` with a `theta` longer than the model; one
+  that was too short failed inside the fit with `'names' attribute [9]
+  must be the same length as the vector [7]`. The fit now stops, naming
+  both lengths and each phase's share: `'theta' has 11 entries, but this
+  model takes 9 (early 6, constant 3)`. A phase with its own `formula` is
+  counted from that formula, every other phase from the global design.
+  Unfitted (`fit = FALSE`), `theta` is still returned as supplied.
+
 * **A translated job's missing-value guard no longer stops on rows
   `hazard()` drops anyway, and an absent phase variable is named (#340).**
   The guard for a variable outside the fitted model (`/E`, say) stopped
@@ -865,6 +877,25 @@
   The slot is now located the way the fit locates it, so an on-constraint
   `theta` passes silently and an off-constraint one is replaced with a
   warning.
+* **A multiphase fit no longer stops with "t_half must be a positive
+  scalar" when the optimizer steps a phase's time scale out of range
+  (#262).** `t_half` and `tau` are carried on the log scale, and a step can
+  take them past what `exp()` represents, to `0` or `Inf`. Where
+  `exp(log_t_half)` came back as 0, the log-likelihood, its gradient and
+  the Conservation of Events solve all raised that error rather than
+  treating the point as infeasible, so a single-start fit
+  (`control = list(n_starts = 1)`) failed outright, and with several starts
+  that start was lost. Elsewhere the three disagreed: the score raised
+  `missing value where TRUE/FALSE needed` at `t_half` or `tau` of `Inf`,
+  where the log-likelihood returned `-Inf` (`t_half`) or a finite value
+  (`tau`). A phase whose time scale is not finite and positive is now
+  infeasible on all three paths, and the optimizer backs away from it.
+
+  That last case is a **deliberate behaviour change**: at `tau = Inf` the
+  late phase switches off and the log-likelihood used to take that limiting
+  value, so a fit whose `tau` ran past `exp(709.78)` could return a finite
+  objective there while its score could not be evaluated. Such a point is
+  now infeasible. Fits whose scales stay in range are unchanged.
 
 * **`predict(newdata = )` now warns when `newdata` is evaluated differently
   from the fitting data (#331, #334, #335).** Predicted values are
