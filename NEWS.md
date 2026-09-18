@@ -99,8 +99,9 @@
   empty scope such as `~ 1` with `direction = "backward"` to run a backward
   screen on each replicate. Under `direction = "both"`, `scope` names what
   may enter; as in SAS, the drop half still considers every term in the
-  model except those in `force_in` and those frozen by `max_move`.
-  `hzr_bootstrap()` refuses the combination before seeding.
+  model except those in `force_in` and those frozen by `max_move` before
+  the iteration began. `hzr_bootstrap()` refuses the combination before
+  seeding.
 
 * **`hzr_bootstrap()` now refuses a selection argument passed without
   `scope` (#343).** Without `scope` there is no screen, and `direction`,

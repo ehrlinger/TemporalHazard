@@ -40,8 +40,10 @@
 #'   \item{`direction = "both"` (default)}{Two-way stepwise: on every
 #'     iteration, whether or not a variable entered, every term in the model,
 #'     the base model's included, is re-tested and may be dropped unless it
-#'     is in `force_in` or frozen by `max_move`.  `scope` limits what may
-#'     enter, not what may leave.
+#'     is in `force_in` or was frozen by `max_move` before the iteration
+#'     began; a variable frozen on entry can still be dropped in the same
+#'     iteration (see the **Known limitation (the frozen set)** section).
+#'     `scope` limits what may enter, not what may leave.
 #'     This is the SAS `SELECTION = STEPWISE` strategy.  `max_move` caps how
 #'     often a single variable may oscillate before it is frozen.}
 #' }
@@ -100,7 +102,9 @@
 #'   (`~ age + nyha`) or a character vector of names.  For multiphase
 #'   fits, pass a named list of one-sided formulas keyed by phase, naming
 #'   each phase once.  `scope` lists what may enter; a drop considers every
-#'   term in the model except `force_in` and terms frozen by `max_move`.  A two-sided formula is an error,
+#'   term in the model except `force_in` and terms frozen by `max_move`
+#'   before the iteration began (see the **Known limitation (the frozen
+#'   set)** section).  A two-sided formula is an error,
 #'   since its left-hand side would never be a candidate, and so is a
 #'   non-empty `scope` under `direction = "backward"`, which does not read
 #'   it.  An empty scope (`~ 1`, `character()`, or a list of `NULL`s and
