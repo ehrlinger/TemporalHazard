@@ -291,26 +291,6 @@ Control parameters:
   [`stats::nlm()`](https://rdrr.io/r/stats/nlm.html); see the
   "Convergence" section.
 
-- `abstol`: Projected-gradient tolerance, used only by the bounded
-  (L-BFGS-B) optimizer (default 1e-6). The fits `hazard()` runs use BFGS
-  and ignore it.
-
-- `method`: Recorded but not used. The fits `hazard()` runs use BFGS (a
-  multiphase fit may run a Nelder-Mead warm-up first, and a stop that
-  fails SAS's gradient test continues with
-  [`stats::nlm()`](https://rdrr.io/r/stats/nlm.html)); the entry is
-  accepted so that translated SAS jobs (`QUASI`) run unchanged. SAS
-  `PROC HAZARD` jobs write `STEEPEST QUASI` together (steepest descent
-  first, then quasi-Newton). `QUASI`/`QUASINEWTON` is `"bfgs"`; **there
-  is no steepest-descent option and no two-stage strategy**. The
-  multiphase likelihood is multimodal, so a different descent path can
-  land on a different optimum: a fit translated from a job using
-  `STEEPEST` may not reproduce SAS's estimates, and
-  [`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
-  records the keyword as untranslated rather than dropping it.
-
-- `condition`: Condition number control (default 14)
-
 - `conserve`: Apply Conservation of Events (**`dist = "multiphase"`
   only**; default `TRUE`). CoE counts exact events, so it is
   **automatically disabled** whenever any `status` falls outside {0, 1}
@@ -329,9 +309,62 @@ Control parameters:
   Read `fit$spec$control$conserve_applied`, not
   `fit$spec$control$conserve`: the latter says only what you asked for.
 
-- `nocov`, `nocor`: Accepted for compatibility with the SAS
-  `PROC HAZARD` options of the same names. They change neither the
-  fitted object nor its printed summary.
+- `shape_param_count`: The number of baseline parameters at the front of
+  `theta`: the scale and any shape parameters, so 2 for `"weibull"` and
+  1 for `"exponential"`. For a single-distribution model only. The fit
+  itself does not use it; the stepwise refit and the score test read it
+  back from `fit$spec$control`. A multiphase fit derives its own layout,
+  so nothing reads it there.
+
+The elements above are accepted without a warning: `maxit` and `reltol`
+for every model, `shape_param_count` for a single-distribution model,
+and `n_starts`, `start_seed`, `phase_share_tol` and `conserve` for
+`dist = "multiphase"` (#376). Any other element draws one warning that
+names it and says why it has no effect, and the fit proceeds unchanged,
+as [`stats::optim()`](https://rdrr.io/r/stats/optim.html) does for
+unknown `control` names. The element is dropped before the fit, so a
+name such as `n_starts_extra` cannot be read as `n_starts`, and
+`fit$spec$control` keeps none of the ignored elements. That covers:
+
+- a name no fit reads, such as the misspelling `n_startz`, and an
+  unnamed element;
+
+- `abstol` (read only by a bounded optimizer no fit uses), `method`,
+  `condition`, `nocov` and `nocor`, which earlier versions documented as
+  accepted without reading them;
+
+- `fix` and `quasi`, which no fit has ever read. A fit given `fix` was
+  never constrained, so results obtained with it may be affected; hold a
+  parameter with `hzr_phase(fixed = )` on a multiphase phase. A
+  single-distribution model has no mechanism for fixing a parameter.
+
+- a multiphase element such as `n_starts` given to a single-distribution
+  fit, and `shape_param_count` given to a multiphase one.
+
+No name in `control` is an error; a bad value for an element the fit
+reads, such as `maxit = "a"`, still stops a fit (`fit = TRUE`) where it
+is read.
+[`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+and
+[`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
+pass `control` to every candidate refit, and an error there would count
+as a failed candidate, so a screen would report success having tested
+nothing.
+
+SAS `PROC HAZARD` options with no `control` equivalent: `NOCOV` and
+`NOCOR` only suppress printed output, and `hazard()` prints nothing
+until asked. `CONDITION=` stops SAS's optimizer on a condition-number
+test that `hazard()` does not have. `QUASI` is `hazard()`'s optimizer
+already: the fits it runs use BFGS (a multiphase fit may run a
+Nelder-Mead warm-up first, and a stop that fails SAS's gradient test
+continues with [`stats::nlm()`](https://rdrr.io/r/stats/nlm.html)). SAS
+jobs often write `STEEPEST QUASI` together, steepest descent first;
+**there is no steepest-descent option and no two-stage strategy**. The
+multiphase likelihood is multimodal, so a different descent path can
+land on a different optimum: a fit translated from a job using
+`STEEPEST` may not reproduce SAS's estimates, and
+[`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
+records the keyword as untranslated rather than dropping it.
 
 Censoring status coding:
 
@@ -556,10 +589,10 @@ summary(fit2)
 #> Coefficients:
 #>          estimate   std_error     z_stat      p_value
 #> mu    0.121938323 0.062299561  1.9572902 5.031335e-02
-#> nu    1.143693955 0.084297244 13.5673944 6.250475e-42
+#> nu    1.143693956 0.084297244 13.5673944 6.250475e-42
 #> beta1 0.001710112 0.008807807  0.1941586 8.460517e-01
 #> beta2 0.156102262 0.090593058  1.7231151 8.486772e-02
-#> beta3 0.017258365 0.362941256  0.0475514 9.620738e-01
+#> beta3 0.017258366 0.362941256  0.0475514 9.620738e-01
 
 # \donttest{
 # -- Parametric survival with Kaplan-Meier overlay -----------------

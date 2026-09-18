@@ -386,18 +386,12 @@
 </h3>
 <p>The procedure-level statement that names the dataset and sets global options. The <code>NOCOV</code> / <code>NOCOR</code> flags suppress covariance and correlation output; <code>CONDITION=</code> is a tolerance switch for the convergence check.</p>
 <pre class="sas"><code>PROC HAZARD DATA=AVCS NOCOV NOCOR CONDITION=14;</code></pre>
-<p>Maps to <code><a href="../reference/hazard.html">hazard()</a></code> <code>control</code> list:</p>
+<p><code>DATA=</code> becomes <code><a href="../reference/hazard.html">hazard()</a></code>’s <code>data</code> argument. None of the three options has a <code>control</code> equivalent. <code>NOCOV</code> and <code>NOCOR</code> only suppress printed output, and <code><a href="../reference/hazard.html">hazard()</a></code> prints nothing until you ask for it with <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> or <code><a href="https://rdrr.io/r/stats/vcov.html" class="external-link">vcov()</a></code>. <code>CONDITION=</code> sets a tolerance that <code><a href="../reference/hazard.html">hazard()</a></code> does not take: it reports the Hessian’s conditioning through <code>rcond</code> instead. So the statement translates to:</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/hazard.html">hazard</a></span><span class="op">(</span></span>
-<span>  <span class="va">...</span>,</span>
-<span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
-<span>    nocov      <span class="op">=</span> <span class="cn">TRUE</span>,   <span class="co"># suppress covariance output</span></span>
-<span>    nocor      <span class="op">=</span> <span class="cn">TRUE</span>,   <span class="co"># suppress correlation output</span></span>
-<span>    condition  <span class="op">=</span> <span class="fl">14</span>      <span class="co"># CONDITION= switch</span></span>
-<span>  <span class="op">)</span></span>
-<span><span class="op">)</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/hazard.html">hazard</a></span><span class="op">(</span><span class="va">...</span>, data <span class="op">=</span> <span class="va">avcs</span><span class="op">)</span></span></code></pre></div>
 </div>
+<p>The <code>control</code> settings a fit reads are <code>maxit</code> and <code>reltol</code> for every model, plus <code>n_starts</code>, <code>conserve</code>, <code>phase_share_tol</code> and <code>start_seed</code> for a multiphase one. If you pass <code>nocov</code>, <code>nocor</code> or <code>condition</code> anyway, <code><a href="../reference/hazard.html">hazard()</a></code> warns that the option does nothing and fits the model unchanged. A name that nothing reads, such as a misspelling, draws the same warning, so a mistyped setting cannot silently leave the default in force.</p>
 <p>Additional <code>PROC HAZARD</code> options with no direct R equivalent yet are passed through <code>...</code> as named arguments and stored in <code>fit$legacy_args</code>.</p>
 <hr></section><section class="level3"><h3 id="time">
 <code>TIME</code><a class="anchor" aria-label="anchor" href="#time"></a>
@@ -457,7 +451,7 @@
 <span><span class="op">)</span></span></code></pre></div>
 </div>
 <blockquote>
-<p><strong>Note:</strong> <code>theta</code> takes the <code>PARMS</code> values on the scale the optimizer works on, which is not always the scale SAS prints. <code>MUE</code>, <code>MUC</code> and <code>THALF</code> go in as logs; <code>NU</code> and <code>M</code> go in as written. A fixed parameter is declared on the phase that owns it, so <code>FIXM</code> is <code>fixed = "m"</code> inside the early <code><a href="../reference/hzr_phase.html">hzr_phase()</a></code>. <code><a href="../reference/hazard.html">hazard()</a></code> does not read a <code>control$fix</code> entry: a fix written there leaves <code>M</code> free, and nothing warns you.</p>
+<p><strong>Note:</strong> <code>theta</code> takes the <code>PARMS</code> values on the scale the optimizer works on, which is not always the scale SAS prints. <code>MUE</code>, <code>MUC</code> and <code>THALF</code> go in as logs; <code>NU</code> and <code>M</code> go in as written. A fixed parameter is declared on the phase that owns it, so <code>FIXM</code> is <code>fixed = "m"</code> inside the early <code><a href="../reference/hzr_phase.html">hzr_phase()</a></code>. <code><a href="../reference/hazard.html">hazard()</a></code> does not read a <code>control$fix</code> entry: a fix written there leaves <code>M</code> free, and <code><a href="../reference/hazard.html">hazard()</a></code> warns that it never reads <code>control$fix</code>.</p>
 </blockquote>
 <hr></section><section class="level3"><h3 id="early-and-constant-covariate-blocks">
 <code>EARLY</code> and <code>CONSTANT</code> covariate blocks<a class="anchor" aria-label="anchor" href="#early-and-constant-covariate-blocks"></a>
@@ -737,7 +731,7 @@ PROC HAZARD DATA=AVCS P CONSERVE OUTHAZ=OUTEST CONDITION=14 QUASI;
 <li>
 <code>EARLY</code> and <code>CONSTANT</code> become the <code>formula</code> of the matching <code><a href="../reference/hzr_phase.html">hzr_phase()</a></code>.</li>
 <li>
-<code>CONSERVE</code> goes into <code>control</code> as <code>conserve = TRUE</code>. <code>CONDITION=14</code> and <code>QUASI</code> have no <code><a href="../reference/hazard.html">hazard()</a></code> equivalent, so nothing is written for them: <code>CONDITION=</code> stops <code>PROC HAZARD</code>’s optimizer when its Hessian approximation becomes too ill-conditioned, and <code>QUASI</code> chooses its optimizer. <code><a href="../reference/hazard.html">hazard()</a></code> offers no optimizer choice (it fits by BFGS, after a Nelder-Mead warm-up in some multiphase fits) and has no such stop.</li>
+<code>CONSERVE</code> goes into <code>control</code> as <code>conserve = TRUE</code>. <code>CONDITION=14</code> and <code>QUASI</code> have no <code><a href="../reference/hazard.html">hazard()</a></code> equivalent, so nothing is written for them: <code>CONDITION=</code> stops <code>PROC HAZARD</code>’s optimizer when its Hessian approximation becomes too ill-conditioned, and <code>QUASI</code> chooses its optimizer. <code><a href="../reference/hazard.html">hazard()</a></code> offers no optimizer choice (it fits by BFGS, after a Nelder-Mead warm-up in some multiphase fits) and has no such stop. Passed anyway, as <code>control = list(condition = 14, method = "bfgs")</code>, they would only draw a warning that they do nothing.</li>
 <li>
 <code>PROC STANDARD REPLACE</code> from the SAS <code>DATA</code> steps becomes one line that fills the missing <code>inc_surg</code> values with the column mean.</li>
 </ul>
@@ -768,7 +762,7 @@ PROC HAZARD DATA=AVCS P CONSERVE OUTHAZ=OUTEST CONDITION=14 QUASI;
 <span>    <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="fl">4.391673e-07</span><span class="op">)</span>,</span>
 <span>    <span class="fl">1.375285</span>, <span class="fl">3.11765</span>, <span class="fl">1.054988</span></span>
 <span>  <span class="op">)</span>,</span>
-<span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>condition <span class="op">=</span> <span class="fl">14</span>, conserve <span class="op">=</span> <span class="cn">TRUE</span>, method <span class="op">=</span> <span class="st">"bfgs"</span><span class="op">)</span>,</span>
+<span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>conserve <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span>,                 <span class="co"># CONSERVE</span></span>
 <span>  fit <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span>
 <span></span>

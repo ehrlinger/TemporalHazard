@@ -336,21 +336,6 @@ with the size of the log-likelihood: about 0.0024 at a log-likelihood of
 and still report convergence, so <code>hazard()</code> then applies SAS/C HAZARD's
 relative-gradient test and, when the stop fails it, continues with
 <code><a href="https://rdrr.io/r/stats/nlm.html" class="external-link">stats::nlm()</a></code>; see the "Convergence" section.</p></li>
-<li><p><code>abstol</code>: Projected-gradient tolerance, used only by the bounded
-(L-BFGS-B) optimizer (default 1e-6). The fits <code>hazard()</code> runs use BFGS
-and ignore it.</p></li>
-<li><p><code>method</code>: Recorded but not used. The fits <code>hazard()</code> runs use BFGS (a
-multiphase fit may run a Nelder-Mead warm-up first, and a stop that
-fails SAS's gradient test continues with <code><a href="https://rdrr.io/r/stats/nlm.html" class="external-link">stats::nlm()</a></code>); the entry is
-accepted so that translated SAS jobs (<code>QUASI</code>) run unchanged.
-SAS <code>PROC HAZARD</code> jobs write <code>STEEPEST QUASI</code> together (steepest
-descent first, then quasi-Newton). <code>QUASI</code>/<code>QUASINEWTON</code> is <code>"bfgs"</code>;
-<strong>there is no steepest-descent option and no two-stage strategy</strong>. The
-multiphase likelihood is multimodal, so a different descent path can land
-on a different optimum: a fit translated from a job using <code>STEEPEST</code> may
-not reproduce SAS's estimates, and <code><a href="hzr_translate_sas.html">hzr_translate_sas()</a></code> records the
-keyword as untranslated rather than dropping it.</p></li>
-<li><p><code>condition</code>: Condition number control (default 14)</p></li>
 <li><p><code>conserve</code>: Apply Conservation of Events (<strong><code>dist = "multiphase"</code> only</strong>;
 default <code>TRUE</code>). CoE counts exact events, so it is <strong>automatically
 disabled</strong> whenever any <code>status</code> falls outside {0, 1} (which interval
@@ -363,10 +348,50 @@ applied;</p></li>
 <code>"no_events"</code>, <code>"setup_failed"</code>, or <code>NA</code> when CoE was applied.</p></li>
 </ul><p>Read <code>fit$spec$control$conserve_applied</code>, not
 <code>fit$spec$control$conserve</code>: the latter says only what you asked for.</p></li>
-<li><p><code>nocov</code>, <code>nocor</code>: Accepted for compatibility with the SAS <code>PROC HAZARD</code>
-options of the same names. They change neither the fitted object nor its
-printed summary.</p></li>
-</ul><p>Censoring status coding:</p><ul><li><p>1: Exact event at time</p></li>
+<li><p><code>shape_param_count</code>: The number of baseline parameters at the front of
+<code>theta</code>: the scale and any shape parameters, so 2 for <code>"weibull"</code> and 1
+for <code>"exponential"</code>. For a single-distribution model only. The fit itself does not
+use it; the stepwise refit and the score test read it back from
+<code>fit$spec$control</code>. A multiphase fit derives its own layout, so nothing
+reads it there.</p></li>
+</ul><p>The elements above are accepted without a warning: <code>maxit</code> and <code>reltol</code>
+for every model, <code>shape_param_count</code> for a single-distribution model, and
+<code>n_starts</code>, <code>start_seed</code>, <code>phase_share_tol</code> and <code>conserve</code> for
+<code>dist = "multiphase"</code> (#376). Any other element draws one warning that
+names it and says why it has no effect, and the fit proceeds unchanged,
+as <code><a href="https://rdrr.io/r/stats/optim.html" class="external-link">stats::optim()</a></code> does for unknown <code>control</code> names. The element is
+dropped before the fit, so a name such as <code>n_starts_extra</code> cannot be read
+as <code>n_starts</code>, and <code>fit$spec$control</code> keeps none of the ignored
+elements. That covers:</p><ul><li><p>a name no fit reads, such as the misspelling <code>n_startz</code>, and an unnamed
+element;</p></li>
+<li><p><code>abstol</code> (read only by a bounded optimizer no fit uses), <code>method</code>,
+<code>condition</code>, <code>nocov</code> and <code>nocor</code>, which earlier versions documented as
+accepted without reading them;</p></li>
+<li><p><code>fix</code> and <code>quasi</code>, which no fit has ever read. A fit given <code>fix</code> was
+never constrained, so results obtained with it may be affected; hold a
+parameter with <code>hzr_phase(fixed = )</code> on a multiphase phase. A
+single-distribution model has no mechanism for fixing a parameter.</p></li>
+<li><p>a multiphase element such as <code>n_starts</code> given to a single-distribution
+fit, and <code>shape_param_count</code> given to a multiphase one.</p></li>
+</ul><p>No name in <code>control</code> is an error; a bad value for an element the fit
+reads, such as <code>maxit = "a"</code>, still stops a fit (<code>fit = TRUE</code>) where it
+is read. <code><a href="hzr_stepwise.html">hzr_stepwise()</a></code> and
+<code><a href="hzr_bootstrap.html">hzr_bootstrap()</a></code> pass <code>control</code> to every candidate refit, and an error
+there would count as a failed candidate, so a screen would report success
+having tested nothing.</p>
+<p>SAS <code>PROC HAZARD</code> options with no <code>control</code> equivalent: <code>NOCOV</code> and <code>NOCOR</code>
+only suppress printed output, and <code>hazard()</code> prints nothing until asked.
+<code>CONDITION=</code> stops SAS's optimizer on a condition-number test that
+<code>hazard()</code> does not have. <code>QUASI</code> is <code>hazard()</code>'s optimizer already: the
+fits it runs use BFGS (a multiphase fit may run a Nelder-Mead warm-up
+first, and a stop that fails SAS's gradient test continues with
+<code><a href="https://rdrr.io/r/stats/nlm.html" class="external-link">stats::nlm()</a></code>). SAS jobs often write <code>STEEPEST QUASI</code> together, steepest
+descent first; <strong>there is no steepest-descent option and no two-stage
+strategy</strong>. The multiphase likelihood is multimodal, so a different descent
+path can land on a different optimum: a fit translated from a job using
+<code>STEEPEST</code> may not reproduce SAS's estimates, and <code><a href="hzr_translate_sas.html">hzr_translate_sas()</a></code>
+records the keyword as untranslated rather than dropping it.</p>
+<p>Censoring status coding:</p><ul><li><p>1: Exact event at time</p></li>
 <li><p>0: Right-censored at time</p></li>
 <li><p>-1: Left-censored with upper bound at time_upper \(or time\)</p></li>
 <li><p>2: Interval-censored in the interval \(time_lower, time_upper\)</p></li>
@@ -571,10 +596,10 @@ nonlinear temporal decomposition mixed effects model. <em>Stat Methods Med Res.<
 <span class="r-out co"><span class="r-pr">#&gt;</span> Coefficients:</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>          estimate   std_error     z_stat      p_value</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> mu    0.121938323 0.062299561  1.9572902 5.031335e-02</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> nu    1.143693955 0.084297244 13.5673944 6.250475e-42</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> nu    1.143693956 0.084297244 13.5673944 6.250475e-42</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> beta1 0.001710112 0.008807807  0.1941586 8.460517e-01</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> beta2 0.156102262 0.090593058  1.7231151 8.486772e-02</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> beta3 0.017258365 0.362941256  0.0475514 9.620738e-01</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> beta3 0.017258366 0.362941256  0.0475514 9.620738e-01</span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="co"># \donttest{</span></span></span>
 <span class="r-in"><span><span class="co"># -- Parametric survival with Kaplan-Meier overlay -----------------</span></span></span>

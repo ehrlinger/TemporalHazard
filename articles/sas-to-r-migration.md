@@ -89,21 +89,32 @@ output; `CONDITION=` is a tolerance switch for the convergence check.
 PROC HAZARD DATA=AVCS NOCOV NOCOR CONDITION=14;
 ```
 
-Maps to
+`DATA=` becomes
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)’s
+`data` argument. None of the three options has a `control` equivalent.
+`NOCOV` and `NOCOR` only suppress printed output, and
 [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
-`control` list:
+prints nothing until you ask for it with
+[`summary()`](https://rdrr.io/r/base/summary.html) or
+[`vcov()`](https://rdrr.io/r/stats/vcov.html). `CONDITION=` sets a
+tolerance that
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+does not take: it reports the Hessian’s conditioning through `rcond`
+instead. So the statement translates to:
 
 ``` r
 
-fit <- hazard(
-  ...,
-  control = list(
-    nocov      = TRUE,   # suppress covariance output
-    nocor      = TRUE,   # suppress correlation output
-    condition  = 14      # CONDITION= switch
-  )
-)
+fit <- hazard(..., data = avcs)
 ```
+
+The `control` settings a fit reads are `maxit` and `reltol` for every
+model, plus `n_starts`, `conserve`, `phase_share_tol` and `start_seed`
+for a multiphase one. If you pass `nocov`, `nocor` or `condition`
+anyway,
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+warns that the option does nothing and fits the model unchanged. A name
+that nothing reads, such as a misspelling, draws the same warning, so a
+mistyped setting cannot silently leave the default in force.
 
 Additional `PROC HAZARD` options with no direct R equivalent yet are
 passed through `...` as named arguments and stored in `fit$legacy_args`.
@@ -206,7 +217,9 @@ fit <- hazard(
 > [`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md).
 > [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 > does not read a `control$fix` entry: a fix written there leaves `M`
-> free, and nothing warns you.
+> free, and
+> [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+> warns that it never reads `control$fix`.
 
 ------------------------------------------------------------------------
 
@@ -529,7 +542,9 @@ statement:
   ill-conditioned, and `QUASI` chooses its optimizer.
   [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   offers no optimizer choice (it fits by BFGS, after a Nelder-Mead
-  warm-up in some multiphase fits) and has no such stop.
+  warm-up in some multiphase fits) and has no such stop. Passed anyway,
+  as `control = list(condition = 14, method = "bfgs")`, they would only
+  draw a warning that they do nothing.
 - `PROC STANDARD REPLACE` from the SAS `DATA` steps becomes one line
   that fills the missing `inc_surg` values with the column mean.
 
@@ -562,7 +577,7 @@ fit <- hazard(
     log(4.391673e-07),
     1.375285, 3.11765, 1.054988
   ),
-  control = list(condition = 14, conserve = TRUE, method = "bfgs"),
+  control = list(conserve = TRUE),                 # CONSERVE
   fit = TRUE
 )
 
