@@ -6,15 +6,19 @@
   you hold estimates from such a translation, they have no SAS run behind
   them (#340).** A phase statement with an option written in a form SAS's
   lexer or grammar rejects, such as `AGE/EI` (options glued together),
-  `AGE/E/I`, `Y/`, `/S`, or `AGE/MOVE` with no value, stops the job with a
-  syntax error in `PROC HAZARD`, and `ORDER=` with `/E`, `/I` or `/S` stops
-  it with "mutually exclusive". The translator used to record the text and
-  fit anyway, with the variable in the model. Each now emits a `stop()`
+  `AGE/E/I`, `Y/`, `/S`, `AGE/MOVE` with no value, or a value after `=`
+  that its lexer does not read as a number (`AGE=abc`, `AGE/MOVE=1E5`,
+  `AGE/MOVE=Inf`), stops the job with a syntax error in `PROC HAZARD`, and
+  `ORDER=` with `/E`, `/I` or `/S` stops it with "mutually exclusive". The
+  translator used to record the text and fit anyway, with the variable in
+  the model (or, for `AGE=abc`, left out of it). Each now emits a `stop()`
   naming the source. To check a job: search its phase statements for a run
-  of option letters after one `/` (`/EI`, `/SI`), a second `/`, or `ORDER=`
-  beside `/E`, `/I` or `/S`. None of these forms occurs in the reference
-  corpus. Options separated by spaces (`AGE/E I`) are valid SAS and still
-  translate, with `/E` taking precedence.
+  of option letters after one `/` (`/EI`, `/SI`), a second `/`, `ORDER=`
+  beside `/E`, `/I` or `/S`, or a value after `=` that is not a plain
+  decimal number (an exponent needs a decimal point: `1.0E5`, not `1E5`).
+  None of these forms occurs in the reference corpus. Options separated by
+  spaces (`AGE/E I`) are valid SAS and still translate, with `/E` taking
+  precedence.
 
 * **Standard errors were too small for a late (`"g3"`) phase with free
   shapes: re-run any you have reported (#332).** At realistic optima the

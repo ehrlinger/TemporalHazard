@@ -1548,7 +1548,21 @@ test_that("each syntax-error form names its own source, not a shared one (#340)"
     "Y/"          = "hazard_y.y:220-225", # "/" with no option after it
     "AGE/MOVE"    = "hazard_y.y:228-232", # MOVE needs = NUMBER
     "AGE/MOVE="   = "hazard_y.y:228-232", # "=" lexes; the NUMBER is missing
-    "AGE/E=2"     = "hazard_y.y:228-232") # E takes no value
+    "AGE/E=2"     = "hazard_y.y:228-232", # E takes no value
+    # A value R reads as a number but the lexer does not (hazard_l.l:34-38
+    # has no Inf, no exponent without a decimal point, no trailing ".").
+    "AGE/MOVE=INF" = "hazard_l.l:176",  # no name rule after "/": a word
+    "AGE/MOVE=1E5" = "hazard_l.l:176",  # longest match: word beats NUMBER "1"
+    "AGE/ORDER=5." = "hazard_l.l:176",
+    "AGE/MOVE=+5"  = "hazard_l.l:178",  # "+" has no rule at all
+    "AGE/MOVE=I"   = "hazard_y.y:228-232", # I lexes as INCLUDE, not NUMBER
+    # The same after a phase variable, where a name lexes whole as NAME.
+    "AGE=INF"      = "hazard_y.y:216-218", # NAME where NUMBER belongs
+    "AGE=abc"      = "hazard_y.y:216-218",
+    "AGE=1E5"      = "hazard_l.l:176",
+    "AGE=0x1A"     = "hazard_l.l:176",
+    "AGE=+5"       = "hazard_l.l:178",
+    "AGE="         = "hazard_y.y:216-218") # "=" lexes; the NUMBER is missing
   for (item in names(cases)) {
     got <- .hzr_parse_parms(ops, covars = list(early = paste0(item, ", Z")))
     expect_length(got$rejected, 1L)
@@ -1558,7 +1572,8 @@ test_that("each syntax-error form names its own source, not a shared one (#340)"
   # And forms SAS accepts are not rejected: long forms beat the word rule on
   # equal length by coming first; several flags may follow one "/".
   for (item in c("AGE/EXCLUDE", "AGE/START", "AGE/ORDER=2", "AGE/MOVE = 3",
-                 "AGE/E I", "AGE/S MOVE=2")) {
+                 "AGE/E I", "AGE/S MOVE=2", "AGE=-0.5", "AGE=.5",
+                 "AGE=1.5E-3", "AGE=5")) {
     got <- .hzr_parse_parms(ops, covars = list(early = paste0(item, ", Z")))
     expect_length(got$rejected, 0L)
   }

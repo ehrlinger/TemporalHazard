@@ -1083,8 +1083,8 @@
 #' direction keywords only refine it. `NOSTEPWISE`/`NOSW` (token `ONEWAY`,
 #' option 34) does NOT turn it off: `stpwprc.c` leaves `sw = 1` and sets only
 #' `nosw`, which caps each variable at one move, so it is a forward-only
-#' screen (`direction = "forward"`). `stepwise` is therefore `TRUE` for every
-#' SELECTION statement; the field is kept for the caller's refusal test.
+#' screen (`direction = "forward"`). Every SELECTION statement therefore runs
+#' a screen.
 #'
 #' HAZARD's lexer also collapses FORWARD, FW, SW, SELECT and STEPWISE into
 #' one token, which `hazard_y.y` maps to option 21; BACKWARD is option 22.

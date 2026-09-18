@@ -137,6 +137,35 @@
   bad_form <- syntax_error(paste(
     "MOVE= and ORDER= need a number, and E, I and S take no value",
     "(hazard_y.y:228-232), so the parser fails (yyerror.c:19)"))
+  # After a phase variable, "=" needs a NUMBER (hazard_y.y:216-218).
+  no_value <- syntax_error(paste(
+    "a phase variable's \"=\" needs a number (hazard_y.y:216-218), so the",
+    "parser fails (yyerror.c:19)"))
+  word_value <- syntax_error(paste(
+    "the text after \"=\" is not a number to the lexer, so hazard_l.l:176",
+    "reads it as unexpected and sets yysynerr"))
+  char_value <- syntax_error(paste(
+    "a character after \"=\" has no lexer rule and falls to the catch-all",
+    "at hazard_l.l:178, which sets yysynerr"))
+  # The lexer's NUMBER (hazard_l.l:34-38). as.numeric() also reads Inf, NaN,
+  # 1e5, 5. and 0x1A, none of which PROC HAZARD lexes as a number.
+  is_number <- function(s) {
+    grepl("^-?([0-9]+|[0-9]*[.][0-9]+(E[+-]?[0-9]+)?)$", toupper(s))
+  }
+  # Which rule reads a value that is not a NUMBER. Per input, not per
+  # refusal: a character outside the word rule's set falls to the catch-all;
+  # a whole name lexes as NAME after a phase variable (hazard_l.l:174-175)
+  # and as an option keyword after "/" (hazard_l.l:154-163), and either way
+  # the parser finds it where NUMBER belongs; anything else is a word.
+  value_error <- function(s, after_slash) {
+    s <- toupper(s)
+    if (!nzchar(s)) return(if (after_slash) bad_form else no_value)
+    if (grepl("[^-._A-Z0-9]", s)) return(char_value)
+    if (after_slash && s %in% c("E", "EXCLUDE", "I", "INCLUDE", "S", "START",
+                                "M", "MOVE", "O", "ORDER")) return(bad_form)
+    if (!after_slash && grepl("^[_A-Z][_A-Z0-9]*$", s)) return(no_value)
+    word_value
+  }
 
   for (piece in x) {
     for (p in strsplit(piece, ",", fixed = TRUE)[[1L]]) {
@@ -172,12 +201,11 @@
       val <- NA_real_
       if (eq > 0L) {
         val_chr <- trimws(substr(p, eq + 1L, nchar(p)))
-        val <- suppressWarnings(as.numeric(val_chr))
-        if (is.na(val)) {
-          bad(p, sprintf("non-numeric value for phase-statement covariate %s",
-                         var))
+        if (!is_number(val_chr)) {
+          reject(p, value_error(val_chr, after_slash = FALSE))
           next
         }
+        val <- as.numeric(val_chr)
       }
 
       flag <- ""
@@ -185,8 +213,7 @@
       for (o in opts) {
         key <- sub("=.*$", "", o)
         has_val <- grepl("=", o, fixed = TRUE)
-        val_ok <- has_val &&
-          !is.na(suppressWarnings(as.numeric(sub("^[^=]*=", "", o))))
+        val_ok <- has_val && is_number(sub("^[^=]*=", "", o))
         # Each token must be one the option state lexes whole: E/I/S (or
         # their long forms) alone, M/O (or MOVE/ORDER) with `= number`
         # (hazard_y.y:228-232). Anything else is a syntax error.
@@ -197,11 +224,14 @@
           next
         }
         if ((is_flag && has_val) || (is_valued && !val_ok)) {
-          # A non-numeric word after "=" is unexpected text to the lexer; an
-          # empty value lexes fine and the grammar finds NUMBER missing.
-          val_txt <- sub("^[^=]*=", "", o)
+          # Which rule rejects the value depends on the value; a flag with
+          # "=" or a MOVE/ORDER with none fails in the grammar.
           reject(paste0(var, "/", o),
-                 if (is_valued && has_val && nzchar(val_txt)) bad_text else bad_form)
+                 if (is_valued && has_val) {
+                   value_error(sub("^[^=]*=", "", o), after_slash = TRUE)
+                 } else {
+                   bad_form
+                 })
           next
         }
         if (key %in% c("O", "ORDER")) order_given <- TRUE
