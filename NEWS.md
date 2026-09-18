@@ -2,6 +2,60 @@
 
 ## Breaking changes
 
+* **Standard errors were too small for a late (`"g3"`) phase with free
+  shapes: re-run any you have reported (#332).** At realistic optima the
+  standard errors this package reported for such a fit were **12 to 14
+  times too small**, so confidence intervals were far too narrow and Wald
+  p-values far too significant. Anyone who has published or acted on a
+  standard error, a confidence interval or a Wald test from a fit with a
+  free `"g3"` shape should re-run it. Near the exponential limit (a fitted
+  `alpha` of 0.0021) they were about four times too small, and where the
+  data leave a shape undetermined the fit reported finite standard errors
+  for a direction the likelihood does not determine at all.
+
+  **The fit itself is unchanged unless its search passed through a small
+  `alpha`.** For every fit without a `"g3"` phase, every fit whose `"g3"`
+  shapes are fixed, and every free-shape fit whose search never took `alpha`
+  to `1e-5` or below, the estimates and the log-likelihood are identical.
+  What moves is the Hessian and everything read from it -- standard errors,
+  Wald statistics, confidence intervals, the condition warnings, and the
+  score test `hzr_stepwise()` uses to enter a variable. Where the search did
+  pass through that region the optimizer's own gradient was wrong, and the
+  estimates can move too; see below.
+
+  The cause was numerical: the G3 second derivatives stepped every shape by
+  a fixed amount, about 1.2e-4, and the score stepped a small `alpha` by
+  1e-5. That is far too small a fraction of a large `gamma`, where rounding
+  takes over, and far too large a fraction of a small `eta` or `alpha`,
+  where truncation does. Each shape is now stepped in proportion to itself.
+  Nothing warned, and the individual Hessian entries were never off by more
+  than 0.77% -- it is the inversion of an ill-conditioned matrix that turned
+  that into an order of magnitude in the standard errors, which is why the
+  entry error alone is not the number to judge this by.
+
+  - **If a fit has a free `alpha`, refit it under this version and compare
+    -- its final `alpha` does not tell you whether this applies.** At
+    `0 < alpha <= 1e-5` the gradient in `alpha`, which the optimizer uses,
+    was about 50% off at `alpha = 1e-5` and approached 100% as `alpha` fell.
+    A search only has to pass through that region for the difference to
+    steer it. On the package's own `avc` data a free-shape fit started at
+    `gamma = 0.1` went below `alpha = 1e-5` on its way, finished with `alpha`
+    between 0.015 and 0.02 -- far outside the region -- and still stopped at
+    `gamma` 100.9 where it used to stop at 94.4.
+
+    Both versions stopped short of an optimum there, and both said so: the
+    fit warns that its estimates fail the relative-gradient test SAS/C
+    HAZARD requires (0.121 before this change, 0.482 after, against a limit
+    of 6.06e-06). **If your fit carries that warning, its estimates were not
+    a reliable optimum before this release either** -- refit with more
+    starts or other starting values rather than reading a change in them as
+    an improvement. On one weakly identified data set, fits started at such
+    an `alpha` stopped a full log-likelihood unit below what was attainable
+    and reported `converged = TRUE`. Such
+    likelihoods are often multimodal, so a corrected fit is not guaranteed
+    to end higher from every start. At such an `alpha` the Hessian is now
+    evaluated, and is usually too ill-conditioned to invert: standard
+    errors are unavailable, with a warning.
 * **A multiphase phase formula without an intercept no longer drops its
   first term (#303).** `hzr_phase(formula = ~ 0 + age)` or `~ age - 1`
   fitted the phase without `age`, and `~ 0 + age + mal` without `age`, with
@@ -570,6 +624,18 @@
   fit, so its shape parameters `param_1` and `param_2` counted as selected
   covariates. Such a screen returned a summary of only those parameters, each
   at `pct = 100`, and said nothing. Multiphase screens already warned.
+
+* **`hzr_bootstrap()` names two more kinds of refit that are not a fit
+  (#343).** A refit returning a list with no `fit` was tallied as a
+  convergence failure; it is now ``"refit returned a <class> with no `fit`, not a
+  fit object"``, in both modes. A refit whose fit held a finite
+  objective but no estimates counted as a success and then ended the run
+  building its replicate row; it is now a failed replicate,
+  `"refit returned no parameter estimates"`. `hazard()` returns neither. A
+  fit with no `data` frame whose call names a formula that was `NULL` when
+  it ran, as a wrapper forwarding its own `formula` argument can leave, now
+  stops with a message saying there are no rows to count, instead of
+  `length(n) == 1L is not TRUE`.
 
 * **The G3 late-phase shape is now accurate where `(t/tau)^gamma`
   underflows.** With a large `gamma`, event times well below `tau` take
