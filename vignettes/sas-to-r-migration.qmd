@@ -100,9 +100,9 @@ instead. So the statement translates to:
 fit <- hazard(..., data = avcs)
 ```
 
-`control` holds only settings the fit reads: `maxit`, `reltol` and
-`abstol` for every model, plus `n_starts`, `conserve`, `phase_share_tol`
-and `start_seed` for a multiphase one. `hazard()` refuses any other
+`control` holds only settings the fit reads: `maxit` and `reltol` for
+every model, plus `n_starts`, `conserve`, `phase_share_tol` and
+`start_seed` for a multiphase one. `hazard()` refuses any other
 element rather than ignoring it, so a mistyped name is an error, not a
 silently unchanged fit.
 

@@ -29,7 +29,7 @@ cv_multiphase <- function(control, fit = FALSE) {
 
 test_that("an unknown control element is refused and named", {
   expect_error(cv_weibull(list(n_startz = 99)),
-               "'n_startz'.*maxit, reltol, abstol, shape_param_count")
+               "'n_startz'.*maxit, reltol, shape_param_count")
   expect_error(cv_multiphase(list(n_startz = 99, nonsense = "x")),
                "'n_startz', 'nonsense'")
   # The multiphase list names the multiphase elements too.
@@ -46,8 +46,21 @@ test_that("control$fix is refused, pointing at hzr_phase(fixed = )", {
   expect_error(cv_weibull(list(fix = 2L, maxit = 50)), "control\\$fix")
 })
 
-test_that("control$quasi is refused as never read", {
-  expect_error(cv_multiphase(list(quasi = TRUE)), "control\\$quasi.*never read")
+test_that("names hazard() documented or emitted, but never read, are refused", {
+  # Each changed nothing; the message names it and says why.
+  reasons <- c(abstol = "bounded optimizer", method = "BFGS",
+               condition = "CONDITION= has no equivalent",
+               nocov = "prints nothing", nocor = "prints nothing",
+               quasi = "BFGS")
+  for (nm in names(reasons)) {
+    ctl <- stats::setNames(list(1), nm)
+    expect_error(cv_multiphase(ctl),
+                 paste0("ever read.*control\\$", nm, " \\(.*", reasons[[nm]]),
+                 label = nm)
+  }
+  # Several at once are all named.
+  expect_error(cv_weibull(list(condition = 14, method = "bfgs")),
+               "control\\$method.*control\\$condition|control\\$condition.*control\\$method")
 })
 
 test_that("a multiphase-only element on a single distribution says so", {
@@ -61,8 +74,7 @@ test_that("control must be a named list", {
 
 test_that("the elements the fitter reads are accepted", {
   # Known positive: legitimate lists still construct and fit.
-  expect_s3_class(cv_weibull(list(maxit = 200, reltol = 1e-8, abstol = 1e-6)),
-                  "hazard")
+  expect_s3_class(cv_weibull(list(maxit = 200, reltol = 1e-8)), "hazard")
   expect_s3_class(cv_weibull(list(shape_param_count = 2L)), "hazard")
   expect_s3_class(
     cv_multiphase(list(n_starts = 1L, conserve = FALSE, phase_share_tol = 0,

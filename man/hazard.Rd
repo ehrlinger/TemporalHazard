@@ -240,21 +240,6 @@ with the size of the log-likelihood: about 0.0024 at a log-likelihood of
 and still report convergence, so \code{hazard()} then applies SAS/C HAZARD's
 relative-gradient test and, when the stop fails it, continues with
 \code{\link[stats:nlm]{stats::nlm()}}; see the "Convergence" section.
-\item \code{abstol}: Projected-gradient tolerance, used only by the bounded
-(L-BFGS-B) optimizer (default 1e-6). The fits \code{hazard()} runs use BFGS
-and ignore it.
-\item \code{method}: Recorded but not used. The fits \code{hazard()} runs use BFGS (a
-multiphase fit may run a Nelder-Mead warm-up first, and a stop that
-fails SAS's gradient test continues with \code{\link[stats:nlm]{stats::nlm()}}); the entry is
-accepted so that translated SAS jobs (\code{QUASI}) run unchanged.
-SAS \verb{PROC HAZARD} jobs write \verb{STEEPEST QUASI} together (steepest
-descent first, then quasi-Newton). \code{QUASI}/\code{QUASINEWTON} is \code{"bfgs"};
-\strong{there is no steepest-descent option and no two-stage strategy}. The
-multiphase likelihood is multimodal, so a different descent path can land
-on a different optimum: a fit translated from a job using \code{STEEPEST} may
-not reproduce SAS's estimates, and \code{hzr_translate_sas()} records the
-keyword as untranslated rather than dropping it.
-\item \code{condition}: Condition number control (default 14)
 \item \code{conserve}: Apply Conservation of Events (\strong{\code{dist = "multiphase"} only};
 default \code{TRUE}). CoE counts exact events, so it is \strong{automatically
 disabled} whenever any \code{status} falls outside \{0, 1\} (which interval
@@ -271,10 +256,34 @@ applied;
 
 Read \code{fit$spec$control$conserve_applied}, not
 \code{fit$spec$control$conserve}: the latter says only what you asked for.
-\item \code{nocov}, \code{nocor}: Accepted for compatibility with the SAS \verb{PROC HAZARD}
-options of the same names. They change neither the fitted object nor its
-printed summary.
+\item \code{shape_param_count}: The number of shape parameters at the front of
+\code{theta}, for the legacy SAS-parity helpers and the stepwise refit, which
+read it back from \code{fit$spec$control}. The fit itself does not use it.
 }
+
+\code{control} accepts only the elements above: \code{maxit}, \code{reltol} and
+\code{shape_param_count} for every model, and \code{n_starts}, \code{start_seed},
+\code{phase_share_tol} and \code{conserve} for \code{dist = "multiphase"}. Any other
+element is an error that names it, rather than a setting silently ignored
+(#376). That includes names earlier versions accepted without reading:
+\code{abstol} (read only by a bounded optimizer no fit uses), \code{method},
+\code{condition}, \code{nocov}, \code{nocor}, \code{quasi} and \code{fix}. A fit given \code{fix} was
+never constrained; hold a parameter with \code{hzr_phase(fixed = )} on a
+multiphase phase. A single-distribution model has no mechanism for
+fixing a parameter.
+
+SAS \verb{PROC HAZARD} options with no \code{control} equivalent: \code{NOCOV} and \code{NOCOR}
+only suppress printed output, and \code{hazard()} prints nothing until asked.
+\verb{CONDITION=} stops SAS's optimizer on a condition-number test that
+\code{hazard()} does not have. \code{QUASI} is \code{hazard()}'s optimizer already: the
+fits it runs use BFGS (a multiphase fit may run a Nelder-Mead warm-up
+first, and a stop that fails SAS's gradient test continues with
+\code{\link[stats:nlm]{stats::nlm()}}). SAS jobs often write \verb{STEEPEST QUASI} together, steepest
+descent first; \strong{there is no steepest-descent option and no two-stage
+strategy}. The multiphase likelihood is multimodal, so a different descent
+path can land on a different optimum: a fit translated from a job using
+\code{STEEPEST} may not reproduce SAS's estimates, and \code{hzr_translate_sas()}
+records the keyword as untranslated rather than dropping it.
 
 Censoring status coding:
 \itemize{

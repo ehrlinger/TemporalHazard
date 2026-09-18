@@ -5,13 +5,16 @@
 * **`hazard()` now refuses a `control` element that the fit would ignore
   (#376).** `control` used to accept any name, so a mistyped one, such as
   `n_startz` for `n_starts`, left the default in force and said nothing.
-  `control` now accepts only what the fit reads: `maxit`, `reltol`,
-  `abstol` and `shape_param_count` for every model, and `n_starts`,
-  `conserve`, `phase_share_tol` and `start_seed` for a multiphase one. Any
-  other name is an error that names it and lists the accepted ones. The SAS
-  options `CONDITION=`, `NOCOV`, `NOCOR` and `QUASI`, which the SAS-to-R
-  migration vignette used to show as `control` elements, have no `control`
-  equivalent and are refused too.
+  `control` now accepts only what the fit reads: `maxit`, `reltol` and
+  `shape_param_count` for every model, and `n_starts`, `conserve`,
+  `phase_share_tol` and `start_seed` for a multiphase one. Any other name is
+  an error that names it and lists the accepted ones. That includes five
+  names `?hazard` used to document as accepted although no fit read them:
+  `abstol` (read only by a bounded optimizer that no fit uses), `method`,
+  `condition`, `nocov` and `nocor`. Each is now refused with the reason it
+  never had an effect. The SAS options `CONDITION=`, `NOCOV`, `NOCOR` and
+  `QUASI`, which the SAS-to-R migration vignette used to show as `control`
+  elements, have no `control` equivalent.
 
   **If you used `control$fix`, your fit was not constrained.** It was never
   documented, and the fitting code never read it: a fit given
