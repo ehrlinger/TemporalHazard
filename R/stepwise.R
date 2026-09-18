@@ -32,11 +32,18 @@
 #'   \item{`direction = "forward"`}{Start from the base model and only
 #'     *add* variables; the best eligible candidate enters each step
 #'     until none clears the entry rule.  Variables never leave once in.}
-#'   \item{`direction = "backward"`}{Start from the full candidate model and
-#'     only *drop* variables; the weakest term leaves each step until all
-#'     survivors clear the retention rule.}
-#'   \item{`direction = "both"` (default)}{Two-way stepwise: after each
-#'     entry, already-selected variables are re-tested and may be dropped.
+#'   \item{`direction = "backward"`}{Start from the base model, which must
+#'     already hold every candidate, and only *drop* variables; the weakest
+#'     term leaves each step until all survivors clear the retention rule.
+#'     `scope` is not read, so a non-empty one is an error: protect terms
+#'     with `force_in`.}
+#'   \item{`direction = "both"` (default)}{Two-way stepwise: on every
+#'     iteration, whether or not a variable entered, every term in the model,
+#'     the base model's included, is re-tested and may be dropped unless it
+#'     is in `force_in` or was frozen by `max_move` before the iteration
+#'     began; a variable frozen on entry can still be dropped in the same
+#'     iteration (see the **Known limitation (the frozen set)** section).
+#'     `scope` limits what may enter, not what may leave.
 #'     This is the SAS `SELECTION = STEPWISE` strategy.  `max_move` caps how
 #'     often a single variable may oscillate before it is frozen.}
 #' }
@@ -93,7 +100,15 @@
 #'   column not already in the model for every phase.  For
 #'   single-distribution fits, pass a one-sided formula
 #'   (`~ age + nyha`) or a character vector of names.  For multiphase
-#'   fits, pass a named list of one-sided formulas keyed by phase.
+#'   fits, pass a named list of one-sided formulas keyed by phase, naming
+#'   each phase once.  `scope` lists what may enter; a drop considers every
+#'   term in the model except `force_in` and terms frozen by `max_move`
+#'   before the iteration began (see the **Known limitation (the frozen
+#'   set)** section).  A two-sided formula is an error,
+#'   since its left-hand side would never be a candidate, and so is a
+#'   non-empty `scope` under `direction = "backward"`, which does not read
+#'   it.  An empty scope (`~ 1`, `character()`, or a list of `NULL`s and
+#'   `~ 1`s) is accepted there.
 #' @param data Data frame the base fit was built on.  Required for
 #'   refits.
 #' @param direction Search strategy: one of `"both"` (default),
@@ -287,6 +302,7 @@ hzr_stepwise <- function(fit,
     stop("`data` must be a data frame (typically the frame used for the base fit).",
          call. = FALSE)
   }
+  .hzr_refuse_unhonoured_scope(scope, direction)
 
   # Every accepted step goes through .hzr_refit_with_scope(), so a base fit
   # it cannot refit makes the entire screen a no-op.  Left to fail
