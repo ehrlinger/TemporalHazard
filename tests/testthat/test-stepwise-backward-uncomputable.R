@@ -405,3 +405,61 @@ test_that("hzr_bootstrap() counts only replicates that left a variable untested"
     expect_false(any(hit))
   }
 })
+
+test_that("hzr_bootstrap() counts an untested removal in a replicate that stopped", {
+  # Two-way: every entry test is NA and x3's removal test is NA. A replicate
+  # drops noise x2, then cannot test x2's re-entry and stops for want of an
+  # entry test, with x3 still kept untested. It is a stopped replicate AND
+  # one that decided a variable without a test; both counts must see it
+  # (Copilot, #399 round 2).
+  obj <- .fit_overfitted()
+  orig <- .hzr_candidate_score
+  local_mocked_bindings(
+    .hzr_candidate_score = function(...) {
+      a <- list(...)
+      s <- orig(...)
+      na_it <- identical(a$mode, "entry")
+      if (identical(a$mode, "drop")) {
+        cols <- colnames(a$current$data$x)
+        na_it <- identical(cols[match(a$names, paste0("beta", seq_along(cols)))],
+                           "x3")
+      }
+      if (na_it) {
+        s$score <- NA_real_
+        s$p_value <- NA_real_
+        s$stat <- NA_real_
+      }
+      s
+    }
+  )
+  screens <- list()
+  orig_sw <- hzr_stepwise
+  local_mocked_bindings(
+    hzr_stepwise = function(...) {
+      r <- orig_sw(...)
+      screens[[length(screens) + 1L]] <<- list(
+        stopped = isTRUE(r$criteria$stopped_uncomputable),
+        listed = length(c(r$criteria$wald_untested_removals,
+                          r$criteria$wald_untested_entries)) > 0L
+      )
+      r
+    }
+  )
+  w <- testthat::capture_warnings(
+    boot <- hzr_bootstrap(obj$fit, n_boot = 3, seed = 1,
+                          scope = c("x1", "x2", "x3"),
+                          direction = "both", criterion = "wald",
+                          slentry = 0.05, slstay = 0.20)
+  )
+  expect_identical(boot$n_failed, 0L)
+  reps <- utils::tail(screens, boot$n_success)
+  stopped <- vapply(reps, `[[`, logical(1L), "stopped")
+  listed <- vapply(reps, `[[`, logical(1L), "listed")
+  # The case under test occurs: a stopped replicate that also left a
+  # variable untested.
+  expect_true(any(stopped & listed))
+  expect_identical(boot$n_uncomputable_replicates, sum(stopped))
+  expect_true(any(grepl(paste0("^", sum(listed), " of ", boot$n_success,
+                               " successful replicates decided a variable ",
+                               "without a Wald test"), w)))
+})

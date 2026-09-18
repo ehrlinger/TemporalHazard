@@ -1631,7 +1631,8 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     could not test for entry counts as not selected, and one it could not
 #'     test for removal as selected. A replicate that went on after deciding
 #'     a variable without a Wald test (`wald_no_variance`) is not counted
-#'     here, and gets a warning of its own. Always `0` in refit mode.}
+#'     here unless it also stopped, and gets a warning of its own either way.
+#'     Always `0` in refit mode.}
 #'   \item{uncomputable_reasons}{Select mode only: named integer vector
 #'     counting *why* candidate scores were unavailable, summed over every
 #'     replicate. `information_indefinite` is the one to read first: it marks
@@ -2208,10 +2209,13 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       if (select_mode) {
         if (isTRUE(boot_fit$criteria$stopped_uncomputable)) {
           n_uncomputable_reps <- n_uncomputable_reps + 1L
-        } else if (length(c(boot_fit$criteria$wald_untested_removals,
-                            boot_fit$criteria$wald_untested_entries)) > 0L) {
-          # Replicates run quietly, so the screen's own warning about a
-          # variable decided without a Wald test never reaches the user (#389).
+        }
+        # Replicates run quietly, so the screen's own warning about a
+        # variable decided without a Wald test never reaches the user (#389).
+        # Counted apart from a stop: a replicate can keep a variable untested
+        # and later stop for want of a test on the other half.
+        if (length(c(boot_fit$criteria$wald_untested_removals,
+                     boot_fit$criteria$wald_untested_entries)) > 0L) {
           n_wald_untested_reps <- n_wald_untested_reps + 1L
         }
         uncomputable_reasons <- .hzr_merge_reasons(

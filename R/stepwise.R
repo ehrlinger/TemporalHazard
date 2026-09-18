@@ -151,7 +151,10 @@
 #'       `wald_untested_removals` and `wald_untested_entries` (the
 #'       `"var"` / `"var@phase"` tokens of variables kept in, or left out,
 #'       on a step whose Wald test for them could not be computed; a
-#'       variable tested at a later step is not listed) and
+#'       variable tested at a later step is not listed.  Entries are listed
+#'       under `criterion = "wald"` only: under `"score"` an entry no test
+#'       could reach is reported by its reason, such as
+#'       `fallback_no_variance`) and
 #'       `stopped_uncomputable` (`TRUE` when the last iteration had
 #'       candidates for entry or for removal and could test none of them).
 #'       Read `uncomputable_reasons` before treating

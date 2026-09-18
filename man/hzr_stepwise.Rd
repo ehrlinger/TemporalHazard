@@ -113,7 +113,10 @@ under \code{criterion = "aic"} whose fit had no finite objective,
 \code{wald_untested_removals} and \code{wald_untested_entries} (the
 \code{"var"} / \code{"var@phase"} tokens of variables kept in, or left out,
 on a step whose Wald test for them could not be computed; a
-variable tested at a later step is not listed) and
+variable tested at a later step is not listed.  Entries are listed
+under \code{criterion = "wald"} only: under \code{"score"} an entry no test
+could reach is reported by its reason, such as
+\code{fallback_no_variance}) and
 \code{stopped_uncomputable} (\code{TRUE} when the last iteration had
 candidates for entry or for removal and could test none of them).
 Read \code{uncomputable_reasons} before treating
