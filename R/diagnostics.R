@@ -1503,11 +1503,17 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #' @keywords internal
 #' @noRd
 .hzr_bootstrap_not_a_fit <- function(x) {
+  # The reason is a key hzr_bootstrap() tallies, so the article is chosen by
+  # the class's first letter rather than dropped: every existing key ("a
+  # numeric", "a list", "a data.frame") stays as it was, and only a
+  # vowel-initial class ("an integer") changes (ledger item 2).
+  cls <- class(x)[1L]
+  a <- if (grepl("^[aeiouAEIOU]", cls)) "an " else "a "
   if (!is.list(x)) {
-    return(paste0("refit returned a ", class(x)[1L], ", not a fit object"))
+    return(paste0("refit returned ", a, cls, ", not a fit object"))
   }
   if (!is.list(x$fit)) {
-    return(paste0("refit returned a ", class(x)[1L],
+    return(paste0("refit returned ", a, cls,
                   " with no `fit`, not a fit object"))
   }
   NULL
@@ -1623,8 +1629,9 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   \item{failure_reasons}{Named integer vector counting why replicates
 #'     failed, most common first: the refit's error message (or
 #'     `"error with an empty message"`),
-#'     `"refit returned a <class>, not a fit object"` (or `"... with no
-#'     \code{fit}, not a fit object"`), `"refit returned no parameter
+#'     `"refit returned a <class>, not a fit object"` (`"an <class>"` when the
+#'     class begins with a vowel; or `"... with no \code{fit}, not a fit
+#'     object"`), `"refit returned no parameter
 #'     estimates"`, or
 #'     `"non-finite objective (did not converge)"`. It sums to `n_failed`, and
 #'     is an empty named integer vector, never `NULL`, when none failed. When
