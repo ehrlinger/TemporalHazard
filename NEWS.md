@@ -28,8 +28,7 @@
   the diagnostics. So `hazard()` did not refuse a
   term such as `constant(age)` in the global formula (#275). If a function of
   that name was visible, the term became an ordinary covariate and entered
-  every phase, a different model with no warning. The control check also
-  called `n_starts` off-path for a fit that used it. `hazard()` now drops the
+  every phase, a different model with no warning. `hazard()` now drops the
   names from `dist` before reading it, so `fit$spec$dist` is stored without
   them.
 

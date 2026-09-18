@@ -198,7 +198,11 @@ optimize to produce fitted estimates.
 \details{
 Control parameters:
 \itemize{
-\item \code{maxit}: Maximum iterations (default 1000)
+\item \code{maxit}: Maximum iterations of the quasi-Newton (BFGS) optimizer
+(default 1000). It caps that stage, not the whole fit: a multiphase fit
+with fixed shapes first runs a Nelder-Mead warm-up with its own limit,
+and a fit whose optimizer reports convergence but fails SAS's gradient
+test is continued with \code{\link[stats:nlm]{stats::nlm()}} (see "Convergence").
 \item \code{n_starts}: Number of optimization starts for multiphase fits (default 5).
 Each start after the first offsets the initial values. The offsets are
 drawn from an internally seeded stream, so a multiphase fit is

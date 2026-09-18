@@ -79,8 +79,8 @@
     p <- if (is.null(fit$data$x)) 0L else ncol(fit$data$x)
     if (length(theta) != n_shape + p) {
       stop(
-        "The fit's theta has ", length(theta), " value(s), but a ",
-        fit$spec$dist, " fit with ", p, " covariate column(s) has ",
+        "The fit's theta has ", length(theta), " value(s), but a `dist = \"",
+        fit$spec$dist, "\"` fit with ", p, " covariate column(s) has ",
         n_shape + p, " coefficients, so they cannot be matched to the ",
         "covariates.  Refit with a starting value for each covariate.",
         call. = FALSE

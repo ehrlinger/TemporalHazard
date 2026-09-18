@@ -133,3 +133,20 @@ test_that("empty or invalid names argument is rejected", {
   expect_error(.hzr_wald_p(fit, c("mu", "")), "non-empty character vector")
   expect_error(.hzr_wald_p(fit, 1), "non-empty character vector")
 })
+
+test_that("a theta/design mismatch names the dist without a wrong article", {
+  # The message read "but a exponential fit" (ledger item 2): an article
+  # placed before an interpolated dist name disagrees with any that begins
+  # with a vowel. Naming the argument keeps the article on a fixed word.
+  set.seed(1)
+  d <- data.frame(time = rexp(60, 0.3) + 0.01, status = rbinom(60, 1, 0.7),
+                  age = rnorm(60))
+  fit <- suppressWarnings(hazard(survival::Surv(time, status) ~ age, data = d,
+                                 dist = "exponential", theta = c(0.3, 0),
+                                 fit = TRUE))
+  fit$fit$theta <- c(fit$fit$theta, 0)
+  err <- tryCatch(.hzr_wald_p(fit, "age"), error = conditionMessage)
+  expect_match(err, 'but a `dist = "exponential"` fit with 1 covariate column(s) has 2 coefficients',
+               fixed = TRUE)
+  expect_no_match(err, "a exponential", fixed = TRUE)
+})
