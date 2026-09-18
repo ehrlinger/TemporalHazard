@@ -88,19 +88,23 @@ convergence check.
 PROC HAZARD DATA=AVCS NOCOV NOCOR CONDITION=14;
 ```
 
-Maps to `hazard()` `control` list:
+`DATA=` becomes `hazard()`'s `data` argument. None of the three options
+has a `control` equivalent. `NOCOV` and `NOCOR` only suppress printed
+output, and `hazard()` prints nothing until you ask for it with
+`summary()` or `vcov()`. `CONDITION=` sets a tolerance that `hazard()`
+does not take: it reports the Hessian's conditioning through `rcond`
+instead. So the statement translates to:
 
 ```{r}
 #| eval: false
-fit <- hazard(
-  ...,
-  control = list(
-    nocov      = TRUE,   # suppress covariance output
-    nocor      = TRUE,   # suppress correlation output
-    condition  = 14      # CONDITION= switch
-  )
-)
+fit <- hazard(..., data = avcs)
 ```
+
+`control` holds only settings the fit reads: `maxit`, `reltol` and
+`abstol` for every model, plus `n_starts`, `conserve`, `phase_share_tol`
+and `start_seed` for a multiphase one. `hazard()` refuses any other
+element rather than ignoring it, so a mistyped name is an error, not a
+silently unchanged fit.
 
 Additional `PROC HAZARD` options with no direct R equivalent yet are passed
 through `...` as named arguments and stored in `fit$legacy_args`.
@@ -400,10 +404,11 @@ statement:
   becomes `fixed = "m"` on the early phase.
 - `EARLY` and `CONSTANT` become the `formula` of the matching
   `hzr_phase()`.
-- `CONDITION=14`, `CONSERVE` and `QUASI` go into `control` as
-  `condition = 14`, `conserve = TRUE` and `method = "bfgs"`. BFGS is the
-  default optimizer, so the last one records the mapping and changes
-  nothing.
+- `CONSERVE` becomes `control = list(conserve = TRUE)`. `CONDITION=14`
+  and `QUASI` have no `control` equivalent: `hazard()` already optimizes
+  by quasi-Newton (BFGS), and it reports the Hessian's conditioning
+  through `rcond` rather than taking a tolerance. `hazard()` refuses a
+  `control` element it would not use, so they are left out.
 - `PROC STANDARD REPLACE` from the SAS `DATA` steps becomes one line that
   fills the missing `inc_surg` values with the column mean.
 
@@ -437,7 +442,7 @@ fit <- hazard(
     log(4.391673e-07),
     1.375285, 3.11765, 1.054988
   ),
-  control = list(condition = 14, conserve = TRUE, method = "bfgs"),
+  control = list(conserve = TRUE),                 # CONSERVE
   fit = TRUE
 )
 

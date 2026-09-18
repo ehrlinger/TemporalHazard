@@ -872,6 +872,7 @@ hazard <- function(formula = NULL,
   if (!is.list(control)) {
     stop("'control' must be a list.", call. = FALSE)
   }
+  .hzr_validate_control(control, dist)
 
   # Multiphase validation
   if (dist == "multiphase") {
@@ -2563,6 +2564,76 @@ vcov.hazard <- function(object, ...) {
   } else {
     x
   }
+}
+
+
+# The `control` elements the fitter reads, by distribution (#376), derived
+# from the code rather than the documentation: .hzr_optim_generic() reads
+# maxit, reltol and abstol; .hzr_optim_multiphase() reads and strips the
+# multiphase ones before the optimizer; shape_param_count is not read by the
+# fitter but is read back from the stored spec$control by the stepwise refit
+# and the score test.
+.hzr_control_names <- list(
+  all = c("maxit", "reltol", "abstol", "shape_param_count"),
+  multiphase = c("n_starts", "conserve", "phase_share_tol", "start_seed")
+)
+
+
+#' Refuse a `control` element the fitter would ignore
+#'
+#' `hazard()` accepted any `control` element, so one it never reads -- a
+#' typo such as `n_startz`, or `fix`, which no fitting code has ever read --
+#' left the fit as it would have been and said nothing (#376). An element
+#' is accepted only if the fitter reads it for this distribution.
+#'
+#' @param control The `control` list, already known to be a list.
+#' @param dist The distribution name.
+#' @return `NULL`, invisibly; stops on an element the fit would ignore.
+#' @keywords internal
+#' @noRd
+.hzr_validate_control <- function(control, dist) {
+  if (length(control) == 0L) {
+    return(invisible(NULL))
+  }
+  nm <- names(control)
+  if (is.null(nm) || anyNA(nm) || any(!nzchar(nm))) {
+    stop("'control' must be a named list, such as list(maxit = 500).",
+         call. = FALSE)
+  }
+  never_read <- intersect(nm, c("fix", "quasi"))
+  if ("fix" %in% never_read) {
+    stop("control$fix is not supported: hazard() has never read it, so a ",
+         "fit given control = list(fix = ...) was the unconstrained fit, ",
+         "its \"fixed\" parameters free. To hold a parameter at its ",
+         "starting value, use hzr_phase(fixed = ) on a phase of a ",
+         "dist = \"multiphase\" model. A single-distribution model has no ",
+         "mechanism for fixing a parameter.", call. = FALSE)
+  }
+  if ("quasi" %in% never_read) {
+    stop("control$quasi is not supported: hazard() has never read it. ",
+         "The optimizer is chosen by hazard() and is quasi-Newton (BFGS) ",
+         "already.", call. = FALSE)
+  }
+  multiphase <- identical(dist, "multiphase")
+  accepted <- c(.hzr_control_names$all,
+                if (multiphase) .hzr_control_names$multiphase)
+  unknown <- setdiff(nm, accepted)
+  if (length(unknown) > 0L) {
+    mp_only <- if (multiphase) {
+      character(0)
+    } else {
+      intersect(unknown, .hzr_control_names$multiphase)
+    }
+    stop("'control' has element(s) the fit would ignore: ",
+         paste0("'", unknown, "'", collapse = ", "), ". ",
+         if (length(mp_only) > 0L) {
+           paste0(paste0("'", mp_only, "'", collapse = ", "),
+                  " apply only for dist = \"multiphase\". ")
+         },
+         "For dist = \"", dist, "\" the accepted elements are: ",
+         paste(accepted, collapse = ", "), ".", call. = FALSE)
+  }
+  invisible(NULL)
 }
 
 #' Apply `.hzr_numeric_values()` to every column of a data frame or list
