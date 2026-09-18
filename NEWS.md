@@ -94,10 +94,13 @@
   stopped 9.5 log-likelihood units below the fit with the intercept, with
   warnings but wrong estimates. The formula now fits as
   `Surv(time, dead) ~ grp`, and factors are coded as they would be with the
-  intercept. A factor term therefore has one coefficient fewer, so a
-  `theta` supplied for the old design is now too long, and the fit stops
-  with a `non-conformable arguments` error; drop one coefficient per such
-  factor. A numeric term fits as before (`~ 0 + age` is `~ age`), apart
+  intercept. The design therefore has exactly **one** coefficient fewer,
+  from the first factor term: without an intercept R codes only the first
+  factor with every level, and later factors keep their usual coding. So
+  `~ 0 + f1 + f2` had `f1a f1b f1c f2y` and now has `f1b f1c f2y`. A
+  `theta` supplied for the old design is one entry too long, and the fit
+  stops with a `non-conformable arguments` error; drop the first factor's
+  first-level coefficient, and only that one. A numeric term fits as before (`~ 0 + age` is `~ age`), apart
   from the new warning, which a `hzr_stepwise()` refit does not repeat. The
   phase-formula counterpart is #303.
 

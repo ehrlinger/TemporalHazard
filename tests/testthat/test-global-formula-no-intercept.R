@@ -34,8 +34,16 @@ test_that("the removal warns once, and only where it is ignored (#337)", {
     # By CLASS as well as message: stepwise's muffler keys on the class
     # (stepwise-refit.R), so a warning that kept its wording and lost its
     # class would break the muffling with every message assertion passing.
-    expect_warning(global_ni_parse(rhs, d), "removes the intercept",
-                   class = "hzr_intercept_removed", info = rhs)
+    # Exactly ONCE per call: expect_warning() alone passes on a duplicate.
+    ws <- list()
+    withCallingHandlers(global_ni_parse(rhs, d), warning = function(w) {
+      ws[[length(ws) + 1L]] <<- w
+      invokeRestart("muffleWarning")
+    })
+    expect_length(ws, 1L)
+    expect_s3_class(ws[[1L]], "hzr_intercept_removed")
+    expect_match(conditionMessage(ws[[1L]]), "removes the intercept",
+                 info = rhs)
   }
   for (rhs in c("grp", "age + grp", "1", "0")) {
     expect_no_warning(global_ni_parse(rhs, d))
