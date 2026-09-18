@@ -400,10 +400,11 @@ statement:
   becomes `fixed = "m"` on the early phase.
 - `EARLY` and `CONSTANT` become the `formula` of the matching
   `hzr_phase()`.
-- `CONDITION=14`, `CONSERVE` and `QUASI` go into `control` as
-  `condition = 14`, `conserve = TRUE` and `method = "bfgs"`. BFGS is the
-  default optimizer, so the last one records the mapping and changes
-  nothing.
+- `CONSERVE` goes into `control` as `conserve = TRUE`. `CONDITION=14`
+  and `QUASI` have no `hazard()` equivalent, so nothing is written for
+  them: `CONDITION=` stops `PROC HAZARD`'s optimizer when its Hessian
+  approximation becomes too ill-conditioned, and `QUASI` chooses its
+  optimizer. `hazard()` always uses BFGS and has no such stop.
 - `PROC STANDARD REPLACE` from the SAS `DATA` steps becomes one line that
   fills the missing `inc_surg` values with the column mean.
 
@@ -647,7 +648,7 @@ fit <- hazard(
     log(0.2361727), log(0.1512095), 1.438652, 1, log(0.0005436977)
   ),
   weights = ifelse(DEAD > 0, DEAD, 1),
-  control = list(condition = 14, conserve = TRUE, method = "bfgs")
+  control = list(conserve = TRUE)
 )
 ```
 
@@ -678,17 +679,20 @@ The fit is bound to `fit` and `fit = TRUE` is emitted, which is what
 makes the document runnable: a later `predict()` chunk from a
 `PROC HAZPRED` block in the same job refers to that name.
 
-`CONSERVE` becomes `control$conserve = TRUE`, `QUASI` becomes
-`control$method = "bfgs"`, `CONDITION=14` becomes `control$condition
-= 14`, and the `PARMS` early-phase shape (`MUE`/`THALF`/`NU`/`M FIXM`)
-becomes a `hzr_phase("cdf", ...)` with `m` fixed. These are the forms
-the hand translation above uses. `FIXM` holds `m` only through
-`fixed = "m"` on the phase. `QUASI` changes nothing: `hazard()` does not
-read `control$method`, and the fitting path uses BFGS regardless (a
+`CONSERVE` becomes `control$conserve = TRUE`, and the `PARMS`
+early-phase shape (`MUE`/`THALF`/`NU`/`M FIXM`) becomes a
+`hzr_phase("cdf", ...)` with `m` fixed. `FIXM` holds `m` only through
+`fixed = "m"` on the phase. `QUASI` and `CONDITION=14` are not in
+`control`, because `hazard()` reads neither: they are listed in
+`job$untranslated` with the reason. `QUASI` chooses `PROC HAZARD`'s
+optimizer, and `hazard()` has no choice to make: it always uses BFGS (a
 multiphase fit may run a Nelder-Mead warm-up first, and a stop that fails
-SAS's gradient test continues with `stats::nlm()`), so the entry only
-records the SAS choice. The fitting path reads none of `control$fix`,
-`control$quasi` or `control$method`.
+SAS's gradient test continues with `stats::nlm()`). `CONDITION=` stops
+`PROC HAZARD`'s optimizer as ill-conditioned once its Hessian
+approximation's condition estimate passes the limit, and `hazard()` has no
+such stop; it warns about the final Hessian instead. Earlier
+versions of the translator wrote both into `control`, where nothing read
+them.
 `dist = "multiphase"` is emitted whenever `phases` is, and `theta`
 carries the full interleaved multiphase start vector (early scale,
 then every early-phase shape parameter in phase order, then the
