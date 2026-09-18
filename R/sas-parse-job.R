@@ -474,11 +474,11 @@
         mapped <- mapped - 1L
         note("QUASINEWTON", paste(
           "QUASI chooses PROC HAZARD's quasi-Newton optimizer. hazard() has",
-          "no optimizer choice to make: every fit it runs uses BFGS, a",
-          "quasi-Newton method (each .hzr_optim_generic() caller passes",
-          "use_bounds = FALSE), continued with stats::nlm() when SAS's",
-          "gradient test fails. The search path can differ, and on a",
-          "multimodal likelihood so can the optimum"))
+          "no optimizer choice to make: it fits by BFGS, a quasi-Newton",
+          "method (a multiphase fit with fixed shapes may run a Nelder-Mead",
+          "warm-up first), continued with stats::nlm() when SAS's gradient",
+          "test fails. The search path can differ, and on a multimodal",
+          "likelihood so can the optimum"))
       },
       STEEPEST    = {
         mapped <- mapped - 1L

@@ -404,8 +404,8 @@ statement:
   and `QUASI` have no `hazard()` equivalent, so nothing is written for
   them: `CONDITION=` stops `PROC HAZARD`'s optimizer when its Hessian
   approximation becomes too ill-conditioned, and `QUASI` chooses its
-  optimizer. `hazard()` offers no optimizer choice (it always uses BFGS)
-  and has no such stop.
+  optimizer. `hazard()` offers no optimizer choice (it fits by BFGS, after
+  a Nelder-Mead warm-up in some multiphase fits) and has no such stop.
 - `PROC STANDARD REPLACE` from the SAS `DATA` steps becomes one line that
   fills the missing `inc_surg` values with the column mean.
 
