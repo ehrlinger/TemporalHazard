@@ -129,3 +129,45 @@ test_that("a stepwise refit does not repeat the warning (#337)", {
   expect_gte(nrow(sw$steps), 1L)
   expect_identical(repeated, 0L)
 })
+
+test_that("a single-distribution no-op refit does not repeat the warning (#337)", {
+  skip_on_cran()
+  # The single-distribution refit (.hzr_refit_with_scope) muffles the intercept
+  # warning too, and until now nothing tested it. An ordinary forward or
+  # backward step cannot: .hzr_formula_update() rebuilds the right-hand side
+  # from the term labels, which never carry `0` or `- 1`, so every real add or
+  # drop restores the intercept and there is nothing to muffle -- a test built
+  # on one would pass with the muffler removed. The muffler is live only where
+  # the formula comes back UNCHANGED: adding a variable already present, or
+  # dropping one that is absent. Those refits re-parse `~ 0 + x1`.
+  set.seed(337)
+  n <- 200
+  df <- data.frame(x1 = stats::rnorm(n), x2 = stats::rnorm(n))
+  df$time <- stats::rexp(n) * exp(-0.8 * df$x1 - 0.9 * df$x2)
+  df$status <- 1L
+  seen <- 0L
+  count_warnings <- function(w) {
+    if (grepl("removes the intercept", conditionMessage(w))) seen <<- seen + 1L
+    invokeRestart("muffleWarning")
+  }
+  # Known positive: the same handler over the fit that DOES warn counts one.
+  base <- withCallingHandlers(
+    hazard(survival::Surv(time, status) ~ 0 + x1, data = df,
+           dist = "weibull", theta = c(0.5, 1, 0), fit = TRUE),
+    warning = count_warnings
+  )
+  expect_identical(seen, 1L)
+
+  for (case in list(c("add", "x1"), c("drop", "x2"))) {
+    seen <- 0L
+    refit <- withCallingHandlers(
+      .hzr_refit_with_scope(base, case[[1]], case[[2]], data = df),
+      warning = count_warnings
+    )
+    # The no-op path was taken: the formula is still intercept-free. Without
+    # this, a zero below could come from a path that had restored it.
+    expect_identical(attr(stats::terms(refit$call$formula), "intercept"), 0L,
+                     info = paste(case, collapse = " "))
+    expect_identical(seen, 0L, info = paste(case, collapse = " "))
+  }
+})
