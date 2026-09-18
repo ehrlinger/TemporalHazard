@@ -1572,6 +1572,15 @@
 #' @keywords internal
 #' @noRd
 .hzr_formula_design <- function(formula, data) {
+  # The design always drops an intercept column, because a phase has no free
+  # intercept of its own (its scale `mu` plays that role). Without one,
+  # `~ 0 + age` would lose `age` instead, and a factor would code all its
+  # levels. So `~ 0 + x` builds exactly the design of `~ x` (#303).
+  tt <- stats::terms(formula, data = data)
+  if (attr(tt, "intercept") == 0L) {
+    attr(tt, "intercept") <- 1L
+    formula <- tt
+  }
   mf <- stats::model.frame(formula, data = data, na.action = stats::na.pass)
   mm <- stats::model.matrix(formula, data = mf)
   tt <- attr(mf, "terms")
