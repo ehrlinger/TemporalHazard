@@ -714,3 +714,51 @@ test_that("every other refusal still fires when the job carries SELECTION (#160)
   expect_true(any(grepl("SETG3900", rows[[1L]])))
   expect_identical(rows[[1L]], rows[[2L]])
 })
+
+# --- Copilot review of c91c35b5, each finding reproduced before fixing -----
+
+test_that("a SELECTION job with no DATA= is refused even with nothing to screen (#160)", {
+  # No phase variable at all, so neither the covariate nor the listwise test
+  # fired, and hzr_stepwise() then stopped on "`data` must be a data frame".
+  # A screen always needs `data`, whatever it screens.
+  job <- .nodata_job("SELECTION;")
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"))
+  msg <- tryCatch(eval(job$calls$fit), error = conditionMessage)
+  expect_match(msg, "names no DATA= dataset")
+  expect_match(msg, "hzr_stepwise() needs `data`", fixed = TRUE)
+  expect_false("fit_base" %in% names(job$calls))
+})
+
+test_that("a no-DATA= refusal mentions SELECTION only for a SELECTION job (#311)", {
+  plain <- tryCatch(eval(.nodata_job("EARLY A/E;")$calls$fit), error = conditionMessage)
+  expect_no_match(plain, "SELECTION")
+  expect_match(plain, "PROC HAZARD deletes rows where any is missing")
+  sel <- tryCatch(eval(.nodata_job("SELECTION; EARLY A, B;")$calls$fit),
+                  error = conditionMessage)
+  expect_match(sel, "hzr_stepwise() needs `data`", fixed = TRUE)
+})
+
+test_that("a negative MAXSTEPS is refused with its own reason, not force_in's (#160)", {
+  job <- .sel_job("SELECTION MAXSTEPS=-3; EARLY A, B;")
+  msg <- tryCatch(eval(job$calls$fit), error = conditionMessage)
+  expect_match(msg, "a negative MAXSTEPS", fixed = TRUE)
+  expect_match(msg, "stpwprc.c:76-79", fixed = TRUE)
+  expect_no_match(msg, "force_in")
+})
+
+test_that("/I in a phase that is not built pins nothing (#160)", {
+  # PROC HAZARD skips an unbuilt phase's variables (setstat.c:9-12), flags
+  # included. force_in used to be filtered against every variable of the
+  # built phases, so LATE A/I with no MUL pinned the early phase's movable A.
+  job <- .nodata_job("SELECTION; EARLY A, B; LATE A/I;", data = " DATA=D",
+                     parms = "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005;")
+  cl <- job$calls$fit[[3L]]
+  expect_identical(cl[[1L]], as.name("hzr_stepwise"))
+  expect_null(cl[["force_in"]])
+  expect_equal(deparse(cl[["scope"]]), "list(phase_1 = ~A + B, phase_2 = NULL)")
+  # Control: the same /I in a BUILT phase is still a cross-phase pin, refused.
+  built <- .nodata_job("SELECTION; EARLY A, B; LATE A/I;", data = " DATA=D",
+                       parms = "PARMS MUE=0.2 THALF=0.15 NU=1 MUL=0.01 TAU=1 GAMMA=2 ETA=2;")
+  expect_identical(built$calls$fit[[3L]][[1L]], as.name("stop"))
+  expect_error(eval(built$calls$fit), "/I in one phase, movable in another", fixed = TRUE)
+})

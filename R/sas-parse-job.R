@@ -674,6 +674,10 @@
                        "selected (hazrd4.c's rsttbl)"))
     explain <- function(item) {
       if (!is.na(why[item])) return(unname(why[item]))
+      if (startsWith(item, "MAXSTEPS=")) {
+        return(paste0(item, ": PROC HAZARD refuses a negative MAXSTEPS ",
+                      "(stpwprc.c:76-79), so there is no run to translate"))
+      }
       if (grepl("/(MOVE|ORDER)", item)) {
         return(paste0(item, ": a per-variable MOVE= or ORDER= has no ",
                       "hzr_stepwise() equivalent (its max_move is per run)"))
@@ -703,8 +707,11 @@
     function(ph) is.call(ph) && !is.null(ph[["formula"]]),
     logical(1)
   )
+  # A SELECTION job always needs `data`, even with no phase variable at all:
+  # hzr_stepwise() refits each candidate from it and stops without it.
   if (is.null(data_name) &&
-      (any(phase_has_formula) || length(parms$listwise_only))) {
+      (any(phase_has_formula) || length(parms$listwise_only) ||
+         !is.null(sel))) {
     # Say what is actually true of this job. "A phase has covariates" is
     # false when every named variable sits outside the emitted phases: a
     # SELECTION candidate, an /E variable, or a covariate of a phase that is
@@ -712,13 +719,19 @@
     why_data <- if (any(phase_has_formula)) {
       paste0("but a phase has covariates, and hazard() evaluates a phase's ",
              "covariates only in `data`.")
+    } else if (!is.null(sel)) {
+      paste0("but it carries a SELECTION statement, and hzr_stepwise() needs ",
+             "`data` to refit each candidate",
+             if (length(parms$listwise_only)) paste0(
+               " (this job's are ", paste(parms$listwise_only, collapse = ", "),
+               ")"),
+             ".")
     } else {
       paste0("but its phase statements name ",
              paste(parms$listwise_only, collapse = ", "),
-             ", which are outside the fitted base model. With no dataset the ",
-             "translation cannot say where to read them: a SELECTION screen ",
-             "needs them in `data`, and PROC HAZARD deletes rows where any is ",
-             "missing.")
+             ", which are outside the fitted model. With no dataset the ",
+             "translation cannot say where to read them, and PROC HAZARD ",
+             "deletes rows where any is missing.")
     }
     untr <- rbind(untr, .hzr_untranslated_frame(
       NA_integer_, "DATA=",

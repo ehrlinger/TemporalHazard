@@ -938,7 +938,9 @@
   # simply in the model, which is the `selection = FALSE` path.
   sel_candidates <- list()
   sel_movable <- list()
-  sel_force_in <- character(0)
+  # Kept per phase: /I in a phase that is not built pins nothing, because
+  # PROC HAZARD skips that phase's variables and their flags (setstat.c:9-12).
+  sel_force_in <- list()
   for (ph in c("early", "constant", "late")) {
     raw <- covars[[ph]]
     if (is.null(raw)) {
@@ -957,7 +959,7 @@
     if (!isFALSE(selection)) {
       sel_candidates[[ph]] <- parsed$names[parsed$flags == ""]
       sel_movable[[ph]] <- parsed$names[parsed$flags %in% c("", "S")]
-      sel_force_in <- c(sel_force_in, parsed$names[parsed$flags == "I"])
+      sel_force_in[[ph]] <- parsed$names[parsed$flags == "I"]
     }
     phase_covars[[ph]] <- parsed$names[keep]
     phase_named[[ph]] <- parsed$names
@@ -1367,7 +1369,7 @@
     in_model = stats::setNames(
       lapply(built, function(ph) phase_covars[[ph]] %||% character(0)),
       sprintf("phase_%d", seq_along(built))),
-    force_in = unique(sel_force_in)
+    force_in = unique(unlist(sel_force_in[built]))
   )
   list(
     phases = as.call(c(quote(list), phase_calls)),
