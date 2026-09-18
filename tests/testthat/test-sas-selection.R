@@ -455,8 +455,9 @@ test_that("the emitted screen reports candidates it could not score (#160)", {
   # multiphase ICENSOR fit without numDeriv): the screen then drops nothing
   # and reads exactly like "nothing met slstay" (#160, Copilot on ce9211f7).
   env$fit <- list(criteria = list(n_uncomputable_scores = 0L),
+                  coefficients = c(phase_1.log_mu = 0, phase_1.STRONG = 1),
                   fit = list(vcov = NULL))
-  expect_warning(eval(job$calls$screen_check, env), "no standard errors")
+  expect_warning(eval(job$calls$screen_check, env), "no usable standard error")
 })
 
 # --- #160 r-reviewer findings ------------------------------------------------
@@ -807,4 +808,46 @@ test_that("the screen refits under the job's own control, not hazard()'s default
   expect_true("phase_1.STRONG" %in% names(stats::coef(final)))
   expect_false(final$spec$control$conserve)
   expect_equal(final$spec$control$maxit, 77)
+})
+
+test_that("the removal check reads each removable coefficient's variance (#160)", {
+  # is.matrix() was not enough: .hzr_safe_solve() keeps a matrix after
+  # masking a non-positive variance to NA, and a FIXED parameter has an NA
+  # row by design. So the check reads the variances of the coefficients the
+  # screen could remove -- the job's movable variables -- and nothing else.
+  job <- .sel_job("SELECTION SLE=0.2; EARLY STRONG, NOISE;")
+  chk <- job$calls$screen_check
+  env <- new.env(parent = baseenv())
+  cf <- c(phase_1.log_mu = 0, phase_1.m = 1, phase_1.STRONG = 1, phase_2.log_mu = 0)
+  # A movable coefficient with an NA variance: its removal was not testable.
+  env$fit <- list(criteria = list(n_uncomputable_scores = 0L), coefficients = cf,
+                  fit = list(vcov = diag(c(1, 1, NA, 1))))
+  expect_warning(eval(chk, env), "STRONG")
+  # Only a FIXED shape (FIXM) lacks a variance: nothing removable is affected.
+  env$fit <- list(criteria = list(n_uncomputable_scores = 0L), coefficients = cf,
+                  fit = list(vcov = diag(c(1, NA, 1, 1))))
+  expect_no_warning(eval(chk, env))
+})
+
+test_that("a forward-only screen does not warn about removal tests (#160)", {
+  # NOSTEPWISE translates to direction = "forward", which never removes, so
+  # a missing standard error costs it no removal test.
+  job <- .sel_job("SELECTION NOSW; EARLY STRONG, NOISE;")
+  expect_equal(job$calls$fit[[3L]][["direction"]], "forward")
+  env <- new.env(parent = baseenv())
+  env$fit <- list(criteria = list(n_uncomputable_scores = 0L),
+                  coefficients = c(phase_1.STRONG = 1), fit = list(vcov = NULL))
+  expect_no_warning(eval(job$calls$screen_check, env))
+})
+
+test_that("SELECTION options written with spaces around = keep their values (#160)", {
+  # SAS accepts `SLE = 0.2`; splitting on whitespace turned it into three
+  # tokens, recorded as untranslated, and the screen then ran at SAS's
+  # DEFAULT thresholds -- a runnable screen with the wrong rule.
+  job <- .sel_job("SELECTION SLE = 0.2 SLS = 0.1 MAXSTEPS = 5; EARLY A, B;")
+  cl <- job$calls$fit[[3L]]
+  expect_equal(cl[["slentry"]], 0.2)
+  expect_equal(cl[["slstay"]], 0.1)
+  expect_equal(cl[["max_steps"]], 5)
+  expect_false(any(c("SLE", "SLS", "MAXSTEPS", "0.2", "") %in% job$untranslated$construct))
 })

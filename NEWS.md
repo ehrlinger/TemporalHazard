@@ -472,7 +472,8 @@
   **The screen may select a different model than `PROC HAZARD` did**, and
   the rendered document says so in a callout above the chunk: `PROC HAZARD`
   uses approximate variances during selection, which the entry statistic
-  here reproduces but the Wald removal tests do not, and `force_in` is keyed by variable name across phases where
+  here reproduces (except for a candidate refitted because its information
+  is indefinite) but the Wald removal tests do not, and `force_in` is keyed by variable name across phases where
   SAS's `/I` holds a variable in one phase. Read the result as this
   package's screen of the job's candidates, not as a reproduction of the SAS
   run.

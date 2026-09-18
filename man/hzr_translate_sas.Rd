@@ -67,9 +67,10 @@ package's internals, so the document renders in your session, and in a
 colleague's, without anything further installed, with one exception. A
 translated \code{SELECTION} screen on a multiphase job with interval-censored
 rows (an \code{ICENSOR} job; \code{LCENSOR} is left truncation and does not need
-it) needs the suggested package \pkg{numDeriv}. Without it the score
-entry test stops and says so, and the emitted check warns that removals
-could not be tested.
+it) needs the suggested package \pkg{numDeriv}. Without it a screen that
+tests an entry stops and says so. A screen that completes but cannot test
+a removal (a \code{BACKWARD} screen, whose base has no usable variance) is
+caught by the emitted check, which warns and names the variables.
 }
 
 \section{Experimental}{

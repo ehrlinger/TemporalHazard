@@ -95,9 +95,10 @@
 #' colleague's, without anything further installed, with one exception. A
 #' translated `SELECTION` screen on a multiphase job with interval-censored
 #' rows (an `ICENSOR` job; `LCENSOR` is left truncation and does not need
-#' it) needs the suggested package \pkg{numDeriv}. Without it the score
-#' entry test stops and says so, and the emitted check warns that removals
-#' could not be tested.
+#' it) needs the suggested package \pkg{numDeriv}. Without it a screen that
+#' tests an entry stops and says so. A screen that completes but cannot test
+#' a removal (a `BACKWARD` screen, whose base has no usable variance) is
+#' caught by the emitted check, which warns and names the variables.
 #'
 #' @section Experimental:
 #' The emitted document renders: the `hazard()` chunk binds its fit to a name
@@ -455,7 +456,8 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
 #' `hzr_stepwise()` runs the job's own candidates, flags and thresholds, but
 #' it cannot be expected to reach `PROC HAZARD`'s selected set: SAS uses
 #' approximate variances during selection, which the entry statistic here
-#' reproduces but the Wald removal tests do not, and `force_in` is not
+#' reproduces (except for a candidate refitted because its information is
+#' indefinite) but the Wald removal tests do not, and `force_in` is not
 #' phase-keyed where SAS's `/I` is. The
 #' divergence is recorded against a real fixture in
 #' `tests/testthat/test-sas-parity.R` (hm.death.AVC). The reader meets this
@@ -473,8 +475,10 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
       "differ from the one PROC HAZARD chose, for reasons that cannot be",
       "tuned away. PROC HAZARD uses approximate variances during selection",
       "(it ignores the shaping-parameter covariances). The entry statistic",
-      "here reproduces that approximation, but the Wald tests behind the drop",
-      "decisions use the full Hessian, so removals can differ; and SAS's /I",
+      "here reproduces that approximation, except for a candidate whose",
+      "information is indefinite, which is refitted and Wald-tested instead;",
+      "the Wald tests behind the drop decisions use the full Hessian, so",
+      "removals can differ too; and SAS's /I",
       "holds a variable in ONE phase,",
       "while hzr_stepwise()'s force_in is keyed by variable name across every",
       "phase, which is why a job whose /I variable is movable in another",

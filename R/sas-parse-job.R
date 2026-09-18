@@ -520,7 +520,13 @@
       # below fire on `PARMS MUE=0.2 THALF=1; PARMS FIXNU;` -- a job the
       # reference runs -- because only the trailing statement survived.
       PARAMETERS = parms_ops <- c(parms_ops, ops),
-      STEPWISE   = sel_ops <- ops,
+      # SAS accepts `SLE = 0.2`. Splitting that on whitespace left three
+      # tokens, recorded as untranslated, and the screen ran at the DEFAULT
+      # threshold instead, so close the spaces around `=` first.
+      STEPWISE   = {
+        sel_ops <- strsplit(gsub("\\s*=\\s*", "=", ops_text), "\\s+")[[1L]]
+        sel_ops <- sel_ops[nzchar(sel_ops)]
+      },
       # RESTRICT constrains which variables the screen may select
       # (hazrd4.c's rsttbl). It is recorded here and refused below when the
       # job also has a SELECTION: a screen that ignored it would select by a
@@ -953,19 +959,44 @@
                 "$criteria$uncomputable_reasons. A screen that could not ",
                 "score a candidate did not test it.", call. = FALSE)
       }
-      # Removal is tested on Wald p-values, which need standard errors. A
-      # multiphase ICENSOR fit without numDeriv has none, and the screen then
-      # removes nothing -- indistinguishable from "nothing met slstay".
-      # Indexed by string: the caller substitutes the SYMBOL `fit` with this
-      # block's slot name, and `fit$fit` would rename the component too.
-      if (!is.matrix(fit[["fit"]][["vcov"]])) {
-        warning("The screened model has no standard errors, so no Wald ",
-                "removal test could be computed and nothing could be ",
-                "removed. For an interval-censored job, install 'numDeriv'.",
-                call. = FALSE)
-      }
       invisible(n_unscored)
     })
+    # Removal is tested on Wald p-values, which need a usable variance for
+    # the coefficient being tested. A multiphase ICENSOR fit without
+    # numDeriv has none at all, and a masked variance is NA inside an
+    # otherwise valid matrix; either way the screen cannot remove that
+    # variable, which reads exactly like "it met slstay". Only the
+    # variables the screen could remove are read: a FIXED shape has an NA
+    # variance by design. A forward-only screen never removes, so it gets
+    # no such check. Indexed by string: the caller substitutes the SYMBOL
+    # `fit` with this block's slot name, and `fit$fit` would rename the
+    # component too.
+    removable <- unique(unlist(parms$selection$movable %||% list()))
+    if (!identical(sel$direction, "forward") && length(removable)) {
+      removable_re <- paste0("^phase_[0-9]+[.](",
+                             paste(removable, collapse = "|"), ")")
+      removal_check <- bquote({
+        est <- names(stats::coef(fit))
+        v <- fit[["fit"]][["vcov"]]
+        var_ok <- if (is.matrix(v) && nrow(v) == length(est)) {
+          is.finite(diag(v)) & diag(v) > 0
+        } else {
+          rep(FALSE, length(est))
+        }
+        untestable <- est[grepl(.(removable_re), est) & !var_ok]
+        if (length(untestable)) {
+          warning("The screened model has no usable standard error for ",
+                  paste(untestable, collapse = ", "), ", so no Wald ",
+                  "removal test could be computed for it. For an ",
+                  "interval-censored job, install 'numDeriv'.", call. = FALSE)
+        }
+      })
+      screen_check_call <- as.call(c(
+        as.name("{"),
+        as.list(removal_check)[-1L],
+        as.list(screen_check_call)[-1L]
+      ))
+    }
   }
 
   list(call = as.call(c(head, args)), status_call = status_call,
