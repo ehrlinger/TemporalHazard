@@ -102,9 +102,11 @@ fit <- hazard(..., data = avcs)
 
 `control` holds only settings the fit reads: `maxit` and `reltol` for
 every model, plus `n_starts`, `conserve`, `phase_share_tol` and
-`start_seed` for a multiphase one. `hazard()` refuses any other
-element rather than ignoring it, so a mistyped name is an error, not a
-silently unchanged fit.
+`start_seed` for a multiphase one. If you pass `nocov`, `nocor` or
+`condition` anyway, `hazard()` warns that the option does nothing and fits
+the model unchanged. A name that nothing reads, such as a misspelling, is
+an error, so a mistyped setting cannot silently leave the default in
+force.
 
 Additional `PROC HAZARD` options with no direct R equivalent yet are passed
 through `...` as named arguments and stored in `fit$legacy_args`.
@@ -407,8 +409,9 @@ statement:
 - `CONSERVE` becomes `control = list(conserve = TRUE)`. `CONDITION=14`
   and `QUASI` have no `control` equivalent: `hazard()` already optimizes
   by quasi-Newton (BFGS), and it reports the Hessian's conditioning
-  through `rcond` rather than taking a tolerance. `hazard()` refuses a
-  `control` element it would not use, so they are left out.
+  through `rcond` rather than taking a tolerance. Passed as
+  `control = list(condition = 14, method = "bfgs")` they would only draw a
+  warning that they do nothing, so they are left out.
 - `PROC STANDARD REPLACE` from the SAS `DATA` steps becomes one line that
   fills the missing `inc_surg` values with the column mean.
 

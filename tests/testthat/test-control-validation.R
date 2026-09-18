@@ -46,26 +46,82 @@ test_that("control$fix is refused, pointing at hzr_phase(fixed = )", {
   expect_error(cv_weibull(list(fix = 2L, maxit = 50)), "control\\$fix")
 })
 
-test_that("names hazard() documented or emitted, but never read, are refused", {
-  # Each changed nothing; the message names it and says why.
-  reasons <- c(abstol = "bounded optimizer", method = "BFGS",
-               condition = "CONDITION= has no equivalent",
-               nocov = "prints nothing", nocor = "prints nothing",
-               quasi = "BFGS")
-  for (nm in names(reasons)) {
-    ctl <- stats::setNames(list(1), nm)
-    expect_error(cv_multiphase(ctl),
-                 paste0("ever read.*control\\$", nm, " \\(.*", reasons[[nm]]),
-                 label = nm)
-  }
-  # Several at once are all named.
-  expect_error(cv_weibull(list(condition = 14, method = "bfgs")),
-               "control\\$method.*control\\$condition|control\\$condition.*control\\$method")
+test_that("control$quasi is an error saying it was never read", {
+  expect_error(cv_multiphase(list(quasi = TRUE)), "control\\$quasi.*never read")
 })
 
-test_that("a multiphase-only element on a single distribution says so", {
-  expect_error(cv_weibull(list(n_starts = 3)),
-               "'n_starts'.*only for dist = \"multiphase\"")
+test_that("a documented name that no fit reads warns, and the fit is unchanged", {
+  # cv_weibull(), not cv_multiphase(): the latter suppresses warnings.
+  reasons <- c(abstol = "bounded optimizer", method = "BFGS",
+               condition = "CONDITION= has no equivalent",
+               nocov = "prints nothing", nocor = "prints nothing")
+  for (nm in names(reasons)) {
+    ctl <- stats::setNames(list(1), nm)
+    expect_warning(
+      obj <- cv_weibull(ctl),
+      paste0("no effect.*control\\$", nm, " \\(.*", reasons[[nm]]),
+      label = nm
+    )
+    expect_s3_class(obj, "hazard")
+  }
+  # Several at once share one warning, in the order given.
+  expect_warning(cv_weibull(list(condition = 14, method = "bfgs")),
+                 "control\\$condition.*control\\$method")
+  # The fit is the fit without them: they are ignored, not applied.
+  want <- cv_weibull(list(maxit = 500), fit = TRUE)
+  expect_warning(
+    got <- cv_weibull(list(maxit = 500, abstol = 1e-3, condition = 14),
+                      fit = TRUE),
+    "no effect"
+  )
+  expect_identical(got$fit$theta, want$fit$theta)
+  expect_identical(got$fit$objective, want$fit$objective)
+})
+
+test_that("a name nothing reads is an error even beside a warned one", {
+  expect_error(cv_weibull(list(condition = 14, n_startz = 1)),
+               "no fit reads: 'n_startz'")
+})
+
+test_that("a multiphase element on a single distribution warns and fits", {
+  expect_warning(
+    obj <- cv_weibull(list(n_starts = 3)),
+    "control\\$n_starts \\(it applies only to dist = \"multiphase\"\\)"
+  )
+  expect_s3_class(obj, "hazard")
+})
+
+test_that("a warned name forwarded by stepwise still lets the screen select", {
+  # The case the warn-not-error choice exists for: hzr_stepwise() forwards
+  # control to every candidate refit, and an error there fails each
+  # candidate, emptying the screen as if nothing qualified.
+  data(avc, package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc)
+  base <- hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
+                 dist = "weibull", fit = TRUE, theta = c(mu = 0.01, nu = 0.5))
+  sw <- suppressWarnings(hzr_stepwise(
+    base, scope = "age", data = d, direction = "forward",
+    criterion = "wald", trace = FALSE, control = list(n_starts = 1L)
+  ))
+  expect_identical(sw$steps$variable, "age")
+  expect_identical(sw$criteria$n_refit_failures, 0L)
+})
+
+test_that("a name nothing reads, forwarded by stepwise, still fails every candidate", {
+  # The other direction, pinned so the warn/error line cannot widen
+  # silently: an unknown name stays an error inside a refit, which stepwise
+  # records as a failed candidate (#386), leaving the screen empty.
+  data(avc, package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc)
+  base <- hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
+                 dist = "weibull", fit = TRUE, theta = c(mu = 0.01, nu = 0.5))
+  sw <- suppressWarnings(hzr_stepwise(
+    base, scope = "age", data = d, direction = "forward",
+    criterion = "wald", trace = FALSE, control = list(n_startz = 1L)
+  ))
+  expect_identical(nrow(sw$steps), 0L)
+  expect_gt(sw$criteria$n_refit_failures, 0L)
+  expect_match(sw$criteria$refit_failure_reasons[["age"]], "n_startz")
 })
 
 test_that("control must be a named list", {

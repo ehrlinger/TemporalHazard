@@ -307,16 +307,20 @@ NULL
 #'   `theta`, for the legacy SAS-parity helpers and the stepwise refit, which
 #'   read it back from `fit$spec$control`. The fit itself does not use it.
 #'
-#' `control` accepts only the elements above: `maxit`, `reltol` and
+#' The fit reads only the elements above: `maxit`, `reltol` and
 #' `shape_param_count` for every model, and `n_starts`, `start_seed`,
-#' `phase_share_tol` and `conserve` for `dist = "multiphase"`. Any other
-#' element is an error that names it, rather than a setting silently ignored
-#' (#376). That includes names earlier versions accepted without reading:
-#' `abstol` (read only by a bounded optimizer no fit uses), `method`,
-#' `condition`, `nocov`, `nocor`, `quasi` and `fix`. A fit given `fix` was
-#' never constrained; hold a parameter with `hzr_phase(fixed = )` on a
-#' multiphase phase. A single-distribution model has no mechanism for
-#' fixing a parameter.
+#' `phase_share_tol` and `conserve` for `dist = "multiphase"` (#376).
+#' - A name that nothing reads is an error that names it, rather than a
+#'   setting silently ignored: a misspelling such as `n_startz`, and `fix`
+#'   and `quasi`, which no fit has ever read. A fit given `fix` was never
+#'   constrained; hold a parameter with `hzr_phase(fixed = )` on a
+#'   multiphase phase. A single-distribution model has no mechanism for
+#'   fixing a parameter.
+#' - A real name that does nothing for this fit warns, and the fit proceeds
+#'   unchanged: `abstol` (read only by a bounded optimizer no fit uses),
+#'   `method`, `condition`, `nocov` and `nocor`, which earlier versions
+#'   documented as accepted without reading them, and a multiphase element
+#'   such as `n_starts` given to a single-distribution fit.
 #'
 #' SAS `PROC HAZARD` options with no `control` equivalent: `NOCOV` and `NOCOR`
 #' only suppress printed output, and `hazard()` prints nothing until asked.
@@ -2612,9 +2616,12 @@ vcov.hazard <- function(object, ...) {
   multiphase = c("n_starts", "conserve", "phase_share_tol", "start_seed")
 )
 
-# Names hazard() documented or a translation emitted, which no fit ever
-# read, with the reason each is refused (#376).
-.hzr_control_never_read <- c(
+# Names ?hazard documented as accepted, or a translation emitted, although
+# no fit ever read them, with the reason each has no effect (#376). They
+# warn rather than error: the name is real, it only does nothing. A warning
+# inside a stepwise or bootstrap candidate refit leaves the refit to
+# proceed, where an error would be recorded as a failed candidate.
+.hzr_control_no_effect <- c(
   abstol = paste0("it is read only by a bounded optimizer that no fit ",
                   "hazard() runs uses; `reltol` is the tolerance that ",
                   "applies"),
@@ -2624,22 +2631,25 @@ vcov.hazard <- function(object, ...) {
                      "condition-number stop, and reports the Hessian's ",
                      "conditioning after the fit instead"),
   nocov = "it suppresses printed output, and hazard() prints nothing",
-  nocor = "it suppresses printed output, and hazard() prints nothing",
-  quasi = paste0("the optimizer is chosen by hazard() and is quasi-Newton ",
-                 "(BFGS) already")
+  nocor = "it suppresses printed output, and hazard() prints nothing"
 )
 
 
-#' Refuse a `control` element the fitter would ignore
+#' Check `control` against the elements the fit reads
 #'
 #' `hazard()` accepted any `control` element, so one it never reads -- a
 #' typo such as `n_startz`, or `fix`, which no fitting code has ever read --
-#' left the fit as it would have been and said nothing (#376). An element
-#' is accepted only if the fitter reads it for this distribution.
+#' left the fit as it would have been and said nothing (#376). A name that
+#' nothing reads is an error; so are `fix` and `quasi`, which say what a fit
+#' given them actually was. A real name that does nothing here -- one of
+#' the names ?hazard documented without reading, or a multiphase element on
+#' a single-distribution fit -- warns and is ignored, so a stepwise or
+#' bootstrap candidate refit that forwards it still runs.
 #'
 #' @param control The `control` list, already known to be a list.
 #' @param dist The distribution name.
-#' @return `NULL`, invisibly; stops on an element the fit would ignore.
+#' @return `NULL`, invisibly; stops on a name no fit reads, warns on one
+#'   that does nothing for this fit.
 #' @keywords internal
 #' @noRd
 .hzr_validate_control <- function(control, dist) {
@@ -2659,32 +2669,42 @@ vcov.hazard <- function(object, ...) {
          "dist = \"multiphase\" model. A single-distribution model has no ",
          "mechanism for fixing a parameter.", call. = FALSE)
   }
-  never_read <- intersect(nm, names(.hzr_control_never_read))
-  if (length(never_read) > 0L) {
-    stop("'control' has element(s) that no fit has ever read, so they ",
-         "changed nothing and are no longer accepted: ",
-         paste0("control$", never_read, " (",
-                .hzr_control_never_read[never_read], ")", collapse = "; "),
-         ".", call. = FALSE)
+  if ("quasi" %in% nm) {
+    stop("control$quasi is not supported: hazard() has never read it. ",
+         "The optimizer is chosen by hazard() and is quasi-Newton (BFGS) ",
+         "already.", call. = FALSE)
   }
   multiphase <- identical(dist, "multiphase")
   accepted <- c(.hzr_control_names$all,
                 if (multiphase) .hzr_control_names$multiphase)
-  unknown <- setdiff(nm, accepted)
+  no_effect <- intersect(nm, names(.hzr_control_no_effect))
+  # A name the fitter reads, but only for another model: real, not a typo.
+  off_path <- if (multiphase) {
+    character(0)
+  } else {
+    intersect(nm, .hzr_control_names$multiphase)
+  }
+  unknown <- setdiff(nm, c(accepted, no_effect, off_path))
   if (length(unknown) > 0L) {
-    mp_only <- if (multiphase) {
-      character(0)
-    } else {
-      intersect(unknown, .hzr_control_names$multiphase)
-    }
-    stop("'control' has element(s) the fit would ignore: ",
+    stop("'control' has element(s) that no fit reads: ",
          paste0("'", unknown, "'", collapse = ", "), ". ",
-         if (length(mp_only) > 0L) {
-           paste0(paste0("'", mp_only, "'", collapse = ", "),
-                  " apply only for dist = \"multiphase\". ")
-         },
          "For dist = \"", dist, "\" the accepted elements are: ",
          paste(accepted, collapse = ", "), ".", call. = FALSE)
+  }
+  notes <- c(
+    if (length(no_effect) > 0L) {
+      paste0("control$", no_effect, " (", .hzr_control_no_effect[no_effect],
+             ")")
+    },
+    if (length(off_path) > 0L) {
+      paste0("control$", off_path, " (it applies only to dist = ",
+             "\"multiphase\")")
+    }
+  )
+  if (length(notes) > 0L) {
+    warning("'control' element(s) with no effect on this dist = \"", dist,
+            "\" fit, ignored: ", paste(notes, collapse = "; "), ".",
+            call. = FALSE)
   }
   invisible(NULL)
 }

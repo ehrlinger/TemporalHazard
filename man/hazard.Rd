@@ -261,16 +261,22 @@ Read \code{fit$spec$control$conserve_applied}, not
 read it back from \code{fit$spec$control}. The fit itself does not use it.
 }
 
-\code{control} accepts only the elements above: \code{maxit}, \code{reltol} and
+The fit reads only the elements above: \code{maxit}, \code{reltol} and
 \code{shape_param_count} for every model, and \code{n_starts}, \code{start_seed},
-\code{phase_share_tol} and \code{conserve} for \code{dist = "multiphase"}. Any other
-element is an error that names it, rather than a setting silently ignored
-(#376). That includes names earlier versions accepted without reading:
-\code{abstol} (read only by a bounded optimizer no fit uses), \code{method},
-\code{condition}, \code{nocov}, \code{nocor}, \code{quasi} and \code{fix}. A fit given \code{fix} was
-never constrained; hold a parameter with \code{hzr_phase(fixed = )} on a
+\code{phase_share_tol} and \code{conserve} for \code{dist = "multiphase"} (#376).
+\itemize{
+\item A name that nothing reads is an error that names it, rather than a
+setting silently ignored: a misspelling such as \code{n_startz}, and \code{fix}
+and \code{quasi}, which no fit has ever read. A fit given \code{fix} was never
+constrained; hold a parameter with \code{hzr_phase(fixed = )} on a
 multiphase phase. A single-distribution model has no mechanism for
 fixing a parameter.
+\item A real name that does nothing for this fit warns, and the fit proceeds
+unchanged: \code{abstol} (read only by a bounded optimizer no fit uses),
+\code{method}, \code{condition}, \code{nocov} and \code{nocor}, which earlier versions
+documented as accepted without reading them, and a multiphase element
+such as \code{n_starts} given to a single-distribution fit.
+}
 
 SAS \verb{PROC HAZARD} options with no \code{control} equivalent: \code{NOCOV} and \code{NOCOR}
 only suppress printed output, and \code{hazard()} prints nothing until asked.

@@ -2,19 +2,23 @@
 
 ## Breaking changes
 
-* **`hazard()` now refuses a `control` element that the fit would ignore
+* **`hazard()` now checks `control`, and refuses a name that nothing reads
   (#376).** `control` used to accept any name, so a mistyped one, such as
   `n_startz` for `n_starts`, left the default in force and said nothing.
-  `control` now accepts only what the fit reads: `maxit`, `reltol` and
-  `shape_param_count` for every model, and `n_starts`, `conserve`,
-  `phase_share_tol` and `start_seed` for a multiphase one. Any other name is
-  an error that names it and lists the accepted ones. That includes five
-  names `?hazard` used to document as accepted although no fit read them:
-  `abstol` (read only by a bounded optimizer that no fit uses), `method`,
-  `condition`, `nocov` and `nocor`. Each is now refused with the reason it
-  never had an effect. The SAS options `CONDITION=`, `NOCOV`, `NOCOR` and
-  `QUASI`, which the SAS-to-R migration vignette used to show as `control`
-  elements, have no `control` equivalent.
+  The fit reads `maxit`, `reltol` and `shape_param_count` for every model,
+  and `n_starts`, `conserve`, `phase_share_tol` and `start_seed` for a
+  multiphase one. A name that nothing reads is now an error that names it
+  and lists the accepted ones. A real name that does nothing for this fit
+  now warns, and the fit proceeds unchanged. That covers five names
+  `?hazard` used to document as accepted although no fit read them, and a
+  multiphase element such as `n_starts` given to a single-distribution fit.
+  The five are `abstol` (read only by a bounded optimizer that no fit
+  uses), `method`, `condition`, `nocov` and `nocor`. A warning rather than
+  an error keeps a stepwise or bootstrap run working when it forwards such
+  a name to every candidate refit: an error there would fail each
+  candidate and empty the screen. The SAS options `CONDITION=`, `NOCOV`,
+  `NOCOR` and `QUASI`, which the SAS-to-R migration vignette used to show as
+  `control` elements, have no `control` equivalent.
 
   **If you used `control$fix`, your fit was not constrained.** It was never
   documented, and the fitting code never read it: a fit given
@@ -26,7 +30,7 @@
   results, this one has no known affected user: nothing in this package or
   its tests passed `control$fix` to `hazard()`, so the exposure is limited
   to anyone who found and used the undocumented name. `control$quasi` was
-  never read either, and is refused the same way.
+  never read either, and is an error the same way.
 
 * **Standard errors were too small for a late (`"g3"`) phase with free
   shapes: re-run any you have reported (#332).** At realistic optima the
