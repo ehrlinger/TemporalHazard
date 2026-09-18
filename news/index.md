@@ -250,6 +250,26 @@
   stop.
 
 - **[`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
+  no longer writes `CONDITION=` or `QUASI` into
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)’s
+  `control`
+  ([\#384](https://github.com/ehrlinger/TemporalHazard/issues/384)).**
+  They were emitted as `condition` and `method`, which
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  never reads, so the translation counted two options as mapped while
+  they did nothing. No fit changes. Both are now recorded in
+  `$untranslated` with the reason. `CONDITION=` stops `PROC HAZARD`’s
+  optimizer when its Hessian approximation becomes too ill-conditioned,
+  and
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  has no such stop; it warns about the final Hessian instead; a
+  `CONDITION=` outside 3 to 14, which `PROC HAZARD` itself ignores, is
+  recorded as such. `QUASI` chooses `PROC HAZARD`’s optimizer, and
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  has no choice to make: it fits by BFGS, a quasi-Newton method, after a
+  Nelder-Mead warm-up in some multiphase fits.
+
+- **[`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
   now emits a [`stop()`](https://rdrr.io/r/base/stop.html) in place of
   the fit when a job has no `DATA=` and a phase has covariates
   ([\#311](https://github.com/ehrlinger/TemporalHazard/issues/311)).** A

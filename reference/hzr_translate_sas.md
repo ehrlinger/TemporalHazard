@@ -180,5 +180,6 @@ layout and the emitted document format are all expected to change.
 job <- hzr_translate_sas(
   system.file("extdata", "hz-example.sas", package = "TemporalHazard")
 )
+#> Warning: 2 untranslated construct(s) in hz-example.sas: QUASINEWTON, CONDITION
 # }
 ```
