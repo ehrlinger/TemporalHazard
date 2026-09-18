@@ -118,7 +118,7 @@ test_that("tokens_mapped never exceeds tokens_seen when values are bad", {
   expect_gte(nrow(got$untranslated), 3L)
 })
 
-test_that("a CONDITION= PROC HAZARD ignores is not described as a stop (#384)", {
+test_that("a CONDITION= that PROC HAZARD ignores is not described as a stop (#384)", {
   # hazpprc.c:48-56 stores CONDITION only for 3 <= n <= 14; outside that the
   # limit stays at the 0 stmtprc.c:74 set, setopt.c:454 skips the test, and
   # the built-in thresholds apply. Saying "CONDITION=20 stops the optimizer"
