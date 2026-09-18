@@ -109,8 +109,12 @@ test_that("the single-start fit from #262 completes instead of erroring (#262)",
   ))
   # What #262 claims, and what main fails: the single start is not discarded
   # as errored. On main this fit stops with "no usable fit from 1 start: 1
-  # errored"; here the start completes.
-  expect_identical(fit$fit$starts$status, "ok")
+  # errored"; here the start completes. Its status is "ok" or
+  # "nonconverged": the loop writes "ok" only for optim()'s convergence code
+  # 0, which is the optimizer's flag, not #262's claim. "error" (main) and
+  # "infeasible" (a finite start the guard wrongly penalised) both fail.
+  expect_length(fit$fit$starts$status, 1L)
+  expect_true(fit$fit$starts$status %in% c("ok", "nonconverged"))
   expect_true(is.finite(fit$fit$objective))
   expect_gt(fit$fit$objective, -1e9)
   # Deliberately NOT asserted: convergence. This fit reports converged = TRUE,
