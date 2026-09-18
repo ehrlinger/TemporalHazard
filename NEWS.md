@@ -489,6 +489,20 @@
 
 ## Bug fixes
 
+* **A score-criterion `hzr_stepwise()` screen on a multiphase base that
+  dropped rows with missing covariates now stops and says so (#372).** Such a
+  fit drops every row with a missing value in a phase covariate, but keeps the
+  full response in `$data`. The score test's row check counted that full
+  response, so it passed; every candidate then failed to line up with the
+  fit's design, and the screen stopped with no steps, blaming each candidate
+  as `not_expandable`. The check now counts the rows the fit was estimated on
+  and stops with an error naming how many rows the base dropped and the
+  remedy: refit the base model on complete cases and pass that data frame.
+  This was never a silent wrong answer (the screen always warned that nothing
+  could be scored), but it reported the wrong cause, and a screen that used
+  to finish with zero steps now stops with an error. A base fitted on
+  complete data is unaffected.
+
 * **A fit made with `survival::Surv()`'s own status codes was wrong, not
   empty, and said nothing (#231).** `Surv()` codes interval-censored rows
   `3`, and this package codes them `2`. Passing survival's integers as a

@@ -609,6 +609,24 @@
   )
 }
 
+#' Number of rows a fit was estimated on, read off the fit
+#'
+#' A multiphase fit aligns its phase designs by dropping every row with a
+#' missing covariate, and stores the aligned designs in `$fit$x_list`, while
+#' `$data$time` keeps the caller's full length. The designs' row count is
+#' therefore the rows the fit used. A fit with no phase design columns has
+#' nothing to drop, so its `time` length is the count.
+#'
+#' @param fit A fitted `hazard` object.
+#' @return A single integer.
+#' @keywords internal
+#' @noRd
+.hzr_fit_rows_used <- function(fit) {
+  xl <- Filter(function(x) !is.null(x) && NCOL(x) > 0L, fit$fit$x_list)
+  n <- unique(vapply(xl, NROW, integer(1)))
+  if (length(n) == 1L) n else length(fit$data$time)
+}
+
 #' Score statistic for one entry candidate
 #'
 #' @param current Fitted `hazard` object (the step's current model).
@@ -636,7 +654,23 @@
   # passing pre-`na.omit()` data would fail the row check inside
   # .hzr_score_expand() for EVERY candidate, and stepwise would report nothing
   # significant -- a plausible-looking wrong answer. Fail loudly instead.
-  n_obs <- length(current$data$time)
+  # Count the rows the FIT used, read off the fit itself: a multiphase fit
+  # drops every row with a missing phase covariate but keeps the caller's full
+  # `time` in `$data`, so `length(time)` overstated them, this check passed,
+  # and every candidate was then labelled `not_expandable` (#372).
+  n_time <- length(current$data$time)
+  n_obs <- .hzr_fit_rows_used(current)
+  if (n_obs != n_time) {
+    stop(
+      "The base fit dropped ", n_time - n_obs, " rows with missing values ",
+      "in its covariates, so its stored response (", n_time, " rows) no ",
+      "longer lines up with the rows it was fitted on (", n_obs, "), and no ",
+      "candidate can be scored against it. Refit the base model on complete ",
+      "cases (for example `na.omit()` over the model's columns) and pass that ",
+      "same data frame.",
+      call. = FALSE
+    )
+  }
   if (nrow(data) != n_obs) {
     stop(
       "`data` has ", nrow(data), " rows but the fitted model used ", n_obs,
