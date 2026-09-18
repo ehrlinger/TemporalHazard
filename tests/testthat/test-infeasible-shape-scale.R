@@ -115,3 +115,35 @@ test_that("the single-start fit from #262 completes instead of erroring (#262)",
   # optimizer's own flag, which says nothing about #262 here (see #351:
   # `converged` is TRUE when a fit fails the relative-gradient test).
 })
+
+test_that("a corrupt interval bound still stops the fit whatever the scale (#262 x #394)", {
+  # #394 guards the DATA (interval bounds); #262 guards the PARAMETERS (a
+  # time scale stepped out of range). Disjoint inputs -- but #394's comment
+  # says order is load-bearing: a corrupt row must STOP the fit, not return
+  # -Inf for the optimizer to walk away from, and #262's guard returns -Inf.
+  # Inside .hzr_logl_multiphase() #262's return does come first, so a DIRECT
+  # call with both defects returns -Inf. That internal order is not pinned,
+  # since checking the bounds first would be an improvement. The user-facing
+  # guarantee is pinned instead: hazard() checks the data at entry
+  # (.hzr_check_sas_data) before any likelihood is evaluated. An NA bound is
+  # refused earlier still, by input validation (#232's test), so the corrupt
+  # row that reaches this check through hazard() is a finite interval whose
+  # upper bound does not exceed its lower one.
+  tt <- c(1, 2, 3, 4, 5, 6)
+  st <- c(1, 0, 2, 1, 2, 1)
+  lo <- c(0, 0, 3, 0, 2, 0)   # row 3: lower == upper, a zero-width interval
+  ph <- list(e = hzr_phase("cdf", t_half = 3, nu = 1, m = 0),
+             c = hzr_phase("constant"))
+  fit_at <- function(log_t_half) {
+    hazard(time = tt, status = st, time_lower = lo, time_upper = tt,
+           dist = "multiphase", phases = ph,
+           theta = c(log(0.1), log_t_half, 1, 0, log(0.05)),
+           objective = "sas", fit = TRUE)
+  }
+  msg <- "requires upper > lower on every interval-censored row"
+  # Out-of-range scale AND a corrupt interval: the data defect wins.
+  expect_error(fit_at(-800), msg)
+  # Control: a feasible scale stops identically, so the stop is the data's,
+  # not a side effect of the scale.
+  expect_error(fit_at(log(3)), msg)
+})
