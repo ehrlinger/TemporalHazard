@@ -218,6 +218,10 @@ test_that("every step return carries refit_failures and its reasons", {
   expect_identical(names(bwd_none), names(wald_none))
   expect_identical(names(bwd_drop), names(wald_add))
   expect_true(all(names(wald_add) %in% names(score_add)))
+  # Every step counts the candidates it could not test (#389).
+  for (s in list(wald_none, wald_add, score_add, bwd_none, bwd_drop)) {
+    expect_identical(s$n_uncomputable, 0L)
+  }
   for (s in list(wald_none, wald_add, score_add, bwd_none, bwd_drop)) {
     expect_identical(s$refit_failure_reasons, character())
     expect_identical(s$refit_failures, character())
