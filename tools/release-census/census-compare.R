@@ -118,6 +118,14 @@ if (length(only_old)) say("  !! cases present only in the old run: ",
                           paste(only_old, collapse = ", "))
 if (length(only_new)) say("  !! cases present only in the new run: ",
                           paste(only_new, collapse = ", "))
+# Both runs read the same cases file, so the sets must match. Comparing only
+# the intersection would certify an incomplete census.
+if (length(only_old) || length(only_new) ||
+      !identical(old$counts$declared, new$counts$declared)) {
+  say("  !! The two runs do not cover the same cases, so the census is ")
+  say("  !! incomplete and is not compared. Re-run both from one cases file.")
+  quit(status = 3)
+}
 say("")
 
 # ---------------------------------------------------------------------------

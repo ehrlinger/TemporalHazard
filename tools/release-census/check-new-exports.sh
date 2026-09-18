@@ -22,15 +22,6 @@ git show "$OLD:NAMESPACE" | grep '^export(' | sed 's/^export(//; s/)$//' | sort 
 grep '^export(' NAMESPACE | sed 's/^export(//; s/)$//' | sort > "$WORK/new.exp"
 ADDED="$(comm -13 "$WORK/old.exp" "$WORK/new.exp")"
 
-if [ -z "$ADDED" ]; then
-  echo "no exports added since $OLD -- nothing to check"
-  exit 0
-fi
-
-echo "exports added since $OLD:"
-echo "$ADDED" | sed 's/^/  +/'
-echo
-
 # Known positive: the \value detector must fire on a file that has none.
 printf '\\name{zzz}\n\\title{No Value Here}\n' > "$WORK/novalue.Rd"
 if grep -q '\\value' "$WORK/novalue.Rd"; then
@@ -43,6 +34,16 @@ if ! grep -q '\\value' "$WORK/hasvalue.Rd"; then
   exit 1
 fi
 echo "known positive: \\value detector distinguishes both cases -- PASS"
+
+if [ -z "$ADDED" ]; then
+  echo "no exports added since $OLD -- nothing to check"
+  exit 0
+fi
+
+echo "exports added since $OLD:"
+echo "$ADDED" | sed 's/^/  +/'
+echo
+
 echo
 
 FAILED=0

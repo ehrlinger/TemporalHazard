@@ -48,9 +48,22 @@ release_slot() {
 # Release on exit; a signal exits, so the EXIT trap releases once and the
 # census does not carry on without its slot.
 trap release_slot EXIT
-trap 'exit 130' INT TERM
+# While a slot is being waited for, the acquiring child is a separate
+# process: a signal must stop it too, or it could later take a slot that no
+# one releases. Its own EXIT trap drops its ticket.
+ACQ_PID=""
+on_signal() {
+  if [ -n "$ACQ_PID" ]; then kill "$ACQ_PID" 2> /dev/null || true; fi
+  exit 130
+}
+trap on_signal INT TERM
 
-SLOT="$(bash "$HERE/gate-slot.sh" acquire release-census "census $OLD_VER vs $NEW_VER")"
+bash "$HERE/gate-slot.sh" acquire release-census "census $OLD_VER vs $NEW_VER" \
+  > "$WORK/slot.path" &
+ACQ_PID=$!
+wait "$ACQ_PID"
+ACQ_PID=""
+SLOT="$(cat "$WORK/slot.path")"
 echo "holding gate slot: $SLOT" | tee -a "$LOG"
 
 # --- installs --------------------------------------------------------------

@@ -712,7 +712,9 @@ census_cases <- function() {
     ## -- SAS fixtures ------------------------------------------------------
     # Gated on HAZARD_EXAMPLES_DIR, the same variable R-CMD-check.yaml sets
     # for the one runner that has the `ehrlinger/hazard` checkout. Without it
-    # this case records ABSENT with a reason, rather than disappearing. A
+    # this case records ERROR, with a message saying the fixture is
+    # unavailable (census-run.R reserves ABSENT for a missing export), rather
+    # than disappearing; read an ERROR-BOTH-SAME here as "not run". A
     # mounted /Volumes/qhsstudies is NOT sufficient on its own: the fixtures
     # the translator corpus reads live in the hazard repo, not on the volume.
     sas_outhaz_fixture = list(needs = "hzr_read_outhaz", fn = function(d) {
