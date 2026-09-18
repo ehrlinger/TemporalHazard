@@ -595,7 +595,7 @@ hazard <- function(formula = NULL,
     # bound both as a column and in the calling frame silently read the
     # calling frame's vector.
     .hzr_warn_masked_ambiguity(list(weights = substitute(weights)), data,
-                               parent.frame())
+                               parent.frame(), interface = "formula")
     weights <- eval(substitute(weights), data, parent.frame())
   }
 
@@ -2581,13 +2581,20 @@ vcov.hazard <- function(object, ...) {
 #' `inherits = TRUE` reaches base, where a column named `c`, `t` or `df`
 #' would warn on every call.
 #'
+#' The diagnosis is one sentence on both interfaces; the remedy differs,
+#' because only the vector interface can drop `data` to reach the calling
+#' frame, while the formula interface requires it.
+#'
 #' @param exprs Named list of the unevaluated argument expressions.
 #' @param data The data frame or list the arguments are masked by.
 #' @param env The calling frame.
+#' @param interface `"vector"` or `"formula"`, choosing the remedy clause.
 #' @return `NULL`, invisibly; warns naming each ambiguous name.
 #' @keywords internal
 #' @noRd
-.hzr_warn_masked_ambiguity <- function(exprs, data, env) {
+.hzr_warn_masked_ambiguity <- function(exprs, data, env,
+                                       interface = c("vector", "formula")) {
+  interface <- match.arg(interface)
   ambiguous <- lapply(exprs, function(e) {
     if (is.null(e)) {
       return(character(0))
@@ -2610,8 +2617,12 @@ vcov.hazard <- function(object, ...) {
                              collapse = ", "),
       ": the name is both a column of 'data' and a variable visible from ",
       "the calling frame. The column was used. Write data$<name> for the ",
-      "column; to use the calling frame's value, give it a name that is not ",
-      "a column of 'data'.",
+      "column, or ",
+      if (interface == "vector") {
+        "omit 'data' to use the calling frame's value."
+      } else {
+        "give the calling frame's value a name that is not a column of 'data'."
+      },
       call. = FALSE
     )
   }

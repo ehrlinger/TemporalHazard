@@ -52,27 +52,34 @@ test_that("a calling-frame name that is not a column still resolves there, witho
   expect_identical(got$fit$objective, want$fit$objective)
 })
 
-test_that("both interfaces give the same warning on the same ambiguous input", {
-  # Interface parity is why the formula path now shares the vector path's
-  # rule, so pin that the message is one message, not two that drift.
+test_that("both interfaces read the same vector and warn on the same ambiguous input", {
+  # Interface parity is about behaviour, which is what the design decided:
+  # the same column read and a warning raised, with one diagnosis. The
+  # remedy clause differs on purpose: only the vector interface can drop
+  # `data` to reach the calling frame.
   d <- fw_data()
   wc <- rep(1, 40)
   catch <- function(expr) {
     msg <- NULL
-    withCallingHandlers(expr, warning = function(w) {
+    val <- withCallingHandlers(expr, warning = function(w) {
       if (grepl("both a column of 'data'", conditionMessage(w))) {
         msg <<- conditionMessage(w)
       }
       invokeRestart("muffleWarning")
     })
-    msg
+    list(fit = val, msg = msg)
   }
   via_formula <- catch(hazard(survival::Surv(t, s) ~ x, data = d,
                               weights = wc, dist = "weibull",
                               theta = c(1, 1, 0), fit = TRUE))
-  via_vector <- catch(hazard(data = d, time = t, status = s, x = as.matrix(d["x"]),
-                             weights = wc, dist = "weibull",
-                             theta = c(1, 1, 0), fit = TRUE))
-  expect_false(is.null(via_formula))
-  expect_identical(via_formula, via_vector)
+  via_vector <- catch(hazard(data = d, time = t, status = s,
+                             x = as.matrix(d["x"]), weights = wc,
+                             dist = "weibull", theta = c(1, 1, 0), fit = TRUE))
+  expect_false(is.null(via_formula$msg))
+  expect_false(is.null(via_vector$msg))
+  diagnosis <- function(m) sub("The column was used\\..*$", "", m)
+  expect_identical(diagnosis(via_formula$msg), diagnosis(via_vector$msg))
+  expect_identical(via_formula$fit$fit$objective, via_vector$fit$fit$objective)
+  expect_match(via_vector$msg, "or omit 'data' to use the calling frame's value\\.$")
+  expect_match(via_formula$msg, "not a column of 'data'\\.$")
 })
