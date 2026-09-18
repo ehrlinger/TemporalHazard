@@ -4,6 +4,27 @@
 
 ### Breaking changes
 
+- **[`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
+  no longer fits a job `PROC HAZARD` rejects: if you hold estimates from
+  such a translation, they have no SAS run behind them
+  ([\#340](https://github.com/ehrlinger/TemporalHazard/issues/340)).** A
+  phase statement with an option written in a form SAS’s lexer or
+  grammar rejects, such as `AGE/EI` (options glued together), `AGE/E/I`,
+  `Y/`, `/S`, `AGE/MOVE` with no value, or a value after `=` that its
+  lexer does not read as a number (`AGE=abc`, `AGE/MOVE=1E5`,
+  `AGE/MOVE=Inf`), stops the job with a syntax error in `PROC HAZARD`,
+  and `ORDER=` with `/E`, `/I` or `/S` stops it with “mutually
+  exclusive”. The translator used to record the text and fit anyway,
+  with the variable in the model (or, for `AGE=abc`, left out of it).
+  Each now emits a [`stop()`](https://rdrr.io/r/base/stop.html) naming
+  the source. To check a job: search its phase statements for a run of
+  option letters after one `/` (`/EI`, `/SI`), a second `/`, `ORDER=`
+  beside `/E`, `/I` or `/S`, or a value after `=` that is not a plain
+  decimal number (an exponent needs a decimal point: `1.0E5`, not
+  `1E5`). None of these forms occurs in the reference corpus. Options
+  separated by spaces (`AGE/E I`) are valid SAS and still translate,
+  with `/E` taking precedence.
+
 - **Standard errors were too small for a late (`"g3"`) phase with free
   shapes: re-run any you have reported
   ([\#332](https://github.com/ehrlinger/TemporalHazard/issues/332)).**
@@ -810,6 +831,23 @@
   naming it, such as a macro that writes it internally, is not detected.
 
 ### Bug fixes
+
+- **A translated job’s missing-value guard no longer stops on rows
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  drops anyway, and an absent phase variable is named
+  ([\#340](https://github.com/ehrlinger/TemporalHazard/issues/340)).**
+  The guard for a variable outside the fitted model (`/E`, say) stopped
+  whenever it was missing, even on rows where a modelled variable was
+  missing too;
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  drops those rows itself, as SAS does. It now stops only on rows
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  would keep. A phase-statement variable that the dataset lacks used to
+  fail as “object … not found”; the status chunk now names every such
+  variable and the dataset. A phase-statement variable that is not
+  numeric (a character or factor column) now stops the job too, as
+  `PROC HAZARD` does (“VARIABLE NOT NUMERIC”); the translation used to
+  dummy-code it and fit a model SAS never ran.
 
 - **The `objective = "sas"` interval checks name the real defect
   ([\#340](https://github.com/ehrlinger/TemporalHazard/issues/340)).**
