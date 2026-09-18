@@ -66,8 +66,8 @@ while :; do
 done
 
 # Belt and braces: do not start while a slot still names this session.
-for s in /private/tmp/claude-504/th-heavy-gate-slots/slot1 \
-         /private/tmp/claude-504/th-heavy-gate-slots/slot2; do
+GATE="${TH_GATE_ROOT:-/private/tmp/claude-504/th-heavy-gate-slots}"
+for s in "$GATE/slot1" "$GATE/slot2"; do
   if [ -d "$s" ] && grep -q "release-census" "$s/owner.txt" 2>/dev/null; then
     say "a gate slot still names release-census; waiting for its release"
     while [ -d "$s" ] && grep -q "release-census" "$s/owner.txt" 2>/dev/null; do
@@ -80,6 +80,6 @@ done
 say "starting the $OLD_VER-baseline census (it takes its own ticket now)"
 bash "$HERE/run-census.sh" "$OLD_REF" "$OLD_VER" "$NEW_REF" "$NEW_VER" \
   "$SECOND_WORK" 2>&1 | tee -a "$CHAINLOG"
-RC=$?
+RC=${PIPESTATUS[0]}
 say "second census orchestrator exit: $RC"
 exit "$RC"

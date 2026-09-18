@@ -9,7 +9,8 @@
 # was added to stop. Never removes another session's ticket or slot.
 set -eu
 
-GATE=/private/tmp/claude-504/th-heavy-gate-slots
+# The root is configurable (TH_GATE_ROOT); the default is this programme's.
+GATE="${TH_GATE_ROOT:-/private/tmp/claude-504/th-heavy-gate-slots}"
 QUEUE="$GATE/queue"
 SLOTS="$GATE"
 
@@ -17,6 +18,16 @@ cmd="${1:?acquire|release}"
 
 if [ "$cmd" = "release" ]; then
   SLOT="${2:?slot dir required}"
+  # Only this gate's slots, and only one this tool acquired: releasing by
+  # path alone removed a slot another job held (2026-09-17).
+  case "$SLOT" in
+    "$SLOTS/slot1"|"$SLOTS/slot2") ;;
+    *) echo "refusing to release $SLOT: not a slot of $SLOTS" >&2; exit 1 ;;
+  esac
+  if ! grep -qx 'owner: release-census' "$SLOT/owner.txt" 2>/dev/null; then
+    echo "refusing to release $SLOT: not held by release-census" >&2
+    exit 1
+  fi
   rm -rf "$SLOT"
   echo "released $SLOT"
   exit 0
@@ -28,7 +39,8 @@ HEADSHA="$(git rev-parse HEAD)"
 WT="$(pwd)"
 
 mkdir -p "$QUEUE"
-T="$(date +%s)-$SLUG"
+# The pid makes a ticket unique when two sessions start in the same second.
+T="$(date +%s)-$SLUG-$$"
 echo "release-census | $WT | $HEADSHA | $DESC" > "$QUEUE/$T"
 echo "took ticket $T" >&2
 

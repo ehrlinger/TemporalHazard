@@ -110,4 +110,6 @@ for fn in $ADDED; do
 done
 
 echo "checks failing: $FAILED"
-exit 0
+# Non-zero when any check failed, so the caller can gate on it. Capped at 1:
+# an exit status is taken modulo 256, so a count could wrap to "success".
+[ "$FAILED" -eq 0 ]

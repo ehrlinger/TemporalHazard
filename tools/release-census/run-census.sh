@@ -11,7 +11,7 @@
 # Holds a heavy-gate slot for the whole run and releases it on EVERY exit
 # path, including failure. No timing is recorded: six sessions share this
 # CPU, so every wall-clock number from this programme is contended.
-set -eu
+set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
@@ -42,11 +42,13 @@ NEW_SHA="$(git rev-parse "$NEW_REF")"
 SLOT=""
 release_slot() {
   if [ -n "$SLOT" ] && [ -d "$SLOT" ]; then
-    rm -rf "$SLOT"
-    echo "released gate slot $SLOT" | tee -a "$LOG"
+    bash "$HERE/gate-slot.sh" release "$SLOT" | tee -a "$LOG"
   fi
 }
-trap release_slot EXIT INT TERM
+# Release on exit; a signal exits, so the EXIT trap releases once and the
+# census does not carry on without its slot.
+trap release_slot EXIT
+trap 'exit 130' INT TERM
 
 SLOT="$(bash "$HERE/gate-slot.sh" acquire release-census "census $OLD_VER vs $NEW_VER")"
 echo "holding gate slot: $SLOT" | tee -a "$LOG"
@@ -75,7 +77,7 @@ set +e
 Rscript "$HERE/census-compare.R" \
   "$WORK/census-$OLD_VER.rds" "$WORK/census-$NEW_VER.rds" \
   "$WORK/census-report.txt" 2>&1 | tee -a "$LOG"
-CMP=$?
+CMP=${PIPESTATUS[0]}
 set -e
 
 {

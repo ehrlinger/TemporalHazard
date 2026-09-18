@@ -21,6 +21,12 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 # The NEWS text a user of $OLDVER reads: everything above that heading.
+# Without the heading, awk would print the whole file and audit the wrong
+# range, so refuse.
+if ! grep -qxF "# TemporalHazard $OLDVER" NEWS.md; then
+  echo "FAIL: NEWS.md has no '# TemporalHazard $OLDVER' heading" >&2
+  exit 1
+fi
 awk -v v="# TemporalHazard $OLDVER" '$0 == v { exit } { print }' NEWS.md > "$WORK/news-since.txt"
 NEWS_LINES="$(wc -l < "$WORK/news-since.txt" | tr -d ' ')"
 echo "NEWS text above the '$OLDVER' heading: $NEWS_LINES lines"

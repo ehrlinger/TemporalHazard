@@ -72,7 +72,7 @@ say("")
 say("## Environment")
 env_fields <- c("r_version", "platform", "blas", "lapack", "survival",
                 "numDeriv", "qhsstudies_mounted", "hazard_repo",
-                "hazard_examples_dir")
+                "hazard_examples_dir", "rng")
 env_mismatch <- character()
 for (f in env_fields) {
   a <- paste(as.character(old$env[[f]]), collapse = ",")
@@ -81,12 +81,12 @@ for (f in env_fields) {
   say(sprintf("  %-20s %-40s %s", f, a, flag))
   if (!identical(a, b)) env_mismatch <- c(env_mismatch, f)
 }
-say(sprintf("  %-20s %s", "RNGkind",
-            paste(old$env$rng, collapse = ",")))
 if (length(env_mismatch)) {
   say("")
   say("  !! ENVIRONMENT DIFFERS in: ", paste(env_mismatch, collapse = ", "))
-  say("  !! Numeric differences below may be environmental, not code.")
+  say("  !! A comparison across environments cannot tell code from")
+  say("  !! environment, so it is not run. Re-run both sides alike.")
+  quit(status = 2)
 }
 say("")
 say("## SAS fixtures")

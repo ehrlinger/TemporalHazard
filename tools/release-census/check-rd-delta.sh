@@ -98,7 +98,9 @@ echo "=== whole-package sanity: raw non-ASCII in any Rd (\\enc{} is fine) ==="
 A=0
 for f in man/*.Rd; do
   if nonascii "$f" > /dev/null; then
-    if nonascii "$f" | grep -q -F '\enc{'; then
+    # Every non-ASCII line must carry an \enc{} fallback; one line that does
+    # must not excuse another that does not.
+    if ! nonascii "$f" | grep -q -v -F '\enc{'; then
       echo "  $f (inside \\enc{} -- correct, has an ASCII fallback)"
     else
       echo "  $f  <-- RAW non-ASCII: this is the PDF-manual failure mode"

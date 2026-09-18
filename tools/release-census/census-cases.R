@@ -196,7 +196,7 @@ probe_fit_gated <- function(fit) {
     # An NA standard error means the Hessian could not be inverted, so the
     # point is not a proper interior maximum whatever `converged` says.
     se_finite = !is.null(se) && is.numeric(se) && length(se) > 0L &&
-      !any(is.na(se)),
+      all(is.finite(se)),
     rcond = if (is.numeric(rc) && length(rc) == 1L) rc else NA_real_,
     # NULL where the version predates the gradient test; NA where the test
     # was not applied. Both are "cannot confirm", never "passed".

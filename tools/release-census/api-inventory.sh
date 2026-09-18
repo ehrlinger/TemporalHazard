@@ -22,7 +22,7 @@ for side in old new; do
   # Normalise imports: roxygen writes importFrom() either one-per-line or as a
   # multi-line list, so compare the (package, symbol) pairs, not the layout.
   tr -d ' \t' < "$WORK/$side.ns" | tr '\n' ' ' | tr -s ' ' \
-    | sed 's/) */)\n/g' | grep -e '^import' \
+    | sed 's/) */)\n/g' | grep -E '^(import|useDynLib|exportPattern|exportClass|exportMethod)' \
     | sed 's/,$//' | tr -d ' ' \
     | awk -F'[(,)]' '{ for (i = 3; i <= NF; i++) if ($i != "") print $1 "(" $2 "," $i ")" }' \
     | sort -u > "$WORK/$side.other"
@@ -39,7 +39,7 @@ cp "$WORK/old.exp" "$WORK/kp.exp"
 echo "zzz_sentinel_export_that_never_existed" >> "$WORK/kp.exp"
 sort -o "$WORK/kp.exp" "$WORK/kp.exp"
 KP="$(comm -23 "$WORK/kp.exp" "$WORK/new.exp")"
-if [ "$KP" = "zzz_sentinel_export_that_never_existed" ]; then
+if printf '%s\n' "$KP" | grep -qx 'zzz_sentinel_export_that_never_existed'; then
   echo "PASS: removal detector fired on the sentinel"
 else
   echo "FAIL: removal detector did not fire; got: [$KP]" >&2
