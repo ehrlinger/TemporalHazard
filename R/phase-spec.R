@@ -123,6 +123,9 @@
 #'   phase-specific covariates.  It is evaluated in the `data` given to
 #'   [hazard()], so without `data` [hazard()] refuses it, unless it builds
 #'   nothing either way: an intercept-only `~ 1` with no global `x`.
+#'   The phase's scale parameter plays the role of an intercept, so the
+#'   design never has one: removing it (`~ 0 + age`, `~ age - 1`) is
+#'   ignored with a warning, and builds the design of `~ age`.
 #'   When `NULL` (default), the phase inherits the global design from
 #'   [hazard()]: the global formula's covariates, or `x` on the vector
 #'   interface.
@@ -269,6 +272,17 @@ hzr_phase <- function(type = c("cdf", "hazard", "constant", "g3"),
     if (length(formula) == 3L) {
       stop("Phase formula must be one-sided (e.g. ~ age + nyha), ",
            "not two-sided (response ~ predictors).", call. = FALSE)
+    }
+    # The design is built as if the intercept were present (#303), so say
+    # so here, once, rather than on every refit that builds the design.
+    tt <- stats::terms(formula, allowDotAsName = TRUE)
+    # `~ 0` alone builds no columns either way, so there is nothing to say.
+    if (attr(tt, "intercept") == 0L && length(attr(tt, "term.labels")) > 0L) {
+      warning("Phase formula `", paste(deparse(formula), collapse = " "),
+              "` removes the intercept, which a phase formula cannot do: ",
+              "the phase's scale parameter plays the intercept role. The ",
+              "design is built as if the intercept were present, so factors ",
+              "are coded as they would be with it.", call. = FALSE)
     }
   }
 

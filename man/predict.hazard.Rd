@@ -41,7 +41,12 @@ variable that is itself a column counts only if another column, such
 as \code{I(age^2)}, is built from it). With all the
 variables given, the design is rebuilt from them, so a design column
 that contradicts one is ignored; some variables beside the design
-columns, with others missing, is an error. A
+columns, with others missing, is an error. That error is conservative
+in two cases where nothing contradicts: \code{poly()} design columns given
+with the variable they are built from but without another variable,
+and a non-syntactic name such as \verb{my age} given both as the design
+column \code{`my age`} and as the variable. Give all of the formula's
+variables, or only the design columns. A
 column the model does not use is
 ignored, and a covariate the model needs but \code{newdata} lacks is an error.
 Only the columns of the model's \code{data} are taken from \code{newdata}: a
@@ -50,6 +55,10 @@ from the formula's environment, and a term that uses row-level values
 kept outside \code{data} (\code{~ zz}, with \code{zz} a vector in the workspace) is an
 error, even when \code{newdata} has a \code{zz} column; move it into \code{data} and
 refit.
+A term that computes a statistic over \code{newdata}'s rows warns only for
+the functions the check knows (see "How \code{newdata} is evaluated"). Any
+other function, including one you write, is still recomputed from
+\code{newdata}'s rows, silently: no warning means undetected, not safe.
 A fit made with an unnamed \code{x} matrix matches by position. For the types
 requiring time, a \code{newdata} with only a \code{time} column evaluates the
 baseline, with every covariate at 0. Because \code{time} is then the
@@ -148,11 +157,57 @@ For models fit with \code{time_windows}, predictions for \code{type = "linear_pr
 or \code{"hazard"} also require time values (via \code{newdata$time} or fitted-time fallback)
 so window-specific coefficients can be selected.
 
-A term built by a transform that is not row-wise, such as
-\code{I(age - mean(age))} or \code{rank(age)}, is recomputed from \code{newdata}'s own
-rows, as in \code{\link[stats:predict.lm]{stats::predict.lm()}}. It therefore differs from the fitted
-values unless \code{newdata} reproduces the fitting data.
+See the section "How \code{newdata} is evaluated" for what is recomputed from
+\code{newdata} and when \code{predict()} warns.
 }
+\section{How \code{newdata} is evaluated}{
+
+\code{predict()} evaluates the model's formulas on \code{newdata} as given, as
+\code{\link[stats:predict.lm]{stats::predict.lm()}} does. It uses the fit's factor levels and
+contrasts, and the centering, basis and knots that a top-level \code{scale()},
+\code{poly()}, \code{ns()} or \code{bs()} term recorded. Everything else is recomputed
+from \code{newdata}, so a prediction can differ from the fit without any
+error. \code{predict()} warns, naming the cause, in three such cases. The
+predicted values are the same with or without the warning.
+\itemize{
+\item \strong{A term that computes a statistic over the rows.} In
+\code{I(age - mean(age))}, \code{I(scale(age)^2)} or
+\code{I(as.integer(factor(grp)))}, the mean, the scaling or the factor
+coding comes from \code{newdata}'s rows, so a row's prediction depends on
+which other rows are given. Compute such a variable in the data before
+fitting, and supply it in \code{newdata}. The check knows a fixed list of
+R's functions, among them \code{mean()}, \code{median()}, \code{min()}, \code{max()},
+\code{quantile()}, \code{sd()}, \code{IQR()}, \code{ave()}, \code{rank()}, \code{length()},
+\code{scale()}, \code{factor()} and \code{cut()} with a count of breaks. A function
+not on it, including one you write, is recomputed from \code{newdata}'s
+rows just the same, with no warning: the list is a floor, not a
+boundary.
+\item \strong{A column of another type than the fit saw.} A numeric column given
+as character compares as text (\code{"154.6" > 50} is \code{FALSE}), and a
+\code{difftime} in other units is used in those units. The check compares
+against the fitting data the fit kept, which fits saved before
+TemporalHazard 1.1.0 do not have, so those fits are not checked. A
+factor given as its level labels, or an integer for a double, is not
+a mismatch.
+\item \strong{A design rebuilt under this session's contrasts.} A formula fit
+saved by version 1.2.10 or earlier kept no record of its contrasts,
+and its design is rebuilt under \code{options(contrasts =)}. \code{predict()}
+warns when that option names a function other than \code{contr.treatment}
+or \code{contr.poly} and the rebuilt design is used. A redefined
+\code{contr.treatment} is not detected.
+}
+
+Two cases are not detected:
+\itemize{
+\item A constant the formula reads from its environment, such as \code{cutoff}
+in \code{I(age > cutoff)}, is read when you predict, so a value changed
+since the fit is used.
+\item A comparison of strings, such as \code{I(grp > "b")}, follows the session's
+collation (\code{LC_COLLATE}), which can order strings differently from the
+session that fitted the model.
+}
+}
+
 \examples{
 # -- Basic predictions ------------------------------------------------
 set.seed(1)
