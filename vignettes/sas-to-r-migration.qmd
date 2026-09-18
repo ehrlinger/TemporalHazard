@@ -404,8 +404,8 @@ statement:
   and `QUASI` have no `hazard()` equivalent, so nothing is written for
   them: `CONDITION=` stops `PROC HAZARD`'s optimizer when its Hessian
   approximation becomes too ill-conditioned, and `QUASI` chooses its
-  optimizer. `hazard()` offers no optimizer choice (it uses BFGS, or
-  L-BFGS-B when parameters are bounded) and has no such stop.
+  optimizer. `hazard()` offers no optimizer choice (it always uses BFGS)
+  and has no such stop.
 - `PROC STANDARD REPLACE` from the SAS `DATA` steps becomes one line that
   fills the missing `inc_surg` values with the column mean.
 
@@ -698,10 +698,9 @@ early-phase shape (`MUE`/`THALF`/`NU`/`M FIXM`) becomes a
 `fixed = "m"` on the phase. `QUASI` and `CONDITION=14` are not in
 `control`, because `hazard()` reads neither: they are listed in
 `job$untranslated` with the reason. `QUASI` chooses `PROC HAZARD`'s
-optimizer, and `hazard()` has no choice to make: it uses BFGS, or L-BFGS-B
-when parameters are bounded (a multiphase fit may run a Nelder-Mead warm-up
-first, and a stop that fails SAS's gradient test continues with
-`stats::nlm()`). `CONDITION=` stops
+optimizer, and `hazard()` has no choice to make: it always uses BFGS (a
+multiphase fit may run a Nelder-Mead warm-up first, and a stop that fails
+SAS's gradient test continues with `stats::nlm()`). `CONDITION=` stops
 `PROC HAZARD`'s optimizer as ill-conditioned once its Hessian
 approximation's condition estimate passes the limit, and `hazard()` has no
 such stop; it warns about the final Hessian instead. Earlier

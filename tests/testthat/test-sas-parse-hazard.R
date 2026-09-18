@@ -100,6 +100,9 @@ test_that("CONDITION and QUASI are recorded, never emitted into control (#384)",
   # QUASI chooses SAS's optimizer; hazard() has no choice to make.
   expect_equal(sum(u$construct == "QUASINEWTON"), 1L)
   expect_match(u$reason[u$construct == "QUASINEWTON"], "BFGS", fixed = TRUE)
+  # Not "L-BFGS-B when bounded": every .hzr_optim_generic() caller passes
+  # use_bounds = FALSE, so no fit hazard() runs takes that branch.
+  expect_no_match(u$reason[u$construct == "QUASINEWTON"], "L-BFGS-B", fixed = TRUE)
   expect_lte(got$tokens_mapped, got$tokens_seen)
 })
 
