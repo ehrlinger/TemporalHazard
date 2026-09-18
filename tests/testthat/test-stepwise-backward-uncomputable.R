@@ -285,7 +285,7 @@ test_that("hzr_bootstrap() warns when replicates decide a variable untested", {
   .mask_x3_removal()
   w <- testthat::capture_warnings(
     boot <- hzr_bootstrap(obj$fit, n_boot = 3, seed = 1,
-                          scope = c("x1", "x2", "x3"),
+                          scope = ~ 1,
                           direction = "backward", criterion = "wald",
                           slstay = 0.20)
   )
@@ -386,7 +386,7 @@ test_that("hzr_bootstrap() counts only replicates that left a variable untested"
   )
   w <- testthat::capture_warnings(
     boot <- hzr_bootstrap(obj$fit, n_boot = 3, seed = 1,
-                          scope = c("x1", "x2", "x3"),
+                          scope = ~ 1,
                           direction = "backward", criterion = "wald",
                           slstay = 0.20)
   )

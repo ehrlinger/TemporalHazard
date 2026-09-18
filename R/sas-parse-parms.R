@@ -102,6 +102,70 @@
     bad_construct <<- c(bad_construct, construct)
     bad_reason <<- c(bad_reason, reason)
   }
+  # Text PROC HAZARD refuses to run. A job carrying any of it produces no
+  # estimates, so the caller emits a stop() rather than a fit (#340).
+  rejected <- character(0)
+  reject <- function(construct, reason) {
+    bad(construct, reason)
+    rejected <<- c(rejected, paste0(construct, ": ", reason))
+  }
+  # Every form below sets yysynerr, and initprz.c:75-77 then exits "SYNTAX"
+  # before any data are read. Each names its OWN source: the lexer and the
+  # grammar reject for different reasons.
+  syntax_error <- function(why) {
+    paste0("PROC HAZARD stops the job with a syntax error: ", why,
+           ", and initprz.c:75-77 exits \"SYNTAX\"")
+  }
+  # The word rule [.\-_A-Z0-9]+ is active in every lexer state and matches
+  # a run such as EI whole, beating E on flex's longest match.
+  bad_text <- syntax_error(paste(
+    "the option state has no rule for this text, so hazard_l.l:176 reads",
+    "it as unexpected and sets yysynerr"))
+  # The option state (PHOP) has no "/" rule; only PHVR does (hazard_l.l:151).
+  second_slash <- syntax_error(paste(
+    "a second \"/\" has no rule in the option state and falls to the",
+    "catch-all at hazard_l.l:178, which sets yysynerr"))
+  # hazard_y.y:210 phasevaropt starts with the variable, and 220-225 need at
+  # least one option after "/"; yyerror.c:19 sets yysynerr on a parse error.
+  no_variable <- syntax_error(paste(
+    "an option needs a variable before its \"/\" (hazard_y.y:210), so",
+    "the parser fails (yyerror.c:19)"))
+  no_option <- syntax_error(paste(
+    "a \"/\" needs at least one option after it (hazard_y.y:220-225), so",
+    "the parser fails (yyerror.c:19)"))
+  # hazard_y.y:228-232: MOVE and ORDER take `= NUMBER`; E, I and S take none.
+  bad_form <- syntax_error(paste(
+    "MOVE= and ORDER= need a number, and E, I and S take no value",
+    "(hazard_y.y:228-232), so the parser fails (yyerror.c:19)"))
+  # After a phase variable, "=" needs a NUMBER (hazard_y.y:216-218).
+  no_value <- syntax_error(paste(
+    "a phase variable's \"=\" needs a number (hazard_y.y:216-218), so the",
+    "parser fails (yyerror.c:19)"))
+  word_value <- syntax_error(paste(
+    "the text after \"=\" is not a number to the lexer, so hazard_l.l:176",
+    "reads it as unexpected and sets yysynerr"))
+  char_value <- syntax_error(paste(
+    "a character after \"=\" has no lexer rule and falls to the catch-all",
+    "at hazard_l.l:178, which sets yysynerr"))
+  # The lexer's NUMBER (hazard_l.l:34-38). as.numeric() also reads Inf, NaN,
+  # 1e5, 5. and 0x1A, none of which PROC HAZARD lexes as a number.
+  is_number <- function(s) {
+    grepl("^-?([0-9]+|[0-9]*[.][0-9]+(E[+-]?[0-9]+)?)$", toupper(s))
+  }
+  # Which rule reads a value that is not a NUMBER. Per input, not per
+  # refusal: a character outside the word rule's set falls to the catch-all;
+  # a whole name lexes as NAME after a phase variable (hazard_l.l:174-175)
+  # and as an option keyword after "/" (hazard_l.l:154-163), and either way
+  # the parser finds it where NUMBER belongs; anything else is a word.
+  value_error <- function(s, after_slash) {
+    s <- toupper(s)
+    if (!nzchar(s)) return(if (after_slash) bad_form else no_value)
+    if (grepl("[^-._A-Z0-9]", s)) return(char_value)
+    if (after_slash && s %in% c("E", "EXCLUDE", "I", "INCLUDE", "S", "START",
+                                "M", "MOVE", "O", "ORDER")) return(bad_form)
+    if (!after_slash && grepl("^[_A-Z][_A-Z0-9]*$", s)) return(no_value)
+    word_value
+  }
 
   for (piece in x) {
     for (p in strsplit(piece, ",", fixed = TRUE)[[1L]]) {
@@ -112,8 +176,12 @@
       # hazard_l.l has no "/" rule in option state, and a "/" with no name
       # before it is a syntax error, so PROC HAZARD rejects both. Record the
       # item rather than read it as a covariate or an option it is not.
-      if (slash == 1L || (slash > 0L && .idx(substr(p, slash + 1L, nchar(p)), "/") > 0L)) {
-        bad(p, "phase-statement item PROC HAZARD would reject as a syntax error")
+      if (slash == 1L) {
+        reject(p, no_variable)
+        next
+      }
+      if (slash > 0L && .idx(substr(p, slash + 1L, nchar(p)), "/") > 0L) {
+        reject(p, second_slash)
         next
       }
       if (slash > 0L) {
@@ -123,7 +191,7 @@
         # phaseopts needs at least one option (hazard_y.y), so a bare "/" is
         # a syntax error PROC HAZARD rejects, not an option-free covariate.
         if (!length(opts)) {
-          bad(p, "phase-statement item PROC HAZARD would reject as a syntax error")
+          reject(p, no_option)
           next
         }
         p <- trimws(substr(p, 1L, slash - 1L))
@@ -133,17 +201,40 @@
       val <- NA_real_
       if (eq > 0L) {
         val_chr <- trimws(substr(p, eq + 1L, nchar(p)))
-        val <- suppressWarnings(as.numeric(val_chr))
-        if (is.na(val)) {
-          bad(p, sprintf("non-numeric value for phase-statement covariate %s",
-                         var))
+        if (!is_number(val_chr)) {
+          reject(p, value_error(val_chr, after_slash = FALSE))
           next
         }
+        val <- as.numeric(val_chr)
       }
 
       flag <- ""
+      order_given <- FALSE
       for (o in opts) {
         key <- sub("=.*$", "", o)
+        has_val <- grepl("=", o, fixed = TRUE)
+        val_ok <- has_val && is_number(sub("^[^=]*=", "", o))
+        # Each token must be one that the option state lexes whole: E/I/S (or
+        # their long forms) alone, M/O (or MOVE/ORDER) with `= number`
+        # (hazard_y.y:228-232). Anything else is a syntax error.
+        is_flag <- key %in% c("E", "EXCLUDE", "I", "INCLUDE", "S", "START")
+        is_valued <- key %in% c("M", "MOVE", "O", "ORDER")
+        if (!is_flag && !is_valued) {
+          reject(paste0(var, "/", o), bad_text)
+          next
+        }
+        if ((is_flag && has_val) || (is_valued && !val_ok)) {
+          # Which rule rejects the value depends on the value; a flag with
+          # "=" or a MOVE/ORDER with none fails in the grammar.
+          reject(paste0(var, "/", o),
+                 if (is_valued && has_val) {
+                   value_error(sub("^[^=]*=", "", o), after_slash = TRUE)
+                 } else {
+                   bad_form
+                 })
+          next
+        }
+        if (key %in% c("O", "ORDER")) order_given <- TRUE
         if (key %in% c("E", "EXCLUDE")) {
           flag <- "E"
         } else if (key %in% c("I", "INCLUDE")) {
@@ -156,11 +247,16 @@
               sprintf(paste("per-variable %s= option on phase-statement",
                             "covariate %s has no hazard() equivalent"),
                       long, var))
-        } else {
-          bad(paste0(var, "/", o),
-              sprintf(paste("unrecognised phase option %s on phase-statement",
-                            "covariate %s"), o, var))
         }
+      }
+      # ORDER= with /E, /I or /S: przconc.c:45-53 logs "ORDER= and %s are
+      # mutually exclusive" and sets semerr, and hazard.c:249-251 exits
+      # ("SEMANTIC") before any data are read.
+      if (order_given && nzchar(flag)) {
+        reject(paste0(var, "/", flag, " ORDER="), paste(
+          "PROC HAZARD refuses the job: ORDER= and /E, /I or /S are mutually",
+          "exclusive (przconc.c:45-53 sets semerr; hazard.c:249-251 exits",
+          "\"SEMANTIC\" before reading any data)"))
       }
       names_out <- c(names_out, var)
       values_out <- c(values_out, val)
@@ -186,7 +282,7 @@
 
   list(names = names_out, values = values_out, flags = flags_out,
        excluded = excluded, untranslated_construct = bad_construct,
-       untranslated_reason = bad_reason)
+       untranslated_reason = bad_reason, rejected = rejected)
 }
 
 #' `fixed=` value: a bare string for one entry, a `c(...)` call for several.
@@ -926,6 +1022,8 @@
   # per .hzr_phase_theta_names()); a bare VAR with no value defaults to 0,
   # matching .hzr_phase_start().
   phase_covars <- list()
+  # Phase-statement text PROC HAZARD refuses to run (#340).
+  rejected <- character(0)
   # Every covariate a phase statement names (not /E, which is excluded and
   # guarded through listwise_only), before SELECTION withholds its
   # candidates from phase_covars. A row about a phase that is not built must
@@ -966,6 +1064,7 @@
     phase_named[[ph]] <- parsed$names
     phase_covar_vals[[ph]] <- parsed$values[keep]
     phase_vars <- c(phase_vars, parsed$names, parsed$excluded)
+    rejected <- c(rejected, parsed$rejected)
     for (i in seq_along(parsed$untranslated_construct)) {
       flag_bad(parsed$untranslated_construct[[i]], parsed$untranslated_reason[[i]])
     }
@@ -1379,6 +1478,7 @@
     selection = selection_spec,
     has_phases = length(phase_calls) > 0L,
     refused = refused,
+    rejected = rejected,
     untranslated = .hzr_untranslated_frame(
       line = rep(NA_integer_, length(bad_construct)),
       construct = bad_construct,
