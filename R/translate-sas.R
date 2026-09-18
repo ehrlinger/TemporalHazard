@@ -84,15 +84,34 @@
 #' @return An `hzr_sas_job` object, invisibly. `$calls` holds the emitted
 #'   calls keyed by chunk label, `$grid` the last prediction grid seen and
 #'   `$inhaz` the first unresolved `INHAZ=` (not all of each, when a job has
-#'   several), `$untranslated` the recorded gaps and `$coverage` the token
-#'   counts.
+#'   several), `$untranslated` the recorded gaps, `$coverage` the token
+#'   counts, and `$notes` any callout attached to a chunk by label, emitted
+#'   immediately above that chunk in the rendered document.
+#'
+#' @section What the emitted document needs to run:
+#' Base R at the version this package declares in `DESCRIPTION` (`Depends`),
+#' plus TemporalHazard itself. The emitted chunks never reach into this
+#' package's internals, so the document renders in your session, and in a
+#' colleague's, without anything further installed, with one exception. A
+#' translated `SELECTION` screen on a multiphase job with interval-censored
+#' rows (an `ICENSOR` job; `LCENSOR` is left truncation and does not need
+#' it) needs the suggested package \pkg{numDeriv}. Without it a screen that
+#' tests an entry stops and says so. A screen that completes but cannot test
+#' a removal (a `BACKWARD` screen, whose base has no usable variance) is
+#' caught by the emitted check, which warns and names the variables.
 #'
 #' @section Experimental:
 #' The emitted document renders: the `hazard()` chunk binds its fit to a name
 #' and passes `fit = TRUE`, so the `predict()` chunks have something to
-#' predict from. Two SAS constructs are refused outright rather than
-#' mistranslated, each emitting a `stop()` in place of the fit: a `SELECTION`
-#' statement requesting a stepwise screen (#152, #160), and `LCENSOR`
+#' predict from. A `SELECTION` statement is translated into an
+#' `hzr_stepwise()` call carrying the job's own candidates, per-variable
+#' flags and thresholds (#160); the screen is real, and may select a
+#' different model than `PROC HAZARD` did, which the emitted document says
+#' in a callout above the chunk. `SELECTION` options with no faithful
+#' translation are refused outright rather than mistranslated, emitting a
+#' `stop()` in place of the fit: `FAST`, `MAXVARS`, `RESTRICT`, a
+#' per-variable `MOVE=` or `ORDER=`, and a variable held by
+#' `/I` in one phase but movable in another. So is `LCENSOR`
 #' combined with `ICENSOR`, which one `time_lower` argument cannot express
 #' (#155). Prediction grids the parser cannot resolve are refused whole, and
 #' the `predict()` chunks that would have read such a grid become a `stop()`
@@ -181,6 +200,8 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
 
   calls <- list()
   untr <- .hzr_untranslated_frame()
+  # Callouts attached to a named chunk, rendered immediately ABOVE it.
+  notes <- list()
   seen <- 0L
   mapped <- 0L
   grid <- NULL
@@ -273,7 +294,28 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
       # a bare hazard(...) call binds nothing, so those chunks failed with
       # "object 'fit' not found" -- or worse, silently used an unrelated
       # object of that name already in the rendering session (#151).
-      calls[[fit_slot]] <- call("<-", as.name(fit_slot), r$call)
+      if (is.null(r$stepwise_call)) {
+        calls[[fit_slot]] <- call("<-", as.name(fit_slot), r$call)
+      } else {
+        # A SELECTION job is two chunks: the shape-fixed base fit, then the
+        # screen. `fit <- hzr_stepwise(fit, ...)` would be self-referential,
+        # so the base is bound under <slot>_base and the screen's RESULT
+        # takes the slot name every predict() chunk already references.
+        base_slot <- paste0(fit_slot, "_base")
+        calls[[base_slot]] <- call("<-", as.name(base_slot), r$call)
+        sw <- r$stepwise_call
+        sw[[2L]] <- as.name(base_slot)
+        calls[[fit_slot]] <- call("<-", as.name(fit_slot), sw)
+        notes[[fit_slot]] <- .hzr_selection_divergence_note(
+          direction = r$stepwise_call[["direction"]])
+        if (!is.null(r$screen_check_call)) {
+          chk <- do.call(substitute,
+                         list(r$screen_check_call,
+                              list(fit = as.name(fit_slot),
+                                   fit_label = fit_slot)))
+          calls[[.hzr_next_call_name(calls, "screen_check")]] <- chk
+        }
+      }
       fits[[length(fits) + 1L]] <- list(slot = fit_slot, outhaz = r$outhaz)
     } else {
       r <- tryCatch(.hzr_parse_hazpred(b, txt), error = function(e) {
@@ -376,7 +418,8 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
                   checksum = unname(tools::md5sum(path))),
     calls = calls, grid = grid, inhaz = first_unresolved_inhaz,
     outhaz = outhaz_vec, untranslated = untr,
-    coverage = list(tokens_seen = seen, tokens_mapped = mapped)
+    coverage = list(tokens_seen = seen, tokens_mapped = mapped),
+    notes = notes
   )
   job$inhaz_resolved <- is.null(first_unresolved_inhaz)
   .hzr_validate_sas_job(job)
@@ -406,4 +449,63 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
     )
   }
   invisible(job)
+}
+
+
+#' The callout a translated SELECTION job carries, above its screen.
+#'
+#' `hzr_stepwise()` runs the job's own candidates, flags and thresholds, but
+#' it cannot be expected to reach `PROC HAZARD`'s selected set: SAS uses
+#' approximate variances during selection, which the entry statistic here
+#' reproduces (except for a candidate refitted because its information is
+#' indefinite) but the Wald removal tests do not, and `force_in` is not
+#' phase-keyed where SAS's `/I` is. The
+#' divergence is recorded against a real fixture in
+#' `tests/testthat/test-sas-parity.R` (hm.death.AVC). The reader meets this
+#' before the code, which is why it is a note on the chunk rather than a row
+#' in `$untranslated` (#160).
+#' @noRd
+.hzr_selection_divergence_note <- function(direction = "both") {
+  # Only what this screen's direction does: a BACKWARD screen never enters,
+  # and a forward-only (NOSTEPWISE) screen never removes, so neither the
+  # entry statistic nor re-entry applies to both.
+  enters <- !identical(direction, "backward")
+  removes <- !identical(direction, "forward")
+  list(
+    title = paste("SELECTION: this screen may select a different model than",
+                  "PROC HAZARD did"),
+    body = paste(c(
+      "This job's SELECTION statement is translated into hzr_stepwise() with",
+      "the job's own candidates, per-variable flags and SLENTRY/SLSTAY",
+      "thresholds. The screen is real, and the selected model may still",
+      "differ from the one PROC HAZARD chose, for reasons that cannot be",
+      "tuned away. PROC HAZARD uses approximate variances during selection",
+      "(it ignores the shaping-parameter covariances).",
+      if (enters) c(
+        "The entry statistic here reproduces that approximation, except for",
+        "a candidate whose information is indefinite, which is refitted and",
+        "Wald-tested instead."),
+      if (removes) c(
+        "The Wald tests behind the drop decisions use the full Hessian, so",
+        "removals can differ."),
+      "SAS's /I holds a variable in ONE phase, while hzr_stepwise()'s",
+      "force_in is keyed by variable name across every phase, which is why a",
+      "job whose /I variable is movable in another phase is refused rather",
+      "than screened here.",
+      if (enters && removes) c(
+        "And PROC HAZARD's MOVE limit counts a variable's DELETIONS,",
+        "separately for each phase: at its default of 1 a variable removed",
+        "from a phase can never return to it, while this package's",
+        "oscillation guard counts entries and exits together across every",
+        "phase and lets a removed variable re-enter. So the screen here can",
+        "re-enter variables PROC HAZARD would have kept out, and occasionally",
+        "freeze one PROC HAZARD would still move."),
+      "The divergence is recorded against the hm.death.AVC fixture in",
+      "tests/testthat/test-sas-parity.R. Read the selected model as this",
+      "package's screen of this job's candidates, not as a reproduction of",
+      "the SAS run, and compare it against the SAS listing before relying on",
+      "it. Any candidate the screen could not score is reported by the",
+      "uncomputable-score check below it."
+    ), collapse = " ")
+  )
 }
