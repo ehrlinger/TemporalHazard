@@ -659,6 +659,19 @@
   string comparisons. Fits saved before 1.1.0 kept no fitting data, and
   their column types are not checked.
 
+- **The vignettes no longer skip every chunk in silence when the
+  rendering session cannot see the installed package
+  ([\#276](https://github.com/ehrlinger/TemporalHazard/issues/276)).**
+  Each vignette gates its chunks on
+  [`requireNamespace("TemporalHazard")`](https://ehrlinger.github.io/TemporalHazard/),
+  so a render session that could not load the package produced a
+  complete-looking document with no computed output and no error.
+  Rebuilding the vignettes now puts the library that `R CMD build`
+  installs the package into back on
+  [`.libPaths()`](https://rdrr.io/r/base/libPaths.html), and under
+  continuous integration a package that will not load stops the build
+  and says why.
+
 - **`predict(newdata = )` on a multiphase fit saved before this version
   no longer gets [`scale()`](https://rdrr.io/r/base/scale.html),
   [`poly()`](https://rdrr.io/r/stats/poly.html) or `ns()` in a phase
