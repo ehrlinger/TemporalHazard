@@ -956,7 +956,9 @@
       # Removal is tested on Wald p-values, which need standard errors. A
       # multiphase ICENSOR fit without numDeriv has none, and the screen then
       # removes nothing -- indistinguishable from "nothing met slstay".
-      if (!is.matrix(fit$fit$vcov)) {
+      # Indexed by string: the caller substitutes the SYMBOL `fit` with this
+      # block's slot name, and `fit$fit` would rename the component too.
+      if (!is.matrix(fit[["fit"]][["vcov"]])) {
         warning("The screened model has no standard errors, so no Wald ",
                 "removal test could be computed and nothing could be ",
                 "removed. For an interval-censored job, install 'numDeriv'.",

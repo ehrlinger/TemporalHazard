@@ -445,7 +445,8 @@ test_that("the emitted screen reports candidates it could not score (#160)", {
   job <- .sel_job("SELECTION SLE=0.2; EARLY STRONG, NOISE;")
   expect_true("screen_check" %in% names(job$calls))
   env <- new.env(parent = baseenv())
-  env$fit <- list(criteria = list(n_uncomputable_scores = 2L))
+  env$fit <- list(criteria = list(n_uncomputable_scores = 2L),
+                  fit = list(vcov = diag(2)))
   expect_warning(eval(job$calls$screen_check, env), "2 candidate score")
   env$fit <- list(criteria = list(n_uncomputable_scores = 0L),
                   fit = list(vcov = diag(2)))
@@ -563,9 +564,17 @@ test_that("the screen check names its own fit and avoids %||% (#160)", {
   # Executed, because the label is pasted from pieces in the source: what
   # matters is the message the reader sees.
   env <- new.env(parent = baseenv())
-  env$fit_2 <- list(criteria = list(n_uncomputable_scores = 2L))
+  env$fit_2 <- list(criteria = list(n_uncomputable_scores = 2L),
+                    fit = list(vcov = diag(2)))
   expect_warning(eval(job$calls[[chk[2L]]], env),
                  "fit_2\\$criteria\\$uncomputable_reasons")
+  # The substitution renames the SYMBOL `fit`. Reached as fit$fit$vcov, the
+  # component name is a symbol too, so the second block read
+  # fit_2$fit_2$vcov -- always NULL -- and warned "no standard errors" for
+  # every model it screened. A model WITH standard errors must not warn.
+  env$fit_2 <- list(criteria = list(n_uncomputable_scores = 0L),
+                    fit = list(vcov = diag(2)))
+  expect_no_warning(eval(job$calls[[chk[2L]]], env))
   all_src <- paste(vapply(job$calls, function(c0) {
     paste(deparse(c0), collapse = " ")
   }, character(1)), collapse = " ")
