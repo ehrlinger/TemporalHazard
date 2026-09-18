@@ -303,8 +303,9 @@ NULL
 #'
 #'   Read `fit$spec$control$conserve_applied`, not
 #'   `fit$spec$control$conserve`: the latter says only what you asked for.
-#' - `shape_param_count`: The number of shape parameters at the front of
-#'   `theta`, for a single-distribution model only. The fit itself does not
+#' - `shape_param_count`: The number of baseline parameters at the front of
+#'   `theta`: the scale and any shape parameters, so 2 for `"weibull"` and 1
+#'   for `"exponential"`. For a single-distribution model only. The fit itself does not
 #'   use it; the stepwise refit and the score test read it back from
 #'   `fit$spec$control`. A multiphase fit derives its own layout, so nothing
 #'   reads it there.

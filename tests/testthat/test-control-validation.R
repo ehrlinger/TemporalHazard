@@ -203,3 +203,20 @@ test_that("hazard() stores dist without names", {
   obj <- cv_multiphase_raw(list(), dist = c(model = "multiphase"))
   expect_identical(obj$spec$dist, "multiphase")
 })
+
+test_that("a warned name forwarded by bootstrap select mode still lets replicates select", {
+  # hzr_bootstrap() catches each replicate's errors, so if a warned name
+  # were an error, every candidate refit would fail and each replicate would
+  # still count as a success, having selected nothing. Assert a selection.
+  data(avc, package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc)
+  base <- hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
+                 dist = "weibull", theta = c(mu = 0.01, nu = 0.5), fit = TRUE)
+  bs <- suppressWarnings(hzr_bootstrap(
+    base, n_boot = 10, seed = 321, scope = ~ age + mal + com_iv,
+    slentry = 0.3, slstay = 0.2, control = list(n_starts = 1)
+  ))
+  expect_gt(bs$n_success, 0)
+  covariates <- bs$summary[!bs$summary$parameter %in% c("mu", "nu"), ]
+  expect_gt(sum(covariates$n), 0)
+})
