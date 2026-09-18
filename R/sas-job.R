@@ -19,10 +19,11 @@
 #' Construct an hzr_sas_job.
 #' @noRd
 .hzr_sas_job <- function(source, calls, grid, inhaz, outhaz,
-                         untranslated, coverage) {
+                         untranslated, coverage, notes = list()) {
   structure(list(source = source, calls = calls, grid = grid,
                  inhaz = inhaz, outhaz = outhaz,
-                 untranslated = untranslated, coverage = coverage),
+                 untranslated = untranslated, coverage = coverage,
+                 notes = notes),
             class = "hzr_sas_job")
 }
 
