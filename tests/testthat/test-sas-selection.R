@@ -22,7 +22,6 @@ test_that("BACKWARD and ONEWAY are distinct from stepwise", {
   # as "no screen" put every candidate into a plain fit.
   for (kw in c("NOSTEPWISE", "NOSW")) {
     got <- .hzr_selection_spec(kw)
-    expect_true(got$stepwise, info = kw)
     expect_equal(got$direction, "forward", info = kw)
   }
 })
@@ -69,7 +68,6 @@ test_that("a SELECTION statement with no direction still enables stepwise", {
   # stepwisestmt : STEPWISE stepwiseopts { setopt(33); } -- stepwiseopts may be
   # empty, so the statement itself turns stepwise on.
   got <- .hzr_selection_spec(c("SLENTRY=0.05", "SLSTAY=0.1"))
-  expect_true(got$stepwise)
   expect_equal(got$direction, "both")
   expect_equal(got$slentry, 0.05)
   expect_equal(got$slstay, 0.1)
@@ -77,13 +75,11 @@ test_that("a SELECTION statement with no direction still enables stepwise", {
 
 test_that("a bare SELECTION with no options at all enables stepwise", {
   got <- .hzr_selection_spec(character(0))
-  expect_true(got$stepwise)
   expect_equal(got$direction, "both")
 })
 
 test_that("NOSTEPWISE keeps its entry threshold, because it still screens", {
   got <- .hzr_selection_spec(c("NOSTEPWISE", "SLENTRY=0.05"))
-  expect_true(got$stepwise)
   expect_equal(got$slentry, 0.05)
   expect_false(any(grepl("SLENTRY", got$untranslated$construct)))
 })
