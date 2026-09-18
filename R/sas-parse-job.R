@@ -705,11 +705,25 @@
   )
   if (is.null(data_name) &&
       (any(phase_has_formula) || length(parms$listwise_only))) {
+    # Say what is actually true of this job. "A phase has covariates" is
+    # false when every named variable sits outside the emitted phases: a
+    # SELECTION candidate, an /E variable, or a covariate of a phase that is
+    # not built. Those are read by the screen or by the missing-row guard.
+    why_data <- if (any(phase_has_formula)) {
+      paste0("but a phase has covariates, and hazard() evaluates a phase's ",
+             "covariates only in `data`.")
+    } else {
+      paste0("but its phase statements name ",
+             paste(parms$listwise_only, collapse = ", "),
+             ", which are outside the fitted base model. With no dataset the ",
+             "translation cannot say where to read them: a SELECTION screen ",
+             "needs them in `data`, and PROC HAZARD deletes rows where any is ",
+             "missing.")
+    }
     untr <- rbind(untr, .hzr_untranslated_frame(
       NA_integer_, "DATA=",
-      paste("the job names no DATA= dataset, but a phase has covariates,",
-            "which hazard() evaluates only in `data`. Add DATA= to the job",
-            "and translate again, or fit it by hand (#311).")
+      paste("the job names no DATA= dataset,", why_data, "Add DATA= to the",
+            "job and translate again, or fit it by hand (#311).")
     ))
     if (!is.null(sel)) {
       untr <- rbind(untr, sel$untranslated)
@@ -720,13 +734,11 @@
       }
     }
     return(list(
-      call = quote(stop(
-        "This PROC HAZARD job names no DATA= dataset, but a phase has ",
-        "covariates, and hazard() evaluates a phase's covariates only in ",
-        "`data`. Name the dataset with DATA= and translate the job again, ",
-        "or fit the model by hand.",
-        call. = FALSE
-      )),
+      call = as.call(list(quote(stop), paste(
+        "This PROC HAZARD job names no DATA= dataset,", why_data,
+        "Name the dataset with DATA= and translate the job again, or fit the",
+        "model by hand."
+      ), call. = FALSE)),
       status_call = NULL, outhaz = outhaz, untranslated = untr,
       tokens_seen = seen, tokens_mapped = mapped
     ))

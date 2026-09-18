@@ -583,6 +583,8 @@ test_that("the listwise guard says what a candidate actually is (#160)", {
 }
 
 test_that("no DATA= is refused whatever SELECTION withholds from the base (#160, #311)", {
+  # Only the first and last cases were blind before the fix; the middle three
+  # put a variable in the base model and are controls for the refusal itself.
   for (stmts in c("SELECTION; EARLY A, B;",           # candidates only
                   "SELECTION; EARLY A, B/S;",         # a candidate beside a movable
                   "SELECTION; EARLY A/I, B;",         # a candidate beside a /I
@@ -610,6 +612,30 @@ test_that("no DATA= with only an /E variable is refused, SELECTION or not (#311)
   expect_error(eval(job$calls$fit), "names no DATA= dataset")
   expect_true("DATA=" %in% job$untranslated$construct)
   expect_null(job$calls$status)
+})
+
+test_that("no DATA= with only an unbuilt phase's covariates is refused, truthfully (#311)", {
+  # The same widening as /E, found by review: these covariates are read only
+  # by the missing-row guard, so the job used to translate and read them from
+  # the rendering environment. The message must not claim "a phase has
+  # covariates" -- no emitted phase does -- so it names the variables instead.
+  cases <- c("PARMS MUE=0.2 THALF=0.15 NU=1;" = "LATE X;",       # no MUL
+             "PARMS MUE=0.2 THALF=0.15 NU=1; " = "CONSTANT X;",  # no MUC
+             "PARMS MUC=0.0005;" = "EARLY X;")                   # no MUE
+  for (i in seq_along(cases)) {
+    info <- paste(names(cases)[i], cases[[i]])
+    job <- .nodata_job(cases[[i]], parms = names(cases)[i])
+    expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"), info = info)
+    msg <- tryCatch(eval(job$calls$fit), error = conditionMessage)
+    expect_match(msg, "names no DATA= dataset, but its phase statements name X,",
+                 fixed = TRUE, info = info)
+    expect_no_match(msg, "a phase has covariates", info = info)
+    expect_match(job$untranslated$reason[job$untranslated$construct == "DATA="],
+                 "name X,", fixed = TRUE, info = info)
+  }
+  # And where an emitted phase DOES carry covariates, the message says so.
+  job <- .nodata_job("EARLY A;")
+  expect_error(eval(job$calls$fit), "a phase has covariates")
 })
 
 test_that("a no-DATA= job keeps its SELECTION refusal reason too (#160, #340 item 3)", {
@@ -642,6 +668,12 @@ test_that("candidates of a phase that is not built still leave a row (#160)", {
   hit <- grepl("early phase material with no active MUE", u$reason)
   expect_equal(sum(hit), 1L)
   expect_match(u$construct[hit], "\\bA B\\b")
+  job <- .nodata_job("SELECTION; EARLY A; LATE X, Y/S;", data = " DATA=D",
+                     parms = "PARMS MUE=0.2 THALF=0.15 NU=1;")
+  u <- job$untranslated
+  hit <- grepl("late phase material with no active MUL", u$reason)
+  expect_equal(sum(hit), 1L)
+  expect_match(u$construct[hit], "\\bX Y\\b")
 })
 
 test_that("every other refusal still fires when the job carries SELECTION (#160)", {

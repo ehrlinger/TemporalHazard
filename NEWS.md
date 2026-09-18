@@ -139,10 +139,12 @@
   the base model could not see them. When the job's `SELECTION` could not be
   run anyway (`FAST`, say), that reason is recorded in `$untranslated` beside
   the `DATA=` one, so adding `DATA=` does not reveal a second refusal. **This
-  widens #311 on purpose:** a job with no `DATA=` whose only phase variable is
-  excluded (`/E`) is now refused too, with or without `SELECTION`. It used to
-  translate, and its missing-value guard read the variable from whatever
-  environment rendered the document.
+  widens #311 on purpose:** a job with no `DATA=` is now refused too, with or
+  without `SELECTION`, when its only phase variables are excluded (`/E`) or
+  belong to a phase that is not built (a `LATE` statement with no `MUL`, say).
+  Such a job used to translate, and its missing-value guard read those
+  variables from whatever environment rendered the document. The refusal
+  names the variables rather than claiming a phase has covariates.
 
 * **`predict(newdata = )` matches covariates by name, so `newdata` with
   other names now stops.** A fit made through the vector interface with a
