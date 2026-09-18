@@ -1114,6 +1114,29 @@
   fit locates it, so an on-constraint `theta` passes silently and an
   off-constraint one is replaced with a warning.
 
+- **A multiphase fit no longer stops with “t_half must be a positive
+  scalar” when the optimizer steps a phase’s time scale out of range
+  ([\#262](https://github.com/ehrlinger/TemporalHazard/issues/262)).**
+  `t_half` and `tau` are carried on the log scale, and a step can take
+  them past what [`exp()`](https://rdrr.io/r/base/Log.html) represents,
+  to `0` or `Inf`. Where `exp(log_t_half)` came back as 0, the
+  log-likelihood, its gradient and the Conservation of Events solve all
+  raised that error rather than treating the point as infeasible, so a
+  single-start fit (`control = list(n_starts = 1)`) failed outright, and
+  with several starts that start was lost. Elsewhere the three
+  disagreed: the score raised `missing value where TRUE/FALSE needed` at
+  `t_half` or `tau` of `Inf`, where the log-likelihood returned `-Inf`
+  (`t_half`) or a finite value (`tau`). A phase whose time scale is not
+  finite and positive is now infeasible on all three paths, and the
+  optimizer backs away from it.
+
+  That last case is a **deliberate behaviour change**: at `tau = Inf`
+  the late phase switches off and the log-likelihood used to take that
+  limiting value, so a fit whose `tau` ran past `exp(709.78)` could
+  return a finite objective there while its score could not be
+  evaluated. Such a point is now infeasible. Fits whose scales stay in
+  range are unchanged.
+
 - **`predict(newdata = )` now warns when `newdata` is evaluated
   differently from the fitting data
   ([\#331](https://github.com/ehrlinger/TemporalHazard/issues/331),
