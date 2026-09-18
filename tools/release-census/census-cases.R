@@ -221,7 +221,9 @@ probe_boot <- function(b) {
   reps <- b$replicates
   spread <- if (is.data.frame(reps) && nrow(reps)) {
     tapply(reps$estimate, reps$parameter, stats::sd)
-  } else NULL
+  } else {
+    NULL
+  }
   list(
     kind = "boot",
     replicates = reps,
@@ -668,8 +670,9 @@ census_cases <- function() {
       # so they are muffled here and re-raised scrubbed.
       tr <- withCallingHandlers(
         tryCatch(hzr_translate_sas(f),
-                 error = function(e) stop(scrub(conditionMessage(e)),
-                                          call. = FALSE)),
+                 error = function(e) {
+                   stop(scrub(conditionMessage(e)), call. = FALSE)
+                 }),
         warning = function(w) {
           warning(scrub(conditionMessage(w)), call. = FALSE)
           invokeRestart("muffleWarning")

@@ -112,8 +112,10 @@ for (nm in common) {
     cat("    ", old_ref, ": ", sa, "\n", sep = "")
     cat("    ", new_ref, ": ", sb, "\n", sep = "")
     # Name the argument-level delta, which is what a user actually hits.
-    na <- names(a); nb <- names(b)
-    added <- setdiff(nb, na); removed <- setdiff(na, nb)
+    na <- names(a)
+    nb <- names(b)
+    added <- setdiff(nb, na)
+    removed <- setdiff(na, nb)
     if (length(added)) cat("    ARGS ADDED  : ", paste(added, collapse = ", "), "\n", sep = "")
     if (length(removed)) cat("    ARGS REMOVED: ", paste(removed, collapse = ", "), "\n", sep = "")
     for (k in intersect(na, nb)) {

@@ -37,7 +37,9 @@ out <- args[[3]]
 # only builds a list of closures, and the package is touched inside their
 # bodies, which are not evaluated here.
 declared_gate_kp <- character()
-cases_file <- if (length(args) == 4L) args[[4]] else {
+cases_file <- if (length(args) == 4L) {
+  args[[4]]
+} else {
   f <- file.path(dirname(sub("^--file=", "", grep("^--file=",
                  commandArgs(trailingOnly = FALSE), value = TRUE)[1])),
                  "census-cases.R")
@@ -301,7 +303,9 @@ for (nm in all_names) {
       } else if (is.numeric(oo) && is.numeric(no) && length(oo) == 1L &&
                  length(no) == 1L) {
         sprintf("; objective moved by %.3g", no - oo)
-      } else ""
+      } else {
+        ""
+      }
       rows[[nm]] <- list(
         name = nm,
         outcome = if (!length(d)) "IDENTICAL-GATED" else "DIFFERS-GATED",
@@ -349,7 +353,9 @@ for (nm in all_names) {
   rows[[nm]]$warn_detail <- if (rows[[nm]]$warn_changed) {
     paste0("old warnings: [", paste(ow, collapse = " | "),
            "] new warnings: [", paste(nw, collapse = " | "), "]")
-  } else ""
+  } else {
+    ""
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -390,9 +396,9 @@ say("")
 # A gate that refuses to classify uninterpretable rows is worth nothing unless
 # some row actually trips it. Same discipline as the planted changes above.
 
-gated <- Filter(function(r) r$outcome %in%
-                  c("UNINTERPRETABLE", "DIFFERS-GATED", "IDENTICAL-GATED"),
-                rows)
+gated <- Filter(function(r) {
+  r$outcome %in% c("UNINTERPRETABLE", "DIFFERS-GATED", "IDENTICAL-GATED")
+}, rows)
 say("## Gradient gate on the appended multiphase cases")
 if (!length(gated)) {
   say("  no gated cases in this run (an older cases file?)")
@@ -403,8 +409,9 @@ if (!length(gated)) {
   say("")
   # Declared in the cases file (authoritative), with the run record as a
   # fallback for an rds written before census-run.R propagated the field.
-  gate_kps <- Filter(function(r) !is.null(r$gate_kp) ||
-                       r$name %in% declared_gate_kp, gated)
+  gate_kps <- Filter(function(r) {
+    !is.null(r$gate_kp) || r$name %in% declared_gate_kp
+  }, gated)
   if (!length(gate_kps)) {
     say("  FAIL: no case is declared as the gate's known positive, so the")
     say("  gate is untested. A gate no row trips cannot be trusted to stop")
