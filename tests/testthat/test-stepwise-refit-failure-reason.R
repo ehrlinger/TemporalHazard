@@ -214,9 +214,16 @@ test_that("every step return carries refit_failures and its reasons", {
   expect_false(bwd_none$accepted)
 
   # The backward step and the refit-based forward step share one shape; the
-  # score path adds its own diagnostics on top of it.
-  expect_identical(names(bwd_none), names(wald_none))
-  expect_identical(names(bwd_drop), names(wald_add))
+  # score path adds its own diagnostics on top of it. The backward step also
+  # counts the removals it could not test, under the score path's names
+  # (#389).
+  uncomputable <- c("n_uncomputable", "uncomputable_reasons")
+  expect_identical(setdiff(names(bwd_none), uncomputable), names(wald_none))
+  expect_identical(setdiff(names(bwd_drop), uncomputable), names(wald_add))
+  expect_true(all(uncomputable %in% names(bwd_none)))
+  expect_true(all(uncomputable %in% names(bwd_drop)))
+  expect_true(all(uncomputable %in% names(score_add)))
+  expect_identical(bwd_drop$n_uncomputable, 0L)
   expect_true(all(names(wald_add) %in% names(score_add)))
   for (s in list(wald_none, wald_add, score_add, bwd_none, bwd_drop)) {
     expect_identical(s$refit_failure_reasons, character())

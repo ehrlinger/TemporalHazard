@@ -711,6 +711,12 @@
 #'     built (an unusable factor, say) fails in the refit with its own
 #'     message.  The reason then says the drop removes no
 #'     column, and `accepted` is `FALSE` with the current fit returned.
+#'   * `n_uncomputable` and `uncomputable_reasons` count the candidates
+#'     this step could not TEST: not forced in, with an `NA` score because
+#'     the current model has no usable variance for the coefficient (#389).
+#'     `stop_reason` is `"scores_uncomputable"` when that left no candidate
+#'     to decide on, so the caller can tell it from nothing meeting
+#'     `slstay`.
 #'
 #' @keywords internal
 #' @noRd
@@ -739,6 +745,11 @@
     stringsAsFactors = FALSE
   )
 
+  # Read by null_result() when it is called, so a result built after the
+  # scores carries their count.
+  n_uncomputable <- 0L
+  uncomputable_reasons <- stats::setNames(integer(0), character(0))
+
   null_result <- function(all_scores = empty_scores) {
     list(
       accepted  = FALSE,
@@ -752,6 +763,8 @@
       stat_type = NA_character_,
       df        = NA_integer_,
       all_scores     = all_scores,
+      n_uncomputable = n_uncomputable,
+      uncomputable_reasons = uncomputable_reasons,
       refit_failures = character(),
       refit_failure_reasons = character()
     )
@@ -790,9 +803,22 @@
   }
   all_scores <- do.call(rbind, rows)
 
+  # A removal candidate with an NA score was not tested: the current model
+  # has no usable variance for its coefficient (an interval-censored
+  # multiphase fit without numDeriv has none at all).  It stays in the model
+  # exactly as if it had met `slstay`, so count it, as the forward step
+  # counts an entry it could not score (#389).  A forced-in variable is never
+  # a removal candidate, so its missing test costs nothing.
+  n_uncomputable <- sum(!all_scores$force_in & is.na(all_scores$score))
+  uncomputable_reasons <- .hzr_tally_reasons(
+    rep("wald_no_variance", n_uncomputable)
+  )
+
   eligible <- which(!all_scores$force_in & !is.na(all_scores$score))
   if (length(eligible) == 0L) {
-    return(null_result(all_scores))
+    out <- null_result(all_scores)
+    if (n_uncomputable > 0L) out$stop_reason <- "scores_uncomputable"
+    return(out)
   }
 
   best_idx <- eligible[which.min(all_scores$score[eligible])]
@@ -908,6 +934,8 @@
     stat_type = best$stat_type,
     df        = best$df,
     all_scores     = all_scores,
+    n_uncomputable = n_uncomputable,
+    uncomputable_reasons = uncomputable_reasons,
     refit_failures = character(),
     refit_failure_reasons = character()
   )

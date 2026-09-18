@@ -1624,8 +1624,9 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     common reason.}
 #'   \item{n_uncomputable_replicates}{Select mode only: number of otherwise
 #'     successful replicates whose screen stopped because no remaining
-#'     candidate's score statistic could be computed, rather than because no
-#'     candidate met `slentry`. Such replicates contribute no selections, so
+#'     candidate could be tested (its score statistic, or for a removal its
+#'     Wald statistic, could not be computed), rather than because no
+#'     candidate met `slentry` or `slstay`. Such replicates contribute no selections, so
 #'     a non-zero count means every reported selection frequency is
 #'     depressed. Always `0` in refit mode.}
 #'   \item{uncomputable_reasons}{Select mode only: named integer vector
@@ -2318,9 +2319,10 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
 
   if (n_uncomputable_reps > 0L) {
     warning(n_uncomputable_reps, " of ", n_success, " successful replicates ",
-            "stopped because the score statistic could not be computed for ",
-            "any remaining candidate, rather than because no candidate met ",
-            "`slentry`. Those replicates contribute no selections, so every ",
+            "stopped because no remaining candidate could be tested -- the ",
+            "score statistic, or for a removal the Wald statistic, could not ",
+            "be computed -- rather than because no candidate met `slentry` ",
+            "or `slstay`. Those replicates contribute no selections, so every ",
             "reported selection frequency is depressed by them.",
             .hzr_format_reasons(uncomputable_reasons), call. = FALSE)
   } else if (n_indefinite > 0L) {

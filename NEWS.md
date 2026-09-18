@@ -564,6 +564,23 @@
 
 ## Bug fixes
 
+* **A backward `hzr_stepwise()` screen that cannot test a removal now says
+  so (#389).** A variable is removed on the current model's Wald p-value,
+  which needs a variance for its coefficient. When that variance was
+  missing, the p-value was `NA` and the variable stayed in the model exactly
+  as if it had met `slstay`, with no warning, and
+  `$criteria$n_uncomputable_scores` stayed 0. The common case is an
+  interval- or left-censored multiphase fit on an installation without
+  `numDeriv`, where no coefficient has a variance: such a screen stopped
+  after 0 steps and kept variables it drops when `numDeriv` is present.
+  These removals are now counted in `n_uncomputable_scores`, under the
+  reason `wald_no_variance` in `uncomputable_reasons`. A screen left with no
+  removal it can test sets `stopped_uncomputable` and warns that it stopped
+  without testing, and one that finishes after keeping an untested variable
+  warns that it did so. `hzr_bootstrap()` counts such replicates in
+  `n_uncomputable_replicates`. A forced-in variable is never a removal
+  candidate and is not counted.
+
 * **A backward `hzr_stepwise()` drop's refusal now names the reduced design,
   and its pre-check no longer repeats parse-time warnings (#343).** The
   reason for refusing a drop that removes no column read "the refit's

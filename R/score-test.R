@@ -852,7 +852,13 @@
       "collides with factor `g`'s level `b`: rename the column, or rename or",
       "relevel the factor"
     ),
-    nonfinite = "the score or its variance was not finite"
+    nonfinite = "the score or its variance was not finite",
+    wald_no_variance = paste(
+      "the current model has no usable variance for the coefficient, so its",
+      "Wald test for removal could not be computed. A fit with interval- or",
+      "left-censored rows takes its variance from numDeriv, so this is what",
+      "a screen run without numDeriv installed reports"
+    )
   )
   out <- unname(txt[reason])
   out[is.na(out)] <- reason[is.na(out)]

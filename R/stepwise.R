@@ -139,8 +139,11 @@
 #'       screen, `frozen` can name a variable the final model does not
 #'       contain; see the **Known limitation (the frozen set)** section.}
 #'     \item{\code{criteria}}{Named list of the threshold / direction
-#'       settings actually applied, plus, under `criterion = "score"`,
-#'       `n_uncomputable_scores` (how many candidate scores were `NA`),
+#'       settings actually applied, plus
+#'       `n_uncomputable_scores` (how many candidate scores were `NA`: an
+#'       entry the score test could not score under `criterion = "score"`,
+#'       or, under any criterion, a removal whose Wald statistic could not
+#'       be computed, `wald_no_variance`),
 #'       `uncomputable_reasons` (a named integer vector of *why*) and
 #'       `stopped_uncomputable`. Read `uncomputable_reasons` before treating
 #'       an unscored candidate as a bad one: `information_indefinite` marks
@@ -571,6 +574,17 @@ hzr_stepwise <- function(fit,
         force_in  = effective_force_in
       ), extra_args))
 
+      # A removal whose Wald p-value is NA was not tested, and it stays in
+      # the model as if it met `slstay` (#389).  Counted with the forward
+      # step's unscored entries.
+      n_uncomputable_scores <- n_uncomputable_scores +
+        (bwd$n_uncomputable %||% 0L)
+      uncomputable_reasons <- .hzr_merge_reasons(
+        uncomputable_reasons, bwd$uncomputable_reasons
+      )
+      if (identical(bwd$stop_reason, "scores_uncomputable")) {
+        iter_uncomputable <- TRUE
+      }
       iter_refit_failures <- c(iter_refit_failures,
                                bwd$refit_failures %||% character())
       iter_refit_reasons <- c(iter_refit_reasons,
@@ -603,8 +617,13 @@ hzr_stepwise <- function(fit,
           paste(iter_refit_failures, collapse = ", ")
         ))
       } else if (iter_uncomputable) {
+        # Only a backward step that could test nothing ENDS the run here; in
+        # a two-way screen one that could not test on an iteration where an
+        # entry happened does not, and is reported as untested removals.
+        stopped_uncomputable <- TRUE
         emit(sprintf(
-          "(stopped after %s: no candidate score could be COMPUTED -- none was tested)",
+          paste0("(stopped after %s: no candidate score or removal test ",
+                 "could be COMPUTED -- none was tested)"),
           step_txt
         ))
       } else {
@@ -675,12 +694,16 @@ hzr_stepwise <- function(fit,
   n_indefinite <- sum(unname(uncomputable_reasons[untested_codes]),
                       na.rm = TRUE)
 
+  n_untested_drops <- sum(unname(uncomputable_reasons["wald_no_variance"]),
+                          na.rm = TRUE)
+
   if (stopped_uncomputable) {
-    warning("Stepwise selection stopped because the score statistic ",
-            "could not be computed for any remaining candidate (",
+    warning("Stepwise selection stopped because no remaining candidate ",
+            "could be tested: its score statistic, or for a removal its Wald ",
+            "statistic, could not be computed (",
             n_uncomputable_scores, " candidate score(s) were NA across the ",
-            "run). This is not the same as no candidate meeting `slentry`: ",
-            "the screen stopped without being able to test them.",
+            "run). This is not the same as no candidate meeting `slentry` ",
+            "or `slstay`: the screen stopped without being able to test them.",
             .hzr_format_reasons(uncomputable_reasons), call. = FALSE)
   } else if (n_indefinite > 0L) {
     # The run finished normally, so the branch above stays quiet -- but a
@@ -703,6 +726,16 @@ hzr_stepwise <- function(fit,
             "with `criterion = \"wald\"` runs the same refit and fails the ",
             "same way. See `$criteria$uncomputable_reasons` for which ",
             "mechanism applied.", call. = FALSE)
+  }
+  if (!stopped_uncomputable && n_untested_drops > 0L) {
+    # The run went on, because other candidates could be tested, so the
+    # stopped warning stays quiet.  But each of these variables stayed in the
+    # model with no test at all, which reads exactly like "met slstay" (#389).
+    warning("Stepwise selection completed, but ", n_untested_drops,
+            " removal test(s) could not be computed, and those variables ",
+            "were kept without being tested: ",
+            .hzr_score_reason_text("wald_no_variance"), ". See ",
+            "`$criteria$uncomputable_reasons`.", call. = FALSE)
   }
   # A completed run keeps the tally but says nothing about it, and a collision
   # is a naming mistake the user can fix, not a property of the data. The

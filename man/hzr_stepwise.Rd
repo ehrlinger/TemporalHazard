@@ -101,8 +101,11 @@ frozen action; see Details.}
 screen, \code{frozen} can name a variable the final model does not
 contain; see the \strong{Known limitation (the frozen set)} section.}
 \item{\code{criteria}}{Named list of the threshold / direction
-settings actually applied, plus, under \code{criterion = "score"},
-\code{n_uncomputable_scores} (how many candidate scores were \code{NA}),
+settings actually applied, plus
+\code{n_uncomputable_scores} (how many candidate scores were \code{NA}: an
+entry the score test could not score under \code{criterion = "score"},
+or, under any criterion, a removal whose Wald statistic could not
+be computed, \code{wald_no_variance}),
 \code{uncomputable_reasons} (a named integer vector of \emph{why}) and
 \code{stopped_uncomputable}. Read \code{uncomputable_reasons} before treating
 an unscored candidate as a bad one: \code{information_indefinite} marks
