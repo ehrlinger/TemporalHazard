@@ -139,10 +139,14 @@
   the base model could not see them. When the job's `SELECTION` could not be
   run anyway (`FAST`, say), that reason is recorded in `$untranslated` beside
   the `DATA=` one, so adding `DATA=` does not reveal a second refusal. **This
-  widens #311 on purpose:** a job with no `DATA=` is now refused too, with or
-  without `SELECTION`, when its only phase variables are excluded (`/E`) or
-  belong to a phase that is not built (a `LATE` statement with no `MUL`, say).
-  Such a job used to translate, and its missing-value guard read those
+  widens #311 on purpose.** A job with no `DATA=` is now refused, with or
+  without `SELECTION`, when its only phase variables are any of these:
+  - excluded with `/E`;
+  - on a `LATE` statement when `PARMS` has no `MUL`;
+  - on a `CONSTANT` statement when `PARMS` has no `MUC`;
+  - on an `EARLY` statement when `PARMS` has no `MUE`.
+
+  **Such jobs used to translate.** Their missing-value guard then read those
   variables from whatever environment rendered the document. The refusal
   names the variables rather than claiming a phase has covariates.
 
