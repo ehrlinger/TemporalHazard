@@ -80,7 +80,7 @@ the others rather than estimating it:
 \item{\code{"eta_gamma"}}{\eqn{\eta = 2/\gamma}, so that
 \eqn{\gamma\eta = 2}. SAS/C: \code{FIXGE2}.}
 }
-At \code{alpha = 1}, the default, the g3 form is
+At \code{alpha = 1}, \code{hzr_phase()}'s default, the g3 form is
 \eqn{(t/\tau)^{\gamma\eta}}{(t/tau)^(gamma*eta)} (see \code{\link[=hzr_decompos_g3]{hzr_decompos_g3()}}),
 which depends on
 \eqn{\gamma} and \eqn{\eta} only through their product. So

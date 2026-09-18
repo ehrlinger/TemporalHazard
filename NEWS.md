@@ -978,7 +978,8 @@
   returns something other than a fit (#333).** Reading the objective off a
   bare vector was an error outside the replicate's own error handling. Such
   a replicate now counts as failed, under the reason
-  `"refit returned a <class>, not a fit object"`. `hazard()` never returns
+  `"refit returned a <class>, not a fit object"` (`an <class>` when the
+  class begins with a vowel, as in `"an integer"`). `hazard()` never returns
   one; a stored call rewritten to another function can. The refusal of a
   `data =` that is not a data frame now names `data` in its message.
 
@@ -992,7 +993,7 @@
 * **`hzr_bootstrap()` names two more kinds of refit that are not a fit
   (#343).** A refit returning a list with no `fit` was tallied as a
   convergence failure; it is now ``"refit returned a <class> with no `fit`, not a
-  fit object"``, in both modes. A refit whose fit held a finite
+  fit object"`` (`an <class>` before a vowel), in both modes. A refit whose fit held a finite
   objective but no estimates counted as a success and then ended the run
   building its replicate row; it is now a failed replicate,
   `"refit returned no parameter estimates"`. `hazard()` returns neither. A

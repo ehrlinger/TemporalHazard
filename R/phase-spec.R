@@ -146,7 +146,7 @@
 #'     \item{`"eta_gamma"`}{\eqn{\eta = 2/\gamma}, so that
 #'       \eqn{\gamma\eta = 2}. SAS/C: `FIXGE2`.}
 #'   }
-#'   At `alpha = 1`, the default, the g3 form is
+#'   At `alpha = 1`, `hzr_phase()`'s default, the g3 form is
 #'   \eqn{(t/\tau)^{\gamma\eta}}{(t/tau)^(gamma*eta)} (see [hzr_decompos_g3()]),
 #'   which depends on
 #'   \eqn{\gamma} and \eqn{\eta} only through their product. So
