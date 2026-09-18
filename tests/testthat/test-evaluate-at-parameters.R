@@ -472,9 +472,19 @@ test_that("the refusals describe the model in front of them (#144)", {
   expect_null(names(ev$theta))
 
   # A model with no observations says that, rather than blaming a phase
-  # design it does not have.
-  z <- hazard(time = numeric(0), status = numeric(0), dist = "weibull",
+  # design it does not have. Since #336, hazard() refuses empty input itself,
+  # so a new object cannot be built empty: the user is told there, first.
+  expect_error(hazard(time = numeric(0), status = numeric(0), dist = "weibull",
+                      theta = c(0.05, 0.9), fit = FALSE),
+               "no observations")
+  # hzr_evaluate() keeps its own refusal for an empty object that reaches it
+  # without passing hazard()'s check -- one saved before #336 -- and must still
+  # say so rather than fail on a phase design. Emptying a valid object's data
+  # is that object.
+  z <- hazard(time = d$int_dead, status = d$dead, dist = "weibull",
               theta = c(0.05, 0.9), fit = FALSE)
+  z$data$time <- numeric(0)
+  z$data$status <- numeric(0)
   expect_error(hzr_evaluate(z, theta = c(0.05, 0.9)),
                "carries no observations")
 })
