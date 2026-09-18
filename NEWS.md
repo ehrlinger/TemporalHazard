@@ -575,6 +575,34 @@
   directly or editing a fit's stored data, since `hazard()` checks lengths
   and missing bounds first.
 
+* **`hzr_stepwise()` now says when it could not run a Wald test for an entry
+  or a removal (#389).** A Wald test needs the model's variance for the
+  coefficient. When that variance was missing, the p-value was `NA`, and the
+  variable was treated exactly as if it had been tested: an untested removal
+  stayed in the model as if it met `slstay`, and an untested entry stayed out
+  as if it missed `slentry`. There was no warning, and
+  `$criteria$n_uncomputable_scores` stayed 0. The common case is an
+  interval- or left-censored multiphase fit on an installation without
+  `numDeriv`, where no coefficient has a variance. A backward screen there
+  stopped after 0 steps and kept variables it drops when `numDeriv` is
+  present; a forward Wald screen stopped after 0 steps and entered nothing.
+  Such tests are now counted in `n_uncomputable_scores` under the reason
+  `wald_no_variance`, and the variables are listed in the new
+  `$criteria$wald_untested_removals` and `$criteria$wald_untested_entries`.
+  A screen whose last iteration could test none of its candidates for entry,
+  or none for removal, sets `stopped_uncomputable` and warns which. Any other
+  variable decided without a test is named once in a warning.
+  `hzr_bootstrap()` runs its replicates quietly, so it now warns with the
+  number of replicates that decided a variable untested. `stopped_uncomputable`
+  is now decided by the last iteration alone, so a two-way screen that could
+  not test anything at one step and recovered at the next is no longer
+  reported as stopped. A forced-in variable
+  is never a removal candidate and is not counted. The stop warnings of
+  `hzr_stepwise()` and `hzr_bootstrap()` now name both criteria, and
+  `hzr_bootstrap()` no longer says such replicates contribute no selections:
+  a replicate may stop after several steps, and an untested removal counts
+  as selected.
+
 * **A backward `hzr_stepwise()` drop's refusal now names the reduced design,
   and its pre-check no longer repeats parse-time warnings (#343).** The
   reason for refusing a drop that removes no column read "the refit's
