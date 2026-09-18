@@ -1092,11 +1092,14 @@
 
 ## Known limitations
 
-* **`hzr_stepwise()`'s `$scope$frozen` can name a variable the final model
-  excludes (#378).** Each iteration makes a forward step and then a backward
-  step, and the protected sets are fixed when the iteration starts, so a
-  variable that the forward step freezes can still be dropped by the backward
-  step that follows. It is then reported as frozen while the selected model
+* **In a two-way `hzr_stepwise()` screen, `$scope$frozen` can name a
+  variable the final model excludes (#378).** With `direction = "both"`,
+  each iteration makes a forward step and then a backward step, and the
+  protected sets are fixed when the iteration starts, so a variable that the
+  forward step freezes can still be dropped by the backward step that
+  follows. Forward-only and backward-only screens are not affected: neither
+  makes both steps in one iteration, so their `$scope$frozen` and final model
+  agree. It is then reported as frozen while the selected model
   does not contain it, and nothing warns. When they disagree, **trust the
   final model and `$steps`**, which records both the `"frozen"` row and the
   `"drop"` after it; read `$scope$frozen` as the variables that reached the
