@@ -214,7 +214,7 @@
         key <- sub("=.*$", "", o)
         has_val <- grepl("=", o, fixed = TRUE)
         val_ok <- has_val && is_number(sub("^[^=]*=", "", o))
-        # Each token must be one the option state lexes whole: E/I/S (or
+        # Each token must be one that the option state lexes whole: E/I/S (or
         # their long forms) alone, M/O (or MOVE/ORDER) with `= number`
         # (hazard_y.y:228-232). Anything else is a syntax error.
         is_flag <- key %in% c("E", "EXCLUDE", "I", "INCLUDE", "S", "START")
