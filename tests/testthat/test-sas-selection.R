@@ -16,8 +16,15 @@ test_that("every forward/stepwise spelling reaches the same direction", {
 test_that("BACKWARD and ONEWAY are distinct from stepwise", {
   expect_equal(.hzr_selection_spec("BACKWARD")$direction, "backward")
   expect_equal(.hzr_selection_spec("BW")$direction, "backward")
-  # ONEWAY means no stepwise at all: the caller emits a plain hazard() fit.
-  expect_null(.hzr_selection_spec("NOSTEPWISE")$direction)
+  # ONEWAY/NOSTEPWISE is still a screen, forward only: the SELECTION statement
+  # itself sets sw = 1 (hazard_y.y setopt(33); stpwprc.c), and NOSTEPWISE only
+  # sets nosw, which caps each variable at one move (#342 review). Reading it
+  # as "no screen" put every candidate into a plain fit.
+  for (kw in c("NOSTEPWISE", "NOSW")) {
+    got <- .hzr_selection_spec(kw)
+    expect_true(got$stepwise, info = kw)
+    expect_equal(got$direction, "forward", info = kw)
+  }
 })
 
 test_that("a SELECTION block is refused, not emitted as hzr_stepwise", {
@@ -72,10 +79,32 @@ test_that("a bare SELECTION with no options at all enables stepwise", {
   expect_equal(got$direction, "both")
 })
 
-test_that("NOSTEPWISE disables it and records any orphaned thresholds", {
+test_that("NOSTEPWISE keeps its entry threshold, because it still screens", {
   got <- .hzr_selection_spec(c("NOSTEPWISE", "SLENTRY=0.05"))
-  expect_false(got$stepwise)
-  expect_true(any(grepl("SLENTRY", got$untranslated$construct)))
+  expect_true(got$stepwise)
+  expect_equal(got$slentry, 0.05)
+  expect_false(any(grepl("SLENTRY", got$untranslated$construct)))
+})
+
+test_that("a NOSTEPWISE job is refused, not fitted with every candidate in (#342)", {
+  # Under SELECTION a bare phase variable starts OUT of the model
+  # (setstat.c), so emitting ~AGE + X + Z as a plain fit was a wrong model
+  # with an empty $untranslated. Executed, not shape-asserted.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste(
+    "%HAZARD( PROC HAZARD DATA=D CONDITION=14; EVENT DEAD; TIME TT;",
+    "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; SELECTION NOSW;",
+    "EARLY AGE, X/I, Z/S; );"
+  ), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  expect_true(any(job$untranslated$construct == "SELECTION"))
+  set.seed(5)
+  n <- 60
+  D <- data.frame(TT = stats::rexp(n, 0.2), DEAD = rep(c(1, 0), length.out = n),
+                  AGE = stats::rnorm(n), X = stats::rnorm(n), Z = stats::rnorm(n))
+  res <- suppressWarnings(render_sim(job, list(D = D)))
+  expect_match(res$results[["fit"]], "^ERROR: .*SELECTION")
+  expect_false(exists("fit", envir = res$env, inherits = FALSE))
 })
 
 test_that("a directionless SELECTION block is refused too", {
