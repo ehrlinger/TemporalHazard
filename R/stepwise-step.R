@@ -210,6 +210,8 @@
         df        = integer(),
         stringsAsFactors = FALSE
       ),
+      n_uncomputable = 0L,
+      uncomputable_reasons = stats::setNames(integer(0), character(0)),
       refit_failures = character(),
       refit_failure_reasons = character()
     )
@@ -302,12 +304,28 @@
   # them in a parallel list keyed by row for winner lookup.
   candidate_fits <- lapply(rows, function(r) attr(r, "fit"))
 
+  # A candidate whose refit converged but whose Wald p-value is NA was not
+  # tested: the refit has no usable variance for the entered coefficient.
+  # It stays out of the model exactly as if it had missed `slentry`, so count
+  # it, as the backward step counts an untested removal (#389).  A failed
+  # refit also scores NA, but is reported as a refit failure.  Under AIC the
+  # score needs no variance, so an NA there is a non-finite objective.
+  refit_ok <- vapply(candidate_fits, inherits, logical(1L), what = "hazard")
+  n_uncomputable <- sum(is.na(all_scores$score) & refit_ok)
+  uncomputable_reasons <- .hzr_tally_reasons(rep(
+    if (criterion == "wald") "wald_no_variance" else "nonfinite",
+    n_uncomputable
+  ))
+
   valid <- which(!is.na(all_scores$score))
   if (length(valid) == 0L) {
     out <- null_result()
     out$all_scores <- all_scores
+    out$n_uncomputable <- n_uncomputable
+    out$uncomputable_reasons <- uncomputable_reasons
     out$refit_failures <- failures
     out$refit_failure_reasons <- failure_reasons
+    if (n_uncomputable > 0L) out$stop_reason <- "scores_uncomputable"
     return(out)
   }
 
@@ -323,6 +341,8 @@
   if (!threshold_met) {
     out <- null_result()
     out$all_scores <- all_scores
+    out$n_uncomputable <- n_uncomputable
+    out$uncomputable_reasons <- uncomputable_reasons
     out$refit_failures <- failures
     out$refit_failure_reasons <- failure_reasons
     return(out)
@@ -340,6 +360,8 @@
     stat_type = best$stat_type,
     df        = best$df,
     all_scores = all_scores,
+    n_uncomputable = n_uncomputable,
+    uncomputable_reasons = uncomputable_reasons,
     refit_failures = failures,
     refit_failure_reasons = failure_reasons
   )
@@ -711,11 +733,25 @@
 #'   * The action this represents is a drop, so `accepted = TRUE` means
 #'     the variable was removed from the model.
 #'   * `refit_failures` and `refit_failure_reasons` carry one more case than
-#'     the forward step's: a drop this step REFUSED because the refit, which
-#'     converged, left the design no smaller -- an interaction whose main
-#'     effect has gone is recoded, so the "reduced" model is the model it
-#'     started from (#320).  The reason then says the drop removes no
+#'     the forward step's: a drop this step REFUSED because it leaves the
+#'     design no smaller -- an interaction whose main effect has gone is
+#'     recoded, so the "reduced" model is the model it started from (#320).
+#'     A multiphase drop is judged on the converged refit.  A
+#'     single-distribution drop is judged on its reduced design, before any
+#'     refit, WHEN that design can be built: the fit stores a formula and
+#'     the mutated formula parses against `data` (#323).  Otherwise the
+#'     refit runs and reports the failure itself -- a vector-interface fit
+#'     has no formula to mutate, and such a base is refused by
+#'     `hzr_stepwise()` before any step, while a design that cannot be
+#'     built (an unusable factor, say) fails in the refit with its own
+#'     message.  The reason then says the drop removes no
 #'     column, and `accepted` is `FALSE` with the current fit returned.
+#'   * `n_uncomputable` and `uncomputable_reasons` count the candidates
+#'     this step could not TEST: not forced in, with an `NA` score because
+#'     the current model has no usable variance for the coefficient (#389).
+#'     `stop_reason` is `"scores_uncomputable"` when that left no candidate
+#'     to decide on, so the caller can tell it from nothing meeting
+#'     `slstay`.
 #'
 #' @keywords internal
 #' @noRd
@@ -744,6 +780,11 @@
     stringsAsFactors = FALSE
   )
 
+  # Read by null_result() when it is called, so a result built after the
+  # scores carries their count.
+  n_uncomputable <- 0L
+  uncomputable_reasons <- stats::setNames(integer(0), character(0))
+
   null_result <- function(all_scores = empty_scores) {
     list(
       accepted  = FALSE,
@@ -757,6 +798,8 @@
       stat_type = NA_character_,
       df        = NA_integer_,
       all_scores     = all_scores,
+      n_uncomputable = n_uncomputable,
+      uncomputable_reasons = uncomputable_reasons,
       refit_failures = character(),
       refit_failure_reasons = character()
     )
@@ -795,9 +838,22 @@
   }
   all_scores <- do.call(rbind, rows)
 
+  # A removal candidate with an NA score was not tested: the current model
+  # has no usable variance for its coefficient (an interval-censored
+  # multiphase fit without numDeriv has none at all).  It stays in the model
+  # exactly as if it had met `slstay`, so count it, as the forward step
+  # counts an entry it could not score (#389).  A forced-in variable is never
+  # a removal candidate, so its missing test costs nothing.
+  n_uncomputable <- sum(!all_scores$force_in & is.na(all_scores$score))
+  uncomputable_reasons <- .hzr_tally_reasons(
+    rep("wald_no_variance", n_uncomputable)
+  )
+
   eligible <- which(!all_scores$force_in & !is.na(all_scores$score))
   if (length(eligible) == 0L) {
-    return(null_result(all_scores))
+    out <- null_result(all_scores)
+    if (n_uncomputable > 0L) out$stop_reason <- "scores_uncomputable"
+    return(out)
   }
 
   best_idx <- eligible[which.min(all_scores$score[eligible])]
@@ -813,6 +869,60 @@
     return(null_result(all_scores))
   }
 
+  failure_token <- if (is.na(best$phase)) {
+    best$variable
+  } else {
+    paste0(best$variable, "@", best$phase)
+  }
+
+  # A drop must remove a column.  Under treatment contrasts an interaction
+  # whose main effect has gone is coded with a full set of dummies, so
+  # dropping `z` from `~ z + z:f` turns `z, z:fb` into `z:fa, z:fb`: the same
+  # column space and the same likelihood, a "reduced" model that is the model
+  # it started from (#320).  Accepting it recorded a drop whose p-value
+  # described a variable the fit still carries.  The forward step refuses the
+  # mirror of this, a candidate that adds no column
+  # (`.hzr_entered_coef_name()`, #306).
+  refuse_no_column <- function(old_cols, new_cols) {
+    reason <- paste0(
+      "removes no column: the reduced design (",
+      paste(sQuote(new_cols), collapse = ", "),
+      ") has no fewer columns than the current one (",
+      paste(sQuote(old_cols), collapse = ", "),
+      "), so the model is not reduced"
+    )
+    warning("Stepwise backward: dropping ", failure_token, " ", reason, ".",
+            call. = FALSE)
+    out <- null_result(all_scores)
+    out$refit_failures <- failure_token
+    out$refit_failure_reasons <- stats::setNames(reason, failure_token)
+    out
+  }
+
+  # A single-distribution refit warm-starts from `theta_old[-drop_idx]`, one
+  # element shorter than the design a drop that removes no column leaves, so
+  # that refit fails to conform and would report the arithmetic rather than
+  # the cause (#323).  Its reduced design is therefore decided here, before
+  # refitting, from the same formula parse `hazard()` uses.  Both designs are
+  # built on `data`, so a factor level absent from it cannot pass for a
+  # removed column.  A design that cannot be built is left to the refit,
+  # which reports why.
+  if (is.na(best$phase) && !is.null(current$call$formula)) {
+    # Quietly: the current formula's warnings surfaced when the base was
+    # fitted, and the reduced formula's warnings surface in the refit if the
+    # drop goes ahead. Parsing both here doubled every parse-time warning
+    # (#343).
+    designs <- tryCatch(suppressWarnings({
+      old_formula <- .hzr_stored_formula(current, "`current`")
+      new_formula <- .hzr_formula_update(old_formula, "drop", best$variable)
+      list(old = colnames(.hzr_parse_formula(old_formula, data)$x),
+           new = colnames(.hzr_parse_formula(new_formula, data)$x))
+    }), error = function(e) NULL)
+    if (!is.null(designs) && length(designs$new) >= length(designs$old)) {
+      return(refuse_no_column(designs$old, designs$new))
+    }
+  }
+
   refitted <- tryCatch(
     .hzr_refit_with_scope(
       current, action = "drop",
@@ -822,12 +932,6 @@
     ),
     error = function(e) e
   )
-
-  failure_token <- if (is.na(best$phase)) {
-    best$variable
-  } else {
-    paste0(best$variable, "@", best$phase)
-  }
 
   if (inherits(refitted, "error") || isFALSE(refitted$fit$converged)) {
     reason <- .hzr_refit_failure_reason(refitted)
@@ -839,20 +943,8 @@
     return(out)
   }
 
-  # A drop must remove a column.  Under treatment contrasts an interaction
-  # whose main effect has gone is coded with a full set of dummies, so
-  # dropping `z` from `~ z + z:f` turns `z, z:fb` into `z:fa, z:fb`: the same
-  # column space and the same likelihood, a "reduced" model that is the model
-  # it started from (#320).  Accepting it recorded a drop whose p-value
-  # described a variable the fit still carries.  The forward step refuses the
-  # mirror of this, a candidate that adds no column
-  # (`.hzr_entered_coef_name()`, #306).
-  #
-  # Multiphase only, by construction.  A single-distribution refit warm-starts
-  # from `theta_old[-drop_idx]`, one element shorter than the design it would
-  # need, so a drop that removes no column fails to conform and is reported by
-  # the refit-failure branch above, never reaching here.  A branch for it could
-  # not fire, and a guard no test can kill does not stay.
+  # The same check on the multiphase path, where the refit conforms and its
+  # phase design is read off the result.
   if (!is.na(best$phase)) {
     old_cols <- colnames(current$fit$x_list[[best$phase]])
     new_cols <- colnames(refitted$fit$x_list[[best$phase]])
@@ -861,19 +953,7 @@
            "so a drop from it cannot be checked.", call. = FALSE)
     }
     if (length(new_cols) >= length(old_cols)) {
-      reason <- paste0(
-        "removes no column: the refit's design (",
-        paste(sQuote(new_cols), collapse = ", "),
-        ") has no fewer columns than the current one (",
-        paste(sQuote(old_cols), collapse = ", "),
-        "), so the model is not reduced"
-      )
-      warning("Stepwise backward: dropping ", failure_token, " ", reason, ".",
-              call. = FALSE)
-      out <- null_result(all_scores)
-      out$refit_failures <- failure_token
-      out$refit_failure_reasons <- stats::setNames(reason, failure_token)
-      return(out)
+      return(refuse_no_column(old_cols, new_cols))
     }
   }
 
@@ -889,6 +969,8 @@
     stat_type = best$stat_type,
     df        = best$df,
     all_scores     = all_scores,
+    n_uncomputable = n_uncomputable,
+    uncomputable_reasons = uncomputable_reasons,
     refit_failures = character(),
     refit_failure_reasons = character()
   )

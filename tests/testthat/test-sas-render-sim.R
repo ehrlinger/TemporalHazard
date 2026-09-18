@@ -463,3 +463,15 @@ test_that("render_sim cannot see the caller's globals", {
   ok <- render_sim(list(calls = list(a = quote(f <- hzr_decompos(1, 1, 1, 1)))))
   expect_true(ok$ok)
 })
+
+test_that("render_sim resolves stats without consulting the search path", {
+  # testthat's parallel workers attach the package before R attaches stats
+  # above it, so a render environment parented on package:TemporalHazard
+  # could not find predict() there (#330). The layer must end at baseenv(),
+  # not continue into whatever the search path holds.
+  p <- .render_parent()
+  expect_identical(parent.env(p), baseenv())
+  expect_identical(get("predict", envir = p, inherits = FALSE), stats::predict)
+  got <- render_sim(list(calls = list(a = quote(q <- quantile(c(1, 2, 3))))))
+  expect_identical(got$results[["a"]], "ok")
+})

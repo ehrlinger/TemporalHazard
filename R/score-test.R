@@ -386,7 +386,9 @@
         error = function(e) NULL
       )
       if (is.null(mf_j)) return(NULL)
-      x_j <- stats::model.matrix(ph$formula, data = mf_j)[, -1L, drop = FALSE]
+      # The fit's own construction, so an intercept-free formula builds as
+      # it did at fit time (#303).
+      x_j <- .hzr_formula_design(ph$formula, data)$x
       x_list[[nm]] <- x_j
       cov_counts[[nm]] <- ncol(x_j)
     } else if (!is.null(current$fit$x_list[[nm]]) || !is.null(d$x)) {
@@ -419,6 +421,16 @@
     # Every phase the step does not touch must keep the design the fit used;
     # a different column count means the expansion rebuilt it wrongly.
     return(NULL)
+  }
+  for (nm in unchanged) {
+    # The same count can still be a different design: a fit saved before
+    # #303 holds `~ 0 + o`, for an ordered `o`, as dummies `om`, `oh`, which
+    # now rebuild as `o.L`, `o.Q`.
+    if (cov_counts[[nm]] > 0L &&
+          !identical(colnames(x_list[[nm]]),
+                     colnames(current$fit$x_list[[nm]]))) {
+      return(NULL)
+    }
   }
   for (nm in nms) {
     xm <- x_list[[nm]]
@@ -840,7 +852,15 @@
       "collides with factor `g`'s level `b`: rename the column, or rename or",
       "relevel the factor"
     ),
-    nonfinite = "the score or its variance was not finite"
+    nonfinite = "the score or its variance was not finite",
+    wald_no_variance = paste(
+      "the model had no usable variance for the coefficient, so its Wald",
+      "test could not be computed: there was no variance matrix, the",
+      "coefficient's variance was not positive, or a multi-column term's",
+      "variance block was singular. A fit with interval- or left-censored",
+      "rows takes its variance from numDeriv, so a screen run without",
+      "numDeriv installed reports this for every variable"
+    )
   )
   out <- unname(txt[reason])
   out[is.na(out)] <- reason[is.na(out)]

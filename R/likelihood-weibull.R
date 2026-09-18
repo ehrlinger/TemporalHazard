@@ -137,7 +137,10 @@ NULL
   if (any(status == 1 & time <= 0)) {
     return(Inf)
   }
-  if (any(status %in% c(-1, 2)) && any(upper <= 0)) {
+  # Per row (#341): only a left- or interval-censored row whose upper bound
+  # is 0 has no probability. A right-censored row at time 0 contributes
+  # log S(0) = 0, and an interval opening at 0 contributes log(1 - S(u)).
+  if (any(status %in% c(-1, 2) & upper <= 0)) {
     return(Inf)
   }
   if (any(status == 2) && any(lower[status == 2] >= upper[status == 2])) {

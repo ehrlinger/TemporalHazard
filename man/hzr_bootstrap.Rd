@@ -93,20 +93,28 @@ parameter. In \code{mode = "select"}, \code{pct} is the selection frequency
 and the other statistics are conditional on selection.}
 \item{n_success}{Number of successfully converged replicates.}
 \item{n_failed}{Number of replicates that failed: the refit stopped with
-an error, or returned a non-finite objective.}
+an error, returned something other than a fit, returned a non-finite
+objective, or returned a finite objective but no parameter
+estimates.}
 \item{failure_reasons}{Named integer vector counting why replicates
 failed, most common first: the refit's error message (or
-\code{"error with an empty message"}), or
+\code{"error with an empty message"}),
+\code{"refit returned a <class>, not a fit object"} (or \code{"... with no \code{fit}, not a fit object"}), \code{"refit returned no parameter estimates"}, or
 \code{"non-finite objective (did not converge)"}. It sums to \code{n_failed}, and
 is an empty named integer vector, never \code{NULL}, when none failed. When
 every replicate fails, \code{hzr_bootstrap()} also warns, naming the most
 common reason.}
 \item{n_uncomputable_replicates}{Select mode only: number of otherwise
 successful replicates whose screen stopped because no remaining
-candidate's score statistic could be computed, rather than because no
-candidate met \code{slentry}. Such replicates contribute no selections, so
-a non-zero count means every reported selection frequency is
-depressed. Always \code{0} in refit mode.}
+candidate could be tested (its score statistic, or for a removal its
+Wald statistic, could not be computed), rather than because no
+candidate met \code{slentry} or \code{slstay}. A non-zero count means every
+reported selection frequency is biased: a candidate such a replicate
+could not test for entry counts as not selected, and one it could not
+test for removal as selected. A replicate that went on after deciding
+a variable without a Wald test (\code{wald_no_variance}) is not counted
+here unless it also stopped, and gets a warning of its own either way.
+Always \code{0} in refit mode.}
 \item{uncomputable_reasons}{Select mode only: named integer vector
 counting \emph{why} candidate scores were unavailable, summed over every
 replicate. \code{information_indefinite} is the one to read first: it marks

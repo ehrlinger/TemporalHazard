@@ -47,6 +47,15 @@
   }
 
   for (nm in names(job$calls)) {
+    # A note belongs ABOVE its chunk: the reader must meet it before the
+    # code, not after the output (#160).
+    note <- job$notes[[nm]]
+    if (!is.null(note)) {
+      add("::: {.callout-important}",
+          sprintf("## %s", note$title),
+          note$body,
+          ":::", "")
+    }
     add("```{r}",
         sprintf("#| label: %s", nm),
         deparse(job$calls[[nm]], width.cutoff = 60L),

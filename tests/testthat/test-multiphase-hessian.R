@@ -438,8 +438,7 @@ test_that("13-parameter multiphase anchor: stable SEs and rcond (supersedes plac
 # the analytic Hessian's log_tau diagonal read 1.4e6 against about 5.1e3.
 # numDeriv's default d = 0.1 steps log_tau by 0.26, which at gamma = 220 is
 # far wider than the G3 transition, so the reference uses d = 1e-3. The
-# 5% bar allows for the fixed eta step, which leaves the log_tau/eta cross
-# term about 1% off here.
+# steps that shape entries take are sized in test-g3-hessian-steps.R (#332).
 test_that("g3 analytic Hessian matches numDeriv at an extreme shape", {
   skip_if_not_installed("numDeriv")
   withr::local_seed(20260916)
