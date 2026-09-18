@@ -468,6 +468,13 @@ test_that("a job PROC HAZARD rejects at parse emits a stop(), not a fit (#340)",
                  fixed = TRUE, info = stmt)
     expect_false("fit_base" %in% names(job$calls), info = stmt)
   }
+  # SAS stops at parse before any semantic check, so the parse refusal must
+  # win even over a job that also lacks EVENT, which otherwise stops the
+  # whole translation first (Copilot, #396).
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines("%HAZARD( PROC HAZARD DATA=D; TIME TT; PARMS MUE=0.2 THALF=0.15 NU=1; EARLY AGE/EI; );", f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  expect_error(eval(job$calls$fit), "hazard_l.l:176", fixed = TRUE)
   # Control: the same options written the way SAS accepts them still fit.
   job <- job_for("EARLY AGE/E I, Y;")
   expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))

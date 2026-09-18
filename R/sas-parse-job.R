@@ -561,21 +561,12 @@
     selection = if (is.null(sel)) FALSE else
       if (identical(sel$direction, "backward")) "backward" else "screen")
   untr <- rbind(untr, parms$untranslated)
-  cens <- .hzr_censor_spec(statements)
-  untr <- rbind(untr, cens$untranslated)
-
-  # The UNTRANSLATED callout alone is not enough here: a reader who renders
-  # past it would still get a fit, and a fit over a mis-specified model is
-  # this package's signature defect -- a result that looks like one and is
-  # not. Emit a stop() in place of the hazard() call so the document fails
-  # where the fit would have been, and say what has to be done by hand.
-  # This return precedes SELECTION parsing, so a job carrying BOTH refusals
-  # records only this one; it still stops loudly, and no corpus job does both.
   # PROC HAZARD itself refuses this job at parse: a syntax error in a phase
   # statement (hazard_l.l:176 -> initprz.c:75-77) or ORDER= with /E, /I or /S
   # (przconc.c:45-53 -> hazard.c:249-251). It produces no estimates, so a fit
   # here would answer a job the reference never runs (#340). Checked first:
-  # SAS stops at parse, before anything the other refusals read.
+  # SAS stops at parse, before anything the other refusals read -- including
+  # the censoring spec, which throws on a job with no EVENT (#396 review).
   if (length(parms$rejected)) {
     msg <- paste0(
       "PROC HAZARD does not run this job: ",
@@ -588,6 +579,16 @@
     ))
   }
 
+  cens <- .hzr_censor_spec(statements)
+  untr <- rbind(untr, cens$untranslated)
+
+  # The UNTRANSLATED callout alone is not enough here: a reader who renders
+  # past it would still get a fit, and a fit over a mis-specified model is
+  # this package's signature defect -- a result that looks like one and is
+  # not. Emit a stop() in place of the hazard() call so the document fails
+  # where the fit would have been, and say what has to be done by hand.
+  # This return precedes SELECTION parsing, so a job carrying BOTH refusals
+  # records only this one; it still stops loudly, and no corpus job does both.
   if (isTRUE(cens$refused)) {
     return(list(
       call = quote(stop(
