@@ -414,8 +414,9 @@
   the reduced formula before the refit parsed the reduced one again, which
   doubled any warning raised while building the design: 8 per step instead
   of 4. It now parses quietly. When `data` is the frame the base was fitted
-  on, those warnings already surfaced from the base fit, and the reduced
-  formula's surface again from the refit if the drop goes ahead. When `data`
+  on, the current formula's warnings already surfaced from the base fit, and
+  the reduced formula's warnings surface again from the refit if the drop
+  goes ahead. When `data`
   differs, the current formula's warnings on it are no longer shown; they
   cannot change the pre-check's decision, which compares column counts.
 

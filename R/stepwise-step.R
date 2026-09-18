@@ -848,8 +848,9 @@
   # which reports why.
   if (is.na(best$phase) && !is.null(current$call$formula)) {
     # Quietly: the current formula's warnings surfaced when the base was
-    # fitted, and the reduced formula's surface in the refit if the drop goes
-    # ahead. Parsing both here doubled every parse-time warning (#343).
+    # fitted, and the reduced formula's warnings surface in the refit if the
+    # drop goes ahead. Parsing both here doubled every parse-time warning
+    # (#343).
     designs <- tryCatch(suppressWarnings({
       old_formula <- .hzr_stored_formula(current, "`current`")
       new_formula <- .hzr_formula_update(old_formula, "drop", best$variable)
