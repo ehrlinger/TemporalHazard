@@ -348,9 +348,11 @@ test_that("ROBUST translates, recorded as the optimizer choice it is (#160)", {
 
 test_that("the callout does not claim ROBUST changes the variance (#160)", {
   # INVERTED from an earlier test that required the callout to name ROBUST
-  # as a variance divergence. ROBUST is an optimizer choice and changes
-  # neither the variance nor the selected model, so the callout must not
-  # describe it as one. This assertion is the guard against reinstating it.
+  # as a variance divergence. ROBUST is an optimizer choice: it does not
+  # change the variance, though a different optimizer can reach a different
+  # optimum on a multimodal likelihood and so change the selected model (the
+  # $untranslated row says so). What this guards is the false VARIANCE
+  # mechanism, which two rulings rested on.
   doc <- paste(TemporalHazard:::.hzr_render_qmd(
     .sel_job("SELECTION ROBUST SLE=0.2; EARLY STRONG, NOISE;")), collapse = " ")
   expect_no_match(doc, "ROBUST variance")
@@ -850,4 +852,46 @@ test_that("SELECTION options written with spaces around = keep their values (#16
   expect_equal(cl[["slstay"]], 0.1)
   expect_equal(cl[["max_steps"]], 5)
   expect_false(any(c("SLE", "SLS", "MAXSTEPS", "0.2", "") %in% job$untranslated$construct))
+})
+
+test_that("the removal check matches a variable's coefficient exactly (#160)", {
+  # An unanchored prefix let movable `A` claim `phase_1.AGE`. With AGE held
+  # by /I, the screen can never remove it, so an NA variance there costs no
+  # removal test -- but the prefix still reported it.
+  job <- .sel_job("SELECTION SLE=0.2; EARLY A, AGE/I;")
+  env <- new.env(parent = baseenv())
+  env$fit <- list(criteria = list(n_uncomputable_scores = 0L),
+                  coefficients = c(phase_1.log_mu = 0, phase_1.A = 1, phase_1.AGE = 1),
+                  fit = list(vcov = diag(c(1, 1, NA))))
+  expect_no_warning(eval(job$calls$screen_check, env))
+  # Control: the same NA on the movable A does warn, and names only A.
+  env$fit$fit$vcov <- diag(c(1, NA, 1))
+  msg <- tryCatch({
+    eval(job$calls$screen_check, env)
+    "none"
+  }, warning = conditionMessage)
+  expect_match(msg, "standard error for phase_1.A, so", fixed = TRUE)
+})
+
+test_that("the callout describes only what this screen's direction does (#160)", {
+  # The callout's own text: "re-enter" also appears, rightly, in the MOVE
+  # row of the untranslated callout elsewhere in the document.
+  note <- function(stmts) {
+    .sel_job(stmts)$notes$fit$body
+  }
+  both <- note("SELECTION; EARLY STRONG, NOISE;")
+  expect_match(both, "The entry statistic", fixed = TRUE)
+  expect_match(both, "drop decisions", fixed = TRUE)
+  expect_match(both, "can re-enter variables PROC HAZARD would have kept out", fixed = TRUE)
+  # BACKWARD never enters, so neither the entry statistic nor re-entry applies.
+  back <- note("SELECTION BACKWARD; EARLY STRONG, NOISE;")
+  expect_no_match(back, "The entry statistic", fixed = TRUE)
+  expect_no_match(back, "re-enter", fixed = TRUE)
+  expect_match(back, "drop decisions", fixed = TRUE)
+  # NOSTEPWISE is forward only: it never removes, so neither does re-entry.
+  fwd <- note("SELECTION NOSW; EARLY STRONG, NOISE;")
+  expect_match(fwd, "The entry statistic", fixed = TRUE)
+  expect_no_match(fwd, "drop decisions", fixed = TRUE)
+  expect_no_match(fwd, "re-enter", fixed = TRUE)
+  for (d in list(both, back, fwd)) expect_match(d, "approximate variances", fixed = TRUE)
 })

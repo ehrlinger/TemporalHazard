@@ -306,7 +306,8 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
         sw <- r$stepwise_call
         sw[[2L]] <- as.name(base_slot)
         calls[[fit_slot]] <- call("<-", as.name(fit_slot), sw)
-        notes[[fit_slot]] <- .hzr_selection_divergence_note()
+        notes[[fit_slot]] <- .hzr_selection_divergence_note(
+          direction = r$stepwise_call[["direction"]])
         if (!is.null(r$screen_check_call)) {
           chk <- do.call(substitute,
                          list(r$screen_check_call,
@@ -464,38 +465,47 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
 #' before the code, which is why it is a note on the chunk rather than a row
 #' in `$untranslated` (#160).
 #' @noRd
-.hzr_selection_divergence_note <- function() {
+.hzr_selection_divergence_note <- function(direction = "both") {
+  # Only what this screen's direction does: a BACKWARD screen never enters,
+  # and a forward-only (NOSTEPWISE) screen never removes, so neither the
+  # entry statistic nor re-entry applies to both.
+  enters <- !identical(direction, "backward")
+  removes <- !identical(direction, "forward")
   list(
     title = paste("SELECTION: this screen may select a different model than",
                   "PROC HAZARD did"),
-    body = paste(
+    body = paste(c(
       "This job's SELECTION statement is translated into hzr_stepwise() with",
       "the job's own candidates, per-variable flags and SLENTRY/SLSTAY",
       "thresholds. The screen is real, and the selected model may still",
       "differ from the one PROC HAZARD chose, for reasons that cannot be",
       "tuned away. PROC HAZARD uses approximate variances during selection",
-      "(it ignores the shaping-parameter covariances). The entry statistic",
-      "here reproduces that approximation, except for a candidate whose",
-      "information is indefinite, which is refitted and Wald-tested instead;",
-      "the Wald tests behind the drop decisions use the full Hessian, so",
-      "removals can differ too; and SAS's /I",
-      "holds a variable in ONE phase,",
-      "while hzr_stepwise()'s force_in is keyed by variable name across every",
-      "phase, which is why a job whose /I variable is movable in another",
-      "phase is refused rather than screened here. And PROC HAZARD's MOVE",
-      "limit counts a variable's DELETIONS, separately for each phase: at",
-      "its default of 1 a variable removed from a phase can never return to",
-      "it, while this package's oscillation guard counts entries and exits",
-      "together across every phase and lets a removed variable re-enter. So",
-      "the screen here can re-enter variables PROC HAZARD would have kept",
-      "out, and occasionally freeze one PROC HAZARD would still move. The",
-      "divergence is recorded against the hm.death.AVC",
-      "fixture in",
+      "(it ignores the shaping-parameter covariances).",
+      if (enters) c(
+        "The entry statistic here reproduces that approximation, except for",
+        "a candidate whose information is indefinite, which is refitted and",
+        "Wald-tested instead."),
+      if (removes) c(
+        "The Wald tests behind the drop decisions use the full Hessian, so",
+        "removals can differ."),
+      "SAS's /I holds a variable in ONE phase, while hzr_stepwise()'s",
+      "force_in is keyed by variable name across every phase, which is why a",
+      "job whose /I variable is movable in another phase is refused rather",
+      "than screened here.",
+      if (enters && removes) c(
+        "And PROC HAZARD's MOVE limit counts a variable's DELETIONS,",
+        "separately for each phase: at its default of 1 a variable removed",
+        "from a phase can never return to it, while this package's",
+        "oscillation guard counts entries and exits together across every",
+        "phase and lets a removed variable re-enter. So the screen here can",
+        "re-enter variables PROC HAZARD would have kept out, and occasionally",
+        "freeze one PROC HAZARD would still move."),
+      "The divergence is recorded against the hm.death.AVC fixture in",
       "tests/testthat/test-sas-parity.R. Read the selected model as this",
       "package's screen of this job's candidates, not as a reproduction of",
       "the SAS run, and compare it against the SAS listing before relying on",
       "it. Any candidate the screen could not score is reported by the",
       "uncomputable-score check below it."
-    )
+    ), collapse = " ")
   )
 }

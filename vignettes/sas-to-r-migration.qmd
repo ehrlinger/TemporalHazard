@@ -554,11 +554,14 @@ before you point it at a corpus.
   screen may choose a different model than `PROC HAZARD` did.** The job's
   candidates, per-variable flags (`/S`, `/I`, `/E`) and `SLE`/`SLS`
   thresholds are carried into an `hzr_stepwise()` call. `PROC HAZARD` uses
-  approximate variances while selecting. The entry statistic here
-  reproduces that approximation (except for a candidate refitted because
-  its information is indefinite), but the Wald tests behind each removal
-  use the full Hessian, so removals can differ; the emitted document says
-  so in a callout above the chunk. Compare the
+  approximate variances while selecting. In a screen that enters
+  variables, the entry statistic here reproduces that approximation
+  (except for a candidate refitted because its information is
+  indefinite); in one that removes them, the Wald tests behind each
+  removal use the full Hessian, so removals can differ. A `BACKWARD`
+  screen only removes and a `NOSTEPWISE` one only enters, and the callout
+  the emitted document carries above the chunk describes only what that
+  job's screen does. Compare the
   selected model against the SAS listing before relying on it. Options
   with no faithful translation are still refused, each emitting a
   `stop()`: `FAST`, `MAXVARS`, `RESTRICT`, a

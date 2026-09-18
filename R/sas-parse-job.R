@@ -967,14 +967,16 @@
     # otherwise valid matrix; either way the screen cannot remove that
     # variable, which reads exactly like "it met slstay". Only the
     # variables the screen could remove are read: a FIXED shape has an NA
-    # variance by design. A forward-only screen never removes, so it gets
+    # variance by design. Matched EXACTLY, so a movable `A` does not claim a
+    # forced-in `AGE` (a factor candidate's dummy columns are therefore not
+    # read; SAS phase variables are numeric). A forward-only screen never removes, so it gets
     # no such check. Indexed by string: the caller substitutes the SYMBOL
     # `fit` with this block's slot name, and `fit$fit` would rename the
     # component too.
     removable <- unique(unlist(parms$selection$movable %||% list()))
     if (!identical(sel$direction, "forward") && length(removable)) {
       removable_re <- paste0("^phase_[0-9]+[.](",
-                             paste(removable, collapse = "|"), ")")
+                             paste(removable, collapse = "|"), ")$")
       removal_check <- bquote({
         est <- names(stats::coef(fit))
         v <- fit[["fit"]][["vcov"]]
