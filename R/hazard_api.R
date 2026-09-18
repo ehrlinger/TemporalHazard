@@ -994,9 +994,11 @@ hazard <- function(formula = NULL,
       stop("'theta' has ", length(theta), " entries, but this model takes ",
            sum(per_phase), " (",
            paste(names(per_phase), per_phase, collapse = ", "), "): each ",
-           "phase takes its log_mu and free shapes, then one coefficient per ",
-           "column of its own formula's design, or of the global design it ",
-           "inherits. See hzr_theta_names().", call. = FALSE)
+           "phase takes its log_mu, then its shape parameters whether fixed ",
+           "or free (3 for a cdf or hazard phase, 4 for g3, none for ",
+           "constant), then one coefficient per column of its own formula's ",
+           "design, or of the global design it inherits. See ",
+           "hzr_theta_names().", call. = FALSE)
     }
   }
   if (!fit && dist == "multiphase" && !is.null(theta) &&

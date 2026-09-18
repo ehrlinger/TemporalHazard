@@ -1,5 +1,5 @@
 # A supplied multiphase `theta` must have one entry per parameter: each
-# phase's log_mu and free shapes, then one coefficient per column of the
+# phase's log_mu and shape slots, then one coefficient per column of the
 # design the phase uses (its own `formula`, or the global one it inherits).
 # The only check compared the length with the global design's column count,
 # and only as a lower bound, so a longer `theta` fitted with the extra
@@ -77,4 +77,25 @@ test_that("an unfitted multiphase model still carries theta as supplied (#408)",
 test_that("no theta still means the fit builds its own starts (#408)", {
   fit <- suppressWarnings(theta_len_fit(NULL))
   expect_length(fit$fit$theta, 9L)
+})
+
+test_that("the length message counts fixed shapes, as the check does (#408)", {
+  # Every early shape fixed: the phase still takes all three shape slots, so
+  # the model takes 9, and a message saying "free shapes" would have led the
+  # reader to count 6 (early 3, constant 3).
+  ph <- list(early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                               fixed = "shapes"),
+             constant = hzr_phase("constant"))
+  err <- tryCatch(theta_len_fit(c(theta_ok, 0), phases = ph),
+                  error = function(e) conditionMessage(e))
+  expect_match(err, "'theta' has 10 entries, but this model takes 9 \\(early 6, constant 3\\)")
+  expect_match(err, "shape parameters whether fixed or free", fixed = TRUE)
+  expect_no_match(err, "free shapes", fixed = TRUE)
+  # A g3 phase takes four shape slots: log_mu, log_tau, gamma, alpha, eta,
+  # then the two inherited f1 coefficients.
+  ph_g3 <- list(early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                                  fixed = "m"),
+                late = hzr_phase("g3"))
+  expect_error(theta_len_fit(c(theta_ok[1:6], rep(0, 8)), phases = ph_g3),
+               "'theta' has 14 entries, but this model takes 13 \\(early 6, late 7\\)")
 })

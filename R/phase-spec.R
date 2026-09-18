@@ -13,7 +13,7 @@
 #   - formula: optional one-sided formula for phase-specific covariates
 #
 # The helpers extract metadata needed during likelihood construction:
-#   - .hzr_phase_n_shape():     number of shape parameters (3 or 0)
+#   - .hzr_phase_n_shape():     number of shape parameters (3, 4 or 0)
 #   - .hzr_phase_theta_names(): named labels for the parameter sub-vector
 #
 # SAS/C BRIDGE
@@ -855,7 +855,8 @@ hzr_theta_names <- function(phases, covariates = NULL) {
   }, integer(1))
 }
 
-#' Theta entries each phase takes: log_mu, free shapes, covariates (#408)
+#' Theta entries each phase takes: log_mu, every shape slot fixed or free,
+#' covariates (#408)
 #' @noRd
 .hzr_phase_theta_counts <- function(phases, data, x_fit) {
   vapply(phases, function(ph) 1L + .hzr_phase_n_shape(ph), integer(1)) +
