@@ -141,3 +141,65 @@ test_that("the elements the fitter reads are accepted", {
   fit <- cv_weibull(list(maxit = 500), fit = TRUE)
   expect_true(is.finite(fit$fit$objective))
 })
+
+# cv_multiphase() suppresses warnings, so it cannot show a stray control
+# warning; these calls do not fit (fit = FALSE), so any warning is the
+# validator's.
+cv_multiphase_raw <- function(control, dist = "multiphase") {
+  hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = cv_data(), dist = dist,
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes"),
+      constant = hzr_phase("constant")
+    ),
+    control = control
+  )
+}
+
+test_that("the multiphase elements draw no warning on a multiphase fit", {
+  expect_no_warning(cv_multiphase_raw(
+    list(n_starts = 1L, conserve = FALSE, phase_share_tol = 0,
+         start_seed = 3L, maxit = 200, reltol = 1e-8)
+  ))
+})
+
+test_that("shape_param_count on a multiphase fit warns, and the fit is unchanged", {
+  # Every multiphase path (the stepwise shape count, the refit, the score
+  # test) derives its own theta layout, so nothing reads it there (#405).
+  expect_warning(
+    cv_multiphase_raw(list(shape_param_count = 2L)),
+    "control\\$shape_param_count \\(it applies only to single-distribution"
+  )
+  plain <- cv_multiphase(list(n_starts = 1L), fit = TRUE)
+  given <- cv_multiphase(list(n_starts = 1L, shape_param_count = 9L), fit = TRUE)
+  expect_identical(given$fit$theta, plain$fit$theta)
+})
+
+test_that("a named dist scalar is classified by its value", {
+  # hazard() accepts dist = c(model = "multiphase") and fits multiphase, so
+  # the multiphase elements are read and must not be called off-path (#405).
+  expect_no_warning(
+    cv_multiphase_raw(list(n_starts = 1L), dist = c(model = "multiphase"))
+  )
+})
+
+test_that("a named dist scalar still refuses a phase-scoped global term", {
+  # With a visible function named like a phase, a skipped refusal is silent:
+  # constant(age) became a global covariate and entered BOTH phases (#405).
+  constant <- function(x) x
+  expect_error(
+    hazard(survival::Surv(int_dead, dead) ~ constant(age), data = cv_data(),
+           dist = c(model = "multiphase"),
+           phases = list(
+             early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                               fixed = "shapes"),
+             constant = hzr_phase("constant")
+           )),
+    "names phase 'constant' as a function"
+  )
+})
+
+test_that("hazard() stores dist without names", {
+  obj <- cv_multiphase_raw(list(), dist = c(model = "multiphase"))
+  expect_identical(obj$spec$dist, "multiphase")
+})

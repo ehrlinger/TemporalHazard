@@ -257,14 +257,16 @@ applied;
 Read \code{fit$spec$control$conserve_applied}, not
 \code{fit$spec$control$conserve}: the latter says only what you asked for.
 \item \code{shape_param_count}: The number of shape parameters at the front of
-\code{theta}, read back from \code{fit$spec$control} by the stepwise refit and the
-score test. The fit itself does not use it.
+\code{theta}, for a single-distribution model only. The fit itself does not
+use it; the stepwise refit and the score test read it back from
+\code{fit$spec$control}. A multiphase fit derives its own layout, so nothing
+reads it there.
 }
 
-The elements above are accepted without a warning: \code{maxit}, \code{reltol}
-and \code{shape_param_count} for every model, and \code{n_starts}, \code{start_seed},
-\code{phase_share_tol} and \code{conserve} for \code{dist = "multiphase"} (#376). Any
-other name either warns or is an error:
+The elements above are accepted without a warning: \code{maxit} and \code{reltol}
+for every model, \code{shape_param_count} for a single-distribution model, and
+\code{n_starts}, \code{start_seed}, \code{phase_share_tol} and \code{conserve} for
+\code{dist = "multiphase"} (#376). Any other name either warns or is an error:
 \itemize{
 \item A name that nothing reads is an error that names it, rather than a
 setting silently ignored: a misspelling such as \code{n_startz}, and \code{fix}
@@ -275,8 +277,9 @@ fixing a parameter.
 \item A real name that does nothing for this fit warns, and the fit proceeds
 unchanged: \code{abstol} (read only by a bounded optimizer no fit uses),
 \code{method}, \code{condition}, \code{nocov} and \code{nocor}, which earlier versions
-documented as accepted without reading them, and a multiphase element
-such as \code{n_starts} given to a single-distribution fit.
+documented as accepted without reading them; a multiphase element such
+as \code{n_starts} given to a single-distribution fit; and
+\code{shape_param_count} given to a multiphase fit.
 }
 
 SAS \verb{PROC HAZARD} options with no \code{control} equivalent: \code{NOCOV} and \code{NOCOR}

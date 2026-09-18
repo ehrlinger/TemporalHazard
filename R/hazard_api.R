@@ -304,13 +304,15 @@ NULL
 #'   Read `fit$spec$control$conserve_applied`, not
 #'   `fit$spec$control$conserve`: the latter says only what you asked for.
 #' - `shape_param_count`: The number of shape parameters at the front of
-#'   `theta`, read back from `fit$spec$control` by the stepwise refit and the
-#'   score test. The fit itself does not use it.
+#'   `theta`, for a single-distribution model only. The fit itself does not
+#'   use it; the stepwise refit and the score test read it back from
+#'   `fit$spec$control`. A multiphase fit derives its own layout, so nothing
+#'   reads it there.
 #'
-#' The elements above are accepted without a warning: `maxit`, `reltol`
-#' and `shape_param_count` for every model, and `n_starts`, `start_seed`,
-#' `phase_share_tol` and `conserve` for `dist = "multiphase"` (#376). Any
-#' other name either warns or is an error:
+#' The elements above are accepted without a warning: `maxit` and `reltol`
+#' for every model, `shape_param_count` for a single-distribution model, and
+#' `n_starts`, `start_seed`, `phase_share_tol` and `conserve` for
+#' `dist = "multiphase"` (#376). Any other name either warns or is an error:
 #' - A name that nothing reads is an error that names it, rather than a
 #'   setting silently ignored: a misspelling such as `n_startz`, and `fix`
 #'   and `quasi`, which no fit has ever read. A fit given `fix` was never
@@ -320,8 +322,9 @@ NULL
 #' - A real name that does nothing for this fit warns, and the fit proceeds
 #'   unchanged: `abstol` (read only by a bounded optimizer no fit uses),
 #'   `method`, `condition`, `nocov` and `nocor`, which earlier versions
-#'   documented as accepted without reading them, and a multiphase element
-#'   such as `n_starts` given to a single-distribution fit.
+#'   documented as accepted without reading them; a multiphase element such
+#'   as `n_starts` given to a single-distribution fit; and
+#'   `shape_param_count` given to a multiphase fit.
 #'
 #' SAS `PROC HAZARD` options with no `control` equivalent: `NOCOV` and `NOCOR`
 #' only suppress printed output, and `hazard()` prints nothing until asked.
@@ -547,6 +550,10 @@ hazard <- function(formula = NULL,
                    ...) {
 
   objective <- match.arg(objective)
+  # A named scalar such as c(model = "multiphase") is a valid `dist`, but
+  # identical() against a bare string is FALSE for it. Dropping the names
+  # here, before any read, keeps every later test of `dist` agreeing (#405).
+  dist <- unname(dist)
 
   # `objective` is a top-level argument rather than a `control` element on
   # purpose: it changes the estimand, and burying that among convergence
@@ -2608,12 +2615,14 @@ vcov.hazard <- function(object, ...) {
 # from the code rather than the documentation: .hzr_optim_generic() reads
 # maxit and reltol; .hzr_optim_multiphase() reads and strips the multiphase
 # ones before the optimizer; shape_param_count is not read by the fitter but
-# is read back from the stored spec$control by the stepwise refit and the
-# score test. abstol is read only by .hzr_optim_generic()'s bounded
+# is read back from the stored spec$control by the single-distribution
+# stepwise refit and score test (every multiphase path derives its own theta
+# layout, so on a multiphase fit nothing reads it; #405). abstol is read only by .hzr_optim_generic()'s bounded
 # (L-BFGS-B) branch, which every caller turns off (use_bounds = FALSE), so
 # no fit reads it.
 .hzr_control_names <- list(
-  all = c("maxit", "reltol", "shape_param_count"),
+  all = c("maxit", "reltol"),
+  single = "shape_param_count",
   multiphase = c("n_starts", "conserve", "phase_share_tol", "start_seed")
 )
 
@@ -2643,8 +2652,9 @@ vcov.hazard <- function(object, ...) {
 #' left the fit as it would have been and said nothing (#376). A name that
 #' nothing reads is an error; so are `fix` and `quasi`, which say what a fit
 #' given them actually was. A real name that does nothing here -- one of
-#' the names ?hazard documented without reading, or a multiphase element on
-#' a single-distribution fit -- warns and is ignored, so a stepwise or
+#' the names ?hazard documented without reading, a multiphase element on a
+#' single-distribution fit, or shape_param_count on a multiphase one -- warns
+#' and is ignored, so a stepwise or
 #' bootstrap candidate refit that forwards it still runs.
 #'
 #' @param control The `control` list, already known to be a list.
@@ -2677,14 +2687,18 @@ vcov.hazard <- function(object, ...) {
   }
   multiphase <- identical(dist, "multiphase")
   accepted <- c(.hzr_control_names$all,
-                if (multiphase) .hzr_control_names$multiphase)
+                if (multiphase) {
+                  .hzr_control_names$multiphase
+                } else {
+                  .hzr_control_names$single
+                })
   no_effect <- intersect(nm, names(.hzr_control_no_effect))
   # A name the fitter reads, but only for another model: real, not a typo.
-  off_path <- if (multiphase) {
-    character(0)
+  off_path <- intersect(nm, if (multiphase) {
+    .hzr_control_names$single
   } else {
-    intersect(nm, .hzr_control_names$multiphase)
-  }
+    .hzr_control_names$multiphase
+  })
   unknown <- setdiff(nm, c(accepted, no_effect, off_path))
   if (length(unknown) > 0L) {
     stop("'control' has element(s) that no fit reads: ",
@@ -2698,8 +2712,12 @@ vcov.hazard <- function(object, ...) {
              ")")
     },
     if (length(off_path) > 0L) {
-      paste0("control$", off_path, " (it applies only to dist = ",
-             "\"multiphase\")")
+      paste0("control$", off_path, " (it applies only to ",
+             if (multiphase) {
+               "single-distribution fits"
+             } else {
+               "dist = \"multiphase\""
+             }, ")")
     }
   )
   if (length(notes) > 0L) {

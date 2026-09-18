@@ -5,14 +5,17 @@
 * **`hazard()` now checks `control`, and refuses a name that nothing reads
   (#376).** `control` used to accept any name, so a mistyped one, such as
   `n_startz` for `n_starts`, left the default in force and said nothing.
-  `hazard()` accepts `maxit`, `reltol` and `shape_param_count` for every
-  model, and `n_starts`, `conserve`, `phase_share_tol` and `start_seed` for
-  a multiphase one. The fit reads all of them except `shape_param_count`,
-  which the stepwise refit and the score test read back from the fit. A name that nothing reads is now an error that names it
+  `hazard()` accepts `maxit` and `reltol` for every model,
+  `shape_param_count` for a single-distribution one, and `n_starts`,
+  `conserve`, `phase_share_tol` and `start_seed` for a multiphase one. The
+  fit reads all of them except `shape_param_count`, which the
+  single-distribution stepwise refit and score test read back from the fit.
+  A name that nothing reads is now an error that names it
   and lists the accepted ones. A real name that does nothing for this fit
   now warns, and the fit proceeds unchanged. That covers five names
-  `?hazard` used to document as accepted although no fit read them, and a
-  multiphase element such as `n_starts` given to a single-distribution fit.
+  `?hazard` used to document as accepted although no fit read them, a
+  multiphase element such as `n_starts` given to a single-distribution fit,
+  and `shape_param_count` given to a multiphase fit, where nothing reads it.
   The five are `abstol` (read only by a bounded optimizer that no fit
   uses), `method`, `condition`, `nocov` and `nocor`. A warning rather than
   an error keeps a stepwise or bootstrap run working when it forwards such
@@ -32,6 +35,19 @@
   its tests passed `control$fix` to `hazard()`, so the exposure is limited
   to anyone who found and used the undocumented name. `control$quasi` was
   never read either, and is an error the same way.
+
+* **A named `dist` could skip the check on phase-scoped formula terms
+  (#405).** `hazard()` accepts a named scalar such as
+  `dist = c(model = "multiphase")`, but tested it with `identical()`, which a
+  named value never matches. `hazard()` does this in its own checks, and so
+  does code that later reads `fit$spec$dist`, such as the stepwise refit and
+  the diagnostics. So `hazard()` did not refuse a
+  term such as `constant(age)` in the global formula (#275). If a function of
+  that name was visible, the term became an ordinary covariate and entered
+  every phase, a different model with no warning. The control check also
+  called `n_starts` off-path for a fit that used it. `hazard()` now drops the
+  names from `dist` before reading it, so `fit$spec$dist` is stored without
+  them.
 
 * **Standard errors were too small for a late (`"g3"`) phase with free
   shapes: re-run any you have reported (#332).** At realistic optima the
