@@ -215,14 +215,17 @@
   the phase without its covariates. The job is now recorded in
   `$untranslated` with the reason, and the emitted `stop()` says to add
   `DATA=` and translate again. A job with no `DATA=` and no phase
-  covariates still translates to a fit.
+  covariates still translates to a fit, unless it has a `SELECTION`
+  statement (see the next entry).
 
 * **The no-`DATA=` refusal (#311) counts every variable a phase statement
   names, not only the covariates of the base model (#160).** A `SELECTION`
   job withholds its candidates from the base model, so a refusal reading only
   the base model could not see them. When the job's `SELECTION` could not be
   run anyway (`FAST`, say), that reason is recorded in `$untranslated` beside
-  the `DATA=` one, so adding `DATA=` does not reveal a second refusal. **This
+  the `DATA=` one, so adding `DATA=` does not reveal a second refusal. A
+  `SELECTION` job with no `DATA=` is refused even if its phase statements
+  name no variable, because a screen refits every candidate from `data`. **This
   widens #311 on purpose.** A job with no `DATA=` is now refused, with or
   without `SELECTION`, when its only phase variables are any of these:
   - excluded with `/E`;

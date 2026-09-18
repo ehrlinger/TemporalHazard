@@ -926,7 +926,8 @@
   # per .hzr_phase_theta_names()); a bare VAR with no value defaults to 0,
   # matching .hzr_phase_start().
   phase_covars <- list()
-  # Every variable a phase statement names, before SELECTION withholds its
+  # Every covariate a phase statement names (not /E, which is excluded and
+  # guarded through listwise_only), before SELECTION withholds its
   # candidates from phase_covars. A row about a phase that is not built must
   # name all of them, or a candidate-only phase vanishes without a trace.
   phase_named <- list()

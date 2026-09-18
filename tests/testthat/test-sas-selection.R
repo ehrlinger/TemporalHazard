@@ -762,3 +762,26 @@ test_that("/I in a phase that is not built pins nothing (#160)", {
   expect_identical(built$calls$fit[[3L]][[1L]], as.name("stop"))
   expect_error(eval(built$calls$fit), "/I in one phase, movable in another", fixed = TRUE)
 })
+
+test_that("the screen refits under the job's own control, not hazard()'s defaults (#160)", {
+  skip_on_cran()
+  # hzr_stepwise() forwards only its `...` to each refit. Without the job's
+  # control there, a NOCONSERVE job fitted its base without Conservation of
+  # Events and then reported a selected model refitted WITH it (and at
+  # hazard()'s default maxit): a different fitting contract, silently.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste(
+    "%HAZARD( PROC HAZARD DATA=D NOCONSERVE MAXITER=77; EVENT DEAD; TIME TT;",
+    "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005;",
+    "SELECTION SLE=0.2; EARLY STRONG, NOISE; );"), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  expect_identical(job$calls$fit[[3L]][["control"]],
+                   job$calls$fit_base[[3L]][["control"]])
+  res <- suppressWarnings(render_sim(job, list(D = .sel_data())))
+  expect_true(res$ok, info = paste(res$results, collapse = "; "))
+  final <- res$env$fit
+  # A step was taken, so the reported model IS a refit.
+  expect_true("phase_1.STRONG" %in% names(stats::coef(final)))
+  expect_false(final$spec$control$conserve)
+  expect_equal(final$spec$control$maxit, 77)
+})

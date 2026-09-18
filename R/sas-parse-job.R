@@ -892,6 +892,11 @@
       })))
     }
     sw_args$data <- args$data
+    # hzr_stepwise() forwards `...` to every refit. Without the job's control
+    # there, the selected model is refitted at hazard()'s defaults: a
+    # NOCONSERVE job's base ran without Conservation of Events and its
+    # selected model with it.
+    if (!is.null(args$control)) sw_args$control <- args$control
     sw_args$direction <- sel$direction
     # SAS enters on the score statistic and removes on Wald, which is what
     # criterion = "score" does here.

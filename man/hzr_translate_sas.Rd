@@ -64,7 +64,11 @@ back to referencing \code{fit} and the ambiguity is recorded in
 Base R at the version this package declares in \code{DESCRIPTION} (\code{Depends}),
 plus TemporalHazard itself. The emitted chunks never reach into this
 package's internals, so the document renders in your session, and in a
-colleague's, without anything further installed.
+colleague's, without anything further installed, with one exception. A
+translated \code{SELECTION} screen uses the score criterion, and for a
+multiphase job with interval- or left-censored rows (an \code{ICENSOR} or
+\code{LCENSOR} job) that needs the suggested package \pkg{numDeriv}: the
+screen stops and says so if it is not installed.
 }
 
 \section{Experimental}{
