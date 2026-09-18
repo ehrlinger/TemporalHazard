@@ -142,9 +142,21 @@ augmented with:
 - `criteria`:
 
   Named list of the threshold / direction settings actually applied,
-  plus, under `criterion = "score"`, `n_uncomputable_scores` (how many
-  candidate scores were `NA`), `uncomputable_reasons` (a named integer
-  vector of *why*) and `stopped_uncomputable`. Read
+  plus `n_uncomputable_scores` (how many candidate scores were `NA`,
+  counted once per step: an entry the score test could not score under
+  `criterion = "score"`; an entry under `criterion = "wald"`, or a
+  removal under any criterion, whose Wald statistic could not be
+  computed for want of a variance, `wald_no_variance`; or an entry under
+  `criterion = "aic"` whose fit had no finite objective, `nonfinite`),
+  `uncomputable_reasons` (a named integer vector of *why*),
+  `wald_untested_removals` and `wald_untested_entries` (the `"var"` /
+  `"var@phase"` tokens of variables kept in, or left out, on a step
+  whose Wald test for them could not be computed; a variable tested at a
+  later step is not listed. Entries are listed under
+  `criterion = "wald"` only: under `"score"` an entry no test could
+  reach is reported by its reason, such as `fallback_no_variance`) and
+  `stopped_uncomputable` (`TRUE` when the last iteration had candidates
+  for entry or for removal and could test none of them). Read
   `uncomputable_reasons` before treating an unscored candidate as a bad
   one: `information_indefinite` marks candidates whose effect is too
   large for the score test's approximation at zero, which are typically

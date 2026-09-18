@@ -206,10 +206,25 @@ contain; see the <strong>Known limitation (the frozen set)</strong> section.</p>
 
 <dt><code>criteria</code></dt>
 <dd><p>Named list of the threshold / direction
-settings actually applied, plus, under <code>criterion = "score"</code>,
-<code>n_uncomputable_scores</code> (how many candidate scores were <code>NA</code>),
-<code>uncomputable_reasons</code> (a named integer vector of <em>why</em>) and
-<code>stopped_uncomputable</code>. Read <code>uncomputable_reasons</code> before treating
+settings actually applied, plus
+<code>n_uncomputable_scores</code> (how many candidate scores were <code>NA</code>,
+counted once per step: an entry the score test could not score
+under <code>criterion = "score"</code>; an entry under <code>criterion = "wald"</code>, or
+a removal under any criterion, whose Wald statistic could not be
+computed for want of a variance, <code>wald_no_variance</code>; or an entry
+under <code>criterion = "aic"</code> whose fit had no finite objective,
+<code>nonfinite</code>),
+<code>uncomputable_reasons</code> (a named integer vector of <em>why</em>),
+<code>wald_untested_removals</code> and <code>wald_untested_entries</code> (the
+<code>"var"</code> / <code>"var@phase"</code> tokens of variables kept in, or left out,
+on a step whose Wald test for them could not be computed; a
+variable tested at a later step is not listed.  Entries are listed
+under <code>criterion = "wald"</code> only: under <code>"score"</code> an entry no test
+could reach is reported by its reason, such as
+<code>fallback_no_variance</code>) and
+<code>stopped_uncomputable</code> (<code>TRUE</code> when the last iteration had
+candidates for entry or for removal and could test none of them).
+Read <code>uncomputable_reasons</code> before treating
 an unscored candidate as a bad one: <code>information_indefinite</code> marks
 candidates whose effect is too large for the score test's
 approximation at zero, which are typically the strongest variables

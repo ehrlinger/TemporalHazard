@@ -160,10 +160,15 @@ A list with class `"hzr_bootstrap"` containing:
 - n_uncomputable_replicates:
 
   Select mode only: number of otherwise successful replicates whose
-  screen stopped because no remaining candidate's score statistic could
-  be computed, rather than because no candidate met `slentry`. Such
-  replicates contribute no selections, so a non-zero count means every
-  reported selection frequency is depressed. Always `0` in refit mode.
+  screen stopped because no remaining candidate could be tested (its
+  score statistic, or for a removal its Wald statistic, could not be
+  computed), rather than because no candidate met `slentry` or `slstay`.
+  A non-zero count means every reported selection frequency is biased: a
+  candidate such a replicate could not test for entry counts as not
+  selected, and one it could not test for removal as selected. A
+  replicate that went on after deciding a variable without a Wald test
+  (`wald_no_variance`) is not counted here unless it also stopped, and
+  gets a warning of its own either way. Always `0` in refit mode.
 
 - uncomputable_reasons:
 
@@ -290,8 +295,8 @@ base <- hazard(
 bs_sel <- hzr_bootstrap(base, n_boot = 20, seed = 123,
                          scope = ~ age + mal,
                          slentry = 0.3, slstay = 0.2)
-#> Warning: Stepwise selection stopped because the score statistic could not be computed for any remaining candidate (1 candidate score(s) were NA across the run). This is not the same as no candidate meeting `slentry`: the screen stopped without being able to test them. Causes: 1 x the current model's information matrix could not be inverted, so no candidate could be scored at that step.
-#> Warning: 9 of 20 successful replicates stopped because the score statistic could not be computed for any remaining candidate, rather than because no candidate met `slentry`. Those replicates contribute no selections, so every reported selection frequency is depressed by them. Causes: 10 x the current model's information matrix could not be inverted, so no candidate could be scored at that step.
+#> Warning: Stepwise selection stopped because no remaining candidate could be tested for entry: its score statistic, or its Wald statistic for want of a variance, could not be computed (1 candidate score(s) were NA across the run). This is not the same as no candidate meeting `slentry` or `slstay`: the screen stopped without being able to test them. Causes: 1 x the current model's information matrix could not be inverted, so no candidate could be scored at that step.
+#> Warning: 9 of 20 successful replicates stopped because no remaining candidate could be tested -- the score statistic, or for a removal the Wald statistic, could not be computed -- rather than because no candidate met `slentry` or `slstay`. Every reported selection frequency is biased by them: a candidate they could not test for entry counts as not selected, and one they could not test for removal as selected. Causes: 10 x the current model's information matrix could not be inverted, so no candidate could be scored at that step.
 print(bs_sel)
 #> Bootstrap inference for hazard model
 #> Mode: embedded stepwise selection 

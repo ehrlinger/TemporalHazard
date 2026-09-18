@@ -209,10 +209,15 @@ common reason.</p></dd>
 <dt>n_uncomputable_replicates</dt>
 <dd><p>Select mode only: number of otherwise
 successful replicates whose screen stopped because no remaining
-candidate's score statistic could be computed, rather than because no
-candidate met <code>slentry</code>. Such replicates contribute no selections, so
-a non-zero count means every reported selection frequency is
-depressed. Always <code>0</code> in refit mode.</p></dd>
+candidate could be tested (its score statistic, or for a removal its
+Wald statistic, could not be computed), rather than because no
+candidate met <code>slentry</code> or <code>slstay</code>. A non-zero count means every
+reported selection frequency is biased: a candidate such a replicate
+could not test for entry counts as not selected, and one it could not
+test for removal as selected. A replicate that went on after deciding
+a variable without a Wald test (<code>wald_no_variance</code>) is not counted
+here unless it also stopped, and gets a warning of its own either way.
+Always <code>0</code> in refit mode.</p></dd>
 
 <dt>uncomputable_reasons</dt>
 <dd><p>Select mode only: named integer vector
@@ -335,8 +340,8 @@ procedure used when <code>scope</code> is supplied.</p></div>
 <span class="r-in"><span><span class="va">bs_sel</span> <span class="op">&lt;-</span> <span class="fu">hzr_bootstrap</span><span class="op">(</span><span class="va">base</span>, n_boot <span class="op">=</span> <span class="fl">20</span>, seed <span class="op">=</span> <span class="fl">123</span>,</span></span>
 <span class="r-in"><span>                         scope <span class="op">=</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">mal</span>,</span></span>
 <span class="r-in"><span>                         slentry <span class="op">=</span> <span class="fl">0.3</span>, slstay <span class="op">=</span> <span class="fl">0.2</span><span class="op">)</span></span></span>
-<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>Stepwise selection stopped because the score statistic could not be computed for any remaining candidate (1 candidate score(s) were NA across the run). This is not the same as no candidate meeting `slentry`: the screen stopped without being able to test them. Causes: 1 x the current model's information matrix could not be inverted, so no candidate could be scored at that step.</span>
-<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>9 of 20 successful replicates stopped because the score statistic could not be computed for any remaining candidate, rather than because no candidate met `slentry`. Those replicates contribute no selections, so every reported selection frequency is depressed by them. Causes: 10 x the current model's information matrix could not be inverted, so no candidate could be scored at that step.</span>
+<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>Stepwise selection stopped because no remaining candidate could be tested for entry: its score statistic, or its Wald statistic for want of a variance, could not be computed (1 candidate score(s) were NA across the run). This is not the same as no candidate meeting `slentry` or `slstay`: the screen stopped without being able to test them. Causes: 1 x the current model's information matrix could not be inverted, so no candidate could be scored at that step.</span>
+<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>9 of 20 successful replicates stopped because no remaining candidate could be tested -- the score statistic, or for a removal the Wald statistic, could not be computed -- rather than because no candidate met `slentry` or `slstay`. Every reported selection frequency is biased by them: a candidate they could not test for entry counts as not selected, and one they could not test for removal as selected. Causes: 10 x the current model's information matrix could not be inverted, so no candidate could be scored at that step.</span>
 <span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">bs_sel</span><span class="op">)</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Bootstrap inference for hazard model</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Mode: embedded stepwise selection </span>
