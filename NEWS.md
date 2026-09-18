@@ -881,6 +881,13 @@
   `.libPaths()`, and under continuous integration a package that will not
   load stops the build and says why.
 
+* **A multiphase `hzr_stepwise()` `scope` whose element is not a formula now
+  says so (#328).** `scope = list(late = c("age", "mal"))` stopped with
+  "formula must be a `formula` object", which named neither `scope` nor the
+  phase. It now names `scope$late` and says a multiphase `scope` is a named
+  list of formulas keyed by phase. A character vector remains a valid scope
+  for a single-distribution fit.
+
 * **`predict(newdata = )` on a multiphase fit saved before this version no
   longer gets `scale()`, `poly()` or `ns()` in a phase formula silently wrong
   (#307).** Such a fit stored no phase design, so the phase was rebuilt from
