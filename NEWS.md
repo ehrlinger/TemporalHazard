@@ -2,6 +2,24 @@
 
 ## Breaking changes
 
+* **`hzr_translate_sas()` no longer fits a job `PROC HAZARD` rejects: if
+  you hold estimates from such a translation, they have no SAS run behind
+  them (#340).** A phase statement with an option written in a form SAS's
+  lexer or grammar rejects, such as `AGE/EI` (options glued together),
+  `AGE/E/I`, `Y/`, `/S`, `AGE/MOVE` with no value, or a value after `=`
+  that its lexer does not read as a number (`AGE=abc`, `AGE/MOVE=1E5`,
+  `AGE/MOVE=Inf`), stops the job with a syntax error in `PROC HAZARD`, and
+  `ORDER=` with `/E`, `/I` or `/S` stops it with "mutually exclusive". The
+  translator used to record the text and fit anyway, with the variable in
+  the model (or, for `AGE=abc`, left out of it). Each now emits a `stop()`
+  naming the source. To check a job: search its phase statements for a run
+  of option letters after one `/` (`/EI`, `/SI`), a second `/`, `ORDER=`
+  beside `/E`, `/I` or `/S`, or a value after `=` that is not a plain
+  decimal number (an exponent needs a decimal point: `1.0E5`, not `1E5`).
+  None of these forms occurs in the reference corpus. Options separated by
+  spaces (`AGE/E I`) are valid SAS and still translate, with `/E` taking
+  precedence.
+
 * **Standard errors were too small for a late (`"g3"`) phase with free
   shapes: re-run any you have reported (#332).** At realistic optima the
   standard errors this package reported for such a fit were **12 to 14
@@ -85,6 +103,33 @@
   the fit does, and declines to score (a score of `NA`) when a phase the
   step does not change rebuilds with different columns than the fit
   stored, as a model saved by an earlier version with such a formula can.
+* **A model formula without an intercept now builds the design of the same
+  formula with one, with a warning (#337).** Every distribution carries its
+  own intercept, its baseline parameter (the one the covariates add to).
+  Without one in the formula,
+  `Surv(time, dead) ~ 0 + grp` coded a column for every level of a factor
+  `grp`, collinear with that parameter. A Weibull fit lost its standard errors
+  (`Hessian not invertible`). A multiphase fit inheriting the design
+  stopped 9.5 log-likelihood units below the fit with the intercept, with
+  warnings but wrong estimates. The formula now fits as
+  `Surv(time, dead) ~ grp`, and factors are coded as they would be with the
+  intercept. The design therefore has one column fewer, from the first
+  factor term: without an intercept R codes only the first factor with
+  every level, and later factors keep their usual coding, so
+  `~ 0 + f1 + f2` had `f1a f1b f1c f2y` and now has `f1b f1c f2y`. In a
+  single-distribution fit that is one coefficient fewer in `theta`. In a
+  multiphase fit, every phase that inherits the global design loses that
+  column, so `theta` is one entry shorter for each such phase; a phase
+  with its own `formula` is unaffected. To reuse a `theta` supplied for the
+  old design, drop the first factor's first-level coefficient from the
+  global design, and from each phase that inherits it. Left unchanged, a
+  single-distribution fit stops with a `non-conformable arguments` error.
+  A multiphase fit does **not** stop: the extra entries are carried along
+  and only the standard errors are flagged as unreliable, so check the
+  length of any `theta` you supply (#408). A numeric term fits as before
+  (`~ 0 + age` is `~ age`), apart from the new warning, which a
+  `hzr_stepwise()` refit does not repeat. The phase-formula counterpart is
+  #303.
 
 * **`hzr_stepwise()` and `hzr_bootstrap()` now refuse a `scope` under
   `direction = "backward"` (#343).** A backward screen only drops terms the
@@ -610,6 +655,18 @@
   detected.
 
 ## Bug fixes
+
+* **A translated job's missing-value guard no longer stops on rows
+  `hazard()` drops anyway, and an absent phase variable is named (#340).**
+  The guard for a variable outside the fitted model (`/E`, say) stopped
+  whenever it was missing, even on rows where a modelled variable was
+  missing too; `hazard()` drops those rows itself, as SAS does. It now stops
+  only on rows `hazard()` would keep. A phase-statement variable that the
+  dataset lacks used to fail as "object ... not found"; the status chunk
+  now names every such variable and the dataset. A phase-statement variable
+  that is not numeric (a character or factor column) now stops the job too,
+  as `PROC HAZARD` does ("VARIABLE NOT NUMERIC"); the translation used to
+  dummy-code it and fit a model SAS never ran.
 
 * **The `objective = "sas"` interval checks name the real defect (#340).**
   The objective's own guard let an interval row with an `NA` bound through:
