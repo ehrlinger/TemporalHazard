@@ -635,22 +635,90 @@
     ))
   }
 
+  # Why this job's SELECTION cannot be run faithfully, or NULL when it can.
+  # A function because two paths need it: the screen below, and the no-DATA=
+  # refusal, which returns first and must still record this reason so a reader
+  # who adds DATA= as told does not meet a refusal the document never named.
+  selection_refusal <- function(untr) {
+    if (is.null(sel)) return(NULL)
+    # Constructs with no faithful translation. A per-variable MOVE=
+    # or ORDER= has no hzr_stepwise() equivalent at all (its max_move is
+    # per run), and ORDER= drives entry order.
+    per_var_opts <- grep("/(MOVE|ORDER)", untr$construct, value = TRUE)
+    # force_in has no phase, so a variable held by /I in one phase and
+    # movable in another would be pinned in BOTH. That is a wrong model,
+    # not a path difference, which is where this draws the refuse line.
+    # Both sides restricted to BUILT phases: a /I naming a phase this job
+    # does not select has no phase to conflict with, and the discarded
+    # phase's covariates are already recorded.
+    movable_all <- unique(unlist(parms$selection$movable %||% list()))
+    in_model_all <- unique(unlist(parms$selection$in_model %||% list()))
+    cross_pinned <- intersect(
+      intersect(parms$selection$force_in %||% character(0), in_model_all),
+      movable_all)
+    refusals <- c(sel$refuse,
+                  if (saw_restrict) "RESTRICT",
+                  if (length(per_var_opts)) per_var_opts,
+                  if (length(cross_pinned)) {
+                    paste0(cross_pinned, " (/I in one phase, movable in another)")
+                  })
+    if (!length(refusals)) return(NULL)
+    # Name ONLY what fired. One boilerplate string listing every refusable
+    # construct made the reason unreadable and, worse, made a test
+    # asserting "FAST" pass for a MAXVARS job.
+    why <- c(
+      FAST = "FAST is a different search (H->f), not a stepwise run",
+      MAXVARS = paste("MAXVARS caps the selected set and hzr_stepwise()",
+                      "has no equivalent"),
+      RESTRICT = paste("RESTRICT constrains which variables may be",
+                       "selected (hazrd4.c's rsttbl)"))
+    explain <- function(item) {
+      if (!is.na(why[item])) return(unname(why[item]))
+      if (grepl("/(MOVE|ORDER)", item)) {
+        return(paste0(item, ": a per-variable MOVE= or ORDER= has no ",
+                      "hzr_stepwise() equivalent (its max_move is per run)"))
+      }
+      paste0(item, ": force_in is keyed by variable name across phases, ",
+             "so it would be pinned in the phase SAS leaves movable")
+    }
+    paste0(
+      "SELECTION carries ", paste(refusals, collapse = ", "),
+      ", which this translator cannot run faithfully. ",
+      paste(vapply(refusals, explain, character(1)), collapse = "; ")
+    )
+  }
+
   # A phase covariate is evaluated only in `data`, and with no DATA= there is
   # none: hazard() refuses the call (#299) and tells the reader to pass
   # `data =`, which the SAS job never had. Read the emitted phase calls rather
   # than the SAS text, so this tracks what the chunk would carry (#311).
+  # The emitted phases are NOT the whole question, though: SELECTION withholds
+  # its candidates from them, and /E variables are never in them, yet the
+  # screen's scope and the listwise guard read both from `data` too. Reading
+  # only the phase calls made this refusal blind to exactly what SELECTION
+  # withholds (#160), so every phase-statement variable outside the base
+  # model (listwise_only) counts as well.
   phase_has_formula <- vapply(
     as.list(parms$phases)[-1L],
     function(ph) is.call(ph) && !is.null(ph[["formula"]]),
     logical(1)
   )
-  if (is.null(data_name) && any(phase_has_formula)) {
+  if (is.null(data_name) &&
+      (any(phase_has_formula) || length(parms$listwise_only))) {
     untr <- rbind(untr, .hzr_untranslated_frame(
       NA_integer_, "DATA=",
       paste("the job names no DATA= dataset, but a phase has covariates,",
             "which hazard() evaluates only in `data`. Add DATA= to the job",
             "and translate again, or fit it by hand (#311).")
     ))
+    if (!is.null(sel)) {
+      untr <- rbind(untr, sel$untranslated)
+      reason <- selection_refusal(untr)
+      if (!is.null(reason)) {
+        untr <- rbind(untr, .hzr_untranslated_frame(NA_integer_, "SELECTION",
+                                                    reason))
+      }
+    }
     return(list(
       call = quote(stop(
         "This PROC HAZARD job names no DATA= dataset, but a phase has ",
@@ -771,51 +839,8 @@
   screen_check_call <- NULL
   if (!is.null(sel)) {
     untr <- rbind(untr, sel$untranslated)
-    # Constructs with no faithful translation. A per-variable MOVE=
-    # or ORDER= has no hzr_stepwise() equivalent at all (its max_move is
-    # per run), and ORDER= drives entry order.
-    per_var_opts <- grep("/(MOVE|ORDER)", untr$construct, value = TRUE)
-    # force_in has no phase, so a variable held by /I in one phase and
-    # movable in another would be pinned in BOTH. That is a wrong model,
-    # not a path difference, which is where this draws the refuse line.
-    # Both sides restricted to BUILT phases: a /I naming a phase this job
-    # does not select has no phase to conflict with, and the discarded
-    # phase's covariates are already recorded.
-    movable_all <- unique(unlist(parms$selection$movable %||% list()))
-    in_model_all <- unique(unlist(parms$selection$in_model %||% list()))
-    cross_pinned <- intersect(
-      intersect(parms$selection$force_in %||% character(0), in_model_all),
-      movable_all)
-    refusals <- c(sel$refuse,
-                  if (saw_restrict) "RESTRICT",
-                  if (length(per_var_opts)) per_var_opts,
-                  if (length(cross_pinned)) {
-                    paste0(cross_pinned, " (/I in one phase, movable in another)")
-                  })
-    if (length(refusals)) {
-      # Name ONLY what fired. One boilerplate string listing every refusable
-      # construct made the reason unreadable and, worse, made a test
-      # asserting "FAST" pass for a MAXVARS job.
-      why <- c(
-        FAST = "FAST is a different search (H->f), not a stepwise run",
-        MAXVARS = paste("MAXVARS caps the selected set and hzr_stepwise()",
-                        "has no equivalent"),
-        RESTRICT = paste("RESTRICT constrains which variables may be",
-                         "selected (hazrd4.c's rsttbl)"))
-      explain <- function(item) {
-        if (!is.na(why[item])) return(unname(why[item]))
-        if (grepl("/(MOVE|ORDER)", item)) {
-          return(paste0(item, ": a per-variable MOVE= or ORDER= has no ",
-                        "hzr_stepwise() equivalent (its max_move is per run)"))
-        }
-        paste0(item, ": force_in is keyed by variable name across phases, ",
-               "so it would be pinned in the phase SAS leaves movable")
-      }
-      reason <- paste0(
-        "SELECTION carries ", paste(refusals, collapse = ", "),
-        ", which this translator cannot run faithfully. ",
-        paste(vapply(refusals, explain, character(1)), collapse = "; ")
-      )
+    reason <- selection_refusal(untr)
+    if (!is.null(reason)) {
       untr <- rbind(untr, .hzr_untranslated_frame(NA_integer_, "SELECTION",
                                                   reason))
       return(list(

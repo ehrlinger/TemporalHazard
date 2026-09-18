@@ -566,3 +566,119 @@ test_that("the listwise guard says what a candidate actually is (#160)", {
   expect_no_match(msg, "never sees these variables")
   expect_match(msg, "candidate")
 })
+
+# --- SELECTION must not blind a refusal that reads the base model ----------
+# Under a forward or two-way screen a bare phase variable is WITHHELD from the
+# base model (setstat.c, H->sw == 1). A refusal whose condition reads the
+# base model's covariates therefore cannot see a candidate. #311's no-DATA=
+# refusal was one: with SELECTION it went quiet and the screen then failed
+# on "`data` must be a data frame", naming neither DATA= nor the fix.
+
+.nodata_job <- function(stmts, parms = "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005;",
+                        data = "", env = parent.frame()) {
+  f <- withr::local_tempfile(fileext = ".sas", .local_envir = env)
+  writeLines(paste0("%HAZARD( PROC HAZARD", data, " CONDITION=14; EVENT DEAD; ",
+                    "TIME TT; ", parms, " ", stmts, " );"), f)
+  suppressWarnings(hzr_translate_sas(f))
+}
+
+test_that("no DATA= is refused whatever SELECTION withholds from the base (#160, #311)", {
+  for (stmts in c("SELECTION; EARLY A, B;",           # candidates only
+                  "SELECTION; EARLY A, B/S;",         # a candidate beside a movable
+                  "SELECTION; EARLY A/I, B;",         # a candidate beside a /I
+                  "SELECTION BACKWARD; EARLY A, B;",  # candidates start IN the base
+                  "SELECTION; EARLY A/E;")) {         # only an excluded variable
+    job <- .nodata_job(stmts)
+    expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"), info = stmts)
+    expect_error(eval(job$calls$fit), "names no DATA= dataset", info = stmts)
+    expect_true("DATA=" %in% job$untranslated$construct, info = stmts)
+    expect_false("fit_base" %in% names(job$calls), info = stmts)
+  }
+  # Control: the same jobs WITH DATA= are not refused for it.
+  job <- .nodata_job("SELECTION; EARLY A, B;", data = " DATA=D")
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hzr_stepwise"))
+  expect_false("DATA=" %in% job$untranslated$construct)
+})
+
+test_that("no DATA= with only an /E variable is refused, SELECTION or not (#311)", {
+  # A DELIBERATE WIDENING of #311, decided by the release coordinator: this
+  # job used to translate, and its listwise guard then read A from whatever
+  # environment rendered the document. That is the lookup #311 closed for
+  # base covariates. Narrowing the guard to SELECTION candidates removes it.
+  job <- .nodata_job("EARLY A/E;")
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"))
+  expect_error(eval(job$calls$fit), "names no DATA= dataset")
+  expect_true("DATA=" %in% job$untranslated$construct)
+  expect_null(job$calls$status)
+})
+
+test_that("a no-DATA= job keeps its SELECTION refusal reason too (#160, #340 item 3)", {
+  # The DATA= refusal returns first. The reader who adds DATA= as told must
+  # not then meet a second refusal the first document never mentioned.
+  job <- .nodata_job("SELECTION FAST; EARLY A, B;")
+  u <- job$untranslated
+  expect_true("DATA=" %in% u$construct)
+  expect_equal(sum(u$construct == "SELECTION"), 1L)
+  expect_match(u$reason[u$construct == "SELECTION"], "FAST is a different search")
+  expect_error(eval(job$calls$fit), "names no DATA= dataset")
+  # And a SELECTION this translator can run records no SELECTION refusal.
+  ok <- .nodata_job("SELECTION; EARLY A, B;")
+  expect_false("SELECTION" %in% ok$untranslated$construct)
+})
+
+test_that("candidates of a phase that is not built still leave a row (#160)", {
+  # PROC HAZARD skips an unbuilt phase's covariates (setstat.c:9-12) and the
+  # translator records them. Under SELECTION they were withheld from the list
+  # the row is written from, so a candidate-only phase vanished silently.
+  job <- .nodata_job("SELECTION; EARLY A; CONSTANT B, C/S;", data = " DATA=D",
+                     parms = "PARMS MUE=0.2 THALF=0.15 NU=1;")
+  u <- job$untranslated
+  hit <- grepl("constant phase covariates with no active MUC", u$reason)
+  expect_equal(sum(hit), 1L)
+  expect_equal(u$construct[hit], "B C")
+  job <- .nodata_job("SELECTION; EARLY A, B/S; CONSTANT C;", data = " DATA=D",
+                     parms = "PARMS MUC=0.0005;")
+  u <- job$untranslated
+  hit <- grepl("early phase material with no active MUE", u$reason)
+  expect_equal(sum(hit), 1L)
+  expect_match(u$construct[hit], "\\bA B\\b")
+})
+
+test_that("every other refusal still fires when the job carries SELECTION (#160)", {
+  # The census behind the no-DATA= fix above: each translator refusal whose
+  # condition could depend on the model, run WITH a SELECTION statement. A
+  # "no" needs a test as much as a "yes": the next refusal added should
+  # show which side of the line it falls on. None of these read the base
+  # model's covariates -- they read the censoring statements, the PARMS
+  # operands or the SETG3 shape rules -- so SELECTION cannot blind them.
+  # (The HAZPRED grid, %repeat, rewrite-step and INHAZ refusals are not in
+  # the census: they read other blocks, never the PROC HAZARD model.)
+  cases <- list(
+    list(parms = "PARMS MUE=0.2 THALF=0.15 NU=1;", extra = "LCENSOR ST; ICENSOR C3 = CT;",
+         msg = "combines LCENSOR"),
+    # This one CRASHED the translation under SELECTION: the scope names were
+    # paste0("phase_", seq_along(built)), which is "phase_" when no phase is
+    # built, so setNames() failed and the whole file failed to translate.
+    list(parms = "PARMS THALF=0.15 NU=1;", extra = "", msg = "selects no phase"),
+    list(parms = "PARMS MUE=0.2;", extra = "",
+         msg = "builds no phase this translator could use"))
+  for (cs in cases) {
+    for (sel in c("", "SELECTION;")) {
+      info <- paste(cs$parms, cs$extra, sel)
+      job <- .nodata_job(paste(cs$extra, sel, "EARLY A, B;"), parms = cs$parms,
+                         data = " DATA=D")
+      expect_identical(job$calls$fit[[3L]][[1L]] %||% job$calls$fit[[1L]],
+                       as.name("stop"), info = info)
+      expect_error(eval(job$calls$fit, new.env()), cs$msg, info = info)
+    }
+  }
+  # The SETG3 entry refusals are $untranslated rows naming PROC HAZARD's
+  # own refusal; SELECTION must not change which rows are written.
+  setg3 <- "PARMS MUE=0.2 THALF=0.15 NU=1 MUL=0.01 TAU=0 FIXTAU GAMMA=2 ETA=2;"
+  rows <- lapply(c("", "SELECTION;"), function(sel) {
+    u <- .nodata_job(paste(sel, "EARLY A, B;"), parms = setg3, data = " DATA=D")$untranslated
+    u$reason[grepl("SETG3", u$reason)]
+  })
+  expect_true(any(grepl("SETG3900", rows[[1L]])))
+  expect_identical(rows[[1L]], rows[[2L]])
+})

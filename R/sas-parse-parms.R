@@ -926,6 +926,10 @@
   # per .hzr_phase_theta_names()); a bare VAR with no value defaults to 0,
   # matching .hzr_phase_start().
   phase_covars <- list()
+  # Every variable a phase statement names, before SELECTION withholds its
+  # candidates from phase_covars. A row about a phase that is not built must
+  # name all of them, or a candidate-only phase vanishes without a trace.
+  phase_named <- list()
   phase_covar_vals <- list()
   phase_vars <- character(0)
   # Under SELECTION a bare variable starts OUT of the model and is a
@@ -939,6 +943,7 @@
     raw <- covars[[ph]]
     if (is.null(raw)) {
       phase_covars[[ph]] <- character(0)
+      phase_named[[ph]] <- character(0)
       phase_covar_vals[[ph]] <- numeric(0)
       next
     }
@@ -955,6 +960,7 @@
       sel_force_in <- c(sel_force_in, parsed$names[parsed$flags == "I"])
     }
     phase_covars[[ph]] <- parsed$names[keep]
+    phase_named[[ph]] <- parsed$names
     phase_covar_vals[[ph]] <- parsed$values[keep]
     phase_vars <- c(phase_vars, parsed$names, parsed$excluded)
     for (i in seq_along(parsed$untranslated_construct)) {
@@ -1236,20 +1242,20 @@
 
   # (2) Everything belonging to a phase whose MU never activated it.
   if (!has_early) {
-    gone <- dropped(early, .hzr_parms_early_arg, fixed_early, phase_covars$early)
+    gone <- dropped(early, .hzr_parms_early_arg, fixed_early, phase_named$early)
     if (nzchar(gone)) {
       flag_bad(gone, paste0("early phase material with no active MUE: PROC ",
                             "HAZARD zeroes the shape operands (stmtprc.c:",
                             "101-112) and skips the covariates (setstat.c:9-12)"))
     }
   }
-  if (!has_muc && length(phase_covars$constant)) {
-    flag_bad(paste(phase_covars$constant, collapse = " "),
+  if (!has_muc && length(phase_named$constant)) {
+    flag_bad(paste(phase_named$constant, collapse = " "),
              paste0("constant phase covariates with no active MUC: PROC ",
                     "HAZARD skips them (setstat.c:9-12)"))
   }
   if (!has_late) {
-    gone <- dropped(late, .hzr_parms_late_arg, fixed_late, phase_covars$late)
+    gone <- dropped(late, .hzr_parms_late_arg, fixed_late, phase_named$late)
     if (nzchar(gone)) {
       flag_bad(gone, paste0("late phase material with no active MUL: PROC ",
                             "HAZARD zeroes the shape operands (stmtprc.c:",
@@ -1343,7 +1349,9 @@
   # Scope is keyed by the name the BASE FIT will carry. The emitted phases
   # list is unnamed, so hazard() auto-names them phase_1, phase_2, ... in
   # build order: keying on "early"/"constant" fails with "Unknown phase(s)
-  # in scope". Only built phases have a key.
+  # in scope". Only built phases have a key. sprintf(), not paste0():
+  # paste0("phase_", integer(0)) is "phase_", so a job that builds no phase
+  # crashed setNames() instead of reaching its "selects no phase" refusal.
   built <- c(
     if (has_early && length(early)) "early",
     if (has_muc) "constant",
@@ -1352,13 +1360,13 @@
   selection_spec <- if (isFALSE(selection)) NULL else list(
     scope = stats::setNames(
       lapply(built, function(ph) sel_candidates[[ph]] %||% character(0)),
-      paste0("phase_", seq_along(built))),
+      sprintf("phase_%d", seq_along(built))),
     movable = stats::setNames(
       lapply(built, function(ph) sel_movable[[ph]] %||% character(0)),
-      paste0("phase_", seq_along(built))),
+      sprintf("phase_%d", seq_along(built))),
     in_model = stats::setNames(
       lapply(built, function(ph) phase_covars[[ph]] %||% character(0)),
-      paste0("phase_", seq_along(built))),
+      sprintf("phase_%d", seq_along(built))),
     force_in = unique(sel_force_in)
   )
   list(
