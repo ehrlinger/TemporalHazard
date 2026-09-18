@@ -98,8 +98,9 @@ directory) to name an already-converted fit directly, e.g.
     <p>An <code>hzr_sas_job</code> object, invisibly. <code>$calls</code> holds the emitted
 calls keyed by chunk label, <code>$grid</code> the last prediction grid seen and
 <code>$inhaz</code> the first unresolved <code>INHAZ=</code> (not all of each, when a job has
-several), <code>$untranslated</code> the recorded gaps and <code>$coverage</code> the token
-counts.</p>
+several), <code>$untranslated</code> the recorded gaps, <code>$coverage</code> the token
+counts, and <code>$notes</code> any callout attached to a chunk by label, emitted
+immediately above that chunk in the rendered document.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
@@ -128,14 +129,35 @@ back to referencing <code>fit</code> and the ambiguity is recorded in
 <code>untranslated</code>, never guessed at silently.</p>
     </div>
     <div class="section level2">
+    <h2 id="what-the-emitted-document-needs-to-run">What the emitted document needs to run<a class="anchor" aria-label="anchor" href="#what-the-emitted-document-needs-to-run"></a></h2>
+
+
+<p>Base R at the version this package declares in <code>DESCRIPTION</code> (<code>Depends</code>),
+plus TemporalHazard itself. The emitted chunks never reach into this
+package's internals, so the document renders in your session, and in a
+colleague's, without anything further installed, with one exception. A
+translated <code>SELECTION</code> screen on a multiphase job with interval-censored
+rows (an <code>ICENSOR</code> job; <code>LCENSOR</code> is left truncation and does not need
+it) needs the suggested package <span class="pkg">numDeriv</span>. Without it a screen that
+tests an entry stops and says so. A screen that completes but cannot test
+a removal (a <code>BACKWARD</code> screen, whose base has no usable variance) is
+caught by the emitted check, which warns and names the variables.</p>
+    </div>
+    <div class="section level2">
     <h2 id="experimental">Experimental<a class="anchor" aria-label="anchor" href="#experimental"></a></h2>
 
 
 <p>The emitted document renders: the <code><a href="hazard.html">hazard()</a></code> chunk binds its fit to a name
 and passes <code>fit = TRUE</code>, so the <code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> chunks have something to
-predict from. Two SAS constructs are refused outright rather than
-mistranslated, each emitting a <code><a href="https://rdrr.io/r/base/stop.html" class="external-link">stop()</a></code> in place of the fit: a <code>SELECTION</code>
-statement requesting a stepwise screen (#152, #160), and <code>LCENSOR</code>
+predict from. A <code>SELECTION</code> statement is translated into an
+<code><a href="hzr_stepwise.html">hzr_stepwise()</a></code> call carrying the job's own candidates, per-variable
+flags and thresholds (#160); the screen is real, and may select a
+different model than <code>PROC HAZARD</code> did, which the emitted document says
+in a callout above the chunk. <code>SELECTION</code> options with no faithful
+translation are refused outright rather than mistranslated, emitting a
+<code><a href="https://rdrr.io/r/base/stop.html" class="external-link">stop()</a></code> in place of the fit: <code>FAST</code>, <code>MAXVARS</code>, <code>RESTRICT</code>, a
+per-variable <code>MOVE=</code> or <code>ORDER=</code>, and a variable held by
+<code>/I</code> in one phase but movable in another. So is <code>LCENSOR</code>
 combined with <code>ICENSOR</code>, which one <code>time_lower</code> argument cannot express
 (#155). Prediction grids the parser cannot resolve are refused whole, and
 the <code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> chunks that would have read such a grid become a <code><a href="https://rdrr.io/r/base/stop.html" class="external-link">stop()</a></code>

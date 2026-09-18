@@ -722,13 +722,26 @@ hundreds.
 > translator works”: it is a translation aid, and four limits are worth
 > knowing before you point it at a corpus.
 >
-> - **A `SELECTION` statement is refused, not translated.** The emitted
->   chunk is a [`stop()`](https://rdrr.io/r/base/stop.html).
->   [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)’s
->   refit path needs a formula-interface base fit and this translator
->   emits the vector interface, so a translated screen would report zero
->   steps, indistinguishable from “nothing met `slentry`”. Run the
->   selection by hand.
+> - **A `SELECTION` statement is translated into a real screen, and the
+>   screen may choose a different model than `PROC HAZARD` did.** The
+>   job’s candidates, per-variable flags (`/S`, `/I`, `/E`) and
+>   `SLE`/`SLS` thresholds are carried into an
+>   [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+>   call. `PROC HAZARD` uses approximate variances while selecting. In a
+>   screen that enters variables, the entry statistic here reproduces
+>   that approximation (except for a candidate refitted because its
+>   information is indefinite); in one that removes them, the Wald tests
+>   behind each removal use the full Hessian, so removals can differ. A
+>   `BACKWARD` screen only removes and a `NOSTEPWISE` one only enters,
+>   and the callout the emitted document carries above the chunk
+>   describes only what that job’s screen does. Compare the selected
+>   model against the SAS listing before relying on it. Options with no
+>   faithful translation are still refused, each emitting a
+>   [`stop()`](https://rdrr.io/r/base/stop.html): `FAST`, `MAXVARS`,
+>   `RESTRICT`, a per-variable `MOVE=` or `ORDER=`, and a variable held
+>   by `/I` in one phase but movable in another. On the reference corpus
+>   two jobs in four translate; the other two are a cross-phase `/I` and
+>   a `RESTRICT`.
 > - **`LCENSOR` combined with `ICENSOR` is refused.**
 >   [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)’s
 >   single `time_lower` argument carries the entry time for status 0/1

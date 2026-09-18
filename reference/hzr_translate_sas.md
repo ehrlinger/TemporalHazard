@@ -38,7 +38,9 @@ hzr_translate_sas(path, out_dir = NULL, librefs = NULL)
 An `hzr_sas_job` object, invisibly. `$calls` holds the emitted calls
 keyed by chunk label, `$grid` the last prediction grid seen and `$inhaz`
 the first unresolved `INHAZ=` (not all of each, when a job has several),
-`$untranslated` the recorded gaps and `$coverage` the token counts.
+`$untranslated` the recorded gaps, `$coverage` the token counts, and
+`$notes` any callout attached to a chunk by label, emitted immediately
+above that chunk in the rendered document.
 
 ## Details
 
@@ -72,16 +74,36 @@ local fit, which fit a
 genuinely unknown; the emitted call falls back to referencing `fit` and
 the ambiguity is recorded in `untranslated`, never guessed at silently.
 
+## What the emitted document needs to run
+
+Base R at the version this package declares in `DESCRIPTION`
+(`Depends`), plus TemporalHazard itself. The emitted chunks never reach
+into this package's internals, so the document renders in your session,
+and in a colleague's, without anything further installed, with one
+exception. A translated `SELECTION` screen on a multiphase job with
+interval-censored rows (an `ICENSOR` job; `LCENSOR` is left truncation
+and does not need it) needs the suggested package numDeriv. Without it a
+screen that tests an entry stops and says so. A screen that completes
+but cannot test a removal (a `BACKWARD` screen, whose base has no usable
+variance) is caught by the emitted check, which warns and names the
+variables.
+
 ## Experimental
 
 The emitted document renders: the
 [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 chunk binds its fit to a name and passes `fit = TRUE`, so the
 [`predict()`](https://rdrr.io/r/stats/predict.html) chunks have
-something to predict from. Two SAS constructs are refused outright
-rather than mistranslated, each emitting a
-[`stop()`](https://rdrr.io/r/base/stop.html) in place of the fit: a
-`SELECTION` statement requesting a stepwise screen (#152, \#160), and
+something to predict from. A `SELECTION` statement is translated into an
+[`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+call carrying the job's own candidates, per-variable flags and
+thresholds (#160); the screen is real, and may select a different model
+than `PROC HAZARD` did, which the emitted document says in a callout
+above the chunk. `SELECTION` options with no faithful translation are
+refused outright rather than mistranslated, emitting a
+[`stop()`](https://rdrr.io/r/base/stop.html) in place of the fit:
+`FAST`, `MAXVARS`, `RESTRICT`, a per-variable `MOVE=` or `ORDER=`, and a
+variable held by `/I` in one phase but movable in another. So is
 `LCENSOR` combined with `ICENSOR`, which one `time_lower` argument
 cannot express (#155). Prediction grids the parser cannot resolve are
 refused whole, and the
