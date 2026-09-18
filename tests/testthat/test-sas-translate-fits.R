@@ -510,6 +510,7 @@ test_that("a phase variable missing from the data is named, not 'object not foun
   D$ZZ <- rep(c("a", "b"), 30)
   res <- suppressWarnings(render_sim(job, list(D = D)))
   expect_false(res$ok)
-  expect_match(res$results[["status"]], "not numeric: ZZ", fixed = TRUE)
+  expect_match(res$results[["status"]], "These phase variables are not numeric: ZZ.",
+               fixed = TRUE)
   expect_false(exists("fit", envir = res$env, inherits = FALSE))
 })

@@ -912,7 +912,7 @@
       # no new symbol reaches the emitted code.
       if (!all(vapply(.(dsym)[.(phase_vars)], "is.numeric", NA))) {
         stop("PROC HAZARD refuses a phase variable that is not numeric ",
-             "(vfynvar.c:22-26), and this job's are not numeric: ",
+             "(vfynvar.c:22-26). These phase variables are not numeric: ",
              paste(names(which(!vapply(.(dsym)[.(phase_vars)], "is.numeric",
                                        NA))), collapse = ", "),
              ". Convert them to numeric codes, as the SAS dataset holds them.",
