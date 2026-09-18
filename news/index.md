@@ -1139,6 +1139,16 @@
   continuous integration a package that will not load stops the build
   and says why.
 
+- **A multiphase
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  `scope` whose element is not a formula now says so
+  ([\#328](https://github.com/ehrlinger/TemporalHazard/issues/328)).**
+  `scope = list(late = c("age", "mal"))` stopped with “formula must be a
+  `formula` object”, which named neither `scope` nor the phase. It now
+  names `scope$late` and says a multiphase `scope` is a named list of
+  formulas keyed by phase. A character vector remains a valid scope for
+  a single-distribution fit.
+
 - **`predict(newdata = )` on a multiphase fit saved before this version
   no longer gets [`scale()`](https://rdrr.io/r/base/scale.html),
   [`poly()`](https://rdrr.io/r/stats/poly.html) or `ns()` in a phase
