@@ -1048,6 +1048,34 @@ test_that("hzr_bootstrap(scope=) forwards a caller-supplied trace= without colli
   expect_gte(bs$n_success, 0L)
 })
 
+test_that("hzr_bootstrap(scope=) forwards control= to a single-distribution fit", {
+  # The Weibull bootstraps above used to pass control = list(n_starts = 1),
+  # which has no effect on a Weibull fit; its "no effect" warning was the
+  # only evidence that control reached the fit on this path. This asserts
+  # the forward directly, with an element a Weibull refit does read: a
+  # maxit of 2 stops the post-entry refit short, so the replicates change.
+  data(avc, package = "TemporalHazard")
+  avc <- na.omit(avc)
+  base <- hazard(survival::Surv(int_dead, dead) ~ 1, data = avc,
+                 dist = "weibull", theta = c(mu = 0.01, nu = 0.5), fit = TRUE)
+  boot <- function(...) {
+    ws <- character()
+    bs <- withCallingHandlers(
+      hzr_bootstrap(base, n_boot = 2, seed = 42, scope = ~ age + mal, ...),
+      warning = function(w) {
+        ws <<- c(ws, conditionMessage(w))
+        invokeRestart("muffleWarning")
+      }
+    )
+    list(bs = bs, warnings = ws)
+  }
+  default <- boot()
+  short <- boot(control = list(maxit = 2L))
+  expect_false(identical(short$bs$replicates, default$bs$replicates))
+  expect_true(any(grepl("refit did not converge", short$warnings)))
+  expect_false(any(grepl("refit did not converge", default$warnings)))
+})
+
 test_that("hzr_bootstrap errors on unused '...' when scope is NULL", {
   # '...' only has a purpose in select-mode (forwarded to hzr_stepwise());
   # in fixed-refit mode it must still error on an unrecognized argument, as
