@@ -102,3 +102,16 @@ test_that("a classed numeric matrix column keeps its shape when converted", {
   expect_equal(as.vector(out$w), v, tolerance = 1e-12)
   expect_false(inherits(out$w, "hzr_dim_wrapped"))
 })
+
+test_that("an integer AsIs matrix column keeps its class and storage", {
+  # Its values equal its storage, only in another storage mode; comparing
+  # with identical() on the raw storage called that a difference and
+  # rewrote the column as a bare double matrix (#381 review).
+  df <- data.frame(id = 1:3)
+  df$m <- I(cbind(1:3, 4:6))
+  out <- .hzr_numeric_frame_values(df)
+
+  expect_s3_class(out$m, "AsIs")
+  expect_identical(storage.mode(out$m), "integer")
+  expect_identical(out$m, df$m)
+})
