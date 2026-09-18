@@ -824,7 +824,7 @@
   # (`.hzr_entered_coef_name()`, #306).
   refuse_no_column <- function(old_cols, new_cols) {
     reason <- paste0(
-      "removes no column: the refit's design (",
+      "removes no column: the reduced design (",
       paste(sQuote(new_cols), collapse = ", "),
       ") has no fewer columns than the current one (",
       paste(sQuote(old_cols), collapse = ", "),
@@ -847,12 +847,16 @@
   # removed column.  A design that cannot be built is left to the refit,
   # which reports why.
   if (is.na(best$phase) && !is.null(current$call$formula)) {
-    designs <- tryCatch({
+    # Quietly: the current formula's warnings surfaced when the base was
+    # fitted, and the reduced formula's warnings surface in the refit if the
+    # drop goes ahead. Parsing both here doubled every parse-time warning
+    # (#343).
+    designs <- tryCatch(suppressWarnings({
       old_formula <- .hzr_stored_formula(current, "`current`")
       new_formula <- .hzr_formula_update(old_formula, "drop", best$variable)
       list(old = colnames(.hzr_parse_formula(old_formula, data)$x),
            new = colnames(.hzr_parse_formula(new_formula, data)$x))
-    }, error = function(e) NULL)
+    }), error = function(e) NULL)
     if (!is.null(designs) && length(designs$new) >= length(designs$old)) {
       return(refuse_no_column(designs$old, designs$new))
     }
