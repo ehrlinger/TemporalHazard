@@ -731,6 +731,20 @@
 
 ### Bug fixes
 
+- **The `objective = "sas"` interval checks name the real defect
+  ([\#340](https://github.com/ehrlinger/TemporalHazard/issues/340)).**
+  The objective’s own guard let an interval row with an `NA` bound
+  through: [`which()`](https://rdrr.io/r/base/which.html) drops an `NA`
+  comparison, so the row became `-Inf`, a value the optimizer walks away
+  from, while the entry check stops on the same row. Both now stop on
+  it. The entry check also reports a `time_lower` or `time_upper`
+  shorter than `status` as a length mismatch, naming `time` when the
+  bound was left to default to it, where it reported an `NA` bound. Both
+  are reachable only by calling the internals directly or editing a
+  fit’s stored data, since
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  checks lengths and missing bounds first.
+
 - **A score-criterion
   [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   screen on a multiphase base that dropped rows with missing covariates
