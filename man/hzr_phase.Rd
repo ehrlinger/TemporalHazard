@@ -80,6 +80,15 @@ the others rather than estimating it:
 \item{\code{"eta_gamma"}}{\eqn{\eta = 2/\gamma}, so that
 \eqn{\gamma\eta = 2}. SAS/C: \code{FIXGE2}.}
 }
+At \code{alpha = 1}, \code{hzr_phase()}'s default, the g3 form is
+\eqn{(t/\tau)^{\gamma\eta}}{(t/tau)^(gamma*eta)} (see \code{\link[=hzr_decompos_g3]{hzr_decompos_g3()}}),
+which depends on
+\eqn{\gamma} and \eqn{\eta} only through their product. So
+\eqn{\gamma} and \eqn{\eta} are not separately identified there: under
+\code{"eta_gamma"} the product is fixed at 2 and \eqn{\gamma} is not
+identified at all, and with both estimated only the product is. A fit
+started there can report convergence with an arbitrary \eqn{\gamma}.
+Start \code{alpha} away from 1, or fix \eqn{\gamma}, for such a phase.
 The derived parameter follows the others at every step of the
 optimization, so it is not a free parameter and cannot be named in
 \code{fixed}; \code{"shapes"} leaves it out. Its starting value is computed from the
