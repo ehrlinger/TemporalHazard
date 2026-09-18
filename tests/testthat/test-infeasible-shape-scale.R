@@ -20,7 +20,13 @@ test_that("an out-of-range time scale is infeasible, not an error (#262)", {
                              c = hzr_phase("constant")),
                theta = function(ls) c(log(0.1), ls, 1, 0, log(0.05))),
     g3 = list(phases = list(g = hzr_phase("g3"), c = hzr_phase("constant")),
-              theta = function(ls) c(log(0.1), ls, 3, 1, 1, log(0.05)))
+              theta = function(ls) c(log(0.1), ls, 3, 1, 1, log(0.05))),
+    # A separate selector in .hzr_phase_scale_feasible(): it shares cdf's
+    # log_t_half, so mapping it to log_tau, or dropping it, must fail here.
+    hazard = list(phases = list(h = hzr_phase("hazard", t_half = 3, nu = 1,
+                                              m = 0),
+                                c = hzr_phase("constant")),
+                  theta = function(ls) c(log(0.1), ls, 1, 0, log(0.05)))
   )
   for (nm in names(layouts)) {
     ph <- layouts[[nm]]$phases
@@ -73,8 +79,9 @@ test_that("an out-of-range time scale is infeasible, not an error (#262)", {
                                   sanitize = FALSE)
     expect_true(all(is.finite(g)), info = nm)
     expect_false(isTRUE(all(g == 0)), info = nm)
-    # The solve moves the conserved phase's scale; the infeasible branch above
-    # returns theta unchanged, so equality here would mean it was skipped.
+    # The solve moves the conserved phase's log_mu; the infeasible branch
+    # above returns theta unchanged, so equality here would mean it was
+    # skipped.
     solved <- .hzr_conserve_events(th, "c", conserved, d$time, d$status, ph,
                                    counts, x_list, sum(d$status))
     expect_true(all(is.finite(solved)), info = nm)
