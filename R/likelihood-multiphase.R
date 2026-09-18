@@ -560,6 +560,18 @@
   if (length(idx_interval) > 0) {
     lower <- if (is.null(time_lower)) time else time_lower
     upper <- if (is.null(time_upper)) time else time_upper
+    # A short bound indexes past its end as NA, which the check below would
+    # report as "an NA bound" -- the wrong defect (#340). hazard() validates
+    # lengths first, so only a direct call reaches this.
+    # A NULL bound was filled from `time`, so name `time`, not an argument
+    # the caller never passed (#394 review).
+    for (b in list(list(if (is.null(time_lower)) "time" else "time_lower", lower),
+                   list(if (is.null(time_upper)) "time" else "time_upper", upper))) {
+      if (length(b[[2L]]) != length(status)) {
+        stop(b[[1L]], " has length ", length(b[[2L]]), ", but status has ",
+             "length ", length(status), ".", call. = FALSE)
+      }
+    }
     # An NA bound makes the width comparison NA, which then stood in for the
     # row index in the message below (#232). Name it as its own defect.
     na_bound <- idx_interval[is.na(lower[idx_interval]) |
@@ -625,7 +637,10 @@
   # the optimizer would walk away from a corrupt row instead of stopping on
   # it.  Order is load-bearing here.
   if (objective == "sas") {
-    bad <- which(!(upper > lower))
+    # which() drops an NA comparison, so an NA bound must be named here or
+    # it passes this guard and becomes -Inf below, which the optimizer walks
+    # away from; the entry check stops on the same row (#340).
+    bad <- which(!(upper > lower) | is.na(upper) | is.na(lower))
     if (length(bad) > 0) {
       stop("objective = \"sas\" requires upper > lower on every ",
            "interval-censored row; the interval-mean hazard divides by ",
