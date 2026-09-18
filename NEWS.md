@@ -20,6 +20,19 @@
   spaces (`AGE/E I`) are valid SAS and still translate, with `/E` taking
   precedence.
 
+* **A named `dist` could skip the check on phase-scoped formula terms
+  (#405).** `hazard()` accepts a named scalar such as
+  `dist = c(model = "multiphase")`, but tested it with `identical()`, which a
+  named value never matches. `hazard()` does this in its own checks, and so
+  does code that later reads `fit$spec$dist`, such as the stepwise refit and
+  the diagnostics. So `hazard()` did not refuse a
+  term such as `constant(age)` in the global formula (#275). If a function of
+  that name was visible, the term became an ordinary covariate and entered
+  every phase, a different model with no warning. The control check also
+  called `n_starts` off-path for a fit that used it. `hazard()` now drops the
+  names from `dist` before reading it, so `fit$spec$dist` is stored without
+  them.
+
 * **Standard errors were too small for a late (`"g3"`) phase with free
   shapes: re-run any you have reported (#332).** At realistic optima the
   standard errors this package reported for such a fit were **12 to 14
@@ -667,6 +680,45 @@
   that is not numeric (a character or factor column) now stops the job too,
   as `PROC HAZARD` does ("VARIABLE NOT NUMERIC"); the translation used to
   dummy-code it and fit a model SAS never ran.
+
+* **`hazard()` now warns about every `control` element it does not read
+  (#376).** `control` used to accept any name silently, so a mistyped one,
+  such as `n_startz` for `n_starts`, left the default in force and said
+  nothing. `hazard()` accepts `maxit` and `reltol` for every model,
+  `shape_param_count` for a single-distribution one, and `n_starts`,
+  `conserve`, `phase_share_tol` and `start_seed` for a multiphase one. The
+  fit reads all of them except `shape_param_count`, which the
+  single-distribution stepwise refit and score test read back from the fit.
+  Any other element now draws one warning that names it and says why it
+  has no effect, and the fit proceeds unchanged, as `stats::optim()` does
+  for unknown `control` names. The element is dropped before the fit: R's
+  `$` matches a partial name, so `n_starts_extra` used to be read as
+  `n_starts`, and `fit$spec$control` now keeps none of the ignored
+  elements. That covers a misspelling, an unnamed
+  element, five names `?hazard` used to document as accepted although no
+  fit read them (`abstol`, read only by a bounded optimizer that no fit
+  uses, and `method`, `condition`, `nocov` and `nocor`), `fix` and `quasi`,
+  a multiphase element such as `n_starts` given to a single-distribution
+  fit, and `shape_param_count` given to a multiphase fit, where nothing
+  reads it. No name is an error (a bad value for an element the fit reads,
+  such as `maxit = "a"`, still stops a fit that reads it): `hzr_stepwise()` and
+  `hzr_bootstrap()` pass `control` to every candidate refit, and an error
+  there counts as a failed candidate, so a screen would report success
+  having tested nothing. The SAS options `CONDITION=`, `NOCOV`, `NOCOR` and
+  `QUASI`, which the SAS-to-R migration vignette used to show as `control`
+  elements, have no `control` equivalent.
+
+  **If you used `control$fix`, your fit was not constrained.** It was never
+  documented, and the fitting code never read it: a fit given
+  `control = list(fix = ...)` was the unconstrained fit, with its "fixed"
+  parameters free. It now draws a warning saying so. To hold a parameter at
+  its starting value, use `hzr_phase(fixed = )` on a phase of a multiphase
+  model and re-run; a single-distribution model has no mechanism for fixing
+  a parameter. Unlike the other entries that ask you to re-check results,
+  this one has no known affected user: nothing in this package or its tests
+  passed `control$fix` to `hazard()`, so the exposure is limited to anyone
+  who found and used the undocumented name. `control$quasi` was never read
+  either, and warns the same way.
 
 * **The `objective = "sas"` interval checks name the real defect (#340).**
   The objective's own guard let an interval row with an `NA` bound through:

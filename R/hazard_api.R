@@ -293,21 +293,6 @@ NULL
 #'   and still report convergence, so `hazard()` then applies SAS/C HAZARD's
 #'   relative-gradient test and, when the stop fails it, continues with
 #'   [stats::nlm()]; see the "Convergence" section.
-#' - `abstol`: Projected-gradient tolerance, used only by the bounded
-#'   (L-BFGS-B) optimizer (default 1e-6). The fits `hazard()` runs use BFGS
-#'   and ignore it.
-#' - `method`: Recorded but not used. The fits `hazard()` runs use BFGS (a
-#'   multiphase fit may run a Nelder-Mead warm-up first, and a stop that
-#'   fails SAS's gradient test continues with [stats::nlm()]); the entry is
-#'   accepted so that translated SAS jobs (`QUASI`) run unchanged.
-#'   SAS `PROC HAZARD` jobs write `STEEPEST QUASI` together (steepest
-#'   descent first, then quasi-Newton). `QUASI`/`QUASINEWTON` is `"bfgs"`;
-#'   **there is no steepest-descent option and no two-stage strategy**. The
-#'   multiphase likelihood is multimodal, so a different descent path can land
-#'   on a different optimum: a fit translated from a job using `STEEPEST` may
-#'   not reproduce SAS's estimates, and `hzr_translate_sas()` records the
-#'   keyword as untranslated rather than dropping it.
-#' - `condition`: Condition number control (default 14)
 #' - `conserve`: Apply Conservation of Events (**`dist = "multiphase"` only**;
 #'   default `TRUE`). CoE counts exact events, so it is **automatically
 #'   disabled** whenever any `status` falls outside \{0, 1\} (which interval
@@ -322,9 +307,53 @@ NULL
 #'
 #'   Read `fit$spec$control$conserve_applied`, not
 #'   `fit$spec$control$conserve`: the latter says only what you asked for.
-#' - `nocov`, `nocor`: Accepted for compatibility with the SAS `PROC HAZARD`
-#'   options of the same names. They change neither the fitted object nor its
-#'   printed summary.
+#' - `shape_param_count`: The number of baseline parameters at the front of
+#'   `theta`: the scale and any shape parameters, so 2 for `"weibull"` and 1
+#'   for `"exponential"`. For a single-distribution model only. The fit itself does not
+#'   use it; the stepwise refit and the score test read it back from
+#'   `fit$spec$control`. A multiphase fit derives its own layout, so nothing
+#'   reads it there.
+#'
+#' The elements above are accepted without a warning: `maxit` and `reltol`
+#' for every model, `shape_param_count` for a single-distribution model, and
+#' `n_starts`, `start_seed`, `phase_share_tol` and `conserve` for
+#' `dist = "multiphase"` (#376). Any other element draws one warning that
+#' names it and says why it has no effect, and the fit proceeds unchanged,
+#' as [stats::optim()] does for unknown `control` names. The element is
+#' dropped before the fit, so a name such as `n_starts_extra` cannot be read
+#' as `n_starts`, and `fit$spec$control` keeps none of the ignored
+#' elements. That covers:
+#' - a name no fit reads, such as the misspelling `n_startz`, and an unnamed
+#'   element;
+#' - `abstol` (read only by a bounded optimizer no fit uses), `method`,
+#'   `condition`, `nocov` and `nocor`, which earlier versions documented as
+#'   accepted without reading them;
+#' - `fix` and `quasi`, which no fit has ever read. A fit given `fix` was
+#'   never constrained, so results obtained with it may be affected; hold a
+#'   parameter with `hzr_phase(fixed = )` on a multiphase phase. A
+#'   single-distribution model has no mechanism for fixing a parameter.
+#' - a multiphase element such as `n_starts` given to a single-distribution
+#'   fit, and `shape_param_count` given to a multiphase one.
+#'
+#' No name in `control` is an error; a bad value for an element the fit
+#' reads, such as `maxit = "a"`, still stops a fit (`fit = TRUE`) where it
+#' is read. [hzr_stepwise()] and
+#' [hzr_bootstrap()] pass `control` to every candidate refit, and an error
+#' there would count as a failed candidate, so a screen would report success
+#' having tested nothing.
+#'
+#' SAS `PROC HAZARD` options with no `control` equivalent: `NOCOV` and `NOCOR`
+#' only suppress printed output, and `hazard()` prints nothing until asked.
+#' `CONDITION=` stops SAS's optimizer on a condition-number test that
+#' `hazard()` does not have. `QUASI` is `hazard()`'s optimizer already: the
+#' fits it runs use BFGS (a multiphase fit may run a Nelder-Mead warm-up
+#' first, and a stop that fails SAS's gradient test continues with
+#' [stats::nlm()]). SAS jobs often write `STEEPEST QUASI` together, steepest
+#' descent first; **there is no steepest-descent option and no two-stage
+#' strategy**. The multiphase likelihood is multimodal, so a different descent
+#' path can land on a different optimum: a fit translated from a job using
+#' `STEEPEST` may not reproduce SAS's estimates, and `hzr_translate_sas()`
+#' records the keyword as untranslated rather than dropping it.
 #'
 #' Censoring status coding:
 #' - 1: Exact event at time
@@ -537,6 +566,10 @@ hazard <- function(formula = NULL,
                    ...) {
 
   objective <- match.arg(objective)
+  # A named scalar such as c(model = "multiphase") is a valid `dist`, but
+  # identical() against a bare string is FALSE for it. Dropping the names
+  # here, before any read, keeps every later test of `dist` agreeing (#405).
+  dist <- unname(dist)
 
   # `objective` is a top-level argument rather than a `control` element on
   # purpose: it changes the estimand, and burying that among convergence
@@ -876,6 +909,9 @@ hazard <- function(formula = NULL,
   if (!is.list(control)) {
     stop("'control' must be a list.", call. = FALSE)
   }
+  # Only the names this fit reads go on: consumers read control with `$`,
+  # which would partial-match a warned name such as n_starts_extra (#405).
+  control <- .hzr_validate_control(control, dist)
 
   # Multiphase validation
   if (dist == "multiphase") {
@@ -2590,6 +2626,128 @@ vcov.hazard <- function(object, ...) {
     return(x)
   }
   array(values, dim(x), dimnames(x))
+}
+
+
+# The `control` elements the fitter reads, by distribution (#376), derived
+# from the code rather than the documentation: .hzr_optim_generic() reads
+# maxit and reltol; .hzr_optim_multiphase() reads and strips the multiphase
+# ones before the optimizer; shape_param_count is not read by the fitter but
+# is read back from the stored spec$control by the single-distribution
+# stepwise refit and score test (every multiphase path derives its own theta
+# layout, so on a multiphase fit nothing reads it; #405). abstol is read only by .hzr_optim_generic()'s bounded
+# (L-BFGS-B) branch, which every caller turns off (use_bounds = FALSE), so
+# no fit reads it.
+.hzr_control_names <- list(
+  all = c("maxit", "reltol"),
+  single = "shape_param_count",
+  multiphase = c("n_starts", "conserve", "phase_share_tol", "start_seed")
+)
+
+# Names ?hazard documented as accepted, a translation emitted, or a user
+# might reasonably pass, although no fit ever read them, with the reason each
+# has no effect (#376). Like every unread name they warn, and the fit
+# proceeds: an error inside a stepwise or bootstrap candidate refit would be
+# recorded as a failed candidate and empty the screen.
+.hzr_control_no_effect <- c(
+  abstol = paste0("it is read only by a bounded optimizer that no fit ",
+                  "hazard() runs uses; `reltol` is the tolerance that ",
+                  "applies"),
+  method = paste0("hazard() chooses its optimizer: ",
+                  "BFGS, a quasi-Newton method (a multiphase fit may run a ",
+                  "Nelder-Mead warm-up first, and a stop that fails SAS's ",
+                  "gradient test continues with stats::nlm())"),
+  condition = paste0("SAS's CONDITION= has no equivalent: hazard() has no ",
+                     "condition-number stop, and reports the Hessian's ",
+                     "conditioning after the fit instead"),
+  nocov = "it suppresses printed output, and hazard() prints nothing",
+  nocor = "it suppresses printed output, and hazard() prints nothing",
+  fix = paste0("hazard() has never read it, so a fit given it was the ",
+               "unconstrained fit with its \"fixed\" parameters free, and ",
+               "results obtained with it may be affected; hold a parameter ",
+               "with hzr_phase(fixed = ) on a phase of a ",
+               "dist = \"multiphase\" model, since a single-distribution ",
+               "model has no mechanism for fixing one"),
+  quasi = paste0("hazard() has never read it; its optimizer is ",
+                 "BFGS, a quasi-Newton method (a multiphase fit may run a ",
+                 "Nelder-Mead warm-up first, and a stop that fails SAS's ",
+                 "gradient test continues with stats::nlm())")
+)
+
+
+#' Warn about every `control` element the fit does not read
+#'
+#' `hazard()` accepted any `control` element, so one it never reads -- a
+#' typo such as `n_startz`, or `fix`, which no fitting code has ever read --
+#' left the fit as it would have been and said nothing (#376). Every such
+#' element now draws one warning that names it and says why it does
+#' nothing, and the fit proceeds, as `stats::optim()` does for unknown
+#' `control` names. Nothing errors: an error inside a stepwise or bootstrap
+#' candidate refit would be recorded as a failed candidate, so the screen
+#' would report success having tested nothing.
+#'
+#' @param control The `control` list, already known to be a list.
+#' @param dist The distribution name.
+#' @return `control` restricted to the elements this fit reads, so that no
+#'   consumer's `$` can partial-match a warned name (`control$n_starts`
+#'   would read `n_starts_extra`); warns once about every other element.
+#' @keywords internal
+#' @noRd
+.hzr_validate_control <- function(control, dist) {
+  if (length(control) == 0L) {
+    return(control)
+  }
+  nm <- names(control)
+  if (is.null(nm)) {
+    nm <- rep("", length(control))
+  }
+  unnamed <- is.na(nm) | !nzchar(nm)
+  names_all <- nm
+  nm <- nm[!unnamed]
+  multiphase <- identical(dist, "multiphase")
+  accepted <- c(.hzr_control_names$all,
+                if (multiphase) {
+                  .hzr_control_names$multiphase
+                } else {
+                  .hzr_control_names$single
+                })
+  no_effect <- intersect(nm, names(.hzr_control_no_effect))
+  # A name the fitter reads, but only for another model.
+  off_path <- intersect(nm, if (multiphase) {
+    .hzr_control_names$single
+  } else {
+    .hzr_control_names$multiphase
+  })
+  unknown <- setdiff(nm, c(accepted, no_effect, off_path))
+  notes <- c(
+    if (length(no_effect) > 0L) {
+      paste0("control$", no_effect, " (", .hzr_control_no_effect[no_effect],
+             ")")
+    },
+    if (length(off_path) > 0L) {
+      paste0("control$", off_path, " (it applies only to ",
+             if (multiphase) {
+               "single-distribution fits"
+             } else {
+               "dist = \"multiphase\""
+             }, ")")
+    },
+    if (length(unknown) > 0L) {
+      paste0("control$", unknown, " (not an element any fit reads; for dist",
+             " = \"", dist, "\" the elements accepted without a warning are ",
+             paste(accepted, collapse = ", "), ")")
+    },
+    if (any(unnamed)) {
+      paste0(sum(unnamed), " unnamed element(s) (control is read by name, ",
+             "as in list(maxit = 500))")
+    }
+  )
+  if (length(notes) > 0L) {
+    warning("'control' element(s) with no effect on this dist = \"", dist,
+            "\" fit, ignored: ", paste(notes, collapse = "; "), ".",
+            call. = FALSE)
+  }
+  control[!unnamed & names_all %in% accepted]
 }
 
 #' Apply `.hzr_numeric_values()` to every column of a data frame or list
