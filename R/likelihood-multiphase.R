@@ -2111,6 +2111,11 @@
                                       weights = weights, ...)
         grad[i] <- (ll_plus - ll0) / h_i
       }
+      # At an infeasible point the log-likelihood is -Inf, so a quotient is
+      # NaN, or +-Inf where the perturbed point is finite. A sanitised
+      # gradient is finite: zero what could not be differenced, as the
+      # analytic score does (#262).
+      grad[!is.finite(grad)] <- 0
     }
 
     grad

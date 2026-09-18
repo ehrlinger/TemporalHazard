@@ -158,3 +158,42 @@ test_that("a corrupt interval bound still stops the fit whatever the scale (#262
   # not a side effect of the scale.
   expect_error(fit_at(log(3)), msg)
 })
+
+test_that("the optimizer's gradient stays finite at an infeasible scale (#262)", {
+  # The tests above call .hzr_gradient_multiphase() directly. The optimizer
+  # is handed a wrapper around it, whose all-zero fallback differences the
+  # log-likelihood: at an infeasible scale that is -Inf, so the quotient was
+  # NaN, or +-Inf where a perturbed point was finite. The optimizer then
+  # zeroed it, but a sanitised gradient must be finite without that help.
+  d <- scale_data()
+  captured <- NULL
+  local_mocked_bindings(.hzr_optim_generic = function(...) {
+    captured <<- list(...)
+    stop("captured")
+  })
+  ph <- list(e = hzr_phase("cdf", t_half = 3, nu = 1, m = 0),
+             c = hzr_phase("constant"))
+  try(suppressWarnings(hazard(
+    time = d$time, status = d$status, dist = "multiphase", phases = ph,
+    fit = TRUE, control = list(n_starts = 1L, conserve = FALSE)
+  )), silent = TRUE)
+  expect_true(is.function(captured$gradient_fn))
+  score <- function(ls) {
+    captured$gradient_fn(
+      theta = c(log(0.1), ls, 1, 0, log(0.05)), time = captured$time,
+      status = captured$status, time_lower = captured$time_lower,
+      time_upper = captured$time_upper, x = captured$x,
+      weights = captured$weights
+    )
+  }
+  # 800 and -800 overflow and underflow exp(); 709.75 is just short of the
+  # overflow, where a perturbation of another parameter lands on a finite
+  # likelihood and the old quotient was +-Inf.
+  for (ls in c(800, -800, 709.75)) {
+    expect_identical(score(ls), rep(0, 5L), info = paste("log_t_half", ls))
+  }
+  # Feasible control: the fallback is not reached, the score is not zero.
+  feasible <- score(log(3))
+  expect_true(all(is.finite(feasible)))
+  expect_false(isTRUE(all(feasible == 0)))
+})
