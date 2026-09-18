@@ -885,8 +885,7 @@ test_that("hzr_bootstrap scope runs embedded stepwise selection per replicate", 
 
   bs <- hzr_bootstrap(base, n_boot = 10, seed = 321,
                        scope = ~ age + mal + com_iv,
-                       slentry = 0.3, slstay = 0.2,
-                       control = list(n_starts = 1))
+                       slentry = 0.3, slstay = 0.2)
 
   expect_s3_class(bs, "hzr_bootstrap")
   expect_identical(bs$mode, "select")
@@ -921,8 +920,7 @@ test_that("hzr_bootstrap scope reaches criterion = 'score'", {
   bs <- hzr_bootstrap(base, n_boot = 3, seed = 321,
                        scope = ~ age + mal,
                        criterion = "score",
-                       slentry = 0.3, slstay = 0.2,
-                       control = list(n_starts = 1))
+                       slentry = 0.3, slstay = 0.2)
   expect_s3_class(bs, "hzr_bootstrap")
   expect_identical(bs$mode, "select")
   expect_gt(bs$n_success, 0)
@@ -930,8 +928,7 @@ test_that("hzr_bootstrap scope reaches criterion = 'score'", {
   bs_wald <- hzr_bootstrap(base, n_boot = 3, seed = 321,
                             scope = ~ age + mal,
                             criterion = "wald",
-                            slentry = 0.3, slstay = 0.2,
-                            control = list(n_starts = 1))
+                            slentry = 0.3, slstay = 0.2)
   expect_s3_class(bs_wald, "hzr_bootstrap")
   expect_gt(bs_wald$n_success, 0)
 })
@@ -1025,8 +1022,7 @@ test_that("hzr_bootstrap scope with a nonexistent column warns but does not rais
   expect_warning(
     bs <- hzr_bootstrap(base, n_boot = 3, seed = 1,
                          scope = ~ age + not_a_real_column,
-                         criterion = "wald",
-                         control = list(n_starts = 1)),
+                         criterion = "wald"),
     "not_a_real_column"
   )
   expect_false("not_a_real_column" %in% bs$summary$parameter)
@@ -1047,7 +1043,7 @@ test_that("hzr_bootstrap(scope=) forwards a caller-supplied trace= without colli
   )
 
   bs <- hzr_bootstrap(base, n_boot = 2, seed = 42, scope = ~ age + mal,
-                       control = list(n_starts = 1), trace = TRUE)
+                       trace = TRUE)
   expect_s3_class(bs, "hzr_bootstrap")
   expect_gte(bs$n_success, 0L)
 })
@@ -1083,8 +1079,7 @@ test_that("print.hzr_bootstrap reports the mode", {
   # print label, so it passed throughout. Kept as-is because the print
   # contract is what it covers; the empty screen is tracked separately.
   bs_sel <- suppressWarnings(
-    hzr_bootstrap(base, n_boot = 5, seed = 42, scope = ~ age + mal,
-                  control = list(n_starts = 1))
+    hzr_bootstrap(base, n_boot = 5, seed = 42, scope = ~ age + mal)
   )
   expect_output(print(bs_sel), "stepwise selection")
   expect_gt(bs_sel$n_uncomputable_replicates, 0L)
