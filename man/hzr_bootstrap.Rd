@@ -83,8 +83,8 @@ multiphase fit uses the analytic Hessian instead and does not need it.
 See \code{\link[=hzr_stepwise]{hzr_stepwise()}}.}
 
 \item{...}{Additional arguments forwarded to \code{\link[=hzr_stepwise]{hzr_stepwise()}} (e.g.
-\code{control = list(n_starts = 1)}) when \code{scope} is supplied; ignored
-otherwise.}
+\code{control = list(maxit = 500)}, which every \code{dist} reads) when \code{scope}
+is supplied; ignored otherwise.}
 
 \item{x}{An \code{hzr_bootstrap} object.}
 

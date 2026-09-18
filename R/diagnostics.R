@@ -1586,8 +1586,8 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   replicate, pass an empty scope such as `~ 1`. See [hzr_stepwise()] for
 #'   definitions and defaults.
 #' @param ... Additional arguments forwarded to [hzr_stepwise()] (e.g.
-#'   `control = list(n_starts = 1)`) when `scope` is supplied; ignored
-#'   otherwise.
+#'   `control = list(maxit = 500)`, which every `dist` reads) when `scope`
+#'   is supplied; ignored otherwise.
 #'
 #' @section Selection mode is experimental:
 #'
