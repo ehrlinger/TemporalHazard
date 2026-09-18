@@ -157,7 +157,10 @@ Default <code>0.20</code> matches SAS <code>SLSTAY</code>.</p></dd>
 <dt id="arg-max-move">max_move<a class="anchor" aria-label="anchor" href="#arg-max-move"></a></dt>
 <dd><p>Per-variable oscillation cap.  When a variable has
 entered + exited more than <code>max_move</code> times it is frozen for the
-remainder of the run.  Default <code>4</code>.</p></dd>
+remainder of the run.  Default <code>4</code>.  In a two-way screen
+(<code>direction = "both"</code>), a variable frozen on entry can still be
+dropped in the same iteration; see the
+<strong>Known limitation (the frozen set)</strong> section.</p></dd>
 
 
 <dt id="arg-force-in">force_in<a class="anchor" aria-label="anchor" href="#arg-force-in"></a></dt>
@@ -197,7 +200,9 @@ frozen action; see Details.</p></dd>
 
 <dt><code>scope</code></dt>
 <dd><p>Record of the candidate scope, plus
-<code>force_in</code>, <code>force_out</code>, and the frozen set.</p></dd>
+<code>force_in</code>, <code>force_out</code>, and the frozen set.  In a two-way
+screen, <code>frozen</code> can name a variable the final model does not
+contain; see the <strong>Known limitation (the frozen set)</strong> section.</p></dd>
 
 <dt><code>criteria</code></dt>
 <dd><p>Named list of the threshold / direction
@@ -374,6 +379,32 @@ information-criterion search.</p></dd>
 
 
 </dl></div>
+    <div class="section level2">
+    <h2 id="known-limitation-the-frozen-set-">Known limitation (the frozen set)<a class="anchor" aria-label="anchor" href="#known-limitation-the-frozen-set-"></a></h2>
+
+
+
+<p>In a two-way screen (<code>direction = "both"</code>), <code>$scope$frozen</code> can name a
+variable that the final model does not contain.  Each two-way iteration
+makes a forward step and then a backward step, and the sets of protected
+variables are fixed at the start of the iteration.  A variable that the
+forward step freezes can therefore still be dropped by the backward step
+that follows it, so it is reported as frozen while the final model
+excludes it.  Nothing warns when this happens.</p>
+<p>Forward-only and backward-only screens are not affected: a forward-only
+screen never makes a backward step to drop the frozen variable, and a
+backward-only screen never makes a forward step to freeze it on entry.
+In those, <code>$scope$frozen</code> and the final model agree.</p>
+<p><strong>When the two disagree, trust the final model and <code>$steps</code>.</strong>  The
+final model is what was selected, and <code>$steps</code> records both the
+<code>"frozen"</code> row and the <code>"drop"</code> that followed it.  Read <code>$scope$frozen</code>
+only as the list of variables that reached the <code>max_move</code> cap, not as a
+list of variables held in the model.</p>
+<p>This is a known limitation of this release.  The analysis, including why
+fixing it changes which variables are selected, is in
+<a href="https://github.com/ehrlinger/TemporalHazard/issues/378" class="external-link">https://github.com/ehrlinger/TemporalHazard/issues/378</a> and
+<a href="https://github.com/ehrlinger/TemporalHazard/issues/379" class="external-link">https://github.com/ehrlinger/TemporalHazard/issues/379</a>.</p>
+    </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
     <div class="dont-index"><p><code><a href="hazard.html">hazard()</a></code> for the base model and <code><a href="hzr_phase.html">hzr_phase()</a></code> for multiphase

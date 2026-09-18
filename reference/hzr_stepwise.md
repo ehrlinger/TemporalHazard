@@ -92,7 +92,9 @@ as.data.frame(x, ...)
 
   Per-variable oscillation cap. When a variable has entered + exited
   more than `max_move` times it is frozen for the remainder of the run.
-  Default `4`.
+  Default `4`. In a two-way screen (`direction = "both"`), a variable
+  frozen on entry can still be dropped in the same iteration; see the
+  **Known limitation (the frozen set)** section.
 
 - force_in:
 
@@ -133,7 +135,9 @@ augmented with:
 - `scope`:
 
   Record of the candidate scope, plus `force_in`, `force_out`, and the
-  frozen set.
+  frozen set. In a two-way screen, `frozen` can name a variable the
+  final model does not contain; see the **Known limitation (the frozen
+  set)** section.
 
 - `criteria`:
 
@@ -320,6 +324,32 @@ and whether it is accepted.
   current model without a per-candidate refit (the chosen drop is refit
   afterwards). Use this for a non-significance-based,
   information-criterion search.
+
+## Known limitation (the frozen set)
+
+In a two-way screen (`direction = "both"`), `$scope$frozen` can name a
+variable that the final model does not contain. Each two-way iteration
+makes a forward step and then a backward step, and the sets of protected
+variables are fixed at the start of the iteration. A variable that the
+forward step freezes can therefore still be dropped by the backward step
+that follows it, so it is reported as frozen while the final model
+excludes it. Nothing warns when this happens.
+
+Forward-only and backward-only screens are not affected: a forward-only
+screen never makes a backward step to drop the frozen variable, and a
+backward-only screen never makes a forward step to freeze it on entry.
+In those, `$scope$frozen` and the final model agree.
+
+**When the two disagree, trust the final model and `$steps`.** The final
+model is what was selected, and `$steps` records both the `"frozen"` row
+and the `"drop"` that followed it. Read `$scope$frozen` only as the list
+of variables that reached the `max_move` cap, not as a list of variables
+held in the model.
+
+This is a known limitation of this release. The analysis, including why
+fixing it changes which variables are selected, is in
+<https://github.com/ehrlinger/TemporalHazard/issues/378> and
+<https://github.com/ehrlinger/TemporalHazard/issues/379>.
 
 ## See also
 
