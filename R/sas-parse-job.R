@@ -817,13 +817,15 @@
     names(derive) <- c("", "", as.character(cens$status_name))
     call("<-", as.name(data_name), derive)
   }
+  # Variables in some fitted phase formula: hazard() drops their missing rows
+  # itself. Read by the listwise guard and the column check below.
+  modelled <- unique(unlist(lapply(as.list(parms$phases)[-1L], function(ph) {
+    if (is.call(ph) && !is.null(ph[["formula"]])) all.vars(ph[["formula"]])
+  })))
   # Phase variables outside every fitted formula still delete their missing
   # rows in PROC HAZARD (see .hzr_parse_parms()), and hazard() cannot see
   # them. Stop in the status chunk, ahead of the fit, rather than fit more
   # rows than SAS did.
-  modelled <- unique(unlist(lapply(as.list(parms$phases)[-1L], function(ph) {
-    if (is.call(ph) && !is.null(ph[["formula"]])) all.vars(ph[["formula"]])
-  })))
   if (length(parms$listwise_only)) {
     lw <- lapply(parms$listwise_only, as.name)
     any_na <- Reduce(function(a, b) call("|", a, b),
@@ -873,6 +875,18 @@
              paste(setdiff(.(phase_vars), names(.(dsym))), collapse = ", "),
              ", which are not columns of ", .(data_name), ". Add them to ",
              .(data_name), " or remove them from the phase statements.",
+             call. = FALSE)
+      }
+      # PROC HAZARD refuses a non-numeric phase variable (vfynvar.c:22-26,
+      # "VARIABLE NOT NUMERIC", sets semerr; hazard.c:249-251 exits), where
+      # hazard() would dummy-code it and fit. FUN is passed as a string so
+      # no new symbol reaches the emitted code.
+      if (!all(vapply(.(dsym)[.(phase_vars)], "is.numeric", NA))) {
+        stop("PROC HAZARD refuses a phase variable that is not numeric ",
+             "(vfynvar.c:22-26), and this job's are not numeric: ",
+             paste(names(which(!vapply(.(dsym)[.(phase_vars)], "is.numeric",
+                                       NA))), collapse = ", "),
+             ". Convert them to numeric codes, as the SAS dataset holds them.",
              call. = FALSE)
       }
     })

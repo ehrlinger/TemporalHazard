@@ -585,7 +585,10 @@
   missing too; `hazard()` drops those rows itself, as SAS does. It now stops
   only on rows `hazard()` would keep. A phase-statement variable that the
   dataset lacks used to fail as "object ... not found"; the status chunk
-  now names every such variable and the dataset.
+  now names every such variable and the dataset. A phase-statement variable
+  that is not numeric (a character or factor column) now stops the job too,
+  as `PROC HAZARD` does ("VARIABLE NOT NUMERIC"); the translation used to
+  dummy-code it and fit a model SAS never ran.
 
 * **A backward `hzr_stepwise()` drop's refusal now names the reduced design,
   and its pre-check no longer repeats parse-time warnings (#343).** The

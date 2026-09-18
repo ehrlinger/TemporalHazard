@@ -53,7 +53,9 @@ test_that("public-corpus jobs that translate also render", {
   n_partial <- 0L      # distinct jobs checked only up to their fit chunks
   failures <- character(0)
   ineligible <- character(0)
-  seen <- new.env(parent = emptyenv())
+  # Keys are whole deparsed jobs; a character vector, because assign() caps
+  # a name at 10000 bytes and the longest corpus job passed that (#340).
+  seen <- character(0)
   # Jobs refused because PROC HAZARD itself rejects their phase statements
   # (#340). The corpus carries only single-flag options (/E, /I, /S), all
   # valid SAS, so none may be refused: this is the false-refusal check the
@@ -75,8 +77,8 @@ test_that("public-corpus jobs that translate also render", {
     # byte-identical calls.
     key <- paste(vapply(job$calls, function(x) paste(deparse(x), collapse = " "), ""),
                  collapse = " ;; ")
-    if (!is.null(seen[[key]])) next
-    assign(key, TRUE, envir = seen)
+    if (key %in% seen) next
+    seen <- c(seen, key)
 
     shape <- sas_job_shape(job)
     # A meaningless fit is fine here -- the assertion is that the chunks run

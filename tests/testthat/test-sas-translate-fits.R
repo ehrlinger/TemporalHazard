@@ -504,4 +504,12 @@ test_that("a phase variable missing from the data is named, not 'object not foun
   D$D <- seq_len(60)
   res <- suppressWarnings(render_sim(job, list(D = D)))
   expect_true(res$ok, info = paste(res$results, collapse = "; "))
+  # A phase variable that is not numeric: PROC HAZARD refuses the job
+  # (vfynvar.c:22-26 "VARIABLE NOT NUMERIC" sets semerr; hazard.c:249-251
+  # exits), while hazard() would dummy-code it and fit.
+  D$ZZ <- rep(c("a", "b"), 30)
+  res <- suppressWarnings(render_sim(job, list(D = D)))
+  expect_false(res$ok)
+  expect_match(res$results[["status"]], "not numeric: ZZ", fixed = TRUE)
+  expect_false(exists("fit", envir = res$env, inherits = FALSE))
 })
