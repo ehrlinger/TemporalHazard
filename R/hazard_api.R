@@ -2553,21 +2553,45 @@ vcov.hazard <- function(object, ...) {
 #' single argument such as `time` is one vector whatever its shape, so by
 #' default a classed numeric with a `dim` is read as its values too.
 #'
+#' Under `keep_dim`, the values are still read, and the shape kept
+#' (#371): a classed numeric matrix column was left entirely alone, so an
+#' integer64 matrix column of `data` fitted on its raw doubles, and the same
+#' column in `newdata` predicted on them. Which classes need reading cannot
+#' be listed, so it is decided by behaviour: the class's own `as.numeric()`
+#' is compared with the stored values as numbers, and the column is replaced
+#' only when they differ. A `Surv` column, whose stored doubles ARE its
+#' values, is therefore returned unchanged and keeps its class, which it
+#' must, since a bare matrix is no longer a response. So is an integer
+#' `AsIs` matrix, whose values equal its storage in another mode.
+#'
 #' @param x Any object.
-#' @param keep_dim If `TRUE`, leave an object with a `dim` unchanged.
-#' @return `x`, or `as.numeric(x)` when the rule applies.
+#' @param keep_dim If `TRUE`, keep the `dim` of an object that has one,
+#'   reading its values into a matrix of the same shape.
+#' @return `x`, or its values, when the rule applies.
 #' @noRd
 .hzr_numeric_values <- function(x, keep_dim = FALSE) {
-  if (is.object(x) && is.numeric(x) && !(keep_dim && !is.null(dim(x)))) {
-    as.numeric(x)
-  } else {
-    x
+  if (!is.object(x) || !is.numeric(x)) {
+    return(x)
   }
+  values <- as.numeric(x)
+  if (!keep_dim || is.null(dim(x))) {
+    return(values)
+  }
+  # Compared as numbers, not with the storage mode: an integer AsIs matrix
+  # has values equal to its storage, in another mode.
+  if (identical(values, as.numeric(unclass(x)))) {
+    # The class reads as its own storage (a Surv, a classed plain matrix):
+    # nothing to read, and replacing it would drop a class that is load
+    # bearing.
+    return(x)
+  }
+  array(values, dim(x), dimnames(x))
 }
 
 #' Apply `.hzr_numeric_values()` to every column of a data frame or list
 #'
-#' Columns with a `dim` are left alone (`keep_dim = TRUE`). Columns are
+#' A column with a `dim` keeps it (`keep_dim = TRUE`), and its values are
+#' still read (#371). Columns are
 #' replaced in a local copy (`data[] <-`), so a caller's `data.table` is not
 #' modified by reference. Anything that is not a list is returned unchanged.
 #'
