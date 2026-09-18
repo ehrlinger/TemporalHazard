@@ -664,11 +664,11 @@
   if (n_obs != n_time) {
     stop(
       "The base fit dropped ", n_time - n_obs, " rows whose covariate ",
-      "values were missing or not finite, so its stored response (", n_time,
+      "values were missing (NA or NaN), so its stored response (", n_time,
       " rows) no longer lines up with the rows it was fitted on (", n_obs,
       "), and no candidate can be scored against it. The values can be ",
       "missing in the data, or made missing by a transform in a model ",
-      "formula, such as sqrt() or log() of a value outside its domain, which ",
+      "formula, such as sqrt() or log() of a negative value, which ",
       "`na.omit()` on the data does not catch. Refit the base model on only ",
       "the rows it used, and pass that same data frame.",
       call. = FALSE

@@ -566,9 +566,9 @@
 
 * **A score-criterion `hzr_stepwise()` screen on a multiphase base that
   dropped rows with missing covariates now stops and says so (#372).** Such a
-  fit drops every row whose phase covariate is missing or not finite (in the
-  data, or made so by a transform such as `sqrt()` or `log()`), but keeps the
-  full response in `$data`. The score test's row check counted that full
+  fit drops every row whose phase covariate is missing, `NA` or `NaN` (in the
+  data, or made so by a transform such as `sqrt()` or `log()` of a negative
+  value), but keeps the full response in `$data`. The score test's row check counted that full
   response, so it passed; every candidate then failed to line up with the
   fit's design, and the screen stopped with no steps, blaming each candidate
   as `not_expandable`. The check now counts the rows the fit was estimated on

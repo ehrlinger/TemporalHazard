@@ -8,7 +8,10 @@
 # `not_expandable`: the candidate blamed for a base-data problem. The guard's
 # own comment names this case and says to fail loudly; it now can.
 
-avc_372 <- function() avc[, c("int_dead", "dead", "age", "com_iv", "opmos")]
+avc_372 <- function() {
+  data(avc, package = "TemporalHazard", envir = environment())
+  avc[, c("int_dead", "dead", "age", "com_iv", "opmos")]
+}
 
 fit_372 <- function(d) {
   suppressWarnings(hazard(
@@ -102,4 +105,8 @@ test_that("rows made missing by a transform are named, not blamed on the data (#
   expect_match(msg, "dropped 9 rows", fixed = TRUE)
   expect_match(msg, "made missing by a transform", fixed = TRUE)
   expect_match(msg, "`na.omit()` on the data does not catch", fixed = TRUE)
+  # The fitter drops on is.na() only, so NA or NaN. An infinite value is NOT
+  # dropped, and the message must not say it is (Copilot on #387).
+  expect_match(msg, "missing (NA or NaN)", fixed = TRUE)
+  expect_no_match(msg, "finite")
 })
