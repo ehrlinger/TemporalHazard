@@ -156,7 +156,10 @@ compare_probe <- function(a, b) {
 # (R/optimizer.R), so it is derived the same way, not copied as a rounded
 # literal that would accept gradients the package rejects.
 GRADIENT_TOL <- .Machine$double.eps^(1 / 3)
-RCOND_FLOOR <- 1e-8
+# The package's own conditioning threshold (.hzr_rcond_tol, R/hessian-invert.R),
+# derived the same way: the rounded 1e-8 was looser and certified fits the
+# package flags as ill-conditioned.
+RCOND_FLOOR <- .Machine$double.eps^0.5
 
 gate_verdict <- function(g) {
   # Why this is in two parts: `fit$fit$rel_gradient` DOES NOT EXIST before
