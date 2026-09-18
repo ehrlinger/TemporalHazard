@@ -74,7 +74,7 @@ print(x, digits = 4, ...)
   supplied (a one-sided formula, character vector, or, for multiphase
   fits, a named list of one-sided formulas keyed by phase, matching
   [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)'s
-  `scope`), each replicate runs a fresh
+  `scope`; a two-sided formula is an error), each replicate runs a fresh
   [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   selection instead; see Details.
 
@@ -82,8 +82,13 @@ print(x, digits = 4, ...)
 
   Passed through to
   [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
-  on each replicate when `scope` is supplied; ignored when
-  `scope = NULL`. See
+  on each replicate when `scope` is supplied. With `scope = NULL`
+  nothing reads them, so a value other than the default is an error; the
+  default's own value is accepted, whether or not it was passed, so that
+  a wrapper forwarding its defaults still works.
+  `direction = "backward"` with a non-empty `scope` is an error too: a
+  backward screen does not read `scope`. For a backward screen on each
+  replicate, pass an empty scope such as `~ 1`. See
   [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   for definitions and defaults.
 
@@ -91,17 +96,17 @@ print(x, digits = 4, ...)
 
   Entry / retention rule passed through to
   [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
-  on each replicate when `scope` is supplied; ignored when
-  `scope = NULL`. One of `"score"` (default), `"wald"`, or `"aic"`.
-  `"score"` reproduces C/SAS HAZARD's `SELECTION` statistic and needs no
-  per-candidate refit, which is what makes a bootstrap screen over many
-  candidates tractable. Following SAS, the variance used during
-  *selection* is approximate (shaping-parameter covariances are
-  ignored); final-model standard errors are unaffected. For
-  single-distribution fits, `"score"` computes the observed information
-  numerically via the suggested numDeriv package and errors if it is not
-  installed; a multiphase fit uses the analytic Hessian instead and does
-  not need it. See
+  on each replicate when `scope` is supplied; with `scope = NULL`, a
+  value other than the default is an error. One of `"score"` (default),
+  `"wald"`, or `"aic"`. `"score"` reproduces C/SAS HAZARD's `SELECTION`
+  statistic and needs no per-candidate refit, which is what makes a
+  bootstrap screen over many candidates tractable. Following SAS, the
+  variance used during *selection* is approximate (shaping-parameter
+  covariances are ignored); final-model standard errors are unaffected.
+  For single-distribution fits, `"score"` computes the observed
+  information numerically via the suggested numDeriv package and errors
+  if it is not installed; a multiphase fit uses the analytic Hessian
+  instead and does not need it. See
   [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md).
 
 - ...:

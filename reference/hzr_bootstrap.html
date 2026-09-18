@@ -136,20 +136,28 @@ original fixed-formula bootstrap: every replicate refits <code>object</code>'s
 exact model, and <code>summary$pct</code> is always ~100. When supplied (a
 one-sided formula, character vector, or, for multiphase fits, a
 named list of one-sided formulas keyed by phase, matching
-<code><a href="hzr_stepwise.html">hzr_stepwise()</a></code>'s <code>scope</code>), each replicate runs a fresh
+<code><a href="hzr_stepwise.html">hzr_stepwise()</a></code>'s <code>scope</code>; a two-sided formula is an error), each
+replicate runs a fresh
 <code><a href="hzr_stepwise.html">hzr_stepwise()</a></code> selection instead; see Details.</p></dd>
 
 
 <dt id="arg-direction-slentry-slstay-max-steps-max-move-force-in-force-out">direction, slentry, slstay, max_steps, max_move, force_in, force_out<a class="anchor" aria-label="anchor" href="#arg-direction-slentry-slstay-max-steps-max-move-force-in-force-out"></a></dt>
 <dd><p>Passed through to <code><a href="hzr_stepwise.html">hzr_stepwise()</a></code> on each replicate when <code>scope</code> is
-supplied; ignored when <code>scope = NULL</code>. See <code><a href="hzr_stepwise.html">hzr_stepwise()</a></code> for
+supplied. With <code>scope = NULL</code> nothing reads them, so a value other than
+the default is an error; the default's own value is accepted, whether or
+not it was passed, so that a wrapper forwarding its defaults still
+works.
+<code>direction = "backward"</code> with a non-empty <code>scope</code> is an error too: a
+backward screen does not read <code>scope</code>. For a backward screen on each
+replicate, pass an empty scope such as <code>~ 1</code>. See <code><a href="hzr_stepwise.html">hzr_stepwise()</a></code> for
 definitions and defaults.</p></dd>
 
 
 <dt id="arg-criterion">criterion<a class="anchor" aria-label="anchor" href="#arg-criterion"></a></dt>
 <dd><p>Entry / retention rule passed through to
-<code><a href="hzr_stepwise.html">hzr_stepwise()</a></code> on each replicate when <code>scope</code> is supplied; ignored
-when <code>scope = NULL</code>. One of <code>"score"</code> (default), <code>"wald"</code>, or <code>"aic"</code>.
+<code><a href="hzr_stepwise.html">hzr_stepwise()</a></code> on each replicate when <code>scope</code> is supplied; with
+<code>scope = NULL</code>, a value other than the default is an error. One of <code>"score"</code> (default), <code>"wald"</code>, or
+<code>"aic"</code>.
 <code>"score"</code> reproduces C/SAS HAZARD's <code>SELECTION</code> statistic and needs no
 per-candidate refit, which is what makes a bootstrap screen over many
 candidates tractable. Following SAS, the variance used during

@@ -50,7 +50,15 @@ as.data.frame(x, ...)
   already in the model for every phase. For single-distribution fits,
   pass a one-sided formula (`~ age + nyha`) or a character vector of
   names. For multiphase fits, pass a named list of one-sided formulas
-  keyed by phase.
+  keyed by phase, naming each phase once. `scope` lists what may enter;
+  a drop considers every term in the model except `force_in` and terms
+  frozen by `max_move` before the iteration began (see the **Known
+  limitation (the frozen set)** section). A two-sided formula is an
+  error, since its left-hand side would never be a candidate, and so is
+  a non-empty `scope` under `direction = "backward"`, which does not
+  read it. An empty scope (`~ 1`,
+  [`character()`](https://rdrr.io/r/base/character.html), or a list of
+  `NULL`s and `~ 1`s) is accepted there.
 
 - data:
 
@@ -274,16 +282,21 @@ and whether it is accepted.
 
 - `direction = "backward"`:
 
-  Start from the full candidate model and only *drop* variables; the
-  weakest term leaves each step until all survivors clear the retention
-  rule.
+  Start from the base model, which must already hold every candidate,
+  and only *drop* variables; the weakest term leaves each step until all
+  survivors clear the retention rule. `scope` is not read, so a
+  non-empty one is an error: protect terms with `force_in`.
 
 - `direction = "both"` (default):
 
-  Two-way stepwise: after each entry, already-selected variables are
-  re-tested and may be dropped. This is the SAS `SELECTION = STEPWISE`
-  strategy. `max_move` caps how often a single variable may oscillate
-  before it is frozen.
+  Two-way stepwise: on every iteration, whether or not a variable
+  entered, every term in the model, the base model's included, is
+  re-tested and may be dropped unless it is in `force_in` or was frozen
+  by `max_move` before the iteration began; a variable frozen on entry
+  can still be dropped in the same iteration (see the **Known limitation
+  (the frozen set)** section). `scope` limits what may enter, not what
+  may leave. This is the SAS `SELECTION = STEPWISE` strategy. `max_move`
+  caps how often a single variable may oscillate before it is frozen.
 
 &nbsp;
 

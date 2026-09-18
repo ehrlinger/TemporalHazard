@@ -114,7 +114,15 @@ multiphase models: a covariate can enter one phase and not another.</p>
 column not already in the model for every phase.  For
 single-distribution fits, pass a one-sided formula
 (<code>~ age + nyha</code>) or a character vector of names.  For multiphase
-fits, pass a named list of one-sided formulas keyed by phase.</p></dd>
+fits, pass a named list of one-sided formulas keyed by phase, naming
+each phase once.  <code>scope</code> lists what may enter; a drop considers every
+term in the model except <code>force_in</code> and terms frozen by <code>max_move</code>
+before the iteration began (see the <strong>Known limitation (the frozen
+set)</strong> section).  A two-sided formula is an error,
+since its left-hand side would never be a candidate, and so is a
+non-empty <code>scope</code> under <code>direction = "backward"</code>, which does not read
+it.  An empty scope (<code>~ 1</code>, <code><a href="https://rdrr.io/r/base/character.html" class="external-link">character()</a></code>, or a list of <code>NULL</code>s and
+<code>~ 1</code>s) is accepted there.</p></dd>
 
 
 <dt id="arg-data">data<a class="anchor" aria-label="anchor" href="#arg-data"></a></dt>
@@ -335,13 +343,20 @@ and whether it is accepted.</p>
 until none clears the entry rule.  Variables never leave once in.</p></dd>
 
 <dt><code>direction = "backward"</code></dt>
-<dd><p>Start from the full candidate model and
-only <em>drop</em> variables; the weakest term leaves each step until all
-survivors clear the retention rule.</p></dd>
+<dd><p>Start from the base model, which must
+already hold every candidate, and only <em>drop</em> variables; the weakest
+term leaves each step until all survivors clear the retention rule.
+<code>scope</code> is not read, so a non-empty one is an error: protect terms
+with <code>force_in</code>.</p></dd>
 
 <dt><code>direction = "both"</code> (default)</dt>
-<dd><p>Two-way stepwise: after each
-entry, already-selected variables are re-tested and may be dropped.
+<dd><p>Two-way stepwise: on every
+iteration, whether or not a variable entered, every term in the model,
+the base model's included, is re-tested and may be dropped unless it
+is in <code>force_in</code> or was frozen by <code>max_move</code> before the iteration
+began; a variable frozen on entry can still be dropped in the same
+iteration (see the <strong>Known limitation (the frozen set)</strong> section).
+<code>scope</code> limits what may enter, not what may leave.
 This is the SAS <code>SELECTION = STEPWISE</code> strategy.  <code>max_move</code> caps how
 often a single variable may oscillate before it is frozen.</p></dd>
 
