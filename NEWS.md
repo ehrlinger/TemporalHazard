@@ -576,6 +576,17 @@
 
 ## Bug fixes
 
+* **The `objective = "sas"` interval checks name the real defect (#340).**
+  The objective's own guard let an interval row with an `NA` bound through:
+  `which()` drops an `NA` comparison, so the row became `-Inf`, a value the
+  optimizer walks away from, while the entry check stops on the same row.
+  Both now stop on it. The entry check also reports a `time_lower` or
+  `time_upper` shorter than `status` as a length mismatch, naming `time`
+  when the bound was left to default to it, where it reported an `NA`
+  bound. Both are reachable only by calling the internals
+  directly or editing a fit's stored data, since `hazard()` checks lengths
+  and missing bounds first.
+
 * **A score-criterion `hzr_stepwise()` screen on a multiphase base that
   dropped rows with missing covariates now stops and says so (#372).** Such a
   fit drops every row whose phase covariate is missing, `NA` or `NaN` (in the
