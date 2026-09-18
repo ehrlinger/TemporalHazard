@@ -758,12 +758,13 @@
   a reason in `$criteria$refit_failure_reasons`, as a failed refit
   already was. The forward step has refused the mirror of this, a
   candidate that adds no column, since
-  [\#306](https://github.com/ehrlinger/TemporalHazard/issues/306). The
-  check is multiphase-only: a single-distribution refit warm-starts from
-  a `theta` one element shorter than such a design needs, so the refit
-  fails to conform first and is reported as a refit failure
-  (“non-conformable arguments”), which names the symptom and not the
-  cause.
+  [\#306](https://github.com/ehrlinger/TemporalHazard/issues/306). A
+  single-distribution fit gets the same refusal and the same reason
+  ([\#323](https://github.com/ehrlinger/TemporalHazard/issues/323)). Its
+  refit warm-starts from a `theta` one element shorter than such a
+  design needs, so it used to fail to conform first and report
+  “non-conformable arguments”, which named the symptom and not the
+  cause. Its reduced design is now decided before the refit.
 
 - **A stepwise refit failure now says why.**
   [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
