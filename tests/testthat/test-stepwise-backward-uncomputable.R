@@ -78,6 +78,8 @@ test_that("a backward screen with no Wald p-values warns and counts them", {
   expect_true(sw$criteria$stopped_uncomputable)
   expect_true(any(grepl("could not be computed", w)))
   expect_true(any(grepl("slstay", w)))
+  # The stop warning covers them; they are not named a second time.
+  expect_false(any(grepl("without a Wald test", w)))
 })
 
 test_that("a forced-in candidate with no variance is not counted", {
@@ -161,10 +163,10 @@ test_that("a removal untested at one step and tested at a later one is not repor
   expect_false(any(grepl("without a Wald test", w)))
 })
 
-test_that("a two-way screen that tested its entries did not stop untested", {
-  # The entry is tested and rejected (noise x2, unreachable slentry) and the only
-  # removal cannot be tested: the iteration tested something, so it must not
-  # report that nothing was tested.
+test_that("a two-way stop names the half that could not be tested", {
+  # The entry is tested and rejected (noise x2, unreachable slentry) and the
+  # only removal cannot be tested: the screen stopped for want of a removal
+  # test, and must not claim its entries went untested.
   obj <- .fit_overfitted()
   base <- hazard(Surv(time, status) ~ x3, data = obj$data,
                  theta = c(0.5, 1.0, 0), dist = "weibull", fit = TRUE)
@@ -181,9 +183,49 @@ test_that("a two-way screen that tested its entries did not stop untested", {
   ))
   msgs <- c(msgs, out)
   expect_identical(nrow(sw$steps), 0L)
+  expect_true(sw$criteria$stopped_uncomputable)
+  expect_identical(sw$criteria$wald_untested_removals, "x3")
+  expect_identical(sw$criteria$wald_untested_entries, character())
+  expect_true(any(grepl("could be COMPUTED for removal -- none was tested",
+                        msgs)))
+  expect_true(any(grepl("could be tested for removal: .*could not be computed",
+                        msgs)))
+  expect_false(any(grepl("for entry", msgs)))
+})
+
+test_that("a two-way screen that recovers is not reported as stopped", {
+  # x3's entry test is NA on the first forward step only. The screen goes on
+  # (x2 is dropped), tests x3 at the next iteration and stops on merit.
+  obj <- .fit_overfitted()
+  base <- hazard(Surv(time, status) ~ x1 + x2, data = obj$data,
+                 theta = c(0.5, 1.0, 0, 0), dist = "weibull", fit = TRUE)
+  orig <- .hzr_candidate_score
+  seen <- new.env()
+  seen$n <- 0L
+  local_mocked_bindings(
+    .hzr_candidate_score = function(...) {
+      a <- list(...)
+      s <- orig(...)
+      if (identical(a$mode, "entry") && seen$n == 0L) {
+        seen$n <- 1L
+        s$score <- NA_real_
+        s$p_value <- NA_real_
+        s$stat <- NA_real_
+      }
+      s
+    }
+  )
+  w <- testthat::capture_warnings(
+    sw <- hzr_stepwise(base, scope = c("x1", "x2", "x3"), data = obj$data,
+                       direction = "both", criterion = "wald",
+                       slentry = 0.01, slstay = 0.20, trace = FALSE)
+  )
+  expect_identical(seen$n, 1L)
+  expect_identical(sw$steps$variable, "x2")
+  expect_identical(sw$criteria$uncomputable_reasons[["wald_no_variance"]], 1L)
   expect_false(sw$criteria$stopped_uncomputable)
-  expect_false(any(grepl("none was tested|stopped without being able", msgs)))
-  expect_true(any(grepl("removal untested: x3\\.", msgs)))
+  expect_identical(sw$criteria$wald_untested_entries, character())
+  expect_false(any(grepl("could not be computed|without a Wald test", w)))
 })
 
 test_that("a forward Wald screen with no variances warns and counts them", {
@@ -210,7 +252,9 @@ test_that("a forward Wald screen with no variances warns and counts them", {
   expect_identical(sw$criteria$uncomputable_reasons,
                    c(wald_no_variance = 2L))
   expect_true(sw$criteria$stopped_uncomputable)
-  expect_true(any(grepl("could not be computed", w)))
+  expect_true(any(grepl("could be tested for entry: .*could not be computed",
+                        w)))
+  expect_false(any(grepl("without a Wald test", w)))
 })
 
 test_that("control: with variances the same forward Wald screen enters com_iv", {
@@ -319,4 +363,45 @@ test_that("a failed entry refit is not reported as a variable left out untested"
   expect_true("x2" %in% sw$criteria$refit_failures)
   expect_true(any(grepl("candidate refit failed for x2: boom", w)))
   expect_false(any(grepl("without a Wald test", w)))
+})
+
+test_that("hzr_bootstrap() counts only replicates that left a variable untested", {
+  # x3's removal test is NA only while x2 is in the model. A replicate that
+  # drops x2 then tests x3 decided it on a test; one that keeps x2 did not.
+  # The bootstrap's count must match the replicates' own screens.
+  obj <- .fit_overfitted()
+  .mask_x3_removal(only_while = "x2")
+  screens <- list()
+  orig_sw <- hzr_stepwise
+  local_mocked_bindings(
+    hzr_stepwise = function(...) {
+      r <- orig_sw(...)
+      screens[[length(screens) + 1L]] <<- list(
+        listed = length(c(r$criteria$wald_untested_removals,
+                          r$criteria$wald_untested_entries)) > 0L,
+        na = r$criteria$n_uncomputable_scores > 0L
+      )
+      r
+    }
+  )
+  w <- testthat::capture_warnings(
+    boot <- hzr_bootstrap(obj$fit, n_boot = 3, seed = 1,
+                          scope = c("x1", "x2", "x3"),
+                          direction = "backward", criterion = "wald",
+                          slstay = 0.20)
+  )
+  expect_identical(boot$n_failed, 0L)
+  reps <- utils::tail(screens, boot$n_success)
+  n_listed <- sum(vapply(reps, `[[`, logical(1L), "listed"))
+  n_na <- sum(vapply(reps, `[[`, logical(1L), "na"))
+  # At least one replicate had an NA test and then tested the variable.
+  expect_gt(n_na, n_listed)
+  hit <- grepl("successful replicates decided a variable without a Wald test",
+               w)
+  if (n_listed > 0L) {
+    expect_true(any(grepl(paste0("^", n_listed, " of ", boot$n_success,
+                                 " successful replicates decided"), w)))
+  } else {
+    expect_false(any(hit))
+  }
 })

@@ -2208,8 +2208,8 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       if (select_mode) {
         if (isTRUE(boot_fit$criteria$stopped_uncomputable)) {
           n_uncomputable_reps <- n_uncomputable_reps + 1L
-        } else if (isTRUE(unname(boot_fit$criteria$uncomputable_reasons[
-          "wald_no_variance"]) > 0L)) {
+        } else if (length(c(boot_fit$criteria$wald_untested_removals,
+                            boot_fit$criteria$wald_untested_entries)) > 0L) {
           # Replicates run quietly, so the screen's own warning about a
           # variable decided without a Wald test never reaches the user (#389).
           n_wald_untested_reps <- n_wald_untested_reps + 1L

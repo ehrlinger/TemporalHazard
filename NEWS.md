@@ -576,11 +576,16 @@
   stopped after 0 steps and kept variables it drops when `numDeriv` is
   present; a forward Wald screen stopped after 0 steps and entered nothing.
   Such tests are now counted in `n_uncomputable_scores` under the reason
-  `wald_no_variance`. A screen that could test nothing on its last step sets
-  `stopped_uncomputable` and warns that it stopped without testing. A screen
-  that went on warns once, naming each variable it kept or left out without a
-  test. `hzr_bootstrap()` runs its replicates quietly, so it now warns with the
-  number of replicates that decided a variable untested. A forced-in variable
+  `wald_no_variance`, and the variables are listed in the new
+  `$criteria$wald_untested_removals` and `$criteria$wald_untested_entries`.
+  A screen whose last iteration could test none of its candidates for entry,
+  or none for removal, sets `stopped_uncomputable` and warns which. Any other
+  variable decided without a test is named once in a warning.
+  `hzr_bootstrap()` runs its replicates quietly, so it now warns with the
+  number of replicates that decided a variable untested. `stopped_uncomputable`
+  is now decided by the last iteration alone, so a two-way screen that could
+  not test anything at one step and recovered at the next is no longer
+  reported as stopped. A forced-in variable
   is never a removal candidate and is not counted. The stop warnings of
   `hzr_stepwise()` and `hzr_bootstrap()` now name both criteria, and
   `hzr_bootstrap()` no longer says such replicates contribute no selections:

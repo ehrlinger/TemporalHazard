@@ -140,12 +140,21 @@
 #'       contain; see the **Known limitation (the frozen set)** section.}
 #'     \item{\code{criteria}}{Named list of the threshold / direction
 #'       settings actually applied, plus
-#'       `n_uncomputable_scores` (how many candidate scores were `NA`: an
-#'       entry the score test could not score under `criterion = "score"`,
-#'       or, under any criterion, a removal whose Wald statistic could not
-#'       be computed, `wald_no_variance`),
-#'       `uncomputable_reasons` (a named integer vector of *why*) and
-#'       `stopped_uncomputable`. Read `uncomputable_reasons` before treating
+#'       `n_uncomputable_scores` (how many candidate scores were `NA`,
+#'       counted once per step: an entry the score test could not score
+#'       under `criterion = "score"`; an entry under `criterion = "wald"`, or
+#'       a removal under any criterion, whose Wald statistic could not be
+#'       computed for want of a variance, `wald_no_variance`; or an entry
+#'       under `criterion = "aic"` whose fit had no finite objective,
+#'       `nonfinite`),
+#'       `uncomputable_reasons` (a named integer vector of *why*),
+#'       `wald_untested_removals` and `wald_untested_entries` (the
+#'       `"var"` / `"var@phase"` tokens of variables kept in, or left out,
+#'       on a step whose Wald test for them could not be computed; a
+#'       variable tested at a later step is not listed) and
+#'       `stopped_uncomputable` (`TRUE` when the last iteration had
+#'       candidates for entry or for removal and could test none of them).
+#'       Read `uncomputable_reasons` before treating
 #'       an unscored candidate as a bad one: `information_indefinite` marks
 #'       candidates whose effect is too large for the score test's
 #'       approximation at zero, which are typically the strongest variables
@@ -417,6 +426,7 @@ hzr_stepwise <- function(fit,
             wald_tokens(scores, !is.na(scores$score)))
   }
   stopped_uncomputable  <- FALSE
+  stopped_untestable    <- character()
   # Candidates whose REFIT failed, summed over steps.  The per-candidate
   # warning already fires inside the step, but nothing recorded it on the
   # result, so a screen that could not fit any candidate returned the same
@@ -521,7 +531,10 @@ hzr_stepwise <- function(fit,
     # iteration did, and a failure three steps back is not why it ended.
     iter_refit_failures <- character()
     iter_refit_reasons  <- character()
-    iter_uncomputable   <- FALSE
+    # Which half of this iteration had candidates and could test none:
+    # "entry", "removal" or both.  Decided per iteration, so a two-way
+    # screen that recovers at a later iteration is not reported as stopped.
+    iter_untestable     <- character()
 
     effective_force_out <- unique(c(force_out, frozen))
     effective_force_in  <- unique(c(force_in,  frozen))
@@ -543,8 +556,7 @@ hzr_stepwise <- function(fit,
         uncomputable_reasons, fwd$uncomputable_reasons
       )
       if (identical(fwd$stop_reason, "scores_uncomputable")) {
-        stopped_uncomputable <- TRUE
-        iter_uncomputable    <- TRUE
+        iter_untestable <- c(iter_untestable, "entry")
       }
       if (criterion == "wald" && nrow(fwd$all_scores) > 0L) {
         wald_untested_entries <- setdiff(update_untested(
@@ -609,13 +621,8 @@ hzr_stepwise <- function(fit,
           !bwd$all_scores$force_in & is.na(bwd$all_scores$score)
         )
       }
-      # This iteration tested nothing only if the forward half, when it ran,
-      # tested nothing either: a two-way screen whose entries were all tested
-      # and rejected did not stop for want of a test.
-      fwd_tested <- direction == "both" &&
-        any(!is.na(fwd$all_scores$score))
-      if (identical(bwd$stop_reason, "scores_uncomputable") && !fwd_tested) {
-        iter_uncomputable <- TRUE
+      if (identical(bwd$stop_reason, "scores_uncomputable")) {
+        iter_untestable <- c(iter_untestable, "removal")
       }
       iter_refit_failures <- c(iter_refit_failures,
                                bwd$refit_failures %||% character())
@@ -638,6 +645,10 @@ hzr_stepwise <- function(fit,
                           if (step_no == 1L) "" else "s")
       # "no further action" is a claim that candidates were tested and none
       # was good enough.  Say that only when it is true.
+      if (length(iter_untestable) > 0L) {
+        stopped_uncomputable <- TRUE
+        stopped_untestable   <- iter_untestable
+      }
       if (length(iter_refit_failures) > 0L) {
         stopped_refit_failed <- TRUE
         emit(sprintf(
@@ -648,15 +659,13 @@ hzr_stepwise <- function(fit,
           if (length(iter_refit_failures) == 1L) "" else "s",
           paste(iter_refit_failures, collapse = ", ")
         ))
-      } else if (iter_uncomputable) {
-        # Only a backward step that could test nothing ENDS the run here; in
-        # a two-way screen one that could not test on an iteration where an
-        # entry happened does not, and is reported as untested removals.
-        stopped_uncomputable <- TRUE
+      } else if (length(iter_untestable) > 0L) {
+        # Name the half: in a two-way screen the other half may have tested
+        # its candidates and rejected them.
         emit(sprintf(
-          paste0("(stopped after %s: no candidate score or removal test ",
-                 "could be COMPUTED -- none was tested)"),
-          step_txt
+          paste0("(stopped after %s: no candidate score could be COMPUTED ",
+                 "for %s -- none was tested)"),
+          step_txt, paste(iter_untestable, collapse = " or ")
         ))
       } else {
         emit(sprintf("(no further action after %s)", step_txt))
@@ -711,6 +720,8 @@ hzr_stepwise <- function(fit,
     uncomputable_reasons  = uncomputable_reasons,
     n_wald_fallbacks      = n_wald_fallbacks,
     stopped_uncomputable  = stopped_uncomputable,
+    wald_untested_removals = wald_untested_removals,
+    wald_untested_entries  = wald_untested_entries,
     n_refit_failures      = length(refit_failures),
     refit_failures        = refit_failures,
     refit_failure_reasons = refit_failure_reasons,
@@ -729,8 +740,9 @@ hzr_stepwise <- function(fit,
 
   if (stopped_uncomputable) {
     warning("Stepwise selection stopped because no remaining candidate ",
-            "could be tested: its score statistic, or for a removal its Wald ",
-            "statistic, could not be computed (",
+            "could be tested for ", paste(stopped_untestable, collapse = " or "),
+            ": its score statistic, or its Wald statistic for want of a ",
+            "variance, could not be computed (",
             n_uncomputable_scores, " candidate score(s) were NA across the ",
             "run). This is not the same as no candidate meeting `slentry` ",
             "or `slstay`: the screen stopped without being able to test them.",
@@ -757,21 +769,24 @@ hzr_stepwise <- function(fit,
             "same way. See `$criteria$uncomputable_reasons` for which ",
             "mechanism applied.", call. = FALSE)
   }
-  if (!stopped_uncomputable &&
-        length(c(wald_untested_entries, wald_untested_removals)) > 0L) {
-    # The run went on, because other candidates could be tested, so the
-    # stopped warning stays quiet.  But each of these variables was decided
-    # with no test at all, which reads exactly like a test it failed (#389).
+  # Each of these variables was decided with no test at all, which reads
+  # exactly like a test it failed (#389).  A half the stop warning above
+  # already reports is left out here.
+  warn_removals <- if ("removal" %in% stopped_untestable) character() else
+    wald_untested_removals
+  warn_entries <- if ("entry" %in% stopped_untestable) character() else
+    wald_untested_entries
+  if (length(c(warn_removals, warn_entries)) > 0L) {
     warning("Stepwise selection decided ",
-            length(c(wald_untested_entries, wald_untested_removals)),
+            length(c(warn_removals, warn_entries)),
             " variable(s) without a Wald test",
-            if (length(wald_untested_removals)) {
+            if (length(warn_removals)) {
               paste0("; kept in the model with its removal untested: ",
-                     paste(wald_untested_removals, collapse = ", "))
+                     paste(warn_removals, collapse = ", "))
             },
-            if (length(wald_untested_entries)) {
+            if (length(warn_entries)) {
               paste0("; left out with its entry untested: ",
-                     paste(wald_untested_entries, collapse = ", "))
+                     paste(warn_entries, collapse = ", "))
             },
             ". Cause: ", .hzr_score_reason_text("wald_no_variance"),
             ". See `$criteria$uncomputable_reasons`.", call. = FALSE)
