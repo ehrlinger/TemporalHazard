@@ -10,6 +10,9 @@ theta_len_data <- function() {
   withr::local_seed(11)
   n <- 200
   d <- data.frame(f1 = factor(sample(c("a", "b", "c"), n, TRUE)),
+                  # Centred: at a mean of 50, early.log_mu and early.age
+                  # were confounded (correlation -0.998), noise in a length
+                  # test.
                   age = stats::rnorm(n))
   d$time <- stats::rexp(n, 0.3)
   d$dead <- stats::rbinom(n, 1, 0.7)
@@ -41,14 +44,14 @@ test_that("a multiphase theta of the right length fits (#408)", {
 
 test_that("a longer multiphase theta stops, naming both lengths (#408)", {
   expect_error(theta_len_fit(c(theta_ok, 0, 0)),
-               "'theta' has 11 entries, but this model takes 9")
+               "'theta' has 11 entries, but this model takes 9 \\(early 6, constant 3\\)")
 })
 
 test_that("a shorter multiphase theta stops with the same message (#408)", {
   # Was "'names' attribute [9] must be the same length as the vector [7]",
   # raised from inside the fit.
   expect_error(theta_len_fit(theta_ok[1:7]),
-               "'theta' has 7 entries, but this model takes 9")
+               "'theta' has 7 entries, but this model takes 9 \\(early 6, constant 3\\)")
 })
 
 test_that("a phase with its own formula is counted from that formula (#408)", {
@@ -61,7 +64,7 @@ test_that("a phase with its own formula is counted from that formula (#408)", {
   # too many here, so counting every phase from the global design would
   # pass this and fail the fit above.
   expect_error(theta_len_fit(c(own_ok, 0), phases = ph),
-               "'theta' has 9 entries, but this model takes 8")
+               "'theta' has 9 entries, but this model takes 8 \\(early 5, constant 3\\)")
 })
 
 test_that("an unfitted multiphase model still carries theta as supplied (#408)", {
