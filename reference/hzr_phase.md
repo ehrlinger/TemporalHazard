@@ -119,7 +119,16 @@ print(x, ...)
 
   :   \\\eta = 2/\gamma\\, so that \\\gamma\eta = 2\\. SAS/C: `FIXGE2`.
 
-  The derived parameter follows the others at every step of the
+  At `alpha = 1`, `hzr_phase()`'s default, the g3 form is
+  \\(t/\tau)^{\gamma\eta}\\ (see
+  [`hzr_decompos_g3()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos_g3.md)),
+  which depends on \\\gamma\\ and \\\eta\\ only through their product.
+  So \\\gamma\\ and \\\eta\\ are not separately identified there: under
+  `"eta_gamma"` the product is fixed at 2 and \\\gamma\\ is not
+  identified at all, and with both estimated only the product is. A fit
+  started there can report convergence with an arbitrary \\\gamma\\.
+  Start `alpha` away from 1, or fix \\\gamma\\, for such a phase. The
+  derived parameter follows the others at every step of the
   optimization, so it is not a free parameter and cannot be named in
   `fixed`; `"shapes"` leaves it out. Its starting value is computed from
   the others, and a value you supply for it, here or in the `theta`

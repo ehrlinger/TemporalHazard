@@ -39,8 +39,6 @@
   ([\#275](https://github.com/ehrlinger/TemporalHazard/issues/275)). If
   a function of that name was visible, the term became an ordinary
   covariate and entered every phase, a different model with no warning.
-  The control check also called `n_starts` off-path for a fit that used
-  it.
   [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   now drops the names from `dist` before reading it, so `fit$spec$dist`
   is stored without them.
@@ -1302,7 +1300,9 @@
   ([\#333](https://github.com/ehrlinger/TemporalHazard/issues/333)).**
   Reading the objective off a bare vector was an error outside the
   replicate’s own error handling. Such a replicate now counts as failed,
-  under the reason `"refit returned a <class>, not a fit object"`.
+  under the reason `"refit returned a <class>, not a fit object"`
+  (`an <class>` when the class begins with a vowel, as in
+  `"an integer"`).
   [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   never returns one; a stored call rewritten to another function can.
   The refusal of a `data =` that is not a data frame now names `data` in
@@ -1322,10 +1322,10 @@
   ([\#343](https://github.com/ehrlinger/TemporalHazard/issues/343)).** A
   refit returning a list with no `fit` was tallied as a convergence
   failure; it is now
-  `` "refit returned a <class> with no `fit`, not a fit object" ``, in
-  both modes. A refit whose fit held a finite objective but no estimates
-  counted as a success and then ended the run building its replicate
-  row; it is now a failed replicate,
+  `` "refit returned a <class> with no `fit`, not a fit object" ``
+  (`an <class>` before a vowel), in both modes. A refit whose fit held a
+  finite objective but no estimates counted as a success and then ended
+  the run building its replicate row; it is now a failed replicate,
   `"refit returned no parameter estimates"`.
   [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   returns neither. A fit with no `data` frame whose call names a formula

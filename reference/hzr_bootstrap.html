@@ -171,8 +171,8 @@ See <code><a href="hzr_stepwise.html">hzr_stepwise()</a></code>.</p></dd>
 
 <dt id="arg--">...<a class="anchor" aria-label="anchor" href="#arg--"></a></dt>
 <dd><p>Additional arguments forwarded to <code><a href="hzr_stepwise.html">hzr_stepwise()</a></code> (e.g.
-<code>control = list(n_starts = 1)</code>) when <code>scope</code> is supplied; ignored
-otherwise.</p></dd>
+<code>control = list(maxit = 500)</code>, which every <code>dist</code> reads) when <code>scope</code>
+is supplied; ignored otherwise.</p></dd>
 
 
 <dt id="arg-x">x<a class="anchor" aria-label="anchor" href="#arg-x"></a></dt>
@@ -208,7 +208,8 @@ estimates.</p></dd>
 <dd><p>Named integer vector counting why replicates
 failed, most common first: the refit's error message (or
 <code>"error with an empty message"</code>),
-<code>"refit returned a &lt;class&gt;, not a fit object"</code> (or <code>"... with no \code{fit}, not a fit object"</code>), <code>"refit returned no parameter estimates"</code>, or
+<code>"refit returned a &lt;class&gt;, not a fit object"</code> (<code>"an &lt;class&gt;"</code> when the
+class begins with a vowel; or <code>"... with no \code{fit}, not a fit object"</code>), <code>"refit returned no parameter estimates"</code>, or
 <code>"non-finite objective (did not converge)"</code>. It sums to <code>n_failed</code>, and
 is an empty named integer vector, never <code>NULL</code>, when none failed. When
 every replicate fails, <code>hzr_bootstrap()</code> also warns, naming the most

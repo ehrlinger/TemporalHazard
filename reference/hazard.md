@@ -236,7 +236,14 @@ same names giving the reason for each.
 
 Control parameters:
 
-- `maxit`: Maximum iterations (default 1000)
+- `maxit`: Maximum iterations of the quasi-Newton (BFGS) optimizer
+  (default 1000), applied to each start. A fit whose optimizer reports
+  convergence but fails SAS's gradient test is continued with
+  [`stats::nlm()`](https://rdrr.io/r/stats/nlm.html) under the same
+  limit (see "Convergence"), so raising `maxit` lets that continuation
+  run further too. The Nelder-Mead warm-up that a multiphase fit with
+  fixed parameters may run first has its own limit, which `maxit` does
+  not change.
 
 - `n_starts`: Number of optimization starts for multiphase fits (default
   5). Each start after the first offsets the initial values. The offsets

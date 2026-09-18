@@ -113,8 +113,8 @@ print(x, digits = 4, ...)
 
   Additional arguments forwarded to
   [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
-  (e.g. `control = list(n_starts = 1)`) when `scope` is supplied;
-  ignored otherwise.
+  (e.g. `control = list(maxit = 500)`, which every `dist` reads) when
+  `scope` is supplied; ignored otherwise.
 
 - x:
 
@@ -154,7 +154,8 @@ A list with class `"hzr_bootstrap"` containing:
 
   Named integer vector counting why replicates failed, most common
   first: the refit's error message (or `"error with an empty message"`),
-  `"refit returned a <class>, not a fit object"` (or
+  `"refit returned a <class>, not a fit object"` (`"an <class>"` when
+  the class begins with a vowel; or
   `"... with no \code{fit}, not a fit object"`),
   `"refit returned no parameter estimates"`, or
   `"non-finite objective (did not converge)"`. It sums to `n_failed`,

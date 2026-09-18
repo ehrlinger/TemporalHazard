@@ -173,7 +173,16 @@ the others rather than estimating it:</p><dl><dt><code>"none"</code></dt>
 \(\gamma\eta = 2\). SAS/C: <code>FIXGE2</code>.</p></dd>
 
 
-</dl><p>The derived parameter follows the others at every step of the
+</dl><p>At <code>alpha = 1</code>, <code>hzr_phase()</code>'s default, the g3 form is
+\((t/\tau)^{\gamma\eta}\) (see <code><a href="hzr_decompos_g3.html">hzr_decompos_g3()</a></code>),
+which depends on
+\(\gamma\) and \(\eta\) only through their product. So
+\(\gamma\) and \(\eta\) are not separately identified there: under
+<code>"eta_gamma"</code> the product is fixed at 2 and \(\gamma\) is not
+identified at all, and with both estimated only the product is. A fit
+started there can report convergence with an arbitrary \(\gamma\).
+Start <code>alpha</code> away from 1, or fix \(\gamma\), for such a phase.
+The derived parameter follows the others at every step of the
 optimization, so it is not a free parameter and cannot be named in
 <code>fixed</code>; <code>"shapes"</code> leaves it out. Its starting value is computed from the
 others, and a value you supply for it, here or in the <code>theta</code> given to
