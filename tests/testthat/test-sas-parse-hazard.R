@@ -11,9 +11,11 @@ test_that("a canonical AVC-style block becomes a hazard() call", {
   expect_equal(got$outhaz, "EX.HZD")
   expect_equal(got$call[["data"]], as.name("AVCS"))
   expect_equal(got$call[["time"]], as.name("INT_DEAD"))
+  # Only what hazard() reads. CONDITION and QUASI used to be emitted as
+  # `condition` and `method`, which nothing reads: the translator counted two
+  # options as mapped while they did nothing (#384).
   expect_equal(got$call[["control"]],
-               quote(list(maxit = 200, condition = 14, conserve = TRUE,
-                          method = "bfgs")))
+               quote(list(maxit = 200, conserve = TRUE)))
   # STEEPEST has no R equivalent and must be surfaced, not dropped.
   expect_true("STEEPEST" %in% got$untranslated$construct)
 })
@@ -70,8 +72,35 @@ test_that("a non-numeric MI is recorded, not coerced to NA", {
   got <- expect_silent(.hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]]))
   expect_true(any(grepl("MI|MAXITER", got$untranslated$construct)))
   expect_null(got$call[["control"]][["maxit"]])
-  # The valid option alongside it must still be translated.
-  expect_equal(got$call[["control"]][["condition"]], 14)
+  # The option alongside it is still handled: CONDITION has no R equivalent,
+  # so it is recorded rather than dropped (#384).
+  expect_true("CONDITION" %in% got$untranslated$construct)
+})
+
+test_that("CONDITION and QUASI are recorded, never emitted into control (#384)", {
+  txt <- .hzr_sas_normalise(paste(
+    "%HAZARD( PROC HAZARD DATA=A CONDITION=14 QUASI MI=50 CONSERVE;",
+    "EVENT D; TIME T; PARMS MUE=1 THALF=1 NU=1; );"
+  ))
+  got <- .hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]])
+  ctl <- as.list(got$call[["control"]])[-1L]
+  # Every emitted name is one the fitter reads (the census in #384).
+  read_by_fitter <- c("maxit", "reltol", "abstol", "n_starts", "conserve",
+                      "phase_share_tol", "start_seed")
+  expect_true(all(names(ctl) %in% read_by_fitter), info = toString(names(ctl)))
+  expect_null(ctl$condition)
+  expect_null(ctl$method)
+  u <- got$untranslated
+  # CONDITION= stops SAS's optimizer as ill-conditioned once log10 of the
+  # Hessian approximation's condition estimate exceeds it (setopt.c:452-456);
+  # hazard() has no such stop, only a warning on the final Hessian.
+  expect_equal(sum(u$construct == "CONDITION"), 1L)
+  expect_match(u$reason[u$construct == "CONDITION"], "setopt.c:452-456",
+               fixed = TRUE)
+  # QUASI chooses SAS's optimizer; hazard() has no choice to make.
+  expect_equal(sum(u$construct == "QUASINEWTON"), 1L)
+  expect_match(u$reason[u$construct == "QUASINEWTON"], "BFGS", fixed = TRUE)
+  expect_lte(got$tokens_mapped, got$tokens_seen)
 })
 
 test_that("tokens_mapped never exceeds tokens_seen when values are bad", {

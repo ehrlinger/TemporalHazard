@@ -439,18 +439,38 @@
           ctl$maxit <- val_num
         }
       },
+      # Recorded, never emitted: hazard() reads no `condition` (#384).
+      # CONDITION=n (3 to 14, hazpprc.c:48-56) stops PROC HAZARD's optimizer
+      # as ill-conditioned once log10 of its Hessian approximation's
+      # condition estimate exceeds n (setopt.c:452-456). hazard()'s optimizer
+      # has no such stop; it warns about the final Hessian after the fit.
       CONDITION   = {
+        mapped <- mapped - 1L
         val_num <- suppressWarnings(as.numeric(val))
         if (is.na(val_num)) {
-          mapped <- mapped - 1L
           note("CONDITION", "non-numeric value for CONDITION")
         } else {
-          ctl$condition <- val_num
+          note("CONDITION", paste0(
+            "CONDITION=", val, " stops PROC HAZARD's optimizer as ",
+            "ill-conditioned once log10 of the Hessian approximation's ",
+            "condition estimate exceeds it (setopt.c:452-456). hazard() has ",
+            "no such stop: it fits, then warns if the final Hessian is ",
+            "ill-conditioned"))
         }
       },
       CONSERVE    = ctl$conserve <- TRUE,
       NOCONSERVE  = ctl$conserve <- FALSE,
-      QUASINEWTON = ctl$method <- "bfgs",
+      # Recorded, never emitted: hazard() reads no `method` (#384). QUASI
+      # chooses PROC HAZARD's optimizer; hazard() has no choice to make.
+      QUASINEWTON = {
+        mapped <- mapped - 1L
+        note("QUASINEWTON", paste(
+          "QUASI chooses PROC HAZARD's quasi-Newton optimizer. hazard() has",
+          "no optimizer choice: it always uses BFGS, a quasi-Newton method,",
+          "continued with stats::nlm() when SAS's gradient test fails. The",
+          "search path can differ, and on a multimodal likelihood so can the",
+          "optimum"))
+      },
       STEEPEST    = {
         mapped <- mapped - 1L
         note("STEEPEST", "no R equivalent for steepest descent (issue #145)")
@@ -740,7 +760,7 @@
 
   # Canonical control order, so the emitted call does not depend on the order
   # the options happened to appear in the SAS text.
-  ctl <- ctl[intersect(c("maxit", "condition", "conserve", "method"),
+  ctl <- ctl[intersect(c("maxit", "conserve"),
                        names(ctl))]
   if (length(ctl)) args$control <- as.call(c(quote(list), ctl))
 

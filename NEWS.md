@@ -204,6 +204,16 @@
   not a `PROC HAZARD` refusal, so it is kept apart from the existing
   "selects no phase" stop.
 
+* **`hzr_translate_sas()` no longer writes `CONDITION=` or `QUASI` into
+  `hazard()`'s `control` (#384).** They were emitted as `condition` and
+  `method`, which `hazard()` never reads, so the translation counted two
+  options as mapped while they did nothing. No fit changes. Both are now
+  recorded in `$untranslated` with the reason. `CONDITION=` stops
+  `PROC HAZARD`'s optimizer when its Hessian approximation becomes too
+  ill-conditioned, and `hazard()` has no such stop; it warns about the final
+  Hessian instead. `QUASI` chooses `PROC HAZARD`'s optimizer, and `hazard()`
+  has no choice to make: it always uses BFGS.
+
 * **`hzr_translate_sas()` now emits a `stop()` in place of the fit when a
   job has no `DATA=` and a phase has covariates (#311).** A phase's
   covariates are evaluated only in `data`, and such a job's fit chunk has
