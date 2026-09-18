@@ -800,6 +800,12 @@ test_that("a bound shorter than status is named as a length mismatch (#340)", {
     TemporalHazard:::.hzr_check_sas_data(c(1, 0, 2, 1, 2, 1), 1:6,
                                          rep(0, 6), 1:5, "sas"),
     "time_upper has length 5, but status has length 6", fixed = TRUE)
+  # A bound left NULL is filled from `time`, so a short `time` is named as
+  # `time`, not as a time_lower the caller never passed (Copilot, #394).
+  msg <- tryCatch(
+    TemporalHazard:::.hzr_check_sas_data(c(1, 0, 2, 1, 2, 1), 1:4, NULL, NULL, "sas"),
+    error = conditionMessage)
+  expect_identical(msg, "time has length 4, but status has length 6.")
   # Control: equal lengths reach the ordinary checks and pass.
   expect_silent(TemporalHazard:::.hzr_check_sas_data(
     c(1, 0, 2), c(1, 2, 3), c(0, 0, 1), c(1, 2, 3), "sas"))

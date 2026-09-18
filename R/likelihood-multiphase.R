@@ -563,7 +563,10 @@
     # A short bound indexes past its end as NA, which the check below would
     # report as "an NA bound" -- the wrong defect (#340). hazard() validates
     # lengths first, so only a direct call reaches this.
-    for (b in list(list("time_lower", lower), list("time_upper", upper))) {
+    # A NULL bound was filled from `time`, so name `time`, not an argument
+    # the caller never passed (#394 review).
+    for (b in list(list(if (is.null(time_lower)) "time" else "time_lower", lower),
+                   list(if (is.null(time_upper)) "time" else "time_upper", upper))) {
       if (length(b[[2L]]) != length(status)) {
         stop(b[[1L]], " has length ", length(b[[2L]]), ", but status has ",
              "length ", length(status), ".", call. = FALSE)
