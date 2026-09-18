@@ -307,9 +307,10 @@ NULL
 #'   `theta`, read back from `fit$spec$control` by the stepwise refit and the
 #'   score test. The fit itself does not use it.
 #'
-#' `hazard()` accepts only the elements above: `maxit`, `reltol` and
-#' `shape_param_count` for every model, and `n_starts`, `start_seed`,
-#' `phase_share_tol` and `conserve` for `dist = "multiphase"` (#376).
+#' The elements above are accepted without a warning: `maxit`, `reltol`
+#' and `shape_param_count` for every model, and `n_starts`, `start_seed`,
+#' `phase_share_tol` and `conserve` for `dist = "multiphase"` (#376). Any
+#' other name either warns or is an error:
 #' - A name that nothing reads is an error that names it, rather than a
 #'   setting silently ignored: a misspelling such as `n_startz`, and `fix`
 #'   and `quasi`, which no fit has ever read. A fit given `fix` was never

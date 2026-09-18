@@ -261,9 +261,10 @@ Read \code{fit$spec$control$conserve_applied}, not
 score test. The fit itself does not use it.
 }
 
-\code{hazard()} accepts only the elements above: \code{maxit}, \code{reltol} and
-\code{shape_param_count} for every model, and \code{n_starts}, \code{start_seed},
-\code{phase_share_tol} and \code{conserve} for \code{dist = "multiphase"} (#376).
+The elements above are accepted without a warning: \code{maxit}, \code{reltol}
+and \code{shape_param_count} for every model, and \code{n_starts}, \code{start_seed},
+\code{phase_share_tol} and \code{conserve} for \code{dist = "multiphase"} (#376). Any
+other name either warns or is an error:
 \itemize{
 \item A name that nothing reads is an error that names it, rather than a
 setting silently ignored: a misspelling such as \code{n_startz}, and \code{fix}
