@@ -213,8 +213,10 @@ test_that("the drop pre-check adds no parse warnings of its own (#343)", {
       invokeRestart("muffleWarning")
     }
   )
-  # `z` drops, so the pre-check ran, and the warning term survives into the
-  # refit, so the refit's own parse still warns.
+  # `z` drops and the warning term survives into the refit, so the refit's
+  # own parse still warns. The count is the assertion that matters: these two
+  # expectations would also pass with the pre-check deleted, which the
+  # shared-reason tests above catch instead.
   expect_true(step$accepted)
   expect_identical(step$variable, "z")
   expect_equal(n_warn, 4L)

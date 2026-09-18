@@ -413,8 +413,11 @@
   reduced design", on both paths. The same pre-check parsed the current and
   the reduced formula before the refit parsed the reduced one again, which
   doubled any warning raised while building the design: 8 per step instead
-  of 4. It now parses quietly, since those warnings surface from the base fit
-  and from the refit.
+  of 4. It now parses quietly. When `data` is the frame the base was fitted
+  on, those warnings already surfaced from the base fit, and the reduced
+  formula's surface again from the refit if the drop goes ahead. When `data`
+  differs, the current formula's warnings on it are no longer shown; they
+  cannot change the pre-check's decision, which compares column counts.
 
 * **A fit made with `survival::Surv()`'s own status codes was wrong, not
   empty, and said nothing (#231).** `Surv()` codes interval-censored rows
