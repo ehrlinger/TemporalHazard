@@ -106,10 +106,15 @@ every replicate fails, \code{hzr_bootstrap()} also warns, naming the most
 common reason.}
 \item{n_uncomputable_replicates}{Select mode only: number of otherwise
 successful replicates whose screen stopped because no remaining
-candidate's score statistic could be computed, rather than because no
-candidate met \code{slentry}. Such replicates contribute no selections, so
-a non-zero count means every reported selection frequency is
-depressed. Always \code{0} in refit mode.}
+candidate could be tested (its score statistic, or for a removal its
+Wald statistic, could not be computed), rather than because no
+candidate met \code{slentry} or \code{slstay}. A non-zero count means every
+reported selection frequency is biased: a candidate such a replicate
+could not test for entry counts as not selected, and one it could not
+test for removal as selected. A replicate that went on after deciding
+a variable without a Wald test (\code{wald_no_variance}) is not counted
+here unless it also stopped, and gets a warning of its own either way.
+Always \code{0} in refit mode.}
 \item{uncomputable_reasons}{Select mode only: named integer vector
 counting \emph{why} candidate scores were unavailable, summed over every
 replicate. \code{information_indefinite} is the one to read first: it marks
