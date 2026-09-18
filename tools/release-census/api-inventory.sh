@@ -24,7 +24,7 @@ for side in old new; do
   tr -d ' \t' < "$WORK/$side.ns" | tr '\n' ' ' | tr -s ' ' \
     | sed 's/) */)\n/g' | grep -E '^(import|useDynLib|exportPattern|exportClass|exportMethod)' \
     | sed 's/,$//' | tr -d ' ' \
-    | awk -F'[(,)]' '{ for (i = 3; i <= NF; i++) if ($i != "") print $1 "(" $2 "," $i ")" }' \
+    | awk -F'[(,)]' '{ n = 0; for (i = 3; i <= NF; i++) if ($i != "") { print $1 "(" $2 "," $i ")"; n++ } if (n == 0) print $1 "(" $2 ")" }' \
     | sort -u > "$WORK/$side.other"
 done
 

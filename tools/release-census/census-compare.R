@@ -159,7 +159,9 @@ gate_verdict <- function(g) {
   #           maximum whatever `converged` reports.
   #   part 2, where the field exists: the relative-gradient test itself.
   #
-  # Absent or NA is always "cannot confirm", never "passed".
+  # In part 1, absent or NA is always "cannot confirm", never "passed"; so
+  # is a gradient that was recorded as NA. A side that predates the field
+  # is judged on part 1 alone, and the verdict line says so.
   if (is.null(g)) {
     return(list(ok = FALSE, why = "no gate data recorded"))
   }
@@ -312,8 +314,15 @@ for (nm in all_names) {
         detail = paste0(
           if (length(d)) paste0("components: ", paste(d, collapse = ", "),
                                 "; ", fmt_disc(md), obj, ". ") else "",
-          "BOTH SIDES AT A PROPER OPTIMUM, so this verdict is about the ",
-          "model. ", gates),
+          if (isTRUE(o$probe[[GATE_KEY]]$rel_gradient_present) &&
+                isTRUE(n$probe[[GATE_KEY]]$rel_gradient_present)) {
+            "BOTH SIDES AT A PROPER OPTIMUM, so this verdict is about the model. "
+          } else {
+            paste0("Both sides pass converged, finite SEs and rcond; the ",
+                   "SAS/C gradient test ran only where the version records ",
+                   "it (see the gates). ")
+          },
+          gates),
         gate_kp = kp_gate, kp = kp)
     }
   } else {

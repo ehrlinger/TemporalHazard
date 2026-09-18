@@ -21,6 +21,12 @@ nonascii() {
 }
 
 OLD="${1:?old ref required}"
+# An unknown ref made `git diff` fail inside `|| true`, which read as "no Rd
+# changed". Verify it first.
+if ! git rev-parse --verify --quiet "$OLD^{commit}" > /dev/null; then
+  echo "FAIL: '$OLD' is not a commit" >&2
+  exit 1
+fi
 
 CHANGED="$(git diff --name-only "$OLD..HEAD" -- man/ | grep '\.Rd$' || true)"
 ALLRD="$(ls man/*.Rd | wc -l | tr -d ' ')"
@@ -98,9 +104,14 @@ echo "=== whole-package sanity: raw non-ASCII in any Rd (\\enc{} is fine) ==="
 A=0
 for f in man/*.Rd; do
   if nonascii "$f" > /dev/null; then
-    # Every non-ASCII line must carry an \enc{} fallback; one line that does
-    # must not excuse another that does not.
-    if ! nonascii "$f" | grep -q -v -F '\enc{'; then
+    # Every non-ASCII byte must sit inside an \enc{}{} span: remove the
+    # spans, and any non-ASCII left over is raw, on any line.
+    if ! perl -ne 's/\\enc\{[^{}]*\}\{[^{}]*\}//g; exit 1 if /[^\x00-\x7F]/' "$f"; then
+      RAW=1
+    else
+      RAW=0
+    fi
+    if [ "$RAW" -eq 0 ]; then
       echo "  $f (inside \\enc{} -- correct, has an ASCII fallback)"
     else
       echo "  $f  <-- RAW non-ASCII: this is the PDF-manual failure mode"

@@ -12,7 +12,7 @@
 #   \dontrun vs \donttest     -- \dontrun is the one CRAN objects to
 #   \title in Title Case
 #   software names quoted     -- 'SAS', 'C', 'R' etc in \title/\description
-set -eu
+set -euo pipefail
 
 OLD="${1:?old ref required}"
 WORK="$(mktemp -d)"

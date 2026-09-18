@@ -44,7 +44,9 @@ say "waiting for the first census (pid $FIRST_PID) to finish"
 while :; do
   DONE_LOG=0
   DONE_PID=0
-  if grep -q "census-compare exit status" "$FIRST_WORK/orchestrator.log" 2>/dev/null; then
+  # census.log is the log run-census.sh itself writes; orchestrator.log
+  # existed only when the launcher redirected stdout there.
+  if grep -q "census-compare exit status" "$FIRST_WORK/census.log" 2>/dev/null; then
     DONE_LOG=1
   fi
   if ! kill -0 "$FIRST_PID" 2>/dev/null; then
