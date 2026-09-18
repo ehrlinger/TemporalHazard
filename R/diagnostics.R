@@ -1626,9 +1626,12 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     successful replicates whose screen stopped because no remaining
 #'     candidate could be tested (its score statistic, or for a removal its
 #'     Wald statistic, could not be computed), rather than because no
-#'     candidate met `slentry` or `slstay`. Such replicates contribute no selections, so
-#'     a non-zero count means every reported selection frequency is
-#'     depressed. Always `0` in refit mode.}
+#'     candidate met `slentry` or `slstay`. A non-zero count means every
+#'     reported selection frequency is biased: a candidate such a replicate
+#'     could not test for entry counts as not selected, and one it could not
+#'     test for removal as selected. A replicate that went on after deciding
+#'     a variable without a Wald test (`wald_no_variance`) is not counted
+#'     here, and gets a warning of its own. Always `0` in refit mode.}
 #'   \item{uncomputable_reasons}{Select mode only: named integer vector
 #'     counting *why* candidate scores were unavailable, summed over every
 #'     replicate. `information_indefinite` is the one to read first: it marks
@@ -2072,6 +2075,7 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # step-level warning never reaches the user here; the count has to be read
   # off the returned objects and reported in aggregate.
   n_uncomputable_reps <- 0L
+  n_wald_untested_reps <- 0L
   # Reasons are merged from EVERY select-mode replicate, not only the ones
   # that stopped. A replicate that finished having silently passed over a
   # candidate it could not score is the case a stopped-replicate count cannot
@@ -2204,6 +2208,11 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       if (select_mode) {
         if (isTRUE(boot_fit$criteria$stopped_uncomputable)) {
           n_uncomputable_reps <- n_uncomputable_reps + 1L
+        } else if (isTRUE(unname(boot_fit$criteria$uncomputable_reasons[
+          "wald_no_variance"]) > 0L)) {
+          # Replicates run quietly, so the screen's own warning about a
+          # variable decided without a Wald test never reaches the user (#389).
+          n_wald_untested_reps <- n_wald_untested_reps + 1L
         }
         uncomputable_reasons <- .hzr_merge_reasons(
           uncomputable_reasons, boot_fit$criteria$uncomputable_reasons
@@ -2322,8 +2331,9 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
             "stopped because no remaining candidate could be tested -- the ",
             "score statistic, or for a removal the Wald statistic, could not ",
             "be computed -- rather than because no candidate met `slentry` ",
-            "or `slstay`. Those replicates contribute no selections, so every ",
-            "reported selection frequency is depressed by them.",
+            "or `slstay`. Every reported selection frequency is biased by ",
+            "them: a candidate they could not test for entry counts as not ",
+            "selected, and one they could not test for removal as selected.",
             .hzr_format_reasons(uncomputable_reasons), call. = FALSE)
   } else if (n_indefinite > 0L) {
     # No replicate stopped, so the branch above stays quiet. Under
@@ -2341,6 +2351,15 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
             "information indefinite -- so their selection frequencies are ",
             "understated rather than merely noisy. See ",
             "`$uncomputable_reasons` for which mechanism.", call. = FALSE)
+  }
+
+  if (n_wald_untested_reps > 0L) {
+    warning(n_wald_untested_reps, " of ", n_success, " successful replicates ",
+            "decided a variable without a Wald test: a removal it could not ",
+            "test left the variable in, and an entry it could not test left ",
+            "it out, each counted as if tested. Cause: ",
+            .hzr_score_reason_text("wald_no_variance"), ". See ",
+            "`$uncomputable_reasons`.", call. = FALSE)
   }
 
   if (n_nonmonotone_reps > 0L) {

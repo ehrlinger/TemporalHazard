@@ -97,25 +97,34 @@ test_that("a forced-in candidate with no variance is not counted", {
   expect_false(any(grepl("could not be computed", w)))
 })
 
-test_that("a variable kept only because its removal test was NA is reported", {
-  obj <- .fit_overfitted()
+# Removal tests for x3 only come back NA. A single-distribution drop names its
+# coefficient by position (`beta<k>`), so which variable it is depends on the
+# step: resolve it through the current fit's design columns.
+.mask_x3_removal <- function(env = parent.frame(), only_while = NULL) {
   orig <- .hzr_candidate_score
   local_mocked_bindings(
     .hzr_candidate_score = function(...) {
       a <- list(...)
       s <- orig(...)
-      # A single-distribution drop names its coefficient by position
-      # (`beta<k>`), so which variable it is depends on the step.
-      cols <- colnames(a$current$data$x)
-      var <- cols[match(a$names, paste0("beta", seq_along(cols)))]
-      if (identical(var, "x3")) {
-        s$score <- NA_real_
-        s$p_value <- NA_real_
-        s$stat <- NA_real_
+      if (identical(a$mode, "drop")) {
+        cols <- colnames(a$current$data$x)
+        var <- cols[match(a$names, paste0("beta", seq_along(cols)))]
+        if (identical(var, "x3") &&
+              (is.null(only_while) || only_while %in% cols)) {
+          s$score <- NA_real_
+          s$p_value <- NA_real_
+          s$stat <- NA_real_
+        }
       }
       s
-    }
+    },
+    .env = env
   )
+}
+
+test_that("a variable kept only because its removal test was NA is reported", {
+  obj <- .fit_overfitted()
+  .mask_x3_removal()
   w <- testthat::capture_warnings(
     sw <- hzr_stepwise(obj$fit, data = obj$data, direction = "backward",
                        criterion = "wald", slstay = 0.20, trace = FALSE)
@@ -124,10 +133,190 @@ test_that("a variable kept only because its removal test was NA is reported", {
   expect_false(sw$criteria$stopped_uncomputable)
   expect_false("x3" %in% sw$steps$variable)
   expect_true("x3" %in% colnames(sw$data$x))
-  # ... but x3 was kept without a test, once per backward step taken.
+  # ... but x3 was kept without a test. The counter counts attempts, one per
+  # backward step; the warning names the variable once.
   expect_identical(sw$criteria$uncomputable_reasons[["wald_no_variance"]],
                    sw$criteria$n_uncomputable_scores)
   expect_identical(sw$criteria$n_uncomputable_scores,
                    nrow(sw$steps) + 1L)
-  expect_true(any(grepl("kept without being tested", w)))
+  expect_identical(sum(grepl("without a Wald test", w)), 1L)
+  expect_true(any(grepl(
+    "decided 1 variable\\(s\\) without a Wald test; kept in the model with its removal untested: x3\\.",
+    w
+  )))
+})
+
+test_that("a removal untested at one step and tested at a later one is not reported", {
+  # x3's test is NA only while x2 is still in the model; once x2 is dropped
+  # x3 is tested, so the screen decided it on a test.
+  obj <- .fit_overfitted()
+  .mask_x3_removal(only_while = "x2")
+  w <- testthat::capture_warnings(
+    sw <- hzr_stepwise(obj$fit, data = obj$data, direction = "backward",
+                       criterion = "wald", slstay = 0.20, trace = FALSE)
+  )
+  expect_identical(sw$steps$variable[1], "x2")
+  expect_gt(nrow(sw$steps), 0L)
+  expect_identical(sw$criteria$n_uncomputable_scores, 1L)
+  expect_false(any(grepl("without a Wald test", w)))
+})
+
+test_that("a two-way screen that tested its entries did not stop untested", {
+  # The entry is tested and rejected (noise x2, unreachable slentry) and the only
+  # removal cannot be tested: the iteration tested something, so it must not
+  # report that nothing was tested.
+  obj <- .fit_overfitted()
+  base <- hazard(Surv(time, status) ~ x3, data = obj$data,
+                 theta = c(0.5, 1.0, 0), dist = "weibull", fit = TRUE)
+  .mask_x3_removal()
+  msgs <- character()
+  out <- utils::capture.output(sw <- withCallingHandlers(
+    hzr_stepwise(base, scope = "x2", data = obj$data,
+                 direction = "both", criterion = "wald", slentry = 1e-12,
+                 slstay = 0.20, trace = TRUE),
+    warning = function(w) {
+      msgs <<- c(msgs, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
+  ))
+  msgs <- c(msgs, out)
+  expect_identical(nrow(sw$steps), 0L)
+  expect_false(sw$criteria$stopped_uncomputable)
+  expect_false(any(grepl("none was tested|stopped without being able", msgs)))
+  expect_true(any(grepl("removal untested: x3\\.", msgs)))
+})
+
+test_that("a forward Wald screen with no variances warns and counts them", {
+  skip_on_cran()
+  .mask_numderiv()
+  d <- .ic_backward_data()
+  fit <- suppressWarnings(hazard(
+    time = d$hi, status = d$st, time_lower = d$lo, time_upper = d$hi,
+    data = d, dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                        fixed = "shapes", formula = ~ age),
+      constant = hzr_phase("constant")
+    ),
+    fit = TRUE, control = list(n_starts = 1L, maxit = 500L)
+  ))
+  w <- testthat::capture_warnings(
+    sw <- hzr_stepwise(fit, data = d, scope = list(early = ~ mal + com_iv),
+                       direction = "forward", criterion = "wald",
+                       slentry = 0.05, trace = FALSE)
+  )
+  expect_identical(nrow(sw$steps), 0L)
+  expect_identical(sw$criteria$n_uncomputable_scores, 2L)
+  expect_identical(sw$criteria$uncomputable_reasons,
+                   c(wald_no_variance = 2L))
+  expect_true(sw$criteria$stopped_uncomputable)
+  expect_true(any(grepl("could not be computed", w)))
+})
+
+test_that("control: with variances the same forward Wald screen enters com_iv", {
+  skip_on_cran()
+  skip_if_not_installed("numDeriv")
+  d <- .ic_backward_data()
+  fit <- suppressWarnings(hazard(
+    time = d$hi, status = d$st, time_lower = d$lo, time_upper = d$hi,
+    data = d, dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                        fixed = "shapes", formula = ~ age),
+      constant = hzr_phase("constant")
+    ),
+    fit = TRUE, control = list(n_starts = 1L, maxit = 500L)
+  ))
+  sw <- suppressWarnings(
+    hzr_stepwise(fit, data = d, scope = list(early = ~ mal + com_iv),
+                 direction = "forward", criterion = "wald",
+                 slentry = 0.05, trace = FALSE)
+  )
+  expect_true("com_iv" %in% sw$steps$variable[sw$steps$action == "enter"])
+  expect_identical(sw$criteria$n_uncomputable_scores, 0L)
+})
+
+test_that("hzr_bootstrap() warns when replicates decide a variable untested", {
+  obj <- .fit_overfitted()
+  .mask_x3_removal()
+  w <- testthat::capture_warnings(
+    boot <- hzr_bootstrap(obj$fit, n_boot = 3, seed = 1,
+                          scope = c("x1", "x2", "x3"),
+                          direction = "backward", criterion = "wald",
+                          slstay = 0.20)
+  )
+  expect_identical(boot$n_uncomputable_replicates, 0L)
+  expect_gt(boot$uncomputable_reasons[["wald_no_variance"]], 0L)
+  expect_true(any(grepl(
+    paste0("^", boot$n_success, " of ", boot$n_success,
+           " successful replicates decided a variable without a Wald test"),
+    w
+  )))
+})
+
+test_that("a forward candidate whose refit failed is a refit failure, not untested", {
+  obj <- .fit_stepwise_base()
+  local_mocked_bindings(.hzr_refit_with_scope = function(...) stop("boom"))
+  step <- suppressWarnings(
+    .hzr_stepwise_forward_step(obj$fit, scope = c("x1", "x2"), data = obj$data,
+                               criterion = "wald", slentry = 0.05)
+  )
+  expect_identical(step$refit_failures, c("x1", "x2"))
+  expect_identical(step$n_uncomputable, 0L)
+  expect_null(step$stop_reason)
+})
+
+test_that("a forward entry left out only because its Wald test was NA is reported", {
+  obj <- .fit_stepwise_base()
+  orig <- .hzr_candidate_score
+  local_mocked_bindings(
+    .hzr_candidate_score = function(...) {
+      a <- list(...)
+      s <- orig(...)
+      if (identical(a$mode, "entry")) {
+        cols <- colnames(a$candidate$data$x)
+        var <- cols[match(a$names, paste0("beta", seq_along(cols)))]
+        if (identical(var, "x3")) {
+          s$score <- NA_real_
+          s$p_value <- NA_real_
+          s$stat <- NA_real_
+        }
+      }
+      s
+    }
+  )
+  w <- testthat::capture_warnings(
+    sw <- hzr_stepwise(obj$fit, scope = c("x1", "x2", "x3"), data = obj$data,
+                       direction = "forward", criterion = "wald",
+                       slentry = 0.05, trace = FALSE)
+  )
+  # x1 is tested and enters, and noise x2 is tested and rejected at the last
+  # step, so the run did not stop for want of a test ...
+  expect_identical(sw$steps$variable, "x1")
+  expect_false(sw$criteria$stopped_uncomputable)
+  # ... but x3 was left out untested, and is named once.
+  expect_identical(sw$criteria$uncomputable_reasons[["wald_no_variance"]], 2L)
+  expect_identical(sum(grepl("without a Wald test", w)), 1L)
+  expect_true(any(grepl("left out with its entry untested: x3\\.", w)))
+})
+
+test_that("a failed entry refit is not reported as a variable left out untested", {
+  # x2's refit fails, which is reported as a refit failure with its own
+  # reason; it must not also be named with the no-variance diagnosis.
+  obj <- .fit_stepwise_base()
+  orig <- .hzr_refit_with_scope
+  local_mocked_bindings(
+    .hzr_refit_with_scope = function(current, action, var, ...) {
+      if (identical(action, "add") && identical(var, "x2")) stop("boom")
+      orig(current, action = action, var = var, ...)
+    }
+  )
+  w <- testthat::capture_warnings(
+    sw <- hzr_stepwise(obj$fit, scope = c("x1", "x2"), data = obj$data,
+                       direction = "forward", criterion = "wald",
+                       slentry = 0.05, trace = FALSE)
+  )
+  expect_true("x2" %in% sw$criteria$refit_failures)
+  expect_true(any(grepl("candidate refit failed for x2: boom", w)))
+  expect_false(any(grepl("without a Wald test", w)))
 })

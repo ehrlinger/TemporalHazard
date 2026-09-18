@@ -854,10 +854,12 @@
     ),
     nonfinite = "the score or its variance was not finite",
     wald_no_variance = paste(
-      "the current model has no usable variance for the coefficient, so its",
-      "Wald test for removal could not be computed. A fit with interval- or",
-      "left-censored rows takes its variance from numDeriv, so this is what",
-      "a screen run without numDeriv installed reports"
+      "the model had no usable variance for the coefficient, so its Wald",
+      "test could not be computed: there was no variance matrix, the",
+      "coefficient's variance was not positive, or a multi-column term's",
+      "variance block was singular. A fit with interval- or left-censored",
+      "rows takes its variance from numDeriv, so a screen run without",
+      "numDeriv installed reports this for every variable"
     )
   )
   out <- unname(txt[reason])

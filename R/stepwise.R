@@ -400,6 +400,22 @@ hzr_stepwise <- function(fit,
   n_uncomputable_scores <- 0L
   uncomputable_reasons  <- stats::setNames(integer(0), character(0))
   n_wald_fallbacks      <- 0L
+  # Variables whose Wald test for entry or removal could not be computed
+  # (#389), by "var" / "var@phase" token: an untested removal stays in the
+  # model and an untested entry stays out, each as if it had been tested.
+  wald_untested_entries  <- character()
+  wald_untested_removals <- character()
+  # A variable's latest step decides: one untested at step 1 and tested at
+  # step 3 was tested.
+  wald_tokens <- function(scores, keep) {
+    scores <- scores[keep, , drop = FALSE]
+    paste0(scores$variable,
+           ifelse(is.na(scores$phase), "", paste0("@", scores$phase)))
+  }
+  update_untested <- function(set, scores, untested) {
+    setdiff(union(set, wald_tokens(scores, untested)),
+            wald_tokens(scores, !is.na(scores$score)))
+  }
   stopped_uncomputable  <- FALSE
   # Candidates whose REFIT failed, summed over steps.  The per-candidate
   # warning already fires inside the step, but nothing recorded it on the
@@ -530,6 +546,11 @@ hzr_stepwise <- function(fit,
         stopped_uncomputable <- TRUE
         iter_uncomputable    <- TRUE
       }
+      if (criterion == "wald" && nrow(fwd$all_scores) > 0L) {
+        wald_untested_entries <- setdiff(update_untested(
+          wald_untested_entries, fwd$all_scores, is.na(fwd$all_scores$score)
+        ), fwd$refit_failures %||% character())
+      }
       iter_refit_failures <- c(iter_refit_failures,
                                fwd$refit_failures %||% character())
       iter_refit_reasons <- c(iter_refit_reasons,
@@ -582,7 +603,18 @@ hzr_stepwise <- function(fit,
       uncomputable_reasons <- .hzr_merge_reasons(
         uncomputable_reasons, bwd$uncomputable_reasons
       )
-      if (identical(bwd$stop_reason, "scores_uncomputable")) {
+      if (nrow(bwd$all_scores) > 0L) {
+        wald_untested_removals <- update_untested(
+          wald_untested_removals, bwd$all_scores,
+          !bwd$all_scores$force_in & is.na(bwd$all_scores$score)
+        )
+      }
+      # This iteration tested nothing only if the forward half, when it ran,
+      # tested nothing either: a two-way screen whose entries were all tested
+      # and rejected did not stop for want of a test.
+      fwd_tested <- direction == "both" &&
+        any(!is.na(fwd$all_scores$score))
+      if (identical(bwd$stop_reason, "scores_uncomputable") && !fwd_tested) {
         iter_uncomputable <- TRUE
       }
       iter_refit_failures <- c(iter_refit_failures,
@@ -694,8 +726,6 @@ hzr_stepwise <- function(fit,
   n_indefinite <- sum(unname(uncomputable_reasons[untested_codes]),
                       na.rm = TRUE)
 
-  n_untested_drops <- sum(unname(uncomputable_reasons["wald_no_variance"]),
-                          na.rm = TRUE)
 
   if (stopped_uncomputable) {
     warning("Stepwise selection stopped because no remaining candidate ",
@@ -727,15 +757,24 @@ hzr_stepwise <- function(fit,
             "same way. See `$criteria$uncomputable_reasons` for which ",
             "mechanism applied.", call. = FALSE)
   }
-  if (!stopped_uncomputable && n_untested_drops > 0L) {
+  if (!stopped_uncomputable &&
+        length(c(wald_untested_entries, wald_untested_removals)) > 0L) {
     # The run went on, because other candidates could be tested, so the
-    # stopped warning stays quiet.  But each of these variables stayed in the
-    # model with no test at all, which reads exactly like "met slstay" (#389).
-    warning("Stepwise selection completed, but ", n_untested_drops,
-            " removal test(s) could not be computed, and those variables ",
-            "were kept without being tested: ",
-            .hzr_score_reason_text("wald_no_variance"), ". See ",
-            "`$criteria$uncomputable_reasons`.", call. = FALSE)
+    # stopped warning stays quiet.  But each of these variables was decided
+    # with no test at all, which reads exactly like a test it failed (#389).
+    warning("Stepwise selection decided ",
+            length(c(wald_untested_entries, wald_untested_removals)),
+            " variable(s) without a Wald test",
+            if (length(wald_untested_removals)) {
+              paste0("; kept in the model with its removal untested: ",
+                     paste(wald_untested_removals, collapse = ", "))
+            },
+            if (length(wald_untested_entries)) {
+              paste0("; left out with its entry untested: ",
+                     paste(wald_untested_entries, collapse = ", "))
+            },
+            ". Cause: ", .hzr_score_reason_text("wald_no_variance"),
+            ". See `$criteria$uncomputable_reasons`.", call. = FALSE)
   }
   # A completed run keeps the tally but says nothing about it, and a collision
   # is a naming mistake the user can fix, not a property of the data. The

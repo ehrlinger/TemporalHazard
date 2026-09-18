@@ -564,22 +564,28 @@
 
 ## Bug fixes
 
-* **A backward `hzr_stepwise()` screen that cannot test a removal now says
-  so (#389).** A variable is removed on the current model's Wald p-value,
-  which needs a variance for its coefficient. When that variance was
-  missing, the p-value was `NA` and the variable stayed in the model exactly
-  as if it had met `slstay`, with no warning, and
+* **`hzr_stepwise()` now says when it could not run a Wald test for an entry
+  or a removal (#389).** A Wald test needs the model's variance for the
+  coefficient. When that variance was missing, the p-value was `NA`, and the
+  variable was treated exactly as if it had been tested: an untested removal
+  stayed in the model as if it met `slstay`, and an untested entry stayed out
+  as if it missed `slentry`. There was no warning, and
   `$criteria$n_uncomputable_scores` stayed 0. The common case is an
   interval- or left-censored multiphase fit on an installation without
-  `numDeriv`, where no coefficient has a variance: such a screen stopped
-  after 0 steps and kept variables it drops when `numDeriv` is present.
-  These removals are now counted in `n_uncomputable_scores`, under the
-  reason `wald_no_variance` in `uncomputable_reasons`. A screen left with no
-  removal it can test sets `stopped_uncomputable` and warns that it stopped
-  without testing, and one that finishes after keeping an untested variable
-  warns that it did so. `hzr_bootstrap()` counts such replicates in
-  `n_uncomputable_replicates`. A forced-in variable is never a removal
-  candidate and is not counted.
+  `numDeriv`, where no coefficient has a variance. A backward screen there
+  stopped after 0 steps and kept variables it drops when `numDeriv` is
+  present; a forward Wald screen stopped after 0 steps and entered nothing.
+  Such tests are now counted in `n_uncomputable_scores` under the reason
+  `wald_no_variance`. A screen that could test nothing on its last step sets
+  `stopped_uncomputable` and warns that it stopped without testing. A screen
+  that went on warns once, naming each variable it kept or left out without a
+  test. `hzr_bootstrap()` runs its replicates quietly, so it now warns with the
+  number of replicates that decided a variable untested. A forced-in variable
+  is never a removal candidate and is not counted. The stop warnings of
+  `hzr_stepwise()` and `hzr_bootstrap()` now name both criteria, and
+  `hzr_bootstrap()` no longer says such replicates contribute no selections:
+  a replicate may stop after several steps, and an untested removal counts
+  as selected.
 
 * **A backward `hzr_stepwise()` drop's refusal now names the reduced design,
   and its pre-check no longer repeats parse-time warnings (#343).** The

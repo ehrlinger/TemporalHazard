@@ -108,9 +108,12 @@ common reason.}
 successful replicates whose screen stopped because no remaining
 candidate could be tested (its score statistic, or for a removal its
 Wald statistic, could not be computed), rather than because no
-candidate met \code{slentry} or \code{slstay}. Such replicates contribute no selections, so
-a non-zero count means every reported selection frequency is
-depressed. Always \code{0} in refit mode.}
+candidate met \code{slentry} or \code{slstay}. A non-zero count means every
+reported selection frequency is biased: a candidate such a replicate
+could not test for entry counts as not selected, and one it could not
+test for removal as selected. A replicate that went on after deciding
+a variable without a Wald test (\code{wald_no_variance}) is not counted
+here, and gets a warning of its own. Always \code{0} in refit mode.}
 \item{uncomputable_reasons}{Select mode only: named integer vector
 counting \emph{why} candidate scores were unavailable, summed over every
 replicate. \code{information_indefinite} is the one to read first: it marks

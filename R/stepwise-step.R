@@ -197,6 +197,8 @@
         df        = integer(),
         stringsAsFactors = FALSE
       ),
+      n_uncomputable = 0L,
+      uncomputable_reasons = stats::setNames(integer(0), character(0)),
       refit_failures = character(),
       refit_failure_reasons = character()
     )
@@ -289,12 +291,28 @@
   # them in a parallel list keyed by row for winner lookup.
   candidate_fits <- lapply(rows, function(r) attr(r, "fit"))
 
+  # A candidate whose refit converged but whose Wald p-value is NA was not
+  # tested: the refit has no usable variance for the entered coefficient.
+  # It stays out of the model exactly as if it had missed `slentry`, so count
+  # it, as the backward step counts an untested removal (#389).  A failed
+  # refit also scores NA, but is reported as a refit failure.  Under AIC the
+  # score needs no variance, so an NA there is a non-finite objective.
+  refit_ok <- vapply(candidate_fits, inherits, logical(1L), what = "hazard")
+  n_uncomputable <- sum(is.na(all_scores$score) & refit_ok)
+  uncomputable_reasons <- .hzr_tally_reasons(rep(
+    if (criterion == "wald") "wald_no_variance" else "nonfinite",
+    n_uncomputable
+  ))
+
   valid <- which(!is.na(all_scores$score))
   if (length(valid) == 0L) {
     out <- null_result()
     out$all_scores <- all_scores
+    out$n_uncomputable <- n_uncomputable
+    out$uncomputable_reasons <- uncomputable_reasons
     out$refit_failures <- failures
     out$refit_failure_reasons <- failure_reasons
+    if (n_uncomputable > 0L) out$stop_reason <- "scores_uncomputable"
     return(out)
   }
 
@@ -310,6 +328,8 @@
   if (!threshold_met) {
     out <- null_result()
     out$all_scores <- all_scores
+    out$n_uncomputable <- n_uncomputable
+    out$uncomputable_reasons <- uncomputable_reasons
     out$refit_failures <- failures
     out$refit_failure_reasons <- failure_reasons
     return(out)
@@ -327,6 +347,8 @@
     stat_type = best$stat_type,
     df        = best$df,
     all_scores = all_scores,
+    n_uncomputable = n_uncomputable,
+    uncomputable_reasons = uncomputable_reasons,
     refit_failures = failures,
     refit_failure_reasons = failure_reasons
   )
