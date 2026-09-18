@@ -571,6 +571,23 @@
   # where the fit would have been, and say what has to be done by hand.
   # This return precedes SELECTION parsing, so a job carrying BOTH refusals
   # records only this one; it still stops loudly, and no corpus job does both.
+  # PROC HAZARD itself refuses this job at parse: a syntax error in a phase
+  # statement (hazard_l.l:176 -> initprz.c:75-77) or ORDER= with /E, /I or /S
+  # (przconc.c:45-53 -> hazard.c:249-251). It produces no estimates, so a fit
+  # here would answer a job the reference never runs (#340). Checked first:
+  # SAS stops at parse, before anything the other refusals read.
+  if (length(parms$rejected)) {
+    msg <- paste0(
+      "PROC HAZARD does not run this job: ",
+      paste(parms$rejected, collapse = "; "), ". Correct the ",
+      "phase statement and translate the job again.")
+    return(list(
+      call = as.call(list(quote(stop), msg, call. = FALSE)),
+      status_call = NULL, outhaz = outhaz, untranslated = untr,
+      tokens_seen = seen, tokens_mapped = mapped
+    ))
+  }
+
   if (isTRUE(cens$refused)) {
     return(list(
       call = quote(stop(
@@ -803,10 +820,22 @@
   # rows in PROC HAZARD (see .hzr_parse_parms()), and hazard() cannot see
   # them. Stop in the status chunk, ahead of the fit, rather than fit more
   # rows than SAS did.
+  modelled <- unique(unlist(lapply(as.list(parms$phases)[-1L], function(ph) {
+    if (is.call(ph) && !is.null(ph[["formula"]])) all.vars(ph[["formula"]])
+  })))
   if (length(parms$listwise_only)) {
     lw <- lapply(parms$listwise_only, as.name)
     any_na <- Reduce(function(a, b) call("|", a, b),
                      lapply(lw, function(v) call("is.na", v)))
+    # Only rows hazard() would KEEP matter: where a modelled phase variable
+    # is also missing, hazard() drops the row itself, which is what SAS does
+    # too, so there is nothing to stop for (#340 item 8).
+    if (length(modelled)) {
+      kept <- Reduce(function(a, b) call("&", a, b),
+                     lapply(lapply(modelled, as.name),
+                            function(v) call("!", call("is.na", v))))
+      any_na <- call("&", call("(", any_na), call("(", kept))
+    }
     msg <- paste(
       "This job has rows where a phase variable outside the fitted base",
       "model --", paste(parms$listwise_only, collapse = ", "), "-- is",
@@ -828,6 +857,28 @@
       status_call[[3L]][[3L]] <- guarded
       status_call[[3L]]
     }
+  }
+  # A phase variable the dataset does not contain failed deep inside the
+  # chunk as "object 'ZZ' not found", naming neither the statement nor the
+  # dataset (#340 item 9). Check the names first and say so.
+  phase_vars <- union(modelled, parms$listwise_only)
+  if (!is.null(data_name) && length(phase_vars)) {
+    dsym <- as.name(data_name)
+    # No assignment: this runs inside transform(), where a new name could
+    # shadow a column of the same name, and every symbol in emitted code is
+    # read as a data column by the test oracle's synthetic data.
+    present <- bquote({
+      if (!all(.(phase_vars) %in% names(.(dsym)))) {
+        stop("This job's phase statements name ",
+             paste(setdiff(.(phase_vars), names(.(dsym))), collapse = ", "),
+             ", which are not columns of ", .(data_name), ". Add them to ",
+             .(data_name), " or remove them from the phase statements.",
+             call. = FALSE)
+      }
+    })
+    status_call[[3L]][[3L]] <- as.call(c(as.name("{"),
+                                         as.list(present)[-1L],
+                                         list(status_call[[3L]][[3L]])))
   }
   args$status <- cens$status_name
   if (!is.null(cens$time_lower)) args$time_lower <- cens$time_lower
@@ -1033,11 +1084,12 @@
 #'
 #' `SLENTRY` and `SLSTAY` are kept under `NOSTEPWISE` too: the forward
 #' screen still applies its entry threshold.
-#' @return `list(stepwise = TRUE, direction = <chr>,
-#'   slentry = <dbl|NULL>, slstay = <dbl|NULL>, untranslated = <data.frame>)`.
+#' @return `list(direction = <chr>, slentry = <dbl|NULL>, slstay = <dbl|NULL>,
+#'   untranslated = <data.frame>, ...)`. A SELECTION statement always turns
+#'   the screen on (hazard_y.y's `stepwisestmt`), so there is no on/off field.
 #' @noRd
 .hzr_selection_spec <- function(operands) {
-  out <- list(stepwise = TRUE, direction = "both", slentry = NULL,
+  out <- list(direction = "both", slentry = NULL,
               slstay = NULL, max_steps = NULL, max_move = NULL,
               refuse = character(0), robust = character(0),
               untranslated = .hzr_untranslated_frame())
