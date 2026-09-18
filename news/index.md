@@ -253,6 +253,30 @@
   warning. The error names the phase and its formula. Refit the base
   model with `data =` and retry.
 
+- **[`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  and
+  [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
+  now also refuse a multiphase fit saved before 1.1.0 when they cannot
+  tell whether its phase formula was used
+  ([\#324](https://github.com/ehrlinger/TemporalHazard/issues/324)).**
+  Such an object stores neither its data frame nor a record of which
+  phases used their formulas. On the vector interface, a call that names
+  `data = dd` reads the same whether `dd` was a data frame or `NULL`,
+  and a `NULL` there meant the phase formula was ignored. A fit with a
+  phase whose stored columns are the ones it would have inherited was
+  let through, and a screen then credited the ignored formula’s columns
+  to the candidate it was testing, with no warning. Such fits are now
+  refused, naming the phase and its formula. This also refuses a fit
+  that did use a phase formula whose columns are exactly the inherited
+  ones: without the record the two cannot be told apart. The check turns
+  on the stored data frame, not the version: a fit that kept
+  `data$frame` (every fit from 1.1.0 on, unless that element was
+  removed) is unaffected, and so is a call without `time =`. A call with
+  `time =` is read as the vector interface even when it also passes a
+  formula, so a wrapper’s `formula = fml` beside it is judged here too.
+  Refit the base model with the current version, passing `data =`, and
+  retry.
+
 - **[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   now stops when two design columns share a name**
   ([\#298](https://github.com/ehrlinger/TemporalHazard/issues/298)). A
