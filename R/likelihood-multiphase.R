@@ -1609,6 +1609,15 @@
 #' @keywords internal
 #' @noRd
 .hzr_formula_design <- function(formula, data) {
+  # The design always drops an intercept column, because a phase has no free
+  # intercept of its own (its scale `mu` plays that role). Without one,
+  # `~ 0 + age` would lose `age` instead, and a factor would code all its
+  # levels. So `~ 0 + x` builds exactly the design of `~ x` (#303).
+  tt <- stats::terms(formula, data = data)
+  if (attr(tt, "intercept") == 0L) {
+    attr(tt, "intercept") <- 1L
+    formula <- tt
+  }
   mf <- stats::model.frame(formula, data = data, na.action = stats::na.pass)
   mm <- stats::model.matrix(formula, data = mf)
   tt <- attr(mf, "terms")
@@ -2758,9 +2767,13 @@
     dphi_dgamma <- (d_plus$g3 - phi0) / eps_g
   }
 
-  # Central differences for alpha
-  if (alpha > h) {
-    eps_a <- max(abs(alpha) * h, 1e-10)
+  # Central differences for alpha, stepping in proportion to alpha so a
+  # small alpha stays positive. A forward step of h at alpha <= h moved
+  # alpha by 100% or more of itself and put this derivative, and the
+  # optimizer's gradient, 50-70% off (#332). Only alpha = 0, the exponential
+  # limit, needs the forward difference.
+  if (alpha > 0) {
+    eps_a <- alpha * h
     d_plus  <- hzr_decompos_g3(time, tau = tau, gamma = gamma,
                                  alpha = alpha + eps_a, eta = eta)
     d_minus <- hzr_decompos_g3(time, tau = tau, gamma = gamma,

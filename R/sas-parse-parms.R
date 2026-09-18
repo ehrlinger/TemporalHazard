@@ -68,60 +68,125 @@
 }
 
 #' Parse one phase's `EARLY`/`CONSTANT`/`LATE` operand text into covariate
-#' names, discarding a `/ options` tail and non-numeric `VAR=VALUE` pairs.
+#' names, starting values and per-variable options.
 #'
-#' The real grammar (`phasevaropt : phasevar phaseval phaseoptspec`, with
-#' `phaseoptspec : /*nothing*/ | '/' phaseopts`) is a comma-separated list of
-#' `VAR=startvalue` pairs or bare `VAR`s, optionally followed by `/ options`
-#' (the `PHOP` family, `EXCLUDE`/`INCLUDE`/`MOVE`/`ORDER`/`START`,
-#' deferred in v1 scope). `x` may be a single raw operand string (from the
-#' job parser) or an already-split character vector of bare names (the
-#' `.hzr_parse_parms()` `covars=` back-compat interface); both are handled by
-#' splitting every element on `/` then `,`, which is a no-op on a plain bare
-#' name.
+#' The real grammar is a comma-separated list of `phasevaropt : phasevar
+#' phaseval phaseoptspec` (`hazard_y.y`): `VAR`, an optional `= startvalue`,
+#' and an optional `/ options` that belongs to THAT variable alone. The lexer
+#' leaves option state at the next comma (`hazard_l.l`, `<PHOP>\\,`), so
+#' `AGE, MAL/I, OPMOS` is three covariates. Cutting the list at the first
+#' `/` instead dropped every later covariate from the model (#342).
+#'
+#' Options (lexer aliases in brackets): `EXCLUDE` (`E`), `INCLUDE` (`I`),
+#' `START` (`S`), `MOVE=` (`M`), `ORDER=` (`O`). Without a SELECTION
+#' statement `setstat.c` puts a bare, `START` or `INCLUDE` variable in the
+#' model and leaves an `EXCLUDE` one out, so an excluded variable is returned
+#' in `excluded`, not in `names`. `przconc.c` tests EXCLUDE before INCLUDE
+#' before START, and so does this. `MOVE=`, `ORDER=` and anything unrecognised
+#' are recorded per variable, never dropped silently.
+#'
+#' `x` may be a single raw operand string (from the job parser) or a
+#' character vector of pieces (the `.hzr_parse_parms()` `covars=` back-compat
+#' interface); each element is split on `,`.
+#' @return `list(names, values, flags, excluded, untranslated_construct,
+#'   untranslated_reason)`. `flags` is parallel to `names`: `""`, `"I"` or
+#'   `"S"`.
 #' @noRd
 .hzr_parse_phase_covars <- function(x) {
   names_out <- character(0)
   values_out <- numeric(0)
+  flags_out <- character(0)
   bad_construct <- character(0)
   bad_reason <- character(0)
-  opt_tail <- character(0)
+  bad <- function(construct, reason) {
+    bad_construct <<- c(bad_construct, construct)
+    bad_reason <<- c(bad_reason, reason)
+  }
 
   for (piece in x) {
-    slash <- .idx(piece, "/")
-    if (slash > 0L) {
-      tail <- trimws(substr(piece, slash + 1L, nchar(piece)))
-      if (nzchar(tail)) opt_tail <- c(opt_tail, tail)
-      piece <- substr(piece, 1L, slash - 1L)
-    }
-    parts <- strsplit(piece, ",", fixed = TRUE)[[1L]]
-    for (p in parts) {
+    for (p in strsplit(piece, ",", fixed = TRUE)[[1L]]) {
       p <- trimws(p)
       if (!nzchar(p)) next
-      eq <- .idx(p, "=")
-      if (eq == 0L) {
-        names_out <- c(names_out, p)
-        values_out <- c(values_out, NA_real_)
+      opts <- character(0)
+      slash <- .idx(p, "/")
+      # hazard_l.l has no "/" rule in option state, and a "/" with no name
+      # before it is a syntax error, so PROC HAZARD rejects both. Record the
+      # item rather than read it as a covariate or an option it is not.
+      if (slash == 1L || (slash > 0L && .idx(substr(p, slash + 1L, nchar(p)), "/") > 0L)) {
+        bad(p, "phase-statement item PROC HAZARD would reject as a syntax error")
         next
       }
-      var <- trimws(substr(p, 1L, eq - 1L))
-      val_chr <- trimws(substr(p, eq + 1L, nchar(p)))
-      val <- suppressWarnings(as.numeric(val_chr))
-      if (is.na(val)) {
-        bad_construct <- c(bad_construct, p)
-        bad_reason <- c(
-          bad_reason,
-          sprintf("non-numeric value for phase-statement covariate %s", var)
-        )
-      } else {
-        names_out <- c(names_out, var)
-        values_out <- c(values_out, val)
+      if (slash > 0L) {
+        opt_txt <- gsub("\\s*=\\s*", "=", substr(p, slash + 1L, nchar(p)))
+        opts <- strsplit(trimws(opt_txt), "[[:space:]/]+")[[1L]]
+        opts <- toupper(opts[nzchar(opts)])
+        # phaseopts needs at least one option (hazard_y.y), so a bare "/" is
+        # a syntax error PROC HAZARD rejects, not an option-free covariate.
+        if (!length(opts)) {
+          bad(p, "phase-statement item PROC HAZARD would reject as a syntax error")
+          next
+        }
+        p <- trimws(substr(p, 1L, slash - 1L))
       }
+      eq <- .idx(p, "=")
+      var <- if (eq == 0L) p else trimws(substr(p, 1L, eq - 1L))
+      val <- NA_real_
+      if (eq > 0L) {
+        val_chr <- trimws(substr(p, eq + 1L, nchar(p)))
+        val <- suppressWarnings(as.numeric(val_chr))
+        if (is.na(val)) {
+          bad(p, sprintf("non-numeric value for phase-statement covariate %s",
+                         var))
+          next
+        }
+      }
+
+      flag <- ""
+      for (o in opts) {
+        key <- sub("=.*$", "", o)
+        if (key %in% c("E", "EXCLUDE")) {
+          flag <- "E"
+        } else if (key %in% c("I", "INCLUDE")) {
+          if (flag != "E") flag <- "I"
+        } else if (key %in% c("S", "START")) {
+          if (!flag %in% c("E", "I")) flag <- "S"
+        } else if (key %in% c("M", "MOVE", "O", "ORDER")) {
+          long <- if (key %in% c("M", "MOVE")) "MOVE" else "ORDER"
+          bad(paste0(var, "/", long, sub("^[^=]*", "", o)),
+              sprintf(paste("per-variable %s= option on phase-statement",
+                            "covariate %s has no hazard() equivalent"),
+                      long, var))
+        } else {
+          bad(paste0(var, "/", o),
+              sprintf(paste("unrecognised phase option %s on phase-statement",
+                            "covariate %s"), o, var))
+        }
+      }
+      names_out <- c(names_out, var)
+      values_out <- c(values_out, val)
+      flags_out <- c(flags_out, flag)
     }
   }
 
-  list(names = names_out, values = values_out, options_tail = opt_tail,
-       untranslated_construct = bad_construct, untranslated_reason = bad_reason)
+  # A repeated covariate is one parameter: setconc.c maps every occurrence to
+  # the same slot, and setstat.c runs for each in turn, so the LAST occurrence
+  # sets its start value (0 when omitted) and its options. It keeps its first
+  # position. Emitting it twice put two entries in theta for one column.
+  last <- !duplicated(names_out, fromLast = TRUE)
+  first_pos <- match(names_out[last], names_out)
+  ord <- order(first_pos)
+  names_out <- names_out[last][ord]
+  values_out <- values_out[last][ord]
+  flags_out <- flags_out[last][ord]
+  excluded <- names_out[flags_out == "E"]
+  keep <- flags_out != "E"
+  names_out <- names_out[keep]
+  values_out <- values_out[keep]
+  flags_out <- flags_out[keep]
+
+  list(names = names_out, values = values_out, flags = flags_out,
+       excluded = excluded, untranslated_construct = bad_construct,
+       untranslated_reason = bad_reason)
 }
 
 #' `fixed=` value: a bare string for one entry, a `c(...)` call for several.
@@ -463,6 +528,11 @@
 #'
 #' @param operands Character vector of `PARMS` tokens, e.g.
 #'   `c("MUE=0.2", "THALF=0.15", "NU=1.4", "M=1", "FIXM", "MUC=0.0005")`.
+#' @param selection `FALSE` for a job with no `SELECTION` statement,
+#'   `"screen"` for a forward or two-way screen (bare variables are
+#'   candidates, withheld from the phase formulas), or `"backward"` (bare
+#'   variables start in the model, as `setstat.c` puts them there when
+#'   `H->sw` is 0).
 #' @param covars Optional named list of phase covariates, e.g.
 #'   `list(early = c("X1", "X2"), constant = , late = )`, from the operands of
 #'   the `EARLY` / `CONSTANT` / `LATE` statements.
@@ -478,7 +548,7 @@
 #'   could not read is recorded but not refused, because the refusal is a
 #'   claim about the reference and not about this parser.
 #' @noRd
-.hzr_parse_parms <- function(operands, covars = list()) {
+.hzr_parse_parms <- function(operands, covars = list(), selection = FALSE) {
   mu <- list()
   early <- list()
   late <- list()
@@ -849,35 +919,55 @@
   }
 
   # EARLY/CONSTANT/LATE operand text: comma-separated VAR=VALUE pairs (or
-  # bare VARs), optionally followed by a "/ options" tail. Non-numeric values
-  # and the options tail are recorded to untranslated, never guessed at; see
-  # .hzr_parse_phase_covars(). VAR=VALUE starting values are now mapped into
+  # bare VARs), each with its own optional "/ options". Non-numeric values
+  # and options with no hazard() equivalent are recorded to untranslated,
+  # never guessed at; see .hzr_parse_phase_covars(). VAR=VALUE starting values are now mapped into
   # theta (one entry per covariate, appended after that phase's shape block,
   # per .hzr_phase_theta_names()); a bare VAR with no value defaults to 0,
   # matching .hzr_phase_start().
   phase_covars <- list()
+  # Every covariate a phase statement names (not /E, which is excluded and
+  # guarded through listwise_only), before SELECTION withholds its
+  # candidates from phase_covars. A row about a phase that is not built must
+  # name all of them, or a candidate-only phase vanishes without a trace.
+  phase_named <- list()
   phase_covar_vals <- list()
+  phase_vars <- character(0)
+  # Under SELECTION a bare variable starts OUT of the model and is a
+  # candidate; /S starts in and may move; /I starts in and never moves
+  # (setstat.c with H->sw == 1). Without SELECTION every non-/E variable is
+  # simply in the model, which is the `selection = FALSE` path.
+  sel_candidates <- list()
+  sel_movable <- list()
+  # Kept per phase: /I in a phase that is not built pins nothing, because
+  # PROC HAZARD skips that phase's variables and their flags (setstat.c:9-12).
+  sel_force_in <- list()
   for (ph in c("early", "constant", "late")) {
     raw <- covars[[ph]]
     if (is.null(raw)) {
       phase_covars[[ph]] <- character(0)
+      phase_named[[ph]] <- character(0)
       phase_covar_vals[[ph]] <- numeric(0)
       next
     }
     parsed <- .hzr_parse_phase_covars(raw)
-    phase_covars[[ph]] <- parsed$names
-    phase_covar_vals[[ph]] <- parsed$values
+    # Candidates are withheld only from a FORWARD or two-way screen. Under
+    # BACKWARD, stpwprc.c leaves H->sw at 0, so setstat.c puts a bare
+    # variable IN the model and the screen drops from the full set.
+    withhold <- identical(selection, "screen")
+    keep <- if (withhold) parsed$flags %in% c("I", "S") else
+      rep(TRUE, length(parsed$names))
+    if (!isFALSE(selection)) {
+      sel_candidates[[ph]] <- parsed$names[parsed$flags == ""]
+      sel_movable[[ph]] <- parsed$names[parsed$flags %in% c("", "S")]
+      sel_force_in[[ph]] <- parsed$names[parsed$flags == "I"]
+    }
+    phase_covars[[ph]] <- parsed$names[keep]
+    phase_named[[ph]] <- parsed$names
+    phase_covar_vals[[ph]] <- parsed$values[keep]
+    phase_vars <- c(phase_vars, parsed$names, parsed$excluded)
     for (i in seq_along(parsed$untranslated_construct)) {
       flag_bad(parsed$untranslated_construct[[i]], parsed$untranslated_reason[[i]])
-    }
-    if (length(parsed$options_tail)) {
-      flag_bad(
-        paste("/", paste(parsed$options_tail, collapse = " ")),
-        sprintf(
-          "%s phase options (EXCLUDE/INCLUDE/MOVE/ORDER/START) are deferred (v1 scope)",
-          ph
-        )
-      )
     }
   }
 
@@ -1155,20 +1245,20 @@
 
   # (2) Everything belonging to a phase whose MU never activated it.
   if (!has_early) {
-    gone <- dropped(early, .hzr_parms_early_arg, fixed_early, phase_covars$early)
+    gone <- dropped(early, .hzr_parms_early_arg, fixed_early, phase_named$early)
     if (nzchar(gone)) {
       flag_bad(gone, paste0("early phase material with no active MUE: PROC ",
                             "HAZARD zeroes the shape operands (stmtprc.c:",
                             "101-112) and skips the covariates (setstat.c:9-12)"))
     }
   }
-  if (!has_muc && length(phase_covars$constant)) {
-    flag_bad(paste(phase_covars$constant, collapse = " "),
+  if (!has_muc && length(phase_named$constant)) {
+    flag_bad(paste(phase_named$constant, collapse = " "),
              paste0("constant phase covariates with no active MUC: PROC ",
                     "HAZARD skips them (setstat.c:9-12)"))
   }
   if (!has_late) {
-    gone <- dropped(late, .hzr_parms_late_arg, fixed_late, phase_covars$late)
+    gone <- dropped(late, .hzr_parms_late_arg, fixed_late, phase_named$late)
     if (nzchar(gone)) {
       flag_bad(gone, paste0("late phase material with no active MUL: PROC ",
                             "HAZARD zeroes the shape operands (stmtprc.c:",
@@ -1249,9 +1339,44 @@
              "MUL with no late phase shape operand (TAU/GAMMA/ALPHA/ETA)")
   }
 
+  # getrisk.c collects every phase-statement variable, of every phase and
+  # whatever its options, and readobs.c deletes a row where any is missing.
+  # hazard() drops missing rows only for variables in a formula it fits, so
+  # the rest -- /E variables, and covariates of a phase that is not built --
+  # are returned for the caller to guard.
+  modelled <- c(
+    if (has_early && length(early)) phase_covars$early,
+    if (has_muc) phase_covars$constant,
+    if (has_late && length(late)) phase_covars$late
+  )
+  # Scope is keyed by the name the BASE FIT will carry. The emitted phases
+  # list is unnamed, so hazard() auto-names them phase_1, phase_2, ... in
+  # build order: keying on "early"/"constant" fails with "Unknown phase(s)
+  # in scope". Only built phases have a key. sprintf(), not paste0():
+  # paste0("phase_", integer(0)) is "phase_", so a job that builds no phase
+  # crashed setNames() instead of reaching its "selects no phase" refusal.
+  built <- c(
+    if (has_early && length(early)) "early",
+    if (has_muc) "constant",
+    if (has_late && length(late)) "late"
+  )
+  selection_spec <- if (isFALSE(selection)) NULL else list(
+    scope = stats::setNames(
+      lapply(built, function(ph) sel_candidates[[ph]] %||% character(0)),
+      sprintf("phase_%d", seq_along(built))),
+    movable = stats::setNames(
+      lapply(built, function(ph) sel_movable[[ph]] %||% character(0)),
+      sprintf("phase_%d", seq_along(built))),
+    in_model = stats::setNames(
+      lapply(built, function(ph) phase_covars[[ph]] %||% character(0)),
+      sprintf("phase_%d", seq_along(built))),
+    force_in = unique(unlist(sel_force_in[built]))
+  )
   list(
     phases = as.call(c(quote(list), phase_calls)),
     theta = as.call(c(quote(c), theta_blocks)),
+    listwise_only = setdiff(unique(phase_vars), modelled),
+    selection = selection_spec,
     has_phases = length(phase_calls) > 0L,
     refused = refused,
     untranslated = .hzr_untranslated_frame(
