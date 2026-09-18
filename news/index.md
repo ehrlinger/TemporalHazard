@@ -66,6 +66,42 @@
     ill-conditioned to invert: standard errors are unavailable, with a
     warning.
 
+- **A multiphase phase formula without an intercept no longer drops its
+  first term
+  ([\#303](https://github.com/ehrlinger/TemporalHazard/issues/303)).**
+  `hzr_phase(formula = ~ 0 + age)` or `~ age - 1` fitted the phase
+  without `age`, and `~ 0 + age + mal` without `age`, with no warning
+  and no message. `~ 0 + age + grp`, for a factor `grp`, lost `age` and
+  kept a column for every level of `grp`.
+  [`predict()`](https://rdrr.io/r/stats/predict.html) repeated the same
+  design, so its results agreed with the wrong fit. A phase has no free
+  intercept of its own (its scale parameter plays that role), so such a
+  formula now builds exactly the design of the same formula with an
+  intercept: `~ 0 + age` fits as `~ age`, and factors are coded as they
+  would be with the intercept present, not with a column per level.
+  [`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
+  now warns that the removal is ignored, once, when the phase is
+  created. Refit a model whose phase formula had no intercept: its
+  estimates will change. A formula that fits as before starts with an
+  unordered factor, character or logical column under the default
+  treatment contrasts, which already built the design of the formula
+  with an intercept. An ordered factor, or any factor under other
+  `contrasts`, is now coded as it would be with the intercept (for an
+  ordered factor, `o.L` and `o.Q` rather than `om` and `oh`), so its
+  coefficients change meaning. An interaction first, such as
+  `~ 0 + g:age`, lost a column and now keeps it.
+
+  The score test in
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  rebuilt the other phases of the model the old way, so once the fit was
+  corrected they would have disagreed: a candidate’s score was computed
+  against a design the model was not fitted with, silently when the
+  column counts matched, and otherwise every candidate in the other
+  phases could not be scored. It now builds them as the fit does, and
+  declines to score (a score of `NA`) when a phase the step does not
+  change rebuilds with different columns than the fit stored, as a model
+  saved by an earlier version with such a formula can.
+
 - **[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   now refuses a multiphase phase formula with covariates when no `data`
   is supplied
@@ -658,6 +694,21 @@
   formula-environment constant changed since the fit, and collation in
   string comparisons. Fits saved before 1.1.0 kept no fitting data, and
   their column types are not checked.
+
+- **One row at time 0 no longer empties an exponential, Weibull or
+  log-normal fit
+  ([\#341](https://github.com/ehrlinger/TemporalHazard/issues/341)).** A
+  row right-censored at time 0, as `Surv(0, NA, type = "interval2")`
+  gives, contributes nothing to the likelihood. With any left- or
+  interval-censored row in the data, these three families refused the
+  whole fit instead: the objective was clamped, and
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  reported `converged = TRUE` at the starting values, with no warning
+  about the data. The log-normal refused such a row on any data, and
+  also refused an interval opening at 0, `(0, u]`, which is left
+  censoring at `u`. Each is now evaluated as the row it is, matching the
+  log-logistic and multiphase fits. Fits without such rows are
+  unchanged.
 
 - **The vignettes no longer skip every chunk in silence when the
   rendering session cannot see the installed package

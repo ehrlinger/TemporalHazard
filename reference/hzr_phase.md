@@ -82,8 +82,11 @@ print(x, ...)
   so without `data`
   [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
   refuses it, unless it builds nothing either way: an intercept-only
-  `~ 1` with no global `x`. When `NULL` (default), the phase inherits
-  the global design from
+  `~ 1` with no global `x`. The phase's scale parameter plays the role
+  of an intercept, so the design never has one: removing it
+  (`~ 0 + age`, `~ age - 1`) is ignored with a warning, and builds the
+  design of `~ age`. When `NULL` (default), the phase inherits the
+  global design from
   [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md):
   the global formula's covariates, or `x` on the vector interface.
 
