@@ -439,21 +439,6 @@
   } else {
     length(scope) == 0L || empty_formula(scope)
   }
-  if (direction == "backward" && !empty) {
-    remedy <- if (caller == "hzr_bootstrap") {
-      paste0("For a backward screen on each replicate, pass an empty ",
-             "`scope` such as `~ 1`; to screen a candidate set, use ",
-             "`direction = \"both\"` or `\"forward\"`. With `scope` unset, ",
-             "hzr_bootstrap() does not select at all.")
-    } else {
-      paste0("Pass the full model as the base fit, protect terms with ",
-             "`force_in`, and leave `scope` unset or empty.")
-    }
-    stop("`scope` has no effect when `direction = \"backward\"`: a backward ",
-         "screen only drops terms the base model already has, so a variable ",
-         "left out of `scope` is still dropped and one the base lacks is ",
-         "never tested. ", remedy, call. = FALSE)
-  }
   one_sided <- function(sc, what) {
     if (inherits(sc, "formula") && length(sc) == 3L) {
       stop(what, " must be one-sided: its left-hand side (`",
@@ -475,6 +460,24 @@
     }
   } else {
     one_sided(scope, "`scope`")
+  }
+  # After the structural checks, so a malformed scope gets the error that
+  # names its fault (the left-hand side, a repeated phase) under every
+  # direction; the backward refusal is about a well-formed scope.
+  if (direction == "backward" && !empty) {
+    remedy <- if (caller == "hzr_bootstrap") {
+      paste0("For a backward screen on each replicate, pass an empty ",
+             "`scope` such as `~ 1`; to screen a candidate set, use ",
+             "`direction = \"both\"` or `\"forward\"`. With `scope` unset, ",
+             "hzr_bootstrap() does not select at all.")
+    } else {
+      paste0("Pass the full model as the base fit, protect terms with ",
+             "`force_in`, and leave `scope` unset or empty.")
+    }
+    stop("`scope` has no effect when `direction = \"backward\"`: a backward ",
+         "screen only drops terms the base model already has, so a variable ",
+         "left out of `scope` is still dropped and one the base lacks is ",
+         "never tested. ", remedy, call. = FALSE)
   }
   invisible(NULL)
 }

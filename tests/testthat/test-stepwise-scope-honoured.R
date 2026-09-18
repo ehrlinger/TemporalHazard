@@ -89,6 +89,35 @@ test_that("a two-sided scope formula is refused, naming its left-hand side (#343
   )
 })
 
+test_that("a two-sided scope names its left-hand side under every direction (#343)", {
+  # NEWS promises the error names the left-hand side. The backward refusal
+  # ran first, so a two-sided scope under backward got the generic "no
+  # effect" message instead (Copilot on #367). The structural checks now
+  # come first, for both callers, and an empty two-sided scope is caught too.
+  lhs <- "`scope` must be one-sided: its left-hand side (`com_iv`) would be ignored"
+  d <- avc_343()
+  b0 <- weibull_343(d, survival::Surv(int_dead, dead) ~ 1, c(0.1, 1))
+  for (dir in c("backward", "forward", "both")) {
+    for (sc in list(com_iv ~ age + mal, com_iv ~ 1)) {
+      expect_error(
+        hzr_stepwise(b0, scope = sc, data = d, direction = dir,
+                     criterion = "wald", trace = FALSE),
+        lhs, fixed = TRUE, info = paste(dir, deparse(sc))
+      )
+    }
+  }
+  expect_error(
+    hzr_bootstrap(b0, n_boot = 2L, seed = 1L, scope = com_iv ~ 1,
+                  direction = "backward"),
+    lhs, fixed = TRUE
+  )
+  # A duplicated phase is refused under backward too, empty entries or not.
+  expect_error(
+    .hzr_refuse_unhonoured_scope(list(early = ~ 1, early = ~ 1), "backward"),
+    "`scope` names `early` more than once", fixed = TRUE
+  )
+})
+
 test_that("a two-sided multiphase scope element is refused, naming its phase (#343)", {
   skip_on_cran() # a multiphase fit
   d <- avc_343()
