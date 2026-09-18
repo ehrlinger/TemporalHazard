@@ -57,15 +57,32 @@ test_that("an out-of-range time scale is infeasible, not an error (#262)", {
         th, info = info
       )
     }
-    # A feasible scale is untouched: finite likelihood, finite score.
+    # A feasible scale is untouched: finite likelihood, finite score, and a
+    # Conservation of Events solve that actually runs. Each is asserted so
+    # that a regression which quietly treated a FEASIBLE scale as infeasible
+    # would fail -- the likelihood alone would not catch a zero-filled score
+    # or a skipped solve.
     th <- layouts[[nm]]$theta(log(3))
     expect_true(is.finite(.hzr_logl_multiphase(
       th, d$time, d$status, phases = ph, covariate_counts = counts,
-      x_list = x_list)))
+      x_list = x_list)), info = nm)
+    # Unsanitised, so an unevaluable component shows as NA rather than 0;
+    # and not all zero, since a feasible non-optimal point has a gradient.
+    g <- .hzr_gradient_multiphase(th, d$time, d$status, phases = ph,
+                                  covariate_counts = counts, x_list = x_list,
+                                  sanitize = FALSE)
+    expect_true(all(is.finite(g)), info = nm)
+    expect_false(isTRUE(all(g == 0)), info = nm)
+    # The solve moves the conserved phase's scale; the infeasible branch above
+    # returns theta unchanged, so equality here would mean it was skipped.
+    solved <- .hzr_conserve_events(th, "c", conserved, d$time, d$status, ph,
+                                   counts, x_list, sum(d$status))
+    expect_true(all(is.finite(solved)), info = nm)
+    expect_false(identical(solved, th), info = nm)
   }
 })
 
-test_that("the single-start fit from #262 fits (#262)", {
+test_that("the single-start fit from #262 completes instead of erroring (#262)", {
   skip_on_cran()
   withr::local_seed(3)
   n <- 300
@@ -83,6 +100,18 @@ test_that("the single-start fit from #262 fits (#262)", {
     ),
     fit = TRUE, control = list(n_starts = 1)
   ))
+  # What #262 claims, and what main fails: the single start is not discarded
+  # as errored. On main this fit stops with "no usable fit from 1 start: 1
+  # errored"; here the start completes.
+  expect_identical(fit$fit$starts$status, "ok")
   expect_true(is.finite(fit$fit$objective))
   expect_gt(fit$fit$objective, -1e9)
+  # Deliberately NOT asserted: convergence. This fit reports converged = TRUE,
+  # but its relative gradient (about 0.006) is roughly 1000 times over the
+  # limit SAS/C HAZARD accepts, and its Hessian is not positive definite, so
+  # it is not a verified optimum -- on a three-phase model these data
+  # probably cannot identify. #262 claims the start stops ERRORING, not that
+  # the fit reaches an optimum. Pinning `converged` would assert the
+  # optimizer's own flag, which says nothing about #262 here (see #351:
+  # `converged` is TRUE when a fit fails the relative-gradient test).
 })
