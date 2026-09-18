@@ -689,8 +689,9 @@
 * **A translated `SELECTION` job's check chunk no longer repeats
   `hzr_stepwise()`'s own warnings, or calls a failed Wald test an
   uncomputable score (#400).** Since #399, `hzr_stepwise()` warns when a
-  screen stops on candidates it could not test, and names every variable it
-  kept or left out without a Wald test. The check chunk after the screen
+  screen stops on candidates it could not test, listing every reason. When
+  the screen completed, it names each variable it kept in the model without
+  a Wald test of its removal. The check chunk after the screen
   still warned twice more. First it warned that the model had "no usable
   standard error". Then it warned that "N candidate score(s) were
   uncomputable", counting the Wald failures as scores. It now reads

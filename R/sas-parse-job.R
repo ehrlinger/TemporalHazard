@@ -1054,13 +1054,14 @@
     # does when a screen STOPPED on uncomputable candidates. This check says
     # only what the screen has not already said (#400).
     screen_check_call <- bquote({
-      rs <- fit$criteria$uncomputable_reasons
-      if (is.null(rs)) rs <- integer(0)
-      rs <- rs[names(rs) != "wald_no_variance"]
-      n_unscored <- sum(rs)
+      .reasons <- fit$criteria$uncomputable_reasons
+      if (is.null(.reasons)) .reasons <- integer(0)
+      .reasons <- .reasons[names(.reasons) != "wald_no_variance"]
+      n_unscored <- sum(.reasons)
       if (n_unscored > 0L && !isTRUE(fit$criteria$stopped_uncomputable)) {
         warning(n_unscored, " candidate score(s) could not be computed in ",
-                "this screen (", paste0(names(rs), " = ", rs, collapse = ", "),
+                "this screen (", paste0(names(.reasons), " = ", .reasons,
+                                  collapse = ", "),
                 "); see ", .(quote(fit_label)),
                 "$criteria$uncomputable_reasons. A candidate the screen ",
                 "could not score was not tested at that step.", call. = FALSE)
