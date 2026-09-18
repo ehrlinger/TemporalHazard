@@ -71,7 +71,7 @@ Default \code{0.20} matches SAS \code{SLSTAY}.}
 entered + exited more than \code{max_move} times it is frozen for the
 remainder of the run.  Default \code{4}.  A variable frozen on entry can
 still be dropped in the same iteration; see the
-\strong{Known limitation: the frozen set} section.}
+\strong{Known limitation (the frozen set)} section.}
 
 \item{force_in}{Character vector of variables that must remain in
 the model.  Such variables are still scored and reported in the
@@ -98,7 +98,7 @@ frozen action; see Details.}
 \item{\code{scope}}{Record of the candidate scope, plus
 \code{force_in}, \code{force_out}, and the frozen set.  \code{frozen} can name
 a variable the final model does not contain; see the
-\strong{Known limitation: the frozen set} section.}
+\strong{Known limitation (the frozen set)} section.}
 \item{\code{criteria}}{Named list of the threshold / direction
 settings actually applied, plus, under \code{criterion = "score"},
 \code{n_uncomputable_scores} (how many candidate scores were \code{NA}),
@@ -251,8 +251,8 @@ information-criterion search.}
 }
 }
 
-\section{Known limitation}{
- the frozen set:
+\section{Known limitation (the frozen set)}{
+
 
 \verb{$scope$frozen} can name a variable that the final model does not
 contain.  Each iteration makes a forward step and then a backward step,

@@ -117,7 +117,7 @@
 #'   entered + exited more than `max_move` times it is frozen for the
 #'   remainder of the run.  Default `4`.  A variable frozen on entry can
 #'   still be dropped in the same iteration; see the
-#'   **Known limitation: the frozen set** section.
+#'   **Known limitation (the frozen set)** section.
 #' @param force_in Character vector of variables that must remain in
 #'   the model.  Such variables are still scored and reported in the
 #'   selection trace, but are never dropped.
@@ -136,7 +136,7 @@
 #'     \item{\code{scope}}{Record of the candidate scope, plus
 #'       `force_in`, `force_out`, and the frozen set.  `frozen` can name
 #'       a variable the final model does not contain; see the
-#'       **Known limitation: the frozen set** section.}
+#'       **Known limitation (the frozen set)** section.}
 #'     \item{\code{criteria}}{Named list of the threshold / direction
 #'       settings actually applied, plus, under `criterion = "score"`,
 #'       `n_uncomputable_scores` (how many candidate scores were `NA`),
@@ -173,7 +173,7 @@
 #'     \item{\code{final_call}}{The call that produced this result.}
 #'   }
 #'
-#' @section Known limitation: the frozen set:
+#' @section Known limitation (the frozen set):
 #'
 #' `$scope$frozen` can name a variable that the final model does not
 #' contain.  Each iteration makes a forward step and then a backward step,
