@@ -40,7 +40,15 @@ hzr_stepwise(
 column not already in the model for every phase.  For
 single-distribution fits, pass a one-sided formula
 (\code{~ age + nyha}) or a character vector of names.  For multiphase
-fits, pass a named list of one-sided formulas keyed by phase.}
+fits, pass a named list of one-sided formulas keyed by phase, naming
+each phase once.  \code{scope} lists what may enter; a drop considers every
+term in the model except \code{force_in} and terms frozen by \code{max_move}
+before the iteration began (see the \strong{Known limitation (the frozen
+set)} section).  A two-sided formula is an error,
+since its left-hand side would never be a candidate, and so is a
+non-empty \code{scope} under \code{direction = "backward"}, which does not read
+it.  An empty scope (\code{~ 1}, \code{character()}, or a list of \code{NULL}s and
+\code{~ 1}s) is accepted there.}
 
 \item{data}{Data frame the base fit was built on.  Required for
 refits.}
@@ -211,11 +219,18 @@ and whether it is accepted.
 \item{\code{direction = "forward"}}{Start from the base model and only
 \emph{add} variables; the best eligible candidate enters each step
 until none clears the entry rule.  Variables never leave once in.}
-\item{\code{direction = "backward"}}{Start from the full candidate model and
-only \emph{drop} variables; the weakest term leaves each step until all
-survivors clear the retention rule.}
-\item{\code{direction = "both"} (default)}{Two-way stepwise: after each
-entry, already-selected variables are re-tested and may be dropped.
+\item{\code{direction = "backward"}}{Start from the base model, which must
+already hold every candidate, and only \emph{drop} variables; the weakest
+term leaves each step until all survivors clear the retention rule.
+\code{scope} is not read, so a non-empty one is an error: protect terms
+with \code{force_in}.}
+\item{\code{direction = "both"} (default)}{Two-way stepwise: on every
+iteration, whether or not a variable entered, every term in the model,
+the base model's included, is re-tested and may be dropped unless it
+is in \code{force_in} or was frozen by \code{max_move} before the iteration
+began; a variable frozen on entry can still be dropped in the same
+iteration (see the \strong{Known limitation (the frozen set)} section).
+\code{scope} limits what may enter, not what may leave.
 This is the SAS \code{SELECTION = STEPWISE} strategy.  \code{max_move} caps how
 often a single variable may oscillate before it is frozen.}
 }
