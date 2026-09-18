@@ -137,7 +137,18 @@ sas_synth_data <- function(job, n = 24L) {
       # ICENSOR hoists status into its own chunk, derived into the dataset
       # with transform(<data>, .hzr_status = .) so hazard()'s data mask
       # cannot shadow it; with no DATA= it is a bare local binding.
-      d <- if (identical(heads[[k]], "transform")) as.character(rhs[[2L]]) else ""
+      # A DATA= job's status chunk is a block when it first checks that the
+      # dataset has every phase variable (#340 item 9); the transform() is its
+      # last expression.
+      last <- job$calls[[k]]
+      if (is.call(last) && identical(last[[1L]], as.name("{"))) {
+        last <- last[[length(last)]]
+      }
+      d <- if (identical(.sas_head(last), "transform")) {
+        as.character(.sas_strip_assign(last)[[2L]])
+      } else {
+        ""
+      }
       add(d, "status", .sas_syms(rhs))
     }
     if (identical(heads[[k]], "hazard")) {

@@ -491,4 +491,10 @@ test_that("a phase variable missing from the data is named, not 'object not foun
   D$QQ <- stats::rnorm(60)
   res <- suppressWarnings(render_sim(job, list(D = D)))
   expect_true(res$ok, info = paste(res$results, collapse = "; "))
+  # A column named like the dataset must not mask it (Copilot, #396). Inside
+  # transform(), `D` resolved to that column, whose names() are NULL, so the
+  # check refused a job whose variables were all present.
+  D$D <- seq_len(60)
+  res <- suppressWarnings(render_sim(job, list(D = D)))
+  expect_true(res$ok, info = paste(res$results, collapse = "; "))
 })

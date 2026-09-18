@@ -864,9 +864,8 @@
   phase_vars <- union(modelled, parms$listwise_only)
   if (!is.null(data_name) && length(phase_vars)) {
     dsym <- as.name(data_name)
-    # No assignment: this runs inside transform(), where a new name could
-    # shadow a column of the same name, and every symbol in emitted code is
-    # read as a data column by the test oracle's synthetic data.
+    # No assignment: every symbol in emitted code is read as a data column by
+    # the test oracle's synthetic data, and a new name there changed it.
     present <- bquote({
       if (!all(.(phase_vars) %in% names(.(dsym)))) {
         stop("This job's phase statements name ",
@@ -876,9 +875,11 @@
              call. = FALSE)
       }
     })
-    status_call[[3L]][[3L]] <- as.call(c(as.name("{"),
-                                         as.list(present)[-1L],
-                                         list(status_call[[3L]][[3L]])))
+    # Ahead of transform(), not inside it: inside, a column named like the
+    # dataset masks it, names() of that column is NULL, and the check refused
+    # a job whose variables were all present (#396 review).
+    status_call <- as.call(c(as.name("{"), as.list(present)[-1L],
+                             list(status_call)))
   }
   args$status <- cens$status_name
   if (!is.null(cens$time_lower)) args$time_lower <- cens$time_lower
