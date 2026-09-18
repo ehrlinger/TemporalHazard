@@ -102,6 +102,38 @@
   change rebuilds with different columns than the fit stored, as a model
   saved by an earlier version with such a formula can.
 
+- **A model formula without an intercept now builds the design of the
+  same formula with one, with a warning
+  ([\#337](https://github.com/ehrlinger/TemporalHazard/issues/337)).**
+  Every distribution carries its own intercept, its baseline parameter
+  (the one the covariates add to). Without one in the formula,
+  `Surv(time, dead) ~ 0 + grp` coded a column for every level of a
+  factor `grp`, collinear with that parameter. A Weibull fit lost its
+  standard errors (`Hessian not invertible`). A multiphase fit
+  inheriting the design stopped 9.5 log-likelihood units below the fit
+  with the intercept, with warnings but wrong estimates. The formula now
+  fits as `Surv(time, dead) ~ grp`, and factors are coded as they would
+  be with the intercept. The design therefore has one column fewer, from
+  the first factor term: without an intercept R codes only the first
+  factor with every level, and later factors keep their usual coding, so
+  `~ 0 + f1 + f2` had `f1a f1b f1c f2y` and now has `f1b f1c f2y`. In a
+  single-distribution fit that is one coefficient fewer in `theta`. In a
+  multiphase fit, every phase that inherits the global design loses that
+  column, so `theta` is one entry shorter for each such phase; a phase
+  with its own `formula` is unaffected. To reuse a `theta` supplied for
+  the old design, drop the first factor’s first-level coefficient from
+  the global design, and from each phase that inherits it. Left
+  unchanged, a single-distribution fit stops with a
+  `non-conformable arguments` error. A multiphase fit does **not** stop:
+  the extra entries are carried along and only the standard errors are
+  flagged as unreliable, so check the length of any `theta` you supply
+  ([\#408](https://github.com/ehrlinger/TemporalHazard/issues/408)). A
+  numeric term fits as before (`~ 0 + age` is `~ age`), apart from the
+  new warning, which a
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  refit does not repeat. The phase-formula counterpart is
+  [\#303](https://github.com/ehrlinger/TemporalHazard/issues/303).
+
 - **[`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   and
   [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
