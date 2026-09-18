@@ -507,6 +507,23 @@
   to finish with zero steps now stops with an error. A base fitted on
   complete data is unaffected.
 
+* **A classed numeric *matrix* column was read as its raw storage, when
+  fitting as well as predicting (#371).** `hazard()` and
+  `predict(newdata = )` read a classed numeric column as its values (#231,
+  #347), but a column carrying a `dim` was left alone entirely, because a
+  genuine matrix column (`I(cbind(p, q))`, a `Surv`) must not be flattened.
+  A `bit64::integer64` matrix column therefore reached the model as its
+  stored doubles. On 120 rows of `avc` with `age` as such a column, the fit
+  ran on 9e-300 in every row: the covariate coefficient stayed at its
+  starting 0.004 and the log-likelihood came out -93.05 against -92.45 for
+  the same numbers as a plain column, with no error and no warning. The same
+  column in `newdata` predicted 0.1, 0.1414 and 0.2236 where the values give
+  0.1271, 0.2027 and 0.2521. Such a column is now read as its values and
+  keeps its shape. Which classes need reading is decided by behaviour rather
+  than by a list: the class's own `as.numeric()` is compared with the stored
+  doubles, and the column is replaced only when they differ, so a `Surv`
+  column, whose stored doubles are its values, keeps its class.
+
 * **A fit made with `survival::Surv()`'s own status codes was wrong, not
   empty, and said nothing (#231).** `Surv()` codes interval-censored rows
   `3`, and this package codes them `2`. Passing survival's integers as a
@@ -1222,6 +1239,24 @@
   formula too. **Selected models and p-values change** for any multiphase
   screen that stepped a phase without a formula while the global formula
   had covariates, or scored a candidate for a phase with an interaction.
+
+## Known limitations
+
+* **In a two-way `hzr_stepwise()` screen, `$scope$frozen` can name a
+  variable the final model excludes (#378).** With `direction = "both"`,
+  each iteration makes a forward step and then a backward step, and the
+  protected sets are fixed when the iteration starts, so a variable that the
+  forward step freezes can still be dropped by the backward step that
+  follows. Forward-only and backward-only screens are not affected: neither
+  makes both steps in one iteration, so their `$scope$frozen` and final model
+  agree. It is then reported as frozen while the selected model
+  does not contain it, and nothing warns. When they disagree, **trust the
+  final model and `$steps`**, which records both the `"frozen"` row and the
+  `"drop"` after it; read `$scope$frozen` as the variables that reached the
+  `max_move` cap, not as variables held in the model. This release does not
+  change the behaviour: correcting the timing alone was measured to keep
+  variables above `slstay` at the default `max_move`, so it is deferred to
+  be fixed together with how moves are counted (#379).
 
 # TemporalHazard 1.2.10
 
