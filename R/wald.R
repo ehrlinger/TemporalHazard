@@ -79,7 +79,11 @@
     p <- if (is.null(fit$data$x)) 0L else ncol(fit$data$x)
     if (length(theta) != n_shape + p) {
       stop(
-        "The fit's theta has ", length(theta), " value(s), but a ",
+        "The fit's theta has ", length(theta), " value(s), but ",
+        # Vowel-aware, not article-free: under hzr_bootstrap(scope = ) this
+        # message becomes a replicate's failure-reason key, so every
+        # consonant-initial dist keeps its key and only "a exponential" moves.
+        if (grepl("^[aeiou]", fit$spec$dist)) "an " else "a ",
         fit$spec$dist, " fit with ", p, " covariate column(s) has ",
         n_shape + p, " coefficients, so they cannot be matched to the ",
         "covariates.  Refit with a starting value for each covariate.",

@@ -26,3 +26,18 @@ test_that("a multiphase scope element that is not a formula names the phase (#32
            "named list of formulas keyed by phase.")
   )
 })
+
+test_that("a non-formula scope element names its class without a wrong article", {
+  # The class was interpolated after "not a", so `list(early = 1L)` read
+  # "not a integer" (ledger item 2). The class now follows a fixed article.
+  skip_on_cran() # a multiphase fit
+  d <- stats::na.omit(avc[, c("int_dead", "dead", "age", "mal")])
+  fit <- scope_list_fit(d)
+  msg <- tryCatch(
+    hzr_stepwise(fit, scope = list(late = 1L), data = d, trace = FALSE),
+    error = conditionMessage
+  )
+  expect_match(msg, "or NULL, not an object of class integer. A multiphase",
+               fixed = TRUE)
+  expect_no_match(msg, "not a integer", fixed = TRUE)
+})
