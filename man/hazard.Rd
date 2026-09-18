@@ -269,7 +269,10 @@ for every model, \code{shape_param_count} for a single-distribution model, and
 \code{n_starts}, \code{start_seed}, \code{phase_share_tol} and \code{conserve} for
 \code{dist = "multiphase"} (#376). Any other element draws one warning that
 names it and says why it has no effect, and the fit proceeds unchanged,
-as \code{\link[stats:optim]{stats::optim()}} does for unknown \code{control} names. That covers:
+as \code{\link[stats:optim]{stats::optim()}} does for unknown \code{control} names. The element is
+dropped before the fit, so a name such as \code{n_starts_extra} cannot be read
+as \code{n_starts}, and \code{fit$spec$control} keeps only the elements the fit
+reads. That covers:
 \itemize{
 \item a name no fit reads, such as the misspelling \code{n_startz}, and an unnamed
 element;

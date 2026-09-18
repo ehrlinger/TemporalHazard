@@ -315,7 +315,10 @@ NULL
 #' `n_starts`, `start_seed`, `phase_share_tol` and `conserve` for
 #' `dist = "multiphase"` (#376). Any other element draws one warning that
 #' names it and says why it has no effect, and the fit proceeds unchanged,
-#' as [stats::optim()] does for unknown `control` names. That covers:
+#' as [stats::optim()] does for unknown `control` names. The element is
+#' dropped before the fit, so a name such as `n_starts_extra` cannot be read
+#' as `n_starts`, and `fit$spec$control` keeps only the elements the fit
+#' reads. That covers:
 #' - a name no fit reads, such as the misspelling `n_startz`, and an unnamed
 #'   element;
 #' - `abstol` (read only by a bounded optimizer no fit uses), `method`,
@@ -901,7 +904,9 @@ hazard <- function(formula = NULL,
   if (!is.list(control)) {
     stop("'control' must be a list.", call. = FALSE)
   }
-  .hzr_validate_control(control, dist)
+  # Only the names this fit reads go on: consumers read control with `$`,
+  # which would partial-match a warned name such as n_starts_extra (#405).
+  control <- .hzr_validate_control(control, dist)
 
   # Multiphase validation
   if (dist == "multiphase") {
@@ -2674,19 +2679,21 @@ vcov.hazard <- function(object, ...) {
 #'
 #' @param control The `control` list, already known to be a list.
 #' @param dist The distribution name.
-#' @return `NULL`, invisibly; warns once about every element this fit does
-#'   not read.
+#' @return `control` restricted to the elements this fit reads, so that no
+#'   consumer's `$` can partial-match a warned name (`control$n_starts`
+#'   would read `n_starts_extra`); warns once about every other element.
 #' @keywords internal
 #' @noRd
 .hzr_validate_control <- function(control, dist) {
   if (length(control) == 0L) {
-    return(invisible(NULL))
+    return(control)
   }
   nm <- names(control)
   if (is.null(nm)) {
     nm <- rep("", length(control))
   }
   unnamed <- is.na(nm) | !nzchar(nm)
+  names_all <- nm
   nm <- nm[!unnamed]
   multiphase <- identical(dist, "multiphase")
   accepted <- c(.hzr_control_names$all,
@@ -2731,7 +2738,7 @@ vcov.hazard <- function(object, ...) {
             "\" fit, ignored: ", paste(notes, collapse = "; "), ".",
             call. = FALSE)
   }
-  invisible(NULL)
+  control[!unnamed & names_all %in% accepted]
 }
 
 #' Apply `.hzr_numeric_values()` to every column of a data frame or list

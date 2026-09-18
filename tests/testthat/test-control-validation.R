@@ -243,3 +243,50 @@ test_that("a warned name forwarded by bootstrap select mode still lets replicate
     expect_gt(sum(covariates$n), 0, label = names(ctl))
   }
 })
+
+test_that("a warned name that extends a read one is ignored, not partial-matched", {
+  # `$` partial-matches on lists, so control$n_starts would read
+  # n_starts_extra. The warning says ignored, so the fit must be the default
+  # one, not the one n_starts = 8 would give (#405 review).
+  data(avc, package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc[, c("int_dead", "dead")])
+  mp_raw <- function(ctl) {
+    hazard(
+      survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
+      phases = list(early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1),
+                    constant = hzr_phase("constant")),
+      fit = TRUE, control = modifyList(list(start_seed = 1L), ctl)
+    )
+  }
+  mp <- function(ctl) suppressWarnings(mp_raw(ctl))
+  default <- mp(list())
+  eight <- mp(list(n_starts = 8L))
+  # Known positive: n_starts changes this fit, so the check can fail.
+  expect_false(identical(default$fit$theta, eight$fit$theta))
+  w <- character()
+  mp_extra <- withCallingHandlers(
+    mp_raw(list(n_starts_extra = 8L)),
+    warning = function(x) {
+      w <<- c(w, conditionMessage(x))
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_true(any(grepl("n_starts_extra \\(not an element", w)))
+  expect_identical(mp_extra$fit$theta, default$fit$theta)
+})
+
+test_that("a misspelled maxit is ignored, not partial-matched", {
+  want <- cv_weibull(list(maxit = 1L), fit = TRUE)
+  plain <- cv_weibull(list(), fit = TRUE)
+  # Known positive: maxit = 1 changes this fit.
+  expect_false(identical(want$fit$theta, plain$fit$theta))
+  got <- suppressWarnings(cv_weibull(list(maxitt = 1L), fit = TRUE))
+  expect_identical(got$fit$theta, plain$fit$theta)
+})
+
+test_that("the stored control holds only the names the fit reads", {
+  obj <- suppressWarnings(cv_weibull(
+    list(maxit = 500, maxitt = 1, abstol = 1, n_starts = 2, 7)
+  ))
+  expect_identical(names(obj$spec$control), "maxit")
+})

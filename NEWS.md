@@ -634,7 +634,10 @@
   single-distribution stepwise refit and score test read back from the fit.
   Any other element now draws one warning that names it and says why it
   has no effect, and the fit proceeds unchanged, as `stats::optim()` does
-  for unknown `control` names. That covers a misspelling, an unnamed
+  for unknown `control` names. The element is dropped before the fit: R's
+  `$` matches a partial name, so `n_starts_extra` used to be read as
+  `n_starts`, and `fit$spec$control` now keeps only the elements the fit
+  reads. That covers a misspelling, an unnamed
   element, five names `?hazard` used to document as accepted although no
   fit read them (`abstol`, read only by a bounded optimizer that no fit
   uses, and `method`, `condition`, `nocov` and `nocor`), `fix` and `quasi`,
