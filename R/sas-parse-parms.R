@@ -68,60 +68,125 @@
 }
 
 #' Parse one phase's `EARLY`/`CONSTANT`/`LATE` operand text into covariate
-#' names, discarding a `/ options` tail and non-numeric `VAR=VALUE` pairs.
+#' names, starting values and per-variable options.
 #'
-#' The real grammar (`phasevaropt : phasevar phaseval phaseoptspec`, with
-#' `phaseoptspec : /*nothing*/ | '/' phaseopts`) is a comma-separated list of
-#' `VAR=startvalue` pairs or bare `VAR`s, optionally followed by `/ options`
-#' (the `PHOP` family, `EXCLUDE`/`INCLUDE`/`MOVE`/`ORDER`/`START`,
-#' deferred in v1 scope). `x` may be a single raw operand string (from the
-#' job parser) or an already-split character vector of bare names (the
-#' `.hzr_parse_parms()` `covars=` back-compat interface); both are handled by
-#' splitting every element on `/` then `,`, which is a no-op on a plain bare
-#' name.
+#' The real grammar is a comma-separated list of `phasevaropt : phasevar
+#' phaseval phaseoptspec` (`hazard_y.y`): `VAR`, an optional `= startvalue`,
+#' and an optional `/ options` that belongs to THAT variable alone. The lexer
+#' leaves option state at the next comma (`hazard_l.l`, `<PHOP>\\,`), so
+#' `AGE, MAL/I, OPMOS` is three covariates. Cutting the list at the first
+#' `/` instead dropped every later covariate from the model (#342).
+#'
+#' Options (lexer aliases in brackets): `EXCLUDE` (`E`), `INCLUDE` (`I`),
+#' `START` (`S`), `MOVE=` (`M`), `ORDER=` (`O`). Without a SELECTION
+#' statement `setstat.c` puts a bare, `START` or `INCLUDE` variable in the
+#' model and leaves an `EXCLUDE` one out, so an excluded variable is returned
+#' in `excluded`, not in `names`. `przconc.c` tests EXCLUDE before INCLUDE
+#' before START, and so does this. `MOVE=`, `ORDER=` and anything unrecognised
+#' are recorded per variable, never dropped silently.
+#'
+#' `x` may be a single raw operand string (from the job parser) or a
+#' character vector of pieces (the `.hzr_parse_parms()` `covars=` back-compat
+#' interface); each element is split on `,`.
+#' @return `list(names, values, flags, excluded, untranslated_construct,
+#'   untranslated_reason)`. `flags` is parallel to `names`: `""`, `"I"` or
+#'   `"S"`.
 #' @noRd
 .hzr_parse_phase_covars <- function(x) {
   names_out <- character(0)
   values_out <- numeric(0)
+  flags_out <- character(0)
   bad_construct <- character(0)
   bad_reason <- character(0)
-  opt_tail <- character(0)
+  bad <- function(construct, reason) {
+    bad_construct <<- c(bad_construct, construct)
+    bad_reason <<- c(bad_reason, reason)
+  }
 
   for (piece in x) {
-    slash <- .idx(piece, "/")
-    if (slash > 0L) {
-      tail <- trimws(substr(piece, slash + 1L, nchar(piece)))
-      if (nzchar(tail)) opt_tail <- c(opt_tail, tail)
-      piece <- substr(piece, 1L, slash - 1L)
-    }
-    parts <- strsplit(piece, ",", fixed = TRUE)[[1L]]
-    for (p in parts) {
+    for (p in strsplit(piece, ",", fixed = TRUE)[[1L]]) {
       p <- trimws(p)
       if (!nzchar(p)) next
-      eq <- .idx(p, "=")
-      if (eq == 0L) {
-        names_out <- c(names_out, p)
-        values_out <- c(values_out, NA_real_)
+      opts <- character(0)
+      slash <- .idx(p, "/")
+      # hazard_l.l has no "/" rule in option state, and a "/" with no name
+      # before it is a syntax error, so PROC HAZARD rejects both. Record the
+      # item rather than read it as a covariate or an option it is not.
+      if (slash == 1L || (slash > 0L && .idx(substr(p, slash + 1L, nchar(p)), "/") > 0L)) {
+        bad(p, "phase-statement item PROC HAZARD would reject as a syntax error")
         next
       }
-      var <- trimws(substr(p, 1L, eq - 1L))
-      val_chr <- trimws(substr(p, eq + 1L, nchar(p)))
-      val <- suppressWarnings(as.numeric(val_chr))
-      if (is.na(val)) {
-        bad_construct <- c(bad_construct, p)
-        bad_reason <- c(
-          bad_reason,
-          sprintf("non-numeric value for phase-statement covariate %s", var)
-        )
-      } else {
-        names_out <- c(names_out, var)
-        values_out <- c(values_out, val)
+      if (slash > 0L) {
+        opt_txt <- gsub("\\s*=\\s*", "=", substr(p, slash + 1L, nchar(p)))
+        opts <- strsplit(trimws(opt_txt), "[[:space:]/]+")[[1L]]
+        opts <- toupper(opts[nzchar(opts)])
+        # phaseopts needs at least one option (hazard_y.y), so a bare "/" is
+        # a syntax error PROC HAZARD rejects, not an option-free covariate.
+        if (!length(opts)) {
+          bad(p, "phase-statement item PROC HAZARD would reject as a syntax error")
+          next
+        }
+        p <- trimws(substr(p, 1L, slash - 1L))
       }
+      eq <- .idx(p, "=")
+      var <- if (eq == 0L) p else trimws(substr(p, 1L, eq - 1L))
+      val <- NA_real_
+      if (eq > 0L) {
+        val_chr <- trimws(substr(p, eq + 1L, nchar(p)))
+        val <- suppressWarnings(as.numeric(val_chr))
+        if (is.na(val)) {
+          bad(p, sprintf("non-numeric value for phase-statement covariate %s",
+                         var))
+          next
+        }
+      }
+
+      flag <- ""
+      for (o in opts) {
+        key <- sub("=.*$", "", o)
+        if (key %in% c("E", "EXCLUDE")) {
+          flag <- "E"
+        } else if (key %in% c("I", "INCLUDE")) {
+          if (flag != "E") flag <- "I"
+        } else if (key %in% c("S", "START")) {
+          if (!flag %in% c("E", "I")) flag <- "S"
+        } else if (key %in% c("M", "MOVE", "O", "ORDER")) {
+          long <- if (key %in% c("M", "MOVE")) "MOVE" else "ORDER"
+          bad(paste0(var, "/", long, sub("^[^=]*", "", o)),
+              sprintf(paste("per-variable %s= option on phase-statement",
+                            "covariate %s has no hazard() equivalent"),
+                      long, var))
+        } else {
+          bad(paste0(var, "/", o),
+              sprintf(paste("unrecognised phase option %s on phase-statement",
+                            "covariate %s"), o, var))
+        }
+      }
+      names_out <- c(names_out, var)
+      values_out <- c(values_out, val)
+      flags_out <- c(flags_out, flag)
     }
   }
 
-  list(names = names_out, values = values_out, options_tail = opt_tail,
-       untranslated_construct = bad_construct, untranslated_reason = bad_reason)
+  # A repeated covariate is one parameter: setconc.c maps every occurrence to
+  # the same slot, and setstat.c runs for each in turn, so the LAST occurrence
+  # sets its start value (0 when omitted) and its options. It keeps its first
+  # position. Emitting it twice put two entries in theta for one column.
+  last <- !duplicated(names_out, fromLast = TRUE)
+  first_pos <- match(names_out[last], names_out)
+  ord <- order(first_pos)
+  names_out <- names_out[last][ord]
+  values_out <- values_out[last][ord]
+  flags_out <- flags_out[last][ord]
+  excluded <- names_out[flags_out == "E"]
+  keep <- flags_out != "E"
+  names_out <- names_out[keep]
+  values_out <- values_out[keep]
+  flags_out <- flags_out[keep]
+
+  list(names = names_out, values = values_out, flags = flags_out,
+       excluded = excluded, untranslated_construct = bad_construct,
+       untranslated_reason = bad_reason)
 }
 
 #' `fixed=` value: a bare string for one entry, a `c(...)` call for several.
@@ -233,10 +298,13 @@
 # a result and is not.
 #
 # g_two/ga_two (the GAMMA*ETA = 2 and GAMMA*ETA/ALPHA = 2 constraint flags)
-# are driven by FIXGE2/FIXGAE2. .hzr_parse_parms() maps them onto
-# hzr_phase(constraint = ) itself, for WEIBULL only, and records every other
-# case -- so this trace takes both as FALSE rather than guessing. Every branch
-# below is therefore the !g_two && !ga_two column of the C's own tables.
+# are driven by FIXGE2/FIXGAE2, which .hzr_parse_parms() handles itself: it
+# maps them onto hzr_phase(constraint = ) for WEIBULL, mirrors (or refuses)
+# SETG3_ignore_tau() when that branch takes them, with or without WEIBULL, and
+# records every other case -- and does not call this trace for the
+# SETG3_ignore_tau() phases. So this trace takes both as FALSE rather than
+# guessing. Every branch below is therefore the !g_two && !ga_two column of
+# the C's own tables.
 
 # What each SETG3 refusal code objects to. The code alone is greppable but
 # opaque; a caller reading $untranslated needs to know which operand to change.
@@ -460,6 +528,11 @@
 #'
 #' @param operands Character vector of `PARMS` tokens, e.g.
 #'   `c("MUE=0.2", "THALF=0.15", "NU=1.4", "M=1", "FIXM", "MUC=0.0005")`.
+#' @param selection `FALSE` for a job with no `SELECTION` statement,
+#'   `"screen"` for a forward or two-way screen (bare variables are
+#'   candidates, withheld from the phase formulas), or `"backward"` (bare
+#'   variables start in the model, as `setstat.c` puts them there when
+#'   `H->sw` is 0).
 #' @param covars Optional named list of phase covariates, e.g.
 #'   `list(early = c("X1", "X2"), constant = , late = )`, from the operands of
 #'   the `EARLY` / `CONSTANT` / `LATE` statements.
@@ -475,7 +548,7 @@
 #'   could not read is recorded but not refused, because the refusal is a
 #'   claim about the reference and not about this parser.
 #' @noRd
-.hzr_parse_parms <- function(operands, covars = list()) {
+.hzr_parse_parms <- function(operands, covars = list(), selection = FALSE) {
   mu <- list()
   early <- list()
   late <- list()
@@ -689,21 +762,83 @@
   # SETG3_weibull() applies them (setg3.c:444-481, and SETG3_alpha_fixup() at
   # :815-834), with hzd_late_t2p.c deciding which parameter is derived at each
   # step. Only that branch is traced. Outside WEIBULL the flags go through
-  # SETG3_verify_ge_2() and SETG3_alpha_gener(), and together, or with ALPHA
-  # fixed at 1, SETG3_ignore_tau() fixes TAU, GAMMA and ETA (setg3.c:392-399);
-  # those stay recorded rather than guessed at.
+  # SETG3_verify_ge_2() and SETG3_alpha_gener(), which stay recorded rather
+  # than guessed at. Together, or with ALPHA fixed at 1, they take
+  # SETG3_ignore_tau() instead, which is mirrored below.
   late_constraint <- "none"
+  ignore_tau_handled <- FALSE
   constraint_flags <- c("FIXGE2", "FIXGAE2")[c(saw_ge2, saw_gae2)]
   if (length(constraint_flags) && !(has_late && length(late))) {
     for (flag in constraint_flags) {
       flag_bad(flag, "PARMS token has no phase target")
     }
+  } else if (length(constraint_flags) &&
+               (length(constraint_flags) == 2L || ignore_tau)) {
+    # setg3.c:312-314 takes SETG3_ignore_tau() for `g_two && ga_two`, or for
+    # ALPHA fixed at 1, and before the WEIBULL dispatch, so with or without
+    # WEIBULL. With either flag it then (setg3.c:377-400):
+    #   - fixes TAU at 1;
+    #   - fixes ALPHA at 1, refusing with SETG3940 if ALPHA is fixed at
+    #     anything else;
+    #   - fixes GAMMA and ETA at 2 and 1, or 1 and 2 when the job wrote ETA = 2.
+    # All four are exact, not a numerical branch: at alpha = 1 the likelihood
+    # sees only (t/tau)^(gamma*eta), and gamma*eta = 2 either way. So the
+    # values and the fixes are mirrored (see the TAU pin above for why a
+    # half-mirror leaves an aliased ridge).
+    fx_user <- function(param) param %in% fixed_late_user
+    written <- late_full
+    tau_raw <- if (tau_absent) NA_real_ else late[["tau"]]
+    # The entry refusals (setg3.c:269-284) run before SETG3_ignore_tau(); the
+    # SETG3 trace below records those from the unrewritten operands.
+    entry_refused <- (isTRUE(tau_raw <= 0) && fx_user("tau")) ||
+      (isTRUE(written[["gamma"]] <= 0) && fx_user("gamma")) ||
+      (isTRUE(written[["alpha"]] < 0) && fx_user("alpha")) ||
+      (isTRUE(written[["eta"]] <= 0) && fx_user("eta"))
+    if (!entry_refused && fx_user("alpha") &&
+          !isTRUE(written[["alpha"]] == 1)) {
+      # PROC HAZARD stops here, so nothing the trace below would describe
+      # is ever reached.
+      ignore_tau_handled <- TRUE
+      flag_bad(paste(constraint_flags, collapse = " "), paste0(
+        "PROC HAZARD refuses this job: SETG3 raises (SETG3940) -- ",
+        "SETG3_ignore_tau() must set ALPHA to 1, but ALPHA is fixed at ",
+        sprintf("%g", written[["alpha"]]), " (setg3.c:382-385)"))
+    } else if (!entry_refused) {
+      eta_two <- isTRUE(written[["eta"]] == 2)
+      late_full[["tau"]] <- 1
+      late_full[["alpha"]] <- 1
+      late_full[["gamma"]] <- if (eta_two) 1 else 2
+      late_full[["eta"]] <- if (eta_two) 2 else 1
+      fixed_late <- unname(.hzr_parms_late_arg)
+      ignore_tau_handled <- TRUE
+      # A TAU the job wrote is already reported below when ALPHA is fixed at
+      # 1; with both flags and ALPHA free nothing else says it.
+      moved <- c(
+        if (!ignore_tau && !tau_absent && !isTRUE(tau_raw == 1)) {
+          sprintf("TAU=%g", tau_raw)
+        },
+        vapply(c("gamma", "alpha", "eta"), function(param) {
+          if (isTRUE(written[[param]] == late_full[[param]])) "" else
+            sprintf("%s=%g", toupper(param), written[[param]])
+        }, character(1))
+      )
+      moved <- moved[nzchar(moved)]
+      if (length(moved)) {
+        flag_bad(paste(moved, collapse = " "), paste0(
+          "SETG3_ignore_tau() runs this phase at TAU = 1, ALPHA = 1, GAMMA = ",
+          sprintf("%g", late_full[["gamma"]]), ", ETA = ",
+          sprintf("%g", late_full[["eta"]]), ", all fixed (setg3.c:377-400), ",
+          "because ", if (length(constraint_flags) == 2L) {
+            "FIXGE2 and FIXGAE2 are both set"
+          } else {
+            paste(constraint_flags, "is set with ALPHA fixed at 1")
+          },
+          "; the emitted phase mirrors that, so the value(s) written here are ",
+          "used by neither PROC HAZARD nor the translation"))
+      }
+    }
   } else if (length(constraint_flags)) {
-    not_traced <- if (length(constraint_flags) == 2L || ignore_tau) {
-      paste0("SETG3_ignore_tau() then fixes TAU, GAMMA and ETA and sets ",
-             "ALPHA = 1 (setg3.c:392-399); hzr_phase() carries one ",
-             "constraint per phase, so write those fixed values directly")
-    } else if (!saw_weibull) {
+    not_traced <- if (!saw_weibull) {
       paste0("without WEIBULL, SETG3 applies it through SETG3_verify_ge_2() ",
              "and SETG3_alpha_gener(), which this translator does not trace")
     }
@@ -784,35 +919,55 @@
   }
 
   # EARLY/CONSTANT/LATE operand text: comma-separated VAR=VALUE pairs (or
-  # bare VARs), optionally followed by a "/ options" tail. Non-numeric values
-  # and the options tail are recorded to untranslated, never guessed at; see
-  # .hzr_parse_phase_covars(). VAR=VALUE starting values are now mapped into
+  # bare VARs), each with its own optional "/ options". Non-numeric values
+  # and options with no hazard() equivalent are recorded to untranslated,
+  # never guessed at; see .hzr_parse_phase_covars(). VAR=VALUE starting values are now mapped into
   # theta (one entry per covariate, appended after that phase's shape block,
   # per .hzr_phase_theta_names()); a bare VAR with no value defaults to 0,
   # matching .hzr_phase_start().
   phase_covars <- list()
+  # Every covariate a phase statement names (not /E, which is excluded and
+  # guarded through listwise_only), before SELECTION withholds its
+  # candidates from phase_covars. A row about a phase that is not built must
+  # name all of them, or a candidate-only phase vanishes without a trace.
+  phase_named <- list()
   phase_covar_vals <- list()
+  phase_vars <- character(0)
+  # Under SELECTION a bare variable starts OUT of the model and is a
+  # candidate; /S starts in and may move; /I starts in and never moves
+  # (setstat.c with H->sw == 1). Without SELECTION every non-/E variable is
+  # simply in the model, which is the `selection = FALSE` path.
+  sel_candidates <- list()
+  sel_movable <- list()
+  # Kept per phase: /I in a phase that is not built pins nothing, because
+  # PROC HAZARD skips that phase's variables and their flags (setstat.c:9-12).
+  sel_force_in <- list()
   for (ph in c("early", "constant", "late")) {
     raw <- covars[[ph]]
     if (is.null(raw)) {
       phase_covars[[ph]] <- character(0)
+      phase_named[[ph]] <- character(0)
       phase_covar_vals[[ph]] <- numeric(0)
       next
     }
     parsed <- .hzr_parse_phase_covars(raw)
-    phase_covars[[ph]] <- parsed$names
-    phase_covar_vals[[ph]] <- parsed$values
+    # Candidates are withheld only from a FORWARD or two-way screen. Under
+    # BACKWARD, stpwprc.c leaves H->sw at 0, so setstat.c puts a bare
+    # variable IN the model and the screen drops from the full set.
+    withhold <- identical(selection, "screen")
+    keep <- if (withhold) parsed$flags %in% c("I", "S") else
+      rep(TRUE, length(parsed$names))
+    if (!isFALSE(selection)) {
+      sel_candidates[[ph]] <- parsed$names[parsed$flags == ""]
+      sel_movable[[ph]] <- parsed$names[parsed$flags %in% c("", "S")]
+      sel_force_in[[ph]] <- parsed$names[parsed$flags == "I"]
+    }
+    phase_covars[[ph]] <- parsed$names[keep]
+    phase_named[[ph]] <- parsed$names
+    phase_covar_vals[[ph]] <- parsed$values[keep]
+    phase_vars <- c(phase_vars, parsed$names, parsed$excluded)
     for (i in seq_along(parsed$untranslated_construct)) {
       flag_bad(parsed$untranslated_construct[[i]], parsed$untranslated_reason[[i]])
-    }
-    if (length(parsed$options_tail)) {
-      flag_bad(
-        paste("/", paste(parsed$options_tail, collapse = " ")),
-        sprintf(
-          "%s phase options (EXCLUDE/INCLUDE/MOVE/ORDER/START) are deferred (v1 scope)",
-          ph
-        )
-      )
     }
   }
 
@@ -827,6 +982,27 @@
   # has no shape operand is recorded rather than built, because PROC HAZARD
   # would supply its own shape defaults and they are not this parser's -- see
   # the orphan branches below.
+  # A shape that is not finite, as written (GAMMA=1e400 reads as Inf) or after
+  # a rewrite above (2/ETA, GAMMA*ETA/2), cannot be built: hzr_phase() refuses
+  # it. Say so here rather than let the translation read clean over a call
+  # that stops.
+  for (shape in list(if (has_early && length(early)) early_full,
+                     if (has_late && length(late)) late_full)) {
+    for (param in names(shape)) {
+      value <- shape[[param]]
+      if (is.numeric(value) && length(value) == 1L && !is.finite(value)) {
+        # After SETG3's rewrites, not as written: an operand that is infinite
+        # as written but replaced by a rewrite is not flagged, because PROC
+        # HAZARD reads it the same way (hazard_l.l:53 scans with sscanf and
+        # no range check) and applies the same rewrite, so the emitted model
+        # is the one it fits.
+        flag_bad(sprintf("%s=%g", toupper(param), value), paste0(
+          toupper(param), " is not a finite number after SETG3's rewrites, ",
+          "so the emitted hzr_phase() call cannot be built"))
+      }
+    }
+  }
+
   phase_calls <- list()
   theta_blocks <- list()
   if (has_early && length(early)) {
@@ -890,7 +1066,10 @@
   # of .hzr_setg3_notes() for why a refusal and a rewrite are both recorded
   # while only the two identifiability fixes are mirrored.
   setg3_refused <- FALSE
-  if (length(late) && has_late) {
+  # The trace assumes neither constraint flag, so it does not describe a phase
+  # SETG3_ignore_tau() ran under one: that phase is fully determined above, or
+  # refused there with SETG3940.
+  if (length(late) && has_late && !ignore_tau_handled) {
     setg3 <- .hzr_setg3_notes(
       tau_raw = if (tau_absent) NA_real_ else late[["tau"]],
       gamma = late_full[["gamma"]],
@@ -1001,7 +1180,7 @@
              "by neither PROC HAZARD nor the translation")
     )
   } else if (length(late) && has_late && !setg3_refused && tau_defaulted &&
-             !ignore_tau) {
+             !ignore_tau && !ignore_tau_handled) {
     # Which data-dependent default applies depends on whether the job wrote a
     # TAU at all -- see the tau_absent/tau_nonpositive split above.
     # The other SETG3 branch (setg3.c:316-318), reached only when the
@@ -1066,20 +1245,20 @@
 
   # (2) Everything belonging to a phase whose MU never activated it.
   if (!has_early) {
-    gone <- dropped(early, .hzr_parms_early_arg, fixed_early, phase_covars$early)
+    gone <- dropped(early, .hzr_parms_early_arg, fixed_early, phase_named$early)
     if (nzchar(gone)) {
       flag_bad(gone, paste0("early phase material with no active MUE: PROC ",
                             "HAZARD zeroes the shape operands (stmtprc.c:",
                             "101-112) and skips the covariates (setstat.c:9-12)"))
     }
   }
-  if (!has_muc && length(phase_covars$constant)) {
-    flag_bad(paste(phase_covars$constant, collapse = " "),
+  if (!has_muc && length(phase_named$constant)) {
+    flag_bad(paste(phase_named$constant, collapse = " "),
              paste0("constant phase covariates with no active MUC: PROC ",
                     "HAZARD skips them (setstat.c:9-12)"))
   }
   if (!has_late) {
-    gone <- dropped(late, .hzr_parms_late_arg, fixed_late, phase_covars$late)
+    gone <- dropped(late, .hzr_parms_late_arg, fixed_late, phase_named$late)
     if (nzchar(gone)) {
       flag_bad(gone, paste0("late phase material with no active MUL: PROC ",
                             "HAZARD zeroes the shape operands (stmtprc.c:",
@@ -1160,9 +1339,44 @@
              "MUL with no late phase shape operand (TAU/GAMMA/ALPHA/ETA)")
   }
 
+  # getrisk.c collects every phase-statement variable, of every phase and
+  # whatever its options, and readobs.c deletes a row where any is missing.
+  # hazard() drops missing rows only for variables in a formula it fits, so
+  # the rest -- /E variables, and covariates of a phase that is not built --
+  # are returned for the caller to guard.
+  modelled <- c(
+    if (has_early && length(early)) phase_covars$early,
+    if (has_muc) phase_covars$constant,
+    if (has_late && length(late)) phase_covars$late
+  )
+  # Scope is keyed by the name the BASE FIT will carry. The emitted phases
+  # list is unnamed, so hazard() auto-names them phase_1, phase_2, ... in
+  # build order: keying on "early"/"constant" fails with "Unknown phase(s)
+  # in scope". Only built phases have a key. sprintf(), not paste0():
+  # paste0("phase_", integer(0)) is "phase_", so a job that builds no phase
+  # crashed setNames() instead of reaching its "selects no phase" refusal.
+  built <- c(
+    if (has_early && length(early)) "early",
+    if (has_muc) "constant",
+    if (has_late && length(late)) "late"
+  )
+  selection_spec <- if (isFALSE(selection)) NULL else list(
+    scope = stats::setNames(
+      lapply(built, function(ph) sel_candidates[[ph]] %||% character(0)),
+      sprintf("phase_%d", seq_along(built))),
+    movable = stats::setNames(
+      lapply(built, function(ph) sel_movable[[ph]] %||% character(0)),
+      sprintf("phase_%d", seq_along(built))),
+    in_model = stats::setNames(
+      lapply(built, function(ph) phase_covars[[ph]] %||% character(0)),
+      sprintf("phase_%d", seq_along(built))),
+    force_in = unique(unlist(sel_force_in[built]))
+  )
   list(
     phases = as.call(c(quote(list), phase_calls)),
     theta = as.call(c(quote(c), theta_blocks)),
+    listwise_only = setdiff(unique(phase_vars), modelled),
+    selection = selection_spec,
     has_phases = length(phase_calls) > 0L,
     refused = refused,
     untranslated = .hzr_untranslated_frame(

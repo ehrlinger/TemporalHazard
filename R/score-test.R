@@ -386,7 +386,9 @@
         error = function(e) NULL
       )
       if (is.null(mf_j)) return(NULL)
-      x_j <- stats::model.matrix(ph$formula, data = mf_j)[, -1L, drop = FALSE]
+      # The fit's own construction, so an intercept-free formula builds as
+      # it did at fit time (#303).
+      x_j <- .hzr_formula_design(ph$formula, data)$x
       x_list[[nm]] <- x_j
       cov_counts[[nm]] <- ncol(x_j)
     } else if (!is.null(current$fit$x_list[[nm]]) || !is.null(d$x)) {
@@ -419,6 +421,16 @@
     # Every phase the step does not touch must keep the design the fit used;
     # a different column count means the expansion rebuilt it wrongly.
     return(NULL)
+  }
+  for (nm in unchanged) {
+    # The same count can still be a different design: a fit saved before
+    # #303 holds `~ 0 + o`, for an ordered `o`, as dummies `om`, `oh`, which
+    # now rebuild as `o.L`, `o.Q`.
+    if (cov_counts[[nm]] > 0L &&
+          !identical(colnames(x_list[[nm]]),
+                     colnames(current$fit$x_list[[nm]]))) {
+      return(NULL)
+    }
   }
   for (nm in nms) {
     xm <- x_list[[nm]]
@@ -597,6 +609,25 @@
   )
 }
 
+#' Number of rows a fit was estimated on, read off the fit
+#'
+#' A multiphase fit aligns its phase designs by dropping every row with a
+#' missing covariate, and stores the aligned designs in `$fit$x_list`, while
+#' `$data$time` keeps the caller's full length. The designs' row count is
+#' therefore the rows the fit used. A fit with no phase design columns has
+#' nothing to drop, so its `time` length is the count.
+#'
+#' @param fit A fitted `hazard` object.
+#' @return A single integer.
+#' @keywords internal
+#' @noRd
+.hzr_fit_rows_used <- function(fit) {
+  xl <- Filter(function(x) !is.null(x) && NCOL(x) > 0L, fit$fit$x_list)
+  # The fitter refuses phase designs of different lengths before it stores
+  # them, so the stored ones agree; none means nothing was dropped.
+  if (length(xl)) NROW(xl[[1L]]) else length(fit$data$time)
+}
+
 #' Score statistic for one entry candidate
 #'
 #' @param current Fitted `hazard` object (the step's current model).
@@ -624,7 +655,25 @@
   # passing pre-`na.omit()` data would fail the row check inside
   # .hzr_score_expand() for EVERY candidate, and stepwise would report nothing
   # significant -- a plausible-looking wrong answer. Fail loudly instead.
-  n_obs <- length(current$data$time)
+  # Count the rows the FIT used, read off the fit itself: a multiphase fit
+  # drops every row with a missing phase covariate but keeps the caller's full
+  # `time` in `$data`, so `length(time)` overstated them, this check passed,
+  # and every candidate was then labelled `not_expandable` (#372).
+  n_time <- length(current$data$time)
+  n_obs <- .hzr_fit_rows_used(current)
+  if (n_obs != n_time) {
+    stop(
+      "The base fit dropped ", n_time - n_obs, " rows whose covariate ",
+      "values were missing (NA or NaN), so its stored response (", n_time,
+      " rows) no longer lines up with the rows it was fitted on (", n_obs,
+      "), and no candidate can be scored against it. The values can be ",
+      "missing in the data, or made missing by a transform in a model ",
+      "formula, such as sqrt() or log() of a negative value, which ",
+      "`na.omit()` on the data does not catch. Refit the base model on only ",
+      "the rows it used, and pass that same data frame.",
+      call. = FALSE
+    )
+  }
   if (nrow(data) != n_obs) {
     stop(
       "`data` has ", nrow(data), " rows but the fitted model used ", n_obs,
@@ -840,7 +889,15 @@
       "collides with factor `g`'s level `b`: rename the column, or rename or",
       "relevel the factor"
     ),
-    nonfinite = "the score or its variance was not finite"
+    nonfinite = "the score or its variance was not finite",
+    wald_no_variance = paste(
+      "the model had no usable variance for the coefficient, so its Wald",
+      "test could not be computed: there was no variance matrix, the",
+      "coefficient's variance was not positive, or a multi-column term's",
+      "variance block was singular. A fit with interval- or left-censored",
+      "rows takes its variance from numDeriv, so a screen run without",
+      "numDeriv installed reports this for every variable"
+    )
   )
   out <- unname(txt[reason])
   out[is.na(out)] <- reason[is.na(out)]
