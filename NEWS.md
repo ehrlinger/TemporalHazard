@@ -214,8 +214,10 @@
   recorded in `$untranslated` with the reason. `CONDITION=` stops
   `PROC HAZARD`'s optimizer when its Hessian approximation becomes too
   ill-conditioned, and `hazard()` has no such stop; it warns about the final
-  Hessian instead. `QUASI` chooses `PROC HAZARD`'s optimizer, and `hazard()`
-  has no choice to make: it always uses BFGS.
+  Hessian instead; a `CONDITION=` outside 3 to 14, which `PROC HAZARD`
+  itself ignores, is recorded as such. `QUASI` chooses `PROC HAZARD`'s
+  optimizer, and `hazard()` has no choice to make: it uses BFGS, or
+  L-BFGS-B when parameters are bounded, both quasi-Newton.
 
 * **`hzr_translate_sas()` now emits a `stop()` in place of the fit when a
   job has no `DATA=` and a phase has covariates (#311).** A phase's

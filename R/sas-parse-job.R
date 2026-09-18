@@ -449,13 +449,21 @@
         val_num <- suppressWarnings(as.numeric(val))
         if (is.na(val_num)) {
           note("CONDITION", "non-numeric value for CONDITION")
+        } else if (val_num < 3 || val_num > 14) {
+          # hazpprc.c:48-56 stores only 3..14; otherwise the limit stays at
+          # stmtprc.c:74's 0 and setopt.c:454 applies the built-in test.
+          note("CONDITION", paste0(
+            "CONDITION=", val, " is outside the 3 to 14 PROC HAZARD accepts ",
+            "(hazpprc.c:48-56), so PROC HAZARD ignores it and applies its ",
+            "built-in conditioning limits (setopt.c:458-466). hazard() has ",
+            "no conditioning stop either way"))
         } else {
           note("CONDITION", paste0(
             "CONDITION=", val, " stops PROC HAZARD's optimizer as ",
-            "ill-conditioned once log10 of the Hessian approximation's ",
-            "condition estimate exceeds it (setopt.c:452-456). hazard() has ",
-            "no such stop: it fits, then warns if the final Hessian is ",
-            "ill-conditioned"))
+            "ill-conditioned once, after its first iteration, log10 of the ",
+            "Hessian approximation's condition estimate exceeds it ",
+            "(setopt.c:452-456). hazard() has no such stop: it fits, then ",
+            "warns if the final Hessian is ill-conditioned"))
         }
       },
       CONSERVE    = ctl$conserve <- TRUE,
@@ -466,10 +474,10 @@
         mapped <- mapped - 1L
         note("QUASINEWTON", paste(
           "QUASI chooses PROC HAZARD's quasi-Newton optimizer. hazard() has",
-          "no optimizer choice: it always uses BFGS, a quasi-Newton method,",
-          "continued with stats::nlm() when SAS's gradient test fails. The",
-          "search path can differ, and on a multimodal likelihood so can the",
-          "optimum"))
+          "no optimizer choice to make: it uses BFGS (L-BFGS-B when",
+          "parameters are bounded, both quasi-Newton), continued with",
+          "stats::nlm() when SAS's gradient test fails. The search path can",
+          "differ, and on a multimodal likelihood so can the optimum"))
       },
       STEEPEST    = {
         mapped <- mapped - 1L

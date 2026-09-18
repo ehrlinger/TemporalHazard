@@ -112,3 +112,25 @@ test_that("tokens_mapped never exceeds tokens_seen when values are bad", {
   expect_lte(got$tokens_mapped, got$tokens_seen)
   expect_gte(nrow(got$untranslated), 3L)
 })
+
+test_that("a CONDITION= PROC HAZARD ignores is not described as a stop (#384)", {
+  # hazpprc.c:48-56 stores CONDITION only for 3 <= n <= 14; outside that the
+  # limit stays at the 0 stmtprc.c:74 set, setopt.c:454 skips the test, and
+  # the built-in thresholds apply. Saying "CONDITION=20 stops the optimizer"
+  # would name a cause that never fires (the #387 message shape).
+  reason_for <- function(val) {
+    txt <- .hzr_sas_normalise(paste0(
+      "%HAZARD( PROC HAZARD DATA=A CONDITION=", val, ";",
+      "EVENT D; TIME T; PARMS MUE=1 THALF=1 NU=1; );"))
+    u <- .hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]])$untranslated
+    u$reason[u$construct == "CONDITION"]
+  }
+  inside <- reason_for(14)
+  expect_match(inside, "setopt.c:452-456", fixed = TRUE)
+  for (val in c(2, 20)) {
+    r <- reason_for(val)
+    expect_match(r, "outside the 3 to 14 PROC HAZARD accepts", fixed = TRUE, info = as.character(val))
+    expect_match(r, "hazpprc.c:48-56", fixed = TRUE, info = as.character(val))
+    expect_no_match(r, "stops PROC HAZARD's optimizer", info = as.character(val))
+  }
+})
