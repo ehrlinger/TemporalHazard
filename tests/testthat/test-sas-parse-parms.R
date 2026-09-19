@@ -327,6 +327,53 @@ test_that("an MU whose shape operands could not be read is not built on defaults
   expect_true(all(grepl("spaces around", pieces, fixed = TRUE)))
 })
 
+test_that("a PARMS statement SAS's lexer rejects never builds an orphan on defaults (#365 review 3)", {
+  # R's as.numeric() reads 1E-3, 2. and +0.2; the lexer's NUMBER
+  # (hazard_l.l:34-38) does not, so PROC HAZARD stops with a syntax error.
+  # An orphan MU read that way built a whole phase with no row.
+  for (ops in list("MUE=1E-3", "MUE=2.", "MUE=+0.2", c("MUL=0.1", "MUE=5E-2"),
+                   c("MUE=0.2", "THALF=1E-1"))) {
+    info <- paste(ops, collapse = " ")
+    got <- .hzr_parse_parms(ops)
+    expect_false(isTRUE(got$has_phases), info = info)
+    bad <- ops[!vapply(ops, function(o) {
+      grepl("^-?([0-9]+|[0-9]*[.][0-9]+(E[+-]?[0-9]+)?)$",
+            toupper(sub("^[^=]*=", "", o)))
+    }, logical(1))]
+    row <- got$untranslated$reason[got$untranslated$construct %in% bad]
+    expect_length(row, length(bad))
+    expect_true(all(grepl("hazard_l.l:34-38", row, fixed = TRUE)), info = info)
+    expect_true(all(grepl("does not run", row, fixed = TRUE)), info = info)
+  }
+  # Numbers the lexer does read are still read.
+  for (v in c(".5", "1.5E-3", "-0.5", "5")) {
+    expect_identical(.hzr_parse_parms(c("MUE=0.2", paste0("THALF=", v)))$has_phases,
+                     TRUE, info = v)
+  }
+  # A bare MU or shape keyword needs `= NUMBER` (hazard_y.y:137-147).
+  got <- .hzr_parse_parms(c("MUE=0.2", "THALF"))
+  expect_false(isTRUE(got$has_phases))
+  row <- got$untranslated$reason[got$untranslated$construct == "THALF"]
+  expect_match(row, "hazard_y.y:137-147", fixed = TRUE)
+  expect_match(row, "does not run", fixed = TRUE)
+  # Every piece of a spaced operand, in each spacing, is a piece (SAS runs
+  # the job), and blocks the orphan build; a stray number is not a piece.
+  for (ops in list(c("MUE=0.2", "THALF", "=0.3"), c("MUE=0.2", "THALF=", "0.3"),
+                   c("MUE=0.2", "THALF", "=", "0.3"))) {
+    info <- paste(ops, collapse = " ")
+    got <- .hzr_parse_parms(ops)
+    expect_false(isTRUE(got$has_phases), info = info)
+    pieces <- got$untranslated$reason[got$untranslated$construct %in% ops[-1L]]
+    expect_length(pieces, length(ops) - 1L)
+    expect_true(all(grepl("spaces around", pieces, fixed = TRUE)), info = info)
+    expect_false(any(grepl("does not run", pieces, fixed = TRUE)), info = info)
+  }
+  got <- .hzr_parse_parms(c("MUE=0.2", "MUC=0.01", "0.3"))
+  row <- got$untranslated$reason[got$untranslated$construct == "0.3"]
+  expect_match(row, "does not run", fixed = TRUE)
+  expect_no_match(row, "spaces around", fixed = TRUE)
+})
+
 test_that("an orphan MU keys scope, force_in and the listwise guard like its written defaults (#345)", {
   # The phase list was built on the MU alone while the scope/force_in keys and
   # the modelled-variable list still required a shape operand. With SELECTION,
@@ -1607,12 +1654,15 @@ test_that("a shape that is not finite after SETG3's rewrites is recorded (#329 r
   # WRITTEN but replaced by a rewrite is deliberately not flagged: PROC
   # HAZARD reads it the same way (hazard_l.l:53) and applies the same
   # rewrite, so the emitted model is the one it fits (#346 review).
+  # Spelled as the lexer's NUMBER spells them (hazard_l.l:34-38 needs a "."
+  # before an exponent): `1e400` is not a number to PROC HAZARD, whose job
+  # then does not run, while `1.0E400` lexes and sscanf() reads it as Inf.
   cases <- list(
-    written = c("MUL=0.2", "TAU=1", "GAMMA=1e400", "ETA=0.5", "WEIBULL"),
-    written_tau = c("MUL=0.2", "TAU=1e400", "GAMMA=2", "ETA=0.5", "WEIBULL"),
-    ge2_rewrite = c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=1e-320", "FIXGE2",
+    written = c("MUL=0.2", "TAU=1", "GAMMA=1.0E400", "ETA=0.5", "WEIBULL"),
+    written_tau = c("MUL=0.2", "TAU=1.0E400", "GAMMA=2", "ETA=0.5", "WEIBULL"),
+    ge2_rewrite = c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=1.0E-320", "FIXGE2",
                     "WEIBULL"),
-    gae2_start = c("MUL=0.2", "TAU=1", "GAMMA=1e300", "ETA=1e300", "FIXGAE2",
+    gae2_start = c("MUL=0.2", "TAU=1", "GAMMA=1.0E300", "ETA=1.0E300", "FIXGAE2",
                    "WEIBULL")
   )
   for (nm in names(cases)) {
@@ -1621,8 +1671,9 @@ test_that("a shape that is not finite after SETG3's rewrites is recorded (#329 r
                           fixed = TRUE)), label = nm)
   }
   # Finite extremes are not flagged.
-  ok <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=1e300", "ETA=1e-300",
+  ok <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=1.0E300", "ETA=1.0E-300",
                            "FIXGAE2", "WEIBULL"))
+  expect_true(ok$has_phases)
   expect_false(any(grepl("not a finite number", ok$untranslated$reason,
                          fixed = TRUE)))
 })

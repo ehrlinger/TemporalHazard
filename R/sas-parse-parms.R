@@ -45,21 +45,50 @@
   "before PROC HAZARD reads the statement, so this translation cannot tell ",
   "what it becomes"
 )
-# A bare `=` or a bare number is a piece of an operand this parser split
-# apart: `THALF = 0.3`, written with spaces, which SAS's lexer reads (it skips
-# whitespace, hazard_l.l:50) and PROC HAZARD runs. It is not a keyword the
-# lexer rejects, so it must not say the job does not run.
+.hzr_parms_unresolved_why <- function(op) {
+  if (grepl("&", op, fixed = TRUE)) .hzr_parms_unresolved_macro_reason else
+    .hzr_parms_unresolved_reason
+}
+
+# The lexer's NUMBER (hazard_l.l:34-38). as.numeric() also reads 1E-3 (no
+# decimal point before the exponent), 2. and +0.2, none of which PROC HAZARD
+# lexes as a number: the job stops with a syntax error.
+.hzr_sas_lexer_number <- function(s) {
+  grepl("^-?([0-9]+|[0-9]*[.][0-9]+(E[+-]?[0-9]+)?)$", toupper(s))
+}
+
+# An operand written with spaces around `=` (`THALF = 0.3`, `THALF =0.3`,
+# `THALF= 0.3`) reaches this parser split into pieces. SAS's lexer skips the
+# whitespace (hazard_l.l:50) and PROC HAZARD runs the job, so no piece is a
+# syntax error; but the operand's value is not read here. Marked from context,
+# since a bare number is a piece only after an `=`, and a stray one is not.
 .hzr_parms_unresolved_piece_reason <- paste0(
   "unresolved PARMS keyword: a piece of an operand written with spaces ",
   "around `=`, which PROC HAZARD accepts but this translator splits apart, ",
   "so the operand's value was not read"
 )
-.hzr_parms_unresolved_why <- function(op) {
-  if (grepl("&", op, fixed = TRUE)) return(.hzr_parms_unresolved_macro_reason)
-  if (identical(op, "=") || grepl("^[-+]?[0-9.]+([eE][-+]?[0-9]+)?$", op)) {
-    return(.hzr_parms_unresolved_piece_reason)
+.hzr_parms_spaced_pieces <- function(ops) {
+  n <- length(ops)
+  piece <- logical(n)
+  bare_key <- function(i) {
+    i >= 1L && i <= n && !grepl("=", ops[[i]], fixed = TRUE) &&
+      !is.na(.hzr_sas_token(ops[[i]], "HAZARD", "PARM"))
   }
-  .hzr_parms_unresolved_reason
+  for (i in seq_len(n)) {
+    op <- ops[[i]]
+    if (identical(op, "=")) {
+      piece[i] <- TRUE
+      if (bare_key(i - 1L)) piece[i - 1L] <- TRUE
+      if (i < n) piece[i + 1L] <- TRUE
+    } else if (startsWith(op, "=")) {
+      piece[i] <- TRUE
+      if (bare_key(i - 1L)) piece[i - 1L] <- TRUE
+    } else if (nchar(op) > 1L && endsWith(op, "=") && i < n) {
+      piece[i] <- TRUE
+      piece[i + 1L] <- TRUE
+    }
+  }
+  piece
 }
 .hzr_parms_mu_order  <- c("MUE", "MUC", "MUL")
 
@@ -705,12 +734,20 @@
     bad_reason <<- c(bad_reason, reason)
   }
 
-  for (op in operands) {
+  spaced_piece <- .hzr_parms_spaced_pieces(operands)
+  for (i in seq_along(operands)) {
+    op <- operands[[i]]
+    if (spaced_piece[i]) {
+      unreadable <- TRUE
+      flag_bad(op, .hzr_parms_unresolved_piece_reason)
+      next
+    }
     eq <- .idx(op, "=")
 
     if (eq > 0L) {
       key <- substr(op, 1L, eq - 1L)
-      val <- suppressWarnings(as.numeric(substr(op, eq + 1L, nchar(op))))
+      raw <- substr(op, eq + 1L, nchar(op))
+      val <- suppressWarnings(as.numeric(raw))
       token <- .hzr_sas_token(key, "HAZARD", "PARM")
       if (is.na(token)) {
         unreadable <- TRUE
@@ -718,6 +755,13 @@
       } else if (is.na(val)) {
         unreadable <- TRUE
         flag_bad(op, sprintf("PARMS value for %s is not numeric", key))
+      } else if (!.hzr_sas_lexer_number(raw)) {
+        unreadable <- TRUE
+        flag_bad(op, paste0(
+          "PARMS value ", raw, " for ", key, " is not a number PROC HAZARD's ",
+          "lexer reads (hazard_l.l:34-38), so PROC HAZARD rejects this job ",
+          "with a syntax error and it does not run"
+        ))
       } else if (token %in% .hzr_parms_mu_order) {
         mu[[token]] <- val
       } else if (token %in% names(.hzr_parms_early_arg)) {
@@ -754,6 +798,15 @@
     if (is.na(token)) {
       unreadable <- TRUE
       flag_bad(op, .hzr_parms_unresolved_why(op))
+    } else if (token %in% c(.hzr_parms_mu_order, names(.hzr_parms_early_arg),
+                            names(.hzr_parms_late_arg), "DELTA")) {
+      # A value keyword with no `= NUMBER` after it, and not the first piece
+      # of a spaced operand (those are marked above).
+      unreadable <- TRUE
+      flag_bad(op, paste0(
+        op, " needs a value (", op, "=NUMBER, hazard_y.y:137-147), so PROC ",
+        "HAZARD rejects this job with a syntax error and it does not run"
+      ))
     } else if (token == "WEIBULL") {
       # setopt(6) -> SETG3_weibull() (setg3.c:427) is the GENERALIZED Weibull:
       # "NOW HANDLE THE SPECIAL SITUATION OF THE GENERALIZED WEIBULL, WHERE WE
@@ -914,7 +967,11 @@
   constraint_flags <- c("FIXGE2", "FIXGAE2")[c(saw_ge2, saw_gae2)]
   if (length(constraint_flags) && !build_late) {
     for (flag in constraint_flags) {
-      flag_bad(flag, "PARMS token has no phase target")
+      flag_bad(flag, if (has_late) {
+        "the late phase it constrains is not built (see the MUL row)"
+      } else {
+        "PARMS token has no phase target"
+      })
     }
   } else if (length(constraint_flags) &&
                (length(constraint_flags) == 2L || ignore_tau)) {
@@ -1496,6 +1553,8 @@
              "setg1.c:381-387, hzd_early_t2p.c:65-77), but that constraint is ",
              "not applied here: the emitted early phase does not tie them, a ",
              "different model from PROC HAZARD's")
+    } else if (has_early) {
+      "the early phase it constrains is not built (see the MUE row)"
     } else {
       "PARMS token has no phase target"
     })

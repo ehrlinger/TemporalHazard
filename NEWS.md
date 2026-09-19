@@ -745,7 +745,12 @@
   as untranslated and build no phase. PROC HAZARD runs that phase on its own
   shape defaults (early `THALF` 1, `NU` 2, `M` 1; late `GAMMA` 1, `ALPHA` 1,
   `ETA` 2), which do not depend on the data, so the translation now builds it
-  the same way. The late `TAU` start (0.75 of the longest follow-up) is the one
+  the same way, provided it read the whole `PARMS` statement. If any operand
+  could not be read (for example one written with spaces around `=`, which
+  `PROC HAZARD` accepts), a shape may have been written that the translator
+  did not see, so the phase is recorded and not built. A `PARMS` value that
+  `PROC HAZARD`'s lexer does not read as a number (`1E-3`, `2.`, `+0.2`) is
+  now recorded as a syntax error, not read by R and fitted. The late `TAU` start (0.75 of the longest follow-up) is the one
   value that depends on the data, and it is recorded, as it already was for a
   late phase written without `TAU`. That record now says what it means:
   because the multiphase likelihood is multimodal, a different start can
