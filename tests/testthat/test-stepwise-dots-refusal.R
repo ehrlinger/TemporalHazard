@@ -1,13 +1,15 @@
 # hzr_stepwise() and hzr_bootstrap() check `...` against what a candidate
-# refit reads (#386).
+# refit may take from it (#386).
 #
 # Both forward `...` to every candidate refit, and hazard()'s own `...` is
 # legacy pass-through that stores any name unread. So a misspelled argument,
 # `slentyr = 1e-6` for `slentry`, vanished into the refits and the screen ran
-# at the default slentry = 0.30: a different model, with no warning. The
-# refit reads only control, weights, time_windows and objective; every other
-# hazard() argument it sets itself, so a forwarded one was either ignored
-# (time_lower on a formula refit) or failed every candidate (dist).
+# at the default slentry = 0.30: a different model, with no warning. Only
+# `control`, and an `objective` equal to the base fit's, may pass: every
+# other hazard() argument describes the model a candidate is compared with,
+# and a forwarded one was ignored (time_lower on a formula refit), failed
+# every candidate (dist), or changed the candidates' estimand alone
+# (weights, time_windows).
 
 dots_data_386 <- function() {
   data(avc, package = "TemporalHazard", envir = environment())
@@ -50,12 +52,6 @@ test_that("hzr_stepwise() refuses a misspelled argument and names it (#386)", {
   msg <- refused_386(screen_386(base, d, slentyr = 1e-6))
   expect_match(msg, "^hzr_stepwise\\(\\): `slentyr` is not an argument")
   expect_match(msg, "Did you mean `slentry`?", fixed = TRUE)
-  # An abbreviation is spelled out before the check, so a differing
-  # objective is refused at entry rather than colliding with the refit's own
-  # `objective` inside every candidate. (Not in hzr_bootstrap(), where R
-  # binds `objec` to its own `object` formal first.)
-  expect_match(refused_386(screen_386(base, d, objec = "sas")),
-               "^hzr_stepwise\\(\\): `objective = \"sas\"` differs")
 })
 
 test_that("an unnamed argument in `...` is refused too (#386)", {
@@ -70,13 +66,16 @@ test_that("an unnamed argument in `...` is refused too (#386)", {
   )
 })
 
-test_that("an argument the refit sets itself is refused, not ignored (#386)", {
-  # `time_lower` on a formula refit was ignored with no message; `dist`
-  # collided with the refit's own and failed every candidate.
+test_that("an argument the refit takes from the base fit is refused (#386)", {
+  # time_lower was ignored by a formula refit; dist collided with the
+  # refit's own and failed every candidate; weights and time_windows changed
+  # the candidates' likelihood but not the base model's.
   d <- dots_data_386()
   base <- dots_base_386(d)
   for (arg in list(list(time_lower = d$int_dead * 0.99),
-                   list(dist = "exponential"))) {
+                   list(dist = "exponential"),
+                   list(weights = rep(2, nrow(d))),
+                   list(time_windows = 1))) {
     msg <- refused_386(do.call(screen_386, c(list(base, d), arg)))
     expect_match(msg, paste0("^hzr_stepwise\\(\\): `", names(arg),
                              "` cannot be passed through `...`"),
@@ -84,18 +83,50 @@ test_that("an argument the refit sets itself is refused, not ignored (#386)", {
   }
 })
 
-test_that("`control` is forwarded, and so is an abbreviation of it (#386)", {
-  skip_on_cran() # three stepwise screens
-  # maxit = 1 stops every candidate refit short, so no variable enters;
-  # the default admits three. The forwarding is therefore observable. An
-  # abbreviation hazard() applied by partial matching still works.
+test_that("ambiguous, repeated and malformed arguments are refused (#386)", {
   d <- dots_data_386()
   base <- dots_base_386(d)
-  full <- suppressWarnings(screen_386(base, d, control = list(maxit = 1L)))
-  abbr <- suppressWarnings(screen_386(base, d, contr = list(maxit = 1L)))
-  expect_identical(nrow(full$steps), 0L)
+  # pmatch() returns NA for an ambiguous prefix as for no match; the two
+  # need different messages.
+  expect_match(refused_386(screen_386(base, d, ti = 1)),
+               "`ti` abbreviates more than one hazard() argument",
+               fixed = TRUE)
+  # After spelling out, `cont` is a second `control`.
+  expect_match(refused_386(screen_386(base, d, control = list(),
+                                      cont = list(maxit = 1L))),
+               "`control` is given more than once", fixed = TRUE)
+  # hazard() requires a list; NULL would fail every candidate.
+  expect_match(refused_386(screen_386(base, d, control = NULL)),
+               "`control` must be a list", fixed = TRUE)
+})
+
+test_that("`objective` passes only when it equals the base fit's (#386)", {
+  skip_on_cran() # a stepwise screen
+  d <- dots_data_386()
+  base <- dots_base_386(d)
+  expect_match(refused_386(screen_386(base, d, objective = "sas")),
+               "^hzr_stepwise\\(\\): `objective = \"sas\"` differs")
+  # An abbreviated name is spelled out first, so it is checked too.
+  expect_match(refused_386(screen_386(base, d, objec = "sas")),
+               "^hzr_stepwise\\(\\): `objective = \"sas\"` differs")
+  # hazard() match.arg()s the value, so "lik" is the base fit's objective.
+  sw <- screen_386(base, d, objective = "lik")
+  expect_identical(sort(sw$steps$variable), c("age", "com_iv", "mal"))
+})
+
+test_that("`control` reaches the refits, and so does an abbreviation (#386)", {
+  skip_on_cran() # two stepwise screens
+  # The final model is the last accepted refit, and a fit records the
+  # control it was given, so this reads the forwarded value itself rather
+  # than inferring it from a screen that could be empty for other reasons.
+  d <- dots_data_386()
+  base <- dots_base_386(d)
+  full <- screen_386(base, d, control = list(maxit = 77L))
+  abbr <- screen_386(base, d, contr = list(maxit = 77L))
+  expect_identical(nrow(full$steps), 3L)
+  expect_identical(full$spec$control$maxit, 77L)
+  expect_identical(abbr$spec$control$maxit, 77L)
   expect_identical(abbr$steps, full$steps)
-  expect_identical(nrow(screen_386(base, d)$steps), 3L)
 })
 
 test_that("hzr_bootstrap() refuses at entry, not per replicate (#386)", {
@@ -115,6 +146,9 @@ test_that("hzr_bootstrap() refuses at entry, not per replicate (#386)", {
   expect_match(msg, "Did you mean `slentry`?", fixed = TRUE)
   expect_match(refused_386(boot(dist = "exponential")),
                "^hzr_bootstrap\\(\\): `dist` cannot be passed")
+  # Unresampled weights would be misaligned with every replicate's rows.
+  expect_match(refused_386(boot(weights = rep(1, nrow(d)))),
+               "^hzr_bootstrap\\(\\): `weights` cannot be passed")
   expect_match(refused_386(boot(objective = "sas")),
                "^hzr_bootstrap\\(\\): `objective = \"sas\"` differs")
   expect_identical(.Random.seed, before)
@@ -122,18 +156,20 @@ test_that("hzr_bootstrap() refuses at entry, not per replicate (#386)", {
 
 test_that("hzr_bootstrap() still forwards `control` and `trace` (#386)", {
   skip_on_cran() # bootstrap replicates with a screen each
+  # reltol = 1e-2 stops each refit sooner but still converged, so com_iv
+  # enters every replicate either way and only its estimate moves. A run
+  # whose candidates all failed would not select com_iv at all.
   d <- dots_data_386()
   base <- dots_base_386(d)
   boot <- function(...) {
     hzr_bootstrap(base, n_boot = 2L, seed = 1L, scope = ~ com_iv,
                   criterion = "wald", trace = TRUE, ...)
   }
-  bs <- boot()
-  expect_identical(bs$n_success, 2L)
-  expect_true("com_iv" %in% bs$summary$parameter)
-  # maxit = 1 reaches the screen's candidate refits, so com_iv never enters.
-  short <- suppressWarnings(boot(control = list(maxit = 1L)))
-  expect_false("com_iv" %in% short$summary$parameter)
-  # The base fit's own objective, restated, is accepted.
-  expect_identical(boot(objective = "likelihood")$n_success, 2L)
+  est <- function(bs) bs$summary$mean[bs$summary$parameter == "com_iv"]
+  tight <- boot()
+  loose <- boot(control = list(reltol = 1e-2))
+  expect_identical(c(tight$n_success, loose$n_success), c(2L, 2L))
+  expect_identical(tight$summary$n[tight$summary$parameter == "com_iv"], 2L)
+  expect_identical(loose$summary$n[loose$summary$parameter == "com_iv"], 2L)
+  expect_false(identical(est(tight), est(loose)))
 })

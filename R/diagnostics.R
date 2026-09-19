@@ -1587,10 +1587,9 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   definitions and defaults.
 #' @param ... Additional arguments forwarded to [hzr_stepwise()] (e.g.
 #'   `control = list(maxit = 500)`, which every `dist` reads) when `scope`
-#'   is supplied. `trace` and the names [hzr_stepwise()] forwards to its
-#'   refits (`control`, `weights`, `time_windows`, and an `objective` equal
-#'   to the fit's) are accepted; any other name is an error, and so is any
-#'   `...` argument without `scope`.
+#'   is supplied. Only `trace`, `control` and an `objective` equal to the
+#'   fit's are accepted; any other name is an error, and so is any `...`
+#'   argument without `scope`.
 #'
 #' @section Selection mode is experimental:
 #'

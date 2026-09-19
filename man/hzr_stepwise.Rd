@@ -92,14 +92,14 @@ considered as candidates.}
 \item{trace}{Logical; print step-by-step progress to the console.
 Default \code{TRUE}.}
 
-\item{...}{Passed to every candidate refit. Only the \code{hazard()}
-arguments a refit reads are accepted: \code{control} (e.g.
-\code{control = list(maxit = 500)}), \code{weights}, \code{time_windows}, and
-\code{objective}, which must equal the base fit's. Any other name is an
-error: a misspelling such as \code{slentyr} would be stored by \code{hazard()}
-without being read, and the refit sets the response, data, \code{dist},
-\code{theta}, \code{phases} and \code{fit} from the base model itself. The \code{print()},
-\code{summary()} and \code{as.data.frame()} methods ignore \code{...}.}
+\item{...}{Passed to every candidate refit. Only \code{control} (e.g.
+\code{control = list(maxit = 500)}) and an \code{objective} equal to the base
+fit's are accepted. Any other name is an error: a misspelling such as
+\code{slentyr} would be stored by \code{hazard()} without being read, and every
+other \code{hazard()} argument (the response, data, \code{weights},
+\code{time_windows}, \code{dist}, \code{theta}, \code{phases}, \code{fit}) is taken from the base
+model, so that each candidate is compared with the model it extends.
+The \code{print()}, \code{summary()} and \code{as.data.frame()} methods ignore \code{...}.}
 
 \item{x}{An \code{hzr_stepwise} object.}
 

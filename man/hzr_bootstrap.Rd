@@ -84,10 +84,9 @@ See \code{\link[=hzr_stepwise]{hzr_stepwise()}}.}
 
 \item{...}{Additional arguments forwarded to \code{\link[=hzr_stepwise]{hzr_stepwise()}} (e.g.
 \code{control = list(maxit = 500)}, which every \code{dist} reads) when \code{scope}
-is supplied. \code{trace} and the names \code{\link[=hzr_stepwise]{hzr_stepwise()}} forwards to its
-refits (\code{control}, \code{weights}, \code{time_windows}, and an \code{objective} equal
-to the fit's) are accepted; any other name is an error, and so is any
-\code{...} argument without \code{scope}.}
+is supplied. Only \code{trace}, \code{control} and an \code{objective} equal to the
+fit's are accepted; any other name is an error, and so is any \code{...}
+argument without \code{scope}.}
 
 \item{x}{An \code{hzr_bootstrap} object.}
 

@@ -141,14 +141,14 @@
 #'   considered as candidates.
 #' @param trace Logical; print step-by-step progress to the console.
 #'   Default `TRUE`.
-#' @param ... Passed to every candidate refit. Only the `hazard()`
-#'   arguments a refit reads are accepted: `control` (e.g.
-#'   `control = list(maxit = 500)`), `weights`, `time_windows`, and
-#'   `objective`, which must equal the base fit's. Any other name is an
-#'   error: a misspelling such as `slentyr` would be stored by `hazard()`
-#'   without being read, and the refit sets the response, data, `dist`,
-#'   `theta`, `phases` and `fit` from the base model itself. The `print()`,
-#'   `summary()` and `as.data.frame()` methods ignore `...`.
+#' @param ... Passed to every candidate refit. Only `control` (e.g.
+#'   `control = list(maxit = 500)`) and an `objective` equal to the base
+#'   fit's are accepted. Any other name is an error: a misspelling such as
+#'   `slentyr` would be stored by `hazard()` without being read, and every
+#'   other `hazard()` argument (the response, data, `weights`,
+#'   `time_windows`, `dist`, `theta`, `phases`, `fit`) is taken from the base
+#'   model, so that each candidate is compared with the model it extends.
+#'   The `print()`, `summary()` and `as.data.frame()` methods ignore `...`.
 #'
 #' @return An object of class `c("hzr_stepwise", "hazard")`, the
 #'   final fit augmented with:
@@ -849,16 +849,20 @@ hzr_stepwise <- function(fit,
 }
 
 # Check the `...` of hzr_stepwise() / hzr_bootstrap() against what a
-# candidate refit actually reads, and return it with abbreviations spelled out
-# (#386). Both forward `...` to every refit, and hazard()'s own `...` is legacy
-# pass-through that stores any name unread, so a misspelled `slentyr` for
-# `slentry` was silently dropped and the screen ran at the default. A refit
-# reads only the four names below: it sets the response, data, dist, theta,
-# phases and fit itself, so passing one of those is ignored (time_lower on a
-# formula refit) or collides with the refit's own (dist) and fails every
-# candidate. An abbreviation that R would match to one of the four is kept,
-# since hazard() used to apply it by partial matching. `extra` names the
-# caller itself consumes from `...` (hzr_bootstrap()'s `trace`).
+# candidate refit may take from it, and return it with abbreviations spelled
+# out (#386). Both forward `...` to every refit, and hazard()'s own `...` is
+# legacy pass-through that stores any name unread, so a misspelled `slentyr`
+# for `slentry` was silently dropped and the screen ran at the default.
+# Only `control`, and an `objective` equal to the base fit's, may pass. Every
+# other hazard() argument describes the model the candidates are compared
+# with, so the refit takes it from the base fit: a forwarded one was ignored
+# (time_lower on a formula refit), collided with the refit's own (dist,
+# failing every candidate), or changed the estimand of the candidates alone
+# (weights, time_windows), so score and AIC differences compared two models
+# fitted to different likelihoods. An abbreviation R would match to `control`
+# or `objective` is kept, since hazard() used to apply it by partial
+# matching. `extra` names the caller consumes itself (hzr_bootstrap()'s
+# `trace`).
 .hzr_check_forwarded_dots <- function(dots, caller, own, fit,
                                       extra = character()) {
   if (!length(dots)) return(dots)
@@ -868,24 +872,30 @@ hzr_stepwise <- function(fit,
          "is forwarded by name to the hazard() refits, so name it.",
          call. = FALSE)
   }
-  read_by_refit <- c("control", "weights", "time_windows", "objective")
+  forwardable <- c("control", "objective")
   hz <- setdiff(names(formals(hazard)), "...")
+  tick <- function(x) paste0("`", x, "`", collapse = ", ")
   full <- nms
-  unknown <- set_by_refit <- character()
+  unknown <- from_base <- character()
   for (i in seq_along(nms)) {
     if (nms[i] %in% extra) next
     m <- pmatch(nms[i], hz)
     if (is.na(m)) {
+      prefixed <- hz[startsWith(hz, nms[i])]
+      if (length(prefixed) > 1L) {
+        stop(caller, "(): `", nms[i], "` abbreviates more than one ",
+             "hazard() argument (", tick(prefixed), "). Spell it out.",
+             call. = FALSE)
+      }
       unknown <- c(unknown, nms[i])
-    } else if (hz[m] %in% read_by_refit) {
+    } else if (hz[m] %in% forwardable) {
       full[i] <- hz[m]
     } else {
-      set_by_refit <- c(set_by_refit, nms[i])
+      from_base <- c(from_base, nms[i])
     }
   }
-  tick <- function(x) paste0("`", x, "`", collapse = ", ")
   if (length(unknown)) {
-    known <- unique(c(setdiff(own, "..."), read_by_refit, extra))
+    known <- unique(c(setdiff(own, "..."), forwardable, extra))
     hint <- vapply(unknown, function(nm) {
       dist <- utils::adist(nm, known)[1L, ]
       if (min(dist) > 2L) return("")
@@ -900,28 +910,42 @@ hzr_stepwise <- function(fit,
          "declare without reading it, so it would have had no effect.",
          paste(hint, collapse = ""), call. = FALSE)
   }
-  if (length(set_by_refit)) {
-    stop(caller, "(): ", tick(set_by_refit), " cannot be passed through ",
-         "`...`. Every candidate refit takes the response, data, dist, ",
-         "theta, phases and fit from the base model, so ",
-         if (length(set_by_refit) > 1L) "these are" else "it is",
-         " either ignored or in conflict with the refit's own. Of hazard()'s ",
-         "arguments, `...` forwards only ", tick(read_by_refit), ". To ",
-         "change anything else, refit the base model and screen from that.",
-         call. = FALSE)
+  if (length(from_base)) {
+    stop(caller, "(): ", tick(from_base), " cannot be passed through ",
+         "`...`. Every candidate refit takes the response, data, weights, ",
+         "time windows, dist, theta, phases and fit from the base model, so ",
+         "that each candidate is compared with the model it would extend. ",
+         "Of hazard()'s arguments, `...` forwards only `control` and an ",
+         "`objective` equal to the base fit's. To change anything else, refit ",
+         "the base model and screen from that.", call. = FALSE)
+  }
+  if (anyDuplicated(full[!full %in% extra])) {
+    dup <- unique(full[duplicated(full) & !full %in% extra])
+    stop(caller, "(): ", tick(dup), " is given more than once in `...`, ",
+         "counting abbreviations.", call. = FALSE)
   }
   names(dots) <- full
+  if ("control" %in% full && !is.list(dots$control)) {
+    stop(caller, "(): `control` must be a list, as hazard() requires; ",
+         "every candidate refit would have failed on it.", call. = FALSE)
+  }
   # A refit may not change the estimand; refuse here rather than once per
   # candidate, where hzr_bootstrap() would tally it as a failed replicate.
+  # match.arg() first, as hazard() does, so "lik" is "likelihood".
   if ("objective" %in% full) {
     fit_objective <- .hzr_fit_objective(fit)
-    if (!identical(dots$objective, fit_objective)) {
+    objective <- tryCatch(
+      match.arg(dots$objective, eval(formals(hazard)$objective)),
+      error = function(e) dots$objective
+    )
+    if (!identical(objective, fit_objective)) {
       stop(caller, "(): `objective = ", deparse1(dots$objective),
            "` differs from the base fit's objective = \"", fit_objective,
            "\", and a candidate refit cannot change the estimand. Refit the ",
            "base model under that objective and screen from there.",
            call. = FALSE)
     }
+    dots$objective <- objective
   }
   dots
 }
