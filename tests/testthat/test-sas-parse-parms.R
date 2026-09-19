@@ -300,15 +300,13 @@ test_that("a MUL with no late shape operand builds the phase on SAS's defaults (
 })
 
 test_that("an MU whose shape operands could not be read is not built on defaults (#365 review)", {
-  # `THALF = 0.3` with spaces lexes fine in SAS (hazard_l.l skips whitespace)
-  # but splits apart here, so this parser reads no early shape operand. That
-  # is not the same as none written: building the orphan phase on SAS's
-  # defaults fitted NU fixed at 2 for a job that fixes it at 1 (r-reviewer,
-  # second pass on #365). Such a phase is not built, and a row says why.
-  for (cs in list(list(ops = c("MUE=0.2", "THALF", "=", "0.3", "NU", "=", "1", "FIXNU"),
-                       mu = "MUE=0.2"),
-                  list(ops = c("MUL=0.1", "GAMMA", "=", "3", "FIXGAMMA"),
-                       mu = "MUL=0.1"))) {
+  # A macro operand is the unreadable case: SAS expands `&H` before PROC
+  # HAZARD reads the statement, so whether a shape was written cannot be told
+  # here, and building the orphan phase on SAS's defaults would fit a
+  # different model. (Operands written with spaces around `=` used to be the
+  # example; they are joined before parsing now, #421.)
+  for (cs in list(list(ops = c("MUE=0.2", "THALF=&H", "FIXNU"), mu = "MUE=0.2"),
+                  list(ops = c("MUL=0.1", "GAMMA=&G"), mu = "MUL=0.1"))) {
     got <- .hzr_parse_parms(cs$ops)
     expect_false(isTRUE(got$has_phases), info = cs$mu)
     row <- got$untranslated$reason[got$untranslated$construct == cs$mu]
@@ -318,13 +316,6 @@ test_that("an MU whose shape operands could not be read is not built on defaults
   }
   # A fully readable orphan still builds (the #345 case).
   expect_true(.hzr_parse_parms(c("MUE=0.2", "FIXNU"))$has_phases)
-  # The pieces of a spaced operand are not keywords PROC HAZARD rejects: SAS
-  # lexes `THALF = 0.3` and runs the job, so no row may say it does not run.
-  got <- .hzr_parse_parms(c("MUE=0.2", "THALF", "=", "0.3", "NU", "=", "1"))
-  pieces <- got$untranslated$reason[got$untranslated$construct %in% c("=", "0.3", "1")]
-  expect_length(pieces, 4L)
-  expect_false(any(grepl("does not run", pieces, fixed = TRUE)))
-  expect_true(all(grepl("spaces around", pieces, fixed = TRUE)))
 })
 
 test_that("a PARMS statement SAS's lexer rejects never builds an orphan on defaults (#365 review 3)", {
@@ -358,17 +349,15 @@ test_that("a PARMS statement SAS's lexer rejects never builds an orphan on defau
   row <- got$untranslated$reason[got$untranslated$construct == "THALF"]
   expect_match(row, "hazard_y.y:137-147", fixed = TRUE)
   expect_match(row, "does not run", fixed = TRUE)
-  # Every piece of a spaced operand, in each spacing, is a piece (SAS runs
-  # the job), and blocks the orphan build; a stray number is not a piece.
+  # A spaced operand is joined and read, in each spacing (#421): the phase
+  # builds on the written value, with no row.
   for (ops in list(c("MUE=0.2", "THALF", "=0.3"), c("MUE=0.2", "THALF=", "0.3"),
                    c("MUE=0.2", "THALF", "=", "0.3"))) {
     info <- paste(ops, collapse = " ")
     got <- .hzr_parse_parms(ops)
-    expect_false(isTRUE(got$has_phases), info = info)
-    pieces <- got$untranslated$reason[got$untranslated$construct %in% ops[-1L]]
-    expect_length(pieces, length(ops) - 1L)
-    expect_true(all(grepl("spaces around", pieces, fixed = TRUE)), info = info)
-    expect_false(any(grepl("does not run", pieces, fixed = TRUE)), info = info)
+    expect_true(isTRUE(got$has_phases), info = info)
+    expect_match(deparse(got$phases)[1L], "t_half = 0.3", fixed = TRUE, info = info)
+    expect_equal(nrow(got$untranslated), 0L, info = info)
   }
   got <- .hzr_parse_parms(c("MUE=0.2", "MUC=0.01", "0.3"))
   row <- got$untranslated$reason[got$untranslated$construct == "0.3"]
@@ -376,30 +365,34 @@ test_that("a PARMS statement SAS's lexer rejects never builds an orphan on defau
   expect_no_match(row, "spaces around", fixed = TRUE)
 })
 
-test_that("a spaced operand PROC HAZARD would still reject is not said to be accepted (#365 review 4)", {
-  # A piece reason says PROC HAZARD accepts the operand, which is true only
-  # when the joined operand is a value keyword followed by a lexer NUMBER
-  # (hazard_y.y:137-147, hazard_l.l:34-38). Otherwise the job does not run.
+test_that("a joined operand PROC HAZARD would still reject is a syntax error (#365 review 4, #421)", {
+  # Joined (#421), each of these is an operand PROC HAZARD rejects, so it says
+  # the job does not run rather than claiming acceptance.
   for (ops in list(c("MUE=0.2", "THALF=0.5", "NU", "=", "ABC"),
                    c("MUE=0.2", "THALF=0.5", "NU=", "1E-3"),
-                   c("=", "0.3", "MUE=0.2", "THALF=0.5"),
                    c("MUE=0.2", "THALF=0.5", "FIXNU", "=", "1"))) {
     info <- paste(ops, collapse = " ")
     got <- .hzr_parse_parms(ops)
     rows <- got$untranslated$reason[!got$untranslated$construct %in%
                                       c("MUE=0.2", "THALF=0.5")]
     expect_gt(length(rows), 0L)
-    expect_false(any(grepl("PROC HAZARD accepts", rows, fixed = TRUE)), info = info)
     expect_true(all(grepl("does not run", rows, fixed = TRUE)), info = info)
+    expect_false(any(grepl("PROC HAZARD accepts", rows, fixed = TRUE)), info = info)
   }
-  # Control: a spaced operand SAS runs keeps the piece reason.
+  # A dangling `=` with no keyword before it cannot join, and is not accepted.
+  got <- .hzr_parse_parms(c("=", "0.3", "MUE=0.2", "THALF=0.5"))
+  rows <- got$untranslated$reason[!got$untranslated$construct %in%
+                                    c("MUE=0.2", "THALF=0.5")]
+  expect_gt(length(rows), 0L)
+  expect_false(any(grepl("PROC HAZARD accepts", rows, fixed = TRUE)))
+  # Control: a spaced operand SAS runs is read, with no row.
   got <- .hzr_parse_parms(c("MUE=0.2", "THALF=0.5", "NU", "=", "-1.5"))
-  expect_true(all(grepl("PROC HAZARD accepts", got$untranslated$reason[
-    got$untranslated$construct %in% c("NU", "=", "-1.5")], fixed = TRUE)))
+  expect_equal(nrow(got$untranslated), 0L)
+  expect_match(deparse(got$phases)[1L], "nu = -1.5", fixed = TRUE)
 })
 
 test_that("a TAU the statement did not let this parser read is not called unspecified (#365 review 4)", {
-  got <- .hzr_parse_parms(c("MUL=0.1", "GAMMA=1", "TAU", "=", "0.5", "FIXTAU"))
+  got <- .hzr_parse_parms(c("MUL=0.1", "GAMMA=1", "TAU=&T", "FIXTAU"))
   row <- got$untranslated$reason[got$untranslated$construct == "TAU (unspecified)"]
   expect_length(row, 1L)
   expect_match(row, "was not read", fixed = TRUE)
@@ -1365,19 +1358,18 @@ test_that("a job with no PARMS operands at all is refused, not defaulted", {
 
 test_that("operands this parser cannot read are recorded but never refused", {
   # `refused` drives a stop() in place of the fit, so it is a claim about what
-  # PROC HAZARD does and is sound only when the whole statement was understood.
-  # .hzr_parse_hazard() splits on " ", so `PARMS MUE = 0.2` arrives as separate
-  # "MUE", "=", "0.2" operands and nothing parses -- while HAZARD's lexer drops
-  # whitespace unconditionally (hazard_l.l:32, rule at :50) and RUNS that job
-  # with an active early phase. Refusing it would stop a job the reference
-  # accepts, so the gate must key on comprehension, not on has_phases.
-  spaced <- .hzr_parse_parms(c("MUE", "=", "0.2", "THALF", "=", "1"))
-  expect_false(spaced$has_phases)
-  expect_false(spaced$refused)
-  expect_false(any(grepl("modterm.c", spaced$untranslated$reason, fixed = TRUE)))
-  # Not refusing is not the same as declaring it fine -- the operands are still
-  # reported, so this cannot pass by the parser having silently accepted them.
-  expect_true("MUE" %in% spaced$untranslated$construct)
+  # PROC HAZARD does and is sound only when the whole statement was
+  # understood. A macro operand is expanded by SAS before PROC HAZARD reads
+  # the statement, so this parser cannot tell what the job says; refusing it
+  # would claim a verdict it does not have. (Operands written with spaces
+  # around `=` used to be this case; they are joined and read now, #421.)
+  unread <- .hzr_parse_parms(c("MUE=&M", "THALF=1"))
+  expect_false(unread$has_phases)
+  expect_false(unread$refused)
+  expect_false(any(grepl("modterm.c", unread$untranslated$reason, fixed = TRUE)))
+  # Not refusing is not the same as declaring it fine -- the operand is still
+  # reported, so this cannot pass by the parser having silently accepted it.
+  expect_true("MUE=&M" %in% unread$untranslated$construct)
 
   # The paired readable case, so the assertions above cannot pass merely
   # because nothing ever refuses: MUE=0 is understood AND selects no phase.
@@ -1758,16 +1750,23 @@ test_that("a macro reference is not called a syntax error (#365 review)", {
                    c("MUE=0.2", "&KEY=", "0.3"),
                    c("MUE=0.2", "&KEY", "=0.3"),
                    c("MUE=0.2", "THALF", "=", "&V", "NU", "=", "1"))) {
+    # Joined (#421), each of these is one operand carrying a macro. The
+    # phase is not built on defaults in any of them: an unread operand may
+    # be the one that sets a shape.
     info <- paste(ops, collapse = " ")
     got <- .hzr_parse_parms(ops)
-    expect_false(isTRUE(got$has_phases), info = info)
+    # Either no phase is built, or one is built while an operand went unread:
+    # both stop, neither claims a syntax error.
+    expect_true(!isTRUE(got$has_phases) || length(got$not_mirrored) > 0L,
+                info = info)
     rows <- got$untranslated$reason[got$untranslated$construct != "MUE=0.2"]
     expect_gt(length(rows), 0L)
     expect_false(any(grepl("syntax error", rows, fixed = TRUE)), info = info)
     expect_false(any(grepl("does not run", rows, fixed = TRUE)), info = info)
     # Only the macro operand's pieces: the last case also carries a valid
     # spaced `NU = 1`, which rightly keeps its "accepts" reason.
-    macro_rows <- if ("NU" %in% ops) rows[seq_len(3L)] else rows
+    macro_rows <- rows[grepl("&", got$untranslated$construct[
+      got$untranslated$construct != "MUE=0.2"], fixed = TRUE)]
     expect_false(any(grepl("PROC HAZARD accepts", macro_rows, fixed = TRUE)),
                  info = info)
     expect_true(any(grepl("macro reference", rows, fixed = TRUE)), info = info)

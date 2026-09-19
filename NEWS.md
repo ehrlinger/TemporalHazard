@@ -46,6 +46,20 @@
 
   A `PARMS` or `PROC` value that carries a macro reference (`&X`, `%CALL`) is
   not refused, because SAS expands it before PROC HAZARD reads the statement.
+  An operand this translation could not read, for that reason or any other,
+  also stops a job whose phases it did build: the unread operand may be the
+  one that sets a shape, and the emitted phase would then carry SAS's default
+  where the job wrote something else.
+
+* **An operand written with spaces around `=` is read, not split apart**
+  (#421). SAS's lexer skips whitespace (`hazard_l.l:32`), so `THALF = 0.3` and
+  `MAXITER = 50` are the same jobs as their unspaced forms. This translator
+  split them on whitespace: the `PARMS` pieces were recorded and the phase was
+  built from `PROC HAZARD`'s default instead of the written value, and the
+  `PROC` line reported its pieces as unknown options. Operands are joined
+  before parsing, on both. A joined operand `PROC HAZARD` still rejects
+  (`THALF = ABC`, or `FIXNU = 1`, which takes no value) is a syntax error,
+  just as it is when written without the spaces.
 
 * **`hzr_translate_sas()` no longer fits a job `PROC HAZARD` rejects: if
   you hold estimates from such a translation, they have no SAS run behind

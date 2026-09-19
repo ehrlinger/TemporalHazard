@@ -407,7 +407,7 @@
 
   # --- statement 1: the PROC line and its options -------------------------
   toks <- strsplit(trimws(st[[1L]]), " ", fixed = TRUE)[[1L]]
-  toks <- toks[nzchar(toks)]
+  toks <- .hzr_sas_join_spaced(toks[nzchar(toks)])
   ctl <- list()
   data_name <- NULL
   outhaz <- NULL
@@ -432,21 +432,13 @@
     if (identical(token, "PROC") || identical(token, "HAZARD")) next
     seen <- seen + 1L
     if (is.na(token)) {
-      # The HZRP keyword table is the lexer's own (data-raw/hazard-grammar.R),
-      # so a word it does not know falls to the catch-all (hazard_l.l:177-179),
-      # sets yysynerr and terminates at initprz.c:75-77 -- as an unknown PARMS
-      # keyword does (U1). A macro token is left undecided: SAS expands it.
-      if (.hzr_sas_is_macro(tok)) {
-        note(key, "unknown PROC HAZARD option")
-      } else {
-        proc_rejected <- c(proc_rejected, paste0(
-          key, ": not a PROC HAZARD option (hazard_l.l), so PROC HAZARD ",
-          "rejects this job with a syntax error"))
-        note(key, paste0(
-          "unknown PROC HAZARD option: not in PROC HAZARD's grammar ",
-          "(hazard_l.l), so PROC HAZARD rejects this job with a syntax error ",
-          "and it does not run"))
-      }
+      # An unknown word here IS a lexer catch-all in PROC HAZARD
+      # (hazard_l.l:177-179), but this parser's block text is not guaranteed
+      # to hold only PROC HAZARD statements: a %repeat call brings a DATA
+      # step's own keywords through here. Claiming a syntax error on them
+      # refused jobs that run, so it is recorded, not refused (see the
+      # leftovers issue).
+      note(key, "unknown PROC HAZARD option")
       next
     }
     mapped <- mapped + 1L
@@ -544,6 +536,8 @@
     token <- .hzr_sas_token(kw, "HAZARD", "STMT")
     seen <- seen + 1L
     if (is.na(token)) {
+      # Recorded, not refused, for the same reason as an unknown PROC option
+      # above: the block text can carry another step's keywords.
       note(kw, "unknown HAZARD statement")
       next
     }
@@ -1638,7 +1632,7 @@
   }
 
   toks <- strsplit(trimws(st[[1L]]), " ", fixed = TRUE)[[1L]]
-  toks <- toks[nzchar(toks)]
+  toks <- .hzr_sas_join_spaced(toks[nzchar(toks)])
   data_name <- NULL
   inhaz <- NULL
   want_surv <- TRUE

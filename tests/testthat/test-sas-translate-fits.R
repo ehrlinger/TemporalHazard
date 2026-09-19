@@ -153,9 +153,10 @@ test_that("a PARMS that builds no usable phase emits a stop(), not a fit", {
   # which rendered an unfitted object. The test above is the paired case: a
   # usable PARMS still emits hazard().
   # (A template's `?` used to be the example; PROC HAZARD's lexer rejects `?`,
-  # so it is now a syntax stop (U1). An operand written with spaces around
-  # `=` is the parser's own limit: SAS accepts it, this parser cannot read it.)
-  for (parms in c("PARMS MUE = 0.2 THALF = 1 NU = 1;")) {
+  # so it is now a syntax stop (U1). An operand written with spaces around `=`
+  # is joined and read now (#421). A macro-only PARMS is the parser's own
+  # limit: SAS expands it and runs the job, this parser cannot read it.)
+  for (parms in c("PARMS &ALLPARMS;")) {
     f <- withr::local_tempfile(fileext = ".sas")
     writeLines(paste(
       "%HAZARD( PROC HAZARD DATA=AVCS CONDITION=14;",
@@ -794,15 +795,15 @@ test_that("U1 review 3: the last DELTA wins, and more known-unfittable jobs stop
   # hazard_y.y:138 is last-wins, so DELTA=0.5 DELTA=0 runs at delta = 0 --
   # exactly what is emitted.
   expect_false(.u1_stops(.u1_job(parms = "MUE=0.2 DELTA=0.5 DELTA=0 NU=1 M=1 THALF=1")))
-  # An unknown PROC option falls to the lexer's catch-all (hazard_l.l:177-179)
-  # and sets yysynerr, exactly as an unknown PARMS keyword does.
+  # An unknown PROC option IS a lexer catch-all in PROC HAZARD, but this
+  # parser's block text can carry another step's keywords (a %repeat call
+  # brings a DATA step through), so it is recorded rather than refused.
   job <- .u1_job(proc = " FOO", parms = "MUE=0.2 THALF=1 NU=1")
-  expect_true(.u1_stops(job))
-  expect_match(.u1_msg(job), "PROC HAZARD does not run this job", fixed = TRUE)
-  expect_false(.u1_stops(.u1_job(proc = " &OPT", parms = "MUE=0.2 THALF=1 NU=1")))
+  expect_false(.u1_stops(job))
+  expect_true("FOO" %in% job$untranslated$construct)
   # FIXTAU whose TAU this parser could not read: PROC HAZARD fixes TAU at the
   # written value or at 0.75*Tmax, never at the 1 the emitted phase pins.
-  job <- .u1_job(parms = "MUL=0.2 GAMMA=1 TAU = 5 FIXTAU")
+  job <- .u1_job(parms = "MUL=0.2 GAMMA=1 TAU=&T FIXTAU")
   expect_true(.u1_stops(job))
   expect_match(.u1_msg(job), "FIXTAU", fixed = TRUE)
   # An active MU whose phase this parser could not build: PROC HAZARD fits
@@ -812,4 +813,35 @@ test_that("U1 review 3: the last DELTA wins, and more known-unfittable jobs stop
   expect_match(.u1_msg(job), "MUL", fixed = TRUE)
   # Control: the same job with the late shape written builds both phases.
   expect_false(.u1_stops(.u1_job(parms = "MUE=0.2 THALF=0.5 NU=1 M=1 MUL=0.3 GAMMA=2 ETA=1 WEIBULL")))
+})
+
+test_that("U1 review 4: spaces around `=` are SAS's job, not a refusal (#421)", {
+  # hazard_l.l:32 skips whitespace, so `MAXITER = 50` and `THALF = 0.3` are
+  # the same jobs as their unspaced forms. They used to be split apart here:
+  # the PROC line called them a syntax error (a false refusal), and PARMS
+  # filled the operand from SAS's default and fitted a model PROC HAZARD does
+  # not fit. Operands are joined before parsing.
+  job <- .u1_job(proc = " MAXITER = 50", parms = "MUE=0.2 THALF=1 NU=1")
+  expect_false(.u1_stops(job))
+  expect_equal(job$calls$fit_base %||% job$calls$fit, job$calls$fit)
+  # The value is read, not defaulted.
+  job <- .u1_job(parms = "MUE=0.2 THALF = 0.3 NU = 1 M=1")
+  expect_false(.u1_stops(job))
+  src <- paste(deparse(job$calls$fit), collapse = " ")
+  expect_match(src, "t_half = 0.3", fixed = TRUE)
+  expect_match(src, "nu = 1", fixed = TRUE)
+  # Each spelling joins.
+  for (p in c("MUE=0.2 THALF= 0.3 NU=1 M=1", "MUE=0.2 THALF =0.3 NU=1 M=1")) {
+    src <- paste(deparse(.u1_job(parms = p)$calls$fit), collapse = " ")
+    expect_match(src, "t_half = 0.3", fixed = TRUE, info = p)
+  }
+  # A joined operand SAS still rejects is still a syntax stop.
+  expect_true(.u1_stops(.u1_job(parms = "MUE=0.2 THALF = ABC NU=1")))
+  # An unknown HAZARD statement keyword is recorded, for the same reason.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste("%HAZARD( PROC HAZARD DATA=D; EVENT DEAD; TIME TT; FOO BAR;",
+                   "PARMS MUL=0.2 TAU=1 GAMMA=2 ETA=1 WEIBULL; );"), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  expect_false(.u1_stops(job))
+  expect_true("FOO" %in% job$untranslated$construct)
 })

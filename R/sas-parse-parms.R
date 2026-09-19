@@ -83,6 +83,35 @@
   "around `=`, which PROC HAZARD accepts but this translator splits apart, ",
   "so the operand's value was not read"
 )
+# SAS's lexer skips whitespace (hazard_l.l:32), so `THALF = 0.3` is the same
+# operand as `THALF=0.3`: PROC HAZARD reads the value and runs the job. This
+# parser splits the statement on whitespace, so it joins the pieces back
+# before reading them. Anything that does not join into `KEY=VALUE` is left
+# alone for .hzr_parms_spaced_pieces() to judge (#421).
+.hzr_sas_join_spaced <- function(ops) {
+  n <- length(ops)
+  if (n < 2L) return(ops)
+  out <- character(0)
+  i <- 1L
+  while (i <= n) {
+    op <- ops[[i]]
+    if (identical(op, "=") && length(out) && i < n) {
+      out[length(out)] <- paste0(out[length(out)], "=", ops[[i + 1L]])
+      i <- i + 2L
+    } else if (nchar(op) > 1L && endsWith(op, "=") && i < n) {
+      out <- c(out, paste0(op, ops[[i + 1L]]))
+      i <- i + 2L
+    } else if (nchar(op) > 1L && startsWith(op, "=") && length(out)) {
+      out[length(out)] <- paste0(out[length(out)], op)
+      i <- i + 1L
+    } else {
+      out <- c(out, op)
+      i <- i + 1L
+    }
+  }
+  out
+}
+
 .hzr_parms_spaced_pieces <- function(ops) {
   # 0 = not a piece; 1 = a piece of a spaced operand PROC HAZARD accepts
   # (joined, it is a value keyword `= NUMBER`, hazard_y.y:137-147 and
@@ -812,6 +841,7 @@
     }
   }
 
+  operands <- .hzr_sas_join_spaced(operands)
   spaced_piece <- .hzr_parms_spaced_pieces(operands)
   for (i in seq_along(operands)) {
     op <- operands[[i]]
@@ -839,7 +869,10 @@
         unreadable <- TRUE
         if (.hzr_sas_is_macro(raw)) {
           # A macro value SAS expands first: not known to fail.
-          flag_bad(op, sprintf("PARMS value for %s is not numeric", key))
+          flag_bad(op, sprintf(paste0(
+            "PARMS value for %s is a SAS macro reference, which SAS resolves ",
+            "before PROC HAZARD reads the statement, so this translation ",
+            "cannot tell what it becomes"), key))
         } else if (grepl("?", raw, fixed = TRUE)) {
           # A template's placeholder: the lexer has no rule for `?` and its
           # catch-all sets yysynerr (hazard_l.l:178). Filling it from SAS's
@@ -884,6 +917,15 @@
         # hazard_y.y:138 is last-wins, so a later DELTA=0 clears an
         # earlier non-zero one, as it does in PROC HAZARD.
         delta_seen <- if (identical(val, 0)) NULL else list(op = op, val = val)
+      } else if (token %in% c("WEIBULL", "FIXGE2", "FIXGAE2", "FIXMNU1",
+                              "FIXDELTA", names(.hzr_parms_fix_map))) {
+        # A flag keyword given a value: the grammar has it as a bare token
+        # (hazard_y.y:148-160), so `FIXNU=1` is a syntax error and the job
+        # does not run (U1).
+        unreadable <- TRUE
+        flag_syntax(op, paste0(
+          key, " takes no value in PROC HAZARD (hazard_y.y:148-160), so PROC ",
+          "HAZARD rejects this job with a syntax error and it does not run"))
       } else {
         unreadable <- TRUE
         flag_bad(op, "PARMS keyword has no phase target")
@@ -1770,6 +1812,19 @@
     "written cannot be told, and the phase is not built on PROC HAZARD's ",
     "defaults"
   )
+  # An operand this parser could not read may be a shape or a FIX flag of a
+  # phase it DID build, and the emitted phase then carries SAS's default
+  # where the job wrote something else. It cannot be told apart from an
+  # operand that changes nothing, so the document stops rather than fitting
+  # a model that may not be PROC HAZARD's (U1).
+  if (unreadable && (build_early || build_late || has_muc)) {
+    not_mirrored <- c(not_mirrored, paste0(
+      "operands of this PARMS statement were not read (see the rows above); ",
+      "one of them may set a shape or a FIX flag of a phase this translation ",
+      "did build, so it cannot tell whether the emitted phases carry the ",
+      "values PROC HAZARD uses"))
+  }
+
   # PROC HAZARD fits the phase whatever this parser could read, so a model
   # without it is short a phase: the document stops (U1).
   for (nm in c("MUE", "MUL")) {
@@ -1781,9 +1836,9 @@
                paste(nm, sprintf(unread_why, phase)))
       not_mirrored <- c(not_mirrored, paste0(
         "an active ", nm, " whose ", phase, " phase this translation could ",
-        "not build (its shape operands were not read, see the rows above); ",
-        "PROC HAZARD fits that phase, so the emitted model would be short of ",
-        "it"))
+        "not build, because operands of this PARMS statement were not read ",
+        "(see the rows above); PROC HAZARD fits that phase, so the emitted ",
+        "model would be short of it"))
     }
   }
 
