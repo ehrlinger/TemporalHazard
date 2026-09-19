@@ -553,3 +553,76 @@ test_that("a phase variable missing from the data is named, not 'object not foun
                fixed = TRUE)
   expect_false(exists("fit", envir = res$env, inherits = FALSE))
 })
+
+test_that("every reachable SETG3 refusal renders a stop(), not a fit (#359)", {
+  # The whole reachable set, not a sample. Twelve codes can fire through
+  # .hzr_parse_parms(): the nine the exhaustive search in
+  # test-sas-parse-parms.R pins for the .hzr_setg3_notes() trace, plus the
+  # three the FIXGE2/FIXGAE2 constraint block raises itself (SETG3940,
+  # SETG3990, SETG31000). Each is RENDERED: the fit chunk must fail and bind
+  # no `fit`, which is the consequence a reader meets, rather than the
+  # message text we happen to emit.
+  refusals <- c(
+    # site: .hzr_setg3_notes() -- entry checks, setg3.c:269-284
+    SETG3900 = "PARMS MUL=0.2 TAU=0 FIXTAU GAMMA=2 ETA=1;",
+    SETG3910 = "PARMS MUL=0.2 TAU=1 GAMMA=0 FIXGAMMA ETA=1;",
+    SETG3920 = "PARMS MUL=0.2 TAU=1 GAMMA=2 ALPHA=-1 FIXALPHA ETA=1;",
+    SETG3930 = "PARMS MUL=0.2 TAU=1 GAMMA=2 ETA=0 FIXETA;",
+    # site: .hzr_setg3_notes() -- SETG3_weibull and the alpha fixup
+    SETG3960 = "PARMS MUL=0.2 TAU=1 GAMMA=0 ETA=0.25 FIXGE2 WEIBULL;",
+    SETG3970 = "PARMS MUL=0.2 TAU=1 GAMMA=2 ETA=0 WEIBULL;",
+    SETG3980 = "PARMS MUL=0.2 TAU=1 GAMMA=4 ETA=0.25 ALPHA=0 WEIBULL;",
+    SETG31020 = "PARMS MUL=0.2 TAU=1 GAMMA=1 ETA=1 FIXGAMMA FIXETA;",
+    SETG31040 = "PARMS MUL=0.2 TAU=1 GAMMA=1 ETA=1 ALPHA=3 FIXALPHA;",
+    # site: the constraint block's own alpha = 0 case, which the trace cannot
+    # see because it takes ga_two as FALSE
+    SETG3980_gae2 = paste("PARMS MUL=0.2 TAU=1 GAMMA=4 ETA=0.25 ALPHA=0",
+                          "FIXALPHA FIXGAE2 WEIBULL;"),
+    # site: the constraint block, FIXGE2 with both shapes fixed off 2
+    SETG3990 = paste("PARMS MUL=0.2 TAU=1 GAMMA=4 ETA=0.25 FIXGAMMA FIXETA",
+                     "FIXGE2 WEIBULL;"),
+    # site: the constraint block, FIXGAE2 with ALPHA fixed off the constraint
+    SETG31000 = paste("PARMS MUL=0.2 TAU=1 GAMMA=4 ETA=0.25 ALPHA=3 FIXALPHA",
+                      "FIXGAE2 WEIBULL;"),
+    # site: SETG3_ignore_tau under both flags, ALPHA fixed away from 1
+    SETG3940 = paste("PARMS MUL=0.2 TAU=1 GAMMA=4 ETA=0.5 ALPHA=3 FIXALPHA",
+                     "FIXGAE2 FIXGE2 WEIBULL;")
+  )
+  translate <- function(parms) {
+    f <- withr::local_tempfile(fileext = ".sas", .local_envir = parent.frame())
+    writeLines(paste("%HAZARD( PROC HAZARD DATA=D CONDITION=14;",
+                     "EVENT DEAD; TIME TT;", parms, ");"), f)
+    suppressWarnings(hzr_translate_sas(f))
+  }
+  set.seed(359)
+  n <- 80
+  D <- data.frame(TT = stats::rexp(n, 0.2), DEAD = rep(c(1, 0), length.out = n))
+
+  for (label in names(refusals)) {
+    code <- sub("_gae2$", "", label)
+    job <- translate(refusals[[label]])
+    res <- suppressWarnings(render_sim(job, list(D = D)))
+    expect_false(res$ok, info = label)
+    expect_match(res$results[["fit"]], code, fixed = TRUE, info = label)
+    expect_false(exists("fit", envir = res$env, inherits = FALSE), info = label)
+  }
+
+  # The paired control: a job PROC HAZARD runs still renders a fit. Without
+  # it, a fix that refused everything would pass every assertion above.
+  ok <- translate("PARMS MUL=0.2 TAU=1 GAMMA=4 ETA=0.25 WEIBULL;")
+  ok_res <- suppressWarnings(render_sim(ok, list(D = D)))
+  expect_true(ok_res$ok)
+  expect_s3_class(get("fit", envir = ok_res$env, inherits = FALSE), "hazard")
+
+  # The second control, and the one this change nearly got wrong: a constraint
+  # flag without WEIBULL reaches SETG3 down a path the trace does not model,
+  # so the trace's verdict is not PROC HAZARD's. Both of these FIT, and the
+  # document has to render.
+  for (ops in c("PARMS MUL=0.2 TAU=1 GAMMA=4 ETA=0.5 FIXGAMMA FIXETA FIXGE2;",
+                "PARMS MUL=0.2 TAU=1 GAMMA=4 ETA=1 ALPHA=2 FIXALPHA FIXGAE2;")) {
+    untraced <- suppressWarnings(render_sim(translate(ops), list(D = D)))
+    expect_true(untraced$ok, info = ops)
+    expect_s3_class(get("fit", envir = untraced$env, inherits = FALSE),
+                    "hazard")
+  }
+})

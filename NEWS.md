@@ -740,6 +740,20 @@
 
 ## Bug fixes
 
+* **A `hzr_translate_sas()` job PROC HAZARD refuses now stops instead of
+  fitting** (#359). When `SETG3` sets an error, the procedure exits in
+  `shape()` before `results()`, so the job produces nothing. The translation
+  recorded that as an untranslated row and still emitted a `hazard()` chunk,
+  and a reader who rendered past the callout got a converged fit standing in
+  for a job with no result. The document now opens with a `stop()` naming the
+  `SETG3` code, its cause and the `PARMS` operands that produced it. The row is
+  still recorded, so the listing of what was wrong is unchanged.
+
+  The refusal is raised only where the `setg3.c` trace applies. With `FIXGE2`
+  or `FIXGAE2` and no `WEIBULL`, SAS reaches `SETG3` down a path this
+  translator does not model, and jobs PROC HAZARD does fit were coming back
+  refused; those are recorded as before and still emit their fit.
+
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded
   as untranslated and build no phase. PROC HAZARD runs that phase on its own

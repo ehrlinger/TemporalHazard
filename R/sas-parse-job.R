@@ -661,6 +661,29 @@
     ))
   }
 
+  # A job SETG3 refuses. PROC HAZARD sets the error in shape() and exits
+  # before results(), so nothing is fitted and there is no fit to translate.
+  # The row alone left the hazard() chunk in place, and a reader who rendered
+  # past the callout got a converged fit standing in for a job that produced
+  # nothing -- the shape this package calls its signature defect. The code and
+  # the operands travel in the message, so the reader knows what to change
+  # (#359).
+  if (!is.null(parms$refusal_reason) && !is.na(parms$refusal_reason)) {
+    return(list(
+      call = call(
+        "stop",
+        paste0("This PROC HAZARD job is refused before any fit is computed: ",
+               parms$refusal_reason,
+               ". SETG3 sets the error in shape() and the procedure exits ",
+               "before results(), so there is no fit to translate. Correct ",
+               "the PARMS operand(s) named here, or fit the model by hand."),
+        call. = FALSE
+      ),
+      status_call = NULL, outhaz = outhaz, untranslated = untr,
+      tokens_seen = seen, tokens_mapped = mapped
+    ))
+  }
+
   # A PARMS statement that builds no phase and is NOT refused -- operands this
   # parser could not read (a template's `MUE=?`). A MUE or MUL with no shape
   # operand no longer lands here: it builds on PROC HAZARD's own shape

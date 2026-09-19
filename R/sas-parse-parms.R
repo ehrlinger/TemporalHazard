@@ -525,9 +525,13 @@
 #             property of the data, not of the PARMS block, so it cannot be
 #             decided here -- the TAU row already says the start is
 #             data-dependent.
-#   SETG3940, SETG3990, SETG31000, SETG31010
-#             are reachable only through g_two/ga_two, which FIXGE2/FIXGAE2
-#             drive and .hzr_sas_token() records as unresolved.
+#   SETG3940, SETG3990, SETG31000
+#             are reachable only through g_two/ga_two. The constraint block
+#             below raises them itself now that FIXGE2/FIXGAE2 are mapped
+#             (#329, #359), so they are absent HERE but not unreachable.
+#   SETG31010 is the non-WEIBULL twin of SETG3990 (setg3.c:884-889), on the
+#             SETG3_verify_ge_2() path this translator does not trace: a
+#             non-WEIBULL job carrying either flag is recorded, not refused.
 # SEVEN of the sixteen are unreachable in both languages, because each guards a
 # condition the ENTRY checks at setg3.c:269-284 have already refused:
 #   SETG31090, SETG32050, SETG33020  want a non-positive GAMMA that is fixed
@@ -539,8 +543,10 @@
 #                                    and zero sets g3flag = 2 (:332-335) so
 #                                    SETG3_alpha_gener() is never called.
 # They are kept because the C keeps them and because the entry checks are what
-# makes them dead -- change those and these wake up. Nine codes can actually
-# fire, which an exhaustive search in the tests pins rather than asserts.
+# makes them dead -- change those and these wake up. Nine codes can fire from
+# THIS trace, which an exhaustive search in the tests pins rather than
+# asserts; the constraint block below raises three more (SETG3940, SETG3990,
+# SETG31000), so twelve are reachable through .hzr_parse_parms().
 
 #' Plain-language gloss for a SETG3 refusal code.
 #' @noRd
@@ -766,6 +772,23 @@
   flag_bad <- function(construct, reason) {
     bad_construct <<- c(bad_construct, construct)
     bad_reason <<- c(bad_reason, reason)
+  }
+
+  # A SETG3 refusal is a job PROC HAZARD stops in shape(), before hzrg() fits
+  # anything, so it has to leave this parser as more than prose:
+  # .hzr_parse_job() turns `refusal_reason` into the stop() chunk. `refused`
+  # is not widened for it -- that field is documented as modterm.c's ERROR
+  # 1001 ("no phase selected"), and overloading it would lose that meaning.
+  # The row is still recorded, so the document lists what was wrong.
+  refusal_reason <- NA_character_
+  flag_refusal <- function(construct, reason) {
+    flag_bad(construct, reason)
+    # The stop() chunk carries the reason and nothing else, and it tells the
+    # reader to correct the operands named in it -- so the construct has to
+    # travel with the reason or the message names nothing.
+    if (is.na(refusal_reason)) {
+      refusal_reason <<- paste0(reason, " (PARMS ", construct, ")")
+    }
   }
 
   spaced_piece <- .hzr_parms_spaced_pieces(operands)
@@ -1037,7 +1060,7 @@
       # PROC HAZARD stops here, so nothing the trace below would describe
       # is ever reached.
       ignore_tau_handled <- TRUE
-      flag_bad(paste(constraint_flags, collapse = " "), paste0(
+      flag_refusal(paste(constraint_flags, collapse = " "), paste0(
         "PROC HAZARD refuses this job: SETG3 raises (SETG3940) -- ",
         "SETG3_ignore_tau() must set ALPHA to 1, but ALPHA is fixed at ",
         sprintf("%g", written[["alpha"]]), " (setg3.c:382-385)"))
@@ -1084,6 +1107,9 @@
     gamma_ <- late_full[["gamma"]]
     eta_ <- late_full[["eta"]]
     alpha_ <- late_full[["alpha"]]
+    # The operands as this job wrote them (after the shape defaults are
+    # filled), kept for the moved-shape record at the end of this block.
+    written_late <- late_full
     # SETG3_weibull() refuses on the operands as written (setg3.c:430-440)
     # BEFORE either constraint moves one, so rewriting first would repair a
     # job PROC HAZARD does not run. .hzr_setg3_notes() reports these refusals
@@ -1095,7 +1121,7 @@
       !isTRUE(alpha_ >= 0) || (isTRUE(alpha_ == 0) && !fx("alpha")) ||
       alpha_zero_gae2
     if (is.null(not_traced) && alpha_zero_gae2) {
-      flag_bad("FIXGAE2", paste0(
+      flag_refusal("FIXGAE2", paste0(
         "PROC HAZARD refuses this job: SETG3 raises (SETG3980) -- ",
         .hzr_setg3_refusal_reason("(SETG3980)"),
         "; under FIXGAE2 a fixed ALPHA = 0 does not select the exponential ",
@@ -1116,7 +1142,7 @@
       # from 2 is moved, or refused, there too.
       if (!isTRUE(gamma_ * eta_ == 2)) {
         if (fx("gamma") && fx("eta")) {
-          flag_bad("FIXGE2", paste0(
+          flag_refusal("FIXGE2", paste0(
             "PROC HAZARD refuses this job: SETG3 raises (SETG3990) -- GAMMA ",
             "and ETA are both fixed and GAMMA*ETA = ", sprintf("%g", gamma_ * eta_),
             ", not 2, so neither can be adjusted"))
@@ -1136,7 +1162,7 @@
       # SETG3_alpha_fixup() (setg3.c:817-826) tests a fixed ALPHA against the
       # constraint before it asks whether GAMMA or ETA is free, so this
       # refusal holds whatever else is fixed.
-      flag_bad("FIXGAE2", paste0(
+      flag_refusal("FIXGAE2", paste0(
         "PROC HAZARD refuses this job: SETG3 raises (SETG31000) -- ALPHA is ",
         "fixed at ", sprintf("%g", late_full[["alpha"]]), " where FIXGAE2 ",
         "must move it to GAMMA*ETA/2 = ", sprintf("%g", gamma_ * eta_ / 2)))
@@ -1154,6 +1180,30 @@
       late_constraint <- "alpha_gamma_eta"
     }
     fixed_late <- intersect(unname(.hzr_parms_late_arg), fixed_late)
+
+    # setg3.c:449-467 and :827 move a shape onto the constraint and call
+    # hzr_parm_changed(), so PROC HAZARD tells its own reader. The emitted
+    # phase is that model, but the job wrote something else, and the SETG3
+    # notes trace below covers only its own rewrites -- not this block's,
+    # added with the constraint mapping. Record them here so the emitted
+    # document says what changed (#359).
+    moved_by_flags <- vapply(c("gamma", "alpha", "eta"), function(param) {
+      if (isTRUE(written_late[[param]] == late_full[[param]])) "" else
+        sprintf("%s=%g -> %g", toupper(param), written_late[[param]],
+                late_full[[param]])
+    }, character(1))
+    moved_by_flags <- moved_by_flags[nzchar(moved_by_flags)]
+    # No `refusal_reason` guard here: a refused job never reaches a rewrite,
+    # so the two cannot coexist (a mutant allowing both changes nothing).
+    if (length(moved_by_flags)) {
+      flag_bad(paste(moved_by_flags, collapse = " "), paste0(
+        paste(constraint_flags, collapse = " and "),
+        " moves the late shape onto the constraint before fitting ",
+        "(setg3.c:449-467, :827), as PROC HAZARD does and reports through ",
+        "hzr_parm_changed(): ", paste(moved_by_flags, collapse = ", "),
+        ". The emitted phase is the model PROC HAZARD fits, not the operands ",
+        "written here"))
+    }
   }
 
   # EARLY/CONSTANT/LATE operand text: comma-separated VAR=VALUE pairs (or
@@ -1320,21 +1370,41 @@
     )
     if (!is.null(setg3$refusal)) {
       setg3_refused <- isTRUE(setg3$entry)
-      flag_bad(
-        sprintf("GAMMA=%g ALPHA=%g ETA=%g%s", late_full[["gamma"]],
-                late_full[["alpha"]], late_full[["eta"]],
-                if (length(fixed_late_user)) {
-                  paste0(" fixed:", paste(fixed_late_user, collapse = ","))
-                } else {
-                  ""
-                }),
-        paste0("PROC HAZARD refuses this job: SETG3 raises ",
-               setg3$refusal, " -- ",
-               .hzr_setg3_refusal_reason(setg3$refusal),
-               ". hzr_phase() would accept it, so without this the ",
-               "translation would emit a runnable fit for a job that does ",
-               "not run")
-      )
+      # The setg3.c trace .hzr_setg3_notes() encodes assumes neither constraint
+      # flag is set. With FIXGE2 or FIXGAE2 and no WEIBULL, SAS reaches SETG3
+      # down a path the trace does not model, and jobs PROC HAZARD RUNS come
+      # back refused here: `MUL=0.2 TAU=1 GAMMA=4 ETA=0.5 FIXGAMMA FIXETA
+      # FIXGE2` and `MUL=0.2 TAU=1 GAMMA=4 ETA=1 ALPHA=2 FIXALPHA FIXGAE2` both
+      # fit. Such a job is neither refused nor silently passed: the row says
+      # what is true, which is that this parser cannot decide it.
+      not_traced <- length(constraint_flags) && !saw_weibull
+      construct <- sprintf("GAMMA=%g ALPHA=%g ETA=%g%s", late_full[["gamma"]],
+                           late_full[["alpha"]], late_full[["eta"]],
+                           if (length(fixed_late_user)) {
+                             paste0(" fixed:",
+                                    paste(fixed_late_user, collapse = ","))
+                           } else {
+                             ""
+                           })
+      if (not_traced) {
+        flag_bad(construct, paste0(
+          "this shape reaches SETG3 with ",
+          paste(constraint_flags, collapse = " and "),
+          " set and no WEIBULL, which this translation does not trace, so ",
+          "whether PROC HAZARD refuses the job (it would raise ",
+          setg3$refusal, " on the traced path) is not decided here. The ",
+          "emitted phase is the one the PARMS statement writes; check the ",
+          "SAS log before relying on the fit"
+        ))
+      } else {
+        flag_refusal(construct, paste0(
+          "PROC HAZARD refuses this job: SETG3 raises ",
+          setg3$refusal, " -- ",
+          .hzr_setg3_refusal_reason(setg3$refusal),
+          ". hzr_phase() accepts this shape, so the translated fit ",
+          "would converge on a job SAS never fits"
+        ))
+      }
     } else {
       # At alpha = 1 only the product gamma*eta is identified, and the
       # emitted call deliberately keeps the user's split rather than
@@ -1673,6 +1743,7 @@
     has_phases = length(phase_calls) > 0L,
     refused = refused,
     rejected = rejected,
+    refusal_reason = refusal_reason,
     untranslated = .hzr_untranslated_frame(
       line = rep(NA_integer_, length(bad_construct)),
       construct = bad_construct,

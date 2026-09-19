@@ -1459,7 +1459,9 @@ test_that("FIX tokens of a phase that is not built are recorded", {
 test_that("FIXGAE2 on a WEIBULL late phase derives alpha", {
   got <- .hzr_parse_parms(c("MUL=5.64297E-05", "TAU=14", "ALPHA=2", "GAMMA=22",
                             "ETA=0.18", "FIXGAE2", "WEIBULL"))
-  expect_equal(nrow(got$untranslated), 0L)
+  # One row: the ALPHA the job wrote is not the one either program uses, as
+  # PROC HAZARD's own listing reports through hzr_parm_changed() (#359).
+  expect_equal(got$untranslated$construct, "ALPHA=2 -> 1.98")
   expect_equal(
     got$phases,
     quote(list(hzr_phase("g3", tau = 14, gamma = 22, alpha = 1.98, eta = 0.18,
@@ -1473,7 +1475,7 @@ test_that("FIXGAE2 on a WEIBULL late phase derives alpha", {
 test_that("FIXGE2 with gamma and eta free derives eta, moving gamma onto 2/eta", {
   got <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
                             "FIXGE2", "WEIBULL"))
-  expect_equal(nrow(got$untranslated), 0L)
+  expect_equal(got$untranslated$construct, "GAMMA=4 -> 8")
   expect_equal(
     got$phases,
     quote(list(hzr_phase("g3", tau = 1, gamma = 8, alpha = 1, eta = 0.25,
@@ -1484,7 +1486,7 @@ test_that("FIXGE2 with gamma and eta free derives eta, moving gamma onto 2/eta",
 test_that("FIXGE2 with one of gamma, eta fixed fixes both on the constraint", {
   got <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
                             "FIXGAMMA", "FIXGE2", "WEIBULL"))
-  expect_equal(nrow(got$untranslated), 0L)
+  expect_equal(got$untranslated$construct, "ETA=0.25 -> 0.5")
   expect_equal(
     got$phases,
     quote(list(hzr_phase("g3", tau = 1, gamma = 4, alpha = 1, eta = 0.5,
@@ -1516,7 +1518,7 @@ test_that("FIXGAE2 against a fixed alpha off the constraint is a refusal", {
 test_that("FIXGAE2 with gamma and eta both fixed only moves alpha's start", {
   got <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
                             "FIXGAMMA", "FIXETA", "FIXGAE2", "WEIBULL"))
-  expect_equal(nrow(got$untranslated), 0L)
+  expect_equal(got$untranslated$construct, "ALPHA=1 -> 0.5")
   expect_equal(
     got$phases,
     quote(list(hzr_phase("g3", tau = 1, gamma = 4, alpha = 0.5, eta = 0.25,
@@ -1861,4 +1863,131 @@ test_that("each syntax-error form names its own source, not a shared one (#340)"
     got <- .hzr_parse_parms(ops, covars = list(early = paste0(item, ", Z")))
     expect_length(got$rejected, 0L)
   }
+})
+
+# ---------------------------------------------------------------------------
+# A refusal leaves the parser as more than prose (#359)
+# ---------------------------------------------------------------------------
+
+test_that("the constraint block adds exactly three reachable refusal codes", {
+  # The exhaustive search above pins the nine codes the .hzr_setg3_notes()
+  # trace can raise. The FIXGE2/FIXGAE2 block raises three more itself, which
+  # that search cannot see because it calls the trace directly and the trace
+  # takes both flags as FALSE. Enumerated here so the reachable set is a list
+  # of inputs rather than a count: twelve in total, every one tested.
+  by_site <- list(
+    # constraint block, alpha = 0 under FIXGAE2 (g3flag 3, not the trace's 4)
+    "(SETG3980)" = c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25", "ALPHA=0",
+                     "FIXALPHA", "FIXGAE2", "WEIBULL"),
+    # constraint block, FIXGE2 with both shapes fixed off the product
+    "(SETG3990)" = c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25", "FIXGAMMA",
+                     "FIXETA", "FIXGE2", "WEIBULL"),
+    # constraint block, FIXGAE2 with ALPHA fixed off the constraint
+    "(SETG31000)" = c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25", "ALPHA=3",
+                      "FIXALPHA", "FIXGAE2", "WEIBULL"),
+    # SETG3_ignore_tau under both flags, ALPHA fixed away from 1
+    "(SETG3940)" = c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.5", "ALPHA=3",
+                     "FIXALPHA", "FIXGAE2", "FIXGE2", "WEIBULL")
+  )
+  for (code in names(by_site)) {
+    got <- .hzr_parse_parms(by_site[[code]])
+    expect_match(got$refusal_reason, code, fixed = TRUE, label = code)
+  }
+
+  # SETG31010 is the non-WEIBULL twin of SETG3990 (setg3.c:884-889). This
+  # translator does not trace the non-WEIBULL constraint path at all -- it
+  # records the flag as untranslated instead -- so that code is not reachable
+  # here, and the job is recorded rather than refused.
+  non_weibull <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
+                                    "FIXGAMMA", "FIXETA", "FIXGE2"))
+  expect_true(is.na(non_weibull$refusal_reason))
+  expect_true(any(grepl("not translated", non_weibull$untranslated$reason,
+                        fixed = TRUE)))
+})
+
+test_that("a constraint flag without WEIBULL is recorded, never refused", {
+  # The .hzr_setg3_notes() trace takes both constraint flags as FALSE, so on
+  # the non-WEIBULL constraint path it answers about a job SAS does not run.
+  # PROC HAZARD FITS both of these; before the containment they came back as
+  # SETG31020 and SETG31040 and the translated document opened with stop(),
+  # which is the signature defect pointing the other way -- a refusal that
+  # looks like PROC HAZARD's and is not.
+  for (ops in list(
+    c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.5", "FIXGAMMA", "FIXETA",
+      "FIXGE2"),
+    c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=1", "ALPHA=2", "FIXALPHA",
+      "FIXGAE2")
+  )) {
+    got <- .hzr_parse_parms(ops)
+    expect_true(is.na(got$refusal_reason),
+                label = paste(ops, collapse = " "))
+    # The note survives the containment, and it says what is true. Dropping
+    # only the stop() would leave the row asserting "PROC HAZARD refuses this
+    # job" about a job PROC HAZARD fits -- a quieter version of the same
+    # wrong answer.
+    row <- got$untranslated$reason[grepl("^GAMMA=", got$untranslated$construct)]
+    expect_length(row, 1L)
+    expect_match(row, "does not trace", fixed = TRUE)
+    expect_false(grepl("PROC HAZARD refuses this job", row, fixed = TRUE))
+    expect_false(is.null(got$phases))
+  }
+
+  # The same shapes WITH WEIBULL stay refused -- the containment is keyed on
+  # the untraced path, not on the flags alone.
+  weibull <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
+                                "FIXGAMMA", "FIXETA", "FIXGE2", "WEIBULL"))
+  expect_false(is.na(weibull$refusal_reason))
+})
+
+test_that("every SETG3 refusal is carried out of the parser", {
+  # `refused` is documented as modterm.c's ERROR 1001 ("no phase selected"),
+  # so the SETG3 codes travel in their own field rather than widening it.
+  codes <- list(
+    SETG3960 = c("MUL=0.2", "TAU=1", "GAMMA=0", "ETA=0.25", "FIXGE2",
+                 "WEIBULL"),
+    SETG3980 = c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25", "ALPHA=0",
+                 "WEIBULL"),
+    SETG31020 = c("MUL=0.2", "TAU=1", "GAMMA=1", "ETA=1", "FIXGAMMA",
+                  "FIXETA"),
+    SETG3940 = c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.5", "ALPHA=3",
+                 "FIXALPHA", "FIXGAE2", "FIXGE2", "WEIBULL")
+  )
+  for (code in names(codes)) {
+    got <- .hzr_parse_parms(codes[[code]])
+    expect_match(got$refusal_reason, code, fixed = TRUE, label = code)
+    # The row stays too: the document still lists what was wrong.
+    expect_true(any(grepl(code, got$untranslated$reason, fixed = TRUE)),
+                label = code)
+    # ERROR 1001 is a different refusal and must not be claimed here.
+    expect_false(got$refused, label = code)
+  }
+  ok <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
+                           "WEIBULL"))
+  expect_true(is.na(ok$refusal_reason))
+})
+
+test_that("the constraint block's own rewrite is recorded, as the trace's are", {
+  # setg3.c:449-467 moves GAMMA to 2/ETA when the product is not 2, and calls
+  # hzr_parm_changed(HZ_GAMMA), so PROC HAZARD tells its reader. The emitted
+  # phase is right; what was missing is the record. The SETG3-notes trace
+  # covers its own rewrites, but not the constraint block #329 added.
+  got <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=3", "ETA=0.5", "FIXGE2",
+                            "WEIBULL"))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("g3", tau = 1, gamma = 4, alpha = 1, eta = 0.5,
+                         constraint = "eta_gamma")))
+  )
+  row <- got$untranslated$reason[grepl("GAMMA", got$untranslated$construct,
+                                       fixed = TRUE)]
+  expect_length(row, 1L)
+  expect_match(row, "FIXGE2", fixed = TRUE)
+  # The whole move, not the digits: the reason carries "setg3.c:449-467", so
+  # a bare "3" and a bare "4" both match the citation and cannot fail.
+  expect_match(row, "GAMMA=3 -> 4", fixed = TRUE)
+
+  # A job already on the constraint has nothing to record.
+  on <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.5", "FIXGE2",
+                           "WEIBULL"))
+  expect_equal(nrow(on$untranslated), 0L)
 })
