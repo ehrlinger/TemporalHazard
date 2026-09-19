@@ -1587,7 +1587,9 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   definitions and defaults.
 #' @param ... Additional arguments forwarded to [hzr_stepwise()] (e.g.
 #'   `control = list(maxit = 500)`, which every `dist` reads) when `scope`
-#'   is supplied; ignored otherwise.
+#'   is supplied. Only `trace` and names `hazard()` declares are accepted;
+#'   any other name is an error, and so is any `...` argument without
+#'   `scope`.
 #'
 #' @section Selection mode is experimental:
 #'

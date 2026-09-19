@@ -92,7 +92,11 @@ considered as candidates.}
 \item{trace}{Logical; print step-by-step progress to the console.
 Default \code{TRUE}.}
 
-\item{...}{Unused.}
+\item{...}{Passed to the underlying \code{hazard()} refits (e.g.
+\code{control = list(n_starts = 3)}). Only names \code{hazard()} declares are
+accepted: any other name, such as a misspelled \code{slentyr}, is an error,
+since \code{hazard()} would store it without reading it. The \code{print()},
+\code{summary()} and \code{as.data.frame()} methods ignore \code{...}.}
 
 \item{x}{An \code{hzr_stepwise} object.}
 

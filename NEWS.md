@@ -216,6 +216,19 @@
   applies to each element of a multiphase `scope` list, and a list that
   names a phase twice, whose second entry was never read, is refused too.
 
+* **`hzr_stepwise()` and `hzr_bootstrap()` now refuse a `...` argument that
+  `hazard()` does not declare (#386).** Both pass `...` on to every
+  candidate refit, and `hazard()` stores an undeclared name without reading
+  it. So a misspelled argument had no effect: `slentyr = 1e-6`, meant as
+  `slentry`, ran the screen at the default `slentry = 0.30` and selected
+  three variables where the intended threshold selects one, with no
+  message. Such a call is now an error that names the argument and, when
+  one is close, the argument it was probably meant to be. An unnamed value
+  in `...` is refused too. `hzr_bootstrap()` refuses before seeding, so the
+  error is not tallied as a replicate failure. Names `hazard()` declares,
+  such as `control`, are forwarded as before. `?hzr_stepwise` had also
+  described `...` as unused, because the print method's entry replaced it.
+
 * **`hazard()` now refuses a multiphase phase formula with covariates when
   no `data` is supplied (#299).** Such fits previously ignored the phase
   formula. On the vector interface (`time =`, `status =`) without `data`, a

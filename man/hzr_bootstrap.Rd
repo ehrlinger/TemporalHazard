@@ -84,7 +84,9 @@ See \code{\link[=hzr_stepwise]{hzr_stepwise()}}.}
 
 \item{...}{Additional arguments forwarded to \code{\link[=hzr_stepwise]{hzr_stepwise()}} (e.g.
 \code{control = list(maxit = 500)}, which every \code{dist} reads) when \code{scope}
-is supplied; ignored otherwise.}
+is supplied. Only \code{trace} and names \code{hazard()} declares are accepted;
+any other name is an error, and so is any \code{...} argument without
+\code{scope}.}
 
 \item{x}{An \code{hzr_bootstrap} object.}
 

@@ -142,7 +142,10 @@
 #' @param trace Logical; print step-by-step progress to the console.
 #'   Default `TRUE`.
 #' @param ... Passed to the underlying `hazard()` refits (e.g.
-#'   `control = list(n_starts = 3)`).
+#'   `control = list(n_starts = 3)`). Only names `hazard()` declares are
+#'   accepted: any other name, such as a misspelled `slentyr`, is an error,
+#'   since `hazard()` would store it without reading it. The `print()`,
+#'   `summary()` and `as.data.frame()` methods ignore `...`.
 #'
 #' @return An object of class `c("hzr_stepwise", "hazard")`, the
 #'   final fit augmented with:
@@ -877,7 +880,6 @@ hzr_stepwise <- function(fit,
 
 #' @rdname hzr_stepwise
 #' @param x An `hzr_stepwise` object.
-#' @param ... Unused.
 #' @return `print.hzr_stepwise` returns `x` invisibly.
 #' @export
 print.hzr_stepwise <- function(x, ...) {
