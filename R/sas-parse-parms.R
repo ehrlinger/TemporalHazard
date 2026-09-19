@@ -45,8 +45,12 @@
   "before PROC HAZARD reads the statement, so this translation cannot tell ",
   "what it becomes"
 )
+# A SAS macro reference (`&X`) or call (`%CALL`), which SAS expands before
+# PROC HAZARD reads the statement: never judged as a syntax error.
+.hzr_sas_is_macro <- function(x) grepl("[&%]", x)
+
 .hzr_parms_unresolved_why <- function(op) {
-  if (grepl("&", op, fixed = TRUE)) .hzr_parms_unresolved_macro_reason else
+  if (.hzr_sas_is_macro(op)) .hzr_parms_unresolved_macro_reason else
     .hzr_parms_unresolved_reason
 }
 
@@ -94,7 +98,7 @@
     !is.na(t) && t %in% c(.hzr_parms_mu_order, names(.hzr_parms_early_arg),
                           names(.hzr_parms_late_arg), "DELTA")
   }
-  macro <- function(x) grepl("&", x, fixed = TRUE)
+  macro <- .hzr_sas_is_macro
   bare_key <- function(k) {
     k >= 1L && code[k] == 0L && !grepl("=", ops[[k]], fixed = TRUE) &&
       (!is.na(tok(ops[[k]])) || macro(ops[[k]]))
@@ -773,6 +777,9 @@
   # stop() rather than a fit (John's U1 decision, 2026-09-19). A macro
   # reference is not here: SAS expands it first, so it is not known to fail.
   parms_rejected <- character(0)
+  # A job PROC HAZARD runs on a model this translation would not emit (U1):
+  # .hzr_parse_job() stops on any entry here, naming each.
+  not_mirrored <- character(0)
 
   flag_bad <- function(construct, reason) {
     bad_construct <<- c(bad_construct, construct)
@@ -783,7 +790,7 @@
     parms_rejected <<- c(parms_rejected, paste0("PARMS ", construct, ": ", reason))
   }
   flag_unresolved <- function(op) {
-    if (grepl("&", op, fixed = TRUE)) flag_bad(op, .hzr_parms_unresolved_why(op))
+    if (.hzr_sas_is_macro(op)) flag_bad(op, .hzr_parms_unresolved_why(op))
     else flag_syntax(op, .hzr_parms_unresolved_why(op))
   }
 
@@ -829,7 +836,18 @@
         flag_unresolved(op)
       } else if (is.na(val)) {
         unreadable <- TRUE
-        flag_bad(op, sprintf("PARMS value for %s is not numeric", key))
+        if (.hzr_sas_is_macro(raw) || grepl("?", raw, fixed = TRUE)) {
+          # A macro value SAS expands first; a template's `?` placeholder is
+          # left for the reader to fill (the "builds no phase" stop names it).
+          flag_bad(op, sprintf("PARMS value for %s is not numeric", key))
+        } else {
+          # A word after `=` is not a NUMBER to the lexer (hazard_l.l:176):
+          # PROC HAZARD stops with a syntax error, as for `NU = ABC`.
+          flag_syntax(op, paste0(
+            "PARMS value ", raw, " for ", key, " is not a number PROC ",
+            "HAZARD's lexer reads (hazard_l.l:34-38), so PROC HAZARD rejects ",
+            "this job with a syntax error and it does not run"))
+        }
       } else if (!.hzr_sas_lexer_number(raw)) {
         unreadable <- TRUE
         flag_syntax(op, paste0(
@@ -856,6 +874,9 @@
           # message -- it lands in the untranslated frame and is grepped by
           # callers and tests. format() honours getOption("OutDec"), so a
           # session with OutDec = "," would write "DELTA = 0,5" and break both.
+          not_mirrored <- c(not_mirrored, paste0(
+            "DELTA = ", sprintf("%g", val), ", which R does not implement (it ",
+            "assumes delta = 0); remove DELTA or fit the model by hand"))
           flag_bad(op, paste0(
             "DELTA = ", sprintf("%g", val), " is not implemented -- R assumes ",
             "delta = 0, so the emitted call fits a DIFFERENT model than this ",
@@ -1146,8 +1167,50 @@
       # Recorded by the SETG3 trace or just above; nothing to translate.
       NULL
     } else if (!is.null(not_traced)) {
-      for (flag in constraint_flags) {
-        flag_bad(flag, paste0(flag, " is not translated: ", not_traced))
+      # Without WEIBULL, an all-positive shape takes SETG3_all_gt_0()
+      # (setg3.c:484-505): SETG3_verify_ge_2(), then SETG3_alpha_fixup(). Its
+      # deterministic refusals are raised here (U1). Otherwise SAS ties the
+      # constrained shapes at every step (hzd_late_t2p.c), which this
+      # translation mirrors only under WEIBULL: if one of them is free, the
+      # emitted phase is a different model and the document stops; if all
+      # are fixed on the relation, it is SAS's model and fits.
+      ties <- unique(c(if (saw_ge2) c("gamma", "eta"),
+                       if (saw_gae2) c("alpha", "gamma", "eta")))
+      all_pos <- isTRUE(gamma_ > 0) && isTRUE(eta_ > 0) && isTRUE(alpha_ > 0)
+      gte <- gamma_ * eta_
+      if (all_pos && saw_ge2 && fx("gamma") && fx("eta") && !isTRUE(gte == 2)) {
+        flag_refusal("FIXGE2", paste0(
+          "PROC HAZARD refuses this job: SETG3 raises (SETG31010) -- without ",
+          "WEIBULL, SETG3_verify_ge_2() finds GAMMA and ETA both fixed with ",
+          "GAMMA*ETA = ", sprintf("%g", gte), ", not 2 (setg3.c:884-889)"))
+      } else if (all_pos && saw_gae2 && fx("alpha") && !isTRUE(gte / alpha_ == 2)) {
+        flag_refusal("FIXGAE2", paste0(
+          "PROC HAZARD refuses this job: SETG3 raises (SETG31000) -- ALPHA is ",
+          "fixed at ", sprintf("%g", alpha_), " where FIXGAE2 must move it to ",
+          "GAMMA*ETA/2 = ", sprintf("%g", gte / 2), " (setg3.c:817-826)"))
+      } else if (all_pos && saw_ge2 && fx("alpha") && isTRUE(alpha_ >= 1)) {
+        # SETG3_verify_ge_2() has already put GAMMA*ETA at 2, so
+        # SETG3_alpha_fixup() sees GAMMA*ETA/ALPHA = 2/ALPHA <= 2 and a fixed
+        # ALPHA it may not move (setg3.c:836-847).
+        flag_refusal("FIXGE2", paste0(
+          "PROC HAZARD refuses this job: SETG3 raises (SETG31040) -- without ",
+          "WEIBULL, SETG3_alpha_fixup() needs GAMMA*ETA/ALPHA > 2, but ALPHA ",
+          "is fixed at ", sprintf("%g", alpha_), " (setg3.c:836-847)"))
+      } else if (!all(ties %in% fixed_late)) {
+        not_mirrored <- c(not_mirrored, paste0(
+          paste(constraint_flags, collapse = " and "), " without WEIBULL, ",
+          "with which PROC HAZARD ties ", paste(toupper(ties), collapse = ", "),
+          " at every step (setg3.c:484-505, hzd_late_t2p.c); this translation ",
+          "mirrors that constraint only with WEIBULL, so the emitted phase ",
+          "would estimate them freely. Add WEIBULL if the job means it, or fit ",
+          "the model by hand"))
+        for (flag in constraint_flags) {
+          flag_bad(flag, paste0(flag, " is not translated: ", not_traced))
+        }
+      } else {
+        for (flag in constraint_flags) {
+          flag_bad(flag, paste0(flag, " is not translated: ", not_traced))
+        }
       }
     } else if (saw_ge2) {
       # setg3.c:444-472: make GAMMA*ETA = 2 by moving the operand that is not
@@ -1392,7 +1455,10 @@
       # FIXGE2` and `MUL=0.2 TAU=1 GAMMA=4 ETA=1 ALPHA=2 FIXALPHA FIXGAE2` both
       # fit. Such a job is neither refused nor silently passed: the row says
       # what is true, which is that this parser cannot decide it.
-      not_traced <- length(constraint_flags) && !saw_weibull
+      # The entry checks (setg3.c:269-284) run before any constraint or
+      # WEIBULL logic, so they are refusals on every path (U1 review).
+      not_traced <- length(constraint_flags) && !saw_weibull &&
+        !isTRUE(setg3$entry)
       construct <- sprintf("GAMMA=%g ALPHA=%g ETA=%g%s", late_full[["gamma"]],
                            late_full[["alpha"]], late_full[["eta"]],
                            if (length(fixed_late_user)) {
@@ -1530,6 +1596,12 @@
     # data-dependent value while the emitted phase holds it at 1, which is a
     # different model outright.
     tau_fixed <- "tau" %in% fixed_late
+    if (tau_fixed && tau_absent && !unreadable) {
+      not_mirrored <- c(not_mirrored, paste0(
+        "FIXTAU with no TAU written, which PROC HAZARD fixes at 0.75*Tmax ",
+        "(readobs.c:153-154), a value that depends on the data; write TAU= ",
+        "with the value to fix it at"))
+    }
     flag_bad(
       if (tau_absent) "TAU (unspecified)" else
         paste0("TAU=", sprintf("%g", late[["tau"]])),
@@ -1677,6 +1749,12 @@
   # that this translation does not apply. On an active early phase that makes
   # the emitted phase a different model, and the row says the consequence
   # rather than a parse state. Mirroring it is separate work.
+  # FIXMNU1 constrains nothing when M and NU are both fixed on M*NU = 1 with
+  # both positive: SETG1_mNuOne_TRUE() leaves m = 1/nu unchanged
+  # (setg1.c:531-548) and hzd_early_t2p.c:65-77 acts only on a free one.
+  mnu1_vacuous <- all(c("m", "nu") %in% fixed_early) &&
+    isTRUE(early_full[["m"]] > 0) && isTRUE(early_full[["nu"]] > 0) &&
+    isTRUE(abs(early_full[["m"]] * early_full[["nu"]] - 1) < 1e-12)
   if (saw_mnu1) {
     flag_bad("FIXMNU1", if (build_early) {
       paste0("FIXMNU1 ties M to NU in PROC HAZARD (|M*NU| = 1; ",
@@ -1762,7 +1840,11 @@
     # FIXMNU1 on an active early phase: PROC HAZARD fits |M*NU| = 1, which
     # this translation does not mirror (#358), so the model it would emit is
     # a different one. .hzr_parse_job() stops on it (U1).
-    not_mirrored = if (saw_mnu1 && has_early) "FIXMNU1" else character(0),
+    not_mirrored = c(not_mirrored, if (saw_mnu1 && has_early && !mnu1_vacuous) {
+      paste0("FIXMNU1, which PROC HAZARD applies as |M*NU| = 1 on the early ",
+             "phase and this translation does not mirror (#358); remove ",
+             "FIXMNU1 to fit M and NU freely")
+    }),
     untranslated = .hzr_untranslated_frame(
       line = rep(NA_integer_, length(bad_construct)),
       construct = bad_construct,

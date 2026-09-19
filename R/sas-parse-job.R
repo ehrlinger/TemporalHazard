@@ -416,7 +416,7 @@
   # job (U1, #403). as.numeric() reads 1E5 and 5., which the lexer does not.
   proc_rejected <- character(0)
   check_number <- function(key, val) {
-    if (nzchar(val) && !.hzr_sas_lexer_number(val)) {
+    if (nzchar(val) && !.hzr_sas_is_macro(val) && !.hzr_sas_lexer_number(val)) {
       proc_rejected <<- c(proc_rejected, paste0(
         key, "=", val, ": not a number PROC HAZARD's lexer reads ",
         "(hazard_l.l:34-38), so PROC HAZARD rejects this job with a syntax ",
@@ -443,7 +443,7 @@
       DATA        = data_name <- sub("^WORK[.]", "", val),
       OUTHAZ      = outhaz <- val,
       MAXITER     = {
-        check_number("MAXITER", val)
+        check_number(key, val)
         val_num <- suppressWarnings(as.numeric(val))
         if (is.na(val_num)) {
           mapped <- mapped - 1L
@@ -459,7 +459,7 @@
       # has no such stop; it warns about the final Hessian after the fit.
       CONDITION   = {
         mapped <- mapped - 1L
-        check_number("CONDITION", val)
+        check_number(key, val)
         val_num <- suppressWarnings(as.numeric(val))
         if (is.na(val_num)) {
           note("CONDITION", "non-numeric value for CONDITION")
@@ -688,7 +688,7 @@
       call = call(
         "stop",
         paste0("This PROC HAZARD job is refused before any fit is computed: ",
-               parms$refusal_reason,
+               sub("^PROC HAZARD refuses this job: ", "", parms$refusal_reason),
                ". SETG3 sets the error in shape() and the procedure exits ",
                "before results(), so there is no fit to translate. Correct ",
                "the PARMS operand(s) named here, or fit the model by hand."),
@@ -708,11 +708,9 @@
   if (length(parms$not_mirrored)) {
     return(list(
       call = call("stop", paste0(
-        "This job's PARMS statement uses FIXMNU1, which PROC HAZARD applies ",
-        "as |M*NU| = 1 on the early phase. This translation does not mirror ",
-        "that constraint (#358), so the model it would emit is a different ",
-        "one from PROC HAZARD's. Remove FIXMNU1 to fit M and NU freely, or ",
-        "fit the constrained model by hand."), call. = FALSE),
+        "PROC HAZARD runs this job on a model this translation does not ",
+        "emit, so a fit here would be a different model from PROC HAZARD's: ",
+        paste(parms$not_mirrored, collapse = "; "), "."), call. = FALSE),
       status_call = NULL, outhaz = outhaz, untranslated = untr,
       tokens_seen = seen, tokens_mapped = mapped
     ))

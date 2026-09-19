@@ -1894,18 +1894,17 @@ test_that("the constraint block adds exactly three reachable refusal codes", {
     expect_match(got$refusal_reason, code, fixed = TRUE, label = code)
   }
 
-  # SETG31010 is the non-WEIBULL twin of SETG3990 (setg3.c:884-889). This
-  # translator does not trace the non-WEIBULL constraint path at all -- it
-  # records the flag as untranslated instead -- so that code is not reachable
-  # here, and the job is recorded rather than refused.
+  # SETG31010 is the non-WEIBULL twin of SETG3990 (setg3.c:884-889). An
+  # all-positive shape without WEIBULL takes SETG3_all_gt_0(), whose
+  # SETG3_verify_ge_2() refuses GAMMA and ETA both fixed off GAMMA*ETA = 2
+  # deterministically. This used to be recorded and fitted; under U1 it is
+  # the refusal it is (r-reviewer on the U1 branch).
   non_weibull <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
                                     "FIXGAMMA", "FIXETA", "FIXGE2"))
-  expect_true(is.na(non_weibull$refusal_reason))
-  expect_true(any(grepl("not translated", non_weibull$untranslated$reason,
-                        fixed = TRUE)))
+  expect_match(non_weibull$refusal_reason, "SETG31010", fixed = TRUE)
 })
 
-test_that("a constraint flag without WEIBULL is recorded, never refused", {
+test_that("a constraint flag without WEIBULL is recorded, not refused, unless SETG3 refuses it deterministically", {
   # The .hzr_setg3_notes() trace takes both constraint flags as FALSE, so on
   # the non-WEIBULL constraint path it answers about a job SAS does not run.
   # PROC HAZARD FITS both of these; before the containment they came back as

@@ -616,15 +616,26 @@ test_that("every reachable SETG3 refusal renders a stop(), not a fit (#359)", {
 
   # The second control, and the one this change nearly got wrong: a constraint
   # flag without WEIBULL reaches SETG3 down a path the trace does not model,
-  # so the trace's verdict is not PROC HAZARD's. Both of these FIT, and the
-  # document has to render.
-  for (ops in c("PARMS MUL=0.2 TAU=1 GAMMA=4 ETA=0.5 FIXGAMMA FIXETA FIXGE2;",
-                "PARMS MUL=0.2 TAU=1 GAMMA=4 ETA=1 ALPHA=2 FIXALPHA FIXGAE2;")) {
-    untraced <- suppressWarnings(render_sim(translate(ops), list(D = D)))
-    expect_true(untraced$ok, info = ops)
-    expect_s3_class(get("fit", envir = untraced$env, inherits = FALSE),
-                    "hazard")
-  }
+  # so the trace's verdict is not PROC HAZARD's. PROC HAZARD fits both of
+  # these. The first is the model the translation emits (GAMMA and ETA fixed
+  # on GAMMA*ETA = 2), so the document has to render.
+  ops <- "PARMS MUL=0.2 TAU=1 GAMMA=4 ETA=0.5 FIXGAMMA FIXETA FIXGE2;"
+  untraced <- suppressWarnings(render_sim(translate(ops), list(D = D)))
+  expect_true(untraced$ok, info = ops)
+  expect_s3_class(get("fit", envir = untraced$env, inherits = FALSE),
+                  "hazard")
+  # The second is not: PROC HAZARD recomputes ALPHA as GAMMA*ETA/2 at every
+  # step (hzd_late_t2p.c:90-94) with GAMMA and ETA free, and the translation
+  # mirrors that only with WEIBULL. Under U1 it stops, and says why; it is
+  # not called a refusal, because SAS runs it.
+  ops <- "PARMS MUL=0.2 TAU=1 GAMMA=4 ETA=1 ALPHA=2 FIXALPHA FIXGAE2;"
+  job <- translate(ops)
+  msg <- tryCatch({
+    eval(job$calls$fit, new.env())
+    "no error"
+  }, error = conditionMessage)
+  expect_match(msg, "FIXGAE2 without WEIBULL", fixed = TRUE)
+  expect_no_match(msg, "refuse", fixed = TRUE)
 })
 
 # --- U1: a job PROC HAZARD refuses, or fits differently, emits stop() -------
@@ -684,4 +695,75 @@ test_that("FIXMNU1 on an active early phase stops the document (U1, #358)", {
   # With no early phase there is nothing for FIXMNU1 to constrain: SAS fits.
   job <- .u1_job(parms = "MUL=0.2 TAU=1 GAMMA=2 ETA=1 FIXMNU1")
   expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
+})
+
+# --- U1, r-reviewer pass 1 on the branch: false refusals and missed ones ---
+.u1_stops <- function(job) identical(job$calls$fit[[3L]][[1L]], as.name("stop"))
+
+test_that("a macro value or call is never refused as a syntax error (U1 review)", {
+  # SAS expands `&X` and `%CALL` before PROC HAZARD reads the statement.
+  for (cs in list(list(proc = " MAXITER=&MX", parms = "MUE=0.2 THALF=1 NU=1"),
+                  list(proc = " CONDITION=&C", parms = "MUE=0.2 THALF=1 NU=1"),
+                  list(proc = "", parms = "MUE=0.2 THALF=1 NU=1 %FIXOPTS"),
+                  list(proc = "", parms = "MUE=0.2 THALF=1 NU=&V"))) {
+    job <- .u1_job(proc = cs$proc, parms = cs$parms)
+    info <- paste(cs$proc, cs$parms)
+    expect_false(grepl("does not run", .u1_msg(job), fixed = TRUE), info = info)
+  }
+})
+
+test_that("an unspaced non-numeric PARMS value is a syntax error (U1 review)", {
+  job <- .u1_job(parms = "MUE=0.2 THALF=0.5 NU=ABC")
+  expect_true(.u1_stops(job))
+  expect_match(.u1_msg(job), "PROC HAZARD does not run this job", fixed = TRUE)
+})
+
+test_that("a FIXMNU1 that constrains nothing does not stop (U1 review)", {
+  # M and NU both fixed with M*NU = 1: SETG1_mNuOne_TRUE() leaves m = 1/nu
+  # unchanged (setg1.c:531-548) and hzd_early_t2p.c acts only on a free one.
+  job <- .u1_job(parms = "MUE=0.2 THALF=1 NU=1 M=1 FIXM FIXNU FIXMNU1")
+  expect_false(.u1_stops(job))
+})
+
+test_that("SETG3's entry refusals stop on the constraint path too (U1 review)", {
+  # setg3.c:269-284 run before any constraint or WEIBULL logic.
+  for (p in c("MUL=0.2 TAU=0 FIXTAU GAMMA=2 ETA=1 FIXGE2",
+              "MUL=0.2 TAU=1 GAMMA=0 FIXGAMMA ETA=1 FIXGAE2",
+              "MUL=0.2 TAU=1 GAMMA=2 ALPHA=-1 FIXALPHA ETA=1 FIXGE2")) {
+    job <- .u1_job(parms = p)
+    expect_true(.u1_stops(job), info = p)
+    expect_match(.u1_msg(job), "SETG39[0-3]0", info = p)
+  }
+})
+
+test_that("FIXGE2/FIXGAE2 without WEIBULL stops unless the emitted model is SAS's (U1 review)", {
+  # Deterministic refusals on SETG3_all_gt_0()'s path.
+  for (cs in list(c("MUL=0.2 TAU=1 GAMMA=4 ETA=0.25 FIXGAMMA FIXETA FIXGE2", "SETG31010"),
+                  c("MUL=0.2 TAU=1 GAMMA=4 ETA=0.25 ALPHA=3 FIXALPHA FIXGAE2", "SETG31000"),
+                  c("MUL=0.2 TAU=1 GAMMA=4 ETA=0.5 ALPHA=2 FIXALPHA FIXGAMMA FIXETA FIXGE2",
+                    "SETG31040"))) {
+    job <- .u1_job(parms = cs[[1]])
+    expect_true(.u1_stops(job), info = cs[[1]])
+    expect_match(.u1_msg(job), cs[[2]], fixed = TRUE, info = cs[[1]])
+  }
+  # A constrained shape left free: SAS ties it, the emitted phase would not.
+  job <- .u1_job(parms = "MUL=0.2 TAU=1 GAMMA=3 ETA=1 FIXGE2")
+  expect_true(.u1_stops(job))
+  expect_match(.u1_msg(job), "FIXGE2", fixed = TRUE)
+  # Controls: every constrained shape fixed on the relation is SAS's model;
+  # WEIBULL is the mirrored path.
+  expect_false(.u1_stops(.u1_job(parms = "MUL=0.2 TAU=1 GAMMA=4 ETA=0.5 FIXGAMMA FIXETA FIXGE2")))
+  expect_false(.u1_stops(.u1_job(parms = "MUL=0.2 TAU=1 GAMMA=3 ETA=1 FIXGE2 WEIBULL")))
+})
+
+test_that("DELTA != 0 and a FIXTAU with no TAU written stop (U1 review)", {
+  job <- .u1_job(parms = "MUE=0.2 THALF=1 NU=1 DELTA=0.5")
+  expect_true(.u1_stops(job))
+  expect_match(.u1_msg(job), "DELTA", fixed = TRUE)
+  job <- .u1_job(parms = "MUL=0.2 GAMMA=2 ETA=1 FIXTAU")
+  expect_true(.u1_stops(job))
+  expect_match(.u1_msg(job), "0.75*Tmax", fixed = TRUE)
+  # Controls: DELTA = 0 is R's model; a written positive TAU is fixed at it.
+  expect_false(.u1_stops(.u1_job(parms = "MUE=0.2 THALF=1 NU=1 DELTA=0")))
+  expect_false(.u1_stops(.u1_job(parms = "MUL=0.2 TAU=2 GAMMA=2 ETA=1 FIXTAU")))
 })
