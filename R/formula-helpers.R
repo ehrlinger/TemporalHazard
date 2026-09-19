@@ -1067,11 +1067,21 @@
     # would be a silent wrong answer, so it is refused -- as it was before,
     # when such a column made the positional match fail.
     extra <- setdiff(names(newdata), c(cols, "time"))
-    # A vector-interface fit is recognised by `time =` in its call, not by a
-    # NULL formula: a wrapper's `formula = fml` names a formula even when
-    # `fml` was NULL (#406).
-    if (!is.null(object$call$formula) && !"time" %in% names(object$call) &&
-          length(extra) > 0L) {
+    # A vector-interface fit is not recognised by a NULL call$formula alone:
+    # a wrapper's `formula = fml` names a formula even when `fml` was NULL.
+    # Nor by `time =` alone: hazard() fits a formula given beside `time =`
+    # and ignores the `time`. With both named, the formula argument is
+    # evaluated where the call was made: NULL means vector. A written or
+    # passed formula evaluates to itself, and a fit with no call environment
+    # (saved before 1.2.2) cannot be resolved, so both keep the refusal
+    # (#406).
+    f <- object$call$formula
+    vector_fit <- is.null(f) || (
+      "time" %in% names(object$call) &&
+        is.environment(object$call_env) &&
+        is.null(tryCatch(eval(f, object$call_env), error = function(e) e))
+    )
+    if (!vector_fit && length(extra) > 0L) {
       stop("This fit was saved by an earlier version of TemporalHazard, ",
            "without a stored formula design, so 'newdata' may hold only its ",
            "design columns (", paste0("'", cols, "'", collapse = ", "),

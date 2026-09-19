@@ -122,3 +122,21 @@ test_that("a formula fit saved without its design still refuses an extra newdata
     "saved by an earlier version of TemporalHazard, without a stored formula design"
   )
 })
+
+test_that("a formula fit whose call also named time = is still a formula fit (#406)", {
+  # hazard() fits the formula when one is given and ignores `time =` beside
+  # it, so `time` in the call does not make a fit vector-interface. Saved
+  # without its design, such a fit must still refuse an extra column.
+  d <- stats::na.omit(avc[, c("int_dead", "dead", "age")])
+  fit <- hazard(survival::Surv(int_dead, dead) ~ age, data = d,
+                time = d$int_dead * 3, dist = "weibull",
+                theta = c(0.1, 1, 0), fit = TRUE)
+  fit$data$x_design <- NULL
+  fit$fit$x_design <- NULL
+  fit$data$frame <- NULL
+  expect_error(
+    predict(fit, newdata = data.frame(time = c(1, 5), age = c(50, 70),
+                                      extra = 1), type = "survival"),
+    "saved by an earlier version of TemporalHazard, without a stored formula design"
+  )
+})
