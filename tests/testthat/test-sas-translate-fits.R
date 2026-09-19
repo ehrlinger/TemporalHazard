@@ -789,3 +789,27 @@ test_that("a template placeholder or a bare % is a syntax error, not filled in (
   }
   expect_match(.u1_msg(.u1_job(parms = "MUE=0.2 THALF=1 NU=?")), "fill it in", fixed = TRUE)
 })
+
+test_that("U1 review 3: the last DELTA wins, and more known-unfittable jobs stop", {
+  # hazard_y.y:138 is last-wins, so DELTA=0.5 DELTA=0 runs at delta = 0 --
+  # exactly what is emitted.
+  expect_false(.u1_stops(.u1_job(parms = "MUE=0.2 DELTA=0.5 DELTA=0 NU=1 M=1 THALF=1")))
+  # An unknown PROC option falls to the lexer's catch-all (hazard_l.l:177-179)
+  # and sets yysynerr, exactly as an unknown PARMS keyword does.
+  job <- .u1_job(proc = " FOO", parms = "MUE=0.2 THALF=1 NU=1")
+  expect_true(.u1_stops(job))
+  expect_match(.u1_msg(job), "PROC HAZARD does not run this job", fixed = TRUE)
+  expect_false(.u1_stops(.u1_job(proc = " &OPT", parms = "MUE=0.2 THALF=1 NU=1")))
+  # FIXTAU whose TAU this parser could not read: PROC HAZARD fixes TAU at the
+  # written value or at 0.75*Tmax, never at the 1 the emitted phase pins.
+  job <- .u1_job(parms = "MUL=0.2 GAMMA=1 TAU = 5 FIXTAU")
+  expect_true(.u1_stops(job))
+  expect_match(.u1_msg(job), "FIXTAU", fixed = TRUE)
+  # An active MU whose phase this parser could not build: PROC HAZARD fits
+  # that phase, so the emitted model is short of one.
+  job <- .u1_job(parms = "MUE=0.2 THALF=0.5 NU=1 M=1 MUL=0.3 &SHAPE FIXGE2")
+  expect_true(.u1_stops(job))
+  expect_match(.u1_msg(job), "MUL", fixed = TRUE)
+  # Control: the same job with the late shape written builds both phases.
+  expect_false(.u1_stops(.u1_job(parms = "MUE=0.2 THALF=0.5 NU=1 M=1 MUL=0.3 GAMMA=2 ETA=1 WEIBULL")))
+})

@@ -2,6 +2,51 @@
 
 ## Breaking changes
 
+* **A `hzr_translate_sas()` job PROC HAZARD refuses now stops instead of
+  fitting** (#359). When `SETG3` sets an error, the procedure exits in
+  `shape()` before `results()`, so the job produces nothing. The translation
+  recorded that as an untranslated row and still emitted a `hazard()` chunk,
+  and a reader who rendered past the callout got a converged fit standing in
+  for a job with no result. The document now opens with a `stop()` naming the
+  `SETG3` code, its cause and the `PARMS` operands that produced it. The row is
+  still recorded, so the listing of what was wrong is unchanged.
+
+  The refusal is raised only where it is PROC HAZARD's. With `FIXGE2` or
+  `FIXGAE2` and no `WEIBULL`, SAS reaches `SETG3` down a path the `setg3.c`
+  trace does not model, so the trace's verdict is not used there. Only
+  `SETG3`'s entry refusals are raised as refusals on that path (see the next
+  entry).
+
+* **More `hzr_translate_sas()` jobs that PROC HAZARD refuses, or fits
+  differently, now stop instead of fitting** (#358, #403, #421). Each of these
+  was already recorded as an untranslated row, but the translation still
+  emitted a fit:
+  - a `PARMS` operand PROC HAZARD rejects with a syntax error: a value its
+    lexer does not read as a number (`NU=1E-3`, `NU=2.`), a value keyword
+    with no `= NUMBER`, a spaced operand that is invalid even joined, or a
+    keyword outside its grammar (`FIXG1`);
+  - a `MAXITER=` or `CONDITION=` value that its lexer does not read as a
+    number;
+  - a template's `?` placeholder in `PARMS`, which PROC HAZARD's lexer also
+    rejects. It was filled from SAS's default and fitted; it now asks to be
+    filled in;
+  - a model this translation cannot emit:
+    - `FIXMNU1` on an active early phase, which PROC HAZARD fits with
+      `|M*NU| = 1`; this translation does not mirror that constraint;
+    - `DELTA` other than 0 on an active early phase;
+    - `FIXTAU` with no `TAU` written, which PROC HAZARD fixes at 0.75 of the
+      longest follow-up;
+    - `FIXGE2` or `FIXGAE2` without `WEIBULL`. That path is not modelled
+      here, so the stop says the translation cannot tell whether PROC HAZARD
+      refuses the job or which model it fits;
+  - `SETG3`'s entry refusals, on every path.
+
+  Refusal coverage is not complete: `SETG1`'s refusals, which `PROC HAZARD`
+  raises for an early phase, are not traced, so such a job still fits (#424).
+
+  A `PARMS` or `PROC` value that carries a macro reference (`&X`, `%CALL`) is
+  not refused, because SAS expands it before PROC HAZARD reads the statement.
+
 * **`hzr_translate_sas()` no longer fits a job `PROC HAZARD` rejects: if
   you hold estimates from such a translation, they have no SAS run behind
   them (#340).** A phase statement with an option written in a form SAS's
@@ -739,48 +784,6 @@
   detected.
 
 ## Bug fixes
-
-* **A `hzr_translate_sas()` job PROC HAZARD refuses now stops instead of
-  fitting** (#359). When `SETG3` sets an error, the procedure exits in
-  `shape()` before `results()`, so the job produces nothing. The translation
-  recorded that as an untranslated row and still emitted a `hazard()` chunk,
-  and a reader who rendered past the callout got a converged fit standing in
-  for a job with no result. The document now opens with a `stop()` naming the
-  `SETG3` code, its cause and the `PARMS` operands that produced it. The row is
-  still recorded, so the listing of what was wrong is unchanged.
-
-  The refusal is raised only where it is PROC HAZARD's. With `FIXGE2` or
-  `FIXGAE2` and no `WEIBULL`, SAS reaches `SETG3` down a path the `setg3.c`
-  trace does not model, so the trace's verdict is not used there. Only
-  `SETG3`'s entry refusals are raised as refusals on that path (see the next
-  entry).
-
-* **More `hzr_translate_sas()` jobs that PROC HAZARD refuses, or fits
-  differently, now stop instead of fitting** (#358, #403, #421). Each of these
-  was already recorded as an untranslated row, but the translation still
-  emitted a fit:
-  - a `PARMS` operand PROC HAZARD rejects with a syntax error: a value its
-    lexer does not read as a number (`NU=1E-3`, `NU=2.`), a value keyword
-    with no `= NUMBER`, a spaced operand that is invalid even joined, or a
-    keyword outside its grammar (`FIXG1`);
-  - a `MAXITER=` or `CONDITION=` value that its lexer does not read as a
-    number;
-  - a template's `?` placeholder in `PARMS`, which PROC HAZARD's lexer also
-    rejects. It was filled from SAS's default and fitted; it now asks to be
-    filled in;
-  - a model this translation cannot emit:
-    - `FIXMNU1` on an active early phase, which PROC HAZARD fits with
-      `|M*NU| = 1`; this translation does not mirror that constraint;
-    - `DELTA` other than 0 on an active early phase;
-    - `FIXTAU` with no `TAU` written, which PROC HAZARD fixes at 0.75 of the
-      longest follow-up;
-    - `FIXGE2` or `FIXGAE2` without `WEIBULL`. That path is not modelled
-      here, so the stop says the translation cannot tell whether PROC HAZARD
-      refuses the job or which model it fits;
-  - `SETG3`'s entry refusals, on every path.
-
-  A `PARMS` or `PROC` value that carries a macro reference (`&X`, `%CALL`) is
-  not refused, because SAS expands it before PROC HAZARD reads the statement.
 
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded

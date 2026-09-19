@@ -881,7 +881,9 @@
         # Decided after the loop: DELTA is read only by SETG1()
         # (setg1.c:306), which runs only for an active early phase
         # (shape.c:19-21), so a late-only job ignores it.
-        if (!identical(val, 0)) delta_seen <- list(op = op, val = val)
+        # hazard_y.y:138 is last-wins, so a later DELTA=0 clears an
+        # earlier non-zero one, as it does in PROC HAZARD.
+        delta_seen <- if (identical(val, 0)) NULL else list(op = op, val = val)
       } else {
         unreadable <- TRUE
         flag_bad(op, "PARMS keyword has no phase target")
@@ -1581,11 +1583,17 @@
     # data-dependent value while the emitted phase holds it at 1, which is a
     # different model outright.
     tau_fixed <- "tau" %in% fixed_late
-    if (tau_fixed && tau_absent && !unreadable) {
-      not_mirrored <- c(not_mirrored, paste0(
-        "FIXTAU with no TAU written, which PROC HAZARD fixes at 0.75*Tmax ",
-        "(readobs.c:153-154), a value that depends on the data; write TAU= ",
-        "with the value to fix it at"))
+    if (tau_fixed && tau_absent) {
+      not_mirrored <- c(not_mirrored, if (unreadable) {
+        paste0("FIXTAU with a TAU this translation could not read (see the ",
+               "rows above): PROC HAZARD fixes TAU at the value written, or ",
+               "at 0.75*Tmax if none was (readobs.c:153-154), while the ",
+               "emitted phase would pin it at 1")
+      } else {
+        paste0("FIXTAU with no TAU written, which PROC HAZARD fixes at ",
+               "0.75*Tmax (readobs.c:153-154), a value that depends on the ",
+               "data; write TAU= with the value to fix it at")
+      })
     }
     flag_bad(
       if (tau_absent) "TAU (unspecified)" else
@@ -1762,13 +1770,21 @@
     "written cannot be told, and the phase is not built on PROC HAZARD's ",
     "defaults"
   )
-  if (has_early && !build_early) {
-    flag_bad(paste0("MUE=", sprintf("%g", mu[["MUE"]])),
-             paste("MUE", sprintf(unread_why, "early")))
-  }
-  if (has_late && !build_late) {
-    flag_bad(paste0("MUL=", sprintf("%g", mu[["MUL"]])),
-             paste("MUL", sprintf(unread_why, "late")))
+  # PROC HAZARD fits the phase whatever this parser could read, so a model
+  # without it is short a phase: the document stops (U1).
+  for (nm in c("MUE", "MUL")) {
+    active <- if (nm == "MUE") has_early else has_late
+    built <- if (nm == "MUE") build_early else build_late
+    if (active && !built) {
+      phase <- if (nm == "MUE") "early" else "late"
+      flag_bad(paste0(nm, "=", sprintf("%g", mu[[nm]])),
+               paste(nm, sprintf(unread_why, phase)))
+      not_mirrored <- c(not_mirrored, paste0(
+        "an active ", nm, " whose ", phase, " phase this translation could ",
+        "not build (its shape operands were not read, see the rows above); ",
+        "PROC HAZARD fits that phase, so the emitted model would be short of ",
+        "it"))
+    }
   }
 
   # getrisk.c collects every phase-statement variable, of every phase and

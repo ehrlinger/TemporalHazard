@@ -432,7 +432,21 @@
     if (identical(token, "PROC") || identical(token, "HAZARD")) next
     seen <- seen + 1L
     if (is.na(token)) {
-      note(key, "unknown PROC HAZARD option")
+      # The HZRP keyword table is the lexer's own (data-raw/hazard-grammar.R),
+      # so a word it does not know falls to the catch-all (hazard_l.l:177-179),
+      # sets yysynerr and terminates at initprz.c:75-77 -- as an unknown PARMS
+      # keyword does (U1). A macro token is left undecided: SAS expands it.
+      if (.hzr_sas_is_macro(tok)) {
+        note(key, "unknown PROC HAZARD option")
+      } else {
+        proc_rejected <- c(proc_rejected, paste0(
+          key, ": not a PROC HAZARD option (hazard_l.l), so PROC HAZARD ",
+          "rejects this job with a syntax error"))
+        note(key, paste0(
+          "unknown PROC HAZARD option: not in PROC HAZARD's grammar ",
+          "(hazard_l.l), so PROC HAZARD rejects this job with a syntax error ",
+          "and it does not run"))
+      }
       next
     }
     mapped <- mapped + 1L
