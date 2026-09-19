@@ -148,6 +148,9 @@ hzr_evaluate <- function(object, theta, times = NULL) {
   if (is.null(names(theta)) && !is.null(prepared$names)) {
     names(theta) <- prepared$names
   }
+  # The likelihood's sentinel for an out-of-model theta is Inf, which would
+  # be returned as the log-likelihood (#383).
+  .hzr_check_theta(theta, dist)
 
   if (identical(dist, "multiphase")) {
     # As hazard(fit = FALSE) does with a supplied theta: derive the
@@ -235,7 +238,11 @@ hzr_evaluate <- function(object, theta, times = NULL) {
     out$phases <- phases_v
     return(out)
   }
-  out$n_par <- .hzr_shape_parameter_count(dist, control = object$spec$control) +
+  # The likelihood's own count: it ignores control$shape_param_count, which
+  # only the score test and the stepwise refit read (as wald.R does). Taking
+  # the control count refused a fit's own theta and accepted a longer one,
+  # evaluating another model's likelihood.
+  out$n_par <- .hzr_shape_parameter_count(dist) +
     (if (is.null(x)) 0L else ncol(x))
   # Only if they describe THIS model: a stored theta of the wrong length
   # would otherwise be pasted onto a vector of another, and `names<-` errors

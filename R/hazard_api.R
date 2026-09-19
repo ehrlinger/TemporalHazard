@@ -831,6 +831,9 @@ hazard <- function(formula = NULL,
     if (!is.numeric(theta) || any(!is.finite(theta))) {
       stop("'theta' must be a finite numeric vector when provided.", call. = FALSE)
     }
+    # A Weibull scale or shape <= 0 is outside the model; the optimizer died
+    # on it with "non-finite value supplied by optim" (#383).
+    if (fit) .hzr_check_theta(theta, dist)
 
     # If x exists, theta must include coefficients for all variates
     # theta = [shape parms ... | covariate coefficients ...]
@@ -1992,9 +1995,7 @@ predict.hazard <- function(object, newdata = NULL,
     # The closures below return NA on negative shape parameters so numeric
     # jacobian perturbations stay robust, but we want a clean error at the
     # point estimate itself.
-    if (dist_lbl == "weibull" && (theta[1] <= 0 || theta[2] <= 0)) {
-      stop("Weibull shape parameters (mu, nu) must be positive.", call. = FALSE)
-    }
+    .hzr_check_theta(theta, dist_lbl)
 
     cumhaz_of <- if (dist_lbl == "weibull") {
       function(th) {
