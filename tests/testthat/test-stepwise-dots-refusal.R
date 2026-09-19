@@ -111,6 +111,9 @@ test_that("hzr_bootstrap() refuses at entry, not per replicate (#386)", {
                "^hzr_bootstrap\\(\\): `dist` cannot be passed")
   expect_match(refused_386(boot(objective = "sas")),
                "^hzr_bootstrap\\(\\): `objective = \"sas\"` differs")
+  # An abbreviation is spelled out before the check, so it is caught too.
+  expect_match(refused_386(boot(objec = "sas")),
+               "^hzr_bootstrap\\(\\): `objective = \"sas\"` differs")
   expect_identical(.Random.seed, before)
 })
 
