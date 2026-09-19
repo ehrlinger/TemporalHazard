@@ -53,7 +53,8 @@
 
 * **An operand written with spaces around `=` is read, not split apart**
   (#421). SAS's lexer skips whitespace (`hazard_l.l:32`), so `THALF = 0.3` and
-  `MAXITER = 50` are the same jobs as their unspaced forms. This translator
+  `MAXITER = 50` are the same jobs as the same operands written without the
+  spaces. This translator
   split them on whitespace: the `PARMS` pieces were recorded and the phase was
   built from `PROC HAZARD`'s default instead of the written value, and the
   `PROC` line reported its pieces as unknown options. Operands are joined
