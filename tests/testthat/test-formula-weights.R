@@ -123,3 +123,62 @@ test_that("an ambiguous argument inside a namespace-qualified call still warns",
     "'fw_wcol' \\(weights\\): the name is both a column"
   )
 })
+
+test_that("the ambiguity warning's advice works when followed, on both interfaces", {
+  # It used to say "Write data$<name>", and in the caller's frame `data` is
+  # usually base::data(), so following it errored (#401 review). The advice
+  # now names the caller's own data argument when that is a plain symbol.
+  d <- fw_data()
+  advice_value <- function(msg, env) {
+    adv <- regmatches(msg, regexpr("Write [^ ]+ for the column", msg))
+    expect_length(adv, 1L)
+    expr <- sub("<name>", "fw_wcol", sub(" for the column$", "", sub("^Write ", "", adv)))
+    eval(parse(text = expr), envir = env)
+  }
+  caller <- function(iface) {
+    fw_wcol <- rep(1, 40)
+    msg <- NULL
+    withCallingHandlers(
+      if (iface == "formula") {
+        hazard(survival::Surv(t, s) ~ x, data = d, weights = fw_wcol,
+               dist = "weibull", theta = c(1, 1, 0))
+      } else {
+        hazard(data = d, time = t, status = s, x = as.matrix(d["x"]),
+               weights = fw_wcol, dist = "weibull", theta = c(1, 1, 0))
+      },
+      warning = function(w) {
+        if (grepl("both a column", conditionMessage(w))) msg <<- conditionMessage(w)
+        invokeRestart("muffleWarning")
+      }
+    )
+    advice_value(msg, environment())
+  }
+  # Following the advice reads the column, not the caller's variable.
+  expect_identical(caller("formula"), d$fw_wcol)
+  expect_identical(caller("vector"), d$fw_wcol)
+})
+
+test_that("the ambiguity warning falls back when data is not a plain name", {
+  # An inline expression or magrittr's `.` cannot be written as a prefix, so
+  # the advice says to use the data frame passed as `data` instead.
+  d <- fw_data()
+  fw_wcol <- rep(1, 40)
+  msgs <- function(expr) {
+    m <- character()
+    withCallingHandlers(expr, warning = function(w) {
+      m <<- c(m, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    })
+    m[grepl("both a column", m)]
+  }
+  inline <- msgs(hazard(survival::Surv(t, s) ~ x, data = transform(d),
+                        weights = fw_wcol, dist = "weibull", theta = c(1, 1, 0)))
+  . <- d
+  dot <- msgs(hazard(survival::Surv(t, s) ~ x, data = ., weights = fw_wcol,
+                     dist = "weibull", theta = c(1, 1, 0)))
+  for (m in list(inline, dot)) {
+    expect_length(m, 1L)
+    expect_match(m, "the data frame passed as 'data'")
+    expect_false(grepl("data$", m, fixed = TRUE))
+  }
+})

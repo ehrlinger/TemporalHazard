@@ -105,7 +105,10 @@
   function name in a qualified call such as `base::abs(w)`, which is never
   looked up in `data`; that false warning had been raised on the vector
   interface since 1.2.2 (#151), and only the call's own arguments are now
-  checked.
+  checked. The warning's advice now names the data frame the call passed,
+  as in `d$w`. Since 1.2.2 the vector interface had advised `data$<name>`,
+  which finds `utils::data()` rather than the data frame and fails with
+  "object of type 'closure' is not subsettable" when followed.
 
 * **A multiphase phase formula without an intercept no longer drops its
   first term (#303).** `hzr_phase(formula = ~ 0 + age)` or `~ age - 1`

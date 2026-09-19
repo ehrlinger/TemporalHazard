@@ -579,6 +579,9 @@ hazard <- function(formula = NULL,
   # identical() against a bare string is FALSE for it. Dropping the names
   # here, before any read, keeps every later test of `dist` agreeing (#405).
   dist <- unname(dist)
+  # The caller's own `data` expression, captured before `data` is reassigned:
+  # the ambiguity warning names it in its advice (#401).
+  data_arg <- substitute(data)
 
   # `objective` is a top-level argument rather than a `control` element on
   # purpose: it changes the estimand, and burying that among convergence
@@ -638,7 +641,8 @@ hazard <- function(formula = NULL,
     # bound both as a column and in the calling frame silently read the
     # calling frame's vector.
     .hzr_warn_masked_ambiguity(list(weights = substitute(weights)), data,
-                               parent.frame(), interface = "formula")
+                               parent.frame(), interface = "formula",
+                               data_arg = data_arg)
     weights <- eval(substitute(weights), data, parent.frame())
   }
 
@@ -660,7 +664,7 @@ hazard <- function(formula = NULL,
            time_lower = substitute(time_lower),
            time_upper = substitute(time_upper),
            weights = substitute(weights)),
-      data, mask_env
+      data, mask_env, data_arg = data_arg
     )
     time <- eval(substitute(time), data, mask_env)
     status <- eval(substitute(status), data, mask_env)
@@ -2770,7 +2774,8 @@ vcov.hazard <- function(object, ...) {
 #' @keywords internal
 #' @noRd
 .hzr_warn_masked_ambiguity <- function(exprs, data, env,
-                                       interface = c("vector", "formula")) {
+                                       interface = c("vector", "formula"),
+                                       data_arg = NULL) {
   interface <- match.arg(interface)
   ambiguous <- lapply(exprs, function(e) {
     if (is.null(e)) {
@@ -2793,8 +2798,16 @@ vcov.hazard <- function(object, ...) {
                                          lengths(ambiguous))),
                              collapse = ", "),
       ": the name is both a column of 'data' and a variable visible from ",
-      "the calling frame. The column was used. Write data$<name> for the ",
-      "column, or ",
+      "the calling frame. The column was used. ",
+      # Name the caller's own data argument only when it is a plain symbol:
+      # `data` itself is usually base::data() in the caller's frame, and an
+      # inline expression or magrittr's `.` cannot be written as a prefix.
+      if (is.symbol(data_arg) && !identical(data_arg, quote(.))) {
+        paste0("Write ", deparse(data_arg), "$<name> for the column, or ")
+      } else {
+        paste0("Refer to the column through the data frame passed as ",
+               "'data', or ")
+      },
       if (interface == "vector") {
         "omit 'data' to use the calling frame's value."
       } else {
