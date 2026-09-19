@@ -932,7 +932,8 @@
   # is NA, objective is NA, and theta holds the SAS starting values, while
   # print.hazard() shows a populated summary that says none of that (#151).
   args$fit <- TRUE
-  # A PARMS statement that builds a phase makes this a multiphase job. hazard()'s `dist` defaults to "weibull", and its
+  # A PARMS statement that builds a phase makes this a multiphase job.
+  # hazard()'s `dist` defaults to "weibull", and its
   # `else if (!is.null(phases))` branch silently discards the entire phase
   # specification (with only a warning) when dist stays at that default --
   # so dist = "multiphase" must be emitted whenever phases were built. A job
