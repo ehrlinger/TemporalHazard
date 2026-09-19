@@ -67,3 +67,19 @@ test_that("constants and knots from outside data still predict at new rows", {
   expect_length(p, 2L)
   expect_true(all(is.finite(p)))
 })
+
+test_that("the row-count backstop still refuses when the pre-check is bypassed", {
+  # The pre-check now catches every wrong-rows shape the suite has, so this
+  # is the only test that reaches .hzr_check_design_rows(). It proves the
+  # backstop is live defence, not code that merely goes unreached.
+  local_mocked_bindings(.hzr_refuse_outside_rows = function(...) invisible(NULL))
+  o <- ot_setup()
+  zz <- o$zz
+  fit <- hazard(survival::Surv(t, s) ~ zz, data = o$d, dist = "weibull",
+                theta = c(mu = 0.5, nu = 1, 0), fit = TRUE)
+  expect_error(
+    predict(fit, newdata = data.frame(zz = c(-1, 1)), type = "linear_predictor"),
+    "The design rebuilt for the model has 60 rows for 2 row(s) of 'newdata'",
+    fixed = TRUE
+  )
+})
