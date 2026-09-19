@@ -124,9 +124,14 @@ test_that("hzr_evaluate() returns the multiphase shape at supplied times (#144)"
 
   # The families without an internal shape function refuse rather than
   # duplicating predict()'s formulas.
-  expect_error(hzr_evaluate(eval_spec(), theta = c(0.05, 0.9),
-                            times = c(1, 2)),
-               "supported for dist = .multiphase. only")
+  msg <- tryCatch(hzr_evaluate(eval_spec(), theta = c(0.05, 0.9),
+                               times = c(1, 2)),
+                  error = conditionMessage)
+  expect_match(msg, "supported for dist = .multiphase. only")
+  # It is a refusal, so the message must not promise a result: it once said
+  # the log-likelihood "is returned either way", over a stop().
+  expect_match(msg, "without `times` for its log-likelihood", fixed = TRUE)
+  expect_false(grepl("returned either way", msg, fixed = TRUE))
 })
 
 test_that("hzr_evaluate() refuses what it cannot evaluate (#144)", {

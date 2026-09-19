@@ -312,9 +312,10 @@ hzr_evaluate <- function(object, theta, times = NULL) {
     # same formula drift (#303 is that defect). So this is refused rather
     # than mirrored.
     stop("'times' is supported for dist = \"multiphase\" only; this model ",
-         "is \"", dist, "\". Its log-likelihood at the supplied parameters ",
-         "is returned either way. For a curve, fit the model and use ",
-         "predict(), or evaluate the distribution directly.", call. = FALSE)
+         "is \"", dist, "\". Call hzr_evaluate() without `times` for its ",
+         "log-likelihood at the supplied parameters. For a curve, fit the ",
+         "model and use predict(), or evaluate the distribution directly.",
+         call. = FALSE)
   }
   phases <- prepared$phases
   counts <- prepared$covariate_counts
