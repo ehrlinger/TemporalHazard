@@ -754,6 +754,23 @@
   translator does not model, and jobs PROC HAZARD does fit were coming back
   refused; those are recorded as before and still emit their fit.
 
+* **More `hzr_translate_sas()` jobs that PROC HAZARD refuses, or fits
+  differently, now stop instead of fitting** (#358, #403, #421). Each of these
+  was already recorded as an untranslated row, but the translation still
+  emitted a fit:
+  - a `PARMS` operand PROC HAZARD rejects with a syntax error: a value its
+    lexer does not read as a number (`NU=1E-3`, `NU=2.`), a value keyword
+    with no `= NUMBER`, a spaced operand that is invalid even joined, or a
+    keyword outside its grammar (`FIXG1`);
+  - a `MAXITER=` or `CONDITION=` value that its lexer does not read as a
+    number;
+  - `FIXMNU1` on an active early phase. PROC HAZARD fits that phase with
+    `|M*NU| = 1`, and this translation does not mirror the constraint, so it
+    would have emitted a different model.
+
+  A `PARMS` operand that carries a macro reference is not refused, because SAS
+  expands it before PROC HAZARD reads the statement.
+
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded
   as untranslated and build no phase. PROC HAZARD runs that phase on its own

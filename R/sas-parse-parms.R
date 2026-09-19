@@ -768,10 +768,23 @@
   # SEMANTIC guards: `MUE=0 THALF=1` is fully readable and genuinely selects
   # no phase, so it must still refuse even though it flags THALF=1.
   unreadable <- FALSE
+  # PARMS text PROC HAZARD rejects with a syntax error (initprz.c:75-77): it
+  # joins the phase statements' `rejected`, and .hzr_parse_job() emits a
+  # stop() rather than a fit (John's U1 decision, 2026-09-19). A macro
+  # reference is not here: SAS expands it first, so it is not known to fail.
+  parms_rejected <- character(0)
 
   flag_bad <- function(construct, reason) {
     bad_construct <<- c(bad_construct, construct)
     bad_reason <<- c(bad_reason, reason)
+  }
+  flag_syntax <- function(construct, reason) {
+    flag_bad(construct, reason)
+    parms_rejected <<- c(parms_rejected, paste0("PARMS ", construct, ": ", reason))
+  }
+  flag_unresolved <- function(op) {
+    if (grepl("&", op, fixed = TRUE)) flag_bad(op, .hzr_parms_unresolved_why(op))
+    else flag_syntax(op, .hzr_parms_unresolved_why(op))
   }
 
   # A SETG3 refusal is a job PROC HAZARD stops in shape(), before hzrg() fits
@@ -796,10 +809,12 @@
     op <- operands[[i]]
     if (spaced_piece[i] > 0L) {
       unreadable <- TRUE
-      flag_bad(op, switch(spaced_piece[i],
-                          .hzr_parms_unresolved_piece_reason,
-                          .hzr_parms_rejected_piece_reason,
-                          .hzr_parms_macro_piece_reason))
+      if (spaced_piece[i] == 2L) {
+        flag_syntax(op, .hzr_parms_rejected_piece_reason)
+      } else {
+        flag_bad(op, if (spaced_piece[i] == 1L) .hzr_parms_unresolved_piece_reason
+                 else .hzr_parms_macro_piece_reason)
+      }
       next
     }
     eq <- .idx(op, "=")
@@ -811,13 +826,13 @@
       token <- .hzr_sas_token(key, "HAZARD", "PARM")
       if (is.na(token)) {
         unreadable <- TRUE
-        flag_bad(op, .hzr_parms_unresolved_why(op))
+        flag_unresolved(op)
       } else if (is.na(val)) {
         unreadable <- TRUE
         flag_bad(op, sprintf("PARMS value for %s is not numeric", key))
       } else if (!.hzr_sas_lexer_number(raw)) {
         unreadable <- TRUE
-        flag_bad(op, paste0(
+        flag_syntax(op, paste0(
           "PARMS value ", raw, " for ", key, " is not a number PROC HAZARD's ",
           "lexer reads (hazard_l.l:34-38), so PROC HAZARD rejects this job ",
           "with a syntax error and it does not run"
@@ -857,13 +872,13 @@
     token <- .hzr_sas_token(op, "HAZARD", "PARM")
     if (is.na(token)) {
       unreadable <- TRUE
-      flag_bad(op, .hzr_parms_unresolved_why(op))
+      flag_unresolved(op)
     } else if (token %in% c(.hzr_parms_mu_order, names(.hzr_parms_early_arg),
                             names(.hzr_parms_late_arg), "DELTA")) {
       # A value keyword with no `= NUMBER` after it, and not the first piece
       # of a spaced operand (those are marked above).
       unreadable <- TRUE
-      flag_bad(op, paste0(
+      flag_syntax(op, paste0(
         op, " needs a value (", op, "=NUMBER, hazard_y.y:137-147), so PROC ",
         "HAZARD rejects this job with a syntax error and it does not run"
       ))
@@ -1742,8 +1757,12 @@
     selection = selection_spec,
     has_phases = length(phase_calls) > 0L,
     refused = refused,
-    rejected = rejected,
+    rejected = c(parms_rejected, rejected),
     refusal_reason = refusal_reason,
+    # FIXMNU1 on an active early phase: PROC HAZARD fits |M*NU| = 1, which
+    # this translation does not mirror (#358), so the model it would emit is
+    # a different one. .hzr_parse_job() stops on it (U1).
+    not_mirrored = if (saw_mnu1 && has_early) "FIXMNU1" else character(0),
     untranslated = .hzr_untranslated_frame(
       line = rep(NA_integer_, length(bad_construct)),
       construct = bad_construct,

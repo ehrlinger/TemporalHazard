@@ -411,6 +411,18 @@
   ctl <- list()
   data_name <- NULL
   outhaz <- NULL
+  # A PROC-line value the lexer does not read as a NUMBER (hazard_l.l:34-38,
+  # the HZRP state at :53) is a syntax error: PROC HAZARD does not run the
+  # job (U1, #403). as.numeric() reads 1E5 and 5., which the lexer does not.
+  proc_rejected <- character(0)
+  check_number <- function(key, val) {
+    if (nzchar(val) && !.hzr_sas_lexer_number(val)) {
+      proc_rejected <<- c(proc_rejected, paste0(
+        key, "=", val, ": not a number PROC HAZARD's lexer reads ",
+        "(hazard_l.l:34-38), so PROC HAZARD rejects this job with a syntax ",
+        "error"))
+    }
+  }
 
   for (tok in toks) {
     eqp <- .idx(tok, "=")
@@ -431,6 +443,7 @@
       DATA        = data_name <- sub("^WORK[.]", "", val),
       OUTHAZ      = outhaz <- val,
       MAXITER     = {
+        check_number("MAXITER", val)
         val_num <- suppressWarnings(as.numeric(val))
         if (is.na(val_num)) {
           mapped <- mapped - 1L
@@ -446,6 +459,7 @@
       # has no such stop; it warns about the final Hessian after the fit.
       CONDITION   = {
         mapped <- mapped - 1L
+        check_number("CONDITION", val)
         val_num <- suppressWarnings(as.numeric(val))
         if (is.na(val_num)) {
           note("CONDITION", "non-numeric value for CONDITION")
@@ -596,11 +610,12 @@
   # here would answer a job the reference never runs (#340). Checked first:
   # SAS stops at parse, before anything the other refusals read -- including
   # the censoring spec, which throws on a job with no EVENT (#396 review).
-  if (length(parms$rejected)) {
+  rejected <- c(proc_rejected, parms$rejected)
+  if (length(rejected)) {
     msg <- paste0(
       "PROC HAZARD does not run this job: ",
-      paste(parms$rejected, collapse = "; "), ". Correct the ",
-      "phase statement and translate the job again.")
+      paste(rejected, collapse = "; "), ". Correct the ",
+      "statement(s) named here and translate the job again.")
     return(list(
       call = as.call(list(quote(stop), msg, call. = FALSE)),
       status_call = NULL, outhaz = outhaz, untranslated = untr,
@@ -679,6 +694,25 @@
                "the PARMS operand(s) named here, or fit the model by hand."),
         call. = FALSE
       ),
+      status_call = NULL, outhaz = outhaz, untranslated = untr,
+      tokens_seen = seen, tokens_mapped = mapped
+    ))
+  }
+
+  # A job PROC HAZARD runs, but on a model this translation does not emit:
+  # FIXMNU1 constrains |M*NU| = 1 on the early phase (setg1.c:363-575,
+  # hzd_early_t2p.c:65-77), and the emitted phase would estimate M and NU
+  # without it. A fit here would be a different model standing in for the
+  # job's, so the document stops (U1, #358). Mirroring the constraint is
+  # new modelling, left out of 1.3.0.
+  if (length(parms$not_mirrored)) {
+    return(list(
+      call = call("stop", paste0(
+        "This job's PARMS statement uses FIXMNU1, which PROC HAZARD applies ",
+        "as |M*NU| = 1 on the early phase. This translation does not mirror ",
+        "that constraint (#358), so the model it would emit is a different ",
+        "one from PROC HAZARD's. Remove FIXMNU1 to fit M and NU freely, or ",
+        "fit the constrained model by hand."), call. = FALSE),
       status_call = NULL, outhaz = outhaz, untranslated = untr,
       tokens_seen = seen, tokens_mapped = mapped
     ))

@@ -626,3 +626,62 @@ test_that("every reachable SETG3 refusal renders a stop(), not a fit (#359)", {
                     "hazard")
   }
 })
+
+# --- U1: a job PROC HAZARD refuses, or fits differently, emits stop() -------
+# John's decision (2026-09-19): when the translator knows PROC HAZARD refuses
+# a job, or fits a model other than the one it would emit, the document stops
+# rather than fitting with a row the reader may never see.
+
+.u1_job <- function(proc = "", parms, env = parent.frame()) {
+  f <- withr::local_tempfile(fileext = ".sas", .local_envir = env)
+  writeLines(paste0("%HAZARD( PROC HAZARD DATA=D", proc,
+                    "; EVENT DEAD; TIME TT; PARMS ", parms, "; );"), f)
+  suppressWarnings(hzr_translate_sas(f))
+}
+.u1_msg <- function(job) {
+  tryCatch({
+    eval(job$calls$fit, new.env())
+    "no error"
+  }, error = conditionMessage)
+}
+
+test_that("a PARMS syntax error stops the document (U1, #421)", {
+  for (p in c("MUE=0.2 THALF=0.5 NU=1E-3", "MUE=0.2 THALF=0.5 NU",
+              "MUE=0.2 THALF=0.5 NU = ABC", "MUE=0.2 THALF=0.5 FIXG1")) {
+    job <- .u1_job(parms = p)
+    expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"), info = p)
+    expect_match(.u1_msg(job), "PROC HAZARD does not run this job", fixed = TRUE,
+                 info = p)
+  }
+  # Controls: a job SAS runs still fits, including a macro piece this parser
+  # cannot judge, which is indeterminate and so not a known refusal.
+  for (p in c("MUE=0.2 THALF=0.5 NU=1", "MUE=0.2 THALF=0.5 NU=1 &X")) {
+    job <- .u1_job(parms = p)
+    expect_false(identical(job$calls$fit[[3L]][[1L]], as.name("stop")) &&
+                   grepl("does not run", .u1_msg(job), fixed = TRUE), info = p)
+  }
+})
+
+test_that("a PROC-line value the lexer rejects stops the document (U1, #403)", {
+  for (proc in c(" MAXITER=1E5", " CONDITION=5.")) {
+    job <- .u1_job(proc = proc, parms = "MUE=0.2 THALF=1 NU=1")
+    expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"), info = proc)
+    msg <- .u1_msg(job)
+    expect_match(msg, "PROC HAZARD does not run this job", fixed = TRUE, info = proc)
+    expect_match(msg, "hazard_l.l:34-38", fixed = TRUE, info = proc)
+  }
+  job <- .u1_job(proc = " MAXITER=200 CONDITION=14", parms = "MUE=0.2 THALF=1 NU=1")
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
+})
+
+test_that("FIXMNU1 on an active early phase stops the document (U1, #358)", {
+  job <- .u1_job(parms = "MUE=0.2 THALF=1 NU=2 M=0.5 FIXMNU1")
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"))
+  msg <- .u1_msg(job)
+  expect_match(msg, "FIXMNU1", fixed = TRUE)
+  expect_match(msg, "|M*NU| = 1", fixed = TRUE)
+  expect_match(msg, "#358", fixed = TRUE)
+  # With no early phase there is nothing for FIXMNU1 to constrain: SAS fits.
+  job <- .u1_job(parms = "MUL=0.2 TAU=1 GAMMA=2 ETA=1 FIXMNU1")
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
+})
