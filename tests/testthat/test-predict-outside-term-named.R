@@ -83,3 +83,42 @@ test_that("the row-count backstop still refuses when the pre-check is bypassed",
     fixed = TRUE
   )
 })
+
+test_that("a vector fit made through a wrapper's formula argument takes newdata like any vector fit (#406)", {
+  # A wrapper passing `formula = fml` stores the symbol `fml` in the call
+  # even when fml is NULL. The fit is a vector-interface fit (its call has
+  # `time =`), but predict() read the non-NULL call$formula as a formula
+  # fit saved before its design, and refused a newdata with an extra
+  # column. Part of #406; the other sites are in stream C's PR.
+  d <- stats::na.omit(avc[, c("int_dead", "dead", "age")])
+  wrap <- function(dat) {
+    fml <- NULL
+    hazard(formula = fml, time = dat$int_dead, status = dat$dead,
+           x = cbind(age = dat$age), dist = "weibull",
+           theta = c(0.1, 1, 0), fit = TRUE)
+  }
+  plain <- hazard(time = d$int_dead, status = d$dead, x = cbind(age = d$age),
+                  dist = "weibull", theta = c(0.1, 1, 0), fit = TRUE)
+  nd <- data.frame(time = c(1, 5), age = c(50, 70), extra = 1)
+  expect_identical(predict(wrap(d), newdata = nd, type = "survival"),
+                   predict(plain, newdata = nd, type = "survival"))
+})
+
+test_that("a formula fit saved without its design still refuses an extra newdata column", {
+  # The control for the #406 edit: a genuine pre-design formula fit (no
+  # x_design, no kept data frame, no call environment, so the design cannot
+  # be rebuilt) still refuses a newdata column it cannot tell from a formula
+  # variable. Its call has no `time =`.
+  d <- stats::na.omit(avc[, c("int_dead", "dead", "age")])
+  fit <- hazard(survival::Surv(int_dead, dead) ~ age, data = d,
+                dist = "weibull", theta = c(0.1, 1, 0), fit = TRUE)
+  fit$data$x_design <- NULL
+  fit$fit$x_design <- NULL
+  fit$data$frame <- NULL
+  fit$call_env <- NULL
+  expect_error(
+    predict(fit, newdata = data.frame(time = c(1, 5), age = c(50, 70),
+                                      extra = 1), type = "survival"),
+    "saved by an earlier version of TemporalHazard, without a stored formula design"
+  )
+})

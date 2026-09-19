@@ -1067,7 +1067,11 @@
     # would be a silent wrong answer, so it is refused -- as it was before,
     # when such a column made the positional match fail.
     extra <- setdiff(names(newdata), c(cols, "time"))
-    if (!is.null(object$call$formula) && length(extra) > 0L) {
+    # A vector-interface fit is recognised by `time =` in its call, not by a
+    # NULL formula: a wrapper's `formula = fml` names a formula even when
+    # `fml` was NULL (#406).
+    if (!is.null(object$call$formula) && !"time" %in% names(object$call) &&
+          length(extra) > 0L) {
       stop("This fit was saved by an earlier version of TemporalHazard, ",
            "without a stored formula design, so 'newdata' may hold only its ",
            "design columns (", paste0("'", cols, "'", collapse = ", "),
