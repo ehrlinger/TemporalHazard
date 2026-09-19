@@ -331,15 +331,17 @@ test_that("a PARMS statement SAS's lexer rejects never builds an orphan on defau
   # R's as.numeric() reads 1E-3, 2. and +0.2; the lexer's NUMBER
   # (hazard_l.l:34-38) does not, so PROC HAZARD stops with a syntax error.
   # An orphan MU read that way built a whole phase with no row.
-  for (ops in list("MUE=1E-3", "MUE=2.", "MUE=+0.2", c("MUL=0.1", "MUE=5E-2"),
-                   c("MUE=0.2", "THALF=1E-1"))) {
+  # The operand the lexer rejects, stated per case rather than recomputed.
+  for (cs in list(list(ops = "MUE=1E-3", bad = "MUE=1E-3"),
+                  list(ops = "MUE=2.", bad = "MUE=2."),
+                  list(ops = "MUE=+0.2", bad = "MUE=+0.2"),
+                  list(ops = c("MUL=0.1", "MUE=5E-2"), bad = "MUE=5E-2"),
+                  list(ops = c("MUE=0.2", "THALF=1E-1"), bad = "THALF=1E-1"))) {
+    ops <- cs$ops
+    bad <- cs$bad
     info <- paste(ops, collapse = " ")
     got <- .hzr_parse_parms(ops)
     expect_false(isTRUE(got$has_phases), info = info)
-    bad <- ops[!vapply(ops, function(o) {
-      grepl("^-?([0-9]+|[0-9]*[.][0-9]+(E[+-]?[0-9]+)?)$",
-            toupper(sub("^[^=]*=", "", o)))
-    }, logical(1))]
     row <- got$untranslated$reason[got$untranslated$construct %in% bad]
     expect_length(row, length(bad))
     expect_true(all(grepl("hazard_l.l:34-38", row, fixed = TRUE)), info = info)
@@ -372,6 +374,36 @@ test_that("a PARMS statement SAS's lexer rejects never builds an orphan on defau
   row <- got$untranslated$reason[got$untranslated$construct == "0.3"]
   expect_match(row, "does not run", fixed = TRUE)
   expect_no_match(row, "spaces around", fixed = TRUE)
+})
+
+test_that("a spaced operand PROC HAZARD would still reject is not said to be accepted (#365 review 4)", {
+  # A piece reason says PROC HAZARD accepts the operand, which is true only
+  # when the joined operand is a value keyword followed by a lexer NUMBER
+  # (hazard_y.y:137-147, hazard_l.l:34-38). Otherwise the job does not run.
+  for (ops in list(c("MUE=0.2", "THALF=0.5", "NU", "=", "ABC"),
+                   c("MUE=0.2", "THALF=0.5", "NU=", "1E-3"),
+                   c("=", "0.3", "MUE=0.2", "THALF=0.5"),
+                   c("MUE=0.2", "THALF=0.5", "FIXNU", "=", "1"))) {
+    info <- paste(ops, collapse = " ")
+    got <- .hzr_parse_parms(ops)
+    rows <- got$untranslated$reason[!got$untranslated$construct %in%
+                                      c("MUE=0.2", "THALF=0.5")]
+    expect_gt(length(rows), 0L)
+    expect_false(any(grepl("PROC HAZARD accepts", rows, fixed = TRUE)), info = info)
+    expect_true(all(grepl("does not run", rows, fixed = TRUE)), info = info)
+  }
+  # Control: a spaced operand SAS runs keeps the piece reason.
+  got <- .hzr_parse_parms(c("MUE=0.2", "THALF=0.5", "NU", "=", "-1.5"))
+  expect_true(all(grepl("PROC HAZARD accepts", got$untranslated$reason[
+    got$untranslated$construct %in% c("NU", "=", "-1.5")], fixed = TRUE)))
+})
+
+test_that("a TAU the statement did not let this parser read is not called unspecified (#365 review 4)", {
+  got <- .hzr_parse_parms(c("MUL=0.1", "GAMMA=1", "TAU", "=", "0.5", "FIXTAU"))
+  row <- got$untranslated$reason[got$untranslated$construct == "TAU (unspecified)"]
+  expect_length(row, 1L)
+  expect_match(row, "was not read", fixed = TRUE)
+  expect_no_match(row, "applied to an unspecified TAU", fixed = TRUE)
 })
 
 test_that("an orphan MU keys scope, force_in and the listwise guard like its written defaults (#345)", {

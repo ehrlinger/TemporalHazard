@@ -62,33 +62,59 @@
 # whitespace (hazard_l.l:50) and PROC HAZARD runs the job, so no piece is a
 # syntax error; but the operand's value is not read here. Marked from context,
 # since a bare number is a piece only after an `=`, and a stray one is not.
+.hzr_parms_rejected_piece_reason <- paste0(
+  "unresolved PARMS keyword: a piece of an operand written with spaces ",
+  "around `=` that is not a value keyword `= NUMBER` even joined ",
+  "(hazard_y.y:137-147, hazard_l.l:34-38), so PROC HAZARD rejects this job ",
+  "with a syntax error and it does not run"
+)
 .hzr_parms_unresolved_piece_reason <- paste0(
   "unresolved PARMS keyword: a piece of an operand written with spaces ",
   "around `=`, which PROC HAZARD accepts but this translator splits apart, ",
   "so the operand's value was not read"
 )
 .hzr_parms_spaced_pieces <- function(ops) {
+  # 0 = not a piece; 1 = a piece of a spaced operand PROC HAZARD accepts
+  # (joined, it is a value keyword `= NUMBER`, hazard_y.y:137-147 and
+  # hazard_l.l:34-38); 2 = a piece of one it would still reject.
   n <- length(ops)
-  piece <- logical(n)
-  bare_key <- function(i) {
-    i >= 1L && i <= n && !grepl("=", ops[[i]], fixed = TRUE) &&
-      !is.na(.hzr_sas_token(ops[[i]], "HAZARD", "PARM"))
+  code <- integer(n)
+  tok <- function(x) .hzr_sas_token(x, "HAZARD", "PARM")
+  value_key <- function(x) {
+    t <- tok(x)
+    !is.na(t) && t %in% c(.hzr_parms_mu_order, names(.hzr_parms_early_arg),
+                          names(.hzr_parms_late_arg), "DELTA")
   }
-  for (i in seq_len(n)) {
+  bare_key <- function(k) {
+    k >= 1L && code[k] == 0L && !grepl("=", ops[[k]], fixed = TRUE) &&
+      !is.na(tok(ops[[k]]))
+  }
+  i <- 1L
+  while (i <= n) {
     op <- ops[[i]]
+    key_i <- if (bare_key(i - 1L)) i - 1L else NA_integer_
     if (identical(op, "=")) {
-      piece[i] <- TRUE
-      if (bare_key(i - 1L)) piece[i - 1L] <- TRUE
-      if (i < n) piece[i + 1L] <- TRUE
-    } else if (startsWith(op, "=")) {
-      piece[i] <- TRUE
-      if (bare_key(i - 1L)) piece[i - 1L] <- TRUE
+      val_i <- if (i < n) i + 1L else NA_integer_
+      ok <- !is.na(key_i) && value_key(ops[[key_i]]) && !is.na(val_i) &&
+        .hzr_sas_lexer_number(ops[[val_i]])
+      members <- c(key_i, i, val_i)
+    } else if (startsWith(op, "=") && nchar(op) > 1L) {
+      ok <- !is.na(key_i) && value_key(ops[[key_i]]) &&
+        .hzr_sas_lexer_number(substring(op, 2L))
+      members <- c(key_i, i)
     } else if (nchar(op) > 1L && endsWith(op, "=") && i < n) {
-      piece[i] <- TRUE
-      piece[i + 1L] <- TRUE
+      ok <- value_key(substr(op, 1L, nchar(op) - 1L)) &&
+        .hzr_sas_lexer_number(ops[[i + 1L]])
+      members <- c(i, i + 1L)
+    } else {
+      i <- i + 1L
+      next
     }
+    members <- members[!is.na(members)]
+    code[members] <- if (ok) 1L else 2L
+    i <- max(members) + 1L
   }
-  piece
+  code
 }
 .hzr_parms_mu_order  <- c("MUE", "MUC", "MUL")
 
@@ -213,9 +239,7 @@
     "at hazard_l.l:178, which sets yysynerr"))
   # The lexer's NUMBER (hazard_l.l:34-38). as.numeric() also reads Inf, NaN,
   # 1e5, 5. and 0x1A, none of which PROC HAZARD lexes as a number.
-  is_number <- function(s) {
-    grepl("^-?([0-9]+|[0-9]*[.][0-9]+(E[+-]?[0-9]+)?)$", toupper(s))
-  }
+  is_number <- .hzr_sas_lexer_number
   # Which rule reads a value that is not a NUMBER. Per input, not per
   # refusal: a character outside the word rule's set falls to the catch-all;
   # a whole name lexes as NAME after a phase variable (hazard_l.l:174-175)
@@ -737,9 +761,10 @@
   spaced_piece <- .hzr_parms_spaced_pieces(operands)
   for (i in seq_along(operands)) {
     op <- operands[[i]]
-    if (spaced_piece[i]) {
+    if (spaced_piece[i] > 0L) {
       unreadable <- TRUE
-      flag_bad(op, .hzr_parms_unresolved_piece_reason)
+      flag_bad(op, if (spaced_piece[i] == 1L) .hzr_parms_unresolved_piece_reason
+               else .hzr_parms_rejected_piece_reason)
       next
     }
     eq <- .idx(op, "=")
@@ -1411,8 +1436,16 @@
     flag_bad(
       if (tau_absent) "TAU (unspecified)" else
         paste0("TAU=", sprintf("%g", late[["tau"]])),
-      paste0("PROC HAZARD ", if (tau_fixed) "fixes" else "starts", " TAU at ",
-             if (tau_absent) {
+      paste0(if (tau_absent && unreadable) {
+               paste0("TAU was not read here: this statement has operands ",
+                      "the translator could not read (see their rows), so ",
+                      "whether and how TAU was written cannot be told. If it ",
+                      "was not written, ")
+             },
+             "PROC HAZARD ", if (tau_fixed) "fixes" else "starts", " TAU at ",
+             if (tau_absent && unreadable) {
+               "0.75*Tmax (readobs.c:153-154, "
+             } else if (tau_absent) {
                "0.75*Tmax (readobs.c:153-154, applied to an unspecified TAU "
              } else {
                "2*Tmax/3 (setg3.c:317, applied to a non-positive TAU "
