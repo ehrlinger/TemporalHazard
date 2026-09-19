@@ -152,6 +152,31 @@ test_that("a name bound to something else keeps the behaviour it had (#406)", {
                "cannot count the rows to resample", fixed = TRUE)
 })
 
+test_that("a fit whose call names no `time =` is left alone (#406)", {
+  # The rule reads the binding only for a call that names `time =`, which is
+  # what a vector fit records. A covariate-free formula fit passed by
+  # variable does not, so a NULL binding must not turn it into a vector fit:
+  # its message stays main's.
+  #
+  # The NULL is written into `call_env` itself. hazard() captures the
+  # caller's bindings by copy (.hzr_capture_call_env), so rebinding the
+  # name in this frame would not reach the fit -- except for a fit made at
+  # top level, whose captured environment is empty and parented to the
+  # global environment, where the binding stays live.
+  d <- wv_data_406()
+  fml <- survival::Surv(int_dead, dead) ~ 1
+  f <- hazard(formula = fml, data = d, dist = "weibull", theta = c(0.1, 1),
+              fit = TRUE)
+  expect_false("time" %in% names(f$call))
+  expect_null(f$data$x_design)
+  assign("fml", NULL, envir = f$call_env)
+  expect_match(
+    wv_msg_406(hzr_stepwise(f, scope = ~ mal, data = d, direction = "forward",
+                            criterion = "wald", trace = FALSE)),
+    "did not resolve to a formula", fixed = TRUE
+  )
+})
+
 test_that("a formula fit saved before `x_design` keeps its guards (#406)", {
   # Vintage: saved by 1.2.10 or earlier, which stored no `x_design`. It has
   # `x`, so the rule declines it and #278's guard still runs; classifying it
