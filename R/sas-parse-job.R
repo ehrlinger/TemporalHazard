@@ -1031,7 +1031,8 @@
     stepwise_call <- as.call(c(quote(hzr_stepwise),
                                Filter(Negate(is.null), sw_args)))
     # A screen can stop because no candidate could be SCORED, which reads
-    # exactly like "nothing met slentry" (#159). Say which it was.
+    # exactly like "nothing met slentry" (#159). hzr_stepwise() now says so
+    # itself when it stops; the check below covers a screen that completed.
     # `fit` is substituted for this block's own slot name by the caller, in
     # the message string as well as the code: a second SELECTION block used
     # to tell the reader to look at `fit`, which in that document is a
@@ -1046,55 +1047,29 @@
     # 4.3. A grep for the construct mostly finds those false positives; the
     # question is always which side of the namespace boundary the code runs
     # on. Nothing checks this automatically.
+    # Keyed on the REASONS, not n_uncomputable_scores: that is an attempt
+    # count which, since #399, also counts removals and entries whose WALD
+    # test had no variance (`wald_no_variance`). Those are not uncomputable
+    # scores, and hzr_stepwise() now names each such variable itself, as it
+    # does when a screen STOPPED on uncomputable candidates. This check says
+    # only what the screen has not already said (#400).
+    # Every local is dot-prefixed: the chunk runs in the reader's session, so
+    # a bare name would overwrite the reader's object of that name (#400).
     screen_check_call <- bquote({
-      n_unscored <- fit$criteria$n_uncomputable_scores
-      if (is.null(n_unscored)) n_unscored <- 0L
-      if (n_unscored > 0L) {
-        warning(n_unscored, " candidate score(s) were uncomputable in this ",
-                "screen; see ", .(quote(fit_label)),
-                "$criteria$uncomputable_reasons. A screen that could not ",
-                "score a candidate did not test it.", call. = FALSE)
+      .reasons <- fit$criteria$uncomputable_reasons
+      if (is.null(.reasons)) .reasons <- integer(0)
+      .reasons <- .reasons[names(.reasons) != "wald_no_variance"]
+      .n_unscored <- sum(.reasons)
+      if (.n_unscored > 0L && !isTRUE(fit$criteria$stopped_uncomputable)) {
+        warning(.n_unscored, " candidate score(s) could not be computed in ",
+                "this screen (", paste0(names(.reasons), " = ", .reasons,
+                                  collapse = ", "),
+                "); see ", .(quote(fit_label)),
+                "$criteria$uncomputable_reasons. A candidate the screen ",
+                "could not score was not tested at that step.", call. = FALSE)
       }
-      invisible(n_unscored)
+      invisible(.n_unscored)
     })
-    # Removal is tested on Wald p-values, which need a usable variance for
-    # the coefficient being tested. A multiphase ICENSOR fit without
-    # numDeriv has none at all, and a masked variance is NA inside an
-    # otherwise valid matrix; either way the screen cannot remove that
-    # variable, which reads exactly like "it met slstay". Only the
-    # variables the screen could remove are read: a FIXED shape has an NA
-    # variance by design. Matched EXACTLY, so a movable `A` does not claim a
-    # forced-in `AGE` (a factor candidate's dummy columns are therefore not
-    # read; SAS phase variables are numeric). A forward-only screen never removes, so it gets
-    # no such check. Indexed by string: the caller substitutes the SYMBOL
-    # `fit` with this block's slot name, and `fit$fit` would rename the
-    # component too.
-    removable <- unique(unlist(parms$selection$movable %||% list()))
-    if (!identical(sel$direction, "forward") && length(removable)) {
-      removable_re <- paste0("^phase_[0-9]+[.](",
-                             paste(removable, collapse = "|"), ")$")
-      removal_check <- bquote({
-        est <- names(stats::coef(fit))
-        v <- fit[["fit"]][["vcov"]]
-        var_ok <- if (is.matrix(v) && nrow(v) == length(est)) {
-          is.finite(diag(v)) & diag(v) > 0
-        } else {
-          rep(FALSE, length(est))
-        }
-        untestable <- est[grepl(.(removable_re), est) & !var_ok]
-        if (length(untestable)) {
-          warning("The screened model has no usable standard error for ",
-                  paste(untestable, collapse = ", "), ", so no Wald ",
-                  "removal test could be computed for it. For an ",
-                  "interval-censored job, install 'numDeriv'.", call. = FALSE)
-        }
-      })
-      screen_check_call <- as.call(c(
-        as.name("{"),
-        as.list(removal_check)[-1L],
-        as.list(screen_check_call)[-1L]
-      ))
-    }
   }
 
   list(call = as.call(c(head, args)), status_call = status_call,

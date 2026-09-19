@@ -435,27 +435,38 @@ test_that("printing options are recorded, not refused (#160)", {
   expect_true(any(grepl("NOPRINTS", job$untranslated$construct)))
 })
 
-test_that("the emitted screen reports candidates it could not score (#160)", {
+test_that("the emitted screen reports candidates it could not score (#160, #400)", {
   # This used to grep the rendered document for "uncomputable", a word the
   # callout body also contains, so it passed with the check chunk deleted.
-  # Assert the chunk exists and EXECUTE it against a fit that could not
-  # score two candidates, and against one that scored them all.
+  # Assert the chunk exists and EXECUTE it. The mocks carry the criteria a
+  # real hzr_stepwise() fit carries since #399: an attempt count, the named
+  # reasons, and whether the screen stopped on them.
   job <- .sel_job("SELECTION SLE=0.2; EARLY STRONG, NOISE;")
   expect_true("screen_check" %in% names(job$calls))
   env <- new.env(parent = baseenv())
-  env$fit <- list(criteria = list(n_uncomputable_scores = 2L),
-                  fit = list(vcov = diag(2)))
-  expect_warning(eval(job$calls$screen_check, env), "2 candidate score")
-  env$fit <- list(criteria = list(n_uncomputable_scores = 0L),
-                  fit = list(vcov = diag(2)))
+  crit <- function(reasons, stopped = FALSE) {
+    list(criteria = list(n_uncomputable_scores = sum(reasons),
+                         uncomputable_reasons = reasons,
+                         stopped_uncomputable = stopped))
+  }
+  # A completed screen that could not score two candidates says so, by reason.
+  env$fit <- crit(c(nuisance_singular = 2L))
+  msg <- tryCatch({
+    eval(job$calls$screen_check, env)
+    "none"
+  }, warning = conditionMessage)
+  expect_match(msg, "2 candidate score(s)", fixed = TRUE)
+  expect_match(msg, "nuisance_singular = 2", fixed = TRUE)
+  env$fit <- crit(stats::setNames(integer(0), character(0)))
   expect_no_warning(eval(job$calls$screen_check, env))
-  # No standard errors means no Wald removal test could be computed (a
-  # multiphase ICENSOR fit without numDeriv): the screen then drops nothing
-  # and reads exactly like "nothing met slstay" (#160, Copilot on ce9211f7).
-  env$fit <- list(criteria = list(n_uncomputable_scores = 0L),
-                  coefficients = c(phase_1.log_mu = 0, phase_1.STRONG = 1),
-                  fit = list(vcov = NULL))
-  expect_warning(eval(job$calls$screen_check, env), "no usable standard error")
+  # A Wald test without a variance is not an uncomputable SCORE, and
+  # hzr_stepwise() reports it itself, naming the variables (#389, #400).
+  env$fit <- crit(c(wald_no_variance = 3L))
+  expect_no_warning(eval(job$calls$screen_check, env))
+  # A screen that STOPPED on uncomputable candidates has already warned, with
+  # every reason; the check must not say it a second time (#400).
+  env$fit <- crit(c(nuisance_singular = 3L), stopped = TRUE)
+  expect_no_warning(eval(job$calls$screen_check, env))
 })
 
 # --- #160 r-reviewer findings ------------------------------------------------
@@ -563,16 +574,17 @@ test_that("the screen check names its own fit and avoids %||% (#160)", {
   # Executed, because the label is pasted from pieces in the source: what
   # matters is the message the reader sees.
   env <- new.env(parent = baseenv())
-  env$fit_2 <- list(criteria = list(n_uncomputable_scores = 2L),
-                    fit = list(vcov = diag(2)))
+  env$fit_2 <- list(criteria = list(n_uncomputable_scores = 2L,
+                                    uncomputable_reasons = c(nuisance_singular = 2L),
+                                    stopped_uncomputable = FALSE))
   expect_warning(eval(job$calls[[chk[2L]]], env),
                  "fit_2\\$criteria\\$uncomputable_reasons")
-  # The substitution renames the SYMBOL `fit`. Reached as fit$fit$vcov, the
-  # component name is a symbol too, so the second block read
-  # fit_2$fit_2$vcov -- always NULL -- and warned "no standard errors" for
-  # every model it screened. A model WITH standard errors must not warn.
-  env$fit_2 <- list(criteria = list(n_uncomputable_scores = 0L),
-                    fit = list(vcov = diag(2)))
+  # The substitution renames the SYMBOL `fit`, so a component reached as
+  # `$fit` would be renamed too (#160: fit_2$fit_2$vcov). A screen that
+  # scored everything must not warn under the second block's name either.
+  env$fit_2 <- list(criteria = list(n_uncomputable_scores = 0L,
+                                    uncomputable_reasons = stats::setNames(integer(0), character(0)),
+                                    stopped_uncomputable = FALSE))
   expect_no_warning(eval(job$calls[[chk[2L]]], env))
   all_src <- paste(vapply(job$calls, function(c0) {
     paste(deparse(c0), collapse = " ")
@@ -808,34 +820,78 @@ test_that("the screen refits under the job's own control, not hazard()'s default
   expect_equal(final$spec$control$maxit, 77)
 })
 
-test_that("the removal check reads each removable coefficient's variance (#160)", {
-  # is.matrix() was not enough: .hzr_safe_solve() keeps a matrix after
-  # masking a non-positive variance to NA, and a FIXED parameter has an NA
-  # row by design. So the check reads the variances of the coefficients the
-  # screen could remove -- the job's movable variables -- and nothing else.
+test_that("the screen check leaves the reader's own objects alone (#400)", {
+  # The chunk runs in the reader's session, so each local it creates shares
+  # a namespace with the job's data: a bare `rs` would have overwritten a
+  # job's DATA=rs, and a bare `n_unscored` a variable of that name (Codex on
+  # #419). Assert the property, not the name: a pre-existing object keeps
+  # its value, and the chunk adds no non-dotted name to the frame, whether
+  # it warns or not.
   job <- .sel_job("SELECTION SLE=0.2; EARLY STRONG, NOISE;")
-  chk <- job$calls$screen_check
-  env <- new.env(parent = baseenv())
-  cf <- c(phase_1.log_mu = 0, phase_1.m = 1, phase_1.STRONG = 1, phase_2.log_mu = 0)
-  # A movable coefficient with an NA variance: its removal was not testable.
-  env$fit <- list(criteria = list(n_uncomputable_scores = 0L), coefficients = cf,
-                  fit = list(vcov = diag(c(1, 1, NA, 1))))
-  expect_warning(eval(chk, env), "STRONG")
-  # Only a FIXED shape (FIXM) lacks a variance: nothing removable is affected.
-  env$fit <- list(criteria = list(n_uncomputable_scores = 0L), coefficients = cf,
-                  fit = list(vcov = diag(c(1, NA, 1, 1))))
-  expect_no_warning(eval(chk, env))
+  for (reasons in list(c(nuisance_singular = 2L),
+                       stats::setNames(integer(0), character(0)))) {
+    env <- new.env(parent = baseenv())
+    env$fit <- list(criteria = list(n_uncomputable_scores = sum(reasons),
+                                    uncomputable_reasons = reasons,
+                                    stopped_uncomputable = FALSE))
+    env$n_unscored <- "user data"
+    env$rs <- "user data"
+    before <- ls(env)
+    suppressWarnings(eval(job$calls$screen_check, env))
+    expect_identical(env$n_unscored, "user data")
+    expect_identical(env$rs, "user data")
+    expect_identical(ls(env), before)
+  }
 })
 
-test_that("a forward-only screen does not warn about removal tests (#160)", {
-  # NOSTEPWISE translates to direction = "forward", which never removes, so
-  # a missing standard error costs it no removal test.
-  job <- .sel_job("SELECTION NOSW; EARLY STRONG, NOISE;")
-  expect_equal(job$calls$fit[[3L]][["direction"]], "forward")
-  env <- new.env(parent = baseenv())
-  env$fit <- list(criteria = list(n_uncomputable_scores = 0L),
-                  coefficients = c(phase_1.STRONG = 1), fit = list(vcov = NULL))
-  expect_no_warning(eval(job$calls$screen_check, env))
+test_that("the screen check does not repeat hzr_stepwise()'s Wald report (#400)", {
+  skip_on_cran() # two multiphase fits
+  # Rebuilt from a REAL backward fit, not a vcov = NULL mock. A multiphase
+  # ICENSOR fit has no variances without numDeriv, so no removal can be
+  # tested. hzr_stepwise() says so itself since #389/#399; the emitted check
+  # used to say it twice more, and called the Wald failure an uncomputable
+  # score.
+  orig <- base::requireNamespace
+  local_mocked_bindings(
+    requireNamespace = function(package, ...) {
+      if (identical(package, "numDeriv")) FALSE else orig(package, ...)
+    },
+    .package = "base"
+  )
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste(
+    "%HAZARD( PROC HAZARD DATA=D CONDITION=14; EVENT DEAD; TIME TT;",
+    "ICENSOR C3 = CT; PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005;",
+    "SELECTION BACKWARD SLS=0.05; EARLY STRONG, NOISE, MAL; );"
+  ), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  d <- .sel_data()
+  set.seed(7)
+  ic <- sample(which(d$DEAD == 1), 60)
+  d$C3 <- 0L
+  d$C3[ic] <- 1L
+  d$DEAD[ic] <- 0L
+  d$CT <- d$TT * 0.6
+  env <- new.env()
+  env$D <- d
+  chunk_warnings <- function(nm) {
+    w <- character()
+    withCallingHandlers(eval(job$calls[[nm]], env), warning = function(cw) {
+      w <<- c(w, conditionMessage(cw))
+      invokeRestart("muffleWarning")
+    })
+    w
+  }
+  for (nm in setdiff(names(job$calls), c("fit", "screen_check"))) {
+    suppressWarnings(eval(job$calls[[nm]], env))
+  }
+  expect_false(any(is.finite(env$fit_base$fit$se)))
+  w_fit <- chunk_warnings("fit")
+  # The screen reported it, and it was the Wald test that failed.
+  expect_identical(env$fit$criteria$uncomputable_reasons, c(wald_no_variance = 3L))
+  expect_true(any(grepl("no remaining candidate could be tested for removal", w_fit, fixed = TRUE)))
+  # The check adds nothing to that.
+  expect_identical(chunk_warnings("screen_check"), character(0))
 })
 
 test_that("SELECTION options written with spaces around = keep their values (#160)", {
@@ -848,25 +904,6 @@ test_that("SELECTION options written with spaces around = keep their values (#16
   expect_equal(cl[["slstay"]], 0.1)
   expect_equal(cl[["max_steps"]], 5)
   expect_false(any(c("SLE", "SLS", "MAXSTEPS", "0.2", "") %in% job$untranslated$construct))
-})
-
-test_that("the removal check matches a variable's coefficient exactly (#160)", {
-  # An unanchored prefix let movable `A` claim `phase_1.AGE`. With AGE held
-  # by /I, the screen can never remove it, so an NA variance there costs no
-  # removal test -- but the prefix still reported it.
-  job <- .sel_job("SELECTION SLE=0.2; EARLY A, AGE/I;")
-  env <- new.env(parent = baseenv())
-  env$fit <- list(criteria = list(n_uncomputable_scores = 0L),
-                  coefficients = c(phase_1.log_mu = 0, phase_1.A = 1, phase_1.AGE = 1),
-                  fit = list(vcov = diag(c(1, 1, NA))))
-  expect_no_warning(eval(job$calls$screen_check, env))
-  # Control: the same NA on the movable A does warn, and names only A.
-  env$fit$fit$vcov <- diag(c(1, NA, 1))
-  msg <- tryCatch({
-    eval(job$calls$screen_check, env)
-    "none"
-  }, warning = conditionMessage)
-  expect_match(msg, "standard error for phase_1.A, so", fixed = TRUE)
 })
 
 test_that("the callout describes only what this screen's direction does (#160)", {

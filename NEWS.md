@@ -686,6 +686,20 @@
 
 ## Bug fixes
 
+* **A translated `SELECTION` job's check chunk no longer repeats
+  `hzr_stepwise()`'s own warnings, or calls a failed Wald test a score it
+  could not compute (#400).** Since #399, `hzr_stepwise()` warns when a
+  screen stops on candidates it could not test, listing every reason. When
+  the screen completed, it names each variable it kept in the model without
+  a Wald test of its removal. The check chunk after the screen
+  still warned twice more. First it warned that the model had "no usable
+  standard error". Then it warned that
+  `N candidate score(s) were uncomputable`, counting the Wald failures as
+  scores. It now reads
+  `$criteria$uncomputable_reasons` without `wald_no_variance`, names each
+  reason, and stays quiet when the screen stopped, because that warning
+  already lists every reason.
+
 * **A multiphase fit stops when `theta` does not have one entry per
   parameter, instead of fitting with extra entries or failing obscurely
   (#408).** `hazard()` compared a supplied `theta` only with the global
