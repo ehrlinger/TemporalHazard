@@ -107,8 +107,8 @@
   interface since 1.2.2 (#151), and only the call's own arguments are now
   checked. The warning's advice now names the data frame the call passed,
   as in `d$w`. Since 1.2.2 the vector interface had advised `data$<name>`,
-  which finds `utils::data()` rather than the data frame and fails with
-  "object of type 'closure' is not subsettable" when followed.
+  which finds `utils::data()` rather than the data frame, so following it
+  was an error.
 
 * **A multiphase phase formula without an intercept no longer drops its
   first term (#303).** `hzr_phase(formula = ~ 0 + age)` or `~ age - 1`
