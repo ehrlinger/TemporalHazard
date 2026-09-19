@@ -298,6 +298,8 @@ hzr_stepwise <- function(fit,
   if (!inherits(fit, "hazard")) {
     stop("`fit` must be a `hazard` object.", call. = FALSE)
   }
+  .hzr_refuse_undeclared_dots(list(...), "hzr_stepwise",
+                              own = names(formals(hzr_stepwise)))
   if (missing(data) || !is.data.frame(data)) {
     stop("`data` must be a data frame (typically the frame used for the base fit).",
          call. = FALSE)
@@ -839,6 +841,37 @@ hzr_stepwise <- function(fit,
 
   class(result) <- unique(c("hzr_stepwise", class(result)))
   result
+}
+
+# Refuse a `...` name that hazard() does not declare (#386). The selection
+# entry points forward `...` to every candidate refit, and hazard()'s own
+# `...` is legacy pass-through that accepts any name, so a misspelled
+# argument (`slentyr` for `slentry`) was silently dropped and the screen ran
+# at its defaults. `allowed` adds names the caller itself consumes from
+# `...`; `own` is the caller's formals, searched for the nearest spelling.
+.hzr_refuse_undeclared_dots <- function(dots, caller, own, allowed = character()) {
+  declared <- c(setdiff(names(formals(hazard)), "..."), allowed)
+  nms <- names(dots) %||% rep("", length(dots))
+  bad <- unique(nms[!nms %in% declared])
+  if (!length(bad)) return(invisible(NULL))
+  if ("" %in% bad) {
+    stop(caller, "(): `...` holds an unnamed argument. Everything in `...` ",
+         "is forwarded by name to the hazard() refits, so name it.",
+         call. = FALSE)
+  }
+  known <- unique(c(setdiff(own, "..."), declared))
+  hint <- vapply(bad, function(nm) {
+    dist <- utils::adist(nm, known)[1L, ]
+    if (min(dist) > 2L) return("")
+    paste0(" Did you mean `", known[which.min(dist)], "`",
+           if (length(bad) > 1L) paste0(" for `", nm, "`") else "", "?")
+  }, character(1))
+  stop(caller, "(): ", paste0("`", bad, "`", collapse = ", "),
+       if (length(bad) > 1L) " are not arguments" else " is not an argument",
+       " of ", caller, "() or of hazard(). Everything in `...` is forwarded ",
+       "to the hazard() refits, and hazard() stores a name it does not ",
+       "declare without reading it, so it would have had no effect.",
+       paste(hint, collapse = ""), call. = FALSE)
 }
 
 

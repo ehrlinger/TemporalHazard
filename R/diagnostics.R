@@ -1784,6 +1784,11 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
          ". '...' is only forwarded to hzr_stepwise() when 'scope' is set.",
          call. = FALSE)
   }
+  # Refused here, before seeding: inside a replicate, hzr_stepwise()'s own
+  # refusal would be caught and tallied as a replicate failure (#386).
+  .hzr_refuse_undeclared_dots(extra_args, "hzr_bootstrap",
+                              own = names(formals(hzr_bootstrap)),
+                              allowed = "trace")
 
   # hzr_stepwise() is always called below with trace = FALSE (per-step
   # stepwise output would be too noisy across n_boot replicates; `verbose`
