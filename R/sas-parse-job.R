@@ -708,8 +708,8 @@
   if (length(parms$not_mirrored)) {
     return(list(
       call = call("stop", paste0(
-        "PROC HAZARD runs this job on a model this translation does not ",
-        "emit, so a fit here would be a different model from PROC HAZARD's: ",
+        "This translation cannot emit PROC HAZARD's model for this job, so a ",
+        "fit here could stand in for a model PROC HAZARD does not fit: ",
         paste(parms$not_mirrored, collapse = "; "), "."), call. = FALSE),
       status_call = NULL, outhaz = outhaz, untranslated = untr,
       tokens_seen = seen, tokens_mapped = mapped

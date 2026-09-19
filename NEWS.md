@@ -751,9 +751,9 @@
 
   The refusal is raised only where it is PROC HAZARD's. With `FIXGE2` or
   `FIXGAE2` and no `WEIBULL`, SAS reaches `SETG3` down a path the `setg3.c`
-  trace does not model, so the trace's verdict is not used there. Only that
-  path's own deterministic refusals and `SETG3`'s entry refusals are raised
-  (see the next entry).
+  trace does not model, so the trace's verdict is not used there. Only
+  `SETG3`'s entry refusals are raised as refusals on that path (see the next
+  entry).
 
 * **More `hzr_translate_sas()` jobs that PROC HAZARD refuses, or fits
   differently, now stop instead of fitting** (#358, #403, #421). Each of these
@@ -765,21 +765,22 @@
     keyword outside its grammar (`FIXG1`);
   - a `MAXITER=` or `CONDITION=` value that its lexer does not read as a
     number;
-  - a model this translation does not emit:
+  - a template's `?` placeholder in `PARMS`, which PROC HAZARD's lexer also
+    rejects. It was filled from SAS's default and fitted; it now asks to be
+    filled in;
+  - a model this translation cannot emit:
     - `FIXMNU1` on an active early phase, which PROC HAZARD fits with
       `|M*NU| = 1`; this translation does not mirror that constraint;
-    - `DELTA` other than 0;
+    - `DELTA` other than 0 on an active early phase;
     - `FIXTAU` with no `TAU` written, which PROC HAZARD fixes at 0.75 of the
       longest follow-up;
-    - `FIXGE2` or `FIXGAE2` without `WEIBULL` when a shape they tie is free.
-      The constraint is mirrored only with `WEIBULL`.
-  - `SETG3` refusals on the non-`WEIBULL` constraint path that follow from
-    the written operands alone (`SETG31010`, `SETG31000`, `SETG31040`), and
-    `SETG3`'s entry refusals on every path.
+    - `FIXGE2` or `FIXGAE2` without `WEIBULL`. That path is not modelled
+      here, so the stop says the translation cannot tell whether PROC HAZARD
+      refuses the job or which model it fits;
+  - `SETG3`'s entry refusals, on every path.
 
-  A `PARMS` or `PROC` value that carries a macro reference (`&X`, `%CALL`), or
-  a template's `?`, is not refused, because SAS expands the macro, and the
-  placeholder is left for the reader to fill.
+  A `PARMS` or `PROC` value that carries a macro reference (`&X`, `%CALL`) is
+  not refused, because SAS expands it before PROC HAZARD reads the statement.
 
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded
