@@ -1746,6 +1746,30 @@ test_that("a macro reference is not called a syntax error (#365 review)", {
   # A keyword the lexer rejects still says it.
   got <- .hzr_parse_parms(c("MUE=0.2", "THALF=1", "FIXG1"))
   expect_match(got$untranslated$reason, "does not run", fixed = TRUE)
+  # A spaced operand with a macro in its key or value cannot be judged until
+  # SAS expands it: `%let KEY=THALF; PARMS MUE=0.2 &KEY = 0.3;` is a valid
+  # THALF = 0.3, and `THALF = &VAL` may be too (Codex on #365 at 85ffd1ba).
+  # Its pieces must claim neither acceptance nor rejection, and the orphan
+  # must still not be built on defaults.
+  for (ops in list(c("MUE=0.2", "&KEY", "=", "0.3"),
+                   c("MUE=0.2", "THALF", "=", "&VAL"),
+                   c("MUE=0.2", "&KEY=", "0.3"),
+                   c("MUE=0.2", "&KEY", "=0.3"),
+                   c("MUE=0.2", "THALF", "=", "&V", "NU", "=", "1"))) {
+    info <- paste(ops, collapse = " ")
+    got <- .hzr_parse_parms(ops)
+    expect_false(isTRUE(got$has_phases), info = info)
+    rows <- got$untranslated$reason[got$untranslated$construct != "MUE=0.2"]
+    expect_gt(length(rows), 0L)
+    expect_false(any(grepl("syntax error", rows, fixed = TRUE)), info = info)
+    expect_false(any(grepl("does not run", rows, fixed = TRUE)), info = info)
+    # Only the macro operand's pieces: the last case also carries a valid
+    # spaced `NU = 1`, which rightly keeps its "accepts" reason.
+    macro_rows <- if ("NU" %in% ops) rows[seq_len(3L)] else rows
+    expect_false(any(grepl("PROC HAZARD accepts", macro_rows, fixed = TRUE)),
+                 info = info)
+    expect_true(any(grepl("macro reference", rows, fixed = TRUE)), info = info)
+  }
 })
 
 test_that("a keyword outside PROC HAZARD's grammar says the job does not run", {

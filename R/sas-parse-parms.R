@@ -68,6 +68,12 @@
   "(hazard_y.y:137-147, hazard_l.l:34-38), so PROC HAZARD rejects this job ",
   "with a syntax error and it does not run"
 )
+.hzr_parms_macro_piece_reason <- paste0(
+  "unresolved PARMS keyword: a piece of an operand written with spaces ",
+  "around `=` whose key or value is a SAS macro reference, which SAS ",
+  "resolves before PROC HAZARD reads the statement, so this translation ",
+  "cannot tell what the operand becomes"
+)
 .hzr_parms_unresolved_piece_reason <- paste0(
   "unresolved PARMS keyword: a piece of an operand written with spaces ",
   "around `=`, which PROC HAZARD accepts but this translator splits apart, ",
@@ -76,7 +82,10 @@
 .hzr_parms_spaced_pieces <- function(ops) {
   # 0 = not a piece; 1 = a piece of a spaced operand PROC HAZARD accepts
   # (joined, it is a value keyword `= NUMBER`, hazard_y.y:137-147 and
-  # hazard_l.l:34-38); 2 = a piece of one it would still reject.
+  # hazard_l.l:34-38); 2 = a piece of one it would still reject; 3 = a piece
+  # of one whose key or value is a macro reference, which SAS expands before
+  # PROC HAZARD reads it (`&KEY = 0.3` may be THALF = 0.3), so it can be
+  # judged neither way here (Codex on #365).
   n <- length(ops)
   code <- integer(n)
   tok <- function(x) .hzr_sas_token(x, "HAZARD", "PARM")
@@ -85,9 +94,10 @@
     !is.na(t) && t %in% c(.hzr_parms_mu_order, names(.hzr_parms_early_arg),
                           names(.hzr_parms_late_arg), "DELTA")
   }
+  macro <- function(x) grepl("&", x, fixed = TRUE)
   bare_key <- function(k) {
     k >= 1L && code[k] == 0L && !grepl("=", ops[[k]], fixed = TRUE) &&
-      !is.na(tok(ops[[k]]))
+      (!is.na(tok(ops[[k]])) || macro(ops[[k]]))
   }
   i <- 1L
   while (i <= n) {
@@ -111,7 +121,7 @@
       next
     }
     members <- members[!is.na(members)]
-    code[members] <- if (ok) 1L else 2L
+    code[members] <- if (any(macro(ops[members]))) 3L else if (ok) 1L else 2L
     i <- max(members) + 1L
   }
   code
@@ -763,8 +773,10 @@
     op <- operands[[i]]
     if (spaced_piece[i] > 0L) {
       unreadable <- TRUE
-      flag_bad(op, if (spaced_piece[i] == 1L) .hzr_parms_unresolved_piece_reason
-               else .hzr_parms_rejected_piece_reason)
+      flag_bad(op, switch(spaced_piece[i],
+                          .hzr_parms_unresolved_piece_reason,
+                          .hzr_parms_rejected_piece_reason,
+                          .hzr_parms_macro_piece_reason))
       next
     }
     eq <- .idx(op, "=")
