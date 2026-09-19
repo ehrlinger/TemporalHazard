@@ -398,3 +398,86 @@
   if (is.numeric(x)) return(x)
   NULL
 }
+
+#' Refuse a `scope` the screen would not honour
+#'
+#' A backward screen only drops terms the base model already has, so it
+#' never reads `scope`: the variables it leaves out are still dropped, and the
+#' ones the base lacks are never tested. A two-sided scope formula is read by
+#' its right-hand side only, so its left-hand side is never a candidate, and a
+#' phase named twice in a scope list is read at its first entry only. Each ran
+#' to a result with no message (#343). `hzr_stepwise()` and `hzr_bootstrap()`
+#' call this before any fitting or seeding.
+#'
+#' @param scope The `scope` argument as given.
+#' @param direction The matched `direction`.
+#' @param caller `"hzr_stepwise"` or `"hzr_bootstrap"`, which need different
+#'   remedies for a backward screen.
+#' @return `NULL`, invisibly; otherwise stops.
+#' @keywords internal
+#' @noRd
+.hzr_refuse_unhonoured_scope <- function(scope, direction,
+                                         caller = "hzr_stepwise") {
+  if (is.null(scope)) {
+    return(invisible(NULL))
+  }
+  # An empty scope offers nothing to enter, which a backward screen honours.
+  # An offset is no candidate, but it is refused under "both", so it is not
+  # treated as empty here either.
+  empty_formula <- function(sc) {
+    if (!inherits(sc, "formula") || length(sc) != 2L) return(FALSE)
+    tt <- tryCatch(stats::terms(sc), error = function(e) NULL)
+    !is.null(tt) && length(attr(tt, "term.labels")) == 0L &&
+      is.null(attr(tt, "offset"))
+  }
+  empty <- if (is.list(scope) && !inherits(scope, "formula")) {
+    # A zero-length element offers nothing to enter, as `character()` does for
+    # a whole scope; refusing one while accepting the other was arbitrary.
+    all(vapply(scope, function(sc) {
+      is.null(sc) || length(sc) == 0L || empty_formula(sc)
+    }, logical(1)))
+  } else {
+    length(scope) == 0L || empty_formula(scope)
+  }
+  one_sided <- function(sc, what) {
+    if (inherits(sc, "formula") && length(sc) == 3L) {
+      stop(what, " must be one-sided: its left-hand side (`",
+           paste(deparse(sc[[2L]]), collapse = " "), "`) would be ignored, ",
+           "so it would never be a candidate. Write every candidate on the ",
+           "right, as in `~ ", paste(deparse(sc[[3L]]), collapse = " "), "`.",
+           call. = FALSE)
+    }
+  }
+  if (is.list(scope) && !inherits(scope, "formula")) {
+    dup <- unique(names(scope)[duplicated(names(scope)) & nzchar(names(scope))])
+    if (length(dup)) {
+      stop("`scope` names ", paste0("`", dup, "`", collapse = ", "),
+           " more than once; only the first entry would be read. Give each ",
+           "phase one formula listing all its candidates.", call. = FALSE)
+    }
+    for (i in seq_along(scope)) {
+      one_sided(scope[[i]], paste0("`scope$", names(scope)[i], "`"))
+    }
+  } else {
+    one_sided(scope, "`scope`")
+  }
+  # After the structural checks, so a malformed scope gets the error that
+  # names its fault (the left-hand side, a repeated phase) under every
+  # direction; the backward refusal is about a well-formed scope.
+  if (direction == "backward" && !empty) {
+    remedy <- if (caller == "hzr_bootstrap") {
+      paste0("For a backward screen on each replicate, pass an empty ",
+             "`scope` such as `~ 1`; to screen a candidate set, use ",
+             "`direction = \"both\"` or `\"forward\"`. With `scope` unset, ",
+             "hzr_bootstrap() does not select at all.")
+    } else {
+      paste0("Pass the full model as the base fit, protect terms with ",
+             "`force_in`, and leave `scope` unset or empty.")
+    }
+    stop("`scope` has no effect when `direction = \"backward\"`: a backward ",
+         "screen only drops terms the base model already has, so a variable ",
+         "left out of `scope` is still dropped and one the base lacks is ",
+         "never tested. ", remedy, call. = FALSE)
+  }
+  invisible(NULL)
+}

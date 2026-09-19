@@ -375,6 +375,21 @@ test_that("a phase variable outside the model still deletes its missing rows (#3
   res <- suppressWarnings(render_sim(job, list(D = D)))
   expect_true(res$ok, info = paste(res$results, collapse = "; "))
 
+  # X missing only where the modelled AGE is missing too: hazard() drops
+  # those rows itself, so they are exactly the rows SAS deletes, and there is
+  # nothing to stop for (#340 item 8). The guard used to stop here.
+  D_same <- D
+  D_same$AGE[1:40] <- NA
+  D_same$X[1:40] <- NA
+  res <- suppressWarnings(render_sim(job, list(D = D_same)))
+  expect_true(res$ok, info = paste(res$results, collapse = "; "))
+  # The fit used exactly the rows SAS keeps: the same chunks rendered on the
+  # 110 complete rows give the same estimates. (fit$data keeps all rows; the
+  # multiphase path drops incomplete design rows while fitting.)
+  sub <- suppressWarnings(render_sim(job, list(D = D_same[-(1:40), ])))
+  expect_true(sub$ok, info = paste(sub$results, collapse = "; "))
+  expect_equal(stats::coef(res$env$fit), stats::coef(sub$env$fit))
+
   # A second statement for a phase adds to the first (hazard_y.y appends),
   # it does not replace it.
   job <- job_for("EARLY AGE; EARLY Y;")
@@ -432,4 +447,70 @@ test_that("a job with no DATA= and phase covariates emits a stop(), not a fit (#
   res <- suppressWarnings(render_sim(job, list(D = D)))
   expect_true(res$ok, info = paste(res$results, collapse = "; "))
   expect_true("phase_1.MAL" %in% names(stats::coef(res$env$fit)))
+})
+
+test_that("a job PROC HAZARD rejects at parse emits a stop(), not a fit (#340)", {
+  job_for <- function(stmt) {
+    f <- withr::local_tempfile(fileext = ".sas", .local_envir = parent.frame())
+    writeLines(paste("%HAZARD( PROC HAZARD DATA=D CONDITION=14; EVENT DEAD; TIME TT;",
+                     "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005;", stmt, ");"), f)
+    suppressWarnings(hzr_translate_sas(f))
+  }
+  cases <- c("EARLY AGE/EI, Y;" = "hazard_l.l:176",
+             "EARLY AGE/E ORDER=2, Y;" = "przconc.c:45-53",
+             "EARLY AGE/E/I, Y;" = "syntax error",
+             "SELECTION; EARLY AGE/EI, Y;" = "hazard_l.l:176")
+  for (stmt in names(cases)) {
+    job <- job_for(stmt)
+    expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"), info = stmt)
+    expect_error(eval(job$calls$fit), cases[[stmt]], fixed = TRUE, info = stmt)
+    expect_error(eval(job$calls$fit), "PROC HAZARD does not run this job",
+                 fixed = TRUE, info = stmt)
+    expect_false("fit_base" %in% names(job$calls), info = stmt)
+  }
+  # SAS stops at parse before any semantic check, so the parse refusal must
+  # win even over a job that also lacks EVENT, which otherwise stops the
+  # whole translation first (Copilot, #396).
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines("%HAZARD( PROC HAZARD DATA=D; TIME TT; PARMS MUE=0.2 THALF=0.15 NU=1; EARLY AGE/EI; );", f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  expect_error(eval(job$calls$fit), "hazard_l.l:176", fixed = TRUE)
+  # Control: the same options written the way SAS accepts them still fit.
+  job <- job_for("EARLY AGE/E I, Y;")
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
+})
+
+test_that("a phase variable missing from the data is named, not 'object not found' (#340)", {
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste("%HAZARD( PROC HAZARD DATA=D CONDITION=14; EVENT DEAD; TIME TT;",
+                   "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005;",
+                   "EARLY AGE, ZZ; CONSTANT QQ/E; );"), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  set.seed(9)
+  D <- data.frame(TT = stats::rexp(60), DEAD = rep(c(1, 0), 30), AGE = stats::rnorm(60))
+  res <- suppressWarnings(render_sim(job, list(D = D)))
+  expect_false(res$ok)
+  expect_match(res$results[["status"]], "phase statements name ZZ, QQ", fixed = TRUE)
+  expect_match(res$results[["status"]], "not columns of D", fixed = TRUE)
+  expect_false(exists("fit", envir = res$env, inherits = FALSE))
+  # Control: with the columns present, the chunk runs.
+  D$ZZ <- stats::rnorm(60)
+  D$QQ <- stats::rnorm(60)
+  res <- suppressWarnings(render_sim(job, list(D = D)))
+  expect_true(res$ok, info = paste(res$results, collapse = "; "))
+  # A column named like the dataset must not mask it (Copilot, #396). Inside
+  # transform(), `D` resolved to that column, whose names() are NULL, so the
+  # check refused a job whose variables were all present.
+  D$D <- seq_len(60)
+  res <- suppressWarnings(render_sim(job, list(D = D)))
+  expect_true(res$ok, info = paste(res$results, collapse = "; "))
+  # A phase variable that is not numeric: PROC HAZARD refuses the job
+  # (vfynvar.c:22-26 "VARIABLE NOT NUMERIC" sets semerr; hazard.c:249-251
+  # exits), while hazard() would dummy-code it and fit.
+  D$ZZ <- rep(c("a", "b"), 30)
+  res <- suppressWarnings(render_sim(job, list(D = D)))
+  expect_false(res$ok)
+  expect_match(res$results[["status"]], "These phase variables are not numeric: ZZ.",
+               fixed = TRUE)
+  expect_false(exists("fit", envir = res$env, inherits = FALSE))
 })

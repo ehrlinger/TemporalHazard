@@ -399,6 +399,31 @@
 }
 
 
+#' Is a phase's time scale inside exp()'s range?
+#'
+#' `t_half` and `tau` are carried as `log_t_half` and `log_tau`, and an
+#' optimizer step can take them past what `exp()` represents: the scale is
+#' then `0` or `Inf`. At `t_half = 0` the decomposition refuses to evaluate,
+#' which is the error #262 was filed for. The other cells disagreed among
+#' themselves: the score could not be evaluated at a scale of `Inf`, where
+#' the objective returned `-Inf` for `t_half` and, for `tau`, the finite
+#' value of the phase switched off. All are now one infeasible point, to be
+#' penalised like any other rather than raising or, at `tau = Inf`, being
+#' optimized over a value the score cannot support (#262).
+#'
+#' @param pars A phase's unpacked parameters (`.hzr_unpack_phase_theta()`).
+#' @param type The phase type.
+#' @return A single logical.
+#' @keywords internal
+#' @noRd
+.hzr_phase_scale_feasible <- function(pars, type) {
+  log_scale <- switch(type, cdf = , hazard = pars$log_t_half,
+                      g3 = pars$log_tau, NULL)
+  if (is.null(log_scale)) return(TRUE)
+  scale <- exp(log_scale)
+  is.finite(scale) && scale > 0
+}
+
 #' Apply the Conservation of Events adjustment to one phase's log_mu
 #'
 #' Given the current theta vector, analytically solve the fixmu phase's
@@ -435,6 +460,14 @@
                                   phases, covariate_counts, x_list,
                                   total_events, weights = NULL,
                                   time_lower = NULL) {
+  # An infeasible time scale has no cumulative hazard to solve against; leave
+  # theta for the likelihood, which penalises it (#262).
+  theta_split <- .hzr_split_theta(theta, phases, covariate_counts)
+  for (nm in names(phases)) {
+    pars <- .hzr_unpack_phase_theta(theta_split[[nm]], phases[[nm]])
+    if (!.hzr_phase_scale_feasible(pars, phases[[nm]]$type)) return(theta)
+  }
+
   # Compute per-phase cumulative hazard contributions
   decomp <- .hzr_multiphase_cumhaz(time, theta, phases,
                                      covariate_counts, x_list,
@@ -560,6 +593,18 @@
   if (length(idx_interval) > 0) {
     lower <- if (is.null(time_lower)) time else time_lower
     upper <- if (is.null(time_upper)) time else time_upper
+    # A short bound indexes past its end as NA, which the check below would
+    # report as "an NA bound" -- the wrong defect (#340). hazard() validates
+    # lengths first, so only a direct call reaches this.
+    # A NULL bound was filled from `time`, so name `time`, not an argument
+    # the caller never passed (#394 review).
+    for (b in list(list(if (is.null(time_lower)) "time" else "time_lower", lower),
+                   list(if (is.null(time_upper)) "time" else "time_upper", upper))) {
+      if (length(b[[2L]]) != length(status)) {
+        stop(b[[1L]], " has length ", length(b[[2L]]), ", but status has ",
+             "length ", length(status), ".", call. = FALSE)
+      }
+    }
     # An NA bound makes the width comparison NA, which then stood in for the
     # row index in the message below (#232). Name it as its own defect.
     na_bound <- idx_interval[is.na(lower[idx_interval]) |
@@ -625,7 +670,10 @@
   # the optimizer would walk away from a corrupt row instead of stopping on
   # it.  Order is load-bearing here.
   if (objective == "sas") {
-    bad <- which(!(upper > lower))
+    # which() drops an NA comparison, so an NA bound must be named here or
+    # it passes this guard and becomes -Inf below, which the optimizer walks
+    # away from; the entry check stops on the same row (#340).
+    bad <- which(!(upper > lower) | is.na(upper) | is.na(lower))
     if (length(bad) > 0) {
       stop("objective = \"sas\" requires upper > lower on every ",
            "interval-censored row; the interval-mean hazard divides by ",
@@ -718,6 +766,7 @@
   theta_split <- .hzr_split_theta(theta, phases, covariate_counts)
   for (nm in names(phases)) {
     pars <- .hzr_unpack_phase_theta(theta_split[[nm]], phases[[nm]])
+    if (!.hzr_phase_scale_feasible(pars, phases[[nm]]$type)) return(-Inf)
     if (phases[[nm]]$type %in% c("cdf", "hazard")) {
       if (pars$m < 0 && pars$nu < 0) return(-Inf)
     }
@@ -850,6 +899,9 @@
   theta_split <- .hzr_split_theta(theta, phases, covariate_counts)
   for (nm in names(phases)) {
     pars <- .hzr_unpack_phase_theta(theta_split[[nm]], phases[[nm]])
+    if (!.hzr_phase_scale_feasible(pars, phases[[nm]]$type)) {
+      return(if (sanitize) grad else grad * NA)
+    }
     if (phases[[nm]]$type %in% c("cdf", "hazard")) {
       if (pars$m < 0 && pars$nu < 0) return(if (sanitize) grad else grad * NA)
     }
@@ -2079,6 +2131,11 @@
                                       weights = weights, ...)
         grad[i] <- (ll_plus - ll0) / h_i
       }
+      # At an infeasible point the log-likelihood is -Inf, so a quotient is
+      # NaN, or +-Inf where the perturbed point is finite. A sanitised
+      # gradient is finite: zero what could not be differenced, as the
+      # analytic score does (#262).
+      grad[!is.finite(grad)] <- 0
     }
 
     grad

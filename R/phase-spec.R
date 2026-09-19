@@ -13,7 +13,7 @@
 #   - formula: optional one-sided formula for phase-specific covariates
 #
 # The helpers extract metadata needed during likelihood construction:
-#   - .hzr_phase_n_shape():     number of shape parameters (3 or 0)
+#   - .hzr_phase_n_shape():     number of shape parameters (3, 4 or 0)
 #   - .hzr_phase_theta_names(): named labels for the parameter sub-vector
 #
 # SAS/C BRIDGE
@@ -146,6 +146,15 @@
 #'     \item{`"eta_gamma"`}{\eqn{\eta = 2/\gamma}, so that
 #'       \eqn{\gamma\eta = 2}. SAS/C: `FIXGE2`.}
 #'   }
+#'   At `alpha = 1`, `hzr_phase()`'s default, the g3 form is
+#'   \eqn{(t/\tau)^{\gamma\eta}}{(t/tau)^(gamma*eta)} (see [hzr_decompos_g3()]),
+#'   which depends on
+#'   \eqn{\gamma} and \eqn{\eta} only through their product. So
+#'   \eqn{\gamma} and \eqn{\eta} are not separately identified there: under
+#'   `"eta_gamma"` the product is fixed at 2 and \eqn{\gamma} is not
+#'   identified at all, and with both estimated only the product is. A fit
+#'   started there can report convergence with an arbitrary \eqn{\gamma}.
+#'   Start `alpha` away from 1, or fix \eqn{\gamma}, for such a phase.
 #'   The derived parameter follows the others at every step of the
 #'   optimization, so it is not a free parameter and cannot be named in
 #'   `fixed`; `"shapes"` leaves it out. Its starting value is computed from the
@@ -837,6 +846,30 @@ hzr_theta_names <- function(phases, covariates = NULL) {
     theta[term$pos] <- term$value
   }
   theta
+}
+
+#' Covariate columns each phase uses, located as the optimizer locates them
+#'
+#' A phase formula against `data`, else the global design, else none (#328).
+#' @noRd
+.hzr_phase_covariate_counts <- function(phases, data, x_fit) {
+  vapply(phases, function(ph) {
+    if (!is.null(ph$formula) && !is.null(data)) {
+      ncol(.hzr_formula_design(ph$formula, data)$x)
+    } else if (!is.null(x_fit)) {
+      ncol(x_fit)
+    } else {
+      0L
+    }
+  }, integer(1))
+}
+
+#' Theta entries each phase takes: log_mu, every shape slot fixed or free,
+#' covariates (#408)
+#' @noRd
+.hzr_phase_theta_counts <- function(phases, data, x_fit) {
+  vapply(phases, function(ph) 1L + .hzr_phase_n_shape(ph), integer(1)) +
+    .hzr_phase_covariate_counts(phases, data, x_fit)
 }
 
 #' Apply the constraints to a supplied theta, saying what was replaced

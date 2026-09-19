@@ -11,9 +11,11 @@ test_that("a canonical AVC-style block becomes a hazard() call", {
   expect_equal(got$outhaz, "EX.HZD")
   expect_equal(got$call[["data"]], as.name("AVCS"))
   expect_equal(got$call[["time"]], as.name("INT_DEAD"))
+  # Only what hazard() reads. CONDITION and QUASI used to be emitted as
+  # `condition` and `method`, which nothing reads: the translator counted two
+  # options as mapped while they did nothing (#384).
   expect_equal(got$call[["control"]],
-               quote(list(maxit = 200, condition = 14, conserve = TRUE,
-                          method = "bfgs")))
+               quote(list(maxit = 200, conserve = TRUE)))
   # STEEPEST has no R equivalent and must be surfaced, not dropped.
   expect_true("STEEPEST" %in% got$untranslated$construct)
 })
@@ -70,8 +72,40 @@ test_that("a non-numeric MI is recorded, not coerced to NA", {
   got <- expect_silent(.hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]]))
   expect_true(any(grepl("MI|MAXITER", got$untranslated$construct)))
   expect_null(got$call[["control"]][["maxit"]])
-  # The valid option alongside it must still be translated.
-  expect_equal(got$call[["control"]][["condition"]], 14)
+  # The option alongside it is still handled: CONDITION has no R equivalent,
+  # so it is recorded rather than dropped (#384).
+  expect_true("CONDITION" %in% got$untranslated$construct)
+})
+
+test_that("CONDITION and QUASI are recorded, never emitted into control (#384)", {
+  txt <- .hzr_sas_normalise(paste(
+    "%HAZARD( PROC HAZARD DATA=A CONDITION=14 QUASI MI=50 CONSERVE;",
+    "EVENT D; TIME T; PARMS MUE=1 THALF=1 NU=1; );"
+  ))
+  got <- .hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]])
+  ctl <- as.list(got$call[["control"]])[-1L]
+  # Every emitted name is one the fitter reads (the census in #384).
+  read_by_fitter <- c("maxit", "reltol", "abstol", "n_starts", "conserve",
+                      "phase_share_tol", "start_seed")
+  expect_true(all(names(ctl) %in% read_by_fitter), info = toString(names(ctl)))
+  expect_null(ctl$condition)
+  expect_null(ctl$method)
+  u <- got$untranslated
+  # CONDITION= stops SAS's optimizer as ill-conditioned once log10 of the
+  # Hessian approximation's condition estimate exceeds it (setopt.c:452-456);
+  # hazard() has no such stop, only a warning on the final Hessian.
+  expect_equal(sum(u$construct == "CONDITION"), 1L)
+  expect_match(u$reason[u$construct == "CONDITION"], "setopt.c:452-456",
+               fixed = TRUE)
+  # QUASI chooses SAS's optimizer; hazard() has no choice to make.
+  expect_equal(sum(u$construct == "QUASINEWTON"), 1L)
+  expect_match(u$reason[u$construct == "QUASINEWTON"], "BFGS", fixed = TRUE)
+  # Not "L-BFGS-B when bounded": hazard()'s fitting path always calls
+  # .hzr_optim_generic() with use_bounds = FALSE (each distribution's fitter
+  # does), so no fit hazard() runs takes that branch. Only a unit test
+  # reaches it directly (test-sas-gradient-check.R).
+  expect_no_match(u$reason[u$construct == "QUASINEWTON"], "L-BFGS-B", fixed = TRUE)
+  expect_lte(got$tokens_mapped, got$tokens_seen)
 })
 
 test_that("tokens_mapped never exceeds tokens_seen when values are bad", {
@@ -82,4 +116,26 @@ test_that("tokens_mapped never exceeds tokens_seen when values are bad", {
   got <- .hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]])
   expect_lte(got$tokens_mapped, got$tokens_seen)
   expect_gte(nrow(got$untranslated), 3L)
+})
+
+test_that("a CONDITION= that PROC HAZARD ignores is not described as a stop (#384)", {
+  # hazpprc.c:48-56 stores CONDITION only for 3 <= n <= 14; outside that the
+  # limit stays at the 0 stmtprc.c:74 set, setopt.c:454 skips the test, and
+  # the built-in thresholds apply. Saying "CONDITION=20 stops the optimizer"
+  # would name a cause that never fires (the #387 message shape).
+  reason_for <- function(val) {
+    txt <- .hzr_sas_normalise(paste0(
+      "%HAZARD( PROC HAZARD DATA=A CONDITION=", val, ";",
+      "EVENT D; TIME T; PARMS MUE=1 THALF=1 NU=1; );"))
+    u <- .hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]])$untranslated
+    u$reason[u$construct == "CONDITION"]
+  }
+  inside <- reason_for(14)
+  expect_match(inside, "setopt.c:452-456", fixed = TRUE)
+  for (val in c(2, 20)) {
+    r <- reason_for(val)
+    expect_match(r, "outside the 3 to 14 PROC HAZARD accepts", fixed = TRUE, info = as.character(val))
+    expect_match(r, "hazpprc.c:48-56", fixed = TRUE, info = as.character(val))
+    expect_no_match(r, "stops PROC HAZARD's optimizer", info = as.character(val))
+  }
 })
