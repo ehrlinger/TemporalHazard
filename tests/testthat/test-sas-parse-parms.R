@@ -299,6 +299,34 @@ test_that("a MUL with no late shape operand builds the phase on SAS's defaults (
   expect_match(got$untranslated$reason, "0.75*Tmax", fixed = TRUE)
 })
 
+test_that("an MU whose shape operands could not be read is not built on defaults (#365 review)", {
+  # `THALF = 0.3` with spaces lexes fine in SAS (hazard_l.l skips whitespace)
+  # but splits apart here, so this parser reads no early shape operand. That
+  # is not the same as none written: building the orphan phase on SAS's
+  # defaults fitted NU fixed at 2 for a job that fixes it at 1 (r-reviewer,
+  # second pass on #365). Such a phase is not built, and a row says why.
+  for (cs in list(list(ops = c("MUE=0.2", "THALF", "=", "0.3", "NU", "=", "1", "FIXNU"),
+                       mu = "MUE=0.2"),
+                  list(ops = c("MUL=0.1", "GAMMA", "=", "3", "FIXGAMMA"),
+                       mu = "MUL=0.1"))) {
+    got <- .hzr_parse_parms(cs$ops)
+    expect_false(isTRUE(got$has_phases), info = cs$mu)
+    row <- got$untranslated$reason[got$untranslated$construct == cs$mu]
+    expect_length(row, 1L)
+    expect_match(row, "could not be read", fixed = TRUE, info = cs$mu)
+    expect_match(row, "not built", fixed = TRUE, info = cs$mu)
+  }
+  # A fully readable orphan still builds (the #345 case).
+  expect_true(.hzr_parse_parms(c("MUE=0.2", "FIXNU"))$has_phases)
+  # The pieces of a spaced operand are not keywords PROC HAZARD rejects: SAS
+  # lexes `THALF = 0.3` and runs the job, so no row may say it does not run.
+  got <- .hzr_parse_parms(c("MUE=0.2", "THALF", "=", "0.3", "NU", "=", "1"))
+  pieces <- got$untranslated$reason[got$untranslated$construct %in% c("=", "0.3", "1")]
+  expect_length(pieces, 4L)
+  expect_false(any(grepl("does not run", pieces, fixed = TRUE)))
+  expect_true(all(grepl("spaces around", pieces, fixed = TRUE)))
+})
+
 test_that("an orphan MU keys scope, force_in and the listwise guard like its written defaults (#345)", {
   # The phase list was built on the MU alone while the scope/force_in keys and
   # the modelled-variable list still required a shape operand. With SELECTION,

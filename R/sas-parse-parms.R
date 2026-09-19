@@ -45,9 +45,21 @@
   "before PROC HAZARD reads the statement, so this translation cannot tell ",
   "what it becomes"
 )
+# A bare `=` or a bare number is a piece of an operand this parser split
+# apart: `THALF = 0.3`, written with spaces, which SAS's lexer reads (it skips
+# whitespace, hazard_l.l:50) and PROC HAZARD runs. It is not a keyword the
+# lexer rejects, so it must not say the job does not run.
+.hzr_parms_unresolved_piece_reason <- paste0(
+  "unresolved PARMS keyword: a piece of an operand written with spaces ",
+  "around `=`, which PROC HAZARD accepts but this translator splits apart, ",
+  "so the operand's value was not read"
+)
 .hzr_parms_unresolved_why <- function(op) {
-  if (grepl("&", op, fixed = TRUE)) .hzr_parms_unresolved_macro_reason else
-    .hzr_parms_unresolved_reason
+  if (grepl("&", op, fixed = TRUE)) return(.hzr_parms_unresolved_macro_reason)
+  if (identical(op, "=") || grepl("^[-+]?[0-9.]+([eE][-+]?[0-9]+)?$", op)) {
+    return(.hzr_parms_unresolved_piece_reason)
+  }
+  .hzr_parms_unresolved_reason
 }
 .hzr_parms_mu_order  <- c("MUE", "MUC", "MUL")
 
@@ -830,6 +842,15 @@
   has_early <- mu_active("MUE")
   has_muc <- mu_active("MUC")
   has_late <- mu_active("MUL")
+  # Whether a phase is BUILT, as distinct from whether its MU is active. An
+  # active MU with no shape operand builds on PROC HAZARD's own shape defaults
+  # (#345), but only when the whole statement was read: if any operand could
+  # not be read, a shape operand may have been written in a form this parser
+  # split apart (`THALF = 0.3`, which SAS lexes), and building on defaults
+  # would fit a different model. Such a phase is not built, and is recorded
+  # below. Every build, scope and trace gate reads these, not has_*.
+  build_early <- has_early && (length(early) > 0L || !unreadable)
+  build_late <- has_late && (length(late) > 0L || !unreadable)
 
   # setg3.c:312-314's own predicate for taking the SETG3_ignore_tau() branch.
   # The `g_two && ga_two` disjunct alongside it is driven by PARMS keywords
@@ -891,7 +912,7 @@
   late_constraint <- "none"
   ignore_tau_handled <- FALSE
   constraint_flags <- c("FIXGE2", "FIXGAE2")[c(saw_ge2, saw_gae2)]
-  if (length(constraint_flags) && !has_late) {
+  if (length(constraint_flags) && !build_late) {
     for (flag in constraint_flags) {
       flag_bad(flag, "PARMS token has no phase target")
     }
@@ -1111,8 +1132,8 @@
   # a rewrite above (2/ETA, GAMMA*ETA/2), cannot be built: hzr_phase() refuses
   # it. Say so here rather than let the translation read clean over a call
   # that stops.
-  for (shape in list(if (has_early) early_full,
-                     if (has_late) late_full)) {
+  for (shape in list(if (build_early) early_full,
+                     if (build_late) late_full)) {
     for (param in names(shape)) {
       value <- shape[[param]]
       if (is.numeric(value) && length(value) == 1L && !is.finite(value)) {
@@ -1130,7 +1151,7 @@
 
   phase_calls <- list()
   theta_blocks <- list()
-  if (has_early) {
+  if (build_early) {
     phase_calls[[length(phase_calls) + 1L]] <- .hzr_parms_phase_call(
       "cdf", early_full, phase_covars$early, fixed_early
     )
@@ -1147,7 +1168,7 @@
       .hzr_parms_theta_block("constant", mu[["MUC"]], list(), phase_covar_vals$constant)
     )
   }
-  if (has_late) {
+  if (build_late) {
     phase_calls[[length(phase_calls) + 1L]] <- .hzr_parms_phase_call(
       "g3", late_full, phase_covars$late, fixed_late, late_constraint
     )
@@ -1194,7 +1215,7 @@
   # The trace assumes neither constraint flag, so it does not describe a phase
   # SETG3_ignore_tau() ran under one: that phase is fully determined above, or
   # refused there with SETG3940.
-  if (has_late && !ignore_tau_handled) {
+  if (build_late && !ignore_tau_handled) {
     setg3 <- .hzr_setg3_notes(
       tau_raw = if (tau_absent) NA_real_ else late[["tau"]],
       gamma = late_full[["gamma"]],
@@ -1295,7 +1316,7 @@
   # reporting a TAU rule alongside an entry refusal would describe code PROC
   # HAZARD never reaches, the same false positive the MUL gate exists to avoid,
   # while suppressing it for a late refusal would hide one that did run.
-  if (has_late && !setg3_refused && ignore_tau &&
+  if (build_late && !setg3_refused && ignore_tau &&
       !is.null(late[["tau"]]) && !isTRUE(late[["tau"]] == 1)) {
     flag_bad(
       paste0("TAU=", sprintf("%g", late[["tau"]])),
@@ -1304,7 +1325,7 @@
              "emitted phase mirrors that, so the value written here is used ",
              "by neither PROC HAZARD nor the translation")
     )
-  } else if (has_late && !setg3_refused && tau_defaulted &&
+  } else if (build_late && !setg3_refused && tau_defaulted &&
              !ignore_tau && !ignore_tau_handled) {
     # Which data-dependent default applies depends on whether the job wrote a
     # TAU at all -- see the tau_absent/tau_nonpositive split above.
@@ -1470,7 +1491,7 @@
   # the emitted phase a different model, and the row says the consequence
   # rather than a parse state. Mirroring it is separate work.
   if (saw_mnu1) {
-    flag_bad("FIXMNU1", if (has_early) {
+    flag_bad("FIXMNU1", if (build_early) {
       paste0("FIXMNU1 ties M to NU in PROC HAZARD (|M*NU| = 1; ",
              "setg1.c:381-387, hzd_early_t2p.c:65-77), but that constraint is ",
              "not applied here: the emitted early phase does not tie them, a ",
@@ -1487,7 +1508,22 @@
   # the late TAU start, 0.75*Tmax (readobs.c:153-154, before SETG3), recorded by
   # the TAU row above exactly as for a written late phase with no TAU (#345).
   # This used to record the MU instead, when the parser's defaults were not
-  # SAS's; they are now.
+  # SAS's; they are now. An orphan whose statement was not fully read is the
+  # exception (see build_early): it is recorded, not built.
+  unread_why <- paste0(
+    "with no ", "%s", " shape operand this translator could read: other PARMS ",
+    "operands could not be read (see their rows), so whether a shape was ",
+    "written cannot be told, and the phase is not built on PROC HAZARD's ",
+    "defaults"
+  )
+  if (has_early && !build_early) {
+    flag_bad(paste0("MUE=", sprintf("%g", mu[["MUE"]])),
+             paste("MUE", sprintf(unread_why, "early")))
+  }
+  if (has_late && !build_late) {
+    flag_bad(paste0("MUL=", sprintf("%g", mu[["MUL"]])),
+             paste("MUL", sprintf(unread_why, "late")))
+  }
 
   # getrisk.c collects every phase-statement variable, of every phase and
   # whatever its options, and readobs.c deletes a row where any is missing.
@@ -1498,9 +1534,9 @@
   # shape defaults (#345). A stricter gate here keyed scope against a phase
   # list it did not match.
   modelled <- c(
-    if (has_early) phase_covars$early,
+    if (build_early) phase_covars$early,
     if (has_muc) phase_covars$constant,
-    if (has_late) phase_covars$late
+    if (build_late) phase_covars$late
   )
   # Scope is keyed by the name the BASE FIT will carry. The emitted phases
   # list is unnamed, so hazard() auto-names them phase_1, phase_2, ... in
@@ -1509,9 +1545,9 @@
   # paste0("phase_", integer(0)) is "phase_", so a job that builds no phase
   # crashed setNames() instead of reaching its "selects no phase" refusal.
   built <- c(
-    if (has_early) "early",
+    if (build_early) "early",
     if (has_muc) "constant",
-    if (has_late) "late"
+    if (build_late) "late"
   )
   selection_spec <- if (isFALSE(selection)) NULL else list(
     scope = stats::setNames(
