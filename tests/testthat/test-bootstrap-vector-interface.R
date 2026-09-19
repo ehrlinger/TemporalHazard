@@ -379,7 +379,7 @@ test_that("failure_reasons tallies every failed replicate, by reason, without wa
   # successes are the same fit object by construction, so every free
   # parameter is identical across them.
   expect_length(w, 1L)
-  expect_match(w, "(sd = 0)", fixed = TRUE)
+  expect_match(w, "(sd = 0", fixed = TRUE)
   expect_equal(b$n_success, 2L)
   expect_equal(b$n_failed, 4L)
   expect_identical(

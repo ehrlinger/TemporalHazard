@@ -1,11 +1,11 @@
-# hzr_bootstrap() warns when a FREE parameter is identical in every
-# successful replicate (#373).
+# hzr_bootstrap() and replicates that did not estimate anything (#373).
 #
-# Resampled data moves every estimate a replicate actually makes, so an sd of
-# exactly 0 on a free parameter means the replicates did not estimate it. The
-# route #373 measured: a start at theta = 1e10 leaves a single-distribution
-# fit at the optimizer's -1e10 sentinel, and every replicate reproduces it.
-# That run reported n_success = 5, n_failed = 0 and no warning. A parameter
+# The route #373 measured: a start at theta = 1e10 leaves a single-
+# distribution fit at the optimizer's -1e10 sentinel, which stands in for a
+# likelihood that could not be evaluated, and every replicate reproduced it:
+# n_success = 5, n_failed = 0, sd exactly 0, no warning. Two guards:
+# a replicate at the sentinel is a failed replicate, and a free parameter
+# that does not move across replicates is named in a warning. A parameter
 # held by `fixed =` is identical by design and must not be named.
 
 zv_data_373 <- function() {
@@ -34,7 +34,7 @@ mp_fit_373 <- function(d) {
   ))
 }
 
-zero_var_warnings <- function(w) grep("(sd = 0)", w, value = TRUE, fixed = TRUE)
+zero_var_warnings <- function(w) grep("(sd = 0", w, value = TRUE, fixed = TRUE)
 
 run_373 <- function(expr) {
   w <- character()
@@ -45,7 +45,10 @@ run_373 <- function(expr) {
   list(res = res, w = w)
 }
 
-test_that("a sentinel fit's replicates are named, not counted clean (#373)", {
+sentinel_reason_373 <-
+  "objective at the optimizer's -1e10 sentinel (no log-likelihood)"
+
+test_that("a replicate at the -1e10 sentinel is a failed replicate (#373)", {
   d <- zv_data_373()
   bad <- suppressWarnings(hazard(
     survival::Surv(int_dead, dead) ~ 1, data = d, dist = "weibull",
@@ -54,8 +57,39 @@ test_that("a sentinel fit's replicates are named, not counted clean (#373)", {
   # The mechanism: an objective at the sentinel, not a log-likelihood.
   expect_identical(bad$fit$objective, -1e10)
   out <- run_373(hzr_bootstrap(bad, n_boot = 5L, seed = 1L))
+  expect_identical(out$res$n_success, 0L)
+  expect_identical(out$res$failure_reasons,
+                   stats::setNames(5L, sentinel_reason_373))
+  expect_match(out$w, "no replicate succeeded", fixed = TRUE, all = FALSE)
+})
+
+test_that("replicates that drift before reaching the sentinel fail too (#373)", {
+  # From theta = 20 the optimizer moves before the clamp stops it, so the
+  # stuck replicates differ and an sd test alone would pass them. Measured:
+  # four of five replicates end at the sentinel.
+  d <- zv_data_373()
+  drift <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = d, dist = "weibull",
+    theta = c(20, 20), fit = TRUE
+  ))
+  out <- run_373(hzr_bootstrap(drift, n_boot = 5L, seed = 1L))
+  expect_identical(out$res$n_success, 1L)
+  expect_identical(out$res$failure_reasons,
+                   stats::setNames(4L, sentinel_reason_373))
+})
+
+test_that("identical replicates are named, to within rounding (#373)", {
+  # From theta = 50 the objective is finite (about -3.6e196) and not the
+  # sentinel, and every replicate stays put up to the last bits: sd is about
+  # 1e-14 around a mean of 50. An exact-zero test would pass it.
+  d <- zv_data_373()
+  stuck <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = d, dist = "weibull",
+    theta = c(50, 50), fit = TRUE
+  ))
+  out <- run_373(hzr_bootstrap(stuck, n_boot = 5L, seed = 1L))
   expect_identical(out$res$n_success, 5L)
-  expect_identical(out$res$summary$sd, c(0, 0))
+  expect_true(all(out$res$summary$sd > 0))
   zw <- zero_var_warnings(out$w)
   expect_length(zw, 1L)
   expect_match(zw, "`param_1`, `param_2`", fixed = TRUE)
@@ -72,10 +106,9 @@ test_that("a working single-distribution bootstrap does not warn (#373)", {
   expect_length(zero_var_warnings(out$w), 0L)
 })
 
-test_that("a single-distribution fit's empty fixed_mask means nothing is fixed (#373)", {
-  # fixed_mask is logical(0) on a single-distribution fit. Indexing theta
-  # by an empty mask would check no parameter at all: the hollow shape this
-  # guard exists to catch, reproduced inside it.
+test_that("identical single-distribution replicates are named (#373)", {
+  # fixed_mask is logical(0) on a single-distribution fit, so nothing is
+  # exempt and both parameters are named.
   d <- zv_data_373()
   ok <- hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
                dist = "weibull", theta = c(0.1, 1), fit = TRUE)

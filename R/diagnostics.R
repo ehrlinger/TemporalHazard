@@ -1620,12 +1620,16 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   \item{summary}{Data frame with columns `parameter`, `n`, `pct`,
 #'     `mean`, `sd`, `min`, `max`, `ci_lower`, `ci_upper`, one row per
 #'     parameter. In `mode = "select"`, `pct` is the selection frequency
-#'     and the other statistics are conditional on selection.}
+#'     and the other statistics are conditional on selection. A free
+#'     parameter whose `sd` is 0, to within rounding, across two or more
+#'     replicates draws a warning naming it: the replicates did not
+#'     re-estimate it. Parameters held by `hzr_phase(fixed = )` are exempt.}
 #'   \item{n_success}{Number of successfully converged replicates.}
 #'   \item{n_failed}{Number of replicates that failed: the refit stopped with
 #'     an error, returned something other than a fit, returned a non-finite
-#'     objective, or returned a finite objective but no parameter
-#'     estimates.}
+#'     objective or one at the optimizer's -1e10 sentinel (which stands in for
+#'     a likelihood that could not be evaluated), or returned a finite
+#'     objective but no parameter estimates.}
 #'   \item{failure_reasons}{Named integer vector counting why replicates
 #'     failed, most common first: the refit's error message (or
 #'     `"error with an empty message"`),
@@ -1633,7 +1637,9 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     class begins with a vowel; or `"... with no \code{fit}, not a fit
 #'     object"`), `"refit returned no parameter
 #'     estimates"`, or
-#'     `"non-finite objective (did not converge)"`. It sums to `n_failed`, and
+#'     `"non-finite objective (did not converge)"`, or
+#'     `"objective at the optimizer's -1e10 sentinel (no log-likelihood)"`.
+#'     It sums to `n_failed`, and
 #'     is an empty named integer vector, never `NULL`, when none failed. When
 #'     every replicate fails, `hzr_bootstrap()` also warns, naming the most
 #'     common reason.}
@@ -2248,6 +2254,11 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       .hzr_bootstrap_not_a_fit(boot_fit)
     } else if (!isTRUE(is.finite(boot_fit$fit$objective))) {
       "non-finite objective (did not converge)"
+    } else if (boot_fit$fit$objective == -1e10) {
+      # The optimizer and the multiphase likelihood clamp a non-finite
+      # objective to 1e10, so a fit that never had a likelihood reports
+      # objective = -1e10: finite, and counted as a success before (#373).
+      "objective at the optimizer's -1e10 sentinel (no log-likelihood)"
     } else if (!is.numeric(boot_fit$fit$theta) ||
                  length(boot_fit$fit$theta) == 0L) {
       # A success with no estimates ended the run building its replicate row.
@@ -2286,11 +2297,9 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
         param_names[seq_along(theta_b)]
       }
       # fixed_mask is logical(0) on a single-distribution fit, which fixes
-      # nothing; only a mask aligned with theta names a fixed parameter.
-      mask_b <- boot_fit$fit$fixed_mask
-      if (length(mask_b) == length(theta_b)) {
-        fixed_names <- union(fixed_names, names_b[as.logical(mask_b)])
-      }
+      # nothing; on a multiphase fit it is aligned with theta.
+      fixed_names <- union(fixed_names,
+                           names_b[as.logical(boot_fit$fit$fixed_mask)])
       rep_list[[b]] <- data.frame(
         replicate = b,
         parameter = names_b,
@@ -2354,33 +2363,36 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
                               stringsAsFactors = FALSE)
   }
 
-  # Resampling should move every estimate a replicate makes, so a free
-  # parameter with sd exactly 0 across the replicates that estimated it was not
-  # re-estimated. #373: a fit at the optimizer's -1e10 sentinel reproduced
-  # itself in every replicate and was counted n_success = 5, n_failed = 0,
-  # with no warning. AGENTS.md prescribes asserting that a free parameter
-  # varies; this is that assertion.
-  # sd() of a single replicate is NA, so the is.na() test also skips a
-  # parameter estimated only once.
-  flat <- summary_df$parameter[!is.na(summary_df$sd) & summary_df$sd == 0 &
-                                 !summary_df$parameter %in% fixed_names]
+  # A parameter the data inform moves between resamples, so a free parameter
+  # that did not move across the replicates that estimated it was not
+  # re-estimated (#373). AGENTS.md prescribes asserting that a free parameter
+  # varies; this is that assertion. "Did not move" is relative to its size:
+  # identical replicates can differ in the last bits, so sd was 1e-14 around
+  # a mean of 50 for a fit started at theta = 50. sd() of a single replicate
+  # is NA, so the is.na() test also skips a parameter estimated only once.
+  flat <- summary_df$parameter[
+    !is.na(summary_df$sd) &
+      summary_df$sd <= sqrt(.Machine$double.eps) * abs(summary_df$mean) &
+      !summary_df$parameter %in% fixed_names
+  ]
   if (length(flat)) {
     n_flat <- summary_df$n[match(flat, summary_df$parameter)]
-    warning("hzr_bootstrap(): free parameter", if (length(flat) > 1L) "s",
-            " ", paste0("`", flat, "`", collapse = ", "),
-            if (length(flat) > 1L) " were" else " was", " identical in ",
+    plural <- length(flat) > 1L
+    warning("hzr_bootstrap(): free parameter", if (plural) "s", " ",
+            paste0("`", flat, "`", collapse = ", "),
+            if (plural) " were" else " was", " identical in ",
             if (all(n_flat == n_success)) {
               paste0("all ", n_success, " successful replicates")
             } else {
-              "every replicate that estimated it"
+              paste0("every replicate that estimated ",
+                     if (plural) "them" else "it")
             },
-            " (sd = 0). Resampled data should move every estimate a ",
-            "replicate makes, so these replicates did not re-estimate ",
-            if (length(flat) > 1L) "them" else "it",
-            ", and the summary's sd and interval carry no sampling variation. ",
-            "One cause is a fit whose objective sits at the optimizer's ",
-            "-1e10 sentinel rather than at a log-likelihood; check ",
-            "`object$fit$objective`.", call. = FALSE)
+            " (sd = 0 to within rounding). A parameter the data inform ",
+            "moves between resamples, so the replicates did not re-estimate ",
+            if (plural) "these" else "it", ", or the data do not inform ",
+            if (plural) "them" else "it", ", and the summary's sd and ",
+            "interval carry no sampling variation. One cause is a fit that ",
+            "never left its starting values.", call. = FALSE)
   }
 
   # A selection frequency is the whole deliverable of a select-mode run, so a
