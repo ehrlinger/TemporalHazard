@@ -866,10 +866,36 @@ hzr_theta_names <- function(phases, covariates = NULL) {
 
 #' Theta entries each phase takes: log_mu, every shape slot fixed or free,
 #' covariates (#408)
+#'
+#' `covariate_counts` may be passed when the caller has already resolved the
+#' phases' designs, as `hzr_evaluate()` has (#144); both then count the same
+#' way.
 #' @noRd
-.hzr_phase_theta_counts <- function(phases, data, x_fit) {
+.hzr_phase_theta_counts <- function(phases, data, x_fit,
+                                    covariate_counts = NULL) {
+  if (is.null(covariate_counts)) {
+    covariate_counts <- .hzr_phase_covariate_counts(phases, data, x_fit)
+  }
   vapply(phases, function(ph) 1L + .hzr_phase_n_shape(ph), integer(1)) +
-    .hzr_phase_covariate_counts(phases, data, x_fit)
+    covariate_counts
+}
+
+#' The message for a multiphase theta of the wrong length (#408, #144)
+#'
+#' One sentence for both places that check it, hazard(fit = TRUE) and
+#' hzr_evaluate(), built from the per-phase counts so the two cannot
+#' describe the same mismatch differently.
+#' @noRd
+.hzr_theta_length_message <- function(n, per_phase) {
+  paste0(
+    "'theta' has ", n, " entries, but this model takes ", sum(per_phase),
+    " (", paste(names(per_phase), per_phase, collapse = ", "), "): each ",
+    "phase takes its log_mu, then its shape parameters whether fixed ",
+    "or free (3 for a cdf or hazard phase, 4 for g3, none for ",
+    "constant), then one coefficient per column of its own formula's ",
+    "design, or of the global design it inherits. See ",
+    "hzr_theta_names()."
+  )
 }
 
 #' Apply the constraints to a supplied theta, saying what was replaced

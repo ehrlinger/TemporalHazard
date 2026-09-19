@@ -666,6 +666,21 @@
   `max_move`, `MOVE=` is recorded in `$untranslated`, and the callout names
   the difference. On the one reference job that translates, an unbounded
   screen re-entered five variables `PROC HAZARD` would have kept out.
+* **`hzr_evaluate()` evaluates a model at parameters you supply (#144).**
+  A parity check needs the likelihood at another program's converged
+  estimates, evaluated by this package's own likelihood, and there was no
+  way to ask for it. `hzr_evaluate(object, theta)` returns the
+  log-likelihood of the model's data at `theta`, for a fitted model or one
+  built with `fit = FALSE`, and with `times` (multiphase only) the hazard
+  and cumulative hazard there for a covariate-free subject. The result is
+  not a fit and does not read as one: it carries no standard errors, no
+  convergence status and no covariance, and `print()` says so on its first
+  line. A phase built with `hzr_phase(constraint = )` has its derived shape
+  re-derived here, as the fit re-derives it, so a contradictory value passed
+  in `theta` is replaced rather than used as given. At a fitted model's own
+  estimates it returns that fit's objective, except where the fit reports an
+  objective it is not at: under Conservation of Events the conserved scale is
+  re-solved after the objective is recorded (#362), and the two then differ.
 
 * **`hzr_phase()` can derive one late-phase shape from the others (#325).**
   The new `constraint` argument covers SAS/C's two late-phase constraints:
@@ -963,6 +978,24 @@
   reported, and `fit$fit$phase_share`, are unchanged, and what those further
   points are worth is not measured. The diagnostic says less than it did,
   not something different.
+* **`predict()` on a model built with `fit = FALSE` now says so (#144).**
+  Its numbers come from the starting values the model was given, not from
+  estimates, and it said nothing: predicting from non-estimates in silence
+  is the defect a `fit = FALSE` object invites. It now warns, under the
+  condition class `hzr_unfitted_prediction`, which
+  `options(TemporalHazard.warn_unfitted_prediction = FALSE)` switches off
+  for code that means it. Predicting from such a model remains supported
+  for every distribution but `"multiphase"`.
+
+* **`predict()` on an unfitted multiphase model now says what is missing
+  (#144).** It failed with an unrelated internal error,
+  `missing value where TRUE/FALSE needed`, from `predict()` reading the
+  per-phase covariate counts that an unfitted object does not carry. The
+  error now says that a multiphase model built with `fit = FALSE` has no
+  per-phase design matrices, because they are resolved when the model is
+  fitted, and points at `fit = TRUE` or the new `hzr_evaluate()`. Models of
+  the other distributions built with `fit = FALSE` still predict from their
+  supplied parameters, with the warning above; only multiphase ever failed.
 
 * **`predict(newdata = )` now warns when `newdata` is evaluated differently
   from the fitting data (#331, #334, #335).** Predicted values are
