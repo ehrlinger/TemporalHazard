@@ -347,8 +347,8 @@
 * **`hzr_translate_sas()` now emits a `stop()` in place of the fit when a
   `PARMS` statement builds no phase it could use.** Operands the translator
   could not read (a template's `MUE=?`, or `MUE = 0.2` written with spaces
-  around `=`, which `PROC HAZARD` accepts) or could not use (a `MUE` or `MUL`
-  with no shape operand) are recorded in `$untranslated`, but the fit chunk
+  around `=`, which `PROC HAZARD` accepts) are recorded in `$untranslated`,
+  but the fit chunk
   used to be emitted anyway, as `hazard(fit = TRUE, theta = c())` under the
   default Weibull. That chunk rendered an unfitted object, and would now fail
   on the error above with a message about `theta` that does not name the real
@@ -739,6 +739,34 @@
   detected.
 
 ## Bug fixes
+
+* **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
+  (#345). An active `MUE` or `MUL` with no shape operand used to be recorded
+  as untranslated and build no phase. PROC HAZARD runs that phase on its own
+  shape defaults (early `THALF` 1, `NU` 2, `M` 1; late `GAMMA` 1, `ALPHA` 1,
+  `ETA` 2), which do not depend on the data, so the translation now builds it
+  the same way, provided it read the whole `PARMS` statement. If any operand
+  could not be read (for example one written with spaces around `=`, which
+  `PROC HAZARD` accepts), a shape may have been written that the translator
+  did not see, so the phase is recorded and not built. A `PARMS` value that
+  `PROC HAZARD`'s lexer does not read as a number (`1E-3`, `2.`, `+0.2`) is
+  now recorded as a syntax error, not read by R and fitted. The late `TAU` start (0.75 of the longest follow-up) is the one
+  value that depends on the data, and it is recorded, as it already was for a
+  late phase written without `TAU`. That record now says what it means:
+  because the multiphase likelihood is multimodal, a different start can
+  change the estimates, not only the path to them; and with `FIXTAU` on an
+  unwritten `TAU`, PROC HAZARD holds `TAU` at that data-dependent value while
+  the translation holds it at 1, a different model.
+
+* **Two `hzr_translate_sas()` rows now state their consequence** (#345 review).
+  - `FIXMNU1` on an active early phase is a real PROC HAZARD constraint
+    (`|M*NU| = 1`) that the translation does not apply. It was recorded as "PARMS
+    token has no phase target", which read as a parsing gap; the row now says
+    the constraint is not applied and the emitted phase is a different model.
+  - A `PARMS` keyword that is not in PROC HAZARD's grammar (for example
+    `FIXG1` or `FIXG3`, which are internal flags, not options) is one PROC
+    HAZARD rejects, so its job does not run. The row keeps its "unresolved
+    PARMS keyword" prefix and now says that.
 
 * **A translated `SELECTION` job's check chunk no longer repeats
   `hzr_stepwise()`'s own warnings, or calls a failed Wald test a score it

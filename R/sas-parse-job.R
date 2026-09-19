@@ -662,8 +662,9 @@
   }
 
   # A PARMS statement that builds no phase and is NOT refused -- operands this
-  # parser could not read (a template's `MUE=?`) or could not use (a MUE with
-  # no shape operand). This is not a claim about PROC HAZARD, which is why it
+  # parser could not read (a template's `MUE=?`). A MUE or MUL with no shape
+  # operand no longer lands here: it builds on PROC HAZARD's own shape
+  # defaults (#345). This is not a claim about PROC HAZARD, which is why it
   # is kept apart from `refused` above. Theta blocks are built only alongside
   # phases, so the call below would carry theta = c() under hazard()'s
   # default Weibull: a model PROC HAZARD never fits, with no starting values.
@@ -678,7 +679,7 @@
         "could not read or use are listed in $untranslated -- for example ",
         "`?` placeholders left for the reader to fill in, an operand ",
         "written with spaces around `=` (`MUE = 0.2`, which this translator ",
-        "splits apart), or a MUE or MUL with no shape operand. This is a ",
+        "splits apart). This is a ",
         "limit of the translation, not a PROC HAZARD refusal. Correct those ",
         "operands and translate again, or fit the model by hand.",
         call. = FALSE
@@ -931,13 +932,13 @@
   # is NA, objective is NA, and theta holds the SAS starting values, while
   # print.hazard() shows a populated summary that says none of that (#151).
   args$fit <- TRUE
-  # A PARMS statement that actually specified shape parameters makes this a
-  # multiphase job. hazard()'s `dist` defaults to "weibull", and its
+  # A PARMS statement that builds a phase makes this a multiphase job.
+  # hazard()'s `dist` defaults to "weibull", and its
   # `else if (!is.null(phases))` branch silently discards the entire phase
   # specification (with only a warning) when dist stays at that default --
   # so dist = "multiphase" must be emitted whenever phases were built. A job
-  # with no PARMS statement at all (or one that specified no shape
-  # parameters) has phase_calls = list(), i.e. parms$phases is the empty
+  # with no PARMS statement at all (or one that builds no phase) has
+  # phase_calls = list(), i.e. parms$phases is the empty
   # `list()` call rather than NULL; omit both phases and dist on that path
   # so it stays a plain non-multiphase fit and does not trip that same
   # "'phases' is ignored" warning for a phases arg that was never meant to

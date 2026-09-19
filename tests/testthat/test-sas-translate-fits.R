@@ -146,12 +146,13 @@ test_that("a plain EVENT/TIME job's emitted call fits with no time_lower/time_up
 })
 
 test_that("a PARMS that builds no usable phase emits a stop(), not a fit", {
-  # Both shapes build no phase and are not refused: the parser could not use
-  # MUE without a shape operand, nor read a template's `?`. The fit chunk
+  # A template's `?` builds no phase and is not refused: the parser cannot
+  # read it. (A MUE without a shape operand used to be here too; it now
+  # builds on SAS's defaults, #345, and is executed in the test below.) The fit chunk
   # used to be hazard(fit = TRUE, theta = c()) under the default Weibull,
   # which rendered an unfitted object. The test above is the paired case: a
   # usable PARMS still emits hazard().
-  for (parms in c("PARMS MUE=0.2;", "PARMS MUE=? THALF=? NU=? MUC=?;")) {
+  for (parms in c("PARMS MUE=? THALF=? NU=? MUC=?;")) {
     f <- withr::local_tempfile(fileext = ".sas")
     writeLines(paste(
       "%HAZARD( PROC HAZARD DATA=AVCS CONDITION=14;",
@@ -159,8 +160,11 @@ test_that("a PARMS that builds no usable phase emits a stop(), not a fit", {
     ), f)
     job <- suppressWarnings(hzr_translate_sas(f))
     expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"), info = parms)
-    expect_error(eval(job$calls$fit, new.env()),
-                 "builds no phase this translator could use", info = parms)
+    msg <- tryCatch(eval(job$calls$fit, new.env()), error = conditionMessage)
+    expect_match(msg, "builds no phase this translator could use", info = parms)
+    # A MUE or MUL with no shape operand now builds its phase (#345), so the
+    # message must not offer it as a cause.
+    expect_no_match(msg, "with no shape operand", fixed = TRUE, info = parms)
     # Not the reference's own refusal, which needs a PARMS the parser read.
     expect_false(any(grepl("modterm.c", job$untranslated$reason, fixed = TRUE)),
                  info = parms)
@@ -312,6 +316,41 @@ test_that("the emitted HAZPRED call produces logit bounds, not the default", {
   expect_false(isTRUE(all.equal(logit$upper, loglog$upper)))
   expect_true(all(got$lower <= got$fit & got$fit <= got$upper))
   expect_true(all(got$lower >= 0 & got$upper <= 1))
+})
+
+test_that("an orphan MUE and MUL translate to the fit of their written defaults (#345)", {
+  skip_on_cran()
+  # Execute the emitted chunks, not their text: PARMS names both phases by
+  # scale only, and PROC HAZARD runs them on its shape defaults. The fit must
+  # be the one the same defaults written out produce -- same model, same
+  # start -- and a real likelihood, not the optimizer's 1e10 penalty.
+  translate_and_fit <- function(parms, data) {
+    f <- withr::local_tempfile(fileext = ".sas")
+    writeLines(paste(
+      "%HAZARD( PROC HAZARD DATA=D NOCONSERVE;",
+      "EVENT DEAD; TIME TT;", parms, ");"
+    ), f)
+    job <- suppressWarnings(hzr_translate_sas(f))
+    env <- new.env(parent = asNamespace("TemporalHazard"))
+    env$D <- data
+    for (nm in names(job$calls)) suppressWarnings(eval(job$calls[[nm]], env))
+    list(job = job, fit = env$fit)
+  }
+  withr::local_seed(345)
+  n <- 400
+  dat <- data.frame(TT = stats::rweibull(n, 0.8, 5),
+                    DEAD = stats::rbinom(n, 1, 0.7))
+  orphan <- translate_and_fit("PARMS MUE=0.2 MUL=0.05;", dat)
+  written <- translate_and_fit(
+    "PARMS MUE=0.2 THALF=1 NU=2 M=1 MUL=0.05 GAMMA=1 ALPHA=1 ETA=2;", dat
+  )
+  expect_s3_class(orphan$fit, "hazard")
+  expect_equal(length(orphan$fit$spec$phases), 2L)
+  expect_true(orphan$fit$fit$converged)
+  expect_gt(orphan$fit$fit$objective, -1e9)
+  expect_identical(orphan$fit$fit$theta, written$fit$fit$theta)
+  expect_identical(orphan$fit$fit$objective, written$fit$fit$objective)
+  expect_equal(orphan$job$untranslated$reason, written$job$untranslated$reason)
 })
 
 test_that("every covariate after a '/' option reaches the fitted model (#342)", {

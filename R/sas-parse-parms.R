@@ -26,6 +26,106 @@
 # the order the PARMS operands appeared in, so the result is deterministic.
 .hzr_parms_early_arg <- c(THALF = "t_half", NU = "nu", M = "m")
 .hzr_parms_late_arg  <- c(TAU = "tau", GAMMA = "gamma", ALPHA = "alpha", ETA = "eta")
+
+# The grammar table (.hzr_sas_grammar) is generated from HAZARD's own lexer
+# (data-raw/hazard-grammar.R), so a PARMS keyword it does not know is one
+# PROC HAZARD's lexer rejects: the job does not run. FIXG1 and FIXG3, for
+# instance, are internal flags shape.c:36-41 sets, not options. The prefix is
+# kept for callers that grep it.
+.hzr_parms_unresolved_reason <- paste0(
+  "unresolved PARMS keyword: not in PROC HAZARD's grammar (hazard_l.l), so ",
+  "PROC HAZARD rejects this job with a syntax error and it does not run; ",
+  "whatever is emitted here translates a job that does not run"
+)
+# A macro reference (`&EXTRA`) is resolved by SAS before PROC HAZARD reads
+# the statement, so the grammar table cannot say what it becomes, and in
+# particular cannot say the job fails. Same prefix, neutral consequence.
+.hzr_parms_unresolved_macro_reason <- paste0(
+  "unresolved PARMS keyword: a SAS macro reference, which SAS resolves ",
+  "before PROC HAZARD reads the statement, so this translation cannot tell ",
+  "what it becomes"
+)
+.hzr_parms_unresolved_why <- function(op) {
+  if (grepl("&", op, fixed = TRUE)) .hzr_parms_unresolved_macro_reason else
+    .hzr_parms_unresolved_reason
+}
+
+# The lexer's NUMBER (hazard_l.l:34-38). as.numeric() also reads 1E-3 (no
+# decimal point before the exponent), 2. and +0.2, none of which PROC HAZARD
+# lexes as a number: the job stops with a syntax error.
+.hzr_sas_lexer_number <- function(s) {
+  grepl("^-?([0-9]+|[0-9]*[.][0-9]+(E[+-]?[0-9]+)?)$", toupper(s))
+}
+
+# An operand written with spaces around `=` (`THALF = 0.3`, `THALF =0.3`,
+# `THALF= 0.3`) reaches this parser split into pieces. SAS's lexer skips the
+# whitespace (hazard_l.l:50) and PROC HAZARD runs the job, so no piece is a
+# syntax error; but the operand's value is not read here. Marked from context,
+# since a bare number is a piece only after an `=`, and a stray one is not.
+.hzr_parms_rejected_piece_reason <- paste0(
+  "unresolved PARMS keyword: a piece of an operand written with spaces ",
+  "around `=` that is not a value keyword `= NUMBER` even joined ",
+  "(hazard_y.y:137-147, hazard_l.l:34-38), so PROC HAZARD rejects this job ",
+  "with a syntax error and it does not run"
+)
+.hzr_parms_macro_piece_reason <- paste0(
+  "unresolved PARMS keyword: a piece of an operand written with spaces ",
+  "around `=` whose key or value is a SAS macro reference, which SAS ",
+  "resolves before PROC HAZARD reads the statement, so this translation ",
+  "cannot tell what the operand becomes"
+)
+.hzr_parms_unresolved_piece_reason <- paste0(
+  "unresolved PARMS keyword: a piece of an operand written with spaces ",
+  "around `=`, which PROC HAZARD accepts but this translator splits apart, ",
+  "so the operand's value was not read"
+)
+.hzr_parms_spaced_pieces <- function(ops) {
+  # 0 = not a piece; 1 = a piece of a spaced operand PROC HAZARD accepts
+  # (joined, it is a value keyword `= NUMBER`, hazard_y.y:137-147 and
+  # hazard_l.l:34-38); 2 = a piece of one it would still reject; 3 = a piece
+  # of one whose key or value is a macro reference, which SAS expands before
+  # PROC HAZARD reads it (`&KEY = 0.3` may be THALF = 0.3), so it can be
+  # judged neither way here (Codex on #365).
+  n <- length(ops)
+  code <- integer(n)
+  tok <- function(x) .hzr_sas_token(x, "HAZARD", "PARM")
+  value_key <- function(x) {
+    t <- tok(x)
+    !is.na(t) && t %in% c(.hzr_parms_mu_order, names(.hzr_parms_early_arg),
+                          names(.hzr_parms_late_arg), "DELTA")
+  }
+  macro <- function(x) grepl("&", x, fixed = TRUE)
+  bare_key <- function(k) {
+    k >= 1L && code[k] == 0L && !grepl("=", ops[[k]], fixed = TRUE) &&
+      (!is.na(tok(ops[[k]])) || macro(ops[[k]]))
+  }
+  i <- 1L
+  while (i <= n) {
+    op <- ops[[i]]
+    key_i <- if (bare_key(i - 1L)) i - 1L else NA_integer_
+    if (identical(op, "=")) {
+      val_i <- if (i < n) i + 1L else NA_integer_
+      ok <- !is.na(key_i) && value_key(ops[[key_i]]) && !is.na(val_i) &&
+        .hzr_sas_lexer_number(ops[[val_i]])
+      members <- c(key_i, i, val_i)
+    } else if (startsWith(op, "=") && nchar(op) > 1L) {
+      ok <- !is.na(key_i) && value_key(ops[[key_i]]) &&
+        .hzr_sas_lexer_number(substring(op, 2L))
+      members <- c(key_i, i)
+    } else if (nchar(op) > 1L && endsWith(op, "=") && i < n) {
+      ok <- value_key(substr(op, 1L, nchar(op) - 1L)) &&
+        .hzr_sas_lexer_number(ops[[i + 1L]])
+      members <- c(i, i + 1L)
+    } else {
+      i <- i + 1L
+      next
+    }
+    members <- members[!is.na(members)]
+    code[members] <- if (any(macro(ops[members]))) 3L else if (ok) 1L else 2L
+    i <- max(members) + 1L
+  }
+  code
+}
 .hzr_parms_mu_order  <- c("MUE", "MUC", "MUL")
 
 # PROC HAZARD's OWN shape defaults (src/hazard/stmtprc.c:34-37), used for any
@@ -149,9 +249,7 @@
     "at hazard_l.l:178, which sets yysynerr"))
   # The lexer's NUMBER (hazard_l.l:34-38). as.numeric() also reads Inf, NaN,
   # 1e5, 5. and 0x1A, none of which PROC HAZARD lexes as a number.
-  is_number <- function(s) {
-    grepl("^-?([0-9]+|[0-9]*[.][0-9]+(E[+-]?[0-9]+)?)$", toupper(s))
-  }
+  is_number <- .hzr_sas_lexer_number
   # Which rule reads a value that is not a NUMBER. Per input, not per
   # refusal: a character outside the word rule's set falls to the catch-all;
   # a whole name lexes as NAME after a phase variable (hazard_l.l:174-175)
@@ -653,6 +751,7 @@
   saw_weibull <- FALSE
   saw_ge2 <- FALSE
   saw_gae2 <- FALSE
+  saw_mnu1 <- FALSE
   bad_construct <- character(0)
   bad_reason <- character(0)
   # Set when an operand could not be read at all -- an unresolved keyword, a
@@ -669,19 +768,37 @@
     bad_reason <<- c(bad_reason, reason)
   }
 
-  for (op in operands) {
+  spaced_piece <- .hzr_parms_spaced_pieces(operands)
+  for (i in seq_along(operands)) {
+    op <- operands[[i]]
+    if (spaced_piece[i] > 0L) {
+      unreadable <- TRUE
+      flag_bad(op, switch(spaced_piece[i],
+                          .hzr_parms_unresolved_piece_reason,
+                          .hzr_parms_rejected_piece_reason,
+                          .hzr_parms_macro_piece_reason))
+      next
+    }
     eq <- .idx(op, "=")
 
     if (eq > 0L) {
       key <- substr(op, 1L, eq - 1L)
-      val <- suppressWarnings(as.numeric(substr(op, eq + 1L, nchar(op))))
+      raw <- substr(op, eq + 1L, nchar(op))
+      val <- suppressWarnings(as.numeric(raw))
       token <- .hzr_sas_token(key, "HAZARD", "PARM")
       if (is.na(token)) {
         unreadable <- TRUE
-        flag_bad(op, "unresolved PARMS keyword")
+        flag_bad(op, .hzr_parms_unresolved_why(op))
       } else if (is.na(val)) {
         unreadable <- TRUE
         flag_bad(op, sprintf("PARMS value for %s is not numeric", key))
+      } else if (!.hzr_sas_lexer_number(raw)) {
+        unreadable <- TRUE
+        flag_bad(op, paste0(
+          "PARMS value ", raw, " for ", key, " is not a number PROC HAZARD's ",
+          "lexer reads (hazard_l.l:34-38), so PROC HAZARD rejects this job ",
+          "with a syntax error and it does not run"
+        ))
       } else if (token %in% .hzr_parms_mu_order) {
         mu[[token]] <- val
       } else if (token %in% names(.hzr_parms_early_arg)) {
@@ -717,7 +834,16 @@
     token <- .hzr_sas_token(op, "HAZARD", "PARM")
     if (is.na(token)) {
       unreadable <- TRUE
-      flag_bad(op, "unresolved PARMS keyword")
+      flag_bad(op, .hzr_parms_unresolved_why(op))
+    } else if (token %in% c(.hzr_parms_mu_order, names(.hzr_parms_early_arg),
+                            names(.hzr_parms_late_arg), "DELTA")) {
+      # A value keyword with no `= NUMBER` after it, and not the first piece
+      # of a spaced operand (those are marked above).
+      unreadable <- TRUE
+      flag_bad(op, paste0(
+        op, " needs a value (", op, "=NUMBER, hazard_y.y:137-147), so PROC ",
+        "HAZARD rejects this job with a syntax error and it does not run"
+      ))
     } else if (token == "WEIBULL") {
       # setopt(6) -> SETG3_weibull() (setg3.c:427) is the GENERALIZED Weibull:
       # "NOW HANDLE THE SPECIAL SITUATION OF THE GENERALIZED WEIBULL, WHERE WE
@@ -738,6 +864,9 @@
       saw_ge2 <- TRUE
     } else if (token == "FIXGAE2") {
       saw_gae2 <- TRUE
+    } else if (token == "FIXMNU1") {
+      # Recorded below, once whether an early phase is active is known.
+      saw_mnu1 <- TRUE
     } else if (token %in% names(.hzr_parms_fix_map)) {
       param <- .hzr_parms_fix_map[[token]]
       if (param %in% .hzr_parms_early_arg) {
@@ -775,8 +904,8 @@
   # as an absent TAU (setg3.c:316) -- and it is a divergence only when
   # SETG3_ignore_tau() does not take the branch above it, since that branch
   # pins TAU at 1 (setg3.c:378), exactly the value emitted here.
-  # `late` itself is left untouched: `length(late)` is the "did PARMS name a
-  # late shape operand" gate below, and a TAU=0 operand still counts as one.
+  # `late` itself is left untouched, so `tau_absent` still tells an unwritten
+  # TAU from a written TAU=0.
   #
   # Absent and explicitly-non-positive are DIFFERENT cases, and conflating
   # them put a false refusal in $untranslated. PROC HAZARD never sees the
@@ -803,6 +932,15 @@
   has_early <- mu_active("MUE")
   has_muc <- mu_active("MUC")
   has_late <- mu_active("MUL")
+  # Whether a phase is BUILT, as distinct from whether its MU is active. An
+  # active MU with no shape operand builds on PROC HAZARD's own shape defaults
+  # (#345), but only when the whole statement was read: if any operand could
+  # not be read, a shape operand may have been written in a form this parser
+  # split apart (`THALF = 0.3`, which SAS lexes), and building on defaults
+  # would fit a different model. Such a phase is not built, and is recorded
+  # below. Every build, scope and trace gate reads these, not has_*.
+  build_early <- has_early && (length(early) > 0L || !unreadable)
+  build_late <- has_late && (length(late) > 0L || !unreadable)
 
   # setg3.c:312-314's own predicate for taking the SETG3_ignore_tau() branch.
   # The `g_two && ga_two` disjunct alongside it is driven by PARMS keywords
@@ -864,9 +1002,13 @@
   late_constraint <- "none"
   ignore_tau_handled <- FALSE
   constraint_flags <- c("FIXGE2", "FIXGAE2")[c(saw_ge2, saw_gae2)]
-  if (length(constraint_flags) && !(has_late && length(late))) {
+  if (length(constraint_flags) && !build_late) {
     for (flag in constraint_flags) {
-      flag_bad(flag, "PARMS token has no phase target")
+      flag_bad(flag, if (has_late) {
+        "the late phase it constrains is not built (see the MUL row)"
+      } else {
+        "PARMS token has no phase target"
+      })
     }
   } else if (length(constraint_flags) &&
                (length(constraint_flags) == 2L || ignore_tau)) {
@@ -1077,16 +1219,15 @@
   # phase that is not built must therefore contribute no theta block either,
   # or every later block is read against the wrong labels.
   #
-  # The MU gate is necessary but not sufficient here: an active MU whose phase
-  # has no shape operand is recorded rather than built, because PROC HAZARD
-  # would supply its own shape defaults and they are not this parser's -- see
-  # the orphan branches below.
+  # The MU gate is the whole gate: an active MU whose phase has no shape
+  # operand is built on PROC HAZARD's own shape defaults, which
+  # .hzr_parms_fill_shape() has already filled in (#345).
   # A shape that is not finite, as written (GAMMA=1e400 reads as Inf) or after
   # a rewrite above (2/ETA, GAMMA*ETA/2), cannot be built: hzr_phase() refuses
   # it. Say so here rather than let the translation read clean over a call
   # that stops.
-  for (shape in list(if (has_early && length(early)) early_full,
-                     if (has_late && length(late)) late_full)) {
+  for (shape in list(if (build_early) early_full,
+                     if (build_late) late_full)) {
     for (param in names(shape)) {
       value <- shape[[param]]
       if (is.numeric(value) && length(value) == 1L && !is.finite(value)) {
@@ -1104,7 +1245,7 @@
 
   phase_calls <- list()
   theta_blocks <- list()
-  if (has_early && length(early)) {
+  if (build_early) {
     phase_calls[[length(phase_calls) + 1L]] <- .hzr_parms_phase_call(
       "cdf", early_full, phase_covars$early, fixed_early
     )
@@ -1121,7 +1262,7 @@
       .hzr_parms_theta_block("constant", mu[["MUC"]], list(), phase_covar_vals$constant)
     )
   }
-  if (has_late && length(late)) {
+  if (build_late) {
     phase_calls[[length(phase_calls) + 1L]] <- .hzr_parms_phase_call(
       "g3", late_full, phase_covars$late, fixed_late, late_constraint
     )
@@ -1168,7 +1309,7 @@
   # The trace assumes neither constraint flag, so it does not describe a phase
   # SETG3_ignore_tau() ran under one: that phase is fully determined above, or
   # refused there with SETG3940.
-  if (length(late) && has_late && !ignore_tau_handled) {
+  if (build_late && !ignore_tau_handled) {
     setg3 <- .hzr_setg3_notes(
       tau_raw = if (tau_absent) NA_real_ else late[["tau"]],
       gamma = late_full[["gamma"]],
@@ -1269,7 +1410,7 @@
   # reporting a TAU rule alongside an entry refusal would describe code PROC
   # HAZARD never reaches, the same false positive the MUL gate exists to avoid,
   # while suppressing it for a late refusal would hide one that did run.
-  if (length(late) && has_late && !setg3_refused && ignore_tau &&
+  if (build_late && !setg3_refused && ignore_tau &&
       !is.null(late[["tau"]]) && !isTRUE(late[["tau"]] == 1)) {
     flag_bad(
       paste0("TAU=", sprintf("%g", late[["tau"]])),
@@ -1278,7 +1419,7 @@
              "emitted phase mirrors that, so the value written here is used ",
              "by neither PROC HAZARD nor the translation")
     )
-  } else if (length(late) && has_late && !setg3_refused && tau_defaulted &&
+  } else if (build_late && !setg3_refused && tau_defaulted &&
              !ignore_tau && !ignore_tau_handled) {
     # Which data-dependent default applies depends on whether the job wrote a
     # TAU at all -- see the tau_absent/tau_nonpositive split above.
@@ -1293,22 +1434,46 @@
     # `2 * max(<timevar>) / 3` instead was considered and rejected: SAS's Tmax
     # is taken over the analysis set after exclusions, not over the raw column,
     # so the expression would look exact while being a guess.
+    # An active MUL with no shape operand now builds its phase (#345), so this
+    # row is the only record of its data-dependent TAU start.
     #
-    # `length(late)` because a late phase that was never built is already
-    # reported by the MUL guard below, and two rows for one absence is noise.
+    # Two consequences, and the row names the one that applies. With TAU free,
+    # the start differs, and because the multiphase likelihood is multimodal
+    # that can change where the fit converges, not only how it gets there.
+    # With FIXTAU (reachable only for an unwritten TAU: a written non-positive
+    # one is refused as SETG3900), PROC HAZARD holds TAU at that
+    # data-dependent value while the emitted phase holds it at 1, which is a
+    # different model outright.
+    tau_fixed <- "tau" %in% fixed_late
     flag_bad(
       if (tau_absent) "TAU (unspecified)" else
         paste0("TAU=", sprintf("%g", late[["tau"]])),
-      paste0("PROC HAZARD starts TAU at ",
-             if (tau_absent) {
+      paste0(if (tau_absent && unreadable) {
+               paste0("TAU was not read here: this statement has operands ",
+                      "the translator could not read (see their rows), so ",
+                      "whether and how TAU was written cannot be told. If it ",
+                      "was not written, ")
+             },
+             "PROC HAZARD ", if (tau_fixed) "fixes" else "starts", " TAU at ",
+             if (tau_absent && unreadable) {
+               "0.75*Tmax (readobs.c:153-154, "
+             } else if (tau_absent) {
                "0.75*Tmax (readobs.c:153-154, applied to an unspecified TAU "
              } else {
                "2*Tmax/3 (setg3.c:317, applied to a non-positive TAU "
              },
              "before SETG3 runs), which depends on the data and cannot be ",
-             "reproduced at parse time; the emitted phase starts at tau = 1, ",
-             "so this fit begins somewhere PROC HAZARD would not and the ",
-             "multiphase likelihood is multimodal")
+             "reproduced at parse time. ",
+             if (tau_fixed) {
+               paste0("The emitted phase fixes tau = 1 instead, so this is ",
+                      "a different model, not only a different start: the ",
+                      "estimates will differ from PROC HAZARD's")
+             } else {
+               paste0("The emitted phase starts at tau = 1. The multiphase ",
+                      "likelihood is multimodal, so a different start can ",
+                      "converge to a different optimum: the estimates, not ",
+                      "only the path to them, may differ from PROC HAZARD's")
+             })
     )
   }
 
@@ -1422,31 +1587,60 @@
     )
   }
 
-  # (4) An active MU whose phase carries no shape operand. PROC HAZARD builds
-  # the phase here, on its own defaults: thalf 1, nu 2, m 1, gamma 1, alpha 1,
-  # eta 2 (stmtprc.c:30-37) and tau = 2*Tmax/3 (setg3.c:317 -- stmtprc.c:34
-  # only zeroes tau; the data-dependent default is set later, in SETG3()).
-  # Those are not this parser's defaults, and tau needs max(time) and so is not
-  # computable at parse time, so the MU is recorded rather than guessed at. A
-  # translation this parser declines is recoverable; one it invents is not.
-  if (has_early && !length(early)) {
-    flag_bad(paste0("MUE=", sprintf("%g", mu[["MUE"]])),
-             "MUE with no early phase shape operand (THALF/NU/M)")
+  # FIXMNU1 is a real PROC HAZARD constraint (hazard_y.y:153; parmprc.c:29-38;
+  # hzd_early_t2p.c:65-77 derives M = +/-1/NU or NU = +/-1/M at every step)
+  # that this translation does not apply. On an active early phase that makes
+  # the emitted phase a different model, and the row says the consequence
+  # rather than a parse state. Mirroring it is separate work.
+  if (saw_mnu1) {
+    flag_bad("FIXMNU1", if (build_early) {
+      paste0("FIXMNU1 ties M to NU in PROC HAZARD (|M*NU| = 1; ",
+             "setg1.c:381-387, hzd_early_t2p.c:65-77), but that constraint is ",
+             "not applied here: the emitted early phase does not tie them, a ",
+             "different model from PROC HAZARD's")
+    } else if (has_early) {
+      "the early phase it constrains is not built (see the MUE row)"
+    } else {
+      "PARMS token has no phase target"
+    })
   }
-  if (has_late && !length(late)) {
+
+  # (4) An active MU whose phase carries no shape operand is built above, on
+  # PROC HAZARD's shape defaults (stmtprc.c:30-37): early tHalf 1, nu 2, m 1,
+  # all data-free (setg1.c:343-349 substitutes 1 only for a non-positive
+  # tHalf), and late gamma 1, alpha 1, eta 2. The one data-dependent value is
+  # the late TAU start, 0.75*Tmax (readobs.c:153-154, before SETG3), recorded by
+  # the TAU row above exactly as for a written late phase with no TAU (#345).
+  # This used to record the MU instead, when the parser's defaults were not
+  # SAS's; they are now. An orphan whose statement was not fully read is the
+  # exception (see build_early): it is recorded, not built.
+  unread_why <- paste0(
+    "with no ", "%s", " shape operand this translator could read: other PARMS ",
+    "operands could not be read (see their rows), so whether a shape was ",
+    "written cannot be told, and the phase is not built on PROC HAZARD's ",
+    "defaults"
+  )
+  if (has_early && !build_early) {
+    flag_bad(paste0("MUE=", sprintf("%g", mu[["MUE"]])),
+             paste("MUE", sprintf(unread_why, "early")))
+  }
+  if (has_late && !build_late) {
     flag_bad(paste0("MUL=", sprintf("%g", mu[["MUL"]])),
-             "MUL with no late phase shape operand (TAU/GAMMA/ALPHA/ETA)")
+             paste("MUL", sprintf(unread_why, "late")))
   }
 
   # getrisk.c collects every phase-statement variable, of every phase and
   # whatever its options, and readobs.c deletes a row where any is missing.
   # hazard() drops missing rows only for variables in a formula it fits, so
   # the rest -- /E variables, and covariates of a phase that is not built --
-  # are returned for the caller to guard.
+  # are returned for the caller to guard. "Built" is the same gate the phase
+  # list uses above: the MU alone, since an orphan MU builds on PROC HAZARD's
+  # shape defaults (#345). A stricter gate here keyed scope against a phase
+  # list it did not match.
   modelled <- c(
-    if (has_early && length(early)) phase_covars$early,
+    if (build_early) phase_covars$early,
     if (has_muc) phase_covars$constant,
-    if (has_late && length(late)) phase_covars$late
+    if (build_late) phase_covars$late
   )
   # Scope is keyed by the name the BASE FIT will carry. The emitted phases
   # list is unnamed, so hazard() auto-names them phase_1, phase_2, ... in
@@ -1455,9 +1649,9 @@
   # paste0("phase_", integer(0)) is "phase_", so a job that builds no phase
   # crashed setNames() instead of reaching its "selects no phase" refusal.
   built <- c(
-    if (has_early && length(early)) "early",
+    if (build_early) "early",
     if (has_muc) "constant",
-    if (has_late && length(late)) "late"
+    if (build_late) "late"
   )
   selection_spec <- if (isFALSE(selection)) NULL else list(
     scope = stats::setNames(
