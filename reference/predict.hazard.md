@@ -24,7 +24,18 @@ predict(
 
 - object:
 
-  A `hazard` object.
+  A `hazard` object. One built with `fit = FALSE` holds the starting
+  values it was given rather than estimates, so predicting from it warns
+  (condition class `hzr_unfitted_prediction`); under
+  `dist = "multiphase"` it is an error instead, because the per-phase
+  designs are resolved only when the model is fitted. To evaluate a
+  model at parameters you supply, use
+  [`hzr_evaluate()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_evaluate.md).
+  The warning is governed by
+  `options(TemporalHazard.warn_unfitted_prediction = )`, which this
+  package's own tests set to `FALSE` where they exercise that capability
+  deliberately; leaving it on is what tells a reader that a number came
+  from a starting value.
 
 - newdata:
 

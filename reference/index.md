@@ -51,6 +51,8 @@
 
 - [`hzr_decompos()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos.md)
   : Generalized temporal decomposition
+- [`hzr_evaluate()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_evaluate.md)
+  : Evaluate a hazard model at parameters you supply
 - [`hzr_decompos_g3()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos_g3.md)
   : Late-phase (G3) temporal decomposition
 

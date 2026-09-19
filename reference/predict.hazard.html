@@ -83,7 +83,16 @@ types including linear predictor, hazard, survival probability, and cumulative h
 
 
 <dl><dt id="arg-object">object<a class="anchor" aria-label="anchor" href="#arg-object"></a></dt>
-<dd><p>A <code>hazard</code> object.</p></dd>
+<dd><p>A <code>hazard</code> object. One built with <code>fit = FALSE</code> holds the
+starting values it was given rather than estimates, so predicting from
+it warns (condition class <code>hzr_unfitted_prediction</code>); under
+<code>dist = "multiphase"</code> it is an error instead, because the per-phase
+designs are resolved only when the model is fitted. To evaluate a model
+at parameters you supply, use <code><a href="hzr_evaluate.html">hzr_evaluate()</a></code>. The warning is governed
+by <code>options(TemporalHazard.warn_unfitted_prediction = )</code>, which this
+package's own tests set to <code>FALSE</code> where they exercise that capability
+deliberately; leaving it on is what tells a reader that a number came
+from a starting value.</p></dd>
 
 
 <dt id="arg-newdata">newdata<a class="anchor" aria-label="anchor" href="#arg-newdata"></a></dt>
