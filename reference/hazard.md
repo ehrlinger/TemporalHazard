@@ -303,9 +303,11 @@ Control parameters:
   fit can be warned about while being identified. For the same reason
   the per-phase measures can overstate what an interval-censored or
   left-truncated fit loses, since a phase flat across the event times
-  may still be identified through the bounds. The measured shares are
-  kept on the fit as `fit$fit$phase_share`. Raise it to catch marginal
-  phases, set it to 0 to silence the check.
+  may still be identified through the bounds; the saturated warning says
+  so where such points exist, rather than claiming the likelihood is
+  unchanged (#228). The measured shares are kept on the fit as
+  `fit$fit$phase_share`. Raise it to catch marginal phases, set it to 0
+  to silence the check.
 
 - `reltol`: Relative convergence tolerance on the objective, the
   negative log-likelihood (default 1e-5). BFGS stops when an iteration
@@ -616,10 +618,10 @@ summary(fit2)
 #> Coefficients:
 #>          estimate   std_error     z_stat      p_value
 #> mu    0.121938323 0.062299561  1.9572902 5.031335e-02
-#> nu    1.143693956 0.084297244 13.5673944 6.250475e-42
+#> nu    1.143693955 0.084297244 13.5673944 6.250475e-42
 #> beta1 0.001710112 0.008807807  0.1941586 8.460517e-01
 #> beta2 0.156102262 0.090593058  1.7231151 8.486772e-02
-#> beta3 0.017258366 0.362941256  0.0475514 9.620738e-01
+#> beta3 0.017258365 0.362941256  0.0475514 9.620738e-01
 
 # \donttest{
 # -- Parametric survival with Kaplan-Meier overlay -----------------
