@@ -50,6 +50,12 @@ test_that("hzr_stepwise() refuses a misspelled argument and names it (#386)", {
   msg <- refused_386(screen_386(base, d, slentyr = 1e-6))
   expect_match(msg, "^hzr_stepwise\\(\\): `slentyr` is not an argument")
   expect_match(msg, "Did you mean `slentry`?", fixed = TRUE)
+  # An abbreviation is spelled out before the check, so a differing
+  # objective is refused at entry rather than colliding with the refit's own
+  # `objective` inside every candidate. (Not in hzr_bootstrap(), where R
+  # binds `objec` to its own `object` formal first.)
+  expect_match(refused_386(screen_386(base, d, objec = "sas")),
+               "^hzr_stepwise\\(\\): `objective = \"sas\"` differs")
 })
 
 test_that("an unnamed argument in `...` is refused too (#386)", {
@@ -110,9 +116,6 @@ test_that("hzr_bootstrap() refuses at entry, not per replicate (#386)", {
   expect_match(refused_386(boot(dist = "exponential")),
                "^hzr_bootstrap\\(\\): `dist` cannot be passed")
   expect_match(refused_386(boot(objective = "sas")),
-               "^hzr_bootstrap\\(\\): `objective = \"sas\"` differs")
-  # An abbreviation is spelled out before the check, so it is caught too.
-  expect_match(refused_386(boot(objec = "sas")),
                "^hzr_bootstrap\\(\\): `objective = \"sas\"` differs")
   expect_identical(.Random.seed, before)
 })
