@@ -131,7 +131,7 @@ test_that("hzr_evaluate() returns the multiphase shape at supplied times (#144)"
 
 test_that("hzr_evaluate() refuses what it cannot evaluate (#144)", {
   spec <- eval_spec()
-  expect_error(hzr_evaluate(spec, theta = c(1, 1, 1)), "has 3 parameters")
+  expect_error(hzr_evaluate(spec, theta = c(1, 1, 1)), "has 3 entries, but this weibull model takes 2")
   expect_error(hzr_evaluate(spec, theta = c(NA_real_, 1)), "finite numeric")
   expect_error(hzr_evaluate(spec, theta = c(1, 1), times = -1),
                "finite positive times")
@@ -260,8 +260,8 @@ test_that("hzr_evaluate() checks theta against the model, not against itself (#1
   theta <- c(log(0.05), log(0.2), 1, -0.4, log(0.03))
   expect_true(is.finite(hzr_evaluate(spec, theta = theta)$logLik))
   expect_error(hzr_evaluate(spec, theta = c(theta, 99, -99)),
-               "has 7 parameters, but this multiphase model has 5")
-  expect_error(hzr_evaluate(spec, theta = theta[1:4]), "has 4 parameters")
+               "has 7 entries, but this model takes 5 \\(early 4, constant 1\\)")
+  expect_error(hzr_evaluate(spec, theta = theta[1:4]), "has 4 entries")
 
   # With covariates, the model's names include them, so a correctly named
   # theta is accepted rather than refused.
@@ -316,7 +316,7 @@ test_that("hzr_evaluate() counts parameters without column names (#144)", {
                  fit = FALSE)
   expect_true(is.finite(hzr_evaluate(spec, theta = theta7)$logLik))
   expect_error(hzr_evaluate(spec, theta = c(theta7, 99)),
-               "has 8 parameters, but this multiphase model has 7")
+               "has 8 entries, but this model takes 7 \\(early 5, constant 2\\)")
   # And the synthesised names are the fit's own, so a named theta works.
   nm <- names(hzr_evaluate(spec, theta = theta7)$theta)
   expect_length(nm, 7L)
@@ -459,7 +459,7 @@ test_that("the refusals describe the model in front of them (#144)", {
               theta = c(0.05, 0.9, 0.01, 99), fit = FALSE)
   msg <- tryCatch(hzr_evaluate(w, theta = w$fit$theta),
                   error = conditionMessage)
-  expect_match(msg, "has 4 parameters, but this weibull model has 3")
+  expect_match(msg, "has 4 entries, but this weibull model takes 3")
   expect_false(grepl("phase designs", msg))
   # A stored theta of the wrong length must not be pasted onto another
   # vector's names: that failed with base R's "'names' attribute [4] must be
@@ -572,4 +572,27 @@ test_that("hzr_evaluate() does not nag that the model is unfitted (#144)", {
   single <- eval_spec()
   expect_warning(predict(single, type = "hazard"),
                  class = "hzr_unfitted_prediction")
+})
+
+test_that("hzr_evaluate() and hazard() word a wrong theta length alike (#144, #408)", {
+  # Two exact-length checks in one package: the same arithmetic and the same
+  # sentence, including a g3 phase's four shape slots.
+  data("avc", package = "TemporalHazard", envir = environment())
+  d <- na.omit(avc[, c("int_dead", "dead", "age")])
+  ph <- list(early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1,
+                               fixed = "m"),
+             late = hzr_phase("g3"))
+  spec <- hazard(survival::Surv(int_dead, dead) ~ age, data = d,
+                 dist = "multiphase", phases = ph, fit = FALSE)
+  from_evaluate <- tryCatch(hzr_evaluate(spec, theta = rep(0.1, 13)),
+                            error = conditionMessage)
+  from_fit <- tryCatch(
+    hazard(survival::Surv(int_dead, dead) ~ age, data = d,
+           dist = "multiphase", phases = ph, theta = rep(0.1, 13),
+           fit = TRUE),
+    error = conditionMessage
+  )
+  expect_match(from_evaluate,
+               "'theta' has 13 entries, but this model takes 11 \\(early 5, late 6\\)")
+  expect_identical(from_evaluate, from_fit)
 })

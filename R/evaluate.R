@@ -117,13 +117,25 @@ hzr_evaluate <- function(object, theta, times = NULL) {
          } else {
            ""
          },
-         "'theta' has ", length(theta), " parameter",
-         if (length(theta) == 1L) "" else "s", ", but this ", dist,
-         " model has ", prepared$n_par,
-         if (is.null(prepared$names)) "." else
-           paste0(": ", paste(utils::head(prepared$names, 3L),
-                              collapse = ", "),
-                  if (length(prepared$names) > 3L) ", ..." else "", "."),
+         if (identical(dist, "multiphase")) {
+           # The same count and sentence as hazard(fit = TRUE) (#408).
+           .hzr_theta_length_message(
+             length(theta),
+             .hzr_phase_theta_counts(
+               prepared$phases, covariate_counts = prepared$covariate_counts
+             )
+           )
+         } else {
+           paste0(
+             "'theta' has ", length(theta), " ",
+             if (length(theta) == 1L) "entry" else "entries",
+             ", but this ", dist, " model takes ", prepared$n_par,
+             if (is.null(prepared$names)) "." else
+               paste0(": ", paste(utils::head(prepared$names, 3L),
+                                  collapse = ", "),
+                      if (length(prepared$names) > 3L) ", ..." else "", ".")
+           )
+         },
          call. = FALSE)
   }
   if (!is.null(names(theta)) && !is.null(prepared$names) &&
