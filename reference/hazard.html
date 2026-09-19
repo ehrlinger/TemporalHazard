@@ -117,14 +117,25 @@ Example: <code>hazard(Surv(time, status) ~ x1 + x2, data = df, dist = "weibull",
 
 <dt id="arg-data">data<a class="anchor" aria-label="anchor" href="#arg-data"></a></dt>
 <dd><p>Optional data frame. On the formula path it supplies the model
-frame. On the vector path <code>time</code>, <code>status</code>, <code>time_lower</code>, <code>time_upper</code>
-and <code>weights</code> are evaluated in its scope, the way <code><a href="https://rdrr.io/r/base/subset.html" class="external-link">base::subset()</a></code> and
-<code><a href="https://rdrr.io/r/base/transform.html" class="external-link">base::transform()</a></code> do: a bare column name resolves to that column, and
+frame, and <code>weights</code> is evaluated in its scope. On the vector path
+<code>time</code>, <code>status</code>, <code>time_lower</code>, <code>time_upper</code> and <code>weights</code> are evaluated
+in its scope, the way <code><a href="https://rdrr.io/r/base/subset.html" class="external-link">base::subset()</a></code> and <code><a href="https://rdrr.io/r/base/transform.html" class="external-link">base::transform()</a></code> do: a bare column name resolves to that column, and
 anything that is not a column (<code>df$col</code>, a local vector, a literal)
 falls through to the calling environment. A column of the same name as
 a caller variable wins, and because that silently discards the caller's
 vector (the way a wrapper forwarding its own argument by name does),
 such a name raises a warning naming the symbol and the argument.
+The warning reads the names written in the expression. When the
+argument is the name alone, it says the column was used. When the name
+is part of a larger expression, it does not say which value was read:
+the expression may never evaluate the name (an unused function
+argument), may rebind it first (a loop variable, an assignment) or may
+evaluate it somewhere else (<code><a href="https://rdrr.io/r/base/with.html" class="external-link">with()</a></code>), and the warning cannot tell. A name chosen at run time, as in <code>get(nm)</code> or
+<code>eval(as.name(nm))</code>, resolves the same way, column first, as it does in
+<code><a href="https://rdrr.io/r/stats/lm.html" class="external-link">stats::lm()</a></code>, but is not checked; the vector path has behaved so since
+1.2.2. No second evaluation is made to compare the two values, because
+evaluating an expression such as <code>runif(n)</code> twice gives two different
+vectors.
 Masked arguments are validated like any other, so an <code>NA</code> in a
 masked column errors: an <code>NA</code> count on the SAS <code>ICENSOR</code>
 path reaches <code>weights</code> and stops with <code>'weights' must be non-negative and finite</code>.</p></dd>
@@ -215,7 +226,12 @@ column and the column of prediction times in the decomposed output of
 <dd><p>Optional numeric vector of observation weights (non-negative).
 Each observation's log-likelihood contribution is multiplied by its weight.
 Use for severity-weighted repeated events. Default <code>NULL</code> (unit weights).
-Implements the SAS <code>WEIGHT</code> statement.</p></dd>
+Implements the SAS <code>WEIGHT</code> statement. With <code>data</code>, a name is looked up
+among its columns first and then in the calling environment, on both
+interfaces. <code><a href="https://rdrr.io/r/stats/lm.html" class="external-link">stats::lm()</a></code> also looks in <code>data</code> first, but then in the
+formula's environment rather than the caller's, so a formula built
+inside another function does not bring that function's variables with
+it here. See <code>data</code> for the warning raised when a name is both.</p></dd>
 
 
 <dt id="arg-control">control<a class="anchor" aria-label="anchor" href="#arg-control"></a></dt>

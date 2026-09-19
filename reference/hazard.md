@@ -53,9 +53,10 @@ hazard(
 
 - data:
 
-  Optional data frame. On the formula path it supplies the model frame.
-  On the vector path `time`, `status`, `time_lower`, `time_upper` and
-  `weights` are evaluated in its scope, the way
+  Optional data frame. On the formula path it supplies the model frame,
+  and `weights` is evaluated in its scope. On the vector path `time`,
+  `status`, `time_lower`, `time_upper` and `weights` are evaluated in
+  its scope, the way
   [`base::subset()`](https://rdrr.io/r/base/subset.html) and
   [`base::transform()`](https://rdrr.io/r/base/transform.html) do: a
   bare column name resolves to that column, and anything that is not a
@@ -63,10 +64,22 @@ hazard(
   calling environment. A column of the same name as a caller variable
   wins, and because that silently discards the caller's vector (the way
   a wrapper forwarding its own argument by name does), such a name
-  raises a warning naming the symbol and the argument. Masked arguments
-  are validated like any other, so an `NA` in a masked column errors: an
-  `NA` count on the SAS `ICENSOR` path reaches `weights` and stops with
-  `'weights' must be non-negative and finite`.
+  raises a warning naming the symbol and the argument. The warning reads
+  the names written in the expression. When the argument is the name
+  alone, it says the column was used. When the name is part of a larger
+  expression, it does not say which value was read: the expression may
+  never evaluate the name (an unused function argument), may rebind it
+  first (a loop variable, an assignment) or may evaluate it somewhere
+  else ([`with()`](https://rdrr.io/r/base/with.html)), and the warning
+  cannot tell. A name chosen at run time, as in `get(nm)` or
+  `eval(as.name(nm))`, resolves the same way, column first, as it does
+  in [`stats::lm()`](https://rdrr.io/r/stats/lm.html), but is not
+  checked; the vector path has behaved so since 1.2.2. No second
+  evaluation is made to compare the two values, because evaluating an
+  expression such as `runif(n)` twice gives two different vectors.
+  Masked arguments are validated like any other, so an `NA` in a masked
+  column errors: an `NA` count on the SAS `ICENSOR` path reaches
+  `weights` and stops with `'weights' must be non-negative and finite`.
 
 - time:
 
@@ -165,7 +178,14 @@ hazard(
   Optional numeric vector of observation weights (non-negative). Each
   observation's log-likelihood contribution is multiplied by its weight.
   Use for severity-weighted repeated events. Default `NULL` (unit
-  weights). Implements the SAS `WEIGHT` statement.
+  weights). Implements the SAS `WEIGHT` statement. With `data`, a name
+  is looked up among its columns first and then in the calling
+  environment, on both interfaces.
+  [`stats::lm()`](https://rdrr.io/r/stats/lm.html) also looks in `data`
+  first, but then in the formula's environment rather than the caller's,
+  so a formula built inside another function does not bring that
+  function's variables with it here. See `data` for the warning raised
+  when a name is both.
 
 - control:
 
