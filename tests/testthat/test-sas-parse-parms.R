@@ -299,6 +299,40 @@ test_that("a MUL with no late shape operand builds the phase on SAS's defaults (
   expect_match(got$untranslated$reason, "0.75*Tmax", fixed = TRUE)
 })
 
+test_that("an orphan MU keys scope, force_in and the listwise guard like its written defaults (#345)", {
+  # The phase list was built on the MU alone while the scope/force_in keys and
+  # the modelled-variable list still required a shape operand. With SELECTION,
+  # an orphan MUE's constant-phase candidate was screened into phase_1 (the
+  # EARLY phase), the early candidate was never offered, and a /I variable
+  # left force_in: a different screen, silently (r-reviewer on #365). Without
+  # SELECTION, a modelled covariate was returned as listwise-only. The
+  # property: an orphan MU parses exactly as its defaults written out.
+  cases <- list(
+    list(orphan = c("MUE=0.2", "MUC=0.01"),
+         written = c("MUE=0.2", "THALF=1", "NU=2", "M=1", "MUC=0.01"),
+         covars = list(early = "AGE, NYHA/I", constant = "SEX")),
+    list(orphan = c("MUC=0.01", "MUL=0.1"),
+         written = c("MUC=0.01", "MUL=0.1", "GAMMA=1", "ALPHA=1", "ETA=2"),
+         covars = list(constant = "SEX", late = "AGE, NYHA/I")))
+  for (cs in cases) {
+    for (sel in c(FALSE, TRUE)) {
+      info <- paste(paste(cs$orphan, collapse = " "), "selection =", sel)
+      o <- .hzr_parse_parms(cs$orphan, covars = cs$covars, selection = sel)
+      w <- .hzr_parse_parms(cs$written, covars = cs$covars, selection = sel)
+      expect_identical(o$phases, w$phases, info = info)
+      expect_identical(o$selection, w$selection, info = info)
+      expect_identical(o$listwise_only, w$listwise_only, info = info)
+    }
+  }
+  # And the screen reaches the right phase: the early candidate is offered to
+  # phase_1, the constant one to phase_2, and /I is forced in.
+  sel <- .hzr_parse_parms(c("MUE=0.2", "MUC=0.01"),
+                          covars = list(early = "AGE, NYHA/I", constant = "SEX"),
+                          selection = TRUE)$selection
+  expect_identical(sel$scope, list(phase_1 = "AGE", phase_2 = "SEX"))
+  expect_identical(sel$force_in, "NYHA")
+})
+
 test_that("a MUE with no early shape operand builds the phase on SAS's defaults (#345)", {
   # stmtprc.c:31-33: tHalf 1, nu 2, m 1, all data-free (setg1.c:343-349
   # substitutes 1 only for a non-positive tHalf), so this is an exact mirror.
@@ -1587,6 +1621,20 @@ test_that("FIXMNU1 with an early phase says the constraint is not applied", {
   expect_match(none$untranslated$reason[none$untranslated$construct ==
                                            "FIXMNU1"],
                "no phase target", fixed = TRUE)
+})
+
+test_that("a macro reference is not called a syntax error (#365 review)", {
+  # SAS resolves `&EXTRA` before PROC HAZARD reads the statement, so the
+  # grammar table cannot say what it becomes, or that the job does not run.
+  got <- .hzr_parse_parms(c("MUE=0.2", "THALF=1", "&EXTRA"))
+  row <- got$untranslated$reason[got$untranslated$construct == "&EXTRA"]
+  expect_length(row, 1L)
+  expect_match(row, "^unresolved PARMS keyword")
+  expect_match(row, "macro reference", fixed = TRUE)
+  expect_no_match(row, "does not run", fixed = TRUE)
+  # A keyword the lexer rejects still says it.
+  got <- .hzr_parse_parms(c("MUE=0.2", "THALF=1", "FIXG1"))
+  expect_match(got$untranslated$reason, "does not run", fixed = TRUE)
 })
 
 test_that("a keyword outside PROC HAZARD's grammar says the job does not run", {

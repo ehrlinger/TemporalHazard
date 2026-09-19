@@ -37,6 +37,18 @@
   "PROC HAZARD rejects this job with a syntax error and it does not run; ",
   "whatever is emitted here translates a job that does not run"
 )
+# A macro reference (`&EXTRA`) is resolved by SAS before PROC HAZARD reads
+# the statement, so the grammar table cannot say what it becomes, and in
+# particular cannot say the job fails. Same prefix, neutral consequence.
+.hzr_parms_unresolved_macro_reason <- paste0(
+  "unresolved PARMS keyword: a SAS macro reference, which SAS resolves ",
+  "before PROC HAZARD reads the statement, so this translation cannot tell ",
+  "what it becomes"
+)
+.hzr_parms_unresolved_why <- function(op) {
+  if (grepl("&", op, fixed = TRUE)) .hzr_parms_unresolved_macro_reason else
+    .hzr_parms_unresolved_reason
+}
 .hzr_parms_mu_order  <- c("MUE", "MUC", "MUL")
 
 # PROC HAZARD's OWN shape defaults (src/hazard/stmtprc.c:34-37), used for any
@@ -690,7 +702,7 @@
       token <- .hzr_sas_token(key, "HAZARD", "PARM")
       if (is.na(token)) {
         unreadable <- TRUE
-        flag_bad(op, .hzr_parms_unresolved_reason)
+        flag_bad(op, .hzr_parms_unresolved_why(op))
       } else if (is.na(val)) {
         unreadable <- TRUE
         flag_bad(op, sprintf("PARMS value for %s is not numeric", key))
@@ -729,7 +741,7 @@
     token <- .hzr_sas_token(op, "HAZARD", "PARM")
     if (is.na(token)) {
       unreadable <- TRUE
-      flag_bad(op, .hzr_parms_unresolved_reason)
+      flag_bad(op, .hzr_parms_unresolved_why(op))
     } else if (token == "WEIBULL") {
       # setopt(6) -> SETG3_weibull() (setg3.c:427) is the GENERALIZED Weibull:
       # "NOW HANDLE THE SPECIAL SITUATION OF THE GENERALIZED WEIBULL, WHERE WE
@@ -1459,10 +1471,10 @@
   # rather than a parse state. Mirroring it is separate work.
   if (saw_mnu1) {
     flag_bad("FIXMNU1", if (has_early) {
-      paste0("FIXMNU1 constrains M*NU = 1 in PROC HAZARD (hzd_early_t2p.c:",
-             "65-77), but that constraint is not applied here: the emitted ",
-             "early phase estimates M and NU freely, a different model from ",
-             "PROC HAZARD's")
+      paste0("FIXMNU1 ties M to NU in PROC HAZARD (|M*NU| = 1; ",
+             "setg1.c:381-387, hzd_early_t2p.c:65-77), but that constraint is ",
+             "not applied here: the emitted early phase does not tie them, a ",
+             "different model from PROC HAZARD's")
     } else {
       "PARMS token has no phase target"
     })
@@ -1481,11 +1493,14 @@
   # whatever its options, and readobs.c deletes a row where any is missing.
   # hazard() drops missing rows only for variables in a formula it fits, so
   # the rest -- /E variables, and covariates of a phase that is not built --
-  # are returned for the caller to guard.
+  # are returned for the caller to guard. "Built" is the same gate the phase
+  # list uses above: the MU alone, since an orphan MU builds on PROC HAZARD's
+  # shape defaults (#345). A stricter gate here keyed scope against a phase
+  # list it did not match.
   modelled <- c(
-    if (has_early && length(early)) phase_covars$early,
+    if (has_early) phase_covars$early,
     if (has_muc) phase_covars$constant,
-    if (has_late && length(late)) phase_covars$late
+    if (has_late) phase_covars$late
   )
   # Scope is keyed by the name the BASE FIT will carry. The emitted phases
   # list is unnamed, so hazard() auto-names them phase_1, phase_2, ... in
@@ -1494,9 +1509,9 @@
   # paste0("phase_", integer(0)) is "phase_", so a job that builds no phase
   # crashed setNames() instead of reaching its "selects no phase" refusal.
   built <- c(
-    if (has_early && length(early)) "early",
+    if (has_early) "early",
     if (has_muc) "constant",
-    if (has_late && length(late)) "late"
+    if (has_late) "late"
   )
   selection_spec <- if (isFALSE(selection)) NULL else list(
     scope = stats::setNames(

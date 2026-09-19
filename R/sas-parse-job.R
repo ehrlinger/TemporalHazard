@@ -932,13 +932,12 @@
   # is NA, objective is NA, and theta holds the SAS starting values, while
   # print.hazard() shows a populated summary that says none of that (#151).
   args$fit <- TRUE
-  # A PARMS statement that actually specified shape parameters makes this a
-  # multiphase job. hazard()'s `dist` defaults to "weibull", and its
+  # A PARMS statement that builds a phase makes this a multiphase job. hazard()'s `dist` defaults to "weibull", and its
   # `else if (!is.null(phases))` branch silently discards the entire phase
   # specification (with only a warning) when dist stays at that default --
   # so dist = "multiphase" must be emitted whenever phases were built. A job
-  # with no PARMS statement at all (or one that specified no shape
-  # parameters) has phase_calls = list(), i.e. parms$phases is the empty
+  # with no PARMS statement at all (or one that builds no phase) has
+  # phase_calls = list(), i.e. parms$phases is the empty
   # `list()` call rather than NULL; omit both phases and dist on that path
   # so it stays a plain non-multiphase fit and does not trip that same
   # "'phases' is ignored" warning for a phases arg that was never meant to

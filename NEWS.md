@@ -347,8 +347,8 @@
 * **`hzr_translate_sas()` now emits a `stop()` in place of the fit when a
   `PARMS` statement builds no phase it could use.** Operands the translator
   could not read (a template's `MUE=?`, or `MUE = 0.2` written with spaces
-  around `=`, which `PROC HAZARD` accepts) or could not use (a `MUE` or `MUL`
-  with no shape operand) are recorded in `$untranslated`, but the fit chunk
+  around `=`, which `PROC HAZARD` accepts) are recorded in `$untranslated`,
+  but the fit chunk
   used to be emitted anyway, as `hazard(fit = TRUE, theta = c())` under the
   default Weibull. That chunk rendered an unfitted object, and would now fail
   on the error above with a message about `theta` that does not name the real
@@ -755,7 +755,7 @@
 
 * **Two `hzr_translate_sas()` rows now state their consequence** (#345 review).
   - `FIXMNU1` on an active early phase is a real PROC HAZARD constraint
-    (`M*NU = 1`) that the translation does not apply. It was recorded as "PARMS
+    (`|M*NU| = 1`) that the translation does not apply. It was recorded as "PARMS
     token has no phase target", which read as a parsing gap; the row now says
     the constraint is not applied and the emitted phase is a different model.
   - A `PARMS` keyword that is not in PROC HAZARD's grammar (for example
