@@ -586,13 +586,21 @@ before you point it at a corpus.
 - **A job `PROC HAZARD` itself refuses, or one whose model this
   translation cannot emit, stops the document.** A syntax error in a
   `PARMS` operand or on the `PROC` line (a value its lexer does not read
-  as a number, an unknown keyword, a template's `?`), a `SETG3` refusal,
-  `FIXMNU1`, a non-zero `DELTA`, `FIXTAU` with no `TAU` written, and
-  `FIXGE2`/`FIXGAE2` without `WEIBULL` each emit a `stop()` naming the
+  as a number, a keyword outside the grammar, a template's `?`), a
+  `SETG3` refusal, `FIXMNU1`, a non-zero `DELTA` on an active early
+  phase, `FIXTAU` with no `TAU` written, and `FIXGE2`/`FIXGAE2` without
+  `WEIBULL` each emit a `stop()` naming the
   cause. A fit standing in for a job `PROC HAZARD` does not run, or for a
   model it does not fit, is the answer this package most wants to avoid.
-  Operands carrying a macro reference are left undecided, because SAS
-  expands them before `PROC HAZARD` reads the statement.
+
+  Two limits on that. An **unknown** keyword is *recorded, not refused*:
+  a `%repeat` call brings a DATA step's own keywords through the same
+  parser, so refusing them would stop jobs that run. And an operand
+  carrying a **macro reference** gets no syntax verdict, because SAS
+  expands it before `PROC HAZARD` reads the statement, but it still
+  stops a job whose phases were built: the unread operand may be the one
+  that sets a shape, and the emitted phase would otherwise carry SAS's
+  default where the job wrote something else.
 - **Prediction grids the parser cannot resolve are refused whole**, and
   an unresolved `INHAZ=` stops the render on purpose. Both are covered
   under "What it doesn't translate" below. Note that resolving an
