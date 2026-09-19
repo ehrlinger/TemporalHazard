@@ -148,11 +148,23 @@
   # syntax, not values: `data = d` with `d` NULL still names `d`, so a test
   # on the call let such a fit through (#310). The call is read only for an
   # object saved before the frame was stored.
-  no_data <- if ("frame" %in% names(fit$data)) {
-    is.null(fit$data$frame)
-  } else {
-    is.null(fit$call$data)
-  }
+  pre_frame <- !"frame" %in% names(fit$data)
+  no_data <- if (pre_frame) is.null(fit$call$data) else is.null(fit$data$frame)
+  # An object saved before 1.1.0 has neither the frame nor the record, so a
+  # vector-interface call that names `data` cannot be judged without
+  # evaluating it: `data = dd` reads the same whether `dd` was a data frame or
+  # NULL, and by the time a saved object is reloaded `dd` may be gone or
+  # rebound. Such a fit is refused whenever its phase looks inherited, which
+  # also refuses a fit that genuinely used a phase formula whose columns are
+  # the inherited names: a refit request, not a wrong number (#324). A fit
+  # with a record, or with no `data` in its call, is decided by the check
+  # before it.
+  # The vector interface is recognised by `time =` in the call, not by a
+  # missing formula: a wrapper writes `formula = fml`, a symbol even when
+  # `fml` was NULL, and without `call_env` (none before 1.2.2) a later
+  # binding of `fml` would decide the refit instead (#324).
+  vector_call <- is.null(fit$call$formula) || "time" %in% names(fit$call)
+  undecidable <- pre_frame && vector_call
   for (nm in names(fit$spec$phases)) {
     pf <- fit$spec$phases[[nm]]$formula
     has_terms <- !is.null(pf) && .hzr_phase_formula_has_terms(pf)
@@ -169,6 +181,19 @@
         paste(deparse(pf), collapse = " "), "`, that the fit ignored: it ",
         "was built without `data`, and a refit given `data` ", consequence,
         ". Refit the base model with `data =` and retry"
+      ))
+    }
+    if (!is.null(pf) && (has_x || has_terms) && undecidable &&
+          .hzr_phase_inherits_global(fit, nm)) {
+      return(paste0(
+        "phase '", nm, "' has a formula, `",
+        paste(deparse(pf), collapse = " "), "`, and the fit stores neither ",
+        "its data frame nor a record of whether a phase formula was used, as ",
+        "a fit saved before 1.1.0 does (or one whose `data$frame` was ",
+        "removed). Its columns are the ones the phase would inherit, so the ",
+        "fit could be either model, and a refit given `data` could be the ",
+        "other one. Refit the base model with the current version, passing ",
+        "`data =`, and retry"
       ))
     }
   }
@@ -392,7 +417,7 @@
     # under the likelihood while the base fit's `objective` is the SAS
     # density, so `delta_logLik` and `aic` would be differenced across two
     # estimands -- a full `$steps` table, no warning, wrong numbers.
-    do.call(hazard, c(
+    .hzr_muffle_intercept_warning(do.call(hazard, c(
       response_args,
       list(
         dist         = "multiphase",
@@ -403,7 +428,7 @@
         fit          = TRUE
       ),
       extra_args
-    ))
+    )))
   } else {
     # Single-distribution path: mutate the global formula, warm-start
     # theta by inserting / dropping the relevant beta slot. Unlike multiphase
@@ -445,7 +470,7 @@
       }
     }
 
-    do.call(hazard, c(
+    .hzr_muffle_intercept_warning(do.call(hazard, c(
       list(
         formula      = new_formula,
         data         = data,
@@ -456,6 +481,16 @@
         fit          = TRUE
       ),
       extra_args
-    ))
+    )))
   }
+}
+
+
+# A refit re-parses the base fit's formula, and the base fit already warned
+# that its intercept removal is ignored (#337); do not repeat it per step.
+.hzr_muffle_intercept_warning <- function(expr) {
+  withCallingHandlers(
+    expr,
+    hzr_intercept_removed = function(w) invokeRestart("muffleWarning")
+  )
 }

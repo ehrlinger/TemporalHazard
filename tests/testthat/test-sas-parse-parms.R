@@ -115,27 +115,28 @@ test_that("phase covariate options attach to their own variable (#342)", {
   )
   expect_equal(unname(tail(eval(got$theta), 2L)), c(0.5, 2))
 
-  # Per-variable MOVE= and ORDER=, and a word that is not an option, go to
-  # $untranslated under that variable's name; the variable stays in.
-  got <- .hzr_parse_parms(ops, covars = list(
-    early = "AGE/MOVE=2 ORDER = 1, MAL / FOO"
-  ))
+  # Per-variable MOVE= and ORDER= go to $untranslated under that variable's
+  # name; the variable stays in. (With no /E, /I or /S there is no semerr.)
+  got <- .hzr_parse_parms(ops, covars = list(early = "AGE/MOVE=2 ORDER = 1, MAL"))
   expect_equal(
     got$phases,
     quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1,
                          formula = ~AGE + MAL)))
   )
   u <- got$untranslated
-  expect_true(all(c("AGE/MOVE=2", "AGE/ORDER=1", "MAL/FOO") %in% u$construct))
+  expect_true(all(c("AGE/MOVE=2", "AGE/ORDER=1") %in% u$construct))
+  expect_length(got$rejected, 0L)
 
-  # Text SAS's lexer rejects is recorded, not read as something it is not: a
-  # second "/" in one item, and an option with no variable before it.
-  got <- .hzr_parse_parms(ops, covars = list(early = "AGE/E/I, MAL, /S, Y/"))
-  expect_equal(
-    got$phases,
-    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1, formula = ~MAL)))
-  )
-  expect_true(all(c("AGE/E/I", "/S", "Y/") %in% got$untranslated$construct))
+  # Text SAS's lexer rejects makes PROC HAZARD stop the whole job
+  # (hazard_l.l:176 sets yysynerr; initprz.c:75-77 exits "SYNTAX"). It used
+  # to be recorded while the job still fitted, without the variable: a fit
+  # for a job the reference never runs (#340). Each is now a rejection.
+  for (item in c("MAL / FOO", "AGE/E/I", "/S", "Y/", "AGE/EI", "AGE/MOVE",
+                 "AGE/ORDER=X")) {
+    got <- .hzr_parse_parms(ops, covars = list(early = paste0(item, ", Z")))
+    expect_length(got$rejected, 1L)
+    expect_match(got$rejected, "syntax error", info = item)
+  }
 
   # A repeated covariate is ONE parameter: setconc.c maps every occurrence to
   # the same slot and setstat.c runs for each, so the last occurrence sets
@@ -1502,4 +1503,78 @@ test_that("a shape that is not finite after SETG3's rewrites is recorded (#329 r
                            "FIXGAE2", "WEIBULL"))
   expect_false(any(grepl("not a finite number", ok$untranslated$reason,
                          fixed = TRUE)))
+})
+
+test_that("glued phase options are a syntax error; spaced ones follow precedence (#340)", {
+  ops <- c("MUE=0.2", "THALF=1", "NU=1")
+  # hazard_l.l:176's word rule matches `EI` whole, beating `E` on flex's
+  # longest match, so `/EI` is unexpected text and SAS stops the job.
+  got <- .hzr_parse_parms(ops, covars = list(early = "AGE/EI, Y"))
+  expect_match(got$rejected, "hazard_l.l:176", fixed = TRUE)
+  # `/E I` lexes as EXCLUDE then INCLUDE (whitespace is skipped,
+  # hazard_l.l:50); several options may follow one "/" (hazard_y.y:224-225),
+  # and EXCLUDE takes precedence (przconc.c:35-39): AGE is excluded.
+  got <- .hzr_parse_parms(ops, covars = list(early = "AGE/E I, Y"))
+  expect_length(got$rejected, 0L)
+  expect_equal(got$phases,
+               quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1, formula = ~Y))))
+  # The long forms lex as the keywords: equal length, and the earlier rule wins.
+  got <- .hzr_parse_parms(ops, covars = list(early = "AGE/EXCLUDE, Y"))
+  expect_length(got$rejected, 0L)
+})
+
+test_that("ORDER= with /E, /I or /S is rejected, as przconc.c rejects it (#340)", {
+  ops <- c("MUE=0.2", "THALF=1", "NU=1")
+  for (flag in c("E", "I", "S")) {
+    got <- .hzr_parse_parms(ops, covars = list(early = paste0("AGE/", flag, " ORDER=2, Y")))
+    expect_length(got$rejected, 1L)
+    expect_match(got$rejected, "przconc.c:45-53", fixed = TRUE, info = flag)
+    expect_match(got$rejected, "mutually exclusive", info = flag)
+  }
+  # ORDER= alone sets no semerr.
+  got <- .hzr_parse_parms(ops, covars = list(early = "AGE/ORDER=2, Y"))
+  expect_length(got$rejected, 0L)
+})
+
+test_that("each syntax-error form names its own source, not a shared one (#340)", {
+  ops <- c("MUE=0.2", "THALF=1", "NU=1")
+  # Stated per string before running: the source that rejects it.
+  cases <- c(
+    "AGE/EI"      = "hazard_l.l:176",   # word rule matches EI whole
+    "MAL / FOO"   = "hazard_l.l:176",   # FOO is no option keyword
+    "AGE/ORDER=X" = "hazard_l.l:176",   # X after = is unexpected text
+    "AGE/E/I"     = "hazard_l.l:178",   # no "/" rule in the option state
+    "/S"          = "hazard_y.y:210",   # an option before any variable
+    "Y/"          = "hazard_y.y:220-225", # "/" with no option after it
+    "AGE/MOVE"    = "hazard_y.y:228-232", # MOVE needs = NUMBER
+    "AGE/MOVE="   = "hazard_y.y:228-232", # "=" lexes; the NUMBER is missing
+    "AGE/E=2"     = "hazard_y.y:228-232", # E takes no value
+    # A value R reads as a number but the lexer does not (hazard_l.l:34-38
+    # has no Inf, no exponent without a decimal point, no trailing ".").
+    "AGE/MOVE=INF" = "hazard_l.l:176",  # no name rule after "/": a word
+    "AGE/MOVE=1E5" = "hazard_l.l:176",  # longest match: word beats NUMBER "1"
+    "AGE/ORDER=5." = "hazard_l.l:176",
+    "AGE/MOVE=+5"  = "hazard_l.l:178",  # "+" has no rule at all
+    "AGE/MOVE=I"   = "hazard_y.y:228-232", # I lexes as INCLUDE, not NUMBER
+    # The same after a phase variable, where a name lexes whole as NAME.
+    "AGE=INF"      = "hazard_y.y:216-218", # NAME where NUMBER belongs
+    "AGE=abc"      = "hazard_y.y:216-218",
+    "AGE=1E5"      = "hazard_l.l:176",
+    "AGE=0x1A"     = "hazard_l.l:176",
+    "AGE=+5"       = "hazard_l.l:178",
+    "AGE="         = "hazard_y.y:216-218") # "=" lexes; the NUMBER is missing
+  for (item in names(cases)) {
+    got <- .hzr_parse_parms(ops, covars = list(early = paste0(item, ", Z")))
+    expect_length(got$rejected, 1L)
+    expect_match(got$rejected, cases[[item]], fixed = TRUE, info = item)
+    expect_match(got$rejected, "initprz.c:75-77", fixed = TRUE, info = item)
+  }
+  # And forms SAS accepts are not rejected: long forms beat the word rule on
+  # equal length by coming first; several flags may follow one "/".
+  for (item in c("AGE/EXCLUDE", "AGE/START", "AGE/ORDER=2", "AGE/MOVE = 3",
+                 "AGE/E I", "AGE/S MOVE=2", "AGE=-0.5", "AGE=.5",
+                 "AGE=1.5E-3", "AGE=5")) {
+    got <- .hzr_parse_parms(ops, covars = list(early = paste0(item, ", Z")))
+    expect_length(got$rejected, 0L)
+  }
 })

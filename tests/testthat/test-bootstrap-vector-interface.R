@@ -542,3 +542,16 @@ test_that("a fit whose call names a NULL formula and no data says why it cannot 
   expect_match(msg, "cannot count the rows to resample", fixed = TRUE)
   expect_no_match(msg, "length(n)", fixed = TRUE)
 })
+
+test_that("a not-a-fit reason agrees its article with a vowel-initial class", {
+  # The reason is a tallied key, so its article follows the class's first
+  # letter (ledger item 2): "an integer", where it read "a integer". The
+  # existing keys above pin consonant classes and cannot catch that.
+  expect_identical(.hzr_bootstrap_not_a_fit(1L),
+                   "refit returned an integer, not a fit object")
+  expect_identical(.hzr_bootstrap_not_a_fit(structure(list(fit = 1), class = "alpha")),
+                   "refit returned an alpha with no `fit`, not a fit object")
+  # A consonant-initial class keeps the key it always had.
+  expect_identical(.hzr_bootstrap_not_a_fit(1.5),
+                   "refit returned a numeric, not a fit object")
+})

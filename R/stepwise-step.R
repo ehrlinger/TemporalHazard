@@ -61,6 +61,22 @@
              paste(sQuote(unknown), collapse = ", "),
              call. = FALSE)
       }
+      # Only the single-distribution scope takes a character vector; here one
+      # used to fail in the term reader with a message naming neither
+      # `scope` nor the phase (#328).
+      for (p in names(scope)) {
+        sc <- scope[[p]]
+        if (!is.null(sc) && !inherits(sc, "formula")) {
+          stop("`scope$", p, "` must be a one-sided formula such as ",
+               "`~ age + mal`, or NULL, not ",
+               # The class follows a fixed article: "not a integer" was the
+               # interpolated form (ledger item 2).
+               if (is.character(sc)) "a character vector" else
+                 paste0("an object of class ", class(sc)[1L]),
+               ". A multiphase `scope` is a named list of formulas keyed by ",
+               "phase.", call. = FALSE)
+        }
+      }
     }
 
     candidates <- list()
@@ -197,6 +213,8 @@
         df        = integer(),
         stringsAsFactors = FALSE
       ),
+      n_uncomputable = 0L,
+      uncomputable_reasons = stats::setNames(integer(0), character(0)),
       refit_failures = character(),
       refit_failure_reasons = character()
     )
@@ -289,12 +307,28 @@
   # them in a parallel list keyed by row for winner lookup.
   candidate_fits <- lapply(rows, function(r) attr(r, "fit"))
 
+  # A candidate whose refit converged but whose Wald p-value is NA was not
+  # tested: the refit has no usable variance for the entered coefficient.
+  # It stays out of the model exactly as if it had missed `slentry`, so count
+  # it, as the backward step counts an untested removal (#389).  A failed
+  # refit also scores NA, but is reported as a refit failure.  Under AIC the
+  # score needs no variance, so an NA there is a non-finite objective.
+  refit_ok <- vapply(candidate_fits, inherits, logical(1L), what = "hazard")
+  n_uncomputable <- sum(is.na(all_scores$score) & refit_ok)
+  uncomputable_reasons <- .hzr_tally_reasons(rep(
+    if (criterion == "wald") "wald_no_variance" else "nonfinite",
+    n_uncomputable
+  ))
+
   valid <- which(!is.na(all_scores$score))
   if (length(valid) == 0L) {
     out <- null_result()
     out$all_scores <- all_scores
+    out$n_uncomputable <- n_uncomputable
+    out$uncomputable_reasons <- uncomputable_reasons
     out$refit_failures <- failures
     out$refit_failure_reasons <- failure_reasons
+    if (n_uncomputable > 0L) out$stop_reason <- "scores_uncomputable"
     return(out)
   }
 
@@ -310,6 +344,8 @@
   if (!threshold_met) {
     out <- null_result()
     out$all_scores <- all_scores
+    out$n_uncomputable <- n_uncomputable
+    out$uncomputable_reasons <- uncomputable_reasons
     out$refit_failures <- failures
     out$refit_failure_reasons <- failure_reasons
     return(out)
@@ -327,6 +363,8 @@
     stat_type = best$stat_type,
     df        = best$df,
     all_scores = all_scores,
+    n_uncomputable = n_uncomputable,
+    uncomputable_reasons = uncomputable_reasons,
     refit_failures = failures,
     refit_failure_reasons = failure_reasons
   )
@@ -711,6 +749,12 @@
 #'     built (an unusable factor, say) fails in the refit with its own
 #'     message.  The reason then says the drop removes no
 #'     column, and `accepted` is `FALSE` with the current fit returned.
+#'   * `n_uncomputable` and `uncomputable_reasons` count the candidates
+#'     this step could not TEST: not forced in, with an `NA` score because
+#'     the current model has no usable variance for the coefficient (#389).
+#'     `stop_reason` is `"scores_uncomputable"` when that left no candidate
+#'     to decide on, so the caller can tell it from nothing meeting
+#'     `slstay`.
 #'
 #' @keywords internal
 #' @noRd
@@ -739,6 +783,11 @@
     stringsAsFactors = FALSE
   )
 
+  # Read by null_result() when it is called, so a result built after the
+  # scores carries their count.
+  n_uncomputable <- 0L
+  uncomputable_reasons <- stats::setNames(integer(0), character(0))
+
   null_result <- function(all_scores = empty_scores) {
     list(
       accepted  = FALSE,
@@ -752,6 +801,8 @@
       stat_type = NA_character_,
       df        = NA_integer_,
       all_scores     = all_scores,
+      n_uncomputable = n_uncomputable,
+      uncomputable_reasons = uncomputable_reasons,
       refit_failures = character(),
       refit_failure_reasons = character()
     )
@@ -790,9 +841,22 @@
   }
   all_scores <- do.call(rbind, rows)
 
+  # A removal candidate with an NA score was not tested: the current model
+  # has no usable variance for its coefficient (an interval-censored
+  # multiphase fit without numDeriv has none at all).  It stays in the model
+  # exactly as if it had met `slstay`, so count it, as the forward step
+  # counts an entry it could not score (#389).  A forced-in variable is never
+  # a removal candidate, so its missing test costs nothing.
+  n_uncomputable <- sum(!all_scores$force_in & is.na(all_scores$score))
+  uncomputable_reasons <- .hzr_tally_reasons(
+    rep("wald_no_variance", n_uncomputable)
+  )
+
   eligible <- which(!all_scores$force_in & !is.na(all_scores$score))
   if (length(eligible) == 0L) {
-    return(null_result(all_scores))
+    out <- null_result(all_scores)
+    if (n_uncomputable > 0L) out$stop_reason <- "scores_uncomputable"
+    return(out)
   }
 
   best_idx <- eligible[which.min(all_scores$score[eligible])]
@@ -908,6 +972,8 @@
     stat_type = best$stat_type,
     df        = best$df,
     all_scores     = all_scores,
+    n_uncomputable = n_uncomputable,
+    uncomputable_reasons = uncomputable_reasons,
     refit_failures = character(),
     refit_failure_reasons = character()
   )

@@ -504,7 +504,9 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
       "tests/testthat/test-sas-parity.R. Read the selected model as this",
       "package's screen of this job's candidates, not as a reproduction of",
       "the SAS run, and compare it against the SAS listing before relying on",
-      "it. Any candidate the screen could not score is reported by the",
+      "it. A candidate the screen could not test is reported: by",
+      "hzr_stepwise() itself when that stopped the screen or left a",
+      "variable untested for want of a variance, and otherwise by the",
       "uncomputable-score check below it."
     ), collapse = " ")
   )
