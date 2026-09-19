@@ -53,6 +53,35 @@
   fit$spec$objective %||% "likelihood"
 }
 
+# Was `fit` made through the vector interface (`time =`, `status =`)?
+# Normally the stored call says so: `hazard(formula, data)` records no
+# `time =`. A wrapper that forwards its formula argument by variable defeats
+# that, because `formula = fml` stores a symbol even when `fml` was NULL, and
+# the fit is then taken for a formula fit (#406).
+#
+# This recognises ONE such shape, the one #406 measured: the call names
+# `time =`, the fit stores no design of either kind, and the name is STILL
+# bound to NULL where the fit was made. Such a fit has nothing a formula
+# could disagree about -- no covariates were built from one -- and its
+# replicates come out identical to the same fit made without the wrapper.
+#
+# Every other shape keeps the behaviour it has: a fit that stores a design,
+# a fit whose name is bound to something else, and a fit that records no
+# `call_env` are all left to the formula path, where they fail loudly with a
+# message about resolving the name. Deciding those needs to know which
+# interface hazard() used, and a stored call plus a live binding cannot say:
+# three measured shapes get it wrong in both directions (see the 1.3.1
+# issue). The fix there is for hazard() to record the interface when it fits.
+.hzr_wrapper_vector_call <- function(fit) {
+  f <- fit$call$formula
+  if (is.null(f)) return(TRUE)
+  if (!"time" %in% names(fit$call)) return(FALSE)
+  if (!is.null(fit$data$x) || !is.null(fit$data$x_design)) return(FALSE)
+  env <- fit$call_env
+  is.environment(env) &&
+    is.null(tryCatch(eval(f, env), error = function(e) e))
+}
+
 #' Why a fit cannot be refit with a mutated scope
 #'
 #' Single decision point for "can `.hzr_refit_with_scope()` handle this
@@ -88,7 +117,7 @@
   if (!is.null(inherit_blocker)) {
     return(inherit_blocker)
   }
-  if (!is.null(fit$call$formula)) {
+  if (!.hzr_wrapper_vector_call(fit)) {
     return(NULL)
   }
 
@@ -246,7 +275,7 @@
   fix <- paste0(". Give each phase its covariates with ",
                 "hzr_phase(formula = ~ ...), with the columns in `data`")
 
-  if (is.null(fit$call$formula)) {
+  if (.hzr_wrapper_vector_call(fit)) {
     # Ask the design that was built, not the call: an `x` argument bound to
     # NULL names `x` but built no columns, so an inheriting phase loses none.
     if (!is.null(fit$data$x) && ncol(fit$data$x) > 0L) {
@@ -371,7 +400,7 @@
   # Recover the original formula; see .hzr_stored_formula() for why this
   # cannot be a deparse. A vector-interface fit has none -- which the blocker
   # above has already established is survivable on the multiphase path only.
-  has_formula <- !is.null(current$call$formula)
+  has_formula <- !.hzr_wrapper_vector_call(current)
   current_formula <- if (has_formula) {
     .hzr_stored_formula(current, "`current`")
   } else {

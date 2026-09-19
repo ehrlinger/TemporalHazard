@@ -1932,7 +1932,10 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # A select-mode screen draws its candidate columns from the fit's `data`. A
   # vector fit made without `data =` has none, so its candidates would be read
   # from the environment and never resampled with the rows.
-  vector_interface <- is.null(cl$formula) && !is.null(cl$time)
+  # `.hzr_wrapper_vector_call()` also recognises the one wrapper shape of
+  # #406: `formula = fml` with the name still bound to NULL, no stored
+  # design, beside `time =`.
+  vector_interface <- .hzr_wrapper_vector_call(object) && !is.null(cl$time)
   if (select_mode && vector_interface && is.null(orig_data)) {
     stop("hzr_bootstrap(): `scope` selection draws its candidate columns ",
          "from the fit's `data =`, and this vector-interface fit was made ",
