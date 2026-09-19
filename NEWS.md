@@ -740,6 +740,30 @@
 
 ## Bug fixes
 
+* **A single-distribution `theta` must have one entry per parameter, and a
+  Weibull scale and shape must be positive, fitted or not (#375, #383).**
+  `hazard()` compared a supplied `theta` only with the design's column
+  count, as a lower bound, so a wrong length was caught only sometimes, and
+  when it was not, the result could be wrong. With `fit = TRUE`, some wrong
+  lengths failed with an unrelated error (`non-conformable arguments`), and
+  some fitted silently: a `theta` holding only the shape parameters fitted
+  the model with its covariates dropped, and on a one-covariate model a
+  `theta` one entry too long returned its starting values unfitted. With
+  `fit = FALSE` the object was built, and `predict()` then either failed
+  with an unrelated message or, for a model with no covariates given an
+  extra entry, applied it to a `newdata` column the model never had and
+  returned a wrong prediction with no warning. A Weibull scale or shape at
+  or below zero failed with `non-finite value supplied by optim`. Both are
+  now refused, naming the lengths or the parameter, for example
+  `'theta' has 2 entries, but this weibull model takes 3: 2 shape
+  parameters, then one coefficient per column of the design (1 column).`
+  The count is the likelihood's, so `control$shape_param_count`, which the
+  likelihood ignores, does not change it. Unlike a multiphase model (#408),
+  an unfitted single-distribution model is refused too: its parameter count
+  is known without fitting, and an object of the wrong length could not be
+  predicted from correctly. A multiphase specification may carry fewer
+  entries until a fit resolves its phases' designs.
+
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded
   as untranslated and build no phase. PROC HAZARD runs that phase on its own
