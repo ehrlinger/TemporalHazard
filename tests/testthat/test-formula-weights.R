@@ -1,8 +1,9 @@
 # On the formula interface, `weights = <name>` is looked up in `data` first,
-# then the calling frame, as the vector interface has done since #151 and as
-# stats::lm() does (#392). It used to skip `data`: a column-only name was not
-# found, and a name bound both as a column and in the calling frame silently
-# read the calling frame's vector.
+# then the calling frame, as the vector interface has done since #151 (#392).
+# The formula path used to skip `data`: a column-only name was not found, and
+# a name bound both as a column and in the calling frame silently read the
+# calling frame's vector. stats::lm() also looks in `data` first, but falls
+# back to the formula's environment, not the calling frame.
 
 # The weights column is named fw_wcol, a name no caller plausibly has: the
 # column-only test asserts no ambiguity warning, which is correct only while
@@ -126,7 +127,7 @@ test_that("an ambiguous argument inside a namespace-qualified call still warns",
 
 test_that("the ambiguity warning's advice works when followed, on both interfaces", {
   # It used to say "Write data$<name>", and in the caller's frame `data` is
-  # usually base::data(), so following it errored (#401 review). The advice
+  # usually utils::data(), so following it errored (#401 review). The advice
   # now names the caller's own data argument when that is a plain symbol.
   d <- fw_data()
   advice_value <- function(msg, env) {
@@ -181,4 +182,111 @@ test_that("the ambiguity warning falls back when data is not a plain name", {
     expect_match(m, "the data frame passed as 'data'")
     expect_false(grepl("data$", m, fixed = TRUE))
   }
+})
+
+# The warning says "The column was used" only when the argument is the name
+# alone. Inside a larger expression the name may never be evaluated (a lazy
+# function argument), may be rebound first (a loop variable, an assignment)
+# or may be evaluated elsewhere (with()), so the warning does not say which
+# value was read (#401 review).
+# Each case compares the fit's objective with the two candidate vectors,
+# because a message test passes whether or not the column was used.
+fw_fit <- function(d, wexpr, env = parent.frame()) {
+  msgs <- character()
+  fit <- withCallingHandlers(
+    eval(bquote(hazard(survival::Surv(t, s) ~ x, data = .(d),
+                       weights = .(wexpr), dist = "weibull",
+                       theta = c(1, 1, 0), fit = TRUE)), env),
+    warning = function(w) {
+      msgs <<- c(msgs, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
+  )
+  amb <- msgs[grepl("both a column", msgs)]
+  list(objective = fit$fit$objective, ambiguity = length(amb),
+       definite = sum(grepl("The column was used", amb, fixed = TRUE)),
+       unchecked = sum(grepl("which value it read, if any, is not checked",
+                             amb, fixed = TRUE)))
+}
+
+test_that("a name inside a larger expression warns without saying which value was used", {
+  d <- fw_data()
+  fw_wcol <- rep(1, 40)
+  column <- fw_fit(d, quote(d$fw_wcol))$objective
+  frame <- fw_fit(d, quote(rep(1, 40)))$objective
+  expect_false(isTRUE(all.equal(frame, column)))
+  here <- environment()
+  # The objective goes either way; the message must be true for both.
+  shapes <- list(
+    list(quote((function(a) rep(1, 40))(fw_wcol)), frame),
+    list(quote((function(fw_wcol) fw_wcol)(rep(1, 40))), frame),
+    list(quote({
+      for (fw_wcol in list(rep(1, 40))) NULL
+      fw_wcol
+    }), frame),
+    list(quote({
+      fw_wcol <- rep(1, 40)
+      fw_wcol
+    }), frame),
+    list(quote(with(list(fw_wcol = rep(1, 40)), fw_wcol)), frame),
+    # `here` is bound before the call: environment() inside the argument
+    # would return the data mask itself.
+    list(quote(local(fw_wcol, envir = here)), frame),
+    list(quote(local(fw_wcol)), column),
+    list(quote((function() fw_wcol)()), column),
+    list(quote(sapply(1:40, function(i, k = fw_wcol) k[i])), column),
+    list(quote(fw_wcol * 1), column)
+  )
+  for (s in shapes) {
+    got <- fw_fit(d, s[[1]])
+    expect_identical(got$objective, s[[2]], label = deparse(s[[1]]))
+    expect_identical(got$ambiguity, 1L, label = deparse(s[[1]]))
+    expect_identical(got$definite, 0L, label = deparse(s[[1]]))
+    expect_identical(got$unchecked, 1L, label = deparse(s[[1]]))
+  }
+  # The name alone is the one case where the column is known to be read.
+  got <- fw_fit(d, quote(fw_wcol))
+  expect_identical(got$objective, column)
+  expect_identical(got$definite, 1L)
+})
+
+test_that("an empty index in a masked argument does not stop the fit", {
+  # `m[, 2]` carries the empty symbol, which is no name to look up; it
+  # errored "invalid first argument" (vector interface since 1.2.2).
+  d <- fw_data()
+  wm <- cbind(1, d$fw_wcol)
+  want <- hazard(survival::Surv(t, s) ~ x, data = d, weights = d$fw_wcol,
+                 dist = "weibull", theta = c(1, 1, 0), fit = TRUE)
+  expect_no_warning(
+    got <- hazard(survival::Surv(t, s) ~ x, data = d, weights = wm[, 2],
+                  dist = "weibull", theta = c(1, 1, 0), fit = TRUE)
+  )
+  expect_identical(got$fit$objective, want$fit$objective)
+  tm <- cbind(d$t, 0)
+  want_v <- hazard(time = d$t, status = d$s, data = d, dist = "weibull",
+                   theta = c(1, 1), fit = TRUE)
+  expect_no_warning(
+    got_v <- hazard(time = tm[, 1], status = d$s, data = d,
+                    dist = "weibull", theta = c(1, 1), fit = TRUE)
+  )
+  expect_identical(got_v$fit$objective, want_v$fit$objective)
+})
+
+test_that("an expression the ambiguity check cannot walk is fitted unchecked", {
+  # A generated expression can nest deeper than the walk can recurse. The
+  # check is a diagnostic, so its failure must not stop a fit that main
+  # made (#401 review). The walk's failure is simulated: the depth at which
+  # recursion fails differs by platform.
+  d <- fw_data()
+  fw_wcol <- rep(1, 40)
+  want <- hazard(survival::Surv(t, s) ~ x, data = d, weights = d$fw_wcol,
+                 dist = "weibull", theta = c(1, 1, 0), fit = TRUE)
+  local_mocked_bindings(
+    .hzr_ambiguity_symbols = function(e) stop("evaluation nested too deeply")
+  )
+  expect_no_warning(
+    got <- hazard(survival::Surv(t, s) ~ x, data = d, weights = fw_wcol,
+                  dist = "weibull", theta = c(1, 1, 0), fit = TRUE)
+  )
+  expect_identical(got$fit$objective, want$fit$objective)
 })

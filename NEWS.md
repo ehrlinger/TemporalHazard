@@ -88,27 +88,42 @@
     errors are unavailable, with a warning.
 * **A formula fit given `weights = <name>` could silently use the wrong
   weights: re-run any where that name was also a variable in your session
-  (#392).** On the formula interface, `hazard()` did not look `weights` up in
-  `data`. A name that was only a column of `data` failed with "object not
+  (#392).** On the formula interface, `hazard()` did not look `weights` up
+  in `data`. A name that was only a column of `data` failed with "object not
   found", but a name that was both a column and a variable in the calling
   frame (`wc <- d$wc`, a leftover from an earlier step) silently used the
   variable, not the column, with no error and no warning. On a 40-row
   example with a unit-weight `wc` beside the intended column, the
   log-likelihood was -34.23592435 instead of -33.53365357; the size of the
   error depends on how far the two vectors differ. `weights` is now looked
-  up in `data` first, then the calling frame, as `stats::lm()` does and as
-  the vector interface (`time =`, `status =`) already did. When a name is
-  both a column and a visible variable, the column is used and `hazard()`
-  now warns, naming it, on both interfaces. If you see that warning, the
-  fit may differ from one made by an earlier version. A name that is only a
-  column, or only a variable, does not warn. Nor does the namespace or
-  function name in a qualified call such as `base::abs(w)`, which is never
-  looked up in `data`; that false warning had been raised on the vector
-  interface since 1.2.2 (#151), and only the call's own arguments are now
-  checked. The warning's advice now names the data frame the call passed,
-  as in `d$w`. Since 1.2.2 the vector interface had advised `data$<name>`,
-  which finds `utils::data()` rather than the data frame, so following it
-  was an error.
+  up in `data` first, then the calling frame, as the vector interface (`time
+  =`, `status =`) already did. `stats::lm()` also looks in `data` first, but
+  then in the formula's environment, not the caller's. When a name is both a
+  column and a visible variable, the column is used and `hazard()` now
+  warns, naming it, on both interfaces. If you see that warning, the fit may
+  differ from one made by an earlier version. A name that is only a column,
+  or only a variable, does not warn. Nor does the namespace or function name
+  in a qualified call such as `base::abs(w)`, which is never looked up in
+  `data`; that false warning had been raised on the vector interface since
+  1.2.2 (#151), and only the call's own arguments are now checked. The
+  warning's advice now names the data frame the call passed, as in `d$w`.
+  Since 1.2.2 the vector interface had advised `data$<name>`, which finds
+  `utils::data()` rather than the data frame, so following it was an error.
+  The warning reads the names written in the expression: a name chosen at
+  run time, as in `get(nm)`, is resolved the same way, column first, as in
+  `stats::lm()`, but is not checked. That is not new; the vector interface
+  has behaved so since 1.2.2. When the name is part of a larger expression,
+  such as `(function(a) 1)(w)` or `{ w <- 1; w }`, the warning no longer
+  says the column was used, because the expression may never read the name,
+  may rebind it first, or may evaluate it elsewhere, as `with()` does; it
+  says instead that which value it read, if any, is not checked.
+
+* **A masked argument with an empty index, such as `time = m[, 1]`, no
+  longer fails when `data` is given.** Since 1.2.2, `hazard(time = m[, 1],
+  status = s, data = d)` stopped with "invalid first argument": the check
+  for names that are both a column and a caller variable tried to look up
+  the empty index as a name. It now skips it, on the vector interface and on
+  the formula interface's `weights = m[, 2]`.
 
 * **A multiphase phase formula without an intercept no longer drops its
   first term (#303).** `hzr_phase(formula = ~ 0 + age)` or `~ age - 1`

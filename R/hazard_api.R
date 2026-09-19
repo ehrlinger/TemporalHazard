@@ -190,6 +190,17 @@ NULL
 #'   a caller variable wins, and because that silently discards the caller's
 #'   vector (the way a wrapper forwarding its own argument by name does),
 #'   such a name raises a warning naming the symbol and the argument.
+#'   The warning reads the names written in the expression. When the
+#'   argument is the name alone, it says the column was used. When the name
+#'   is part of a larger expression, it does not say which value was read:
+#'   the expression may never evaluate the name (an unused function
+#'   argument), may rebind it first (a loop variable, an assignment) or may
+#'   evaluate it somewhere else (`with()`), and the warning cannot tell. A name chosen at run time, as in `get(nm)` or
+#'   `eval(as.name(nm))`, resolves the same way, column first, as it does in
+#'   [stats::lm()], but is not checked; the vector path has behaved so since
+#'   1.2.2. No second evaluation is made to compare the two values, because
+#'   evaluating an expression such as `runif(n)` twice gives two different
+#'   vectors.
 #'   Masked arguments are validated like any other, so an `NA` in a
 #'   masked column errors: an `NA` count on the SAS `ICENSOR`
 #'   path reaches `weights` and stops with `'weights' must be
@@ -218,10 +229,12 @@ NULL
 #' @param weights Optional numeric vector of observation weights (non-negative).
 #'   Each observation's log-likelihood contribution is multiplied by its weight.
 #'   Use for severity-weighted repeated events. Default `NULL` (unit weights).
-#'   Implements the SAS `WEIGHT` statement. With `data`, a bare name is looked
-#'   up among its columns first and then in the calling environment, on both
-#'   interfaces, as [stats::lm()] does; see `data` for the warning raised
-#'   when a name is both.
+#'   Implements the SAS `WEIGHT` statement. With `data`, a name is looked up
+#'   among its columns first and then in the calling environment, on both
+#'   interfaces. [stats::lm()] also looks in `data` first, but then in the
+#'   formula's environment rather than the caller's, so a formula built
+#'   inside another function does not bring that function's variables with
+#'   it here. See `data` for the warning raised when a name is both.
 #' @param control Named list of control options (see Details).
 #' @param objective Which interval-censored contribution the multiphase
 #'   likelihood accumulates. `"likelihood"` (default) uses the interval
@@ -636,10 +649,11 @@ hazard <- function(formula = NULL,
     x_design <- parsed$x_design
 
     # `weights` is looked up in `data` first, then the calling frame, by the
-    # rule the vector path below applies, as stats::lm() does (#392). It
-    # used to skip `data`: a column-only name was not found, and a name
-    # bound both as a column and in the calling frame silently read the
-    # calling frame's vector.
+    # rule the vector path below applies (#392). This path used to skip
+    # `data`: a column-only name was not found, and a name bound both as a
+    # column and in the calling frame silently read the calling frame's
+    # vector. stats::lm() also looks in `data` first, but falls back to the
+    # formula's environment, not the calling frame.
     .hzr_warn_masked_ambiguity(list(weights = substitute(weights)), data,
                                parent.frame(), interface = "formula",
                                data_arg = data_arg)
@@ -2770,6 +2784,8 @@ vcov.hazard <- function(object, ...) {
 #' @param data The data frame or list the arguments are masked by.
 #' @param env The calling frame.
 #' @param interface `"vector"` or `"formula"`, choosing the remedy clause.
+#' @param data_arg The caller's unevaluated `data` argument, named in the
+#'   advice when it is a plain symbol.
 #' @return `NULL`, invisibly; warns naming each ambiguous name.
 #' @keywords internal
 #' @noRd
@@ -2785,10 +2801,41 @@ vcov.hazard <- function(object, ...) {
     # all.vars(quote(other$tt)) is c("other", "tt") and the warning names
     # `tt` -- a column that was never consulted -- while `data$tt`, the
     # remedy the warning itself prescribes, triggers it.
-    nms <- .hzr_ambiguity_symbols(e)
+    # The warning is a diagnostic: an expression too deeply nested to walk
+    # (generated code) is fitted unchecked rather than refused (#401 review).
+    nms <- tryCatch(.hzr_ambiguity_symbols(e),
+                    error = function(err) character(0))
     nms[nms %in% names(data) &
           vapply(nms, .hzr_bound_locally, logical(1), env = env)]
   })
+  # Only an argument that is the name alone is known to have read the
+  # column. Inside a larger expression the name may never be evaluated (a
+  # lazy function argument), may be rebound first (a loop variable, an
+  # assignment) or may be evaluated elsewhere (with(), local(envir =)), and
+  # no reading of the syntax can tell (#401 review). So that case says
+  # nothing about which value was used.
+  bare <- vapply(exprs, is.symbol, logical(1))
+  .hzr_warn_ambiguous_names(ambiguous[bare], "The column was used. ",
+                            interface, data_arg)
+  .hzr_warn_ambiguous_names(
+    ambiguous[!bare],
+    paste0("The name is part of a larger expression, and which value it ",
+           "read, if any, is not checked. "),
+    interface, data_arg
+  )
+  invisible(NULL)
+}
+
+#' Emit the ambiguity warning for one class of names
+#'
+#' @param ambiguous Named list (by argument) of ambiguous names.
+#' @param outcome The sentence saying what is known about the value used.
+#' @inheritParams .hzr_warn_masked_ambiguity
+#' @return `NULL`, invisibly.
+#' @keywords internal
+#' @noRd
+.hzr_warn_ambiguous_names <- function(ambiguous, outcome, interface,
+                                      data_arg) {
   ambiguous <- ambiguous[lengths(ambiguous) > 0L]
   if (length(ambiguous) > 0L) {
     warning(
@@ -2798,9 +2845,9 @@ vcov.hazard <- function(object, ...) {
                                          lengths(ambiguous))),
                              collapse = ", "),
       ": the name is both a column of 'data' and a variable visible from ",
-      "the calling frame. The column was used. ",
+      "the calling frame. ", outcome,
       # Name the caller's own data argument only when it is a plain symbol:
-      # `data` itself is usually base::data() in the caller's frame, and an
+      # `data` itself is usually utils::data() in the caller's frame, and an
       # inline expression or magrittr's `.` cannot be written as a prefix.
       if (is.symbol(data_arg) && !identical(data_arg, quote(.))) {
         paste0("Write ", deparse(data_arg), "$<name> for the column, or ")
@@ -2852,7 +2899,14 @@ vcov.hazard <- function(object, ...) {
   if (!is.symbol(head)) {
     parts <- c(list(head), parts)
   }
-  unique(unlist(lapply(parts, .hzr_ambiguity_symbols), use.names = FALSE))
+  # A function literal's defaults are expressions too, but they sit in a
+  # pairlist, which is not a call, so the walk would skip them.
+  if (is.symbol(head) && identical(as.character(head), "function")) {
+    parts <- c(as.list(e[[2L]]), list(e[[3L]]))
+  }
+  nms <- unlist(lapply(parts, .hzr_ambiguity_symbols), use.names = FALSE)
+  # A missing argument, as in `x[, j]`, is the empty symbol; it names nothing.
+  unique(nms[nzchar(nms)])
 }
 
 #' Apply `.hzr_numeric_values()` to every column of a data frame or list
