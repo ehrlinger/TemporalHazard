@@ -1053,20 +1053,22 @@
     # scores, and hzr_stepwise() now names each such variable itself, as it
     # does when a screen STOPPED on uncomputable candidates. This check says
     # only what the screen has not already said (#400).
+    # Every local is dot-prefixed: the chunk runs in the reader's session, so
+    # a bare name would overwrite the reader's object of that name (#400).
     screen_check_call <- bquote({
       .reasons <- fit$criteria$uncomputable_reasons
       if (is.null(.reasons)) .reasons <- integer(0)
       .reasons <- .reasons[names(.reasons) != "wald_no_variance"]
-      n_unscored <- sum(.reasons)
-      if (n_unscored > 0L && !isTRUE(fit$criteria$stopped_uncomputable)) {
-        warning(n_unscored, " candidate score(s) could not be computed in ",
+      .n_unscored <- sum(.reasons)
+      if (.n_unscored > 0L && !isTRUE(fit$criteria$stopped_uncomputable)) {
+        warning(.n_unscored, " candidate score(s) could not be computed in ",
                 "this screen (", paste0(names(.reasons), " = ", .reasons,
                                   collapse = ", "),
                 "); see ", .(quote(fit_label)),
                 "$criteria$uncomputable_reasons. A candidate the screen ",
                 "could not score was not tested at that step.", call. = FALSE)
       }
-      invisible(n_unscored)
+      invisible(.n_unscored)
     })
   }
 

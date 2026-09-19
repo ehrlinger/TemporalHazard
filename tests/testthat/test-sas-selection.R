@@ -820,6 +820,30 @@ test_that("the screen refits under the job's own control, not hazard()'s default
   expect_equal(final$spec$control$maxit, 77)
 })
 
+test_that("the screen check leaves the reader's own objects alone (#400)", {
+  # The chunk runs in the reader's session, so each local it creates shares
+  # a namespace with the job's data: a bare `rs` would have overwritten a
+  # job's DATA=rs, and a bare `n_unscored` a variable of that name (Codex on
+  # #419). Assert the property, not the name: a pre-existing object keeps
+  # its value, and the chunk adds no non-dotted name to the frame, whether
+  # it warns or not.
+  job <- .sel_job("SELECTION SLE=0.2; EARLY STRONG, NOISE;")
+  for (reasons in list(c(nuisance_singular = 2L),
+                       stats::setNames(integer(0), character(0)))) {
+    env <- new.env(parent = baseenv())
+    env$fit <- list(criteria = list(n_uncomputable_scores = sum(reasons),
+                                    uncomputable_reasons = reasons,
+                                    stopped_uncomputable = FALSE))
+    env$n_unscored <- "user data"
+    env$rs <- "user data"
+    before <- ls(env)
+    suppressWarnings(eval(job$calls$screen_check, env))
+    expect_identical(env$n_unscored, "user data")
+    expect_identical(env$rs, "user data")
+    expect_identical(ls(env), before)
+  }
+})
+
 test_that("the screen check does not repeat hzr_stepwise()'s Wald report (#400)", {
   skip_on_cran() # two multiphase fits
   # Rebuilt from a REAL backward fit, not a vcov = NULL mock. A multiphase
