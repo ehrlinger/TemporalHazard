@@ -1587,9 +1587,10 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   definitions and defaults.
 #' @param ... Additional arguments forwarded to [hzr_stepwise()] (e.g.
 #'   `control = list(maxit = 500)`, which every `dist` reads) when `scope`
-#'   is supplied. Only `trace` and names `hazard()` declares are accepted;
-#'   any other name is an error, and so is any `...` argument without
-#'   `scope`.
+#'   is supplied. `trace` and the names [hzr_stepwise()] forwards to its
+#'   refits (`control`, `weights`, `time_windows`, and an `objective` equal
+#'   to the fit's) are accepted; any other name is an error, and so is any
+#'   `...` argument without `scope`.
 #'
 #' @section Selection mode is experimental:
 #'
@@ -1786,11 +1787,11 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
          ". '...' is only forwarded to hzr_stepwise() when 'scope' is set.",
          call. = FALSE)
   }
-  # Refused here, before seeding: inside a replicate, hzr_stepwise()'s own
+  # Checked here, before seeding: inside a replicate, hzr_stepwise()'s own
   # refusal would be caught and tallied as a replicate failure (#386).
-  .hzr_refuse_undeclared_dots(extra_args, "hzr_bootstrap",
-                              own = names(formals(hzr_bootstrap)),
-                              allowed = "trace")
+  extra_args <- .hzr_check_forwarded_dots(extra_args, "hzr_bootstrap",
+                                          own = names(formals(hzr_bootstrap)),
+                                          fit = object, extra = "trace")
 
   # hzr_stepwise() is always called below with trace = FALSE (per-step
   # stepwise output would be too noisy across n_boot replicates; `verbose`
