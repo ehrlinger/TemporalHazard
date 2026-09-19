@@ -684,6 +684,24 @@ test_that("a PROC-line value the lexer rejects stops the document (U1, #403)", {
   expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
 })
 
+test_that("a spaced PROC-line option is read, not dropped (U1 review 4, #421)", {
+  # SAS's lexer skips whitespace (hazard_l.l:32), so MAXITER = 250 is one
+  # option. Read as three tokens it is dropped, and the fit then runs on
+  # hazard()'s own iteration limit rather than the job's 250 -- a different
+  # model with no refusal. Asserted on the emitted call, not on the parse.
+  for (p in c(" MAXITER=250", " MAXITER = 250", " MAXITER= 250",
+              " MAXITER =250")) {
+    job <- .u1_job(proc = p, parms = "MUE=0.2 THALF=1 NU=1")
+    expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"), info = p)
+    expect_true(any(grepl("maxit = 250", deparse(job$calls$fit), fixed = TRUE)),
+                info = p)
+    expect_identical(NROW(job$untranslated), 0L, info = p)
+  }
+  # The PROC HAZPRED line joins the same way: its grid name survives.
+  hp <- .hzr_parse_hazpred(list(text = "PROC HAZPRED DATA = G INHAZ = HZ"), "")
+  expect_false(any(hp$untranslated$reason == "unknown PROC HAZPRED option"))
+})
+
 test_that("FIXMNU1 on an active early phase stops the document (U1, #358)", {
   job <- .u1_job(parms = "MUE=0.2 THALF=1 NU=2 M=0.5 FIXMNU1")
   expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"))
