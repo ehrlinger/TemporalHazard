@@ -675,6 +675,21 @@
 
 ## New features
 
+* **`hzr_translate_sas()` now says when `PROC HAZARD` rewrote a shape operand
+  before fitting, instead of emitting the rewritten value silently.** Under
+  `FIXGE2` or `FIXGAE2` with `WEIBULL`, `SETG3` moves the late shape onto the
+  constraint before the fit (`setg3.c:449-467, :827`), so a job written
+  `ALPHA=2 GAMMA=5 ETA=1 FIXGAE2 WEIBULL` is fitted by `PROC HAZARD` at
+  `ALPHA=2.5`, not at the 2 on the statement. The translation already emitted
+  `alpha = 2.5`, the model `PROC HAZARD` fits, but said nothing, so a reader
+  comparing the emitted call against the job saw a value they had not written
+  and no reason for it. Such a rewrite is now recorded, naming the operand and
+  both values (`ALPHA=2 -> 2.5`).
+
+  **No fit changes.** The emitted call is the same on both sides; what is new
+  is the row and the "untranslated construct(s)" warning that goes with it.
+  A job that translated cleanly and reported no rows may now report one.
+
 * **`hzr_translate_sas()` now translates a `SELECTION` statement into an
   `hzr_stepwise()` call** (#160). Such a job used to emit a `stop()`: the
   refit path needed a formula-interface base fit, so every candidate refit
