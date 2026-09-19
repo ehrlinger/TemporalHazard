@@ -172,20 +172,35 @@ NULL
 #'   censoring status with different integers than this package does; the
 #'   formula path translates them, so write `Surv()`'s codes here. A plain
 #'   `status` vector takes this package's codes; a `Surv` passed as `status`
-#'   is translated the same way as here.
+#'   is translated the same way as here. Every distribution carries its own
+#'   intercept: its baseline parameter, the one the covariates add to,
+#'   already plays that role, so the design never has one: removing
+#'   it (`~ 0 + age`, `~ age - 1`) is ignored with a warning, and builds the
+#'   design of `~ age`.
 #'   A `.` on the right-hand side stands for every column of `data` that the
 #'   `Surv()` term does not use, as in `survival::coxph()`.
 #'   When provided, overrides direct time/status/x arguments and extracts from data.
 #'   Example: `hazard(Surv(time, status) ~ x1 + x2, data = df, dist = "weibull", fit = TRUE)`.
 #' @param data Optional data frame. On the formula path it supplies the model
-#'   frame. On the vector path `time`, `status`, `time_lower`, `time_upper`
-#'   and `weights` are evaluated in its scope, the way [base::subset()] and
-#'   [base::transform()] do: a bare column name resolves to that column, and
+#'   frame, and `weights` is evaluated in its scope. On the vector path
+#'   `time`, `status`, `time_lower`, `time_upper` and `weights` are evaluated
+#'   in its scope, the way [base::subset()] and [base::transform()] do: a bare column name resolves to that column, and
 #'   anything that is not a column (`df$col`, a local vector, a literal)
 #'   falls through to the calling environment. A column of the same name as
 #'   a caller variable wins, and because that silently discards the caller's
 #'   vector (the way a wrapper forwarding its own argument by name does),
 #'   such a name raises a warning naming the symbol and the argument.
+#'   The warning reads the names written in the expression. When the
+#'   argument is the name alone, it says the column was used. When the name
+#'   is part of a larger expression, it does not say which value was read:
+#'   the expression may never evaluate the name (an unused function
+#'   argument), may rebind it first (a loop variable, an assignment) or may
+#'   evaluate it somewhere else (`with()`), and the warning cannot tell. A name chosen at run time, as in `get(nm)` or
+#'   `eval(as.name(nm))`, resolves the same way, column first, as it does in
+#'   [stats::lm()], but is not checked; the vector path has behaved so since
+#'   1.2.2. No second evaluation is made to compare the two values, because
+#'   evaluating an expression such as `runif(n)` twice gives two different
+#'   vectors.
 #'   Masked arguments are validated like any other, so an `NA` in a
 #'   masked column errors: an `NA` count on the SAS `ICENSOR`
 #'   path reaches `weights` and stops with `'weights' must be
@@ -214,7 +229,12 @@ NULL
 #' @param weights Optional numeric vector of observation weights (non-negative).
 #'   Each observation's log-likelihood contribution is multiplied by its weight.
 #'   Use for severity-weighted repeated events. Default `NULL` (unit weights).
-#'   Implements the SAS `WEIGHT` statement.
+#'   Implements the SAS `WEIGHT` statement. With `data`, a name is looked up
+#'   among its columns first and then in the calling environment, on both
+#'   interfaces. [stats::lm()] also looks in `data` first, but then in the
+#'   formula's environment rather than the caller's, so a formula built
+#'   inside another function does not bring that function's variables with
+#'   it here. See `data` for the warning raised when a name is both.
 #' @param control Named list of control options (see Details).
 #' @param objective Which interval-censored contribution the multiphase
 #'   likelihood accumulates. `"likelihood"` (default) uses the interval
@@ -243,7 +263,13 @@ NULL
 #'
 #' @details
 #' Control parameters:
-#' - `maxit`: Maximum iterations (default 1000)
+#' - `maxit`: Maximum iterations of the quasi-Newton (BFGS) optimizer
+#'   (default 1000), applied to each start. A fit whose optimizer reports
+#'   convergence but fails SAS's gradient test is continued with
+#'   [stats::nlm()] under the same limit (see "Convergence"), so raising
+#'   `maxit` lets that continuation run further too. The Nelder-Mead warm-up
+#'   that a multiphase fit with fixed parameters may run first has its own
+#'   limit, which `maxit` does not change.
 #' - `n_starts`: Number of optimization starts for multiphase fits (default 5).
 #'   Each start after the first offsets the initial values. The offsets are
 #'   drawn from an internally seeded stream, so a multiphase fit is
@@ -278,7 +304,8 @@ NULL
 #'   while being identified. For the same reason the per-phase measures can
 #'   overstate what an interval-censored or left-truncated fit loses, since a
 #'   phase flat across the event times may still be identified through the
-#'   bounds. The measured shares are
+#'   bounds; the saturated warning says so where such points exist, rather
+#'   than claiming the likelihood is unchanged (#228). The measured shares are
 #'   kept on the fit as `fit$fit$phase_share`. Raise it to catch marginal
 #'   phases, set it to 0 to silence the check.
 #' - `reltol`: Relative convergence tolerance on the objective, the negative
@@ -289,21 +316,6 @@ NULL
 #'   and still report convergence, so `hazard()` then applies SAS/C HAZARD's
 #'   relative-gradient test and, when the stop fails it, continues with
 #'   [stats::nlm()]; see the "Convergence" section.
-#' - `abstol`: Projected-gradient tolerance, used only by the bounded
-#'   (L-BFGS-B) optimizer (default 1e-6). The fits `hazard()` runs use BFGS
-#'   and ignore it.
-#' - `method`: Recorded but not used. The fits `hazard()` runs use BFGS (a
-#'   multiphase fit may run a Nelder-Mead warm-up first, and a stop that
-#'   fails SAS's gradient test continues with [stats::nlm()]); the entry is
-#'   accepted so that translated SAS jobs (`QUASI`) run unchanged.
-#'   SAS `PROC HAZARD` jobs write `STEEPEST QUASI` together (steepest
-#'   descent first, then quasi-Newton). `QUASI`/`QUASINEWTON` is `"bfgs"`;
-#'   **there is no steepest-descent option and no two-stage strategy**. The
-#'   multiphase likelihood is multimodal, so a different descent path can land
-#'   on a different optimum: a fit translated from a job using `STEEPEST` may
-#'   not reproduce SAS's estimates, and `hzr_translate_sas()` records the
-#'   keyword as untranslated rather than dropping it.
-#' - `condition`: Condition number control (default 14)
 #' - `conserve`: Apply Conservation of Events (**`dist = "multiphase"` only**;
 #'   default `TRUE`). CoE counts exact events, so it is **automatically
 #'   disabled** whenever any `status` falls outside \{0, 1\} (which interval
@@ -318,9 +330,53 @@ NULL
 #'
 #'   Read `fit$spec$control$conserve_applied`, not
 #'   `fit$spec$control$conserve`: the latter says only what you asked for.
-#' - `nocov`, `nocor`: Accepted for compatibility with the SAS `PROC HAZARD`
-#'   options of the same names. They change neither the fitted object nor its
-#'   printed summary.
+#' - `shape_param_count`: The number of baseline parameters at the front of
+#'   `theta`: the scale and any shape parameters, so 2 for `"weibull"` and 1
+#'   for `"exponential"`. For a single-distribution model only. The fit itself does not
+#'   use it; the stepwise refit and the score test read it back from
+#'   `fit$spec$control`. A multiphase fit derives its own layout, so nothing
+#'   reads it there.
+#'
+#' The elements above are accepted without a warning: `maxit` and `reltol`
+#' for every model, `shape_param_count` for a single-distribution model, and
+#' `n_starts`, `start_seed`, `phase_share_tol` and `conserve` for
+#' `dist = "multiphase"` (#376). Any other element draws one warning that
+#' names it and says why it has no effect, and the fit proceeds unchanged,
+#' as [stats::optim()] does for unknown `control` names. The element is
+#' dropped before the fit, so a name such as `n_starts_extra` cannot be read
+#' as `n_starts`, and `fit$spec$control` keeps none of the ignored
+#' elements. That covers:
+#' - a name no fit reads, such as the misspelling `n_startz`, and an unnamed
+#'   element;
+#' - `abstol` (read only by a bounded optimizer no fit uses), `method`,
+#'   `condition`, `nocov` and `nocor`, which earlier versions documented as
+#'   accepted without reading them;
+#' - `fix` and `quasi`, which no fit has ever read. A fit given `fix` was
+#'   never constrained, so results obtained with it may be affected; hold a
+#'   parameter with `hzr_phase(fixed = )` on a multiphase phase. A
+#'   single-distribution model has no mechanism for fixing a parameter.
+#' - a multiphase element such as `n_starts` given to a single-distribution
+#'   fit, and `shape_param_count` given to a multiphase one.
+#'
+#' No name in `control` is an error; a bad value for an element the fit
+#' reads, such as `maxit = "a"`, still stops a fit (`fit = TRUE`) where it
+#' is read. [hzr_stepwise()] and
+#' [hzr_bootstrap()] pass `control` to every candidate refit, and an error
+#' there would count as a failed candidate, so a screen would report success
+#' having tested nothing.
+#'
+#' SAS `PROC HAZARD` options with no `control` equivalent: `NOCOV` and `NOCOR`
+#' only suppress printed output, and `hazard()` prints nothing until asked.
+#' `CONDITION=` stops SAS's optimizer on a condition-number test that
+#' `hazard()` does not have. `QUASI` is `hazard()`'s optimizer already: the
+#' fits it runs use BFGS (a multiphase fit may run a Nelder-Mead warm-up
+#' first, and a stop that fails SAS's gradient test continues with
+#' [stats::nlm()]). SAS jobs often write `STEEPEST QUASI` together, steepest
+#' descent first; **there is no steepest-descent option and no two-stage
+#' strategy**. The multiphase likelihood is multimodal, so a different descent
+#' path can land on a different optimum: a fit translated from a job using
+#' `STEEPEST` may not reproduce SAS's estimates, and `hzr_translate_sas()`
+#' records the keyword as untranslated rather than dropping it.
 #'
 #' Censoring status coding:
 #' - 1: Exact event at time
@@ -533,6 +589,13 @@ hazard <- function(formula = NULL,
                    ...) {
 
   objective <- match.arg(objective)
+  # A named scalar such as c(model = "multiphase") is a valid `dist`, but
+  # identical() against a bare string is FALSE for it. Dropping the names
+  # here, before any read, keeps every later test of `dist` agreeing (#405).
+  dist <- unname(dist)
+  # The caller's own `data` expression, captured before `data` is reassigned:
+  # the ambiguity warning names it in its advice (#401).
+  data_arg <- substitute(data)
 
   # `objective` is a top-level argument rather than a `control` element on
   # purpose: it changes the estimand, and burying that among convergence
@@ -586,6 +649,16 @@ hazard <- function(formula = NULL,
     x <- parsed$x
     x_design <- parsed$x_design
 
+    # `weights` is looked up in `data` first, then the calling frame, by the
+    # rule the vector path below applies (#392). This path used to skip
+    # `data`: a column-only name was not found, and a name bound both as a
+    # column and in the calling frame silently read the calling frame's
+    # vector. stats::lm() also looks in `data` first, but falls back to the
+    # formula's environment, not the calling frame.
+    .hzr_warn_masked_ambiguity(list(weights = substitute(weights)), data,
+                               parent.frame(), interface = "formula",
+                               data_arg = data_arg)
+    weights <- eval(substitute(weights), data, parent.frame())
   }
 
   # Data masking on the vector path. `data` used to be consulted only by the
@@ -601,48 +674,13 @@ hazard <- function(formula = NULL,
       stop("'data' must be a data frame or a list.", call. = FALSE)
     }
     mask_env <- parent.frame()
-    # A wrapper that forwards its own argument by name -- f <- function(tt)
-    # hazard(data = d, time = tt, ...) -- reads as "use the caller's vector"
-    # and silently gets the column instead: a fit over the wrong rows, no
-    # error, no warning. The column still wins (that is the subset() rule),
-    # but a name that is BOTH a column and visible from the calling frame is
-    # ambiguous enough to say so out loud. The lexical walk stops at the
-    # global environment (see .hzr_bound_locally): `inherits = FALSE` misses
-    # the wrapper case entirely, and `inherits = TRUE` reaches base, where a
-    # column named `c`, `t` or `df` would warn on every call.
-    ambiguous <- lapply(
+    .hzr_warn_masked_ambiguity(
       list(time = substitute(time), status = substitute(status),
            time_lower = substitute(time_lower),
            time_upper = substitute(time_upper),
            weights = substitute(weights)),
-      function(e) {
-        if (is.null(e)) {
-          return(character(0))
-        }
-        # Not all.vars(): it counts the RHS of `$` as a variable, so
-        # all.vars(quote(other$tt)) is c("other", "tt") and the warning names
-        # `tt` -- a column that was never consulted -- while `data$tt`, the
-        # remedy the warning itself prescribes, triggers it.
-        nms <- .hzr_mask_symbols(e)
-        nms[nms %in% names(data) &
-              vapply(nms, .hzr_bound_locally, logical(1), env = mask_env)]
-      }
+      data, mask_env, data_arg = data_arg
     )
-    ambiguous <- ambiguous[lengths(ambiguous) > 0L]
-    if (length(ambiguous) > 0L) {
-      warning(
-        "In hazard(), ", paste(sprintf("'%s' (%s)",
-                                       unlist(ambiguous, use.names = FALSE),
-                                       rep(names(ambiguous),
-                                           lengths(ambiguous))),
-                               collapse = ", "),
-        ": the name is both a column of 'data' and a variable visible from ",
-        "the calling frame. The column was used. Write data$<name> for the ",
-        "column, or ",
-        "omit 'data' to use the calling frame's value.",
-        call. = FALSE
-      )
-    }
     time <- eval(substitute(time), data, mask_env)
     status <- eval(substitute(status), data, mask_env)
     time_lower <- eval(substitute(time_lower), data, mask_env)
@@ -872,6 +910,9 @@ hazard <- function(formula = NULL,
   if (!is.list(control)) {
     stop("'control' must be a list.", call. = FALSE)
   }
+  # Only the names this fit reads go on: consumers read control with `$`,
+  # which would partial-match a warned name such as n_starts_extra (#405).
+  control <- .hzr_validate_control(control, dist)
 
   # Multiphase validation
   if (dist == "multiphase") {
@@ -942,20 +983,24 @@ hazard <- function(formula = NULL,
   # off its own constraint. The slots are located the way the optimizer
   # locates them (.hzr_optim_multiphase()): a phase formula against `data`,
   # else the global design, else no covariates (#328).
+  # A fit needs one theta entry per parameter. The check near the top only
+  # compares the length with the global design, and only as a lower bound,
+  # so a longer multiphase theta fitted with the extra entries carried along
+  # and a shorter one failed inside the fit on a names() mismatch (#408).
+  # Unfitted, theta is returned as supplied, so the constraint block below
+  # warns instead.
+  if (fit && dist == "multiphase" && !is.null(theta)) {
+    per_phase <- .hzr_phase_theta_counts(phases, data, x_fit)
+    if (length(theta) != sum(per_phase)) {
+      stop(.hzr_theta_length_message(length(theta), per_phase),
+           call. = FALSE)
+    }
+  }
   if (!fit && dist == "multiphase" && !is.null(theta) &&
       any(vapply(phases, function(ph) .hzr_phase_constraint(ph) != "none",
                  logical(1)))) {
-    counts <- vapply(phases, function(ph) {
-      if (!is.null(ph$formula) && !is.null(data)) {
-        ncol(.hzr_formula_design(ph$formula, data)$x)
-      } else if (!is.null(x_fit)) {
-        ncol(x_fit)
-      } else {
-        0L
-      }
-    }, integer(1))
-    n_theta <- sum(vapply(phases, function(ph) 1L + .hzr_phase_n_shape(ph),
-                          integer(1))) + sum(counts)
+    counts <- .hzr_phase_covariate_counts(phases, data, x_fit)
+    n_theta <- sum(.hzr_phase_theta_counts(phases, data, x_fit))
     if (length(theta) == n_theta) {
       theta <- .hzr_constrain_supplied_theta(theta, phases, counts)
     } else {
@@ -1245,7 +1290,16 @@ hazard <- function(formula = NULL,
 #' Produces prediction outputs from a `hazard` object. Supports multiple prediction
 #' types including linear predictor, hazard, survival probability, and cumulative hazard.
 #'
-#' @param object A `hazard` object.
+#' @param object A `hazard` object. One built with `fit = FALSE` holds the
+#'   starting values it was given rather than estimates, so predicting from
+#'   it warns (condition class `hzr_unfitted_prediction`); under
+#'   `dist = "multiphase"` it is an error instead, because the per-phase
+#'   designs are resolved only when the model is fitted. To evaluate a model
+#'   at parameters you supply, use [hzr_evaluate()]. The warning is governed
+#'   by `options(TemporalHazard.warn_unfitted_prediction = )`, which this
+#'   package's own tests set to `FALSE` where they exercise that capability
+#'   deliberately; leaving it on is what tells a reader that a number came
+#'   from a starting value.
 #' @param newdata Optional matrix or data frame of predictors. For types requiring
 #'   time (e.g., "survival", "cumulative_hazard"), newdata should include a `time`
 #'   column, or time will be taken from the fitted object's data.
@@ -1260,7 +1314,12 @@ hazard <- function(formula = NULL,
 #'   as `I(age^2)`, is built from it). With all the
 #'   variables given, the design is rebuilt from them, so a design column
 #'   that contradicts one is ignored; some variables beside the design
-#'   columns, with others missing, is an error. A
+#'   columns, with others missing, is an error. That error is conservative
+#'   in two cases where nothing contradicts: `poly()` design columns given
+#'   with the variable they are built from but without another variable,
+#'   and a non-syntactic name such as `my age` given both as the design
+#'   column `` `my age` `` and as the variable. Give all of the formula's
+#'   variables, or only the design columns. A
 #'   column the model does not use is
 #'   ignored, and a covariate the model needs but `newdata` lacks is an error.
 #'   Only the columns of the model's `data` are taken from `newdata`: a
@@ -1269,6 +1328,10 @@ hazard <- function(formula = NULL,
 #'   kept outside `data` (`~ zz`, with `zz` a vector in the workspace) is an
 #'   error, even when `newdata` has a `zz` column; move it into `data` and
 #'   refit.
+#'   A term that computes a statistic over `newdata`'s rows warns only for
+#'   the functions the check knows (see "How `newdata` is evaluated"). Any
+#'   other function, including one you write, is still recomputed from
+#'   `newdata`'s rows, silently: no warning means undetected, not safe.
 #'   A fit made with an unnamed `x` matrix matches by position. For the types
 #'   requiring time, a `newdata` with only a `time` column evaluates the
 #'   baseline, with every covariate at 0. Because `time` is then the
@@ -1340,10 +1403,52 @@ hazard <- function(formula = NULL,
 #' or `"hazard"` also require time values (via `newdata$time` or fitted-time fallback)
 #' so window-specific coefficients can be selected.
 #'
-#' A term built by a transform that is not row-wise, such as
-#' `I(age - mean(age))` or `rank(age)`, is recomputed from `newdata`'s own
-#' rows, as in [stats::predict.lm()]. It therefore differs from the fitted
-#' values unless `newdata` reproduces the fitting data.
+#' See the section "How `newdata` is evaluated" for what is recomputed from
+#' `newdata` and when `predict()` warns.
+#'
+#' @section How `newdata` is evaluated:
+#' `predict()` evaluates the model's formulas on `newdata` as given, as
+#' [stats::predict.lm()] does. It uses the fit's factor levels and
+#' contrasts, and the centering, basis and knots that a top-level `scale()`,
+#' `poly()`, `ns()` or `bs()` term recorded. Everything else is recomputed
+#' from `newdata`, so a prediction can differ from the fit without any
+#' error. `predict()` warns, naming the cause, in three such cases. The
+#' predicted values are the same with or without the warning.
+#'
+#' - **A term that computes a statistic over the rows.** In
+#'   `I(age - mean(age))`, `I(scale(age)^2)` or
+#'   `I(as.integer(factor(grp)))`, the mean, the scaling or the factor
+#'   coding comes from `newdata`'s rows, so a row's prediction depends on
+#'   which other rows are given. Compute such a variable in the data before
+#'   fitting, and supply it in `newdata`. The check knows a fixed list of
+#'   R's functions, among them `mean()`, `median()`, `min()`, `max()`,
+#'   `quantile()`, `sd()`, `IQR()`, `ave()`, `rank()`, `length()`,
+#'   `scale()`, `factor()` and `cut()` with a count of breaks. A function
+#'   not on it, including one you write, is recomputed from `newdata`'s
+#'   rows just the same, with no warning: the list is a floor, not a
+#'   boundary.
+#' - **A column of another type than the fit saw.** A numeric column given
+#'   as character compares as text (`"154.6" > 50` is `FALSE`), and a
+#'   `difftime` in other units is used in those units. The check compares
+#'   against the fitting data the fit kept, which fits saved before
+#'   TemporalHazard 1.1.0 do not have, so those fits are not checked. A
+#'   factor given as its level labels, or an integer for a double, is not
+#'   a mismatch.
+#' - **A design rebuilt under this session's contrasts.** A formula fit
+#'   saved by version 1.2.10 or earlier kept no record of its contrasts,
+#'   and its design is rebuilt under `options(contrasts =)`. `predict()`
+#'   warns when that option names a function other than `contr.treatment`
+#'   or `contr.poly` and the rebuilt design is used. A redefined
+#'   `contr.treatment` is not detected.
+#'
+#' Two cases are not detected:
+#'
+#' - A constant the formula reads from its environment, such as `cutoff`
+#'   in `I(age > cutoff)`, is read when you predict, so a value changed
+#'   since the fit is used.
+#' - A comparison of strings, such as `I(grp > "b")`, follows the session's
+#'   collation (`LC_COLLATE`), which can order strings differently from the
+#'   session that fitted the model.
 #'
 #' @return When `se.fit = FALSE` (default), a numeric vector of predictions.
 #'   When `se.fit = TRUE`, a data frame with columns `fit`, `se.fit`, `lower`,
@@ -1496,6 +1601,36 @@ predict.hazard <- function(object, newdata = NULL,
   if (!is.logical(se.fit) || length(se.fit) != 1L || is.na(se.fit)) {
     stop("'se.fit' must be TRUE or FALSE.", call. = FALSE)
   }
+  # A multiphase model built with fit = FALSE has no per-phase designs: they
+  # are resolved at fit time, and without them .hzr_split_theta() looked up a
+  # position that is not there and died with "argument of length 0" (#144).
+  # After the argument checks, so a bad `se.fit` still reports itself, and
+  # not for linear_predictor, which multiphase refuses for a fitted model too
+  # and whose remedy is not "fit it". Other distributions predict from
+  # supplied parameters perfectly well and are left alone.
+  if (identical(object$spec$dist, "multiphase") &&
+        !identical(type, "linear_predictor") &&
+        is.null(object$fit$covariate_counts)) {
+    stop("This multiphase model was built with fit = FALSE, so it has no ",
+         "per-phase design matrices: they are resolved when the model is ",
+         "fitted, and predict() cannot rebuild the phases without them. ",
+         "Refit with fit = TRUE, or use hzr_evaluate() to evaluate the ",
+         "model at parameters you supply.", call. = FALSE)
+  }
+  # The other families predict from an unfitted object perfectly well, and
+  # that is an intended, tested capability -- but the numbers come from the
+  # starting values, not from estimates, and saying nothing is the
+  # fit = FALSE hollow-chunk defect (#144). Classed, so a caller that meant
+  # to supply parameters can muffle exactly this.
+  if ((is.null(object$fit$converged) || is.na(object$fit$converged)) &&
+        isTRUE(getOption("TemporalHazard.warn_unfitted_prediction", TRUE))) {
+    warning(warningCondition(paste0(
+      "This model was built with fit = FALSE: these predictions come from ",
+      "the starting values it was given, not from estimates. Refit with ",
+      "fit = TRUE for a fitted model's predictions, or use hzr_evaluate() ",
+      "to evaluate a model at parameters you supply."
+    ), class = "hzr_unfitted_prediction"))
+  }
   if (se.fit) {
     if (!is.numeric(level) || length(level) != 1L ||
           is.na(level) || level <= 0 || level >= 1) {
@@ -1515,12 +1650,32 @@ predict.hazard <- function(object, newdata = NULL,
   time_based <- type %in% c("survival", "cumulative_hazard") ||
     identical(object$spec$dist, "multiphase") || !is.null(time_windows)
   if (!is.null(newdata)) {
+    # A classed numeric column, such as bit64's integer64, stores doubles
+    # that are not its values; read the values, as hazard() reads `data`
+    # (#347). One rule for fitting and prediction.
+    newdata <- .hzr_numeric_frame_values(newdata)
     # A formula fit saved before its design was stored gets it rebuilt, when
     # the rebuild is exact, so the by-name rules below apply to it (#301).
     # Design-level newdata (hzr_gof(), hzr_deciles()) never uses it, so it
     # skips the rebuild's cost.
     if (!isTRUE(attr(newdata, "hzr_design_columns"))) {
+      recovered <- is.null(object$data$x_design)
       object <- .hzr_recover_x_design(object)
+      recovered <- recovered && !is.null(object$data$x_design)
+      # A legacy design rebuilt under this session's contrasts warns, but
+      # only when the rebuild is used: newdata giving the design columns
+      # uses them as they are (#335). A newdata the design route refuses
+      # stops later, with its own message.
+      nd_frame <- as.data.frame(newdata)
+      if (recovered && !isTRUE(tryCatch(
+        .hzr_uses_design_columns(object, nd_frame),
+        error = function(e) TRUE
+      ))) {
+        .hzr_warn_rebuilt_contrasts(object$data$x_design$contrasts)
+      }
+      # A column of another type than the fit saw is evaluated as given;
+      # warn once per call, naming it (#334).
+      .hzr_warn_newdata_types(object, nd_frame)
     }
     .hzr_check_time_covariate(object, as.data.frame(newdata), time_based)
   }
@@ -1676,29 +1831,47 @@ predict.hazard <- function(object, newdata = NULL,
         # fit ignores hzr_phase(formula = ). .hzr_phase_inherits_global()
         # decides, from the fit's record or, for an older fit, its columns;
         # hzr_gof() calls the same helper, so the two cannot disagree.
-        for (nm in names(phases)) {
-          ph <- phases[[nm]]
-          uses_formula <- !.hzr_phase_inherits_global(object, nm)
-          if (uses_formula && ncol(nd_covs) > 0) {
-            # The fit's levels, contrasts and columns, not newdata's.
-            x_list[[nm]] <- .hzr_phase_newdata_design(object, nm, ph, newdata)
-          } else if (cov_counts[[nm]] > 0 && ncol(nd_covs) > 0) {
-            # A formula-less phase inherits the global design: rebuild that,
-            # not every non-time column of newdata (which also carries the
-            # phase formulas' variables).
-            x_g <- .hzr_global_design(object, newdata)
-            # With time windows the fit expanded the inherited design per
-            # window (age_w1, age_w2); expand it the same way here, or the
-            # rows meet the per-window coefficients unexpanded.
-            if (!is.null(time_windows)) {
-              x_g <- .hzr_expand_time_varying_design(
-                x = x_g, time = pred_time, time_windows = time_windows
-              )
+        # Built once for every phase that inherits it, so its warnings are
+        # given once per call.
+        x_global <- NULL
+        # A design computing over the rows warns once per call, naming
+        # every phase, not once per phase.
+        row_dependent <- character(0)
+        withCallingHandlers({
+          for (nm in names(phases)) {
+            ph <- phases[[nm]]
+            uses_formula <- !.hzr_phase_inherits_global(object, nm)
+            if (uses_formula && ncol(nd_covs) > 0) {
+              # The fit's levels, contrasts and columns, not newdata's.
+              x_list[[nm]] <- .hzr_phase_newdata_design(object, nm, ph,
+                                                        newdata)
+            } else if (cov_counts[[nm]] > 0 && ncol(nd_covs) > 0) {
+              # A formula-less phase inherits the global design: rebuild that,
+              # not every non-time column of newdata (which also carries the
+              # phase formulas' variables).
+              if (is.null(x_global)) {
+                x_global <- .hzr_global_design(object, newdata)
+              }
+              x_g <- x_global
+              # With time windows the fit expanded the inherited design per
+              # window (age_w1, age_w2); expand it the same way here, or the
+              # rows meet the per-window coefficients unexpanded.
+              if (!is.null(time_windows)) {
+                x_g <- .hzr_expand_time_varying_design(
+                  x = x_g, time = pred_time, time_windows = time_windows
+                )
+              }
+              x_list[[nm]] <- x_g
+            } else {
+              x_list[[nm]] <- NULL
             }
-            x_list[[nm]] <- x_g
-          } else {
-            x_list[[nm]] <- NULL
           }
+        }, hzr_row_dependent = function(w) {
+          row_dependent <<- c(row_dependent, conditionMessage(w))
+          invokeRestart("muffleWarning")
+        })
+        if (length(row_dependent) > 0L) {
+          warning(paste(row_dependent, collapse = "\n"), call. = FALSE)
         }
       }
 
@@ -2464,21 +2637,316 @@ vcov.hazard <- function(object, ...) {
 #' single argument such as `time` is one vector whatever its shape, so by
 #' default a classed numeric with a `dim` is read as its values too.
 #'
+#' Under `keep_dim`, the values are still read, and the shape kept
+#' (#371): a classed numeric matrix column was left entirely alone, so an
+#' integer64 matrix column of `data` fitted on its raw doubles, and the same
+#' column in `newdata` predicted on them. Which classes need reading cannot
+#' be listed, so it is decided by behaviour: the class's own `as.numeric()`
+#' is compared with the stored values as numbers, and the column is replaced
+#' only when they differ. A `Surv` column, whose stored doubles ARE its
+#' values, is therefore returned unchanged and keeps its class, which it
+#' must, since a bare matrix is no longer a response. So is an integer
+#' `AsIs` matrix, whose values equal its storage in another mode.
+#'
 #' @param x Any object.
-#' @param keep_dim If `TRUE`, leave an object with a `dim` unchanged.
-#' @return `x`, or `as.numeric(x)` when the rule applies.
+#' @param keep_dim If `TRUE`, keep the `dim` of an object that has one,
+#'   reading its values into a matrix of the same shape.
+#' @return `x`, or its values, when the rule applies.
 #' @noRd
 .hzr_numeric_values <- function(x, keep_dim = FALSE) {
-  if (is.object(x) && is.numeric(x) && !(keep_dim && !is.null(dim(x)))) {
-    as.numeric(x)
-  } else {
-    x
+  if (!is.object(x) || !is.numeric(x)) {
+    return(x)
   }
+  values <- as.numeric(x)
+  if (!keep_dim || is.null(dim(x))) {
+    return(values)
+  }
+  # Compared as numbers, not with the storage mode: an integer AsIs matrix
+  # has values equal to its storage, in another mode.
+  if (identical(values, as.numeric(unclass(x)))) {
+    # The class reads as its own storage (a Surv, a classed plain matrix):
+    # nothing to read, and replacing it would drop a class that is load
+    # bearing.
+    return(x)
+  }
+  array(values, dim(x), dimnames(x))
+}
+
+
+# The `control` elements the fitter reads, by distribution (#376), derived
+# from the code rather than the documentation: .hzr_optim_generic() reads
+# maxit and reltol; .hzr_optim_multiphase() reads and strips the multiphase
+# ones before the optimizer; shape_param_count is not read by the fitter but
+# is read back from the stored spec$control by the single-distribution
+# stepwise refit and score test (every multiphase path derives its own theta
+# layout, so on a multiphase fit nothing reads it; #405). abstol is read only by .hzr_optim_generic()'s bounded
+# (L-BFGS-B) branch, which every caller turns off (use_bounds = FALSE), so
+# no fit reads it.
+.hzr_control_names <- list(
+  all = c("maxit", "reltol"),
+  single = "shape_param_count",
+  multiphase = c("n_starts", "conserve", "phase_share_tol", "start_seed")
+)
+
+# Names ?hazard documented as accepted, a translation emitted, or a user
+# might reasonably pass, although no fit ever read them, with the reason each
+# has no effect (#376). Like every unread name they warn, and the fit
+# proceeds: an error inside a stepwise or bootstrap candidate refit would be
+# recorded as a failed candidate and empty the screen.
+.hzr_control_no_effect <- c(
+  abstol = paste0("it is read only by a bounded optimizer that no fit ",
+                  "hazard() runs uses; `reltol` is the tolerance that ",
+                  "applies"),
+  method = paste0("hazard() chooses its optimizer: ",
+                  "BFGS, a quasi-Newton method (a multiphase fit may run a ",
+                  "Nelder-Mead warm-up first, and a stop that fails SAS's ",
+                  "gradient test continues with stats::nlm())"),
+  condition = paste0("SAS's CONDITION= has no equivalent: hazard() has no ",
+                     "condition-number stop, and reports the Hessian's ",
+                     "conditioning after the fit instead"),
+  nocov = "it suppresses printed output, and hazard() prints nothing",
+  nocor = "it suppresses printed output, and hazard() prints nothing",
+  fix = paste0("hazard() has never read it, so a fit given it was the ",
+               "unconstrained fit with its \"fixed\" parameters free, and ",
+               "results obtained with it may be affected; hold a parameter ",
+               "with hzr_phase(fixed = ) on a phase of a ",
+               "dist = \"multiphase\" model, since a single-distribution ",
+               "model has no mechanism for fixing one"),
+  quasi = paste0("hazard() has never read it; its optimizer is ",
+                 "BFGS, a quasi-Newton method (a multiphase fit may run a ",
+                 "Nelder-Mead warm-up first, and a stop that fails SAS's ",
+                 "gradient test continues with stats::nlm())")
+)
+
+
+#' Warn about every `control` element the fit does not read
+#'
+#' `hazard()` accepted any `control` element, so one it never reads -- a
+#' typo such as `n_startz`, or `fix`, which no fitting code has ever read --
+#' left the fit as it would have been and said nothing (#376). Every such
+#' element now draws one warning that names it and says why it does
+#' nothing, and the fit proceeds, as `stats::optim()` does for unknown
+#' `control` names. Nothing errors: an error inside a stepwise or bootstrap
+#' candidate refit would be recorded as a failed candidate, so the screen
+#' would report success having tested nothing.
+#'
+#' @param control The `control` list, already known to be a list.
+#' @param dist The distribution name.
+#' @return `control` restricted to the elements this fit reads, so that no
+#'   consumer's `$` can partial-match a warned name (`control$n_starts`
+#'   would read `n_starts_extra`); warns once about every other element.
+#' @keywords internal
+#' @noRd
+.hzr_validate_control <- function(control, dist) {
+  if (length(control) == 0L) {
+    return(control)
+  }
+  nm <- names(control)
+  if (is.null(nm)) {
+    nm <- rep("", length(control))
+  }
+  unnamed <- is.na(nm) | !nzchar(nm)
+  names_all <- nm
+  nm <- nm[!unnamed]
+  multiphase <- identical(dist, "multiphase")
+  accepted <- c(.hzr_control_names$all,
+                if (multiphase) {
+                  .hzr_control_names$multiphase
+                } else {
+                  .hzr_control_names$single
+                })
+  no_effect <- intersect(nm, names(.hzr_control_no_effect))
+  # A name the fitter reads, but only for another model.
+  off_path <- intersect(nm, if (multiphase) {
+    .hzr_control_names$single
+  } else {
+    .hzr_control_names$multiphase
+  })
+  unknown <- setdiff(nm, c(accepted, no_effect, off_path))
+  notes <- c(
+    if (length(no_effect) > 0L) {
+      paste0("control$", no_effect, " (", .hzr_control_no_effect[no_effect],
+             ")")
+    },
+    if (length(off_path) > 0L) {
+      paste0("control$", off_path, " (it applies only to ",
+             if (multiphase) {
+               "single-distribution fits"
+             } else {
+               "dist = \"multiphase\""
+             }, ")")
+    },
+    if (length(unknown) > 0L) {
+      paste0("control$", unknown, " (not an element any fit reads; for dist",
+             " = \"", dist, "\" the elements accepted without a warning are ",
+             paste(accepted, collapse = ", "), ")")
+    },
+    if (any(unnamed)) {
+      paste0(sum(unnamed), " unnamed element(s) (control is read by name, ",
+             "as in list(maxit = 500))")
+    }
+  )
+  if (length(notes) > 0L) {
+    warning("'control' element(s) with no effect on this dist = \"", dist,
+            "\" fit, ignored: ", paste(notes, collapse = "; "), ".",
+            call. = FALSE)
+  }
+  control[!unnamed & names_all %in% accepted]
+}
+
+#' Warn when a masked argument names both a column and a caller variable
+#'
+#' `hazard()` evaluates an argument expression with `data` as the environment
+#' and the caller's frame as its parent, so a column wins (the rule
+#' `subset()`, `transform()` and `with()` use, and `stats::lm()` for
+#' `weights`). A wrapper that forwards its own argument by name --
+#' `f <- function(tt) hazard(data = d, time = tt, ...)` -- reads as "use the
+#' caller's vector" and silently gets the column instead: a fit over the wrong
+#' rows, no error, no warning. The column still wins, but a name that is
+#' BOTH a column and visible from the calling frame is ambiguous enough to
+#' say so. Both interfaces call this one helper, so they give one message
+#' (#151, #392). The lexical walk stops at the global environment
+#' (`.hzr_bound_locally()`): `inherits = FALSE` misses the wrapper case, and
+#' `inherits = TRUE` reaches base, where a column named `c`, `t` or `df`
+#' would warn on every call.
+#'
+#' The diagnosis is one sentence on both interfaces; the remedy differs,
+#' because only the vector interface can drop `data` to reach the calling
+#' frame, while the formula interface requires it.
+#'
+#' @param exprs Named list of the unevaluated argument expressions.
+#' @param data The data frame or list the arguments are masked by.
+#' @param env The calling frame.
+#' @param interface `"vector"` or `"formula"`, choosing the remedy clause.
+#' @param data_arg The caller's unevaluated `data` argument, named in the
+#'   advice when it is a plain symbol.
+#' @return `NULL`, invisibly; warns naming each ambiguous name.
+#' @keywords internal
+#' @noRd
+.hzr_warn_masked_ambiguity <- function(exprs, data, env,
+                                       interface = c("vector", "formula"),
+                                       data_arg = NULL) {
+  interface <- match.arg(interface)
+  ambiguous <- lapply(exprs, function(e) {
+    if (is.null(e)) {
+      return(character(0))
+    }
+    # Not all.vars(): it counts the RHS of `$` as a variable, so
+    # all.vars(quote(other$tt)) is c("other", "tt") and the warning names
+    # `tt` -- a column that was never consulted -- while `data$tt`, the
+    # remedy the warning itself prescribes, triggers it.
+    # The warning is a diagnostic: an expression too deeply nested to walk
+    # (generated code) is fitted unchecked rather than refused (#401 review).
+    nms <- tryCatch(.hzr_ambiguity_symbols(e),
+                    error = function(err) character(0))
+    nms[nms %in% names(data) &
+          vapply(nms, .hzr_bound_locally, logical(1), env = env)]
+  })
+  # Only an argument that is the name alone is known to have read the
+  # column. Inside a larger expression the name may never be evaluated (a
+  # lazy function argument), may be rebound first (a loop variable, an
+  # assignment) or may be evaluated elsewhere (with(), local(envir =)), and
+  # no reading of the syntax can tell (#401 review). So that case says
+  # nothing about which value was used.
+  bare <- vapply(exprs, is.symbol, logical(1))
+  .hzr_warn_ambiguous_names(ambiguous[bare], "The column was used. ",
+                            interface, data_arg)
+  .hzr_warn_ambiguous_names(
+    ambiguous[!bare],
+    paste0("The name is part of a larger expression, and which value it ",
+           "read, if any, is not checked. "),
+    interface, data_arg
+  )
+  invisible(NULL)
+}
+
+#' Emit the ambiguity warning for one class of names
+#'
+#' @param ambiguous Named list (by argument) of ambiguous names.
+#' @param outcome The sentence saying what is known about the value used.
+#' @inheritParams .hzr_warn_masked_ambiguity
+#' @return `NULL`, invisibly.
+#' @keywords internal
+#' @noRd
+.hzr_warn_ambiguous_names <- function(ambiguous, outcome, interface,
+                                      data_arg) {
+  ambiguous <- ambiguous[lengths(ambiguous) > 0L]
+  if (length(ambiguous) > 0L) {
+    warning(
+      "In hazard(), ", paste(sprintf("'%s' (%s)",
+                                     unlist(ambiguous, use.names = FALSE),
+                                     rep(names(ambiguous),
+                                         lengths(ambiguous))),
+                             collapse = ", "),
+      ": the name is both a column of 'data' and a variable visible from ",
+      "the calling frame. ", outcome,
+      # Name the caller's own data argument only when it is a plain symbol:
+      # `data` itself is usually utils::data() in the caller's frame, and an
+      # inline expression or magrittr's `.` cannot be written as a prefix.
+      if (is.symbol(data_arg) && !identical(data_arg, quote(.))) {
+        paste0("Write ", deparse(data_arg), "$<name> for the column, or ")
+      } else {
+        paste0("Refer to the column through the data frame passed as ",
+               "'data', or ")
+      },
+      if (interface == "vector") {
+        "omit 'data' to use the calling frame's value."
+      } else {
+        "give the calling frame's value a name that is not a column of 'data'."
+      },
+      call. = FALSE
+    )
+  }
+  invisible(NULL)
+}
+
+
+#' The names a masked argument looks up, for the ambiguity warning
+#'
+#' As `.hzr_mask_symbols()`, which skips the name after `$` and `@`, but
+#' also skipping both operands of `::` and `:::`: `stats::runif(n)` looks up
+#' `n`, never a `stats` or `runif` column, so neither can be ambiguous (#401
+#' review). A namespace-qualified call's own arguments are still collected.
+#' `.hzr_mask_symbols()` is left as it is: it also feeds the formula's
+#' `data_vars` and the `time` check.
+#'
+#' @param e A language object, symbol or constant.
+#' @return Character vector of symbol names, possibly empty.
+#' @keywords internal
+#' @noRd
+.hzr_ambiguity_symbols <- function(e) {
+  if (is.symbol(e)) {
+    return(as.character(e))
+  }
+  if (!is.call(e)) {
+    return(character(0))
+  }
+  head <- e[[1L]]
+  if (is.symbol(head) && as.character(head) %in% c("::", ":::")) {
+    return(character(0))
+  }
+  if (is.symbol(head) && as.character(head) %in% c("$", "@") &&
+        length(e) >= 3L) {
+    return(.hzr_ambiguity_symbols(e[[2L]]))
+  }
+  parts <- as.list(e)[-1L]
+  if (!is.symbol(head)) {
+    parts <- c(list(head), parts)
+  }
+  # A function literal's defaults are expressions too, but they sit in a
+  # pairlist, which is not a call, so the walk would skip them.
+  if (is.symbol(head) && identical(as.character(head), "function")) {
+    parts <- c(as.list(e[[2L]]), list(e[[3L]]))
+  }
+  nms <- unlist(lapply(parts, .hzr_ambiguity_symbols), use.names = FALSE)
+  # A missing argument, as in `x[, j]`, is the empty symbol; it names nothing.
+  unique(nms[nzchar(nms)])
 }
 
 #' Apply `.hzr_numeric_values()` to every column of a data frame or list
 #'
-#' Columns with a `dim` are left alone (`keep_dim = TRUE`). Columns are
+#' A column with a `dim` keeps it (`keep_dim = TRUE`), and its values are
+#' still read (#371). Columns are
 #' replaced in a local copy (`data[] <-`), so a caller's `data.table` is not
 #' modified by reference. Anything that is not a list is returned unchanged.
 #'

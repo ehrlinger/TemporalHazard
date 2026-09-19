@@ -399,6 +399,31 @@
 }
 
 
+#' Is a phase's time scale inside exp()'s range?
+#'
+#' `t_half` and `tau` are carried as `log_t_half` and `log_tau`, and an
+#' optimizer step can take them past what `exp()` represents: the scale is
+#' then `0` or `Inf`. At `t_half = 0` the decomposition refuses to evaluate,
+#' which is the error #262 was filed for. The other cells disagreed among
+#' themselves: the score could not be evaluated at a scale of `Inf`, where
+#' the objective returned `-Inf` for `t_half` and, for `tau`, the finite
+#' value of the phase switched off. All are now one infeasible point, to be
+#' penalised like any other rather than raising or, at `tau = Inf`, being
+#' optimized over a value the score cannot support (#262).
+#'
+#' @param pars A phase's unpacked parameters (`.hzr_unpack_phase_theta()`).
+#' @param type The phase type.
+#' @return A single logical.
+#' @keywords internal
+#' @noRd
+.hzr_phase_scale_feasible <- function(pars, type) {
+  log_scale <- switch(type, cdf = , hazard = pars$log_t_half,
+                      g3 = pars$log_tau, NULL)
+  if (is.null(log_scale)) return(TRUE)
+  scale <- exp(log_scale)
+  is.finite(scale) && scale > 0
+}
+
 #' Apply the Conservation of Events adjustment to one phase's log_mu
 #'
 #' Given the current theta vector, analytically solve the fixmu phase's
@@ -435,6 +460,14 @@
                                   phases, covariate_counts, x_list,
                                   total_events, weights = NULL,
                                   time_lower = NULL) {
+  # An infeasible time scale has no cumulative hazard to solve against; leave
+  # theta for the likelihood, which penalises it (#262).
+  theta_split <- .hzr_split_theta(theta, phases, covariate_counts)
+  for (nm in names(phases)) {
+    pars <- .hzr_unpack_phase_theta(theta_split[[nm]], phases[[nm]])
+    if (!.hzr_phase_scale_feasible(pars, phases[[nm]]$type)) return(theta)
+  }
+
   # Compute per-phase cumulative hazard contributions
   decomp <- .hzr_multiphase_cumhaz(time, theta, phases,
                                      covariate_counts, x_list,
@@ -560,6 +593,18 @@
   if (length(idx_interval) > 0) {
     lower <- if (is.null(time_lower)) time else time_lower
     upper <- if (is.null(time_upper)) time else time_upper
+    # A short bound indexes past its end as NA, which the check below would
+    # report as "an NA bound" -- the wrong defect (#340). hazard() validates
+    # lengths first, so only a direct call reaches this.
+    # A NULL bound was filled from `time`, so name `time`, not an argument
+    # the caller never passed (#394 review).
+    for (b in list(list(if (is.null(time_lower)) "time" else "time_lower", lower),
+                   list(if (is.null(time_upper)) "time" else "time_upper", upper))) {
+      if (length(b[[2L]]) != length(status)) {
+        stop(b[[1L]], " has length ", length(b[[2L]]), ", but status has ",
+             "length ", length(status), ".", call. = FALSE)
+      }
+    }
     # An NA bound makes the width comparison NA, which then stood in for the
     # row index in the message below (#232). Name it as its own defect.
     na_bound <- idx_interval[is.na(lower[idx_interval]) |
@@ -625,7 +670,10 @@
   # the optimizer would walk away from a corrupt row instead of stopping on
   # it.  Order is load-bearing here.
   if (objective == "sas") {
-    bad <- which(!(upper > lower))
+    # which() drops an NA comparison, so an NA bound must be named here or
+    # it passes this guard and becomes -Inf below, which the optimizer walks
+    # away from; the entry check stops on the same row (#340).
+    bad <- which(!(upper > lower) | is.na(upper) | is.na(lower))
     if (length(bad) > 0) {
       stop("objective = \"sas\" requires upper > lower on every ",
            "interval-censored row; the interval-mean hazard divides by ",
@@ -718,6 +766,7 @@
   theta_split <- .hzr_split_theta(theta, phases, covariate_counts)
   for (nm in names(phases)) {
     pars <- .hzr_unpack_phase_theta(theta_split[[nm]], phases[[nm]])
+    if (!.hzr_phase_scale_feasible(pars, phases[[nm]]$type)) return(-Inf)
     if (phases[[nm]]$type %in% c("cdf", "hazard")) {
       if (pars$m < 0 && pars$nu < 0) return(-Inf)
     }
@@ -850,6 +899,9 @@
   theta_split <- .hzr_split_theta(theta, phases, covariate_counts)
   for (nm in names(phases)) {
     pars <- .hzr_unpack_phase_theta(theta_split[[nm]], phases[[nm]])
+    if (!.hzr_phase_scale_feasible(pars, phases[[nm]]$type)) {
+      return(if (sanitize) grad else grad * NA)
+    }
     if (phases[[nm]]$type %in% c("cdf", "hazard")) {
       if (pars$m < 0 && pars$nu < 0) return(if (sanitize) grad else grad * NA)
     }
@@ -1494,8 +1546,28 @@
         paste(format(sh$variation[saturated], digits = 3), collapse = ", "),
         "). The phase has already finished before the first observation, so ",
         "it acts as a constant offset: 'mu' remains identified but the shape ",
-        "parameters do not, and the likelihood is unchanged whether they are ",
-        "pinned or fitted. A 'cdf' phase whose half-life is far shorter than ",
+        "parameters do not",
+        # The likelihood also evaluates the phase at entry times and interval
+        # bounds, where a phase flat across the observed times can still be
+        # climbing. Claiming the likelihood is unchanged is then false -- by
+        # 103 log-likelihood units on one interval-censored fit (#228) -- so
+        # say what was measured and point at the rest.
+        if (n_added > 0L) {
+          paste0(
+            ", at least not by those times. This fit also evaluates the ",
+            "phase at ", n_added,
+            " further time", if (n_added == 1L) "" else "s",
+            " (counting-process entry times or interval bounds), which this ",
+            "measure does not cover: the shapes may still be identified ",
+            "there, so check before treating them as unidentified"
+          )
+        } else {
+          paste0(
+            ", and the likelihood is unchanged whether they are pinned or ",
+            "fitted"
+          )
+        },
+        ". A 'cdf' phase whose half-life is far shorter than ",
         "the first observed time is the usual cause.",
         call. = FALSE)
     }
@@ -1572,6 +1644,15 @@
 #' @keywords internal
 #' @noRd
 .hzr_formula_design <- function(formula, data) {
+  # The design always drops an intercept column, because a phase has no free
+  # intercept of its own (its scale `mu` plays that role). Without one,
+  # `~ 0 + age` would lose `age` instead, and a factor would code all its
+  # levels. So `~ 0 + x` builds exactly the design of `~ x` (#303).
+  tt <- stats::terms(formula, data = data)
+  if (attr(tt, "intercept") == 0L) {
+    attr(tt, "intercept") <- 1L
+    formula <- tt
+  }
   mf <- stats::model.frame(formula, data = data, na.action = stats::na.pass)
   mm <- stats::model.matrix(formula, data = mf)
   tt <- attr(mf, "terms")
@@ -1864,45 +1945,24 @@
 }
 
 
-#' Fit a multiphase additive hazard model via maximum likelihood
+#' Build a multiphase fit's per-phase designs and align its rows
 #'
-#' Assembles starting values from phase specifications, resolves per-phase
-#' design matrices, and delegates to `.hzr_optim_generic()`.
+#' The one place a multiphase model's per-phase design matrices are built from
+#' its phases and data, and the only place rows are dropped for an NA in one
+#' of them. `.hzr_optim_multiphase()` calls it to fit; `hzr_evaluate()` calls
+#' it to evaluate an unfitted model at supplied parameters, so the two cannot
+#' build different designs for the same specification (#144).
 #'
-#' @param time Numeric vector of follow-up times.
-#' @param status Numeric event indicator vector.
-#' @param time_lower Optional lower bounds for interval censoring.
-#' @param time_upper Optional upper bounds for left/interval censoring.
-#' @param x Global design matrix (n x p) or NULL.
-#' @param theta_start Starting parameter vector (full internal scale).
-#'   If NULL, assembled automatically from phase specs.
-#' @param control Named list of control options.
-#' @param phases Named list of validated `hzr_phase` objects.
-#' @param formula_global The global formula (used when phases have no
-#'   phase-specific formula).
-#' @param data Data frame containing covariates (needed for phase-specific
-#'   formula evaluation).
-#' @param objective Which interval-censored contribution to accumulate;
-#'   see `.hzr_logl_interval()`.
-#' @return List with par (internal scale), value, convergence, vcov, etc.
+#' @inheritParams .hzr_optim_multiphase
+#' @return A list with the row-aligned `time`, `status`, `time_lower`,
+#'   `time_upper`, `x` and `weights`, plus `x_list` (per-phase designs,
+#'   carrying the `from_formula` attribute), `covariate_counts` and
+#'   `x_design`.
 #' @keywords internal
-.hzr_optim_multiphase <- function(time, status,
-                                   time_lower = NULL, time_upper = NULL,
-                                   x = NULL,
-                                   theta_start = NULL,
-                                   weights = NULL,
-                                   control = list(),
-                                   phases,
-                                   objective = c("likelihood", "sas"),
-                                   formula_global = NULL,
-                                   data = NULL) {
-
-  objective <- match.arg(objective)
-
-  if (is.null(weights)) weights <- rep(1, length(time))
-
-  phases <- .hzr_validate_phases(phases)
-
+#' @noRd
+.hzr_multiphase_designs <- function(time, status, time_lower = NULL,
+                                    time_upper = NULL, x = NULL,
+                                    weights = NULL, phases, data = NULL) {
   # --- Resolve per-phase design matrices and covariate counts ----------------
   # Build phase-specific design matrices with na.action = na.pass so that
   # rows with NA covariates are preserved (not silently dropped).  We then
@@ -1973,6 +2033,68 @@
   attr(x_list, "from_formula") <- vapply(names(x_list), function(nm) {
     !is.null(phases[[nm]]$formula) && !is.null(data)
   }, logical(1))
+  list(time = time, status = status, time_lower = time_lower,
+       time_upper = time_upper, x = x, weights = weights,
+       x_list = x_list, covariate_counts = covariate_counts,
+       x_design = x_design)
+}
+
+
+#' Fit a multiphase additive hazard model via maximum likelihood
+#'
+#' Assembles starting values from phase specifications, resolves per-phase
+#' design matrices, and delegates to `.hzr_optim_generic()`.
+#'
+#' @param time Numeric vector of follow-up times.
+#' @param status Numeric event indicator vector.
+#' @param time_lower Optional lower bounds for interval censoring.
+#' @param time_upper Optional upper bounds for left/interval censoring.
+#' @param x Global design matrix (n x p) or NULL.
+#' @param theta_start Starting parameter vector (full internal scale).
+#'   If NULL, assembled automatically from phase specs.
+#' @param control Named list of control options.
+#' @param phases Named list of validated `hzr_phase` objects.
+#' @param formula_global The global formula (used when phases have no
+#'   phase-specific formula).
+#' @param data Data frame containing covariates (needed for phase-specific
+#'   formula evaluation).
+#' @param objective Which interval-censored contribution to accumulate;
+#'   see `.hzr_logl_interval()`.
+#' @return List with par (internal scale), value, convergence, vcov, etc.
+
+
+#' @keywords internal
+.hzr_optim_multiphase <- function(time, status,
+                                   time_lower = NULL, time_upper = NULL,
+                                   x = NULL,
+                                   theta_start = NULL,
+                                   weights = NULL,
+                                   control = list(),
+                                   phases,
+                                   objective = c("likelihood", "sas"),
+                                   formula_global = NULL,
+                                   data = NULL) {
+
+  objective <- match.arg(objective)
+
+  if (is.null(weights)) weights <- rep(1, length(time))
+
+  phases <- .hzr_validate_phases(phases)
+
+  # --- Resolve per-phase design matrices and covariate counts ----------------
+  built_designs <- .hzr_multiphase_designs(
+    time, status, time_lower = time_lower, time_upper = time_upper, x = x,
+    weights = weights, phases = phases, data = data
+  )
+  time             <- built_designs$time
+  status           <- built_designs$status
+  time_lower       <- built_designs$time_lower
+  time_upper       <- built_designs$time_upper
+  x                <- built_designs$x
+  weights          <- built_designs$weights
+  x_list           <- built_designs$x_list
+  covariate_counts <- built_designs$covariate_counts
+  x_design         <- built_designs$x_design
 
   # --- Assemble starting values if not provided ------------------------------
   if (is.null(theta_start)) {
@@ -2050,6 +2172,11 @@
                                       weights = weights, ...)
         grad[i] <- (ll_plus - ll0) / h_i
       }
+      # At an infeasible point the log-likelihood is -Inf, so a quotient is
+      # NaN, or +-Inf where the perturbed point is finite. A sanitised
+      # gradient is finite: zero what could not be differenced, as the
+      # analytic score does (#262).
+      grad[!is.finite(grad)] <- 0
     }
 
     grad
@@ -2721,9 +2848,13 @@
     dphi_dgamma <- (d_plus$g3 - phi0) / eps_g
   }
 
-  # Central differences for alpha
-  if (alpha > h) {
-    eps_a <- max(abs(alpha) * h, 1e-10)
+  # Central differences for alpha, stepping in proportion to alpha so a
+  # small alpha stays positive. A forward step of h at alpha <= h moved
+  # alpha by 100% or more of itself and put this derivative, and the
+  # optimizer's gradient, 50-70% off (#332). Only alpha = 0, the exponential
+  # limit, needs the forward difference.
+  if (alpha > 0) {
+    eps_a <- alpha * h
     d_plus  <- hzr_decompos_g3(time, tau = tau, gamma = gamma,
                                  alpha = alpha + eps_a, eta = eta)
     d_minus <- hzr_decompos_g3(time, tau = tau, gamma = gamma,

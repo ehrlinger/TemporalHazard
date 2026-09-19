@@ -463,3 +463,33 @@ test_that("render_sim cannot see the caller's globals", {
   ok <- render_sim(list(calls = list(a = quote(f <- hzr_decompos(1, 1, 1, 1)))))
   expect_true(ok$ok)
 })
+
+test_that("render_sim resolves stats without consulting the search path", {
+  # testthat's parallel workers attach the package before R attaches stats
+  # above it, so a render environment parented on package:TemporalHazard
+  # could not find predict() there (#330). The layer must end at baseenv(),
+  # not continue into whatever the search path holds.
+  p <- .render_parent()
+  expect_identical(parent.env(p), baseenv())
+  expect_identical(get("predict", envir = p, inherits = FALSE), stats::predict)
+  got <- render_sim(list(calls = list(a = quote(q <- quantile(c(1, 2, 3))))))
+  expect_identical(got$results[["a"]], "ok")
+})
+
+test_that("sas_synth_data() stops on a status chunk it cannot read (#340)", {
+  # The oracle found the dataset through the status chunk's transform(). When
+  # that chunk changed shape it found nothing, silently, and two corpus jobs
+  # then failed at an unrelated check. It must now say which chunk it could
+  # not read.
+  job <- list(calls = list(status = quote(D <- somethingelse(D))))
+  expect_error(sas_synth_data(job),
+               "cannot find the dataset in status chunk 'status'", fixed = TRUE)
+  # Both legitimate shapes are read.
+  ok <- list(calls = list(status = quote({
+    if (FALSE) stop()
+    D <- transform(D, .hzr_status = ifelse(DEAD > 0, 1, 0))
+  })))
+  expect_true("DEAD" %in% names(sas_synth_data(ok)$D))
+  bare <- list(calls = list(status = quote(.hzr_status <- ifelse(DEAD > 0, 1, 0))))
+  expect_silent(sas_synth_data(bare))
+})

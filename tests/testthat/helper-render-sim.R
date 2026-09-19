@@ -7,15 +7,17 @@
 # The render environment's parent. globalenv() is not one: an unrelated
 # global `fit`, or any leftover symbol from another test file, satisfies a
 # broken translation and this helper reports "ok" -- an oracle that ambient
-# state can satisfy is not an oracle. The attached package environment sits
-# AFTER globalenv() on the search path, so parenting on it reaches the
-# package's exports, stats and base, and nothing of the user's.
+# state can satisfy is not an oracle.
+#
+# Nor is the attached package environment. Name lookup from it walks the
+# rest of the search path, so `predict` resolved only when package:stats
+# happened to sit after it. testthat's parallel workers attach the package
+# in callr's load hook, before R attaches the default packages above it, so
+# there stats is not reached and every predict() chunk failed (#330). Build
+# the layer explicitly instead: the exports of stats and TemporalHazard over
+# baseenv(), whose parent is emptyenv(), so no search-path state can decide
+# the verdict in either direction.
 .render_parent <- function() {
-  if ("package:TemporalHazard" %in% search()) {
-    return(as.environment("package:TemporalHazard"))
-  }
-  # Belt and braces for a load path that does not attach: rebuild the same
-  # layer by hand rather than silently fall back to globalenv().
   e <- new.env(parent = baseenv())
   for (pkg in c("stats", "TemporalHazard")) {
     ns <- asNamespace(pkg)
@@ -135,7 +137,29 @@ sas_synth_data <- function(job, n = 24L) {
       # ICENSOR hoists status into its own chunk, derived into the dataset
       # with transform(<data>, .hzr_status = .) so hazard()'s data mask
       # cannot shadow it; with no DATA= it is a bare local binding.
-      d <- if (identical(heads[[k]], "transform")) as.character(rhs[[2L]]) else ""
+      # A DATA= job's status chunk is a block when it first checks that the
+      # dataset has every phase variable (#340 item 9); the transform() is its
+      # last expression.
+      last <- job$calls[[k]]
+      if (is.call(last) && identical(last[[1L]], as.name("{"))) {
+        last <- last[[length(last)]]
+      }
+      # Only two shapes are legitimate: `<data> <- transform(<data>, ...)`,
+      # or a bare `.hzr_status <- ...` for a job with no DATA=. Anything else
+      # used to fall through to "no dataset", and the synthetic columns went
+      # nowhere, surfacing two steps later as an unrelated failure. Say so.
+      no_data <- is.call(last) && identical(last[[1L]], as.name("<-")) &&
+        identical(last[[2L]], as.name(".hzr_status"))
+      if (identical(.sas_head(last), "transform")) {
+        d <- as.character(.sas_strip_assign(last)[[2L]])
+      } else if (no_data) {
+        d <- ""
+      } else {
+        stop("sas_synth_data(): cannot find the dataset in status chunk '",
+             nms[[k]], "'; its last expression is neither `<data> <- ",
+             "transform(<data>, ...)` nor `.hzr_status <- ...`.",
+             call. = FALSE)
+      }
       add(d, "status", .sas_syms(rhs))
     }
     if (identical(heads[[k]], "hazard")) {

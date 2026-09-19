@@ -54,16 +54,24 @@ original fixed-formula bootstrap: every replicate refits \code{object}'s
 exact model, and \code{summary$pct} is always ~100. When supplied (a
 one-sided formula, character vector, or, for multiphase fits, a
 named list of one-sided formulas keyed by phase, matching
-\code{\link[=hzr_stepwise]{hzr_stepwise()}}'s \code{scope}), each replicate runs a fresh
+\code{\link[=hzr_stepwise]{hzr_stepwise()}}'s \code{scope}; a two-sided formula is an error), each
+replicate runs a fresh
 \code{\link[=hzr_stepwise]{hzr_stepwise()}} selection instead; see Details.}
 
 \item{direction, slentry, slstay, max_steps, max_move, force_in, force_out}{Passed through to \code{\link[=hzr_stepwise]{hzr_stepwise()}} on each replicate when \code{scope} is
-supplied; ignored when \code{scope = NULL}. See \code{\link[=hzr_stepwise]{hzr_stepwise()}} for
+supplied. With \code{scope = NULL} nothing reads them, so a value other than
+the default is an error; the default's own value is accepted, whether or
+not it was passed, so that a wrapper forwarding its defaults still
+works.
+\code{direction = "backward"} with a non-empty \code{scope} is an error too: a
+backward screen does not read \code{scope}. For a backward screen on each
+replicate, pass an empty scope such as \code{~ 1}. See \code{\link[=hzr_stepwise]{hzr_stepwise()}} for
 definitions and defaults.}
 
 \item{criterion}{Entry / retention rule passed through to
-\code{\link[=hzr_stepwise]{hzr_stepwise()}} on each replicate when \code{scope} is supplied; ignored
-when \code{scope = NULL}. One of \code{"score"} (default), \code{"wald"}, or \code{"aic"}.
+\code{\link[=hzr_stepwise]{hzr_stepwise()}} on each replicate when \code{scope} is supplied; with
+\code{scope = NULL}, a value other than the default is an error. One of \code{"score"} (default), \code{"wald"}, or
+\code{"aic"}.
 \code{"score"} reproduces C/SAS HAZARD's \code{SELECTION} statistic and needs no
 per-candidate refit, which is what makes a bootstrap screen over many
 candidates tractable. Following SAS, the variance used during
@@ -75,8 +83,8 @@ multiphase fit uses the analytic Hessian instead and does not need it.
 See \code{\link[=hzr_stepwise]{hzr_stepwise()}}.}
 
 \item{...}{Additional arguments forwarded to \code{\link[=hzr_stepwise]{hzr_stepwise()}} (e.g.
-\code{control = list(n_starts = 1)}) when \code{scope} is supplied; ignored
-otherwise.}
+\code{control = list(maxit = 500)}, which every \code{dist} reads) when \code{scope}
+is supplied; ignored otherwise.}
 
 \item{x}{An \code{hzr_bootstrap} object.}
 
@@ -93,20 +101,29 @@ parameter. In \code{mode = "select"}, \code{pct} is the selection frequency
 and the other statistics are conditional on selection.}
 \item{n_success}{Number of successfully converged replicates.}
 \item{n_failed}{Number of replicates that failed: the refit stopped with
-an error, or returned a non-finite objective.}
+an error, returned something other than a fit, returned a non-finite
+objective, or returned a finite objective but no parameter
+estimates.}
 \item{failure_reasons}{Named integer vector counting why replicates
 failed, most common first: the refit's error message (or
-\code{"error with an empty message"}), or
+\code{"error with an empty message"}),
+\code{"refit returned a <class>, not a fit object"} (\code{"an <class>"} when the
+class begins with a vowel; or \code{"... with no \code{fit}, not a fit object"}), \code{"refit returned no parameter estimates"}, or
 \code{"non-finite objective (did not converge)"}. It sums to \code{n_failed}, and
 is an empty named integer vector, never \code{NULL}, when none failed. When
 every replicate fails, \code{hzr_bootstrap()} also warns, naming the most
 common reason.}
 \item{n_uncomputable_replicates}{Select mode only: number of otherwise
 successful replicates whose screen stopped because no remaining
-candidate's score statistic could be computed, rather than because no
-candidate met \code{slentry}. Such replicates contribute no selections, so
-a non-zero count means every reported selection frequency is
-depressed. Always \code{0} in refit mode.}
+candidate could be tested (its score statistic, or for a removal its
+Wald statistic, could not be computed), rather than because no
+candidate met \code{slentry} or \code{slstay}. A non-zero count means every
+reported selection frequency is biased: a candidate such a replicate
+could not test for entry counts as not selected, and one it could not
+test for removal as selected. A replicate that went on after deciding
+a variable without a Wald test (\code{wald_no_variance}) is not counted
+here unless it also stopped, and gets a warning of its own either way.
+Always \code{0} in refit mode.}
 \item{uncomputable_reasons}{Select mode only: named integer vector
 counting \emph{why} candidate scores were unavailable, summed over every
 replicate. \code{information_indefinite} is the one to read first: it marks

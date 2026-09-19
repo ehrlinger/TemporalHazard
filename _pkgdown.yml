@@ -62,6 +62,7 @@ reference:
   - title: Decomposition
     contents:
       - hzr_decompos
+      - hzr_evaluate
       - hzr_decompos_g3
   - title: Datasets
     contents:

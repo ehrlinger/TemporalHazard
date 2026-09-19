@@ -13,7 +13,7 @@
 #   - formula: optional one-sided formula for phase-specific covariates
 #
 # The helpers extract metadata needed during likelihood construction:
-#   - .hzr_phase_n_shape():     number of shape parameters (3 or 0)
+#   - .hzr_phase_n_shape():     number of shape parameters (3, 4 or 0)
 #   - .hzr_phase_theta_names(): named labels for the parameter sub-vector
 #
 # SAS/C BRIDGE
@@ -123,6 +123,9 @@
 #'   phase-specific covariates.  It is evaluated in the `data` given to
 #'   [hazard()], so without `data` [hazard()] refuses it, unless it builds
 #'   nothing either way: an intercept-only `~ 1` with no global `x`.
+#'   The phase's scale parameter plays the role of an intercept, so the
+#'   design never has one: removing it (`~ 0 + age`, `~ age - 1`) is
+#'   ignored with a warning, and builds the design of `~ age`.
 #'   When `NULL` (default), the phase inherits the global design from
 #'   [hazard()]: the global formula's covariates, or `x` on the vector
 #'   interface.
@@ -143,6 +146,15 @@
 #'     \item{`"eta_gamma"`}{\eqn{\eta = 2/\gamma}, so that
 #'       \eqn{\gamma\eta = 2}. SAS/C: `FIXGE2`.}
 #'   }
+#'   At `alpha = 1`, `hzr_phase()`'s default, the g3 form is
+#'   \eqn{(t/\tau)^{\gamma\eta}}{(t/tau)^(gamma*eta)} (see [hzr_decompos_g3()]),
+#'   which depends on
+#'   \eqn{\gamma} and \eqn{\eta} only through their product. So
+#'   \eqn{\gamma} and \eqn{\eta} are not separately identified there: under
+#'   `"eta_gamma"` the product is fixed at 2 and \eqn{\gamma} is not
+#'   identified at all, and with both estimated only the product is. A fit
+#'   started there can report convergence with an arbitrary \eqn{\gamma}.
+#'   Start `alpha` away from 1, or fix \eqn{\gamma}, for such a phase.
 #'   The derived parameter follows the others at every step of the
 #'   optimization, so it is not a free parameter and cannot be named in
 #'   `fixed`; `"shapes"` leaves it out. Its starting value is computed from the
@@ -269,6 +281,17 @@ hzr_phase <- function(type = c("cdf", "hazard", "constant", "g3"),
     if (length(formula) == 3L) {
       stop("Phase formula must be one-sided (e.g. ~ age + nyha), ",
            "not two-sided (response ~ predictors).", call. = FALSE)
+    }
+    # The design is built as if the intercept were present (#303), so say
+    # so here, once, rather than on every refit that builds the design.
+    tt <- stats::terms(formula, allowDotAsName = TRUE)
+    # `~ 0` alone builds no columns either way, so there is nothing to say.
+    if (attr(tt, "intercept") == 0L && length(attr(tt, "term.labels")) > 0L) {
+      warning("Phase formula `", paste(deparse(formula), collapse = " "),
+              "` removes the intercept, which a phase formula cannot do: ",
+              "the phase's scale parameter plays the intercept role. The ",
+              "design is built as if the intercept were present, so factors ",
+              "are coded as they would be with it.", call. = FALSE)
     }
   }
 
@@ -823,6 +846,56 @@ hzr_theta_names <- function(phases, covariates = NULL) {
     theta[term$pos] <- term$value
   }
   theta
+}
+
+#' Covariate columns each phase uses, located as the optimizer locates them
+#'
+#' A phase formula against `data`, else the global design, else none (#328).
+#' @noRd
+.hzr_phase_covariate_counts <- function(phases, data, x_fit) {
+  vapply(phases, function(ph) {
+    if (!is.null(ph$formula) && !is.null(data)) {
+      ncol(.hzr_formula_design(ph$formula, data)$x)
+    } else if (!is.null(x_fit)) {
+      ncol(x_fit)
+    } else {
+      0L
+    }
+  }, integer(1))
+}
+
+#' Theta entries each phase takes: log_mu, every shape slot fixed or free,
+#' covariates (#408)
+#'
+#' `covariate_counts` may be passed when the caller has already resolved the
+#' phases' designs, as `hzr_evaluate()` has (#144); both then count the same
+#' way.
+#' @noRd
+.hzr_phase_theta_counts <- function(phases, data, x_fit,
+                                    covariate_counts = NULL) {
+  if (is.null(covariate_counts)) {
+    covariate_counts <- .hzr_phase_covariate_counts(phases, data, x_fit)
+  }
+  vapply(phases, function(ph) 1L + .hzr_phase_n_shape(ph), integer(1)) +
+    covariate_counts
+}
+
+#' The message for a multiphase theta of the wrong length (#408, #144)
+#'
+#' One sentence for both places that check it, hazard(fit = TRUE) and
+#' hzr_evaluate(), built from the per-phase counts so the two cannot
+#' describe the same mismatch differently.
+#' @noRd
+.hzr_theta_length_message <- function(n, per_phase) {
+  paste0(
+    "'theta' has ", n, " entries, but this model takes ", sum(per_phase),
+    " (", paste(names(per_phase), per_phase, collapse = ", "), "): each ",
+    "phase takes its log_mu, then its shape parameters whether fixed ",
+    "or free (3 for a cdf or hazard phase, 4 for g3, none for ",
+    "constant), then one coefficient per column of its own formula's ",
+    "design, or of the global design it inherits. See ",
+    "hzr_theta_names()."
+  )
 }
 
 #' Apply the constraints to a supplied theta, saying what was replaced

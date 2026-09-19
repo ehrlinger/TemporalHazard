@@ -1466,6 +1466,7 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   `fit_obj$fit$theta`.
 #' @keywords internal
 #' @noRd
+
 .hzr_bootstrap_param_names <- function(fit_obj) {
   theta <- fit_obj$fit$theta
   param_names <- names(theta)
@@ -1487,6 +1488,35 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
     param_names[still_blank] <- paste0("param_", which(still_blank))
   }
   param_names
+}
+
+#' Why a bootstrap refit's return value is not a fit, if it is not
+#'
+#' `hzr_bootstrap()` reads `$fit$objective` and `$fit$theta` off each
+#' replicate's refit. `$` on an atomic vector is an error, and a list without
+#' `fit` reads as a missing objective, so both are named here instead (#333,
+#' #343). `hazard()` never returns either; a stored call rewritten to another
+#' function can.
+#'
+#' @param x The refit's return value.
+#' @return `NULL`, or a character scalar naming what `x` is.
+#' @keywords internal
+#' @noRd
+.hzr_bootstrap_not_a_fit <- function(x) {
+  # The reason is a key hzr_bootstrap() tallies, so the article is chosen by
+  # the class's first letter rather than dropped: every existing key ("a
+  # numeric", "a list", "a data.frame") stays as it was, and only a
+  # vowel-initial class ("an integer") changes (ledger item 2).
+  cls <- class(x)[1L]
+  a <- if (grepl("^[aeiouAEIOU]", cls)) "an " else "a "
+  if (!is.list(x)) {
+    return(paste0("refit returned ", a, cls, ", not a fit object"))
+  }
+  if (!is.list(x$fit)) {
+    return(paste0("refit returned ", a, cls,
+                  " with no `fit`, not a fit object"))
+  }
+  NULL
 }
 
 #' Bootstrap resampling for hazard model coefficients
@@ -1529,11 +1559,13 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   exact model, and `summary$pct` is always ~100. When supplied (a
 #'   one-sided formula, character vector, or, for multiphase fits, a
 #'   named list of one-sided formulas keyed by phase, matching
-#'   [hzr_stepwise()]'s `scope`), each replicate runs a fresh
+#'   [hzr_stepwise()]'s `scope`; a two-sided formula is an error), each
+#'   replicate runs a fresh
 #'   [hzr_stepwise()] selection instead; see Details.
 #' @param criterion Entry / retention rule passed through to
-#'   [hzr_stepwise()] on each replicate when `scope` is supplied; ignored
-#'   when `scope = NULL`. One of `"score"` (default), `"wald"`, or `"aic"`.
+#'   [hzr_stepwise()] on each replicate when `scope` is supplied; with
+#'   `scope = NULL`, a value other than the default is an error. One of `"score"` (default), `"wald"`, or
+#'   `"aic"`.
 #'   `"score"` reproduces C/SAS HAZARD's `SELECTION` statistic and needs no
 #'   per-candidate refit, which is what makes a bootstrap screen over many
 #'   candidates tractable. Following SAS, the variance used during
@@ -1545,11 +1577,17 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   See [hzr_stepwise()].
 #' @param direction,slentry,slstay,max_steps,max_move,force_in,force_out
 #'   Passed through to [hzr_stepwise()] on each replicate when `scope` is
-#'   supplied; ignored when `scope = NULL`. See [hzr_stepwise()] for
+#'   supplied. With `scope = NULL` nothing reads them, so a value other than
+#'   the default is an error; the default's own value is accepted, whether or
+#'   not it was passed, so that a wrapper forwarding its defaults still
+#'   works.
+#'   `direction = "backward"` with a non-empty `scope` is an error too: a
+#'   backward screen does not read `scope`. For a backward screen on each
+#'   replicate, pass an empty scope such as `~ 1`. See [hzr_stepwise()] for
 #'   definitions and defaults.
 #' @param ... Additional arguments forwarded to [hzr_stepwise()] (e.g.
-#'   `control = list(n_starts = 1)`) when `scope` is supplied; ignored
-#'   otherwise.
+#'   `control = list(maxit = 500)`, which every `dist` reads) when `scope`
+#'   is supplied; ignored otherwise.
 #'
 #' @section Selection mode is experimental:
 #'
@@ -1585,20 +1623,31 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     and the other statistics are conditional on selection.}
 #'   \item{n_success}{Number of successfully converged replicates.}
 #'   \item{n_failed}{Number of replicates that failed: the refit stopped with
-#'     an error, or returned a non-finite objective.}
+#'     an error, returned something other than a fit, returned a non-finite
+#'     objective, or returned a finite objective but no parameter
+#'     estimates.}
 #'   \item{failure_reasons}{Named integer vector counting why replicates
 #'     failed, most common first: the refit's error message (or
-#'     `"error with an empty message"`), or
+#'     `"error with an empty message"`),
+#'     `"refit returned a <class>, not a fit object"` (`"an <class>"` when the
+#'     class begins with a vowel; or `"... with no \code{fit}, not a fit
+#'     object"`), `"refit returned no parameter
+#'     estimates"`, or
 #'     `"non-finite objective (did not converge)"`. It sums to `n_failed`, and
 #'     is an empty named integer vector, never `NULL`, when none failed. When
 #'     every replicate fails, `hzr_bootstrap()` also warns, naming the most
 #'     common reason.}
 #'   \item{n_uncomputable_replicates}{Select mode only: number of otherwise
 #'     successful replicates whose screen stopped because no remaining
-#'     candidate's score statistic could be computed, rather than because no
-#'     candidate met `slentry`. Such replicates contribute no selections, so
-#'     a non-zero count means every reported selection frequency is
-#'     depressed. Always `0` in refit mode.}
+#'     candidate could be tested (its score statistic, or for a removal its
+#'     Wald statistic, could not be computed), rather than because no
+#'     candidate met `slentry` or `slstay`. A non-zero count means every
+#'     reported selection frequency is biased: a candidate such a replicate
+#'     could not test for entry counts as not selected, and one it could not
+#'     test for removal as selected. A replicate that went on after deciding
+#'     a variable without a Wald test (`wald_no_variance`) is not counted
+#'     here unless it also stopped, and gets a warning of its own either way.
+#'     Always `0` in refit mode.}
 #'   \item{uncomputable_reasons}{Select mode only: named integer vector
 #'     counting *why* candidate scores were unavailable, summed over every
 #'     replicate. `information_indefinite` is the one to read first: it marks
@@ -1691,6 +1740,37 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   direction <- match.arg(direction)
   criterion <- match.arg(criterion)
   select_mode <- !is.null(scope)
+  # Selection arguments whose value differs from the default. Without `scope`
+  # none of them is read, so a default passed on by a wrapper asks for
+  # nothing; any other value is a selection setting that would be ignored.
+  # Compared AFTER match.arg, so a wrapper forwarding the whole
+  # c("both", "forward", "backward") choices vector counts as the default: it
+  # is not a caller asking for a direction.
+  given <- c(
+    direction = direction != "both",
+    criterion = criterion != "score",
+    # as.numeric() so a 50L and a 50 compare equal; a caller passing the
+    # default's value, however typed, is asking for nothing.
+    slentry   = !identical(as.numeric(slentry), 0.30),
+    slstay    = !identical(as.numeric(slstay), 0.20),
+    max_steps = !identical(as.numeric(max_steps), 50),
+    max_move  = !identical(as.numeric(max_move), 4),
+    force_in  = length(force_in) > 0L,
+    force_out = length(force_out) > 0L
+  )
+  given <- names(given)[given]
+  # Before seeding, so a refused call leaves the random number stream alone.
+  .hzr_refuse_unhonoured_scope(scope, direction, caller = "hzr_bootstrap")
+  # Without `scope` there is no screen, so a selection argument would be
+  # silently ignored and every term reported at pct = 100 (#343).
+  if (!select_mode && length(given)) {
+    named <- paste0("`", given, "`", collapse = ", ")
+    stop("hzr_bootstrap(): ", named,
+         if (length(given) > 1L) " only take" else " only takes",
+         " effect in a selection screen, which needs `scope`. Either pass ",
+         "`scope` to screen on each replicate, or omit ", named, " to refit ",
+         "the fit's exact model on each replicate.", call. = FALSE)
+  }
 
   # `...` exists only to forward stepwise-control arguments (e.g. `control=`)
   # to hzr_stepwise() in select-mode; fixed-refit mode (scope = NULL) has no
@@ -1832,7 +1912,8 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # compared against nothing and named the vectors 'NA'.
   if (!is.null(orig_data) && !is.data.frame(orig_data)) {
     stop("hzr_bootstrap() resamples the rows of the fit's `data =`, which ",
-         "must be a data frame, and this fit's is a ", class(orig_data)[1L],
+         "must be a data frame, and this fit's `data` is a ",
+         class(orig_data)[1L],
          ". Refit with `data = as.data.frame(...)` and bootstrap that.",
          call. = FALSE)
   }
@@ -1870,6 +1951,18 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     length(object$data$time)
   } else {
     nrow(orig_data)
+  }
+  # A call can name a formula that was NULL when it ran (a wrapper forwarding
+  # `formula = fml`), which makes a vector fit the test above does not
+  # recognise. With no `data` frame either there are no rows to count, and
+  # sample.int() stopped with "length(n) == 1L is not TRUE" (#343).
+  if (!is.numeric(n_obs) || length(n_obs) != 1L) {
+    stop("hzr_bootstrap() cannot count the rows to resample: this fit ",
+         "stores no `data` frame, and its call names a `formula` (",
+         paste(deparse(cl$formula), collapse = " "), ") rather than the ",
+         "`time` and `status` vectors it was fitted from. Refit with ",
+         "`data =`, or call hazard() with `time =` and `status =` and no ",
+         "`formula`, and bootstrap that.", call. = FALSE)
   }
   sample_size <- max(1L, as.integer(n_obs * fraction))
 
@@ -2029,6 +2122,7 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # step-level warning never reaches the user here; the count has to be read
   # off the returned objects and reported in aggregate.
   n_uncomputable_reps <- 0L
+  n_wald_untested_reps <- 0L
   # Reasons are merged from EVERY select-mode replicate, not only the ones
   # that stopped. A replicate that finished having silently passed over a
   # candidate it could not score is the case a stopped-replicate count cannot
@@ -2094,6 +2188,11 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
           }
           cl_base$fit <- TRUE
           base_boot <- eval(cl_base, envir = rep_env)
+          # The same reason refit mode records below, rather than whatever
+          # `$` on a non-list says, or a missing objective's "did not
+          # converge".
+          not_a_fit <- .hzr_bootstrap_not_a_fit(base_boot)
+          if (!is.null(not_a_fit)) stop(not_a_fit)
           if (!is.finite(base_boot$fit$objective)) {
             stop("base refit did not converge")
           }
@@ -2140,14 +2239,30 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       # n_failed.
       msg <- conditionMessage(boot_fit)
       if (nzchar(msg)) msg else "error with an empty message"
+    } else if (!is.null(.hzr_bootstrap_not_a_fit(boot_fit))) {
+      # Read outside the tryCatch() above: `$` on an atomic vector ended the
+      # whole run.
+      .hzr_bootstrap_not_a_fit(boot_fit)
     } else if (!isTRUE(is.finite(boot_fit$fit$objective))) {
       "non-finite objective (did not converge)"
+    } else if (!is.numeric(boot_fit$fit$theta) ||
+                 length(boot_fit$fit$theta) == 0L) {
+      # A success with no estimates ended the run building its replicate row.
+      "refit returned no parameter estimates"
     }
     if (is.null(failure)) {
       n_success <- n_success + 1L
       if (select_mode) {
         if (isTRUE(boot_fit$criteria$stopped_uncomputable)) {
           n_uncomputable_reps <- n_uncomputable_reps + 1L
+        }
+        # Replicates run quietly, so the screen's own warning about a
+        # variable decided without a Wald test never reaches the user (#389).
+        # Counted apart from a stop: a replicate can keep a variable untested
+        # and later stop for want of a test on the other half.
+        if (length(c(boot_fit$criteria$wald_untested_removals,
+                     boot_fit$criteria$wald_untested_entries)) > 0L) {
+          n_wald_untested_reps <- n_wald_untested_reps + 1L
         }
         uncomputable_reasons <- .hzr_merge_reasons(
           uncomputable_reasons, boot_fit$criteria$uncomputable_reasons
@@ -2237,8 +2352,11 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # fill the summary at pct = 100 and the table looks like a set of perfectly
   # reliable variables.
   if (select_mode && n_success > 0L) {
+    # Named by the helper that names the replicates' parameters: coef() of a
+    # single-distribution fit has no names, so against it every base
+    # parameter counted as selected and this never fired.
     selected <- setdiff(unique(replicates$parameter),
-                        names(stats::coef(object)))
+                        .hzr_bootstrap_param_names(object))
     if (length(selected) == 0L) {
       warning("Bootstrap selection selected no covariate in any of the ",
               n_success, " successful replicates. The summary holds only the ",
@@ -2260,10 +2378,12 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
 
   if (n_uncomputable_reps > 0L) {
     warning(n_uncomputable_reps, " of ", n_success, " successful replicates ",
-            "stopped because the score statistic could not be computed for ",
-            "any remaining candidate, rather than because no candidate met ",
-            "`slentry`. Those replicates contribute no selections, so every ",
-            "reported selection frequency is depressed by them.",
+            "stopped because no remaining candidate could be tested -- the ",
+            "score statistic, or for a removal the Wald statistic, could not ",
+            "be computed -- rather than because no candidate met `slentry` ",
+            "or `slstay`. Every reported selection frequency is biased by ",
+            "them: a candidate they could not test for entry counts as not ",
+            "selected, and one they could not test for removal as selected.",
             .hzr_format_reasons(uncomputable_reasons), call. = FALSE)
   } else if (n_indefinite > 0L) {
     # No replicate stopped, so the branch above stays quiet. Under
@@ -2281,6 +2401,15 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
             "information indefinite -- so their selection frequencies are ",
             "understated rather than merely noisy. See ",
             "`$uncomputable_reasons` for which mechanism.", call. = FALSE)
+  }
+
+  if (n_wald_untested_reps > 0L) {
+    warning(n_wald_untested_reps, " of ", n_success, " successful replicates ",
+            "decided a variable without a Wald test: a removal it could not ",
+            "test left the variable in, and an entry it could not test left ",
+            "it out, each counted as if tested. Cause: ",
+            .hzr_score_reason_text("wald_no_variance"), ". See ",
+            "`$uncomputable_reasons`.", call. = FALSE)
   }
 
   if (n_nonmonotone_reps > 0L) {

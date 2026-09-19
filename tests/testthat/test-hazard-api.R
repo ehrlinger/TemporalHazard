@@ -532,11 +532,18 @@ test_that("formula interface works without intercept", {
     x = c(1, 0, 1)
   )
 
-  fit <- hazard(
-    Surv(time, status) ~ x - 1,
-    data = df,
-    theta = 0.4,
-    dist = "exponential"
+  # Since #337 the removal is ignored and the design is built as for `~ x`,
+  # with a classed warning. For a numeric `x` that is the same one-column
+  # design this test always checked, so the assertions below are unchanged;
+  # the warning is now expected rather than leaking into the suite.
+  expect_warning(
+    fit <- hazard(
+      Surv(time, status) ~ x - 1,
+      data = df,
+      theta = 0.4,
+      dist = "exponential"
+    ),
+    class = "hzr_intercept_removed"
   )
 
   expect_equal(ncol(fit$data$x), 1)

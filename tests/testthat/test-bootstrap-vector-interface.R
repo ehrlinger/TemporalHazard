@@ -245,7 +245,7 @@ test_that("a `data =` that is not a data frame is refused, naming its class", {
   msg <- tryCatch(hzr_bootstrap(fit, n_boot = 2, seed = 1),
                   error = conditionMessage)
   expect_match(msg, "must be a data frame", fixed = TRUE)
-  expect_match(msg, "is a list", fixed = TRUE)
+  expect_match(msg, "this fit's `data` is a list", fixed = TRUE)
   expect_no_match(msg, "NA", fixed = TRUE)
 })
 
@@ -415,4 +415,143 @@ test_that("a refit error with an empty message is still counted", {
   expect_equal(sum(b$failure_reasons), b$n_failed)
   expect_identical(b$failure_reasons,
                    c("error with an empty message" = 3L))
+})
+
+# Select mode (`scope =`) catches its replicate errors in a second handler. If
+# that handler dropped the condition, a failed replicate would still count,
+# but its reason would read "non-finite objective" for every failure (#333).
+# The per-replicate base refit evaluates the stored call; hzr_stepwise()'s own
+# refits and the up-front validation screen call hazard() directly, so
+# replacing the call's function fails the replicates and nothing else.
+test_that("select mode tallies each failed replicate under its own reason (#333)", {
+  d <- avc_fixture()
+  base <- hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
+                 dist = "weibull", theta = c(0.1, 1), fit = TRUE)
+  state <- new.env()
+  state$calls <- 0L
+  flaky <- function(...) {
+    state$calls <- state$calls + 1L
+    switch(state$calls %% 3L + 1L,
+           stop("synthetic base refit failure"),
+           list(fit = list(objective = NaN, theta = base$fit$theta)),
+           {
+             mc <- match.call()
+             mc[[1L]] <- quote(hazard)
+             eval(mc, parent.frame())
+           })
+  }
+  env <- new.env(parent = base$call_env %||% globalenv())
+  assign("flaky_base", flaky, envir = env)
+  base$call[[1L]] <- as.name("flaky_base")
+  base$call_env <- env
+
+  b <- suppressWarnings(hzr_bootstrap(base, n_boot = 6L, seed = 1L,
+                                      scope = ~ age, criterion = "wald"))
+  expect_equal(b$mode, "select")
+  expect_equal(b$n_success, 2L)
+  expect_equal(b$n_failed, 4L)
+  expect_identical(
+    b$failure_reasons[sort(names(b$failure_reasons))],
+    c("base refit did not converge" = 2L,
+      "synthetic base refit failure" = 2L)
+  )
+  expect_equal(sum(b$failure_reasons), b$n_failed)
+})
+
+test_that("a refit that returns a bare vector is a failed replicate, not a crash (#333)", {
+  vf <- no_data_weibull(avc_fixture())
+  env <- new.env(parent = vf$call_env %||% globalenv())
+  assign("atomic_refit", function(...) c(1, 2), envir = env)
+  vf$call[[1L]] <- as.name("atomic_refit")
+  vf$call_env <- env
+
+  b <- suppressWarnings(hzr_bootstrap(vf, n_boot = 3L, seed = 1L))
+  expect_equal(b$n_success, 0L)
+  expect_equal(b$n_failed, 3L)
+  expect_identical(b$failure_reasons,
+                   c("refit returned a numeric, not a fit object" = 3L))
+
+  # Select mode reads its base refit inside the replicate's handler, so it
+  # reports the same reason rather than the `$` error.
+  d <- avc_fixture()
+  base <- hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
+                 dist = "weibull", theta = c(0.1, 1), fit = TRUE)
+  env <- new.env(parent = base$call_env %||% globalenv())
+  assign("atomic_refit", function(...) c(1, 2), envir = env)
+  base$call[[1L]] <- as.name("atomic_refit")
+  base$call_env <- env
+  bs <- suppressWarnings(hzr_bootstrap(base, n_boot = 3L, seed = 1L,
+                                       scope = ~ age, criterion = "wald"))
+  expect_equal(bs$n_failed, 3L)
+  expect_identical(bs$failure_reasons,
+                   c("refit returned a numeric, not a fit object" = 3L))
+})
+
+# A refit that returns a list is not thereby a fit (#343). One with no `fit`
+# was tallied as a convergence failure, and one whose fit held an objective
+# but no estimates passed as a success and then ended the run building its
+# replicate row.
+with_refit_returning <- function(fit, value) {
+  env <- new.env(parent = fit$call_env %||% globalenv())
+  assign("odd_refit", function(...) value, envir = env)
+  fit$call[[1L]] <- as.name("odd_refit")
+  fit$call_env <- env
+  fit
+}
+
+test_that("a refit returning a list with no fit is named as such, in both modes (#343)", {
+  reason <- "refit returned a data.frame with no `fit`, not a fit object"
+  vf <- with_refit_returning(no_data_weibull(avc_fixture()),
+                             data.frame(a = 1))
+  b <- suppressWarnings(hzr_bootstrap(vf, n_boot = 3L, seed = 1L))
+  expect_identical(b$failure_reasons, stats::setNames(3L, reason))
+
+  d <- avc_fixture()
+  base <- hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
+                 dist = "weibull", theta = c(0.1, 1), fit = TRUE)
+  bs <- suppressWarnings(hzr_bootstrap(
+    with_refit_returning(base, data.frame(a = 1)), n_boot = 3L, seed = 1L,
+    scope = ~ age, criterion = "wald"
+  ))
+  expect_identical(bs$failure_reasons, stats::setNames(3L, reason))
+})
+
+test_that("a refit with an objective but no estimates fails its replicate, not the run (#343)", {
+  vf <- with_refit_returning(no_data_weibull(avc_fixture()),
+                             list(fit = list(objective = 1, theta = NULL)))
+  b <- suppressWarnings(hzr_bootstrap(vf, n_boot = 3L, seed = 1L))
+  expect_equal(b$n_success, 0L)
+  expect_identical(
+    b$failure_reasons,
+    c("refit returned no parameter estimates" = 3L)
+  )
+  expect_equal(nrow(b$replicates), 0L)
+})
+
+test_that("a fit whose call names a NULL formula and no data says why it cannot resample (#343)", {
+  # A wrapper that forwarded `formula = fml` with `fml` NULL made a vector fit
+  # whose call still names a formula. With no `data` frame either, there was
+  # nothing to count rows in, and the run stopped inside sample.int() with
+  # "length(n) == 1L is not TRUE".
+  d <- avc_fixture()
+  vf <- no_data_weibull(d)
+  fml <- NULL
+  vf$call$formula <- quote(fml)
+  msg <- tryCatch(hzr_bootstrap(vf, n_boot = 2L, seed = 1L),
+                  error = conditionMessage)
+  expect_match(msg, "cannot count the rows to resample", fixed = TRUE)
+  expect_no_match(msg, "length(n)", fixed = TRUE)
+})
+
+test_that("a not-a-fit reason agrees its article with a vowel-initial class", {
+  # The reason is a tallied key, so its article follows the class's first
+  # letter (ledger item 2): "an integer", where it read "a integer". The
+  # existing keys above pin consonant classes and cannot catch that.
+  expect_identical(.hzr_bootstrap_not_a_fit(1L),
+                   "refit returned an integer, not a fit object")
+  expect_identical(.hzr_bootstrap_not_a_fit(structure(list(fit = 1), class = "alpha")),
+                   "refit returned an alpha with no `fit`, not a fit object")
+  # A consonant-initial class keeps the key it always had.
+  expect_identical(.hzr_bootstrap_not_a_fit(1.5),
+                   "refit returned a numeric, not a fit object")
 })
