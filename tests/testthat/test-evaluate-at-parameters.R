@@ -460,8 +460,10 @@ test_that("the refusals describe the model in front of them (#144)", {
   x <- matrix(d$age, ncol = 1, dimnames = list(NULL, "age"))
   # A single-distribution model has no phases, and here the stored vector is
   # LONGER than the model's count: the multiphase explanation must not fire.
+  # hazard() refuses to build such an object (#375), so it is made by hand.
   w <- hazard(time = d$int_dead, status = d$dead, x = x, dist = "weibull",
-              theta = c(0.05, 0.9, 0.01, 99), fit = FALSE)
+              theta = c(0.05, 0.9, 0.01), fit = FALSE)
+  w$fit$theta <- c(0.05, 0.9, 0.01, 99)
   msg <- tryCatch(hzr_evaluate(w, theta = w$fit$theta),
                   error = conditionMessage)
   expect_match(msg, "has 4 entries, but this weibull model takes 3")
@@ -471,7 +473,8 @@ test_that("the refusals describe the model in front of them (#144)", {
   # the same length as the vector [3]". The correct theta evaluates, and its
   # names are simply not taken from the mismatched stored vector.
   wn <- hazard(time = d$int_dead, status = d$dead, x = x, dist = "weibull",
-               theta = c(a = 0.05, b = 0.9, c = 0.01, d = 99), fit = FALSE)
+               theta = c(0.05, 0.9, 0.01), fit = FALSE)
+  wn$fit$theta <- c(a = 0.05, b = 0.9, c = 0.01, d = 99)
   ev <- hzr_evaluate(wn, theta = c(0.05, 0.9, 0.01))
   expect_true(is.finite(ev$logLik))
   expect_null(names(ev$theta))

@@ -105,6 +105,12 @@ hzr_evaluate <- function(object, theta, times = NULL) {
          },
          " There is no likelihood to report.", call. = FALSE)
   }
+  if (!identical(dist, "multiphase")) {
+    # The same count and sentence as hazard() (#375). n_par is that count.
+    .hzr_check_theta(theta, dist,
+                     n_coef = if (is.null(prepared$x)) 0L else ncol(prepared$x),
+                     windowed = !is.null(object$spec$time_windows))
+  }
   if (length(theta) != prepared$n_par) {
     stored <- length(object$fit$theta)
     stop(if (identical(dist, "multiphase") && stored &&

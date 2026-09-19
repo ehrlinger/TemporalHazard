@@ -831,9 +831,6 @@ hazard <- function(formula = NULL,
     if (!is.numeric(theta) || any(!is.finite(theta))) {
       stop("'theta' must be a finite numeric vector when provided.", call. = FALSE)
     }
-    # A Weibull scale or shape <= 0 is outside the model; the optimizer died
-    # on it with "non-finite value supplied by optim" (#383).
-    if (fit) .hzr_check_theta(theta, dist)
 
     # If x exists, theta must include coefficients for all variates
     # theta = [shape parms ... | covariate coefficients ...]
@@ -916,6 +913,17 @@ hazard <- function(formula = NULL,
   # Only the names this fit reads go on: consumers read control with `$`,
   # which would partial-match a warned name such as n_starts_extra (#405).
   control <- .hzr_validate_control(control, dist)
+
+  # A single-distribution theta must have one entry per parameter and, for
+  # Weibull, a positive scale and shape, fitted or not: an unfitted object
+  # of the wrong length can never be predicted from. Here, because x_fit is
+  # final only after time-window expansion. Multiphase is checked below
+  # (#408), where fit = FALSE may legitimately carry fewer entries.
+  if (!is.null(theta) && dist != "multiphase") {
+    .hzr_check_theta(theta, dist,
+                     n_coef = if (is.null(x_fit)) 0L else ncol(x_fit),
+                     windowed = !is.null(time_windows))
+  }
 
   # Multiphase validation
   if (dist == "multiphase") {

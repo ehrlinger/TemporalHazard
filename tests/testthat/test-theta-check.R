@@ -62,3 +62,25 @@ test_that("hzr_evaluate() counts parameters as the likelihood does, not as contr
                "'theta' has 4 entries, but this weibull model takes 3",
                fixed = TRUE)
 })
+
+test_that("an unfitted Weibull model refuses a non-positive scale or shape too (#375)", {
+  # An unfitted object with such a theta can never be predicted from.
+  expect_error(
+    hazard(survival::Surv(t, s) ~ x, data = tc_data(), dist = "weibull",
+           theta = c(0, 1, 0), fit = FALSE),
+    "Weibull scale mu = 0", fixed = TRUE
+  )
+})
+
+test_that("an unsupported distribution is not told it takes 0 parameters (#375)", {
+  # The length check covers the four distributions whose count is known;
+  # anything else reaches the refusal that already exists for it.
+  d <- tc_data()
+  msg <- tryCatch(hazard(time = d$t, status = d$s, dist = "gompertz",
+                         theta = c(1, 1), fit = TRUE),
+                  error = conditionMessage)
+  expect_match(msg, "not yet supported for fitting", fixed = TRUE)
+  expect_false(grepl("takes 0", msg, fixed = TRUE))
+  expect_s3_class(hazard(time = d$t, status = d$s, dist = "gompertz",
+                         theta = c(1, 1), fit = FALSE), "hazard")
+})

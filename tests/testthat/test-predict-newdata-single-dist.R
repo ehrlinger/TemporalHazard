@@ -285,9 +285,12 @@ test_that("a fit with no covariates ignores newdata's unused columns (#300)", {
     }
   }
   # Only a fit without coefficients drops the columns: one that stored no
-  # `x` but has a coefficient still takes them by position.
+  # `x` but has a coefficient still takes them by position. hazard() now
+  # refuses to build that object (#375), so it is made by hand: predict()
+  # must still behave so for any object that reaches it another way.
   obj <- hazard(time = d$int_dead, status = d$dead, dist = "exponential",
-                theta = c(-4, 0.01))
+                theta = -4)
+  obj$fit$theta <- c(-4, 0.01)
   expect_equal(predict(obj, newdata = data.frame(time = .sd_time, age = 70),
                        type = "linear_predictor"),
                c(0.7, 0.7), tolerance = 1e-12)
