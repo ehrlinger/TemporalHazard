@@ -96,9 +96,10 @@ Default \code{TRUE}.}
 \code{control = list(maxit = 500)}) and an \code{objective} equal to the base
 fit's are accepted. Any other name is an error: a misspelling such as
 \code{slentyr} would be stored by \code{hazard()} without being read, and every
-other \code{hazard()} argument (the response, data, \code{weights},
-\code{time_windows}, \code{dist}, \code{theta}, \code{phases}, \code{fit}) is taken from the base
-model, so that each candidate is compared with the model it extends.
+other \code{hazard()} argument (the response, \code{weights}, \code{time_windows},
+\code{dist}, \code{theta}, \code{phases}, \code{fit} and so on) is set by the refit itself,
+from the base model and \code{data}, so that each candidate is compared with
+the model it extends.
 The \code{print()}, \code{summary()} and \code{as.data.frame()} methods ignore \code{...}.}
 
 \item{x}{An \code{hzr_stepwise} object.}

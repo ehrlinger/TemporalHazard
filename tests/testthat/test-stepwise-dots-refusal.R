@@ -89,7 +89,7 @@ test_that("ambiguous, repeated and malformed arguments are refused (#386)", {
   # pmatch() returns NA for an ambiguous prefix as for no match; the two
   # need different messages.
   expect_match(refused_386(screen_386(base, d, ti = 1)),
-               "`ti` abbreviates more than one hazard() argument",
+               "`ti` abbreviates more than one argument",
                fixed = TRUE)
   # After spelling out, `cont` is a second `control`.
   expect_match(refused_386(screen_386(base, d, control = list(),
@@ -130,9 +130,8 @@ test_that("`control` reaches the refits, and so does an abbreviation (#386)", {
 })
 
 test_that("hzr_bootstrap() refuses at entry, not per replicate (#386)", {
-  # Inside a replicate, hzr_stepwise()'s refusal would be caught and tallied
-  # as a replicate failure. The bootstrap must refuse before resampling, and
-  # before seeding, so the caller's random number stream is left alone.
+  # The bootstrap refuses before seeding, so the caller's random number
+  # stream is left alone and the error names hzr_bootstrap().
   d <- dots_data_386()
   base <- dots_base_386(d)
   boot <- function(...) {
@@ -151,10 +150,15 @@ test_that("hzr_bootstrap() refuses at entry, not per replicate (#386)", {
                "^hzr_bootstrap\\(\\): `weights` cannot be passed")
   expect_match(refused_386(boot(objective = "sas")),
                "^hzr_bootstrap\\(\\): `objective = \"sas\"` differs")
+  # `trace` is the bootstrap's own name in `...`: repeated, or abbreviated
+  # alongside the hazard() names it prefixes, it is refused here too.
+  expect_match(refused_386(boot(trace = TRUE, trace = FALSE)),
+               "`trace` is given more than once", fixed = TRUE)
+  expect_match(refused_386(boot(t = TRUE)), "(`trace`, `time`", fixed = TRUE)
   expect_identical(.Random.seed, before)
 })
 
-test_that("hzr_bootstrap() still forwards `control` and `trace` (#386)", {
+test_that("hzr_bootstrap() forwards `control` and accepts `trace` (#386)", {
   skip_on_cran() # bootstrap replicates with a screen each
   # reltol = 1e-2 stops each refit sooner but still converged, so com_iv
   # enters every replicate either way and only its estimate moves. A run

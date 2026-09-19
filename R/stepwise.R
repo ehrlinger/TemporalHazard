@@ -145,9 +145,10 @@
 #'   `control = list(maxit = 500)`) and an `objective` equal to the base
 #'   fit's are accepted. Any other name is an error: a misspelling such as
 #'   `slentyr` would be stored by `hazard()` without being read, and every
-#'   other `hazard()` argument (the response, data, `weights`,
-#'   `time_windows`, `dist`, `theta`, `phases`, `fit`) is taken from the base
-#'   model, so that each candidate is compared with the model it extends.
+#'   other `hazard()` argument (the response, `weights`, `time_windows`,
+#'   `dist`, `theta`, `phases`, `fit` and so on) is set by the refit itself,
+#'   from the base model and `data`, so that each candidate is compared with
+#'   the model it extends.
 #'   The `print()`, `summary()` and `as.data.frame()` methods ignore `...`.
 #'
 #' @return An object of class `c("hzr_stepwise", "hazard")`, the
@@ -877,19 +878,21 @@ hzr_stepwise <- function(fit,
   tick <- function(x) paste0("`", x, "`", collapse = ", ")
   full <- nms
   unknown <- from_base <- character()
+  candidates <- c(extra, hz)
   for (i in seq_along(nms)) {
-    if (nms[i] %in% extra) next
-    m <- pmatch(nms[i], hz)
+    m <- pmatch(nms[i], candidates)
     if (is.na(m)) {
-      prefixed <- hz[startsWith(hz, nms[i])]
+      prefixed <- candidates[startsWith(candidates, nms[i])]
       if (length(prefixed) > 1L) {
         stop(caller, "(): `", nms[i], "` abbreviates more than one ",
-             "hazard() argument (", tick(prefixed), "). Spell it out.",
-             call. = FALSE)
+             "argument it could be passed to (", tick(prefixed), "). ",
+             "Spell it out.", call. = FALSE)
       }
       unknown <- c(unknown, nms[i])
-    } else if (hz[m] %in% forwardable) {
-      full[i] <- hz[m]
+    } else if (candidates[m] %in% extra) {
+      full[i] <- candidates[m]
+    } else if (candidates[m] %in% forwardable) {
+      full[i] <- candidates[m]
     } else {
       from_base <- c(from_base, nms[i])
     }
@@ -912,15 +915,15 @@ hzr_stepwise <- function(fit,
   }
   if (length(from_base)) {
     stop(caller, "(): ", tick(from_base), " cannot be passed through ",
-         "`...`. Every candidate refit takes the response, data, weights, ",
-         "time windows, dist, theta, phases and fit from the base model, so ",
-         "that each candidate is compared with the model it would extend. ",
+         "`...`. Every candidate refit sets these itself, from the base ",
+         "model and `data`, so that each candidate is compared with the ",
+         "model it would extend. ",
          "Of hazard()'s arguments, `...` forwards only `control` and an ",
          "`objective` equal to the base fit's. To change anything else, refit ",
          "the base model and screen from that.", call. = FALSE)
   }
-  if (anyDuplicated(full[!full %in% extra])) {
-    dup <- unique(full[duplicated(full) & !full %in% extra])
+  if (anyDuplicated(full)) {
+    dup <- unique(full[duplicated(full)])
     stop(caller, "(): ", tick(dup), " is given more than once in `...`, ",
          "counting abbreviations.", call. = FALSE)
   }

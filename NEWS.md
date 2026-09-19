@@ -232,8 +232,8 @@
   such as `contr`, and an `objective` equal to the base fit's. A differing
   `objective`, a `control` that is not a list, a repeated argument and an
   ambiguous abbreviation are refused at entry rather than failing every
-  candidate. `hzr_bootstrap()` checks before seeding, so a refusal is not
-  tallied as a replicate failure. `?hzr_stepwise` had also described `...`
+  candidate. `hzr_bootstrap()` checks before seeding, so a refusal leaves
+  the random number stream untouched and names `hzr_bootstrap()`. `?hzr_stepwise` had also described `...`
   as unused, because the print method's entry replaced it.
 
 * **`hazard()` now refuses a multiphase phase formula with covariates when
