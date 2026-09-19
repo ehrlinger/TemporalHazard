@@ -146,6 +146,24 @@ test_that("multiphase: a working bootstrap does not warn on its fixed shapes (#3
   expect_length(zero_var_warnings(out$w), 0L)
 })
 
+test_that("a free parameter at exactly 0 in every replicate is named (#373)", {
+  # The tolerance is relative to the mean, so at a mean of 0 it is sd == 0:
+  # intended, since a free estimate that is exactly 0 in every replicate
+  # did not move either.
+  d <- zv_data_373()
+  ok <- hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
+               dist = "weibull", theta = c(0.1, 1), fit = TRUE)
+  zero <- ok
+  zero$fit$theta[2L] <- 0
+  out <- run_373(hzr_bootstrap(same_refit_373(ok, zero), n_boot = 3L,
+                               seed = 1L))
+  s <- out$res$summary
+  expect_identical(s$mean[s$parameter == "param_2"], 0)
+  zw <- zero_var_warnings(out$w)
+  expect_length(zw, 1L)
+  expect_match(zw, "`param_1`, `param_2`", fixed = TRUE)
+})
+
 test_that("a parameter in only one replicate is not reported (#373)", {
   # With one replicate there is no spread to test; sd is NA, not 0.
   d <- zv_data_373()
