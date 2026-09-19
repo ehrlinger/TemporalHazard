@@ -752,8 +752,12 @@
   replicates of five. And a free parameter that does not move across the
   replicates that estimated it, to within rounding, is named in a warning:
   from `theta = 50` the objective is finite but every replicate stays at
-  its start, with an `sd` of about 1e-14 around 50. Parameters held by
-  `hzr_phase(..., fixed =)` are identical by design and are not named.
+  its start, with an `sd` of about 1e-14 around 50. Parameters the fit
+  holds fixed (by `hzr_phase(..., fixed =)`, by a constraint, or by
+  Conservation of Events) are identical by design and are not named. A run
+  in which only some replicates stay at their start while their objective is
+  finite is not caught; that rests on the optimizer's convergence test
+  (#351).
   What a sentinel objective should mean for a single fit is tracked
   separately (#351, #374).
 

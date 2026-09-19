@@ -101,7 +101,9 @@ parameter. In \code{mode = "select"}, \code{pct} is the selection frequency
 and the other statistics are conditional on selection. A free
 parameter whose \code{sd} is 0, to within rounding, across two or more
 replicates draws a warning naming it: the replicates did not
-re-estimate it. Parameters held by \code{hzr_phase(fixed = )} are exempt.}
+re-estimate it. Parameters the fit holds fixed are exempt: those held
+by \code{hzr_phase(fixed = )}, shapes a constraint derives, and a conserved
+\code{log_mu}.}
 \item{n_success}{Number of successfully converged replicates.}
 \item{n_failed}{Number of replicates that failed: the refit stopped with
 an error, returned something other than a fit, returned a non-finite

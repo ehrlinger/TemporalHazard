@@ -1623,7 +1623,9 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     and the other statistics are conditional on selection. A free
 #'     parameter whose `sd` is 0, to within rounding, across two or more
 #'     replicates draws a warning naming it: the replicates did not
-#'     re-estimate it. Parameters held by `hzr_phase(fixed = )` are exempt.}
+#'     re-estimate it. Parameters the fit holds fixed are exempt: those held
+#'     by `hzr_phase(fixed = )`, shapes a constraint derives, and a conserved
+#'     `log_mu`.}
 #'   \item{n_success}{Number of successfully converged replicates.}
 #'   \item{n_failed}{Number of replicates that failed: the refit stopped with
 #'     an error, returned something other than a fit, returned a non-finite
@@ -2296,8 +2298,9 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       } else {
         param_names[seq_along(theta_b)]
       }
-      # fixed_mask is logical(0) on a single-distribution fit, which fixes
-      # nothing; on a multiphase fit it is aligned with theta.
+      # fixed_mask is NULL when nothing is fixed (every single-distribution
+      # fit); otherwise it is aligned with theta. It also marks shapes a
+      # constraint derives and a conserved log_mu, which are exempt too.
       fixed_names <- union(fixed_names,
                            names_b[as.logical(boot_fit$fit$fixed_mask)])
       rep_list[[b]] <- data.frame(
@@ -2391,8 +2394,13 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
             "moves between resamples, so the replicates did not re-estimate ",
             if (plural) "these" else "it", ", or the data do not inform ",
             if (plural) "them" else "it", ", and the summary's sd and ",
-            "interval carry no sampling variation. One cause is a fit that ",
-            "never left its starting values.", call. = FALSE)
+            "interval carry no sampling variation",
+            if (select_mode) {
+              paste0(", and the selection frequencies from these replicates ",
+                     "are not evidence either")
+            },
+            ". One cause is a fit that never left its starting values.",
+            call. = FALSE)
   }
 
   # A selection frequency is the whole deliverable of a select-mode run, so a
