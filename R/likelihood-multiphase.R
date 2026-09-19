@@ -1546,8 +1546,28 @@
         paste(format(sh$variation[saturated], digits = 3), collapse = ", "),
         "). The phase has already finished before the first observation, so ",
         "it acts as a constant offset: 'mu' remains identified but the shape ",
-        "parameters do not, and the likelihood is unchanged whether they are ",
-        "pinned or fitted. A 'cdf' phase whose half-life is far shorter than ",
+        "parameters do not",
+        # The likelihood also evaluates the phase at entry times and interval
+        # bounds, where a phase flat across the observed times can still be
+        # climbing. Claiming the likelihood is unchanged is then false -- by
+        # 103 log-likelihood units on one interval-censored fit (#228) -- so
+        # say what was measured and point at the rest.
+        if (n_added > 0L) {
+          paste0(
+            ", at least not by those times. This fit also evaluates the ",
+            "phase at ", n_added,
+            " further time", if (n_added == 1L) "" else "s",
+            " (counting-process entry times or interval bounds), which this ",
+            "measure does not cover: the shapes may still be identified ",
+            "there, so check before treating them as unidentified"
+          )
+        } else {
+          paste0(
+            ", and the likelihood is unchanged whether they are pinned or ",
+            "fitted"
+          )
+        },
+        ". A 'cdf' phase whose half-life is far shorter than ",
         "the first observed time is the usual cause.",
         call. = FALSE)
     }

@@ -255,7 +255,8 @@ zero entry time makes separately observable, so a fit can be warned about
 while being identified. For the same reason the per-phase measures can
 overstate what an interval-censored or left-truncated fit loses, since a
 phase flat across the event times may still be identified through the
-bounds. The measured shares are
+bounds; the saturated warning says so where such points exist, rather
+than claiming the likelihood is unchanged (#228). The measured shares are
 kept on the fit as \code{fit$fit$phase_share}. Raise it to catch marginal
 phases, set it to 0 to silence the check.
 \item \code{reltol}: Relative convergence tolerance on the objective, the negative

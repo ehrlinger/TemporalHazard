@@ -949,6 +949,20 @@
   value, so a fit whose `tau` ran past `exp(709.78)` could return a finite
   objective there while its score could not be evaluated. Such a point is
   now infeasible. Fits whose scales stay in range are unchanged.
+* **The saturated-phase warning no longer claims the likelihood is unchanged
+  when the fit evaluates the phase elsewhere (#228).** The warning reports a
+  phase whose contribution is constant across the event times, and said its
+  shape parameters were unidentified and "the likelihood is unchanged whether
+  they are pinned or fitted". An interval-censored or left-truncated
+  likelihood also evaluates the phase at the interval bounds and the
+  counting-process entry times, where a phase flat across the event times can
+  still be climbing: on one such fit the likelihood moves 103 units in a
+  parameter the message called unchanged. Where the fit has such points, the
+  warning now says how many there are and that the shapes may be identified
+  there. **The warning still fires on such a fit**: which phases are
+  reported, and `fit$fit$phase_share`, are unchanged, and what those further
+  points are worth is not measured. The diagnostic says less than it did,
+  not something different.
 
 * **`predict(newdata = )` now warns when `newdata` is evaluated differently
   from the fitting data (#331, #334, #335).** Predicted values are
