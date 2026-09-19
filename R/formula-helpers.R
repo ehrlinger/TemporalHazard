@@ -423,6 +423,9 @@
 #' @noRd
 .hzr_rebuild_design <- function(design, newdata, cols, where) {
   .hzr_warn_row_dependent(design$terms, where)
+  .hzr_refuse_outside_rows(design$terms,
+                           .hzr_newdata_frame(newdata, design$data_vars),
+                           where)
   build <- function(x) {
     nd <- .hzr_newdata_frame(x, design$data_vars)
     mf <- stats::model.frame(design$terms, data = nd, xlev = design$xlevels,
@@ -712,12 +715,67 @@
   bad <- which(colSums(!same) > 0L)
   if (length(bad) > 0L) {
     term <- unique(c("(Intercept)", labels)[attr(mm, "assign")[bad] + 1L])
-    stop("term ", paste0("'", term, "'", collapse = ", "), " of ", where,
-         " uses row-level values taken from outside `data`; ",
-         "predict(newdata =) cannot rebuild them for new rows. Move them ",
-         "into `data` as columns and refit.", call. = FALSE)
+    .hzr_stop_outside_term(term, where)
   }
   mm
+}
+
+
+#' Refuse model terms that take row-level values from outside `data`
+#'
+#' One sentence for both places that find such a term: the pre-check before
+#' `model.frame()` (`.hzr_refuse_outside_rows()`) and the equivariance check
+#' after it (`.hzr_check_equivariant()`).
+#' @param term Character vector of term labels.
+#' @param where Text naming the design.
+#' @noRd
+.hzr_stop_outside_term <- function(term, where) {
+  stop("term ", paste0("'", term, "'", collapse = ", "), " of ", where,
+       " uses row-level values taken from outside `data`; ",
+       "predict(newdata =) cannot rebuild them for new rows. Move them ",
+       "into `data` as columns and refit.", call. = FALSE)
+}
+
+
+#' Name a term whose variable has the wrong number of rows for `newdata`
+#'
+#' `newdata` supplies only the fit's data columns, so a model-frame variable
+#' evaluated there with a row count other than `newdata`'s took its rows
+#' from outside `data` (a vector in the formula's environment). Left to
+#' `model.frame()`, that failed with "variable lengths differ", naming
+#' whichever variable it compared against, or reached the row-count
+#' backstop, which names no term (#409). A scalar or a knot vector passed as
+#' an argument is not a model-frame variable of the wrong length, so it is
+#' untouched. A variable that fails to evaluate is left for `model.frame()`
+#' to report.
+#' @param terms The stored terms object.
+#' @param nd The newdata frame, restricted to the data columns.
+#' @param where Text naming the design.
+#' @noRd
+.hzr_refuse_outside_rows <- function(terms, nd, where) {
+  vars <- attr(terms, "predvars")
+  if (is.null(vars)) vars <- attr(terms, "variables")
+  vars <- as.list(vars)[-1L]
+  factors <- attr(terms, "factors")
+  if (!length(vars) || !length(factors)) {
+    return(invisible(NULL))
+  }
+  env <- environment(terms)
+  if (is.null(env)) env <- parent.frame()
+  wrong <- vapply(vars, function(v) {
+    val <- tryCatch(eval(v, nd, env), error = function(e) NULL)
+    !is.null(val) && NROW(val) != nrow(nd)
+  }, logical(1))
+  if (!any(wrong)) {
+    return(invisible(NULL))
+  }
+  rows <- intersect(rownames(factors), vapply(
+    as.list(attr(terms, "variables"))[-1L][wrong],
+    function(v) paste(deparse(v), collapse = " "), character(1)
+  ))
+  term <- colnames(factors)[colSums(factors[rows, , drop = FALSE] != 0) > 0]
+  if (length(term)) .hzr_stop_outside_term(term, where)
+  invisible(NULL)
 }
 
 
