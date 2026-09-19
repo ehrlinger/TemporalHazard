@@ -740,6 +740,18 @@
 
 ## Bug fixes
 
+* **`hzr_bootstrap()` warns when a free parameter is identical in every
+  successful replicate (#373).** Resampled data should move every estimate
+  a replicate makes, so an `sd` of exactly 0 means the replicates did not
+  re-estimate it. A Weibull fit started at `theta = c(1e10, 1e10)` stops at
+  the optimizer's -1e10 sentinel instead of a log-likelihood, and each
+  replicate reproduced it: 5 of 5 replicates were counted as successes,
+  every `sd` was 0, and nothing warned. The warning names each such
+  parameter. Parameters held by `hzr_phase(..., fixed =)` are identical by
+  design and are not named; a single-distribution fit fixes none. What a
+  sentinel objective should mean for the fit itself is tracked separately
+  (#351, #374).
+
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded
   as untranslated and build no phase. PROC HAZARD runs that phase on its own

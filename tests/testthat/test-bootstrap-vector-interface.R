@@ -367,7 +367,19 @@ with_flaky_refit <- function(fit) {
 
 test_that("failure_reasons tallies every failed replicate, by reason, without warning on partial failure", {
   vf <- with_flaky_refit(no_data_weibull(avc_fixture()))
-  expect_no_warning(b <- hzr_bootstrap(vf, n_boot = 6L, seed = 1L))
+  w <- character()
+  b <- withCallingHandlers(
+    hzr_bootstrap(vf, n_boot = 6L, seed = 1L),
+    warning = function(x) {
+      w <<- c(w, conditionMessage(x))
+      invokeRestart("muffleWarning")
+    }
+  )
+  # Partial failure does not warn. The one warning is #373's: the two
+  # successes are the same fit object by construction, so every free
+  # parameter is identical across them.
+  expect_length(w, 1L)
+  expect_match(w, "(sd = 0)", fixed = TRUE)
   expect_equal(b$n_success, 2L)
   expect_equal(b$n_failed, 4L)
   expect_identical(

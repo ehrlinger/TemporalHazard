@@ -2117,6 +2117,9 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # the message with it: a run could fail every replicate and say only that
   # they failed. Named integer(0), never NULL, when nothing fails.
   failure_reasons <- stats::setNames(integer(0), character(0))
+  # Parameters held by `fixed =` in any replicate: identical across replicates
+  # by design, so the zero-variance check below must not name them (#373).
+  fixed_names <- character()
   # Replicates whose stepwise screen stopped because no candidate's score
   # could be computed.  Each replicate runs under suppressWarnings(), so the
   # step-level warning never reaches the user here; the count has to be read
@@ -2282,6 +2285,12 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       } else {
         param_names[seq_along(theta_b)]
       }
+      # fixed_mask is logical(0) on a single-distribution fit, which fixes
+      # nothing; only a mask aligned with theta names a fixed parameter.
+      mask_b <- boot_fit$fit$fixed_mask
+      if (length(mask_b) == length(theta_b)) {
+        fixed_names <- union(fixed_names, names_b[as.logical(mask_b)])
+      }
       rep_list[[b]] <- data.frame(
         replicate = b,
         parameter = names_b,
@@ -2343,6 +2352,35 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
                               max = numeric(0), ci_lower = numeric(0),
                               ci_upper = numeric(0),
                               stringsAsFactors = FALSE)
+  }
+
+  # Resampling should move every estimate a replicate makes, so a free
+  # parameter with sd exactly 0 across the replicates that estimated it was not
+  # re-estimated. #373: a fit at the optimizer's -1e10 sentinel reproduced
+  # itself in every replicate and was counted n_success = 5, n_failed = 0,
+  # with no warning. AGENTS.md prescribes asserting that a free parameter
+  # varies; this is that assertion.
+  # sd() of a single replicate is NA, so the is.na() test also skips a
+  # parameter estimated only once.
+  flat <- summary_df$parameter[!is.na(summary_df$sd) & summary_df$sd == 0 &
+                                 !summary_df$parameter %in% fixed_names]
+  if (length(flat)) {
+    n_flat <- summary_df$n[match(flat, summary_df$parameter)]
+    warning("hzr_bootstrap(): free parameter", if (length(flat) > 1L) "s",
+            " ", paste0("`", flat, "`", collapse = ", "),
+            if (length(flat) > 1L) " were" else " was", " identical in ",
+            if (all(n_flat == n_success)) {
+              paste0("all ", n_success, " successful replicates")
+            } else {
+              "every replicate that estimated it"
+            },
+            " (sd = 0). Resampled data should move every estimate a ",
+            "replicate makes, so these replicates did not re-estimate ",
+            if (length(flat) > 1L) "them" else "it",
+            ", and the summary's sd and interval carry no sampling variation. ",
+            "One cause is a fit whose objective sits at the optimizer's ",
+            "-1e10 sentinel rather than at a log-likelihood; check ",
+            "`object$fit$objective`.", call. = FALSE)
   }
 
   # A selection frequency is the whole deliverable of a select-mode run, so a
