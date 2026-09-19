@@ -43,14 +43,25 @@ When provided, overrides direct time/status/x arguments and extracts from data.
 Example: \code{hazard(Surv(time, status) ~ x1 + x2, data = df, dist = "weibull", fit = TRUE)}.}
 
 \item{data}{Optional data frame. On the formula path it supplies the model
-frame. On the vector path \code{time}, \code{status}, \code{time_lower}, \code{time_upper}
-and \code{weights} are evaluated in its scope, the way \code{\link[base:subset]{base::subset()}} and
-\code{\link[base:transform]{base::transform()}} do: a bare column name resolves to that column, and
+frame, and \code{weights} is evaluated in its scope. On the vector path
+\code{time}, \code{status}, \code{time_lower}, \code{time_upper} and \code{weights} are evaluated
+in its scope, the way \code{\link[base:subset]{base::subset()}} and \code{\link[base:transform]{base::transform()}} do: a bare column name resolves to that column, and
 anything that is not a column (\code{df$col}, a local vector, a literal)
 falls through to the calling environment. A column of the same name as
 a caller variable wins, and because that silently discards the caller's
 vector (the way a wrapper forwarding its own argument by name does),
 such a name raises a warning naming the symbol and the argument.
+The warning reads the names written in the expression. When the
+argument is the name alone, it says the column was used. When the name
+is part of a larger expression, it does not say which value was read:
+the expression may never evaluate the name (an unused function
+argument), may rebind it first (a loop variable, an assignment) or may
+evaluate it somewhere else (\code{with()}), and the warning cannot tell. A name chosen at run time, as in \code{get(nm)} or
+\code{eval(as.name(nm))}, resolves the same way, column first, as it does in
+\code{\link[stats:lm]{stats::lm()}}, but is not checked; the vector path has behaved so since
+1.2.2. No second evaluation is made to compare the two values, because
+evaluating an expression such as \code{runif(n)} twice gives two different
+vectors.
 Masked arguments are validated like any other, so an \code{NA} in a
 masked column errors: an \code{NA} count on the SAS \code{ICENSOR}
 path reaches \code{weights} and stops with \verb{'weights' must be non-negative and finite}.}
@@ -123,7 +134,12 @@ column and the column of prediction times in the decomposed output of
 \item{weights}{Optional numeric vector of observation weights (non-negative).
 Each observation's log-likelihood contribution is multiplied by its weight.
 Use for severity-weighted repeated events. Default \code{NULL} (unit weights).
-Implements the SAS \code{WEIGHT} statement.}
+Implements the SAS \code{WEIGHT} statement. With \code{data}, a name is looked up
+among its columns first and then in the calling environment, on both
+interfaces. \code{\link[stats:lm]{stats::lm()}} also looks in \code{data} first, but then in the
+formula's environment rather than the caller's, so a formula built
+inside another function does not bring that function's variables with
+it here. See \code{data} for the warning raised when a name is both.}
 
 \item{control}{Named list of control options (see Details).}
 
