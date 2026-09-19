@@ -8,10 +8,12 @@
 # and tried to resolve `fml`, so the refit failed with a message about
 # resolving a name rather than about the interface.
 #
-# This recognises ONE shape, the one #406 measured: `time =` in the call, no
-# stored design of either kind, and the name STILL bound to NULL where the
-# fit was made. Every other shape keeps the behaviour it has on main, and the
-# tests below pin those too, by vintage, so what was left alone is visible.
+# This recognises ONE shape, the one #406 reported: `time =` in the call, the
+# name STILL bound to NULL where the fit was made, and no data frame beside
+# any stored design -- which a formula fit must have, since hazard() requires
+# `data` with a formula. Every other shape keeps the behaviour it has on
+# main, and the tests below pin those too, by vintage, so what was left
+# alone is visible.
 # Deciding the rest needs hazard() to record its interface at fit time, which
 # is the 1.3.1 issue.
 
@@ -107,13 +109,44 @@ test_that("a multiphase wrapper fit screens as the plain fit does (#406)", {
   expect_identical(screen(wrap_m(d)), want)
 })
 
-test_that("a fit that stores a design keeps the behaviour it had (#406)", {
-  # Vintage: made today, with `x` passed directly. The narrow rule declines
-  # to classify it, so its message is main's -- about resolving the name.
-  # Changing that needs the interface recorded at fit time (1.3.1).
+test_that("the wrapper's vector fit with `x` matches the plain one (#406)", {
+  # #406's own reproduction passes `x =`. Both paths must answer exactly as
+  # they do for the same fit made without the wrapper -- including the
+  # bootstrap refusal, which exists because a design passed as `x` cannot be
+  # resampled with the rows. Skipping that refusal would pair resampled
+  # outcomes with the original design.
   d <- wv_data_406()
+  plain <- hazard(time = d$int_dead, status = d$dead,
+                  x = cbind(age = d$age), dist = "weibull",
+                  theta = c(0.1, 1, 0), fit = TRUE)
   wf <- wv_wrap_x_406(d)
   expect_false(is.null(wf$data$x))
+  expect_null(wf$data$frame)
+  screen <- function(f) {
+    wv_msg_406(hzr_stepwise(f, scope = ~ mal, data = d, direction = "forward",
+                            criterion = "wald", trace = FALSE))
+  }
+  boot <- function(f) wv_msg_406(hzr_bootstrap(f, n_boot = 2L, seed = 1L))
+  expect_match(screen(plain), "built via the vector interface", fixed = TRUE)
+  expect_identical(screen(wf), screen(plain))
+  expect_match(boot(plain), "passed directly as `x`", fixed = TRUE)
+  expect_identical(boot(wf), boot(plain))
+})
+
+test_that("a fit storing a design beside a frame keeps its behaviour (#406)", {
+  # hazard() requires `data` with a formula, so a fit holding both a design
+  # and a frame could be either interface. The rule declines it and its
+  # message stays main's -- about resolving the name. Changing that needs
+  # the interface recorded at fit time (#432).
+  d <- wv_data_406()
+  wf <- local({
+    fml <- NULL
+    hazard(formula = fml, time = d$int_dead, status = d$dead,
+           x = cbind(age = d$age), data = d, dist = "weibull",
+           theta = c(0.1, 1, 0), fit = TRUE)
+  })
+  expect_false(is.null(wf$data$x))
+  expect_false(is.null(wf$data$frame))
   expect_match(
     wv_msg_406(hzr_stepwise(wf, scope = ~ mal, data = d,
                             direction = "forward", criterion = "wald",
@@ -121,7 +154,7 @@ test_that("a fit that stores a design keeps the behaviour it had (#406)", {
     "did not resolve to a formula", fixed = TRUE
   )
   expect_match(wv_msg_406(hzr_bootstrap(wf, n_boot = 2L, seed = 1L)),
-               "cannot count the rows to resample", fixed = TRUE)
+               "did not resolve to a formula", fixed = TRUE)
 })
 
 test_that("a fit saved before `call_env` keeps the behaviour it had (#406)", {

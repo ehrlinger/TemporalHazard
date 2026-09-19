@@ -59,24 +59,29 @@
 # that, because `formula = fml` stores a symbol even when `fml` was NULL, and
 # the fit is then taken for a formula fit (#406).
 #
-# This recognises ONE such shape, the one #406 measured: the call names
-# `time =`, the fit stores no design of either kind, and the name is STILL
-# bound to NULL where the fit was made. Such a fit has nothing a formula
-# could disagree about -- no covariates were built from one -- and its
-# replicates come out identical to the same fit made without the wrapper.
+# This recognises ONE such shape, the one #406 reported: the call names
+# `time =`, the name is STILL bound to NULL where the fit was made, and the
+# fit cannot be a formula fit, because hazard() REQUIRES `data` with a
+# formula ("'data' is required when 'formula' is provided") and this fit
+# stores no frame beside its design. A fit with a design AND a frame could
+# be either, and is left alone: a formula fit saved by 1.2.10 or earlier
+# keeps `x` without `x_design`, so reading `x` as the vector path's design
+# would classify it as a vector fit and its bootstrap would report success
+# over a model whose covariate never moved.
 #
-# Every other shape keeps the behaviour it has: a fit that stores a design,
-# a fit whose name is bound to something else, and a fit that records no
-# `call_env` are all left to the formula path, where they fail loudly with a
-# message about resolving the name. Deciding those needs to know which
-# interface hazard() used, and a stored call plus a live binding cannot say:
-# three measured shapes get it wrong in both directions (see the 1.3.1
-# issue). The fix there is for hazard() to record the interface when it fits.
+# Every other shape keeps the behaviour it has: a fit with both a design and
+# a frame, a fit whose name is bound to something else, and a fit that
+# records no `call_env` are all left to the formula path, where they fail
+# loudly with a message about resolving the name. Deciding those needs to
+# know which interface hazard() used, and a stored call plus a live binding
+# cannot say: four measured shapes get it wrong in both directions (#432).
+# The fix there is for hazard() to record the interface when it fits.
 .hzr_wrapper_vector_call <- function(fit) {
   f <- fit$call$formula
   if (is.null(f)) return(TRUE)
   if (!"time" %in% names(fit$call)) return(FALSE)
-  if (!is.null(fit$data$x) || !is.null(fit$data$x_design)) return(FALSE)
+  has_design <- !is.null(fit$data$x) || !is.null(fit$data$x_design)
+  if (has_design && !is.null(fit$data$frame)) return(FALSE)
   env <- fit$call_env
   is.environment(env) &&
     is.null(tryCatch(eval(f, env), error = function(e) e))
