@@ -365,3 +365,32 @@ test_that("summary() says so when the ridge check could not run", {
   expect_true("    weak_direction_check: model not fitted" %in% out)
   expect_identical(.hzr_check_not_done_output(out, fit0), character(0))
 })
+
+test_that("a covariance that is not positive definite names no ridge (#416)", {
+  # A covariance whose "correlation" exceeds 1, or with a negative
+  # eigenvalue, is not a covariance: the Hessian was taken where it is not
+  # negative definite, typically short of the optimum. Reading it as a
+  # correlation matrix named a ridge from "correlation 1.09" on a model
+  # that is identified (#416). It is "could not look" (NA), not a ridge.
+  over_one <- matrix(c(1, 1.09, 1.09, 1), 2,
+                     dimnames = list(c("a", "b"), c("a", "b")))
+  res <- .hzr_weak_direction_impl(over_one, rcond = 1e-12,
+                                  param_names = c("a", "b"))
+  expect_identical(res$weak, NA)
+  expect_match(res$reason, "not positive definite")
+
+  # Every correlation within [-1, 1], but not a valid correlation matrix:
+  # three variables cannot be pairwise 0.995, 0.995 and -0.995.
+  r <- 0.995
+  bad <- matrix(c(1, r, r, r, 1, -r, r, -r, 1), 3)
+  res3 <- .hzr_weak_direction_impl(bad, rcond = 1e-12,
+                                   param_names = c("a", "b", "c"))
+  expect_identical(res3$weak, NA)
+  expect_match(res3$reason, "not positive definite")
+
+  # Control: a genuine, positive-definite ridge is still named.
+  ridge <- matrix(c(1, 0.995, 0.995, 1), 2)
+  found <- .hzr_weak_direction_impl(ridge, rcond = 1e-12,
+                                    param_names = c("a", "b"))$weak
+  expect_setequal(found$params, c("a", "b"))
+})

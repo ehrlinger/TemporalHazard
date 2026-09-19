@@ -190,6 +190,17 @@ NULL
   s <- sqrt(diag(V))
   R <- V / outer(s, s)
   if (anyNA(R) || any(!is.finite(R))) return(na_because("covariance has non-finite entries"))
+  # A negative eigenvalue means this is not a covariance: the Hessian was
+  # taken where it is not negative definite, typically short of the optimum.
+  # Reading it as a correlation matrix named a ridge from "correlation 1.09"
+  # on an identified model (#416), so it is a gap, not a finding. A
+  # "correlation" above 1 always leaves a negative eigenvalue, so this one
+  # test covers it.
+  e_min <- tryCatch(min(eigen(R, symmetric = TRUE, only.values = TRUE)$values),
+                    error = function(e) NA_real_)
+  if (is.na(e_min) || e_min < -sqrt(.Machine$double.eps)) {
+    return(na_because("covariance is not positive definite"))
+  }
 
   # (4) Scan the standardised directions from flattest to stiffest, rather
   #     than gating only the leading one. Taking just the top eigenvector
