@@ -988,13 +988,14 @@
   for every distribution but `"multiphase"`.
 
 * **`predict()` on an unfitted multiphase model now says what is missing
-  (#144).** It failed with `argument of length 0`, from an internal helper
-  looking up a parameter position that an unfitted object does not carry.
-  The error now says that a multiphase model built with `fit = FALSE` has no
+  (#144).** It failed with an unrelated internal error,
+  `missing value where TRUE/FALSE needed`, from `predict()` reading the
+  per-phase covariate counts that an unfitted object does not carry. The
+  error now says that a multiphase model built with `fit = FALSE` has no
   per-phase design matrices, because they are resolved when the model is
   fitted, and points at `fit = TRUE` or the new `hzr_evaluate()`. Models of
-  the other distributions built with `fit = FALSE` predict from their
-  supplied parameters as before; only multiphase ever failed.
+  the other distributions built with `fit = FALSE` still predict from their
+  supplied parameters, with the warning above; only multiphase ever failed.
 
 * **`predict(newdata = )` now warns when `newdata` is evaluated differently
   from the fitting data (#331, #334, #335).** Predicted values are
