@@ -662,8 +662,9 @@
   }
 
   # A PARMS statement that builds no phase and is NOT refused -- operands this
-  # parser could not read (a template's `MUE=?`) or could not use (a MUE with
-  # no shape operand). This is not a claim about PROC HAZARD, which is why it
+  # parser could not read (a template's `MUE=?`). A MUE or MUL with no shape
+  # operand no longer lands here: it builds on PROC HAZARD's own shape
+  # defaults (#345). This is not a claim about PROC HAZARD, which is why it
   # is kept apart from `refused` above. Theta blocks are built only alongside
   # phases, so the call below would carry theta = c() under hazard()'s
   # default Weibull: a model PROC HAZARD never fits, with no starting values.
@@ -678,7 +679,7 @@
         "could not read or use are listed in $untranslated -- for example ",
         "`?` placeholders left for the reader to fill in, an operand ",
         "written with spaces around `=` (`MUE = 0.2`, which this translator ",
-        "splits apart), or a MUE or MUL with no shape operand. This is a ",
+        "splits apart). This is a ",
         "limit of the translation, not a PROC HAZARD refusal. Correct those ",
         "operands and translate again, or fit the model by hand.",
         call. = FALSE

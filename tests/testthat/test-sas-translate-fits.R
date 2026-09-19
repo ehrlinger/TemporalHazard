@@ -160,8 +160,11 @@ test_that("a PARMS that builds no usable phase emits a stop(), not a fit", {
     ), f)
     job <- suppressWarnings(hzr_translate_sas(f))
     expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"), info = parms)
-    expect_error(eval(job$calls$fit, new.env()),
-                 "builds no phase this translator could use", info = parms)
+    msg <- tryCatch(eval(job$calls$fit, new.env()), error = conditionMessage)
+    expect_match(msg, "builds no phase this translator could use", info = parms)
+    # A MUE or MUL with no shape operand now builds its phase (#345), so the
+    # message must not offer it as a cause.
+    expect_no_match(msg, "with no shape operand", fixed = TRUE, info = parms)
     # Not the reference's own refusal, which needs a PARMS the parser read.
     expect_false(any(grepl("modterm.c", job$untranslated$reason, fixed = TRUE)),
                  info = parms)

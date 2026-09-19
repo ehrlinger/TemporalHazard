@@ -726,7 +726,10 @@ test_that("every other refusal still fires when the job carries SELECTION (#160)
     # paste0("phase_", seq_along(built)), which is "phase_" when no phase is
     # built, so setNames() failed and the whole file failed to translate.
     list(parms = "PARMS THALF=0.15 NU=1;", extra = "", msg = "selects no phase"),
-    list(parms = "PARMS MUE=0.2;", extra = "",
+    # A template's `?` builds no phase and is not refused. A MUE with no
+    # shape operand used to stand here, but it now builds on PROC HAZARD's
+    # own shape defaults (#345), so it no longer reaches this refusal.
+    list(parms = "PARMS MUE=? THALF=? NU=? MUC=?;", extra = "",
          msg = "builds no phase this translator could use"))
   for (cs in cases) {
     for (sel in c("", "SELECTION;")) {

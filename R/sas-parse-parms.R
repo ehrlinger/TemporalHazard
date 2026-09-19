@@ -30,7 +30,7 @@
 # The grammar table (.hzr_sas_grammar) is generated from HAZARD's own lexer
 # (data-raw/hazard-grammar.R), so a PARMS keyword it does not know is one
 # PROC HAZARD's lexer rejects: the job does not run. FIXG1 and FIXG3, for
-# instance, are internal flags shape.c:34-41 sets, not options. The prefix is
+# instance, are internal flags shape.c:36-41 sets, not options. The prefix is
 # kept for callers that grep it.
 .hzr_parms_unresolved_reason <- paste0(
   "unresolved PARMS keyword: not in PROC HAZARD's grammar (hazard_l.l), so ",
@@ -1470,9 +1470,9 @@
 
   # (4) An active MU whose phase carries no shape operand is built above, on
   # PROC HAZARD's shape defaults (stmtprc.c:30-37): early tHalf 1, nu 2, m 1,
-  # all data-free (setg1.c:342-348 substitutes 1 only for a non-positive
+  # all data-free (setg1.c:343-349 substitutes 1 only for a non-positive
   # tHalf), and late gamma 1, alpha 1, eta 2. The one data-dependent value is
-  # the late TAU start, 0.75*Tmax (readobs.c:154, before SETG3), recorded by
+  # the late TAU start, 0.75*Tmax (readobs.c:153-154, before SETG3), recorded by
   # the TAU row above exactly as for a written late phase with no TAU (#345).
   # This used to record the MU instead, when the parser's defaults were not
   # SAS's; they are now.

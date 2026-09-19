@@ -280,7 +280,7 @@ test_that("WEIBULL alongside FIXALPHA fixes alpha and only alpha", {
 test_that("a MUL with no late shape operand builds the phase on SAS's defaults (#345)", {
   # PARMS names a late phase by giving it a scale; PROC HAZARD runs it on the
   # shape defaults stmtprc.c:34-37 sets (gamma 1, alpha 1, eta 2), with TAU
-  # started at 0.75*Tmax by readobs.c:154 before SETG3 runs. gamma, alpha and
+  # started at 0.75*Tmax by readobs.c:153-154 before SETG3 runs. gamma, alpha and
   # eta are data-free, so the phase is mirrored; only the TAU start depends on
   # the data, and that is recorded exactly as for a written phase with no TAU.
   got <- .hzr_parse_parms(c("MUE=0.2", "THALF=1", "NU=1", "MUL=0.05",
@@ -300,7 +300,7 @@ test_that("a MUL with no late shape operand builds the phase on SAS's defaults (
 })
 
 test_that("a MUE with no early shape operand builds the phase on SAS's defaults (#345)", {
-  # stmtprc.c:30-32: tHalf 1, nu 2, m 1, all data-free (setg1.c:342-348
+  # stmtprc.c:31-33: tHalf 1, nu 2, m 1, all data-free (setg1.c:343-349
   # substitutes 1 only for a non-positive tHalf), so this is an exact mirror.
   got <- .hzr_parse_parms(c("MUE=0.2", "MUL=0.05", "TAU=2", "GAMMA=1.5"))
   expect_equal(
@@ -312,7 +312,7 @@ test_that("a MUE with no early shape operand builds the phase on SAS's defaults 
 })
 
 test_that("an orphan MUL with FIXGE2 and FIXGAE2 takes SETG3_ignore_tau() on the defaults (#345)", {
-  # The default ETA is 2, so setg3.c:394-396 keeps gamma 1, eta 2.
+  # The default ETA is 2, so setg3.c:397-399 keeps gamma 1, eta 2.
   got <- .hzr_parse_parms(c("MUL=0.2", "FIXGE2", "FIXGAE2"))
   expect_equal(
     got$phases,
@@ -1591,7 +1591,7 @@ test_that("FIXMNU1 with an early phase says the constraint is not applied", {
 
 test_that("a keyword outside PROC HAZARD's grammar says the job does not run", {
   # FIXG1 and FIXG3 are not PARMS options: HZRstr.fixg1/fixg3 are internal
-  # flags shape.c:34-41 sets when every shape is fixed. The lexer has no such
+  # flags shape.c:36-41 sets when every shape is fixed. The lexer has no such
   # token, so PROC HAZARD rejects the job; the row has to say so, and keeps
   # its "unresolved PARMS keyword" prefix for callers that grep it.
   for (ops in list(c("MUE=0.2", "THALF=1", "FIXG1"),
