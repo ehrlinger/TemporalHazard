@@ -1800,6 +1800,8 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   extra_args <- .hzr_check_forwarded_dots(extra_args, "hzr_bootstrap",
                                           own = names(formals(hzr_bootstrap)),
                                           fit = object, extra = "trace")
+  # Once here, not once per replicate's screen and its refits (#410).
+  extra_args <- .hzr_validate_control_once(extra_args, object)
 
   # hzr_stepwise() is always called below with trace = FALSE (per-step
   # stepwise output would be too noisy across n_boot replicates; `verbose`
