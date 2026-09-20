@@ -140,3 +140,79 @@ test_that("a formula fit whose call also named time = is still a formula fit (#4
     "saved by an earlier version of TemporalHazard, without a stored formula design"
   )
 })
+
+test_that("predict() does not run a formula argument that is a call (#430 review)", {
+  # The interface is read from the call, and a call there was EVALUATED to
+  # decide it, so predict() ran user code: a counter advanced on every
+  # predict, and a formula argument touching the RNG moved .Random.seed.
+  # Only a plain name is looked up now, so a call classifies as a formula
+  # and is refused, as on main. Codex, focused review of #430.
+  d <- stats::na.omit(avc[, c("int_dead", "dead", "age")])
+  nd <- data.frame(time = c(1, 5), age = c(50, 70), extra = 1)
+  side <- 0L
+  mk <- function() {
+    side <<- side + 1L
+    NULL
+  }
+  fit <- hazard(formula = mk(), time = d$int_dead, status = d$dead,
+                x = cbind(age = d$age), dist = "weibull",
+                theta = c(0.1, 1, 0), fit = TRUE)
+  fit$data$x_design <- NULL
+  fit$fit$x_design <- NULL
+  fit$data$frame <- NULL
+  at_fit <- side
+  for (i in 1:2) {
+    expect_error(predict(fit, newdata = nd, type = "survival"),
+                 "saved by an earlier version of TemporalHazard")
+  }
+  expect_identical(side, at_fit)
+})
+
+test_that("predict() does not consume the RNG stream (#430 review)", {
+  d <- stats::na.omit(avc[, c("int_dead", "dead", "age")])
+  nd <- data.frame(time = c(1, 5), age = c(50, 70), extra = 1)
+  draws <- function() {
+    stats::runif(1)
+    NULL
+  }
+  fit <- hazard(formula = draws(), time = d$int_dead, status = d$dead,
+                x = cbind(age = d$age), dist = "weibull",
+                theta = c(0.1, 1, 0), fit = TRUE)
+  fit$data$x_design <- NULL
+  fit$fit$x_design <- NULL
+  fit$data$frame <- NULL
+  set.seed(42)
+  before <- .Random.seed
+  try(predict(fit, newdata = nd, type = "survival"), silent = TRUE)
+  expect_identical(.Random.seed, before)
+  # The draw a caller gets next is the seed's own, not one predict() moved.
+  set.seed(42)
+  want <- stats::rnorm(1)
+  set.seed(42)
+  try(predict(fit, newdata = nd, type = "survival"), silent = TRUE)
+  expect_identical(stats::rnorm(1), want)
+})
+
+test_that("a name that no longer exists keeps the refusal (#430 review)", {
+  # rm(fml) must not read as "no formula": main refuses, and so does this.
+  d <- stats::na.omit(avc[, c("int_dead", "dead", "age")])
+  nd <- data.frame(time = c(1, 5), age = c(50, 70), extra = 1)
+  fml <- NULL
+  e <- new.env(parent = globalenv())
+  assign("fml", NULL, envir = e)
+  fit <- hazard(formula = fml, time = d$int_dead, status = d$dead,
+                x = cbind(age = d$age), dist = "weibull",
+                theta = c(0.1, 1, 0), fit = TRUE)
+  fit$data$x_design <- NULL
+  fit$fit$x_design <- NULL
+  fit$data$frame <- NULL
+  fit$call_env <- e
+  expect_identical(predict(fit, newdata = nd, type = "survival"),
+                   predict(hazard(time = d$int_dead, status = d$dead,
+                                  x = cbind(age = d$age), dist = "weibull",
+                                  theta = c(0.1, 1, 0), fit = TRUE),
+                           newdata = nd, type = "survival"))
+  rm("fml", envir = e)
+  expect_error(predict(fit, newdata = nd, type = "survival"),
+               "saved by an earlier version of TemporalHazard")
+})
