@@ -267,3 +267,30 @@ test_that("a bootstrap does not consume the random stream (#406)", {
                      error = function(e) NULL))
   expect_identical(stats::rnorm(1), want)
 })
+
+test_that("a formula argument that is not a name is left alone (#406)", {
+  # A wrapper may hold its formula in a list: `formula = spec$fml`. That is
+  # an expression, not a name, so the rule declines it and the message stays
+  # main's. Without the symbol guard, `as.character()` of it has length 3
+  # and `exists()` raises "first argument has length > 1" -- an internal
+  # error in place of the refusal.
+  d <- wv_data_406()
+  spec <- list(fml = NULL)
+  f <- hazard(formula = spec$fml, time = d$int_dead, status = d$dead,
+              dist = "weibull", theta = c(0.1, 1), fit = TRUE)
+  expect_identical(f$call$formula, quote(spec$fml))
+  for (msg in list(
+    wv_msg_406(hzr_stepwise(f, scope = ~ mal, data = d,
+                            direction = "forward", criterion = "wald",
+                            trace = FALSE)),
+    wv_msg_406(hzr_bootstrap(f, n_boot = 2L, seed = 1L))
+  )) {
+    expect_no_match(msg, "first argument has length", fixed = TRUE)
+  }
+  expect_match(
+    wv_msg_406(hzr_stepwise(f, scope = ~ mal, data = d,
+                            direction = "forward", criterion = "wald",
+                            trace = FALSE)),
+    "did not resolve to a formula", fixed = TRUE
+  )
+})
