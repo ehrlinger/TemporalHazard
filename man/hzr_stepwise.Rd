@@ -92,7 +92,15 @@ considered as candidates.}
 \item{trace}{Logical; print step-by-step progress to the console.
 Default \code{TRUE}.}
 
-\item{...}{Unused.}
+\item{...}{Passed to every candidate refit. Only \code{control} (e.g.
+\code{control = list(maxit = 500)}) and an \code{objective} equal to the base
+fit's are accepted. Any other name is an error: a misspelling such as
+\code{slentyr} would be stored by \code{hazard()} without being read, and every
+other \code{hazard()} argument (the response, \code{weights}, \code{time_windows},
+\code{dist}, \code{theta}, \code{phases}, \code{fit} and so on) is set by the refit itself,
+from the base model and \code{data}, so that each candidate is compared with
+the model it extends.
+The \code{print()}, \code{summary()} and \code{as.data.frame()} methods ignore \code{...}.}
 
 \item{x}{An \code{hzr_stepwise} object.}
 
