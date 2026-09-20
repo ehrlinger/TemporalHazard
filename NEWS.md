@@ -54,6 +54,23 @@
   one that sets a shape, and the emitted phase would then carry SAS's default
   where the job wrote something else.
 
+  **A refusal stops the render of the whole document, not just its own
+  job.** The refusal itself is per job: a file holding several jobs emits one
+  fit chunk each, and only the refused job's chunk becomes a `stop()`, so the
+  other jobs' calls are written out unchanged. But the document has no
+  `error` chunk option, so rendering it halts at the first refusal: Quarto
+  exits 1 with "Execution halted" and **no output document is produced at
+  all**, including the results of jobs that come before the refused one. So a
+  file with one job PROC HAZARD refuses, among twenty that run, yields
+  nothing until that job is corrected or removed.
+
+  This applies to **every** refusal listed above, not to any one cause. It
+  is deliberate for this release: a halted render cannot be mistaken for a
+  result. Setting `error: true` on the fit chunks would let the rest of the
+  document render, and was considered and **deferred** (#435), because a
+  rendered document that shows an error and then carries on to later results
+  reads as complete, which is the failure this package most wants to avoid.
+
 * **An operand written with spaces around `=` is read, not split apart**
   (#421). SAS's lexer skips whitespace (`hazard_l.l:32`), so `THALF = 0.3` and
   `MAXITER = 50` are the same jobs as the same operands written without the
