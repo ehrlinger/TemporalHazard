@@ -26,7 +26,10 @@
     with no `= NUMBER`, a spaced operand that is invalid even joined, or a
     keyword outside its grammar (`FIXG1`);
   - a `MAXITER=` or `CONDITION=` value that its lexer does not read as a
-    number;
+    number, **or no value at all**: `MAXITER '=' NUMBER` and
+    `CONDITION '=' NUMBER` (`hazard_y.y:63-64`) have no form without a
+    number, so `MAXITER=`, `MAXITER =` and a bare `MAXITER` are each a
+    syntax error and the job does not run;
   - a template's `?` placeholder in `PARMS`, which PROC HAZARD's lexer also
     rejects. It was filled from SAS's default and fitted; it now asks to be
     filled in;

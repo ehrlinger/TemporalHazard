@@ -684,6 +684,36 @@ test_that("a PROC-line value the lexer rejects stops the document (U1, #403)", {
   expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
 })
 
+test_that("MAXITER or CONDITION with no value stops the document (U1, #433)", {
+  # hazard_y.y:63-64 are `MAXITER '=' NUMBER` and `CONDITION '=' NUMBER`.
+  # No NUMBER, no rule: the option falls to `hazardopt : error` (:77),
+  # yyerror latches yysynerr (yyerror.c:19) and initprz.c:75-77 terminates
+  # the procedure. So an empty value is a syntax error exactly as a
+  # non-numeric one is, and a bare keyword with no `=` is too.
+  for (proc in c(" MAXITER=", " MAXITER =", " CONDITION=", " CONDITION =",
+                 " MAXITER", " CONDITION")) {
+    job <- .u1_job(proc = proc, parms = "MUE=0.2 THALF=1 NU=1")
+    expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"), info = proc)
+    msg <- .u1_msg(job)
+    expect_match(msg, "PROC HAZARD does not run this job", fixed = TRUE, info = proc)
+    expect_match(msg, "hazard_y.y:63-64", fixed = TRUE, info = proc)
+  }
+  # A macro is still exempt: SAS expands it before PROC HAZARD reads the
+  # statement, so whether a NUMBER arrives is not knowable here.
+  job <- .u1_job(proc = " MAXITER=&N", parms = "MUE=0.2 THALF=1 NU=1")
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
+  # And a value that is present and numeric is untouched. MAXITER alone
+  # leaves no row; CONDITION always leaves one, because hazard() reads no
+  # `condition` and that is recorded rather than emitted (#384). So the
+  # assertion is that neither is REJECTED, not that nothing is recorded.
+  job <- .u1_job(proc = " MAXITER=200", parms = "MUE=0.2 THALF=1 NU=1")
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
+  expect_identical(NROW(job$untranslated), 0L)
+  job <- .u1_job(proc = " MAXITER=200 CONDITION=14", parms = "MUE=0.2 THALF=1 NU=1")
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
+  expect_false(any(grepl("syntax error", job$untranslated$reason, fixed = TRUE)))
+})
+
 test_that("a spaced PROC-line option is read, not dropped (U1 review 4, #421)", {
   # SAS's lexer skips whitespace (hazard_l.l:32), so MAXITER = 250 is one
   # option. Read as three tokens it is dropped, and the fit then runs on

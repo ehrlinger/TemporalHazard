@@ -416,7 +416,21 @@
   # job (U1, #403). as.numeric() reads 1E5 and 5., which the lexer does not.
   proc_rejected <- character(0)
   check_number <- function(key, val) {
-    if (nzchar(val) && !.hzr_sas_is_macro(val) && !.hzr_sas_lexer_number(val)) {
+    # A macro carries no verdict: SAS expands it before PROC HAZARD reads
+    # the statement, so whether a NUMBER arrives is not knowable here.
+    if (.hzr_sas_is_macro(val)) return(invisible(NULL))
+    if (!nzchar(val)) {
+      # `MAXITER '=' NUMBER` and `CONDITION '=' NUMBER` (hazard_y.y:63-64)
+      # have no form without a NUMBER, so `MAXITER=`, `MAXITER =` and a bare
+      # `MAXITER` all fall to `hazardopt : error` (:77). This is the grammar
+      # refusing the option, not the lexer refusing a value, hence the
+      # different citation.
+      proc_rejected <<- c(proc_rejected, paste0(
+        key, ": no value, and PROC HAZARD has no form of this option without ",
+        "one (hazard_y.y:63-64), so it rejects this job with a syntax error"))
+      return(invisible(NULL))
+    }
+    if (!.hzr_sas_lexer_number(val)) {
       proc_rejected <<- c(proc_rejected, paste0(
         key, "=", val, ": not a number PROC HAZARD's lexer reads ",
         "(hazard_l.l:34-38), so PROC HAZARD rejects this job with a syntax ",
