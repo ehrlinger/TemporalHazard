@@ -196,7 +196,12 @@ and <code>estimate</code>, one row per parameter per successful replicate.</p></
 <dd><p>Data frame with columns <code>parameter</code>, <code>n</code>, <code>pct</code>,
 <code>mean</code>, <code>sd</code>, <code>min</code>, <code>max</code>, <code>ci_lower</code>, <code>ci_upper</code>, one row per
 parameter. In <code>mode = "select"</code>, <code>pct</code> is the selection frequency
-and the other statistics are conditional on selection.</p></dd>
+and the other statistics are conditional on selection. A free
+parameter whose <code>sd</code> is 0, to within rounding, across two or more
+replicates draws a warning naming it: the replicates did not
+re-estimate it. Parameters the fit holds fixed are exempt: those held
+by <code>hzr_phase(fixed = )</code>, shapes a constraint derives, and a conserved
+<code>log_mu</code>.</p></dd>
 
 <dt>n_success</dt>
 <dd><p>Number of successfully converged replicates.</p></dd>
@@ -204,8 +209,9 @@ and the other statistics are conditional on selection.</p></dd>
 <dt>n_failed</dt>
 <dd><p>Number of replicates that failed: the refit stopped with
 an error, returned something other than a fit, returned a non-finite
-objective, or returned a finite objective but no parameter
-estimates.</p></dd>
+objective or one at the optimizer's -1e10 sentinel (which stands in for
+a likelihood that could not be evaluated), or returned a finite
+objective but no parameter estimates.</p></dd>
 
 <dt>failure_reasons</dt>
 <dd><p>Named integer vector counting why replicates
@@ -213,7 +219,9 @@ failed, most common first: the refit's error message (or
 <code>"error with an empty message"</code>),
 <code>"refit returned a &lt;class&gt;, not a fit object"</code> (<code>"an &lt;class&gt;"</code> when the
 class begins with a vowel; or <code>"... with no \code{fit}, not a fit object"</code>), <code>"refit returned no parameter estimates"</code>, or
-<code>"non-finite objective (did not converge)"</code>. It sums to <code>n_failed</code>, and
+<code>"non-finite objective (did not converge)"</code>, or
+<code>"objective at the optimizer's -1e10 sentinel (no log-likelihood)"</code>.
+It sums to <code>n_failed</code>, and
 is an empty named integer vector, never <code>NULL</code>, when none failed. When
 every replicate fails, <code>hzr_bootstrap()</code> also warns, naming the most
 common reason.</p></dd>

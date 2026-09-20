@@ -141,7 +141,11 @@ A list with class `"hzr_bootstrap"` containing:
   Data frame with columns `parameter`, `n`, `pct`, `mean`, `sd`, `min`,
   `max`, `ci_lower`, `ci_upper`, one row per parameter. In
   `mode = "select"`, `pct` is the selection frequency and the other
-  statistics are conditional on selection.
+  statistics are conditional on selection. A free parameter whose `sd`
+  is 0, to within rounding, across two or more replicates draws a
+  warning naming it: the replicates did not re-estimate it. Parameters
+  the fit holds fixed are exempt: those held by `hzr_phase(fixed = )`,
+  shapes a constraint derives, and a conserved `log_mu`.
 
 - n_success:
 
@@ -150,8 +154,10 @@ A list with class `"hzr_bootstrap"` containing:
 - n_failed:
 
   Number of replicates that failed: the refit stopped with an error,
-  returned something other than a fit, returned a non-finite objective,
-  or returned a finite objective but no parameter estimates.
+  returned something other than a fit, returned a non-finite objective
+  or one at the optimizer's -1e10 sentinel (which stands in for a
+  likelihood that could not be evaluated), or returned a finite
+  objective but no parameter estimates.
 
 - failure_reasons:
 
@@ -161,10 +167,11 @@ A list with class `"hzr_bootstrap"` containing:
   the class begins with a vowel; or
   `"... with no \code{fit}, not a fit object"`),
   `"refit returned no parameter estimates"`, or
-  `"non-finite objective (did not converge)"`. It sums to `n_failed`,
-  and is an empty named integer vector, never `NULL`, when none failed.
-  When every replicate fails, `hzr_bootstrap()` also warns, naming the
-  most common reason.
+  `"non-finite objective (did not converge)"`, or
+  `"objective at the optimizer's -1e10 sentinel (no log-likelihood)"`.
+  It sums to `n_failed`, and is an empty named integer vector, never
+  `NULL`, when none failed. When every replicate fails,
+  `hzr_bootstrap()` also warns, naming the most common reason.
 
 - n_uncomputable_replicates:
 
