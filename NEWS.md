@@ -791,8 +791,8 @@
   it is backquoted, so the job stopped with R's own parser error
   (`unexpected symbol`) rather than anything about the job. Formulas are now
   built from symbols, at the phase statements and at the `SELECTION` scope
-  alike, so any name `PROC HAZARD` accepts survives, and `deparse()`
-  backquotes it so the emitted document re-parses to the same call.
+  alike, and `deparse()` backquotes such a name so the emitted document
+  re-parses to the same call.
 
   The failure was loud, so no fit stood in for one: such a job produced
   nothing. On a sample of the studies share, 13 distinct `PROC HAZARD` steps
@@ -803,6 +803,18 @@
   `data.frame()` renames it to `X_X1` unless you pass `check.names = FALSE`,
   and a renamed column is **refused** by name rather than quietly dropped, so
   a fit cannot come back short a covariate without saying so.
+
+  **A `SELECTION` job carrying such a name is refused rather than screened.**
+  `hzr_stepwise()` spells a non-syntactic name two ways at once: backquoted
+  in the `terms()` labels its candidates are keyed on, bare in `force_in`.
+  The two never match, so a `/I` pin is ignored and a `BACKWARD` screen can
+  drop a variable `PROC HAZARD` holds in, with no warning naming it; and the
+  score criterion, the only one this translator emits, indexes the data by
+  the backquoted label and skips the candidate as "not found". Both are wrong
+  models delivered as populated results, so such a job now stops and names
+  the cause. It stopped before this release too, one step earlier, so nothing
+  that used to work is refused. The underlying defects are in the stepwise
+  driver and are tracked separately.
 
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded

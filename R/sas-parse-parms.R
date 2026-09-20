@@ -461,8 +461,20 @@
 #'
 #' Names arrive trimmed from `.hzr_parse_phase_covars()`; `as.name()` would
 #' otherwise make a symbol carrying the surrounding space.
+#'
+#' A name that survives here is not thereby usable everywhere: `hzr_stepwise()`
+#' spells a non-syntactic name two ways at once (backquoted in its `terms()`
+#' candidate labels, bare in `force_in`), so a `SELECTION` job carrying one is
+#' refused in `.hzr_parse_job()` rather than screened wrongly (#411).
 #' @noRd
 .hzr_sas_covar_formula <- function(covars) {
+  # Reduce() over an empty list is NULL, and `~NULL` is a valid formula with
+  # no terms: a phase would then be fitted with no covariates and nothing
+  # would error. Both callers guard with length(), so this makes that
+  # requirement local rather than remote.
+  if (!length(covars)) {
+    stop("internal: .hzr_sas_covar_formula() needs at least one name")
+  }
   call("~", Reduce(function(a, b) call("+", a, b), lapply(covars, as.name)))
 }
 

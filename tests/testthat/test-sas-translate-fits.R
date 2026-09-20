@@ -611,16 +611,43 @@ test_that("a renamed underscore column fails loudly, it does not fit a smaller m
   expect_match(err, "not columns of D", fixed = TRUE)
 })
 
-test_that("a SELECTION scope carries an underscore name backquoted (#411)", {
+test_that("a SELECTION job carrying a non-syntactic name is refused, not screened (#411)", {
+  skip_on_cran()
+  # The phase formulas now carry `_X1`, but hzr_stepwise() spells such a name
+  # two ways at once: backquoted in its terms() candidate labels, bare in
+  # force_in. Measured consequences, which is why this is a refusal and not a
+  # screen: a /I pin never matches, so BACKWARD DROPS a variable SAS holds in
+  # with no warning naming it; and the score criterion, the only one this
+  # translator emits, indexes `data` by the backquoted label and skips the
+  # candidate. Both would be wrong models from a populated result.
   f <- withr::local_tempfile(fileext = ".sas")
   writeLines(c("%HAZARD( PROC HAZARD DATA=D; TIME T; EVENT E;",
-               " PARMS MUE=0.2 THALF=1 NU=1 M=1 MUC=0.01;",
-               " EARLY AGE, _X1;",
-               " SELECTION FORWARD SLE=0.3; );"), f)
+               " PARMS MUE=0.2 THALF=1 NU=1 M=1;",
+               " EARLY AGE=0.1 /I, _X1=0.1 /I;",
+               " SELECTION BACKWARD SLS=0.05; );"), f)
   job <- suppressWarnings(hzr_translate_sas(f))
-  txt <- deparse(job$calls$fit)
-  expect_true(any(grepl("scope", txt, fixed = TRUE)))
-  expect_true(any(grepl("`_X1`", txt, fixed = TRUE)))
-  # The emitted call must re-parse to the same call, not merely look right.
-  expect_identical(str2lang(paste(txt, collapse = "\n")), job$calls$fit)
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"))
+  msg <- tryCatch({
+    eval(job$calls$fit, new.env())
+    "no error"
+  }, error = conditionMessage)
+  expect_match(msg, "_X1", fixed = TRUE)
+  expect_match(msg, "not a syntactic R name", fixed = TRUE)
+  expect_match(msg, "hazard_l.l:39", fixed = TRUE)
+
+  # Control, so the refusal is not blanket: ordinary names still screen.
+  f2 <- withr::local_tempfile(fileext = ".sas")
+  writeLines(c("%HAZARD( PROC HAZARD DATA=D; TIME T; EVENT E;",
+               " PARMS MUE=0.2 THALF=1 NU=1 M=1;",
+               " EARLY AGE, SEX;",
+               " SELECTION FORWARD SLE=0.3; );"), f2)
+  job2 <- suppressWarnings(hzr_translate_sas(f2))
+  expect_identical(job2$calls$fit[[3L]][[1L]], as.name("hzr_stepwise"))
+})
+
+test_that(".hzr_sas_covar_formula() refuses an empty name vector (#411)", {
+  # Reduce() over an empty list is NULL and `~NULL` is a hollow formula: a
+  # phase fitted with no covariates, and nothing would error.
+  expect_error(.hzr_sas_covar_formula(character(0)), "at least one name")
+  expect_identical(.hzr_sas_covar_formula("AGE"), quote(~AGE))
 })
