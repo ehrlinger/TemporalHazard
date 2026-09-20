@@ -1067,29 +1067,7 @@
     # would be a silent wrong answer, so it is refused -- as it was before,
     # when such a column made the positional match fail.
     extra <- setdiff(names(newdata), c(cols, "time"))
-    # A vector-interface fit is not recognised by a NULL call$formula alone:
-    # a wrapper's `formula = fml` names a formula even when `fml` was NULL.
-    # Nor by `time =` alone: hazard() fits a formula given beside `time =`
-    # and ignores the `time`. With both named, the formula argument is
-    # LOOKED UP where the call was made -- never evaluated: a plain name
-    # bound to NULL is the wrapper case, and anything else keeps the
-    # refusal. Evaluating it instead let predict() run the caller's code:
-    # `formula = mk()` advanced a counter on every call, and a formula
-    # argument drawing from the RNG moved .Random.seed (#430 review). A
-    # written formula, a call, a name bound to a formula, a name that no
-    # longer exists, and a fit with no call environment (saved before
-    # 1.2.2) all classify as a formula fit, as main does. A name rebound
-    # after the fit still changes the answer; only recording the interface
-    # at construction can close that, which is #432.
-    f <- object$call$formula
-    vector_fit <- is.null(f) || (
-      "time" %in% names(object$call) &&
-        is.symbol(f) &&
-        is.environment(object$call_env) &&
-        exists(as.character(f), envir = object$call_env) &&
-        is.null(get(as.character(f), envir = object$call_env))
-    )
-    if (!vector_fit && length(extra) > 0L) {
+    if (!is.null(object$call$formula) && length(extra) > 0L) {
       stop("This fit was saved by an earlier version of TemporalHazard, ",
            "without a stored formula design, so 'newdata' may hold only its ",
            "design columns (", paste0("'", cols, "'", collapse = ", "),
