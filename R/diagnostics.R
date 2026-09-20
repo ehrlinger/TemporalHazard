@@ -1899,7 +1899,12 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # select-mode refit reused it for the base model and dropped it from the
   # candidates. Every replicate reported success either way, so it is
   # refused.
-  if (is.null(cl$formula) && !is.null(cl$time) && !is.null(cl$x)) {
+  # `x` first, then the interface, so the refusal is about the design; and
+  # the interface test is the shared one, or a wrapper's vector fit would
+  # skip this refusal and pair resampled outcomes with the original design
+  # (#406).
+  if (!is.null(cl$x) && !is.null(cl$time) &&
+        .hzr_wrapper_vector_call(object)) {
     stop("hzr_bootstrap(): this fit's design matrix was passed directly as ",
          "`x`, which replicates cannot resample with the rows: each would ",
          "pair resampled outcomes with the original design. Refit with the ",
@@ -1932,7 +1937,10 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # A select-mode screen draws its candidate columns from the fit's `data`. A
   # vector fit made without `data =` has none, so its candidates would be read
   # from the environment and never resampled with the rows.
-  vector_interface <- is.null(cl$formula) && !is.null(cl$time)
+  # `.hzr_wrapper_vector_call()` also recognises the one wrapper shape of
+  # #406: `formula = fml` with the name still bound to NULL, no stored
+  # design, beside `time =`.
+  vector_interface <- .hzr_wrapper_vector_call(object) && !is.null(cl$time)
   if (select_mode && vector_interface && is.null(orig_data)) {
     stop("hzr_bootstrap(): `scope` selection draws its candidate columns ",
          "from the fit's `data =`, and this vector-interface fit was made ",

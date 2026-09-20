@@ -324,13 +324,14 @@
 #'   caller's frame; passing it explicitly is preferable to relying on the
 #'   default, which is only correct because it is evaluated lazily.
 #' @return The formula, or `NULL` when the fit carries none (the vector
-#'   interface). Errors when a stored formula cannot be resolved.
+#'   interface, including the wrapper shape `.hzr_wrapper_vector_call()`
+#'   recognises, #406). Errors when a stored formula cannot be resolved.
 #' @keywords internal
 #' @noRd
 .hzr_stored_formula <- function(fit, what = "`fit`",
                                 envir = parent.frame()) {
   raw <- fit$call$formula
-  if (is.null(raw)) {
+  if (.hzr_wrapper_vector_call(fit)) {
     return(NULL)
   }
   if (inherits(raw, "formula")) {

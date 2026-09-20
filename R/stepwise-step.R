@@ -910,7 +910,7 @@
   # built on `data`, so a factor level absent from it cannot pass for a
   # removed column.  A design that cannot be built is left to the refit,
   # which reports why.
-  if (is.na(best$phase) && !is.null(current$call$formula)) {
+  if (is.na(best$phase) && !.hzr_wrapper_vector_call(current)) {
     # Quietly: the current formula's warnings surfaced when the base was
     # fitted, and the reduced formula's warnings surface in the refit if the
     # drop goes ahead. Parsing both here doubled every parse-time warning
