@@ -216,3 +216,26 @@ test_that("a name that no longer exists keeps the refusal (#430 review)", {
   expect_error(predict(fit, newdata = nd, type = "survival"),
                "saved by an earlier version of TemporalHazard")
 })
+
+test_that("a formula held in a list refuses, rather than erroring inside the check (#430 review)", {
+  # `formula = spec$fml` is a call, not a name: as.character() of it has
+  # length 3, so exists() would raise "first argument has length > 1" --
+  # an internal error in place of the refusal. is.symbol() is what stops
+  # that, and the side-effect tests pass without it, so this is the test
+  # that keeps it (stream C's finding, the same pair of guards).
+  d <- stats::na.omit(avc[, c("int_dead", "dead", "age")])
+  spec <- list(fml = NULL)
+  fit <- hazard(formula = spec$fml, time = d$int_dead, status = d$dead,
+                x = cbind(age = d$age), dist = "weibull",
+                theta = c(0.1, 1, 0), fit = TRUE)
+  fit$data$x_design <- NULL
+  fit$fit$x_design <- NULL
+  fit$data$frame <- NULL
+  msg <- tryCatch(
+    predict(fit, newdata = data.frame(time = c(1, 5), age = c(50, 70),
+                                      extra = 1), type = "survival"),
+    error = conditionMessage
+  )
+  expect_match(msg, "saved by an earlier version of TemporalHazard")
+  expect_false(grepl("length > 1", msg, fixed = TRUE))
+})
