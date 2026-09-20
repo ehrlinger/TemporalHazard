@@ -780,6 +780,19 @@
 
 ## Bug fixes
 
+* **`hzr_stepwise()` and `hzr_bootstrap()` warn once about a `control`
+  element the fit does not read, not once per candidate refit (#410).**
+  Since the release's `control` validation, an element a fit ignores draws
+  a warning and `hazard()` proceeds. Both functions hand `control` to every
+  candidate refit, so one warning became **six** in a three-step screen, and
+  scaled with replicates in a bootstrap. No result changed: the harm is to
+  **other** warnings, because past 50 R prints only "There were 50 or more
+  warnings", so the repeats can bury the ill-conditioned-Hessian and
+  gradient-test warnings that say a fit is not to be trusted. The forwarded
+  `control` is now validated once, at the call, and the refits are given
+  what survives, so they have nothing left to warn about. An element the fit
+  does read is still forwarded and still takes effect.
+
   What a sentinel objective should mean for a single fit is tracked
   separately (#351, #374).
 
