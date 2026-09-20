@@ -1800,8 +1800,12 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   extra_args <- .hzr_check_forwarded_dots(extra_args, "hzr_bootstrap",
                                           own = names(formals(hzr_bootstrap)),
                                           fit = object, extra = "trace")
-  # Once here, not once per replicate's screen and its refits (#410).
-  extra_args <- .hzr_validate_control_once(extra_args, object)
+  # `control` is NOT validated here (#410). The up-front screen below runs
+  # hzr_stepwise() on the real data, which validates it once, and every
+  # replicate's screen runs under suppressWarnings(). Validating here as well
+  # was measured to change nothing, at 3 and at 10 replicates. The test "a
+  # bootstrap warns once, not once per replicate" pins the count from either
+  # side, so if the replicates ever stop being muffled it fails here.
 
   # hzr_stepwise() is always called below with trace = FALSE (per-step
   # stepwise output would be too noisy across n_boot replicates; `verbose`
