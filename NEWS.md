@@ -756,6 +756,10 @@
   replicates are identical to the plain fit's, a multiphase one screens
   instead of stopping, and a single-distribution one is refused as the
   vector fit it is, and one holding a design passed as `x` is refused by the
+  same rule as the plain fit. The stored formula argument is read only when
+  it is a name, and then only for its value, so an expression written there
+  is never evaluated and a bootstrap neither repeats its side effects nor
+  consumes the random number stream. Such a fit is refused by the
   same rule as the plain fit, rather than resampling rows beside a design
   that cannot follow them. Fits of other shapes are unchanged, including a
   fit that stores both a design and a frame, which could be either

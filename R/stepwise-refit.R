@@ -82,9 +82,18 @@
   if (!"time" %in% names(fit$call)) return(FALSE)
   has_design <- !is.null(fit$data$x) || !is.null(fit$data$x_design)
   if (has_design && !is.null(fit$data$frame)) return(FALSE)
+  # Only a NAME is looked up, and only for its value: the stored formula
+  # argument may be any expression, and EVALUATING one has side effects.
+  # Measured on this branch before this line: `formula = mk()`, where mk()
+  # increments a counter, ran three more times per hzr_bootstrap() call, and
+  # `formula = draws()`, calling runif(), moved `.Random.seed`, which would
+  # silently change which rows the replicates resample. A call, a literal
+  # formula and anything else are left to the formula path, as on main.
+  if (!is.symbol(f)) return(FALSE)
   env <- fit$call_env
-  is.environment(env) &&
-    is.null(tryCatch(eval(f, env), error = function(e) e))
+  nm <- as.character(f)
+  is.environment(env) && exists(nm, envir = env) &&
+    is.null(tryCatch(get(nm, envir = env), error = function(e) e))
 }
 
 #' Why a fit cannot be refit with a mutated scope

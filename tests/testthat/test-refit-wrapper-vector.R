@@ -225,3 +225,45 @@ test_that("a formula fit saved before `x_design` keeps its guards (#406)", {
   expect_match(wv_msg_406(hzr_bootstrap(legacy, n_boot = 3L, seed = 1L)),
                "which is not a column of it", fixed = TRUE)
 })
+
+test_that("the stored formula expression is never evaluated (#406)", {
+  # The rule reads the formula argument only when it is a NAME, and then
+  # only for its value. The argument may be any expression, and evaluating
+  # one has side effects: with `formula = mk()` incrementing a counter, an
+  # earlier version of this rule ran it three more times per bootstrap.
+  d <- wv_data_406()
+  counter <- new.env(parent = emptyenv())
+  counter$n <- 0L
+  mk <- function() {
+    counter$n <- counter$n + 1L
+    NULL
+  }
+  f <- hazard(formula = mk(), time = d$int_dead, status = d$dead,
+              dist = "weibull", theta = c(0.1, 1), fit = TRUE)
+  # Known positive: hazard() itself evaluated it once, so the counter works.
+  expect_identical(counter$n, 1L)
+  invisible(tryCatch(suppressWarnings(hzr_bootstrap(f, n_boot = 2L,
+                                                    seed = 1L)),
+                     error = function(e) NULL))
+  expect_identical(counter$n, 1L)
+})
+
+test_that("a bootstrap does not consume the random stream (#406)", {
+  # `formula = draws()` calls runif(). Evaluating it inside hzr_bootstrap()
+  # moved `.Random.seed`, so the replicates resampled different rows with no
+  # message: set.seed(42); rnorm(1) gave -1.220813 where it gives 1.370958.
+  d <- wv_data_406()
+  draws <- function() {
+    stats::runif(1)
+    NULL
+  }
+  f <- hazard(formula = draws(), time = d$int_dead, status = d$dead,
+              dist = "weibull", theta = c(0.1, 1), fit = TRUE)
+  set.seed(42)
+  want <- stats::rnorm(1)
+  set.seed(42)
+  invisible(tryCatch(suppressWarnings(hzr_bootstrap(f, n_boot = 2L,
+                                                    seed = NULL)),
+                     error = function(e) NULL))
+  expect_identical(stats::rnorm(1), want)
+})
