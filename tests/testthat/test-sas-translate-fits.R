@@ -553,3 +553,74 @@ test_that("a phase variable missing from the data is named, not 'object not foun
                fixed = TRUE)
   expect_false(exists("fit", envir = res$env, inherits = FALSE))
 })
+
+# --- #411: a SAS covariate name that begins with an underscore ---
+
+test_that("an underscore-named covariate fits end to end (#411)", {
+  skip_on_cran()
+  set.seed(7)
+  n <- 120
+  # check.names = FALSE: the column really is named `_X1`, as the SAS dataset
+  # named it. data.frame()'s default would rename it (asserted below).
+  D <- data.frame(T = stats::rexp(n, 0.2), E = rep(c(1, 1, 0), length.out = n),
+                  AGE = stats::rnorm(n), check.names = FALSE)
+  D[["_X1"]] <- stats::rnorm(n)
+  expect_true("_X1" %in% names(D))
+
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(c("%HAZARD( PROC HAZARD DATA=D; TIME T; EVENT E;",
+               " PARMS MUE=0.2 THALF=1 NU=1 M=1 MUC=0.01;",
+               " EARLY AGE=0.1, _X1=0.1; );"), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  expect_true(any(grepl("`_X1`", deparse(job$calls$fit), fixed = TRUE)))
+
+  # Execute the emitted chunks, not their text.
+  env <- new.env(parent = environment())
+  env$D <- D
+  for (nm in names(job$calls)) suppressWarnings(eval(job$calls[[nm]], env))
+  expect_s3_class(env$fit, "hazard")
+  # The covariate is actually IN the model, not merely in the formula text.
+  # model.matrix() backquotes a non-syntactic name, so the coefficient is
+  # named with the backquotes: assert the name the fit really carries.
+  expect_true("phase_1.`_X1`" %in% names(stats::coef(env$fit)))
+})
+
+test_that("a renamed underscore column fails loudly, it does not fit a smaller model (#411)", {
+  skip_on_cran()
+  set.seed(7)
+  n <- 120
+  # data.frame()'s default check.names = TRUE turns `_X1` into `X_X1`. The
+  # danger is a fit that quietly drops the covariate; it must refuse instead.
+  D <- data.frame(T = stats::rexp(n, 0.2), E = rep(c(1, 1, 0), length.out = n),
+                  AGE = stats::rnorm(n), "_X1" = stats::rnorm(n))
+  expect_false("_X1" %in% names(D))
+  expect_true("X_X1" %in% names(D))
+
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(c("%HAZARD( PROC HAZARD DATA=D; TIME T; EVENT E;",
+               " PARMS MUE=0.2 THALF=1 NU=1 M=1 MUC=0.01;",
+               " EARLY AGE=0.1, _X1=0.1; );"), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  env <- new.env(parent = environment())
+  env$D <- D
+  err <- tryCatch({
+    for (nm in names(job$calls)) suppressWarnings(eval(job$calls[[nm]], env))
+    "no error"
+  }, error = conditionMessage)
+  expect_match(err, "_X1", fixed = TRUE)
+  expect_match(err, "not columns of D", fixed = TRUE)
+})
+
+test_that("a SELECTION scope carries an underscore name backquoted (#411)", {
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(c("%HAZARD( PROC HAZARD DATA=D; TIME T; EVENT E;",
+               " PARMS MUE=0.2 THALF=1 NU=1 M=1 MUC=0.01;",
+               " EARLY AGE, _X1;",
+               " SELECTION FORWARD SLE=0.3; );"), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  txt <- deparse(job$calls$fit)
+  expect_true(any(grepl("scope", txt, fixed = TRUE)))
+  expect_true(any(grepl("`_X1`", txt, fixed = TRUE)))
+  # The emitted call must re-parse to the same call, not merely look right.
+  expect_identical(str2lang(paste(txt, collapse = "\n")), job$calls$fit)
+})

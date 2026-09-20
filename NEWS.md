@@ -783,6 +783,27 @@
   What a sentinel objective should mean for a single fit is tracked
   separately (#351, #374).
 
+* **`hzr_translate_sas()` no longer fails on a SAS covariate whose name begins
+  with an underscore** (#411). `PROC HAZARD`'s lexer reads a name as
+  `[_A-Z][_A-Z0-9]*` (`hazard_l.l:39`), so `_X1` is a legal phase-statement
+  covariate. The translation built each phase formula by pasting the names
+  into `str2lang()`, and an R symbol may not begin with an underscore unless
+  it is backquoted, so the job stopped with R's own parser error
+  (`unexpected symbol`) rather than anything about the job. Formulas are now
+  built from symbols, at the phase statements and at the `SELECTION` scope
+  alike, so any name `PROC HAZARD` accepts survives, and `deparse()`
+  backquotes it so the emitted document re-parses to the same call.
+
+  The failure was loud, so no fit stood in for one: such a job produced
+  nothing. On a sample of the studies share, 13 distinct `PROC HAZARD` steps
+  fail this way and none of them carries a macro, making this a second and
+  independent cause of an unreadable step.
+
+  Note that the column must really be named `_X1` in the data frame. R's
+  `data.frame()` renames it to `X_X1` unless you pass `check.names = FALSE`,
+  and a renamed column is **refused** by name rather than quietly dropped, so
+  a fit cannot come back short a covariate without saying so.
+
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded
   as untranslated and build no phase. PROC HAZARD runs that phase on its own

@@ -449,14 +449,30 @@
   block
 }
 
+#' Build a one-sided formula from covariate names, as symbols.
+#'
+#' PROC HAZARD's lexer reads a name as `[_A-Z][_A-Z0-9]*` (`hazard_l.l:39`),
+#' so a covariate may begin with an underscore. An R symbol may not unless it
+#' is backquoted, so pasting the names into `str2lang()` raised R's own parser
+#' error ("unexpected symbol") and stopped the whole job (#411). Building the
+#' call from symbols cannot fail that way, whatever the name contains, and
+#' `deparse()` backquotes a non-syntactic name so the emitted document
+#' re-parses to the same call.
+#'
+#' Names arrive trimmed from `.hzr_parse_phase_covars()`; `as.name()` would
+#' otherwise make a symbol carrying the surrounding space.
+#' @noRd
+.hzr_sas_covar_formula <- function(covars) {
+  call("~", Reduce(function(a, b) call("+", a, b), lapply(covars, as.name)))
+}
+
 #' Build one `hzr_phase(...)` call.
 #' @noRd
 .hzr_parms_phase_call <- function(type, shape, covars, fixed,
                                   constraint = "none") {
   call_args <- c(list(quote(hzr_phase), type), shape)
   if (length(covars)) {
-    call_args <- c(call_args,
-                    list(formula = str2lang(paste("~", paste(covars, collapse = " + ")))))
+    call_args <- c(call_args, list(formula = .hzr_sas_covar_formula(covars)))
   }
   fixed_call <- .hzr_parms_fixed_call(fixed)
   if (!is.null(fixed_call)) call_args <- c(call_args, list(fixed = fixed_call))

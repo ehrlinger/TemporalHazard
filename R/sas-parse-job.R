@@ -990,8 +990,11 @@
       # screen the whole SAS dataset -- the EVENT count and the time
       # variable included.
       scope <- parms$selection$scope %||% list()
+      # Built from symbols, not pasted text: a SAS name may begin with an
+      # underscore and an R symbol may not (#411). See
+      # .hzr_sas_covar_formula().
       sw_args$scope <- as.call(c(quote(list), lapply(scope, function(v) {
-        if (length(v)) str2lang(paste("~", paste(v, collapse = " + "))) else NULL
+        if (length(v)) .hzr_sas_covar_formula(v) else NULL
       })))
     }
     sw_args$data <- args$data
