@@ -82,6 +82,26 @@
   (`THALF = ABC`, or `FIXNU = 1`, which takes no value) is a syntax error,
   just as it is when written without the spaces.
 
+* **`hzr_bootstrap()` no longer counts replicates that estimated nothing as
+  successes (#373).** The optimizer stands in 1e10 for a negative
+  log-likelihood it could not evaluate, so a fit that never had a
+  likelihood reports `objective = -1e10`, which is finite. A Weibull fit
+  started at `theta = c(1e10, 1e10)` sits there, and each replicate
+  reproduced it: 5 of 5 replicates were counted as successes, every `sd`
+  was 0, and nothing warned. A replicate at the sentinel is now a failed
+  replicate, with its own reason in `failure_reasons`, so `n_success` can
+  be lower than before and the summary is built from fewer replicates; from `theta = 20`,
+  where the optimizer moves before the clamp stops it, that is four
+  replicates of five. And a free parameter that does not move across the
+  replicates that estimated it, to within rounding, is named in a warning:
+  from `theta = 50` the objective is finite but every replicate stays at
+  its start, with an `sd` of about 1e-14 around 50. Parameters the fit
+  holds fixed (by `hzr_phase(..., fixed =)`, by a constraint, or by
+  Conservation of Events) are identical by design and are not named. A run
+  in which only some replicates stay at their start while their objective is
+  finite is not caught; that rests on the optimizer's convergence test
+  (#351).
+
 * **`hzr_translate_sas()` no longer fits a job `PROC HAZARD` rejects: if
   you hold estimates from such a translation, they have no SAS run behind
   them (#340).** A phase statement with an option written in a form SAS's
@@ -295,6 +315,26 @@
   `com_iv`, with no message. The error names the left-hand side. The same
   applies to each element of a multiphase `scope` list, and a list that
   names a phase twice, whose second entry was never read, is refused too.
+
+* **`hzr_stepwise()` and `hzr_bootstrap()` now check `...` against what a
+  candidate refit may take from it (#386).** Both pass `...` on to every
+  candidate refit, and `hazard()` stores a name it does not declare without
+  reading it. So a misspelled argument had no effect: `slentyr = 1e-6`,
+  meant as `slentry`, ran the screen at the default `slentry = 0.30` and
+  selected three variables where the intended threshold selects one, with
+  no message. Other `hazard()` arguments were no safer: a refit takes the
+  response and `dist` from the base model, so `time_lower` was ignored on a
+  formula fit and `dist` failed every candidate, and `weights` or
+  `time_windows` changed the likelihood of the candidates but not of the
+  base model they were compared with. Each is now an error naming the
+  argument and, for a misspelling, the argument it was probably meant to
+  be. `...` forwards `control`, including by an unambiguous abbreviation
+  such as `contr`, and an `objective` equal to the base fit's. A differing
+  `objective`, a `control` that is not a list, a repeated argument and an
+  ambiguous abbreviation are refused at entry rather than failing every
+  candidate. `hzr_bootstrap()` checks before seeding, so a refusal leaves
+  the random number stream untouched and names `hzr_bootstrap()`. `?hzr_stepwise` had also described `...`
+  as unused, because the print method's entry replaced it.
 
 * **`hazard()` now refuses a multiphase phase formula with covariates when
   no `data` is supplied (#299).** Such fits previously ignored the phase
@@ -834,6 +874,9 @@
   detected.
 
 ## Bug fixes
+
+  What a sentinel objective should mean for a single fit is tracked
+  separately (#351, #374).
 
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded
@@ -2630,7 +2673,6 @@
   character column named in an explicit `scope`, which the score criterion
   still cannot expand. Its refusal used to say switching criterion would not
   help, and now points at it instead.
-
 
 
 # TemporalHazard 1.2.2
