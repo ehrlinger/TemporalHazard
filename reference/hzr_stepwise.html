@@ -188,7 +188,15 @@ Default <code>TRUE</code>.</p></dd>
 
 
 <dt id="arg--">...<a class="anchor" aria-label="anchor" href="#arg--"></a></dt>
-<dd><p>Unused.</p></dd>
+<dd><p>Passed to every candidate refit. Only <code>control</code> (e.g.
+<code>control = list(maxit = 500)</code>) and an <code>objective</code> equal to the base
+fit's are accepted. Any other name is an error: a misspelling such as
+<code>slentyr</code> would be stored by <code><a href="hazard.html">hazard()</a></code> without being read, and every
+other <code><a href="hazard.html">hazard()</a></code> argument (the response, <code>weights</code>, <code>time_windows</code>,
+<code>dist</code>, <code>theta</code>, <code>phases</code>, <code>fit</code> and so on) is set by the refit itself,
+from the base model and <code>data</code>, so that each candidate is compared with
+the model it extends.
+The <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code>, <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> and <code><a href="https://rdrr.io/r/base/as.data.frame.html" class="external-link">as.data.frame()</a></code> methods ignore <code>...</code>.</p></dd>
 
 
 <dt id="arg-x">x<a class="anchor" aria-label="anchor" href="#arg-x"></a></dt>

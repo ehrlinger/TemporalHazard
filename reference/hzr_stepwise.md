@@ -121,7 +121,20 @@ as.data.frame(x, ...)
 
 - ...:
 
-  Unused.
+  Passed to every candidate refit. Only `control` (e.g.
+  `control = list(maxit = 500)`) and an `objective` equal to the base
+  fit's are accepted. Any other name is an error: a misspelling such as
+  `slentyr` would be stored by
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  without being read, and every other
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  argument (the response, `weights`, `time_windows`, `dist`, `theta`,
+  `phases`, `fit` and so on) is set by the refit itself, from the base
+  model and `data`, so that each candidate is compared with the model it
+  extends. The [`print()`](https://rdrr.io/r/base/print.html),
+  [`summary()`](https://rdrr.io/r/base/summary.html) and
+  [`as.data.frame()`](https://rdrr.io/r/base/as.data.frame.html) methods
+  ignore `...`.
 
 - x:
 

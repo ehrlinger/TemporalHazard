@@ -172,7 +172,10 @@ See <code><a href="hzr_stepwise.html">hzr_stepwise()</a></code>.</p></dd>
 <dt id="arg--">...<a class="anchor" aria-label="anchor" href="#arg--"></a></dt>
 <dd><p>Additional arguments forwarded to <code><a href="hzr_stepwise.html">hzr_stepwise()</a></code> (e.g.
 <code>control = list(maxit = 500)</code>, which every <code>dist</code> reads) when <code>scope</code>
-is supplied; ignored otherwise.</p></dd>
+is supplied. Only <code>control</code> and an <code>objective</code> equal to the fit's are
+forwarded. <code>trace</code> is accepted and ignored, since each replicate's screen
+runs quietly; use <code>verbose</code> for progress. Any other name is an error, and
+so is any <code>...</code> argument without <code>scope</code>.</p></dd>
 
 
 <dt id="arg-x">x<a class="anchor" aria-label="anchor" href="#arg-x"></a></dt>

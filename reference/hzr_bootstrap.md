@@ -114,7 +114,10 @@ print(x, digits = 4, ...)
   Additional arguments forwarded to
   [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   (e.g. `control = list(maxit = 500)`, which every `dist` reads) when
-  `scope` is supplied; ignored otherwise.
+  `scope` is supplied. Only `control` and an `objective` equal to the
+  fit's are forwarded. `trace` is accepted and ignored, since each
+  replicate's screen runs quietly; use `verbose` for progress. Any other
+  name is an error, and so is any `...` argument without `scope`.
 
 - x:
 
