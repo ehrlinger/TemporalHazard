@@ -1587,7 +1587,10 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   definitions and defaults.
 #' @param ... Additional arguments forwarded to [hzr_stepwise()] (e.g.
 #'   `control = list(maxit = 500)`, which every `dist` reads) when `scope`
-#'   is supplied; ignored otherwise.
+#'   is supplied. Only `control` and an `objective` equal to the fit's are
+#'   forwarded. `trace` is accepted and ignored, since each replicate's screen
+#'   runs quietly; use `verbose` for progress. Any other name is an error, and
+#'   so is any `...` argument without `scope`.
 #'
 #' @section Selection mode is experimental:
 #'
@@ -1784,6 +1787,11 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
          ". '...' is only forwarded to hzr_stepwise() when 'scope' is set.",
          call. = FALSE)
   }
+  # Checked here, before seeding, so a refusal leaves the caller's random
+  # number stream alone and names hzr_bootstrap() (#386).
+  extra_args <- .hzr_check_forwarded_dots(extra_args, "hzr_bootstrap",
+                                          own = names(formals(hzr_bootstrap)),
+                                          fit = object, extra = "trace")
 
   # hzr_stepwise() is always called below with trace = FALSE (per-step
   # stepwise output would be too noisy across n_boot replicates; `verbose`

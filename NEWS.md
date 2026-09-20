@@ -216,6 +216,26 @@
   applies to each element of a multiphase `scope` list, and a list that
   names a phase twice, whose second entry was never read, is refused too.
 
+* **`hzr_stepwise()` and `hzr_bootstrap()` now check `...` against what a
+  candidate refit may take from it (#386).** Both pass `...` on to every
+  candidate refit, and `hazard()` stores a name it does not declare without
+  reading it. So a misspelled argument had no effect: `slentyr = 1e-6`,
+  meant as `slentry`, ran the screen at the default `slentry = 0.30` and
+  selected three variables where the intended threshold selects one, with
+  no message. Other `hazard()` arguments were no safer: a refit takes the
+  response and `dist` from the base model, so `time_lower` was ignored on a
+  formula fit and `dist` failed every candidate, and `weights` or
+  `time_windows` changed the likelihood of the candidates but not of the
+  base model they were compared with. Each is now an error naming the
+  argument and, for a misspelling, the argument it was probably meant to
+  be. `...` forwards `control`, including by an unambiguous abbreviation
+  such as `contr`, and an `objective` equal to the base fit's. A differing
+  `objective`, a `control` that is not a list, a repeated argument and an
+  ambiguous abbreviation are refused at entry rather than failing every
+  candidate. `hzr_bootstrap()` checks before seeding, so a refusal leaves
+  the random number stream untouched and names `hzr_bootstrap()`. `?hzr_stepwise` had also described `...`
+  as unused, because the print method's entry replaced it.
+
 * **`hazard()` now refuses a multiphase phase formula with covariates when
   no `data` is supplied (#299).** Such fits previously ignored the phase
   formula. On the vector interface (`time =`, `status =`) without `data`, a
