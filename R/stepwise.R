@@ -141,8 +141,15 @@
 #'   considered as candidates.
 #' @param trace Logical; print step-by-step progress to the console.
 #'   Default `TRUE`.
-#' @param ... Passed to the underlying `hazard()` refits (e.g.
-#'   `control = list(n_starts = 3)`).
+#' @param ... Passed to every candidate refit. Only `control` (e.g.
+#'   `control = list(maxit = 500)`) and an `objective` equal to the base
+#'   fit's are accepted. Any other name is an error: a misspelling such as
+#'   `slentyr` would be stored by `hazard()` without being read, and every
+#'   other `hazard()` argument (the response, `weights`, `time_windows`,
+#'   `dist`, `theta`, `phases`, `fit` and so on) is set by the refit itself,
+#'   from the base model and `data`, so that each candidate is compared with
+#'   the model it extends.
+#'   The `print()`, `summary()` and `as.data.frame()` methods ignore `...`.
 #'
 #' @return An object of class `c("hzr_stepwise", "hazard")`, the
 #'   final fit augmented with:
@@ -298,6 +305,9 @@ hzr_stepwise <- function(fit,
   if (!inherits(fit, "hazard")) {
     stop("`fit` must be a `hazard` object.", call. = FALSE)
   }
+  extra_args <- .hzr_check_forwarded_dots(list(...), "hzr_stepwise",
+                                          own = names(formals(hzr_stepwise)),
+                                          fit = fit)
   if (missing(data) || !is.data.frame(data)) {
     stop("`data` must be a data frame (typically the frame used for the base fit).",
          call. = FALSE)
@@ -374,8 +384,6 @@ hzr_stepwise <- function(fit,
 
   ts_start <- Sys.time()
   call <- match.call()
-
-  extra_args <- list(...)
 
   steps     <- list()
   trace_msg <- character()
@@ -841,10 +849,113 @@ hzr_stepwise <- function(fit,
   result
 }
 
+# Check the `...` of hzr_stepwise() / hzr_bootstrap() against what a
+# candidate refit may take from it, and return it with abbreviations spelled
+# out (#386). Both forward `...` to every refit, and hazard()'s own `...` is
+# legacy pass-through that stores any name unread, so a misspelled `slentyr`
+# for `slentry` was silently dropped and the screen ran at the default.
+# Only `control`, and an `objective` equal to the base fit's, may pass. Every
+# other hazard() argument describes the model the candidates are compared
+# with, so the refit takes it from the base fit: a forwarded one was ignored
+# (time_lower on a formula refit), collided with the refit's own (dist,
+# failing every candidate), or changed the estimand of the candidates alone
+# (weights, time_windows), so score and AIC differences compared two models
+# fitted to different likelihoods. An abbreviation R would match to `control`
+# or `objective` is kept, since hazard() used to apply it by partial
+# matching. `extra` names the caller consumes itself (hzr_bootstrap()'s
+# `trace`).
+.hzr_check_forwarded_dots <- function(dots, caller, own, fit,
+                                      extra = character()) {
+  if (!length(dots)) return(dots)
+  nms <- names(dots) %||% rep("", length(dots))
+  if (any(!nzchar(nms))) {
+    stop(caller, "(): `...` holds an unnamed argument. Everything in `...` ",
+         "is forwarded by name to the hazard() refits, so name it.",
+         call. = FALSE)
+  }
+  forwardable <- c("control", "objective")
+  hz <- setdiff(names(formals(hazard)), "...")
+  tick <- function(x) paste0("`", x, "`", collapse = ", ")
+  full <- nms
+  unknown <- from_base <- character()
+  candidates <- c(extra, hz)
+  for (i in seq_along(nms)) {
+    m <- pmatch(nms[i], candidates)
+    if (is.na(m)) {
+      prefixed <- candidates[startsWith(candidates, nms[i])]
+      if (length(prefixed) > 1L) {
+        stop(caller, "(): `", nms[i], "` abbreviates more than one ",
+             "argument it could be passed to (", tick(prefixed), "). ",
+             "Spell it out.", call. = FALSE)
+      }
+      unknown <- c(unknown, nms[i])
+    } else if (candidates[m] %in% extra) {
+      full[i] <- candidates[m]
+    } else if (candidates[m] %in% forwardable) {
+      full[i] <- candidates[m]
+    } else {
+      from_base <- c(from_base, nms[i])
+    }
+  }
+  if (length(unknown)) {
+    known <- unique(c(setdiff(own, "..."), forwardable, extra))
+    hint <- vapply(unknown, function(nm) {
+      dist <- utils::adist(nm, known)[1L, ]
+      if (min(dist) > 2L) return("")
+      paste0(" Did you mean `", known[which.min(dist)], "`",
+             if (length(unknown) > 1L) paste0(" for `", nm, "`") else "", "?")
+    }, character(1))
+    stop(caller, "(): ", tick(unknown),
+         if (length(unknown) > 1L) " are not arguments" else
+           " is not an argument",
+         " of ", caller, "() or of hazard(). Everything in `...` is forwarded ",
+         "to the hazard() refits, and hazard() stores a name it does not ",
+         "declare without reading it, so it would have had no effect.",
+         paste(hint, collapse = ""), call. = FALSE)
+  }
+  if (length(from_base)) {
+    stop(caller, "(): ", tick(from_base), " cannot be passed through ",
+         "`...`. Every candidate refit sets these itself, from the base ",
+         "model and `data`, so that each candidate is compared with the ",
+         "model it would extend. ",
+         "Of hazard()'s arguments, `...` forwards only `control` and an ",
+         "`objective` equal to the base fit's. To change anything else, refit ",
+         "the base model and screen from that.", call. = FALSE)
+  }
+  if (anyDuplicated(full)) {
+    dup <- unique(full[duplicated(full)])
+    stop(caller, "(): ", tick(dup), " is given more than once in `...`, ",
+         "counting abbreviations.", call. = FALSE)
+  }
+  names(dots) <- full
+  if ("control" %in% full && !is.list(dots$control)) {
+    stop(caller, "(): `control` must be a list, as hazard() requires; ",
+         "every candidate refit would have failed on it.", call. = FALSE)
+  }
+  # A refit may not change the estimand; refuse here rather than once per
+  # candidate, where hzr_bootstrap() would tally it as a failed replicate.
+  # match.arg() first, as hazard() does, so "lik" is "likelihood".
+  if ("objective" %in% full) {
+    fit_objective <- .hzr_fit_objective(fit)
+    objective <- tryCatch(
+      match.arg(dots$objective, eval(formals(hazard)$objective)),
+      error = function(e) dots$objective
+    )
+    if (!identical(objective, fit_objective)) {
+      stop(caller, "(): `objective = ", deparse1(dots$objective),
+           "` differs from the base fit's objective = \"", fit_objective,
+           "\", and a candidate refit cannot change the estimand. Refit the ",
+           "base model under that objective and screen from there.",
+           call. = FALSE)
+    }
+    dots$objective <- objective
+  }
+  dots
+}
+
 
 #' @rdname hzr_stepwise
 #' @param x An `hzr_stepwise` object.
-#' @param ... Unused.
 #' @return `print.hzr_stepwise` returns `x` invisibly.
 #' @export
 print.hzr_stepwise <- function(x, ...) {
