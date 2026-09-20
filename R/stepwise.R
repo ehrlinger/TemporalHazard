@@ -851,14 +851,16 @@ hzr_stepwise <- function(fit,
 }
 
 # Validate a forwarded `control` ONCE, here, and forward what survives (#410).
-# Since #405 every element the fit does not read draws a warning from
-# hazard(), and both entry points hand `control` to every candidate refit, so
-# one warning became six in a three-step screen and scaled with replicates in
-# a bootstrap. The screen's result never changed; the harm is that past 50
-# warnings R prints only "There were 50 or more warnings", so the repeats can
-# bury the ill-conditioned-Hessian and gradient-test warnings that say a fit
-# is not trustworthy. .hzr_validate_control() warns and RETURNS the cleaned
-# list, so passing that on leaves the refits nothing to warn about.
+# Since #376 an element the fit does not read draws a warning from hazard(),
+# and both entry points hand `control` to every candidate refit: one warning
+# became six in a three-step screen, and three in a select-mode bootstrap,
+# one per candidate refit of the up-front screen (the replicate screens run
+# muffled, so that count did not grow with n_boot). The result never
+# changed; the harm is that past 50 warnings R prints only "There were 50 or
+# more warnings", so the repeats can bury the ill-conditioned-Hessian and
+# gradient-test warnings that say a fit is not trustworthy.
+# .hzr_validate_control() warns and RETURNS the cleaned list, and it is
+# idempotent, so passing that on leaves the refits nothing to warn about.
 .hzr_validate_control_once <- function(extra_args, fit) {
   if (!"control" %in% names(extra_args)) return(extra_args)
   extra_args$control <- .hzr_validate_control(extra_args$control,
