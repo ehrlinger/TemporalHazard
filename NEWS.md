@@ -812,9 +812,19 @@
   score criterion, the only one this translator emits, indexes the data by
   the backquoted label and skips the candidate as "not found". Both are wrong
   models delivered as populated results, so such a job now stops and names
-  the cause. It stopped before this release too, one step earlier, so nothing
-  that used to work is refused. The underlying defects are in the stepwise
-  driver and are tracked separately.
+  the cause. For a name like `_X1` this costs nothing: the job stopped before
+  this release too, one step earlier, in the phase formula.
+
+  It does change one other class. The phase parser passes text it cannot read
+  through as though it were a variable, so `EARLY AGE, AGE*SEX;` used to
+  translate: with `SELECTION` it emitted a screen over `~AGE * SEX`, and
+  without one a three-term formula against two coefficient slots. `AGE*SEX` is
+  not a name `PROC HAZARD` accepts (`hazard_l.l:39`, `hazard_y.y:213`), so it
+  rejects that job at parse and neither result ever meant anything; such a
+  `SELECTION` job now stops as well, with a reason saying so rather than
+  claiming the lexer accepted the text. The underlying defects are in the
+  stepwise driver, and the phase parser reading unreadable text as a
+  variable is tracked separately.
 
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded

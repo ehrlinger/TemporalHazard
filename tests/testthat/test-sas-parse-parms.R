@@ -1883,7 +1883,11 @@ test_that("a covariate whose name begins with `_` builds a formula, not a parse 
 
 test_that("an underscore name survives the round trip in every position", {
   ops <- c("MUE=0.2", "THALF=1", "NU=1", "M=1")
-  for (covars in c("_X1", "_X1, AGE", "AGE, _X1", "_A, _B")) {
+  # The reserved words are IN the SAS grammar too: hazard_l.l:39 is
+  # ([_A-Z][_A-Z0-9]*), which matches NA, TRUE, FALSE and NULL. On the pasted
+  # path `~AGE + NA` parsed as a logical literal rather than a variable.
+  for (covars in c("_X1", "_X1, AGE", "AGE, _X1", "_A, _B",
+                   "AGE, NA", "AGE, TRUE", "AGE, FALSE", "AGE, NULL")) {
     got <- .hzr_parse_parms(ops, covars = list(early = covars))
     expect_identical(str2lang(paste(deparse(got$phases), collapse = "\n")),
                      got$phases, info = covars)

@@ -651,3 +651,40 @@ test_that(".hzr_sas_covar_formula() refuses an empty name vector (#411)", {
   expect_error(.hzr_sas_covar_formula(character(0)), "at least one name")
   expect_identical(.hzr_sas_covar_formula("AGE"), quote(~AGE))
 })
+
+test_that("a refused SELECTION name is given the reason that actually applies (#411)", {
+  # Two classes hide behind "R would backquote this", and only one of them is
+  # a name PROC HAZARD accepts. Claiming the lexer accepted `AGE*SEX` would be
+  # a fabricated C citation, and "rename the column" the wrong remedy.
+  job <- function(early) {
+    f <- withr::local_tempfile(fileext = ".sas", .local_envir = parent.frame())
+    writeLines(c("%HAZARD( PROC HAZARD DATA=D; TIME T; EVENT E;",
+                 " PARMS MUE=0.2 THALF=1 NU=1 M=1;",
+                 paste0(" EARLY ", early, ";"),
+                 " SELECTION FORWARD SLE=0.3; );"), f)
+    suppressWarnings(hzr_translate_sas(f))
+  }
+  msg <- function(j) {
+    tryCatch({
+      eval(j$calls$fit, new.env())
+      "no error"
+    }, error = conditionMessage)
+  }
+
+  # In the grammar (hazard_l.l:39): SAS accepts it, R backquotes it.
+  for (nm in c("_X1", "NA", "TRUE")) {
+    m <- msg(job(paste0("AGE /I, ", nm)))
+    expect_match(m, "lexer accepts this name", fixed = TRUE, info = nm)
+    expect_match(m, "hazard_l.l:39", fixed = TRUE, info = nm)
+  }
+  # NOT in the grammar: PROC HAZARD rejects the job at parse, so the message
+  # must not claim its lexer accepted the text.
+  for (nm in c("AGE*SEX", "LOG(AGE)")) {
+    m <- msg(job(paste0("AGE /I, ", nm)))
+    expect_false(grepl("lexer accepts this name", m, fixed = TRUE), info = nm)
+    expect_match(m, "rejects this job at parse", fixed = TRUE, info = nm)
+    expect_match(m, "hazard_y.y:213", fixed = TRUE, info = nm)
+  }
+  # Control: an ordinary pair still screens.
+  expect_identical(job("AGE /I, SEX")$calls$fit[[3L]][[1L]], as.name("hzr_stepwise"))
+})
