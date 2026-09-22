@@ -84,7 +84,10 @@ NULL
 #' `fit$fit$polish_code`. `print()` and `summary()` show both.
 #' `rel_gradient` is `NA` when the test was not applied (the optimizer did
 #' not report convergence) or the gradient cannot be evaluated at the
-#' estimates; `NA` is never reported as a pass. Under Conservation of Events
+#' estimates; `NA` is never reported as a pass, and it is not a failure
+#' either. Which of those happened is recorded in
+#' `fit$fit$rel_gradient_reason`, `NA_character_` when the test did run, and
+#' `print()` and `summary()` show it. Under Conservation of Events
 #' the analytic score omits how the conserved scale moves, so the test is
 #' computed from finite differences of the log-likelihood with that scale
 #' re-solved, as SAS/C does; the continuation still uses the analytic score,
@@ -535,7 +538,8 @@ NULL
 #'   \code{weights}, etc.),
 #'   \code{fit} (optimisation results: \code{theta}, \code{objective},
 #'   \code{converged}, \code{se}, \code{vcov}, \code{counts}, \code{message},
-#'   and \code{rel_gradient} and \code{polish_code}, the SAS/C acceptance
+#'   and \code{rel_gradient}, \code{rel_gradient_reason} and
+#'   \code{polish_code}, the SAS/C acceptance
 #'   test described under "Convergence";
 #'   all \code{NULL} when \code{fit = FALSE}; multiphase fits add
 #'   \code{starts}, one row per optimisation start with its \code{status}
@@ -1148,6 +1152,7 @@ hazard <- function(formula = NULL,
   # would bury the two that matter.
   if (fit_ran) {
     fit_state$rel_gradient <- optim_result$rel_gradient
+    fit_state$rel_gradient_reason <- optim_result$rel_gradient_reason
     fit_state$polish_code  <- optim_result$polish_code
     # Codes 4 and 5 imply a failed test when nlm() and the statistic use the
     # same gradient; under CoE they need not, so the statistic is checked too.
@@ -2048,13 +2053,19 @@ predict.hazard <- function(object, newdata = NULL,
 # with no record of it (imported from SAS, or saved by an earlier version).
 # A converged fit whose gradient could not be evaluated says so, because
 # printing nothing would read as a test that never ran; the nlm() code is
-# shown whenever there is one.
+# shown whenever there is one. It also says WHY, when the fit recorded a
+# reason: "not evaluated" alone reads as a failure the fit is hiding, and
+# under Conservation of Events it is the ordinary outcome (#351). Objects
+# fitted before the reason was recorded carry none, and print as before.
 .hzr_format_gradient_test <- function(rel_gradient, polish_code,
-                                      converged = TRUE) {
+                                      converged = TRUE,
+                                      reason = NA_character_) {
   if (!isTRUE(converged) || length(rel_gradient) != 1L) return(NULL)
   has_code <- length(polish_code) == 1L && !is.na(polish_code)
   if (is.na(rel_gradient)) {
+    has_reason <- length(reason) == 1L && !is.na(reason) && nzchar(reason)
     return(paste0("  gradient:     not evaluated at the estimates",
+                  if (has_reason) paste0(": ", reason),
                   if (has_code) paste0(" (nlm code ", polish_code, ")")))
   }
   gradtl <- .Machine$double.eps^(1 / 3)
@@ -2096,7 +2107,8 @@ print.hazard <- function(x, ...) {
     cat("  log-lik:     ", format(x$fit$objective, digits = 6), "\n")
     cat("  converged:   ", x$fit$converged, "\n")
     cat(.hzr_format_gradient_test(x$fit$rel_gradient, x$fit$polish_code,
-                                  converged = x$fit$converged),
+                                  converged = x$fit$converged,
+                                  reason = x$fit$rel_gradient_reason),
         sep = "\n")
   }
   # Always printed, "none" included (#242).
@@ -2198,6 +2210,7 @@ summary.hazard <- function(object, ...) {
     engine = object$engine,
     converged = object$fit$converged,
     rel_gradient = object$fit$rel_gradient,
+    rel_gradient_reason = object$fit$rel_gradient_reason,
     polish_code = object$fit$polish_code,
     log_lik = object$fit$objective,
     counts = object$fit$counts,
@@ -2261,7 +2274,8 @@ print.summary.hazard <- function(x, ...) {
   if (!is.null(x$converged) && !is.na(x$converged)) {
     cat("  converged:   ", x$converged, "\n")
     cat(.hzr_format_gradient_test(x$rel_gradient, x$polish_code,
-                                  converged = x$converged), sep = "\n")
+                                  converged = x$converged,
+                                  reason = x$rel_gradient_reason), sep = "\n")
   }
   if (!is.null(x$log_lik) && !is.na(x$log_lik)) {
     cat("  log-lik:     ", format(x$log_lik, digits = 6), "\n")

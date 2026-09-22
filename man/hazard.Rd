@@ -169,7 +169,8 @@ An object of class \code{hazard}, a named list with components:
 \code{weights}, etc.),
 \code{fit} (optimisation results: \code{theta}, \code{objective},
 \code{converged}, \code{se}, \code{vcov}, \code{counts}, \code{message},
-and \code{rel_gradient} and \code{polish_code}, the SAS/C acceptance
+and \code{rel_gradient}, \code{rel_gradient_reason} and
+\code{polish_code}, the SAS/C acceptance
 test described under "Convergence";
 all \code{NULL} when \code{fit = FALSE}; multiphase fits add
 \code{starts}, one row per optimisation start with its \code{status}
@@ -404,7 +405,10 @@ continuation improved the fit, its termination code in
 \code{fit$fit$polish_code}. \code{print()} and \code{summary()} show both.
 \code{rel_gradient} is \code{NA} when the test was not applied (the optimizer did
 not report convergence) or the gradient cannot be evaluated at the
-estimates; \code{NA} is never reported as a pass. Under Conservation of Events
+estimates; \code{NA} is never reported as a pass, and it is not a failure
+either. Which of those happened is recorded in
+\code{fit$fit$rel_gradient_reason}, \code{NA_character_} when the test did run, and
+\code{print()} and \code{summary()} show it. Under Conservation of Events
 the analytic score omits how the conserved scale moves, so the test is
 computed from finite differences of the log-likelihood with that scale
 re-solved, as SAS/C does; the continuation still uses the analytic score,
