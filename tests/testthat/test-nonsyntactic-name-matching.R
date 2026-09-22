@@ -102,10 +102,96 @@ test_that("a character scope does not re-offer a variable in the model (#437)", 
   # had it, and the refit then failed on a duplicate column.
   d <- ns_data_437()
   fit <- ns_fit_437(d)
-  offered <- vapply(.hzr_stepwise_candidates(fit, scope = c("mal", "_X1"),
-                                             data = d),
-                    function(c) c$var, character(1))
-  expect_length(offered, 0L)
+  offered <- function(fit, ...) {
+    vapply(.hzr_stepwise_candidates(fit, data = d, ...),
+           function(c) c$var, character(1))
+  }
+  # Known positive FIRST: without it, `expect_length(0)` is satisfied by an
+  # enumeration that returned nothing at all, which is indistinguishable
+  # from one that matched correctly and had nothing to offer.
+  base <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ 1,
+                                  data = d, dist = "weibull",
+                                  theta = c(0.1, 1), fit = TRUE))
+  expect_setequal(offered(base, scope = c("mal", "_X1")), c("mal", "_X1"))
+  expect_length(offered(fit, scope = c("mal", "_X1")), 0L)
+})
+
+test_that("entry needs the QUOTED spelling; a bare one fails loudly (#437)", {
+  skip_on_cran() # three forward screens
+  # The distinction the NEWS bullet has to make, pinned so the prose cannot
+  # drift from it. Matching a non-syntactic variable is not the same as
+  # being able to ADD one: the refit pastes the candidate into a formula, so
+  # it parses only when the candidate is already quoted. A formula scope
+  # carries `terms()` labels and therefore does; a character scope of bare
+  # names does not, and that failure is LOUD (#441).
+  d <- ns_data_437()
+  base <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ 1,
+                                  data = d, dist = "weibull",
+                                  theta = c(0.1, 1), fit = TRUE))
+  fwd <- function(...) {
+    suppressWarnings(hzr_stepwise(base, data = d, direction = "forward",
+                                  criterion = "aic", trace = FALSE, ...))
+  }
+  entered <- function(sw) sw$steps$variable[sw$steps$action == "enter"]
+
+  # A formula scope: the label is already quoted, so the add succeeds.
+  sw_f <- fwd(scope = ~ `_X1` + mal)
+  expect_true("`_X1`" %in% entered(sw_f))
+  expect_identical(sw_f$criteria$n_refit_failures, 0L)
+
+  # A character scope written bare: it cannot be added, and says so.
+  sw_c <- fwd(scope = c("_X1", "mal"))
+  expect_false(any(entered(sw_c) %in% c("_X1", "`_X1`")))
+  expect_gt(sw_c$criteria$n_refit_failures, 0L)
+
+  # Written with backticks, the same character scope does add it: the
+  # barrier is the spelling of the candidate, not the shape of the scope.
+  expect_true("`_X1`" %in% entered(fwd(scope = c("`_X1`", "mal"))))
+})
+
+test_that("multiphase candidate enumeration matches by variable too (#437)", {
+  skip_on_cran() # a multiphase fit
+  # The two multiphase sites in .hzr_stepwise_candidates() are changed by
+  # this fix and every other test here is single-distribution, so reverting
+  # either would go unnoticed.
+  d <- ns_data_437()
+  mp <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
+    phases = list(
+      early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                           fixed = "shapes"),
+      constant = hzr_phase("constant")
+    ),
+    fit = TRUE, control = list(n_starts = 2L, maxit = 500L)
+  ))
+  vars <- function(...) {
+    vapply(.hzr_stepwise_candidates(mp, data = d, ...),
+           function(c) c$var, character(1))
+  }
+  sc <- list(early = ~ `_X1` + mal, constant = NULL)
+  # Known positive: both are offered when nothing is excluded.
+  expect_setequal(vars(scope = sc), c("`_X1`", "mal"))
+  # force_out, written bare, must reach the label.
+  expect_identical(vars(scope = sc, force_out = "_X1"), "mal")
+  # And the default-scope site, on a syntactic frame so the pre-existing
+  # bare-name paste in that branch is not what is under test.
+  data(avc, package = "TemporalHazard", envir = environment())
+  dd <- stats::na.omit(avc[, c("int_dead", "dead", "age", "mal")])
+  mp2 <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = dd, dist = "multiphase",
+    phases = list(
+      early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                           fixed = "shapes"),
+      constant = hzr_phase("constant")
+    ),
+    fit = TRUE, control = list(n_starts = 2L, maxit = 500L)
+  ))
+  all_vars <- vapply(.hzr_stepwise_candidates(mp2, data = dd),
+                     function(c) c$var, character(1))
+  expect_true("age" %in% all_vars) # known positive
+  kept <- vapply(.hzr_stepwise_candidates(mp2, data = dd, force_out = "age"),
+                 function(c) c$var, character(1))
+  expect_false("age" %in% kept)
 })
 
 test_that("a syntactic name is unaffected (#437)", {

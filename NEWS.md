@@ -796,11 +796,13 @@
   not the inverse of quoting: a column named `` a`b `` is labelled
   `` `a\`b` `` and strips to `a\b`, a name that does not exist. A term that
   is not a single symbol, such as an interaction, still matches by label.
-  This is about MATCHING: a forward step still cannot ADD such a variable,
-  because the refit builds its formula by pasting the bare name, which does
-  not parse. That failure is loud -- the candidate is named as a refit
-  failure and the screen says so -- and is tracked in #441, with the score
-  criterion's own lookup by label in #438.
+  This is about MATCHING, and ADDING such a variable is a separate question
+  with a separate answer: the refit pastes the candidate into a formula, so
+  it parses only when the candidate is already quoted. A formula `scope`
+  carries `terms()` labels and therefore adds one; a character `scope` of
+  bare names cannot, and says so -- the candidate is named as a refit
+  failure and the screen reports it. That gap is tracked in #441, with the
+  score criterion's own lookup by label in #438.
 
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded

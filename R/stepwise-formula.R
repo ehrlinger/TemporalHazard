@@ -98,7 +98,11 @@
 #'
 #' @param x,y Character vectors of labels or names.
 #' @return The elements of `x`, as spelled in `x`, whose variable is not in
-#'   `y`, each variable once.
+#'   `y`, each variable once. "Once" is by VARIABLE, so on a frame read with
+#'   `check.names = FALSE` carrying both `age` and `age ` -- which key to the
+#'   same symbol -- only the first is returned, where `setdiff()` returned
+#'   both. That is the same pathological input the key map's leniency turns
+#'   on, and the same trade.
 #' @keywords internal
 #' @noRd
 .hzr_setdiff_var <- function(x, y) {
