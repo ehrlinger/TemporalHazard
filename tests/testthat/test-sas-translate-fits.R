@@ -558,7 +558,7 @@ test_that("a phase variable missing from the data is named, not 'object not foun
   expect_false(exists("fit", envir = res$env, inherits = FALSE))
 })
 
-test_that("every reachable SETG3 refusal renders a stop(), not a fit (#359)", {
+test_that("every reachable SETG3 refusal reaches the reader (#359)", {
   # The whole reachable set, not a sample. Twelve codes can fire through
   # .hzr_parse_parms(): the nine the exhaustive search in
   # test-sas-parse-parms.R pins for the .hzr_setg3_notes() trace, plus the
@@ -602,14 +602,49 @@ test_that("every reachable SETG3 refusal renders a stop(), not a fit (#359)", {
   n <- 80
   D <- data.frame(TT = stats::rexp(n, 0.2), DEAD = rep(c(1, 0), length.out = n))
 
+  # Since 2026-09-22 such a job EMITS the fit and warns, so that a rendered
+  # document completes and carries the reason (John's decision). The
+  # exception is a refusal whose own value hzr_phase() will not accept:
+  # there is no fit to emit, so the document still stops, with the message
+  # that names the code rather than a later, vaguer one.
+  #
+  # The assertion is therefore that the code reaches the reader by ONE of
+  # exactly two routes, never neither. Both routes are counted, and both
+  # must occur: if a change collapsed everything onto one of them, an
+  # assertion that only checked "the code appears somewhere" would still
+  # pass.
+  warned <- 0L
+  stopped <- 0L
   for (label in names(refusals)) {
     code <- sub("_gae2$", "", label)
     job <- translate(refusals[[label]])
-    res <- suppressWarnings(render_sim(job, list(D = D)))
-    expect_false(res$ok, info = label)
-    expect_match(res$results[["fit"]], code, fixed = TRUE, info = label)
-    expect_false(exists("fit", envir = res$env, inherits = FALSE), info = label)
+    warn_nm <- grep("^refusal", names(job$calls), value = TRUE)
+    if (length(warn_nm)) {
+      warned <- warned + 1L
+      msgs <- character(0)
+      withCallingHandlers(eval(job$calls[[warn_nm[[1L]]]], new.env()),
+                          warning = function(x) {
+                            msgs <<- c(msgs, conditionMessage(x))
+                            invokeRestart("muffleWarning")
+                          })
+      expect_match(paste(msgs, collapse = " "), code, fixed = TRUE, info = label)
+      # The row is the other half of the contract: warned AND listed.
+      expect_gt(NROW(job$untranslated), 0L)
+      # And the fit really is emitted, not quietly dropped.
+      expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"), info = label)
+    } else {
+      stopped <- stopped + 1L
+      expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"), info = label)
+      err <- tryCatch({
+        eval(job$calls$fit, new.env())
+        "no error"
+      }, error = conditionMessage)
+      expect_match(err, code, fixed = TRUE, info = label)
+    }
   }
+  # Known positives for both routes: neither may be empty.
+  expect_gt(warned, 0L)
+  expect_gt(stopped, 0L)
 
   # The paired control: a job PROC HAZARD runs still renders a fit. Without
   # it, a fix that refused everything would pass every assertion above.
@@ -628,10 +663,17 @@ test_that("every reachable SETG3 refusal renders a stop(), not a fit (#359)", {
   for (ops in c("PARMS MUL=0.2 TAU=1 GAMMA=4 ETA=0.5 FIXGAMMA FIXETA FIXGE2;",
                 "PARMS MUL=0.2 TAU=1 GAMMA=4 ETA=1 ALPHA=2 FIXALPHA FIXGAE2;")) {
     job <- translate(ops)
-    msg <- tryCatch({
-      eval(job$calls$fit, new.env())
-      "no error"
-    }, error = conditionMessage)
+    # These now warn and still fit, so the reason reaches the reader through
+    # the refusal chunk rather than through an error.
+    warn_nm <- grep("^refusal", names(job$calls), value = TRUE)
+    expect_length(warn_nm, 1L)
+    msgs <- character(0)
+    withCallingHandlers(eval(job$calls[[warn_nm[[1L]]]], new.env()),
+                        warning = function(x) {
+                          msgs <<- c(msgs, conditionMessage(x))
+                          invokeRestart("muffleWarning")
+                        })
+    msg <- paste(msgs, collapse = " ")
     expect_match(msg, "cannot tell whether PROC HAZARD refuses", fixed = TRUE, info = ops)
     expect_no_match(msg, "refused before any fit", fixed = TRUE, info = ops)
   }
@@ -648,34 +690,74 @@ test_that("every reachable SETG3 refusal renders a stop(), not a fit (#359)", {
                     "; EVENT DEAD; TIME TT; PARMS ", parms, "; );"), f)
   suppressWarnings(hzr_translate_sas(f))
 }
+# Since 2026-09-22 a job PROC HAZARD would refuse, or fit differently, is
+# EMITTED with a loud warning and an $untranslated row, so a rendered
+# document completes and carries the reason instead of halting on it. These
+# helpers assert that whole contract, not just one half of it.
+.u1_refusal_chunk <- function(job) {
+  nm <- grep("^refusal", names(job$calls), value = TRUE)
+  if (!length(nm)) NULL else job$calls[[nm[[1L]]]]
+}
+.u1_stops <- function(job) {
+  identical(job$calls$fit[[3L]][[1L]], as.name("stop"))
+}
+# The warn route: the fit IS emitted, a refusal chunk warns, and the
+# construct is listed. All three, because any one alone is a half-contract.
+.u1_warns_and_fits <- function(job) {
+  !is.null(.u1_refusal_chunk(job)) &&
+    NROW(job$untranslated) > 0L &&
+    identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
+}
+# A refusal must reach the reader by ONE of two routes and never neither:
+# it warns and still fits, or -- where the value PROC HAZARD refuses is also
+# one hzr_phase() will not build -- there is no fit to emit and it stops.
+.u1_refuses <- function(job) .u1_warns_and_fits(job) || .u1_stops(job)
+# The reason text, by whichever route carried it.
 .u1_msg <- function(job) {
-  tryCatch({
-    eval(job$calls$fit, new.env())
-    "no error"
-  }, error = conditionMessage)
+  ch <- .u1_refusal_chunk(job)
+  if (is.null(ch)) {
+    if (!.u1_stops(job)) {
+      return("no refusal")
+    }
+    return(tryCatch({
+      eval(job$calls$fit, new.env())
+      "no error"
+    }, error = conditionMessage))
+  }
+  # Evaluate the emitted chunk rather than reading its text: what a reader of
+  # the rendered document receives is the warning, not the source.
+  msgs <- character(0)
+  withCallingHandlers(eval(ch, new.env()), warning = function(x) {
+    msgs <<- c(msgs, conditionMessage(x))
+    invokeRestart("muffleWarning")
+  })
+  if (length(msgs)) paste(msgs, collapse = " ") else "no warning"
 }
 
-test_that("a PARMS syntax error stops the document (U1, #421)", {
+test_that("a PARMS syntax error warns and still fits (U1, #421)", {
   for (p in c("MUE=0.2 THALF=0.5 NU=1E-3", "MUE=0.2 THALF=0.5 NU",
               "MUE=0.2 THALF=0.5 NU = ABC", "MUE=0.2 THALF=0.5 FIXG1")) {
     job <- .u1_job(parms = p)
-    expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"), info = p)
+    expect_true(.u1_refuses(job), info = p)
     expect_match(.u1_msg(job), "PROC HAZARD does not run this job", fixed = TRUE,
                  info = p)
   }
-  # Controls: a job SAS runs still fits, including a macro piece this parser
-  # cannot judge, which is indeterminate and so not a known refusal.
-  for (p in c("MUE=0.2 THALF=0.5 NU=1", "MUE=0.2 THALF=0.5 NU=1 &X")) {
-    job <- .u1_job(parms = p)
-    expect_false(identical(job$calls$fit[[3L]][[1L]], as.name("stop")) &&
-                   grepl("does not run", .u1_msg(job), fixed = TRUE), info = p)
-  }
+  # Controls. An ordinary job is not refused at all. A macro piece is
+  # INDETERMINATE, not a syntax error: SAS expands it before PROC HAZARD
+  # reads the statement, so it must never be reported as a job PROC HAZARD
+  # does not run. (It is still carried as an unread operand, which is a
+  # different claim and is asserted elsewhere.)
+  job <- .u1_job(parms = "MUE=0.2 THALF=0.5 NU=1")
+  expect_false(.u1_refuses(job))
+  job <- .u1_job(parms = "MUE=0.2 THALF=0.5 NU=1 &X")
+  expect_false(grepl("PROC HAZARD does not run this job", .u1_msg(job),
+                     fixed = TRUE))
 })
 
-test_that("a PROC-line value the lexer rejects stops the document (U1, #403)", {
+test_that("a PROC-line value the lexer rejects warns and still fits (U1, #403)", {
   for (proc in c(" MAXITER=1E5", " CONDITION=5.")) {
     job <- .u1_job(proc = proc, parms = "MUE=0.2 THALF=1 NU=1")
-    expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"), info = proc)
+    expect_true(.u1_refuses(job), info = proc)
     msg <- .u1_msg(job)
     expect_match(msg, "PROC HAZARD does not run this job", fixed = TRUE, info = proc)
     expect_match(msg, "hazard_l.l:34-38", fixed = TRUE, info = proc)
@@ -684,7 +766,7 @@ test_that("a PROC-line value the lexer rejects stops the document (U1, #403)", {
   expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
 })
 
-test_that("MAXITER or CONDITION with no value stops the document (U1, #433)", {
+test_that("MAXITER or CONDITION with no value warns and still fits (U1, #433)", {
   # hazard_y.y:63-64 are `MAXITER '=' NUMBER` and `CONDITION '=' NUMBER`.
   # No NUMBER, no rule: the option falls to `hazardopt : error` (:77),
   # yyerror latches yysynerr (yyerror.c:19) and initprz.c:75-77 terminates
@@ -693,7 +775,7 @@ test_that("MAXITER or CONDITION with no value stops the document (U1, #433)", {
   for (proc in c(" MAXITER=", " MAXITER =", " CONDITION=", " CONDITION =",
                  " MAXITER", " CONDITION")) {
     job <- .u1_job(proc = proc, parms = "MUE=0.2 THALF=1 NU=1")
-    expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"), info = proc)
+    expect_true(.u1_refuses(job), info = proc)
     msg <- .u1_msg(job)
     expect_match(msg, "PROC HAZARD does not run this job", fixed = TRUE, info = proc)
     expect_match(msg, "hazard_y.y:63-64", fixed = TRUE, info = proc)
@@ -732,9 +814,9 @@ test_that("a spaced PROC-line option is read, not dropped (U1 review 4, #421)", 
   expect_false(any(hp$untranslated$reason == "unknown PROC HAZPRED option"))
 })
 
-test_that("FIXMNU1 on an active early phase stops the document (U1, #358)", {
+test_that("FIXMNU1 on an active early phase warns and still fits (U1, #358)", {
   job <- .u1_job(parms = "MUE=0.2 THALF=1 NU=2 M=0.5 FIXMNU1")
-  expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"))
+  expect_true(.u1_refuses(job))
   msg <- .u1_msg(job)
   expect_match(msg, "FIXMNU1", fixed = TRUE)
   expect_match(msg, "|M*NU| = 1", fixed = TRUE)
@@ -745,7 +827,6 @@ test_that("FIXMNU1 on an active early phase stops the document (U1, #358)", {
 })
 
 # --- U1, r-reviewer pass 1 on the branch: false refusals and missed ones ---
-.u1_stops <- function(job) identical(job$calls$fit[[3L]][[1L]], as.name("stop"))
 
 test_that("a macro value or call is never refused as a syntax error (U1 review)", {
   # SAS expands `&X` and `%CALL` before PROC HAZARD reads the statement.
@@ -761,11 +842,11 @@ test_that("a macro value or call is never refused as a syntax error (U1 review)"
 
 test_that("an unspaced non-numeric PARMS value is a syntax error (U1 review)", {
   job <- .u1_job(parms = "MUE=0.2 THALF=0.5 NU=ABC")
-  expect_true(.u1_stops(job))
+  expect_true(.u1_refuses(job))
   expect_match(.u1_msg(job), "PROC HAZARD does not run this job", fixed = TRUE)
 })
 
-test_that("FIXMNU1 stops honestly, even where it might constrain nothing (U1 review 2)", {
+test_that("FIXMNU1 warns honestly, even where it might constrain nothing (U1 review 2)", {
   # The vacuous-FIXMNU1 exemption was dropped after its sign cases went wrong
   # (M*NU = -1 is vacuous too; M = NU = -1 is SETG1920). The stop claims
   # neither that PROC HAZARD runs the job nor that it refuses it.
@@ -773,25 +854,25 @@ test_that("FIXMNU1 stops honestly, even where it might constrain nothing (U1 rev
               "MUE=0.2 THALF=0.5 M=-1 NU=1 FIXM FIXNU FIXMNU1",
               "MUE=0.2 THALF=0.5 M=-1 NU=-1 FIXM FIXNU FIXMNU1")) {
     job <- .u1_job(parms = p)
-    expect_true(.u1_stops(job), info = p)
+    expect_true(.u1_refuses(job), info = p)
     msg <- .u1_msg(job)
     expect_match(msg, "cannot emit PROC HAZARD's model", fixed = TRUE, info = p)
     expect_no_match(msg, "runs this job", fixed = TRUE, info = p)
   }
 })
 
-test_that("SETG3's entry refusals stop on the constraint path too (U1 review)", {
+test_that("SETG3's entry refusals warn on the constraint path too (U1 review)", {
   # setg3.c:269-284 run before any constraint or WEIBULL logic.
   for (p in c("MUL=0.2 TAU=0 FIXTAU GAMMA=2 ETA=1 FIXGE2",
               "MUL=0.2 TAU=1 GAMMA=0 FIXGAMMA ETA=1 FIXGAE2",
               "MUL=0.2 TAU=1 GAMMA=2 ALPHA=-1 FIXALPHA ETA=1 FIXGE2")) {
     job <- .u1_job(parms = p)
-    expect_true(.u1_stops(job), info = p)
+    expect_true(.u1_refuses(job), info = p)
     expect_match(.u1_msg(job), "SETG39[0-3]0", info = p)
   }
 })
 
-test_that("FIXGE2/FIXGAE2 without WEIBULL stops, saying it cannot tell (U1 review 2)", {
+test_that("FIXGE2/FIXGAE2 without WEIBULL warns, saying it cannot tell (U1 review 2)", {
   # The non-WEIBULL constraint path (SETG3_all_gt_0(), SETG3_alpha_le_0(), ...)
   # is not modelled here, and hand-deriving it went wrong twice. Every such
   # job stops and claims neither a refusal nor a run -- including the jobs
@@ -803,29 +884,29 @@ test_that("FIXGE2/FIXGAE2 without WEIBULL stops, saying it cannot tell (U1 revie
               "MUL=0.2 TAU=1 GAMMA=4 ETA=1 ALPHA=0 FIXALPHA FIXGAMMA FIXETA FIXGAE2",
               "MUL=0.2 TAU=1 GAMMA=4 ETA=1 ALPHA=3 FIXGAMMA FIXETA FIXGAE2")) {
     job <- .u1_job(parms = p)
-    expect_true(.u1_stops(job), info = p)
+    expect_true(.u1_refuses(job), info = p)
     msg <- .u1_msg(job)
     expect_match(msg, "cannot tell whether PROC HAZARD refuses", fixed = TRUE, info = p)
     expect_no_match(msg, "runs this job", fixed = TRUE, info = p)
   }
   # The same shapes with WEIBULL are the mirrored path, and fit.
-  expect_false(.u1_stops(.u1_job(parms = "MUL=0.2 TAU=1 GAMMA=3 ETA=1 FIXGE2 WEIBULL")))
-  expect_false(.u1_stops(.u1_job(parms = "MUL=0.2 TAU=1 GAMMA=4 ETA=0.5 FIXGAMMA FIXETA FIXGE2 WEIBULL")))
+  expect_false(.u1_refuses(.u1_job(parms = "MUL=0.2 TAU=1 GAMMA=3 ETA=1 FIXGE2 WEIBULL")))
+  expect_false(.u1_refuses(.u1_job(parms = "MUL=0.2 TAU=1 GAMMA=4 ETA=0.5 FIXGAMMA FIXETA FIXGE2 WEIBULL")))
 })
 
-test_that("DELTA != 0 and a FIXTAU with no TAU written stop (U1 review)", {
+test_that("DELTA != 0 and a FIXTAU with no TAU written warn (U1 review)", {
   job <- .u1_job(parms = "MUE=0.2 THALF=1 NU=1 DELTA=0.5")
-  expect_true(.u1_stops(job))
+  expect_true(.u1_refuses(job))
   expect_match(.u1_msg(job), "DELTA", fixed = TRUE)
   job <- .u1_job(parms = "MUL=0.2 GAMMA=2 ETA=1 FIXTAU")
-  expect_true(.u1_stops(job))
+  expect_true(.u1_refuses(job))
   expect_match(.u1_msg(job), "0.75*Tmax", fixed = TRUE)
   # Controls: DELTA = 0 is R's model; a written positive TAU is fixed at it.
-  expect_false(.u1_stops(.u1_job(parms = "MUE=0.2 THALF=1 NU=1 DELTA=0")))
+  expect_false(.u1_refuses(.u1_job(parms = "MUE=0.2 THALF=1 NU=1 DELTA=0")))
   # DELTA is read only by SETG1 (setg1.c:306), which runs only for an active
   # early phase (shape.c:19-21): a late-only job ignores it.
-  expect_false(.u1_stops(.u1_job(parms = "MUL=0.2 TAU=1 GAMMA=2 ETA=1 DELTA=0.5")))
-  expect_false(.u1_stops(.u1_job(parms = "MUL=0.2 TAU=2 GAMMA=2 ETA=1 FIXTAU")))
+  expect_false(.u1_refuses(.u1_job(parms = "MUL=0.2 TAU=1 GAMMA=2 ETA=1 DELTA=0.5")))
+  expect_false(.u1_refuses(.u1_job(parms = "MUL=0.2 TAU=2 GAMMA=2 ETA=1 FIXTAU")))
 })
 
 test_that("a template placeholder or a bare % is a syntax error, not filled in (U1 review 2)", {
@@ -833,34 +914,34 @@ test_that("a template placeholder or a bare % is a syntax error, not filled in (
   # rejects `?` (hazard_l.l:178). `50%` is no macro: % with no name after it.
   for (p in c("MUE=0.2 THALF=1 NU=?", "MUE=0.2 THALF=1 NU=50%")) {
     job <- .u1_job(parms = p)
-    expect_true(.u1_stops(job), info = p)
+    expect_true(.u1_refuses(job), info = p)
     expect_match(.u1_msg(job), "PROC HAZARD does not run this job", fixed = TRUE, info = p)
   }
   expect_match(.u1_msg(.u1_job(parms = "MUE=0.2 THALF=1 NU=?")), "fill it in", fixed = TRUE)
 })
 
-test_that("U1 review 3: the last DELTA wins, and more known-unfittable jobs stop", {
+test_that("U1 review 3: the last DELTA wins, and more known-unfittable jobs warn", {
   # hazard_y.y:138 is last-wins, so DELTA=0.5 DELTA=0 runs at delta = 0 --
   # exactly what is emitted.
-  expect_false(.u1_stops(.u1_job(parms = "MUE=0.2 DELTA=0.5 DELTA=0 NU=1 M=1 THALF=1")))
+  expect_false(.u1_refuses(.u1_job(parms = "MUE=0.2 DELTA=0.5 DELTA=0 NU=1 M=1 THALF=1")))
   # An unknown PROC option IS a lexer catch-all in PROC HAZARD, but this
   # parser's block text can carry another step's keywords (a %repeat call
   # brings a DATA step through), so it is recorded rather than refused.
   job <- .u1_job(proc = " FOO", parms = "MUE=0.2 THALF=1 NU=1")
-  expect_false(.u1_stops(job))
+  expect_false(.u1_refuses(job))
   expect_true("FOO" %in% job$untranslated$construct)
   # FIXTAU whose TAU this parser could not read: PROC HAZARD fixes TAU at the
   # written value or at 0.75*Tmax, never at the 1 the emitted phase pins.
   job <- .u1_job(parms = "MUL=0.2 GAMMA=1 TAU=&T FIXTAU")
-  expect_true(.u1_stops(job))
+  expect_true(.u1_refuses(job))
   expect_match(.u1_msg(job), "FIXTAU", fixed = TRUE)
   # An active MU whose phase this parser could not build: PROC HAZARD fits
   # that phase, so the emitted model is short of one.
   job <- .u1_job(parms = "MUE=0.2 THALF=0.5 NU=1 M=1 MUL=0.3 &SHAPE FIXGE2")
-  expect_true(.u1_stops(job))
+  expect_true(.u1_refuses(job))
   expect_match(.u1_msg(job), "MUL", fixed = TRUE)
   # Control: the same job with the late shape written builds both phases.
-  expect_false(.u1_stops(.u1_job(parms = "MUE=0.2 THALF=0.5 NU=1 M=1 MUL=0.3 GAMMA=2 ETA=1 WEIBULL")))
+  expect_false(.u1_refuses(.u1_job(parms = "MUE=0.2 THALF=0.5 NU=1 M=1 MUL=0.3 GAMMA=2 ETA=1 WEIBULL")))
 })
 
 test_that("U1 review 4: spaces around `=` are SAS's job, not a refusal (#421)", {
@@ -870,11 +951,11 @@ test_that("U1 review 4: spaces around `=` are SAS's job, not a refusal (#421)", 
   # filled the operand from SAS's default and fitted a model PROC HAZARD does
   # not fit. Operands are joined before parsing.
   job <- .u1_job(proc = " MAXITER = 50", parms = "MUE=0.2 THALF=1 NU=1")
-  expect_false(.u1_stops(job))
+  expect_false(.u1_refuses(job))
   expect_equal(job$calls$fit_base %||% job$calls$fit, job$calls$fit)
   # The value is read, not defaulted.
   job <- .u1_job(parms = "MUE=0.2 THALF = 0.3 NU = 1 M=1")
-  expect_false(.u1_stops(job))
+  expect_false(.u1_refuses(job))
   src <- paste(deparse(job$calls$fit), collapse = " ")
   expect_match(src, "t_half = 0.3", fixed = TRUE)
   expect_match(src, "nu = 1", fixed = TRUE)
@@ -884,12 +965,52 @@ test_that("U1 review 4: spaces around `=` are SAS's job, not a refusal (#421)", 
     expect_match(src, "t_half = 0.3", fixed = TRUE, info = p)
   }
   # A joined operand SAS still rejects is still a syntax stop.
-  expect_true(.u1_stops(.u1_job(parms = "MUE=0.2 THALF = ABC NU=1")))
+  expect_true(.u1_refuses(.u1_job(parms = "MUE=0.2 THALF = ABC NU=1")))
   # An unknown HAZARD statement keyword is recorded, for the same reason.
   f <- withr::local_tempfile(fileext = ".sas")
   writeLines(paste("%HAZARD( PROC HAZARD DATA=D; EVENT DEAD; TIME TT; FOO BAR;",
                    "PARMS MUL=0.2 TAU=1 GAMMA=2 ETA=1 WEIBULL; );"), f)
   job <- suppressWarnings(hzr_translate_sas(f))
-  expect_false(.u1_stops(job))
+  expect_false(.u1_refuses(job))
   expect_true("FOO" %in% job$untranslated$construct)
+})
+
+test_that("every refusal class warns AND lists a row, and a clean job does neither", {
+  # The contract John set on 2026-09-22, asserted as a whole and over the
+  # whole class list rather than one example: a job PROC HAZARD would refuse,
+  # or would fit differently, EMITS the fit, warns loudly, and names the
+  # construct in $untranslated. Any one of the three alone is a half-contract:
+  # a warning nobody can grep afterwards, a row nobody reads at render, or a
+  # fit that quietly disappeared.
+  classes <- list(
+    "PARMS value the lexer rejects"  = list("", "MUE=0.2 THALF=1 NU=1E-3"),
+    "PARMS value keyword, no number" = list("", "MUE=0.2 THALF=1 NU"),
+    "PARMS keyword outside grammar"  = list("", "MUE=0.2 THALF=1 NU=1 FIXG1"),
+    "PARMS flag given a value"       = list("", "MUE=0.2 THALF=1 NU=1 FIXNU=1"),
+    "PROC value the lexer rejects"   = list(" MAXITER=1E5", "MUE=0.2 THALF=1 NU=1"),
+    "PROC option with no value"      = list(" MAXITER=", "MUE=0.2 THALF=1 NU=1"),
+    "template ? placeholder"         = list("", "MUE=0.2 THALF=? NU=1"),
+    "FIXMNU1 on an active early"     = list("", "MUE=0.2 THALF=1 NU=2 M=0.5 FIXMNU1"),
+    "DELTA != 0 on an active early"  = list("", "MUE=0.2 THALF=0.3 NU=1 DELTA=0.5"),
+    "FIXTAU with no TAU written"     = list("", "MUL=0.2 GAMMA=2 ETA=1 ALPHA=1 FIXTAU"),
+    "FIXGAE2 without WEIBULL"        = list("", "MUL=0.1 TAU=8 ALPHA=2 GAMMA=5 ETA=1 FIXGAE2"),
+    "an operand read as a macro"     = list("", "MUE=0.2 THALF=0.3 NU=1 M=0 &FLAGS")
+  )
+  for (nm in names(classes)) {
+    job <- .u1_job(proc = classes[[nm]][[1L]], parms = classes[[nm]][[2L]])
+    expect_true(.u1_warns_and_fits(job), info = nm)
+    # Spelled out, so a failure says which half broke.
+    expect_false(is.null(.u1_refusal_chunk(job)), info = nm)
+    expect_gt(NROW(job$untranslated), 0L)
+    expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"), info = nm)
+    expect_no_match(.u1_msg(job), "no warning", fixed = TRUE, info = nm)
+  }
+
+  # KNOWN NEGATIVE: a job PROC HAZARD runs, translated faithfully, must raise
+  # neither half. Without it a change that warned on everything would satisfy
+  # every assertion above.
+  clean <- .u1_job(parms = "MUE=0.2 THALF=1 NU=1")
+  expect_null(.u1_refusal_chunk(clean))
+  expect_identical(NROW(clean$untranslated), 0L)
+  expect_identical(clean$calls$fit[[3L]][[1L]], as.name("hazard"))
 })

@@ -428,6 +428,10 @@
       proc_rejected <<- c(proc_rejected, paste0(
         key, ": no value, and PROC HAZARD has no form of this option without ",
         "one (hazard_y.y:63-64), so it rejects this job with a syntax error"))
+      # A refused construct is listed as well as warned about: the warning
+      # is read once at render, the row is what a reader greps afterwards.
+      note(key, paste0("no value; PROC HAZARD has no form of this option ",
+                       "without one (hazard_y.y:63-64)"))
       return(invisible(NULL))
     }
     if (!.hzr_sas_lexer_number(val)) {
@@ -435,6 +439,9 @@
         key, "=", val, ": not a number PROC HAZARD's lexer reads ",
         "(hazard_l.l:34-38), so PROC HAZARD rejects this job with a syntax ",
         "error"))
+      note(paste0(key, "=", val),
+           paste0("not a number PROC HAZARD's lexer reads ",
+                  "(hazard_l.l:34-38)"))
     }
   }
 
@@ -632,17 +639,31 @@
   # here would answer a job the reference never runs (#340). Checked first:
   # SAS stops at parse, before anything the other refusals read -- including
   # the censoring spec, which throws on a job with no EVENT (#396 review).
-  rejected <- c(proc_rejected, parms$rejected)
-  if (length(rejected)) {
+  # Split by provenance, not by message text. A PHASE statement PROC HAZARD
+  # refuses at parse has always stopped the document (#340) and still does.
+  # A PARMS operand or PROC-line value it refuses used to emit a fit with an
+  # untranslated row; since 2026-09-22 it emits the fit, the row AND a loud
+  # warning, so a rendered document completes and carries the reason rather
+  # than halting on it.
+  if (length(parms$rejected_phase)) {
     msg <- paste0(
       "PROC HAZARD does not run this job: ",
-      paste(rejected, collapse = "; "), ". Correct the ",
+      paste(parms$rejected_phase, collapse = "; "), ". Correct the ",
       "statement(s) named here and translate the job again.")
     return(list(
       call = as.call(list(quote(stop), msg, call. = FALSE)),
       status_call = NULL, outhaz = outhaz, untranslated = untr,
       tokens_seen = seen, tokens_mapped = mapped
     ))
+  }
+  refusal_warnings <- character(0)
+  rejected <- c(proc_rejected, parms$rejected_parms)
+  if (length(rejected)) {
+    refusal_warnings <- c(refusal_warnings, paste0(
+      "PROC HAZARD does not run this job: ",
+      paste(rejected, collapse = "; "), ". The fit below is this ",
+      "translation's, not one PROC HAZARD would produce. Correct the ",
+      "statement(s) named here and translate the job again."))
   }
 
   cens <- .hzr_censor_spec(statements)
@@ -706,19 +727,13 @@
   # the operands travel in the message, so the reader knows what to change
   # (#359).
   if (!is.null(parms$refusal_reason) && !is.na(parms$refusal_reason)) {
-    return(list(
-      call = call(
-        "stop",
-        paste0("This PROC HAZARD job is refused before any fit is computed: ",
-               sub("^PROC HAZARD refuses this job: ", "", parms$refusal_reason),
-               ". SETG3 sets the error in shape() and the procedure exits ",
-               "before results(), so there is no fit to translate. Correct ",
-               "the PARMS operand(s) named here, or fit the model by hand."),
-        call. = FALSE
-      ),
-      status_call = NULL, outhaz = outhaz, untranslated = untr,
-      tokens_seen = seen, tokens_mapped = mapped
-    ))
+    refusal_warnings <- c(refusal_warnings, paste0(
+      "This PROC HAZARD job is refused before any fit is computed: ",
+      sub("^PROC HAZARD refuses this job: ", "", parms$refusal_reason),
+      ". SETG3 sets the error in shape() and the procedure exits before ",
+      "results(), so PROC HAZARD produces nothing for this job and the fit ",
+      "below stands in for no SAS result at all. Correct the PARMS ",
+      "operand(s) named here, or fit the model by hand."))
   }
 
   # A job PROC HAZARD runs, but on a model this translation does not emit:
@@ -728,14 +743,10 @@
   # job's, so the document stops (U1, #358). Mirroring the constraint is
   # new modelling, left out of 1.3.0.
   if (length(parms$not_mirrored)) {
-    return(list(
-      call = call("stop", paste0(
-        "This translation cannot emit PROC HAZARD's model for this job, so a ",
-        "fit here could stand in for a model PROC HAZARD does not fit: ",
-        paste(parms$not_mirrored, collapse = "; "), "."), call. = FALSE),
-      status_call = NULL, outhaz = outhaz, untranslated = untr,
-      tokens_seen = seen, tokens_mapped = mapped
-    ))
+    refusal_warnings <- c(refusal_warnings, paste0(
+      "This translation cannot emit PROC HAZARD's model for this job, so the ",
+      "fit below stands in for a model PROC HAZARD does not fit: ",
+      paste(parms$not_mirrored, collapse = "; "), "."))
   }
 
   # A PARMS statement that builds no phase and is NOT refused -- operands this
@@ -1150,10 +1161,48 @@
     })
   }
 
+  # John's 2026-09-22 decision replaces these refusals' stop() with a warning
+  # so that a rendered document COMPLETES and carries the reason. For most
+  # classes it does. For a SETG3 ENTRY refusal it cannot: SAS refuses those
+  # because a shape value is out of range (setg3.c:269-284), and the same
+  # value is out of range for hzr_phase(), which refuses to build the phase
+  # at all. Emitting the fit there does not produce a document that
+  # completes; it produces one that halts on "gamma must be a positive
+  # scalar" instead of one naming SETG3910 and the operand that caused it.
+  #
+  # So the rule is the decision's INTENT rather than its letter: warn and fit
+  # where the fit can run, and keep the informative stop where it cannot.
+  # Decided by BUILDING the emitted phases rather than by listing codes, so
+  # it tracks what hzr_phase() actually accepts.
+  if (length(refusal_warnings) && !is.null(args$phases)) {
+    buildable <- tryCatch({
+      eval(args$phases, envir = asNamespace("TemporalHazard"))
+      TRUE
+    }, error = function(e) FALSE)
+    if (!buildable) {
+      return(list(
+        call = as.call(list(quote(stop), paste0(
+          paste(refusal_warnings, collapse = " "),
+          " This job cannot be fitted as written either: the value PROC ",
+          "HAZARD refuses is also outside the range hzr_phase() accepts, so ",
+          "there is no fit to emit and the document stops here rather than ",
+          "on a less specific error further down."), call. = FALSE)),
+        status_call = NULL, outhaz = outhaz, untranslated = untr,
+        tokens_seen = seen, tokens_mapped = mapped,
+        refusal_warnings = character(0)
+      ))
+    }
+  }
+
   list(call = as.call(c(head, args)), status_call = status_call,
        stepwise_call = stepwise_call, screen_check_call = screen_check_call,
        outhaz = outhaz, untranslated = untr, tokens_seen = seen,
-       tokens_mapped = mapped)
+       tokens_mapped = mapped,
+       # Each is a reason PROC HAZARD would refuse this job, or would fit a
+       # different model from the one emitted. They are carried out rather
+       # than raised here: the point is that the RENDERED document warns, so
+       # translate-sas.R emits them as a chunk immediately above the fit.
+       refusal_warnings = refusal_warnings)
 }
 
 #' Translate a SELECTION statement to hzr_stepwise() arguments.

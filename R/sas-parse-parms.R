@@ -1886,6 +1886,16 @@
     has_phases = length(phase_calls) > 0L,
     refused = refused,
     rejected = c(parms_rejected, rejected),
+    # The same vector split by PROVENANCE, because the two halves now get
+    # different treatment and telling them apart by their text would be a
+    # shape test on a message. `rejected_phase` is the phase statements',
+    # which PROC HAZARD has always refused at parse and which the document
+    # has always stopped on (#340). `rejected_parms` is the PARMS operands',
+    # which used to fit with a row and now fit with a row AND a warning
+    # (John's 2026-09-22 decision). `rejected` stays the union: it is read by
+    # existing tests and by nothing that needs the distinction.
+    rejected_phase = rejected,
+    rejected_parms = parms_rejected,
     refusal_reason = refusal_reason,
     # FIXMNU1 on an active early phase: PROC HAZARD fits |M*NU| = 1, which
     # this translation does not mirror (#358), so the model it would emit is

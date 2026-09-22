@@ -2,14 +2,24 @@
 
 ## Breaking changes
 
-* **A `hzr_translate_sas()` job PROC HAZARD refuses now stops instead of
-  fitting** (#359). When `SETG3` sets an error, the procedure exits in
-  `shape()` before `results()`, so the job produces nothing. The translation
-  recorded that as an untranslated row and still emitted a `hazard()` chunk,
-  and a reader who rendered past the callout got a converged fit standing in
-  for a job with no result. The document now opens with a `stop()` naming the
-  `SETG3` code, its cause and the `PARMS` operands that produced it. The row is
-  still recorded, so the listing of what was wrong is unchanged.
+* **A `hzr_translate_sas()` job PROC HAZARD refuses now warns loudly, and
+  says so in `$untranslated`** (#359). When `SETG3` sets an error, the
+  procedure exits in `shape()` before `results()`, so the job produces
+  nothing. The translation recorded that as an untranslated row and emitted a
+  `hazard()` chunk with nothing to mark it, and a reader who rendered past the
+  callout got a converged fit standing in for a job with no result. The
+  emitted document now carries a `warning()` immediately above the fit,
+  naming the `SETG3` code, its cause and the `PARMS` operands that produced
+  it, and the row is recorded as before. The fit is still emitted: a rendered
+  document completes, and the reader is told what it stands in for.
+
+  **One case still stops, because it cannot do anything else.** `SETG3`'s
+  entry refusals fire when a shape value is out of range (`setg3.c:269-284`),
+  and the same value is out of range for `hzr_phase()`, which will not build
+  the phase at all. There is no fit to emit, so such a job stops with the
+  message that names the code and the operand, rather than running on to a
+  less specific error. Which jobs those are is decided by building the
+  emitted phases, not by a list of codes.
 
   The refusal is raised only where it is PROC HAZARD's. With `FIXGE2` or
   `FIXGAE2` and no `WEIBULL`, SAS reaches `SETG3` down a path the `setg3.c`
@@ -18,9 +28,11 @@
   entry).
 
 * **More `hzr_translate_sas()` jobs that PROC HAZARD refuses, or fits
-  differently, now stop instead of fitting** (#358, #403, #421). Each of these
-  was already recorded as an untranslated row, but the translation still
-  emitted a fit:
+  differently, now warn loudly** (#358, #403, #421). Each was already recorded
+  as an untranslated row, but nothing in the rendered document said so, and a
+  reader met a converged fit with no sign that PROC HAZARD would not have
+  produced it. Each now emits the fit, a `warning()` above it naming the
+  cause, and the row:
   - a `PARMS` operand PROC HAZARD rejects with a syntax error: a value its
     lexer does not read as a number (`NU=1E-3`, `NU=2.`), a value keyword
     with no `= NUMBER`, a spaced operand that is invalid even joined, or a
@@ -54,22 +66,25 @@
   one that sets a shape, and the emitted phase would then carry SAS's default
   where the job wrote something else.
 
-  **A refusal stops the render of the whole document, not just its own
-  job.** The refusal itself is per job: a file holding several jobs emits one
-  fit chunk each, and only the refused job's chunk becomes a `stop()`, so the
-  other jobs' calls are written out unchanged. But the document has no
-  `error` chunk option, so rendering it halts at the first refusal: Quarto
-  exits 1 with "Execution halted" and **no output document is produced at
-  all**, including the results of jobs that come before the refused one. So a
-  file with one job PROC HAZARD refuses, among twenty that run, yields
-  nothing until that job is corrected or removed.
+  **A refused job no longer stops the render.** The warning is per job: a
+  file holding several jobs emits one fit chunk each, and only the refused
+  job's fit is preceded by a `warning()` chunk, so every other job is written
+  out and runs unchanged. A document carrying a refusal renders to completion
+  and shows the warning in its output, where an earlier draft of this work
+  made it a `stop()` and Quarto then exited 1 and produced no output document
+  at all, including for the jobs before the refused one.
 
-  This applies to **every** refusal listed above, not to any one cause. It
-  is deliberate for this release: a halted render cannot be mistaken for a
-  result. Setting `error: true` on the fit chunks would let the rest of the
-  document render, and was considered and **deferred** (#435), because a
-  rendered document that shows an error and then carries on to later results
-  reads as complete, which is the failure this package most wants to avoid.
+  The exception is the entry-refusal case above, where no fit can be built.
+  That one still stops, and a file containing such a job still yields no
+  rendered output until it is corrected or removed. A reader who wants the
+  other jobs' results in the meantime can delete that job from the file.
+
+  The risk this accepts, deliberately: a rendered document that shows a
+  warning and then carries on to a fit **can** be read as a clean result by
+  someone who does not read the warning. That is why the warning is raised
+  in its own chunk immediately above the fit rather than folded into it, and
+  why every such job also carries a row in `$untranslated` -- the warning is
+  read once at render, the row is what a reader can search for afterwards.
 
 * **An operand written with spaces around `=` is read, not split apart**
   (#421). SAS's lexer skips whitespace (`hazard_l.l:32`), so `THALF = 0.3` and
