@@ -1161,38 +1161,15 @@
     })
   }
 
-  # John's 2026-09-22 decision replaces these refusals' stop() with a warning
-  # so that a rendered document COMPLETES and carries the reason. For most
-  # classes it does. For a SETG3 ENTRY refusal it cannot: SAS refuses those
-  # because a shape value is out of range (setg3.c:269-284), and the same
-  # value is out of range for hzr_phase(), which refuses to build the phase
-  # at all. Emitting the fit there does not produce a document that
-  # completes; it produces one that halts on "gamma must be a positive
-  # scalar" instead of one naming SETG3910 and the operand that caused it.
-  #
-  # So the rule is the decision's INTENT rather than its letter: warn and fit
-  # where the fit can run, and keep the informative stop where it cannot.
-  # Decided by BUILDING the emitted phases rather than by listing codes, so
-  # it tracks what hzr_phase() actually accepts.
-  if (length(refusal_warnings) && !is.null(args$phases)) {
-    buildable <- tryCatch({
-      eval(args$phases, envir = asNamespace("TemporalHazard"))
-      TRUE
-    }, error = function(e) FALSE)
-    if (!buildable) {
-      return(list(
-        call = as.call(list(quote(stop), paste0(
-          paste(refusal_warnings, collapse = " "),
-          " This job cannot be fitted as written either: the value PROC ",
-          "HAZARD refuses is also outside the range hzr_phase() accepts, so ",
-          "there is no fit to emit and the document stops here rather than ",
-          "on a less specific error further down."), call. = FALSE)),
-        status_call = NULL, outhaz = outhaz, untranslated = untr,
-        tokens_seen = seen, tokens_mapped = mapped,
-        refusal_warnings = character(0)
-      ))
-    }
-  }
+  # John's 2026-09-22 decision, as amended at 19:51: EVERY refusal warns and
+  # emits the fit, with no exception. Three of them (SETG3910, SETG3920,
+  # SETG3930) still halt, because SAS refuses them for a shape value that is
+  # out of range (setg3.c:269-284) and hzr_phase() will not build a phase
+  # from that same value. The warning is emitted in its own chunk ABOVE the
+  # fit precisely so that the real cause -- the SETG3 code and the operand --
+  # is raised before the halt, instead of the reader meeting only
+  # "gamma must be a positive scalar" from further down. An earlier revision
+  # of this branch kept a stop() for those three; it was replaced by this.
 
   list(call = as.call(c(head, args)), status_call = status_call,
        stepwise_call = stepwise_call, screen_check_call = screen_check_call,

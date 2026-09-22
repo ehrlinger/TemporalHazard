@@ -602,49 +602,35 @@ test_that("every reachable SETG3 refusal reaches the reader (#359)", {
   n <- 80
   D <- data.frame(TT = stats::rexp(n, 0.2), DEAD = rep(c(1, 0), length.out = n))
 
-  # Since 2026-09-22 such a job EMITS the fit and warns, so that a rendered
-  # document completes and carries the reason (John's decision). The
-  # exception is a refusal whose own value hzr_phase() will not accept:
-  # there is no fit to emit, so the document still stops, with the message
-  # that names the code rather than a later, vaguer one.
+  # Since 2026-09-22 EVERY such job emits the fit and warns: a rendered
+  # document completes and carries the reason instead of halting on it.
   #
-  # The assertion is therefore that the code reaches the reader by ONE of
-  # exactly two routes, never neither. Both routes are counted, and both
-  # must occur: if a change collapsed everything onto one of them, an
-  # assertion that only checked "the code appears somewhere" would still
-  # pass.
-  warned <- 0L
-  stopped <- 0L
+  # Three of these (SETG3910/3920/3930) still halt further down, at
+  # hzr_phase(), because SAS refuses them for a shape value that is out of
+  # range and hzr_phase() will not build a phase from that same value. The
+  # warning is emitted in its own chunk ABOVE the fit so that the SETG3 code
+  # and the operand are stated before that happens. Measured caveat, recorded
+  # here because it is easy to assume otherwise: when the fit chunk errors,
+  # Quarto writes no document, and knitr captures warnings INTO the document,
+  # so that warning does not reach the render console either -- it is in the
+  # emitted .qmd source above the failing chunk, and in $untranslated.
   for (label in names(refusals)) {
     code <- sub("_gae2$", "", label)
     job <- translate(refusals[[label]])
     warn_nm <- grep("^refusal", names(job$calls), value = TRUE)
-    if (length(warn_nm)) {
-      warned <- warned + 1L
-      msgs <- character(0)
-      withCallingHandlers(eval(job$calls[[warn_nm[[1L]]]], new.env()),
-                          warning = function(x) {
-                            msgs <<- c(msgs, conditionMessage(x))
-                            invokeRestart("muffleWarning")
-                          })
-      expect_match(paste(msgs, collapse = " "), code, fixed = TRUE, info = label)
-      # The row is the other half of the contract: warned AND listed.
-      expect_gt(NROW(job$untranslated), 0L)
-      # And the fit really is emitted, not quietly dropped.
-      expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"), info = label)
-    } else {
-      stopped <- stopped + 1L
-      expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"), info = label)
-      err <- tryCatch({
-        eval(job$calls$fit, new.env())
-        "no error"
-      }, error = conditionMessage)
-      expect_match(err, code, fixed = TRUE, info = label)
-    }
+    expect_length(warn_nm, 1L)
+    msgs <- character(0)
+    withCallingHandlers(eval(job$calls[[warn_nm[[1L]]]], new.env()),
+                        warning = function(x) {
+                          msgs <<- c(msgs, conditionMessage(x))
+                          invokeRestart("muffleWarning")
+                        })
+    # The code reaches the reader, the construct is listed, and the fit is
+    # emitted rather than replaced. All three, for every class.
+    expect_match(paste(msgs, collapse = " "), code, fixed = TRUE, info = label)
+    expect_gt(NROW(job$untranslated), 0L)
+    expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"), info = label)
   }
-  # Known positives for both routes: neither may be empty.
-  expect_gt(warned, 0L)
-  expect_gt(stopped, 0L)
 
   # The paired control: a job PROC HAZARD runs still renders a fit. Without
   # it, a fix that refused everything would pass every assertion above.

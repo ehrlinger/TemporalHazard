@@ -13,13 +13,21 @@
   it, and the row is recorded as before. The fit is still emitted: a rendered
   document completes, and the reader is told what it stands in for.
 
-  **One case still stops, because it cannot do anything else.** `SETG3`'s
-  entry refusals fire when a shape value is out of range (`setg3.c:269-284`),
-  and the same value is out of range for `hzr_phase()`, which will not build
-  the phase at all. There is no fit to emit, so such a job stops with the
-  message that names the code and the operand, rather than running on to a
-  less specific error. Which jobs those are is decided by building the
-  emitted phases, not by a list of codes.
+  **Three of these still fail further down, and it is worth knowing why.**
+  `SETG3`'s entry refusals `SETG3910`, `SETG3920` and `SETG3930` fire because
+  a shape value is out of range (`setg3.c:269-284`), and the same value is out
+  of range for `hzr_phase()`, which will not build the phase. The warning is
+  emitted in its own chunk **above** the fit, naming the `SETG3` code and the
+  operand, so the cause is stated before `hzr_phase()` refuses. The render
+  then stops there with `hzr_phase()`'s own message.
+
+  Be aware of where that warning does and does not appear. When a chunk
+  errors, Quarto writes no output document, and `knitr` collects warnings
+  **into** the document rather than printing them, so the warning does not
+  reach the render console either. What a reader has in that case is the
+  emitted `.qmd` itself, where the `warning()` naming `SETG3910` sits
+  immediately above the failing fit, and the `$untranslated` row on the
+  translated job.
 
   The refusal is raised only where it is PROC HAZARD's. With `FIXGE2` or
   `FIXGAE2` and no `WEIBULL`, SAS reaches `SETG3` down a path the `setg3.c`
@@ -74,10 +82,18 @@
   made it a `stop()` and Quarto then exited 1 and produced no output document
   at all, including for the jobs before the refused one.
 
-  The exception is the entry-refusal case above, where no fit can be built.
-  That one still stops, and a file containing such a job still yields no
-  rendered output until it is corrected or removed. A reader who wants the
-  other jobs' results in the meantime can delete that job from the file.
+  The exception is the three entry refusals above. They are warned about and
+  emitted like everything else, but `hzr_phase()` then refuses the
+  out-of-range value, so a file containing such a job still yields no rendered
+  output until it is corrected or removed. A reader who wants the other jobs'
+  results in the meantime can delete that job from the file.
+
+  **Which jobs stop and which warn, in one place.** A job stops only where it
+  did before this release: a phase statement `PROC HAZARD` refuses at parse
+  (#340), a `PARMS` statement that builds no phase this translator can use, a
+  job with no `DATA=` whose phases name covariates (#311), and a `SELECTION`
+  job that selects no phase. Everything newly recognised in this release
+  warns and still fits.
 
   The risk this accepts, deliberately: a rendered document that shows a
   warning and then carries on to a fit **can** be read as a clean result by
