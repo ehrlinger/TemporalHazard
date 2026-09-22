@@ -405,8 +405,11 @@ continuation improved the fit, its termination code in
 \code{fit$fit$polish_code}. \code{print()} and \code{summary()} show both.
 \code{rel_gradient} is \code{NA} when the test was not applied (the optimizer did
 not report convergence) or the gradient cannot be evaluated at the
-estimates; \code{NA} is never reported as a pass, and it is not a failure
-either. Which of those happened is recorded in
+estimates; \code{NA} is never reported as a pass. Neither is it always a
+failure: some routes to it, such as a non-converged stop, do say the
+estimates are unreliable, while others, such as a finite-difference score
+that needed a point where the log-likelihood is not usable, say nothing
+against them. Which route it took is recorded in
 \code{fit$fit$rel_gradient_reason}, \code{NA_character_} when the test did run, and
 \code{print()} and \code{summary()} show it. Under Conservation of Events
 the analytic score omits how the conserved scale moves, so the test is

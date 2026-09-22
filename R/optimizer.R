@@ -246,7 +246,8 @@ NULL
       return(na("the estimates are not all finite"))
     }
     if (!is.finite(value) || value >= 1e10) {
-      return(na("the log-likelihood is not finite at the estimates"))
+      return(na(paste0("the log-likelihood at the estimates is non-finite ",
+                       "or past the optimizer's penalty")))
     }
     g <- if (gradient_exact) {
       tryCatch(
@@ -274,8 +275,8 @@ NULL
       return(na(if (gradient_exact) {
         "the score has a non-finite component at the estimates"
       } else {
-        paste0("the log-likelihood is not finite at a point the ",
-               "finite-difference score needs")
+        paste0("the log-likelihood is non-finite or past the optimizer's ",
+               "penalty at a point the finite-difference score needs")
       }))
     }
     list(value = max(abs(g) * pmax(abs(theta), 1)) / max(abs(value), 1),
@@ -284,11 +285,14 @@ NULL
   rel_grad <- NA_real_
   # Why the test was not run, for the NA the fit would otherwise carry alone.
   # Both routes to skipping it entirely are named here; the evaluated routes
-  # overwrite this below.
-  rel_reason <- if (use_bounds) {
-    "the bounded optimizer stops on its own projected gradient"
-  } else {
+  # overwrite this below. Convergence is asked FIRST: a bounded run that
+  # stopped at its iteration limit is a non-convergence, and saying "the
+  # bounded optimizer stops on its own projected gradient" there would
+  # describe the path rather than what happened on it.
+  rel_reason <- if (result$convergence != 0L) {
     "the optimizer did not report convergence"
+  } else {
+    "the bounded optimizer stops on its own projected gradient"
   }
   polish_code <- NA_integer_
   if (!use_bounds && result$convergence == 0L) {

@@ -84,8 +84,11 @@ NULL
 #' `fit$fit$polish_code`. `print()` and `summary()` show both.
 #' `rel_gradient` is `NA` when the test was not applied (the optimizer did
 #' not report convergence) or the gradient cannot be evaluated at the
-#' estimates; `NA` is never reported as a pass, and it is not a failure
-#' either. Which of those happened is recorded in
+#' estimates; `NA` is never reported as a pass. Neither is it always a
+#' failure: some routes to it, such as a non-converged stop, do say the
+#' estimates are unreliable, while others, such as a finite-difference score
+#' that needed a point where the log-likelihood is not usable, say nothing
+#' against them. Which route it took is recorded in
 #' `fit$fit$rel_gradient_reason`, `NA_character_` when the test did run, and
 #' `print()` and `summary()` show it. Under Conservation of Events
 #' the analytic score omits how the conserved scale moves, so the test is
