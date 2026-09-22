@@ -22,6 +22,9 @@
   finite is not caught; that rests on the optimizer's convergence test
   (#351).
 
+  What a sentinel objective should mean for a single fit is tracked
+  separately (#351, #374).
+
 * **`hzr_translate_sas()` no longer fits a job `PROC HAZARD` rejects: if
   you hold estimates from such a translation, they have no SAS run behind
   them (#340).** A phase statement with an option written in a form SAS's
@@ -793,10 +796,11 @@
   not the inverse of quoting: a column named `` a`b `` is labelled
   `` `a\`b` `` and strips to `a\b`, a name that does not exist. A term that
   is not a single symbol, such as an interaction, still matches by label.
-  The score criterion's own lookup by label is a separate defect (#438).
-
-  What a sentinel objective should mean for a single fit is tracked
-  separately (#351, #374).
+  This is about MATCHING: a forward step still cannot ADD such a variable,
+  because the refit builds its formula by pasting the bare name, which does
+  not parse. That failure is loud -- the candidate is named as a refit
+  failure and the screen says so -- and is tracked in #441, with the score
+  criterion's own lookup by label in #438.
 
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded

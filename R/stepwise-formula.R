@@ -74,6 +74,13 @@
 #' not a single symbol -- an interaction, a function call -- is returned
 #' unchanged, so those still match by label as they always did.
 #'
+#' The map is many-to-one, and deliberately so: `` `x` `` and `x` are the same
+#' variable. The cost is that matching is LOOSER than a string comparison in
+#' one direction -- `"age "` parses to the symbol `age`, so on a frame read
+#' with `check.names = FALSE` carrying both `age` and `age `, a pin written
+#' either way names the first. That is pathological input; the leniency is
+#' what makes a bare name from the translator match its own candidate.
+#'
 #' @param x Character vector of labels or names.
 #' @return Character vector of the same length, each element the variable a
 #'   label names, or the element unchanged.
@@ -91,12 +98,17 @@
 #'
 #' @param x,y Character vectors of labels or names.
 #' @return The elements of `x`, as spelled in `x`, whose variable is not in
-#'   `y`.
+#'   `y`, each variable once.
 #' @keywords internal
 #' @noRd
 .hzr_setdiff_var <- function(x, y) {
   if (!length(x)) return(x)
-  x[!(.hzr_var_key(x) %in% .hzr_var_key(y))]
+  key <- .hzr_var_key(x)
+  # `setdiff()` de-duplicates as well as subtracting, and the character-scope
+  # path relied on it: a scope naming a variable twice was scored, refit and
+  # reported twice, with nothing said. De-duplicate by VARIABLE, keeping the
+  # first spelling `x` uses for it.
+  x[!duplicated(key) & !(key %in% .hzr_var_key(y))]
 }
 
 #' Add or drop a variable from a formula's RHS

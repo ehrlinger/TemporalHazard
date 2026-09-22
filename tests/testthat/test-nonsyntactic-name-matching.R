@@ -10,15 +10,19 @@
 # SAS names reach R this way routinely: a leading underscore, a dot, a
 # reserved word.
 
+# `age` is the column a free backward step drops here, so IT is the one
+# renamed: a pin on `_X1` then has to REDIRECT the drop onto `mal`. Renaming
+# the other column instead gives a fixture where an ignored pin and an
+# honoured pin produce the same answer, and the test cannot fail (#437).
 ns_data_437 <- function() {
   data(avc, package = "TemporalHazard", envir = environment())
   d <- stats::na.omit(avc[, c("int_dead", "dead", "age", "mal")])
-  names(d)[names(d) == "mal"] <- "_X1"
+  names(d)[names(d) == "age"] <- "_X1"
   d
 }
 
 ns_fit_437 <- function(d) {
-  suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ age + `_X1`,
+  suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ `_X1` + mal,
                           data = d, dist = "weibull",
                           theta = c(0.1, 1, 0, 0), fit = TRUE))
 }
@@ -29,46 +33,48 @@ ns_drop_437 <- function(fit, d, ...) {
                                                slstay = 1e-9, ...))
 }
 
-test_that("the fixture is live: unpinned, a variable IS dropped (#437)", {
+test_that("the fixture is live: unpinned, the NON-SYNTACTIC one is dropped (#437)", {
   skip_on_cran() # a backward step
-  # Known positive. Without this, a test that the pin holds could pass
-  # because nothing was ever going to be dropped. Measured: this step drops
-  # `age`, so the pin below has to REDIRECT the drop, not merely prevent it.
+  # Known positive, and it fixes which answer means "the pin was ignored".
+  # Without it, a test that the pin holds could pass because nothing was
+  # going to be dropped at all.
   d <- ns_data_437()
   st <- ns_drop_437(ns_fit_437(d), d)
   expect_true(st$accepted)
-  expect_identical(st$variable, "age")
+  expect_identical(st$variable, "`_X1`")
 })
 
-test_that("pinning only the non-syntactic one redirects the drop (#437)", {
+test_that("pinning the non-syntactic one redirects the drop (#437)", {
   skip_on_cran() # a backward step
-  # The sharpest form: `age` is what an unpinned step drops, so pinning
-  # `_X1` alone must still drop `age`, and pinning `age` alone must move the
-  # drop onto `_X1`. Unmatched, the second pin did nothing.
+  # The sharp form. `_X1` is what an unpinned step drops, so an IGNORED pin
+  # drops `_X1` and an HONOURED one drops `mal`: the two answers differ, and
+  # the unfixed code gives the first.
   d <- ns_data_437()
-  fit <- ns_fit_437(d)
-  expect_identical(ns_drop_437(fit, d, force_in = "_X1")$variable, "age")
-  st <- ns_drop_437(fit, d, force_in = "age")
+  st <- ns_drop_437(ns_fit_437(d), d, force_in = "_X1")
   expect_true(st$accepted)
-  expect_identical(st$variable, "`_X1`")
+  expect_identical(st$variable, "mal")
 })
 
 test_that("force_in pins a non-syntactic variable, written bare (#437)", {
   skip_on_cran() # a backward step
   # The documented contract, and what the translator emits.
   d <- ns_data_437()
-  st <- ns_drop_437(ns_fit_437(d), d, force_in = c("age", "_X1"))
+  st <- ns_drop_437(ns_fit_437(d), d, force_in = c("mal", "_X1"))
   expect_false(st$accepted)
+  expect_gt(nrow(st$all_scores), 0L) # or `all()` is vacuously true
   expect_true(all(st$all_scores$force_in))
 })
 
 test_that("force_in also accepts the label spelling (#437)", {
   skip_on_cran() # a backward step
-  # Someone reading the $steps table, or a saved screen, sees the label. It
-  # must name the same variable.
+  # A regression guard, not a demonstration: the label spelling matched
+  # before the fix too. It pins the decision that the key map is
+  # many-to-one, so someone reading the label off $steps names the same
+  # variable as someone writing it bare.
   d <- ns_data_437()
-  st <- ns_drop_437(ns_fit_437(d), d, force_in = c("age", "`_X1`"))
+  st <- ns_drop_437(ns_fit_437(d), d, force_in = c("mal", "`_X1`"))
   expect_false(st$accepted)
+  expect_gt(nrow(st$all_scores), 0L) # or `all()` is vacuously true
   expect_true(all(st$all_scores$force_in))
 })
 
@@ -84,8 +90,8 @@ test_that("force_out keeps a non-syntactic candidate out (#437)", {
            function(c) c$var, character(1))
   }
   # Known positive: it is offered when not excluded.
-  expect_true(any(offered(scope = ~ age + `_X1`) %in% c("_X1", "`_X1`")))
-  expect_false(any(offered(scope = ~ age + `_X1`, force_out = "_X1") %in%
+  expect_true(any(offered(scope = ~ `_X1` + mal) %in% c("_X1", "`_X1`")))
+  expect_false(any(offered(scope = ~ `_X1` + mal, force_out = "_X1") %in%
                      c("_X1", "`_X1`")))
 })
 
@@ -96,7 +102,7 @@ test_that("a character scope does not re-offer a variable in the model (#437)", 
   # had it, and the refit then failed on a duplicate column.
   d <- ns_data_437()
   fit <- ns_fit_437(d)
-  offered <- vapply(.hzr_stepwise_candidates(fit, scope = c("age", "_X1"),
+  offered <- vapply(.hzr_stepwise_candidates(fit, scope = c("mal", "_X1"),
                                              data = d),
                     function(c) c$var, character(1))
   expect_length(offered, 0L)
@@ -115,6 +121,26 @@ test_that("a syntactic name is unaffected (#437)", {
   expect_true(st_free$accepted)
   st_pinned <- ns_drop_437(fit, d, force_in = c("age", "mal"))
   expect_false(st_pinned$accepted)
+})
+
+test_that("a scope naming a variable twice offers it once (#437)", {
+  skip_on_cran() # a candidate enumeration
+  # `setdiff()` de-duplicates as well as subtracting, and replacing it with a
+  # key comparison silently dropped that: the variable was scored, refit and
+  # reported TWICE, with nothing said. Found by review of this fix, not by
+  # the fix's own tests.
+  data(avc, package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc[, c("int_dead", "dead", "age", "mal")])
+  base <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ 1,
+                                  data = d, dist = "weibull",
+                                  theta = c(0.1, 1), fit = TRUE))
+  vars <- function(...) {
+    vapply(.hzr_stepwise_candidates(base, data = d, ...),
+           function(c) c$var, character(1))
+  }
+  expect_identical(vars(scope = c("age", "age", "mal")), c("age", "mal"))
+  # The same variable written two ways is still one variable.
+  expect_identical(vars(scope = c("age", "`age`")), "age")
 })
 
 test_that("the key is parsed, not stripped of backticks (#437)", {
