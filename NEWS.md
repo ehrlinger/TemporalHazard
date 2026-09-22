@@ -780,6 +780,21 @@
 
 ## Bug fixes
 
+* **`force_in`, `force_out` and a character `scope` now match a variable
+  whose name is not syntactic (#437).** `terms()` backquotes such a label, so
+  the column `_X1` appears as `` `_X1` `` among a model's terms, while the
+  three arguments are documented as variables and the SAS translator emits
+  bare names. The two spellings never met: a pinned variable was **dropped
+  with no warning naming it**, a `force_out` one was still offered, and a
+  character `scope` re-offered a variable the model already had. Names that
+  reach R this way are ordinary in translated work: a leading underscore, a
+  dot, a reserved word. Matching now compares the variable a label names,
+  obtained by parsing the label rather than by removing backticks, which is
+  not the inverse of quoting: a column named `` a`b `` is labelled
+  `` `a\`b` `` and strips to `a\b`, a name that does not exist. A term that
+  is not a single symbol, such as an interaction, still matches by label.
+  The score criterion's own lookup by label is a separate defect (#438).
+
   What a sentinel objective should mean for a single fit is tracked
   separately (#351, #374).
 

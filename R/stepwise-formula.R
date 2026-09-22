@@ -61,6 +61,44 @@
 }
 
 
+#' The variable a term label names
+#'
+#' `terms()` backquotes a label whose variable is not a syntactic name, so
+#' `` `_X1` `` is the label of the column `_X1`. `force_in`, `force_out` and a
+#' character `scope` are documented as VARIABLES, and the translator emits
+#' bare names, so a pin on such a variable never matched its own candidate
+#' and was silently ignored (#437).
+#'
+#' The label is PARSED rather than stripped of backticks: stripping is not
+#' the inverse of quoting, and a name may contain a backtick. A label that is
+#' not a single symbol -- an interaction, a function call -- is returned
+#' unchanged, so those still match by label as they always did.
+#'
+#' @param x Character vector of labels or names.
+#' @return Character vector of the same length, each element the variable a
+#'   label names, or the element unchanged.
+#' @keywords internal
+#' @noRd
+.hzr_var_key <- function(x) {
+  if (!length(x)) return(character())
+  vapply(x, function(lab) {
+    e <- tryCatch(str2lang(lab), error = function(...) NULL)
+    if (is.symbol(e)) as.character(e) else lab
+  }, character(1), USE.NAMES = FALSE)
+}
+
+#' Set difference on variables, whatever their spelling
+#'
+#' @param x,y Character vectors of labels or names.
+#' @return The elements of `x`, as spelled in `x`, whose variable is not in
+#'   `y`.
+#' @keywords internal
+#' @noRd
+.hzr_setdiff_var <- function(x, y) {
+  if (!length(x)) return(x)
+  x[!(.hzr_var_key(x) %in% .hzr_var_key(y))]
+}
+
 #' Add or drop a variable from a formula's RHS
 #'
 #' @param formula Existing formula.  One-sided (`~ x`) or two-sided

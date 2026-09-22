@@ -38,7 +38,8 @@
       # force_out) are candidates for every phase.
       stored <- .hzr_stored_formula(fit)
       lhs_vars <- if (is.null(stored)) character() else all.vars(stored[[2L]])
-      data_vars <- setdiff(colnames(data), c(lhs_vars, force_out))
+      data_vars <- .hzr_setdiff_var(setdiff(colnames(data), lhs_vars),
+                                    force_out)
       data_vars <- .hzr_modellable_vars(data, data_vars)
       scope <- setNames(
         lapply(phase_names, function(p) {
@@ -84,7 +85,8 @@
       sc <- scope[[p]]
       if (is.null(sc)) next
       terms_p <- .hzr_formula_rhs_terms(sc)
-      eligible <- setdiff(terms_p, c(current_per_phase[[p]], force_out))
+      eligible <- .hzr_setdiff_var(terms_p,
+                                   c(current_per_phase[[p]], force_out))
       for (v in eligible) {
         candidates[[length(candidates) + 1L]] <-
           list(var = v, phase = p)
@@ -97,7 +99,8 @@
   if (is.null(scope)) {
     f <- .hzr_stored_formula(fit)
     lhs_vars <- if (is.null(f)) character() else all.vars(f[[2L]])
-    data_vars <- setdiff(colnames(data), c(lhs_vars, force_out))
+    data_vars <- .hzr_setdiff_var(setdiff(colnames(data), lhs_vars),
+                                  force_out)
     data_vars <- .hzr_modellable_vars(data, data_vars)
   } else {
     if (inherits(scope, "formula")) {
@@ -112,11 +115,11 @@
       stop("`scope` must be NULL, a one-sided formula, or a character vector.",
            call. = FALSE)
     }
-    data_vars <- setdiff(data_vars, force_out)
+    data_vars <- .hzr_setdiff_var(data_vars, force_out)
   }
 
   current_vars <- .hzr_scope_current_vars(fit)
-  eligible <- setdiff(data_vars, current_vars)
+  eligible <- .hzr_setdiff_var(data_vars, current_vars)
   lapply(eligible, function(v) list(var = v, phase = NULL))
 }
 
@@ -829,7 +832,7 @@
     rows[[i]] <- data.frame(
       variable  = cand$var,
       phase     = cand$phase %||% NA_character_,
-      force_in  = cand$var %in% force_in,
+      force_in  = .hzr_var_key(cand$var) %in% .hzr_var_key(force_in),
       score     = s$score,
       p_value   = s$p_value,
       delta_aic = s$delta_aic,
