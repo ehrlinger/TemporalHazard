@@ -70,11 +70,12 @@ test_that("constants and knots from outside data still predict at new rows", {
   expect_true(all(is.finite(p)))
 })
 
-test_that("the row-count backstop still refuses when the pre-check is bypassed", {
-  # The pre-check now catches every wrong-rows shape the suite has, so this
-  # is the only test that reaches .hzr_check_design_rows(). It proves the
-  # backstop is live defence, not code that merely goes unreached.
-  local_mocked_bindings(.hzr_refuse_outside_rows = function(...) invisible(NULL))
+test_that("the backstop's own message propagates when nothing can be named", {
+  # The backstop is what REFUSES a short design; naming the term is a
+  # diagnosis run afterwards. When the diagnosis names nothing -- here by
+  # mocking it to return no term -- the refusal must still reach the user,
+  # as the backstop wrote it, rather than being swallowed.
+  local_mocked_bindings(.hzr_outside_rows_term = function(...) character(0))
   o <- ot_setup()
   zz <- o$zz
   fit <- hazard(survival::Surv(t, s) ~ zz, data = o$d, dist = "weibull",
@@ -184,4 +185,86 @@ test_that("a length-changing term of a data column is not blamed on outside data
   # The unconditional remedy is what made it unfollowable here.
   expect_false(grepl("Move them into `data` as columns and refit.", msg,
                      fixed = TRUE))
+})
+
+# Codex, reviewing this PR at c5144c35, found that the pre-check did not
+# merely name a term: by evaluating each variable on its own, before
+# model.frame(), it changed which fits predict at all and which errors
+# reach the caller. Both shapes below come from that review. The pre-check
+# semantics arrived with the original #409 commit, not with the fix to it.
+
+test_that("a term that assigns into model.frame's shared mask still predicts", {
+  # model.frame() evaluates every term in ONE mask, so `I(zz <- age)` is
+  # what `I(zz^2)` reads. Evaluated separately, the second term finds the
+  # unrelated `zz` of the formula's environment instead, and a prediction
+  # main makes was refused.
+  set.seed(21)
+  d <- data.frame(t = rexp(60), s = rbinom(60, 1, 0.7), age = rnorm(60))
+  zz <- rnorm(60)
+  f <- survival::Surv(t, s) ~ I(zz <- age) + I(zz^2)
+  environment(f) <- environment()
+  fit <- suppressWarnings(
+    hazard(f, data = d, dist = "weibull", theta = c(mu = 0.5, nu = 1, 0, 0),
+           fit = TRUE)
+  )
+  p <- predict(fit, newdata = d[1:2, "age", drop = FALSE],
+               type = "linear_predictor")
+  # The newdata path must agree with the fitted path on the same two rows.
+  expect_equal(unname(p),
+               unname(predict(fit, type = "linear_predictor")[1:2]))
+})
+
+test_that("an error raised while building the design reaches the caller", {
+  # The pre-check evaluated each variable in a tryCatch and discarded the
+  # error, then model.frame() evaluated the term again. A function that
+  # fails once and then succeeds therefore returned numbers where the
+  # error should have propagated.
+  set.seed(21)
+  d <- data.frame(t = rexp(60), s = rbinom(60, 1, 0.7), age = rnorm(60))
+  boom <- FALSE
+  ff <- function(x) {
+    if (boom) {
+      boom <<- FALSE
+      stop("formula boom")
+    }
+    x
+  }
+  f <- survival::Surv(t, s) ~ I(ff(age))
+  environment(f) <- environment()
+  fit <- suppressWarnings(
+    hazard(f, data = d, dist = "weibull", theta = c(mu = 0.5, nu = 1, 0),
+           fit = TRUE)
+  )
+  boom <- TRUE
+  msg <- tryCatch(
+    predict(fit, newdata = d[1:2, "age", drop = FALSE],
+            type = "linear_predictor"),
+    error = conditionMessage
+  )
+  # identical(), not a match: the caller's own condition, unchanged.
+  expect_identical(msg, "formula boom")
+})
+
+test_that("the design is built once per predict(newdata = ), as before #409", {
+  # The pre-check evaluated every model-frame variable an extra time. A
+  # term with a side effect, or an expensive one, paid for the diagnosis on
+  # every call, including the calls that succeed.
+  set.seed(21)
+  d <- data.frame(t = rexp(60), s = rbinom(60, 1, 0.7), age = rnorm(60))
+  n_eval <- 0L
+  sideg <- function(x) {
+    n_eval <<- n_eval + 1L
+    x
+  }
+  f <- survival::Surv(t, s) ~ sideg(age)
+  environment(f) <- environment()
+  fit <- suppressWarnings(
+    hazard(f, data = d, dist = "weibull", theta = c(mu = 0.5, nu = 1, 0),
+           fit = TRUE)
+  )
+  n_eval <- 0L
+  invisible(predict(fit, newdata = data.frame(age = c(0.4, 0.5)),
+                    type = "linear_predictor"))
+  # Two: the design, and the row-shifted copy the equivariance check builds.
+  expect_identical(n_eval, 2L)
 })
