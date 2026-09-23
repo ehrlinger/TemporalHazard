@@ -405,19 +405,12 @@ test_that("a term that reads an earlier term's assignment is not named", {
   expect_false(grepl("I(zz^2)", msg, fixed = TRUE))
 })
 
-test_that("a nested model.frame() failure is misattributed, as documented", {
-  # PINS A KNOWN LIMITATION, deliberately. `conditionCall()` cannot tell our
-  # own frame assembly from one the user's term performed itself: both read
-  # `model.frame.default`. So an error from a `model.frame()` call INSIDE a
-  # term is misread as the design build and replaced by the refusal, naming
-  # whichever term is row-mismatched.
-  #
-  # Separating them needs the call stack at signal time, which is more
-  # machinery than this helper earns; the roxygen and NEWS both say so, and
-  # the fix is tracked in its own issue. This test exists so the text and
-  # the behaviour cannot drift apart silently: if someone implements the
-  # frame-depth test, this fails and the documentation must be updated with
-  # it.
+test_that("a nested model.frame() failure keeps the caller's own error", {
+  # Was pinned as a LIMITATION by #430: `conditionCall()` reports
+  # `model.frame.default` for both our own frame assembly and one a user's
+  # term performed itself, so the diagnosis replaced the real failure with
+  # blame for whichever term was row-mismatched. #446 stops classifying the
+  # failure and verifies CAUSATION instead, so this now propagates.
   set.seed(31)
   d <- data.frame(t = rexp(60), s = rbinom(60, 1, 0.7), age = rnorm(60, 60, 5))
   zz <- rnorm(60)
@@ -440,7 +433,31 @@ test_that("a nested model.frame() failure is misattributed, as documented", {
             type = "linear_predictor"),
     error = conditionMessage
   )
-  # The limitation, stated as an expectation rather than left to prose.
-  expect_match(msg, "does not give one value per row", fixed = TRUE)
-  expect_false(grepl("variable lengths differ", msg, fixed = TRUE))
+  expect_match(msg, "variable lengths differ", fixed = TRUE)
+  expect_false(grepl("does not give one value per row", msg, fixed = TRUE))
+})
+
+test_that("a term the model frame rejects keeps its own error, not row blame", {
+  # The second shape #446 covers, and it needs no nested model.frame() at
+  # all: `ff()` returns a LIST, our own outer frame rejects it, and the
+  # diagnosis used to blame `zz` for being row-mismatched. The remedy it
+  # prescribed could not even be followed -- `zz` is not a `data` column, so
+  # `newdata` cannot supply it.
+  set.seed(31)
+  d <- data.frame(t = rexp(60), s = rbinom(60, 1, 0.7), age = rnorm(60, 60, 5))
+  zz <- rnorm(60)
+  ff <- function(x) if (length(x) == 2L) as.list(x) else x
+  f <- survival::Surv(t, s) ~ I(ff(age)) + zz
+  environment(f) <- environment()
+  fit <- suppressWarnings(
+    hazard(f, data = d, dist = "weibull", theta = c(mu = 0.5, nu = 1, 0, 0),
+           fit = TRUE)
+  )
+  msg <- tryCatch(
+    predict(fit, newdata = d[1:2, "age", drop = FALSE],
+            type = "linear_predictor"),
+    error = conditionMessage
+  )
+  expect_match(msg, "invalid type (list) for variable", fixed = TRUE)
+  expect_false(grepl("does not give one value per row", msg, fixed = TRUE))
 })

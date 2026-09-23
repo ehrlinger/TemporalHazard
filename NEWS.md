@@ -336,9 +336,10 @@
   since a length-changing function of a `data` column, such as
   `I(unique(age))`, reaches the same check. An error raised by your own code
   inside a term reaches you unchanged, with its own class and message, even
-  when a different term is row-mismatched -- unless it comes from a
-  `model.frame()` or `model.matrix()` call inside that term, which is read
-  as the design build's own failure and replaced by the naming error.
+  when a different term is row-mismatched (#446). The term is named only
+  when dropping it lets the design build, so a failure the mismatch does not
+  explain -- a term the model frame rejects for its type, or one whose own
+  `model.frame()` call fails -- keeps its own error.
   Before, a supplied `zz` or matrix `M` was used, but a missing or
   list-held one was silently read from the fitting rows (see Bug fixes).
   Formula constants, such as `cutoff` in

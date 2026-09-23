@@ -441,15 +441,17 @@
     # path that succeeds, so `model.frame()`'s one shared mask, its
     # evaluation count and its errors are exactly what they were (#409).
     #
-    # And only for a failure that IS about row counts: a condition raised by
-    # the caller's own code inside a term keeps its class, message and
-    # attributes, even when some other term happens to be row-mismatched
-    # (#430 review).
-    if (.hzr_from_design_build(mm)) {
-      term <- .hzr_outside_rows_term(
-        design$terms, .hzr_newdata_frame(newdata, design$data_vars)
-      )
-      if (length(term)) .hzr_stop_unmatched_rows(term, where, nrow(newdata))
+    # And only when the mismatch EXPLAINS the failure. Asking where the
+    # failure came from was tried twice and missed a shape each time (#446):
+    # `conditionCall()` cannot tell our own frame assembly from one a user's
+    # term performed itself, and it says nothing about a failure that is not
+    # about rows at all. Verifying causation answers both without
+    # enumerating either.
+    term <- .hzr_outside_rows_term(
+      design$terms, .hzr_newdata_frame(newdata, design$data_vars)
+    )
+    if (length(term) && .hzr_mismatch_explains(design, newdata, term)) {
+      .hzr_stop_unmatched_rows(term, where, nrow(newdata))
     }
     stop(mm)
   }
@@ -788,46 +790,60 @@
 }
 
 
-#' Did this condition come from building the design, rather than user code?
+#' Does the row mismatch explain why the build failed?
 #'
-#' `predict(newdata = )` replaces a build failure with a named-term refusal,
-#' and must not do that to a condition the caller raised inside one of their
-#' own terms: `~ I(ff(age)) + zz`, where `ff()` fails and `zz` merely happens
-#' to be row-mismatched, lost the caller's class and message and blamed `zz`
-#' (#430 review). The two are told apart by `conditionCall()`, which is the
-#' building function for a design failure and the user's own call otherwise.
+#' The naming error is only an improvement when the mismatched term is the
+#' reason `model.frame()` failed. Deciding that by inspecting the condition
+#' was tried twice and missed a shape each time (#446): `conditionCall()`
+#' reports `model.frame.default` both for our own frame assembly and for a
+#' `model.frame()` call a user's term made itself, and it says nothing at all
+#' about a failure that is not about rows -- a term returning a list is
+#' rejected by our own frame, with `zz` merely happening to be mismatched
+#' beside it.
 #'
-#' Matching the CALL rather than the message is deliberate: both base
-#' messages ("variable lengths differ", "length of 'dimnames' ...") come from
-#' C and are translated, so a message test would quietly stop working outside
-#' an English locale -- which no CI here would catch. Our own backstop
-#' carries no call and is recognised by its class instead.
+#' So the question is answered by experiment instead: drop the offending
+#' terms and build again. If the build then succeeds, the mismatch was the
+#' cause and naming it helps. If it fails the same way, it was not, and the
+#' caller's own condition is re-raised untouched.
 #'
-#' A user function that itself calls `model.frame()` or `model.matrix()` and
-#' fails inside it is misread as a design failure: `conditionCall()` reports
-#' the same callee for both. That is a known limitation, not an oversight
-#' (#446) -- separating them needs the call stack at signal time, it fails
-#' loudly either way, and NEWS records the exception. The behaviour is
-#' PINNED by "a nested model.frame() failure is misattributed, as
-#' documented", so fixing #446 fails that test and forces this note and the
-#' NEWS sentence to be updated with it.
+#' This runs only on a path that is already failing, so the extra build costs
+#' nothing on any call that succeeds.
 #'
-#' @param e A condition.
-#' @return `TRUE` when the condition came from the design build.
+#' @param design A stored design: `terms`, `xlevels`, `contrasts`, `data_vars`.
+#' @param newdata Data frame of new rows.
+#' @param term Character vector of term labels the diagnosis named.
+#' @return `TRUE` when dropping those terms lets the design build.
 #' @noRd
-.hzr_from_design_build <- function(e) {
-  if (inherits(e, "hzr_design_rows_error")) {
-    return(TRUE)
-  }
-  cl <- conditionCall(e)
-  if (!is.call(cl)) {
+.hzr_mismatch_explains <- function(design, newdata, term) {
+  labels <- attr(design$terms, "term.labels")
+  idx <- which(labels %in% term)
+  if (!length(idx)) {
     return(FALSE)
   }
-  fn <- paste(deparse(cl[[1L]]), collapse = "")
-  fn %in% c("model.frame", "model.frame.default", "model.matrix",
-            "model.matrix.default", "stats::model.frame",
-            "stats::model.frame.default", "stats::model.matrix",
-            "stats::model.matrix.default")
+  if (length(idx) == length(labels)) {
+    # Nothing else is left to fail, so the mismatch is the whole story. This
+    # is the `~ zz` case, where the design builds at the fitting rows and the
+    # row-count backstop is what refused it.
+    return(TRUE)
+  }
+  reduced <- tryCatch(
+    stats::drop.terms(design$terms, idx, keep.response = TRUE),
+    error = function(e) NULL
+  )
+  if (is.null(reduced)) {
+    return(FALSE)
+  }
+  tryCatch(
+    {
+      nd <- .hzr_newdata_frame(newdata, design$data_vars)
+      mf <- stats::model.frame(reduced, data = nd, xlev = design$xlevels,
+                               na.action = stats::na.pass)
+      stats::model.matrix(reduced, data = mf,
+                          contrasts.arg = design$contrasts)
+      TRUE
+    },
+    error = function(e) FALSE
+  )
 }
 
 
