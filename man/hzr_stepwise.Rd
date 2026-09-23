@@ -39,7 +39,11 @@ hzr_stepwise(
 \item{scope}{Candidate set.  \code{NULL} (default) uses every data-frame
 column not already in the model for every phase.  For
 single-distribution fits, pass a one-sided formula
-(\code{~ age + nyha}) or a character vector of names.  For multiphase
+(\code{~ age + nyha}) or a character vector of names.  In a character
+\code{scope}, a name that also parses as an expression is read as the
+expression, so a data column literally named \code{age:mal} is written
+backquoted, as \code{"`age:mal`"}, to distinguish it from the \code{age:mal}
+interaction (#442).  For multiphase
 fits, pass a named list of one-sided formulas keyed by phase, naming
 each phase once.  \code{scope} lists what may enter; a drop considers every
 term in the model except \code{force_in} and terms frozen by \code{max_move}
@@ -84,10 +88,17 @@ dropped in the same iteration; see the
 
 \item{force_in}{Character vector of variables that must remain in
 the model.  Such variables are still scored and reported in the
-selection trace, but are never dropped.}
+selection trace, but are never dropped.  A variable whose name is not
+syntactic is matched by NAME, so the bare \code{"_X1"} names the column
+\verb{_X1} even though \code{terms()} labels it \code{`_X1`} (#437).  A name that
+also parses as an EXPRESSION is the expression: \code{"age:mal"} is the
+interaction, and a data column literally named \code{age:mal} must be
+written backquoted, as \code{"`age:mal`"} (#442).}
 
 \item{force_out}{Character vector of variables that may never be
-considered as candidates.}
+considered as candidates.  Matched the same way as \code{force_in},
+including the backquoted form for a literal column whose name parses
+as an expression.}
 
 \item{trace}{Logical; print step-by-step progress to the console.
 Default \code{TRUE}.}

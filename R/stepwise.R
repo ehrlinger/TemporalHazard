@@ -99,7 +99,11 @@
 #' @param scope Candidate set.  `NULL` (default) uses every data-frame
 #'   column not already in the model for every phase.  For
 #'   single-distribution fits, pass a one-sided formula
-#'   (`~ age + nyha`) or a character vector of names.  For multiphase
+#'   (`~ age + nyha`) or a character vector of names.  In a character
+#'   `scope`, a name that also parses as an expression is read as the
+#'   expression, so a data column literally named `age:mal` is written
+#'   backquoted, as `` "`age:mal`" ``, to distinguish it from the `age:mal`
+#'   interaction (#442).  For multiphase
 #'   fits, pass a named list of one-sided formulas keyed by phase, naming
 #'   each phase once.  `scope` lists what may enter; a drop considers every
 #'   term in the model except `force_in` and terms frozen by `max_move`
@@ -136,9 +140,16 @@
 #'   **Known limitation (the frozen set)** section.
 #' @param force_in Character vector of variables that must remain in
 #'   the model.  Such variables are still scored and reported in the
-#'   selection trace, but are never dropped.
+#'   selection trace, but are never dropped.  A variable whose name is not
+#'   syntactic is matched by NAME, so the bare `"_X1"` names the column
+#'   `_X1` even though `terms()` labels it `` `_X1` `` (#437).  A name that
+#'   also parses as an EXPRESSION is the expression: `"age:mal"` is the
+#'   interaction, and a data column literally named `age:mal` must be
+#'   written backquoted, as `` "`age:mal`" `` (#442).
 #' @param force_out Character vector of variables that may never be
-#'   considered as candidates.
+#'   considered as candidates.  Matched the same way as `force_in`,
+#'   including the backquoted form for a literal column whose name parses
+#'   as an expression.
 #' @param trace Logical; print step-by-step progress to the console.
 #'   Default `TRUE`.
 #' @param ... Passed to every candidate refit. Only `control` (e.g.

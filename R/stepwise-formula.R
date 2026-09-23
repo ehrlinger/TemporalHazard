@@ -70,9 +70,25 @@
 #' and was silently ignored (#437).
 #'
 #' The label is PARSED rather than stripped of backticks: stripping is not
-#' the inverse of quoting, and a name may contain a backtick. A label that is
-#' not a single symbol -- an interaction, a function call -- is returned
-#' unchanged, so those still match by label as they always did.
+#' the inverse of quoting, and a name may contain a backtick.
+#'
+#' The key carries WHICH KIND of thing the label is, because a name and an
+#' expression can have the same text. `terms()` backquotes a column named
+#' `age:mal`, and parsing that label gives the symbol `age:mal`; the
+#' INTERACTION of `age` and `mal` has the label `age:mal` with no backticks.
+#' Keyed on the text alone the two collided, and the literal column silently
+#' disappeared from the candidates (found by review of #442). So:
+#'
+#' * a label that parses to a symbol keys as `v:<name>`;
+#' * a label that does not parse keys as `v:<label>` -- a bare non-syntactic
+#'   name, which is what the arguments are documented to take and what the
+#'   SAS translator emits;
+#' * anything else keys as `e:<label>` -- an expression, matched by its text
+#'   exactly as it always was.
+#'
+#' A bare `"age:mal"` is therefore the INTERACTION, because it parses; naming
+#' the literal column needs the backquoted `` "`age:mal`" ``. That ambiguity
+#' is real and this is the same way it resolved before #437.
 #'
 #' The map is many-to-one, and deliberately so: `` `x` `` and `x` are the same
 #' variable. The cost is that matching is LOOSER than a string comparison in
@@ -88,9 +104,18 @@
 #' @noRd
 .hzr_var_key <- function(x) {
   if (!length(x)) return(character())
+  # A sentinel, not NULL: `str2lang("NULL")` legitimately RETURNS NULL, so
+  # `is.null()` cannot tell a parse failure from a parsed `NULL`.
+  failed <- new.env()
   vapply(x, function(lab) {
-    e <- tryCatch(str2lang(lab), error = function(...) NULL)
-    if (is.symbol(e)) as.character(e) else lab
+    e <- tryCatch(str2lang(lab), error = function(...) failed)
+    if (identical(e, failed)) {
+      paste0("v:", lab)              # unparseable: a bare non-syntactic name
+    } else if (is.symbol(e)) {
+      paste0("v:", as.character(e))  # a name, however it was spelled
+    } else {
+      paste0("e:", lab)              # an expression, matched by its text
+    }
   }, character(1), USE.NAMES = FALSE)
 }
 

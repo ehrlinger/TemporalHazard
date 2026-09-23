@@ -244,8 +244,12 @@ test_that("the key is parsed, not stripped of backticks (#437)", {
     data = d, dist = "weibull", theta = c(0.1, 1, 0, 0), fit = TRUE
   ))
   labels <- attr(stats::terms(stats::formula(fit$call$formula)), "term.labels")
-  expect_identical(.hzr_var_key(labels), c("age", nm))
-  expect_false(identical(gsub("`", "", labels, fixed = TRUE)[2L], nm))
+  # Assert the RELATION, not the key's spelling: the label must key the same
+  # as the bare name, and differently from the backtick-stripped text.
+  expect_identical(.hzr_var_key(labels), .hzr_var_key(c("age", nm)))
+  stripped <- gsub("`", "", labels, fixed = TRUE)[2L]
+  expect_false(identical(stripped, nm))
+  expect_false(identical(.hzr_var_key(labels)[2L], .hzr_var_key(stripped)))
   # And it holds end to end: the pin is honoured.
   st <- ns_drop_437(fit, d, force_in = c("age", nm))
   expect_false(st$accepted)
@@ -254,7 +258,90 @@ test_that("the key is parsed, not stripped of backticks (#437)", {
 test_that("a term that is not a single symbol keeps its label (#437)", {
   # An interaction or a function call has no single variable to name, so it
   # must be returned unchanged and go on matching by label as before.
-  expect_identical(.hzr_var_key(c("z:f", "I(age > 50)", "log(age)")),
-                   c("z:f", "I(age > 50)", "log(age)"))
+  # Two labels with the same text key the same...
+  expect_identical(.hzr_var_key("z:f"), .hzr_var_key("z:f"))
+  # ...but an expression NEVER keys as the literal column of the same text,
+  # or the column disappears from the candidates (#442).
+  for (e in c("z:f", "I(age > 50)", "log(age)")) {
+    expect_false(identical(.hzr_var_key(e),
+                           .hzr_var_key(paste0("`", e, "`"))),
+                 info = e)
+  }
   expect_identical(.hzr_var_key(character()), character())
+})
+
+# --- Codex review of #442: expression labels must stay distinct from literal
+# column names (discussion_r4082123105). -------------------------------------
+
+test_that("a literal column named like an interaction is still offered (#442)", {
+  skip_on_cran() # a fit plus candidate enumeration
+  # `terms()` backquotes the literal column `age:mal`, and parsing that label
+  # gives the symbol `age:mal`. The INTERACTION label age:mal is a `:` call,
+  # not a symbol. Keyed on the name alone the two collided, and the literal
+  # column silently vanished from the candidates while the screen finished
+  # normally. main offers it; the first version of this fix did not.
+  data(avc, package = "TemporalHazard", envir = environment())
+  d0 <- stats::na.omit(avc[, c("int_dead", "dead", "age", "mal")])
+  d <- data.frame(d0, `age:mal` = as.numeric(scale(d0$age)) * 0.5 + 1,
+                  check.names = FALSE)
+  # The column is genuinely not the product, or the test proves nothing.
+  expect_false(isTRUE(all.equal(d[["age:mal"]], d$age * d$mal)))
+  fit <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ age * mal,
+                                 data = d, dist = "weibull",
+                                 theta = c(0.1, 1, 0, 0, 0), fit = TRUE))
+  expect_true("age:mal" %in%
+                attr(stats::terms(stats::formula(fit$call$formula)),
+                     "term.labels")) # the interaction IS in the model
+  offered <- vapply(.hzr_stepwise_candidates(fit, scope = ~ `age:mal`, data = d),
+                    function(c) c$var, character(1))
+  expect_identical(offered, "`age:mal`")
+})
+
+test_that("the key preserves main's distinctions except where #437 merges them", {
+  # A DIFFERENTIAL test, added because two silent regressions in this PR came
+  # from generalising a comparison without enumerating what the old one
+  # DISTINGUISHED. main compared raw strings. For every pair of label shapes,
+  # the new key must agree with that string comparison, except for an
+  # explicit allow-set of the pairs #437 deliberately merges.
+  shapes <- c("age", "`age`", "_X1", "`_X1`", "a b", "`a b`",
+              "age:mal", "`age:mal`", "log(age)", "`log(age)`",
+              "I(age > 50)", "`I(age > 50)`",
+              # Literals, which parse to something that is neither a symbol
+              # nor a failure. "NULL" is the one that needs a sentinel rather
+              # than is.null() to classify, since str2lang("NULL") RETURNS
+              # NULL; a mutation to is.null() survived every other test here.
+              "NULL", "`NULL`", "TRUE", "`TRUE`", "1", "`1`")
+  # Each entry: a label spelling and the same VARIABLE written bare. Nothing
+  # else may merge.
+  allow <- list(c("age", "`age`"), c("_X1", "`_X1`"), c("a b", "`a b`"))
+  allowed <- function(a, b) {
+    any(vapply(allow, function(p) {
+      setequal(c(a, b), p)
+    }, logical(1)))
+  }
+
+  deviations <- character()
+  merged_by_allow <- 0L
+  for (i in seq_along(shapes)) {
+    for (j in seq_along(shapes)) {
+      if (j <= i) next
+      a <- shapes[i]
+      b <- shapes[j]
+      main_equal <- identical(a, b)                       # main's comparison
+      new_equal  <- identical(.hzr_var_key(a), .hzr_var_key(b))
+      if (allowed(a, b)) {
+        # An allow-set entry must EARN its place: it must merge now, and it
+        # must not have merged before, or it is padding.
+        expect_true(new_equal, info = paste("allow-set pair not merged:", a, b))
+        expect_false(main_equal, info = paste("allow-set pair was already equal:", a, b))
+        merged_by_allow <- merged_by_allow + 1L
+      } else if (!identical(new_equal, main_equal)) {
+        deviations <- c(deviations, paste0(a, " <> ", b,
+                                           " (main=", main_equal,
+                                           ", new=", new_equal, ")"))
+      }
+    }
+  }
+  expect_identical(merged_by_allow, length(allow)) # every listed pair was seen
+  expect_identical(deviations, character())
 })

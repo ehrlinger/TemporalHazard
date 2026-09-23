@@ -826,6 +826,13 @@
   present, because that path indexes `data` by the backquoted label (#438).
   A `"score"` screen can therefore finish having omitted the variable.
 
+  A label that also parses as an EXPRESSION keeps its own identity, so an
+  interaction and a data column that happens to carry the same text are not
+  confused: `age:mal` is the interaction, and a column literally named
+  `age:mal` is written backquoted, as `` "`age:mal`" ``. Without that
+  distinction the literal column vanished from the candidates with nothing
+  said, which is how it was found, by review of this change.
+
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded
   as untranslated and build no phase. PROC HAZARD runs that phase on its own
