@@ -724,7 +724,9 @@
     ))
   }
   refusal_warnings <- character(0)
-  rejected <- c(proc_rejected, parms$rejected_parms)
+  # A phase variable that is not a NAME is refused at parse too, but it
+  # translated on main, so it warns here instead of stopping above (#440).
+  rejected <- c(proc_rejected, parms$rejected_parms, parms$rejected_name)
   if (!is.null(proc_syntax_error)) {
     rejected <- c(proc_syntax_error, rejected)
     note("PROC HAZARD", proc_syntax_error)
@@ -892,16 +894,12 @@
     #   - `_X1`, and the reserved words `NA`, `TRUE`, `FALSE`, `NULL`, ARE
     #     names PROC HAZARD accepts, and only R objects to them (#411);
     #   - `AGE*SEX`, `LOG(AGE)` and `B SEX` are NOT names, so PROC HAZARD
-    #     rejects the job at parse. This parser passes such text through as
-    #     though it were a variable, which is its own defect, but the reason
-    #     given to the reader must not claim the lexer accepted it.
+    #     rejects the job at parse, and the reason given to the reader must
+    #     not claim the lexer accepted it.
     # Only a name PROC HAZARD ACCEPTS is refused here. Text it rejects at
-    # parse (`AGE*SEX`, `LOG(AGE)`) is passed through by this parser as though
-    # it were a variable, which is a real defect -- but refusing it would be a
-    # NEW stop for a job that translates on main today, and new stops are not
-    # what this release does (John, 2026-09-22). It is tracked by #440 and
-    # will become a warning plus an $untranslated row there, once the warn
-    # machinery lands. Until then such a job emits exactly what main emits.
+    # parse (`AGE*SEX`, `LOG(AGE)`) no longer reaches this point: the phase
+    # parser leaves it out of the model, with a row and a warning (#440). A
+    # macro reference (`&V`) still can, and is not a name to judge.
     nonsyntactic <- nonsyntactic[grepl("^[_A-Za-z][_A-Za-z0-9]*$", nonsyntactic)]
     refusals <- c(sel$refuse,
                   if (saw_restrict) "RESTRICT",

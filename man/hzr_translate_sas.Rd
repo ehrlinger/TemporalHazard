@@ -43,6 +43,13 @@ and rendered as visible callouts, never dropped. A \verb{PROC HAZPRED} job whose
 \verb{INHAZ=} fitted model cannot be located emits a \code{stop()}, so the document
 fails to render rather than reporting over a model it did not load.
 
+A phase-statement variable that \verb{PROC HAZARD} cannot read as a name, such
+as \code{AGE*SEX}, \code{LOG(AGE)} or \verb{B SEX}, is left out of the model. A phase
+variable must be a NAME, \verb{[_A-Z][_A-Z0-9]*} (\code{hazard_l.l:39};
+\code{phasevar : NAME}, \code{hazard_y.y:213}), so \verb{PROC HAZARD} rejects such a job
+at parse. The document raises a \code{warning()} above the fit, and the operand
+is recorded in \verb{$untranslated}.
+
 A job may contain more than one \verb{PROC HAZARD} and/or \verb{PROC HAZPRED} block.
 Every block is preserved: the first of a kind keeps the bare chunk name
 (\code{fit}, \code{pred}, \code{pred_haz}), later ones get \code{fit_2}, \code{fit_3}, \code{pred_2}, and

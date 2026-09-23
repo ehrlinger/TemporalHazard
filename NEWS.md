@@ -67,7 +67,20 @@
     - `FIXGE2` or `FIXGAE2` without `WEIBULL`. That path is not modelled
       here, so the warning says the translation cannot tell whether PROC
       HAZARD refuses the job or which model it fits;
-  - `SETG3`'s entry refusals, on every path.
+  - `SETG3`'s entry refusals, on every path;
+  - a phase variable that is not a name to PROC HAZARD's lexer (#440):
+    `AGE*SEX`, `LOG(AGE)`, `B SEX`, `1AGE`. A phase variable must be a NAME,
+    `[_A-Z][_A-Z0-9]*` (`hazard_l.l:39`, `phasevar : NAME` at
+    `hazard_y.y:213`), so PROC HAZARD rejects such a job at parse. The phase
+    parser passed the text through as a column name, with no row and no
+    warning, so `EARLY AGE=0.1, AGE*SEX=0.2;` emitted a fit on a column
+    called `AGE*SEX` and, under `SELECTION`, a screen offering it as a
+    candidate. The operand is now left out of the model, and out of `theta`
+    with it, so the emitted formula has one starting value per term. This
+    holds with and without `SELECTION`, and for every spacing of the
+    operand. A name PROC HAZARD accepts, including `_X1` and a word that is
+    a keyword elsewhere (`E`, `EARLY`), does not warn, and neither does a
+    macro reference, which SAS expands before its lexer runs.
 
   Refusal coverage is not complete: `SETG1`'s refusals, which `PROC HAZARD`
   raises for an early phase, are not traced, so such a job still fits (#424).
@@ -95,8 +108,9 @@
 
   **Which jobs stop and which warn, in one place.** A job stops only where it
   did before this release: a phase statement `PROC HAZARD` refuses at parse
-  (#340), a `PARMS` statement that builds no phase this translator can use, a
-  job with no `DATA=` whose phases name covariates (#311), and a `SELECTION`
+  (#340) other than a phase variable that is not a name (#440, above), a
+  `PARMS` statement that builds no phase this translator can use, a job
+  with no `DATA=` whose phases name covariates (#311), and a `SELECTION`
   job that selects no phase. Everything newly recognised in this release
   warns and still fits.
 
@@ -1267,20 +1281,12 @@
   the cause. For a name like `_X1` this costs nothing: the job stopped before
   this release too, one step earlier, in the phase formula.
 
-  Text `PROC HAZARD` does not accept as a name is **not** refused here. The
-  phase parser passes what it cannot read through as though it were a
-  variable, so `EARLY AGE, AGE*SEX;` translates. `AGE*SEX` is not a name
+  Text `PROC HAZARD` does not accept as a name is **not** refused here,
+  because it no longer reaches this check. `AGE*SEX` is not a name
   (`hazard_l.l:39`, `hazard_y.y:213`), so `PROC HAZARD` rejects that job at
-  parse and the translated result never meant anything either way; but
-  refusing it here would stop a job that translates today, so it is left
-  alone and tracked by #440.
-
-  One thing does change for such a job, and it is an improvement rather
-  than a refusal. Built from pasted text, `AGE*SEX` became an R interaction:
-  `~AGE + AGE * SEX` expands to three model terms against two starting
-  values, and the reader met an arithmetic complaint about `theta`. Built
-  from symbols it is one opaque name, so the reader is told the column is
-  missing from the data instead. Both forms fail; only the second says why.
+  parse; the phase parser now leaves such an operand out of the model, with
+  a warning and an untranslated row, rather than stopping a job that
+  translated before (#440, under Breaking changes).
 
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded

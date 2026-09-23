@@ -1441,11 +1441,9 @@ test_that("a SELECTION name PROC HAZARD accepts is refused; one it rejects is no
   # (hazard_l.l:39) and only R objects to it, and that job already died on
   # main, so refusing it is not a new stop.
   #
-  # Text PROC HAZARD REJECTS at parse (`AGE*SEX`, `LOG(AGE)`) is NOT refused.
-  # This parser passes it through as though it were a variable, which is a
-  # real defect, but refusing it would be a NEW stop for a job that
-  # translates on main today. Tracked by #440, to become a warning plus an
-  # $untranslated row once that machinery lands.
+  # Text PROC HAZARD REJECTS at parse (`AGE*SEX`, `LOG(AGE)`) is NOT refused
+  # here: stopping it would be a NEW stop for a job that translated on main.
+  # It warns, with a row, and is left out of the screen (#440; tested below).
   job <- function(early) {
     f <- withr::local_tempfile(fileext = ".sas", .local_envir = parent.frame())
     writeLines(c("%HAZARD( PROC HAZARD DATA=D; TIME T; EVENT E;",
@@ -1469,8 +1467,8 @@ test_that("a SELECTION name PROC HAZARD accepts is refused; one it rejects is no
     expect_match(msg(j), "hazard_l.l:39", fixed = TRUE, info = nm)
   }
 
-  # NOT in the grammar: NOT refused. The emitted call is a screen, exactly as
-  # on main -- this branch must not add a stop here.
+  # NOT in the grammar: NOT refused. The emitted call is still a screen --
+  # no stop is added here.
   for (nm in c("AGE*SEX", "LOG(AGE)")) {
     j <- job(paste0("AGE /I, ", nm))
     expect_identical(j$calls$fit[[3L]][[1L]], as.name("hzr_stepwise"), info = nm)
@@ -1481,34 +1479,241 @@ test_that("a SELECTION name PROC HAZARD accepts is refused; one it rejects is no
   expect_identical(job("AGE /I, SEX")$calls$fit[[3L]][[1L]], as.name("hzr_stepwise"))
 })
 
-test_that("unreadable phase text fails at least as informatively as it did (#411, #440)", {
+
+# --- #440: a phase variable PROC HAZARD cannot lex as a NAME ---------------
+# hazard_l.l:39 is `name ([_A-Z][_A-Z0-9]*)` and hazard_y.y:213 is
+# `phasevar : NAME`, so `AGE*SEX`, `LOG(AGE)`, `B SEX` and `1AGE` are not
+# phase variables: PROC HAZARD rejects the job at parse. On main the parser
+# passed each through as a column name, with no row and no warning. Under U1
+# such a job now warns, records one row, and emits a fit WITHOUT the operand,
+# so the emitted formula and theta agree.
+.p440_classes <- c(interaction = "AGE*SEX", call = "LOG(AGE)",
+                   spaced = "B SEX", digit = "1AGE")
+.p440_job <- function(early, selection = FALSE, env = parent.frame()) {
+  f <- withr::local_tempfile(fileext = ".sas", .local_envir = env)
+  writeLines(paste0("%HAZARD( PROC HAZARD DATA=D; TIME T; EVENT E;",
+                    " PARMS MUE=0.2 THALF=1 NU=1 M=1 MUC=0.01;",
+                    " EARLY ", early, ";",
+                    if (selection) " SELECTION SLE=0.3 SLS=0.2;",
+                    " );"), f)
+  w <- character(0)
+  withCallingHandlers(job <- hzr_translate_sas(f), warning = function(x) {
+    w <<- c(w, conditionMessage(x))
+    invokeRestart("muffleWarning")
+  })
+  job$translate_warnings <- w
+  job
+}
+# The warning the DOCUMENT raises, by evaluating the emitted refusal chunk.
+.p440_chunk_warning <- function(job) {
+  nm <- grep("^refusal", names(job$calls), value = TRUE)
+  if (!length(nm)) return(character(0))
+  msgs <- character(0)
+  withCallingHandlers(eval(job$calls[[nm[[1L]]]], new.env()),
+                      warning = function(x) {
+                        msgs <<- c(msgs, conditionMessage(x))
+                        invokeRestart("muffleWarning")
+                      })
+  msgs
+}
+.p440_rows <- function(job) {
+  u <- job$untranslated
+  u[grepl("not a PROC HAZARD variable name", u$reason, fixed = TRUE), ,
+    drop = FALSE]
+}
+# Covariate TERMS in the emitted early-phase formula against covariate STARTS
+# in the emitted theta (the early block is log_mu, log_t_half, nu, m; the
+# constant phase adds log_mu). A formula that expands to more terms than it
+# has starts is the defect #440 describes.
+.p440_terms_vs_starts <- function(fit_call) {
+  ph <- fit_call$phases[[2L]]
+  n_terms <- if (is.null(ph$formula)) 0L else
+    length(attr(stats::terms(eval(ph$formula)), "term.labels"))
+  n_starts <- length(fit_call$theta) - 1L - 4L - 1L
+  c(terms = n_terms, starts = n_starts)
+}
+
+test_that("a phase variable that is not a PROC HAZARD NAME warns, rows and drops (#440)", {
+  base <- .p440_job("AGE=0.1")
+  base_sel <- .p440_job("AGE=0.1", selection = TRUE)
+  for (cls in names(.p440_classes)) {
+    x <- .p440_classes[[cls]]
+    for (sel in c(FALSE, TRUE)) {
+      info <- paste(cls, if (sel) "with SELECTION" else "plain")
+      b <- if (sel) base_sel else base
+      job <- .p440_job(paste0("AGE=0.1, ", x, "=0.2"), selection = sel)
+      rows <- .p440_rows(job)
+      # Exactly one row, naming the construct and the grammar.
+      expect_identical(NROW(rows), 1L, info = info)
+      expect_identical(rows$construct, x, info = info)
+      expect_match(rows$reason, "hazard_l.l:39", fixed = TRUE, info = info)
+      expect_match(rows$reason, "hazard_y.y:213", fixed = TRUE, info = info)
+      # And nothing else changed: every other row is the baseline's.
+      expect_identical(NROW(job$untranslated), NROW(b$untranslated) + 1L,
+                       info = info)
+      # The translation warns, naming the construct.
+      expect_true(any(grepl(x, job$translate_warnings, fixed = TRUE)),
+                  info = info)
+      # The document warns, naming the construct and the grammar reason,
+      # and the warning carries the ROW's own construct and reason, so the
+      # two cannot disagree about what was refused.
+      w <- .p440_chunk_warning(job)
+      expect_length(w, 1L)
+      expect_match(w, "PROC HAZARD does not run this job", fixed = TRUE,
+                   info = info)
+      expect_match(w, paste0(rows$construct, ": ", rows$reason),
+                   fixed = TRUE, info = info)
+      # The fit is emitted, not a stop, and it is the baseline's model: the
+      # operand is gone from the formula AND from theta.
+      if (sel) {
+        expect_identical(job$calls$fit[[3L]][[1L]], as.name("hzr_stepwise"),
+                         info = info)
+        expect_identical(job$calls$fit_base, b$calls$fit_base, info = info)
+        expect_identical(job$calls$fit, b$calls$fit, info = info)
+      } else {
+        expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"),
+                         info = info)
+        expect_identical(job$calls$fit, b$calls$fit, info = info)
+        tv <- .p440_terms_vs_starts(job$calls$fit[[3L]])
+        expect_identical(tv[["terms"]], tv[["starts"]], info = info)
+      }
+    }
+  }
+})
+
+test_that("names PROC HAZARD accepts do not warn (#440 known negatives)", {
+  # From hazard_l.l:39, clause by clause: a leading underscore, a bare
+  # underscore, digits after the first character, and words that are
+  # keywords elsewhere but lex as NAME in the phase-variable state (PHVR has
+  # no keyword rules, hazard_l.l:151-152 and :174).
+  ok <- .hzr_parse_phase_covars("_X1, _, A1_2, E, I, S, EARLY, PARMS, age")
+  expect_identical(ok$names, c("_X1", "_", "A1_2", "E", "I", "S", "EARLY",
+                               "PARMS", "age"))
+  expect_length(ok$untranslated_construct, 0L)
+  expect_length(ok$not_a_name, 0L)
+  # Each clause of the regex, violated.
+  bad <- .hzr_parse_phase_covars("AGE, 1AGE, A.B, A-B, A$B, A*B, F(X), B SEX")
+  expect_identical(bad$names, "AGE")
+  expect_identical(bad$untranslated_construct,
+                   c("1AGE", "A.B", "A-B", "A$B", "A*B", "F(X)", "B SEX"))
+  expect_length(bad$not_a_name, 7L)
+  # Not phase-statement syntax errors of the #340 kind, so they do not stop.
+  expect_length(bad$rejected, 0L)
+
+  # End to end: no row, no refusal chunk, no warning.
+  for (x in c("AGE=0.1", "AGE=0.1, _X1=0.2")) {
+    job <- .p440_job(x)
+    expect_identical(NROW(job$untranslated), 0L, info = x)
+    expect_length(grep("^refusal", names(job$calls)), 0L)
+    expect_length(job$translate_warnings, 0L)
+    expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
+  }
+  # `_X1` under SELECTION keeps its own R-side refusal (#411); this check
+  # adds nothing to it.
+  job <- .p440_job("AGE=0.1, _X1=0.2", selection = TRUE)
+  expect_identical(NROW(.p440_rows(job)), 0L)
+  expect_match(job$untranslated$reason[job$untranslated$construct ==
+                                          "SELECTION"],
+               "not a syntactic R name", fixed = TRUE)
+})
+
+test_that("an item with no variable stops, as it did on main (#440)", {
+  # `EARLY AGE, =0.2;` errored inside R on main ("attempt to use
+  # zero-length variable name"). It is a parse error to PROC HAZARD too,
+  # and it stays a stop -- now the #340 one, which names the source.
+  p <- .hzr_parse_phase_covars("AGE, =0.2")
+  expect_identical(p$names, "AGE")
+  expect_length(p$not_a_name, 0L)
+  expect_length(p$rejected, 1L)
+  expect_match(p$rejected, "hazard_y.y:210-213", fixed = TRUE)
+  job <- .p440_job("AGE, =0.2")
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"))
+})
+
+test_that("a macro reference in a phase statement is not judged (#440)", {
+  # SAS expands `&V` before PROC HAZARD's lexer sees it, so whether it is a
+  # NAME cannot be known here.
+  p <- .hzr_parse_phase_covars("AGE, &V")
+  expect_length(p$not_a_name, 0L)
+  expect_identical(p$names, c("AGE", "&V"))
+})
+
+test_that("the #440 verdict is invariant under spacing", {
+  # PROC HAZARD's lexer skips whitespace (hazard_l.l:32), so a space changes
+  # the token stream only where it separates two word-rule characters
+  # (`B SEX` is two NAMEs, `BSEX` one). Generate every spelling of each
+  # token stream: each free gap with and without a space, each required gap
+  # with one space or two. This generalises #433's generator, which varies
+  # only the gaps around `=`.
+  word <- function(t) grepl("^[-._A-Z0-9]+$", t)
+  spellings <- function(toks) {
+    n <- length(toks) - 1L
+    gaps <- lapply(seq_len(n), function(k) {
+      if (word(toks[[k]]) && word(toks[[k + 1L]])) c(" ", "  ") else c("", " ")
+    })
+    grid <- expand.grid(gaps, stringsAsFactors = FALSE)
+    apply(grid, 1L, function(g) {
+      paste0(c(rbind(toks[-length(toks)], g), toks[[length(toks)]]),
+             collapse = "")
+    })
+  }
+  streams <- list(
+    c("AGE", "*", "SEX", "=", "0.2"),
+    c("LOG", "(", "AGE", ")", "=", "0.2"),
+    c("B", "SEX", "=", "0.2"),
+    c("1AGE", "=", "0.2")
+  )
+  for (toks in streams) {
+    v <- unique(spellings(toks))
+    expect_gt(length(v), 1L)          # the generator must vary
+    # Parser level: every spelling, one answer.
+    parsed <- lapply(v, function(s) {
+      .hzr_parse_phase_covars(paste0("AGE=0.1, ", s))
+    })
+    expect_length(unique(parsed), 1L)
+    expect_length(parsed[[1L]]$not_a_name, 1L)
+    # Translation level: rows, calls and the document's warning.
+    out <- lapply(v, function(s) {
+      job <- .p440_job(paste0("AGE=0.1, ", s))
+      list(rows = job$untranslated[, c("construct", "reason")],
+           calls = job$calls[names(job$calls) != "data"],
+           warning = .p440_chunk_warning(job))
+    })
+    expect_length(unique(out), 1L)
+    expect_length(out[[1L]]$warning, 1L)
+  }
+})
+
+test_that("the emitted #440 fit runs, with one start per covariate term", {
   skip_on_cran()
-  # `AGE*SEX` is not a name PROC HAZARD accepts (hazard_l.l:39,
-  # hazard_y.y:213), so the job produces nothing there. Both this branch and
-  # 71277ff8 ERROR on it rather than fitting; what changes is WHICH error.
-  # On 71277ff8 the pasted text became an R interaction, so `~AGE + AGE * SEX`
-  # expanded to three model terms against two starting values and the reader
-  # met an arithmetic complaint about `theta`. Built from symbols it is one
-  # opaque name, and the reader is told the column is missing. The assertion
-  # is that it still fails, and that the failure names the construct.
-  set.seed(4)
-  n <- 200
+  set.seed(440)
+  n <- 150
   D <- data.frame(AGE = stats::rnorm(n), SEX = stats::rbinom(n, 1, 0.5))
   D$T <- stats::rexp(n, 0.2)
-  D$E <- 1
-  f <- withr::local_tempfile(fileext = ".sas")
-  writeLines(c("%HAZARD( PROC HAZARD DATA=D; TIME T; EVENT E;",
-               " PARMS MUE=0.2 THALF=1 NU=1 M=1 MUC=0.01;",
-               " EARLY AGE=0.1, AGE*SEX=0.2; );"), f)
-  job <- suppressWarnings(hzr_translate_sas(f))
-  # Translation emits a fit, not a stop: no new refusal is added here.
-  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
-  env <- new.env(parent = environment())
-  env$D <- D
-  err <- tryCatch({
+  D$E <- stats::rbinom(n, 1, 0.7)
+  run <- function(job) {
+    env <- new.env(parent = environment())
+    env$D <- D
     for (k in names(job$calls)) suppressWarnings(eval(job$calls[[k]], env))
-    "no error"
-  }, error = conditionMessage)
-  expect_no_match(err, "no error", fixed = TRUE)
-  expect_match(err, "AGE*SEX", fixed = TRUE)
+    env
+  }
+  for (cls in names(.p440_classes)) {
+    job <- .p440_job(paste0("AGE=0.1, ", .p440_classes[[cls]], "=0.2"))
+    env <- run(job)
+    fit <- env$fit
+    expect_s3_class(fit, "hazard")
+    # The fitted parameter vector is exactly as long as the emitted start,
+    # and carries one covariate: a formula with more terms than starts
+    # cannot reach here.
+    expect_identical(length(fit$fit$theta),
+                     length(eval(job$calls$fit[[3L]]$theta)), info = cls)
+    expect_identical(sum(fit$fit$covariate_counts), 1L, info = cls)
+  }
+  # The SELECTION jobs emit the baseline's calls (asserted above for every
+  # class), so one run of the screen covers them; this one is the #411 case.
+  job <- .p440_job("AGE=0.1, AGE*SEX=0.2", selection = TRUE)
+  utils::capture.output(env <- suppressMessages(run(job)))
+  expect_s3_class(env$fit, "hzr_stepwise")
+  expect_false(any(grepl("SEX", unlist(lapply(env$fit$scope, deparse)),
+                         fixed = TRUE)))
 })
