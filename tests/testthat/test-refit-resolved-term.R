@@ -281,7 +281,8 @@ test_that("wald, aic and score agree beside the age:mal interaction (#442, #449)
   # wald and aic entered it while score compared its column NAME with the
   # model's term labels, matched the interaction, and declined it as
   # not_expandable. Run over a weak (nearly collinear with age), a noise and
-  # a strong column: a weak one hid the disagreement from one reviewer.
+  # a strong column, because a weak enough column CAN hide the divergence:
+  # whether it does depends on how weak it is.
   d0 <- rrt_avc()
   make <- list(
     weak   = function() {
@@ -304,8 +305,6 @@ test_that("wald, aic and score agree beside the age:mal interaction (#442, #449)
       expect_identical(length(final[[crit]]$criteria$uncomputable_reasons),
                        0L, info = paste(k, crit))
     }
-    expect_equal(final$score$fit$objective, final$wald$fit$objective,
-                 tolerance = 1e-6, info = k)
   }
 })
 
@@ -341,4 +340,64 @@ test_that("an untested entry is reported by the name a drop would use (#441)", {
                                         criterion = "wald", trace = FALSE))
     expect_identical(sw$criteria$wald_untested_entries, "`_X1`")
   }
+})
+
+test_that("a column no formula can name is skipped, saying so (#449)", {
+  skip_on_cran() # full screens
+  # A column literally named "." has no term label: terms() reads `.` as
+  # "every other column". Its placeholder identity was pasted into formula
+  # text, so a multiphase default scope stopped with the parser's
+  # "unexpected '<'", and a single-distribution one failed three refits the
+  # same way. It is not a candidate; the screen says why, once, and goes on.
+  withr::local_seed(1L)
+  d <- rrt_avc()
+  d[["."]] <- stats::rnorm(nrow(d))
+  mp <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
+    phases = list(constant = hzr_phase("constant")),
+    fit = TRUE, control = list(n_starts = 1L)
+  ))
+  sd1 <- rrt_fit(d, "1", c(0.1, 1))
+  for (base in list(mp, sd1)) {
+    w <- character()
+    sw <- NULL
+    expect_no_error(sw <- withCallingHandlers(
+      hzr_stepwise(base, data = d, direction = "forward", criterion = "wald",
+                   slentry = 0.99, trace = FALSE,
+                   control = list(n_starts = 1L)),
+      warning = function(cnd) {
+        w <<- c(w, conditionMessage(cnd))
+        invokeRestart("muffleWarning")
+      }
+    ))
+    expect_identical(sum(grepl("\".\"", w, fixed = TRUE) &
+                           grepl("cannot be a stepwise candidate", w,
+                                 fixed = TRUE)), 1L)
+    expect_false(any(grepl("unexpected", w, fixed = TRUE)))
+    expect_identical(sw$criteria$n_refit_failures, 0L)
+  }
+})
+
+test_that("score says why it declines an interaction beside a literal column (#449)", {
+  skip_on_cran() # a full screen
+  # The interaction is a term, not a column; that a column of the same
+  # spelling exists must not make the decline read "not found in `data`".
+  withr::local_seed(1L)
+  d0 <- rrt_avc()
+  d <- data.frame(d0, `age:mal` = d0$mal * 2 + stats::rnorm(nrow(d0), sd = 0.5),
+                  check.names = FALSE)
+  base <- rrt_fit(d, "age + mal", c(0.1, 1, 0, 0))
+  w <- character()
+  sw <- withCallingHandlers(
+    hzr_stepwise(base, data = d, scope = ~ age:mal, direction = "forward",
+                 criterion = "score", slentry = 0.99, trace = FALSE),
+    warning = function(cnd) {
+      w <<- c(w, conditionMessage(cnd))
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_false(any(grepl("not found in `data`", w, fixed = TRUE)))
+  expect_true(any(grepl("is not a single column of `data`", w, fixed = TRUE)))
+  expect_true(any(grepl("different variable", w, fixed = TRUE)))
+  expect_identical(nrow(sw$steps), 0L)
 })

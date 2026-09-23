@@ -90,6 +90,19 @@
   }, character(1), USE.NAMES = FALSE)
 }
 
+#' Is a column label the placeholder for a name no formula can hold?
+#'
+#' `.hzr_column_label()` gives `""` and `"."` a placeholder, `<column ".">`,
+#' because `terms()` cannot label them (`.` means every other column). Such a
+#' column is never a stepwise candidate: pasted into formula text, the
+#' placeholder does not parse (#449).
+#'
+#' @keywords internal
+#' @noRd
+.hzr_is_label_placeholder <- function(label) {
+  startsWith(label, "<column ")
+}
+
 #' The term a candidate's refit writes into the formula
 #'
 #' `.hzr_formula_update()` writes its `var` into the formula TEXT, so the

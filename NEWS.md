@@ -953,7 +953,9 @@
   rather than reported as not found in `data` and skipped (#438). An
   interaction is no longer scored from a literal column that shares its
   spelling; the score declines it, as it does any term that is not a
-  column.
+  column, and its warning now says that instead of "not found in `data`".
+  A column no formula can name, such as one called `.`, is not offered as
+  a candidate, and the screen says so once.
 
   One spelling is unchanged: `$steps$variable` records an entry under the
   name as the scope wrote it and a drop under its label, so the column

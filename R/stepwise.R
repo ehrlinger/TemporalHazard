@@ -443,6 +443,24 @@ hzr_stepwise <- function(fit,
     scope_labels <- resolved_scope$id
     unresolved$scope <- resolved_scope$unresolved
   }
+  # A column no formula can name is never offered. Say so once, here, for
+  # the scopes that would offer it: the default, and a character scope that
+  # names it (#449).
+  unnameable <- if (is.null(scope)) {
+    stored <- .hzr_stored_formula(fit)
+    lhs <- if (is.null(stored) || length(stored) < 3L) character() else
+      all.vars(stored[[2L]])
+    cols <- setdiff(names(data), lhs)
+    cols[.hzr_is_label_placeholder(.hzr_column_label(cols))]
+  } else if (is.character(scope) && length(scope_labels)) {
+    scope[.hzr_is_label_placeholder(scope_labels)]
+  }
+  if (length(unnameable)) {
+    warning("Column(s) ",
+            paste(encodeString(unnameable, quote = "\""), collapse = ", "),
+            " of `data` cannot be a stepwise candidate: a model formula cannot ",
+            "name them. Rename them to offer them.", call. = FALSE)
+  }
   known_labels <- unique(c(unlist(.hzr_scope_current_vars(fit),
                                   use.names = FALSE),
                            scope_labels))

@@ -44,7 +44,9 @@
       stored <- .hzr_stored_formula(fit)
       lhs_vars <- if (is.null(stored)) character() else all.vars(stored[[2L]])
       data_vars <- setdiff(colnames(data), lhs_vars)
-      data_vars <- data_vars[!.hzr_column_label(data_vars) %in% force_out]
+      data_ids <- .hzr_column_label(data_vars)
+      data_vars <- data_vars[!data_ids %in% force_out &
+                               !.hzr_is_label_placeholder(data_ids)]
       data_vars <- .hzr_modellable_vars(data, data_vars)
       # Written as term labels, never pasted names: a pasted `age ` read back
       # as `age`, and `_X1` did not parse (#449). The column name stays the
@@ -110,7 +112,7 @@
     lhs_vars <- if (is.null(f)) character() else all.vars(f[[2L]])
     data_vars <- setdiff(colnames(data), lhs_vars)
     data_ids  <- .hzr_column_label(data_vars)
-    keep <- !data_ids %in% force_out
+    keep <- !data_ids %in% force_out & !.hzr_is_label_placeholder(data_ids)
     data_vars <- data_vars[keep]
     data_ids  <- data_ids[keep]
     keep <- data_vars %in% .hzr_modellable_vars(data, data_vars)
@@ -143,7 +145,8 @@
   # scope naming a variable twice offers it once, under its first spelling.
   current_vars <- .hzr_scope_current_vars(fit)
   keep <- !duplicated(data_ids) &
-    !data_ids %in% c(force_out, current_vars)
+    !data_ids %in% c(force_out, current_vars) &
+    !.hzr_is_label_placeholder(data_ids)
   Map(function(v, id) list(var = v, phase = NULL, id = id),
       data_vars[keep], data_ids[keep], USE.NAMES = FALSE)
 }
@@ -710,7 +713,24 @@
 #' @keywords internal
 #' @noRd
 .hzr_score_check_numeric <- function(data, var, phase, col = var) {
-  xcand <- if (is.na(col)) NULL else data[[col]]
+  if (is.na(col)) {
+    # The candidate resolved to a term that is no column: an interaction or
+    # a transform. A column spelled the same, when there is one, is another
+    # variable, so "not found in `data`" would be false (#449).
+    where <- if (is.null(phase)) "" else paste0(" in phase ", sQuote(phase))
+    warning(
+      "Stepwise forward: candidate ", sQuote(var), where, " is not a single ",
+      "column of `data`, which is all the score criterion can test",
+      if (var %in% names(data)) {
+        paste0(" (the column named ", sQuote(var), " is a different ",
+               "variable, written `` `", var, "` `` in a formula)")
+      },
+      "; skipping. `criterion = \"wald\"` refits it instead.",
+      call. = FALSE
+    )
+    return(invisible(NULL))
+  }
+  xcand <- data[[col]]
   if (is.null(xcand)) {
     where <- if (is.null(phase)) "" else paste0(" in phase ", sQuote(phase))
     warning(
