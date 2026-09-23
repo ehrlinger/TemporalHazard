@@ -23,12 +23,13 @@ test_that("an outside term beside a data column is named, whichever columns newd
     msg <- tryCatch(predict(fit, newdata = nd, type = "linear_predictor"),
                     error = conditionMessage)
     expect_match(msg, want, fixed = TRUE)
-    # `model.frame()`'s own message is no longer DISCARDED -- it is the first
-    # line and the naming follows it (#446). What #409 was protecting was
-    # that the user is not left with "variable lengths differ" naming some
-    # other variable and no term at all, so that is what is asserted: the
-    # term is named, and the base message is not the whole message.
-    expect_false(identical(msg, "variable lengths differ (found for 'mal')"))
+    # RESTORED. This assertion was weakened on the #446 branch to
+    # `expect_false(identical(msg, "variable lengths differ (found for
+    # 'mal')"))`, which cannot fail once anything at all is appended, and the
+    # weakening was reported as intent. It is load bearing: `mal` is a column
+    # the user supplied correctly, and leading with base R's blame for it is
+    # the misattribution #409 exists to suppress.
+    expect_false(grepl("variable lengths differ", msg, fixed = TRUE))
   }
 })
 
