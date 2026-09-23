@@ -1122,3 +1122,38 @@ test_that("a macro call whose arguments contain spaces stays one operand (#433 r
   u <- one_row("MUE=0.2 THALF=1 NU=1 LOG(A, B)")
   expect_gt(NROW(u), 1L)
 })
+
+test_that("a rejected PROC option gets exactly one applicable row (#433 review)", {
+  # check_number() recorded the rejection, then the option's own switch arm
+  # continued and added a second row. `CONDITION=5.` said both that PROC
+  # HAZARD's lexer rejects the number AND what its optimizer does with the
+  # value, although a rejected job never runs. `MAXITER =` also left an
+  # operand whose key was the empty string, reported as an unknown option
+  # with a blank name.
+  rows <- function(proc) {
+    .u1_job(proc = proc, parms = "MUE=0.2 THALF=1 NU=1")$untranslated
+  }
+  for (proc in c(" MAXITER=", " MAXITER =", " CONDITION=5.", " MAXITER=1E5",
+                 " CONDITION=")) {
+    u <- rows(proc)
+    expect_identical(NROW(u), 1L, info = proc)
+    # No construct may be blank: that is the dangling half of a spaced
+    # assignment, not an option anybody wrote.
+    expect_true(all(nzchar(u$construct)), info = proc)
+    # And no row may describe what the optimizer does with a value in a job
+    # PROC HAZARD does not run.
+    expect_false(any(grepl("stops PROC HAZARD's optimizer", u$reason,
+                           fixed = TRUE)), info = proc)
+  }
+
+  # CONTROLS, so the test cannot pass by suppressing rows generally.
+  # An ACCEPTED CONDITION still records its one explanatory row, because
+  # hazard() reads no `condition` (#384).
+  u <- rows(" CONDITION=14")
+  expect_identical(NROW(u), 1L)
+  expect_match(u$reason, "stops PROC HAZARD's optimizer", fixed = TRUE)
+  # An accepted MAXITER records nothing and reaches the emitted call.
+  job <- .u1_job(proc = " MAXITER=250", parms = "MUE=0.2 THALF=1 NU=1")
+  expect_identical(NROW(job$untranslated), 0L)
+  expect_true(any(grepl("maxit = 250", deparse(job$calls$fit), fixed = TRUE)))
+})

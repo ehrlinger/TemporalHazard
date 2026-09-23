@@ -415,10 +415,14 @@
   # the HZRP state at :53) is a syntax error: PROC HAZARD does not run the
   # job (U1, #403). as.numeric() reads 1E5 and 5., which the lexer does not.
   proc_rejected <- character(0)
+  # Returns TRUE when it rejected the option, so the caller can stop rather
+  # than add a second, sometimes contradictory row. `CONDITION=5.` used to say
+  # both that PROC HAZARD's lexer rejects the number AND what its optimizer
+  # does with the value, although a rejected job never runs (#433 review).
   check_number <- function(key, val) {
     # A macro carries no verdict: SAS expands it before PROC HAZARD reads
     # the statement, so whether a NUMBER arrives is not knowable here.
-    if (.hzr_sas_is_macro(val)) return(invisible(NULL))
+    if (.hzr_sas_is_macro(val)) return(FALSE)
     if (!nzchar(val)) {
       # `MAXITER '=' NUMBER` and `CONDITION '=' NUMBER` (hazard_y.y:63-64)
       # have no form without a NUMBER, so `MAXITER=`, `MAXITER =` and a bare
@@ -432,7 +436,7 @@
       # is read once at render, the row is what a reader greps afterwards.
       note(key, paste0("no value; PROC HAZARD has no form of this option ",
                        "without one (hazard_y.y:63-64)"))
-      return(invisible(NULL))
+      return(TRUE)
     }
     if (!.hzr_sas_lexer_number(val)) {
       proc_rejected <<- c(proc_rejected, paste0(
@@ -442,7 +446,9 @@
       note(paste0(key, "=", val),
            paste0("not a number PROC HAZARD's lexer reads ",
                   "(hazard_l.l:34-38)"))
+      return(TRUE)
     }
+    FALSE
   }
 
   for (tok in toks) {
@@ -470,13 +476,17 @@
       DATA        = data_name <- sub("^WORK[.]", "", val),
       OUTHAZ      = outhaz <- val,
       MAXITER     = {
-        check_number(key, val)
-        val_num <- suppressWarnings(as.numeric(val))
-        if (is.na(val_num)) {
+        if (check_number(key, val)) {
+          # Rejected: one row, already recorded by check_number().
           mapped <- mapped - 1L
-          note("MAXITER", "non-numeric value for MAXITER")
         } else {
-          ctl$maxit <- val_num
+          val_num <- suppressWarnings(as.numeric(val))
+          if (is.na(val_num)) {
+            mapped <- mapped - 1L
+            note("MAXITER", "non-numeric value for MAXITER")
+          } else {
+            ctl$maxit <- val_num
+          }
         }
       },
       # Recorded, never emitted: hazard() reads no `condition` (#384).
@@ -486,9 +496,11 @@
       # has no such stop; it warns about the final Hessian after the fit.
       CONDITION   = {
         mapped <- mapped - 1L
-        check_number(key, val)
-        val_num <- suppressWarnings(as.numeric(val))
-        if (is.na(val_num)) {
+        val_num <- if (check_number(key, val)) NULL else
+          suppressWarnings(as.numeric(val))
+        if (is.null(val_num)) {
+          # Rejected: one row, already recorded by check_number().
+        } else if (is.na(val_num)) {
           note("CONDITION", "non-numeric value for CONDITION")
         } else if (val_num < 3 || val_num > 14) {
           # hazpprc.c:48-56 stores only 3..14; otherwise the limit stays at

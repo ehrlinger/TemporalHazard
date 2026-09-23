@@ -139,6 +139,14 @@
     if (identical(op, "=") && length(out) && i < n) {
       out[length(out)] <- paste0(out[length(out)], "=", ops[[i + 1L]])
       i <- i + 2L
+    } else if (identical(op, "=") && length(out)) {
+      # A TRAILING bare `=`: the dangling half of `MAXITER =` with nothing
+      # after it. Attaching it to the previous operand makes one construct
+      # `MAXITER=` rather than leaving an operand whose key is the empty
+      # string, which was then reported as an unknown option with a blank
+      # name (#433 review).
+      out[length(out)] <- paste0(out[length(out)], "=")
+      i <- i + 1L
     } else if (nchar(op) > 1L && endsWith(op, "=") && i < n) {
       out <- c(out, paste0(op, ops[[i + 1L]]))
       i <- i + 2L
