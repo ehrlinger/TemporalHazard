@@ -47,15 +47,33 @@ as.data.frame(x, ...)
 - scope:
 
   Candidate set. `NULL` (default) uses every data-frame column not
-  already in the model for every phase. For single-distribution fits,
-  pass a one-sided formula (`~ age + nyha`) or a character vector of
-  names. For multiphase fits, pass a named list of one-sided formulas
-  keyed by phase, naming each phase once. `scope` lists what may enter;
-  a drop considers every term in the model except `force_in` and terms
-  frozen by `max_move` before the iteration began (see the **Known
-  limitation (the frozen set)** section). A two-sided formula is an
-  error, since its left-hand side would never be a candidate, and so is
-  a non-empty `scope` under `direction = "backward"`, which does not
+  already in the model for every phase. A candidate enters by writing
+  its name into the formula text, so under this default too a column
+  whose name reads as a different term enters as that term, with no
+  warning: a column literally named `age:mal` enters as the interaction,
+  and a column `"age "` beside `age` enters as `age` (#449). For
+  single-distribution fits, pass a one-sided formula (`~ age + nyha`) or
+  a character vector of names. Each name in a character `scope` is
+  looked up, not parsed: a name that is exactly a column of `data` is
+  that column, otherwise a name that is exactly a term label as
+  [`terms()`](https://rdrr.io/r/stats/terms.html) writes it
+  (`` "`_X1`" ``, `"log(age)"`, `"age:mal"`) is that term, and any other
+  name is ignored with a warning naming it. The column is looked up
+  first, so when `data` has a column literally named `age:mal`,
+  `"age:mal"` puts that column in the scope rather than the interaction.
+  Resolution decides which variables are in the scope; it does not
+  change how a candidate is entered. The refit writes the name as you
+  spelled it into the formula text. When that text reads as a different
+  term, as `"age:mal"` reads as the interaction and `"age "` as `age`,
+  the screen enters that other term with no warning (#449); when it does
+  not parse, as a bare `"_X1"` does not, the candidate cannot enter
+  (#441, \#438). For multiphase fits, pass a named list of one-sided
+  formulas keyed by phase, naming each phase once. `scope` lists what
+  may enter; a drop considers every term in the model except `force_in`
+  and terms frozen by `max_move` before the iteration began (see the
+  **Known limitation (the frozen set)** section). A two-sided formula is
+  an error, since its left-hand side would never be a candidate, and so
+  is a non-empty `scope` under `direction = "backward"`, which does not
   read it. An empty scope (`~ 1`,
   [`character()`](https://rdrr.io/r/base/character.html), or a list of
   `NULL`s and `~ 1`s) is accepted there.
@@ -108,12 +126,24 @@ as.data.frame(x, ...)
 
   Character vector of variables that must remain in the model. Such
   variables are still scored and reported in the selection trace, but
-  are never dropped.
+  are never dropped. Each name is looked up, not parsed, once, when the
+  screen starts: a name that is exactly a column of `data` is that
+  column, so the bare `"_X1"` pins the column `_X1` although
+  [`terms()`](https://rdrr.io/r/stats/terms.html) labels it `` `_X1` ``,
+  and `"TRUE"` pins a column named `TRUE`. Otherwise a name that is
+  exactly a term label of the model or `scope` is that term, so
+  `` "`_X1`" `` and `"age:mal"` work too. Any other name, `"age "` with
+  a trailing space when there is no such column, say, matches nothing
+  and is ignored with a warning naming it. The column is looked up
+  first: when `data` has a column literally named `age:mal`, `"age:mal"`
+  resolves to that column and not to the interaction.
 
 - force_out:
 
   Character vector of variables that may never be considered as
-  candidates.
+  candidates. Names are looked up as for `force_in`: a column of `data`
+  first, then a term label of the model or `scope`, and a warning for a
+  name that is neither.
 
 - trace:
 
@@ -158,7 +188,18 @@ augmented with:
   Record of the candidate scope, plus `force_in`, `force_out`, and the
   frozen set. In a two-way screen, `frozen` can name a variable the
   final model does not contain; see the **Known limitation (the frozen
-  set)** section.
+  set)** section. `unresolved` is a list with elements `force_in`,
+  `force_out` and `scope`, each the names that matched neither a column
+  of `data` nor a term label and were therefore ignored
+  ([`character()`](https://rdrr.io/r/base/character.html) when none
+  were). The trace, and so
+  [`print()`](https://rdrr.io/r/base/print.html) and
+  [`summary()`](https://rdrr.io/r/base/summary.html), carries a line for
+  each non-empty one, and a screen whose character `scope` was emptied
+  this way says so where it stops. `candidates`, `force_in` and
+  `force_out` here are the arguments as given, so a character
+  `candidates` still lists the names that were ignored, as `force_in`
+  and `force_out` do; read `unresolved` for which those were (#451).
 
 - `criteria`:
 

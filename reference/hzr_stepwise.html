@@ -111,9 +111,28 @@ multiphase models: a covariate can enter one phase and not another.</p>
 
 <dt id="arg-scope">scope<a class="anchor" aria-label="anchor" href="#arg-scope"></a></dt>
 <dd><p>Candidate set.  <code>NULL</code> (default) uses every data-frame
-column not already in the model for every phase.  For
+column not already in the model for every phase.  A candidate enters
+by writing its name into the formula text, so under this default too a
+column whose name reads as a different term enters as that term, with
+no warning: a column literally named <code>age:mal</code> enters as the
+interaction, and a column <code>"age "</code> beside <code>age</code> enters as <code>age</code>
+(#449).  For
 single-distribution fits, pass a one-sided formula
-(<code>~ age + nyha</code>) or a character vector of names.  For multiphase
+(<code>~ age + nyha</code>) or a character vector of names.  Each name in a
+character <code>scope</code> is looked up, not parsed: a name that is exactly a
+column of <code>data</code> is that column, otherwise a name that is exactly a
+term label as <code><a href="https://rdrr.io/r/stats/terms.html" class="external-link">terms()</a></code> writes it (<code>"`_X1`"</code>, <code>"log(age)"</code>,
+<code>"age:mal"</code>) is that term, and any other name is ignored with a
+warning naming it.  The column is looked up first, so when <code>data</code> has
+a column literally named <code>age:mal</code>, <code>"age:mal"</code> puts that column in
+the scope rather than the interaction.  Resolution decides which
+variables are in the scope; it does not change how a candidate is
+entered.  The refit writes the name as you spelled it into the
+formula text.  When that text reads as a different term, as
+<code>"age:mal"</code> reads as the interaction and <code>"age "</code> as <code>age</code>, the
+screen enters that other term with no warning (#449); when it does not
+parse, as a bare <code>"_X1"</code> does not, the candidate cannot enter
+(#441, #438).  For multiphase
 fits, pass a named list of one-sided formulas keyed by phase, naming
 each phase once.  <code>scope</code> lists what may enter; a drop considers every
 term in the model except <code>force_in</code> and terms frozen by <code>max_move</code>
@@ -174,12 +193,24 @@ dropped in the same iteration; see the
 <dt id="arg-force-in">force_in<a class="anchor" aria-label="anchor" href="#arg-force-in"></a></dt>
 <dd><p>Character vector of variables that must remain in
 the model.  Such variables are still scored and reported in the
-selection trace, but are never dropped.</p></dd>
+selection trace, but are never dropped.  Each name is looked up, not
+parsed, once, when the screen starts: a name that is exactly a column
+of <code>data</code> is that column, so the bare <code>"_X1"</code> pins the column <code>_X1</code>
+although <code><a href="https://rdrr.io/r/stats/terms.html" class="external-link">terms()</a></code> labels it <code>`_X1`</code>, and <code>"TRUE"</code> pins a column
+named <code>TRUE</code>.  Otherwise a name that is exactly a term label of the
+model or <code>scope</code> is that term, so <code>"`_X1`"</code> and <code>"age:mal"</code> work
+too.  Any other name, <code>"age "</code> with a trailing space when there is no
+such column, say, matches nothing and is ignored with a warning naming
+it.  The column is looked up first: when <code>data</code> has a column literally
+named <code>age:mal</code>, <code>"age:mal"</code> resolves to that column and not to the
+interaction.</p></dd>
 
 
 <dt id="arg-force-out">force_out<a class="anchor" aria-label="anchor" href="#arg-force-out"></a></dt>
 <dd><p>Character vector of variables that may never be
-considered as candidates.</p></dd>
+considered as candidates.  Names are looked up as for <code>force_in</code>:
+a column of <code>data</code> first, then a term label of the model or <code>scope</code>,
+and a warning for a name that is neither.</p></dd>
 
 
 <dt id="arg-trace">trace<a class="anchor" aria-label="anchor" href="#arg-trace"></a></dt>
@@ -218,7 +249,17 @@ frozen action; see Details.</p></dd>
 <dd><p>Record of the candidate scope, plus
 <code>force_in</code>, <code>force_out</code>, and the frozen set.  In a two-way
 screen, <code>frozen</code> can name a variable the final model does not
-contain; see the <strong>Known limitation (the frozen set)</strong> section.</p></dd>
+contain; see the <strong>Known limitation (the frozen set)</strong> section.
+<code>unresolved</code> is a list with elements <code>force_in</code>, <code>force_out</code> and
+<code>scope</code>, each the names that matched neither a column of <code>data</code>
+nor a term label and were therefore ignored (<code><a href="https://rdrr.io/r/base/character.html" class="external-link">character()</a></code> when
+none were).  The trace, and so <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code> and <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code>, carries a
+line for each non-empty one, and a screen whose character <code>scope</code>
+was emptied this way says so where it stops.  <code>candidates</code>,
+<code>force_in</code> and <code>force_out</code> here are the arguments as given, so a
+character <code>candidates</code> still lists the names that were ignored,
+as <code>force_in</code> and <code>force_out</code> do; read <code>unresolved</code> for which
+those were (#451).</p></dd>
 
 <dt><code>criteria</code></dt>
 <dd><p>Named list of the threshold / direction

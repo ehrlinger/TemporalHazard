@@ -227,6 +227,16 @@ A list with class `"hzr_bootstrap"` containing:
 
   Only present when `mode == "select"`: the candidate scope used.
 
+- unresolved:
+
+  Only present when `mode == "select"`: the `$scope$unresolved` record
+  of the up-front
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  screen on the original data, the names in `force_in`, `force_out` and
+  a character `scope` that matched nothing and were ignored.
+  [`print()`](https://rdrr.io/r/base/print.html) shows a line when any
+  is non-empty.
+
 ## Details
 
 When `scope` is supplied, each replicate instead runs a fresh
