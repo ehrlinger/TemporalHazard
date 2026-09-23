@@ -339,7 +339,10 @@
   when a different term is row-mismatched (#446). The term is named only
   when correcting its length lets the design build, so a failure the row
   count does not explain -- a term the model frame rejects for its type, or
-  one whose own `model.frame()` call fails -- keeps its own error.
+  one whose own `model.frame()` call fails -- keeps its own error. A term
+  that fails only sometimes is the exception: checking the row counts
+  re-evaluates it, so a failure that does not reproduce leaves no evidence
+  and another term may be named instead.
   Before, a supplied `zz` or matrix `M` was used, but a missing or
   list-held one was silently read from the fitting rows (see Bug fixes).
   Formula constants, such as `cutoff` in

@@ -477,11 +477,21 @@ test_that("a term the model frame rejects keeps its own error, not row blame", {
 })
 
 
-# The probe matrix that found the `drop.terms()` regression, as tests. Term
-# ORDER is permuted deliberately: that defect was invisible to a four-row
-# table whose every shape put the outside variable last, because
-# `drop.terms()` indexed `predvars` positionally while `terms()` orders
-# `variables` by first appearance and `term.labels` by interaction order.
+# The probe matrix, as tests. Term ORDER is permuted deliberately: the
+# `drop.terms()` regression was invisible to a four-row table whose every
+# shape put the outside variable last, because `drop.terms()` indexed
+# `predvars` positionally while `terms()` orders `variables` by first
+# appearance and `term.labels` by interaction order.
+#
+# Which of the three blocks below actually DISCRIMINATE, measured by running
+# this file against both implementations rather than assumed:
+#   "used only inside an interaction"  -- RED on the drop.terms head
+#   "a length-changing function"       -- RED on the drop.terms head
+#   "whatever ORDER it is written in"  -- passes on BOTH, and on main
+# The third catches neither defect: a plain additive term cannot trigger the
+# positional misalignment, which needs a variable that appears only inside an
+# interaction. It is kept as a cheap pin on the ordinary case, and labelled
+# here so nobody reads the trio as three regression guards (#450 review).
 
 vc_data <- function() {
   set.seed(31)
@@ -556,4 +566,77 @@ test_that("a length-changing function of a data column is still named", {
       vc_named, fixed = TRUE, info = sh[[1]]
     )
   }
+})
+
+test_that("a newdata column named like the substitution symbol cannot shadow it", {
+  # `model.frame()` resolves `predvars` against `data` BEFORE the terms'
+  # environment, so a column named like the symbol the causation experiment
+  # binds would shadow it: the experiment would run, report success and have
+  # tested nothing -- this package's signature shape (#450 review). The
+  # symbol base is lengthened until no `newdata` column starts with it.
+  set.seed(31)
+  d <- data.frame(t = rexp(60), s = rbinom(60, 1, 0.7), age = rnorm(60, 60, 5))
+  gg <- function(x) if (length(x) == 2L) as.list(rnorm(60)) else x
+  for (nm in c("ordinary", "..hzr_v1")) {
+    dd <- d
+    dd[[nm]] <- rnorm(60)
+    f <- stats::as.formula(
+      paste0("survival::Surv(t, s) ~ I(gg(age)) + `", nm, "`")
+    )
+    environment(f) <- environment()
+    fit <- suppressWarnings(
+      hazard(f, data = dd, dist = "weibull", theta = c(0.5, 1, 0, 0),
+             fit = TRUE)
+    )
+    msg <- tryCatch(
+      predict(fit, newdata = dd[1:2, c("age", nm)], type = "linear_predictor"),
+      error = conditionMessage
+    )
+    # The list-valued term is the real cause either way, so the shadowing
+    # column must not change the answer.
+    expect_match(msg, "invalid type (list) for variable", fixed = TRUE,
+                 info = nm)
+  }
+})
+
+test_that("a failure that does not reproduce may be misattributed (documented limit)", {
+  # PINS A KNOWN LIMITATION, deliberately, so the code and the note in #446
+  # cannot drift apart. The diagnosis must evaluate every variable to learn
+  # its row count, and that evaluation is itself a second run. A term that
+  # fails ONCE has therefore already succeeded by the time any causation
+  # test could run, and the evidence is gone: no experiment can tell "failed
+  # because of length" from "failed for a reason that went away".
+  #
+  # Measured step by step: build calls ff (fails), diagnosis calls ff again
+  # (succeeds, one-shot), so `I(ff(age))` is no longer row-mismatched and
+  # only `zz` is -- which is then named. Loud and rare; recorded in #446
+  # rather than chased.
+  set.seed(31)
+  d <- data.frame(t = rexp(60), s = rbinom(60, 1, 0.7), age = rnorm(60, 60, 5))
+  zz <- rnorm(60)
+  boom <- FALSE
+  ff <- function(x) {
+    if (boom) {
+      boom <<- FALSE
+      stop("formula boom")
+    }
+    x
+  }
+  f <- survival::Surv(t, s) ~ I(ff(age)) + zz
+  environment(f) <- environment()
+  fit <- suppressWarnings(
+    hazard(f, data = d, dist = "weibull", theta = c(mu = 0.5, nu = 1, 0, 0),
+           fit = TRUE)
+  )
+  boom <- TRUE
+  msg <- tryCatch(
+    predict(fit, newdata = d[1:2, "age", drop = FALSE],
+            type = "linear_predictor"),
+    error = conditionMessage
+  )
+  # The limitation, stated as an expectation. If a future change makes the
+  # caller's "formula boom" survive here, THIS TEST FAILS and the note in
+  # #446 and the roxygen must be updated with it.
+  expect_match(msg, "term 'zz' of the model does not give one value per row",
+               fixed = TRUE)
 })

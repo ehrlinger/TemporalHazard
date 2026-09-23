@@ -391,7 +391,7 @@
 #' knots, or an object kept outside `data`) resolves from the formula's
 #' environment, so a same-named `newdata` column can never stand in for it.
 #' A term that took row-level values from outside `data` is then refused by
-#' `.hzr_check_equivariant()`, and named by `.hzr_outside_rows_term()`.
+#' `.hzr_check_equivariant()`, and named by `.hzr_outside_rows_wrong()`.
 #'
 #' @param newdata Data frame of new rows.
 #' @param data_vars The formula's fitting-data variables.
@@ -411,7 +411,7 @@
 #' contrasts, so a factor given as a single label still codes to the fit's
 #' columns. `newdata` supplies only the data columns, and a term that does
 #' not follow its rows is refused; see `.hzr_newdata_frame()`,
-#' `.hzr_check_equivariant()` and `.hzr_outside_rows_term()`.
+#' `.hzr_check_equivariant()` and `.hzr_outside_rows_wrong()`.
 #'
 #' @param design A stored design: `terms`, `xlevels`, `contrasts`,
 #'   `data_vars`.
@@ -693,7 +693,7 @@
 #' refused, naming its term. This does not depend on the shape of the
 #' outside object. One row cannot be shifted, so the row-count backstop
 #' (`.hzr_check_design_rows()`) is what refuses it, and
-#' `.hzr_outside_rows_term()` then names the term.
+#' `.hzr_outside_rows_wrong()` then names the term.
 #'
 #' @param build Function of a data frame of new rows, returning the model
 #'   matrix with its `assign` attribute.
@@ -769,7 +769,7 @@
 
 #' Refuse a term that does not give one value per row of `newdata`
 #'
-#' For the diagnosis (`.hzr_outside_rows_term()`), which has established
+#' For the diagnosis (`.hzr_outside_rows_wrong()`), which has established
 #' only the row count. Outside-`data` values are ONE cause; a length-changing
 #' function of a `data` column, such as `unique()` or `stats::na.omit()`, is
 #' another, and for that one "move it into `data`" is advice the user cannot
@@ -818,9 +818,20 @@
 #' Nothing the caller owns is touched: the corrected values live in a child
 #' environment, and the `predvars` edit is made on a copy of the terms.
 #'
+#' KNOWN LIMIT (#446). A term that fails only SOMETIMES may be misattributed.
+#' The diagnosis has to evaluate every variable to learn its row count, and
+#' that evaluation is itself a second run, so a term that failed once has
+#' already succeeded by the time any causation test could run. The evidence
+#' is gone: no experiment can tell "failed because of length" from "failed
+#' for a reason that went away", and whichever variable is genuinely
+#' row-mismatched gets named instead. It is loud and rare, and it is pinned
+#' by "a failure that does not reproduce may be misattributed", so this note
+#' and that test fail together if it is ever fixed.
+#'
 #' @param design A stored design: `terms`, `xlevels`, `contrasts`, `data_vars`.
 #' @param newdata Data frame of new rows.
-#' @param wrong The `.hzr_outside_rows_wrong()` record: `idx`, `vals`, `term`.
+#' @param wrong The `.hzr_outside_rows_wrong()` record: `idx`, `vals_all`,
+#'   `term`.
 #' @return `TRUE` when correcting the lengths lets the design build.
 #' @noRd
 .hzr_length_explains <- function(design, newdata, wrong) {
@@ -836,11 +847,31 @@
   if (is.null(pv)) {
     pv <- attr(tt, "variables")
   }
-  for (k in seq_along(wrong$idx)) {
-    sym <- paste0("..hzr_len_", k)
-    assign(sym, .hzr_fix_rows(wrong$vals[[k]], n), envir = mask)
-    # +1 because the list's own head is the call to `list`.
-    pv[[wrong$idx[k] + 1L]] <- as.name(sym)
+  # A base `model.frame()` cannot mistake for a column of `newdata`: it
+  # resolves `predvars` against `data` BEFORE the terms' environment, so a
+  # `newdata` column named like the substitution symbol shadows it and the
+  # experiment silently tests nothing while reporting success (#450 review).
+  base <- "..hzr_v"
+  while (any(startsWith(names(nd), base))) {
+    base <- paste0(base, "_")
+  }
+  # EVERY entry is replaced, not only the offending ones, so the rebuild
+  # executes no user code at all: each is a symbol lookup of a value this
+  # call already evaluated. Substituting only the offending entries left the
+  # others as expressions, which re-ran the caller's code a third time and
+  # let a failure that does not reproduce heal inside the experiment.
+  for (i in seq_along(wrong$vals_all)) {
+    if (is.null(wrong$vals_all[[i]])) {
+      # Never evaluated, so its length is not what went wrong.
+      return(FALSE)
+    }
+    sym <- paste0(base, i)
+    value <- wrong$vals_all[[i]]
+    if (i %in% wrong$idx) {
+      value <- .hzr_fix_rows(value, n)
+    }
+    assign(sym, value, envir = mask)
+    pv[[i + 1L]] <- as.name(sym)
   }
   attr(tt, "predvars") <- pv
   environment(tt) <- mask
@@ -899,10 +930,11 @@
 #' @param terms The stored terms object.
 #' @param nd The newdata frame, restricted to the data columns.
 #' @return A list: `idx` (positions in `predvars`), `vals` (their evaluated
-#'   values) and `term` (the term labels to name). Empty when nothing is wrong.
+#'   values, ALL of them) and `term` (the term labels to name). Empty when
+#'   nothing is wrong.
 #' @noRd
 .hzr_outside_rows_wrong <- function(terms, nd) {
-  none <- list(idx = integer(0), vals = list(), term = character(0))
+  none <- list(idx = integer(0), vals_all = list(), term = character(0))
   vars <- attr(terms, "predvars")
   if (is.null(vars)) vars <- attr(terms, "variables")
   vars <- as.list(vars)[-1L]
@@ -939,7 +971,7 @@
   rows <- rownames(factors)[wrong]
   list(
     idx = which(wrong),
-    vals = vals[wrong],
+    vals_all = vals,
     term = colnames(factors)[colSums(factors[rows, , drop = FALSE] != 0) > 0]
   )
 }
