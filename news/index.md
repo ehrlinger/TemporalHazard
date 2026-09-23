@@ -1209,6 +1209,63 @@
   [\#438](https://github.com/ehrlinger/TemporalHazard/issues/438)).
 
 - **[`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
+  no longer fails on a SAS covariate whose name begins with an
+  underscore**
+  ([\#411](https://github.com/ehrlinger/TemporalHazard/issues/411)).
+  `PROC HAZARD`’s lexer reads a name as `[_A-Z][_A-Z0-9]*`
+  (`hazard_l.l:39`), so `_X1` is a legal phase-statement covariate. The
+  translation built each phase formula by pasting the names into
+  [`str2lang()`](https://rdrr.io/r/base/parse.html), and an R symbol may
+  not begin with an underscore unless it is backquoted, so the job
+  stopped with R’s own parser error (`unexpected symbol`) rather than
+  anything about the job. Formulas are now built from symbols, at the
+  phase statements and at the `SELECTION` scope alike, and
+  [`deparse()`](https://rdrr.io/r/base/deparse.html) backquotes such a
+  name so the emitted document re-parses to the same call.
+
+  The failure was loud, so no fit stood in for one: such a job produced
+  nothing. On a sample of the studies share, 13 distinct `PROC HAZARD`
+  steps fail this way and none of them carries a macro, making this a
+  second and independent cause of an unreadable step.
+
+  Note that the column must really be named `_X1` in the data frame. R’s
+  [`data.frame()`](https://rdrr.io/r/base/data.frame.html) renames it to
+  `X_X1` unless you pass `check.names = FALSE`, and a renamed column is
+  **refused** by name rather than quietly dropped, so a fit cannot come
+  back short a covariate without saying so.
+
+  **A `SELECTION` job carrying such a name is refused rather than
+  screened.**
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  spells a non-syntactic name two ways at once: backquoted in the
+  [`terms()`](https://rdrr.io/r/stats/terms.html) labels its candidates
+  are keyed on, bare in `force_in`. The two never match, so a `/I` pin
+  is ignored and a `BACKWARD` screen can drop a variable `PROC HAZARD`
+  holds in, with no warning naming it; and the score criterion, the only
+  one this translator emits, indexes the data by the backquoted label
+  and skips the candidate as “not found”. Both are wrong models
+  delivered as populated results, so such a job now stops and names the
+  cause. For a name like `_X1` this costs nothing: the job stopped
+  before this release too, one step earlier, in the phase formula.
+
+  Text `PROC HAZARD` does not accept as a name is **not** refused here.
+  The phase parser passes what it cannot read through as though it were
+  a variable, so `EARLY AGE, AGE*SEX;` translates. `AGE*SEX` is not a
+  name (`hazard_l.l:39`, `hazard_y.y:213`), so `PROC HAZARD` rejects
+  that job at parse and the translated result never meant anything
+  either way; but refusing it here would stop a job that translates
+  today, so it is left alone and tracked by
+  [\#440](https://github.com/ehrlinger/TemporalHazard/issues/440).
+
+  One thing does change for such a job, and it is an improvement rather
+  than a refusal. Built from pasted text, `AGE*SEX` became an R
+  interaction: `~AGE + AGE * SEX` expands to three model terms against
+  two starting values, and the reader met an arithmetic complaint about
+  `theta`. Built from symbols it is one opaque name, so the reader is
+  told the column is missing from the data instead. Both forms fail;
+  only the second says why.
+
+- **[`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
   builds a phase whose `PARMS` writes only its scale**
   ([\#345](https://github.com/ehrlinger/TemporalHazard/issues/345)). An
   active `MUE` or `MUL` with no shape operand used to be recorded as
