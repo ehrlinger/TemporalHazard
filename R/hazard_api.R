@@ -548,8 +548,9 @@ NULL
 #'   \code{starts}, one row per optimisation start with its \code{status}
 #'   (\code{"ok"}, \code{"nonconverged"}, \code{"infeasible"},
 #'   \code{"nonfinite"} or \code{"error"}), \code{objective} (\code{NA}
-#'   unless the start reached a point where the likelihood is defined),
-#'   \code{convergence} (the
+#'   unless the start reached a point where the likelihood is defined, and
+#'   recorded as the optimizer returned it, before any Conservation of Events
+#'   adjustment to the conserved phase's scale), \code{convergence} (the
 #'   \code{\link[stats]{optim}} code, \code{0} for success), whether it was
 #'   the \code{best} and so the reported fit, and the \code{message} of any
 #'   error. A start that stops at \code{maxit} has a finite \code{objective}
