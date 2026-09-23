@@ -152,7 +152,11 @@ test_that("a PARMS that builds no usable phase emits a stop(), not a fit", {
   # used to be hazard(fit = TRUE, theta = c()) under the default Weibull,
   # which rendered an unfitted object. The test above is the paired case: a
   # usable PARMS still emits hazard().
-  for (parms in c("PARMS MUE=? THALF=? NU=? MUC=?;")) {
+  # (A template's `?` used to be the example; PROC HAZARD's lexer rejects `?`,
+  # so it is now a syntax stop (U1). An operand written with spaces around `=`
+  # is joined and read now (#421). A macro-only PARMS is the parser's own
+  # limit: SAS expands it and runs the job, this parser cannot read it.)
+  for (parms in c("PARMS &ALLPARMS;")) {
     f <- withr::local_tempfile(fileext = ".sas")
     writeLines(paste(
       "%HAZARD( PROC HAZARD DATA=AVCS CONDITION=14;",
@@ -552,6 +556,786 @@ test_that("a phase variable missing from the data is named, not 'object not foun
   expect_match(res$results[["status"]], "These phase variables are not numeric: ZZ.",
                fixed = TRUE)
   expect_false(exists("fit", envir = res$env, inherits = FALSE))
+})
+
+test_that("every reachable SETG3 refusal reaches the reader (#359)", {
+  # The whole reachable set, not a sample. Twelve codes can fire through
+  # .hzr_parse_parms(): the nine the exhaustive search in
+  # test-sas-parse-parms.R pins for the .hzr_setg3_notes() trace, plus the
+  # three the FIXGE2/FIXGAE2 constraint block raises itself (SETG3940,
+  # SETG3990, SETG31000). Each is RENDERED: the fit chunk must fail and bind
+  # no `fit`, which is the consequence a reader meets, rather than the
+  # message text we happen to emit.
+  refusals <- c(
+    # site: .hzr_setg3_notes() -- entry checks, setg3.c:269-284
+    SETG3900 = "PARMS MUL=0.2 TAU=0 FIXTAU GAMMA=2 ETA=1;",
+    SETG3910 = "PARMS MUL=0.2 TAU=1 GAMMA=0 FIXGAMMA ETA=1;",
+    SETG3920 = "PARMS MUL=0.2 TAU=1 GAMMA=2 ALPHA=-1 FIXALPHA ETA=1;",
+    SETG3930 = "PARMS MUL=0.2 TAU=1 GAMMA=2 ETA=0 FIXETA;",
+    # site: .hzr_setg3_notes() -- SETG3_weibull and the alpha fixup
+    SETG3960 = "PARMS MUL=0.2 TAU=1 GAMMA=0 ETA=0.25 FIXGE2 WEIBULL;",
+    SETG3970 = "PARMS MUL=0.2 TAU=1 GAMMA=2 ETA=0 WEIBULL;",
+    SETG3980 = "PARMS MUL=0.2 TAU=1 GAMMA=4 ETA=0.25 ALPHA=0 WEIBULL;",
+    SETG31020 = "PARMS MUL=0.2 TAU=1 GAMMA=1 ETA=1 FIXGAMMA FIXETA;",
+    SETG31040 = "PARMS MUL=0.2 TAU=1 GAMMA=1 ETA=1 ALPHA=3 FIXALPHA;",
+    # site: the constraint block's own alpha = 0 case, which the trace cannot
+    # see because it takes ga_two as FALSE
+    SETG3980_gae2 = paste("PARMS MUL=0.2 TAU=1 GAMMA=4 ETA=0.25 ALPHA=0",
+                          "FIXALPHA FIXGAE2 WEIBULL;"),
+    # site: the constraint block, FIXGE2 with both shapes fixed off 2
+    SETG3990 = paste("PARMS MUL=0.2 TAU=1 GAMMA=4 ETA=0.25 FIXGAMMA FIXETA",
+                     "FIXGE2 WEIBULL;"),
+    # site: the constraint block, FIXGAE2 with ALPHA fixed off the constraint
+    SETG31000 = paste("PARMS MUL=0.2 TAU=1 GAMMA=4 ETA=0.25 ALPHA=3 FIXALPHA",
+                      "FIXGAE2 WEIBULL;"),
+    # site: SETG3_ignore_tau under both flags, ALPHA fixed away from 1
+    SETG3940 = paste("PARMS MUL=0.2 TAU=1 GAMMA=4 ETA=0.5 ALPHA=3 FIXALPHA",
+                     "FIXGAE2 FIXGE2 WEIBULL;")
+  )
+  translate <- function(parms) {
+    f <- withr::local_tempfile(fileext = ".sas", .local_envir = parent.frame())
+    writeLines(paste("%HAZARD( PROC HAZARD DATA=D CONDITION=14;",
+                     "EVENT DEAD; TIME TT;", parms, ");"), f)
+    suppressWarnings(hzr_translate_sas(f))
+  }
+  set.seed(359)
+  n <- 80
+  D <- data.frame(TT = stats::rexp(n, 0.2), DEAD = rep(c(1, 0), length.out = n))
+
+  # Since 2026-09-22 EVERY such job emits the fit and warns: a rendered
+  # document completes and carries the reason instead of halting on it.
+  #
+  # Three of these (SETG3910/3920/3930) still halt further down, at
+  # hzr_phase(), because SAS refuses them for a shape value that is out of
+  # range and hzr_phase() will not build a phase from that same value. The
+  # warning is emitted in its own chunk ABOVE the fit so that the SETG3 code
+  # and the operand are stated before that happens. Measured caveat, recorded
+  # here because it is easy to assume otherwise: when the fit chunk errors,
+  # Quarto writes no document, and knitr captures warnings INTO the document,
+  # so that warning does not reach the render console either -- it is in the
+  # emitted .qmd source above the failing chunk, and in $untranslated.
+  for (label in names(refusals)) {
+    code <- sub("_gae2$", "", label)
+    job <- translate(refusals[[label]])
+    warn_nm <- grep("^refusal", names(job$calls), value = TRUE)
+    expect_length(warn_nm, 1L)
+    msgs <- character(0)
+    withCallingHandlers(eval(job$calls[[warn_nm[[1L]]]], new.env()),
+                        warning = function(x) {
+                          msgs <<- c(msgs, conditionMessage(x))
+                          invokeRestart("muffleWarning")
+                        })
+    # The code reaches the reader, the construct is listed, and the fit is
+    # emitted rather than replaced. All three, for every class.
+    expect_match(paste(msgs, collapse = " "), code, fixed = TRUE, info = label)
+    expect_gt(NROW(job$untranslated), 0L)
+    expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"), info = label)
+  }
+
+  # The paired control: a job PROC HAZARD runs still renders a fit. Without
+  # it, a fix that refused everything would pass every assertion above.
+  ok <- translate("PARMS MUL=0.2 TAU=1 GAMMA=4 ETA=0.25 WEIBULL;")
+  ok_res <- suppressWarnings(render_sim(ok, list(D = D)))
+  expect_true(ok_res$ok)
+  expect_s3_class(get("fit", envir = ok_res$env, inherits = FALSE), "hazard")
+
+  # The second control, and the one this change nearly got wrong: a constraint
+  # flag without WEIBULL reaches SETG3 down a path the trace does not model,
+  # so the trace's verdict is not PROC HAZARD's. PROC HAZARD fits both of
+  # these, and the old narrowing let them render. Under U1 (and after two
+  # review passes found the hand-derived non-WEIBULL path wrong both ways)
+  # the translation stops on them, saying it cannot tell -- never calling
+  # them refused.
+  for (ops in c("PARMS MUL=0.2 TAU=1 GAMMA=4 ETA=0.5 FIXGAMMA FIXETA FIXGE2;",
+                "PARMS MUL=0.2 TAU=1 GAMMA=4 ETA=1 ALPHA=2 FIXALPHA FIXGAE2;")) {
+    job <- translate(ops)
+    # These now warn and still fit, so the reason reaches the reader through
+    # the refusal chunk rather than through an error.
+    warn_nm <- grep("^refusal", names(job$calls), value = TRUE)
+    expect_length(warn_nm, 1L)
+    msgs <- character(0)
+    withCallingHandlers(eval(job$calls[[warn_nm[[1L]]]], new.env()),
+                        warning = function(x) {
+                          msgs <<- c(msgs, conditionMessage(x))
+                          invokeRestart("muffleWarning")
+                        })
+    msg <- paste(msgs, collapse = " ")
+    expect_match(msg, "cannot tell whether PROC HAZARD refuses", fixed = TRUE, info = ops)
+    expect_no_match(msg, "refused before any fit", fixed = TRUE, info = ops)
+  }
+})
+
+# --- U1: a job PROC HAZARD refuses, or fits differently, warns and fits -----
+# John's decision (2026-09-19), as amended on 2026-09-22: when the translator
+# knows PROC HAZARD refuses a job, or fits a model other than the one it would
+# emit, the document EMITS the fit with a loud warning above it and a row in
+# $untranslated, rather than either stopping or fitting with a row the reader
+# may never see. The first form of the decision stopped; that halted Quarto
+# before it wrote any output, including for the jobs preceding the refused
+# one, so the warning carries the message instead.
+
+.u1_job <- function(proc = "", parms, env = parent.frame()) {
+  f <- withr::local_tempfile(fileext = ".sas", .local_envir = env)
+  writeLines(paste0("%HAZARD( PROC HAZARD DATA=D", proc,
+                    "; EVENT DEAD; TIME TT; PARMS ", parms, "; );"), f)
+  suppressWarnings(hzr_translate_sas(f))
+}
+# Since 2026-09-22 a job PROC HAZARD would refuse, or fit differently, is
+# EMITTED with a loud warning and an $untranslated row, so a rendered
+# document completes and carries the reason instead of halting on it. These
+# helpers assert that whole contract, not just one half of it.
+.u1_refusal_chunk <- function(job) {
+  nm <- grep("^refusal", names(job$calls), value = TRUE)
+  if (!length(nm)) NULL else job$calls[[nm[[1L]]]]
+}
+.u1_stops <- function(job) {
+  identical(job$calls$fit[[3L]][[1L]], as.name("stop"))
+}
+# The warn route: the fit IS emitted, a refusal chunk warns, and the
+# construct is listed. All three, because any one alone is a half-contract.
+.u1_warns_and_fits <- function(job) {
+  !is.null(.u1_refusal_chunk(job)) &&
+    NROW(job$untranslated) > 0L &&
+    identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
+}
+# A refusal must reach the reader by ONE of two routes and never neither:
+# it warns and still fits, or -- where the value PROC HAZARD refuses is also
+# one hzr_phase() will not build -- there is no fit to emit and it stops.
+.u1_refuses <- function(job) .u1_warns_and_fits(job) || .u1_stops(job)
+# The reason text, by whichever route carried it.
+.u1_msg <- function(job) {
+  ch <- .u1_refusal_chunk(job)
+  if (is.null(ch)) {
+    if (!.u1_stops(job)) {
+      return("no refusal")
+    }
+    return(tryCatch({
+      eval(job$calls$fit, new.env())
+      "no error"
+    }, error = conditionMessage))
+  }
+  # Evaluate the emitted chunk rather than reading its text: what a reader of
+  # the rendered document receives is the warning, not the source.
+  msgs <- character(0)
+  withCallingHandlers(eval(ch, new.env()), warning = function(x) {
+    msgs <<- c(msgs, conditionMessage(x))
+    invokeRestart("muffleWarning")
+  })
+  if (length(msgs)) paste(msgs, collapse = " ") else "no warning"
+}
+
+test_that("a PARMS syntax error warns and still fits (U1, #421)", {
+  for (p in c("MUE=0.2 THALF=0.5 NU=1E-3", "MUE=0.2 THALF=0.5 NU",
+              "MUE=0.2 THALF=0.5 NU = ABC", "MUE=0.2 THALF=0.5 FIXG1")) {
+    job <- .u1_job(parms = p)
+    expect_true(.u1_refuses(job), info = p)
+    expect_match(.u1_msg(job), "PROC HAZARD does not run this job", fixed = TRUE,
+                 info = p)
+  }
+  # Controls. An ordinary job is not refused at all. A macro piece is
+  # INDETERMINATE, not a syntax error: SAS expands it before PROC HAZARD
+  # reads the statement, so it must never be reported as a job PROC HAZARD
+  # does not run. (It is still carried as an unread operand, which is a
+  # different claim and is asserted elsewhere.)
+  job <- .u1_job(parms = "MUE=0.2 THALF=0.5 NU=1")
+  expect_false(.u1_refuses(job))
+  job <- .u1_job(parms = "MUE=0.2 THALF=0.5 NU=1 &X")
+  expect_false(grepl("PROC HAZARD does not run this job", .u1_msg(job),
+                     fixed = TRUE))
+})
+
+test_that("a PROC-line value the lexer rejects warns and still fits (U1, #403)", {
+  for (proc in c(" MAXITER=1E5", " CONDITION=5.")) {
+    job <- .u1_job(proc = proc, parms = "MUE=0.2 THALF=1 NU=1")
+    expect_true(.u1_refuses(job), info = proc)
+    msg <- .u1_msg(job)
+    expect_match(msg, "PROC HAZARD does not run this job", fixed = TRUE, info = proc)
+    expect_match(msg, "hazard_l.l:33-38", fixed = TRUE, info = proc)
+  }
+  job <- .u1_job(proc = " MAXITER=200 CONDITION=14", parms = "MUE=0.2 THALF=1 NU=1")
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
+})
+
+test_that("MAXITER or CONDITION with no value warns and still fits (U1, #433)", {
+  # hazard_y.y:63-64 are `MAXITER '=' NUMBER` and `CONDITION '=' NUMBER`.
+  # No NUMBER, no rule: the option falls to `hazardopt : error` (:77),
+  # yyerror latches yysynerr (yyerror.c:19) and initprz.c:75-77 terminates
+  # the procedure. So an empty value is a syntax error exactly as a
+  # non-numeric one is, and a bare keyword with no `=` is too.
+  for (proc in c(" MAXITER=", " MAXITER =", " CONDITION=", " CONDITION =",
+                 " MAXITER", " CONDITION")) {
+    job <- .u1_job(proc = proc, parms = "MUE=0.2 THALF=1 NU=1")
+    expect_true(.u1_refuses(job), info = proc)
+    msg <- .u1_msg(job)
+    expect_match(msg, "PROC HAZARD does not run this job", fixed = TRUE, info = proc)
+    expect_match(msg, "hazard_y.y:63-64", fixed = TRUE, info = proc)
+  }
+  # A macro is still exempt: SAS expands it before PROC HAZARD reads the
+  # statement, so whether a NUMBER arrives is not knowable here.
+  job <- .u1_job(proc = " MAXITER=&N", parms = "MUE=0.2 THALF=1 NU=1")
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
+  # And a value that is present and numeric is untouched. MAXITER alone
+  # leaves no row; CONDITION always leaves one, because hazard() reads no
+  # `condition` and that is recorded rather than emitted (#384). So the
+  # assertion is that neither is REJECTED, not that nothing is recorded.
+  job <- .u1_job(proc = " MAXITER=200", parms = "MUE=0.2 THALF=1 NU=1")
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
+  expect_identical(NROW(job$untranslated), 0L)
+  job <- .u1_job(proc = " MAXITER=200 CONDITION=14", parms = "MUE=0.2 THALF=1 NU=1")
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
+  expect_false(any(grepl("syntax error", job$untranslated$reason, fixed = TRUE)))
+})
+
+test_that("a spaced PROC-line option is read, not dropped (U1 review 4, #421)", {
+  # SAS's lexer skips whitespace (hazard_l.l:32), so MAXITER = 250 is one
+  # option. Read as three tokens it is dropped, and the fit then runs on
+  # hazard()'s own iteration limit rather than the job's 250 -- a different
+  # model with no refusal. Asserted on the emitted call, not on the parse.
+  for (p in c(" MAXITER=250", " MAXITER = 250", " MAXITER= 250",
+              " MAXITER =250")) {
+    job <- .u1_job(proc = p, parms = "MUE=0.2 THALF=1 NU=1")
+    expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"), info = p)
+    expect_true(any(grepl("maxit = 250", deparse(job$calls$fit), fixed = TRUE)),
+                info = p)
+    expect_identical(NROW(job$untranslated), 0L, info = p)
+  }
+  # The PROC HAZPRED line joins the same way: its grid name survives.
+  hp <- .hzr_parse_hazpred(list(text = "PROC HAZPRED DATA = G INHAZ = HZ"), "")
+  expect_false(any(hp$untranslated$reason == "unknown PROC HAZPRED option"))
+})
+
+test_that("FIXMNU1 on an active early phase warns and still fits (U1, #358)", {
+  job <- .u1_job(parms = "MUE=0.2 THALF=1 NU=2 M=0.5 FIXMNU1")
+  expect_true(.u1_refuses(job))
+  msg <- .u1_msg(job)
+  expect_match(msg, "FIXMNU1", fixed = TRUE)
+  expect_match(msg, "|M*NU| = 1", fixed = TRUE)
+  expect_match(msg, "#358", fixed = TRUE)
+  # With no early phase there is nothing for FIXMNU1 to constrain: SAS fits.
+  job <- .u1_job(parms = "MUL=0.2 TAU=1 GAMMA=2 ETA=1 FIXMNU1")
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
+})
+
+# --- U1, r-reviewer pass 1 on the branch: false refusals and missed ones ---
+
+test_that("a macro value or call is never refused as a syntax error (U1 review)", {
+  # SAS expands `&X` and `%CALL` before PROC HAZARD reads the statement.
+  for (cs in list(list(proc = " MAXITER=&MX", parms = "MUE=0.2 THALF=1 NU=1"),
+                  list(proc = " CONDITION=&C", parms = "MUE=0.2 THALF=1 NU=1"),
+                  list(proc = "", parms = "MUE=0.2 THALF=1 NU=1 %FIXOPTS"),
+                  list(proc = "", parms = "MUE=0.2 THALF=1 NU=&V"))) {
+    job <- .u1_job(proc = cs$proc, parms = cs$parms)
+    info <- paste(cs$proc, cs$parms)
+    expect_false(grepl("does not run", .u1_msg(job), fixed = TRUE), info = info)
+  }
+})
+
+test_that("an unspaced non-numeric PARMS value is a syntax error (U1 review)", {
+  job <- .u1_job(parms = "MUE=0.2 THALF=0.5 NU=ABC")
+  expect_true(.u1_refuses(job))
+  expect_match(.u1_msg(job), "PROC HAZARD does not run this job", fixed = TRUE)
+})
+
+test_that("FIXMNU1 warns honestly, even where it might constrain nothing (U1 review 2)", {
+  # The vacuous-FIXMNU1 exemption was dropped after its sign cases went wrong
+  # (M*NU = -1 is vacuous too; M = NU = -1 is SETG1920). The stop claims
+  # neither that PROC HAZARD runs the job nor that it refuses it.
+  for (p in c("MUE=0.2 THALF=1 NU=1 M=1 FIXM FIXNU FIXMNU1",
+              "MUE=0.2 THALF=0.5 M=-1 NU=1 FIXM FIXNU FIXMNU1",
+              "MUE=0.2 THALF=0.5 M=-1 NU=-1 FIXM FIXNU FIXMNU1")) {
+    job <- .u1_job(parms = p)
+    expect_true(.u1_refuses(job), info = p)
+    msg <- .u1_msg(job)
+    expect_match(msg, "cannot emit PROC HAZARD's model", fixed = TRUE, info = p)
+    expect_no_match(msg, "runs this job", fixed = TRUE, info = p)
+  }
+})
+
+test_that("SETG3's entry refusals warn on the constraint path too (U1 review)", {
+  # setg3.c:269-284 run before any constraint or WEIBULL logic.
+  for (p in c("MUL=0.2 TAU=0 FIXTAU GAMMA=2 ETA=1 FIXGE2",
+              "MUL=0.2 TAU=1 GAMMA=0 FIXGAMMA ETA=1 FIXGAE2",
+              "MUL=0.2 TAU=1 GAMMA=2 ALPHA=-1 FIXALPHA ETA=1 FIXGE2")) {
+    job <- .u1_job(parms = p)
+    expect_true(.u1_refuses(job), info = p)
+    expect_match(.u1_msg(job), "SETG39[0-3]0", info = p)
+  }
+})
+
+test_that("FIXGE2/FIXGAE2 without WEIBULL warns, saying it cannot tell (U1 review 2)", {
+  # The non-WEIBULL constraint path (SETG3_all_gt_0(), SETG3_alpha_le_0(), ...)
+  # is not modelled here, and hand-deriving it went wrong twice. Every such
+  # job stops and claims neither a refusal nor a run -- including the jobs
+  # where the emitted phase happens to be SAS's model (loud, not wrong).
+  for (p in c("MUL=0.2 TAU=1 GAMMA=4 ETA=0.25 FIXGAMMA FIXETA FIXGE2",
+              "MUL=0.2 TAU=1 GAMMA=3 ETA=1 FIXGE2",
+              "MUL=0.2 TAU=1 GAMMA=4 ETA=0.5 FIXGAMMA FIXETA FIXGE2",
+              "MUL=0.2 TAU=1 GAMMA=1 ETA=1 ALPHA=0 FIXALPHA FIXGAMMA FIXETA FIXGE2",
+              "MUL=0.2 TAU=1 GAMMA=4 ETA=1 ALPHA=0 FIXALPHA FIXGAMMA FIXETA FIXGAE2",
+              "MUL=0.2 TAU=1 GAMMA=4 ETA=1 ALPHA=3 FIXGAMMA FIXETA FIXGAE2")) {
+    job <- .u1_job(parms = p)
+    expect_true(.u1_refuses(job), info = p)
+    msg <- .u1_msg(job)
+    expect_match(msg, "cannot tell whether PROC HAZARD refuses", fixed = TRUE, info = p)
+    expect_no_match(msg, "runs this job", fixed = TRUE, info = p)
+  }
+  # The same shapes with WEIBULL are the mirrored path, and fit.
+  expect_false(.u1_refuses(.u1_job(parms = "MUL=0.2 TAU=1 GAMMA=3 ETA=1 FIXGE2 WEIBULL")))
+  expect_false(.u1_refuses(.u1_job(parms = "MUL=0.2 TAU=1 GAMMA=4 ETA=0.5 FIXGAMMA FIXETA FIXGE2 WEIBULL")))
+})
+
+test_that("DELTA != 0 and a FIXTAU with no TAU written warn (U1 review)", {
+  job <- .u1_job(parms = "MUE=0.2 THALF=1 NU=1 DELTA=0.5")
+  expect_true(.u1_refuses(job))
+  expect_match(.u1_msg(job), "DELTA", fixed = TRUE)
+  job <- .u1_job(parms = "MUL=0.2 GAMMA=2 ETA=1 FIXTAU")
+  expect_true(.u1_refuses(job))
+  expect_match(.u1_msg(job), "0.75*Tmax", fixed = TRUE)
+  # Controls: DELTA = 0 is R's model; a written positive TAU is fixed at it.
+  expect_false(.u1_refuses(.u1_job(parms = "MUE=0.2 THALF=1 NU=1 DELTA=0")))
+  # DELTA is read only by SETG1 (setg1.c:306), which runs only for an active
+  # early phase (shape.c:19-21): a late-only job ignores it.
+  expect_false(.u1_refuses(.u1_job(parms = "MUL=0.2 TAU=1 GAMMA=2 ETA=1 DELTA=0.5")))
+  expect_false(.u1_refuses(.u1_job(parms = "MUL=0.2 TAU=2 GAMMA=2 ETA=1 FIXTAU")))
+})
+
+test_that("a template placeholder or a bare % is a syntax error, not filled in (U1 review 2)", {
+  # `NU=?` used to fit with NU filled from SAS's default; PROC HAZARD's lexer
+  # rejects `?` (hazard_l.l:178). `50%` is no macro: % with no name after it.
+  for (p in c("MUE=0.2 THALF=1 NU=?", "MUE=0.2 THALF=1 NU=50%")) {
+    job <- .u1_job(parms = p)
+    expect_true(.u1_refuses(job), info = p)
+    expect_match(.u1_msg(job), "PROC HAZARD does not run this job", fixed = TRUE, info = p)
+  }
+  expect_match(.u1_msg(.u1_job(parms = "MUE=0.2 THALF=1 NU=?")), "fill it in", fixed = TRUE)
+})
+
+test_that("U1 review 3: the last DELTA wins, and more known-unfittable jobs warn", {
+  # hazard_y.y:138 is last-wins, so DELTA=0.5 DELTA=0 runs at delta = 0 --
+  # exactly what is emitted.
+  expect_false(.u1_refuses(.u1_job(parms = "MUE=0.2 DELTA=0.5 DELTA=0 NU=1 M=1 THALF=1")))
+  # An unknown PROC option IS a lexer catch-all in PROC HAZARD, but this
+  # parser's block text can carry another step's keywords (a %repeat call
+  # brings a DATA step through), so it is recorded rather than refused.
+  job <- .u1_job(proc = " FOO", parms = "MUE=0.2 THALF=1 NU=1")
+  expect_false(.u1_refuses(job))
+  expect_true("FOO" %in% job$untranslated$construct)
+  # FIXTAU whose TAU this parser could not read: PROC HAZARD fixes TAU at the
+  # written value or at 0.75*Tmax, never at the 1 the emitted phase pins.
+  job <- .u1_job(parms = "MUL=0.2 GAMMA=1 TAU=&T FIXTAU")
+  expect_true(.u1_refuses(job))
+  expect_match(.u1_msg(job), "FIXTAU", fixed = TRUE)
+  # An active MU whose phase this parser could not build: PROC HAZARD fits
+  # that phase, so the emitted model is short of one.
+  job <- .u1_job(parms = "MUE=0.2 THALF=0.5 NU=1 M=1 MUL=0.3 &SHAPE FIXGE2")
+  expect_true(.u1_refuses(job))
+  expect_match(.u1_msg(job), "MUL", fixed = TRUE)
+  # Control: the same job with the late shape written builds both phases.
+  expect_false(.u1_refuses(.u1_job(parms = "MUE=0.2 THALF=0.5 NU=1 M=1 MUL=0.3 GAMMA=2 ETA=1 WEIBULL")))
+})
+
+test_that("U1 review 4: spaces around `=` are SAS's job, not a refusal (#421)", {
+  # hazard_l.l:32 skips whitespace, so `MAXITER = 50` and `THALF = 0.3` are
+  # the same jobs as their unspaced forms. They used to be split apart here:
+  # the PROC line called them a syntax error (a false refusal), and PARMS
+  # filled the operand from SAS's default and fitted a model PROC HAZARD does
+  # not fit. Operands are joined before parsing.
+  job <- .u1_job(proc = " MAXITER = 50", parms = "MUE=0.2 THALF=1 NU=1")
+  expect_false(.u1_refuses(job))
+  # `fit_base` exists only for a SELECTION job, and this one has none, so an
+  # earlier `expect_equal(job$calls$fit_base %||% job$calls$fit,
+  # job$calls$fit)` reduced to expect_equal(x, x) and could not fail (#433
+  # review). Assert the property that was meant instead: no base-fit chunk is
+  # emitted, which a SELECTION regression here WOULD break.
+  expect_false("fit_base" %in% names(job$calls))
+  # The value is read, not defaulted.
+  job <- .u1_job(parms = "MUE=0.2 THALF = 0.3 NU = 1 M=1")
+  expect_false(.u1_refuses(job))
+  src <- paste(deparse(job$calls$fit), collapse = " ")
+  expect_match(src, "t_half = 0.3", fixed = TRUE)
+  expect_match(src, "nu = 1", fixed = TRUE)
+  # Each spelling joins.
+  for (p in c("MUE=0.2 THALF= 0.3 NU=1 M=1", "MUE=0.2 THALF =0.3 NU=1 M=1")) {
+    src <- paste(deparse(.u1_job(parms = p)$calls$fit), collapse = " ")
+    expect_match(src, "t_half = 0.3", fixed = TRUE, info = p)
+  }
+  # A joined operand SAS still rejects is still a syntax stop.
+  expect_true(.u1_refuses(.u1_job(parms = "MUE=0.2 THALF = ABC NU=1")))
+  # An unknown HAZARD statement keyword is recorded, for the same reason.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste("%HAZARD( PROC HAZARD DATA=D; EVENT DEAD; TIME TT; FOO BAR;",
+                   "PARMS MUL=0.2 TAU=1 GAMMA=2 ETA=1 WEIBULL; );"), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  expect_false(.u1_refuses(job))
+  expect_true("FOO" %in% job$untranslated$construct)
+})
+
+test_that("every refusal class warns AND lists a row, and a clean job does neither", {
+  # The contract John set on 2026-09-22, asserted as a whole and over the
+  # whole class list rather than one example: a job PROC HAZARD would refuse,
+  # or would fit differently, EMITS the fit, warns loudly, and names the
+  # construct in $untranslated. Any one of the three alone is a half-contract:
+  # a warning nobody can grep afterwards, a row nobody reads at render, or a
+  # fit that quietly disappeared.
+  classes <- list(
+    "PARMS value the lexer rejects"  = list("", "MUE=0.2 THALF=1 NU=1E-3"),
+    "PARMS value keyword, no number" = list("", "MUE=0.2 THALF=1 NU"),
+    "PARMS keyword outside grammar"  = list("", "MUE=0.2 THALF=1 NU=1 FIXG1"),
+    "PARMS flag given a value"       = list("", "MUE=0.2 THALF=1 NU=1 FIXNU=1"),
+    "PROC value the lexer rejects"   = list(" MAXITER=1E5", "MUE=0.2 THALF=1 NU=1"),
+    "PROC option with no value"      = list(" MAXITER=", "MUE=0.2 THALF=1 NU=1"),
+    "template ? placeholder"         = list("", "MUE=0.2 THALF=? NU=1"),
+    "FIXMNU1 on an active early"     = list("", "MUE=0.2 THALF=1 NU=2 M=0.5 FIXMNU1"),
+    "DELTA != 0 on an active early"  = list("", "MUE=0.2 THALF=0.3 NU=1 DELTA=0.5"),
+    "FIXTAU with no TAU written"     = list("", "MUL=0.2 GAMMA=2 ETA=1 ALPHA=1 FIXTAU"),
+    "FIXGAE2 without WEIBULL"        = list("", "MUL=0.1 TAU=8 ALPHA=2 GAMMA=5 ETA=1 FIXGAE2"),
+    "an operand read as a macro"     = list("", "MUE=0.2 THALF=0.3 NU=1 M=0 &FLAGS")
+  )
+  for (nm in names(classes)) {
+    job <- .u1_job(proc = classes[[nm]][[1L]], parms = classes[[nm]][[2L]])
+    expect_true(.u1_warns_and_fits(job), info = nm)
+    # Spelled out, so a failure says which half broke.
+    expect_false(is.null(.u1_refusal_chunk(job)), info = nm)
+    expect_gt(NROW(job$untranslated), 0L)
+    expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"), info = nm)
+    expect_no_match(.u1_msg(job), "no warning", fixed = TRUE, info = nm)
+  }
+
+  # KNOWN NEGATIVE: a job PROC HAZARD runs, translated faithfully, must raise
+  # neither half. Without it a change that warned on everything would satisfy
+  # every assertion above.
+  clean <- .u1_job(parms = "MUE=0.2 THALF=1 NU=1")
+  expect_null(.u1_refusal_chunk(clean))
+  expect_identical(NROW(clean$untranslated), 0L)
+  expect_identical(clean$calls$fit[[3L]][[1L]], as.name("hazard"))
+})
+
+test_that("SETG3's entry refusals are raised in the C's own order (#433 review)", {
+  # setg3.c:269-284 (src/model/, pin dad7978) checks TAU, then GAMMA, then
+  # ALPHA, then ETA, and EACH RETURNS before the next -- and all four return
+  # before SETG3_ignore_tau() at :309-323 and before the WEIBULL branch. So a
+  # job tripping two of them is refused by the FIRST, and a message naming the
+  # later code names a refusal PROC HAZARD never reaches.
+  #
+  # One case per adjacent pair, plus the entry-vs-WEIBULL case that prompted
+  # this: it named SETG3980 while SAS returns SETG3910.
+  pairs <- list(
+    # TAU before GAMMA
+    list(parms = "MUL=0.2 TAU=0 FIXTAU GAMMA=0 FIXGAMMA ETA=1",
+         want = "SETG3900", notwant = "SETG3910"),
+    # GAMMA before ALPHA
+    list(parms = "MUL=0.2 TAU=1 GAMMA=0 FIXGAMMA ALPHA=-1 FIXALPHA ETA=1",
+         want = "SETG3910", notwant = "SETG3920"),
+    # ALPHA before ETA
+    list(parms = "MUL=0.2 TAU=1 GAMMA=2 ALPHA=-1 FIXALPHA ETA=0 FIXETA",
+         want = "SETG3920", notwant = "SETG3930"),
+    # ETA before the WEIBULL branch
+    list(parms = "MUL=0.2 TAU=1 GAMMA=2 ETA=0 FIXETA ALPHA=0 FIXALPHA WEIBULL",
+         want = "SETG3930", notwant = "SETG3980"),
+    # the reported case: an entry refusal before the FIXGAE2 alpha rule
+    list(parms = paste("MUL=0.2 TAU=1 GAMMA=0 FIXGAMMA ETA=1 ALPHA=0",
+                       "FIXALPHA FIXGAE2 WEIBULL"),
+         want = "SETG3910", notwant = "SETG3980")
+  )
+  for (p in pairs) {
+    job <- .u1_job(parms = p$parms)
+    msg <- .u1_msg(job)
+    expect_match(msg, p$want, fixed = TRUE, info = p$parms)
+    # The point is not only that the right code appears, but that the LATER
+    # one does not: flag_refusal() keeps the first reason, so a wrong order
+    # shows up as the later code appearing instead.
+    expect_no_match(msg, p$notwant, fixed = TRUE, info = p$parms)
+  }
+})
+
+test_that("the refusal message's claim about hzr_phase() matches what happens (#433 review)", {
+  skip_on_cran()
+  # The sentence used to assert that hzr_phase() accepts the shape, from a
+  # hand-maintained idea of which codes were "shape" refusals. It was false
+  # for FIVE of the seven classes, not the three the text claimed: SAS
+  # refuses several of these precisely BECAUSE a shape is out of range, and
+  # the same value is out of range for hzr_phase().
+  #
+  # So the message is now derived by CONSTRUCTING the phase, and this test
+  # executes each class's emitted chunks and requires the message and the
+  # outcome to agree. No list of codes appears in either, so neither can
+  # drift from the other.
+  set.seed(3)
+  n <- 80
+  D <- data.frame(TT = stats::rexp(n, 0.2),
+                  DEAD = rep(c(1, 1, 0), length.out = n))
+  classes <- c(
+    SETG3900 = "MUL=0.1 TAU=0 GAMMA=2 ETA=1 ALPHA=1 FIXTAU",
+    SETG3910 = "MUL=0.1 TAU=8 GAMMA=0 ETA=1 ALPHA=1 FIXGAMMA",
+    SETG3920 = "MUL=0.1 TAU=8 GAMMA=2 ETA=1 ALPHA=-1 FIXALPHA",
+    SETG3930 = "MUL=0.1 TAU=8 GAMMA=2 ETA=0 ALPHA=1 FIXETA",
+    SETG3960 = "MUL=0.2 TAU=1 GAMMA=0 ETA=0.25 FIXGE2 WEIBULL",
+    SETG3970 = "MUL=0.2 TAU=1 GAMMA=2 ETA=0 WEIBULL",
+    SETG3980 = "MUL=0.2 TAU=1 GAMMA=4 ETA=0.25 ALPHA=0 WEIBULL"
+  )
+  agreed <- 0L
+  says_yes <- 0L
+  says_no <- 0L
+  for (nm in names(classes)) {
+    job <- .u1_job(parms = classes[[nm]])
+    msg <- .u1_msg(job)
+    claims_accepts <- grepl("accepts this shape", msg, fixed = TRUE)
+    env <- new.env(parent = environment())
+    env$D <- D
+    completes <- tryCatch({
+      for (k in names(job$calls)) suppressWarnings(eval(job$calls[[k]], env))
+      TRUE
+    }, error = function(e) FALSE)
+    expect_identical(claims_accepts, completes, info = nm)
+    agreed <- agreed + 1L
+    if (claims_accepts) says_yes <- says_yes + 1L else says_no <- says_no + 1L
+  }
+  expect_identical(agreed, length(classes))
+  # BOTH outcomes must occur, or an implementation that always said one thing
+  # would satisfy every assertion above.
+  expect_gt(says_yes, 0L)
+  expect_gt(says_no, 0L)
+})
+
+test_that("a macro call whose arguments contain spaces stays one operand (#433 review)", {
+  # Operands are split on whitespace, so `%FLAGS(A, B)` became `%FLAGS(A,`
+  # and `B)`. Only the first looked like a macro; the remainder was judged on
+  # its own, giving a job SAS runs a false $untranslated row and a false
+  # warning. SAS expands the whole call before PROC HAZARD reads any operand,
+  # so it must travel as one token and stay indeterminate.
+  one_row <- function(parms) {
+    job <- .u1_job(parms = parms)
+    job$untranslated
+  }
+  # The reported two-argument case, and its no-space control.
+  u <- one_row("MUE=0.2 THALF=1 NU=1 %FLAGS(A, B)")
+  expect_identical(NROW(u), 1L)
+  expect_identical(u$construct, "%FLAGS(A, B)")
+  u <- one_row("MUE=0.2 THALF=1 NU=1 %FLAGS(A,B)")
+  expect_identical(NROW(u), 1L)
+  expect_identical(u$construct, "%FLAGS(A,B)")
+  # Three arguments, so the joiner is not special-cased to one space.
+  u <- one_row("MUE=0.2 THALF=1 NU=1 %F(A, B, C)")
+  expect_identical(NROW(u), 1L)
+  expect_identical(u$construct, "%F(A, B, C)")
+
+  # OVER-REACH CONTROL, the direction a joiner fails in: an operand AFTER the
+  # macro must still be read. Without this the test could not tell a correct
+  # join from one that swallowed the rest of the statement.
+  job <- .u1_job(parms = "MUE=0.2 THALF=1 %F(A, B) NU=1")
+  expect_identical(NROW(job$untranslated), 1L)
+  expect_true(any(grepl("nu = 1", deparse(job$calls$fit), fixed = TRUE)))
+
+  # A non-macro token carrying parentheses is NOT joined: it is not a macro,
+  # and reading unreadable phase text as a variable is tracked by #440.
+  u <- one_row("MUE=0.2 THALF=1 NU=1 LOG(A, B)")
+  expect_gt(NROW(u), 1L)
+})
+
+test_that("a rejected PROC option gets exactly one applicable row (#433 review)", {
+  # check_number() recorded the rejection, then the option's own switch arm
+  # continued and added a second row. `CONDITION=5.` said both that PROC
+  # HAZARD's lexer rejects the number AND what its optimizer does with the
+  # value, although a rejected job never runs. `MAXITER =` also left an
+  # operand whose key was the empty string, reported as an unknown option
+  # with a blank name.
+  rows <- function(proc) {
+    .u1_job(proc = proc, parms = "MUE=0.2 THALF=1 NU=1")$untranslated
+  }
+  for (proc in c(" MAXITER=", " MAXITER =", " CONDITION=5.", " MAXITER=1E5",
+                 " CONDITION=")) {
+    u <- rows(proc)
+    expect_identical(NROW(u), 1L, info = proc)
+    # No construct may be blank: that is the dangling half of a spaced
+    # assignment, not an option anybody wrote.
+    expect_true(all(nzchar(u$construct)), info = proc)
+    # And no row may describe what the optimizer does with a value in a job
+    # PROC HAZARD does not run.
+    expect_false(any(grepl("stops PROC HAZARD's optimizer", u$reason,
+                           fixed = TRUE)), info = proc)
+  }
+
+  # CONTROLS, so the test cannot pass by suppressing rows generally.
+  # An ACCEPTED CONDITION still records its one explanatory row, because
+  # hazard() reads no `condition` (#384).
+  u <- rows(" CONDITION=14")
+  expect_identical(NROW(u), 1L)
+  expect_match(u$reason, "stops PROC HAZARD's optimizer", fixed = TRUE)
+  # An accepted MAXITER records nothing and reaches the emitted call.
+  job <- .u1_job(proc = " MAXITER=250", parms = "MUE=0.2 THALF=1 NU=1")
+  expect_identical(NROW(job$untranslated), 0L)
+  expect_true(any(grepl("maxit = 250", deparse(job$calls$fit), fixed = TRUE)))
+})
+
+test_that("an entry refusal suppresses the 'cannot tell' verdict (#433 review)", {
+  # SETG3's entry checks (setg3.c:269-284) each `return` immediately, so the
+  # untraced non-WEIBULL dispatch (setg3.c:359-374) is NEVER reached once one
+  # of them fires. A job carrying both therefore has exactly one true verdict:
+  # PROC HAZARD refuses it at entry. Emitting "cannot tell whether PROC HAZARD
+  # refuses this job" alongside "refused before any fit is computed" told the
+  # reader both that SAS produces nothing and that we cannot say.
+  job <- .u1_job(parms = "MUL=0.2 TAU=0 FIXTAU GAMMA=2 ETA=1 FIXGE2")
+  m <- .u1_msg(job)
+  # The entry refusal must SURVIVE -- suppressing the contradiction must not
+  # suppress the verdict with it.
+  expect_match(m, "(SETG3900)", fixed = TRUE)
+  expect_match(m, "refused before any fit is computed", fixed = TRUE)
+  expect_no_match(m, "cannot tell whether PROC HAZARD refuses", fixed = TRUE)
+
+  # KNOWN NEGATIVE: with no entry refusal, the untraced path must still say
+  # it cannot tell. Otherwise the fix has deleted the honest verdict too.
+  plain <- .u1_job(parms = "MUL=0.1 TAU=8 ALPHA=2 GAMMA=5 ETA=1 FIXGAE2")
+  pm <- .u1_msg(plain)
+  expect_match(pm, "cannot tell whether PROC HAZARD refuses", fixed = TRUE)
+  expect_no_match(pm, "refused before any fit is computed", fixed = TRUE)
+})
+
+test_that("two refusal reasons are separated in the emitted warning (#433 review)", {
+  # warning(a, b) pastes its arguments with NO separator, so a job carrying
+  # two refusal classes rendered as "...fit the model by hand.This translation
+  # cannot emit...". The test helper hid it: it collapses the captured
+  # messages itself, and a single warning() call yields ONE message however
+  # many pieces were pasted into it.
+  job <- .u1_job(parms = "MUE=0.2 THALF=1 NU=1E-3 M=1 FIXMNU1")
+  m <- .u1_msg(job)
+  expect_no_match(m, "[a-z]\\.[A-Z]")
+})
+
+test_that("operand joining is INVARIANT under spacing (#433 review 2)", {
+  # PROC HAZARD's lexer is whitespace-insensitive (hazard_l.l:32, :55), so
+  # every spacing of one statement is the same token stream to SAS. Two
+  # earlier rounds of this review fixed one spelling each and each time
+  # another slipped through, because the set of spellings cannot be
+  # enumerated by a fix. Assert the PROPERTY instead: generate every spacing
+  # of each statement and require one answer.
+  spacings <- function(pairs) {
+    # every `=` with or without a space on each side
+    grid <- expand.grid(rep(list(c("", " ")), 2L * length(pairs)),
+                        stringsAsFactors = FALSE)
+    out <- character(nrow(grid))
+    for (r in seq_len(nrow(grid))) {
+      s <- ""
+      for (k in seq_along(pairs)) {
+        l <- grid[[2L * k - 1L]][r]
+        rgt <- grid[[2L * k]][r]
+        s <- paste0(s, if (nzchar(s)) " " else "",
+                    pairs[[k]][[1L]], l, "=", rgt, pairs[[k]][[2L]])
+      }
+      out[[r]] <- s
+    }
+    unique(out)
+  }
+  statements <- list(
+    list(c("DATA", "MAXITER"), c("", "50")),       # the defect: key as value
+    list(c("MUE", "0.2"), c("THALF", "0.3")),      # two genuine operands
+    list(c("MAXITER", "250")),                     # one genuine operand
+    # A MACRO operand. SAS expands `&N` before the lexer runs, so every
+    # spelling is one job that RUNS -- but a macro is opaque to the
+    # tokeniser, and when the `=` is glued to it (`MAXITER =&N`) the whole
+    # `=&N` tested as a macro and was never split. That was the last branch
+    # keying on spacing, and it produced a FALSE refusal (#433 review 3).
+    list(c("MAXITER", "&N")),
+    list(c("DATA", "&LIB")),
+    list(c("MUE", "%N(1)"))
+  )
+  for (st in statements) {
+    variants <- spacings(st)
+    expect_gt(length(variants), 1L)                # the generator must vary
+    joined <- lapply(variants, function(v) {
+      .hzr_sas_join_spaced(strsplit(trimws(v), "[ \t]+")[[1L]])
+    })
+    # ONE answer for all spellings of this statement.
+    expect_length(unique(joined), 1L)
+  }
+
+  # And the consequence that matters: no spelling may emit a `data` argument
+  # that is itself an option. This is the assertion the two spelling-specific
+  # tests were each half of.
+  for (v in spacings(list(c("DATA", "MAXITER"), c("", "50")))) {
+    f <- withr::local_tempfile(fileext = ".sas")
+    writeLines(paste0("%HAZARD( PROC HAZARD ", v, "; EVENT DEAD; TIME TT;",
+                      " PARMS MUE=0.2 THALF=1 NU=1; );"), f)
+    out <- tryCatch(suppressWarnings(hzr_translate_sas(f)), error = function(e) e)
+    if (inherits(out, "error")) next          # loud is acceptable
+    d <- out$calls$fit[[3L]]$data
+    expect_false(is.name(d) && grepl("=", as.character(d), fixed = TRUE),
+                 info = v)
+    silent <- identical(out$calls$fit[[3L]][[1L]], as.name("hazard")) &&
+      NROW(out$untranslated) == 0L &&
+      !length(grep("^refusal", names(out$calls)))
+    expect_false(silent, info = v)
+  }
+})
+
+test_that("a name-valued PROC option with no value is refused (#433 review 2)", {
+  # `DATA '=' dsfield` and `OUTHAZ '=' dsfield`, dsfield : NAME | LIBMEM
+  # (hazard_y.y:61-62, :80-81). Neither has a form without a name, so an
+  # empty value is a syntax error and the job does not run. Only MAXITER and
+  # CONDITION had a presence check; OUTHAZ= was dropped silently and the job
+  # fitted, and DATA= surfaced as an internal R error naming neither.
+  #
+  # The option must be LAST to be genuinely valueless. `OUTHAZ= MAXITER=50`
+  # is NOT this case: <HZRP>OUTHAZ switches the lexer to DSNM, where MAXITER
+  # lexes as a NAME (hazard_l.l:60,80), so SAS reads OUTHAZ=MAXITER and then
+  # a stray `=`. An earlier draft of this test asserted that spelling and was
+  # wrong about SAS, not about the code.
+  for (opt in c("DATA", "OUTHAZ")) {
+    f <- withr::local_tempfile(fileext = ".sas")
+    writeLines(paste0("%HAZARD( PROC HAZARD DATA=D MAXITER=50 ", opt, "=;",
+                      " EVENT DEAD; TIME TT; PARMS MUE=0.2 THALF=1 NU=1; );"), f)
+    job <- suppressWarnings(hzr_translate_sas(f))
+    expect_false(is.null(.u1_refusal_chunk(job)), info = opt)
+    expect_true(any(grepl(opt, job$untranslated$construct, fixed = TRUE)),
+                info = opt)
+    # An earlier option on the same line is still read: a refusal must not
+    # eat the whole statement.
+    expect_identical(job$calls$fit[[3L]]$control$maxit, 50, info = opt)
+  }
+  # KNOWN NEGATIVE: real values refuse nothing.
+  f2 <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste0("%HAZARD( PROC HAZARD DATA=D OUTHAZ=H MAXITER=50;",
+                    " EVENT DEAD; TIME TT; PARMS MUE=0.2 THALF=1 NU=1; );"), f2)
+  clean <- suppressWarnings(hzr_translate_sas(f2))
+  expect_null(.u1_refusal_chunk(clean))
+})
+
+test_that("a libref with no member is refused, not left empty (#433 review 3)", {
+  # `WORK.` is neither NAME nor LIBMEM (hazard_l.l:39-40), so SAS rejects it.
+  # The presence check ran BEFORE the WORK. strip, so "WORK." passed it and
+  # the strip then left an empty name, surfacing as an internal
+  # "attempt to use zero-length variable name" that named neither the option
+  # nor the reason.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste0("%HAZARD( PROC HAZARD DATA=WORK. MAXITER=50; EVENT DEAD;",
+                    " TIME TT; PARMS MUE=0.2 THALF=1 NU=1; );"), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  expect_false(is.null(.u1_refusal_chunk(job)))
+  expect_true(any(grepl("DATA", job$untranslated$construct, fixed = TRUE)))
+  # KNOWN NEGATIVE: a real WORK-qualified name still translates, stripped.
+  f2 <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste0("%HAZARD( PROC HAZARD DATA=WORK.D MAXITER=50; EVENT DEAD;",
+                    " TIME TT; PARMS MUE=0.2 THALF=1 NU=1; );"), f2)
+  ok <- suppressWarnings(hzr_translate_sas(f2))
+  expect_null(.u1_refusal_chunk(ok))
+  expect_identical(ok$calls$fit[[3L]]$data, as.name("D"))
+})
+
+test_that("PROC HAZPRED refuses a stray `=` and an empty name (#433 review 3)", {
+  # The HAZPRED caller shares the joiner but had neither the stray-`=` block
+  # nor the presence check, so `DATA=G = INHAZ=H` recorded a BLANK-keyword
+  # "unknown option" row and emitted the prediction calls anyway, for a job
+  # SAS rejects.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste0("%HAZARD( PROC HAZARD DATA=D; EVENT DEAD; TIME TT;",
+                    " PARMS MUE=0.2 THALF=1 NU=1; );\n",
+                    "%HAZPRED( PROC HAZPRED DATA=PGRID = INHAZ=H OUT=P;",
+                    " TIME TT; );"), f)
+  # A %HAZPRED block is folded into the SAME hzr_sas_job as the %HAZARD one
+  # it predicts from, so this is one job, not two.
+  hp <- suppressWarnings(hzr_translate_sas(f))
+  expect_s3_class(hp, "hzr_sas_job")
+  expect_false(any(!nzchar(hp$untranslated$construct)))
+  expect_true(any(grepl("stray", hp$untranslated$reason, fixed = TRUE)))
 })
 
 # --- #411: a SAS covariate name that begins with an underscore ---

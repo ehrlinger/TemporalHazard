@@ -54,13 +54,33 @@ test_that("a LATE statement with comma-separated VAR=VALUE operands parses", {
   )
 })
 
-test_that("a non-numeric CONDITION is recorded, not coerced to NA", {
+test_that("a non-numeric CONDITION is refused once, not coerced to NA", {
   txt <- .hzr_sas_normalise(paste(
     "%HAZARD( PROC HAZARD DATA=A CONDITION=ABC;",
     "EVENT D; TIME T; PARMS MUE=1 THALF=1 NU=1; );"
   ))
   got <- expect_silent(.hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]]))
-  expect_true("CONDITION" %in% got$untranslated$construct)
+  # `ABC` lexes as `name` (hazard_l.l:39), and `CONDITION '=' NUMBER`
+  # (hazard_y.y:64) has no other form, so the option falls to
+  # `hazardopt : error` (:77) and PROC HAZARD refuses the job. That is one
+  # fact, so it is one row: an earlier version added a second "non-numeric
+  # value" row describing a value a refused job never reads (#433 review).
+  expect_equal(got$untranslated$construct, "CONDITION=ABC")
+  expect_length(got$refusal_warnings, 1L)
+  expect_null(got$call[["control"]][["condition"]])
+})
+
+test_that("a macro CONDITION is recorded without a refusal verdict", {
+  # SAS expands `&MAC` before PROC HAZARD reads the statement, so whether a
+  # NUMBER arrives is not knowable here and no refusal may be claimed. This
+  # is the branch that keeps the non-numeric note reachable.
+  txt <- .hzr_sas_normalise(paste(
+    "%HAZARD( PROC HAZARD DATA=A CONDITION=&MAC;",
+    "EVENT D; TIME T; PARMS MUE=1 THALF=1 NU=1; );"
+  ))
+  got <- expect_silent(.hzr_parse_hazard(.hzr_sas_blocks(txt)[[1L]]))
+  expect_equal(got$untranslated$construct, "CONDITION")
+  expect_length(got$refusal_warnings, 0L)
   expect_null(got$call[["control"]][["condition"]])
 })
 
