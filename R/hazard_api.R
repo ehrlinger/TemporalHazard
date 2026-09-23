@@ -638,10 +638,18 @@ hazard <- function(formula = NULL,
   # each refuse a function column, but `structure(list(...), class =
   # "data.frame")` carries one and `is.data.frame()` is TRUE for it. A
   # list-column is a list, which the lookup skips, so it still fits.
-  if (!is.null(data)) {
+  # `is.list()` first, and not merely for speed: this guard iterates `data`,
+  # so on anything that is not list-like it would answer BEFORE the shape
+  # check below and answer wrongly -- `vapply()` raises a coercion error for
+  # an S4 object, and for an environment it reports a "function element" and
+  # tells the user to remove it, which does not make an environment
+  # acceptable `data`. Both are questions about shape, not about functions.
+  # `is.list()` is TRUE for a data frame, tibble and data.table alike.
+  if (is.list(data)) {
     nm <- names(data)
-    fn <- vapply(data, is.function, logical(1)) &
-      !is.null(nm) & !is.na(nm) & nzchar(nm)
+    # `!is.null(nm)` would be dead here: for an unnamed list `nm` is NULL and
+    # `!is.na(NULL)` is already logical(0), which zeroes the whole vector.
+    fn <- vapply(data, is.function, logical(1)) & !is.na(nm) & nzchar(nm)
     if (any(fn)) {
       stop("'data' holds a function named ",
            paste0("'", unique(nm[fn]), "'", collapse = ", "),
