@@ -796,13 +796,17 @@
   not the inverse of quoting: a column named `` a`b `` is labelled
   `` `a\`b` `` and strips to `a\b`, a name that does not exist. A term that
   is not a single symbol, such as an interaction, still matches by label.
-  This is about MATCHING, and ADDING such a variable is a separate question
-  with a separate answer: the refit pastes the candidate into a formula, so
-  it parses only when the candidate is already quoted. A formula `scope`
-  carries `terms()` labels and therefore adds one; a character `scope` of
-  bare names cannot, and says so -- the candidate is named as a refit
-  failure and the screen reports it. That gap is tracked in #441, with the
-  score criterion's own lookup by label in #438.
+  This is about MATCHING. ADDING such a variable is a separate question with
+  a separate answer, and the answer depends on the criterion, so no single
+  rule covers it. Under `"wald"` and `"aic"`, a formula `scope` adds one
+  (its labels are already quoted) while a character `scope` of bare names
+  cannot, because the refit pastes the candidate into a formula that then
+  does not parse; that failure names the candidate as a refit failure.
+  Under `"score"` the opposite holds for a formula `scope`: the candidate is
+  offered and then skipped, with a message reporting it as not found in
+  `data` although the column is present, because that path indexes `data` by
+  the backquoted label. So a screen can omit the variable and still finish.
+  These are tracked in #441 and #438 respectively and are NOT fixed here.
 
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded
