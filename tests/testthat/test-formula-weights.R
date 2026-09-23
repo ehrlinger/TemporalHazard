@@ -111,6 +111,51 @@ test_that("a namespace-qualified call does not raise a false ambiguity warning",
   )
 })
 
+test_that("a named argument's tag is not looked up, so it cannot be ambiguous (#402)", {
+  # `n` in stats::runif(n = 40) names runif()'s argument; it is never looked
+  # up, in data or anywhere else. A column `n` beside a caller variable `n`
+  # is therefore not ambiguous, on either interface. A collector that also
+  # harvested argument tags would warn here and name a column the fit never
+  # read (#401 review).
+  d <- fw_data()
+  d$n <- 2
+  n <- 1
+  set.seed(7)
+  want_f <- hazard(survival::Surv(t, s) ~ x, data = d,
+                   weights = stats::runif(40), dist = "weibull",
+                   theta = c(1, 1, 0), fit = TRUE)
+  set.seed(7)
+  expect_no_warning(
+    got_f <- hazard(survival::Surv(t, s) ~ x, data = d,
+                    weights = stats::runif(n = 40), dist = "weibull",
+                    theta = c(1, 1, 0), fit = TRUE)
+  )
+  expect_identical(got_f$fit$objective, want_f$fit$objective)
+  expect_identical(got_f$data$weights, want_f$data$weights)
+
+  # The vector interface, asserted the same way rather than only for the
+  # absence of a warning. The first version of this block used
+  # `fit = FALSE`, discarded the result and did not reset the seed, so
+  # replacing these weights with `rep(1, 40)` changed the fit and the test
+  # still passed (#423 review) -- it pinned the warning and nothing else.
+  set.seed(7)
+  want_v <- hazard(data = d, time = t, status = s, x = as.matrix(d["x"]),
+                   weights = stats::runif(40), dist = "weibull",
+                   theta = c(1, 1, 0), fit = TRUE)
+  set.seed(7)
+  expect_no_warning(
+    got_v <- hazard(data = d, time = t, status = s, x = as.matrix(d["x"]),
+                    weights = stats::runif(n = 40), dist = "weibull",
+                    theta = c(1, 1, 0), fit = TRUE)
+  )
+  # The tag must not change which weights were read, nor the fit they give.
+  expect_identical(got_v$data$weights, want_v$data$weights)
+  expect_identical(got_v$fit$objective, want_v$fit$objective)
+  # And the weights must actually be the runif draw, not unit weights: an
+  # assertion that both calls agree is satisfied by both being wrong.
+  expect_false(isTRUE(all.equal(unname(got_v$data$weights), rep(1, 40))))
+})
+
 test_that("an ambiguous argument inside a namespace-qualified call still warns", {
   # The control: skipping the namespace and export names must not skip the
   # call's own arguments, which ARE looked up in data.
