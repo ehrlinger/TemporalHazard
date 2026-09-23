@@ -25,11 +25,15 @@ coe_ll_at <- function(fit, time, status, phases) {
 test_that("a CoE fit reports the log-likelihood of the theta it returns (#362)", {
   skip_on_cran()
   data(avc, package = "TemporalHazard")
-  phases <- list(
+  # alpha = 1 is replaced by the value the constraint derives, and says so.
+  # That warning is fixture construction, not the behaviour under test, and it
+  # is silenced here for the same reason the fit call below is: so the suite's
+  # warning multiset carries only warnings a test is actually about.
+  phases <- suppressWarnings(list(
     early = hzr_phase("cdf", t_half = .15, nu = 1.4, m = 1, fixed = "m"),
     late  = hzr_phase("g3", tau = 5, gamma = 1, alpha = 1, eta = 1,
                       constraint = "alpha_gamma_eta")
-  )
+  ))
   fit <- suppressWarnings(hazard(
     time = avc$int_dead, status = avc$dead, dist = "multiphase",
     phases = phases, fit = TRUE, control = list(n_starts = 1L)

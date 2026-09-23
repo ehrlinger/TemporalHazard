@@ -518,6 +518,17 @@
 # Interval-censored contribution
 # ============================================================================
 
+#' Stop on a data defect, as a classed condition (#407)
+#'
+#' The message is built exactly as `stop()` builds it, and carries the class
+#' `hzr_data_error`, so a caller that absorbs numerical failures (the score
+#' path's `tryCatch` sites) can let a data defect through instead of
+#' reporting it as "information matrix could not be inverted".
+#' @noRd
+.hzr_stop_data <- function(...) {
+  stop(errorCondition(.makeMessage(...), class = "hzr_data_error"))
+}
+
 #' Reject row types the SAS objective has no counterpart for
 #'
 #' `PROC HAZARD` has no left-censoring statement, so no SAS run corresponds to
@@ -536,9 +547,9 @@
 #' @keywords internal
 .hzr_check_sas_status <- function(status, objective) {
   if (identical(objective, "sas") && any(status == -1)) {
-    stop("objective = \"sas\" does not support left-censored rows ",
+    .hzr_stop_data("objective = \"sas\" does not support left-censored rows ",
          "(status == -1): PROC HAZARD has no left-censoring statement, so no ",
-         "SAS run corresponds to the result.", call. = FALSE)
+         "SAS run corresponds to the result.")
   }
   invisible(NULL)
 }
@@ -577,10 +588,10 @@
   # defined", which is the framing #213 removed -- and which invites raising
   # `n_starts`, a remedy that cannot work on a pure function of the data.
   if (anyNA(status)) {
-    stop("'status' must be complete; ",
+    .hzr_stop_data("'status' must be complete; ",
          sum(is.na(status)), " row(s) are NA, at index/indices ",
          paste(utils::head(which(is.na(status)), 10L), collapse = ", "),
-         if (sum(is.na(status)) > 10L) ", ..." else "", ".", call. = FALSE)
+         if (sum(is.na(status)) > 10L) ", ..." else "", ".")
   }
 
   if (!identical(objective, "sas")) {
@@ -601,8 +612,8 @@
     for (b in list(list(if (is.null(time_lower)) "time" else "time_lower", lower),
                    list(if (is.null(time_upper)) "time" else "time_upper", upper))) {
       if (length(b[[2L]]) != length(status)) {
-        stop(b[[1L]], " has length ", length(b[[2L]]), ", but status has ",
-             "length ", length(status), ".", call. = FALSE)
+        .hzr_stop_data(b[[1L]], " has length ", length(b[[2L]]), ", but status has ",
+             "length ", length(status), ".")
       }
     }
     # An NA bound makes the width comparison NA, which then stood in for the
@@ -610,22 +621,20 @@
     na_bound <- idx_interval[is.na(lower[idx_interval]) |
                                is.na(upper[idx_interval])]
     if (length(na_bound) > 0) {
-      stop("objective = \"sas\" requires both bounds on every ",
+      .hzr_stop_data("objective = \"sas\" requires both bounds on every ",
            "interval-censored row. ", length(na_bound), " of ",
            length(idx_interval), " interval row(s) have an NA bound, at ",
            "index/indices ", paste(utils::head(na_bound, 10L), collapse = ", "),
-           if (length(na_bound) > 10L) ", ..." else "", ".",
-           call. = FALSE)
+           if (length(na_bound) > 10L) ", ..." else "", ".")
     }
     bad <- idx_interval[!(upper[idx_interval] > lower[idx_interval])]
     if (length(bad) > 0) {
-      stop("objective = \"sas\" requires upper > lower on every ",
+      .hzr_stop_data("objective = \"sas\" requires upper > lower on every ",
            "interval-censored row; the interval-mean hazard divides by ",
            "(u - l). ", length(bad), " of ", length(idx_interval),
            " interval row(s) fail this, at index/indices ",
            paste(utils::head(bad, 10L), collapse = ", "),
-           if (length(bad) > 10L) ", ..." else "", ".",
-           call. = FALSE)
+           if (length(bad) > 10L) ", ..." else "", ".")
     }
   }
 
@@ -675,13 +684,12 @@
     # away from; the entry check stops on the same row (#340).
     bad <- which(!(upper > lower) | is.na(upper) | is.na(lower))
     if (length(bad) > 0) {
-      stop("objective = \"sas\" requires upper > lower on every ",
+      .hzr_stop_data("objective = \"sas\" requires upper > lower on every ",
            "interval-censored row; the interval-mean hazard divides by ",
            "(u - l). ", length(bad), " of ", length(upper),
            " interval row(s) fail this, at index/indices ",
            paste(utils::head(bad, 10L), collapse = ", "),
-           if (length(bad) > 10L) ", ..." else "", ".",
-           call. = FALSE)
+           if (length(bad) > 10L) ", ..." else "", ".")
     }
   }
 

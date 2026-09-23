@@ -20,7 +20,8 @@
   Conservation of Events) are identical by design and are not named. A run
   in which only some replicates stay at their start while their objective is
   finite is not caught; that rests on the optimizer's convergence test
-  (#351).
+  (#351). What a sentinel objective should mean for a single fit is tracked
+  separately (#351, #374).
 
 * **`hzr_translate_sas()` no longer fits a job `PROC HAZARD` rejects: if
   you hold estimates from such a translation, they have no SAS run behind
@@ -805,6 +806,25 @@
 
   What a sentinel objective should mean for a single fit is tracked
   separately (#351, #374).
+* **`hzr_stepwise()` and `hzr_bootstrap()` warn once about a `control`
+  element the fit does not read, not once per candidate refit (#410).**
+  Since #376 made `hazard()` warn about an element a fit ignores rather
+  than accept it silently, both functions have handed `control` to every
+  candidate refit, so one warning became **six** in a three-step screen and
+  **three** in a select-mode bootstrap, one per candidate refit of the
+  screen it runs on the real data before resampling. (The replicate screens
+  run muffled, so the bootstrap's count did not grow with `n_boot`.) No
+  result changed: the harm is to
+  **other** warnings, because past 50 R prints only "There were 50 or more
+  warnings", so the repeats can bury the ill-conditioned-Hessian and
+  gradient-test warnings that say a fit is not to be trusted. The forwarded
+  `control` is now validated once, at the call, and the refits are given
+  what survives, so they have nothing left to warn about. An element the fit
+  does read is still forwarded and still takes effect. One case gains a
+  warning rather than losing repeats: a screen that never refits a candidate,
+  such as `criterion = "score"` with a threshold nothing clears, reported an
+  ignored `control` name not at all, because the warning came from the
+  refits.
 
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded
