@@ -835,7 +835,11 @@
   the reader looking at conditioning. Since the likelihood's data guards
   carry the class `hzr_data_error` (#426), the six sites that wrap the
   likelihood, its gradient and its Hessian now let that class through and
-  go on absorbing everything else. A genuinely numerical failure is
+  go on absorbing everything else. Two of those six can actually receive
+  one, the multiphase Hessian and the multiphase gradient; the other four
+  wrap code that never calls the guards, so their narrowing is defensive
+  rather than a behaviour change, and both live sites are pinned by a
+  test. A genuinely numerical failure is
   unchanged: it is still swallowed and still reported as one. The two
   `tryCatch` calls that wrap linear algebra rather than the likelihood,
   `solve()` on the information block and `model.frame()` on a phase

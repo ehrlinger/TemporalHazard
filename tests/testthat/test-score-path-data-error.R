@@ -88,6 +88,53 @@ test_that("a numerical failure is still absorbed by the score path (#407)", {
   expect_s3_class(err, "error")
   expect_false(inherits(err, "hzr_data_error"))
   # The score path must swallow it and report NULL, as it always has.
-  expect_null(.hzr_score_multiphase_hessian(fit, theta = zero))
+  # Pass EVERY required argument. An earlier version omitted `phases`,
+  # `covariate_counts` and `x_list`, so the call failed on arity, the arity
+  # error was absorbed, and expect_null() passed without reaching the
+  # numerical path at all. Second time this file has had an assertion that
+  # passed for the wrong reason; found by review.
+  expect_null(.hzr_score_multiphase_hessian(
+    fit, theta = zero, phases = fit$spec$phases,
+    covariate_counts = fit$fit$covariate_counts, x_list = fit$fit$x_list
+  ))
   expect_null(.hzr_score_information(fit, theta = zero))
+})
+
+test_that("the gradient site lets a data defect through too (#407)", {
+  skip_on_cran() # a multiphase fit
+  # Of the six narrowed sites only TWO can ever see an hzr_data_error: the
+  # multiphase Hessian and the multiphase gradient. The other four wrap code
+  # that cannot raise one. Reverting the GRADIENT site to a catch-everything
+  # left the rest of this file green, so that narrowing was unpinned.
+  #
+  # This calls .hzr_score_gradient() DIRECTLY, and that is deliberate: through
+  # a screen the Hessian is built first, by .hzr_score_nuisance(), so it
+  # raises before any gradient is evaluated. An end-to-end assertion here
+  # would pass via the Hessian and pin nothing, which is exactly what the
+  # first version of this test did. Measured, not reasoned: the call stack
+  # through hzr_stepwise() ends at .hzr_score_multiphase_hessian.
+  d <- sp_data()
+  d$st <- 1L # plain events, so the fit itself builds
+  base <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
+    phases = list(
+      early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes"),
+      constant = hzr_phase("constant")
+    ),
+    fit = TRUE, control = list(n_starts = 2L, maxit = 300L)
+  ))
+  # A left-censored row under the sas objective is a defect the gradient
+  # refuses.
+  bad <- base
+  bad$spec$objective <- "sas"
+  bad$data$status[1L] <- -1L
+  exp_ <- .hzr_score_expand(bad, var = "age", phase = "early", data = d)
+  expect_false(is.null(exp_)) # known positive: the expansion itself worked
+  expect_error(.hzr_score_gradient(bad, exp_), class = "hzr_data_error")
+  # And the same site still absorbs a NUMERICAL failure: an unusable theta.
+  worse <- bad
+  worse$data$status[1L] <- 1L                    # no data defect now
+  exp2 <- .hzr_score_expand(worse, var = "age", phase = "early", data = d)
+  exp2$theta <- rep(0, length(exp2$theta))
+  expect_null(.hzr_score_gradient(worse, exp2))
 })
