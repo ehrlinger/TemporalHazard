@@ -810,23 +810,28 @@
     "unique() or stats::na.omit(), which has no value to give for a new ",
     "row."
   )
-  # Our own backstop carries no information the note does not.
+  # Our own backstop carries no call, and the note is the same statement in
+  # better words, so it is replaced rather than quoted back.
   if (is.null(original) || inherits(original, "hzr_design_rows_error")) {
     stop(note, call. = FALSE)
   }
-  # `class(original)` verbatim, NOT with a class of ours prepended: a type
-  # failure is not a row-count failure, and labelling it as one would be the
-  # same mistake in a different place.
-  stop(structure(
-    class = class(original),
-    list(
-      message = paste0(
-        conditionMessage(original), "\nSeparately: ", note,
-        " That is true whether or not it caused the error above."
-      ),
-      call = conditionCall(original)
-    )
-  ))
+  # A CONDITION THE CALLER RAISED passes through as the SAME OBJECT. Not a
+  # copy: `conditionMessage()` is a generic, so writing our text into
+  # `$message` does not mean the caller reads it -- a class with its own
+  # method never looks there, and an earlier version of this destroyed both
+  # statements at once (#446). Rebuilding also dropped every field beyond
+  # message and call, so a `tryCatch()` handler fired and got `NULL`, which
+  # is worse than not firing.
+  if (!identical(class(original), c("simpleError", "error", "condition"))) {
+    stop(original)
+  }
+  # A plain base error from the frame build. OURS LEADS: model.frame() names
+  # whichever variable it compared against, which is routinely a column the
+  # user supplied correctly, and a first line blaming `mal` prescribes a
+  # remedy that contradicts the note (#409, #446).
+  stop(paste0(note, "\nThe design build reported: ",
+              paste(conditionMessage(original), collapse = " ")),
+       call. = FALSE)
 }
 
 
@@ -925,8 +930,21 @@
   # was fine (#430 review). `vapply()` evaluates in order, and `mask`
   # persists across the calls, so the assignment carries.
   mask <- list2env(as.list(nd), parent = env)
-  wrong <- vapply(vars, function(v) {
-    val <- tryCatch(eval(v, mask), error = function(e) NULL)
+  vals <- lapply(vars, function(v) tryCatch(eval(v, mask), error = function(e) NULL))
+  # A variable that is not a legal model-frame column -- a list, say -- failed
+  # on its TYPE, not on its rows, and its row count is not the story. Naming a
+  # row-mismatched term for that failure blames a term that had nothing to do
+  # with it and prescribes a remedy that cannot be followed (#446). Decline,
+  # and the caller keeps the type error. Structural, not a message test: both
+  # base messages are translated, so a message test would stop working outside
+  # an English locale and no CI here would catch it.
+  bad_type <- vapply(vals, function(val) {
+    !is.null(val) && !is.atomic(val) && !is.factor(val)
+  }, logical(1))
+  if (any(bad_type)) {
+    return(character(0))
+  }
+  wrong <- vapply(vals, function(val) {
     !is.null(val) && NROW(val) != nrow(nd)
   }, logical(1))
   if (!any(wrong)) {

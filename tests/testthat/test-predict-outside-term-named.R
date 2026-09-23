@@ -23,13 +23,22 @@ test_that("an outside term beside a data column is named, whichever columns newd
     msg <- tryCatch(predict(fit, newdata = nd, type = "linear_predictor"),
                     error = conditionMessage)
     expect_match(msg, want, fixed = TRUE)
-    # RESTORED. This assertion was weakened on the #446 branch to
-    # `expect_false(identical(msg, "variable lengths differ (found for
-    # 'mal')"))`, which cannot fail once anything at all is appended, and the
-    # weakening was reported as intent. It is load bearing: `mal` is a column
-    # the user supplied correctly, and leading with base R's blame for it is
-    # the misattribution #409 exists to suppress.
-    expect_false(grepl("variable lengths differ", msg, fixed = TRUE))
+    # What this assertion protects, per the roxygen on
+    # `.hzr_outside_rows_term()`: left to `model.frame()` the failure named
+    # "whichever variable it compared against" -- here `mal`, a column the
+    # user supplied CORRECTLY -- and the user was left with that. It is load
+    # bearing, and was once weakened on this branch to a form that could not
+    # fail.
+    #
+    # The base text is now quoted back on a later line (#446), so the
+    # protection is stated as ORDER: ours leads, `mal` never does. That can
+    # fail -- flipping the order or dropping the note both break it, and both
+    # were run as mutants.
+    expect_match(strsplit(msg, "\n", fixed = TRUE)[[1L]][[1L]], want,
+                 fixed = TRUE)
+    expect_false(grepl("variable lengths differ",
+                       strsplit(msg, "\n", fixed = TRUE)[[1L]][[1L]],
+                       fixed = TRUE))
   }
 })
 
@@ -449,11 +458,12 @@ test_that("a nested model.frame() failure keeps its own error and gains a note",
     error = conditionMessage
   )
   # The imperfection, stated as an expectation rather than left to prose:
-  # a term IS still named for a failure that was not its doing.
-  expect_match(msg, "Separately: term ", fixed = TRUE)
+  # a term IS still named for a failure that was not its doing. The nested
+  # call raises a plain base error, indistinguishable from our own frame
+  # assembly by `conditionCall()`, so it takes the base-error route.
   expect_match(msg, "does not give one value per row", fixed = TRUE)
-  # And the half that is fixed: the caller's own failure is the first line,
-  # not something the refusal threw away.
-  expect_match(strsplit(msg, "\n", fixed = TRUE)[[1L]][[1L]],
-               "variable lengths differ", fixed = TRUE)
+  # And the half that is fixed: the caller's own failure is no longer thrown
+  # away -- it is quoted back, after our statement.
+  expect_match(msg, "The design build reported: variable lengths differ",
+               fixed = TRUE)
 })
