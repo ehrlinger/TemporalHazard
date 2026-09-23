@@ -290,24 +290,21 @@ test_that("a fit with no covariates ignores newdata's unused columns (#300)", {
       }
     }
   }
-  # An object that stored no `x` but carries a coefficient is REFUSED, and
-  # this assertion was reversed to say so.
+  # An object that stored no `x` but carries a coefficient still takes
+  # newdata's columns by position: position is the only mapping left, and
+  # `.hzr_newdata_design()` documents and implements it. `hazard()` refuses to
+  # BUILD such an object (#375), so it is made by hand here.
   #
-  # It previously pinned the opposite: that such an object still took
-  # newdata's columns by position, returning 70 * 0.01 = 0.7 for `age = 70`.
-  # That was the behaviour of the day rather than a requirement, and the
-  # Codex review of #422 named it for what it is -- a coefficient with no
-  # design column behind it, applied to whatever column newdata happens to
-  # supply, with no error. `hazard()` already refuses to BUILD the object
-  # (#375); predict() now refuses to use one that reached it another way,
-  # which is what "one check at every entry point" has to mean.
+  # I reversed this assertion during the #422 review, on the reading that a
+  # coefficient with no design column behind it should be refused, and put it
+  # back: the refusal also killed test-loglogistic-dist.R's supported case,
+  # and removing a documented capability is a decision to take deliberately
+  # rather than as a side effect of a length check. The length check now
+  # applies only where a stored design exists to check against.
   obj <- hazard(time = d$int_dead, status = d$dead, dist = "exponential",
                 theta = -4)
   obj$fit$theta <- c(-4, 0.01)
-  expect_error(
-    predict(obj, newdata = data.frame(time = .sd_time, age = 70),
-            type = "linear_predictor"),
-    "'theta' has 2 entries, but this exponential model takes 1",
-    fixed = TRUE
-  )
+  expect_equal(predict(obj, newdata = data.frame(time = .sd_time, age = 70),
+                       type = "linear_predictor"),
+               c(0.7, 0.7), tolerance = 1e-12)
 })

@@ -1708,9 +1708,17 @@ predict.hazard <- function(object, newdata = NULL,
   # what `hazard()` and `hzr_evaluate()` both count. Multiphase is excluded
   # here as it is there, since fit = FALSE may legitimately carry fewer
   # entries (#408).
-  if (!identical(object$spec$dist, "multiphase")) {
+  # Only where there IS a stored design to check against. An object that
+  # stored no `x` but carries covariate coefficients is a documented,
+  # supported shape: `.hzr_newdata_design()` maps newdata's columns onto
+  # those coefficients BY POSITION, because position is the only mapping
+  # left. Refusing it here would kill that path (and did: it took
+  # test-loglogistic-dist.R's supported case with it). Whether that
+  # capability should survive at all is a separate decision, not one to make
+  # as a side effect of a length check.
+  if (!identical(object$spec$dist, "multiphase") && !is.null(object$data$x)) {
     x_stored <- object$data$x
-    if (!is.null(x_stored) && !is.null(time_windows)) {
+    if (!is.null(time_windows)) {
       x_stored <- .hzr_expand_time_varying_design(
         x = x_stored, time = object$data$time, time_windows = time_windows
       )

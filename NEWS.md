@@ -817,8 +817,6 @@
 
 ## Bug fixes
 
-  What a sentinel objective should mean for a single fit is tracked
-  separately (#351, #374).
 * **A single-distribution `theta` must have one entry per parameter, and a
   Weibull scale and shape must be positive, fitted or not (#375, #383).**
   `hazard()` compared a supplied `theta` only with the design's column

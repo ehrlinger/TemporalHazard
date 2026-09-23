@@ -65,3 +65,35 @@ test_that("an untampered fit predicts normally, one value per row", {
   nd <- data.frame(time = c(1, 2), x = c(0, 1))
   expect_length(predict(fit, newdata = nd, type = "survival"), 2L)
 })
+
+test_that("the check does not fire on a time-windowed model, or one with no stored design", {
+  # The two cases where the new count is not simply ncol(x), and where getting
+  # it wrong refuses a legitimate object rather than letting a bad one through.
+  #
+  # (a) A time-windowed fit: theta carries one coefficient per covariate PER
+  # WINDOW, so the count must be the expanded one. Dropping the expansion
+  # would leave the suite green while predict() refused every windowed fit,
+  # which is why this asserts the non-firing directly.
+  set.seed(4)
+  n <- 60
+  d <- data.frame(t = stats::rexp(n) + 0.1,
+                  s = stats::rbinom(n, 1, 0.7), x = stats::rnorm(n))
+  win <- suppressWarnings(hazard(
+    survival::Surv(t, s) ~ x, data = d, dist = "weibull",
+    time_windows = c(0.5), theta = c(1, 1, 0, 0), fit = TRUE
+  ))
+  expect_gt(length(win$fit$theta), 3L)   # premise: the design really expanded
+  p <- predict(win, type = "survival")
+  expect_length(p, n)
+
+  # (b) An object that stored no design but carries a coefficient: position is
+  # the only mapping, and it is a documented path, so the check must stay out
+  # of its way.
+  nodes <- hazard(time = d$t, status = d$s, dist = "exponential", theta = -4)
+  nodes$fit$theta <- c(-4, 0.01)
+  expect_length(
+    predict(nodes, newdata = data.frame(time = c(1, 2), age = 70),
+            type = "linear_predictor"),
+    2L
+  )
+})
