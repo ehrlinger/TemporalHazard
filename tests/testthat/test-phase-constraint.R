@@ -464,7 +464,21 @@ test_that("a translated FIXGAE2 job runs as a constrained fit", {
     "  PARMS MUL=0.1 TAU=8 ALPHA=2 GAMMA=5 ETA=1 FIXGAE2 WEIBULL; );"
   ), f)
   out <- withr::local_tempdir()
-  job <- hzr_translate_sas(f, out_dir = out)
+  # PROC HAZARD moves the late shape onto the constraint before fitting
+  # (setg3.c:449-467), so a job written ALPHA=2 is fitted at ALPHA=2.5. The
+  # translation emits 2.5 -- SAS's own model -- and DISCLOSES the rewrite
+  # rather than emitting it silently. Asserted here rather than muffled:
+  # this is where that warning surfaces, and a test whose name says only
+  # that the job "runs as a constrained fit" while the code also warns
+  # documents less than the code does (#433 gate).
+  # The assignment is INSIDE expect_warning() on purpose: it returns the
+  # warning condition, not the value of the expression, so `job <-
+  # expect_warning(...)` binds the warning and every later assertion then
+  # asks the wrong object.
+  job <- NULL
+  expect_warning(job <- hzr_translate_sas(f, out_dir = out),
+                 "ALPHA=2 -> 2.5", fixed = TRUE)
+  expect_true("ALPHA=2 -> 2.5" %in% job$untranslated$construct)
   expect_false("FIXGAE2" %in% job$untranslated$construct)
   qmd <- readLines(file.path(out, sub("[.]sas$", ".qmd", basename(f))))
   expect_true(any(grepl("constraint = \"alpha_gamma_eta\"", qmd, fixed = TRUE)))
