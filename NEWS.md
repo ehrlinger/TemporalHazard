@@ -2,20 +2,30 @@
 
 ## Breaking changes
 
-* **`hazard()` refuses a function-valued element of `data` on the vector
-  interface (#420).** The vector path evaluates `time`, `status`,
-  `time_lower`, `time_upper` and `weights` with `data` masking the calling
-  frame. R's function lookup walks past every binding that is not a
-  function, so an element such as `rep = function(...) ...` in a list
-  `data` was called in place of `base::rep()` by an expression like
-  `weights = rep(1, 40)`. The fit changed and nothing warned; this has
+* **`hazard()` refuses a function-valued element of `data` (#420).** `data`
+  masks the calling frame while `hazard()` evaluates `time`, `status`,
+  `time_lower`, `time_upper` and `weights`, and while it evaluates the
+  formula's `Surv()` response. R's function lookup walks past every binding
+  that is not a function, so an element such as `rep = function(...) ...`
+  was called in place of `base::rep()` by an expression like
+  `weights = rep(1, n)`. The fit changed and nothing warned; this has
   shipped since 1.2.2 (#151). `stats::lm()` refuses the same shape.
-  A numeric element or column of the same name was never consulted and is
-  unaffected, and the formula interface could not reach it.
-  **What now errors:** using the mask to reach a helper, as in
-  `hazard(time = f(t), status = s, data = list(t = ..., s = ..., f = myfun))`.
-  Define the helper in the calling environment, or compute the value before
-  calling `hazard()`, and pass `data` without it.
+  Both interfaces were affected. The formula path looked immune only
+  because the column-reading step replicates each column to `nrow` and dies
+  on a function while doing it -- at one row there is nothing to replicate,
+  and a 1-row frame carrying a `round` made `Surv(round(tt), ss)` read the
+  masked value as the response.
+  **What now errors:** any `data` carrying a *named* element that is a
+  function, whether or not an expression calls it. That includes using the
+  mask to reach a helper, as in
+  `hazard(time = f(t), status = s, data = list(t = ..., s = ..., f = myfun))`,
+  and it includes an S4 generic or a reference-class generator, which are
+  functions for this purpose. Define the helper in the calling environment,
+  or compute the value before calling `hazard()`, and pass `data` without
+  it.
+  **Unaffected:** a numeric element or column of the same name, which was
+  never consulted; a data-frame list-column of functions, which is a list;
+  and an element with no name, which no expression can look up.
 
 * **`hzr_bootstrap()` no longer counts replicates that estimated nothing as
   successes (#373).** The optimizer stands in 1e10 for a negative

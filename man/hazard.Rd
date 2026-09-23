@@ -64,7 +64,16 @@ evaluating an expression such as \code{runif(n)} twice gives two different
 vectors.
 Masked arguments are validated like any other, so an \code{NA} in a
 masked column errors: an \code{NA} count on the SAS \code{ICENSOR}
-path reaches \code{weights} and stops with \verb{'weights' must be non-negative and finite}.}
+path reaches \code{weights} and stops with \verb{'weights' must be non-negative and finite}.
+A named element of \code{data} that is a \strong{function} is refused, on both
+paths, as \code{\link[stats:lm]{stats::lm()}} refuses it. Because the mask sits in front of
+the calling frame, such an element would be called in place of the
+function an expression names -- \code{weights = rep(1, n)} calling a \code{rep}
+held in \code{data} -- and the fit would change with nothing to show for it.
+An S4 generic and a reference-class generator are functions for this
+purpose. A list-column of functions is a list, not a function, and is
+unaffected, as is an element with no name, which no expression can look
+up.}
 
 \item{time}{Numeric follow-up time vector.}
 

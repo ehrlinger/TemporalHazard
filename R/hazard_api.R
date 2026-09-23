@@ -205,6 +205,15 @@ NULL
 #'   masked column errors: an `NA` count on the SAS `ICENSOR`
 #'   path reaches `weights` and stops with `'weights' must be
 #'   non-negative and finite`.
+#'   A named element of `data` that is a **function** is refused, on both
+#'   paths, as [stats::lm()] refuses it. Because the mask sits in front of
+#'   the calling frame, such an element would be called in place of the
+#'   function an expression names -- `weights = rep(1, n)` calling a `rep`
+#'   held in `data` -- and the fit would change with nothing to show for it.
+#'   An S4 generic and a reference-class generator are functions for this
+#'   purpose. A list-column of functions is a list, not a function, and is
+#'   unaffected, as is an element with no name, which no expression can look
+#'   up.
 #' @param time_windows Optional numeric vector of strictly positive cut points for
 #'   piecewise time-varying coefficients. When provided, each predictor column in
 #'   `x` is expanded into one column per time window so each window gets its own
@@ -608,6 +617,43 @@ hazard <- function(formula = NULL,
   }
   x_design <- NULL
   # Formula dispatch: if formula is provided, parse it and extract time/status/x from data
+  # `data` masks the calling frame for the argument expressions AND for the
+  # formula's Surv() response, and R's function lookup walks past every
+  # binding that is not a function. So a function-valued element is CALLED in
+  # place of the function an expression names, changing the fit with nothing
+  # to show for it (#420). stats::lm() refuses the same shape, less clearly
+  # ("cannot coerce class '\"function\"' to a data.frame").
+  #
+  # This runs BEFORE .hzr_numeric_frame_values() and before the formula/vector
+  # branch, both deliberately. That helper replicates each column to `nrow`
+  # and dies on a function while doing it, which looks like a guard and is
+  # not one: at nrow == 1 there is nothing to replicate, the function
+  # survives, and the formula path read it. Running first also means the
+  # named refusal is what the user sees, never "attempt to replicate an
+  # object of type 'closure'".
+  #
+  # Only NAMED elements: `eval()` cannot look up an element that has no name,
+  # so an unnamed one never had the defect and refusing it would be a false
+  # refusal. Data frames are not exempted -- `data.frame()`, `$<-` and `[[<-`
+  # each refuse a function column, but `structure(list(...), class =
+  # "data.frame")` carries one and `is.data.frame()` is TRUE for it. A
+  # list-column is a list, which the lookup skips, so it still fits.
+  if (!is.null(data)) {
+    nm <- names(data)
+    fn <- vapply(data, is.function, logical(1)) &
+      !is.null(nm) & !is.na(nm) & nzchar(nm)
+    if (any(fn)) {
+      stop("'data' holds a function named ",
+           paste0("'", unique(nm[fn]), "'", collapse = ", "),
+           ". `data` masks the calling frame while hazard() evaluates its ",
+           "arguments and the formula's response, so such an element is ",
+           "called in place of the function the expression names, changing ",
+           "the fit with nothing to show for it. Remove it from 'data': ",
+           "define the helper in the calling environment, or compute the ",
+           "value before calling hazard().", call. = FALSE)
+    }
+  }
+
   # Columns of `data` are read before any argument is: Surv() and
   # model.matrix() take a classed numeric's stored doubles too (#231).
   data <- .hzr_numeric_frame_values(data)
@@ -672,34 +718,6 @@ hazard <- function(formula = NULL,
   if (is.null(formula) && !is.null(data)) {
     if (!is.data.frame(data) && !is.list(data)) {
       stop("'data' must be a data frame or a list.", call. = FALSE)
-    }
-    # A function-valued element would be CALLED in place of the function an
-    # argument expression names, because `data` masks the calling frame and
-    # R's function lookup walks past every binding that is not a function.
-    # The fit changed and nothing said so (#420). stats::lm() refuses the
-    # same shape, less clearly ("cannot coerce class '\"function\"' to a
-    # data.frame").
-    #
-    # Data frames are NOT exempted, although data.frame(), `$<-` and `[[<-`
-    # all refuse a function column: `structure(list(a = 1:2, f = f),
-    # class = "data.frame")` carries one, and `is.data.frame()` is TRUE for
-    # it, so exempting them would leave exactly this defect reachable. A
-    # normally built frame cannot trip this, and a list-column is a list,
-    # which the lookup skips.
-    fn <- vapply(data, is.function, logical(1))
-    if (any(fn)) {
-      nm <- names(data)
-      named <- if (is.null(nm)) {
-        paste0("at position ", paste(which(fn), collapse = ", "))
-      } else {
-        paste0("named ", paste0("'", nm[fn], "'", collapse = ", "))
-      }
-      stop("'data' holds a function ", named, ". On the vector interface ",
-           "'data' masks the calling frame, so such an element is called ",
-           "in place of the function an argument expression names, ",
-           "changing the fit with nothing to show for it. Remove it from ",
-           "'data': define the helper in the calling environment, or ",
-           "compute the value before calling hazard().", call. = FALSE)
     }
     mask_env <- parent.frame()
     .hzr_warn_masked_ambiguity(
