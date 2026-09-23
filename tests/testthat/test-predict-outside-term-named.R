@@ -207,8 +207,13 @@ test_that("a term that assigns into model.frame's shared mask still predicts", {
     hazard(f, data = d, dist = "weibull", theta = c(mu = 0.5, nu = 1, 0, 0),
            fit = TRUE)
   )
-  p <- predict(fit, newdata = d[1:2, "age", drop = FALSE],
-               type = "linear_predictor")
+  # The fit is suppressed because a contrived collinear formula warns about
+  # conditioning; the predict() under test is NOT, because a warning from
+  # the rebuild path is exactly what this test has to be able to see.
+  expect_no_warning(
+    p <- predict(fit, newdata = d[1:2, "age", drop = FALSE],
+                 type = "linear_predictor")
+  )
   # The newdata path must agree with the fitted path on the same two rows.
   expect_equal(unname(p),
                unname(predict(fit, type = "linear_predictor")[1:2]))
