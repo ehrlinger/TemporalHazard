@@ -449,7 +449,9 @@
       term <- .hzr_outside_rows_term(
         design$terms, .hzr_newdata_frame(newdata, design$data_vars)
       )
-      if (length(term)) .hzr_stop_unmatched_rows(term, where, nrow(newdata))
+      if (length(term)) {
+        .hzr_stop_unmatched_rows(term, where, nrow(newdata), original = mm)
+      }
     }
     stop(mm)
   }
@@ -772,19 +774,64 @@
 #' function of a `data` column, such as `unique()` or `stats::na.omit()`, is
 #' another, and for that one "move it into `data`" is advice the user cannot
 #' follow. The message gives both rather than asserting the first (#409).
+#'
+#' The diagnosis establishes a row count and nothing else, so it cannot know
+#' whether the term it names is why the build failed. It used to REPLACE the
+#' failure anyway: a term returning a list failed on its type, and the user
+#' was sent to repair an innocent `zz` that merely happened to be
+#' row-mismatched -- advice that could not be followed, because `zz` is not a
+#' column of `data` for `newdata` to supply (#446).
+#'
+#' So the naming is APPENDED to `original` rather than substituted for it.
+#' Both sentences are then independently true and neither claims to explain
+#' the other, which is why no causal test is needed: four attempts at one
+#' were abandoned, each defeated by the rebuild re-running the user's code
+#' (#450). The original's class vector and call are kept verbatim, so a
+#' caller's `tryCatch()` on their own condition class still fires.
+#'
+#' Our own `hzr_design_rows_error` backstop is the exception: it already says
+#' what the note says, so appending would print one statement twice, and it
+#' is replaced as before.
+#'
 #' @param term Character vector of term labels.
 #' @param where Text naming the design.
 #' @param n Number of rows in `newdata`.
+#' @param original The condition the design build raised, or `NULL` to raise
+#'   the note alone.
 #' @noRd
-.hzr_stop_unmatched_rows <- function(term, where, n) {
-  stop("term ", .hzr_term_list(term), " of ", where,
-       " does not give one value per row of 'newdata' (", n, " row(s)), so ",
-       "predict(newdata =) cannot rebuild it for new rows. Either the term ",
-       "takes row-level values from outside `data`, such as a vector in the ",
-       "formula's environment, in which case move those into `data` as ",
-       "columns and refit; or it uses a length-changing function, such as ",
-       "unique() or stats::na.omit(), which has no value to give for a new ",
-       "row.", call. = FALSE)
+.hzr_stop_unmatched_rows <- function(term, where, n, original = NULL) {
+  note <- paste0(
+    "term ", .hzr_term_list(term), " of ", where,
+    " does not give one value per row of 'newdata' (", n, " row(s)), so ",
+    "predict(newdata =) cannot rebuild it for new rows. Either the term ",
+    "takes row-level values from outside `data`, such as a vector in the ",
+    "formula's environment, in which case move those into `data` as ",
+    "columns and refit; or it uses a length-changing function, such as ",
+    "unique() or stats::na.omit(), which has no value to give for a new ",
+    "row."
+  )
+  # Our own backstop carries no call, and the note is the same statement in
+  # better words, so it is replaced rather than quoted back.
+  if (is.null(original) || inherits(original, "hzr_design_rows_error")) {
+    stop(note, call. = FALSE)
+  }
+  # A CONDITION THE CALLER RAISED passes through as the SAME OBJECT. Not a
+  # copy: `conditionMessage()` is a generic, so writing our text into
+  # `$message` does not mean the caller reads it -- a class with its own
+  # method never looks there, and an earlier version of this destroyed both
+  # statements at once (#446). Rebuilding also dropped every field beyond
+  # message and call, so a `tryCatch()` handler fired and got `NULL`, which
+  # is worse than not firing.
+  if (!identical(class(original), c("simpleError", "error", "condition"))) {
+    stop(original)
+  }
+  # A plain base error from the frame build. OURS LEADS: model.frame() names
+  # whichever variable it compared against, which is routinely a column the
+  # user supplied correctly, and a first line blaming `mal` prescribes a
+  # remedy that contradicts the note (#409, #446).
+  stop(paste0(note, "\nThe design build reported: ",
+              paste(conditionMessage(original), collapse = " ")),
+       call. = FALSE)
 }
 
 
@@ -805,12 +852,17 @@
 #'
 #' A user function that itself calls `model.frame()` or `model.matrix()` and
 #' fails inside it is misread as a design failure: `conditionCall()` reports
-#' the same callee for both. That is a known limitation, not an oversight
-#' (#446) -- separating them needs the call stack at signal time, it fails
-#' loudly either way, and NEWS records the exception. The behaviour is
-#' PINNED by "a nested model.frame() failure is misattributed, as
-#' documented", so fixing #446 fails that test and forces this note and the
-#' NEWS sentence to be updated with it.
+#' the same callee for both. Separating them needs the call stack at signal
+#' time, which is more machinery than this helper earns.
+#'
+#' That costs less than it did, because a condition the caller RAISED is now
+#' recognised by its class and passed straight through
+#' (`.hzr_stop_unmatched_rows()`). What remains is the narrow case where the
+#' nested call raises a PLAIN base error, indistinguishable from our own frame
+#' assembly by both class and call: that one takes the base-error route, so a
+#' row-mismatched term is named for a failure that was not its doing, with the
+#' caller's text quoted after it. Recorded in #446 and PINNED by "a nested
+#' model.frame() failure keeps its own error and gains a note".
 #'
 #' @param e A condition.
 #' @return `TRUE` when the condition came from the design build.
@@ -879,8 +931,21 @@
   # was fine (#430 review). `vapply()` evaluates in order, and `mask`
   # persists across the calls, so the assignment carries.
   mask <- list2env(as.list(nd), parent = env)
-  wrong <- vapply(vars, function(v) {
-    val <- tryCatch(eval(v, mask), error = function(e) NULL)
+  vals <- lapply(vars, function(v) tryCatch(eval(v, mask), error = function(e) NULL))
+  # A variable that is not a legal model-frame column -- a list, say -- failed
+  # on its TYPE, not on its rows, and its row count is not the story. Naming a
+  # row-mismatched term for that failure blames a term that had nothing to do
+  # with it and prescribes a remedy that cannot be followed (#446). Decline,
+  # and the caller keeps the type error. Structural, not a message test: both
+  # base messages are translated, so a message test would stop working outside
+  # an English locale and no CI here would catch it.
+  bad_type <- vapply(vals, function(val) {
+    !is.null(val) && !is.atomic(val) && !is.factor(val)
+  }, logical(1))
+  if (any(bad_type)) {
+    return(character(0))
+  }
+  wrong <- vapply(vals, function(val) {
     !is.null(val) && NROW(val) != nrow(nd)
   }, logical(1))
   if (!any(wrong)) {
