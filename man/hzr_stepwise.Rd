@@ -38,11 +38,9 @@ hzr_stepwise(
 
 \item{scope}{Candidate set.  \code{NULL} (default) uses every data-frame
 column not already in the model for every phase.  A candidate enters
-by writing its name into the formula text, so under this default too a
-column whose name reads as a different term enters as that term, with
-no warning: a column literally named \code{age:mal} enters as the
-interaction, and a column \code{"age "} beside \code{age} enters as \code{age}
-(#449).  For
+as the column it names, whatever its name: a column literally named
+\code{age:mal} enters as that column, not the interaction, and a column
+\code{"age "} beside \code{age} enters as itself (#449).  For
 single-distribution fits, pass a one-sided formula
 (\code{~ age + nyha}) or a character vector of names.  Each name in a
 character \code{scope} is looked up, not parsed: a name that is exactly a
@@ -51,14 +49,10 @@ term label as \code{terms()} writes it (\code{"`_X1`"}, \code{"log(age)"},
 \code{"age:mal"}) is that term, and any other name is ignored with a
 warning naming it.  The column is looked up first, so when \code{data} has
 a column literally named \code{age:mal}, \code{"age:mal"} puts that column in
-the scope rather than the interaction.  Resolution decides which
-variables are in the scope; it does not change how a candidate is
-entered.  The refit writes the name as you spelled it into the
-formula text.  When that text reads as a different term, as
-\code{"age:mal"} reads as the interaction and \code{"age "} as \code{age}, the
-screen enters that other term with no warning (#449); when it does not
-parse, as a bare \code{"_X1"} does not, the candidate cannot enter
-(#441, #438).  For multiphase
+the scope rather than the interaction.  A candidate enters as the
+column or term its name resolved to, so a bare \code{"_X1"} enters the
+column \verb{_X1} (#449, #441), and the score reads the values of that
+column however the name was written (#438).  For multiphase
 fits, pass a named list of one-sided formulas keyed by phase, naming
 each phase once.  \code{scope} lists what may enter; a drop considers every
 term in the model except \code{force_in} and terms frozen by \code{max_move}

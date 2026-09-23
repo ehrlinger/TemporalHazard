@@ -90,28 +90,42 @@
   }, character(1), USE.NAMES = FALSE)
 }
 
-#' The term a refit adds for a candidate spelling
+#' The term a candidate's refit writes into the formula
 #'
-#' `.hzr_formula_update()` pastes the candidate's spelling into the formula
-#' TEXT, so the model gains whatever term that text parses to, which is not
-#' always the candidate's identity: the column `age:mal`, spelled bare,
-#' enters as the INTERACTION `age:mal` (#442). hzr_stepwise() uses this to
-#' recognise the term an entry added as that candidate, so it is not
-#' offered again while the term is in the model.
+#' `.hzr_formula_update()` writes its `var` into the formula TEXT, so the
+#' model gains whatever that text parses to. The candidate's spelling is the
+#' user's column name, which can parse to a different term: `age ` reads as
+#' `age`, the column `age:mal` as the interaction, and `_X1` does not parse
+#' (#449, #441). Its identity is the label `terms()` wrote for the resolved
+#' column or term, which parses back to exactly that, so that is what the
+#' refit is given.
 #'
-#' @param x Character vector of candidate spellings.
-#' @return The single term label each spelling pastes to, or `NA` when it
-#'   pastes to none or to several.
+#' @param cand A candidate from `.hzr_stepwise_candidates()`.
+#' @return A term label.
 #' @keywords internal
 #' @noRd
-.hzr_refit_term <- function(x) {
-  vapply(x, function(v) {
-    lab <- tryCatch(
-      attr(stats::terms(stats::as.formula(paste("~", v))), "term.labels"),
-      error = function(e) character()
-    )
-    if (length(lab) == 1L) lab else NA_character_
-  }, character(1), USE.NAMES = FALSE)
+.hzr_candidate_term <- function(cand) {
+  cand$id %||% cand$var
+}
+
+#' The data column a candidate is, if it is one
+#'
+#' The score reads the candidate's values from `data`, so it needs the COLUMN
+#' the candidate resolved to, which is neither its spelling nor its label in
+#' general: a formula `scope` spells `_X1` as its label `` `_X1` ``, which is
+#' no column name (#438), and the interaction `age:mal` is spelled like a
+#' literal column `age:mal` that it is not (#449). The column is the one
+#' whose own `terms()` label is the candidate's identity.
+#'
+#' @param cand A candidate from `.hzr_stepwise_candidates()`.
+#' @param data The screen's data frame.
+#' @return The column name, or `NA` when the candidate is not a column.
+#' @keywords internal
+#' @noRd
+.hzr_candidate_column <- function(cand, data) {
+  cols <- names(data)
+  hit <- match(.hzr_candidate_term(cand), .hzr_column_label(cols))
+  if (is.na(hit)) NA_character_ else cols[[hit]]
 }
 
 #' Is a string a term label of `data`, exactly as `terms()` writes it?

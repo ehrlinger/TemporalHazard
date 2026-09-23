@@ -924,18 +924,33 @@
   screen stops, rather than "no further action".
 
   This is about MATCHING: which variables are pinned, excluded or in the
-  scope. How a candidate ENTERS is unchanged and is a known limitation. The
-  refit writes the candidate's name, as spelled, into the formula text. A
-  formula `scope` carries `terms()` labels, which are already quoted, so
-  its candidates enter as themselves. A name that reads as a different
-  term enters as that term, with no warning: the literal column `age:mal`
-  enters as the interaction, and a column `age ` beside `age` enters as
-  `age`, reachable through the default `scope = NULL`; under
-  `"score"` the entry p-value is still the literal column's (#449). A
-  non-syntactic name written bare, such as `"_X1"`, does not parse, so
-  under `"wald"` and `"aic"` its refit fails and the failure names it
-  (#441); under `"score"` it can fail by either of two routes, and a
-  `"score"` screen can finish having omitted it (#441, #438).
+  scope. How a matched candidate then enters the model is the #449 entry
+  below.
+
+* **A stepwise candidate is now scored and entered as the column it names
+  (#449, #438, #441).** The refit wrote the candidate's name, as spelled,
+  into the formula text, so a column whose name reads as a different term
+  entered as that term, with no warning. A column `age ` or `age # x`
+  beside `age` refit as `age`, through the default `scope = NULL`, a
+  character `scope`, a multiphase default scope and the screens
+  `hzr_bootstrap()` runs; a literal column `age:mal` refit as the
+  interaction, while under `"score"` its entry p-value was the column's;
+  and a multiphase default scope was built the same way, so a strong
+  column `x2 ` read as the noise column `x2` and was never scored. The
+  refit, the multiphase default scope and the multiphase score, which
+  builds the candidate's phase formula from text as well, now write the
+  label `terms()`
+  gives the resolved column, which reads back as that column, and the
+  score reads the values of the column the candidate resolved to. So the
+  column scored is the column entered and reported. The same change
+  fixes two loud failures: a bare non-syntactic name such as `"_X1"` in
+  a character `scope` now enters under `"wald"` and `"aic"`, where its
+  refit failed to parse (#441), and under `"score"` a non-syntactic
+  candidate written as its label, as a formula `scope` writes it, is read
+  from its column rather than reported as not found in `data` and skipped
+  (#438). An interaction is no longer scored from a literal column that
+  shares its spelling; the score declines it, as it does any term that
+  is not a column.
 
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded

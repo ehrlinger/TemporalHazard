@@ -130,16 +130,16 @@ test_that("a real screen never enters a force_out column (#437, #442)", {
   }
 })
 
-test_that("a screen over a literal `age:mal` column completes (#442)", {
+test_that("a screen over a literal `age:mal` column enters that column once (#442, #449)", {
   skip_on_cran() # full screens
-  # Regression found by review of 36214f79: the candidate was compared by
-  # the COLUMN's label while the refit entered the term its spelling pastes
-  # to, so the next iteration re-offered it and the no-op refit stopped the
-  # screen with an error. 71277ff8 completed with one entry. WHICH term the
-  # refit enters for such a column is a known limitation of the refit
-  # (#449), so this asserts only what does not depend on it: the screen
-  # finishes, enters once, fails no refit, and grows the model by one term.
-  d <- nsn_agemal()
+  # At 36214f79 the entry was compared by the column's identity while the
+  # refit entered the interaction, so the next step re-offered it and the
+  # screen stopped with an error. Since #449 the refit enters the column
+  # itself, so it is in the model as `age:mal` and is not offered again.
+  withr::local_seed(1L)
+  d0 <- nsn_avc()
+  d <- data.frame(d0, `age:mal` = d0$mal * 2 + stats::rnorm(nrow(d0), sd = 0.5),
+                  check.names = FALSE)
   fit <- nsn_fit(d, "age + mal", c(0.1, 1, 0, 0))
   for (sc in list(NULL, "age:mal")) {
     sw <- NULL
@@ -149,18 +149,20 @@ test_that("a screen over a literal `age:mal` column completes (#442)", {
     )
     expect_identical(sum(sw$steps$action == "enter"), 1L)
     expect_identical(sw$criteria$n_refit_failures, 0L)
-    expect_length(nsn_final_terms(sw), 3L)
+    expect_setequal(nsn_final_terms(sw), c("age", "mal", "`age:mal`"))
   }
 })
 
 test_that("a frozen literal `age:mal` column is not re-entered (#442)", {
   skip_on_cran() # a two-way screen that oscillates
-  # The column enters as the interaction (#449), which then fails slstay, so
-  # it oscillates until max_move freezes it (step 6) and it is dropped in the
-  # same iteration (step 7). While it is out of the model only its FROZEN
-  # status keeps it out; without that the screen re-entered it at step 8 and
-  # ran to max_steps.
-  d <- nsn_agemal()
+  # A noise column enters (p < slentry) and fails slstay, so it oscillates
+  # until max_move freezes it (step 6) and it is dropped in the same
+  # iteration (step 7). While it is out of the model only its FROZEN status
+  # keeps it out; without that the screen re-enters it and runs to
+  # max_steps.
+  withr::local_seed(2L)
+  d0 <- nsn_avc()
+  d <- data.frame(d0, `age:mal` = stats::rnorm(nrow(d0)), check.names = FALSE)
   fit <- nsn_fit(d, "age + mal", c(0.1, 1, 0, 0))
   sw <- nsn_screen(fit, d, direction = "both", slentry = 0.99, slstay = 0.2,
                    max_steps = 20L)
@@ -171,34 +173,41 @@ test_that("a frozen literal `age:mal` column is not re-entered (#442)", {
 })
 
 test_that("a candidate that adds no column does not end the screen (#442)", {
-  skip_on_cran() # full screens under three criteria
-  # With the interaction already in the model, the literal `age:mal` column
-  # refits as that same interaction (#449) and adds no column. That was an
-  # error that ended the whole screen under wald and aic, while score went
-  # on. Every criterion must now record it and finish.
-  withr::local_seed(1L)
-  d <- nsn_agemal()
-  d$`age:mal` <- d$mal * 2 + stats::rnorm(nrow(d), sd = 0.5) # not collinear
-  fit <- nsn_fit(d, "age * mal", c(0.1, 1, 0, 0, 0))
+  skip_on_cran() # multiphase screens under three criteria
+  # Adding `z` to a phase `~ z:f` turns the columns `z:fa, z:fb` into
+  # `z, z:fb`: no column of its own. That refusal was an error that ended
+  # the whole screen under wald and aic, while score went on. Every
+  # criterion must now record the candidate and finish, each by its own
+  # route: the refit criteria as a refused refit, score as a candidate it
+  # could not expand into a column of its own.
+  withr::local_seed(5L)
+  n <- 300L
+  d <- data.frame(z = stats::rnorm(n),
+                  f = factor(sample(c("a", "b"), n, replace = TRUE)))
+  d$time <- stats::rexp(n) * exp(-0.6 * d$z)
+  d$status <- 1L
+  base <- suppressWarnings(hazard(
+    survival::Surv(time, status) ~ 1, data = d, dist = "multiphase",
+    phases = list(constant = hzr_phase("constant", formula = ~ z:f)),
+    fit = TRUE
+  ))
   for (crit in c("wald", "aic", "score")) {
     sw <- NULL
     expect_no_error(
-      sw <- suppressWarnings(hzr_stepwise(fit, data = d, direction = "forward",
+      sw <- suppressWarnings(hzr_stepwise(base, data = d,
+                                          scope = list(constant = ~ z),
+                                          direction = "forward",
                                           criterion = crit, slentry = 0.99,
                                           trace = FALSE))
     )
-    expect_setequal(nsn_final_terms(sw), c("age", "mal", "age:mal"))
     expect_identical(sum(sw$steps$action == "enter"), 0L, info = crit)
-    # Each records the candidate it could not test, by its own route: the
-    # refit criteria as a refused refit, score as a candidate it could not
-    # expand into a column of its own.
     if (crit == "score") {
       expect_identical(sw$criteria$uncomputable_reasons,
                        c(not_expandable = 1L))
     } else {
-      expect_identical(sw$criteria$refit_failures, "age:mal", info = crit)
+      expect_identical(sw$criteria$refit_failures, "z@constant", info = crit)
       expect_match(unname(sw$criteria$refit_failure_reasons),
-                   "added no design-matrix column", info = crit)
+                   "does not add a column", info = crit)
     }
   }
 })
@@ -293,30 +302,23 @@ test_that("force_out keeps a non-syntactic column out, either spelling (#437)", 
                                force_out = "_X1"), "mal")
 })
 
-test_that("entry needs the QUOTED spelling; a bare one fails loudly (#437)", {
-  skip_on_cran() # three forward screens
-  # Pins the NEWS paragraph that separates MATCHING from ENTRY. Matching a
-  # non-syntactic variable is not being able to ADD one: the refit pastes
-  # the candidate's spelling into the formula text. For `_X1` the quoted
-  # spelling parses and the bare one does not, and that failure is LOUD
-  # (#441). (A spelling that parses to a DIFFERENT term is #449.)
+test_that("a non-syntactic name enters under either spelling (#437, #449)", {
+  skip_on_cran() # full screens
+  # Pins the NEWS paragraph that separates MATCHING from ENTRY. Before #449
+  # the refit pasted the candidate's spelling into the formula text, so the
+  # bare "_X1" did not parse and its refit failed (#441). The refit now
+  # writes the resolved column's term label, so both spellings enter it.
   d <- nsn_rename_age("_X1")
   base <- nsn_fit(d)
   fwd <- function(...) {
     suppressWarnings(hzr_stepwise(base, data = d, direction = "forward",
                                   criterion = "aic", trace = FALSE, ...))
   }
-  entered <- function(sw) sw$steps$variable[sw$steps$action == "enter"]
-
-  sw_f <- fwd(scope = ~ `_X1` + mal)
-  expect_true("`_X1`" %in% entered(sw_f))
-  expect_identical(sw_f$criteria$n_refit_failures, 0L)
-
-  sw_c <- fwd(scope = c("_X1", "mal"))
-  expect_false(any(entered(sw_c) %in% c("_X1", "`_X1`")))
-  expect_gt(sw_c$criteria$n_refit_failures, 0L)
-
-  expect_true("`_X1`" %in% entered(fwd(scope = c("`_X1`", "mal"))))
+  for (sc in list(~ `_X1` + mal, c("_X1", "mal"), c("`_X1`", "mal"))) {
+    sw <- fwd(scope = sc)
+    expect_setequal(nsn_final_terms(sw), c("`_X1`", "mal"))
+    expect_identical(sw$criteria$n_refit_failures, 0L)
+  }
 })
 
 test_that("multiphase: force_out written bare reaches the label (#437)", {

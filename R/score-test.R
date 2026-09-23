@@ -346,16 +346,19 @@
 #'   "duplicate_column")` when the expanded design repeats a column name,
 #'   which hazard() would refuse.
 #' @noRd
-.hzr_score_expand <- function(current, var, phase, data) {
+.hzr_score_expand <- function(current, var, phase, data, term = var) {
   if (current$spec$dist != "multiphase") {
     return(.hzr_score_expand_single(current, var, phase, data))
   }
+  # The phase formula is rebuilt from TEXT, so it is given the candidate's
+  # term label, not the column name `var`: pasted, a column `x2 ` read back
+  # as `x2`, and the score was computed on the wrong column (#449).
   phases <- .hzr_score_phases(current)
   if (is.null(phase) || !is.character(phase) || length(phase) != 1L ||
         !phase %in% names(phases)) {
     return(NULL)
   }
-  if (var %in% .hzr_scope_current_vars(current, phase)) {
+  if (term %in% .hzr_scope_current_vars(current, phase)) {
     return(NULL)
   }
 
@@ -366,7 +369,7 @@
     .hzr_inherited_rhs(current)
   }
   new_phases[[phase]] <- .hzr_phase_update_formula(
-    new_phases[[phase]], action = "add", var = var, inherited = inherited
+    new_phases[[phase]], action = "add", var = term, inherited = inherited
   )
 
   d <- current$data
@@ -637,11 +640,15 @@
 #' @param data Data frame the model was fitted on.
 #' @param nuisance Optional result of `.hzr_score_nuisance(current)`; recomputed
 #'   when `NULL`. Pass it to reuse across candidates within a step.
+#' @param term The candidate's term label, written into a multiphase phase
+#'   formula. Defaults to `var`, which is right only for a syntactic name;
+#'   the stepwise step passes the resolved label (#449). `var` may be `NA`
+#'   for a candidate that is no column, which is declined as `non_numeric`.
 #' @return `list(stat, df, p_value)`. `stat`/`p_value` are `NA_real_` for a
 #'   degenerate candidate, a collinear candidate, or an unusable nuisance block.
 #' @noRd
 .hzr_score_q <- function(current, var, phase = NULL, data,
-                         nuisance = NULL) {
+                         nuisance = NULL, term = var) {
   # Every NA return carries WHY. The reasons are not interchangeable: a
   # collinear column should be dropped, while an indefinite information matrix
   # usually means the candidate is among the strongest on offer. Reporting the
@@ -683,7 +690,7 @@
     )
   }
 
-  xcand <- .hzr_candidate_numeric(data[[var]])
+  xcand <- if (is.na(var)) NULL else .hzr_candidate_numeric(data[[var]])
   if (is.null(xcand) || anyNA(xcand)) {
     return(na_result("non_numeric"))
   }
@@ -696,7 +703,7 @@
   # through to an unadjusted (too large) v_beta.
   if (!isTRUE(nuisance$ok)) return(na_result("nuisance_singular"))
 
-  exp_ <- .hzr_score_expand(current, var, phase, data)
+  exp_ <- .hzr_score_expand(current, var, phase, data, term = term)
   if (is.null(exp_)) return(na_result("not_expandable"))
   if (!is.null(exp_$reason)) return(na_result(exp_$reason))
 
