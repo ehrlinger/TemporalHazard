@@ -901,6 +901,26 @@
 
 ### New features
 
+- **A fit now records why its gradient test was not run, not merely that
+  it was not**
+  ([\#351](https://github.com/ehrlinger/TemporalHazard/issues/351)).
+  SAS/C HAZARD accepts an optimum only when the relative gradient is
+  small enough, and every fit reports that test in
+  `fit$fit$rel_gradient`. `NA` there has always meant “not evaluated”,
+  never a pass – but it did not say why, and “not evaluated at the
+  estimates” on its own reads like a failure the fit is declining to
+  name. It usually is not one. Under Conservation of Events the test is
+  computed by differencing the log-likelihood, so a point the difference
+  needs can fall outside the region where the likelihood is finite while
+  the estimates themselves are sound. Reading that as a failure would
+  condemn a good fit. The reason is now recorded in
+  `fit$fit$rel_gradient_reason` – `NA_character_` when the test did run
+  – and [`print()`](https://rdrr.io/r/base/print.html) and
+  [`summary()`](https://rdrr.io/r/base/summary.html) append it, so the
+  routes to a missing result are told apart from each other and from a
+  test that ran and failed. A test that ran still reports “met” or “not
+  met” exactly as before.
+
 - **[`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
   now translates a `SELECTION` statement into an
   [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)

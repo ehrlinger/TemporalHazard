@@ -235,12 +235,14 @@ An object of class `hazard`, a named list with components: `call` (the
 matched call), `spec` (model specification: `dist`, `control`,
 `time_windows`, `phases`), `data` (input data: `time`, `status`, `x`,
 `weights`, etc.), `fit` (optimisation results: `theta`, `objective`,
-`converged`, `se`, `vcov`, `counts`, `message`, and `rel_gradient` and
-`polish_code`, the SAS/C acceptance test described under "Convergence";
-all `NULL` when `fit = FALSE`; multiphase fits add `starts`, one row per
-optimisation start with its `status` (`"ok"`, `"nonconverged"`,
-`"infeasible"`, `"nonfinite"` or `"error"`), `objective` (`NA` unless
-the start reached a point where the likelihood is defined),
+`converged`, `se`, `vcov`, `counts`, `message`, and `rel_gradient`,
+`rel_gradient_reason` and `polish_code`, the SAS/C acceptance test
+described under "Convergence"; all `NULL` when `fit = FALSE`; multiphase
+fits add `starts`, one row per optimisation start with its `status`
+(`"ok"`, `"nonconverged"`, `"infeasible"`, `"nonfinite"` or `"error"`),
+`objective` (`NA` unless the start reached a point where the likelihood
+is defined, and recorded as the optimizer returned it, before any
+Conservation of Events adjustment to the conserved phase's scale),
 `convergence` (the [`optim`](https://rdrr.io/r/stats/optim.html) code,
 `0` for success), whether it was the `best` and so the reported fit, and
 the `message` of any error. A start that stops at `maxit` has a finite
@@ -481,17 +483,25 @@ continuation improved the fit, its termination code in
 and [`summary()`](https://rdrr.io/r/base/summary.html) show both.
 `rel_gradient` is `NA` when the test was not applied (the optimizer did
 not report convergence) or the gradient cannot be evaluated at the
-estimates; `NA` is never reported as a pass. Under Conservation of
-Events the analytic score omits how the conserved scale moves, so the
-test is computed from finite differences of the log-likelihood with that
-scale re-solved, as SAS/C does; the continuation still uses the analytic
-score, so a CoE fit can honestly end with the test not met. A warning is
-raised only for code 4, the iteration limit (raise `control$maxit`), and
-code 5, where the log-likelihood kept rising along some direction and
-the model may have no maximum. Codes 2 and 3, where SAS/C prints a
-caution, are recorded without one. The test is relative to the size of
-the log-likelihood, so a fit that meets it is within SAS's tolerance of
-the maximum, not exactly at it.
+estimates; `NA` is never reported as a pass. Neither is it always a
+failure: some routes to it, such as a non-converged stop, do say the
+estimates are unreliable, while others, such as a finite-difference
+score that needed a point where the log-likelihood is not usable, say
+nothing against them. Which route it took is recorded in
+`fit$fit$rel_gradient_reason`, `NA_character_` when the test did run,
+and [`print()`](https://rdrr.io/r/base/print.html) and
+[`summary()`](https://rdrr.io/r/base/summary.html) show it. Under
+Conservation of Events the analytic score omits how the conserved scale
+moves, so the test is computed from finite differences of the
+log-likelihood with that scale re-solved, as SAS/C does; the
+continuation still uses the analytic score, so a CoE fit can honestly
+end with the test not met. A warning is raised only for code 4, the
+iteration limit (raise `control$maxit`), and code 5, where the
+log-likelihood kept rising along some direction and the model may have
+no maximum. Codes 2 and 3, where SAS/C prints a caution, are recorded
+without one. The test is relative to the size of the log-likelihood, so
+a fit that meets it is within SAS's tolerance of the maximum, not
+exactly at it.
 
 ## Baseline distributions
 
