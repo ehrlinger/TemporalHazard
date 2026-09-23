@@ -817,6 +817,33 @@
 
 ## Bug fixes
 
+* **A Conservation of Events fit now reports the log-likelihood of the
+  estimates it returns (#362).** Under CoE the conserved phase's scale is
+  re-derived after the optimizer finishes, and the reported objective was the
+  optimizer's own value, taken before that step. The two could describe
+  different parameter vectors: on one fit of the shipped `avc` data the fit
+  reported `-71.934410193` while the likelihood of its own returned `theta`
+  was `-78.1497959154`, a gap of 6.22. Anything reading the objective
+  inherited the discrepancy, including `print()`, `summary()`, the `logLik`
+  and `delta_logLik` columns of `hzr_stepwise()$steps`, and the log-likelihood
+  the score criterion works from. The objective is now recomputed at the
+  returned estimates, so `objective` and `theta` describe the same point. The
+  one exception is loud: if the likelihood cannot be evaluated there, the
+  optimizer's own value is kept and a warning says so. **No estimate
+  changes**: `theta` is untouched and only the number
+  reported beside it moves, and only for fits where the two had diverged. On
+  the datasets measured that was 2 fits in 15.
+
+  **This corrects the report, not the fit.** The largest gaps arose where the
+  estimates are themselves unsound: standing on a discontinuity in the
+  likelihood, where a change of one floating-point step in a parameter moves
+  the log-likelihood by several units (see Known limitations, #448). A fit in
+  that state reports `converged = TRUE`, and that flag does not mean the fit
+  is sound there. Read the relative-gradient test beside it, which such fits
+  fail.
+
+  What a sentinel objective should mean for a single fit is tracked
+  separately (#351, #374).
 * **A ridge is no longer named from a covariance that is not a covariance
   (#416).** `summary()`'s weak-direction report reads the flat direction from
   the correlation of the estimates. When the Hessian was taken where it is not
@@ -1829,6 +1856,23 @@
   had covariates, or scored a candidate for a phase with an interaction.
 
 ## Known limitations
+
+* **A multiphase fit can come to rest on a discontinuity in the likelihood,
+  and still report `converged = TRUE` (#448).** When a `cdf` phase's shape
+  `nu` is driven towards zero, the phase's `(t_half/t)^(1/nu)` term acquires
+  an exponent of order `1e15`, so the phase approaches a step at `t_half`. If
+  `t_half` then comes to rest within a floating-point step of one or more
+  observed event times, the log-likelihood is discontinuous there: on a fit of
+  the shipped `avc` data a one-step change in `log(t_half)` moves the
+  log-likelihood by 6 to 30 units, in no consistent direction, with five tied
+  event times accounting for the whole of it. Such a fit reports
+  `converged = TRUE` while failing the relative-gradient test by six orders of
+  magnitude, so **read `rel_gradient` and the phase's `nu` before trusting a
+  multiphase fit**, and treat a `nu` at the boundary as a warning that the
+  estimates are not identified. This release does not change the behaviour:
+  whether the reference `PROC HAZARD` reaches the same state on the same job
+  has not been established, and that answer decides whether the fix is a
+  parity break or a shared degeneracy.
 
 * **In a two-way `hzr_stepwise()` screen, `$scope$frozen` can name a
   variable the final model excludes (#378).** With `direction = "both"`,
