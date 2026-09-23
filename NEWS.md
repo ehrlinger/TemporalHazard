@@ -843,6 +843,33 @@
 
 ## Bug fixes
 
+* **The G3 phase's `log_tau` derivative is now taken in `log_tau` (#352).**
+  `.hzr_g3_phase_derivatives()` described itself as taking "central
+  differences for log_tau" and stepped `tau` linearly instead, with an
+  absolute floor of `1e-10`. Once `tau` fell below that floor the step was
+  larger than `tau` itself and the difference became one-sided, so the
+  derivative the optimizer and the Hessian both use was **99.4% wrong at
+  `tau = 1e-12`** and 1.4% wrong at `1e-9`, measured against an analytic
+  derivative of the closed form. The step is now proportional to `tau` at
+  every scale, and the one-sided fallback is removed because it can no longer
+  be reached.
+
+  **Some late-phase (`g3`) fits will move.** Where `tau` is small the
+  optimizer now follows a more accurate gradient and can land somewhere
+  measurably different: across six trial two-phase fits, two moved by more
+  than `1e-8` relative, one of them by **21% on a parameter and 42% on a
+  standard error**, with the objective **0.0126 log-likelihood units better**
+  — a better optimum, not merely a different one. Fits whose shapes stay
+  above about `1e-8` move by around `1e-10` relative, which is the precision
+  the step change itself carries. **No fit in this package's own test suite
+  moves**: its results are identical before and after, to every assertion.
+
+  The `gamma` and `eta` steps keep their existing floors deliberately. `G3`
+  is very nearly linear in each of them near zero, so the floor stays small
+  relative to the scale on which the function varies even when it is 100% of
+  the parameter, and both measure accurate to `1.1e-6` or better at the
+  shapes where the `tau` derivative failed.
+
 * **A Conservation of Events fit now reports the log-likelihood of the
   estimates it returns (#362).** Under CoE the conserved phase's scale is
   re-derived after the optimizer finishes, and the reported objective was the

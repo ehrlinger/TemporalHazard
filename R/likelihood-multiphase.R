@@ -2866,24 +2866,34 @@
   Phi0 <- d0$G3
   phi0 <- d0$g3
 
-  # Central differences for log_tau: tau * d/d(tau) = d/d(log(tau))
-  eps_tau <- max(abs(tau) * h, 1e-10)
-  if (tau - eps_tau > 0) {
-    d_plus  <- hzr_decompos_g3(time, tau = tau + eps_tau, gamma = gamma,
-                                 alpha = alpha, eta = eta)
-    d_minus <- hzr_decompos_g3(time, tau = tau - eps_tau, gamma = gamma,
-                                 alpha = alpha, eta = eta)
-    dPhi_dtau <- (d_plus$G3 - d_minus$G3) / (2 * eps_tau)
-    dphi_dtau <- (d_plus$g3 - d_minus$g3) / (2 * eps_tau)
-  } else {
-    d_plus  <- hzr_decompos_g3(time, tau = tau + eps_tau, gamma = gamma,
-                                 alpha = alpha, eta = eta)
-    dPhi_dtau <- (d_plus$G3 - Phi0) / eps_tau
-    dphi_dtau <- (d_plus$g3 - phi0) / eps_tau
-  }
-  # Chain rule: d/d(log_tau) = tau * d/d(tau)
-  dPhi_dlog_tau <- tau * dPhi_dtau
-  dphi_dlog_tau <- tau * dphi_dtau
+  # Central difference IN log_tau, which is what this block has always said
+  # it computes. It used to step tau LINEARLY by max(|tau| * h, 1e-10) and
+  # then multiply by tau. Below tau = 1e-10 that floor is larger than tau
+  # itself, the minus step would reach 0 so it fell back to a one-sided
+  # difference, and `tau * dPhi_dtau` cannot rescue a slope measured a
+  # hundred times away: dPhi/dlog_tau came back 99.4% wrong at tau = 1e-12,
+  # 1.4% at 1e-9 (#352, measured against an analytic derivative of the
+  # closed form).
+  #
+  # Stepping log_tau makes the step proportional to tau at every scale, and
+  # `tau * exp(-h)` is positive for every positive tau -- including
+  # denormals, where 5e-324 * exp(-1e-5) is 4.94e-324 -- so the one-sided
+  # fallback is unreachable and has been removed. At tau == 0 exactly
+  # `hzr_decompos_g3()` already returns `G3 = Inf`, so the base evaluation
+  # above is degenerate before any step is taken and the fallback could not
+  # have rescued that case either.
+  #
+  # gamma and eta keep their floored linear steps DELIBERATELY: G3 is very
+  # nearly linear in each of them near zero, so a 1e-10 step stays small
+  # relative to the scale on which the function varies even when it is 100%
+  # of the parameter, and both measure clean (1.1e-6 and 2.0e-7 at worst) at
+  # the shapes the review of #332 flagged.
+  d_plus  <- hzr_decompos_g3(time, tau = tau * exp(h), gamma = gamma,
+                               alpha = alpha, eta = eta)
+  d_minus <- hzr_decompos_g3(time, tau = tau * exp(-h), gamma = gamma,
+                               alpha = alpha, eta = eta)
+  dPhi_dlog_tau <- (d_plus$G3 - d_minus$G3) / (2 * h)
+  dphi_dlog_tau <- (d_plus$g3 - d_minus$g3) / (2 * h)
 
   # Central differences for gamma (must stay positive)
   eps_g <- max(abs(gamma) * h, 1e-10)
