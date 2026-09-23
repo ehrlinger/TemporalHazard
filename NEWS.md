@@ -827,6 +827,26 @@
 
 ## Bug fixes
 
+* **`predict(newdata = )` no longer replaces a failure with blame for an
+  unrelated term (#446).** When rebuilding the design failed, the refusal
+  named whichever model term did not give one value per row of `newdata` and
+  raised that *instead of* the failure. The naming was never verified to
+  explain anything, so it could blame an innocent term and prescribe a remedy
+  that could not be followed: a term returning a list failed on its type, and
+  the message sent the user to move a `zz` into `data` that was not a column
+  of `data` at all. The two statements are now both reported — the original
+  failure verbatim as the first line, then the naming, labelled as true
+  whether or not it caused that failure — so no causal claim is made and no
+  diagnostic is lost. The original condition's class vector and call are kept,
+  so a `tryCatch()` on a condition class raised inside one of your own terms
+  fires again.
+
+  A failure raised by a `model.frame()` call *inside* one of your terms is
+  still read as a design failure, because `conditionCall()` reports the same
+  function for both, so a row-mismatched term is named alongside it. Your own
+  error is no longer destroyed by that, and the remaining imperfection is
+  recorded in #446.
+
 * **A Conservation of Events fit now reports the log-likelihood of the
   estimates it returns (#362).** Under CoE the conserved phase's scale is
   re-derived after the optimizer finishes, and the reported objective was the

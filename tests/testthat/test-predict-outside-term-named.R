@@ -23,7 +23,12 @@ test_that("an outside term beside a data column is named, whichever columns newd
     msg <- tryCatch(predict(fit, newdata = nd, type = "linear_predictor"),
                     error = conditionMessage)
     expect_match(msg, want, fixed = TRUE)
-    expect_false(grepl("variable lengths differ", msg, fixed = TRUE))
+    # `model.frame()`'s own message is no longer DISCARDED -- it is the first
+    # line and the naming follows it (#446). What #409 was protecting was
+    # that the user is not left with "variable lengths differ" naming some
+    # other variable and no term at all, so that is what is asserted: the
+    # term is named, and the base message is not the whole message.
+    expect_false(identical(msg, "variable lengths differ (found for 'mal')"))
   }
 })
 
@@ -405,19 +410,21 @@ test_that("a term that reads an earlier term's assignment is not named", {
   expect_false(grepl("I(zz^2)", msg, fixed = TRUE))
 })
 
-test_that("a nested model.frame() failure is misattributed, as documented", {
-  # PINS A KNOWN LIMITATION, deliberately. `conditionCall()` cannot tell our
-  # own frame assembly from one the user's term performed itself: both read
-  # `model.frame.default`. So an error from a `model.frame()` call INSIDE a
-  # term is misread as the design build and replaced by the refusal, naming
-  # whichever term is row-mismatched.
+test_that("a nested model.frame() failure keeps its own error and gains a note", {
+  # PINS THE REMAINING IMPERFECTION, deliberately. `conditionCall()` cannot
+  # tell our own frame assembly from one the user's term performed itself:
+  # both read `model.frame.default`. So an error from a `model.frame()` call
+  # INSIDE a term is still read as the design build, and a row-mismatched
+  # term is named alongside it.
   #
-  # Separating them needs the call stack at signal time, which is more
-  # machinery than this helper earns; the roxygen and NEWS both say so, and
-  # the fix is tracked in its own issue. This test exists so the text and
-  # the behaviour cannot drift apart silently: if someone implements the
-  # frame-depth test, this fails and the documentation must be updated with
-  # it.
+  # What changed is that the naming no longer REPLACES the caller's failure
+  # (#446): the original message survives as the first line, so the user is
+  # told what actually went wrong and the appended note is visibly a separate
+  # statement. Separating the two frames needs the call stack at signal time,
+  # which is more machinery than this helper earns; the roxygen and NEWS both
+  # say so. This test exists so the text and the behaviour cannot drift apart
+  # silently: if someone implements the frame-depth test, this fails and the
+  # documentation must be updated with it.
   set.seed(31)
   d <- data.frame(t = rexp(60), s = rbinom(60, 1, 0.7), age = rnorm(60, 60, 5))
   zz <- rnorm(60)
@@ -440,7 +447,12 @@ test_that("a nested model.frame() failure is misattributed, as documented", {
             type = "linear_predictor"),
     error = conditionMessage
   )
-  # The limitation, stated as an expectation rather than left to prose.
+  # The imperfection, stated as an expectation rather than left to prose:
+  # a term IS still named for a failure that was not its doing.
+  expect_match(msg, "Separately: term ", fixed = TRUE)
   expect_match(msg, "does not give one value per row", fixed = TRUE)
-  expect_false(grepl("variable lengths differ", msg, fixed = TRUE))
+  # And the half that is fixed: the caller's own failure is the first line,
+  # not something the refusal threw away.
+  expect_match(strsplit(msg, "\n", fixed = TRUE)[[1L]][[1L]],
+               "variable lengths differ", fixed = TRUE)
 })
