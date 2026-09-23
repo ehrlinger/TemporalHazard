@@ -736,9 +736,14 @@
     #     rejects the job at parse. This parser passes such text through as
     #     though it were a variable, which is its own defect, but the reason
     #     given to the reader must not claim the lexer accepted it.
-    in_grammar <- grepl("^[_A-Za-z][_A-Za-z0-9]*$", nonsyntactic)
-    not_a_name <- nonsyntactic[!in_grammar]
-    nonsyntactic <- nonsyntactic[in_grammar]
+    # Only a name PROC HAZARD ACCEPTS is refused here. Text it rejects at
+    # parse (`AGE*SEX`, `LOG(AGE)`) is passed through by this parser as though
+    # it were a variable, which is a real defect -- but refusing it would be a
+    # NEW stop for a job that translates on main today, and new stops are not
+    # what this release does (John, 2026-09-22). It is tracked by #440 and
+    # will become a warning plus an $untranslated row there, once the warn
+    # machinery lands. Until then such a job emits exactly what main emits.
+    nonsyntactic <- nonsyntactic[grepl("^[_A-Za-z][_A-Za-z0-9]*$", nonsyntactic)]
     refusals <- c(sel$refuse,
                   if (saw_restrict) "RESTRICT",
                   if (length(per_var_opts)) per_var_opts,
@@ -747,9 +752,6 @@
                   },
                   if (length(nonsyntactic)) {
                     paste0(nonsyntactic, " (not a syntactic R name)")
-                  },
-                  if (length(not_a_name)) {
-                    paste0(not_a_name, " (not a PROC HAZARD variable name)")
                   })
     if (!length(refusals)) return(NULL)
     # Name ONLY what fired. One boilerplate string listing every refusable
@@ -770,13 +772,6 @@
       if (grepl("/(MOVE|ORDER)", item)) {
         return(paste0(item, ": a per-variable MOVE= or ORDER= has no ",
                       "hzr_stepwise() equivalent (its max_move is per run)"))
-      }
-      if (grepl("[(]not a PROC HAZARD variable name[)]$", item)) {
-        return(paste0(item, ": a phase variable must be a NAME ",
-                      "(hazard_l.l:39, hazard_y.y:213), so PROC HAZARD ",
-                      "rejects this job at parse and it produces nothing. ",
-                      "This translator read the text as a variable, which is ",
-                      "why the job reached a fit at all before"))
       }
       if (grepl("[(]not a syntactic R name[)]$", item)) {
         return(paste0(item, ": PROC HAZARD's lexer accepts this name ",

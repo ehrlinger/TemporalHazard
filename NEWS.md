@@ -815,16 +815,20 @@
   the cause. For a name like `_X1` this costs nothing: the job stopped before
   this release too, one step earlier, in the phase formula.
 
-  It does change one other class. The phase parser passes text it cannot read
-  through as though it were a variable, so `EARLY AGE, AGE*SEX;` used to
-  translate: with `SELECTION` it emitted a screen over `~AGE * SEX`, and
-  without one a three-term formula against two coefficient slots. `AGE*SEX` is
-  not a name `PROC HAZARD` accepts (`hazard_l.l:39`, `hazard_y.y:213`), so it
-  rejects that job at parse and neither result ever meant anything; such a
-  `SELECTION` job now stops as well, with a reason saying so rather than
-  claiming the lexer accepted the text. The underlying defects are in the
-  stepwise driver, and the phase parser reading unreadable text as a
-  variable is tracked separately.
+  Text `PROC HAZARD` does not accept as a name is **not** refused here. The
+  phase parser passes what it cannot read through as though it were a
+  variable, so `EARLY AGE, AGE*SEX;` translates. `AGE*SEX` is not a name
+  (`hazard_l.l:39`, `hazard_y.y:213`), so `PROC HAZARD` rejects that job at
+  parse and the translated result never meant anything either way; but
+  refusing it here would stop a job that translates today, so it is left
+  alone and tracked by #440.
+
+  One thing does change for such a job, and it is an improvement rather
+  than a refusal. Built from pasted text, `AGE*SEX` became an R interaction:
+  `~AGE + AGE * SEX` expands to three model terms against two starting
+  values, and the reader met an arithmetic complaint about `theta`. Built
+  from symbols it is one opaque name, so the reader is told the column is
+  missing from the data instead. Both forms fail; only the second says why.
 
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded
