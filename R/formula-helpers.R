@@ -855,13 +855,14 @@
 #' the same callee for both. Separating them needs the call stack at signal
 #' time, which is more machinery than this helper earns.
 #'
-#' What that costs is now small, because the diagnosis no longer replaces the
-#' failure: the caller's message, class and call survive, and the naming is
-#' appended to them (#446). So a nested failure still has a term appended to
-#' it that may have nothing to do with it -- true as a statement about row
-#' counts, and labelled as such -- but the caller's own error is no longer
-#' destroyed. The remaining imperfection is recorded in #446 and PINNED by
-#' "a nested model.frame() failure keeps its own error and gains a note".
+#' That costs less than it did, because a condition the caller RAISED is now
+#' recognised by its class and passed straight through
+#' (`.hzr_stop_unmatched_rows()`). What remains is the narrow case where the
+#' nested call raises a PLAIN base error, indistinguishable from our own frame
+#' assembly by both class and call: that one takes the base-error route, so a
+#' row-mismatched term is named for a failure that was not its doing, with the
+#' caller's text quoted after it. Recorded in #446 and PINNED by "a nested
+#' model.frame() failure keeps its own error and gains a note".
 #'
 #' @param e A condition.
 #' @return `TRUE` when the condition came from the design build.
