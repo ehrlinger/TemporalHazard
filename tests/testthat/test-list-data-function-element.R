@@ -214,3 +214,56 @@ test_that("a function nested inside a list element is not refused", {
                 dist = "weibull", theta = c(1, 1), fit = TRUE)
   expect_true(is.finite(fit$fit$objective))
 })
+
+test_that("an element whose name is NA is refused: R binds it as `NA`", {
+  # `!is.na(nm)` was an exemption written from reasoning, not measurement:
+  # an element named NA_character_ is bound under the symbol `NA` and IS
+  # callable, so exempting it left the exact silent changed fit this guard
+  # exists to stop (#443 review). The empty-name exemption beside it was
+  # measured and is correct -- an unnamed or ""-named element cannot be
+  # looked up at all.
+  env <- ldf_flag()
+  env$called <- FALSE
+  d <- list(c(2.5, 3.5, 4.5), c(1L, 1L, 0L), ldf_fn(env, c(250, 350, 450)))
+  names(d) <- c("tt", "ss", NA_character_)
+  # The known positive for the whole test: on 1.2.11 this call fitted with
+  # times 250 350 450, the masking function having run.
+  expect_true(is.function(d[[3L]]))
+  expect_error(
+    hazard(time = `NA`(tt), status = ss, data = d, dist = "weibull",
+           theta = c(1, 1), fit = TRUE),
+    "holds a function"
+  )
+  # Refused before anything is evaluated, so the masking function never ran.
+  expect_false(env$called)
+})
+
+test_that("each remedy the refusal recommends actually works, on both interfaces", {
+  # The message used to prescribe "define the helper in the calling
+  # environment" for every case. That is true for a vector argument and for
+  # formula `weights`, and false for a helper used in the Surv() RESPONSE,
+  # which is evaluated without the formula's environment (#447). A message
+  # that prescribes an impossible remedy is worse than a generic one, so
+  # each remedy is run here rather than described.
+  helper420 <- function(x) x * 2
+  d_list <- list(tt = c(2.5, 3.5, 4.5), ss = c(1L, 1L, 0L))
+  df <- data.frame(tt = c(2.5, 3.5, 4.5), ss = c(1L, 1L, 0L))
+
+  # Remedy 1, vector interface: the helper lives in the calling environment.
+  fit1 <- hazard(time = helper420(tt), status = ss, data = d_list,
+                 dist = "weibull", theta = c(1, 1), fit = TRUE)
+  expect_equal(fit1$data$time, c(5, 7, 9))
+
+  # Remedy 1, formula interface, `weights`: same rule, and it holds.
+  w <- c(1, 1, 1)
+  fit2 <- hazard(survival::Surv(tt, ss) ~ 1, data = df, weights = helper420(w),
+                 dist = "weibull", theta = c(1, 1), fit = TRUE)
+  expect_true(is.finite(fit2$fit$objective))
+
+  # Remedy 2, the Surv() response: precompute a column. The caller-environment
+  # remedy does NOT work here, which is why the message must not offer it.
+  df$doubled <- helper420(df$tt)
+  fit3 <- hazard(survival::Surv(doubled, ss) ~ 1, data = df, dist = "weibull",
+                 theta = c(1, 1), fit = TRUE)
+  expect_equal(fit3$data$time, c(5, 7, 9))
+})

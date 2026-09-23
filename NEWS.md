@@ -20,9 +20,13 @@
   mask to reach a helper, as in
   `hazard(time = f(t), status = s, data = list(t = ..., s = ..., f = myfun))`,
   and it includes an S4 generic or a reference-class generator, which are
-  functions for this purpose. Define the helper in the calling environment,
-  or compute the value before calling `hazard()`, and pass `data` without
-  it.
+  functions for this purpose, as is an element whose name is
+  `NA_character_`, which R binds under the symbol `` `NA` `` and a call can
+  reach. Remove the element and pass `data` without it: for a vector
+  argument, or the formula's `weights`, define the helper in the calling
+  environment; for a helper used inside the `Surv()` response, compute the
+  value into a `data` column first, since the response is evaluated without
+  the formula's environment.
   **Unaffected:** a numeric element or column of the same name, which was
   never consulted; a data-frame list-column of functions, which is a list;
   and an element with no name, which no expression can look up.

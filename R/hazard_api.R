@@ -213,7 +213,12 @@ NULL
 #'   An S4 generic and a reference-class generator are functions for this
 #'   purpose. A list-column of functions is a list, not a function, and is
 #'   unaffected, as is an element with no name, which no expression can look
-#'   up.
+#'   up -- but an `NA_character_` name is refused, because R binds such an
+#'   element under the symbol `` `NA` `` and a call reaches it. Remove the
+#'   element: for a vector argument or `weights`, define the helper in the
+#'   calling environment; for one used inside the `Surv()` response, compute
+#'   the value into a `data` column first, since the response is evaluated
+#'   without the formula's environment.
 #' @param time_windows Optional numeric vector of strictly positive cut points for
 #'   piecewise time-varying coefficients. When provided, each predictor column in
 #'   `x` is expanded into one column per time window so each window gets its own
@@ -632,9 +637,12 @@ hazard <- function(formula = NULL,
   # named refusal is what the user sees, never "attempt to replicate an
   # object of type 'closure'".
   #
-  # Only NAMED elements: `eval()` cannot look up an element that has no name,
-  # so an unnamed one never had the defect and refusing it would be a false
-  # refusal. Data frames are not exempted -- `data.frame()`, `$<-` and `[[<-`
+  # Only elements a call can REACH. An unnamed or ""-named element cannot be
+  # looked up at all, so refusing it would be a false refusal. An
+  # `NA_character_` name is NOT in that class, however it reads: R binds such
+  # an element under the symbol `NA`, and `` `NA`(x) `` calls it, so
+  # exempting it left the whole defect open through one spelling (#443
+  # review). Data frames are not exempted -- `data.frame()`, `$<-` and `[[<-`
   # each refuse a function column, but `structure(list(...), class =
   # "data.frame")` carries one and `is.data.frame()` is TRUE for it. A
   # list-column is a list, which the lookup skips, so it still fits.
@@ -647,18 +655,22 @@ hazard <- function(formula = NULL,
   # `is.list()` is TRUE for a data frame, tibble and data.table alike.
   if (is.list(data)) {
     nm <- names(data)
-    # `!is.null(nm)` would be dead here: for an unnamed list `nm` is NULL and
-    # `!is.na(NULL)` is already logical(0), which zeroes the whole vector.
-    fn <- vapply(data, is.function, logical(1)) & !is.na(nm) & nzchar(nm)
+    # An unnamed list has `nm` NULL, and `is.na(NULL)` is already logical(0),
+    # which zeroes the whole vector -- so NULL names need no test of their own.
+    fn <- vapply(data, is.function, logical(1)) & (is.na(nm) | nzchar(nm))
     if (any(fn)) {
       stop("'data' holds a function named ",
            paste0("'", unique(nm[fn]), "'", collapse = ", "),
            ". `data` masks the calling frame while hazard() evaluates its ",
            "arguments and the formula's response, so such an element is ",
            "called in place of the function the expression names, changing ",
-           "the fit with nothing to show for it. Remove it from 'data': ",
-           "define the helper in the calling environment, or compute the ",
-           "value before calling hazard().", call. = FALSE)
+           "the fit with nothing to show for it. Remove it from 'data'. ",
+           "For a vector argument, or the formula's 'weights', define the ",
+           "helper in the calling environment instead. For a helper used ",
+           "inside the formula's Surv() response, compute the value into a ",
+           "'data' column first: the response is evaluated without the ",
+           "formula's environment, so a helper defined there is not visible ",
+           "to it.", call. = FALSE)
     }
   }
 

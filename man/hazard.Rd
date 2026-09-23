@@ -73,7 +73,12 @@ held in \code{data} -- and the fit would change with nothing to show for it.
 An S4 generic and a reference-class generator are functions for this
 purpose. A list-column of functions is a list, not a function, and is
 unaffected, as is an element with no name, which no expression can look
-up.}
+up -- but an \code{NA_character_} name is refused, because R binds such an
+element under the symbol \code{`NA`} and a call reaches it. Remove the
+element: for a vector argument or \code{weights}, define the helper in the
+calling environment; for one used inside the \code{Surv()} response, compute
+the value into a \code{data} column first, since the response is evaluated
+without the formula's environment.}
 
 \item{time}{Numeric follow-up time vector.}
 
