@@ -4,6 +4,12 @@
 # length 0" from .hzr_split_theta (#144). predict() still refuses, by name,
 # and hzr_evaluate() is the supported route.
 
+# This file predicts from models built with fit = FALSE on purpose, so the
+# warning that those numbers come from starting values is switched off for
+# this file only (#398). A file that does not expect the warning sees it as
+# an ordinary leaked warning.
+withr::local_options(TemporalHazard.warn_unfitted_prediction = FALSE)
+
 eval_spec <- function(fit = FALSE, dist = "weibull") {
   data("avc", package = "TemporalHazard", envir = environment())
   hazard(survival::Surv(int_dead, dead) ~ 1, data = avc, dist = dist,
@@ -33,9 +39,8 @@ test_that("predict() names what an unfitted multiphase model lacks (#144)", {
 
   # A single-distribution model built with fit = FALSE still predicts -- an
   # intended, tested capability -- but it says where the numbers come from.
-  # The suite silences this warning wholesale (helper-unfitted-predictions.R);
-  # switch it back on here, or the assertions below would have nothing to
-  # catch.
+  # This file silences this warning for its own scope (#398); switch it back
+  # on here, or the assertions below would have nothing to catch.
   withr::local_options(TemporalHazard.warn_unfitted_prediction = TRUE)
   single <- eval_spec()
   expect_warning(p <- predict(single, type = "hazard"),
@@ -498,9 +503,9 @@ test_that("the refusals describe the model in front of them (#144)", {
 })
 
 test_that("the unfitted-prediction warning is on by DEFAULT (#144)", {
-  # The suite switches this warning off wholesale
-  # (helper-unfitted-predictions.R), and the tests that assert it switch it
-  # back on for their own scope. Between those two, nothing would notice if
+  # The files that predict from unfitted models on purpose switch this
+  # warning off for their own scope (#398), and the tests that assert it
+  # switch it back on for theirs. Between those two, nothing would notice if
   # the shipped default flipped to FALSE: every test would stay green while
   # users stopped being told that a number came from a starting value. This
   # is the assertion that notices.
@@ -554,8 +559,8 @@ test_that("hzr_evaluate() does not nag that the model is unfitted (#144)", {
   # about something they chose. It is quiet today because it computes the
   # curve itself rather than routing through predict(); this assertion is
   # what notices if it ever starts routing through predict() and inherits
-  # the warning. The option is forced ON, or the suite-wide silencing in
-  # helper-unfitted-predictions.R would make this pass over nothing.
+  # the warning. The option is forced ON, or this file's own silencing
+  # (#398) would make this pass over nothing.
   data("avc", package = "TemporalHazard", envir = environment())
   withr::local_options(TemporalHazard.warn_unfitted_prediction = TRUE)
   phases <- list(

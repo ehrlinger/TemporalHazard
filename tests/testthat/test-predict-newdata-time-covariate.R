@@ -7,6 +7,12 @@
 # The check runs before any prediction, so unfitted objects with a supplied
 # theta are enough for the error cases.
 
+# This file predicts from models built with fit = FALSE on purpose, so the
+# warning that those numbers come from starting values is switched off for
+# this file only (#398). A file that does not expect the warning sees it as
+# an ordinary leaked warning.
+withr::local_options(TemporalHazard.warn_unfitted_prediction = FALSE)
+
 .tc_avc <- local({
   data(avc, package = "TemporalHazard")
   d <- na.omit(avc)

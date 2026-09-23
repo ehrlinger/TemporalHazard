@@ -205,6 +205,20 @@ NULL
 #'   masked column errors: an `NA` count on the SAS `ICENSOR`
 #'   path reaches `weights` and stops with `'weights' must be
 #'   non-negative and finite`.
+#'   A named element of `data` that is a **function** is refused, on both
+#'   paths, as [stats::lm()] refuses it. Because the mask sits in front of
+#'   the calling frame, such an element would be called in place of the
+#'   function an expression names -- `weights = rep(1, n)` calling a `rep`
+#'   held in `data` -- and the fit would change with nothing to show for it.
+#'   An S4 generic and a reference-class generator are functions for this
+#'   purpose. A list-column of functions is a list, not a function, and is
+#'   unaffected, as is an element with no name, which no expression can look
+#'   up -- but an `NA_character_` name is refused, because R binds such an
+#'   element under the symbol `` `NA` `` and a call reaches it. Remove the
+#'   element: for a vector argument or `weights`, define the helper in the
+#'   calling environment; for one used inside the `Surv()` response, compute
+#'   the value into a `data` column first, since the response is evaluated
+#'   without the formula's environment.
 #' @param time_windows Optional numeric vector of strictly positive cut points for
 #'   piecewise time-varying coefficients. When provided, each predictor column in
 #'   `x` is expanded into one column per time window so each window gets its own
@@ -608,6 +622,58 @@ hazard <- function(formula = NULL,
   }
   x_design <- NULL
   # Formula dispatch: if formula is provided, parse it and extract time/status/x from data
+  # `data` masks the calling frame for the argument expressions AND for the
+  # formula's Surv() response, and R's function lookup walks past every
+  # binding that is not a function. So a function-valued element is CALLED in
+  # place of the function an expression names, changing the fit with nothing
+  # to show for it (#420). stats::lm() refuses the same shape, less clearly
+  # ("cannot coerce class '\"function\"' to a data.frame").
+  #
+  # This runs BEFORE .hzr_numeric_frame_values() and before the formula/vector
+  # branch, both deliberately. That helper replicates each column to `nrow`
+  # and dies on a function while doing it, which looks like a guard and is
+  # not one: at nrow == 1 there is nothing to replicate, the function
+  # survives, and the formula path read it. Running first also means the
+  # named refusal is what the user sees, never "attempt to replicate an
+  # object of type 'closure'".
+  #
+  # Only elements a call can REACH. An unnamed or ""-named element cannot be
+  # looked up at all, so refusing it would be a false refusal. An
+  # `NA_character_` name is NOT in that class, however it reads: R binds such
+  # an element under the symbol `NA`, and `` `NA`(x) `` calls it, so
+  # exempting it left the whole defect open through one spelling (#443
+  # review). Data frames are not exempted -- `data.frame()`, `$<-` and `[[<-`
+  # each refuse a function column, but `structure(list(...), class =
+  # "data.frame")` carries one and `is.data.frame()` is TRUE for it. A
+  # list-column is a list, which the lookup skips, so it still fits.
+  # `is.list()` first, and not merely for speed: this guard iterates `data`,
+  # so on anything that is not list-like it would answer BEFORE the shape
+  # check below and answer wrongly -- `vapply()` raises a coercion error for
+  # an S4 object, and for an environment it reports a "function element" and
+  # tells the user to remove it, which does not make an environment
+  # acceptable `data`. Both are questions about shape, not about functions.
+  # `is.list()` is TRUE for a data frame, tibble and data.table alike.
+  if (is.list(data)) {
+    nm <- names(data)
+    # An unnamed list has `nm` NULL, and `is.na(NULL)` is already logical(0),
+    # which zeroes the whole vector -- so NULL names need no test of their own.
+    fn <- vapply(data, is.function, logical(1)) & (is.na(nm) | nzchar(nm))
+    if (any(fn)) {
+      stop("'data' holds a function named ",
+           paste0("'", unique(nm[fn]), "'", collapse = ", "),
+           ". `data` masks the calling frame while hazard() evaluates its ",
+           "arguments and the formula's response, so such an element is ",
+           "called in place of the function the expression names, changing ",
+           "the fit with nothing to show for it. Remove it from 'data'. ",
+           "For a vector argument, or the formula's 'weights', define the ",
+           "helper in the calling environment instead. For a helper used ",
+           "inside the formula's Surv() response, compute the value into a ",
+           "'data' column first: the response is evaluated without the ",
+           "formula's environment, so a helper defined there is not visible ",
+           "to it.", call. = FALSE)
+    }
+  }
+
   # Columns of `data` are read before any argument is: Surv() and
   # model.matrix() take a classed numeric's stored doubles too (#231).
   data <- .hzr_numeric_frame_values(data)
