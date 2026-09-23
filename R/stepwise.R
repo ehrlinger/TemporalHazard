@@ -99,11 +99,15 @@
 #' @param scope Candidate set.  `NULL` (default) uses every data-frame
 #'   column not already in the model for every phase.  For
 #'   single-distribution fits, pass a one-sided formula
-#'   (`~ age + nyha`) or a character vector of names.  In a character
-#'   `scope`, a name that also parses as an expression is read as the
-#'   expression, so a data column literally named `age:mal` is written
-#'   backquoted, as `` "`age:mal`" ``, to distinguish it from the `age:mal`
-#'   interaction (#442).  For multiphase
+#'   (`~ age + nyha`) or a character vector of names.  Each name in a
+#'   character `scope` is looked up, not parsed: a name that is exactly a
+#'   column of `data` is that column, otherwise a name that is exactly a
+#'   term label as `terms()` writes it (`` "`_X1`" ``, `"log(age)"`,
+#'   `"age:mal"`) is that term, and any other name is ignored with a
+#'   warning naming it.  The column is looked up first, so when `data` has
+#'   a column literally named `age:mal`, `"age:mal"` is that column and
+#'   the interaction cannot be named this way; use a formula `scope`
+#'   for it.  For multiphase
 #'   fits, pass a named list of one-sided formulas keyed by phase, naming
 #'   each phase once.  `scope` lists what may enter; a drop considers every
 #'   term in the model except `force_in` and terms frozen by `max_move`
@@ -140,16 +144,21 @@
 #'   **Known limitation (the frozen set)** section.
 #' @param force_in Character vector of variables that must remain in
 #'   the model.  Such variables are still scored and reported in the
-#'   selection trace, but are never dropped.  A variable whose name is not
-#'   syntactic is matched by NAME, so the bare `"_X1"` names the column
-#'   `_X1` even though `terms()` labels it `` `_X1` `` (#437).  A name that
-#'   also parses as an EXPRESSION is the expression: `"age:mal"` is the
-#'   interaction, and a data column literally named `age:mal` must be
-#'   written backquoted, as `` "`age:mal`" `` (#442).
+#'   selection trace, but are never dropped.  Each name is looked up, not
+#'   parsed, once, when the screen starts: a name that is exactly a column
+#'   of `data` is that column, so the bare `"_X1"` pins the column `_X1`
+#'   although `terms()` labels it `` `_X1` ``, and `"TRUE"` pins a column
+#'   named `TRUE`.  Otherwise a name that is exactly a term label of the
+#'   model or `scope` is that term, so `` "`_X1`" `` and `"age:mal"` work
+#'   too.  Any other name, `"age "` with a trailing space when there is no
+#'   such column, say, matches nothing and is ignored with a warning naming
+#'   it.  The column is looked up first: when `data` has a column literally
+#'   named `age:mal`, `"age:mal"` is that column and not the interaction,
+#'   which then cannot be pinned by name.
 #' @param force_out Character vector of variables that may never be
-#'   considered as candidates.  Matched the same way as `force_in`,
-#'   including the backquoted form for a literal column whose name parses
-#'   as an expression.
+#'   considered as candidates.  Names are looked up as for `force_in`:
+#'   a column of `data` first, then a term label of the model or `scope`,
+#'   and a warning for a name that is neither.
 #' @param trace Logical; print step-by-step progress to the console.
 #'   Default `TRUE`.
 #' @param ... Passed to every candidate refit. Only `control` (e.g.
@@ -394,6 +403,36 @@ hzr_stepwise <- function(fit,
          call. = FALSE)
   }
 
+  # Resolve every user-supplied name ONCE, by lookup, and compare only the
+  # results from here on (#437, #442). A name is a column of `data`, else a
+  # term label of the model or `scope`; a name that is neither is warned
+  # about and ignored, never matched by a guess. The user's own values are
+  # kept for the result's `$scope` record.
+  scope_given <- scope
+  scope_labels <- if (inherits(scope, "formula")) {
+    .hzr_formula_rhs_terms(scope)
+  } else if (is.list(scope)) {
+    unlist(lapply(Filter(function(s) inherits(s, "formula"), scope),
+                  .hzr_formula_rhs_terms), use.names = FALSE)
+  }
+  if (is.character(scope) && !identical(fit$spec$dist, "multiphase")) {
+    # An offset is refused before it can be resolved: `terms()` gives it no
+    # label, so resolution would only warn about it and drop it.
+    scope_f <- tryCatch(stats::reformulate(scope), error = function(e) NULL)
+    if (!is.null(scope_f)) .hzr_refuse_offset(scope_f, "`scope`")
+    resolved_scope <- .hzr_resolve_names(scope, data, arg = "`scope`",
+                                         self_label = TRUE)
+    scope <- resolved_scope$spelling
+    scope_labels <- resolved_scope$id
+  }
+  known_labels <- unique(c(unlist(.hzr_scope_current_vars(fit),
+                                  use.names = FALSE),
+                           scope_labels))
+  force_in_id  <- .hzr_resolve_names(force_in, data, known_labels,
+                                     arg = "`force_in`")$id
+  force_out_id <- .hzr_resolve_names(force_out, data, known_labels,
+                                     arg = "`force_out`")$id
+
   ts_start <- Sys.time()
   call <- match.call()
 
@@ -575,8 +614,8 @@ hzr_stepwise <- function(fit,
     # screen that recovers at a later iteration is not reported as stopped.
     iter_untestable     <- character()
 
-    effective_force_out <- unique(c(force_out, frozen))
-    effective_force_in  <- unique(c(force_in,  frozen))
+    effective_force_out <- unique(c(force_out_id, frozen))
+    effective_force_in  <- unique(c(force_in_id,  frozen))
 
     if (direction %in% c("forward", "both")) {
       fwd <- do.call(.hzr_stepwise_forward_step, c(list(
@@ -632,7 +671,7 @@ hzr_stepwise <- function(fit,
         }
         current <- fwd$fit
         record_step("enter", fwd)
-        bump_move(fwd$variable)
+        bump_move(fwd$id) # by term label, as `frozen` is compared
         add_happened <- TRUE
       }
     }
@@ -742,7 +781,7 @@ hzr_stepwise <- function(fit,
   result <- current
   result$steps      <- steps_df
   result$scope      <- list(
-    candidates = scope,
+    candidates = scope_given,
     force_in   = force_in,
     force_out  = force_out,
     frozen     = frozen

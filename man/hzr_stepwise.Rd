@@ -39,11 +39,15 @@ hzr_stepwise(
 \item{scope}{Candidate set.  \code{NULL} (default) uses every data-frame
 column not already in the model for every phase.  For
 single-distribution fits, pass a one-sided formula
-(\code{~ age + nyha}) or a character vector of names.  In a character
-\code{scope}, a name that also parses as an expression is read as the
-expression, so a data column literally named \code{age:mal} is written
-backquoted, as \code{"`age:mal`"}, to distinguish it from the \code{age:mal}
-interaction (#442).  For multiphase
+(\code{~ age + nyha}) or a character vector of names.  Each name in a
+character \code{scope} is looked up, not parsed: a name that is exactly a
+column of \code{data} is that column, otherwise a name that is exactly a
+term label as \code{terms()} writes it (\code{"`_X1`"}, \code{"log(age)"},
+\code{"age:mal"}) is that term, and any other name is ignored with a
+warning naming it.  The column is looked up first, so when \code{data} has
+a column literally named \code{age:mal}, \code{"age:mal"} is that column and
+the interaction cannot be named this way; use a formula \code{scope}
+for it.  For multiphase
 fits, pass a named list of one-sided formulas keyed by phase, naming
 each phase once.  \code{scope} lists what may enter; a drop considers every
 term in the model except \code{force_in} and terms frozen by \code{max_move}
@@ -88,17 +92,22 @@ dropped in the same iteration; see the
 
 \item{force_in}{Character vector of variables that must remain in
 the model.  Such variables are still scored and reported in the
-selection trace, but are never dropped.  A variable whose name is not
-syntactic is matched by NAME, so the bare \code{"_X1"} names the column
-\verb{_X1} even though \code{terms()} labels it \code{`_X1`} (#437).  A name that
-also parses as an EXPRESSION is the expression: \code{"age:mal"} is the
-interaction, and a data column literally named \code{age:mal} must be
-written backquoted, as \code{"`age:mal`"} (#442).}
+selection trace, but are never dropped.  Each name is looked up, not
+parsed, once, when the screen starts: a name that is exactly a column
+of \code{data} is that column, so the bare \code{"_X1"} pins the column \verb{_X1}
+although \code{terms()} labels it \code{`_X1`}, and \code{"TRUE"} pins a column
+named \code{TRUE}.  Otherwise a name that is exactly a term label of the
+model or \code{scope} is that term, so \code{"`_X1`"} and \code{"age:mal"} work
+too.  Any other name, \code{"age "} with a trailing space when there is no
+such column, say, matches nothing and is ignored with a warning naming
+it.  The column is looked up first: when \code{data} has a column literally
+named \code{age:mal}, \code{"age:mal"} is that column and not the interaction,
+which then cannot be pinned by name.}
 
 \item{force_out}{Character vector of variables that may never be
-considered as candidates.  Matched the same way as \code{force_in},
-including the backquoted form for a literal column whose name parses
-as an expression.}
+considered as candidates.  Names are looked up as for \code{force_in}:
+a column of \code{data} first, then a term label of the model or \code{scope},
+and a warning for a name that is neither.}
 
 \item{trace}{Logical; print step-by-step progress to the console.
 Default \code{TRUE}.}

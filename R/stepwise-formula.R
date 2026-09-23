@@ -61,99 +61,110 @@
 }
 
 
-#' The variable a term label names
+#' The term label `terms()` gives a data column
 #'
-#' `terms()` backquotes a label whose variable is not a syntactic name, so
-#' `` `_X1` `` is the label of the column `_X1`. `force_in`, `force_out` and a
-#' character `scope` are documented as VARIABLES, and the translator emits
-#' bare names, so a pin on such a variable never matched its own candidate
-#' and was silently ignored (#437).
+#' The identity a candidate is compared by. `terms()` backquotes a name that
+#' is not syntactic, so the column `_X1` is labelled `` `_X1` `` and the
+#' column `TRUE` is labelled `` `TRUE` ``. The label is produced by
+#' `terms()` itself, from the column's symbol, so no string is parsed and it
+#' is exactly the label a model containing the column carries. Distinct
+#' columns get distinct labels, and a column's label never equals an
+#' expression's: the column `age:mal` is `` `age:mal` ``, the interaction is
+#' `age:mal`.
 #'
-#' The label is PARSED rather than stripped of backticks: stripping is not
-#' the inverse of quoting, and a name may contain a backtick.
-#'
-#' The key carries WHICH KIND of thing the label is, because a name and an
-#' expression can have the same text. `terms()` backquotes a column named
-#' `age:mal`, and parsing that label gives the symbol `age:mal`; the
-#' INTERACTION of `age` and `mal` has the label `age:mal` with no backticks.
-#' Keyed on the text alone the two collided, and the literal column silently
-#' disappeared from the candidates (found by review of #442). So:
-#'
-#' * a label that parses to a symbol keys as `v:<name>`;
-#' * a label that does not parse keys as `v:<label>` -- a bare non-syntactic
-#'   name, which is what the arguments are documented to take and what the
-#'   SAS translator emits;
-#' * anything else keys as `e:<label>` -- an expression, matched by its text
-#'   exactly as it always was.
-#'
-#' A bare `"age:mal"` is therefore the INTERACTION, because it parses; naming
-#' the literal column needs the backquoted `` "`age:mal`" ``. That ambiguity
-#' is real and this is the same way it resolved before #437.
-#'
-#' The map is many-to-one, and deliberately so: `` `x` `` and `x` are the same
-#' variable. The cost is that matching is LOOSER than a string comparison in
-#' one direction -- `"age "` parses to the symbol `age`, so on a frame read
-#' with `check.names = FALSE` carrying both `age` and `age `, a pin written
-#' either way names the first. That is pathological input; the leniency is
-#' what makes a bare name from the translator match its own candidate.
-#'
-#' @param x Character vector of labels or names.
-#' @return Character vector of the same length, each element the variable a
-#'   label names, or the element unchanged.
+#' @param x Character vector of column names.
+#' @return Character vector of labels, the same length. A name no symbol can
+#'   carry (`""`) or that `terms()` refuses (`"."`) gets a placeholder no term
+#'   label can equal, so it matches only itself.
 #' @keywords internal
 #' @noRd
-.hzr_var_key <- function(x) {
-  if (!length(x)) return(character())
-  # A sentinel, not NULL: `str2lang("NULL")` legitimately RETURNS NULL, so
-  # `is.null()` cannot tell a parse failure from a parsed `NULL`.
-  failed <- new.env()
-  vapply(x, function(lab) {
-    e <- tryCatch(str2lang(lab), error = function(...) failed)
-    nm <- if (!identical(e, failed) && is.symbol(e)) as.character(e) else NULL
-    # A symbol is only this label's variable if the text ROUND-TRIPS to it.
-    # `str2lang()` discards surrounding whitespace and anything after a `#`,
-    # so "age ", "age\t" and "age # x" all parse to the symbol `age`; taking
-    # the parse at face value merged those distinct columns, and a
-    # `scope = NULL` screen silently dropped all but the first while
-    # `force_out = "age"` excluded a column the user had not named (found by
-    # review of #442).
-    # `terms()` ESCAPES a backtick inside a name, so the column a`b is
-    # labelled `a\`b`; compare against the escaped form or that label never
-    # round-trips.
-    quoted <- if (is.null(nm)) {
-      NULL
-    } else {
-      paste0("`", gsub("`", "\\\\`", nm), "`")
-    }
-    if (!is.null(nm) && (identical(lab, nm) || identical(lab, quoted))) {
-      paste0("v:", nm)               # a name, bare or backquoted
-    } else if (identical(e, failed) || !is.null(nm)) {
-      paste0("v:", lab)              # a name that is not written cleanly
-    } else {
-      paste0("e:", lab)              # an expression, matched by its text
-    }
+.hzr_column_label <- function(x) {
+  vapply(x, function(nm) {
+    tryCatch(
+      attr(stats::terms(stats::as.formula(call("~", as.name(nm)))),
+           "term.labels"),
+      error = function(e) {
+        paste0("<column ", encodeString(nm, quote = "\""), ">")
+      }
+    )
   }, character(1), USE.NAMES = FALSE)
 }
 
-#' Set difference on variables, whatever their spelling
+#' Is a string a term label of `data`, exactly as `terms()` writes it?
 #'
-#' @param x,y Character vectors of labels or names.
-#' @return The elements of `x`, as spelled in `x`, whose variable is not in
-#'   `y`, each variable once. "Once" is by VARIABLE, so on a frame read with
-#'   `check.names = FALSE` carrying both `age` and `age ` -- which key to the
-#'   same symbol -- only the first is returned, where `setdiff()` returned
-#'   both. That is the same pathological input the key map's leniency turns
-#'   on, and the same trade.
+#' True when the string is the single label `terms()` gives a formula whose
+#' right-hand side is that string, and every variable that term reads is a
+#' column of `data`. `"age "` and `"age # x"` are not labels (`terms()`
+#' writes `age`), nor is `"TRUE"` (a constant, no term), nor `"age*mal"`
+#' (three terms), nor a bare name that is not a column.
+#'
 #' @keywords internal
 #' @noRd
-.hzr_setdiff_var <- function(x, y) {
-  if (!length(x)) return(x)
-  key <- .hzr_var_key(x)
-  # `setdiff()` de-duplicates as well as subtracting, and the character-scope
-  # path relied on it: a scope naming a variable twice was scored, refit and
-  # reported twice, with nothing said. De-duplicate by VARIABLE, keeping the
-  # first spelling `x` uses for it.
-  x[!duplicated(key) & !(key %in% .hzr_var_key(y))]
+.hzr_is_term_label <- function(s, data) {
+  isTRUE(tryCatch({
+    f <- stats::reformulate(s)
+    vars <- all.vars(f)
+    identical(attr(stats::terms(f), "term.labels"), s) &&
+      length(vars) > 0L && all(vars %in% names(data))
+  }, error = function(e) FALSE))
+}
+
+#' Resolve user-supplied names to the terms they name
+#'
+#' `force_in`, `force_out` and a character `scope` are documented as
+#' variables, but a candidate is compared by its `terms()` label, and the
+#' two spellings differ for a name that is not syntactic (#437). Resolving a
+#' string by PARSING it cannot be right: the same text is a raw column name
+#' at some sites and a term label at others, and each rule tried for #442
+#' merged two things that were different. So a string is resolved by LOOKUP,
+#' once, and every later comparison is on the result:
+#'
+#' 1. exactly a column of `data`: that column, identified by
+#'    `.hzr_column_label()`;
+#' 2. otherwise exactly a label in `labels`, or a column's label, or, with
+#'    `self_label = TRUE`, a string that is itself a term label over columns
+#'    of `data` (`.hzr_is_term_label()`): that term;
+#' 3. otherwise it names nothing. It is WARNED about, naming it, and dropped.
+#'
+#' A string that is both a column and a term label names the COLUMN, so with
+#' a column literally called `age:mal` the interaction is reachable only
+#' through a string that is not a column name.
+#'
+#' @param x Character vector supplied by the user.
+#' @param data The screen's data frame.
+#' @param labels Term labels step 2 accepts, besides the columns' own.
+#' @param arg The argument's name, for the warning, e.g. `` "`force_in`" ``.
+#' @param self_label Accept a string that is itself a term label. Used for a
+#'   character `scope`, which introduces its own terms.
+#' @return A list: `spelling`, the resolved elements as the user wrote them,
+#'   and `id`, the label each resolves to, in the same order.
+#' @keywords internal
+#' @noRd
+.hzr_resolve_names <- function(x, data, labels = character(), arg,
+                               self_label = FALSE) {
+  x <- as.character(x)
+  id <- rep(NA_character_, length(x))
+  cols <- names(data)
+  is_col <- x %in% cols
+  id[is_col] <- .hzr_column_label(x[is_col])
+  known <- c(labels, .hzr_column_label(cols))
+  is_lab <- !is_col & x %in% known
+  id[is_lab] <- x[is_lab]
+  if (self_label) {
+    for (i in which(is.na(id))) {
+      if (.hzr_is_term_label(x[i], data)) id[i] <- x[i]
+    }
+  }
+  bad <- is.na(id)
+  if (any(bad)) {
+    warning(arg, " names ",
+            paste(encodeString(x[bad], quote = "\""), collapse = ", "),
+            ", which is neither a column of `data` nor a term label of the ",
+            "model or `scope`; ",
+            if (sum(bad) == 1L) "it is" else "they are", " ignored.",
+            call. = FALSE)
+  }
+  list(spelling = x[!bad], id = id[!bad])
 }
 
 #' Add or drop a variable from a formula's RHS

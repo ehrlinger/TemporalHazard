@@ -19,9 +19,13 @@
 #'   one-sided formula (single-dist), or a named list of one-sided
 #'   formulas keyed by phase (multiphase).
 #' @param data Data frame to derive candidates from when `scope = NULL`.
-#' @param force_out Character vector of variable names to exclude.
+#' @param force_out Term labels to exclude: RESOLVED identities, as
+#'   `.hzr_resolve_names()` returns them, not the user's strings.
+#'   hzr_stepwise() resolves once, at entry (#442).
 #'
-#' @return A list of `list(var = <chr>, phase = <chr or NULL>)`.
+#' @return A list of `list(var = <chr>, phase = <chr or NULL>, id = <chr>)`.
+#'   `var` is the spelling the refit and the score read; `id` is the term
+#'   label every comparison uses.
 #'
 #' @keywords internal
 #' @noRd
@@ -38,8 +42,8 @@
       # force_out) are candidates for every phase.
       stored <- .hzr_stored_formula(fit)
       lhs_vars <- if (is.null(stored)) character() else all.vars(stored[[2L]])
-      data_vars <- .hzr_setdiff_var(setdiff(colnames(data), lhs_vars),
-                                    force_out)
+      data_vars <- setdiff(colnames(data), lhs_vars)
+      data_vars <- data_vars[!.hzr_column_label(data_vars) %in% force_out]
       data_vars <- .hzr_modellable_vars(data, data_vars)
       scope <- setNames(
         lapply(phase_names, function(p) {
@@ -85,11 +89,10 @@
       sc <- scope[[p]]
       if (is.null(sc)) next
       terms_p <- .hzr_formula_rhs_terms(sc)
-      eligible <- .hzr_setdiff_var(terms_p,
-                                   c(current_per_phase[[p]], force_out))
+      eligible <- setdiff(terms_p, c(current_per_phase[[p]], force_out))
       for (v in eligible) {
         candidates[[length(candidates) + 1L]] <-
-          list(var = v, phase = p)
+          list(var = v, phase = p, id = v)
       }
     }
     return(candidates)
@@ -99,28 +102,44 @@
   if (is.null(scope)) {
     f <- .hzr_stored_formula(fit)
     lhs_vars <- if (is.null(f)) character() else all.vars(f[[2L]])
-    data_vars <- .hzr_setdiff_var(setdiff(colnames(data), lhs_vars),
-                                  force_out)
-    data_vars <- .hzr_modellable_vars(data, data_vars)
+    data_vars <- setdiff(colnames(data), lhs_vars)
+    data_ids  <- .hzr_column_label(data_vars)
+    keep <- !data_ids %in% force_out
+    data_vars <- data_vars[keep]
+    data_ids  <- data_ids[keep]
+    keep <- data_vars %in% .hzr_modellable_vars(data, data_vars)
+    data_vars <- data_vars[keep]
+    data_ids  <- data_ids[keep]
   } else {
     if (inherits(scope, "formula")) {
       data_vars <- .hzr_formula_rhs_terms(scope)
+      data_ids  <- data_vars
     } else if (is.character(scope)) {
-      data_vars <- scope
       # A character scope never passes through terms(), so an offset in it
       # reached a refit and failed there with a message that did not say why.
       scope_f <- tryCatch(stats::reformulate(scope), error = function(e) NULL)
       if (!is.null(scope_f)) .hzr_refuse_offset(scope_f, "`scope`")
+      # Each name keeps the spelling the user gave, which the refit and the
+      # score read, and is COMPARED by the term it resolves to (#437, #442).
+      # hzr_stepwise() has already dropped, with a warning, any that resolve
+      # to nothing, so this warns only for a direct internal call.
+      resolved  <- .hzr_resolve_names(scope, data, arg = "`scope`",
+                                      self_label = TRUE)
+      data_vars <- resolved$spelling
+      data_ids  <- resolved$id
     } else {
       stop("`scope` must be NULL, a one-sided formula, or a character vector.",
            call. = FALSE)
     }
-    data_vars <- .hzr_setdiff_var(data_vars, force_out)
   }
 
+  # By identity, never by spelling. De-duplicated as `setdiff()` did: a
+  # scope naming a variable twice offers it once, under its first spelling.
   current_vars <- .hzr_scope_current_vars(fit)
-  eligible <- .hzr_setdiff_var(data_vars, current_vars)
-  lapply(eligible, function(v) list(var = v, phase = NULL))
+  keep <- !duplicated(data_ids) &
+    !data_ids %in% c(force_out, current_vars)
+  Map(function(v, id) list(var = v, phase = NULL, id = id),
+      data_vars[keep], data_ids[keep], USE.NAMES = FALSE)
 }
 
 
@@ -153,8 +172,8 @@
 #' @param criterion One of `"score"`, `"wald"`, or `"aic"`.
 #' @param slentry Entry threshold for the score / Wald criteria (ignored when
 #'   `criterion = "aic"`; the entry rule there is dAIC < 0).
-#' @param force_out Character vector of variables that may never be
-#'   considered as candidates.
+#' @param force_out Term labels that may never be considered as candidates,
+#'   resolved (see `.hzr_stepwise_candidates()`).
 #' @param ... Forwarded to `.hzr_refit_with_scope()` (and thence to
 #'   `hazard()`), e.g. `control = list(...)`.
 #'
@@ -358,6 +377,7 @@
     accepted  = TRUE,
     fit       = candidate_fits[[best_idx]],
     variable  = best$variable,
+    id        = cands[[best_idx]]$id %||% best$variable,
     phase     = best$phase,
     score     = best$score,
     p_value   = best$p_value,
@@ -596,6 +616,7 @@
     accepted  = TRUE,
     fit       = refitted,
     variable  = best$variable,
+    id        = cands[[best_idx]]$id %||% best$variable,
     phase     = best$phase,
     score     = best$score,
     p_value   = best$p_value,
@@ -728,8 +749,9 @@
 #' @param criterion Either `"wald"` or `"aic"`.
 #' @param slstay Retention threshold for the Wald criterion (ignored
 #'   when `criterion = "aic"`; the drop rule there is dAIC_drop < 0).
-#' @param force_in Character vector of variables that may never be
-#'   dropped.
+#' @param force_in Term labels that may never be dropped: RESOLVED
+#'   identities, as `.hzr_resolve_names()` returns them. hzr_stepwise()
+#'   resolves the user's strings once, at entry (#442).
 #' @param ... Forwarded to `.hzr_refit_with_scope()` for the post-drop
 #'   refit.
 #'
@@ -832,7 +854,7 @@
     rows[[i]] <- data.frame(
       variable  = cand$var,
       phase     = cand$phase %||% NA_character_,
-      force_in  = .hzr_var_key(cand$var) %in% .hzr_var_key(force_in),
+      force_in  = cand$var %in% force_in, # both are term labels
       score     = s$score,
       p_value   = s$p_value,
       delta_aic = s$delta_aic,
@@ -967,6 +989,7 @@
     accepted  = TRUE,
     fit       = refitted,
     variable  = best$variable,
+    id        = cands[[best_idx]]$id %||% best$variable,
     phase     = best$phase,
     score     = best$score,
     p_value   = best$p_value,

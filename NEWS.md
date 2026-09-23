@@ -808,19 +808,30 @@
   ignored `control` name not at all, because the warning came from the
   refits.
 
-* **`force_in`, `force_out` and a character `scope` now match a variable
-  whose name is not syntactic (#437).** `terms()` backquotes such a label, so
-  the column `_X1` appears as `` `_X1` `` among a model's terms, while the
-  three arguments are documented as variables and the SAS translator emits
-  bare names. The two spellings never met: a pinned variable was **dropped
-  with no warning naming it**, a `force_out` one was still offered, and a
-  character `scope` re-offered a variable the model already had. Names that
-  reach R this way are ordinary in translated work: a leading underscore, a
-  dot, a reserved word. Matching now compares the variable a label names,
-  obtained by parsing the label rather than by removing backticks, which is
-  not the inverse of quoting: a column named `` a`b `` is labelled
-  `` `a\`b` `` and strips to `a\b`, a name that does not exist. A term that
-  is not a single symbol, such as an interaction, still matches by label.
+* **`force_in`, `force_out` and a character `scope` now name a variable by
+  looking it up, and warn when a name matches nothing (#437).** `terms()`
+  backquotes a label whose variable is not syntactic, so the column `_X1`
+  appears as `` `_X1` `` among a model's terms, while the three arguments
+  are documented as variables and the SAS translator emits bare names. The
+  two spellings never met: a pinned variable was **dropped with no warning
+  naming it**, a `force_out` one was still offered, and a character `scope`
+  re-offered a variable the model already had. Names that reach R this way
+  are ordinary in translated work: a leading underscore, a dot, a reserved
+  word. Each name is now resolved once, when the screen starts, by lookup
+  rather than by reading the string: a name that is exactly a column of
+  `data` is that column, so `"_X1"` pins `_X1` and `"TRUE"` pins a column
+  named `TRUE`; otherwise a name that is exactly a term label of the model
+  or `scope` is that term, so `` "`_X1`" `` and `"age:mal"` work as well;
+  and a name that is neither is ignored **with a warning naming it**, where
+  before it was ignored in silence. The column is looked up first, so when
+  `data` has a column literally named `age:mal`, `"age:mal"` is that column
+  and the interaction can be offered only through a formula `scope`.
+  Distinct columns stay distinct: `age`, `age ` and `age # x` are three
+  columns, and a column literally named `` `x` `` is not `x`. A string that
+  only resembles a name is not read as one: `"age "` when there is no such
+  column, or `` "`age`" ``, which `terms()` never writes, is warned about
+  and ignored.
+
   This is about MATCHING. Whether such a variable can ENTER a screen is a
   separate question, it is not fixed here, and the answer depends on the
   criterion, so no single rule covers it. Under `"wald"` and `"aic"` a
@@ -832,13 +843,6 @@
   whether the candidate cleared the entry threshold before the refit was
   reached; #441 and #438 track them. A `"score"` screen can therefore finish
   having omitted the variable.
-
-  A label that also parses as an EXPRESSION keeps its own identity, so an
-  interaction and a data column that happens to carry the same text are not
-  confused: `age:mal` is the interaction, and a column literally named
-  `age:mal` is written backquoted, as `` "`age:mal`" ``. Without that
-  distinction the literal column vanished from the candidates with nothing
-  said, which is how it was found, by review of this change.
 
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded

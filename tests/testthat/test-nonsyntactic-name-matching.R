@@ -1,160 +1,146 @@
-# A non-syntactic variable name is matched by NAME, not by the spelling
-# `terms()` gives its label (#437).
+# How `force_in`, `force_out` and a character `scope` name a variable
+# (#437, #442).
 #
 # terms() backquotes a label whose variable is not a syntactic name: `_X1`
-# for the column `_X1`. `force_in`, `force_out` and a character `scope` are
-# documented as variables, and the translator emits bare names, so the two
-# spellings never met. The pin was ignored and the variable was dropped,
-# with nothing said -- a wrong model and no message.
+# for the column `_X1`. The three arguments are documented as variables, and
+# the translator emits bare names, so a pin on "_X1" never met its own
+# candidate and was silently ignored (#437).
 #
-# SAS names reach R this way routinely: a leading underscore, a dot, a
-# reserved word.
+# The first fix PARSED each string and guessed what it named. Four review
+# rounds each found a new silent wrong answer in that guess (#442): a
+# candidate scored twice; a literal column `age:mal` swallowed by the
+# interaction; "age", "age " and "age # x" merged; a column literally named
+# `x` (with backticks) merged with `x`; and a reserved word such as "TRUE"
+# parsed to a constant, so a pin on the column TRUE was ignored. The same
+# text is a raw column NAME at some sites and a term LABEL at others, and no
+# function of the string alone is right at both.
+#
+# So a name is resolved by LOOKUP, once, when hzr_stepwise() is called:
+#   1. exactly a column of `data`      -> that column;
+#   2. else exactly a term label of the model or `scope` -> that term;
+#   3. else a warning naming it, and it is ignored.
+#
+# The tests read what the user sees: which terms a screen dropped, and which
+# candidates hzr_stepwise() OFFERED to its first forward step. The second is
+# captured by wrapping the real enumeration, so the resolution under test is
+# the one hzr_stepwise() performs, not a helper called in isolation.
 
-# `age` is the column a free backward step drops here, so IT is the one
-# renamed: a pin on `_X1` then has to REDIRECT the drop onto `mal`. Renaming
-# the other column instead gives a fixture where an ignored pin and an
-# honoured pin produce the same answer, and the test cannot fail (#437).
-ns_data_437 <- function() {
+nsn_avc <- function() {
   data(avc, package = "TemporalHazard", envir = environment())
-  d <- stats::na.omit(avc[, c("int_dead", "dead", "age", "mal")])
-  names(d)[names(d) == "age"] <- "_X1"
+  stats::na.omit(avc[, c("int_dead", "dead", "age", "mal")])
+}
+
+# Rename `age`. It is the term a free backward screen drops first here, so a
+# pin on the renamed column has to REDIRECT the drop onto `mal`: an ignored
+# pin and an honoured one give different answers (#437).
+nsn_rename_age <- function(nm) {
+  d <- nsn_avc()
+  names(d)[names(d) == "age"] <- nm
   d
 }
 
-ns_fit_437 <- function(d) {
-  suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ `_X1` + mal,
-                          data = d, dist = "weibull",
-                          theta = c(0.1, 1, 0, 0), fit = TRUE))
+nsn_fit <- function(d, rhs = "1", theta = c(0.1, 1)) {
+  suppressWarnings(hazard(
+    stats::as.formula(paste("survival::Surv(int_dead, dead) ~", rhs)),
+    data = d, dist = "weibull", theta = theta, fit = TRUE
+  ))
 }
 
-ns_drop_437 <- function(fit, d, ...) {
-  suppressWarnings(.hzr_stepwise_backward_step(fit, data = d,
-                                               criterion = "wald",
-                                               slstay = 1e-9, ...))
+# The candidates hzr_stepwise() offers its first forward step, as spelled in
+# the candidate list. The real enumeration runs; the step is then handed an
+# empty list, so nothing is scored or refit and the screen stops.
+nsn_offered <- function(fit, data, ...) {
+  seen <- NULL
+  real <- .hzr_stepwise_candidates
+  local_mocked_bindings(.hzr_stepwise_candidates = function(...) {
+    out <- real(...)
+    if (is.null(seen)) seen <<- vapply(out, function(c) c$var, character(1))
+    list()
+  })
+  hzr_stepwise(fit, data = data, direction = "forward", criterion = "wald",
+               trace = FALSE, ...)
+  # NULL would mean the enumeration never ran, which must not read as "offered
+  # nothing".
+  expect_false(is.null(seen))
+  seen
 }
 
-test_that("the fixture is live: unpinned, the NON-SYNTACTIC one is dropped (#437)", {
-  skip_on_cran() # a backward step
-  # Known positive, and it fixes which answer means "the pin was ignored".
-  # Without it, a test that the pin holds could pass because nothing was
-  # going to be dropped at all.
-  d <- ns_data_437()
-  st <- ns_drop_437(ns_fit_437(d), d)
-  expect_true(st$accepted)
-  expect_identical(st$variable, "`_X1`")
-})
+# The terms a backward screen dropped, in order. slstay is tiny, so every
+# term that is not pinned is dropped.
+nsn_dropped <- function(fit, data, ...) {
+  sw <- suppressWarnings(hzr_stepwise(fit, data = data, direction = "backward",
+                                      criterion = "wald", slstay = 1e-9,
+                                      trace = FALSE, ...))
+  sw$steps$variable[sw$steps$action == "drop"]
+}
 
-test_that("pinning the non-syntactic one redirects the drop (#437)", {
-  skip_on_cran() # a backward step
-  # The sharp form. `_X1` is what an unpinned step drops, so an IGNORED pin
-  # drops `_X1` and an HONOURED one drops `mal`: the two answers differ, and
-  # the unfixed code gives the first.
-  d <- ns_data_437()
-  st <- ns_drop_437(ns_fit_437(d), d, force_in = "_X1")
-  expect_true(st$accepted)
-  expect_identical(st$variable, "mal")
-})
+# --- #437: a bare non-syntactic name ---------------------------------------
 
-test_that("force_in pins a non-syntactic variable, written bare (#437)", {
-  skip_on_cran() # a backward step
-  # The documented contract, and what the translator emits.
-  d <- ns_data_437()
-  st <- ns_drop_437(ns_fit_437(d), d, force_in = c("mal", "_X1"))
-  expect_false(st$accepted)
-  expect_gt(nrow(st$all_scores), 0L) # or `all()` is vacuously true
-  expect_true(all(st$all_scores$force_in))
-})
-
-test_that("force_in also accepts the label spelling (#437)", {
-  skip_on_cran() # a backward step
-  # A regression guard, not a demonstration: the label spelling matched
-  # before the fix too. It pins the decision that the key map is
-  # many-to-one, so someone reading the label off $steps names the same
-  # variable as someone writing it bare.
-  d <- ns_data_437()
-  st <- ns_drop_437(ns_fit_437(d), d, force_in = c("mal", "`_X1`"))
-  expect_false(st$accepted)
-  expect_gt(nrow(st$all_scores), 0L) # or `all()` is vacuously true
-  expect_true(all(st$all_scores$force_in))
-})
-
-test_that("force_out keeps a non-syntactic candidate out (#437)", {
-  skip_on_cran() # a candidate enumeration
-  # The mirror of force_in, through a formula scope, whose terms are labels.
-  d <- ns_data_437()
-  base <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ 1,
-                                  data = d, dist = "weibull",
-                                  theta = c(0.1, 1), fit = TRUE))
-  offered <- function(...) {
-    vapply(.hzr_stepwise_candidates(base, data = d, ...),
-           function(c) c$var, character(1))
-  }
-  # Known positive: it is offered when not excluded.
-  expect_true(any(offered(scope = ~ `_X1` + mal) %in% c("_X1", "`_X1`")))
-  expect_false(any(offered(scope = ~ `_X1` + mal, force_out = "_X1") %in%
-                     c("_X1", "`_X1`")))
+test_that("force_in = '_X1' pins the column `_X1` (#437)", {
+  skip_on_cran() # backward screens
+  d <- nsn_rename_age("_X1")
+  fit <- nsn_fit(d, "`_X1` + mal", c(0.1, 1, 0, 0))
+  # Known positive: unpinned, `_X1` is the first term dropped.
+  expect_identical(nsn_dropped(fit, d)[1L], "`_X1`")
+  # Pinned bare, as documented and as the translator emits it.
+  expect_identical(nsn_dropped(fit, d, force_in = "_X1"), "mal")
+  # The label spelling names the same term.
+  expect_identical(nsn_dropped(fit, d, force_in = "`_X1`"), "mal")
 })
 
 test_that("a character scope does not re-offer a variable in the model (#437)", {
-  skip_on_cran() # a candidate enumeration
-  # A character scope carries bare names; the model's own terms are labels.
-  # Unmatched, `_X1` was offered as a candidate although the model already
-  # had it, and the refit then failed on a duplicate column.
-  d <- ns_data_437()
-  fit <- ns_fit_437(d)
-  offered <- function(fit, ...) {
-    vapply(.hzr_stepwise_candidates(fit, data = d, ...),
-           function(c) c$var, character(1))
-  }
-  # Known positive FIRST: without it, `expect_length(0)` is satisfied by an
-  # enumeration that returned nothing at all, which is indistinguishable
-  # from one that matched correctly and had nothing to offer.
-  base <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ 1,
-                                  data = d, dist = "weibull",
-                                  theta = c(0.1, 1), fit = TRUE))
-  expect_setequal(offered(base, scope = c("mal", "_X1")), c("mal", "_X1"))
-  expect_length(offered(fit, scope = c("mal", "_X1")), 0L)
+  skip_on_cran() # fits
+  d <- nsn_rename_age("_X1")
+  base <- nsn_fit(d)
+  fit <- nsn_fit(d, "`_X1` + mal", c(0.1, 1, 0, 0))
+  expect_setequal(nsn_offered(base, d, scope = c("mal", "_X1")),
+                  c("mal", "_X1")) # known positive
+  expect_identical(nsn_offered(fit, d, scope = c("mal", "_X1")), character())
+})
+
+test_that("force_out keeps a non-syntactic column out, either spelling (#437)", {
+  skip_on_cran() # a fit
+  d <- nsn_rename_age("_X1")
+  base <- nsn_fit(d)
+  expect_true("_X1" %in% nsn_offered(base, d)) # known positive
+  expect_identical(nsn_offered(base, d, force_out = "_X1"), "mal")
+  expect_identical(nsn_offered(base, d, force_out = "`_X1`"), "mal")
+  # Through a formula scope, whose candidates are labels.
+  expect_setequal(nsn_offered(base, d, scope = ~ `_X1` + mal),
+                  c("`_X1`", "mal"))
+  expect_identical(nsn_offered(base, d, scope = ~ `_X1` + mal,
+                               force_out = "_X1"), "mal")
 })
 
 test_that("entry needs the QUOTED spelling; a bare one fails loudly (#437)", {
   skip_on_cran() # three forward screens
-  # The distinction the NEWS bullet has to make, pinned so the prose cannot
-  # drift from it. Matching a non-syntactic variable is not the same as
-  # being able to ADD one: the refit pastes the candidate into a formula, so
-  # it parses only when the candidate is already quoted. A formula scope
-  # carries `terms()` labels and therefore does; a character scope of bare
-  # names does not, and that failure is LOUD (#441).
-  d <- ns_data_437()
-  base <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ 1,
-                                  data = d, dist = "weibull",
-                                  theta = c(0.1, 1), fit = TRUE))
+  # Pins the NEWS paragraph that separates MATCHING from ENTRY. Matching a
+  # non-syntactic variable is not being able to ADD one: the refit pastes
+  # the candidate's spelling into a formula, so it parses only when that
+  # spelling is quoted. A formula scope carries `terms()` labels and does; a
+  # character scope written bare does not, and that failure is LOUD (#441).
+  d <- nsn_rename_age("_X1")
+  base <- nsn_fit(d)
   fwd <- function(...) {
     suppressWarnings(hzr_stepwise(base, data = d, direction = "forward",
                                   criterion = "aic", trace = FALSE, ...))
   }
   entered <- function(sw) sw$steps$variable[sw$steps$action == "enter"]
 
-  # A formula scope: the label is already quoted, so the add succeeds.
   sw_f <- fwd(scope = ~ `_X1` + mal)
   expect_true("`_X1`" %in% entered(sw_f))
   expect_identical(sw_f$criteria$n_refit_failures, 0L)
 
-  # A character scope written bare: it cannot be added, and says so.
   sw_c <- fwd(scope = c("_X1", "mal"))
   expect_false(any(entered(sw_c) %in% c("_X1", "`_X1`")))
   expect_gt(sw_c$criteria$n_refit_failures, 0L)
 
-  # Written with backticks, the same character scope does add it: the
-  # barrier is the spelling of the candidate, not the shape of the scope.
   expect_true("`_X1`" %in% entered(fwd(scope = c("`_X1`", "mal"))))
 })
 
-test_that("multiphase candidate enumeration matches by variable too (#437)", {
+test_that("multiphase: force_out written bare reaches the label (#437)", {
   skip_on_cran() # a multiphase fit
-  # The two multiphase sites in .hzr_stepwise_candidates() are changed by
-  # this fix and every other test here is single-distribution, so reverting
-  # either would go unnoticed.
-  d <- ns_data_437()
+  d <- nsn_rename_age("_X1")
   mp <- suppressWarnings(hazard(
     survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
     phases = list(
@@ -164,235 +150,213 @@ test_that("multiphase candidate enumeration matches by variable too (#437)", {
     ),
     fit = TRUE, control = list(n_starts = 2L, maxit = 500L)
   ))
-  vars <- function(...) {
-    vapply(.hzr_stepwise_candidates(mp, data = d, ...),
-           function(c) c$var, character(1))
-  }
   sc <- list(early = ~ `_X1` + mal, constant = NULL)
-  # Known positive: both are offered when nothing is excluded.
-  expect_setequal(vars(scope = sc), c("`_X1`", "mal"))
-  # force_out, written bare, must reach the label.
-  expect_identical(vars(scope = sc, force_out = "_X1"), "mal")
-  # And the default-scope site, on a syntactic frame so the pre-existing
-  # bare-name paste in that branch is not what is under test.
-  data(avc, package = "TemporalHazard", envir = environment())
-  dd <- stats::na.omit(avc[, c("int_dead", "dead", "age", "mal")])
-  mp2 <- suppressWarnings(hazard(
-    survival::Surv(int_dead, dead) ~ 1, data = dd, dist = "multiphase",
-    phases = list(
-      early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
-                           fixed = "shapes"),
-      constant = hzr_phase("constant")
-    ),
-    fit = TRUE, control = list(n_starts = 2L, maxit = 500L)
-  ))
-  all_vars <- vapply(.hzr_stepwise_candidates(mp2, data = dd),
-                     function(c) c$var, character(1))
-  expect_true("age" %in% all_vars) # known positive
-  kept <- vapply(.hzr_stepwise_candidates(mp2, data = dd, force_out = "age"),
-                 function(c) c$var, character(1))
-  expect_false("age" %in% kept)
+  expect_setequal(nsn_offered(mp, d, scope = sc), c("`_X1`", "mal"))
+  expect_identical(nsn_offered(mp, d, scope = sc, force_out = "_X1"), "mal")
 })
 
 test_that("a syntactic name is unaffected (#437)", {
-  skip_on_cran() # a backward step
-  # The control: the change must not alter matching where label and name
-  # already agree.
-  data(avc, package = "TemporalHazard", envir = environment())
-  d <- stats::na.omit(avc[, c("int_dead", "dead", "age", "mal")])
-  fit <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ age + mal,
-                                 data = d, dist = "weibull",
-                                 theta = c(0.1, 1, 0, 0), fit = TRUE))
-  st_free <- ns_drop_437(fit, d)
-  expect_true(st_free$accepted)
-  st_pinned <- ns_drop_437(fit, d, force_in = c("age", "mal"))
-  expect_false(st_pinned$accepted)
+  skip_on_cran() # backward screens
+  d <- nsn_avc()
+  fit <- nsn_fit(d, "age + mal", c(0.1, 1, 0, 0))
+  expect_setequal(nsn_dropped(fit, d), c("age", "mal"))
+  expect_identical(nsn_dropped(fit, d, force_in = "age"), "mal")
+  expect_identical(nsn_dropped(fit, d, force_in = c("age", "mal")),
+                   character())
 })
 
-test_that("a scope naming a variable twice offers it once (#437)", {
-  skip_on_cran() # a candidate enumeration
-  # `setdiff()` de-duplicates as well as subtracting, and replacing it with a
-  # key comparison silently dropped that: the variable was scored, refit and
-  # reported TWICE, with nothing said. Found by review of this fix, not by
-  # the fix's own tests.
-  data(avc, package = "TemporalHazard", envir = environment())
-  d <- stats::na.omit(avc[, c("int_dead", "dead", "age", "mal")])
-  base <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ 1,
-                                  data = d, dist = "weibull",
-                                  theta = c(0.1, 1), fit = TRUE))
-  vars <- function(...) {
-    vapply(.hzr_stepwise_candidates(base, data = d, ...),
-           function(c) c$var, character(1))
-  }
-  expect_identical(vars(scope = c("age", "age", "mal")), c("age", "mal"))
-  # The same variable written two ways is still one variable.
-  expect_identical(vars(scope = c("age", "`age`")), "age")
+# --- #442 defect 1: de-duplication ----------------------------------------
+
+test_that("a scope naming a variable twice offers it once (#442, 1)", {
+  skip_on_cran() # a fit
+  d <- nsn_avc()
+  base <- nsn_fit(d)
+  expect_identical(nsn_offered(base, d, scope = c("age", "age", "mal")),
+                   c("age", "mal"))
+  # A column and its own label are one variable.
+  d2 <- nsn_rename_age("_X1")
+  base2 <- nsn_fit(d2)
+  expect_identical(nsn_offered(base2, d2, scope = c("_X1", "`_X1`", "mal")),
+                   c("_X1", "mal"))
 })
 
-test_that("the key is parsed, not stripped of backticks (#437)", {
-  skip_on_cran() # a backward step
-  # Stripping backticks is not the inverse of quoting. A column whose name
-  # CONTAINS one is labelled `a\`b`, which strips to "a\\b" -- a name that
-  # does not exist -- while parsing gives back "a`b". Measured on a live
-  # fit, not reasoned from the grammar.
-  nm <- "a`b"
-  data(avc, package = "TemporalHazard", envir = environment())
-  d <- stats::na.omit(avc[, c("int_dead", "dead", "age", "mal")])
-  names(d)[names(d) == "mal"] <- nm
-  fit <- suppressWarnings(hazard(
-    stats::as.formula("survival::Surv(int_dead, dead) ~ age + `a\\`b`"),
-    data = d, dist = "weibull", theta = c(0.1, 1, 0, 0), fit = TRUE
-  ))
-  labels <- attr(stats::terms(stats::formula(fit$call$formula)), "term.labels")
-  # Assert the RELATION, not the key's spelling: the label must key the same
-  # as the bare name, and differently from the backtick-stripped text.
-  expect_identical(.hzr_var_key(labels), .hzr_var_key(c("age", nm)))
-  stripped <- gsub("`", "", labels, fixed = TRUE)[2L]
-  expect_false(identical(stripped, nm))
-  expect_false(identical(.hzr_var_key(labels)[2L], .hzr_var_key(stripped)))
-  # And it holds end to end: the pin is honoured.
-  st <- ns_drop_437(fit, d, force_in = c("age", nm))
-  expect_false(st$accepted)
-})
+# --- #442 defect 2: a literal column named like an interaction ------------
 
-test_that("a term that is not a single symbol keeps its label (#437)", {
-  # An interaction or a function call has no single variable to name, so it
-  # must be returned unchanged and go on matching by label as before.
-  # Two labels with the same text key the same...
-  expect_identical(.hzr_var_key("z:f"), .hzr_var_key("z:f"))
-  # ...but an expression NEVER keys as the literal column of the same text,
-  # or the column disappears from the candidates (#442).
-  for (e in c("z:f", "I(age > 50)", "log(age)")) {
-    expect_false(identical(.hzr_var_key(e),
-                           .hzr_var_key(paste0("`", e, "`"))),
-                 info = e)
-  }
-  expect_identical(.hzr_var_key(character()), character())
-})
-
-# --- Codex review of #442: expression labels must stay distinct from literal
-# column names (discussion_r4082123105). -------------------------------------
-
-test_that("a literal column named like an interaction is still offered (#442)", {
-  skip_on_cran() # a fit plus candidate enumeration
-  # `terms()` backquotes the literal column `age:mal`, and parsing that label
-  # gives the symbol `age:mal`. The INTERACTION label age:mal is a `:` call,
-  # not a symbol. Keyed on the name alone the two collided, and the literal
-  # column silently vanished from the candidates while the screen finished
-  # normally. main offers it; the first version of this fix did not.
-  data(avc, package = "TemporalHazard", envir = environment())
-  d0 <- stats::na.omit(avc[, c("int_dead", "dead", "age", "mal")])
+nsn_agemal <- function() {
+  d0 <- nsn_avc()
   d <- data.frame(d0, `age:mal` = as.numeric(scale(d0$age)) * 0.5 + 1,
                   check.names = FALSE)
-  # The column is genuinely not the product, or the test proves nothing.
+  # The column is genuinely not the product, or the tests prove nothing.
   expect_false(isTRUE(all.equal(d[["age:mal"]], d$age * d$mal)))
-  fit <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ age * mal,
+  d
+}
+
+test_that("a literal `age:mal` column is offered beside the interaction (#442, 2)", {
+  skip_on_cran() # a fit
+  d <- nsn_agemal()
+  fit <- nsn_fit(d, "age * mal", c(0.1, 1, 0, 0, 0))
+  # The interaction is in the model; the literal column is not.
+  # scope = NULL offers columns: the literal one must be among them.
+  expect_identical(nsn_offered(fit, d), "age:mal")
+  # A formula scope carries its label.
+  expect_identical(nsn_offered(fit, d, scope = ~ `age:mal`), "`age:mal`")
+  # A character scope: the COLUMN wins, so the model's interaction does not
+  # swallow it.
+  expect_identical(nsn_offered(fit, d, scope = "age:mal"), "age:mal")
+})
+
+test_that("a string that is a column AND a term label names the column", {
+  skip_on_cran() # a fit
+  # The precedence, pinned where the two readings give different answers.
+  d <- nsn_agemal()
+  base <- nsn_fit(d)
+  sc <- ~ `age:mal` + age:mal
+  expect_setequal(nsn_offered(base, d, scope = sc),
+                  c("`age:mal`", "age:mal")) # known positive
+  # "age:mal" is the literal column; the interaction stays offered.
+  expect_identical(nsn_offered(base, d, scope = sc, force_out = "age:mal"),
+                   "age:mal")
+  # The interaction is reachable only through a string that is not a
+  # column: here, with no such column, it resolves to the term.
+  d0 <- nsn_avc()
+  base0 <- nsn_fit(d0)
+  expect_identical(nsn_offered(base0, d0, scope = ~ age + age:mal,
+                               force_out = "age:mal"), "age")
+})
+
+# --- #442 defect 3: whitespace and comments -------------------------------
+
+test_that("'age', 'age ' and 'age # x' stay distinct (#442, 3)", {
+  skip_on_cran() # a fit
+  d0 <- nsn_avc()
+  d <- data.frame(d0, `age ` = d0$age * 2, `age # x` = d0$age + 1,
+                  check.names = FALSE)
+  base <- nsn_fit(d)
+  expect_setequal(nsn_offered(base, d), c("age", "mal", "age ", "age # x"))
+  expect_setequal(nsn_offered(base, d, scope = c("age", "age ")),
+                  c("age", "age "))
+  # force_out excludes the column named, and only that one.
+  expect_setequal(nsn_offered(base, d, force_out = "age"),
+                  c("mal", "age ", "age # x"))
+  expect_setequal(nsn_offered(base, d, force_out = "age "),
+                  c("age", "mal", "age # x"))
+})
+
+test_that("a near-miss spelling warns rather than matching (#442, 3)", {
+  skip_on_cran() # a fit
+  d <- nsn_avc()
+  base <- nsn_fit(d)
+  # No column "age " exists here, so it names nothing, and says so.
+  expect_warning(
+    off <- nsn_offered(base, d, force_out = "age "),
+    "\"age \"", fixed = TRUE
+  )
+  expect_setequal(off, c("age", "mal"))
+})
+
+# --- #442 defect 4: a column literally named `x` --------------------------
+
+test_that("a column named `x` (with backticks) is not x (#442, 4)", {
+  skip_on_cran() # a fit
+  d <- nsn_rename_age("x")
+  d <- data.frame(d, `\`x\`` = d$x * 2 + 1, check.names = FALSE)
+  base <- nsn_fit(d)
+  expect_setequal(nsn_offered(base, d), c("x", "mal", "`x`"))
+  expect_setequal(nsn_offered(base, d, force_out = "x"), c("mal", "`x`"))
+  expect_setequal(nsn_offered(base, d, force_out = "`x`"), c("x", "mal"))
+})
+
+# --- #442 defect 5: reserved words and numbers ----------------------------
+
+test_that("force_in honours a column named like a constant (#442, 5)", {
+  skip_on_cran() # backward screens, several fits
+  for (nm in c("TRUE", "NULL", "NA", "Inf", "next", "1")) {
+    d <- nsn_rename_age(nm)
+    lab <- paste0("`", nm, "`")
+    fit <- nsn_fit(d, paste(lab, "+ mal"), c(0.1, 1, 0, 0))
+    # Known positive: unpinned, it is the first term dropped.
+    expect_identical(nsn_dropped(fit, d)[1L], lab, info = nm)
+    expect_identical(nsn_dropped(fit, d, force_in = nm), "mal", info = nm)
+  }
+})
+
+test_that("force_out and scope honour a column named TRUE (#442, 5)", {
+  skip_on_cran() # a fit
+  d <- nsn_rename_age("TRUE")
+  base <- nsn_fit(d)
+  expect_setequal(nsn_offered(base, d), c("TRUE", "mal")) # known positive
+  expect_identical(nsn_offered(base, d, force_out = "TRUE"), "mal")
+  expect_identical(nsn_offered(base, d, scope = "TRUE"), "TRUE")
+})
+
+# --- an unresolved name is never silent -----------------------------------
+
+test_that("an unresolved name warns, naming it, for each argument", {
+  skip_on_cran() # a fit
+  d <- nsn_avc()
+  base <- nsn_fit(d)
+  expect_warning(off <- nsn_offered(base, d, force_in = "nosuch_in"),
+                 "`force_in`.*nosuch_in")
+  expect_setequal(off, c("age", "mal"))
+  expect_warning(off <- nsn_offered(base, d, force_out = "nosuch_out"),
+                 "`force_out`.*nosuch_out")
+  expect_setequal(off, c("age", "mal"))
+  expect_warning(off <- nsn_offered(base, d, scope = c("age", "nosuch_sc")),
+                 "`scope`.*nosuch_sc")
+  expect_identical(off, "age")
+  # A resolved name is quiet, and a term label over columns of `data`
+  # resolves in a character scope although it is not a column.
+  expect_no_warning(nsn_offered(base, d, force_out = "age"))
+  expect_no_warning(off <- nsn_offered(base, d,
+                                       scope = c("age", "log(age)", "age:mal")))
+  expect_identical(off, c("age", "log(age)", "age:mal"))
+})
+
+test_that("hzr_bootstrap() passes the unresolved-name warning on", {
+  skip_on_cran() # a bootstrap
+  d <- nsn_avc()
+  fit <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ age,
                                  data = d, dist = "weibull",
-                                 theta = c(0.1, 1, 0, 0, 0), fit = TRUE))
-  expect_true("age:mal" %in%
-                attr(stats::terms(stats::formula(fit$call$formula)),
-                     "term.labels")) # the interaction IS in the model
-  offered <- vapply(.hzr_stepwise_candidates(fit, scope = ~ `age:mal`, data = d),
-                    function(c) c$var, character(1))
-  expect_identical(offered, "`age:mal`")
+                                 theta = c(0.1, 1, 0), fit = TRUE))
+  expect_warning(
+    suppressMessages(hzr_bootstrap(fit, n_boot = 2L, seed = 1L,
+                                   scope = ~ age + mal, criterion = "wald",
+                                   force_out = "nosuch_boot")),
+    "nosuch_boot"
+  )
 })
 
-test_that("the key preserves main's distinctions except where #437 merges them", {
-  # A DIFFERENTIAL test, added because two silent regressions in this PR came
-  # from generalising a comparison without enumerating what the old one
-  # DISTINGUISHED. main compared raw strings. For every pair of label shapes,
-  # the new key must agree with that string comparison, except for an
-  # explicit allow-set of the pairs #437 deliberately merges.
-  shapes <- c("age", "`age`", "_X1", "`_X1`", "a b", "`a b`",
-              "age:mal", "`age:mal`", "log(age)", "`log(age)`",
-              "I(age > 50)", "`I(age > 50)`",
-              # Literals, which parse to something that is neither a symbol
-              # nor a failure. "NULL" is the one that needs a sentinel rather
-              # than is.null() to classify, since str2lang("NULL") RETURNS
-              # NULL; a mutation to is.null() survived every other test here.
-              "NULL", "`NULL`", "TRUE", "`TRUE`", "1", "`1`",
-              # Names that PARSE to another name: str2lang() discards
-              # surrounding whitespace and anything after a `#`, so these
-              # must not merge with "age" (#442).
-              "age ", "age\t", "age # x",
-              # A name containing a backtick, which terms() ESCAPES.
-              "a`b", "`a\\`b`")
-  # Each entry: a label spelling and the same VARIABLE written bare. Nothing
-  # else may merge.
-  allow <- list(c("age", "`age`"), c("_X1", "`_X1`"), c("a b", "`a b`"),
-                c("a`b", "`a\\`b`"))
-  allowed <- function(a, b) {
-    any(vapply(allow, function(p) {
-      setequal(c(a, b), p)
-    }, logical(1)))
-  }
+# --- the resolution itself ------------------------------------------------
 
-  deviations <- character()
-  merged_by_allow <- 0L
-  for (i in seq_along(shapes)) {
-    for (j in seq_along(shapes)) {
-      if (j <= i) next
-      a <- shapes[i]
-      b <- shapes[j]
-      main_equal <- identical(a, b)                       # main's comparison
-      new_equal  <- identical(.hzr_var_key(a), .hzr_var_key(b))
-      if (allowed(a, b)) {
-        # An allow-set entry must EARN its place: it must merge now, and it
-        # must not have merged before, or it is padding.
-        expect_true(new_equal, info = paste("allow-set pair not merged:", a, b))
-        expect_false(main_equal, info = paste("allow-set pair was already equal:", a, b))
-        merged_by_allow <- merged_by_allow + 1L
-      } else if (!identical(new_equal, main_equal)) {
-        deviations <- c(deviations, paste0(a, " <> ", b,
-                                           " (main=", main_equal,
-                                           ", new=", new_equal, ")"))
-      }
-    }
-  }
-  expect_identical(merged_by_allow, length(allow)) # every listed pair was seen
-  expect_identical(deviations, character())
-})
+test_that("each column resolves to its own terms() label, and only it", {
+  # Replaces #442's differential test, which compared a parsed key against a
+  # string comparison and, through its allow-set, ASSERTED that "TRUE" and
+  # "`TRUE`" were different variables. The property now is the design's:
+  # a column name resolves to the label terms() gives that column, distinct
+  # columns never merge, and a column's label names the column.
+  nms <- c("age", "_X1", "a b", "a`b", "a\\b", "a\nb", "a\tb", ".x", "x",
+           "`x`", "age ", "age # x", "age:mal", "log(age)",
+           "TRUE", "FALSE", "NULL", "NA", "Inf", "NaN", "NA_integer_",
+           "NA_real_", "NA_character_", "next", "break", "if", "1", "1e3")
+  d <- as.data.frame(stats::setNames(
+    lapply(seq_along(nms), function(i) as.numeric(i)), nms
+  ), check.names = FALSE)
+  expect_identical(names(d), nms) # the frame really carries every name
+  labels <- attr(stats::terms(stats::reformulate(".", response = NULL),
+                              data = d), "term.labels")
+  expect_length(labels, length(nms))
 
-test_that("a name that parses to another name stays distinct (#442)", {
-  skip_on_cran() # a fit plus candidate enumeration
-  # `str2lang()` discards surrounding whitespace and anything after a `#`, so
-  # "age ", "age\t" and "age # x" all parse to the symbol `age`. Taking the
-  # parse at face value merged those distinct columns: a scope = NULL screen
-  # dropped all but the first, and force_out = "age" excluded a column the
-  # user never named. Both silent. Found by review of #442.
-  data(avc, package = "TemporalHazard", envir = environment())
-  d0 <- stats::na.omit(avc[, c("int_dead", "dead", "age", "mal")])
-  d <- data.frame(d0, `age ` = d0$age * 2, check.names = FALSE)
-  expect_true("age " %in% names(d)) # the fixture really has both
-  fit0 <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ 1,
-                                  data = d, dist = "weibull",
-                                  theta = c(0.1, 1), fit = TRUE))
-  offered <- function(...) {
-    vapply(.hzr_stepwise_candidates(fit0, data = d, ...),
-           function(c) c$var, character(1))
-  }
-  expect_setequal(offered(), c("age", "mal", "age "))
-  expect_setequal(offered(scope = c("age", "age ")), c("age", "age "))
-  # force_out must exclude the column named, and only that one.
-  expect_setequal(offered(force_out = "age"), c("mal", "age "))
-  expect_setequal(offered(force_out = "age "), c("age", "mal"))
-})
+  by_name <- .hzr_resolve_names(nms, d, arg = "`x`")
+  expect_identical(by_name$id, labels)
+  expect_identical(anyDuplicated(by_name$id), 0L)
 
-test_that("force_out written in the label spelling excludes the column (#442)", {
-  skip_on_cran() # a fit plus candidate enumeration
-  # The only behaviour the key adds over a plain string comparison at the
-  # `colnames()` sites, and nothing exercised it, so reverting those sites
-  # left the suite green (found by review). `colnames()` are bare, so this
-  # is the backquoted spelling reaching a bare column name.
-  d <- ns_data_437() # carries the non-syntactic column `_X1`
-  base <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ 1,
-                                  data = d, dist = "weibull",
-                                  theta = c(0.1, 1), fit = TRUE))
-  offered <- function(...) {
-    vapply(.hzr_stepwise_candidates(base, data = d, ...),
-           function(c) c$var, character(1))
+  by_label <- .hzr_resolve_names(labels, d, arg = "`x`")
+  expect_identical(by_label$id, labels)
+
+  # A string that is neither a column nor a label is not guessed at.
+  for (s in c("`age`", "age  ", "\"age\"", "age#x")) {
+    expect_warning(r <- .hzr_resolve_names(s, d, arg = "`x`"),
+                   encodeString(s, quote = "\""), fixed = TRUE)
+    expect_length(r$id, 0L)
   }
-  expect_true("_X1" %in% offered())                 # known positive
-  expect_false("_X1" %in% offered(force_out = "`_X1`"))
-  expect_false("_X1" %in% offered(force_out = "_X1"))
 })
