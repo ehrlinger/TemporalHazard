@@ -830,7 +830,11 @@
   columns, and a column literally named `` `x` `` is not `x`. A string that
   only resembles a name is not read as one: `"age "` when there is no such
   column, or `` "`age`" ``, which `terms()` never writes, is warned about
-  and ignored.
+  and ignored. The names ignored are also recorded on the result, in
+  `$scope$unresolved` (and `$unresolved` of a select-mode `hzr_bootstrap()`),
+  and `print()` shows them, so `suppressWarnings()` or a saved object does
+  not lose them; a character `scope` emptied this way says so where the
+  screen stops, rather than "no further action".
 
   This is about MATCHING: which variables are pinned, excluded or in the
   scope. How a candidate ENTERS is unchanged and is a known limitation. The
@@ -845,6 +849,15 @@
   under `"wald"` and `"aic"` its refit fails and the failure names it
   (#441); under `"score"` it can fail by either of two routes, and a
   `"score"` screen can finish having omitted it (#441, #438).
+
+* **One forward candidate whose refit adds no column of its own no longer
+  ends the screen under `"wald"` or `"aic"` (#442).** The check that finds
+  the candidate's new coefficient refuses a refit that added no design
+  column, or changed the parameterisation without adding one, and it ran
+  outside the per-candidate error handling, so its error stopped the whole
+  screen. It is now that candidate's refit failure, with the refusal as its
+  reason in `$criteria$refit_failure_reasons`, and the screen goes on, as
+  `"score"` already did.
 
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded

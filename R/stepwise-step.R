@@ -274,6 +274,24 @@
       paste0(cand$var, "@", cand$phase)
     }
 
+    # Coefficient name of the newly-entered variable in the candidate fit,
+    # resolved by the column the refit added rather than by `var`, which
+    # another term's column can carry (a factor dummy named `flag` beside a
+    # logical `flag`, whose own column is `flagTRUE`). It refuses a refit
+    # that added no column, or more than one, and that refusal is this
+    # candidate's failure, caught here like the refit's own: outside the
+    # catch it ended the whole screen under wald and aic (#442).
+    coef_name <- NULL
+    if (!inherits(candidate_fit, "error") &&
+          !isFALSE(candidate_fit$fit$converged)) {
+      coef_name <- tryCatch(
+        .hzr_candidate_coef_name(candidate_fit, cand$var, cand$phase,
+                                 current = current),
+        error = function(e) e
+      )
+      if (inherits(coef_name, "error")) candidate_fit <- coef_name
+    }
+
     if (inherits(candidate_fit, "error") ||
           isFALSE(candidate_fit$fit$converged)) {
       reason <- .hzr_refit_failure_reason(candidate_fit)
@@ -295,13 +313,6 @@
       )
       next
     }
-
-    # Coefficient name of the newly-entered variable in the candidate fit,
-    # resolved by the column the refit added rather than by `var`, which
-    # another term's column can carry (a factor dummy named `flag` beside a
-    # logical `flag`, whose own column is `flagTRUE`).
-    coef_name <- .hzr_candidate_coef_name(candidate_fit, cand$var,
-                                           cand$phase, current = current)
 
     s <- .hzr_candidate_score(
       criterion = criterion, mode = "entry",
@@ -473,6 +484,18 @@
                             data = data, ...),
       error = function(e) e
     )
+    # The coefficient-name refusal (no column added, or several) is this
+    # candidate's failure too, caught as the Wald path catches it (#442).
+    fallback_coef <- NULL
+    if (!is.null(refit) && !inherits(refit, "error") &&
+          !isFALSE(refit$fit$converged)) {
+      fallback_coef <- tryCatch(
+        .hzr_candidate_coef_name(refit, all_scores$variable[i], cand_phase,
+                                 current = current),
+        error = function(e) e
+      )
+      if (inherits(fallback_coef, "error")) refit <- fallback_coef
+    }
     # A refit that fails or does not converge leaves the row NA with its
     # original reason, so it still counts as uncomputable below rather than
     # quietly becoming a candidate with no score.  Record and warn as every
@@ -496,8 +519,7 @@
     }
     w <- .hzr_candidate_score(
       criterion = "wald", mode = "entry", current = current, candidate = refit,
-      names = .hzr_candidate_coef_name(refit, all_scores$variable[i],
-                                       cand_phase, current = current)
+      names = fallback_coef
     )
     if (is.na(w$score)) {
       # The refit CONVERGED -- it returned a point estimate -- but its Hessian

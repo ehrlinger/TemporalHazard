@@ -160,8 +160,10 @@
 #' @param arg The argument's name, for the warning, e.g. `` "`force_in`" ``.
 #' @param self_label Accept a string that is itself a term label. Used for a
 #'   character `scope`, which introduces its own terms.
-#' @return A list: `spelling`, the resolved elements as the user wrote them,
-#'   and `id`, the label each resolves to, in the same order.
+#' @return A list: `spelling`, the resolved elements as the user wrote them;
+#'   `id`, the label each resolves to, in the same order; and `unresolved`,
+#'   the elements that resolved to nothing, which hzr_stepwise() records on
+#'   its result so that the warning is not the only trace of them.
 #' @keywords internal
 #' @noRd
 .hzr_resolve_names <- function(x, data, labels = character(), arg,
@@ -188,7 +190,7 @@
             if (sum(bad) == 1L) "it is" else "they are", " ignored.",
             call. = FALSE)
   }
-  list(spelling = x[!bad], id = id[!bad])
+  list(spelling = x[!bad], id = id[!bad], unresolved = x[bad])
 }
 
 #' Add or drop a variable from a formula's RHS

@@ -39,11 +39,14 @@ nsn_rename_age <- function(nm) {
   d
 }
 
+# The formula is built first and passed by value, so the fit's stored call
+# carries the formula itself: a screen that takes no step returns that call,
+# and nsn_final_terms() must be able to read it.
 nsn_fit <- function(d, rhs = "1", theta = c(0.1, 1)) {
-  suppressWarnings(hazard(
-    stats::as.formula(paste("survival::Surv(int_dead, dead) ~", rhs)),
-    data = d, dist = "weibull", theta = theta, fit = TRUE
-  ))
+  f <- stats::as.formula(paste("survival::Surv(int_dead, dead) ~", rhs))
+  suppressWarnings(do.call(hazard, list(
+    formula = f, data = d, dist = "weibull", theta = theta, fit = TRUE
+  )))
 }
 
 # The candidates hzr_stepwise() offers its first forward step, as spelled in
@@ -148,6 +151,108 @@ test_that("a screen over a literal `age:mal` column completes (#442)", {
     expect_identical(sw$criteria$n_refit_failures, 0L)
     expect_length(nsn_final_terms(sw), 3L)
   }
+})
+
+test_that("a frozen literal `age:mal` column is not re-entered (#442)", {
+  skip_on_cran() # a two-way screen that oscillates
+  # The column enters as the interaction (#449), which then fails slstay, so
+  # it oscillates until max_move freezes it (step 6) and it is dropped in the
+  # same iteration (step 7). While it is out of the model only its FROZEN
+  # status keeps it out; without that the screen re-entered it at step 8 and
+  # ran to max_steps.
+  d <- nsn_agemal()
+  fit <- nsn_fit(d, "age + mal", c(0.1, 1, 0, 0))
+  sw <- nsn_screen(fit, d, direction = "both", slentry = 0.99, slstay = 0.2,
+                   max_steps = 20L)
+  expect_true("frozen" %in% sw$steps$action) # known positive: it oscillated
+  expect_false(sw$criteria$hit_max_steps)
+  expect_identical(nrow(sw$steps), 7L)
+  expect_identical(sum(sw$steps$action == "enter"), 3L)
+})
+
+test_that("a candidate that adds no column does not end the screen (#442)", {
+  skip_on_cran() # full screens under three criteria
+  # With the interaction already in the model, the literal `age:mal` column
+  # refits as that same interaction (#449) and adds no column. That was an
+  # error that ended the whole screen under wald and aic, while score went
+  # on. Every criterion must now record it and finish.
+  withr::local_seed(1L)
+  d <- nsn_agemal()
+  d$`age:mal` <- d$mal * 2 + stats::rnorm(nrow(d), sd = 0.5) # not collinear
+  fit <- nsn_fit(d, "age * mal", c(0.1, 1, 0, 0, 0))
+  for (crit in c("wald", "aic", "score")) {
+    sw <- NULL
+    expect_no_error(
+      sw <- suppressWarnings(hzr_stepwise(fit, data = d, direction = "forward",
+                                          criterion = crit, slentry = 0.99,
+                                          trace = FALSE))
+    )
+    expect_setequal(nsn_final_terms(sw), c("age", "mal", "age:mal"))
+    expect_identical(sum(sw$steps$action == "enter"), 0L, info = crit)
+    # Each records the candidate it could not test, by its own route: the
+    # refit criteria as a refused refit, score as a candidate it could not
+    # expand into a column of its own.
+    if (crit == "score") {
+      expect_identical(sw$criteria$uncomputable_reasons,
+                       c(not_expandable = 1L))
+    } else {
+      expect_identical(sw$criteria$refit_failures, "age:mal", info = crit)
+      expect_match(unname(sw$criteria$refit_failure_reasons),
+                   "added no design-matrix column", info = crit)
+    }
+  }
+})
+
+# --- unresolved names are recorded on the result ---------------------------
+
+test_that("names that resolve to nothing are recorded on the result", {
+  skip_on_cran() # fits
+  # The warning is lost to suppressWarnings() and to a saved object. A
+  # screen emptied by them must not read like an honest empty screen.
+  d <- nsn_avc()
+  base <- nsn_fit(d)
+  sw <- suppressWarnings(hzr_stepwise(
+    base, data = d, scope = c("nope1", "nope2"), direction = "forward",
+    criterion = "wald", trace = FALSE
+  ))
+  expect_identical(sw$scope$unresolved$scope, c("nope1", "nope2"))
+  expect_identical(sw$scope$unresolved$force_in, character())
+  expect_identical(sw$scope$unresolved$force_out, character())
+  tr <- stepwise_trace(sw)
+  expect_false(any(grepl("no further action", tr, fixed = TRUE)))
+  expect_true(any(grepl("resolved to no candidate", tr, fixed = TRUE)))
+  expect_output(print(sw), "\"nope1\", \"nope2\"", fixed = TRUE)
+  expect_output(print(summary(sw)), "\"nope1\", \"nope2\"", fixed = TRUE)
+
+  sw2 <- suppressWarnings(hzr_stepwise(
+    base, data = d, scope = c("age", "nope3"), direction = "forward",
+    criterion = "wald", trace = FALSE, force_in = "nosuch_in",
+    force_out = "nosuch_out"
+  ))
+  expect_identical(sw2$scope$unresolved,
+                   list(force_in = "nosuch_in", force_out = "nosuch_out",
+                        scope = "nope3"))
+  expect_output(print(sw2), "nosuch_in", fixed = TRUE)
+  # A screen with nothing unresolved says nothing about it.
+  sw3 <- nsn_screen(base, d, direction = "forward", scope = c("age", "mal"))
+  expect_identical(sw3$scope$unresolved,
+                   list(force_in = character(), force_out = character(),
+                        scope = character()))
+  expect_false(any(grepl("unresolved", stepwise_trace(sw3), fixed = TRUE)))
+})
+
+test_that("hzr_bootstrap() records the names it ignored", {
+  skip_on_cran() # a bootstrap
+  d <- nsn_avc()
+  fit <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ age,
+                                 data = d, dist = "weibull",
+                                 theta = c(0.1, 1, 0), fit = TRUE))
+  bs <- suppressWarnings(suppressMessages(
+    hzr_bootstrap(fit, n_boot = 2L, seed = 1L, scope = ~ age + mal,
+                  criterion = "wald", force_out = "nosuch_boot")
+  ))
+  expect_identical(bs$unresolved$force_out, "nosuch_boot")
+  expect_output(print(bs), "nosuch_boot", fixed = TRUE)
 })
 
 # --- #437: a bare non-syntactic name ---------------------------------------

@@ -185,7 +185,14 @@
 #'     \item{\code{scope}}{Record of the candidate scope, plus
 #'       `force_in`, `force_out`, and the frozen set.  In a two-way
 #'       screen, `frozen` can name a variable the final model does not
-#'       contain; see the **Known limitation (the frozen set)** section.}
+#'       contain; see the **Known limitation (the frozen set)** section.
+#'       `unresolved` is a list with elements `force_in`, `force_out` and
+#'       `scope`, each the names that matched neither a column of `data`
+#'       nor a term label and were therefore ignored (`character()` when
+#'       none were).  The trace, and so `print()` and `summary()`, carries a
+#'       line for each non-empty one, and a screen whose character `scope`
+#'       was emptied this way says so where it stops.  `force_in` and
+#'       `force_out` here are as given, unresolved names included (#451).}
 #'     \item{\code{criteria}}{Named list of the threshold / direction
 #'       settings actually applied, plus
 #'       `n_uncomputable_scores` (how many candidate scores were `NA`,
@@ -415,6 +422,8 @@ hzr_stepwise <- function(fit,
   # about and ignored, never matched by a guess. The user's own values are
   # kept for the result's `$scope` record.
   scope_given <- scope
+  unresolved <- list(force_in = character(), force_out = character(),
+                     scope = character())
   scope_labels <- if (inherits(scope, "formula")) {
     .hzr_formula_rhs_terms(scope)
   } else if (is.list(scope)) {
@@ -430,14 +439,23 @@ hzr_stepwise <- function(fit,
                                          self_label = TRUE)
     scope <- resolved_scope$spelling
     scope_labels <- resolved_scope$id
+    unresolved$scope <- resolved_scope$unresolved
   }
   known_labels <- unique(c(unlist(.hzr_scope_current_vars(fit),
                                   use.names = FALSE),
                            scope_labels))
-  force_in_id  <- .hzr_resolve_names(force_in, data, known_labels,
-                                     arg = "`force_in`")$id
-  force_out_id <- .hzr_resolve_names(force_out, data, known_labels,
-                                     arg = "`force_out`")$id
+  resolved_in  <- .hzr_resolve_names(force_in, data, known_labels,
+                                     arg = "`force_in`")
+  resolved_out <- .hzr_resolve_names(force_out, data, known_labels,
+                                     arg = "`force_out`")
+  force_in_id  <- resolved_in$id
+  force_out_id <- resolved_out$id
+  unresolved$force_in  <- resolved_in$unresolved
+  unresolved$force_out <- resolved_out$unresolved
+  # A character scope whose every name was unresolved offers nothing; the
+  # stop line must say why rather than claim nothing met the threshold.
+  scope_emptied <- is.character(scope_given) && length(scope_given) > 0L &&
+    length(scope) == 0L
 
   ts_start <- Sys.time()
   call <- match.call()
@@ -468,6 +486,15 @@ hzr_stepwise <- function(fit,
     )
   }
   emit(header)
+  # The warning is lost to suppressWarnings() and to a saved object, so
+  # the names ignored are also recorded in the trace and on the result.
+  for (arg in names(unresolved)) {
+    if (length(unresolved[[arg]]) > 0L) {
+      emit(sprintf("(unresolved `%s`, ignored: %s)", arg,
+                   paste(encodeString(unresolved[[arg]], quote = "\""),
+                         collapse = ", ")))
+    }
+  }
   emit("")
 
   # Move counter: per-variable tally of entries + exits.  Use a named
@@ -767,6 +794,12 @@ hzr_stepwise <- function(fit,
                  "for %s -- none was tested)"),
           step_txt, paste(iter_untestable, collapse = " or ")
         ))
+      } else if (scope_emptied && step_no == 0L) {
+        emit(sprintf(
+          paste0("(stopped after %s: the character `scope` resolved to ",
+                 "no candidate -- every name in it was unresolved)"),
+          step_txt
+        ))
       } else {
         emit(sprintf("(no further action after %s)", step_txt))
       }
@@ -806,7 +839,8 @@ hzr_stepwise <- function(fit,
     candidates = scope_given,
     force_in   = force_in,
     force_out  = force_out,
-    frozen     = frozen
+    frozen     = frozen,
+    unresolved = unresolved
   )
   result$criteria   <- list(
     direction = direction,

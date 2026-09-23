@@ -141,7 +141,14 @@ frozen action; see Details.}
 \item{\code{scope}}{Record of the candidate scope, plus
 \code{force_in}, \code{force_out}, and the frozen set.  In a two-way
 screen, \code{frozen} can name a variable the final model does not
-contain; see the \strong{Known limitation (the frozen set)} section.}
+contain; see the \strong{Known limitation (the frozen set)} section.
+\code{unresolved} is a list with elements \code{force_in}, \code{force_out} and
+\code{scope}, each the names that matched neither a column of \code{data}
+nor a term label and were therefore ignored (\code{character()} when
+none were).  The trace, and so \code{print()} and \code{summary()}, carries a
+line for each non-empty one, and a screen whose character \code{scope}
+was emptied this way says so where it stops.  \code{force_in} and
+\code{force_out} here are as given, unresolved names included (#451).}
 \item{\code{criteria}}{Named list of the threshold / direction
 settings actually applied, plus
 \code{n_uncomputable_scores} (how many candidate scores were \code{NA},
