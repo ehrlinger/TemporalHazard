@@ -842,6 +842,15 @@
   is known without fitting, and an object of the wrong length could not be
   predicted from correctly. A multiphase specification may carry fewer
   entries until a fit resolves its phases' designs.
+
+  The same check now runs in `predict()`, ahead of the type dispatch rather
+  than inside one branch of it. A stored `theta` longer than the design
+  allows, in a hand-edited or legacy object, was refused by
+  `type = "hazard"` and `"linear_predictor"`, where the design is multiplied
+  as a matrix, but `"survival"` and `"cumulative_hazard"` recycled the
+  surplus coefficients into an outer product and returned two values per row
+  with no error. They now refuse, naming both counts, as `hzr_evaluate()`
+  already did.
 * **`hzr_stepwise()` and `hzr_bootstrap()` warn once about a `control`
   element the fit does not read, not once per candidate refit (#410).**
   Since #376 made `hazard()` warn about an element a fit ignores rather

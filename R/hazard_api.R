@@ -1694,6 +1694,32 @@ predict.hazard <- function(object, newdata = NULL,
          "Refit with fit = TRUE, or use hzr_evaluate() to evaluate the ",
          "model at parameters you supply.", call. = FALSE)
   }
+  # The stored theta is checked against the stored design BEFORE any
+  # prediction arithmetic, and for every type, because the downstream checks
+  # are not equivalent. `hazard` and `linear_predictor` refuse a wrong length
+  # where the design is multiplied as a matrix, but `survival` and
+  # `cumulative_hazard` recycled a too-long theta into an outer product and
+  # returned 2n values for n rows with no error (Codex review of #422). A
+  # per-branch check would have to be repeated four times and kept in step;
+  # one check ahead of the dispatch cannot fall out of step.
+  #
+  # The count is the one the theta was validated against at fit time: the
+  # stored design, expanded by the time windows when there are any, which is
+  # what `hazard()` and `hzr_evaluate()` both count. Multiphase is excluded
+  # here as it is there, since fit = FALSE may legitimately carry fewer
+  # entries (#408).
+  if (!identical(object$spec$dist, "multiphase")) {
+    x_stored <- object$data$x
+    if (!is.null(x_stored) && !is.null(time_windows)) {
+      x_stored <- .hzr_expand_time_varying_design(
+        x = x_stored, time = object$data$time, time_windows = time_windows
+      )
+    }
+    .hzr_check_theta(theta, object$spec$dist,
+                     n_coef = if (is.null(x_stored)) 0L else ncol(x_stored),
+                     windowed = !is.null(time_windows))
+  }
+
   # The other families predict from an unfitted object perfectly well, and
   # that is an intended, tested capability -- but the numbers come from the
   # starting values, not from estimates, and saying nothing is the
@@ -2065,11 +2091,10 @@ predict.hazard <- function(object, newdata = NULL,
     dist_lbl <- object$spec$dist
     has_cov <- !is.null(x) && ncol(x) > 0
 
-    # Preserve the pre-0.9.8 stop() behavior on an ill-conditioned MLE.
-    # The closures below return NA on negative shape parameters so numeric
-    # jacobian perturbations stay robust, but we want a clean error at the
-    # point estimate itself.
-    .hzr_check_theta(theta, dist_lbl)
+    # The theta check that used to sit here has moved ahead of the type
+    # dispatch, so it covers every prediction type rather than the two that
+    # reach this line. It raised on the same theta through the same helper, so
+    # nothing here can now fire that did not fire earlier.
 
     cumhaz_of <- if (dist_lbl == "weibull") {
       function(th) {

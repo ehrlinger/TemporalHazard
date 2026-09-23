@@ -290,14 +290,24 @@ test_that("a fit with no covariates ignores newdata's unused columns (#300)", {
       }
     }
   }
-  # Only a fit without coefficients drops the columns: one that stored no
-  # `x` but has a coefficient still takes them by position. hazard() now
-  # refuses to build that object (#375), so it is made by hand: predict()
-  # must still behave so for any object that reaches it another way.
+  # An object that stored no `x` but carries a coefficient is REFUSED, and
+  # this assertion was reversed to say so.
+  #
+  # It previously pinned the opposite: that such an object still took
+  # newdata's columns by position, returning 70 * 0.01 = 0.7 for `age = 70`.
+  # That was the behaviour of the day rather than a requirement, and the
+  # Codex review of #422 named it for what it is -- a coefficient with no
+  # design column behind it, applied to whatever column newdata happens to
+  # supply, with no error. `hazard()` already refuses to BUILD the object
+  # (#375); predict() now refuses to use one that reached it another way,
+  # which is what "one check at every entry point" has to mean.
   obj <- hazard(time = d$int_dead, status = d$dead, dist = "exponential",
                 theta = -4)
   obj$fit$theta <- c(-4, 0.01)
-  expect_equal(predict(obj, newdata = data.frame(time = .sd_time, age = 70),
-                       type = "linear_predictor"),
-               c(0.7, 0.7), tolerance = 1e-12)
+  expect_error(
+    predict(obj, newdata = data.frame(time = .sd_time, age = 70),
+            type = "linear_predictor"),
+    "'theta' has 2 entries, but this exponential model takes 1",
+    fixed = TRUE
+  )
 })
