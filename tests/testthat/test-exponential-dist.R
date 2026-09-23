@@ -1,3 +1,9 @@
+# This file predicts from models built with fit = FALSE on purpose, so the
+# warning that those numbers come from starting values is switched off for
+# this file only (#398). A file that does not expect the warning sees it as
+# an ordinary leaked warning.
+withr::local_options(TemporalHazard.warn_unfitted_prediction = FALSE)
+
 test_that("exponential gradient computes correct shape for univariate case", {
   # Simple univariate exponential (no covariates)
   time <- c(1, 2, 3, 4, 5)
