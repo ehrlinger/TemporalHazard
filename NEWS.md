@@ -65,8 +65,8 @@
     - `FIXTAU` with no `TAU` written, which PROC HAZARD fixes at 0.75 of the
       longest follow-up;
     - `FIXGE2` or `FIXGAE2` without `WEIBULL`. That path is not modelled
-      here, so the stop says the translation cannot tell whether PROC HAZARD
-      refuses the job or which model it fits;
+      here, so the warning says the translation cannot tell whether PROC
+      HAZARD refuses the job or which model it fits;
   - `SETG3`'s entry refusals, on every path.
 
   Refusal coverage is not complete: `SETG1`'s refusals, which `PROC HAZARD`
@@ -75,8 +75,8 @@
   A `PARMS` or `PROC` value that carries a macro reference (`&X`, `%CALL`) is
   not refused, because SAS expands it before PROC HAZARD reads the statement.
   An operand this translation could not read, for that reason or any other,
-  also stops a job whose phases it did build: the unread operand may be the
-  one that sets a shape, and the emitted phase would then carry SAS's default
+  warns on a job whose phases it did build: the unread operand may be the one
+  that sets a shape, and the emitted phase would then carry SAS's default
   where the job wrote something else.
 
   **A refused job no longer stops the render.** The warning is per job: a

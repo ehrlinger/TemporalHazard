@@ -665,10 +665,14 @@ test_that("every reachable SETG3 refusal reaches the reader (#359)", {
   }
 })
 
-# --- U1: a job PROC HAZARD refuses, or fits differently, emits stop() -------
-# John's decision (2026-09-19): when the translator knows PROC HAZARD refuses
-# a job, or fits a model other than the one it would emit, the document stops
-# rather than fitting with a row the reader may never see.
+# --- U1: a job PROC HAZARD refuses, or fits differently, warns and fits -----
+# John's decision (2026-09-19), as amended on 2026-09-22: when the translator
+# knows PROC HAZARD refuses a job, or fits a model other than the one it would
+# emit, the document EMITS the fit with a loud warning above it and a row in
+# $untranslated, rather than either stopping or fitting with a row the reader
+# may never see. The first form of the decision stopped; that halted Quarto
+# before it wrote any output, including for the jobs preceding the refused
+# one, so the warning carries the message instead.
 
 .u1_job <- function(proc = "", parms, env = parent.frame()) {
   f <- withr::local_tempfile(fileext = ".sas", .local_envir = env)

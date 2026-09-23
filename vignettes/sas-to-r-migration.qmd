@@ -584,23 +584,38 @@ before you point it at a corpus.
   the interval's lower bound for status 2 rows; one column cannot
   express both. Either statement alone translates.
 - **A job `PROC HAZARD` itself refuses, or one whose model this
-  translation cannot emit, stops the document.** A syntax error in a
-  `PARMS` operand or on the `PROC` line (a value its lexer does not read
-  as a number, a keyword outside the grammar, a template's `?`), a
+  translation cannot emit, warns loudly and still fits.** A syntax error
+  in a `PARMS` operand or on the `PROC` line (a value its lexer does not
+  read as a number, a keyword outside the grammar, a template's `?`), a
   `SETG3` refusal, `FIXMNU1`, a non-zero `DELTA` on an active early
   phase, `FIXTAU` with no `TAU` written, and `FIXGE2`/`FIXGAE2` without
-  `WEIBULL` each emit a `stop()` naming the
-  cause. A fit standing in for a job `PROC HAZARD` does not run, or for a
-  model it does not fit, is the answer this package most wants to avoid.
+  `WEIBULL` each get a `warning()` chunk immediately above the fit,
+  naming the cause, and a row in `$untranslated`. A fit standing in for a
+  job `PROC HAZARD` does not run, or for a model it does not fit, is the
+  answer this package most wants to avoid, so it is labelled where you
+  cannot miss it rather than left to be inferred from the estimates.
+
+  The warning is **per job**. A file holding several jobs emits one fit
+  chunk each, and only the refused job's fit is preceded by a warning, so
+  the document renders to completion and every other job runs unchanged.
+  An earlier draft of this work stopped instead; Quarto then exited 1 and
+  wrote no output document at all, including for the jobs *before* the
+  refused one.
 
   Two limits on that. An **unknown** keyword is *recorded, not refused*:
   a `%repeat` call brings a DATA step's own keywords through the same
-  parser, so refusing them would stop jobs that run. And an operand
-  carrying a **macro reference** gets no syntax verdict, because SAS
-  expands it before `PROC HAZARD` reads the statement, but it still
-  stops a job whose phases were built: the unread operand may be the one
-  that sets a shape, and the emitted phase would otherwise carry SAS's
-  default where the job wrote something else.
+  parser, so refusing them would flag jobs that run. And an operand
+  carrying a **macro reference** gets no syntax verdict at all, because
+  SAS expands it before `PROC HAZARD` reads the statement, so the
+  translation cannot know what arrived. It still warns on a job whose
+  phases were built: the unread operand may be the one that sets a shape,
+  and the emitted phase would otherwise carry SAS's default where the job
+  wrote something else.
+
+  One case still halts, for want of anything to emit: where the value
+  `PROC HAZARD` refuses is also one `hzr_phase()` will not build, there
+  is no fit to warn above, so the job stops. Delete that job from the
+  file if you need the others' results before you can correct it.
 - **Prediction grids the parser cannot resolve are refused whole**, and
   an unresolved `INHAZ=` stops the render on purpose. Both are covered
   under "What it doesn't translate" below. Note that resolving an
