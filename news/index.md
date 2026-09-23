@@ -1050,6 +1050,32 @@
 
 ### Bug fixes
 
+- **A ridge is no longer named from a covariance that is not a
+  covariance
+  ([\#416](https://github.com/ehrlinger/TemporalHazard/issues/416)).**
+  [`summary()`](https://rdrr.io/r/base/summary.html)’s weak-direction
+  report reads the flat direction from the correlation of the estimates.
+  When the Hessian was taken where it is not negative definite,
+  typically short of the optimum, standardising it produced a matrix
+  with “correlations” outside -1 to 1, and a ridge was reported from it:
+  on the fits measured, correlations of 1.01, 1.31 and 11.3. Those are
+  impossible, and every one of them leaves a negative eigenvalue, so the
+  report is now declined for such a matrix, with `weak` set to `NA` and
+  the reason `"covariance is not positive definite"` rather than a named
+  set of parameters. A genuine ridge is unaffected: a real correlation
+  matrix is positive semi-definite, so a true flat direction sits at or
+  above zero.
+
+  The eigenvalue test uses a tolerance scaled to the numerical error of
+  the eigenvalue computation, `n * eps * max|lambda|`, taken from the
+  correlation matrix. An earlier draft used a fixed `-sqrt(eps)`, about
+  `-1.49e-08`, which still admitted matrices that are indefinite far
+  beyond rounding error, so a ridge was named for one whose off-diagonal
+  read `1.00000001`. The scale is taken from the correlation matrix and
+  not the covariance deliberately, since the correlation matrix is
+  scale-free and the decision must not depend on whether a time was
+  recorded in days or years.
+
 - **[`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   and
   [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
