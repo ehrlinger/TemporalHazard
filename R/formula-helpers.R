@@ -447,11 +447,11 @@
     # term performed itself, and it says nothing about a failure that is not
     # about rows at all. Verifying causation answers both without
     # enumerating either.
-    term <- .hzr_outside_rows_term(
+    wrong <- .hzr_outside_rows_wrong(
       design$terms, .hzr_newdata_frame(newdata, design$data_vars)
     )
-    if (length(term) && .hzr_mismatch_explains(design, newdata, term)) {
-      .hzr_stop_unmatched_rows(term, where, nrow(newdata))
+    if (length(wrong$idx) && .hzr_length_explains(design, newdata, wrong)) {
+      .hzr_stop_unmatched_rows(wrong$term, where, nrow(newdata))
     }
     stop(mm)
   }
@@ -790,60 +790,83 @@
 }
 
 
-#' Does the row mismatch explain why the build failed?
+#' Does the row count explain why the build failed?
 #'
-#' The naming error is only an improvement when the mismatched term is the
-#' reason `model.frame()` failed. Deciding that by inspecting the condition
-#' was tried twice and missed a shape each time (#446): `conditionCall()`
-#' reports `model.frame.default` both for our own frame assembly and for a
-#' `model.frame()` call a user's term made itself, and it says nothing at all
-#' about a failure that is not about rows -- a term returning a list is
-#' rejected by our own frame, with `zz` merely happening to be mismatched
-#' beside it.
+#' The naming error is only an improvement when the row count is the reason
+#' `model.frame()` failed. Deciding that by inspecting the condition was
+#' tried twice and missed a shape each time, and deciding it by dropping
+#' terms was worse: `stats::drop.terms()` subsets `predvars` POSITIONALLY,
+#' while `terms()` orders `variables` by first appearance and `term.labels`
+#' by interaction order, so it removes the wrong entry whenever a variable
+#' appears only inside an interaction (#446).
 #'
-#' So the question is answered by experiment instead: drop the offending
-#' terms and build again. If the build then succeeds, the mismatch was the
-#' cause and naming it helps. If it fails the same way, it was not, and the
-#' caller's own condition is re-raised untouched.
+#' So nothing is classified and nothing is dropped. Each offending variable
+#' is given a length-corrected copy of ITS OWN value, bound to a fresh
+#' symbol that its `predvars` entry is pointed at, and the design is built
+#' again. If it then succeeds the length was the cause, so naming the term
+#' helps. If it fails the same way the length was not the cause, and the
+#' caller's condition is re-raised untouched.
 #'
-#' This runs only on a path that is already failing, so the extra build costs
-#' nothing on any call that succeeds.
+#' The correction preserves type, which is what makes one experiment enough:
+#' `rep_len()` on a list returns a list, so a term the model frame rejects
+#' for its TYPE still fails and is not blamed on rows; an atomic value, a
+#' factor, a `Date`, a `POSIXct` and a matrix all come back usable, so a
+#' genuine length problem is fixed and is blamed on rows. A variable built
+#' only from `data` columns -- `I(unique(age))`, `I(na.omit(age))` -- needs
+#' no special case: its own value is corrected like any other.
+#'
+#' Nothing the caller owns is touched: the corrected values live in a child
+#' environment, and the `predvars` edit is made on a copy of the terms.
 #'
 #' @param design A stored design: `terms`, `xlevels`, `contrasts`, `data_vars`.
 #' @param newdata Data frame of new rows.
-#' @param term Character vector of term labels the diagnosis named.
-#' @return `TRUE` when dropping those terms lets the design build.
+#' @param wrong The `.hzr_outside_rows_wrong()` record: `idx`, `vals`, `term`.
+#' @return `TRUE` when correcting the lengths lets the design build.
 #' @noRd
-.hzr_mismatch_explains <- function(design, newdata, term) {
-  labels <- attr(design$terms, "term.labels")
-  idx <- which(labels %in% term)
-  if (!length(idx)) {
-    return(FALSE)
+.hzr_length_explains <- function(design, newdata, wrong) {
+  nd <- .hzr_newdata_frame(newdata, design$data_vars)
+  n <- nrow(nd)
+  env <- environment(design$terms)
+  if (is.null(env)) {
+    env <- parent.frame()
   }
-  if (length(idx) == length(labels)) {
-    # Nothing else is left to fail, so the mismatch is the whole story. This
-    # is the `~ zz` case, where the design builds at the fitting rows and the
-    # row-count backstop is what refused it.
-    return(TRUE)
+  mask <- new.env(parent = env)
+  tt <- design$terms
+  pv <- attr(tt, "predvars")
+  if (is.null(pv)) {
+    pv <- attr(tt, "variables")
   }
-  reduced <- tryCatch(
-    stats::drop.terms(design$terms, idx, keep.response = TRUE),
-    error = function(e) NULL
-  )
-  if (is.null(reduced)) {
-    return(FALSE)
+  for (k in seq_along(wrong$idx)) {
+    sym <- paste0("..hzr_len_", k)
+    assign(sym, .hzr_fix_rows(wrong$vals[[k]], n), envir = mask)
+    # +1 because the list's own head is the call to `list`.
+    pv[[wrong$idx[k] + 1L]] <- as.name(sym)
   }
+  attr(tt, "predvars") <- pv
+  environment(tt) <- mask
   tryCatch(
     {
-      nd <- .hzr_newdata_frame(newdata, design$data_vars)
-      mf <- stats::model.frame(reduced, data = nd, xlev = design$xlevels,
+      mf <- stats::model.frame(tt, data = nd, xlev = design$xlevels,
                                na.action = stats::na.pass)
-      stats::model.matrix(reduced, data = mf,
-                          contrasts.arg = design$contrasts)
+      stats::model.matrix(tt, data = mf, contrasts.arg = design$contrasts)
       TRUE
     },
     error = function(e) FALSE
   )
+}
+
+
+#' Recycle a value to `n` rows, keeping its type
+#'
+#' `rep_len()` is deliberate: it keeps a list a list, so a term the model
+#' frame rejects for its type is not repaired into a pass (#446).
+#' @param v A value. @param n Rows wanted.
+#' @noRd
+.hzr_fix_rows <- function(v, n) {
+  if (is.matrix(v) || is.data.frame(v)) {
+    return(v[rep_len(seq_len(NROW(v)), n), , drop = FALSE])
+  }
+  rep_len(v, n)
 }
 
 
@@ -875,15 +898,17 @@
 #' to evaluate names nothing, which leaves the original error to propagate.
 #' @param terms The stored terms object.
 #' @param nd The newdata frame, restricted to the data columns.
-#' @return Character vector of term labels, empty when nothing is wrong.
+#' @return A list: `idx` (positions in `predvars`), `vals` (their evaluated
+#'   values) and `term` (the term labels to name). Empty when nothing is wrong.
 #' @noRd
-.hzr_outside_rows_term <- function(terms, nd) {
+.hzr_outside_rows_wrong <- function(terms, nd) {
+  none <- list(idx = integer(0), vals = list(), term = character(0))
   vars <- attr(terms, "predvars")
   if (is.null(vars)) vars <- attr(terms, "variables")
   vars <- as.list(vars)[-1L]
   factors <- attr(terms, "factors")
   if (!length(vars) || !length(factors)) {
-    return(character(0))
+    return(none)
   }
   env <- environment(terms)
   if (is.null(env)) env <- parent.frame()
@@ -895,19 +920,28 @@
   # was fine (#430 review). `vapply()` evaluates in order, and `mask`
   # persists across the calls, so the assignment carries.
   mask <- list2env(as.list(nd), parent = env)
-  wrong <- vapply(vars, function(v) {
-    val <- tryCatch(eval(v, mask), error = function(e) NULL)
+  # The VALUES are kept, not just the verdict: the causation experiment
+  # corrects each offending value's length, so re-evaluating it there would
+  # run the user's code a second time (#446).
+  vals <- vector("list", length(vars))
+  wrong <- vapply(seq_along(vars), function(i) {
+    val <- tryCatch(eval(vars[[i]], mask), error = function(e) NULL)
+    vals[[i]] <<- val
     !is.null(val) && NROW(val) != nrow(nd)
   }, logical(1))
   if (!any(wrong)) {
-    return(character(0))
+    return(none)
   }
   # By POSITION, not by a deparsed string: `deparse()` breaks at 60
   # characters and indents the continuation, so a joined key never equals
   # the wide rowname `terms()` stores, and every long term went unnamed.
   # The factors matrix has one row per entry of `variables`, in order.
   rows <- rownames(factors)[wrong]
-  colnames(factors)[colSums(factors[rows, , drop = FALSE] != 0) > 0]
+  list(
+    idx = which(wrong),
+    vals = vals[wrong],
+    term = colnames(factors)[colSums(factors[rows, , drop = FALSE] != 0) > 0]
+  )
 }
 
 

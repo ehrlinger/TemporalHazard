@@ -75,7 +75,11 @@ test_that("the backstop's own message propagates when nothing can be named", {
   # diagnosis run afterwards. When the diagnosis names nothing -- here by
   # mocking it to return no term -- the refusal must still reach the user,
   # as the backstop wrote it, rather than being swallowed.
-  local_mocked_bindings(.hzr_outside_rows_term = function(...) character(0))
+  local_mocked_bindings(
+    .hzr_outside_rows_wrong = function(...) {
+      list(idx = integer(0), vals = list(), term = character(0))
+    }
+  )
   o <- ot_setup()
   zz <- o$zz
   fit <- hazard(survival::Surv(t, s) ~ zz, data = o$d, dist = "weibull",
@@ -417,6 +421,9 @@ test_that("a nested model.frame() failure keeps the caller's own error", {
   armed <- FALSE
   ff <- function(x) {
     if (armed) {
+      # Raised by a nested model.frame(), UNCAUGHT, so its conditionCall is
+      # `model.frame.default` -- the same callee our own frame assembly
+      # reports, which is exactly what main misattributes.
       return(stats::model.frame(~ x + I(1:3)))
     }
     x
@@ -428,13 +435,20 @@ test_that("a nested model.frame() failure keeps the caller's own error", {
            fit = TRUE)
   )
   armed <- TRUE
-  msg <- tryCatch(
+  cond <- tryCatch(
     predict(fit, newdata = d[1:2, "age", drop = FALSE],
             type = "linear_predictor"),
-    error = conditionMessage
+    condition = function(e) e
   )
-  expect_match(msg, "variable lengths differ", fixed = TRUE)
-  expect_false(grepl("does not give one value per row", msg, fixed = TRUE))
+  # Assert the variable the NESTED call names. The build's own generic
+  # failure also reads "variable lengths differ", but it names `zz`, so a
+  # bare "variable lengths differ" cannot tell the two apart -- and a
+  # CLASSED condition cannot either: giving it `call = NULL` makes main's
+  # old classifier fall through and re-raise, so the test would pass on
+  # main and pin nothing. Measured both ways before settling here.
+  expect_match(conditionMessage(cond), "found for 'I(1:3)'", fixed = TRUE)
+  expect_false(grepl("does not give one value per row",
+                     conditionMessage(cond), fixed = TRUE))
 })
 
 test_that("a term the model frame rejects keeps its own error, not row blame", {
@@ -460,4 +474,86 @@ test_that("a term the model frame rejects keeps its own error, not row blame", {
   )
   expect_match(msg, "invalid type (list) for variable", fixed = TRUE)
   expect_false(grepl("does not give one value per row", msg, fixed = TRUE))
+})
+
+
+# The probe matrix that found the `drop.terms()` regression, as tests. Term
+# ORDER is permuted deliberately: that defect was invisible to a four-row
+# table whose every shape put the outside variable last, because
+# `drop.terms()` indexed `predvars` positionally while `terms()` orders
+# `variables` by first appearance and `term.labels` by interaction order.
+
+vc_data <- function() {
+  set.seed(31)
+  data.frame(t = rexp(60), s = rbinom(60, 1, 0.7), age = rnorm(60, 60, 5),
+             mal = rbinom(60, 1, 0.4), w = rnorm(60))
+}
+
+vc_fit <- function(rhs, theta, d) {
+  zz <- rnorm(nrow(d))
+  f <- stats::as.formula(paste("survival::Surv(t, s) ~", rhs))
+  environment(f) <- environment()
+  suppressWarnings(
+    hazard(f, data = d, dist = "weibull", theta = theta, fit = TRUE)
+  )
+}
+
+vc_named <- "does not give one value per row of 'newdata'"
+
+test_that("an outside term is named whatever ORDER it is written in", {
+  d <- vc_data()
+  nd <- d[1:2, c("age", "mal", "w")]
+  shapes <- list(
+    list("zz + mal", c(0.5, 1, 0, 0)),
+    list("mal + zz", c(0.5, 1, 0, 0)),
+    list("mal + zz + w", c(0.5, 1, 0, 0, 0))
+  )
+  for (sh in shapes) {
+    expect_error(
+      predict(vc_fit(sh[[1]], sh[[2]], d), newdata = nd,
+              type = "linear_predictor"),
+      vc_named, fixed = TRUE, info = sh[[1]]
+    )
+  }
+})
+
+test_that("a variable used only inside an interaction is still named", {
+  d <- vc_data()
+  nd <- d[1:2, c("age", "mal", "w")]
+  shapes <- list(
+    list("mal:age + zz", c(0.5, 1, 0, 0)),
+    list("zz + mal:age", c(0.5, 1, 0, 0)),
+    list("mal*age + zz", c(0.5, 1, 0, 0, 0, 0))
+  )
+  for (sh in shapes) {
+    expect_error(
+      predict(vc_fit(sh[[1]], sh[[2]], d), newdata = nd,
+              type = "linear_predictor"),
+      vc_named, fixed = TRUE, info = sh[[1]]
+    )
+  }
+})
+
+test_that("a length-changing function of a data column is still named", {
+  # These have NO outside symbol, so an experiment that corrected only
+  # outside variables would leave them failing and hand back base R's raw
+  # error -- losing #409's message for a case #430 tests. Their own value is
+  # corrected like any other, so no special case is needed.
+  set.seed(11)
+  d <- data.frame(t = rexp(60), s = rbinom(60, 1, 0.7), age = seq(40, 99),
+                  mal = rbinom(60, 1, 0.4))
+  dup <- data.frame(age = c(30, 30, 50), mal = c(0, 1, 0))
+  shapes <- list(
+    list("I(unique(age))", c(0.5, 1, 0)),
+    list("I(unique(age)) + zz", c(0.5, 1, 0, 0)),
+    list("zz + I(unique(age))", c(0.5, 1, 0, 0)),
+    list("mal:age + I(unique(age))", c(0.5, 1, 0, 0))
+  )
+  for (sh in shapes) {
+    expect_error(
+      predict(vc_fit(sh[[1]], sh[[2]], d), newdata = dup,
+              type = "linear_predictor"),
+      vc_named, fixed = TRUE, info = sh[[1]]
+    )
+  }
 })
