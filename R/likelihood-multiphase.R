@@ -2644,6 +2644,26 @@
         time, status, phases, covariate_counts, x_list, total_events,
         weights = weights, time_lower = time_lower
       )
+      # The objective must describe the parameters returned (#362). The
+      # optimizer's value is the objective at the point IT held, and the line
+      # above has just moved the conserved scale, so the two can describe
+      # different points: on one fit the reported log-likelihood was
+      # -71.934410193 while the likelihood of the returned theta was
+      # -78.1497959154. Recomputed here from the unwrapped likelihood, which
+      # takes a full theta and applies no further conservation step.
+      #
+      # This corrects the REPORT only. The gap was largest where the fit
+      # itself is unsound -- estimates standing on a likelihood discontinuity,
+      # where a one-ulp parameter change moves the log-likelihood by several
+      # units (#448) -- and recomputing the value does not make such a fit
+      # sound. A non-finite recomputation is left alone rather than reported,
+      # because there the optimizer's own value is the better record and
+      # `converged` and the gradient test already speak to it.
+      value_at_par <- logl_fn_unwrapped(
+        best_result$par, time, status, time_lower, time_upper, x,
+        weights = weights
+      )
+      if (is.finite(value_at_par)) best_result$value <- value_at_par
     }
 
     # Expand vcov to full dimension (NA for fixed params -- not estimated)
