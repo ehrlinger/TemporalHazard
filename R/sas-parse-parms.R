@@ -143,9 +143,21 @@
   toks <- character(0)
   for (op in ops) {
     # A macro is expanded by SAS before the lexer sees it, so it is opaque
-    # here and must not be split on an `=` of its own (`%F(A=1)`).
-    if (.hzr_sas_is_macro(op)) {
-      toks <- c(toks, op)
+    # here and must not be split on an `=` of its own (`%F(A=1)`). But the
+    # opacity belongs to the MACRO, not to whatever whitespace token it
+    # arrived in: `=&LIB` and `&K=` are a separator glued to a macro, and
+    # treating the whole token as opaque left this branch keying on spacing
+    # -- `DATA =&LIB` then read as a valueless DATA and produced a FALSE
+    # refusal for a job SAS runs, with no `data` argument in the emitted fit
+    # (#433 review 3). Peel the separators, then judge what is left.
+    lead <- sub("^(=*).*$", "\\1", op)
+    trail <- sub("^.*?(=*)$", "\\1", substring(op, nchar(lead) + 1L))
+    core <- substring(op, nchar(lead) + 1L,
+                      nchar(op) - nchar(trail))
+    if (nzchar(core) && .hzr_sas_is_macro(core)) {
+      if (nchar(lead)) toks <- c(toks, rep("=", nchar(lead)))
+      toks <- c(toks, core)
+      if (nchar(trail)) toks <- c(toks, rep("=", nchar(trail)))
       next
     }
     neq <- lengths(regmatches(op, gregexpr("=", op, fixed = TRUE)))

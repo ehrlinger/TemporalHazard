@@ -512,10 +512,15 @@
       # here makes the emitted data =, the status chunk and the guard use the
       # bare name, which is also how a %repeat OUT= is recorded.
       DATA        = {
-        if (check_name(key, val)) {
+        # Strip the WORK libref BEFORE the presence check: `WORK.` is neither
+        # NAME nor LIBMEM (hazard_l.l:39-40), so SAS rejects it, and checking
+        # the unstripped "WORK." let it through to leave an empty name and an
+        # internal R error (#433 review 3).
+        stripped <- sub("^WORK[.]", "", val)
+        if (check_name(key, stripped)) {
           mapped <- mapped - 1L
         } else {
-          data_name <- sub("^WORK[.]", "", val)
+          data_name <- stripped
         }
       },
       OUTHAZ      = {
@@ -1746,12 +1751,28 @@
 
   toks <- strsplit(trimws(st[[1L]]), " ", fixed = TRUE)[[1L]]
   toks <- .hzr_sas_join_spaced(toks[nzchar(toks)])
+  # Same stray-`=` rule as the PROC HAZARD line. This caller shares the
+  # joiner but had neither this nor a presence check, so a stray `=`
+  # recorded a BLANK-keyword "unknown option" row and the prediction calls
+  # were emitted for a job SAS rejects (#433 review 3).
+  pred_syntax_error <- NULL
+  stray <- which(toks == "=")
+  if (length(stray)) {
+    drop <- unique(c(stray, stray[stray < length(toks)] + 1L))
+    leftover <- paste(toks[drop], collapse = " ")
+    toks <- toks[-drop]
+    pred_syntax_error <- paste0(
+      "a stray `=` on the PROC HAZPRED line (", leftover, "): the option ",
+      "before it already took its value, so PROC HAZPRED reaches a syntax ",
+      "error (hazard_y.y:102) and rejects this job")
+  }
   data_name <- NULL
   inhaz <- NULL
   want_surv <- TRUE
   want_haz <- TRUE
   want_cl <- TRUE
 
+  if (!is.null(pred_syntax_error)) note("PROC HAZPRED", pred_syntax_error)
   for (tok in toks) {
     eqp <- .idx(tok, "=")
     key <- if (eqp > 0L) substring(tok, 1L, eqp - 1L) else tok

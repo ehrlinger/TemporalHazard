@@ -1228,7 +1228,15 @@ test_that("operand joining is INVARIANT under spacing (#433 review 2)", {
   statements <- list(
     list(c("DATA", "MAXITER"), c("", "50")),       # the defect: key as value
     list(c("MUE", "0.2"), c("THALF", "0.3")),      # two genuine operands
-    list(c("MAXITER", "250"))                      # one genuine operand
+    list(c("MAXITER", "250")),                     # one genuine operand
+    # A MACRO operand. SAS expands `&N` before the lexer runs, so every
+    # spelling is one job that RUNS -- but a macro is opaque to the
+    # tokeniser, and when the `=` is glued to it (`MAXITER =&N`) the whole
+    # `=&N` tested as a macro and was never split. That was the last branch
+    # keying on spacing, and it produced a FALSE refusal (#433 review 3).
+    list(c("MAXITER", "&N")),
+    list(c("DATA", "&LIB")),
+    list(c("MUE", "%N(1)"))
   )
   for (st in statements) {
     variants <- spacings(st)
@@ -1289,4 +1297,43 @@ test_that("a name-valued PROC option with no value is refused (#433 review 2)", 
                     " EVENT DEAD; TIME TT; PARMS MUE=0.2 THALF=1 NU=1; );"), f2)
   clean <- suppressWarnings(hzr_translate_sas(f2))
   expect_null(.u1_refusal_chunk(clean))
+})
+
+test_that("a libref with no member is refused, not left empty (#433 review 3)", {
+  # `WORK.` is neither NAME nor LIBMEM (hazard_l.l:39-40), so SAS rejects it.
+  # The presence check ran BEFORE the WORK. strip, so "WORK." passed it and
+  # the strip then left an empty name, surfacing as an internal
+  # "attempt to use zero-length variable name" that named neither the option
+  # nor the reason.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste0("%HAZARD( PROC HAZARD DATA=WORK. MAXITER=50; EVENT DEAD;",
+                    " TIME TT; PARMS MUE=0.2 THALF=1 NU=1; );"), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  expect_false(is.null(.u1_refusal_chunk(job)))
+  expect_true(any(grepl("DATA", job$untranslated$construct, fixed = TRUE)))
+  # KNOWN NEGATIVE: a real WORK-qualified name still translates, stripped.
+  f2 <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste0("%HAZARD( PROC HAZARD DATA=WORK.D MAXITER=50; EVENT DEAD;",
+                    " TIME TT; PARMS MUE=0.2 THALF=1 NU=1; );"), f2)
+  ok <- suppressWarnings(hzr_translate_sas(f2))
+  expect_null(.u1_refusal_chunk(ok))
+  expect_identical(ok$calls$fit[[3L]]$data, as.name("D"))
+})
+
+test_that("PROC HAZPRED refuses a stray `=` and an empty name (#433 review 3)", {
+  # The HAZPRED caller shares the joiner but had neither the stray-`=` block
+  # nor the presence check, so `DATA=G = INHAZ=H` recorded a BLANK-keyword
+  # "unknown option" row and emitted the prediction calls anyway, for a job
+  # SAS rejects.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste0("%HAZARD( PROC HAZARD DATA=D; EVENT DEAD; TIME TT;",
+                    " PARMS MUE=0.2 THALF=1 NU=1; );\n",
+                    "%HAZPRED( PROC HAZPRED DATA=PGRID = INHAZ=H OUT=P;",
+                    " TIME TT; );"), f)
+  # A %HAZPRED block is folded into the SAME hzr_sas_job as the %HAZARD one
+  # it predicts from, so this is one job, not two.
+  hp <- suppressWarnings(hzr_translate_sas(f))
+  expect_s3_class(hp, "hzr_sas_job")
+  expect_false(any(!nzchar(hp$untranslated$construct)))
+  expect_true(any(grepl("stray", hp$untranslated$reason, fixed = TRUE)))
 })
