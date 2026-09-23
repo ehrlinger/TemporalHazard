@@ -106,10 +106,16 @@ hzr_evaluate <- function(object, theta, times = NULL) {
          " There is no likelihood to report.", call. = FALSE)
   }
   if (!identical(dist, "multiphase")) {
-    # The same count and sentence as hazard() (#375). n_par is that count.
-    .hzr_check_theta(theta, dist,
-                     n_coef = if (is.null(prepared$x)) 0L else ncol(prepared$x),
-                     windowed = !is.null(object$spec$time_windows))
+    # POSITIVITY ONLY, deliberately: `n_coef` is withheld so the helper's
+    # length check stays off here. The check below counts the same parameters
+    # and says MORE, naming them ("takes 3: mu, nu, x."), and it is the one
+    # the user should see. Passing n_coef here would fire first with the
+    # generic sentence and make that message unreachable.
+    #
+    # Withholding n_coef is the right call HERE and was the defect in
+    # predict(), where nothing else checked the length. The difference is
+    # whether a better check follows, not a preference about the argument.
+    .hzr_check_theta(theta, dist)
   }
   if (length(theta) != prepared$n_par) {
     stored <- length(object$fit$theta)

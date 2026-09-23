@@ -609,3 +609,36 @@ test_that("hzr_evaluate() and hazard() word a wrong theta length alike (#144, #4
                "'theta' has 13 entries, but this model takes 11 \\(early 5, late 6\\)")
   expect_identical(from_evaluate, from_fit)
 })
+
+test_that("hzr_evaluate() names the parameters when theta is the wrong length", {
+  # The refusal a user sees must be the one that NAMES the model's
+  # parameters. #422 added a shared check that counted the same parameters and
+  # said less; passing it `n_coef` made this message unreachable, and nothing
+  # noticed because the assertions matched only the shared prefix. This pins
+  # the naming clause itself.
+  #
+  # The names come from the STORED theta, so the fixture starts from a NAMED
+  # theta. With an unnamed start there are no names to report and the sentence
+  # ends at the count, which the second case pins so the two shapes cannot be
+  # confused for a regression later.
+  set.seed(9)
+  n <- 40
+  d <- data.frame(t = stats::rexp(n) + 0.1,
+                  s = stats::rbinom(n, 1, 0.7), x = stats::rnorm(n))
+  named <- suppressWarnings(hazard(survival::Surv(t, s) ~ x, data = d,
+                                   dist = "weibull",
+                                   theta = c(mu = 1, nu = 1, x = 0),
+                                   fit = TRUE))
+  msg <- tryCatch(hzr_evaluate(named, c(1, 1, 0, 5)), error = conditionMessage)
+  expect_match(msg, "'theta' has 4 entries, but this weibull model takes 3",
+               fixed = TRUE)
+  expect_match(msg, ": mu, nu, x.", fixed = TRUE)
+
+  unnamed <- suppressWarnings(hazard(survival::Surv(t, s) ~ x, data = d,
+                                     dist = "weibull", theta = c(1, 1, 0),
+                                     fit = TRUE))
+  msg2 <- tryCatch(hzr_evaluate(unnamed, c(1, 1, 0, 5)),
+                   error = conditionMessage)
+  expect_match(msg2, "this weibull model takes 3.", fixed = TRUE)
+  expect_false(grepl(": mu, nu, x", msg2, fixed = TRUE))
+})
