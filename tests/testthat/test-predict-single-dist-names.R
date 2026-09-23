@@ -7,6 +7,12 @@
 # predict() on main at e4059a5, before the fix, so these tests also check
 # that the fix does not move a number.
 
+# This file predicts from models built with fit = FALSE on purpose, so the
+# warning that those numbers come from starting values is switched off for
+# this file only (#398). A file that does not expect the warning sees it as
+# an ordinary leaked warning.
+withr::local_options(TemporalHazard.warn_unfitted_prediction = FALSE)
+
 names_d <- data.frame(
   time = c(1, 2, 3, 4, 5, 6, 7, 8),
   status = c(1, 0, 1, 1, 0, 1, 0, 1),
