@@ -290,10 +290,20 @@ test_that("a fit with no covariates ignores newdata's unused columns (#300)", {
       }
     }
   }
-  # Only a fit without coefficients drops the columns: one that stored no
-  # `x` but has a coefficient still takes them by position.
+  # An object that stored no `x` but carries a coefficient still takes
+  # newdata's columns by position: position is the only mapping left, and
+  # `.hzr_newdata_design()` documents and implements it. `hazard()` refuses to
+  # BUILD such an object (#375), so it is made by hand here.
+  #
+  # I reversed this assertion during the #422 review, on the reading that a
+  # coefficient with no design column behind it should be refused, and put it
+  # back: the refusal also killed test-loglogistic-dist.R's supported case,
+  # and removing a documented capability is a decision to take deliberately
+  # rather than as a side effect of a length check. The length check now
+  # applies only where a stored design exists to check against.
   obj <- hazard(time = d$int_dead, status = d$dead, dist = "exponential",
-                theta = c(-4, 0.01))
+                theta = -4)
+  obj$fit$theta <- c(-4, 0.01)
   expect_equal(predict(obj, newdata = data.frame(time = .sd_time, age = 70),
                        type = "linear_predictor"),
                c(0.7, 0.7), tolerance = 1e-12)
