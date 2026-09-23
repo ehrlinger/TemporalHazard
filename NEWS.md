@@ -700,6 +700,16 @@
   already did. Code that caught the error with `tryCatch(..., error = )`
   will no longer see it; read `$criteria$refit_failures` instead.
 
+* **`hzr_stepwise()`'s `$steps$variable` records the model's term label on
+  every row (#449).** An entry row used to carry the name as the `scope`
+  wrote it and a drop row the `terms()` label, so a non-syntactic column
+  `_X1` entered as `_X1` and left as `` `_X1` ``, and a literal column
+  `age:mal` entered under the interaction's spelling `age:mal`. Every
+  row now uses the label, whatever form the `scope` took. For a syntactic
+  name the label is the name, so nothing changes; code that matched an
+  entry row of a non-syntactic column by its bare name should match the
+  backquoted label instead.
+
 ## New features
 
 * **`hzr_translate_sas()` now translates a `SELECTION` statement into an
@@ -953,17 +963,16 @@
   rather than reported as not found in `data` and skipped (#438). An
   interaction is no longer scored from a literal column that shares its
   spelling; the score declines it, as it does any term that is not a
-  column, and its warning now says that instead of "not found in `data`".
+  column, and its warning now says that instead of "not found in `data`",
+  with the new reason `not_single_column` in `$criteria$uncomputable_reasons`
+  where it read `non_numeric`.
   A column no formula can name, such as one called `.`, is not offered as
   a candidate, and the screen says so once.
 
-  One spelling is unchanged: `$steps$variable` records an entry under the
-  name as the scope wrote it and a drop under its label, so the column
-  `_X1` from a character `scope` or `scope = NULL` enters as `_X1` and
-  leaves as `` `_X1` ``, and the literal column `age:mal` enters as
-  `age:mal`, the spelling of the interaction. `$scope$frozen` and
-  `$criteria$wald_untested_entries` record it under the label;
-  `$criteria$refit_failures` under the name as written.
+  `$steps$variable`, `$scope$frozen` and `$criteria$wald_untested_entries`
+  name such a variable by its label, as the breaking change above on
+  `$steps$variable` sets out; `$criteria$refit_failures` still names a
+  failed candidate as the scope wrote it.
 
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded

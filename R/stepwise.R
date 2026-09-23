@@ -278,7 +278,10 @@
 #' \describe{
 #'   \item{\code{step_num}}{Integer sequence starting at 1.}
 #'   \item{\code{action}}{`"enter"`, `"drop"`, or `"frozen"`.}
-#'   \item{\code{variable}}{Variable affected.}
+#'   \item{\code{variable}}{The term entered, dropped or frozen, as the
+#'     model's `terms()` label: a non-syntactic column `_X1` is recorded as
+#'     `` `_X1` `` on every row, whether the scope named it `"_X1"`,
+#'     `` "`_X1`" `` or in a formula.}
 #'   \item{\code{phase}}{Phase name (multiphase) or `NA_character_`.}
 #'   \item{\code{criterion}}{The criterion actually applied to this step:
 #'     `"score"`, `"wald"`, or `"aic"`.  Under `criterion = "score"` the drop
@@ -733,7 +736,9 @@ hzr_stepwise <- function(fit,
                   "See `$steps$delta_logLik`.", call. = FALSE)
         }
         current <- fwd$fit
-        record_step("enter", fwd)
+        # Recorded under the model's term label, as a drop is, so one
+        # variable has one name in `$steps` whatever the scope wrote (#449).
+        record_step("enter", utils::modifyList(fwd, list(variable = fwd$id)))
         # Counted by the term the model gained, the candidate's identity,
         # which is what a drop names (#449).
         bump_move(fwd$id)

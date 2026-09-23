@@ -162,7 +162,7 @@ test_that("a multiphase score screen scores and refits the column `x2 ` (#449)",
   d2 <- d
   names(d2)[names(d2) == "x1"] <- "x2 "
   sw <- screen_on(d2)
-  expect_identical(sw$steps$variable, "x2 ")
+  expect_identical(sw$steps$variable, "`x2 `")
   expect_identical(sw$steps$phase, ref$steps$phase)
   expect_identical(sw$steps$p_value, ref$steps$p_value)
   expect_identical(sw$criteria$n_wald_fallbacks, ref$criteria$n_wald_fallbacks)
@@ -400,4 +400,51 @@ test_that("score says why it declines an interaction beside a literal column (#4
   expect_true(any(grepl("is not a single column of `data`", w, fixed = TRUE)))
   expect_true(any(grepl("different variable", w, fixed = TRUE)))
   expect_identical(nrow(sw$steps), 0L)
+})
+
+test_that("$steps$variable is the term label on entry and drop alike (#449)", {
+  skip_on_cran() # two-way screens
+  # One variable, one name in the step table, whatever form the scope took:
+  # an entry used to carry the scope's spelling (`_X1`) and a drop the label
+  # (`` `_X1` ``), so filtering the table by either missed half the rows.
+  withr::local_seed(2L)
+  d0 <- rrt_avc()
+  d <- data.frame(d0, `_X1` = stats::rnorm(nrow(d0)), check.names = FALSE)
+  fit <- rrt_fit(d, "age + mal", c(0.1, 1, 0, 0))
+  for (sc in list("_X1", NULL, "`_X1`", ~ `_X1`)) {
+    sw <- suppressWarnings(hzr_stepwise(fit, data = d, scope = sc,
+                                        direction = "both", criterion = "wald",
+                                        slentry = 0.99, slstay = 0.2,
+                                        max_steps = 4L, trace = FALSE))
+    acts <- sw$steps$action
+    expect_true(all(c("enter", "drop") %in% acts)) # known positive
+    what <- paste(deparse(sc), collapse = "")
+    # The entry row and the drop row for the same column, in one screen.
+    expect_identical(unique(sw$steps$variable[acts == "enter"]), "`_X1`",
+                     info = what)
+    expect_identical(unique(sw$steps$variable[acts == "drop"]), "`_X1`",
+                     info = what)
+  }
+})
+
+test_that("score records an interaction it declines as not_single_column (#449)", {
+  skip_on_cran() # full screens
+  # An interaction is a term, not a column the score can test. Its reason
+  # was `non_numeric`, which describes a column, with or without a literal
+  # column of the same spelling beside it.
+  withr::local_seed(1L)
+  d0 <- rrt_avc()
+  d <- data.frame(d0, `age:mal` = d0$mal * 2 + stats::rnorm(nrow(d0), sd = 0.5),
+                  check.names = FALSE)
+  for (dd in list(d0, d)) {
+    base <- rrt_fit(dd, "age + mal", c(0.1, 1, 0, 0))
+    sw <- suppressWarnings(hzr_stepwise(base, data = dd, scope = ~ age:mal,
+                                        direction = "forward",
+                                        criterion = "score", slentry = 0.99,
+                                        trace = FALSE))
+    expect_identical(sw$criteria$uncomputable_reasons,
+                     c(not_single_column = 1L))
+  }
+  expect_match(.hzr_score_reason_text("not_single_column"),
+               "not a single column", fixed = TRUE)
 })

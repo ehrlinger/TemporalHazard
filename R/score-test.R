@@ -650,7 +650,8 @@
 #' @param term The candidate's term label, written into a multiphase phase
 #'   formula. Defaults to `var`, which is right only for a syntactic name;
 #'   the stepwise step passes the resolved label (#449). `var` may be `NA`
-#'   for a candidate that is no column, which is declined as `non_numeric`.
+#'   for a candidate that is no column, which is declined as
+#'   `not_single_column`.
 #' @return `list(stat, df, p_value)`. `stat`/`p_value` are `NA_real_` for a
 #'   degenerate candidate, a collinear candidate, or an unusable nuisance block.
 #' @noRd
@@ -697,7 +698,10 @@
     )
   }
 
-  xcand <- if (is.na(var)) NULL else .hzr_candidate_numeric(data[[var]])
+  # A term that is no column (an interaction, a transform) is not a candidate
+  # the score can test; saying `non_numeric` described a column (#449).
+  if (is.na(var)) return(na_result("not_single_column"))
+  xcand <- .hzr_candidate_numeric(data[[var]])
   if (is.null(xcand) || anyNA(xcand)) {
     return(na_result("non_numeric"))
   }
@@ -839,7 +843,7 @@
 # p = 1. This is that unbuilt alternative.
 #
 # Kept deliberately narrow. The degenerate reasons -- collinear, constant,
-# non_numeric, nuisance_singular -- are NOT here: no refit can make those
+# non_numeric, not_single_column, nuisance_singular -- are NOT here: no refit can make those
 # candidates testable, and paying one per degenerate candidate would give back
 # the whole speed advantage the score criterion exists for.
 .hzr_score_fallback_reasons <- c("information_indefinite",
@@ -890,6 +894,11 @@
     collinear = "the candidate was collinear with the current model",
     constant  = "the candidate column was constant",
     non_numeric = "the candidate column was not numeric, or held NA",
+    not_single_column = paste(
+      "the candidate is a term, such as an interaction, and not a single",
+      "column of `data`, which is all the score criterion can test.",
+      "`criterion = \"wald\"` refits it instead"
+    ),
     nuisance_singular = paste(
       "the current model's information matrix could not be inverted, so no",
       "candidate could be scored at that step"

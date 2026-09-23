@@ -224,7 +224,10 @@ The \code{steps} data frame has columns:
 \describe{
 \item{\code{step_num}}{Integer sequence starting at 1.}
 \item{\code{action}}{\code{"enter"}, \code{"drop"}, or \code{"frozen"}.}
-\item{\code{variable}}{Variable affected.}
+\item{\code{variable}}{The term entered, dropped or frozen, as the
+model's \code{terms()} label: a non-syntactic column \verb{_X1} is recorded as
+\code{`_X1`} on every row, whether the scope named it \code{"_X1"},
+\code{"`_X1`"} or in a formula.}
 \item{\code{phase}}{Phase name (multiphase) or \code{NA_character_}.}
 \item{\code{criterion}}{The criterion actually applied to this step:
 \code{"score"}, \code{"wald"}, or \code{"aic"}.  Under \code{criterion = "score"} the drop
