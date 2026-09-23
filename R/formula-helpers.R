@@ -390,8 +390,9 @@
 #' formula symbol (a constant such as `cutoff` in `I(age > cutoff)`, spline
 #' knots, or an object kept outside `data`) resolves from the formula's
 #' environment, so a same-named `newdata` column can never stand in for it.
-#' A term that took row-level values from outside `data` is then refused by
-#' `.hzr_check_equivariant()`.
+#' A term that took row-level values from outside `data` is then refused,
+#' by `.hzr_refuse_outside_rows()` before `model.frame()` runs, or by
+#' `.hzr_check_equivariant()` after it.
 #'
 #' @param newdata Data frame of new rows.
 #' @param data_vars The formula's fitting-data variables.
@@ -410,8 +411,8 @@
 #' (`.hzr_phase_newdata_design()`) (#271): the fit's terms, factor levels and
 #' contrasts, so a factor given as a single label still codes to the fit's
 #' columns. `newdata` supplies only the data columns, and a term that does
-#' not follow its rows is refused; see `.hzr_newdata_frame()` and
-#' `.hzr_check_equivariant()`.
+#' not follow its rows is refused; see `.hzr_newdata_frame()`,
+#' `.hzr_refuse_outside_rows()` and `.hzr_check_equivariant()`.
 #'
 #' @param design A stored design: `terms`, `xlevels`, `contrasts`,
 #'   `data_vars`.
@@ -671,8 +672,9 @@
 #' formula's environment) does not move with them, so the design is rebuilt
 #' with the rows cyclically shifted and any column that does not follow is
 #' refused, naming its term. This does not depend on the shape of the
-#' outside object. One row cannot be shifted; the row-count backstop
-#' (`.hzr_check_design_rows()`) covers it.
+#' outside object. One row cannot be shifted, so it never reaches this
+#' check: the pre-check (`.hzr_refuse_outside_rows()`) names the term
+#' first, and `.hzr_check_design_rows()` remains the backstop behind both.
 #'
 #' @param build Function of a data frame of new rows, returning the model
 #'   matrix with its `assign` attribute.
@@ -721,33 +723,72 @@
 }
 
 
+#' Name a list of terms the same way wherever one is refused
+#'
+#' @param term Character vector of term labels.
+#' @noRd
+.hzr_term_list <- function(term) {
+  paste0("'", term, "'", collapse = ", ")
+}
+
+
 #' Refuse model terms that take row-level values from outside `data`
 #'
-#' One sentence for both places that find such a term: the pre-check before
-#' `model.frame()` (`.hzr_refuse_outside_rows()`) and the equivariance check
-#' after it (`.hzr_check_equivariant()`).
+#' For the equivariance check (`.hzr_check_equivariant()`), which has
+#' established the cause: the term did not follow a cyclic shift of
+#' `newdata`'s rows, which a term built from those rows cannot do.
 #' @param term Character vector of term labels.
 #' @param where Text naming the design.
 #' @noRd
 .hzr_stop_outside_term <- function(term, where) {
-  stop("term ", paste0("'", term, "'", collapse = ", "), " of ", where,
+  stop("term ", .hzr_term_list(term), " of ", where,
        " uses row-level values taken from outside `data`; ",
        "predict(newdata =) cannot rebuild them for new rows. Move them ",
        "into `data` as columns and refit.", call. = FALSE)
 }
 
 
+#' Refuse a term that does not give one value per row of `newdata`
+#'
+#' For the pre-check (`.hzr_refuse_outside_rows()`), which has established
+#' only the row count. Outside-`data` values are ONE cause; a length-changing
+#' function of a `data` column, such as `unique()` or `stats::na.omit()`, is
+#' another, and for that one "move it into `data`" is advice the user cannot
+#' follow. The message gives both rather than asserting the first (#409).
+#' @param term Character vector of term labels.
+#' @param where Text naming the design.
+#' @param n Number of rows in `newdata`.
+#' @noRd
+.hzr_stop_unmatched_rows <- function(term, where, n) {
+  stop("term ", .hzr_term_list(term), " of ", where,
+       " does not give one value per row of 'newdata' (", n, " row(s)), so ",
+       "predict(newdata =) cannot rebuild it for new rows. Either the term ",
+       "takes row-level values from outside `data`, such as a vector in the ",
+       "formula's environment, in which case move those into `data` as ",
+       "columns and refit; or it uses a length-changing function, such as ",
+       "unique() or stats::na.omit(), which has no value to give for a new ",
+       "row.", call. = FALSE)
+}
+
+
 #' Name a term whose variable has the wrong number of rows for `newdata`
 #'
 #' `newdata` supplies only the fit's data columns, so a model-frame variable
-#' evaluated there with a row count other than `newdata`'s took its rows
-#' from outside `data` (a vector in the formula's environment). Left to
-#' `model.frame()`, that failed with "variable lengths differ", naming
-#' whichever variable it compared against, or reached the row-count
-#' backstop, which names no term (#409). A scalar or a knot vector passed as
-#' an argument is not a model-frame variable of the wrong length, so it is
-#' untouched. A variable that fails to evaluate is left for `model.frame()`
-#' to report.
+#' evaluated there whose row count is not `newdata`'s cannot be matched to
+#' `newdata`'s rows. The usual cause is row-level values from outside `data`
+#' (a vector in the formula's environment), but it is **not** the only one:
+#' a length-changing function of a `data` column, `I(unique(age))` or
+#' `I(as.numeric(stats::na.omit(age)))`, lands here too. The row count alone
+#' does not tell them apart, so the message names both
+#' (`.hzr_stop_unmatched_rows()`). Left to `model.frame()`, either failed
+#' with "variable lengths differ", naming whichever variable it compared
+#' against, or reached the row-count backstop, which names no term (#409).
+#' A scalar or a knot vector passed as an argument is not a model-frame
+#' variable of the wrong length, so it is untouched. A variable that fails
+#' to evaluate is left for `model.frame()` to report.
+#'
+#' Each model-frame variable is evaluated once here, so a `predict(newdata =)`
+#' evaluates every term once more than it did before this check existed.
 #' @param terms The stored terms object.
 #' @param nd The newdata frame, restricted to the data columns.
 #' @param where Text naming the design.
@@ -769,12 +810,13 @@
   if (!any(wrong)) {
     return(invisible(NULL))
   }
-  rows <- intersect(rownames(factors), vapply(
-    as.list(attr(terms, "variables"))[-1L][wrong],
-    function(v) paste(deparse(v), collapse = " "), character(1)
-  ))
+  # By POSITION, not by a deparsed string: `deparse()` breaks at 60
+  # characters and indents the continuation, so a joined key never equals
+  # the wide rowname `terms()` stores, and every long term went unnamed.
+  # The factors matrix has one row per entry of `variables`, in order.
+  rows <- rownames(factors)[wrong]
   term <- colnames(factors)[colSums(factors[rows, , drop = FALSE] != 0) > 0]
-  if (length(term)) .hzr_stop_outside_term(term, where)
+  if (length(term)) .hzr_stop_unmatched_rows(term, where, nrow(nd))
   invisible(NULL)
 }
 

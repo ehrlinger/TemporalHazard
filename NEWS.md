@@ -328,12 +328,14 @@
   from `newdata`.** A term that uses row-level values kept outside `data`
   (a vector, matrix, list or environment in the formula's environment, as
   in `~ zz` or `~ ext$z`) is refused, even when `newdata` supplies the
-  object, with an error naming the term
-  (`term 'zz' of the model uses row-level values taken from outside`).
-  Such a term cannot be rebuilt for new rows. Move the variable
-  into `data` as a column and refit. Before, a supplied `zz` or matrix `M`
-  was used, but a missing or list-held one was silently read from the
-  fitting rows (see Bug fixes). Formula constants, such as `cutoff` in
+  object, with an error naming the term (`term 'zz' of the model ...`)
+  (#409). Such a term cannot be rebuilt for new rows. Move the variable
+  into `data` as a column and refit. When the term's values simply do not
+  line up with `newdata`'s rows, the error says so and gives both causes,
+  since a length-changing function of a `data` column, such as
+  `I(unique(age))`, reaches the same check. Before, a supplied `zz` or
+  matrix `M` was used, but a missing or list-held one was silently read
+  from the fitting rows (see Bug fixes). Formula constants, such as `cutoff` in
   `I(age > cutoff)` and spline knots, are unaffected. A fit saved by an
   earlier version without its data still takes such a variable from
   `newdata`, since it cannot tell it from a column.

@@ -1186,8 +1186,9 @@ test_that("the outside-data refusal at one row, duplicate rows, one fit row", {
   # this used to reach the row-count backstop, which named no term.
   one <- d[5, ]
   one$zz <- zz[5]
-  expect_error(lp(w_zz, one), "term 'zz' of the model uses row-level")
-  expect_error(lp(w_lz, d[5, ]), "term 'Lz\\$z' of the model uses row-level")
+  expect_error(lp(w_zz, one), "term 'zz' of the model does not give one value")
+  expect_error(lp(w_lz, d[5, ]),
+               "term 'Lz\\$z' of the model does not give one value")
   expect_equal(lp(w_ct, d[5, ]), truth(d[5, ]), tolerance = 1e-12)
 
   # Duplicate rows: a design built from newdata's columns moves with its
