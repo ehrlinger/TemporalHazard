@@ -23,9 +23,6 @@
   (#351). What a sentinel objective should mean for a single fit is tracked
   separately (#351, #374).
 
-  What a sentinel objective should mean for a single fit is tracked
-  separately (#351, #374).
-
 * **`hzr_translate_sas()` no longer fits a job `PROC HAZARD` rejects: if
   you hold estimates from such a translation, they have no SAS run behind
   them (#340).** A phase statement with an option written in a form SAS's
