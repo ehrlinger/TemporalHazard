@@ -39,9 +39,9 @@ base <- hazard(survival::Surv(int_dead, dead) ~ age,
 sw <- hzr_stepwise(base, scope = ~ age + mal,
                    data = avc, direction = "forward",
                    control = list(n_starts = 1))
+#> Warning: 'control' element(s) with no effect on this dist = "weibull" fit, ignored: control$n_starts (it applies only to dist = "multiphase").
 #> Stepwise selection (direction = forward, criterion = score, slentry = 0.30, slstay = 0.20)
 #> 
-#> Warning: 'control' element(s) with no effect on this dist = "weibull" fit, ignored: control$n_starts (it applies only to dist = "multiphase").
 #> Step 1: ENTER  mal   (p = 0.001)
 #> (no further action after 1 step)
 #> 
