@@ -750,7 +750,7 @@ test_that("a PROC-line value the lexer rejects warns and still fits (U1, #403)",
     expect_true(.u1_refuses(job), info = proc)
     msg <- .u1_msg(job)
     expect_match(msg, "PROC HAZARD does not run this job", fixed = TRUE, info = proc)
-    expect_match(msg, "hazard_l.l:34-38", fixed = TRUE, info = proc)
+    expect_match(msg, "hazard_l.l:33-38", fixed = TRUE, info = proc)
   }
   job <- .u1_job(proc = " MAXITER=200 CONDITION=14", parms = "MUE=0.2 THALF=1 NU=1")
   expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
@@ -942,7 +942,12 @@ test_that("U1 review 4: spaces around `=` are SAS's job, not a refusal (#421)", 
   # not fit. Operands are joined before parsing.
   job <- .u1_job(proc = " MAXITER = 50", parms = "MUE=0.2 THALF=1 NU=1")
   expect_false(.u1_refuses(job))
-  expect_equal(job$calls$fit_base %||% job$calls$fit, job$calls$fit)
+  # `fit_base` exists only for a SELECTION job, and this one has none, so an
+  # earlier `expect_equal(job$calls$fit_base %||% job$calls$fit,
+  # job$calls$fit)` reduced to expect_equal(x, x) and could not fail (#433
+  # review). Assert the property that was meant instead: no base-fit chunk is
+  # emitted, which a SELECTION regression here WOULD break.
+  expect_false("fit_base" %in% names(job$calls))
   # The value is read, not defaulted.
   job <- .u1_job(parms = "MUE=0.2 THALF = 0.3 NU = 1 M=1")
   expect_false(.u1_refuses(job))
@@ -1160,4 +1165,73 @@ test_that("a rejected PROC option gets exactly one applicable row (#433 review)"
   job <- .u1_job(proc = " MAXITER=250", parms = "MUE=0.2 THALF=1 NU=1")
   expect_identical(NROW(job$untranslated), 0L)
   expect_true(any(grepl("maxit = 250", deparse(job$calls$fit), fixed = TRUE)))
+})
+
+test_that("a valueless option does not swallow the option after it (#433 review)", {
+  # The spaced-operand joiner reads `MUE= 0.2` as one operand. It must not
+  # read `DATA= MAXITER=50` the same way: the second token is another OPTION,
+  # not this one's value. Joining them emitted
+  # hazard(data = `MAXITER=50`) with NO row and NO warning, and silently lost
+  # MAXITER -- a fit for a job PROC HAZARD rejects (`dsfield : NAME`,
+  # hazard_y.y:82-84), which is the defect this whole branch exists to stop.
+  ops <- .hzr_sas_join_spaced(c("DATA=", "MAXITER=50"))
+  expect_equal(ops, c("DATA=", "MAXITER=50"))
+  # The same guard on the bare-`=` spelling.
+  expect_equal(.hzr_sas_join_spaced(c("DATA", "=", "MAXITER=50")),
+               c("DATA=", "MAXITER=50"))
+  # KNOWN NEGATIVE: a genuine spaced value must still join, or the guard has
+  # simply disabled the feature it is protecting.
+  expect_equal(.hzr_sas_join_spaced(c("MUE=", "0.2")), "MUE=0.2")
+  expect_equal(.hzr_sas_join_spaced(c("MUE", "=", "0.2")), "MUE=0.2")
+
+  # End to end, the property that actually matters: the job must NOT silently
+  # emit a fit. On this branch before the guard it produced a clean
+  # hazard(data = `MAXITER=50`) with no row and no warning. It now errors, as
+  # it does on main -- loud, and therefore acceptable. Turning it into a
+  # proper U1 refusal is a separate, LOUD leftover (see the leftovers issue):
+  # `DATA=` with no NAME is a syntax error at `dsfield : NAME`
+  # (hazard_y.y:80-82), so the job is one PROC HAZARD rejects.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste0("%HAZARD( PROC HAZARD DATA= MAXITER=50; EVENT DEAD;",
+                    " TIME TT; PARMS MUE=0.2 THALF=1 NU=1; );"), f)
+  out <- tryCatch(suppressWarnings(hzr_translate_sas(f)), error = function(e) e)
+  silent_fit <- !inherits(out, "error") &&
+    identical(out$calls$fit[[3L]][[1L]], as.name("hazard")) &&
+    NROW(out$untranslated) == 0L &&
+    !length(grep("^refusal", names(out$calls)))
+  expect_false(silent_fit)
+})
+
+test_that("an entry refusal suppresses the 'cannot tell' verdict (#433 review)", {
+  # SETG3's entry checks (setg3.c:269-284) each `return` immediately, so the
+  # untraced non-WEIBULL dispatch (setg3.c:359-374) is NEVER reached once one
+  # of them fires. A job carrying both therefore has exactly one true verdict:
+  # PROC HAZARD refuses it at entry. Emitting "cannot tell whether PROC HAZARD
+  # refuses this job" alongside "refused before any fit is computed" told the
+  # reader both that SAS produces nothing and that we cannot say.
+  job <- .u1_job(parms = "MUL=0.2 TAU=0 FIXTAU GAMMA=2 ETA=1 FIXGE2")
+  m <- .u1_msg(job)
+  # The entry refusal must SURVIVE -- suppressing the contradiction must not
+  # suppress the verdict with it.
+  expect_match(m, "(SETG3900)", fixed = TRUE)
+  expect_match(m, "refused before any fit is computed", fixed = TRUE)
+  expect_no_match(m, "cannot tell whether PROC HAZARD refuses", fixed = TRUE)
+
+  # KNOWN NEGATIVE: with no entry refusal, the untraced path must still say
+  # it cannot tell. Otherwise the fix has deleted the honest verdict too.
+  plain <- .u1_job(parms = "MUL=0.1 TAU=8 ALPHA=2 GAMMA=5 ETA=1 FIXGAE2")
+  pm <- .u1_msg(plain)
+  expect_match(pm, "cannot tell whether PROC HAZARD refuses", fixed = TRUE)
+  expect_no_match(pm, "refused before any fit is computed", fixed = TRUE)
+})
+
+test_that("two refusal reasons are separated in the emitted warning (#433 review)", {
+  # warning(a, b) pastes its arguments with NO separator, so a job carrying
+  # two refusal classes rendered as "...fit the model by hand.This translation
+  # cannot emit...". The test helper hid it: it collapses the captured
+  # messages itself, and a single warning() call yields ONE message however
+  # many pieces were pasted into it.
+  job <- .u1_job(parms = "MUE=0.2 THALF=1 NU=1E-3 M=1 FIXMNU1")
+  m <- .u1_msg(job)
+  expect_no_match(m, "[a-z]\\.[A-Z]")
 })

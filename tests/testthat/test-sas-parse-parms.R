@@ -320,7 +320,7 @@ test_that("an MU whose shape operands could not be read is not built on defaults
 
 test_that("a PARMS statement SAS's lexer rejects never builds an orphan on defaults (#365 review 3)", {
   # R's as.numeric() reads 1E-3, 2. and +0.2; the lexer's NUMBER
-  # (hazard_l.l:34-38) does not, so PROC HAZARD stops with a syntax error.
+  # (hazard_l.l:33-38) does not, so PROC HAZARD stops with a syntax error.
   # An orphan MU read that way built a whole phase with no row.
   # The operand the lexer rejects, stated per case rather than recomputed.
   for (cs in list(list(ops = "MUE=1E-3", bad = "MUE=1E-3"),
@@ -335,7 +335,7 @@ test_that("a PARMS statement SAS's lexer rejects never builds an orphan on defau
     expect_false(isTRUE(got$has_phases), info = info)
     row <- got$untranslated$reason[got$untranslated$construct %in% bad]
     expect_length(row, length(bad))
-    expect_true(all(grepl("hazard_l.l:34-38", row, fixed = TRUE)), info = info)
+    expect_true(all(grepl("hazard_l.l:33-38", row, fixed = TRUE)), info = info)
     expect_true(all(grepl("does not run", row, fixed = TRUE)), info = info)
   }
   # Numbers the lexer does read are still read.
@@ -1680,7 +1680,7 @@ test_that("a shape that is not finite after SETG3's rewrites is recorded (#329 r
   # WRITTEN but replaced by a rewrite is deliberately not flagged: PROC
   # HAZARD reads it the same way (hazard_l.l:53) and applies the same
   # rewrite, so the emitted model is the one it fits (#346 review).
-  # Spelled as the lexer's NUMBER spells them (hazard_l.l:34-38 needs a "."
+  # Spelled as the lexer's NUMBER spells them (hazard_l.l:33-38 needs a "."
   # before an exponent): `1e400` is not a number to PROC HAZARD, whose job
   # then does not run, while `1.0E400` lexes and sscanf() reads it as Inf.
   cases <- list(
@@ -1834,7 +1834,7 @@ test_that("each syntax-error form names its own source, not a shared one (#340)"
     "AGE/MOVE"    = "hazard_y.y:228-232", # MOVE needs = NUMBER
     "AGE/MOVE="   = "hazard_y.y:228-232", # "=" lexes; the NUMBER is missing
     "AGE/E=2"     = "hazard_y.y:228-232", # E takes no value
-    # A value R reads as a number but the lexer does not (hazard_l.l:34-38
+    # A value R reads as a number but the lexer does not (hazard_l.l:33-38
     # has no Inf, no exponent without a decimal point, no trailing ".").
     "AGE/MOVE=INF" = "hazard_l.l:176",  # no name rule after "/": a word
     "AGE/MOVE=1E5" = "hazard_l.l:176",  # longest match: word beats NUMBER "1"
@@ -1989,4 +1989,25 @@ test_that("the constraint block's own rewrite is recorded, as the trace's are", 
   on <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.5", "FIXGE2",
                            "WEIBULL"))
   expect_equal(nrow(on$untranslated), 0L)
+})
+
+test_that("an ABSENT PARMS value cites the grammar, not the lexer (#433 review)", {
+  # `THALF=` with nothing after it is the GRAMMAR refusing the operand --
+  # `THALF '=' NUMBER` (hazard_y.y:139) has no form without a NUMBER -- not
+  # the lexer refusing a value it cannot read. The old message cited
+  # hazard_l.l and printed the absent value, giving "PARMS value  for THALF"
+  # with two spaces. Same distinction check_number() already draws on the
+  # PROC line.
+  got <- .hzr_parse_parms(c("MUE=0.1", "NU=1", "M=1", "THALF="))
+  row <- got$untranslated$reason[got$untranslated$construct == "THALF="]
+  expect_length(row, 1L)
+  expect_match(row, "hazard_y.y", fixed = TRUE)
+  expect_no_match(row, "hazard_l.l:33-38", fixed = TRUE)
+  expect_no_match(row, "value  for", fixed = TRUE)   # the blank
+  # KNOWN NEGATIVE: a value that IS present but unreadable still cites the
+  # lexer, so the fix has not simply swapped every citation.
+  got2 <- .hzr_parse_parms(c("MUE=0.1", "NU=1", "M=1", "THALF=ABC"))
+  row2 <- got2$untranslated$reason[got2$untranslated$construct == "THALF=ABC"]
+  expect_length(row2, 1L)
+  expect_match(row2, "hazard_l.l", fixed = TRUE)
 })

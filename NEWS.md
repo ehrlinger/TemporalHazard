@@ -118,6 +118,15 @@
   (`THALF = ABC`, or `FIXNU = 1`, which takes no value) is a syntax error,
   just as it is when written without the spaces.
 
+  One spelling is **not** covered, and fails before the joining can happen:
+  `DATA = X` with spaces, on a `PROC HAZARD` line that is not wrapped in a
+  `%HAZARD(...)` call. The scanner that cuts a file into blocks treats the
+  word `DATA ` as the start of a new block, so the job is truncated after
+  `PROC HAZARD` and the translation fails with "The EVENT or ICENSOR
+  variable must be specified" for a job that does have an `EVENT` statement.
+  This is unchanged from earlier releases; write `DATA=X` without the spaces,
+  or wrap the job in `%HAZARD(...)`.
+
 * **`hzr_bootstrap()` no longer counts replicates that estimated nothing as
   successes (#373).** The optimizer stands in 1e10 for a negative
   log-likelihood it could not evaluate, so a fit that never had a

@@ -411,7 +411,7 @@
   ctl <- list()
   data_name <- NULL
   outhaz <- NULL
-  # A PROC-line value the lexer does not read as a NUMBER (hazard_l.l:34-38,
+  # A PROC-line value the lexer does not read as a NUMBER (hazard_l.l:33-38,
   # the HZRP state at :53) is a syntax error: PROC HAZARD does not run the
   # job (U1, #403). as.numeric() reads 1E5 and 5., which the lexer does not.
   proc_rejected <- character(0)
@@ -426,7 +426,7 @@
     if (!nzchar(val)) {
       # `MAXITER '=' NUMBER` and `CONDITION '=' NUMBER` (hazard_y.y:63-64)
       # have no form without a NUMBER, so `MAXITER=`, `MAXITER =` and a bare
-      # `MAXITER` all fall to `hazardopt : error` (:77). This is the grammar
+      # `MAXITER` all fall to `hazardopt : error` (:76). This is the grammar
       # refusing the option, not the lexer refusing a value, hence the
       # different citation.
       proc_rejected <<- c(proc_rejected, paste0(
@@ -441,11 +441,11 @@
     if (!.hzr_sas_lexer_number(val)) {
       proc_rejected <<- c(proc_rejected, paste0(
         key, "=", val, ": not a number PROC HAZARD's lexer reads ",
-        "(hazard_l.l:34-38), so PROC HAZARD rejects this job with a syntax ",
+        "(hazard_l.l:33-38), so PROC HAZARD rejects this job with a syntax ",
         "error"))
       note(paste0(key, "=", val),
            paste0("not a number PROC HAZARD's lexer reads ",
-                  "(hazard_l.l:34-38)"))
+                  "(hazard_l.l:33-38)"))
       return(TRUE)
     }
     FALSE
@@ -752,7 +752,7 @@
   # FIXMNU1 constrains |M*NU| = 1 on the early phase (setg1.c:363-575,
   # hzd_early_t2p.c:65-77), and the emitted phase would estimate M and NU
   # without it. A fit here would be a different model standing in for the
-  # job's, so the document stops (U1, #358). Mirroring the constraint is
+  # job's, so the job warns and still fits (U1, #358). Mirroring the constraint is
   # new modelling, left out of 1.3.0.
   if (length(parms$not_mirrored)) {
     refusal_warnings <- c(refusal_warnings, paste0(
@@ -1178,10 +1178,17 @@
   # SETG3930) still halt, because SAS refuses them for a shape value that is
   # out of range (setg3.c:269-284) and hzr_phase() will not build a phase
   # from that same value. The warning is emitted in its own chunk ABOVE the
-  # fit precisely so that the real cause -- the SETG3 code and the operand --
-  # is raised before the halt, instead of the reader meeting only
-  # "gamma must be a positive scalar" from further down. An earlier revision
-  # of this branch kept a stop() for those three; it was replaced by this.
+  # fit so that the real cause -- the SETG3 code and the operand -- is
+  # RECORDED above it. Be clear about what that does and does not buy: under
+  # Quarto the reader does NOT see it. knitr collects warnings INTO the
+  # document, the chunk error then stops the render before any document is
+  # written, and the console shows only hzr_phase()'s own
+  # "gamma must be a positive scalar". The warning reaches a reader who runs
+  # the chunks interactively, and the $untranslated row reaches anyone who
+  # greps the job afterwards. An earlier version of this comment claimed the
+  # cause was raised BEFORE the halt, which contradicted NEWS and was wrong
+  # (#433 review). An earlier revision of the branch kept a stop() for those
+  # three; it was replaced by this.
 
   list(call = as.call(c(head, args)), status_call = status_call,
        stepwise_call = stepwise_call, screen_check_call = screen_check_call,

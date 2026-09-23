@@ -612,10 +612,17 @@ before you point it at a corpus.
   and the emitted phase would otherwise carry SAS's default where the job
   wrote something else.
 
-  One case still halts, for want of anything to emit: where the value
-  `PROC HAZARD` refuses is also one `hzr_phase()` will not build, there
-  is no fit to warn above, so the job stops. Delete that job from the
-  file if you need the others' results before you can correct it.
+  One case still halts, and it halts more than the job. Where the value
+  `PROC HAZARD` refuses is also one `hzr_phase()` will not build, the
+  warning and the fit are both emitted as usual --- but `hzr_phase()`
+  then rejects the value when the chunk actually runs, and an error in a
+  chunk stops Quarto outright: it exits 1 and writes **no output
+  document at all**, including for the jobs before this one. The console
+  shows only `hzr_phase()`'s own message, because `knitr` collects
+  warnings into the document that was never written. So the reason the
+  job was refused does not reach you; only the symptom does. Delete that
+  job from the file if you need the other jobs' results before you can
+  correct it.
 - **Prediction grids the parser cannot resolve are refused whole**, and
   an unresolved `INHAZ=` stops the render on purpose. Both are covered
   under "What it doesn't translate" below. Note that resolving an

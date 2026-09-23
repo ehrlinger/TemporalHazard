@@ -296,9 +296,13 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
       # chunk so `job$calls$fit` stays a bare assignment.
       if (length(r$refusal_warnings)) {
         warn_slot <- .hzr_next_call_name(calls, "refusal")
+        # warning() pastes its arguments with NO separator, so two reasons
+        # ran together as "...by hand.This translation cannot emit..."
+        # (#433 review). Joined here, so the emitted call carries one
+        # readable string however many classes the job trips.
         calls[[warn_slot]] <- as.call(c(
           quote(warning),
-          as.list(r$refusal_warnings),
+          list(paste(r$refusal_warnings, collapse = "\n\n")),
           list(call. = FALSE)))
       }
       fit_slot <- .hzr_next_call_name(calls, "fit")
