@@ -1688,6 +1688,11 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     (embedded stepwise selection).}
 #'   \item{scope}{Only present when `mode == "select"`: the candidate
 #'     scope used.}
+#'   \item{unresolved}{Only present when `mode == "select"`: the
+#'     `$scope$unresolved` record of the up-front [hzr_stepwise()] screen on
+#'     the original data, the names in `force_in`, `force_out` and a
+#'     character `scope` that matched nothing and were ignored. `print()`
+#'     shows a line when any is non-empty.}
 #' }
 #'
 #' @examples
@@ -2033,7 +2038,7 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     # flood. Raising it with call. = TRUE would start muffling it silently,
     # so if that call. ever changes, add the ridge warning to the list this
     # handler lets through by name.
-    withCallingHandlers(
+    upfront_screen <- withCallingHandlers(
       do.call(hzr_stepwise, c(
         list(
           object, scope = scope, data = orig_data,
@@ -2527,7 +2532,12 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     n_wald_fallbacks          = n_wald_fallbacks,
     mode       = if (select_mode) "select" else "refit"
   )
-  if (select_mode) result$scope <- scope
+  if (select_mode) {
+    result$scope <- scope
+    # Carried from the up-front screen: the replicate screens run
+    # muffled, so this is the only record of names ignored (#442).
+    result$unresolved <- upfront_screen$scope$unresolved
+  }
   class(result) <- "hzr_bootstrap"
   result
 }
@@ -2544,7 +2554,15 @@ print.hzr_bootstrap <- function(x, digits = 4, ...) {
   } else {
     "fixed refit"
   }, "\n")
-  cat("Replicates:", x$n_success, "successful,", x$n_failed, "failed\n\n")
+  cat("Replicates:", x$n_success, "successful,", x$n_failed, "failed\n")
+  for (arg in names(x$unresolved)) {
+    if (length(x$unresolved[[arg]]) > 0L) {
+      cat("Unresolved `", arg, "`, ignored: ",
+          paste(encodeString(x$unresolved[[arg]], quote = "\""),
+                collapse = ", "), "\n", sep = "")
+    }
+  }
+  cat("\n")
   if (nrow(x$summary) > 0) {
     display <- x$summary
     for (col in c("pct", "mean", "sd", "min", "max",
