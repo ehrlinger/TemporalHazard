@@ -91,9 +91,14 @@ test_that("the check does not fire on a time-windowed model, or one with no stor
   # of its way.
   nodes <- hazard(time = d$t, status = d$s, dist = "exponential", theta = -4)
   nodes$fit$theta <- c(-4, 0.01)
+  # suppressWarnings: the object is unfitted, so predict() says its numbers
+  # come from starting values. True, and orthogonal to the length check this
+  # test is about, so it is kept out of the suite's warning multiset.
   expect_length(
-    predict(nodes, newdata = data.frame(time = c(1, 2), age = 70),
-            type = "linear_predictor"),
+    suppressWarnings(
+      predict(nodes, newdata = data.frame(time = c(1, 2), age = 70),
+              type = "linear_predictor")
+    ),
     2L
   )
 })
