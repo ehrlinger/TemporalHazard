@@ -612,23 +612,6 @@
   gamma * eta / 3
 }
 
-#' Walk `SETG3()` and report what it would do to one late phase.
-#'
-#' @param tau_raw,gamma,alpha,eta The operand values `PARMS` supplied, with
-#'   PROC HAZARD's own initializers for any it did not
-#'   (`src/hazard/stmtprc.c:34-37`). `tau_raw` is `NA` when `TAU` was absent:
-#'   the `stmtprc.c` initializer of 0 does NOT survive to `SETG3()`, because
-#'   `src/hazard/readobs.c:153-154` replaces an unspecified `TAU` with
-#'   `0.75 * Tmax` on an active late phase, and `readobs()` runs at
-#'   `hazard.c:276`, before `hzrg()` reaches `SETG3()` at `:292`. So an absent
-#'   `TAU` arrives POSITIVE and cannot raise `SETG3900`.
-#' @param fixed Character vector of parameters the job's `FIX*` tokens pinned,
-#'   as the user wrote them: these checks run before SETG3 changes any flag.
-#' @param weibull Whether the job carries the bare `WEIBULL` keyword.
-#' @return `list(refusal = <chr or NULL>, shape = <named numeric or NULL>)`.
-#'   `refusal` names the SAS message code for a job PROC HAZARD will not run;
-#'   otherwise `shape` gives the values SETG3 would optimize from.
-#' @noRd
 #' Would `hzr_phase()` build a `"g3"` phase from these shapes?
 #'
 #' The refusal message used to assert that it would, from a hand-maintained
@@ -1978,3 +1961,21 @@
     )
   )
 }
+
+#' Walk `SETG3()` and report what it would do to one late phase.
+#'
+#' @param tau_raw,gamma,alpha,eta The operand values `PARMS` supplied, with
+#'   PROC HAZARD's own initializers for any it did not
+#'   (`src/hazard/stmtprc.c:34-37`). `tau_raw` is `NA` when `TAU` was absent:
+#'   the `stmtprc.c` initializer of 0 does NOT survive to `SETG3()`, because
+#'   `src/hazard/readobs.c:153-154` replaces an unspecified `TAU` with
+#'   `0.75 * Tmax` on an active late phase, and `readobs()` runs at
+#'   `hazard.c:276`, before `hzrg()` reaches `SETG3()` at `:292`. So an absent
+#'   `TAU` arrives POSITIVE and cannot raise `SETG3900`.
+#' @param fixed Character vector of parameters the job's `FIX*` tokens pinned,
+#'   as the user wrote them: these checks run before SETG3 changes any flag.
+#' @param weibull Whether the job carries the bare `WEIBULL` keyword.
+#' @return `list(refusal = <chr or NULL>, shape = <named numeric or NULL>)`.
+#'   `refusal` names the SAS message code for a job PROC HAZARD will not run;
+#'   otherwise `shape` gives the values SETG3 would optimize from.
+#' @noRd
