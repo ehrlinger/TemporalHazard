@@ -97,9 +97,28 @@
 #' @param fit A fitted `hazard` object built via the
 #'   `formula = Surv(...) ~ predictors, data = df` interface.
 #' @param scope Candidate set.  `NULL` (default) uses every data-frame
-#'   column not already in the model for every phase.  For
+#'   column not already in the model for every phase.  A candidate enters
+#'   by writing its name into the formula text, so under this default too a
+#'   column whose name reads as a different term enters as that term, with
+#'   no warning: a column literally named `age:mal` enters as the
+#'   interaction, and a column `"age "` beside `age` enters as `age`
+#'   (#449).  For
 #'   single-distribution fits, pass a one-sided formula
-#'   (`~ age + nyha`) or a character vector of names.  For multiphase
+#'   (`~ age + nyha`) or a character vector of names.  Each name in a
+#'   character `scope` is looked up, not parsed: a name that is exactly a
+#'   column of `data` is that column, otherwise a name that is exactly a
+#'   term label as `terms()` writes it (`` "`_X1`" ``, `"log(age)"`,
+#'   `"age:mal"`) is that term, and any other name is ignored with a
+#'   warning naming it.  The column is looked up first, so when `data` has
+#'   a column literally named `age:mal`, `"age:mal"` puts that column in
+#'   the scope rather than the interaction.  Resolution decides which
+#'   variables are in the scope; it does not change how a candidate is
+#'   entered.  The refit writes the name as you spelled it into the
+#'   formula text.  When that text reads as a different term, as
+#'   `"age:mal"` reads as the interaction and `"age "` as `age`, the
+#'   screen enters that other term with no warning (#449); when it does not
+#'   parse, as a bare `"_X1"` does not, the candidate cannot enter
+#'   (#441, #438).  For multiphase
 #'   fits, pass a named list of one-sided formulas keyed by phase, naming
 #'   each phase once.  `scope` lists what may enter; a drop considers every
 #'   term in the model except `force_in` and terms frozen by `max_move`
@@ -136,9 +155,21 @@
 #'   **Known limitation (the frozen set)** section.
 #' @param force_in Character vector of variables that must remain in
 #'   the model.  Such variables are still scored and reported in the
-#'   selection trace, but are never dropped.
+#'   selection trace, but are never dropped.  Each name is looked up, not
+#'   parsed, once, when the screen starts: a name that is exactly a column
+#'   of `data` is that column, so the bare `"_X1"` pins the column `_X1`
+#'   although `terms()` labels it `` `_X1` ``, and `"TRUE"` pins a column
+#'   named `TRUE`.  Otherwise a name that is exactly a term label of the
+#'   model or `scope` is that term, so `` "`_X1`" `` and `"age:mal"` work
+#'   too.  Any other name, `"age "` with a trailing space when there is no
+#'   such column, say, matches nothing and is ignored with a warning naming
+#'   it.  The column is looked up first: when `data` has a column literally
+#'   named `age:mal`, `"age:mal"` resolves to that column and not to the
+#'   interaction.
 #' @param force_out Character vector of variables that may never be
-#'   considered as candidates.
+#'   considered as candidates.  Names are looked up as for `force_in`:
+#'   a column of `data` first, then a term label of the model or `scope`,
+#'   and a warning for a name that is neither.
 #' @param trace Logical; print step-by-step progress to the console.
 #'   Default `TRUE`.
 #' @param ... Passed to every candidate refit. Only `control` (e.g.
@@ -159,7 +190,17 @@
 #'     \item{\code{scope}}{Record of the candidate scope, plus
 #'       `force_in`, `force_out`, and the frozen set.  In a two-way
 #'       screen, `frozen` can name a variable the final model does not
-#'       contain; see the **Known limitation (the frozen set)** section.}
+#'       contain; see the **Known limitation (the frozen set)** section.
+#'       `unresolved` is a list with elements `force_in`, `force_out` and
+#'       `scope`, each the names that matched neither a column of `data`
+#'       nor a term label and were therefore ignored (`character()` when
+#'       none were).  The trace, and so `print()` and `summary()`, carries a
+#'       line for each non-empty one, and a screen whose character `scope`
+#'       was emptied this way says so where it stops.  `candidates`,
+#'       `force_in` and `force_out` here are the arguments as given, so a
+#'       character `candidates` still lists the names that were ignored,
+#'       as `force_in` and `force_out` do; read `unresolved` for which
+#'       those were (#451).}
 #'     \item{\code{criteria}}{Named list of the threshold / direction
 #'       settings actually applied, plus
 #'       `n_uncomputable_scores` (how many candidate scores were `NA`,
@@ -383,6 +424,47 @@ hzr_stepwise <- function(fit,
          call. = FALSE)
   }
 
+  # Resolve every user-supplied name ONCE, by lookup, and compare only the
+  # results from here on (#437, #442). A name is a column of `data`, else a
+  # term label of the model or `scope`; a name that is neither is warned
+  # about and ignored, never matched by a guess. The user's own values are
+  # kept for the result's `$scope` record.
+  scope_given <- scope
+  unresolved <- list(force_in = character(), force_out = character(),
+                     scope = character())
+  scope_labels <- if (inherits(scope, "formula")) {
+    .hzr_formula_rhs_terms(scope)
+  } else if (is.list(scope)) {
+    unlist(lapply(Filter(function(s) inherits(s, "formula"), scope),
+                  .hzr_formula_rhs_terms), use.names = FALSE)
+  }
+  if (is.character(scope) && !identical(fit$spec$dist, "multiphase")) {
+    # An offset is refused before it can be resolved: `terms()` gives it no
+    # label, so resolution would only warn about it and drop it.
+    scope_f <- tryCatch(stats::reformulate(scope), error = function(e) NULL)
+    if (!is.null(scope_f)) .hzr_refuse_offset(scope_f, "`scope`")
+    resolved_scope <- .hzr_resolve_names(scope, data, arg = "`scope`",
+                                         self_label = TRUE)
+    scope <- resolved_scope$spelling
+    scope_labels <- resolved_scope$id
+    unresolved$scope <- resolved_scope$unresolved
+  }
+  known_labels <- unique(c(unlist(.hzr_scope_current_vars(fit),
+                                  use.names = FALSE),
+                           scope_labels))
+  resolved_in  <- .hzr_resolve_names(force_in, data, known_labels,
+                                     arg = "`force_in`")
+  resolved_out <- .hzr_resolve_names(force_out, data, known_labels,
+                                     arg = "`force_out`")
+  force_in_id  <- resolved_in$id
+  force_out_id <- resolved_out$id
+  unresolved$force_in  <- resolved_in$unresolved
+  unresolved$force_out <- resolved_out$unresolved
+  # A character scope whose every name was unresolved offers nothing; the
+  # stop line must say why rather than claim nothing met the threshold.
+  scope_emptied <- is.character(scope_given) && length(scope_given) > 0L &&
+    length(scope) == 0L
+
   ts_start <- Sys.time()
   call <- match.call()
 
@@ -412,6 +494,15 @@ hzr_stepwise <- function(fit,
     )
   }
   emit(header)
+  # The warning is lost to suppressWarnings() and to a saved object, so
+  # the names ignored are also recorded in the trace and on the result.
+  for (arg in names(unresolved)) {
+    if (length(unresolved[[arg]]) > 0L) {
+      emit(sprintf("(unresolved `%s`, ignored: %s)", arg,
+                   paste(encodeString(unresolved[[arg]], quote = "\""),
+                         collapse = ", ")))
+    }
+  }
   emit("")
 
   # Move counter: per-variable tally of entries + exits.  Use a named
@@ -419,6 +510,12 @@ hzr_stepwise <- function(fit,
   # NULL, whereas `vec[[missing]]` errors with "subscript out of bounds".
   move_counts <- list()
   frozen      <- character()
+  # The term each entry ADDED, mapped to the candidate that entered it,
+  # where the two differ. The refit pastes the candidate's spelling, so a
+  # literal `age:mal` column spelled bare enters as the interaction; keyed
+  # by the column's identity alone it was offered again, and the refit that
+  # added nothing stopped the screen (#442).
+  entered_as  <- character()
 
   current <- fit
   step_no <- 0L
@@ -564,8 +661,12 @@ hzr_stepwise <- function(fit,
     # screen that recovers at a later iteration is not reported as stopped.
     iter_untestable     <- character()
 
-    effective_force_out <- unique(c(force_out, frozen))
-    effective_force_in  <- unique(c(force_in,  frozen))
+    # A candidate whose entered term is still in the model, or frozen, is
+    # not offered again.
+    in_model <- unlist(.hzr_scope_current_vars(current), use.names = FALSE)
+    held <- entered_as[names(entered_as) %in% c(in_model, frozen)]
+    effective_force_out <- unique(c(force_out_id, frozen, unname(held)))
+    effective_force_in  <- unique(c(force_in_id,  frozen))
 
     if (direction %in% c("forward", "both")) {
       fwd <- do.call(.hzr_stepwise_forward_step, c(list(
@@ -621,7 +722,13 @@ hzr_stepwise <- function(fit,
         }
         current <- fwd$fit
         record_step("enter", fwd)
-        bump_move(fwd$variable)
+        # Counted by the term the model gained, which is what a drop names.
+        term <- .hzr_refit_term(fwd$variable)
+        if (is.na(term)) term <- fwd$id
+        if (!identical(term, fwd$id)) {
+          entered_as[[term]] <- fwd$id
+        }
+        bump_move(term)
         add_happened <- TRUE
       }
     }
@@ -695,6 +802,12 @@ hzr_stepwise <- function(fit,
                  "for %s -- none was tested)"),
           step_txt, paste(iter_untestable, collapse = " or ")
         ))
+      } else if (scope_emptied && step_no == 0L) {
+        emit(sprintf(
+          paste0("(stopped after %s: the character `scope` resolved to ",
+                 "no candidate -- every name in it was unresolved)"),
+          step_txt
+        ))
       } else {
         emit(sprintf("(no further action after %s)", step_txt))
       }
@@ -731,10 +844,11 @@ hzr_stepwise <- function(fit,
   result <- current
   result$steps      <- steps_df
   result$scope      <- list(
-    candidates = scope,
+    candidates = scope_given,
     force_in   = force_in,
     force_out  = force_out,
-    frozen     = frozen
+    frozen     = frozen,
+    unresolved = unresolved
   )
   result$criteria   <- list(
     direction = direction,

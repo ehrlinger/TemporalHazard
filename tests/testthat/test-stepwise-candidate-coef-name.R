@@ -170,11 +170,17 @@ test_that("a candidate that only reparameterises the phase is refused", {
   expect_identical(colnames(refit$fit$x_list$constant), c("z", "z:fb"))
   expect_equal(refit$fit$objective, base$fit$objective, tolerance = 1e-6)
 
-  expect_error(
-    .hzr_stepwise_forward_step(base, scope = list(constant = ~ z), data = d,
-                               criterion = "wald", slentry = 0.05),
+  # Refused as this candidate's failure, not as an error that ends the
+  # screen: the resolver runs inside the per-candidate catch (#442).
+  expect_warning(
+    step <- .hzr_stepwise_forward_step(base, scope = list(constant = ~ z),
+                                       data = d, criterion = "wald",
+                                       slentry = 0.05),
     "does not add a column"
   )
+  expect_false(step$accepted)
+  expect_identical(step$refit_failures, "z@constant")
+  expect_match(unname(step$refit_failure_reasons), "does not add a column")
 })
 
 test_that("a candidate that adds more than one column still errors", {

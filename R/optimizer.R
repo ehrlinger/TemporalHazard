@@ -111,7 +111,9 @@ NULL
 #'   `gradient_exact = FALSE`.
 #'
 #' @return List with par, value (log-likelihood), convergence, counts, message,
-#'   hessian, vcov. Includes \code{se_unavailable_reason}.
+#'   hessian, vcov. Includes \code{se_unavailable_reason}, and
+#'   \code{rel_gradient} with \code{rel_gradient_reason} naming why it is
+#'   \code{NA}.
 #' @noRd
 .hzr_optim_generic <- function(
     logl_fn,
@@ -232,9 +234,20 @@ NULL
   } else {
     list()
   }
+  # The reason travels with the NA. "Not evaluated" on its own cannot tell a
+  # fit whose gradient was never computable from one that would have failed
+  # the test, and under Conservation of Events the first is the ordinary
+  # case: the test differences the log-likelihood, so a point the difference
+  # needs can leave the finite region while the estimates themselves are
+  # sound. Reading those as failures would condemn good fits (#351).
   rel_gradient <- function(theta, value) {
-    if (!all(is.finite(theta)) || !is.finite(value) || value >= 1e10) {
-      return(NA_real_)
+    na <- function(reason) list(value = NA_real_, reason = reason)
+    if (!all(is.finite(theta))) {
+      return(na("the estimates are not all finite"))
+    }
+    if (!is.finite(value) || value >= 1e10) {
+      return(na(paste0("the log-likelihood at the estimates is non-finite ",
+                       "or past the optimizer's penalty")))
     }
     g <- if (gradient_exact) {
       tryCatch(
@@ -249,15 +262,43 @@ NULL
     } else {
       .hzr_fd_gradient(objective, theta, sign_bounded)
     }
-    if (is.null(g) || length(g) != length(theta) || !all(is.finite(g))) {
-      return(NA_real_)
+    if (is.null(g)) {
+      return(na("the score could not be computed at the estimates"))
     }
-    max(abs(g) * pmax(abs(theta), 1)) / max(abs(value), 1)
+    if (length(g) != length(theta)) {
+      return(na(paste0("the score has ", length(g),
+                       if (length(g) == 1L) " component" else " components",
+                       " where the model has ", length(theta),
+                       if (length(theta) == 1L) " parameter" else " parameters")))
+    }
+    if (!all(is.finite(g))) {
+      return(na(if (gradient_exact) {
+        "the score has a non-finite component at the estimates"
+      } else {
+        paste0("the log-likelihood is non-finite or past the optimizer's ",
+               "penalty at a point the finite-difference score needs")
+      }))
+    }
+    list(value = max(abs(g) * pmax(abs(theta), 1)) / max(abs(value), 1),
+         reason = NA_character_)
   }
   rel_grad <- NA_real_
+  # Why the test was not run, for the NA the fit would otherwise carry alone.
+  # Both routes to skipping it entirely are named here; the evaluated routes
+  # overwrite this below. Convergence is asked FIRST: a bounded run that
+  # stopped at its iteration limit is a non-convergence, and saying "the
+  # bounded optimizer stops on its own projected gradient" there would
+  # describe the path rather than what happened on it.
+  rel_reason <- if (result$convergence != 0L) {
+    "the optimizer did not report convergence"
+  } else {
+    "the bounded optimizer stops on its own projected gradient"
+  }
   polish_code <- NA_integer_
   if (!use_bounds && result$convergence == 0L) {
-    rel_grad <- rel_gradient(result$par, result$value)
+    rel <- rel_gradient(result$par, result$value)
+    rel_grad <- rel$value
+    rel_reason <- rel$reason
     if (is.finite(rel_grad) && rel_grad > gradtl) {
       f_nlm <- function(theta) {
         v <- objective(theta)
@@ -279,7 +320,9 @@ NULL
         result$par   <- stats::setNames(polish$estimate, names(result$par))
         result$value <- polish$minimum
         polish_code  <- as.integer(polish$code)
-        rel_grad     <- rel_gradient(result$par, result$value)
+        rel          <- rel_gradient(result$par, result$value)
+        rel_grad     <- rel$value
+        rel_reason   <- rel$reason
         # counts still describe the BFGS run alone, so say the fit went on.
         result$message <- paste0(
           if (length(result$message)) paste0(result$message, "; ") else "",
@@ -380,8 +423,13 @@ NULL
     pd = inv$pd,
     se_unavailable_reason = if (is.matrix(inv$vcov)) NA_character_ else inv$reason,
     # SAS/C's relative gradient at the returned point, after any polish; NA
-    # when not evaluated (the bounded path, or BFGS did not converge).
+    # when it was not evaluated, for any of the reasons rel_gradient_reason
+    # names -- the bounded path and a non-converged stop among them.
     rel_gradient = rel_grad,
+    # Why `rel_gradient` is NA; NA_character_ when the test was evaluated. A
+    # test that could not run and a test that failed are different findings,
+    # and only the second is a statement about the estimates (#351).
+    rel_gradient_reason = rel_reason,
     # stats::nlm()'s termination code when the polish ran and was kept.
     polish_code = polish_code
   )

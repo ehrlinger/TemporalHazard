@@ -164,6 +164,11 @@ Always \code{0} in refit mode.}
 (embedded stepwise selection).}
 \item{scope}{Only present when \code{mode == "select"}: the candidate
 scope used.}
+\item{unresolved}{Only present when \code{mode == "select"}: the
+\verb{$scope$unresolved} record of the up-front \code{\link[=hzr_stepwise]{hzr_stepwise()}} screen on
+the original data, the names in \code{force_in}, \code{force_out} and a
+character \code{scope} that matched nothing and were ignored. \code{print()}
+shows a line when any is non-empty.}
 }
 }
 \description{
