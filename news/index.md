@@ -1085,6 +1085,58 @@
 
 ### Bug fixes
 
+- **A single-distribution `theta` must have one entry per parameter, and
+  a Weibull scale and shape must be positive, fitted or not
+  ([\#375](https://github.com/ehrlinger/TemporalHazard/issues/375),
+  [\#383](https://github.com/ehrlinger/TemporalHazard/issues/383)).**
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  compared a supplied `theta` only with the design’s column count, as a
+  lower bound, so a wrong length was caught only sometimes, and when it
+  was not, the result could be wrong. With `fit = TRUE`, some wrong
+  lengths failed with an unrelated error (`non-conformable arguments`),
+  and some fitted silently: a `theta` holding only the shape parameters
+  fitted the model with its covariates dropped, and on a one-covariate
+  model a `theta` one entry too long returned its starting values
+  unfitted. With `fit = FALSE` the object was built, and
+  [`predict()`](https://rdrr.io/r/stats/predict.html) then either failed
+  with an unrelated message or, for a model with no covariates given an
+  extra entry, applied it to a `newdata` column the model never had and
+  returned a wrong prediction with no warning. A Weibull scale or shape
+  at or below zero failed with `non-finite value supplied by optim`.
+  Both are now refused, naming the lengths or the parameter, for example
+  `'theta' has 2 entries, but this weibull model takes 3: 2 shape parameters, then one coefficient per column of the design (1 column).`
+  The count is the likelihood’s, so `control$shape_param_count`, which
+  the likelihood ignores, does not change it. Unlike a multiphase model
+  ([\#408](https://github.com/ehrlinger/TemporalHazard/issues/408)), an
+  unfitted single-distribution model is refused too: its parameter count
+  is known without fitting, and an object of the wrong length could not
+  be predicted from correctly. A multiphase specification may carry
+  fewer entries until a fit resolves its phases’ designs.
+
+  The same check now runs in
+  [`predict()`](https://rdrr.io/r/stats/predict.html), ahead of the type
+  dispatch rather than inside one branch of it. A stored `theta` longer
+  than the design allows, in a hand-edited or legacy object, was refused
+  by `type = "hazard"` and `"linear_predictor"`, where the design is
+  multiplied as a matrix, but `"survival"` and `"cumulative_hazard"`
+  recycled the surplus coefficients into an outer product and returned
+  two values per row with no error. They now refuse, naming both counts,
+  as
+  [`hzr_evaluate()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_evaluate.md)
+  already did.
+
+  Separately, `predict(newdata = )` now **warns** when it matches
+  `newdata`’s columns to a model’s coefficients **by position**. That
+  happens only for an object that stored no design matrix, where
+  position is the only mapping left, and it means reordering or renaming
+  `newdata`’s columns silently changes the predictions. The warning
+  names how many coefficients are being matched, shows the columns it
+  used, and says to refit so the design is stored and the mapping is by
+  name. The behaviour is unchanged:
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  already refuses to build such an object, so one can only arrive from
+  an older version or by hand, and it still predicts.
+
 - **A Conservation of Events fit now reports the log-likelihood of the
   estimates it returns
   ([\#362](https://github.com/ehrlinger/TemporalHazard/issues/362)).**
