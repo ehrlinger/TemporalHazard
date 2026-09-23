@@ -440,10 +440,17 @@
     # evaluating the variables to name a term. Nothing extra runs on the
     # path that succeeds, so `model.frame()`'s one shared mask, its
     # evaluation count and its errors are exactly what they were (#409).
-    term <- .hzr_outside_rows_term(
-      design$terms, .hzr_newdata_frame(newdata, design$data_vars)
-    )
-    if (length(term)) .hzr_stop_unmatched_rows(term, where, nrow(newdata))
+    #
+    # And only for a failure that IS about row counts: a condition raised by
+    # the caller's own code inside a term keeps its class, message and
+    # attributes, even when some other term happens to be row-mismatched
+    # (#430 review).
+    if (.hzr_from_design_build(mm)) {
+      term <- .hzr_outside_rows_term(
+        design$terms, .hzr_newdata_frame(newdata, design$data_vars)
+      )
+      if (length(term)) .hzr_stop_unmatched_rows(term, where, nrow(newdata))
+    }
     stop(mm)
   }
   mm[, cols, drop = FALSE]
@@ -781,6 +788,44 @@
 }
 
 
+#' Did this condition come from building the design, rather than user code?
+#'
+#' `predict(newdata = )` replaces a build failure with a named-term refusal,
+#' and must not do that to a condition the caller raised inside one of their
+#' own terms: `~ I(ff(age)) + zz`, where `ff()` fails and `zz` merely happens
+#' to be row-mismatched, lost the caller's class and message and blamed `zz`
+#' (#430 review). The two are told apart by `conditionCall()`, which is the
+#' building function for a design failure and the user's own call otherwise.
+#'
+#' Matching the CALL rather than the message is deliberate: both base
+#' messages ("variable lengths differ", "length of 'dimnames' ...") come from
+#' C and are translated, so a message test would quietly stop working outside
+#' an English locale -- which no CI here would catch. Our own backstop
+#' carries no call and is recognised by its class instead.
+#'
+#' A user function that itself calls `model.frame()` and fails inside it
+#' would be misread as a design failure. That is accepted: it is rare, and
+#' the result is a worse message rather than a wrong answer.
+#'
+#' @param e A condition.
+#' @return `TRUE` when the condition came from the design build.
+#' @noRd
+.hzr_from_design_build <- function(e) {
+  if (inherits(e, "hzr_design_rows_error")) {
+    return(TRUE)
+  }
+  cl <- conditionCall(e)
+  if (!is.call(cl)) {
+    return(FALSE)
+  }
+  fn <- paste(deparse(cl[[1L]]), collapse = "")
+  fn %in% c("model.frame", "model.frame.default", "model.matrix",
+            "model.matrix.default", "stats::model.frame",
+            "stats::model.frame.default", "stats::model.matrix",
+            "stats::model.matrix.default")
+}
+
+
 #' Name a term whose variable has the wrong number of rows for `newdata`
 #'
 #' A DIAGNOSIS, run only after `model.frame()` has already failed or
@@ -849,11 +894,21 @@
 #' @noRd
 .hzr_check_design_rows <- function(mm, newdata, where) {
   if (nrow(mm) != nrow(newdata)) {
-    stop("The design rebuilt for ", where, " has ", nrow(mm), " rows for ",
-         nrow(newdata), " row(s) of 'newdata': a term uses row-level values ",
-         "taken from outside `data`, which predict(newdata =) cannot rebuild ",
-         "for new rows. Move them into `data` as columns and refit.",
-         call. = FALSE)
+    # Classed, not merely worded: `.hzr_rebuild_design()` has to tell this
+    # failure from a user's error raised inside a term, and this one carries
+    # no call to identify it by (#430 review).
+    stop(structure(
+      class = c("hzr_design_rows_error", "error", "condition"),
+      list(
+        message = paste0(
+          "The design rebuilt for ", where, " has ", nrow(mm), " rows for ",
+          nrow(newdata), " row(s) of 'newdata': a term uses row-level values ",
+          "taken from outside `data`, which predict(newdata =) cannot rebuild ",
+          "for new rows. Move them into `data` as columns and refit."
+        ),
+        call = NULL
+      )
+    ))
   }
   invisible(NULL)
 }

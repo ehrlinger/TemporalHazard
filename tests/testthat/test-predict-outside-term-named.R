@@ -273,3 +273,108 @@ test_that("the design is built once per predict(newdata = ), as before #409", {
   # Two: the design, and the row-shifted copy the equivariance check builds.
   expect_identical(n_eval, 2L)
 })
+
+# Codex, reviewing this PR at c0b2c9e7, found that the diagnosis could replace
+# a condition it had no business touching: when an EARLIER term raises and a
+# LATER term happens to be row-mismatched, the caller lost their own error and
+# got the row-count refusal, blaming a term that had nothing to do with the
+# failure. The diagnosis is now substituted only for failures that ARE about
+# row counts, identified structurally rather than by message text.
+
+test_that("an unrelated error survives a row-mismatched term beside it", {
+  # The shape the raising-once test above cannot reach: it has no second,
+  # mismatched term, so the diagnosis finds nothing and re-raises anyway.
+  set.seed(31)
+  d <- data.frame(t = rexp(60), s = rbinom(60, 1, 0.7), age = rnorm(60, 60, 5))
+  zz <- rnorm(60)
+  armed <- FALSE
+  ff <- function(x) {
+    if (armed) {
+      stop(structure(class = c("ff_boom", "error", "condition"),
+                     list(message = "ff exploded", call = NULL)))
+    }
+    x
+  }
+  f <- survival::Surv(t, s) ~ I(ff(age)) + zz
+  environment(f) <- environment()
+  fit <- suppressWarnings(
+    hazard(f, data = d, dist = "weibull", theta = c(mu = 0.5, nu = 1, 0, 0),
+           fit = TRUE)
+  )
+  armed <- TRUE
+  e <- tryCatch(
+    predict(fit, newdata = d[1:2, "age", drop = FALSE],
+            type = "linear_predictor"),
+    condition = function(e) e
+  )
+  # The caller's class, not ours: a tryCatch(ff_boom = ) must still fire.
+  expect_identical(class(e), c("ff_boom", "error", "condition"))
+  expect_identical(conditionMessage(e), "ff exploded")
+})
+
+test_that("a user error with no call survives too, beside a mismatched term", {
+  # conditionCall() is what separates a design-build failure from a user's,
+  # and this condition has none -- so the only reason the row-count refusal
+  # does not swallow it is that OUR backstop carries a class instead.
+  set.seed(31)
+  d <- data.frame(t = rexp(60), s = rbinom(60, 1, 0.7), age = rnorm(60, 60, 5))
+  zz <- rnorm(60)
+  armed <- FALSE
+  ff <- function(x) {
+    if (armed) stop("plain user error", call. = FALSE)
+    x
+  }
+  f <- survival::Surv(t, s) ~ I(ff(age)) + zz
+  environment(f) <- environment()
+  fit <- suppressWarnings(
+    hazard(f, data = d, dist = "weibull", theta = c(mu = 0.5, nu = 1, 0, 0),
+           fit = TRUE)
+  )
+  armed <- TRUE
+  msg <- tryCatch(
+    predict(fit, newdata = d[1:2, "age", drop = FALSE],
+            type = "linear_predictor"),
+    error = conditionMessage
+  )
+  expect_identical(msg, "plain user error")
+})
+
+test_that("every row-count failure family still names its term", {
+  # The three underlying errors the named refusal rests on, measured by
+  # neutralising the diagnosis: model.frame.default's "variable lengths
+  # differ", model.matrix.default's "length of 'dimnames'", and our own
+  # backstop. If the predicate stops recognising any one of them, #409's
+  # whole point is lost for that family -- silently, since the user still
+  # gets an error.
+  set.seed(11)
+  n <- 60
+  d <- data.frame(t = rexp(n), s = rbinom(n, 1, 0.7), mal = rbinom(n, 1, 0.4),
+                  age = seq(40, 40 + n - 1))
+  zz <- rnorm(n)
+  mk <- function(rhs, th) {
+    f <- stats::as.formula(paste("survival::Surv(t, s) ~", rhs))
+    environment(f) <- parent.frame()
+    suppressWarnings(hazard(f, data = d, dist = "weibull", theta = th,
+                            fit = TRUE))
+  }
+  named <- "does not give one value per row of 'newdata'"
+  # model.frame.default: variable lengths differ
+  expect_error(
+    predict(mk("zz + mal", c(0.5, 1, 0, 0)),
+            newdata = d[1:2, "mal", drop = FALSE], type = "linear_predictor"),
+    named, fixed = TRUE
+  )
+  # model.matrix.default: length of 'dimnames'
+  expect_error(
+    predict(mk("I(unique(age))", c(0.5, 1, 0)),
+            newdata = data.frame(age = c(30, 30, 50)),
+            type = "linear_predictor"),
+    named, fixed = TRUE
+  )
+  # our own backstop, which carries a class rather than a message to match
+  expect_error(
+    predict(mk("zz", c(0.5, 1, 0)), newdata = data.frame(zz = c(-1, 1)),
+            type = "linear_predictor"),
+    named, fixed = TRUE
+  )
+})
