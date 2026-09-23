@@ -371,6 +371,24 @@
     if (ncol(covs) == 0L || length(object$fit$theta) <= n_shape) {
       return(NULL)
     }
+    # Position is the only mapping left, and that is worth saying out loud.
+    # The columns are matched to coefficients in the order `newdata` happens
+    # to supply them, so a caller who reorders or renames them, or adds one,
+    # gets different numbers with nothing else changing. The fit itself is
+    # what is missing a design: `hazard()` refuses to build such an object
+    # now (#375), so one can only arrive from an older version or by hand.
+    warning(
+      "This model stored no design matrix, so 'newdata' columns are matched ",
+      "to its ", length(object$fit$theta) - n_shape,
+      " covariate coefficient",
+      if (length(object$fit$theta) - n_shape == 1L) "" else "s",
+      " BY POSITION, in the order supplied (",
+      paste(utils::head(colnames(covs), 3L), collapse = ", "),
+      if (ncol(covs) > 3L) ", ..." else "",
+      "). Reordering or renaming them silently changes the predictions. ",
+      "Refit the model so the design is stored and the mapping is by name.",
+      call. = FALSE
+    )
     return(as.matrix(covs))
   }
   # Where `time` is not the prediction time (the eta-based types without

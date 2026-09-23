@@ -465,8 +465,10 @@ test_that("the refusals describe the model in front of them (#144)", {
   x <- matrix(d$age, ncol = 1, dimnames = list(NULL, "age"))
   # A single-distribution model has no phases, and here the stored vector is
   # LONGER than the model's count: the multiphase explanation must not fire.
+  # hazard() refuses to build such an object (#375), so it is made by hand.
   w <- hazard(time = d$int_dead, status = d$dead, x = x, dist = "weibull",
-              theta = c(0.05, 0.9, 0.01, 99), fit = FALSE)
+              theta = c(0.05, 0.9, 0.01), fit = FALSE)
+  w$fit$theta <- c(0.05, 0.9, 0.01, 99)
   msg <- tryCatch(hzr_evaluate(w, theta = w$fit$theta),
                   error = conditionMessage)
   expect_match(msg, "has 4 entries, but this weibull model takes 3")
@@ -476,7 +478,8 @@ test_that("the refusals describe the model in front of them (#144)", {
   # the same length as the vector [3]". The correct theta evaluates, and its
   # names are simply not taken from the mismatched stored vector.
   wn <- hazard(time = d$int_dead, status = d$dead, x = x, dist = "weibull",
-               theta = c(a = 0.05, b = 0.9, c = 0.01, d = 99), fit = FALSE)
+               theta = c(0.05, 0.9, 0.01), fit = FALSE)
+  wn$fit$theta <- c(a = 0.05, b = 0.9, c = 0.01, d = 99)
   ev <- hzr_evaluate(wn, theta = c(0.05, 0.9, 0.01))
   expect_true(is.finite(ev$logLik))
   expect_null(names(ev$theta))
@@ -605,4 +608,37 @@ test_that("hzr_evaluate() and hazard() word a wrong theta length alike (#144, #4
   expect_match(from_evaluate,
                "'theta' has 13 entries, but this model takes 11 \\(early 5, late 6\\)")
   expect_identical(from_evaluate, from_fit)
+})
+
+test_that("hzr_evaluate() names the parameters when theta is the wrong length", {
+  # The refusal a user sees must be the one that NAMES the model's
+  # parameters. #422 added a shared check that counted the same parameters and
+  # said less; passing it `n_coef` made this message unreachable, and nothing
+  # noticed because the assertions matched only the shared prefix. This pins
+  # the naming clause itself.
+  #
+  # The names come from the STORED theta, so the fixture starts from a NAMED
+  # theta. With an unnamed start there are no names to report and the sentence
+  # ends at the count, which the second case pins so the two shapes cannot be
+  # confused for a regression later.
+  set.seed(9)
+  n <- 40
+  d <- data.frame(t = stats::rexp(n) + 0.1,
+                  s = stats::rbinom(n, 1, 0.7), x = stats::rnorm(n))
+  named <- suppressWarnings(hazard(survival::Surv(t, s) ~ x, data = d,
+                                   dist = "weibull",
+                                   theta = c(mu = 1, nu = 1, x = 0),
+                                   fit = TRUE))
+  msg <- tryCatch(hzr_evaluate(named, c(1, 1, 0, 5)), error = conditionMessage)
+  expect_match(msg, "'theta' has 4 entries, but this weibull model takes 3",
+               fixed = TRUE)
+  expect_match(msg, ": mu, nu, x.", fixed = TRUE)
+
+  unnamed <- suppressWarnings(hazard(survival::Surv(t, s) ~ x, data = d,
+                                     dist = "weibull", theta = c(1, 1, 0),
+                                     fit = TRUE))
+  msg2 <- tryCatch(hzr_evaluate(unnamed, c(1, 1, 0, 5)),
+                   error = conditionMessage)
+  expect_match(msg2, "this weibull model takes 3.", fixed = TRUE)
+  expect_false(grepl(": mu, nu, x", msg2, fixed = TRUE))
 })

@@ -71,12 +71,17 @@ test_that("a covariate named like a shape parameter is tested as the covariate",
 })
 
 test_that("a theta with no covariate coefficients is refused, not tested", {
-  # hazard() fits a shape-only theta and ignores the covariates; naming by
-  # position would then test mu and nu as if they were gb and z.
+  # A shape-only theta on a model with covariates: naming by position would
+  # test mu and nu as if they were gb and z. hazard() used to fit such a
+  # theta with the covariates silently dropped; it now refuses it (#375),
+  # so the object is made by hand. The guard must still refuse it for any
+  # object that reaches the stepwise step another way.
   d <- bcn_data()
+  full <- suppressWarnings(bcn_fit(survival::Surv(time, status) ~ gb + z,
+                                   d, c(0.2, 1, 0, 0)))
   for (th in list(c(mu = 0.2, nu = 1), c(0.2, 1))) {
-    fit <- suppressWarnings(bcn_fit(survival::Surv(time, status) ~ gb + z,
-                                    d, th))
+    fit <- full
+    fit$fit$theta <- th
     expect_length(stats::coef(fit), 2L)
     expect_error(
       .hzr_stepwise_backward_step(fit, data = d, criterion = "wald"),
@@ -86,8 +91,10 @@ test_that("a theta with no covariate coefficients is refused, not tested", {
   # The likelihood ignores a shape-count override, so the guard must too.
   fit <- suppressWarnings(hazard(
     survival::Surv(time, status) ~ gb + z, data = d, dist = "weibull",
-    theta = c(0.2, 1), control = list(shape_param_count = 0), fit = TRUE
+    theta = c(0.2, 1, 0, 0), control = list(shape_param_count = 0),
+    fit = TRUE
   ))
+  fit$fit$theta <- c(0.2, 1)
   expect_error(
     .hzr_stepwise_backward_step(fit, data = d, criterion = "wald"),
     "theta has 2 value\\(s\\), but a weibull fit with 2 covariate"

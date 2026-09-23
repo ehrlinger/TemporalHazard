@@ -988,6 +988,17 @@ hazard <- function(formula = NULL,
   # which would partial-match a warned name such as n_starts_extra (#405).
   control <- .hzr_validate_control(control, dist)
 
+  # A single-distribution theta must have one entry per parameter and, for
+  # Weibull, a positive scale and shape, fitted or not: an unfitted object
+  # of the wrong length can never be predicted from. Here, because x_fit is
+  # final only after time-window expansion. Multiphase is checked below
+  # (#408), where fit = FALSE may legitimately carry fewer entries.
+  if (!is.null(theta) && dist != "multiphase") {
+    .hzr_check_theta(theta, dist,
+                     n_coef = if (is.null(x_fit)) 0L else ncol(x_fit),
+                     windowed = !is.null(time_windows))
+  }
+
   # Multiphase validation
   if (dist == "multiphase") {
     if (is.null(phases)) {
@@ -1692,6 +1703,40 @@ predict.hazard <- function(object, newdata = NULL,
          "Refit with fit = TRUE, or use hzr_evaluate() to evaluate the ",
          "model at parameters you supply.", call. = FALSE)
   }
+  # The stored theta is checked against the stored design BEFORE any
+  # prediction arithmetic, and for every type, because the downstream checks
+  # are not equivalent. `hazard` and `linear_predictor` refuse a wrong length
+  # where the design is multiplied as a matrix, but `survival` and
+  # `cumulative_hazard` recycled a too-long theta into an outer product and
+  # returned 2n values for n rows with no error (Codex review of #422). A
+  # per-branch check would have to be repeated four times and kept in step;
+  # one check ahead of the dispatch cannot fall out of step.
+  #
+  # The count is the one the theta was validated against at fit time: the
+  # stored design, expanded by the time windows when there are any, which is
+  # what `hazard()` and `hzr_evaluate()` both count. Multiphase is excluded
+  # here as it is there, since fit = FALSE may legitimately carry fewer
+  # entries (#408).
+  # Only where there IS a stored design to check against. An object that
+  # stored no `x` but carries covariate coefficients is a documented,
+  # supported shape: `.hzr_newdata_design()` maps newdata's columns onto
+  # those coefficients BY POSITION, because position is the only mapping
+  # left. Refusing it here would kill that path (and did: it took
+  # test-loglogistic-dist.R's supported case with it). Whether that
+  # capability should survive at all is a separate decision, not one to make
+  # as a side effect of a length check.
+  if (!identical(object$spec$dist, "multiphase") && !is.null(object$data$x)) {
+    x_stored <- object$data$x
+    if (!is.null(time_windows)) {
+      x_stored <- .hzr_expand_time_varying_design(
+        x = x_stored, time = object$data$time, time_windows = time_windows
+      )
+    }
+    .hzr_check_theta(theta, object$spec$dist,
+                     n_coef = if (is.null(x_stored)) 0L else ncol(x_stored),
+                     windowed = !is.null(time_windows))
+  }
+
   # The other families predict from an unfitted object perfectly well, and
   # that is an intended, tested capability -- but the numbers come from the
   # starting values, not from estimates, and saying nothing is the
@@ -2063,13 +2108,10 @@ predict.hazard <- function(object, newdata = NULL,
     dist_lbl <- object$spec$dist
     has_cov <- !is.null(x) && ncol(x) > 0
 
-    # Preserve the pre-0.9.8 stop() behavior on an ill-conditioned MLE.
-    # The closures below return NA on negative shape parameters so numeric
-    # jacobian perturbations stay robust, but we want a clean error at the
-    # point estimate itself.
-    if (dist_lbl == "weibull" && (theta[1] <= 0 || theta[2] <= 0)) {
-      stop("Weibull shape parameters (mu, nu) must be positive.", call. = FALSE)
-    }
+    # The theta check that used to sit here has moved ahead of the type
+    # dispatch, so it covers every prediction type rather than the two that
+    # reach this line. It raised on the same theta through the same helper, so
+    # nothing here can now fire that did not fire earlier.
 
     cumhaz_of <- if (dist_lbl == "weibull") {
       function(th) {
