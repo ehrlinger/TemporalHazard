@@ -96,7 +96,13 @@ central finite differences.</p>
 
 
 <dt id="arg-h">h<a class="anchor" aria-label="anchor" href="#arg-h"></a></dt>
-<dd><p>Relative step size for finite differences (default 1e-5).</p></dd>
+<dd><p>Finite-difference step (default 1e-5). It is an ABSOLUTE step in
+<code>log_tau</code>, and so relative in <code>tau</code> only to first order; a relative step
+with a <code>1e-10</code> floor for <code>gamma</code> and <code>eta</code>; and strictly proportional for
+<code>alpha</code>. No caller passes it. Accuracy degrades where the function's
+natural scale in <code>log_tau</code>, roughly <code>alpha / gamma</code>, is far from 1: at
+<code>alpha = 0.05, gamma = 4</code> the <code>tau</code> derivative is accurate to about
+1e-6 rather than the 1e-11 it reaches for ordinary shapes.</p></dd>
 
 </dl></div>
     <div class="section level2">
