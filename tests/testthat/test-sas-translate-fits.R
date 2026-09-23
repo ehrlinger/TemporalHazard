@@ -1000,3 +1000,41 @@ test_that("every refusal class warns AND lists a row, and a clean job does neith
   expect_identical(NROW(clean$untranslated), 0L)
   expect_identical(clean$calls$fit[[3L]][[1L]], as.name("hazard"))
 })
+
+test_that("SETG3's entry refusals are raised in the C's own order (#433 review)", {
+  # setg3.c:269-284 (src/model/, pin dad7978) checks TAU, then GAMMA, then
+  # ALPHA, then ETA, and EACH RETURNS before the next -- and all four return
+  # before SETG3_ignore_tau() at :309-323 and before the WEIBULL branch. So a
+  # job tripping two of them is refused by the FIRST, and a message naming the
+  # later code names a refusal PROC HAZARD never reaches.
+  #
+  # One case per adjacent pair, plus the entry-vs-WEIBULL case that prompted
+  # this: it named SETG3980 while SAS returns SETG3910.
+  pairs <- list(
+    # TAU before GAMMA
+    list(parms = "MUL=0.2 TAU=0 FIXTAU GAMMA=0 FIXGAMMA ETA=1",
+         want = "SETG3900", notwant = "SETG3910"),
+    # GAMMA before ALPHA
+    list(parms = "MUL=0.2 TAU=1 GAMMA=0 FIXGAMMA ALPHA=-1 FIXALPHA ETA=1",
+         want = "SETG3910", notwant = "SETG3920"),
+    # ALPHA before ETA
+    list(parms = "MUL=0.2 TAU=1 GAMMA=2 ALPHA=-1 FIXALPHA ETA=0 FIXETA",
+         want = "SETG3920", notwant = "SETG3930"),
+    # ETA before the WEIBULL branch
+    list(parms = "MUL=0.2 TAU=1 GAMMA=2 ETA=0 FIXETA ALPHA=0 FIXALPHA WEIBULL",
+         want = "SETG3930", notwant = "SETG3980"),
+    # the reported case: an entry refusal before the FIXGAE2 alpha rule
+    list(parms = paste("MUL=0.2 TAU=1 GAMMA=0 FIXGAMMA ETA=1 ALPHA=0",
+                       "FIXALPHA FIXGAE2 WEIBULL"),
+         want = "SETG3910", notwant = "SETG3980")
+  )
+  for (p in pairs) {
+    job <- .u1_job(parms = p$parms)
+    msg <- .u1_msg(job)
+    expect_match(msg, p$want, fixed = TRUE, info = p$parms)
+    # The point is not only that the right code appears, but that the LATER
+    # one does not: flag_refusal() keeps the first reason, so a wrong order
+    # shows up as the later code appearing instead.
+    expect_no_match(msg, p$notwant, fixed = TRUE, info = p$parms)
+  }
+})

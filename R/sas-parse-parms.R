@@ -629,6 +629,32 @@
 #'   `refusal` names the SAS message code for a job PROC HAZARD will not run;
 #'   otherwise `shape` gives the values SETG3 would optimize from.
 #' @noRd
+#' The four SETG3 entry refusals, in the C's own order.
+#'
+#' `setg3.c:269-284` (in `src/model/`, at pin `dad7978`) checks TAU, then
+#' GAMMA, then ALPHA, then ETA, and **each one returns immediately**, before
+#' `SETG3_ignore_tau()` at `:309-323` and before the WEIBULL branch. So a job
+#' that would also trip a later rule is refused by the FIRST of these that
+#' matches, and a message naming the later code names a refusal PROC HAZARD
+#' never reaches.
+#'
+#' Kept as one function because two callers need the same order: the trace in
+#' `.hzr_setg3_notes()`, and the constraint block, which records its own
+#' `SETG3980` and must not do so ahead of an entry refusal (#433 review).
+#'
+#' An absent TAU (`NA`) is `0.75*Tmax` by the time SETG3 sees it, so only an
+#' explicitly non-positive `TAU=` can refuse here.
+#' @return The code, or `NULL` when none of the four applies.
+#' @noRd
+.hzr_setg3_entry_refusal <- function(tau_raw, gamma, alpha, eta, fixed) {
+  fx <- function(p) p %in% fixed
+  if (isTRUE(tau_raw <= 0) && fx("tau")) return("(SETG3900)")
+  if (isTRUE(gamma <= 0) && fx("gamma")) return("(SETG3910)")
+  if (isTRUE(alpha < 0) && fx("alpha")) return("(SETG3920)")
+  if (isTRUE(eta <= 0) && fx("eta")) return("(SETG3930)")
+  NULL
+}
+
 .hzr_setg3_notes <- function(tau_raw, gamma, alpha, eta, fixed, weibull) {
   fx <- function(p) p %in% fixed
   # `entry` marks the four checks at setg3.c:269-284, the only ones raised
@@ -638,14 +664,8 @@
     list(refusal = code, entry = entry, shape = NULL)
   }
 
-  # setg3.c:269-284. A FIX* on an operand SAS reads as unspecified is fatal,
-  # and it is checked before anything else -- including SETG3_ignore_tau().
-  # An absent TAU (NA) is 0.75*Tmax by the time SETG3 sees it -- positive, so
-  # only an explicitly non-positive TAU= can refuse here.
-  if (isTRUE(tau_raw <= 0) && fx("tau")) return(refuse("(SETG3900)", TRUE))
-  if (isTRUE(gamma <= 0) && fx("gamma")) return(refuse("(SETG3910)", TRUE))
-  if (isTRUE(alpha < 0) && fx("alpha")) return(refuse("(SETG3920)", TRUE))
-  if (isTRUE(eta <= 0) && fx("eta")) return(refuse("(SETG3930)", TRUE))
+  entry_code <- .hzr_setg3_entry_refusal(tau_raw, gamma, alpha, eta, fixed)
+  if (!is.null(entry_code)) return(refuse(entry_code, TRUE))
 
   # setg3.c:313-315 and 403-421. Reproduced here for the trace only: the
   # emitted call deliberately keeps the user's GAMMA and ETA, because the
@@ -1213,7 +1233,23 @@
     setg3_refuses <- !isTRUE(gamma_ > 0) || !isTRUE(eta_ > 0) ||
       !isTRUE(alpha_ >= 0) || (isTRUE(alpha_ == 0) && !fx("alpha")) ||
       alpha_zero_gae2
-    if (is.null(not_traced) && alpha_zero_gae2) {
+    # An entry refusal comes FIRST, because setg3.c:269-284 returns on it
+    # before the WEIBULL branch this SETG3980 case lives in. flag_refusal()
+    # keeps only the first reason recorded, so recording SETG3980 here
+    # unconditionally named a refusal PROC HAZARD never reaches: with
+    # GAMMA=0 FIXGAMMA ... ALPHA=0 FIXALPHA FIXGAE2 WEIBULL, SAS raises
+    # SETG3910 and never evaluates the alpha rule (#433 review).
+    entry_first <- .hzr_setg3_entry_refusal(
+      late_full[["tau"]], gamma_, alpha_, eta_, fixed_late)
+    entry_construct <- c("(SETG3900)" = "TAU", "(SETG3910)" = "GAMMA",
+                         "(SETG3920)" = "ALPHA", "(SETG3930)" = "ETA")
+    if (is.null(not_traced) && !is.null(entry_first)) {
+      flag_refusal(unname(entry_construct[entry_first]), paste0(
+        "PROC HAZARD refuses this job: SETG3 raises ", entry_first, " -- ",
+        .hzr_setg3_refusal_reason(entry_first),
+        ". It is checked before the WEIBULL rules (setg3.c:269-284), so this ",
+        "is the refusal PROC HAZARD reaches first"))
+    } else if (is.null(not_traced) && alpha_zero_gae2) {
       flag_refusal("FIXGAE2", paste0(
         "PROC HAZARD refuses this job: SETG3 raises (SETG3980) -- ",
         .hzr_setg3_refusal_reason("(SETG3980)"),
