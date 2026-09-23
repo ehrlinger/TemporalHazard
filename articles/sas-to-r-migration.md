@@ -762,15 +762,65 @@ hundreds.
 >   by `/I` in one phase but movable in another. On the reference corpus
 >   two jobs in four translate; the other two are a cross-phase `/I` and
 >   a `RESTRICT`.
+>
 > - **`LCENSOR` combined with `ICENSOR` is refused.**
 >   [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)’s
 >   single `time_lower` argument carries the entry time for status 0/1
 >   rows and the interval’s lower bound for status 2 rows; one column
 >   cannot express both. Either statement alone translates.
+>
+> - **A job `PROC HAZARD` itself refuses, or one whose model this
+>   translation cannot emit, warns loudly and still fits.** A syntax
+>   error in a `PARMS` operand or on the `PROC` line (a value its lexer
+>   does not read as a number, a keyword outside the grammar, a
+>   template’s `?`), a `SETG3` refusal, `FIXMNU1`, a non-zero `DELTA` on
+>   an active early phase, `FIXTAU` with no `TAU` written, and
+>   `FIXGE2`/`FIXGAE2` without `WEIBULL` each get a
+>   [`warning()`](https://rdrr.io/r/base/warning.html) chunk immediately
+>   above the fit, naming the cause, and a row in `$untranslated`. A fit
+>   standing in for a job `PROC HAZARD` does not run, or for a model it
+>   does not fit, is the answer this package most wants to avoid, so it
+>   is labelled where you cannot miss it rather than left to be inferred
+>   from the estimates.
+>
+>   The warning is **per job**. A file holding several jobs emits one
+>   fit chunk each, and only the refused job’s fit is preceded by a
+>   warning, so the document renders to completion and every other job
+>   runs unchanged. An earlier draft of this work stopped instead;
+>   Quarto then exited 1 and wrote no output document at all, including
+>   for the jobs *before* the refused one.
+>
+>   Two limits on that. An **unknown** keyword is *recorded, not
+>   refused*: a `%repeat` call brings a DATA step’s own keywords through
+>   the same parser, so refusing them would flag jobs that run. And an
+>   operand carrying a **macro reference** gets no syntax verdict at
+>   all, because SAS expands it before `PROC HAZARD` reads the
+>   statement, so the translation cannot know what arrived. It still
+>   warns on a job whose phases were built: the unread operand may be
+>   the one that sets a shape, and the emitted phase would otherwise
+>   carry SAS’s default where the job wrote something else.
+>
+>   One case still halts, and it halts more than the job. Where the
+>   value `PROC HAZARD` refuses is also one
+>   [`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
+>   will not build, the warning and the fit are both emitted as usual —
+>   but
+>   [`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)
+>   then rejects the value when the chunk actually runs, and an error in
+>   a chunk stops Quarto outright: it exits 1 and writes **no output
+>   document at all**, including for the jobs before this one. The
+>   console shows only
+>   [`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md)‘s
+>   own message, because `knitr` collects warnings into the document
+>   that was never written. So the reason the job was refused does not
+>   reach you; only the symptom does. Delete that job from the file if
+>   you need the other jobs’ results before you can correct it.
+>
 > - **Prediction grids the parser cannot resolve are refused whole**,
 >   and an unresolved `INHAZ=` stops the render on purpose. Both are
 >   covered under “What it doesn’t translate” below. Note that resolving
 >   an external `INHAZ=` at all requires you to pass `librefs=`.
+>
 > - **Confidence limits from a loaded `INHAZ=` fit may stop the
 >   render.** A translated `PROC HAZPRED` block asks for `se.fit = TRUE`
 >   unless the SAS job says `NOCL`, and
@@ -914,9 +964,10 @@ scale), not just the phases’ log(mu) starts.
 
 Constructs the parser can’t resolve are never silently dropped: they
 land on the returned `hzr_sas_job` object and render as visible
-`UNTRANSLATED` callouts in the `.qmd`, so a translated document shows
-its own gaps instead of quietly under-reporting the original job. Two
-gaps are common enough in production jobs to know about going in:
+`UNTRANSLATED` callouts in the `.qmd` (where they do not stop the
+document outright, above), so a translated document shows its own gaps
+instead of quietly under-reporting the original job. Two gaps are common
+enough in production jobs to know about going in:
 
 - **`PROC HAZPRED` prediction grids built from `SET`-derived values,
   function calls, or unknown names are not translated.** The parser

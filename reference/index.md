@@ -90,6 +90,9 @@
 - [`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
   : Translate a SAS HAZARD job into a Quarto document
 
+- [`print(`*`<hzr_sas_job>`*`)`](https://ehrlinger.github.io/TemporalHazard/reference/print.hzr_sas_job.md)
+  : Print method for hzr_sas_job
+
 - [`hzr_repeated_events()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_repeated_events.md)
   :
 
