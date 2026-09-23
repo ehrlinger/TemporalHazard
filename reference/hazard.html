@@ -138,7 +138,21 @@ evaluating an expression such as <code>runif(n)</code> twice gives two different
 vectors.
 Masked arguments are validated like any other, so an <code>NA</code> in a
 masked column errors: an <code>NA</code> count on the SAS <code>ICENSOR</code>
-path reaches <code>weights</code> and stops with <code>'weights' must be non-negative and finite</code>.</p></dd>
+path reaches <code>weights</code> and stops with <code>'weights' must be non-negative and finite</code>.
+A named element of <code>data</code> that is a <strong>function</strong> is refused, on both
+paths, as <code><a href="https://rdrr.io/r/stats/lm.html" class="external-link">stats::lm()</a></code> refuses it. Because the mask sits in front of
+the calling frame, such an element would be called in place of the
+function an expression names – <code>weights = rep(1, n)</code> calling a <code>rep</code>
+held in <code>data</code> – and the fit would change with nothing to show for it.
+An S4 generic and a reference-class generator are functions for this
+purpose. A list-column of functions is a list, not a function, and is
+unaffected, as is an element with no name, which no expression can look
+up – but an <code>NA_character_</code> name is refused, because R binds such an
+element under the symbol <code>`NA`</code> and a call reaches it. Remove the
+element: for a vector argument or <code>weights</code>, define the helper in the
+calling environment; for one used inside the <code>Surv()</code> response, compute
+the value into a <code>data</code> column first, since the response is evaluated
+without the formula's environment.</p></dd>
 
 
 <dt id="arg-time">time<a class="anchor" aria-label="anchor" href="#arg-time"></a></dt>

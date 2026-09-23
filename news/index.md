@@ -4,6 +4,43 @@
 
 ### Breaking changes
 
+- **[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  refuses a function-valued element of `data`
+  ([\#420](https://github.com/ehrlinger/TemporalHazard/issues/420)).**
+  `data` masks the calling frame while
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  evaluates `time`, `status`, `time_lower`, `time_upper` and `weights`,
+  and while it evaluates the formula’s
+  [`Surv()`](https://rdrr.io/pkg/survival/man/Surv.html) response. R’s
+  function lookup walks past every binding that is not a function, so an
+  element such as `rep = function(...) ...` was called in place of
+  [`base::rep()`](https://rdrr.io/r/base/rep.html) by an expression like
+  `weights = rep(1, n)`. The fit changed and nothing warned; this has
+  shipped since 1.2.2
+  ([\#151](https://github.com/ehrlinger/TemporalHazard/issues/151)).
+  [`stats::lm()`](https://rdrr.io/r/stats/lm.html) refuses the same
+  shape. Both interfaces were affected. The formula path looked immune
+  only because the column-reading step replicates each column to `nrow`
+  and dies on a function while doing it – at one row there is nothing to
+  replicate, and a 1-row frame carrying a `round` made
+  `Surv(round(tt), ss)` read the masked value as the response. **What
+  now errors:** any `data` carrying a *named* element that is a
+  function, whether or not an expression calls it. That includes using
+  the mask to reach a helper, as in
+  `hazard(time = f(t), status = s, data = list(t = ..., s = ..., f = myfun))`,
+  and it includes an S4 generic or a reference-class generator, which
+  are functions for this purpose, as is an element whose name is
+  `NA_character_`, which R binds under the symbol `` `NA` `` and a call
+  can reach. Remove the element and pass `data` without it: for a vector
+  argument, or the formula’s `weights`, define the helper in the calling
+  environment; for a helper used inside the
+  [`Surv()`](https://rdrr.io/pkg/survival/man/Surv.html) response,
+  compute the value into a `data` column first, since the response is
+  evaluated without the formula’s environment. **Unaffected:** a numeric
+  element or column of the same name, which was never consulted; a
+  data-frame list-column of functions, which is a list; and an element
+  with no name, which no expression can look up.
+
 - **[`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
   no longer counts replicates that estimated nothing as successes
   ([\#373](https://github.com/ehrlinger/TemporalHazard/issues/373)).**

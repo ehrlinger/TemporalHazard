@@ -80,6 +80,21 @@ hazard(
   Masked arguments are validated like any other, so an `NA` in a masked
   column errors: an `NA` count on the SAS `ICENSOR` path reaches
   `weights` and stops with `'weights' must be non-negative and finite`.
+  A named element of `data` that is a **function** is refused, on both
+  paths, as [`stats::lm()`](https://rdrr.io/r/stats/lm.html) refuses it.
+  Because the mask sits in front of the calling frame, such an element
+  would be called in place of the function an expression names –
+  `weights = rep(1, n)` calling a `rep` held in `data` – and the fit
+  would change with nothing to show for it. An S4 generic and a
+  reference-class generator are functions for this purpose. A
+  list-column of functions is a list, not a function, and is unaffected,
+  as is an element with no name, which no expression can look up – but
+  an `NA_character_` name is refused, because R binds such an element
+  under the symbol `` `NA` `` and a call reaches it. Remove the element:
+  for a vector argument or `weights`, define the helper in the calling
+  environment; for one used inside the `Surv()` response, compute the
+  value into a `data` column first, since the response is evaluated
+  without the formula's environment.
 
 - time:
 
