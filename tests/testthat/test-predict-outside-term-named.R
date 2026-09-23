@@ -77,7 +77,11 @@ test_that("the backstop's own message propagates when nothing can be named", {
   # as the backstop wrote it, rather than being swallowed.
   local_mocked_bindings(
     .hzr_outside_rows_wrong = function(...) {
-      list(idx = integer(0), vals = list(), term = character(0))
+      # `vals_all`, the field the function actually returns. Naming a
+      # field that does not exist makes a hollow mock: it is harmless
+      # only while `idx` is empty, and would silently pass over nothing
+      # the moment the caller dereferenced it (#450 review).
+      list(idx = integer(0), vals_all = list(), term = character(0))
     }
   )
   o <- ot_setup()
@@ -639,4 +643,39 @@ test_that("a failure that does not reproduce may be misattributed (documented li
   # #446 and the roxygen must be updated with it.
   expect_match(msg, "term 'zz' of the model does not give one value per row",
                fixed = TRUE)
+})
+
+
+test_that("a second, unrelated defect in newdata does not cost the name", {
+  # The experiment asks whether correcting the lengths made the ORIGINAL
+  # failure go away -- not merely whether the corrected build succeeded.
+  # Treating any error as "not the cause" lost the name whenever `newdata`
+  # had a second defect, and a factor level outside `xlevels` is the ordinary
+  # one: the corrected build failed on THAT instead, and the user got base
+  # R's raw "variable lengths differ", which is what #409 exists to replace.
+  set.seed(7)
+  d <- data.frame(t = rexp(60), s = rbinom(60, 1, 0.7),
+                  grp = factor(sample(c("a", "b"), 60, TRUE),
+                               levels = c("a", "b")))
+  zz <- rnorm(60)
+  f <- survival::Surv(t, s) ~ grp + zz
+  environment(f) <- environment()
+  fit <- suppressWarnings(
+    hazard(f, data = d, dist = "weibull", theta = c(mu = 0.5, nu = 1, 0, 0),
+           fit = TRUE)
+  )
+  named <- "term 'zz' of the model does not give one value per row"
+  # The control: an ordinary newdata, which must name the term.
+  expect_error(
+    predict(fit, newdata = data.frame(grp = factor(c("a", "b"),
+                                                   levels = c("a", "b"))),
+            type = "linear_predictor"),
+    named, fixed = TRUE
+  )
+  # The same call with a level the fit never saw: still named.
+  expect_error(
+    predict(fit, newdata = data.frame(grp = factor(c("a", "zzz"))),
+            type = "linear_predictor"),
+    named, fixed = TRUE
+  )
 })

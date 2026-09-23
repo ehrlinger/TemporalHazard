@@ -450,7 +450,7 @@
     wrong <- .hzr_outside_rows_wrong(
       design$terms, .hzr_newdata_frame(newdata, design$data_vars)
     )
-    if (length(wrong$idx) && .hzr_length_explains(design, newdata, wrong)) {
+    if (length(wrong$idx) && .hzr_length_explains(design, newdata, wrong, mm)) {
       .hzr_stop_unmatched_rows(wrong$term, where, nrow(newdata))
     }
     stop(mm)
@@ -803,9 +803,10 @@
 #' So nothing is classified and nothing is dropped. Each offending variable
 #' is given a length-corrected copy of ITS OWN value, bound to a fresh
 #' symbol that its `predvars` entry is pointed at, and the design is built
-#' again. If it then succeeds the length was the cause, so naming the term
-#' helps. If it fails the same way the length was not the cause, and the
-#' caller's condition is re-raised untouched.
+#' again. The two FAILURES are then compared, not merely counted: the
+#' lengths were the cause when correcting them made the original failure go
+#' away, whether or not something else in `newdata` is also wrong. Only an
+#' identical failure means the length was not the cause.
 #'
 #' The correction preserves type, which is what makes one experiment enough:
 #' `rep_len()` on a list returns a list, so a term the model frame rejects
@@ -832,9 +833,11 @@
 #' @param newdata Data frame of new rows.
 #' @param wrong The `.hzr_outside_rows_wrong()` record: `idx`, `vals_all`,
 #'   `term`.
+#' @param original The condition the uncorrected build raised, to compare
+#'   against.
 #' @return `TRUE` when correcting the lengths lets the design build.
 #' @noRd
-.hzr_length_explains <- function(design, newdata, wrong) {
+.hzr_length_explains <- function(design, newdata, wrong, original) {
   nd <- .hzr_newdata_frame(newdata, design$data_vars)
   n <- nrow(nd)
   env <- environment(design$terms)
@@ -875,15 +878,24 @@
   }
   attr(tt, "predvars") <- pv
   environment(tt) <- mask
-  tryCatch(
+  again <- tryCatch(
     {
       mf <- stats::model.frame(tt, data = nd, xlev = design$xlevels,
                                na.action = stats::na.pass)
       stats::model.matrix(tt, data = mf, contrasts.arg = design$contrasts)
-      TRUE
+      NULL
     },
-    error = function(e) FALSE
+    error = function(e) e
   )
+  # Compare the two failures rather than asking merely whether one happened.
+  # Treating ANY error as "not the cause" loses the name whenever `newdata`
+  # has a SECOND, unrelated defect -- a factor level outside `xlevels` is the
+  # ordinary one -- because the corrected build then fails on that instead and
+  # the user gets base R's raw text, which is what #409 exists to replace
+  # (#450 review). The lengths were the cause when correcting them made the
+  # ORIGINAL failure go away, whatever else may still be wrong.
+  is.null(again) ||
+    !identical(conditionMessage(again), conditionMessage(original))
 }
 
 
@@ -891,7 +903,8 @@
 #'
 #' `rep_len()` is deliberate: it keeps a list a list, so a term the model
 #' frame rejects for its type is not repaired into a pass (#446).
-#' @param v A value. @param n Rows wanted.
+#' @param v A value.
+#' @param n Rows wanted.
 #' @noRd
 .hzr_fix_rows <- function(v, n) {
   if (is.matrix(v) || is.data.frame(v)) {
@@ -929,7 +942,7 @@
 #' to evaluate names nothing, which leaves the original error to propagate.
 #' @param terms The stored terms object.
 #' @param nd The newdata frame, restricted to the data columns.
-#' @return A list: `idx` (positions in `predvars`), `vals` (their evaluated
+#' @return A list: `idx` (positions in `predvars`), `vals_all` (their evaluated
 #'   values, ALL of them) and `term` (the term labels to name). Empty when
 #'   nothing is wrong.
 #' @noRd

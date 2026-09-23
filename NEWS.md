@@ -337,9 +337,11 @@
   `I(unique(age))`, reaches the same check. An error raised by your own code
   inside a term reaches you unchanged, with its own class and message, even
   when a different term is row-mismatched (#446). The term is named only
-  when correcting its length lets the design build, so a failure the row
-  count does not explain -- a term the model frame rejects for its type, or
-  one whose own `model.frame()` call fails -- keeps its own error. A term
+  when correcting its length makes the original failure go away, so a failure
+  the row count does not explain -- a term the model frame rejects for its
+  type, or one whose own `model.frame()` call fails -- keeps its own error.
+  A second, unrelated problem in `newdata`, such as a factor level the fit
+  never saw, does not cost you the name. A term
   that fails only sometimes is the exception: checking the row counts
   re-evaluates it, so a failure that does not reproduce leaves no evidence
   and another term may be named instead.
