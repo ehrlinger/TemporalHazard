@@ -272,3 +272,73 @@ test_that("an entry spelled `_X1` and its drop are one variable to max_move (#44
   expect_false(sw$criteria$hit_max_steps)
   expect_identical(sw$scope$frozen, "`_X1`")
 })
+
+test_that("wald, aic and score agree beside the age:mal interaction (#442, #449)", {
+  skip_on_cran() # nine full screens
+  # The #442 fixture: the interaction age:mal is in the model and a data
+  # column is literally named `age:mal`. That column is a variable of its
+  # own, so every criterion must reach the same final model. At 17a5b009
+  # wald and aic entered it while score compared its column NAME with the
+  # model's term labels, matched the interaction, and declined it as
+  # not_expandable. Run over a weak (nearly collinear with age), a noise and
+  # a strong column: a weak one hid the disagreement from one reviewer.
+  d0 <- rrt_avc()
+  make <- list(
+    weak   = function() {
+      as.numeric(scale(d0$age)) * 0.5 + 1 + stats::rnorm(nrow(d0), sd = 0.01)
+    },
+    noise  = function() stats::rnorm(nrow(d0)),
+    strong = function() d0$mal * 2 + stats::rnorm(nrow(d0), sd = 0.5)
+  )
+  for (k in names(make)) {
+    withr::local_seed(1L)
+    d <- data.frame(d0, `age:mal` = make[[k]](), check.names = FALSE)
+    fit <- rrt_fit(d, "age * mal", c(0.1, 1, 0, 0, 0))
+    final <- lapply(c(wald = "wald", aic = "aic", score = "score"),
+                    function(crit) rrt_screen(fit, d, criterion = crit))
+    terms_by <- lapply(final, rrt_final_terms)
+    expect_setequal(terms_by$wald, c("age", "mal", "age:mal", "`age:mal`"))
+    expect_identical(terms_by$aic, terms_by$wald, info = k)
+    expect_identical(terms_by$score, terms_by$wald, info = k)
+    for (crit in names(final)) {
+      expect_identical(length(final[[crit]]$criteria$uncomputable_reasons),
+                       0L, info = paste(k, crit))
+    }
+    expect_equal(final$score$fit$objective, final$wald$fit$objective,
+                 tolerance = 1e-6, info = k)
+  }
+})
+
+test_that("an untested entry is reported by the name a drop would use (#441)", {
+  skip_on_cran() # full screens
+  # $criteria$wald_untested_entries is public. An entry and a removal of the
+  # same variable must be written the same way there, the resolved label,
+  # whatever spelling the scope used, or a reader matching the two lists, or
+  # matching either against $steps, misses it. The entry's Wald test is
+  # masked to NA, as test-stepwise-backward-uncomputable.R does for x3.
+  withr::local_seed(2L)
+  d0 <- rrt_avc()
+  d <- data.frame(d0, `_X1` = stats::rnorm(nrow(d0)), check.names = FALSE)
+  fit <- rrt_fit(d, "age + mal", c(0.1, 1, 0, 0))
+  orig <- .hzr_candidate_score
+  local_mocked_bindings(.hzr_candidate_score = function(...) {
+    a <- list(...)
+    s <- orig(...)
+    if (identical(a$mode, "entry")) {
+      cols <- colnames(a$candidate$data$x)
+      var <- cols[match(a$names, paste0("beta", seq_along(cols)))]
+      if (identical(var, "`_X1`")) {
+        s$score <- NA_real_
+        s$p_value <- NA_real_
+        s$stat <- NA_real_
+      }
+    }
+    s
+  })
+  for (sc in list("_X1", "`_X1`", ~ `_X1`)) {
+    sw <- suppressWarnings(hzr_stepwise(fit, data = d, scope = sc,
+                                        direction = "forward",
+                                        criterion = "wald", trace = FALSE))
+    expect_identical(sw$criteria$wald_untested_entries, "`_X1`")
+  }
+})

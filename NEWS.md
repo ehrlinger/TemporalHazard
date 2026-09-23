@@ -939,18 +939,29 @@
   column `x2 ` read as the noise column `x2` and was never scored. The
   refit, the multiphase default scope and the multiphase score, which
   builds the candidate's phase formula from text as well, now write the
-  label `terms()`
-  gives the resolved column, which reads back as that column, and the
-  score reads the values of the column the candidate resolved to. So the
-  column scored is the column entered and reported. The same change
-  fixes two loud failures: a bare non-syntactic name such as `"_X1"` in
-  a character `scope` now enters under `"wald"` and `"aic"`, where its
-  refit failed to parse (#441), and under `"score"` a non-syntactic
-  candidate written as its label, as a formula `scope` writes it, is read
-  from its column rather than reported as not found in `data` and skipped
-  (#438). An interaction is no longer scored from a literal column that
-  shares its spelling; the score declines it, as it does any term that
-  is not a column.
+  label `terms()` gives the resolved column, which reads back as that
+  column, and the score reads the values of that column and compares it
+  with the model's terms by that label. So the column scored is the
+  column entered, and `"wald"`, `"aic"` and `"score"` reach the same
+  model: with the interaction `age:mal` in the model, a literal column
+  `age:mal` is a variable of its own under all three, where `"score"`
+  had declined it as the interaction. The same change fixes two loud
+  failures: a bare non-syntactic name such as `"_X1"` in a character
+  `scope` now enters under `"wald"` and `"aic"`, where its refit failed
+  to parse (#441), and under `"score"` a non-syntactic candidate written
+  as its label, as a formula `scope` writes it, is read from its column
+  rather than reported as not found in `data` and skipped (#438). An
+  interaction is no longer scored from a literal column that shares its
+  spelling; the score declines it, as it does any term that is not a
+  column.
+
+  One spelling is unchanged: `$steps$variable` records an entry under the
+  name as the scope wrote it and a drop under its label, so the column
+  `_X1` from a character `scope` or `scope = NULL` enters as `_X1` and
+  leaves as `` `_X1` ``, and the literal column `age:mal` enters as
+  `age:mal`, the spelling of the interaction. `$scope$frozen` and
+  `$criteria$wald_untested_entries` record it under the label;
+  `$criteria$refit_failures` under the name as written.
 
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded

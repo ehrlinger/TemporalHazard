@@ -348,7 +348,7 @@
 #' @noRd
 .hzr_score_expand <- function(current, var, phase, data, term = var) {
   if (current$spec$dist != "multiphase") {
-    return(.hzr_score_expand_single(current, var, phase, data))
+    return(.hzr_score_expand_single(current, var, phase, data, term = term))
   }
   # The phase formula is rebuilt from TEXT, so it is given the candidate's
   # term label, not the column name `var`: pasted, a column `x2 ` read back
@@ -513,11 +513,16 @@
 #' `c(theta_old, 0)` warm start puts it. Here it stays pinned at zero.
 #'
 #' @noRd
-.hzr_score_expand_single <- function(current, var, phase, data) {
+.hzr_score_expand_single <- function(current, var, phase, data,
+                                     term = var) {
   if (!is.null(phase)) {
     return(NULL)
   }
-  if (var %in% .hzr_scope_current_vars(current)) {
+  # By the candidate's term label, never its column name: the model's terms
+  # are labels, and the column `age:mal` is spelled like the interaction
+  # `age:mal`, which this compared it with and declined (#449). `var` is
+  # still the column the values are read from.
+  if (term %in% .hzr_scope_current_vars(current)) {
     return(NULL)
   }
 
@@ -528,12 +533,14 @@
   }
 
   new_col <- matrix(as.numeric(xcand), ncol = 1L,
-                    dimnames = list(NULL, var))
+                    dimnames = list(NULL, term))
   x_new <- if (is.null(d$x)) new_col else cbind(d$x, new_col)
   # The refit builds its design with model.matrix(), which names a logical
   # column <var>TRUE. Check the name the refit would create, not `var`: a
   # logical `flag` beside factor `fla`'s dummy `flag` fits fine.
-  refit_name <- if (is.logical(data[[var]])) paste0(var, "TRUE") else var
+  # model.matrix() names the column by the term label, so a non-syntactic
+  # `age:mal` is `` `age:mal` ``, not the interaction's `age:mal` (#449).
+  refit_name <- if (is.logical(data[[var]])) paste0(term, "TRUE") else term
   if (refit_name %in% colnames(d$x)) {
     return(list(reason = "duplicate_column"))
   }
