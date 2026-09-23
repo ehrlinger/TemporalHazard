@@ -700,6 +700,16 @@
   already did. Code that caught the error with `tryCatch(..., error = )`
   will no longer see it; read `$criteria$refit_failures` instead.
 
+* **`hzr_stepwise()`'s `$steps$variable` records the model's term label on
+  every row (#449).** An entry row used to carry the name as the `scope`
+  wrote it and a drop row the `terms()` label, so a non-syntactic column
+  `_X1` entered as `_X1` and left as `` `_X1` ``, and a literal column
+  `age:mal` entered under the interaction's spelling `age:mal`. Every
+  row now uses the label, whatever form the `scope` took. For a syntactic
+  name the label is the name, so nothing changes; code that matched an
+  entry row of a non-syntactic column by its bare name should match the
+  backquoted label instead.
+
 ## New features
 
 * **A fit now records why its gradient test was not run, not merely that it
@@ -982,18 +992,45 @@
   screen stops, rather than "no further action".
 
   This is about MATCHING: which variables are pinned, excluded or in the
-  scope. How a candidate ENTERS is unchanged and is a known limitation. The
-  refit writes the candidate's name, as spelled, into the formula text. A
-  formula `scope` carries `terms()` labels, which are already quoted, so
-  its candidates enter as themselves. A name that reads as a different
-  term enters as that term, with no warning: the literal column `age:mal`
-  enters as the interaction, and a column `age ` beside `age` enters as
-  `age`, reachable through the default `scope = NULL`; under
-  `"score"` the entry p-value is still the literal column's (#449). A
-  non-syntactic name written bare, such as `"_X1"`, does not parse, so
-  under `"wald"` and `"aic"` its refit fails and the failure names it
-  (#441); under `"score"` it can fail by either of two routes, and a
-  `"score"` screen can finish having omitted it (#441, #438).
+  scope. How a matched candidate then enters the model is the #449 entry
+  below.
+
+* **A stepwise candidate is now scored and entered as the column it names
+  (#449, #438, #441).** The refit wrote the candidate's name, as spelled,
+  into the formula text, so a column whose name reads as a different term
+  entered as that term, with no warning. A column `age ` or `age # x`
+  beside `age` refit as `age`, through the default `scope = NULL`, a
+  character `scope`, a multiphase default scope and the screens
+  `hzr_bootstrap()` runs; a literal column `age:mal` refit as the
+  interaction, while under `"score"` its entry p-value was the column's;
+  and a multiphase default scope was built the same way, so a strong
+  column `x2 ` read as the noise column `x2` and was never scored. The
+  refit, the multiphase default scope and the multiphase score, which
+  builds the candidate's phase formula from text as well, now write the
+  label `terms()` gives the resolved column, which reads back as that
+  column, and the score reads the values of that column and compares it
+  with the model's terms by that label. So the column scored is the
+  column entered, and `"wald"`, `"aic"` and `"score"` reach the same
+  model: with the interaction `age:mal` in the model, a literal column
+  `age:mal` is a variable of its own under all three, where `"score"`
+  had declined it as the interaction. The same change fixes two loud
+  failures: a bare non-syntactic name such as `"_X1"` in a character
+  `scope` now enters under `"wald"` and `"aic"`, where its refit failed
+  to parse (#441), and under `"score"` a non-syntactic candidate written
+  as its label, as a formula `scope` writes it, is read from its column
+  rather than reported as not found in `data` and skipped (#438). An
+  interaction is no longer scored from a literal column that shares its
+  spelling; the score declines it, as it does any term that is not a
+  column, and its warning now says that instead of "not found in `data`",
+  with the new reason `not_single_column` in `$criteria$uncomputable_reasons`
+  where it read `non_numeric`.
+  A column no formula can name, such as one called `.`, is not offered as
+  a candidate, and the screen says so once.
+
+  `$steps$variable`, `$scope$frozen` and `$criteria$wald_untested_entries`
+  name such a variable by its label, as the breaking change above on
+  `$steps$variable` sets out; `$criteria$refit_failures` still names a
+  failed candidate as the scope wrote it.
 
 * **`hzr_translate_sas()` no longer fails on a SAS covariate whose name begins
   with an underscore** (#411). `PROC HAZARD`'s lexer reads a name as

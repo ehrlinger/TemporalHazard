@@ -36,6 +36,7 @@
   if (dist == "multiphase") {
     phase_names <- names(fit$spec$phases)
     current_per_phase <- .hzr_scope_current_vars(fit)
+    column_of <- character() # term label -> column name, default scope only
 
     if (is.null(scope)) {
       # Default: all data-frame vars (excluding Surv components and
@@ -43,11 +44,17 @@
       stored <- .hzr_stored_formula(fit)
       lhs_vars <- if (is.null(stored)) character() else all.vars(stored[[2L]])
       data_vars <- setdiff(colnames(data), lhs_vars)
-      data_vars <- data_vars[!.hzr_column_label(data_vars) %in% force_out]
+      data_ids <- .hzr_column_label(data_vars)
+      data_vars <- data_vars[!data_ids %in% force_out &
+                               !.hzr_is_label_placeholder(data_ids)]
       data_vars <- .hzr_modellable_vars(data, data_vars)
+      # Written as term labels, never pasted names: a pasted `age ` read back
+      # as `age`, and `_X1` did not parse (#449). The column name stays the
+      # candidate's spelling, which the score reads from `data`.
+      column_of <- stats::setNames(data_vars, .hzr_column_label(data_vars))
       scope <- setNames(
         lapply(phase_names, function(p) {
-          rhs_syms <- data_vars
+          rhs_syms <- names(column_of)
           # Return as a one-sided formula for symmetry with the
           # user-supplied case.
           if (length(rhs_syms) == 0L) return(NULL)
@@ -91,8 +98,9 @@
       terms_p <- .hzr_formula_rhs_terms(sc)
       eligible <- setdiff(terms_p, c(current_per_phase[[p]], force_out))
       for (v in eligible) {
+        spelling <- if (v %in% names(column_of)) column_of[[v]] else v
         candidates[[length(candidates) + 1L]] <-
-          list(var = v, phase = p, id = v)
+          list(var = spelling, phase = p, id = v)
       }
     }
     return(candidates)
@@ -104,7 +112,7 @@
     lhs_vars <- if (is.null(f)) character() else all.vars(f[[2L]])
     data_vars <- setdiff(colnames(data), lhs_vars)
     data_ids  <- .hzr_column_label(data_vars)
-    keep <- !data_ids %in% force_out
+    keep <- !data_ids %in% force_out & !.hzr_is_label_placeholder(data_ids)
     data_vars <- data_vars[keep]
     data_ids  <- data_ids[keep]
     keep <- data_vars %in% .hzr_modellable_vars(data, data_vars)
@@ -137,7 +145,8 @@
   # scope naming a variable twice offers it once, under its first spelling.
   current_vars <- .hzr_scope_current_vars(fit)
   keep <- !duplicated(data_ids) &
-    !data_ids %in% c(force_out, current_vars)
+    !data_ids %in% c(force_out, current_vars) &
+    !.hzr_is_label_placeholder(data_ids)
   Map(function(v, id) list(var = v, phase = NULL, id = id),
       data_vars[keep], data_ids[keep], USE.NAMES = FALSE)
 }
@@ -262,7 +271,7 @@
     candidate_fit <- tryCatch(
       .hzr_refit_with_scope(
         current, action = "add",
-        var = cand$var, phase = cand$phase,
+        var = .hzr_candidate_term(cand), phase = cand$phase,
         data = data, ...
       ),
       error = function(e) e
@@ -336,6 +345,7 @@
   }
 
   all_scores <- do.call(rbind, rows)
+  all_scores$id <- vapply(cands, .hzr_candidate_term, character(1))
   # Strip the per-row fit attributes from the combined frame but keep
   # them in a parallel list keyed by row for winner lookup.
   candidate_fits <- lapply(rows, function(r) attr(r, "fit"))
@@ -434,9 +444,13 @@
   rows <- vector("list", length(cands))
   for (i in seq_along(cands)) {
     cand <- cands[[i]]
-    .hzr_score_check_numeric(data, cand$var, cand$phase)
+    # Read by the column the candidate resolved to, never by its spelling or
+    # label (#438, #449); NA when it is no column, which the score declines.
+    col <- .hzr_candidate_column(cand, data)
+    .hzr_score_check_numeric(data, cand$var, cand$phase, col = col)
 
-    s_q <- .hzr_score_q(current, cand$var, phase = cand$phase, data = data,
+    s_q <- .hzr_score_q(current, col, phase = cand$phase, data = data,
+                        term = .hzr_candidate_term(cand),
                         nuisance = nuisance)
     s <- .hzr_candidate_score(
       criterion = "score", mode = "entry",
@@ -458,6 +472,7 @@
     )
   }
   all_scores <- do.call(rbind, rows)
+  all_scores$id <- vapply(cands, .hzr_candidate_term, character(1))
 
   # --- Wald fallback for candidates the score could not test (#130) --------
   # Q is SAS's exactly (src/vars/q1.c), and so is its blind spot: the observed
@@ -480,8 +495,8 @@
     cand_phase <- if (is.na(all_scores$phase[i])) NULL else all_scores$phase[i]
     refit <- tryCatch(
       .hzr_refit_with_scope(current, action = "add",
-                            var = all_scores$variable[i], phase = cand_phase,
-                            data = data, ...),
+                            var = .hzr_candidate_term(cands[[i]]),
+                            phase = cand_phase, data = data, ...),
       error = function(e) e
     )
     # The coefficient-name refusal (no column added, or several) is this
@@ -603,8 +618,8 @@
   if (is.null(refitted)) {
     refitted <- tryCatch(
       .hzr_refit_with_scope(
-        current, action = "add", var = best$variable, phase = best_phase,
-        data = data, ...
+        current, action = "add", var = .hzr_candidate_term(cands[[best_idx]]),
+        phase = best_phase, data = data, ...
       ),
       error = function(e) e
     )
@@ -697,8 +712,25 @@
 #'
 #' @keywords internal
 #' @noRd
-.hzr_score_check_numeric <- function(data, var, phase) {
-  xcand <- data[[var]]
+.hzr_score_check_numeric <- function(data, var, phase, col = var) {
+  if (is.na(col)) {
+    # The candidate resolved to a term that is no column: an interaction or
+    # a transform. A column spelled the same, when there is one, is another
+    # variable, so "not found in `data`" would be false (#449).
+    where <- if (is.null(phase)) "" else paste0(" in phase ", sQuote(phase))
+    warning(
+      "Stepwise forward: candidate ", sQuote(var), where, " is not a single ",
+      "column of `data`, which is all the score criterion can test",
+      if (var %in% names(data)) {
+        paste0(" (the column named ", sQuote(var), " is a different ",
+               "variable, written `` `", var, "` `` in a formula)")
+      },
+      "; skipping. `criterion = \"wald\"` refits it instead.",
+      call. = FALSE
+    )
+    return(invisible(NULL))
+  }
+  xcand <- data[[col]]
   if (is.null(xcand)) {
     where <- if (is.null(phase)) "" else paste0(" in phase ", sQuote(phase))
     warning(
