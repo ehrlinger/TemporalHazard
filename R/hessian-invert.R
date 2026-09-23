@@ -196,9 +196,28 @@ NULL
   # on an identified model (#416), so it is a gap, not a finding. A
   # "correlation" above 1 always leaves a negative eigenvalue, so this one
   # test covers it.
-  e_min <- tryCatch(min(eigen(R, symmetric = TRUE, only.values = TRUE)$values),
+  # The tolerance is the numerical error scale of the eigenvalue computation, n * eps * max|lambda|,
+  # not a fixed -sqrt(eps). A fixed cutoff of about -1.49e-08 admitted matrices
+  # that are indefinite far beyond rounding error: c(1, 1 + 1e-8, 1 + 1e-8, 1) has a
+  # minimum eigenvalue near -1e-08 and an off-diagonal of 1.00000001, and was
+  # reported as a ridge rather than declined.
+  #
+  # The scale is taken from the CORRELATION matrix, which is why it is safe to
+  # take it at all. R is already scale-free, so its spectrum is bounded by the
+  # dimension and the tolerance cannot depend on the parameters' units. Taking
+  # the scale from the covariance instead would make the same fit pass or fail
+  # according to whether a time was recorded in days or years, which is exactly
+  # what this check must not do.
+  #
+  # A real correlation matrix is positive semi-definite, so a genuine ridge
+  # sits at or above zero and is unaffected: r = 0.99 through exactly 1, and
+  # equicorrelated blocks at k = 3, 4 and 5, all have a minimum eigenvalue >= 0.
+  e_all <- tryCatch(eigen(R, symmetric = TRUE, only.values = TRUE)$values,
                     error = function(e) NA_real_)
-  if (is.na(e_min) || e_min < -sqrt(.Machine$double.eps)) {
+  e_min <- if (anyNA(e_all)) NA_real_ else min(e_all)
+  e_tol <- if (anyNA(e_all)) NA_real_ else
+    nrow(R) * .Machine$double.eps * max(abs(e_all))
+  if (is.na(e_min) || e_min < -e_tol) {
     return(na_because("covariance is not positive definite"))
   }
 
