@@ -97,7 +97,12 @@
 #' @param fit A fitted `hazard` object built via the
 #'   `formula = Surv(...) ~ predictors, data = df` interface.
 #' @param scope Candidate set.  `NULL` (default) uses every data-frame
-#'   column not already in the model for every phase.  For
+#'   column not already in the model for every phase.  A candidate enters
+#'   by writing its name into the formula text, so under this default too a
+#'   column whose name reads as a different term enters as that term, with
+#'   no warning: a column literally named `age:mal` enters as the
+#'   interaction, and a column `"age "` beside `age` enters as `age`
+#'   (#449).  For
 #'   single-distribution fits, pass a one-sided formula
 #'   (`~ age + nyha`) or a character vector of names.  Each name in a
 #'   character `scope` is looked up, not parsed: a name that is exactly a
@@ -191,8 +196,11 @@
 #'       nor a term label and were therefore ignored (`character()` when
 #'       none were).  The trace, and so `print()` and `summary()`, carries a
 #'       line for each non-empty one, and a screen whose character `scope`
-#'       was emptied this way says so where it stops.  `force_in` and
-#'       `force_out` here are as given, unresolved names included (#451).}
+#'       was emptied this way says so where it stops.  `candidates`,
+#'       `force_in` and `force_out` here are the arguments as given, so a
+#'       character `candidates` still lists the names that were ignored,
+#'       as `force_in` and `force_out` do; read `unresolved` for which
+#'       those were (#451).}
 #'     \item{\code{criteria}}{Named list of the threshold / direction
 #'       settings actually applied, plus
 #'       `n_uncomputable_scores` (how many candidate scores were `NA`,

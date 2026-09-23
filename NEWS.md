@@ -661,6 +661,16 @@
   where `Surv()` and the model formulas read it. Before, those fits read
   its stored bits and returned their starting values as converged.
 
+* **A forward candidate whose refit adds no design column of its own is now
+  a recorded refit failure, not an error out of `hzr_stepwise()` (#442).**
+  Under `"wald"` and `"aic"`, `hzr_stepwise()` used to stop with an error
+  ("added no design-matrix column", or "does not add a column" when the
+  refit only changes the parameterisation). It now issues a warning, adds the
+  candidate to `$criteria$refit_failures` with the refusal as its reason in
+  `$criteria$refit_failure_reasons`, and the screen goes on, as `"score"`
+  already did. Code that caught the error with `tryCatch(..., error = )`
+  will no longer see it; read `$criteria$refit_failures` instead.
+
 ## New features
 
 * **`hzr_translate_sas()` now translates a `SELECTION` statement into an
@@ -849,15 +859,6 @@
   under `"wald"` and `"aic"` its refit fails and the failure names it
   (#441); under `"score"` it can fail by either of two routes, and a
   `"score"` screen can finish having omitted it (#441, #438).
-
-* **One forward candidate whose refit adds no column of its own no longer
-  ends the screen under `"wald"` or `"aic"` (#442).** The check that finds
-  the candidate's new coefficient refuses a refit that added no design
-  column, or changed the parameterisation without adding one, and it ran
-  outside the per-candidate error handling, so its error stopped the whole
-  screen. It is now that candidate's refit failure, with the refusal as its
-  reason in `$criteria$refit_failure_reasons`, and the screen goes on, as
-  `"score"` already did.
 
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded

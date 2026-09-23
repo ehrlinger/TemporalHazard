@@ -37,7 +37,12 @@ hzr_stepwise(
 \verb{formula = Surv(...) ~ predictors, data = df} interface.}
 
 \item{scope}{Candidate set.  \code{NULL} (default) uses every data-frame
-column not already in the model for every phase.  For
+column not already in the model for every phase.  A candidate enters
+by writing its name into the formula text, so under this default too a
+column whose name reads as a different term enters as that term, with
+no warning: a column literally named \code{age:mal} enters as the
+interaction, and a column \code{"age "} beside \code{age} enters as \code{age}
+(#449).  For
 single-distribution fits, pass a one-sided formula
 (\code{~ age + nyha}) or a character vector of names.  Each name in a
 character \code{scope} is looked up, not parsed: a name that is exactly a
@@ -147,8 +152,11 @@ contain; see the \strong{Known limitation (the frozen set)} section.
 nor a term label and were therefore ignored (\code{character()} when
 none were).  The trace, and so \code{print()} and \code{summary()}, carries a
 line for each non-empty one, and a screen whose character \code{scope}
-was emptied this way says so where it stops.  \code{force_in} and
-\code{force_out} here are as given, unresolved names included (#451).}
+was emptied this way says so where it stops.  \code{candidates},
+\code{force_in} and \code{force_out} here are the arguments as given, so a
+character \code{candidates} still lists the names that were ignored,
+as \code{force_in} and \code{force_out} do; read \code{unresolved} for which
+those were (#451).}
 \item{\code{criteria}}{Named list of the threshold / direction
 settings actually applied, plus
 \code{n_uncomputable_scores} (how many candidate scores were \code{NA},
