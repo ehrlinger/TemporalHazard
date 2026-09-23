@@ -310,10 +310,17 @@ test_that("the key preserves main's distinctions except where #437 merges them",
               # nor a failure. "NULL" is the one that needs a sentinel rather
               # than is.null() to classify, since str2lang("NULL") RETURNS
               # NULL; a mutation to is.null() survived every other test here.
-              "NULL", "`NULL`", "TRUE", "`TRUE`", "1", "`1`")
+              "NULL", "`NULL`", "TRUE", "`TRUE`", "1", "`1`",
+              # Names that PARSE to another name: str2lang() discards
+              # surrounding whitespace and anything after a `#`, so these
+              # must not merge with "age" (#442).
+              "age ", "age\t", "age # x",
+              # A name containing a backtick, which terms() ESCAPES.
+              "a`b", "`a\\`b`")
   # Each entry: a label spelling and the same VARIABLE written bare. Nothing
   # else may merge.
-  allow <- list(c("age", "`age`"), c("_X1", "`_X1`"), c("a b", "`a b`"))
+  allow <- list(c("age", "`age`"), c("_X1", "`_X1`"), c("a b", "`a b`"),
+                c("a`b", "`a\\`b`"))
   allowed <- function(a, b) {
     any(vapply(allow, function(p) {
       setequal(c(a, b), p)
@@ -344,4 +351,48 @@ test_that("the key preserves main's distinctions except where #437 merges them",
   }
   expect_identical(merged_by_allow, length(allow)) # every listed pair was seen
   expect_identical(deviations, character())
+})
+
+test_that("a name that parses to another name stays distinct (#442)", {
+  skip_on_cran() # a fit plus candidate enumeration
+  # `str2lang()` discards surrounding whitespace and anything after a `#`, so
+  # "age ", "age\t" and "age # x" all parse to the symbol `age`. Taking the
+  # parse at face value merged those distinct columns: a scope = NULL screen
+  # dropped all but the first, and force_out = "age" excluded a column the
+  # user never named. Both silent. Found by review of #442.
+  data(avc, package = "TemporalHazard", envir = environment())
+  d0 <- stats::na.omit(avc[, c("int_dead", "dead", "age", "mal")])
+  d <- data.frame(d0, `age ` = d0$age * 2, check.names = FALSE)
+  expect_true("age " %in% names(d)) # the fixture really has both
+  fit0 <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ 1,
+                                  data = d, dist = "weibull",
+                                  theta = c(0.1, 1), fit = TRUE))
+  offered <- function(...) {
+    vapply(.hzr_stepwise_candidates(fit0, data = d, ...),
+           function(c) c$var, character(1))
+  }
+  expect_setequal(offered(), c("age", "mal", "age "))
+  expect_setequal(offered(scope = c("age", "age ")), c("age", "age "))
+  # force_out must exclude the column named, and only that one.
+  expect_setequal(offered(force_out = "age"), c("mal", "age "))
+  expect_setequal(offered(force_out = "age "), c("age", "mal"))
+})
+
+test_that("force_out written in the label spelling excludes the column (#442)", {
+  skip_on_cran() # a fit plus candidate enumeration
+  # The only behaviour the key adds over a plain string comparison at the
+  # `colnames()` sites, and nothing exercised it, so reverting those sites
+  # left the suite green (found by review). `colnames()` are bare, so this
+  # is the backquoted spelling reaching a bare column name.
+  d <- ns_data_437() # carries the non-syntactic column `_X1`
+  base <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ 1,
+                                  data = d, dist = "weibull",
+                                  theta = c(0.1, 1), fit = TRUE))
+  offered <- function(...) {
+    vapply(.hzr_stepwise_candidates(base, data = d, ...),
+           function(c) c$var, character(1))
+  }
+  expect_true("_X1" %in% offered())                 # known positive
+  expect_false("_X1" %in% offered(force_out = "`_X1`"))
+  expect_false("_X1" %in% offered(force_out = "_X1"))
 })

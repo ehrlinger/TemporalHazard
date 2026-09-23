@@ -820,11 +820,11 @@
   formula `scope` adds one, because its labels are already quoted, while a
   character `scope` of bare names cannot: the refit pastes the candidate
   into a formula that then does not parse, and the failure names the
-  candidate (#441). Under `"score"` **neither** form adds one. A bare
-  candidate fails the same way and says so; a quoted one is skipped with a
-  message reporting it as not found in `data`, although the column is
-  present, because that path indexes `data` by the backquoted label (#438).
-  A `"score"` screen can therefore finish having omitted the variable.
+  candidate (#441). Under `"score"` **neither** form adds one, and the two
+  fail by different routes, so which of them names the variable depends on
+  whether the candidate cleared the entry threshold before the refit was
+  reached; #441 and #438 track them. A `"score"` screen can therefore finish
+  having omitted the variable.
 
   A label that also parses as an EXPRESSION keeps its own identity, so an
   interaction and a data column that happens to carry the same text are not

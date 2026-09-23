@@ -109,10 +109,26 @@
   failed <- new.env()
   vapply(x, function(lab) {
     e <- tryCatch(str2lang(lab), error = function(...) failed)
-    if (identical(e, failed)) {
-      paste0("v:", lab)              # unparseable: a bare non-syntactic name
-    } else if (is.symbol(e)) {
-      paste0("v:", as.character(e))  # a name, however it was spelled
+    nm <- if (!identical(e, failed) && is.symbol(e)) as.character(e) else NULL
+    # A symbol is only this label's variable if the text ROUND-TRIPS to it.
+    # `str2lang()` discards surrounding whitespace and anything after a `#`,
+    # so "age ", "age\t" and "age # x" all parse to the symbol `age`; taking
+    # the parse at face value merged those distinct columns, and a
+    # `scope = NULL` screen silently dropped all but the first while
+    # `force_out = "age"` excluded a column the user had not named (found by
+    # review of #442).
+    # `terms()` ESCAPES a backtick inside a name, so the column a`b is
+    # labelled `a\`b`; compare against the escaped form or that label never
+    # round-trips.
+    quoted <- if (is.null(nm)) {
+      NULL
+    } else {
+      paste0("`", gsub("`", "\\\\`", nm), "`")
+    }
+    if (!is.null(nm) && (identical(lab, nm) || identical(lab, quoted))) {
+      paste0("v:", nm)               # a name, bare or backquoted
+    } else if (identical(e, failed) || !is.null(nm)) {
+      paste0("v:", lab)              # a name that is not written cleanly
     } else {
       paste0("e:", lab)              # an expression, matched by its text
     }
