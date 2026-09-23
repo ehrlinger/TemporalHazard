@@ -1038,3 +1038,52 @@ test_that("SETG3's entry refusals are raised in the C's own order (#433 review)"
     expect_no_match(msg, p$notwant, fixed = TRUE, info = p$parms)
   }
 })
+
+test_that("the refusal message's claim about hzr_phase() matches what happens (#433 review)", {
+  skip_on_cran()
+  # The sentence used to assert that hzr_phase() accepts the shape, from a
+  # hand-maintained idea of which codes were "shape" refusals. It was false
+  # for FIVE of the seven classes, not the three the text claimed: SAS
+  # refuses several of these precisely BECAUSE a shape is out of range, and
+  # the same value is out of range for hzr_phase().
+  #
+  # So the message is now derived by CONSTRUCTING the phase, and this test
+  # executes each class's emitted chunks and requires the message and the
+  # outcome to agree. No list of codes appears in either, so neither can
+  # drift from the other.
+  set.seed(3)
+  n <- 80
+  D <- data.frame(TT = stats::rexp(n, 0.2),
+                  DEAD = rep(c(1, 1, 0), length.out = n))
+  classes <- c(
+    SETG3900 = "MUL=0.1 TAU=0 GAMMA=2 ETA=1 ALPHA=1 FIXTAU",
+    SETG3910 = "MUL=0.1 TAU=8 GAMMA=0 ETA=1 ALPHA=1 FIXGAMMA",
+    SETG3920 = "MUL=0.1 TAU=8 GAMMA=2 ETA=1 ALPHA=-1 FIXALPHA",
+    SETG3930 = "MUL=0.1 TAU=8 GAMMA=2 ETA=0 ALPHA=1 FIXETA",
+    SETG3960 = "MUL=0.2 TAU=1 GAMMA=0 ETA=0.25 FIXGE2 WEIBULL",
+    SETG3970 = "MUL=0.2 TAU=1 GAMMA=2 ETA=0 WEIBULL",
+    SETG3980 = "MUL=0.2 TAU=1 GAMMA=4 ETA=0.25 ALPHA=0 WEIBULL"
+  )
+  agreed <- 0L
+  says_yes <- 0L
+  says_no <- 0L
+  for (nm in names(classes)) {
+    job <- .u1_job(parms = classes[[nm]])
+    msg <- .u1_msg(job)
+    claims_accepts <- grepl("accepts this shape", msg, fixed = TRUE)
+    env <- new.env(parent = environment())
+    env$D <- D
+    completes <- tryCatch({
+      for (k in names(job$calls)) suppressWarnings(eval(job$calls[[k]], env))
+      TRUE
+    }, error = function(e) FALSE)
+    expect_identical(claims_accepts, completes, info = nm)
+    agreed <- agreed + 1L
+    if (claims_accepts) says_yes <- says_yes + 1L else says_no <- says_no + 1L
+  }
+  expect_identical(agreed, length(classes))
+  # BOTH outcomes must occur, or an implementation that always said one thing
+  # would satisfy every assertion above.
+  expect_gt(says_yes, 0L)
+  expect_gt(says_no, 0L)
+})

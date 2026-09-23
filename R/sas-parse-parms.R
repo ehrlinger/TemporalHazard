@@ -629,6 +629,27 @@
 #'   `refusal` names the SAS message code for a job PROC HAZARD will not run;
 #'   otherwise `shape` gives the values SETG3 would optimize from.
 #' @noRd
+#' Would `hzr_phase()` build a `"g3"` phase from these shapes?
+#'
+#' The refusal message used to assert that it would, from a hand-maintained
+#' idea of which codes were "shape" refusals. That drifted: it was false for
+#' five of the seven SETG3 classes, not the three the text claimed
+#' (`SETG3910`, `SETG3920`, `SETG3930`, and also `SETG3960` and `SETG3970`),
+#' because SAS refuses several of them precisely BECAUSE a shape is out of
+#' range, and the same value is out of range for `hzr_phase()`.
+#'
+#' So the sentence is now derived by CONSTRUCTING the phase. It cannot drift
+#' again: if `hzr_phase()` changes what it accepts, this answer changes with
+#' it (#433 review).
+#' @return `TRUE` when the phase builds, `FALSE` when it refuses.
+#' @noRd
+.hzr_phase_builds <- function(tau, gamma, alpha, eta) {
+  tryCatch({
+    hzr_phase("g3", tau = tau, gamma = gamma, alpha = alpha, eta = eta)
+    TRUE
+  }, error = function(e) FALSE)
+}
+
 #' The four SETG3 entry refusals, in the C's own order.
 #'
 #' `setg3.c:269-284` (in `src/model/`, at pin `dad7978`) checks TAU, then
@@ -1543,12 +1564,21 @@
           "SAS log before relying on the fit"
         ))
       } else {
+        builds <- .hzr_phase_builds(late_full[["tau"]], late_full[["gamma"]],
+                                    late_full[["alpha"]], late_full[["eta"]])
         flag_refusal(construct, paste0(
           "PROC HAZARD refuses this job: SETG3 raises ",
           setg3$refusal, " -- ",
           .hzr_setg3_refusal_reason(setg3$refusal),
-          ". hzr_phase() accepts this shape, so the translated fit ",
-          "would converge on a job SAS never fits"
+          if (builds) {
+            paste0(". hzr_phase() accepts this shape, so the translated fit ",
+                   "would converge on a job SAS never fits")
+          } else {
+            paste0(". hzr_phase() will not build this shape either, because ",
+                   "the value SAS refuses is also outside the range it ",
+                   "accepts, so the document stops at that check rather ",
+                   "than fitting")
+          }
         ))
       }
     } else {

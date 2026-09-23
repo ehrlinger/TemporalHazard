@@ -13,13 +13,18 @@
   it, and the row is recorded as before. The fit is still emitted: a rendered
   document completes, and the reader is told what it stands in for.
 
-  **Three of these still fail further down, and it is worth knowing why.**
-  `SETG3`'s entry refusals `SETG3910`, `SETG3920` and `SETG3930` fire because
-  a shape value is out of range (`setg3.c:269-284`), and the same value is out
-  of range for `hzr_phase()`, which will not build the phase. The warning is
-  emitted in its own chunk **above** the fit, naming the `SETG3` code and the
-  operand, so the cause is stated before `hzr_phase()` refuses. The render
-  then stops there with `hzr_phase()`'s own message.
+  **Some of these still fail further down, and the warning says which.**
+  Several `SETG3` refusals fire precisely because a shape value is out of
+  range, and the same value is out of range for `hzr_phase()`, which will not
+  build the phase. Rather than name a list of codes here, which drifted once
+  already, the warning itself is derived by trying to construct the phase: it
+  says `hzr_phase()` accepts the shape only when it does, and otherwise says
+  the document stops at that check. A test executes every `SETG3` class's
+  emitted chunks and requires the message and the outcome to agree, so the
+  two cannot diverge again. In every case the warning is emitted in its own
+  chunk **above** the fit, naming the `SETG3` code and the operand, so the
+  cause is stated before `hzr_phase()` refuses; the render then stops there
+  with `hzr_phase()`'s own message.
 
   Be aware of where that warning does and does not appear. When a chunk
   errors, Quarto writes no output document, and `knitr` collects warnings
@@ -82,10 +87,10 @@
   made it a `stop()` and Quarto then exited 1 and produced no output document
   at all, including for the jobs before the refused one.
 
-  The exception is the three entry refusals above. They are warned about and
-  emitted like everything else, but `hzr_phase()` then refuses the
-  out-of-range value, so a file containing such a job still yields no rendered
-  output until it is corrected or removed. A reader who wants the other jobs'
+  The exception is the refusals above whose shape `hzr_phase()` will not
+  build. They are warned about and emitted like everything else, but
+  `hzr_phase()` then refuses the out-of-range value, so a file containing such
+  a job still yields no rendered output until it is corrected or removed. A reader who wants the other jobs'
   results in the meantime can delete that job from the file.
 
   **Which jobs stop and which warn, in one place.** A job stops only where it
