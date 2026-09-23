@@ -803,9 +803,14 @@
 #' an English locale -- which no CI here would catch. Our own backstop
 #' carries no call and is recognised by its class instead.
 #'
-#' A user function that itself calls `model.frame()` and fails inside it
-#' would be misread as a design failure. That is accepted: it is rare, and
-#' the result is a worse message rather than a wrong answer.
+#' A user function that itself calls `model.frame()` or `model.matrix()` and
+#' fails inside it is misread as a design failure: `conditionCall()` reports
+#' the same callee for both. That is a known limitation, not an oversight
+#' (#446) -- separating them needs the call stack at signal time, it fails
+#' loudly either way, and NEWS records the exception. The behaviour is
+#' PINNED by "a nested model.frame() failure is misattributed, as
+#' documented", so fixing #446 fails that test and forces this note and the
+#' NEWS sentence to be updated with it.
 #'
 #' @param e A condition.
 #' @return `TRUE` when the condition came from the design build.
@@ -829,12 +834,14 @@
 #' Name a term whose variable has the wrong number of rows for `newdata`
 #'
 #' A DIAGNOSIS, run only after `model.frame()` has already failed or
-#' returned the wrong rows. It evaluates variables itself, so it cannot
-#' reproduce `model.frame()`'s one shared mask -- a term that assigns into
-#' that mask, `I(zz <- age)` read by `I(zz^2)`, resolves differently here.
-#' That is why it never decides whether a prediction happens: it only names
-#' a term for a call that is already failing, and the caller re-raises the
-#' original condition when this names nothing.
+#' returned the wrong rows. It never decides whether a prediction happens:
+#' it only names a term for a call that is already failing, and the caller
+#' re-raises the original condition when this names nothing.
+#'
+#' The variables are evaluated in ONE mask, in order, as `model.frame()`
+#' evaluates them, so a term that assigns into the mask (`I(zz <- age)`) is
+#' visible to a later term that reads it. Evaluating them separately named
+#' terms that were fine (#430 review).
 #'
 #' `newdata` supplies only the fit's data columns, so a model-frame
 #' variable evaluated there whose row count is not `newdata`'s cannot be
@@ -864,8 +871,16 @@
   }
   env <- environment(terms)
   if (is.null(env)) env <- parent.frame()
+  # ONE mask, evaluated in order, because that is what `model.frame()` does.
+  # A term that assigns, `I(zz <- age)`, has to be visible to a later term
+  # that reads it: evaluated in separate masks the diagnosis instead found
+  # the formula environment's unrelated `zz` and named `I(zz^2)` as well as
+  # the genuinely mismatched term, sending the user to repair a term that
+  # was fine (#430 review). `vapply()` evaluates in order, and `mask`
+  # persists across the calls, so the assignment carries.
+  mask <- list2env(as.list(nd), parent = env)
   wrong <- vapply(vars, function(v) {
-    val <- tryCatch(eval(v, nd, env), error = function(e) NULL)
+    val <- tryCatch(eval(v, mask), error = function(e) NULL)
     !is.null(val) && NROW(val) != nrow(nd)
   }, logical(1))
   if (!any(wrong)) {

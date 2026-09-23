@@ -378,3 +378,69 @@ test_that("every row-count failure family still names its term", {
     named, fixed = TRUE
   )
 })
+
+test_that("a term that reads an earlier term's assignment is not named", {
+  # model.frame() evaluates every term in ONE mask, in order, so
+  # `I(zz <- age)` is what `I(zz^2)` reads. Evaluated in separate masks the
+  # diagnosis saw the formula environment's unrelated 60-length `zz` and
+  # named `I(zz^2)` too -- sending the user to repair a term that is fine.
+  # Base R's own message names exactly `yy` here, so this shape was one
+  # where #409's naming was WORSE than what it replaced (#430 review).
+  set.seed(31)
+  d <- data.frame(t = rexp(60), s = rbinom(60, 1, 0.7), age = rnorm(60, 60, 5))
+  zz <- rnorm(60)
+  yy <- rnorm(60)
+  f <- survival::Surv(t, s) ~ I(zz <- age) + I(zz^2) + yy
+  environment(f) <- environment()
+  fit <- suppressWarnings(
+    hazard(f, data = d, dist = "weibull",
+           theta = c(mu = 0.5, nu = 1, 0, 0, 0), fit = TRUE)
+  )
+  msg <- tryCatch(
+    predict(fit, newdata = d[1:2, "age", drop = FALSE],
+            type = "linear_predictor"),
+    error = conditionMessage
+  )
+  expect_match(msg, "'yy'", fixed = TRUE)
+  expect_false(grepl("I(zz^2)", msg, fixed = TRUE))
+})
+
+test_that("a nested model.frame() failure is misattributed, as documented", {
+  # PINS A KNOWN LIMITATION, deliberately. `conditionCall()` cannot tell our
+  # own frame assembly from one the user's term performed itself: both read
+  # `model.frame.default`. So an error from a `model.frame()` call INSIDE a
+  # term is misread as the design build and replaced by the refusal, naming
+  # whichever term is row-mismatched.
+  #
+  # Separating them needs the call stack at signal time, which is more
+  # machinery than this helper earns; the roxygen and NEWS both say so, and
+  # the fix is tracked in its own issue. This test exists so the text and
+  # the behaviour cannot drift apart silently: if someone implements the
+  # frame-depth test, this fails and the documentation must be updated with
+  # it.
+  set.seed(31)
+  d <- data.frame(t = rexp(60), s = rbinom(60, 1, 0.7), age = rnorm(60, 60, 5))
+  zz <- rnorm(60)
+  armed <- FALSE
+  ff <- function(x) {
+    if (armed) {
+      return(stats::model.frame(~ x + I(1:3)))
+    }
+    x
+  }
+  f <- survival::Surv(t, s) ~ I(ff(age)) + zz
+  environment(f) <- environment()
+  fit <- suppressWarnings(
+    hazard(f, data = d, dist = "weibull", theta = c(mu = 0.5, nu = 1, 0, 0),
+           fit = TRUE)
+  )
+  armed <- TRUE
+  msg <- tryCatch(
+    predict(fit, newdata = d[1:2, "age", drop = FALSE],
+            type = "linear_predictor"),
+    error = conditionMessage
+  )
+  # The limitation, stated as an expectation rather than left to prose.
+  expect_match(msg, "does not give one value per row", fixed = TRUE)
+  expect_false(grepl("variable lengths differ", msg, fixed = TRUE))
+})
