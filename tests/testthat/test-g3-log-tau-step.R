@@ -29,8 +29,12 @@ test_that("dPhi/dlog_tau is right where the step floor used to dominate", {
 })
 
 test_that("ordinary tau is unchanged to the precision anyone relies on", {
-  # A guard against the fix being a licence to move well-conditioned fits: at
-  # these shapes the step change is about 1e-10 relative.
+  # A guard against the fix being a licence to move well-conditioned fits.
+  # NOTE the margin: at tau = 1e-6 the OLD code was 1.3e-8 off, so this loop
+  # fails on the previous implementation at that shape by a factor of only
+  # 1.3. It is a discriminator there, not merely a guard, and widening the
+  # tolerance past 2e-8 would silently stop it discriminating. The ~1e-10
+  # regime the NEWS bullet describes begins around tau = 1e-5, not 1e-6.
   for (tau in c(1e-6, 1e-2, 1, 100)) {
     got <- .hzr_g3_phase_derivatives(tau, tau = tau, gamma = 4, alpha = 1.5,
                                      eta = 0.5)$dPhi_dlog_tau
@@ -47,10 +51,38 @@ test_that("tau = 0 is handled by the base evaluation, not by a step fallback", {
   # and it is checked here rather than assumed: hzr_decompos_g3() already
   # returns G3 = Inf for tau <= 0, so the base evaluation is degenerate before
   # any step is taken and the deleted branch could not have rescued it.
-  expect_gt(5e-324 * exp(-1e-5), 0)
   d <- .hzr_g3_phase_derivatives(1, tau = 0, gamma = 4, alpha = 1.5, eta = 0.5)
   expect_false(is.finite(d$Phi[[1L]]))
   expect_false(any(is.finite(d$dPhi_dlog_tau)))
+})
+
+test_that("a step that cannot move tau reports NaN, not a plausible zero", {
+  # A MULTIPLICATIVE step needs tau to have bits left to move, and in the
+  # denormal range it does not: 5e-324 IS the smallest positive double, and
+  # both 5e-324 * exp(1e-5) and 5e-324 * exp(-1e-5) round back to it. The two
+  # evaluation points coincide and the quotient is 0/(2h).
+  #
+  # An earlier version of this file asserted `expect_gt(5e-324 * exp(-1e-5),
+  # 0)` and called that a boundary check. It is a statement about IEEE-754
+  # that no change to this package can falsify, and it is true PRECISELY
+  # BECAUSE the product equals tau -- so it certified the boundary while the
+  # code returned 0 for a derivative whose true value is about -1.8e126.
+  # This asserts the VALUE instead.
+  expect_true(identical(5e-324 * exp(1e-5), 5e-324 * exp(-1e-5)))
+  for (tau in c(5e-324, 1e-320)) {
+    d <- .hzr_g3_phase_derivatives(tau, tau = tau, gamma = 4, alpha = 1.5,
+                                   eta = 3)
+    expect_true(is.nan(d$dPhi_dlog_tau[[1L]]))
+    expect_true(is.nan(d$dphi_dlog_tau[[1L]]))
+  }
+  # tau = Inf coincides the same way and took the same silent-zero path.
+  d <- .hzr_g3_phase_derivatives(1, tau = Inf, gamma = 4, alpha = 1.5, eta = 3)
+  expect_true(is.nan(d$dPhi_dlog_tau[[1L]]))
+  # A shape just above the collapse still differentiates normally, so the
+  # guard cannot be passing by rejecting everything.
+  d <- .hzr_g3_phase_derivatives(1e-300, tau = 1e-300, gamma = 4, alpha = 1.5,
+                                 eta = 3)
+  expect_true(is.finite(d$dPhi_dlog_tau[[1L]]))
 })
 
 test_that("the gamma and eta steps are left alone", {

@@ -847,12 +847,20 @@
   `.hzr_g3_phase_derivatives()` described itself as taking "central
   differences for log_tau" and stepped `tau` linearly instead, with an
   absolute floor of `1e-10`. Once `tau` fell below that floor the step was
-  larger than `tau` itself and the difference became one-sided, so the
-  derivative the optimizer and the Hessian both use was **99.4% wrong at
-  `tau = 1e-12`** and 1.4% wrong at `1e-9`, measured against an analytic
-  derivative of the closed form. The step is now proportional to `tau` at
-  every scale, and the one-sided fallback is removed because it can no longer
-  be reached.
+  larger than `tau * h`, so the step stopped shrinking with `tau` and became
+  a large *relative* step; below `tau = 1e-10` it also exceeded `tau` itself
+  and the difference turned one-sided. The derivative the optimizer and the
+  Hessian both use was **99.4% wrong at `tau = 1e-12`**, 1.4% wrong at
+  `1e-9` and 0.012% wrong at `1e-8` — the second and third of those from the
+  relative-step effect alone, with the branch still central — measured
+  against an analytic derivative of the closed form. The step is now
+  proportional to `tau` at every scale, and the one-sided fallback is removed
+  because it can no longer be reached.
+
+  Where `tau` is so small that multiplying it by `exp(1e-5)` returns the same
+  number — below about `5e-319`, at the bottom of double precision — or where
+  `tau` is infinite, the two evaluation points coincide. That is now reported as `NaN` rather than the
+  plausible `0` a coincident difference quotient produces.
 
   **Some late-phase (`g3`) fits will move.** Where `tau` is small the
   optimizer now follows a more accurate gradient and can land somewhere
@@ -860,8 +868,10 @@
   than `1e-8` relative, one of them by **21% on a parameter and 42% on a
   standard error**, with the objective **0.0126 log-likelihood units better**
   — a better optimum, not merely a different one. Fits whose shapes stay
-  above about `1e-8` move by around `1e-10` relative, which is the precision
-  the step change itself carries. **No fit in this package's own test suite
+  above about `1e-5` move by around `1e-10` relative, which is the precision
+  the step change itself carries; between `1e-8` and `1e-5` the old
+  derivative was wrong by between `1e-4` and `1e-10`, so fits there can move
+  by more than that. **No fit in this package's own test suite
   moves**: its results are identical before and after, to every assertion.
 
   The `gamma` and `eta` steps keep their existing floors deliberately. `G3`

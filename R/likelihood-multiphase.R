@@ -2854,7 +2854,13 @@
 #' @param gamma Positive scalar time exponent.
 #' @param alpha Non-negative scalar shape parameter.
 #' @param eta Positive scalar outer exponent.
-#' @param h Relative step size for finite differences (default 1e-5).
+#' @param h Finite-difference step (default 1e-5). It is an ABSOLUTE step in
+#'   `log_tau`, and so relative in `tau` only to first order; a relative step
+#'   with a `1e-10` floor for `gamma` and `eta`; and strictly proportional for
+#'   `alpha`. No caller passes it. Accuracy degrades where the function's
+#'   natural scale in `log_tau`, roughly `alpha / gamma`, is far from 1: at
+#'   `alpha = 0.05, gamma = 4` the `tau` derivative is accurate to about
+#'   1e-6 rather than the 1e-11 it reaches for ordinary shapes.
 #' @return Named list with Phi, phi, and 8 derivative vectors.
 #' @keywords internal
 .hzr_g3_phase_derivatives <- function(time, tau, gamma, alpha, eta,
@@ -2875,25 +2881,41 @@
   # 1.4% at 1e-9 (#352, measured against an analytic derivative of the
   # closed form).
   #
-  # Stepping log_tau makes the step proportional to tau at every scale, and
-  # `tau * exp(-h)` is positive for every positive tau -- including
-  # denormals, where 5e-324 * exp(-1e-5) is 4.94e-324 -- so the one-sided
-  # fallback is unreachable and has been removed. At tau == 0 exactly
-  # `hzr_decompos_g3()` already returns `G3 = Inf`, so the base evaluation
-  # above is degenerate before any step is taken and the fallback could not
-  # have rescued that case either.
+  # Stepping log_tau makes the step proportional to tau at every scale, so
+  # the one-sided fallback -- reachable only where a linear step could reach
+  # 0 -- has been removed. At tau == 0 exactly `hzr_decompos_g3()` already
+  # returns `G3 = Inf`, so the base evaluation above is degenerate before any
+  # step is taken and the fallback could not have rescued that case either.
+  #
+  # WHERE THE STEP ITSELF COLLAPSES. A multiplicative step needs `tau` to
+  # have bits left to move. In the denormal range it does not: `5e-324` IS
+  # `4.9406564584124654e-324`, the smallest positive double, and both
+  # `5e-324 * exp(1e-5)` and `5e-324 * exp(-1e-5)` round back to it, so the
+  # two evaluation points COINCIDE and the difference quotient is 0/(2h).
+  # That returns a clean, plausible ZERO for a derivative whose true value
+  # is around -1.8e126 -- the shape of defect this package exists to avoid.
+  # `tau = Inf` coincides the same way. So the degeneracy is detected and
+  # reported as NaN, which is not a number anyone will mistake for an answer.
+  # Measured: the collapse begins below tau ~ 5e-319.
   #
   # gamma and eta keep their floored linear steps DELIBERATELY: G3 is very
   # nearly linear in each of them near zero, so a 1e-10 step stays small
   # relative to the scale on which the function varies even when it is 100%
   # of the parameter, and both measure clean (1.1e-6 and 2.0e-7 at worst) at
   # the shapes the review of #332 flagged.
-  d_plus  <- hzr_decompos_g3(time, tau = tau * exp(h), gamma = gamma,
-                               alpha = alpha, eta = eta)
-  d_minus <- hzr_decompos_g3(time, tau = tau * exp(-h), gamma = gamma,
-                               alpha = alpha, eta = eta)
-  dPhi_dlog_tau <- (d_plus$G3 - d_minus$G3) / (2 * h)
-  dphi_dlog_tau <- (d_plus$g3 - d_minus$g3) / (2 * h)
+  tau_plus  <- tau * exp(h)
+  tau_minus <- tau * exp(-h)
+  if (!is.finite(tau) || tau_plus == tau_minus) {
+    dPhi_dlog_tau <- rep(NaN, length(Phi0))
+    dphi_dlog_tau <- rep(NaN, length(phi0))
+  } else {
+    d_plus  <- hzr_decompos_g3(time, tau = tau_plus, gamma = gamma,
+                                 alpha = alpha, eta = eta)
+    d_minus <- hzr_decompos_g3(time, tau = tau_minus, gamma = gamma,
+                                 alpha = alpha, eta = eta)
+    dPhi_dlog_tau <- (d_plus$G3 - d_minus$G3) / (2 * h)
+    dphi_dlog_tau <- (d_plus$g3 - d_minus$g3) / (2 * h)
+  }
 
   # Central differences for gamma (must stay positive)
   eps_g <- max(abs(gamma) * h, 1e-10)
