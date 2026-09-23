@@ -186,6 +186,32 @@
       x = x, weights = d$weights)
 }
 
+#' Absorb a NUMERICAL failure, but let a data defect through (#407)
+#'
+#' The score path deliberately swallows a Hessian it cannot build or invert
+#' and reports it as a numerical failure. It used to swallow EVERY error, so
+#' a data defect raised inside the likelihood came back as "the information
+#' matrix could not be inverted".
+#'
+#' The re-raise has to happen OUTSIDE the `tryCatch`, not from a handler.
+#' Measured: in `tryCatch(expr, hzr_data_error = function(e) stop(e), error
+#' = function(e) NULL)` the `stop(e)` is caught by the SIBLING `error`
+#' handler of that same call, so the classed error is swallowed anyway and
+#' the narrowing is inert while reading as correct.
+#'
+#' @param expr Expression to evaluate.
+#' @return The value, or `NULL` if it failed numerically. An
+#'   `hzr_data_error` propagates.
+#' @keywords internal
+#' @noRd
+.hzr_score_try <- function(expr) {
+  out <- tryCatch(expr,
+                  hzr_data_error = function(e) e,
+                  error = function(e) NULL)
+  if (inherits(out, "hzr_data_error")) stop(out)
+  out
+}
+
 #' Numeric observed information for a single distribution
 #'
 #' Weibull's analytic Hessian is on an internal reparameterisation, not the
@@ -207,11 +233,10 @@
       call. = FALSE
     )
   }
-  h <- tryCatch(
+  h <- .hzr_score_try(
     numDeriv::hessian(
       function(par) .hzr_score_single_nll(current, x, par), theta
-    ),
-    error = function(e) NULL
+    )
   )
   if (is.null(h) || !is.matrix(h) || nrow(h) != length(theta) ||
         !all(is.finite(h))) {
@@ -257,7 +282,7 @@
       objective = .hzr_fit_objective(current)
     )
   }
-  h <- tryCatch(numDeriv::hessian(nll, theta), error = function(e) NULL)
+  h <- .hzr_score_try(numDeriv::hessian(nll, theta))
   if (is.null(h) || !is.matrix(h) || nrow(h) != length(theta) ||
         !all(is.finite(h))) {
     return(NULL)
@@ -278,7 +303,7 @@
     return(.hzr_score_single_hessian(current, d$x, theta))
   }
   phases <- .hzr_score_phases(current)
-  h <- tryCatch(
+  h <- .hzr_score_try(
     .hzr_hessian_multiphase(
       theta, time = d$time, status = d$status,
       time_lower = d$time_lower, time_upper = d$time_upper,
@@ -286,8 +311,7 @@
       phases = phases,
       covariate_counts = current$fit$covariate_counts,
       x_list = current$fit$x_list
-    ),
-    error = function(e) NULL
+    )
   )
   if (!is.null(h)) {
     return(h)
@@ -555,18 +579,17 @@
   d <- current$data
   if (current$spec$dist != "multiphase") {
     fn <- .hzr_score_gradient_fn(current$spec$dist)
-    g <- tryCatch(
+    g <- .hzr_score_try(
       fn(exp_$theta, time = d$time, status = d$status,
          time_lower = d$time_lower, time_upper = d$time_upper,
-         x = exp_$x, weights = d$weights),
-      error = function(e) NULL
+         x = exp_$x, weights = d$weights)
     )
     if (is.null(g) || length(g) != length(exp_$theta) || !all(is.finite(g))) {
       return(NULL)
     }
     return(as.numeric(g))
   }
-  g <- tryCatch(
+  g <- .hzr_score_try(
     .hzr_gradient_multiphase(
       exp_$theta, time = d$time, status = d$status,
       time_lower = d$time_lower, time_upper = d$time_upper,
@@ -575,8 +598,7 @@
       covariate_counts = exp_$covariate_counts,
       x_list = exp_$x_list,
       objective = .hzr_fit_objective(current)
-    ),
-    error = function(e) NULL
+    )
   )
   if (is.null(g) || length(g) != length(exp_$theta)) return(NULL)
   g
@@ -590,7 +612,7 @@
   if (current$spec$dist != "multiphase") {
     return(.hzr_score_single_hessian(current, exp_$x, exp_$theta))
   }
-  h <- tryCatch(
+  h <- .hzr_score_try(
     .hzr_hessian_multiphase(
       exp_$theta, time = d$time, status = d$status,
       time_lower = d$time_lower, time_upper = d$time_upper,
@@ -598,8 +620,7 @@
       phases = exp_$phases,
       covariate_counts = exp_$covariate_counts,
       x_list = exp_$x_list
-    ),
-    error = function(e) NULL
+    )
   )
   if (!is.null(h) && is.matrix(h) && nrow(h) == length(exp_$theta)) {
     return(h)

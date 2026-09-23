@@ -827,6 +827,21 @@
 
 ## Bug fixes
 
+* **A data defect reaching the score criterion is no longer reported as a
+  numerical failure (#407).** The score path absorbs a Hessian it cannot
+  build or invert and says so, which is right, but it absorbed *every*
+  error, so a defect in the data raised inside the likelihood came back as
+  "the current model's information matrix could not be inverted" and sent
+  the reader looking at conditioning. Since the likelihood's data guards
+  carry the class `hzr_data_error` (#426), the six sites that wrap the
+  likelihood, its gradient and its Hessian now let that class through and
+  go on absorbing everything else. A genuinely numerical failure is
+  unchanged: it is still swallowed and still reported as one. The two
+  `tryCatch` calls that wrap linear algebra rather than the likelihood,
+  `solve()` on the information block and `model.frame()` on a phase
+  formula, are untouched, since a failure there really is what they exist
+  to absorb.
+
 * **A Conservation of Events fit now reports the log-likelihood of the
   estimates it returns (#362).** Under CoE the conserved phase's scale is
   re-derived after the optimizer finishes, and the reported objective was the
