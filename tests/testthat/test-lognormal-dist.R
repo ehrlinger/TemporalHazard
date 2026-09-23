@@ -11,6 +11,12 @@
 ##   - Mathematical identity: at true params, z ~ Normal(0,1)
 ##   - Boundary / edge cases (extreme sigma, all events, all censored)
 
+# This file predicts from models built with fit = FALSE on purpose, so the
+# warning that those numbers come from starting values is switched off for
+# this file only (#398). A file that does not expect the warning sees it as
+# an ordinary leaked warning.
+withr::local_options(TemporalHazard.warn_unfitted_prediction = FALSE)
+
 library(testthat)
 
 # ---------------------------------------------------------------------------
