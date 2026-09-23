@@ -112,11 +112,9 @@ multiphase models: a covariate can enter one phase and not another.</p>
 <dt id="arg-scope">scope<a class="anchor" aria-label="anchor" href="#arg-scope"></a></dt>
 <dd><p>Candidate set.  <code>NULL</code> (default) uses every data-frame
 column not already in the model for every phase.  A candidate enters
-by writing its name into the formula text, so under this default too a
-column whose name reads as a different term enters as that term, with
-no warning: a column literally named <code>age:mal</code> enters as the
-interaction, and a column <code>"age "</code> beside <code>age</code> enters as <code>age</code>
-(#449).  For
+as the column it names, whatever its name: a column literally named
+<code>age:mal</code> enters as that column, not the interaction, and a column
+<code>"age "</code> beside <code>age</code> enters as itself (#449).  For
 single-distribution fits, pass a one-sided formula
 (<code>~ age + nyha</code>) or a character vector of names.  Each name in a
 character <code>scope</code> is looked up, not parsed: a name that is exactly a
@@ -125,14 +123,10 @@ term label as <code><a href="https://rdrr.io/r/stats/terms.html" class="external
 <code>"age:mal"</code>) is that term, and any other name is ignored with a
 warning naming it.  The column is looked up first, so when <code>data</code> has
 a column literally named <code>age:mal</code>, <code>"age:mal"</code> puts that column in
-the scope rather than the interaction.  Resolution decides which
-variables are in the scope; it does not change how a candidate is
-entered.  The refit writes the name as you spelled it into the
-formula text.  When that text reads as a different term, as
-<code>"age:mal"</code> reads as the interaction and <code>"age "</code> as <code>age</code>, the
-screen enters that other term with no warning (#449); when it does not
-parse, as a bare <code>"_X1"</code> does not, the candidate cannot enter
-(#441, #438).  For multiphase
+the scope rather than the interaction.  A candidate enters as the
+column or term its name resolved to, so a bare <code>"_X1"</code> enters the
+column <code>_X1</code> (#449, #441), and the score reads the values of that
+column however the name was written (#438).  For multiphase
 fits, pass a named list of one-sided formulas keyed by phase, naming
 each phase once.  <code>scope</code> lists what may enter; a drop considers every
 term in the model except <code>force_in</code> and terms frozen by <code>max_move</code>
@@ -336,7 +330,10 @@ appended.</p>
 <dd><p><code>"enter"</code>, <code>"drop"</code>, or <code>"frozen"</code>.</p></dd>
 
 <dt><code>variable</code></dt>
-<dd><p>Variable affected.</p></dd>
+<dd><p>The term entered, dropped or frozen, as the
+model's <code><a href="https://rdrr.io/r/stats/terms.html" class="external-link">terms()</a></code> label: a non-syntactic column <code>_X1</code> is recorded as
+<code>`_X1`</code> on every row, whether the scope named it <code>"_X1"</code>,
+<code>"`_X1`"</code> or in a formula.</p></dd>
 
 <dt><code>phase</code></dt>
 <dd><p>Phase name (multiphase) or <code>NA_character_</code>.</p></dd>

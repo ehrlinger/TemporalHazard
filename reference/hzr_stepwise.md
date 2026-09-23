@@ -47,34 +47,30 @@ as.data.frame(x, ...)
 - scope:
 
   Candidate set. `NULL` (default) uses every data-frame column not
-  already in the model for every phase. A candidate enters by writing
-  its name into the formula text, so under this default too a column
-  whose name reads as a different term enters as that term, with no
-  warning: a column literally named `age:mal` enters as the interaction,
-  and a column `"age "` beside `age` enters as `age` (#449). For
-  single-distribution fits, pass a one-sided formula (`~ age + nyha`) or
-  a character vector of names. Each name in a character `scope` is
-  looked up, not parsed: a name that is exactly a column of `data` is
-  that column, otherwise a name that is exactly a term label as
+  already in the model for every phase. A candidate enters as the column
+  it names, whatever its name: a column literally named `age:mal` enters
+  as that column, not the interaction, and a column `"age "` beside
+  `age` enters as itself (#449). For single-distribution fits, pass a
+  one-sided formula (`~ age + nyha`) or a character vector of names.
+  Each name in a character `scope` is looked up, not parsed: a name that
+  is exactly a column of `data` is that column, otherwise a name that is
+  exactly a term label as
   [`terms()`](https://rdrr.io/r/stats/terms.html) writes it
   (`` "`_X1`" ``, `"log(age)"`, `"age:mal"`) is that term, and any other
   name is ignored with a warning naming it. The column is looked up
   first, so when `data` has a column literally named `age:mal`,
   `"age:mal"` puts that column in the scope rather than the interaction.
-  Resolution decides which variables are in the scope; it does not
-  change how a candidate is entered. The refit writes the name as you
-  spelled it into the formula text. When that text reads as a different
-  term, as `"age:mal"` reads as the interaction and `"age "` as `age`,
-  the screen enters that other term with no warning (#449); when it does
-  not parse, as a bare `"_X1"` does not, the candidate cannot enter
-  (#441, \#438). For multiphase fits, pass a named list of one-sided
-  formulas keyed by phase, naming each phase once. `scope` lists what
-  may enter; a drop considers every term in the model except `force_in`
-  and terms frozen by `max_move` before the iteration began (see the
-  **Known limitation (the frozen set)** section). A two-sided formula is
-  an error, since its left-hand side would never be a candidate, and so
-  is a non-empty `scope` under `direction = "backward"`, which does not
-  read it. An empty scope (`~ 1`,
+  A candidate enters as the column or term its name resolved to, so a
+  bare `"_X1"` enters the column `_X1` (#449, \#441), and the score
+  reads the values of that column however the name was written (#438).
+  For multiphase fits, pass a named list of one-sided formulas keyed by
+  phase, naming each phase once. `scope` lists what may enter; a drop
+  considers every term in the model except `force_in` and terms frozen
+  by `max_move` before the iteration began (see the **Known limitation
+  (the frozen set)** section). A two-sided formula is an error, since
+  its left-hand side would never be a candidate, and so is a non-empty
+  `scope` under `direction = "backward"`, which does not read it. An
+  empty scope (`~ 1`,
   [`character()`](https://rdrr.io/r/base/character.html), or a list of
   `NULL`s and `~ 1`s) is accepted there.
 
@@ -278,7 +274,10 @@ The `steps` data frame has columns:
 
 - `variable`:
 
-  Variable affected.
+  The term entered, dropped or frozen, as the model's
+  [`terms()`](https://rdrr.io/r/stats/terms.html) label: a non-syntactic
+  column `_X1` is recorded as `` `_X1` `` on every row, whether the
+  scope named it `"_X1"`, `` "`_X1`" `` or in a formula.
 
 - `phase`:
 
