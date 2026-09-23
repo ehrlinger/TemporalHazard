@@ -853,6 +853,43 @@
 
 ## Bug fixes
 
+* **The G3 phase's `log_tau` derivative is now taken in `log_tau` (#352).**
+  `.hzr_g3_phase_derivatives()` described itself as taking "central
+  differences for log_tau" and stepped `tau` linearly instead, with an
+  absolute floor of `1e-10`. Once `tau` fell below that floor the step was
+  larger than `tau * h`, so the step stopped shrinking with `tau` and became
+  a large *relative* step; below `tau = 1e-10` it also exceeded `tau` itself
+  and the difference turned one-sided. The derivative the optimizer and the
+  Hessian both use was **99.4% wrong at `tau = 1e-12`**, 1.4% wrong at
+  `1e-9` and 0.012% wrong at `1e-8` — the second and third of those from the
+  relative-step effect alone, with the branch still central — measured
+  against an analytic derivative of the closed form. The step is now
+  proportional to `tau` at every scale, and the one-sided fallback is removed
+  because it can no longer be reached.
+
+  Where `tau` is so small that multiplying it by `exp(1e-5)` returns the same
+  number — below about `5e-319`, at the bottom of double precision — or where
+  `tau` is infinite, the two evaluation points coincide. That is now reported as `NaN` rather than the
+  plausible `0` a coincident difference quotient produces.
+
+  **Some late-phase (`g3`) fits will move.** Where `tau` is small the
+  optimizer now follows a more accurate gradient and can land somewhere
+  measurably different: across six trial two-phase fits, two moved by more
+  than `1e-8` relative, one of them by **21% on a parameter and 42% on a
+  standard error**, with the objective **0.0126 log-likelihood units better**
+  — a better optimum, not merely a different one. Fits whose shapes stay
+  above about `1e-5` move by around `1e-10` relative, which is the precision
+  the step change itself carries; between `1e-8` and `1e-5` the old
+  derivative was wrong by between `1e-4` and `1e-10`, so fits there can move
+  by more than that. **No fit in this package's own test suite
+  moves**: its results are identical before and after, to every assertion.
+
+  The `gamma` and `eta` steps keep their existing floors deliberately. `G3`
+  is very nearly linear in each of them near zero, so the floor stays small
+  relative to the scale on which the function varies even when it is 100% of
+  the parameter, and both measure accurate to `1.1e-6` or better at the
+  shapes where the `tau` derivative failed.
+
 * **A single-distribution `theta` must have one entry per parameter, and a
   Weibull scale and shape must be positive, fitted or not (#375, #383).**
   `hazard()` compared a supplied `theta` only with the design's column
