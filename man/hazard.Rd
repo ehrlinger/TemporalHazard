@@ -64,7 +64,21 @@ evaluating an expression such as \code{runif(n)} twice gives two different
 vectors.
 Masked arguments are validated like any other, so an \code{NA} in a
 masked column errors: an \code{NA} count on the SAS \code{ICENSOR}
-path reaches \code{weights} and stops with \verb{'weights' must be non-negative and finite}.}
+path reaches \code{weights} and stops with \verb{'weights' must be non-negative and finite}.
+A named element of \code{data} that is a \strong{function} is refused, on both
+paths, as \code{\link[stats:lm]{stats::lm()}} refuses it. Because the mask sits in front of
+the calling frame, such an element would be called in place of the
+function an expression names -- \code{weights = rep(1, n)} calling a \code{rep}
+held in \code{data} -- and the fit would change with nothing to show for it.
+An S4 generic and a reference-class generator are functions for this
+purpose. A list-column of functions is a list, not a function, and is
+unaffected, as is an element with no name, which no expression can look
+up -- but an \code{NA_character_} name is refused, because R binds such an
+element under the symbol \code{`NA`} and a call reaches it. Remove the
+element: for a vector argument or \code{weights}, define the helper in the
+calling environment; for one used inside the \code{Surv()} response, compute
+the value into a \code{data} column first, since the response is evaluated
+without the formula's environment.}
 
 \item{time}{Numeric follow-up time vector.}
 
@@ -169,14 +183,16 @@ An object of class \code{hazard}, a named list with components:
 \code{weights}, etc.),
 \code{fit} (optimisation results: \code{theta}, \code{objective},
 \code{converged}, \code{se}, \code{vcov}, \code{counts}, \code{message},
-and \code{rel_gradient} and \code{polish_code}, the SAS/C acceptance
+and \code{rel_gradient}, \code{rel_gradient_reason} and
+\code{polish_code}, the SAS/C acceptance
 test described under "Convergence";
 all \code{NULL} when \code{fit = FALSE}; multiphase fits add
 \code{starts}, one row per optimisation start with its \code{status}
 (\code{"ok"}, \code{"nonconverged"}, \code{"infeasible"},
 \code{"nonfinite"} or \code{"error"}), \code{objective} (\code{NA}
-unless the start reached a point where the likelihood is defined),
-\code{convergence} (the
+unless the start reached a point where the likelihood is defined, and
+recorded as the optimizer returned it, before any Conservation of Events
+adjustment to the conserved phase's scale), \code{convergence} (the
 \code{\link[stats]{optim}} code, \code{0} for success), whether it was
 the \code{best} and so the reported fit, and the \code{message} of any
 error. A start that stops at \code{maxit} has a finite \code{objective}
@@ -404,7 +420,13 @@ continuation improved the fit, its termination code in
 \code{fit$fit$polish_code}. \code{print()} and \code{summary()} show both.
 \code{rel_gradient} is \code{NA} when the test was not applied (the optimizer did
 not report convergence) or the gradient cannot be evaluated at the
-estimates; \code{NA} is never reported as a pass. Under Conservation of Events
+estimates; \code{NA} is never reported as a pass. Neither is it always a
+failure: some routes to it, such as a non-converged stop, do say the
+estimates are unreliable, while others, such as a finite-difference score
+that needed a point where the log-likelihood is not usable, say nothing
+against them. Which route it took is recorded in
+\code{fit$fit$rel_gradient_reason}, \code{NA_character_} when the test did run, and
+\code{print()} and \code{summary()} show it. Under Conservation of Events
 the analytic score omits how the conserved scale moves, so the test is
 computed from finite differences of the log-likelihood with that scale
 re-solved, as SAS/C does; the continuation still uses the analytic score,

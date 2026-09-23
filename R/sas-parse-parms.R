@@ -571,14 +571,42 @@
   block
 }
 
+#' Build a one-sided formula from covariate names, as symbols.
+#'
+#' PROC HAZARD's lexer reads a name as `[_A-Z][_A-Z0-9]*` (`hazard_l.l:39`),
+#' so a covariate may begin with an underscore. An R symbol may not unless it
+#' is backquoted, so pasting the names into `str2lang()` raised R's own parser
+#' error ("unexpected symbol") and stopped the whole job (#411). Building the
+#' call from symbols cannot fail that way, whatever the name contains, and
+#' `deparse()` backquotes a non-syntactic name so the emitted document
+#' re-parses to the same call.
+#'
+#' Names arrive trimmed from `.hzr_parse_phase_covars()`; `as.name()` would
+#' otherwise make a symbol carrying the surrounding space.
+#'
+#' A name that survives here is not thereby usable everywhere: `hzr_stepwise()`
+#' spells a non-syntactic name two ways at once (backquoted in its `terms()`
+#' candidate labels, bare in `force_in`), so a `SELECTION` job carrying one is
+#' refused in `.hzr_parse_job()` rather than screened wrongly (#411).
+#' @noRd
+.hzr_sas_covar_formula <- function(covars) {
+  # Reduce() over an empty list is NULL, and `~NULL` is a valid formula with
+  # no terms: a phase would then be fitted with no covariates and nothing
+  # would error. Both callers guard with length(), so this makes that
+  # requirement local rather than remote.
+  if (!length(covars)) {
+    stop("internal: .hzr_sas_covar_formula() needs at least one name")
+  }
+  call("~", Reduce(function(a, b) call("+", a, b), lapply(covars, as.name)))
+}
+
 #' Build one `hzr_phase(...)` call.
 #' @noRd
 .hzr_parms_phase_call <- function(type, shape, covars, fixed,
                                   constraint = "none") {
   call_args <- c(list(quote(hzr_phase), type), shape)
   if (length(covars)) {
-    call_args <- c(call_args,
-                    list(formula = str2lang(paste("~", paste(covars, collapse = " + ")))))
+    call_args <- c(call_args, list(formula = .hzr_sas_covar_formula(covars)))
   }
   fixed_call <- .hzr_parms_fixed_call(fixed)
   if (!is.null(fixed_call)) call_args <- c(call_args, list(fixed = fixed_call))

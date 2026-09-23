@@ -371,6 +371,24 @@
     if (ncol(covs) == 0L || length(object$fit$theta) <= n_shape) {
       return(NULL)
     }
+    # Position is the only mapping left, and that is worth saying out loud.
+    # The columns are matched to coefficients in the order `newdata` happens
+    # to supply them, so a caller who reorders or renames them, or adds one,
+    # gets different numbers with nothing else changing. The fit itself is
+    # what is missing a design: `hazard()` refuses to build such an object
+    # now (#375), so one can only arrive from an older version or by hand.
+    warning(
+      "This model stored no design matrix, so 'newdata' columns are matched ",
+      "to its ", length(object$fit$theta) - n_shape,
+      " covariate coefficient",
+      if (length(object$fit$theta) - n_shape == 1L) "" else "s",
+      " BY POSITION, in the order supplied (",
+      paste(utils::head(colnames(covs), 3L), collapse = ", "),
+      if (ncol(covs) > 3L) ", ..." else "",
+      "). Reordering or renaming them silently changes the predictions. ",
+      "Refit the model so the design is stored and the mapping is by name.",
+      call. = FALSE
+    )
     return(as.matrix(covs))
   }
   # Where `time` is not the prediction time (the eta-based types without
@@ -391,7 +409,7 @@
 #' knots, or an object kept outside `data`) resolves from the formula's
 #' environment, so a same-named `newdata` column can never stand in for it.
 #' A term that took row-level values from outside `data` is then refused by
-#' `.hzr_check_equivariant()`.
+#' `.hzr_check_equivariant()`, and named by `.hzr_outside_rows_term()`.
 #'
 #' @param newdata Data frame of new rows.
 #' @param data_vars The formula's fitting-data variables.
@@ -410,8 +428,8 @@
 #' (`.hzr_phase_newdata_design()`) (#271): the fit's terms, factor levels and
 #' contrasts, so a factor given as a single label still codes to the fit's
 #' columns. `newdata` supplies only the data columns, and a term that does
-#' not follow its rows is refused; see `.hzr_newdata_frame()` and
-#' `.hzr_check_equivariant()`.
+#' not follow its rows is refused; see `.hzr_newdata_frame()`,
+#' `.hzr_check_equivariant()` and `.hzr_outside_rows_term()`.
 #'
 #' @param design A stored design: `terms`, `xlevels`, `contrasts`,
 #'   `data_vars`.
@@ -430,8 +448,29 @@
     stats::model.matrix(design$terms, data = mf,
                         contrasts.arg = design$contrasts)
   }
-  mm <- .hzr_check_equivariant(build, newdata,
-                               attr(design$terms, "term.labels"), where)
+  mm <- tryCatch(
+    .hzr_check_equivariant(build, newdata,
+                           attr(design$terms, "term.labels"), where),
+    error = function(e) e
+  )
+  if (inherits(mm, "error")) {
+    # Only now, with the build already failed or short, is it worth
+    # evaluating the variables to name a term. Nothing extra runs on the
+    # path that succeeds, so `model.frame()`'s one shared mask, its
+    # evaluation count and its errors are exactly what they were (#409).
+    #
+    # And only for a failure that IS about row counts: a condition raised by
+    # the caller's own code inside a term keeps its class, message and
+    # attributes, even when some other term happens to be row-mismatched
+    # (#430 review).
+    if (.hzr_from_design_build(mm)) {
+      term <- .hzr_outside_rows_term(
+        design$terms, .hzr_newdata_frame(newdata, design$data_vars)
+      )
+      if (length(term)) .hzr_stop_unmatched_rows(term, where, nrow(newdata))
+    }
+    stop(mm)
+  }
   mm[, cols, drop = FALSE]
 }
 
@@ -668,8 +707,9 @@
 #' formula's environment) does not move with them, so the design is rebuilt
 #' with the rows cyclically shifted and any column that does not follow is
 #' refused, naming its term. This does not depend on the shape of the
-#' outside object. One row cannot be shifted; the row-count backstop
-#' (`.hzr_check_design_rows()`) covers it.
+#' outside object. One row cannot be shifted, so the row-count backstop
+#' (`.hzr_check_design_rows()`) is what refuses it, and
+#' `.hzr_outside_rows_term()` then names the term.
 #'
 #' @param build Function of a data frame of new rows, returning the model
 #'   matrix with its `assign` attribute.
@@ -712,12 +752,164 @@
   bad <- which(colSums(!same) > 0L)
   if (length(bad) > 0L) {
     term <- unique(c("(Intercept)", labels)[attr(mm, "assign")[bad] + 1L])
-    stop("term ", paste0("'", term, "'", collapse = ", "), " of ", where,
-         " uses row-level values taken from outside `data`; ",
-         "predict(newdata =) cannot rebuild them for new rows. Move them ",
-         "into `data` as columns and refit.", call. = FALSE)
+    .hzr_stop_outside_term(term, where)
   }
   mm
+}
+
+
+#' Name a list of terms the same way wherever one is refused
+#'
+#' @param term Character vector of term labels.
+#' @noRd
+.hzr_term_list <- function(term) {
+  paste0("'", term, "'", collapse = ", ")
+}
+
+
+#' Refuse model terms that take row-level values from outside `data`
+#'
+#' For the equivariance check (`.hzr_check_equivariant()`), which has
+#' established the cause: the term did not follow a cyclic shift of
+#' `newdata`'s rows, which a term built from those rows cannot do.
+#' @param term Character vector of term labels.
+#' @param where Text naming the design.
+#' @noRd
+.hzr_stop_outside_term <- function(term, where) {
+  stop("term ", .hzr_term_list(term), " of ", where,
+       " uses row-level values taken from outside `data`; ",
+       "predict(newdata =) cannot rebuild them for new rows. Move them ",
+       "into `data` as columns and refit.", call. = FALSE)
+}
+
+
+#' Refuse a term that does not give one value per row of `newdata`
+#'
+#' For the diagnosis (`.hzr_outside_rows_term()`), which has established
+#' only the row count. Outside-`data` values are ONE cause; a length-changing
+#' function of a `data` column, such as `unique()` or `stats::na.omit()`, is
+#' another, and for that one "move it into `data`" is advice the user cannot
+#' follow. The message gives both rather than asserting the first (#409).
+#' @param term Character vector of term labels.
+#' @param where Text naming the design.
+#' @param n Number of rows in `newdata`.
+#' @noRd
+.hzr_stop_unmatched_rows <- function(term, where, n) {
+  stop("term ", .hzr_term_list(term), " of ", where,
+       " does not give one value per row of 'newdata' (", n, " row(s)), so ",
+       "predict(newdata =) cannot rebuild it for new rows. Either the term ",
+       "takes row-level values from outside `data`, such as a vector in the ",
+       "formula's environment, in which case move those into `data` as ",
+       "columns and refit; or it uses a length-changing function, such as ",
+       "unique() or stats::na.omit(), which has no value to give for a new ",
+       "row.", call. = FALSE)
+}
+
+
+#' Did this condition come from building the design, rather than user code?
+#'
+#' `predict(newdata = )` replaces a build failure with a named-term refusal,
+#' and must not do that to a condition the caller raised inside one of their
+#' own terms: `~ I(ff(age)) + zz`, where `ff()` fails and `zz` merely happens
+#' to be row-mismatched, lost the caller's class and message and blamed `zz`
+#' (#430 review). The two are told apart by `conditionCall()`, which is the
+#' building function for a design failure and the user's own call otherwise.
+#'
+#' Matching the CALL rather than the message is deliberate: both base
+#' messages ("variable lengths differ", "length of 'dimnames' ...") come from
+#' C and are translated, so a message test would quietly stop working outside
+#' an English locale -- which no CI here would catch. Our own backstop
+#' carries no call and is recognised by its class instead.
+#'
+#' A user function that itself calls `model.frame()` or `model.matrix()` and
+#' fails inside it is misread as a design failure: `conditionCall()` reports
+#' the same callee for both. That is a known limitation, not an oversight
+#' (#446) -- separating them needs the call stack at signal time, it fails
+#' loudly either way, and NEWS records the exception. The behaviour is
+#' PINNED by "a nested model.frame() failure is misattributed, as
+#' documented", so fixing #446 fails that test and forces this note and the
+#' NEWS sentence to be updated with it.
+#'
+#' @param e A condition.
+#' @return `TRUE` when the condition came from the design build.
+#' @noRd
+.hzr_from_design_build <- function(e) {
+  if (inherits(e, "hzr_design_rows_error")) {
+    return(TRUE)
+  }
+  cl <- conditionCall(e)
+  if (!is.call(cl)) {
+    return(FALSE)
+  }
+  fn <- paste(deparse(cl[[1L]]), collapse = "")
+  fn %in% c("model.frame", "model.frame.default", "model.matrix",
+            "model.matrix.default", "stats::model.frame",
+            "stats::model.frame.default", "stats::model.matrix",
+            "stats::model.matrix.default")
+}
+
+
+#' Name a term whose variable has the wrong number of rows for `newdata`
+#'
+#' A DIAGNOSIS, run only after `model.frame()` has already failed or
+#' returned the wrong rows. It never decides whether a prediction happens:
+#' it only names a term for a call that is already failing, and the caller
+#' re-raises the original condition when this names nothing.
+#'
+#' The variables are evaluated in ONE mask, in order, as `model.frame()`
+#' evaluates them, so a term that assigns into the mask (`I(zz <- age)`) is
+#' visible to a later term that reads it. Evaluating them separately named
+#' terms that were fine (#430 review).
+#'
+#' `newdata` supplies only the fit's data columns, so a model-frame
+#' variable evaluated there whose row count is not `newdata`'s cannot be
+#' matched to `newdata`'s rows. The usual cause is row-level values from
+#' outside `data` (a vector in the formula's environment), but it is
+#' **not** the only one:
+#' a length-changing function of a `data` column, `I(unique(age))` or
+#' `I(as.numeric(stats::na.omit(age)))`, lands here too. The row count alone
+#' does not tell them apart, so the message names both
+#' (`.hzr_stop_unmatched_rows()`). Left to `model.frame()`, either failed
+#' with "variable lengths differ", naming whichever variable it compared
+#' against, or reached the row-count backstop, which names no term (#409).
+#' A scalar or a knot vector passed as an argument is not a model-frame
+#' variable of the wrong length, so it is untouched. A variable that fails
+#' to evaluate names nothing, which leaves the original error to propagate.
+#' @param terms The stored terms object.
+#' @param nd The newdata frame, restricted to the data columns.
+#' @return Character vector of term labels, empty when nothing is wrong.
+#' @noRd
+.hzr_outside_rows_term <- function(terms, nd) {
+  vars <- attr(terms, "predvars")
+  if (is.null(vars)) vars <- attr(terms, "variables")
+  vars <- as.list(vars)[-1L]
+  factors <- attr(terms, "factors")
+  if (!length(vars) || !length(factors)) {
+    return(character(0))
+  }
+  env <- environment(terms)
+  if (is.null(env)) env <- parent.frame()
+  # ONE mask, evaluated in order, because that is what `model.frame()` does.
+  # A term that assigns, `I(zz <- age)`, has to be visible to a later term
+  # that reads it: evaluated in separate masks the diagnosis instead found
+  # the formula environment's unrelated `zz` and named `I(zz^2)` as well as
+  # the genuinely mismatched term, sending the user to repair a term that
+  # was fine (#430 review). `vapply()` evaluates in order, and `mask`
+  # persists across the calls, so the assignment carries.
+  mask <- list2env(as.list(nd), parent = env)
+  wrong <- vapply(vars, function(v) {
+    val <- tryCatch(eval(v, mask), error = function(e) NULL)
+    !is.null(val) && NROW(val) != nrow(nd)
+  }, logical(1))
+  if (!any(wrong)) {
+    return(character(0))
+  }
+  # By POSITION, not by a deparsed string: `deparse()` breaks at 60
+  # characters and indents the continuation, so a joined key never equals
+  # the wide rowname `terms()` stores, and every long term went unnamed.
+  # The factors matrix has one row per entry of `variables`, in order.
+  rows <- rownames(factors)[wrong]
+  colnames(factors)[colSums(factors[rows, , drop = FALSE] != 0) > 0]
 }
 
 
@@ -735,11 +927,21 @@
 #' @noRd
 .hzr_check_design_rows <- function(mm, newdata, where) {
   if (nrow(mm) != nrow(newdata)) {
-    stop("The design rebuilt for ", where, " has ", nrow(mm), " rows for ",
-         nrow(newdata), " row(s) of 'newdata': a term uses row-level values ",
-         "taken from outside `data`, which predict(newdata =) cannot rebuild ",
-         "for new rows. Move them into `data` as columns and refit.",
-         call. = FALSE)
+    # Classed, not merely worded: `.hzr_rebuild_design()` has to tell this
+    # failure from a user's error raised inside a term, and this one carries
+    # no call to identify it by (#430 review).
+    stop(structure(
+      class = c("hzr_design_rows_error", "error", "condition"),
+      list(
+        message = paste0(
+          "The design rebuilt for ", where, " has ", nrow(mm), " rows for ",
+          nrow(newdata), " row(s) of 'newdata': a term uses row-level values ",
+          "taken from outside `data`, which predict(newdata =) cannot rebuild ",
+          "for new rows. Move them into `data` as columns and refit."
+        ),
+        call = NULL
+      )
+    ))
   }
   invisible(NULL)
 }

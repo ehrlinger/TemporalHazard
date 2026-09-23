@@ -869,11 +869,48 @@
     cross_pinned <- intersect(
       intersect(parms$selection$force_in %||% character(0), in_model_all),
       movable_all)
+    # A name PROC HAZARD accepts but R does not (#411). The phase formulas
+    # now carry such a name (built from symbols), but `hzr_stepwise()` keys
+    # its candidates on `terms()` labels, which backquote it, while
+    # `force_in` is documented and emitted as a bare variable name. The two
+    # spellings never match, so a `/I` pin is silently ignored and the screen
+    # can drop a variable SAS holds in; the score criterion, which is the one
+    # this translator emits, indexes `data` by the backquoted label and skips
+    # the candidate as "not found". Refusing keeps the job LOUD, as it was
+    # before the formulas were fixed, rather than returning a screen that
+    # disagrees with PROC HAZARD. The underlying defects are in the stepwise
+    # driver, not here.
+    nonsyntactic <- unique(c(
+      unlist(parms$selection$scope %||% list()),
+      unlist(parms$selection$movable %||% list()),
+      unlist(parms$selection$in_model %||% list()),
+      parms$selection$force_in %||% character(0)))
+    nonsyntactic <- nonsyntactic[make.names(nonsyntactic) != nonsyntactic]
+    # Two different jobs hide behind "R would backquote this", and they need
+    # different reasons. `hazard_l.l:39` is `name ([_A-Z][_A-Z0-9]*)` and
+    # `hazard_y.y:213` is `phasevar : NAME`, so:
+    #   - `_X1`, and the reserved words `NA`, `TRUE`, `FALSE`, `NULL`, ARE
+    #     names PROC HAZARD accepts, and only R objects to them (#411);
+    #   - `AGE*SEX`, `LOG(AGE)` and `B SEX` are NOT names, so PROC HAZARD
+    #     rejects the job at parse. This parser passes such text through as
+    #     though it were a variable, which is its own defect, but the reason
+    #     given to the reader must not claim the lexer accepted it.
+    # Only a name PROC HAZARD ACCEPTS is refused here. Text it rejects at
+    # parse (`AGE*SEX`, `LOG(AGE)`) is passed through by this parser as though
+    # it were a variable, which is a real defect -- but refusing it would be a
+    # NEW stop for a job that translates on main today, and new stops are not
+    # what this release does (John, 2026-09-22). It is tracked by #440 and
+    # will become a warning plus an $untranslated row there, once the warn
+    # machinery lands. Until then such a job emits exactly what main emits.
+    nonsyntactic <- nonsyntactic[grepl("^[_A-Za-z][_A-Za-z0-9]*$", nonsyntactic)]
     refusals <- c(sel$refuse,
                   if (saw_restrict) "RESTRICT",
                   if (length(per_var_opts)) per_var_opts,
                   if (length(cross_pinned)) {
                     paste0(cross_pinned, " (/I in one phase, movable in another)")
+                  },
+                  if (length(nonsyntactic)) {
+                    paste0(nonsyntactic, " (not a syntactic R name)")
                   })
     if (!length(refusals)) return(NULL)
     # Name ONLY what fired. One boilerplate string listing every refusable
@@ -894,6 +931,15 @@
       if (grepl("/(MOVE|ORDER)", item)) {
         return(paste0(item, ": a per-variable MOVE= or ORDER= has no ",
                       "hzr_stepwise() equivalent (its max_move is per run)"))
+      }
+      if (grepl("[(]not a syntactic R name[)]$", item)) {
+        return(paste0(item, ": PROC HAZARD's lexer accepts this name ",
+                      "(hazard_l.l:39) but R does not, so hzr_stepwise() ",
+                      "spells it two ways at once -- backquoted in its ",
+                      "candidate labels, bare in force_in -- and a /I pin ",
+                      "would be ignored while the score criterion could not ",
+                      "test it. Rename the column, or run the screen by hand ",
+                      "(#411)"))
       }
       paste0(item, ": force_in is keyed by variable name across phases, ",
              "so it would be pinned in the phase SAS leaves movable")
@@ -1149,8 +1195,11 @@
       # screen the whole SAS dataset -- the EVENT count and the time
       # variable included.
       scope <- parms$selection$scope %||% list()
+      # Built from symbols, not pasted text: a SAS name may begin with an
+      # underscore and an R symbol may not (#411). See
+      # .hzr_sas_covar_formula().
       sw_args$scope <- as.call(c(quote(list), lapply(scope, function(v) {
-        if (length(v)) str2lang(paste("~", paste(v, collapse = " + "))) else NULL
+        if (length(v)) .hzr_sas_covar_formula(v) else NULL
       })))
     }
     sw_args$data <- args$data
