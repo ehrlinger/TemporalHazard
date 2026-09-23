@@ -88,6 +88,47 @@
 # parser splits the statement on whitespace, so it joins the pieces back
 # before reading them. Anything that does not join into `KEY=VALUE` is left
 # alone for .hzr_parms_spaced_pieces() to judge (#421).
+#' Rejoin a macro call whose arguments contain spaces.
+#'
+#' Operands are split on whitespace, which cuts `%FLAGS(A, B)` into
+#' `%FLAGS(A,` and `B)`. Only the first fragment then looks like a macro, and
+#' the remainder was classified on its own -- so a job SAS runs collected a
+#' false `$untranslated` row and, since 2026-09-22, a false warning (#433
+#' review).
+#'
+#' SAS expands the whole call before `PROC HAZARD` sees any operand, so the
+#' call must travel as one token and stay indeterminate.
+#'
+#' Absorption is bounded by the operands present: an unclosed `%FLAGS(A`
+#' takes the rest and stops, rather than looping. That is the right reading
+#' anyway, since everything after it is inside the unterminated call.
+#' @noRd
+.hzr_sas_join_macro_calls <- function(ops) {
+  n <- length(ops)
+  if (n < 2L) return(ops)
+  opens <- function(x) lengths(regmatches(x, gregexpr("(", x, fixed = TRUE)))
+  closes <- function(x) lengths(regmatches(x, gregexpr(")", x, fixed = TRUE)))
+  out <- character(0)
+  i <- 1L
+  while (i <= n) {
+    op <- ops[[i]]
+    if (.hzr_sas_is_macro(op) && opens(op) > closes(op)) {
+      j <- i
+      acc <- op
+      while (j < n && opens(acc) > closes(acc)) {
+        j <- j + 1L
+        acc <- paste(acc, ops[[j]])
+      }
+      out <- c(out, acc)
+      i <- j + 1L
+    } else {
+      out <- c(out, op)
+      i <- i + 1L
+    }
+  }
+  out
+}
+
 .hzr_sas_join_spaced <- function(ops) {
   n <- length(ops)
   if (n < 2L) return(ops)
@@ -865,7 +906,7 @@
     }
   }
 
-  operands <- .hzr_sas_join_spaced(operands)
+  operands <- .hzr_sas_join_spaced(.hzr_sas_join_macro_calls(operands))
   spaced_piece <- .hzr_parms_spaced_pieces(operands)
   for (i in seq_along(operands)) {
     op <- operands[[i]]

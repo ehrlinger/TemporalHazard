@@ -1087,3 +1087,38 @@ test_that("the refusal message's claim about hzr_phase() matches what happens (#
   expect_gt(says_yes, 0L)
   expect_gt(says_no, 0L)
 })
+
+test_that("a macro call whose arguments contain spaces stays one operand (#433 review)", {
+  # Operands are split on whitespace, so `%FLAGS(A, B)` became `%FLAGS(A,`
+  # and `B)`. Only the first looked like a macro; the remainder was judged on
+  # its own, giving a job SAS runs a false $untranslated row and a false
+  # warning. SAS expands the whole call before PROC HAZARD reads any operand,
+  # so it must travel as one token and stay indeterminate.
+  one_row <- function(parms) {
+    job <- .u1_job(parms = parms)
+    job$untranslated
+  }
+  # The reported two-argument case, and its no-space control.
+  u <- one_row("MUE=0.2 THALF=1 NU=1 %FLAGS(A, B)")
+  expect_identical(NROW(u), 1L)
+  expect_identical(u$construct, "%FLAGS(A, B)")
+  u <- one_row("MUE=0.2 THALF=1 NU=1 %FLAGS(A,B)")
+  expect_identical(NROW(u), 1L)
+  expect_identical(u$construct, "%FLAGS(A,B)")
+  # Three arguments, so the joiner is not special-cased to one space.
+  u <- one_row("MUE=0.2 THALF=1 NU=1 %F(A, B, C)")
+  expect_identical(NROW(u), 1L)
+  expect_identical(u$construct, "%F(A, B, C)")
+
+  # OVER-REACH CONTROL, the direction a joiner fails in: an operand AFTER the
+  # macro must still be read. Without this the test could not tell a correct
+  # join from one that swallowed the rest of the statement.
+  job <- .u1_job(parms = "MUE=0.2 THALF=1 %F(A, B) NU=1")
+  expect_identical(NROW(job$untranslated), 1L)
+  expect_true(any(grepl("nu = 1", deparse(job$calls$fit), fixed = TRUE)))
+
+  # A non-macro token carrying parentheses is NOT joined: it is not a macro,
+  # and reading unreadable phase text as a variable is tracked by #440.
+  u <- one_row("MUE=0.2 THALF=1 NU=1 LOG(A, B)")
+  expect_gt(NROW(u), 1L)
+})
