@@ -423,9 +423,20 @@
   outside `data` (a vector, matrix, list or environment in the formula’s
   environment, as in `~ zz` or `~ ext$z`) is refused, even when
   `newdata` supplies the object, with an error naming the term
-  (`term 'zz' of the model uses row-level values taken from outside`).
+  (`term 'zz' of the model ...`)
+  ([\#409](https://github.com/ehrlinger/TemporalHazard/issues/409)).
   Such a term cannot be rebuilt for new rows. Move the variable into
-  `data` as a column and refit. Before, a supplied `zz` or matrix `M`
+  `data` as a column and refit. When the term’s values simply do not
+  line up with `newdata`’s rows, the error says so and gives both
+  causes, since a length-changing function of a `data` column, such as
+  `I(unique(age))`, reaches the same check. An error raised by your own
+  code inside a term reaches you unchanged, with its own class and
+  message, even when a different term is row-mismatched – unless it
+  comes from a
+  [`model.frame()`](https://rdrr.io/r/stats/model.frame.html) or
+  [`model.matrix()`](https://rdrr.io/r/stats/model.matrix.html) call
+  inside that term, which is read as the design build’s own failure and
+  replaced by the naming error. Before, a supplied `zz` or matrix `M`
   was used, but a missing or list-held one was silently read from the
   fitting rows (see Bug fixes). Formula constants, such as `cutoff` in
   `I(age > cutoff)` and spline knots, are unaffected. A fit saved by an
