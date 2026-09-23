@@ -791,8 +791,10 @@
   inherited the discrepancy, including `print()`, `summary()`, the `logLik`
   and `delta_logLik` columns of `hzr_stepwise()$steps`, and the log-likelihood
   the score criterion works from. The objective is now recomputed at the
-  returned estimates, so `objective` and `theta` always describe the same
-  point. **No estimate changes**: `theta` is untouched and only the number
+  returned estimates, so `objective` and `theta` describe the same point. The
+  one exception is loud: if the likelihood cannot be evaluated there, the
+  optimizer's own value is kept and a warning says so. **No estimate
+  changes**: `theta` is untouched and only the number
   reported beside it moves, and only for fits where the two had diverged. On
   the datasets measured that was 2 fits in 15.
 

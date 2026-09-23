@@ -69,3 +69,34 @@ test_that("an ordinary CoE fit is unchanged: objective still equals its own like
   expect_equal(fit$fit$objective, coe_ll_at(fit, tt, st, phases),
                tolerance = 1e-10)
 })
+
+test_that("starts$objective keeps the optimizer's own value, and says so (#362)", {
+  skip_on_cran()
+  # The two fields answer different questions and can legitimately differ.
+  # `starts$objective` records what each start's optimisation REACHED, on one
+  # footing across rows, and `best` is the argmax of that column.
+  # `fit$fit$objective` is the likelihood of the estimates actually returned,
+  # after the conservation adjustment has moved the conserved scale. Rewriting
+  # only the winning row to match would break the argmax invariant that
+  # test-multiphase-reproducibility.R asserts, so the difference is kept and
+  # pinned here rather than left to be discovered.
+  data(avc, package = "TemporalHazard")
+  phases <- suppressWarnings(list(
+    early = hzr_phase("cdf", t_half = .15, nu = 1.4, m = 1, fixed = "m"),
+    late  = hzr_phase("g3", tau = 5, gamma = 1, alpha = 1, eta = 1,
+                      constraint = "alpha_gamma_eta")
+  ))
+  fit <- suppressWarnings(hazard(
+    time = avc$int_dead, status = avc$dead, dist = "multiphase",
+    phases = phases, fit = TRUE, control = list(n_starts = 1L)
+  ))
+  starts <- fit$fit$starts
+  expect_identical(sum(starts$best), 1L)
+  # The argmax invariant still holds over the column.
+  expect_equal(starts$objective[starts$best], max(starts$objective))
+  # And on this fit the winning row is the PRE-adjustment value, so it differs
+  # from the reported objective by the size of the conservation adjustment.
+  expect_false(isTRUE(all.equal(starts$objective[starts$best],
+                                fit$fit$objective)))
+  expect_gt(abs(starts$objective[starts$best] - fit$fit$objective), 1)
+})
