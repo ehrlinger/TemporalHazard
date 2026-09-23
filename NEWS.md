@@ -824,25 +824,27 @@
   or `scope` is that term, so `` "`_X1`" `` and `"age:mal"` work as well;
   and a name that is neither is ignored **with a warning naming it**, where
   before it was ignored in silence. The column is looked up first, so when
-  `data` has a column literally named `age:mal`, `"age:mal"` is that column
-  and the interaction can be offered only through a formula `scope`.
+  `data` has a column literally named `age:mal`, `"age:mal"` resolves to
+  that column, and the interaction can be named only in a formula `scope`.
   Distinct columns stay distinct: `age`, `age ` and `age # x` are three
   columns, and a column literally named `` `x` `` is not `x`. A string that
   only resembles a name is not read as one: `"age "` when there is no such
   column, or `` "`age`" ``, which `terms()` never writes, is warned about
   and ignored.
 
-  This is about MATCHING. Whether such a variable can ENTER a screen is a
-  separate question, it is not fixed here, and the answer depends on the
-  criterion, so no single rule covers it. Under `"wald"` and `"aic"` a
-  formula `scope` adds one, because its labels are already quoted, while a
-  character `scope` of bare names cannot: the refit pastes the candidate
-  into a formula that then does not parse, and the failure names the
-  candidate (#441). Under `"score"` **neither** form adds one, and the two
-  fail by different routes, so which of them names the variable depends on
-  whether the candidate cleared the entry threshold before the refit was
-  reached; #441 and #438 track them. A `"score"` screen can therefore finish
-  having omitted the variable.
+  This is about MATCHING: which variables are pinned, excluded or in the
+  scope. How a candidate ENTERS is unchanged and is a known limitation. The
+  refit writes the candidate's name, as spelled, into the formula text. A
+  formula `scope` carries `terms()` labels, which are already quoted, so
+  its candidates enter as themselves. A name that reads as a different
+  term enters as that term, with no warning: the literal column `age:mal`
+  enters as the interaction, and a column `age ` beside `age` enters as
+  `age`, reachable through the default `scope = NULL`; under
+  `"score"` the entry p-value is still the literal column's (#449). A
+  non-syntactic name written bare, such as `"_X1"`, does not parse, so
+  under `"wald"` and `"aic"` its refit fails and the failure names it
+  (#441); under `"score"` it can fail by either of two routes, and a
+  `"score"` screen can finish having omitted it (#441, #438).
 
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded

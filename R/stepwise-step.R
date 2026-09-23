@@ -1204,6 +1204,14 @@
       call. = FALSE
     )
   }
+  # A refit that added no column at all is said so first; the message below
+  # would list the same design twice (#442).
+  if (length(added) == 0L) {
+    stop("Variable ", sQuote(var), where,
+         " added no design-matrix column the current fit lacks, so its ",
+         "coefficient cannot be identified.",
+         call. = FALSE)
+  }
   # One new NAME is not one new column: `z` added to `~ z:f` turns
   # `z:fa, z:fb` into `z, z:fb`, the same column space and likelihood.  The
   # score path requires the count to rise by one for the same reason.
@@ -1216,12 +1224,6 @@
       "), so there is no coefficient of its own to test.",
       call. = FALSE
     )
-  }
-  if (length(added) == 0L) {
-    stop("Variable ", sQuote(var), where,
-         " added no design-matrix column the current fit lacks, so its ",
-         "coefficient cannot be identified.",
-         call. = FALSE)
   }
   if (multiphase) paste0(phase, ".", new_cols[added]) else paste0("beta", added)
 }

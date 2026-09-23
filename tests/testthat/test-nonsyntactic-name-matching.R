@@ -74,6 +74,82 @@ nsn_dropped <- function(fit, data, ...) {
   sw$steps$variable[sw$steps$action == "drop"]
 }
 
+nsn_agemal <- function() {
+  d0 <- nsn_avc()
+  d <- data.frame(d0, `age:mal` = as.numeric(scale(d0$age)) * 0.5 + 1,
+                  check.names = FALSE)
+  # The column is genuinely not the product, or the tests prove nothing.
+  expect_false(isTRUE(all.equal(d[["age:mal"]], d$age * d$mal)))
+  d
+}
+
+# The terms of the model a screen FINISHED with. Read off the fitted object
+# the screen returns, so every step, refit included, has run.
+nsn_final_terms <- function(sw) {
+  attr(stats::terms(stats::formula(sw$call$formula)), "term.labels")
+}
+
+nsn_screen <- function(fit, data, ...) {
+  suppressWarnings(hzr_stepwise(fit, data = data, criterion = "wald",
+                                trace = FALSE, ...))
+}
+
+# --- real screens, run to completion ---------------------------------------
+#
+# nsn_offered() below stops each screen before anything is scored or refit,
+# which is right for the resolution layer and blind to everything after it.
+# These run the whole screen and read the final model.
+
+test_that("a real screen keeps a pinned `_X1` in the final model (#437)", {
+  skip_on_cran() # full screens
+  d <- nsn_rename_age("_X1")
+  fit <- nsn_fit(d, "`_X1` + mal", c(0.1, 1, 0, 0))
+  sw_free <- nsn_screen(fit, d, direction = "backward", slstay = 1e-9)
+  expect_identical(nsn_final_terms(sw_free), character()) # known positive
+  sw_pin <- nsn_screen(fit, d, direction = "backward", slstay = 1e-9,
+                       force_in = "_X1")
+  expect_identical(nsn_final_terms(sw_pin), "`_X1`")
+})
+
+test_that("a real screen never enters a force_out column (#437, #442)", {
+  skip_on_cran() # full screens
+  for (nm in c("_X1", "TRUE")) {
+    d <- nsn_rename_age(nm)
+    base <- nsn_fit(d)
+    sc <- stats::as.formula(paste0("~ `", nm, "` + mal"))
+    lab <- paste0("`", nm, "`")
+    sw_free <- nsn_screen(base, d, direction = "forward", slentry = 0.99,
+                          scope = sc)
+    expect_setequal(nsn_final_terms(sw_free), c(lab, "mal")) # known positive
+    sw_out <- nsn_screen(base, d, direction = "forward", slentry = 0.99,
+                         scope = sc, force_out = nm)
+    expect_identical(nsn_final_terms(sw_out), "mal", info = nm)
+  }
+})
+
+test_that("a screen over a literal `age:mal` column completes (#442)", {
+  skip_on_cran() # full screens
+  # Regression found by review of 36214f79: the candidate was compared by
+  # the COLUMN's label while the refit entered the term its spelling pastes
+  # to, so the next iteration re-offered it and the no-op refit stopped the
+  # screen with an error. 71277ff8 completed with one entry. WHICH term the
+  # refit enters for such a column is a known limitation of the refit
+  # (#449), so this asserts only what does not depend on it: the screen
+  # finishes, enters once, fails no refit, and grows the model by one term.
+  d <- nsn_agemal()
+  fit <- nsn_fit(d, "age + mal", c(0.1, 1, 0, 0))
+  for (sc in list(NULL, "age:mal")) {
+    sw <- NULL
+    expect_no_error(
+      sw <- nsn_screen(fit, d, direction = "forward", slentry = 0.99,
+                       scope = sc)
+    )
+    expect_identical(sum(sw$steps$action == "enter"), 1L)
+    expect_identical(sw$criteria$n_refit_failures, 0L)
+    expect_length(nsn_final_terms(sw), 3L)
+  }
+})
+
 # --- #437: a bare non-syntactic name ---------------------------------------
 
 test_that("force_in = '_X1' pins the column `_X1` (#437)", {
@@ -116,9 +192,9 @@ test_that("entry needs the QUOTED spelling; a bare one fails loudly (#437)", {
   skip_on_cran() # three forward screens
   # Pins the NEWS paragraph that separates MATCHING from ENTRY. Matching a
   # non-syntactic variable is not being able to ADD one: the refit pastes
-  # the candidate's spelling into a formula, so it parses only when that
-  # spelling is quoted. A formula scope carries `terms()` labels and does; a
-  # character scope written bare does not, and that failure is LOUD (#441).
+  # the candidate's spelling into the formula text. For `_X1` the quoted
+  # spelling parses and the bare one does not, and that failure is LOUD
+  # (#441). (A spelling that parses to a DIFFERENT term is #449.)
   d <- nsn_rename_age("_X1")
   base <- nsn_fit(d)
   fwd <- function(...) {
@@ -181,15 +257,6 @@ test_that("a scope naming a variable twice offers it once (#442, 1)", {
 })
 
 # --- #442 defect 2: a literal column named like an interaction ------------
-
-nsn_agemal <- function() {
-  d0 <- nsn_avc()
-  d <- data.frame(d0, `age:mal` = as.numeric(scale(d0$age)) * 0.5 + 1,
-                  check.names = FALSE)
-  # The column is genuinely not the product, or the tests prove nothing.
-  expect_false(isTRUE(all.equal(d[["age:mal"]], d$age * d$mal)))
-  d
-}
 
 test_that("a literal `age:mal` column is offered beside the interaction (#442, 2)", {
   skip_on_cran() # a fit

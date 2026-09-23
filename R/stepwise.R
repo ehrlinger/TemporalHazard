@@ -105,9 +105,15 @@
 #'   term label as `terms()` writes it (`` "`_X1`" ``, `"log(age)"`,
 #'   `"age:mal"`) is that term, and any other name is ignored with a
 #'   warning naming it.  The column is looked up first, so when `data` has
-#'   a column literally named `age:mal`, `"age:mal"` is that column and
-#'   the interaction cannot be named this way; use a formula `scope`
-#'   for it.  For multiphase
+#'   a column literally named `age:mal`, `"age:mal"` puts that column in
+#'   the scope rather than the interaction.  Resolution decides which
+#'   variables are in the scope; it does not change how a candidate is
+#'   entered.  The refit writes the name as you spelled it into the
+#'   formula text.  When that text reads as a different term, as
+#'   `"age:mal"` reads as the interaction and `"age "` as `age`, the
+#'   screen enters that other term with no warning (#449); when it does not
+#'   parse, as a bare `"_X1"` does not, the candidate cannot enter
+#'   (#441, #438).  For multiphase
 #'   fits, pass a named list of one-sided formulas keyed by phase, naming
 #'   each phase once.  `scope` lists what may enter; a drop considers every
 #'   term in the model except `force_in` and terms frozen by `max_move`
@@ -153,8 +159,8 @@
 #'   too.  Any other name, `"age "` with a trailing space when there is no
 #'   such column, say, matches nothing and is ignored with a warning naming
 #'   it.  The column is looked up first: when `data` has a column literally
-#'   named `age:mal`, `"age:mal"` is that column and not the interaction,
-#'   which then cannot be pinned by name.
+#'   named `age:mal`, `"age:mal"` resolves to that column and not to the
+#'   interaction.
 #' @param force_out Character vector of variables that may never be
 #'   considered as candidates.  Names are looked up as for `force_in`:
 #'   a column of `data` first, then a term label of the model or `scope`,
@@ -469,6 +475,12 @@ hzr_stepwise <- function(fit,
   # NULL, whereas `vec[[missing]]` errors with "subscript out of bounds".
   move_counts <- list()
   frozen      <- character()
+  # The term each entry ADDED, mapped to the candidate that entered it,
+  # where the two differ. The refit pastes the candidate's spelling, so a
+  # literal `age:mal` column spelled bare enters as the interaction; keyed
+  # by the column's identity alone it was offered again, and the refit that
+  # added nothing stopped the screen (#442).
+  entered_as  <- character()
 
   current <- fit
   step_no <- 0L
@@ -614,7 +626,11 @@ hzr_stepwise <- function(fit,
     # screen that recovers at a later iteration is not reported as stopped.
     iter_untestable     <- character()
 
-    effective_force_out <- unique(c(force_out_id, frozen))
+    # A candidate whose entered term is still in the model, or frozen, is
+    # not offered again.
+    in_model <- unlist(.hzr_scope_current_vars(current), use.names = FALSE)
+    held <- entered_as[names(entered_as) %in% c(in_model, frozen)]
+    effective_force_out <- unique(c(force_out_id, frozen, unname(held)))
     effective_force_in  <- unique(c(force_in_id,  frozen))
 
     if (direction %in% c("forward", "both")) {
@@ -671,7 +687,13 @@ hzr_stepwise <- function(fit,
         }
         current <- fwd$fit
         record_step("enter", fwd)
-        bump_move(fwd$id) # by term label, as `frozen` is compared
+        # Counted by the term the model gained, which is what a drop names.
+        term <- .hzr_refit_term(fwd$variable)
+        if (is.na(term)) term <- fwd$id
+        if (!identical(term, fwd$id)) {
+          entered_as[[term]] <- fwd$id
+        }
+        bump_move(term)
         add_happened <- TRUE
       }
     }

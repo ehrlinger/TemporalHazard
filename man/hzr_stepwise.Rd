@@ -45,9 +45,15 @@ column of \code{data} is that column, otherwise a name that is exactly a
 term label as \code{terms()} writes it (\code{"`_X1`"}, \code{"log(age)"},
 \code{"age:mal"}) is that term, and any other name is ignored with a
 warning naming it.  The column is looked up first, so when \code{data} has
-a column literally named \code{age:mal}, \code{"age:mal"} is that column and
-the interaction cannot be named this way; use a formula \code{scope}
-for it.  For multiphase
+a column literally named \code{age:mal}, \code{"age:mal"} puts that column in
+the scope rather than the interaction.  Resolution decides which
+variables are in the scope; it does not change how a candidate is
+entered.  The refit writes the name as you spelled it into the
+formula text.  When that text reads as a different term, as
+\code{"age:mal"} reads as the interaction and \code{"age "} as \code{age}, the
+screen enters that other term with no warning (#449); when it does not
+parse, as a bare \code{"_X1"} does not, the candidate cannot enter
+(#441, #438).  For multiphase
 fits, pass a named list of one-sided formulas keyed by phase, naming
 each phase once.  \code{scope} lists what may enter; a drop considers every
 term in the model except \code{force_in} and terms frozen by \code{max_move}
@@ -101,8 +107,8 @@ model or \code{scope} is that term, so \code{"`_X1`"} and \code{"age:mal"} work
 too.  Any other name, \code{"age "} with a trailing space when there is no
 such column, say, matches nothing and is ignored with a warning naming
 it.  The column is looked up first: when \code{data} has a column literally
-named \code{age:mal}, \code{"age:mal"} is that column and not the interaction,
-which then cannot be pinned by name.}
+named \code{age:mal}, \code{"age:mal"} resolves to that column and not to the
+interaction.}
 
 \item{force_out}{Character vector of variables that may never be
 considered as candidates.  Names are looked up as for \code{force_in}:

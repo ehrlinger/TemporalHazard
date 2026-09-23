@@ -90,6 +90,30 @@
   }, character(1), USE.NAMES = FALSE)
 }
 
+#' The term a refit adds for a candidate spelling
+#'
+#' `.hzr_formula_update()` pastes the candidate's spelling into the formula
+#' TEXT, so the model gains whatever term that text parses to, which is not
+#' always the candidate's identity: the column `age:mal`, spelled bare,
+#' enters as the INTERACTION `age:mal` (#442). hzr_stepwise() uses this to
+#' recognise the term an entry added as that candidate, so it is not
+#' offered again while the term is in the model.
+#'
+#' @param x Character vector of candidate spellings.
+#' @return The single term label each spelling pastes to, or `NA` when it
+#'   pastes to none or to several.
+#' @keywords internal
+#' @noRd
+.hzr_refit_term <- function(x) {
+  vapply(x, function(v) {
+    lab <- tryCatch(
+      attr(stats::terms(stats::as.formula(paste("~", v))), "term.labels"),
+      error = function(e) character()
+    )
+    if (length(lab) == 1L) lab else NA_character_
+  }, character(1), USE.NAMES = FALSE)
+}
+
 #' Is a string a term label of `data`, exactly as `terms()` writes it?
 #'
 #' True when the string is the single label `terms()` gives a formula whose
