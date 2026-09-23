@@ -137,7 +137,16 @@
   # two options, where `MUE= 0.2` is one. Without this, `DATA=` consumed
   # `MAXITER=50` and the job fitted as data = `MAXITER=50` with no row and no
   # warning, losing MAXITER (#433 review).
-  is_value <- function(j) j <= n && !grepl("=", ops[[j]], fixed = TRUE)
+  # Two ways a token proves it is the NEXT OPTION rather than this one's
+  # value: it carries its own `=` (`MAXITER=50`), or the token AFTER it is a
+  # bare `=` (`MAXITER` `=` `50`). Round 1 of this review tested only the
+  # first, so the fully spaced `DATA = MAXITER = 50` still joined into one
+  # operand and fitted silently. The guard has to index on the SPACING, which
+  # is what the joiner keys on, not only on the content of one token.
+  is_value <- function(j) {
+    j <= n && !grepl("=", ops[[j]], fixed = TRUE) &&
+      !(j < n && identical(ops[[j + 1L]], "="))
+  }
   out <- character(0)
   i <- 1L
   while (i <= n) {

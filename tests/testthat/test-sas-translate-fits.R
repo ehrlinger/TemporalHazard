@@ -1186,8 +1186,11 @@ test_that("a valueless option does not swallow the option after it (#433 review)
 
   # End to end, the property that actually matters: the job must NOT silently
   # emit a fit. On this branch before the guard it produced a clean
-  # hazard(data = `MAXITER=50`) with no row and no warning. It now errors, as
-  # it does on main -- loud, and therefore acceptable. Turning it into a
+  # hazard(data = `MAXITER=50`) with no row and no warning. It now errors,
+  # which is what main does -- loud, and therefore acceptable. Note the
+  # error is RESTORED by this fix, not unchanged across it: the silent fit
+  # was this branch's own regression, so "as it does on main" was true of
+  # main and false of this branch's base (#433 review 2). Turning it into a
   # proper U1 refusal is a separate, LOUD leftover (see the leftovers issue):
   # `DATA=` with no NAME is a syntax error at `dsfield : NAME`
   # (hazard_y.y:80-82), so the job is one PROC HAZARD rejects.
@@ -1234,4 +1237,38 @@ test_that("two refusal reasons are separated in the emitted warning (#433 review
   job <- .u1_job(parms = "MUE=0.2 THALF=1 NU=1E-3 M=1 FIXMNU1")
   m <- .u1_msg(job)
   expect_no_match(m, "[a-z]\\.[A-Z]")
+})
+
+test_that("a valueless option does not swallow a SPACED following option (#433 review 2)", {
+  # Round 1's guard asked whether the next token CONTAINS `=`. That is the
+  # wrong thing to index on: written fully spaced, the next token is a bare
+  # keyword with no `=` in it, so the guard passed and the joiner swallowed
+  # the option AND its value. Vary the spacing, which is what the mechanism
+  # actually depends on, not just the content.
+  expect_equal(.hzr_sas_join_spaced(c("DATA", "=", "MAXITER", "=", "50")),
+               c("DATA=", "MAXITER=50"))
+  expect_equal(.hzr_sas_join_spaced(c("DATA=", "MAXITER", "=", "50")),
+               c("DATA=", "MAXITER=50"))
+  expect_equal(.hzr_sas_join_spaced(c("DATA", "=", "MAXITER=", "50")),
+               c("DATA=", "MAXITER=50"))
+  # KNOWN NEGATIVES: every genuine spaced value must still join, at the
+  # start, middle and END of the list (the end is where `i < n` stops
+  # applying, so it is its own case).
+  expect_equal(.hzr_sas_join_spaced(c("MUE", "=", "0.2", "THALF", "=", "0.3")),
+               c("MUE=0.2", "THALF=0.3"))
+  expect_equal(.hzr_sas_join_spaced(c("MUE=", "0.2", "NU", "=", "1")),
+               c("MUE=0.2", "NU=1"))
+  expect_equal(.hzr_sas_join_spaced(c("FIXNU", "MUE", "=", "0.2")),
+               c("FIXNU", "MUE=0.2"))
+
+  # End to end: the fully-spaced job must not emit a clean fit.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste0("%HAZARD( PROC HAZARD DATA = MAXITER = 50; EVENT DEAD;",
+                    " TIME TT; PARMS MUE=0.2 THALF=1 NU=1; );"), f)
+  out <- tryCatch(suppressWarnings(hzr_translate_sas(f)), error = function(e) e)
+  silent_fit <- !inherits(out, "error") &&
+    identical(out$calls$fit[[3L]][[1L]], as.name("hazard")) &&
+    NROW(out$untranslated) == 0L &&
+    !length(grep("^refusal", names(out$calls)))
+  expect_false(silent_fit)
 })
