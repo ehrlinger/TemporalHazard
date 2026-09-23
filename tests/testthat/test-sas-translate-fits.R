@@ -553,3 +553,178 @@ test_that("a phase variable missing from the data is named, not 'object not foun
                fixed = TRUE)
   expect_false(exists("fit", envir = res$env, inherits = FALSE))
 })
+
+# --- #411: a SAS covariate name that begins with an underscore ---
+
+test_that("an underscore-named covariate fits end to end (#411)", {
+  skip_on_cran()
+  set.seed(7)
+  n <- 120
+  # check.names = FALSE: the column really is named `_X1`, as the SAS dataset
+  # named it. data.frame()'s default would rename it (asserted below).
+  D <- data.frame(T = stats::rexp(n, 0.2), E = rep(c(1, 1, 0), length.out = n),
+                  AGE = stats::rnorm(n), check.names = FALSE)
+  D[["_X1"]] <- stats::rnorm(n)
+  expect_true("_X1" %in% names(D))
+
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(c("%HAZARD( PROC HAZARD DATA=D; TIME T; EVENT E;",
+               " PARMS MUE=0.2 THALF=1 NU=1 M=1 MUC=0.01;",
+               " EARLY AGE=0.1, _X1=0.1; );"), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  expect_true(any(grepl("`_X1`", deparse(job$calls$fit), fixed = TRUE)))
+
+  # Execute the emitted chunks, not their text.
+  env <- new.env(parent = environment())
+  env$D <- D
+  for (nm in names(job$calls)) suppressWarnings(eval(job$calls[[nm]], env))
+  expect_s3_class(env$fit, "hazard")
+  # The covariate is actually IN the model, not merely in the formula text.
+  # model.matrix() backquotes a non-syntactic name, so the coefficient is
+  # named with the backquotes: assert the name the fit really carries.
+  expect_true("phase_1.`_X1`" %in% names(stats::coef(env$fit)))
+})
+
+test_that("a renamed underscore column fails loudly, it does not fit a smaller model (#411)", {
+  skip_on_cran()
+  set.seed(7)
+  n <- 120
+  # data.frame()'s default check.names = TRUE turns `_X1` into `X_X1`. The
+  # danger is a fit that quietly drops the covariate; it must refuse instead.
+  D <- data.frame(T = stats::rexp(n, 0.2), E = rep(c(1, 1, 0), length.out = n),
+                  AGE = stats::rnorm(n), "_X1" = stats::rnorm(n))
+  expect_false("_X1" %in% names(D))
+  expect_true("X_X1" %in% names(D))
+
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(c("%HAZARD( PROC HAZARD DATA=D; TIME T; EVENT E;",
+               " PARMS MUE=0.2 THALF=1 NU=1 M=1 MUC=0.01;",
+               " EARLY AGE=0.1, _X1=0.1; );"), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  env <- new.env(parent = environment())
+  env$D <- D
+  err <- tryCatch({
+    for (nm in names(job$calls)) suppressWarnings(eval(job$calls[[nm]], env))
+    "no error"
+  }, error = conditionMessage)
+  expect_match(err, "_X1", fixed = TRUE)
+  expect_match(err, "not columns of D", fixed = TRUE)
+})
+
+test_that("a SELECTION job carrying a non-syntactic name is refused, not screened (#411)", {
+  skip_on_cran()
+  # The phase formulas now carry `_X1`, but hzr_stepwise() spells such a name
+  # two ways at once: backquoted in its terms() candidate labels, bare in
+  # force_in. Measured consequences, which is why this is a refusal and not a
+  # screen: a /I pin never matches, so BACKWARD DROPS a variable SAS holds in
+  # with no warning naming it; and the score criterion, the only one this
+  # translator emits, indexes `data` by the backquoted label and skips the
+  # candidate. Both would be wrong models from a populated result.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(c("%HAZARD( PROC HAZARD DATA=D; TIME T; EVENT E;",
+               " PARMS MUE=0.2 THALF=1 NU=1 M=1;",
+               " EARLY AGE=0.1 /I, _X1=0.1 /I;",
+               " SELECTION BACKWARD SLS=0.05; );"), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"))
+  msg <- tryCatch({
+    eval(job$calls$fit, new.env())
+    "no error"
+  }, error = conditionMessage)
+  expect_match(msg, "_X1", fixed = TRUE)
+  expect_match(msg, "not a syntactic R name", fixed = TRUE)
+  expect_match(msg, "hazard_l.l:39", fixed = TRUE)
+
+  # Control, so the refusal is not blanket: ordinary names still screen.
+  f2 <- withr::local_tempfile(fileext = ".sas")
+  writeLines(c("%HAZARD( PROC HAZARD DATA=D; TIME T; EVENT E;",
+               " PARMS MUE=0.2 THALF=1 NU=1 M=1;",
+               " EARLY AGE, SEX;",
+               " SELECTION FORWARD SLE=0.3; );"), f2)
+  job2 <- suppressWarnings(hzr_translate_sas(f2))
+  expect_identical(job2$calls$fit[[3L]][[1L]], as.name("hzr_stepwise"))
+})
+
+test_that(".hzr_sas_covar_formula() refuses an empty name vector (#411)", {
+  # Reduce() over an empty list is NULL and `~NULL` is a hollow formula: a
+  # phase fitted with no covariates, and nothing would error.
+  expect_error(.hzr_sas_covar_formula(character(0)), "at least one name")
+  expect_identical(.hzr_sas_covar_formula("AGE"), quote(~AGE))
+})
+
+test_that("a SELECTION name PROC HAZARD accepts is refused; one it rejects is not (#411)", {
+  # Only a name PROC HAZARD ACCEPTS is refused here. `_X1` is in its grammar
+  # (hazard_l.l:39) and only R objects to it, and that job already died on
+  # main, so refusing it is not a new stop.
+  #
+  # Text PROC HAZARD REJECTS at parse (`AGE*SEX`, `LOG(AGE)`) is NOT refused.
+  # This parser passes it through as though it were a variable, which is a
+  # real defect, but refusing it would be a NEW stop for a job that
+  # translates on main today. Tracked by #440, to become a warning plus an
+  # $untranslated row once that machinery lands.
+  job <- function(early) {
+    f <- withr::local_tempfile(fileext = ".sas", .local_envir = parent.frame())
+    writeLines(c("%HAZARD( PROC HAZARD DATA=D; TIME T; EVENT E;",
+                 " PARMS MUE=0.2 THALF=1 NU=1 M=1;",
+                 paste0(" EARLY ", early, ";"),
+                 " SELECTION FORWARD SLE=0.3; );"), f)
+    suppressWarnings(hzr_translate_sas(f))
+  }
+  msg <- function(j) {
+    tryCatch({
+      eval(j$calls$fit, new.env())
+      "no error"
+    }, error = conditionMessage)
+  }
+
+  # In the grammar: refused, and told the truth about why.
+  for (nm in c("_X1", "NA", "TRUE")) {
+    j <- job(paste0("AGE /I, ", nm))
+    expect_identical(j$calls$fit[[3L]][[1L]], as.name("stop"), info = nm)
+    expect_match(msg(j), "lexer accepts this name", fixed = TRUE, info = nm)
+    expect_match(msg(j), "hazard_l.l:39", fixed = TRUE, info = nm)
+  }
+
+  # NOT in the grammar: NOT refused. The emitted call is a screen, exactly as
+  # on main -- this branch must not add a stop here.
+  for (nm in c("AGE*SEX", "LOG(AGE)")) {
+    j <- job(paste0("AGE /I, ", nm))
+    expect_identical(j$calls$fit[[3L]][[1L]], as.name("hzr_stepwise"), info = nm)
+    expect_false(grepl("not a syntactic R name", msg(j), fixed = TRUE), info = nm)
+  }
+
+  # Control: an ordinary pair still screens.
+  expect_identical(job("AGE /I, SEX")$calls$fit[[3L]][[1L]], as.name("hzr_stepwise"))
+})
+
+test_that("unreadable phase text fails at least as informatively as it did (#411, #440)", {
+  skip_on_cran()
+  # `AGE*SEX` is not a name PROC HAZARD accepts (hazard_l.l:39,
+  # hazard_y.y:213), so the job produces nothing there. Both this branch and
+  # 71277ff8 ERROR on it rather than fitting; what changes is WHICH error.
+  # On 71277ff8 the pasted text became an R interaction, so `~AGE + AGE * SEX`
+  # expanded to three model terms against two starting values and the reader
+  # met an arithmetic complaint about `theta`. Built from symbols it is one
+  # opaque name, and the reader is told the column is missing. The assertion
+  # is that it still fails, and that the failure names the construct.
+  set.seed(4)
+  n <- 200
+  D <- data.frame(AGE = stats::rnorm(n), SEX = stats::rbinom(n, 1, 0.5))
+  D$T <- stats::rexp(n, 0.2)
+  D$E <- 1
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(c("%HAZARD( PROC HAZARD DATA=D; TIME T; EVENT E;",
+               " PARMS MUE=0.2 THALF=1 NU=1 M=1 MUC=0.01;",
+               " EARLY AGE=0.1, AGE*SEX=0.2; );"), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  # Translation emits a fit, not a stop: no new refusal is added here.
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
+  env <- new.env(parent = environment())
+  env$D <- D
+  err <- tryCatch({
+    for (k in names(job$calls)) suppressWarnings(eval(job$calls[[k]], env))
+    "no error"
+  }, error = conditionMessage)
+  expect_no_match(err, "no error", fixed = TRUE)
+  expect_match(err, "AGE*SEX", fixed = TRUE)
+})

@@ -370,16 +370,19 @@
 #'   "duplicate_column")` when the expanded design repeats a column name,
 #'   which hazard() would refuse.
 #' @noRd
-.hzr_score_expand <- function(current, var, phase, data) {
+.hzr_score_expand <- function(current, var, phase, data, term = var) {
   if (current$spec$dist != "multiphase") {
-    return(.hzr_score_expand_single(current, var, phase, data))
+    return(.hzr_score_expand_single(current, var, phase, data, term = term))
   }
+  # The phase formula is rebuilt from TEXT, so it is given the candidate's
+  # term label, not the column name `var`: pasted, a column `x2 ` read back
+  # as `x2`, and the score was computed on the wrong column (#449).
   phases <- .hzr_score_phases(current)
   if (is.null(phase) || !is.character(phase) || length(phase) != 1L ||
         !phase %in% names(phases)) {
     return(NULL)
   }
-  if (var %in% .hzr_scope_current_vars(current, phase)) {
+  if (term %in% .hzr_scope_current_vars(current, phase)) {
     return(NULL)
   }
 
@@ -390,7 +393,7 @@
     .hzr_inherited_rhs(current)
   }
   new_phases[[phase]] <- .hzr_phase_update_formula(
-    new_phases[[phase]], action = "add", var = var, inherited = inherited
+    new_phases[[phase]], action = "add", var = term, inherited = inherited
   )
 
   d <- current$data
@@ -534,11 +537,16 @@
 #' `c(theta_old, 0)` warm start puts it. Here it stays pinned at zero.
 #'
 #' @noRd
-.hzr_score_expand_single <- function(current, var, phase, data) {
+.hzr_score_expand_single <- function(current, var, phase, data,
+                                     term = var) {
   if (!is.null(phase)) {
     return(NULL)
   }
-  if (var %in% .hzr_scope_current_vars(current)) {
+  # By the candidate's term label, never its column name: the model's terms
+  # are labels, and the column `age:mal` is spelled like the interaction
+  # `age:mal`, which this compared it with and declined (#449). `var` is
+  # still the column the values are read from.
+  if (term %in% .hzr_scope_current_vars(current)) {
     return(NULL)
   }
 
@@ -549,12 +557,14 @@
   }
 
   new_col <- matrix(as.numeric(xcand), ncol = 1L,
-                    dimnames = list(NULL, var))
+                    dimnames = list(NULL, term))
   x_new <- if (is.null(d$x)) new_col else cbind(d$x, new_col)
   # The refit builds its design with model.matrix(), which names a logical
   # column <var>TRUE. Check the name the refit would create, not `var`: a
   # logical `flag` beside factor `fla`'s dummy `flag` fits fine.
-  refit_name <- if (is.logical(data[[var]])) paste0(var, "TRUE") else var
+  # model.matrix() names the column by the term label, so a non-syntactic
+  # `age:mal` is `` `age:mal` ``, not the interaction's `age:mal` (#449).
+  refit_name <- if (is.logical(data[[var]])) paste0(term, "TRUE") else term
   if (refit_name %in% colnames(d$x)) {
     return(list(reason = "duplicate_column"))
   }
@@ -658,11 +668,16 @@
 #' @param data Data frame the model was fitted on.
 #' @param nuisance Optional result of `.hzr_score_nuisance(current)`; recomputed
 #'   when `NULL`. Pass it to reuse across candidates within a step.
+#' @param term The candidate's term label, written into a multiphase phase
+#'   formula. Defaults to `var`, which is right only for a syntactic name;
+#'   the stepwise step passes the resolved label (#449). `var` may be `NA`
+#'   for a candidate that is no column, which is declined as
+#'   `not_single_column`.
 #' @return `list(stat, df, p_value)`. `stat`/`p_value` are `NA_real_` for a
 #'   degenerate candidate, a collinear candidate, or an unusable nuisance block.
 #' @noRd
 .hzr_score_q <- function(current, var, phase = NULL, data,
-                         nuisance = NULL) {
+                         nuisance = NULL, term = var) {
   # Every NA return carries WHY. The reasons are not interchangeable: a
   # collinear column should be dropped, while an indefinite information matrix
   # usually means the candidate is among the strongest on offer. Reporting the
@@ -704,6 +719,9 @@
     )
   }
 
+  # A term that is no column (an interaction, a transform) is not a candidate
+  # the score can test; saying `non_numeric` described a column (#449).
+  if (is.na(var)) return(na_result("not_single_column"))
   xcand <- .hzr_candidate_numeric(data[[var]])
   if (is.null(xcand) || anyNA(xcand)) {
     return(na_result("non_numeric"))
@@ -717,7 +735,7 @@
   # through to an unadjusted (too large) v_beta.
   if (!isTRUE(nuisance$ok)) return(na_result("nuisance_singular"))
 
-  exp_ <- .hzr_score_expand(current, var, phase, data)
+  exp_ <- .hzr_score_expand(current, var, phase, data, term = term)
   if (is.null(exp_)) return(na_result("not_expandable"))
   if (!is.null(exp_$reason)) return(na_result(exp_$reason))
 
@@ -846,7 +864,7 @@
 # p = 1. This is that unbuilt alternative.
 #
 # Kept deliberately narrow. The degenerate reasons -- collinear, constant,
-# non_numeric, nuisance_singular -- are NOT here: no refit can make those
+# non_numeric, not_single_column, nuisance_singular -- are NOT here: no refit can make those
 # candidates testable, and paying one per degenerate candidate would give back
 # the whole speed advantage the score criterion exists for.
 .hzr_score_fallback_reasons <- c("information_indefinite",
@@ -897,6 +915,11 @@
     collinear = "the candidate was collinear with the current model",
     constant  = "the candidate column was constant",
     non_numeric = "the candidate column was not numeric, or held NA",
+    not_single_column = paste(
+      "the candidate is a term, such as an interaction, and not a single",
+      "column of `data`, which is all the score criterion can test.",
+      "`criterion = \"wald\"` refits it instead"
+    ),
     nuisance_singular = paste(
       "the current model's information matrix could not be inverted, so no",
       "candidate could be scored at that step"

@@ -98,11 +98,9 @@
 #'   `formula = Surv(...) ~ predictors, data = df` interface.
 #' @param scope Candidate set.  `NULL` (default) uses every data-frame
 #'   column not already in the model for every phase.  A candidate enters
-#'   by writing its name into the formula text, so under this default too a
-#'   column whose name reads as a different term enters as that term, with
-#'   no warning: a column literally named `age:mal` enters as the
-#'   interaction, and a column `"age "` beside `age` enters as `age`
-#'   (#449).  For
+#'   as the column it names, whatever its name: a column literally named
+#'   `age:mal` enters as that column, not the interaction, and a column
+#'   `"age "` beside `age` enters as itself (#449).  For
 #'   single-distribution fits, pass a one-sided formula
 #'   (`~ age + nyha`) or a character vector of names.  Each name in a
 #'   character `scope` is looked up, not parsed: a name that is exactly a
@@ -111,14 +109,10 @@
 #'   `"age:mal"`) is that term, and any other name is ignored with a
 #'   warning naming it.  The column is looked up first, so when `data` has
 #'   a column literally named `age:mal`, `"age:mal"` puts that column in
-#'   the scope rather than the interaction.  Resolution decides which
-#'   variables are in the scope; it does not change how a candidate is
-#'   entered.  The refit writes the name as you spelled it into the
-#'   formula text.  When that text reads as a different term, as
-#'   `"age:mal"` reads as the interaction and `"age "` as `age`, the
-#'   screen enters that other term with no warning (#449); when it does not
-#'   parse, as a bare `"_X1"` does not, the candidate cannot enter
-#'   (#441, #438).  For multiphase
+#'   the scope rather than the interaction.  A candidate enters as the
+#'   column or term its name resolved to, so a bare `"_X1"` enters the
+#'   column `_X1` (#449, #441), and the score reads the values of that
+#'   column however the name was written (#438).  For multiphase
 #'   fits, pass a named list of one-sided formulas keyed by phase, naming
 #'   each phase once.  `scope` lists what may enter; a drop considers every
 #'   term in the model except `force_in` and terms frozen by `max_move`
@@ -284,7 +278,10 @@
 #' \describe{
 #'   \item{\code{step_num}}{Integer sequence starting at 1.}
 #'   \item{\code{action}}{`"enter"`, `"drop"`, or `"frozen"`.}
-#'   \item{\code{variable}}{Variable affected.}
+#'   \item{\code{variable}}{The term entered, dropped or frozen, as the
+#'     model's `terms()` label: a non-syntactic column `_X1` is recorded as
+#'     `` `_X1` `` on every row, whether the scope named it `"_X1"`,
+#'     `` "`_X1`" `` or in a formula.}
 #'   \item{\code{phase}}{Phase name (multiphase) or `NA_character_`.}
 #'   \item{\code{criterion}}{The criterion actually applied to this step:
 #'     `"score"`, `"wald"`, or `"aic"`.  Under `criterion = "score"` the drop
@@ -449,6 +446,24 @@ hzr_stepwise <- function(fit,
     scope_labels <- resolved_scope$id
     unresolved$scope <- resolved_scope$unresolved
   }
+  # A column no formula can name is never offered. Say so once, here, for
+  # the scopes that would offer it: the default, and a character scope that
+  # names it (#449).
+  unnameable <- if (is.null(scope)) {
+    stored <- .hzr_stored_formula(fit)
+    lhs <- if (is.null(stored) || length(stored) < 3L) character() else
+      all.vars(stored[[2L]])
+    cols <- setdiff(names(data), lhs)
+    cols[.hzr_is_label_placeholder(.hzr_column_label(cols))]
+  } else if (is.character(scope) && length(scope_labels)) {
+    scope[.hzr_is_label_placeholder(scope_labels)]
+  }
+  if (length(unnameable)) {
+    warning("Column(s) ",
+            paste(encodeString(unnameable, quote = "\""), collapse = ", "),
+            " of `data` cannot be a stepwise candidate: a model formula cannot ",
+            "name them. Rename them to offer them.", call. = FALSE)
+  }
   known_labels <- unique(c(unlist(.hzr_scope_current_vars(fit),
                                   use.names = FALSE),
                            scope_labels))
@@ -510,12 +525,6 @@ hzr_stepwise <- function(fit,
   # NULL, whereas `vec[[missing]]` errors with "subscript out of bounds".
   move_counts <- list()
   frozen      <- character()
-  # The term each entry ADDED, mapped to the candidate that entered it,
-  # where the two differ. The refit pastes the candidate's spelling, so a
-  # literal `age:mal` column spelled bare enters as the interaction; keyed
-  # by the column's identity alone it was offered again, and the refit that
-  # added nothing stopped the screen (#442).
-  entered_as  <- character()
 
   current <- fit
   step_no <- 0L
@@ -543,7 +552,10 @@ hzr_stepwise <- function(fit,
   # step 3 was tested.
   wald_tokens <- function(scores, keep) {
     scores <- scores[keep, , drop = FALSE]
-    paste0(scores$variable,
+    # By resolved identity, which is how a drop names the variable too: an
+    # entry spelled `_X1` and a removal of `` `_X1` `` are one variable
+    # (#441). A drop's `variable` already is its label.
+    paste0(scores$id %||% scores$variable,
            ifelse(is.na(scores$phase), "", paste0("@", scores$phase)))
   }
   update_untested <- function(set, scores, untested) {
@@ -661,11 +673,7 @@ hzr_stepwise <- function(fit,
     # screen that recovers at a later iteration is not reported as stopped.
     iter_untestable     <- character()
 
-    # A candidate whose entered term is still in the model, or frozen, is
-    # not offered again.
-    in_model <- unlist(.hzr_scope_current_vars(current), use.names = FALSE)
-    held <- entered_as[names(entered_as) %in% c(in_model, frozen)]
-    effective_force_out <- unique(c(force_out_id, frozen, unname(held)))
+    effective_force_out <- unique(c(force_out_id, frozen))
     effective_force_in  <- unique(c(force_in_id,  frozen))
 
     if (direction %in% c("forward", "both")) {
@@ -688,9 +696,16 @@ hzr_stepwise <- function(fit,
         iter_untestable <- c(iter_untestable, "entry")
       }
       if (criterion == "wald" && nrow(fwd$all_scores) > 0L) {
+        # A failed refit is reported as a refit failure, not as untested.
+        # Its row is found by the spelling the failure token carries, and
+        # removed by identity, as the other tokens are keyed (#441).
+        sc <- fwd$all_scores
+        failed <- paste0(sc$variable, ifelse(is.na(sc$phase), "",
+                                             paste0("@", sc$phase))) %in%
+          (fwd$refit_failures %||% character())
         wald_untested_entries <- setdiff(update_untested(
-          wald_untested_entries, fwd$all_scores, is.na(fwd$all_scores$score)
-        ), fwd$refit_failures %||% character())
+          wald_untested_entries, sc, is.na(sc$score)
+        ), wald_tokens(sc, failed))
       }
       iter_refit_failures <- c(iter_refit_failures,
                                fwd$refit_failures %||% character())
@@ -721,14 +736,12 @@ hzr_stepwise <- function(fit,
                   "See `$steps$delta_logLik`.", call. = FALSE)
         }
         current <- fwd$fit
-        record_step("enter", fwd)
-        # Counted by the term the model gained, which is what a drop names.
-        term <- .hzr_refit_term(fwd$variable)
-        if (is.na(term)) term <- fwd$id
-        if (!identical(term, fwd$id)) {
-          entered_as[[term]] <- fwd$id
-        }
-        bump_move(term)
+        # Recorded under the model's term label, as a drop is, so one
+        # variable has one name in `$steps` whatever the scope wrote (#449).
+        record_step("enter", utils::modifyList(fwd, list(variable = fwd$id)))
+        # Counted by the term the model gained, the candidate's identity,
+        # which is what a drop names (#449).
+        bump_move(fwd$id)
         add_happened <- TRUE
       }
     }

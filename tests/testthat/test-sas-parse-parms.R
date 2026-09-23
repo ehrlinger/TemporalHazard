@@ -1862,3 +1862,37 @@ test_that("each syntax-error form names its own source, not a shared one (#340)"
     expect_length(got$rejected, 0L)
   }
 })
+
+# --- #411: a SAS name may begin with an underscore, an R symbol may not ---
+
+test_that("a covariate whose name begins with `_` builds a formula, not a parse error", {
+  # PROC HAZARD's lexer reads a name as [_A-Z][_A-Z0-9]* (hazard_l.l:39), so
+  # `_X1` is a legal covariate. Pasting it into str2lang() produced R's own
+  # parser error ("unexpected symbol") and the whole job stopped. Building the
+  # formula from SYMBOLS cannot fail that way, and deparse() backquotes the
+  # name so the emitted document re-parses.
+  ops <- c("MUE=0.2", "THALF=1", "NU=1", "M=1")
+  got <- .hzr_parse_parms(ops, covars = list(early = "AGE, _X1"))
+  expect_length(got$rejected, 0L)
+  txt <- paste(deparse(got$phases), collapse = " ")
+  expect_match(txt, "`_X1`", fixed = TRUE)
+  # The emitted text must re-parse to the SAME call, not merely look right.
+  expect_identical(str2lang(paste(deparse(got$phases), collapse = "\n")),
+                   got$phases)
+})
+
+test_that("an underscore name survives the round trip in every position", {
+  ops <- c("MUE=0.2", "THALF=1", "NU=1", "M=1")
+  # The reserved words are IN the SAS grammar too: hazard_l.l:39 is
+  # ([_A-Z][_A-Z0-9]*), which matches NA, TRUE, FALSE and NULL. On the pasted
+  # path `~AGE + NA` parsed as a logical literal rather than a variable.
+  for (covars in c("_X1", "_X1, AGE", "AGE, _X1", "_A, _B",
+                   "AGE, NA", "AGE, TRUE", "AGE, FALSE", "AGE, NULL")) {
+    got <- .hzr_parse_parms(ops, covars = list(early = covars))
+    expect_identical(str2lang(paste(deparse(got$phases), collapse = "\n")),
+                     got$phases, info = covars)
+  }
+  # Control: an ordinary name is unchanged and gains no backquotes.
+  got <- .hzr_parse_parms(ops, covars = list(early = "AGE, SEX"))
+  expect_false(grepl("`", paste(deparse(got$phases), collapse = " "), fixed = TRUE))
+})

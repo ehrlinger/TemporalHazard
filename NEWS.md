@@ -700,7 +700,33 @@
   already did. Code that caught the error with `tryCatch(..., error = )`
   will no longer see it; read `$criteria$refit_failures` instead.
 
+* **`hzr_stepwise()`'s `$steps$variable` records the model's term label on
+  every row (#449).** An entry row used to carry the name as the `scope`
+  wrote it and a drop row the `terms()` label, so a non-syntactic column
+  `_X1` entered as `_X1` and left as `` `_X1` ``, and a literal column
+  `age:mal` entered under the interaction's spelling `age:mal`. Every
+  row now uses the label, whatever form the `scope` took. For a syntactic
+  name the label is the name, so nothing changes; code that matched an
+  entry row of a non-syntactic column by its bare name should match the
+  backquoted label instead.
+
 ## New features
+
+* **A fit now records why its gradient test was not run, not merely that it
+  was not** (#351). SAS/C HAZARD accepts an optimum only when the relative
+  gradient is small enough, and every fit reports that test in
+  `fit$fit$rel_gradient`. `NA` there has always meant "not evaluated", never
+  a pass -- but it did not say why, and "not evaluated at the estimates" on
+  its own reads like a failure the fit is declining to name. It usually is
+  not one. Under Conservation of Events the test is computed by
+  differencing the log-likelihood, so a point the difference needs can fall
+  outside the region where the likelihood is finite while the estimates
+  themselves are sound. Reading that as a failure would condemn a good fit.
+  The reason is now recorded in `fit$fit$rel_gradient_reason` --
+  `NA_character_` when the test did run -- and `print()` and `summary()`
+  append it, so the routes to a missing result are told apart from each
+  other and from a test that ran and failed.
+  A test that ran still reports "met" or "not met" exactly as before.
 
 * **`hzr_translate_sas()` now translates a `SELECTION` statement into an
   `hzr_stepwise()` call** (#160). Such a job used to emit a `stop()`: the
@@ -827,6 +853,86 @@
 
 ## Bug fixes
 
+* **The G3 phase's `log_tau` derivative is now taken in `log_tau` (#352).**
+  `.hzr_g3_phase_derivatives()` described itself as taking "central
+  differences for log_tau" and stepped `tau` linearly instead, with an
+  absolute floor of `1e-10`. Once `tau` fell below that floor the step was
+  larger than `tau * h`, so the step stopped shrinking with `tau` and became
+  a large *relative* step; below `tau = 1e-10` it also exceeded `tau` itself
+  and the difference turned one-sided. The derivative the optimizer and the
+  Hessian both use was **99.4% wrong at `tau = 1e-12`**, 1.4% wrong at
+  `1e-9` and 0.012% wrong at `1e-8` — the second and third of those from the
+  relative-step effect alone, with the branch still central — measured
+  against an analytic derivative of the closed form. The step is now
+  proportional to `tau` at every scale, and the one-sided fallback is removed
+  because it can no longer be reached.
+
+  Where `tau` is so small that multiplying it by `exp(1e-5)` returns the same
+  number — below about `5e-319`, at the bottom of double precision — or where
+  `tau` is infinite, the two evaluation points coincide. That is now reported as `NaN` rather than the
+  plausible `0` a coincident difference quotient produces.
+
+  **Some late-phase (`g3`) fits will move.** Where `tau` is small the
+  optimizer now follows a more accurate gradient and can land somewhere
+  measurably different: across six trial two-phase fits, two moved by more
+  than `1e-8` relative, one of them by **21% on a parameter and 42% on a
+  standard error**, with the objective **0.0126 log-likelihood units better**
+  — a better optimum, not merely a different one. Fits whose shapes stay
+  above about `1e-5` move by around `1e-10` relative, which is the precision
+  the step change itself carries; between `1e-8` and `1e-5` the old
+  derivative was wrong by between `1e-4` and `1e-10`, so fits there can move
+  by more than that. **No fit in this package's own test suite
+  moves**: its results are identical before and after, to every assertion.
+
+  The `gamma` and `eta` steps keep their existing floors deliberately. `G3`
+  is very nearly linear in each of them near zero, so the floor stays small
+  relative to the scale on which the function varies even when it is 100% of
+  the parameter, and both measure accurate to `1.1e-6` or better at the
+  shapes where the `tau` derivative failed.
+
+* **A single-distribution `theta` must have one entry per parameter, and a
+  Weibull scale and shape must be positive, fitted or not (#375, #383).**
+  `hazard()` compared a supplied `theta` only with the design's column
+  count, as a lower bound, so a wrong length was caught only sometimes, and
+  when it was not, the result could be wrong. With `fit = TRUE`, some wrong
+  lengths failed with an unrelated error (`non-conformable arguments`), and
+  some fitted silently: a `theta` holding only the shape parameters fitted
+  the model with its covariates dropped, and on a one-covariate model a
+  `theta` one entry too long returned its starting values unfitted. With
+  `fit = FALSE` the object was built, and `predict()` then either failed
+  with an unrelated message or, for a model with no covariates given an
+  extra entry, applied it to a `newdata` column the model never had and
+  returned a wrong prediction with no warning. A Weibull scale or shape at
+  or below zero failed with `non-finite value supplied by optim`. Both are
+  now refused, naming the lengths or the parameter, for example
+  `'theta' has 2 entries, but this weibull model takes 3: 2 shape
+  parameters, then one coefficient per column of the design (1 column).`
+  The count is the likelihood's, so `control$shape_param_count`, which the
+  likelihood ignores, does not change it. Unlike a multiphase model (#408),
+  an unfitted single-distribution model is refused too: its parameter count
+  is known without fitting, and an object of the wrong length could not be
+  predicted from correctly. A multiphase specification may carry fewer
+  entries until a fit resolves its phases' designs.
+
+  The same check now runs in `predict()`, ahead of the type dispatch rather
+  than inside one branch of it. A stored `theta` longer than the design
+  allows, in a hand-edited or legacy object, was refused by
+  `type = "hazard"` and `"linear_predictor"`, where the design is multiplied
+  as a matrix, but `"survival"` and `"cumulative_hazard"` recycled the
+  surplus coefficients into an outer product and returned two values per row
+  with no error. They now refuse, naming both counts, as `hzr_evaluate()`
+  already did.
+
+  Separately, `predict(newdata = )` now **warns** when it matches `newdata`'s
+  columns to a model's coefficients **by position**. That happens only for an
+  object that stored no design matrix, where position is the only mapping
+  left, and it means reordering or renaming `newdata`'s columns silently
+  changes the predictions. The warning names how many coefficients are being
+  matched, shows the columns it used, and says to refit so the design is
+  stored and the mapping is by name. The behaviour is unchanged: `hazard()`
+  already refuses to build such an object, so one can only arrive from an
+  older version or by hand, and it still predicts.
+
 * **A data defect reaching the score criterion is no longer reported as a
   numerical failure (#407).** The score path absorbs a Hessian it cannot
   build or invert and says so, which is right, but it absorbed *every*
@@ -943,18 +1049,92 @@
   screen stops, rather than "no further action".
 
   This is about MATCHING: which variables are pinned, excluded or in the
-  scope. How a candidate ENTERS is unchanged and is a known limitation. The
-  refit writes the candidate's name, as spelled, into the formula text. A
-  formula `scope` carries `terms()` labels, which are already quoted, so
-  its candidates enter as themselves. A name that reads as a different
-  term enters as that term, with no warning: the literal column `age:mal`
-  enters as the interaction, and a column `age ` beside `age` enters as
-  `age`, reachable through the default `scope = NULL`; under
-  `"score"` the entry p-value is still the literal column's (#449). A
-  non-syntactic name written bare, such as `"_X1"`, does not parse, so
-  under `"wald"` and `"aic"` its refit fails and the failure names it
-  (#441); under `"score"` it can fail by either of two routes, and a
-  `"score"` screen can finish having omitted it (#441, #438).
+  scope. How a matched candidate then enters the model is the #449 entry
+  below.
+
+* **A stepwise candidate is now scored and entered as the column it names
+  (#449, #438, #441).** The refit wrote the candidate's name, as spelled,
+  into the formula text, so a column whose name reads as a different term
+  entered as that term, with no warning. A column `age ` or `age # x`
+  beside `age` refit as `age`, through the default `scope = NULL`, a
+  character `scope`, a multiphase default scope and the screens
+  `hzr_bootstrap()` runs; a literal column `age:mal` refit as the
+  interaction, while under `"score"` its entry p-value was the column's;
+  and a multiphase default scope was built the same way, so a strong
+  column `x2 ` read as the noise column `x2` and was never scored. The
+  refit, the multiphase default scope and the multiphase score, which
+  builds the candidate's phase formula from text as well, now write the
+  label `terms()` gives the resolved column, which reads back as that
+  column, and the score reads the values of that column and compares it
+  with the model's terms by that label. So the column scored is the
+  column entered, and `"wald"`, `"aic"` and `"score"` reach the same
+  model: with the interaction `age:mal` in the model, a literal column
+  `age:mal` is a variable of its own under all three, where `"score"`
+  had declined it as the interaction. The same change fixes two loud
+  failures: a bare non-syntactic name such as `"_X1"` in a character
+  `scope` now enters under `"wald"` and `"aic"`, where its refit failed
+  to parse (#441), and under `"score"` a non-syntactic candidate written
+  as its label, as a formula `scope` writes it, is read from its column
+  rather than reported as not found in `data` and skipped (#438). An
+  interaction is no longer scored from a literal column that shares its
+  spelling; the score declines it, as it does any term that is not a
+  column, and its warning now says that instead of "not found in `data`",
+  with the new reason `not_single_column` in `$criteria$uncomputable_reasons`
+  where it read `non_numeric`.
+  A column no formula can name, such as one called `.`, is not offered as
+  a candidate, and the screen says so once.
+
+  `$steps$variable`, `$scope$frozen` and `$criteria$wald_untested_entries`
+  name such a variable by its label, as the breaking change above on
+  `$steps$variable` sets out; `$criteria$refit_failures` still names a
+  failed candidate as the scope wrote it.
+
+* **`hzr_translate_sas()` no longer fails on a SAS covariate whose name begins
+  with an underscore** (#411). `PROC HAZARD`'s lexer reads a name as
+  `[_A-Z][_A-Z0-9]*` (`hazard_l.l:39`), so `_X1` is a legal phase-statement
+  covariate. The translation built each phase formula by pasting the names
+  into `str2lang()`, and an R symbol may not begin with an underscore unless
+  it is backquoted, so the job stopped with R's own parser error
+  (`unexpected symbol`) rather than anything about the job. Formulas are now
+  built from symbols, at the phase statements and at the `SELECTION` scope
+  alike, and `deparse()` backquotes such a name so the emitted document
+  re-parses to the same call.
+
+  The failure was loud, so no fit stood in for one: such a job produced
+  nothing. On a sample of the studies share, 13 distinct `PROC HAZARD` steps
+  fail this way and none of them carries a macro, making this a second and
+  independent cause of an unreadable step.
+
+  Note that the column must really be named `_X1` in the data frame. R's
+  `data.frame()` renames it to `X_X1` unless you pass `check.names = FALSE`,
+  and a renamed column is **refused** by name rather than quietly dropped, so
+  a fit cannot come back short a covariate without saying so.
+
+  **A `SELECTION` job carrying such a name is refused rather than screened.**
+  `hzr_stepwise()` spells a non-syntactic name two ways at once: backquoted
+  in the `terms()` labels its candidates are keyed on, bare in `force_in`.
+  The two never match, so a `/I` pin is ignored and a `BACKWARD` screen can
+  drop a variable `PROC HAZARD` holds in, with no warning naming it; and the
+  score criterion, the only one this translator emits, indexes the data by
+  the backquoted label and skips the candidate as "not found". Both are wrong
+  models delivered as populated results, so such a job now stops and names
+  the cause. For a name like `_X1` this costs nothing: the job stopped before
+  this release too, one step earlier, in the phase formula.
+
+  Text `PROC HAZARD` does not accept as a name is **not** refused here. The
+  phase parser passes what it cannot read through as though it were a
+  variable, so `EARLY AGE, AGE*SEX;` translates. `AGE*SEX` is not a name
+  (`hazard_l.l:39`, `hazard_y.y:213`), so `PROC HAZARD` rejects that job at
+  parse and the translated result never meant anything either way; but
+  refusing it here would stop a job that translates today, so it is left
+  alone and tracked by #440.
+
+  One thing does change for such a job, and it is an improvement rather
+  than a refusal. Built from pasted text, `AGE*SEX` became an R interaction:
+  `~AGE + AGE * SEX` expands to three model terms against two starting
+  values, and the reader met an arithmetic complaint about `theta`. Built
+  from symbols it is one opaque name, so the reader is told the column is
+  missing from the data instead. Both forms fail; only the second says why.
 
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded

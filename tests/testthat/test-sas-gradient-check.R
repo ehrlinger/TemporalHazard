@@ -107,6 +107,18 @@ test_that("hazard() warns only on the polish's hard failures, and records every 
   # Code 4 whose statistic nonetheless meets the test -- possible when
   # nlm() stops on a partial score, as under CoE -- does not warn.
   expect_no_warning(fit_with(4L, rel = 1e-9), message = "relative-gradient test")
+  # An NA with no reason recorded prints the bare line it always printed,
+  # with nothing dangling after it. The field is REMOVED rather than set to
+  # NA_character_, because an object saved before the field existed carries no
+  # element at all, and only that path exercises the formatter's NULL branch;
+  # the mock leaves the real fit's own NA_character_ in place, which two other
+  # tests already cover.
+  old_object <- fit_with(NA_integer_, rel = NA_real_)
+  old_object$fit$rel_gradient_reason <- NULL
+  expect_false("rel_gradient_reason" %in% names(old_object$fit))
+  out <- utils::capture.output(print(old_object))
+  expect_true(any(trimws(out) == "gradient:     not evaluated at the estimates"))
+  expect_false(any(grepl("not evaluated at the estimates:", out, fixed = TRUE)))
 })
 
 test_that("a polished fit keeps the caller's parameter names and says it went on", {
@@ -131,6 +143,9 @@ test_that("rel_gradient is NA, never a pass, where the gradient cannot be truste
     hessian_fn = function(theta) diag(2)
   )
   expect_true(is.na(flat$rel_gradient))
+  expect_identical(flat$rel_gradient_reason,
+                   paste0("the log-likelihood at the estimates is non-finite ",
+                          "or past the optimizer's penalty"))
   # A score with a NaN component: the wrapper zeroes it, and BFGS stops far
   # from the optimum with an apparently tiny gradient.
   nan_score <- suppressWarnings(.hzr_optim_generic(
@@ -140,10 +155,18 @@ test_that("rel_gradient is NA, never a pass, where the gradient cannot be truste
     time = 1, status = 1, theta_start = start, hessian_fn = rosen_hessian
   ))
   expect_true(is.na(nan_score$rel_gradient))
-  # Converged with no usable gradient: said, not left blank.
+  expect_identical(nan_score$rel_gradient_reason,
+                   "the score has a non-finite component at the estimates")
+  # Converged with no usable gradient: said, not left blank -- and said WHY,
+  # so a reader cannot take a test that could not run for one that failed.
   expect_match(.hzr_format_gradient_test(nan_score$rel_gradient,
                                          nan_score$polish_code),
                "not evaluated")
+  expect_match(.hzr_format_gradient_test(nan_score$rel_gradient,
+                                         nan_score$polish_code,
+                                         reason = nan_score$rel_gradient_reason),
+               "not evaluated at the estimates: the score has a non-finite",
+               fixed = TRUE)
   # Not converged, or no record at all: no line.
   expect_null(.hzr_format_gradient_test(NA_real_, NA_integer_,
                                         converged = FALSE))
@@ -229,6 +252,21 @@ test_that("a finite difference that lands on the clamp is NA, not a fabricated g
   expect_true(fit$par[1] <= 1 &&
                 fit$par[1] > 1 - .Machine$double.eps^(1 / 3))
   expect_true(is.na(fit$rel_gradient))
+  # This is the shape a Conservation of Events fit takes: CoE differences the
+  # log-likelihood (gradient_exact = FALSE), so a point the difference needs
+  # can leave the finite region while the estimates are sound. The NA names
+  # that, and never reads as a failed test (#351).
+  expect_identical(
+    fit$rel_gradient_reason,
+    paste0("the log-likelihood is non-finite or past the optimizer's ",
+           "penalty at a point the finite-difference score needs")
+  )
+  line <- .hzr_format_gradient_test(fit$rel_gradient, fit$polish_code,
+                                    reason = fit$rel_gradient_reason)
+  expect_match(line, "not evaluated at the estimates: the log-likelihood",
+               fixed = TRUE)
+  expect_match(line, "finite-difference score needs", fixed = TRUE)
+  expect_false(grepl("not met", line, fixed = TRUE))
 })
 
 test_that("the acceptance test asks for the unsanitised score", {
@@ -404,4 +442,117 @@ test_that("the bounded (L-BFGS-B) path is not polished", {
   )
   expect_true(is.na(fit$rel_gradient))
   expect_true(is.na(fit$polish_code))
+  expect_identical(fit$rel_gradient_reason,
+                   "the bounded optimizer stops on its own projected gradient")
+})
+
+test_that("a test that ran carries no reason, and a failure is still a failure", {
+  # The known positive for the reason field: if every NA acquires a reason,
+  # the risk is that a real failure acquires one too and stops being read as
+  # a failure. An evaluated test records NA_character_, and the failing
+  # verdict is printed whatever reason is passed alongside it.
+  fit <- .hzr_optim_generic(
+    logl_fn = rosen_logl, gradient_fn = rosen_score, time = 1, status = 1,
+    theta_start = start, hessian_fn = rosen_hessian
+  )
+  expect_true(is.finite(fit$rel_gradient))
+  expect_identical(fit$rel_gradient_reason, NA_character_)
+  # A finite relative gradient above gradtl reports "not met", and a stray
+  # reason cannot turn that into "not evaluated".
+  failing <- .hzr_format_gradient_test(1e-2, NA_integer_,
+                                       reason = "a reason that must be ignored")
+  expect_match(failing, "not met", fixed = TRUE)
+  expect_false(grepl("a reason that must be ignored", failing, fixed = TRUE))
+})
+
+test_that("a fit that did not converge says that, rather than naming a gradient", {
+  # The test is not applied at all here, and the reason distinguishes this
+  # from a gradient that could not be evaluated at a converged point.
+  fit <- suppressWarnings(.hzr_optim_generic(
+    logl_fn = rosen_logl, gradient_fn = rosen_score, time = 1, status = 1,
+    theta_start = start, hessian_fn = rosen_hessian,
+    control = list(maxit = 1L)
+  ))
+  expect_false(fit$convergence == 0L)
+  expect_true(is.na(fit$rel_gradient))
+  expect_identical(fit$rel_gradient_reason,
+                   "the optimizer did not report convergence")
+})
+
+test_that("a score of the wrong length is named as such, with both counts", {
+  # Only the raw (sanitize = FALSE) score can be the wrong length here:
+  # optim() rejects a short gradient itself, long before the acceptance test
+  # sees one, so the branch is reachable only through the asymmetry it
+  # defends against -- a gradient_fn that answers the raw request
+  # differently, as the multiphase score is the one that takes the request.
+  short_raw <- function(theta, ..., sanitize = TRUE) {
+    if (sanitize) rosen_score(theta) else rosen_score(theta)[1]
+  }
+  fit <- suppressWarnings(.hzr_optim_generic(
+    logl_fn = rosen_logl, gradient_fn = short_raw,
+    time = 1, status = 1, theta_start = start, hessian_fn = rosen_hessian
+  ))
+  expect_true(is.na(fit$rel_gradient))
+  expect_identical(fit$rel_gradient_reason,
+                   "the score has 1 component where the model has 2 parameters")
+})
+
+test_that("hazard() records the reason on the fit, and print()/summary() show it", {
+  # The user-visible half. Every other test here reads .hzr_optim_generic()'s
+  # return directly, so deleting the line in hazard() that copies the reason
+  # onto the fit, or the argument that passes it to the formatter, left the
+  # whole feature inert with the suite still green. A planted reason travels
+  # the real path: optimizer -> fit_state -> print() and summary().
+  set.seed(7)
+  df <- data.frame(time = stats::rexp(80, 0.4),
+                   status = rep(c(1, 1, 0), length.out = 80),
+                   z = stats::rnorm(80))
+  real <- .hzr_optim_exponential
+  testthat::local_mocked_bindings(.hzr_optim_exponential = function(...) {
+    r <- real(...)
+    r$rel_gradient <- NA_real_
+    r$rel_gradient_reason <- "a planted reason"
+    r
+  })
+  f <- hazard(survival::Surv(time, status) ~ z, data = df, dist = "exponential",
+              theta = c(log_rate = 0, z = 0), fit = TRUE)
+  expect_identical(f$fit$rel_gradient_reason, "a planted reason")
+  expect_identical(summary(f)$rel_gradient_reason, "a planted reason")
+  expect_output(print(f), "not evaluated at the estimates: a planted reason",
+                fixed = TRUE)
+  expect_output(print(summary(f)),
+                "not evaluated at the estimates: a planted reason", fixed = TRUE)
+})
+
+test_that("a real CoE fit whose test cannot run says so, and says why (#351)", {
+  skip_on_cran()
+  # The end-to-end case the issue is about: a converged multiphase fit with
+  # Conservation of Events applied, whose acceptance test cannot be evaluated
+  # because the finite-difference score needs a point where the
+  # log-likelihood is not usable. The estimates are sound; only the test is
+  # missing, and the fit must say which of those it is rather than leaving a
+  # bare NA that reads as a failure.
+  set.seed(40)
+  n <- 40
+  tt <- stats::rexp(n) + 0.01
+  st <- stats::rbinom(n, 1, 0.75)
+  f <- suppressWarnings(hazard(
+    time = tt, status = st, dist = "multiphase",
+    phases = list(early = hzr_phase("cdf", t_half = 1, nu = 1, m = 0),
+                  const = hzr_phase("constant")),
+    fit = TRUE
+  ))
+  # Premises: without these the fixture is no longer the case under test.
+  expect_true(isTRUE(f$fit$converged))
+  expect_true(isTRUE(f$spec$control$conserve_applied))
+  expect_true(is.na(f$fit$rel_gradient))
+  expect_identical(
+    f$fit$rel_gradient_reason,
+    paste0("the log-likelihood is non-finite or past the optimizer's ",
+           "penalty at a point the finite-difference score needs")
+  )
+  out <- utils::capture.output(print(f))
+  expect_true(any(grepl("finite-difference score needs", out, fixed = TRUE)))
+  # A missing test is not a failed one.
+  expect_false(any(grepl("not met", out, fixed = TRUE)))
 })

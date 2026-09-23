@@ -10,7 +10,7 @@ test_that("hazard() builds a hazard object", {
     time = c(1, 2),
     status = c(1, 0),
     x = x,
-    theta = c(0.2, -0.1),
+    theta = c(1, 1, 0.2, -0.1),
     dist = "weibull",
     maxit = 50
   )
@@ -225,7 +225,8 @@ test_that("fit = TRUE without theta is refused for single-distribution models", 
 
 test_that("predict.hazard returns linear predictor and hazard scale", {
   x <- matrix(c(1, 0, 0, 1), ncol = 2)
-  fit <- hazard(time = c(1, 2), status = c(1, 0), x = x, theta = c(0.3, -0.2))
+  fit <- hazard(time = c(1, 2), status = c(1, 0), x = x,
+                theta = c(1, 1, 0.3, -0.2))
 
   eta <- predict(fit, type = "linear_predictor")
   hz <- predict(fit, type = "hazard")
@@ -239,7 +240,7 @@ test_that("predict.hazard accepts newdata", {
     time = c(1, 2),
     status = c(1, 0),
     x = matrix(c(1, 2, 3, 4), ncol = 2),
-    theta = c(0.5, 0.25)
+    theta = c(1, 1, 0.5, 0.25)
   )
 
   newdata <- matrix(c(2, 1, 0, 1), ncol = 2)
@@ -258,7 +259,7 @@ test_that("summary.hazard returns model summary metadata", {
     time = c(1, 2, 3),
     status = c(1, 0, 1),
     x = matrix(c(1, 0, 0, 1, 1, 1), ncol = 2),
-    theta = c(0.3, -0.2),
+    theta = c(1, 1, 0.3, -0.2),
     dist = "weibull"
   )
 
@@ -268,8 +269,8 @@ test_that("summary.hazard returns model summary metadata", {
   expect_equal(s$n, 3)
   expect_equal(s$p, 2)
   expect_equal(s$dist, "weibull")
-  expect_equal(rownames(s$coefficients), c("beta1", "beta2"))
-  expect_equal(s$coefficients$estimate, c(0.3, -0.2), tolerance = 1e-12)
+  expect_equal(rownames(s$coefficients), c("mu", "nu", "beta1", "beta2"))
+  expect_equal(s$coefficients$estimate, c(1, 1, 0.3, -0.2), tolerance = 1e-12)
 })
 
 test_that("summary.hazard includes standard errors when vcov is available", {
@@ -277,17 +278,17 @@ test_that("summary.hazard includes standard errors when vcov is available", {
     time = c(1, 2),
     status = c(1, 0),
     x = matrix(c(1, 0), ncol = 1),
-    theta = c(0.4),
+    theta = c(0, 0.4),
     dist = "exponential"
   )
-  fit$fit$vcov <- matrix(0.25, nrow = 1, ncol = 1)
+  fit$fit$vcov <- diag(0.25, 2)
 
   s <- summary(fit)
 
   expect_true(s$has_vcov)
-  expect_equal(s$coefficients$std_error, 0.5, tolerance = 1e-12)
-  expect_true(is.finite(s$coefficients$z_stat))
-  expect_true(is.finite(s$coefficients$p_value))
+  expect_equal(s$coefficients$std_error, c(0.5, 0.5), tolerance = 1e-12)
+  expect_true(all(is.finite(s$coefficients$z_stat)))
+  expect_true(all(is.finite(s$coefficients$p_value)))
 })
 
 test_that("optimizer produces valid vcov and SEs for all distributions", {
@@ -477,7 +478,7 @@ test_that("print.summary.hazard prints without error", {
     time = c(1, 2),
     status = c(1, 0),
     x = matrix(c(1, 0), ncol = 1),
-    theta = c(0.4),
+    theta = c(0, 0.4),
     dist = "exponential"
   )
 
@@ -495,13 +496,13 @@ test_that("hazard() accepts formula interface with Surv()", {
   fit <- hazard(
     Surv(time, status) ~ x1 + x2,
     data = df,
-    theta = c(0.3, -0.2),
+    theta = c(1, 1, 0.3, -0.2),
     dist = "weibull"
   )
 
   expect_s3_class(fit, "hazard")
   expect_equal(fit$spec$dist, "weibull")
-  expect_equal(length(fit$fit$theta), 2)
+  expect_equal(length(fit$fit$theta), 4)
 })
 
 test_that("formula interface extracts predictors correctly", {
@@ -546,7 +547,7 @@ test_that("formula interface works without intercept", {
     fit <- hazard(
       Surv(time, status) ~ x - 1,
       data = df,
-      theta = 0.4,
+      theta = c(0, 0.4),
       dist = "exponential"
     ),
     class = "hzr_intercept_removed"
