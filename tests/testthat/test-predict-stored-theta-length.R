@@ -102,3 +102,63 @@ test_that("the check does not fire on a time-windowed model, or one with no stor
     2L
   )
 })
+
+test_that("predict() warns when it maps newdata columns by position (#422)", {
+  # John's decision (2026-09-23): keep the behaviour, say it out loud. An
+  # object with no stored design matches newdata's columns to its coefficients
+  # in the order supplied, so reordering or renaming them changes the
+  # predictions with nothing else changing. The warning names the count, shows
+  # the columns it used, and says what to do.
+  set.seed(5)
+  n <- 30
+  d <- data.frame(t = stats::rexp(n) + 0.1, s = stats::rbinom(n, 1, 0.7))
+  obj <- hazard(time = d$t, status = d$s, dist = "exponential", theta = -4)
+  obj$fit$theta <- c(-4, 0.01)
+  nd <- data.frame(time = c(1, 2), age = 70)
+  expect_warning(
+    suppressWarnings(  # the separate fit = FALSE notice is not what this pins
+      withCallingHandlers(
+        predict(obj, newdata = nd, type = "linear_predictor"),
+        warning = function(w) {
+          if (!grepl("BY POSITION", conditionMessage(w), fixed = TRUE)) {
+            invokeRestart("muffleWarning")
+          }
+        }
+      )
+    ),
+    NA
+  )
+  # Pin the text directly, which is what a user reads.
+  msgs <- character(0)
+  withCallingHandlers(
+    predict(obj, newdata = nd, type = "linear_predictor"),
+    warning = function(w) {
+      msgs <<- c(msgs, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
+  )
+  pos <- msgs[grepl("BY POSITION", msgs, fixed = TRUE)]
+  expect_length(pos, 1L)
+  expect_match(pos, "stored no design matrix", fixed = TRUE)
+  expect_match(pos, "1 covariate coefficient BY POSITION", fixed = TRUE)
+  expect_match(pos, "age", fixed = TRUE)
+  expect_match(pos, "Refit the model", fixed = TRUE)
+
+  # Control: a fit WITH a stored design maps by name and must not warn.
+  set.seed(6)
+  d2 <- data.frame(t = stats::rexp(n) + 0.1, s = stats::rbinom(n, 1, 0.7),
+                   x = stats::rnorm(n))
+  ok <- suppressWarnings(hazard(survival::Surv(t, s) ~ x, data = d2,
+                                dist = "weibull", theta = c(1, 1, 0),
+                                fit = TRUE))
+  msgs2 <- character(0)
+  withCallingHandlers(
+    predict(ok, newdata = data.frame(time = c(1, 2), x = c(0, 1)),
+            type = "linear_predictor"),
+    warning = function(w) {
+      msgs2 <<- c(msgs2, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_length(msgs2[grepl("BY POSITION", msgs2, fixed = TRUE)], 0L)
+})

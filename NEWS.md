@@ -849,6 +849,16 @@
   surplus coefficients into an outer product and returned two values per row
   with no error. They now refuse, naming both counts, as `hzr_evaluate()`
   already did.
+
+  Separately, `predict(newdata = )` now **warns** when it matches `newdata`'s
+  columns to a model's coefficients **by position**. That happens only for an
+  object that stored no design matrix, where position is the only mapping
+  left, and it means reordering or renaming `newdata`'s columns silently
+  changes the predictions. The warning names how many coefficients are being
+  matched, shows the columns it used, and says to refit so the design is
+  stored and the mapping is by name. The behaviour is unchanged: `hazard()`
+  already refuses to build such an object, so one can only arrive from an
+  older version or by hand, and it still predicts.
 * **`hzr_stepwise()` and `hzr_bootstrap()` warn once about a `control`
   element the fit does not read, not once per candidate refit (#410).**
   Since #376 made `hazard()` warn about an element a fit ignores rather
