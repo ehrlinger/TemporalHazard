@@ -2,6 +2,35 @@
 
 ## Breaking changes
 
+* **`hazard()` refuses a function-valued element of `data` (#420).** `data`
+  masks the calling frame while `hazard()` evaluates `time`, `status`,
+  `time_lower`, `time_upper` and `weights`, and while it evaluates the
+  formula's `Surv()` response. R's function lookup walks past every binding
+  that is not a function, so an element such as `rep = function(...) ...`
+  was called in place of `base::rep()` by an expression like
+  `weights = rep(1, n)`. The fit changed and nothing warned; this has
+  shipped since 1.2.2 (#151). `stats::lm()` refuses the same shape.
+  Both interfaces were affected. The formula path looked immune only
+  because the column-reading step replicates each column to `nrow` and dies
+  on a function while doing it -- at one row there is nothing to replicate,
+  and a 1-row frame carrying a `round` made `Surv(round(tt), ss)` read the
+  masked value as the response.
+  **What now errors:** any `data` carrying a *named* element that is a
+  function, whether or not an expression calls it. That includes using the
+  mask to reach a helper, as in
+  `hazard(time = f(t), status = s, data = list(t = ..., s = ..., f = myfun))`,
+  and it includes an S4 generic or a reference-class generator, which are
+  functions for this purpose, as is an element whose name is
+  `NA_character_`, which R binds under the symbol `` `NA` `` and a call can
+  reach. Remove the element and pass `data` without it: for a vector
+  argument, or the formula's `weights`, define the helper in the calling
+  environment; for a helper used inside the `Surv()` response, compute the
+  value into a `data` column first, since the response is evaluated without
+  the formula's environment.
+  **Unaffected:** a numeric element or column of the same name, which was
+  never consulted; a data-frame list-column of functions, which is a list;
+  and an element with no name, which no expression can look up.
+
 * **`hzr_bootstrap()` no longer counts replicates that estimated nothing as
   successes (#373).** The optimizer stands in 1e10 for a negative
   log-likelihood it could not evaluate, so a fit that never had a
@@ -20,7 +49,8 @@
   Conservation of Events) are identical by design and are not named. A run
   in which only some replicates stay at their start while their objective is
   finite is not caught; that rests on the optimizer's convergence test
-  (#351).
+  (#351). What a sentinel objective should mean for a single fit is tracked
+  separately (#351, #374).
 
 * **`hzr_translate_sas()` no longer fits a job `PROC HAZARD` rejects: if
   you hold estimates from such a translation, they have no SAS run behind
@@ -328,12 +358,19 @@
   from `newdata`.** A term that uses row-level values kept outside `data`
   (a vector, matrix, list or environment in the formula's environment, as
   in `~ zz` or `~ ext$z`) is refused, even when `newdata` supplies the
-  object, with an error naming the term
-  (`term 'zz' of the model uses row-level values taken from outside`).
-  Such a term cannot be rebuilt for new rows. Move the variable
-  into `data` as a column and refit. Before, a supplied `zz` or matrix `M`
-  was used, but a missing or list-held one was silently read from the
-  fitting rows (see Bug fixes). Formula constants, such as `cutoff` in
+  object, with an error naming the term (`term 'zz' of the model ...`)
+  (#409). Such a term cannot be rebuilt for new rows. Move the variable
+  into `data` as a column and refit. When the term's values simply do not
+  line up with `newdata`'s rows, the error says so and gives both causes,
+  since a length-changing function of a `data` column, such as
+  `I(unique(age))`, reaches the same check. An error raised by your own code
+  inside a term reaches you unchanged, with its own class and message, even
+  when a different term is row-mismatched -- unless it comes from a
+  `model.frame()` or `model.matrix()` call inside that term, which is read
+  as the design build's own failure and replaced by the naming error.
+  Before, a supplied `zz` or matrix `M` was used, but a missing or
+  list-held one was silently read from the fitting rows (see Bug fixes).
+  Formula constants, such as `cutoff` in
   `I(age > cutoff)` and spline knots, are unaffected. A fit saved by an
   earlier version without its data still takes such a variable from
   `newdata`, since it cannot tell it from a column.
@@ -796,8 +833,25 @@
 
 ## Bug fixes
 
-  What a sentinel objective should mean for a single fit is tracked
-  separately (#351, #374).
+* **`hzr_stepwise()` and `hzr_bootstrap()` warn once about a `control`
+  element the fit does not read, not once per candidate refit (#410).**
+  Since #376 made `hazard()` warn about an element a fit ignores rather
+  than accept it silently, both functions have handed `control` to every
+  candidate refit, so one warning became **six** in a three-step screen and
+  **three** in a select-mode bootstrap, one per candidate refit of the
+  screen it runs on the real data before resampling. (The replicate screens
+  run muffled, so the bootstrap's count did not grow with `n_boot`.) No
+  result changed: the harm is to
+  **other** warnings, because past 50 R prints only "There were 50 or more
+  warnings", so the repeats can bury the ill-conditioned-Hessian and
+  gradient-test warnings that say a fit is not to be trusted. The forwarded
+  `control` is now validated once, at the call, and the refits are given
+  what survives, so they have nothing left to warn about. An element the fit
+  does read is still forwarded and still takes effect. One case gains a
+  warning rather than losing repeats: a screen that never refits a candidate,
+  such as `criterion = "score"` with a threshold nothing clears, reported an
+  ignored `control` name not at all, because the warning came from the
+  refits.
 
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded
