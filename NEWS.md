@@ -2,6 +2,35 @@
 
 ## Breaking changes
 
+* **`hazard()` refuses a function-valued element of `data` (#420).** `data`
+  masks the calling frame while `hazard()` evaluates `time`, `status`,
+  `time_lower`, `time_upper` and `weights`, and while it evaluates the
+  formula's `Surv()` response. R's function lookup walks past every binding
+  that is not a function, so an element such as `rep = function(...) ...`
+  was called in place of `base::rep()` by an expression like
+  `weights = rep(1, n)`. The fit changed and nothing warned; this has
+  shipped since 1.2.2 (#151). `stats::lm()` refuses the same shape.
+  Both interfaces were affected. The formula path looked immune only
+  because the column-reading step replicates each column to `nrow` and dies
+  on a function while doing it -- at one row there is nothing to replicate,
+  and a 1-row frame carrying a `round` made `Surv(round(tt), ss)` read the
+  masked value as the response.
+  **What now errors:** any `data` carrying a *named* element that is a
+  function, whether or not an expression calls it. That includes using the
+  mask to reach a helper, as in
+  `hazard(time = f(t), status = s, data = list(t = ..., s = ..., f = myfun))`,
+  and it includes an S4 generic or a reference-class generator, which are
+  functions for this purpose, as is an element whose name is
+  `NA_character_`, which R binds under the symbol `` `NA` `` and a call can
+  reach. Remove the element and pass `data` without it: for a vector
+  argument, or the formula's `weights`, define the helper in the calling
+  environment; for a helper used inside the `Surv()` response, compute the
+  value into a `data` column first, since the response is evaluated without
+  the formula's environment.
+  **Unaffected:** a numeric element or column of the same name, which was
+  never consulted; a data-frame list-column of functions, which is a list;
+  and an element with no name, which no expression can look up.
+
 * **`hzr_bootstrap()` no longer counts replicates that estimated nothing as
   successes (#373).** The optimizer stands in 1e10 for a negative
   log-likelihood it could not evaluate, so a fit that never had a
@@ -20,7 +49,8 @@
   Conservation of Events) are identical by design and are not named. A run
   in which only some replicates stay at their start while their objective is
   finite is not caught; that rests on the optimizer's convergence test
-  (#351).
+  (#351). What a sentinel objective should mean for a single fit is tracked
+  separately (#351, #374).
 
 * **`hzr_translate_sas()` no longer fits a job `PROC HAZARD` rejects: if
   you hold estimates from such a translation, they have no SAS run behind
@@ -328,12 +358,19 @@
   from `newdata`.** A term that uses row-level values kept outside `data`
   (a vector, matrix, list or environment in the formula's environment, as
   in `~ zz` or `~ ext$z`) is refused, even when `newdata` supplies the
-  object, with an error naming the term
-  (`term 'zz' of the model uses row-level values taken from outside`).
-  Such a term cannot be rebuilt for new rows. Move the variable
-  into `data` as a column and refit. Before, a supplied `zz` or matrix `M`
-  was used, but a missing or list-held one was silently read from the
-  fitting rows (see Bug fixes). Formula constants, such as `cutoff` in
+  object, with an error naming the term (`term 'zz' of the model ...`)
+  (#409). Such a term cannot be rebuilt for new rows. Move the variable
+  into `data` as a column and refit. When the term's values simply do not
+  line up with `newdata`'s rows, the error says so and gives both causes,
+  since a length-changing function of a `data` column, such as
+  `I(unique(age))`, reaches the same check. An error raised by your own code
+  inside a term reaches you unchanged, with its own class and message, even
+  when a different term is row-mismatched -- unless it comes from a
+  `model.frame()` or `model.matrix()` call inside that term, which is read
+  as the design build's own failure and replaced by the naming error.
+  Before, a supplied `zz` or matrix `M` was used, but a missing or
+  list-held one was silently read from the fitting rows (see Bug fixes).
+  Formula constants, such as `cutoff` in
   `I(age > cutoff)` and spline knots, are unaffected. A fit saved by an
   earlier version without its data still takes such a variable from
   `newdata`, since it cannot tell it from a column.
@@ -653,6 +690,16 @@
   where `Surv()` and the model formulas read it. Before, those fits read
   its stored bits and returned their starting values as converged.
 
+* **A forward candidate whose refit adds no design column of its own is now
+  a recorded refit failure, not an error out of `hzr_stepwise()` (#442).**
+  Under `"wald"` and `"aic"`, `hzr_stepwise()` used to stop with an error
+  ("added no design-matrix column", or "does not add a column" when the
+  refit only changes the parameterisation). It now issues a warning, adds the
+  candidate to `$criteria$refit_failures` with the refusal as its reason in
+  `$criteria$refit_failure_reasons`, and the screen goes on, as `"score"`
+  already did. Code that caught the error with `tryCatch(..., error = )`
+  will no longer see it; read `$criteria$refit_failures` instead.
+
 ## New features
 
 * **`hzr_translate_sas()` now translates a `SELECTION` statement into an
@@ -780,8 +827,115 @@
 
 ## Bug fixes
 
+* **A Conservation of Events fit now reports the log-likelihood of the
+  estimates it returns (#362).** Under CoE the conserved phase's scale is
+  re-derived after the optimizer finishes, and the reported objective was the
+  optimizer's own value, taken before that step. The two could describe
+  different parameter vectors: on one fit of the shipped `avc` data the fit
+  reported `-71.934410193` while the likelihood of its own returned `theta`
+  was `-78.1497959154`, a gap of 6.22. Anything reading the objective
+  inherited the discrepancy, including `print()`, `summary()`, the `logLik`
+  and `delta_logLik` columns of `hzr_stepwise()$steps`, and the log-likelihood
+  the score criterion works from. The objective is now recomputed at the
+  returned estimates, so `objective` and `theta` describe the same point. The
+  one exception is loud: if the likelihood cannot be evaluated there, the
+  optimizer's own value is kept and a warning says so. **No estimate
+  changes**: `theta` is untouched and only the number
+  reported beside it moves, and only for fits where the two had diverged. On
+  the datasets measured that was 2 fits in 15.
+
+  **This corrects the report, not the fit.** The largest gaps arose where the
+  estimates are themselves unsound: standing on a discontinuity in the
+  likelihood, where a change of one floating-point step in a parameter moves
+  the log-likelihood by several units (see Known limitations, #448). A fit in
+  that state reports `converged = TRUE`, and that flag does not mean the fit
+  is sound there. Read the relative-gradient test beside it, which such fits
+  fail.
+
   What a sentinel objective should mean for a single fit is tracked
   separately (#351, #374).
+* **A ridge is no longer named from a covariance that is not a covariance
+  (#416).** `summary()`'s weak-direction report reads the flat direction from
+  the correlation of the estimates. When the Hessian was taken where it is not
+  negative definite, typically short of the optimum, standardising it produced
+  a matrix with "correlations" outside -1 to 1, and a ridge was reported from
+  it: on the fits measured, correlations of 1.01, 1.31 and 11.3. Those are
+  impossible, and every one of them leaves a negative eigenvalue, so the
+  report is now declined for such a matrix, with `weak` set to `NA` and the
+  reason `"covariance is not positive definite"` rather than a named set of
+  parameters. A genuine ridge is unaffected: a real correlation matrix is
+  positive semi-definite, so a true flat direction sits at or above zero.
+
+  The eigenvalue test uses a tolerance scaled to the numerical error of the eigenvalue computation,
+  `n * eps * max|lambda|`, taken from the correlation matrix. An earlier draft
+  used a fixed `-sqrt(eps)`, about `-1.49e-08`, which still admitted matrices
+  that are indefinite far beyond rounding error, so a ridge was named for one whose
+  off-diagonal read `1.00000001`. The scale is taken from the correlation
+  matrix and not the covariance deliberately, since the correlation matrix is
+  scale-free and the decision must not depend on whether a time was recorded
+  in days or years.
+
+* **`hzr_stepwise()` and `hzr_bootstrap()` warn once about a `control`
+  element the fit does not read, not once per candidate refit (#410).**
+  Since #376 made `hazard()` warn about an element a fit ignores rather
+  than accept it silently, both functions have handed `control` to every
+  candidate refit, so one warning became **six** in a three-step screen and
+  **three** in a select-mode bootstrap, one per candidate refit of the
+  screen it runs on the real data before resampling. (The replicate screens
+  run muffled, so the bootstrap's count did not grow with `n_boot`.) No
+  result changed: the harm is to
+  **other** warnings, because past 50 R prints only "There were 50 or more
+  warnings", so the repeats can bury the ill-conditioned-Hessian and
+  gradient-test warnings that say a fit is not to be trusted. The forwarded
+  `control` is now validated once, at the call, and the refits are given
+  what survives, so they have nothing left to warn about. An element the fit
+  does read is still forwarded and still takes effect. One case gains a
+  warning rather than losing repeats: a screen that never refits a candidate,
+  such as `criterion = "score"` with a threshold nothing clears, reported an
+  ignored `control` name not at all, because the warning came from the
+  refits.
+
+* **`force_in`, `force_out` and a character `scope` now name a variable by
+  looking it up, and warn when a name matches nothing (#437).** `terms()`
+  backquotes a label whose variable is not syntactic, so the column `_X1`
+  appears as `` `_X1` `` among a model's terms, while the three arguments
+  are documented as variables and the SAS translator emits bare names. The
+  two spellings never met: a pinned variable was **dropped with no warning
+  naming it**, a `force_out` one was still offered, and a character `scope`
+  re-offered a variable the model already had. Names that reach R this way
+  are ordinary in translated work: a leading underscore, a dot, a reserved
+  word. Each name is now resolved once, when the screen starts, by lookup
+  rather than by reading the string: a name that is exactly a column of
+  `data` is that column, so `"_X1"` pins `_X1` and `"TRUE"` pins a column
+  named `TRUE`; otherwise a name that is exactly a term label of the model
+  or `scope` is that term, so `` "`_X1`" `` and `"age:mal"` work as well;
+  and a name that is neither is ignored **with a warning naming it**, where
+  before it was ignored in silence. The column is looked up first, so when
+  `data` has a column literally named `age:mal`, `"age:mal"` resolves to
+  that column, and the interaction can be named only in a formula `scope`.
+  Distinct columns stay distinct: `age`, `age ` and `age # x` are three
+  columns, and a column literally named `` `x` `` is not `x`. A string that
+  only resembles a name is not read as one: `"age "` when there is no such
+  column, or `` "`age`" ``, which `terms()` never writes, is warned about
+  and ignored. The names ignored are also recorded on the result, in
+  `$scope$unresolved` (and `$unresolved` of a select-mode `hzr_bootstrap()`),
+  and `print()` shows them, so `suppressWarnings()` or a saved object does
+  not lose them; a character `scope` emptied this way says so where the
+  screen stops, rather than "no further action".
+
+  This is about MATCHING: which variables are pinned, excluded or in the
+  scope. How a candidate ENTERS is unchanged and is a known limitation. The
+  refit writes the candidate's name, as spelled, into the formula text. A
+  formula `scope` carries `terms()` labels, which are already quoted, so
+  its candidates enter as themselves. A name that reads as a different
+  term enters as that term, with no warning: the literal column `age:mal`
+  enters as the interaction, and a column `age ` beside `age` enters as
+  `age`, reachable through the default `scope = NULL`; under
+  `"score"` the entry p-value is still the literal column's (#449). A
+  non-syntactic name written bare, such as `"_X1"`, does not parse, so
+  under `"wald"` and `"aic"` its refit fails and the failure names it
+  (#441); under `"score"` it can fail by either of two routes, and a
+  `"score"` screen can finish having omitted it (#441, #438).
 
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded
@@ -1754,6 +1908,23 @@
   had covariates, or scored a candidate for a phase with an interaction.
 
 ## Known limitations
+
+* **A multiphase fit can come to rest on a discontinuity in the likelihood,
+  and still report `converged = TRUE` (#448).** When a `cdf` phase's shape
+  `nu` is driven towards zero, the phase's `(t_half/t)^(1/nu)` term acquires
+  an exponent of order `1e15`, so the phase approaches a step at `t_half`. If
+  `t_half` then comes to rest within a floating-point step of one or more
+  observed event times, the log-likelihood is discontinuous there: on a fit of
+  the shipped `avc` data a one-step change in `log(t_half)` moves the
+  log-likelihood by 6 to 30 units, in no consistent direction, with five tied
+  event times accounting for the whole of it. Such a fit reports
+  `converged = TRUE` while failing the relative-gradient test by six orders of
+  magnitude, so **read `rel_gradient` and the phase's `nu` before trusting a
+  multiphase fit**, and treat a `nu` at the boundary as a warning that the
+  estimates are not identified. This release does not change the behaviour:
+  whether the reference `PROC HAZARD` reaches the same state on the same job
+  has not been established, and that answer decides whether the fix is a
+  parity break or a shared degeneracy.
 
 * **In a two-way `hzr_stepwise()` screen, `$scope$frozen` can name a
   variable the final model excludes (#378).** With `direction = "both"`,

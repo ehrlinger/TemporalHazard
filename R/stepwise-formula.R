@@ -61,6 +61,138 @@
 }
 
 
+#' The term label `terms()` gives a data column
+#'
+#' The identity a candidate is compared by. `terms()` backquotes a name that
+#' is not syntactic, so the column `_X1` is labelled `` `_X1` `` and the
+#' column `TRUE` is labelled `` `TRUE` ``. The label is produced by
+#' `terms()` itself, from the column's symbol, so no string is parsed and it
+#' is exactly the label a model containing the column carries. Distinct
+#' columns get distinct labels, and a column's label never equals an
+#' expression's: the column `age:mal` is `` `age:mal` ``, the interaction is
+#' `age:mal`.
+#'
+#' @param x Character vector of column names.
+#' @return Character vector of labels, the same length. A name no symbol can
+#'   carry (`""`) or that `terms()` refuses (`"."`) gets a placeholder no term
+#'   label can equal, so it matches only itself.
+#' @keywords internal
+#' @noRd
+.hzr_column_label <- function(x) {
+  vapply(x, function(nm) {
+    tryCatch(
+      attr(stats::terms(stats::as.formula(call("~", as.name(nm)))),
+           "term.labels"),
+      error = function(e) {
+        paste0("<column ", encodeString(nm, quote = "\""), ">")
+      }
+    )
+  }, character(1), USE.NAMES = FALSE)
+}
+
+#' The term a refit adds for a candidate spelling
+#'
+#' `.hzr_formula_update()` pastes the candidate's spelling into the formula
+#' TEXT, so the model gains whatever term that text parses to, which is not
+#' always the candidate's identity: the column `age:mal`, spelled bare,
+#' enters as the INTERACTION `age:mal` (#442). hzr_stepwise() uses this to
+#' recognise the term an entry added as that candidate, so it is not
+#' offered again while the term is in the model.
+#'
+#' @param x Character vector of candidate spellings.
+#' @return The single term label each spelling pastes to, or `NA` when it
+#'   pastes to none or to several.
+#' @keywords internal
+#' @noRd
+.hzr_refit_term <- function(x) {
+  vapply(x, function(v) {
+    lab <- tryCatch(
+      attr(stats::terms(stats::as.formula(paste("~", v))), "term.labels"),
+      error = function(e) character()
+    )
+    if (length(lab) == 1L) lab else NA_character_
+  }, character(1), USE.NAMES = FALSE)
+}
+
+#' Is a string a term label of `data`, exactly as `terms()` writes it?
+#'
+#' True when the string is the single label `terms()` gives a formula whose
+#' right-hand side is that string, and every variable that term reads is a
+#' column of `data`. `"age "` and `"age # x"` are not labels (`terms()`
+#' writes `age`), nor is `"TRUE"` (a constant, no term), nor `"age*mal"`
+#' (three terms), nor a bare name that is not a column.
+#'
+#' @keywords internal
+#' @noRd
+.hzr_is_term_label <- function(s, data) {
+  isTRUE(tryCatch({
+    f <- stats::reformulate(s)
+    vars <- all.vars(f)
+    identical(attr(stats::terms(f), "term.labels"), s) &&
+      length(vars) > 0L && all(vars %in% names(data))
+  }, error = function(e) FALSE))
+}
+
+#' Resolve user-supplied names to the terms they name
+#'
+#' `force_in`, `force_out` and a character `scope` are documented as
+#' variables, but a candidate is compared by its `terms()` label, and the
+#' two spellings differ for a name that is not syntactic (#437). Resolving a
+#' string by PARSING it cannot be right: the same text is a raw column name
+#' at some sites and a term label at others, and each rule tried for #442
+#' merged two things that were different. So a string is resolved by LOOKUP,
+#' once, and every later comparison is on the result:
+#'
+#' 1. exactly a column of `data`: that column, identified by
+#'    `.hzr_column_label()`;
+#' 2. otherwise exactly a label in `labels`, or a column's label, or, with
+#'    `self_label = TRUE`, a string that is itself a term label over columns
+#'    of `data` (`.hzr_is_term_label()`): that term;
+#' 3. otherwise it names nothing. It is WARNED about, naming it, and dropped.
+#'
+#' A string that is both a column and a term label names the COLUMN, so with
+#' a column literally called `age:mal` the interaction is reachable only
+#' through a string that is not a column name.
+#'
+#' @param x Character vector supplied by the user.
+#' @param data The screen's data frame.
+#' @param labels Term labels step 2 accepts, besides the columns' own.
+#' @param arg The argument's name, for the warning, e.g. `` "`force_in`" ``.
+#' @param self_label Accept a string that is itself a term label. Used for a
+#'   character `scope`, which introduces its own terms.
+#' @return A list: `spelling`, the resolved elements as the user wrote them;
+#'   `id`, the label each resolves to, in the same order; and `unresolved`,
+#'   the elements that resolved to nothing, which hzr_stepwise() records on
+#'   its result so that the warning is not the only trace of them.
+#' @keywords internal
+#' @noRd
+.hzr_resolve_names <- function(x, data, labels = character(), arg,
+                               self_label = FALSE) {
+  x <- as.character(x)
+  id <- rep(NA_character_, length(x))
+  cols <- names(data)
+  is_col <- x %in% cols
+  id[is_col] <- .hzr_column_label(x[is_col])
+  known <- c(labels, .hzr_column_label(cols))
+  is_lab <- !is_col & x %in% known
+  id[is_lab] <- x[is_lab]
+  if (self_label) {
+    for (i in which(is.na(id))) {
+      if (.hzr_is_term_label(x[i], data)) id[i] <- x[i]
+    }
+  }
+  bad <- is.na(id)
+  if (any(bad)) {
+    warning(arg, " names ",
+            paste(encodeString(x[bad], quote = "\""), collapse = ", "),
+            ", which is neither a column of `data` nor a term label of the ",
+            "model or `scope`; ",
+            if (sum(bad) == 1L) "it is" else "they are", " ignored.",
+            call. = FALSE)
+  }
+  list(spelling = x[!bad], id = id[!bad], unresolved = x[bad])
+}
+
 #' Add or drop a variable from a formula's RHS
 #'
 #' @param formula Existing formula.  One-sided (`~ x`) or two-sided

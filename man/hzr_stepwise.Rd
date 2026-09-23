@@ -37,9 +37,28 @@ hzr_stepwise(
 \verb{formula = Surv(...) ~ predictors, data = df} interface.}
 
 \item{scope}{Candidate set.  \code{NULL} (default) uses every data-frame
-column not already in the model for every phase.  For
+column not already in the model for every phase.  A candidate enters
+by writing its name into the formula text, so under this default too a
+column whose name reads as a different term enters as that term, with
+no warning: a column literally named \code{age:mal} enters as the
+interaction, and a column \code{"age "} beside \code{age} enters as \code{age}
+(#449).  For
 single-distribution fits, pass a one-sided formula
-(\code{~ age + nyha}) or a character vector of names.  For multiphase
+(\code{~ age + nyha}) or a character vector of names.  Each name in a
+character \code{scope} is looked up, not parsed: a name that is exactly a
+column of \code{data} is that column, otherwise a name that is exactly a
+term label as \code{terms()} writes it (\code{"`_X1`"}, \code{"log(age)"},
+\code{"age:mal"}) is that term, and any other name is ignored with a
+warning naming it.  The column is looked up first, so when \code{data} has
+a column literally named \code{age:mal}, \code{"age:mal"} puts that column in
+the scope rather than the interaction.  Resolution decides which
+variables are in the scope; it does not change how a candidate is
+entered.  The refit writes the name as you spelled it into the
+formula text.  When that text reads as a different term, as
+\code{"age:mal"} reads as the interaction and \code{"age "} as \code{age}, the
+screen enters that other term with no warning (#449); when it does not
+parse, as a bare \code{"_X1"} does not, the candidate cannot enter
+(#441, #438).  For multiphase
 fits, pass a named list of one-sided formulas keyed by phase, naming
 each phase once.  \code{scope} lists what may enter; a drop considers every
 term in the model except \code{force_in} and terms frozen by \code{max_move}
@@ -84,10 +103,22 @@ dropped in the same iteration; see the
 
 \item{force_in}{Character vector of variables that must remain in
 the model.  Such variables are still scored and reported in the
-selection trace, but are never dropped.}
+selection trace, but are never dropped.  Each name is looked up, not
+parsed, once, when the screen starts: a name that is exactly a column
+of \code{data} is that column, so the bare \code{"_X1"} pins the column \verb{_X1}
+although \code{terms()} labels it \code{`_X1`}, and \code{"TRUE"} pins a column
+named \code{TRUE}.  Otherwise a name that is exactly a term label of the
+model or \code{scope} is that term, so \code{"`_X1`"} and \code{"age:mal"} work
+too.  Any other name, \code{"age "} with a trailing space when there is no
+such column, say, matches nothing and is ignored with a warning naming
+it.  The column is looked up first: when \code{data} has a column literally
+named \code{age:mal}, \code{"age:mal"} resolves to that column and not to the
+interaction.}
 
 \item{force_out}{Character vector of variables that may never be
-considered as candidates.}
+considered as candidates.  Names are looked up as for \code{force_in}:
+a column of \code{data} first, then a term label of the model or \code{scope},
+and a warning for a name that is neither.}
 
 \item{trace}{Logical; print step-by-step progress to the console.
 Default \code{TRUE}.}
@@ -115,7 +146,17 @@ frozen action; see Details.}
 \item{\code{scope}}{Record of the candidate scope, plus
 \code{force_in}, \code{force_out}, and the frozen set.  In a two-way
 screen, \code{frozen} can name a variable the final model does not
-contain; see the \strong{Known limitation (the frozen set)} section.}
+contain; see the \strong{Known limitation (the frozen set)} section.
+\code{unresolved} is a list with elements \code{force_in}, \code{force_out} and
+\code{scope}, each the names that matched neither a column of \code{data}
+nor a term label and were therefore ignored (\code{character()} when
+none were).  The trace, and so \code{print()} and \code{summary()}, carries a
+line for each non-empty one, and a screen whose character \code{scope}
+was emptied this way says so where it stops.  \code{candidates},
+\code{force_in} and \code{force_out} here are the arguments as given, so a
+character \code{candidates} still lists the names that were ignored,
+as \code{force_in} and \code{force_out} do; read \code{unresolved} for which
+those were (#451).}
 \item{\code{criteria}}{Named list of the threshold / direction
 settings actually applied, plus
 \code{n_uncomputable_scores} (how many candidate scores were \code{NA},

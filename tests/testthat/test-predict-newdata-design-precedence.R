@@ -9,6 +9,12 @@
 # saved before the design was stored, or a caller passing design columns),
 # and hzr_deciles() / hzr_gof(), which evaluate at the fitted design, say so.
 
+# This file predicts from models built with fit = FALSE on purpose, so the
+# warning that those numbers come from starting values is switched off for
+# this file only (#398). A file that does not expect the warning sees it as
+# an ordinary leaked warning.
+withr::local_options(TemporalHazard.warn_unfitted_prediction = FALSE)
+
 .dp_avc <- local({
   data(avc, package = "TemporalHazard")
   d <- na.omit(avc)
@@ -1181,12 +1187,14 @@ test_that("the outside-data refusal at one row, duplicate rows, one fit row", {
   truth <- function(x) drop(cbind(x$age > cutoff, x$mal) %*% beta)
   lp <- function(w, x) unname(predict(w, newdata = x, type = "linear_predictor"))
 
-  # One row cannot be shifted, so the row-count backstop refuses.
+  # One row cannot be shifted. The outside variable has the fit's n rows,
+  # not newdata's one, so it is named before model.frame() runs (#409);
+  # this used to reach the row-count backstop, which named no term.
   one <- d[5, ]
   one$zz <- zz[5]
-  backstop <- paste0("has ", n, " rows for 1 row")
-  expect_error(lp(w_zz, one), backstop)
-  expect_error(lp(w_lz, d[5, ]), backstop)
+  expect_error(lp(w_zz, one), "term 'zz' of the model does not give one value")
+  expect_error(lp(w_lz, d[5, ]),
+               "term 'Lz\\$z' of the model does not give one value")
   expect_equal(lp(w_ct, d[5, ]), truth(d[5, ]), tolerance = 1e-12)
 
   # Duplicate rows: a design built from newdata's columns moves with its

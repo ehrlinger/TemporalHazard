@@ -518,6 +518,17 @@
 # Interval-censored contribution
 # ============================================================================
 
+#' Stop on a data defect, as a classed condition (#407)
+#'
+#' The message is built exactly as `stop()` builds it, and carries the class
+#' `hzr_data_error`, so a caller that absorbs numerical failures (the score
+#' path's `tryCatch` sites) can let a data defect through instead of
+#' reporting it as "information matrix could not be inverted".
+#' @noRd
+.hzr_stop_data <- function(...) {
+  stop(errorCondition(.makeMessage(...), class = "hzr_data_error"))
+}
+
 #' Reject row types the SAS objective has no counterpart for
 #'
 #' `PROC HAZARD` has no left-censoring statement, so no SAS run corresponds to
@@ -536,9 +547,9 @@
 #' @keywords internal
 .hzr_check_sas_status <- function(status, objective) {
   if (identical(objective, "sas") && any(status == -1)) {
-    stop("objective = \"sas\" does not support left-censored rows ",
+    .hzr_stop_data("objective = \"sas\" does not support left-censored rows ",
          "(status == -1): PROC HAZARD has no left-censoring statement, so no ",
-         "SAS run corresponds to the result.", call. = FALSE)
+         "SAS run corresponds to the result.")
   }
   invisible(NULL)
 }
@@ -577,10 +588,10 @@
   # defined", which is the framing #213 removed -- and which invites raising
   # `n_starts`, a remedy that cannot work on a pure function of the data.
   if (anyNA(status)) {
-    stop("'status' must be complete; ",
+    .hzr_stop_data("'status' must be complete; ",
          sum(is.na(status)), " row(s) are NA, at index/indices ",
          paste(utils::head(which(is.na(status)), 10L), collapse = ", "),
-         if (sum(is.na(status)) > 10L) ", ..." else "", ".", call. = FALSE)
+         if (sum(is.na(status)) > 10L) ", ..." else "", ".")
   }
 
   if (!identical(objective, "sas")) {
@@ -601,8 +612,8 @@
     for (b in list(list(if (is.null(time_lower)) "time" else "time_lower", lower),
                    list(if (is.null(time_upper)) "time" else "time_upper", upper))) {
       if (length(b[[2L]]) != length(status)) {
-        stop(b[[1L]], " has length ", length(b[[2L]]), ", but status has ",
-             "length ", length(status), ".", call. = FALSE)
+        .hzr_stop_data(b[[1L]], " has length ", length(b[[2L]]), ", but status has ",
+             "length ", length(status), ".")
       }
     }
     # An NA bound makes the width comparison NA, which then stood in for the
@@ -610,22 +621,20 @@
     na_bound <- idx_interval[is.na(lower[idx_interval]) |
                                is.na(upper[idx_interval])]
     if (length(na_bound) > 0) {
-      stop("objective = \"sas\" requires both bounds on every ",
+      .hzr_stop_data("objective = \"sas\" requires both bounds on every ",
            "interval-censored row. ", length(na_bound), " of ",
            length(idx_interval), " interval row(s) have an NA bound, at ",
            "index/indices ", paste(utils::head(na_bound, 10L), collapse = ", "),
-           if (length(na_bound) > 10L) ", ..." else "", ".",
-           call. = FALSE)
+           if (length(na_bound) > 10L) ", ..." else "", ".")
     }
     bad <- idx_interval[!(upper[idx_interval] > lower[idx_interval])]
     if (length(bad) > 0) {
-      stop("objective = \"sas\" requires upper > lower on every ",
+      .hzr_stop_data("objective = \"sas\" requires upper > lower on every ",
            "interval-censored row; the interval-mean hazard divides by ",
            "(u - l). ", length(bad), " of ", length(idx_interval),
            " interval row(s) fail this, at index/indices ",
            paste(utils::head(bad, 10L), collapse = ", "),
-           if (length(bad) > 10L) ", ..." else "", ".",
-           call. = FALSE)
+           if (length(bad) > 10L) ", ..." else "", ".")
     }
   }
 
@@ -675,13 +684,12 @@
     # away from; the entry check stops on the same row (#340).
     bad <- which(!(upper > lower) | is.na(upper) | is.na(lower))
     if (length(bad) > 0) {
-      stop("objective = \"sas\" requires upper > lower on every ",
+      .hzr_stop_data("objective = \"sas\" requires upper > lower on every ",
            "interval-censored row; the interval-mean hazard divides by ",
            "(u - l). ", length(bad), " of ", length(upper),
            " interval row(s) fail this, at index/indices ",
            paste(utils::head(bad, 10L), collapse = ", "),
-           if (length(bad) > 10L) ", ..." else "", ".",
-           call. = FALSE)
+           if (length(bad) > 10L) ", ..." else "", ".")
     }
   }
 
@@ -2644,6 +2652,51 @@
         time, status, phases, covariate_counts, x_list, total_events,
         weights = weights, time_lower = time_lower
       )
+      # The objective must describe the parameters returned (#362). The
+      # optimizer's value is the objective at the point IT held, and the line
+      # above has just moved the conserved scale, so the two can describe
+      # different points: on one fit the reported log-likelihood was
+      # -71.934410193 while the likelihood of the returned theta was
+      # -78.1497959154. Recomputed here from the unwrapped likelihood, which
+      # takes a full theta and applies no further conservation step.
+      #
+      # This corrects the REPORT only. The gap was largest where the fit
+      # itself is unsound -- estimates standing on a likelihood discontinuity,
+      # where a one-ulp parameter change moves the log-likelihood by several
+      # units (#448) -- and recomputing the value does not make such a fit
+      # sound. A non-finite recomputation is left alone rather than reported,
+      # because there the optimizer's own value is the better record and
+      # `converged` and the gradient test already speak to it.
+      # tryCatch for the same reason the per-start evaluation above has one: an
+      # error here would turn a completed optimisation into a hard failure
+      # after all the work is done.
+      value_at_par <- tryCatch(
+        logl_fn_unwrapped(
+          best_result$par, time, status, time_lower, time_upper, x,
+          weights = weights
+        ),
+        error = function(e) NA_real_
+      )
+      if (is.finite(value_at_par)) {
+        best_result$value <- value_at_par
+      } else {
+        # Not silent. Keeping the optimizer's value here restores exactly the
+        # defect this block fixes, an objective describing a point other than
+        # the estimates, so it is said rather than left to be inferred from a
+        # number that looks ordinary.
+        warning(
+          "The log-likelihood could not be evaluated at the conserved ",
+          "estimates, so the reported objective is the optimizer's own value ",
+          "and describes a slightly different parameter vector. Compare ",
+          "hzr_evaluate(fit, coef(fit)) before relying on it.",
+          call. = FALSE
+        )
+      }
+      # `starts$objective` is deliberately NOT updated. It records what each
+      # start's optimisation reached, on one footing across rows, and `best` is
+      # the argmax of that column; rewriting only the winning row would break
+      # that. So under CoE the winning row can differ from the reported
+      # objective, by the size of the conservation adjustment.
     }
 
     # Expand vcov to full dimension (NA for fixed params -- not estimated)
