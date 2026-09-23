@@ -2,6 +2,35 @@
 
 ## Breaking changes
 
+* **`hazard()` refuses a function-valued element of `data` (#420).** `data`
+  masks the calling frame while `hazard()` evaluates `time`, `status`,
+  `time_lower`, `time_upper` and `weights`, and while it evaluates the
+  formula's `Surv()` response. R's function lookup walks past every binding
+  that is not a function, so an element such as `rep = function(...) ...`
+  was called in place of `base::rep()` by an expression like
+  `weights = rep(1, n)`. The fit changed and nothing warned; this has
+  shipped since 1.2.2 (#151). `stats::lm()` refuses the same shape.
+  Both interfaces were affected. The formula path looked immune only
+  because the column-reading step replicates each column to `nrow` and dies
+  on a function while doing it -- at one row there is nothing to replicate,
+  and a 1-row frame carrying a `round` made `Surv(round(tt), ss)` read the
+  masked value as the response.
+  **What now errors:** any `data` carrying a *named* element that is a
+  function, whether or not an expression calls it. That includes using the
+  mask to reach a helper, as in
+  `hazard(time = f(t), status = s, data = list(t = ..., s = ..., f = myfun))`,
+  and it includes an S4 generic or a reference-class generator, which are
+  functions for this purpose, as is an element whose name is
+  `NA_character_`, which R binds under the symbol `` `NA` `` and a call can
+  reach. Remove the element and pass `data` without it: for a vector
+  argument, or the formula's `weights`, define the helper in the calling
+  environment; for a helper used inside the `Surv()` response, compute the
+  value into a `data` column first, since the response is evaluated without
+  the formula's environment.
+  **Unaffected:** a numeric element or column of the same name, which was
+  never consulted; a data-frame list-column of functions, which is a list;
+  and an element with no name, which no expression can look up.
+
 * **`hzr_bootstrap()` no longer counts replicates that estimated nothing as
   successes (#373).** The optimizer stands in 1e10 for a negative
   log-likelihood it could not evaluate, so a fit that never had a
@@ -329,12 +358,19 @@
   from `newdata`.** A term that uses row-level values kept outside `data`
   (a vector, matrix, list or environment in the formula's environment, as
   in `~ zz` or `~ ext$z`) is refused, even when `newdata` supplies the
-  object, with an error naming the term
-  (`term 'zz' of the model uses row-level values taken from outside`).
-  Such a term cannot be rebuilt for new rows. Move the variable
-  into `data` as a column and refit. Before, a supplied `zz` or matrix `M`
-  was used, but a missing or list-held one was silently read from the
-  fitting rows (see Bug fixes). Formula constants, such as `cutoff` in
+  object, with an error naming the term (`term 'zz' of the model ...`)
+  (#409). Such a term cannot be rebuilt for new rows. Move the variable
+  into `data` as a column and refit. When the term's values simply do not
+  line up with `newdata`'s rows, the error says so and gives both causes,
+  since a length-changing function of a `data` column, such as
+  `I(unique(age))`, reaches the same check. An error raised by your own code
+  inside a term reaches you unchanged, with its own class and message, even
+  when a different term is row-mismatched -- unless it comes from a
+  `model.frame()` or `model.matrix()` call inside that term, which is read
+  as the design build's own failure and replaced by the naming error.
+  Before, a supplied `zz` or matrix `M` was used, but a missing or
+  list-held one was silently read from the fitting rows (see Bug fixes).
+  Formula constants, such as `cutoff` in
   `I(age > cutoff)` and spline knots, are unaffected. A fit saved by an
   earlier version without its data still takes such a variable from
   `newdata`, since it cannot tell it from a column.
@@ -808,6 +844,27 @@
 
   What a sentinel objective should mean for a single fit is tracked
   separately (#351, #374).
+* **A ridge is no longer named from a covariance that is not a covariance
+  (#416).** `summary()`'s weak-direction report reads the flat direction from
+  the correlation of the estimates. When the Hessian was taken where it is not
+  negative definite, typically short of the optimum, standardising it produced
+  a matrix with "correlations" outside -1 to 1, and a ridge was reported from
+  it: on the fits measured, correlations of 1.01, 1.31 and 11.3. Those are
+  impossible, and every one of them leaves a negative eigenvalue, so the
+  report is now declined for such a matrix, with `weak` set to `NA` and the
+  reason `"covariance is not positive definite"` rather than a named set of
+  parameters. A genuine ridge is unaffected: a real correlation matrix is
+  positive semi-definite, so a true flat direction sits at or above zero.
+
+  The eigenvalue test uses a tolerance scaled to the numerical error of the eigenvalue computation,
+  `n * eps * max|lambda|`, taken from the correlation matrix. An earlier draft
+  used a fixed `-sqrt(eps)`, about `-1.49e-08`, which still admitted matrices
+  that are indefinite far beyond rounding error, so a ridge was named for one whose
+  off-diagonal read `1.00000001`. The scale is taken from the correlation
+  matrix and not the covariance deliberately, since the correlation matrix is
+  scale-free and the decision must not depend on whether a time was recorded
+  in days or years.
+
 * **`hzr_stepwise()` and `hzr_bootstrap()` warn once about a `control`
   element the fit does not read, not once per candidate refit (#410).**
   Since #376 made `hazard()` warn about an element a fit ignores rather
