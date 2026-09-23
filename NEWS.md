@@ -118,6 +118,32 @@
   (`THALF = ABC`, or `FIXNU = 1`, which takes no value) is a syntax error,
   just as it is when written without the spaces.
 
+  Joining now works the way `PROC HAZARD`'s own lexer does. Whitespace only
+  separates tokens there (`hazard_l.l:32`) and `=` is a token in its own
+  right (`:55`), so every spelling of one statement is the **same** token
+  stream to SAS. The operands are normalised to that token stream first and
+  then paired as `KEY = VALUE` by the grammar, so all spellings of a
+  statement give one answer by construction rather than by matching
+  particular spellings. Two earlier attempts did match spellings, and each
+  left another spelling reading a following option as a value: `PROC HAZARD
+  DATA = MAXITER = 50` fitted with `data` set to `MAXITER=50` and the
+  iteration limit silently dropped.
+
+  A stray `=` left over after that pairing is now recorded and warned about
+  as the syntax error it is. `DATA = MAXITER = 50` is read as SAS reads it
+  --- `DATA` switches the lexer to its dataset-name state, where `MAXITER`
+  is a name (`hazard_l.l:59, :80`), so the dataset is `MAXITER` and the
+  trailing `= 50` is a stray `=` that sends `PROC HAZARD` to
+  `hazardopt : error` (`hazard_y.y:76`).
+
+* **`DATA=` and `OUTHAZ=` with no value are refused** (#433). `DATA '='
+  dsfield` and `OUTHAZ '=' dsfield` (`hazard_y.y:61-62`), where a `dsfield` is
+  a name or a libref-qualified name (`:80-81`), have no form without one, so
+  the job does not run. `OUTHAZ=` was previously dropped with no row at all
+  and the job fitted; `DATA=` surfaced as an internal R error naming neither
+  the option nor what was lost. Both now warn and record the construct,
+  alongside the existing check on `MAXITER=` and `CONDITION=`.
+
   One spelling is **not** covered, and fails before the joining can happen:
   `DATA = X` with spaces, on a `PROC HAZARD` line that is not wrapped in a
   `%HAZARD(...)` call. The scanner that cuts a file into blocks treats the

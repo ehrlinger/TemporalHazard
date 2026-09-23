@@ -408,6 +408,26 @@
   # --- statement 1: the PROC line and its options -------------------------
   toks <- strsplit(trimws(st[[1L]]), " ", fixed = TRUE)[[1L]]
   toks <- .hzr_sas_join_spaced(toks[nzchar(toks)])
+  # A bare `=` survives the joiner only when the grammar has nothing to pair
+  # it with: `DATA = MAXITER = 50` is DATA='MAXITER' (a valid `DATA '=' NAME`,
+  # because <HZRP>DATA switches the lexer to DSNM where MAXITER lexes as a
+  # NAME, hazard_l.l:59,80) followed by a STRAY `=` and an orphan value. SAS
+  # reaches `hazardopt : error` (hazard_y.y:76) there and does not run the
+  # job. Recorded once, as the syntax error it is, rather than as one blank
+  # "unknown option" row per leftover token (#433 review 2).
+  stray <- which(toks == "=")
+  if (length(stray)) {
+    drop <- unique(c(stray, stray[stray < length(toks)] + 1L))
+    leftover <- paste(toks[drop], collapse = " ")
+    toks <- toks[-drop]
+    proc_syntax_error <- paste0(
+      "a stray `=` on the PROC HAZARD line (", leftover, "): the option ",
+      "before it already took its value, so PROC HAZARD reaches ",
+      "`hazardopt : error` (hazard_y.y:76) and rejects this job with a ",
+      "syntax error")
+  } else {
+    proc_syntax_error <- NULL
+  }
   ctl <- list()
   data_name <- NULL
   outhaz <- NULL
@@ -419,6 +439,24 @@
   # than add a second, sometimes contradictory row. `CONDITION=5.` used to say
   # both that PROC HAZARD's lexer rejects the number AND what its optimizer
   # does with the value, although a rejected job never runs (#433 review).
+  # `DATA '=' dsfield` and `OUTHAZ '=' dsfield` (hazard_y.y:61-62), where
+  # dsfield : NAME | LIBMEM (:80-81), have no form without a name, so an
+  # empty value is the grammar refusing the option -- the same shape as
+  # `MAXITER '=' NUMBER` with no number, and it belongs in the same presence
+  # check. Before this, OUTHAZ= was dropped with no row and the job fitted,
+  # and DATA= left data_name as "" and surfaced as an internal
+  # "attempt to use zero-length variable name" (#433 review 2).
+  check_name <- function(key, val) {
+    if (.hzr_sas_is_macro(val)) return(FALSE)
+    if (nzchar(val)) return(FALSE)
+    proc_rejected <<- c(proc_rejected, paste0(
+      key, ": no value, and PROC HAZARD has no form of this option without a ",
+      "dataset name (hazard_y.y:61-62, :80-81), so it rejects this job with ",
+      "a syntax error"))
+    note(key, paste0("no value; PROC HAZARD has no form of this option ",
+                     "without a dataset name (hazard_y.y:61-62, :80-81)"))
+    TRUE
+  }
   check_number <- function(key, val) {
     # A macro carries no verdict: SAS expands it before PROC HAZARD reads
     # the statement, so whether a NUMBER arrives is not knowable here.
@@ -473,8 +511,20 @@
       # A WORK. libref names the same dataset as the bare name. Dropping it
       # here makes the emitted data =, the status chunk and the guard use the
       # bare name, which is also how a %repeat OUT= is recorded.
-      DATA        = data_name <- sub("^WORK[.]", "", val),
-      OUTHAZ      = outhaz <- val,
+      DATA        = {
+        if (check_name(key, val)) {
+          mapped <- mapped - 1L
+        } else {
+          data_name <- sub("^WORK[.]", "", val)
+        }
+      },
+      OUTHAZ      = {
+        if (check_name(key, val)) {
+          mapped <- mapped - 1L
+        } else {
+          outhaz <- val
+        }
+      },
       MAXITER     = {
         if (check_number(key, val)) {
           # Rejected: one row, already recorded by check_number().
@@ -670,6 +720,10 @@
   }
   refusal_warnings <- character(0)
   rejected <- c(proc_rejected, parms$rejected_parms)
+  if (!is.null(proc_syntax_error)) {
+    rejected <- c(proc_syntax_error, rejected)
+    note("PROC HAZARD", proc_syntax_error)
+  }
   if (length(rejected)) {
     refusal_warnings <- c(refusal_warnings, paste0(
       "PROC HAZARD does not run this job: ",

@@ -130,46 +130,59 @@
 }
 
 .hzr_sas_join_spaced <- function(ops) {
-  n <- length(ops)
-  if (n < 2L) return(ops)
-  # An operand that already carries its own `=` is the NEXT option, not this
-  # one's value, so a dangling `=` must not swallow it: `DATA= MAXITER=50` is
-  # two options, where `MUE= 0.2` is one. Without this, `DATA=` consumed
-  # `MAXITER=50` and the job fitted as data = `MAXITER=50` with no row and no
-  # warning, losing MAXITER (#433 review).
-  # Two ways a token proves it is the NEXT OPTION rather than this one's
-  # value: it carries its own `=` (`MAXITER=50`), or the token AFTER it is a
-  # bare `=` (`MAXITER` `=` `50`). Round 1 of this review tested only the
-  # first, so the fully spaced `DATA = MAXITER = 50` still joined into one
-  # operand and fitted silently. The guard has to index on the SPACING, which
-  # is what the joiner keys on, not only on the content of one token.
-  is_value <- function(j) {
-    j <= n && !grepl("=", ops[[j]], fixed = TRUE) &&
-      !(j < n && identical(ops[[j + 1L]], "="))
+  if (!length(ops)) return(ops)
+  # PROC HAZARD's lexer is whitespace-INSENSITIVE: `ws` only separates tokens
+  # (hazard_l.l:32) and `=` is a token in its own right (:55). So every
+  # spacing of one statement is the SAME token stream to SAS, and spacing
+  # carries no information. Earlier versions of this function treated spacing
+  # as meaningful and matched particular spellings; each review round then
+  # found another spelling that slipped through, because the set of spellings
+  # is not something a fix can enumerate. This normalises to SAS's own token
+  # stream first and then pairs by the grammar, so all spellings of one
+  # statement give one answer by construction (#433 review 2).
+  toks <- character(0)
+  for (op in ops) {
+    # A macro is expanded by SAS before the lexer sees it, so it is opaque
+    # here and must not be split on an `=` of its own (`%F(A=1)`).
+    if (.hzr_sas_is_macro(op)) {
+      toks <- c(toks, op)
+      next
+    }
+    neq <- lengths(regmatches(op, gregexpr("=", op, fixed = TRUE)))
+    if (!neq) {
+      toks <- c(toks, op)
+      next
+    }
+    parts <- strsplit(op, "=", fixed = TRUE)[[1L]]
+    for (k in seq_along(parts)) {
+      if (nzchar(parts[[k]])) toks <- c(toks, parts[[k]])
+      if (k <= neq) toks <- c(toks, "=")
+    }
   }
+  toks <- toks[nzchar(toks)]
+  # Pair left to right as `KEY '=' VALUE` (hazard_y.y:61-64, :137-147). A
+  # stray `=`, or a value with no key before it, is left as its own operand:
+  # SAS reaches `hazardopt : error` (hazard_y.y:76) on exactly those, and the
+  # caller records them as the syntax error they are.
   out <- character(0)
   i <- 1L
+  n <- length(toks)
   while (i <= n) {
-    op <- ops[[i]]
-    if (identical(op, "=") && length(out) && i < n && is_value(i + 1L)) {
-      out[length(out)] <- paste0(out[length(out)], "=", ops[[i + 1L]])
-      i <- i + 2L
-    } else if (identical(op, "=") && length(out)) {
-      # A TRAILING bare `=`: the dangling half of `MAXITER =` with nothing
-      # after it. Attaching it to the previous operand makes one construct
-      # `MAXITER=` rather than leaving an operand whose key is the empty
-      # string, which was then reported as an unknown option with a blank
-      # name (#433 review).
-      out[length(out)] <- paste0(out[length(out)], "=")
+    tok <- toks[[i]]
+    if (identical(tok, "=")) {
+      out <- c(out, "=")
       i <- i + 1L
-    } else if (nchar(op) > 1L && endsWith(op, "=") && i < n && is_value(i + 1L)) {
-      out <- c(out, paste0(op, ops[[i + 1L]]))
-      i <- i + 2L
-    } else if (nchar(op) > 1L && startsWith(op, "=") && length(out)) {
-      out[length(out)] <- paste0(out[length(out)], op)
-      i <- i + 1L
+    } else if (i < n && identical(toks[[i + 1L]], "=")) {
+      has_val <- i + 2L <= n && !identical(toks[[i + 2L]], "=")
+      if (has_val) {
+        out <- c(out, paste0(tok, "=", toks[[i + 2L]]))
+        i <- i + 3L
+      } else {
+        out <- c(out, paste0(tok, "="))
+        i <- i + 2L
+      }
     } else {
-      out <- c(out, op)
+      out <- c(out, tok)
       i <- i + 1L
     }
   }

@@ -1167,44 +1167,6 @@ test_that("a rejected PROC option gets exactly one applicable row (#433 review)"
   expect_true(any(grepl("maxit = 250", deparse(job$calls$fit), fixed = TRUE)))
 })
 
-test_that("a valueless option does not swallow the option after it (#433 review)", {
-  # The spaced-operand joiner reads `MUE= 0.2` as one operand. It must not
-  # read `DATA= MAXITER=50` the same way: the second token is another OPTION,
-  # not this one's value. Joining them emitted
-  # hazard(data = `MAXITER=50`) with NO row and NO warning, and silently lost
-  # MAXITER -- a fit for a job PROC HAZARD rejects (`dsfield : NAME`,
-  # hazard_y.y:82-84), which is the defect this whole branch exists to stop.
-  ops <- .hzr_sas_join_spaced(c("DATA=", "MAXITER=50"))
-  expect_equal(ops, c("DATA=", "MAXITER=50"))
-  # The same guard on the bare-`=` spelling.
-  expect_equal(.hzr_sas_join_spaced(c("DATA", "=", "MAXITER=50")),
-               c("DATA=", "MAXITER=50"))
-  # KNOWN NEGATIVE: a genuine spaced value must still join, or the guard has
-  # simply disabled the feature it is protecting.
-  expect_equal(.hzr_sas_join_spaced(c("MUE=", "0.2")), "MUE=0.2")
-  expect_equal(.hzr_sas_join_spaced(c("MUE", "=", "0.2")), "MUE=0.2")
-
-  # End to end, the property that actually matters: the job must NOT silently
-  # emit a fit. On this branch before the guard it produced a clean
-  # hazard(data = `MAXITER=50`) with no row and no warning. It now errors,
-  # which is what main does -- loud, and therefore acceptable. Note the
-  # error is RESTORED by this fix, not unchanged across it: the silent fit
-  # was this branch's own regression, so "as it does on main" was true of
-  # main and false of this branch's base (#433 review 2). Turning it into a
-  # proper U1 refusal is a separate, LOUD leftover (see the leftovers issue):
-  # `DATA=` with no NAME is a syntax error at `dsfield : NAME`
-  # (hazard_y.y:80-82), so the job is one PROC HAZARD rejects.
-  f <- withr::local_tempfile(fileext = ".sas")
-  writeLines(paste0("%HAZARD( PROC HAZARD DATA= MAXITER=50; EVENT DEAD;",
-                    " TIME TT; PARMS MUE=0.2 THALF=1 NU=1; );"), f)
-  out <- tryCatch(suppressWarnings(hzr_translate_sas(f)), error = function(e) e)
-  silent_fit <- !inherits(out, "error") &&
-    identical(out$calls$fit[[3L]][[1L]], as.name("hazard")) &&
-    NROW(out$untranslated) == 0L &&
-    !length(grep("^refusal", names(out$calls)))
-  expect_false(silent_fit)
-})
-
 test_that("an entry refusal suppresses the 'cannot tell' verdict (#433 review)", {
   # SETG3's entry checks (setg3.c:269-284) each `return` immediately, so the
   # untraced non-WEIBULL dispatch (setg3.c:359-374) is NEVER reached once one
@@ -1239,36 +1201,92 @@ test_that("two refusal reasons are separated in the emitted warning (#433 review
   expect_no_match(m, "[a-z]\\.[A-Z]")
 })
 
-test_that("a valueless option does not swallow a SPACED following option (#433 review 2)", {
-  # Round 1's guard asked whether the next token CONTAINS `=`. That is the
-  # wrong thing to index on: written fully spaced, the next token is a bare
-  # keyword with no `=` in it, so the guard passed and the joiner swallowed
-  # the option AND its value. Vary the spacing, which is what the mechanism
-  # actually depends on, not just the content.
-  expect_equal(.hzr_sas_join_spaced(c("DATA", "=", "MAXITER", "=", "50")),
-               c("DATA=", "MAXITER=50"))
-  expect_equal(.hzr_sas_join_spaced(c("DATA=", "MAXITER", "=", "50")),
-               c("DATA=", "MAXITER=50"))
-  expect_equal(.hzr_sas_join_spaced(c("DATA", "=", "MAXITER=", "50")),
-               c("DATA=", "MAXITER=50"))
-  # KNOWN NEGATIVES: every genuine spaced value must still join, at the
-  # start, middle and END of the list (the end is where `i < n` stops
-  # applying, so it is its own case).
-  expect_equal(.hzr_sas_join_spaced(c("MUE", "=", "0.2", "THALF", "=", "0.3")),
-               c("MUE=0.2", "THALF=0.3"))
-  expect_equal(.hzr_sas_join_spaced(c("MUE=", "0.2", "NU", "=", "1")),
-               c("MUE=0.2", "NU=1"))
-  expect_equal(.hzr_sas_join_spaced(c("FIXNU", "MUE", "=", "0.2")),
-               c("FIXNU", "MUE=0.2"))
+test_that("operand joining is INVARIANT under spacing (#433 review 2)", {
+  # PROC HAZARD's lexer is whitespace-insensitive (hazard_l.l:32, :55), so
+  # every spacing of one statement is the same token stream to SAS. Two
+  # earlier rounds of this review fixed one spelling each and each time
+  # another slipped through, because the set of spellings cannot be
+  # enumerated by a fix. Assert the PROPERTY instead: generate every spacing
+  # of each statement and require one answer.
+  spacings <- function(pairs) {
+    # every `=` with or without a space on each side
+    grid <- expand.grid(rep(list(c("", " ")), 2L * length(pairs)),
+                        stringsAsFactors = FALSE)
+    out <- character(nrow(grid))
+    for (r in seq_len(nrow(grid))) {
+      s <- ""
+      for (k in seq_along(pairs)) {
+        l <- grid[[2L * k - 1L]][r]
+        rgt <- grid[[2L * k]][r]
+        s <- paste0(s, if (nzchar(s)) " " else "",
+                    pairs[[k]][[1L]], l, "=", rgt, pairs[[k]][[2L]])
+      }
+      out[[r]] <- s
+    }
+    unique(out)
+  }
+  statements <- list(
+    list(c("DATA", "MAXITER"), c("", "50")),       # the defect: key as value
+    list(c("MUE", "0.2"), c("THALF", "0.3")),      # two genuine operands
+    list(c("MAXITER", "250"))                      # one genuine operand
+  )
+  for (st in statements) {
+    variants <- spacings(st)
+    expect_gt(length(variants), 1L)                # the generator must vary
+    joined <- lapply(variants, function(v) {
+      .hzr_sas_join_spaced(strsplit(trimws(v), "[ \t]+")[[1L]])
+    })
+    # ONE answer for all spellings of this statement.
+    expect_length(unique(joined), 1L)
+  }
 
-  # End to end: the fully-spaced job must not emit a clean fit.
-  f <- withr::local_tempfile(fileext = ".sas")
-  writeLines(paste0("%HAZARD( PROC HAZARD DATA = MAXITER = 50; EVENT DEAD;",
-                    " TIME TT; PARMS MUE=0.2 THALF=1 NU=1; );"), f)
-  out <- tryCatch(suppressWarnings(hzr_translate_sas(f)), error = function(e) e)
-  silent_fit <- !inherits(out, "error") &&
-    identical(out$calls$fit[[3L]][[1L]], as.name("hazard")) &&
-    NROW(out$untranslated) == 0L &&
-    !length(grep("^refusal", names(out$calls)))
-  expect_false(silent_fit)
+  # And the consequence that matters: no spelling may emit a `data` argument
+  # that is itself an option. This is the assertion the two spelling-specific
+  # tests were each half of.
+  for (v in spacings(list(c("DATA", "MAXITER"), c("", "50")))) {
+    f <- withr::local_tempfile(fileext = ".sas")
+    writeLines(paste0("%HAZARD( PROC HAZARD ", v, "; EVENT DEAD; TIME TT;",
+                      " PARMS MUE=0.2 THALF=1 NU=1; );"), f)
+    out <- tryCatch(suppressWarnings(hzr_translate_sas(f)), error = function(e) e)
+    if (inherits(out, "error")) next          # loud is acceptable
+    d <- out$calls$fit[[3L]]$data
+    expect_false(is.name(d) && grepl("=", as.character(d), fixed = TRUE),
+                 info = v)
+    silent <- identical(out$calls$fit[[3L]][[1L]], as.name("hazard")) &&
+      NROW(out$untranslated) == 0L &&
+      !length(grep("^refusal", names(out$calls)))
+    expect_false(silent, info = v)
+  }
+})
+
+test_that("a name-valued PROC option with no value is refused (#433 review 2)", {
+  # `DATA '=' dsfield` and `OUTHAZ '=' dsfield`, dsfield : NAME | LIBMEM
+  # (hazard_y.y:61-62, :80-81). Neither has a form without a name, so an
+  # empty value is a syntax error and the job does not run. Only MAXITER and
+  # CONDITION had a presence check; OUTHAZ= was dropped silently and the job
+  # fitted, and DATA= surfaced as an internal R error naming neither.
+  #
+  # The option must be LAST to be genuinely valueless. `OUTHAZ= MAXITER=50`
+  # is NOT this case: <HZRP>OUTHAZ switches the lexer to DSNM, where MAXITER
+  # lexes as a NAME (hazard_l.l:60,80), so SAS reads OUTHAZ=MAXITER and then
+  # a stray `=`. An earlier draft of this test asserted that spelling and was
+  # wrong about SAS, not about the code.
+  for (opt in c("DATA", "OUTHAZ")) {
+    f <- withr::local_tempfile(fileext = ".sas")
+    writeLines(paste0("%HAZARD( PROC HAZARD DATA=D MAXITER=50 ", opt, "=;",
+                      " EVENT DEAD; TIME TT; PARMS MUE=0.2 THALF=1 NU=1; );"), f)
+    job <- suppressWarnings(hzr_translate_sas(f))
+    expect_false(is.null(.u1_refusal_chunk(job)), info = opt)
+    expect_true(any(grepl(opt, job$untranslated$construct, fixed = TRUE)),
+                info = opt)
+    # An earlier option on the same line is still read: a refusal must not
+    # eat the whole statement.
+    expect_identical(job$calls$fit[[3L]]$control$maxit, 50, info = opt)
+  }
+  # KNOWN NEGATIVE: real values refuse nothing.
+  f2 <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste0("%HAZARD( PROC HAZARD DATA=D OUTHAZ=H MAXITER=50;",
+                    " EVENT DEAD; TIME TT; PARMS MUE=0.2 THALF=1 NU=1; );"), f2)
+  clean <- suppressWarnings(hzr_translate_sas(f2))
+  expect_null(.u1_refusal_chunk(clean))
 })
