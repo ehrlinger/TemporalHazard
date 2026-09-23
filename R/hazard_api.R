@@ -673,6 +673,34 @@ hazard <- function(formula = NULL,
     if (!is.data.frame(data) && !is.list(data)) {
       stop("'data' must be a data frame or a list.", call. = FALSE)
     }
+    # A function-valued element would be CALLED in place of the function an
+    # argument expression names, because `data` masks the calling frame and
+    # R's function lookup walks past every binding that is not a function.
+    # The fit changed and nothing said so (#420). stats::lm() refuses the
+    # same shape, less clearly ("cannot coerce class '\"function\"' to a
+    # data.frame").
+    #
+    # Data frames are NOT exempted, although data.frame(), `$<-` and `[[<-`
+    # all refuse a function column: `structure(list(a = 1:2, f = f),
+    # class = "data.frame")` carries one, and `is.data.frame()` is TRUE for
+    # it, so exempting them would leave exactly this defect reachable. A
+    # normally built frame cannot trip this, and a list-column is a list,
+    # which the lookup skips.
+    fn <- vapply(data, is.function, logical(1))
+    if (any(fn)) {
+      nm <- names(data)
+      named <- if (is.null(nm)) {
+        paste0("at position ", paste(which(fn), collapse = ", "))
+      } else {
+        paste0("named ", paste0("'", nm[fn], "'", collapse = ", "))
+      }
+      stop("'data' holds a function ", named, ". On the vector interface ",
+           "'data' masks the calling frame, so such an element is called ",
+           "in place of the function an argument expression names, ",
+           "changing the fit with nothing to show for it. Remove it from ",
+           "'data': define the helper in the calling environment, or ",
+           "compute the value before calling hazard().", call. = FALSE)
+    }
     mask_env <- parent.frame()
     .hzr_warn_masked_ambiguity(
       list(time = substitute(time), status = substitute(status),

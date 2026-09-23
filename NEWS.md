@@ -2,6 +2,21 @@
 
 ## Breaking changes
 
+* **`hazard()` refuses a function-valued element of `data` on the vector
+  interface (#420).** The vector path evaluates `time`, `status`,
+  `time_lower`, `time_upper` and `weights` with `data` masking the calling
+  frame. R's function lookup walks past every binding that is not a
+  function, so an element such as `rep = function(...) ...` in a list
+  `data` was called in place of `base::rep()` by an expression like
+  `weights = rep(1, 40)`. The fit changed and nothing warned; this has
+  shipped since 1.2.2 (#151). `stats::lm()` refuses the same shape.
+  A numeric element or column of the same name was never consulted and is
+  unaffected, and the formula interface could not reach it.
+  **What now errors:** using the mask to reach a helper, as in
+  `hazard(time = f(t), status = s, data = list(t = ..., s = ..., f = myfun))`.
+  Define the helper in the calling environment, or compute the value before
+  calling `hazard()`, and pass `data` without it.
+
 * **`hzr_bootstrap()` no longer counts replicates that estimated nothing as
   successes (#373).** The optimizer stands in 1e10 for a negative
   log-likelihood it could not evaluate, so a fit that never had a
