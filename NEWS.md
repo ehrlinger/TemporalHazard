@@ -68,6 +68,22 @@
       here, so the warning says the translation cannot tell whether PROC
       HAZARD refuses the job or which model it fits;
   - `SETG3`'s entry refusals, on every path;
+  - `SETG1`'s refusals for an early phase (#424): `THALF` fixed at a value
+    that is not positive (`SETG1910`); `M` and `NU` both fixed on a case no
+    model takes (`SETG1940`, `SETG1950`, `SETG1960`, and `SETG1920` and
+    `SETG1930` under `FIXMNU1`); and `DELTA` fixed outside `[-1, 1]`
+    (`SETG1900`, `SETG1901`). They were fitted with no row, or warned for the
+    wrong reason, that the model was not mirrored. Most of these values are
+    out of range for `hazard()` as well, so the fit still fails after the
+    warning;
+  - an early phase PROC HAZARD may not fit (#424). With `NU=0` and `M` free,
+    `SETG1` selects its limiting case, and these jobs fitted with no row.
+    What the binary does next was measured on two datasets, and the warning
+    says only what was seen. For `M=0 NU=0 FIXNU` it produced no result on
+    both. For `M=1 NU=0` and `M=-1 NU=0`, with or without `FIXNU`, it stopped
+    on a domain error (`DLG1980`) on one dataset and fitted on the other, so
+    the warning says PROC HAZARD **may** print no estimates on your data. In
+    neither case does it say PROC HAZARD fits another model;
   - a phase variable that is not a name to PROC HAZARD's lexer (#440):
     `AGE*SEX`, `LOG(AGE)`, `B SEX`, `1AGE`. A phase variable must be a NAME,
     `[_A-Z][_A-Z0-9]*` (`hazard_l.l:39`, `phasevar : NAME` at
@@ -110,8 +126,14 @@
     oracle for both shapes, and it runs either job when a later phase
     statement carries a `(`, as above; the warning says so there.
 
-  Refusal coverage is not complete: `SETG1`'s refusals, which `PROC HAZARD`
-  raises for an early phase, are not traced, so such a job still fits (#424).
+  Every class above for `SETG1` was checked against the HAZARD binary
+  (C-Version 4.4.4), with the data staged as PROC HAZARD reads it, on the
+  package's `avc` data and on an independent seeded dataset. Where
+  `SETG1` moves a starting value and runs, the translation now starts there
+  too, with a row and no warning (#421): a free `THALF` that is not positive
+  starts at 1, where it was emitted as written and the document stopped at
+  its logarithm; `M=0 NU=0` with both free starts at `M = NU = 1`; and
+  `NU=0` with only `M` fixed starts `NU` at 1.
 
   A `PARMS` or `PROC` value that carries a macro reference (`&X`, `%CALL`) is
   not refused, because SAS expands it before PROC HAZARD reads the statement.
@@ -905,6 +927,24 @@
   backquoted label instead.
 
 ## New features
+
+* **`hzr_stepwise()` records what a pin resolved to, beside what was asked
+  for (#451).** `$scope$force_in` and `$scope$force_out` list the caller's
+  own strings. `$scope$unresolved` has recorded the names that matched
+  nothing since #442, but nothing recorded what the names that *did* match
+  resolved to, so a saved result could not say whether `"_X1"` pinned the
+  column `_X1` or a model term spelled that way.
+  The results now also carry `$scope$force_in_resolved` and
+  `$scope$force_out_resolved`, the identities those names resolved to: a
+  bare `"_X1"` is recorded as given in the first and as `` "`_X1`" `` in the
+  second, and a name that resolved to nothing is absent from the second
+  entirely. Nothing is renamed or removed, and the as-given fields are
+  unchanged. The resolved fields hold the resolved names **only**; the
+  frozen set is not merged into them, since `$scope$frozen` already records
+  it and merging would list variables the caller never named.
+  Resolving is not applying: `force_in` names variables that must *remain*
+  in, so a name that resolves to a variable the model does not contain is
+  recorded as resolved and still pins nothing.
 
 * **`hzr_translate_sas()` now says when `PROC HAZARD` rewrote a shape operand
   before fitting, instead of emitting the rewritten value silently.** Under
