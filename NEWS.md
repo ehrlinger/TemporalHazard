@@ -1069,10 +1069,11 @@
   was nevertheless reported as having resolved — it did not appear in
   `$scope$unresolved` — while doing nothing at all, and with a formula
   `scope` nothing warned either. It now warns and is listed as unresolved,
-  like any other name that cannot be used. With a character or default
-  `scope` you already saw a warning that the column could not be a
-  *candidate*; that one is unchanged, and the new one is about *pinning*, so
-  both now appear.
+  like any other name that cannot be used, and `$scope$unresolved` keeps
+  the names in the order you wrote them, a repeated name included. With a
+  character or default `scope` you already saw a warning that the column
+  could not be a *candidate*; that one is unchanged, and the new one is about
+  *pinning*, so both now appear.
 
   The selected model does not change. The pin never had any effect, and a
   test asserts the same job with and without it reaches the same terms at the
