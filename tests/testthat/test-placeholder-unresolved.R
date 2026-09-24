@@ -49,16 +49,22 @@ test_that("a pin naming an unnameable column is reported, not published", {
   expect_match(r$msgs[[1L]], "`force_in` names \".\"", fixed = TRUE)
   expect_match(r$msgs[[1L]], "no model formula can name", fixed = TRUE)
   expect_true("." %in% unlist(r$value$scope$unresolved))
-  # No placeholder survives anywhere in `$scope` AS IT EXISTS ON THIS BASE.
-  # Scoped deliberately: the field that PUBLISHES the resolved pin to users,
-  # `$scope$force_in_resolved`, is added by #451 and is not on this branch, so
-  # the user-facing symptom #463 was filed for cannot be observed here. Stream
-  # C verifies that on the merged tree.
+  # No placeholder survives anywhere in `$scope`, which includes
+  # `force_in_resolved` (#451), the field that PUBLISHES resolved pins to users.
+  # A placeholder there is the symptom #463 was filed for.
   # rapply(), not Filter(is.character, unlist(.)): unlist() COERCES to a
   # common type first, so the filter would run on an already-coerced vector.
   chr <- rapply(r$value$scope, as.character, classes = "character", how = "unlist")
   expect_gt(length(chr), 0L)          # the check must have something to look at
   expect_false(any(.hzr_is_label_placeholder(chr)))
+  # The scan cannot see two failures, so each gets its own line. If the field
+  # VANISHED, the scan would have one field fewer to look at and would still
+  # pass, and so would `expect_length(NULL, 0L)`; hence the `is.null` check.
+  # If a NON-placeholder value such as the spelling "." were published, the
+  # scan would pass it, because "." is not in placeholder form and `$scope`
+  # already holds "." legitimately in `force_in`; hence the length check.
+  expect_false(is.null(r$value$scope$force_in_resolved))
+  expect_length(r$value$scope$force_in_resolved, 0L)
 })
 
 test_that("force_out is handled the same way", {
@@ -255,9 +261,10 @@ test_that("a pin on a column named \"\" warns and is listed as unresolved", {
   expect_match(r$msgs[[1L]], "`force_in` names \"\", which no model formula",
                fixed = TRUE)
   expect_identical(r$value$scope$unresolved$force_in, "")
-  # NOT asserted: that the pin stays out of `$scope$force_in_resolved`. That
-  # field comes from #451, which is not on this branch, so it reads NULL for
-  # every pin, resolved or not, and an `expect_length(..., 0L)` on it could
-  # never fail. An earlier draft of this test had exactly that assertion
-  # (#469 review). Assert it once #451 lands.
+  # The pin is not published as resolved. The `is.null` line comes first
+  # because `expect_length(NULL, 0L)` passes. An earlier draft had only the
+  # length check, on a branch where the field did not exist yet, so it could
+  # not fail (#469 review).
+  expect_false(is.null(r$value$scope$force_in_resolved))
+  expect_length(r$value$scope$force_in_resolved, 0L)
 })
