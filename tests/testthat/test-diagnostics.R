@@ -975,7 +975,13 @@ test_that("hzr_bootstrap suppresses per-replicate fit warnings", {
                   slentry = 0.3, slstay = 0.2,
                   control = list(n_starts = 1))
   )
-  expect_false(any(grepl("ill-conditioned|rcond|Hessian", w)))
+  # The weak-identification warning is excluded by name: it comes from the
+  # up-front screen on the REAL data, which lets it through on purpose
+  # (hzr_bootstrap(), R/diagnostics.R). Since #415 it can name a single
+  # coefficient there -- on this data `constant.com_iv` runs to about -16 --
+  # and that is the screen doing its job, not a replicate leaking.
+  numerical <- w[!startsWith(w, "weakly identified fit:")]
+  expect_false(any(grepl("ill-conditioned|rcond|Hessian", numerical)))
 })
 
 test_that("hzr_bootstrap scope raises immediately on a structurally invalid scope", {
