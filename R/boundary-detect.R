@@ -18,9 +18,34 @@
 # dataset here.
 .hzr_step_resolution <- sqrt(.Machine$double.eps)
 
-# Returns NULL when the phase is not a step at this resolution, otherwise a
-# list(parameter, detail) describing it.  `g_fn` takes a time vector and
-# returns G; injecting it keeps this testable without a fitted object.
+#' Is a fitted phase indistinguishable from a step at this data's resolution?
+#'
+#' The G1 decomposition refuses `nu == 0` with `m >= 0` outright, because that
+#' limit is degenerate: \eqn{G} collapses to a step. But a fit can settle at
+#' `nu = -1.4e-16`, take the ordinary `m > 0 && nu < 0` branch, and return
+#' `converged = TRUE`. The guard sits at the exact point while the pathology is
+#' a neighbourhood of it (#448).
+#'
+#' This thresholds no parameter. It asks whether THE DATA CAN RESOLVE THE RISE:
+#' the phase must span the range, below `tol` somewhere and above `1 - tol`
+#' somewhere, while at most ONE distinct observed time falls strictly inside
+#' the transition. A genuine curve puts many times inside it; a step admits at
+#' most the one sitting on it. That one is not an edge case -- an observed time
+#' landing exactly on `t_half`, where \eqn{G} is 0.5, is the mechanism #448
+#' reports.
+#'
+#' @param time,time_lower,time_upper Observed times. All three are read: an
+#'   interval-censored row is observed as \[lower, upper\] and a
+#'   left-truncated fit carries the entry time in `time_lower`, so both are
+#'   points the likelihood evaluates at and both can fall below `min(time)`.
+#' @param t_half,nu The fitted shape values, reported in the detail string.
+#' @param g_fn Function of a time vector returning \eqn{G}. Injected so this
+#'   is testable without a fitted object.
+#' @param tol The numerically-0 / numerically-1 scale.
+#' @return `NULL` when the phase is not a step at this resolution, otherwise a
+#'   list with `parameter` and `detail`.
+#' @keywords internal
+#' @noRd
 .hzr_phase_step_detail <- function(time, t_half, nu, g_fn,
                                    time_lower = NULL, time_upper = NULL,
                                    tol = .hzr_step_resolution) {
@@ -76,14 +101,24 @@
   )
 }
 
-# Build a $boundary record for one phase, or NULL.  Kept here rather than in
-# hazard_api.R so the shared check's body stays small: it calls this once per
-# named phase, BEFORE its unbounded-type filter, because a "cdf" phase is not
-# an unbounded type and would otherwise never be examined.
-#
-# Only the G1-based types ("cdf", "hazard") can degenerate this way: the step
-# is the nu -> 0 limit of G1, which is what decomposition.R refuses at nu == 0
-# exactly.  "g3" has its own parameterisation and "constant" has no shape.
+#' Build a `$boundary` record for one phase, or `NULL`
+#'
+#' Kept out of `hazard_api.R` so the shared check's body stays small. It is
+#' called once per named phase, BEFORE the unbounded-type filter, because a
+#' `"cdf"` phase is not an unbounded type and would otherwise never be
+#' examined.
+#'
+#' Only the G1-based types (`"cdf"`, `"hazard"`) can degenerate this way: the
+#' step is the \eqn{\nu \to 0} limit of G1, which is what the decomposition
+#' refuses at `nu == 0` exactly. `"g3"` has its own parameterisation and
+#' `"constant"` has no shape.
+#'
+#' @param name,type The phase's name and type.
+#' @param theta The fitted parameter vector, phase-name prefixed.
+#' @param time,time_lower,time_upper Observed times.
+#' @return A `$boundary` record, or `NULL`.
+#' @keywords internal
+#' @noRd
 .hzr_phase_step_record <- function(name, type, theta, time,
                                    time_lower = NULL, time_upper = NULL) {
   if (!length(type) || !type %in% c("cdf", "hazard")) return(NULL)
