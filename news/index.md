@@ -96,6 +96,28 @@
 
   - `SETG3`’s entry refusals, on every path;
 
+  - `SETG1`’s refusals for an early phase
+    ([\#424](https://github.com/ehrlinger/TemporalHazard/issues/424)):
+    `THALF` fixed at a value that is not positive (`SETG1910`); `M` and
+    `NU` both fixed on a case no model takes (`SETG1940`, `SETG1950`,
+    `SETG1960`, and `SETG1920` and `SETG1930` under `FIXMNU1`); and
+    `DELTA` fixed outside `[-1, 1]` (`SETG1900`, `SETG1901`). They were
+    fitted with no row, or warned for the wrong reason, that the model
+    was not mirrored. Most of these values are out of range for
+    [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+    as well, so the fit still fails after the warning;
+
+  - an early phase PROC HAZARD may not fit
+    ([\#424](https://github.com/ehrlinger/TemporalHazard/issues/424)).
+    With `NU=0` and `M` free, `SETG1` selects its limiting case, and
+    these jobs fitted with no row. What the binary does next was
+    measured on two datasets, and the warning says only what was seen.
+    For `M=0 NU=0 FIXNU` it produced no result on both. For `M=1 NU=0`
+    and `M=-1 NU=0`, with or without `FIXNU`, it stopped on a domain
+    error (`DLG1980`) on one dataset and fitted on the other, so the
+    warning says PROC HAZARD **may** print no estimates on your data. In
+    neither case does it say PROC HAZARD fits another model;
+
   - a phase variable that is not a name to PROC HAZARD’s lexer
     ([\#440](https://github.com/ehrlinger/TemporalHazard/issues/440)):
     `AGE*SEX`, `LOG(AGE)`, `B SEX`, `1AGE`. A phase variable must be a
@@ -146,10 +168,16 @@
     oracle for both shapes, and it runs either job when a later phase
     statement carries a `(`, as above; the warning says so there.
 
-  Refusal coverage is not complete: `SETG1`’s refusals, which
-  `PROC HAZARD` raises for an early phase, are not traced, so such a job
-  still fits
-  ([\#424](https://github.com/ehrlinger/TemporalHazard/issues/424)).
+  Every class above for `SETG1` was checked against the HAZARD binary
+  (C-Version 4.4.4), with the data staged as PROC HAZARD reads it, on
+  the package’s `avc` data and on an independent seeded dataset. Where
+  `SETG1` moves a starting value and runs, the translation now starts
+  there too, with a row and no warning
+  ([\#421](https://github.com/ehrlinger/TemporalHazard/issues/421)): a
+  free `THALF` that is not positive starts at 1, where it was emitted as
+  written and the document stopped at its logarithm; `M=0 NU=0` with
+  both free starts at `M = NU = 1`; and `NU=0` with only `M` fixed
+  starts `NU` at 1.
 
   A `PARMS` or `PROC` value that carries a macro reference (`&X`,
   `%CALL`) is not refused, because SAS expands it before PROC HAZARD
