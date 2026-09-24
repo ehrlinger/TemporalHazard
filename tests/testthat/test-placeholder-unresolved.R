@@ -145,9 +145,52 @@ test_that("the selected model is bit-identical with and without the pin", {
   expect_false(is.null(names(a$fit$theta)))
   expect_identical(names(a$fit$theta), names(b$fit$theta))
   expect_identical(a$fit$objective, b$fit$objective)
-  # GUARD: the comparison must be able to fail. A pin that IS nameable can
-  # change the selection, so this pair is not trivially equal for every input.
+  # GUARD, and it has to COMPARE something. An earlier version built `cc`
+  # with a nameable pin and then only asserted `cc$fit$objective` was
+  # non-NULL -- it never compared it, so deleting the `force_in = "age"`
+  # argument left the test passing and the guard could not see the mutation
+  # it was written for.
   cc <- hzr_stepwise(fit, scope = ~ age + mal, data = d, direction = "both",
                      criterion = "wald", force_in = "age", trace = FALSE)
   expect_false(is.null(cc$fit$objective))
+  expect_false(identical(cc$fit$objective, b$fit$objective))
+})
+
+
+test_that("the default scope emits BOTH warnings, and neither may be dropped", {
+  # Two guards now answer two different questions about the same column --
+  # can it be a CANDIDATE, and can it be PINNED -- and on the default scope
+  # both fire. Pinned together deliberately: dropping either leaves a warning
+  # count of 1, which reads clean, so only asserting both messages can catch
+  # it. That is this change's own cascade lesson turned on its own code
+  # (stream C, #463 review).
+  d <- ph_data()
+  r <- ph_warnings(
+    hzr_stepwise(ph_fit(d), data = d, direction = "both",
+                 criterion = "wald", force_in = ".", trace = FALSE)
+  )
+  expect_length(r$msgs, 2L)
+  expect_true(any(grepl("cannot be a stepwise candidate", r$msgs, fixed = TRUE)))
+  expect_true(any(grepl("cannot be pinned", r$msgs, fixed = TRUE)))
+})
+
+test_that("the literal placeholder text does not advise renaming nothing", {
+  # `known` in .hzr_resolve_names() holds every column's label, placeholders
+  # included, so a user typing `<column ".">` verbatim reaches the pin path.
+  # There is no column of that name, so "Rename that column" would point at
+  # nothing; the advice is omitted rather than made up.
+  d <- ph_data()
+  r <- ph_warnings(
+    hzr_stepwise(ph_fit(d), scope = ~ age + mal, data = d, direction = "both",
+                 criterion = "wald", force_in = '<column ".">', trace = FALSE)
+  )
+  expect_length(r$msgs, 1L)
+  expect_match(r$msgs[[1L]], "cannot be pinned", fixed = TRUE)
+  expect_false(grepl("Rename", r$msgs[[1L]], fixed = TRUE))
+  # and a real column name still gets the advice
+  r2 <- ph_warnings(
+    hzr_stepwise(ph_fit(d), scope = ~ age + mal, data = d, direction = "both",
+                 criterion = "wald", force_in = ".", trace = FALSE)
+  )
+  expect_match(r2$msgs[[1L]], "Rename that column", fixed = TRUE)
 })
