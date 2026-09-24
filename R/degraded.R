@@ -12,8 +12,12 @@
 # so a path the reasons miss is reported rather than hidden.
 
 .hzr_capabilities <- c(
+  # ORDER MATTERS: .hzr_validate_degraded() requires the reported entries to
+  # be identical to intersect(.hzr_capabilities, reported), so this vector
+  # must match the order the causes are ASSEMBLED in below. boundary_check is
+  # added before the conservation_of_events block, so it belongs here.
   "fitting", "standard_errors", "conserved_phase_variance",
-  "weak_direction_check", "conservation_of_events", "boundary_check"
+  "weak_direction_check", "boundary_check", "conservation_of_events"
 )
 
 .hzr_cause_not_recorded <- "cause not recorded"

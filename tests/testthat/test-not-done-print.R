@@ -33,7 +33,10 @@ test_that("print() and summary() say 'none' for a clean fit", {
 
 test_that("print() and summary() show every entry of a degraded record", {
   fit0 <- unfitted()
-  expect_length(fit0$degraded, 3L)                 # guard: something to print
+  # 4, not 3: an unfitted object now also lists boundary_check, for the same
+  # reason it lists weak_direction_check -- there are no fitted phase
+  # parameters to examine (#444).
+  expect_length(fit0$degraded, 4L)                 # guard: something to print
   for (out in printed(fit0)) {
     expect_identical(.hzr_check_not_done_output(out, fit0), character(0))
   }
