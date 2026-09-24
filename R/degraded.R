@@ -12,8 +12,12 @@
 # so a path the reasons miss is reported rather than hidden.
 
 .hzr_capabilities <- c(
+  # ORDER MATTERS: .hzr_validate_degraded() requires the reported entries to
+  # be identical to intersect(.hzr_capabilities, reported), so this vector
+  # must match the order the causes are ASSEMBLED in below. boundary_check is
+  # added before the conservation_of_events block, so it belongs here.
   "fitting", "standard_errors", "conserved_phase_variance",
-  "weak_direction_check", "conservation_of_events"
+  "weak_direction_check", "boundary_check", "conservation_of_events"
 )
 
 .hzr_cause_not_recorded <- "cause not recorded"
@@ -82,7 +86,17 @@
 .hzr_degraded_record <- function(vcov, weak, control, dist,
                                  fitted = TRUE, imported = FALSE,
                                  reasons = list(),
-                                 fixed_mask = NULL, param_names = NULL) {
+                                 fixed_mask = NULL, param_names = NULL,
+                                 # NULL, not NA: this builder is a pure
+                                 # function of what it is TOLD, and a caller
+                                 # that says nothing about the boundary check
+                                 # is not asserting that it did not run. The
+                                 # tri-state lives on `fit$fit$boundary`,
+                                 # which `hazard()` initialises to NA and
+                                 # ALWAYS passes explicitly (#444) -- so the
+                                 # "never examined" state still reaches here
+                                 # for every real fit.
+                                 boundary = NULL) {
   # Entries are added in canonical order, so names(causes) is already ordered.
   causes <- character(0)
 
@@ -125,6 +139,19 @@
       "imported from SAS output; no R Hessian"
     } else {
       .hzr_reason_or_unrecorded(reasons$weak)
+    }
+  }
+
+  # Same tri-state as weak: NA means the check did not run, and the reason
+  # says why. NULL means it ran and found nothing, which is NOT a degraded
+  # capability (#444).
+  if (.hzr_is_na_scalar(boundary)) {
+    causes["boundary_check"] <- if (!fitted) {
+      "model not fitted"
+    } else if (imported) {
+      "imported from SAS output; no fitted phases to examine"
+    } else {
+      .hzr_reason_or_unrecorded(reasons$boundary)
     }
   }
 
@@ -185,6 +212,7 @@
           length(.hzr_params_missing_variance(object$fit$vcov,
                                               object$fit$fixed_mask)) > 0L)
   agree("weak_direction_check", .hzr_is_na_scalar(object$fit$weak))
+  agree("boundary_check", .hzr_is_na_scalar(object$fit$boundary))
   agree("conservation_of_events",
         identical(object$spec$dist, "multiphase") &&
           isFALSE(ctl$conserve_applied))

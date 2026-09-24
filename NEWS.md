@@ -1045,6 +1045,31 @@
 
 ## Bug fixes
 
+* **A `"hazard"` phase fitted outside your data is now reported (#444).** The
+  `"hazard"` phase type is −log(1 − G(t)), which grows without bound as G
+  approaches 1, and nothing held its `t_half` inside the observed times. A fit
+  could walk `t_half` below the first observation, evaluate the whole data
+  range where G is essentially 1, and return a log-likelihood of **+290082**
+  with `converged = TRUE` and no warning — a supremum reported as an
+  interior optimum. On the shipped `cabgkul` data the fitted `t_half` was
+  0.000352 against a first observed time of 0.0329.
+
+  Such a fit now **warns** and records what was found in `fit$fit$boundary`.
+  Nothing is bounded and no estimate moves: this reports, it does not
+  constrain.
+
+  The warning states a plain fact — `t_half` is below the observed support
+  — with no tuned threshold, and the magnitude is in the record so you can
+  judge it. Alongside the ratio, each entry carries **1 − G(t_min)**, the
+  phase's remaining mass at the first observed time, which is the mechanism
+  itself: a fit merely hugging the edge of its data measures 0.053, while the
+  `cabgkul` fit above measures 3.8e-12.
+
+  `fit$fit$boundary` is `NULL` when the check ran and found nothing, a list of
+  records when it found something, and `NA` when it did not run — with the
+  reason in `fit$degraded_causes`, so "nothing found" stays distinguishable
+  from "never looked". Catch the warning with `hzr_unbounded_phase`, or the
+  whole boundary family with `hzr_boundary`.
 * **The G3 phase's `log_tau` derivative is now taken in `log_tau` (#352).**
   `.hzr_g3_phase_derivatives()` described itself as taking "central
   differences for log_tau" and stepped `tau` linearly instead, with an
