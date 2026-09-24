@@ -1097,6 +1097,44 @@
 
 ## Bug fixes
 
+* **`hzr_translate_sas()` no longer says `PROC HAZARD` refuses a job that a
+  later `(` lets it run (#461).** `PROC HAZARD`'s lexer clears its
+  syntax-error flag at every `(` (`hazard_l.l:56`), so a syntax error
+  written before a later `(`, such as the one in `LOG()`, does not stop the
+  job. The translation warned "PROC HAZARD does not run this job" for these
+  jobs all the same. Measured against the HAZARD binary on the package's
+  `avc` data, `PARMS MUE=0.2 THALF=1 NU=ABC; EARLY LOG();` fits, while the
+  same job with `EARLY AGE;` is refused.
+
+  Such a job now warns that the syntax error does not stop it, and that the
+  fit stands in for a model `PROC HAZARD` does not fit, in the same words as
+  the other jobs whose model this translation cannot emit. A job cleared
+  this way can still be refused later, at fit time: `SETG3` refuses
+  `TAU=0 FIXTAU` whatever the parse did, and says so in its own warning. `PROC HAZARD` fits what the error
+  recovery in its parser leaves, and this translation does not reproduce
+  that recovery. The two can disagree either way: after `EARLY AGE*SEX;`,
+  `PROC HAZARD` keeps `AGE` where the translation drops the operand, and
+  after `NU=ABC` it drops a `THALF=0.5` written later in the same `PARMS`
+  statement where the translation keeps it. The `$untranslated` row is
+  recorded as before.
+
+  The verdict follows where the `(` falls, statement by statement, and a
+  test checks it against the binary for every refusal class:
+  - a `(` in a later statement clears syntax errors in the `PROC HAZARD`
+    line, in `PARMS`, in a `TIME` or `EVENT` operand count, and in a phase
+    statement. The phase-statement stop (#340) still stops, but its message
+    no longer says `PROC HAZARD` does not run the job;
+  - a `(` before the error clears nothing, and neither does one followed
+    in its own statement by anything other than `)` or `= number`
+    (`LOG() /I`, `(LOG)`), or by a statement `PROC HAZARD` does not know.
+    These still warn that the job does not run;
+  - an error in the same statement as the `(` is left to `PROC HAZARD`'s
+    error recovery, which fits `EARLY AGE*SEX, LOG();` and stops
+    `EARLY 1AGE, SEX, LOG();` before fitting. The warning says it cannot
+    tell which;
+  - a refusal `PROC HAZARD` raises as a semantic error is unaffected:
+    `ORDER=` with `/E`, and the `SETG1`, `SETG3` and no-phase refusals.
+
 * **A stray `=` in `PARMS` no longer takes the next operand with it
   (#458).** `PARMS MUE=0.2 = THALF=0.15 NU=1` read the stray `=` as a piece
   of a spaced operand and threw `THALF=0.15` away with it, so the emitted fit
@@ -1116,7 +1154,10 @@
   HAZARD` never performs, and the emitted phase carried the rewritten value:
   `setg3.c:269-284` returns on these checks before the constraint rules at
   `:444-481` run. The job now has one row, and its phase keeps the values
-  written. The job still warns with the same code; the warning now names
+  written, with one exception: `hzr_phase()` needs `tau > 0`, so a fixed
+  `TAU` that is zero or negative is emitted as `tau = 1`
+  (`TAU=0 FIXTAU GAMMA=1 ETA=1 FIXGE2 WEIBULL` emits `tau = 1`). The job
+  still warns with the same code; the warning now names
   the late shape and its fixed parameters (`GAMMA=1 ALPHA=1 ETA=1
   fixed:tau`), as the same job without `WEIBULL` already did, rather than
   `TAU` alone.
