@@ -95,6 +95,13 @@ NULL
   for (k in seq_along(phases)) {
     nm <- names(phases)[[k]]
     if (!nzchar(nm)) next
+    # #448: a G1-based phase whose nu collapses toward 0 becomes a step at
+    # t_half. Checked BEFORE the unbounded-type filter: a "cdf" phase is not
+    # an unbounded type, so the `next` below would skip it entirely.
+    step_rec <- .hzr_phase_step_record(nm, phases[[k]]$type, theta, time,
+                                       time_lower = time_lower,
+                                       time_upper = time_upper)
+    if (!is.null(step_rec)) found[[length(found) + 1L]] <- step_rec
     if (!.hzr_phase_type_unbounded(phases[[k]]$type)) next
     key <- paste0(nm, ".log_t_half")
     if (!key %in% names(theta)) next

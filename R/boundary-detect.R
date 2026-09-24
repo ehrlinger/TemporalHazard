@@ -42,14 +42,26 @@
   g <- tryCatch(g_fn(ut), error = function(e) NULL)
   if (is.null(g) || length(g) != length(ut) || !all(is.finite(g))) return(NULL)
 
-  # An adjacent pair that brackets the whole rise: below tol, then above 1-tol.
-  lo <- g[-length(g)]
-  hi <- g[-1L]
-  jump <- which(lo < tol & hi > 1 - tol)
-  if (!length(jump)) return(NULL)
-  j <- jump[[1L]]
+  # THE DATA CANNOT RESOLVE THE RISE.  The phase must span the whole range --
+  # somewhere below tol and somewhere above 1 - tol -- while at most ONE
+  # distinct observed time falls strictly inside the transition.  A genuine
+  # curve puts many times inside it; a step admits at most the one sitting on
+  # it.
+  #
+  # The earlier form of this test asked for one ADJACENT PAIR to bracket the
+  # entire rise, and it declined on #448's own fit: an observed time lands
+  # exactly on t_half, where G is 0.5, so the rise splits across two gaps
+  # (-0 -> 0.5, then 0.5 -> 1).  That tie AT t_half is the defect's signature
+  # -- the issue's five tied event times -- not an edge case, so a criterion
+  # that a tie defeats is the wrong one.
+  if (!any(g < tol) || !any(g > 1 - tol)) return(NULL)
+  inside <- which(g > tol & g < 1 - tol)
+  if (length(inside) > 1L) return(NULL)
 
-  n_at <- sum(ok & time >= ut[j] & time <= ut[j + 1L])
+  # The bracketing pair, for the message: last time below, first time above.
+  j <- max(which(g < tol))
+  jj <- min(which(g > 1 - tol))
+  n_at <- sum(ok & time >= ut[j] & time <= ut[jj])
   list(
     parameter = "nu",
     detail = sprintf(
@@ -59,7 +71,34 @@
              "observation(s) fall in that interval, so the log-likelihood is ",
              "discontinuous there and a one-ulp change in nu can move it. ",
              "Treat the shape parameters as unidentified rather than estimated."),
-      ut[j], ut[j + 1L], nu, t_half, n_at
+      ut[j], ut[jj], nu, t_half, n_at
     )
   )
+}
+
+# Build a $boundary record for one phase, or NULL.  Kept here rather than in
+# hazard_api.R so the shared check's body stays small: it calls this once per
+# named phase, BEFORE its unbounded-type filter, because a "cdf" phase is not
+# an unbounded type and would otherwise never be examined.
+#
+# Only the G1-based types ("cdf", "hazard") can degenerate this way: the step
+# is the nu -> 0 limit of G1, which is what decomposition.R refuses at nu == 0
+# exactly.  "g3" has its own parameterisation and "constant" has no shape.
+.hzr_phase_step_record <- function(name, type, theta, time,
+                                   time_lower = NULL, time_upper = NULL) {
+  if (!length(type) || !type %in% c("cdf", "hazard")) return(NULL)
+  need <- paste0(name, c(".log_t_half", ".nu", ".m"))
+  if (!all(need %in% names(theta))) return(NULL)
+  t_half <- exp(unname(theta[[need[[1L]]]]))
+  nu <- unname(theta[[need[[2L]]]])
+  m <- unname(theta[[need[[3L]]]])
+  if (!is.finite(t_half) || !is.finite(nu) || !is.finite(m)) return(NULL)
+  g_fn <- function(x) {
+    hzr_decompos(x, t_half = t_half, nu = nu, m = m)$G
+  }
+  d <- .hzr_phase_step_detail(time, t_half = t_half, nu = nu, g_fn = g_fn,
+                              time_lower = time_lower, time_upper = time_upper)
+  if (is.null(d)) return(NULL)
+  list(mechanism = "phase_discontinuity", phase = name,
+       parameter = d$parameter, detail = d$detail)
 }

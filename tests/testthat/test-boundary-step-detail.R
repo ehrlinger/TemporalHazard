@@ -63,3 +63,49 @@ test_that("interval bounds count as observed times", {
   expect_type(out, "list")
   expect_match(out$detail, "0.1", fixed = TRUE)
 })
+
+test_that("a tie sitting exactly ON the step is still reported (#448's own case)", {
+  # The real #448 fit has an observed time AT t_half, where G = 0.5, so the
+  # rise splits across two gaps.  An earlier criterion asking one adjacent
+  # pair to bracket the whole rise declined here -- on the very fit the issue
+  # reports.  The tie is the mechanism, not an edge case.
+  th <- 0.06570977
+  ut <- c(0.05475814, th, 0.07118558, 0.08213721)
+  gfn <- function(x) hzr_decompos(x, t_half = th, nu = -1.439154e-16, m = 1)$G
+  expect_equal(gfn(th), 0.5, tolerance = 1e-8)   # the midpoint is real
+  out <- .hzr_phase_step_detail(ut, t_half = th, nu = -1.439154e-16, g_fn = gfn)
+  expect_type(out, "list")
+  expect_identical(out$parameter, "nu")
+})
+
+test_that("two or more times inside the transition means the data DOES resolve it", {
+  ut <- seq(0.5, 5, by = 0.5)
+  smooth <- function(x) pnorm(x, mean = 2.5, sd = 1)
+  expect_null(.hzr_phase_step_detail(ut, t_half = 2.5, nu = 1.4, g_fn = smooth))
+})
+
+# The two guards below are CO-SUFFICIENT on an ordinary smooth phase: the span
+# test and the inside-count test each reject it alone, so mutating either one
+# in isolation survives. These two cases separate them -- each needs exactly
+# one guard, so each mutation now has a test that can only be killed by it.
+
+test_that("a phase already saturated across all observed times is NOT a step", {
+  # G is pinned near 1 everywhere: nothing inside the transition (count 0, so
+  # the count guard passes it) but it never reaches 0, so it does not SPAN.
+  # A phase that finished before the first observation is not a step WITHIN
+  # the data. Only the span guard rejects this.
+  ut <- c(1, 2, 3)
+  sat <- function(x) rep(1 - 1e-12, length(x))
+  expect_null(.hzr_phase_step_detail(ut, t_half = 0.001, nu = 1e-16,
+                                     g_fn = sat))
+})
+
+test_that("a rise the data DOES resolve is not a step, even though it spans", {
+  # Spans 0 to 1, so the span guard passes it, but TWO observed times fall
+  # inside the transition, so the data resolves the rise. Only the
+  # inside-count guard rejects this.
+  ut <- c(1, 2, 3, 4)
+  resolved <- function(x) c(1e-12, 0.3, 0.7, 1 - 1e-12)[match(x, c(1, 2, 3, 4))]
+  expect_null(.hzr_phase_step_detail(ut, t_half = 2.5, nu = 0.5,
+                                     g_fn = resolved))
+})
