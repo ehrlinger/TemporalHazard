@@ -291,3 +291,25 @@ test_that("a bound the likelihood never reads is not an observed time", {
                paste0("below the first observed time (",
                       format(min(d$t), digits = 4), ")"), fixed = TRUE)
 })
+
+test_that("a `time` an explicit bound replaces is not an observed time", {
+  # A left-censored row is evaluated at its `time_upper`; its `time` is not
+  # read, so a tiny value there must not become the first observed time.
+  d <- ub_data()
+  n <- length(d$t)
+  tt <- c(d$t, 1e-12)
+  st <- c(d$s, -1)
+  up <- c(d$t, stats::median(d$t))
+  ph <- list(early = hzr_phase("hazard", t_half = 0.5, nu = 1, m = 0),
+             late  = hzr_phase("constant"))
+  fit <- suppressWarnings(hazard(
+    time = tt, status = st, time_upper = up, dist = "multiphase",
+    phases = ph, fit = TRUE, control = list(n_starts = 1L),
+    theta = c(log(0.1), log(min(d$t) / 1000), 1, 0, log(0.05))))
+  t_half <- exp(unname(fit$fit$theta[["early.log_t_half"]]))
+  expect_lt(1e-12, t_half)
+  expect_true(is.list(fit$fit$boundary))
+  expect_match(fit$fit$boundary[[1L]]$detail,
+               paste0("below the first observed time (",
+                      format(min(d$t), digits = 4), ")"), fixed = TRUE)
+})

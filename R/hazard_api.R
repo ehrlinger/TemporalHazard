@@ -1515,7 +1515,13 @@ hazard <- function(formula = NULL,
   }
   boundary_check <- .hzr_boundary_check_impl(
     theta = fit_state$theta, phases = phases,
-    time = rows_with(time, c(-1, 0, 1, 2)), fitted = fit_ran,
+    # `time` itself is read only where no explicit bound replaces it: always
+    # for status 0/1; for a left-censored row only without `time_upper`; for
+    # an interval row as either bound that was not supplied.
+    time = rows_with(time, c(0, 1,
+                             if (is.null(time_upper)) -1,
+                             if (is.null(time_lower) || is.null(time_upper)) 2)),
+    fitted = fit_ran,
     time_lower = rows_with(time_lower, c(0, 1, 2)),
     time_upper = rows_with(time_upper, c(-1, 2))
   )
