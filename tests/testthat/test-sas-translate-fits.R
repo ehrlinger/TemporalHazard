@@ -1769,3 +1769,145 @@ test_that("the phase-name verdict matches the HAZARD binary on a grid (#440)", {
     }
   }
 })
+
+# --- SETG1: the early phase's refusals, rewrites and no-result case (#424) --
+# The oracle is the HAZARD binary itself (data-raw/setg1-oracle.R): each row
+# records whether PROC HAZARD refused one early-phase PARMS statement, ran it,
+# or produced no result, with the data staged as PROC HAZARD stages it.
+
+.p424_oracle <- function() {
+  path <- test_path("fixtures", "setg1-oracle.csv")
+  utils::read.csv(path, comment.char = "#", stringsAsFactors = FALSE)
+}
+# The jobs PROC HAZARD runs only after SETG1 has moved a starting value
+# (setg1.c:342-349, :614-617, :686-691, :763-767): one row, no warning.
+.p424_moved <- c("thalf_neg_free", "thalf_zero_free", "thalf_half_free",
+                 "mnu_zero_free", "nu_zero_fixm")
+.p424_class <- function(job) {
+  msg <- .u1_msg(job)
+  if (grepl("refused before any fit is computed", msg, fixed = TRUE)) {
+    "refused"
+  } else if (grepl("produces no result", msg, fixed = TRUE)) {
+    "no_result"
+  } else {
+    "runs"
+  }
+}
+.p424_warnings <- function(job) {
+  ch <- .u1_refusal_chunk(job)
+  if (is.null(ch)) return(character(0))
+  msgs <- character(0)
+  withCallingHandlers(eval(ch, new.env()), warning = function(x) {
+    msgs <<- c(msgs, conditionMessage(x))
+    invokeRestart("muffleWarning")
+  })
+  msgs
+}
+
+test_that("the SETG1 verdict matches the HAZARD binary on a grid (#424)", {
+  oracle <- .p424_oracle()
+  # Coverage before comparison: every class, and the known positive, present.
+  expect_setequal(unique(oracle$binary), c("runs", "refused", "no_result"))
+  expect_gte(nrow(oracle), 20L)
+  expect_identical(oracle$binary[oracle$id == "known_positive"], "runs")
+  for (k in seq_len(nrow(oracle))) {
+    o <- oracle[k, ]
+    job <- .u1_job(parms = o$parms)
+    expect_identical(.p424_class(job), o$binary, info = o$id)
+    w <- .p424_warnings(job)
+    n_rows <- NROW(job$untranslated)
+    expect_identical(as.character(job$calls$fit[[3L]][[1L]]), "hazard",
+                     info = o$id)
+    if (o$binary == "runs") {
+      expect_length(w, 0L)
+      expect_identical(n_rows, if (o$id %in% .p424_moved) 1L else 0L,
+                       info = o$id)
+    } else {
+      # Warned once, recorded once.
+      expect_length(w, 1L)
+      expect_identical(n_rows, 1L, info = o$id)
+    }
+    if (startsWith(o$id, "SETG")) {
+      expect_match(paste(w, collapse = " "),
+                   paste0("(", sub("_.*$", "", o$id), ")"), fixed = TRUE,
+                   info = o$id)
+    }
+  }
+})
+
+test_that("a free non-positive THALF starts at 1, as SETG1 does (#421 item 3)", {
+  for (p in c("MUE=0.2 THALF=-1 NU=1 M=1", "MUE=0.2 THALF=0 NU=1 M=1",
+              "MUE=0.2 THALF=-.5")) {
+    job <- .u1_job(parms = p)
+    ph <- job$calls$fit[[3L]]$phases[[2L]]
+    expect_identical(ph$t_half, 1, info = p)
+    # The theta block is built from the same value: log(1), finite.
+    th <- eval(job$calls$fit[[3L]]$theta)
+    expect_true(all(is.finite(th)), info = p)
+    expect_identical(NROW(job$untranslated), 1L)
+    expect_match(job$untranslated$reason, "setg1.c:342-349", fixed = TRUE)
+    expect_null(.u1_refusal_chunk(job))
+  }
+  # Fixed, the same value is SETG1910, and the warning says so.
+  job <- .u1_job(parms = "MUE=0.2 THALF=-1 FIXTHALF NU=1 M=1")
+  expect_match(.u1_msg(job), "(SETG1910)", fixed = TRUE)
+})
+
+test_that("SETG1's g1flag 4 with a free M is NO RESULT, not another model (#424)", {
+  # PROC HAZARD does not fit a different model here: SETG1 selects the
+  # limiting positive generic case (setg1.c:763-776) and the fit then stops
+  # on a domain error (DLG1980), with no estimates. Calling it not_mirrored
+  # would be a false statement about SAS.
+  for (p in c("MUE=0.2 THALF=1 M=1 NU=0", "MUE=0.2 THALF=1 M=-1 NU=0",
+              "MUE=0.2 THALF=1 M=0 NU=0 FIXNU")) {
+    job <- .u1_job(parms = p)
+    msg <- .u1_msg(job)
+    expect_match(msg, "produces no result", fixed = TRUE, info = p)
+    expect_no_match(msg, "cannot emit PROC HAZARD's model", fixed = TRUE,
+                    info = p)
+    expect_no_match(msg, "refused before any fit", fixed = TRUE, info = p)
+  }
+  # M fixed: SAS runs it, so nothing is said.
+  job <- .u1_job(parms = "MUE=0.2 THALF=1 M=-1 NU=0 FIXM FIXNU")
+  expect_null(.u1_refusal_chunk(job))
+})
+
+test_that("the SETG1 verdict is invariant under spacing (#424)", {
+  oracle <- .p424_oracle()
+  oracle <- oracle[oracle$binary != "runs" | oracle$id %in% .p424_moved, ]
+  expect_gte(nrow(oracle), 10L)
+  for (k in seq_len(nrow(oracle))) {
+    o <- oracle[k, ]
+    base <- .u1_job(parms = o$parms)
+    for (sp in c(" = ", " =", "= ")) {
+      v <- gsub("=", sp, o$parms, fixed = TRUE)
+      expect_false(identical(v, o$parms))          # the spelling varies
+      job <- .u1_job(parms = v)
+      expect_identical(.p424_class(job), o$binary, info = v)
+      expect_identical(job$untranslated, base$untranslated, info = v)
+      expect_identical(.p424_warnings(job), .p424_warnings(base), info = v)
+    }
+  }
+})
+
+test_that("the SETG1 documents render past the warning (#424)", {
+  skip_on_cran()
+  e <- new.env()
+  utils::data("avc", package = "TemporalHazard", envir = e)
+  a <- e$avc[stats::complete.cases(e$avc), ]
+  D <- data.frame(TT = a$int_dead, DEAD = a$dead)
+  oracle <- .p424_oracle()
+  # Rows whose operands are ALSO outside what hzr_phase() or the likelihood
+  # accepts: the fit halts after the warning, as for SETG3910-3930 above.
+  halts <- c("SETG1910_neg", "SETG1910_zero", "SETG1940", "SETG1950",
+             "SETG1960", "SETG1920", "SETG1930", "g1flag4_mpos_fixnu")
+  for (id in c(halts, "SETG1900", "SETG1901", .p424_moved, "g1flag4_mpos",
+               "g1flag4_mneg", "g1flag4_mzero_fixnu")) {
+    job <- .u1_job(parms = oracle$parms[oracle$id == id])
+    res <- suppressWarnings(render_sim(job, list(D = D)))
+    expect_identical(res$ok, !(id %in% halts), info = id)
+    # The warning chunk itself always ran.
+    rn <- grep("^refusal", names(res$results), value = TRUE)
+    if (length(rn)) expect_identical(unname(res$results[[rn]]), "ok", info = id)
+  }
+})
