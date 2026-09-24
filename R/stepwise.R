@@ -196,8 +196,8 @@
 #'       is not applying: a name that resolves to a variable the model does
 #'       not contain is recorded here and still pins nothing, because
 #'       `force_in` only keeps a variable that is already in.  The resolved
-#'       fields are **not** positionally aligned with the as-given ones,
-#'       which stay longer by every name that resolved to nothing.
+#'       fields are **not** aligned element for element with the as-given
+#'       ones, which stay longer by every name that resolved to nothing.
 #'       In a two-way
 #'       screen, `frozen` can name a variable the final model does not
 #'       contain; see the **Known limitation (the frozen set)** section.

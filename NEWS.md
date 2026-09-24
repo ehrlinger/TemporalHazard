@@ -865,8 +865,10 @@
 
 * **`hzr_stepwise()` records what a pin resolved to, beside what was asked
   for (#451).** `$scope$force_in` and `$scope$force_out` list the caller's
-  own strings, so a name that matched nothing at all appeared there as
-  though it had been applied, and only a call-time warning said otherwise.
+  own strings. `$scope$unresolved` has recorded the names that matched
+  nothing since #442, but nothing recorded what the names that *did* match
+  resolved to, so a saved result could not say whether `"_X1"` pinned the
+  column `_X1` or a model term spelled that way.
   The results now also carry `$scope$force_in_resolved` and
   `$scope$force_out_resolved`, the identities those names resolved to: a
   bare `"_X1"` is recorded as given in the first and as `` "`_X1`" `` in the
