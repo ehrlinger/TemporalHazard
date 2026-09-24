@@ -31,7 +31,11 @@ test_that("a resolved pin is recorded as its identity, not as written (#451)", {
   expect_identical(sw$scope$force_in_resolved, "`_X1`")
   # The two must DIFFER here, or the test cannot tell them apart.
   expect_false(identical(sw$scope$force_in, sw$scope$force_in_resolved))
-  # Known positive: the pin actually held, so this is a live screen.
+  # Known positive. The pin check below is `%in%`, which is FALSE against an
+  # empty frame, so on a screen that took no step at all it would pass over
+  # nothing. Assert what the screen DID first, so the pin check is a statement
+  # about a live screen.
+  expect_identical(sw$steps$variable[sw$steps$action == "drop"], "mal")
   expect_false("`_X1`" %in% sw$steps$variable[sw$steps$action == "drop"])
 })
 
@@ -89,6 +93,8 @@ test_that("force_out is recorded both ways too (#451)", {
                                       trace = FALSE))
   expect_identical(sw$scope$force_out, "_X1")
   expect_identical(sw$scope$force_out_resolved, "`_X1`")
-  # Known positive: the exclusion held.
+  # Known positive, for the same reason as the backward test above: without
+  # it, an empty steps frame would satisfy the exclusion check vacuously.
+  expect_identical(sw$steps$variable, "mal")
   expect_false("`_X1`" %in% sw$steps$variable)
 })

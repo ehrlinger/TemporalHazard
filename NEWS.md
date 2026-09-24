@@ -865,7 +865,7 @@
 
 * **`hzr_stepwise()` records what a pin resolved to, beside what was asked
   for (#451).** `$scope$force_in` and `$scope$force_out` list the caller's
-  own strings, so a name that pinned or excluded nothing appeared there as
+  own strings, so a name that matched nothing at all appeared there as
   though it had been applied, and only a call-time warning said otherwise.
   The results now also carry `$scope$force_in_resolved` and
   `$scope$force_out_resolved`, the identities those names resolved to: a
@@ -875,6 +875,9 @@
   unchanged. The resolved fields hold the resolved names **only**; the
   frozen set is not merged into them, since `$scope$frozen` already records
   it and merging would list variables the caller never named.
+  Resolving is not applying: `force_in` names variables that must *remain*
+  in, so a name that resolves to a variable the model does not contain is
+  recorded as resolved and still pins nothing.
 
 * **`hzr_translate_sas()` now says when `PROC HAZARD` rewrote a shape operand
   before fitting, instead of emitting the rewritten value silently.** Under
