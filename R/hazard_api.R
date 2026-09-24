@@ -1504,11 +1504,20 @@ hazard <- function(formula = NULL,
   if (length(fit_state$rows_used) == length(in_fit)) {
     in_fit <- in_fit & fit_state$rows_used
   }
-  keep_rows <- function(v) if (length(v) == length(in_fit)) v[in_fit] else v
+  # And only the bounds the likelihood evaluates on each row: `time_lower` is
+  # an entry time for status 0/1 and an interval's lower bound for status 2,
+  # and is ignored on a left-censored row; `time_upper` is read only for
+  # status -1/2. A supplied bound the likelihood never reads must not
+  # stretch or split the span either check looks at.
+  rows_with <- function(v, codes) {
+    if (length(v) != length(in_fit)) return(v)
+    v[in_fit & !is.na(status) & status %in% codes]
+  }
   boundary_check <- .hzr_boundary_check_impl(
     theta = fit_state$theta, phases = phases,
-    time = keep_rows(time), fitted = fit_ran,
-    time_lower = keep_rows(time_lower), time_upper = keep_rows(time_upper)
+    time = rows_with(time, c(-1, 0, 1, 2)), fitted = fit_ran,
+    time_lower = rows_with(time_lower, c(0, 1, 2)),
+    time_upper = rows_with(time_upper, c(-1, 2))
   )
   fit_state$boundary <- boundary_check$boundary
   degraded_reasons$boundary <- boundary_check$reason

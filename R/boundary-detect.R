@@ -8,7 +8,9 @@
 #
 # The test below deliberately does NOT threshold `nu`.  It asks a question of
 # the DATA: does this phase complete its entire rise, from numerically 0 to
-# numerically 1, inside a single gap between adjacent observed times?  If so
+# numerically 1, with AT MOST ONE observed time strictly inside it?  (One, not
+# none: #448's own fit has an observed time sitting exactly on t_half, where
+# G is 0.5, so its rise spans two gaps; see .hzr_phase_step_detail().)  If so
 # the phase is a step AT THIS DATA'S RESOLUTION -- a fact about this fit and
 # these times, not a tuning choice.  The magnitude is reported so the reader
 # judges severity; nothing is suppressed on its behalf.
