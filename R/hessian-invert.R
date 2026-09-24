@@ -305,10 +305,10 @@ NULL
 #' matrix normalises every variance to 1, so a parameter the data do not
 #' determine, with no partner to trade off against, looks exactly like a
 #' well-determined one. It is read instead from the covariance in a metric
-#' where one unit means the same thing for every parameter: positive shapes
-#' (`gamma`, `alpha`, `eta`, `nu`) on the log scale, so their variance is
-#' relative, and everything else as it is (already log-scale, or a
-#' coefficient). Scaling every parameter by its own value instead -- the
+#' where the positive g3 shapes (`gamma`, `alpha`, `eta`) are on the log
+#' scale, so their variance is relative, and everything else is as it is
+#' (already log-scale, or a coefficient). Only a g3 shape can be NAMED; see
+#' the comment at the naming step for why. Scaling every parameter by its own value instead -- the
 #' candidate measured in #415 -- named `log_mu` on fits whose `gamma` had run
 #' to 1e7, because a log-scale estimate near 0 inflates its relative
 #' variance without bound.
@@ -329,18 +329,27 @@ NULL
 #'   entry, its `estimate`, and `se_metric`, its standard error in the
 #'   metric above.
 #' @noRd
+.hzr_weak_single_names <- "(^|\\.)(gamma|alpha|eta)$"
+
 .hzr_weak_single_parameter <- function(V, theta, keep, nms, rcond, cor_tol) {
   if (is.null(theta) || length(theta) < max(keep)) return(NULL)
   th <- unname(theta)[keep]
   if (anyNA(th) || any(!is.finite(th))) return(NULL)
-  positive_shape <- grepl("(^|\\.)(gamma|alpha|eta|nu)$", nms) & th > 0
+  positive_shape <- grepl(.hzr_weak_single_names, nms) & th > 0
   sc <- ifelse(positive_shape, th, 1)
   S <- V / outer(sc, sc)
   e <- tryCatch(eigen(S, symmetric = TRUE), error = function(e) NULL)
   if (is.null(e) || !is.finite(e$values[1])) return(NULL)
   v1 <- e$vectors[, 1]
   j <- which.max(abs(v1))
-  if (abs(v1[j]) < cor_tol) return(NULL)
+  # Only a positive g3 shape is named. A coefficient or a log-scale
+  # parameter can dominate this direction through its UNITS alone: a
+  # covariate recorded in units of 1e-4 opened the rcond gate and named its
+  # well-identified coefficient (z = 4.7) as undetermined. Its flatness is
+  # not distinguishable from scaling without a natural unit, and the g3
+  # shapes are the parameters with one. (`nu` is excluded: it is signed, and
+  # 0 is a legitimate limiting value, so relative variance near it is noise.)
+  if (abs(v1[j]) < cor_tol || !positive_shape[j]) return(NULL)
   list(params = nms[j], weights = v1[j]^2, correlation = NA_real_,
        rcond = rcond, n_directions = 1L, single = TRUE,
        estimate = th[j], se_metric = sqrt(e$values[1]))

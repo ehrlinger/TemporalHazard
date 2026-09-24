@@ -715,7 +715,9 @@ NULL
 #'   \code{n_directions}, the number of near-flat directions found (when a
 #'   single parameter carries the direction on its own, the list has one
 #'   \code{params} entry, \code{single = TRUE}, its \code{estimate}, and
-#'   \code{correlation = NA});
+#'   \code{correlation = NA}, and \code{se_metric}, its standard error on
+#'   the log scale; only a g3 shape, \code{gamma}, \code{alpha} or
+#'   \code{eta}, is named this way);
 #'   \code{NULL} when the fit was examined and is well identified; and
 #'   \code{NA} when the check could not run because no usable Hessian was
 #'   available, which includes an unfitted object and an install without
@@ -1481,21 +1483,28 @@ hazard <- function(formula = NULL,
   )
   fit_state$boundary <- boundary_check$boundary
   degraded_reasons$boundary <- boundary_check$reason
-  # Holds made at setup (#415) are records of the same family. They exist
-  # only when a fit ran, so the check above has examined the fit too and
-  # $boundary is NULL or a list here, never NA.
+  # Holds made at setup (#415) are records of the same family, prepended.
+  # When the post-fit check could not run ($boundary NA, e.g. no positive
+  # observed times) the field stays NA, as the degraded record requires, and
+  # the holds are still announced below rather than dropped.
+  boundary_records <- fit_state$boundary
   if (fit_ran && length(optim_held <- fit_state$held)) {
-    fit_state$boundary <- c(optim_held, fit_state$boundary)
+    if (.hzr_is_na_scalar(fit_state$boundary)) {
+      boundary_records <- optim_held
+    } else {
+      fit_state$boundary <- c(optim_held, fit_state$boundary)
+      boundary_records <- fit_state$boundary
+    }
   }
-  if (is.list(fit_state$boundary)) {
+  if (is.list(boundary_records) && length(boundary_records)) {
     warning(structure(
       # One class per mechanism present, not only the first record's: a
       # setup hold listed first must not hide an unbounded phase's class.
-      class = c(unique(paste0("hzr_", vapply(fit_state$boundary,
+      class = c(unique(paste0("hzr_", vapply(boundary_records,
                                              function(r) r$mechanism,
                                              character(1)))),
                 "hzr_boundary", "warning", "condition"),
-      list(message = .hzr_boundary_message(fit_state$boundary), call = NULL)
+      list(message = .hzr_boundary_message(boundary_records), call = NULL)
     ))
   }
 

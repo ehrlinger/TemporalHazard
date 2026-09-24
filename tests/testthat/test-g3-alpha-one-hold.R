@@ -59,7 +59,7 @@ test_that("alpha fixed at 1 holds tau and eta, and fits the Weibull", {
   expect_null(fit$fit$weak)
 })
 
-test_that("the hold keeps the likelihood: held and unheld maxima agree", {
+test_that("the hold reaches the fit a caller gets by pinning the same values", {
   skip_on_cran()
   skip_if_not_installed("numDeriv")
   d <- hold_data(seed = 7)
@@ -67,7 +67,8 @@ test_that("the hold keeps the likelihood: held and unheld maxima agree", {
     fit_g3(d, hzr_phase("g3", tau = 2, gamma = 3, alpha = 1, eta = 1,
                         fixed = "alpha")))
   # tau and eta pinned by the caller at the values the hold would choose: no
-  # hold fires, so this is the same model reached without it.
+  # hold fires, so this is the same model reached without it. (That the hold
+  # keeps the MAXIMUM is the survreg comparison in the first test.)
   pinned <- fit_g3(d, hzr_phase("g3", tau = 1, gamma = 3, alpha = 1, eta = 1,
                                 fixed = c("tau", "alpha", "eta")))
   expect_null(boundary_records(pinned, "g3_alpha_one")[[1]])
@@ -100,10 +101,29 @@ test_that("the hold follows SETG3's branches for which of gamma/eta carries", {
   h <- hold("alpha", constraint = "eta_gamma")
   expect_equal(unname(h$theta[c("late.gamma", "late.eta")]), c(2, 1))
   expect_true("gamma" %in% h$phases$late$fixed)
-  # ... or eta = 2, gamma = 1 when ETA = 2 was given, i.e. gamma = 1 here.
+  # ... whatever gamma started at: under eta_gamma eta is derived, so SAS's
+  # "ETA = 2 given" alternative cannot arise.
   h <- hold("alpha", gamma = 1, constraint = "eta_gamma")
-  expect_equal(unname(h$theta[c("late.gamma", "late.eta")]), c(1, 2))
+  expect_equal(unname(h$theta[c("late.gamma", "late.eta")]), c(2, 1))
   expect_equal(unname(h$theta[["late.log_tau"]]), 0)
+})
+
+test_that("the held start has the same cumulative hazard as the unheld one", {
+  # log_mu is rescaled as tau goes to 1, so the start the optimizer (and
+  # CoE's start scaling) sees is the same function of time.
+  ph <- hzr_phase("g3", tau = 5, gamma = 3, alpha = 1, eta = 1,
+                  fixed = "shapes")
+  th <- c(late.log_mu = log(1e-3), late.log_tau = log(5), late.gamma = 3,
+          late.alpha = 1, late.eta = 1)
+  h <- .hzr_g3_alpha_one_hold(th, list(late = ph))
+  expect_false(isTRUE(all.equal(h$theta, th)))
+  grid <- c(0.1, 1, 5, 20)
+  cum <- function(theta, phases) {
+    .hzr_multiphase_cumhaz(grid, theta, phases, c(late = 0L),
+                           list(late = NULL))
+  }
+  expect_equal(cum(h$theta, h$phases), cum(th, list(late = ph)),
+               tolerance = 1e-12)
 })
 
 test_that("the hold keys on alpha FIXED at exactly 1, as SAS does", {

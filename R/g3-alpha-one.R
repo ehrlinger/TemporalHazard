@@ -14,8 +14,11 @@
 #
 #   - tau is set to 1 and fixed                          (setg3.c:380-381)
 #   - under FIXGE2 gamma and eta are both fixed, at
-#     gamma = 2, eta = 1 (or eta = 2, gamma = 1 when
-#     ETA = 2 was given)                                 (setg3.c:393-403)
+#     gamma = 2, eta = 1                                 (setg3.c:393-403)
+#     (SAS takes eta = 2, gamma = 1 instead when ETA = 2
+#     was given; under constraint = "eta_gamma" eta is
+#     derived and cannot be given, so R always holds
+#     gamma = 2. The likelihood is the same either way.)
 #   - otherwise the product is carried by ONE parameter:
 #     both free -> eta is fixed                          (setg3.c:406-407)
 #     eta fixed -> gamma = gamma * eta, eta = 1          (setg3.c:409-413)
@@ -24,7 +27,16 @@
 # The likelihood is unchanged by this: at alpha = 1 the held and the unheld
 # models are the same family, and the hold only removes the directions the
 # data cannot see. So this mirrors SAS and says so (warn + record in
-# $boundary), rather than refusing. It keys on alpha FIXED at exactly 1, as
+# $boundary), rather than refusing. log_mu's START is moved by
+# -(gamma * eta) * log(tau) as tau goes to 1, so the start's likelihood is
+# unchanged too; SAS does not do this, and it cannot change the maximum, but
+# without it the phase's starting cumulative hazard was multiplied by
+# tau^(gamma * eta) (125 at tau = 5), and CoE's start scaling reads it.
+#
+# NOT mirrored: after SETG3_ignore_tau() SAS still runs SETG3_verify_ge_2()
+# (setg3.c:870-921), which rewrites a gamma * eta start at or below 2 to 3,
+# or refuses (SETG31020) when both are fixed. R has never applied that check
+# to any g3 phase; it is a separate, older difference. It keys on alpha FIXED at exactly 1, as
 # SAS does (`Late.alpha==ONE && hzr_parm_is_fixed(HZ_ALPHA)`); a FREE alpha
 # started at 1 is not held, by SAS or here.
 
@@ -53,13 +65,14 @@
     gamma <- unname(theta[[key("gamma")]])
     eta   <- unname(theta[[key("eta")]])
 
+    ge2 <- identical(.hzr_phase_constraint(ph), "eta_gamma")
+    theta[[key("log_mu")]] <- theta[[key("log_mu")]] -
+      gamma * eta * theta[[key("log_tau")]]
     theta[[key("log_tau")]] <- 0
     fixed <- union(fixed, "tau")
-    if (identical(.hzr_phase_constraint(ph), "eta_gamma")) {
-      # eta is derived as 2 / gamma here, so "ETA = 2 given" is gamma = 1.
-      gamma_new <- if (isTRUE(all.equal(gamma, 1))) 1 else 2
-      theta[[key("gamma")]] <- gamma_new
-      theta[[key("eta")]] <- 2 / gamma_new
+    if (ge2) {
+      theta[[key("gamma")]] <- 2
+      theta[[key("eta")]] <- 1
       fixed <- union(fixed, "gamma")
     } else {
       if (!"gamma" %in% fixed && !"eta" %in% fixed) fixed <- union(fixed, "eta")
@@ -99,9 +112,16 @@
       detail = paste0(
         "phase '", nm, "' is g3 with alpha fixed at 1, where G3 = ",
         "(t/tau)^(gamma*eta): tau is confounded with mu, and gamma with eta. ",
-        "As PROC HAZARD does, the product is carried by one parameter and ",
-        "tau is held at 1 (", paste(changes, collapse = "; "), "). The ",
-        "likelihood is unchanged; mu and the product are what is estimated."
+        "As PROC HAZARD does, tau is held at 1 and ",
+        if (ge2) {
+          "gamma * eta = 2 is held as gamma = 2, eta = 1"
+        } else if (all(c("gamma", "eta") %in% fixed)) {
+          "the fixed product is held in one parameter"
+        } else {
+          "the product is carried by one parameter"
+        },
+        " (", paste(changes, collapse = "; "), "). The likelihood is ",
+        "unchanged; mu is rescaled to match."
       )
     )
   }

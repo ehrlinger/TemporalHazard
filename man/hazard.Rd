@@ -205,7 +205,9 @@ squared loadings (\code{weights}), the strongest pairwise
 \code{n_directions}, the number of near-flat directions found (when a
 single parameter carries the direction on its own, the list has one
 \code{params} entry, \code{single = TRUE}, its \code{estimate}, and
-\code{correlation = NA});
+\code{correlation = NA}, and \code{se_metric}, its standard error on
+the log scale; only a g3 shape, \code{gamma}, \code{alpha} or
+\code{eta}, is named this way);
 \code{NULL} when the fit was examined and is well identified; and
 \code{NA} when the check could not run because no usable Hessian was
 available, which includes an unfitted object and an install without

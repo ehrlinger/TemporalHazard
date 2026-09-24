@@ -75,3 +75,38 @@ test_that("a pair the correlation reading finds is still reported as the pair", 
   expect_false(isTRUE(w$single))
   expect_setequal(w$params, c("early.m", "early.nu"))
 })
+
+test_that("a coefficient or log-scale parameter is never named on its own", {
+  # A covariate in units of 1e-4 opens the rcond gate by scaling alone, and
+  # its well-identified coefficient dominated the flattest direction.
+  v <- diag(c(0.01, 0.02, (0.1 * th[3])^2, 0.001, 565^2))
+  w <- .hzr_weak_direction(v, gated, c(nm, "late.x2"),
+                           theta = c(th, 2641))
+  expect_null(w)
+  v2 <- diag(c(1e4, 0.02, (0.1 * th[3])^2, 0.001))
+  expect_null(.hzr_weak_direction(v2, gated, nm, theta = th))
+})
+
+test_that("nu is not a named shape: it is signed and 0 is legitimate", {
+  v <- diag(c(0.01, 0.05^2))
+  expect_null(.hzr_weak_direction(v, gated, c("early.log_t_half", "early.nu"),
+                                  theta = c(0, 1e-3)))
+})
+
+test_that("an identified fit with a small-unit covariate names nothing", {
+  skip_if_not_installed("numDeriv")
+  withr::local_seed(1)
+  n <- 400
+  x1 <- stats::rnorm(n)
+  x2 <- stats::rnorm(n) * 1e-4
+  ev <- (stats::rexp(n) / exp(0.5 * x1 + 3000 * x2))^(1 / 1.5)
+  cen <- stats::runif(n, 0, 3)
+  d <- data.frame(time = pmin(ev, cen), status = as.numeric(ev <= cen),
+                  x1 = x1, x2 = x2)
+  fit <- suppressWarnings(hazard(survival::Surv(time, status) ~ x1 + x2,
+                                 data = d, dist = "weibull",
+                                 theta = c(0.5, 1, 0, 0), fit = TRUE))
+  # The premise: the gate is open, so only the naming rule keeps this quiet.
+  expect_lt(fit$fit$rcond, .hzr_rcond_tol)
+  expect_null(fit$fit$weak)
+})
