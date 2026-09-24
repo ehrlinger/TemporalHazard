@@ -243,7 +243,23 @@ frozen action; see Details.</p></dd>
 
 <dt><code>scope</code></dt>
 <dd><p>Record of the candidate scope, plus
-<code>force_in</code>, <code>force_out</code>, and the frozen set.  In a two-way
+<code>force_in</code>, <code>force_out</code>, and the frozen set.  Four fields answer
+four different questions about the pins, and none substitutes for
+another: <code>force_in</code> and <code>force_out</code> are the names <strong>as given</strong>,
+including any that pinned nothing; <code>force_in_resolved</code> and
+<code>force_out_resolved</code> are what those names <strong>resolved to</strong>, as a
+column or term label, so a bare <code>"_X1"</code> appears there as
+<code>"`_X1`"</code>; <code>unresolved</code> is which of them resolved to nothing;
+and <code>frozen</code> is what the loop held in that the caller never named.
+The resolved fields carry the resolved names only: the frozen set
+is <strong>not</strong> merged into them, because <code>frozen</code> already records it
+and merging would list variables nobody asked for (#451).  Resolving
+is not applying: a name that resolves to a variable the model does
+not contain is recorded here and still pins nothing, because
+<code>force_in</code> only keeps a variable that is already in.  The resolved
+fields are <strong>not</strong> aligned element for element with the as-given
+ones, which stay longer by every name that resolved to nothing.
+In a two-way
 screen, <code>frozen</code> can name a variable the final model does not
 contain; see the <strong>Known limitation (the frozen set)</strong> section.
 <code>unresolved</code> is a list with elements <code>force_in</code>, <code>force_out</code> and
