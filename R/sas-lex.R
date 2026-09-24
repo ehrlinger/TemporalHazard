@@ -265,8 +265,10 @@
       # must follow a `;`. Matching the word anywhere cut the job at its own
       # DATA= option whenever that was written `DATA = X` (#458); spacing
       # carries no meaning to SAS's lexer (hazard_l.l:32), so the test has
-      # to be where the word sits in the statement, not what follows it.
-      b <- regexpr("(?<=;|; )(PROC|DATA|RUN)", rest, perl = TRUE)
+      # to be where the word sits in the statement, not what follows it. The
+      # `\\b` makes it the word: `DATASET X;` is a statement PROC HAZARD
+      # receives, not a DATA step (#473 review).
+      b <- regexpr("(?<=;|; )(PROC|DATA|RUN)\\b", rest, perl = TRUE)
       end_at <- if (b == -1L) nchar(txt) else search_from + b - 2L
       body <- substring(txt, proc_at, end_at)
       term <- "none"
