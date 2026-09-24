@@ -1204,11 +1204,11 @@
       # rejects the job. The PROC HAZARD and PROC HAZPRED lines record theirs
       # the same way (#433 review 2, 3; #458).
       flag_syntax(op, paste0(
-        "a stray `=` in PARMS: the operand before it already took its ",
-        "value, so PROC HAZARD reaches `otherstmt : error` ",
-        "(hazard_y.y:102), discards the rest of the statement and rejects ",
-        "this job with a syntax error; the operands after it are read here ",
-        "as written"))
+        "a stray `=` in PARMS, with no keyword before it to take a value: ",
+        "PROC HAZARD reaches `otherstmt : error` (hazard_y.y:102), discards ",
+        "the rest of the statement and rejects this job with a syntax error, ",
+        "so it does not run; the operands after it are read here as ",
+        "written"))
       next
     }
     if (spaced_piece[i] > 0L) {
