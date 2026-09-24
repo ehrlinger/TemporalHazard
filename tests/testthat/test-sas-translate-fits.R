@@ -1076,6 +1076,8 @@ test_that("an entry refusal is recorded once, with no rewrite after it (#458)", 
         why <- job$untranslated$reason
         codes <- regmatches(why, regexpr("\\(SETG3[0-9]+\\)", why))
         expect_identical(codes, code, info = p)
+        # ... and the refusal still reaches the reader as a warning chunk.
+        expect_false(is.null(.u1_refusal_chunk(job)), info = p)
         expect_false(any(grepl("moves the late shape", why, fixed = TRUE)),
                      info = p)
         n_cases <- n_cases + 1L

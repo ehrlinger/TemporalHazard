@@ -1098,7 +1098,10 @@
   HAZARD` never performs, and the emitted phase carried the rewritten value:
   `setg3.c:269-284` returns on these checks before the constraint rules at
   `:444-481` run. The job now has one row, and its phase keeps the values
-  written. The warning and its code are unchanged.
+  written. The job still warns with the same code; the warning now names
+  the late shape and its fixed parameters (`GAMMA=1 ALPHA=1 ETA=1
+  fixed:tau`), as the same job without `WEIBULL` already did, rather than
+  `TAU` alone.
 
 * **`PROC HAZARD DATA = X` translates when the job is not wrapped in
   `%HAZARD(...)` (#458).** A `PROC HAZARD` with no enclosing parenthesis is
