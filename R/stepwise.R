@@ -471,6 +471,47 @@ hzr_stepwise <- function(fit,
                                      arg = "`force_in`")
   resolved_out <- .hzr_resolve_names(force_out, data, known_labels,
                                      arg = "`force_out`")
+  # A PIN NAMING AN UNNAMEABLE COLUMN IS NOT RESOLVED. `.hzr_column_label()`
+  # gives "." and "" the placeholder `<column ".">` because `terms()` cannot
+  # label them, and that is not NA -- so `.hzr_resolve_names()` reported such
+  # a pin as a hit, it reached `force_in_id`, and nothing warned. The pin was
+  # always inert, since no formula can name the column and the placeholder
+  # can never equal a term label; what was wrong is that every signal said it
+  # had resolved, and #451 publishes the value as `$scope$force_in_resolved`,
+  # documented as a column or term label (#463).
+  #
+  # Handled HERE rather than in `.hzr_resolve_names()` deliberately. The
+  # `scope` path at :459 DEPENDS on the placeholder surviving: the
+  # `unnameable` block above reads it out of `scope_labels` to say
+  # "Column(s) "." of `data` cannot be a stepwise candidate", which is
+  # accurate. Making the resolver drop placeholders emptied `scope_labels`,
+  # silenced that message, and replaced it with "neither a column of `data`
+  # nor a term label" -- FALSE, because it is a column. One warning either
+  # way, so a warnings-count check reads clean (stream C, #463 review).
+  pin_unnameable <- function(res) {
+    if (!length(res$id)) return(res)
+    ph <- .hzr_is_label_placeholder(res$id)
+    if (!any(ph)) return(res)
+    list(spelling = res$spelling[!ph], id = res$id[!ph],
+         unresolved = c(res$unresolved, res$spelling[ph]))
+  }
+  warn_unnameable_pin <- function(res, arg) {
+    ph <- if (length(res$id)) .hzr_is_label_placeholder(res$id) else logical(0)
+    if (!any(ph)) return(invisible(NULL))
+    warning(arg, " names ",
+            paste(encodeString(res$spelling[ph], quote = "\""),
+                  collapse = ", "),
+            ", which no model formula can name, so it cannot be pinned; ",
+            if (sum(ph) == 1L) "it is" else "they are", " ignored. Rename ",
+            if (sum(ph) == 1L) "that column" else "those columns",
+            " to use ", arg, ".", call. = FALSE)
+    invisible(NULL)
+  }
+  warn_unnameable_pin(resolved_in,  "`force_in`")
+  warn_unnameable_pin(resolved_out, "`force_out`")
+  resolved_in  <- pin_unnameable(resolved_in)
+  resolved_out <- pin_unnameable(resolved_out)
+
   force_in_id  <- resolved_in$id
   force_out_id <- resolved_out$id
   unresolved$force_in  <- resolved_in$unresolved
