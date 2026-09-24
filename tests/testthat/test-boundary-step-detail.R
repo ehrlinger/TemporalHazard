@@ -109,3 +109,31 @@ test_that("a rise the data DOES resolve is not a step, even though it spans", {
   expect_null(.hzr_phase_step_detail(ut, t_half = 2.5, nu = 0.5,
                                      g_fn = resolved))
 })
+
+test_that("the detail allows the one observed time sitting on t_half", {
+  # #448's own shape: an observed time lands on t_half, where G is 0.5, so the
+  # two times named bracket the rise but are NOT adjacent observations.
+  tt <- c(1, 2, 2.5, 3, 4)
+  step <- function(x) ifelse(x < 2.5, 0, ifelse(x > 2.5, 1, 0.5))
+  out <- .hzr_phase_step_detail(tt, t_half = 2.5, nu = 1e-16, g_fn = step)
+  expect_type(out, "list")
+  expect_match(out$detail, "between the observed times 2 and 3", fixed = TRUE)
+  expect_match(out$detail, "at most one observed time inside", fixed = TRUE)
+  expect_false(grepl("adjacent", out$detail, fixed = TRUE))
+})
+
+test_that("each boundary mechanism keeps its own lead-in and class", {
+  recs <- list(list(mechanism = "phase_discontinuity", detail = "a."),
+               list(mechanism = "unbounded_phase", detail = "b."))
+  msg <- .hzr_boundary_message(recs)
+  expect_match(msg, "^phase collapsed to a step: a\\.")
+  expect_match(msg, "fitted outside the observed support: b.", fixed = TRUE)
+  expect_false(startsWith(msg, "fitted outside"))
+  cond <- .hzr_boundary_condition(recs)
+  # The unbounded record is second, and is still catchable by its own class.
+  expect_s3_class(cond, "hzr_unbounded_phase")
+  expect_s3_class(cond, "hzr_phase_discontinuity")
+  expect_s3_class(cond, "hzr_boundary")
+  expect_identical(tryCatch(warning(cond), hzr_unbounded_phase = function(e) "caught"),
+                   "caught")
+})

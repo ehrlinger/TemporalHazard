@@ -167,9 +167,33 @@ NULL
 #' @keywords internal
 #' @noRd
 .hzr_boundary_message <- function(records) {
-  paste0("fitted outside the observed support: ",
-         paste(vapply(records, function(r) r$detail, character(1)),
-               collapse = " "))
+  # Each mechanism keeps its own lead-in: a cdf phase that collapsed to a step
+  # can sit well inside the data, and calling it "fitted outside the observed
+  # support" would name the wrong cause.
+  lead <- c(unbounded_phase = "fitted outside the observed support: ",
+            phase_discontinuity = "phase collapsed to a step: ")
+  paste(vapply(records, function(r) {
+    paste0(if (r$mechanism %in% names(lead)) lead[[r$mechanism]] else "",
+           r$detail)
+  }, character(1)), collapse = " ")
+}
+
+#' The warning condition for boundary findings
+#'
+#' Classed `hzr_<mechanism>` for EVERY mechanism present, not only the first
+#' record's, so a handler for one mechanism is not defeated by another
+#' record listed ahead of it; all inherit `hzr_boundary`.
+#' @param records The `$boundary` list.
+#' @return A warning condition.
+#' @keywords internal
+#' @noRd
+.hzr_boundary_condition <- function(records) {
+  mechanisms <- vapply(records, function(r) r$mechanism, character(1))
+  structure(
+    class = c(unique(paste0("hzr_", mechanisms)), "hzr_boundary", "warning",
+              "condition"),
+    list(message = .hzr_boundary_message(records), call = NULL)
+  )
 }
 
 
@@ -1472,11 +1496,7 @@ hazard <- function(formula = NULL,
   fit_state$boundary <- boundary_check$boundary
   degraded_reasons$boundary <- boundary_check$reason
   if (is.list(fit_state$boundary)) {
-    warning(structure(
-      class = c(paste0("hzr_", fit_state$boundary[[1L]]$mechanism),
-                "hzr_boundary", "warning", "condition"),
-      list(message = .hzr_boundary_message(fit_state$boundary), call = NULL)
-    ))
+    warning(.hzr_boundary_condition(fit_state$boundary))
   }
 
   # Refit-based tooling (hzr_bootstrap()) re-evaluates $call, so it needs the

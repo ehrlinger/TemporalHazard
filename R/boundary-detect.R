@@ -91,8 +91,9 @@
     parameter = "nu",
     detail = sprintf(
       paste0("The early-phase shape is a step at this data's resolution: the ",
-             "phase rises from 0 to 1 entirely between two adjacent observed ",
-             "times (%.6g and %.6g), with nu = %.3g and t_half = %.6g. %d ",
+             "phase rises from 0 to 1 between the observed times %.6g and ",
+             "%.6g, with at most one observed time inside the rise (nu = ",
+             "%.3g, t_half = %.6g). %d ",
              "observation(s) fall in that interval, so the log-likelihood is ",
              "discontinuous there and a one-ulp change in nu can move it. ",
              "Treat the shape parameters as unidentified rather than estimated."),
