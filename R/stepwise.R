@@ -510,15 +510,23 @@ hzr_stepwise <- function(fit,
   # silenced that message, and replaced it with "neither a column of `data`
   # nor a term label" -- FALSE, because it is a column. One warning either
   # way, so a warnings-count check reads clean (stream C, #463 review).
-  pin_unnameable <- function(res) {
+  pin_unnameable <- function(res, x) {
     if (!length(res$id)) return(res)
     ph <- .hzr_is_label_placeholder(res$id)
     if (!any(ph)) return(res)
     # Mirrors `.hzr_resolve_names()`'s return shape: same three elements, in
     # the same order, with `spelling` and `id` filtered by the SAME mask so
     # their index alignment survives.
+    #
+    # `unresolved` is taken from the user's own `x`, not by appending, so it
+    # keeps the order they wrote and any repeat. That is exact because the
+    # resolver is a function of the string alone: every copy of a string
+    # resolves the same way, so membership picks out precisely the dropped
+    # positions. `c(res$unresolved, ...)` put these pins last, and union()
+    # or unique() would have dropped a repeated one (#465 review).
+    drop <- c(res$unresolved, res$spelling[ph])
     list(spelling = res$spelling[!ph], id = res$id[!ph],
-         unresolved = c(res$unresolved, res$spelling[ph]))
+         unresolved = x[x %in% drop])
   }
   warn_unnameable_pin <- function(res, arg) {
     ph <- if (length(res$id)) .hzr_is_label_placeholder(res$id) else logical(0)
@@ -546,8 +554,8 @@ hzr_stepwise <- function(fit,
   }
   warn_unnameable_pin(resolved_in,  "`force_in`")
   warn_unnameable_pin(resolved_out, "`force_out`")
-  resolved_in  <- pin_unnameable(resolved_in)
-  resolved_out <- pin_unnameable(resolved_out)
+  resolved_in  <- pin_unnameable(resolved_in,  as.character(force_in))
+  resolved_out <- pin_unnameable(resolved_out, as.character(force_out))
 
   force_in_id  <- resolved_in$id
   force_out_id <- resolved_out$id
