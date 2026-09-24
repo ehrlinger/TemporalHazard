@@ -90,7 +90,7 @@
   list(
     parameter = "nu",
     detail = sprintf(
-      paste0("The early-phase shape is a step at this data's resolution: the ",
+      paste0("The phase's shape is a step at this data's resolution: the ",
              "phase rises from 0 to 1 between the observed times %.6g and ",
              "%.6g, with at most one observed time inside the rise (nu = ",
              "%.3g, t_half = %.6g). %d ",

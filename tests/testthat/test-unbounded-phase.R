@@ -228,3 +228,21 @@ test_that("a duplicated phase name yields one record, not two", {
   r2 <- .hzr_boundary_check_impl(th, ph2, c(1, 2, 3), fitted = TRUE)
   expect_length(r2$boundary, 1L)
 })
+
+test_that("a weight-0 row does not supply the first observed time", {
+  # The likelihood drops a weight-0 row, so its time is not an observed time
+  # of this fit. Before, a weight-0 row placed below the fitted t_half moved
+  # t_min below it and silently removed the record.
+  d <- ub_data()
+  ph <- list(early = hzr_phase("hazard", t_half = 0.5, nu = 1, m = 0),
+             late  = hzr_phase("constant"))
+  th <- c(log(0.1), log(min(d$t) / 1000), 1, 0, log(0.05))
+  base <- ub_fit(d, ph, theta = th)
+  padded <- ub_fit(list(t = c(d$t, 1e-12), s = c(d$s, 0)), ph, theta = th,
+                   weights = c(rep(1, length(d$t)), 0))
+  # The premise: the ghost row sits below the fitted t_half.
+  expect_lt(1e-12, exp(unname(padded$fit$theta[["early.log_t_half"]])))
+  expect_true(is.list(padded$fit$boundary))
+  expect_identical(padded$fit$boundary[[1L]]$detail,
+                   base$fit$boundary[[1L]]$detail)
+})

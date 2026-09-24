@@ -1488,10 +1488,15 @@ hazard <- function(formula = NULL,
   # A phase fitted outside the support its parameterisation can carry (#444).
   # A sibling of $weak, with the same tri-state: NA not examined, NULL
   # examined and nothing found, a list of records otherwise.
+  # Only rows the likelihood reads: a weight-0 row is excluded from the fit,
+  # so its time must not supply the first observed time (#444) or an
+  # endpoint of a step (#448) either.
+  in_fit <- if (is.null(weights)) rep(TRUE, length(time)) else weights > 0
+  keep_rows <- function(v) if (length(v) == length(in_fit)) v[in_fit] else v
   boundary_check <- .hzr_boundary_check_impl(
     theta = fit_state$theta, phases = phases,
-    time = time, fitted = fit_ran,
-    time_lower = time_lower, time_upper = time_upper
+    time = keep_rows(time), fitted = fit_ran,
+    time_lower = keep_rows(time_lower), time_upper = keep_rows(time_upper)
   )
   fit_state$boundary <- boundary_check$boundary
   degraded_reasons$boundary <- boundary_check$reason
