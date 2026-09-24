@@ -863,6 +863,19 @@
 
 ## New features
 
+* **`hzr_stepwise()` records what a pin resolved to, beside what was asked
+  for (#451).** `$scope$force_in` and `$scope$force_out` list the caller's
+  own strings, so a name that pinned or excluded nothing appeared there as
+  though it had been applied, and only a call-time warning said otherwise.
+  The results now also carry `$scope$force_in_resolved` and
+  `$scope$force_out_resolved`, the identities those names resolved to: a
+  bare `"_X1"` is recorded as given in the first and as `` "`_X1`" `` in the
+  second, and a name that resolved to nothing is absent from the second
+  entirely. Nothing is renamed or removed, and the as-given fields are
+  unchanged. The resolved fields hold the resolved names **only**; the
+  frozen set is not merged into them, since `$scope$frozen` already records
+  it and merging would list variables the caller never named.
+
 * **`hzr_translate_sas()` now says when `PROC HAZARD` rewrote a shape operand
   before fitting, instead of emitting the rewritten value silently.** Under
   `FIXGE2` or `FIXGAE2` with `WEIBULL`, `SETG3` moves the late shape onto the

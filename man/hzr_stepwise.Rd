@@ -138,7 +138,17 @@ final fit augmented with:
 \item{\code{steps}}{Data frame with one row per accepted /
 frozen action; see Details.}
 \item{\code{scope}}{Record of the candidate scope, plus
-\code{force_in}, \code{force_out}, and the frozen set.  In a two-way
+\code{force_in}, \code{force_out}, and the frozen set.  Four fields answer
+four different questions about the pins, and none substitutes for
+another: \code{force_in} and \code{force_out} are the names \strong{as given},
+including any that pinned nothing; \code{force_in_resolved} and
+\code{force_out_resolved} are what those names \strong{resolved to}, as the
+model's own term labels, so a bare \code{"_X1"} appears there as
+\code{"`_X1`"}; \code{unresolved} is which of them resolved to nothing;
+and \code{frozen} is what the loop held in that the caller never named.
+The resolved fields carry the resolved names only: the frozen set
+is \strong{not} merged into them, because \code{frozen} already records it
+and merging would list variables nobody asked for (#451).  In a two-way
 screen, \code{frozen} can name a variable the final model does not
 contain; see the \strong{Known limitation (the frozen set)} section.
 \code{unresolved} is a list with elements \code{force_in}, \code{force_out} and
