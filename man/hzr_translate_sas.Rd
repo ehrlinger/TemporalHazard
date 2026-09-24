@@ -52,6 +52,14 @@ variable must be a NAME, \verb{[_A-Z][_A-Z0-9]*} (\code{hazard_l.l:39};
 at parse. The document raises a \code{warning()} above the fit, and the operand
 is recorded in \verb{$untranslated}.
 
+Two more syntax errors take the same route. A value on a \verb{PROC HAZARD}
+option that takes none, such as \code{NOCOV=1} (\code{hazard_y.y:65-76}), is
+ignored in the fit. A \code{TIME}, \code{EVENT}, \code{RCENSOR}, \code{LCENSOR} or \code{WEIGHT}
+statement with more than one operand, which takes exactly one name
+(\code{hazard_y.y:106-127}), is fitted on the first. Both are warned about
+above the fit and recorded in \verb{$untranslated}. \code{TIME} or \code{EVENT} with no
+operand leaves no variable to fit, so that job's fit chunk is a \code{stop()}.
+
 A job may contain more than one \verb{PROC HAZARD} and/or \verb{PROC HAZPRED} block.
 Every block is preserved: the first of a kind keeps the bare chunk name
 (\code{fit}, \code{pred}, \code{pred_haz}), later ones get \code{fit_2}, \code{fit_3}, \code{pred_2}, and
