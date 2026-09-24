@@ -407,10 +407,87 @@
 
   # --- statement 1: the PROC line and its options -------------------------
   toks <- strsplit(trimws(st[[1L]]), " ", fixed = TRUE)[[1L]]
-  toks <- toks[nzchar(toks)]
+  toks <- .hzr_sas_join_spaced(toks[nzchar(toks)])
+  # A bare `=` survives the joiner only when the grammar has nothing to pair
+  # it with: `DATA = MAXITER = 50` is DATA='MAXITER' (a valid `DATA '=' NAME`,
+  # because <HZRP>DATA switches the lexer to DSNM where MAXITER lexes as a
+  # NAME, hazard_l.l:59,80) followed by a STRAY `=` and an orphan value. SAS
+  # reaches `hazardopt : error` (hazard_y.y:76) there and does not run the
+  # job. Recorded once, as the syntax error it is, rather than as one blank
+  # "unknown option" row per leftover token (#433 review 2).
+  stray <- which(toks == "=")
+  if (length(stray)) {
+    drop <- unique(c(stray, stray[stray < length(toks)] + 1L))
+    leftover <- paste(toks[drop], collapse = " ")
+    toks <- toks[-drop]
+    proc_syntax_error <- paste0(
+      "a stray `=` on the PROC HAZARD line (", leftover, "): the option ",
+      "before it already took its value, so PROC HAZARD reaches ",
+      "`hazardopt : error` (hazard_y.y:76) and rejects this job with a ",
+      "syntax error")
+  } else {
+    proc_syntax_error <- NULL
+  }
   ctl <- list()
   data_name <- NULL
   outhaz <- NULL
+  # A PROC-line value the lexer does not read as a NUMBER (hazard_l.l:33-38,
+  # the HZRP state at :53) is a syntax error: PROC HAZARD does not run the
+  # job (U1, #403). as.numeric() reads 1E5 and 5., which the lexer does not.
+  proc_rejected <- character(0)
+  # Returns TRUE when it rejected the option, so the caller can stop rather
+  # than add a second, sometimes contradictory row. `CONDITION=5.` used to say
+  # both that PROC HAZARD's lexer rejects the number AND what its optimizer
+  # does with the value, although a rejected job never runs (#433 review).
+  # `DATA '=' dsfield` and `OUTHAZ '=' dsfield` (hazard_y.y:61-62), where
+  # dsfield : NAME | LIBMEM (:80-81), have no form without a name, so an
+  # empty value is the grammar refusing the option -- the same shape as
+  # `MAXITER '=' NUMBER` with no number, and it belongs in the same presence
+  # check. Before this, OUTHAZ= was dropped with no row and the job fitted,
+  # and DATA= left data_name as "" and surfaced as an internal
+  # "attempt to use zero-length variable name" (#433 review 2).
+  check_name <- function(key, val) {
+    if (.hzr_sas_is_macro(val)) return(FALSE)
+    if (nzchar(val)) return(FALSE)
+    proc_rejected <<- c(proc_rejected, paste0(
+      key, ": no value, and PROC HAZARD has no form of this option without a ",
+      "dataset name (hazard_y.y:61-62, :80-81), so it rejects this job with ",
+      "a syntax error"))
+    note(key, paste0("no value; PROC HAZARD has no form of this option ",
+                     "without a dataset name (hazard_y.y:61-62, :80-81)"))
+    TRUE
+  }
+  check_number <- function(key, val) {
+    # A macro carries no verdict: SAS expands it before PROC HAZARD reads
+    # the statement, so whether a NUMBER arrives is not knowable here.
+    if (.hzr_sas_is_macro(val)) return(FALSE)
+    if (!nzchar(val)) {
+      # `MAXITER '=' NUMBER` and `CONDITION '=' NUMBER` (hazard_y.y:63-64)
+      # have no form without a NUMBER, so `MAXITER=`, `MAXITER =` and a bare
+      # `MAXITER` all fall to `hazardopt : error` (:76). This is the grammar
+      # refusing the option, not the lexer refusing a value, hence the
+      # different citation.
+      proc_rejected <<- c(proc_rejected, paste0(
+        key, ": no value, and PROC HAZARD has no form of this option without ",
+        "one (hazard_y.y:63-64), so it rejects this job with a syntax error"))
+      # A refused construct is listed as well as warned about: the warning
+      # is read once at render, the row is what a reader greps afterwards.
+      note(key, paste0("no value; PROC HAZARD has no form of this option ",
+                       "without one (hazard_y.y:63-64)"))
+      return(TRUE)
+    }
+    if (!.hzr_sas_lexer_number(val)) {
+      proc_rejected <<- c(proc_rejected, paste0(
+        key, "=", val, ": not a number PROC HAZARD's lexer reads ",
+        "(hazard_l.l:33-38), so PROC HAZARD rejects this job with a syntax ",
+        "error"))
+      note(paste0(key, "=", val),
+           paste0("not a number PROC HAZARD's lexer reads ",
+                  "(hazard_l.l:33-38)"))
+      return(TRUE)
+    }
+    FALSE
+  }
 
   for (tok in toks) {
     eqp <- .idx(tok, "=")
@@ -420,6 +497,12 @@
     if (identical(token, "PROC") || identical(token, "HAZARD")) next
     seen <- seen + 1L
     if (is.na(token)) {
+      # An unknown word here IS a lexer catch-all in PROC HAZARD
+      # (hazard_l.l:177-179), but this parser's block text is not guaranteed
+      # to hold only PROC HAZARD statements: a %repeat call brings a DATA
+      # step's own keywords through here. Claiming a syntax error on them
+      # refused jobs that run, so it is recorded, not refused (see the
+      # leftovers issue).
       note(key, "unknown PROC HAZARD option")
       next
     }
@@ -428,15 +511,37 @@
       # A WORK. libref names the same dataset as the bare name. Dropping it
       # here makes the emitted data =, the status chunk and the guard use the
       # bare name, which is also how a %repeat OUT= is recorded.
-      DATA        = data_name <- sub("^WORK[.]", "", val),
-      OUTHAZ      = outhaz <- val,
-      MAXITER     = {
-        val_num <- suppressWarnings(as.numeric(val))
-        if (is.na(val_num)) {
+      DATA        = {
+        # Strip the WORK libref BEFORE the presence check: `WORK.` is neither
+        # NAME nor LIBMEM (hazard_l.l:39-40), so SAS rejects it, and checking
+        # the unstripped "WORK." let it through to leave an empty name and an
+        # internal R error (#433 review 3).
+        stripped <- sub("^WORK[.]", "", val)
+        if (check_name(key, stripped)) {
           mapped <- mapped - 1L
-          note("MAXITER", "non-numeric value for MAXITER")
         } else {
-          ctl$maxit <- val_num
+          data_name <- stripped
+        }
+      },
+      OUTHAZ      = {
+        if (check_name(key, val)) {
+          mapped <- mapped - 1L
+        } else {
+          outhaz <- val
+        }
+      },
+      MAXITER     = {
+        if (check_number(key, val)) {
+          # Rejected: one row, already recorded by check_number().
+          mapped <- mapped - 1L
+        } else {
+          val_num <- suppressWarnings(as.numeric(val))
+          if (is.na(val_num)) {
+            mapped <- mapped - 1L
+            note("MAXITER", "non-numeric value for MAXITER")
+          } else {
+            ctl$maxit <- val_num
+          }
         }
       },
       # Recorded, never emitted: hazard() reads no `condition` (#384).
@@ -446,8 +551,11 @@
       # has no such stop; it warns about the final Hessian after the fit.
       CONDITION   = {
         mapped <- mapped - 1L
-        val_num <- suppressWarnings(as.numeric(val))
-        if (is.na(val_num)) {
+        val_num <- if (check_number(key, val)) NULL else
+          suppressWarnings(as.numeric(val))
+        if (is.null(val_num)) {
+          # Rejected: one row, already recorded by check_number().
+        } else if (is.na(val_num)) {
           note("CONDITION", "non-numeric value for CONDITION")
         } else if (val_num < 3 || val_num > 14) {
           # hazpprc.c:48-56 stores only 3..14; otherwise the limit stays at
@@ -516,6 +624,8 @@
     token <- .hzr_sas_token(kw, "HAZARD", "STMT")
     seen <- seen + 1L
     if (is.na(token)) {
+      # Recorded, not refused, for the same reason as an unknown PROC option
+      # above: the block text can carry another step's keywords.
       note(kw, "unknown HAZARD statement")
       next
     }
@@ -596,16 +706,35 @@
   # here would answer a job the reference never runs (#340). Checked first:
   # SAS stops at parse, before anything the other refusals read -- including
   # the censoring spec, which throws on a job with no EVENT (#396 review).
-  if (length(parms$rejected)) {
+  # Split by provenance, not by message text. A PHASE statement PROC HAZARD
+  # refuses at parse has always stopped the document (#340) and still does.
+  # A PARMS operand or PROC-line value it refuses used to emit a fit with an
+  # untranslated row; since 2026-09-22 it emits the fit, the row AND a loud
+  # warning, so a rendered document completes and carries the reason rather
+  # than halting on it.
+  if (length(parms$rejected_phase)) {
     msg <- paste0(
       "PROC HAZARD does not run this job: ",
-      paste(parms$rejected, collapse = "; "), ". Correct the ",
-      "phase statement and translate the job again.")
+      paste(parms$rejected_phase, collapse = "; "), ". Correct the ",
+      "statement(s) named here and translate the job again.")
     return(list(
       call = as.call(list(quote(stop), msg, call. = FALSE)),
       status_call = NULL, outhaz = outhaz, untranslated = untr,
       tokens_seen = seen, tokens_mapped = mapped
     ))
+  }
+  refusal_warnings <- character(0)
+  rejected <- c(proc_rejected, parms$rejected_parms)
+  if (!is.null(proc_syntax_error)) {
+    rejected <- c(proc_syntax_error, rejected)
+    note("PROC HAZARD", proc_syntax_error)
+  }
+  if (length(rejected)) {
+    refusal_warnings <- c(refusal_warnings, paste0(
+      "PROC HAZARD does not run this job: ",
+      paste(rejected, collapse = "; "), ". The fit below is this ",
+      "translation's, not one PROC HAZARD would produce. Correct the ",
+      "statement(s) named here and translate the job again."))
   }
 
   cens <- .hzr_censor_spec(statements)
@@ -659,6 +788,36 @@
       status_call = NULL, outhaz = outhaz, untranslated = untr,
       tokens_seen = seen, tokens_mapped = mapped
     ))
+  }
+
+  # A job SETG3 refuses. PROC HAZARD sets the error in shape() and exits
+  # before results(), so nothing is fitted and there is no fit to translate.
+  # The row alone left the hazard() chunk in place, and a reader who rendered
+  # past the callout got a converged fit standing in for a job that produced
+  # nothing -- the shape this package calls its signature defect. The code and
+  # the operands travel in the message, so the reader knows what to change
+  # (#359).
+  if (!is.null(parms$refusal_reason) && !is.na(parms$refusal_reason)) {
+    refusal_warnings <- c(refusal_warnings, paste0(
+      "This PROC HAZARD job is refused before any fit is computed: ",
+      sub("^PROC HAZARD refuses this job: ", "", parms$refusal_reason),
+      ". SETG3 sets the error in shape() and the procedure exits before ",
+      "results(), so PROC HAZARD produces nothing for this job and the fit ",
+      "below stands in for no SAS result at all. Correct the PARMS ",
+      "operand(s) named here, or fit the model by hand."))
+  }
+
+  # A job PROC HAZARD runs, but on a model this translation does not emit:
+  # FIXMNU1 constrains |M*NU| = 1 on the early phase (setg1.c:363-575,
+  # hzd_early_t2p.c:65-77), and the emitted phase would estimate M and NU
+  # without it. A fit here would be a different model standing in for the
+  # job's, so the job warns and still fits (U1, #358). Mirroring the constraint is
+  # new modelling, left out of 1.3.0.
+  if (length(parms$not_mirrored)) {
+    refusal_warnings <- c(refusal_warnings, paste0(
+      "This translation cannot emit PROC HAZARD's model for this job, so the ",
+      "fit below stands in for a model PROC HAZARD does not fit: ",
+      paste(parms$not_mirrored, collapse = "; "), "."))
   }
 
   # A PARMS statement that builds no phase and is NOT refused -- operands this
@@ -1122,10 +1281,32 @@
     })
   }
 
+  # John's 2026-09-22 decision, as amended at 19:51: EVERY refusal warns and
+  # emits the fit, with no exception. Three of them (SETG3910, SETG3920,
+  # SETG3930) still halt, because SAS refuses them for a shape value that is
+  # out of range (setg3.c:269-284) and hzr_phase() will not build a phase
+  # from that same value. The warning is emitted in its own chunk ABOVE the
+  # fit so that the real cause -- the SETG3 code and the operand -- is
+  # RECORDED above it. Be clear about what that does and does not buy: under
+  # Quarto the reader does NOT see it. knitr collects warnings INTO the
+  # document, the chunk error then stops the render before any document is
+  # written, and the console shows only hzr_phase()'s own
+  # "gamma must be a positive scalar". The warning reaches a reader who runs
+  # the chunks interactively, and the $untranslated row reaches anyone who
+  # greps the job afterwards. An earlier version of this comment claimed the
+  # cause was raised BEFORE the halt, which contradicted NEWS and was wrong
+  # (#433 review). An earlier revision of the branch kept a stop() for those
+  # three; it was replaced by this.
+
   list(call = as.call(c(head, args)), status_call = status_call,
        stepwise_call = stepwise_call, screen_check_call = screen_check_call,
        outhaz = outhaz, untranslated = untr, tokens_seen = seen,
-       tokens_mapped = mapped)
+       tokens_mapped = mapped,
+       # Each is a reason PROC HAZARD would refuse this job, or would fit a
+       # different model from the one emitted. They are carried out rather
+       # than raised here: the point is that the RENDERED document warns, so
+       # translate-sas.R emits them as a chunk immediately above the fit.
+       refusal_warnings = refusal_warnings)
 }
 
 #' Translate a SELECTION statement to hzr_stepwise() arguments.
@@ -1618,13 +1799,29 @@
   }
 
   toks <- strsplit(trimws(st[[1L]]), " ", fixed = TRUE)[[1L]]
-  toks <- toks[nzchar(toks)]
+  toks <- .hzr_sas_join_spaced(toks[nzchar(toks)])
+  # Same stray-`=` rule as the PROC HAZARD line. This caller shares the
+  # joiner but had neither this nor a presence check, so a stray `=`
+  # recorded a BLANK-keyword "unknown option" row and the prediction calls
+  # were emitted for a job SAS rejects (#433 review 3).
+  pred_syntax_error <- NULL
+  stray <- which(toks == "=")
+  if (length(stray)) {
+    drop <- unique(c(stray, stray[stray < length(toks)] + 1L))
+    leftover <- paste(toks[drop], collapse = " ")
+    toks <- toks[-drop]
+    pred_syntax_error <- paste0(
+      "a stray `=` on the PROC HAZPRED line (", leftover, "): the option ",
+      "before it already took its value, so PROC HAZPRED reaches a syntax ",
+      "error (hazard_y.y:102) and rejects this job")
+  }
   data_name <- NULL
   inhaz <- NULL
   want_surv <- TRUE
   want_haz <- TRUE
   want_cl <- TRUE
 
+  if (!is.null(pred_syntax_error)) note("PROC HAZPRED", pred_syntax_error)
   for (tok in toks) {
     eqp <- .idx(tok, "=")
     key <- if (eqp > 0L) substring(tok, 1L, eqp - 1L) else tok

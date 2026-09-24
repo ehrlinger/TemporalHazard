@@ -45,12 +45,16 @@
   "before PROC HAZARD reads the statement, so this translation cannot tell ",
   "what it becomes"
 )
+# A SAS macro reference (`&X`) or call (`%CALL`), which SAS expands before
+# PROC HAZARD reads the statement: never judged as a syntax error.
+.hzr_sas_is_macro <- function(x) grepl("[&%][A-Za-z_]", x)
+
 .hzr_parms_unresolved_why <- function(op) {
-  if (grepl("&", op, fixed = TRUE)) .hzr_parms_unresolved_macro_reason else
+  if (.hzr_sas_is_macro(op)) .hzr_parms_unresolved_macro_reason else
     .hzr_parms_unresolved_reason
 }
 
-# The lexer's NUMBER (hazard_l.l:34-38). as.numeric() also reads 1E-3 (no
+# The lexer's NUMBER (hazard_l.l:33-38). as.numeric() also reads 1E-3 (no
 # decimal point before the exponent), 2. and +0.2, none of which PROC HAZARD
 # lexes as a number: the job stops with a syntax error.
 .hzr_sas_lexer_number <- function(s) {
@@ -65,7 +69,7 @@
 .hzr_parms_rejected_piece_reason <- paste0(
   "unresolved PARMS keyword: a piece of an operand written with spaces ",
   "around `=` that is not a value keyword `= NUMBER` even joined ",
-  "(hazard_y.y:137-147, hazard_l.l:34-38), so PROC HAZARD rejects this job ",
+  "(hazard_y.y:137-147, hazard_l.l:33-38), so PROC HAZARD rejects this job ",
   "with a syntax error and it does not run"
 )
 .hzr_parms_macro_piece_reason <- paste0(
@@ -79,10 +83,128 @@
   "around `=`, which PROC HAZARD accepts but this translator splits apart, ",
   "so the operand's value was not read"
 )
+# SAS's lexer skips whitespace (hazard_l.l:32), so `THALF = 0.3` is the same
+# operand as `THALF=0.3`: PROC HAZARD reads the value and runs the job. This
+# parser splits the statement on whitespace, so it joins the pieces back
+# before reading them. Anything that does not join into `KEY=VALUE` is left
+# alone for .hzr_parms_spaced_pieces() to judge (#421).
+#' Rejoin a macro call whose arguments contain spaces.
+#'
+#' Operands are split on whitespace, which cuts `%FLAGS(A, B)` into
+#' `%FLAGS(A,` and `B)`. Only the first fragment then looks like a macro, and
+#' the remainder was classified on its own -- so a job SAS runs collected a
+#' false `$untranslated` row and, since 2026-09-22, a false warning (#433
+#' review).
+#'
+#' SAS expands the whole call before `PROC HAZARD` sees any operand, so the
+#' call must travel as one token and stay indeterminate.
+#'
+#' Absorption is bounded by the operands present: an unclosed `%FLAGS(A`
+#' takes the rest and stops, rather than looping. That is the right reading
+#' anyway, since everything after it is inside the unterminated call.
+#' @noRd
+.hzr_sas_join_macro_calls <- function(ops) {
+  n <- length(ops)
+  if (n < 2L) return(ops)
+  opens <- function(x) lengths(regmatches(x, gregexpr("(", x, fixed = TRUE)))
+  closes <- function(x) lengths(regmatches(x, gregexpr(")", x, fixed = TRUE)))
+  out <- character(0)
+  i <- 1L
+  while (i <= n) {
+    op <- ops[[i]]
+    if (.hzr_sas_is_macro(op) && opens(op) > closes(op)) {
+      j <- i
+      acc <- op
+      while (j < n && opens(acc) > closes(acc)) {
+        j <- j + 1L
+        acc <- paste(acc, ops[[j]])
+      }
+      out <- c(out, acc)
+      i <- j + 1L
+    } else {
+      out <- c(out, op)
+      i <- i + 1L
+    }
+  }
+  out
+}
+
+.hzr_sas_join_spaced <- function(ops) {
+  if (!length(ops)) return(ops)
+  # PROC HAZARD's lexer is whitespace-INSENSITIVE: `ws` only separates tokens
+  # (hazard_l.l:32) and `=` is a token in its own right (:55). So every
+  # spacing of one statement is the SAME token stream to SAS, and spacing
+  # carries no information. Earlier versions of this function treated spacing
+  # as meaningful and matched particular spellings; each review round then
+  # found another spelling that slipped through, because the set of spellings
+  # is not something a fix can enumerate. This normalises to SAS's own token
+  # stream first and then pairs by the grammar, so all spellings of one
+  # statement give one answer by construction (#433 review 2).
+  toks <- character(0)
+  for (op in ops) {
+    # A macro is expanded by SAS before the lexer sees it, so it is opaque
+    # here and must not be split on an `=` of its own (`%F(A=1)`). But the
+    # opacity belongs to the MACRO, not to whatever whitespace token it
+    # arrived in: `=&LIB` and `&K=` are a separator glued to a macro, and
+    # treating the whole token as opaque left this branch keying on spacing
+    # -- `DATA =&LIB` then read as a valueless DATA and produced a FALSE
+    # refusal for a job SAS runs, with no `data` argument in the emitted fit
+    # (#433 review 3). Peel the separators, then judge what is left.
+    lead <- sub("^(=*).*$", "\\1", op)
+    trail <- sub("^.*?(=*)$", "\\1", substring(op, nchar(lead) + 1L))
+    core <- substring(op, nchar(lead) + 1L,
+                      nchar(op) - nchar(trail))
+    if (nzchar(core) && .hzr_sas_is_macro(core)) {
+      if (nchar(lead)) toks <- c(toks, rep("=", nchar(lead)))
+      toks <- c(toks, core)
+      if (nchar(trail)) toks <- c(toks, rep("=", nchar(trail)))
+      next
+    }
+    neq <- lengths(regmatches(op, gregexpr("=", op, fixed = TRUE)))
+    if (!neq) {
+      toks <- c(toks, op)
+      next
+    }
+    parts <- strsplit(op, "=", fixed = TRUE)[[1L]]
+    for (k in seq_along(parts)) {
+      if (nzchar(parts[[k]])) toks <- c(toks, parts[[k]])
+      if (k <= neq) toks <- c(toks, "=")
+    }
+  }
+  toks <- toks[nzchar(toks)]
+  # Pair left to right as `KEY '=' VALUE` (hazard_y.y:61-64, :137-147). A
+  # stray `=`, or a value with no key before it, is left as its own operand:
+  # SAS reaches `hazardopt : error` (hazard_y.y:76) on exactly those, and the
+  # caller records them as the syntax error they are.
+  out <- character(0)
+  i <- 1L
+  n <- length(toks)
+  while (i <= n) {
+    tok <- toks[[i]]
+    if (identical(tok, "=")) {
+      out <- c(out, "=")
+      i <- i + 1L
+    } else if (i < n && identical(toks[[i + 1L]], "=")) {
+      has_val <- i + 2L <= n && !identical(toks[[i + 2L]], "=")
+      if (has_val) {
+        out <- c(out, paste0(tok, "=", toks[[i + 2L]]))
+        i <- i + 3L
+      } else {
+        out <- c(out, paste0(tok, "="))
+        i <- i + 2L
+      }
+    } else {
+      out <- c(out, tok)
+      i <- i + 1L
+    }
+  }
+  out
+}
+
 .hzr_parms_spaced_pieces <- function(ops) {
   # 0 = not a piece; 1 = a piece of a spaced operand PROC HAZARD accepts
   # (joined, it is a value keyword `= NUMBER`, hazard_y.y:137-147 and
-  # hazard_l.l:34-38); 2 = a piece of one it would still reject; 3 = a piece
+  # hazard_l.l:33-38); 2 = a piece of one it would still reject; 3 = a piece
   # of one whose key or value is a macro reference, which SAS expands before
   # PROC HAZARD reads it (`&KEY = 0.3` may be THALF = 0.3), so it can be
   # judged neither way here (Codex on #365).
@@ -94,7 +216,7 @@
     !is.na(t) && t %in% c(.hzr_parms_mu_order, names(.hzr_parms_early_arg),
                           names(.hzr_parms_late_arg), "DELTA")
   }
-  macro <- function(x) grepl("&", x, fixed = TRUE)
+  macro <- .hzr_sas_is_macro
   bare_key <- function(k) {
     k >= 1L && code[k] == 0L && !grepl("=", ops[[k]], fixed = TRUE) &&
       (!is.na(tok(ops[[k]])) || macro(ops[[k]]))
@@ -247,7 +369,7 @@
   char_value <- syntax_error(paste(
     "a character after \"=\" has no lexer rule and falls to the catch-all",
     "at hazard_l.l:178, which sets yysynerr"))
-  # The lexer's NUMBER (hazard_l.l:34-38). as.numeric() also reads Inf, NaN,
+  # The lexer's NUMBER (hazard_l.l:33-38). as.numeric() also reads Inf, NaN,
   # 1e5, 5. and 0x1A, none of which PROC HAZARD lexes as a number.
   is_number <- .hzr_sas_lexer_number
   # Which rule reads a value that is not a NUMBER. Per input, not per
@@ -553,9 +675,13 @@
 #             property of the data, not of the PARMS block, so it cannot be
 #             decided here -- the TAU row already says the start is
 #             data-dependent.
-#   SETG3940, SETG3990, SETG31000, SETG31010
-#             are reachable only through g_two/ga_two, which FIXGE2/FIXGAE2
-#             drive and .hzr_sas_token() records as unresolved.
+#   SETG3940, SETG3990, SETG31000
+#             are reachable only through g_two/ga_two. The constraint block
+#             below raises them itself now that FIXGE2/FIXGAE2 are mapped
+#             (#329, #359), so they are absent HERE but not unreachable.
+#   SETG31010 is the non-WEIBULL twin of SETG3990 (setg3.c:884-889), on the
+#             SETG3_verify_ge_2() path this translator does not trace: a
+#             non-WEIBULL job carrying either flag is recorded, not refused.
 # SEVEN of the sixteen are unreachable in both languages, because each guards a
 # condition the ENTRY checks at setg3.c:269-284 have already refused:
 #   SETG31090, SETG32050, SETG33020  want a non-positive GAMMA that is fixed
@@ -567,8 +693,10 @@
 #                                    and zero sets g3flag = 2 (:332-335) so
 #                                    SETG3_alpha_gener() is never called.
 # They are kept because the C keeps them and because the entry checks are what
-# makes them dead -- change those and these wake up. Nine codes can actually
-# fire, which an exhaustive search in the tests pins rather than asserts.
+# makes them dead -- change those and these wake up. Nine codes can fire from
+# THIS trace, which an exhaustive search in the tests pins rather than
+# asserts; the constraint block below raises three more (SETG3940, SETG3990,
+# SETG31000), so twelve are reachable through .hzr_parse_parms().
 
 #' Plain-language gloss for a SETG3 refusal code.
 #' @noRd
@@ -601,6 +729,53 @@
   gamma * eta / 3
 }
 
+#' Would `hzr_phase()` build a `"g3"` phase from these shapes?
+#'
+#' The refusal message used to assert that it would, from a hand-maintained
+#' idea of which codes were "shape" refusals. That drifted: it was false for
+#' five of the seven SETG3 classes, not the three the text claimed
+#' (`SETG3910`, `SETG3920`, `SETG3930`, and also `SETG3960` and `SETG3970`),
+#' because SAS refuses several of them precisely BECAUSE a shape is out of
+#' range, and the same value is out of range for `hzr_phase()`.
+#'
+#' So the sentence is now derived by CONSTRUCTING the phase. It cannot drift
+#' again: if `hzr_phase()` changes what it accepts, this answer changes with
+#' it (#433 review).
+#' @return `TRUE` when the phase builds, `FALSE` when it refuses.
+#' @noRd
+.hzr_phase_builds <- function(tau, gamma, alpha, eta) {
+  tryCatch({
+    hzr_phase("g3", tau = tau, gamma = gamma, alpha = alpha, eta = eta)
+    TRUE
+  }, error = function(e) FALSE)
+}
+
+#' The four SETG3 entry refusals, in the C's own order.
+#'
+#' `setg3.c:269-284` (in `src/model/`, at pin `dad7978`) checks TAU, then
+#' GAMMA, then ALPHA, then ETA, and **each one returns immediately**, before
+#' `SETG3_ignore_tau()` at `:309-323` and before the WEIBULL branch. So a job
+#' that would also trip a later rule is refused by the FIRST of these that
+#' matches, and a message naming the later code names a refusal PROC HAZARD
+#' never reaches.
+#'
+#' Kept as one function because two callers need the same order: the trace in
+#' `.hzr_setg3_notes()`, and the constraint block, which records its own
+#' `SETG3980` and must not do so ahead of an entry refusal (#433 review).
+#'
+#' An absent TAU (`NA`) is `0.75*Tmax` by the time SETG3 sees it, so only an
+#' explicitly non-positive `TAU=` can refuse here.
+#' @return The code, or `NULL` when none of the four applies.
+#' @noRd
+.hzr_setg3_entry_refusal <- function(tau_raw, gamma, alpha, eta, fixed) {
+  fx <- function(p) p %in% fixed
+  if (isTRUE(tau_raw <= 0) && fx("tau")) return("(SETG3900)")
+  if (isTRUE(gamma <= 0) && fx("gamma")) return("(SETG3910)")
+  if (isTRUE(alpha < 0) && fx("alpha")) return("(SETG3920)")
+  if (isTRUE(eta <= 0) && fx("eta")) return("(SETG3930)")
+  NULL
+}
+
 #' Walk `SETG3()` and report what it would do to one late phase.
 #'
 #' @param tau_raw,gamma,alpha,eta The operand values `PARMS` supplied, with
@@ -627,14 +802,8 @@
     list(refusal = code, entry = entry, shape = NULL)
   }
 
-  # setg3.c:269-284. A FIX* on an operand SAS reads as unspecified is fatal,
-  # and it is checked before anything else -- including SETG3_ignore_tau().
-  # An absent TAU (NA) is 0.75*Tmax by the time SETG3 sees it -- positive, so
-  # only an explicitly non-positive TAU= can refuse here.
-  if (isTRUE(tau_raw <= 0) && fx("tau")) return(refuse("(SETG3900)", TRUE))
-  if (isTRUE(gamma <= 0) && fx("gamma")) return(refuse("(SETG3910)", TRUE))
-  if (isTRUE(alpha < 0) && fx("alpha")) return(refuse("(SETG3920)", TRUE))
-  if (isTRUE(eta <= 0) && fx("eta")) return(refuse("(SETG3930)", TRUE))
+  entry_code <- .hzr_setg3_entry_refusal(tau_raw, gamma, alpha, eta, fixed)
+  if (!is.null(entry_code)) return(refuse(entry_code, TRUE))
 
   # setg3.c:313-315 and 403-421. Reproduced here for the trace only: the
   # emitted call deliberately keeps the user's GAMMA and ETA, because the
@@ -790,21 +959,58 @@
   # SEMANTIC guards: `MUE=0 THALF=1` is fully readable and genuinely selects
   # no phase, so it must still refuse even though it flags THALF=1.
   unreadable <- FALSE
+  # PARMS text PROC HAZARD rejects with a syntax error (initprz.c:75-77): it
+  # joins the phase statements' `rejected`, and .hzr_parse_job() emits a
+  # stop() rather than a fit (John's U1 decision, 2026-09-19). A macro
+  # reference is not here: SAS expands it first, so it is not known to fail.
+  parms_rejected <- character(0)
+  # A job PROC HAZARD runs on a model this translation would not emit (U1):
+  # .hzr_parse_job() stops on any entry here, naming each.
+  not_mirrored <- character(0)
+  delta_seen <- NULL
 
   flag_bad <- function(construct, reason) {
     bad_construct <<- c(bad_construct, construct)
     bad_reason <<- c(bad_reason, reason)
   }
+  flag_syntax <- function(construct, reason) {
+    flag_bad(construct, reason)
+    parms_rejected <<- c(parms_rejected, paste0("PARMS ", construct, ": ", reason))
+  }
+  flag_unresolved <- function(op) {
+    if (.hzr_sas_is_macro(op)) flag_bad(op, .hzr_parms_unresolved_why(op))
+    else flag_syntax(op, .hzr_parms_unresolved_why(op))
+  }
 
+  # A SETG3 refusal is a job PROC HAZARD stops in shape(), before hzrg() fits
+  # anything, so it has to leave this parser as more than prose:
+  # .hzr_parse_job() turns `refusal_reason` into the warning chunk. `refused`
+  # is not widened for it -- that field is documented as modterm.c's ERROR
+  # 1001 ("no phase selected"), and overloading it would lose that meaning.
+  # The row is still recorded, so the document lists what was wrong.
+  refusal_reason <- NA_character_
+  flag_refusal <- function(construct, reason) {
+    flag_bad(construct, reason)
+    # The warning chunk carries the reason and nothing else, and it tells the
+    # reader to correct the operands named in it -- so the construct has to
+    # travel with the reason or the message names nothing.
+    if (is.na(refusal_reason)) {
+      refusal_reason <<- paste0(reason, " (PARMS ", construct, ")")
+    }
+  }
+
+  operands <- .hzr_sas_join_spaced(.hzr_sas_join_macro_calls(operands))
   spaced_piece <- .hzr_parms_spaced_pieces(operands)
   for (i in seq_along(operands)) {
     op <- operands[[i]]
     if (spaced_piece[i] > 0L) {
       unreadable <- TRUE
-      flag_bad(op, switch(spaced_piece[i],
-                          .hzr_parms_unresolved_piece_reason,
-                          .hzr_parms_rejected_piece_reason,
-                          .hzr_parms_macro_piece_reason))
+      if (spaced_piece[i] == 2L) {
+        flag_syntax(op, .hzr_parms_rejected_piece_reason)
+      } else {
+        flag_bad(op, if (spaced_piece[i] == 1L) .hzr_parms_unresolved_piece_reason
+                 else .hzr_parms_macro_piece_reason)
+      }
       next
     }
     eq <- .idx(op, "=")
@@ -816,15 +1022,48 @@
       token <- .hzr_sas_token(key, "HAZARD", "PARM")
       if (is.na(token)) {
         unreadable <- TRUE
-        flag_bad(op, .hzr_parms_unresolved_why(op))
+        flag_unresolved(op)
       } else if (is.na(val)) {
         unreadable <- TRUE
-        flag_bad(op, sprintf("PARMS value for %s is not numeric", key))
+        if (.hzr_sas_is_macro(raw)) {
+          # A macro value SAS expands first: not known to fail.
+          flag_bad(op, sprintf(paste0(
+            "PARMS value for %s is a SAS macro reference, which SAS resolves ",
+            "before PROC HAZARD reads the statement, so this translation ",
+            "cannot tell what it becomes"), key))
+        } else if (grepl("?", raw, fixed = TRUE)) {
+          # A template's placeholder: the lexer has no rule for `?` and its
+          # catch-all sets yysynerr (hazard_l.l:178). Filling it from SAS's
+          # default and fitting would answer a job that does not run.
+          flag_syntax(op, paste0(
+            "PARMS value ", raw, " for ", key, " is a template placeholder, ",
+            "which PROC HAZARD's lexer rejects (hazard_l.l:178), so the job ",
+            "does not run until it is filled in; fill it in and translate ",
+            "the job again"))
+        } else if (!nzchar(trimws(raw))) {
+          # NO value at all. `<param> '=' NUMBER` (hazard_y.y:137-147) has no
+          # form without a NUMBER, so this is the GRAMMAR refusing the
+          # operand, not the lexer refusing a value it cannot read -- the
+          # same distinction check_number() draws on the PROC line. The old
+          # message cited the lexer and interpolated the absent value,
+          # printing "PARMS value  for THALF" (#433 review).
+          flag_syntax(op, paste0(
+            "PARMS operand ", key, " has no value, and PROC HAZARD has no ",
+            "form of it without one (hazard_y.y:137-147), so PROC HAZARD ",
+            "rejects this job with a syntax error and it does not run"))
+        } else {
+          # A word after `=` is not a NUMBER to the lexer (hazard_l.l:176):
+          # PROC HAZARD stops with a syntax error, as for `NU = ABC`.
+          flag_syntax(op, paste0(
+            "PARMS value ", raw, " for ", key, " is not a number PROC ",
+            "HAZARD's lexer reads (hazard_l.l:33-38), so PROC HAZARD rejects ",
+            "this job with a syntax error and it does not run"))
+        }
       } else if (!.hzr_sas_lexer_number(raw)) {
         unreadable <- TRUE
-        flag_bad(op, paste0(
+        flag_syntax(op, paste0(
           "PARMS value ", raw, " for ", key, " is not a number PROC HAZARD's ",
-          "lexer reads (hazard_l.l:34-38), so PROC HAZARD rejects this job ",
+          "lexer reads (hazard_l.l:33-38), so PROC HAZARD rejects this job ",
           "with a syntax error and it does not run"
         ))
       } else if (token %in% .hzr_parms_mu_order) {
@@ -841,17 +1080,21 @@
         # but a WRONG ANSWER: the emitted call fits a different function, with
         # no error. Say which of the two this is; the generic "no phase target"
         # reason fired identically on both and so distinguished nothing.
-        if (!identical(val, 0)) {
-          # sprintf("%g"), not format(): this string is DATA, not just a
-          # message -- it lands in the untranslated frame and is grepped by
-          # callers and tests. format() honours getOption("OutDec"), so a
-          # session with OutDec = "," would write "DELTA = 0,5" and break both.
-          flag_bad(op, paste0(
-            "DELTA = ", sprintf("%g", val), " is not implemented -- R assumes ",
-            "delta = 0, so the emitted call fits a DIFFERENT model than this ",
-            "job (rho, the time argument and the density Jacobian all differ)"
-          ))
-        }
+        # Decided after the loop: DELTA is read only by SETG1()
+        # (setg1.c:306), which runs only for an active early phase
+        # (shape.c:19-21), so a late-only job ignores it.
+        # hazard_y.y:138 is last-wins, so a later DELTA=0 clears an
+        # earlier non-zero one, as it does in PROC HAZARD.
+        delta_seen <- if (identical(val, 0)) NULL else list(op = op, val = val)
+      } else if (token %in% c("WEIBULL", "FIXGE2", "FIXGAE2", "FIXMNU1",
+                              "FIXDELTA", names(.hzr_parms_fix_map))) {
+        # A flag keyword given a value: the grammar has it as a bare token
+        # (hazard_y.y:148-160), so `FIXNU=1` is a syntax error and the job
+        # does not run (U1).
+        unreadable <- TRUE
+        flag_syntax(op, paste0(
+          key, " takes no value in PROC HAZARD (hazard_y.y:148-160), so PROC ",
+          "HAZARD rejects this job with a syntax error and it does not run"))
       } else {
         unreadable <- TRUE
         flag_bad(op, "PARMS keyword has no phase target")
@@ -862,13 +1105,13 @@
     token <- .hzr_sas_token(op, "HAZARD", "PARM")
     if (is.na(token)) {
       unreadable <- TRUE
-      flag_bad(op, .hzr_parms_unresolved_why(op))
+      flag_unresolved(op)
     } else if (token %in% c(.hzr_parms_mu_order, names(.hzr_parms_early_arg),
                             names(.hzr_parms_late_arg), "DELTA")) {
       # A value keyword with no `= NUMBER` after it, and not the first piece
       # of a spaced operand (those are marked above).
       unreadable <- TRUE
-      flag_bad(op, paste0(
+      flag_syntax(op, paste0(
         op, " needs a value (", op, "=NUMBER, hazard_y.y:137-147), so PROC ",
         "HAZARD rejects this job with a syntax error and it does not run"
       ))
@@ -969,6 +1212,19 @@
   # below. Every build, scope and trace gate reads these, not has_*.
   build_early <- has_early && (length(early) > 0L || !unreadable)
   build_late <- has_late && (length(late) > 0L || !unreadable)
+  if (!is.null(delta_seen) && has_early) {
+    # sprintf("%g"), not format(): this string is DATA, not just a message --
+    # it lands in the untranslated frame and is grepped by callers and tests.
+    # format() honours getOption("OutDec"), so a session with OutDec = ","
+    # would write "DELTA = 0,5" and break both.
+    not_mirrored <- c(not_mirrored, paste0(
+      "DELTA = ", sprintf("%g", delta_seen$val), ", which R does not ",
+      "implement (it assumes delta = 0); remove DELTA or fit the model by hand"))
+    flag_bad(delta_seen$op, paste0(
+      "DELTA = ", sprintf("%g", delta_seen$val), " is not implemented -- R ",
+      "assumes delta = 0, so the emitted call fits a DIFFERENT model than this ",
+      "job (rho, the time argument and the density Jacobian all differ)"))
+  }
 
   # setg3.c:312-314's own predicate for taking the SETG3_ignore_tau() branch.
   # The `g_two && ga_two` disjunct alongside it is driven by PARMS keywords
@@ -1023,9 +1279,10 @@
   # FIXGE2 (GAMMA*ETA = 2) and FIXGAE2 (GAMMA*ETA/ALPHA = 2), as
   # SETG3_weibull() applies them (setg3.c:444-481, and SETG3_alpha_fixup() at
   # :815-834), with hzd_late_t2p.c deciding which parameter is derived at each
-  # step. Only that branch is traced. Outside WEIBULL the flags go through
-  # SETG3_verify_ge_2() and SETG3_alpha_gener(), which stay recorded rather
-  # than guessed at. Together, or with ALPHA fixed at 1, they take
+  # step. Only that branch is traced. Outside WEIBULL SETG3 dispatches to
+  # other SETG3_* functions with their own rewrites and refusals; that path is
+  # not modelled, and such a job stops saying so (U1). Together, or with ALPHA
+  # fixed at 1, they take
   # SETG3_ignore_tau() instead, which is mirrored below.
   late_constraint <- "none"
   ignore_tau_handled <- FALSE
@@ -1065,7 +1322,7 @@
       # PROC HAZARD stops here, so nothing the trace below would describe
       # is ever reached.
       ignore_tau_handled <- TRUE
-      flag_bad(paste(constraint_flags, collapse = " "), paste0(
+      flag_refusal(paste(constraint_flags, collapse = " "), paste0(
         "PROC HAZARD refuses this job: SETG3 raises (SETG3940) -- ",
         "SETG3_ignore_tau() must set ALPHA to 1, but ALPHA is fixed at ",
         sprintf("%g", written[["alpha"]]), " (setg3.c:382-385)"))
@@ -1112,6 +1369,9 @@
     gamma_ <- late_full[["gamma"]]
     eta_ <- late_full[["eta"]]
     alpha_ <- late_full[["alpha"]]
+    # The operands as this job wrote them (after the shape defaults are
+    # filled), kept for the moved-shape record at the end of this block.
+    written_late <- late_full
     # SETG3_weibull() refuses on the operands as written (setg3.c:430-440)
     # BEFORE either constraint moves one, so rewriting first would repair a
     # job PROC HAZARD does not run. .hzr_setg3_notes() reports these refusals
@@ -1122,8 +1382,32 @@
     setg3_refuses <- !isTRUE(gamma_ > 0) || !isTRUE(eta_ > 0) ||
       !isTRUE(alpha_ >= 0) || (isTRUE(alpha_ == 0) && !fx("alpha")) ||
       alpha_zero_gae2
-    if (is.null(not_traced) && alpha_zero_gae2) {
-      flag_bad("FIXGAE2", paste0(
+    # An entry refusal comes FIRST, because setg3.c:269-284 returns on it
+    # before the WEIBULL branch this SETG3980 case lives in. flag_refusal()
+    # keeps only the first reason recorded, so recording SETG3980 here
+    # unconditionally named a refusal PROC HAZARD never reaches: with
+    # GAMMA=0 FIXGAMMA ... ALPHA=0 FIXALPHA FIXGAE2 WEIBULL, SAS raises
+    # SETG3910 and never evaluates the alpha rule (#433 review).
+    # The RAW written TAU, not late_full's. SAS tests HZRstr.l.tau at
+    # setg3.c:269 BEFORE SETG3_ignore_tau() rewrites Late.tau to 1
+    # (setg3.c:377-378), so reading the rewritten value here made a job
+    # written TAU=0 FIXTAU look like TAU=1 and the entry refusal could never
+    # fire on this path -- while the SETG3 trace, which uses the raw value,
+    # raised (SETG3900) for the same job. Same expression as the trace site
+    # below, so the two cannot disagree again (#433 review).
+    entry_first <- .hzr_setg3_entry_refusal(
+      if (tau_absent) NA_real_ else late[["tau"]],
+      gamma_, alpha_, eta_, fixed_late)
+    entry_construct <- c("(SETG3900)" = "TAU", "(SETG3910)" = "GAMMA",
+                         "(SETG3920)" = "ALPHA", "(SETG3930)" = "ETA")
+    if (is.null(not_traced) && !is.null(entry_first)) {
+      flag_refusal(unname(entry_construct[entry_first]), paste0(
+        "PROC HAZARD refuses this job: SETG3 raises ", entry_first, " -- ",
+        .hzr_setg3_refusal_reason(entry_first),
+        ". It is checked before the WEIBULL rules (setg3.c:269-284), so this ",
+        "is the refusal PROC HAZARD reaches first"))
+    } else if (is.null(not_traced) && alpha_zero_gae2) {
+      flag_refusal("FIXGAE2", paste0(
         "PROC HAZARD refuses this job: SETG3 raises (SETG3980) -- ",
         .hzr_setg3_refusal_reason("(SETG3980)"),
         "; under FIXGAE2 a fixed ALPHA = 0 does not select the exponential ",
@@ -1132,7 +1416,31 @@
     if (is.null(not_traced) && setg3_refuses) {
       # Recorded by the SETG3 trace or just above; nothing to translate.
       NULL
+    } else if (!is.null(not_traced) && !is.null(entry_first)) {
+      # SETG3's entry checks (setg3.c:269-284) each `return` before the
+      # dispatch below, so a job that trips one NEVER reaches the untraced
+      # path and there is nothing to be unable to tell. Saying both left the
+      # reader with "PROC HAZARD produces nothing for this job" and "cannot
+      # tell whether PROC HAZARD refuses this job" in one warning (#433
+      # review). The entry refusal is recorded by the SETG3 trace, so
+      # suppressing this message drops the contradiction, not the verdict --
+      # which the paired test asserts by requiring (SETG3900) to survive.
+      NULL
     } else if (!is.null(not_traced)) {
+      # Without WEIBULL, SETG3 dispatches on the signs of ALPHA, GAMMA and ETA
+      # (setg3.c:357-374) to SETG3_all_gt_0(), SETG3_alpha_le_0() and their
+      # siblings, each with its own rewrites and refusals. This translation
+      # does not model that path. Deriving it by hand went wrong in both
+      # directions in two review passes on the U1 branch -- jobs SAS runs came
+      # back refused, jobs SAS refuses were fitted -- so it claims neither: the
+      # document stops and says it cannot tell (U1). SETG3's entry refusals
+      # (setg3.c:269-284), which run before this path, still stop as refusals.
+      not_mirrored <- c(not_mirrored, paste0(
+        paste(constraint_flags, collapse = " and "), " without WEIBULL: this ",
+        "translation does not model PROC HAZARD's constraint path without ",
+        "WEIBULL (setg3.c:357-374 and the SETG3_* functions it dispatches to), ",
+        "so it cannot tell whether PROC HAZARD refuses this job or which model ",
+        "it fits. Add WEIBULL if the job means it, or fit the model by hand"))
       for (flag in constraint_flags) {
         flag_bad(flag, paste0(flag, " is not translated: ", not_traced))
       }
@@ -1144,7 +1452,7 @@
       # from 2 is moved, or refused, there too.
       if (!isTRUE(gamma_ * eta_ == 2)) {
         if (fx("gamma") && fx("eta")) {
-          flag_bad("FIXGE2", paste0(
+          flag_refusal("FIXGE2", paste0(
             "PROC HAZARD refuses this job: SETG3 raises (SETG3990) -- GAMMA ",
             "and ETA are both fixed and GAMMA*ETA = ", sprintf("%g", gamma_ * eta_),
             ", not 2, so neither can be adjusted"))
@@ -1164,7 +1472,7 @@
       # SETG3_alpha_fixup() (setg3.c:817-826) tests a fixed ALPHA against the
       # constraint before it asks whether GAMMA or ETA is free, so this
       # refusal holds whatever else is fixed.
-      flag_bad("FIXGAE2", paste0(
+      flag_refusal("FIXGAE2", paste0(
         "PROC HAZARD refuses this job: SETG3 raises (SETG31000) -- ALPHA is ",
         "fixed at ", sprintf("%g", late_full[["alpha"]]), " where FIXGAE2 ",
         "must move it to GAMMA*ETA/2 = ", sprintf("%g", gamma_ * eta_ / 2)))
@@ -1182,6 +1490,30 @@
       late_constraint <- "alpha_gamma_eta"
     }
     fixed_late <- intersect(unname(.hzr_parms_late_arg), fixed_late)
+
+    # setg3.c:449-467 and :827 move a shape onto the constraint and call
+    # hzr_parm_changed(), so PROC HAZARD tells its own reader. The emitted
+    # phase is that model, but the job wrote something else, and the SETG3
+    # notes trace below covers only its own rewrites -- not this block's,
+    # added with the constraint mapping. Record them here so the emitted
+    # document says what changed (#359).
+    moved_by_flags <- vapply(c("gamma", "alpha", "eta"), function(param) {
+      if (isTRUE(written_late[[param]] == late_full[[param]])) "" else
+        sprintf("%s=%g -> %g", toupper(param), written_late[[param]],
+                late_full[[param]])
+    }, character(1))
+    moved_by_flags <- moved_by_flags[nzchar(moved_by_flags)]
+    # No `refusal_reason` guard here: a refused job never reaches a rewrite,
+    # so the two cannot coexist (a mutant allowing both changes nothing).
+    if (length(moved_by_flags)) {
+      flag_bad(paste(moved_by_flags, collapse = " "), paste0(
+        paste(constraint_flags, collapse = " and "),
+        " moves the late shape onto the constraint before fitting ",
+        "(setg3.c:449-467, :827), as PROC HAZARD does and reports through ",
+        "hzr_parm_changed(): ", paste(moved_by_flags, collapse = ", "),
+        ". The emitted phase is the model PROC HAZARD fits, not the operands ",
+        "written here"))
+    }
   }
 
   # EARLY/CONSTANT/LATE operand text: comma-separated VAR=VALUE pairs (or
@@ -1348,21 +1680,53 @@
     )
     if (!is.null(setg3$refusal)) {
       setg3_refused <- isTRUE(setg3$entry)
-      flag_bad(
-        sprintf("GAMMA=%g ALPHA=%g ETA=%g%s", late_full[["gamma"]],
-                late_full[["alpha"]], late_full[["eta"]],
-                if (length(fixed_late_user)) {
-                  paste0(" fixed:", paste(fixed_late_user, collapse = ","))
-                } else {
-                  ""
-                }),
-        paste0("PROC HAZARD refuses this job: SETG3 raises ",
-               setg3$refusal, " -- ",
-               .hzr_setg3_refusal_reason(setg3$refusal),
-               ". hzr_phase() would accept it, so without this the ",
-               "translation would emit a runnable fit for a job that does ",
-               "not run")
-      )
+      # The setg3.c trace .hzr_setg3_notes() encodes assumes neither constraint
+      # flag is set. With FIXGE2 or FIXGAE2 and no WEIBULL, SAS reaches SETG3
+      # down a path the trace does not model, and jobs PROC HAZARD RUNS come
+      # back refused here: `MUL=0.2 TAU=1 GAMMA=4 ETA=0.5 FIXGAMMA FIXETA
+      # FIXGE2` and `MUL=0.2 TAU=1 GAMMA=4 ETA=1 ALPHA=2 FIXALPHA FIXGAE2` both
+      # fit. Such a job is neither refused nor silently passed: the row says
+      # what is true, which is that this parser cannot decide it.
+      # The entry checks (setg3.c:269-284) run before any constraint or
+      # WEIBULL logic, so they are refusals on every path (U1 review).
+      not_traced <- length(constraint_flags) && !saw_weibull &&
+        !isTRUE(setg3$entry)
+      construct <- sprintf("GAMMA=%g ALPHA=%g ETA=%g%s", late_full[["gamma"]],
+                           late_full[["alpha"]], late_full[["eta"]],
+                           if (length(fixed_late_user)) {
+                             paste0(" fixed:",
+                                    paste(fixed_late_user, collapse = ","))
+                           } else {
+                             ""
+                           })
+      if (not_traced) {
+        flag_bad(construct, paste0(
+          "this shape reaches SETG3 with ",
+          paste(constraint_flags, collapse = " and "),
+          " set and no WEIBULL, which this translation does not trace, so ",
+          "whether PROC HAZARD refuses the job (it would raise ",
+          setg3$refusal, " on the traced path) is not decided here. The ",
+          "emitted phase is the one the PARMS statement writes; check the ",
+          "SAS log before relying on the fit"
+        ))
+      } else {
+        builds <- .hzr_phase_builds(late_full[["tau"]], late_full[["gamma"]],
+                                    late_full[["alpha"]], late_full[["eta"]])
+        flag_refusal(construct, paste0(
+          "PROC HAZARD refuses this job: SETG3 raises ",
+          setg3$refusal, " -- ",
+          .hzr_setg3_refusal_reason(setg3$refusal),
+          if (builds) {
+            paste0(". hzr_phase() accepts this shape, so the translated fit ",
+                   "would converge on a job SAS never fits")
+          } else {
+            paste0(". hzr_phase() will not build this shape either, because ",
+                   "the value SAS refuses is also outside the range it ",
+                   "accepts, so the document stops at that check rather ",
+                   "than fitting")
+          }
+        ))
+      }
     } else {
       # At alpha = 1 only the product gamma*eta is identified, and the
       # emitted call deliberately keeps the user's split rather than
@@ -1473,6 +1837,18 @@
     # data-dependent value while the emitted phase holds it at 1, which is a
     # different model outright.
     tau_fixed <- "tau" %in% fixed_late
+    if (tau_fixed && tau_absent) {
+      not_mirrored <- c(not_mirrored, if (unreadable) {
+        paste0("FIXTAU with a TAU this translation could not read (see the ",
+               "rows above): PROC HAZARD fixes TAU at the value written, or ",
+               "at 0.75*Tmax if none was (readobs.c:153-154), while the ",
+               "emitted phase would pin it at 1")
+      } else {
+        paste0("FIXTAU with no TAU written, which PROC HAZARD fixes at ",
+               "0.75*Tmax (readobs.c:153-154), a value that depends on the ",
+               "data; write TAU= with the value to fix it at")
+      })
+    }
     flag_bad(
       if (tau_absent) "TAU (unspecified)" else
         paste0("TAU=", sprintf("%g", late[["tau"]])),
@@ -1648,13 +2024,34 @@
     "written cannot be told, and the phase is not built on PROC HAZARD's ",
     "defaults"
   )
-  if (has_early && !build_early) {
-    flag_bad(paste0("MUE=", sprintf("%g", mu[["MUE"]])),
-             paste("MUE", sprintf(unread_why, "early")))
+  # An operand this parser could not read may be a shape or a FIX flag of a
+  # phase it DID build, and the emitted phase then carries SAS's default
+  # where the job wrote something else. It cannot be told apart from an
+  # operand that changes nothing, so the job warns rather than silently
+  # fitting a model that may not be PROC HAZARD's (U1).
+  if (unreadable && (build_early || build_late || has_muc)) {
+    not_mirrored <- c(not_mirrored, paste0(
+      "operands of this PARMS statement were not read (see the rows above); ",
+      "one of them may set a shape or a FIX flag of a phase this translation ",
+      "did build, so it cannot tell whether the emitted phases carry the ",
+      "values PROC HAZARD uses"))
   }
-  if (has_late && !build_late) {
-    flag_bad(paste0("MUL=", sprintf("%g", mu[["MUL"]])),
-             paste("MUL", sprintf(unread_why, "late")))
+
+  # PROC HAZARD fits the phase whatever this parser could read, so a model
+  # without it is short a phase: the job warns and still fits (U1).
+  for (nm in c("MUE", "MUL")) {
+    active <- if (nm == "MUE") has_early else has_late
+    built <- if (nm == "MUE") build_early else build_late
+    if (active && !built) {
+      phase <- if (nm == "MUE") "early" else "late"
+      flag_bad(paste0(nm, "=", sprintf("%g", mu[[nm]])),
+               paste(nm, sprintf(unread_why, phase)))
+      not_mirrored <- c(not_mirrored, paste0(
+        "an active ", nm, " whose ", phase, " phase this translation could ",
+        "not build, because operands of this PARMS statement were not read ",
+        "(see the rows above); PROC HAZARD fits that phase, so the emitted ",
+        "model would be short of it"))
+    }
   }
 
   # getrisk.c collects every phase-statement variable, of every phase and
@@ -1700,7 +2097,26 @@
     selection = selection_spec,
     has_phases = length(phase_calls) > 0L,
     refused = refused,
-    rejected = rejected,
+    rejected = c(parms_rejected, rejected),
+    # The same vector split by PROVENANCE, because the two halves now get
+    # different treatment and telling them apart by their text would be a
+    # shape test on a message. `rejected_phase` is the phase statements',
+    # which PROC HAZARD has always refused at parse and which the document
+    # has always stopped on (#340). `rejected_parms` is the PARMS operands',
+    # which used to fit with a row and now fit with a row AND a warning
+    # (John's 2026-09-22 decision). `rejected` stays the union: it is read by
+    # existing tests and by nothing that needs the distinction.
+    rejected_phase = rejected,
+    rejected_parms = parms_rejected,
+    refusal_reason = refusal_reason,
+    # FIXMNU1 on an active early phase: PROC HAZARD fits |M*NU| = 1, which
+    # this translation does not mirror (#358), so the model it would emit is
+    # a different one. .hzr_parse_job() warns on it (U1).
+    not_mirrored = c(not_mirrored, if (saw_mnu1 && has_early) {
+      paste0("FIXMNU1, which PROC HAZARD applies as |M*NU| = 1 on the early ",
+             "phase and this translation does not mirror (#358); remove ",
+             "FIXMNU1 to fit M and NU freely")
+    }),
     untranslated = .hzr_untranslated_frame(
       line = rep(NA_integer_, length(bad_construct)),
       construct = bad_construct,
