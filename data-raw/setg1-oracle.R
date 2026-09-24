@@ -29,11 +29,10 @@
 # verdicts: a positive control that reads "runs" and a negative control that
 # does not run. The script stops if either fails on either dataset.
 #
-# `class` is the verdict the translator must give. The translator speaks only
-# about the shapes SETG1 singles out, so:
-#   ref "runs"      -> "runs": a job PROC HAZARD fits on the reference data is
-#                      not warned about, even where it fails to converge on
-#                      other data -- that is fitting, not a verdict on the job;
+# `class` is the verdict the translator must give. It is keyed on the
+# reference dataset; the synthetic result and its error codes are recorded
+# alongside (`binary_synth`, `codes_synth`), whatever they are:
+#   ref "runs"      -> "runs", whatever synth gave;
 #   ref "refused"   -> "refused", and it must be refused on synth too;
 #   ref "no_result" -> "no_result" when synth also gives none, and
 #                      "may_not_fit" when synth fits: the failure depends on
@@ -117,6 +116,11 @@ run_one <- function(parms, ix, D) {
                unlist(regmatches(out, gregexpr("fatal exit: [A-Z]+", out))))
   raised <- sub("^\\[hazard ERROR [^]]*\\] ", "",
                 out[grepl("^\\[hazard ERROR", out)])
+  # Every error code the listing carries, in the widened form of stream D's
+  # pattern: the narrow SETG1|DLG1|DG1RHO form recorded "none" for failures
+  # that carry DTRSFM1120 and similar codes (#468 review 2).
+  codes <- unique(unlist(regmatches(out, gregexpr("[A-Z]{2,8}[0-9]{3,4}",
+                                                  out))))
   nmark <- sum(vapply(fitted_markers,
                       function(m) any(grepl(m, out, fixed = TRUE)), TRUE))
   verdict <- if (nmark == length(fitted_markers)) "runs" else
@@ -126,6 +130,7 @@ run_one <- function(parms, ix, D) {
     class = verdict,
     reason = if (length(raised)) raised[[1L]] else
       if (verdict == "runs") "fitted (all markers)" else "",
+    codes = if (length(codes)) paste(codes, collapse = " ") else "none",
     version = grep("C-Version", out, value = TRUE)
   )
 }
@@ -157,7 +162,9 @@ rows <- lapply(seq_along(grid), function(k) {
   data.frame(id = names(grid)[[k]], parms = grid[[k]], class = class,
              binary_ref = base$class, reason_ref = base$reason,
              stable_ref = all(scaled == base$class),
+             codes_ref = base$codes,
              binary_synth = synth$class, reason_synth = synth$reason,
+             codes_synth = synth$codes,
              stringsAsFactors = FALSE)
 })
 tab <- do.call(rbind, rows)
@@ -178,5 +185,6 @@ writeLines(c(
 ), dest)
 suppressWarnings(utils::write.table(tab, dest, append = TRUE, sep = ",",
                                     row.names = FALSE, qmethod = "double"))
-print(tab[, c("id", "class", "binary_ref", "binary_synth", "stable_ref")],
+print(tab[, c("id", "class", "binary_ref", "codes_ref", "binary_synth",
+              "codes_synth")],
       row.names = FALSE)

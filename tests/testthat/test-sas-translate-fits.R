@@ -1839,6 +1839,20 @@ test_that("the SETG1 verdict matches the HAZARD binary on a grid (#424)", {
   nr <- oracle$class == "no_result"
   expect_true(all(oracle$binary_ref[nr] == "no_result" &
                     oracle$binary_synth[nr] == "no_result"))
+  # Known positives for the widened code pattern (#468 review 2). Why these
+  # two codes: under the old narrow pattern (SETG1|DLG1|DG1RHO) both of these
+  # synthetic failures read "no code at all", which cannot be told apart from
+  # a plain non-convergence -- and that is what made the dataset-precedence
+  # rule look sound. DTRSFM1120 is a starting-value failure in the transform
+  # stage (hzd_early_t2p.c:37); DLG1935 is a G1 domain error in the same
+  # switch as DLG1980 (hzd_ln_G1_and_SG1.c:81). Requiring one of each pins
+  # that the probe can SEE the difference between the two kinds, not merely
+  # that two strings occur. The class stays keyed on the reference data.
+  synth_codes <- strsplit(oracle$codes_synth, " ", fixed = TRUE)
+  expect_true(any(vapply(synth_codes, function(x) "DTRSFM1120" %in% x, NA)))
+  expect_true(any(vapply(synth_codes, function(x) "DLG1935" %in% x, NA)))
+  expect_false(any(oracle$codes_synth[oracle$binary_synth == "no_result"] ==
+                     "none"))
   for (k in seq_len(nrow(oracle))) {
     o <- oracle[k, ]
     job <- .u1_job(parms = o$parms)
