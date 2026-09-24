@@ -2073,7 +2073,7 @@ test_that("a spaced operand PROC HAZARD would still reject is not said to be acc
   expect_identical(NROW(ok$untranslated), 0L)
 })
 
-test_that("SETG1 reports the refusal it reaches first: DELTA, THALF, M and NU (#424)", {
+test_that("SETG1 records the refusal it reaches first: DELTA, THALF, M and NU (#424)", {
   # setg1.c returns on each refusal in turn (:310-328, :343-346, then the
   # M and NU cases), so a job carrying several names the first of them.
   first <- function(ops) .hzr_parse_parms(ops)$refusal_reason

@@ -1853,6 +1853,24 @@ test_that("the SETG1 verdict matches the HAZARD binary on a grid (#424)", {
   expect_true(any(vapply(synth_codes, function(x) "DLG1935" %in% x, NA)))
   expect_false(any(oracle$codes_synth[oracle$binary_synth == "no_result"] ==
                      "none"))
+  # DG1RHO970 whole: the pattern before this one cut it to RHO970 at the
+  # digit in "DG1", so this is the code the old pattern broke.
+  all_codes <- unlist(strsplit(c(oracle$codes_ref, oracle$codes_synth), " "))
+  expect_true("DG1RHO970" %in% all_codes)
+  expect_false("RHO970" %in% all_codes)
+  # A SETG19xx code is DERIVED from setg1.c, never observed: the binary keeps
+  # it in Common.errflg and prints only the generic error, so a refused row
+  # records no code and that generic text, on both datasets.
+  ref <- oracle$class == "refused"
+  expect_gte(sum(ref), 9L)
+  expect_identical(oracle$setg1_code_derived[ref],
+                   sub("_.*$", "", oracle$id[ref]))
+  expect_true(all(oracle$codes_ref[ref] == "none" &
+                    oracle$codes_synth[ref] == "none"))
+  expect_true(all(oracle$error_text_ref[ref] ==
+                    "Fixed parameter violates model constraints." &
+                    oracle$error_text_synth[ref] ==
+                    "Fixed parameter violates model constraints."))
   for (k in seq_len(nrow(oracle))) {
     o <- oracle[k, ]
     job <- .u1_job(parms = o$parms)

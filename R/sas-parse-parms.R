@@ -1014,9 +1014,12 @@
 #'
 #' SETG1() (hazard `src/model/setg1.c` at dad7978) runs for every active early
 #' phase (shape.c:19-21), in this order: DELTA, THALF, then M and NU. A
-#' refusal returns at once, so the first one reached is the one PROC HAZARD
-#' reports. Each class here was measured on the HAZARD binary
-#' (tests/testthat/fixtures/setg1-oracle.csv), not only read off the C.
+#' refusal returns at once, so the first one reached is the one setg1.c
+#' records. The SETG19xx code itself is read off setg1.c: the binary stores it
+#' in Common.errflg (hzr_set_parm_err.c) and never prints it, and its listing
+#' says only "Fixed parameter violates model constraints." with a SEMANTIC
+#' exit (modterm.c:24-29). Each class (refused, runs, no result) was measured
+#' on the HAZARD binary (tests/testthat/fixtures/setg1-oracle.csv).
 #'
 #' @param shape Named numeric `c(t_half, nu, m)`, SAS defaults filled in.
 #' @param fixed Character vector of fixed early shape names.

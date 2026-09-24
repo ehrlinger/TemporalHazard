@@ -29,6 +29,15 @@
 # verdicts: a positive control that reads "runs" and a negative control that
 # does not run. The script stops if either fails on either dataset.
 #
+# Observed versus derived. `codes_*` and `error_text_*` are what the listing
+# PRINTS. `setg1_code_derived` is NOT printed: it is the SETG19xx code
+# setg1.c raises for that grid row, read off the C source (the row's id). The
+# binary stores the code with hzr_set_parm_err() in Common.errflg and never
+# prints it on the PROC HAZARD path, so for a SETG1 refusal the listing says
+# only "$ERROR: Fixed parameter violates model constraints." (modterm.c:28)
+# and exits SEMANTIC, and `codes_*` is honestly "none". Grepping a listing
+# for SETG1920 finds nothing; that is expected, not a missing refusal.
+#
 # `class` is the verdict the translator must give. It is keyed on the
 # reference dataset; the synthetic result and its error codes are recorded
 # alongside (`binary_synth`, `codes_synth`), whatever they are:
@@ -116,11 +125,16 @@ run_one <- function(parms, ix, D) {
                unlist(regmatches(out, gregexpr("fatal exit: [A-Z]+", out))))
   raised <- sub("^\\[hazard ERROR [^]]*\\] ", "",
                 out[grepl("^\\[hazard ERROR", out)])
-  # Every error code the listing carries, in the widened form of stream D's
-  # pattern: the narrow SETG1|DLG1|DG1RHO form recorded "none" for failures
-  # that carry DTRSFM1120 and similar codes (#468 review 2).
-  codes <- unique(unlist(regmatches(out, gregexpr("[A-Z]{2,8}[0-9]{3,4}",
-                                                  out))))
+  # Every error code the listing carries. The narrow SETG1|DLG1|DG1RHO form
+  # recorded "none" for DTRSFM1120 and similar codes (#468 review 2), and
+  # [A-Z]{2,8}[0-9]{3,4} cut DG1RHO970 to RHO970 at the digit in "DG1". This
+  # form keeps it whole: DG1RHO970, DLG1980, DTRSFM1120, RHO960.
+  codes <- unique(unlist(regmatches(
+    out, gregexpr("[A-Z0-9]*[A-Z][0-9]{3,4}", out))))
+  # The listing's own error lines, verbatim: for a SETG1 refusal this is all
+  # the binary says (see the header on setg1_code_derived).
+  error_text <- trimws(sub("^\\$ERROR:", "",
+                           grep("^\\$ERROR:", out, value = TRUE)))
   nmark <- sum(vapply(fitted_markers,
                       function(m) any(grepl(m, out, fixed = TRUE)), TRUE))
   verdict <- if (nmark == length(fitted_markers)) "runs" else
@@ -131,6 +145,8 @@ run_one <- function(parms, ix, D) {
     reason = if (length(raised)) raised[[1L]] else
       if (verdict == "runs") "fitted (all markers)" else "",
     codes = if (length(codes)) paste(codes, collapse = " ") else "none",
+    error_text = if (length(error_text))
+      paste(unique(error_text), collapse = " | ") else "",
     version = grep("C-Version", out, value = TRUE)
   )
 }
@@ -162,9 +178,11 @@ rows <- lapply(seq_along(grid), function(k) {
   data.frame(id = names(grid)[[k]], parms = grid[[k]], class = class,
              binary_ref = base$class, reason_ref = base$reason,
              stable_ref = all(scaled == base$class),
-             codes_ref = base$codes,
+             setg1_code_derived = if (startsWith(names(grid)[[k]], "SETG"))
+               sub("_.*$", "", names(grid)[[k]]) else "",
+             codes_ref = base$codes, error_text_ref = base$error_text,
              binary_synth = synth$class, reason_synth = synth$reason,
-             codes_synth = synth$codes,
+             codes_synth = synth$codes, error_text_synth = synth$error_text,
              stringsAsFactors = FALSE)
 })
 tab <- do.call(rbind, rows)
