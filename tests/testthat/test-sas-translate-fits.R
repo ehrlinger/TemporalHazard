@@ -1518,7 +1518,7 @@ test_that("a SELECTION name PROC HAZARD accepts is refused; one it rejects is no
 }
 .p440_rows <- function(job) {
   u <- job$untranslated
-  u[grepl("not a PROC HAZARD variable name", u$reason, fixed = TRUE), ,
+  u[grepl("^(not a PROC HAZARD variable name|follows a `[(]`)", u$reason), ,
     drop = FALSE]
 }
 # Covariate TERMS in the emitted early-phase formula against covariate STARTS
@@ -1591,6 +1591,15 @@ test_that("names PROC HAZARD accepts do not warn (#440 known negatives)", {
                                "PARMS", "age"))
   expect_length(ok$untranslated_construct, 0L)
   expect_length(ok$not_a_name, 0L)
+  # `(` returns no token (hazard_l.l:56) and `)` is whitespace (:32), so a
+  # last item `LOG()` is the variable LOG, with or without a start value.
+  for (s in c("LOG()", "LOG ( ) = 0.2", "LOG)", "LOG((")) {
+    p <- .hzr_parse_phase_covars(paste0("AGE, ", s))
+    expect_identical(p$names, c("AGE", "LOG"), info = s)
+    expect_length(p$not_a_name, 0L)
+  }
+  expect_identical(.hzr_parse_phase_covars("AGE, LOG()=0.2")$values,
+                   c(NA, 0.2))
   # Each clause of the regex, violated.
   bad <- .hzr_parse_phase_covars("AGE, 1AGE, A.B, A-B, A$B, A*B, F(X), B SEX")
   expect_identical(bad$names, "AGE")
@@ -1716,4 +1725,47 @@ test_that("the emitted #440 fit runs, with one start per covariate term", {
   expect_s3_class(env$fit, "hzr_stepwise")
   expect_false(any(grepl("SEX", unlist(lapply(env$fit$scope, deparse)),
                          fixed = TRUE)))
+})
+
+test_that("the phase-name verdict matches the HAZARD binary on a grid (#440)", {
+  # The oracle is the C binary itself, not a reading of its lexer: each row
+  # records whether PROC HAZARD ran one EARLY statement and which phase
+  # variables its listing reports. Provenance (binary version, file date,
+  # source checkout) is in the fixture's header; regenerate it with
+  # data-raw/phase-name-oracle.R.
+  path <- test_path("fixtures", "phase-name-oracle.csv")
+  oracle <- utils::read.csv(path, comment.char = "#", stringsAsFactors = FALSE)
+  # Coverage before comparison: every verdict class is present, so the test
+  # cannot pass over a grid that exercises only one side.
+  expect_setequal(unique(oracle$verdict),
+                  c("runs", "rejected", "runs_after_reset"))
+  expect_gte(nrow(oracle), 20L)
+  for (k in seq_len(nrow(oracle))) {
+    o <- oracle[k, ]
+    job <- .p440_job(o$early)
+    rows <- .p440_rows(job)
+    w <- .p440_chunk_warning(job)
+    fc <- job$calls$fit[[3L]]
+    ph <- fc$phases[[2L]]
+    emitted <- if (is.null(ph$formula)) character(0) else
+      all.vars(eval(ph$formula))
+    if (o$verdict == "runs") {
+      # SAS runs it: no warning, and the SAME variables in the SAME order.
+      expect_identical(NROW(rows), 0L, info = o$early)
+      expect_length(w, 0L)
+      expect_identical(emitted, strsplit(o$early_vars, " ")[[1L]],
+                       info = o$early)
+    } else {
+      # SAS rejects it (or runs it only because a later `(` cleared the
+      # error): warned, recorded, and never an operand SAS did not read.
+      expect_gte(NROW(rows), 1L)
+      expect_length(w, 1L)
+      expect_identical(as.character(fc[[1L]]), "hazard", info = o$early)
+      expect_true(all(emitted %in% c("AGE", "SEX", "LOG")), info = o$early)
+      if (o$verdict == "runs_after_reset") {
+        expect_match(w, "clears its syntax-error flag", fixed = TRUE,
+                     info = o$early)
+      }
+    }
+  }
 })

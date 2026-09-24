@@ -44,7 +44,9 @@ and rendered as visible callouts, never dropped. A \verb{PROC HAZPRED} job whose
 fails to render rather than reporting over a model it did not load.
 
 A phase-statement variable that \verb{PROC HAZARD} cannot read as a name, such
-as \code{AGE*SEX}, \code{LOG(AGE)} or \verb{B SEX}, is left out of the model. A phase
+as \code{AGE*SEX}, \code{LOG(AGE)} or \verb{B SEX}, is left out of the model. (\code{LOG()}
+is read as \code{LOG}, as \verb{PROC HAZARD} reads it: its lexer treats \verb{)} as
+whitespace and \code{(} as a change of state, \code{hazard_l.l:32} and \verb{:56}.) A phase
 variable must be a NAME, \verb{[_A-Z][_A-Z0-9]*} (\code{hazard_l.l:39};
 \code{phasevar : NAME}, \code{hazard_y.y:213}), so \verb{PROC HAZARD} rejects such a job
 at parse. The document raises a \code{warning()} above the fit, and the operand

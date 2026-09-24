@@ -82,6 +82,18 @@
     a keyword elsewhere (`E`, `EARLY`), does not warn, and neither does a
     macro reference, which SAS expands before its lexer runs.
 
+    Parentheses follow the lexer rather than a rule of thumb, and the
+    verdicts are checked against the HAZARD binary (C-Version 4.4.4). `)` is
+    whitespace to it (`hazard_l.l:32`), and `(` returns no token but
+    switches it to its PROC-line state (`hazard_l.l:56`). So a last item
+    `LOG()` or `LOG() = 0.2` is the variable `LOG`, which PROC HAZARD fits
+    and the translation now keeps. `LOG(X)`, `AGE(1)`, `LOG() /I`, and every
+    item after a `(` in the same statement are rejected. A `(` also clears
+    PROC HAZARD's syntax-error flag, so a job whose phase statements carry
+    one may run despite an earlier error: the binary runs
+    `EARLY AGE*SEX, LOG();` and fits `AGE` alone. The translation does not
+    reproduce which variables survive, and says so in the warning.
+
   Refusal coverage is not complete: `SETG1`'s refusals, which `PROC HAZARD`
   raises for an early phase, are not traced, so such a job still fits (#424).
 

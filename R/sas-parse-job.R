@@ -738,6 +738,21 @@
       "translation's, not one PROC HAZARD would produce. Correct the ",
       "statement(s) named here and translate the job again."))
   }
+  # `(` clears yysynerr (hazard_l.l:56), so an error the lexer or parser
+  # raised BEFORE a later `(` no longer stops the job. The HAZARD binary
+  # (C-Version 4.4.4) runs `EARLY AGE*SEX, LOG();` and fits AGE alone, the
+  # rest lost to its parser's error recovery. This translation does not
+  # reproduce that recovery, so it says what may happen instead (#440).
+  if (length(parms$rejected_name) && isTRUE(parms$paren_seen)) {
+    refusal_warnings <- c(refusal_warnings, paste0(
+      "This job's phase statements also contain `(`, and PROC HAZARD's ",
+      "lexer clears its syntax-error flag at every `(` (hazard_l.l:56). ",
+      "Where a `(` follows the text named above, PROC HAZARD runs the job ",
+      "despite it, and fits whichever variables its parser's error recovery ",
+      "leaves (for `EARLY AGE*SEX, LOG();` it fits AGE alone). This ",
+      "translation does not reproduce that recovery, so its fit may carry ",
+      "variables PROC HAZARD's does not."))
+  }
 
   cens <- .hzr_censor_spec(statements)
   untr <- rbind(untr, cens$untranslated)

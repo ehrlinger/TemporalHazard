@@ -391,6 +391,11 @@
       "`phasevar : NAME`, hazard_y.y:213, in a comma-separated list,",
       ":207), and the lexer or the parser rejects this text")),
     ". This translation leaves it out of the model")
+  after_paren_reason <- paste0(
+    "follows a `(` in the same phase statement. ", syntax_error(paste(
+      "`(` switches the lexer to its PROC-line state (hazard_l.l:56), where",
+      "a comma and a name are unexpected text (hazard_l.l:176-178)")),
+    ". This translation leaves it out of the model")
   # Which rule reads a value that is not a NUMBER. Per input, not per
   # refusal: a character outside the word rule's set falls to the catch-all;
   # a whole name lexes as NAME after a phase variable (hazard_l.l:174-175)
@@ -407,6 +412,8 @@
   }
 
   for (piece in x) {
+    # The lexer stays in the PROC-line state from a `(` to the next `;`.
+    after_paren <- FALSE
     for (p in strsplit(piece, ",", fixed = TRUE)[[1L]]) {
       p <- trimws(p)
       if (!nzchar(p)) next
@@ -506,11 +513,40 @@
       }
       # Judged last, so a job that already stopped above still stops. A
       # macro reference is not judged: SAS expands it before the lexer runs.
-      if (!.hzr_sas_is_macro(var) && !.hzr_sas_is_name(var)) {
-        shown <- .hzr_sas_canonical_text(var)
-        bad(shown, not_name_reason)
-        not_a_name <- c(not_a_name, paste0(shown, ": ", not_name_reason))
-        next
+      # The judgement follows the lexer's states, measured against the
+      # binary (tests/testthat/fixtures/phase-name-oracle.csv):
+      #   - `)` is whitespace (hazard_l.l:32), so `LOG)` is LOG;
+      #   - `(` returns no token and switches to the PROC-line state HZRP
+      #     (hazard_l.l:56). There `=` and a number still lex (:53, :55), so
+      #     `LOG()` and `LOG() = 0.2` are the variable LOG, but a name, a
+      #     comma, a `/` or a number in place of NAME's successor does not:
+      #     `LOG(X)`, `AGE(1)`, `LOG() /I` and every later item of the same
+      #     statement are rejected.
+      if (!.hzr_sas_is_macro(var)) {
+        v <- trimws(gsub(")", " ", var, fixed = TRUE))
+        paren <- regexpr("(", v, fixed = TRUE)
+        why <- NULL
+        if (after_paren) {
+          why <- after_paren_reason
+        } else if (paren > 0L) {
+          after_paren <- TRUE
+          head <- trimws(substr(v, 1L, paren - 1L))
+          rest <- gsub("[[:space:](]", "", substring(v, paren))
+          if (nzchar(rest) || length(opts) || !.hzr_sas_is_name(head)) {
+            why <- not_name_reason
+          } else {
+            v <- head
+          }
+        } else if (!.hzr_sas_is_name(v)) {
+          why <- not_name_reason
+        }
+        if (!is.null(why)) {
+          shown <- .hzr_sas_canonical_text(var)
+          bad(shown, why)
+          not_a_name <- c(not_a_name, paste0(shown, ": ", why))
+          next
+        }
+        var <- v
       }
       names_out <- c(names_out, var)
       values_out <- c(values_out, val)
@@ -537,7 +573,8 @@
   list(names = names_out, values = values_out, flags = flags_out,
        excluded = excluded, untranslated_construct = bad_construct,
        untranslated_reason = bad_reason, rejected = rejected,
-       not_a_name = not_a_name)
+       not_a_name = not_a_name,
+       has_paren = any(grepl("(", x, fixed = TRUE)))
 }
 
 #' Is `x` a NAME to PROC HAZARD's lexer?
@@ -1587,6 +1624,9 @@
   # A phase variable that is not a NAME, which it also refuses, but which
   # warns rather than stops (#440): see .hzr_parse_phase_covars().
   rejected_name <- character(0)
+  # Whether any phase statement carries a `(`, which clears PROC HAZARD's
+  # syntax-error flag (hazard_l.l:56) and so can make it run a job anyway.
+  paren_seen <- FALSE
   # Every covariate a phase statement names (not /E, which is excluded and
   # guarded through listwise_only), before SELECTION withholds its
   # candidates from phase_covars. A row about a phase that is not built must
@@ -1628,6 +1668,7 @@
     phase_covar_vals[[ph]] <- parsed$values[keep]
     phase_vars <- c(phase_vars, parsed$names, parsed$excluded)
     rejected <- c(rejected, parsed$rejected)
+    if (isTRUE(parsed$has_paren)) paren_seen <- TRUE
     if (length(parsed$not_a_name)) {
       rejected_name <- c(rejected_name,
                          paste(toupper(ph), parsed$not_a_name))
@@ -2176,6 +2217,7 @@
     # A phase variable that is not a NAME (#440): refused at parse like
     # `rejected_phase`, but it translated on main, so it warns (U1).
     rejected_name = rejected_name,
+    paren_seen = paren_seen,
     refusal_reason = refusal_reason,
     # FIXMNU1 on an active early phase: PROC HAZARD fits |M*NU| = 1, which
     # this translation does not mirror (#358), so the model it would emit is
