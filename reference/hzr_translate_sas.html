@@ -112,6 +112,14 @@ refused rather than translated. See the Experimental section below.</p>
 and rendered as visible callouts, never dropped. A <code>PROC HAZPRED</code> job whose
 <code>INHAZ=</code> fitted model cannot be located emits a <code><a href="https://rdrr.io/r/base/stop.html" class="external-link">stop()</a></code>, so the document
 fails to render rather than reporting over a model it did not load.</p>
+<p>A phase-statement variable that <code>PROC HAZARD</code> cannot read as a name, such
+as <code>AGE*SEX</code>, <code>LOG(AGE)</code> or <code>B SEX</code>, is left out of the model. (<code>LOG()</code>
+is read as <code>LOG</code>, as <code>PROC HAZARD</code> reads it: its lexer treats <code>)</code> as
+whitespace and <code>(</code> as a change of state, <code>hazard_l.l:32</code> and <code>:56</code>.) A phase
+variable must be a NAME, <code>[_A-Z][_A-Z0-9]*</code> (<code>hazard_l.l:39</code>;
+<code>phasevar : NAME</code>, <code>hazard_y.y:213</code>), so <code>PROC HAZARD</code> rejects such a job
+at parse. The document raises a <code><a href="https://rdrr.io/r/base/warning.html" class="external-link">warning()</a></code> above the fit, and the operand
+is recorded in <code>$untranslated</code>.</p>
 <p>A job may contain more than one <code>PROC HAZARD</code> and/or <code>PROC HAZPRED</code> block.
 Every block is preserved: the first of a kind keeps the bare chunk name
 (<code>fit</code>, <code>pred</code>, <code>pred_haz</code>), later ones get <code>fit_2</code>, <code>fit_3</code>, <code>pred_2</code>, and

@@ -56,6 +56,16 @@ job whose `INHAZ=` fitted model cannot be located emits a
 [`stop()`](https://rdrr.io/r/base/stop.html), so the document fails to
 render rather than reporting over a model it did not load.
 
+A phase-statement variable that `PROC HAZARD` cannot read as a name,
+such as `AGE*SEX`, `LOG(AGE)` or `B SEX`, is left out of the model.
+(`LOG()` is read as `LOG`, as `PROC HAZARD` reads it: its lexer treats
+`)` as whitespace and `(` as a change of state, `hazard_l.l:32` and
+`:56`.) A phase variable must be a NAME, `[_A-Z][_A-Z0-9]*`
+(`hazard_l.l:39`; `phasevar : NAME`, `hazard_y.y:213`), so `PROC HAZARD`
+rejects such a job at parse. The document raises a
+[`warning()`](https://rdrr.io/r/base/warning.html) above the fit, and
+the operand is recorded in `$untranslated`.
+
 A job may contain more than one `PROC HAZARD` and/or `PROC HAZPRED`
 block. Every block is preserved: the first of a kind keeps the bare
 chunk name (`fit`, `pred`, `pred_haz`), later ones get `fit_2`, `fit_3`,
