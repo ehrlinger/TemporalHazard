@@ -1102,6 +1102,24 @@
 
 ## Bug fixes
 
+* **A row at time 0 is now dropped before fitting, as PROC HAZARD drops it
+  (#374).** An EVENT at time 0 made the lognormal and loglogistic fits
+  return the optimizer's `-1e10` clamp, and the exponential fit
+  `log(.Machine$double.xmax)`, each with `converged = TRUE` and no warning:
+  a value that is not a likelihood. PROC HAZARD never fits such a row. It
+  deletes any observation with `TIME <= 0` at input, whatever its status
+  (`hazard/src/hazard/readt.c:12-14`), and notes the count. `hazard()` now
+  does the same, with a warning (class `"hzr_time_zero_dropped"`), and
+  records the count and the rows' positions in `fit$data`. The time tested
+  is the row's upper bound, PROC HAZARD's `TIME`: `time` for an exact or
+  right-censored row, `time_upper` for a left- or interval-censored one. A
+  lower bound or entry time of 0 is admissible, as PROC HAZARD admits it, so
+  an interval opening at 0 is still fitted, as left censoring (#341). Right-censored rows at 0
+  contributed nothing to the likelihood, so those fits keep their estimates
+  but now report the smaller row count. `hzr_stepwise()` given the original
+  data frame drops the same rows, so it stays aligned with the fit. If every
+  row is at time 0, `hazard()` stops with nothing left to fit.
+
 * **`hzr_stepwise()` no longer reports a pin on a column no formula can name
   as resolved (#463).** `force_in` and `force_out` accept a column of `data`
   or a term label. A column called `"."` or `""` is neither usable: `terms()`

@@ -373,6 +373,14 @@ hzr_stepwise <- function(fit,
     stop("`data` must be a data frame (typically the frame used for the base fit).",
          call. = FALSE)
   }
+  # hazard() drops rows at time 0 before fitting (#374). The data frame a
+  # caller passes here is usually the one given to hazard(), so it still has
+  # them; drop the same rows, by position, when it is exactly that frame.
+  dropped <- fit$data$dropped_time_zero_rows
+  if (length(dropped) &&
+      nrow(data) == length(fit$data$time) + length(dropped)) {
+    data <- data[-dropped, , drop = FALSE]
+  }
   .hzr_refuse_unhonoured_scope(scope, direction)
 
   # Every accepted step goes through .hzr_refit_with_scope(), so a base fit

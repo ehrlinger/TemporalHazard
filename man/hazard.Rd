@@ -80,7 +80,15 @@ calling environment; for one used inside the \code{Surv()} response, compute
 the value into a \code{data} column first, since the response is evaluated
 without the formula's environment.}
 
-\item{time}{Numeric follow-up time vector.}
+\item{time}{Numeric follow-up time vector. A row whose time is 0 is
+dropped before fitting, whatever its status, as PROC HAZARD drops it
+(\code{TIME <= 0} is inadmissible there). The time tested is the row's upper
+bound: \code{time} for an exact or right-censored row, \code{time_upper} for a
+left- or interval-censored one; a lower bound or entry time of 0 is
+admissible. \code{hazard()} warns with the count (class
+\code{"hzr_time_zero_dropped"}), and every row stored on the fit is what
+remains. \code{fit$data$dropped_time_zero} is the count and
+\code{fit$data$dropped_time_zero_rows} their positions among the rows given.}
 
 \item{status}{Numeric or logical event indicator vector, or a
 \code{\link[survival:Surv]{survival::Surv()}} object. A \code{Surv} is read by its \code{type}, exactly as the

@@ -269,7 +269,15 @@ NULL
 #'     is the form that reproduces the classic C/SAS HAZARD models.}
 #' }
 #'
-#' @param time Numeric follow-up time vector.
+#' @param time Numeric follow-up time vector. A row whose time is 0 is
+#'   dropped before fitting, whatever its status, as PROC HAZARD drops it
+#'   (`TIME <= 0` is inadmissible there). The time tested is the row's upper
+#'   bound: `time` for an exact or right-censored row, `time_upper` for a
+#'   left- or interval-censored one; a lower bound or entry time of 0 is
+#'   admissible. `hazard()` warns with the count (class
+#'   `"hzr_time_zero_dropped"`), and every row stored on the fit is what
+#'   remains. `fit$data$dropped_time_zero` is the count and
+#'   `fit$data$dropped_time_zero_rows` their positions among the rows given.
 #' @param status Numeric or logical event indicator vector, or a
 #'   [survival::Surv()] object. A `Surv` is read by its `type`, exactly as the
 #'   formula interface reads it, and a `time`, `time_lower` or `time_upper`
@@ -1094,6 +1102,59 @@ hazard <- function(formula = NULL,
          "codes differ from these: pass it as the response, or as 'status', ",
          "and it is translated.", call. = FALSE)
   }
+  # A row at time 0 is deleted, whatever its status, as PROC HAZARD deletes
+  # it at input (#374): hazard/src/hazard/readt.c:12-14 marks TIME <= 0 as
+  # inadmissible, readobs.c:132-138 leaves it out of the data, and
+  # obsstat.c:62-69 notes the count. The rule is on SAS's TIME alone; a
+  # lower bound or entry time of 0 is admissible, as readct.c allows CT = 0.
+  # Fitting such a row instead made an EVENT at 0 return the optimizer's
+  # clamp or log(double.xmax) with converged = TRUE (lognormal, loglogistic,
+  # exponential), a value that is not a likelihood.
+  # SAS's TIME is the row's UPPER bound. Here that is `time` for an exact or
+  # right-censored row, but `time_upper` for a left- or interval-censored one:
+  # an interval row's `time` is its LOWER bound (Surv "interval2" maps
+  # [l, u] to time = l, time_upper = u), so testing `time` there would drop
+  # a legitimate interval opening at 0, which #341 fits as left censoring.
+  sas_time <- time
+  if (!is.null(time_upper) && length(time_upper) == n) {
+    bounded <- !is.na(status) & status %in% c(-1, 2)
+    sas_time[bounded] <- time_upper[bounded]
+  }
+  at_zero <- sas_time == 0
+  n_dropped_time_zero <- sum(at_zero)
+  dropped_time_zero_rows <- which(at_zero)
+  if (n_dropped_time_zero > 0L) {
+    keep <- !at_zero
+    subset_rows <- function(v) {
+      if (is.null(v)) return(v)
+      if (is.matrix(v) || is.data.frame(v)) {
+        if (nrow(v) == n) v[keep, , drop = FALSE] else v
+      } else if (length(v) == n) {
+        v[keep]
+      } else {
+        v
+      }
+    }
+    time <- time[keep]
+    status <- status[keep]
+    time_lower <- subset_rows(time_lower)
+    time_upper <- subset_rows(time_upper)
+    weights <- subset_rows(weights)
+    x <- subset_rows(x)
+    x_fit <- subset_rows(x_fit)
+    if (is.data.frame(data)) data <- subset_rows(data)
+    n <- length(time)
+    n_obs <- n
+    warning(structure(
+      class = c("hzr_time_zero_dropped", "warning", "condition"),
+      list(message = paste0(
+        n_dropped_time_zero, " row(s) with time = 0 were dropped before ",
+        "fitting, as PROC HAZARD drops them (TIME <= 0 is inadmissible, ",
+        "readt.c). The fit uses the other ", n, "; the count is in ",
+        "fit$data$dropped_time_zero."
+      ), call = NULL)
+    ))
+  }
   # A row adds nothing to the likelihood when its weight is 0, or when it is
   # right-censored at time 0 (H(0) = 0). With no other row the fit returned
   # its starting values, objective 0 and converged = TRUE, as zero rows did.
@@ -1101,8 +1162,12 @@ hazard <- function(formula = NULL,
   if (!is.null(weights)) contributes <- contributes & weights > 0
   if (!anyNA(status) && !any(contributes)) {
     stop("hazard() was given no observations that contribute to the ",
-         "likelihood: every row has weight 0 or is right-censored at time 0.",
-         call. = FALSE)
+         "likelihood: every row has weight 0",
+         if (n_dropped_time_zero > 0L) {
+           paste0(" or time = 0 (", n_dropped_time_zero, " such row(s) ",
+                  "dropped, as PROC HAZARD drops them)")
+         },
+         ".", call. = FALSE)
   }
 
   if (!is.character(dist) || length(dist) != 1 || !nzchar(dist)) {
@@ -1509,6 +1574,13 @@ hazard <- function(formula = NULL,
       # (formula path; NULL otherwise), so predict(newdata = ) can rebuild it.
       x_design = x_design,
       weights = weights,
+      # Rows dropped for time = 0 before fitting (#374): every stored vector
+      # above, and `frame`, is what remains.
+      dropped_time_zero = n_dropped_time_zero,
+      # Their positions in the rows hazard() was given, so a caller that
+      # passes the original data frame on (hzr_stepwise(data = )) can be
+      # aligned with the fit.
+      dropped_time_zero_rows = dropped_time_zero_rows,
       # The evaluated `data` argument as passed to hazard() (formula path; NULL
       # when called with raw vectors). This is the user's data frame, not a
       # model.frame() result. Stored so refit-based tooling such as

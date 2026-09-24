@@ -163,7 +163,8 @@ test_that("hazard() refuses zero rows on every path (#231)", {
   expect_equal(fitw(w5, wrap(lo5), up5), ref_w)
   expect_equal(fitw(w5, lo5, wrap(up5)), ref_w)
   # NA status still reaches the completeness check that names it.
-  expect_error(hazard(time = c(0, 0), status = c(NA, NA),
+  # (Times above 0: a row at time 0 is dropped before status is read, #374.)
+  expect_error(hazard(time = c(1, 2), status = c(NA, NA),
                        dist = "exponential", theta = 0.1, fit = TRUE),
                "'status' must be complete")
 
@@ -174,9 +175,13 @@ test_that("hazard() refuses zero rows on every path (#231)", {
                                 dist = "exponential", theta = 0.1, fit = TRUE))
   expect_true(is.finite(w1$fit$objective))
   expect_false(w1$fit$objective == 0)
-  e0 <- suppressWarnings(hazard(time = c(0, 0, 0), status = c(1, 0, 0),
-                                dist = "exponential", theta = 0.1, fit = TRUE))
-  expect_false(e0$fit$objective == 0)
+  # Every row at time 0: all are dropped, as PROC HAZARD drops them (#374),
+  # so nothing is left to fit. This control used to assert only that the
+  # objective was not 0, which the clamp value also satisfies.
+  expect_error(suppressWarnings(hazard(time = c(0, 0, 0), status = c(1, 0, 0),
+                                       dist = "exponential", theta = 0.1,
+                                       fit = TRUE)),
+               "no observations")
   codes <- suppressWarnings(hazard(time = c(1, 2, 3, 4, 5),
                                    status = c(-1, 0, 1, 2, 1),
                                    time_lower = c(0, 0, 0, 1, 0),
