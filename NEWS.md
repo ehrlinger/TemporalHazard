@@ -1084,6 +1084,17 @@
 
 ## Bug fixes
 
+* **A stray `=` in `PARMS` no longer takes the next operand with it
+  (#458).** `PARMS MUE=0.2 = THALF=0.15 NU=1` read the stray `=` as a piece
+  of a spaced operand and threw `THALF=0.15` away with it, so the emitted fit
+  started `t_half` at `PROC HAZARD`'s default of 1 rather than the 0.15
+  written. The stray `=` is now recorded as the syntax error it is, as the
+  `PROC HAZARD` and `PROC HAZPRED` lines already did, and the operands after
+  it are read as written. `PARMS` has no error rule of its own
+  (`hazard_y.y:130-160`), so `PROC HAZARD` falls to `otherstmt : error`
+  (`:102`) and rejects the job; the job still warns, as before. `==` is two
+  `=` tokens to SAS (`hazard_l.l:55`) and records two rows.
+
 * **`hzr_stepwise()` no longer reports a pin on a column no formula can name
   as resolved (#463).** `force_in` and `force_out` accept a column of `data`
   or a term label. A column called `"."` or `""` is neither usable: `terms()`

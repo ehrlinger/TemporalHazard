@@ -225,7 +225,14 @@
   while (i <= n) {
     op <- ops[[i]]
     key_i <- if (bare_key(i - 1L)) i - 1L else NA_integer_
-    if (identical(op, "=")) {
+    if (identical(op, "=") && is.na(key_i)) {
+      # A stray `=`, with no key before it: not a piece of anything, and the
+      # operand after it is its own. Taking that operand as this `=`'s value
+      # threw away a complete `THALF=0.15` as debris (#458). The caller
+      # records the stray as the syntax error it is.
+      i <- i + 1L
+      next
+    } else if (identical(op, "=")) {
       val_i <- if (i < n) i + 1L else NA_integer_
       ok <- !is.na(key_i) && value_key(ops[[key_i]]) && !is.na(val_i) &&
         .hzr_sas_lexer_number(ops[[val_i]])
@@ -1189,6 +1196,21 @@
   spaced_piece <- .hzr_parms_spaced_pieces(operands)
   for (i in seq_along(operands)) {
     op <- operands[[i]]
+    if (identical(op, "=") && spaced_piece[i] == 0L) {
+      # The joiner leaves a bare `=` only where the grammar has nothing to
+      # pair it with. PARMS has no error production of its own
+      # (hazard_y.y:130-160), so it falls to `otherstmt : error`
+      # (hazard_y.y:102): PROC HAZARD discards the rest of the statement and
+      # rejects the job. The PROC HAZARD and PROC HAZPRED lines record theirs
+      # the same way (#433 review 2, 3; #458).
+      flag_syntax(op, paste0(
+        "a stray `=` in PARMS: the operand before it already took its ",
+        "value, so PROC HAZARD reaches `otherstmt : error` ",
+        "(hazard_y.y:102), discards the rest of the statement and rejects ",
+        "this job with a syntax error; the operands after it are read here ",
+        "as written"))
+      next
+    }
     if (spaced_piece[i] > 0L) {
       unreadable <- TRUE
       if (spaced_piece[i] == 2L) {

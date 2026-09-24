@@ -1276,6 +1276,71 @@ test_that("operand joining is INVARIANT under spacing (#433 review 2)", {
   }
 })
 
+# Every spelling of one TOKEN STREAM: each gap next to an `=` is either empty
+# or one space, and every other gap is one space (two names must stay apart).
+# Unlike .u1_spacings(), this can spell a stray `=` glued on both sides
+# (`MUE=0.2=THALF=0.15`), which is the same token stream to SAS as the spaced
+# one (hazard_l.l:32, :55).
+.u1_token_spacings <- function(toks) {
+  gaps <- which(toks[-length(toks)] == "=" | toks[-1L] == "=")
+  grid <- expand.grid(rep(list(c("", " ")), length(gaps)),
+                      stringsAsFactors = FALSE)
+  out <- character(nrow(grid))
+  for (r in seq_len(nrow(grid))) {
+    sep <- rep(" ", length(toks) - 1L)
+    sep[gaps] <- unlist(grid[r, ], use.names = FALSE)
+    out[[r]] <- paste0(toks, c(sep, ""), collapse = "")
+  }
+  unique(out)
+}
+
+test_that("a stray `=` in PARMS does not swallow the next operand (#458)", {
+  # PARMS has no error production of its own (hazard_y.y:130-160), so a stray
+  # `=` falls to `otherstmt : error` (hazard_y.y:102) and PROC HAZARD rejects
+  # the job with a syntax error. Measured on the C binary (4.4.4, synthetic
+  # data): `MUE=0.2 = THALF=0.15 ...` and `MUE=0.2==THALF=0.15 ...` both exit
+  # "SYNTAX at initprz" while the unspaced control runs.
+  #
+  # The translator emits the fit anyway, with the refusal (U1). It used to
+  # read the stray `=` as a piece of a spaced operand and take THALF=0.15
+  # with it as debris, so the emitted fit silently used t_half = 1.
+  stray1 <- c("MUE", "=", "0.2", "=", "THALF", "=", "0.15", "NU", "=", "1")
+  # `==` is TWO `=` tokens (hazard_l.l:55): a different statement, and it
+  # must record two strays, not one.
+  stray2 <- c("MUE", "=", "0.2", "=", "=", "THALF", "=", "0.15", "NU", "=",
+              "1")
+  control <- c("MUE", "=", "0.2", "THALF", "=", "0.15", "NU", "=", "1")
+  want_theta <- quote(c(log(0.2), log(0.15), 1, 1))
+  cases <- list(list(toks = stray1, n_stray = 1L),
+                list(toks = stray2, n_stray = 2L),
+                list(toks = control, n_stray = 0L))
+  for (cs in cases) {
+    variants <- .u1_token_spacings(cs$toks)
+    expect_gt(length(variants), 16L)               # the generator must vary
+    answers <- lapply(variants, function(v) {
+      job <- .u1_job(parms = v)
+      stray_rows <- sum(job$untranslated$construct == "=")
+      list(theta = job$calls$fit[[3L]]$theta,
+           stray_rows = stray_rows,
+           refused = !is.null(.u1_refusal_chunk(job)),
+           rows = NROW(job$untranslated))
+    })
+    # ONE answer across every spelling of this token stream.
+    expect_length(unique(answers), 1L)
+    a <- answers[[1L]]
+    # THALF is read, whatever the strays.
+    expect_identical(a$theta, want_theta, info = variants[[1L]])
+    expect_identical(a$stray_rows, cs$n_stray, info = variants[[1L]])
+    # KNOWN NEGATIVE: the control records nothing and refuses nothing; a
+    # stray refuses and its row is the ONLY row.
+    expect_identical(a$refused, cs$n_stray > 0L, info = variants[[1L]])
+    expect_identical(a$rows, cs$n_stray, info = variants[[1L]])
+  }
+  # The reason a reader sees names the syntax error, not a spaced operand.
+  job <- .u1_job(parms = "MUE=0.2 = THALF=0.15 NU=1")
+  expect_match(.u1_msg(job), "stray `=`", fixed = TRUE)
+})
+
 test_that("a name-valued PROC option with no value is refused (#433 review 2)", {
   # `DATA '=' dsfield` and `OUTHAZ '=' dsfield`, dsfield : NAME | LIBMEM
   # (hazard_y.y:61-62, :80-81). Neither has a form without a name, so an
