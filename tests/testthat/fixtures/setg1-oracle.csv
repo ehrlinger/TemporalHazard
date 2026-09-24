@@ -2,30 +2,31 @@
 # Binary: ~/Documents/GitHub/hazard/dist/bin/hazard (Procedure HAZARD (C-Version 4.4.4))
 # Binary file date: 2026-04-28
 # Source checkout when generated: dad7978277c2c60e258be3cd78029d4f4093e557
-# Data: avc (complete cases); `stable` = same class with times x10 and x0.1
+# Datasets: ref = avc (complete cases); synth = synthetic-n200-seed5 (stream D's generator, ported)
+# Controls passed on each dataset: positive reads runs, negative does not.
 # Generated: 2026-09-24
-"id","parms","binary","reason","stable"
-"known_positive","MUE=0.2 THALF=1 NU=1 M=1","runs","Normal exit",TRUE
-"SETG1910_neg","MUE=0.2 THALF=-1 FIXTHALF NU=1 M=1","refused","fatal exit: SEMANTIC at hazard.c:253 in main()",TRUE
-"SETG1910_zero","MUE=0.2 THALF=0 FIXTHALF NU=1 M=1","refused","fatal exit: SEMANTIC at hazard.c:253 in main()",TRUE
-"thalf_neg_free","MUE=0.2 THALF=-1 NU=1 M=1","runs","Normal exit",TRUE
-"thalf_zero_free","MUE=0.2 THALF=0 NU=1 M=1","runs","Normal exit",TRUE
-"thalf_half_free","MUE=0.2 THALF=-.5","runs","Normal exit",TRUE
-"SETG1940","MUE=0.2 THALF=1 M=-1 NU=-1 FIXM FIXNU","refused","fatal exit: SEMANTIC at hazard.c:253 in main()",TRUE
-"SETG1950","MUE=0.2 THALF=1 M=0 NU=0 FIXM FIXNU","refused","fatal exit: SEMANTIC at hazard.c:253 in main()",TRUE
-"SETG1960","MUE=0.2 THALF=1 M=1 NU=0 FIXM FIXNU","refused","fatal exit: SEMANTIC at hazard.c:253 in main()",TRUE
-"SETG1920","MUE=0.2 THALF=1 M=-1 NU=-1 FIXM FIXNU FIXMNU1","refused","fatal exit: SEMANTIC at hazard.c:253 in main()",TRUE
-"SETG1930","MUE=0.2 THALF=1 M=0 NU=0 FIXM FIXNU FIXMNU1","refused","fatal exit: SEMANTIC at hazard.c:253 in main()",TRUE
-"SETG1900","MUE=0.2 THALF=1 NU=1 M=1 DELTA=-2 FIXDELTA","refused","fatal exit: SEMANTIC at hazard.c:253 in main()",TRUE
-"SETG1901","MUE=0.2 THALF=1 NU=1 M=1 DELTA=2 FIXDELTA","refused","fatal exit: SEMANTIC at hazard.c:253 in main()",TRUE
-"mnu_zero_free","MUE=0.2 THALF=1 M=0 NU=0","runs","Normal exit",TRUE
-"g1flag4_mpos","MUE=0.2 THALF=1 M=1 NU=0","no_result","DLG1980 (errno=2) raised at hzd_ln_G1_and_SG1.c:83 in hzd_ln_G1_and_SG1()",TRUE
-"g1flag4_mpos_fixnu","MUE=0.2 THALF=1 M=1 NU=0 FIXNU","no_result","DLG1980 (errno=2) raised at hzd_ln_G1_and_SG1.c:83 in hzd_ln_G1_and_SG1()",TRUE
-"g1flag4_mneg","MUE=0.2 THALF=1 M=-1 NU=0","no_result","DLG1980 (errno=2) raised at hzd_ln_G1_and_SG1.c:83 in hzd_ln_G1_and_SG1()",TRUE
-"g1flag4_mneg_fixnu","MUE=0.2 THALF=1 M=-1 NU=0 FIXNU","no_result","DLG1980 (errno=2) raised at hzd_ln_G1_and_SG1.c:83 in hzd_ln_G1_and_SG1()",TRUE
-"g1flag4_mneg_both","MUE=0.2 THALF=1 M=-1 NU=0 FIXM FIXNU","runs","Normal exit",FALSE
-"g1flag4_mzero_fixnu","MUE=0.2 THALF=1 M=0 NU=0 FIXNU","no_result","DG1RHO970 (errno=2) raised at hzd_set_rho.c:43 in hzd_set_rho()",TRUE
-"nu_zero_fixm","MUE=0.2 THALF=1 M=1 NU=0 FIXM","runs","Normal exit",TRUE
-"thalf_fixed_pos","MUE=0.2 THALF=0.5 FIXTHALF NU=1 M=1","runs","Normal exit",FALSE
-"mnu_both_fixed_pos","MUE=0.2 THALF=1 NU=2 M=1 FIXM FIXNU","runs","Normal exit",TRUE
-"shape_defaults","MUE=0.2","runs","Normal exit",TRUE
+"id","parms","class","binary_ref","reason_ref","stable_ref","binary_synth","reason_synth"
+"known_positive","MUE=0.2 THALF=1 NU=1 M=1","runs","runs","fitted (all markers)",TRUE,"no_result","DTRSFM1120 (errno=1) raised at hzd_early_t2p.c:23 in hzd_early_t2p()"
+"SETG1910_neg","MUE=0.2 THALF=-1 FIXTHALF NU=1 M=1","refused","refused","fatal exit: SEMANTIC at hazard.c:253 in main()",TRUE,"refused","fatal exit: SEMANTIC at hazard.c:253 in main()"
+"SETG1910_zero","MUE=0.2 THALF=0 FIXTHALF NU=1 M=1","refused","refused","fatal exit: SEMANTIC at hazard.c:253 in main()",TRUE,"refused","fatal exit: SEMANTIC at hazard.c:253 in main()"
+"thalf_neg_free","MUE=0.2 THALF=-1 NU=1 M=1","runs","runs","fitted (all markers)",TRUE,"no_result","DTRSFM1120 (errno=1) raised at hzd_early_t2p.c:23 in hzd_early_t2p()"
+"thalf_zero_free","MUE=0.2 THALF=0 NU=1 M=1","runs","runs","fitted (all markers)",TRUE,"no_result","DTRSFM1120 (errno=1) raised at hzd_early_t2p.c:23 in hzd_early_t2p()"
+"thalf_half_free","MUE=0.2 THALF=-.5","runs","runs","fitted (all markers)",TRUE,"no_result","DLG1935 (errno=1) raised at hzd_ln_G1_and_SG1.c:43 in hzd_ln_G1_and_SG1()"
+"SETG1940","MUE=0.2 THALF=1 M=-1 NU=-1 FIXM FIXNU","refused","refused","fatal exit: SEMANTIC at hazard.c:253 in main()",TRUE,"refused","fatal exit: SEMANTIC at hazard.c:253 in main()"
+"SETG1950","MUE=0.2 THALF=1 M=0 NU=0 FIXM FIXNU","refused","refused","fatal exit: SEMANTIC at hazard.c:253 in main()",TRUE,"refused","fatal exit: SEMANTIC at hazard.c:253 in main()"
+"SETG1960","MUE=0.2 THALF=1 M=1 NU=0 FIXM FIXNU","refused","refused","fatal exit: SEMANTIC at hazard.c:253 in main()",TRUE,"refused","fatal exit: SEMANTIC at hazard.c:253 in main()"
+"SETG1920","MUE=0.2 THALF=1 M=-1 NU=-1 FIXM FIXNU FIXMNU1","refused","refused","fatal exit: SEMANTIC at hazard.c:253 in main()",TRUE,"refused","fatal exit: SEMANTIC at hazard.c:253 in main()"
+"SETG1930","MUE=0.2 THALF=1 M=0 NU=0 FIXM FIXNU FIXMNU1","refused","refused","fatal exit: SEMANTIC at hazard.c:253 in main()",TRUE,"refused","fatal exit: SEMANTIC at hazard.c:253 in main()"
+"SETG1900","MUE=0.2 THALF=1 NU=1 M=1 DELTA=-2 FIXDELTA","refused","refused","fatal exit: SEMANTIC at hazard.c:253 in main()",TRUE,"refused","fatal exit: SEMANTIC at hazard.c:253 in main()"
+"SETG1901","MUE=0.2 THALF=1 NU=1 M=1 DELTA=2 FIXDELTA","refused","refused","fatal exit: SEMANTIC at hazard.c:253 in main()",TRUE,"refused","fatal exit: SEMANTIC at hazard.c:253 in main()"
+"mnu_zero_free","MUE=0.2 THALF=1 M=0 NU=0","runs","runs","fitted (all markers)",TRUE,"no_result","DTRSFM1120 (errno=1) raised at hzd_early_t2p.c:23 in hzd_early_t2p()"
+"g1flag4_mpos","MUE=0.2 THALF=1 M=1 NU=0","may_not_fit","no_result","DLG1980 (errno=2) raised at hzd_ln_G1_and_SG1.c:83 in hzd_ln_G1_and_SG1()",FALSE,"runs","fitted (all markers)"
+"g1flag4_mpos_fixnu","MUE=0.2 THALF=1 M=1 NU=0 FIXNU","may_not_fit","no_result","DLG1980 (errno=2) raised at hzd_ln_G1_and_SG1.c:83 in hzd_ln_G1_and_SG1()",FALSE,"runs","fitted (all markers)"
+"g1flag4_mneg","MUE=0.2 THALF=1 M=-1 NU=0","may_not_fit","no_result","DLG1980 (errno=2) raised at hzd_ln_G1_and_SG1.c:83 in hzd_ln_G1_and_SG1()",FALSE,"runs","fitted (all markers)"
+"g1flag4_mneg_fixnu","MUE=0.2 THALF=1 M=-1 NU=0 FIXNU","may_not_fit","no_result","DLG1980 (errno=2) raised at hzd_ln_G1_and_SG1.c:83 in hzd_ln_G1_and_SG1()",FALSE,"runs","fitted (all markers)"
+"g1flag4_mneg_both","MUE=0.2 THALF=1 M=-1 NU=0 FIXM FIXNU","runs","runs","fitted (all markers)",FALSE,"runs","fitted (all markers)"
+"g1flag4_mzero_fixnu","MUE=0.2 THALF=1 M=0 NU=0 FIXNU","no_result","no_result","DG1RHO970 (errno=2) raised at hzd_set_rho.c:43 in hzd_set_rho()",TRUE,"no_result","DG1RHO970 (errno=2) raised at hzd_set_rho.c:43 in hzd_set_rho()"
+"nu_zero_fixm","MUE=0.2 THALF=1 M=1 NU=0 FIXM","runs","runs","fitted (all markers)",TRUE,"no_result","DTRSFM1120 (errno=1) raised at hzd_early_t2p.c:23 in hzd_early_t2p()"
+"thalf_fixed_pos","MUE=0.2 THALF=0.5 FIXTHALF NU=1 M=1","runs","runs","fitted (all markers)",FALSE,"no_result","DG1RHO960 (errno=1) raised at hzd_set_rho.c:49 in hzd_set_rho()"
+"mnu_both_fixed_pos","MUE=0.2 THALF=1 NU=2 M=1 FIXM FIXNU","runs","runs","fitted (all markers)",TRUE,"runs","fitted (all markers)"
+"shape_defaults","MUE=0.2","runs","runs","fitted (all markers)",TRUE,"no_result","DLG1935 (errno=1) raised at hzd_ln_G1_and_SG1.c:43 in hzd_ln_G1_and_SG1()"

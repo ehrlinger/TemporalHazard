@@ -825,13 +825,22 @@
       "below stands in for no SAS result at all. Correct the PARMS ",
       "operand(s) named here, or fit the model by hand."))
   }
-  # A job PROC HAZARD accepts and starts to fit, but on a case its fit
-  # cannot evaluate, so it prints no estimates (#424). Not a refusal, and
-  # not a different model: there is no SAS result to compare with at all.
+  # A job PROC HAZARD accepts and starts to fit, on a case its fit cannot
+  # evaluate on the data measured (#424). Not a refusal, and not a different
+  # model. "may_not_fit" is the data-dependent half: SAS stopped on one
+  # dataset and fitted on another, so the tail says it MAY have no result
+  # (#468 review).
   if (!is.null(parms$no_result_reason) && !is.na(parms$no_result_reason)) {
     refusal_warnings <- c(refusal_warnings, paste0(
-      parms$no_result_reason, ". The fit below stands in for no SAS result at all. Correct the ",
-      "PARMS operand(s) named here, or fit the model by hand."))
+      parms$no_result_reason, ". ",
+      if (identical(parms$no_result_kind, "may_not_fit")) {
+        paste0("On your data PROC HAZARD may have printed no estimates, so ",
+               "check its listing before comparing the fit below with it.")
+      } else {
+        paste0("The fit below may stand in for no SAS result at all. ",
+               "Correct the PARMS operand(s) named here, or fit the model ",
+               "by hand.")
+      }))
   }
 
   # A job PROC HAZARD runs, but on a model this translation does not emit:

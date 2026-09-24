@@ -1798,12 +1798,21 @@ test_that("the phase-name verdict matches the HAZARD binary on a grid (#440)", {
     # because this message quotes the row's reason, and a no-result reason
     # routed here would otherwise read as a no-result verdict.
     "runs"
-  } else if (grepl("produces no result", msg, fixed = TRUE)) {
+  } else if (grepl("PROC HAZARD may not fit this job", msg, fixed = TRUE)) {
+    "may_not_fit"
+  } else if (grepl("PROC HAZARD produced no result for this job", msg,
+                   fixed = TRUE)) {
     "no_result"
   } else {
     "runs"
   }
 }
+# The row must carry its class as well as the warning (#468 review).
+.p424_row_phrase <- c(
+  no_result = "PROC HAZARD produced no result for this job",
+  may_not_fit = "PROC HAZARD may not fit this job",
+  refused = "PROC HAZARD refuses this job: SETG1 raises"
+)
 .p424_warnings <- function(job) {
   ch <- .u1_refusal_chunk(job)
   if (is.null(ch)) return(character(0))
@@ -1818,25 +1827,36 @@ test_that("the phase-name verdict matches the HAZARD binary on a grid (#440)", {
 test_that("the SETG1 verdict matches the HAZARD binary on a grid (#424)", {
   oracle <- .p424_oracle()
   # Coverage before comparison: every class, and the known positive, present.
-  expect_setequal(unique(oracle$binary), c("runs", "refused", "no_result"))
+  expect_setequal(unique(oracle$class),
+                  c("runs", "refused", "no_result", "may_not_fit"))
   expect_gte(nrow(oracle), 20L)
-  expect_identical(oracle$binary[oracle$id == "known_positive"], "runs")
+  expect_identical(oracle$binary_ref[oracle$id == "known_positive"], "runs")
+  # "may_not_fit" is the data-dependent class: no result on one dataset, a
+  # fit on the other. "no_result" gave no result on both.
+  mnf <- oracle$class == "may_not_fit"
+  expect_true(all(oracle$binary_ref[mnf] == "no_result" &
+                    oracle$binary_synth[mnf] == "runs"))
+  nr <- oracle$class == "no_result"
+  expect_true(all(oracle$binary_ref[nr] == "no_result" &
+                    oracle$binary_synth[nr] == "no_result"))
   for (k in seq_len(nrow(oracle))) {
     o <- oracle[k, ]
     job <- .u1_job(parms = o$parms)
-    expect_identical(.p424_class(job), o$binary, info = o$id)
+    expect_identical(.p424_class(job), o$class, info = o$id)
     w <- .p424_warnings(job)
     n_rows <- NROW(job$untranslated)
     expect_identical(as.character(job$calls$fit[[3L]][[1L]]), "hazard",
                      info = o$id)
-    if (o$binary == "runs") {
+    if (o$class == "runs") {
       expect_length(w, 0L)
       expect_identical(n_rows, if (o$id %in% .p424_moved) 1L else 0L,
                        info = o$id)
     } else {
-      # Warned once, recorded once.
+      # Warned once, recorded once, and the row names its class.
       expect_length(w, 1L)
       expect_identical(n_rows, 1L, info = o$id)
+      expect_match(job$untranslated$reason, .p424_row_phrase[[o$class]],
+                   fixed = TRUE, info = o$id)
     }
     if (startsWith(o$id, "SETG")) {
       expect_match(paste(w, collapse = " "),
@@ -1864,20 +1884,36 @@ test_that("a free non-positive THALF starts at 1, as SETG1 does (#421 item 3)", 
   expect_match(.u1_msg(job), "(SETG1910)", fixed = TRUE)
 })
 
-test_that("SETG1's g1flag 4 with a free M is NO RESULT, not another model (#424)", {
+test_that("SETG1's g1flag 4 with a free M is no result or may not fit, never another model (#424, #468)", {
   # PROC HAZARD does not fit a different model here: SETG1 selects the
-  # limiting positive generic case (setg1.c:763-776) and the fit then stops
-  # on a domain error (DLG1980), with no estimates. Calling it not_mirrored
-  # would be a false statement about SAS.
-  for (p in c("MUE=0.2 THALF=1 M=1 NU=0", "MUE=0.2 THALF=1 M=-1 NU=0",
-              "MUE=0.2 THALF=1 M=0 NU=0 FIXNU")) {
-    job <- .u1_job(parms = p)
-    msg <- .u1_msg(job)
-    expect_match(msg, "produces no result", fixed = TRUE, info = p)
-    expect_no_match(msg, "cannot emit PROC HAZARD's model", fixed = TRUE,
+  # limiting positive generic case (setg1.c:631-634, :692-699, :763-770).
+  # Calling it not_mirrored would be a false statement about SAS. What the
+  # fit then does depends on M, and was measured on two datasets:
+  # DLG1980 (M != 0) stopped the fit on one and not on the other, so the
+  # claim is qualified; DG1RHO970 (M = 0) stopped it on both.
+  may <- c("MUE=0.2 THALF=1 M=1 NU=0", "MUE=0.2 THALF=1 M=1 NU=0 FIXNU",
+           "MUE=0.2 THALF=1 M=-1 NU=0", "MUE=0.2 THALF=1 M=-1 NU=0 FIXNU")
+  none <- "MUE=0.2 THALF=1 M=0 NU=0 FIXNU"
+  msgs <- vapply(c(may, none), function(p) .u1_msg(.u1_job(parms = p)), "")
+  for (p in c(may, none)) {
+    expect_no_match(msgs[[p]], "cannot emit PROC HAZARD's model", fixed = TRUE,
                     info = p)
-    expect_no_match(msg, "refused before any fit", fixed = TRUE, info = p)
+    expect_no_match(msgs[[p]], "refused before any fit", fixed = TRUE, info = p)
   }
+  for (p in may) {
+    expect_match(msgs[[p]], "PROC HAZARD may not fit this job", fixed = TRUE,
+                 info = p)
+    expect_match(msgs[[p]], "depends on the data", fixed = TRUE, info = p)
+    expect_no_match(msgs[[p]], "produced no result", fixed = TRUE, info = p)
+  }
+  expect_match(msgs[[none]],
+               paste("PROC HAZARD produced no result for this job on the",
+                     "reference data and on an independent dataset"),
+               fixed = TRUE)
+  expect_no_match(msgs[[none]], "may not fit", fixed = TRUE)
+  # The two classes' warnings are different texts, not one message twice.
+  expect_false(identical(sub(" [(]PARMS .*$", "", msgs[[may[[1L]]]]),
+                         sub(" [(]PARMS .*$", "", msgs[[none]])))
   # M fixed: SAS runs it, so nothing is said.
   job <- .u1_job(parms = "MUE=0.2 THALF=1 M=-1 NU=0 FIXM FIXNU")
   expect_null(.u1_refusal_chunk(job))
@@ -1885,7 +1921,7 @@ test_that("SETG1's g1flag 4 with a free M is NO RESULT, not another model (#424)
 
 test_that("the SETG1 verdict is invariant under spacing (#424)", {
   oracle <- .p424_oracle()
-  oracle <- oracle[oracle$binary != "runs" | oracle$id %in% .p424_moved, ]
+  oracle <- oracle[oracle$class != "runs" | oracle$id %in% .p424_moved, ]
   expect_gte(nrow(oracle), 10L)
   for (k in seq_len(nrow(oracle))) {
     o <- oracle[k, ]
@@ -1894,7 +1930,7 @@ test_that("the SETG1 verdict is invariant under spacing (#424)", {
       v <- gsub("=", sp, o$parms, fixed = TRUE)
       expect_false(identical(v, o$parms))          # the spelling varies
       job <- .u1_job(parms = v)
-      expect_identical(.p424_class(job), o$binary, info = v)
+      expect_identical(.p424_class(job), o$class, info = v)
       expect_identical(job$untranslated, base$untranslated, info = v)
       expect_identical(.p424_warnings(job), .p424_warnings(base), info = v)
     }

@@ -76,11 +76,14 @@
     wrong reason, that the model was not mirrored. Most of these values are
     out of range for `hazard()` as well, so the fit still fails after the
     warning;
-  - an early phase on which PROC HAZARD produces no result (#424). With
-    `NU=0` and `M` free (`M=1 NU=0`, `M=-1 NU=0`, `M=0 NU=0 FIXNU`), `SETG1`
-    selects its limiting case and the fit stops on a domain error before any
-    estimates are printed. These fitted with no row. The warning says there is
-    no SAS result to compare with, not that PROC HAZARD fits another model;
+  - an early phase PROC HAZARD may not fit (#424). With `NU=0` and `M` free,
+    `SETG1` selects its limiting case, and these jobs fitted with no row.
+    What the binary does next was measured on two datasets, and the warning
+    says only what was seen. For `M=0 NU=0 FIXNU` it produced no result on
+    both. For `M=1 NU=0` and `M=-1 NU=0`, with or without `FIXNU`, it stopped
+    on a domain error (`DLG1980`) on one dataset and fitted on the other, so
+    the warning says PROC HAZARD **may** print no estimates on your data. In
+    neither case does it say PROC HAZARD fits another model;
   - a phase variable that is not a name to PROC HAZARD's lexer (#440):
     `AGE*SEX`, `LOG(AGE)`, `B SEX`, `1AGE`. A phase variable must be a NAME,
     `[_A-Z][_A-Z0-9]*` (`hazard_l.l:39`, `phasevar : NAME` at
@@ -108,7 +111,8 @@
     reproduce which variables survive, and says so in the warning.
 
   Every class above for `SETG1` was checked against the HAZARD binary
-  (C-Version 4.4.4), with the data staged as PROC HAZARD reads it. Where
+  (C-Version 4.4.4), with the data staged as PROC HAZARD reads it, on the
+  package's `avc` data and on an independent seeded dataset. Where
   `SETG1` moves a starting value and runs, the translation now starts there
   too, with a row and no warning (#421): a free `THALF` that is not positive
   starts at 1, where it was emitted as written and the document stopped at

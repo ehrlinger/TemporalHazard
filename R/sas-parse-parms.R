@@ -1024,7 +1024,8 @@
 #' @param fix_delta,mnu1 Whether FIXDELTA and FIXMNU1 were given.
 #' @return `list(code, construct, reason)` for a refusal; otherwise
 #'   `list(code = NULL, moved = <named numeric>, no_result = <construct> or
-#'   NULL)`, where `moved` holds the start values SETG1 substitutes.
+#'   NULL, no_result_kind = "no_result", "may_not_fit" or NULL)`, where
+#'   `moved` holds the start values SETG1 substitutes.
 #' @noRd
 .hzr_setg1_check <- function(shape, fixed, delta, fix_delta, mnu1) {
   fx <- function(p) p %in% fixed
@@ -1073,21 +1074,27 @@
   # THALF not fixed and not positive: SETG1 uses 1 (setg1.c:343-349).
   moved <- if (th <= 0) c(t_half = 1) else numeric(0)
   no_result <- NULL
+  no_result_kind <- NULL
   if (!mnu1 && nu == 0) {
     if (!fx("m") && (m != 0 || fx("nu"))) {
       # SETG1 selects the limiting positive generic case, g1flag 4, with M
-      # free (setg1.c:631-634, :692-699, :763-770). The binary then stops on
-      # a domain error while fitting (DLG1980 at hzd_ln_G1_and_SG1.c:117-121,
-      # or DG1RHO970 at hzd_set_rho.c:51-54 for M = 0) and prints no
-      # estimates. With M fixed as well it runs, so that case is not here.
+      # free (setg1.c:631-634, :692-699, :763-770). With M fixed as well the
+      # binary runs it, so that case is not here. What follows depends on M
+      # (#468 review, both measured on two datasets):
+      # - M = 0 (M started at 1): hzd_set_rho() raises DG1RHO970
+      #   (hzd_set_rho.c:51-54) on both datasets: "no_result".
+      # - M != 0: DLG1980 (hzd_ln_G1_and_SG1.c:117-121), a domain error the
+      #   fit raises on some data and not on other data: "may_not_fit".
       no_result <- mnu
+      no_result_kind <- if (m == 0) "no_result" else "may_not_fit"
     } else if (m == 0 && !fx("m") && !fx("nu")) {
       moved <- c(moved, nu = 1, m = 1)       # setg1.c:686-691
     } else if (m != 0 && fx("m") && !fx("nu")) {
       moved <- c(moved, nu = 1)              # setg1.c:627-630, :759-762
     }
   }
-  list(code = NULL, moved = moved, no_result = no_result)
+  list(code = NULL, moved = moved, no_result = no_result,
+       no_result_kind = no_result_kind)
 }
 
 #' Map a SAS `PARMS` statement's operands to phases and a starting theta.
@@ -1402,16 +1409,32 @@
     fix_delta = saw_fixdelta, mnu1 = saw_mnu1)
   setg1_refused <- !is.null(setg1$code)
   no_result_reason <- NA_character_
+  no_result_kind <- NA_character_
   if (setg1_refused) {
     flag_refusal(setg1$construct, setg1$reason)
   } else if (!is.null(setg1$no_result) && is.null(delta_seen)) {
-    flag_bad(setg1$no_result, paste0(
-      "PROC HAZARD produces no result for this job: SETG1 selects its ",
-      "limiting case with NU fixed at 0 and M free (setg1.c:631-634, ",
-      ":692-699, :763-770), and the fit then stops on a domain error ",
-      "(DLG1980 or DG1RHO970) before any estimates are printed"))
+    # Two classes, worded by the evidence each has (#468 review). The claim
+    # is about what the HAZARD binary did on the datasets it was run on, not
+    # about every dataset.
+    flag_bad(setg1$no_result, if (setg1$no_result_kind == "no_result") {
+      paste0(
+        "PROC HAZARD produced no result for this job on the reference data ",
+        "and on an independent dataset: SETG1 selects its limiting case with ",
+        "NU fixed at 0 and M started at 1 (setg1.c:692-699), and ",
+        "hzd_set_rho() then raises DG1RHO970 (hzd_set_rho.c:51-54) before ",
+        "any estimates are printed")
+    } else {
+      paste0(
+        "PROC HAZARD may not fit this job: SETG1 selects its limiting case ",
+        "with NU fixed at 0 and M free (setg1.c:631-634, :763-770), and the ",
+        "fit can then stop on DLG1980 (hzd_ln_G1_and_SG1.c:117-121), a ",
+        "domain error that depends on the data. It stopped there, with no ",
+        "estimates, on the reference data, and fitted on an independent ",
+        "dataset")
+    })
     no_result_reason <- paste0(bad_reason[[length(bad_reason)]], " (PARMS ",
                                setg1$no_result, ")")
+    no_result_kind <- setg1$no_result_kind
   }
   if (length(setg1$moved)) {
     was <- early_full[names(setg1$moved)]
@@ -2341,6 +2364,7 @@
     refusal_reason = refusal_reason,
     # SETG1 selected a case the fit cannot evaluate: no estimates (#424).
     no_result_reason = no_result_reason,
+    no_result_kind = no_result_kind,
     # FIXMNU1 on an active early phase: PROC HAZARD fits |M*NU| = 1, which
     # this translation does not mirror (#358), so the model it would emit is
     # a different one. .hzr_parse_job() warns on it (U1).
