@@ -31,7 +31,8 @@ ph_fit <- function(d) {
 ph_warnings <- function(expr) {
   msgs <- character(0)
   val <- withCallingHandlers(expr, warning = function(w) {
-    msgs <<- c(msgs, conditionMessage(w)); invokeRestart("muffleWarning")
+    msgs <<- c(msgs, conditionMessage(w))
+    invokeRestart("muffleWarning")
   })
   list(msgs = msgs, value = val)
 }
