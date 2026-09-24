@@ -43,6 +43,24 @@ and rendered as visible callouts, never dropped. A \verb{PROC HAZPRED} job whose
 \verb{INHAZ=} fitted model cannot be located emits a \code{stop()}, so the document
 fails to render rather than reporting over a model it did not load.
 
+A phase-statement variable that \verb{PROC HAZARD} cannot read as a name, such
+as \code{AGE*SEX}, \code{LOG(AGE)} or \verb{B SEX}, is left out of the model. (\code{LOG()}
+is read as \code{LOG}, as \verb{PROC HAZARD} reads it: its lexer treats \verb{)} as
+whitespace and \code{(} as a change of state, \code{hazard_l.l:32} and \verb{:56}.) A phase
+variable must be a NAME, \verb{[_A-Z][_A-Z0-9]*} (\code{hazard_l.l:39};
+\code{phasevar : NAME}, \code{hazard_y.y:213}), so \verb{PROC HAZARD} rejects such a job
+at parse. The document raises a \code{warning()} above the fit, and the operand
+is recorded in \verb{$untranslated}.
+
+Two more syntax errors take the same route. A value on a \verb{PROC HAZARD}
+option that takes none, such as \code{NOCOV=1} (\code{hazard_y.y:65-76}), is
+ignored in the fit. A \code{TIME}, \code{EVENT}, \code{RCENSOR}, \code{LCENSOR} or \code{WEIGHT}
+statement with more than one operand, which takes exactly one name
+(\code{hazard_y.y:106-127}), is fitted on the first. Both are warned about
+above the fit and recorded in \verb{$untranslated}. \code{TIME} or \code{EVENT} with no
+operand, and no other statement supplying the variable, leaves nothing to
+fit, so that job's fit chunk is a \code{stop()}.
+
 A job may contain more than one \verb{PROC HAZARD} and/or \verb{PROC HAZPRED} block.
 Every block is preserved: the first of a kind keeps the bare chunk name
 (\code{fit}, \code{pred}, \code{pred_haz}), later ones get \code{fit_2}, \code{fit_3}, \code{pred_2}, and

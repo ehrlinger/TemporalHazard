@@ -435,6 +435,11 @@
   # the HZRP state at :53) is a syntax error: PROC HAZARD does not run the
   # job (U1, #403). as.numeric() reads 1E5 and 5., which the lexer does not.
   proc_rejected <- character(0)
+  # Refusals added under #431, counted so the `(` caveat below reaches them.
+  stmt_rejected <- 0L
+  # A TIME or EVENT with no operand (#431), by token; fatal below only when
+  # nothing else in the job supplies the variable.
+  stmt_empty <- list()
   # Returns TRUE when it rejected the option, so the caller can stop rather
   # than add a second, sometimes contradictory row. `CONDITION=5.` used to say
   # both that PROC HAZARD's lexer rejects the number AND what its optimizer
@@ -504,6 +509,22 @@
       # refused jobs that run, so it is recorded, not refused (see the
       # leftovers issue).
       note(key, "unknown PROC HAZARD option")
+      next
+    }
+    # Eleven PROC HAZARD options are bare tokens with no `'=' value` form
+    # (hazard_y.y:65-75). A value after one reaches `hazardopt : error`
+    # (:76), yyerror latches yysynerr (yyerror.c:19) and initprz.c:75-77
+    # stops the job with SYNTAX. The key resolved to a real option, so this
+    # cannot be a %repeat DATA step's keyword (#431). A macro value does not
+    # change the verdict: the `=` is written, whatever `&X` expands to.
+    if (eqp > 0L && token %in% c("CONSERVE", "NOCONSERVE", "QUASINEWTON",
+                                 "STEEPEST", "PRINTIT", "NOPRINT", "NOCOR",
+                                 "NOCOV", "NOLOG", "NONOTES", "NUMERIC")) {
+      proc_rejected <- c(proc_rejected, paste0(
+        tok, ": ", key, " takes no value in PROC HAZARD (hazard_y.y:65-76), ",
+        "so it rejects this job with a syntax error"))
+      note(tok, "a value on an option that takes none (hazard_y.y:65-76)")
+      stmt_rejected <- stmt_rejected + 1L
       next
     }
     mapped <- mapped + 1L
@@ -629,6 +650,32 @@
       note(kw, "unknown HAZARD statement")
       next
     }
+    # TIME, EVENT, RCENSOR, LCENSOR and WEIGHT each take exactly one NAME
+    # (hazard_y.y:106, :109, :112, :124, :127). Any other count falls to
+    # `otherstmt : error` (:102) and initprz.c:75-77 stops the job with
+    # SYNTAX, so taking ops[[1L]] and dropping the rest fitted a model the
+    # job did not describe, silently (#431). A macro operand can expand to
+    # any number of names, so the count carries no verdict when one is there.
+    if (token %in% c("TIME", "EVENT", "RCENSOR", "LCENSOR", "WEIGHT") &&
+        length(ops) != 1L && !any(.hzr_sas_is_macro(ops))) {
+      why <- paste0(
+        if (length(ops)) "more than one operand" else "no operand",
+        "; PROC HAZARD's ", kw, " takes exactly one variable name ",
+        "(hazard_y.y:106-127)")
+      proc_rejected <- c(proc_rejected, paste0(
+        stmt_text, ": ", why, ", so it rejects this job with a syntax error"))
+      note(stmt_text, why)
+      stmt_rejected <- stmt_rejected + 1L
+      if (!length(ops)) {
+        if (token %in% c("TIME", "EVENT")) {
+          stmt_empty[[token]] <- paste0(stmt_text, ": ", why)
+        }
+        next
+      }
+      # The extra operands are dropped from the fit below; the warning and
+      # the row above say so. Refused, so not counted as mapped.
+      mapped <- mapped - 1L
+    }
     mapped <- mapped + 1L
     switch(token,
       TIME       = statements$TIME <- ops[[1L]],
@@ -712,10 +759,19 @@
   # untranslated row; since 2026-09-22 it emits the fit, the row AND a loud
   # warning, so a rendered document completes and carries the reason rather
   # than halting on it.
-  if (length(parms$rejected_phase)) {
+  # A TIME or EVENT with no operand (#431) takes this route too when no other
+  # statement supplies the variable (a second TIME, or ICENSOR for EVENT):
+  # there is then nothing to fit, so no fit to emit with a warning above it.
+  # Otherwise it warns below like the other #431 refusals.
+  stmt_fatal <- c(
+    if (is.null(statements$TIME)) stmt_empty$TIME,
+    if (is.null(statements$EVENT) && is.null(statements$ICENSOR))
+      stmt_empty$EVENT)
+  if (length(parms$rejected_phase) || length(stmt_fatal)) {
     msg <- paste0(
       "PROC HAZARD does not run this job: ",
-      paste(parms$rejected_phase, collapse = "; "), ". Correct the ",
+      paste(c(parms$rejected_phase, stmt_fatal), collapse = "; "),
+      ". Correct the ",
       "statement(s) named here and translate the job again.")
     return(list(
       call = as.call(list(quote(stop), msg, call. = FALSE)),
@@ -724,7 +780,9 @@
     ))
   }
   refusal_warnings <- character(0)
-  rejected <- c(proc_rejected, parms$rejected_parms)
+  # A phase variable that is not a NAME is refused at parse too, but it
+  # translated on main, so it warns here instead of stopping above (#440).
+  rejected <- c(proc_rejected, parms$rejected_parms, parms$rejected_name)
   if (!is.null(proc_syntax_error)) {
     rejected <- c(proc_syntax_error, rejected)
     note("PROC HAZARD", proc_syntax_error)
@@ -735,6 +793,24 @@
       paste(rejected, collapse = "; "), ". The fit below is this ",
       "translation's, not one PROC HAZARD would produce. Correct the ",
       "statement(s) named here and translate the job again."))
+  }
+  # `(` clears yysynerr (hazard_l.l:56), so an error the lexer or parser
+  # raised BEFORE a later `(` no longer stops the job. The HAZARD binary
+  # (C-Version 4.4.4) runs `EARLY AGE*SEX, LOG();` and fits AGE alone, the
+  # rest lost to its parser's error recovery. This translation does not
+  # reproduce that recovery, so it says what may happen instead (#440).
+  # The #431 refusals are syntax errors of the same kind: the HAZARD binary
+  # runs `NOCOV=1` and `EVENT DEAD EXTRA` when `EARLY AGE, LOG();` follows.
+  if ((length(parms$rejected_name) || stmt_rejected > 0L) &&
+      isTRUE(parms$paren_seen)) {
+    refusal_warnings <- c(refusal_warnings, paste0(
+      "This job's phase statements also contain `(`, and PROC HAZARD's ",
+      "lexer clears its syntax-error flag at every `(` (hazard_l.l:56). ",
+      "Where a `(` follows the text named above, PROC HAZARD runs the job ",
+      "despite it, and fits whichever variables its parser's error recovery ",
+      "leaves (for `EARLY AGE*SEX, LOG();` it fits AGE alone). This ",
+      "translation does not reproduce that recovery, so its fit may carry ",
+      "variables PROC HAZARD's does not."))
   }
 
   cens <- .hzr_censor_spec(statements)
@@ -892,16 +968,12 @@
     #   - `_X1`, and the reserved words `NA`, `TRUE`, `FALSE`, `NULL`, ARE
     #     names PROC HAZARD accepts, and only R objects to them (#411);
     #   - `AGE*SEX`, `LOG(AGE)` and `B SEX` are NOT names, so PROC HAZARD
-    #     rejects the job at parse. This parser passes such text through as
-    #     though it were a variable, which is its own defect, but the reason
-    #     given to the reader must not claim the lexer accepted it.
+    #     rejects the job at parse, and the reason given to the reader must
+    #     not claim the lexer accepted it.
     # Only a name PROC HAZARD ACCEPTS is refused here. Text it rejects at
-    # parse (`AGE*SEX`, `LOG(AGE)`) is passed through by this parser as though
-    # it were a variable, which is a real defect -- but refusing it would be a
-    # NEW stop for a job that translates on main today, and new stops are not
-    # what this release does (John, 2026-09-22). It is tracked by #440 and
-    # will become a warning plus an $untranslated row there, once the warn
-    # machinery lands. Until then such a job emits exactly what main emits.
+    # parse (`AGE*SEX`, `LOG(AGE)`) no longer reaches this point: the phase
+    # parser leaves it out of the model, with a row and a warning (#440). A
+    # macro reference (`&V`) still can, and is not a name to judge.
     nonsyntactic <- nonsyntactic[grepl("^[_A-Za-z][_A-Za-z0-9]*$", nonsyntactic)]
     refusals <- c(sel$refuse,
                   if (saw_restrict) "RESTRICT",

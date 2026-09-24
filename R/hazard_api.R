@@ -35,6 +35,137 @@ NULL
 # 7. Generate a golden fixture via data-raw/golden_fixtures.R
 #    (.hzr_create_<dist>_golden_fixture()).
 
+#' Find phases fitted outside the support their parameterisation can carry
+#'
+#' A DIAGNOSIS run after the optimizer returns, never a constraint: it does
+#' not move an estimate, and a fit that trips it still returns its fit. An
+#' unbounded phase type (`.hzr_phase_type_unbounded()`) whose fitted `t_half`
+#' lies below the first observed time has left the data, and `-log(1 - G)` is
+#' then evaluated where `G` is essentially 1 (#444).
+#'
+#' The trigger is a plain FACT -- `t_half` is below the observed support --
+#' with no tuned threshold. The MAGNITUDE does the discriminating and is
+#' carried in `$detail`: the ratio, and `1 - G(t_min)`, the phase's remaining
+#' mass at the first observed time, which is the mechanism itself rather than
+#' a proxy for it. Measured: a suite fit hugging the edge of its data reads
+#' 0.053, and the `cabgkul` fit that reported a log-likelihood of +290082
+#' reads 3.8e-12.
+#'
+#' Keyed on the FITTED value, not the starting one. A fit that starts below
+#' the data and converges inside it is not this defect.
+#'
+#' @param theta Fitted parameter vector, named `<phase>.<parameter>`.
+#' @param phases The fitted spec's phase list.
+#' @param time The observed times.
+#' @param fitted Did a fit actually run?
+#' @return List with `boundary` (`NA` not examined, `NULL` nothing found, or a
+#'   list of records) and `reason` (why, when `NA`).
+#' @keywords internal
+#' @noRd
+.hzr_boundary_check_impl <- function(theta, phases, time, fitted,
+                                     time_lower = NULL, time_upper = NULL) {
+  na_because <- function(reason) list(boundary = NA, reason = reason)
+  if (!isTRUE(fitted)) {
+    return(na_because("model not fitted"))
+  }
+  # A fit with no phases -- every single-distribution fit -- has nothing an
+  # unbounded phase type could trip, so this is "examined, found nothing"
+  # (NULL) rather than "could not look" (NA). Returning NA here listed
+  # boundary_check as a lost capability on every weibull fit in the package,
+  # which is noise, not a finding. Compare conservation_of_events, which is
+  # likewise reported only where it is applicable.
+  if (!length(phases) || is.null(names(phases))) {
+    return(list(boundary = NULL, reason = NULL))
+  }
+  # EVERY observed time, not just `time`. For an interval-censored row the
+  # interval is [time_lower, time_upper], and on a left-truncated fit
+  # time_lower is the entry time -- both can lie below min(time). The record
+  # calls this "the first observed time", so it has to be one (#444).
+  all_t <- c(time, time_lower, time_upper)
+  t_ok <- all_t[is.finite(all_t) & all_t > 0]
+  if (!length(t_ok)) {
+    return(na_because("no positive observed times"))
+  }
+  t_min <- min(t_ok)
+
+  found <- list()
+  # BY INDEX, not by name: `phases[[nm]]` resolves a duplicated name to the
+  # FIRST element, so `names(phases) == c("a", "a")` iterated twice and
+  # emitted two identical records for one phase.
+  for (k in seq_along(phases)) {
+    nm <- names(phases)[[k]]
+    if (!nzchar(nm)) next
+    if (!.hzr_phase_type_unbounded(phases[[k]]$type)) next
+    key <- paste0(nm, ".log_t_half")
+    if (!key %in% names(theta)) next
+    t_half <- exp(unname(theta[[key]]))
+    if (!is.finite(t_half) || t_half >= t_min) next
+    g <- tryCatch(
+      hzr_decompos(t_min, t_half = t_half,
+                   nu = unname(theta[[paste0(nm, ".nu")]]),
+                   m = unname(theta[[paste0(nm, ".m")]]))$G,
+      error = function(e) NA_real_
+    )
+    found[[length(found) + 1L]] <- list(
+      mechanism = "unbounded_phase",
+      phase = nm,
+      parameter = "t_half",
+      detail = paste0(
+        "phase '", nm, "' is of the unbounded type 'hazard' and its fitted ",
+        "t_half (", format(t_half, digits = 4), ") is below the first ",
+        "observed time (", format(t_min, digits = 4), "), a factor of ",
+        format(t_min / t_half, digits = 3), ". Its remaining mass there, ",
+        "1 - G(t_min), is ", format(1 - g, digits = 4),
+        ". ",
+        # `1e-6` IS a tuned number, and unlike the TRIGGER -- which stays a
+        # plain fact with no threshold -- it decides which of three sentences
+        # a reader sees. It is a wording cut-off, not a detection cut-off: no
+        # record is created or suppressed by it, and the measured magnitude
+        # is printed either way, so a reader who disagrees with the cut-off
+        # still has the number. Named here so it is not mistaken for part of
+        # the criterion.
+        #
+        # The magnitude decides this, so the sentence must not assert it
+        # unconditionally: an earlier version said "G is near 1 ... may be a
+        # supremum" whatever the number was, which contradicts the design
+        # this check rests on -- the trigger states a fact, the magnitude
+        # discriminates. Reproduced across reachable fits at 1 - G from
+        # 0.0067 to 0.22; the second is a fifth of the mass remaining and no
+        # runaway at all.
+        if (!is.finite(g)) {
+          paste0("The remaining mass could not be computed, so whether ",
+                 "-log(1 - G) is diverging here is NOT KNOWN.")
+        } else if (1 - g < 1e-6) {
+          paste0("G is numerically 1 across the observed range, so ",
+                 "-log(1 - G) diverges: the objective is unbounded above and ",
+                 "a reported optimum is likely a supremum rather than a fit.")
+        } else {
+          paste0("The phase still carries mass beyond the first observation, ",
+                 "so this is a fit sitting outside its data rather than one ",
+                 "riding the divergence of -log(1 - G).")
+        }
+      )
+    )
+  }
+  if (!length(found)) {
+    return(list(boundary = NULL, reason = NULL))
+  }
+  list(boundary = found, reason = NULL)
+}
+
+
+#' The warning text for boundary findings
+#' @param records The `$boundary` list.
+#' @return A single string.
+#' @keywords internal
+#' @noRd
+.hzr_boundary_message <- function(records) {
+  paste0("fitted outside the observed support: ",
+         paste(vapply(records, function(r) r$detail, character(1)),
+               collapse = " "))
+}
+
+
 #' Build and optionally fit a hazard model
 #'
 #' Creates a `hazard` object and optionally fits it via maximum likelihood.
@@ -586,12 +717,24 @@ NULL
 #'   vector of the steps not performed, in the fixed order
 #'   \code{"fitting"}, \code{"standard_errors"},
 #'   \code{"conserved_phase_variance"}, \code{"weak_direction_check"},
-#'   \code{"conservation_of_events"}, and empty when nothing was lost; and
+#'   \code{"boundary_check"}, \code{"conservation_of_events"}, and empty
+#'   when nothing was lost; and
 #'   \code{degraded_causes}, a character vector with the same names giving
 #'   the reason for each. \code{print()} and \code{summary()} always show
 #'   them as a "Not done in this run" block, which reads "none" when nothing
 #'   was lost. \code{fit$fit$weak} is \code{NA} exactly when
 #'   \code{"weak_direction_check"} is listed.
+#'
+#'   \code{fit$fit$boundary} is its sibling and takes the same three states,
+#'   for phases fitted outside the support their parameterisation can carry:
+#'   \code{NULL} when the check ran and found nothing, a list of records when
+#'   it found something, and \code{NA} when it did not run --- and it is
+#'   \code{NA} exactly when \code{"boundary_check"} is listed in
+#'   \code{degraded}, with the reason in \code{degraded_causes}. Each record
+#'   carries \code{mechanism}, \code{phase}, \code{parameter} and a
+#'   printable \code{detail}. A fit that trips it also raises a warning of
+#'   class \code{"hzr_unbounded_phase"}, which inherits \code{"hzr_boundary"}
+#'   so one handler catches the whole family.
 #' @export
 hazard <- function(formula = NULL,
                    data = NULL,
@@ -1101,7 +1244,14 @@ hazard <- function(formula = NULL,
     converged = NA,
     objective = NA_real_,
     se = NULL,
-    gradient = NULL
+    gradient = NULL,
+    # NA rather than NULL, but UNOBSERVABLE TODAY and not a guard: the
+    # post-fit block below always overwrites this, on every path including
+    # fit = FALSE, so a mutation to NULL changes nothing and no test can
+    # catch it. Kept so that an early return added later yields "never
+    # examined" instead of an absent field -- stated plainly rather than
+    # dressed up as a protection the code does not have (#444).
+    boundary = NA
   )
 
   .hzr_run_fit_safely <- function(expr) {
@@ -1304,6 +1454,24 @@ hazard <- function(formula = NULL,
     warning(.hzr_weak_direction_message(fit_state$weak), call. = FALSE)
   }
 
+  # A phase fitted outside the support its parameterisation can carry (#444).
+  # A sibling of $weak, with the same tri-state: NA not examined, NULL
+  # examined and nothing found, a list of records otherwise.
+  boundary_check <- .hzr_boundary_check_impl(
+    theta = fit_state$theta, phases = phases,
+    time = time, fitted = fit_ran,
+    time_lower = time_lower, time_upper = time_upper
+  )
+  fit_state$boundary <- boundary_check$boundary
+  degraded_reasons$boundary <- boundary_check$reason
+  if (is.list(fit_state$boundary)) {
+    warning(structure(
+      class = c(paste0("hzr_", fit_state$boundary[[1L]]$mechanism),
+                "hzr_boundary", "warning", "condition"),
+      list(message = .hzr_boundary_message(fit_state$boundary), call = NULL)
+    ))
+  }
+
   # Refit-based tooling (hzr_bootstrap()) re-evaluates $call, so it needs the
   # bindings that call refers to. Capturing parent.frame() wholesale would pin
   # the caller's entire frame to every fitted object -- measured at a 1400x
@@ -1360,7 +1528,8 @@ hazard <- function(formula = NULL,
   # entries appear; the reasons carried up from the optimizer say why. The
   # validator stops if the two disagree, because that is a package bug.
   record <- .hzr_degraded_record(
-    vcov = fit_state$vcov, weak = fit_state$weak, control = control,
+    vcov = fit_state$vcov, weak = fit_state$weak,
+    boundary = fit_state$boundary, control = control,
     dist = dist, fitted = fit_ran,
     fixed_mask = fit_state$fixed_mask, param_names = weak_names,
     reasons = degraded_reasons
@@ -2332,6 +2501,7 @@ summary.hazard <- function(object, ...) {
     rcond = object$fit$rcond,
     pd = object$fit$pd,
     weak = object$fit$weak,
+    boundary = object$fit$boundary,
     degraded = object$degraded,
     degraded_causes = object$degraded_causes,
     phases = object$spec$phases
@@ -2401,6 +2571,14 @@ print.summary.hazard <- function(x, ...) {
     # Wrapped rather than cat()'d flat: the message names parameters and two
     # diagnostics, and an unwrapped line buries them off the right edge.
     cat(strwrap(paste0("Note: ", .hzr_weak_direction_message(x$weak)),
+                width = 76, indent = 2, exdent = 8),
+        sep = "\n")
+    cat("\n")
+  }
+  if (is.list(x$boundary)) {
+    # Reported for the same reason as $weak: a fit that looks converged and
+    # is a supremum is this package's signature defect (#444).
+    cat(strwrap(paste0("Note: ", .hzr_boundary_message(x$boundary)),
                 width = 76, indent = 2, exdent = 8),
         sep = "\n")
     cat("\n")

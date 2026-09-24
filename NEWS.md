@@ -67,7 +67,48 @@
     - `FIXGE2` or `FIXGAE2` without `WEIBULL`. That path is not modelled
       here, so the warning says the translation cannot tell whether PROC
       HAZARD refuses the job or which model it fits;
-  - `SETG3`'s entry refusals, on every path.
+  - `SETG3`'s entry refusals, on every path;
+  - a phase variable that is not a name to PROC HAZARD's lexer (#440):
+    `AGE*SEX`, `LOG(AGE)`, `B SEX`, `1AGE`. A phase variable must be a NAME,
+    `[_A-Z][_A-Z0-9]*` (`hazard_l.l:39`, `phasevar : NAME` at
+    `hazard_y.y:213`), so PROC HAZARD rejects such a job at parse. The phase
+    parser passed the text through as a column name, with no row and no
+    warning, so `EARLY AGE=0.1, AGE*SEX=0.2;` emitted a fit on a column
+    called `AGE*SEX` and, under `SELECTION`, a screen offering it as a
+    candidate. The operand is now left out of the model, and out of `theta`
+    with it, so the emitted formula has one starting value per term. This
+    holds with and without `SELECTION`, and for every spacing of the
+    operand. A name PROC HAZARD accepts, including `_X1` and a word that is
+    a keyword elsewhere (`E`, `EARLY`), does not warn, and neither does a
+    macro reference, which SAS expands before its lexer runs.
+
+    Parentheses follow the lexer rather than a rule of thumb, and the
+    verdicts are checked against the HAZARD binary (C-Version 4.4.4). `)` is
+    whitespace to it (`hazard_l.l:32`), and `(` returns no token but
+    switches it to its PROC-line state (`hazard_l.l:56`). So a last item
+    `LOG()` or `LOG() = 0.2` is the variable `LOG`, which PROC HAZARD fits
+    and the translation now keeps. `LOG(X)`, `AGE(1)`, `LOG() /I`, and every
+    item after a `(` in the same statement are rejected. A `(` also clears
+    PROC HAZARD's syntax-error flag, so a job whose phase statements carry
+    one may run despite an earlier error: the binary runs
+    `EARLY AGE*SEX, LOG();` and fits `AGE` alone. The translation does not
+    reproduce which variables survive, and says so in the warning.
+  - a value on a `PROC HAZARD` option that takes none (#431): `NOCOV=1`,
+    `CONSERVE=YES`, `PRINTIT=1`, `NOPRINT=0`, in any spacing. Eleven options
+    are bare tokens (`hazard_y.y:65-75`), so the `=` is a syntax error and
+    the job does not run. The value was ignored and the job fitted with no
+    row;
+  - a `TIME`, `EVENT`, `RCENSOR`, `LCENSOR` or `WEIGHT` statement with other
+    than one operand (#431). Each takes exactly one name
+    (`hazard_y.y:106-127`). `EVENT DEAD EXTRA` fitted on `DEAD` and dropped
+    `EXTRA` with nothing said; it now warns and fits on the first operand.
+    With no operand at all, `WEIGHT`, `RCENSOR` and `LCENSOR` are left out
+    of the fit, and `TIME` or `EVENT` stops the job, since there is no
+    variable to fit, unless another statement supplies one (a second
+    `TIME`, or `ICENSOR` for `EVENT`). An operand that is a macro reference is not counted,
+    since it can expand to any number of names. The HAZARD binary is the
+    oracle for both shapes, and it runs either job when a later phase
+    statement carries a `(`, as above; the warning says so there.
 
   Refusal coverage is not complete: `SETG1`'s refusals, which `PROC HAZARD`
   raises for an early phase, are not traced, so such a job still fits (#424).
@@ -95,10 +136,12 @@
 
   **Which jobs stop and which warn, in one place.** A job stops only where it
   did before this release: a phase statement `PROC HAZARD` refuses at parse
-  (#340), a `PARMS` statement that builds no phase this translator can use, a
-  job with no `DATA=` whose phases name covariates (#311), and a `SELECTION`
-  job that selects no phase. Everything newly recognised in this release
-  warns and still fits.
+  (#340) other than a phase variable that is not a name (#440, above), a
+  `PARMS` statement that builds no phase this translator can use, a job
+  with no `DATA=` whose phases name covariates (#311), a `SELECTION`
+  job that selects no phase, and a `TIME` or `EVENT` statement with no
+  operand (#431) that leaves nothing to fit. Everything else newly
+  recognised in this release warns and still fits.
 
   The risk this accepts, deliberately: a rendered document that shows a
   warning and then carries on to a fit **can** be read as a clean result by
@@ -1037,6 +1080,50 @@
 
 ## Bug fixes
 
+* **`hzr_stepwise()` no longer reports a pin on a column no formula can name
+  as resolved (#463).** `force_in` and `force_out` accept a column of `data`
+  or a term label. A column called `"."` or `""` is neither usable: `terms()`
+  cannot put it in a formula, so it can never become a model term. Such a pin
+  was nevertheless reported as having resolved — it did not appear in
+  `$scope$unresolved` — while doing nothing at all, and with a formula
+  `scope` nothing warned either. It now warns and is listed as unresolved,
+  like any other name that cannot be used. With a character or default
+  `scope` you already saw a warning that the column could not be a
+  *candidate*; that one is unchanged, and the new one is about *pinning*, so
+  both now appear.
+
+  The selected model does not change. The pin never had any effect, and a
+  test asserts the same job with and without it reaches the same terms at the
+  same log-likelihood.
+
+  The warning for a `scope` naming such a column is unchanged and still says
+  the accurate thing — that the column exists but cannot be a candidate.
+
+* **A `"hazard"` phase fitted outside your data is now reported (#444).** The
+  `"hazard"` phase type is −log(1 − G(t)), which grows without bound as G
+  approaches 1, and nothing held its `t_half` inside the observed times. A fit
+  could walk `t_half` below the first observation, evaluate the whole data
+  range where G is essentially 1, and return a log-likelihood of **+290082**
+  with `converged = TRUE` and no warning — a supremum reported as an
+  interior optimum. On the shipped `cabgkul` data the fitted `t_half` was
+  0.000352 against a first observed time of 0.0329.
+
+  Such a fit now **warns** and records what was found in `fit$fit$boundary`.
+  Nothing is bounded and no estimate moves: this reports, it does not
+  constrain.
+
+  The warning states a plain fact — `t_half` is below the observed support
+  — with no tuned threshold, and the magnitude is in the record so you can
+  judge it. Alongside the ratio, each entry carries **1 − G(t_min)**, the
+  phase's remaining mass at the first observed time, which is the mechanism
+  itself: a fit merely hugging the edge of its data measures 0.053, while the
+  `cabgkul` fit above measures 3.8e-12.
+
+  `fit$fit$boundary` is `NULL` when the check ran and found nothing, a list of
+  records when it found something, and `NA` when it did not run — with the
+  reason in `fit$degraded_causes`, so "nothing found" stays distinguishable
+  from "never looked". Catch the warning with `hzr_unbounded_phase`, or the
+  whole boundary family with `hzr_boundary`.
 * **The G3 phase's `log_tau` derivative is now taken in `log_tau` (#352).**
   `.hzr_g3_phase_derivatives()` described itself as taking "central
   differences for log_tau" and stepped `tau` linearly instead, with an
@@ -1116,6 +1203,26 @@
   stored and the mapping is by name. The behaviour is unchanged: `hazard()`
   already refuses to build such an object, so one can only arrive from an
   older version or by hand, and it still predicts.
+
+* **A data defect reaching the score criterion is no longer reported as a
+  numerical failure (#407).** The score path absorbs a Hessian it cannot
+  build or invert and says so, which is right, but it absorbed *every*
+  error, so a defect in the data raised inside the likelihood came back as
+  "the current model's information matrix could not be inverted" and sent
+  the reader looking at conditioning. Since the likelihood's data guards
+  carry the class `hzr_data_error` (#426), the six sites that wrap the
+  likelihood, its gradient and its Hessian now let that class through and
+  go on absorbing everything else. Two of those six can actually receive
+  one, the multiphase Hessian and the multiphase gradient; the other four
+  wrap code that never calls the guards, so their narrowing is defensive
+  rather than a behaviour change, and both live sites are pinned by a
+  test. A genuinely numerical failure is
+  unchanged: it is still swallowed and still reported as one. The two
+  `tryCatch` calls that wrap linear algebra rather than the likelihood,
+  `solve()` on the information block and `model.frame()` on a phase
+  formula, are untouched, since a failure there really is what they exist
+  to absorb.
+
 * **A Conservation of Events fit now reports the log-likelihood of the
   estimates it returns (#362).** Under CoE the conserved phase's scale is
   re-derived after the optimizer finishes, and the reported objective was the
@@ -1285,20 +1392,12 @@
   the cause. For a name like `_X1` this costs nothing: the job stopped before
   this release too, one step earlier, in the phase formula.
 
-  Text `PROC HAZARD` does not accept as a name is **not** refused here. The
-  phase parser passes what it cannot read through as though it were a
-  variable, so `EARLY AGE, AGE*SEX;` translates. `AGE*SEX` is not a name
+  Text `PROC HAZARD` does not accept as a name is **not** refused here,
+  because it no longer reaches this check. `AGE*SEX` is not a name
   (`hazard_l.l:39`, `hazard_y.y:213`), so `PROC HAZARD` rejects that job at
-  parse and the translated result never meant anything either way; but
-  refusing it here would stop a job that translates today, so it is left
-  alone and tracked by #440.
-
-  One thing does change for such a job, and it is an improvement rather
-  than a refusal. Built from pasted text, `AGE*SEX` became an R interaction:
-  `~AGE + AGE * SEX` expands to three model terms against two starting
-  values, and the reader met an arithmetic complaint about `theta`. Built
-  from symbols it is one opaque name, so the reader is told the column is
-  missing from the data instead. Both forms fail; only the second says why.
+  parse; the phase parser now leaves such an operand out of the model, with
+  a warning and an untranslated row, rather than stopping a job that
+  translated before (#440, under Breaking changes).
 
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded

@@ -214,12 +214,24 @@ fields recording what the fit did not do: \code{degraded}, a character
 vector of the steps not performed, in the fixed order
 \code{"fitting"}, \code{"standard_errors"},
 \code{"conserved_phase_variance"}, \code{"weak_direction_check"},
-\code{"conservation_of_events"}, and empty when nothing was lost; and
+\code{"boundary_check"}, \code{"conservation_of_events"}, and empty
+when nothing was lost; and
 \code{degraded_causes}, a character vector with the same names giving
 the reason for each. \code{print()} and \code{summary()} always show
 them as a "Not done in this run" block, which reads "none" when nothing
 was lost. \code{fit$fit$weak} is \code{NA} exactly when
 \code{"weak_direction_check"} is listed.
+
+\code{fit$fit$boundary} is its sibling and takes the same three states,
+for phases fitted outside the support their parameterisation can carry:
+\code{NULL} when the check ran and found nothing, a list of records when
+it found something, and \code{NA} when it did not run --- and it is
+\code{NA} exactly when \code{"boundary_check"} is listed in
+\code{degraded}, with the reason in \code{degraded_causes}. Each record
+carries \code{mechanism}, \code{phase}, \code{parameter} and a
+printable \code{detail}. A fit that trips it also raises a warning of
+class \code{"hzr_unbounded_phase"}, which inherits \code{"hzr_boundary"}
+so one handler catches the whole family.
 }
 \description{
 Creates a \code{hazard} object and optionally fits it via maximum likelihood.
