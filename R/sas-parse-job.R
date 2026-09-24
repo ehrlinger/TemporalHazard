@@ -818,10 +818,20 @@
     refusal_warnings <- c(refusal_warnings, paste0(
       "This PROC HAZARD job is refused before any fit is computed: ",
       sub("^PROC HAZARD refuses this job: ", "", parms$refusal_reason),
-      ". SETG3 sets the error in shape() and the procedure exits before ",
+      ". ", if (grepl("SETG1 raises", parms$refusal_reason, fixed = TRUE))
+        "SETG1" else "SETG3",
+      " sets the error in shape() and the procedure exits before ",
       "results(), so PROC HAZARD produces nothing for this job and the fit ",
       "below stands in for no SAS result at all. Correct the PARMS ",
       "operand(s) named here, or fit the model by hand."))
+  }
+  # A job PROC HAZARD accepts and starts to fit, but on a case its fit
+  # cannot evaluate, so it prints no estimates (#424). Not a refusal, and
+  # not a different model: there is no SAS result to compare with at all.
+  if (!is.null(parms$no_result_reason) && !is.na(parms$no_result_reason)) {
+    refusal_warnings <- c(refusal_warnings, paste0(
+      parms$no_result_reason, ". The fit below stands in for no SAS result at all. Correct the ",
+      "PARMS operand(s) named here, or fit the model by hand."))
   }
 
   # A job PROC HAZARD runs, but on a model this translation does not emit:

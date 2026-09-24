@@ -841,14 +841,20 @@ test_that("FIXMNU1 warns honestly, even where it might constrain nothing (U1 rev
   # (M*NU = -1 is vacuous too; M = NU = -1 is SETG1920). The stop claims
   # neither that PROC HAZARD runs the job nor that it refuses it.
   for (p in c("MUE=0.2 THALF=1 NU=1 M=1 FIXM FIXNU FIXMNU1",
-              "MUE=0.2 THALF=0.5 M=-1 NU=1 FIXM FIXNU FIXMNU1",
-              "MUE=0.2 THALF=0.5 M=-1 NU=-1 FIXM FIXNU FIXMNU1")) {
+              "MUE=0.2 THALF=0.5 M=-1 NU=1 FIXM FIXNU FIXMNU1")) {
     job <- .u1_job(parms = p)
     expect_true(.u1_refuses(job), info = p)
     msg <- .u1_msg(job)
     expect_match(msg, "cannot emit PROC HAZARD's model", fixed = TRUE, info = p)
     expect_no_match(msg, "runs this job", fixed = TRUE, info = p)
   }
+  # M = NU = -1, both fixed, IS SETG1920, and the HAZARD binary refuses it
+  # (fixtures/setg1-oracle.csv), so it now says so rather than that it
+  # cannot tell (#424).
+  msg <- .u1_msg(.u1_job(
+    parms = "MUE=0.2 THALF=0.5 M=-1 NU=-1 FIXM FIXNU FIXMNU1"))
+  expect_match(msg, "(SETG1920)", fixed = TRUE)
+  expect_no_match(msg, "cannot emit PROC HAZARD's model", fixed = TRUE)
 })
 
 test_that("SETG3's entry refusals warn on the constraint path too (U1 review)", {
@@ -1787,6 +1793,11 @@ test_that("the phase-name verdict matches the HAZARD binary on a grid (#440)", {
   msg <- .u1_msg(job)
   if (grepl("refused before any fit is computed", msg, fixed = TRUE)) {
     "refused"
+  } else if (grepl("cannot emit PROC HAZARD's model", msg, fixed = TRUE)) {
+    # A different model, which SAS RUNS. Checked before "no result",
+    # because this message quotes the row's reason, and a no-result reason
+    # routed here would otherwise read as a no-result verdict.
+    "runs"
   } else if (grepl("produces no result", msg, fixed = TRUE)) {
     "no_result"
   } else {
@@ -1845,7 +1856,7 @@ test_that("a free non-positive THALF starts at 1, as SETG1 does (#421 item 3)", 
     th <- eval(job$calls$fit[[3L]]$theta)
     expect_true(all(is.finite(th)), info = p)
     expect_identical(NROW(job$untranslated), 1L)
-    expect_match(job$untranslated$reason, "setg1.c:342-349", fixed = TRUE)
+    expect_match(job$untranslated$reason, "setg1.c:343-349", fixed = TRUE)
     expect_null(.u1_refusal_chunk(job))
   }
   # Fixed, the same value is SETG1910, and the warning says so.
