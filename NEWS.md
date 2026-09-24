@@ -104,7 +104,8 @@
     `EXTRA` with nothing said; it now warns and fits on the first operand.
     With no operand at all, `WEIGHT`, `RCENSOR` and `LCENSOR` are left out
     of the fit, and `TIME` or `EVENT` stops the job, since there is no
-    variable to fit. An operand that is a macro reference is not counted,
+    variable to fit, unless another statement supplies one (a second
+    `TIME`, or `ICENSOR` for `EVENT`). An operand that is a macro reference is not counted,
     since it can expand to any number of names. The HAZARD binary is the
     oracle for both shapes, and it runs either job when a later phase
     statement carries a `(`, as above; the warning says so there.
@@ -139,7 +140,7 @@
   `PARMS` statement that builds no phase this translator can use, a job
   with no `DATA=` whose phases name covariates (#311), a `SELECTION`
   job that selects no phase, and a `TIME` or `EVENT` statement with no
-  operand (#431), which leaves nothing to fit. Everything else newly
+  operand (#431) that leaves nothing to fit. Everything else newly
   recognised in this release warns and still fits.
 
   The risk this accepts, deliberately: a rendered document that shows a

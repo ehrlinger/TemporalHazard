@@ -437,8 +437,9 @@
   proc_rejected <- character(0)
   # Refusals added under #431, counted so the `(` caveat below reaches them.
   stmt_rejected <- 0L
-  # A TIME or EVENT with no operand leaves no variable to fit (#431).
-  stmt_fatal <- character(0)
+  # A TIME or EVENT with no operand (#431), by token; fatal below only when
+  # nothing else in the job supplies the variable.
+  stmt_empty <- list()
   # Returns TRUE when it rejected the option, so the caller can stop rather
   # than add a second, sometimes contradictory row. `CONDITION=5.` used to say
   # both that PROC HAZARD's lexer rejects the number AND what its optimizer
@@ -651,7 +652,7 @@
     }
     # TIME, EVENT, RCENSOR, LCENSOR and WEIGHT each take exactly one NAME
     # (hazard_y.y:106, :109, :112, :124, :127). Any other count falls to
-    # `otherstmt : error` (:101) and initprz.c:75-77 stops the job with
+    # `otherstmt : error` (:102) and initprz.c:75-77 stops the job with
     # SYNTAX, so taking ops[[1L]] and dropping the rest fitted a model the
     # job did not describe, silently (#431). A macro operand can expand to
     # any number of names, so the count carries no verdict when one is there.
@@ -667,7 +668,7 @@
       stmt_rejected <- stmt_rejected + 1L
       if (!length(ops)) {
         if (token %in% c("TIME", "EVENT")) {
-          stmt_fatal <- c(stmt_fatal, paste0(stmt_text, ": ", why))
+          stmt_empty[[token]] <- paste0(stmt_text, ": ", why)
         }
         next
       }
@@ -758,8 +759,14 @@
   # untranslated row; since 2026-09-22 it emits the fit, the row AND a loud
   # warning, so a rendered document completes and carries the reason rather
   # than halting on it.
-  # A TIME or EVENT with no operand (#431) takes this route too: there is no
-  # variable to fit, so no fit to emit with a warning above it.
+  # A TIME or EVENT with no operand (#431) takes this route too when no other
+  # statement supplies the variable (a second TIME, or ICENSOR for EVENT):
+  # there is then nothing to fit, so no fit to emit with a warning above it.
+  # Otherwise it warns below like the other #431 refusals.
+  stmt_fatal <- c(
+    if (is.null(statements$TIME)) stmt_empty$TIME,
+    if (is.null(statements$EVENT) && is.null(statements$ICENSOR))
+      stmt_empty$EVENT)
   if (length(parms$rejected_phase) || length(stmt_fatal)) {
     msg <- paste0(
       "PROC HAZARD does not run this job: ",

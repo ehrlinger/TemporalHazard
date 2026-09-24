@@ -58,7 +58,8 @@ ignored in the fit. A \code{TIME}, \code{EVENT}, \code{RCENSOR}, \code{LCENSOR} 
 statement with more than one operand, which takes exactly one name
 (\code{hazard_y.y:106-127}), is fitted on the first. Both are warned about
 above the fit and recorded in \verb{$untranslated}. \code{TIME} or \code{EVENT} with no
-operand leaves no variable to fit, so that job's fit chunk is a \code{stop()}.
+operand, and no other statement supplying the variable, leaves nothing to
+fit, so that job's fit chunk is a \code{stop()}.
 
 A job may contain more than one \verb{PROC HAZARD} and/or \verb{PROC HAZPRED} block.
 Every block is preserved: the first of a kind keeps the bare chunk name

@@ -1778,7 +1778,7 @@ test_that("the phase-name verdict matches the HAZARD binary on a grid (#440)", {
 # are bare tokens (hazard_y.y:65-75), so a value after one reaches
 # `hazardopt : error` (:76); TIME, EVENT, RCENSOR, LCENSOR and WEIGHT take
 # exactly one NAME (:106-127), so any other count reaches `otherstmt : error`
-# (:101). Either way initprz.c:75-77 stops the job with SYNTAX. The binary
+# (:102). Either way initprz.c:75-77 stops the job with SYNTAX. The binary
 # oracle for both is tests/testthat/fixtures/proc-option-oracle.csv.
 
 .p431_job <- function(text, env = parent.frame()) {
@@ -1842,6 +1842,23 @@ test_that("a one-name statement with other than one operand is refused (#431)", 
       "PROC HAZARD's ", names(stop_jobs)[[k]], " takes exactly one"),
       info = stop_jobs[[k]])
   }
+  # An empty TIME or EVENT is not fatal when another statement supplies the
+  # variable: it warns and fits like the others.
+  for (text in c(
+    paste("PROC HAZARD DATA=D; EVENT DEAD; TIME TT; TIME;", .p431_parms),
+    paste("PROC HAZARD DATA=D; EVENT; ICENSOR C = T0; TIME TT;", .p431_parms)
+  )) {
+    job <- .p431_job(text)
+    expect_true(.u1_warns_and_fits(job), info = text)
+    expect_identical(NROW(job$untranslated), 1L, info = text)
+  }
+  # The fit is on the FIRST operand, and the extra one is not read.
+  job <- .p431_job(warn[[1L]])
+  used <- c(all.vars(job$calls$status), all.vars(job$calls$fit[[3L]]))
+  expect_true("DEAD" %in% used)
+  expect_false("EXTRA" %in% used)
+  job <- .p431_job(warn[[2L]])
+  expect_identical(job$calls$fit[[3L]]$time, as.name("TT"))
 })
 
 test_that("the forms PROC HAZARD runs stay quiet (#431 known negatives)", {

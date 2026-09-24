@@ -70,7 +70,8 @@
 #' statement with more than one operand, which takes exactly one name
 #' (`hazard_y.y:106-127`), is fitted on the first. Both are warned about
 #' above the fit and recorded in `$untranslated`. `TIME` or `EVENT` with no
-#' operand leaves no variable to fit, so that job's fit chunk is a `stop()`.
+#' operand, and no other statement supplying the variable, leaves nothing to
+#' fit, so that job's fit chunk is a `stop()`.
 #'
 #' A job may contain more than one `PROC HAZARD` and/or `PROC HAZPRED` block.
 #' Every block is preserved: the first of a kind keeps the bare chunk name
