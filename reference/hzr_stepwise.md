@@ -126,13 +126,16 @@ as.data.frame(x, ...)
   screen starts: a name that is exactly a column of `data` is that
   column, so the bare `"_X1"` pins the column `_X1` although
   [`terms()`](https://rdrr.io/r/stats/terms.html) labels it `` `_X1` ``,
-  and `"TRUE"` pins a column named `TRUE`. Otherwise a name that is
-  exactly a term label of the model or `scope` is that term, so
-  `` "`_X1`" `` and `"age:mal"` work too. Any other name, `"age "` with
-  a trailing space when there is no such column, say, matches nothing
-  and is ignored with a warning naming it. The column is looked up
-  first: when `data` has a column literally named `age:mal`, `"age:mal"`
-  resolves to that column and not to the interaction.
+  and `"TRUE"` pins a column named `TRUE`. The exception is a column no
+  model formula can hold, `"."` or `""`: it can never become a model
+  term, so it cannot be pinned, and naming it warns and lists it in
+  `unresolved`. Otherwise a name that is exactly a term label of the
+  model or `scope` is that term, so `` "`_X1`" `` and `"age:mal"` work
+  too. Any other name, `"age "` with a trailing space when there is no
+  such column, say, matches nothing and is ignored with a warning naming
+  it. The column is looked up first: when `data` has a column literally
+  named `age:mal`, `"age:mal"` resolves to that column and not to the
+  interaction.
 
 - force_out:
 
@@ -185,10 +188,14 @@ augmented with:
   frozen set. In a two-way screen, `frozen` can name a variable the
   final model does not contain; see the **Known limitation (the frozen
   set)** section. `unresolved` is a list with elements `force_in`,
-  `force_out` and `scope`, each the names that matched neither a column
-  of `data` nor a term label and were therefore ignored
+  `force_out` and `scope`, each the names that could not be used and
+  were therefore ignored
   ([`character()`](https://rdrr.io/r/base/character.html) when none
-  were). The trace, and so
+  were). That is usually a name matching neither a column of `data` nor
+  a term label; for `force_in` and `force_out` it also covers a name
+  that IS a column but which no model formula can hold, such as `"."` or
+  `""`, since such a column can never become a model term and so can
+  never be pinned. The trace, and so
   [`print()`](https://rdrr.io/r/base/print.html) and
   [`summary()`](https://rdrr.io/r/base/summary.html), carries a line for
   each non-empty one, and a screen whose character `scope` was emptied

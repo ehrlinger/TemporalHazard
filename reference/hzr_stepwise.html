@@ -191,7 +191,9 @@ selection trace, but are never dropped.  Each name is looked up, not
 parsed, once, when the screen starts: a name that is exactly a column
 of <code>data</code> is that column, so the bare <code>"_X1"</code> pins the column <code>_X1</code>
 although <code><a href="https://rdrr.io/r/stats/terms.html" class="external-link">terms()</a></code> labels it <code>`_X1`</code>, and <code>"TRUE"</code> pins a column
-named <code>TRUE</code>.  Otherwise a name that is exactly a term label of the
+named <code>TRUE</code>.  The exception is a column no model formula can hold,
+<code>"."</code> or <code>""</code>: it can never become a model term, so it cannot be
+pinned, and naming it warns and lists it in <code>unresolved</code>.  Otherwise a name that is exactly a term label of the
 model or <code>scope</code> is that term, so <code>"`_X1`"</code> and <code>"age:mal"</code> work
 too.  Any other name, <code>"age "</code> with a trailing space when there is no
 such column, say, matches nothing and is ignored with a warning naming
@@ -245,9 +247,13 @@ frozen action; see Details.</p></dd>
 screen, <code>frozen</code> can name a variable the final model does not
 contain; see the <strong>Known limitation (the frozen set)</strong> section.
 <code>unresolved</code> is a list with elements <code>force_in</code>, <code>force_out</code> and
-<code>scope</code>, each the names that matched neither a column of <code>data</code>
-nor a term label and were therefore ignored (<code><a href="https://rdrr.io/r/base/character.html" class="external-link">character()</a></code> when
-none were).  The trace, and so <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code> and <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code>, carries a
+<code>scope</code>, each the names that could not be used and were therefore
+ignored (<code><a href="https://rdrr.io/r/base/character.html" class="external-link">character()</a></code> when none were). That is usually a name
+matching neither a column of <code>data</code> nor a term label; for <code>force_in</code>
+and <code>force_out</code> it also covers a name that IS a column but which no
+model formula can hold, such as <code>"."</code> or <code>""</code>, since such a column
+can never become a model term and so can never be pinned.
+The trace, and so <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code> and <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code>, carries a
 line for each non-empty one, and a screen whose character <code>scope</code>
 was emptied this way says so where it stops.  <code>candidates</code>,
 <code>force_in</code> and <code>force_out</code> here are the arguments as given, so a
