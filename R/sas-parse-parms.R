@@ -225,7 +225,14 @@
   while (i <= n) {
     op <- ops[[i]]
     key_i <- if (bare_key(i - 1L)) i - 1L else NA_integer_
-    if (identical(op, "=")) {
+    if (identical(op, "=") && is.na(key_i)) {
+      # A stray `=`, with no key before it: not a piece of anything, and the
+      # operand after it is its own. Taking that operand as this `=`'s value
+      # threw away a complete `THALF=0.15` as debris (#458). The caller
+      # records the stray as the syntax error it is.
+      i <- i + 1L
+      next
+    } else if (identical(op, "=")) {
       val_i <- if (i < n) i + 1L else NA_integer_
       ok <- !is.na(key_i) && value_key(ops[[key_i]]) && !is.na(val_i) &&
         .hzr_sas_lexer_number(ops[[val_i]])
@@ -1189,6 +1196,21 @@
   spaced_piece <- .hzr_parms_spaced_pieces(operands)
   for (i in seq_along(operands)) {
     op <- operands[[i]]
+    if (identical(op, "=") && spaced_piece[i] == 0L) {
+      # The joiner leaves a bare `=` only where the grammar has nothing to
+      # pair it with. PARMS has no error production of its own
+      # (hazard_y.y:130-160), so it falls to `otherstmt : error`
+      # (hazard_y.y:102): PROC HAZARD discards the rest of the statement and
+      # rejects the job. The PROC HAZARD and PROC HAZPRED lines record theirs
+      # the same way (#433 review 2, 3; #458).
+      flag_syntax(op, paste0(
+        "a stray `=` in PARMS, with no keyword before it to take a value: ",
+        "PROC HAZARD reaches `otherstmt : error` (hazard_y.y:102), discards ",
+        "the rest of the statement and rejects this job with a syntax error, ",
+        "so it does not run; the operands after it are read here as ",
+        "written"))
+      next
+    }
     if (spaced_piece[i] > 0L) {
       unreadable <- TRUE
       if (spaced_piece[i] == 2L) {
@@ -1639,23 +1661,24 @@
     entry_first <- .hzr_setg3_entry_refusal(
       if (tau_absent) NA_real_ else late[["tau"]],
       gamma_, alpha_, eta_, fixed_late)
-    entry_construct <- c("(SETG3900)" = "TAU", "(SETG3910)" = "GAMMA",
-                         "(SETG3920)" = "ALPHA", "(SETG3930)" = "ETA")
-    if (is.null(not_traced) && !is.null(entry_first)) {
-      flag_refusal(unname(entry_construct[entry_first]), paste0(
-        "PROC HAZARD refuses this job: SETG3 raises ", entry_first, " -- ",
-        .hzr_setg3_refusal_reason(entry_first),
-        ". It is checked before the WEIBULL rules (setg3.c:269-284), so this ",
-        "is the refusal PROC HAZARD reaches first"))
-    } else if (is.null(not_traced) && alpha_zero_gae2) {
+    # An entry refusal is RECORDED by the SETG3 trace below, which runs on
+    # this branch (ignore_tau_handled is never set here), as it records one
+    # on every other path. Recording it here as well gave every WEIBULL job
+    # with one constraint flag two rows for one refusal (#458). What this
+    # block owes it is to record nothing of its own: no later refusal, and
+    # no rewrite, since setg3.c:269-284 returns before either is reached.
+    if (is.null(not_traced) && is.null(entry_first) && alpha_zero_gae2) {
       flag_refusal("FIXGAE2", paste0(
         "PROC HAZARD refuses this job: SETG3 raises (SETG3980) -- ",
         .hzr_setg3_refusal_reason("(SETG3980)"),
         "; under FIXGAE2 a fixed ALPHA = 0 does not select the exponential ",
         "case (setg3.c:333-335)"))
     }
-    if (is.null(not_traced) && setg3_refuses) {
-      # Recorded by the SETG3 trace or just above; nothing to translate.
+    if (is.null(not_traced) && (setg3_refuses || !is.null(entry_first))) {
+      # Recorded by the SETG3 trace or just above; nothing to translate. An
+      # entry refusal belongs here too: with TAU=0 FIXTAU the shape is
+      # otherwise valid, so it fell through to the FIXGE2 rewrite and
+      # reported GAMMA moved to 2, which setg3.c:270 returns before (#458).
       NULL
     } else if (!is.null(not_traced) && !is.null(entry_first)) {
       # SETG3's entry checks (setg3.c:269-284) each `return` before the

@@ -1054,6 +1054,55 @@ test_that("SETG3's entry refusals are raised in the C's own order (#433 review)"
   }
 })
 
+test_that("an entry refusal is recorded once, with no rewrite after it (#458)", {
+  # setg3.c:269-284 (pin dad7978) checks TAU, GAMMA, ALPHA and ETA and
+  # RETURNS on the first failure, before the FIXGE2/FIXGAE2 rules at
+  # :444-481 and :815-834 can move a shape. With WEIBULL and one constraint
+  # flag, the constraint block and the SETG3 trace both recorded the entry
+  # refusal, and for TAU the block also recorded a GAMMA or ALPHA rewrite
+  # PROC HAZARD never performs. Every entry code, every flag combination,
+  # with and without WEIBULL: one SETG3 row, the right code, no rewrite row.
+  entries <- c("(SETG3900)" = "TAU=0 FIXTAU GAMMA=1 ETA=1",
+               "(SETG3910)" = "TAU=1 GAMMA=0 FIXGAMMA ETA=1",
+               "(SETG3920)" = "TAU=1 GAMMA=1 ALPHA=-1 FIXALPHA ETA=1",
+               "(SETG3930)" = "TAU=1 GAMMA=1 ETA=0 FIXETA")
+  flags <- c("FIXGE2", "FIXGAE2", "FIXGE2 FIXGAE2", "")
+  n_cases <- 0L
+  for (code in names(entries)) {
+    for (fl in flags) {
+      for (w in c(" WEIBULL", "")) {
+        p <- paste0("MUL=0.2 ", entries[[code]], " ", fl, w)
+        job <- .u1_job(parms = p)
+        why <- job$untranslated$reason
+        codes <- regmatches(why, regexpr("\\(SETG3[0-9]+\\)", why))
+        expect_identical(codes, code, info = p)
+        # ... and the refusal still reaches the reader as a warning chunk.
+        expect_false(is.null(.u1_refusal_chunk(job)), info = p)
+        expect_false(any(grepl("moves the late shape", why, fixed = TRUE)),
+                     info = p)
+        n_cases <- n_cases + 1L
+      }
+    }
+  }
+  expect_identical(n_cases, 32L)                 # the grid ran in full
+
+  # The reported job: its emitted phase keeps GAMMA as written.
+  job <- .u1_job(parms = "MUL=0.2 TAU=0 FIXTAU GAMMA=1 ETA=1 FIXGE2 WEIBULL")
+  expect_identical(NROW(job$untranslated), 1L)
+  ph <- job$calls$fit[[3L]]$phases[[2L]]
+  expect_identical(ph$gamma, 1)
+
+  # KNOWN NEGATIVE: a job with no entry refusal still reports the rewrite
+  # FIXGE2 / FIXGAE2 really performs, and records no refusal.
+  for (fl in c("FIXGE2", "FIXGAE2")) {
+    p <- paste0("MUL=0.2 TAU=1 FIXTAU GAMMA=1 ETA=1 ", fl, " WEIBULL")
+    ok <- .u1_job(parms = p)
+    expect_true(any(grepl("moves the late shape", ok$untranslated$reason,
+                          fixed = TRUE)), info = p)
+    expect_null(.u1_refusal_chunk(ok))
+  }
+})
+
 test_that("the refusal message's claim about hzr_phase() matches what happens (#433 review)", {
   skip_on_cran()
   # The sentence used to assert that hzr_phase() accepts the shape, from a
@@ -1273,6 +1322,114 @@ test_that("operand joining is INVARIANT under spacing (#433 review 2)", {
       NROW(out$untranslated) == 0L &&
       !length(grep("^refusal", names(out$calls)))
     expect_false(silent, info = v)
+  }
+})
+
+# Every spelling of one TOKEN STREAM: each gap next to an `=` is either empty
+# or one space, and every other gap is one space (two names must stay apart).
+# Unlike .u1_spacings(), this can spell a stray `=` glued on both sides
+# (`MUE=0.2=THALF=0.15`), which is the same token stream to SAS as the spaced
+# one (hazard_l.l:32, :55).
+.u1_token_spacings <- function(toks) {
+  gaps <- which(toks[-length(toks)] == "=" | toks[-1L] == "=")
+  grid <- expand.grid(rep(list(c("", " ")), length(gaps)),
+                      stringsAsFactors = FALSE)
+  out <- character(nrow(grid))
+  for (r in seq_len(nrow(grid))) {
+    sep <- rep(" ", length(toks) - 1L)
+    sep[gaps] <- unlist(grid[r, ], use.names = FALSE)
+    out[[r]] <- paste0(toks, c(sep, ""), collapse = "")
+  }
+  unique(out)
+}
+
+test_that("a stray `=` in PARMS does not swallow the next operand (#458)", {
+  # PARMS has no error production of its own (hazard_y.y:130-160), so a stray
+  # `=` falls to `otherstmt : error` (hazard_y.y:102) and PROC HAZARD rejects
+  # the job with a syntax error. Measured on the C binary (4.4.4, synthetic
+  # data): `MUE=0.2 = THALF=0.15 ...` and `MUE=0.2==THALF=0.15 ...` both exit
+  # "SYNTAX at initprz" while the unspaced control runs.
+  #
+  # The translator emits the fit anyway, with the refusal (U1). It used to
+  # read the stray `=` as a piece of a spaced operand and take THALF=0.15
+  # with it as debris, so the emitted fit silently used t_half = 1.
+  stray1 <- c("MUE", "=", "0.2", "=", "THALF", "=", "0.15", "NU", "=", "1")
+  # `==` is TWO `=` tokens (hazard_l.l:55): a different statement, and it
+  # must record two strays, not one.
+  stray2 <- c("MUE", "=", "0.2", "=", "=", "THALF", "=", "0.15", "NU", "=",
+              "1")
+  control <- c("MUE", "=", "0.2", "THALF", "=", "0.15", "NU", "=", "1")
+  want_theta <- quote(c(log(0.2), log(0.15), 1, 1))
+  cases <- list(list(toks = stray1, n_stray = 1L),
+                list(toks = stray2, n_stray = 2L),
+                list(toks = control, n_stray = 0L))
+  for (cs in cases) {
+    variants <- .u1_token_spacings(cs$toks)
+    expect_gt(length(variants), 16L)               # the generator must vary
+    answers <- lapply(variants, function(v) {
+      job <- .u1_job(parms = v)
+      stray_rows <- sum(job$untranslated$construct == "=")
+      list(theta = job$calls$fit[[3L]]$theta,
+           stray_rows = stray_rows,
+           refused = !is.null(.u1_refusal_chunk(job)),
+           rows = NROW(job$untranslated))
+    })
+    # ONE answer across every spelling of this token stream.
+    expect_length(unique(answers), 1L)
+    a <- answers[[1L]]
+    # THALF is read, whatever the strays.
+    expect_identical(a$theta, want_theta, info = variants[[1L]])
+    expect_identical(a$stray_rows, cs$n_stray, info = variants[[1L]])
+    # KNOWN NEGATIVE: the control records nothing and refuses nothing; a
+    # stray refuses and its row is the ONLY row.
+    expect_identical(a$refused, cs$n_stray > 0L, info = variants[[1L]])
+    expect_identical(a$rows, cs$n_stray, info = variants[[1L]])
+  }
+  # The reason a reader sees names the syntax error, not a spaced operand.
+  job <- .u1_job(parms = "MUE=0.2 = THALF=0.15 NU=1")
+  expect_match(.u1_msg(job), "stray `=`", fixed = TRUE)
+})
+
+test_that("an unwrapped PROC HAZARD's DATA= is not a block boundary, in any spacing (#458)", {
+  # A PROC HAZARD with no enclosing `%HAZARD(` is bounded at the next DATA
+  # step, PROC or RUN. The scanner matched the text `DATA ` anywhere, so the
+  # DATA= OPTION written `data = avcs` cut the job off after `PROC HAZARD`
+  # and it failed for want of an EVENT it has. SAS's lexer skips whitespace
+  # (hazard_l.l:32), so every spelling below is one statement.
+  toks <- c("proc", "hazard", "data", "=", "avcs;", "time", "fu_time;",
+            "event", "status;", "parms", "mue", "=", "0.1", "nu", "=", "1",
+            "m", "=", "1;")
+  translate <- function(src) {
+    f <- withr::local_tempfile(fileext = ".sas")
+    writeLines(src, f)
+    tryCatch(suppressWarnings(hzr_translate_sas(f)),
+             error = function(e) conditionMessage(e))
+  }
+  variants <- .u1_token_spacings(toks)
+  expect_gt(length(variants), 16L)                 # the generator must vary
+  answers <- lapply(variants, function(v) {
+    out <- translate(c(v, "run;"))
+    if (is.character(out)) out else list(fit = out$calls$fit,
+                                         rows = NROW(out$untranslated))
+  })
+  # ONE answer across every spelling, and it is a translation, not an error.
+  expect_length(unique(answers), 1L)
+  a <- answers[[1L]]
+  expect_false(is.character(a), info = if (is.character(a)) a)
+  expect_identical(a$fit[[3L]]$data, as.name("AVCS"))
+  expect_identical(a$fit[[3L]]$time, as.name("FU_TIME"))
+  expect_identical(a$rows, 0L)
+
+  # KNOWN NEGATIVE: a real DATA step and RUN still end the block, in the
+  # spaced spelling, so what follows is not read as PROC HAZARD statements.
+  spaced <- "proc hazard data = avcs; time fu_time; event status;"
+  for (tail in c("data x; set y; run;", "run; data x; set y;")) {
+    txt <- .hzr_sas_normalise(paste(spaced, "parms mue=0.1 nu=1 m=1;", tail))
+    b <- .hzr_sas_blocks(txt)
+    expect_length(b, 1L)
+    expect_match(b[[1L]]$text, "PARMS MUE=0.1", fixed = TRUE, info = tail)
+    expect_no_match(b[[1L]]$text, "SET Y", fixed = TRUE, info = tail)
+    expect_no_match(b[[1L]]$text, "RUN", fixed = TRUE, info = tail)
   }
 })
 
