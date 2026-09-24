@@ -6,6 +6,7 @@
 nm <- c("late.log_mu", "late.log_tau", "late.gamma", "late.alpha")
 th <- c(-0.5, 1, 4, 0.8)
 gated <- 1e-12  # below .hzr_rcond_tol, as on every fit this reading targets
+shapes <- c("late.gamma", "late.alpha", "late.eta")
 
 # gamma's standard error, relative to gamma, is `rel`; everything else is
 # determined and uncorrelated with it.
@@ -14,7 +15,8 @@ single_vcov <- function(rel, gamma = th[3]) {
 }
 
 test_that("a parameter the data do not determine is named on its own", {
-  w <- .hzr_weak_direction(single_vcov(50), gated, nm, theta = th)
+  w <- .hzr_weak_direction(single_vcov(50), gated, nm, theta = th,
+                           shape_names = shapes)
   expect_true(is.list(w))
   expect_true(isTRUE(w$single))
   expect_identical(w$params, "late.gamma")
@@ -33,12 +35,14 @@ test_that("a parameter's own precision is not the criterion; the gate is", {
   # 1e7 that is what a flat-to-infinity likelihood reports, so it is named
   # when the Hessian is ill-conditioned ...
   w <- .hzr_weak_direction(single_vcov(0.3, gamma = 1e7), gated, nm,
-                           theta = replace(th, 3, 1e7))
+                           theta = replace(th, 3, 1e7),
+                           shape_names = shapes)
   expect_identical(w$params, "late.gamma")
   expect_match(.hzr_weak_direction_message(w), "'late.gamma' = 1e+07",
                fixed = TRUE)
   # ... and not when it is not.
-  expect_null(.hzr_weak_direction(single_vcov(0.3), 1e-4, nm, theta = th))
+  expect_null(.hzr_weak_direction(single_vcov(0.3), 1e-4, nm, theta = th,
+                           shape_names = shapes))
 })
 
 test_that("no single parameter dominating means nothing is named", {
@@ -46,11 +50,13 @@ test_that("no single parameter dominating means nothing is named", {
   # each, correlation 0.5, below the pairwise reading's bar too).
   v <- diag(c(1, 1, (0.1 * th[3])^2, 0.001))
   v[1, 2] <- v[2, 1] <- 0.5
-  expect_null(.hzr_weak_direction(v, gated, nm, theta = th))
+  expect_null(.hzr_weak_direction(v, gated, nm, theta = th,
+                           shape_names = shapes))
 })
 
 test_that("the rcond gate still decides whether anything is read", {
-  expect_null(.hzr_weak_direction(single_vcov(50), 1e-4, nm, theta = th))
+  expect_null(.hzr_weak_direction(single_vcov(50), 1e-4, nm, theta = th,
+                           shape_names = shapes))
 })
 
 test_that("a log-scale estimate near 0 is not scaled by its own value", {
@@ -61,7 +67,8 @@ test_that("a log-scale estimate near 0 is not scaled by its own value", {
   th0 <- th
   th0[2] <- 1e-4
   v <- diag(c(0.01, 0.25, (50 * th[3])^2, 0.001))
-  w <- .hzr_weak_direction(v, gated, nm, theta = th0)
+  w <- .hzr_weak_direction(v, gated, nm, theta = th0,
+                           shape_names = shapes)
   expect_identical(w$params, "late.gamma")
   value_scaled <- v / outer(abs(th0), abs(th0))
   expect_identical(nm[which.max(abs(eigen(value_scaled)$vectors[, 1]))],
@@ -71,7 +78,8 @@ test_that("a log-scale estimate near 0 is not scaled by its own value", {
 test_that("a pair the correlation reading finds is still reported as the pair", {
   v <- matrix(c(1, 0.999, 0.999, 1), 2) * 100
   w <- .hzr_weak_direction(v, gated, c("early.m", "early.nu"),
-                           theta = c(27, 0.027))
+                           theta = c(27, 0.027),
+                           shape_names = shapes)
   expect_false(isTRUE(w$single))
   expect_setequal(w$params, c("early.m", "early.nu"))
 })
@@ -81,16 +89,19 @@ test_that("a coefficient or log-scale parameter is never named on its own", {
   # its well-identified coefficient dominated the flattest direction.
   v <- diag(c(0.01, 0.02, (0.1 * th[3])^2, 0.001, 565^2))
   w <- .hzr_weak_direction(v, gated, c(nm, "late.x2"),
-                           theta = c(th, 2641))
+                           theta = c(th, 2641),
+                           shape_names = shapes)
   expect_null(w)
   v2 <- diag(c(1e4, 0.02, (0.1 * th[3])^2, 0.001))
-  expect_null(.hzr_weak_direction(v2, gated, nm, theta = th))
+  expect_null(.hzr_weak_direction(v2, gated, nm, theta = th,
+                           shape_names = shapes))
 })
 
 test_that("nu is not a named shape: it is signed and 0 is legitimate", {
   v <- diag(c(0.01, 0.05^2))
   expect_null(.hzr_weak_direction(v, gated, c("early.log_t_half", "early.nu"),
-                                  theta = c(0, 1e-3)))
+                                  theta = c(0, 1e-3),
+                           shape_names = shapes))
 })
 
 test_that("an identified fit with a small-unit covariate names nothing", {
@@ -109,4 +120,16 @@ test_that("an identified fit with a small-unit covariate names nothing", {
   # The premise: the gate is open, so only the naming rule keeps this quiet.
   expect_lt(fit$fit$rcond, .hzr_rcond_tol)
   expect_null(fit$fit$weak)
+})
+
+test_that("a covariate named like a shape is not a shape", {
+  # A cdf phase with a covariate called `gamma` has a coefficient
+  # `early.gamma`; only the phase specs say which names are g3 shapes.
+  v <- diag(c(0.01, (50 * 4)^2))
+  expect_null(.hzr_weak_direction(v, gated, c("early.log_mu", "early.gamma"),
+                                  theta = c(-1, 4), shape_names = shapes))
+  expect_identical(
+    .hzr_weak_direction(v, gated, c("early.log_mu", "early.gamma"),
+                        theta = c(-1, 4), shape_names = "early.gamma")$params,
+    "early.gamma")
 })

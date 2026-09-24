@@ -1465,8 +1465,18 @@ hazard <- function(formula = NULL,
     weak_vcov[which(masked), ] <- NA_real_
     weak_vcov[, which(masked)] <- NA_real_
   }
+  # The g3 shapes the single-parameter reading may name (#415), from the
+  # phase specs rather than from a name suffix.
+  weak_shapes <- if (dist == "multiphase" && length(phases)) {
+    unlist(lapply(seq_along(phases), function(k) {
+      if (identical(phases[[k]]$type, "g3")) {
+        paste0(names(phases)[[k]], ".", c("gamma", "alpha", "eta"))
+      }
+    }))
+  }
   weak_check <- .hzr_weak_direction_impl(weak_vcov, fit_state$rcond,
-                                         weak_names, theta = fit_state$par)
+                                         weak_names, theta = fit_state$par,
+                                         shape_names = weak_shapes)
   fit_state$weak <- weak_check$weak
   degraded_reasons$weak <- weak_check$reason
   if (is.list(fit_state$weak)) {

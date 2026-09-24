@@ -71,7 +71,7 @@ test_that("the hold reaches the fit a caller gets by pinning the same values", {
   # keeps the MAXIMUM is the survreg comparison in the first test.)
   pinned <- fit_g3(d, hzr_phase("g3", tau = 1, gamma = 3, alpha = 1, eta = 1,
                                 fixed = c("tau", "alpha", "eta")))
-  expect_null(boundary_records(pinned, "g3_alpha_one")[[1]])
+  expect_length(boundary_records(pinned, "g3_alpha_one"), 0L)
   expect_equal(held$fit$objective, pinned$fit$objective, tolerance = 1e-8)
   expect_equal(coef(held), coef(pinned), tolerance = 1e-5)
 })
@@ -165,7 +165,7 @@ test_that("FIXGE2 refuses a fixed alpha above 1 (SETG31040)", {
   fit <- suppressWarnings(
     fit_g3(d, hzr_phase("g3", tau = 2, gamma = 3, alpha = 0.5,
                         fixed = "alpha", constraint = "eta_gamma")))
-  expect_null(boundary_records(fit, "g3_fixge2_alpha_start")[[1]])
+  expect_length(boundary_records(fit, "g3_fixge2_alpha_start"), 0L)
 })
 
 test_that("FIXGE2 moves a free alpha start at 1 or above to 2/3, and says so", {

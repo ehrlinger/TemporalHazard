@@ -127,6 +127,9 @@ NULL
 #'   parameters span the flat direction.
 #' @param theta The fitted parameter vector, aligned with \code{vcov}. Needed
 #'   only by the single-parameter reading, which is skipped without it.
+#' @param shape_names Names of the g3 shape parameters (\code{gamma},
+#'   \code{alpha}, \code{eta}) the single-parameter reading may name; it is
+#'   skipped when empty.
 #' @return One of three values, which callers must keep distinct:
 #'   \code{NULL} when the check ran and found no ridge; \code{NA} when the
 #'   check \emph{could not} run, because no usable Hessian was available; and
@@ -155,7 +158,8 @@ NULL
 .hzr_weak_direction_impl <- function(vcov, rcond, param_names = NULL,
                                      tol = .hzr_rcond_tol,
                                      cor_tol = .hzr_ridge_cor_tol,
-                                     share = 0.9, theta = NULL) {
+                                     share = 0.9, theta = NULL,
+                                     shape_names = NULL) {
   na_because <- function(reason) list(weak = NA, reason = reason)
   looked <- function(weak) list(weak = weak, reason = NA_character_)
 
@@ -293,7 +297,7 @@ NULL
 
   if (is.null(found)) {
     return(looked(.hzr_weak_single_parameter(V, theta, keep, nms, rcond,
-                                             cor_tol)))
+                                             cor_tol, shape_names)))
   }
   found$n_directions <- length(seen)
   looked(found)
@@ -329,13 +333,16 @@ NULL
 #'   entry, its `estimate`, and `se_metric`, its standard error in the
 #'   metric above.
 #' @noRd
-.hzr_weak_single_names <- "(^|\\.)(gamma|alpha|eta)$"
-
-.hzr_weak_single_parameter <- function(V, theta, keep, nms, rcond, cor_tol) {
+.hzr_weak_single_parameter <- function(V, theta, keep, nms, rcond, cor_tol,
+                                       shape_names) {
   if (is.null(theta) || length(theta) < max(keep)) return(NULL)
+  if (!length(shape_names)) return(NULL)
   th <- unname(theta)[keep]
   if (anyNA(th) || any(!is.finite(th))) return(NULL)
-  positive_shape <- grepl(.hzr_weak_single_names, nms) & th > 0
+  # The g3 shapes are named by the CALLER from the phase specs, not guessed
+  # from a name suffix: a covariate called `gamma` in a cdf phase is
+  # `early.gamma` too.
+  positive_shape <- nms %in% shape_names & th > 0
   sc <- ifelse(positive_shape, th, 1)
   S <- V / outer(sc, sc)
   e <- tryCatch(eigen(S, symmetric = TRUE), error = function(e) NULL)
@@ -359,10 +366,11 @@ NULL
 .hzr_weak_direction <- function(vcov, rcond, param_names = NULL,
                                 tol = .hzr_rcond_tol,
                                 cor_tol = .hzr_ridge_cor_tol,
-                                share = 0.9, theta = NULL) {
+                                share = 0.9, theta = NULL,
+                                shape_names = NULL) {
   .hzr_weak_direction_impl(vcov, rcond, param_names = param_names,
                            tol = tol, cor_tol = cor_tol, share = share,
-                           theta = theta)$weak
+                           theta = theta, shape_names = shape_names)$weak
 }
 
 #' Warning text for a detected ridge direction
