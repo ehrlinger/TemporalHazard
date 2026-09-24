@@ -255,5 +255,9 @@ test_that("a pin on a column named \"\" warns and is listed as unresolved", {
   expect_match(r$msgs[[1L]], "`force_in` names \"\", which no model formula",
                fixed = TRUE)
   expect_identical(r$value$scope$unresolved$force_in, "")
-  expect_length(r$value$scope$force_in_resolved, 0L)
+  # NOT asserted: that the pin stays out of `$scope$force_in_resolved`. That
+  # field comes from #451, which is not on this branch, so it reads NULL for
+  # every pin, resolved or not, and an `expect_length(..., 0L)` on it could
+  # never fail. An earlier draft of this test had exactly that assertion
+  # (#469 review). Assert it once #451 lands.
 })
