@@ -1054,6 +1054,53 @@ test_that("SETG3's entry refusals are raised in the C's own order (#433 review)"
   }
 })
 
+test_that("an entry refusal is recorded once, with no rewrite after it (#458)", {
+  # setg3.c:269-284 (pin dad7978) checks TAU, GAMMA, ALPHA and ETA and
+  # RETURNS on the first failure, before the FIXGE2/FIXGAE2 rules at
+  # :444-481 and :815-834 can move a shape. With WEIBULL and one constraint
+  # flag, the constraint block and the SETG3 trace both recorded the entry
+  # refusal, and for TAU the block also recorded a GAMMA or ALPHA rewrite
+  # PROC HAZARD never performs. Every entry code, every flag combination,
+  # with and without WEIBULL: one SETG3 row, the right code, no rewrite row.
+  entries <- c("(SETG3900)" = "TAU=0 FIXTAU GAMMA=1 ETA=1",
+               "(SETG3910)" = "TAU=1 GAMMA=0 FIXGAMMA ETA=1",
+               "(SETG3920)" = "TAU=1 GAMMA=1 ALPHA=-1 FIXALPHA ETA=1",
+               "(SETG3930)" = "TAU=1 GAMMA=1 ETA=0 FIXETA")
+  flags <- c("FIXGE2", "FIXGAE2", "FIXGE2 FIXGAE2", "")
+  n_cases <- 0L
+  for (code in names(entries)) {
+    for (fl in flags) {
+      for (w in c(" WEIBULL", "")) {
+        p <- paste0("MUL=0.2 ", entries[[code]], " ", fl, w)
+        job <- .u1_job(parms = p)
+        why <- job$untranslated$reason
+        codes <- regmatches(why, regexpr("\\(SETG3[0-9]+\\)", why))
+        expect_identical(codes, code, info = p)
+        expect_false(any(grepl("moves the late shape", why, fixed = TRUE)),
+                     info = p)
+        n_cases <- n_cases + 1L
+      }
+    }
+  }
+  expect_identical(n_cases, 32L)                 # the grid ran in full
+
+  # The reported job: its emitted phase keeps GAMMA as written.
+  job <- .u1_job(parms = "MUL=0.2 TAU=0 FIXTAU GAMMA=1 ETA=1 FIXGE2 WEIBULL")
+  expect_identical(NROW(job$untranslated), 1L)
+  ph <- job$calls$fit[[3L]]$phases[[2L]]
+  expect_identical(ph$gamma, 1)
+
+  # KNOWN NEGATIVE: a job with no entry refusal still reports the rewrite
+  # FIXGE2 / FIXGAE2 really performs, and records no refusal.
+  for (fl in c("FIXGE2", "FIXGAE2")) {
+    p <- paste0("MUL=0.2 TAU=1 FIXTAU GAMMA=1 ETA=1 ", fl, " WEIBULL")
+    ok <- .u1_job(parms = p)
+    expect_true(any(grepl("moves the late shape", ok$untranslated$reason,
+                          fixed = TRUE)), info = p)
+    expect_null(.u1_refusal_chunk(ok))
+  }
+})
+
 test_that("the refusal message's claim about hzr_phase() matches what happens (#433 review)", {
   skip_on_cran()
   # The sentence used to assert that hzr_phase() accepts the shape, from a

@@ -1095,6 +1095,16 @@
   (`:102`) and rejects the job; the job still warns, as before. `==` is two
   `=` tokens to SAS (`hazard_l.l:55`) and records two rows.
 
+* **A `SETG3` entry refusal under `WEIBULL` is recorded once (#458).** With
+  `WEIBULL` and one of `FIXGE2` or `FIXGAE2`, a job that fixed `TAU`, `GAMMA`
+  or `ETA` at a non-positive value, or `ALPHA` below zero, listed the same
+  `SETG3900`-`SETG3930` refusal twice in `$untranslated`. For a fixed
+  non-positive `TAU` it also listed a `GAMMA` or `ALPHA` rewrite `PROC
+  HAZARD` never performs, and the emitted phase carried the rewritten value:
+  `setg3.c:269-284` returns on these checks before the constraint rules at
+  `:444-481` run. The job now has one row, and its phase keeps the values
+  written. The warning and its code are unchanged.
+
 * **`hzr_stepwise()` no longer reports a pin on a column no formula can name
   as resolved (#463).** `force_in` and `force_out` accept a column of `data`
   or a term label. A column called `"."` or `""` is neither usable: `terms()`
