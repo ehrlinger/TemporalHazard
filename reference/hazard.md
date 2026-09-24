@@ -261,13 +261,23 @@ as a clean result), `engine` (implementation tag, `"native-r-m2"`), and
 two fields recording what the fit did not do: `degraded`, a character
 vector of the steps not performed, in the fixed order `"fitting"`,
 `"standard_errors"`, `"conserved_phase_variance"`,
-`"weak_direction_check"`, `"conservation_of_events"`, and empty when
-nothing was lost; and `degraded_causes`, a character vector with the
-same names giving the reason for each.
-[`print()`](https://rdrr.io/r/base/print.html) and
+`"weak_direction_check"`, `"boundary_check"`,
+`"conservation_of_events"`, and empty when nothing was lost; and
+`degraded_causes`, a character vector with the same names giving the
+reason for each. [`print()`](https://rdrr.io/r/base/print.html) and
 [`summary()`](https://rdrr.io/r/base/summary.html) always show them as a
 "Not done in this run" block, which reads "none" when nothing was lost.
 `fit$fit$weak` is `NA` exactly when `"weak_direction_check"` is listed.
+
+`fit$fit$boundary` is its sibling and takes the same three states, for
+phases fitted outside the support their parameterisation can carry:
+`NULL` when the check ran and found nothing, a list of records when it
+found something, and `NA` when it did not run — and it is `NA` exactly
+when `"boundary_check"` is listed in `degraded`, with the reason in
+`degraded_causes`. Each record carries `mechanism`, `phase`, `parameter`
+and a printable `detail`. A fit that trips it also raises a warning of
+class `"hzr_unbounded_phase"`, which inherits `"hzr_boundary"` so one
+handler catches the whole family.
 
 ## Details
 
