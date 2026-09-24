@@ -43,6 +43,18 @@
   invisible(x)
 }
 
+#' Print method for hzr_sas_job
+#'
+#' Shows what [hzr_translate_sas()] made of one SAS job: the chunks it emitted,
+#' how many of the job's tokens it mapped, and one line per construct it could
+#' not translate. Read the untranslated lines before trusting the document --
+#' each one names something the emitted R does differently from PROC HAZARD,
+#' or not at all.
+#'
+#' @param x An `hzr_sas_job` object, as returned by [hzr_translate_sas()].
+#' @param ... Additional arguments (ignored).
+#' @return The object `x`, invisibly.
+#' @seealso [hzr_translate_sas()], which builds the object.
 #' @export
 print.hzr_sas_job <- function(x, ...) {
   cat("<hzr_sas_job>", basename(x$source$path), "\n")

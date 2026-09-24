@@ -2,6 +2,157 @@
 
 ## Breaking changes
 
+* **A `hzr_translate_sas()` job PROC HAZARD refuses now warns loudly, and
+  says so in `$untranslated`** (#359). When `SETG3` sets an error, the
+  procedure exits in `shape()` before `results()`, so the job produces
+  nothing. The translation recorded that as an untranslated row and emitted a
+  `hazard()` chunk with nothing to mark it, and a reader who rendered past the
+  callout got a converged fit standing in for a job with no result. The
+  emitted document now carries a `warning()` immediately above the fit,
+  naming the `SETG3` code, its cause and the `PARMS` operands that produced
+  it, and the row is recorded as before. The fit is still emitted: a rendered
+  document completes, and the reader is told what it stands in for.
+
+  **Some of these still fail further down, and the warning says which.**
+  Several `SETG3` refusals fire precisely because a shape value is out of
+  range, and the same value is out of range for `hzr_phase()`, which will not
+  build the phase. Rather than name a list of codes here, which drifted once
+  already, the warning itself is derived by trying to construct the phase: it
+  says `hzr_phase()` accepts the shape only when it does, and otherwise says
+  the document stops at that check. A test executes every `SETG3` class's
+  emitted chunks and requires the message and the outcome to agree, so the
+  two cannot diverge again. In every case the warning is emitted in its own
+  chunk **above** the fit, naming the `SETG3` code and the operand, so the
+  cause is stated before `hzr_phase()` refuses; the render then stops there
+  with `hzr_phase()`'s own message.
+
+  Be aware of where that warning does and does not appear. When a chunk
+  errors, Quarto writes no output document, and `knitr` collects warnings
+  **into** the document rather than printing them, so the warning does not
+  reach the render console either. What a reader has in that case is the
+  emitted `.qmd` itself, where the `warning()` naming `SETG3910` sits
+  immediately above the failing fit, and the `$untranslated` row on the
+  translated job.
+
+  The refusal is raised only where it is PROC HAZARD's. With `FIXGE2` or
+  `FIXGAE2` and no `WEIBULL`, SAS reaches `SETG3` down a path the `setg3.c`
+  trace does not model, so the trace's verdict is not used there. Only
+  `SETG3`'s entry refusals are raised as refusals on that path (see the next
+  entry).
+
+* **More `hzr_translate_sas()` jobs that PROC HAZARD refuses, or fits
+  differently, now warn loudly** (#358, #403, #421). Each was already recorded
+  as an untranslated row, but nothing in the rendered document said so, and a
+  reader met a converged fit with no sign that PROC HAZARD would not have
+  produced it. Each now emits the fit, a `warning()` above it naming the
+  cause, and the row:
+  - a `PARMS` operand PROC HAZARD rejects with a syntax error: a value its
+    lexer does not read as a number (`NU=1E-3`, `NU=2.`), a value keyword
+    with no `= NUMBER`, a spaced operand that is invalid even joined, or a
+    keyword outside its grammar (`FIXG1`);
+  - a `MAXITER=` or `CONDITION=` value that its lexer does not read as a
+    number, **or no value at all**: `MAXITER '=' NUMBER` and
+    `CONDITION '=' NUMBER` (`hazard_y.y:63-64`) have no form without a
+    number, so `MAXITER=`, `MAXITER =` and a bare `MAXITER` are each a
+    syntax error and the job does not run;
+  - a template's `?` placeholder in `PARMS`, which PROC HAZARD's lexer also
+    rejects. It was filled from SAS's default and fitted; it now asks to be
+    filled in;
+  - a model this translation cannot emit:
+    - `FIXMNU1` on an active early phase, which PROC HAZARD fits with
+      `|M*NU| = 1`; this translation does not mirror that constraint;
+    - `DELTA` other than 0 on an active early phase;
+    - `FIXTAU` with no `TAU` written, which PROC HAZARD fixes at 0.75 of the
+      longest follow-up;
+    - `FIXGE2` or `FIXGAE2` without `WEIBULL`. That path is not modelled
+      here, so the warning says the translation cannot tell whether PROC
+      HAZARD refuses the job or which model it fits;
+  - `SETG3`'s entry refusals, on every path.
+
+  Refusal coverage is not complete: `SETG1`'s refusals, which `PROC HAZARD`
+  raises for an early phase, are not traced, so such a job still fits (#424).
+
+  A `PARMS` or `PROC` value that carries a macro reference (`&X`, `%CALL`) is
+  not refused, because SAS expands it before PROC HAZARD reads the statement.
+  An operand this translation could not read, for that reason or any other,
+  warns on a job whose phases it did build: the unread operand may be the one
+  that sets a shape, and the emitted phase would then carry SAS's default
+  where the job wrote something else.
+
+  **A refused job no longer stops the render.** The warning is per job: a
+  file holding several jobs emits one fit chunk each, and only the refused
+  job's fit is preceded by a `warning()` chunk, so every other job is written
+  out and runs unchanged. A document carrying a refusal renders to completion
+  and shows the warning in its output, where an earlier draft of this work
+  made it a `stop()` and Quarto then exited 1 and produced no output document
+  at all, including for the jobs before the refused one.
+
+  The exception is the refusals above whose shape `hzr_phase()` will not
+  build. They are warned about and emitted like everything else, but
+  `hzr_phase()` then refuses the out-of-range value, so a file containing such
+  a job still yields no rendered output until it is corrected or removed. A reader who wants the other jobs'
+  results in the meantime can delete that job from the file.
+
+  **Which jobs stop and which warn, in one place.** A job stops only where it
+  did before this release: a phase statement `PROC HAZARD` refuses at parse
+  (#340), a `PARMS` statement that builds no phase this translator can use, a
+  job with no `DATA=` whose phases name covariates (#311), and a `SELECTION`
+  job that selects no phase. Everything newly recognised in this release
+  warns and still fits.
+
+  The risk this accepts, deliberately: a rendered document that shows a
+  warning and then carries on to a fit **can** be read as a clean result by
+  someone who does not read the warning. That is why the warning is raised
+  in its own chunk immediately above the fit rather than folded into it, and
+  why every such job also carries a row in `$untranslated` -- the warning is
+  read once at render, the row is what a reader can search for afterwards.
+
+* **An operand written with spaces around `=` is read, not split apart**
+  (#421). SAS's lexer skips whitespace (`hazard_l.l:32`), so `THALF = 0.3` and
+  `MAXITER = 50` are the same jobs as the same operands written without the
+  spaces. This translator
+  split them on whitespace: the `PARMS` pieces were recorded and the phase was
+  built from `PROC HAZARD`'s default instead of the written value, and the
+  `PROC` line reported its pieces as unknown options. Operands are joined
+  before parsing, on both. A joined operand `PROC HAZARD` still rejects
+  (`THALF = ABC`, or `FIXNU = 1`, which takes no value) is a syntax error,
+  just as it is when written without the spaces.
+
+  Joining now works the way `PROC HAZARD`'s own lexer does. Whitespace only
+  separates tokens there (`hazard_l.l:32`) and `=` is a token in its own
+  right (`:55`), so every spelling of one statement is the **same** token
+  stream to SAS. The operands are normalised to that token stream first and
+  then paired as `KEY = VALUE` by the grammar, so all spellings of a
+  statement give one answer by construction rather than by matching
+  particular spellings. Two earlier attempts did match spellings, and each
+  left another spelling reading a following option as a value: `PROC HAZARD
+  DATA = MAXITER = 50` fitted with `data` set to `MAXITER=50` and the
+  iteration limit silently dropped.
+
+  A stray `=` left over after that pairing is now recorded and warned about
+  as the syntax error it is. `DATA = MAXITER = 50` is read as SAS reads it
+  --- `DATA` switches the lexer to its dataset-name state, where `MAXITER`
+  is a name (`hazard_l.l:59, :80`), so the dataset is `MAXITER` and the
+  trailing `= 50` is a stray `=` that sends `PROC HAZARD` to
+  `hazardopt : error` (`hazard_y.y:76`).
+
+* **`DATA=` and `OUTHAZ=` with no value are refused** (#433). `DATA '='
+  dsfield` and `OUTHAZ '=' dsfield` (`hazard_y.y:61-62`), where a `dsfield` is
+  a name or a libref-qualified name (`:80-81`), have no form without one, so
+  the job does not run. `OUTHAZ=` was previously dropped with no row at all
+  and the job fitted; `DATA=` surfaced as an internal R error naming neither
+  the option nor what was lost. Both now warn and record the construct,
+  alongside the existing check on `MAXITER=` and `CONDITION=`.
+
+  One spelling is **not** covered, and fails before the joining can happen:
+  `DATA = X` with spaces, on a `PROC HAZARD` line that is not wrapped in a
+  `%HAZARD(...)` call. The scanner that cuts a file into blocks treats the
+  word `DATA ` as the start of a new block, so the job is truncated after
+  `PROC HAZARD` and the translation fails with "The EVENT or ICENSOR
+  variable must be specified" for a job that does have an `EVENT` statement.
+  This is unchanged from earlier releases; write `DATA=X` without the spaces,
+  or wrap the job in `%HAZARD(...)`.
+
 * **`hazard()` refuses a function-valued element of `data` (#420).** `data`
   masks the calling frame while `hazard()` evaluates `time`, `status`,
   `time_lower`, `time_upper` and `weights`, and while it evaluates the
@@ -700,7 +851,32 @@
   already did. Code that caught the error with `tryCatch(..., error = )`
   will no longer see it; read `$criteria$refit_failures` instead.
 
+* **`hzr_stepwise()`'s `$steps$variable` records the model's term label on
+  every row (#449).** An entry row used to carry the name as the `scope`
+  wrote it and a drop row the `terms()` label, so a non-syntactic column
+  `_X1` entered as `_X1` and left as `` `_X1` ``, and a literal column
+  `age:mal` entered under the interaction's spelling `age:mal`. Every
+  row now uses the label, whatever form the `scope` took. For a syntactic
+  name the label is the name, so nothing changes; code that matched an
+  entry row of a non-syntactic column by its bare name should match the
+  backquoted label instead.
+
 ## New features
+
+* **`hzr_translate_sas()` now says when `PROC HAZARD` rewrote a shape operand
+  before fitting, instead of emitting the rewritten value silently.** Under
+  `FIXGE2` or `FIXGAE2` with `WEIBULL`, `SETG3` moves the late shape onto the
+  constraint before the fit (`setg3.c:449-467, :827`), so a job written
+  `ALPHA=2 GAMMA=5 ETA=1 FIXGAE2 WEIBULL` is fitted by `PROC HAZARD` at
+  `ALPHA=2.5`, not at the 2 on the statement. The translation already emitted
+  `alpha = 2.5`, the model `PROC HAZARD` fits, but said nothing, so a reader
+  comparing the emitted call against the job saw a value they had not written
+  and no reason for it. Such a rewrite is now recorded, naming the operand and
+  both values (`ALPHA=2 -> 2.5`).
+
+  **No fit changes.** The emitted call is the same on both sides; what is new
+  is the row and the "untranslated construct(s)" warning that goes with it.
+  A job that translated cleanly and reported no rows may now report one.
 
 * **A fit now records why its gradient test was not run, not merely that it
   was not** (#351). SAS/C HAZARD accepts an optimum only when the relative
@@ -868,6 +1044,42 @@
   reason in `fit$degraded_causes`, so "nothing found" stays distinguishable
   from "never looked". Catch the warning with `hzr_unbounded_phase`, or the
   whole boundary family with `hzr_boundary`.
+* **The G3 phase's `log_tau` derivative is now taken in `log_tau` (#352).**
+  `.hzr_g3_phase_derivatives()` described itself as taking "central
+  differences for log_tau" and stepped `tau` linearly instead, with an
+  absolute floor of `1e-10`. Once `tau` fell below that floor the step was
+  larger than `tau * h`, so the step stopped shrinking with `tau` and became
+  a large *relative* step; below `tau = 1e-10` it also exceeded `tau` itself
+  and the difference turned one-sided. The derivative the optimizer and the
+  Hessian both use was **99.4% wrong at `tau = 1e-12`**, 1.4% wrong at
+  `1e-9` and 0.012% wrong at `1e-8` — the second and third of those from the
+  relative-step effect alone, with the branch still central — measured
+  against an analytic derivative of the closed form. The step is now
+  proportional to `tau` at every scale, and the one-sided fallback is removed
+  because it can no longer be reached.
+
+  Where `tau` is so small that multiplying it by `exp(1e-5)` returns the same
+  number — below about `5e-319`, at the bottom of double precision — or where
+  `tau` is infinite, the two evaluation points coincide. That is now reported as `NaN` rather than the
+  plausible `0` a coincident difference quotient produces.
+
+  **Some late-phase (`g3`) fits will move.** Where `tau` is small the
+  optimizer now follows a more accurate gradient and can land somewhere
+  measurably different: across six trial two-phase fits, two moved by more
+  than `1e-8` relative, one of them by **21% on a parameter and 42% on a
+  standard error**, with the objective **0.0126 log-likelihood units better**
+  — a better optimum, not merely a different one. Fits whose shapes stay
+  above about `1e-5` move by around `1e-10` relative, which is the precision
+  the step change itself carries; between `1e-8` and `1e-5` the old
+  derivative was wrong by between `1e-4` and `1e-10`, so fits there can move
+  by more than that. **No fit in this package's own test suite
+  moves**: its results are identical before and after, to every assertion.
+
+  The `gamma` and `eta` steps keep their existing floors deliberately. `G3`
+  is very nearly linear in each of them near zero, so the floor stays small
+  relative to the scale on which the function varies even when it is 100% of
+  the parameter, and both measure accurate to `1.1e-6` or better at the
+  shapes where the `tau` derivative failed.
 
 * **A single-distribution `theta` must have one entry per parameter, and a
   Weibull scale and shape must be positive, fitted or not (#375, #383).**
@@ -1008,18 +1220,45 @@
   screen stops, rather than "no further action".
 
   This is about MATCHING: which variables are pinned, excluded or in the
-  scope. How a candidate ENTERS is unchanged and is a known limitation. The
-  refit writes the candidate's name, as spelled, into the formula text. A
-  formula `scope` carries `terms()` labels, which are already quoted, so
-  its candidates enter as themselves. A name that reads as a different
-  term enters as that term, with no warning: the literal column `age:mal`
-  enters as the interaction, and a column `age ` beside `age` enters as
-  `age`, reachable through the default `scope = NULL`; under
-  `"score"` the entry p-value is still the literal column's (#449). A
-  non-syntactic name written bare, such as `"_X1"`, does not parse, so
-  under `"wald"` and `"aic"` its refit fails and the failure names it
-  (#441); under `"score"` it can fail by either of two routes, and a
-  `"score"` screen can finish having omitted it (#441, #438).
+  scope. How a matched candidate then enters the model is the #449 entry
+  below.
+
+* **A stepwise candidate is now scored and entered as the column it names
+  (#449, #438, #441).** The refit wrote the candidate's name, as spelled,
+  into the formula text, so a column whose name reads as a different term
+  entered as that term, with no warning. A column `age ` or `age # x`
+  beside `age` refit as `age`, through the default `scope = NULL`, a
+  character `scope`, a multiphase default scope and the screens
+  `hzr_bootstrap()` runs; a literal column `age:mal` refit as the
+  interaction, while under `"score"` its entry p-value was the column's;
+  and a multiphase default scope was built the same way, so a strong
+  column `x2 ` read as the noise column `x2` and was never scored. The
+  refit, the multiphase default scope and the multiphase score, which
+  builds the candidate's phase formula from text as well, now write the
+  label `terms()` gives the resolved column, which reads back as that
+  column, and the score reads the values of that column and compares it
+  with the model's terms by that label. So the column scored is the
+  column entered, and `"wald"`, `"aic"` and `"score"` reach the same
+  model: with the interaction `age:mal` in the model, a literal column
+  `age:mal` is a variable of its own under all three, where `"score"`
+  had declined it as the interaction. The same change fixes two loud
+  failures: a bare non-syntactic name such as `"_X1"` in a character
+  `scope` now enters under `"wald"` and `"aic"`, where its refit failed
+  to parse (#441), and under `"score"` a non-syntactic candidate written
+  as its label, as a formula `scope` writes it, is read from its column
+  rather than reported as not found in `data` and skipped (#438). An
+  interaction is no longer scored from a literal column that shares its
+  spelling; the score declines it, as it does any term that is not a
+  column, and its warning now says that instead of "not found in `data`",
+  with the new reason `not_single_column` in `$criteria$uncomputable_reasons`
+  where it read `non_numeric`.
+  A column no formula can name, such as one called `.`, is not offered as
+  a candidate, and the screen says so once.
+
+  `$steps$variable`, `$scope$frozen` and `$criteria$wald_untested_entries`
+  name such a variable by its label, as the breaking change above on
+  `$steps$variable` sets out; `$criteria$refit_failures` still names a
+  failed candidate as the scope wrote it.
 
 * **`hzr_translate_sas()` no longer fails on a SAS covariate whose name begins
   with an underscore** (#411). `PROC HAZARD`'s lexer reads a name as
@@ -2880,7 +3119,6 @@
   character column named in an explicit `scope`, which the score criterion
   still cannot expand. Its refusal used to say switching criterion would not
   help, and now points at it instead.
-
 
 
 # TemporalHazard 1.2.2
