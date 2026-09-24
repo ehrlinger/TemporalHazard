@@ -1388,6 +1388,49 @@ test_that("a stray `=` in PARMS does not swallow the next operand (#458)", {
   expect_match(.u1_msg(job), "stray `=`", fixed = TRUE)
 })
 
+test_that("an unwrapped PROC HAZARD's DATA= is not a block boundary, in any spacing (#458)", {
+  # A PROC HAZARD with no enclosing `%HAZARD(` is bounded at the next DATA
+  # step, PROC or RUN. The scanner matched the text `DATA ` anywhere, so the
+  # DATA= OPTION written `data = avcs` cut the job off after `PROC HAZARD`
+  # and it failed for want of an EVENT it has. SAS's lexer skips whitespace
+  # (hazard_l.l:32), so every spelling below is one statement.
+  toks <- c("proc", "hazard", "data", "=", "avcs;", "time", "fu_time;",
+            "event", "status;", "parms", "mue", "=", "0.1", "nu", "=", "1",
+            "m", "=", "1;")
+  translate <- function(src) {
+    f <- withr::local_tempfile(fileext = ".sas")
+    writeLines(src, f)
+    tryCatch(suppressWarnings(hzr_translate_sas(f)),
+             error = function(e) conditionMessage(e))
+  }
+  variants <- .u1_token_spacings(toks)
+  expect_gt(length(variants), 16L)                 # the generator must vary
+  answers <- lapply(variants, function(v) {
+    out <- translate(c(v, "run;"))
+    if (is.character(out)) out else list(fit = out$calls$fit,
+                                         rows = NROW(out$untranslated))
+  })
+  # ONE answer across every spelling, and it is a translation, not an error.
+  expect_length(unique(answers), 1L)
+  a <- answers[[1L]]
+  expect_false(is.character(a), info = if (is.character(a)) a)
+  expect_identical(a$fit[[3L]]$data, as.name("AVCS"))
+  expect_identical(a$fit[[3L]]$time, as.name("FU_TIME"))
+  expect_identical(a$rows, 0L)
+
+  # KNOWN NEGATIVE: a real DATA step and RUN still end the block, in the
+  # spaced spelling, so what follows is not read as PROC HAZARD statements.
+  spaced <- "proc hazard data = avcs; time fu_time; event status;"
+  for (tail in c("data x; set y; run;", "run; data x; set y;")) {
+    txt <- .hzr_sas_normalise(paste(spaced, "parms mue=0.1 nu=1 m=1;", tail))
+    b <- .hzr_sas_blocks(txt)
+    expect_length(b, 1L)
+    expect_match(b[[1L]]$text, "PARMS MUE=0.1", fixed = TRUE, info = tail)
+    expect_no_match(b[[1L]]$text, "SET Y", fixed = TRUE, info = tail)
+    expect_no_match(b[[1L]]$text, "RUN", fixed = TRUE, info = tail)
+  }
+})
+
 test_that("a name-valued PROC option with no value is refused (#433 review 2)", {
   # `DATA '=' dsfield` and `OUTHAZ '=' dsfield`, dsfield : NAME | LIBMEM
   # (hazard_y.y:61-62, :80-81). Neither has a form without a name, so an

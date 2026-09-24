@@ -209,14 +209,9 @@
   the option nor what was lost. Both now warn and record the construct,
   alongside the existing check on `MAXITER=` and `CONDITION=`.
 
-  One spelling is **not** covered, and fails before the joining can happen:
-  `DATA = X` with spaces, on a `PROC HAZARD` line that is not wrapped in a
-  `%HAZARD(...)` call. The scanner that cuts a file into blocks treats the
-  word `DATA ` as the start of a new block, so the job is truncated after
-  `PROC HAZARD` and the translation fails with "The EVENT or ICENSOR
-  variable must be specified" for a job that does have an `EVENT` statement.
-  This is unchanged from earlier releases; write `DATA=X` without the spaces,
-  or wrap the job in `%HAZARD(...)`.
+  `DATA = X` with spaces, on a `PROC HAZARD` line not wrapped in a
+  `%HAZARD(...)` call, failed before the joining could happen; that is fixed
+  under #458 below.
 
 * **`hazard()` refuses a function-valued element of `data` (#420).** `data`
   masks the calling frame while `hazard()` evaluates `time`, `status`,
@@ -1104,6 +1099,16 @@
   `setg3.c:269-284` returns on these checks before the constraint rules at
   `:444-481` run. The job now has one row, and its phase keeps the values
   written. The warning and its code are unchanged.
+
+* **`PROC HAZARD DATA = X` translates when the job is not wrapped in
+  `%HAZARD(...)` (#458).** A `PROC HAZARD` with no enclosing parenthesis is
+  bounded at the next `DATA` step, `PROC` or `RUN`, and the scanner found
+  those by the word alone, so the `DATA=` option written with a space
+  before the `=` ended the job right after `PROC HAZARD`. The translation
+  then failed with "The EVENT or ICENSOR variable must be specified" for a
+  job that has an `EVENT` statement. A boundary is now a statement that
+  begins with one of those words, after a `;`, so every spacing of the
+  `PROC` line gives the same translation.
 
 * **`hzr_stepwise()` no longer reports a pin on a column no formula can name
   as resolved (#463).** `force_in` and `force_out` accept a column of `data`

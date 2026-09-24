@@ -191,8 +191,8 @@
 #' that opens the group containing it, then forwards from that paren to its
 #' balancing `)` (unchanged balanced-paren logic; the corpus confirms 0
 #' unterminated). A PROC with no enclosing paren at all is still returned,
-#' never dropped: its text is bounded at the next `PROC `/`DATA `/`RUN;`
-#' boundary, whichever comes first. If none of those follow, the block
+#' never dropped: its text is bounded at the next statement that begins with
+#' `PROC`, `DATA` or `RUN`, whichever comes first. If none follows, the block
 #' extends to the end of the normalised text. This is safe because this
 #' function only ever runs on output from `.hzr_sas_normalise()`, which has
 #' already stripped all comments, so there is no trailing comment prose left
@@ -253,7 +253,7 @@
 
     if (is.na(open_at)) {
       # No enclosing paren anywhere before this PROC. Bound the text at the
-      # next PROC / DATA / RUN; boundary, never dropping the block. If none
+      # next PROC / DATA / RUN statement, never dropping the block. If none
       # of those follow either, the block genuinely extends to the end of
       # txt -- that is safe here because .hzr_sas_blocks() only ever sees
       # output from .hzr_sas_normalise(), which has already stripped all
@@ -261,7 +261,12 @@
       # to prevent cannot arise at this point.
       search_from <- proc_at + proc_lens[k]
       rest <- substring(txt, search_from)
-      b <- regexpr("PROC |DATA |RUN;", rest)
+      # A boundary is a STATEMENT that begins with PROC, DATA or RUN, so it
+      # must follow a `;`. Matching the word anywhere cut the job at its own
+      # DATA= option whenever that was written `DATA = X` (#458); spacing
+      # carries no meaning to SAS's lexer (hazard_l.l:32), so the test has
+      # to be where the word sits in the statement, not what follows it.
+      b <- regexpr("(?<=;|; )(PROC|DATA|RUN)", rest, perl = TRUE)
       end_at <- if (b == -1L) nchar(txt) else search_from + b - 2L
       body <- substring(txt, proc_at, end_at)
       term <- "none"
