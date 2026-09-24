@@ -102,3 +102,49 @@ test_that("`.` leaves a column named \"\" out, and says so", {
   expect_match(r2$msgs[[1L]], "2 columns of `data` named \"\" are left out",
                fixed = TRUE)
 })
+
+# Multiphase reaches the same two failures: the global formula goes through
+# the same parser, and a phase formula's `.` is written out against `data`
+# before fitting (#277), which is a `terms(two_sided, data = data)` call.
+ecn_mp <- function(d, phase_formula) {
+  hazard(survival::Surv(t, s) ~ 1, data = d, dist = "multiphase",
+         phases = list(
+           early    = hzr_phase("cdf", t_half = 0.3, nu = 1, m = -0.4,
+                                formula = phase_formula),
+           constant = hzr_phase("constant")
+         ),
+         fit = TRUE, control = list(n_starts = 1L, conserve = FALSE))
+}
+
+ecn_mp_data <- function() {
+  set.seed(9)
+  n <- 120
+  d <- data.frame(t = rexp(n) + 0.05, s = rbinom(n, 1, 0.8),
+                  age = rnorm(n), x = rnorm(n))
+  names(d)[names(d) == "x"] <- ""
+  d
+}
+
+test_that("a multiphase fit is not broken by a column named \"\"", {
+  d <- ecn_mp_data()
+  expect_true(any(names(d) == ""))
+  clean <- d[, names(d) != ""]
+  r <- ecn_warnings(ecn_mp(d, ~ age))
+  expect_false(any(grepl("named \"\"", r$msgs, fixed = TRUE)))
+  b <- suppressWarnings(ecn_mp(clean, ~ age))
+  expect_identical(r$value$fit$objective, b$fit$objective)
+})
+
+test_that("a phase `~ .` leaves a column named \"\" out, naming the phase", {
+  d <- ecn_mp_data()
+  expect_true(any(names(d) == ""))
+  clean <- d[, names(d) != ""]
+  r <- ecn_warnings(ecn_mp(d, ~ .))
+  hits <- grep("named \"\"", r$msgs, fixed = TRUE, value = TRUE)
+  expect_length(hits, 1L)
+  expect_match(hits, "is left out of `.` in phase 'early': a model formula",
+               fixed = TRUE)
+  expect_identical(all.vars(r$value$spec$phases$early$formula), "age")
+  b <- suppressWarnings(ecn_mp(clean, ~ .))
+  expect_identical(r$value$fit$objective, b$fit$objective)
+})
