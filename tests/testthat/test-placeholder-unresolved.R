@@ -194,3 +194,66 @@ test_that("the literal placeholder text does not advise renaming nothing", {
   )
   expect_match(r2$msgs[[1L]], "Rename that column", fixed = TRUE)
 })
+
+# UNRESOLVED PINS KEEP THE USER'S ORDER (#465 review). `.hzr_resolve_names()`
+# keeps its input's order, but the pin filter above appended the unnameable
+# pins AFTER the names the resolver had already left unresolved, so
+# `force_in = c(".", "nope")` came back as "nope", ".". The set was right;
+# the order was not the one the user wrote, in the field or in print().
+# The repeated-name case is here because the easy fixes -- union(), unique()
+# -- would restore the order and quietly drop the repeat.
+test_that("unresolved pins keep the order they were written in", {
+  d <- ph_data()
+  f <- ph_fit(d)
+  sw_pins <- function(...) {
+    suppressWarnings(
+      hzr_stepwise(f, scope = ~ age + mal, data = d, direction = "both",
+                   criterion = "wald", trace = FALSE, ...)
+    )
+  }
+
+  sw <- sw_pins(force_in = c(".", "nope"))
+  expect_identical(sw$scope$unresolved$force_in, c(".", "nope"))
+  # Where the user reads it, not only where it is produced.
+  expect_true(any(grepl("(unresolved `force_in`, ignored: \".\", \"nope\")",
+                        capture.output(print(sw)), fixed = TRUE)))
+
+  # The other order stays as written too, so a fix that merely moved the
+  # placeholders to the FRONT would fail here.
+  expect_identical(sw_pins(force_in = c("nope", "."))$scope$unresolved$force_in,
+                   c("nope", "."))
+
+  # A repeated name is kept, in place.
+  expect_identical(
+    sw_pins(force_in = c(".", "nope", "."))$scope$unresolved$force_in,
+    c(".", "nope", ".")
+  )
+
+  # Both pin sites share the filter; `force_out` is checked separately.
+  expect_identical(sw_pins(force_out = c(".", "nope"))$scope$unresolved$force_out,
+                   c(".", "nope"))
+})
+
+# A COLUMN NAMED "" (#465 review). NEWS promises that a pin on a column
+# called "" warns and is listed as unresolved, and until now only "." had a
+# test. A "" column reaches `hzr_stepwise()` only when its `data` differs
+# from the fit's: `hazard()` itself stops on any data frame carrying a ""
+# column, even an unused one. So the model is fitted on clean data here.
+# `direction = "forward"` with nothing left to add means no refit, so the
+# pin's own warning is the only one -- a refit on this data would hit that
+# separate `hazard()` failure and add warnings that are not this test's.
+test_that("a pin on a column named \"\" warns and is listed as unresolved", {
+  d <- ph_data()
+  clean <- d[, names(d) != "."]
+  names(d)[names(d) == "."] <- ""
+  f <- ph_fit(clean)
+  r <- ph_warnings(
+    hzr_stepwise(f, scope = ~ age + mal, data = d, direction = "forward",
+                 criterion = "wald", force_in = "", trace = FALSE)
+  )
+  expect_length(r$msgs, 1L)
+  expect_match(r$msgs[[1L]], "`force_in` names \"\", which no model formula",
+               fixed = TRUE)
+  expect_identical(r$value$scope$unresolved$force_in, "")
+  expect_length(r$value$scope$force_in_resolved, 0L)
+})
