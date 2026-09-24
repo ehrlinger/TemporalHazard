@@ -36,6 +36,29 @@
     stop("'formula' must be a formula object.", call. = FALSE)
   }
 
+  # A column named "" can be named by no formula, so it can play no part in
+  # the model -- but two base-R calls below fail on it outright: `list2env()`
+  # over the data and `terms(formula, data = data)` for any two-sided formula
+  # both stop with "attempt to use zero-length variable name". That stopped
+  # every fit, and every stepwise refit, on data merely CARRYING such a column
+  # (#470). Drop it here, where the formula path starts. Only `.` would have
+  # reached for it, so only then is there anything to tell the user; this
+  # matches the stepwise default scope, which says the same column "cannot be
+  # a stepwise candidate" (#449). An NA name is left alone: nothing here fails
+  # on it.
+  empty <- !is.na(names(data)) & !nzchar(names(data))
+  if (any(empty)) {
+    if ("." %in% all.vars(formula[[length(formula)]])) {
+      warning(sum(empty), if (sum(empty) == 1L) " column" else " columns",
+              " of `data` named \"\" ", if (sum(empty) == 1L) "is" else "are",
+              " left out of `.`: a model formula cannot name ",
+              if (sum(empty) == 1L) "it" else "them", ". Rename ",
+              if (sum(empty) == 1L) "it" else "them", " to include ",
+              if (sum(empty) == 1L) "it" else "them", ".", call. = FALSE)
+    }
+    data <- data[!empty]
+  }
+
   # Parse the LHS (should be Surv(...))
   lhs <- formula[[2L]]
   rhs <- formula[[3L]]
