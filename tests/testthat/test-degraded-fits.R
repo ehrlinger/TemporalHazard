@@ -40,7 +40,11 @@ test_that("an unfitted object records that it was not fitted, and why", {
   dat <- weib_data()
   fit0 <- hazard(time = dat$t, status = dat$d, dist = "weibull", fit = FALSE)
   expect_identical(fit0$degraded,
-                   c("fitting", "standard_errors", "weak_direction_check"))
+    # boundary_check joins the list for the same reason the others are on
+    # it: an unfitted object has no fitted phase parameters to examine, so
+    # the check genuinely did not run and says so (#444).
+                     c("fitting", "standard_errors", "weak_direction_check",
+                       "boundary_check"))
   expect_identical(fit0$degraded_causes[["fitting"]],
                    "not requested (fit = FALSE)")
   expect_false("cause not recorded" %in% fit0$degraded_causes)

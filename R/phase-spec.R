@@ -29,6 +29,28 @@
 # the C/SAS HAZARD implementation for late-phase rising hazards.
 # The "hazard" type (-log(1-G(t))) is available for alternative models.
 
+#' Is a phase type unbounded in its own parameterisation?
+#'
+#' `"hazard"` is \eqn{-\log(1 - G(t))}, which diverges as \eqn{G \to 1}: the
+#' phase has no upper bound, and nothing keeps its `t_half` inside the
+#' observed support. A fit can walk `t_half` below the data, land the whole
+#' observed range where \eqn{G} is essentially 1, and run the objective away
+#' to a supremum it reports as a converged interior optimum (#444).
+#'
+#' `"cdf"` uses the same G1 decomposition but is bounded on \eqn{[0, 1]}, so a
+#' small `t_half` there is an ordinary estimate and not a runaway. The
+#' distinction is a property of the TYPE, not of the parameter name, which is
+#' why this is keyed on the type.
+#'
+#' @param type A phase type string.
+#' @return `TRUE` when the type's parameterisation is unbounded.
+#' @keywords internal
+#' @noRd
+.hzr_phase_type_unbounded <- function(type) {
+  identical(as.character(type), "hazard")
+}
+
+
 # ============================================================================
 # Constructor
 # ============================================================================
