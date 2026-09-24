@@ -125,6 +125,27 @@
     The translation does not reproduce which variables survive, and says
     so in the warning.
 
+  - a value on a `PROC HAZARD` option that takes none
+    ([\#431](https://github.com/ehrlinger/TemporalHazard/issues/431)):
+    `NOCOV=1`, `CONSERVE=YES`, `PRINTIT=1`, `NOPRINT=0`, in any spacing.
+    Eleven options are bare tokens (`hazard_y.y:65-75`), so the `=` is a
+    syntax error and the job does not run. The value was ignored and the
+    job fitted with no row;
+
+  - a `TIME`, `EVENT`, `RCENSOR`, `LCENSOR` or `WEIGHT` statement with
+    other than one operand
+    ([\#431](https://github.com/ehrlinger/TemporalHazard/issues/431)).
+    Each takes exactly one name (`hazard_y.y:106-127`).
+    `EVENT DEAD EXTRA` fitted on `DEAD` and dropped `EXTRA` with nothing
+    said; it now warns and fits on the first operand. With no operand at
+    all, `WEIGHT`, `RCENSOR` and `LCENSOR` are left out of the fit, and
+    `TIME` or `EVENT` stops the job, since there is no variable to fit,
+    unless another statement supplies one (a second `TIME`, or `ICENSOR`
+    for `EVENT`). An operand that is a macro reference is not counted,
+    since it can expand to any number of names. The HAZARD binary is the
+    oracle for both shapes, and it runs either job when a later phase
+    statement carries a `(`, as above; the warning says so there.
+
   Refusal coverage is not complete: `SETG1`’s refusals, which
   `PROC HAZARD` raises for an early phase, are not traced, so such a job
   still fits
@@ -167,9 +188,12 @@
   ([\#440](https://github.com/ehrlinger/TemporalHazard/issues/440),
   above), a `PARMS` statement that builds no phase this translator can
   use, a job with no `DATA=` whose phases name covariates
-  ([\#311](https://github.com/ehrlinger/TemporalHazard/issues/311)), and
-  a `SELECTION` job that selects no phase. Everything newly recognised
-  in this release warns and still fits.
+  ([\#311](https://github.com/ehrlinger/TemporalHazard/issues/311)), a
+  `SELECTION` job that selects no phase, and a `TIME` or `EVENT`
+  statement with no operand
+  ([\#431](https://github.com/ehrlinger/TemporalHazard/issues/431)) that
+  leaves nothing to fit. Everything else newly recognised in this
+  release warns and still fits.
 
   The risk this accepts, deliberately: a rendered document that shows a
   warning and then carries on to a fit **can** be read as a clean result

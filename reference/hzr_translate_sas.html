@@ -120,6 +120,14 @@ variable must be a NAME, <code>[_A-Z][_A-Z0-9]*</code> (<code>hazard_l.l:39</cod
 <code>phasevar : NAME</code>, <code>hazard_y.y:213</code>), so <code>PROC HAZARD</code> rejects such a job
 at parse. The document raises a <code><a href="https://rdrr.io/r/base/warning.html" class="external-link">warning()</a></code> above the fit, and the operand
 is recorded in <code>$untranslated</code>.</p>
+<p>Two more syntax errors take the same route. A value on a <code>PROC HAZARD</code>
+option that takes none, such as <code>NOCOV=1</code> (<code>hazard_y.y:65-76</code>), is
+ignored in the fit. A <code>TIME</code>, <code>EVENT</code>, <code>RCENSOR</code>, <code>LCENSOR</code> or <code>WEIGHT</code>
+statement with more than one operand, which takes exactly one name
+(<code>hazard_y.y:106-127</code>), is fitted on the first. Both are warned about
+above the fit and recorded in <code>$untranslated</code>. <code>TIME</code> or <code>EVENT</code> with no
+operand, and no other statement supplying the variable, leaves nothing to
+fit, so that job's fit chunk is a <code><a href="https://rdrr.io/r/base/stop.html" class="external-link">stop()</a></code>.</p>
 <p>A job may contain more than one <code>PROC HAZARD</code> and/or <code>PROC HAZPRED</code> block.
 Every block is preserved: the first of a kind keeps the bare chunk name
 (<code>fit</code>, <code>pred</code>, <code>pred_haz</code>), later ones get <code>fit_2</code>, <code>fit_3</code>, <code>pred_2</code>, and
