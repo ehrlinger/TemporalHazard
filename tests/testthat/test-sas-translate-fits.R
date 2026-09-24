@@ -841,14 +841,20 @@ test_that("FIXMNU1 warns honestly, even where it might constrain nothing (U1 rev
   # (M*NU = -1 is vacuous too; M = NU = -1 is SETG1920). The stop claims
   # neither that PROC HAZARD runs the job nor that it refuses it.
   for (p in c("MUE=0.2 THALF=1 NU=1 M=1 FIXM FIXNU FIXMNU1",
-              "MUE=0.2 THALF=0.5 M=-1 NU=1 FIXM FIXNU FIXMNU1",
-              "MUE=0.2 THALF=0.5 M=-1 NU=-1 FIXM FIXNU FIXMNU1")) {
+              "MUE=0.2 THALF=0.5 M=-1 NU=1 FIXM FIXNU FIXMNU1")) {
     job <- .u1_job(parms = p)
     expect_true(.u1_refuses(job), info = p)
     msg <- .u1_msg(job)
     expect_match(msg, "cannot emit PROC HAZARD's model", fixed = TRUE, info = p)
     expect_no_match(msg, "runs this job", fixed = TRUE, info = p)
   }
+  # M = NU = -1, both fixed, IS SETG1920, and the HAZARD binary refuses it
+  # (fixtures/setg1-oracle.csv), so it now says so rather than that it
+  # cannot tell (#424).
+  msg <- .u1_msg(.u1_job(
+    parms = "MUE=0.2 THALF=0.5 M=-1 NU=-1 FIXM FIXNU FIXMNU1"))
+  expect_match(msg, "(SETG1920)", fixed = TRUE)
+  expect_no_match(msg, "cannot emit PROC HAZARD's model", fixed = TRUE)
 })
 
 test_that("SETG3's entry refusals warn on the constraint path too (U1 review)", {
@@ -1201,6 +1207,25 @@ test_that("two refusal reasons are separated in the emitted warning (#433 review
   expect_no_match(m, "[a-z]\\.[A-Z]")
 })
 
+# Every spelling of KEY=VALUE pairs, each `=` with or without a space on
+# each side. Shared by the #433 and #431 spacing tests.
+.u1_spacings <- function(pairs) {
+  grid <- expand.grid(rep(list(c("", " ")), 2L * length(pairs)),
+                      stringsAsFactors = FALSE)
+  out <- character(nrow(grid))
+  for (r in seq_len(nrow(grid))) {
+    s <- ""
+    for (k in seq_along(pairs)) {
+      l <- grid[[2L * k - 1L]][r]
+      rgt <- grid[[2L * k]][r]
+      s <- paste0(s, if (nzchar(s)) " " else "",
+                  pairs[[k]][[1L]], l, "=", rgt, pairs[[k]][[2L]])
+    }
+    out[[r]] <- s
+  }
+  unique(out)
+}
+
 test_that("operand joining is INVARIANT under spacing (#433 review 2)", {
   # PROC HAZARD's lexer is whitespace-insensitive (hazard_l.l:32, :55), so
   # every spacing of one statement is the same token stream to SAS. Two
@@ -1208,23 +1233,7 @@ test_that("operand joining is INVARIANT under spacing (#433 review 2)", {
   # another slipped through, because the set of spellings cannot be
   # enumerated by a fix. Assert the PROPERTY instead: generate every spacing
   # of each statement and require one answer.
-  spacings <- function(pairs) {
-    # every `=` with or without a space on each side
-    grid <- expand.grid(rep(list(c("", " ")), 2L * length(pairs)),
-                        stringsAsFactors = FALSE)
-    out <- character(nrow(grid))
-    for (r in seq_len(nrow(grid))) {
-      s <- ""
-      for (k in seq_along(pairs)) {
-        l <- grid[[2L * k - 1L]][r]
-        rgt <- grid[[2L * k]][r]
-        s <- paste0(s, if (nzchar(s)) " " else "",
-                    pairs[[k]][[1L]], l, "=", rgt, pairs[[k]][[2L]])
-      }
-      out[[r]] <- s
-    }
-    unique(out)
-  }
+  spacings <- .u1_spacings
   statements <- list(
     list(c("DATA", "MAXITER"), c("", "50")),       # the defect: key as value
     list(c("MUE", "0.2"), c("THALF", "0.3")),      # two genuine operands
@@ -1767,5 +1776,403 @@ test_that("the phase-name verdict matches the HAZARD binary on a grid (#440)", {
                      info = o$early)
       }
     }
+  }
+})
+
+# --- #431: a valued bare option, and a one-name statement's operand count ---
+# Two PROC HAZARD syntax errors that used to fit silently. Eleven PROC options
+# are bare tokens (hazard_y.y:65-75), so a value after one reaches
+# `hazardopt : error` (:76); TIME, EVENT, RCENSOR, LCENSOR and WEIGHT take
+# exactly one NAME (:106-127), so any other count reaches `otherstmt : error`
+# (:102). Either way initprz.c:75-77 stops the job with SYNTAX. The binary
+# oracle for both is tests/testthat/fixtures/proc-option-oracle.csv.
+
+.p431_job <- function(text, env = parent.frame()) {
+  f <- withr::local_tempfile(fileext = ".sas", .local_envir = env)
+  writeLines(paste0("%HAZARD( ", text, " );"), f)
+  suppressWarnings(hzr_translate_sas(f))
+}
+.p431_parms <- "PARMS MUE=0.2 THALF=0.3 NU=1 M=0;"
+
+test_that("a value on a PROC option that takes none warns and fits (#431)", {
+  for (opt in c("NOCOV=1", "CONSERVE=YES", "PRINTIT=1", "NOPRINT=0")) {
+    key <- sub("=.*$", "", opt)
+    job <- .u1_job(proc = paste0(" ", opt),
+                   parms = "MUE=0.2 THALF=0.3 NU=1 M=0")
+    expect_true(.u1_warns_and_fits(job), info = opt)
+    expect_identical(NROW(job$untranslated), 1L, info = opt)
+    expect_identical(job$untranslated$construct, opt, info = opt)
+    expect_match(.u1_msg(job), paste0(
+      "does not run this job: ", opt, ": ", key, " takes no value in PROC ",
+      "HAZARD \\(hazard_y.y:65-76\\), so it rejects this job with a syntax ",
+      "error"), info = opt)
+  }
+})
+
+test_that("a one-name statement with other than one operand is refused (#431)", {
+  b <- "EVENT DEAD; TIME TT;"
+  warn <- c(
+    EVENT = paste("PROC HAZARD DATA=D; EVENT DEAD EXTRA; TIME TT;",
+                  .p431_parms),
+    TIME = paste("PROC HAZARD DATA=D; EVENT DEAD; TIME TT EXTRA;",
+                 .p431_parms),
+    WEIGHT = paste("PROC HAZARD DATA=D;", b, "WEIGHT EXTRA AGE;", .p431_parms),
+    RCENSOR = paste("PROC HAZARD DATA=D;", b, "RCENSOR ZERO AGE;",
+                    .p431_parms),
+    LCENSOR = paste("PROC HAZARD DATA=D;", b, "LCENSOR ZERO AGE;",
+                    .p431_parms),
+    WEIGHT = paste("PROC HAZARD DATA=D;", b, "WEIGHT;", .p431_parms),
+    RCENSOR = paste("PROC HAZARD DATA=D;", b, "RCENSOR;", .p431_parms),
+    LCENSOR = paste("PROC HAZARD DATA=D;", b, "LCENSOR;", .p431_parms)
+  )
+  for (k in seq_along(warn)) {
+    job <- .p431_job(warn[[k]])
+    expect_true(.u1_warns_and_fits(job), info = warn[[k]])
+    expect_identical(NROW(job$untranslated), 1L, info = warn[[k]])
+    expect_match(.u1_msg(job), paste0(
+      "does not run this job: .*PROC HAZARD's ", names(warn)[[k]],
+      " takes exactly one variable name .*syntax error"), info = warn[[k]])
+  }
+  # With no operand, TIME and EVENT leave no variable to fit: the fit chunk
+  # is the stop() route, still with exactly one row.
+  stop_jobs <- c(
+    EVENT = paste("PROC HAZARD DATA=D; EVENT; TIME TT;", .p431_parms),
+    TIME = paste("PROC HAZARD DATA=D; EVENT DEAD; TIME;", .p431_parms)
+  )
+  for (k in seq_along(stop_jobs)) {
+    job <- .p431_job(stop_jobs[[k]])
+    expect_true(.u1_stops(job), info = stop_jobs[[k]])
+    expect_identical(NROW(job$untranslated), 1L, info = stop_jobs[[k]])
+    expect_match(.u1_msg(job), paste0(
+      "does not run this job: ", names(stop_jobs)[[k]], ": no operand; ",
+      "PROC HAZARD's ", names(stop_jobs)[[k]], " takes exactly one"),
+      info = stop_jobs[[k]])
+  }
+  # An empty TIME or EVENT is not fatal when another statement supplies the
+  # variable: it warns and fits like the others.
+  for (text in c(
+    paste("PROC HAZARD DATA=D; EVENT DEAD; TIME TT; TIME;", .p431_parms),
+    paste("PROC HAZARD DATA=D; EVENT; ICENSOR C = T0; TIME TT;", .p431_parms)
+  )) {
+    job <- .p431_job(text)
+    expect_true(.u1_warns_and_fits(job), info = text)
+    expect_identical(NROW(job$untranslated), 1L, info = text)
+  }
+  # The fit is on the FIRST operand, and the extra one is not read.
+  job <- .p431_job(warn[[1L]])
+  used <- c(all.vars(job$calls$status), all.vars(job$calls$fit[[3L]]))
+  expect_true("DEAD" %in% used)
+  expect_false("EXTRA" %in% used)
+  job <- .p431_job(warn[[2L]])
+  expect_identical(job$calls$fit[[3L]]$time, as.name("TT"))
+})
+
+test_that("the forms PROC HAZARD runs stay quiet (#431 known negatives)", {
+  for (text in c(
+    paste("PROC HAZARD DATA=D NOCOV; EVENT DEAD; TIME TT;", .p431_parms),
+    paste("PROC HAZARD DATA=D; EVENT DEAD; TIME TT;", .p431_parms)
+  )) {
+    job <- .p431_job(text)
+    expect_null(.u1_refusal_chunk(job))
+    expect_identical(NROW(job$untranslated), 0L, info = text)
+    expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"),
+                     info = text)
+  }
+})
+
+test_that("a valued bare option is refused in every spacing (#431)", {
+  variants <- .u1_spacings(list(c("NOCOV", "1")))
+  expect_length(variants, 4L)                     # the generator must vary
+  constructs <- character(0)
+  for (v in variants) {
+    job <- .u1_job(proc = paste0(" ", v),
+                   parms = "MUE=0.2 THALF=0.3 NU=1 M=0")
+    expect_true(.u1_warns_and_fits(job), info = v)
+    expect_identical(NROW(job$untranslated), 1L, info = v)
+    constructs <- c(constructs, job$untranslated$construct)
+  }
+  # ONE answer for all spellings.
+  expect_identical(unique(constructs), "NOCOV=1")
+})
+
+.p431_oracle <- function() {
+  # Regenerate with data-raw/proc-option-oracle.R. Its header carries the
+  # binary's version and the hazard checkout it was built from.
+  path <- test_path("fixtures", "proc-option-oracle.csv")
+  utils::read.csv(path, comment.char = "#", stringsAsFactors = FALSE)
+}
+
+test_that("the translator's verdict matches the HAZARD binary's (#431)", {
+  oracle <- .p431_oracle()
+  # Coverage before comparison: every verdict class is present.
+  expect_setequal(unique(oracle$verdict),
+                  c("runs", "rejected", "runs_after_reset"))
+  expect_gte(nrow(oracle), 30L)
+  for (k in seq_len(nrow(oracle))) {
+    o <- oracle[k, ]
+    job <- .p431_job(o$job)
+    if (o$verdict == "runs") {
+      expect_null(.u1_refusal_chunk(job))
+      expect_identical(NROW(job$untranslated), 0L, info = o$job)
+      expect_false(.u1_stops(job), info = o$job)
+    } else {
+      expect_true(.u1_refuses(job), info = o$job)
+      expect_identical(NROW(job$untranslated), 1L, info = o$job)
+      msg <- .u1_msg(job)
+      expect_match(msg, "does not run this job", fixed = TRUE, info = o$job)
+      if (o$verdict == "runs_after_reset") {
+        expect_match(msg, "clears its syntax-error flag", fixed = TRUE,
+                     info = o$job)
+      } else {
+        expect_no_match(msg, "clears its syntax-error flag", fixed = TRUE,
+                        info = o$job)
+      }
+    }
+  }
+})
+
+test_that("every oracle job's emitted document runs (#431)", {
+  skip_on_cran()
+  set.seed(431)
+  n <- 60
+  D <- data.frame(TT = stats::rexp(n, 0.2),
+                  DEAD = rep(c(1, 0, 1), length.out = n),
+                  EXTRA = rep(c(1, 0), length.out = n),
+                  AGE = stats::rnorm(n), ZERO = 0, ONE = 1,
+                  LOG = stats::rnorm(n))
+  oracle <- .p431_oracle()
+  n_fit <- 0L
+  for (k in seq_len(nrow(oracle))) {
+    job <- .p431_job(oracle$job[[k]])
+    env <- new.env()
+    env$D <- D
+    if (.u1_stops(job)) {
+      # No variable to fit: the document stops at the fit, with the reason.
+      expect_error(for (nm in names(job$calls)) {
+        suppressWarnings(eval(job$calls[[nm]], env))
+      }, "does not run this job", info = oracle$job[[k]])
+      next
+    }
+    for (nm in names(job$calls)) suppressWarnings(eval(job$calls[[nm]], env))
+    expect_s3_class(env$fit, "hazard")
+    expect_true(all(is.finite(stats::coef(env$fit))), info = oracle$job[[k]])
+    n_fit <- n_fit + 1L
+  }
+  # Known positive: the loop fitted every row except the two stop routes.
+  expect_identical(n_fit, nrow(oracle) - 2L)
+})
+
+# --- SETG1: the early phase's refusals, rewrites and no-result case (#424) --
+# The oracle is the HAZARD binary itself (data-raw/setg1-oracle.R): each row
+# records whether PROC HAZARD refused one early-phase PARMS statement, ran it,
+# or produced no result, with the data staged as PROC HAZARD stages it.
+
+.p424_oracle <- function() {
+  path <- test_path("fixtures", "setg1-oracle.csv")
+  utils::read.csv(path, comment.char = "#", stringsAsFactors = FALSE)
+}
+# The jobs PROC HAZARD runs only after SETG1 has moved a starting value
+# (setg1.c:342-349, :614-617, :686-691, :763-767): one row, no warning.
+.p424_moved <- c("thalf_neg_free", "thalf_zero_free", "thalf_half_free",
+                 "mnu_zero_free", "nu_zero_fixm")
+.p424_class <- function(job) {
+  msg <- .u1_msg(job)
+  if (grepl("refused before any fit is computed", msg, fixed = TRUE)) {
+    "refused"
+  } else if (grepl("cannot emit PROC HAZARD's model", msg, fixed = TRUE)) {
+    # A different model, which SAS RUNS. Checked before "no result",
+    # because this message quotes the row's reason, and a no-result reason
+    # routed here would otherwise read as a no-result verdict.
+    "runs"
+  } else if (grepl("PROC HAZARD may not fit this job", msg, fixed = TRUE)) {
+    "may_not_fit"
+  } else if (grepl("PROC HAZARD produced no result for this job", msg,
+                   fixed = TRUE)) {
+    "no_result"
+  } else {
+    "runs"
+  }
+}
+# The row must carry its class as well as the warning (#468 review).
+.p424_row_phrase <- c(
+  no_result = "PROC HAZARD produced no result for this job",
+  may_not_fit = "PROC HAZARD may not fit this job",
+  refused = "PROC HAZARD refuses this job: SETG1 raises"
+)
+.p424_warnings <- function(job) {
+  ch <- .u1_refusal_chunk(job)
+  if (is.null(ch)) return(character(0))
+  msgs <- character(0)
+  withCallingHandlers(eval(ch, new.env()), warning = function(x) {
+    msgs <<- c(msgs, conditionMessage(x))
+    invokeRestart("muffleWarning")
+  })
+  msgs
+}
+
+test_that("the SETG1 verdict matches the HAZARD binary on a grid (#424)", {
+  oracle <- .p424_oracle()
+  # Coverage before comparison: every class, and the known positive, present.
+  expect_setequal(unique(oracle$class),
+                  c("runs", "refused", "no_result", "may_not_fit"))
+  expect_gte(nrow(oracle), 20L)
+  expect_identical(oracle$binary_ref[oracle$id == "known_positive"], "runs")
+  # "may_not_fit" is the data-dependent class: no result on one dataset, a
+  # fit on the other. "no_result" gave no result on both.
+  mnf <- oracle$class == "may_not_fit"
+  expect_true(all(oracle$binary_ref[mnf] == "no_result" &
+                    oracle$binary_synth[mnf] == "runs"))
+  nr <- oracle$class == "no_result"
+  expect_true(all(oracle$binary_ref[nr] == "no_result" &
+                    oracle$binary_synth[nr] == "no_result"))
+  # Known positives for the widened code pattern (#468 review 2). Why these
+  # two codes: under the old narrow pattern (SETG1|DLG1|DG1RHO) both of these
+  # synthetic failures read "no code at all", which cannot be told apart from
+  # a plain non-convergence -- and that is what made the dataset-precedence
+  # rule look sound. DTRSFM1120 is a starting-value failure in the transform
+  # stage (hzd_early_t2p.c:37); DLG1935 is a G1 domain error in the same
+  # switch as DLG1980 (hzd_ln_G1_and_SG1.c:81). Requiring one of each pins
+  # that the probe can SEE the difference between the two kinds, not merely
+  # that two strings occur. The class stays keyed on the reference data.
+  synth_codes <- strsplit(oracle$codes_synth, " ", fixed = TRUE)
+  expect_true(any(vapply(synth_codes, function(x) "DTRSFM1120" %in% x, NA)))
+  expect_true(any(vapply(synth_codes, function(x) "DLG1935" %in% x, NA)))
+  expect_false(any(oracle$codes_synth[oracle$binary_synth == "no_result"] ==
+                     "none"))
+  # DG1RHO970 whole: the pattern before this one cut it to RHO970 at the
+  # digit in "DG1", so this is the code the old pattern broke.
+  all_codes <- unlist(strsplit(c(oracle$codes_ref, oracle$codes_synth), " "))
+  expect_true("DG1RHO970" %in% all_codes)
+  expect_false("RHO970" %in% all_codes)
+  # A SETG19xx code is DERIVED from setg1.c, never observed: the binary keeps
+  # it in Common.errflg and prints only the generic error, so a refused row
+  # records no code and that generic text, on both datasets.
+  ref <- oracle$class == "refused"
+  expect_gte(sum(ref), 9L)
+  expect_identical(oracle$setg1_code_derived[ref],
+                   sub("_.*$", "", oracle$id[ref]))
+  expect_true(all(oracle$codes_ref[ref] == "none" &
+                    oracle$codes_synth[ref] == "none"))
+  expect_true(all(oracle$error_text_ref[ref] ==
+                    "Fixed parameter violates model constraints." &
+                    oracle$error_text_synth[ref] ==
+                    "Fixed parameter violates model constraints."))
+  for (k in seq_len(nrow(oracle))) {
+    o <- oracle[k, ]
+    job <- .u1_job(parms = o$parms)
+    expect_identical(.p424_class(job), o$class, info = o$id)
+    w <- .p424_warnings(job)
+    n_rows <- NROW(job$untranslated)
+    expect_identical(as.character(job$calls$fit[[3L]][[1L]]), "hazard",
+                     info = o$id)
+    if (o$class == "runs") {
+      expect_length(w, 0L)
+      expect_identical(n_rows, if (o$id %in% .p424_moved) 1L else 0L,
+                       info = o$id)
+    } else {
+      # Warned once, recorded once, and the row names its class.
+      expect_length(w, 1L)
+      expect_identical(n_rows, 1L, info = o$id)
+      expect_match(job$untranslated$reason, .p424_row_phrase[[o$class]],
+                   fixed = TRUE, info = o$id)
+    }
+    if (startsWith(o$id, "SETG")) {
+      expect_match(paste(w, collapse = " "),
+                   paste0("(", sub("_.*$", "", o$id), ")"), fixed = TRUE,
+                   info = o$id)
+    }
+  }
+})
+
+test_that("a free non-positive THALF starts at 1, as SETG1 does (#421 item 3)", {
+  for (p in c("MUE=0.2 THALF=-1 NU=1 M=1", "MUE=0.2 THALF=0 NU=1 M=1",
+              "MUE=0.2 THALF=-.5")) {
+    job <- .u1_job(parms = p)
+    ph <- job$calls$fit[[3L]]$phases[[2L]]
+    expect_identical(ph$t_half, 1, info = p)
+    # The theta block is built from the same value: log(1), finite.
+    th <- eval(job$calls$fit[[3L]]$theta)
+    expect_true(all(is.finite(th)), info = p)
+    expect_identical(NROW(job$untranslated), 1L)
+    expect_match(job$untranslated$reason, "setg1.c:343-349", fixed = TRUE)
+    expect_null(.u1_refusal_chunk(job))
+  }
+  # Fixed, the same value is SETG1910, and the warning says so.
+  job <- .u1_job(parms = "MUE=0.2 THALF=-1 FIXTHALF NU=1 M=1")
+  expect_match(.u1_msg(job), "(SETG1910)", fixed = TRUE)
+})
+
+test_that("SETG1's g1flag 4 with a free M is no result or may not fit, never another model (#424, #468)", {
+  # PROC HAZARD does not fit a different model here: SETG1 selects the
+  # limiting positive generic case (setg1.c:631-634, :692-699, :763-770).
+  # Calling it not_mirrored would be a false statement about SAS. What the
+  # fit then does depends on M, and was measured on two datasets:
+  # DLG1980 (M != 0) stopped the fit on one and not on the other, so the
+  # claim is qualified; DG1RHO970 (M = 0) stopped it on both.
+  may <- c("MUE=0.2 THALF=1 M=1 NU=0", "MUE=0.2 THALF=1 M=1 NU=0 FIXNU",
+           "MUE=0.2 THALF=1 M=-1 NU=0", "MUE=0.2 THALF=1 M=-1 NU=0 FIXNU")
+  none <- "MUE=0.2 THALF=1 M=0 NU=0 FIXNU"
+  msgs <- vapply(c(may, none), function(p) .u1_msg(.u1_job(parms = p)), "")
+  for (p in c(may, none)) {
+    expect_no_match(msgs[[p]], "cannot emit PROC HAZARD's model", fixed = TRUE,
+                    info = p)
+    expect_no_match(msgs[[p]], "refused before any fit", fixed = TRUE, info = p)
+  }
+  for (p in may) {
+    expect_match(msgs[[p]], "PROC HAZARD may not fit this job", fixed = TRUE,
+                 info = p)
+    expect_match(msgs[[p]], "depends on the data", fixed = TRUE, info = p)
+    expect_no_match(msgs[[p]], "produced no result", fixed = TRUE, info = p)
+  }
+  expect_match(msgs[[none]],
+               paste("PROC HAZARD produced no result for this job on the",
+                     "reference data and on an independent dataset"),
+               fixed = TRUE)
+  expect_no_match(msgs[[none]], "may not fit", fixed = TRUE)
+  # The two classes' warnings are different texts, not one message twice.
+  expect_false(identical(sub(" [(]PARMS .*$", "", msgs[[may[[1L]]]]),
+                         sub(" [(]PARMS .*$", "", msgs[[none]])))
+  # M fixed: SAS runs it, so nothing is said.
+  job <- .u1_job(parms = "MUE=0.2 THALF=1 M=-1 NU=0 FIXM FIXNU")
+  expect_null(.u1_refusal_chunk(job))
+})
+
+test_that("the SETG1 verdict is invariant under spacing (#424)", {
+  oracle <- .p424_oracle()
+  oracle <- oracle[oracle$class != "runs" | oracle$id %in% .p424_moved, ]
+  expect_gte(nrow(oracle), 10L)
+  for (k in seq_len(nrow(oracle))) {
+    o <- oracle[k, ]
+    base <- .u1_job(parms = o$parms)
+    for (sp in c(" = ", " =", "= ")) {
+      v <- gsub("=", sp, o$parms, fixed = TRUE)
+      expect_false(identical(v, o$parms))          # the spelling varies
+      job <- .u1_job(parms = v)
+      expect_identical(.p424_class(job), o$class, info = v)
+      expect_identical(job$untranslated, base$untranslated, info = v)
+      expect_identical(.p424_warnings(job), .p424_warnings(base), info = v)
+    }
+  }
+})
+
+test_that("the SETG1 documents render past the warning (#424)", {
+  skip_on_cran()
+  e <- new.env()
+  utils::data("avc", package = "TemporalHazard", envir = e)
+  a <- e$avc[stats::complete.cases(e$avc), ]
+  D <- data.frame(TT = a$int_dead, DEAD = a$dead)
+  oracle <- .p424_oracle()
+  # Rows whose operands are ALSO outside what hzr_phase() or the likelihood
+  # accepts: the fit halts after the warning, as for SETG3910-3930 above.
+  halts <- c("SETG1910_neg", "SETG1910_zero", "SETG1940", "SETG1950",
+             "SETG1960", "SETG1920", "SETG1930", "g1flag4_mpos_fixnu")
+  for (id in c(halts, "SETG1900", "SETG1901", .p424_moved, "g1flag4_mpos",
+               "g1flag4_mneg", "g1flag4_mzero_fixnu")) {
+    job <- .u1_job(parms = oracle$parms[oracle$id == id])
+    res <- suppressWarnings(render_sim(job, list(D = D)))
+    expect_identical(res$ok, !(id %in% halts), info = id)
+    # The warning chunk itself always ran.
+    rn <- grep("^refusal", names(res$results), value = TRUE)
+    if (length(rn)) expect_identical(unname(res$results[[rn]]), "ok", info = id)
   }
 })

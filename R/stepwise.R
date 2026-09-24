@@ -153,7 +153,9 @@
 #'   parsed, once, when the screen starts: a name that is exactly a column
 #'   of `data` is that column, so the bare `"_X1"` pins the column `_X1`
 #'   although `terms()` labels it `` `_X1` ``, and `"TRUE"` pins a column
-#'   named `TRUE`.  Otherwise a name that is exactly a term label of the
+#'   named `TRUE`.  The exception is a column no model formula can hold,
+#'   `"."` or `""`: it can never become a model term, so it cannot be
+#'   pinned, and naming it warns and lists it in `unresolved`.  Otherwise a name that is exactly a term label of the
 #'   model or `scope` is that term, so `` "`_X1`" `` and `"age:mal"` work
 #'   too.  Any other name, `"age "` with a trailing space when there is no
 #'   such column, say, matches nothing and is ignored with a warning naming
@@ -182,13 +184,33 @@
 #'     \item{\code{steps}}{Data frame with one row per accepted /
 #'       frozen action; see Details.}
 #'     \item{\code{scope}}{Record of the candidate scope, plus
-#'       `force_in`, `force_out`, and the frozen set.  In a two-way
+#'       `force_in`, `force_out`, and the frozen set.  Four fields answer
+#'       four different questions about the pins, and none substitutes for
+#'       another: `force_in` and `force_out` are the names **as given**,
+#'       including any that pinned nothing; `force_in_resolved` and
+#'       `force_out_resolved` are what those names **resolved to**, as a
+#'       column or term label, so a bare `"_X1"` appears there as
+#'       `` "`_X1`" ``; `unresolved` is which of them resolved to nothing;
+#'       and `frozen` is what the loop held in that the caller never named.
+#'       The resolved fields carry the resolved names only: the frozen set
+#'       is **not** merged into them, because `frozen` already records it
+#'       and merging would list variables nobody asked for (#451).  Resolving
+#'       is not applying: a name that resolves to a variable the model does
+#'       not contain is recorded here and still pins nothing, because
+#'       `force_in` only keeps a variable that is already in.  The resolved
+#'       fields are **not** aligned element for element with the as-given
+#'       ones, which stay longer by every name that resolved to nothing.
+#'       In a two-way
 #'       screen, `frozen` can name a variable the final model does not
 #'       contain; see the **Known limitation (the frozen set)** section.
 #'       `unresolved` is a list with elements `force_in`, `force_out` and
-#'       `scope`, each the names that matched neither a column of `data`
-#'       nor a term label and were therefore ignored (`character()` when
-#'       none were).  The trace, and so `print()` and `summary()`, carries a
+#'       `scope`, each the names that could not be used and were therefore
+#'       ignored (`character()` when none were). That is usually a name
+#'       matching neither a column of `data` nor a term label; for `force_in`
+#'       and `force_out` it also covers a name that IS a column but which no
+#'       model formula can hold, such as `"."` or `""`, since such a column
+#'       can never become a model term and so can never be pinned.
+#'       The trace, and so `print()` and `summary()`, carries a
 #'       line for each non-empty one, and a screen whose character `scope`
 #'       was emptied this way says so where it stops.  `candidates`,
 #'       `force_in` and `force_out` here are the arguments as given, so a
@@ -471,6 +493,62 @@ hzr_stepwise <- function(fit,
                                      arg = "`force_in`")
   resolved_out <- .hzr_resolve_names(force_out, data, known_labels,
                                      arg = "`force_out`")
+  # A PIN NAMING AN UNNAMEABLE COLUMN IS NOT RESOLVED. `.hzr_column_label()`
+  # gives "." and "" the placeholder `<column ".">` because `terms()` cannot
+  # label them, and that is not NA -- so `.hzr_resolve_names()` reported such
+  # a pin as a hit, it reached `force_in_id`, and nothing warned. The pin was
+  # always inert, since no formula can name the column and the placeholder
+  # can never equal a term label; what was wrong is that every signal said it
+  # had resolved, and #451 publishes the value as `$scope$force_in_resolved`,
+  # documented as a column or term label (#463).
+  #
+  # Handled HERE rather than in `.hzr_resolve_names()` deliberately. The
+  # `scope` path at :459 DEPENDS on the placeholder surviving: the
+  # `unnameable` block above reads it out of `scope_labels` to say
+  # "Column(s) "." of `data` cannot be a stepwise candidate", which is
+  # accurate. Making the resolver drop placeholders emptied `scope_labels`,
+  # silenced that message, and replaced it with "neither a column of `data`
+  # nor a term label" -- FALSE, because it is a column. One warning either
+  # way, so a warnings-count check reads clean (stream C, #463 review).
+  pin_unnameable <- function(res) {
+    if (!length(res$id)) return(res)
+    ph <- .hzr_is_label_placeholder(res$id)
+    if (!any(ph)) return(res)
+    # Mirrors `.hzr_resolve_names()`'s return shape: same three elements, in
+    # the same order, with `spelling` and `id` filtered by the SAME mask so
+    # their index alignment survives.
+    list(spelling = res$spelling[!ph], id = res$id[!ph],
+         unresolved = c(res$unresolved, res$spelling[ph]))
+  }
+  warn_unnameable_pin <- function(res, arg) {
+    ph <- if (length(res$id)) .hzr_is_label_placeholder(res$id) else logical(0)
+    if (!any(ph)) return(invisible(NULL))
+    # "Rename the column" only makes sense when the user named a column. The
+    # placeholder text itself also reaches here, because `known` in
+    # `.hzr_resolve_names()` contains every column's label including the
+    # placeholders -- and there is no column called `<column ".">` to rename.
+    named_a_column <- res$spelling[ph] %in% names(data)
+    advice <- if (all(named_a_column)) {
+      paste0(" Rename ", if (sum(ph) == 1L) "that column" else "those columns",
+             " to use ", arg, ".")
+    } else {
+      ""
+    }
+    warning(arg, " names ",
+            paste(encodeString(res$spelling[ph], quote = "\""),
+                  collapse = ", "),
+            ", which no model formula can name, so ",
+            if (sum(ph) == 1L) "it cannot" else "they cannot",
+            " be pinned; ",
+            if (sum(ph) == 1L) "it is" else "they are", " ignored.",
+            advice, call. = FALSE)
+    invisible(NULL)
+  }
+  warn_unnameable_pin(resolved_in,  "`force_in`")
+  warn_unnameable_pin(resolved_out, "`force_out`")
+  resolved_in  <- pin_unnameable(resolved_in)
+  resolved_out <- pin_unnameable(resolved_out)
+
   force_in_id  <- resolved_in$id
   force_out_id <- resolved_out$id
   unresolved$force_in  <- resolved_in$unresolved
@@ -860,6 +938,14 @@ hzr_stepwise <- function(fit,
     candidates = scope_given,
     force_in   = force_in,
     force_out  = force_out,
+    # The RESOLVED identities, recorded beside the names as given, so a pin
+    # that resolved to nothing is visible as absent here rather than only in
+    # `$scope$unresolved` (#451). These are the resolved names ONLY: the
+    # internal effective set also carries `frozen`, which `$scope$frozen`
+    # already records, and merging the two would list variables the caller
+    # never named.
+    force_in_resolved  = force_in_id,
+    force_out_resolved = force_out_id,
     frozen     = frozen,
     unresolved = unresolved
   )

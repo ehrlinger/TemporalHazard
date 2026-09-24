@@ -68,6 +68,22 @@
       here, so the warning says the translation cannot tell whether PROC
       HAZARD refuses the job or which model it fits;
   - `SETG3`'s entry refusals, on every path;
+  - `SETG1`'s refusals for an early phase (#424): `THALF` fixed at a value
+    that is not positive (`SETG1910`); `M` and `NU` both fixed on a case no
+    model takes (`SETG1940`, `SETG1950`, `SETG1960`, and `SETG1920` and
+    `SETG1930` under `FIXMNU1`); and `DELTA` fixed outside `[-1, 1]`
+    (`SETG1900`, `SETG1901`). They were fitted with no row, or warned for the
+    wrong reason, that the model was not mirrored. Most of these values are
+    out of range for `hazard()` as well, so the fit still fails after the
+    warning;
+  - an early phase PROC HAZARD may not fit (#424). With `NU=0` and `M` free,
+    `SETG1` selects its limiting case, and these jobs fitted with no row.
+    What the binary does next was measured on two datasets, and the warning
+    says only what was seen. For `M=0 NU=0 FIXNU` it produced no result on
+    both. For `M=1 NU=0` and `M=-1 NU=0`, with or without `FIXNU`, it stopped
+    on a domain error (`DLG1980`) on one dataset and fitted on the other, so
+    the warning says PROC HAZARD **may** print no estimates on your data. In
+    neither case does it say PROC HAZARD fits another model;
   - a phase variable that is not a name to PROC HAZARD's lexer (#440):
     `AGE*SEX`, `LOG(AGE)`, `B SEX`, `1AGE`. A phase variable must be a NAME,
     `[_A-Z][_A-Z0-9]*` (`hazard_l.l:39`, `phasevar : NAME` at
@@ -93,9 +109,31 @@
     one may run despite an earlier error: the binary runs
     `EARLY AGE*SEX, LOG();` and fits `AGE` alone. The translation does not
     reproduce which variables survive, and says so in the warning.
+  - a value on a `PROC HAZARD` option that takes none (#431): `NOCOV=1`,
+    `CONSERVE=YES`, `PRINTIT=1`, `NOPRINT=0`, in any spacing. Eleven options
+    are bare tokens (`hazard_y.y:65-75`), so the `=` is a syntax error and
+    the job does not run. The value was ignored and the job fitted with no
+    row;
+  - a `TIME`, `EVENT`, `RCENSOR`, `LCENSOR` or `WEIGHT` statement with other
+    than one operand (#431). Each takes exactly one name
+    (`hazard_y.y:106-127`). `EVENT DEAD EXTRA` fitted on `DEAD` and dropped
+    `EXTRA` with nothing said; it now warns and fits on the first operand.
+    With no operand at all, `WEIGHT`, `RCENSOR` and `LCENSOR` are left out
+    of the fit, and `TIME` or `EVENT` stops the job, since there is no
+    variable to fit, unless another statement supplies one (a second
+    `TIME`, or `ICENSOR` for `EVENT`). An operand that is a macro reference is not counted,
+    since it can expand to any number of names. The HAZARD binary is the
+    oracle for both shapes, and it runs either job when a later phase
+    statement carries a `(`, as above; the warning says so there.
 
-  Refusal coverage is not complete: `SETG1`'s refusals, which `PROC HAZARD`
-  raises for an early phase, are not traced, so such a job still fits (#424).
+  Every class above for `SETG1` was checked against the HAZARD binary
+  (C-Version 4.4.4), with the data staged as PROC HAZARD reads it, on the
+  package's `avc` data and on an independent seeded dataset. Where
+  `SETG1` moves a starting value and runs, the translation now starts there
+  too, with a row and no warning (#421): a free `THALF` that is not positive
+  starts at 1, where it was emitted as written and the document stopped at
+  its logarithm; `M=0 NU=0` with both free starts at `M = NU = 1`; and
+  `NU=0` with only `M` fixed starts `NU` at 1.
 
   A `PARMS` or `PROC` value that carries a macro reference (`&X`, `%CALL`) is
   not refused, because SAS expands it before PROC HAZARD reads the statement.
@@ -122,9 +160,10 @@
   did before this release: a phase statement `PROC HAZARD` refuses at parse
   (#340) other than a phase variable that is not a name (#440, above), a
   `PARMS` statement that builds no phase this translator can use, a job
-  with no `DATA=` whose phases name covariates (#311), and a `SELECTION`
-  job that selects no phase. Everything newly recognised in this release
-  warns and still fits.
+  with no `DATA=` whose phases name covariates (#311), a `SELECTION`
+  job that selects no phase, and a `TIME` or `EVENT` statement with no
+  operand (#431) that leaves nothing to fit. Everything else newly
+  recognised in this release warns and still fits.
 
   The risk this accepts, deliberately: a rendered document that shows a
   warning and then carries on to a fit **can** be read as a clean result by
@@ -889,6 +928,24 @@
 
 ## New features
 
+* **`hzr_stepwise()` records what a pin resolved to, beside what was asked
+  for (#451).** `$scope$force_in` and `$scope$force_out` list the caller's
+  own strings. `$scope$unresolved` has recorded the names that matched
+  nothing since #442, but nothing recorded what the names that *did* match
+  resolved to, so a saved result could not say whether `"_X1"` pinned the
+  column `_X1` or a model term spelled that way.
+  The results now also carry `$scope$force_in_resolved` and
+  `$scope$force_out_resolved`, the identities those names resolved to: a
+  bare `"_X1"` is recorded as given in the first and as `` "`_X1`" `` in the
+  second, and a name that resolved to nothing is absent from the second
+  entirely. Nothing is renamed or removed, and the as-given fields are
+  unchanged. The resolved fields hold the resolved names **only**; the
+  frozen set is not merged into them, since `$scope$frozen` already records
+  it and merging would list variables the caller never named.
+  Resolving is not applying: `force_in` names variables that must *remain*
+  in, so a name that resolves to a variable the model does not contain is
+  recorded as resolved and still pins nothing.
+
 * **`hzr_translate_sas()` now says when `PROC HAZARD` rewrote a shape operand
   before fitting, instead of emitting the rewritten value silently.** Under
   `FIXGE2` or `FIXGAE2` with `WEIBULL`, `SETG3` moves the late shape onto the
@@ -1078,6 +1135,25 @@
   gradient calculations", exiting with an error status while still printing the
   estimates. So this is a shared degeneracy that the reference already flags,
   and reporting it is parity-preserving rather than a break.
+
+* **`hzr_stepwise()` no longer reports a pin on a column no formula can name
+  as resolved (#463).** `force_in` and `force_out` accept a column of `data`
+  or a term label. A column called `"."` or `""` is neither usable: `terms()`
+  cannot put it in a formula, so it can never become a model term. Such a pin
+  was nevertheless reported as having resolved — it did not appear in
+  `$scope$unresolved` — while doing nothing at all, and with a formula
+  `scope` nothing warned either. It now warns and is listed as unresolved,
+  like any other name that cannot be used. With a character or default
+  `scope` you already saw a warning that the column could not be a
+  *candidate*; that one is unchanged, and the new one is about *pinning*, so
+  both now appear.
+
+  The selected model does not change. The pin never had any effect, and a
+  test asserts the same job with and without it reaches the same terms at the
+  same log-likelihood.
+
+  The warning for a `scope` naming such a column is unchanged and still says
+  the accurate thing — that the column exists but cannot be a candidate.
 
 * **A `"hazard"` phase fitted outside your data is now reported (#444).** The
   `"hazard"` phase type is −log(1 − G(t)), which grows without bound as G

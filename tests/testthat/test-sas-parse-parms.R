@@ -2072,3 +2072,30 @@ test_that("a spaced operand PROC HAZARD would still reject is not said to be acc
     c("MUE=0.2", "THALF=0.5", "NU", "=", "-1.5")))
   expect_identical(NROW(ok$untranslated), 0L)
 })
+
+test_that("SETG1 records the refusal it reaches first: DELTA, THALF, M and NU (#424)", {
+  # setg1.c returns on each refusal in turn (:310-328, :343-346, then the
+  # M and NU cases), so a job carrying several names the first of them.
+  first <- function(ops) .hzr_parse_parms(ops)$refusal_reason
+  expect_match(first(c("MUE=0.2", "DELTA=2", "FIXDELTA", "THALF=-1",
+                       "FIXTHALF", "M=-1", "NU=-1", "FIXM", "FIXNU")),
+               "(SETG1901)", fixed = TRUE)
+  expect_match(first(c("MUE=0.2", "THALF=-1", "FIXTHALF", "M=-1", "NU=-1",
+                       "FIXM", "FIXNU")), "(SETG1910)", fixed = TRUE)
+  expect_match(first(c("MUE=0.2", "THALF=1", "M=-1", "NU=-1", "FIXM",
+                       "FIXNU")), "(SETG1940)", fixed = TRUE)
+  # SETG1 runs only for an active early phase (shape.c:19-21).
+  late_only <- .hzr_parse_parms(c("MUL=0.2", "THALF=-1", "FIXTHALF"))
+  expect_true(is.na(late_only$refusal_reason))
+  # A refusal is the job's only verdict: no no-result reason beside it.
+  p <- .hzr_parse_parms(c("MUE=0.2", "M=1", "NU=0", "FIXM", "FIXNU"))
+  expect_match(p$refusal_reason, "(SETG1960)", fixed = TRUE)
+  expect_true(is.na(p$no_result_reason))
+  p <- .hzr_parse_parms(c("MUE=0.2", "M=1", "NU=0"))
+  expect_true(is.na(p$refusal_reason))
+  expect_match(p$no_result_reason, "may not fit this job", fixed = TRUE)
+  expect_identical(p$no_result_kind, "may_not_fit")
+  p <- .hzr_parse_parms(c("MUE=0.2", "M=0", "NU=0", "FIXNU"))
+  expect_match(p$no_result_reason, "produced no result", fixed = TRUE)
+  expect_identical(p$no_result_kind, "no_result")
+})

@@ -101,7 +101,9 @@ selection trace, but are never dropped.  Each name is looked up, not
 parsed, once, when the screen starts: a name that is exactly a column
 of \code{data} is that column, so the bare \code{"_X1"} pins the column \verb{_X1}
 although \code{terms()} labels it \code{`_X1`}, and \code{"TRUE"} pins a column
-named \code{TRUE}.  Otherwise a name that is exactly a term label of the
+named \code{TRUE}.  The exception is a column no model formula can hold,
+\code{"."} or \code{""}: it can never become a model term, so it cannot be
+pinned, and naming it warns and lists it in \code{unresolved}.  Otherwise a name that is exactly a term label of the
 model or \code{scope} is that term, so \code{"`_X1`"} and \code{"age:mal"} work
 too.  Any other name, \code{"age "} with a trailing space when there is no
 such column, say, matches nothing and is ignored with a warning naming
@@ -138,13 +140,33 @@ final fit augmented with:
 \item{\code{steps}}{Data frame with one row per accepted /
 frozen action; see Details.}
 \item{\code{scope}}{Record of the candidate scope, plus
-\code{force_in}, \code{force_out}, and the frozen set.  In a two-way
+\code{force_in}, \code{force_out}, and the frozen set.  Four fields answer
+four different questions about the pins, and none substitutes for
+another: \code{force_in} and \code{force_out} are the names \strong{as given},
+including any that pinned nothing; \code{force_in_resolved} and
+\code{force_out_resolved} are what those names \strong{resolved to}, as a
+column or term label, so a bare \code{"_X1"} appears there as
+\code{"`_X1`"}; \code{unresolved} is which of them resolved to nothing;
+and \code{frozen} is what the loop held in that the caller never named.
+The resolved fields carry the resolved names only: the frozen set
+is \strong{not} merged into them, because \code{frozen} already records it
+and merging would list variables nobody asked for (#451).  Resolving
+is not applying: a name that resolves to a variable the model does
+not contain is recorded here and still pins nothing, because
+\code{force_in} only keeps a variable that is already in.  The resolved
+fields are \strong{not} aligned element for element with the as-given
+ones, which stay longer by every name that resolved to nothing.
+In a two-way
 screen, \code{frozen} can name a variable the final model does not
 contain; see the \strong{Known limitation (the frozen set)} section.
 \code{unresolved} is a list with elements \code{force_in}, \code{force_out} and
-\code{scope}, each the names that matched neither a column of \code{data}
-nor a term label and were therefore ignored (\code{character()} when
-none were).  The trace, and so \code{print()} and \code{summary()}, carries a
+\code{scope}, each the names that could not be used and were therefore
+ignored (\code{character()} when none were). That is usually a name
+matching neither a column of \code{data} nor a term label; for \code{force_in}
+and \code{force_out} it also covers a name that IS a column but which no
+model formula can hold, such as \code{"."} or \code{""}, since such a column
+can never become a model term and so can never be pinned.
+The trace, and so \code{print()} and \code{summary()}, carries a
 line for each non-empty one, and a screen whose character \code{scope}
 was emptied this way says so where it stops.  \code{candidates},
 \code{force_in} and \code{force_out} here are the arguments as given, so a
