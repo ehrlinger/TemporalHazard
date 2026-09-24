@@ -64,6 +64,15 @@
 #' at parse. The document raises a `warning()` above the fit, and the operand
 #' is recorded in `$untranslated`.
 #'
+#' Two more syntax errors take the same route. A value on a `PROC HAZARD`
+#' option that takes none, such as `NOCOV=1` (`hazard_y.y:65-76`), is
+#' ignored in the fit. A `TIME`, `EVENT`, `RCENSOR`, `LCENSOR` or `WEIGHT`
+#' statement with more than one operand, which takes exactly one name
+#' (`hazard_y.y:106-127`), is fitted on the first. Both are warned about
+#' above the fit and recorded in `$untranslated`. `TIME` or `EVENT` with no
+#' operand, and no other statement supplying the variable, leaves nothing to
+#' fit, so that job's fit chunk is a `stop()`.
+#'
 #' A job may contain more than one `PROC HAZARD` and/or `PROC HAZPRED` block.
 #' Every block is preserved: the first of a kind keeps the bare chunk name
 #' (`fit`, `pred`, `pred_haz`), later ones get `fit_2`, `fit_3`, `pred_2`, and
