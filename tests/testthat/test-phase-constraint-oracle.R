@@ -53,17 +53,19 @@ oracle_cases <- list(
   ),
   # FIXGE2: search log mu, log tau, log gamma; eta = 2/gamma. alpha is held,
   # because with alpha free as well a sample this size runs gamma to a ridge.
+  # Held below 1: PROC HAZARD refuses a fixed alpha above 1 under FIXGE2
+  # (SETG31040, #418), and so does hazard().
   eta_gamma = list(
     truth = list(mu = 0.5, tau = 8, gamma = 2, eta = 1),
     start = list(mu = 0.3, tau = 6, gamma = 3, eta = 2 / 3),
-    alpha = 2,
+    alpha = 0.5,
     shapes = function(p) {
       gamma <- exp(p[3])
-      list(mu = exp(p[1]), tau = exp(p[2]), gamma = gamma, alpha = 2,
+      list(mu = exp(p[1]), tau = exp(p[2]), gamma = gamma, alpha = 0.5,
            eta = 2 / gamma)
     },
     phase = function(s) {
-      hzr_phase("g3", tau = s$tau, gamma = s$gamma, alpha = 2,
+      hzr_phase("g3", tau = s$tau, gamma = s$gamma, alpha = 0.5,
                 fixed = "alpha", constraint = "eta_gamma")
     }
   )

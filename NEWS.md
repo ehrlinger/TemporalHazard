@@ -1102,6 +1102,47 @@
 
 ## Bug fixes
 
+* **A g3 phase with `alpha` fixed at 1 is now fitted as PROC HAZARD fits it
+  (#415).** At `alpha = 1` the g3 form is `(t/tau)^(gamma*eta)`, so `tau` is
+  confounded with `mu`, and `gamma` with `eta`. With all of them free the fit
+  walked a ridge and reported `converged = TRUE` at an arbitrary point on it,
+  warning only about standard errors. PROC HAZARD re-expresses this phase
+  before fitting (`SETG3_ignore_tau()`, `setg3.c:313-315` and `380-425`):
+  `tau` is held at 1, and the product is carried by one parameter, `gamma`
+  unless `gamma` is the one you fixed. Under `constraint = "eta_gamma"`
+  (`FIXGE2`) both are held, at `gamma = 2`, `eta = 1`. `hazard()` now does the
+  same, and **warns and records it** in `fit$fit$boundary` (mechanism
+  `"g3_alpha_one"`, warning class `"hzr_g3_alpha_one"`, which inherits
+  `"hzr_boundary"`). The likelihood is unchanged: the held fit is the Weibull
+  fit, which a test checks against `survival::survreg()`. A *free* `alpha`
+  that starts at 1 is not held, by SAS or here. The hold is announced only
+  when it changes a value or what is fixed.
+
+* **The weak-direction warning now names a single parameter that the data do
+  not determine (#415).** It named only pairs of parameters that trade off,
+  because it reads the correlation matrix, and a correlation matrix
+  normalises a lone parameter's variance away. So a `gamma` that ran to 1e7
+  with no partner produced no named warning. When the pairwise reading finds
+  nothing behind the same Hessian-condition gate, a second reading now names
+  one parameter that carries the flattest direction on its own. It reads
+  positive shapes on the log scale. Scaling every parameter by its own value
+  misnamed `log_mu` on runaway-`gamma` fits. Measured on 34 fits, it fired on
+  12 of the 14 degenerate fits it could read (`gamma` on 11, `alpha` on 1) and
+  on none of 10 identified fits. The warning and `fit$fit$weak` carry
+  `single = TRUE`, and every pair the pairwise reading named before is
+  unchanged.
+
+* **Under `constraint = "eta_gamma"` (`FIXGE2`), a fixed `alpha` above 1 is
+  now refused, and a free one started at 1 or above is moved to 2/3, as PROC
+  HAZARD does (#418).** With `gamma * eta = 2` the g3 form needs
+  `gamma * eta / alpha > 2`, that is `alpha < 1`. PROC HAZARD stops on a
+  fixed `alpha` above 1 (`SETG31040`, `setg3.c:843-847`), and `hazard()` now
+  does too, where it used to fit. A free `alpha` started at or above 1 is
+  rewritten to 2/3 (`setg3.c:848-850`); `hazard()` does the same, with a
+  warning and a `fit$fit$boundary` record (mechanism
+  `"g3_fixge2_alpha_start"`). A fixed `alpha` of exactly 1 takes the hold
+  above.
+
 * **`hzr_stepwise()` no longer reports a pin on a column no formula can name
   as resolved (#463).** `force_in` and `force_out` accept a column of `data`
   or a term label. A column called `"."` or `""` is neither usable: `terms()`
@@ -2392,6 +2433,20 @@
   had covariates, or scored a candidate for a phase with an interaction.
 
 ## Known limitations
+
+* **A g3 phase under `constraint = "eta_gamma"` can still report a finite,
+  warning-free `gamma` while the likelihood rises toward `gamma = Inf`
+  (#418).** As `gamma` grows the g3 form tends to a corner law, the
+  likelihood has a finite limit there, and when the data prefer a sharp bend
+  there is a supremum and no maximum. A fit that stops short of it can report
+  `converged = TRUE` with an ordinary-looking `gamma` and standard error, and
+  nothing warns, because the Hessian at that point is well conditioned. This
+  release refuses and rewrites the `FIXGE2` setups PROC HAZARD does (see Bug
+  fixes). It does **not** detect this case, which needs a profile comparison
+  against the corner law. Until it does, **for a constrained g3 phase, compare
+  the log-likelihood at a much larger `gamma` before trusting `gamma`-hat**.
+  The fitted hazard is barely affected away from `tau`; it is the inference
+  about `gamma` that is at risk.
 
 * **A multiphase fit can come to rest on a discontinuity in the likelihood,
   and still report `converged = TRUE` (#448).** When a `cdf` phase's shape

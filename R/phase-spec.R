@@ -174,9 +174,15 @@
 #'   \eqn{\gamma} and \eqn{\eta} only through their product. So
 #'   \eqn{\gamma} and \eqn{\eta} are not separately identified there: under
 #'   `"eta_gamma"` the product is fixed at 2 and \eqn{\gamma} is not
-#'   identified at all, and with both estimated only the product is. A fit
-#'   started there can report convergence with an arbitrary \eqn{\gamma}.
-#'   Start `alpha` away from 1, or fix \eqn{\gamma}, for such a phase.
+#'   identified at all, and with both estimated only the product is. With
+#'   `alpha` *fixed* at 1, [hazard()] therefore fits the phase as PROC HAZARD
+#'   does: `tau` is held at 1 and the product is carried by one parameter
+#'   (under `"eta_gamma"`, \eqn{\gamma = 2} and \eqn{\eta = 1} are both held),
+#'   with a warning and a record in `fit$fit$boundary`. Under `"eta_gamma"` a
+#'   fixed `alpha` above 1 is refused, as PROC HAZARD refuses it, and a free
+#'   one started at 1 or above starts at 2/3 instead. A free `alpha` that
+#'   comes to rest near 1 can still leave \eqn{\gamma} undetermined; the
+#'   weak-direction warning names it when the Hessian shows it.
 #'   The derived parameter follows the others at every step of the
 #'   optimization, so it is not a free parameter and cannot be named in
 #'   `fixed`; `"shapes"` leaves it out. Its starting value is computed from the
