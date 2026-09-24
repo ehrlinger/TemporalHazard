@@ -246,3 +246,26 @@ test_that("a weight-0 row does not supply the first observed time", {
   expect_identical(padded$fit$boundary[[1L]]$detail,
                    base$fit$boundary[[1L]]$detail)
 })
+
+test_that("a row the designs drop for an NA covariate is not an observed time", {
+  # A phase formula is evaluated in `data`, and the multiphase designs drop a
+  # row with an NA there before the likelihood sees it, while hazard() keeps
+  # it in `time` (the global formula has no covariate to lose it on).
+  d <- ub_data()
+  n <- length(d$t)
+  withr::local_seed(2)
+  df <- data.frame(t = c(d$t, 1e-12), s = c(d$s, 0),
+                   z = c(stats::rnorm(n), NA))
+  ph <- list(early = hzr_phase("hazard", t_half = 0.5, nu = 1, m = 0),
+             late  = hzr_phase("constant", formula = ~ z))
+  fit <- suppressWarnings(hazard(
+    survival::Surv(t, s) ~ 1, data = df, dist = "multiphase",
+    phases = ph, fit = TRUE, control = list(n_starts = 1L),
+    theta = c(log(0.1), log(min(d$t) / 1000), 1, 0, log(0.05), 0)))
+  t_half <- exp(unname(fit$fit$theta[["early.log_t_half"]]))
+  expect_lt(1e-12, t_half)  # the premise: the dropped row is below t_half
+  expect_true(is.list(fit$fit$boundary))
+  expect_match(fit$fit$boundary[[1L]]$detail,
+               paste0("below the first observed time (",
+                      format(min(d$t), digits = 4), ")"), fixed = TRUE)
+})

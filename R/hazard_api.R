@@ -1361,6 +1361,7 @@ hazard <- function(formula = NULL,
     fit_state$covariate_counts <- optim_result$covariate_counts
     fit_state$x_list <- optim_result$x_list
     fit_state$x_design <- optim_result$x_design
+    fit_state$rows_used <- optim_result$rows_used
     fit_state$fixed_mask <- optim_result$fixed_mask
     fit_state$starts <- optim_result$starts
     # Applied CoE state, recorded next to the requested one in spec$control
@@ -1489,9 +1490,13 @@ hazard <- function(formula = NULL,
   # A sibling of $weak, with the same tri-state: NA not examined, NULL
   # examined and nothing found, a list of records otherwise.
   # Only rows the likelihood reads: a weight-0 row is excluded from the fit,
-  # so its time must not supply the first observed time (#444) or an
-  # endpoint of a step (#448) either.
+  # and so is a row the multiphase designs drop for an NA covariate, so
+  # neither may supply the first observed time (#444) or an endpoint of a
+  # step (#448).
   in_fit <- if (is.null(weights)) rep(TRUE, length(time)) else weights > 0
+  if (length(fit_state$rows_used) == length(in_fit)) {
+    in_fit <- in_fit & fit_state$rows_used
+  }
   keep_rows <- function(v) if (length(v) == length(in_fit)) v[in_fit] else v
   boundary_check <- .hzr_boundary_check_impl(
     theta = fit_state$theta, phases = phases,

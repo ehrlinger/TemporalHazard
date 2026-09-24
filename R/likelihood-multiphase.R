@@ -2044,7 +2044,7 @@
   list(time = time, status = status, time_lower = time_lower,
        time_upper = time_upper, x = x, weights = weights,
        x_list = x_list, covariate_counts = covariate_counts,
-       x_design = x_design)
+       x_design = x_design, rows_used = !drop_rows)
 }
 
 
@@ -2103,6 +2103,7 @@
   x_list           <- built_designs$x_list
   covariate_counts <- built_designs$covariate_counts
   x_design         <- built_designs$x_design
+  rows_used        <- built_designs$rows_used
 
   # --- Assemble starting values if not provided ------------------------------
   if (is.null(theta_start)) {
@@ -2816,6 +2817,9 @@
   best_result$covariate_counts <- covariate_counts
   best_result$x_list <- x_list
   best_result$x_design <- x_design
+  # Which of hazard()'s rows the likelihood read, in hazard()'s row order:
+  # post-fit checks over the observed times must not count a dropped row.
+  best_result$rows_used <- rows_used
 
   # Which starts survived, and which one the reported fit came from.
   best_result$starts <- starts
