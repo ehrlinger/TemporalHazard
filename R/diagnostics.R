@@ -1842,14 +1842,9 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # hold one value per row -- `pi`, a cutoff, a knots vector -- is a constant,
   # rightly the same in every replicate, and is left alone.
   if (is.data.frame(orig_data)) {
-    # One value per row of the data hazard() was GIVEN, too: the stored frame
-    # has had its time-0 rows dropped (#374), and a caller-frame vector has
-    # not, so comparing with the stored frame alone let it through.
-    row_counts <- nrow(orig_data) +
-      c(0L, length(object$data$dropped_time_zero_rows))
     per_row <- function(v, env) {
       val <- get0(v, envir = env, inherits = TRUE)
-      !is.null(val) && !is.function(val) && NROW(val) %in% row_counts
+      !is.null(val) && !is.function(val) && NROW(val) == nrow(orig_data)
     }
     outside_in <- function(vars, env) {
       vars <- setdiff(vars, c(names(orig_data), "."))

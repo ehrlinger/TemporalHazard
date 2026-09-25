@@ -1147,17 +1147,18 @@
   lower bound or entry time of 0 is admissible, as PROC HAZARD admits it, so
   an interval opening at 0 is still fitted, as left censoring (#341). Right-censored rows at 0
   contributed nothing to the likelihood, so those fits keep their estimates
-  but now report the smaller row count. Every formula expression is computed
-  on the data as given, and the rows are removed afterwards, as PROC HAZARD
-  removes them after the DATA step and as `model.frame()` does for
-  `subset =`. So `scale(age)` uses the mean and SD of every row given, and in
-  `Surv(time - min(time), status)` the row the expression makes 0 is the one
-  dropped. The rows are dropped before any other check reads them.
+  but now report the smaller row count. The fit is built on the retained
+  rows only, response and design alike, as if the dropped rows had not been
+  given: `scale(age)` uses the retained rows, and so does every function that
+  later rebuilds the model from the fit (the score test, `hzr_evaluate()`,
+  and the refits in `hzr_stepwise()` and `hzr_bootstrap()`), so they agree
+  with it. Two inputs cannot be rebuilt that way and are refused, with a
+  message naming the cause: a response whose values change once the rows
+  are dropped, such as `Surv(time - min(time), status)`; and a formula,
+  global or a phase's, that reads a per-row value from outside `data`.
   `hzr_stepwise()` given the data frame used for the fit drops the same
-  rows, but only when both the retained and the dropped rows match it.
-  `hzr_bootstrap()` still refuses `Surv()` vectors that are not columns of
-  `data`. If every row is at time 0, `hazard()` stops with nothing left to
-  fit.
+  rows, but only when both the retained and the dropped rows match it. If
+  every row is at time 0, `hazard()` stops with nothing left to fit.
 
 * **A column of `data` named `""` no longer stops the fit (#470).** Any
   formula-interface fit on such data stopped with "attempt to use zero-length

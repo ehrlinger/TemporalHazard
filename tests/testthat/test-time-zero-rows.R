@@ -142,44 +142,6 @@ test_that("a list of columns given as data is filtered like a data frame", {
   expect_equal(f$data$frame$tt, f$data$time)
 })
 
-test_that("hzr_bootstrap() still refuses Surv() vectors from outside data", {
-  # The #278 guard compared a vector's length with the stored frame, which
-  # has lost the time-0 row; the caller's vector has not. It let the call
-  # through and returned identical replicates as full success.
-  # The Surv() vectors live where the formula interface looks for a name that
-  # is not a column: the global environment (a local frame is not searched,
-  # on main as here).
-  withr::local_seed(3)
-  tt <- stats::rexp(60, 0.4) + 0.01
-  tt[4] <- 0
-  assign("tz_tt", tt, envir = globalenv())
-  assign("tz_ss", stats::rbinom(60, 1, 0.7), envir = globalenv())
-  withr::defer(rm("tz_tt", "tz_ss", envir = globalenv()))
-  dd <- data.frame(age = stats::rnorm(60))
-  f <- suppressWarnings(hazard(survival::Surv(tz_tt, tz_ss) ~ 1, data = dd,
-                               dist = "weibull", theta = c(0.5, 1),
-                               fit = TRUE))
-  expect_identical(f$data$dropped_time_zero, 1L)
-  expect_error(suppressWarnings(hzr_bootstrap(f, n_boot = 3)),
-               "not columns of it")
-})
-
-test_that("a Surv() response read from outside data falls back too", {
-  # Worked on main; the rebuild must not turn it into an error.
-  withr::local_seed(6)
-  n <- 60
-  gt <- c(0, stats::rexp(n, 0.4) + 0.01)
-  assign("tz_gt", gt, envir = globalenv())
-  withr::defer(rm("tz_gt", envir = globalenv()))
-  dat <- data.frame(st = c(1, stats::rbinom(n, 1, 0.7)),
-                    age = stats::rnorm(n + 1))
-  f <- suppressWarnings(hazard(survival::Surv(tz_gt, st) ~ age, data = dat,
-                               dist = "weibull", theta = c(0.5, 1, 0),
-                               fit = TRUE))
-  expect_identical(f$data$dropped_time_zero, 1L)
-  expect_equal(f$data$time, gt[-1])
-})
-
 test_that("every row at time 0 reaches the no-observations stop", {
   d0 <- data.frame(tm = c(0, 0, 0), st = c(1, 0, 1), g = c("a", "b", "a"))
   expect_error(suppressWarnings(hazard(survival::Surv(tm, st) ~ g, data = d0,
@@ -222,95 +184,6 @@ test_that("a dropped row's own values are not checked", {
     time = c(0, d$time), status = c(1, d$status),
     time_lower = c(2, rep(0, nrow(d))), dist = "weibull",
     theta = tz_theta$weibull, fit = TRUE)))
-})
-
-test_that("formula expressions are computed on the data as given", {
-  # As PROC HAZARD computes in the DATA step before readt.c drops a row, and
-  # as model.frame() does for `subset =`: scale(age) is centred on every row
-  # given, the dropped one included (John, 2026-09-25).
-  withr::local_seed(2)
-  n <- 80
-  d <- data.frame(time = stats::rexp(n, 0.4) + 0.01,
-                  status = stats::rbinom(n, 1, 0.7),
-                  age = stats::rnorm(n, 60, 10))
-  d0 <- rbind(data.frame(time = 0, status = 1, age = 150), d)
-  fit0 <- suppressWarnings(hazard(survival::Surv(time, status) ~ scale(age),
-                                  data = d0, dist = "weibull",
-                                  theta = c(0.3, 1.2, 0), fit = TRUE))
-  ref_d <- d
-  ref_d$sa <- (d$age - mean(d0$age)) / stats::sd(d0$age)
-  ref <- suppressWarnings(hazard(survival::Surv(time, status) ~ sa,
-                                 data = ref_d, dist = "weibull",
-                                 theta = c(0.3, 1.2, 0), fit = TRUE))
-  expect_equal(unname(coef(fit0)), unname(coef(ref)), tolerance = 1e-6)
-  # The centre is the full data's, and predict(newdata) uses it.
-  nd <- data.frame(age = c(50, 70), time = 2)
-  nd_ref <- data.frame(sa = (nd$age - mean(d0$age)) / stats::sd(d0$age),
-                       time = 2)
-  expect_equal(stats::predict(fit0, newdata = nd, type = "survival"),
-               stats::predict(ref, newdata = nd_ref, type = "survival"),
-               tolerance = 1e-6)
-})
-
-test_that("a response expression decides which rows are at time 0", {
-  # Surv(time - min(time), status): the row the EXPRESSION makes 0 is the
-  # one dropped, and the fit is that of the computed times without it.
-  withr::local_seed(7)
-  d <- data.frame(time = stats::rexp(60, 0.4) + 1,
-                  status = stats::rbinom(60, 1, 0.7))
-  f <- suppressWarnings(hazard(survival::Surv(time - min(time), status) ~ 1,
-                               data = d, dist = "weibull",
-                               theta = c(0.3, 1.2), fit = TRUE))
-  shifted <- d$time - min(d$time)
-  expect_identical(f$data$dropped_time_zero_rows, which(shifted == 0))
-  ref <- suppressWarnings(hazard(time = shifted[shifted > 0],
-                                 status = d$status[shifted > 0],
-                                 dist = "weibull", theta = c(0.3, 1.2),
-                                 fit = TRUE))
-  expect_equal(f$fit$objective, ref$fit$objective, tolerance = 1e-8)
-})
-
-test_that("a phase formula is computed on the data as given too", {
-  skip_if_not_installed("numDeriv")
-  withr::local_seed(8)
-  n <- 80
-  d <- data.frame(time = stats::rexp(n, 0.4) + 0.01,
-                  status = stats::rbinom(n, 1, 0.7),
-                  age = stats::rnorm(n, 60, 10))
-  d0 <- rbind(data.frame(time = 0, status = 1, age = 150), d)
-  ph <- function(f) {
-    list(early = hzr_phase("cdf", t_half = 1, nu = 1, m = 0, formula = f),
-         const = hzr_phase("constant"))
-  }
-  got <- suppressWarnings(hazard(survival::Surv(time, status) ~ 1, data = d0,
-                                 dist = "multiphase", fit = TRUE,
-                                 phases = ph(~ scale(age)),
-                                 control = list(n_starts = 1L)))
-  ref_d <- d
-  ref_d$sa <- (d$age - mean(d0$age)) / stats::sd(d0$age)
-  ref <- suppressWarnings(hazard(survival::Surv(time, status) ~ 1, data = ref_d,
-                                 dist = "multiphase", fit = TRUE,
-                                 phases = ph(~ sa),
-                                 control = list(n_starts = 1L)))
-  expect_equal(unname(got$fit$x_list$early[, 1]), ref_d$sa)
-  expect_equal(got$fit$objective, ref$fit$objective, tolerance = 1e-8)
-})
-
-test_that("a term read from outside data is subset with its rows", {
-  withr::local_seed(5)
-  n <- 60
-  zz <- stats::rnorm(n + 1)
-  dd <- data.frame(time = c(0, stats::rexp(n, 0.4) + 0.01),
-                   status = c(1, stats::rbinom(n, 1, 0.7)))
-  f <- suppressWarnings(hazard(survival::Surv(time, status) ~ zz, data = dd,
-                               dist = "weibull", theta = c(0.5, 1, 0),
-                               fit = TRUE))
-  ref <- suppressWarnings(hazard(
-    survival::Surv(time, status) ~ zz, dist = "weibull",
-    data = data.frame(dd[-1, ], zz = zz[-1]), theta = c(0.5, 1, 0),
-    fit = TRUE))
-  expect_equal(unname(f$data$x[, "zz"]), zz[-1])
-  expect_equal(unname(coef(f)), unname(coef(ref)), tolerance = 1e-6)
 })
 
 test_that("hzr_stepwise() does not trim a frame whose dropped rows differ", {
@@ -366,4 +239,103 @@ test_that("a column named \"\" and a row at time 0 together (#470, #374)", {
                tolerance = 1e-8)
   expect_equal(unname(sw_got$fit$theta), unname(sw_ref$fit$theta),
                tolerance = 1e-6)
+})
+
+test_that("a data-dependent term is built on the retained rows", {
+  # The fit is built as if the dropped rows had not been given, so every
+  # consumer that rebuilds from the stored frame agrees with it (John,
+  # 2026-09-25).
+  withr::local_seed(2)
+  n <- 80
+  d <- data.frame(time = stats::rexp(n, 0.4) + 0.01,
+                  status = stats::rbinom(n, 1, 0.7),
+                  age = stats::rnorm(n, 60, 10), bmi = stats::rnorm(n, 27, 4))
+  d0 <- rbind(data.frame(time = 0, status = 1, age = 150, bmi = 40), d)
+  fit <- function(dd) {
+    suppressWarnings(hazard(survival::Surv(time, status) ~ scale(age),
+                            data = dd, dist = "weibull",
+                            theta = c(0.3, 1.2, 0), fit = TRUE))
+  }
+  with0 <- fit(d0)
+  without <- fit(d)
+  expect_equal(coef(with0), coef(without), tolerance = 1e-6)
+  nd <- data.frame(age = c(50, 70), time = 2)
+  expect_equal(stats::predict(with0, newdata = nd, type = "survival"),
+               stats::predict(without, newdata = nd, type = "survival"),
+               tolerance = 1e-6)
+  # A consumer that rebuilds from the stored frame reproduces the fit.
+  expect_equal(as.numeric(hzr_evaluate(with0, coef(with0))$logLik),
+               with0$fit$objective, tolerance = 1e-8)
+})
+
+test_that("a phase formula is built on the retained rows too", {
+  skip_if_not_installed("numDeriv")
+  withr::local_seed(8)
+  n <- 80
+  d <- data.frame(time = stats::rexp(n, 0.4) + 0.01,
+                  status = stats::rbinom(n, 1, 0.7),
+                  age = stats::rnorm(n, 60, 10), bmi = stats::rnorm(n, 27, 4))
+  d0 <- rbind(data.frame(time = 0, status = 1, age = 90, bmi = 40), d)
+  ph <- list(early = hzr_phase("cdf", t_half = 1, nu = 1, m = 0,
+                               formula = ~ scale(age)),
+             const = hzr_phase("constant"))
+  fit <- function(dd) {
+    suppressWarnings(hazard(survival::Surv(time, status) ~ 1, data = dd,
+                            dist = "multiphase", fit = TRUE, phases = ph,
+                            control = list(n_starts = 1L)))
+  }
+  got <- fit(d0)
+  ref <- fit(d)
+  expect_equal(got$fit$objective, ref$fit$objective, tolerance = 1e-8)
+  expect_equal(unname(got$fit$x_list$early), unname(ref$fit$x_list$early))
+  # The two consumers the review found disagreeing: hzr_evaluate() and the
+  # multiphase score test, which rebuild the phase design from the frame.
+  expect_equal(as.numeric(hzr_evaluate(got, got$fit$theta)$logLik),
+               got$fit$objective, tolerance = 1e-8)
+  sg <- suppressWarnings(hzr_stepwise(got, scope = list(early = ~ bmi),
+                                      data = d0, direction = "forward",
+                                      criterion = "score", slentry = 0.99,
+                                      trace = FALSE))
+  sr <- suppressWarnings(hzr_stepwise(ref, scope = list(early = ~ bmi),
+                                      data = d, direction = "forward",
+                                      criterion = "score", slentry = 0.99,
+                                      trace = FALSE))
+  expect_gt(nrow(sr$steps), 0L)
+  expect_equal(sg$steps$p_value, sr$steps$p_value, tolerance = 1e-6)
+})
+
+test_that("a response that depends on the dropped rows is refused", {
+  # Surv(time - min(time), status): without the row it makes 0, the
+  # minimum changes, so there is no consistent fit.
+  withr::local_seed(7)
+  d <- data.frame(time = stats::rexp(60, 0.4) + 1,
+                  status = stats::rbinom(60, 1, 0.7))
+  expect_error(suppressWarnings(hazard(
+    survival::Surv(time - min(time), status) ~ 1, data = d,
+    dist = "weibull", theta = c(0.3, 1.2), fit = TRUE)),
+    "depends on the 1 row(s) at time 0", fixed = TRUE)
+})
+
+test_that("a formula reading per-row values from outside data is refused", {
+  withr::local_seed(5)
+  n <- 60
+  zz <- stats::rnorm(n + 1)
+  dd <- data.frame(time = c(0, stats::rexp(n, 0.4) + 0.01),
+                   status = c(1, stats::rbinom(n, 1, 0.7)))
+  expect_error(suppressWarnings(hazard(
+    survival::Surv(time, status) ~ zz, data = dd, dist = "weibull",
+    theta = c(0.5, 1, 0), fit = TRUE)),
+    "reads 'zz' from outside `data`", fixed = TRUE)
+  # A phase formula too.
+  dd$age <- stats::rnorm(n + 1)
+  expect_error(suppressWarnings(hazard(
+    survival::Surv(time, status) ~ 1, data = dd, dist = "multiphase",
+    phases = list(early = hzr_phase("cdf", formula = ~ zz),
+                  const = hzr_phase("constant")), fit = TRUE)),
+    "reads 'zz' from outside `data`", fixed = TRUE)
+  # Without a row at time 0 nothing changes: an outside vector still fits.
+  zc <- zz[-1]
+  expect_no_error(suppressWarnings(hazard(
+    survival::Surv(time, status) ~ zc, data = dd[-1, ], dist = "weibull",
+    theta = c(0.5, 1, 0), fit = TRUE)))
 })

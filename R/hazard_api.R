@@ -1054,7 +1054,6 @@ hazard <- function(formula = NULL,
   at_zero <- sas_time == 0
   n_dropped_time_zero <- sum(at_zero)
   dropped_time_zero_rows <- which(at_zero)
-  data_model <- NULL
   dropped_frame <- NULL
   if (n_dropped_time_zero > 0L) {
     keep <- !at_zero
@@ -1083,21 +1082,64 @@ hazard <- function(formula = NULL,
       } else {
         lapply(data, subset_rows)
       }
-      # Every expression -- the response, scale(age), a factor's levels, a
-      # phase formula's terms -- is computed on the data AS GIVEN, and the
-      # rows are removed afterwards, as PROC HAZARD removes them after the
-      # DATA step and as stats::model.frame() does for `subset =` and
-      # `na.action`. (John, 2026-09-25: the alternative, rebuilding without
-      # the dropped rows, is circular for a response such as
-      # Surv(time - min(time), status), whose zeros depend on those rows.)
-      # The global design above was built that way already. Phase designs
-      # are built later from `data`, so the optimizer gets the full rows
-      # with the kept-row mask, and subsets each phase design after building
-      # it (.hzr_multiphase_designs()).
-      data_model <- data_full
-      attr(data_model, "hzr_rows_kept") <- keep
+      # The fit is built on the RETAINED rows only, response and design
+      # both, as if the dropped rows had not been given (John, 2026-09-25).
+      # Every downstream consumer -- the score test, hzr_evaluate(), stepwise
+      # and bootstrap refits -- rebuilds from the stored retained frame, so
+      # they agree with the fit by construction. (Computing on all rows and
+      # subsetting after was tried and reviewed: each of those consumers then
+      # rebuilt a design the fit never used, silently.) Two inputs cannot be
+      # rebuilt that way, and are refused rather than fitted inconsistently.
       if (is.data.frame(data_full)) {
         dropped_frame <- data_full[!keep, , drop = FALSE]
+      }
+      data_rows <- if (is.data.frame(data_full)) {
+        nrow(data_full)
+      } else {
+        unique(vapply(data_full, NROW, integer(1)))
+      }
+      # (1) A formula -- global or a phase's -- that reads a per-row value
+      #     from OUTSIDE `data`: that value keeps its full length and cannot
+      #     follow the rows.
+      forms <- c(if (!is.null(formula)) list(formula),
+                 lapply(Filter(function(ph) !is.null(ph$formula), phases),
+                        function(ph) ph$formula))
+      outside <- unique(unlist(lapply(forms, function(fm) {
+        vars <- setdiff(all.vars(fm), names(data_full))
+        vars[vapply(vars, function(v) {
+          val <- get0(v, envir = environment(fm), inherits = TRUE)
+          !is.null(val) && !is.function(val) && NROW(val) == data_rows
+        }, logical(1))]
+      })))
+      if (length(outside)) {
+        stop(n_dropped_time_zero, " row(s) are at time 0 and are dropped ",
+             "before fitting, as PROC HAZARD drops them, but the formula ",
+             "reads ", paste0("'", outside, "'", collapse = ", "), " from ",
+             "outside `data`, which cannot follow the rows. Put ",
+             if (length(outside) > 1L) "them" else "it", " in `data`, or ",
+             "drop the rows at time 0 yourself.", call. = FALSE)
+      }
+      # (2) Rebuild the response and design on the retained rows. A
+      #     response whose values then CHANGE depended on the dropped rows --
+      #     Surv(time - min(time), status) -- and has no consistent fit.
+      if (!is.null(formula) && any(keep)) {
+        reparsed <- withCallingHandlers(
+          .hzr_parse_formula(formula = formula, data = data),
+          hzr_intercept_removed = function(w) invokeRestart("muffleWarning")
+        )
+        same <- function(a, b) isTRUE(all.equal(a, b, check.attributes = FALSE))
+        if (!same(reparsed$time, time) || !same(reparsed$status, status) ||
+            !same(reparsed$time_lower, time_lower) ||
+            !same(reparsed$time_upper, time_upper)) {
+          stop("The response in `formula` depends on the ",
+               n_dropped_time_zero, " row(s) at time 0 that are dropped ",
+               "before fitting (as PROC HAZARD drops them): computed ",
+               "without them it gives different times or status. Compute ",
+               "the response in `data` first, or drop those rows yourself.",
+               call. = FALSE)
+        }
+        x <- reparsed$x
+        x_design <- reparsed$x_design
       }
     }
     n <- length(time)
@@ -1452,9 +1494,7 @@ hazard <- function(formula = NULL,
       x = x_fit, theta_start = theta, weights = weights,
       control = control,
       phases = phases, objective = objective,
-      # The full rows with their kept-row mask when time-0 rows were
-      # dropped, so phase designs are computed on the data as given.
-      formula_global = formula, data = data_model %||% data
+      formula_global = formula, data = data
     ))
 
     fit_state$theta <- optim_result$par
