@@ -1033,6 +1033,113 @@ hazard <- function(formula = NULL,
     }
   }
 
+  # A row at time 0 is deleted, whatever its status, as PROC HAZARD deletes
+  # it at input (#374): hazard/src/hazard/readt.c:12-14 marks TIME <= 0 as
+  # inadmissible, readobs.c:132-138 leaves it out of the data, and
+  # obsstat.c:62-69 notes the count. The rule is on SAS's TIME alone; a
+  # lower bound or entry time of 0 is admissible, as readct.c allows CT = 0.
+  # Fitting such a row instead made an EVENT at 0 return the optimizer's
+  # clamp or log(double.xmax) with converged = TRUE (lognormal, loglogistic,
+  # exponential), a value that is not a likelihood.
+  # SAS's TIME is the row's UPPER bound. Here that is `time` for an exact or
+  # right-censored row, but `time_upper` for a left- or interval-censored one:
+  # an interval row's `time` is its LOWER bound (Surv "interval2" maps
+  # [l, u] to time = l, time_upper = u), so testing `time` there would drop
+  # a legitimate interval opening at 0, which #341 fits as left censoring.
+  sas_time <- time
+  if (!is.null(time_upper) && length(time_upper) == n) {
+    bounded <- !is.na(status) & status %in% c(-1, 2)
+    sas_time[bounded] <- time_upper[bounded]
+  }
+  at_zero <- sas_time == 0
+  n_dropped_time_zero <- sum(at_zero)
+  dropped_time_zero_rows <- which(at_zero)
+  rebuilt <- FALSE
+  if (n_dropped_time_zero > 0L) {
+    keep <- !at_zero
+    subset_rows <- function(v) {
+      if (is.null(v)) return(v)
+      if (is.matrix(v) || is.data.frame(v)) {
+        if (nrow(v) == n) v[keep, , drop = FALSE] else v
+      } else if (length(v) == n) {
+        v[keep]
+      } else {
+        v
+      }
+    }
+    time <- time[keep]
+    status <- status[keep]
+    time_lower <- subset_rows(time_lower)
+    time_upper <- subset_rows(time_upper)
+    weights <- subset_rows(weights)
+    x <- subset_rows(x)
+    if (is.list(data)) {
+      data_full <- data
+      # A list of columns is accepted as `data` too; subset each column of
+      # the row count, as a data frame's rows are.
+      data <- if (is.data.frame(data)) {
+        subset_rows(data)
+      } else {
+        lapply(data, subset_rows)
+      }
+      data_rows <- if (is.data.frame(data_full)) {
+        nrow(data_full)
+      } else {
+        unique(vapply(data_full, NROW, integer(1)))
+      }
+      # On the formula path the design was built from ALL rows, so a
+      # data-dependent term -- scale(age), poly(age, 2) -- still carried the
+      # dropped rows (scale(age)'s coefficient moved from 0.126 to 0.176 with
+      # one extra row at time 0). Rebuild it from the rows that remain, as
+      # fitting the retained rows would build it. (A factor level found only
+      # in a dropped row stays a level of the rebuilt factor, as it does when
+      # the rows are removed beforehand.) The rebuilt `x` is validated below
+      # like any other.
+      rebuilt <- FALSE
+      if (!is.null(formula) && identical(data_rows, length(keep))) {
+        reparsed <- tryCatch(.hzr_parse_formula(formula = formula, data = data),
+                             error = function(e) e)
+        # Only a term read from OUTSIDE `data` keeps its full length, so it
+        # either fails ("variable lengths differ") or re-parses at the full
+        # row count. That one case falls back to subsetting the full design,
+        # and the warning says so. Any other re-parse is used as built, so a
+        # design the retained rows cannot support (scale() of a column
+        # constant on them) is refused by the validation below rather than
+        # silently replaced by one the dropped rows shaped; any other error
+        # is raised.
+        outside <- if (inherits(reparsed, "error")) {
+          grepl("variable lengths differ", conditionMessage(reparsed),
+                fixed = TRUE)
+        } else {
+          length(reparsed$time) != sum(keep) ||
+            (!is.null(reparsed$x) && NROW(reparsed$x) == data_rows)
+        }
+        if (inherits(reparsed, "error") && !outside) stop(reparsed)
+        if (!outside) {
+          x <- reparsed$x
+          x_design <- reparsed$x_design
+          rebuilt <- TRUE
+        }
+      }
+    }
+    n <- length(time)
+    warning(structure(
+      class = c("hzr_time_zero_dropped", "warning", "condition"),
+      list(message = paste0(
+        n_dropped_time_zero, " row(s) with time = 0 were dropped before ",
+        "fitting, as PROC HAZARD drops them (TIME <= 0 is inadmissible, ",
+        "readt.c). The fit uses the other ", n, "; the count is in ",
+        "fit$data$dropped_time_zero, and row numbers in later messages ",
+        "count the rows that remain.",
+        if (!is.null(formula) && !rebuilt) {
+          paste0(" The formula's terms read values outside `data`, so its ",
+                 "design was built with every row and then subset: a ",
+                 "data-dependent term such as scale() still used the ",
+                 "dropped rows. Put those variables in `data` to avoid it.")
+        }
+      ), call = NULL)
+    ))
+  }
   # For status 0/1 rows `time_lower` is the counting-process ENTRY time when
   # 0 < time_lower < time, and every family forms H(time) - H(time_lower)
   # there (the entry rule lives in each likelihood, e.g.
@@ -1148,89 +1255,6 @@ hazard <- function(formula = NULL,
          if (sum(bad_status) > 10L) ", ..." else "", ". A Surv object's ",
          "codes differ from these: pass it as the response, or as 'status', ",
          "and it is translated.", call. = FALSE)
-  }
-  # A row at time 0 is deleted, whatever its status, as PROC HAZARD deletes
-  # it at input (#374): hazard/src/hazard/readt.c:12-14 marks TIME <= 0 as
-  # inadmissible, readobs.c:132-138 leaves it out of the data, and
-  # obsstat.c:62-69 notes the count. The rule is on SAS's TIME alone; a
-  # lower bound or entry time of 0 is admissible, as readct.c allows CT = 0.
-  # Fitting such a row instead made an EVENT at 0 return the optimizer's
-  # clamp or log(double.xmax) with converged = TRUE (lognormal, loglogistic,
-  # exponential), a value that is not a likelihood.
-  # SAS's TIME is the row's UPPER bound. Here that is `time` for an exact or
-  # right-censored row, but `time_upper` for a left- or interval-censored one:
-  # an interval row's `time` is its LOWER bound (Surv "interval2" maps
-  # [l, u] to time = l, time_upper = u), so testing `time` there would drop
-  # a legitimate interval opening at 0, which #341 fits as left censoring.
-  sas_time <- time
-  if (!is.null(time_upper) && length(time_upper) == n) {
-    bounded <- !is.na(status) & status %in% c(-1, 2)
-    sas_time[bounded] <- time_upper[bounded]
-  }
-  at_zero <- sas_time == 0
-  n_dropped_time_zero <- sum(at_zero)
-  dropped_time_zero_rows <- which(at_zero)
-  if (n_dropped_time_zero > 0L) {
-    keep <- !at_zero
-    subset_rows <- function(v) {
-      if (is.null(v)) return(v)
-      if (is.matrix(v) || is.data.frame(v)) {
-        if (nrow(v) == n) v[keep, , drop = FALSE] else v
-      } else if (length(v) == n) {
-        v[keep]
-      } else {
-        v
-      }
-    }
-    time <- time[keep]
-    status <- status[keep]
-    time_lower <- subset_rows(time_lower)
-    time_upper <- subset_rows(time_upper)
-    weights <- subset_rows(weights)
-    x <- subset_rows(x)
-    x_fit <- subset_rows(x_fit)
-    if (is.list(data)) {
-      data_full <- data
-      # A list of columns is accepted as `data` too; subset each column of
-      # the row count, as a data frame's rows are.
-      data <- if (is.data.frame(data)) {
-        subset_rows(data)
-      } else {
-        lapply(data, subset_rows)
-      }
-      data_rows <- if (is.data.frame(data_full)) {
-        nrow(data_full)
-      } else {
-        unique(vapply(data_full, NROW, integer(1)))
-      }
-      # On the formula path the design was built from ALL rows, so a
-      # data-dependent term -- scale(age), poly(age, 2), a factor's levels --
-      # still carried the dropped rows (scale(age)'s coefficient moved from
-      # 0.126 to 0.176 with one extra row at time 0). Rebuild it from the rows
-      # that remain, as if they had never been there.
-      if (!is.null(formula) && identical(data_rows, length(keep))) {
-        reparsed <- .hzr_parse_formula(formula = formula, data = data)
-        x <- reparsed$x
-        x_design <- reparsed$x_design
-        x_fit <- if (!is.null(time_windows) && !is.null(x)) {
-          .hzr_expand_time_varying_design(x = x, time = time,
-                                          time_windows = time_windows)
-        } else {
-          x
-        }
-      }
-    }
-    n <- length(time)
-    n_obs <- n
-    warning(structure(
-      class = c("hzr_time_zero_dropped", "warning", "condition"),
-      list(message = paste0(
-        n_dropped_time_zero, " row(s) with time = 0 were dropped before ",
-        "fitting, as PROC HAZARD drops them (TIME <= 0 is inadmissible, ",
-        "readt.c). The fit uses the other ", n, "; the count is in ",
-        "fit$data$dropped_time_zero."
-      ), call = NULL)
-    ))
   }
   # A row adds nothing to the likelihood when its weight is 0, or when it is
   # right-censored at time 0 (H(0) = 0). With no other row the fit returned

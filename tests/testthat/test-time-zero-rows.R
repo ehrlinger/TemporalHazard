@@ -163,3 +163,93 @@ test_that("a list of columns given as data is filtered like a data frame", {
   expect_identical(lengths(f$data$frame), c(tt = nrow(d), ss = nrow(d)))
   expect_equal(f$data$frame$tt, f$data$time)
 })
+
+test_that("hzr_bootstrap() still refuses Surv() vectors from outside data", {
+  # The #278 guard compared a vector's length with the stored frame, which
+  # has lost the time-0 row; the caller's vector has not. It let the call
+  # through and returned identical replicates as full success.
+  # The Surv() vectors live where the formula interface looks for a name that
+  # is not a column: the global environment (a local frame is not searched,
+  # on main as here).
+  withr::local_seed(3)
+  tt <- stats::rexp(60, 0.4) + 0.01
+  tt[4] <- 0
+  assign("tz_tt", tt, envir = globalenv())
+  assign("tz_ss", stats::rbinom(60, 1, 0.7), envir = globalenv())
+  withr::defer(rm("tz_tt", "tz_ss", envir = globalenv()))
+  dd <- data.frame(age = stats::rnorm(60))
+  f <- suppressWarnings(hazard(survival::Surv(tz_tt, tz_ss) ~ 1, data = dd,
+                               dist = "weibull", theta = c(0.5, 1),
+                               fit = TRUE))
+  expect_identical(f$data$dropped_time_zero, 1L)
+  expect_error(suppressWarnings(hzr_bootstrap(f, n_boot = 3)),
+               "not columns of it")
+})
+
+test_that("a rebuilt design is validated like any other", {
+  # After the drop, scale() of a column that was constant on the retained
+  # rows is NaN; the rebuilt design lost every row and the fit returned the
+  # optimizer's clamp with converged = TRUE.
+  withr::local_seed(4)
+  dd <- data.frame(tm = c(0, stats::rexp(59, 0.4) + 0.01),
+                   st = stats::rbinom(60, 1, 0.7),
+                   age = stats::rnorm(60), redo = c(1, rep(0, 59)))
+  expect_error(suppressWarnings(hazard(
+    survival::Surv(tm, st) ~ age + scale(redo), data = dd, dist = "weibull",
+    theta = c(0.5, 1, 0, 0), fit = TRUE)))
+})
+
+test_that("a term read from outside data falls back to subsetting, and says so", {
+  withr::local_seed(5)
+  n <- 60
+  zz <- stats::rnorm(n + 1)
+  dd <- data.frame(time = c(0, stats::rexp(n, 0.4) + 0.01),
+                   status = c(1, stats::rbinom(n, 1, 0.7)))
+  w <- NULL
+  f <- withCallingHandlers(
+    hazard(survival::Surv(time, status) ~ zz, data = dd, dist = "weibull",
+           theta = c(0.5, 1, 0), fit = TRUE),
+    hzr_time_zero_dropped = function(e) {
+      w <<- e
+      invokeRestart("muffleWarning")
+    },
+    warning = function(e) invokeRestart("muffleWarning"))
+  expect_match(conditionMessage(w), "read values outside `data`", fixed = TRUE)
+  expect_equal(nrow(f$data$x), n)
+})
+
+test_that("weights stay aligned with the rows that remain", {
+  d <- tz_data()
+  wts <- stats::runif(nrow(d), 0.5, 2)
+  ref <- suppressWarnings(hazard(time = d$time, status = d$status,
+                                 weights = wts, dist = "weibull",
+                                 theta = tz_theta$weibull, fit = TRUE))
+  got <- suppressWarnings(hazard(time = c(0, d$time), status = c(1, d$status),
+                                 weights = c(5, wts), dist = "weibull",
+                                 theta = tz_theta$weibull, fit = TRUE))
+  expect_equal(got$data$weights, wts)
+  expect_equal(got$fit$objective, ref$fit$objective, tolerance = 1e-8)
+  # Formula path, weights as a column.
+  d$w <- wts
+  d0 <- rbind(data.frame(time = 0, status = 1, x = 0, w = 5), d)
+  reff <- suppressWarnings(hazard(survival::Surv(time, status) ~ x, data = d,
+                                  weights = w, dist = "weibull",
+                                  theta = c(0.3, 1.2, 0), fit = TRUE))
+  gotf <- suppressWarnings(hazard(survival::Surv(time, status) ~ x, data = d0,
+                                  weights = w, dist = "weibull",
+                                  theta = c(0.3, 1.2, 0), fit = TRUE))
+  expect_equal(gotf$fit$objective, reff$fit$objective, tolerance = 1e-8)
+})
+
+test_that("a dropped row's own values are not checked", {
+  d <- tz_data()
+  # An NA weight, and an entry after exit, on the row that is dropped.
+  expect_no_error(suppressWarnings(hazard(
+    time = c(0, d$time), status = c(1, d$status),
+    weights = c(NA, rep(1, nrow(d))), dist = "weibull",
+    theta = tz_theta$weibull, fit = TRUE)))
+  expect_no_error(suppressWarnings(hazard(
+    time = c(0, d$time), status = c(1, d$status),
+    time_lower = c(2, rep(0, nrow(d))), dist = "weibull",
+    theta = tz_theta$weibull, fit = TRUE)))
+})
