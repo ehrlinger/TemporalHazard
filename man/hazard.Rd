@@ -100,7 +100,12 @@ variables, so it cannot see inside a function: a helper that indexes a
 vector from outside \code{data} by position, such as
 \code{function(a) a + g[seq_along(a)]}, sees only the retained rows and pairs
 them with the first elements of \code{g}, as it would under
-\code{stats::lm(subset = )}. Put such a vector in \code{data}.}
+\code{stats::lm(subset = )}. Put such a vector in \code{data}.
+A caller-supplied row-aligned input whose row count differs from
+\code{time}'s is refused before any row is dropped: \code{x} and \code{weights} on the
+\verb{time =}/\verb{status =} interface, and \code{data} wherever a formula reads it row
+by row. (On the formula interface the design is not the caller's; it is
+rebuilt from the retained rows of \code{data}.)}
 
 \item{status}{Numeric or logical event indicator vector, or a
 \code{\link[survival:Surv]{survival::Surv()}} object. A \code{Surv} is read by its \code{type}, exactly as the
@@ -173,7 +178,11 @@ among its columns first and then in the calling environment, on both
 interfaces. \code{\link[stats:lm]{stats::lm()}} also looks in \code{data} first, but then in the
 formula's environment rather than the caller's, so a formula built
 inside another function does not bring that function's variables with
-it here. See \code{data} for the warning raised when a name is both.}
+it here. See \code{data} for the warning raised when a name is both.
+\code{weights} is evaluated over every row given, so an expression that
+depends on the rows -- \code{weights = w / mean(w)} -- includes any row later
+dropped for time 0 (see \code{time}); compute it in \code{data} on the rows you
+intend to fit if that matters.}
 
 \item{control}{Named list of control options (see Details).}
 

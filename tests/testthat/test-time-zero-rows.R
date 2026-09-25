@@ -342,3 +342,85 @@ test_that("a formula reading per-row values from outside data is refused", {
     survival::Surv(time, status) ~ zc, data = dd[-1, ], dist = "weibull",
     theta = c(0.5, 1, 0), fit = TRUE)))
 })
+
+test_that("an x, weights or data of the wrong length is refused, not misaligned", {
+  # N2 (1.2.12 release review): a design k rows short was accepted when k
+  # rows were at time 0, and paired with the wrong rows.
+  withr::local_seed(3)
+  n <- 60
+  d <- data.frame(tm = stats::rexp(n, 0.3) + 0.05,
+                  ev = stats::rbinom(n, 1, 0.7), age = stats::rnorm(n, 60, 10))
+  d$age[40] <- NA
+  d$tm[3] <- 0
+  xx <- stats::model.matrix(~ age, d)[, -1, drop = FALSE]
+  expect_equal(nrow(xx), n - 1)  # the premise: one row short
+  expect_error(suppressWarnings(hazard(
+    time = d$tm, status = d$ev, x = xx, dist = "weibull",
+    theta = c(0.3, 1, 0), fit = TRUE)),
+    "'x' has 59 row(s) but 'time' has 60", fixed = TRUE)
+  expect_error(suppressWarnings(hazard(
+    time = d$tm, status = d$ev, weights = rep(1, n - 1), dist = "weibull",
+    theta = c(0.3, 1), fit = TRUE)),
+    "'weights' has 59 row(s)", fixed = TRUE)
+  expect_error(suppressWarnings(hazard(
+    time = d$tm, status = d$ev, data = d[-60, ], dist = "multiphase",
+    phases = list(early = hzr_phase("cdf", formula = ~ age),
+                  const = hzr_phase("constant")), fit = TRUE)),
+    "'data' has 59 row(s)", fixed = TRUE)
+})
+
+test_that("a list data with a scalar column is filtered; a ragged one is refused", {
+  d <- tz_data()
+  lst <- list(tt = c(0, d$time), ss = c(1, d$status), lab = "cohortA")
+  f <- suppressWarnings(hazard(time = tt, status = ss, data = lst,
+                               dist = "weibull", theta = tz_theta$weibull,
+                               fit = TRUE))
+  expect_identical(f$data$dropped_time_zero, 1L)
+  expect_identical(f$data$frame$lab, "cohortA")
+  lst$bad <- 1:3
+  expect_error(suppressWarnings(hazard(time = tt, status = ss, data = lst,
+                                       dist = "weibull",
+                                       theta = tz_theta$weibull, fit = TRUE)),
+               "'data$bad' has 3 row(s)", fixed = TRUE)
+})
+
+test_that("the length check refuses only inputs that would be misaligned", {
+  withr::local_seed(11)
+  n <- 40
+  d1 <- data.frame(tm = stats::rexp(n, 0.3) + 0.05,
+                   ev = stats::rbinom(n, 1, 0.7), age = stats::rnorm(n, 60, 10))
+  d1$tm[3] <- 0
+  d1$age[3] <- NA  # the dropped row is also the NA row
+  # Formula path: model.matrix() drops the NA row, x is rebuilt anyway, and
+  # the fit is the fit of the rows that remain.
+  got <- suppressWarnings(hazard(survival::Surv(tm, ev) ~ age, data = d1,
+                                 dist = "weibull", theta = c(0.3, 1, 0),
+                                 fit = TRUE))
+  ref <- suppressWarnings(hazard(survival::Surv(tm, ev) ~ age, data = d1[-3, ],
+                                 dist = "weibull", theta = c(0.3, 1, 0),
+                                 fit = TRUE))
+  expect_equal(coef(got), coef(ref), tolerance = 1e-8)
+  # Vector path: a longer `data` used only to look names up is left alone.
+  lookup <- suppressWarnings(hazard(time = d1$tm[1:30], status = d1$ev[1:30],
+                                    data = d1, dist = "weibull",
+                                    theta = c(0.3, 1), fit = TRUE))
+  lref <- suppressWarnings(hazard(time = d1$tm[c(1:2, 4:30)],
+                                  status = d1$ev[c(1:2, 4:30)],
+                                  dist = "weibull", theta = c(0.3, 1),
+                                  fit = TRUE))
+  expect_equal(coef(lookup), coef(lref), tolerance = 1e-8)
+  # A scalar `weights` is not a row-aligned input, and is refused.
+  expect_error(suppressWarnings(hazard(
+    time = c(0, 1.5, 2), status = c(1, 1, 0), weights = 3,
+    dist = "exponential", theta = 0, fit = TRUE)),
+    "'weights' has 1 row(s)", fixed = TRUE)
+})
+
+test_that("an unnamed list column is named by position in the refusal", {
+  d <- tz_data()
+  lst <- list(tt = c(0, d$time), ss = c(1, d$status), 1:3)
+  expect_error(suppressWarnings(hazard(time = tt, status = ss, data = lst,
+                                       dist = "weibull",
+                                       theta = tz_theta$weibull, fit = TRUE)),
+               "'data[[3]]' has 3 row(s)", fixed = TRUE)
+})
