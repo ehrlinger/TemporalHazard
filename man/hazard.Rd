@@ -80,7 +80,27 @@ calling environment; for one used inside the \code{Surv()} response, compute
 the value into a \code{data} column first, since the response is evaluated
 without the formula's environment.}
 
-\item{time}{Numeric follow-up time vector.}
+\item{time}{Numeric follow-up time vector. A row whose time is 0 is
+dropped before fitting, whatever its status, as PROC HAZARD drops it
+(\code{TIME <= 0} is inadmissible there). The time tested is the row's upper
+bound: \code{time} for an exact or right-censored row, \code{time_upper} for a
+left- or interval-censored one; a lower bound or entry time of 0 is
+admissible. \code{hazard()} warns with the count (class
+\code{"hzr_time_zero_dropped"}), and every row stored on the fit is what
+remains. \code{fit$data$dropped_time_zero} is the count and
+\code{fit$data$dropped_time_zero_rows} their positions among the rows given.
+On the formula interface the response and design are then built on the
+retained rows, as if the dropped ones had not been given, so a
+data-dependent term such as \code{scale(age)} uses the retained rows. Two
+inputs are refused because they cannot follow the rows: a response
+whose values change once the rows are dropped, such as
+\code{Surv(time - min(time), status)}, and a formula that reads a per-row
+value from outside \code{data}. That check reads the formula's own
+variables, so it cannot see inside a function: a helper that indexes a
+vector from outside \code{data} by position, such as
+\code{function(a) a + g[seq_along(a)]}, sees only the retained rows and pairs
+them with the first elements of \code{g}, as it would under
+\code{stats::lm(subset = )}. Put such a vector in \code{data}.}
 
 \item{status}{Numeric or logical event indicator vector, or a
 \code{\link[survival:Surv]{survival::Surv()}} object. A \code{Surv} is read by its \code{type}, exactly as the

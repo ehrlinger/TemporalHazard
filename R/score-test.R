@@ -714,7 +714,8 @@
     stop(
       "`data` has ", nrow(data), " rows but the fitted model used ", n_obs,
       ". The score test needs `data` row-aligned with the fit; pass the same ",
-      "data frame the model was fitted on (after any NA removal).",
+      "data frame the model was fitted on (after any NA removal, and without ",
+      "rows at time 0, which hazard() drops).",
       call. = FALSE
     )
   }

@@ -84,16 +84,21 @@ test_that("an unsorted or repeated time_grid is sorted and de-duplicated", {
   expect_error(hzr_gof(fit, time_grid = c(-1, 1)), "time_grid")
 })
 
-test_that("km_surv at time 0 is the Kaplan-Meier value when an event is at 0", {
+test_that("rows at time 0 are dropped by the fit, and the KM is of the rest", {
+  # PROC HAZARD deletes a row with TIME <= 0 (readt.c:12-14), and hazard()
+  # now does too (#374), so an event at time 0 never reaches hzr_gof(): its
+  # Kaplan-Meier columns are those of the rows the fit used. (Before #374
+  # this test asserted km_surv at t = 0 with the event at 0 included.)
   d <- .gof_grid_data()
   d$stop[1:2] <- 0
   d$event[1:2] <- c(1, 0)
-  fit <- suppressWarnings(hazard(time = d$stop, status = d$event,
-                                 dist = "exponential",
-                                 theta = c(log_rate = log(0.3)), fit = TRUE))
-  km <- survival::survfit(survival::Surv(d$stop, d$event) ~ 1)
-  expect_equal(km$time[1], 0)
-  expect_lt(km$surv[1], 1)
+  expect_warning(
+    fit <- hazard(time = d$stop, status = d$event, dist = "exponential",
+                  theta = c(log_rate = log(0.3)), fit = TRUE),
+    "^2 row\\(s\\) with time = 0 were dropped", class = "hzr_time_zero_dropped")
+  expect_identical(fit$data$dropped_time_zero, 2L)
+  kept <- d$stop > 0
+  km <- survival::survfit(survival::Surv(d$stop[kept], d$event[kept]) ~ 1)
   expect_no_warning(g <- hzr_gof(fit))
   # The default grid is the Kaplan-Meier times, so the columns coincide.
   expect_equal(g$km_surv, km$surv)

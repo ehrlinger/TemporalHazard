@@ -302,7 +302,27 @@ NULL
 #'     is the form that reproduces the classic C/SAS HAZARD models.}
 #' }
 #'
-#' @param time Numeric follow-up time vector.
+#' @param time Numeric follow-up time vector. A row whose time is 0 is
+#'   dropped before fitting, whatever its status, as PROC HAZARD drops it
+#'   (`TIME <= 0` is inadmissible there). The time tested is the row's upper
+#'   bound: `time` for an exact or right-censored row, `time_upper` for a
+#'   left- or interval-censored one; a lower bound or entry time of 0 is
+#'   admissible. `hazard()` warns with the count (class
+#'   `"hzr_time_zero_dropped"`), and every row stored on the fit is what
+#'   remains. `fit$data$dropped_time_zero` is the count and
+#'   `fit$data$dropped_time_zero_rows` their positions among the rows given.
+#'   On the formula interface the response and design are then built on the
+#'   retained rows, as if the dropped ones had not been given, so a
+#'   data-dependent term such as `scale(age)` uses the retained rows. Two
+#'   inputs are refused because they cannot follow the rows: a response
+#'   whose values change once the rows are dropped, such as
+#'   `Surv(time - min(time), status)`, and a formula that reads a per-row
+#'   value from outside `data`. That check reads the formula's own
+#'   variables, so it cannot see inside a function: a helper that indexes a
+#'   vector from outside `data` by position, such as
+#'   `function(a) a + g[seq_along(a)]`, sees only the retained rows and pairs
+#'   them with the first elements of `g`, as it would under
+#'   `stats::lm(subset = )`. Put such a vector in `data`.
 #' @param status Numeric or logical event indicator vector, or a
 #'   [survival::Surv()] object. A `Surv` is read by its `type`, exactly as the
 #'   formula interface reads it, and a `time`, `time_lower` or `time_upper`
@@ -1025,6 +1045,127 @@ hazard <- function(formula = NULL,
     }
   }
 
+  # A row at time 0 is deleted, whatever its status, as PROC HAZARD deletes
+  # it at input (#374): hazard/src/hazard/readt.c:12-14 marks TIME <= 0 as
+  # inadmissible, readobs.c:132-138 leaves it out of the data, and
+  # obsstat.c:62-69 notes the count. The rule is on SAS's TIME alone; a
+  # lower bound or entry time of 0 is admissible, as readct.c allows CT = 0.
+  # Fitting such a row instead made an EVENT at 0 return the optimizer's
+  # clamp or log(double.xmax) with converged = TRUE (lognormal, loglogistic,
+  # exponential), a value that is not a likelihood.
+  # SAS's TIME is the row's UPPER bound. Here that is `time` for an exact or
+  # right-censored row, but `time_upper` for a left- or interval-censored one:
+  # an interval row's `time` is its LOWER bound (Surv "interval2" maps
+  # [l, u] to time = l, time_upper = u), so testing `time` there would drop
+  # a legitimate interval opening at 0, which #341 fits as left censoring.
+  sas_time <- time
+  if (!is.null(time_upper) && length(time_upper) == n) {
+    bounded <- !is.na(status) & status %in% c(-1, 2)
+    sas_time[bounded] <- time_upper[bounded]
+  }
+  at_zero <- sas_time == 0
+  n_dropped_time_zero <- sum(at_zero)
+  dropped_time_zero_rows <- which(at_zero)
+  dropped_frame <- NULL
+  if (n_dropped_time_zero > 0L) {
+    keep <- !at_zero
+    subset_rows <- function(v) {
+      if (is.null(v)) return(v)
+      if (is.matrix(v) || is.data.frame(v)) {
+        if (nrow(v) == n) v[keep, , drop = FALSE] else v
+      } else if (length(v) == n) {
+        v[keep]
+      } else {
+        v
+      }
+    }
+    time <- time[keep]
+    status <- status[keep]
+    time_lower <- subset_rows(time_lower)
+    time_upper <- subset_rows(time_upper)
+    weights <- subset_rows(weights)
+    x <- subset_rows(x)
+    if (is.list(data)) {
+      data_full <- data
+      # A list of columns is accepted as `data` too; subset each column of
+      # the row count, as a data frame's rows are.
+      data <- if (is.data.frame(data)) {
+        subset_rows(data)
+      } else {
+        lapply(data, subset_rows)
+      }
+      # The fit is built on the RETAINED rows only, response and design
+      # both, as if the dropped rows had not been given (John, 2026-09-25).
+      # Every downstream consumer -- the score test, hzr_evaluate(), stepwise
+      # and bootstrap refits -- rebuilds from the stored retained frame, so
+      # they agree with the fit by construction. (Computing on all rows and
+      # subsetting after was tried and reviewed: each of those consumers then
+      # rebuilt a design the fit never used, silently.) Two inputs cannot be
+      # rebuilt that way, and are refused rather than fitted inconsistently.
+      if (is.data.frame(data_full)) {
+        dropped_frame <- data_full[!keep, , drop = FALSE]
+      }
+      data_rows <- if (is.data.frame(data_full)) {
+        nrow(data_full)
+      } else {
+        unique(vapply(data_full, NROW, integer(1)))
+      }
+      # (1) A formula -- global or a phase's -- that reads a per-row value
+      #     from OUTSIDE `data`: that value keeps its full length and cannot
+      #     follow the rows.
+      forms <- c(if (!is.null(formula)) list(formula),
+                 lapply(Filter(function(ph) !is.null(ph$formula), phases),
+                        function(ph) ph$formula))
+      outside <- unique(unlist(lapply(forms, function(fm) {
+        vars <- setdiff(all.vars(fm), names(data_full))
+        vars[vapply(vars, function(v) {
+          val <- get0(v, envir = environment(fm), inherits = TRUE)
+          !is.null(val) && !is.function(val) && NROW(val) == data_rows
+        }, logical(1))]
+      })))
+      if (length(outside)) {
+        stop(n_dropped_time_zero, " row(s) are at time 0 and are dropped ",
+             "before fitting, as PROC HAZARD drops them, but the formula ",
+             "reads ", paste0("'", outside, "'", collapse = ", "), " from ",
+             "outside `data`, which cannot follow the rows. Put ",
+             if (length(outside) > 1L) "them" else "it", " in `data`, or ",
+             "drop the rows at time 0 yourself.", call. = FALSE)
+      }
+      # (2) Rebuild the response and design on the retained rows. A
+      #     response whose values then CHANGE depended on the dropped rows --
+      #     Surv(time - min(time), status) -- and has no consistent fit.
+      if (!is.null(formula) && any(keep)) {
+        reparsed <- withCallingHandlers(
+          .hzr_parse_formula(formula = formula, data = data),
+          hzr_intercept_removed = function(w) invokeRestart("muffleWarning")
+        )
+        same <- function(a, b) isTRUE(all.equal(a, b, check.attributes = FALSE))
+        if (!same(reparsed$time, time) || !same(reparsed$status, status) ||
+            !same(reparsed$time_lower, time_lower) ||
+            !same(reparsed$time_upper, time_upper)) {
+          stop("The response in `formula` depends on the ",
+               n_dropped_time_zero, " row(s) at time 0 that are dropped ",
+               "before fitting (as PROC HAZARD drops them): computed ",
+               "without them it gives different times or status. Compute ",
+               "the response in `data` first, or drop those rows yourself.",
+               call. = FALSE)
+        }
+        x <- reparsed$x
+        x_design <- reparsed$x_design
+      }
+    }
+    n <- length(time)
+    warning(structure(
+      class = c("hzr_time_zero_dropped", "warning", "condition"),
+      list(message = paste0(
+        n_dropped_time_zero, " row(s) with time = 0 were dropped before ",
+        "fitting, as PROC HAZARD drops them (TIME <= 0 is inadmissible, ",
+        "readt.c). The fit uses the other ", n, "; the count is in ",
+        "fit$data$dropped_time_zero, and row numbers in later messages ",
+        "count the rows that remain."
+      ), call = NULL)
+    ))
+  }
   # For status 0/1 rows `time_lower` is the counting-process ENTRY time when
   # 0 < time_lower < time, and every family forms H(time) - H(time_lower)
   # there (the entry rule lives in each likelihood, e.g.
@@ -1148,8 +1289,12 @@ hazard <- function(formula = NULL,
   if (!is.null(weights)) contributes <- contributes & weights > 0
   if (!anyNA(status) && !any(contributes)) {
     stop("hazard() was given no observations that contribute to the ",
-         "likelihood: every row has weight 0 or is right-censored at time 0.",
-         call. = FALSE)
+         "likelihood: every row has weight 0",
+         if (n_dropped_time_zero > 0L) {
+           paste0(" or time = 0 (", n_dropped_time_zero, " such row(s) ",
+                  "dropped, as PROC HAZARD drops them)")
+         },
+         ".", call. = FALSE)
   }
 
   if (!is.character(dist) || length(dist) != 1 || !nzchar(dist)) {
@@ -1604,6 +1749,16 @@ hazard <- function(formula = NULL,
       # (formula path; NULL otherwise), so predict(newdata = ) can rebuild it.
       x_design = x_design,
       weights = weights,
+      # Rows dropped for time = 0 before fitting (#374): every stored vector
+      # above, and `frame`, is what remains.
+      dropped_time_zero = n_dropped_time_zero,
+      # Their positions in the rows hazard() was given, so a caller that
+      # passes the original data frame on (hzr_stepwise(data = )) can be
+      # aligned with the fit.
+      dropped_time_zero_rows = dropped_time_zero_rows,
+      # And the dropped rows themselves, so hzr_stepwise() can confirm that a
+      # frame it is given is the one hazard() was given before trimming it.
+      dropped_time_zero_frame = dropped_frame,
       # The evaluated `data` argument as passed to hazard() (formula path; NULL
       # when called with raw vectors). This is the user's data frame, not a
       # model.frame() result. Stored so refit-based tooling such as
