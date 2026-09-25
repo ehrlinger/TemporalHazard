@@ -840,15 +840,20 @@
       # SAS accepts `SLE = 0.2`. Splitting that on whitespace left three
       # tokens, recorded as untranslated, and the screen ran at the DEFAULT
       # threshold instead, so close the spaces around `=` first.
+      # PROC HAZARD accumulates SELECTION statements across the job, and a
+      # repeated option is last-wins (#505, measured: `SLE=0.05; SELECTION
+      # SLS=0.1;` screens at 0.05, and BACKWARD in either statement makes
+      # it backward). Assigning kept only the last statement.
       STEPWISE   = {
-        sel_ops <- strsplit(gsub("\\s*=\\s*", "=", ops_text), "\\s+")[[1L]]
-        sel_ops <- sel_ops[nzchar(sel_ops)]
+        new_ops <- strsplit(gsub("\\s*=\\s*", "=", ops_text), "\\s+")[[1L]]
+        new_ops <- new_ops[nzchar(new_ops)]
+        sel_ops <- c(sel_ops, new_ops)
         # In the STEP state a value is a NUMBER (hazard_l.l:33-38, :53) or a
         # syntax error, and as.numeric() in .hzr_selection_spec() reads
         # 1E-3, 2E-1, +0.1 and 5., none of which PROC HAZARD lexes (N3).
         # The screen still runs at the value as read here; the warning and
         # the row say PROC HAZARD does not run the job, as for MAXITER.
-        for (op in sel_ops) {
+        for (op in new_ops) {
           eqp <- .idx(op, "=")
           if (eqp == 0L) next
           val <- substring(op, eqp + 1L)

@@ -1034,3 +1034,51 @@ test_that("a SELECTION value refusal emits a screen that runs (N3)", {
   # STRONG's effect clears p < 0.001 on these data, so the screen entered it.
   expect_true("STRONG" %in% steps$variable[steps$action == "enter"])
 })
+
+# --- #505: PROC HAZARD accumulates SELECTION statements across the job ------
+# Measured on the HAZARD binary on avc with a noise column Z (2026-09-25,
+# `PARMS MUE=0.2 THALF=1; ...; EARLY AGE, Z;`), reading the SLE from "No
+# other variables met the <SLE> significance level for entry":
+# `SLE=0.05` alone 0.05; `SLS=0.1` alone 0.3 (the default);
+# `SLE=0.05; SELECTION SLS=0.1;` 0.05; `SLS=0.1; SELECTION SLE=0.05;` 0.05;
+# `SLE=0.05; SELECTION SLE=0.07;` 0.07. A direction keyword in either
+# statement holds too: `BACKWARD; SELECTION SLE=0.05;` and
+# `SLE=0.05; SELECTION BACKWARD;` both print "Backward Stepwise Selection",
+# and `NOSW; SELECTION;` prints "Forward Selection". The translation kept
+# only the last statement, so the #505 job screened at slentry 0.3.
+test_that("SELECTION statements accumulate, a repeated option last-wins (#505)", {
+  cl <- function(sel) .sel_job(paste(sel, "EARLY A, B;"))$calls$fit[[3L]]
+  rows <- list(
+    list("SELECTION SLE=0.05;", 0.05, 0.2),
+    list("SELECTION SLS=0.1;", 0.3, 0.1),
+    list("SELECTION SLE=0.05; SELECTION SLS=0.1;", 0.05, 0.1),
+    list("SELECTION SLS=0.1; SELECTION SLE=0.05;", 0.05, 0.1),
+    list("SELECTION SLE=0.05; SELECTION SLE=0.07;", 0.07, 0.2))
+  for (r in rows) {
+    got <- cl(r[[1L]])
+    expect_equal(got[["slentry"]], r[[2L]], info = r[[1L]])
+    expect_equal(got[["slstay"]], r[[3L]], info = r[[1L]])
+  }
+  expect_identical(cl("SELECTION BACKWARD; SELECTION SLE=0.05;")[["direction"]],
+                   "backward")
+  expect_identical(cl("SELECTION SLE=0.05; SELECTION BACKWARD;")[["direction"]],
+                   "backward")
+  expect_identical(cl("SELECTION NOSW; SELECTION;")[["direction"]], "forward")
+  # The N3 check still reads the first statement's values.
+  job <- .sel_job("SELECTION SLE=1E-3; SELECTION SLS=0.1; EARLY A, B;")
+  expect_match(.n3_refusal(job), "SLE=1E-3: not a number", fixed = TRUE)
+  expect_equal(job$calls$fit[[3L]][["slentry"]], 0.001)
+  expect_identical(sum(job$untranslated$construct == "SLE=1E-3"), 1L)
+})
+
+test_that("an accumulated SELECTION job screens at the first statement's SLE (#505)", {
+  skip_on_cran()
+  job <- .sel_job("SELECTION SLE=0.05; SELECTION SLS=0.1; EARLY STRONG, NOISE;")
+  res <- suppressWarnings(render_sim(job, list(D = .sel_data())))
+  expect_true(res$ok, info = paste(res$results, collapse = "; "))
+  sw <- res$env$fit
+  expect_s3_class(sw, "hzr_stepwise")
+  expect_equal(sw$criteria$slentry, 0.05)
+  expect_equal(sw$criteria$slstay, 0.1)
+  expect_true("STRONG" %in% as.data.frame(sw)$variable)
+})

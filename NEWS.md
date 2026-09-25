@@ -1267,6 +1267,14 @@
   a warning: a keyword with no `= value` (`SLE 0.2`), a value on an option
   that takes none (`NOPRINTS=1`), and an unknown option.
 
+* **`hzr_translate_sas()` now reads every `SELECTION` statement in a job, not
+  only the last (#505).** `PROC HAZARD` accumulates them, and a repeated
+  option takes its last value. Measured on the HAZARD binary on `avc`,
+  `SELECTION SLE=0.05; SELECTION SLS=0.1;` screens at an entry level of
+  0.05, and `BACKWARD` in either statement makes the screen backward. The
+  translation kept only the second statement, so that job screened at the
+  default 0.3, with no row and no warning.
+
 * **The weak-direction warning now names a single g3 shape that the data do
   not determine (#415).** It named only pairs of parameters that trade off,
   because it reads the correlation matrix, and a correlation matrix
