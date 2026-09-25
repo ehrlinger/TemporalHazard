@@ -88,8 +88,10 @@ test_that("the formula interface drops the row from data too, so phases align", 
   expect_identical(got$data$dropped_time_zero, 1L)
   expect_identical(nrow(got$data$frame), nrow(d))
   expect_equal(got$fit$objective, ref$fit$objective, tolerance = 1e-8)
-  # A downstream consumer: residuals and predictions are per retained row.
-  expect_length(stats::predict(got, type = "survival"), nrow(d))
+  # A downstream consumer: predictions are per retained row, and equal the
+  # reference fit's.
+  expect_equal(stats::predict(got, type = "survival"),
+               stats::predict(ref, type = "survival"), tolerance = 1e-6)
 })
 
 test_that("hzr_stepwise() given the original frame is aligned with the fit", {
@@ -196,7 +198,8 @@ test_that("a rebuilt design is validated like any other", {
                    age = stats::rnorm(60), redo = c(1, rep(0, 59)))
   expect_error(suppressWarnings(hazard(
     survival::Surv(tm, st) ~ age + scale(redo), data = dd, dist = "weibull",
-    theta = c(0.5, 1, 0, 0), fit = TRUE)))
+    theta = c(0.5, 1, 0, 0), fit = TRUE)),
+    "Predictor rows must match the length of 'time'", fixed = TRUE)
 })
 
 test_that("a term read from outside data falls back to subsetting, and says so", {
@@ -215,7 +218,42 @@ test_that("a term read from outside data falls back to subsetting, and says so",
     },
     warning = function(e) invokeRestart("muffleWarning"))
   expect_match(conditionMessage(w), "read values outside `data`", fixed = TRUE)
-  expect_equal(nrow(f$data$x), n)
+  expect_true(isTRUE(f$data$time_zero_design_subset))
+  # The RIGHT rows were kept: the same fit as zz put in data without the row.
+  ref <- suppressWarnings(hazard(
+    survival::Surv(time, status) ~ zz, dist = "weibull",
+    data = data.frame(dd[-1, ], zz = zz[-1]), theta = c(0.5, 1, 0),
+    fit = TRUE))
+  expect_equal(unname(f$data$x[, "zz"]), zz[-1])
+  expect_equal(unname(coef(f)), unname(coef(ref)), tolerance = 1e-6)
+  # hzr_stepwise() cannot refit such a design against `data`, and says so.
+  dd$x1 <- stats::rnorm(n + 1)
+  expect_error(hzr_stepwise(f, scope = "x1", data = dd, trace = FALSE),
+               "reads a per-row value from outside `data`", fixed = TRUE)
+})
+
+test_that("a Surv() response read from outside data falls back too", {
+  # Worked on main; the rebuild must not turn it into an error.
+  withr::local_seed(6)
+  n <- 60
+  gt <- c(0, stats::rexp(n, 0.4) + 0.01)
+  assign("tz_gt", gt, envir = globalenv())
+  withr::defer(rm("tz_gt", envir = globalenv()))
+  dat <- data.frame(st = c(1, stats::rbinom(n, 1, 0.7)),
+                    age = stats::rnorm(n + 1))
+  f <- suppressWarnings(hazard(survival::Surv(tz_gt, st) ~ age, data = dat,
+                               dist = "weibull", theta = c(0.5, 1, 0),
+                               fit = TRUE))
+  expect_identical(f$data$dropped_time_zero, 1L)
+  expect_equal(f$data$time, gt[-1])
+})
+
+test_that("every row at time 0 reaches the no-observations stop", {
+  d0 <- data.frame(tm = c(0, 0, 0), st = c(1, 0, 1), g = c("a", "b", "a"))
+  expect_error(suppressWarnings(hazard(survival::Surv(tm, st) ~ g, data = d0,
+                                       dist = "weibull", theta = c(0.5, 1, 0),
+                                       fit = TRUE)),
+               "no observations")
 })
 
 test_that("weights stay aligned with the rows that remain", {

@@ -380,6 +380,12 @@ hzr_stepwise <- function(fit,
   # stored frame. A different frame that merely has the same row count is
   # left alone, and the alignment checks downstream report it.
   dropped <- fit$data$dropped_time_zero_rows
+  if (length(dropped) && isTRUE(fit$data$time_zero_design_subset)) {
+    stop("The base fit dropped ", length(dropped), " row(s) at time 0 and ",
+         "its formula reads a per-row value from outside `data`, so no refit ",
+         "against `data` can reproduce its design. Put those variables in ",
+         "`data` and refit before selecting.", call. = FALSE)
+  }
   if (length(dropped) && is.data.frame(fit$data$frame) &&
       nrow(data) == length(fit$data$time) + length(dropped)) {
     trimmed <- data[-dropped, , drop = FALSE]

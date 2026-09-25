@@ -1152,10 +1152,12 @@
   from the rows that remain, so a data-dependent term such as `scale(age)` is
   built as it would be on the retained data. A factor level seen only in a
   dropped row remains a level, as it does when you remove the row yourself.
-  A term that reads a per-row value from outside `data` cannot be rebuilt;
-  its design is subset instead, and the warning says so. `hzr_stepwise()`
-  given the data frame used for the fit drops the same rows, and only when
-  the frame is provably that one. `hzr_bootstrap()` still refuses `Surv()`
+  A global-formula term that reads a per-row value from outside `data`
+  cannot be rebuilt; its design is subset instead, the warning says so, and
+  `hzr_stepwise()` refuses such a fit, since no refit can reproduce it. A
+  phase formula must find its variables in `data`, or the fit stops.
+  `hzr_stepwise()` given the data frame used for the fit drops the same
+  rows, and only when the frame is provably that one. `hzr_bootstrap()` still refuses `Surv()`
   vectors that are not columns of `data`. If every row is at time 0,
   `hazard()` stops with nothing left to fit.
 

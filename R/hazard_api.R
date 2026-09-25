@@ -1054,7 +1054,7 @@ hazard <- function(formula = NULL,
   at_zero <- sas_time == 0
   n_dropped_time_zero <- sum(at_zero)
   dropped_time_zero_rows <- which(at_zero)
-  rebuilt <- FALSE
+  design_subset <- FALSE
   if (n_dropped_time_zero > 0L) {
     keep <- !at_zero
     subset_rows <- function(v) {
@@ -1095,31 +1095,27 @@ hazard <- function(formula = NULL,
       # in a dropped row stays a level of the rebuilt factor, as it does when
       # the rows are removed beforehand.) The rebuilt `x` is validated below
       # like any other.
-      rebuilt <- FALSE
-      if (!is.null(formula) && identical(data_rows, length(keep))) {
-        reparsed <- tryCatch(.hzr_parse_formula(formula = formula, data = data),
-                             error = function(e) e)
-        # Only a term read from OUTSIDE `data` keeps its full length, so it
-        # either fails ("variable lengths differ") or re-parses at the full
-        # row count. That one case falls back to subsetting the full design,
-        # and the warning says so. Any other re-parse is used as built, so a
-        # design the retained rows cannot support (scale() of a column
-        # constant on them) is refused by the validation below rather than
-        # silently replaced by one the dropped rows shaped; any other error
-        # is raised.
-        outside <- if (inherits(reparsed, "error")) {
-          grepl("variable lengths differ", conditionMessage(reparsed),
-                fixed = TRUE)
-        } else {
-          length(reparsed$time) != sum(keep) ||
-            (!is.null(reparsed$x) && NROW(reparsed$x) == data_rows)
-        }
-        if (inherits(reparsed, "error") && !outside) stop(reparsed)
-        if (!outside) {
-          x <- reparsed$x
-          x_design <- reparsed$x_design
-          rebuilt <- TRUE
-        }
+      # A term read from OUTSIDE `data` -- a formula variable that is not a
+      # column but has one value per original row -- keeps its full length
+      # and cannot be rebuilt on the retained rows. Only then is the full
+      # design subset instead, and the warning says so. Decided from the
+      # formula's own variables, not from an error message.
+      outside_vars <- setdiff(all.vars(formula %||% ~ 1), names(data_full))
+      per_row_outside <- vapply(outside_vars, function(v) {
+        val <- get0(v, envir = environment(formula), inherits = TRUE)
+        !is.null(val) && !is.function(val) && NROW(val) == data_rows
+      }, logical(1))
+      design_subset <- !is.null(formula) && any(per_row_outside)
+      if (!is.null(formula) && !design_subset && any(keep) &&
+          identical(data_rows, length(keep))) {
+        # The first parse already warned about anything the formula implies
+        # (an intercept removed, ...); the rebuild must not say it twice.
+        reparsed <- withCallingHandlers(
+          .hzr_parse_formula(formula = formula, data = data),
+          hzr_intercept_removed = function(w) invokeRestart("muffleWarning")
+        )
+        x <- reparsed$x
+        x_design <- reparsed$x_design
       }
     }
     n <- length(time)
@@ -1131,7 +1127,7 @@ hazard <- function(formula = NULL,
         "readt.c). The fit uses the other ", n, "; the count is in ",
         "fit$data$dropped_time_zero, and row numbers in later messages ",
         "count the rows that remain.",
-        if (!is.null(formula) && !rebuilt) {
+        if (design_subset) {
           paste0(" The formula's terms read values outside `data`, so its ",
                  "design was built with every row and then subset: a ",
                  "data-dependent term such as scale() still used the ",
@@ -1727,6 +1723,10 @@ hazard <- function(formula = NULL,
       # passes the original data frame on (hzr_stepwise(data = )) can be
       # aligned with the fit.
       dropped_time_zero_rows = dropped_time_zero_rows,
+      # TRUE when the formula read a per-row value from outside `data`, so
+      # the design could not be rebuilt without the dropped rows and was
+      # subset instead; refits against `data` cannot reproduce it.
+      time_zero_design_subset = design_subset,
       # The evaluated `data` argument as passed to hazard() (formula path; NULL
       # when called with raw vectors). This is the user's data frame, not a
       # model.frame() result. Stored so refit-based tooling such as
