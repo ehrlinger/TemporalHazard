@@ -480,14 +480,11 @@ test_that("alpha = 1 fixed with GAMMA and ETA both free fixes ETA, as SAS does",
 })
 
 test_that("fixing ETA at alpha = 1 is what makes GAMMA estimable", {
-  # Two-sided, because "the standard error is finite" alone could come from
-  # anything: fit the SAME phase with ETA left free and show the ridge. At
-  # alpha = 1, tau = 1 only gamma * eta is identified, so the free fit must
-  # reach the same log-likelihood and the same product, and its gamma must
-  # be undetermined: a standard error at least 100 times the fixed fit's
-  # (about 0.02), or none at all. On an exactly flat ridge the Hessian is
-  # singular in theory, so which of the two comes out is numerical noise:
-  # 7.5 where plain BFGS stopped, none 4e-6 away after the polish.
+  # At alpha = 1, tau = 1 only gamma * eta is identified. The translator fixes
+  # ETA as SETG3 does, and since #415 hazard() does the same for a phase that
+  # leaves both free: the "free" fit is held to the fixed one, with a record
+  # saying so. Before #415 it walked the ridge (gamma's standard error 7.5,
+  # or none, against about 0.02).
   skip_on_cran()
   got <- .hzr_parse_parms(c("MUL=0.01", "TAU=1", "ALPHA=1", "GAMMA=2",
                             "ETA=3", "FIXALPHA"))
@@ -504,17 +501,15 @@ test_that("fixing ETA at alpha = 1 is what makes GAMMA estimable", {
     v <- stats::vcov(f)
     if (is.matrix(v)) sqrt(diag(v))[["phase_1.gamma"]] else NA_real_
   }
-  product <- function(f) {
-    f$fit$theta[["phase_1.gamma"]] * f$fit$theta[["phase_1.eta"]]
-  }
   fixed <- fit_one(eval(got$phases))
   free <- fit_one(list(hzr_phase("g3", tau = 1, gamma = 2, alpha = 1,
                                  eta = 3, fixed = c("tau", "alpha"))))
   expect_true(is.finite(se_gamma(fixed)))
-  expect_true(!is.finite(se_gamma(free)) ||
-                se_gamma(free) > 100 * se_gamma(fixed))
-  expect_lt(abs(free$fit$objective - fixed$fit$objective), 1e-4)
-  expect_lt(abs(product(free) / product(fixed) - 1), 1e-3)
+  mech <- vapply(free$fit$boundary, function(r) r$mechanism, character(1))
+  expect_true("g3_alpha_one" %in% mech)
+  expect_equal(unname(coef(free)), unname(coef(fixed)), tolerance = 1e-6)
+  expect_equal(se_gamma(free), se_gamma(fixed), tolerance = 1e-4)
+  expect_lt(abs(free$fit$objective - fixed$fit$objective), 1e-8)
 })
 
 test_that("alpha = 1 fixed with GAMMA fixed is not recorded", {

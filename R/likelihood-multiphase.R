@@ -2125,6 +2125,18 @@
   # further down then leaves the derived slot out of the search.
   theta_start <- .hzr_constrain_supplied_theta(theta_start, phases,
                                                covariate_counts)
+  # A g3 phase with alpha FIXED at 1 is re-expressed as PROC HAZARD does
+  # (#415): tau and one of gamma/eta are held, since the data cannot see them.
+  # Before the CoE setup and the fixed-parameter mask, which both read the
+  # phases' fixed sets and this start.
+  held <- .hzr_g3_alpha_one_hold(theta_start, phases)
+  theta_start <- held$theta
+  phases <- held$phases
+  # And under FIXGE2 (#418): refuse a fixed alpha above 1, move a free start
+  # at or above 1 to 2/3, as SETG3 does.
+  fixge2 <- .hzr_g3_fixge2_alpha(theta_start, phases)
+  theta_start <- fixge2$theta
+  held$records <- c(held$records, fixge2$records)
 
   # --- Likelihood wrapper matching .hzr_optim_generic() signature -----------
   # NOTE: `weights` is an explicit formal so that .hzr_optim_generic can pass
@@ -2814,6 +2826,7 @@
 
   # Store phase metadata for downstream use (predict, summary)
   best_result$phases <- phases
+  best_result$held <- held$records
   best_result$covariate_counts <- covariate_counts
   best_result$x_list <- x_list
   best_result$x_design <- x_design
