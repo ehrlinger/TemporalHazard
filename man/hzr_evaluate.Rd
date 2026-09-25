@@ -56,10 +56,12 @@ objective, under Conservation of Events too: since #362 the fit's objective
 is recomputed at the estimates it returns, except where the fit warns that
 it could not, and then the two can differ.
 
-A \code{theta} the likelihood cannot evaluate -- an overflowing rate, a shape
-outside the family, or a value past a guard that stops short of where the
-log-likelihood itself overflows -- gives \code{-Inf}, with a warning of class
-\code{"hzr_evaluate_not_finite"}, for every distribution.
+A \code{theta} that passes the input checks but that the likelihood cannot
+evaluate -- an overflowing rate, a shape outside the family, or a value
+past a guard that stops short of where the log-likelihood itself
+overflows -- gives \code{-Inf}, with a warning of class
+\code{"hzr_evaluate_not_finite"}, for every distribution. A Weibull \code{mu} or
+\code{nu} at or below 0 is still refused outright by those input checks.
 }
 \examples{
 data(avc, package = "TemporalHazard")

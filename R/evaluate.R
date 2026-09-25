@@ -30,10 +30,12 @@
 #' is recomputed at the estimates it returns, except where the fit warns that
 #' it could not, and then the two can differ.
 #'
-#' A `theta` the likelihood cannot evaluate -- an overflowing rate, a shape
-#' outside the family, or a value past a guard that stops short of where the
-#' log-likelihood itself overflows -- gives `-Inf`, with a warning of class
-#' `"hzr_evaluate_not_finite"`, for every distribution.
+#' A `theta` that passes the input checks but that the likelihood cannot
+#' evaluate -- an overflowing rate, a shape outside the family, or a value
+#' past a guard that stops short of where the log-likelihood itself
+#' overflows -- gives `-Inf`, with a warning of class
+#' `"hzr_evaluate_not_finite"`, for every distribution. A Weibull `mu` or
+#' `nu` at or below 0 is still refused outright by those input checks.
 #'
 #' @param object A `hazard` object, fitted or built with `fit = FALSE`. Its
 #'   data, distribution and phase specification are used; its own `theta` is
