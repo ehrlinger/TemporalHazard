@@ -50,7 +50,8 @@
 #' @noRd
 .hzr_phase_step_detail <- function(time, t_half, nu, g_fn,
                                    time_lower = NULL, time_upper = NULL,
-                                   tol = .hzr_step_resolution) {
+                                   tol = .hzr_step_resolution,
+                                   with_origin = FALSE) {
   if (!is.function(g_fn)) return(NULL)
   # EVERY observed time, not just `time`.  An interval-censored row is observed
   # as [time_lower, time_upper], and on a left-truncated fit time_lower is the
@@ -68,6 +69,17 @@
 
   g <- tryCatch(g_fn(ut), error = function(e) NULL)
   if (is.null(g) || length(g) != length(ut) || !all(is.finite(g))) return(NULL)
+
+  # A "cdf" phase has G(0) = 0 by definition, so the origin is a point below
+  # the rise even when no observed time is. Without it, a step placed ON the
+  # first observed time -- G is 0.82 there and 1 at every later time -- had
+  # no observed time below tol and went unreported, while the event at
+  # t_half took the spike (1.2.12 release review N4: a translated job on
+  # avc, log-likelihood -23.5 against the reference's -207.66).
+  if (with_origin) {
+    ut <- c(0, ut)
+    g <- c(0, g)
+  }
 
   # THE DATA CANNOT RESOLVE THE RISE.  The phase must span the whole range --
   # somewhere below tol and somewhere above 1 - tol -- while at most ONE
@@ -89,17 +101,22 @@
   j <- max(which(g < tol))
   jj <- min(which(g > 1 - tol))
   n_at <- sum(ok & time >= ut[j] & time <= ut[jj])
+  bracket <- if (ut[j] == 0) {
+    sprintf("the origin (time 0, where G is 0) and the observed time %.6g",
+            ut[jj])
+  } else {
+    sprintf("the observed times %.6g and %.6g", ut[j], ut[jj])
+  }
   list(
     parameter = "nu",
     detail = sprintf(
       paste0("The phase's shape is a step at this data's resolution: the ",
-             "phase rises from 0 to 1 between the observed times %.6g and ",
-             "%.6g, with at most one observed time inside the rise (nu = ",
-             "%.3g, t_half = %.6g). %d ",
+             "phase rises from 0 to 1 between %s, with at most one observed ",
+             "time inside the rise (nu = %.3g, t_half = %.6g). %d ",
              "observation(s) fall in that interval, so the log-likelihood is ",
              "discontinuous there and a one-ulp change in nu can move it. ",
              "Treat the shape parameters as unidentified rather than estimated."),
-      ut[j], ut[jj], nu, t_half, n_at
+      bracket, nu, t_half, n_at
     )
   )
 }
@@ -134,8 +151,11 @@
   g_fn <- function(x) {
     hzr_decompos(x, t_half = t_half, nu = nu, m = m)$G
   }
+  # The origin counts as a point below the rise only for "cdf": a "hazard"
+  # phase whose t_half is below the data is #444's unbounded_phase record.
   d <- .hzr_phase_step_detail(time, t_half = t_half, nu = nu, g_fn = g_fn,
-                              time_lower = time_lower, time_upper = time_upper)
+                              time_lower = time_lower, time_upper = time_upper,
+                              with_origin = identical(type, "cdf"))
   if (is.null(d)) return(NULL)
   list(mechanism = "phase_discontinuity", phase = name,
        parameter = d$parameter, detail = d$detail)

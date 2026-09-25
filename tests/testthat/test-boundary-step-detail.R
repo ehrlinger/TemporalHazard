@@ -137,3 +137,43 @@ test_that("each boundary mechanism keeps its own lead-in and class", {
   expect_identical(tryCatch(warning(cond), hzr_unbounded_phase = function(e) "caught"),
                    "caught")
 })
+
+test_that("a step placed on the first observed time is reported via the origin", {
+  # N4 (1.2.12 release review): G is 0.82 at the first observed time and 1 at
+  # every later one, so no observed time lies below the rise. A cdf phase has
+  # G(0) = 0, so the origin is the point below it.
+  tt <- c(1, 2, 3, 4)
+  step <- function(x) ifelse(x < 1, 0, ifelse(x == 1, 0.82, 1))
+  expect_null(.hzr_phase_step_detail(tt, t_half = 1, nu = -7e-17,
+                                     g_fn = step))
+  out <- .hzr_phase_step_detail(tt, t_half = 1, nu = -7e-17, g_fn = step,
+                                with_origin = TRUE)
+  expect_type(out, "list")
+  expect_match(out$detail, "between the origin (time 0, where G is 0) and ",
+               fixed = TRUE)
+  expect_match(out$detail, "the observed time 2,", fixed = TRUE)
+  # A smooth phase is not reported with the origin either.
+  smooth <- function(x) stats::pnorm(x, mean = 2.5, sd = 1)
+  expect_null(.hzr_phase_step_detail(seq(0.5, 5, by = 0.5), t_half = 2.5,
+                                     nu = 1.4, g_fn = smooth,
+                                     with_origin = TRUE))
+})
+
+test_that("the release review's translated avc job is reported (N4)", {
+  skip_on_cran()
+  job <- tempfile(fileext = ".sas")
+  writeLines(c("PROC HAZARD DATA=avc;", "  TIME int_dead;", "  EVENT dead;",
+               paste("  PARMS MUE=0.2 THALF=0.3 NU=1 M=1 FIXM MUL=0.01 TAU=1",
+                     "GAMMA=3 ALPHA=1 ETA=1 FIXTAU FIXALPHA FIXGAMMA;"),
+               "RUN;"), job)
+  tr <- hzr_translate_sas(job)
+  data(avc, package = "TemporalHazard")
+  AVC <- avc  # nolint: object_name_linter. The job's own data name.
+  names(AVC) <- toupper(names(AVC))
+  suppressWarnings(for (cl in tr$calls) eval(cl))
+  t_half <- exp(unname(fit$fit$theta[[2]]))
+  # The premise: the step sits on the first observed time.
+  expect_equal(t_half, min(AVC$INT_DEAD), tolerance = 1e-6)
+  mech <- vapply(fit$fit$boundary, function(r) r$mechanism, character(1))
+  expect_true("phase_discontinuity" %in% mech)
+})
