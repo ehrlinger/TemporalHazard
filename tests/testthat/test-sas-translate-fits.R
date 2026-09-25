@@ -2200,6 +2200,22 @@ test_that("a job a later `(` clears names each cleared construct (#461)", {
   expect_no_match(msg, "does not run", fixed = TRUE)
 })
 
+test_that("a cleared phase stop gives AGE=ABC as an example, not as this job (#478 review)", {
+  # The cleared #340 stop illustrated the parser's recovery with
+  # `EARLY AGE=ABC;` in words that read as a statement about THIS job, so an
+  # `AGE/X` job was told the recovery "keeps AGE" after a construct it does
+  # not contain.
+  for (ph in c("EARLY AGE/X;", "EARLY AGE=ABC;")) {
+    msg <- .u1_msg(.p431_job(paste(
+      "PROC HAZARD DATA=D; EVENT DEAD; TIME TT; PARMS MUE=0.2 THALF=1 MUL=0.1;",
+      ph, "LATE LOG();")))
+    expect_match(msg, "cannot emit PROC HAZARD's model", fixed = TRUE, info = ph)
+    expect_match(msg, sub(";$", "", ph), fixed = TRUE, info = ph)
+    expect_match(msg, "for example, after `EARLY AGE=ABC;`", fixed = TRUE,
+                 info = ph)
+  }
+})
+
 test_that("a `(` inside a macro call does not clear a refusal (#461)", {
   # SAS expands %LOGT() before PROC HAZARD's lexer reads the job, so its `(`
   # may never reach hazard_l.l:56. Not an oracle row: the binary sees only

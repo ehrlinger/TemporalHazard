@@ -912,10 +912,10 @@
     # fitting, so only "cleared" changes this verdict.
     msg <- if (identical(reset, "cleared") && !length(stmt_fatal)) {
       paste0("This translation cannot emit PROC HAZARD's model for this job: ",
-             .hzr_sas_paren_cleared(what), "after `EARLY AGE=ABC;` the ",
-             "recovery keeps AGE, which this translation cannot place in a ",
-             "model. Correct the statement(s) named here and translate the ",
-             "job again.")
+             .hzr_sas_paren_cleared(what), "what it keeps may be text ",
+             "this translation cannot place in a model (for example, after ",
+             "`EARLY AGE=ABC;` it keeps AGE). Correct the statement(s) named ",
+             "here and translate the job again.")
     } else {
       paste0(
         "PROC HAZARD does not run this job: ",
