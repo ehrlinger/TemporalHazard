@@ -889,6 +889,12 @@ test_that("FIXGE2/FIXGAE2 without WEIBULL report SETG3's measured start (#472)",
   # gamma*eta = 2 at eta = 4. Binary: 0.5->0.75, 1->1.5.
   expect_start(c("GAMMA=0.5", "ETA=4"), "FIXGAE2", "gamma=0.5 alpha=1 eta=4",
                "gamma = 0.75, alpha = 1.5, eta = 4")
+  # gamma moves, and the moved gamma*eta/alpha is exactly 2, so alpha is
+  # kept, and the row must say so. Binary: 1->1.5, 1.5->1.5 (no change mark).
+  expect_start("ALPHA=1.5", "FIXGAE2", "gamma=1 alpha=1.5 eta=2",
+               "gamma = 1.5, alpha = 1.5, eta = 2")
+  expect_match(start_row("ALPHA=1.5", "FIXGAE2")$reason,
+               "so alpha stays at 1.5 (setg3.c:818)", fixed = TRUE)
   # Already gamma*eta/alpha = 2: nothing moves. Binary: 2->2, 2->2.
   expect_equal(nrow(start_row(c("GAMMA=2", "ALPHA=2"), "FIXGAE2")), 0L)
 
