@@ -1147,19 +1147,17 @@
   lower bound or entry time of 0 is admissible, as PROC HAZARD admits it, so
   an interval opening at 0 is still fitted, as left censoring (#341). Right-censored rows at 0
   contributed nothing to the likelihood, so those fits keep their estimates
-  but now report the smaller row count. The rows are dropped before any
-  other check reads them, and on the formula interface the design is rebuilt
-  from the rows that remain, so a data-dependent term such as `scale(age)` is
-  built as it would be on the retained data. A factor level seen only in a
-  dropped row remains a level, as it does when you remove the row yourself.
-  A global-formula term that reads a per-row value from outside `data`
-  cannot be rebuilt; its design is subset instead, the warning says so, and
-  `hzr_stepwise()` refuses such a fit, since no refit can reproduce it. A
-  phase formula must find its variables in `data`, or the fit stops.
+  but now report the smaller row count. Every formula expression is computed
+  on the data as given, and the rows are removed afterwards, as PROC HAZARD
+  removes them after the DATA step and as `model.frame()` does for
+  `subset =`. So `scale(age)` uses the mean and SD of every row given, and in
+  `Surv(time - min(time), status)` the row the expression makes 0 is the one
+  dropped. The rows are dropped before any other check reads them.
   `hzr_stepwise()` given the data frame used for the fit drops the same
-  rows, and only when the frame is provably that one. `hzr_bootstrap()` still refuses `Surv()`
-  vectors that are not columns of `data`. If every row is at time 0,
-  `hazard()` stops with nothing left to fit.
+  rows, but only when both the retained and the dropped rows match it.
+  `hzr_bootstrap()` still refuses `Surv()` vectors that are not columns of
+  `data`. If every row is at time 0, `hazard()` stops with nothing left to
+  fit.
 
 * **The weak-direction warning now names a single g3 shape that the data do
   not determine (#415).** It named only pairs of parameters that trade off,

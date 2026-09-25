@@ -1990,6 +1990,13 @@
     if (!is.null(ph$formula) && !is.null(data)) {
       # Phase-specific formula: build design matrix from data.
       built <- .hzr_formula_design(ph$formula, data)
+      # hazard() dropped rows at time 0 (#374) after computing everything on
+      # the data as given; it passes the full rows with the kept-row mask, so
+      # the phase design is built on them and then subset the same way.
+      kept <- attr(data, "hzr_rows_kept")
+      if (!is.null(kept) && NROW(built$x) == length(kept)) {
+        built$x <- built$x[kept, , drop = FALSE]
+      }
       .hzr_refuse_duplicate_columns(built$x, phase = nm)
       x_list[[nm]] <- built$x
       covariate_counts[[nm]] <- ncol(built$x)

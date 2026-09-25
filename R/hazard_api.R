@@ -1054,7 +1054,8 @@ hazard <- function(formula = NULL,
   at_zero <- sas_time == 0
   n_dropped_time_zero <- sum(at_zero)
   dropped_time_zero_rows <- which(at_zero)
-  design_subset <- FALSE
+  data_model <- NULL
+  dropped_frame <- NULL
   if (n_dropped_time_zero > 0L) {
     keep <- !at_zero
     subset_rows <- function(v) {
@@ -1082,40 +1083,21 @@ hazard <- function(formula = NULL,
       } else {
         lapply(data, subset_rows)
       }
-      data_rows <- if (is.data.frame(data_full)) {
-        nrow(data_full)
-      } else {
-        unique(vapply(data_full, NROW, integer(1)))
-      }
-      # On the formula path the design was built from ALL rows, so a
-      # data-dependent term -- scale(age), poly(age, 2) -- still carried the
-      # dropped rows (scale(age)'s coefficient moved from 0.126 to 0.176 with
-      # one extra row at time 0). Rebuild it from the rows that remain, as
-      # fitting the retained rows would build it. (A factor level found only
-      # in a dropped row stays a level of the rebuilt factor, as it does when
-      # the rows are removed beforehand.) The rebuilt `x` is validated below
-      # like any other.
-      # A term read from OUTSIDE `data` -- a formula variable that is not a
-      # column but has one value per original row -- keeps its full length
-      # and cannot be rebuilt on the retained rows. Only then is the full
-      # design subset instead, and the warning says so. Decided from the
-      # formula's own variables, not from an error message.
-      outside_vars <- setdiff(all.vars(formula %||% ~ 1), names(data_full))
-      per_row_outside <- vapply(outside_vars, function(v) {
-        val <- get0(v, envir = environment(formula), inherits = TRUE)
-        !is.null(val) && !is.function(val) && NROW(val) == data_rows
-      }, logical(1))
-      design_subset <- !is.null(formula) && any(per_row_outside)
-      if (!is.null(formula) && !design_subset && any(keep) &&
-          identical(data_rows, length(keep))) {
-        # The first parse already warned about anything the formula implies
-        # (an intercept removed, ...); the rebuild must not say it twice.
-        reparsed <- withCallingHandlers(
-          .hzr_parse_formula(formula = formula, data = data),
-          hzr_intercept_removed = function(w) invokeRestart("muffleWarning")
-        )
-        x <- reparsed$x
-        x_design <- reparsed$x_design
+      # Every expression -- the response, scale(age), a factor's levels, a
+      # phase formula's terms -- is computed on the data AS GIVEN, and the
+      # rows are removed afterwards, as PROC HAZARD removes them after the
+      # DATA step and as stats::model.frame() does for `subset =` and
+      # `na.action`. (John, 2026-09-25: the alternative, rebuilding without
+      # the dropped rows, is circular for a response such as
+      # Surv(time - min(time), status), whose zeros depend on those rows.)
+      # The global design above was built that way already. Phase designs
+      # are built later from `data`, so the optimizer gets the full rows
+      # with the kept-row mask, and subsets each phase design after building
+      # it (.hzr_multiphase_designs()).
+      data_model <- data_full
+      attr(data_model, "hzr_rows_kept") <- keep
+      if (is.data.frame(data_full)) {
+        dropped_frame <- data_full[!keep, , drop = FALSE]
       }
     }
     n <- length(time)
@@ -1126,13 +1108,7 @@ hazard <- function(formula = NULL,
         "fitting, as PROC HAZARD drops them (TIME <= 0 is inadmissible, ",
         "readt.c). The fit uses the other ", n, "; the count is in ",
         "fit$data$dropped_time_zero, and row numbers in later messages ",
-        "count the rows that remain.",
-        if (design_subset) {
-          paste0(" The formula's terms read values outside `data`, so its ",
-                 "design was built with every row and then subset: a ",
-                 "data-dependent term such as scale() still used the ",
-                 "dropped rows. Put those variables in `data` to avoid it.")
-        }
+        "count the rows that remain."
       ), call = NULL)
     ))
   }
@@ -1473,7 +1449,9 @@ hazard <- function(formula = NULL,
       x = x_fit, theta_start = theta, weights = weights,
       control = control,
       phases = phases, objective = objective,
-      formula_global = formula, data = data
+      # The full rows with their kept-row mask when time-0 rows were
+      # dropped, so phase designs are computed on the data as given.
+      formula_global = formula, data = data_model %||% data
     ))
 
     fit_state$theta <- optim_result$par
@@ -1723,10 +1701,9 @@ hazard <- function(formula = NULL,
       # passes the original data frame on (hzr_stepwise(data = )) can be
       # aligned with the fit.
       dropped_time_zero_rows = dropped_time_zero_rows,
-      # TRUE when the formula read a per-row value from outside `data`, so
-      # the design could not be rebuilt without the dropped rows and was
-      # subset instead; refits against `data` cannot reproduce it.
-      time_zero_design_subset = design_subset,
+      # And the dropped rows themselves, so hzr_stepwise() can confirm that a
+      # frame it is given is the one hazard() was given before trimming it.
+      dropped_time_zero_frame = dropped_frame,
       # The evaluated `data` argument as passed to hazard() (formula path; NULL
       # when called with raw vectors). This is the user's data frame, not a
       # model.frame() result. Stored so refit-based tooling such as
