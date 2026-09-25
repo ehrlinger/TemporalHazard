@@ -1584,13 +1584,6 @@ test_that("a SELECTION name PROC HAZARD accepts is screened, not refused (#459)"
                  " SELECTION FORWARD SLE=0.3; );"), f)
     suppressWarnings(hzr_translate_sas(f))
   }
-  msg <- function(j) {
-    tryCatch({
-      eval(j$calls$fit, new.env())
-      "no error"
-    }, error = conditionMessage)
-  }
-
   # In the grammar: screened, with no SELECTION row and the pin emitted.
   for (nm in c("_X1", "NA", "TRUE", "FALSE", "NULL")) {
     j <- job(paste0("AGE, ", nm, " /I"))
@@ -1604,7 +1597,7 @@ test_that("a SELECTION name PROC HAZARD accepts is screened, not refused (#459)"
   for (nm in c("AGE*SEX", "LOG(AGE)")) {
     j <- job(paste0("AGE /I, ", nm))
     expect_identical(j$calls$fit[[3L]][[1L]], as.name("hzr_stepwise"), info = nm)
-    expect_false(grepl("not a syntactic R name", msg(j), fixed = TRUE), info = nm)
+    expect_false("SELECTION" %in% j$untranslated$construct, info = nm)
   }
 
   # Control: an ordinary pair still screens.
