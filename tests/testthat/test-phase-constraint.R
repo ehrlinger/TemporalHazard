@@ -298,13 +298,15 @@ test_that("the derived variance is the delta method, and an NA does not spread",
 
 # eta_gamma is fitted with alpha held: with alpha free as well, simulated data
 # of this size let gamma run to a ridge (gamma -> Inf, eta -> 0) where the
-# fit says nothing about the constraint.
+# fit says nothing about the constraint. It is held BELOW 1: with gamma * eta
+# = 2, PROC HAZARD needs gamma * eta / alpha > 2 and refuses a fixed alpha
+# above 1 (SETG31040, #418), which hazard() now does too.
 e2e_cases <- list(
   alpha_gamma_eta = list(truth = c(log(0.3), log(10), 6, 2.4, 0.8),
                          start = list(tau = 8, gamma = 5, eta = 1),
                          free = c(1L, 2L, 3L, 5L)),
-  eta_gamma = list(truth = c(log(0.5), log(8), 2, 2, 1),
-                   start = list(tau = 6, gamma = 3, alpha = 2,
+  eta_gamma = list(truth = c(log(0.5), log(8), 2, 0.5, 1),
+                   start = list(tau = 6, gamma = 3, alpha = 0.5,
                                 fixed = "alpha"),
                    free = 1:3)
 )

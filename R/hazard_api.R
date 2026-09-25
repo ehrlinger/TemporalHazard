@@ -167,11 +167,13 @@ NULL
 #' @keywords internal
 #' @noRd
 .hzr_boundary_message <- function(records) {
-  # Each mechanism keeps its own lead-in: a cdf phase that collapsed to a step
-  # can sit well inside the data, and calling it "fitted outside the observed
-  # support" would name the wrong cause.
+  # Each mechanism keeps its own lead-in: a setup hold (#415) was not
+  # "fitted outside the observed support", and nor is a cdf phase that
+  # collapsed to a step inside the data; saying so would name the wrong cause.
   lead <- c(unbounded_phase = "fitted outside the observed support: ",
-            phase_discontinuity = "phase collapsed to a step: ")
+            phase_discontinuity = "phase collapsed to a step: ",
+            g3_alpha_one = "shape parameters held at setup: ",
+            g3_fixge2_alpha_start = "starting value moved at setup: ")
   paste(vapply(records, function(r) {
     paste0(if (r$mechanism %in% names(lead)) lead[[r$mechanism]] else "",
            r$detail)
@@ -744,7 +746,12 @@ NULL
 #'   combination, giving the \code{params} spanning that direction, their
 #'   squared loadings (\code{weights}), the strongest pairwise
 #'   \code{correlation} among them, the Hessian \code{rcond} and
-#'   \code{n_directions}, the number of near-flat directions found;
+#'   \code{n_directions}, the number of near-flat directions found (when a
+#'   single parameter carries the direction on its own, the list has one
+#'   \code{params} entry, \code{single = TRUE}, its \code{estimate}, and
+#'   \code{correlation = NA}, and \code{se_metric}, its standard error on
+#'   the log scale; only a g3 shape, \code{gamma}, \code{alpha} or
+#'   \code{eta}, is named this way);
 #'   \code{NULL} when the fit was examined and is well identified; and
 #'   \code{NA} when the check could not run because no usable Hessian was
 #'   available, which includes an unfitted object and an install without
@@ -773,14 +780,16 @@ NULL
 #'   carries \code{mechanism}, \code{phase}, \code{parameter} and a
 #'   printable \code{detail}. The mechanisms are \code{"unbounded_phase"}, a
 #'   \code{"hazard"} phase whose \code{t_half} is below the first observed
-#'   time, and \code{"phase_discontinuity"}, a \code{"cdf"} or
-#'   \code{"hazard"} phase whose shape has collapsed to a step the observed
-#'   times cannot resolve (it can lie inside the data). Only rows the
-#'   likelihood reads count as observed times. A fit with any record raises
-#'   one warning whose classes are \code{"hzr_"} plus each mechanism present
-#'   (\code{"hzr_unbounded_phase"}, \code{"hzr_phase_discontinuity"}), all
-#'   inheriting \code{"hzr_boundary"}, so one handler catches the whole
-#'   family.
+#'   time; \code{"phase_discontinuity"}, a \code{"cdf"} or \code{"hazard"}
+#'   phase whose shape has collapsed to a step the observed times cannot
+#'   resolve (it can lie inside the data); and two made at setup, before the
+#'   fit: \code{"g3_alpha_one"} (a g3 phase with \code{alpha} fixed at 1,
+#'   re-expressed as PROC HAZARD does, see [hzr_phase()]) and
+#'   \code{"g3_fixge2_alpha_start"} (a free \code{alpha} start moved to 2/3
+#'   under \code{constraint = "eta_gamma"}). Only rows the likelihood reads
+#'   count as observed times. A fit with any record raises one warning whose
+#'   classes are \code{"hzr_"} plus each mechanism present, all inheriting
+#'   \code{"hzr_boundary"}, so one handler catches the whole family.
 #' @export
 hazard <- function(formula = NULL,
                    data = NULL,
@@ -1435,6 +1444,7 @@ hazard <- function(formula = NULL,
     fit_state$x_design <- optim_result$x_design
     fit_state$rows_used <- optim_result$rows_used
     fit_state$fixed_mask <- optim_result$fixed_mask
+    fit_state$held <- optim_result$held
     fit_state$starts <- optim_result$starts
     # Applied CoE state, recorded next to the requested one in spec$control
     # below. Kept here first so the assembly reads the optimizer's answer
@@ -1550,8 +1560,18 @@ hazard <- function(formula = NULL,
     weak_vcov[which(masked), ] <- NA_real_
     weak_vcov[, which(masked)] <- NA_real_
   }
+  # The g3 shapes the single-parameter reading may name (#415), from the
+  # phase specs rather than from a name suffix.
+  weak_shapes <- if (dist == "multiphase" && length(phases)) {
+    unlist(lapply(seq_along(phases), function(k) {
+      if (identical(phases[[k]]$type, "g3")) {
+        paste0(names(phases)[[k]], ".", c("gamma", "alpha", "eta"))
+      }
+    }))
+  }
   weak_check <- .hzr_weak_direction_impl(weak_vcov, fit_state$rcond,
-                                         weak_names)
+                                         weak_names, theta = fit_state$par,
+                                         shape_names = weak_shapes)
   fit_state$weak <- weak_check$weak
   degraded_reasons$weak <- weak_check$reason
   if (is.list(fit_state$weak)) {
@@ -1592,8 +1612,21 @@ hazard <- function(formula = NULL,
   )
   fit_state$boundary <- boundary_check$boundary
   degraded_reasons$boundary <- boundary_check$reason
-  if (is.list(fit_state$boundary)) {
-    warning(.hzr_boundary_condition(fit_state$boundary))
+  # Holds made at setup (#415) are records of the same family, prepended.
+  # When the post-fit check could not run ($boundary NA, e.g. no positive
+  # observed times) the field stays NA, as the degraded record requires, and
+  # the holds are still announced below rather than dropped.
+  boundary_records <- fit_state$boundary
+  if (fit_ran && length(optim_held <- fit_state$held)) {
+    if (.hzr_is_na_scalar(fit_state$boundary)) {
+      boundary_records <- optim_held
+    } else {
+      fit_state$boundary <- c(optim_held, fit_state$boundary)
+      boundary_records <- fit_state$boundary
+    }
+  }
+  if (is.list(boundary_records) && length(boundary_records)) {
+    warning(.hzr_boundary_condition(boundary_records))
   }
 
   # Refit-based tooling (hzr_bootstrap()) re-evaluates $call, so it needs the
