@@ -1083,6 +1083,14 @@ test_that("a SELECTION option PROC HAZARD rejects warns with its own reason (#50
     list(sel = "BOGUS=1", what = "BOGUS=1", why = "unknown SELECTION option"),
     list(sel = "BOGUS", what = "BOGUS", why = "unknown SELECTION option"),
     list(sel = "BOGUS=ABC", what = "BOGUS=ABC", why = "unknown SELECTION option"),
+    # A statement keyword has no rule in the STEP state (hazard_l.l:112-141),
+    # so it is unexpected text too: measured, `SELECTION SELECT;`,
+    # `SELECTION TIME;` and `SELECTION SELECTION SLE=0.05;` exit SYNTAX, and
+    # fit after a later `(`. They screened with no warning.
+    list(sel = "SELECT", what = "SELECT", why = "unknown SELECTION option"),
+    list(sel = "TIME", what = "TIME", why = "unknown SELECTION option"),
+    list(sel = "SELECTION SLE=0.05", what = "SELECTION",
+         why = "unknown SELECTION option"),
     list(sel = "NOPRINTS=1", what = "NOPRINTS=1",
          why = "a value on an option that takes none"),
     list(sel = "NOPRINTS=ABC", what = "NOPRINTS=ABC",

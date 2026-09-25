@@ -1266,10 +1266,13 @@
   the warning says the fit stands in for a model `PROC HAZARD` does not fit.
   The other syntax errors the binary was measured to refuse in a
   `SELECTION` statement warn the same way, each with its own reason: an
-  unknown option (`BOGUS`, `BOGUS=1`), a value on an option that takes none
-  (`NOPRINTS=1`), and a numeric option with no `= value` (`SLE 0.2`). Each
-  was recorded without a warning. A value on a direction keyword keeps its
-  direction (`BACKWARD=1` still screens backward).
+  unknown option (`BOGUS`, `BOGUS=1`, or a statement keyword such as
+  `SELECT` or `TIME`, which has no meaning inside `SELECTION`), a value on
+  an option that takes none (`NOPRINTS=1`), and a numeric option with no
+  `= value` (`SLE 0.2`). Each was recorded without a warning, and `SELECT`
+  was read as a direction keyword with no row at all. A value on a
+  direction keyword keeps its direction (`BACKWARD=1` still screens
+  backward).
 
 * **`hzr_translate_sas()` now reads every `SELECTION` statement in a job, not
   only the last (#505).** `PROC HAZARD` accumulates them, and a repeated

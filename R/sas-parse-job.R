@@ -1593,8 +1593,11 @@
     eqp <- .idx(op, "=")
     key <- if (eqp > 0L) substring(op, 1L, eqp - 1L) else op
     val <- if (eqp > 0L) substring(op, eqp + 1L) else ""
+    # STEP context only. `SELECT` and the other statement keywords resolve
+    # only in STMT context (hazard_l.l:112-114), so inside SELECTION they
+    # are unexpected text: measured, `SELECTION SELECT;`, `SELECTION TIME;`
+    # and `SELECTION SELECTION SLE=0.05;` exit SYNTAX.
     token <- .hzr_sas_token(key, "HAZARD", "STEP")
-    if (is.na(token)) token <- .hzr_sas_token(key, "HAZARD", "STMT")
     if (is.na(token)) {
       bad[[op]] <- paste0("unknown SELECTION option, which PROC HAZARD's ",
                           "lexer reads as unexpected text (hazard_l.l:176-179)")
