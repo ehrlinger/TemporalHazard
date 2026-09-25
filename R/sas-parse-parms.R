@@ -323,8 +323,11 @@
 #' parser turns into a warning (#440).
 #'
 #' @return `list(names, values, flags, excluded, untranslated_construct,
-#'   untranslated_reason, rejected, not_a_name)`. `flags` is parallel to
-#'   `names`: `""`, `"I"` or `"S"`.
+#'   untranslated_reason, rejected, rejected_what, semantic, not_a_name,
+#'   not_a_name_what)`. `flags` is parallel to `names`: `""`, `"I"` or
+#'   `"S"`. `rejected_what` and `not_a_name_what` are the constructs of
+#'   `rejected` and `not_a_name` without their reasons; `semantic` holds the
+#'   constructs of `rejected` that PROC HAZARD refuses as SEMANTIC errors.
 #' @noRd
 .hzr_parse_phase_covars <- function(x) {
   names_out <- character(0)
@@ -339,10 +342,17 @@
   # Text PROC HAZARD refuses to run. A job carrying any of it produces no
   # estimates, so the caller emits a stop() rather than a fit (#340).
   rejected <- character(0)
+  # The same refusals by construct alone, for a verdict that has to name
+  # them without their reasons (#461).
+  rejected_what <- character(0)
   reject <- function(construct, reason) {
     bad(construct, reason)
     rejected <<- c(rejected, paste0(construct, ": ", reason))
+    rejected_what <<- c(rejected_what, construct)
   }
+  # The refusals PROC HAZARD raises as SEMANTIC rather than SYNTAX errors,
+  # which a later `(` does not clear (#461).
+  semantic <- character(0)
   # Every form below sets yysynerr, and initprz.c:75-77 then exits "SYNTAX"
   # before any data are read. Each names its OWN source: the lexer and the
   # grammar reject for different reasons.
@@ -392,6 +402,7 @@
   # text went through as a column name -- so under U1 it warns and fits
   # without the operand, rather than joining `rejected`, which stops.
   not_a_name <- character(0)
+  not_a_name_what <- character(0)
   not_name_reason <- paste0(
     "not a PROC HAZARD variable name. ", syntax_error(paste(
       "a phase variable must be a NAME, [_A-Z][_A-Z0-9]* (hazard_l.l:39;",
@@ -418,7 +429,27 @@
     word_value
   }
 
+  # phasevaropts is one or more phasevaropt separated by `,`
+  # (hazard_y.y:206-207), so a statement with no item, an empty item, or a
+  # leading or trailing comma is a parse error. The binary refuses each
+  # with SYNTAX (tests/testthat/fixtures/paren-reset-oracle.csv); the split
+  # below dropped them without a word (#461 review). Not judged where a
+  # macro reference could expand to the missing item. The variables that
+  # are there are unambiguous, so it takes the #440 route, warn and fit,
+  # rather than the #340 stop (U1 ruling, 2026-09-22).
+  empty_item <- syntax_error(paste(
+    "a phase statement needs at least one variable, and each `,` a variable",
+    "on either side (hazard_y.y:206-207), so the parser fails",
+    "(yyerror.c:19)"))
   for (piece in x) {
+    t <- trimws(piece)
+    if (!.hzr_sas_is_macro(t) &&
+        (!nzchar(t) || grepl("^,|,$|,[[:space:]]*,", t))) {
+      shown <- if (nzchar(t)) t else "(no variable)"
+      bad(shown, empty_item)
+      not_a_name <- c(not_a_name, paste0(shown, ": ", empty_item))
+      not_a_name_what <- c(not_a_name_what, shown)
+    }
     # The lexer stays in the PROC-line state from a `(` to the next `;`.
     after_paren <- FALSE
     for (p in strsplit(piece, ",", fixed = TRUE)[[1L]]) {
@@ -513,6 +544,7 @@
       # mutually exclusive" and sets semerr, and hazard.c:249-251 exits
       # ("SEMANTIC") before any data are read.
       if (order_given && nzchar(flag)) {
+        semantic <- c(semantic, paste0(var, "/", flag, " ORDER="))
         reject(paste0(var, "/", flag, " ORDER="), paste(
           "PROC HAZARD refuses the job: ORDER= and /E, /I or /S are mutually",
           "exclusive (przconc.c:45-53 sets semerr; hazard.c:249-251 exits",
@@ -551,6 +583,7 @@
           shown <- .hzr_sas_canonical_text(var)
           bad(shown, why)
           not_a_name <- c(not_a_name, paste0(shown, ": ", why))
+          not_a_name_what <- c(not_a_name_what, shown)
           next
         }
         var <- v
@@ -580,8 +613,8 @@
   list(names = names_out, values = values_out, flags = flags_out,
        excluded = excluded, untranslated_construct = bad_construct,
        untranslated_reason = bad_reason, rejected = rejected,
-       not_a_name = not_a_name,
-       has_paren = any(grepl("(", x, fixed = TRUE)))
+       rejected_what = rejected_what, semantic = semantic,
+       not_a_name = not_a_name, not_a_name_what = not_a_name_what)
 }
 
 #' Is `x` a NAME to PROC HAZARD's lexer?
@@ -686,10 +719,8 @@
 #' Names arrive trimmed from `.hzr_parse_phase_covars()`; `as.name()` would
 #' otherwise make a symbol carrying the surrounding space.
 #'
-#' A name that survives here is not thereby usable everywhere: `hzr_stepwise()`
-#' spells a non-syntactic name two ways at once (backquoted in its `terms()`
-#' candidate labels, bare in `force_in`), so a `SELECTION` job carrying one is
-#' refused in `.hzr_parse_job()` rather than screened wrongly (#411).
+#' A `SELECTION` job carrying such a name is screened, and a `/I` pin on it
+#' holds (#459).
 #' @noRd
 .hzr_sas_covar_formula <- function(covars) {
   # Reduce() over an empty list is NULL, and `~NULL` is a valid formula with
@@ -1157,6 +1188,7 @@
   # stop() rather than a fit (John's U1 decision, 2026-09-19). A macro
   # reference is not here: SAS expands it first, so it is not known to fail.
   parms_rejected <- character(0)
+  parms_rejected_what <- character(0)
   # A job PROC HAZARD runs on a model this translation would not emit (U1):
   # .hzr_parse_job() stops on any entry here, naming each.
   not_mirrored <- character(0)
@@ -1169,6 +1201,7 @@
   flag_syntax <- function(construct, reason) {
     flag_bad(construct, reason)
     parms_rejected <<- c(parms_rejected, paste0("PARMS ", construct, ": ", reason))
+    parms_rejected_what <<- c(parms_rejected_what, paste("PARMS", construct))
   }
   flag_unresolved <- function(op) {
     if (.hzr_sas_is_macro(op)) flag_bad(op, .hzr_parms_unresolved_why(op))
@@ -1793,9 +1826,6 @@
   # A phase variable that is not a NAME, which it also refuses, but which
   # warns rather than stops (#440): see .hzr_parse_phase_covars().
   rejected_name <- character(0)
-  # Whether any phase statement carries a `(`, which clears PROC HAZARD's
-  # syntax-error flag (hazard_l.l:56) and so can make it run a job anyway.
-  paren_seen <- FALSE
   # Every covariate a phase statement names (not /E, which is excluded and
   # guarded through listwise_only), before SELECTION withholds its
   # candidates from phase_covars. A row about a phase that is not built must
@@ -1837,7 +1867,6 @@
     phase_covar_vals[[ph]] <- parsed$values[keep]
     phase_vars <- c(phase_vars, parsed$names, parsed$excluded)
     rejected <- c(rejected, parsed$rejected)
-    if (isTRUE(parsed$has_paren)) paren_seen <- TRUE
     if (length(parsed$not_a_name)) {
       rejected_name <- c(rejected_name,
                          paste(toupper(ph), parsed$not_a_name))
@@ -2386,7 +2415,8 @@
     # A phase variable that is not a NAME (#440): refused at parse like
     # `rejected_phase`, but it translated on main, so it warns (U1).
     rejected_name = rejected_name,
-    paren_seen = paren_seen,
+    # The PARMS constructs alone, for a verdict that names them (#461).
+    rejected_parms_what = parms_rejected_what,
     refusal_reason = refusal_reason,
     # SETG1 selected a case the fit cannot evaluate: no estimates (#424).
     no_result_reason = no_result_reason,

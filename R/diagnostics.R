@@ -1878,7 +1878,9 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       },
       if (!is.null(stored)) {
         outside_in(all.vars(stats::delete.response(
-          stats::terms(stored, data = orig_data)
+          # The stored frame keeps a "" column as passed; terms() fails on
+          # it for a two-sided formula (#470).
+          stats::terms(stored, data = .hzr_drop_empty_names(orig_data))
         )), base_env %||% call_env)
       },
       unlist(lapply(phase_formulas, function(f) {
