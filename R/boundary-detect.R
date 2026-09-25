@@ -44,6 +44,10 @@
 #' @param g_fn Function of a time vector returning \eqn{G}. Injected so this
 #'   is testable without a fitted object.
 #' @param tol The numerically-0 / numerically-1 scale.
+#' @param with_origin Treat the origin as a point where G is 0. Safe
+#'   because every decomposition has G(0) = 0; used only when the first
+#'   observed time lies strictly inside the rise (tol < G(t_min) < 1 - tol),
+#'   so a phase complete before the data is not called a step.
 #' @return `NULL` when the phase is not a step at this resolution, otherwise a
 #'   list with `parameter` and `detail`.
 #' @keywords internal

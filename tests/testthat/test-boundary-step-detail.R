@@ -175,7 +175,13 @@ test_that("the release review's translated avc job is reported (N4)", {
   data(avc, package = "TemporalHazard")
   AVC <- avc  # nolint: object_name_linter. The job's own data name.
   names(AVC) <- toupper(names(AVC))
-  suppressWarnings(for (cl in tr$calls) eval(cl))
+  classes <- character(0)
+  withCallingHandlers(for (cl in tr$calls) eval(cl), warning = function(w) {
+    classes <<- c(classes, class(w))
+    invokeRestart("muffleWarning")
+  })
+  # The fit warns with the step's own class, not only about its Hessian.
+  expect_true("hzr_phase_discontinuity" %in% classes)
   t_half <- exp(unname(fit$fit$theta[[2]]))
   # The premise: the step sits on the first observed time.
   expect_equal(t_half, min(AVC$INT_DEAD), tolerance = 1e-6)
