@@ -1155,6 +1155,17 @@
   claimed. The "`FIXGE2` is not translated" row is unchanged and still
   marks the job as untranslated.
 
+* **A column of `data` named `""` no longer stops the fit (#470).** Any
+  formula-interface fit on such data stopped with "attempt to use zero-length
+  variable name", even when the formula never used the column. That included
+  every candidate refit in `hzr_stepwise()`, so the screen stopped after no
+  steps, and a multiphase fit. No formula can name such a column, so it plays
+  no part in the model. It is now left out, and the fit is the fit without it.
+  A formula that uses `.`, including a phase formula, warns that the column
+  is left out of `.` and says to rename it, as `hzr_stepwise()` already did
+  for its default scope. The `time =`/`status =` interface was never
+  affected.
+
 * **`hzr_translate_sas()` no longer says `PROC HAZARD` refuses a job that a
   later `(` lets it run (#461).** `PROC HAZARD`'s lexer clears its
   syntax-error flag at every `(` (`hazard_l.l:56`), so a syntax error
@@ -1598,19 +1609,21 @@
   and a renamed column is **refused** by name rather than quietly dropped, so
   a fit cannot come back short a covariate without saying so.
 
-  **A `SELECTION` job carrying such a name is refused rather than screened.**
-  `hzr_stepwise()` spells a non-syntactic name two ways at once: backquoted
-  in the `terms()` labels its candidates are keyed on, bare in `force_in`.
-  The two never match, so a `/I` pin is ignored and a `BACKWARD` screen can
-  drop a variable `PROC HAZARD` holds in, with no warning naming it; and the
-  score criterion, the only one this translator emits, indexes the data by
-  the backquoted label and skips the candidate as "not found". Both are wrong
-  models delivered as populated results, so such a job now stops and names
-  the cause. For a name like `_X1` this costs nothing: the job stopped before
-  this release too, one step earlier, in the phase formula.
+  **A `SELECTION` job carrying such a name is screened, and a `/I` pin on it
+  holds (#459).** An earlier change in this release refused such a job,
+  citing two causes, and neither is live. Each was measured by translating
+  the job, lifting the refusal and running the emitted screen. The `/I` pin
+  cause was real where the refusal was written: on that branch a
+  `BACKWARD` screen dropped a pinned `_X1` with no warning naming it. The
+  #437 name lookup fixed it and reached `main` 18 minutes before the
+  refusal did, so every commit of `main` that carried the refusal already
+  carried the fix. The score-criterion cause, which stopped a `FORWARD`
+  screen with `_X1` unscored, was fixed by #449. A `/I` pin on `_X1` or on a
+  reserved word such as `TRUE` now holds, and the score criterion enters
+  such a column.
 
-  Text `PROC HAZARD` does not accept as a name is **not** refused here,
-  because it no longer reaches this check. `AGE*SEX` is not a name
+  Text `PROC HAZARD` does not accept as a name is a different case.
+  `AGE*SEX` is not a name
   (`hazard_l.l:39`, `hazard_y.y:213`), so `PROC HAZARD` rejects that job at
   parse; the phase parser now leaves such an operand out of the model, with
   a warning and an untranslated row, rather than stopping a job that

@@ -1118,44 +1118,17 @@
     cross_pinned <- intersect(
       intersect(parms$selection$force_in %||% character(0), in_model_all),
       movable_all)
-    # A name PROC HAZARD accepts but R does not (#411). The phase formulas
-    # now carry such a name (built from symbols), but `hzr_stepwise()` keys
-    # its candidates on `terms()` labels, which backquote it, while
-    # `force_in` is documented and emitted as a bare variable name. The two
-    # spellings never match, so a `/I` pin is silently ignored and the screen
-    # can drop a variable SAS holds in; the score criterion, which is the one
-    # this translator emits, indexes `data` by the backquoted label and skips
-    # the candidate as "not found". Refusing keeps the job LOUD, as it was
-    # before the formulas were fixed, rather than returning a screen that
-    # disagrees with PROC HAZARD. The underlying defects are in the stepwise
-    # driver, not here.
-    nonsyntactic <- unique(c(
-      unlist(parms$selection$scope %||% list()),
-      unlist(parms$selection$movable %||% list()),
-      unlist(parms$selection$in_model %||% list()),
-      parms$selection$force_in %||% character(0)))
-    nonsyntactic <- nonsyntactic[make.names(nonsyntactic) != nonsyntactic]
-    # Two different jobs hide behind "R would backquote this", and they need
-    # different reasons. `hazard_l.l:39` is `name ([_A-Z][_A-Z0-9]*)` and
-    # `hazard_y.y:213` is `phasevar : NAME`, so:
-    #   - `_X1`, and the reserved words `NA`, `TRUE`, `FALSE`, `NULL`, ARE
-    #     names PROC HAZARD accepts, and only R objects to them (#411);
-    #   - `AGE*SEX`, `LOG(AGE)` and `B SEX` are NOT names, so PROC HAZARD
-    #     rejects the job at parse, and the reason given to the reader must
-    #     not claim the lexer accepted it.
-    # Only a name PROC HAZARD ACCEPTS is refused here. Text it rejects at
-    # parse (`AGE*SEX`, `LOG(AGE)`) no longer reaches this point: the phase
-    # parser leaves it out of the model, with a row and a warning (#440). A
-    # macro reference (`&V`) still can, and is not a name to judge.
-    nonsyntactic <- nonsyntactic[grepl("^[_A-Za-z][_A-Za-z0-9]*$", nonsyntactic)]
+    # A name PROC HAZARD accepts but R does not (`_X1`, `TRUE`) is NOT
+    # refused. #411 refused it, citing a `/I` pin that never matched and a
+    # score criterion that could not test the candidate. Measured through
+    # this translator (#459), #437 had fixed the pin before the refusal
+    # reached main, and #449 (PR #455) fixed the score path, so the job is
+    # screened like any other.
     refusals <- c(sel$refuse,
                   if (saw_restrict) "RESTRICT",
                   if (length(per_var_opts)) per_var_opts,
                   if (length(cross_pinned)) {
                     paste0(cross_pinned, " (/I in one phase, movable in another)")
-                  },
-                  if (length(nonsyntactic)) {
-                    paste0(nonsyntactic, " (not a syntactic R name)")
                   })
     if (!length(refusals)) return(NULL)
     # Name ONLY what fired. One boilerplate string listing every refusable
@@ -1176,15 +1149,6 @@
       if (grepl("/(MOVE|ORDER)", item)) {
         return(paste0(item, ": a per-variable MOVE= or ORDER= has no ",
                       "hzr_stepwise() equivalent (its max_move is per run)"))
-      }
-      if (grepl("[(]not a syntactic R name[)]$", item)) {
-        return(paste0(item, ": PROC HAZARD's lexer accepts this name ",
-                      "(hazard_l.l:39) but R does not, so hzr_stepwise() ",
-                      "spells it two ways at once -- backquoted in its ",
-                      "candidate labels, bare in force_in -- and a /I pin ",
-                      "would be ignored while the score criterion could not ",
-                      "test it. Rename the column, or run the screen by hand ",
-                      "(#411)"))
       }
       paste0(item, ": force_in is keyed by variable name across phases, ",
              "so it would be pinned in the phase SAS leaves movable")
