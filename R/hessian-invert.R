@@ -100,9 +100,12 @@ NULL
 #' entirely on the larger one, so a two-parameter ridge would be reported as a
 #' single unidentified parameter.  Standardising first makes the loadings comparable.
 #'
-#' A single imprecise but uncorrelated parameter is deliberately \emph{not}
-#' reported: that is ordinary low precision, already covered by the
-#' ill-conditioning warning and by the parameter's own standard error.
+#' The pairwise reading cannot see a single parameter the data do not
+#' determine, since a correlation matrix normalises its variance away. When
+#' it finds nothing and \code{theta} is supplied, a second reading names one
+#' parameter that carries the flattest direction on its own (#415); see
+#' \code{.hzr_weak_single_parameter()}. Behind the rcond gate a parameter
+#' that dominates that direction is named whatever its own standard error.
 #'
 #' Where two eigenvalues are exactly tied, LAPACK may return any basis of the
 #' degenerate eigenspace, so the loadings can spread across both ridges and
@@ -122,6 +125,11 @@ NULL
 #' @param cor_tol Minimum absolute correlation for a trade-off to count.
 #' @param share Cumulative squared-loading share used to decide how many
 #'   parameters span the flat direction.
+#' @param theta The fitted parameter vector, aligned with \code{vcov}. Needed
+#'   only by the single-parameter reading, which is skipped without it.
+#' @param shape_names Names of the g3 shape parameters (\code{gamma},
+#'   \code{alpha}, \code{eta}) the single-parameter reading may name; it is
+#'   skipped when empty.
 #' @return One of three values, which callers must keep distinct:
 #'   \code{NULL} when the check ran and found no ridge; \code{NA} when the
 #'   check \emph{could not} run, because no usable Hessian was available; and
@@ -150,7 +158,8 @@ NULL
 .hzr_weak_direction_impl <- function(vcov, rcond, param_names = NULL,
                                      tol = .hzr_rcond_tol,
                                      cor_tol = .hzr_ridge_cor_tol,
-                                     share = 0.9) {
+                                     share = 0.9, theta = NULL,
+                                     shape_names = NULL) {
   na_because <- function(reason) list(weak = NA, reason = reason)
   looked <- function(weak) list(weak = weak, reason = NA_character_)
 
@@ -286,18 +295,82 @@ NULL
     }
   }
 
-  if (is.null(found)) return(looked(NULL))
+  if (is.null(found)) {
+    return(looked(.hzr_weak_single_parameter(V, theta, keep, nms, rcond,
+                                             cor_tol, shape_names)))
+  }
   found$n_directions <- length(seen)
   looked(found)
+}
+
+#' A flat direction along ONE parameter (#415)
+#'
+#' The pairwise scan above cannot see this by construction: a correlation
+#' matrix normalises every variance to 1, so a parameter the data do not
+#' determine, with no partner to trade off against, looks exactly like a
+#' well-determined one. It is read instead from the covariance in a metric
+#' where the positive g3 shapes (`gamma`, `alpha`, `eta`) are on the log
+#' scale, so their variance is relative, and everything else is as it is
+#' (already log-scale, or a coefficient). Only a g3 shape can be NAMED; see
+#' the comment at the naming step for why. Scaling every parameter by its own value instead -- the
+#' candidate measured in #415 -- named `log_mu` on fits whose `gamma` had run
+#' to 1e7, because a log-scale estimate near 0 inflates its relative
+#' variance without bound.
+#'
+#' Fires only when the pairwise scan found nothing (so every pair it names
+#' is unchanged), behind the same rcond gate as the caller, when the flattest
+#' direction loads on one parameter (`|loading| >= cor_tol`). The gate does
+#' the discriminating, as #415 found: there is no magnitude bar, because a
+#' likelihood that is flat all the way to a boundary (gamma -> Inf) still
+#' reports a finite local curvature there, and a relative standard error of
+#' 0.1 to 0.4 at gamma-hat = 1e7 is numerical, not information. Measured on
+#' 34 fits (#415's design, FIXGE2, n = 300; identified fits at n = 1500; the
+#' ill-scaled-covariate control): it fires on 12 of the 14 gated degenerate
+#' fits it can read, naming gamma on 11 and alpha on 1, and on none of the
+#' 10 identified fits, whose largest loading is 0.972 even ungated.
+#'
+#' @return `NULL`, or the `$weak` list with `single = TRUE`, one `params`
+#'   entry, its `estimate`, and `se_metric`, its standard error in the
+#'   metric above.
+#' @noRd
+.hzr_weak_single_parameter <- function(V, theta, keep, nms, rcond, cor_tol,
+                                       shape_names) {
+  if (is.null(theta) || length(theta) < max(keep)) return(NULL)
+  if (!length(shape_names)) return(NULL)
+  th <- unname(theta)[keep]
+  if (anyNA(th) || any(!is.finite(th))) return(NULL)
+  # The g3 shapes are named by the CALLER from the phase specs, not guessed
+  # from a name suffix: a covariate called `gamma` in a cdf phase is
+  # `early.gamma` too.
+  positive_shape <- nms %in% shape_names & th > 0
+  sc <- ifelse(positive_shape, th, 1)
+  S <- V / outer(sc, sc)
+  e <- tryCatch(eigen(S, symmetric = TRUE), error = function(e) NULL)
+  if (is.null(e) || !is.finite(e$values[1])) return(NULL)
+  v1 <- e$vectors[, 1]
+  j <- which.max(abs(v1))
+  # Only a positive g3 shape is named. A coefficient or a log-scale
+  # parameter can dominate this direction through its UNITS alone: a
+  # covariate recorded in units of 1e-4 opened the rcond gate and named its
+  # well-identified coefficient (z = 4.7) as undetermined. Its flatness is
+  # not distinguishable from scaling without a natural unit, and the g3
+  # shapes are the parameters with one. (`nu` is excluded: it is signed, and
+  # 0 is a legitimate limiting value, so relative variance near it is noise.)
+  if (abs(v1[j]) < cor_tol || !positive_shape[j]) return(NULL)
+  list(params = nms[j], weights = v1[j]^2, correlation = NA_real_,
+       rcond = rcond, n_directions = 1L, single = TRUE,
+       estimate = th[j], se_metric = sqrt(e$values[1]))
 }
 
 # The shape every existing caller relies on: list / NULL / NA, unchanged.
 .hzr_weak_direction <- function(vcov, rcond, param_names = NULL,
                                 tol = .hzr_rcond_tol,
                                 cor_tol = .hzr_ridge_cor_tol,
-                                share = 0.9) {
+                                share = 0.9, theta = NULL,
+                                shape_names = NULL) {
   .hzr_weak_direction_impl(vcov, rcond, param_names = param_names,
-                           tol = tol, cor_tol = cor_tol, share = share)$weak
+                           tol = tol, cor_tol = cor_tol, share = share,
+                           theta = theta, shape_names = shape_names)$weak
 }
 
 #' Warning text for a detected ridge direction
@@ -309,6 +382,16 @@ NULL
 #' @return A single string.
 #' @noRd
 .hzr_weak_direction_message <- function(weak) {
+  if (isTRUE(weak$single)) {
+    return(paste0(
+      "weakly identified fit: '", weak$params, "' = ",
+      format(weak$estimate, digits = 4), " carries a near-flat direction ",
+      "on its own (loading ", format(sqrt(weak$weights), digits = 3),
+      ", Hessian rcond = ", format(weak$rcond, digits = 3), "). Its point ",
+      "estimate -- not just its standard error -- is not pinned down by the ",
+      "data, and it may be running to a boundary of its range."
+    ))
+  }
   # Naming one direction and stopping invites the reader to treat every
   # parameter it does not mention as identified. When the scan cleared the
   # gate more than once, say so rather than letting the omission speak.
