@@ -91,7 +91,7 @@ for (constraint in names(oracle_cases)) {
       if (is.finite(v)) v else 1e10
     }
     ref <- stats::nlm(nll, p0, gradtol = 1e-10, steptol = 1e-12,
-                      iterlim = 2000)
+                      iterlim = 2000, hessian = TRUE)
     # Code 3 is nlm stopping on step size along a flat direction; the
     # log-likelihood comparison below is what holds it to the optimum.
     expect_true(ref$code %in% 1:3)
@@ -112,14 +112,24 @@ for (constraint in names(oracle_cases)) {
 
     expect_true(fit$fit$converged)
     expect_equal(fit$fit$objective, -ref$minimum, tolerance = 1e-8)
-    # Estimates are looser than the likelihood by construction: near the
-    # optimum a shift of about sqrt(2 * dLL / curvature) along the flattest
-    # direction costs nothing measurable (measured up to 5e-4 here). Each
-    # element is held to that on its own scale, as a ratio, and the worst one
-    # is tested: expect_equal() would average over the vector, and would
-    # compare a small element on an absolute scale it cannot fail.
+    # Estimates are held exactly as tightly as the likelihood above, no
+    # tighter: that assertion admits a shortfall of up to
+    # dll = 1e-8 * |logLik| (relative tolerance), and near the optimum
+    # the largest change in log(element i) that costs no more than dll is
+    # sqrt(2 * dll * (J H^-1 J')_ii), with H the oracle's Hessian and J the
+    # map from search to log-element scale (linear here, so the unit-step
+    # difference is exact). Along the flat direction that is a few 1e-3;
+    # across it, far less. A fixed element gets a bound of 0.
+    dll <- 1e-8 * abs(ref$minimum)
+    log_shapes <- function(p) log(unlist(case$shapes(p)))
+    jac <- sapply(seq_along(ref$estimate), function(k) {
+      log_shapes(ref$estimate + replace(0 * ref$estimate, k, 1)) -
+        log_shapes(ref$estimate)
+    })
+    bound <- sqrt(2 * dll * diag(jac %*% solve(ref$hessian) %*% t(jac)))
     ratio <- unlist(got) / unlist(ref_shapes)
-    expect_lt(max(abs(ratio - 1)), 1e-3)
+    # Report the worst excess, not just FALSE, when this fails.
+    expect_lte(max(abs(log(ratio)) - bound), 1e-12)
     # The package's objective is the oracle's likelihood at the package's own
     # estimates, not only at the oracle's.
     expect_equal(fit$fit$objective, do.call(oracle_loglik, c(list(d), got)),
