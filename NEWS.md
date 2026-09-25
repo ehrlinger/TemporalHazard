@@ -297,7 +297,7 @@
   in which only some replicates stay at their start while their objective is
   finite is not caught; that rests on the optimizer's convergence test
   (#351). What a sentinel objective should mean for a single fit is tracked
-  separately (#351, #374).
+  separately (#486).
 
 * **`hzr_translate_sas()` no longer fits a job `PROC HAZARD` rejects: if
   you hold estimates from such a translation, they have no SAS run behind
@@ -1071,9 +1071,14 @@
   line. A phase built with `hzr_phase(constraint = )` has its derived shape
   re-derived here, as the fit re-derives it, so a contradictory value passed
   in `theta` is replaced rather than used as given. At a fitted model's own
-  estimates it returns that fit's objective, except where the fit reports an
-  objective it is not at: under Conservation of Events the conserved scale is
-  re-solved after the objective is recorded (#362), and the two then differ.
+  estimates it returns that fit's objective, under Conservation of Events
+  too, since the fit's objective is recomputed at the estimates it returns
+  (#362), except where the fit warns that it could not. A `theta` the
+  likelihood cannot evaluate gives `-Inf`, with a
+  warning of class `"hzr_evaluate_not_finite"`, for every distribution: the
+  single-distribution likelihoods return `+Inf` internally for such a
+  `theta`, and it used to reach you as `logLik = Inf`, the best possible fit
+  (for example, an exponential model on `avc` at `theta = 800`).
 
 * **`hzr_phase()` can derive one late-phase shape from the others (#325).**
   The new `constraint` argument covers SAS/C's two late-phase constraints:
@@ -1158,7 +1163,12 @@
   global or a phase's, that reads a per-row value from outside `data`.
   `hzr_stepwise()` given the data frame used for the fit drops the same
   rows, but only when both the retained and the dropped rows match it. If
-  every row is at time 0, `hazard()` stops with nothing left to fit.
+  every row is at time 0, `hazard()` stops with nothing left to fit. An
+  `x` or `weights`, or a `data` that a formula reads row by row, whose
+  length differs from `time`'s is refused before any row is dropped; one that
+  was short by exactly the number of rows at time 0 used to be accepted and
+  fitted against the wrong rows. A `data` used only to look names up need
+  not match.
 
 * **`hzr_translate_sas()` now reports the starting shape `PROC HAZARD`
   actually uses for a `FIXGE2` or `FIXGAE2` job without `WEIBULL` (#472).**
@@ -1225,8 +1235,10 @@
     (`LOG() /I`, `(LOG)`). A statement after the `(` can set the flag
     again (`RESTRICT A*B`, `SELECTION SLE=ABC`, `WEIGHT 2W`, or one
     `PROC HAZARD` does not know), and this translation checks only `PARMS`
-    and the phase statements for such errors, so any other statement after
-    the `(` keeps the refusal. These still warn that the job does not run,
+    and the phase statements fully for such errors (a `SELECTION`
+    statement's operands are checked too, but not shown to be complete), so
+    any other statement after the `(`, `SELECTION` included, keeps the
+    refusal. These still warn that the job does not run,
     which is too strong for a clean one: the binary fits the job when the
     statement is `SELECTION SLE=0.2`;
   - an error in the same statement as the `(` is left to `PROC HAZARD`'s
@@ -1246,6 +1258,42 @@
   name (#440): `EARLY AGE,,SEX;` fits `AGE` and `SEX`, and `LATE ;` fits
   the late phase with no covariates. Both follow the rules above when a
   later `(` clears them.
+
+* **A `SELECTION` value that `PROC HAZARD`'s lexer does not read as a number
+  now warns, as a `PARMS` or `MAXITER=` value already did.** The screen read
+  `SLE=`, `SLS=`, `MOVE=` and `MAXSTEPS=` with `as.numeric()`, which also
+  reads `1E-3`, `2E-1`, `+0.1` and `5.`. `PROC HAZARD` lexes none of them as
+  a number (`hazard_l.l:33-38`), and on the package's `avc` data the HAZARD
+  binary refuses `SLE=1E-3`, `SLS=2E-1`, `SLE=+0.1` and `MAXSTEPS=5.` with a
+  syntax error, while `SLE=.2`, `SLE=0.2E-1` and `MAXSTEPS=5.0` fit. The
+  translation emitted `hzr_stepwise(slentry = 0.001)` and the rest with no
+  warning and no row. A value `as.numeric()` cannot read (`SLE=ABC`) had a
+  row and fell back to the default, also without a warning. Such a job now
+  warns that `PROC HAZARD` does not run it and records the row. The screen
+  still runs, at the value as `as.numeric()` reads it, or at `PROC HAZARD`'s
+  default when it cannot read it. A later `(` clears the error as it does
+  the others (#461); the binary then fits the job with no screen at all, so
+  the warning says the fit stands in for a model `PROC HAZARD` does not fit.
+  The other syntax errors the binary was measured to refuse in a
+  `SELECTION` statement warn the same way, each with its own reason: an
+  unknown option (`BOGUS`, `BOGUS=1`, or a statement keyword such as
+  `SELECT` or `TIME`, which has no meaning inside `SELECTION`), a value on
+  an option that takes none (`NOPRINTS=1`), and a numeric option with no
+  `= value` (`SLE 0.2`). Each was recorded without a warning, and `SELECT`
+  was read as a direction keyword with no row at all. A value on a
+  direction keyword keeps its direction (`BACKWARD=1` still screens
+  backward).
+
+* **`hzr_translate_sas()` now reads every `SELECTION` statement in a job, not
+  only the last (#505).** `PROC HAZARD` accumulates them, and a repeated
+  option takes its last value. Measured on the HAZARD binary on `avc`,
+  `SELECTION SLE=0.05; SELECTION SLS=0.1;` screens at an entry level of
+  0.05, and `BACKWARD` in either statement makes the screen backward. The
+  translation kept only the second statement, so that job screened at the
+  default 0.3, with no row and no warning. One exception remains: a
+  negative `MAXSTEPS` in an earlier statement still refuses the job here,
+  although the binary runs it when a later statement sets `MAXSTEPS`
+  again.
 
 * **The weak-direction warning now names a single g3 shape that the data do
   not determine (#415).** It named only pairs of parameters that trade off,
@@ -1295,6 +1343,15 @@
   gradient calculations", exiting with an error status while still printing the
   estimates. So this is a shared degeneracy that the reference already flags,
   and reporting it is parity-preserving rather than a break.
+
+  A step placed on the first observed time is reported too. There, no observed
+  time lies below the rise, and the detector used to require one; a phase
+  has G(0) = 0, so the origin now serves as that point when the first
+  observed time is inside the rise. A phase already complete before the
+  first observation is not a step and is left to the identifiability check. (A translated
+  job on `avc` came to rest that way, with `t_half` on the first event time,
+  at a log-likelihood of -23.5 against the reference binary's -207.66, and
+  nothing was recorded.)
 
 * **A stray `=` in `PARMS` no longer takes the next operand with it
   (#458).** `PARMS MUE=0.2 = THALF=0.15 NU=1` read the stray `=` as a piece
@@ -1504,7 +1561,7 @@
   fail.
 
   What a sentinel objective should mean for a single fit is tracked
-  separately (#351, #374).
+  separately (#486).
 * **A ridge is no longer named from a covariance that is not a covariance
   (#416).** `summary()`'s weak-direction report reads the flat direction from
   the correlation of the estimates. When the Hessian was taken where it is not
