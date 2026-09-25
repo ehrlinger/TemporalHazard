@@ -152,3 +152,14 @@ test_that("hzr_stepwise() does not trim a frame that is not the fit's", {
                                              data = other, trace = FALSE)),
                "rows but the fitted model used")
 })
+
+test_that("a list of columns given as data is filtered like a data frame", {
+  d <- tz_data()
+  lst <- list(tt = c(0, d$time), ss = c(1, d$status))
+  f <- suppressWarnings(hazard(time = tt, status = ss, data = lst,
+                               dist = "weibull", theta = tz_theta$weibull,
+                               fit = TRUE))
+  expect_identical(f$data$dropped_time_zero, 1L)
+  expect_identical(lengths(f$data$frame), c(tt = nrow(d), ss = nrow(d)))
+  expect_equal(f$data$frame$tt, f$data$time)
+})
