@@ -838,6 +838,108 @@ test_that("the verify_ge_2 row does not fire above the boundary or on WEIBULL", 
   expect_equal(nrow(weib$untranslated), 0L)
 })
 
+test_that("FIXGE2/FIXGAE2 without WEIBULL report SETG3's measured start (#472)", {
+  # Without WEIBULL a constraint flag sends SETG3_all_gt_0() down the g_two
+  # (FIXGE2) or ga_two (FIXGAE2) branch of SETG3_verify_ge_2() and
+  # SETG3_alpha_fixup(), which the general trace does not model: it said
+  # gamma = 1.5 under FIXGE2, where PROC HAZARD leaves gamma at 1. Every
+  # expected value below is the "Used" column of the PROC HAZARD binary's
+  # "Initial Parameter Values" listing on avc data (hazard pin dad7978), one
+  # cell per branch and one each side of the branch boundary.
+  late <- c("MUE=0.2", "THALF=1", "MUL=0.1")
+  start_row <- function(extra, flag) {
+    got <- .hzr_parse_parms(c(late, extra, flag))
+    u <- got$untranslated
+    # The job stays loud: the flag's own row is always first.
+    expect_equal(u$construct[1], flag)
+    expect_match(u$reason[1], paste0("^", flag, " is not translated"))
+    u[grepl("optimizes from", u$reason), , drop = FALSE]
+  }
+  expect_start <- function(extra, flag, construct, values) {
+    r <- start_row(extra, flag)
+    expect_equal(r$construct, construct)
+    expect_match(r$reason, paste0("SETG3() optimizes from ", values, ","),
+                 fixed = TRUE)
+  }
+
+  # FIXGE2 -- gamma: kept when gamma*eta = 2, else 2/eta; alpha: kept when
+  # gamma*eta/alpha > 2, else gamma*eta/3. Binary: 1->1, 1->0.6666667.
+  expect_start(NULL, "FIXGE2", "gamma=1 alpha=1 eta=2",
+               "gamma = 1, alpha = 0.666667, eta = 2")
+  # Second start point, other gamma branch. Binary: 1->0.6666667 on both.
+  expect_start("ETA=3", "FIXGE2", "gamma=1 alpha=1 eta=3",
+               "gamma = 0.666667, alpha = 0.666667, eta = 3")
+  # Alpha just below the boundary is kept. Binary: 2->1, 0.9->0.9.
+  expect_start(c("GAMMA=2", "ALPHA=0.9"), "FIXGE2", "gamma=2 alpha=0.9 eta=2",
+               "gamma = 1, alpha = 0.9, eta = 2")
+  # gamma*eta below 2 moves gamma the same way. Binary: 0.5->1, 1->0.6666667.
+  expect_start("GAMMA=0.5", "FIXGE2", "gamma=0.5 alpha=1 eta=2",
+               "gamma = 1, alpha = 0.666667, eta = 2")
+  # Nothing moves, so no start row. Binary: 1->1, 0.5->0.5, 2->2.
+  expect_equal(nrow(start_row("ALPHA=0.5", "FIXGE2")), 0L)
+
+  # FIXGAE2 -- gamma: 3/eta when gamma*eta <= 2, else kept; alpha:
+  # gamma*eta/2 unless already equal. Binary: 1->1.5, 1->1.5.
+  expect_start(NULL, "FIXGAE2", "gamma=1 alpha=1 eta=2",
+               "gamma = 1.5, alpha = 1.5, eta = 2")
+  # Second start point, other gamma branch. Binary: 2->2, 1->2.
+  expect_start("GAMMA=2", "FIXGAE2", "gamma=2 alpha=1 eta=2",
+               "gamma = 2, alpha = 2, eta = 2")
+  # gamma*eta = 2.25, just above the boundary. Binary: 1.5->1.5, 1->1.125.
+  expect_start(c("GAMMA=1.5", "ETA=1.5"), "FIXGAE2",
+               "gamma=1.5 alpha=1 eta=1.5",
+               "gamma = 1.5, alpha = 1.125, eta = 1.5")
+  # gamma*eta = 2 at eta = 4. Binary: 0.5->0.75, 1->1.5.
+  expect_start(c("GAMMA=0.5", "ETA=4"), "FIXGAE2", "gamma=0.5 alpha=1 eta=4",
+               "gamma = 0.75, alpha = 1.5, eta = 4")
+  # gamma moves, and the moved gamma*eta/alpha is exactly 2, so alpha is
+  # kept, and the row must say so. Binary: 1->1.5, 1.5->1.5 (no change mark).
+  expect_start("ALPHA=1.5", "FIXGAE2", "gamma=1 alpha=1.5 eta=2",
+               "gamma = 1.5, alpha = 1.5, eta = 2")
+  # (Assigned first: expect_match() evaluates its object twice.)
+  kept <- start_row("ALPHA=1.5", "FIXGAE2")
+  expect_match(kept$reason, "so alpha stays at 1.5 (setg3.c:818)",
+               fixed = TRUE)
+  # SAS also holds one shape fixed; the listing's "Estimated?" column reads
+  # No for ETA under FIXGE2 and for ALPHA under FIXGAE2.
+  ge2 <- start_row(NULL, "FIXGE2")
+  expect_match(ge2$reason, "holds ETA fixed", fixed = TRUE)
+  gae2 <- start_row(NULL, "FIXGAE2")
+  expect_match(gae2$reason, "holds ALPHA fixed", fixed = TRUE)
+  # Already gamma*eta/alpha = 2: nothing moves. Binary: 2->2, 2->2.
+  expect_equal(nrow(start_row(c("GAMMA=2", "ALPHA=2"), "FIXGAE2")), 0L)
+
+  # Outside the measured domain (a fixed shape) no start is claimed.
+  expect_equal(nrow(start_row(c("GAMMA=2", "FIXGAMMA"), "FIXGE2")), 0L)
+  # Nor for a non-positive shape: SAS takes SETG3_gamma_le_0() there, not
+  # SETG3_all_gt_0(), so this rule does not apply.
+  expect_equal(nrow(start_row("GAMMA=0", "FIXGE2")), 0L)
+  # A fixed ALPHA especially: PROC HAZARD REFUSES this job ("Fixed parameter
+  # violates model constraints", SETG31040 at setg3.c:845-847, measured on
+  # the binary), so a start row here would describe a fit SAS never runs.
+  expect_equal(nrow(start_row(c("ALPHA=1.2", "FIXALPHA"), "FIXGE2")), 0L)
+
+  # Known positive: the same shape with no flag still records the 1.5 row,
+  # so the absence above is the guard, not a trace that stopped firing.
+  plain <- .hzr_parse_parms(late)
+  expect_equal(plain$untranslated$construct,
+               c("gamma=1 alpha=1 eta=2", "TAU (unspecified)"))
+  expect_match(plain$untranslated$reason[1],
+               "^SETG3\\(\\) optimizes from gamma = 1\\.5, not")
+
+  # WEIBULL controls are unchanged: the constraint maps onto hzr_phase() and
+  # only the TAU row is recorded.
+  ge2w <- .hzr_parse_parms(c(late, "FIXGE2", "WEIBULL"))
+  expect_equal(ge2w$untranslated$construct, "TAU (unspecified)")
+  expect_equal(ge2w$phases[[3]], quote(hzr_phase(
+    "g3", tau = 1, gamma = 1, alpha = 1, eta = 2, constraint = "eta_gamma")))
+  gae2w <- .hzr_parse_parms(c(late, "FIXGAE2", "WEIBULL"))
+  expect_equal(gae2w$untranslated$construct, "TAU (unspecified)")
+  expect_equal(gae2w$phases[[3]], quote(hzr_phase(
+    "g3", tau = 1, gamma = 1, alpha = 1, eta = 2,
+    constraint = "alpha_gamma_eta")))
+})
+
 test_that("the product SETG3_verify_ge_2 reads survives the ignore_tau swap", {
   # setg3.c:403-421 moves the exponent between GAMMA and ETA but preserves
   # their PRODUCT, which is all `gte` reads -- so the boundary test is the same

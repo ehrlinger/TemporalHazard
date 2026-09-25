@@ -1133,6 +1133,28 @@
 
 ## Bug fixes
 
+* **`hzr_translate_sas()` now reports the starting shape `PROC HAZARD`
+  actually uses for a `FIXGE2` or `FIXGAE2` job without `WEIBULL` (#472).**
+  The old row applied the rule for jobs with neither flag, and so said
+  `gamma = 1.5` under `FIXGE2`, which was false. At the default `gamma = 1`,
+  `eta = 2`, `PROC HAZARD` leaves `gamma` at 1 (`setg3.c:883`) and moves
+  `alpha` to 2/3 (`:849`). Under `FIXGAE2` the old row named `gamma = 1.5`
+  but not `alpha`, which moves to 1.5 as well (`:919`, `:827`).
+
+  That row is replaced by one that states both values and the rule that
+  produced them, in terms of the job's own `GAMMA`, `ALPHA` and `ETA`.
+  - Under `FIXGE2`, `gamma` becomes `2/ETA` unless `GAMMA*ETA` is already 2.
+    Then, with that `gamma`, `alpha` becomes `gamma*ETA/3` unless
+    `gamma*ETA/ALPHA` is above 2.
+  - Under `FIXGAE2`, `gamma` becomes `3/ETA` when `GAMMA*ETA` is 2 or less.
+    Then, with that `gamma`, `alpha` becomes `gamma*ETA/2`.
+
+  Each branch was checked against the `PROC HAZARD` binary. The new row
+  appears only where all three shapes are positive and none is fixed,
+  because that is where the rule was measured. Elsewhere no start is
+  claimed. The "`FIXGE2` is not translated" row is unchanged and still
+  marks the job as untranslated.
+
 * **A column of `data` named `""` no longer stops the fit (#470).** Any
   formula-interface fit on such data stopped with "attempt to use zero-length
   variable name", even when the formula never used the column. That included

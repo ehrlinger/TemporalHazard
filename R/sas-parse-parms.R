@@ -909,6 +909,91 @@
   NULL
 }
 
+#' SETG3's start for one constraint flag without WEIBULL (#472).
+#'
+#' `.hzr_setg3_notes()` takes g_two and ga_two as FALSE, so it cannot speak
+#' for a job carrying `FIXGE2` or `FIXGAE2` without `WEIBULL`: it said
+#' `gamma = 1.5` under `FIXGE2`, where PROC HAZARD leaves gamma at 1. This
+#' covers only `SETG3_all_gt_0()` (`setg3.c:496-506`, all three shapes
+#' positive) with none of GAMMA, ALPHA or ETA fixed, which is the domain
+#' measured against the PROC HAZARD binary: each branch below, and each side
+#' of its boundary, was read off the listing's "Used" column on avc data.
+#' Anywhere else it returns `NULL` and claims nothing; the flag's own
+#' "is not translated" row still marks the job.
+#'
+#' Comparisons are exact, as the C's are (`gte!=TWO`, `gte<=TWO`,
+#' `gteva!=TWO`).
+#' @return A reason string when SETG3 moves GAMMA or ALPHA, else `NULL`.
+#' @noRd
+.hzr_setg3_constraint_start <- function(gamma, alpha, eta, fixed, flag) {
+  if (length(flag) != 1L) return(NULL)
+  if (!(isTRUE(gamma > 0) && isTRUE(alpha > 0) && isTRUE(eta > 0))) {
+    return(NULL)
+  }
+  if (any(c("gamma", "alpha", "eta") %in% fixed)) return(NULL)
+  gte <- gamma * eta
+  if (flag == "FIXGE2") {
+    # SETG3_verify_ge_2(), g_two branch (setg3.c:877-906).
+    if (gte == 2) {
+      g <- gamma
+      why_g <- sprintf("GAMMA*ETA = 2 already, so gamma stays at %g (setg3.c:883)",
+                       gamma)
+    } else {
+      g <- 2 / eta
+      why_g <- sprintf(paste0("GAMMA*ETA = %g, not 2, so gamma moves to ",
+                              "2/ETA = %g (setg3.c:883, :895)"), gte, g)
+    }
+    # SETG3_alpha_fixup(), !ga_two branch (setg3.c:836-851).
+    gteva <- g * eta / alpha
+    if (gteva > 2) {
+      a <- alpha
+      why_a <- sprintf(paste0("gamma*eta/alpha = %g is above 2, so alpha ",
+                              "stays at %g (setg3.c:836)"), gteva, alpha)
+    } else {
+      a <- g * eta / 3
+      why_a <- sprintf(paste0("gamma*eta/alpha = %g is not above 2, so alpha ",
+                              "moves to gamma*eta/3 = %g (setg3.c:849)"),
+                       gteva, a)
+    }
+  } else if (flag == "FIXGAE2") {
+    # SETG3_verify_ge_2(), !g_two branch (setg3.c:907-923).
+    if (gte <= 2) {
+      g <- 3 / eta
+      why_g <- sprintf(paste0("GAMMA*ETA = %g is not above 2, so gamma ",
+                              "moves to 3/ETA = %g (setg3.c:907, :919)"), gte, g)
+    } else {
+      g <- gamma
+      why_g <- sprintf(paste0("GAMMA*ETA = %g is above 2, so gamma stays at ",
+                              "%g (setg3.c:907)"), gte, gamma)
+    }
+    # SETG3_alpha_fixup(), ga_two branch (setg3.c:817-834).
+    gteva <- g * eta / alpha
+    if (gteva != 2) {
+      a <- g * eta / 2
+      why_a <- sprintf(paste0("gamma*eta/alpha = %g, not 2, so alpha moves ",
+                              "to gamma*eta/2 = %g (setg3.c:818, :827)"),
+                       gteva, a)
+    } else {
+      a <- alpha
+      why_a <- sprintf(paste0("gamma*eta/alpha = 2 already, so alpha stays ",
+                              "at %g (setg3.c:818)"), alpha)
+    }
+  } else {
+    return(NULL)
+  }
+  if (g == gamma && a == alpha) return(NULL)
+  paste0("with ", flag, " and no WEIBULL, SETG3() optimizes from ",
+         sprintf("gamma = %g, alpha = %g, eta = %g", g, a, eta),
+         ", not the value(s) emitted here: ", why_g,
+         "; then, from that gamma, ", why_a,
+         ". PROC HAZARD also holds ",
+         if (flag == "FIXGE2") "ETA fixed (setg3.c:905-906)" else
+           "ALPHA fixed (setg3.c:831-832)",
+         ". The emitted call keeps the values PARMS wrote and applies no ",
+         "constraint, so a SAS parity run starts elsewhere and fits a ",
+         "constrained model")
+}
+
 #' Walk `SETG3()` and report what it would do to one late phase.
 #'
 #' @param tau_raw,gamma,alpha,eta The operand values `PARMS` supplied, with
@@ -2030,6 +2115,21 @@
                    "than fitting")
           }
         ))
+      }
+    } else if (length(constraint_flags) && !saw_weibull) {
+      # The trace above takes g_two and ga_two as FALSE, so its start is
+      # wrong for FIXGE2 or FIXGAE2 without WEIBULL: it said gamma = 1.5
+      # under FIXGE2, where PROC HAZARD leaves gamma at 1 (setg3.c:883).
+      # .hzr_setg3_constraint_start() states the start PROC HAZARD does use,
+      # only where that was measured on the binary, and NULL elsewhere. The
+      # flag's "is not translated" row is recorded either way (#472).
+      start <- .hzr_setg3_constraint_start(
+        late_full[["gamma"]], late_full[["alpha"]], late_full[["eta"]],
+        fixed_late_user, constraint_flags
+      )
+      if (!is.null(start)) {
+        flag_bad(sprintf("gamma=%g alpha=%g eta=%g", late_full[["gamma"]],
+                         late_full[["alpha"]], late_full[["eta"]]), start)
       }
     } else {
       # At alpha = 1 only the product gamma*eta is identified, and the
