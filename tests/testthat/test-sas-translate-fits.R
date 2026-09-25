@@ -2197,6 +2197,21 @@ test_that("a job a later `(` clears names each cleared construct (#461)", {
   expect_no_match(msg, "does not run", fixed = TRUE)
 })
 
+test_that("a `(` inside a macro call does not clear a refusal (#461)", {
+  # SAS expands %LOGT() before PROC HAZARD's lexer reads the job, so its `(`
+  # may never reach hazard_l.l:56. Not an oracle row: the binary sees only
+  # the expansion. The known positive is the same job with LOG().
+  macro <- .u1_msg(.p431_job(paste(
+    "PROC HAZARD DATA=D; EVENT DEAD; TIME TT;",
+    "PARMS MUE=0.2 THALF=1 NU=ABC; EARLY AGE, %LOGT();")))
+  expect_match(macro, "does not run this job", fixed = TRUE)
+  expect_no_match(macro, "clears its syntax-error flag", fixed = TRUE)
+  plain <- .u1_msg(.p431_job(paste(
+    "PROC HAZARD DATA=D; EVENT DEAD; TIME TT;",
+    "PARMS MUE=0.2 THALF=1 NU=ABC; EARLY AGE, LOG();")))
+  expect_match(plain, "clears its syntax-error flag", fixed = TRUE)
+})
+
 test_that("every #461 oracle job's emitted document runs or stops (#461)", {
   skip_on_cran()
   # The data the oracle was measured on.

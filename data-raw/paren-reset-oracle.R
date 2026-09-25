@@ -77,6 +77,8 @@ grid <- list(
   # ORDER= with /E is SEMANTIC (przconc.c:45-53), not a syntax error.
   c("semantic", "alone", job(rest = paste(B, P, "; EARLY SEX/E ORDER=1, AGE;"))),
   c("semantic", "after", job(rest = paste(B, P, "; EARLY SEX/E ORDER=1; EARLY LOG();"))),
+  # A syntax error the `(` clears does not clear a SEMANTIC one beside it.
+  c("semantic", "after", job(rest = paste(B, P, "NU=ABC; EARLY SEX/E ORDER=1; EARLY LOG();"))),
   # PROC-line refusals.
   c("proc", "alone", job(" MAXITER=5.", paste(B, P, "; EARLY AGE;"))),
   c("proc", "after", job(" MAXITER=5.", paste(B, P, "; EARLY LOG();"))),
@@ -88,6 +90,9 @@ grid <- list(
   c("proc", "after", job(" = MAXITER=50", paste(B, P, "; EARLY LOG();"))),
   c("proc", "alone", job(" NOCOV=1", paste(B, P, "; EARLY AGE;"))),
   c("proc", "after", job(" NOCOV=1", paste(B, P, "; EARLY LOG();"))),
+  # A `(` on the PROC line itself: the parser meets the error at the `;`,
+  # after the `(`, so the flag is set again.
+  c("proc", "same", job(" MAXITER=5. ()", paste(B, P, "; EARLY AGE;"))),
   # A one-name statement with other than one operand (#431).
   c("statement", "alone", job(rest = paste("EVENT DEAD SEX; TIME TT;", P, "; EARLY AGE;"))),
   c("statement", "after", job(rest = paste("EVENT DEAD SEX; TIME TT;", P, "; EARLY LOG();"))),

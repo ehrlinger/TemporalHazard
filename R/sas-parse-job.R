@@ -417,8 +417,10 @@
 #'   `EARLY AGE=ABC, LOG();` before fitting.
 #' * `"none"`: no `(` clears the refusals, so the refusal stands.
 #'
-#' The PROC line (statement 1) is never taken as the clearing statement, and
-#' a statement this translation cannot judge (an unknown keyword, a macro
+#' The PROC line (statement 1) is never taken as the clearing statement: the
+#' parser meets a PROC-line error at a token after it, often the `;`, so a
+#' `(` in the same line clears too early (`MAXITER=5. ()` is refused). A
+#' statement this translation cannot judge (an unknown keyword, a macro
 #' reference) at or after the last `(` makes the verdict `"none"`: both
 #' leave a refusal in place rather than clear one PROC HAZARD keeps.
 #' @param st The job's statements, split at `;`, the PROC line first.
