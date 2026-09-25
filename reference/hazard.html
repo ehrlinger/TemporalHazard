@@ -321,15 +321,22 @@ them as a "Not done in this run" block, which reads "none" when nothing
 was lost. <code>fit$fit$weak</code> is <code>NA</code> exactly when
 <code>"weak_direction_check"</code> is listed.</p>
 <p><code>fit$fit$boundary</code> is its sibling and takes the same three states,
-for phases fitted outside the support their parameterisation can carry:
+for phases whose fit sits where their parameterisation breaks down:
 <code>NULL</code> when the check ran and found nothing, a list of records when
 it found something, and <code>NA</code> when it did not run — and it is
 <code>NA</code> exactly when <code>"boundary_check"</code> is listed in
 <code>degraded</code>, with the reason in <code>degraded_causes</code>. Each record
 carries <code>mechanism</code>, <code>phase</code>, <code>parameter</code> and a
-printable <code>detail</code>. A fit that trips it also raises a warning of
-class <code>"hzr_unbounded_phase"</code>, which inherits <code>"hzr_boundary"</code>
-so one handler catches the whole family.</p>
+printable <code>detail</code>. The mechanisms are <code>"unbounded_phase"</code>, a
+<code>"hazard"</code> phase whose <code>t_half</code> is below the first observed
+time, and <code>"phase_discontinuity"</code>, a <code>"cdf"</code> or
+<code>"hazard"</code> phase whose shape has collapsed to a step the observed
+times cannot resolve (it can lie inside the data). Only rows the
+likelihood reads count as observed times. A fit with any record raises
+one warning whose classes are <code>"hzr_"</code> plus each mechanism present
+(<code>"hzr_unbounded_phase"</code>, <code>"hzr_phase_discontinuity"</code>), all
+inheriting <code>"hzr_boundary"</code>, so one handler catches the whole
+family.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>

@@ -270,13 +270,19 @@ reason for each. [`print()`](https://rdrr.io/r/base/print.html) and
 `fit$fit$weak` is `NA` exactly when `"weak_direction_check"` is listed.
 
 `fit$fit$boundary` is its sibling and takes the same three states, for
-phases fitted outside the support their parameterisation can carry:
-`NULL` when the check ran and found nothing, a list of records when it
-found something, and `NA` when it did not run — and it is `NA` exactly
-when `"boundary_check"` is listed in `degraded`, with the reason in
+phases whose fit sits where their parameterisation breaks down: `NULL`
+when the check ran and found nothing, a list of records when it found
+something, and `NA` when it did not run — and it is `NA` exactly when
+`"boundary_check"` is listed in `degraded`, with the reason in
 `degraded_causes`. Each record carries `mechanism`, `phase`, `parameter`
-and a printable `detail`. A fit that trips it also raises a warning of
-class `"hzr_unbounded_phase"`, which inherits `"hzr_boundary"` so one
+and a printable `detail`. The mechanisms are `"unbounded_phase"`, a
+`"hazard"` phase whose `t_half` is below the first observed time, and
+`"phase_discontinuity"`, a `"cdf"` or `"hazard"` phase whose shape has
+collapsed to a step the observed times cannot resolve (it can lie inside
+the data). Only rows the likelihood reads count as observed times. A fit
+with any record raises one warning whose classes are `"hzr_"` plus each
+mechanism present (`"hzr_unbounded_phase"`,
+`"hzr_phase_discontinuity"`), all inheriting `"hzr_boundary"`, so one
 handler catches the whole family.
 
 ## Details
