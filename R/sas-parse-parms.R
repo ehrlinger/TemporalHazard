@@ -988,8 +988,12 @@
          sprintf("gamma = %g, alpha = %g, eta = %g", g, a, eta),
          ", not the value(s) emitted here: ", why_g,
          "; then, from that gamma, ", why_a,
-         ". The emitted call keeps the values PARMS wrote, so a SAS parity ",
-         "run starts elsewhere")
+         ". PROC HAZARD also holds ",
+         if (flag == "FIXGE2") "ETA fixed (setg3.c:905-906)" else
+           "ALPHA fixed (setg3.c:831-832)",
+         ". The emitted call keeps the values PARMS wrote and applies no ",
+         "constraint, so a SAS parity run starts elsewhere and fits a ",
+         "constrained model")
 }
 
 #' Walk `SETG3()` and report what it would do to one late phase.

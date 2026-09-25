@@ -872,6 +872,9 @@ test_that("FIXGE2/FIXGAE2 without WEIBULL report SETG3's measured start (#472)",
   # Alpha just below the boundary is kept. Binary: 2->1, 0.9->0.9.
   expect_start(c("GAMMA=2", "ALPHA=0.9"), "FIXGE2", "gamma=2 alpha=0.9 eta=2",
                "gamma = 1, alpha = 0.9, eta = 2")
+  # gamma*eta below 2 moves gamma the same way. Binary: 0.5->1, 1->0.6666667.
+  expect_start("GAMMA=0.5", "FIXGE2", "gamma=0.5 alpha=1 eta=2",
+               "gamma = 1, alpha = 0.666667, eta = 2")
   # Nothing moves, so no start row. Binary: 1->1, 0.5->0.5, 2->2.
   expect_equal(nrow(start_row("ALPHA=0.5", "FIXGE2")), 0L)
 
@@ -893,13 +896,24 @@ test_that("FIXGE2/FIXGAE2 without WEIBULL report SETG3's measured start (#472)",
   # kept, and the row must say so. Binary: 1->1.5, 1.5->1.5 (no change mark).
   expect_start("ALPHA=1.5", "FIXGAE2", "gamma=1 alpha=1.5 eta=2",
                "gamma = 1.5, alpha = 1.5, eta = 2")
-  expect_match(start_row("ALPHA=1.5", "FIXGAE2")$reason,
-               "so alpha stays at 1.5 (setg3.c:818)", fixed = TRUE)
+  # (Assigned first: expect_match() evaluates its object twice.)
+  kept <- start_row("ALPHA=1.5", "FIXGAE2")
+  expect_match(kept$reason, "so alpha stays at 1.5 (setg3.c:818)",
+               fixed = TRUE)
+  # SAS also holds one shape fixed; the listing's "Estimated?" column reads
+  # No for ETA under FIXGE2 and for ALPHA under FIXGAE2.
+  ge2 <- start_row(NULL, "FIXGE2")
+  expect_match(ge2$reason, "holds ETA fixed", fixed = TRUE)
+  gae2 <- start_row(NULL, "FIXGAE2")
+  expect_match(gae2$reason, "holds ALPHA fixed", fixed = TRUE)
   # Already gamma*eta/alpha = 2: nothing moves. Binary: 2->2, 2->2.
   expect_equal(nrow(start_row(c("GAMMA=2", "ALPHA=2"), "FIXGAE2")), 0L)
 
   # Outside the measured domain (a fixed shape) no start is claimed.
   expect_equal(nrow(start_row(c("GAMMA=2", "FIXGAMMA"), "FIXGE2")), 0L)
+  # Nor for a non-positive shape: SAS takes SETG3_gamma_le_0() there, not
+  # SETG3_all_gt_0(), so this rule does not apply.
+  expect_equal(nrow(start_row("GAMMA=0", "FIXGE2")), 0L)
   # A fixed ALPHA especially: PROC HAZARD REFUSES this job ("Fixed parameter
   # violates model constraints", SETG31040 at setg3.c:845-847, measured on
   # the binary), so a start row here would describe a fit SAS never runs.
