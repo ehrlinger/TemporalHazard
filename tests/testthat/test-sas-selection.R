@@ -1071,6 +1071,69 @@ test_that("SELECTION statements accumulate, a repeated option last-wins (#505)",
   expect_identical(sum(job$untranslated$construct == "SLE=1E-3"), 1L)
 })
 
+test_that("a SELECTION option PROC HAZARD rejects warns with its own reason (#504 review)", {
+  # Measured on the binary (avc plus noise Z, `SELECTION <op>; EARLY AGE, Z;`,
+  # 2026-09-25): BOGUS=1, BOGUS, BOGUS=ABC, NOPRINTS=1, NOPRINTS=ABC,
+  # `SLE 0.2` and MOVE=ABC each exit SYNTAX with no markers; NOPRINTS and
+  # SLE=0.2 fit. With `EARLY AGE, Z();` instead, every one of them fits
+  # (4 of 4 markers). The lexer-number check read every OPTION=value, so an
+  # unknown option was refused as "not a number", and NOPRINTS=1 and a bare
+  # BOGUS got a row and no warning.
+  cases <- list(
+    list(sel = "BOGUS=1", what = "BOGUS=1", why = "unknown SELECTION option"),
+    list(sel = "BOGUS", what = "BOGUS", why = "unknown SELECTION option"),
+    list(sel = "BOGUS=ABC", what = "BOGUS=ABC", why = "unknown SELECTION option"),
+    list(sel = "NOPRINTS=1", what = "NOPRINTS=1",
+         why = "a value on an option that takes none"),
+    list(sel = "NOPRINTS=ABC", what = "NOPRINTS=ABC",
+         why = "a value on an option that takes none"),
+    list(sel = "SLE 0.2", what = "SLE 0.2", why = "no value"),
+    list(sel = "MOVE=ABC", what = "MOVE=ABC",
+         why = "not a number PROC HAZARD's lexer reads"))
+  for (cs in cases) {
+    job <- .sel_job(paste0("SELECTION ", cs$sel, "; EARLY A, B;"))
+    msg <- .n3_refusal(job)
+    expect_match(msg, "PROC HAZARD does not run this job", fixed = TRUE,
+                 info = cs$sel)
+    expect_match(msg, paste0(cs$what, ": ", cs$why), fixed = TRUE, info = cs$sel)
+    if (!identical(cs$why, "not a number PROC HAZARD's lexer reads")) {
+      expect_no_match(msg, "not a number", fixed = TRUE, info = cs$sel)
+    }
+    u <- job$untranslated
+    expect_identical(sum(u$construct == cs$what), 1L, info = cs$sel)
+    expect_match(u$reason[u$construct == cs$what], cs$why, fixed = TRUE,
+                 info = cs$sel)
+    expect_identical(job$calls$fit[[3L]][[1L]], as.name("hzr_stepwise"),
+                     info = cs$sel)
+  }
+  # One row each, not a second "unknown" or "non-numeric" row beside it.
+  u <- .sel_job("SELECTION BOGUS=1; EARLY A, B;")$untranslated
+  expect_false("BOGUS" %in% u$construct)
+  u <- .sel_job("SELECTION SLE=ABC; EARLY A, B;")$untranslated
+  expect_false("SLE" %in% u$construct)
+  u <- .sel_job("SELECTION MOVE=ABC; EARLY A, B;")$untranslated
+  expect_identical(setdiff(grep("^MOVE", u$construct, value = TRUE),
+                           "MOVE (PROC HAZARD default 1)"), "MOVE=ABC")
+  # `SLE 0.2` screens at the default, as the value was never assigned.
+  expect_equal(.sel_job("SELECTION SLE 0.2; EARLY A, B;")$calls$fit[[3L]][["slentry"]],
+               0.3)
+  # A value on a direction keyword still keeps the direction it names.
+  back <- .sel_job("SELECTION BACKWARD=1; EARLY A, B;")
+  expect_match(.n3_refusal(back), "BACKWARD=1: a value on an option", fixed = TRUE)
+  expect_identical(back$calls$fit[[3L]][["direction"]], "backward")
+  # Known positives: the same keywords written as the grammar has them.
+  for (ok in c("NOPRINTS", "SLE=0.2", "BACKWARD", "MOVE=2")) {
+    expect_identical(.n3_refusal(.sel_job(paste0("SELECTION ", ok, "; EARLY A, B;"))),
+                     NA_character_, info = ok)
+  }
+  # A later `(` clears each, as the binary fits them all (#461 wording).
+  for (cs in c("BOGUS=1", "NOPRINTS=1", "SLE 0.2")) {
+    msg <- .n3_refusal(.sel_job(paste0("SELECTION ", cs, "; EARLY A, B();")))
+    expect_match(msg, paste0("does not stop this job for the syntax error in ", cs),
+                 fixed = TRUE, info = cs)
+  }
+})
+
 test_that("an accumulated SELECTION job screens at the first statement's SLE (#505)", {
   skip_on_cran()
   job <- .sel_job("SELECTION SLE=0.05; SELECTION SLS=0.1; EARLY STRONG, NOISE;")

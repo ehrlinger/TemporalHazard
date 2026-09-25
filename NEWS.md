@@ -1225,9 +1225,10 @@
     (`LOG() /I`, `(LOG)`). A statement after the `(` can set the flag
     again (`RESTRICT A*B`, `SELECTION SLE=ABC`, `WEIGHT 2W`, or one
     `PROC HAZARD` does not know), and this translation checks only `PARMS`
-    and the phase statements fully for such errors (a `SELECTION` value is
-    checked too, but not the rest of that statement), so any other
-    statement after the `(`, `SELECTION` included, keeps the refusal. These still warn that the job does not run,
+    and the phase statements fully for such errors (a `SELECTION`
+    statement's operands are checked too, but not shown to be complete), so
+    any other statement after the `(`, `SELECTION` included, keeps the
+    refusal. These still warn that the job does not run,
     which is too strong for a clean one: the binary fits the job when the
     statement is `SELECTION SLE=0.2`;
   - an error in the same statement as the `(` is left to `PROC HAZARD`'s
@@ -1263,9 +1264,12 @@
   default when it cannot read it. A later `(` clears the error as it does
   the others (#461); the binary then fits the job with no screen at all, so
   the warning says the fit stands in for a model `PROC HAZARD` does not fit.
-  Other syntax errors in a `SELECTION` statement are still recorded without
-  a warning: a keyword with no `= value` (`SLE 0.2`), a value on an option
-  that takes none (`NOPRINTS=1`), and an unknown option.
+  The other syntax errors the binary was measured to refuse in a
+  `SELECTION` statement warn the same way, each with its own reason: an
+  unknown option (`BOGUS`, `BOGUS=1`), a value on an option that takes none
+  (`NOPRINTS=1`), and a numeric option with no `= value` (`SLE 0.2`). Each
+  was recorded without a warning. A value on a direction keyword keeps its
+  direction (`BACKWARD=1` still screens backward).
 
 * **`hzr_translate_sas()` now reads every `SELECTION` statement in a job, not
   only the last (#505).** `PROC HAZARD` accumulates them, and a repeated
@@ -1273,7 +1277,10 @@
   `SELECTION SLE=0.05; SELECTION SLS=0.1;` screens at an entry level of
   0.05, and `BACKWARD` in either statement makes the screen backward. The
   translation kept only the second statement, so that job screened at the
-  default 0.3, with no row and no warning.
+  default 0.3, with no row and no warning. One exception remains: a
+  negative `MAXSTEPS` in an earlier statement still refuses the job here,
+  although the binary runs it when a later statement sets `MAXSTEPS`
+  again.
 
 * **The weak-direction warning now names a single g3 shape that the data do
   not determine (#415).** It named only pairs of parameters that trade off,

@@ -747,9 +747,9 @@
     # translation does not see (`RESTRICT A*B`, `SELECTION SLE=ABC`,
     # `WEIGHT 2W`), which sets the flag again after a `(` and was measured
     # to be refused, so it cannot follow a `(` that is to clear the job.
-    # SELECTION's values are now checked (N3), but its other syntax errors,
-    # an unknown option, a keyword missing its `= NUMBER` or a value on an
-    # option that takes none (`NOPRINTS=1`), are not, so it stays blind here.
+    # SELECTION's operands are now checked by .hzr_selection_syntax() (N3,
+    # #504 review), but that check is not shown to catch every error PROC
+    # HAZARD raises there, so SELECTION stays blind here.
     if (!token %in% c("PARAMETERS", "EARLY", "CONSTANT", "LATE")) {
       blind_stmt <- c(blind_stmt, i)
     }
@@ -847,23 +847,17 @@
       STEPWISE   = {
         new_ops <- strsplit(gsub("\\s*=\\s*", "=", ops_text), "\\s+")[[1L]]
         new_ops <- new_ops[nzchar(new_ops)]
-        sel_ops <- c(sel_ops, new_ops)
-        # In the STEP state a value is a NUMBER (hazard_l.l:33-38, :53) or a
-        # syntax error, and as.numeric() in .hzr_selection_spec() reads
-        # 1E-3, 2E-1, +0.1 and 5., none of which PROC HAZARD lexes (N3).
-        # The screen still runs at the value as read here; the warning and
-        # the row say PROC HAZARD does not run the job, as for MAXITER.
-        for (op in new_ops) {
-          eqp <- .idx(op, "=")
-          if (eqp == 0L) next
-          val <- substring(op, eqp + 1L)
-          if (.hzr_sas_is_macro(val) || .hzr_sas_lexer_number(val)) next
+        # The operands PROC HAZARD rejects with a syntax error (N3 and the
+        # #504 review): the job warns under U1, as for MAXITER, and the
+        # screen still runs on what .hzr_selection_syntax() keeps.
+        chk <- .hzr_selection_syntax(new_ops)
+        sel_ops <- c(sel_ops, chk$keep)
+        if (length(chk$bad)) {
           proc_rejected <- c(proc_rejected, paste0(
-            op, ": not a number PROC HAZARD's lexer reads ",
-            "(hazard_l.l:33-38), so PROC HAZARD rejects this job with a ",
-            "syntax error"))
-          proc_what <- c(proc_what, op)
-          sel_bad <- c(sel_bad, op)
+            names(chk$bad), ": ", chk$bad, ", so PROC HAZARD rejects this ",
+            "job with a syntax error"))
+          proc_what <- c(proc_what, names(chk$bad))
+          sel_bad <- c(sel_bad, chk$bad)
           err_stmt <- c(err_stmt, i)
         }
       },
@@ -934,9 +928,9 @@
     .hzr_sas_paren_reset(st, err_stmt, blind_stmt)
   # The SELECTION rows say the job is refused only when no `(` clears it;
   # otherwise the verdict is the #461 warning's below.
-  for (op in sel_bad) {
-    note(op, paste0(
-      "not a number PROC HAZARD's lexer reads (hazard_l.l:33-38)",
+  for (k in seq_along(sel_bad)) {
+    note(names(sel_bad)[[k]], paste0(
+      sel_bad[[k]],
       if (identical(reset, "none")) {
         ", so PROC HAZARD rejects this job with a syntax error"
       }))
@@ -1562,6 +1556,78 @@
        # than raised here: the point is that the RENDERED document warns, so
        # translate-sas.R emits them as a chunk immediately above the fit.
        refusal_warnings = refusal_warnings)
+}
+
+#' The SELECTION operands PROC HAZARD rejects with a syntax error.
+#'
+#' `stepwiseopt` (hazard_y.y:169-181) is `SLENTRY`, `SLSTAY`, `MOVE`,
+#' `MAXSTEPS` or `MAXVARS` followed by `'=' NUMBER`, or a bare keyword. In the
+#' STEP state a value is a NUMBER (hazard_l.l:33-38, :53) or unexpected text,
+#' and a word the state has no rule for is unexpected text too
+#' (hazard_l.l:176-179). Each of these sets the syntax-error flag, and the
+#' binary refuses the job (measured on avc: `SLE=1E-3`, `BOGUS=1`, `BOGUS`,
+#' `NOPRINTS=1`, `SLE 0.2` and `MOVE=ABC` exit SYNTAX; `NOPRINTS`, `SLE=0.2`
+#' fit). A macro operand is SAS's to expand and carries no verdict.
+#'
+#' What is kept is what the screen still runs on: a value `as.numeric()`
+#' reads (`1E-3`, as N3's warning says), and the keyword alone for a value
+#' written on a bare keyword, so `BACKWARD=1` still screens backward. An
+#' unknown option, a numeric option with no value and an unreadable value
+#' are dropped, so .hzr_selection_spec() does not add a second row for them.
+#' @param ops One statement's operands, spaces around `=` already closed.
+#' @return `list(keep = <chr>, bad = <named chr>)`: `bad` maps each rejected
+#'   construct to the reason, without the verdict.
+#' @noRd
+.hzr_selection_syntax <- function(ops) {
+  numeric_opts <- c("SLENTRY", "SLSTAY", "MOVE", "MAXSTEPS", "MAXVARS")
+  keep <- character(0)
+  bad <- character(0)
+  i <- 1L
+  while (i <= length(ops)) {
+    op <- ops[[i]]
+    i <- i + 1L
+    if (.hzr_sas_is_macro(op)) {
+      keep <- c(keep, op)
+      next
+    }
+    eqp <- .idx(op, "=")
+    key <- if (eqp > 0L) substring(op, 1L, eqp - 1L) else op
+    val <- if (eqp > 0L) substring(op, eqp + 1L) else ""
+    token <- .hzr_sas_token(key, "HAZARD", "STEP")
+    if (is.na(token)) token <- .hzr_sas_token(key, "HAZARD", "STMT")
+    if (is.na(token)) {
+      bad[[op]] <- paste0("unknown SELECTION option, which PROC HAZARD's ",
+                          "lexer reads as unexpected text (hazard_l.l:176-179)")
+      next
+    }
+    if (token %in% numeric_opts) {
+      if (!nzchar(val)) {
+        # `SLE 0.2`: the number written without `=` is the same error.
+        what <- op
+        if (eqp == 0L && i <= length(ops) &&
+              .hzr_sas_lexer_number(ops[[i]])) {
+          what <- paste(op, ops[[i]])
+          i <- i + 1L
+        }
+        bad[[what]] <- paste0("no value; PROC HAZARD has no form of this ",
+                              "option without `= NUMBER` (hazard_y.y:169-173)")
+        next
+      }
+      if (!.hzr_sas_lexer_number(val)) {
+        bad[[op]] <- "not a number PROC HAZARD's lexer reads (hazard_l.l:33-38)"
+        if (is.na(suppressWarnings(as.numeric(val)))) next
+      }
+      keep <- c(keep, op)
+      next
+    }
+    if (eqp > 0L) {
+      bad[[op]] <- "a value on an option that takes none (hazard_y.y:174-181)"
+      keep <- c(keep, key)
+      next
+    }
+    keep <- c(keep, op)
+  }
+  list(keep = keep, bad = bad)
 }
 
 #' Translate a SELECTION statement to hzr_stepwise() arguments.
