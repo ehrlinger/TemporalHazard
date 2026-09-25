@@ -611,7 +611,7 @@ fit_3ph <- hazard(
     early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
                           fixed = "shapes"),
     constant = hzr_phase("constant"),
-    late     = hzr_phase("g3", tau = 5, gamma = 3, alpha = 1, eta = 1,
+    late     = hzr_phase("g3", tau = 1, gamma = 3, alpha = 1, eta = 1,
                           fixed = "shapes")
   ),
   fit = TRUE, control = list(n_starts = 5, maxit = 1000)
@@ -624,10 +624,10 @@ round(exp(coef(fit_3ph)[log_mu_idx]), 6)
 ```
 
 The constant phase scale has collapsed to zero
-($\mu \approx 7 \times 10^{-13}$), and `hazard()` warns that the phase is
+($\mu$ of order $10^{-13}$), and `hazard()` warns that the phase is
 not identified. The late phase scale looks just as small
-($\mu \approx 6 \times 10^{-6}$), but $\mu$ multiplies the phase's own
-shape, and $G_3$ with `tau = 5` and `gamma = 3` grows as $(t/5)^3$. By the
+($\mu \approx 5 \times 10^{-8}$), but $\mu$ multiplies the phase's own
+shape, and $G_3$ with `tau = 1` and `gamma = 3` grows as $t^3$. By the
 end of follow-up (170.6 months) the late phase carries 0.23 of the 0.48
 total cumulative hazard. With both phases available, the optimizer drops
 the constant phase and hands the slow post-recovery attrition, which the

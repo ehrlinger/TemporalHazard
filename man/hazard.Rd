@@ -202,7 +202,12 @@ values: a list, when the likelihood is near-flat along a parameter
 combination, giving the \code{params} spanning that direction, their
 squared loadings (\code{weights}), the strongest pairwise
 \code{correlation} among them, the Hessian \code{rcond} and
-\code{n_directions}, the number of near-flat directions found;
+\code{n_directions}, the number of near-flat directions found (when a
+single parameter carries the direction on its own, the list has one
+\code{params} entry, \code{single = TRUE}, its \code{estimate}, and
+\code{correlation = NA}, and \code{se_metric}, its standard error on
+the log scale; only a g3 shape, \code{gamma}, \code{alpha} or
+\code{eta}, is named this way);
 \code{NULL} when the fit was examined and is well identified; and
 \code{NA} when the check could not run because no usable Hessian was
 available, which includes an unfitted object and an install without
@@ -231,14 +236,16 @@ it found something, and \code{NA} when it did not run --- and it is
 carries \code{mechanism}, \code{phase}, \code{parameter} and a
 printable \code{detail}. The mechanisms are \code{"unbounded_phase"}, a
 \code{"hazard"} phase whose \code{t_half} is below the first observed
-time, and \code{"phase_discontinuity"}, a \code{"cdf"} or
-\code{"hazard"} phase whose shape has collapsed to a step the observed
-times cannot resolve (it can lie inside the data). Only rows the
-likelihood reads count as observed times. A fit with any record raises
-one warning whose classes are \code{"hzr_"} plus each mechanism present
-(\code{"hzr_unbounded_phase"}, \code{"hzr_phase_discontinuity"}), all
-inheriting \code{"hzr_boundary"}, so one handler catches the whole
-family.
+time; \code{"phase_discontinuity"}, a \code{"cdf"} or \code{"hazard"}
+phase whose shape has collapsed to a step the observed times cannot
+resolve (it can lie inside the data); and two made at setup, before the
+fit: \code{"g3_alpha_one"} (a g3 phase with \code{alpha} fixed at 1,
+re-expressed as PROC HAZARD does, see \code{\link[=hzr_phase]{hzr_phase()}}) and
+\code{"g3_fixge2_alpha_start"} (a free \code{alpha} start moved to 2/3
+under \code{constraint = "eta_gamma"}). Only rows the likelihood reads
+count as observed times. A fit with any record raises one warning whose
+classes are \code{"hzr_"} plus each mechanism present, all inheriting
+\code{"hzr_boundary"}, so one handler catches the whole family.
 }
 \description{
 Creates a \code{hazard} object and optionally fits it via maximum likelihood.
