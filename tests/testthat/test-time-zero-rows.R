@@ -329,3 +329,41 @@ test_that("hzr_stepwise() does not trim a frame whose dropped rows differ", {
                                              data = other, trace = FALSE)),
                "rows but the fitted model used")
 })
+
+test_that("a column named \"\" and a row at time 0 together (#470, #374)", {
+  # Both drops happen in hazard()'s data preparation; each must happen, and
+  # neither may undo the other.
+  withr::local_seed(10)
+  n <- 60
+  d <- data.frame(t = stats::rexp(n) + 0.1, s = stats::rbinom(n, 1, 0.8),
+                  age = stats::rnorm(n), mal = stats::rbinom(n, 1, 0.4),
+                  x = stats::rnorm(n))
+  d0 <- rbind(data.frame(t = 0, s = 1, age = 0.5, mal = 1, x = 0.1), d)
+  names(d0)[names(d0) == "x"] <- ""
+  expect_true(any(names(d0) == ""))
+  clean <- d[, c("t", "s", "age", "mal")]
+  fit <- function(dd) {
+    suppressWarnings(hazard(survival::Surv(t, s) ~ age, data = dd,
+                            dist = "weibull", theta = c(0.5, 1, 0),
+                            fit = TRUE))
+  }
+  got <- fit(d0)
+  ref <- fit(clean)
+  expect_identical(got$data$dropped_time_zero, 1L)
+  expect_equal(got$fit$objective, ref$fit$objective, tolerance = 1e-8)
+  expect_equal(unname(coef(got)), unname(coef(ref)), tolerance = 1e-6)
+
+  sw <- function(base, dd) {
+    suppressWarnings(hzr_stepwise(base, scope = ~ age + mal, data = dd,
+                                  direction = "forward", slentry = 0.9,
+                                  trace = FALSE))
+  }
+  sw_got <- sw(got, d0)
+  sw_ref <- sw(ref, clean)
+  # The control must take a step, or equal screens prove nothing.
+  expect_gt(length(sw_ref$fit$theta), length(ref$fit$theta))
+  expect_equal(sw_got$fit$objective, sw_ref$fit$objective,
+               tolerance = 1e-8)
+  expect_equal(unname(sw_got$fit$theta), unname(sw_ref$fit$theta),
+               tolerance = 1e-6)
+})
