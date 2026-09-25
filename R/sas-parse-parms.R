@@ -949,12 +949,12 @@
     gteva <- g * eta / alpha
     if (gteva > 2) {
       a <- alpha
-      why_a <- sprintf(paste0("GAMMA*ETA/ALPHA = %g is above 2, so alpha ",
+      why_a <- sprintf(paste0("gamma*eta/alpha = %g is above 2, so alpha ",
                               "stays at %g (setg3.c:836)"), gteva, alpha)
     } else {
       a <- g * eta / 3
-      why_a <- sprintf(paste0("GAMMA*ETA/ALPHA = %g is not above 2, so alpha ",
-                              "moves to GAMMA*ETA/3 = %g (setg3.c:849)"),
+      why_a <- sprintf(paste0("gamma*eta/alpha = %g is not above 2, so alpha ",
+                              "moves to gamma*eta/3 = %g (setg3.c:849)"),
                        gteva, a)
     }
   } else if (flag == "FIXGAE2") {
@@ -972,12 +972,12 @@
     gteva <- g * eta / alpha
     if (gteva != 2) {
       a <- g * eta / 2
-      why_a <- sprintf(paste0("GAMMA*ETA/ALPHA = %g, not 2, so alpha moves ",
-                              "to GAMMA*ETA/2 = %g (setg3.c:818, :827)"),
+      why_a <- sprintf(paste0("gamma*eta/alpha = %g, not 2, so alpha moves ",
+                              "to gamma*eta/2 = %g (setg3.c:818, :827)"),
                        gteva, a)
     } else {
       a <- alpha
-      why_a <- sprintf(paste0("GAMMA*ETA/ALPHA = 2 already, so alpha stays ",
+      why_a <- sprintf(paste0("gamma*eta/alpha = 2 already, so alpha stays ",
                               "at %g (setg3.c:818)"), alpha)
     }
   } else {
@@ -986,7 +986,8 @@
   if (g == gamma && a == alpha) return(NULL)
   paste0("with ", flag, " and no WEIBULL, SETG3() optimizes from ",
          sprintf("gamma = %g, alpha = %g, eta = %g", g, a, eta),
-         ", not the value(s) emitted here: ", why_g, "; then ", why_a,
+         ", not the value(s) emitted here: ", why_g,
+         "; then, from that gamma, ", why_a,
          ". The emitted call keeps the values PARMS wrote, so a SAS parity ",
          "run starts elsewhere")
 }

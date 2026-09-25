@@ -900,6 +900,10 @@ test_that("FIXGE2/FIXGAE2 without WEIBULL report SETG3's measured start (#472)",
 
   # Outside the measured domain (a fixed shape) no start is claimed.
   expect_equal(nrow(start_row(c("GAMMA=2", "FIXGAMMA"), "FIXGE2")), 0L)
+  # A fixed ALPHA especially: PROC HAZARD REFUSES this job ("Fixed parameter
+  # violates model constraints", SETG31040 at setg3.c:845-847, measured on
+  # the binary), so a start row here would describe a fit SAS never runs.
+  expect_equal(nrow(start_row(c("ALPHA=1.2", "FIXALPHA"), "FIXGE2")), 0L)
 
   # Known positive: the same shape with no flag still records the 1.5 row,
   # so the absence above is the guard, not a trace that stopped firing.

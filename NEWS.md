@@ -1144,9 +1144,10 @@
   That row is replaced by one that states both values and the rule that
   produced them, in terms of the job's own `GAMMA`, `ALPHA` and `ETA`.
   - Under `FIXGE2`, `gamma` becomes `2/ETA` unless `GAMMA*ETA` is already 2.
-    `alpha` then becomes `GAMMA*ETA/3` unless `GAMMA*ETA/ALPHA` is above 2.
+    Then, with that `gamma`, `alpha` becomes `gamma*ETA/3` unless
+    `gamma*ETA/ALPHA` is above 2.
   - Under `FIXGAE2`, `gamma` becomes `3/ETA` when `GAMMA*ETA` is 2 or less.
-    `alpha` then becomes `GAMMA*ETA/2`.
+    Then, with that `gamma`, `alpha` becomes `gamma*ETA/2`.
 
   Each branch was checked against the `PROC HAZARD` binary. The new row
   appears only where all three shapes are positive and none is fixed,
