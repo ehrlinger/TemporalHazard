@@ -94,7 +94,9 @@ design matrices, and delegates to <code>.hzr_optim_generic()</code>.</p>
 
 
 <dt id="arg-time-lower">time_lower<a class="anchor" aria-label="anchor" href="#arg-time-lower"></a></dt>
-<dd><p>Optional lower bounds for interval censoring.</p></dd>
+<dd><p>Optional lower bounds: the counting-process ENTRY time
+on a status 0/1 row when 0 &lt; time_lower &lt; time (left truncation), and the
+interval's lower bound on a status-2 row.</p></dd>
 
 
 <dt id="arg-time-upper">time_upper<a class="anchor" aria-label="anchor" href="#arg-time-upper"></a></dt>

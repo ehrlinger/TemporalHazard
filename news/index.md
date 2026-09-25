@@ -1705,6 +1705,16 @@
   this is a shared degeneracy that the reference already flags, and
   reporting it is parity-preserving rather than a break.
 
+  A step placed on the first observed time is reported too. There, no
+  observed time lies below the rise, and the detector used to require
+  one; a phase has G(0) = 0, so the origin now serves as that point when
+  the first observed time is inside the rise. A phase already complete
+  before the first observation is not a step and is left to the
+  identifiability check. (A translated job on `avc` came to rest that
+  way, with `t_half` on the first event time, at a log-likelihood of
+  -23.5 against the reference binary’s -207.66, and nothing was
+  recorded.)
+
 - **A stray `=` in `PARMS` no longer takes the next operand with it
   ([\#458](https://github.com/ehrlinger/TemporalHazard/issues/458)).**
   `PARMS MUE=0.2 = THALF=0.15 NU=1` read the stray `=` as a piece of a
