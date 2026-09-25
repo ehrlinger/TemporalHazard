@@ -156,7 +156,27 @@ without the formula's environment.</p></dd>
 
 
 <dt id="arg-time">time<a class="anchor" aria-label="anchor" href="#arg-time"></a></dt>
-<dd><p>Numeric follow-up time vector.</p></dd>
+<dd><p>Numeric follow-up time vector. A row whose time is 0 is
+dropped before fitting, whatever its status, as PROC HAZARD drops it
+(<code>TIME &lt;= 0</code> is inadmissible there). The time tested is the row's upper
+bound: <code>time</code> for an exact or right-censored row, <code>time_upper</code> for a
+left- or interval-censored one; a lower bound or entry time of 0 is
+admissible. <code>hazard()</code> warns with the count (class
+<code>"hzr_time_zero_dropped"</code>), and every row stored on the fit is what
+remains. <code>fit$data$dropped_time_zero</code> is the count and
+<code>fit$data$dropped_time_zero_rows</code> their positions among the rows given.
+On the formula interface the response and design are then built on the
+retained rows, as if the dropped ones had not been given, so a
+data-dependent term such as <code>scale(age)</code> uses the retained rows. Two
+inputs are refused because they cannot follow the rows: a response
+whose values change once the rows are dropped, such as
+<code>Surv(time - min(time), status)</code>, and a formula that reads a per-row
+value from outside <code>data</code>. That check reads the formula's own
+variables, so it cannot see inside a function: a helper that indexes a
+vector from outside <code>data</code> by position, such as
+<code>function(a) a + g[seq_along(a)]</code>, sees only the retained rows and pairs
+them with the first elements of <code>g</code>, as it would under
+<code>stats::lm(subset = )</code>. Put such a vector in <code>data</code>.</p></dd>
 
 
 <dt id="arg-status">status<a class="anchor" aria-label="anchor" href="#arg-status"></a></dt>
@@ -666,10 +686,10 @@ nonlinear temporal decomposition mixed effects model. <em>Stat Methods Med Res.<
 <span class="r-out co"><span class="r-pr">#&gt;</span> Coefficients:</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>          estimate   std_error     z_stat      p_value</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> mu    0.121938323 0.062299561  1.9572902 5.031335e-02</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> nu    1.143693955 0.084297244 13.5673944 6.250475e-42</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> nu    1.143693956 0.084297244 13.5673944 6.250475e-42</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> beta1 0.001710112 0.008807807  0.1941586 8.460517e-01</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> beta2 0.156102262 0.090593058  1.7231151 8.486772e-02</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> beta3 0.017258365 0.362941256  0.0475514 9.620738e-01</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> beta3 0.017258366 0.362941256  0.0475514 9.620738e-01</span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="co"># \donttest{</span></span></span>
 <span class="r-in"><span><span class="co"># -- Parametric survival with Kaplan-Meier overlay -----------------</span></span></span>

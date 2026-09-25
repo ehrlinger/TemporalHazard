@@ -98,7 +98,27 @@ hazard(
 
 - time:
 
-  Numeric follow-up time vector.
+  Numeric follow-up time vector. A row whose time is 0 is dropped before
+  fitting, whatever its status, as PROC HAZARD drops it (`TIME <= 0` is
+  inadmissible there). The time tested is the row's upper bound: `time`
+  for an exact or right-censored row, `time_upper` for a left- or
+  interval-censored one; a lower bound or entry time of 0 is admissible.
+  `hazard()` warns with the count (class `"hzr_time_zero_dropped"`), and
+  every row stored on the fit is what remains.
+  `fit$data$dropped_time_zero` is the count and
+  `fit$data$dropped_time_zero_rows` their positions among the rows
+  given. On the formula interface the response and design are then built
+  on the retained rows, as if the dropped ones had not been given, so a
+  data-dependent term such as `scale(age)` uses the retained rows. Two
+  inputs are refused because they cannot follow the rows: a response
+  whose values change once the rows are dropped, such as
+  `Surv(time - min(time), status)`, and a formula that reads a per-row
+  value from outside `data`. That check reads the formula's own
+  variables, so it cannot see inside a function: a helper that indexes a
+  vector from outside `data` by position, such as
+  `function(a) a + g[seq_along(a)]`, sees only the retained rows and
+  pairs them with the first elements of `g`, as it would under
+  `stats::lm(subset = )`. Put such a vector in `data`.
 
 - status:
 
@@ -666,10 +686,10 @@ summary(fit2)
 #> Coefficients:
 #>          estimate   std_error     z_stat      p_value
 #> mu    0.121938323 0.062299561  1.9572902 5.031335e-02
-#> nu    1.143693955 0.084297244 13.5673944 6.250475e-42
+#> nu    1.143693956 0.084297244 13.5673944 6.250475e-42
 #> beta1 0.001710112 0.008807807  0.1941586 8.460517e-01
 #> beta2 0.156102262 0.090593058  1.7231151 8.486772e-02
-#> beta3 0.017258365 0.362941256  0.0475514 9.620738e-01
+#> beta3 0.017258366 0.362941256  0.0475514 9.620738e-01
 
 # \donttest{
 # -- Parametric survival with Kaplan-Meier overlay -----------------
