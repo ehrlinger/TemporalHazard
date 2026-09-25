@@ -144,6 +144,16 @@ test_that("the hold keys on alpha FIXED at exactly 1, as SAS does", {
                 1L)
 })
 
+test_that("an integer theta is held like a double one", {
+  ph <- hzr_phase("g3", tau = 2, gamma = 3, alpha = 1, eta = 1,
+                  fixed = "alpha")
+  th_int <- c(late.log_mu = -1L, late.log_tau = 1L, late.gamma = 3L,
+              late.alpha = 1L, late.eta = 1L)
+  h <- .hzr_g3_alpha_one_hold(th_int, list(late = ph))
+  expect_length(h$records, 1L)
+  expect_equal(unname(h$theta[["late.log_tau"]]), 0)
+})
+
 test_that("a hold that changes nothing is not announced", {
   ph <- hzr_phase("g3", tau = 1, gamma = 3, alpha = 1, eta = 1,
                   fixed = "shapes")

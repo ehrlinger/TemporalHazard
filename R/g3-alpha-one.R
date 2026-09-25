@@ -58,7 +58,9 @@
     fixed <- if (is.null(ph$fixed)) character(0) else ph$fixed
     key <- function(p) paste0(nm, ".", p)
     if (!"alpha" %in% fixed || !key("alpha") %in% names(theta)) next
-    if (!identical(unname(theta[[key("alpha")]]), 1)) next
+    # Numerically, not identical(): an integer theta (1L) is a valid input,
+    # and identical(1L, 1) is FALSE, which skipped the hold silently.
+    if (!isTRUE(unname(theta[[key("alpha")]]) == 1)) next
 
     before_theta <- theta
     before_fixed <- fixed
