@@ -713,6 +713,7 @@
   statements <- list()
   parms_ops <- character(0)
   sel_ops <- NULL
+  sel_bad <- character(0)
   saw_restrict <- FALSE
   covars <- list()
 
@@ -746,6 +747,9 @@
     # translation does not see (`RESTRICT A*B`, `SELECTION SLE=ABC`,
     # `WEIGHT 2W`), which sets the flag again after a `(` and was measured
     # to be refused, so it cannot follow a `(` that is to clear the job.
+    # SELECTION's operands are now checked by .hzr_selection_syntax() (N3,
+    # #504 review), but that check is not shown to catch every error PROC
+    # HAZARD raises there, so SELECTION stays blind here.
     if (!token %in% c("PARAMETERS", "EARLY", "CONSTANT", "LATE")) {
       blind_stmt <- c(blind_stmt, i)
     }
@@ -836,9 +840,26 @@
       # SAS accepts `SLE = 0.2`. Splitting that on whitespace left three
       # tokens, recorded as untranslated, and the screen ran at the DEFAULT
       # threshold instead, so close the spaces around `=` first.
+      # PROC HAZARD accumulates SELECTION statements across the job, and a
+      # repeated option is last-wins (#505, measured: `SLE=0.05; SELECTION
+      # SLS=0.1;` screens at 0.05, and BACKWARD in either statement makes
+      # it backward). Assigning kept only the last statement.
       STEPWISE   = {
-        sel_ops <- strsplit(gsub("\\s*=\\s*", "=", ops_text), "\\s+")[[1L]]
-        sel_ops <- sel_ops[nzchar(sel_ops)]
+        new_ops <- strsplit(gsub("\\s*=\\s*", "=", ops_text), "\\s+")[[1L]]
+        new_ops <- new_ops[nzchar(new_ops)]
+        # The operands PROC HAZARD rejects with a syntax error (N3 and the
+        # #504 review): the job warns under U1, as for MAXITER, and the
+        # screen still runs on what .hzr_selection_syntax() keeps.
+        chk <- .hzr_selection_syntax(new_ops)
+        sel_ops <- c(sel_ops, chk$keep)
+        if (length(chk$bad)) {
+          proc_rejected <- c(proc_rejected, paste0(
+            names(chk$bad), ": ", chk$bad, ", so PROC HAZARD rejects this ",
+            "job with a syntax error"))
+          proc_what <- c(proc_what, names(chk$bad))
+          sel_bad <- c(sel_bad, chk$bad)
+          err_stmt <- c(err_stmt, i)
+        }
       },
       # RESTRICT constrains which variables the screen may select
       # (hazrd4.c's rsttbl). It is recorded here and refused below when the
@@ -905,6 +926,15 @@
   }
   reset <- if (semantic_seen) "none" else
     .hzr_sas_paren_reset(st, err_stmt, blind_stmt)
+  # The SELECTION rows say the job is refused only when no `(` clears it;
+  # otherwise the verdict is the #461 warning's below.
+  for (k in seq_along(sel_bad)) {
+    note(names(sel_bad)[[k]], paste0(
+      sel_bad[[k]],
+      if (identical(reset, "none")) {
+        ", so PROC HAZARD rejects this job with a syntax error"
+      }))
+  }
   what <- c(proc_syntax_what, proc_what, parms$rejected_parms_what, phase_what)
   if (length(parms$rejected_phase) || length(stmt_fatal)) {
     # With no TIME or EVENT there is nothing to fit whatever the flag says,
@@ -1490,9 +1520,19 @@
     })
   }
 
-  # John's 2026-09-22 decision, as amended at 19:51: EVERY refusal warns and
-  # emits the fit, with no exception. Three of them (SETG3910, SETG3920,
-  # SETG3930) still halt, because SAS refuses them for a shape value that is
+  # John's 2026-09-22 decision, as amended at 19:51: a refusal warns and
+  # emits the fit. That holds for the refusals that reach this return, not
+  # for every refusal. Six paths above return a stop() in place of the fit:
+  # a phase statement PROC HAZARD refuses at parse (#340), or a TIME or EVENT
+  # with no operand and nothing else to supply it (#431), where a later `(`
+  # changes only the stop's wording (#461); LCENSOR with ICENSOR (#155); no
+  # phase selected (modterm.c ERROR 1001); a PARMS statement that builds no
+  # phase this translation can use; no DATA= (#311); and a SELECTION
+  # construct hzr_stepwise() cannot run (FAST, MAXVARS, RESTRICT, a negative
+  # MAXSTEPS, a per-variable MOVE= or ORDER=, a cross-phase /I). A job with
+  # no EVENT or ICENSOR statement at all never gets that far:
+  # .hzr_censor_spec() raises during translation. Of the refusals that do
+  # reach here, three (SETG3910, SETG3920, SETG3930) still halt, because SAS refuses them for a shape value that is
   # out of range (setg3.c:269-284) and hzr_phase() will not build a phase
   # from that same value. The warning is emitted in its own chunk ABOVE the
   # fit so that the real cause -- the SETG3 code and the operand -- is
@@ -1516,6 +1556,81 @@
        # than raised here: the point is that the RENDERED document warns, so
        # translate-sas.R emits them as a chunk immediately above the fit.
        refusal_warnings = refusal_warnings)
+}
+
+#' The SELECTION operands PROC HAZARD rejects with a syntax error.
+#'
+#' `stepwiseopt` (hazard_y.y:169-181) is `SLENTRY`, `SLSTAY`, `MOVE`,
+#' `MAXSTEPS` or `MAXVARS` followed by `'=' NUMBER`, or a bare keyword. In the
+#' STEP state a value is a NUMBER (hazard_l.l:33-38, :53) or unexpected text,
+#' and a word the state has no rule for is unexpected text too
+#' (hazard_l.l:176-179). Each of these sets the syntax-error flag, and the
+#' binary refuses the job (measured on avc: `SLE=1E-3`, `BOGUS=1`, `BOGUS`,
+#' `NOPRINTS=1`, `SLE 0.2` and `MOVE=ABC` exit SYNTAX; `NOPRINTS`, `SLE=0.2`
+#' fit). A macro operand is SAS's to expand and carries no verdict.
+#'
+#' What is kept is what the screen still runs on: a value `as.numeric()`
+#' reads (`1E-3`, as N3's warning says), and the keyword alone for a value
+#' written on a bare keyword, so `BACKWARD=1` still screens backward. An
+#' unknown option, a numeric option with no value and an unreadable value
+#' are dropped, so .hzr_selection_spec() does not add a second row for them.
+#' @param ops One statement's operands, spaces around `=` already closed.
+#' @return `list(keep = <chr>, bad = <named chr>)`: `bad` maps each rejected
+#'   construct to the reason, without the verdict.
+#' @noRd
+.hzr_selection_syntax <- function(ops) {
+  numeric_opts <- c("SLENTRY", "SLSTAY", "MOVE", "MAXSTEPS", "MAXVARS")
+  keep <- character(0)
+  bad <- character(0)
+  i <- 1L
+  while (i <= length(ops)) {
+    op <- ops[[i]]
+    i <- i + 1L
+    if (.hzr_sas_is_macro(op)) {
+      keep <- c(keep, op)
+      next
+    }
+    eqp <- .idx(op, "=")
+    key <- if (eqp > 0L) substring(op, 1L, eqp - 1L) else op
+    val <- if (eqp > 0L) substring(op, eqp + 1L) else ""
+    # STEP context only. `SELECT` and the other statement keywords resolve
+    # only in STMT context (hazard_l.l:112-114), so inside SELECTION they
+    # are unexpected text: measured, `SELECTION SELECT;`, `SELECTION TIME;`
+    # and `SELECTION SELECTION SLE=0.05;` exit SYNTAX.
+    token <- .hzr_sas_token(key, "HAZARD", "STEP")
+    if (is.na(token)) {
+      bad[[op]] <- paste0("unknown SELECTION option, which PROC HAZARD's ",
+                          "lexer reads as unexpected text (hazard_l.l:176-179)")
+      next
+    }
+    if (token %in% numeric_opts) {
+      if (!nzchar(val)) {
+        # `SLE 0.2`: the number written without `=` is the same error.
+        what <- op
+        if (eqp == 0L && i <= length(ops) &&
+              .hzr_sas_lexer_number(ops[[i]])) {
+          what <- paste(op, ops[[i]])
+          i <- i + 1L
+        }
+        bad[[what]] <- paste0("no value; PROC HAZARD has no form of this ",
+                              "option without `= NUMBER` (hazard_y.y:169-173)")
+        next
+      }
+      if (!.hzr_sas_lexer_number(val)) {
+        bad[[op]] <- "not a number PROC HAZARD's lexer reads (hazard_l.l:33-38)"
+        if (is.na(suppressWarnings(as.numeric(val)))) next
+      }
+      keep <- c(keep, op)
+      next
+    }
+    if (eqp > 0L) {
+      bad[[op]] <- "a value on an option that takes none (hazard_y.y:174-181)"
+      keep <- c(keep, key)
+      next
+    }
+    keep <- c(keep, op)
+  }
+  list(keep = keep, bad = bad)
 }
 
 #' Translate a SELECTION statement to hzr_stepwise() arguments.
