@@ -1,6 +1,6 @@
 # Changelog
 
-## TemporalHazard 1.2.11
+## TemporalHazard 1.2.12
 
 ### Breaking changes
 
