@@ -173,7 +173,10 @@ test_that("weights stay aligned with the rows that remain", {
   expect_equal(gotf$fit$objective, reff$fit$objective, tolerance = 1e-8)
 })
 
-test_that("a dropped row's own values are not checked", {
+test_that("a dropped row's weight and entry time are not checked", {
+  # The drop runs before the weight and entry-time checks. (The bounds'
+  # own type checks -- finite, non-negative -- still run on every row,
+  # because a row's upper bound decides whether it is dropped.)
   d <- tz_data()
   # An NA weight, and an entry after exit, on the row that is dropped.
   expect_no_error(suppressWarnings(hazard(
