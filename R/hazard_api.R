@@ -439,6 +439,10 @@ NULL
 #'   formula's environment rather than the caller's, so a formula built
 #'   inside another function does not bring that function's variables with
 #'   it here. See `data` for the warning raised when a name is both.
+#'   `weights` is evaluated over every row given, so an expression that
+#'   depends on the rows -- `weights = w / mean(w)` -- includes any row later
+#'   dropped for time 0 (see `time`); compute it in `data` on the rows you
+#'   intend to fit if that matters.
 #' @param control Named list of control options (see Details).
 #' @param objective Which interval-censored contribution the multiphase
 #'   likelihood accumulates. `"likelihood"` (default) uses the interval
@@ -1069,30 +1073,38 @@ hazard <- function(formula = NULL,
   dropped_frame <- NULL
   if (n_dropped_time_zero > 0L) {
     keep <- !at_zero
-    subset_rows <- function(v) {
+    # Anything row-aligned must have exactly n rows to be subset. One of
+    # another length used to pass through untouched, so an `x`, `weights`
+    # or `data` k rows short was accepted when k rows were dropped, and paired
+    # with the wrong rows (#476 release review, N2). A scalar passes.
+    subset_rows <- function(v, what) {
       if (is.null(v)) return(v)
-      if (is.matrix(v) || is.data.frame(v)) {
-        if (nrow(v) == n) v[keep, , drop = FALSE] else v
-      } else if (length(v) == n) {
-        v[keep]
-      } else {
+      rows <- NROW(v)
+      if (rows == n) {
+        if (is.matrix(v) || is.data.frame(v)) v[keep, , drop = FALSE] else v[keep]
+      } else if (!is.matrix(v) && !is.data.frame(v) && length(v) == 1L) {
         v
+      } else {
+        stop("'", what, "' has ", rows, " row(s) but 'time' has ", n,
+             ". They must match before the ", n_dropped_time_zero,
+             " row(s) at time 0 can be dropped.", call. = FALSE)
       }
     }
     time <- time[keep]
     status <- status[keep]
-    time_lower <- subset_rows(time_lower)
-    time_upper <- subset_rows(time_upper)
-    weights <- subset_rows(weights)
-    x <- subset_rows(x)
+    time_lower <- subset_rows(time_lower, "time_lower")
+    time_upper <- subset_rows(time_upper, "time_upper")
+    weights <- subset_rows(weights, "weights")
+    x <- subset_rows(x, "x")
     if (is.list(data)) {
       data_full <- data
       # A list of columns is accepted as `data` too; subset each column of
       # the row count, as a data frame's rows are.
       data <- if (is.data.frame(data)) {
-        subset_rows(data)
+        subset_rows(data, "data")
       } else {
-        lapply(data, subset_rows)
+        Map(function(col, nm) subset_rows(col, paste0("data$", nm)),
+            data, names(data) %||% rep("", length(data)))
       }
       # The fit is built on the RETAINED rows only, response and design
       # both, as if the dropped rows had not been given (John, 2026-09-25).
@@ -1105,11 +1117,10 @@ hazard <- function(formula = NULL,
       if (is.data.frame(data_full)) {
         dropped_frame <- data_full[!keep, , drop = FALSE]
       }
-      data_rows <- if (is.data.frame(data_full)) {
-        nrow(data_full)
-      } else {
-        unique(vapply(data_full, NROW, integer(1)))
-      }
+      # Every column of `data` is now known to have n rows or to be a
+      # scalar (subset_rows() refused anything else), so n is its row count;
+      # a ragged list no longer makes this a vector.
+      data_rows <- n
       # (1) A formula -- global or a phase's -- that reads a per-row value
       #     from OUTSIDE `data`: that value keeps its full length and cannot
       #     follow the rows.

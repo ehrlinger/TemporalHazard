@@ -173,7 +173,11 @@ among its columns first and then in the calling environment, on both
 interfaces. \code{\link[stats:lm]{stats::lm()}} also looks in \code{data} first, but then in the
 formula's environment rather than the caller's, so a formula built
 inside another function does not bring that function's variables with
-it here. See \code{data} for the warning raised when a name is both.}
+it here. See \code{data} for the warning raised when a name is both.
+\code{weights} is evaluated over every row given, so an expression that
+depends on the rows -- \code{weights = w / mean(w)} -- includes any row later
+dropped for time 0 (see \code{time}); compute it in \code{data} on the rows you
+intend to fit if that matters.}
 
 \item{control}{Named list of control options (see Details).}
 

@@ -342,3 +342,44 @@ test_that("a formula reading per-row values from outside data is refused", {
     survival::Surv(time, status) ~ zc, data = dd[-1, ], dist = "weibull",
     theta = c(0.5, 1, 0), fit = TRUE)))
 })
+
+test_that("an x, weights or data of the wrong length is refused, not misaligned", {
+  # N2 (1.2.12 release review): a design k rows short was accepted when k
+  # rows were at time 0, and paired with the wrong rows.
+  set.seed(3)
+  n <- 60
+  d <- data.frame(tm = stats::rexp(n, 0.3) + 0.05,
+                  ev = stats::rbinom(n, 1, 0.7), age = stats::rnorm(n, 60, 10))
+  d$age[40] <- NA
+  d$tm[3] <- 0
+  xx <- stats::model.matrix(~ age, d)[, -1, drop = FALSE]
+  expect_equal(nrow(xx), n - 1)  # the premise: one row short
+  expect_error(suppressWarnings(hazard(
+    time = d$tm, status = d$ev, x = xx, dist = "weibull",
+    theta = c(0.3, 1, 0), fit = TRUE)),
+    "'x' has 59 row(s) but 'time' has 60", fixed = TRUE)
+  expect_error(suppressWarnings(hazard(
+    time = d$tm, status = d$ev, weights = rep(1, n - 1), dist = "weibull",
+    theta = c(0.3, 1), fit = TRUE)),
+    "'weights' has 59 row(s)", fixed = TRUE)
+  expect_error(suppressWarnings(hazard(
+    time = d$tm, status = d$ev, data = d[-60, ], dist = "multiphase",
+    phases = list(early = hzr_phase("cdf", formula = ~ age),
+                  const = hzr_phase("constant")), fit = TRUE)),
+    "'data' has 59 row(s)", fixed = TRUE)
+})
+
+test_that("a list data with a scalar column is filtered; a ragged one is refused", {
+  d <- tz_data()
+  lst <- list(tt = c(0, d$time), ss = c(1, d$status), lab = "cohortA")
+  f <- suppressWarnings(hazard(time = tt, status = ss, data = lst,
+                               dist = "weibull", theta = tz_theta$weibull,
+                               fit = TRUE))
+  expect_identical(f$data$dropped_time_zero, 1L)
+  expect_identical(f$data$frame$lab, "cohortA")
+  lst$bad <- 1:3
+  expect_error(suppressWarnings(hazard(time = tt, status = ss, data = lst,
+                                       dist = "weibull",
+                                       theta = tz_theta$weibull, fit = TRUE)),
+               "'data$bad' has 3 row(s)", fixed = TRUE)
+})
