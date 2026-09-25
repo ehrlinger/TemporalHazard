@@ -62,9 +62,11 @@ jobs:
 
       # TinyTeX's minimal scheme lacks the Courier metrics (pcrr8t) that the
       # R-devel manual needs; without them the PDF manual fails to build on
-      # ubuntu devel (run 36194130301). Install the package explicitly.
-      - name: Install LaTeX Courier fonts
-        run: tlmgr install courier
+      # ubuntu devel (run 36194130301). makeindex is missing too: with Courier
+      # in place the indexed build still failed with "No file Rd2.ind" (run
+      # 36198449094). Install both explicitly.
+      - name: Install LaTeX packages the manual needs
+        run: tlmgr install courier makeindex
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
