@@ -1140,6 +1140,15 @@
   - a refusal `PROC HAZARD` raises as a semantic error is unaffected:
     `ORDER=` with `/E`, and the `SETG1`, `SETG3` and no-phase refusals.
 
+  Four syntax errors were not recognised at all, and are now. A phase
+  statement with an empty item, a leading or trailing comma, or no
+  variable (`EARLY AGE,,SEX;`, `EARLY AGE,;`, `LATE ,AGE;`, `LATE ;`)
+  fitted with nothing said, and a bare `PARMS;` was dropped. The binary
+  refuses each one with a syntax error (`hazard_y.y:206-207`, `:133-134`).
+  The phase forms now stop the document like the other phase-statement
+  refusals (#340), and `PARMS;` warns like the other `PARMS` refusals. Both
+  follow the rules above when a later `(` clears them.
+
 * **A stray `=` in `PARMS` no longer takes the next operand with it
   (#458).** `PARMS MUE=0.2 = THALF=0.15 NU=1` read the stray `=` as a piece
   of a spaced operand and threw `THALF=0.15` away with it, so the emitted fit

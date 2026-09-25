@@ -429,7 +429,22 @@
     word_value
   }
 
+  # phasevaropts is one or more phasevaropt separated by `,`
+  # (hazard_y.y:206-207), so a statement with no item, an empty item, or a
+  # leading or trailing comma is a parse error. The binary refuses each
+  # with SYNTAX (tests/testthat/fixtures/paren-reset-oracle.csv); the split
+  # below dropped them without a word (#461 review). Not judged where a
+  # macro reference could expand to the missing item.
+  empty_item <- syntax_error(paste(
+    "a phase statement needs at least one variable, and each `,` a variable",
+    "on either side (hazard_y.y:206-207), so the parser fails",
+    "(yyerror.c:19)"))
   for (piece in x) {
+    t <- trimws(piece)
+    if (!.hzr_sas_is_macro(t) &&
+        (!nzchar(t) || grepl("^,|,$|,[[:space:]]*,", t))) {
+      reject(if (nzchar(t)) t else "(no variable)", empty_item)
+    }
     # The lexer stays in the PROC-line state from a `(` to the next `;`.
     after_paren <- FALSE
     for (p in strsplit(piece, ",", fixed = TRUE)[[1L]]) {

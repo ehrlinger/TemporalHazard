@@ -787,6 +787,19 @@
       # the row above say so. Refused, so not counted as mapped.
       mapped <- mapped - 1L
     }
+    # `parmsopts` needs at least one operand (hazard_y.y:133-134), so a bare
+    # `PARMS;` falls to `otherstmt : error` (:102). The binary refuses it
+    # with SYNTAX; it was dropped without a word (#461 review).
+    if (token == "PARAMETERS" && !length(ops)) {
+      why <- paste0("no operand; PROC HAZARD's ", kw, " takes at least one ",
+                    "(hazard_y.y:133-134)")
+      proc_rejected <- c(proc_rejected, paste0(
+        stmt_text, ": ", why, ", so it rejects this job with a syntax error"))
+      proc_what <- c(proc_what, stmt_text)
+      err_stmt <- c(err_stmt, i)
+      note(stmt_text, why)
+      mapped <- mapped - 1L
+    }
     mapped <- mapped + 1L
     switch(token,
       TIME       = statements$TIME <- ops[[1L]],

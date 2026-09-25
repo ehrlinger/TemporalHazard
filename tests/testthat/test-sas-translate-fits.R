@@ -2254,9 +2254,14 @@ test_that("every #461 oracle job's emitted document runs or stops (#461)", {
     expect_true(all(is.finite(stats::coef(env$fit))), info = oracle$job[[k]])
     n_fit <- n_fit + 1L
   }
-  # Known positives: the loop fitted every row but the one phase stop.
-  expect_identical(n_stop, 1L)
-  expect_identical(n_fit, nrow(oracle) - 1L)
+  # Known positives: the loop fitted every row but the phase-statement
+  # stops, which are the "phase" rows and the empty phase items (not the
+  # empty PARMS, which warns).
+  stops <- oracle$class == "phase" |
+    (oracle$class == "empty" & !grepl("PARMS ;", oracle$job, fixed = TRUE))
+  expect_identical(n_stop, sum(stops))
+  expect_gte(n_stop, 2L)
+  expect_identical(n_fit, nrow(oracle) - sum(stops))
 })
 
 # --- SETG1: the early phase's refusals, rewrites and no-result case (#424) --

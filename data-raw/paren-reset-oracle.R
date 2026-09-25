@@ -117,6 +117,23 @@ grid <- list(
   c("name", "same",   job(rest = paste(B, P, "; EARLY AGE*SEX, LOG() = 0.1;"))),
   c("name", "same",   job(rest = paste(B, P, "; EARLY AGE*SEX, LOG() /I;"))),
   c("name", "same",   job(rest = paste(B, P, "; EARLY AGE*SEX, (LOG);"))),
+  # An empty item, a leading or trailing comma, or a statement with no
+  # operand: phasevaropts and parmsopts need at least one item
+  # (hazard_y.y:206-207, :133-134). r-reviewer pass 2 on #461.
+  c("empty", "alone", job(rest = paste(B, P, "; EARLY AGE,,SEX;"))),
+  c("empty", "after", job(rest = paste(B, P, "; EARLY AGE,,SEX; EARLY LOG();"))),
+  c("empty", "alone", job(rest = paste(B, P, "; EARLY AGE,;"))),
+  c("empty", "after", job(rest = paste(B, P, "; EARLY AGE,; EARLY LOG();"))),
+  c("empty", "alone", job(rest = paste(B, P, "; EARLY ,AGE;"))),
+  c("empty", "after", job(rest = paste(B, P, "; EARLY ,AGE; EARLY LOG();"))),
+  c("empty", "alone", job(rest = paste(B, P, "; EARLY AGE; LATE AGE,,SEX;"))),
+  c("empty", "after", job(rest = paste(B, P, "; LATE AGE,,SEX; EARLY LOG();"))),
+  c("empty", "alone", job(rest = paste(B, P, "; EARLY AGE; LATE ;"))),
+  c("empty", "after", job(rest = paste(B, P, "; LATE ; EARLY LOG();"))),
+  c("empty", "same",  job(rest = paste(B, P, "; EARLY AGE,,LOG();"))),
+  c("empty", "alone", job(rest = paste(B, P, "; PARMS ; EARLY AGE;"))),
+  c("empty", "after", job(rest = paste(B, P, "; PARMS ; EARLY LOG();"))),
+  c("empty", "before", job(rest = paste(B, P, "; EARLY LOG(); PARMS ;"))),
   # A statement PROC HAZARD does not know, after the `(`, sets the flag again.
   c("unknown", "after", job(rest = paste(B, P, "; EARLY AGE*SEX, LOG(); FOO BAR;"))),
   # So does a syntax error in a known statement the translator does not
