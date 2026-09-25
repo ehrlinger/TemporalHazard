@@ -103,6 +103,28 @@ test_that("`.` leaves a column named \"\" out, and says so", {
                fixed = TRUE)
 })
 
+test_that("hzr_bootstrap() on such a fit is the bootstrap without the column", {
+  # The fit stores the data frame as passed, "" column included, and the
+  # bootstrap read it with terms(two-sided formula, data = frame): #470 again,
+  # on the first thing a user does with the fit (#477 review).
+  d <- ecn_data()
+  expect_true(any(names(d) == ""))
+  clean <- d[, names(d) != ""]
+  th <- c(mu = 0.5, nu = 1, 0, 0)
+  a <- ecn_fit(survival::Surv(t, s) ~ age + mal, d, th)
+  b <- ecn_fit(survival::Surv(t, s) ~ age + mal, clean, th)
+  set.seed(1)
+  ba <- hzr_bootstrap(a, n_boot = 4)
+  set.seed(1)
+  bb <- hzr_bootstrap(b, n_boot = 4)
+  expect_identical(ba$n_success, 4L)
+  # Replicates must differ from each other, or two degenerate bootstraps
+  # would compare equal and prove nothing.
+  age <- ba$replicates$estimate[ba$replicates$parameter == "age"]
+  expect_gt(stats::sd(age), 0)
+  expect_identical(ba$replicates, bb$replicates)
+})
+
 # Multiphase reaches the same two failures: the global formula goes through
 # the same parser, and a phase formula's `.` is written out against `data`
 # before fitting (#277), which is a `terms(two_sided, data = data)` call.
