@@ -1581,10 +1581,12 @@
     (`LOG() /I`, `(LOG)`). A statement after the `(` can set the flag
     again (`RESTRICT A*B`, `SELECTION SLE=ABC`, `WEIGHT 2W`, or one
     `PROC HAZARD` does not know), and this translation checks only
-    `PARMS` and the phase statements for such errors, so any other
-    statement after the `(` keeps the refusal. These still warn that the
-    job does not run, which is too strong for a clean one: the binary
-    fits the job when the statement is `SELECTION SLE=0.2`;
+    `PARMS` and the phase statements fully for such errors (a
+    `SELECTION` statement’s operands are checked too, but not shown to
+    be complete), so any other statement after the `(`, `SELECTION`
+    included, keeps the refusal. These still warn that the job does not
+    run, which is too strong for a clean one: the binary fits the job
+    when the statement is `SELECTION SLE=0.2`;
   - an error in the same statement as the `(` is left to `PROC HAZARD`’s
     error recovery, which fits `EARLY AGE*SEX, LOG();` and stops
     `EARLY 1AGE, SEX, LOG();` before fitting. The warning says it cannot
@@ -1604,6 +1606,48 @@
   `EARLY AGE,,SEX;` fits `AGE` and `SEX`, and `LATE ;` fits the late
   phase with no covariates. Both follow the rules above when a later `(`
   clears them.
+
+- **A `SELECTION` value that `PROC HAZARD`’s lexer does not read as a
+  number now warns, as a `PARMS` or `MAXITER=` value already did.** The
+  screen read `SLE=`, `SLS=`, `MOVE=` and `MAXSTEPS=` with
+  [`as.numeric()`](https://rdrr.io/r/base/numeric.html), which also
+  reads `1E-3`, `2E-1`, `+0.1` and `5.`. `PROC HAZARD` lexes none of
+  them as a number (`hazard_l.l:33-38`), and on the package’s `avc` data
+  the HAZARD binary refuses `SLE=1E-3`, `SLS=2E-1`, `SLE=+0.1` and
+  `MAXSTEPS=5.` with a syntax error, while `SLE=.2`, `SLE=0.2E-1` and
+  `MAXSTEPS=5.0` fit. The translation emitted
+  `hzr_stepwise(slentry = 0.001)` and the rest with no warning and no
+  row. A value [`as.numeric()`](https://rdrr.io/r/base/numeric.html)
+  cannot read (`SLE=ABC`) had a row and fell back to the default, also
+  without a warning. Such a job now warns that `PROC HAZARD` does not
+  run it and records the row. The screen still runs, at the value as
+  [`as.numeric()`](https://rdrr.io/r/base/numeric.html) reads it, or at
+  `PROC HAZARD`’s default when it cannot read it. A later `(` clears the
+  error as it does the others
+  ([\#461](https://github.com/ehrlinger/TemporalHazard/issues/461)); the
+  binary then fits the job with no screen at all, so the warning says
+  the fit stands in for a model `PROC HAZARD` does not fit. The other
+  syntax errors the binary was measured to refuse in a `SELECTION`
+  statement warn the same way, each with its own reason: an unknown
+  option (`BOGUS`, `BOGUS=1`, or a statement keyword such as `SELECT` or
+  `TIME`, which has no meaning inside `SELECTION`), a value on an option
+  that takes none (`NOPRINTS=1`), and a numeric option with no `= value`
+  (`SLE 0.2`). Each was recorded without a warning, and `SELECT` was
+  read as a direction keyword with no row at all. A value on a direction
+  keyword keeps its direction (`BACKWARD=1` still screens backward).
+
+- **[`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
+  now reads every `SELECTION` statement in a job, not only the last
+  ([\#505](https://github.com/ehrlinger/TemporalHazard/issues/505)).**
+  `PROC HAZARD` accumulates them, and a repeated option takes its last
+  value. Measured on the HAZARD binary on `avc`,
+  `SELECTION SLE=0.05; SELECTION SLS=0.1;` screens at an entry level of
+  0.05, and `BACKWARD` in either statement makes the screen backward.
+  The translation kept only the second statement, so that job screened
+  at the default 0.3, with no row and no warning. One exception remains:
+  a negative `MAXSTEPS` in an earlier statement still refuses the job
+  here, although the binary runs it when a later statement sets
+  `MAXSTEPS` again.
 
 - **The weak-direction warning now names a single g3 shape that the data
   do not determine

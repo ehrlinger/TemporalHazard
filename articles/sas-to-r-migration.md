@@ -969,20 +969,25 @@ document outright, above), so a translated document shows its own gaps
 instead of quietly under-reporting the original job. Two gaps are common
 enough in production jobs to know about going in:
 
-- **`PROC HAZPRED` prediction grids built from `SET`-derived values,
-  function calls, or unknown names are not translated.** The parser
+- **`PROC HAZPRED` prediction grids that depend on `SET`, function
+  calls, or unknown names are not fully translated.** The parser
   resolves a grid’s `DO` loop bounds when they are literal numbers or
   DATA-step constants it can fold
   (e.g. `DO MONTHS = 1*DTY, 2*DTY, ... ;` with `DTY` assigned earlier in
-  the same DATA step), but a bound read from `SET`, computed by a
-  function call, or naming something the parser can’t resolve is refused
-  whole rather than partially read: a partial grid is a partial
-  `newdata`, and reporting predictions over a half-read grid would be
-  worse than not reporting them. Such grids emit an `UNTRANSLATED`
-  block; build the `newdata` grid by hand and pass it to
+  the same DATA step). A bound read from `SET`, computed by a function
+  call, or naming something the parser can’t resolve is refused: the
+  grid emits an `UNTRANSLATED` block and the
+  [`predict()`](https://rdrr.io/r/stats/predict.html) chunks stop, so
+  build the `newdata` grid by hand and pass it to
   [`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)
-  instead. On the public corpus, grid resolution is 19 of 55 (35%), up
-  from 10 of 55 (18%) before constant folding.
+  instead. A `SET` statement beside a `DO` loop with literal bounds is
+  **not** refused, and the grid is only partly read.
+  `DATA PREDICT; SET COHORT; DO MONTHS = 1 TO 12; OUTPUT; END;`
+  translates to a grid of twelve `time` values and nothing else: the
+  rows and columns `SET` brings in are dropped, and no `UNTRANSLATED`
+  block says so. Compare such a grid with the SAS one before you trust
+  its predictions. On the public corpus, grid resolution is 19 of 55
+  (35%), up from 10 of 55 (18%) before constant folding.
 - **An unresolved `INHAZ=` fails the render on purpose.** If a
   `PROC HAZPRED` job’s fitted-model dataset can’t be found (neither from
   another translated job’s `OUTHAZ=` nor from the `librefs=` argument
