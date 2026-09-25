@@ -323,6 +323,8 @@ NULL
 #'   `function(a) a + g[seq_along(a)]`, sees only the retained rows and pairs
 #'   them with the first elements of `g`, as it would under
 #'   `stats::lm(subset = )`. Put such a vector in `data`.
+#'   An `x` or `weights` (and, when a formula reads it, a `data`) whose row
+#'   count differs from `time`'s is refused before any row is dropped.
 #' @param status Numeric or logical event indicator vector, or a
 #'   [survival::Surv()] object. A `Surv` is read by its `type`, exactly as the
 #'   formula interface reads it, and a `time`, `time_lower` or `time_upper`
@@ -1076,13 +1078,15 @@ hazard <- function(formula = NULL,
     # Anything row-aligned must have exactly n rows to be subset. One of
     # another length used to pass through untouched, so an `x`, `weights`
     # or `data` k rows short was accepted when k rows were dropped, and paired
-    # with the wrong rows (#476 release review, N2). A scalar passes.
-    subset_rows <- function(v, what) {
+    # with the wrong rows (#476 release review, N2). Only a list-`data`
+    # column may be a scalar.
+    subset_rows <- function(v, what, scalar_ok = FALSE) {
       if (is.null(v)) return(v)
       rows <- NROW(v)
       if (rows == n) {
         if (is.matrix(v) || is.data.frame(v)) v[keep, , drop = FALSE] else v[keep]
-      } else if (!is.matrix(v) && !is.data.frame(v) && length(v) == 1L) {
+      } else if (scalar_ok && !is.matrix(v) && !is.data.frame(v) &&
+                 length(v) == 1L) {
         v
       } else {
         stop("'", what, "' has ", rows, " row(s) but 'time' has ", n,
@@ -1095,16 +1099,37 @@ hazard <- function(formula = NULL,
     time_lower <- subset_rows(time_lower, "time_lower")
     time_upper <- subset_rows(time_upper, "time_upper")
     weights <- subset_rows(weights, "weights")
-    x <- subset_rows(x, "x")
-    if (is.list(data)) {
+    # On the formula path `x` comes from model.matrix(), which can drop NA
+    # rows, and is rebuilt below from the retained `data` anyway; only the
+    # vector path's `x` is the caller's and must match.
+    x <- if (is.null(formula)) {
+      subset_rows(x, "x")
+    } else if (NROW(x) == n) {
+      x[keep, , drop = FALSE]
+    } else {
+      x
+    }
+    # On the vector path `data` may serve only to look names up, and then
+    # need not match `time`; it is read row by row only through a phase
+    # formula. Such a `data` of another length is left as it was.
+    phase_reads_data <- length(Filter(function(ph) !is.null(ph$formula),
+                                      phases %||% list())) > 0L
+    data_rowwise <- !is.null(formula) || phase_reads_data
+    data_n <- if (is.data.frame(data)) nrow(data) else if (is.list(data)) {
+      max(0L, vapply(data, NROW, integer(1)))
+    } else {
+      NA_integer_
+    }
+    if (is.list(data) && (data_rowwise || identical(data_n, n))) {
       data_full <- data
       # A list of columns is accepted as `data` too; subset each column of
       # the row count, as a data frame's rows are.
       data <- if (is.data.frame(data)) {
         subset_rows(data, "data")
       } else {
-        Map(function(col, nm) subset_rows(col, paste0("data$", nm)),
-            data, names(data) %||% rep("", length(data)))
+        Map(function(col, nm) {
+          subset_rows(col, paste0("data$", nm), scalar_ok = TRUE)
+        }, data, names(data) %||% rep("", length(data)))
       }
       # The fit is built on the RETAINED rows only, response and design
       # both, as if the dropped rows had not been given (John, 2026-09-25).

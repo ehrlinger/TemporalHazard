@@ -1159,9 +1159,11 @@
   `hzr_stepwise()` given the data frame used for the fit drops the same
   rows, but only when both the retained and the dropped rows match it. If
   every row is at time 0, `hazard()` stops with nothing left to fit. An
-  `x`, `weights` or `data` whose length differs from `time`'s is refused
-  before any row is dropped; one that was short by exactly the number of rows
-  at time 0 used to be accepted and fitted against the wrong rows.
+  `x` or `weights`, or a `data` that a formula reads row by row, whose
+  length differs from `time`'s is refused before any row is dropped; one that
+  was short by exactly the number of rows at time 0 used to be accepted and
+  fitted against the wrong rows. A `data` used only to look names up need
+  not match.
 
 * **`hzr_translate_sas()` now reports the starting shape `PROC HAZARD`
   actually uses for a `FIXGE2` or `FIXGAE2` job without `WEIBULL` (#472).**

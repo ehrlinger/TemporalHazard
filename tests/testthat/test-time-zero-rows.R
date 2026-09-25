@@ -383,3 +383,35 @@ test_that("a list data with a scalar column is filtered; a ragged one is refused
                                        theta = tz_theta$weibull, fit = TRUE)),
                "'data$bad' has 3 row(s)", fixed = TRUE)
 })
+
+test_that("the length check refuses only inputs that would be misaligned", {
+  withr::local_seed(11)
+  n <- 40
+  d1 <- data.frame(tm = stats::rexp(n, 0.3) + 0.05,
+                   ev = stats::rbinom(n, 1, 0.7), age = stats::rnorm(n, 60, 10))
+  d1$tm[3] <- 0
+  d1$age[3] <- NA  # the dropped row is also the NA row
+  # Formula path: model.matrix() drops the NA row, x is rebuilt anyway, and
+  # the fit is the fit of the rows that remain.
+  got <- suppressWarnings(hazard(survival::Surv(tm, ev) ~ age, data = d1,
+                                 dist = "weibull", theta = c(0.3, 1, 0),
+                                 fit = TRUE))
+  ref <- suppressWarnings(hazard(survival::Surv(tm, ev) ~ age, data = d1[-3, ],
+                                 dist = "weibull", theta = c(0.3, 1, 0),
+                                 fit = TRUE))
+  expect_equal(coef(got), coef(ref), tolerance = 1e-8)
+  # Vector path: a longer `data` used only to look names up is left alone.
+  lookup <- suppressWarnings(hazard(time = d1$tm[1:30], status = d1$ev[1:30],
+                                    data = d1, dist = "weibull",
+                                    theta = c(0.3, 1), fit = TRUE))
+  lref <- suppressWarnings(hazard(time = d1$tm[c(1:2, 4:30)],
+                                  status = d1$ev[c(1:2, 4:30)],
+                                  dist = "weibull", theta = c(0.3, 1),
+                                  fit = TRUE))
+  expect_equal(coef(lookup), coef(lref), tolerance = 1e-8)
+  # A scalar `weights` is not a row-aligned input, and is refused.
+  expect_error(suppressWarnings(hazard(
+    time = c(0, 1.5, 2), status = c(1, 1, 0), weights = 3,
+    dist = "exponential", theta = 0, fit = TRUE)),
+    "'weights' has 1 row(s)", fixed = TRUE)
+})
