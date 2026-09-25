@@ -118,7 +118,12 @@ grid <- list(
   c("name", "same",   job(rest = paste(B, P, "; EARLY AGE*SEX, LOG() /I;"))),
   c("name", "same",   job(rest = paste(B, P, "; EARLY AGE*SEX, (LOG);"))),
   # A statement PROC HAZARD does not know, after the `(`, sets the flag again.
-  c("unknown", "after", job(rest = paste(B, P, "; EARLY AGE*SEX, LOG(); FOO BAR;")))
+  c("unknown", "after", job(rest = paste(B, P, "; EARLY AGE*SEX, LOG(); FOO BAR;"))),
+  # So does a syntax error in a known statement the translator does not
+  # check for one (r-reviewer pass on #461).
+  c("unknown", "after", job(" NOCOV=1", paste(B, P, "; EARLY LOG(); RESTRICT A*B;"))),
+  c("unknown", "after", job(" NOCOV=1", paste(B, P, "; EARLY LOG(); SELECTION SLE=ABC;"))),
+  c("unknown", "after", job(" NOCOV=1", paste(B, P, "; EARLY LOG(); WEIGHT 2W;")))
 )
 
 marks <- c("Estimates for Model Parameters", "Final Results", "Log likelihood",

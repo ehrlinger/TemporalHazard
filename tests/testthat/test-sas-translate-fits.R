@@ -2152,8 +2152,11 @@ test_that("a job a later `(` lets PROC HAZARD run is not called refused (#461)",
       n[["clean"]] <- n[["clean"]] + 1L
       next
     }
-    # Every other row still reaches the reader, and keeps its row.
-    expect_true(.u1_refuses(job), info = o$job)
+    # Every other row still reaches the reader, and keeps its row. A warning
+    # chunk rather than .u1_refuses(), whose fit check expects hazard(): a
+    # SELECTION job's fit chunk is hzr_stepwise().
+    expect_true(!is.null(.u1_refusal_chunk(job)) || .u1_stops(job),
+                info = o$job)
     expect_gte(NROW(job$untranslated), 1L)
     msg <- .u1_msg(job)
     if (o$verdict == "fits") {

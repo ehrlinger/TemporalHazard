@@ -741,6 +741,14 @@
       note(kw, "unknown HAZARD statement")
       next
     }
+    # Only PARMS and the phase statements are checked here for every syntax
+    # error PROC HAZARD raises. Any other statement can hide one this
+    # translation does not see (`RESTRICT A*B`, `SELECTION SLE=ABC`,
+    # `WEIGHT 2W`), which sets the flag again after a `(` and was measured
+    # to be refused, so it cannot follow a `(` that is to clear the job.
+    if (!token %in% c("PARAMETERS", "EARLY", "CONSTANT", "LATE")) {
+      blind_stmt <- c(blind_stmt, i)
+    }
     if (token %in% c("EARLY", "CONSTANT", "LATE")) {
       pc <- .hzr_parse_phase_covars(ops_text)
       if (length(pc$semantic)) semantic_seen <- TRUE

@@ -1126,8 +1126,13 @@
     no longer says `PROC HAZARD` does not run the job;
   - a `(` before the error clears nothing, and neither does one followed
     in its own statement by anything other than `)` or `= number`
-    (`LOG() /I`, `(LOG)`), or by a statement `PROC HAZARD` does not know.
-    These still warn that the job does not run;
+    (`LOG() /I`, `(LOG)`). A statement after the `(` can set the flag
+    again (`RESTRICT A*B`, `SELECTION SLE=ABC`, `WEIGHT 2W`, or one
+    `PROC HAZARD` does not know), and this translation checks only `PARMS`
+    and the phase statements for such errors, so any other statement after
+    the `(` keeps the refusal. These still warn that the job does not run,
+    which is too strong for a clean one: the binary fits the job when the
+    statement is `SELECTION SLE=0.2`;
   - an error in the same statement as the `(` is left to `PROC HAZARD`'s
     error recovery, which fits `EARLY AGE*SEX, LOG();` and stops
     `EARLY 1AGE, SEX, LOG();` before fitting. The warning says it cannot
