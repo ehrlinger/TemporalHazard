@@ -36,6 +36,8 @@
     stop("'formula' must be a formula object.", call. = FALSE)
   }
 
+  data <- .hzr_drop_empty_names(data, formula)
+
   # Parse the LHS (should be Surv(...))
   lhs <- formula[[2L]]
   rhs <- formula[[3L]]
@@ -167,6 +169,39 @@
     rhs_formula <- stats::reformulate("1", env = environment(rhs_formula))
   }
   rhs_formula
+}
+
+#' Drop the columns of `data` named ""
+#'
+#' A column named "" can be named by no formula, so it can play no part in a
+#' model. Two base-R calls in the formula path still fail on it outright:
+#' `list2env()` over the data and `terms(formula, data = data)` for a
+#' two-sided formula or one containing `.`. Both stop with "attempt to use
+#' zero-length variable name". That stopped every fit, and every stepwise
+#' refit, on data that merely CARRIED such a column (#470). Only `.` would
+#' have reached for the column, so only then is there anything to tell the
+#' user. This matches the stepwise default scope, which says the same column
+#' "cannot be a stepwise candidate" (#449). An NA name is left alone, because
+#' nothing fails on it.
+#'
+#' @param data A data frame.
+#' @param formula The formula about to be read against `data`, or `NULL` to
+#'   drop silently, for a caller that is not expanding `.` for the user.
+#' @param where Where `.` appears, for the warning, e.g. `" in phase 'early'"`.
+#' @return `data` without the ""-named columns.
+#' @noRd
+.hzr_drop_empty_names <- function(data, formula = NULL, where = "") {
+  empty <- !is.na(names(data)) & !nzchar(names(data))
+  if (!any(empty)) return(data)
+  if (!is.null(formula) && "." %in% all.vars(formula[[length(formula)]])) {
+    one <- sum(empty) == 1L
+    warning(sum(empty), if (one) " column" else " columns",
+            " of `data` named \"\" ", if (one) "is" else "are",
+            " left out of `.`", where, ": a model formula cannot name ",
+            if (one) "it" else "them", ". Rename ", if (one) "it" else "them",
+            " to include ", if (one) "it" else "them", ".", call. = FALSE)
+  }
+  data[!empty]
 }
 
 

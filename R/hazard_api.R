@@ -1219,7 +1219,10 @@ hazard <- function(formula = NULL,
       two_sided <- stats::as.formula(
         call("~", formula[[2L]], pf[[length(pf)]]), env = environment(pf)
       )
-      phases[[nm]]$formula <- .hzr_expand_rhs(two_sided, data)
+      phases[[nm]]$formula <- .hzr_expand_rhs(
+        two_sided,
+        .hzr_drop_empty_names(data, pf, paste0(" in phase '", nm, "'"))
+      )
     }
     .hzr_check_phase_formula_data(phases, data, x)
   } else if (!is.null(phases)) {
