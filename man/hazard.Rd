@@ -101,8 +101,11 @@ vector from outside \code{data} by position, such as
 \code{function(a) a + g[seq_along(a)]}, sees only the retained rows and pairs
 them with the first elements of \code{g}, as it would under
 \code{stats::lm(subset = )}. Put such a vector in \code{data}.
-An \code{x} or \code{weights} (and, when a formula reads it, a \code{data}) whose row
-count differs from \code{time}'s is refused before any row is dropped.}
+A caller-supplied row-aligned input whose row count differs from
+\code{time}'s is refused before any row is dropped: \code{x} and \code{weights} on the
+\verb{time =}/\verb{status =} interface, and \code{data} wherever a formula reads it row
+by row. (On the formula interface the design is not the caller's; it is
+rebuilt from the retained rows of \code{data}.)}
 
 \item{status}{Numeric or logical event indicator vector, or a
 \code{\link[survival:Surv]{survival::Surv()}} object. A \code{Surv} is read by its \code{type}, exactly as the

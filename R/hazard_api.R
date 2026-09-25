@@ -323,8 +323,11 @@ NULL
 #'   `function(a) a + g[seq_along(a)]`, sees only the retained rows and pairs
 #'   them with the first elements of `g`, as it would under
 #'   `stats::lm(subset = )`. Put such a vector in `data`.
-#'   An `x` or `weights` (and, when a formula reads it, a `data`) whose row
-#'   count differs from `time`'s is refused before any row is dropped.
+#'   A caller-supplied row-aligned input whose row count differs from
+#'   `time`'s is refused before any row is dropped: `x` and `weights` on the
+#'   `time =`/`status =` interface, and `data` wherever a formula reads it row
+#'   by row. (On the formula interface the design is not the caller's; it is
+#'   rebuilt from the retained rows of `data`.)
 #' @param status Numeric or logical event indicator vector, or a
 #'   [survival::Surv()] object. A `Surv` is read by its `type`, exactly as the
 #'   formula interface reads it, and a `time`, `time_lower` or `time_upper`
@@ -1127,12 +1130,14 @@ hazard <- function(formula = NULL,
       data <- if (is.data.frame(data)) {
         subset_rows(data, "data")
       } else {
-        Map(function(col, nm) {
-          subset_rows(col, paste0("data$", nm), scalar_ok = TRUE)
-        }, data, names(data) %||% rep("", length(data)))
+        Map(function(col, nm, k) {
+          label <- if (nzchar(nm)) paste0("data$", nm) else
+            paste0("data[[", k, "]]")
+          subset_rows(col, label, scalar_ok = TRUE)
+        }, data, names(data) %||% rep("", length(data)), seq_along(data))
       }
       # The fit is built on the RETAINED rows only, response and design
-      # both, as if the dropped rows had not been given (John, 2026-09-25).
+      # both, as if the dropped rows had not been given (#476).
       # Every downstream consumer -- the score test, hzr_evaluate(), stepwise
       # and bootstrap refits -- rebuilds from the stored retained frame, so
       # they agree with the fit by construction. (Computing on all rows and
