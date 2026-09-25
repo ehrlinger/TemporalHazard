@@ -1073,7 +1073,8 @@
   in `theta` is replaced rather than used as given. At a fitted model's own
   estimates it returns that fit's objective, under Conservation of Events
   too, since the fit's objective is recomputed at the estimates it returns
-  (#362). A `theta` the likelihood cannot evaluate gives `-Inf`, with a
+  (#362), except where the fit warns that it could not. A `theta` the
+  likelihood cannot evaluate gives `-Inf`, with a
   warning of class `"hzr_evaluate_not_finite"`, for every distribution: the
   single-distribution likelihoods return `+Inf` internally for such a
   `theta`, and it used to reach you as `logLik = Inf`, the best possible fit

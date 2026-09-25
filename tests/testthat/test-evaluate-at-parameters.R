@@ -669,3 +669,15 @@ test_that("a likelihood that is not finite is reported as -Inf, for every family
     expect_true(is.finite(as.numeric(ok$logLik)), info = d)
   }
 })
+
+test_that("a multiphase likelihood that is not finite warns too", {
+  data(avc, package = "TemporalHazard")
+  a <- stats::na.omit(avc)
+  f <- hazard(survival::Surv(int_dead, dead) ~ 1, data = a,
+              dist = "multiphase", fit = FALSE,
+              phases = list(early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1),
+                            const = hzr_phase("constant")))
+  th <- c(log(0.1), log(0.5), 1, 1, 800)  # const.log_mu = 800 overflows
+  expect_warning(r <- hzr_evaluate(f, th), class = "hzr_evaluate_not_finite")
+  expect_identical(as.numeric(r$logLik), -Inf)
+})

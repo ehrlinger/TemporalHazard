@@ -27,11 +27,13 @@
 #' applies it, so the derived entry you pass is replaced rather than
 #' used as given. At a fitted model's own estimates this returns that fit's
 #' objective, under Conservation of Events too: since #362 the fit's objective
-#' is recomputed at the estimates it returns.
+#' is recomputed at the estimates it returns, except where the fit warns that
+#' it could not, and then the two can differ.
 #'
 #' A `theta` the likelihood cannot evaluate -- an overflowing rate, a shape
-#' outside the family -- gives a log-likelihood of `-Inf`, with a warning of
-#' class `"hzr_evaluate_not_finite"`, for every distribution.
+#' outside the family, or a value past a guard that stops short of where the
+#' log-likelihood itself overflows -- gives `-Inf`, with a warning of class
+#' `"hzr_evaluate_not_finite"`, for every distribution.
 #'
 #' @param object A `hazard` object, fitted or built with `fit = FALSE`. Its
 #'   data, distribution and phase specification are used; its own `theta` is
@@ -290,10 +292,10 @@ hzr_evaluate <- function(object, theta, times = NULL) {
     warning(structure(
       class = c("hzr_evaluate_not_finite", "warning", "condition"),
       list(message = paste0(
-        "hzr_evaluate(): the log-likelihood is not finite at this 'theta' ",
-        "(the ", object$spec$dist, " likelihood returned ",
-        format(logl), "): the parameters are outside what the model can ",
-        "evaluate. Reported as -Inf."
+        "hzr_evaluate(): the ", object$spec$dist, " likelihood could not ",
+        "be evaluated at this 'theta' (it returned ", format(logl), "): the ",
+        "parameters are outside the range it computes, which is not always ",
+        "where the log-likelihood itself stops being finite. Reported as -Inf."
       ), call = NULL)
     ))
     logl <- -Inf

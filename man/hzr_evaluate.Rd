@@ -53,11 +53,13 @@ from the others, and that rule is applied to \code{theta} here as the fit
 applies it, so the derived entry you pass is replaced rather than
 used as given. At a fitted model's own estimates this returns that fit's
 objective, under Conservation of Events too: since #362 the fit's objective
-is recomputed at the estimates it returns.
+is recomputed at the estimates it returns, except where the fit warns that
+it could not, and then the two can differ.
 
 A \code{theta} the likelihood cannot evaluate -- an overflowing rate, a shape
-outside the family -- gives a log-likelihood of \code{-Inf}, with a warning of
-class \code{"hzr_evaluate_not_finite"}, for every distribution.
+outside the family, or a value past a guard that stops short of where the
+log-likelihood itself overflows -- gives \code{-Inf}, with a warning of class
+\code{"hzr_evaluate_not_finite"}, for every distribution.
 }
 \examples{
 data(avc, package = "TemporalHazard")
