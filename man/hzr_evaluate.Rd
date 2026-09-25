@@ -52,11 +52,12 @@ A phase built with \code{hzr_phase(constraint = )} derives one of its shapes
 from the others, and that rule is applied to \code{theta} here as the fit
 applies it, so the derived entry you pass is replaced rather than
 used as given. At a fitted model's own estimates this returns that fit's
-objective, with one exception: under Conservation of Events the fit
-re-solves the conserved scale after recording its objective, so a fit
-whose likelihood is steep in that scale can report a value it is not at.
-Then this function returns the likelihood at the estimates, and the two
-differ.
+objective, under Conservation of Events too: since #362 the fit's objective
+is recomputed at the estimates it returns.
+
+A \code{theta} the likelihood cannot evaluate -- an overflowing rate, a shape
+outside the family -- gives a log-likelihood of \code{-Inf}, with a warning of
+class \code{"hzr_evaluate_not_finite"}, for every distribution.
 }
 \examples{
 data(avc, package = "TemporalHazard")

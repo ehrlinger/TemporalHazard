@@ -642,3 +642,30 @@ test_that("hzr_evaluate() names the parameters when theta is the wrong length", 
   expect_match(msg2, "this weibull model takes 3.", fixed = TRUE)
   expect_false(grepl(": mu, nu, x", msg2, fixed = TRUE))
 })
+
+test_that("a likelihood that is not finite is reported as -Inf, for every family", {
+  # N2's sibling N1 (1.2.12 release review): the single-distribution
+  # likelihoods return +Inf as a sentinel for a theta they cannot evaluate,
+  # and hzr_evaluate() reported it as logLik = Inf, the best possible fit.
+  data(avc, package = "TemporalHazard")
+  a <- stats::na.omit(avc)
+  cases <- list(
+    exponential = list(start = 0.1, bad = 800),
+    weibull = list(start = c(0.3, 1.2), bad = c(2, 1e5)),
+    lognormal = list(start = c(1, 0), bad = c(0, -800)),
+    loglogistic = list(start = c(-1, 0), bad = c(800, -800))
+  )
+  for (d in names(cases)) {
+    f <- hazard(survival::Surv(int_dead, dead) ~ 1, data = a, dist = d,
+                theta = cases[[d]]$start, fit = FALSE)
+    # The premise: the raw likelihood returns the sentinel here.
+    raw <- .hzr_logl_at_raw(f, cases[[d]]$bad, .hzr_evaluate_prepare(f))
+    expect_identical(raw, Inf, info = d)
+    expect_warning(r <- hzr_evaluate(f, cases[[d]]$bad),
+                   class = "hzr_evaluate_not_finite")
+    expect_identical(as.numeric(r$logLik), -Inf, info = d)
+    # A theta it can evaluate is unchanged, and quiet.
+    expect_no_warning(ok <- hzr_evaluate(f, cases[[d]]$start))
+    expect_true(is.finite(as.numeric(ok$logLik)), info = d)
+  }
+})
