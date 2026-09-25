@@ -228,21 +228,24 @@ was lost. \code{fit$fit$weak} is \code{NA} exactly when
 \code{"weak_direction_check"} is listed.
 
 \code{fit$fit$boundary} is its sibling and takes the same three states,
-for phases fitted outside the support their parameterisation can carry:
+for phases whose fit sits where their parameterisation breaks down:
 \code{NULL} when the check ran and found nothing, a list of records when
 it found something, and \code{NA} when it did not run --- and it is
 \code{NA} exactly when \code{"boundary_check"} is listed in
 \code{degraded}, with the reason in \code{degraded_causes}. Each record
 carries \code{mechanism}, \code{phase}, \code{parameter} and a
-printable \code{detail}. The mechanisms are \code{"unbounded_phase"}
-(a \code{"hazard"} phase whose \code{t_half} is below the data), and
-two made at setup, before the fit: \code{"g3_alpha_one"} (a g3 phase
-with \code{alpha} fixed at 1, re-expressed as PROC HAZARD does, see
-\code{\link[=hzr_phase]{hzr_phase()}}) and \code{"g3_fixge2_alpha_start"} (a free \code{alpha}
-start moved to 2/3 under \code{constraint = "eta_gamma"}). A fit with
-any record raises one warning whose classes are \code{"hzr_"} plus each
-mechanism present, all inheriting \code{"hzr_boundary"}, so one handler
-catches the whole family.
+printable \code{detail}. The mechanisms are \code{"unbounded_phase"}, a
+\code{"hazard"} phase whose \code{t_half} is below the first observed
+time; \code{"phase_discontinuity"}, a \code{"cdf"} or \code{"hazard"}
+phase whose shape has collapsed to a step the observed times cannot
+resolve (it can lie inside the data); and two made at setup, before the
+fit: \code{"g3_alpha_one"} (a g3 phase with \code{alpha} fixed at 1,
+re-expressed as PROC HAZARD does, see \code{\link[=hzr_phase]{hzr_phase()}}) and
+\code{"g3_fixge2_alpha_start"} (a free \code{alpha} start moved to 2/3
+under \code{constraint = "eta_gamma"}). Only rows the likelihood reads
+count as observed times. A fit with any record raises one warning whose
+classes are \code{"hzr_"} plus each mechanism present, all inheriting
+\code{"hzr_boundary"}, so one handler catches the whole family.
 }
 \description{
 Creates a \code{hazard} object and optionally fits it via maximum likelihood.

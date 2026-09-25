@@ -93,6 +93,24 @@ test_that("an unenclosed PROC with nothing following extends to end of text", {
   expect_true(grepl("EVENT D;", b[[1]]$text, fixed = TRUE))
 })
 
+test_that("an unenclosed PROC is bounded by the words PROC/DATA/RUN, not a prefix (#473 review)", {
+  # A statement beginning DATASET or RUNNING is not a DATA step or RUN; SAS
+  # hands it to PROC HAZARD, so it stays in the block with what follows.
+  body <- function(src) .hzr_sas_blocks(.hzr_sas_normalise(src))[[1]]$text
+  for (w in c("DATASET X", "RUNNING X", "PROCESS X")) {
+    expect_equal(body(paste0("PROC HAZARD DATA=A; EVENT D; ", w, "; TIME T; RUN;")),
+                 paste0("PROC HAZARD DATA=A; EVENT D; ", w, "; TIME T;"), info = w)
+  }
+  # Known positives: each word itself still ends the block, with or without
+  # a space after the `;`.
+  for (w in c("DATA NEXT;", "RUN;", "PROC PRINT;")) {
+    for (sep in c(" ", "")) {
+      expect_equal(body(paste0("PROC HAZARD DATA=A; EVENT D;", sep, w)),
+                   "PROC HAZARD DATA=A; EVENT D;", info = paste0("[", sep, "]", w))
+    }
+  }
+})
+
 test_that("%REPEAT calls are blocks too, in file order, with offsets", {
   txt <- .hzr_sas_normalise(c(
     "%repeat(in=bd, out=events, id=ccfid);",

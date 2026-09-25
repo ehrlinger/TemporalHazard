@@ -49,16 +49,22 @@ test_that("a pin naming an unnameable column is reported, not published", {
   expect_match(r$msgs[[1L]], "`force_in` names \".\"", fixed = TRUE)
   expect_match(r$msgs[[1L]], "no model formula can name", fixed = TRUE)
   expect_true("." %in% unlist(r$value$scope$unresolved))
-  # No placeholder survives anywhere in `$scope` AS IT EXISTS ON THIS BASE.
-  # Scoped deliberately: the field that PUBLISHES the resolved pin to users,
-  # `$scope$force_in_resolved`, is added by #451 and is not on this branch, so
-  # the user-facing symptom #463 was filed for cannot be observed here. Stream
-  # C verifies that on the merged tree.
+  # No placeholder survives anywhere in `$scope`, which includes
+  # `force_in_resolved` (#451), the field that PUBLISHES resolved pins to users.
+  # A placeholder there is the symptom #463 was filed for.
   # rapply(), not Filter(is.character, unlist(.)): unlist() COERCES to a
   # common type first, so the filter would run on an already-coerced vector.
   chr <- rapply(r$value$scope, as.character, classes = "character", how = "unlist")
   expect_gt(length(chr), 0L)          # the check must have something to look at
   expect_false(any(.hzr_is_label_placeholder(chr)))
+  # The scan cannot see two failures, so each gets its own line. If the field
+  # VANISHED, the scan would have one field fewer to look at and would still
+  # pass, and so would `expect_length(NULL, 0L)`; hence the `is.null` check.
+  # If a NON-placeholder value such as the spelling "." were published, the
+  # scan would pass it, because "." is not in placeholder form and `$scope`
+  # already holds "." legitimately in `force_in`; hence the length check.
+  expect_false(is.null(r$value$scope$force_in_resolved))
+  expect_length(r$value$scope$force_in_resolved, 0L)
 })
 
 test_that("force_out is handled the same way", {
@@ -193,4 +199,72 @@ test_that("the literal placeholder text does not advise renaming nothing", {
                  criterion = "wald", force_in = ".", trace = FALSE)
   )
   expect_match(r2$msgs[[1L]], "Rename that column", fixed = TRUE)
+})
+
+# UNRESOLVED PINS KEEP THE USER'S ORDER (#465 review). `.hzr_resolve_names()`
+# keeps its input's order, but the pin filter above appended the unnameable
+# pins AFTER the names the resolver had already left unresolved, so
+# `force_in = c(".", "nope")` came back as "nope", ".". The set was right;
+# the order was not the one the user wrote, in the field or in print().
+# The repeated-name case is here because the easy fixes -- union(), unique()
+# -- would restore the order and quietly drop the repeat.
+test_that("unresolved pins keep the order they were written in", {
+  d <- ph_data()
+  f <- ph_fit(d)
+  sw_pins <- function(...) {
+    suppressWarnings(
+      hzr_stepwise(f, scope = ~ age + mal, data = d, direction = "both",
+                   criterion = "wald", trace = FALSE, ...)
+    )
+  }
+
+  sw <- sw_pins(force_in = c(".", "nope"))
+  expect_identical(sw$scope$unresolved$force_in, c(".", "nope"))
+  # Where the user reads it, not only where it is produced.
+  expect_true(any(grepl("(unresolved `force_in`, ignored: \".\", \"nope\")",
+                        capture.output(print(sw)), fixed = TRUE)))
+
+  # The other order stays as written too, so a fix that merely moved the
+  # placeholders to the FRONT would fail here.
+  expect_identical(sw_pins(force_in = c("nope", "."))$scope$unresolved$force_in,
+                   c("nope", "."))
+
+  # A repeated name is kept, in place.
+  expect_identical(
+    sw_pins(force_in = c(".", "nope", "."))$scope$unresolved$force_in,
+    c(".", "nope", ".")
+  )
+
+  # Both pin sites share the filter; `force_out` is checked separately.
+  expect_identical(sw_pins(force_out = c(".", "nope"))$scope$unresolved$force_out,
+                   c(".", "nope"))
+})
+
+# A COLUMN NAMED "" (#465 review). NEWS promises that a pin on a column
+# called "" warns and is listed as unresolved, and until now only "." had a
+# test. A "" column reaches `hzr_stepwise()` only when its `data` differs
+# from the fit's: `hazard()` itself stops on any data frame carrying a ""
+# column, even an unused one. So the model is fitted on clean data here.
+# `direction = "forward"` with nothing left to add means no refit, so the
+# pin's own warning is the only one -- a refit on this data would hit that
+# separate `hazard()` failure and add warnings that are not this test's.
+test_that("a pin on a column named \"\" warns and is listed as unresolved", {
+  d <- ph_data()
+  clean <- d[, names(d) != "."]
+  names(d)[names(d) == "."] <- ""
+  f <- ph_fit(clean)
+  r <- ph_warnings(
+    hzr_stepwise(f, scope = ~ age + mal, data = d, direction = "forward",
+                 criterion = "wald", force_in = "", trace = FALSE)
+  )
+  expect_length(r$msgs, 1L)
+  expect_match(r$msgs[[1L]], "`force_in` names \"\", which no model formula",
+               fixed = TRUE)
+  expect_identical(r$value$scope$unresolved$force_in, "")
+  # The pin is not published as resolved. The `is.null` line comes first
+  # because `expect_length(NULL, 0L)` passes. An earlier draft had only the
+  # length check, on a branch where the field did not exist yet, so it could
+  # not fail (#469 review).
+  expect_false(is.null(r$value$scope$force_in_resolved))
+  expect_length(r$value$scope$force_in_resolved, 0L)
 })

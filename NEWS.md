@@ -245,14 +245,9 @@
   the option nor what was lost. Both now warn and record the construct,
   alongside the existing check on `MAXITER=` and `CONDITION=`.
 
-  One spelling is **not** covered, and fails before the joining can happen:
-  `DATA = X` with spaces, on a `PROC HAZARD` line that is not wrapped in a
-  `%HAZARD(...)` call. The scanner that cuts a file into blocks treats the
-  word `DATA ` as the start of a new block, so the job is truncated after
-  `PROC HAZARD` and the translation fails with "The EVENT or ICENSOR
-  variable must be specified" for a job that does have an `EVENT` statement.
-  This is unchanged from earlier releases; write `DATA=X` without the spaces,
-  or wrap the job in `%HAZARD(...)`.
+  `DATA = X` with spaces, on a `PROC HAZARD` line not wrapped in a
+  `%HAZARD(...)` call, failed before the joining could happen; that is fixed
+  under #458 below.
 
 * **`hazard()` refuses a function-valued element of `data` (#420).** `data`
   masks the calling frame while `hazard()` evaluates `time`, `status`,
@@ -1153,6 +1148,74 @@
   the same direction. The warning and `fit$fit$weak` carry `single = TRUE`.
   Every pair the pairwise reading named before is unchanged.
 
+* **A phase that has collapsed to a step is now reported (#448).** When a
+  `cdf` phase's shape `nu` is driven towards zero, its `(t_half/t)^(1/nu)` term
+  acquires an exponent of order `1e15` and the phase approaches a step at
+  `t_half`. The decomposition has always refused `nu = 0` outright, because
+  that limit is degenerate; but a fit can come to rest a floating-point step
+  away from it, take the ordinary branch, and return `converged = TRUE` with
+  nothing said. On a fit of the shipped `avc` data, `nu` settles at `-1.4e-16`
+  and a one-step change in it moves the log-likelihood by 6 to 30 units, in no
+  consistent direction, with five tied event times at `t_half` accounting for
+  the whole of it.
+
+  Such a fit now warns, and records the finding in `fit$fit$boundary` with
+  class `"hzr_phase_discontinuity"`, which inherits `"hzr_boundary"`. **The fit
+  is still returned and `converged` keeps its meaning:** it reports what the
+  optimizer did, which is a different question from whether the answer is
+  sound. The record names the phase, the two observed times the rise falls
+  between, the fitted `nu` and `t_half`, and how many observations lie in that
+  interval, so you can judge how far out the fit is rather than take a verdict
+  on trust.
+
+  The test thresholds no parameter. It asks whether **your data can resolve the
+  rise**: the phase must go from numerically 0 to numerically 1 while at most
+  one observed time falls strictly inside the transition. A genuine curve puts
+  many times inside it; a step admits at most the one sitting on it.
+
+  A previous release recorded this under Known limitations and said the fix
+  waited on whether the reference `PROC HAZARD` reaches the same state, since
+  that decides whether a change here is a parity break. **It does reach it, and
+  it declines to vouch for the result**: on the same specification it reports a
+  possible singularity and says that "insufficient accuracy is possible in the
+  gradient calculations", exiting with an error status while still printing the
+  estimates. So this is a shared degeneracy that the reference already flags,
+  and reporting it is parity-preserving rather than a break.
+
+* **A stray `=` in `PARMS` no longer takes the next operand with it
+  (#458).** `PARMS MUE=0.2 = THALF=0.15 NU=1` read the stray `=` as a piece
+  of a spaced operand and threw `THALF=0.15` away with it, so the emitted fit
+  started `t_half` at `PROC HAZARD`'s default of 1 rather than the 0.15
+  written. The stray `=` is now recorded as the syntax error it is, as the
+  `PROC HAZARD` and `PROC HAZPRED` lines already did, and the operands after
+  it are read as written. `PARMS` has no error rule of its own
+  (`hazard_y.y:130-160`), so `PROC HAZARD` falls to `otherstmt : error`
+  (`:102`) and rejects the job; the job still warns, as before. `==` is two
+  `=` tokens to SAS (`hazard_l.l:55`) and records two rows.
+
+* **A `SETG3` entry refusal under `WEIBULL` is recorded once (#458).** With
+  `WEIBULL` and one of `FIXGE2` or `FIXGAE2`, a job that fixed `TAU`, `GAMMA`
+  or `ETA` at a non-positive value, or `ALPHA` below zero, listed the same
+  `SETG3900`-`SETG3930` refusal twice in `$untranslated`. For a fixed
+  non-positive `TAU` it also listed a `GAMMA` or `ALPHA` rewrite `PROC
+  HAZARD` never performs, and the emitted phase carried the rewritten value:
+  `setg3.c:269-284` returns on these checks before the constraint rules at
+  `:444-481` run. The job now has one row, and its phase keeps the values
+  written. The job still warns with the same code; the warning now names
+  the late shape and its fixed parameters (`GAMMA=1 ALPHA=1 ETA=1
+  fixed:tau`), as the same job without `WEIBULL` already did, rather than
+  `TAU` alone.
+
+* **`PROC HAZARD DATA = X` translates when the job is not wrapped in
+  `%HAZARD(...)` (#458).** A `PROC HAZARD` with no enclosing parenthesis is
+  bounded at the next `DATA` step, `PROC` or `RUN`, and the scanner found
+  those by the word alone, so the `DATA=` option written with a space
+  before the `=` ended the job right after `PROC HAZARD`. The translation
+  then failed with "The EVENT or ICENSOR variable must be specified" for a
+  job that has an `EVENT` statement. A boundary is now a statement that
+  begins with one of those words, after a `;`, so every spacing of the
+  `PROC` line gives the same translation.
+
 * **`hzr_stepwise()` no longer reports a pin on a column no formula can name
   as resolved (#463).** `force_in` and `force_out` accept a column of `data`
   or a term label. A column called `"."` or `""` is neither usable: `terms()`
@@ -1160,10 +1223,11 @@
   was nevertheless reported as having resolved — it did not appear in
   `$scope$unresolved` — while doing nothing at all, and with a formula
   `scope` nothing warned either. It now warns and is listed as unresolved,
-  like any other name that cannot be used. With a character or default
-  `scope` you already saw a warning that the column could not be a
-  *candidate*; that one is unchanged, and the new one is about *pinning*, so
-  both now appear.
+  like any other name that cannot be used, and `$scope$unresolved` keeps
+  the names in the order you wrote them, a repeated name included. With a
+  character or default `scope` you already saw a warning that the column
+  could not be a *candidate*; that one is unchanged, and the new one is about
+  *pinning*, so both now appear.
 
   The selected model does not change. The pin never had any effect, and a
   test asserts the same job with and without it reaches the same terms at the
@@ -1316,7 +1380,8 @@
   **This corrects the report, not the fit.** The largest gaps arose where the
   estimates are themselves unsound: standing on a discontinuity in the
   likelihood, where a change of one floating-point step in a parameter moves
-  the log-likelihood by several units (see Known limitations, #448). A fit in
+  the log-likelihood by several units (#448, now reported; see Bug fixes). A
+  fit in
   that state reports `converged = TRUE`, and that flag does not mean the fit
   is sound there. Read the relative-gradient test beside it, which such fits
   fail.
@@ -2457,23 +2522,6 @@
   the log-likelihood at a much larger `gamma` before trusting `gamma`-hat**.
   The fitted hazard is barely affected away from `tau`; it is the inference
   about `gamma` that is at risk.
-
-* **A multiphase fit can come to rest on a discontinuity in the likelihood,
-  and still report `converged = TRUE` (#448).** When a `cdf` phase's shape
-  `nu` is driven towards zero, the phase's `(t_half/t)^(1/nu)` term acquires
-  an exponent of order `1e15`, so the phase approaches a step at `t_half`. If
-  `t_half` then comes to rest within a floating-point step of one or more
-  observed event times, the log-likelihood is discontinuous there: on a fit of
-  the shipped `avc` data a one-step change in `log(t_half)` moves the
-  log-likelihood by 6 to 30 units, in no consistent direction, with five tied
-  event times accounting for the whole of it. Such a fit reports
-  `converged = TRUE` while failing the relative-gradient test by six orders of
-  magnitude, so **read `rel_gradient` and the phase's `nu` before trusting a
-  multiphase fit**, and treat a `nu` at the boundary as a warning that the
-  estimates are not identified. This release does not change the behaviour:
-  whether the reference `PROC HAZARD` reaches the same state on the same job
-  has not been established, and that answer decides whether the fix is a
-  parity break or a shared degeneracy.
 
 * **In a two-way `hzr_stepwise()` screen, `$scope$frozen` can name a
   variable the final model excludes (#378).** With `direction = "both"`,
