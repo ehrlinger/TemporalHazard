@@ -2034,12 +2034,14 @@
         ))
       }
     } else if (!(length(constraint_flags) && !saw_weibull)) {
-      # A start trace is only true on the path the trace models. FIXGE2 or
-      # FIXGAE2 without WEIBULL sends SETG3_verify_ge_2() and
-      # SETG3_alpha_fixup() down their g_two / ga_two branches instead
-      # (setg3.c:817-835, :877-906), and the binary shows the trace wrong
-      # there: FIXGE2 at gamma = 1, eta = 2 leaves gamma at 1 (setg3.c:883)
-      # and moves alpha to 2/3; FIXGAE2 moves alpha as well as gamma (#472).
+      # A start trace is only true on the path the trace models, which takes
+      # g_two and ga_two as FALSE. Without WEIBULL, FIXGE2 sends
+      # SETG3_verify_ge_2() down its g_two branch (setg3.c:877-906) and
+      # FIXGAE2 sends SETG3_alpha_fixup() down its ga_two branch (:817-835),
+      # and the binary shows the trace wrong on both: FIXGE2 at gamma = 1,
+      # eta = 2 leaves gamma at 1 (:883), and the !ga_two alpha_fixup then
+      # moves alpha to gamma*eta/3 = 2/3 (:849); FIXGAE2 moves gamma to 1.5
+      # (:919) and then alpha to gamma*eta/2 = 1.5 (:827) (#472).
       # Such a job already carries a "<flag> is not translated" row, which
       # is the true statement, so no start row is added beside it.
       #
