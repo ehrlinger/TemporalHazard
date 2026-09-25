@@ -1225,8 +1225,9 @@
     (`LOG() /I`, `(LOG)`). A statement after the `(` can set the flag
     again (`RESTRICT A*B`, `SELECTION SLE=ABC`, `WEIGHT 2W`, or one
     `PROC HAZARD` does not know), and this translation checks only `PARMS`
-    and the phase statements for such errors, so any other statement after
-    the `(` keeps the refusal. These still warn that the job does not run,
+    and the phase statements fully for such errors (a `SELECTION` value is
+    checked too, but not the rest of that statement), so any other
+    statement after the `(`, `SELECTION` included, keeps the refusal. These still warn that the job does not run,
     which is too strong for a clean one: the binary fits the job when the
     statement is `SELECTION SLE=0.2`;
   - an error in the same statement as the `(` is left to `PROC HAZARD`'s
@@ -1257,11 +1258,14 @@
   translation emitted `hzr_stepwise(slentry = 0.001)` and the rest with no
   warning and no row. A value `as.numeric()` cannot read (`SLE=ABC`) had a
   row and fell back to the default, also without a warning. Such a job now
-  warns that `PROC HAZARD` does not run
-  it and records the row, and the screen still runs at the value as read. A
-  later `(` clears the error as it does the others (#461); the binary then
-  fits the job with no screen at all, so the warning says the fit stands in
-  for a model `PROC HAZARD` does not fit.
+  warns that `PROC HAZARD` does not run it and records the row. The screen
+  still runs, at the value as `as.numeric()` reads it, or at `PROC HAZARD`'s
+  default when it cannot read it. A later `(` clears the error as it does
+  the others (#461); the binary then fits the job with no screen at all, so
+  the warning says the fit stands in for a model `PROC HAZARD` does not fit.
+  Other syntax errors in a `SELECTION` statement are still recorded without
+  a warning: a keyword with no `= value` (`SLE 0.2`), a value on an option
+  that takes none (`NOPRINTS=1`), and an unknown option.
 
 * **The weak-direction warning now names a single g3 shape that the data do
   not determine (#415).** It named only pairs of parameters that trade off,

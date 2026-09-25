@@ -748,8 +748,8 @@
     # `WEIGHT 2W`), which sets the flag again after a `(` and was measured
     # to be refused, so it cannot follow a `(` that is to clear the job.
     # SELECTION's values are now checked (N3), but its other syntax errors,
-    # an unknown option or a keyword missing its `= NUMBER`, are not, so it
-    # stays blind here.
+    # an unknown option, a keyword missing its `= NUMBER` or a value on an
+    # option that takes none (`NOPRINTS=1`), are not, so it stays blind here.
     if (!token %in% c("PARAMETERS", "EARLY", "CONSTANT", "LATE")) {
       blind_stmt <- c(blind_stmt, i)
     }
