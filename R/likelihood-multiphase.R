@@ -2055,7 +2055,9 @@
 #'
 #' @param time Numeric vector of follow-up times.
 #' @param status Numeric event indicator vector.
-#' @param time_lower Optional lower bounds for interval censoring.
+#' @param time_lower Optional lower bounds: the counting-process ENTRY time
+#'   on a status 0/1 row when 0 < time_lower < time (left truncation), and the
+#'   interval's lower bound on a status-2 row.
 #' @param time_upper Optional upper bounds for left/interval censoring.
 #' @param x Global design matrix (n x p) or NULL.
 #' @param theta_start Starting parameter vector (full internal scale).
