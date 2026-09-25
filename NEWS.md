@@ -297,7 +297,7 @@
   in which only some replicates stay at their start while their objective is
   finite is not caught; that rests on the optimizer's convergence test
   (#351). What a sentinel objective should mean for a single fit is tracked
-  separately (#351, #374).
+  separately (#486).
 
 * **`hzr_translate_sas()` no longer fits a job `PROC HAZARD` rejects: if
   you hold estimates from such a translation, they have no SAS run behind
@@ -1509,7 +1509,7 @@
   fail.
 
   What a sentinel objective should mean for a single fit is tracked
-  separately (#351, #374).
+  separately (#486).
 * **A ridge is no longer named from a covariance that is not a covariance
   (#416).** `summary()`'s weak-direction report reads the flat direction from
   the correlation of the estimates. When the Hessian was taken where it is not
