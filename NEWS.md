@@ -1296,7 +1296,7 @@
   estimates. So this is a shared degeneracy that the reference already flags,
   and reporting it is parity-preserving rather than a break.
 
-  A step placed on the first observed time is reported too. There no observed
+  A step placed on the first observed time is reported too. There, no observed
   time lies below the rise, and the detector used to require one; a phase
   has G(0) = 0, so the origin now serves as that point when the first
   observed time is inside the rise. A phase already complete before the
