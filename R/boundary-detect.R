@@ -70,13 +70,18 @@
   g <- tryCatch(g_fn(ut), error = function(e) NULL)
   if (is.null(g) || length(g) != length(ut) || !all(is.finite(g))) return(NULL)
 
-  # A "cdf" phase has G(0) = 0 by definition, so the origin is a point below
+  # A phase has G(0) = 0 by definition, so the origin is a point below
   # the rise even when no observed time is. Without it, a step placed ON the
   # first observed time -- G is 0.82 there and 1 at every later time -- had
   # no observed time below tol and went unreported, while the event at
   # t_half took the spike (1.2.12 release review N4: a translated job on
   # avc, log-likelihood -23.5 against the reference's -207.66).
-  if (with_origin) {
+  # Only when the FIRST observed time lies inside the rise: that is N4's
+  # signature. A phase already complete before the first observation (G ~ 1
+  # at every observed time) is unidentified but not a step, and the
+  # phase_share_tol check (and #444 for "hazard") already reports it; adding
+  # the origin there named a smooth, fixed decay "a step" (r-reviewer, #502).
+  if (with_origin && g[1] > tol && g[1] < 1 - tol) {
     ut <- c(0, ut)
     g <- c(0, g)
   }
@@ -151,11 +156,14 @@
   g_fn <- function(x) {
     hzr_decompos(x, t_half = t_half, nu = nu, m = m)$G
   }
-  # The origin counts as a point below the rise only for "cdf": a "hazard"
-  # phase whose t_half is below the data is #444's unbounded_phase record.
+  # Both types have G(0) = 0. The origin is used only when the first
+  # observed time is inside the rise, so a "hazard" phase wholly below the
+  # data (G ~ 1 at every time) stays #444's unbounded_phase record, while one
+  # whose step straddles the first time -- which #444 skips, t_half >= t_min
+  # -- is reported here.
   d <- .hzr_phase_step_detail(time, t_half = t_half, nu = nu, g_fn = g_fn,
                               time_lower = time_lower, time_upper = time_upper,
-                              with_origin = identical(type, "cdf"))
+                              with_origin = TRUE)
   if (is.null(d)) return(NULL)
   list(mechanism = "phase_discontinuity", phase = name,
        parameter = d$parameter, detail = d$detail)

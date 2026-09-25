@@ -152,6 +152,11 @@ test_that("a step placed on the first observed time is reported via the origin",
   expect_match(out$detail, "between the origin (time 0, where G is 0) and ",
                fixed = TRUE)
   expect_match(out$detail, "the observed time 2,", fixed = TRUE)
+  # A phase complete before the first observation is not a step, and is
+  # left to the identifiability check (r-reviewer, #502).
+  done <- function(x) rep(1, length(x))
+  expect_null(.hzr_phase_step_detail(tt, t_half = 1e-6, nu = 0, g_fn = done,
+                                     with_origin = TRUE))
   # A smooth phase is not reported with the origin either.
   smooth <- function(x) stats::pnorm(x, mean = 2.5, sd = 1)
   expect_null(.hzr_phase_step_detail(seq(0.5, 5, by = 0.5), t_half = 2.5,
@@ -176,4 +181,22 @@ test_that("the release review's translated avc job is reported (N4)", {
   expect_equal(t_half, min(AVC$INT_DEAD), tolerance = 1e-6)
   mech <- vapply(fit$fit$boundary, function(r) r$mechanism, character(1))
   expect_true("phase_discontinuity" %in% mech)
+  rec <- fit$fit$boundary[[which(mech == "phase_discontinuity")]]
+  expect_match(rec$detail, "between the origin (time 0, where G is 0)",
+               fixed = TRUE)
+})
+
+test_that("a hazard-type step straddling the first time is reported (#444 skips it)", {
+  # t_half just above t_min: #444 skips (t_half >= t_min), and without the
+  # origin no observed time lay below the rise.
+  tt <- c(1, 2, 3)
+  rec <- .hzr_phase_step_record("early", "hazard",
+                                c(early.log_t_half = log(1.0005),
+                                  early.nu = 1e-3, early.m = 1), tt)
+  # The real decomposition at those values puts G(t_min) inside the rise.
+  g1 <- hzr_decompos(1, t_half = 1.0005, nu = 1e-3, m = 1)$G
+  expect_gt(g1, .hzr_step_resolution)
+  expect_lt(g1, 1 - .hzr_step_resolution)
+  expect_identical(rec$mechanism, "phase_discontinuity")
+  expect_match(rec$detail, "the origin (time 0", fixed = TRUE)
 })

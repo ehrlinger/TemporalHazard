@@ -1297,8 +1297,10 @@
   and reporting it is parity-preserving rather than a break.
 
   A step placed on the first observed time is reported too. There no observed
-  time lies below the rise, and the detector used to require one; a `"cdf"`
-  phase has G(0) = 0, so the origin now serves as that point. (A translated
+  time lies below the rise, and the detector used to require one; a phase
+  has G(0) = 0, so the origin now serves as that point when the first
+  observed time is inside the rise. A phase already complete before the
+  first observation is not a step and is left to the identifiability check. (A translated
   job on `avc` came to rest that way, with `t_half` on the first event time,
   at a log-likelihood of -23.5 against the reference binary's -207.66, and
   nothing was recorded.)
