@@ -968,8 +968,8 @@
     # refused. #411 refused it, citing a `/I` pin that never matched and a
     # score criterion that could not test the candidate. Measured through
     # this translator (#459), #437 had fixed the pin before the refusal
-    # reached main, and #455 fixed the score path, so the job is screened
-    # like any other.
+    # reached main, and #449 (PR #455) fixed the score path, so the job is
+    # screened like any other.
     refusals <- c(sel$refuse,
                   if (saw_restrict) "RESTRICT",
                   if (length(per_var_opts)) per_var_opts,

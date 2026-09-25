@@ -1572,7 +1572,7 @@ test_that("a SELECTION name PROC HAZARD accepts is screened, not refused (#459)"
   # `_X1` and the reserved words are in PROC HAZARD's grammar
   # (hazard_l.l:39) and only R objects to them. #411 refused such a job;
   # #459 measured both of its causes as not live, so it now screens (the
-  # screens themselves are executed in the #459 tests above).
+  # screens themselves are executed in the #459 tests below).
   #
   # Text PROC HAZARD REJECTS at parse (`AGE*SEX`, `LOG(AGE)`) is not refused
   # either: it warns, with a row, and is left out of the screen (#440).
@@ -1610,8 +1610,8 @@ test_that("a SELECTION name PROC HAZARD accepts is screened, not refused (#459)"
 # with the refusal lifted (#459): a `/I` pin on `_X1` was DROPPED at the #411
 # branch tip 9d30dc3e and HELD at its merge 5c121f03, at a0405a9b and at
 # f8808a5e, so #437 (merged first) had fixed it; the score criterion could not
-# score `_X1` at a0405a9b and entered it at f8808a5e, so #455 fixed the
-# second. The job now runs, and these execute what it emits.
+# score `_X1` at a0405a9b and entered it at f8808a5e, so #449 (PR #455) fixed
+# the second. The job now runs, and these execute what it emits.
 .p459_data <- function() {
   set.seed(459)
   n <- 300
@@ -1667,7 +1667,7 @@ test_that("a /I pin on a non-syntactic name holds through the translator (#459)"
     expect_true(paste0("phase_1.", lab) %in% names(stats::coef(held$fit)),
                 info = nm)
     expect_identical(held$fit$scope$force_in_resolved, lab, info = nm)
-    expect_length(held$fit$scope$unresolved$force_in, 0L)
+    expect_identical(length(held$fit$scope$unresolved$force_in), 0L, info = nm)
     expect_false(held$fit$criteria$stopped_uncomputable, info = nm)
   }
 })
@@ -1677,7 +1677,8 @@ test_that("the score criterion enters a non-syntactic name through the translato
   set.seed(4592)
   D <- .p459_data()
   # A column carrying signal beyond AGE, so a working score path must enter
-  # it. Before #455 the translated screen could not score it and stopped.
+  # it. Before #449 (PR #455) the translated screen could not score it and
+  # stopped.
   signal <- -(log(D$T) + 1.5 * D$AGE) + stats::rnorm(nrow(D), sd = 0.5)
   run <- .p459_run("AGE /I, _X1", "FORWARD SLENTRY=0.3", "_X1", signal)
   expect_identical(run$job$calls$fit[[3L]][[1L]], as.name("hzr_stepwise"))
