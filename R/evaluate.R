@@ -26,11 +26,16 @@
 #' from the others, and that rule is applied to `theta` here as the fit
 #' applies it, so the derived entry you pass is replaced rather than
 #' used as given. At a fitted model's own estimates this returns that fit's
-#' objective, with one exception: under Conservation of Events the fit
-#' re-solves the conserved scale after recording its objective, so a fit
-#' whose likelihood is steep in that scale can report a value it is not at.
-#' Then this function returns the likelihood at the estimates, and the two
-#' differ.
+#' objective, under Conservation of Events too: since #362 the fit's objective
+#' is recomputed at the estimates it returns, except where the fit warns that
+#' it could not, and then the two can differ.
+#'
+#' A `theta` that passes the input checks but that the likelihood cannot
+#' evaluate -- an overflowing rate, a shape outside the family, or a value
+#' past a guard that stops short of where the log-likelihood itself
+#' overflows -- gives `-Inf`, with a warning of class
+#' `"hzr_evaluate_not_finite"`, for every distribution. A Weibull `mu` or
+#' `nu` at or below 0 is still refused outright by those input checks.
 #'
 #' @param object A `hazard` object, fitted or built with `fit = FALSE`. Its
 #'   data, distribution and phase specification are used; its own `theta` is
@@ -278,6 +283,29 @@ hzr_evaluate <- function(object, theta, times = NULL) {
 #' @keywords internal
 #' @noRd
 .hzr_logl_at <- function(object, theta, prepared) {
+  # The single-distribution likelihoods return +Inf as a sentinel for a
+  # theta they cannot evaluate (an overflowing rate, an infeasible shape),
+  # and it reached the user as logLik = Inf, the best possible fit (1.2.12
+  # release review, N1; #383 covered Weibull mu/nu <= 0 only). Whatever the
+  # family, a log-likelihood that is not finite is reported as -Inf, the
+  # value the multiphase likelihood already returns, and said so.
+  logl <- .hzr_logl_at_raw(object, theta, prepared)
+  if (length(logl) != 1L || !is.finite(logl)) {
+    warning(structure(
+      class = c("hzr_evaluate_not_finite", "warning", "condition"),
+      list(message = paste0(
+        "hzr_evaluate(): the ", object$spec$dist, " likelihood could not ",
+        "be evaluated at this 'theta' (it returned ", format(logl), "): the ",
+        "parameters are outside the range it computes, which is not always ",
+        "where the log-likelihood itself stops being finite. Reported as -Inf."
+      ), call = NULL)
+    ))
+    logl <- -Inf
+  }
+  logl
+}
+
+.hzr_logl_at_raw <- function(object, theta, prepared) {
   dist <- object$spec$dist
   args <- list(theta = unname(theta), time = prepared$time,
                status = prepared$status, time_lower = prepared$time_lower,

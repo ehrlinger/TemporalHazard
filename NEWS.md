@@ -297,7 +297,7 @@
   in which only some replicates stay at their start while their objective is
   finite is not caught; that rests on the optimizer's convergence test
   (#351). What a sentinel objective should mean for a single fit is tracked
-  separately (#351, #374).
+  separately (#486).
 
 * **`hzr_translate_sas()` no longer fits a job `PROC HAZARD` rejects: if
   you hold estimates from such a translation, they have no SAS run behind
@@ -1071,9 +1071,14 @@
   line. A phase built with `hzr_phase(constraint = )` has its derived shape
   re-derived here, as the fit re-derives it, so a contradictory value passed
   in `theta` is replaced rather than used as given. At a fitted model's own
-  estimates it returns that fit's objective, except where the fit reports an
-  objective it is not at: under Conservation of Events the conserved scale is
-  re-solved after the objective is recorded (#362), and the two then differ.
+  estimates it returns that fit's objective, under Conservation of Events
+  too, since the fit's objective is recomputed at the estimates it returns
+  (#362), except where the fit warns that it could not. A `theta` the
+  likelihood cannot evaluate gives `-Inf`, with a
+  warning of class `"hzr_evaluate_not_finite"`, for every distribution: the
+  single-distribution likelihoods return `+Inf` internally for such a
+  `theta`, and it used to reach you as `logLik = Inf`, the best possible fit
+  (for example, an exponential model on `avc` at `theta = 800`).
 
 * **`hzr_phase()` can derive one late-phase shape from the others (#325).**
   The new `constraint` argument covers SAS/C's two late-phase constraints:
@@ -1158,7 +1163,12 @@
   global or a phase's, that reads a per-row value from outside `data`.
   `hzr_stepwise()` given the data frame used for the fit drops the same
   rows, but only when both the retained and the dropped rows match it. If
-  every row is at time 0, `hazard()` stops with nothing left to fit.
+  every row is at time 0, `hazard()` stops with nothing left to fit. An
+  `x` or `weights`, or a `data` that a formula reads row by row, whose
+  length differs from `time`'s is refused before any row is dropped; one that
+  was short by exactly the number of rows at time 0 used to be accepted and
+  fitted against the wrong rows. A `data` used only to look names up need
+  not match.
 
 * **`hzr_translate_sas()` now reports the starting shape `PROC HAZARD`
   actually uses for a `FIXGE2` or `FIXGAE2` job without `WEIBULL` (#472).**
@@ -1513,7 +1523,7 @@
   fail.
 
   What a sentinel objective should mean for a single fit is tracked
-  separately (#351, #374).
+  separately (#486).
 * **A ridge is no longer named from a covariance that is not a covariance
   (#416).** `summary()`'s weak-direction report reads the flat direction from
   the correlation of the estimates. When the Hessian was taken where it is not
