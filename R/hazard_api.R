@@ -95,6 +95,13 @@ NULL
   for (k in seq_along(phases)) {
     nm <- names(phases)[[k]]
     if (!nzchar(nm)) next
+    # #448: a G1-based phase whose nu collapses toward 0 becomes a step at
+    # t_half. Checked BEFORE the unbounded-type filter: a "cdf" phase is not
+    # an unbounded type, so the `next` below would skip it entirely.
+    step_rec <- .hzr_phase_step_record(nm, phases[[k]]$type, theta, time,
+                                       time_lower = time_lower,
+                                       time_upper = time_upper)
+    if (!is.null(step_rec)) found[[length(found) + 1L]] <- step_rec
     if (!.hzr_phase_type_unbounded(phases[[k]]$type)) next
     key <- paste0(nm, ".log_t_half")
     if (!key %in% names(theta)) next
@@ -160,9 +167,33 @@ NULL
 #' @keywords internal
 #' @noRd
 .hzr_boundary_message <- function(records) {
-  paste0("fitted outside the observed support: ",
-         paste(vapply(records, function(r) r$detail, character(1)),
-               collapse = " "))
+  # Each mechanism keeps its own lead-in: a cdf phase that collapsed to a step
+  # can sit well inside the data, and calling it "fitted outside the observed
+  # support" would name the wrong cause.
+  lead <- c(unbounded_phase = "fitted outside the observed support: ",
+            phase_discontinuity = "phase collapsed to a step: ")
+  paste(vapply(records, function(r) {
+    paste0(if (r$mechanism %in% names(lead)) lead[[r$mechanism]] else "",
+           r$detail)
+  }, character(1)), collapse = " ")
+}
+
+#' The warning condition for boundary findings
+#'
+#' Classed `hzr_<mechanism>` for EVERY mechanism present, not only the first
+#' record's, so a handler for one mechanism is not defeated by another
+#' record listed ahead of it; all inherit `hzr_boundary`.
+#' @param records The `$boundary` list.
+#' @return A warning condition.
+#' @keywords internal
+#' @noRd
+.hzr_boundary_condition <- function(records) {
+  mechanisms <- vapply(records, function(r) r$mechanism, character(1))
+  structure(
+    class = c(unique(paste0("hzr_", mechanisms)), "hzr_boundary", "warning",
+              "condition"),
+    list(message = .hzr_boundary_message(records), call = NULL)
+  )
 }
 
 
@@ -734,15 +765,22 @@ NULL
 #'   \code{"weak_direction_check"} is listed.
 #'
 #'   \code{fit$fit$boundary} is its sibling and takes the same three states,
-#'   for phases fitted outside the support their parameterisation can carry:
+#'   for phases whose fit sits where their parameterisation breaks down:
 #'   \code{NULL} when the check ran and found nothing, a list of records when
 #'   it found something, and \code{NA} when it did not run --- and it is
 #'   \code{NA} exactly when \code{"boundary_check"} is listed in
 #'   \code{degraded}, with the reason in \code{degraded_causes}. Each record
 #'   carries \code{mechanism}, \code{phase}, \code{parameter} and a
-#'   printable \code{detail}. A fit that trips it also raises a warning of
-#'   class \code{"hzr_unbounded_phase"}, which inherits \code{"hzr_boundary"}
-#'   so one handler catches the whole family.
+#'   printable \code{detail}. The mechanisms are \code{"unbounded_phase"}, a
+#'   \code{"hazard"} phase whose \code{t_half} is below the first observed
+#'   time, and \code{"phase_discontinuity"}, a \code{"cdf"} or
+#'   \code{"hazard"} phase whose shape has collapsed to a step the observed
+#'   times cannot resolve (it can lie inside the data). Only rows the
+#'   likelihood reads count as observed times. A fit with any record raises
+#'   one warning whose classes are \code{"hzr_"} plus each mechanism present
+#'   (\code{"hzr_unbounded_phase"}, \code{"hzr_phase_discontinuity"}), all
+#'   inheriting \code{"hzr_boundary"}, so one handler catches the whole
+#'   family.
 #' @export
 hazard <- function(formula = NULL,
                    data = NULL,
@@ -1395,6 +1433,7 @@ hazard <- function(formula = NULL,
     fit_state$covariate_counts <- optim_result$covariate_counts
     fit_state$x_list <- optim_result$x_list
     fit_state$x_design <- optim_result$x_design
+    fit_state$rows_used <- optim_result$rows_used
     fit_state$fixed_mask <- optim_result$fixed_mask
     fit_state$starts <- optim_result$starts
     # Applied CoE state, recorded next to the requested one in spec$control
@@ -1522,19 +1561,39 @@ hazard <- function(formula = NULL,
   # A phase fitted outside the support its parameterisation can carry (#444).
   # A sibling of $weak, with the same tri-state: NA not examined, NULL
   # examined and nothing found, a list of records otherwise.
+  # Only rows the likelihood reads: a weight-0 row is excluded from the fit,
+  # and so is a row the multiphase designs drop for an NA covariate, so
+  # neither may supply the first observed time (#444) or an endpoint of a
+  # step (#448).
+  in_fit <- if (is.null(weights)) rep(TRUE, length(time)) else weights > 0
+  if (length(fit_state$rows_used) == length(in_fit)) {
+    in_fit <- in_fit & fit_state$rows_used
+  }
+  # And only the bounds the likelihood evaluates on each row: `time_lower` is
+  # an entry time for status 0/1 and an interval's lower bound for status 2,
+  # and is ignored on a left-censored row; `time_upper` is read only for
+  # status -1/2. A supplied bound the likelihood never reads must not
+  # stretch or split the span either check looks at.
+  rows_with <- function(v, codes) {
+    if (length(v) != length(in_fit)) return(v)
+    v[in_fit & !is.na(status) & status %in% codes]
+  }
   boundary_check <- .hzr_boundary_check_impl(
     theta = fit_state$theta, phases = phases,
-    time = time, fitted = fit_ran,
-    time_lower = time_lower, time_upper = time_upper
+    # `time` itself is read only where no explicit bound replaces it: always
+    # for status 0/1; for a left-censored row only without `time_upper`; for
+    # an interval row as either bound that was not supplied.
+    time = rows_with(time, c(0, 1,
+                             if (is.null(time_upper)) -1,
+                             if (is.null(time_lower) || is.null(time_upper)) 2)),
+    fitted = fit_ran,
+    time_lower = rows_with(time_lower, c(0, 1, 2)),
+    time_upper = rows_with(time_upper, c(-1, 2))
   )
   fit_state$boundary <- boundary_check$boundary
   degraded_reasons$boundary <- boundary_check$reason
   if (is.list(fit_state$boundary)) {
-    warning(structure(
-      class = c(paste0("hzr_", fit_state$boundary[[1L]]$mechanism),
-                "hzr_boundary", "warning", "condition"),
-      list(message = .hzr_boundary_message(fit_state$boundary), call = NULL)
-    ))
+    warning(.hzr_boundary_condition(fit_state$boundary))
   }
 
   # Refit-based tooling (hzr_bootstrap()) re-evaluates $call, so it needs the
