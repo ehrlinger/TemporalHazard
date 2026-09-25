@@ -311,6 +311,18 @@ NULL
 #'   `"hzr_time_zero_dropped"`), and every row stored on the fit is what
 #'   remains. `fit$data$dropped_time_zero` is the count and
 #'   `fit$data$dropped_time_zero_rows` their positions among the rows given.
+#'   On the formula interface the response and design are then built on the
+#'   retained rows, as if the dropped ones had not been given, so a
+#'   data-dependent term such as `scale(age)` uses the retained rows. Two
+#'   inputs are refused because they cannot follow the rows: a response
+#'   whose values change once the rows are dropped, such as
+#'   `Surv(time - min(time), status)`, and a formula that reads a per-row
+#'   value from outside `data`. That check reads the formula's own
+#'   variables, so it cannot see inside a function: a helper that indexes a
+#'   vector from outside `data` by position, such as
+#'   `function(a) a + g[seq_along(a)]`, sees only the retained rows and pairs
+#'   them with the first elements of `g`, as it would under
+#'   `stats::lm(subset = )`. Put such a vector in `data`.
 #' @param status Numeric or logical event indicator vector, or a
 #'   [survival::Surv()] object. A `Surv` is read by its `type`, exactly as the
 #'   formula interface reads it, and a `time`, `time_lower` or `time_upper`
