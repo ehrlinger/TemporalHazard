@@ -1453,6 +1453,21 @@
 
 ### Bug fixes
 
+- **A column of `data` named `""` no longer stops the fit
+  ([\#470](https://github.com/ehrlinger/TemporalHazard/issues/470)).**
+  Any formula-interface fit on such data stopped with “attempt to use
+  zero-length variable name”, even when the formula never used the
+  column. That included every candidate refit in
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md),
+  so the screen stopped after no steps, and a multiphase fit. No formula
+  can name such a column, so it plays no part in the model. It is now
+  left out, and the fit is the fit without it. A formula that uses `.`,
+  including a phase formula, warns that the column is left out of `.`
+  and says to rename it, as
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  already did for its default scope. The `time =`/`status =` interface
+  was never affected.
+
 - **[`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
   no longer says `PROC HAZARD` refuses a job that a later `(` lets it
   run
