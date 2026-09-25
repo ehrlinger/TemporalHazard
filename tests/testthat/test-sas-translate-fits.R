@@ -2215,6 +2215,64 @@ test_that("a `(` inside a macro call does not clear a refusal (#461)", {
   expect_match(plain, "clears its syntax-error flag", fixed = TRUE)
 })
 
+test_that("an empty phase item or bare PARMS warns and still fits (#461)", {
+  skip_on_cran()
+  # Each form is refused by the binary with SYNTAX (paren-reset-oracle.csv),
+  # but its variables are unambiguous, so the document warns, records the
+  # row and fits the model written (the U1 ruling of 2026-09-22), as the
+  # #440 path does for `EARLY 1AGE;`.
+  set.seed(461)
+  n <- 120
+  D <- data.frame(TT = stats::rexp(n, 0.2),
+                  DEAD = rep(c(1, 0, 1), length.out = n),
+                  AGE = stats::rnorm(n), SEX = rep(c(0, 1), length.out = n))
+  head <- "PROC HAZARD DATA=D; EVENT DEAD; TIME TT;"
+  P <- "PARMS MUE=0.2 THALF=1;"
+  cases <- list(
+    list(paste(head, P, "EARLY AGE,,SEX;"), c("AGE", "SEX")),
+    list(paste(head, P, "EARLY AGE,;"), "AGE"),
+    list(paste(head, P, "EARLY ,AGE;"), "AGE"),
+    list(paste(head, P, "EARLY AGE; LATE AGE,,SEX;"), "AGE"),
+    # With an active late phase the LATE variables are fitted there.
+    list(paste(head, "PARMS MUE=0.2 THALF=1 MUL=0.01 TAU=1 GAMMA=1 ETA=1",
+               "FIXTAU FIXGAMMA FIXETA; EARLY AGE; LATE AGE,,SEX;"),
+         c("phase_1.AGE", "phase_2.AGE", "phase_2.SEX")),
+    list(paste(head, P, "EARLY AGE; LATE ;"), "AGE"),
+    list(paste(head, P, "PARMS ; EARLY AGE;"), "AGE"))
+  n_fit <- 0L
+  for (cs in cases) {
+    job <- .p431_job(cs[[1L]])
+    # The document carries a fit call AND the warning, and lists the row.
+    expect_identical(as.character(job$calls$fit[[3L]][[1L]]), "hazard",
+                     info = cs[[1L]])
+    expect_match(.u1_msg(job), "does not run this job", fixed = TRUE,
+                 info = cs[[1L]])
+    expect_gte(NROW(job$untranslated), 1L)
+    env <- new.env()
+    env$D <- D
+    w <- character(0)
+    withCallingHandlers(
+      for (nm in names(job$calls)) eval(job$calls[[nm]], env),
+      warning = function(x) {
+        w <<- c(w, conditionMessage(x))
+        invokeRestart("muffleWarning")
+      })
+    expect_true(any(grepl("does not run this job", w, fixed = TRUE)),
+                info = cs[[1L]])
+    expect_s3_class(env$fit, "hazard")
+    expect_true(all(is.finite(stats::coef(env$fit))), info = cs[[1L]])
+    # The fitted covariates are the ones written, and only those.
+    fitted <- names(stats::coef(env$fit))
+    for (v in cs[[2L]]) {
+      expect_true(any(grepl(v, fitted, fixed = TRUE)), info = cs[[1L]])
+    }
+    expect_false(any(grepl("SEX", fitted, fixed = TRUE)) &&
+                   !any(grepl("SEX", cs[[2L]], fixed = TRUE)), info = cs[[1L]])
+    n_fit <- n_fit + 1L
+  }
+  expect_identical(n_fit, length(cases))
+})
+
 test_that("every #461 oracle job's emitted document runs or stops (#461)", {
   skip_on_cran()
   # The data the oracle was measured on.
@@ -2255,12 +2313,11 @@ test_that("every #461 oracle job's emitted document runs or stops (#461)", {
     n_fit <- n_fit + 1L
   }
   # Known positives: the loop fitted every row but the phase-statement
-  # stops, which are the "phase" rows and the empty phase items (not the
-  # empty PARMS, which warns).
-  stops <- oracle$class == "phase" |
-    (oracle$class == "empty" & !grepl("PARMS ;", oracle$job, fixed = TRUE))
+  # stops (#340). The empty items warn and fit, so they are among the fits.
+  stops <- oracle$class == "phase"
   expect_identical(n_stop, sum(stops))
-  expect_gte(n_stop, 2L)
+  expect_gte(n_stop, 1L)
+  expect_gte(sum(oracle$class == "empty"), 5L)
   expect_identical(n_fit, nrow(oracle) - sum(stops))
 })
 

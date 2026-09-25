@@ -1145,9 +1145,11 @@
   variable (`EARLY AGE,,SEX;`, `EARLY AGE,;`, `LATE ,AGE;`, `LATE ;`)
   fitted with nothing said, and a bare `PARMS;` was dropped. The binary
   refuses each one with a syntax error (`hazard_y.y:206-207`, `:133-134`).
-  The phase forms now stop the document like the other phase-statement
-  refusals (#340), and `PARMS;` warns like the other `PARMS` refusals. Both
-  follow the rules above when a later `(` clears them.
+  Each now warns and records its row, and the document still fits the
+  variables that are written, as it does for a phase variable that is not a
+  name (#440): `EARLY AGE,,SEX;` fits `AGE` and `SEX`, and `LATE ;` fits
+  the late phase with no covariates. Both follow the rules above when a
+  later `(` clears them.
 
 * **A stray `=` in `PARMS` no longer takes the next operand with it
   (#458).** `PARMS MUE=0.2 = THALF=0.15 NU=1` read the stray `=` as a piece
