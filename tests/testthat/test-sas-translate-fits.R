@@ -2076,11 +2076,15 @@ test_that("the translator's verdict matches the HAZARD binary's (#431)", {
       expect_true(.u1_refuses(job), info = o$job)
       expect_identical(NROW(job$untranslated), 1L, info = o$job)
       msg <- .u1_msg(job)
-      expect_match(msg, "does not run this job", fixed = TRUE, info = o$job)
       if (o$verdict == "runs_after_reset") {
+        # PROC HAZARD runs these, so the verdict must not say it does not
+        # (#461); the refusal is cleared by the later `(`, and says so.
+        expect_no_match(msg, "does not run this job", fixed = TRUE,
+                        info = o$job)
         expect_match(msg, "clears its syntax-error flag", fixed = TRUE,
                      info = o$job)
       } else {
+        expect_match(msg, "does not run this job", fixed = TRUE, info = o$job)
         expect_no_match(msg, "clears its syntax-error flag", fixed = TRUE,
                         info = o$job)
       }
@@ -2117,6 +2121,220 @@ test_that("every oracle job's emitted document runs (#431)", {
   }
   # Known positive: the loop fitted every row except the two stop routes.
   expect_identical(n_fit, nrow(oracle) - 2L)
+})
+
+# --- #461: a later `(` clears PROC HAZARD's syntax-error flag ---------------
+# hazard_l.l:56 resets yysynerr at every `(`, so a syntax error raised before
+# a later `(` no longer stops the job. The oracle runs every refusal class the
+# translator emits alone, with a `(` after it and with one before it, against
+# the HAZARD binary on the package's avc (data-raw/paren-reset-oracle.R). Its
+# verdict comes from the fatal-exit reason and the fitted markers together.
+.p461_oracle <- function() {
+  path <- test_path("fixtures", "paren-reset-oracle.csv")
+  utils::read.csv(path, comment.char = "#", stringsAsFactors = FALSE)
+}
+
+test_that("a job a later `(` lets PROC HAZARD run is not called refused (#461)", {
+  oracle <- .p461_oracle()
+  # Coverage before comparison: every verdict and every position is present,
+  # so the loop cannot pass over a grid that exercises one side only.
+  expect_setequal(unique(oracle$verdict), c("fits", "refused", "no_fit"))
+  expect_true(all(c("none", "alone", "after", "before", "same") %in%
+                    oracle$paren))
+  n <- c(clean = 0L, fits = 0L, refused = 0L, no_fit = 0L)
+  for (k in seq_len(nrow(oracle))) {
+    o <- oracle[k, ]
+    job <- .p431_job(o$job)
+    if (o$class == "clean") {
+      # Known positives: a job SAS fits, translated with nothing to say.
+      expect_null(.u1_refusal_chunk(job))
+      expect_identical(NROW(job$untranslated), 0L, info = o$job)
+      n[["clean"]] <- n[["clean"]] + 1L
+      next
+    }
+    # Every other row still reaches the reader, and keeps its row. A warning
+    # chunk rather than .u1_refuses(), whose fit check expects hazard(): a
+    # SELECTION job's fit chunk is hzr_stepwise().
+    expect_true(!is.null(.u1_refusal_chunk(job)) || .u1_stops(job),
+                info = o$job)
+    expect_gte(NROW(job$untranslated), 1L)
+    msg <- .u1_msg(job)
+    if (o$verdict == "fits") {
+      # PROC HAZARD runs it: never "does not run", and the reason is named.
+      expect_no_match(msg, "does not run this job", fixed = TRUE,
+                      info = o$job)
+      expect_match(msg, "clears its syntax-error flag", fixed = TRUE,
+                   info = o$job)
+      expect_match(msg, "cannot emit PROC HAZARD's model", fixed = TRUE,
+                   info = o$job)
+    } else {
+      # Refused, or accepted at parse and stopped before fitting: never the
+      # verdict that the syntax error does not stop it.
+      expect_no_match(msg, "does not stop this job for the syntax error",
+                      fixed = TRUE, info = o$job)
+      if (o$verdict == "refused") {
+        expect_match(msg, paste("does not run this job",
+                                "refused before any fit is computed",
+                                "selects no phase", sep = "|"), info = o$job)
+      }
+    }
+    n[[o$verdict]] <- n[[o$verdict]] + 1L
+  }
+  # Every row was judged, and each branch ran on more than one of them.
+  expect_identical(sum(n), nrow(oracle))
+  expect_true(all(n >= 3L))
+})
+
+test_that("a job a later `(` clears names each cleared construct (#461)", {
+  # Four syntax errors of four classes, then a `(`. The binary fits this job
+  # on avc (4 of 4 markers, no fatal exit) and refuses it with SYNTAX when
+  # the last statement is `EARLY AGE;` instead (measured 2026-09-24).
+  msg <- .u1_msg(.p431_job(paste(
+    "PROC HAZARD DATA=D NOCOV=1; EVENT DEAD SEX; TIME TT;",
+    "PARMS MUE=0.2 THALF=1 NU=ABC; EARLY AGE*SEX; EARLY LOG();")))
+  for (what in c("NOCOV=1", "EVENT DEAD SEX", "PARMS NU=ABC",
+                 "EARLY AGE*SEX")) {
+    expect_match(msg, what, fixed = TRUE, info = what)
+  }
+  expect_match(msg, "does not stop this job for the syntax error", fixed = TRUE)
+  expect_no_match(msg, "does not run", fixed = TRUE)
+})
+
+test_that("a cleared phase stop gives AGE=ABC as an example, not as this job (#478 review)", {
+  # The cleared #340 stop illustrated the parser's recovery with
+  # `EARLY AGE=ABC;` in words that read as a statement about THIS job, so an
+  # `AGE/X` job was told the recovery "keeps AGE" after a construct it does
+  # not contain.
+  for (ph in c("EARLY AGE/X;", "EARLY AGE=ABC;")) {
+    msg <- .u1_msg(.p431_job(paste(
+      "PROC HAZARD DATA=D; EVENT DEAD; TIME TT; PARMS MUE=0.2 THALF=1 MUL=0.1;",
+      ph, "LATE LOG();")))
+    expect_match(msg, "cannot emit PROC HAZARD's model", fixed = TRUE, info = ph)
+    expect_match(msg, sub(";$", "", ph), fixed = TRUE, info = ph)
+    expect_match(msg, "for example, after `EARLY AGE=ABC;`", fixed = TRUE,
+                 info = ph)
+  }
+})
+
+test_that("a `(` inside a macro call does not clear a refusal (#461)", {
+  # SAS expands %LOGT() before PROC HAZARD's lexer reads the job, so its `(`
+  # may never reach hazard_l.l:56. Not an oracle row: the binary sees only
+  # the expansion. The known positive is the same job with LOG().
+  macro <- .u1_msg(.p431_job(paste(
+    "PROC HAZARD DATA=D; EVENT DEAD; TIME TT;",
+    "PARMS MUE=0.2 THALF=1 NU=ABC; EARLY AGE, %LOGT();")))
+  expect_match(macro, "does not run this job", fixed = TRUE)
+  expect_no_match(macro, "clears its syntax-error flag", fixed = TRUE)
+  plain <- .u1_msg(.p431_job(paste(
+    "PROC HAZARD DATA=D; EVENT DEAD; TIME TT;",
+    "PARMS MUE=0.2 THALF=1 NU=ABC; EARLY AGE, LOG();")))
+  expect_match(plain, "clears its syntax-error flag", fixed = TRUE)
+})
+
+test_that("an empty phase item or bare PARMS warns and still fits (#461)", {
+  skip_on_cran()
+  # Each form is refused by the binary with SYNTAX (paren-reset-oracle.csv),
+  # but its variables are unambiguous, so the document warns, records the
+  # row and fits the model written (the U1 ruling of 2026-09-22), as the
+  # #440 path does for `EARLY 1AGE;`.
+  set.seed(461)
+  n <- 120
+  D <- data.frame(TT = stats::rexp(n, 0.2),
+                  DEAD = rep(c(1, 0, 1), length.out = n),
+                  AGE = stats::rnorm(n), SEX = rep(c(0, 1), length.out = n))
+  head <- "PROC HAZARD DATA=D; EVENT DEAD; TIME TT;"
+  P <- "PARMS MUE=0.2 THALF=1;"
+  cases <- list(
+    list(paste(head, P, "EARLY AGE,,SEX;"), c("AGE", "SEX")),
+    list(paste(head, P, "EARLY AGE,;"), "AGE"),
+    list(paste(head, P, "EARLY ,AGE;"), "AGE"),
+    list(paste(head, P, "EARLY AGE; LATE AGE,,SEX;"), "AGE"),
+    # With an active late phase the LATE variables are fitted there.
+    list(paste(head, "PARMS MUE=0.2 THALF=1 MUL=0.01 TAU=1 GAMMA=1 ETA=1",
+               "FIXTAU FIXGAMMA FIXETA; EARLY AGE; LATE AGE,,SEX;"),
+         c("phase_1.AGE", "phase_2.AGE", "phase_2.SEX")),
+    list(paste(head, P, "EARLY AGE; LATE ;"), "AGE"),
+    list(paste(head, P, "PARMS ; EARLY AGE;"), "AGE"))
+  n_fit <- 0L
+  for (cs in cases) {
+    job <- .p431_job(cs[[1L]])
+    # The document carries a fit call AND the warning, and lists the row.
+    expect_identical(as.character(job$calls$fit[[3L]][[1L]]), "hazard",
+                     info = cs[[1L]])
+    expect_match(.u1_msg(job), "does not run this job", fixed = TRUE,
+                 info = cs[[1L]])
+    expect_gte(NROW(job$untranslated), 1L)
+    env <- new.env()
+    env$D <- D
+    w <- character(0)
+    withCallingHandlers(
+      for (nm in names(job$calls)) eval(job$calls[[nm]], env),
+      warning = function(x) {
+        w <<- c(w, conditionMessage(x))
+        invokeRestart("muffleWarning")
+      })
+    expect_true(any(grepl("does not run this job", w, fixed = TRUE)),
+                info = cs[[1L]])
+    expect_s3_class(env$fit, "hazard")
+    expect_true(all(is.finite(stats::coef(env$fit))), info = cs[[1L]])
+    # The fitted covariates are the ones written, and only those.
+    fitted <- names(stats::coef(env$fit))
+    for (v in cs[[2L]]) {
+      expect_true(any(grepl(v, fitted, fixed = TRUE)), info = cs[[1L]])
+    }
+    expect_false(any(grepl("SEX", fitted, fixed = TRUE)) &&
+                   !any(grepl("SEX", cs[[2L]], fixed = TRUE)), info = cs[[1L]])
+    n_fit <- n_fit + 1L
+  }
+  expect_identical(n_fit, length(cases))
+})
+
+test_that("every #461 oracle job's emitted document runs or stops (#461)", {
+  skip_on_cran()
+  # The data the oracle was measured on.
+  a <- avc[stats::complete.cases(avc), ]
+  D <- data.frame(TT = a$int_dead, DEAD = a$dead,
+                  AGE = as.numeric(scale(a$age)),
+                  LOG = as.numeric(scale(a$opmos)), SEX = a$mal)
+  oracle <- .p461_oracle()
+  oracle <- oracle[oracle$verdict == "fits" & oracle$class != "clean", ]
+  n_fit <- 0L
+  n_stop <- 0L
+  for (k in seq_len(nrow(oracle))) {
+    job <- .p431_job(oracle$job[[k]])
+    env <- new.env()
+    env$D <- D
+    if (.u1_stops(job)) {
+      # The phase-statement stop keeps its stop, with the cleared verdict.
+      expect_error(for (nm in names(job$calls)) {
+        suppressWarnings(eval(job$calls[[nm]], env))
+      }, "does not stop this job for the syntax error", fixed = TRUE,
+      info = oracle$job[[k]])
+      n_stop <- n_stop + 1L
+      next
+    }
+    w <- character(0)
+    withCallingHandlers(
+      for (nm in names(job$calls)) eval(job$calls[[nm]], env),
+      warning = function(x) {
+        w <<- c(w, conditionMessage(x))
+        invokeRestart("muffleWarning")
+      })
+    # The reader of the rendered document receives the verdict ...
+    expect_true(any(grepl("clears its syntax-error flag", w, fixed = TRUE)),
+                info = oracle$job[[k]])
+    # ... above a fit that ran.
+    expect_s3_class(env$fit, "hazard")
+    expect_true(all(is.finite(stats::coef(env$fit))), info = oracle$job[[k]])
+    n_fit <- n_fit + 1L
+  }
+  # Known positives: the loop fitted every row but the phase-statement
+  # stops (#340). The empty items warn and fit, so they are among the fits.
+  stops <- oracle$class == "phase"
+  expect_identical(n_stop, sum(stops))
+  expect_gte(n_stop, 1L)
+  expect_gte(sum(oracle$class == "empty"), 5L)
+  expect_identical(n_fit, nrow(oracle) - sum(stops))
 })
 
 # --- SETG1: the early phase's refusals, rewrites and no-result case (#424) --
