@@ -691,14 +691,14 @@ fit_3ph <- hazard(
     early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
                           fixed = "shapes"),
     constant = hzr_phase("constant"),
-    late     = hzr_phase("g3", tau = 5, gamma = 3, alpha = 1, eta = 1,
+    late     = hzr_phase("g3", tau = 1, gamma = 3, alpha = 1, eta = 1,
                           fixed = "shapes")
   ),
   fit = TRUE, control = list(n_starts = 5, maxit = 1000)
 )
 #> Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =
-#> 4.37e-12); standard errors may be unreliable
-#> Warning: Phase 'constant' contributes at most 3.18e-11 of the cumulative hazard
+#> 6.15e-12); standard errors may be unreliable
+#> Warning: Phase 'constant' contributes at most 4.47e-11 of the cumulative hazard
 #> at any observed time. Such a phase has not started by the end of follow-up, so
 #> neither its 'mu' nor its shape is identified: the fit converges and those
 #> parameters drift freely.
@@ -708,25 +708,25 @@ fit_3ph <- hazard(
 log_mu_idx <- grep("log_mu", names(coef(fit_3ph)))
 round(exp(coef(fit_3ph)[log_mu_idx]), 6)
 #>    early.log_mu constant.log_mu     late.log_mu 
-#>        0.248869        0.000000        0.000006
+#>        0.248868        0.000000        0.000000
 ```
 
-The constant phase scale has collapsed to zero (\\\mu \approx 7 \times
-10^{-13}\\), and
+The constant phase scale has collapsed to zero (\\\mu\\ of order
+\\10^{-13}\\), and
 [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 warns that the phase is not identified. The late phase scale looks just
-as small (\\\mu \approx 6 \times 10^{-6}\\), but \\\mu\\ multiplies the
-phase’s own shape, and \\G_3\\ with `tau = 5` and `gamma = 3` grows as
-\\(t/5)^3\\. By the end of follow-up (170.6 months) the late phase
-carries 0.23 of the 0.48 total cumulative hazard. With both phases
-available, the optimizer drops the constant phase and hands the slow
-post-recovery attrition, which the two-phase fit gave the constant
-phase, to the late phase instead. So judge a phase by its contribution,
-from `predict(..., type = "cumulative_hazard", decompose = TRUE)`, not
-by the size of its \\\mu\\. The right diagnostic question is not “did
-the AIC improve?” but “does this phase represent real clinical biology?”
-Late deterioration after AVC repair requires long follow-up to observe;
-this dataset doesn’t have it.
+as small (\\\mu \approx 5 \times 10^{-8}\\), but \\\mu\\ multiplies the
+phase’s own shape, and \\G_3\\ with `tau = 1` and `gamma = 3` grows as
+\\t^3\\. By the end of follow-up (170.6 months) the late phase carries
+0.23 of the 0.48 total cumulative hazard. With both phases available,
+the optimizer drops the constant phase and hands the slow post-recovery
+attrition, which the two-phase fit gave the constant phase, to the late
+phase instead. So judge a phase by its contribution, from
+`predict(..., type = "cumulative_hazard", decompose = TRUE)`, not by the
+size of its \\\mu\\. The right diagnostic question is not “did the AIC
+improve?” but “does this phase represent real clinical biology?” Late
+deterioration after AVC repair requires long follow-up to observe; this
+dataset doesn’t have it.
 
 When shapes are also free (no `fixed` argument), a redundant phase can
 make the Hessian rank-deficient and

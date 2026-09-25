@@ -301,7 +301,12 @@ values: a list, when the likelihood is near-flat along a parameter
 combination, giving the <code>params</code> spanning that direction, their
 squared loadings (<code>weights</code>), the strongest pairwise
 <code>correlation</code> among them, the Hessian <code>rcond</code> and
-<code>n_directions</code>, the number of near-flat directions found;
+<code>n_directions</code>, the number of near-flat directions found (when a
+single parameter carries the direction on its own, the list has one
+<code>params</code> entry, <code>single = TRUE</code>, its <code>estimate</code>, and
+<code>correlation = NA</code>, and <code>se_metric</code>, its standard error on
+the log scale; only a g3 shape, <code>gamma</code>, <code>alpha</code> or
+<code>eta</code>, is named this way);
 <code>NULL</code> when the fit was examined and is well identified; and
 <code>NA</code> when the check could not run because no usable Hessian was
 available, which includes an unfitted object and an install without
@@ -329,14 +334,16 @@ it found something, and <code>NA</code> when it did not run — and it is
 carries <code>mechanism</code>, <code>phase</code>, <code>parameter</code> and a
 printable <code>detail</code>. The mechanisms are <code>"unbounded_phase"</code>, a
 <code>"hazard"</code> phase whose <code>t_half</code> is below the first observed
-time, and <code>"phase_discontinuity"</code>, a <code>"cdf"</code> or
-<code>"hazard"</code> phase whose shape has collapsed to a step the observed
-times cannot resolve (it can lie inside the data). Only rows the
-likelihood reads count as observed times. A fit with any record raises
-one warning whose classes are <code>"hzr_"</code> plus each mechanism present
-(<code>"hzr_unbounded_phase"</code>, <code>"hzr_phase_discontinuity"</code>), all
-inheriting <code>"hzr_boundary"</code>, so one handler catches the whole
-family.</p>
+time; <code>"phase_discontinuity"</code>, a <code>"cdf"</code> or <code>"hazard"</code>
+phase whose shape has collapsed to a step the observed times cannot
+resolve (it can lie inside the data); and two made at setup, before the
+fit: <code>"g3_alpha_one"</code> (a g3 phase with <code>alpha</code> fixed at 1,
+re-expressed as PROC HAZARD does, see <code><a href="hzr_phase.html">hzr_phase()</a></code>) and
+<code>"g3_fixge2_alpha_start"</code> (a free <code>alpha</code> start moved to 2/3
+under <code>constraint = "eta_gamma"</code>). Only rows the likelihood reads
+count as observed times. A fit with any record raises one warning whose
+classes are <code>"hzr_"</code> plus each mechanism present, all inheriting
+<code>"hzr_boundary"</code>, so one handler catches the whole family.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>

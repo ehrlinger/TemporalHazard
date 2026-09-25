@@ -125,14 +125,21 @@ print(x, ...)
   which depends on \\\gamma\\ and \\\eta\\ only through their product.
   So \\\gamma\\ and \\\eta\\ are not separately identified there: under
   `"eta_gamma"` the product is fixed at 2 and \\\gamma\\ is not
-  identified at all, and with both estimated only the product is. A fit
-  started there can report convergence with an arbitrary \\\gamma\\.
-  Start `alpha` away from 1, or fix \\\gamma\\, for such a phase. The
-  derived parameter follows the others at every step of the
-  optimization, so it is not a free parameter and cannot be named in
-  `fixed`; `"shapes"` leaves it out. Its starting value is computed from
-  the others, and a value you supply for it, here or in the `theta`
-  given to
+  identified at all, and with both estimated only the product is. With
+  `alpha` *fixed* at 1,
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  therefore fits the phase as PROC HAZARD does: `tau` is held at 1 and
+  the product is carried by one parameter (under `"eta_gamma"`, \\\gamma
+  = 2\\ and \\\eta = 1\\ are both held), with a warning and a record in
+  `fit$fit$boundary`. Under `"eta_gamma"` a fixed `alpha` above 1 is
+  refused, as PROC HAZARD refuses it, and a free one started at 1 or
+  above starts at 2/3 instead. A free `alpha` that comes to rest near 1
+  can still leave \\\gamma\\ undetermined; the weak-direction warning
+  names it when the Hessian shows it. The derived parameter follows the
+  others at every step of the optimization, so it is not a free
+  parameter and cannot be named in `fixed`; `"shapes"` leaves it out.
+  Its starting value is computed from the others, and a value you supply
+  for it, here or in the `theta` given to
   [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md),
   is replaced, with a warning when it differs. Under
   `hazard(fit = FALSE)` that replacement is made only when no phase

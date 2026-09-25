@@ -252,19 +252,23 @@ values: a list, when the likelihood is near-flat along a parameter
 combination, giving the `params` spanning that direction, their squared
 loadings (`weights`), the strongest pairwise `correlation` among them,
 the Hessian `rcond` and `n_directions`, the number of near-flat
-directions found; `NULL` when the fit was examined and is well
-identified; and `NA` when the check could not run because no usable
-Hessian was available, which includes an unfitted object and an install
-without the suggested numDeriv. Test with `is.list(fit$fit$weak)`, not
-`!is.null()`: the `NA` case has not been examined and must not be read
-as a clean result), `engine` (implementation tag, `"native-r-m2"`), and
-two fields recording what the fit did not do: `degraded`, a character
-vector of the steps not performed, in the fixed order `"fitting"`,
-`"standard_errors"`, `"conserved_phase_variance"`,
-`"weak_direction_check"`, `"boundary_check"`,
-`"conservation_of_events"`, and empty when nothing was lost; and
-`degraded_causes`, a character vector with the same names giving the
-reason for each. [`print()`](https://rdrr.io/r/base/print.html) and
+directions found (when a single parameter carries the direction on its
+own, the list has one `params` entry, `single = TRUE`, its `estimate`,
+and `correlation = NA`, and `se_metric`, its standard error on the log
+scale; only a g3 shape, `gamma`, `alpha` or `eta`, is named this way);
+`NULL` when the fit was examined and is well identified; and `NA` when
+the check could not run because no usable Hessian was available, which
+includes an unfitted object and an install without the suggested
+numDeriv. Test with `is.list(fit$fit$weak)`, not `!is.null()`: the `NA`
+case has not been examined and must not be read as a clean result),
+`engine` (implementation tag, `"native-r-m2"`), and two fields recording
+what the fit did not do: `degraded`, a character vector of the steps not
+performed, in the fixed order `"fitting"`, `"standard_errors"`,
+`"conserved_phase_variance"`, `"weak_direction_check"`,
+`"boundary_check"`, `"conservation_of_events"`, and empty when nothing
+was lost; and `degraded_causes`, a character vector with the same names
+giving the reason for each.
+[`print()`](https://rdrr.io/r/base/print.html) and
 [`summary()`](https://rdrr.io/r/base/summary.html) always show them as a
 "Not done in this run" block, which reads "none" when nothing was lost.
 `fit$fit$weak` is `NA` exactly when `"weak_direction_check"` is listed.
@@ -276,14 +280,17 @@ something, and `NA` when it did not run — and it is `NA` exactly when
 `"boundary_check"` is listed in `degraded`, with the reason in
 `degraded_causes`. Each record carries `mechanism`, `phase`, `parameter`
 and a printable `detail`. The mechanisms are `"unbounded_phase"`, a
-`"hazard"` phase whose `t_half` is below the first observed time, and
+`"hazard"` phase whose `t_half` is below the first observed time;
 `"phase_discontinuity"`, a `"cdf"` or `"hazard"` phase whose shape has
 collapsed to a step the observed times cannot resolve (it can lie inside
-the data). Only rows the likelihood reads count as observed times. A fit
-with any record raises one warning whose classes are `"hzr_"` plus each
-mechanism present (`"hzr_unbounded_phase"`,
-`"hzr_phase_discontinuity"`), all inheriting `"hzr_boundary"`, so one
-handler catches the whole family.
+the data); and two made at setup, before the fit: `"g3_alpha_one"` (a g3
+phase with `alpha` fixed at 1, re-expressed as PROC HAZARD does, see
+[`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md))
+and `"g3_fixge2_alpha_start"` (a free `alpha` start moved to 2/3 under
+`constraint = "eta_gamma"`). Only rows the likelihood reads count as
+observed times. A fit with any record raises one warning whose classes
+are `"hzr_"` plus each mechanism present, all inheriting
+`"hzr_boundary"`, so one handler catches the whole family.
 
 ## Details
 
