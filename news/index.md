@@ -1492,7 +1492,11 @@
   when both the retained and the dropped rows match it. If every row is
   at time 0,
   [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
-  stops with nothing left to fit.
+  stops with nothing left to fit. An `x` or `weights`, or a `data` that
+  a formula reads row by row, whose length differs from `time`’s is
+  refused before any row is dropped; one that was short by exactly the
+  number of rows at time 0 used to be accepted and fitted against the
+  wrong rows. A `data` used only to look names up need not match.
 
 - **[`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
   now reports the starting shape `PROC HAZARD` actually uses for a

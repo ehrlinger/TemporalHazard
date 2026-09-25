@@ -176,7 +176,12 @@ variables, so it cannot see inside a function: a helper that indexes a
 vector from outside <code>data</code> by position, such as
 <code>function(a) a + g[seq_along(a)]</code>, sees only the retained rows and pairs
 them with the first elements of <code>g</code>, as it would under
-<code>stats::lm(subset = )</code>. Put such a vector in <code>data</code>.</p></dd>
+<code>stats::lm(subset = )</code>. Put such a vector in <code>data</code>.
+A caller-supplied row-aligned input whose row count differs from
+<code>time</code>'s is refused before any row is dropped: <code>x</code> and <code>weights</code> on the
+<code>time =</code>/<code>status =</code> interface, and <code>data</code> wherever a formula reads it row
+by row. (On the formula interface the design is not the caller's; it is
+rebuilt from the retained rows of <code>data</code>.)</p></dd>
 
 
 <dt id="arg-status">status<a class="anchor" aria-label="anchor" href="#arg-status"></a></dt>
@@ -265,7 +270,11 @@ among its columns first and then in the calling environment, on both
 interfaces. <code><a href="https://rdrr.io/r/stats/lm.html" class="external-link">stats::lm()</a></code> also looks in <code>data</code> first, but then in the
 formula's environment rather than the caller's, so a formula built
 inside another function does not bring that function's variables with
-it here. See <code>data</code> for the warning raised when a name is both.</p></dd>
+it here. See <code>data</code> for the warning raised when a name is both.
+<code>weights</code> is evaluated over every row given, so an expression that
+depends on the rows – <code>weights = w / mean(w)</code> – includes any row later
+dropped for time 0 (see <code>time</code>); compute it in <code>data</code> on the rows you
+intend to fit if that matters.</p></dd>
 
 
 <dt id="arg-control">control<a class="anchor" aria-label="anchor" href="#arg-control"></a></dt>

@@ -118,7 +118,12 @@ hazard(
   vector from outside `data` by position, such as
   `function(a) a + g[seq_along(a)]`, sees only the retained rows and
   pairs them with the first elements of `g`, as it would under
-  `stats::lm(subset = )`. Put such a vector in `data`.
+  `stats::lm(subset = )`. Put such a vector in `data`. A caller-supplied
+  row-aligned input whose row count differs from `time`'s is refused
+  before any row is dropped: `x` and `weights` on the
+  `time =`/`status =` interface, and `data` wherever a formula reads it
+  row by row. (On the formula interface the design is not the caller's;
+  it is rebuilt from the retained rows of `data`.)
 
 - status:
 
@@ -220,7 +225,10 @@ hazard(
   first, but then in the formula's environment rather than the caller's,
   so a formula built inside another function does not bring that
   function's variables with it here. See `data` for the warning raised
-  when a name is both.
+  when a name is both. `weights` is evaluated over every row given, so
+  an expression that depends on the rows – `weights = w / mean(w)` –
+  includes any row later dropped for time 0 (see `time`); compute it in
+  `data` on the rows you intend to fit if that matters.
 
 - control:
 
