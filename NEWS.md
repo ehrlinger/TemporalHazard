@@ -1133,6 +1133,16 @@
 
 ## Bug fixes
 
+* **`hzr_translate_sas()` no longer reports a `SETG3()` starting shape for a
+  `FIXGE2` or `FIXGAE2` job without `WEIBULL` (#472).** The row said
+  `PROC HAZARD` starts from `gamma = 1.5`, which was false. At the default
+  `gamma = 1`, `eta = 2` under `FIXGE2`, `PROC HAZARD` leaves `gamma` at 1
+  (`setg3.c:883`) and moves `alpha` to 2/3. Under `FIXGAE2` it moves `alpha`
+  to 1.5 as well as `gamma`, and the row mentioned only `gamma`. The trace
+  models the path without these flags, so it no longer speaks for them. The
+  existing "`FIXGE2` is not translated" row still marks the job as
+  untranslated.
+
 * **`hzr_translate_sas()` no longer says `PROC HAZARD` refuses a job that a
   later `(` lets it run (#461).** `PROC HAZARD`'s lexer clears its
   syntax-error flag at every `(` (`hazard_l.l:56`), so a syntax error

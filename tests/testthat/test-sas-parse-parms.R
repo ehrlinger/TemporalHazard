@@ -838,6 +838,46 @@ test_that("the verify_ge_2 row does not fire above the boundary or on WEIBULL", 
   expect_equal(nrow(weib$untranslated), 0L)
 })
 
+test_that("FIXGE2/FIXGAE2 without WEIBULL gets no SETG3 start trace (#472)", {
+  # The trace models the !g_two && !ga_two column of setg3.c. Without WEIBULL
+  # a constraint flag takes SETG3_verify_ge_2() / SETG3_alpha_fixup() down
+  # the g_two / ga_two branches instead, which the trace does not model. The
+  # binary on avc data (ad05b7a0, hazard pin dad7978) shows the trace was
+  # wrong on both flags for the defaulted shape gamma = 1, alpha = 1, eta = 2:
+  #   FIXGE2:  Used gamma = 1 (setg3.c:883 skips at gamma*eta = 2), alpha =
+  #            0.6666667 -- the trace said gamma = 1.5 and nothing of alpha.
+  #   FIXGAE2: Used gamma = 1.5 and alpha = 1.5 -- the trace said gamma only.
+  # The "is not translated" row is what stays: the job must remain loud.
+  late <- c("MUE=0.2", "THALF=1", "MUL=0.1")
+  for (flag in c("FIXGE2", "FIXGAE2")) {
+    got <- .hzr_parse_parms(c(late, flag))
+    expect_equal(got$untranslated$construct, c(flag, "TAU (unspecified)"))
+    expect_match(got$untranslated$reason[1],
+                 paste0("^", flag, " is not translated: without WEIBULL"))
+    expect_false(any(grepl("optimizes from", got$untranslated$reason)))
+  }
+
+  # Known positive: the same shape with no flag still records the 1.5 row,
+  # so the absence above is the guard, not a trace that stopped firing.
+  plain <- .hzr_parse_parms(late)
+  expect_equal(plain$untranslated$construct,
+               c("gamma=1 alpha=1 eta=2", "TAU (unspecified)"))
+  expect_match(plain$untranslated$reason[1],
+               "^SETG3\\(\\) optimizes from gamma = 1\\.5, not")
+
+  # WEIBULL controls are unchanged: the constraint maps onto hzr_phase() and
+  # only the TAU row is recorded.
+  ge2w <- .hzr_parse_parms(c(late, "FIXGE2", "WEIBULL"))
+  expect_equal(ge2w$untranslated$construct, "TAU (unspecified)")
+  expect_equal(ge2w$phases[[3]], quote(hzr_phase(
+    "g3", tau = 1, gamma = 1, alpha = 1, eta = 2, constraint = "eta_gamma")))
+  gae2w <- .hzr_parse_parms(c(late, "FIXGAE2", "WEIBULL"))
+  expect_equal(gae2w$untranslated$construct, "TAU (unspecified)")
+  expect_equal(gae2w$phases[[3]], quote(hzr_phase(
+    "g3", tau = 1, gamma = 1, alpha = 1, eta = 2,
+    constraint = "alpha_gamma_eta")))
+})
+
 test_that("the product SETG3_verify_ge_2 reads survives the ignore_tau swap", {
   # setg3.c:403-421 moves the exponent between GAMMA and ETA but preserves
   # their PRODUCT, which is all `gte` reads -- so the boundary test is the same
