@@ -112,3 +112,43 @@ test_that("hzr_stepwise() given the original frame is aligned with the fit", {
   expect_identical(sw_orig$steps, sw_kept$steps)
   expect_equal(sw_orig$fit$fit$objective, sw_kept$fit$fit$objective)
 })
+
+test_that("a data-dependent formula term is built without the dropped row", {
+  # scale(age) centres on the data it is evaluated on; the dropped row
+  # (age 150) must not move that centre.
+  withr::local_seed(2)
+  n <- 80
+  d <- data.frame(time = stats::rexp(n, 0.4) + 0.01,
+                  status = stats::rbinom(n, 1, 0.7),
+                  age = stats::rnorm(n, 60, 10))
+  d0 <- rbind(data.frame(time = 0, status = 1, age = 150), d)
+  f <- function(dd) {
+    suppressWarnings(hazard(survival::Surv(time, status) ~ scale(age),
+                            data = dd, dist = "weibull",
+                            theta = c(0.3, 1.2, 0), fit = TRUE))
+  }
+  with0 <- f(d0)
+  without <- f(d)
+  expect_equal(coef(with0), coef(without), tolerance = 1e-6)
+  # Predictions on new data rebuild scale(age) from the stored design.
+  nd <- data.frame(age = c(50, 70), time = 2)
+  expect_equal(stats::predict(with0, newdata = nd, type = "survival"),
+               stats::predict(without, newdata = nd, type = "survival"),
+               tolerance = 1e-6)
+})
+
+test_that("hzr_stepwise() does not trim a frame that is not the fit's", {
+  withr::local_seed(1)
+  n <- 80
+  d <- data.frame(time = c(0, stats::rexp(n, 0.4) + 0.01),
+                  status = c(1, stats::rbinom(n, 1, 0.7)),
+                  x1 = stats::rnorm(n + 1), x2 = stats::rnorm(n + 1))
+  f <- suppressWarnings(hazard(survival::Surv(time, status) ~ 1, data = d,
+                               dist = "weibull", theta = c(0.3, 1.2),
+                               fit = TRUE))
+  other <- d
+  other$time <- stats::rexp(n + 1, 0.4) + 0.01  # same size, different cohort
+  expect_error(suppressWarnings(hzr_stepwise(f, scope = c("x1", "x2"),
+                                             data = other, trace = FALSE)),
+               "rows but the fitted model used")
+})

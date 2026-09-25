@@ -1189,7 +1189,26 @@ hazard <- function(formula = NULL,
     weights <- subset_rows(weights)
     x <- subset_rows(x)
     x_fit <- subset_rows(x_fit)
-    if (is.data.frame(data)) data <- subset_rows(data)
+    if (is.data.frame(data)) {
+      data_full <- data
+      data <- subset_rows(data)
+      # On the formula path the design was built from ALL rows, so a
+      # data-dependent term -- scale(age), poly(age, 2), a factor's levels --
+      # still carried the dropped rows (scale(age)'s coefficient moved from
+      # 0.126 to 0.176 with one extra row at time 0). Rebuild it from the rows
+      # that remain, as if they had never been there.
+      if (!is.null(formula) && nrow(data_full) == length(keep)) {
+        reparsed <- .hzr_parse_formula(formula = formula, data = data)
+        x <- reparsed$x
+        x_design <- reparsed$x_design
+        x_fit <- if (!is.null(time_windows) && !is.null(x)) {
+          .hzr_expand_time_varying_design(x = x, time = time,
+                                          time_windows = time_windows)
+        } else {
+          x
+        }
+      }
+    }
     n <- length(time)
     n_obs <- n
     warning(structure(
