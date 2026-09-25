@@ -713,6 +713,7 @@
   statements <- list()
   parms_ops <- character(0)
   sel_ops <- NULL
+  sel_bad <- character(0)
   saw_restrict <- FALSE
   covars <- list()
 
@@ -746,6 +747,9 @@
     # translation does not see (`RESTRICT A*B`, `SELECTION SLE=ABC`,
     # `WEIGHT 2W`), which sets the flag again after a `(` and was measured
     # to be refused, so it cannot follow a `(` that is to clear the job.
+    # SELECTION's values are now checked (N3), but its other syntax errors,
+    # an unknown option or a keyword missing its `= NUMBER`, are not, so it
+    # stays blind here.
     if (!token %in% c("PARAMETERS", "EARLY", "CONSTANT", "LATE")) {
       blind_stmt <- c(blind_stmt, i)
     }
@@ -839,6 +843,24 @@
       STEPWISE   = {
         sel_ops <- strsplit(gsub("\\s*=\\s*", "=", ops_text), "\\s+")[[1L]]
         sel_ops <- sel_ops[nzchar(sel_ops)]
+        # In the STEP state a value is a NUMBER (hazard_l.l:33-38, :53) or a
+        # syntax error, and as.numeric() in .hzr_selection_spec() reads
+        # 1E-3, 2E-1, +0.1 and 5., none of which PROC HAZARD lexes (N3).
+        # The screen still runs at the value as read here; the warning and
+        # the row say PROC HAZARD does not run the job, as for MAXITER.
+        for (op in sel_ops) {
+          eqp <- .idx(op, "=")
+          if (eqp == 0L) next
+          val <- substring(op, eqp + 1L)
+          if (.hzr_sas_is_macro(val) || .hzr_sas_lexer_number(val)) next
+          proc_rejected <- c(proc_rejected, paste0(
+            op, ": not a number PROC HAZARD's lexer reads ",
+            "(hazard_l.l:33-38), so PROC HAZARD rejects this job with a ",
+            "syntax error"))
+          proc_what <- c(proc_what, op)
+          sel_bad <- c(sel_bad, op)
+          err_stmt <- c(err_stmt, i)
+        }
       },
       # RESTRICT constrains which variables the screen may select
       # (hazrd4.c's rsttbl). It is recorded here and refused below when the
@@ -905,6 +927,15 @@
   }
   reset <- if (semantic_seen) "none" else
     .hzr_sas_paren_reset(st, err_stmt, blind_stmt)
+  # The SELECTION rows say the job is refused only when no `(` clears it;
+  # otherwise the verdict is the #461 warning's below.
+  for (op in sel_bad) {
+    note(op, paste0(
+      "not a number PROC HAZARD's lexer reads (hazard_l.l:33-38)",
+      if (identical(reset, "none")) {
+        ", so PROC HAZARD rejects this job with a syntax error"
+      }))
+  }
   what <- c(proc_syntax_what, proc_what, parms$rejected_parms_what, phase_what)
   if (length(parms$rejected_phase) || length(stmt_fatal)) {
     # With no TIME or EVENT there is nothing to fit whatever the flag says,
@@ -1490,9 +1521,19 @@
     })
   }
 
-  # John's 2026-09-22 decision, as amended at 19:51: EVERY refusal warns and
-  # emits the fit, with no exception. Three of them (SETG3910, SETG3920,
-  # SETG3930) still halt, because SAS refuses them for a shape value that is
+  # John's 2026-09-22 decision, as amended at 19:51: a refusal warns and
+  # emits the fit. That holds for the refusals that reach this return, not
+  # for every refusal. Six paths above return a stop() in place of the fit:
+  # a phase statement PROC HAZARD refuses at parse (#340), or a TIME or EVENT
+  # with no operand and nothing else to supply it (#431), where a later `(`
+  # changes only the stop's wording (#461); LCENSOR with ICENSOR (#155); no
+  # phase selected (modterm.c ERROR 1001); a PARMS statement that builds no
+  # phase this translation can use; no DATA= (#311); and a SELECTION
+  # construct hzr_stepwise() cannot run (FAST, MAXVARS, RESTRICT, a negative
+  # MAXSTEPS, a per-variable MOVE= or ORDER=, a cross-phase /I). A job with
+  # no EVENT or ICENSOR statement at all never gets that far:
+  # .hzr_censor_spec() raises during translation. Of the refusals that do
+  # reach here, three (SETG3910, SETG3920, SETG3930) still halt, because SAS refuses them for a shape value that is
   # out of range (setg3.c:269-284) and hzr_phase() will not build a phase
   # from that same value. The warning is emitted in its own chunk ABOVE the
   # fit so that the real cause -- the SETG3 code and the operand -- is

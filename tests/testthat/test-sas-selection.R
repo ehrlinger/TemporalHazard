@@ -933,3 +933,104 @@ test_that("the callout describes only what this screen's direction does (#160)",
   expect_no_match(fwd, "re-enter", fixed = TRUE)
   for (d in list(both, back, fwd)) expect_match(d, "approximate variances", fixed = TRUE)
 })
+
+# --- N3 (1.2.12 review): a SELECTION value PROC HAZARD's lexer does not read -
+# .hzr_selection_spec() reads a value with as.numeric(), which reads 1E-3,
+# 2E-1, +0.1 and 5. -- none of them a NUMBER to hazard_l.l:33-38, so in the
+# STEP state (:53) each is unexpected text or an unexpected char, and
+# initprz.c:75-77 stops the job with SYNTAX. Measured on the HAZARD binary on
+# avc (2026-09-25; PARMS MUE=0.2 THALF=1; SELECTION <value>; EARLY AGE;):
+# SLE=0.2, .2, 0.20, 0.2E-1, MAXSTEPS=5 and 5.0 fit (4 of 4 markers, with a
+# stepwise section); SLE=ABC, 1E-3, SLS=2E-1, SLE=+0.1 and MAXSTEPS=5. exit
+# SYNTAX with no markers. The translation emitted a screen with no warning,
+# and with no row for any but ABC. Under U1 it now warns and records the row,
+# and still screens at the value as this translation reads it.
+.n3_refusal <- function(job) {
+  slot <- grep("^refusal", names(job$calls), value = TRUE)
+  if (!length(slot)) return(NA_character_)
+  job$calls[[slot[[1L]]]][[2L]]
+}
+
+test_that("a SELECTION value the lexer does not read warns and still screens (N3)", {
+  bad <- list(
+    list(op = "SLE=1E-3", arg = "slentry", val = 0.001),
+    list(op = "SLS=2E-1", arg = "slstay", val = 0.2),
+    list(op = "SLE=+0.1", arg = "slentry", val = 0.1),
+    list(op = "MAXSTEPS=5.", arg = "max_steps", val = 5),
+    list(op = "SLE=ABC", arg = "slentry", val = 0.3))
+  for (b in bad) {
+    job <- .sel_job(paste0("SELECTION ", b$op, "; EARLY A, B;"))
+    cl <- job$calls$fit[[3L]]
+    expect_identical(cl[[1L]], as.name("hzr_stepwise"), info = b$op)
+    expect_equal(cl[[b$arg]], b$val, info = b$op)
+    msg <- .n3_refusal(job)
+    expect_match(msg, "PROC HAZARD does not run this job", fixed = TRUE,
+                 info = b$op)
+    expect_match(msg, paste0(b$op, ": not a number PROC HAZARD's lexer reads"),
+                 fixed = TRUE, info = b$op)
+    row <- job$untranslated$reason[job$untranslated$construct == b$op]
+    expect_length(row, 1L)
+    expect_match(row, "rejects this job with a syntax error", fixed = TRUE,
+                 info = b$op)
+  }
+})
+
+test_that("a SELECTION value the lexer reads raises nothing (N3 known positive)", {
+  good <- list(c("SLE=0.2", "slentry", 0.2), c("SLE=.2", "slentry", 0.2),
+               c("SLE=0.20", "slentry", 0.2), c("SLE=0.2E-1", "slentry", 0.02),
+               c("MAXSTEPS=5", "max_steps", 5), c("MAXSTEPS=5.0", "max_steps", 5))
+  for (g in good) {
+    job <- .sel_job(paste0("SELECTION ", g[[1L]], "; EARLY A, B;"))
+    expect_equal(job$calls$fit[[3L]][[g[[2L]]]], as.numeric(g[[3L]]),
+                 info = g[[1L]])
+    expect_identical(.n3_refusal(job), NA_character_, info = g[[1L]])
+    expect_false(g[[1L]] %in% job$untranslated$construct, info = g[[1L]])
+  }
+  # A macro value is SAS's to expand, so it carries no verdict.
+  expect_identical(.n3_refusal(.sel_job("SELECTION SLE=&SLE; EARLY A, B;")),
+                   NA_character_)
+})
+
+test_that("a later `(` clears a SELECTION value refusal, as the binary does (N3, #461)", {
+  # Measured: `SELECTION SLE=1E-3; EARLY LOG();` exits with no SYNTAX and
+  # fits (4 of 4 markers) but prints no stepwise section, while the same job
+  # at SLE=0.2 prints "Forward Stepwise Selection". The parser's recovery
+  # drops the screen and the translation still emits one, so the job takes
+  # the #461 cleared wording rather than "does not run".
+  job <- .sel_job("SELECTION SLE=1E-3; EARLY A, B; EARLY LOG();")
+  msg <- .n3_refusal(job)
+  expect_match(msg, "does not stop this job for the syntax error in SLE=1E-3",
+               fixed = TRUE)
+  expect_match(msg, "cannot emit PROC HAZARD's model", fixed = TRUE)
+  expect_no_match(msg, "does not run", fixed = TRUE)
+  row <- job$untranslated$reason[job$untranslated$construct == "SLE=1E-3"]
+  expect_length(row, 1L)
+  expect_match(row, "not a number PROC HAZARD's lexer reads", fixed = TRUE)
+  expect_no_match(row, "rejects this job", fixed = TRUE)
+  # A `(` in the SELECTION statement itself does not clear it: measured,
+  # `EARLY AGE; SELECTION SLE=1E-3 ();` exits SYNTAX.
+  same <- .n3_refusal(.sel_job("EARLY A, B; SELECTION SLE=1E-3 ();"))
+  expect_match(same, "PROC HAZARD does not run this job", fixed = TRUE)
+})
+
+test_that("a SELECTION value refusal emits a screen that runs (N3)", {
+  skip_on_cran()
+  job <- .sel_job("SELECTION SLE=1E-3; EARLY STRONG, NOISE;")
+  expect_equal(job$calls$fit[[3L]][["slentry"]], 0.001)
+  w <- character(0)
+  res <- withCallingHandlers(
+    render_sim(job, list(D = .sel_data())),
+    warning = function(cnd) {
+      w <<- c(w, conditionMessage(cnd))
+      invokeRestart("muffleWarning")
+    })
+  expect_true(res$ok, info = paste(res$results, collapse = "; "))
+  # The document raises the refusal when its chunk runs, not only at
+  # translation.
+  expect_true(any(grepl("SLE=1E-3: not a number", w, fixed = TRUE)))
+  sw <- res$env$fit
+  expect_s3_class(sw, "hzr_stepwise")
+  steps <- as.data.frame(sw)
+  # STRONG's effect clears p < 0.001 on these data, so the screen entered it.
+  expect_true("STRONG" %in% steps$variable[steps$action == "enter"])
+})

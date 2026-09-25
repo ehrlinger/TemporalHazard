@@ -1247,6 +1247,22 @@
   the late phase with no covariates. Both follow the rules above when a
   later `(` clears them.
 
+* **A `SELECTION` value that `PROC HAZARD`'s lexer does not read as a number
+  now warns, as a `PARMS` or `MAXITER=` value already did.** The screen read
+  `SLE=`, `SLS=`, `MOVE=` and `MAXSTEPS=` with `as.numeric()`, which also
+  reads `1E-3`, `2E-1`, `+0.1` and `5.`. `PROC HAZARD` lexes none of them as
+  a number (`hazard_l.l:33-38`), and on the package's `avc` data the HAZARD
+  binary refuses `SLE=1E-3`, `SLS=2E-1`, `SLE=+0.1` and `MAXSTEPS=5.` with a
+  syntax error, while `SLE=.2`, `SLE=0.2E-1` and `MAXSTEPS=5.0` fit. The
+  translation emitted `hzr_stepwise(slentry = 0.001)` and the rest with no
+  warning and no row. A value `as.numeric()` cannot read (`SLE=ABC`) had a
+  row and fell back to the default, also without a warning. Such a job now
+  warns that `PROC HAZARD` does not run
+  it and records the row, and the screen still runs at the value as read. A
+  later `(` clears the error as it does the others (#461); the binary then
+  fits the job with no screen at all, so the warning says the fit stands in
+  for a model `PROC HAZARD` does not fit.
+
 * **The weak-direction warning now names a single g3 shape that the data do
   not determine (#415).** It named only pairs of parameters that trade off,
   because it reads the correlation matrix, and a correlation matrix
