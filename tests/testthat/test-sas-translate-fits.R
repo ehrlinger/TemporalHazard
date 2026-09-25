@@ -1561,40 +1561,6 @@ test_that("a renamed underscore column fails loudly, it does not fit a smaller m
   expect_match(err, "not columns of D", fixed = TRUE)
 })
 
-test_that("a SELECTION job carrying a non-syntactic name is refused, not screened (#411)", {
-  skip_on_cran()
-  # The phase formulas now carry `_X1`, but hzr_stepwise() spells such a name
-  # two ways at once: backquoted in its terms() candidate labels, bare in
-  # force_in. Measured consequences, which is why this is a refusal and not a
-  # screen: a /I pin never matches, so BACKWARD DROPS a variable SAS holds in
-  # with no warning naming it; and the score criterion, the only one this
-  # translator emits, indexes `data` by the backquoted label and skips the
-  # candidate. Both would be wrong models from a populated result.
-  f <- withr::local_tempfile(fileext = ".sas")
-  writeLines(c("%HAZARD( PROC HAZARD DATA=D; TIME T; EVENT E;",
-               " PARMS MUE=0.2 THALF=1 NU=1 M=1;",
-               " EARLY AGE=0.1 /I, _X1=0.1 /I;",
-               " SELECTION BACKWARD SLS=0.05; );"), f)
-  job <- suppressWarnings(hzr_translate_sas(f))
-  expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"))
-  msg <- tryCatch({
-    eval(job$calls$fit, new.env())
-    "no error"
-  }, error = conditionMessage)
-  expect_match(msg, "_X1", fixed = TRUE)
-  expect_match(msg, "not a syntactic R name", fixed = TRUE)
-  expect_match(msg, "hazard_l.l:39", fixed = TRUE)
-
-  # Control, so the refusal is not blanket: ordinary names still screen.
-  f2 <- withr::local_tempfile(fileext = ".sas")
-  writeLines(c("%HAZARD( PROC HAZARD DATA=D; TIME T; EVENT E;",
-               " PARMS MUE=0.2 THALF=1 NU=1 M=1;",
-               " EARLY AGE, SEX;",
-               " SELECTION FORWARD SLE=0.3; );"), f2)
-  job2 <- suppressWarnings(hzr_translate_sas(f2))
-  expect_identical(job2$calls$fit[[3L]][[1L]], as.name("hzr_stepwise"))
-})
-
 test_that(".hzr_sas_covar_formula() refuses an empty name vector (#411)", {
   # Reduce() over an empty list is NULL and `~NULL` is a hollow formula: a
   # phase fitted with no covariates, and nothing would error.
@@ -1602,14 +1568,14 @@ test_that(".hzr_sas_covar_formula() refuses an empty name vector (#411)", {
   expect_identical(.hzr_sas_covar_formula("AGE"), quote(~AGE))
 })
 
-test_that("a SELECTION name PROC HAZARD accepts is refused; one it rejects is not (#411)", {
-  # Only a name PROC HAZARD ACCEPTS is refused here. `_X1` is in its grammar
-  # (hazard_l.l:39) and only R objects to it, and that job already died on
-  # main, so refusing it is not a new stop.
+test_that("a SELECTION name PROC HAZARD accepts is screened, not refused (#459)", {
+  # `_X1` and the reserved words are in PROC HAZARD's grammar
+  # (hazard_l.l:39) and only R objects to them. #411 refused such a job;
+  # #459 measured both of its causes as not live, so it now screens (the
+  # screens themselves are executed in the #459 tests above).
   #
-  # Text PROC HAZARD REJECTS at parse (`AGE*SEX`, `LOG(AGE)`) is NOT refused
-  # here: stopping it would be a NEW stop for a job that translated on main.
-  # It warns, with a row, and is left out of the screen (#440; tested below).
+  # Text PROC HAZARD REJECTS at parse (`AGE*SEX`, `LOG(AGE)`) is not refused
+  # either: it warns, with a row, and is left out of the screen (#440).
   job <- function(early) {
     f <- withr::local_tempfile(fileext = ".sas", .local_envir = parent.frame())
     writeLines(c("%HAZARD( PROC HAZARD DATA=D; TIME T; EVENT E;",
@@ -1625,12 +1591,12 @@ test_that("a SELECTION name PROC HAZARD accepts is refused; one it rejects is no
     }, error = conditionMessage)
   }
 
-  # In the grammar: refused, and told the truth about why.
-  for (nm in c("_X1", "NA", "TRUE")) {
-    j <- job(paste0("AGE /I, ", nm))
-    expect_identical(j$calls$fit[[3L]][[1L]], as.name("stop"), info = nm)
-    expect_match(msg(j), "lexer accepts this name", fixed = TRUE, info = nm)
-    expect_match(msg(j), "hazard_l.l:39", fixed = TRUE, info = nm)
+  # In the grammar: screened, with no SELECTION row and the pin emitted.
+  for (nm in c("_X1", "NA", "TRUE", "FALSE", "NULL")) {
+    j <- job(paste0("AGE, ", nm, " /I"))
+    expect_identical(j$calls$fit[[3L]][[1L]], as.name("hzr_stepwise"), info = nm)
+    expect_identical(j$calls$fit[[3L]]$force_in, call("c", nm), info = nm)
+    expect_false("SELECTION" %in% j$untranslated$construct, info = nm)
   }
 
   # NOT in the grammar: NOT refused. The emitted call is still a screen --
@@ -1645,6 +1611,89 @@ test_that("a SELECTION name PROC HAZARD accepts is refused; one it rejects is no
   expect_identical(job("AGE /I, SEX")$calls$fit[[3L]][[1L]], as.name("hzr_stepwise"))
 })
 
+
+# --- #459: a SELECTION job carrying a name PROC HAZARD accepts is screened ---
+# #411 refused such a job, citing two causes. Measured through the translator
+# with the refusal lifted (#459): a `/I` pin on `_X1` was DROPPED at the #411
+# branch tip 9d30dc3e and HELD at its merge 5c121f03, at a0405a9b and at
+# f8808a5e, so #437 (merged first) had fixed it; the score criterion could not
+# score `_X1` at a0405a9b and entered it at f8808a5e, so #455 fixed the
+# second. The job now runs, and these execute what it emits.
+.p459_data <- function() {
+  set.seed(459)
+  n <- 300
+  age <- stats::rnorm(n)
+  tt <- stats::rexp(n, 0.2 * exp(1.5 * age))
+  cens <- stats::rexp(n, 0.05)
+  data.frame(T = pmin(tt, cens), E = as.numeric(tt <= cens), AGE = age)
+}
+.p459_run <- function(early, selection, col, values) {
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(c("%HAZARD( PROC HAZARD DATA=D; TIME T; EVENT E;",
+               " PARMS MUE=0.2 THALF=1 NU=1 M=1;",
+               paste0(" EARLY ", early, ";"),
+               paste0(" SELECTION ", selection, "; );")), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  D <- .p459_data()
+  D[[col]] <- values
+  # The unusual input really is there: data.frame() would have renamed it.
+  stopifnot(col %in% names(D))
+  env <- new.env(parent = environment())
+  env$D <- D
+  utils::capture.output(for (nm in names(job$calls)) {
+    suppressWarnings(eval(job$calls[[nm]], env))
+  })
+  list(job = job, fit = env$fit)
+}
+
+test_that("a /I pin on a non-syntactic name holds through the translator (#459)", {
+  skip_on_cran()
+  set.seed(4591)
+  noise <- stats::rnorm(300)
+  for (nm in c("_X1", "TRUE")) {
+    lab <- paste0("`", nm, "`")
+    # Known positive: with no pin, the screen drops the noise column. slstay
+    # is tiny because a term STAYS when p <= slstay; AGE (p far below 1e-9)
+    # is kept either way.
+    free <- .p459_run(paste0("AGE, ", nm), "BACKWARD SLSTAY=0.000000001",
+                      nm, noise)
+    expect_identical(free$job$calls$fit[[3L]][[1L]], as.name("hzr_stepwise"),
+                     info = nm)
+    expect_s3_class(free$fit, "hzr_stepwise")
+    expect_identical(free$fit$steps$action, "drop", info = nm)
+    expect_identical(free$fit$steps$variable, lab, info = nm)
+    expect_false(paste0("phase_1.", lab) %in% names(stats::coef(free$fit)),
+                 info = nm)
+
+    # The question: the same job with `/I` keeps it, and the pin resolved.
+    held <- .p459_run(paste0("AGE, ", nm, " /I"),
+                      "BACKWARD SLSTAY=0.000000001", nm, noise)
+    expect_identical(held$job$calls$fit[[3L]]$force_in, call("c", nm),
+                     info = nm)
+    expect_identical(nrow(held$fit$steps), 0L, info = nm)
+    expect_true(paste0("phase_1.", lab) %in% names(stats::coef(held$fit)),
+                info = nm)
+    expect_identical(held$fit$scope$force_in_resolved, lab, info = nm)
+    expect_length(held$fit$scope$unresolved$force_in, 0L)
+    expect_false(held$fit$criteria$stopped_uncomputable, info = nm)
+  }
+})
+
+test_that("the score criterion enters a non-syntactic name through the translator (#459)", {
+  skip_on_cran()
+  set.seed(4592)
+  D <- .p459_data()
+  # A column carrying signal beyond AGE, so a working score path must enter
+  # it. Before #455 the translated screen could not score it and stopped.
+  signal <- -(log(D$T) + 1.5 * D$AGE) + stats::rnorm(nrow(D), sd = 0.5)
+  run <- .p459_run("AGE /I, _X1", "FORWARD SLENTRY=0.3", "_X1", signal)
+  expect_identical(run$job$calls$fit[[3L]][[1L]], as.name("hzr_stepwise"))
+  expect_identical(run$fit$steps$action, "enter")
+  expect_identical(run$fit$steps$variable, "`_X1`")
+  expect_identical(run$fit$criteria$n_uncomputable_scores, 0L)
+  expect_false(run$fit$criteria$stopped_uncomputable)
+  expect_true("phase_1.`_X1`" %in% names(stats::coef(run$fit)))
+})
 
 # --- #440: a phase variable PROC HAZARD cannot lex as a NAME ---------------
 # hazard_l.l:39 is `name ([_A-Z][_A-Z0-9]*)` and hazard_y.y:213 is
@@ -1783,13 +1832,11 @@ test_that("names PROC HAZARD accepts do not warn (#440 known negatives)", {
     expect_length(job$translate_warnings, 0L)
     expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
   }
-  # `_X1` under SELECTION keeps its own R-side refusal (#411); this check
-  # adds nothing to it.
+  # `_X1` under SELECTION is screened (#459), and this check adds no row.
   job <- .p440_job("AGE=0.1, _X1=0.2", selection = TRUE)
   expect_identical(NROW(.p440_rows(job)), 0L)
-  expect_match(job$untranslated$reason[job$untranslated$construct ==
-                                          "SELECTION"],
-               "not a syntactic R name", fixed = TRUE)
+  expect_false("SELECTION" %in% job$untranslated$construct)
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hzr_stepwise"))
 })
 
 test_that("an item with no variable stops, as it did on main (#440)", {
