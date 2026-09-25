@@ -838,24 +838,62 @@ test_that("the verify_ge_2 row does not fire above the boundary or on WEIBULL", 
   expect_equal(nrow(weib$untranslated), 0L)
 })
 
-test_that("FIXGE2/FIXGAE2 without WEIBULL gets no SETG3 start trace (#472)", {
-  # The trace models the !g_two && !ga_two column of setg3.c. Without WEIBULL
-  # a constraint flag takes SETG3_verify_ge_2() / SETG3_alpha_fixup() down
-  # the g_two / ga_two branches instead, which the trace does not model. The
-  # binary on avc data (ad05b7a0, hazard pin dad7978) shows the trace was
-  # wrong on both flags for the defaulted shape gamma = 1, alpha = 1, eta = 2:
-  #   FIXGE2:  Used gamma = 1 (setg3.c:883 skips at gamma*eta = 2), alpha =
-  #            0.6666667 -- the trace said gamma = 1.5 and nothing of alpha.
-  #   FIXGAE2: Used gamma = 1.5 and alpha = 1.5 -- the trace said gamma only.
-  # The "is not translated" row is what stays: the job must remain loud.
+test_that("FIXGE2/FIXGAE2 without WEIBULL report SETG3's measured start (#472)", {
+  # Without WEIBULL a constraint flag sends SETG3_all_gt_0() down the g_two
+  # (FIXGE2) or ga_two (FIXGAE2) branch of SETG3_verify_ge_2() and
+  # SETG3_alpha_fixup(), which the general trace does not model: it said
+  # gamma = 1.5 under FIXGE2, where PROC HAZARD leaves gamma at 1. Every
+  # expected value below is the "Used" column of the PROC HAZARD binary's
+  # "Initial Parameter Values" listing on avc data (hazard pin dad7978), one
+  # cell per branch and one each side of the branch boundary.
   late <- c("MUE=0.2", "THALF=1", "MUL=0.1")
-  for (flag in c("FIXGE2", "FIXGAE2")) {
-    got <- .hzr_parse_parms(c(late, flag))
-    expect_equal(got$untranslated$construct, c(flag, "TAU (unspecified)"))
-    expect_match(got$untranslated$reason[1],
-                 paste0("^", flag, " is not translated: without WEIBULL"))
-    expect_false(any(grepl("optimizes from", got$untranslated$reason)))
+  start_row <- function(extra, flag) {
+    got <- .hzr_parse_parms(c(late, extra, flag))
+    u <- got$untranslated
+    # The job stays loud: the flag's own row is always first.
+    expect_equal(u$construct[1], flag)
+    expect_match(u$reason[1], paste0("^", flag, " is not translated"))
+    u[grepl("optimizes from", u$reason), , drop = FALSE]
   }
+  expect_start <- function(extra, flag, construct, values) {
+    r <- start_row(extra, flag)
+    expect_equal(r$construct, construct)
+    expect_match(r$reason, paste0("SETG3() optimizes from ", values, ","),
+                 fixed = TRUE)
+  }
+
+  # FIXGE2 -- gamma: kept when gamma*eta = 2, else 2/eta; alpha: kept when
+  # gamma*eta/alpha > 2, else gamma*eta/3. Binary: 1->1, 1->0.6666667.
+  expect_start(NULL, "FIXGE2", "gamma=1 alpha=1 eta=2",
+               "gamma = 1, alpha = 0.666667, eta = 2")
+  # Second start point, other gamma branch. Binary: 1->0.6666667 on both.
+  expect_start("ETA=3", "FIXGE2", "gamma=1 alpha=1 eta=3",
+               "gamma = 0.666667, alpha = 0.666667, eta = 3")
+  # Alpha just below the boundary is kept. Binary: 2->1, 0.9->0.9.
+  expect_start(c("GAMMA=2", "ALPHA=0.9"), "FIXGE2", "gamma=2 alpha=0.9 eta=2",
+               "gamma = 1, alpha = 0.9, eta = 2")
+  # Nothing moves, so no start row. Binary: 1->1, 0.5->0.5, 2->2.
+  expect_equal(nrow(start_row("ALPHA=0.5", "FIXGE2")), 0L)
+
+  # FIXGAE2 -- gamma: 3/eta when gamma*eta <= 2, else kept; alpha:
+  # gamma*eta/2 unless already equal. Binary: 1->1.5, 1->1.5.
+  expect_start(NULL, "FIXGAE2", "gamma=1 alpha=1 eta=2",
+               "gamma = 1.5, alpha = 1.5, eta = 2")
+  # Second start point, other gamma branch. Binary: 2->2, 1->2.
+  expect_start("GAMMA=2", "FIXGAE2", "gamma=2 alpha=1 eta=2",
+               "gamma = 2, alpha = 2, eta = 2")
+  # gamma*eta = 2.25, just above the boundary. Binary: 1.5->1.5, 1->1.125.
+  expect_start(c("GAMMA=1.5", "ETA=1.5"), "FIXGAE2",
+               "gamma=1.5 alpha=1 eta=1.5",
+               "gamma = 1.5, alpha = 1.125, eta = 1.5")
+  # gamma*eta = 2 at eta = 4. Binary: 0.5->0.75, 1->1.5.
+  expect_start(c("GAMMA=0.5", "ETA=4"), "FIXGAE2", "gamma=0.5 alpha=1 eta=4",
+               "gamma = 0.75, alpha = 1.5, eta = 4")
+  # Already gamma*eta/alpha = 2: nothing moves. Binary: 2->2, 2->2.
+  expect_equal(nrow(start_row(c("GAMMA=2", "ALPHA=2"), "FIXGAE2")), 0L)
+
+  # Outside the measured domain (a fixed shape) no start is claimed.
+  expect_equal(nrow(start_row(c("GAMMA=2", "FIXGAMMA"), "FIXGE2")), 0L)
 
   # Known positive: the same shape with no flag still records the 1.5 row,
   # so the absence above is the guard, not a trace that stopped firing.
