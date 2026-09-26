@@ -1,3 +1,20 @@
+# TemporalHazard 1.2.13
+
+## Bug fixes
+
+* **`hzr_stepwise(criterion = "score")` now refuses a `data` whose rows are
+  not the base fit's rows in the fit's order (#487).** The score test reads
+  each candidate from `data` by position and scores it against the fit's
+  stored rows, and it checked only the row count. The same rows sorted or
+  shuffled scored every candidate against the wrong observations and
+  entered a different variable, with no warning: on `avc`, a Weibull base
+  entered `com_iv` (p = 0.0001) from the original frame and `mal`
+  (p = 0.17) from the frame sorted by time. Every column `data` shares with
+  the data frame given to `hazard()` must now match it; a column only
+  `data` has, such as a candidate derived after the fit, is not compared.
+  A fit made through the vector interface without `data =` stores no frame,
+  so it cannot be checked.
+
 # TemporalHazard 1.2.12
 
 ## Breaking changes

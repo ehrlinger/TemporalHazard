@@ -659,6 +659,34 @@
   if (length(xl)) NROW(xl[[1L]]) else length(fit$data$time)
 }
 
+#' Columns of `data` that differ from the fit's own data frame
+#'
+#' `$data$frame` is the frame hazard() was given, after its time-0 rows were
+#' dropped (#374), so it holds the fit's rows in the fit's order. Every column
+#' the two frames share must agree value for value; a column only `data` has
+#' (a candidate derived after the fit) cannot be compared and is not. A fit
+#' with no stored frame (the vector interface without `data =`) has nothing to
+#' compare against and returns no columns.
+#'
+#' @return Character vector of the shared column names that differ.
+#' @noRd
+.hzr_score_rows_moved <- function(current, data) {
+  frame <- current$data$frame
+  if (!is.data.frame(frame)) return(character())
+  if (nrow(frame) != nrow(data)) {
+    # The caller has already matched nrow(data) to the fit's rows, so a frame
+    # of another length is not those rows: on the vector interface `data` may
+    # serve only to look names up, and is stored at its own length. It says
+    # nothing about row order.
+    return(character())
+  }
+  common <- intersect(names(data), names(frame))
+  same <- vapply(common, function(nm) {
+    isTRUE(all.equal(data[[nm]], frame[[nm]], check.attributes = FALSE))
+  }, logical(1))
+  common[!same]
+}
+
 #' Score statistic for one entry candidate
 #'
 #' @param current Fitted `hazard` object (the step's current model).
@@ -716,6 +744,25 @@
       ". The score test needs `data` row-aligned with the fit; pass the same ",
       "data frame the model was fitted on (after any NA removal, and without ",
       "rows at time 0, which hazard() drops).",
+      call. = FALSE
+    )
+  }
+  # The row COUNT matching is not the rows matching. Candidate values are read
+  # from `data` by position and scored against the fit's stored rows, so the
+  # same rows in another order scored every candidate against the wrong
+  # patients and entered a different variable, with no warning (#487).
+  moved <- .hzr_score_rows_moved(current, data)
+  if (length(moved)) {
+    stop(
+      "`data` does not hold the rows the model was fitted on, in the same ",
+      "order: column", if (length(moved) > 1L) "s", " ",
+      paste0("`", utils::head(moved, 5L), "`", collapse = ", "),
+      if (length(moved) > 5L) paste0(" and ", length(moved) - 5L, " more"),
+      " differ", if (length(moved) == 1L) "s", " from the data frame given ",
+      "to hazard(). The score test reads each candidate from `data` row by ",
+      "row, so a sorted or reordered frame scores every candidate against ",
+      "the wrong observations. Pass the data frame the model was fitted on, ",
+      "in its original row order.",
       call. = FALSE
     )
   }

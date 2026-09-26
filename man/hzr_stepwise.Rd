@@ -64,7 +64,10 @@ it.  An empty scope (\code{~ 1}, \code{character()}, or a list of \code{NULL}s a
 \code{~ 1}s) is accepted there.}
 
 \item{data}{Data frame the base fit was built on.  Required for
-refits.}
+refits.  Its rows must be the fit's rows in the same order: the score
+criterion reads each candidate by position, so a sorted or reordered
+frame is refused when the fit stored the frame it was given.  Columns
+added after the fit, such as derived candidates, are allowed.}
 
 \item{direction}{Search strategy: one of \code{"both"} (default),
 \code{"forward"}, or \code{"backward"}.  Controls whether variables may only

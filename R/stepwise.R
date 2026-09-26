@@ -123,7 +123,10 @@
 #'   it.  An empty scope (`~ 1`, `character()`, or a list of `NULL`s and
 #'   `~ 1`s) is accepted there.
 #' @param data Data frame the base fit was built on.  Required for
-#'   refits.
+#'   refits.  Its rows must be the fit's rows in the same order: the score
+#'   criterion reads each candidate by position, so a sorted or reordered
+#'   frame is refused when the fit stored the frame it was given.  Columns
+#'   added after the fit, such as derived candidates, are allowed.
 #' @param direction Search strategy: one of `"both"` (default),
 #'   `"forward"`, or `"backward"`.  Controls whether variables may only
 #'   enter, only leave, or both.  See the **Selection direction and
