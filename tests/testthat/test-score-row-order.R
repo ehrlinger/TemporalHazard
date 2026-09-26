@@ -115,11 +115,27 @@ test_that("rows hazard() dropped at time 0 do not read as a reordering (#487)", 
   expect_identical(ro_screen(fit, d, ro_scope)$steps$variable, "com_iv")
 })
 
-test_that("a lookup-only `data` of another length is not compared (#487)", {
-  skip_on_cran() # a multiphase fit plus a screen
+# A screen that counts the unverified-order warnings it raises and muffles
+# the rest. ro_screen() suppresses every warning, so it cannot see them.
+ro_screen_w <- function(fit, data, scope) {
+  n <- 0L
+  sw <- withCallingHandlers(
+    hzr_stepwise(fit, scope = scope, data = data, direction = "forward",
+                 criterion = "score", max_steps = 1L, trace = FALSE),
+    hzr_score_rows_unverified = function(w) {
+      n <<- n + 1L
+      invokeRestart("muffleWarning")
+    },
+    warning = function(w) invokeRestart("muffleWarning")
+  )
+  list(sw = sw, n_unverified = n)
+}
+
+test_that("a lookup-only `data` of another length is checked by time (#487)", {
+  skip_on_cran() # a multiphase fit plus four screens
   # On the vector interface `data` may serve only to look names up, and is
-  # then stored at its own length. It is not the fit's rows, so it says
-  # nothing about the order of the frame the screen is given.
+  # then stored at its own length, so it is not the fit's rows and cannot be
+  # compared with the screen's `data`. The fit's event times can.
   set.seed(3)
   n <- 300
   D <- data.frame(tt = stats::rexp(n, 0.3) + 0.01,
@@ -133,8 +149,70 @@ test_that("a lookup-only `data` of another length is not compared (#487)", {
     fit = TRUE
   ))
   expect_identical(nrow(fit$data$frame), 5L)
-  sw <- ro_screen(fit, D, list(early = NULL, const = ~ x1 + x2))
-  expect_identical(sw$steps$variable, "x1")
+  sc <- list(early = NULL, const = ~ x1 + x2)
+  set.seed(4)
+  sh <- D[sample(nrow(D)), ]
+  expect_false(identical(sh$tt, D$tt))
+
+  # `tt` holds the fit's times in order: checked, and screened silently.
+  r <- ro_screen_w(fit, D, sc)
+  expect_identical(r$sw$steps$variable, "x1")
+  expect_identical(r$n_unverified, 0L)
+  # The same rows shuffled: `tt` holds the times out of order, so refused.
+  expect_error(ro_screen(fit, sh, sc), "column `tt` holds the fit's event")
+
+  # Without `tt` nothing can be checked, and the reader is told, once.
+  r <- ro_screen_w(fit, D[, -1L], sc)
+  expect_identical(r$sw$steps$variable, "x1")
+  expect_identical(r$n_unverified, 1L)
+  expect_identical(ro_screen_w(fit, sh[, -1L], sc)$n_unverified, 1L)
+  # The warning says why; the screen's other warnings are muffled outside it.
+  suppressWarnings(expect_warning(
+    hzr_stepwise(fit, scope = sc, data = sh[, -1L], direction = "forward",
+                 criterion = "score", max_steps = 1L, trace = FALSE),
+    "has 5 rows, not the fit's 300",
+    class = "hzr_score_rows_unverified"
+  ))
+})
+
+test_that("a vector fit without `data =` is not screened silently (#487)", {
+  skip_on_cran() # a multiphase fit plus three screens
+  # The reviewer's repro: no stored frame at all, so a shuffled avc entered
+  # com_iv (Q = 4.04, p = 0.044) where the original enters opmos (Q = 8.13),
+  # with no error or warning.
+  d <- ro_avc()
+  fit <- suppressWarnings(hazard(
+    time = d$int_dead, status = d$dead, dist = "multiphase",
+    phases = list(
+      early    = hzr_phase("cdf", t_half = 0.1512095, nu = 1.438652, m = 1,
+                           fixed = "shapes"),
+      constant = hzr_phase("constant")
+    ),
+    fit = TRUE
+  ))
+  expect_null(fit$data$frame)
+  sc <- list(early = NULL,
+             constant = ~ age + com_iv + opmos + mal + nyha + inc_surg)
+  set.seed(487)
+  sh <- d[sample(nrow(d)), ]
+  expect_false(identical(sh$int_dead, d$int_dead))
+
+  r <- ro_screen_w(fit, d, sc)
+  expect_identical(r$sw$steps$variable, "opmos")
+  expect_identical(r$n_unverified, 0L)
+  expect_error(ro_screen(fit, sh, sc), "column `int_dead` holds the fit's")
+  # The Wald criterion refits on the vector interface, whose response is the
+  # fit's stored vectors, so it misread the shuffle the same way (com_iv for
+  # opmos); it is checked too.
+  expect_error(
+    suppressWarnings(hzr_stepwise(fit, scope = sc, data = sh,
+                                  direction = "forward", criterion = "wald",
+                                  max_steps = 1L, trace = FALSE)),
+    "column `int_dead` holds the fit's"
+  )
+
+  no_time <- setdiff(names(d), "int_dead")
+  expect_identical(ro_screen_w(fit, sh[, no_time], sc)$n_unverified, 1L)
 })
 
 test_that("the bootstrap select mode screens each replicate unrefused (#487)", {
@@ -148,5 +226,9 @@ test_that("the bootstrap select mode screens each replicate unrefused (#487)", {
                                        criterion = "score"))
   expect_identical(bs$n_failed, 0L)
   expect_identical(bs$n_success, 3L)
-  expect_true("com_iv" %in% bs$replicates$parameter)
+  # com_iv enters every replicate, each at its own estimate: three screens
+  # on three resamples, not one result repeated.
+  hit <- bs$replicates$parameter == "com_iv"
+  expect_equal(bs$replicates$replicate[hit], 1:3)
+  expect_identical(length(unique(bs$replicates$estimate[hit])), 3L)
 })

@@ -67,7 +67,13 @@ it.  An empty scope (\code{~ 1}, \code{character()}, or a list of \code{NULL}s a
 refits.  Its rows must be the fit's rows in the same order: the score
 criterion reads each candidate by position, so a sorted or reordered
 frame is refused when the fit stored the frame it was given.  Columns
-added after the fit, such as derived candidates, are allowed.}
+added after the fit, such as derived candidates, are allowed.  A
+vector-interface fit made without \verb{data =}, or with a \code{data} of another
+row count used only to look names up, stores no frame to compare.  For
+those the order is checked against a column of \code{data} holding the fit's
+event times, and refused if they are out of order; with no such column
+it cannot be checked, and a warning of class
+\code{hzr_score_rows_unverified} says so.}
 
 \item{direction}{Search strategy: one of \code{"both"} (default),
 \code{"forward"}, or \code{"backward"}.  Controls whether variables may only
