@@ -396,6 +396,27 @@ test_that("CLIMITS=95, outside (0, 1), is SAS's one-SE band (#493)", {
   expect_equal(got$haz, got$ref("hazard", one_se_493))
 })
 
+test_that("CLIMITS=1, the upper boundary, is SAS's one-SE band (#493)", {
+  skip_on_cran()
+  # hzpp.c:8 tests CLimit >= ONE, so 1 itself is outside (0, 1). A level of
+  # 1 passed to predict() is an error, not a band.
+  got <- hazpred_493("CLIMITS=1")
+  expect_equal(got$surv, got$ref("survival", one_se_493))
+})
+
+test_that("CLIMITS=1. and CLIMITS=9E-1 are rejected, as SAS rejects them (#493)", {
+  skip_on_cran()
+  # The SAS lexer's NUMBER needs digits after a point and a point before an
+  # exponent (hazpred_l.l:13-16), so both are syntax errors there.
+  for (opt in c("CLIMITS=1.", "CLIMITS=9E-1")) {
+    got <- hazpred_493(opt)
+    expect_equal(got$untranslated$construct, "CLIMITS", info = opt)
+    expect_match(got$untranslated$reason, "syntax error", fixed = TRUE,
+                 info = opt)
+    expect_equal(got$surv, got$ref("survival", one_se_493), info = opt)
+  }
+})
+
 test_that("CLIMITS=0 is SAS's one-SE band (#493)", {
   skip_on_cran()
   got <- hazpred_493("CLIMITS=0")
