@@ -167,6 +167,21 @@ test_that("conf.type is omitted when NOCL suppresses confidence limits", {
   expect_null(got$call[["conf.type"]])
 })
 
+test_that("level is omitted when NOCL suppresses confidence limits (#493)", {
+  txt <- .hzr_sas_normalise(paste(
+    sprintf(grid_step, "P"),
+    "%HAZPRED( PROC HAZPRED DATA=P INHAZ=E.H OUT=P NOCL; TIME MONTHS; );"
+  ))
+  got <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)
+  # A band level on a call that draws no band would read as if it did.
+  expect_null(got$call[["level"]])
+  expect_null(got$call_haz[["level"]])
+  # Known positive: the same block without NOCL does carry one.
+  txt_cl <- sub(" NOCL;", ";", txt, fixed = TRUE)
+  got_cl <- .hzr_parse_hazpred(.hzr_sas_blocks(txt_cl)[[1L]], txt_cl)
+  expect_equal(got_cl$call[["level"]], quote(2 * stats::pnorm(1) - 1))
+})
+
 test_that("the log grid matches SAS's INC = (5 + LN_MAX)/99.9 step", {
   # hp.death.AVC.sas's own DO reads `DO LN_TIME=-5 TO LN_MAX BY INC,LN_MAX;`
   # -- the trailing `, LN_MAX` is SAS's own extra DO-list value, not

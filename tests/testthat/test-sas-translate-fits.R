@@ -308,10 +308,14 @@ test_that("the emitted HAZPRED call produces logit bounds, not the default", {
   env$P <- data.frame(time = c(0.5, 1, 2, 5), x = 0)
   got <- eval(emitted, env)
 
+  # At PROC HAZPRED's default one-SE level (#493): the emitted call carries
+  # it, so a reference at predict()'s 0.95 default would differ in level,
+  # not only in transform.
+  one_se <- 2 * stats::pnorm(1) - 1
   logit <- predict(fit, newdata = env$P, type = "survival", se.fit = TRUE,
-                   conf.type = "logit")
+                   level = one_se, conf.type = "logit")
   loglog <- predict(fit, newdata = env$P, type = "survival", se.fit = TRUE,
-                    conf.type = "log-log")
+                    level = one_se, conf.type = "log-log")
 
   expect_equal(got, logit)
   # The decisive check: the two transforms must genuinely disagree here, or
@@ -320,6 +324,98 @@ test_that("the emitted HAZPRED call produces logit bounds, not the default", {
   expect_false(isTRUE(all.equal(logit$upper, loglog$upper)))
   expect_true(all(got$lower <= got$fit & got$fit <= got$upper))
   expect_true(all(got$lower >= 0 & got$upper <= 1))
+})
+
+# PROC HAZPRED draws a one-SE band unless CLIMITS= names a level in (0, 1):
+# its default CLIMITS is 0 (hazpred/stmtprc.c:14) and any value outside
+# (0, 1) gives a multiplier of one (hazpred/hzpp.c:8-9). The emitted
+# predict() calls left `level` at 0.95 and discarded CLIMITS=, so every band
+# was 1.96 times too wide (#493). These evaluate the emitted calls and
+# compare their bounds with predict() at the level SAS would use.
+hazpred_493 <- local({
+  fit <- NULL
+  function(opts) {
+    if (is.null(fit)) {
+      set.seed(17)
+      df <- data.frame(time = stats::rexp(60, 0.3),
+                       status = stats::rbinom(60, 1, 0.6),
+                       x = stats::rnorm(60))
+      fit <<- hazard(survival::Surv(time, status) ~ x, data = df,
+                     dist = "weibull", theta = c(0.5, 1, 0), fit = TRUE)
+    }
+    txt <- .hzr_sas_normalise(paste(
+      "DATA P; DO MONTHS=1 TO 12 BY 1; OUTPUT; END;",
+      sprintf(
+        "%%HAZPRED( PROC HAZPRED DATA=P INHAZ=E.H OUT=P %s; TIME MONTHS; );",
+        opts
+      )
+    ))
+    parsed <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)
+    env <- new.env(parent = globalenv())
+    env$fit <- fit
+    env$P <- data.frame(time = c(0.5, 1, 2, 5), x = 1)
+    ref <- function(type, level) {
+      predict(fit, newdata = env$P, type = type, se.fit = TRUE, level = level,
+              conf.type = if (type == "survival") "logit" else "log-log")
+    }
+    list(surv = eval(parsed$call, env), haz = eval(parsed$call_haz, env),
+         ref = ref, untranslated = parsed$untranslated)
+  }
+})
+one_se_493 <- 2 * stats::pnorm(1) - 1
+
+test_that("emitted HAZPRED bands are one SE by default, not 95% (#493)", {
+  skip_on_cran()
+  got <- hazpred_493("")
+  # Known positive: the standard errors are real, so a 95% and a one-SE band
+  # genuinely differ and the comparisons below can fail.
+  expect_true(all(got$surv$se.fit > 0) && all(got$haz$se.fit > 0))
+  expect_equal(got$surv, got$ref("survival", one_se_493))
+  expect_equal(got$haz, got$ref("hazard", one_se_493))
+  # The width against predict()'s 95% default, on the logit scale the
+  # survival limits are built on, is 1 / 1.96, not 1.
+  wide <- got$ref("survival", 0.95)
+  ratio <- (stats::qlogis(got$surv$upper) - stats::qlogis(got$surv$lower)) /
+    (stats::qlogis(wide$upper) - stats::qlogis(wide$lower))
+  expect_equal(ratio, rep(1 / stats::qnorm(0.975), 4L))
+})
+
+test_that("CLIMITS=0.9 draws 90% bands on both calls (#493)", {
+  skip_on_cran()
+  got <- hazpred_493("CLIMITS=0.9")
+  expect_equal(got$surv, got$ref("survival", 0.9))
+  expect_equal(got$haz, got$ref("hazard", 0.9))
+  expect_false(isTRUE(all.equal(got$surv$lower,
+                                got$ref("survival", one_se_493)$lower)))
+})
+
+test_that("CLIMITS=95, outside (0, 1), is SAS's one-SE band (#493)", {
+  skip_on_cran()
+  got <- hazpred_493("CLIMITS=95")
+  expect_equal(got$surv, got$ref("survival", one_se_493))
+  expect_equal(got$haz, got$ref("hazard", one_se_493))
+})
+
+test_that("CLIMITS=0 is SAS's one-SE band (#493)", {
+  skip_on_cran()
+  got <- hazpred_493("CLIMITS=0")
+  expect_equal(got$surv, got$ref("survival", one_se_493))
+})
+
+test_that("NOCL wins over a later CLIMITS=, as in hzpp.c (#493)", {
+  skip_on_cran()
+  got <- hazpred_493("NOCL CLIMITS=0.9")
+  # se.fit = FALSE: a bare vector of survival, with no bounds at all.
+  expect_false(is.data.frame(got$surv))
+  expect_equal(got$surv, got$ref("survival", one_se_493)$fit)
+})
+
+test_that("a CLIMITS= value SAS cannot lex is recorded, not read (#493)", {
+  skip_on_cran()
+  got <- hazpred_493("CLIMITS=-0.9")
+  expect_equal(got$untranslated$construct, "CLIMITS")
+  expect_match(got$untranslated$reason, "syntax error", fixed = TRUE)
+  expect_equal(got$surv, got$ref("survival", one_se_493))
 })
 
 test_that("an orphan MUE and MUL translate to the fit of their written defaults (#345)", {

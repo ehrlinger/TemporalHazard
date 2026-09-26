@@ -2103,9 +2103,15 @@
 #' `conf.type = "logit"` is set on the survival call, because SAS HAZPRED's
 #' survival confidence limits are on the logit scale (`hzp_calc_srv_CL.c`),
 #' while `predict.hazard()` defaults to `"log-log"` (the survfit standard).
-#' Emitting the default would produce bounds that silently disagree with the
-#' job being reproduced. The hazard call sets nothing: hazard limits are on
-#' the log scale in both engines, so the default already agrees.
+#' Hazard limits are on the log scale in both engines, so the hazard call
+#' leaves `conf.type` at its default.
+#'
+#' `level` is set on both calls. PROC HAZPRED's default `CLIMITS` is 0
+#' (`hazpred/stmtprc.c:14`), and any `CLIMITS` outside `(0, 1)` gives a
+#' multiplier of one (`hazpred/hzpp.c:8-9`), so its default band is one
+#' standard error, where `predict.hazard()` defaults to 95%. Until #493 the
+#' level was never emitted, so every band was 1.96 times too wide, and
+#' `CLIMITS=` was read and discarded.
 #'
 #' `txt` is the whole normalised source, because HAZPRED's real input is the
 #' `DATA=` prediction grid built by a preceding DATA step, not anything in
@@ -2144,6 +2150,7 @@
   want_surv <- TRUE
   want_haz <- TRUE
   want_cl <- TRUE
+  climit <- NULL
 
   if (!is.null(pred_syntax_error)) note("PROC HAZPRED", pred_syntax_error)
   for (tok in toks) {
@@ -2165,7 +2172,19 @@
       NOSURV  = want_surv <- FALSE,
       NOHAZ   = want_haz <- FALSE,
       NOCL    = want_cl <- FALSE,
-      CLIMITS = want_cl <- TRUE,
+      # CLIMITS= sets only the level (hazpred/hazpprc.c:15-16); NOCL is a
+      # separate flag that wins whatever the order (hzpp.c:5-6). Setting
+      # want_cl here turned `NOCL CLIMITS=0.9` back into a banded job.
+      # The value is the lexer's NUMBER (hazpred_l.l:13-16, unsigned); any
+      # other value is a syntax error at hazpred_y.y:53.
+      CLIMITS = if (grepl("^([0-9]+|[0-9]*[.][0-9]+(E[+-]?[0-9]+)?)$", val)) {
+        climit <- as.numeric(val)
+      } else {
+        note(key, paste0(
+          "CLIMITS= takes an unsigned number, not `", val, "`: PROC ",
+          "HAZPRED reaches a syntax error (hazpred_y.y:53) and rejects this ",
+          "job; the bands are drawn at the one-SE default"))
+      },
       NOLOG = NULL, NONOTES = NULL,
       {
         mapped <- mapped - 1L
@@ -2226,6 +2245,17 @@
     # only the survival call needs steering.
     if (identical(type, "survival") && isTRUE(want_cl)) {
       args$conf.type <- "logit"
+    }
+    # PROC HAZPRED's default CLIMITS is 0 (hazpred/stmtprc.c:14), and any
+    # CLIMITS outside (0, 1) gives a multiplier of exactly one
+    # (hazpred/hzpp.c:8-9): a one-SE band. predict.hazard() defaults to
+    # 0.95, so leaving `level` out drew every band 1.96 times too wide (#493).
+    if (isTRUE(want_cl)) {
+      args$level <- if (!is.null(climit) && climit > 0 && climit < 1) {
+        climit
+      } else {
+        quote(2 * stats::pnorm(1) - 1)
+      }
     }
     as.call(c(quote(predict), args))
   }
