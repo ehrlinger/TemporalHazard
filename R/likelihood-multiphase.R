@@ -2558,7 +2558,10 @@
         # Under CoE gradient_fn is the partial score at the conserved theta,
         # not the gradient of the objective being maximised.
         gradient_exact = !(use_conserve && !is.null(fixmu_pos)),
-        sign_bounded = m_free_idx
+        sign_bounded = m_free_idx,
+        # Each start is scored against the likelihood below and an
+        # infeasible one recorded in `starts` (#486).
+        mark_infeasible = FALSE
       ),
       error = function(e) e
     )

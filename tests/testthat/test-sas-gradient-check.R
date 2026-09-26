@@ -137,10 +137,13 @@ test_that("a polished fit keeps the caller's parameter names and says it went on
 test_that("rel_gradient is NA, never a pass, where the gradient cannot be trusted", {
   # A likelihood that is -Inf everywhere: the objective is clamped to 1e10 and
   # the wrapped gradient returns zeros, which read as a relative gradient of 0.
+  # mark_infeasible = FALSE is the multiphase path, where this guard is still
+  # what stands between the clamp and a pass; the single-distribution path
+  # reports such a run as not converged before the test is reached (#486).
   flat <- .hzr_optim_generic(
     logl_fn = function(theta, ...) -Inf, gradient_fn = rosen_score,
     time = 1, status = 1, theta_start = start,
-    hessian_fn = function(theta) diag(2)
+    hessian_fn = function(theta) diag(2), mark_infeasible = FALSE
   )
   expect_true(is.na(flat$rel_gradient))
   expect_identical(flat$rel_gradient_reason,
