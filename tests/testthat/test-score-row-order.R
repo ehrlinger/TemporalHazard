@@ -215,6 +215,48 @@ test_that("a vector fit without `data =` is not screened silently (#487)", {
   expect_identical(ro_screen_w(fit, sh[, no_time], sc)$n_unverified, 1L)
 })
 
+test_that("a vector fit WITH `data =` is checked under Wald and AIC (#487)", {
+  skip_on_cran() # two multiphase fits plus eight screens
+  # The fit stores `data` as its frame, at the fit's length, so the time
+  # check defers to the frame comparison. The score test ran that; the Wald
+  # and AIC screens never reach it, and their vector-interface refits pair
+  # the stored response with `data` read by position: a shuffle entered
+  # com_iv (Wald p = 0.098) where the original enters opmos (p = 0.021).
+  d <- ro_avc()
+  phases <- list(
+    early    = hzr_phase("cdf", t_half = 0.1512095, nu = 1.438652, m = 1,
+                         fixed = "shapes"),
+    constant = hzr_phase("constant")
+  )
+  fv <- suppressWarnings(hazard(time = d$int_dead, status = d$dead, data = d,
+                                dist = "multiphase", phases = phases,
+                                fit = TRUE))
+  expect_identical(nrow(fv$data$frame), nrow(d))
+  expect_null(fv$call$formula)
+  sc <- list(early = NULL, constant = ~ age + com_iv + opmos + mal + inc_surg)
+  set.seed(487)
+  sh <- d[sample(nrow(d)), ]
+  expect_false(identical(sh$int_dead, d$int_dead))
+  screen <- function(fit, data, cr) {
+    suppressWarnings(hzr_stepwise(fit, scope = sc, data = data,
+                                  direction = "forward", criterion = cr,
+                                  max_steps = 1L, trace = FALSE))
+  }
+  for (cr in c("wald", "aic")) {
+    expect_identical(screen(fv, d, cr)$steps$variable, "opmos")
+    expect_error(screen(fv, sh, cr), ro_refusal)
+  }
+
+  # The formula interface refits from `data` alone, response and all, so a
+  # shuffle is self-consistent there and still enters opmos, unrefused.
+  ff <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
+                                dist = "multiphase", phases = phases,
+                                fit = TRUE))
+  for (cr in c("wald", "aic")) {
+    expect_identical(screen(ff, sh, cr)$steps$variable, "opmos")
+  }
+})
+
 test_that("the bootstrap select mode screens each replicate unrefused (#487)", {
   skip_on_cran() # a bootstrap of stepwise screens
   # hzr_bootstrap() refits the base on each resample and screens that same

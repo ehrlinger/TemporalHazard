@@ -687,7 +687,30 @@
   common[!same]
 }
 
-#' Check `data`'s row order where the fit stored no comparable frame
+#' The refusal for a `data` whose shared columns differ from the fit's frame
+#'
+#' @param moved Character vector from `.hzr_score_rows_moved()`.
+#' @noRd
+.hzr_rows_moved_message <- function(moved) {
+  paste0(
+    "`data` does not hold the rows the model was fitted on, in the same ",
+    "order: column", if (length(moved) > 1L) "s", " ",
+    paste0("`", utils::head(moved, 5L), "`", collapse = ", "),
+    if (length(moved) > 5L) paste0(" and ", length(moved) - 5L, " more"),
+    " differ", if (length(moved) == 1L) "s", " from the data frame given ",
+    "to hazard(). Candidates are read from `data` row by row, so a sorted ",
+    "or reordered frame scores every candidate against the wrong ",
+    "observations. Pass the data frame the model was fitted on, in its ",
+    "original row order."
+  )
+}
+
+#' Check `data`'s row order once per screen
+#'
+#' On the vector interface, whose refits pair the stored response with
+#' `data`, a comparable stored frame is compared here for every criterion;
+#' on the formula interface only the score test needs it, and
+#' `.hzr_score_q()` does it.
 #'
 #' `.hzr_score_rows_moved()` compares against `$data$frame`, and skips when
 #' there is none (the vector interface without `data =`) or when it has
@@ -702,10 +725,19 @@
 #'
 #' @return `NULL`, invisibly; called for its error or warning.
 #' @noRd
-.hzr_score_check_unframed_rows <- function(current, data) {
+.hzr_check_data_row_order <- function(current, data) {
   frame <- current$data$frame
   if (is.data.frame(frame) && nrow(frame) == nrow(data)) {
-    # The frame comparison in .hzr_score_q() runs; nothing to add here.
+    # .hzr_score_q() compares `data` with the frame, but only the score test
+    # calls it. A vector-interface refit (.hzr_refit_with_scope(), which
+    # keys on the same `call$formula`) pairs the fit's stored response with
+    # `data` read by position, so a Wald or AIC screen needs the comparison
+    # too. A formula refit rebuilds its response from `data`, and is
+    # consistent with any row order.
+    if (is.null(current$call$formula)) {
+      moved <- .hzr_score_rows_moved(current, data)
+      if (length(moved)) stop(.hzr_rows_moved_message(moved), call. = FALSE)
+    }
     return(invisible(NULL))
   }
   time <- current$data$time
@@ -816,20 +848,7 @@
   # same rows in another order scored every candidate against the wrong
   # patients and entered a different variable, with no warning (#487).
   moved <- .hzr_score_rows_moved(current, data)
-  if (length(moved)) {
-    stop(
-      "`data` does not hold the rows the model was fitted on, in the same ",
-      "order: column", if (length(moved) > 1L) "s", " ",
-      paste0("`", utils::head(moved, 5L), "`", collapse = ", "),
-      if (length(moved) > 5L) paste0(" and ", length(moved) - 5L, " more"),
-      " differ", if (length(moved) == 1L) "s", " from the data frame given ",
-      "to hazard(). The score test reads each candidate from `data` row by ",
-      "row, so a sorted or reordered frame scores every candidate against ",
-      "the wrong observations. Pass the data frame the model was fitted on, ",
-      "in its original row order.",
-      call. = FALSE
-    )
-  }
+  if (length(moved)) stop(.hzr_rows_moved_message(moved), call. = FALSE)
 
   # A term that is no column (an interaction, a transform) is not a candidate
   # the score can test; saying `non_numeric` described a column (#449).

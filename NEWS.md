@@ -12,15 +12,18 @@
   (p = 0.17) from the frame sorted by time. Every column `data` shares with
   the data frame given to `hazard()` must now match it; a column only
   `data` has, such as a candidate derived after the fit, is not compared.
-  Two fits store no frame that can be compared: a vector-interface fit made
-  without `data =`, and one whose `data` served only to look names up and
-  so has another row count. For those, `hzr_stepwise()` looks for a column
-  of `data` holding the fit's event times. In the fit's order, the screen
-  runs; in another order, it is refused, under every criterion, since the
-  vector interface's refits also read `data` by position (the Wald and AIC
-  screens entered `com_iv` for `opmos` the same way). With no such column,
-  the order cannot be checked, and the screen warns once, with class
-  `hzr_score_rows_unverified`.
+  The vector interface (`hazard(time =, status =)`) refits by pairing its
+  stored response with `data` read by position, so there the Wald and AIC
+  criteria misread a reordered frame too, entering `com_iv` for `opmos`;
+  on that interface the comparison now runs under every criterion. A
+  formula fit refits from `data` alone and is unaffected. Two fits store no
+  frame that can be compared: a vector-interface fit made without
+  `data =`, and one whose `data` served only to look names up and so has
+  another row count. For those, `hzr_stepwise()` looks for a column of
+  `data` holding the fit's event times. In the fit's order, the screen
+  runs; in another order, it is refused, under every criterion. With no
+  such column, the order cannot be checked, and the screen warns once,
+  with class `hzr_score_rows_unverified`.
 
 # TemporalHazard 1.2.12
 
