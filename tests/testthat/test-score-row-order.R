@@ -342,6 +342,66 @@ test_that("tied event times do not vouch for row order (#487)", {
   ))
 })
 
+test_that("a `data` sharing no column with the fit's frame is unverified (#487)", {
+  skip_on_cran() # a multiphase fit plus four screens
+  # Only derived candidates, none of them in the stored frame: nothing can
+  # be compared, and that is not a proof of order. A shuffle entered cv2
+  # where the original enters op2, under score and Wald, silently.
+  d <- ro_avc()
+  fv <- suppressWarnings(hazard(
+    time = d$int_dead, status = d$dead, data = d, dist = "multiphase",
+    phases = list(
+      early    = hzr_phase("cdf", t_half = 0.1512095, nu = 1.438652, m = 1,
+                           fixed = "shapes"),
+      constant = hzr_phase("constant")
+    ),
+    fit = TRUE
+  ))
+  der <- data.frame(cv2 = 2 * d$com_iv, op2 = 2 * d$opmos, mal2 = 2 * d$mal)
+  expect_length(intersect(names(der), names(fv$data$frame)), 0L)
+  set.seed(487)
+  shuffled <- der[sample(nrow(der)), , drop = FALSE]
+  sc <- list(early = NULL, constant = ~ cv2 + op2 + mal2)
+  for (cr in c("score", "wald")) {
+    n <- 0L
+    withCallingHandlers(
+      hzr_stepwise(fv, scope = sc, data = shuffled, direction = "forward",
+                   criterion = cr, max_steps = 1L, trace = FALSE),
+      hzr_score_rows_unverified = function(w) {
+        n <<- n + 1L
+        invokeRestart("muffleWarning")
+      },
+      warning = function(w) invokeRestart("muffleWarning")
+    )
+    expect_identical(n, 1L)
+  }
+  suppressWarnings(expect_warning(
+    hzr_stepwise(fv, scope = sc, data = shuffled, direction = "forward",
+                 criterion = "score", max_steps = 1L, trace = FALSE),
+    "shares no column with the data frame stored with the fit",
+    class = "hzr_score_rows_unverified"
+  ))
+})
+
+test_that("a derived column does not stop the time-0 rows being trimmed (#487)", {
+  # hzr_stepwise() trims the rows hazard() dropped at time 0 only when
+  # `data` provably is the frame hazard() was given. Comparing whole frames
+  # read a candidate added after the fit as a different frame, left the
+  # rows in, and the screen then stopped on the row count.
+  d <- ro_avc()
+  d$int_dead[c(3L, 40L)] <- 0
+  fit <- ro_weibull(d)
+  expect_identical(fit$data$dropped_time_zero, 2L)
+  d$cv2 <- 2 * d$com_iv
+  expect_identical(
+    ro_screen(fit, d, ~ cv2 + opmos + mal)$steps$variable, "cv2"
+  )
+  # A frame missing one of the fit's columns is not that frame: not trimmed,
+  # so the row-count refusal still names the mismatch.
+  expect_error(ro_screen(fit, d[, setdiff(names(d), "study")], ~ cv2 + opmos),
+               "has 305 rows but the fitted model used 303")
+})
+
 test_that("the bootstrap select mode screens each replicate unrefused (#487)", {
   skip_on_cran() # a bootstrap of stepwise screens
   # hzr_bootstrap() refits the base on each resample and screens that same

@@ -131,7 +131,8 @@
 #'   the frame is checked whatever the `criterion`.  Columns
 #'   added after the fit, such as derived candidates, are allowed.  A
 #'   vector-interface fit made without `data =`, or with a `data` of another
-#'   row count used only to look names up, stores no frame to compare.  For
+#'   row count used only to look names up, stores no frame to compare, and
+#'   a `data` holding only columns added after the fit shares none.  For
 #'   those the order is checked against a column of `data` holding the fit's
 #'   event times, and refused if they are out of order.  With no such
 #'   column, or when those times have ties (rows reordered within a tie
@@ -392,14 +393,19 @@ hzr_stepwise <- function(fit,
   # them; drop the same rows, by position, only when it provably IS that
   # frame: the rows left must equal the fit's stored frame AND the rows
   # dropped must equal the ones it dropped. Any other frame is left alone,
-  # and the alignment checks downstream report it.
+  # and the alignment checks downstream report it. Only the fit's own
+  # columns are compared, and all must be present: a candidate derived after
+  # the fit is an extra column, not a different frame (#487).
   dropped <- fit$data$dropped_time_zero_rows
+  # By position, since a column named "" cannot be selected by name (#470).
+  kept_cols <- match(names(fit$data$frame), names(data))
   if (length(dropped) && is.data.frame(fit$data$frame) &&
       is.data.frame(fit$data$dropped_time_zero_frame) &&
+      !anyNA(kept_cols) &&
       nrow(data) == length(fit$data$time) + length(dropped)) {
-    same <- isTRUE(all.equal(data[-dropped, , drop = FALSE], fit$data$frame,
-                             check.attributes = FALSE)) &&
-      isTRUE(all.equal(data[dropped, , drop = FALSE],
+    same <- isTRUE(all.equal(data[-dropped, kept_cols, drop = FALSE],
+                             fit$data$frame, check.attributes = FALSE)) &&
+      isTRUE(all.equal(data[dropped, kept_cols, drop = FALSE],
                        fit$data$dropped_time_zero_frame,
                        check.attributes = FALSE))
     if (same) data <- data[-dropped, , drop = FALSE]

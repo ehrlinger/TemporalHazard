@@ -728,7 +728,12 @@
 #' @noRd
 .hzr_check_data_row_order <- function(current, data) {
   frame <- current$data$frame
-  if (is.data.frame(frame) && nrow(frame) == nrow(data)) {
+  # A `data` that shares no column with the frame (derived candidates only)
+  # leaves nothing to compare: that is no proof of order, and falls through
+  # to the checks below, which warn when they cannot prove it either.
+  shares <- is.data.frame(frame) &&
+    length(intersect(names(data), names(frame))) > 0L
+  if (shares && nrow(frame) == nrow(data)) {
     # .hzr_score_q() compares `data` with the frame, but only the score test
     # calls it. Every other criterion refits through .hzr_refit_with_scope(),
     # and that pairs `data`, read by position, with per-row vectors stored
@@ -745,7 +750,9 @@
     return(invisible(NULL))
   }
   time <- current$data$time
-  why <- if (is.data.frame(frame)) {
+  why <- if (is.data.frame(frame) && !shares) {
+    "`data` shares no column with the data frame stored with the fit"
+  } else if (is.data.frame(frame)) {
     paste0("the data frame stored with the fit has ", nrow(frame),
            " rows, not the fit's ", length(time))
   } else {
