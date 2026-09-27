@@ -109,11 +109,17 @@ NULL
 #'   finite-difference stencil must not cross 0 (the multiphase shape `m`,
 #'   where the phase families meet in a cusp). Used only when
 #'   `gradient_exact = FALSE`.
+#' @param mark_infeasible Logical; `TRUE` (the default) reports a run that
+#'   ended on the 1e10 clamp as not converged, with no objective, and warns
+#'   with class `hzr_infeasible_start` (#486). The multiphase path passes
+#'   `FALSE`: it scores each start against the likelihood itself and records
+#'   such a start as `"infeasible"` in its `starts` table.
 #'
 #' @return List with par, value (log-likelihood), convergence, counts, message,
 #'   hessian, vcov. Includes \code{se_unavailable_reason}, and
 #'   \code{rel_gradient} with \code{rel_gradient_reason} naming why it is
-#'   \code{NA}.
+#'   \code{NA}. A run marked infeasible returns \code{value = NA},
+#'   \code{convergence = 99} and no Hessian.
 #' @noRd
 .hzr_optim_generic <- function(
     logl_fn,
@@ -130,7 +136,8 @@ NULL
     lower_bounds = NULL,
     hessian_fn = NULL,
     gradient_exact = TRUE,
-    sign_bounded = integer(0)) {
+    sign_bounded = integer(0),
+    mark_infeasible = TRUE) {
 
   control <- utils::modifyList(
     list(maxit = 1000, reltol = 1e-5, abstol = 1e-6),
@@ -203,6 +210,53 @@ NULL
       control = list(maxit = control$maxit, reltol = control$reltol),
       hessian = FALSE
     )
+  }
+
+  # A run that ended on the clamp has no log-likelihood (#486). objective()
+  # returns 1e10 wherever the likelihood is not finite, and from a start
+  # there every trial point is 1e10 as well, so optim() stops at once with
+  # convergence 0 and value 1e10. Reported as it stood, that read as a
+  # converged fit with log-likelihood -1e10 and estimates equal to the start.
+  # The multiphase path records such a start as "infeasible" in its own
+  # table, so it opts out here. As that path does, ask the likelihood itself
+  # rather than the clamped value: a finite log-likelihood beyond -1e10 is a
+  # (poor) likelihood, not the clamp.
+  ll_at_par <- if (mark_infeasible) {
+    tryCatch(
+      logl_fn(theta = result$par, time = time, status = status,
+              time_lower = time_lower, time_upper = time_upper,
+              x = x, weights = weights, return_gradient = FALSE),
+      error = function(e) NA_real_
+    )
+  }
+  if (mark_infeasible && !is.finite(ll_at_par)) {
+    reason <- paste0("the optimizer ended where the likelihood is not ",
+                     "defined (the starting values are infeasible)")
+    warning(structure(
+      class = c("hzr_infeasible_start", "warning", "condition"),
+      list(message = paste0(
+        "The fit did not converge: ", reason, ". There is no ",
+        "log-likelihood or standard error to report, and the returned ",
+        "parameters are not estimates. Choose starting values (`theta`) at ",
+        "which the log-likelihood is finite."
+      ), call = NULL)
+    ))
+    return(list(
+      par = result$par,
+      value = NA_real_,
+      # Not an optim() code; any non-zero code reads as not converged.
+      convergence = 99L,
+      counts = result$counts,
+      message = reason,
+      hessian = NULL,
+      vcov = NA,
+      rcond = NA_real_,
+      pd = NA,
+      se_unavailable_reason = reason,
+      rel_gradient = NA_real_,
+      rel_gradient_reason = reason,
+      polish_code = NA_integer_
+    ))
   }
 
   # SAS/C's acceptance test (src/optim/umstop.c): the optimum is accepted

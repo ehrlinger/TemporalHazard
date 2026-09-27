@@ -2,6 +2,20 @@
 
 ## Bug fixes
 
+* **A single-distribution fit started where the likelihood is not defined no
+  longer reports `converged = TRUE` (#486).** The optimizer replaces a
+  non-finite log-likelihood with a large penalty, so from such a start every
+  trial point scores the same and it stops at once. For the exponential,
+  Weibull, lognormal and loglogistic fits that read as a converged fit with
+  log-likelihood `-1e10` and the starting values as estimates: for example
+  `theta = 800` for the exponential fit of the shipped `avc` data. Such a fit
+  now reports `converged = FALSE`, no objective (`NA`) and no standard
+  errors, names the cause in the "Not done in this run" record, and warns
+  with class `"hzr_infeasible_start"`. The multiphase path already recorded
+  such a start as infeasible and is unchanged. `hzr_bootstrap()` now counts a
+  replicate that ends there as a non-finite objective rather than at the
+  sentinel.
+
 * **`hzr_stepwise(criterion = "score")` now refuses a `data` whose rows are
   not the base fit's rows in the fit's order (#487).** The score test reads
   each candidate from `data` by position and scores it against the fit's
@@ -323,8 +337,9 @@
   Conservation of Events) are identical by design and are not named. A run
   in which only some replicates stay at their start while their objective is
   finite is not caught; that rests on the optimizer's convergence test
-  (#351). What a sentinel objective should mean for a single fit is tracked
-  separately (#486).
+  (#351). From 1.2.13 a single-distribution fit that ends at the sentinel
+  reports no objective and `converged = FALSE`, so such a replicate fails as
+  a non-finite objective instead (#486).
 
 * **`hzr_translate_sas()` no longer fits a job `PROC HAZARD` rejects: if
   you hold estimates from such a translation, they have no SAS run behind
@@ -1587,8 +1602,8 @@
   is sound there. Read the relative-gradient test beside it, which such fits
   fail.
 
-  What a sentinel objective should mean for a single fit is tracked
-  separately (#486).
+  A single-distribution fit whose objective was the sentinel reports
+  `converged = FALSE` and no objective from 1.2.13 (#486).
 * **A ridge is no longer named from a covariance that is not a covariance
   (#416).** `summary()`'s weak-direction report reads the flat direction from
   the correlation of the estimates. When the Hessian was taken where it is not
