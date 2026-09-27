@@ -157,7 +157,9 @@ A list with class `"hzr_bootstrap"` containing:
   returned something other than a fit, returned a non-finite objective
   or one at the optimizer's -1e10 sentinel (which stands in for a
   likelihood that could not be evaluated), or returned a finite
-  objective but no parameter estimates.
+  objective but no parameter estimates. A single-distribution refit that
+  ends where the likelihood is not defined reports no objective, so it
+  fails as a non-finite objective, not at the sentinel (#486).
 
 - failure_reasons:
 
@@ -167,11 +169,14 @@ A list with class `"hzr_bootstrap"` containing:
   the class begins with a vowel; or
   `"... with no \code{fit}, not a fit object"`),
   `"refit returned no parameter estimates"`, or
-  `"non-finite objective (did not converge)"`, or
-  `"objective at the optimizer's -1e10 sentinel (no log-likelihood)"`.
-  It sums to `n_failed`, and is an empty named integer vector, never
-  `NULL`, when none failed. When every replicate fails,
-  `hzr_bootstrap()` also warns, naming the most common reason.
+  `"non-finite objective (did not converge)"` (the reason for a
+  single-distribution refit that ends where the likelihood is not
+  defined, \#486), or
+  `"objective at the optimizer's -1e10 sentinel (no log-likelihood)"` (a
+  refit whose reported objective is still the sentinel). It sums to
+  `n_failed`, and is an empty named integer vector, never `NULL`, when
+  none failed. When every replicate fails, `hzr_bootstrap()` also warns,
+  naming the most common reason.
 
 - n_uncomputable_replicates:
 
