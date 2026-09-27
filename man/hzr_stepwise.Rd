@@ -67,8 +67,9 @@ it.  An empty scope (\code{~ 1}, \code{character()}, or a list of \code{NULL}s a
 refits.  Its rows must be the fit's rows in the same order: the score
 criterion reads each candidate by position, so a sorted or reordered
 frame is refused when the fit stored the frame it was given.  On the
-vector interface every criterion's refits read \code{data} the same way, so
-there the frame is checked whatever the \code{criterion}.  Columns
+vector interface, and for any fit with \code{weights}, every criterion's
+refits pair \code{data} with vectors stored in the fit's row order, so there
+the frame is checked whatever the \code{criterion}.  Columns
 added after the fit, such as derived candidates, are allowed.  A
 vector-interface fit made without \verb{data =}, or with a \code{data} of another
 row count used only to look names up, stores no frame to compare.  For

@@ -126,8 +126,9 @@
 #'   refits.  Its rows must be the fit's rows in the same order: the score
 #'   criterion reads each candidate by position, so a sorted or reordered
 #'   frame is refused when the fit stored the frame it was given.  On the
-#'   vector interface every criterion's refits read `data` the same way, so
-#'   there the frame is checked whatever the `criterion`.  Columns
+#'   vector interface, and for any fit with `weights`, every criterion's
+#'   refits pair `data` with vectors stored in the fit's row order, so there
+#'   the frame is checked whatever the `criterion`.  Columns
 #'   added after the fit, such as derived candidates, are allowed.  A
 #'   vector-interface fit made without `data =`, or with a `data` of another
 #'   row count used only to look names up, stores no frame to compare.  For
@@ -402,10 +403,10 @@ hzr_stepwise <- function(fit,
     if (same) data <- data[-dropped, , drop = FALSE]
   }
   .hzr_refuse_unhonoured_scope(scope, direction)
-  # Candidates are read from `data` by position: by the score test, and on
-  # the vector interface by every refit too, whose response is the fit's
-  # stored vectors. So on the vector interface `data` is compared with the
-  # stored frame here, for every criterion; where there is no frame to
+  # Candidates are read from `data` by position: by the score test, and by
+  # every refit that pairs `data` with vectors stored on the fit (the vector
+  # interface's response, or `weights`). For those fits `data` is compared
+  # with the stored frame here, for every criterion; where there is no frame to
   # compare with, check what can be checked, and say so when nothing can:
   # once, here, rather than per candidate (#487).
   .hzr_check_data_row_order(fit, data)

@@ -707,10 +707,11 @@
 
 #' Check `data`'s row order once per screen
 #'
-#' On the vector interface, whose refits pair the stored response with
-#' `data`, a comparable stored frame is compared here for every criterion;
-#' on the formula interface only the score test needs it, and
-#' `.hzr_score_q()` does it.
+#' When the refits pair per-row vectors stored on the fit with `data` (the
+#' vector interface's response, or `weights` on either interface), a
+#' comparable stored frame is compared here for every criterion. An
+#' unweighted formula fit rebuilds every per-row input from `data`, so there
+#' only the score test needs it, and `.hzr_score_q()` does it.
 #'
 #' `.hzr_score_rows_moved()` compares against `$data$frame`, and skips when
 #' there is none (the vector interface without `data =`) or when it has
@@ -729,12 +730,15 @@
   frame <- current$data$frame
   if (is.data.frame(frame) && nrow(frame) == nrow(data)) {
     # .hzr_score_q() compares `data` with the frame, but only the score test
-    # calls it. A vector-interface refit (.hzr_refit_with_scope(), which
-    # keys on the same `call$formula`) pairs the fit's stored response with
-    # `data` read by position, so a Wald or AIC screen needs the comparison
-    # too. A formula refit rebuilds its response from `data`, and is
+    # calls it. Every other criterion refits through .hzr_refit_with_scope(),
+    # and that pairs `data`, read by position, with per-row vectors stored
+    # on the fit: `time`, `status`, `time_lower` and `time_upper` on the
+    # vector interface (which it keys on the same `call$formula`), and
+    # `weights` on both. Its other stored inputs, `time_windows`, the phase
+    # specs and the objective, are not per row. A formula fit with no stored
+    # weights rebuilds every per-row input from `data`, so it alone is
     # consistent with any row order.
-    if (is.null(current$call$formula)) {
+    if (is.null(current$call$formula) || !is.null(current$data$weights)) {
       moved <- .hzr_score_rows_moved(current, data)
       if (length(moved)) stop(.hzr_rows_moved_message(moved), call. = FALSE)
     }

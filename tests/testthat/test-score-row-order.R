@@ -247,13 +247,49 @@ test_that("a vector fit WITH `data =` is checked under Wald and AIC (#487)", {
     expect_error(screen(fv, sh, cr), ro_refusal)
   }
 
-  # The formula interface refits from `data` alone, response and all, so a
-  # shuffle is self-consistent there and still enters opmos, unrefused.
+  # An unweighted formula fit refits from `data` alone, response and all, so
+  # a shuffle is self-consistent there and still enters opmos, unrefused.
   ff <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
                                 dist = "multiphase", phases = phases,
                                 fit = TRUE))
+  expect_null(ff$data$weights)
   for (cr in c("wald", "aic")) {
     expect_identical(screen(ff, sh, cr)$steps$variable, "opmos")
+  }
+})
+
+test_that("a weighted formula fit is checked under Wald and AIC (#487)", {
+  skip_on_cran() # a multiphase fit plus five screens
+  # A formula refit rebuilds its response from `data`, but takes the base
+  # fit's stored `weights`, in the fit's row order. A shuffle then weighted
+  # the wrong rows: Wald entered opmos (p = 0.0019) where the original
+  # enters inc_surg (p = 0.0025), and AIC entered nothing, unrefused.
+  d <- ro_avc()
+  w <- ifelse(d$opmos > stats::median(d$opmos), 3, 1)
+  fw <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = d, weights = w,
+    dist = "multiphase",
+    phases = list(
+      early    = hzr_phase("cdf", t_half = 0.1512095, nu = 1.438652, m = 1,
+                           fixed = "shapes"),
+      constant = hzr_phase("constant")
+    ),
+    fit = TRUE
+  ))
+  expect_false(is.null(fw$call$formula))
+  expect_identical(length(fw$data$weights), nrow(d))
+  sc <- list(early = NULL, constant = ~ age + com_iv + opmos + mal + inc_surg)
+  set.seed(487)
+  sh <- d[sample(nrow(d)), ]
+  expect_false(identical(sh$int_dead, d$int_dead))
+  screen <- function(data, cr) {
+    suppressWarnings(hzr_stepwise(fw, scope = sc, data = data,
+                                  direction = "forward", criterion = cr,
+                                  max_steps = 1L, trace = FALSE))
+  }
+  expect_identical(screen(d, "wald")$steps$variable, "inc_surg")
+  for (cr in c("wald", "aic")) {
+    expect_error(screen(sh, cr), ro_refusal)
   }
 })
 

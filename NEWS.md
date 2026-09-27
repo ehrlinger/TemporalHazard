@@ -29,8 +29,11 @@
   The vector interface (`hazard(time =, status =)`) refits by pairing its
   stored response with `data` read by position, so there the Wald and AIC
   criteria misread a reordered frame too, entering `com_iv` for `opmos`;
-  on that interface the comparison now runs under every criterion. A
-  formula fit refits from `data` alone and is unaffected. Two fits store no
+  on that interface the comparison now runs under every criterion. So it
+  does for a fit with `weights`, on either interface: the refits reuse the
+  stored weights, in the fit's row order. Only an unweighted formula fit,
+  which rebuilds every per-row input from `data`, is left to the score
+  test's own comparison. Two fits store no
   frame that can be compared: a vector-interface fit made without
   `data =`, and one whose `data` served only to look names up and so has
   another row count. For those, `hzr_stepwise()` looks for a column of
