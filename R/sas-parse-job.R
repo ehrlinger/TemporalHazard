@@ -2177,9 +2177,21 @@
       # want_cl here turned `NOCL CLIMITS=0.9` back into a banded job.
       # The value is the lexer's NUMBER (hazpred_l.l:13-16, unsigned); any
       # other value is a syntax error at hazpred_y.y:53.
+      # A value that is not translated is not mapped, as MAXITER= and
+      # CONDITION= count it, so the coverage figure does not claim it.
       CLIMITS = if (grepl("^([0-9]+|[0-9]*[.][0-9]+(E[+-]?[0-9]+)?)$", val)) {
         climit <- as.numeric(val)
+      } else if (.hzr_sas_is_macro(val)) {
+        # SAS expands a macro before PROC HAZPRED lexes the option, so it
+        # may well be a valid number: no syntax-error verdict here.
+        mapped <- mapped - 1L
+        note(key, paste0(
+          "CLIMITS=", val, " is a SAS macro reference, which SAS resolves ",
+          "before PROC HAZPRED reads the option, so this translation cannot ",
+          "tell what level it names; the bands are drawn at the one-SE ",
+          "default"))
       } else {
+        mapped <- mapped - 1L
         note(key, paste0(
           "CLIMITS= takes an unsigned number, not `", val, "`: PROC ",
           "HAZPRED reaches a syntax error (hazpred_y.y:53) and rejects this ",
