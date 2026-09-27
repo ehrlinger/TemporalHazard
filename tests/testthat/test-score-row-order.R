@@ -197,9 +197,13 @@ test_that("a vector fit without `data =` is not screened silently (#487)", {
   sh <- d[sample(nrow(d)), ]
   expect_false(identical(sh$int_dead, d$int_dead))
 
+  # avc's times have ties (270 distinct in 305), so `int_dead` in order
+  # cannot prove the rows within a tie are in order: the screen runs, and
+  # warns that it could not verify.
+  expect_lt(length(unique(d$int_dead)), nrow(d))
   r <- ro_screen_w(fit, d, sc)
   expect_identical(r$sw$steps$variable, "opmos")
-  expect_identical(r$n_unverified, 0L)
+  expect_identical(r$n_unverified, 1L)
   expect_error(ro_screen(fit, sh, sc), "column `int_dead` holds the fit's")
   # The Wald criterion refits on the vector interface, whose response is the
   # fit's stored vectors, so it misread the shuffle the same way (com_iv for
@@ -291,6 +295,51 @@ test_that("a weighted formula fit is checked under Wald and AIC (#487)", {
   for (cr in c("wald", "aic")) {
     expect_error(screen(sh, cr), ro_refusal)
   }
+})
+
+test_that("tied event times do not vouch for row order (#487)", {
+  skip_on_cran() # a multiphase fit plus four screens
+  # With ties in the fit's times, a column holding them in order says nothing
+  # about the order of rows WITHIN a tie: such a shuffle leaves the column
+  # identical. It moved 292 rows here and took the screen from com_iv to
+  # opmos, silently. The proper check is #515; until then, warn.
+  d <- ro_avc()
+  d$tt <- ceiling(d$int_dead / 12)
+  w <- ifelse(d$opmos > stats::median(d$opmos), 3, 1)
+  fit <- suppressWarnings(hazard(
+    time = d$tt, status = d$dead, weights = w, dist = "multiphase",
+    phases = list(
+      early    = hzr_phase("cdf", t_half = 0.1512095, nu = 1.438652, m = 1,
+                           fixed = "shapes"),
+      constant = hzr_phase("constant")
+    ),
+    fit = TRUE
+  ))
+  expect_null(fit$data$frame)
+  expect_identical(length(unique(fit$data$time)), 14L)
+  set.seed(487)
+  perm <- seq_len(nrow(d))
+  for (g in unique(d$tt)) {
+    p <- which(d$tt == g)
+    perm[p] <- p[sample.int(length(p))]
+  }
+  sh <- d[perm, ]
+  # Known positive: `tt` is untouched, yet most rows moved.
+  expect_identical(sh$tt, d$tt)
+  expect_gt(sum(perm != seq_along(perm)), 250L)
+
+  sc <- list(early = NULL, constant = ~ age + com_iv + opmos + mal + inc_surg)
+  no_time <- setdiff(names(d), "int_dead")
+  for (dd in list(d[, no_time], sh[, no_time])) {
+    r <- ro_screen_w(fit, dd, sc)
+    expect_identical(r$n_unverified, 1L)
+  }
+  suppressWarnings(expect_warning(
+    hzr_stepwise(fit, scope = sc, data = sh[, no_time], direction = "forward",
+                 criterion = "wald", max_steps = 1L, trace = FALSE),
+    "those times have ties",
+    class = "hzr_score_rows_unverified"
+  ))
 })
 
 test_that("the bootstrap select mode screens each replicate unrefused (#487)", {

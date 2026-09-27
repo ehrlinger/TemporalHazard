@@ -133,8 +133,10 @@
 #'   vector-interface fit made without `data =`, or with a `data` of another
 #'   row count used only to look names up, stores no frame to compare.  For
 #'   those the order is checked against a column of `data` holding the fit's
-#'   event times, and refused if they are out of order; with no such column
-#'   it cannot be checked, and a warning of class
+#'   event times, and refused if they are out of order.  With no such
+#'   column, or when those times have ties (rows reordered within a tie
+#'   leave the column unchanged; a finer check is planned in #515), the
+#'   order cannot be checked, and a warning of class
 #'   `hzr_score_rows_unverified` says so.
 #' @param direction Search strategy: one of `"both"` (default),
 #'   `"forward"`, or `"backward"`.  Controls whether variables may only

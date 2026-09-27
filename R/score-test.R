@@ -751,12 +751,20 @@
   } else {
     "the fit was made without `data =`, so it stores no data frame"
   }
+  # With ties in the times, a column holding them in order proves nothing
+  # about the rows WITHIN a tie: reordering those leaves it identical. Such a
+  # match is not accepted; the screen warns instead. (A check that can see
+  # within ties is #515.)
+  tied <- anyDuplicated(time) > 0L
   permuted <- character()
+  in_order_tied <- character()
   for (nm in names(data)) {
     col <- data[[nm]]
     if (!is.numeric(col) || length(col) != length(time)) next
     if (isTRUE(all.equal(as.numeric(col), time, check.attributes = FALSE))) {
-      return(invisible(NULL))
+      if (!tied) return(invisible(NULL))
+      in_order_tied <- c(in_order_tied, nm)
+      next
     }
     if (isTRUE(all.equal(sort(as.numeric(col)), sort(time)))) {
       permuted <- c(permuted, nm)
@@ -773,10 +781,20 @@
       call. = FALSE
     )
   }
+  held <- if (length(in_order_tied)) {
+    paste0(
+      "; column `", in_order_tied[1L], "` holds the fit's event times in ",
+      "order, but those times have ties (", length(unique(time)), " distinct ",
+      "values in ", length(time), " rows), and rows reordered within a tie ",
+      "leave it unchanged"
+    )
+  } else {
+    ", and no column of `data` holds the fit's event times"
+  }
   warning(warningCondition(
     paste0(
       "The row order of `data` could not be checked against the fit: ", why,
-      ", and no column of `data` holds the fit's event times. The score ",
+      held, ". The score ",
       "test reads each candidate from `data` row by row, so if its rows are ",
       "not in the order the model was fitted on, every candidate is scored ",
       "against the wrong observations. Refit with `data =` to have it ",

@@ -55,9 +55,12 @@
   `data =`, and one whose `data` served only to look names up and so has
   another row count. For those, `hzr_stepwise()` looks for a column of
   `data` holding the fit's event times. In the fit's order, the screen
-  runs; in another order, it is refused, under every criterion. With no
-  such column, the order cannot be checked, and the screen warns once,
-  with class `hzr_score_rows_unverified`.
+  runs; in another order, it is refused, under every criterion. When the
+  fit's times have ties, a column holding them in order cannot show that
+  rows within a tie are in order, so it is not taken as proof. With no
+  such column, or with tied times, the order cannot be checked, and the
+  screen warns once, with class `hzr_score_rows_unverified`. A check that
+  sees within ties is planned (#515).
 
 # TemporalHazard 1.2.12
 
