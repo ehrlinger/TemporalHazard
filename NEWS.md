@@ -16,6 +16,23 @@
   replicate that ends there as a non-finite objective rather than at the
   sentinel.
 
+* **A translated `PROC HAZPRED` job now draws its bands at the level SAS
+  uses: one standard error, unless `CLIMITS=` names another (#493).**
+  The emitted `predict()` calls never set `level`, so they used
+  `predict.hazard()`'s 0.95 and every band was 1.96 times too wide, with no
+  error or warning. `CLIMITS=` was read and discarded. The default
+  `CLIMITS` in PROC HAZPRED is 0 (`hazpred/stmtprc.c:14`), and any value outside
+  `(0, 1)` gives a multiplier of one (`hazpred/hzpp.c:8-9`), so the calls
+  now carry `level = 2 * stats::pnorm(1) - 1` by default and the
+  `CLIMITS=` value when it lies in `(0, 1)`. At the one-SE default the
+  multiplier is exactly 1 in both. For a `CLIMITS=` inside `(0, 1)` the
+  level matches, and the multiplier agrees to about 4e-4: R uses the exact
+  `qnorm()`, and SAS a rational approximation (`hzd_calc_norinv.c:13-17`),
+  giving 1.6452114 against 1.6448536 at 0.9. `NOCL` now wins over a later
+  `CLIMITS=`, as it does in `hzpp.c`, where `CLIMITS=` had switched the
+  bands back on. A `CLIMITS=` value SAS cannot read is recorded in
+  `$untranslated`.
+
 * **`hzr_stepwise(criterion = "score")` now refuses a `data` whose rows are
   not the base fit's rows in the fit's order (#487).** The score test reads
   each candidate from `data` by position and scores it against the fit's
