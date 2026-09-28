@@ -3,7 +3,7 @@
 # relative change in the objective, and the gradient it follows is zeroed
 # wherever the score is not finite. On main 50a5ddd1:
 #
-# - loglogistic from c(-1e5, 1): converged TRUE, log-likelihood -4727490, the
+# - loglogistic from c(-1e5, 1): converged TRUE, log-likelihood -4727490.72, the
 #   score non-finite at the returned point; only Hessian warnings.
 #
 # The sane starts are the known positives: each family converges to the same
@@ -93,6 +93,53 @@ test_that("the multiphase path keeps its own reading of a zeroed score (#518)", 
                    "the score has a non-finite component at the estimates")
 })
 
+test_that("hzr_bootstrap() counts a replicate that did not converge as failed (#518)", {
+  # From the loglogistic far start every replicate refits from c(-1e5, 1).
+  # Before, all 10 counted as successes, with no warning and a param_1 mean
+  # of -43435 where the maximum is about -2.07.
+  data(avc, package = "TemporalHazard", envir = environment())
+  f <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ 1, data = avc,
+                               dist = "loglogistic", theta = c(-1e5, 1),
+                               fit = TRUE))
+  expect_identical(f$fit$converged, FALSE)
+  msgs <- character()
+  b <- withCallingHandlers(
+    hzr_bootstrap(f, n_boot = 10, seed = 1),
+    warning = function(w) {
+      msgs <<- c(msgs, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_identical(b$n_success + b$n_failed, 10L)
+  expect_gt(b$n_failed, 0L)
+  expect_identical(
+    unname(b$failure_reasons[["refit did not converge (converged = FALSE)"]]),
+    b$n_failed
+  )
+  # What survives is a converged replicate, near the maximum.
+  if (b$n_success > 0L) {
+    p1 <- b$replicates$estimate[b$replicates$parameter == "param_1"]
+    expect_true(all(abs(p1) < 10))
+  }
+  # The original fit's own non-convergence is said, loudly.
+  expect_true(any(grepl("the fit being bootstrapped did not converge", msgs,
+                        fixed = TRUE)))
+})
+
+test_that("a bootstrap of a converged fit is unchanged by the convergence check (#518)", {
+  data(avc, package = "TemporalHazard", envir = environment())
+  f <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ 1, data = avc,
+                               dist = "loglogistic", theta = c(1, 1),
+                               fit = TRUE))
+  expect_identical(f$fit$converged, TRUE)
+  expect_no_warning(b <- hzr_bootstrap(f, n_boot = 10, seed = 1))
+  expect_identical(b$n_success, 10L)
+  expect_identical(b$n_failed, 0L)
+  # The replicates vary: they were re-estimated.
+  expect_gt(stats::sd(b$replicates$estimate[b$replicates$parameter == "param_1"]),
+            0.01)
+})
+
 test_that("a score that errors at the estimates is a zeroed score too (#518)", {
   # The wrapped gradient returns zeros when the score errors, so BFGS
   # takes no step from the start and reports convergence 0.
@@ -115,4 +162,8 @@ test_that("a score that errors at the estimates is a zeroed score too (#518)", {
                    "the score could not be computed at the estimates")
   expect_identical(fit$convergence, 99L)
   expect_true("hzr_unverified_convergence" %in% classes)
+  # Named for what happened: it errored, it was not a non-finite value.
+  expect_match(fit$message, "the score could not be computed at the estimates, so",
+               fixed = TRUE)
+  expect_false(grepl("not finite", fit$message, fixed = TRUE))
 })

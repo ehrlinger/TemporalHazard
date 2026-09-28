@@ -469,9 +469,15 @@ NULL
   # under #518. The multiphase path opts out with mark_infeasible, as above.
   if (mark_infeasible && !use_bounds && result$convergence == 0L) {
     if (isTRUE(rel$zeroed)) {
-      unverified <- paste0("the score is not finite at the estimates, so ",
-                           "the optimizer stopped on a gradient it had set ",
-                           "to zero")
+      unverified <- paste0(
+        if (identical(rel$reason,
+                      "the score could not be computed at the estimates")) {
+          "the score could not be computed at the estimates"
+        } else {
+          "the score is not finite at the estimates"
+        },
+        ", so the optimizer stopped on a gradient it had set to zero"
+      )
       warning(structure(
         class = c("hzr_unverified_convergence", "warning", "condition"),
         list(message = paste0(
