@@ -113,6 +113,51 @@ test_that("an empty `$steps` still carries the n_rows column (#519)", {
   expect_identical(out$sw$steps$n_rows, integer())
 })
 
+.s519_weighted_screen <- function(d) {
+  set.seed(1)
+  base <- hazard(Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
+                 phases = .s519_phases(), fit = TRUE, weights = wt,
+                 control = list(n_starts = 1L, maxit = 500L))
+  .s519_screen(base, d, scope = list(constant = ~ z + v),
+               direction = "forward", criterion = "wald")
+}
+
+test_that("dropping only weight-0 rows does not warn (#519)", {
+  d <- .s519_fixture(z_effect = 3, v_effect = 2)
+  # Weight 0 exactly where z is missing: z's entry drops 60 rows that add
+  # nothing to the likelihood, so the sample the tests rest on is unchanged.
+  d$wt <- ifelse(is.na(d$z), 0, 1)
+  out <- .s519_weighted_screen(d)
+  st <- out$sw$steps
+  expect_equal(st$variable, c("v", "z"))
+  # n_rows still counts every row, weight 0 included.
+  expect_equal(st$n_rows, c(310L, 250L))
+  expect_length(out$changed, 0L)
+
+  # Known positive: the same screen with every weight positive warns.
+  d$wt <- 1
+  out <- .s519_weighted_screen(d)
+  expect_equal(out$sw$steps$variable, c("v", "z"))
+  expect_length(out$changed, 1L)
+})
+
+test_that("the warning says which way the sample moved (#519)", {
+  d <- .s519_fixture(z_effect = 3, v_effect = 2)
+  out <- .s519_screen(.s519_fit(d), d, scope = list(constant = ~ z + v),
+                      direction = "forward", criterion = "wald")
+  expect_length(out$changed, 1L)
+  expect_match(conditionMessage(out$changed[[1L]]),
+               "later steps are tested on fewer rows", fixed = TRUE)
+
+  d <- .s519_fixture(z_effect = -0.3, v_effect = 0.5)
+  out <- .s519_screen(.s519_fit(d, ~ z + v), d, direction = "backward",
+                      criterion = "wald")
+  expect_length(out$changed, 1L)
+  msg <- conditionMessage(out$changed[[1L]])
+  expect_match(msg, "rows that earlier tests did not use", fixed = TRUE)
+  expect_no_match(msg, "fewer rows", fixed = TRUE)
+})
+
 test_that("a frozen row records the rows of the model it froze in (#519)", {
   # max_move = 0 freezes each variable on its first move, so each entry is
   # followed by a `frozen` row, written by record_freeze(), not record_step().

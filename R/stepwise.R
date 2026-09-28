@@ -350,8 +350,8 @@
 #'     (rows given weight 0 are counted).  A multiphase fit drops every row
 #'     where a variable in the model is missing, so entering a variable with
 #'     missing values shrinks the sample every later step is tested on, and
-#'     dropping it grows the sample back.  A step that changes the rows
-#'     raises a warning of class `hzr_stepwise_sample_changed` naming the
+#'     dropping it grows the sample back.  A step that changes the rows of
+#'     positive weight raises a warning of class `hzr_stepwise_sample_changed` naming the
 #'     step, the variable and the row counts before and after.  Which
 #'     variables enter is not changed by this: compare `n_rows` across steps
 #'     to see how many rows each test rested on.}
@@ -731,15 +731,28 @@ hzr_stepwise <- function(fit,
     step_no <<- step_no + 1L
     rows <- .hzr_fit_row_mask(current)
     rows_before <- sum(prev_rows)
-    rows_changed <- !identical(rows, prev_rows)
+    # A row of weight 0 adds nothing to the likelihood, so dropping it does
+    # not change the sample a test rests on: compare only positive-weight rows.
+    # A weight vector that does not line up with the rows compares them all.
+    w <- current$data$weights
+    counts <- if (length(w) == length(rows)) !(!is.na(w) & w <= 0) else TRUE
+    used_before <- prev_rows & counts
+    used_after  <- rows & counts
+    rows_changed <- !identical(used_after, used_before)
     if (rows_changed) {
+      direction_txt <- if (sum(used_after) < sum(used_before)) {
+        "later steps are tested on fewer rows than earlier ones"
+      } else if (sum(used_after) > sum(used_before)) {
+        "later steps are tested on rows that earlier tests did not use"
+      } else {
+        "later steps are tested on different rows from earlier ones"
+      }
       warning(warningCondition(paste0(
         "Stepwise step ", step_no, " (", action, " ", out$variable,
         ") changed the rows the model is fitted on, from ", rows_before,
         " to ", sum(rows), ". A multiphase fit drops every row where a ",
-        "variable in the model is missing, so later steps are tested on a ",
-        "different sample from earlier ones, and the final model may rest on ",
-        "rows it no longer uses. See `$steps$n_rows`."
+        "variable in the model is missing, so ", direction_txt, ". ",
+        "See `$steps$n_rows`."
       ), class = "hzr_stepwise_sample_changed"))
     }
     prev_rows <<- rows

@@ -8,9 +8,13 @@
   the sample for every later step, and dropping it grew the sample back,
   with no warning. In one screen of 310 rows, a complete variable entered
   and then one missing on 60 rows did, and the final model rested on 250
-  rows. Such a step now warns, with class `hzr_stepwise_sample_changed`,
-  naming the step, the variable and the row counts before and after, and
-  `$steps` gains an `n_rows` column. Which variables enter is unchanged.
+  rows. Such a step now warns from `hzr_stepwise()`, with class
+  `hzr_stepwise_sample_changed`, naming the step, the variable and the row
+  counts before and after. Rows of weight 0 don't count as a change, since
+  they add nothing to the likelihood. `$steps`, and so `as.data.frame()` of
+  the result, gains an `n_rows` column. Which variables enter is unchanged.
+  `hzr_bootstrap()` suppresses warnings in its select-mode replicates, so a
+  replicate whose sample changes is not reported.
 
 * **A stepwise refit of a single-distribution model now reports each
   coefficient under its own name (#489).** The refit started from the

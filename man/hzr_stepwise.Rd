@@ -296,8 +296,8 @@ diagnostics of the model \emph{after} this step.}
 (rows given weight 0 are counted).  A multiphase fit drops every row
 where a variable in the model is missing, so entering a variable with
 missing values shrinks the sample every later step is tested on, and
-dropping it grows the sample back.  A step that changes the rows
-raises a warning of class \code{hzr_stepwise_sample_changed} naming the
+dropping it grows the sample back.  A step that changes the rows of
+positive weight raises a warning of class \code{hzr_stepwise_sample_changed} naming the
 step, the variable and the row counts before and after.  Which
 variables enter is not changed by this: compare \code{n_rows} across steps
 to see how many rows each test rested on.}
