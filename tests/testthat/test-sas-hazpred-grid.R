@@ -190,17 +190,6 @@ test_that("a value carried over from the previous loop pass is NA (#494)", {
   expect_true(any(grepl("previous loop pass", job$untranslated$reason)))
 })
 
-test_that("a subsetting IF is recorded, its rows kept (#494)", {
-  job <- translate_494(c(
-    "DATA PREDICT; DO MONTHS=1,2,3; OUTPUT; END;",
-    "DATA PREDICT; SET PREDICT; IF MONTHS<3;",
-    hazpred_494("PREDICT")
-  ))
-  g <- suppressWarnings(grid_494(job))
-  expect_equal(g$time, c(1, 2, 3))
-  expect_true(any(grepl("deletes rows, which the grid keeps", job$untranslated$reason)))
-})
-
 refused_494 <- function(job) {
   heads <- vapply(job$calls, function(x) as.character(x[[1L]])[[1L]], "")
   expect_false("predict" %in% heads)
@@ -230,7 +219,7 @@ test_that("a grid another procedure rewrote is refused, not read from before it 
     "PROC MEANS DATA=PREDICT NOPRINT; OUTPUT OUT=PREDICT MEAN=;",
     hazpred_494("PREDICT")
   ))
-  expect_match(refused_494(job), "PREDICT is written by OUTPUT", fixed = TRUE)
+  expect_match(refused_494(job), "PREDICT is written by PROC MEANS", fixed = TRUE)
 })
 
 test_that("a loop that changes a variable after its OUTPUT is refused (#494)", {
@@ -311,6 +300,80 @@ test_that("statements that decide rows this cannot read are refused (#494)", {
     expect_false("predict" %in% heads, info = paste("case", k))
     expect_true(any(grepl("^DATA=", job$untranslated$construct)), info = paste("case", k))
   }
+})
+
+test_that("a subsetting IF or IF ... THEN DELETE refuses the grid (#494)", {
+  # Both decide which rows exist. Keeping them all predicted at rows SAS
+  # deleted: hp.dthip.PAIVS.time gave 24504 rows where SAS wrote 23483.
+  for (del in c("IF MONTHS<3;", "IF MONTHS=3 THEN DELETE;",
+                "IF MONTHS<3 THEN X=1; ELSE DELETE;")) {
+    job <- translate_494(c(
+      "DATA PREDICT; DO MONTHS=1,2,3; OUTPUT; END;",
+      paste("DATA PREDICT; SET PREDICT;", del),
+      hazpred_494("PREDICT")
+    ))
+    expect_match(refused_494(job), "decides which rows exist", fixed = TRUE, info = del)
+  }
+})
+
+test_that("a variable read but never set is a missing column, as in SAS (#494)", {
+  # SAS puts every variable a step names in the dataset, missing where never
+  # set. hp.death.COMPARISON reads _PLAD50 without setting it.
+  job <- translate_494(c(
+    "DATA PREDICT; DO MONTHS=1,2; X=Y*2; OUTPUT; END;",
+    "DATA NEXT; SET PREDICT; IF Z>1 THEN W=1; V=0 U=0;",
+    hazpred_494("NEXT")
+  ))
+  g <- suppressWarnings(grid_494(job))
+  for (v in c("X", "Y", "Z", "W", "U")) {
+    expect_equal(g[[v]], c(NA_real_, NA_real_), info = v)
+  }
+})
+
+test_that("a value an IF changes inside a loop is NA for the whole loop (#494)", {
+  # SAS gives Y = 0, 0, 5: C carries the IF's 5 into the next pass.
+  job <- translate_494(c(
+    "DATA PREDICT; C=0; DO MONTHS=1,2,3; Y=C; IF MONTHS>1 THEN C=5; OUTPUT; END;",
+    hazpred_494("PREDICT")
+  ))
+  g <- suppressWarnings(grid_494(job))
+  expect_equal(g$Y, rep(NA_real_, 3))
+  expect_true(any(job$untranslated$construct == "Y=C" &
+                    grepl("previous loop pass", job$untranslated$reason)))
+})
+
+test_that("LOG of 0, EXP overflow and division by zero are missing, as in SAS (#494)", {
+  job <- translate_494(c(
+    "DATA PREDICT; DO MONTHS=0,1; L=LOG(MONTHS); E=EXP(1000*MONTHS); R=1/MONTHS; OUTPUT; END;",
+    hazpred_494("PREDICT")
+  ))
+  g <- grid_494(job)
+  expect_equal(g$L, c(NA, 0))
+  expect_equal(g$E, c(1, NA))
+  expect_equal(g$R, c(NA, 1))
+})
+
+test_that("PROC SQL CREATE TABLE and PROC APPEND rewrite the grid, and refuse it (#494)", {
+  cases <- list(
+    c("DATA PREDICT; DO MONTHS=1,2,3; OUTPUT; END;",
+      "PROC SQL; CREATE TABLE PREDICT AS SELECT * FROM PREDICT WHERE MONTHS<2; QUIT;"),
+    c("DATA PREDICT; DO MONTHS=1,2; OUTPUT; END;", "DATA X; MONTHS=9;",
+      "PROC APPEND BASE=PREDICT DATA=X; RUN;"),
+    c("DATA PREDICT; DO MONTHS=1,2; OUTPUT; END;", "PROC DATASETS; DELETE PREDICT; RUN;",
+      "DATA OLD; MONTHS=9;", "PROC DATASETS; CHANGE OLD=PREDICT; RUN;")
+  )
+  for (k in seq_along(cases)) {
+    job <- translate_494(c(cases[[k]], hazpred_494("PREDICT")))
+    expect_match(refused_494(job), "PREDICT is written by", fixed = TRUE, info = paste("case", k))
+  }
+})
+
+test_that("statements after a step's only OUTPUT do not reach the grid (#494)", {
+  job <- translate_494(c(
+    "DATA PREDICT; MONTHS=1; OUTPUT; MONTHS=2;",
+    hazpred_494("PREDICT")
+  ))
+  expect_equal(grid_494(job)$time, 1)
 })
 
 test_that("a grid SET from a dataset no DATA step builds is refused (#494a)", {

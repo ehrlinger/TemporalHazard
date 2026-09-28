@@ -1868,6 +1868,26 @@
   if (length(m) >= 3L) m[[3L]] else NULL
 }
 
+#' Every dataset a non-DATA statement writes.
+#'
+#' `OUT=` and its relatives (`OUTEST=`, `OUTSTAT=`, ...), `BASE=` (PROC
+#' APPEND), `CREATE TABLE` and `CREATE VIEW` (PROC SQL). In a PROC DATASETS
+#' step every name counts, because `CHANGE`, `DELETE` and `MODIFY` all take
+#' dataset names.
+#' @noRd
+.hzr_sas_written_names <- function(stmt, datasets = FALSE) {
+  if (datasets) {
+    nms <- regmatches(stmt, gregexpr("[A-Z_][A-Z0-9_.]*", stmt))[[1L]]
+    return(setdiff(nms, c("PROC", "DATASETS", "CHANGE", "DELETE", "MODIFY",
+                          "EXCHANGE", "AGE", "SAVE", "APPEND", "BASE", "DATA",
+                          "LIBRARY", "LIB", "NOLIST", "KILL", "MEMTYPE")))
+  }
+  m <- regmatches(stmt, gregexpr(
+    "(^|[^A-Z0-9_])(OUT[A-Z]*|BASE) *= *[A-Z_][A-Z0-9_.]*|CREATE +(TABLE|VIEW) +[A-Z_][A-Z0-9_.]*",
+    stmt))[[1L]]
+  unique(sub("^.*[= ]", "", m))
+}
+
 #' Every point in a job where a dataset is (re)defined, in file order.
 #'
 #' Four kinds. `data`: a `DATA <name>;` step, carrying its statements.
@@ -1965,9 +1985,8 @@
                      out = .hzr_sas_opt_name(t, "OUT"), by = character(0),
                      bad = nzchar(trimws(opts)))
       } else {
-        proc <- list(kind = "OTHER", pos = p)
-        out <- .hzr_sas_opt_name(t, "OUT")
-        if (!is.null(out)) add(p, out, "opaque", what = sub("^(PROC [A-Z0-9_]+).*$", "\\1", t))
+        proc <- list(kind = "OTHER", pos = p, what = sub("^(PROC [A-Z0-9_]+).*$", "\\1", t))
+        for (out in .hzr_sas_written_names(t)) add(p, out, "opaque", what = proc$what)
       }
       next
     }
@@ -1975,11 +1994,16 @@
       close_all()
       next
     }
-    # A macro call or another procedure's OUTPUT OUT= writes a dataset this
-    # cannot read. Inside a DATA step only a macro call can: `OUT=X` there
-    # is an assignment.
-    out <- if (is.null(cur) || startsWith(t, "%")) .hzr_sas_opt_name(t, "OUT")
-    if (!is.null(out)) add(p, out, "opaque", what = sub("[ (].*$", "", t))
+    # A macro call or a procedure statement (OUTPUT OUT=, CREATE TABLE)
+    # writes a dataset this cannot read. Inside a DATA step only a macro call
+    # can: `OUT=X` there is an assignment.
+    if (is.null(cur) || startsWith(t, "%")) {
+      in_datasets <- !is.null(proc) && identical(proc$what, "PROC DATASETS")
+      what <- if (is.null(proc) || startsWith(t, "%")) sub("[ (].*$", "", t) else proc$what
+      for (out in .hzr_sas_written_names(t, in_datasets && !startsWith(t, "%"))) {
+        add(p, out, "opaque", what = what)
+      }
+    }
     if (!is.null(cur)) {
       cur$stmts <- c(cur$stmts, t)
       next
@@ -2074,6 +2098,19 @@
   cl <- tryCatch(str2lang(paste(out, collapse = " ")), error = function(e) NULL)
   if (is.null(cl)) return(fail("does not read as arithmetic"))
   list(ok = TRUE, call = cl, refs = unique(refs))
+}
+
+#' The variables a DATA-step statement (or right-hand side) reads.
+#'
+#' Every name that is not quoted, not a function called, and not one of the
+#' words SAS's own syntax uses around it.
+#' @noRd
+.hzr_sas_names_read <- function(text) {
+  s <- gsub("'[^']*'|\"[^\"]*\"", " ", text)
+  nms <- regmatches(s, gregexpr("(?<![A-Z0-9_.])[A-Z_][A-Z0-9_]*(?![A-Z0-9_]| *[(])",
+                                s, perl = TRUE))[[1L]]
+  setdiff(unique(nms), c("AND", "OR", "NOT", "EQ", "NE", "GT", "LT", "GE", "LE",
+                         "IN", "IF", "THEN", "ELSE", "DO", "DELETE", "OUTPUT"))
 }
 
 #' Evaluate a translated expression over already-folded constants.
@@ -2240,6 +2277,7 @@
   targets <- character(0)
   deletes <- FALSE
   bad <- NULL
+  reads <- character(0)
   inner <- function(txt) {
     k <- .hzr_sas_stmt_kind(txt)
     if (identical(k, "if")) {
@@ -2253,6 +2291,7 @@
     }
   }
   visit <- function(it) {
+    reads <<- c(reads, .hzr_sas_names_read(sub("^(IF|ELSE)( |$)", "", it$text)))
     if (identical(it$kind, "if")) {
       then <- regmatches(it$text, regexec("^(?:IF .*? THEN|ELSE) +(.+)$", it$text, perl = TRUE))[[1L]]
       if (length(then)) inner(then[[2L]]) else deletes <<- TRUE # a subsetting IF
@@ -2263,7 +2302,8 @@
     }
   }
   visit(item)
-  list(targets = unique(targets), deletes = deletes, bad = bad)
+  list(targets = unique(targets), deletes = deletes, bad = bad,
+       reads = unique(setdiff(reads, targets)))
 }
 
 #' Translate one `DATA <name>;` step into R statements.
@@ -2359,6 +2399,10 @@
     emit(call("<-", W, quote(data.frame(row.names = 1L))))
   }
   const <- list()
+  touch <- function(nms) {
+    for (n in setdiff(nms, known)) set_col(n, NA_real_)
+    known <<- union(known, nms)
+  }
 
   assign_stmt <- function(text, carried = character(0)) {
     v <- sub(" *=.*$", "", text)
@@ -2372,12 +2416,21 @@
       paste0("reads ", paste(setdiff(e$refs, known), collapse = ", "),
              ", which the grid does not carry at this point")
     }
+    # Every variable the statement names is in SAS's program data vector,
+    # missing until set, and so in the dataset it writes.
+    touch(.hzr_sas_names_read(sub("^[A-Z_][A-Z0-9_]* *= *", "", text)))
     if (!is.null(why)) {
       set_col(v, NA_real_)
       u1(text, paste0("not translated: it ", why, ". ", v, " is NA in the grid"))
       const[[v]] <<- NULL
     } else {
       set_col(v, if (length(e$refs)) bquote(with(.(W), .(e$call))) else e$call)
+      # SAS gives a missing value where R gives -Inf, Inf or NaN: LOG of 0 or
+      # a negative, an EXP that overflows, a division by zero.
+      if (is.call(e$call) && !grepl("\"", deparse1(e$call), fixed = TRUE)) {
+        col <- call("$", W, as.name(v))
+        emit(call("<-", call("[", col, call("!", call("is.finite", col))), NA))
+      }
       val <- if (all(e$refs %in% names(const))) .hzr_sas_fold(e$call, const)
       if (is.null(val)) const[[v]] <<- NULL else const[[v]] <<- val
     }
@@ -2386,18 +2439,18 @@
   cond_stmt <- function(it) {
     fx <- .hzr_sas_cond_effects(it)
     if (length(fx$bad)) return(paste0("`", fx$bad[[1L]], "` under a condition"))
+    # A subsetting IF or an IF ... THEN DELETE decides which rows exist.
+    if (fx$deletes) return(paste0("`", it$text, "`, which decides which rows exist"))
+    touch(fx$reads)
     for (v in fx$targets) {
       set_col(v, NA_real_)
       const[[v]] <<- NULL
     }
     known <<- union(known, fx$targets)
-    why <- c(
-      if (length(fx$targets)) paste0("sets ", paste(fx$targets, collapse = ", "), ", NA in the grid"),
-      if (fx$deletes) "deletes rows, which the grid keeps"
-    )
-    if (length(why)) {
+    if (length(fx$targets)) {
       shown <- if (identical(it$kind, "ifdo")) paste0(it$text, "; ... END") else it$text
-      u1(shown, paste0("a conditional statement is not translated: it ", paste(why, collapse = " and ")))
+      u1(shown, paste0("a conditional statement is not translated: it sets ",
+                       paste(fx$targets, collapse = ", "), ", NA in the grid"))
     }
     NULL
   }
@@ -2460,10 +2513,15 @@
       assigned <- vapply(body, function(b) {
         if (identical(b$kind, "assign")) sub(" *=.*$", "", b$text) else NA_character_
       }, character(1L))
+      # A variable an IF sets in the body may carry its value into the next
+      # pass, whichever statement reads it: unresolvable for the whole loop.
+      cond_set <- unique(unlist(lapply(body, function(b) {
+        if (identical(b$kind, "assign")) NULL else .hzr_sas_cond_effects(b)$targets
+      })))
       for (j in seq_along(body)) {
         b <- body[[j]]
         if (identical(b$kind, "assign")) {
-          assign_stmt(b$text, carried = assigned[j:length(assigned)])
+          assign_stmt(b$text, carried = union(assigned[j:length(assigned)], cond_set))
         } else {
           bad <- cond_stmt(b)
           if (!is.null(bad)) return(refuse(bad))
@@ -2580,7 +2638,7 @@
     if (length(warn)) {
       list(call("warning", paste0(
         "This grid was built by SAS DATA step statements that hzr_translate_sas() does not ",
-        "translate; predictions over the variables they set are NA:\n",
+        "translate, and the variables they set are NA in this grid:\n",
         paste0("  ", warn, collapse = "\n")), call. = FALSE))
     },
     code,

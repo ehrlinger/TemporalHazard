@@ -784,11 +784,12 @@ gaps are common enough in production jobs to know about going in:
   grid chunk warns, and that variable is `NA` in the grid, so any
   prediction that uses it is `NA` too. The rest of the grid is still
   built. A step that decides which rows exist in a way it can't read
-  (an `INFILE`, a `MERGE`, another procedure's `OUT=`, a loop bound
+  (an `INFILE`, a `MERGE`, a subsetting `IF` or `IF ... THEN DELETE`,
+  another procedure's `OUT=`, a `PROC SQL` `CREATE TABLE`, a loop bound
   taken from data) refuses the whole grid: the `predict()` chunks stop,
   so build the `newdata` grid by hand and pass it to
-  `predict.hazard()`. On the public corpus, 17 of 36 `PROC HAZPRED`
-  blocks now get a grid, 9 of them with a warning; before 1.2.13, 13
+  `predict.hazard()`. On the public corpus, 15 of 36 `PROC HAZPRED`
+  blocks now get a grid, 7 of them with a warning; before 1.2.13, 13
   did, several of them missing covariates or rows with nothing recorded.
 - **An unresolved `INHAZ=` fails the render on purpose.** If a
   `PROC HAZPRED` job's fitted-model dataset can't be found (neither
