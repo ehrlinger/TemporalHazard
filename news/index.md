@@ -41,6 +41,43 @@
   in `hzpp.c`, where `CLIMITS=` had switched the bands back on. A
   `CLIMITS=` value SAS cannot read is recorded in `$untranslated`.
 
+- **`hzr_stepwise(criterion = "score")` now refuses a `data` whose rows
+  are not the base fit’s rows in the fit’s order
+  ([\#487](https://github.com/ehrlinger/TemporalHazard/issues/487)).**
+  The score test reads each candidate from `data` by position and scores
+  it against the fit’s stored rows, and it checked only the row count.
+  The same rows sorted or shuffled scored every candidate against the
+  wrong observations and entered a different variable, with no warning:
+  on `avc`, a Weibull base entered `com_iv` (p = 0.0001) from the
+  original frame and `mal` (p = 0.17) from the frame sorted by time.
+  Every column `data` shares with the data frame given to
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  must now match it; a column only `data` has, such as a candidate
+  derived after the fit, is not compared. The vector interface
+  (`hazard(time =, status =)`) refits by pairing its stored response
+  with `data` read by position, so there the Wald and AIC criteria
+  misread a reordered frame too, entering `com_iv` for `opmos`; on that
+  interface the comparison now runs under every criterion. So it does
+  for a fit with `weights`, on either interface: the refits reuse the
+  stored weights, in the fit’s row order. Only an unweighted formula
+  fit, which rebuilds every per-row input from `data`, is left to the
+  score test’s own comparison. A `data` holding only columns added after
+  the fit shares none with that frame, so it cannot be compared, and is
+  treated as below; so is one whose shared columns have duplicate rows,
+  since rows reordered among duplicates leave those columns unchanged.
+  Two fits store no frame that can be compared: a vector-interface fit
+  made without `data =`, and one whose `data` served only to look names
+  up and so has another row count. For those,
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  looks for a column of `data` holding the fit’s event times. In the
+  fit’s order, the screen runs; in another order, it is refused, under
+  every criterion. When the fit’s times have ties, a column holding them
+  in order cannot show that rows within a tie are in order, so it is not
+  taken as proof. With no such column, or with tied times, the order
+  cannot be checked, and the screen warns once, with class
+  `hzr_score_rows_unverified`. A check that sees within ties is planned
+  ([\#515](https://github.com/ehrlinger/TemporalHazard/issues/515)).
+
 ## TemporalHazard 1.2.12
 
 ### Breaking changes

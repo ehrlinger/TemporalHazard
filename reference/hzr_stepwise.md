@@ -76,7 +76,24 @@ as.data.frame(x, ...)
 
 - data:
 
-  Data frame the base fit was built on. Required for refits.
+  Data frame the base fit was built on. Required for refits. Its rows
+  must be the fit's rows in the same order: the score criterion reads
+  each candidate by position, so a sorted or reordered frame is refused
+  when the fit stored the frame it was given. On the vector interface,
+  and for any fit with `weights`, every criterion's refits pair `data`
+  with vectors stored in the fit's row order, so there the frame is
+  checked whatever the `criterion`. Columns added after the fit, such as
+  derived candidates, are allowed. A vector-interface fit made without
+  `data =`, or with a `data` of another row count used only to look
+  names up, stores no frame to compare, and a `data` holding only
+  columns added after the fit shares none; and shared columns with
+  duplicate rows cannot show rows reordered among those duplicates. For
+  those the order is checked against a column of `data` holding the
+  fit's event times, and refused if they are out of order. With no such
+  column, or when those times have ties (rows reordered within a tie
+  leave the column unchanged; a finer check is planned in \#515), the
+  order cannot be checked, and a warning of class
+  `hzr_score_rows_unverified` says so.
 
 - direction:
 
