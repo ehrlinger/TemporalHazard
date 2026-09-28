@@ -456,6 +456,26 @@ test_that("an empty or libref-only DATA=, INHAZ= or OUT= is refused (#498 review
   expect_identical(job$calls$pred[[1L]], as.name("predict"))
 })
 
+test_that("a macro value is exempt only if it can expand to a dataset name (#498 review)", {
+  # A leading `.` or digit is unexpected text whatever the macro expands to
+  # (hazpred_l.l:56), so SAS stops these; any `&`/`%` used to exempt them.
+  for (o in c("DATA=PRED INHAZ=OUTEST OUT=.&X", "DATA=PRED INHAZ=1&X OUT=P")) {
+    job <- hp_translate(o)
+    expect_identical(job$calls$pred[[1L]], as.name("stop"), info = o)
+    expect_false("predict" %in% unlist(lapply(job$calls, all.names)), info = o)
+  }
+  # Known negatives: forms that can expand to a name still predict.
+  for (o in c("DATA=PRED INHAZ=OUTEST OUT=&LIB..P", "DATA=PRED INHAZ=OUTEST OUT=&OUTDS",
+              "DATA=PRED INHAZ=OUTEST OUT=%STR(P)")) {
+    job <- hp_translate(o)
+    expect_identical(job$calls$pred[[1L]], as.name("predict"), info = o)
+  }
+  # The reason quotes the value as written, not the joiner's piece of it.
+  job <- hp_translate("DATA=PRED(WHERE=(MONTHS>1)) INHAZ=OUTEST OUT=P")
+  row <- job$untranslated[job$untranslated$construct == "DATA=", ]
+  expect_match(row$reason, "DATA=PRED(WHERE=(MONTHS>1)) is not", fixed = TRUE)
+})
+
 test_that("an empty INHAZ= before another option is named, not the option after it (#498 review)", {
   # `INHAZ= OUT=P`: PROC HAZPRED reads OUT as INHAZ's dataset name
   # (hazpred_l.l:36, :48), and the `=` after it is a syntax error. The

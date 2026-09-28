@@ -2798,12 +2798,28 @@
   # A macro is exempt: SAS expands it first.
   given <- c(DATA = FALSE, INHAZ = FALSE, OUT = FALSE)
   bad_ds <- character(0)
+  ds_re <- "^[A-Z_][A-Z0-9_]*([.][A-Z_][A-Z0-9_]*)?$"
+  # A macro value passes only if it can expand to a name: each reference
+  # (`%F(...)`, `&X.`, `&X`) stands in as a name, and the result must still
+  # match. `.&X` and `1&X` begin with text PROC HAZPRED cannot read
+  # (hazpred_l.l:56) whatever `&X` holds. A reference this cannot place
+  # (nested parentheses) keeps the old blanket exemption.
+  macro_can_name <- function(v) {
+    s <- gsub("%[A-Z_][A-Z0-9_]*[(][^()]*[)]", "M", v)
+    s <- gsub("&[A-Z_][A-Z0-9_]*[.]?", "M", s)
+    grepl("[&%]", s) || grepl(ds_re, s)
+  }
+  raw_ops <- strsplit(trimws(st[[1L]]), " ", fixed = TRUE)[[1L]]
   check_ds <- function(key, val) {
     given[[key]] <<- TRUE
-    if (.hzr_sas_is_macro(val) ||
-          grepl("^[A-Z_][A-Z0-9_]*([.][A-Z_][A-Z0-9_]*)?$", val)) {
+    if (grepl(ds_re, val) ||
+          (.hzr_sas_is_macro(val) && macro_can_name(val))) {
       return(TRUE)
     }
+    # Quote the value as written: the joiner splits `PRED(WHERE=(...))` at
+    # its `=`, and `val` holds only the first piece.
+    raw <- raw_ops[startsWith(raw_ops, paste0(key, "="))]
+    if (length(raw) == 1L && nzchar(val)) val <- substring(raw, nchar(key) + 2L)
     why <- if (key %in% valueless) {
       paste0(key, "= has no dataset name: PROC HAZPRED reads the option ",
              "keyword after it as the name (hazpred_l.l:35-37, :48), and the ",
