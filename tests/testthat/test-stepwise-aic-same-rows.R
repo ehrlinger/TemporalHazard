@@ -93,8 +93,9 @@ test_that("hzr_stepwise() under AIC does not enter z and says why (#488)", {
   expect_match(stop_msg, "different rows", fixed = TRUE)
 })
 
+# Not skipped on CRAN: the fastest block holding both the known positive (w
+# enters) and the refusal, and the only one that kills all four mutants.
 test_that("a completed AIC screen warns about a refused entry (#488)", {
-  skip_on_cran()
   fx <- .aic_rows_fixture()
   out <- .aic_rows_screen(fx, max_steps = 1L)
   expect_equal(out$sw$steps$variable, "w")
