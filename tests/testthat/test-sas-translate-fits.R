@@ -299,7 +299,9 @@ test_that("the emitted HAZPRED call produces logit bounds, not the default", {
 
   txt <- .hzr_sas_normalise(paste(
     "DATA P; DO MONTHS=1 TO 12 BY 1; OUTPUT; END;",
-    "%HAZPRED( PROC HAZPRED DATA=P INHAZ=E.H OUT=P; TIME TIME; );"
+    # TIME names a variable of the grid: `TIME TIME;` over this grid is a job
+    # PROC HAZPRED stops on (hazpred/timeprc.c:16-20), and the grid is refused.
+    "%HAZPRED( PROC HAZPRED DATA=P INHAZ=E.H OUT=P; TIME MONTHS; );"
   ))
   emitted <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)$call
 
