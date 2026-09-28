@@ -4,6 +4,24 @@
 
 ### Bug fixes
 
+- **A stepwise refit of a single-distribution model now reports each
+  coefficient under its own name
+  ([\#489](https://github.com/ehrlinger/TemporalHazard/issues/489)).**
+  The refit started from the current estimates with a zero appended for
+  the new term, but
+  [`model.matrix()`](https://rdrr.io/r/stats/model.matrix.html) puts an
+  interaction after every main effect, and
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  keeps the names of a named `theta`. With `~ age * mal` and a named
+  `theta`, `com_iv` entering was reported as `beta_agexmal = 0.974`, and
+  the interaction’s own coefficient had no name. A drop removed the slot
+  at the term’s position among the terms, so dropping a term that
+  follows a factor removed one of the factor’s coefficients and moved
+  the dropped term’s name onto another column. The starting values are
+  now matched to the new design by column. A factor entering or leaving,
+  and a model with `time_windows`, which used to stop with a `theta`
+  length error, now refit.
+
 - **A translated `PROC HAZPRED` job now predicts at the grid SAS used
   ([\#494](https://github.com/ehrlinger/TemporalHazard/issues/494)).**
   [`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
