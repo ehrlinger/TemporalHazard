@@ -1950,8 +1950,10 @@ hazard <- function(formula = NULL,
 #'   call and with class `"hzr_predict_covariates_zero"`, naming the data
 #'   variables to supply (`age`, not `scale(age)`). Supply them in `newdata`
 #'   to predict at other values, or muffle that class when the baseline is
-#'   what you want. A model without covariates does not warn. Because `time` is then the
-#'   prediction time, a model whose formula uses a variable named `time`
+#'   what you want. A model without covariates does not warn.
+#'
+#'   For those types, the `time` column of `newdata` is always the
+#'   prediction time, so a model whose formula uses a variable named `time`
 #'   (a covariate, or a constant such as `I(age > time)`) cannot be given
 #'   those types at `newdata`; rename it and refit.
 #' @param type Prediction type:

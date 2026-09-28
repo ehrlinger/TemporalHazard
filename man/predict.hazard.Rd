@@ -66,8 +66,10 @@ of 0; for \code{scale(age)} it is the mean age. \code{predict()} warns, once per
 call and with class \code{"hzr_predict_covariates_zero"}, naming the data
 variables to supply (\code{age}, not \code{scale(age)}). Supply them in \code{newdata}
 to predict at other values, or muffle that class when the baseline is
-what you want. A model without covariates does not warn. Because \code{time} is then the
-prediction time, a model whose formula uses a variable named \code{time}
+what you want. A model without covariates does not warn.
+
+For those types, the \code{time} column of \code{newdata} is always the
+prediction time, so a model whose formula uses a variable named \code{time}
 (a covariate, or a constant such as \code{I(age > time)}) cannot be given
 those types at \code{newdata}; rename it and refit.}
 
