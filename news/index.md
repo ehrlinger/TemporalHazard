@@ -4,6 +4,25 @@
 
 ### Bug fixes
 
+- **A translated `PROC HAZPRED` job now predicts at the grid SAS used
+  ([\#494](https://github.com/ehrlinger/TemporalHazard/issues/494)).**
+  [`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
+  read only the first `DO` loop of the first `DATA <name>;` step, and
+  took the loop variable as the time. Three wrong answers followed, none
+  recorded. Covariates a `SET DESIGN` brought in were dropped, and
+  [`predict()`](https://rdrr.io/r/stats/predict.html) evaluated them at
+  0: `hp.death.AVC.hm1` lost its whole design. `TIME YEARS;` with
+  `YEARS = MONTHS/12` predicted at the `MONTHS` values, and
+  `hp.death.AVC.hm2` predicted at its `OPMOS` loop, where SAS predicts
+  at month 6. A grid defined twice used the first definition, where SAS
+  uses the last, so `hm1` lost its `DIGITAL` rows. The grid is now
+  rebuilt from the job’s own DATA steps, and the `time` column is the
+  variable `TIME` names. Fed to the `HAZPRED` binary, the grids emitted
+  for `hm1` and `hm2` reproduce the survival SAS printed for them to the
+  listing’s five decimals. A DATA-step statement the translator can’t
+  compute leaves its variable `NA` in the grid, with a warning and an
+  `$untranslated` row. A grid whose rows it can’t determine is refused.
+
 - **A single-distribution fit started where the likelihood is not
   defined no longer reports `converged = TRUE`
   ([\#486](https://github.com/ehrlinger/TemporalHazard/issues/486)).**
