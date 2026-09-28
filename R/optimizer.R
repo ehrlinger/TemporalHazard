@@ -115,7 +115,7 @@ NULL
 #'   finite log-likelihood below -1e10, with the subclass
 #'   `hzr_start_past_penalty` (#512). It also reports as not converged, with
 #'   class `hzr_unverified_convergence`, a stop where the score is not finite
-#'   or SAS/C's relative-gradient test fails (#518). The multiphase path passes
+#'   (#518). The multiphase path passes
 #'   `FALSE`: it scores each start against the likelihood itself and records
 #'   such a start as `"infeasible"` in its `starts` table.
 #'
@@ -461,34 +461,17 @@ NULL
   # on the relative change in the objective, never on the gradient, and the
   # gradient it follows is the wrapped one above, which is zero wherever the
   # score is not finite. So from a far start a fit could stop on those zeros
-  # (loglogistic from c(-1e5, 1): log-likelihood -4.7e6) or on a ridge the
-  # nlm() polish could not leave (lognormal from c(1e5, 1): -819.29 where
-  # the maximum is -228.66, nlm code 2), and read as converged. Here, after
-  # any polish, such a fit is reported as not converged: when the score is
-  # not finite at the estimates, or when they fail SAS/C's acceptance test
-  # by more than a factor of 1000. Not by any margin: the test takes every
-  # parameter's typical size to be 1, which a poorly scaled but sound fit
-  # can fail. On the test suite a Weibull fit of avc with age and age^2 sits
-  # within 1e-7 of its maximum and fails the test by 17 times, with mu near
-  # 0.002; the stuck starts fail it by 1.4e4 times and more. A fit that
-  # fails by less keeps convergence 0, and print() still shows the test
-  # "not met". nlm()'s code is not consulted, so a code 2 or 3 stop that
-  # passes is converged. The multiphase path opts out with mark_infeasible,
-  # as above: under Conservation of Events its test differences the
-  # objective, and there a failed test is routine at sound estimates (#351).
+  # (loglogistic from c(-1e5, 1): log-likelihood -4.7e6) and read as
+  # converged. Here, after any polish, a fit whose score is not finite (or
+  # errors) at the estimates is reported as not converged. A failed
+  # relative-gradient test alone is not used: no margin on it separates
+  # sound, poorly scaled fits from stuck ones, so those cases stay open
+  # under #518. The multiphase path opts out with mark_infeasible, as above.
   if (mark_infeasible && !use_bounds && result$convergence == 0L) {
-    unverified <- if (isTRUE(rel$zeroed)) {
-      paste0("the score is not finite at the estimates, so the optimizer ",
-             "stopped on a gradient it had set to zero")
-    } else if (is.finite(rel_grad) && rel_grad > 1000 * gradtl) {
-      paste0("the estimates fail the relative-gradient test SAS/C HAZARD ",
-             "requires (here ", signif(rel_grad, 3), ", at most ",
-             signif(gradtl, 3),
-             if (!is.na(polish_code)) {
-               paste0("; nlm() stopped with code ", polish_code)
-             }, ")")
-    }
-    if (!is.null(unverified)) {
+    if (isTRUE(rel$zeroed)) {
+      unverified <- paste0("the score is not finite at the estimates, so ",
+                           "the optimizer stopped on a gradient it had set ",
+                           "to zero")
       warning(structure(
         class = c("hzr_unverified_convergence", "warning", "condition"),
         list(message = paste0(
