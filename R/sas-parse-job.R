@@ -505,6 +505,7 @@
   # DATA= written, even with no usable name: the %HAZARD macro then finds it,
   # and the refusal below names PROC HAZARD's syntax error instead (#497).
   data_given <- FALSE
+  data_raw <- NULL
   outhaz <- NULL
   # A PROC-line value the lexer does not read as a NUMBER (hazard_l.l:33-38,
   # the HZRP state at :53) is a syntax error: PROC HAZARD does not run the
@@ -618,6 +619,7 @@
         # internal R error (#433 review 3).
         stripped <- sub("^WORK[.]", "", val)
         data_given <- TRUE
+        data_raw <- val
         if (check_name(key, stripped)) {
           mapped <- mapped - 1L
         } else {
@@ -1245,16 +1247,40 @@
     # A block whose first statement is not the PROC statement (a %repeat
     # call it encloses, say) was read for options from the wrong statement,
     # so this cannot say SAS finds no DATA=.
+    # A macro on the PROC statement is expanded before %HAZARD reads it, so
+    # it may supply the DATA= this cannot see. And %HAZARD's test for DATA=
+    # is a substring test (hazard.sas:11), so `OUTHAZ=MYDATA` passes it and
+    # the macro reads whatever follows the next `=` (:13-17) as its dataset.
+    # Claim the macro's refusal only where neither applies (#497 review).
+    proc_macros <- toks[vapply(toks, .hzr_sas_is_macro, logical(1))]
     macro <- if (!startsWith(trimws(st[[1L]]), "PROC HAZARD")) {
       paste(
         "This translation read the PROC HAZARD options from the block's",
         "first statement, which is not the PROC HAZARD statement, so it may",
         "have missed a DATA= that SAS reads.")
+    } else if (length(proc_macros)) {
+      paste0(
+        "The PROC HAZARD statement carries ",
+        paste(proc_macros, collapse = ", "), ", which SAS expands before ",
+        "the %HAZARD macro reads the statement, so it may supply a DATA= ",
+        "this translation cannot see.")
+    } else if (identical(data_raw, "WORK.")) {
+      paste(
+        "SAS does not run it either: PROC HAZARD reads WORK as the dataset",
+        "name and the `.` after it as unexpected text (hazard_l.l:79-80,",
+        ":176), a syntax error.")
     } else if (data_given) {
       paste(
         "SAS does not run it either: PROC HAZARD has no form of DATA=",
         "without a dataset name (hazard_y.y:61-62, :80-81), so it rejects",
         "the job with a syntax error.")
+    } else if (grepl("DATA", st[[1L]], fixed = TRUE)) {
+      paste(
+        "SAS does not fit it from a dataset the job names either: the",
+        "%HAZARD macro's test for DATA= is a substring test (hazard.sas:11),",
+        "which the DATA elsewhere on the PROC statement satisfies, so the",
+        "macro takes whatever follows the next `=` as its dataset",
+        "(hazard.sas:13-17).")
     } else {
       paste(
         "SAS does not run it either: the %HAZARD macro finds its dataset only",
@@ -2729,6 +2755,25 @@
 
   toks <- strsplit(trimws(st[[1L]]), " ", fixed = TRUE)[[1L]]
   toks <- .hzr_sas_join_spaced(toks[nzchar(toks)])
+  # `INHAZ= OUT=P`: PROC HAZPRED reads OUT as INHAZ's dataset name
+  # (hazpred_l.l:36, :48) and meets a syntax error at the `=` after it. The
+  # joiner pairs it the same way, which named OUT= as the missing option.
+  # Split it back so the empty option is the one named (#498 review).
+  ds_keys <- c("DATA", "INHAZ", "OUT")
+  valueless <- character(0)
+  i <- 1L
+  while (i < length(toks) - 1L) {
+    kv <- strsplit(toks[[i]], "=", fixed = TRUE)[[1L]]
+    if (length(kv) == 2L && kv[[1L]] %in% ds_keys &&
+          kv[[2L]] %in% c(ds_keys, "CL", "CLIMITS") &&
+          identical(toks[[i + 1L]], "=") && !identical(toks[[i + 2L]], "=")) {
+      valueless <- c(valueless, kv[[1L]])
+      toks <- c(toks[seq_len(i - 1L)], paste0(kv[[1L]], "="),
+                paste0(kv[[2L]], "=", toks[[i + 2L]]),
+                toks[-seq_len(i + 2L)])
+    }
+    i <- i + 1L
+  }
   # Same stray-`=` rule as the PROC HAZARD line. This caller shares the
   # joiner but had neither this nor a presence check, so a stray `=`
   # recorded a BLANK-keyword "unknown option" row and the prediction calls
@@ -2747,6 +2792,35 @@
   data_name <- NULL
   inhaz <- NULL
   out_given <- FALSE
+  # `KEY '=' dsfield` (hazpred_y.y:50-52), and dsfield is a NAME or a
+  # LIB.MEMBER (:62-64, hazpred_l.l:17-18). Any other value, `""` or `WORK.`
+  # included, is a syntax error, and PROC HAZPRED stops (initprz.c:53-55).
+  # A macro is exempt: SAS expands it first.
+  given <- c(DATA = FALSE, INHAZ = FALSE, OUT = FALSE)
+  bad_ds <- character(0)
+  check_ds <- function(key, val) {
+    given[[key]] <<- TRUE
+    if (.hzr_sas_is_macro(val) ||
+          grepl("^[A-Z_][A-Z0-9_]*([.][A-Z_][A-Z0-9_]*)?$", val)) {
+      return(TRUE)
+    }
+    why <- if (key %in% valueless) {
+      paste0(key, "= has no dataset name: PROC HAZPRED reads the option ",
+             "keyword after it as the name (hazpred_l.l:35-37, :48), and the ",
+             "`=` that follows is a syntax error")
+    } else if (!nzchar(val)) {
+      paste0(key, "= has no dataset name, and PROC HAZPRED has no form of ",
+             "it without one (hazpred_y.y:50-52, :62-64), a syntax error")
+    } else {
+      paste0(key, "=", val, " is not a NAME or a LIB.MEMBER ",
+             "(hazpred_l.l:17-18, :47-48), and PROC HAZPRED rejects the text ",
+             "it cannot read (:56-57), a syntax error")
+    }
+    why <- paste0(why, "; PROC HAZPRED then stops (initprz.c:53-55)")
+    bad_ds <<- c(bad_ds, why)
+    note(paste0(key, "="), why)
+    FALSE
+  }
   want_surv <- TRUE
   want_haz <- TRUE
   want_cl <- TRUE
@@ -2767,9 +2841,9 @@
     }
     mapped <- mapped + 1L
     switch(token,
-      DATA    = data_name <- val,
-      INHAZ   = inhaz <- val,
-      OUT     = out_given <- TRUE,
+      DATA    = if (check_ds(token, val)) data_name <- val,
+      INHAZ   = if (check_ds(token, val)) inhaz <- val,
+      OUT     = if (check_ds(token, val)) out_given <- TRUE,
       NOSURV  = want_surv <- FALSE,
       NOHAZ   = want_haz <- FALSE,
       NOCL    = want_cl <- FALSE,
@@ -2845,8 +2919,8 @@
   # :153-163), so SAS predicts nothing. The block used to emit predict()
   # anyway: over the fitting rows with no DATA=, from `fit` with no INHAZ=
   # (#498). Each missing option is its own row; the stop() names them all.
-  absent <- c("DATA=", "INHAZ=", "OUT=")[
-    c(is.null(data_name), is.null(inhaz), !out_given)]
+  # sprintf, not paste0: paste0(character(0), "=") is "=", not empty.
+  absent <- sprintf("%s=", names(given)[!given])
   absent_list <- if (length(absent) > 1L) {
     paste(paste(absent[-length(absent)], collapse = ", "), "or",
           absent[length(absent)])
@@ -2860,10 +2934,16 @@
     ":153-163), so SAS predicts nothing. Add the missing option(s) and ",
     "translate the job again.")
   for (a in absent) note(a, macro_refusal)
+  ds_refusal <- c(
+    if (length(absent)) macro_refusal,
+    if (length(bad_ds)) paste0(
+      "PROC HAZPRED rejects this block: ", paste(bad_ds, collapse = "; "),
+      ". Correct the option(s) named here and translate the job again."))
 
   mk <- function(type) {
-    if (length(absent)) {
-      return(as.call(list(quote(stop), macro_refusal, call. = FALSE)))
+    if (length(ds_refusal)) {
+      return(as.call(list(quote(stop), paste(ds_refusal, collapse = " "),
+                          call. = FALSE)))
     }
     # A refused grid is a refusal, not an absent argument. Emitting
     # predict(fit, newdata = <name>) when no chunk builds <name> leaves the

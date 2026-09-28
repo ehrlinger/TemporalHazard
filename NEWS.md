@@ -45,9 +45,11 @@
   dataset name, which PROC HAZARD rejects as a syntax error, took the same
   path. A `HAZPRED` block with an option missing emitted `predict()`
   anyway: over the fitting rows with no `DATA=`, and from the job's own fit
-  with no `INHAZ=`. Each is now recorded in `$untranslated`, and the fit or
-  prediction chunk is a `stop()` that says which option is missing. None of
-  the 39 public-corpus jobs that translate changes.
+  with no `INHAZ=`. The same happened when one of the three had no dataset
+  name, such as `INHAZ=` or `OUT=WORK.`, which PROC HAZPRED rejects as a
+  syntax error. Each is now recorded in `$untranslated`, and the fit or
+  prediction chunk is a `stop()` that names the missing or invalid option.
+  None of the 39 public-corpus jobs that translate changes.
 
 * **A single-distribution fit started where the likelihood is not defined no
   longer reports `converged = TRUE` (#486).** The optimizer replaces a

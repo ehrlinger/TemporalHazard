@@ -645,6 +645,31 @@ test_that("a job with no DATA= and no phase variable is refused, as %HAZARD refu
   expect_s3_class(res$env$fit, "hazard")
 })
 
+test_that("the no-DATA= refusal claims a SAS refusal only where SAS makes one (#497 review)", {
+  msg_for <- function(proc) {
+    f <- withr::local_tempfile(fileext = ".sas", .local_envir = parent.frame())
+    writeLines(paste("%HAZARD(", proc, "EVENT DEAD; TIME INT_DEAD;",
+                     "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"), f)
+    job <- suppressWarnings(hzr_translate_sas(f))
+    expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"), info = proc)
+    tryCatch(eval(job$calls$fit), error = conditionMessage)
+  }
+  # SAS expands &OPTS before %HAZARD reads the statement, so it may carry DATA=.
+  m <- msg_for("PROC HAZARD &OPTS CONDITION=14;")
+  expect_no_match(m, "SAS does not run it", fixed = TRUE)
+  expect_match(m, "&OPTS", fixed = TRUE)
+  # %HAZARD's check is a substring test (hazard.sas:11), which the DATA in
+  # MYDATA satisfies, so the macro does not stop with "HAZARD not attempted".
+  m <- msg_for("PROC HAZARD OUTHAZ=MYDATA CONDITION=14;")
+  expect_no_match(m, "HAZARD not attempted", fixed = TRUE)
+  expect_match(m, "substring", fixed = TRUE)
+  # DATA=WORK. names WORK; the syntax error is the `.` after it.
+  m <- msg_for("PROC HAZARD DATA=WORK. CONDITION=14;")
+  expect_match(m, "unexpected text (hazard_l.l:79-80, :176)", fixed = TRUE)
+  # Known positive: no DATA anywhere, no macro: the macro refusal stands.
+  expect_match(msg_for("PROC HAZARD CONDITION=14;"), "HAZARD not attempted", fixed = TRUE)
+})
+
 test_that("a job PROC HAZARD rejects at parse emits a stop(), not a fit (#340)", {
   job_for <- function(stmt) {
     f <- withr::local_tempfile(fileext = ".sas", .local_envir = parent.frame())
@@ -1632,7 +1657,7 @@ test_that("a libref with no member is refused, not left empty (#433 review 3)", 
   # rather than warn and fit from whatever TT and DEAD the session holds
   # (#497; before, this took the warn route and fitted).
   expect_true(.u1_stops(job))
-  expect_match(.u1_msg(job), "hazard_y.y:61-62", fixed = TRUE)
+  expect_match(.u1_msg(job), "hazard_l.l:79-80, :176", fixed = TRUE)
   expect_true(any(grepl("DATA", job$untranslated$construct, fixed = TRUE)))
   # KNOWN NEGATIVE: a real WORK-qualified name still translates, stripped.
   f2 <- withr::local_tempfile(fileext = ".sas")

@@ -417,3 +417,52 @@ test_that("a HAZPRED with no DATA=, INHAZ= or OUT= is refused, as %HAZPRED refus
                   paste0(names(opts), "="))
   expect_error(eval(preds(job)[[1L]]), "no DATA=, INHAZ= or OUT=", fixed = TRUE)
 })
+
+# Shared by the two tests below: a fit whose OUTHAZ= the HAZPRED reads.
+hp_fit <- paste(
+  "%HAZARD( PROC HAZARD DATA=D OUTHAZ=OUTEST CONDITION=14; EVENT DEAD;",
+  "TIME INT_DEAD; PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );",
+  sprintf(grid_step, "PRED"))
+hp_translate <- function(opts) {
+  f <- withr::local_tempfile(fileext = ".sas", .local_envir = parent.frame())
+  writeLines(paste(hp_fit, "%HAZPRED( PROC HAZPRED", opts, "; TIME MONTHS; );"), f)
+  suppressWarnings(hzr_translate_sas(f))
+}
+
+test_that("an empty or libref-only DATA=, INHAZ= or OUT= is refused (#498 review)", {
+  # `KEY '=' dsfield` (hazpred_y.y:50-52, :62-64) has no form without a NAME
+  # or LIB.MEMBER, so PROC HAZPRED stops with a syntax error
+  # (initprz.c:53-55). The value `""` passed the presence check, so these
+  # emitted predict() over a job SAS rejects.
+  cases <- c(INHAZ = "DATA=PRED OUT=P INHAZ=", OUT = "INHAZ=OUTEST DATA=PRED OUT=",
+             OUT = "DATA=PRED INHAZ=OUTEST OUT=WORK.",
+             INHAZ = "DATA=PRED INHAZ=WORK. OUT=P",
+             DATA = "INHAZ=OUTEST OUT=P DATA=WORK.")
+  for (k in seq_along(cases)) {
+    job <- hp_translate(cases[[k]])
+    info <- cases[[k]]
+    preds <- job$calls[grepl("^pred", names(job$calls))]
+    expect_length(preds, 2L)
+    expect_false("predict" %in% unlist(lapply(job$calls, all.names)), info = info)
+    row <- job$untranslated[job$untranslated$construct == paste0(names(cases)[k], "="), ]
+    expect_equal(nrow(row), 1L, info = info)
+    expect_match(row$reason, "initprz.c:53-55", fixed = TRUE, info = info)
+    expect_error(eval(preds[[1L]]), "initprz.c:53-55", fixed = TRUE, info = info)
+  }
+  # Known negatives: a LIB.MEMBER and a macro are dataset names SAS reads.
+  job <- hp_translate("DATA=PRED INHAZ=OUTEST OUT=WORK.P")
+  expect_identical(job$calls$pred[[1L]], as.name("predict"))
+  job <- hp_translate("DATA=PRED INHAZ=OUTEST OUT=&OUTDS")
+  expect_identical(job$calls$pred[[1L]], as.name("predict"))
+})
+
+test_that("an empty INHAZ= before another option is named, not the option after it (#498 review)", {
+  # `INHAZ= OUT=P`: PROC HAZPRED reads OUT as INHAZ's dataset name
+  # (hazpred_l.l:36, :48), and the `=` after it is a syntax error. The
+  # refusal named OUT= as missing, which the job plainly carries.
+  job <- hp_translate("DATA=PRED INHAZ= OUT=P")
+  expect_identical(job$calls$pred[[1L]], as.name("stop"))
+  expect_true("INHAZ=" %in% job$untranslated$construct)
+  expect_false("OUT=" %in% job$untranslated$construct)
+  expect_error(eval(job$calls$pred), "INHAZ= has no dataset name", fixed = TRUE)
+})
