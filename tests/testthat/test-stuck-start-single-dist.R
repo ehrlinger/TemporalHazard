@@ -141,6 +141,50 @@ test_that("a non-finite score below the penalty is not evidence of an optimum (#
   expect_match(res$message, "below its own penalty", fixed = TRUE)
 })
 
+run_flat_512 <- function(grad) {
+  classes <- character()
+  res <- withCallingHandlers(
+    .hzr_optim_generic(logl_fn = function(theta, ...) -1e12,
+                       gradient_fn = grad,
+                       time = c(1, 2), status = c(1, 0),
+                       theta_start = c(1, 1)),
+    warning = function(w) {
+      classes <<- c(classes, class(w))
+      invokeRestart("muffleWarning")
+    }
+  )
+  list(res = res, classes = classes)
+}
+
+expect_flat_stuck_512 <- function(out) {
+  expect_identical(out$res$convergence, 99L)
+  expect_identical(out$res$value, NA_real_)
+  expect_identical(out$res$par, c(1, 1))
+  expect_true("hzr_start_past_penalty" %in% out$classes)
+}
+
+test_that("a wrong-length score below the penalty is not evidence of an optimum (#512)", {
+  # optim() itself refuses a wrong-length gradient, so the score is full
+  # length (and zero, so the run stops at once) on its first call, the
+  # optimizer's, and one component short on every later call: the check's.
+  calls <- 0L
+  grad <- function(theta, ...) {
+    calls <<- calls + 1L
+    if (calls == 1L) rep(0, length(theta)) else 0
+  }
+  out <- run_flat_512(grad)
+  # The known positive: the check did ask the score a second time.
+  expect_gte(calls, 2L)
+  expect_flat_stuck_512(out)
+})
+
+test_that("a score that errors below the penalty is not evidence of an optimum (#512)", {
+  # The optimizer's own wrapper reads an error as a zero gradient and stops
+  # at once; the check must read it as no evidence.
+  out <- run_flat_512(function(theta, ...) stop("no score here"))
+  expect_flat_stuck_512(out)
+})
+
 test_that("a bootstrap of a stuck start counts no successes (#512)", {
   data(avc, package = "TemporalHazard", envir = environment())
   d <- stats::na.omit(avc[, c("int_dead", "dead")])
