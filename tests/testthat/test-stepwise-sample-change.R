@@ -112,3 +112,22 @@ test_that("an empty `$steps` still carries the n_rows column (#519)", {
   expect_equal(nrow(out$sw$steps), 0L)
   expect_identical(out$sw$steps$n_rows, integer())
 })
+
+test_that("a frozen row records the rows of the model it froze in (#519)", {
+  # max_move = 0 freezes each variable on its first move, so each entry is
+  # followed by a `frozen` row, written by record_freeze(), not record_step().
+  # z's frozen row comes after the sample changed, so it must read 250, not
+  # the base model's 310.
+  d <- .s519_fixture(z_effect = 3, v_effect = 2)
+  base <- .s519_fit(d)
+  out <- .s519_screen(base, d, scope = list(constant = ~ z + v),
+                      direction = "forward", criterion = "wald",
+                      max_move = 0L)
+  st <- out$sw$steps
+  expect_equal(st$action, c("enter", "frozen", "enter", "frozen"))
+  expect_equal(st$variable, c("v", "v", "z", "z"))
+  expect_equal(st$n_rows, c(310L, 310L, 250L, 250L))
+  expect_equal(st$n_rows[4L], sum(.hzr_fit_row_mask(out$sw)))
+  # Freezing changes no row, so it adds no warning of its own.
+  expect_length(out$changed, 1L)
+})
