@@ -442,7 +442,10 @@
     }
     new_formula <- .hzr_formula_update(current_formula, action, var)
 
-    n_shape <- .hzr_shape_parameter_count(dist, control = current$spec$control)
+    # Counted as hazard() counts it when it checks theta (.hzr_check_theta()),
+    # without control$shape_param_count: the fit was accepted on that count,
+    # and a misleading control would refuse its refit.
+    n_shape <- .hzr_shape_parameter_count(dist)
     theta_old <- current$fit$theta
     if (is.null(theta_old)) {
       stop("`current` has no fitted theta; refit requires a fitted model.",

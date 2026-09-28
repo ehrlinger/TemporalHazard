@@ -153,3 +153,35 @@ test_that(".hzr_refit_warm_start() places coefficients by column", {
     "cannot be matched"
   )
 })
+
+test_that("a refit counts shapes as the likelihood does, not by control", {
+  # hazard() ignores control$shape_param_count when it checks theta (see
+  # .hzr_check_theta()), so a fit made with a misleading one is valid, and
+  # its refit must not be refused for a length the control miscounts.
+  d <- refit_489_data()
+  ctl <- list(shape_param_count = 3L)
+  base <- refit_489_fit(
+    "age * mal",
+    c(mu = 0.1, nu = 1, beta_age = 0, beta_mal = 0, beta_agexmal = 0), d,
+    control = ctl
+  )
+  added <- .hzr_refit_with_scope(base, action = "add", var = "com_iv",
+                                 data = d)
+  expect_same_fit_489(added, refit_489_fit(
+    "age * mal + com_iv",
+    c(mu = 0.1, nu = 1, beta_age = 0, beta_mal = 0, com_iv = 0,
+      beta_agexmal = 0), d, control = ctl
+  ))
+
+  base2 <- refit_489_fit(
+    "age + mal + com_iv",
+    c(mu = 0.1, nu = 1, beta_age = 0, beta_mal = 0, beta_com_iv = 0), d,
+    control = ctl
+  )
+  dropped <- .hzr_refit_with_scope(base2, action = "drop", var = "mal",
+                                   data = d)
+  expect_same_fit_489(dropped, refit_489_fit(
+    "age + com_iv", c(mu = 0.1, nu = 1, beta_age = 0, beta_com_iv = 0), d,
+    control = ctl
+  ))
+})
