@@ -383,6 +383,90 @@ test_that("a `data` sharing no column with the fit's frame is unverified (#487)"
   ))
 })
 
+test_that("duplicate rows in the shared columns do not vouch for order (#487)", {
+  skip_on_cran() # two multiphase fits plus five screens
+  # The frame given to hazard() holds only mal and inc_surg: 11 distinct
+  # rows in 305. Rows shuffled within those groups leave every shared column
+  # identical, while the derived candidates move with them.
+  d <- ro_avc()
+  phases <- list(
+    early    = hzr_phase("cdf", t_half = 0.1512095, nu = 1.438652, m = 1,
+                         fixed = "shapes"),
+    constant = hzr_phase("constant")
+  )
+  small <- d[c("mal", "inc_surg")]
+  fv <- suppressWarnings(hazard(time = d$int_dead, status = d$dead,
+                                data = small, dist = "multiphase",
+                                phases = phases, fit = TRUE))
+  expect_identical(nrow(fv$data$frame), nrow(d))
+  expect_gt(anyDuplicated(fv$data$frame), 0L)
+  scr <- cbind(small, cv2 = 2 * d$com_iv, op2 = 2 * d$opmos)
+  set.seed(487)
+  key <- interaction(small$mal, small$inc_surg, drop = TRUE)
+  perm <- seq_len(nrow(d))
+  for (g in levels(key)) {
+    p <- which(key == g)
+    perm[p] <- p[sample.int(length(p))]
+  }
+  sh <- scr[perm, ]
+  # Known positive: the shared columns are untouched, the candidates moved.
+  expect_equal(sh[c("mal", "inc_surg")], small, ignore_attr = TRUE)
+  expect_false(identical(sh$cv2, scr$cv2))
+  sc <- list(early = NULL, constant = ~ cv2 + op2)
+  for (cr in c("score", "wald")) {
+    n <- 0L
+    withCallingHandlers(
+      hzr_stepwise(fv, scope = sc, data = sh, direction = "forward",
+                   criterion = cr, max_steps = 1L, trace = FALSE),
+      hzr_score_rows_unverified = function(w) {
+        n <<- n + 1L
+        invokeRestart("muffleWarning")
+      },
+      warning = function(w) invokeRestart("muffleWarning")
+    )
+    expect_identical(n, 1L)
+  }
+  suppressWarnings(expect_warning(
+    hzr_stepwise(fv, scope = sc, data = sh, direction = "forward",
+                 criterion = "score", max_steps = 1L, trace = FALSE),
+    "have duplicate rows",
+    class = "hzr_score_rows_unverified"
+  ))
+
+  # An unweighted formula fit: its refits rebuild everything from `data`, so
+  # only the score test reads the stored rows by position. Duplicates are
+  # warned about under score, and not under Wald, where order cannot matter.
+  f4 <- data.frame(tt = ceiling(d$int_dead / 12), dead = d$dead,
+                   mal = d$mal, inc_surg = d$inc_surg)
+  ff <- suppressWarnings(hazard(survival::Surv(tt, dead) ~ 1, data = f4,
+                                dist = "multiphase", phases = phases,
+                                fit = TRUE))
+  expect_null(ff$data$weights)
+  expect_gt(anyDuplicated(ff$data$frame), 0L)
+  f4x <- cbind(f4, cv2 = 2 * d$com_iv, op2 = 2 * d$opmos)
+  expect_identical(ro_screen_w(ff, f4x, sc)$n_unverified, 1L)
+  n <- 0L
+  withCallingHandlers(
+    hzr_stepwise(ff, scope = sc, data = f4x, direction = "forward",
+                 criterion = "wald", max_steps = 1L, trace = FALSE),
+    hzr_score_rows_unverified = function(w) {
+      n <<- n + 1L
+      invokeRestart("muffleWarning")
+    },
+    warning = function(w) invokeRestart("muffleWarning")
+  )
+  expect_identical(n, 0L)
+
+  # With no duplicate rows (all of avc), an in-order screen runs unwarned.
+  full <- suppressWarnings(hazard(time = d$int_dead, status = d$dead,
+                                  data = d, dist = "multiphase",
+                                  phases = phases, fit = TRUE))
+  expect_identical(anyDuplicated(full$data$frame), 0L)
+  r <- ro_screen_w(full, cbind(d, cv2 = 2 * d$com_iv, op2 = 2 * d$opmos), sc)
+  expect_identical(r$sw$steps$variable, "op2")
+  expect_identical(r$n_unverified, 0L)
+})
+
 test_that("a derived column does not stop the time-0 rows being trimmed (#487)", {
   # hzr_stepwise() trims the rows hazard() dropped at time 0 only when
   # `data` provably is the frame hazard() was given. Comparing whole frames

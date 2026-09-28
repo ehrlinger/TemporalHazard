@@ -726,13 +726,14 @@
 #'
 #' @return `NULL`, invisibly; called for its error or warning.
 #' @noRd
-.hzr_check_data_row_order <- function(current, data) {
+.hzr_check_data_row_order <- function(current, data, score = TRUE) {
   frame <- current$data$frame
   # A `data` that shares no column with the frame (derived candidates only)
   # leaves nothing to compare: that is no proof of order, and falls through
   # to the checks below, which warn when they cannot prove it either.
   shares <- is.data.frame(frame) &&
     length(intersect(names(data), names(frame))) > 0L
+  why_frame <- NULL
   if (shares && nrow(frame) == nrow(data)) {
     # .hzr_score_q() compares `data` with the frame, but only the score test
     # calls it. Every other criterion refits through .hzr_refit_with_scope(),
@@ -743,14 +744,31 @@
     # specs and the objective, are not per row. A formula fit with no stored
     # weights rebuilds every per-row input from `data`, so it alone is
     # consistent with any row order.
-    if (is.null(current$call$formula) || !is.null(current$data$weights)) {
+    stored_rows <- is.null(current$call$formula) ||
+      !is.null(current$data$weights)
+    if (stored_rows) {
       moved <- .hzr_score_rows_moved(current, data)
       if (length(moved)) stop(.hzr_rows_moved_message(moved), call. = FALSE)
     }
-    return(invisible(NULL))
+    # Equal shared columns prove the order only if they tell every row
+    # apart: rows reordered within a group of duplicates leave them
+    # identical while a derived candidate moves. Then the match is no proof,
+    # and the time check below is tried instead. (The score test's own
+    # comparison in .hzr_score_q() has the same limit, and relies on this.)
+    if (!stored_rows && !score) return(invisible(NULL))
+    shared <- frame[match(intersect(names(data), names(frame)), names(frame))]
+    n_dup <- sum(duplicated(shared))
+    if (n_dup == 0L) return(invisible(NULL))
+    why_frame <- paste0(
+      "the columns `data` shares with the data frame stored with the fit ",
+      "have duplicate rows (", n_dup, " of ", nrow(shared), " repeat an ",
+      "earlier row), so rows reordered among duplicates leave them unchanged"
+    )
   }
   time <- current$data$time
-  why <- if (is.data.frame(frame) && !shares) {
+  why <- if (!is.null(why_frame)) {
+    why_frame
+  } else if (is.data.frame(frame) && !shares) {
     "`data` shares no column with the data frame stored with the fit"
   } else if (is.data.frame(frame)) {
     paste0("the data frame stored with the fit has ", nrow(frame),
@@ -804,8 +822,13 @@
       held, ". The score ",
       "test reads each candidate from `data` row by row, so if its rows are ",
       "not in the order the model was fitted on, every candidate is scored ",
-      "against the wrong observations. Refit with `data =` to have it ",
-      "checked."
+      "against the wrong observations. ",
+      if (is.data.frame(frame)) {
+        paste0("Include in `data` enough of the columns given to hazard() ",
+               "to tell every row apart to have it checked.")
+      } else {
+        "Refit with `data =` to have it checked."
+      }
     ),
     class = "hzr_score_rows_unverified"
   ))

@@ -52,7 +52,8 @@
   which rebuilds every per-row input from `data`, is left to the score
   test's own comparison. A `data` holding only columns added after the fit
   shares none with that frame, so it cannot be compared, and is treated as
-  below. Two fits store no
+  below; so is one whose shared columns have duplicate rows, since rows
+  reordered among duplicates leave those columns unchanged. Two fits store no
   frame that can be compared: a vector-interface fit made without
   `data =`, and one whose `data` served only to look names up and so has
   another row count. For those, `hzr_stepwise()` looks for a column of

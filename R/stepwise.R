@@ -132,7 +132,9 @@
 #'   added after the fit, such as derived candidates, are allowed.  A
 #'   vector-interface fit made without `data =`, or with a `data` of another
 #'   row count used only to look names up, stores no frame to compare, and
-#'   a `data` holding only columns added after the fit shares none.  For
+#'   a `data` holding only columns added after the fit shares none; and
+#'   shared columns with duplicate rows cannot show rows reordered among
+#'   those duplicates.  For
 #'   those the order is checked against a column of `data` holding the fit's
 #'   event times, and refused if they are out of order.  With no such
 #'   column, or when those times have ties (rows reordered within a tie
@@ -417,7 +419,9 @@ hzr_stepwise <- function(fit,
   # with the stored frame here, for every criterion; where there is no frame to
   # compare with, check what can be checked, and say so when nothing can:
   # once, here, rather than per candidate (#487).
-  .hzr_check_data_row_order(fit, data)
+  .hzr_check_data_row_order(fit, data,
+                            score = criterion == "score" &&
+                              direction != "backward")
 
   # Every accepted step goes through .hzr_refit_with_scope(), so a base fit
   # it cannot refit makes the entire screen a no-op.  Left to fail

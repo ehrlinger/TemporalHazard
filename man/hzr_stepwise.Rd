@@ -73,7 +73,9 @@ the frame is checked whatever the \code{criterion}.  Columns
 added after the fit, such as derived candidates, are allowed.  A
 vector-interface fit made without \verb{data =}, or with a \code{data} of another
 row count used only to look names up, stores no frame to compare, and
-a \code{data} holding only columns added after the fit shares none.  For
+a \code{data} holding only columns added after the fit shares none; and
+shared columns with duplicate rows cannot show rows reordered among
+those duplicates.  For
 those the order is checked against a column of \code{data} holding the fit's
 event times, and refused if they are out of order.  With no such
 column, or when those times have ties (rows reordered within a tie
