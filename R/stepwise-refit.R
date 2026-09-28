@@ -431,7 +431,7 @@
     )))
   } else {
     # Single-distribution path: mutate the global formula, warm-start
-    # theta by inserting / dropping the relevant beta slot. Unlike multiphase
+    # theta from the base fit by design column. Unlike multiphase
     # this genuinely cannot proceed without a formula, which is why
     # .hzr_refit_blocker() still refuses that combination -- assert it rather
     # than letting a NULL formula travel into .hzr_formula_update().
@@ -449,26 +449,31 @@
            call. = FALSE)
     }
 
-    current_vars <- .hzr_scope_current_vars(current)
-    if (action == "add") {
-      # Warm-start with an extra zero for the new beta (appended last,
-      # matching formula-term ordering).
-      if (var %in% current_vars) {
-        # Already present; just rebuild theta as-is
-        theta_start <- theta_old
-      } else {
-        theta_start <- c(theta_old, 0)
-      }
-    } else {
-      if (!var %in% current_vars) {
-        theta_start <- theta_old
-      } else {
-        # Drop position: position in beta slot = match index within
-        # current_vars, shifted by n_shape.
-        drop_idx <- match(var, current_vars) + n_shape
-        theta_start <- theta_old[-drop_idx]
-      }
-    }
+    # The warm start is laid out against the design the refit will build,
+    # read off an unfitted hazard() call with the same arguments. Appending a
+    # zero for an added term put it after an interaction that terms() orders
+    # last, and hazard() keeps a named theta's names, so the new coefficient
+    # was reported under the interaction's name (#489).
+    new_design <- suppressWarnings(.hzr_muffle_intercept_warning(
+      do.call(hazard, c(
+        list(
+          formula      = new_formula,
+          data         = data,
+          dist         = dist,
+          weights      = weights,
+          time_windows = time_windows,
+          fit          = FALSE
+        ),
+        extra_args
+      ))
+    ))
+    theta_start <- .hzr_refit_warm_start(
+      theta_old, n_shape,
+      old_cols = colnames(current$data$x),
+      new_cols = colnames(new_design$data$x),
+      old_windows = current$spec$time_windows,
+      new_windows = new_design$spec$time_windows
+    )
 
     .hzr_muffle_intercept_warning(do.call(hazard, c(
       list(
@@ -483,6 +488,74 @@
       extra_args
     )))
   }
+}
+
+
+#' Warm start for a single-distribution refit, matched by design column
+#'
+#' Each coefficient of the base fit moves to the column of the new design
+#' with the same name; a column the base fit did not have starts at 0, and a
+#' dropped column's coefficient is discarded. With `time_windows`, the design
+#' is one block of columns per window, and the match is made within each
+#' block. When the refit uses different windows from the base fit, no block
+#' corresponds to another and every coefficient starts at 0.
+#'
+#' A named theta keeps its names for the coefficients it carries over, and a
+#' new column's coefficient is named after the column (`<column>_w<k>` under
+#' windows, as the expanded design names it). An unnamed theta stays unnamed.
+#' When the refit's rebuilt formula names a column differently, as when
+#' `mal:age` becomes `age:mal` or an interaction is reordered after a main
+#' effect is dropped, that coefficient is matched by the new column name: it
+#' takes the column's name rather than the user's and warm-starts at 0. Its
+#' fitted value is unaffected.
+#'
+#' @param theta_old The base fit's theta: shape parameters, then one
+#'   coefficient per design column (per window).
+#' @param n_shape Number of leading shape parameters.
+#' @param old_cols,new_cols Column names of the base and new unexpanded
+#'   designs; `NULL` for a model with no covariates.
+#' @param old_windows,new_windows The two fits' `time_windows`, or `NULL`.
+#' @return The warm-start theta for the new design.
+#' @noRd
+.hzr_refit_warm_start <- function(theta_old, n_shape, old_cols, new_cols,
+                                  old_windows, new_windows) {
+  n_win_old <- length(old_windows) + 1L
+  n_win_new <- length(new_windows) + 1L
+  p_old <- length(old_cols)
+  p_new <- length(new_cols)
+  if (length(theta_old) != n_shape + p_old * n_win_old) {
+    stop("Internal: the base fit's theta has ", length(theta_old),
+         " entries, but its design implies ", n_shape + p_old * n_win_old,
+         ", so its coefficients cannot be matched to the refit's columns.",
+         call. = FALSE)
+  }
+
+  beta_old <- theta_old[-seq_len(n_shape)]
+  beta_new <- numeric(p_new * n_win_new)
+  names_new <- if (n_win_new > 1L) {
+    paste0(rep(new_cols, n_win_new), "_w",
+           rep(seq_len(n_win_new), each = p_new))
+  } else {
+    as.character(new_cols)
+  }
+  if (identical(old_windows, new_windows)) {
+    from <- match(new_cols, old_cols)
+    for (k in seq_len(n_win_new)) {
+      at_new <- (k - 1L) * p_new + which(!is.na(from))
+      at_old <- (k - 1L) * p_old + from[!is.na(from)]
+      beta_new[at_new] <- beta_old[at_old]
+      if (!is.null(names(beta_old))) {
+        names_new[at_new] <- names(beta_old)[at_old]
+      }
+    }
+  }
+
+  theta_start <- c(theta_old[seq_len(n_shape)], beta_new)
+  if (is.null(names(theta_old))) {
+    return(unname(theta_start))
+  }
+  names(theta_start) <- c(names(theta_old)[seq_len(n_shape)], names_new)
+  theta_start
 }
 
 
