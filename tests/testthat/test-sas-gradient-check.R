@@ -281,9 +281,12 @@ test_that("the acceptance test asks for the unsanitised score", {
     if (sanitize) g[!is.finite(g)] <- 0
     g
   }
+  # mark_infeasible = FALSE as .hzr_optim_multiphase() passes it; the
+  # single-distribution path reports a stop on a zeroed score as not
+  # converged (#518).
   fit <- suppressWarnings(.hzr_optim_generic(
     logl_fn = rosen_logl, gradient_fn = guarded, time = 1, status = 1,
-    theta_start = start, hessian_fn = rosen_hessian
+    theta_start = start, hessian_fn = rosen_hessian, mark_infeasible = FALSE
   ))
   expect_equal(fit$convergence, 0L)
   expect_true(is.na(fit$rel_gradient))

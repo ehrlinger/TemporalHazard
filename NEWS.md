@@ -56,6 +56,27 @@
   warning (#513). `hzr_bootstrap()` counted such replicates as successes; they now
   fail as a non-finite objective.
 
+* **A single-distribution fit that stopped short of a maximum no longer
+  reports `converged = TRUE` (#518).** The optimizer stops when the
+  log-likelihood stops changing, not when the gradient vanishes, and it
+  treats a score that is not finite as zero. From a far start it could stop
+  on those zeros, or on a ridge that the `nlm()` continuation could not
+  leave either. The loglogistic fit of `avc` from `theta = c(-1e5, 1)` read
+  as converged at log-likelihood -4727490, and the lognormal from
+  `c(1e5, 1)` at -819.29, where the maximum is -228.66; the only warnings
+  concerned the Hessian. A fit now reports `converged = FALSE`, with a
+  warning of class `"hzr_unverified_convergence"`, when the score is not
+  finite at the estimates or they fail SAS/C's relative-gradient test by
+  more than a factor of 1000. Those two starts fail it by more than 1e4.
+  The margin is there because the test takes every parameter's typical
+  size to be 1: a Weibull fit of `avc` on `age` and `age^2`, with `mu` near
+  0.002, sits within 1e-7 of its maximum and fails it by 17 times. Such a
+  fit stays converged, and `print()` still shows the test as not met.
+  `nlm()`'s stopping code is not consulted, so a code 2 or 3 stop that
+  passes the test is converged. The estimates, log-likelihood and
+  standard errors are still returned, as for any fit that did not converge.
+  The multiphase path is unchanged.
+
 * **A translated `PROC HAZPRED` job now draws its bands at the level SAS
   uses: one standard error, unless `CLIMITS=` names another (#493).**
   The emitted `predict()` calls never set `level`, so they used
