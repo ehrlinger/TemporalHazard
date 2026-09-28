@@ -71,11 +71,18 @@ predict(
   write, is still recomputed from `newdata`'s rows, silently: no warning
   means undetected, not safe. A fit made with an unnamed `x` matrix
   matches by position. For the types requiring time, a `newdata` with
-  only a `time` column evaluates the baseline, with every covariate
-  at 0. Because `time` is then the prediction time, a model whose
-  formula uses a variable named `time` (a covariate, or a constant such
-  as `I(age > time)`) cannot be given those types at `newdata`; rename
-  it and refit.
+  only a `time` column evaluates the baseline, with every model-matrix
+  column at 0. For `age` that is an age of 0; for `scale(age)` it is the
+  mean age. [`predict()`](https://rdrr.io/r/stats/predict.html) warns,
+  once per call and with class `"hzr_predict_covariates_zero"`, naming
+  the data variables to supply (`age`, not `scale(age)`). Supply them in
+  `newdata` to predict at other values, or muffle that class when the
+  baseline is what you want. A model without covariates does not warn.
+
+  For those types, the `time` column of `newdata` is always the
+  prediction time, so a model whose formula uses a variable named `time`
+  (a covariate, or a constant such as `I(age > time)`) cannot be given
+  those types at `newdata`; rename it and refit.
 
 - type:
 
