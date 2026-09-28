@@ -94,6 +94,53 @@ test_that("a lognormal fit stuck below the penalty is not converged (#512)", {
   expect_sane_512("lognormal")
 })
 
+test_that("a weighted optimum below -1e10 is still a converged fit (#512)", {
+  # Size alone is not evidence of being stuck: with every weight 5e7 the
+  # exponential MLE of avc is -2.17e10, and it passes the relative-gradient
+  # test there. Started at the MLE, as a user refitting would.
+  data(avc, package = "TemporalHazard", envir = environment())
+  classes <- character()
+  f <- withCallingHandlers(
+    hazard(survival::Surv(int_dead, dead) ~ 1, data = avc,
+           dist = "exponential", theta = -5.204146,
+           weights = rep(5e7, nrow(avc)), fit = TRUE),
+    warning = function(w) {
+      classes <<- c(classes, class(w))
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_identical(f$fit$converged, TRUE)
+  expect_equal(f$fit$objective, -2.17145e10, tolerance = 1e-5)
+  expect_equal(unname(f$fit$theta), -5.204146, tolerance = 1e-6)
+  expect_false("hzr_infeasible_start" %in% classes)
+  expect_match(utils::capture.output(print(f)), "log-lik:", fixed = TRUE,
+               all = FALSE)
+})
+
+test_that("a non-finite score below the penalty is not evidence of an optimum (#512)", {
+  # A finite, flat log-likelihood of -1e12 whose score is NaN. The optimizer
+  # zeroes the non-finite gradient, sees a flat surface and stops at once
+  # with convergence 0. The score is unusable, so nothing verifies an
+  # optimum, and the run must take the stuck return.
+  logl <- function(theta, ...) -1e12
+  grad <- function(theta, ...) rep(NaN, length(theta))
+  classes <- character()
+  res <- withCallingHandlers(
+    .hzr_optim_generic(logl_fn = logl, gradient_fn = grad,
+                       time = c(1, 2), status = c(1, 0),
+                       theta_start = c(1, 1)),
+    warning = function(w) {
+      classes <<- c(classes, class(w))
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_identical(res$convergence, 99L)
+  expect_identical(res$value, NA_real_)
+  expect_identical(res$par, c(1, 1))
+  expect_true("hzr_start_past_penalty" %in% classes)
+  expect_match(res$message, "below its own penalty", fixed = TRUE)
+})
+
 test_that("a bootstrap of a stuck start counts no successes (#512)", {
   data(avc, package = "TemporalHazard", envir = environment())
   d <- stats::na.omit(avc[, c("int_dead", "dead")])
