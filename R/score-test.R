@@ -659,6 +659,182 @@
   if (length(xl)) NROW(xl[[1L]]) else length(fit$data$time)
 }
 
+#' Columns of `data` that differ from the fit's own data frame
+#'
+#' `$data$frame` is the frame hazard() was given, after its time-0 rows were
+#' dropped (#374), so it holds the fit's rows in the fit's order. Every column
+#' the two frames share must agree value for value; a column only `data` has
+#' (a candidate derived after the fit) cannot be compared and is not. A fit
+#' with no stored frame (the vector interface without `data =`) has nothing to
+#' compare against and returns no columns.
+#'
+#' @return Character vector of the shared column names that differ.
+#' @noRd
+.hzr_score_rows_moved <- function(current, data) {
+  frame <- current$data$frame
+  if (!is.data.frame(frame)) return(character())
+  if (nrow(frame) != nrow(data)) {
+    # The caller has already matched nrow(data) to the fit's rows, so a frame
+    # of another length is not those rows: on the vector interface `data` may
+    # serve only to look names up, and is stored at its own length. It says
+    # nothing about row order.
+    return(character())
+  }
+  common <- intersect(names(data), names(frame))
+  same <- vapply(common, function(nm) {
+    isTRUE(all.equal(data[[nm]], frame[[nm]], check.attributes = FALSE))
+  }, logical(1))
+  common[!same]
+}
+
+#' The refusal for a `data` whose shared columns differ from the fit's frame
+#'
+#' @param moved Character vector from `.hzr_score_rows_moved()`.
+#' @noRd
+.hzr_rows_moved_message <- function(moved) {
+  paste0(
+    "`data` does not hold the rows the model was fitted on, in the same ",
+    "order: column", if (length(moved) > 1L) "s", " ",
+    paste0("`", utils::head(moved, 5L), "`", collapse = ", "),
+    if (length(moved) > 5L) paste0(" and ", length(moved) - 5L, " more"),
+    " differ", if (length(moved) == 1L) "s", " from the data frame given ",
+    "to hazard(). Candidates are read from `data` row by row, so a sorted ",
+    "or reordered frame scores every candidate against the wrong ",
+    "observations. Pass the data frame the model was fitted on, in its ",
+    "original row order."
+  )
+}
+
+#' Check `data`'s row order once per screen
+#'
+#' When the refits pair per-row vectors stored on the fit with `data` (the
+#' vector interface's response, or `weights` on either interface), a
+#' comparable stored frame is compared here for every criterion. An
+#' unweighted formula fit rebuilds every per-row input from `data`, so there
+#' only the score test needs it, and `.hzr_score_q()` does it.
+#'
+#' `.hzr_score_rows_moved()` compares against `$data$frame`, and skips when
+#' there is none (the vector interface without `data =`) or when it has
+#' another row count (a lookup-only `data`). Those skips let a reordered
+#' `data` through silently (#487). What the fit always stores is its response,
+#' so on that route a column of `data` holding the fit's `time` values is
+#' compared with it: in the fit's order, the rows are taken as aligned; as the
+#' same values in another order, the screen is refused. With no such column
+#' the order cannot be checked, and a classed `hzr_score_rows_unverified`
+#' warning says so. Called once per screen, on the base fit only: every later
+#' step's fit is a refit on `data` itself.
+#'
+#' @return `NULL`, invisibly; called for its error or warning.
+#' @noRd
+.hzr_check_data_row_order <- function(current, data, score = TRUE) {
+  frame <- current$data$frame
+  # A `data` that shares no column with the frame (derived candidates only)
+  # leaves nothing to compare: that is no proof of order, and falls through
+  # to the checks below, which warn when they cannot prove it either.
+  shares <- is.data.frame(frame) &&
+    length(intersect(names(data), names(frame))) > 0L
+  why_frame <- NULL
+  if (shares && nrow(frame) == nrow(data)) {
+    # .hzr_score_q() compares `data` with the frame, but only the score test
+    # calls it. Every other criterion refits through .hzr_refit_with_scope(),
+    # and that pairs `data`, read by position, with per-row vectors stored
+    # on the fit: `time`, `status`, `time_lower` and `time_upper` on the
+    # vector interface (which it keys on the same `call$formula`), and
+    # `weights` on both. Its other stored inputs, `time_windows`, the phase
+    # specs and the objective, are not per row. A formula fit with no stored
+    # weights rebuilds every per-row input from `data`, so it alone is
+    # consistent with any row order.
+    stored_rows <- is.null(current$call$formula) ||
+      !is.null(current$data$weights)
+    if (stored_rows) {
+      moved <- .hzr_score_rows_moved(current, data)
+      if (length(moved)) stop(.hzr_rows_moved_message(moved), call. = FALSE)
+    }
+    # Equal shared columns prove the order only if they tell every row
+    # apart: rows reordered within a group of duplicates leave them
+    # identical while a derived candidate moves. Then the match is no proof,
+    # and the time check below is tried instead. (The score test's own
+    # comparison in .hzr_score_q() has the same limit, and relies on this.)
+    if (!stored_rows && !score) return(invisible(NULL))
+    shared <- frame[match(intersect(names(data), names(frame)), names(frame))]
+    n_dup <- sum(duplicated(shared))
+    if (n_dup == 0L) return(invisible(NULL))
+    why_frame <- paste0(
+      "the columns `data` shares with the data frame stored with the fit ",
+      "have duplicate rows (", n_dup, " of ", nrow(shared), " repeat an ",
+      "earlier row), so rows reordered among duplicates leave them unchanged"
+    )
+  }
+  time <- current$data$time
+  why <- if (!is.null(why_frame)) {
+    why_frame
+  } else if (is.data.frame(frame) && !shares) {
+    "`data` shares no column with the data frame stored with the fit"
+  } else if (is.data.frame(frame)) {
+    paste0("the data frame stored with the fit has ", nrow(frame),
+           " rows, not the fit's ", length(time))
+  } else {
+    "the fit was made without `data =`, so it stores no data frame"
+  }
+  # With ties in the times, a column holding them in order proves nothing
+  # about the rows WITHIN a tie: reordering those leaves it identical. Such a
+  # match is not accepted; the screen warns instead. (A check that can see
+  # within ties is #515.)
+  tied <- anyDuplicated(time) > 0L
+  permuted <- character()
+  in_order_tied <- character()
+  for (nm in names(data)) {
+    col <- data[[nm]]
+    if (!is.numeric(col) || length(col) != length(time)) next
+    if (isTRUE(all.equal(as.numeric(col), time, check.attributes = FALSE))) {
+      if (!tied) return(invisible(NULL))
+      in_order_tied <- c(in_order_tied, nm)
+      next
+    }
+    if (isTRUE(all.equal(sort(as.numeric(col)), sort(time)))) {
+      permuted <- c(permuted, nm)
+    }
+  }
+  if (length(permuted)) {
+    stop(
+      "`data` does not hold the rows the model was fitted on, in the same ",
+      "order: column `", permuted[1L], "` holds the fit's event times in ",
+      "another order. The score test reads each candidate from `data` row ",
+      "by row, so a sorted or reordered frame scores every candidate against ",
+      "the wrong observations. Pass the rows in the order the model was ",
+      "fitted on.",
+      call. = FALSE
+    )
+  }
+  held <- if (length(in_order_tied)) {
+    paste0(
+      "; column `", in_order_tied[1L], "` holds the fit's event times in ",
+      "order, but those times have ties (", length(unique(time)), " distinct ",
+      "values in ", length(time), " rows), and rows reordered within a tie ",
+      "leave it unchanged"
+    )
+  } else {
+    ", and no column of `data` holds the fit's event times"
+  }
+  warning(warningCondition(
+    paste0(
+      "The row order of `data` could not be checked against the fit: ", why,
+      held, ". The score ",
+      "test reads each candidate from `data` row by row, so if its rows are ",
+      "not in the order the model was fitted on, every candidate is scored ",
+      "against the wrong observations. ",
+      if (is.data.frame(frame)) {
+        paste0("Include in `data` enough of the columns given to hazard() ",
+               "to tell every row apart to have it checked.")
+      } else {
+        "Refit with `data =` to have it checked."
+      }
+    ),
+    class = "hzr_score_rows_unverified"
+  ))
+  invisible(NULL)
+}
+
 #' Score statistic for one entry candidate
 #'
 #' @param current Fitted `hazard` object (the step's current model).
@@ -719,6 +895,12 @@
       call. = FALSE
     )
   }
+  # The row COUNT matching is not the rows matching. Candidate values are read
+  # from `data` by position and scored against the fit's stored rows, so the
+  # same rows in another order scored every candidate against the wrong
+  # patients and entered a different variable, with no warning (#487).
+  moved <- .hzr_score_rows_moved(current, data)
+  if (length(moved)) stop(.hzr_rows_moved_message(moved), call. = FALSE)
 
   # A term that is no column (an interaction, a transform) is not a candidate
   # the score can test; saying `non_numeric` described a column (#449).

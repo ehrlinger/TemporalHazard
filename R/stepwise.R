@@ -123,7 +123,24 @@
 #'   it.  An empty scope (`~ 1`, `character()`, or a list of `NULL`s and
 #'   `~ 1`s) is accepted there.
 #' @param data Data frame the base fit was built on.  Required for
-#'   refits.
+#'   refits.  Its rows must be the fit's rows in the same order: the score
+#'   criterion reads each candidate by position, so a sorted or reordered
+#'   frame is refused when the fit stored the frame it was given.  On the
+#'   vector interface, and for any fit with `weights`, every criterion's
+#'   refits pair `data` with vectors stored in the fit's row order, so there
+#'   the frame is checked whatever the `criterion`.  Columns
+#'   added after the fit, such as derived candidates, are allowed.  A
+#'   vector-interface fit made without `data =`, or with a `data` of another
+#'   row count used only to look names up, stores no frame to compare, and
+#'   a `data` holding only columns added after the fit shares none; and
+#'   shared columns with duplicate rows cannot show rows reordered among
+#'   those duplicates.  For
+#'   those the order is checked against a column of `data` holding the fit's
+#'   event times, and refused if they are out of order.  With no such
+#'   column, or when those times have ties (rows reordered within a tie
+#'   leave the column unchanged; a finer check is planned in #515), the
+#'   order cannot be checked, and a warning of class
+#'   `hzr_score_rows_unverified` says so.
 #' @param direction Search strategy: one of `"both"` (default),
 #'   `"forward"`, or `"backward"`.  Controls whether variables may only
 #'   enter, only leave, or both.  See the **Selection direction and
@@ -378,19 +395,33 @@ hzr_stepwise <- function(fit,
   # them; drop the same rows, by position, only when it provably IS that
   # frame: the rows left must equal the fit's stored frame AND the rows
   # dropped must equal the ones it dropped. Any other frame is left alone,
-  # and the alignment checks downstream report it.
+  # and the alignment checks downstream report it. Only the fit's own
+  # columns are compared, and all must be present: a candidate derived after
+  # the fit is an extra column, not a different frame (#487).
   dropped <- fit$data$dropped_time_zero_rows
+  # By position, since a column named "" cannot be selected by name (#470).
+  kept_cols <- match(names(fit$data$frame), names(data))
   if (length(dropped) && is.data.frame(fit$data$frame) &&
       is.data.frame(fit$data$dropped_time_zero_frame) &&
+      !anyNA(kept_cols) &&
       nrow(data) == length(fit$data$time) + length(dropped)) {
-    same <- isTRUE(all.equal(data[-dropped, , drop = FALSE], fit$data$frame,
-                             check.attributes = FALSE)) &&
-      isTRUE(all.equal(data[dropped, , drop = FALSE],
+    same <- isTRUE(all.equal(data[-dropped, kept_cols, drop = FALSE],
+                             fit$data$frame, check.attributes = FALSE)) &&
+      isTRUE(all.equal(data[dropped, kept_cols, drop = FALSE],
                        fit$data$dropped_time_zero_frame,
                        check.attributes = FALSE))
     if (same) data <- data[-dropped, , drop = FALSE]
   }
   .hzr_refuse_unhonoured_scope(scope, direction)
+  # Candidates are read from `data` by position: by the score test, and by
+  # every refit that pairs `data` with vectors stored on the fit (the vector
+  # interface's response, or `weights`). For those fits `data` is compared
+  # with the stored frame here, for every criterion; where there is no frame to
+  # compare with, check what can be checked, and say so when nothing can:
+  # once, here, rather than per candidate (#487).
+  .hzr_check_data_row_order(fit, data,
+                            score = criterion == "score" &&
+                              direction != "backward")
 
   # Every accepted step goes through .hzr_refit_with_scope(), so a base fit
   # it cannot refit makes the entire screen a no-op.  Left to fail
