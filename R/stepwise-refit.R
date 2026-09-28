@@ -503,6 +503,11 @@
 #' A named theta keeps its names for the coefficients it carries over, and a
 #' new column's coefficient is named after the column (`<column>_w<k>` under
 #' windows, as the expanded design names it). An unnamed theta stays unnamed.
+#' When the refit's rebuilt formula names a column differently, as when
+#' `mal:age` becomes `age:mal` or an interaction is reordered after a main
+#' effect is dropped, that coefficient is matched by the new column name: it
+#' takes the column's name rather than the user's and warm-starts at 0. Its
+#' fitted value is unaffected.
 #'
 #' @param theta_old The base fit's theta: shape parameters, then one
 #'   coefficient per design column (per window).
