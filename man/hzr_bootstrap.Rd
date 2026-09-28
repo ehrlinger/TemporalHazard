@@ -111,8 +111,9 @@ by \code{hzr_phase(fixed = )}, shapes a constraint derives, and a conserved
 \item{n_failed}{Number of replicates that failed: the refit stopped with
 an error, returned something other than a fit, returned a non-finite
 objective or one at the optimizer's -1e10 sentinel (which stands in for
-a likelihood that could not be evaluated), or returned a finite
-objective but no parameter estimates. A single-distribution refit that
+a likelihood that could not be evaluated), did not converge, or
+returned a finite objective but no parameter estimates. A
+single-distribution refit that
 ends where the likelihood is not defined reports no objective, so it
 fails as a non-finite objective, not at the sentinel (#486).}
 \item{failure_reasons}{Named integer vector counting why replicates
@@ -124,7 +125,10 @@ class begins with a vowel; or \code{"... with no \code{fit}, not a fit object"})
 single-distribution refit that ends where the likelihood is not
 defined, #486), or
 \code{"objective at the optimizer's -1e10 sentinel (no log-likelihood)"}
-(a refit whose reported objective is still the sentinel).
+(a refit whose reported objective is still the sentinel), or
+\code{"refit did not converge (converged = FALSE)"} (a refit that reports
+\code{converged = FALSE}, including one stopped on a score that is not
+finite, #518).
 It sums to \code{n_failed}, and
 is an empty named integer vector, never \code{NULL}, when none failed. When
 every replicate fails, \code{hzr_bootstrap()} also warns, naming the most
