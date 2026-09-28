@@ -1831,6 +1831,37 @@ hazard <- function(formula = NULL,
   obj
 }
 
+#' Warn that predict() set a model's covariates to 0
+#'
+#' A `newdata` with no covariate column, for a model that has covariates,
+#' evaluates the baseline. That is rarely a patient in the data, and it was
+#' silent (#522). Classed, so a caller who wants the baseline can muffle
+#' exactly this.
+#'
+#' @param covariates Names of the covariates evaluated at 0; may be `NULL`
+#'   for an object that kept no names.
+#' @param n Their count, used when there are no names.
+#' @return Invisible `NULL`, called for its warning.
+#' @keywords internal
+#' @noRd
+.hzr_warn_covariates_zero <- function(covariates, n = length(covariates)) {
+  covariates <- unique(covariates)
+  if (length(covariates) > 0L) n <- length(covariates)
+  what <- if (length(covariates) > 0L) {
+    paste0(ngettext(n, "covariate ", "covariates "),
+           paste0("'", covariates, "'", collapse = ", "))
+  } else {
+    paste(n, ngettext(n, "covariate", "covariates"))
+  }
+  warning(warningCondition(paste0(
+    "'newdata' has no covariate column, so predict() evaluated the model's ",
+    what, " at 0: the baseline, not an average patient. Supply ",
+    ngettext(n, "it as a column", "them as columns"),
+    " of 'newdata' to predict at other values."
+  ), class = "hzr_predict_covariates_zero"))
+  invisible(NULL)
+}
+
 #' Predict from a hazard model object
 #'
 #' Produces prediction outputs from a `hazard` object. Supports multiple prediction
@@ -1880,7 +1911,12 @@ hazard <- function(formula = NULL,
 #'   `newdata`'s rows, silently: no warning means undetected, not safe.
 #'   A fit made with an unnamed `x` matrix matches by position. For the types
 #'   requiring time, a `newdata` with only a `time` column evaluates the
-#'   baseline, with every covariate at 0. Because `time` is then the
+#'   baseline, with every covariate at 0. For a model with covariates that is
+#'   rarely a patient in the data (an age of 0, say), so `predict()` warns,
+#'   once per call and with class `"hzr_predict_covariates_zero"`, naming the
+#'   covariates it set to 0. Supply them as columns of `newdata` to predict
+#'   at other values, or muffle that class when the baseline is what you
+#'   want. A model without covariates does not warn. Because `time` is then the
 #'   prediction time, a model whose formula uses a variable named `time`
 #'   (a covariate, or a constant such as `I(age > time)`) cannot be given
 #'   those types at `newdata`; rename it and refit.
@@ -2452,6 +2488,14 @@ predict.hazard <- function(object, newdata = NULL,
         if (length(row_dependent) > 0L) {
           warning(paste(row_dependent, collapse = "\n"), call. = FALSE)
         }
+        # No covariate column at all leaves every phase's design NULL, so a
+        # phase with covariates is evaluated at 0 for all of them (#522).
+        if (ncol(nd_covs) == 0L && any(unlist(cov_counts) > 0)) {
+          zeroed <- unlist(lapply(names(phases), function(nm) {
+            if (cov_counts[[nm]] > 0) colnames(object$fit$x_list[[nm]])
+          }))
+          .hzr_warn_covariates_zero(zeroed)
+        }
       }
 
       # Instantaneous additive hazard is not phase-decomposable through this
@@ -2523,6 +2567,17 @@ predict.hazard <- function(object, newdata = NULL,
         time <- newdata$time
         # By name, before any time-varying expansion below (#267).
         x <- .hzr_newdata_design(object, newdata)
+        # NULL for a model WITH covariate coefficients means newdata had no
+        # covariate column: eta is set to 0 below, so say so (#522).
+        n_shape_nd <- .hzr_shape_parameter_count(object$spec$dist)
+        if (is.null(x) && length(theta) > n_shape_nd) {
+          zeroed <- colnames(object$data$x)
+          if (is.null(zeroed)) {
+            zeroed <- names(theta)[-seq_len(n_shape_nd)]
+          }
+          .hzr_warn_covariates_zero(zeroed,
+                                    n = length(theta) - n_shape_nd)
+        }
       } else {
         stop("'newdata' must contain a 'time' column for '", type, "' predictions.", call. = FALSE)
       }

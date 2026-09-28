@@ -27,8 +27,8 @@ phase_formula_fit <- function(sum_contrasts = FALSE) {
 
 # Expected total cumulative hazard for rows with the given `young` indicator.
 reference_cumhaz <- function(fit, time, young) {
-  base <- predict(fit, newdata = data.frame(time = time),
-                  type = "cumulative_hazard", decompose = TRUE)
+  base <- predict_baseline(fit, newdata = data.frame(time = time),
+                           type = "cumulative_hazard", decompose = TRUE)
   beta <- fit$fit$theta[["early.grpyoung"]]
   exp(beta * young) * base$early + base$constant
 }
@@ -95,8 +95,8 @@ test_that("extra and reordered newdata columns are ignored", {
   # decompose = TRUE and se.fit = TRUE read the same per-phase design.
   dec <- predict(fit, newdata = nd, type = "cumulative_hazard",
                  decompose = TRUE)
-  base <- predict(fit, newdata = data.frame(time = tt),
-                  type = "cumulative_hazard", decompose = TRUE)
+  base <- predict_baseline(fit, newdata = data.frame(time = tt),
+                           type = "cumulative_hazard", decompose = TRUE)
   beta <- fit$fit$theta[["early.grpyoung"]]
   expect_equal(dec$early / (exp(beta * c(1, 0)) * base$early), c(1, 1),
                tolerance = 1e-10, ignore_attr = TRUE)
@@ -161,8 +161,8 @@ test_that("some phase variables beside all design columns is refused (#272)", {
     "gives the formula variable\\(s\\) 'grp'.*lacks 'sx'"
   )
   # Control: design columns only is the design route, not an error.
-  base <- predict(fit, newdata = data.frame(time = 2),
-                  type = "cumulative_hazard", decompose = TRUE)
+  base <- predict_baseline(fit, newdata = data.frame(time = 2),
+                           type = "cumulative_hazard", decompose = TRUE)
   b <- fit$fit$theta[c("early.grpyoung", "early.sxM")]
   got <- predict(fit, newdata = data.frame(time = 2, grpyoung = 1, sxM = 0),
                  type = "cumulative_hazard")
@@ -226,8 +226,8 @@ test_that("a fit without the stored design refuses some variables beside its des
     "gives the formula variable\\(s\\) 'grp'.*lacks 'sx'"
   )
   # Design columns only: nothing to contradict, so they are used.
-  base <- predict(fit, newdata = data.frame(time = 2),
-                  type = "cumulative_hazard", decompose = TRUE)
+  base <- predict_baseline(fit, newdata = data.frame(time = 2),
+                           type = "cumulative_hazard", decompose = TRUE)
   b <- fit$fit$theta[["early.grpyoung"]]
   got <- predict(fit, newdata = data.frame(time = 2, grpyoung = 1, sxM = 0),
                  type = "cumulative_hazard")
@@ -267,8 +267,8 @@ test_that("a changed variable that feeds a derived phase column is refused (#272
   )
   # With grp as well, the design is rebuilt and the stale column ignored.
   nd$grp <- "young"
-  base <- predict(fit, newdata = data.frame(time = 2),
-                  type = "cumulative_hazard", decompose = TRUE)
+  base <- predict_baseline(fit, newdata = data.frame(time = 2),
+                           type = "cumulative_hazard", decompose = TRUE)
   eta <- b[["early.age"]] * 60 + b[["early.grpyoung"]] +
     b[["early.age:grpyoung"]] * 60
   expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard") /
@@ -281,8 +281,8 @@ test_that("design-only newdata with a bare numeric variable is not a mix (#272)"
   # from it, so age + grpyoung is design-only newdata, not a partial one.
   fit <- phase_age_fit(~ age + grp)
   b <- fit$fit$theta
-  base <- predict(fit, newdata = data.frame(time = 2),
-                  type = "cumulative_hazard", decompose = TRUE)
+  base <- predict_baseline(fit, newdata = data.frame(time = 2),
+                           type = "cumulative_hazard", decompose = TRUE)
   got <- predict(fit, newdata = data.frame(time = 2, age = 60, grpyoung = 1),
                  type = "cumulative_hazard")
   eta <- b[["early.age"]] * 60 + b[["early.grpyoung"]]
@@ -311,8 +311,8 @@ test_that("a factor's non-default contrasts are the fit's, not the default", {
   expect_true(fit$fit$converged)
   expect_identical(colnames(fit$fit$x_list$early), "grp1")
   tt <- c(0.5, 2)
-  base <- predict(fit, newdata = data.frame(time = tt),
-                  type = "cumulative_hazard", decompose = TRUE)
+  base <- predict_baseline(fit, newdata = data.frame(time = tt),
+                           type = "cumulative_hazard", decompose = TRUE)
   beta <- fit$fit$theta[["early.grp1"]]
   expect_gt(abs(beta), 0.5)
   for (lab in c("old", "young")) {
@@ -371,8 +371,8 @@ test_that("a phase formula's environment constant still reaches newdata", {
   )
   expect_true(fit$fit$converged)
   tt <- c(0.5, 2)
-  base <- predict(fit, newdata = data.frame(time = tt),
-                  type = "cumulative_hazard", decompose = TRUE)
+  base <- predict_baseline(fit, newdata = data.frame(time = tt),
+                           type = "cumulative_hazard", decompose = TRUE)
   beta <- fit$fit$theta[["early.I(age > cutoff)TRUE"]]
   expect_gt(abs(beta), 0.5)
   got <- predict(fit, newdata = data.frame(time = tt, age = c(150, 50)),

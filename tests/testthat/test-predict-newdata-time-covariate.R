@@ -251,8 +251,8 @@ test_that("a model without a time covariate is unaffected", {
   w <- hazard(survival::Surv(int_dead, dead) ~ mal, data = .tc_avc,
               dist = "weibull", theta = c(mu = 0.01, nu = 0.5, b = 0.3))
   # A time-only newdata is still the baseline, and mal = 1 still moves it.
-  expect_equal(predict(w, newdata = data.frame(time = c(1, 4)),
-                       type = "cumulative_hazard"),
+  expect_equal(predict_baseline(w, newdata = data.frame(time = c(1, 4)),
+                                type = "cumulative_hazard"),
                (0.01 * c(1, 4))^0.5, tolerance = 1e-12)
   expect_equal(predict(w, newdata = data.frame(time = c(1, 4), mal = 1),
                        type = "cumulative_hazard"),
