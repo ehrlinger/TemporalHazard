@@ -61,12 +61,12 @@ other function, including one you write, is still recomputed from
 \code{newdata}'s rows, silently: no warning means undetected, not safe.
 A fit made with an unnamed \code{x} matrix matches by position. For the types
 requiring time, a \code{newdata} with only a \code{time} column evaluates the
-baseline, with every covariate at 0. For a model with covariates that is
-rarely a patient in the data (an age of 0, say), so \code{predict()} warns,
-once per call and with class \code{"hzr_predict_covariates_zero"}, naming the
-covariates it set to 0. Supply them as columns of \code{newdata} to predict
-at other values, or muffle that class when the baseline is what you
-want. A model without covariates does not warn. Because \code{time} is then the
+baseline, with every model-matrix column at 0. For \code{age} that is an age
+of 0; for \code{scale(age)} it is the mean age. \code{predict()} warns, once per
+call and with class \code{"hzr_predict_covariates_zero"}, naming the data
+variables to supply (\code{age}, not \code{scale(age)}). Supply them in \code{newdata}
+to predict at other values, or muffle that class when the baseline is
+what you want. A model without covariates does not warn. Because \code{time} is then the
 prediction time, a model whose formula uses a variable named \code{time}
 (a covariate, or a constant such as \code{I(age > time)}) cannot be given
 those types at \code{newdata}; rename it and refit.}

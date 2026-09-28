@@ -132,3 +132,63 @@ test_that("known positive: a multiphase model without covariates does not warn",
   expect_length(res$value, 2L)
   expect_true(all(res$value > 0 & res$value < 1))
 })
+
+test_that("the warning names the data variables, not model-matrix columns", {
+  d <- .cz_avc
+  d$grp <- factor(ifelse(d$age > 50, "old", "young"))
+  f <- hazard(survival::Surv(int_dead, dead) ~ scale(age) + grp, data = d,
+              dist = "weibull", theta = c(0.1, 1, 0, 0), fit = TRUE)
+  res <- .cz_warnings(predict(f, newdata = .cz_nd, type = "survival"))
+  .cz_only_zero_warning(res, c("age", "grp"))
+  msg <- conditionMessage(res$warnings[[1L]])
+  expect_match(msg, "Supply the variables 'age', 'grp' in 'newdata'",
+               fixed = TRUE)
+  # Not the model-matrix columns, and no claim about the patient: 0 on
+  # scale(age) IS the mean age.
+  expect_no_match(msg, "scale(age)", fixed = TRUE)
+  expect_no_match(msg, "grpyoung", fixed = TRUE)
+  expect_no_match(msg, "average patient", fixed = TRUE)
+})
+
+test_that("a phase formula's warning names its data variables", {
+  skip_on_cran()
+  d <- .cz_avc
+  d$grp <- factor(ifelse(d$age > 50, "old", "young"))
+  fp <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
+    phases = list(
+      early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                           fixed = "shapes", formula = ~ grp + mal),
+      constant = hzr_phase("constant", formula = ~ scale(age))
+    ),
+    fit = TRUE
+  ))
+  res <- .cz_warnings(predict(fp, newdata = .cz_nd, type = "survival"))
+  .cz_only_zero_warning(res, c("grp", "mal", "age"))
+  msg <- conditionMessage(res$warnings[[1L]])
+  expect_no_match(msg, "grpyoung", fixed = TRUE)
+  expect_no_match(msg, "scale(age)", fixed = TRUE)
+})
+
+test_that("an unnamed x is counted, not called 0 covariates", {
+  skip_on_cran()
+  d <- .cz_avc
+  x <- unname(as.matrix(d[, c("age", "mal")]))
+  fm <- suppressWarnings(hazard(
+    time = d$int_dead, status = d$dead, x = x, dist = "multiphase",
+    phases = list(
+      early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                           fixed = "shapes"),
+      constant = hzr_phase("constant")
+    ),
+    fit = TRUE
+  ))
+  expect_null(colnames(fm$data$x))
+  expect_identical(unname(unlist(fm$fit$covariate_counts)), c(2L, 2L))
+  res <- .cz_warnings(predict(fm, newdata = .cz_nd, type = "survival"))
+  expect_length(res$warnings, 1L)
+  expect_s3_class(res$warnings[[1L]], "hzr_predict_covariates_zero")
+  expect_match(conditionMessage(res$warnings[[1L]]),
+               "Supply the model's 2 covariates (unnamed x columns)",
+               fixed = TRUE)
+})

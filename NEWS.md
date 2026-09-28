@@ -125,7 +125,8 @@
   the prediction for a patient of age 0, with no warning; a `newdata` that
   gave some covariates but not all was already refused. The values are
   unchanged, but `predict()` now warns, once per call and with class
-  `"hzr_predict_covariates_zero"`, naming the covariates it set to 0. This
+  `"hzr_predict_covariates_zero"`, naming the data variables to supply
+  (`age`, not the model-matrix column `scale(age)`). This
   covers the single-distribution fits, on both interfaces, and the
   multiphase fits, whose covariates enter globally or through a phase
   formula. A model without covariates does not warn, and `?predict.hazard`
