@@ -346,15 +346,15 @@
 #'     computable, regardless of the active criterion.}
 #'   \item{\code{logLik}, \code{aic}, \code{n_coef}}{Goodness-of-fit
 #'     diagnostics of the model *after* this step.}
-#'   \item{\code{n_rows}}{Rows the model *after* this step was fitted on.  A
-#'     multiphase fit drops every row where a variable in the model is
-#'     missing, so entering a variable with missing values shrinks the
-#'     sample every later step is tested on, and dropping it grows the
-#'     sample back.  A step that changes the rows raises a warning of class
-#'     `hzr_stepwise_sample_changed` naming the step, the variable and the
-#'     row counts before and after.  Which variables enter is not changed
-#'     by this: compare `n_rows` across steps to see which rows each test
-#'     rested on.}
+#'   \item{\code{n_rows}}{Number of rows in the fit's data after this step
+#'     (rows given weight 0 are counted).  A multiphase fit drops every row
+#'     where a variable in the model is missing, so entering a variable with
+#'     missing values shrinks the sample every later step is tested on, and
+#'     dropping it grows the sample back.  A step that changes the rows
+#'     raises a warning of class `hzr_stepwise_sample_changed` naming the
+#'     step, the variable and the row counts before and after.  Which
+#'     variables enter is not changed by this: compare `n_rows` across steps
+#'     to see how many rows each test rested on.}
 #' }
 #'
 #' @examples
