@@ -2,6 +2,23 @@
 
 ## Bug fixes
 
+* **A translated `PROC HAZPRED` job now predicts at the grid SAS used
+  (#494).** `hzr_translate_sas()` read only the first `DO` loop of the
+  first `DATA <name>;` step, and took the loop variable as the time.
+  Three wrong answers followed, none recorded. Covariates a
+  `SET DESIGN` brought in were dropped, and `predict()` evaluated them
+  at 0: `hp.death.AVC.hm1` lost its whole design. `TIME YEARS;` with
+  `YEARS = MONTHS/12` predicted at the `MONTHS` values, and
+  `hp.death.AVC.hm2` predicted at its `OPMOS` loop, where SAS predicts
+  at month 6. A grid defined twice used the first definition, where SAS
+  uses the last, so `hm1` lost its `DIGITAL` rows. The grid is now
+  rebuilt from the job's own DATA steps, and the `time` column is the
+  variable `TIME` names. Fed to the `HAZPRED` binary, the grids emitted
+  for `hm1` and `hm2` reproduce the survival SAS printed for them to the
+  listing's five decimals. A DATA-step statement the translator can't
+  compute leaves its variable `NA` in the grid, with a warning and an
+  `$untranslated` row. A grid whose rows it can't determine is refused.
+
 * **A single-distribution fit started where the likelihood is not defined no
   longer reports `converged = TRUE` (#486).** The optimizer replaces a
   non-finite log-likelihood with a large penalty, so from such a start every
@@ -28,9 +45,15 @@
   now handled as #486's: `converged = FALSE`, no objective, the cause in the
   "Not done in this run" record, and a warning of class
   `"hzr_start_past_penalty"`, which inherits `"hzr_infeasible_start"`. The
-  test is where the optimizer ends, so a start that far out which the
-  optimizer leaves still fits (the exponential from `theta = 50` reaches
-  -434.29). `hzr_bootstrap()` counted such replicates as successes; they now
+  test is where the optimizer ends, and a fit is flagged only when it also
+  fails SAS/C's relative-gradient test there, or when the score there cannot
+  be used (it errors, is not finite, or has the wrong length). So a start that far out which
+  the optimizer leaves still fits (the exponential from `theta = 50` reaches
+  -434.29). A heavily weighted fit that has converged to its true maximum
+  below `-1e10` is not called stuck, because it passes the test. But with
+  very large total weights (around 1e10), the optimizer can still run into
+  its penalty from an ordinary start, and such a fit is refused with a
+  warning (#513). `hzr_bootstrap()` counted such replicates as successes; they now
   fail as a non-finite objective.
 
 * **A translated `PROC HAZPRED` job now draws its bands at the level SAS
