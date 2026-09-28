@@ -303,7 +303,8 @@ under <code>criterion = "score"</code>; an entry under <code>criterion = "wald"<
 a removal under any criterion, whose Wald statistic could not be
 computed for want of a variance, <code>wald_no_variance</code>; or an entry
 under <code>criterion = "aic"</code> whose fit had no finite objective,
-<code>nonfinite</code>),
+<code>nonfinite</code>, or was fitted on different rows from the current model
+because the candidate is missing on some, <code>rows_differ</code>),
 <code>uncomputable_reasons</code> (a named integer vector of <em>why</em>),
 <code>wald_untested_removals</code> and <code>wald_untested_entries</code> (the
 <code>"var"</code> / <code>"var@phase"</code> tokens of variables kept in, or left out,
