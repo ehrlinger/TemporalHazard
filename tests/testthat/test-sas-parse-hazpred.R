@@ -476,6 +476,29 @@ test_that("a macro value is exempt only if it can expand to a dataset name (#498
   expect_match(row$reason, "DATA=PRED(WHERE=(MONTHS>1)) is not", fixed = TRUE)
 })
 
+test_that("a HAZPRED refusal claims the macro's refusal only where the macro makes it (#498 review)", {
+  # SAS expands &OPTS before %HAZPRED reads the statement, so it may supply
+  # the options: the block still stops, but not with "HAZPRED not attempted".
+  for (o in c("&OPTS", "DATA=PRED &IO", "%OPTS(1)")) {
+    job <- hp_translate(o)
+    expect_identical(job$calls$pred[[1L]], as.name("stop"), info = o)
+    m <- tryCatch(eval(job$calls$pred), error = conditionMessage)
+    expect_match(m, "may supply the missing option", fixed = TRUE, info = o)
+    expect_no_match(m, "HAZPRED not attempted", fixed = TRUE, info = o)
+  }
+  # %index(&procstmt,DATA) finds the DATA in HAZDATA, so the macro does not
+  # refuse this job for its missing DATA=.
+  job <- hp_translate("INHAZ=HAZDATA OUT=P")
+  expect_identical(job$calls$pred[[1L]], as.name("stop"))
+  m <- tryCatch(eval(job$calls$pred), error = conditionMessage)
+  expect_match(m, "substring test", fixed = TRUE)
+  expect_no_match(m, "HAZPRED not attempted", fixed = TRUE)
+  # Known positive: nothing on the statement satisfies the DATA test.
+  job <- hp_translate("INHAZ=OUTEST OUT=P")
+  m <- tryCatch(eval(job$calls$pred), error = conditionMessage)
+  expect_match(m, "HAZPRED not attempted", fixed = TRUE)
+})
+
 test_that("an empty INHAZ= before another option is named, not the option after it (#498 review)", {
   # `INHAZ= OUT=P`: PROC HAZPRED reads OUT as INHAZ's dataset name
   # (hazpred_l.l:36, :48), and the `=` after it is a syntax error. The

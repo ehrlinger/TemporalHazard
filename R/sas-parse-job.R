@@ -1337,16 +1337,12 @@
   # package's reserved prefix, so overwriting a column of that name is the
   # intended consequence, not collateral damage. transform() masks exactly
   # as with() did, so the expression's column names still resolve against
-  # the dataset. With no DATA= there is no data frame and no mask, so a
-  # plain local binding is already unshadowable.
-  status_call <- if (is.null(data_name)) {
-    call("<-", cens$status_name, cens$status_expr)
-  } else {
-    derive <- as.call(list(quote(transform), as.name(data_name),
-                           cens$status_expr))
-    names(derive) <- c("", "", as.character(cens$status_name))
-    call("<-", as.name(data_name), derive)
-  }
+  # the dataset. A job with no DATA= was refused above (#497), so there is
+  # always a dataset here.
+  derive <- as.call(list(quote(transform), as.name(data_name),
+                         cens$status_expr))
+  names(derive) <- c("", "", as.character(cens$status_name))
+  status_call <- call("<-", as.name(data_name), derive)
   # Variables in some fitted phase formula: hazard() drops their missing rows
   # itself. Read by the listwise guard and the column check below.
   modelled <- unique(unlist(lapply(as.list(parms$phases)[-1L], function(ph) {
@@ -1384,12 +1380,7 @@
       if (any(.(any_na))) stop(.(msg), call. = FALSE)
       .(cens$status_expr)
     })
-    status_call[[3L]] <- if (is.null(data_name)) {
-      guarded
-    } else {
-      status_call[[3L]][[3L]] <- guarded
-      status_call[[3L]]
-    }
+    status_call[[3L]][[3L]] <- guarded
   }
   # A phase variable the dataset does not contain failed deep inside the
   # chunk as "object 'ZZ' not found", naming neither the statement nor the
@@ -2937,18 +2928,47 @@
   # (#498). Each missing option is its own row; the stop() names them all.
   # sprintf, not paste0: paste0(character(0), "=") is "=", not empty.
   absent <- sprintf("%s=", names(given)[!given])
-  absent_list <- if (length(absent) > 1L) {
-    paste(paste(absent[-length(absent)], collapse = ", "), "or",
-          absent[length(absent)])
-  } else {
-    absent
+  or_list <- function(x) {
+    if (length(x) > 1L) {
+      paste(paste(x[-length(x)], collapse = ", "), "or", x[length(x)])
+    } else {
+      x
+    }
   }
-  macro_refusal <- paste0(
-    "This PROC HAZPRED block names no ", absent_list, ", and the %HAZPRED ",
-    "macro requires DATA=, INHAZ= and OUT= on the PROC statement: without ",
-    "one it stops with \"HAZPRED not attempted\" (hazpred.sas:13-33, ",
-    ":153-163), so SAS predicts nothing. Add the missing option(s) and ",
-    "translate the job again.")
+  # The refusal is claimed only where the macro makes it. A macro reference
+  # on the statement is expanded before %HAZPRED reads &syspbuff, so it may
+  # supply the option. And each of the macro's tests is a substring test
+  # (%index for DATA, INHAZ and " OUT", hazpred.sas:13, :20, :27), so
+  # `INHAZ=HAZDATA` passes the DATA= test; the macro then reads the value
+  # after the next `=` in its place. The block stops either way (#498 review).
+  pred_macros <- toks[vapply(toks, .hzr_sas_is_macro, logical(1))]
+  probe <- c(DATA = "DATA", INHAZ = "INHAZ", OUT = " OUT")
+  passes <- absent[vapply(sub("=$", "", absent), function(k) {
+    grepl(probe[[k]], st[[1L]], fixed = TRUE)
+  }, logical(1))]
+  refused <- setdiff(absent, passes)
+  macro_refusal <- if (length(pred_macros)) {
+    paste0(
+      "This PROC HAZPRED block names no ", or_list(absent), ", but its PROC ",
+      "statement carries ", paste(pred_macros, collapse = ", "), ", which ",
+      "SAS expands before the %HAZPRED macro reads the statement, so it may ",
+      "supply the missing option(s). This translation cannot see what it ",
+      "expands to. Write the option(s) out and translate the job again.")
+  } else {
+    paste0(
+      if (length(refused)) paste0(
+        "This PROC HAZPRED block names no ", or_list(refused), ", and the ",
+        "%HAZPRED macro requires DATA=, INHAZ= and OUT= on the PROC ",
+        "statement: without one it stops with \"HAZPRED not attempted\" ",
+        "(hazpred.sas:13-33, :153-163), so SAS predicts nothing. "),
+      if (length(passes)) paste0(
+        "This PROC HAZPRED block names no ", or_list(passes), ", but the ",
+        "%HAZPRED macro's test for it is a substring test (hazpred.sas:13, ",
+        ":20, :27), which other text on the PROC statement satisfies, so ",
+        "the macro takes the value after the next `=` in its place, not a ",
+        "dataset the job names. "),
+      "Add the missing option(s) and translate the job again.")
+  }
   for (a in absent) note(a, macro_refusal)
   ds_refusal <- c(
     if (length(absent)) macro_refusal,
