@@ -499,6 +499,17 @@ test_that("a HAZPRED refusal claims the macro's refusal only where the macro mak
   expect_match(m, "HAZPRED not attempted", fixed = TRUE)
 })
 
+test_that("a stray `=` on the HAZPRED line stops the block, not only records it (#498 Copilot)", {
+  # PROC HAZPRED rejects the job with a syntax error, so predict() must not
+  # be emitted. The stray `=` was recorded, but mk() never read it.
+  for (o in c("DATA=PRED INHAZ=OUTEST OUT=P = X", "DATA=PRED INHAZ=OUTEST OUT=P =")) {
+    job <- hp_translate(o)
+    expect_false("predict" %in% unlist(lapply(job$calls, all.names)), info = o)
+    expect_identical(job$calls$pred[[1L]], as.name("stop"), info = o)
+    expect_error(eval(job$calls$pred), "stray `=`", fixed = TRUE, info = o)
+  }
+})
+
 test_that("an empty INHAZ= before another option is named, not the option after it (#498 review)", {
   # `INHAZ= OUT=P`: PROC HAZPRED reads OUT as INHAZ's dataset name
   # (hazpred_l.l:36, :48), and the `=` after it is a syntax error. The

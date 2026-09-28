@@ -2970,7 +2970,11 @@
       "Add the missing option(s) and translate the job again.")
   }
   for (a in absent) note(a, macro_refusal)
+  # A stray `=` is a syntax error PROC HAZPRED stops on too; recording it
+  # alone left predict() in the document (#498, Copilot).
   ds_refusal <- c(
+    if (!is.null(pred_syntax_error)) paste0(
+      "PROC HAZPRED rejects this block: ", pred_syntax_error, "."),
     if (length(absent)) macro_refusal,
     if (length(bad_ds)) paste0(
       "PROC HAZPRED rejects this block: ", paste(bad_ds, collapse = "; "),
