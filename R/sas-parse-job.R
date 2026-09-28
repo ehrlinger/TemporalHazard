@@ -2616,7 +2616,10 @@
           list(refuse = paste0("PROC SORT of ", ev$from, " is by a variable it does not carry"))
         } else {
           from <- as.name(ev$from)
-          ord <- as.call(c(quote(order), lapply(ev$by, function(b) call("$", from, as.name(b)))))
+          # SAS orders a numeric missing value below every number, so an
+          # ascending sort puts it first. DESCENDING is refused as a sort.
+          ord <- as.call(c(quote(order), lapply(ev$by, function(b) call("$", from, as.name(b))),
+                           list(na.last = FALSE)))
           list(code = list(bquote(.(as.name(ev$name)) <- .(from)[.(ord), , drop = FALSE])),
                cols = r$cols, untr = empty, warn = character(0))
         }
