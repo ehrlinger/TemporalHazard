@@ -242,7 +242,8 @@
 #'       a removal under any criterion, whose Wald statistic could not be
 #'       computed for want of a variance, `wald_no_variance`; or an entry
 #'       under `criterion = "aic"` whose fit had no finite objective,
-#'       `nonfinite`),
+#'       `nonfinite`, or was fitted on different rows from the current model
+#'       because the candidate is missing on some, `rows_differ`),
 #'       `uncomputable_reasons` (a named integer vector of *why*),
 #'       `wald_untested_removals` and `wald_untested_entries` (the
 #'       `"var"` / `"var@phase"` tokens of variables kept in, or left out,
@@ -1097,6 +1098,16 @@ hzr_stepwise <- function(fit,
     warning("Stepwise selection declined ", n_duplicate, " candidate ",
             "score(s) without testing them: ",
             .hzr_score_reason_text("duplicate_column"), ". See ",
+            "`$criteria$uncomputable_reasons`.", call. = FALSE)
+  }
+  # A refused AIC entry reads like a candidate that did not lower the AIC, and
+  # it is not one: it was never compared (#488).
+  n_rows_differ <- sum(uncomputable_reasons[names(uncomputable_reasons) ==
+                                              "rows_differ"])
+  if (!stopped_uncomputable && n_rows_differ > 0L) {
+    warning("Stepwise selection declined ", n_rows_differ, " candidate ",
+            "entr", if (n_rows_differ == 1L) "y" else "ies", " without ",
+            "testing them: ", .hzr_score_reason_text("rows_differ"), ". See ",
             "`$criteria$uncomputable_reasons`.", call. = FALSE)
   }
   if (stopped_refit_failed) {

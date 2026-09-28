@@ -100,6 +100,9 @@
 #'   \item{p_value}{Always populated when computable.}
 #'   \item{delta_aic}{Always populated when computable.}
 #'   \item{names}{Echoed input.}
+#'   \item{reason}{Why `score` is `NA` when the cause is known, else `NA`:
+#'     `"rows_differ"` for an AIC entry whose candidate was fitted on other
+#'     rows than `current`.}
 #' }
 #'
 #' @keywords internal
@@ -164,11 +167,18 @@
     if (is.finite(wald$stat)) wald$stat else NA_real_
   }
 
+  reason <- NA_character_
   # AIC components
   if (criterion == "aic" && mode == "entry") {
     aic_cur <- .hzr_aic(current)
     aic_can <- .hzr_aic(candidate)
-    delta   <- if (is.finite(aic_cur) && is.finite(aic_can)) {
+    # Two AICs compare only over the same rows. A multiphase refit drops every
+    # row where the candidate is missing, so its log-likelihood sums fewer
+    # terms and a noise variable won by its NAs alone (#488).
+    same_rows <- identical(.hzr_fit_row_mask(current),
+                           .hzr_fit_row_mask(candidate))
+    if (!same_rows) reason <- "rows_differ"
+    delta   <- if (same_rows && is.finite(aic_cur) && is.finite(aic_can)) {
       aic_can - aic_cur
     } else {
       NA_real_
@@ -205,6 +215,27 @@
     df        = wald$df,
     p_value   = wald$p_value,
     delta_aic = delta,
-    names     = names
+    names     = names,
+    # Why `score` is NA when a cause is known (`"rows_differ"`); else NA.
+    reason    = reason
   )
+}
+
+
+#' Which of the caller's rows a fit's likelihood was evaluated on
+#'
+#' A multiphase fit records the rows its phase designs kept in
+#' `$fit$rows_used`, over the full length of `$data$time`. A fit without that
+#' record dropped none, so every row is in.
+#'
+#' @param fit A fitted `hazard` object.
+#' @return Logical vector, one element per row of `$data$time`.
+#' @keywords internal
+#' @noRd
+.hzr_fit_row_mask <- function(fit) {
+  n <- length(fit$data$time)
+  used <- fit$fit$rows_used
+  # Unnamed: the record carries row names when a phase has a design, and none
+  # when no phase does, and those are the same rows.
+  if (is.logical(used) && length(used) == n) unname(used) else rep(TRUE, n)
 }
