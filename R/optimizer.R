@@ -111,7 +111,9 @@ NULL
 #'   `gradient_exact = FALSE`.
 #' @param mark_infeasible Logical; `TRUE` (the default) reports a run that
 #'   ended on the 1e10 clamp as not converged, with no objective, and warns
-#'   with class `hzr_infeasible_start` (#486). The multiphase path passes
+#'   with class `hzr_infeasible_start` (#486); likewise a run that ended at a
+#'   finite log-likelihood below -1e10, with the subclass
+#'   `hzr_start_past_penalty` (#512). The multiphase path passes
 #'   `FALSE`: it scores each start against the likelihood itself and records
 #'   such a start as `"infeasible"` in its `starts` table.
 #'
@@ -245,6 +247,46 @@ NULL
       par = result$par,
       value = NA_real_,
       # Not an optim() code; any non-zero code reads as not converged.
+      convergence = 99L,
+      counts = result$counts,
+      message = reason,
+      hessian = NULL,
+      vcov = NA,
+      rcond = NA_real_,
+      pd = NA,
+      se_unavailable_reason = reason,
+      rel_gradient = NA_real_,
+      rel_gradient_reason = reason,
+      polish_code = NA_integer_
+    ))
+  }
+
+  # Nor has a run that ended where the log-likelihood is finite but below
+  # the penalty (#512). There, every trial point that leaves the finite
+  # region is clamped to 1e10 and so scores BETTER than the current point,
+  # and a gradient of order 1e177 or more overflows the line search: optim()
+  # shrinks its step to nothing and stops at the start with convergence 0.
+  # Asked of where the run ENDED, never where it began: a start this far out
+  # that the optimizer leaves is an ordinary fit (exponential from 50 reaches
+  # -434.29). The reason and the return are #486's, so every reader of that
+  # case -- print(), the degraded record, hzr_bootstrap() -- reads this one.
+  if (mark_infeasible && -ll_at_par >= 1e10) {
+    reason <- paste0("the optimizer stopped where the log-likelihood is ",
+                     "below its own penalty (-1e10), so it could not move ",
+                     "from the starting values")
+    warning(structure(
+      class = c("hzr_start_past_penalty", "hzr_infeasible_start", "warning",
+                "condition"),
+      list(message = paste0(
+        "The fit did not converge: ", reason, " (log-likelihood ",
+        signif(ll_at_par, 4), " there). The returned parameters are not ",
+        "estimates, and there is no maximised log-likelihood or standard ",
+        "error to report. Choose starting values (`theta`) nearer the data."
+      ), call = NULL)
+    ))
+    return(list(
+      par = result$par,
+      value = NA_real_,
       convergence = 99L,
       counts = result$counts,
       message = reason,

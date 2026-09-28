@@ -33,6 +33,23 @@
   replicate that ends there as a non-finite objective rather than at the
   sentinel.
 
+* **A single-distribution fit stuck at a start where the log-likelihood is
+  finite but below `-1e10` no longer reports `converged = TRUE` (#512).**
+  There every trial point outside the finite region scores better than the
+  start under the optimizer's penalty, and the gradient is too large for its
+  line search, so it stopped without moving. `hazard(Surv(int_dead, dead) ~
+  1, data = avc, dist = "weibull", theta = c(50, 50), fit = TRUE)` read as
+  converged with log-likelihood `-3.55e+196` and the starting values as
+  estimates, and "Not done in this run: none". The exponential (`theta =
+  400`) and lognormal (`theta = c(1, -300)`) fits did the same. Such a fit is
+  now handled as #486's: `converged = FALSE`, no objective, the cause in the
+  "Not done in this run" record, and a warning of class
+  `"hzr_start_past_penalty"`, which inherits `"hzr_infeasible_start"`. The
+  test is where the optimizer ends, so a start that far out which the
+  optimizer leaves still fits (the exponential from `theta = 50` reaches
+  -434.29). `hzr_bootstrap()` counted such replicates as successes; they now
+  fail as a non-finite objective.
+
 * **A translated `PROC HAZPRED` job now draws its bands at the level SAS
   uses: one standard error, unless `CLIMITS=` names another (#493).**
   The emitted `predict()` calls never set `level`, so they used
