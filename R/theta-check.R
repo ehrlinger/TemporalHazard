@@ -10,8 +10,8 @@
 #' Two rules, length first. **Length (#375):** one entry per parameter, the
 #' distribution's shape parameters then one coefficient per design column,
 #' counted as the likelihood counts them: `control$shape_param_count` is
-#' ignored, as `wald.R` ignores it, because only the score test and the
-#' stepwise refit read it. The only check was a lower bound against the
+#' ignored, as `wald.R`, the score test and the stepwise refit and trace
+#' ignore it (#489). The only check was a lower bound against the
 #' design, so a short theta fitted with a covariate silently dropped and a
 #' long one returned its starting values unfitted. Checked for the four
 #' distributions whose count is known; an unsupported one is left to the

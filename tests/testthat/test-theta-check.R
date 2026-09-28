@@ -50,8 +50,8 @@ test_that("predict() gives the same refusal for a non-positive Weibull theta", {
 })
 
 test_that("hzr_evaluate() counts parameters as the likelihood does, not as control says", {
-  # control$shape_param_count is read by the score test and the stepwise
-  # refit, and deliberately ignored by the likelihood (as by wald.R).
+  # control$shape_param_count is deliberately ignored by the likelihood, and
+  # so by wald.R, the score test and the stepwise refit (#489).
   # hzr_evaluate() evaluates the likelihood, so it must count as the
   # likelihood does. It refused the fit's own theta and accepted a longer
   # one, returning another model's log-likelihood.
