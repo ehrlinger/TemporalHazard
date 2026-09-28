@@ -15,22 +15,21 @@ test_that("a HAZPRED block becomes a predict() call with se.fit", {
   expect_equal(got$call[["newdata"]], as.name("PREDICT"))
 })
 
-test_that("a log-spaced DO grid becomes an exp(seq(...)) call", {
+test_that("a log-spaced DO grid runs SAS's loop and trailing value", {
   txt <- .hzr_sas_normalise(paste(
     "DATA PREDICT; MAX=180; LN_MAX=LOG(MAX); INC=(5+LN_MAX)/99.9;",
     "DO LN_TIME=-5 TO LN_MAX BY INC, LN_MAX; MONTHS=EXP(LN_TIME); OUTPUT; END;",
     "%HAZPRED( PROC HAZPRED DATA=PREDICT INHAZ=E.H OUT=P; TIME MONTHS; );"
   ))
   got <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)
-  # The span is log(hi) - lo, not the 5 + log(hi) that only coincides with it
-  # because this job starts at -5, and the /99.9 denominator is read from the
-  # job's own INC=, not assumed. The DO's `, LN_MAX` trailing element is SAS's
-  # own extra list value -- `a TO b BY c, d` runs the loop and then takes
-  # `d` -- so the emitted grid appends the exact bound, 180, after the loop.
-  expect_equal(got$grid,
-               quote(data.frame(
-                 time = c(exp(-5 + seq(0, 99) * ((log(180) - -5) / 99.9)), 180)
-               )))
+  # The step is the job's own INC=, not assumed, and the DO's `, LN_MAX`
+  # trailing element is SAS's own extra list value -- `a TO b BY c, d` runs
+  # the loop and then takes `d` -- so the grid ends at EXP(LN_MAX), 180,
+  # after 100 loop points. Run the emitted code rather than read its shape.
+  grid <- eval(got$grid)
+  inc <- (5 + log(180)) / 99.9
+  expect_equal(grid$time, exp(c(-5 + inc * (0:99), log(180))), tolerance = 1e-12)
+  expect_equal(grid$time[[101L]], 180)
 })
 
 test_that("a grid built by SET is untranslated, not guessed at", {
@@ -224,7 +223,7 @@ test_that("the log grid matches SAS's INC = (5 + LN_MAX)/99.9 step", {
     "DO LN_TIME = -5 TO LN_MAX BY INC, LN_MAX; MONTHS = EXP(LN_TIME);",
     "OUTPUT; END; RUN;"
   ))
-  cl <- .hzr_parse_grid(txt, "PGRID")
+  cl <- .hzr_parse_grid(txt, "PGRID", "MONTHS")$call
   grid <- eval(cl)
   expect_equal(nrow(grid), 101L)
   # The 100th (last loop) point is exp(-5 + 99*(log(180)+5)/99.9) = 164.207,
@@ -244,7 +243,7 @@ test_that("a directly-assigned log bound is not mistaken for MAX", {
     "DO LN_TIME = -5 TO LN_MAX BY INC; MONTHS = EXP(LN_TIME);",
     "OUTPUT; END; RUN;"
   ))
-  cl <- .hzr_parse_grid(txt, "PGRID")
+  cl <- .hzr_parse_grid(txt, "PGRID", "MONTHS")$call
   grid <- if (is.null(cl)) NULL else eval(cl)
   # Must not silently produce a grid ending at t = 5.2 by reading LN_MAX=5.2
   # as MAX=5.2 and taking its log (#153). There is no MAX to log here, so
@@ -270,7 +269,7 @@ test_that("the log grid reads its step denominator from INC=, not /99.9", {
     "DO LN_TIME = -5 TO LN_MAX BY INC, LN_MAX; MONTHS = EXP(LN_TIME);",
     "OUTPUT; END; RUN;"
   ))
-  grid <- eval(.hzr_parse_grid(txt, "PGRID"))
+  grid <- eval(.hzr_parse_grid(txt, "PGRID", "MONTHS")$call)
   expect_equal(nrow(grid), 1001L)
   # The trailing point is the job's own MAX, exactly -- same value regardless
   # of the step, so it is the *loop's* last point (row 1000, not 1001) that
@@ -284,7 +283,7 @@ test_that("the log grid reads its step denominator from INC=, not /99.9", {
   # point is unaffected by the step -- both still land on 84 -- so the
   # comparison has to be on the loop's own last point, not on max().
   txt99 <- sub("/999.9", "/99.9", txt, fixed = TRUE)
-  grid99 <- eval(.hzr_parse_grid(txt99, "PGRID"))
+  grid99 <- eval(.hzr_parse_grid(txt99, "PGRID", "MONTHS")$call)
   expect_equal(nrow(grid99), 101L)
   expect_equal(grid99$time[101L], 84)
   expect_false(isTRUE(all.equal(grid99$time[100L], grid$time[1000L])))
@@ -300,7 +299,7 @@ test_that("a /49.9 step gives the 50 loop points SAS's DO loop lands, plus its t
     "DO LN_TIME = -5 TO LN_MAX BY INC, LN_MAX; MONTHS = EXP(LN_TIME);",
     "OUTPUT; END; RUN;"
   ))
-  grid <- eval(.hzr_parse_grid(txt, "PGRID"))
+  grid <- eval(.hzr_parse_grid(txt, "PGRID", "MONTHS")$call)
   expect_equal(nrow(grid), 51L)
   # The 50th (last loop) point reflects the /49.9 step; the 51st (trailing
   # DO-list) point is the job's own MAX, exactly.
@@ -319,7 +318,7 @@ test_that("a log grid starting somewhere other than -5 uses its own span", {
     "DO LN_TIME = 0 TO LN_MAX BY INC; MONTHS = EXP(LN_TIME);",
     "OUTPUT; END; RUN;"
   ))
-  grid <- eval(.hzr_parse_grid(txt, "PGRID"))
+  grid <- eval(.hzr_parse_grid(txt, "PGRID", "MONTHS")$call)
   expect_equal(nrow(grid), 100L)
   expect_equal(min(grid$time), 1)
   expect_equal(max(grid$time), exp(99 * log(180) / 99.9), tolerance = 1e-8)
@@ -340,9 +339,11 @@ test_that("an INC= this cannot parse is refused, not stepped by a guess", {
   expect_true(any(grepl("grid", got$untranslated$reason)))
 })
 
-test_that("an INC= numerator that is not the loop's span is refused", {
-  # A numerator of (5 + LN_MAX) when the loop starts at 0 is not the span,
-  # so the emitted (log(hi) - lo)/denominator would not be this job's step.
+test_that("an INC= numerator that is not the loop's span steps by INC", {
+  # A numerator of (5 + LN_MAX) when the loop starts at 0 is not the span.
+  # The grid used to be refused, because the emitter assumed a step of
+  # span/denominator. The loop is now run as SAS runs it, from 0 by the
+  # job's own INC while the value is at most LN_MAX (#494).
   txt <- .hzr_sas_normalise(paste(
     "DATA PREDICT; MAX = 180; LN_MAX = LOG(MAX);",
     "INC = (5 + LN_MAX)/99.9;",
@@ -350,17 +351,19 @@ test_that("an INC= numerator that is not the loop's span is refused", {
     "%HAZPRED( PROC HAZPRED DATA=PREDICT INHAZ=E.H OUT=P; TIME MONTHS; );"
   ))
   got <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)
-  expect_null(got$grid)
-  expect_true(any(grepl("grid", got$untranslated$reason)))
+  inc <- (5 + log(180)) / 99.9
+  n <- floor(log(180) / inc) + 1
+  expect_equal(n, 51)
+  expect_equal(eval(got$grid)$time, exp(inc * (seq_len(n) - 1)), tolerance = 1e-12)
 })
 
-test_that("a DO with no BY clause is refused, not given the /99.9 step", {
+test_that("a DO with no BY clause steps by 1, not by the /99.9 step", {
+  # SAS's DO a TO b with no BY steps by 1 (#494: formerly refused).
   txt <- .hzr_sas_normalise(paste(
     "DATA PREDICT; MAX = 180; LN_MAX = LOG(MAX);",
     "DO LN_TIME = -5 TO LN_MAX; MONTHS = EXP(LN_TIME); OUTPUT; END;",
     "%HAZPRED( PROC HAZPRED DATA=PREDICT INHAZ=E.H OUT=P; TIME MONTHS; );"
   ))
   got <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)
-  expect_null(got$grid)
-  expect_true(any(grepl("grid", got$untranslated$reason)))
+  expect_equal(eval(got$grid)$time, exp(-5:5))
 })

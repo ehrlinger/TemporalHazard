@@ -769,23 +769,27 @@ document outright, above), so a translated document shows
 its own gaps instead of quietly under-reporting the original job. Two
 gaps are common enough in production jobs to know about going in:
 
-- **`PROC HAZPRED` prediction grids that depend on `SET`, function
-  calls, or unknown names are not fully translated.** The parser
-  resolves a grid's `DO` loop bounds when they are literal numbers or
-  DATA-step constants it can fold (e.g. `DO MONTHS = 1*DTY, 2*DTY,
-  ... ;` with `DTY` assigned earlier in the same DATA step). A bound
-  read from `SET`, computed by a function call, or naming something
-  the parser can't resolve is refused: the grid emits an
-  `UNTRANSLATED` block and the `predict()` chunks stop, so build the
-  `newdata` grid by hand and pass it to `predict.hazard()` instead.
-  A `SET` statement beside a `DO` loop with literal bounds is **not**
-  refused, and the grid is only partly read. `DATA PREDICT; SET
-  COHORT; DO MONTHS = 1 TO 12; OUTPUT; END;` translates to a grid of
-  twelve `time` values and nothing else: the rows and columns `SET`
-  brings in are dropped, and no `UNTRANSLATED` block says so. Compare
-  such a grid with the SAS one before you trust its predictions. On
-  the public corpus, grid resolution is 19 of 55 (35%), up from 10 of
-  55 (18%) before constant folding.
+- **A `PROC HAZPRED` grid is rebuilt from the job's own DATA steps,
+  and some of those steps are only partly read.** The translator
+  follows `DATA=` back the way SAS does: the last step that wrote the
+  dataset before the `PROC HAZPRED`, then each `SET` input of that
+  step, and so on. So a `DATA DESIGN` step's covariates, a
+  `SET PREDICT DIGITAL` that stacks two grids, and a
+  `YEARS = MONTHS/12` all reach the grid, and the emitted `predict()`
+  runs at the variable the `TIME` statement names. Arithmetic, `LOG`
+  and `EXP`, `DO` lists with constant bounds, `OUTPUT`, `DROP`, `KEEP`
+  and `PROC SORT ... BY` are translated. A statement that sets a value
+  the translator can't compute, such as an `IF ... THEN` assignment or
+  a function it does not carry, is recorded as `UNTRANSLATED`, the
+  grid chunk warns, and that variable is `NA` in the grid, so any
+  prediction that uses it is `NA` too. The rest of the grid is still
+  built. A step that decides which rows exist in a way it can't read
+  (an `INFILE`, a `MERGE`, another procedure's `OUT=`, a loop bound
+  taken from data) refuses the whole grid: the `predict()` chunks stop,
+  so build the `newdata` grid by hand and pass it to
+  `predict.hazard()`. On the public corpus, 17 of 36 `PROC HAZPRED`
+  blocks now get a grid, 9 of them with a warning; before 1.2.13, 13
+  did, several of them missing covariates or rows with nothing recorded.
 - **An unresolved `INHAZ=` fails the render on purpose.** If a
   `PROC HAZPRED` job's fitted-model dataset can't be found (neither
   from another translated job's `OUTHAZ=` nor from the `librefs=`

@@ -1816,282 +1816,779 @@
   out
 }
 
-#' Evaluate a SAS DATA-step numeric expression, using only known constants.
-#'
-#' Used to resolve explicit `DO` list elements such as `1*DTY`: `DTY` becomes
-#' a plain number only when it was already folded from an earlier
-#' `DTY=12/365.2425;` assignment in the *same* `DATA` step
-#' (`.hzr_sas_data_constants()`). Anything else (a function call, a
-#' data-step variable, an unknown name) must refuse rather than guess, so
-#' `text` is checked against a strict whitelist regex (digits, the four
-#' arithmetic operators, parentheses, whitespace, and known constant names)
-#' *before* `parse()`/`eval()` ever see it; text that fails the whitelist is
-#' never evaluated at all. `consts` doubles as the `eval()` environment, so
-#' the only names that can resolve are exactly the ones the whitelist
-#' allowed.
-#' @param text A candidate numeric expression, e.g. `"1*DTY"` or `"24"`.
-#' @param consts Named list of already-folded constants (name -> `double`).
-#' @return A finite `double`, or `NA_real_` if `text` cannot be safely
-#'   evaluated.
-#' @noRd
-.hzr_eval_sas_const <- function(text, consts) {
-  text <- trimws(text)
-  if (!nzchar(text)) return(NA_real_)
-  nms <- names(consts)
-  alt <- if (length(nms)) paste(nms[order(-nchar(nms))], collapse = "|") else "(?!)"
-  whitelist <- sprintf("^(?:%s|[0-9.]+|[+*/()-]|[[:space:]]+)+$", alt)
-  if (!grepl(whitelist, text, perl = TRUE)) return(NA_real_)
+# ---------------------------------------------------------------------------
+# PROC HAZPRED prediction grids: the job's own DATA steps, translated
+# ---------------------------------------------------------------------------
+#
+# HAZPRED predicts at every row of its DATA= dataset, reading the time from
+# the variable its TIME statement names (hazpred/timeprc.c:16-25) and every
+# covariate of the model from the column of the same name
+# (hazpred/hazpred.c:153-173). So the grid is whatever the job's DATA steps
+# left in that dataset by the time the procedure ran: the covariates a
+# `SET DESIGN` brings in, the rows a later `DATA PREDICT; SET PREDICT
+# DIGITAL;` appends, and the time a `YEARS = MONTHS/12` derives. Reading
+# only the first DO loop of the first `DATA <name>;` step dropped all three,
+# and the prediction ran at covariates of zero and the wrong times with
+# nothing recorded (#494).
+#
+# The steps are translated statement by statement into base R that builds
+# the same data frame. What cannot be translated reliably is split two ways.
+# A statement whose effect on the grid is known but whose value is not (a
+# conditional assignment, a function this does not carry) is recorded, and
+# the variable it sets is NA in the grid, so predictions that use it are NA
+# rather than evaluated at a value SAS did not use. A statement that decides
+# which rows the grid has (an input file, a MERGE, a loop whose bounds are
+# data) refuses the whole grid, because no grid can be emitted that is not
+# a guess.
 
-  # Safe by construction, not by luck: the whitelist above has already
-  # rejected everything except digits/operators/parens/whitespace and
-  # literal known-constant names, and `consts` (the only environment eval()
-  # is given) holds nothing but doubles -- no function, including any base R
-  # function, is reachable through it. There is no code path from here to
-  # arbitrary execution.
-  val <- tryCatch({
-    expr <- parse(text = text, keep.source = FALSE)
-    if (length(expr) != 1L) NA_real_ else eval(expr[[1L]], envir = consts)
-  }, error = function(e) NA_real_)
-  if (!is.numeric(val) || length(val) != 1L || !is.finite(val)) return(NA_real_)
-  as.double(val)
-}
-
-#' Fold `NAME = <numeric expression>;` assignments into a constants map.
+#' Split normalised SAS source into statements, with their offsets.
 #'
-#' Scoped to one `DATA` step's own preamble (the text before its `DO`
-#' statement): collects assignments in order, so a later constant may
-#' reference an earlier one (`INC=(5+LN_MAX)/99.9` after `LN_MAX=...`).
-#' Only assignments `.hzr_eval_sas_const()` can actually evaluate end up in
-#' the map. An assignment whose right-hand side is not pure arithmetic
-#' over already-known constants (a function call, an unresolved name) is
-#' silently skipped here, not stored; it simply never becomes foldable.
+#' A `;` inside a quoted string does not end a statement.
+#' @return A data frame with `start` (offset of the statement's first
+#'   non-blank character in `txt`), `end` and `text` (trimmed).
 #' @noRd
-.hzr_sas_data_constants <- function(pre) {
-  consts <- list()
-  for (s in strsplit(pre, ";", fixed = TRUE)[[1L]]) {
-    s <- trimws(s)
-    if (!nzchar(s)) next
-    m <- regmatches(s, regexec("^([A-Z_][A-Z0-9_]*) *= *(.+)$", s))[[1L]]
-    if (length(m) < 3L) next
-    val <- .hzr_eval_sas_const(trimws(m[[3L]]), consts)
-    if (!is.na(val)) consts[[m[[2L]]]] <- val
+.hzr_sas_statements <- function(txt) {
+  m <- gregexpr("(?:'[^']*'|\"[^\"]*\"|[^;'\"])+", txt, perl = TRUE)[[1L]]
+  if (m[1L] == -1L) {
+    return(data.frame(start = integer(0), end = integer(0), text = character(0),
+                      stringsAsFactors = FALSE))
   }
-  consts
+  raw <- regmatches(txt, list(m))[[1L]]
+  lead <- nchar(raw) - nchar(sub("^ +", "", raw))
+  data.frame(start = as.integer(m) + lead,
+             end = as.integer(m) + attr(m, "match.length") - 1L,
+             text = trimws(raw), stringsAsFactors = FALSE)
 }
 
-#' Read the step denominator out of a log-grid DATA step's own `INC=`.
-#'
-#' SAS writes the log-grid step as `INC = (<numerator>)/<denominator>`, and
-#' the corpus uses three different denominators (`/49.9`, `/99.9`, `/999.9`).
-#' The denominator is what sets both the step and the point count, so it is
-#' read from the job rather than assumed.
-#'
-#' The numerator has to be the loop's own span, `log(hi) - lo`. Every corpus
-#' job writes that span in one of two spellings: `(5 + LN_MAX)` where the
-#' loop starts at -5, or `(MAX - MIN)`. The two coincide only because
-#' `lo = -5`. A numerator that is *not* the span means the emitted
-#' `(log(hi) - lo)/denominator` step would not be the job's step, so this
-#' returns `NA_real_` and the caller refuses the grid.
-#'
-#' @param pre The DATA step's text before its `DO` statement.
-#' @param inc_var Name of the variable the `DO ... BY` clause steps by.
-#' @param bound_var Name of the `DO ... TO` bound (e.g. `LN_MAX`).
-#' @param ln_hi The bound's value, `log(hi)`.
-#' @param span `log(hi) - lo`, the range the loop covers.
-#' @return The denominator as a positive `double`, or `NA_real_` when the
-#'   `INC=` assignment is absent or is not a form this can parse.
+#' Read one `KEY=value` dataset name out of a statement.
 #' @noRd
-.hzr_sas_grid_denom <- function(pre, inc_var, bound_var, ln_hi, span) {
-  consts <- .hzr_sas_data_constants(pre)
-  # LN_MAX = LOG(MAX) is a function call, so .hzr_sas_data_constants() never
-  # folds it. The DO's TO bound is the log bound by construction, so bind it
-  # here -- after the fold, so it wins over any earlier assignment.
-  consts[[bound_var]] <- ln_hi
+.hzr_sas_opt_name <- function(stmt, key) {
+  m <- regmatches(stmt, regexec(
+    paste0("(^|[^A-Z0-9_])", key, " *= *([A-Z_][A-Z0-9_.]*)"), stmt))[[1L]]
+  if (length(m) >= 3L) m[[3L]] else NULL
+}
 
-  rhs <- NA_character_
-  for (s in strsplit(pre, ";", fixed = TRUE)[[1L]]) {
-    s <- trimws(s)
-    m <- regmatches(s, regexec("^([A-Z_][A-Z0-9_]*) *= *(.+)$", s))[[1L]]
-    # Last assignment wins, as SAS's own sequential DATA-step semantics do.
-    if (length(m) >= 3L && identical(m[[2L]], inc_var)) rhs <- trimws(m[[3L]])
+#' Every point in a job where a dataset is (re)defined, in file order.
+#'
+#' Four kinds. `data`: a `DATA <name>;` step, carrying its statements.
+#' `hazpred`: a `PROC HAZPRED ... OUT=`, whose output has one row per row of
+#' its `DATA=` dataset (`hazpred/obsloop.c:17-26`, `:67`). `sort`: a
+#' `PROC SORT ... ; BY ...;`, which reorders its input. `opaque`: anything
+#' else that writes a dataset (another procedure's or a macro's `OUT=`, a
+#' multi-dataset or optioned `DATA` statement), which this cannot read and so
+#' refuses if a grid depends on it.
+#' @noRd
+.hzr_sas_dataset_events <- function(txt, blocks) {
+  ev <- list()
+  add <- function(pos, name, kind, ...) {
+    ev[[length(ev) + 1L]] <<- list(pos = pos, name = name, kind = kind, ...)
   }
-  if (is.na(rhs)) return(NA_real_)
-
-  parts <- regmatches(rhs, regexec("^\\((.+)\\) */ *([0-9.]+)$", rhs))[[1L]]
-  if (length(parts) < 3L) return(NA_real_)
-  num <- .hzr_eval_sas_const(parts[[2L]], consts)
-  den <- suppressWarnings(as.numeric(parts[[3L]]))
-  if (is.na(num) || is.na(den) || den <= 0) return(NA_real_)
-  if (!isTRUE(all.equal(num, span, tolerance = 1e-8))) return(NA_real_)
-  den
-}
-
-#' Translate the DATA step that builds a HAZPRED prediction grid.
-#'
-#' Returns an unevaluated `data.frame()` call, or `NULL` when the step is not
-#' one of the two stereotyped forms this package can read. `NULL` means
-#' untranslated, never "no grid": a `predict()` call with no `newdata` is a
-#' hollow result (right shape, empty inside), so the caller
-#' (`.hzr_parse_hazpred()`) must record it in `untranslated`, not treat it as
-#' nothing to translate.
-#' @noRd
-.hzr_parse_grid <- function(txt, name) {
-  if (is.null(name) || !nzchar(name)) return(NULL)
-  p <- .idx(txt, paste0("DATA ", name, ";"))
-  if (p == 0L) return(NULL)
-
-  rest <- substring(txt, p + 1L)
-  ends <- c(.idx(rest, "DATA "), .idx(rest, "PROC "), .idx(rest, "%HAZ"))
-  ends <- ends[ends > 0L]
-  body <- if (length(ends)) substring(rest, 1L, min(ends)) else rest
-
-  time_var <- local({
-    m <- regmatches(body, regexec("([A-Z_][A-Z0-9_]*) *= *EXP\\(", body))[[1L]]
-    if (length(m) > 1L) m[[2L]] else NA_character_
-  })
-
-  # --- log-spaced grid: DO LN_TIME=-5 TO LN_MAX BY INC; t = EXP(LN_TIME) ----
-  if (grepl(" DO ", body) && grepl("LOG(", body, fixed = TRUE) &&
-      !is.na(time_var)) {
-    do_at <- regexpr("DO [A-Z_][A-Z0-9_]* *= *[^;]+;", body)
-    if (do_at < 0L) return(NULL)
-    do_txt <- regmatches(body, do_at)
-    pre <- substring(body, 1L, as.integer(do_at) - 1L)
-    # Every corpus DO of this form writes an explicit trailing element after
-    # the BY term (`BY INC,LN_MAX`, `BY INC0, LN_MAX0`, `BY INC, MAX`): SAS's
-    # `DO a TO b BY c, d` list runs the loop and then takes the extra value
-    # `d`, so the emitted grid is one point short of SAS's without it. The
-    # trailing group is captured separately so a DO with none (no comma) is
-    # told apart from one whose trailing element this cannot resolve.
-    do_m <- regmatches(do_txt, regexec(
-      paste0("^DO [A-Z_][A-Z0-9_]* *= *(-?[0-9.]+) TO ",
-             "([A-Z_][A-Z0-9_]*) BY ([A-Z_][A-Z0-9_]*)",
-             "( *, *([A-Za-z0-9_.]+))? *;$"),
-      do_txt))[[1L]]
-    # No `BY` at all means a SAS step of 1, which is not this stereotyped
-    # form; refuse rather than reuse the step of the form it is not.
-    if (length(do_m) < 4L) return(NULL)
-    lo_txt <- do_m[[2L]]
-    bound_var <- do_m[[3L]]
-    inc_var <- do_m[[4L]]
-    trailing_txt <- if (length(do_m) >= 6L) trimws(do_m[[6L]]) else ""
-    # A trailing element is only resolved when it is literally the DO's own
-    # `TO` bound (as in every corpus job) -- SAS then evaluates it to exactly
-    # the loop's `hi`. Anything else cannot be resolved without guessing, so
-    # refuse the whole grid rather than silently drop or misplace the point.
-    if (nzchar(trailing_txt) && !identical(trailing_txt, bound_var)) {
-      return(NULL)
+  for (b in blocks) {
+    head <- sub(";.*$", "", b$text)
+    if (identical(b$proc, "HAZPRED")) {
+      out <- .hzr_sas_opt_name(head, "OUT")
+      from <- .hzr_sas_opt_name(head, "DATA")
+      if (!is.null(out)) {
+        if (is.null(from)) {
+          add(b$start, out, "opaque", what = "PROC HAZPRED with no DATA=")
+        } else {
+          add(b$start, out, "hazpred", from = from)
+        }
+      }
+    } else {
+      out <- .hzr_sas_opt_name(b$text, "OUT")
+      if (identical(b$proc, "REPEAT") && is.null(out)) out <- "EVENTS"
+      if (!is.null(out)) add(b$start, out, "opaque", what = paste0("%", b$proc))
     }
-    has_trailing <- nzchar(trailing_txt)
-    hi_txt <- local({
-      # Anchor on a non-word character before MAX so LN_MAX=5.2 is not read
-      # as MAX=5.2 -- that produced a grid ending at t = 5.2 instead of 181,
-      # with no error (#153).
-      m <- regmatches(body, regexec("(^|[^A-Z0-9_])MAX *= *([0-9.]+)", body))[[1L]]
-      if (length(m) > 2L) m[[3L]] else NA_character_
-    })
-    if (is.na(hi_txt)) return(NULL)
-    lo <- suppressWarnings(as.numeric(lo_txt))
-    hi <- suppressWarnings(as.numeric(hi_txt))
-    if (is.na(lo) || is.na(hi) || hi <= 0) return(NULL)
-    span <- log(hi) - lo
-    if (!is.finite(span) || span <= 0) return(NULL)
-    # The step is the job's own INC=, never an assumed one. Three
-    # denominators appear across the corpus (/49.9, /99.9, /999.9), and
-    # hardcoding /99.9 gave the /999.9 jobs a step ten times too large --
-    # wrong times over a full progress bar, reported as fully translated.
-    denom <- .hzr_sas_grid_denom(pre, inc_var, bound_var, log(hi), span)
-    if (is.na(denom)) return(NULL)
-    # SAS's DO LN_TIME = lo TO LN_MAX BY INC runs floor((LN_MAX - lo)/INC) + 1
-    # times, and INC is span/denom, so the count follows the denominator:
-    # /99.9 lands 100 points, /999.9 lands 1000. The last is
-    # exp(lo + (n - 1) * INC), NOT LN_MAX -- seq(length.out = n) would imply
-    # a /(n - 1) step, so only the first point would agree (#153).
-    n <- floor(denom) + 1
-    # Splice the matched text through str2lang(), not the numeric value: a
-    # negative bound such as -5 parses (like source code) to a unary-minus
-    # call, not a bare negative double, and only str2lang() reproduces that
-    # so the emitted call matches what quote()ing the equivalent source
-    # produces.
-    lo_lang <- str2lang(lo_txt)
-    loop <- bquote(
-      exp(.(lo_lang) +
-            seq(0, .(n - 1)) *
-              ((log(.(str2lang(hi_txt))) - .(lo_lang)) / .(denom)))
-    )
-    # SAS's DO list `a TO b BY c, d` runs the loop and then takes the extra
-    # value `d`; that final value is the loop's own `hi` in this form, exact
-    # (EXP(LN_MAX) == MAX), not another step of the loop.
-    inner <- if (has_trailing) bquote(c(.(loop), .(str2lang(hi_txt)))) else loop
-    cl <- as.call(list(quote(data.frame), inner))
-    # predict.hazard() requires a column literally named `time`
-    # (R/hazard_api.R:1006). Naming the grid column after the SAS DO variable
-    # produced a newdata that predict() rejects outright, so the "grids
-    # resolve" coverage figure counted grids that could not be used (#151).
-    names(cl) <- c("", "time")
-    return(cl)
   }
 
-  # --- explicit DO list: DO MONTHS=1,2,3,6,12,24 TO 180 BY 12; --------------
-  # or, with constants folded first: DO MONTHS=1*DTY,2*DTY,24 TO 180 BY 12;
-  if (grepl(" DO ", body)) {
-    do_at <- regexpr("DO [A-Z_][A-Z0-9_]* *= *[^;]+;", body)
-    if (do_at == -1L) return(NULL)
-    consts <- .hzr_sas_data_constants(substring(body, 1L, as.integer(do_at) - 1L))
-
-    m <- regmatches(body,
-           regexec("DO ([A-Z_][A-Z0-9_]*) *= *([^;]+);", body))[[1L]]
-    if (length(m) < 3L) return(NULL)
-    var <- m[[2L]]
-    parts <- trimws(strsplit(m[[3L]], ",", fixed = TRUE)[[1L]])
-    elems <- list()
-    is_literal <- function(txt) grepl("^-?[0-9.]+$", txt)
-    for (part in parts) {
-      rng <- regmatches(part,
-               regexec("^([A-Z0-9_.+*/()-]+) +TO +([A-Z0-9_.+*/()-]+)( +BY +([A-Z0-9_.+*/()-]+))?$",
-                       part))[[1L]]
-      if (length(rng) >= 3L) {
-        lo_txt <- rng[[2L]]
-        hi_txt <- rng[[3L]]
-        by_txt <- if (length(rng) >= 5L && nzchar(rng[[5L]])) rng[[5L]] else "1"
-        lo <- .hzr_eval_sas_const(lo_txt, consts)
-        hi <- .hzr_eval_sas_const(hi_txt, consts)
-        by <- .hzr_eval_sas_const(by_txt, consts)
-        # A range bound this cannot be evaluated at all -- unknown name, a
-        # function call, or a malformed literal. Refuse the whole grid
-        # rather than coerce silently to NA or emit a partial grid.
-        if (is.na(lo) || is.na(hi) || is.na(by)) return(NULL)
-        # Splice bare numeric literals through str2lang(), not the double:
-        # a negative bound such as -5 parses (like source code) to a
-        # unary-minus call, not a bare negative double, and only str2lang()
-        # reproduces that. A folded constant expression (e.g. 1*DTY) has no
-        # such source form to preserve -- it becomes the evaluated number.
-        elems[[length(elems) + 1L]] <- bquote(
-          seq(.(if (is_literal(lo_txt)) str2lang(lo_txt) else lo),
-              .(if (is_literal(hi_txt)) str2lang(hi_txt) else hi),
-              by = .(if (is_literal(by_txt)) str2lang(by_txt) else by))
-        )
-      } else {
-        val <- .hzr_eval_sas_const(part, consts)
-        # An element that cannot be evaluated at all -- an unknown name, a
-        # function call, or a data-step variable. Refuse the whole grid
-        # rather than emit a partial one.
-        if (is.na(val)) return(NULL)
-        elems[[length(elems) + 1L]] <- if (is_literal(part)) str2lang(part) else val
+  st <- .hzr_sas_statements(txt)
+  in_block <- function(s, e) {
+    any(vapply(blocks, function(b) e >= b$start && s <= b$end, logical(1L)))
+  }
+  cur <- NULL
+  proc <- NULL
+  last_name <- function(p) {
+    before <- Filter(function(x) x$pos < p, ev)
+    if (!length(before)) return(NULL)
+    before[[which.max(vapply(before, function(x) x$pos, numeric(1L)))]]$name
+  }
+  close_all <- function() {
+    if (!is.null(cur) && !is.na(cur$name)) {
+      add(cur$pos, cur$name, "data", stmts = cur$stmts)
+    }
+    cur <<- NULL
+    if (!is.null(proc) && identical(proc$kind, "SORT")) {
+      from <- if (is.null(proc$data)) last_name(proc$pos) else proc$data
+      to <- if (is.null(proc$out)) from else proc$out
+      if (!is.null(to)) {
+        if (is.null(from) || proc$bad || !length(proc$by)) {
+          add(proc$pos, to, "opaque", what = "PROC SORT")
+        } else {
+          add(proc$pos, to, "sort", from = from, by = proc$by)
+        }
       }
     }
-    inner <- as.call(c(quote(c), elems))
-    cl <- as.call(list(quote(data.frame), inner))
-    # predict.hazard() requires a column literally named `time`
-    # (R/hazard_api.R:1006). Naming the grid column after the SAS DO variable
-    # produced a newdata that predict() rejects outright, so the "grids
-    # resolve" coverage figure counted grids that could not be used (#151).
-    names(cl) <- c("", "time")
-    return(cl)
+    proc <<- NULL
   }
 
-  # SET-derived or anything else: not translatable.
-  NULL
+  for (i in seq_len(nrow(st))) {
+    t <- st$text[[i]]
+    p <- st$start[[i]]
+    if (!nzchar(t)) next
+    if (in_block(p, st$end[[i]])) {
+      close_all()
+      next
+    }
+    if (grepl("^DATA( |$)", t) && !grepl("^DATA *=", t)) {
+      close_all()
+      rest <- trimws(sub("^DATA", "", t))
+      if (grepl("^[A-Z_][A-Z0-9_]*$", rest) && !identical(rest, "_NULL_")) {
+        cur <- list(pos = p, name = rest, stmts = character(0))
+      } else {
+        # `DATA A B;`, `DATA A(KEEP=...)`, `DATA LIB.A;`: every name it writes
+        # is recorded as unreadable, and the step's statements are swallowed.
+        nms <- strsplit(gsub("[(][^)]*[)]", " ", rest), " +")[[1L]]
+        for (nm in nms[grepl("^[A-Z_][A-Z0-9_.]*$", nms) & nms != "_NULL_"]) {
+          add(p, nm, "opaque", what = paste0("DATA ", rest))
+        }
+        cur <- list(pos = p, name = NA_character_, stmts = character(0))
+      }
+      next
+    }
+    if (grepl("^PROC ", t)) {
+      close_all()
+      if (grepl("^PROC SORT( |$)", t)) {
+        opts <- trimws(sub("^PROC SORT", "", t))
+        opts <- gsub("(DATA|OUT) *= *[A-Z_][A-Z0-9_.]*", "", opts)
+        proc <- list(kind = "SORT", pos = p, data = .hzr_sas_opt_name(t, "DATA"),
+                     out = .hzr_sas_opt_name(t, "OUT"), by = character(0),
+                     bad = nzchar(trimws(opts)))
+      } else {
+        proc <- list(kind = "OTHER", pos = p)
+        out <- .hzr_sas_opt_name(t, "OUT")
+        if (!is.null(out)) add(p, out, "opaque", what = sub("^(PROC [A-Z0-9_]+).*$", "\\1", t))
+      }
+      next
+    }
+    if (grepl("^(RUN|QUIT)$", t)) {
+      close_all()
+      next
+    }
+    # A macro call or another procedure's OUTPUT OUT= writes a dataset this
+    # cannot read. Inside a DATA step only a macro call can: `OUT=X` there
+    # is an assignment.
+    out <- if (is.null(cur) || startsWith(t, "%")) .hzr_sas_opt_name(t, "OUT")
+    if (!is.null(out)) add(p, out, "opaque", what = sub("[ (].*$", "", t))
+    if (!is.null(cur)) {
+      cur$stmts <- c(cur$stmts, t)
+      next
+    }
+    if (!is.null(proc) && identical(proc$kind, "SORT") && grepl("^BY ", t)) {
+      by <- strsplit(trimws(sub("^BY", "", t)), " +")[[1L]]
+      if (!all(grepl("^[A-Z_][A-Z0-9_]*$", by)) || "DESCENDING" %in% by) proc$bad <- TRUE
+      proc$by <- by
+    }
+  }
+  close_all()
+  ev[order(vapply(ev, function(x) x$pos, numeric(1L)))]
+}
+
+#' The last definition of dataset `name` that starts before offset `before`.
+#' @return An index into `events`, or `NA_integer_`.
+#' @noRd
+.hzr_sas_resolve <- function(events, name, before) {
+  hit <- which(vapply(events, function(e) identical(e$name, name) && e$pos < before,
+                      logical(1L)))
+  if (length(hit)) hit[[length(hit)]] else NA_integer_
+}
+
+#' Translate one SAS DATA-step arithmetic expression into an R call.
+#'
+#' Numbers, variable names, `+ - * / **`, parentheses, quoted strings, a lone
+#' `.` (a missing value) and the functions `LOG` and `EXP`: the whole
+#' vocabulary of the corpus's grid arithmetic. SAS and R agree on the
+#' precedence of these, including `-2**2` (`-4` in both). Anything else (a
+#' comparison, `AND`, another function) is declined rather than guessed at.
+#' Built from a token whitelist, so the returned call can only reference the
+#' variables listed in `refs`, `log`, `exp` and arithmetic.
+#' @return `list(ok = TRUE, call, refs)` or `list(ok = FALSE, why)`.
+#' @noRd
+.hzr_sas_expr <- function(text) {
+  fail <- function(why) list(ok = FALSE, why = why)
+  s <- trimws(text)
+  if (!nzchar(s)) return(fail("an empty expression"))
+  fns <- c(LOG = "log", EXP = "exp")
+  out <- character(0)
+  refs <- character(0)
+  take <- function(pattern) {
+    m <- regmatches(s, regexpr(pattern, s, perl = TRUE))
+    if (length(m)) m else NULL
+  }
+  while (nzchar(s)) {
+    if (startsWith(s, " ")) {
+      s <- sub("^ +", "", s)
+      next
+    }
+    tok <- take("^(?:[0-9]+[.]?[0-9]*|[.][0-9]+)(?:E[+-]?[0-9]+)?")
+    if (!is.null(tok)) {
+      out <- c(out, tok)
+      s <- substring(s, nchar(tok) + 1L)
+      next
+    }
+    tok <- take("^(?:'[^']*'|\"[^\"]*\")")
+    if (!is.null(tok)) {
+      out <- c(out, encodeString(substr(tok, 2L, nchar(tok) - 1L), quote = "\""))
+      s <- substring(s, nchar(tok) + 1L)
+      next
+    }
+    tok <- take("^[A-Z_][A-Z0-9_]*")
+    if (!is.null(tok)) {
+      s <- substring(s, nchar(tok) + 1L)
+      if (grepl("^ *[(]", s)) {
+        if (!tok %in% names(fns)) {
+          return(fail(paste0("calls ", tok, "(), which this translation does not carry")))
+        }
+        out <- c(out, fns[[tok]])
+      } else {
+        out <- c(out, paste0("`", tok, "`"))
+        refs <- c(refs, tok)
+      }
+      next
+    }
+    if (startsWith(s, "**")) {
+      out <- c(out, "^")
+      s <- substring(s, 3L)
+      next
+    }
+    ch <- substr(s, 1L, 1L)
+    if (ch %in% c("+", "-", "*", "/", "(", ")", ",")) {
+      out <- c(out, ch)
+    } else if (ch == ".") {
+      out <- c(out, "NA_real_")
+    } else {
+      return(fail(paste0("uses `", ch, "`, which this translation does not carry")))
+    }
+    s <- substring(s, 2L)
+  }
+  cl <- tryCatch(str2lang(paste(out, collapse = " ")), error = function(e) NULL)
+  if (is.null(cl)) return(fail("does not read as arithmetic"))
+  list(ok = TRUE, call = cl, refs = unique(refs))
+}
+
+#' Evaluate a translated expression over already-folded constants.
+#' @return A length-one value, or `NULL` when it does not fold.
+#' @noRd
+.hzr_sas_fold <- function(call, const) {
+  # Safe by construction: `call` comes only from .hzr_sas_expr(), whose token
+  # whitelist admits numbers, strings, backquoted variable names, arithmetic,
+  # log() and exp(). Every name was checked against `const` by the caller,
+  # and base is the only other scope, so nothing else is reachable.
+  val <- tryCatch(eval(call, envir = const, enclos = baseenv()),
+                  error = function(e) NULL, warning = function(w) NULL)
+  if (length(val) != 1L || !(is.numeric(val) || is.character(val))) return(NULL)
+  if (is.numeric(val) && !is.finite(val)) return(NULL)
+  val
+}
+
+#' Split `text` at commas that are outside parentheses and quotes.
+#' @noRd
+.hzr_sas_split_commas <- function(text) {
+  chars <- strsplit(text, "", fixed = TRUE)[[1L]]
+  depth <- 0L
+  quote <- ""
+  cut <- integer(0)
+  for (i in seq_along(chars)) {
+    ch <- chars[[i]]
+    if (nzchar(quote)) {
+      if (ch == quote) quote <- ""
+    } else if (ch %in% c("'", "\"")) {
+      quote <- ch
+    } else if (ch == "(") {
+      depth <- depth + 1L
+    } else if (ch == ")") {
+      depth <- depth - 1L
+    } else if (ch == "," && depth == 0L) {
+      cut <- c(cut, i)
+    }
+  }
+  starts <- c(1L, cut + 1L)
+  ends <- c(cut - 1L, length(chars))
+  trimws(substring(text, starts, ends))
+}
+
+#' Translate the value list of `DO var = <spec>;` into an R vector call.
+#'
+#' SAS's list is comma separated; each item is a value or `a TO b [BY c]`,
+#' and the loop takes every item in turn (so `DO T = a TO b BY c, b;` runs the
+#' range and then takes `b` once more). Every bound must fold to a constant
+#' from assignments earlier in the same step, as every corpus grid's does,
+#' so the loop has the same values for every row it expands. A bound read
+#' from data would give each row its own loop, which is refused.
+#' @return `list(call, refs)` or `list(refuse = <why>)`.
+#' @noRd
+.hzr_sas_do_values <- function(spec, const) {
+  refuse <- function(why) list(refuse = why)
+  one <- function(txt) {
+    e <- .hzr_sas_expr(txt)
+    if (!e$ok) return(list(why = paste0("`", txt, "` ", e$why)))
+    if (!all(e$refs %in% names(const))) {
+      return(list(why = paste0("`", txt, "` is not a constant set earlier in the step")))
+    }
+    val <- .hzr_sas_fold(e$call, const)
+    if (!is.numeric(val)) return(list(why = paste0("`", txt, "` does not evaluate to a number")))
+    list(call = e$call, refs = e$refs, val = val)
+  }
+  elems <- list()
+  refs <- character(0)
+  for (part in .hzr_sas_split_commas(spec)) {
+    rng <- regmatches(part, regexec("^(.+?) +TO +(.+?)(?: +BY +(.+))?$", part, perl = TRUE))[[1L]]
+    if (length(rng)) {
+      lo <- one(rng[[2L]])
+      hi <- one(rng[[3L]])
+      by <- if (nzchar(rng[[4L]])) one(rng[[4L]]) else list(call = 1, refs = character(0), val = 1)
+      for (x in list(lo, hi, by)) if (!is.null(x$why)) return(refuse(x$why))
+      # SAS runs a TO b BY c while the value has not passed b, counting down
+      # for a negative c, as seq() does. A range SAS runs zero times (or
+      # forever) would leave seq() to fail at render; refuse it here.
+      steps <- (hi$val - lo$val) / by$val
+      if (by$val == 0 || steps < 0 || steps > 1e6) {
+        return(refuse(paste0("`", part, "` is a range SAS runs no times, or without end")))
+      }
+      elems[[length(elems) + 1L]] <- bquote(seq(.(lo$call), .(hi$call), by = .(by$call)))
+      refs <- c(refs, lo$refs, hi$refs, by$refs)
+    } else {
+      x <- one(part)
+      if (!is.null(x$why)) return(refuse(x$why))
+      elems[[length(elems) + 1L]] <- x$call
+      refs <- c(refs, x$refs)
+    }
+  }
+  call <- if (length(elems) == 1L) elems[[1L]] else as.call(c(quote(c), elems))
+  list(call = call, refs = unique(refs))
+}
+
+#' Classify one DATA-step statement.
+#' @noRd
+.hzr_sas_stmt_kind <- function(t) {
+  if (grepl("^[A-Z_][A-Z0-9_]* *=", t)) return("assign")
+  if (identical(t, "DO")) return("group")
+  if (grepl("^DO +[A-Z_][A-Z0-9_]* *=", t)) return("do")
+  if (grepl("^DO( |[(]|$)", t)) return("doother")
+  if (grepl("^(IF|ELSE)( |$)", t)) {
+    return(if (grepl("(^ELSE| THEN) DO$", t)) "ifdo" else "if")
+  }
+  if (identical(t, "OUTPUT")) return("output")
+  if (identical(t, "DELETE")) return("delete")
+  if (grepl("^DROP( |$)", t)) return("drop")
+  if (grepl("^KEEP( |$)", t)) return("keep")
+  if (grepl("^SET( |$)", t)) return("set")
+  ignorable <- paste0("^(LIBNAME|FILENAME|TITLE[0-9]*|FOOTNOTE[0-9]*|OPTIONS?|",
+                      "LENGTH|LABEL|FORMAT|INFORMAT|ATTRIB|PUT|FILE)( |$)")
+  if (grepl(ignorable, t)) return("ignore")
+  "other"
+}
+
+#' Parse a step's statements into a tree, matching each DO to its END.
+#' @return `list(items, error)`; each item is `list(kind, text[, body])`.
+#' @noRd
+.hzr_sas_step_items <- function(stmts) {
+  i <- 1L
+  err <- NULL
+  walk <- function(in_block) {
+    items <- list()
+    while (i <= length(stmts)) {
+      t <- stmts[[i]]
+      i <<- i + 1L
+      if (identical(t, "END")) {
+        if (in_block) return(items)
+        err <<- "an END with no DO"
+        return(items)
+      }
+      item <- list(kind = .hzr_sas_stmt_kind(t), text = t)
+      if (item$kind %in% c("do", "group", "doother", "ifdo")) item$body <- walk(TRUE)
+      items[[length(items) + 1L]] <- item
+    }
+    if (in_block && is.null(err)) err <<- "a DO with no END"
+    items
+  }
+  items <- walk(FALSE)
+  # An unconditional `DO; ... END;` group is only brackets: splice it in.
+  flat <- function(items) {
+    out <- list()
+    for (it in items) {
+      if (!is.null(it$body)) it$body <- flat(it$body)
+      if (identical(it$kind, "group")) out <- c(out, it$body) else out[[length(out) + 1L]] <- it
+    }
+    out
+  }
+  list(items = flat(items), error = err)
+}
+
+#' The kinds, and the assignment targets, anywhere in an item tree.
+#' @noRd
+.hzr_sas_tree_kinds <- function(items) {
+  unlist(lapply(items, function(it) c(it$kind, .hzr_sas_tree_kinds(it$body))))
+}
+
+#' What a conditional statement (or block) would change, if it ran.
+#' @return `list(targets, deletes, bad)`: variables it assigns, whether it can
+#'   delete rows, and the text of any statement inside it that decides rows
+#'   in a way this cannot mark (an OUTPUT, a loop, SET).
+#' @noRd
+.hzr_sas_cond_effects <- function(item) {
+  targets <- character(0)
+  deletes <- FALSE
+  bad <- NULL
+  inner <- function(txt) {
+    k <- .hzr_sas_stmt_kind(txt)
+    if (identical(k, "if")) {
+      visit(list(kind = "if", text = txt)) # ELSE IF ... THEN ...
+    } else if (identical(k, "assign")) {
+      targets <<- c(targets, sub(" *=.*$", "", txt))
+    } else if (identical(k, "delete")) {
+      deletes <<- TRUE
+    } else if (!identical(k, "ignore")) {
+      bad <<- c(bad, txt)
+    }
+  }
+  visit <- function(it) {
+    if (identical(it$kind, "if")) {
+      then <- regmatches(it$text, regexec("^(?:IF .*? THEN|ELSE) +(.+)$", it$text, perl = TRUE))[[1L]]
+      if (length(then)) inner(then[[2L]]) else deletes <<- TRUE # a subsetting IF
+    } else if (identical(it$kind, "ifdo")) {
+      for (b in it$body) visit(b)
+    } else {
+      inner(it$text)
+    }
+  }
+  visit(item)
+  list(targets = unique(targets), deletes = deletes, bad = bad)
+}
+
+#' Translate one `DATA <name>;` step into R statements.
+#'
+#' @param ev The step's event from `.hzr_sas_dataset_events()`.
+#' @param input A function of a dataset name returning `list(cols = ...)` for
+#'   the definition this step's `SET` reads, or `list(refuse = <why>)`.
+#' @return `list(code, cols, untr, warn)` or `list(refuse = <why>)`.
+#' @noRd
+.hzr_sas_translate_step <- function(ev, input) {
+  refuse <- function(why) list(refuse = paste0("its DATA ", ev$name, " step has ", why))
+  parsed <- .hzr_sas_step_items(ev$stmts)
+  if (!is.null(parsed$error)) return(refuse(parsed$error))
+  items <- Filter(function(it) !identical(it$kind, "ignore"), parsed$items)
+
+  W <- as.name(ev$name)
+  code <- list()
+  untr <- .hzr_untranslated_frame()
+  warn <- character(0)
+  emit <- function(cl) code[[length(code) + 1L]] <<- cl
+  set_col <- function(v, value) emit(call("<-", call("$", W, as.name(v)), value))
+  u1 <- function(stmt, why) {
+    untr <<- rbind(untr, .hzr_untranslated_frame(NA_integer_, stmt, why))
+    warn <<- c(warn, paste0("`", stmt, "`: ", why))
+  }
+
+  # --- SET: the step's input rows ------------------------------------------
+  set_names <- character(0)
+  if (length(items) && identical(items[[1L]]$kind, "set")) {
+    spec <- trimws(sub("^SET", "", items[[1L]]$text))
+    set_names <- strsplit(spec, " ", fixed = TRUE)[[1L]]
+    items <- items[-1L]
+  }
+
+  kinds <- .hzr_sas_tree_kinds(items)
+  stop_kinds <- c("set", "other", "doother")
+  if (any(kinds %in% stop_kinds)) {
+    hit <- NULL
+    find <- function(its) {
+      for (it in its) {
+        if (is.null(hit) && it$kind %in% stop_kinds) hit <<- it$text
+        find(it$body)
+      }
+    }
+    find(items)
+    return(refuse(paste0("`", hit, "`, which decides the grid's rows or values in a way ",
+                         "this translation does not read")))
+  }
+  top <- vapply(items, function(it) it$kind, character(1L))
+  loops <- which(top == "do")
+  if (any(top == "delete")) return(refuse("an unconditional DELETE"))
+  # OUTPUT is read at the top level, or as the last statement of one DO
+  # loop. Anywhere else (under IF, or twice in a loop) it decides which rows
+  # exist, and no grid emitted without it would be SAS's.
+  nested_out <- any(vapply(items, function(it) {
+    if (identical(it$kind, "do")) {
+      b <- vapply(it$body, function(x) x$kind, character(1L))
+      !length(b) || sum(.hzr_sas_tree_kinds(it$body) == "output") != 1L ||
+        !identical(b[[length(b)]], "output") || any(b %in% c("do", "delete"))
+    } else {
+      "output" %in% .hzr_sas_tree_kinds(it$body)
+    }
+  }, logical(1L)))
+  if (nested_out) return(refuse("an OUTPUT or DELETE inside a loop or a condition"))
+  if (length(loops) > 1L || (length(loops) && any(top == "output"))) {
+    return(refuse("more than one place that writes rows"))
+  }
+  n_out <- sum(top == "output")
+
+  if (length(set_names)) {
+    ins <- lapply(set_names, input)
+    for (x in ins) if (!is.null(x$refuse)) return(x)
+    each <- lapply(ins, function(x) x$cols)
+    known <- unique(unlist(each))
+    if (length(set_names) == 1L) {
+      emit(call("<-", W, as.name(set_names)))
+    } else {
+      # SET A B stacks A's rows over B's; a variable only one of them has is
+      # missing on the other's rows.
+      parts <- lapply(seq_along(set_names), function(j) {
+        src <- as.name(set_names[[j]])
+        miss <- setdiff(known, each[[j]])
+        if (length(miss)) {
+          src <- as.call(c(list(quote(cbind), src),
+                           stats::setNames(rep(list(NA_real_), length(miss)), miss)))
+        }
+        call("[", src, known)
+      })
+      emit(call("<-", W, as.call(c(quote(rbind), parts))))
+    }
+  } else {
+    known <- character(0)
+    emit(call("<-", W, quote(data.frame(row.names = 1L))))
+  }
+  const <- list()
+
+  assign_stmt <- function(text, carried = character(0)) {
+    v <- sub(" *=.*$", "", text)
+    e <- .hzr_sas_expr(sub("^[A-Z_][A-Z0-9_]* *= *", "", text))
+    why <- if (!e$ok) {
+      e$why
+    } else if (length(intersect(e$refs, carried))) {
+      paste0("reads ", paste(intersect(e$refs, carried), collapse = ", "),
+             " as the previous loop pass left it")
+    } else if (length(setdiff(e$refs, known))) {
+      paste0("reads ", paste(setdiff(e$refs, known), collapse = ", "),
+             ", which the grid does not carry at this point")
+    }
+    if (!is.null(why)) {
+      set_col(v, NA_real_)
+      u1(text, paste0("not translated: it ", why, ". ", v, " is NA in the grid"))
+      const[[v]] <<- NULL
+    } else {
+      set_col(v, if (length(e$refs)) bquote(with(.(W), .(e$call))) else e$call)
+      val <- if (all(e$refs %in% names(const))) .hzr_sas_fold(e$call, const)
+      if (is.null(val)) const[[v]] <<- NULL else const[[v]] <<- val
+    }
+    known <<- union(known, v)
+  }
+  cond_stmt <- function(it) {
+    fx <- .hzr_sas_cond_effects(it)
+    if (length(fx$bad)) return(paste0("`", fx$bad[[1L]], "` under a condition"))
+    for (v in fx$targets) {
+      set_col(v, NA_real_)
+      const[[v]] <<- NULL
+    }
+    known <<- union(known, fx$targets)
+    why <- c(
+      if (length(fx$targets)) paste0("sets ", paste(fx$targets, collapse = ", "), ", NA in the grid"),
+      if (fx$deletes) "deletes rows, which the grid keeps"
+    )
+    if (length(why)) {
+      shown <- if (identical(it$kind, "ifdo")) paste0(it$text, "; ... END") else it$text
+      u1(shown, paste0("a conditional statement is not translated: it ", paste(why, collapse = " and ")))
+    }
+    NULL
+  }
+
+  # Two OUTPUTs write the program data vector twice per input row, so every
+  # variable exists at both, missing where not yet set.
+  if (n_out > 1L) {
+    all_targets <- unique(unlist(lapply(items, function(it) {
+      if (identical(it$kind, "assign")) sub(" *=.*$", "", it$text) else .hzr_sas_cond_effects(it)$targets
+    })))
+    for (v in setdiff(all_targets, known)) set_col(v, NA_real_)
+    known <- union(known, all_targets)
+    emit(quote(.out <- list()))
+  }
+
+  drop <- character(0)
+  keep <- NULL
+  done <- FALSE
+  k_out <- 0L
+  for (it in items) {
+    if (it$kind %in% c("drop", "keep")) {
+      nms <- strsplit(trimws(sub("^(DROP|KEEP)", "", it$text)), " +")[[1L]]
+      if (!all(grepl("^[A-Z_][A-Z0-9_]*$", nms))) {
+        return(refuse(paste0("`", it$text, "`, which is not a plain list of variables")))
+      }
+      if (identical(it$kind, "drop")) drop <- c(drop, nms) else keep <- c(keep, nms)
+      next
+    }
+    # After the step's only OUTPUT, or its output loop, nothing reaches the
+    # grid: statements there change the program data vector and no row is
+    # written from it.
+    if (done) next
+    if (identical(it$kind, "assign")) {
+      assign_stmt(it$text)
+    } else if (it$kind %in% c("if", "ifdo")) {
+      bad <- cond_stmt(it)
+      if (!is.null(bad)) return(refuse(bad))
+    } else if (identical(it$kind, "output")) {
+      if (n_out == 1L) {
+        done <- TRUE
+      } else {
+        k_out <- k_out + 1L
+        emit(bquote(.out[[.(k_out)]] <- .(W)))
+      }
+    } else if (identical(it$kind, "do")) {
+      m <- regmatches(it$text, regexec("^DO +([A-Z_][A-Z0-9_]*) *= *(.+)$", it$text))[[1L]]
+      var <- m[[2L]]
+      vals <- .hzr_sas_do_values(m[[3L]], const)
+      if (!is.null(vals$refuse)) return(refuse(paste0("`", it$text, "`: ", vals$refuse)))
+      vals_call <- if (length(vals$refs)) bquote(with(.(W)[1L, , drop = FALSE], .(vals$call))) else vals$call
+      # Each input row is repeated once per loop value, rows kept together,
+      # as the DATA step writes them.
+      emit(call("<-", quote(.v), vals_call))
+      emit(bquote(.n <- nrow(.(W))))
+      emit(bquote(.(W) <- .(W)[rep(seq_len(.n), each = length(.v)), , drop = FALSE]))
+      set_col(var, quote(rep(.v, times = .n)))
+      known <- union(known, var)
+      const[[var]] <- NULL
+      body <- it$body[-length(it$body)]
+      assigned <- vapply(body, function(b) {
+        if (identical(b$kind, "assign")) sub(" *=.*$", "", b$text) else NA_character_
+      }, character(1L))
+      for (j in seq_along(body)) {
+        b <- body[[j]]
+        if (identical(b$kind, "assign")) {
+          assign_stmt(b$text, carried = assigned[j:length(assigned)])
+        } else {
+          bad <- cond_stmt(b)
+          if (!is.null(bad)) return(refuse(bad))
+        }
+      }
+      done <- TRUE
+    }
+  }
+  if (n_out > 1L) {
+    emit(bquote(.(W) <- do.call(rbind, .out)))
+    emit(bquote(.(W) <- .(W)[order(rep(seq_len(nrow(.out[[1L]])), times = length(.out))), , drop = FALSE]))
+  }
+  if (length(drop)) {
+    emit(bquote(.(W) <- .(W)[setdiff(names(.(W)), .(unique(drop)))]))
+    known <- setdiff(known, drop)
+  }
+  if (!is.null(keep)) {
+    emit(bquote(.(W) <- .(W)[intersect(names(.(W)), .(unique(keep)))]))
+    known <- intersect(known, keep)
+  }
+  emit(bquote(rownames(.(W)) <- NULL))
+  list(code = code, cols = known, untr = untr, warn = warn)
+}
+
+#' Translate the DATA steps that build a HAZPRED prediction grid.
+#'
+#' Resolves the grid as SAS does: the last definition of `name` before the
+#' PROC HAZPRED block, each of its `SET` inputs the last definition before
+#' that step, and so on back. The returned call builds every step it needs,
+#' in file order, inside one `local()`, and ends by copying the column the
+#' HAZPRED `TIME` statement names into the `time` column `predict()` reads.
+#'
+#' @param txt The whole normalised source.
+#' @param name The HAZPRED `DATA=` dataset.
+#' @param time_var The variable the HAZPRED `TIME` statement names.
+#' @param before Offset of the PROC HAZPRED block; only definitions that
+#'   start before it count.
+#' @param blocks `.hzr_sas_blocks(txt)`.
+#' @return `list(call, untranslated, reason)`. `call` is `NULL` when the grid
+#'   cannot be built, and `reason` then says why. `NULL` means untranslated,
+#'   never "no grid": the caller must record it.
+#' @noRd
+.hzr_parse_grid <- function(txt, name, time_var, before = nchar(txt) + 1L,
+                            blocks = .hzr_sas_blocks(txt)) {
+  empty <- .hzr_untranslated_frame()
+  refuse <- function(why) list(call = NULL, untranslated = empty, reason = why)
+  if (is.null(name) || !nzchar(name)) return(refuse("no DATA= dataset was named"))
+  if (is.null(time_var) || is.na(time_var) || !nzchar(time_var)) {
+    return(refuse(paste(
+      "the block has no TIME statement, which PROC HAZPRED requires",
+      "(hazpred/timeprc.c:10-14), so there is no time to predict at")))
+  }
+  events <- .hzr_sas_dataset_events(txt, blocks)
+  memo <- list()
+  built <- integer(0)
+  build <- function(k) {
+    key <- as.character(k)
+    if (!is.null(memo[[key]])) return(memo[[key]])
+    ev <- events[[k]]
+    input <- function(nm) {
+      j <- .hzr_sas_resolve(events, nm, ev$pos)
+      if (is.na(j)) {
+        return(list(refuse = paste0(ev$name, " reads ", nm, ", which no DATA step in this job ",
+                                    "builds before it")))
+      }
+      build(j)
+    }
+    res <- switch(ev$kind,
+      data = .hzr_sas_translate_step(ev, input),
+      hazpred = {
+        r <- input(ev$from)
+        if (!is.null(r$refuse)) r else
+          list(code = list(call("<-", as.name(ev$name), as.name(ev$from))),
+               cols = r$cols, untr = empty, warn = character(0))
+      },
+      sort = {
+        r <- input(ev$from)
+        if (!is.null(r$refuse)) {
+          r
+        } else if (!all(ev$by %in% r$cols)) {
+          list(refuse = paste0("PROC SORT of ", ev$from, " is by a variable it does not carry"))
+        } else {
+          from <- as.name(ev$from)
+          ord <- as.call(c(quote(order), lapply(ev$by, function(b) call("$", from, as.name(b)))))
+          list(code = list(bquote(.(as.name(ev$name)) <- .(from)[.(ord), , drop = FALSE])),
+               cols = r$cols, untr = empty, warn = character(0))
+        }
+      },
+      list(refuse = paste0(ev$name, " is written by ", ev$what, ", which this translation ",
+                           "does not read")))
+    if (is.null(res$refuse)) built <<- c(built, k)
+    memo[[key]] <<- res
+    res
+  }
+
+  k <- .hzr_sas_resolve(events, name, before)
+  if (is.na(k)) {
+    return(refuse(paste0("no DATA step in this job builds ", name, " before this PROC HAZPRED")))
+  }
+  res <- build(k)
+  if (!is.null(res$refuse)) return(refuse(res$refuse))
+  if (!time_var %in% res$cols) {
+    return(refuse(paste0(
+      "the TIME variable ", time_var, " is not a variable of ", name,
+      ", so PROC HAZPRED stops (hazpred/timeprc.c:16-20)")))
+  }
+  ks <- sort(unique(built))
+  parts <- lapply(ks, function(j) memo[[as.character(j)]])
+  code <- unlist(lapply(parts, function(x) x$code), recursive = FALSE)
+  untr <- do.call(rbind, c(list(empty), lapply(parts, function(x) x$untr)))
+  warn <- unlist(lapply(parts, function(x) x$warn))
+  W <- as.name(name)
+  body <- c(
+    if (length(warn)) {
+      list(call("warning", paste0(
+        "This grid was built by SAS DATA step statements that hzr_translate_sas() does not ",
+        "translate; predictions over the variables they set are NA:\n",
+        paste0("  ", warn, collapse = "\n")), call. = FALSE))
+    },
+    code,
+    # PROC HAZPRED reads its time from the variable TIME names
+    # (hazpred/timeprc.c:16-25); predict() reads a column named `time`.
+    list(call("<-", call("$", W, as.name("time")), call("$", W, as.name(time_var))), W)
+  )
+  list(call = call("local", as.call(c(as.name("{"), body))), untranslated = untr, reason = NULL)
 }
 
 #' Parse a PROC HAZPRED block into predict() call(s).
@@ -2151,6 +2648,7 @@
   want_haz <- TRUE
   want_cl <- TRUE
   climit <- NULL
+  time_var <- NULL
 
   if (!is.null(pred_syntax_error)) note("PROC HAZPRED", pred_syntax_error)
   for (tok in toks) {
@@ -2217,17 +2715,26 @@
       next
     }
     mapped <- mapped + 1L
+    # `TIME NAME` (hazpred_y.y:80): the grid variable predictions are made
+    # at. The last one written is the one setvar(11, ...) keeps.
+    if (identical(token, "TIME")) time_var <- if (length(w) >= 2L) w[[2L]] else NA_character_
     if (!(token %in% c("TIME", "ID"))) {
       mapped <- mapped - 1L
       note(kw, "SAS listing control; no R effect")
     }
   }
 
-  grid <- .hzr_parse_grid(txt, data_name)
-  grid_refused <- is.null(grid) && !is.null(data_name)
-  if (grid_refused) {
-    note(paste0("DATA=", data_name),
-         "prediction grid DATA step is not one of the translatable forms")
+  grid <- NULL
+  grid_refused <- FALSE
+  if (!is.null(data_name)) {
+    g <- .hzr_parse_grid(txt, data_name, time_var,
+                         before = if (is.null(block$start)) nchar(txt) + 1L else block$start)
+    grid <- g$call
+    untr <- rbind(untr, g$untranslated)
+    grid_refused <- is.null(grid)
+    if (grid_refused) {
+      note(paste0("DATA=", data_name), paste0("prediction grid not translated: ", g$reason))
+    }
   }
 
   mk <- function(type) {
@@ -2241,8 +2748,8 @@
     if (grid_refused) {
       return(as.call(list(quote(stop), paste0(
         "The ", type, " predictions of this PROC HAZPRED block read the ",
-        "grid ", data_name, ", built by a SAS DATA step ",
-        "hzr_translate_sas() does not translate. Build ", data_name,
+        "grid ", data_name, ", which hzr_translate_sas() does not translate: ",
+        g$reason, ". Build ", data_name,
         " by hand (a data frame with a `time` column) and call predict() ",
         "yourself; rendering over whatever else is named ", data_name,
         " would report predictions over the wrong times."
