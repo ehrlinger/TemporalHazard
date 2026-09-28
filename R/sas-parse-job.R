@@ -1242,7 +1242,15 @@
     } else {
       paste("names no DATA= dataset,", why_data)
     }
-    macro <- if (data_given) {
+    # A block whose first statement is not the PROC statement (a %repeat
+    # call it encloses, say) was read for options from the wrong statement,
+    # so this cannot say SAS finds no DATA=.
+    macro <- if (!startsWith(trimws(st[[1L]]), "PROC HAZARD")) {
+      paste(
+        "This translation read the PROC HAZARD options from the block's",
+        "first statement, which is not the PROC HAZARD statement, so it may",
+        "have missed a DATA= that SAS reads.")
+    } else if (data_given) {
       paste(
         "SAS does not run it either: PROC HAZARD has no form of DATA=",
         "without a dataset name (hazard_y.y:61-62, :80-81), so it rejects",
