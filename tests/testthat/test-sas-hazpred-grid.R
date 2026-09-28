@@ -146,6 +146,21 @@ test_that("PROC SORT reorders the grid it sorts (#494)", {
   expect_equal(grid_494(job)$time, c(1, 2, 3))
 })
 
+test_that("PROC SORT puts a missing key first, as SAS does (#494)", {
+  # SAS orders a numeric missing value below every number, so an ascending
+  # sort puts it first; R's order() puts NA last by default.
+  job <- translate_494(c(
+    "DATA A; DO MONTHS=2,1; K=MONTHS; OUTPUT; END;",
+    "DATA B; MONTHS=3;",
+    "DATA PREDICT; SET A B;",
+    "PROC SORT DATA=PREDICT; BY K;",
+    hazpred_494("PREDICT")
+  ))
+  g <- grid_494(job)
+  expect_equal(g$K, c(NA, 1, 2))
+  expect_equal(g$time, c(3, 1, 2))
+})
+
 test_that("two OUTPUTs write each input row twice, in SAS's order (#494)", {
   job <- translate_494(c(
     "DATA BASE; DO B=1,2; OUTPUT; END;",
