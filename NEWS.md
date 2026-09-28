@@ -14,7 +14,12 @@
   dropped term's name onto another column. The starting values are now
   matched to the new design by column. A factor entering or leaving, and a
   model with `time_windows`, which used to stop with a `theta` length
-  error, now refit.
+  error, now refit. `hzr_stepwise()` now counts a model's shape
+  parameters the way `hazard()` does, ignoring `control$shape_param_count`.
+  For a fit given a count that disagreed with its distribution, the score
+  screen used to stop with a `theta` layout error, and under
+  `criterion = "wald"` or `"aic"` the trace's "Final model" line reported
+  the wrong number of covariates.
 
 * **A translated `PROC HAZPRED` job now predicts at the grid SAS used
   (#494).** `hzr_translate_sas()` read only the first `DO` loop of the

@@ -185,3 +185,40 @@ test_that("a refit counts shapes as the likelihood does, not by control", {
     control = ctl
   ))
 })
+
+test_that("hzr_stepwise() counts shapes by distribution under every criterion", {
+  # The score test's layout and the trace's covariate count read
+  # control$shape_param_count too, which hazard() ignores: the score screen
+  # stopped on a theta "layout" error, and the trace reported one covariate
+  # too few (#489, follow-up to #530).
+  d <- refit_489_data()
+  d$noise <- rep(c(0, 1, 1, 0, 1, 0, 0, 1), length.out = nrow(d))
+  theta <- c(mu = 0.1, nu = 1, beta_age = 0, beta_mal = 0)
+  plain <- refit_489_fit("age + mal", theta, d)
+  misled <- refit_489_fit("age + mal", theta, d,
+                          control = list(shape_param_count = 3L))
+  screen <- function(fit, scope, crit, slentry) {
+    hzr_stepwise(fit, scope = scope, data = d, direction = "forward",
+                 criterion = crit, slentry = slentry, trace = FALSE)
+  }
+  final_line <- function(sw) {
+    utils::tail(grep("^Final model", sw$trace_msg, value = TRUE), 1L)
+  }
+  for (crit in c("score", "wald", "aic")) {
+    # Nothing enters: the final model is the base fit, with 2 covariates.
+    sw <- screen(misled, "noise", crit, 1e-12)
+    expect_identical(nrow(sw$steps), 0L, info = crit)
+    expect_match(final_line(sw), "^Final model: 2 covariates,", info = crit)
+    expect_identical(final_line(sw),
+                     final_line(screen(plain, "noise", crit, 1e-12)),
+                     info = crit)
+
+    # com_iv enters, with the statistic the control-free fit gives it.
+    sw <- screen(misled, "com_iv", crit, 0.99)
+    ref <- screen(plain, "com_iv", crit, 0.99)
+    expect_identical(sw$steps$variable, "com_iv", info = crit)
+    expect_equal(sw$steps$stat, ref$steps$stat, tolerance = 1e-6,
+                 info = crit)
+    expect_match(final_line(sw), "^Final model: 3 covariates,", info = crit)
+  }
+})

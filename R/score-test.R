@@ -94,9 +94,10 @@
 #'
 #' @noRd
 .hzr_score_n_base <- function(current) {
-  n_base <- .hzr_shape_parameter_count(
-    current$spec$dist, control = current$spec$control
-  )
+  # The likelihood's own count, as hazard() checks theta with: it ignores
+  # control$shape_param_count, so a fit made with a misleading one is valid
+  # and must not be read with a different layout here (#489).
+  n_base <- .hzr_shape_parameter_count(current$spec$dist)
   if (!is.finite(n_base) || n_base < 1L) {
     stop(
       ".hzr_score_free_idx(): no known theta layout for dist ",

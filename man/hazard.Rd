@@ -356,10 +356,11 @@ Read \code{fit$spec$control$conserve_applied}, not
 \code{fit$spec$control$conserve}: the latter says only what you asked for.
 \item \code{shape_param_count}: The number of baseline parameters at the front of
 \code{theta}: the scale and any shape parameters, so 2 for \code{"weibull"} and 1
-for \code{"exponential"}. For a single-distribution model only. The fit itself does not
-use it; the stepwise refit and the score test read it back from
-\code{fit$spec$control}. A multiphase fit derives its own layout, so nothing
-reads it there.
+for \code{"exponential"}. For a single-distribution model only. The fit does
+not use it: \code{theta} is checked against the distribution's own count, and
+so are \code{\link[=hzr_stepwise]{hzr_stepwise()}}, its refits and its score test. Only an internal
+helper that writes a SAS input deck for parity checks reads it. A
+multiphase fit derives its own layout, so nothing reads it there.
 }
 
 The elements above are accepted without a warning: \code{maxit} and \code{reltol}

@@ -1346,7 +1346,7 @@ stepwise_trace <- function(fit) {
     }, integer(1L)))
     length(fit$fit$theta) - total_betas
   } else {
-    .hzr_shape_parameter_count(fit$spec$dist,
-                                control = fit$spec$control)
+    # Without control$shape_param_count, which the likelihood ignores (#489).
+    .hzr_shape_parameter_count(fit$spec$dist)
   }
 }
