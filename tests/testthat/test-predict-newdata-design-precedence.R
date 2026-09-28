@@ -798,8 +798,8 @@ test_that("a phase-formula factor with reordered levels codes as the fit did", {
     fit = TRUE))
   th <- pf$fit$theta
   tt <- c(2, 20)
-  base <- predict(pf, newdata = data.frame(time = tt), type = "cumulative_hazard",
-                  decompose = TRUE)
+  base <- predict_baseline(pf, newdata = data.frame(time = tt),
+                           type = "cumulative_hazard", decompose = TRUE)
   # Row 1 is "old" (early: no grp effect), row 2 "young"; the constant
   # phase inherits the global age effect at age 60.
   ref <- base$early * exp(th[["early.grpyoung"]] * c(0, 1)) +
@@ -1048,7 +1048,8 @@ test_that("an extra newdata column cannot mask a phase-formula constant", {
       constant = hzr_phase("constant")),
     fit = TRUE))
   # I(30 > 50) is FALSE, so the answer is the covariate-free baseline.
-  base <- predict(m, newdata = data.frame(time = 2), type = "cumulative_hazard")
+  base <- predict_baseline(m, newdata = data.frame(time = 2),
+                           type = "cumulative_hazard")
   masked <- predict(m, type = "cumulative_hazard",
                     newdata = data.frame(time = 2, age = 30, cutoff = 0))
   expect_equal(unname(masked), unname(base), tolerance = 1e-10)

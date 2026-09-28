@@ -31,7 +31,8 @@ test_that("phase-formula fit: par_cumhaz is at the covariate means, not at 0", {
   nd_mean <- data.frame(time = gof$time, age = mean(d$age), mal = mean(d$mal))
   nd_zero <- data.frame(time = gof$time)
   at_mean <- predict(fit, newdata = nd_mean, type = "cumulative_hazard")
-  at_zero <- predict(fit, newdata = nd_zero, type = "cumulative_hazard")
+  at_zero <- predict_baseline(fit, newdata = nd_zero,
+                              type = "cumulative_hazard")
 
   # The two candidate curves are far apart, so the comparison can fail.
   expect_gt(max(abs(at_zero / at_mean - 1)), 0.5)
@@ -135,8 +136,8 @@ test_that("multiphase fit with only global covariates: curve at their means", {
 # baseline (a time-only newdata) times exp(beta * mean(age)), using the w1
 # coefficient up to time 1 and the w2 coefficient after it.
 .gof_pc_window_ref <- function(fit, gof, d) {
-  base <- predict(fit, newdata = data.frame(time = gof$time),
-                  type = "cumulative_hazard", decompose = TRUE)
+  base <- predict_baseline(fit, newdata = data.frame(time = gof$time),
+                           type = "cumulative_hazard", decompose = TRUE)
   th <- fit$fit$theta
   beta <- function(ph) {
     ifelse(gof$time <= 1, th[[paste0(ph, ".age_w1")]],
@@ -241,8 +242,8 @@ test_that("time_windows: a phase formula whose columns share the window names", 
                    colnames(fit$fit$x_list$constant))
 
   gof <- hzr_gof(fit)
-  base <- predict(fit, newdata = data.frame(time = gof$time),
-                  type = "cumulative_hazard", decompose = TRUE)
+  base <- predict_baseline(fit, newdata = data.frame(time = gof$time),
+                           type = "cumulative_hazard", decompose = TRUE)
   th <- fit$fit$theta
   early_ref <- base$early * exp(th[["early.age_w1"]] * mean(d$age_w1) +
                                   th[["early.age_w2"]] * mean(d$age_w2))
@@ -330,8 +331,8 @@ test_that("global and phase covariates together: curve at both sets of means", {
   # from the model's structure instead: within a phase the covariates scale
   # the baseline, H_j(t | x) = exp(x beta_j) H0_j(t). A time-only newdata
   # gives each phase's baseline H0_j.
-  base <- predict(fit, newdata = data.frame(time = gof$time),
-                  type = "cumulative_hazard", decompose = TRUE)
+  base <- predict_baseline(fit, newdata = data.frame(time = gof$time),
+                           type = "cumulative_hazard", decompose = TRUE)
   th <- fit$fit$theta
   early_ref <- base$early * exp(th[["early.mal"]] * mean(d$mal))
   constant_ref <- base$constant * exp(th[["constant.age"]] * mean(d$age))

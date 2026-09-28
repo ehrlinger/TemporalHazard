@@ -1831,6 +1831,71 @@ hazard <- function(formula = NULL,
   obj
 }
 
+#' Warn that predict() set a model's covariates to 0
+#'
+#' A `newdata` with no covariate column, for a model that has covariates,
+#' evaluates every model-matrix column at 0, and that was silent (#522).
+#' Whether 0 is a sensible patient depends on the coding (0 is the mean of
+#' `scale(age)` but an age of 0 for `age`), so the warning does not judge
+#' it. It names what the user must supply: the formula's data variables
+#' (`age`, `grp`), not the model-matrix columns (`scale(age)`, `grpyoung`).
+#' Classed, so a caller who wants the baseline can muffle exactly this.
+#'
+#' @param object A fitted `hazard` object.
+#' @param phases For a multiphase fit, the names of the phases whose
+#'   covariates were set to 0; `NULL` for a single-distribution fit.
+#' @return Invisible `NULL`, called for its warning.
+#' @keywords internal
+#' @noRd
+.hzr_warn_covariates_zero <- function(object, phases = NULL) {
+  global_vars <- function() {
+    design <- object$data$x_design
+    if (!is.null(design)) design$data_vars else colnames(object$data$x)
+  }
+  vars <- if (is.null(phases)) {
+    global_vars()
+  } else {
+    unlist(lapply(phases, function(nm) {
+      if (.hzr_phase_inherits_global(object, nm)) return(global_vars())
+      design <- object$fit$x_design[[nm]]
+      if (!is.null(design)) return(design$data_vars)
+      f <- object$fit$phases[[nm]]$formula
+      if (is.null(f)) f <- object$spec$phases[[nm]]$formula
+      if (!is.null(f)) {
+        v <- all.vars(f)
+        if (!is.null(object$data$frame)) {
+          v <- intersect(v, names(object$data$frame))
+        }
+        return(v)
+      }
+      colnames(object$fit$x_list[[nm]])
+    }))
+  }
+  vars <- unique(vars)
+  supply <- if (length(vars) > 0L) {
+    paste0(ngettext(length(vars), "the variable ", "the variables "),
+           paste0("'", vars, "'", collapse = ", "))
+  } else {
+    # A vector-interface fit with an unnamed `x`: nothing to name.
+    n <- if (!is.null(object$data$x)) {
+      ncol(object$data$x)
+    } else if (is.null(phases)) {
+      length(object$fit$theta) -
+        .hzr_shape_parameter_count(object$spec$dist)
+    } else {
+      max(unlist(object$fit$covariate_counts[phases]))
+    }
+    paste0("the model's ", n, ngettext(n, " covariate", " covariates"),
+           " (unnamed x columns)")
+  }
+  warning(warningCondition(paste0(
+    "'newdata' has no covariate column, so predict() evaluated the model ",
+    "with every model-matrix column at 0. Supply ", supply,
+    " in 'newdata' to predict at other values."
+  ), class = "hzr_predict_covariates_zero"))
+  invisible(NULL)
+}
+
 #' Predict from a hazard model object
 #'
 #' Produces prediction outputs from a `hazard` object. Supports multiple prediction
@@ -1880,8 +1945,15 @@ hazard <- function(formula = NULL,
 #'   `newdata`'s rows, silently: no warning means undetected, not safe.
 #'   A fit made with an unnamed `x` matrix matches by position. For the types
 #'   requiring time, a `newdata` with only a `time` column evaluates the
-#'   baseline, with every covariate at 0. Because `time` is then the
-#'   prediction time, a model whose formula uses a variable named `time`
+#'   baseline, with every model-matrix column at 0. For `age` that is an age
+#'   of 0; for `scale(age)` it is the mean age. `predict()` warns, once per
+#'   call and with class `"hzr_predict_covariates_zero"`, naming the data
+#'   variables to supply (`age`, not `scale(age)`). Supply them in `newdata`
+#'   to predict at other values, or muffle that class when the baseline is
+#'   what you want. A model without covariates does not warn.
+#'
+#'   For those types, the `time` column of `newdata` is always the
+#'   prediction time, so a model whose formula uses a variable named `time`
 #'   (a covariate, or a constant such as `I(age > time)`) cannot be given
 #'   those types at `newdata`; rename it and refit.
 #' @param type Prediction type:
@@ -2452,6 +2524,12 @@ predict.hazard <- function(object, newdata = NULL,
         if (length(row_dependent) > 0L) {
           warning(paste(row_dependent, collapse = "\n"), call. = FALSE)
         }
+        # No covariate column at all leaves every phase's design NULL, so a
+        # phase with covariates is evaluated at 0 for all of them (#522).
+        if (ncol(nd_covs) == 0L && any(unlist(cov_counts) > 0)) {
+          with_covs <- names(phases)[unlist(cov_counts[names(phases)]) > 0]
+          .hzr_warn_covariates_zero(object, phases = with_covs)
+        }
       }
 
       # Instantaneous additive hazard is not phase-decomposable through this
@@ -2523,6 +2601,12 @@ predict.hazard <- function(object, newdata = NULL,
         time <- newdata$time
         # By name, before any time-varying expansion below (#267).
         x <- .hzr_newdata_design(object, newdata)
+        # NULL for a model WITH covariate coefficients means newdata had no
+        # covariate column: eta is set to 0 below, so say so (#522).
+        n_shape_nd <- .hzr_shape_parameter_count(object$spec$dist)
+        if (is.null(x) && length(theta) > n_shape_nd) {
+          .hzr_warn_covariates_zero(object)
+        }
       } else {
         stop("'newdata' must contain a 'time' column for '", type, "' predictions.", call. = FALSE)
       }
