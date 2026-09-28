@@ -36,8 +36,16 @@
   `converged = FALSE`, no objective, the cause in the “Not done in this
   run” record, and a warning of class `"hzr_start_past_penalty"`, which
   inherits `"hzr_infeasible_start"`. The test is where the optimizer
-  ends, so a start that far out which the optimizer leaves still fits
-  (the exponential from `theta = 50` reaches -434.29).
+  ends, and a fit is flagged only when it also fails SAS/C’s
+  relative-gradient test there, or when the score there cannot be used
+  (it errors, is not finite, or has the wrong length). So a start that
+  far out which the optimizer leaves still fits (the exponential from
+  `theta = 50` reaches -434.29). A heavily weighted fit that has
+  converged to its true maximum below `-1e10` is not called stuck,
+  because it passes the test. But with very large total weights (around
+  1e10), the optimizer can still run into its penalty from an ordinary
+  start, and such a fit is refused with a warning
+  ([\#513](https://github.com/ehrlinger/TemporalHazard/issues/513)).
   [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
   counted such replicates as successes; they now fail as a non-finite
   objective.
