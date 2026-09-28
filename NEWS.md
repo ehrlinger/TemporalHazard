@@ -2,6 +2,16 @@
 
 ## Bug fixes
 
+* **`hzr_stepwise()` now says when a step changes the rows the model is
+  fitted on (#519).** A multiphase fit drops every row where a variable in
+  the model is missing. So entering a variable with missing values shrank
+  the sample for every later step, and dropping it grew the sample back,
+  with no warning. In one screen of 310 rows, a complete variable entered
+  and then one missing on 60 rows did, and the final model rested on 250
+  rows. Such a step now warns, with class `hzr_stepwise_sample_changed`,
+  naming the step, the variable and the row counts before and after, and
+  `$steps` gains an `n_rows` column. Which variables enter is unchanged.
+
 * **A translated `PROC HAZPRED` job now predicts at the grid SAS used
   (#494).** `hzr_translate_sas()` read only the first `DO` loop of the
   first `DATA <name>;` step, and took the loop variable as the time.
