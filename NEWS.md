@@ -29,7 +29,8 @@
   "Not done in this run" record, and a warning of class
   `"hzr_start_past_penalty"`, which inherits `"hzr_infeasible_start"`. The
   test is where the optimizer ends, and a fit is flagged only when it also
-  fails SAS/C's relative-gradient test there. So a start that far out which
+  fails SAS/C's relative-gradient test there, or when the score there cannot
+  be used (it errors, is not finite, or has the wrong length). So a start that far out which
   the optimizer leaves still fits (the exponential from `theta = 50` reaches
   -434.29). A heavily weighted fit that has converged to its true maximum
   below `-1e10` is not called stuck, because it passes the test. But with
