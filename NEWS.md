@@ -65,6 +65,19 @@
   screen warns once, with class `hzr_score_rows_unverified`. A check that
   sees within ties is planned (#515).
 
+* **`hzr_stepwise(criterion = "aic")` no longer enters a variable on the
+  strength of its missing values (#488).** A multiphase refit drops every row
+  where the candidate is missing, so the candidate's log-likelihood summed
+  fewer rows than the current model's, and the two AICs were compared as if
+  they covered the same data. A pure-noise variable missing on 60 of 310 rows
+  entered with a change in AIC near -58 while its own Wald p-value was 0.23,
+  with no warning. A candidate whose refit used different rows is now not
+  scored: it is counted in `$criteria$uncomputable_reasons` as
+  `rows_differ`, a run that ends with no other candidate to test stops with
+  the untested-screen warning, and a run that completes warns that the entry
+  was declined. The Wald and score criteria never compared two fits and are
+  unchanged.
+
 # TemporalHazard 1.2.12
 
 ## Breaking changes

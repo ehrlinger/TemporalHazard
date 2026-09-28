@@ -1117,6 +1117,13 @@
       "relevel the factor"
     ),
     nonfinite = "the score or its variance was not finite",
+    rows_differ = paste(
+      "under `criterion = \"aic\"`, the candidate's refit was fitted on",
+      "different rows from the current model: a multiphase fit drops every",
+      "row where a covariate is missing, so the candidate's log-likelihood",
+      "summed fewer rows and its AIC could not be compared. Remove or impute",
+      "the missing values before the screen, so every model uses the same rows"
+    ),
     wald_no_variance = paste(
       "the model had no usable variance for the coefficient, so its Wald",
       "test could not be computed: there was no variance matrix, the",
