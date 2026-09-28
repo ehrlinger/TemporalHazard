@@ -83,15 +83,28 @@ test_that("replicates that drift before reaching the sentinel fail too (#373)", 
 })
 
 test_that("identical replicates are named, to within rounding (#373)", {
-  # From theta = 50 the objective is finite (about -3.6e196) and not the
-  # sentinel, and every replicate stays put up to the last bits: sd is about
-  # 1e-14 around a mean of 50. An exact-zero test would pass it.
+  # Replicates that differ only in their last bits: sd is a few ulps, not 0.
+  # An exact-zero test would pass them. The route #373 measured, a weibull
+  # start at theta = 50, is no longer one: since #512 each such replicate
+  # stops below the optimizer's penalty and fails, so the replicates are
+  # built here from a working fit, each nudged by k * 1e-15 of itself.
   d <- zv_data_373()
-  stuck <- suppressWarnings(hazard(
-    survival::Surv(int_dead, dead) ~ 1, data = d, dist = "weibull",
-    theta = c(50, 50), fit = TRUE
-  ))
+  ok <- hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
+               dist = "weibull", theta = c(0.1, 1), fit = TRUE)
+  stuck <- ok
+  env <- new.env(parent = ok$call_env %||% globalenv())
+  k <- 0L
+  assign("jitter_refit", function(...) {
+    k <<- k + 1L
+    out <- ok
+    out$fit$theta <- ok$fit$theta * (1 + k * 1e-15)
+    out
+  }, envir = env)
+  stuck$call[[1L]] <- as.name("jitter_refit")
+  stuck$call_env <- env
   out <- run_373(hzr_bootstrap(stuck, n_boot = 5L, seed = 1L))
+  # The known positive: the refit ran five times.
+  expect_identical(k, 5L)
   expect_identical(out$res$n_success, 5L)
   expect_true(all(out$res$summary$sd > 0))
   zw <- zero_var_warnings(out$w)
