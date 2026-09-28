@@ -1890,7 +1890,8 @@
                           "LIBRARY", "LIB", "NOLIST", "KILL", "MEMTYPE")))
   }
   m <- regmatches(stmt, gregexpr(
-    "(^|[^A-Z0-9_])(OUT[A-Z]*|BASE) *= *[A-Z_][A-Z0-9_.]*|(CREATE +(TABLE|VIEW)|INSERT +INTO|DELETE +FROM|ALTER +TABLE|^UPDATE) +[A-Z_][A-Z0-9_.]*",
+    paste0("(^|[^A-Z0-9_])(OUT[A-Z]*|BASE) *= *[A-Z_][A-Z0-9_.]*|",
+           "(CREATE +(TABLE|VIEW)|INSERT +INTO|DELETE +FROM|ALTER +TABLE|^UPDATE) +[A-Z_][A-Z0-9_.]*"),
     stmt))[[1L]]
   unique(sub("^.*[= ]", "", m))
 }
