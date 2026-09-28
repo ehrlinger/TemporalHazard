@@ -256,6 +256,8 @@
   }
 
   rows     <- vector("list", length(cands))
+  # Why a converged candidate went unscored, when the scorer says (#488).
+  score_reasons <- rep(NA_character_, length(cands))
   failures <- character()
   failure_reasons <- character()
 
@@ -328,6 +330,7 @@
       current = current, candidate = candidate_fit,
       names = coef_name
     )
+    score_reasons[i] <- s$reason %||% NA_character_
 
     rows[[i]] <- data.frame(
       variable  = cand$var,
@@ -355,12 +358,14 @@
   # It stays out of the model exactly as if it had missed `slentry`, so count
   # it, as the backward step counts an untested removal (#389).  A failed
   # refit also scores NA, but is reported as a refit failure.  Under AIC the
-  # score needs no variance, so an NA there is a non-finite objective.
+  # score needs no variance, so an NA there is a non-finite objective, unless
+  # the candidate was refused for being fitted on other rows (#488).
   refit_ok <- vapply(candidate_fits, inherits, logical(1L), what = "hazard")
-  n_uncomputable <- sum(is.na(all_scores$score) & refit_ok)
-  uncomputable_reasons <- .hzr_tally_reasons(rep(
-    if (criterion == "wald") "wald_no_variance" else "nonfinite",
-    n_uncomputable
+  unscored <- is.na(all_scores$score) & refit_ok
+  n_uncomputable <- sum(unscored)
+  default_reason <- if (criterion == "wald") "wald_no_variance" else "nonfinite"
+  uncomputable_reasons <- .hzr_tally_reasons(ifelse(
+    is.na(score_reasons[unscored]), default_reason, score_reasons[unscored]
   ))
 
   valid <- which(!is.na(all_scores$score))
