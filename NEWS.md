@@ -31,8 +31,11 @@
   test is where the optimizer ends, and a fit is flagged only when it also
   fails SAS/C's relative-gradient test there. So a start that far out which
   the optimizer leaves still fits (the exponential from `theta = 50` reaches
-  -434.29), and so does a heavily weighted fit whose true maximum lies below
-  `-1e10`. `hzr_bootstrap()` counted such replicates as successes; they now
+  -434.29). A heavily weighted fit that has converged to its true maximum
+  below `-1e10` is not called stuck, because it passes the test. But with
+  very large total weights (around 1e10), the optimizer can still run into
+  its penalty from an ordinary start, and such a fit is refused with a
+  warning (#513). `hzr_bootstrap()` counted such replicates as successes; they now
   fail as a non-finite objective.
 
 * **A translated `PROC HAZPRED` job now draws its bands at the level SAS

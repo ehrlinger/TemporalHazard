@@ -273,8 +273,12 @@ NULL
   # Size alone is not evidence: a heavily weighted fit has a genuine optimum
   # below -1e10 (avc exponential, weights 5e7: -2.17e10). So the run must
   # also fail to be verified there: SAS/C's relative-gradient test (see
-  # below) fails, or the score is not finite. A true optimum passes it at any
-  # weight; the stuck starts fail it by a factor of 1e7 or more.
+  # below) fails, or the score is not finite. A fit that has converged to a
+  # true optimum passes it, so this clause keeps such a fit from being called
+  # stuck; the stuck starts fail it by a factor of 1e7 or more. It does not
+  # make very large total weights (around 1e10) safe: from an ordinary start
+  # BFGS can run into the 1e10 clamp and is refused by #486's check above
+  # (#513).
   stuck_rel_grad <- function() {
     g <- tryCatch(
       gradient_fn(theta = result$par, time = time, status = status,
