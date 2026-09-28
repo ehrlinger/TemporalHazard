@@ -590,17 +590,16 @@ test_that("a job with no DATA= and phase covariates emits a stop(), not a fit (#
     expect_match(res$results[["fit"]], "no DATA=", info = cov)
   }
 
-  # Paired controls. No covariates: no DATA= is fine, the chunk fits from
-  # the bound vectors.
+  # No covariates: still refused, because %HAZARD refuses any job with no
+  # DATA= (#497). This control used to assert a fit from the bound vectors.
+  # The reason no longer claims a phase has covariates.
   job <- translate(paste("%HAZARD( PROC HAZARD CONDITION=14;",
                          "EVENT DEAD; TIME TT;", parms, ");"))
-  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
-  expect_false(any(job$untranslated$construct == "DATA="))
-  res <- suppressWarnings(render_sim(job, as.list(D)))
-  expect_true(res$ok, info = paste(res$results, collapse = "; "))
-  expect_s3_class(res$env$fit, "hazard")
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"))
+  expect_true(any(job$untranslated$construct == "DATA="))
+  expect_error(eval(job$calls$fit), "names no DATA= dataset. SAS", fixed = TRUE)
 
-  # DATA= with the same covariate: still a fit, and the phase carries MAL.
+  # Paired control. DATA= with the same covariate: a fit, and the phase carries MAL.
   skip_on_cran()
   job <- translate(paste("%HAZARD( PROC HAZARD DATA=D CONDITION=14;",
                          "EVENT DEAD; TIME TT;", parms, "EARLY MAL=0; );"))
@@ -609,6 +608,41 @@ test_that("a job with no DATA= and phase covariates emits a stop(), not a fit (#
   res <- suppressWarnings(render_sim(job, list(D = D)))
   expect_true(res$ok, info = paste(res$results, collapse = "; "))
   expect_true("phase_1.MAL" %in% names(stats::coef(res$env$fit)))
+})
+
+test_that("a job with no DATA= and no phase variable is refused, as %HAZARD refuses it (#497)", {
+  # %HAZARD looks for DATA on the PROC statement and, finding none, prints
+  # "HAZARD not attempted" (hazard.sas:11-15, :145-152). The chunk used to fit
+  # from whatever INT_DEAD and DEAD the rendering session held.
+  translate <- function(src) {
+    f <- withr::local_tempfile(fileext = ".sas", .local_envir = parent.frame())
+    writeLines(src, f)
+    suppressWarnings(hzr_translate_sas(f))
+  }
+  body <- "CONDITION=14; EVENT DEAD; TIME INT_DEAD; PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );"
+  n <- 60
+  D <- data.frame(INT_DEAD = stats::qexp(seq_len(n) / (n + 1), 0.2),
+                  DEAD = rep(c(1, 0), length.out = n))
+
+  job <- translate(paste("%HAZARD( PROC HAZARD", body))
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"))
+  called <- unlist(lapply(job$calls, all.names))
+  expect_false("hazard" %in% called)
+  row <- job$untranslated[job$untranslated$construct == "DATA=", ]
+  expect_equal(nrow(row), 1L)
+  expect_match(row$reason, "hazard.sas:11-15", fixed = TRUE)
+  # Rendered where the variables exist, the chunk refuses rather than fits.
+  res <- render_sim(job, as.list(D))
+  expect_false(res$ok)
+  expect_match(res$results[["fit"]], "HAZARD not attempted", fixed = TRUE)
+
+  # Known positive: the same job with DATA= fits from that dataset.
+  job <- translate(paste("%HAZARD( PROC HAZARD DATA=D", body))
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
+  expect_false(any(job$untranslated$construct == "DATA="))
+  res <- suppressWarnings(render_sim(job, list(D = D)))
+  expect_true(res$ok, info = paste(res$results, collapse = "; "))
+  expect_s3_class(res$env$fit, "hazard")
 })
 
 test_that("a job PROC HAZARD rejects at parse emits a stop(), not a fit (#340)", {
@@ -1594,7 +1628,11 @@ test_that("a libref with no member is refused, not left empty (#433 review 3)", 
   writeLines(paste0("%HAZARD( PROC HAZARD DATA=WORK. MAXITER=50; EVENT DEAD;",
                     " TIME TT; PARMS MUE=0.2 THALF=1 NU=1; );"), f)
   job <- suppressWarnings(hzr_translate_sas(f))
-  expect_false(is.null(.u1_refusal_chunk(job)))
+  # With no dataset there is nothing to fit from, so the fit chunk stops
+  # rather than warn and fit from whatever TT and DEAD the session holds
+  # (#497; before, this took the warn route and fitted).
+  expect_true(.u1_stops(job))
+  expect_match(.u1_msg(job), "hazard_y.y:61-62", fixed = TRUE)
   expect_true(any(grepl("DATA", job$untranslated$construct, fixed = TRUE)))
   # KNOWN NEGATIVE: a real WORK-qualified name still translates, stripped.
   f2 <- withr::local_tempfile(fileext = ".sas")

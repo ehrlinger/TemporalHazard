@@ -367,3 +367,53 @@ test_that("a DO with no BY clause steps by 1, not by the /99.9 step", {
   got <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)
   expect_equal(eval(got$grid)$time, exp(-5:5))
 })
+
+test_that("a HAZPRED with no DATA=, INHAZ= or OUT= is refused, as %HAZPRED refuses it (#498)", {
+  # %HAZPRED requires all three on the PROC statement and prints "HAZPRED not
+  # attempted" when any is missing (hazpred.sas:13-33, :153-163). The block
+  # used to emit predict() anyway: over the fitting rows with no DATA=, and
+  # from `fit` with no INHAZ=.
+  translate <- function(src) {
+    f <- withr::local_tempfile(fileext = ".sas", .local_envir = parent.frame())
+    writeLines(src, f)
+    suppressWarnings(hzr_translate_sas(f))
+  }
+  fit <- paste(
+    "%HAZARD( PROC HAZARD DATA=D OUTHAZ=OUTEST CONDITION=14; EVENT DEAD;",
+    "TIME INT_DEAD; PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );",
+    sprintf(grid_step, "PRED"))
+  opts <- c(DATA = "DATA=PRED", INHAZ = "INHAZ=OUTEST", OUT = "OUT=P")
+  pred_job <- function(keep) {
+    translate(paste(fit, "%HAZPRED( PROC HAZPRED", paste(opts[keep], collapse = " "),
+                    "; TIME MONTHS; );"))
+  }
+  preds <- function(job) job$calls[grepl("^pred", names(job$calls))]
+
+  # Known positive: with all three the block predicts.
+  job <- pred_job(names(opts))
+  expect_length(preds(job), 2L)
+  for (cl in preds(job)) expect_identical(cl[[1L]], as.name("predict"))
+
+  for (drop in names(opts)) {
+    job <- pred_job(setdiff(names(opts), drop))
+    expect_length(preds(job), 2L)
+    called <- unlist(lapply(job$calls, all.names))
+    expect_false("predict" %in% called, info = drop)
+    for (cl in preds(job)) {
+      expect_identical(cl[[1L]], as.name("stop"), info = drop)
+      expect_error(eval(cl), paste0("no ", drop, "="), fixed = TRUE, info = drop)
+      expect_error(eval(cl), "HAZPRED not attempted", fixed = TRUE, info = drop)
+    }
+    row <- job$untranslated[job$untranslated$construct == paste0(drop, "="), ]
+    expect_equal(nrow(row), 1L, info = drop)
+    expect_match(row$reason, "hazpred.sas:13-33", fixed = TRUE, info = drop)
+    # The fit itself is untouched: only the HAZPRED block is refused.
+    expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"), info = drop)
+  }
+
+  # All three missing: every one is named, in one refusal.
+  job <- pred_job(character(0))
+  expect_setequal(intersect(job$untranslated$construct, paste0(names(opts), "=")),
+                  paste0(names(opts), "="))
+  expect_error(eval(preds(job)[[1L]]), "no DATA=, INHAZ= or OUT=", fixed = TRUE)
+})

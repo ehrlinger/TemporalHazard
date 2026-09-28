@@ -502,6 +502,9 @@
   }
   ctl <- list()
   data_name <- NULL
+  # DATA= written, even with no usable name: the %HAZARD macro then finds it,
+  # and the refusal below names PROC HAZARD's syntax error instead (#497).
+  data_given <- FALSE
   outhaz <- NULL
   # A PROC-line value the lexer does not read as a NUMBER (hazard_l.l:33-38,
   # the HZRP state at :53) is a syntax error: PROC HAZARD does not run the
@@ -614,6 +617,7 @@
         # the unstripped "WORK." let it through to leave an empty name and an
         # internal R error (#433 review 3).
         stripped <- sub("^WORK[.]", "", val)
+        data_given <- TRUE
         if (check_name(key, stripped)) {
           mapped <- mapped - 1L
         } else {
@@ -1207,9 +1211,11 @@
   )
   # A SELECTION job always needs `data`, even with no phase variable at all:
   # hzr_stepwise() refits each candidate from it and stops without it.
-  if (is.null(data_name) &&
-      (any(phase_has_formula) || length(parms$listwise_only) ||
-         !is.null(sel))) {
+  # And a job with no variable to read still names no DATA=, which the
+  # %HAZARD macro refuses before PROC HAZARD runs (hazard.sas:11-15,
+  # :145-152), so there is no fit to translate whatever the phases carry
+  # (#497). Such a job used to fit from whatever the session held.
+  if (is.null(data_name)) {
     # Say what is actually true of this job. "A phase has covariates" is
     # false when every named variable sits outside the emitted phases: a
     # SELECTION candidate, an /E variable, or a covariate of a phase that is
@@ -1224,17 +1230,33 @@
                " (this job's are ", paste(parms$listwise_only, collapse = ", "),
                ")"),
              ".")
-    } else {
+    } else if (length(parms$listwise_only)) {
       paste0("but its phase statements name ",
              paste(parms$listwise_only, collapse = ", "),
              ", which are outside the fitted model. With no dataset the ",
              "translation cannot say where to read them, and PROC HAZARD ",
              "deletes rows where any is missing.")
     }
+    lead <- if (is.null(why_data)) {
+      "names no DATA= dataset."
+    } else {
+      paste("names no DATA= dataset,", why_data)
+    }
+    macro <- if (data_given) {
+      paste(
+        "SAS does not run it either: PROC HAZARD has no form of DATA=",
+        "without a dataset name (hazard_y.y:61-62, :80-81), so it rejects",
+        "the job with a syntax error.")
+    } else {
+      paste(
+        "SAS does not run it either: the %HAZARD macro finds its dataset only",
+        "through DATA= on the PROC statement, and without it stops with",
+        "\"HAZARD not attempted\" (hazard.sas:11-15, :145-152).")
+    }
     untr <- rbind(untr, .hzr_untranslated_frame(
       NA_integer_, "DATA=",
-      paste("the job names no DATA= dataset,", why_data, "Add DATA= to the",
-            "job and translate again, or fit it by hand (#311).")
+      paste("the job", lead, macro, "Add DATA= to the job and translate",
+            "again, or fit it by hand (#311, #497).")
     ))
     if (!is.null(sel)) {
       untr <- rbind(untr, sel$untranslated)
@@ -1246,7 +1268,7 @@
     }
     return(list(
       call = as.call(list(quote(stop), paste(
-        "This PROC HAZARD job names no DATA= dataset,", why_data,
+        "This PROC HAZARD job", lead, macro,
         "Name the dataset with DATA= and translate the job again, or fit the",
         "model by hand."
       ), call. = FALSE)),
@@ -2716,6 +2738,7 @@
   }
   data_name <- NULL
   inhaz <- NULL
+  out_given <- FALSE
   want_surv <- TRUE
   want_haz <- TRUE
   want_cl <- TRUE
@@ -2738,7 +2761,7 @@
     switch(token,
       DATA    = data_name <- val,
       INHAZ   = inhaz <- val,
-      OUT     = NULL,
+      OUT     = out_given <- TRUE,
       NOSURV  = want_surv <- FALSE,
       NOHAZ   = want_haz <- FALSE,
       NOCL    = want_cl <- FALSE,
@@ -2809,7 +2832,31 @@
     }
   }
 
+  # %HAZPRED requires DATA=, INHAZ= and OUT= on the PROC statement and stops
+  # with "HAZPRED not attempted" when any is missing (hazpred.sas:13-33,
+  # :153-163), so SAS predicts nothing. The block used to emit predict()
+  # anyway: over the fitting rows with no DATA=, from `fit` with no INHAZ=
+  # (#498). Each missing option is its own row; the stop() names them all.
+  absent <- c("DATA=", "INHAZ=", "OUT=")[
+    c(is.null(data_name), is.null(inhaz), !out_given)]
+  absent_list <- if (length(absent) > 1L) {
+    paste(paste(absent[-length(absent)], collapse = ", "), "or",
+          absent[length(absent)])
+  } else {
+    absent
+  }
+  macro_refusal <- paste0(
+    "This PROC HAZPRED block names no ", absent_list, ", and the %HAZPRED ",
+    "macro requires DATA=, INHAZ= and OUT= on the PROC statement: without ",
+    "one it stops with \"HAZPRED not attempted\" (hazpred.sas:13-33, ",
+    ":153-163), so SAS predicts nothing. Add the missing option(s) and ",
+    "translate the job again.")
+  for (a in absent) note(a, macro_refusal)
+
   mk <- function(type) {
+    if (length(absent)) {
+      return(as.call(list(quote(stop), macro_refusal, call. = FALSE)))
+    }
     # A refused grid is a refusal, not an absent argument. Emitting
     # predict(fit, newdata = <name>) when no chunk builds <name> leaves the
     # document to fail on an unbound name -- or, if an object of that name

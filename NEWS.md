@@ -19,6 +19,22 @@
   compute leaves its variable `NA` in the grid, with a warning and an
   `$untranslated` row. A grid whose rows it can't determine is refused.
 
+* **`hzr_translate_sas()` refuses a `PROC HAZARD` job with no `DATA=`, and
+  a `PROC HAZPRED` block with no `DATA=`, `INHAZ=` or `OUT=` (#497,
+  #498).** The `%HAZARD` macro finds its dataset only through `DATA=` and
+  stops without it ("HAZARD not attempted", `hazard.sas:11-15, :145-152`);
+  `%HAZPRED` requires all three options and stops the same way
+  (`hazpred.sas:13-33, :153-163`). So SAS runs neither job. The translator
+  refused a job with no `DATA=` only when a phase had covariates or it
+  carried `SELECTION` (#311). Otherwise it emitted a fit that read the time
+  and event variables from whatever the session held. A `DATA=` with no
+  dataset name, which PROC HAZARD rejects as a syntax error, took the same
+  path. A `HAZPRED` block with an option missing emitted `predict()`
+  anyway: over the fitting rows with no `DATA=`, and from the job's own fit
+  with no `INHAZ=`. Each is now recorded in `$untranslated`, and the fit or
+  prediction chunk is a `stop()` that says which option is missing. None of
+  the 39 public-corpus jobs that translate changes.
+
 * **A single-distribution fit started where the likelihood is not defined no
   longer reports `converged = TRUE` (#486).** The optimizer replaces a
   non-finite log-likelihood with a large penalty, so from such a start every
