@@ -321,13 +321,64 @@ test_that("a variable read but never set is a missing column, as in SAS (#494)",
   # set. hp.death.COMPARISON reads _PLAD50 without setting it.
   job <- translate_494(c(
     "DATA PREDICT; DO MONTHS=1,2; X=Y*2; OUTPUT; END;",
-    "DATA NEXT; SET PREDICT; IF Z>1 THEN W=1; V=0 U=0;",
+    "DATA NEXT; SET PREDICT; IF Z>1 THEN W=1; V=U*0; U=0;",
     hazpred_494("NEXT")
   ))
   g <- suppressWarnings(grid_494(job))
-  for (v in c("X", "Y", "Z", "W", "U")) {
+  # V reads U before U is set, so V is missing; U is then set.
+  for (v in c("X", "Y", "Z", "W", "V")) {
     expect_equal(g[[v]], c(NA_real_, NA_real_), info = v)
   }
+  expect_equal(g$U, c(0, 0))
+})
+
+test_that("PROC SQL INSERT, DELETE, UPDATE and ALTER rewrite the grid, and refuse it (#494)", {
+  for (dml in c("INSERT INTO PREDICT SET MONTHS=9;", "DELETE FROM PREDICT WHERE MONTHS=1;",
+                "UPDATE PREDICT SET MONTHS=9;", "ALTER TABLE PREDICT DROP MONTHS;",
+                "insert into predict set months=9;")) {
+    job <- translate_494(c(
+      "DATA PREDICT; DO MONTHS=1,2; OUTPUT; END;",
+      paste("PROC SQL;", dml, "QUIT;"),
+      hazpred_494("PREDICT")
+    ))
+    expect_match(refused_494(job), "PREDICT is written by PROC SQL", fixed = TRUE, info = dml)
+  }
+})
+
+test_that("a WORK. libref names the same dataset; another libref does not (#494)", {
+  # SAS's one-level names live in WORK, so WORK.PREDICT is PREDICT.
+  job <- translate_494(c(
+    "DATA WORK.PREDICT; DO MONTHS=1,2; OUTPUT; END;",
+    "DATA PREDICT; SET WORK.PREDICT; YEARS=MONTHS/12;",
+    hazpred_494("WORK.PREDICT")
+  ))
+  expect_equal(grid_494(job)$time, c(1, 2))
+  expect_equal(grid_494(job)$YEARS, c(1, 2) / 12)
+  # A HAZPRED reading WORK.PREDICT passes its rows on through OUT=.
+  job <- translate_494(c(
+    "DATA PREDICT; DO MONTHS=1,2; OUTPUT; END;",
+    hazpred_494("WORK.PREDICT", out = "RESULT"),
+    "DATA NEXT; SET RESULT;",
+    hazpred_494("NEXT")
+  ))
+  expect_equal(grid_494(job, 2L)$time, c(1, 2))
+  # A later write through WORK. is the last definition, and refuses the grid.
+  for (w in c("PROC APPEND BASE=WORK.PREDICT DATA=X; RUN;",
+              "PROC MEANS DATA=PREDICT; OUTPUT OUT=WORK.PREDICT; RUN;",
+              "PROC SQL; CREATE TABLE WORK.PREDICT AS SELECT * FROM PREDICT; QUIT;")) {
+    job <- translate_494(c(
+      "DATA PREDICT; DO MONTHS=1,2; OUTPUT; END;", "DATA X; MONTHS=9;", w,
+      hazpred_494("PREDICT")
+    ))
+    expect_match(refused_494(job), "PREDICT is written by", fixed = TRUE, info = w)
+  }
+  # SASUSER.PREDICT is another dataset: writing it leaves PREDICT alone.
+  job <- translate_494(c(
+    "DATA PREDICT; DO MONTHS=1,2; OUTPUT; END;",
+    "PROC APPEND BASE=SASUSER.PREDICT DATA=PREDICT; RUN;",
+    hazpred_494("PREDICT")
+  ))
+  expect_equal(grid_494(job)$time, c(1, 2))
 })
 
 test_that("a value an IF changes inside a loop is NA for the whole loop (#494)", {

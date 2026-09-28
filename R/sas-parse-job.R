@@ -1868,10 +1868,17 @@
   if (length(m) >= 3L) m[[3L]] else NULL
 }
 
+#' A dataset name as SAS resolves it: a one-level name lives in WORK, so
+#' `WORK.PREDICT` is `PREDICT`. Any other libref names another dataset and
+#' is kept.
+#' @noRd
+.hzr_sas_ds <- function(x) sub("^WORK[.]", "", x)
+
 #' Every dataset a non-DATA statement writes.
 #'
 #' `OUT=` and its relatives (`OUTEST=`, `OUTSTAT=`, ...), `BASE=` (PROC
-#' APPEND), `CREATE TABLE` and `CREATE VIEW` (PROC SQL). In a PROC DATASETS
+#' APPEND), and in PROC SQL `CREATE TABLE`, `CREATE VIEW`, `INSERT INTO`,
+#' `DELETE FROM`, `UPDATE` and `ALTER TABLE`. In a PROC DATASETS
 #' step every name counts, because `CHANGE`, `DELETE` and `MODIFY` all take
 #' dataset names.
 #' @noRd
@@ -1883,7 +1890,7 @@
                           "LIBRARY", "LIB", "NOLIST", "KILL", "MEMTYPE")))
   }
   m <- regmatches(stmt, gregexpr(
-    "(^|[^A-Z0-9_])(OUT[A-Z]*|BASE) *= *[A-Z_][A-Z0-9_.]*|CREATE +(TABLE|VIEW) +[A-Z_][A-Z0-9_.]*",
+    "(^|[^A-Z0-9_])(OUT[A-Z]*|BASE) *= *[A-Z_][A-Z0-9_.]*|(CREATE +(TABLE|VIEW)|INSERT +INTO|DELETE +FROM|ALTER +TABLE|^UPDATE) +[A-Z_][A-Z0-9_.]*",
     stmt))[[1L]]
   unique(sub("^.*[= ]", "", m))
 }
@@ -1901,7 +1908,9 @@
 .hzr_sas_dataset_events <- function(txt, blocks) {
   ev <- list()
   add <- function(pos, name, kind, ...) {
-    ev[[length(ev) + 1L]] <<- list(pos = pos, name = name, kind = kind, ...)
+    extra <- list(...)
+    if (!is.null(extra$from)) extra$from <- .hzr_sas_ds(extra$from)
+    ev[[length(ev) + 1L]] <<- c(list(pos = pos, name = .hzr_sas_ds(name), kind = kind), extra)
   }
   for (b in blocks) {
     head <- sub(";.*$", "", b$text)
@@ -1962,7 +1971,7 @@
     }
     if (grepl("^DATA( |$)", t) && !grepl("^DATA *=", t)) {
       close_all()
-      rest <- trimws(sub("^DATA", "", t))
+      rest <- .hzr_sas_ds(trimws(sub("^DATA", "", t)))
       if (grepl("^[A-Z_][A-Z0-9_]*$", rest) && !identical(rest, "_NULL_")) {
         cur <- list(pos = p, name = rest, stmts = character(0))
       } else {
@@ -2334,7 +2343,7 @@
   set_names <- character(0)
   if (length(items) && identical(items[[1L]]$kind, "set")) {
     spec <- trimws(sub("^SET", "", items[[1L]]$text))
-    set_names <- strsplit(spec, " ", fixed = TRUE)[[1L]]
+    set_names <- .hzr_sas_ds(strsplit(spec, " ", fixed = TRUE)[[1L]])
     items <- items[-1L]
   }
 
@@ -2569,6 +2578,7 @@
   empty <- .hzr_untranslated_frame()
   refuse <- function(why) list(call = NULL, untranslated = empty, reason = why)
   if (is.null(name) || !nzchar(name)) return(refuse("no DATA= dataset was named"))
+  name <- .hzr_sas_ds(name)
   if (is.null(time_var) || is.na(time_var) || !nzchar(time_var)) {
     return(refuse(paste(
       "the block has no TIME statement, which PROC HAZPRED requires",
