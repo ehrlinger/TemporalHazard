@@ -270,7 +270,23 @@ NULL
   # that the optimizer leaves is an ordinary fit (exponential from 50 reaches
   # -434.29). The reason and the return are #486's, so every reader of that
   # case -- print(), the degraded record, hzr_bootstrap() -- reads this one.
-  if (mark_infeasible && -ll_at_par >= 1e10) {
+  # Size alone is not evidence: a heavily weighted fit has a genuine optimum
+  # below -1e10 (avc exponential, weights 5e7: -2.17e10). So the run must
+  # also fail to be verified there: SAS/C's relative-gradient test (see
+  # below) fails, or the score is not finite. A true optimum passes it at any
+  # weight; the stuck starts fail it by a factor of 1e7 or more.
+  stuck_rel_grad <- function() {
+    g <- tryCatch(
+      gradient_fn(theta = result$par, time = time, status = status,
+                  time_lower = time_lower, time_upper = time_upper,
+                  x = x, weights = weights),
+      error = function(e) NULL
+    )
+    if (length(g) != length(result$par) || !all(is.finite(g))) return(Inf)
+    max(abs(g) * pmax(abs(result$par), 1)) / max(abs(ll_at_par), 1)
+  }
+  if (mark_infeasible && -ll_at_par >= 1e10 &&
+      !isTRUE(stuck_rel_grad() <= .Machine$double.eps^(1 / 3))) {
     reason <- paste0("the optimizer stopped where the log-likelihood is ",
                      "below its own penalty (-1e10), so it could not move ",
                      "from the starting values")

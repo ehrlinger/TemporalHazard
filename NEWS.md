@@ -28,9 +28,11 @@
   now handled as #486's: `converged = FALSE`, no objective, the cause in the
   "Not done in this run" record, and a warning of class
   `"hzr_start_past_penalty"`, which inherits `"hzr_infeasible_start"`. The
-  test is where the optimizer ends, so a start that far out which the
-  optimizer leaves still fits (the exponential from `theta = 50` reaches
-  -434.29). `hzr_bootstrap()` counted such replicates as successes; they now
+  test is where the optimizer ends, and a fit is flagged only when it also
+  fails SAS/C's relative-gradient test there. So a start that far out which
+  the optimizer leaves still fits (the exponential from `theta = 50` reaches
+  -434.29), and so does a heavily weighted fit whose true maximum lies below
+  `-1e10`. `hzr_bootstrap()` counted such replicates as successes; they now
   fail as a non-finite objective.
 
 * **A translated `PROC HAZPRED` job now draws its bands at the level SAS
