@@ -554,6 +554,13 @@ without one. The test is relative to the size of the log-likelihood, so
 a fit that meets it is within SAS's tolerance of the maximum, not
 exactly at it.
 
+The optimizer treats a score it cannot use as zero, so it can stop on
+those zeros far from the maximum. For the single-distribution fits
+(exponential, Weibull, lognormal and loglogistic), a stop where the
+score at the estimates is not finite, or could not be computed, is
+therefore reported as `converged = FALSE`, with a warning of class
+`"hzr_unverified_convergence"`; `rel_gradient_reason` names which.
+
 ## Baseline distributions
 
 The `dist` argument selects the parametric form of the baseline hazard.
