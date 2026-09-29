@@ -3132,7 +3132,7 @@ test_that("a translated ICENSOR job reproduces PROC HAZARD's fit (#543)", {
     fit <- res$env$fit
     expect_identical(fit$spec$objective, "sas", info = info)
     # The listing prints three decimals.
-    expect_lt(abs(fit$fit$objective - oracle$loglik[[k]]), 5e-4)
+    expect_lt(abs(fit$fit$objective - oracle$loglik[[k]]), 5e-4, label = info)
     th <- fit$fit$theta
     muc <- exp(th[[grep("log_mu$", names(th))[[length(grep("log_mu$",
                                                             names(th)))]]]])

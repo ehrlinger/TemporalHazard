@@ -1694,10 +1694,9 @@
   # also where the log-likelihood peaks, and a one-dimensional maximisation
   # over a shift of every log(MU) finds it. Measured on the binary with and
   # without WEIGHT, LCENSOR and ICENSOR (tests/testthat/fixtures/
-  # maxiter-zero-oracle.csv). For an ICENSOR job the parameters match; the
-  # log-likelihood matches only under objective = "sas", the interval term
-  # PROC HAZARD accumulates, which this translation does not emit for a fit
-  # either, so that job warns that its number differs.
+  # maxiter-zero-oracle.csv). An ICENSOR job's spec carries
+  # objective = "sas" (#543), so its evaluation reproduces PROC HAZARD's
+  # parameters and printed value too.
   code_body <- as.call(c(head, args))
   if (isTRUE(ctl$maxit < 1)) {
     maxit_label <- paste0("MAXITER=", format(ctl$maxit))

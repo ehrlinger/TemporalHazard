@@ -131,7 +131,11 @@
 #' per-variable `MOVE=` or `ORDER=`, and a variable held by
 #' `/I` in one phase but movable in another. So is `LCENSOR`
 #' combined with `ICENSOR`, which one `time_lower` argument cannot express
-#' (#155). Prediction grids the parser cannot resolve are refused whole, and
+#' (#155). A job with `ICENSOR` is fitted with `objective = "sas"`, the
+#' interval term `PROC HAZARD` accumulates, so it reproduces `PROC HAZARD`'s
+#' estimates; the value it reports is then `PROC HAZARD`'s objective, not a
+#' log-likelihood, and a callout above the chunk says so (#543). Prediction
+#' grids the parser cannot resolve are refused whole, and
 #' the `predict()` chunks that would have read such a grid become a `stop()`
 #' naming it, rather than a `predict(newdata = )` over a name no chunk
 #' builds. An unresolved `INHAZ=` stops the render on purpose.
@@ -494,6 +498,27 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
 }
 
 
+#' The callout a translated ICENSOR job carries, above its fit (#543).
+#'
+#' The fit uses `objective = "sas"`, so the value it reports is PROC HAZARD's
+#' objective rather than a log-likelihood. The reader meets this before the
+#' code, as for the SELECTION note below.
+#' @noRd
+.hzr_sas_objective_note <- function() {
+  list(
+    title = "ICENSOR: fitted on PROC HAZARD's objective, not a log-likelihood",
+    body = paste(
+      "This job has ICENSOR, so the chunk below uses `objective = \"sas\"`:",
+      "the interval-censored rows enter as PROC HAZARD accumulates them, the",
+      "interval-mean hazard over (lower bound, time], rather than as the",
+      "probability of an event in the interval. That reproduces PROC",
+      "HAZARD's estimates. The value it reports as the objective is PROC",
+      "HAZARD's, not a log-likelihood, so do not compare it with a",
+      "log-likelihood from another fit or use it in a likelihood-ratio test.",
+      "See ?hazard, argument `objective`.")
+  )
+}
+
 #' The callout a translated SELECTION job carries, above its screen.
 #'
 #' `hzr_stepwise()` runs the job's own candidates, flags and thresholds, but
@@ -507,21 +532,6 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
 #' before the code, which is why it is a note on the chunk rather than a row
 #' in `$untranslated` (#160).
 #' @noRd
-.hzr_sas_objective_note <- function() {
-  list(
-    title = "ICENSOR: fitted on PROC HAZARD's objective, not a log-likelihood",
-    body = paste(
-      "This job has ICENSOR, so the fit below uses `objective = \"sas\"`:",
-      "the interval-censored rows enter as PROC HAZARD accumulates them, the",
-      "interval-mean hazard over (lower bound, time], rather than as the",
-      "probability of an event in the interval. That reproduces PROC",
-      "HAZARD's estimates. The value it reports as the objective is PROC",
-      "HAZARD's, not a log-likelihood, so do not compare it with a",
-      "log-likelihood from another fit or use it in a likelihood-ratio test.",
-      "See ?hazard, argument `objective`.")
-  )
-}
-
 .hzr_selection_divergence_note <- function(direction = "both") {
   # Only what this screen's direction does: a BACKWARD screen never enters,
   # and a forward-only (NOSTEPWISE) screen never removes, so neither the
