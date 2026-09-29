@@ -196,7 +196,7 @@
       "standard error and Wald interval do not describe one. As gamma grows ",
       "this phase tends to a corner law with a finite likelihood, and the ",
       "likelihood rises in that direction here, so the supremum may lie at ",
-      "gamma = Inf. The fitted hazard away from tau is barely affected."
+      "gamma = Inf."
     )
   )
 }
