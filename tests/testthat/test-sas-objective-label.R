@@ -77,7 +77,7 @@ test_that("the formula interface's interval rows are seen too (#544)", {
                   constant = hzr_phase("constant")),
     control = list(n_starts = 1)))
   # The premise: Surv's interval code (3) was stored as this package's 2.
-  expect_true(any(fit$data$status == 2))
+  expect_equal(as.numeric(fit$data$status), d$st)
   expect_match(printed(fit), "SAS objective:", fixed = TRUE)
   expect_identical(summary(fit)$log_lik, NA_real_)
 })
