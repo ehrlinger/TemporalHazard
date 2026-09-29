@@ -32,7 +32,9 @@
   costs two fits. A multiphase model whose global formula lists more
   covariates than its phase formulas use can be refit (it could not once
   refits were given a start), and a `theta` passed to `hzr_stepwise()`
-  through `...` is refused with a message that says why.
+  through `...` is refused with a message that says why. `hazard()` now
+  rejects `dist = NA` with its own message; it passed the check and
+  failed later with a base-R error.
   This applies to every path that refits a multiphase model: `hzr_stepwise()`
   under each criterion, `hzr_bootstrap()` select mode, and the code
   `hzr_translate_sas()` emits for a SAS stepwise job.
