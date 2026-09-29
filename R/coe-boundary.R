@@ -18,7 +18,8 @@
 #' Certify a higher likelihood on the CoE boundary
 #'
 #' Two points are scored at the returned estimates, both with the conserved
-#' phase's `log_mu` sent to `-700` (its scale is then numerically 0):
+#' phase's `log_mu` sent to `-1e4`, where `exp()` is exactly 0 and the phase
+#' contributes nothing at any finite time or linear predictor (checked):
 #' holding every other parameter, and with the other phases' intercepts
 #' shifted by one common amount so predicted events again equal observed
 #' ones. Only intercepts move; shapes, covariate coefficients and fixed
@@ -49,7 +50,13 @@
   }
   w <- if (is.null(weights)) rep(1, length(time)) else weights
   off <- theta
-  off[[fixmu_pos]] <- -700
+  # -1e4, not a milder sentinel: exp(-700) times a large time or a large
+  # linear predictor is still a live phase, and the record says the phase is
+  # off. Verified below rather than assumed.
+  off[[fixmu_pos]] <- -1e4
+  left <- .hzr_multiphase_cumhaz(time, off, phases, covariate_counts, x_list,
+                                 per_phase = TRUE)[[fixmu_phase]]
+  if (any(!is.finite(left)) || any(left != 0)) return(NULL)
   candidates <- list(off)
 
   # The other phases rescaled together so the events are conserved again,

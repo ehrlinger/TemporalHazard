@@ -110,6 +110,25 @@ test_that("only the certificate fires, past its margin, on a converged value (#2
   }
   expect_gt(record(rescaled_only)$gain, record(real)$gain - 1e-12)
   expect_lt(record(held_only)$gain %||% -Inf, record(real)$gain)
+  # "Sent to zero" is literal: the conserved phase contributes exactly
+  # nothing at the certificate, even at an extreme time.
+  cert <- record(real)$certificate_theta
+  xl0 <- list(early = NULL, constant = NULL, late = NULL)
+  expect_true(all(.hzr_multiphase_cumhaz(
+    c(d$time, 1e300), cert, phases, counts, xl0,
+    per_phase = TRUE)[["constant"]] == 0))
+  # And where a linear predictor would keep the phase alive at that floor,
+  # nothing is certified rather than a live phase called off.
+  counts1 <- c(early = 0L, constant = 1L, late = 0L)
+  th1 <- append(theta, 1, after = pos[["constant"]])
+  pos1 <- .hzr_log_mu_positions(phases, counts1)
+  xl1 <- list(early = NULL, constant = matrix(2e4, length(d$time), 1L),
+              late = NULL)
+  expect_null(.hzr_coe_boundary_record(
+    th1, value, TRUE, function(p) value + 1, "constant", pos1[["constant"]],
+    pos1, phases, counts1, xl1, d$time, d$status, NULL, NULL,
+    sum(d$status == 1)))
+
   # The held-only point is scored too: with the rescaled one refused, it
   # alone still certifies here.
   expect_false(is.null(record(held_only)))
