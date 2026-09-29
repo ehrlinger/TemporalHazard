@@ -409,9 +409,12 @@ Control parameters:
 - `shape_param_count`: The number of baseline parameters at the front of
   `theta`: the scale and any shape parameters, so 2 for `"weibull"` and
   1 for `"exponential"`. For a single-distribution model only. The fit
-  itself does not use it; the stepwise refit and the score test read it
-  back from `fit$spec$control`. A multiphase fit derives its own layout,
-  so nothing reads it there.
+  does not use it: `theta` is checked against the distribution's own
+  count, and so are
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md),
+  its refits and its score test. Only an internal helper that writes a
+  SAS input deck for parity checks reads it. A multiphase fit derives
+  its own layout, so nothing reads it there.
 
 The elements above are accepted without a warning: `maxit` and `reltol`
 for every model, `shape_param_count` for a single-distribution model,
@@ -701,10 +704,10 @@ summary(fit2)
 #> Coefficients:
 #>          estimate   std_error     z_stat      p_value
 #> mu    0.121938323 0.062299561  1.9572902 5.031335e-02
-#> nu    1.143693956 0.084297244 13.5673944 6.250475e-42
+#> nu    1.143693955 0.084297244 13.5673944 6.250475e-42
 #> beta1 0.001710112 0.008807807  0.1941586 8.460517e-01
 #> beta2 0.156102262 0.090593058  1.7231151 8.486772e-02
-#> beta3 0.017258366 0.362941256  0.0475514 9.620738e-01
+#> beta3 0.017258365 0.362941256  0.0475514 9.620738e-01
 
 # \donttest{
 # -- Parametric survival with Kaplan-Meier overlay -----------------

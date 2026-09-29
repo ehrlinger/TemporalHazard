@@ -41,6 +41,14 @@
   now matched to the new design by column. A factor entering or leaving,
   and a model with `time_windows`, which used to stop with a `theta`
   length error, now refit.
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  now counts a model’s shape parameters the way
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  does, ignoring `control$shape_param_count`. For a fit given a count
+  that disagreed with its distribution, the score screen used to stop
+  with a `theta` layout error, and under `criterion = "wald"` or `"aic"`
+  the trace’s “Final model” line reported the wrong number of
+  covariates.
 
 - **A translated `PROC HAZPRED` job now predicts at the grid SAS used
   ([\#494](https://github.com/ehrlinger/TemporalHazard/issues/494)).**

@@ -443,10 +443,11 @@ applied;</p></li>
 <code>fit$spec$control$conserve</code>: the latter says only what you asked for.</p></li>
 <li><p><code>shape_param_count</code>: The number of baseline parameters at the front of
 <code>theta</code>: the scale and any shape parameters, so 2 for <code>"weibull"</code> and 1
-for <code>"exponential"</code>. For a single-distribution model only. The fit itself does not
-use it; the stepwise refit and the score test read it back from
-<code>fit$spec$control</code>. A multiphase fit derives its own layout, so nothing
-reads it there.</p></li>
+for <code>"exponential"</code>. For a single-distribution model only. The fit does
+not use it: <code>theta</code> is checked against the distribution's own count, and
+so are <code><a href="hzr_stepwise.html">hzr_stepwise()</a></code>, its refits and its score test. Only an internal
+helper that writes a SAS input deck for parity checks reads it. A
+multiphase fit derives its own layout, so nothing reads it there.</p></li>
 </ul><p>The elements above are accepted without a warning: <code>maxit</code> and <code>reltol</code>
 for every model, <code>shape_param_count</code> for a single-distribution model, and
 <code>n_starts</code>, <code>start_seed</code>, <code>phase_share_tol</code> and <code>conserve</code> for
@@ -701,10 +702,10 @@ nonlinear temporal decomposition mixed effects model. <em>Stat Methods Med Res.<
 <span class="r-out co"><span class="r-pr">#&gt;</span> Coefficients:</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>          estimate   std_error     z_stat      p_value</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> mu    0.121938323 0.062299561  1.9572902 5.031335e-02</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> nu    1.143693956 0.084297244 13.5673944 6.250475e-42</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> nu    1.143693955 0.084297244 13.5673944 6.250475e-42</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> beta1 0.001710112 0.008807807  0.1941586 8.460517e-01</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> beta2 0.156102262 0.090593058  1.7231151 8.486772e-02</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> beta3 0.017258366 0.362941256  0.0475514 9.620738e-01</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> beta3 0.017258365 0.362941256  0.0475514 9.620738e-01</span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="co"># \donttest{</span></span></span>
 <span class="r-in"><span><span class="co"># -- Parametric survival with Kaplan-Meier overlay -----------------</span></span></span>
