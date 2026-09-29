@@ -201,16 +201,16 @@ hzr_evaluate <- function(object, theta, times = NULL) {
   out <- list(
     theta = theta,
     logLik = logl,
-    # Which objective `logLik` holds: under "sas" the interval-censored rows
-    # contribute PROC HAZARD's interval-mean-hazard term, which is not a
-    # log-likelihood (#503).
-    objective = object$spec$objective %||% "likelihood",
     dist = dist,
     # The rows the likelihood actually scored, not the rows the object
     # carries: a phase design with an NA drops rows (#144 review).
     n_obs = length(prepared$time),
     n_events = sum(prepared$status == 1),
-    curve = curve
+    curve = curve,
+    # Which objective `logLik` holds: under "sas" the interval-censored rows
+    # contribute PROC HAZARD's interval-mean-hazard term, which is not a
+    # log-likelihood (#503). Last, so no existing element moves.
+    objective = object$spec$objective %||% "likelihood"
   )
   structure(out, class = "hzr_evaluation")
 }
@@ -414,9 +414,10 @@ print.hzr_evaluation <- function(x, ...) {
   cat("  distribution: ", x$dist, "\n", sep = "")
   cat("  observations: ", x$n_obs, " (", x$n_events, " events)\n", sep = "")
   if (identical(x$objective, "sas")) {
-    cat("  SAS objective at the supplied parameters (objective = \"sas\", ",
-        "not a log-likelihood): ", format(x$logLik, digits = 8), "\n",
-        sep = "")
+    cat("  SAS objective at the supplied parameters: ",
+        format(x$logLik, digits = 8), "\n",
+        "  (objective = \"sas\": not a log-likelihood where the data have\n",
+        "  interval-censored rows)\n", sep = "")
   } else {
     cat("  logLik at the supplied parameters: ",
         format(x$logLik, digits = 8), "\n", sep = "")
