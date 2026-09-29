@@ -897,7 +897,7 @@ hzr_stepwise <- function(fit,
           "loglik_below_base"
         wald_untested_entries <- setdiff(update_untested(
           wald_untested_entries, sc, is.na(sc$score) & !below
-        ), wald_tokens(sc, failed | below))
+        ), wald_tokens(sc, failed))
       }
       iter_refit_failures <- c(iter_refit_failures,
                                fwd$refit_failures %||% character())
