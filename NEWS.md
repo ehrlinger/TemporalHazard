@@ -311,6 +311,17 @@
   variable `TLAGE`. A later `(` clears `PROC HAZARD`'s syntax error, and
   the warning then says so instead.
 
+* **A translated `ICENSOR` job now fits `PROC HAZARD`'s interval objective
+  (#543).** `PROC HAZARD` accumulates an interval-censored row as the
+  interval-mean hazard over (lower bound, time], which `hazard()` calls
+  `objective = "sas"`, and `hzr_translate_sas()` emitted the default
+  interval probability instead. Measured on the binary over a grid of 18
+  optimised fits, that moved the constant phase's `MU` by up to 21% and the
+  reported objective by up to 291 units. The emitted call now passes
+  `objective = "sas"`, which reproduces `PROC HAZARD`'s estimates to the
+  precision it prints. A note above the fit says that the value it reports
+  is `PROC HAZARD`'s objective, not a log-likelihood.
+
 # TemporalHazard 1.2.12
 
 ## Breaking changes
