@@ -278,6 +278,34 @@
   [`?predict.hazard`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)
   documents the behaviour under `newdata`.
 
+- **A translated `MAXITER=0` job now evaluates the starting values, as
+  `PROC HAZARD` does, rather than fitting
+  ([\#496](https://github.com/ehrlinger/TemporalHazard/issues/496)).**
+  `PROC HAZARD` skips its optimizer at `MAXITER=0` and prints the
+  log-likelihood at the starting values, after Conservation of Events
+  has scaled every `MU` by one factor unless `NOCONSERVE` is given.
+  [`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
+  emitted `control = list(maxit = 0)`, and
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  optimised anyway: one job reported -198.370 with `converged = TRUE`
+  where `PROC HAZARD` printed -295.609. The chunk is now
+  [`hzr_evaluate()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_evaluate.md)
+  at those starting values, with the same scaling, and it reproduces the
+  log-likelihood and `MUE` that `PROC HAZARD` prints with and without
+  `WEIGHT`, `LCENSOR` and `NOCONSERVE`. With `ICENSOR` it reproduces
+  `MUE`, and warns that its log-likelihood is
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)’s
+  interval likelihood rather than the term `PROC HAZARD` accumulates.
+  With fewer events than free parameters it stops, as `PROC HAZARD`
+  does. It is not a fit, so the job warns and gains an `$untranslated`
+  row. `PROC HAZARD` still steps through a `SELECTION` screen,
+  evaluating each step at unfitted values; the translation does not, and
+  says so. A value below 1 is read the same way, as `PROC HAZARD`
+  truncates it to 0. A negative `MAXITER`, which `PROC HAZARD` ignores,
+  is no longer emitted:
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  had returned the starting values with `converged = TRUE`.
+
 ## TemporalHazard 1.2.12
 
 ### Breaking changes
