@@ -433,18 +433,20 @@
   # (hazard_y.y:206-207), so a statement with no item, an empty item, or a
   # leading or trailing comma is a parse error. The binary refuses each
   # with SYNTAX (tests/testthat/fixtures/paren-reset-oracle.csv); the split
-  # below dropped them without a word (#461 review). Not judged where a
-  # macro reference could expand to the missing item. The variables that
-  # are there are unambiguous, so it takes the #440 route, warn and fit,
-  # rather than the #340 stop (U1 ruling, 2026-09-22).
+  # below dropped them without a word (#461 review). A macro reference can
+  # hide what an item is, not whether a `,` has an item beside it, so a
+  # macro elsewhere in the statement exempts nothing: the empty item is
+  # empty text whatever the macro expands to (#479). A statement that is a
+  # macro and nothing else is not judged. The variables that are there are
+  # unambiguous, so it takes the #440 route, warn and fit, rather than the
+  # #340 stop (U1 ruling, 2026-09-22).
   empty_item <- syntax_error(paste(
     "a phase statement needs at least one variable, and each `,` a variable",
     "on either side (hazard_y.y:206-207), so the parser fails",
     "(yyerror.c:19)"))
   for (piece in x) {
     t <- trimws(piece)
-    if (!.hzr_sas_is_macro(t) &&
-        (!nzchar(t) || grepl("^,|,$|,[[:space:]]*,", t))) {
+    if (!nzchar(t) || grepl("^,|,$|,[[:space:]]*,", t)) {
       shown <- if (nzchar(t)) t else "(no variable)"
       bad(shown, empty_item)
       not_a_name <- c(not_a_name, paste0(shown, ": ", empty_item))

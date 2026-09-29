@@ -3108,3 +3108,37 @@ test_that("a stray ICENSOR comma still fits the same model (U1, #495)", {
   expect_match(msg, "clears its syntax-error flag", fixed = TRUE)
   expect_no_match(msg, "PROC HAZARD does not run this job", fixed = TRUE)
 })
+
+# --- A macro does not fill an empty phase item (#479) ------------------------
+# phasevaropts needs an item on each side of every `,` (hazard_y.y:206-207).
+# A macro reference can hide what an item IS, not whether a comma has an item
+# beside it, so `EARLY , &X;` has an empty leading item whatever &X expands
+# to. Measured on the binary with the macro-free forms: `EARLY , AGE;`,
+# `EARLY AGE,, SEX;` and `EARLY AGE, ;` each exit SYNTAX at initprz.c:77,
+# and `EARLY AGE;` fits (-206.704). The translation exempted the whole
+# statement when any item was a macro, so these fitted with no warning and no
+# row.
+test_that("a macro does not exempt an empty phase item (#479)", {
+  job_for <- function(ph, env = parent.frame()) {
+    f <- withr::local_tempfile(fileext = ".sas", .local_envir = env)
+    writeLines(paste("%HAZARD( PROC HAZARD DATA=D; EVENT DEAD; TIME TT;",
+                     "PARMS MUE=0.2 THALF=1 MUC=0.01;", ph, ");"), f)
+    suppressWarnings(hzr_translate_sas(f))
+  }
+  for (ph in c("EARLY , &X;", "EARLY SEX,, &X;", "EARLY &X, ;",
+               "EARLY &X,,AGE;", "CONSTANT SEX,, &X;")) {
+    job <- job_for(ph)
+    expect_false(is.null(.u1_refusal_chunk(job)), info = ph)
+    expect_match(.u1_msg(job), "hazard_y.y:206-207", fixed = TRUE, info = ph)
+    expect_true(any(grepl(",", job$untranslated$construct, fixed = TRUE) &
+                      grepl("206-207", job$untranslated$reason, fixed = TRUE)),
+                info = ph)
+  }
+  # Controls: a macro item, alone or beside a variable, is a whole item.
+  for (ph in c("EARLY &X;", "EARLY AGE, &X;", "EARLY &X, AGE;")) {
+    job <- job_for(ph)
+    expect_null(.u1_refusal_chunk(job), info = ph)
+    expect_false(any(grepl("206-207", job$untranslated$reason, fixed = TRUE)),
+                 info = ph)
+  }
+})
