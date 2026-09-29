@@ -109,15 +109,23 @@ test_that("hzr_deciles() chi-square does not move with the weights' scale", {
   expect_equal(d10$expected_rate, d1$expected_rate, tolerance = 1e-5)
 })
 
-test_that("hzr_deciles() with unit weights is the unweighted result", {
+test_that("an unweighted, untruncated hzr_deciles() is unchanged (#491)", {
   avc <- .dec_avc
-  d0 <- hzr_deciles(.dec_weibull(avc, NULL), time = 12)
-  d1 <- hzr_deciles(.dec_weibull(avc, rep(1, nrow(avc))), time = 12)
-  expect_gt(attr(d0, "overall")$chi_sq, 0.5)
-  expect_equal(as.data.frame(unclass(d1)), as.data.frame(unclass(d0)),
-               tolerance = 1e-8, ignore_attr = TRUE)
-  expect_equal(attr(d1, "overall")$chi_sq, attr(d0, "overall")$chi_sq,
-               tolerance = 1e-8)
+  fit <- .dec_weibull(avc, NULL)
+  dec <- hzr_deciles(fit, time = 12)
+  ov <- attr(dec, "overall")
+  # Pinned against the pre-#491 formulas, computed here independently: E is
+  # the sum of H(exit), the chi-square divides by E, and rates are per head.
+  nd <- avc[, c("age", "mal")]
+  nd$time <- avc$int_dead
+  h <- predict(fit, newdata = nd, type = "cumulative_hazard")
+  expect_equal(ov$total_expected, sum(h), tolerance = 1e-10)
+  expect_equal(ov$total_events, sum(avc$dead))
+  expect_gt(ov$chi_sq, 0.5)
+  expect_equal(dec$chi_sq, (dec$events - dec$expected)^2 / dec$expected,
+               tolerance = 1e-12)
+  expect_equal(dec$observed_rate, dec$events / dec$n, tolerance = 1e-12)
+  expect_equal(dec$expected_rate, dec$expected / dec$n, tolerance = 1e-12)
 })
 
 test_that("an interval's lower bound is not taken as an entry time", {
