@@ -33,6 +33,30 @@
   under each criterion, `hzr_bootstrap()` select mode, and the code
   `hzr_translate_sas()` emits for a SAS stepwise job.
 
+* **A g3 phase under `constraint = "eta_gamma"` whose likelihood is higher
+  at a much larger `gamma` is now recorded and warned about (#418).** As
+  `gamma` grows, this phase tends to a corner law whose log-likelihood is
+  finite, so when the data prefer a sharp bend at `tau` the supremum can lie
+  at `gamma = Inf`. A fit could still stop at an ordinary-looking `gamma`
+  with a standard error, report `converged = TRUE`, and warn about nothing.
+  On data drawn from the corner law, a fit stopped at `gamma` = 7.5 with the
+  likelihood 2.0 units higher toward infinity. After a converged fit with
+  `gamma` below 1000, `hazard()` now searches the corner law with the other
+  phases held at their estimates. It records a finding only when the fit's
+  own log-likelihood, evaluated at `gamma` of 1e4, 1e6 or 1e8, beats the
+  reported one by more than 0.01, so a weak search can miss a case but
+  cannot report one that is not there. That proves the reported `gamma` is
+  not the maximum-likelihood estimate; it does not prove the supremum is at
+  infinity rather than at another large `gamma`. A finding goes in
+  `fit$fit$boundary` with mechanism `"g3_corner_supremum"`, carrying the
+  higher point, and raises a warning of class `hzr_g3_corner_supremum`,
+  which inherits `hzr_boundary`. The estimates are unchanged. PROC HAZARD
+  has no such check and would report the same `gamma`. On simulated data
+  this caught 12 of the 14 warning-free fits that stopped short. A fixed
+  `tau` or `alpha` keeps its value in the search and in the check. A fixed
+  `gamma` is not examined, and nor are fits with left-censored or
+  interval-censored rows, or a supremum at `gamma` = 0.
+
 * **`hzr_deciles()` now counts entry times and case weights, as
   `hzr_gof()` does (#491).** Each subject's expected events were its
   cumulative hazard at exit, and events were counted unweighted. A
@@ -304,6 +328,19 @@
   read the same way, as `PROC HAZARD` truncates it to 0. A negative
   `MAXITER`, which `PROC HAZARD` ignores, is no longer emitted:
   `hazard()` had returned the starting values with `converged = TRUE`.
+
+* **A translated `ICENSOR` statement that `PROC HAZARD` cannot parse now
+  warns (#495).** `ICENSOR` takes exactly `count = timevar`, and `PROC
+  HAZARD` stops with a syntax error on anything else: a comma anywhere, a
+  missing `=`, or an extra name. `hzr_translate_sas()` removed a trailing
+  comma and fitted the job without a word, and it fitted a job with a
+  missing `=` without its interval-censored rows, with only an
+  `$untranslated` row to say so. Such a job now warns that `PROC HAZARD`
+  does not run it and gains an `$untranslated` row. The fit uses the
+  names `PROC HAZARD`'s parser reads, the first `count = timevar` once its
+  lexer has dropped the errors, so `C3=TL,AGE` fits `C3` and `TL`, not a
+  variable `TLAGE`. A later `(` clears `PROC HAZARD`'s syntax error, and
+  the warning then says so instead.
 
 # TemporalHazard 1.2.12
 
