@@ -47,12 +47,13 @@ grid <- rbind(grid, expand.grid(
 degenerate_rows <- function(D, how) {
   i <- which(D$C3 > 0)[1:3]
   switch(how,
-    none = D,
-    eq = { D$TL[i] <- D$TT[i]; D },
-    gt = { D$TL[i] <- D$TT[i] * 1.5; D },
-    na = { D$TL[i] <- NA; D },
-    neg = { D$TL[i] <- -1; D },
-    mixed = { D$TL[i] <- c(D$TT[i[1]], D$TT[i[2]] * 1.5, NA); D })
+    none = NULL,
+    eq = D$TL[i] <- D$TT[i],
+    gt = D$TL[i] <- D$TT[i] * 1.5,
+    na = D$TL[i] <- NA,
+    neg = D$TL[i] <- -1,
+    mixed = D$TL[i] <- c(D$TT[i[1]], D$TT[i[2]] * 1.5, NA))
+  D
 }
 
 rows <- lapply(seq_len(nrow(grid)), function(k) {
