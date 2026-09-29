@@ -2,6 +2,23 @@
 
 ## Bug fixes
 
+* **`hzr_deciles()` now counts entry times and case weights, as
+  `hzr_gof()` does (#491).** Each subject's expected events were its
+  cumulative hazard at exit, and events were counted unweighted. A
+  left-truncated subject is at risk only from its entry time, so its
+  expected count is the cumulative hazard at exit minus that at entry, and a
+  weighted fit conserves weighted events. So a correctly specified fit
+  looked badly calibrated. On `avc` with entry times for 40% of subjects, a fit
+  that conserves events expected 107.7 events against 68 observed, where
+  `hzr_gof()` expected 68. A weighted fit reported 68 events where the
+  weighted count was 85.4. Both tallies now carry the entry-time correction
+  and the weights, the `events` column is weighted for a weighted fit, and
+  the group totals again sum to the observed events. For a weighted fit the
+  chi-square divides by the Poisson variance of the weighted count, and the
+  rates are per unit of weight, so neither changes when every weight is
+  multiplied by the same constant. A fit with neither entry times nor
+  weights is unchanged.
+
 * **An AIC stepwise entry no longer rejects, as if tested, a candidate whose
   refit ended below the current model (#490).** Entering a term gives a
   model that contains the current one, so its log-likelihood cannot be lower
