@@ -45,7 +45,10 @@ test_that("R reproduces the AVC stepwise capture's logLik at its estimates (#540
   theta[c("early.log_t_half", "early.nu", "early.m")] <-
     c(log(shapes[["t_half"]]), shapes[["nu"]], shapes[["m"]])
   # Every printed estimate must land on a parameter, and every parameter
-  # must be filled: a partial match would evaluate somewhere else.
+  # must be filled: a partial match would evaluate somewhere else. The set
+  # comparison ignores repeats, so a duplicated row is refused first: the
+  # assignment below would keep only its last value (Copilot, #561).
+  expect_identical(anyDuplicated(key), 0L)
   expect_setequal(key, setdiff(nm, c("early.log_t_half", "early.nu",
                                      "early.m")))
   theta[key] <- est$estimate
