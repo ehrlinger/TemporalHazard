@@ -122,8 +122,8 @@
   } else {
     numeric(0)
   }
-  if (length(cand) > 400L) {
-    cand <- stats::quantile(cand, seq(0, 1, length.out = 400L), names = FALSE)
+  if (length(cand) > 100L) {
+    cand <- stats::quantile(cand, seq(0, 1, length.out = 100L), names = FALSE)
   }
   cand <- sort(unique(c(cand, tau_hat)))
   if (length(cand) > 1L) {
@@ -192,11 +192,11 @@
       format(gain, digits = 3), " higher at gamma = ",
       format(cert$theta[[key("gamma")]], digits = 3), " (tau = ",
       format(exp(cert$theta[[key("log_tau")]]), digits = 4),
-      "). As gamma grows this phase tends to a corner law with a finite ",
-      "likelihood, so the data put the supremum at gamma = Inf: gamma-hat ",
-      "and its standard error are not a maximum-likelihood estimate, and a ",
-      "Wald interval for gamma excludes the direction the likelihood rises ",
-      "in. The fitted hazard away from tau is barely affected."
+      "), so gamma-hat is not the maximum-likelihood estimate and its ",
+      "standard error and Wald interval do not describe one. As gamma grows ",
+      "this phase tends to a corner law with a finite likelihood, and the ",
+      "likelihood rises in that direction here, so the supremum may lie at ",
+      "gamma = Inf. The fitted hazard away from tau is barely affected."
     )
   )
 }

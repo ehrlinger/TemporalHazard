@@ -102,6 +102,25 @@ test_that("the certificate is taken off the bend as well as on it (#418)", {
   expect_length(corner_records(fit), 1L)
 })
 
+test_that("a free alpha is searched inside (0, 1) and certified (#418)", {
+  skip_on_cran()
+  d <- corner_data(300, seed = 7)
+  fit <- suppressWarnings(hazard(
+    time = d$time, status = d$status, dist = "multiphase", fit = TRUE,
+    phases = list(late = hzr_phase("g3", tau = 1.5, gamma = 4, alpha = 0.5,
+                                   constraint = "eta_gamma")),
+    control = list(n_starts = 1L)))
+  expect_lt(unname(coef(fit)["late.gamma"]), 1e3)
+  rec <- corner_records(fit)
+  expect_length(rec, 1L)
+  a <- rec[[1L]]$certificate_theta[["late.alpha"]]
+  expect_gt(a, 0)
+  expect_lt(a, 1)
+  expect_equal(as.numeric(hzr_evaluate(fit, rec[[1L]]$certificate_theta)$logLik),
+               rec[[1L]]$certificate_loglik, tolerance = 1e-10)
+  expect_gt(rec[[1L]]$certificate_loglik, fit$fit$objective + 0.01)
+})
+
 test_that("only the certificate can fire, and only past its margin (#418)", {
   skip_on_cran()
   d <- corner_data(300, seed = 16)

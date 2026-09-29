@@ -275,8 +275,9 @@ under \code{constraint = "eta_gamma"}); and one made after it,
 \code{"g3_corner_supremum"}: a g3 phase under
 \code{constraint = "eta_gamma"} whose estimated \code{gamma} converged
 below 1000 although the log-likelihood is higher at a much larger
-\code{gamma}, with any fixed \code{tau} or \code{alpha} held, so the
-supremum lies at \code{gamma = Inf}. A fixed \code{gamma}, and a fit
+\code{gamma}, with any fixed \code{tau} or \code{alpha} held. The
+estimate is then not the maximum-likelihood one, and the supremum may lie
+at \code{gamma = Inf}. A fixed \code{gamma}, and a fit
 with left- or interval-censored rows, are not examined. That record
 also carries \code{gain}, \code{gamma_hat}, and the higher point as
 \code{certificate_theta} with its \code{certificate_loglik}; the
