@@ -15,11 +15,20 @@
   the base, `age` in the early phase by 25.1 log-likelihood units. Every
   multiphase entry, whether scored by Wald, AIC or the score criterion's
   Wald fallback, was therefore tested against a model not at its optimum.
-  An accepted step then carried that model forward. Refits are now started
-  from the current estimates, matched by parameter name, with a new
-  coefficient at 0; fixed shapes keep their fixed values. The first of
-  several `control$n_starts` is that start itself. Conservation of Events
-  runs as before. Single-distribution refits already started this way.
+  An accepted step then carried that model forward. Each multiphase refit
+  is now fitted twice and the higher log-likelihood kept: once from the
+  current estimates, matched by parameter name with a new coefficient at 0,
+  which cannot end below the current model, and once from the default start
+  as before, because the likelihood has several optima and that start
+  sometimes reaches a higher one. `$fit$refit_start` records which start
+  won and `$fit$refit_objectives` both results. Fixed shapes keep their
+  fixed values, the first of several `control$n_starts` is the start
+  itself, and Conservation of Events runs as before. Single-distribution
+  refits already started from the current estimates. Each candidate now
+  costs two fits. A multiphase model whose global formula lists more
+  covariates than its phase formulas use can be refit (it could not once
+  refits were given a start), and a `theta` passed to `hzr_stepwise()`
+  through `...` is refused with a message that says why.
   This applies to every path that refits a multiphase model: `hzr_stepwise()`
   under each criterion, `hzr_bootstrap()` select mode, and the code
   `hzr_translate_sas()` emits for a SAS stepwise job.

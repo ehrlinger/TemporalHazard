@@ -14,10 +14,12 @@
 # the optimizer near the MLE and typically converges in a handful of
 # BFGS iterations.
 #
-# Multiphase fits: warm-started too, by parameter name, through
-# .hzr_multiphase_warm_start(). They used to start from the phase specs'
-# default values, which is not the model being extended, and a refit then
-# ended below the base it contains, reporting converged = TRUE (#551).
+# Multiphase fits: fitted from two starts, the base's estimates (by
+# parameter name, .hzr_multiphase_warm_start()) and the phase specs' default
+# values, and the better fit kept (.hzr_refit_best_start()). From the default
+# start alone a refit ended below the base it contains, reporting
+# converged = TRUE (#551); from the warm start alone it sometimes stopped at
+# a lower optimum than the default start reaches.
 #
 # Scope for v1: **main effects only**. A term like a multi-level
 # factor or a spline that expands to several coefficients would break
@@ -360,6 +362,16 @@
     }
   }
 
+  # The refit supplies its own start, so a `theta` forwarded from the caller
+  # met the same formal twice and failed with an argument-matching error;
+  # before #551 a multiphase refit instead used it as every candidate's
+  # start, for a model of a different length.
+  if ("theta" %in% names(user_args)) {
+    stop("`theta` cannot be passed to a stepwise refit: each candidate is ",
+         "started from the current model's estimates. Set the starting ",
+         "values on the base fit instead.", call. = FALSE)
+  }
+
   extra_args <- user_args[!names(user_args) %in%
                             c("weights", "time_windows", "objective")]
 
@@ -427,19 +439,25 @@
       ),
       extra_args
     )
-    # Start from the model being extended, not from the phase specs' default
-    # values (#551). The candidate model at the base's estimates, with a new
-    # coefficient at 0, IS the base model, so a refit started there cannot
-    # end below the base. From the default start it did, by up to 25
-    # log-likelihood units, and reported converged = TRUE. The unfitted
-    # object gives the candidate's parameter names by the fit's own naming.
-    proto <- .hzr_muffle_intercept_warning(do.call(
-      hazard, c(refit_args, list(fit = FALSE))
-    ))
+    # Two starts, and the better fit kept (#551). The base's estimates with a
+    # new coefficient at 0 ARE the base model, so a refit started there cannot
+    # end below the base; from the phase specs' default start alone it did,
+    # by up to 25 log-likelihood units, reporting converged = TRUE. But the
+    # likelihood is multimodal, and the default start sometimes reaches a
+    # higher optimum than the warm one, so both are fitted. The unfitted
+    # object gives the candidate's parameter names by the fit's own naming;
+    # its warnings repeat the fits' and are dropped.
+    proto <- suppressWarnings(do.call(hazard,
+                                      c(refit_args, list(fit = FALSE))))
     theta_start <- .hzr_multiphase_warm_start(current, proto)
-    .hzr_muffle_intercept_warning(do.call(hazard, c(
-      refit_args, list(theta = theta_start, fit = TRUE)
-    )))
+    .hzr_refit_best_start(
+      warm    = .hzr_refit_capture(do.call(hazard, c(
+        refit_args, list(theta = theta_start, fit = TRUE)
+      ))),
+      default = .hzr_refit_capture(do.call(hazard, c(
+        refit_args, list(fit = TRUE)
+      )))
+    )
   } else {
     # Single-distribution path: mutate the global formula, warm-start
     # theta from the base fit by design column. Unlike multiphase
@@ -601,6 +619,75 @@
   shared <- intersect(new_names, old_names)
   theta_start[shared] <- unname(theta_old[match(shared, old_names)])
   theta_start
+}
+
+#' Run one refit, holding its warnings back
+#'
+#' A multiphase refit is fitted from two starts and only one fit is kept, so
+#' the warnings of the discarded fit must not reach the user as if they
+#' described the result. The intercept warning the base fit already gave is
+#' dropped outright, as `.hzr_muffle_intercept_warning()` drops it.
+#'
+#' @param expr The refit call, evaluated here.
+#' @return A list: `value`, the fit or the error condition, and `warnings`,
+#'   the warning conditions it raised.
+#' @keywords internal
+#' @noRd
+.hzr_refit_capture <- function(expr) {
+  caught <- list()
+  value <- tryCatch(
+    withCallingHandlers(
+      expr,
+      warning = function(w) {
+        if (!inherits(w, "hzr_intercept_removed")) {
+          caught[[length(caught) + 1L]] <<- w
+        }
+        invokeRestart("muffleWarning")
+      }
+    ),
+    error = function(e) e
+  )
+  list(value = value, warnings = caught)
+}
+
+#' Keep the better of a multiphase refit's two fits
+#'
+#' A fit is usable when it is a `hazard` object that did not report
+#' non-convergence and has a finite objective. Of two usable fits the higher
+#' objective wins, and a tie goes to the warm start, which is the one that
+#' cannot end below the base. One usable fit wins alone. When neither is
+#' usable the default start's outcome is returned exactly as the refit
+#' returned it before #551: its error re-raised, or its non-converged fit.
+#' The kept fit's warnings are then raised, and `fit$fit$refit_start` records
+#' which start won, beside `fit$fit$refit_objectives`, both starts' objectives
+#' (`NA` for one that failed).
+#'
+#' @param warm,default `.hzr_refit_capture()` results.
+#' @return The kept fit.
+#' @keywords internal
+#' @noRd
+.hzr_refit_best_start <- function(warm, default) {
+  objective_of <- function(r) {
+    v <- r$value
+    if (inherits(v, "hazard") && !isFALSE(v$fit$converged) &&
+          isTRUE(is.finite(v$fit$objective))) v$fit$objective else NA_real_
+  }
+  obj <- c(warm = objective_of(warm), default = objective_of(default))
+  winner <- if (all(is.na(obj))) {
+    "default"
+  } else if (is.na(obj[["default"]]) ||
+               (!is.na(obj[["warm"]]) && obj[["warm"]] >= obj[["default"]])) {
+    "warm"
+  } else {
+    "default"
+  }
+  kept <- if (winner == "warm") warm else default
+  for (w in kept$warnings) warning(w)
+  if (inherits(kept$value, "condition")) stop(kept$value)
+  fit <- kept$value
+  fit$fit$refit_start <- winner
+  fit$fit$refit_objectives <- obj
+  fit
 }
 
 

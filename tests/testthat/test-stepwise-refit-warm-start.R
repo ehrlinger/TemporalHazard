@@ -104,40 +104,95 @@
   )
 }
 
-test_that("a multiphase refit starts from the base's estimates (#551)", {
-  g <- .ws_grid()$inherits
-  ns <- asNamespace("TemporalHazard")
-  orig <- get(".hzr_optim_multiphase", envir = ns)
-  seen <- NULL
+# Every start the multiphase optimizer is handed during `expr`, in order.
+.ws_starts_handed <- function(expr) {
+  orig <- .hzr_optim_multiphase
+  seen <- list()
   local_mocked_bindings(.hzr_optim_multiphase = function(...) {
-    seen <<- list(...)$theta_start
+    # Wrapped, so a NULL start (the default) is recorded, not dropped.
+    seen[[length(seen) + 1L]] <<- list(start = list(...)$theta_start)
     orig(...)
   })
-  cand <- suppressWarnings(.hzr_refit_with_scope(
+  value <- expr
+  list(value = value, seen = lapply(seen, `[[`, "start"))
+}
+
+test_that("a multiphase refit is fitted from two starts, warm and default", {
+  g <- .ws_grid()$inherits
+  out <- .ws_starts_handed(suppressWarnings(.hzr_refit_with_scope(
     g$base, action = "add", var = "mal", phase = "constant",
     data = g$data, control = g$ctl
-  ))
+  )))
+  cand <- out$value
   expected <- .ws_base_plus_zero(g$base, cand)
   # Known positive: the candidate model at that start reproduces the base.
   ev <- suppressWarnings(hzr_evaluate(cand, theta = expected))
   expect_equal(ev$logLik, g$base$fit$objective, tolerance = 1e-10)
-  # The optimizer received exactly that start, not NULL.
-  expect_false(is.null(seen))
-  expect_equal(unname(seen), unname(expected), tolerance = 0)
-  expect_equal(names(seen), names(expected))
+  # Two fits: the first from exactly that start, the second from the phase
+  # specs' default (NULL: assembled inside the optimizer).
+  expect_length(out$seen, 2L)
+  expect_equal(unname(out$seen[[1]]), unname(expected), tolerance = 0)
+  expect_equal(names(out$seen[[1]]), names(expected))
+  expect_null(out$seen[[2]])
+  # The kept fit is the better of the two, and says which it was.
+  obj <- cand$fit$refit_objectives
+  expect_named(obj, c("warm", "default"))
+  expect_true(all(is.finite(obj)))
+  expect_identical(cand$fit$refit_start, names(which.max(obj))[1])
+  expect_equal(cand$fit$objective, max(obj), tolerance = 0)
 
   # A drop starts from the base's estimates with the dropped slot removed.
-  seen <- NULL
   g2 <- .ws_grid()$reference_coe
-  cand <- suppressWarnings(.hzr_refit_with_scope(
+  out <- .ws_starts_handed(suppressWarnings(.hzr_refit_with_scope(
     g2$base, action = "drop", var = "op_age", phase = "constant",
     data = g2$data, control = g2$ctl
-  ))
-  expected <- coef(g2$base)[names(coef(cand))]
+  )))
+  expected <- coef(g2$base)[names(coef(out$value))]
   expect_false(anyNA(expected))
   expect_false("constant.op_age" %in% names(expected))
-  expect_false(is.null(seen))
-  expect_equal(unname(seen), unname(expected), tolerance = 0)
+  expect_equal(unname(out$seen[[1]]), unname(expected), tolerance = 0)
+})
+
+test_that("the better start is kept, and a failed start never wins", {
+  fit_like <- function(obj, converged = TRUE) {
+    structure(list(fit = list(objective = obj, converged = converged)),
+              class = "hazard")
+  }
+  pick <- function(w, d) {
+    .hzr_refit_best_start(list(value = w, warnings = list()),
+                          list(value = d, warnings = list()))
+  }
+  expect_identical(pick(fit_like(-10), fit_like(-12))$fit$refit_start,
+                   "warm")
+  expect_identical(pick(fit_like(-12), fit_like(-10))$fit$refit_start,
+                   "default")
+  # A tie keeps the warm start, which cannot end below the base.
+  expect_identical(pick(fit_like(-10), fit_like(-10))$fit$refit_start,
+                   "warm")
+  # Not converged, non-finite, or an error: the other start wins.
+  expect_identical(pick(fit_like(-1, FALSE), fit_like(-10))$fit$refit_start,
+                   "default")
+  expect_identical(pick(fit_like(NaN), fit_like(-10))$fit$refit_start,
+                   "default")
+  expect_identical(
+    pick(simpleError("warm failed"), fit_like(-10))$fit$refit_start,
+    "default")
+  expect_identical(
+    pick(fit_like(-10), simpleError("default failed"))$fit$refit_start,
+    "warm")
+  # Both unusable: the default start's outcome, as before #551.
+  expect_error(pick(simpleError("w"), simpleError("default failed")),
+               "default failed")
+  both_bad <- pick(fit_like(-1, FALSE), fit_like(-2, FALSE))
+  expect_false(both_bad$fit$converged)
+  expect_equal(both_bad$fit$objective, -2)
+  # Only the kept fit's warnings reach the caller.
+  w <- testthat::capture_warnings(.hzr_refit_best_start(
+    list(value = fit_like(-10), warnings = list(simpleWarning("from warm"))),
+    list(value = fit_like(-12),
+         warnings = list(simpleWarning("from default")))
+  ))
+  expect_identical(w, "from warm")
 })
 
 test_that("no multiphase entry refit ends below its base (#551)", {
@@ -156,6 +211,12 @@ test_that("no multiphase entry refit ends below its base (#551)", {
       lab <- paste0(nm, ": ", a[[1]], "@", a[[2]])
       expect_true(isTRUE(cand$fit$converged), label = lab)
       expect_gte(cand$fit$objective, ll0 - .ws_tol(ll0), label = lab)
+      # The warm start alone already meets the property; the kept fit is
+      # the better of the two.
+      obj <- cand$fit$refit_objectives
+      expect_gte(obj[["warm"]], ll0 - .ws_tol(ll0), label = lab)
+      expect_equal(cand$fit$objective, max(obj, na.rm = TRUE),
+                   tolerance = 0, label = lab)
       n_checked <- n_checked + 1L
     }
   }
@@ -193,8 +254,61 @@ test_that("fixed shapes stay fixed and start 1 is the warm start (#551)", {
   ))
   fixed <- c("early.log_t_half", "early.nu", "early.m")
   expect_equal(coef(cand)[fixed], coef(g$base)[fixed], tolerance = 0)
-  # Perturbed starts cannot make it worse than the unperturbed first start.
   ll0 <- g$base$fit$objective
   expect_gte(cand$fit$objective, ll0 - .ws_tol(ll0))
-  expect_equal(nrow(cand$fit$starts), 3L)
+
+  # Start 1 of several IS the warm start, unperturbed: the same model fitted
+  # from base+0 with one start reaches exactly what start 1 of three reaches.
+  warm <- .ws_base_plus_zero(g$base, cand)
+  fit_from <- function(n) {
+    suppressWarnings(hazard(
+      survival::Surv(int_dead, dead) ~ 1, data = g$data,
+      dist = "multiphase", phases = cand$spec$phases, theta = warm,
+      control = list(n_starts = n, conserve = TRUE), fit = TRUE
+    ))
+  }
+  one <- fit_from(1)
+  three <- fit_from(3)
+  expect_equal(nrow(three$fit$starts), 3L)
+  expect_equal(three$fit$starts$objective[1], one$fit$objective,
+               tolerance = 1e-12)
+  expect_gte(three$fit$starts$objective[1], ll0 - .ws_tol(ll0))
+})
+
+test_that("a global covariate pool with phase formulas refits (#551)", {
+  skip_on_cran()
+  # The global formula lists the candidates while every phase has its own
+  # formula, so theta has fewer entries than the global design has columns.
+  a <- stats::na.omit(.ws_avc)
+  base <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ age + mal + com_iv + opmos + orifice +
+      op_age + status + inc_surg,
+    data = a, dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                        fixed = "shapes", formula = ~ 1),
+      constant = hzr_phase("constant", formula = ~ 1)),
+    control = list(n_starts = 1L), fit = TRUE
+  ))
+  expect_lt(length(base$fit$theta), ncol(base$data$x))
+  cand <- suppressWarnings(.hzr_refit_with_scope(
+    base, action = "add", var = "age", phase = "constant", data = a,
+    control = list(n_starts = 1L)
+  ))
+  expect_true("constant.age" %in% names(coef(cand)))
+  expect_gte(cand$fit$objective,
+             base$fit$objective - .ws_tol(base$fit$objective))
+  # The warm fit itself ran. A failed warm start is masked by the default
+  # one, so the result alone cannot show that it was refused.
+  expect_true(is.finite(cand$fit$refit_objectives[["warm"]]))
+})
+
+test_that("a theta forwarded to a refit is refused by name", {
+  g <- .ws_grid()$inherits
+  expect_error(
+    .hzr_refit_with_scope(g$base, action = "add", var = "mal",
+                          phase = "constant", data = g$data,
+                          theta = c(1, 2)),
+    "`theta` cannot be passed to a stepwise refit"
+  )
 })

@@ -1289,8 +1289,11 @@ hazard <- function(formula = NULL,
     # If x exists, theta must include coefficients for all variates
     # theta = [shape parms ... | covariate coefficients ...]
     # For now, assume theta length determines whether we expect x
+    # Not for multiphase: a phase with its own formula takes no slot per
+    # global column, and the exact per-phase count is checked below (#551).
     required_coef <- if (is.null(x_fit)) 0L else ncol(x_fit)
-    if (!is.null(x_fit) && length(theta) < required_coef) {
+    if (dist != "multiphase" && !is.null(x_fit) &&
+          length(theta) < required_coef) {
       stop("'theta' length must be >= number of required coefficients (", required_coef, ").", call. = FALSE)
     }
   }
