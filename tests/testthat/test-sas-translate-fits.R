@@ -3019,8 +3019,9 @@ test_that("an ICENSOR operand PROC HAZARD cannot parse warns (U1, #495)", {
                "C3 TL", "C3", "C3==TL", "C3=TL,AGE", "C,3=TL",
                # A stray comma outside a macro is met whatever it expands to.
                "C3=&T,", "&C,=TL",
-               # A macro call hides nothing outside itself (Copilot on #546).
-               "C3=TL, %TRIM(X)",
+               # A macro call hides nothing outside itself, and a macro after
+               # a `(` hides nothing beside it (Copilot on #546).
+               "C3=TL, %TRIM(X)", "C3=TL(X,&M)",
                # After a `(` the lexer is in the PROC-line state, where any
                # text sets the flag again (binary: SYNTAX for each).
                "C3=TL(X)", "C3=TL()X", "C3=TL()=", "C3=TL() = 1")) {
@@ -3039,7 +3040,9 @@ test_that("an ICENSOR operand PROC HAZARD cannot parse warns (U1, #495)", {
   # `)` is whitespace to the lexer (hazard_l.l:32), and a macro reference
   # joined to a name is one name once SAS resolves it.
   for (ic in c("C3 = TL", "C3=TL", "C3 =TL", "&CNT = TL", "C3=TL()",
-               "&&C3 = TL", "C&I = TL&I", "C3 = TL&S")) {
+               "&&C3 = TL", "C&I = TL&I", "C3 = TL&S",
+               # A macro alone after a `(` may expand to nothing.
+               "C3=TL(&M)")) {
     job <- .p495_job(ic)
     expect_null(.u1_refusal_chunk(job), info = ic)
     expect_identical(NROW(job$untranslated), 0L, info = ic)

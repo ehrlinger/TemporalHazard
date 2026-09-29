@@ -862,8 +862,11 @@
         icns <- sub("[(].*$", "", icns_all)
         tail <- if (!grepl("(", icns_all, fixed = TRUE)) "" else
           sub("^[^(]*[(]", "", icns_all)
-        tail_bad <- nzchar(gsub("[()[:space:]]", "", tail)) &&
-          !.hzr_sas_is_macro(tail)
+        # Only the macro references themselves carry no verdict: text beside
+        # them (`TL(X,&M)` keeps `X,`) sets the flag whatever they expand to
+        # (Copilot on #546).
+        tail_bad <- nzchar(gsub("[()[:space:]]", "",
+                                gsub("[&%][A-Z_][A-Z0-9_]*[.]?", "", tail)))
         toks <- regmatches(icns, gregexpr(
           "[-._A-Z0-9&%]+|=|[^[:space:]]", icns))[[1L]]
         is_macro_tok <- .hzr_sas_is_macro(toks)
