@@ -53,6 +53,20 @@
   fit$spec$objective %||% "likelihood"
 }
 
+#' Is a fit's maximised objective something other than a log-likelihood?
+#'
+#' Under `objective = "sas"` an interval-censored row contributes PROC
+#' HAZARD's interval-mean-hazard term, so the value is not a log-likelihood
+#' wherever the data have such a row. Without one the two objectives agree.
+#' @param fit A `hazard` object.
+#' @return A single logical.
+#' @keywords internal
+#' @noRd
+.hzr_objective_not_loglik <- function(fit) {
+  identical(.hzr_fit_objective(fit), "sas") &&
+    isTRUE(any(fit$data$status == 2, na.rm = TRUE))
+}
+
 #' Why a fit cannot be refit with a mutated scope
 #'
 #' Single decision point for "can `.hzr_refit_with_scope()` handle this

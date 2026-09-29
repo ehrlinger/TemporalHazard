@@ -2,6 +2,22 @@
 
 ## Bug fixes
 
+* **`print()`, `summary()` and the `hzr_stepwise()` trace no longer call an
+  `objective = "sas"` fit's objective a log-likelihood (#544, #556).** Where
+  the data have interval-censored rows, the objective an `objective = "sas"`
+  fit reaches is PROC HAZARD's interval-mean-hazard objective, not a
+  log-likelihood. `print()` showed it as `log-lik:`, `summary()` returned it
+  as `log_lik`, and the stepwise trace's final line as `logLik = ...`, so a
+  reader comparing it with another model's log-likelihood, or taking an LR
+  or AIC from it, got a finite and plausible wrong number. On one fit the
+  printed `log-lik:` was -160.02, where the log-likelihood at the same
+  estimates is -118.94. Such a fit now prints `SAS objective:`, and
+  `summary()`'s `log_lik` is `NA`, with the value in the new
+  `objective_value` and its kind in `objective`. The stepwise trace reads
+  `SAS objective = ..., AIC from it = ...`. Without interval-censored rows
+  the two objectives agree, and nothing changes. `logLik()` and `AIC()` have
+  no method for a `hazard` fit and still stop.
+
 * **A Conservation of Events fit whose likelihood is higher with the
   conserved phase switched off is now recorded and warned about (#261).**
   Under Conservation of Events the conserved phase's `log_mu` is solved so

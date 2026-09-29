@@ -2782,7 +2782,15 @@ print.hazard <- function(x, ...) {
 
   cat("  engine:      ", x$engine, "\n")
   if (!anyNA(x$fit$objective)) {
-    cat("  log-lik:     ", format(x$fit$objective, digits = 6), "\n")
+    # Under objective = "sas" the interval-censored rows contribute PROC
+    # HAZARD's interval-mean-hazard term, so the value is not a
+    # log-likelihood there (#544).
+    if (.hzr_objective_not_loglik(x)) {
+      cat("  SAS objective:", format(x$fit$objective, digits = 6),
+          "(objective = \"sas\"; not a log-likelihood)\n")
+    } else {
+      cat("  log-lik:     ", format(x$fit$objective, digits = 6), "\n")
+    }
     cat("  converged:   ", x$fit$converged, "\n")
     cat(.hzr_format_gradient_test(x$fit$rel_gradient, x$fit$polish_code,
                                   converged = x$fit$converged,
@@ -2801,7 +2809,12 @@ print.hazard <- function(x, ...) {
 #'
 #' @param object A `hazard` object.
 #' @param ... Unused; for S3 compatibility.
-#' @return An object of class `summary.hazard`.
+#' @return An object of class `summary.hazard`. Its `log_lik` is the
+#'   log-likelihood at the estimates, and `NA` for a fit with
+#'   `objective = "sas"` whose data have interval-censored rows: there the
+#'   fitted objective is PROC HAZARD's interval-mean-hazard objective, not a
+#'   log-likelihood. That value is always in `objective_value`, and
+#'   `objective` says which of the two it is (`"likelihood"` or `"sas"`).
 #' @examples
 #' # -- Single-phase Weibull summary ------------------------------------
 #' fit <- hazard(time = rexp(30, 0.5), status = rep(1L, 30),
@@ -2890,7 +2903,15 @@ summary.hazard <- function(object, ...) {
     rel_gradient = object$fit$rel_gradient,
     rel_gradient_reason = object$fit$rel_gradient_reason,
     polish_code = object$fit$polish_code,
-    log_lik = object$fit$objective,
+    # NA where the objective is not a log-likelihood, so a reader of
+    # `$log_lik` cannot difference it against one (#544).
+    log_lik = if (.hzr_objective_not_loglik(object)) {
+      NA_real_
+    } else {
+      object$fit$objective
+    },
+    objective = .hzr_fit_objective(object),
+    objective_value = object$fit$objective,
     counts = object$fit$counts,
     message = object$fit$message,
     coefficients = coef_table,
@@ -2958,6 +2979,10 @@ print.summary.hazard <- function(x, ...) {
   }
   if (!is.null(x$log_lik) && !is.na(x$log_lik)) {
     cat("  log-lik:     ", format(x$log_lik, digits = 6), "\n")
+  } else if (identical(x$objective, "sas") &&
+               isTRUE(is.finite(x$objective_value))) {
+    cat("  SAS objective:", format(x$objective_value, digits = 6),
+        "(objective = \"sas\"; not a log-likelihood)\n")
   }
   if (!is.null(x$rcond) && !is.na(x$rcond) && x$rcond < .hzr_rcond_tol) {
     cat("  Note: Hessian ill-conditioned (rcond = ",
