@@ -178,3 +178,44 @@ test_that("hzr_bootstrap() warns about replicates that declined an entry", {
   expect_true(any(grepl("2 of 2 successful replicates stopped",
                         halted$msgs, fixed = TRUE)))
 })
+
+test_that("the bootstrap's declined-entry causes count only its replicates", {
+  skip_on_cran()
+  fx <- .aic_below_fixture()
+  # Calls: the up-front screen, then one replicate each. The first replicate
+  # stops after declining 5 entries; the second completes after declining 1.
+  orig_sw <- hzr_stepwise
+  n_call <- 0L
+  local_mocked_bindings(
+    hzr_stepwise = function(...) {
+      r <- orig_sw(...)
+      n_call <<- n_call + 1L
+      if (n_call >= 2L) {
+        k <- if (n_call == 2L) 5L else 1L
+        r$criteria$uncomputable_reasons <- .hzr_merge_reasons(
+          r$criteria$uncomputable_reasons, c(loglik_below_base = k)
+        )
+        if (n_call == 2L) r$criteria$stopped_uncomputable <- TRUE
+      }
+      r
+    }
+  )
+  msgs <- character()
+  boot <- withCallingHandlers(
+    hzr_bootstrap(fx$fit, n_boot = 2, seed = 1,
+                  scope = list(constant = ~ mal), direction = "forward",
+                  criterion = "aic", control = fx$control),
+    warning = function(w) {
+      msgs <<- c(msgs, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_equal(n_call, 3L)
+  expect_equal(boot$n_uncomputable_replicates, 1L)
+  expect_equal(boot$uncomputable_reasons, c(loglik_below_base = 6L))
+  hit <- grep("successful replicates completed after declining", msgs,
+              fixed = TRUE, value = TRUE)
+  expect_length(hit, 1L)
+  expect_match(hit, "^1 of 2 successful replicates")
+  expect_match(hit, "Causes: 1 x under", fixed = TRUE)
+})

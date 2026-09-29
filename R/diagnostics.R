@@ -2193,6 +2193,7 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # and the candidate is pooled as not selected.
   declined_codes <- c("rows_differ", "loglik_below_base")
   n_declined_reps <- 0L
+  declined_reasons <- stats::setNames(integer(0), character(0))
   # Replicates in which the score criterion declined a candidate it could not
   # score and the Wald fallback tested it instead. The fallback is a different
   # criterion, so a run where it fired everywhere selected on Wald while
@@ -2337,9 +2338,14 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
           uncomputable_reasons, boot_fit$criteria$uncomputable_reasons
         )
         rep_reasons <- boot_fit$criteria$uncomputable_reasons
+        rep_declined <- rep_reasons[names(rep_reasons) %in% declined_codes]
         if (!isTRUE(boot_fit$criteria$stopped_uncomputable) &&
-              sum(rep_reasons[names(rep_reasons) %in% declined_codes]) > 0L) {
+              sum(rep_declined) > 0L) {
           n_declined_reps <- n_declined_reps + 1L
+          # Tallied from these replicates only, so the warning's causes
+          # describe the replicates its count names.
+          declined_reasons <- .hzr_merge_reasons(declined_reasons,
+                                                 rep_declined)
         }
         if (isTRUE((boot_fit$criteria$n_nonmonotone_entries %||% 0L) > 0L)) {
           n_nonmonotone_reps <- n_nonmonotone_reps + 1L
@@ -2539,12 +2545,11 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   }
 
   if (n_declined_reps > 0L) {
-    declined <- uncomputable_reasons[names(uncomputable_reasons) %in%
-                                       declined_codes]
     warning(n_declined_reps, " of ", n_success, " successful replicates ",
             "completed after declining a candidate entry without testing it, ",
             "and the candidate counts as not selected.",
-            .hzr_format_reasons(declined), " See `$uncomputable_reasons`.",
+            .hzr_format_reasons(declined_reasons),
+            " See `$uncomputable_reasons`.",
             call. = FALSE)
   }
 
