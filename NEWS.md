@@ -37,6 +37,26 @@
   under each criterion, `hzr_bootstrap()` select mode, and the code
   `hzr_translate_sas()` emits for a SAS stepwise job.
 
+* **A Conservation of Events fit whose likelihood is higher with the
+  conserved phase switched off is now recorded and warned about (#261).**
+  Under Conservation of Events the conserved phase's `log_mu` is solved so
+  that it absorbs the events the other phases leave. Where the other phases
+  already account for every event there is nothing to solve, and the
+  objective fell back, with no warning, to that `log_mu`'s starting value.
+  The objective was therefore discontinuous there, and a fit could stop
+  short of a higher likelihood: the reproduction in #261 reported -206.743
+  where -206.669 was available with the constant phase's scale at zero.
+  PROC HAZARD stops the run at that point (`SETCOE1200`, `consrv.c`). After
+  such a fit, `hazard()` now scores the fit's own log-likelihood with the
+  conserved phase's scale sent to zero, both with the other parameters held
+  and with the other phases' scales rescaled to conserve the events again.
+  It records a finding only if one beats the reported value by more than
+  0.01. A finding goes in `fit$fit$boundary` with mechanism
+  `"coe_no_events_left"`, carrying the higher point, and raises a warning
+  of class `hzr_coe_no_events_left`, which inherits `hzr_boundary`. The
+  estimates are unchanged. `fit$fit$boundary` can hold several records, in
+  no guaranteed order, so select them by `mechanism`.
+
 * **A g3 phase under `constraint = "eta_gamma"` whose likelihood is higher
   at a much larger `gamma` is now recorded and warned about (#418).** As
   `gamma` grows, this phase tends to a corner law whose log-likelihood is
@@ -323,11 +343,9 @@
   -295.609. The chunk is now `hzr_evaluate()` at those starting values,
   with the same scaling, and it reproduces the log-likelihood and `MUE`
   that `PROC HAZARD` prints with and without `WEIGHT`, `LCENSOR` and
-  `NOCONSERVE`. With `ICENSOR` it reproduces `MUE`, and warns that its
-  log-likelihood is `hazard()`'s interval likelihood rather than the term
-  `PROC HAZARD` accumulates. With fewer events than free parameters it
-  stops, as `PROC HAZARD` does. It is not a fit, so the job warns and gains an `$untranslated`
-  row. `PROC HAZARD` still steps through a `SELECTION` screen, evaluating
+  `NOCONSERVE`, and with `ICENSOR` (#543). With fewer events than free
+  parameters it stops, as `PROC HAZARD` does. It is not a fit, so the job
+  warns and gains an `$untranslated` row. `PROC HAZARD` still steps through a `SELECTION` screen, evaluating
   each step at unfitted values; the translation does not, and says so. A value below 1 is
   read the same way, as `PROC HAZARD` truncates it to 0. A negative
   `MAXITER`, which `PROC HAZARD` ignores, is no longer emitted:
@@ -345,6 +363,22 @@
   lexer has dropped the errors, so `C3=TL,AGE` fits `C3` and `TL`, not a
   variable `TLAGE`. A later `(` clears `PROC HAZARD`'s syntax error, and
   the warning then says so instead.
+
+* **A translated `ICENSOR` job now fits `PROC HAZARD`'s interval objective
+  (#543).** `PROC HAZARD` accumulates an interval-censored row as the
+  interval-mean hazard over (lower bound, time], which `hazard()` calls
+  `objective = "sas"`, and `hzr_translate_sas()` emitted the default
+  interval probability instead. Measured on the binary over a grid of 18
+  optimised fits, that moved the constant phase's `MU` by up to 21% and the
+  reported objective by up to 291 units. The emitted call now passes
+  `objective = "sas"`, which reproduces `PROC HAZARD`'s estimates to the
+  precision it prints. A note above the fit says that the value it reports
+  is `PROC HAZARD`'s objective, not a log-likelihood. Degenerate intervals
+  are resolved as `PROC HAZARD` resolves them before its fit: a lower bound
+  equal to the time makes the row an exact event, and a lower bound that is
+  missing, negative or after the time drops the row. The status chunk warns
+  with the number of rows each rule touched, and the data frame itself
+  keeps every row.
 
 # TemporalHazard 1.2.12
 
