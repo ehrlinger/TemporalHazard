@@ -851,11 +851,16 @@
         # that and the text before it is read as ICENSOR. A macro reference
         # is joined to the run it touches (`C&I`, `TL&I.`, `&&C3`), as SAS
         # resolves it into one name, and counts as a name. A macro CALL
-        # (`%TRIM(TL)`) owns its `(`, so the statement is not read at all.
-        icns_all <- gsub(")", " ", ops_text, fixed = TRUE)
-        macro_call <- grepl("%[A-Z_][A-Z0-9_]*[[:space:]]*[(]", icns_all)
-        icns <- if (macro_call) "" else sub("[(].*$", "", icns_all)
-        tail <- if (macro_call || !grepl("(", icns_all, fixed = TRUE)) "" else
+        # (`%TRIM(TL)`) owns its `(`: it stands in for one macro token, so
+        # the text around it is still read (`C3=TL, %TRIM(X)` keeps its
+        # comma whatever the call expands to; Copilot on #546), but no
+        # `count = timevar` is taken from a statement that holds one.
+        call_re <- "%[A-Z_][A-Z0-9_]*[[:space:]]*[(][^()]*[)]"
+        macro_call <- grepl(call_re, ops_text)
+        icns_all <- gsub(")", " ", gsub(call_re, " &MACROCALL ", ops_text),
+                         fixed = TRUE)
+        icns <- sub("[(].*$", "", icns_all)
+        tail <- if (!grepl("(", icns_all, fixed = TRUE)) "" else
           sub("^[^(]*[(]", "", icns_all)
         tail_bad <- nzchar(gsub("[()[:space:]]", "", tail)) &&
           !.hzr_sas_is_macro(tail)
@@ -873,7 +878,7 @@
         # mismatch carries no verdict when one is present. A stray character
         # outside the macro does: PROC HAZARD meets it whatever the macro
         # expands to (r-reviewer on #546).
-        refused <- !well_formed && !macro_call &&
+        refused <- !well_formed &&
           (tail_bad || any(err_tok) || !any(is_macro_tok))
         if (refused) {
           why <- paste0("PROC HAZARD's ICENSOR is `ICENSOR count = timevar`, ",
@@ -893,7 +898,7 @@
         # later token (setvar(14), setvar(15)). Measured after a clearing
         # `(`: `C3=TL,AGE` and `C3=TL AGE` use C3 and TL, and `C,3=TL`
         # uses C. Anything else leaves no ICENSOR to emit.
-        if (length(kept) >= 3L && kept_name[[1L]] &&
+        if (!macro_call && length(kept) >= 3L && kept_name[[1L]] &&
               identical(kept[[2L]], "=") && kept_name[[3L]]) {
           statements$ICENSOR <- kept[c(1L, 3L)]
           if (!well_formed && !refused) {

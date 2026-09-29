@@ -3019,6 +3019,8 @@ test_that("an ICENSOR operand PROC HAZARD cannot parse warns (U1, #495)", {
                "C3 TL", "C3", "C3==TL", "C3=TL,AGE", "C,3=TL",
                # A stray comma outside a macro is met whatever it expands to.
                "C3=&T,", "&C,=TL",
+               # A macro call hides nothing outside itself (Copilot on #546).
+               "C3=TL, %TRIM(X)",
                # After a `(` the lexer is in the PROC-line state, where any
                # text sets the flag again (binary: SYNTAX for each).
                "C3=TL(X)", "C3=TL()X", "C3=TL()=", "C3=TL() = 1")) {
