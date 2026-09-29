@@ -164,7 +164,7 @@ sas_synth_data <- function(job, n = 24L) {
     }
     if (identical(heads[[k]], "hazard")) {
       a <- as.list(rhs)[-1L]
-      d <- if (!is.null(a$data)) as.character(a$data) else ""
+      d <- c(all.vars(a$data), "")[[1L]]
       add(d, "time", .sas_syms(a$time))
       add(d, "status", .sas_syms(a$status))
       add(d, "lower", .sas_syms(a$time_lower))

@@ -2800,17 +2800,6 @@ test_that("the SETG1 documents render past the warning (#424)", {
   suppressWarnings(hzr_translate_sas(f))
 }
 
-# An ICENSOR job is translated onto hazard()'s default interval objective,
-# which is not the one PROC HAZARD accumulates (setlik.c; see ?hazard,
-# `objective`), for its fit as much as for this evaluation. The chunk as
-# emitted must still land on PROC HAZARD's parameters; its log-likelihood is
-# compared after objective = "sas" is added to every hazard() call in it.
-.p496_sas_objective <- function(x) {
-  if (!is.call(x)) return(x)
-  x[] <- lapply(x, .p496_sas_objective)
-  if (identical(x[[1L]], as.name("hazard"))) x$objective <- "sas"
-  x
-}
 
 test_that("MAXITER=0 evaluates the log-likelihood PROC HAZARD prints (#496)", {
   oracle <- utils::read.csv(test_path("fixtures", "maxiter-zero-oracle.csv"),
@@ -2837,14 +2826,11 @@ test_that("MAXITER=0 evaluates the log-likelihood PROC HAZARD prints (#496)", {
     # the chunk as emitted; the listing prints seven significant digits.
     expect_equal(exp(ev$theta[[1L]]) / oracle$mue[[k]], 1, tolerance = 1e-6,
                  info = info)
+    # An ICENSOR job is translated onto objective = "sas" (#543), so the
+    # chunk as emitted reproduces the value PROC HAZARD prints.
     if (icens[[k]]) {
-      # The emitted number is hazard()'s interval likelihood, and says so.
-      expect_gt(abs(ev$logLik - oracle$loglik[[k]]), 1)
-      expect_match(.u1_msg(job), "with ICENSOR", fixed = TRUE)
-      job$calls$fit <- .p496_sas_objective(job$calls$fit)
-      ev <- run(job)
-    } else {
-      expect_no_match(.u1_msg(job), "with ICENSOR", fixed = TRUE)
+      expect_match(paste(deparse(job$calls$fit), collapse = " "),
+                   'objective = "sas"', fixed = TRUE)
     }
     # To the last decimal the listing prints (two or three).
     expect_lt(abs(ev$logLik - oracle$loglik[[k]]),
@@ -3107,4 +3093,158 @@ test_that("a stray ICENSOR comma still fits the same model (U1, #495)", {
   msg <- .u1_msg(job)
   expect_match(msg, "clears its syntax-error flag", fixed = TRUE)
   expect_no_match(msg, "PROC HAZARD does not run this job", fixed = TRUE)
+})
+
+# --- ICENSOR fits on PROC HAZARD's objective (#543) --------------------------
+# PROC HAZARD accumulates an interval-censored row as
+# C3 * log([CF(T) - CF(CT)] / (T - CT)) (setlik.c), which hazard() calls
+# objective = "sas". The translation emitted the default interval probability,
+# and on the binary's own jobs that moved MUC by up to 21% and the objective
+# by up to 291 units. The oracle is the binary over a grid of models,
+# interval shares and widths (data-raw/icensor-objective-oracle.R).
+# The oracle's data: the same avc-derived frame the generator writes, with
+# the degenerate interval bounds of its later rows (see
+# data-raw/icensor-objective-oracle.R).
+.p543_data <- function(every, width, degenerate) {
+  e <- new.env()
+  utils::data("avc", package = "TemporalHazard", envir = e)
+  a <- e$avc[stats::complete.cases(e$avc), ]
+  D <- data.frame(TT = a$int_dead, DEAD = a$dead,
+                  AGE = as.numeric(scale(a$age)))
+  D$C3 <- as.numeric(seq_len(nrow(D)) %% every == 0 & D$DEAD == 0)
+  D$TL <- ifelse(D$C3 > 0, D$TT * (1 - width), 0)
+  D$W <- ifelse(seq_len(nrow(D)) %% 3 == 0, 2, 1)
+  i <- which(D$C3 > 0)[1:3]
+  switch(degenerate,
+    none = NULL,
+    eq = D$TL[i] <- D$TT[i],
+    gt = D$TL[i] <- D$TT[i] * 1.5,
+    na = D$TL[i] <- NA,
+    neg = D$TL[i] <- -1,
+    mixed = D$TL[i] <- c(D$TT[i[1]], D$TT[i[2]] * 1.5, NA))
+  D
+}
+
+test_that("a translated ICENSOR job reproduces PROC HAZARD's fit (#543)", {
+  skip_on_cran()
+  oracle <- utils::read.csv(test_path("fixtures", "icensor-objective-oracle.csv"),
+                            comment.char = "#", stringsAsFactors = FALSE)
+  expect_identical(nrow(oracle), 44L)
+  expect_identical(sum(oracle$degenerate != "none"), 20L)
+  # The binary prints no fit for the all-early-shapes-fixed model (see #540):
+  # six rows, all of model 4. Every other row is compared.
+  fitted <- !is.na(oracle$loglik)
+  expect_identical(sum(!fitted), 6L)
+  expect_true(all(oracle$model[!fitted] == 4L))
+  compared <- 0L
+  for (k in which(fitted)) {
+    D <- .p543_data(oracle$every[[k]], oracle$width[[k]],
+                    oracle$degenerate[[k]])
+    expect_identical(sum(D$C3 > 0), oracle$n_interval[[k]])
+    info <- paste(oracle$job[[k]], oracle$every[[k]], oracle$width[[k]],
+                  oracle$degenerate[[k]])
+    f <- withr::local_tempfile(fileext = ".sas")
+    writeLines(paste0("%HAZARD( ", oracle$job[[k]], " );"), f)
+    job <- suppressWarnings(hzr_translate_sas(f))
+    res <- suppressWarnings(render_sim(job, list(D = D)))
+    expect_true(res$ok, info = paste(info, paste(res$results, collapse = "; ")))
+    fit <- res$env$fit
+    expect_identical(fit$spec$objective, "sas", info = info)
+    # The listing prints three decimals.
+    expect_lt(abs(fit$fit$objective - oracle$loglik[[k]]), 5e-4, label = info)
+    th <- fit$fit$theta
+    muc <- exp(th[[grep("log_mu$", names(th))[[length(grep("log_mu$",
+                                                            names(th)))]]]])
+    expect_equal(muc / oracle$muc[[k]], 1, tolerance = 1e-4, info = info)
+    if (!is.na(oracle$mue[[k]])) {
+      expect_equal(exp(th[[1L]]) / oracle$mue[[k]], 1, tolerance = 1e-4,
+                   info = info)
+    }
+    compared <- compared + 1L
+  }
+  expect_identical(compared, 38L)
+})
+
+test_that("degenerate ICENSOR bounds are resolved as readct.c does, and counted (#543)", {
+  # readct.c, on a row with C3 > 0: a missing (:9-11), negative (:12-14) or
+  # greater-than-TIME (:15-17) CTIME deletes the row; CTIME == TIME
+  # (:18-23) makes it an exact event, C1 = C1 + C3. The status chunk says
+  # how many rows each rule touched. Executed, not read.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste("%HAZARD( PROC HAZARD DATA=D; EVENT DEAD; TIME TT;",
+                   "ICENSOR C3 = TL; WEIGHT W; PARMS MUC=0.01;",
+                   "CONSTANT AGE; );"), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  status_warning <- function(D) {
+    msgs <- character(0)
+    env <- new.env(parent = .render_parent())
+    env$D <- D
+    for (nm in c("data", "status")) {
+      withCallingHandlers(eval(job$calls[[nm]], env), warning = function(w) {
+        msgs <<- c(msgs, conditionMessage(w))
+        invokeRestart("muffleWarning")
+      })
+    }
+    list(msgs = msgs, D = env$D)
+  }
+  D <- .p543_data(5, 0.5, "mixed")
+  i <- which(D$C3 > 0)[1:3]
+  out <- status_warning(D)
+  expect_length(out$msgs, 1L)
+  expect_match(out$msgs, ": 1 row with CTIME equal to TIME", fixed = TRUE)
+  expect_match(out$msgs, "and 2 rows with CTIME missing", fixed = TRUE)
+  expect_match(out$msgs, "readct.c", fixed = TRUE)
+  # The recoded row is an exact event, the dropped rows are gone from the
+  # fit, and nothing else is.
+  expect_identical(out$D$.hzr_status[i[1]], 1)
+  expect_identical(out$D$.hzr_keep[i], c(TRUE, FALSE, FALSE))
+  expect_identical(sum(!out$D$.hzr_keep), 2L)
+  res <- suppressWarnings(render_sim(job, list(D = D)))
+  expect_true(res$ok, info = paste(res$results, collapse = "; "))
+  expect_identical(length(res$env$fit$data$time), nrow(D) - 2L)
+  expect_identical(sum(res$env$fit$data$status == 2), sum(D$C3 > 0) - 3L)
+  # The caller's frame keeps its rows even when some are dropped from the
+  # fit, and a clean frame warns nothing and keeps every row.
+  expect_identical(nrow(res$env$D), nrow(D))
+  out <- status_warning(.p543_data(5, 0.5, "none"))
+  expect_length(out$msgs, 0L)
+  expect_true(all(out$D$.hzr_keep))
+  # A missing TIME on an interval row is neither rule: the row is kept for
+  # hazard() to reject with its own message (r-reviewer on #543).
+  D <- .p543_data(5, 0.5, "none")
+  D$TT[which(D$C3 > 0)[1]] <- NA
+  out <- status_warning(D)
+  expect_length(out$msgs, 0L)
+  expect_true(all(out$D$.hzr_keep))
+  # The corpus oracle can still read an ICENSOR job's chunks.
+  expect_true(is.list(sas_synth_data(job)))
+})
+
+test_that("the translated document says the ICENSOR objective is not a log-likelihood (#543)", {
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste("%HAZARD( PROC HAZARD DATA=D; EVENT DEAD; TIME TT;",
+                   "ICENSOR C3 = TL; PARMS MUC=0.01; CONSTANT AGE; );"), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  expect_match(paste(deparse(job$calls$fit), collapse = " "),
+               'objective = "sas"', fixed = TRUE)
+  expect_match(job$notes$fit$title, "not a log-likelihood", fixed = TRUE)
+  out <- withr::local_tempdir()
+  suppressWarnings(hzr_translate_sas(f, out_dir = out))
+  qmd <- readLines(list.files(out, pattern = "[.]qmd$", full.names = TRUE)[[1L]])
+  expect_true(any(grepl("not a log-likelihood", qmd, fixed = TRUE)))
+  # A SELECTION job's note goes on its base fit, the chunk that calls
+  # hazard(); the screen's own note stays on the screen.
+  writeLines(paste("%HAZARD( PROC HAZARD DATA=D; EVENT DEAD; TIME TT;",
+                   "ICENSOR C3 = TL; PARMS MUC=0.01; SELECTION SLE=0.5;",
+                   "CONSTANT AGE, LOG; );"), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  expect_match(job$notes$fit_base$title, "not a log-likelihood", fixed = TRUE)
+  expect_match(job$notes$fit$title, "SELECTION", fixed = TRUE)
+  # Controls: without ICENSOR there is no note and no objective argument.
+  writeLines(paste("%HAZARD( PROC HAZARD DATA=D; EVENT DEAD; TIME TT;",
+                   "PARMS MUC=0.01; CONSTANT AGE; );"), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  expect_null(job$notes$fit)
+  expect_no_match(paste(deparse(job$calls$fit), collapse = " "), "objective",
+                  fixed = TRUE)
 })
