@@ -413,6 +413,17 @@ computable, regardless of the active criterion.</p></dd>
 <dd><p>Goodness-of-fit
 diagnostics of the model <em>after</em> this step.</p></dd>
 
+<dt><code>n_rows</code></dt>
+<dd><p>Number of rows in the fit's data after this step
+(rows given weight 0 are counted).  A multiphase fit drops every row
+where a variable in the model is missing, so entering a variable with
+missing values shrinks the sample every later step is tested on, and
+dropping it grows the sample back.  A step that changes the rows of
+positive weight raises a warning of class <code>hzr_stepwise_sample_changed</code> naming the
+step, the variable and the row counts before and after.  Which
+variables enter is not changed by this: compare <code>n_rows</code> across steps
+to see how many rows each test rested on.</p></dd>
+
 
 </dl></div>
     <div class="section level2">

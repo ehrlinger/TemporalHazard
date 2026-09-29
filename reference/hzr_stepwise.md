@@ -361,6 +361,18 @@ The `steps` data frame has columns:
 
   Goodness-of-fit diagnostics of the model *after* this step.
 
+- `n_rows`:
+
+  Number of rows in the fit's data after this step (rows given weight 0
+  are counted). A multiphase fit drops every row where a variable in the
+  model is missing, so entering a variable with missing values shrinks
+  the sample every later step is tested on, and dropping it grows the
+  sample back. A step that changes the rows of positive weight raises a
+  warning of class `hzr_stepwise_sample_changed` naming the step, the
+  variable and the row counts before and after. Which variables enter is
+  not changed by this: compare `n_rows` across steps to see how many
+  rows each test rested on.
+
 ## Selection direction and criterion
 
 Two arguments shape the search. `direction` decides which moves are
