@@ -16,7 +16,11 @@ NULL
 #' risk groups. Within each group the **expected** event count is the sum of
 #' each subject's predicted cumulative hazard at its *own* follow-up time, and
 #' the **observed** count is its number of events; under conservation of events
-#' the group totals sum to the total observed events. The horizon therefore only
+#' the group totals sum to the total observed events. A subject with an entry
+#' time (`time_lower` on a left-truncated fit) is at risk only after it, so it
+#' contributes its cumulative hazard at exit less that at entry. For a
+#' weighted fit both counts carry the case weights, since such a fit conserves
+#' weighted events. Both follow [hzr_gof()]. The horizon therefore only
 #' stratifies subjects into risk groups; it does not restrict or exclude any
 #' subject, and the expected/observed totals are independent of it.
 #'
@@ -38,9 +42,11 @@ NULL
 #'     survival at \code{time}).}
 #'   \item{n}{Number of observations in the group.}
 #'   \item{events}{Observed event count in the group (all events over
-#'     follow-up).}
+#'     follow-up), weighted by the case weights for a weighted fit.}
 #'   \item{expected}{Expected event count: the sum of each subject's predicted
-#'     cumulative hazard at its own follow-up time.}
+#'     cumulative hazard at its own follow-up time, less that at its entry
+#'     time when it has one, weighted by the case weights for a weighted
+#'     fit.}
 #'   \item{observed_rate}{Observed event rate (events / n).}
 #'   \item{expected_rate}{Expected event rate (expected / n).}
 #'   \item{chi_sq}{Chi-square contribution: (events - expected)^2 /
@@ -145,10 +151,17 @@ hzr_deciles <- function(object, time, groups = 10L,
     }
   }
 
-  cumhaz_fu    <- cumhaz_at(event_time)        # expected-event contribution
+  cumhaz_fu    <- cumhaz_at(event_time)        # H at each subject's exit
   cumhaz_hor   <- cumhaz_at(rep(time, n_obs))  # risk grouping at the horizon
   survival_hor <- exp(-cumhaz_hor)
-  observed     <- as.integer(status == 1)
+  # A left-truncated subject is at risk only from its entry time, and a
+  # weighted fit conserves weighted events, sum(w * H) = sum(w * d). Both
+  # tallies follow hzr_gof(), or a correctly specified fit read as
+  # miscalibrated here (#491).
+  weights <- object$data$weights
+  if (is.null(weights)) weights <- rep(1, n_obs)
+  expected_i <- weights * (cumhaz_fu - .hzr_cumhaz_at_entry(object, event_time))
+  observed   <- weights * as.numeric(status == 1)
   n_included   <- n_obs
   n_excluded   <- 0L
 
@@ -187,8 +200,8 @@ hzr_deciles <- function(object, time, groups = 10L,
   for (g in seq_len(groups)) {
     idx <- which(group == g)
     ng <- length(idx)
-    obs_events <- sum(observed[idx] == 1)
-    exp_events <- sum(cumhaz_fu[idx])
+    obs_events <- sum(observed[idx])
+    exp_events <- sum(expected_i[idx])
 
     result$n[g] <- ng
     result$events[g] <- obs_events
@@ -229,14 +242,59 @@ hzr_deciles <- function(object, time, groups = 10L,
     p_value = overall_p,
     time = time,
     groups = groups,
-    total_events = sum(observed == 1),
-    total_expected = sum(cumhaz_fu),
+    total_events = sum(observed),
+    total_expected = sum(expected_i),
     n_included = n_included,
     n_excluded = n_excluded
   )
 
   class(result) <- c("hzr_deciles", "data.frame")
   result
+}
+
+#' Each subject's cumulative hazard at its counting-process entry time
+#'
+#' A subject with a genuine entry time (a status 0/1 row with
+#' `0 < time_lower < exit`) is at risk only after it, so its expected events
+#' are H(exit) - H(entry), the quantity a maximum likelihood fit conserves.
+#' Shared by hzr_gof() and hzr_deciles() so the two cannot disagree (#491).
+#'
+#' predict() without newdata evaluates the stored design (x, or the per-phase
+#' x_list for multiphase) at the stored time, for either interface; swapping
+#' the stored time for the entry time gives H(entry) the same way.
+#'
+#' @param object A fitted `hazard` object.
+#' @param exit_time Numeric vector of exit times, one per stored row.
+#' @return Numeric vector, one per row: H(entry), or 0 for a row with no
+#'   entry time.
+#' @keywords internal
+#' @noRd
+.hzr_cumhaz_at_entry <- function(object, exit_time) {
+  n <- length(exit_time)
+  entry <- object$data$time_lower
+  has_entry <- if (is.null(entry)) {
+    rep(FALSE, n)
+  } else {
+    entry > 0 & entry < exit_time
+  }
+  h_entry <- rep(0, n)
+  if (any(has_entry)) {
+    at_entry <- object
+    at_entry$data$time <- ifelse(has_entry, entry, exit_time)
+    tw <- object$spec$time_windows
+    if (!identical(object$spec$dist, "multiphase") && !is.null(tw) &&
+          !is.null(object$data$x) && ncol(object$data$x) > 0) {
+      # The likelihood takes H(entry) with each row's design expanded at its
+      # exit time. predict() would re-expand at the entry time, so hand it
+      # the exit-time design, already expanded, and no windows.
+      at_entry$data$x <- .hzr_expand_time_varying_design(
+        x = object$data$x, time = exit_time, time_windows = tw)
+      at_entry$spec$time_windows <- NULL
+    }
+    h_entry[has_entry] <-
+      stats::predict(at_entry, type = "cumulative_hazard")[has_entry]
+  }
+  h_entry
 }
 
 #' Print method for hzr_deciles
@@ -677,29 +735,7 @@ hzr_gof <- function(object, time_grid = NULL) {
     stop("predict() returned ", length(h_exit), " cumulative hazards for ",
          n_total, " subjects.", call. = FALSE)
   }
-  entry <- object$data$time_lower
-  has_entry <- if (is.null(entry)) {
-    rep(FALSE, n_total)
-  } else {
-    entry > 0 & entry < obs_time
-  }
-  h_entry <- rep(0, n_total)
-  if (any(has_entry)) {
-    at_entry <- object
-    at_entry$data$time <- ifelse(has_entry, entry, obs_time)
-    tw <- object$spec$time_windows
-    if (!is_multiphase && !is.null(tw) && !is.null(object$data$x) &&
-        ncol(object$data$x) > 0) {
-      # The likelihood takes H(entry) with each row's design expanded at its
-      # exit time. predict() would re-expand at the entry time, so hand it
-      # the exit-time design, already expanded, and no windows.
-      at_entry$data$x <- .hzr_expand_time_varying_design(
-        x = object$data$x, time = obs_time, time_windows = tw)
-      at_entry$spec$time_windows <- NULL
-    }
-    h_entry[has_entry] <-
-      stats::predict(at_entry, type = "cumulative_hazard")[has_entry]
-  }
+  h_entry <- .hzr_cumhaz_at_entry(object, obs_time)
 
   # A weighted fit conserves weighted events, sum(w * H) = sum(w * d), so both
   # tallies carry the case weights.

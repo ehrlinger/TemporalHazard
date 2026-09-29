@@ -30,9 +30,11 @@ A data frame with one row per risk group and columns:
 survival at \code{time}).}
 \item{n}{Number of observations in the group.}
 \item{events}{Observed event count in the group (all events over
-follow-up).}
+follow-up), weighted by the case weights for a weighted fit.}
 \item{expected}{Expected event count: the sum of each subject's predicted
-cumulative hazard at its own follow-up time.}
+cumulative hazard at its own follow-up time, less that at its entry
+time when it has one, weighted by the case weights for a weighted
+fit.}
 \item{observed_rate}{Observed event rate (events / n).}
 \item{expected_rate}{Expected event rate (expected / n).}
 \item{chi_sq}{Chi-square contribution: (events - expected)^2 /
@@ -59,7 +61,11 @@ ranked by predicted survival at the horizon \code{time} and split into equal-siz
 risk groups. Within each group the \strong{expected} event count is the sum of
 each subject's predicted cumulative hazard at its \emph{own} follow-up time, and
 the \strong{observed} count is its number of events; under conservation of events
-the group totals sum to the total observed events. The horizon therefore only
+the group totals sum to the total observed events. A subject with an entry
+time (\code{time_lower} on a left-truncated fit) is at risk only after it, so it
+contributes its cumulative hazard at exit less that at entry. For a
+weighted fit both counts carry the case weights, since such a fit conserves
+weighted events. Both follow \code{\link[=hzr_gof]{hzr_gof()}}. The horizon therefore only
 stratifies subjects into risk groups; it does not restrict or exclude any
 subject, and the expected/observed totals are independent of it.
 }
