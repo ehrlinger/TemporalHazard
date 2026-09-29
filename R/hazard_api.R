@@ -815,7 +815,14 @@ NULL
 #'   fit: \code{"g3_alpha_one"} (a g3 phase with \code{alpha} fixed at 1,
 #'   re-expressed as PROC HAZARD does, see [hzr_phase()]) and
 #'   \code{"g3_fixge2_alpha_start"} (a free \code{alpha} start moved to 2/3
-#'   under \code{constraint = "eta_gamma"}). Only rows the likelihood reads
+#'   under \code{constraint = "eta_gamma"}); and one made after it,
+#'   \code{"g3_corner_supremum"}: a g3 phase under
+#'   \code{constraint = "eta_gamma"} that converged to a \code{gamma} below
+#'   1000 although the log-likelihood is higher at a much larger
+#'   \code{gamma}, so the supremum lies at \code{gamma = Inf}. That record
+#'   also carries \code{gain}, \code{gamma_hat}, and the higher point as
+#'   \code{certificate_theta} with its \code{certificate_loglik}; the
+#'   estimates are not changed. Only rows the likelihood reads
 #'   count as observed times. A fit with any record raises one warning whose
 #'   classes are \code{"hzr_"} plus each mechanism present, all inheriting
 #'   \code{"hzr_boundary"}, so one handler catches the whole family.

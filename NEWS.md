@@ -2,6 +2,27 @@
 
 ## Bug fixes
 
+* **A g3 phase under `constraint = "eta_gamma"` that stops short of its
+  `gamma = Inf` supremum is now recorded and warned about (#418).** As
+  `gamma` grows, this phase tends to a corner law whose log-likelihood is
+  finite, so when the data prefer a sharp bend at `tau` there is no finite
+  maximum. A fit could still stop at an ordinary-looking `gamma` with a
+  standard error, report `converged = TRUE`, and warn about nothing. On
+  data drawn from the corner law, a fit stopped at `gamma` = 7.5 with the
+  likelihood 2.0 units higher toward infinity. After a converged fit with
+  `gamma` below 1000, `hazard()` now searches the corner law with the other
+  phases held at their estimates. It records a finding only when the fit's
+  own log-likelihood, evaluated at `gamma` of 1e4, 1e6 or 1e8, beats the
+  reported one by more than 0.01, so a weak search can miss a case but
+  cannot report one that is not there. A finding goes in `fit$fit$boundary`
+  with mechanism `"g3_corner_supremum"`, carrying the higher point, and
+  raises a warning of class `hzr_g3_corner_supremum`, which inherits
+  `hzr_boundary`. The estimates are unchanged. PROC HAZARD has no such
+  check and would report the same `gamma`. On simulated data this caught
+  12 of the 14 warning-free fits that stopped short. Fits with
+  left-censored or interval-censored rows are not examined, and neither is
+  a supremum at `gamma` = 0.
+
 * **An AIC stepwise entry no longer rejects, as if tested, a candidate whose
   refit ended below the current model (#490).** Entering a term gives a
   model that contains the current one, so its log-likelihood cannot be lower

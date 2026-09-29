@@ -2829,6 +2829,20 @@
     coe_reason
   }
 
+  # A FIXGE2 g3 phase that stopped short of its gamma = Inf supremum (#418).
+  # Post-fit and report-only: its records join the setup holds' channel, so
+  # hazard() puts them in $boundary and warns, and no estimate moves.
+  held$records <- c(held$records, .hzr_g3_corner_supremum(
+    theta = best_result$par, value = best_result$value,
+    converged = isTRUE(best_result$convergence == 0),
+    objective_fn = function(p) {
+      logl_fn_unwrapped(p, time, status, time_lower, time_upper, x,
+                        weights = weights)
+    },
+    phases = phases, covariate_counts = covariate_counts, x_list = x_list,
+    time = time, status = status, time_lower = time_lower, weights = weights
+  ))
+
   # Store phase metadata for downstream use (predict, summary)
   best_result$phases <- phases
   best_result$held <- held$records
