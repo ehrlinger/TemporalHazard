@@ -2,6 +2,28 @@
 
 ## Bug fixes
 
+* **Multiphase stepwise refits now start from the model they extend
+  (#551). Multiphase selections, and `hzr_bootstrap()` select-mode
+  frequencies, from earlier versions may be wrong.** Each candidate refit
+  in `hzr_stepwise()` started from the phase specifications' default
+  values, not from the current model's estimates. The candidate model
+  contains the current one, so from the current estimates, with the new
+  coefficient at 0, a refit cannot end below the current log-likelihood.
+  From the default start it often did, while reporting `converged = TRUE`.
+  On `avc` with the SAS reference base model (early and constant phases,
+  Conservation of Events), five of nine first-step candidates ended below
+  the base, `age` in the early phase by 25.1 log-likelihood units. Every
+  multiphase entry, whether scored by Wald, AIC or the score criterion's
+  Wald fallback, was therefore tested against a model not at its optimum.
+  An accepted step then carried that model forward. Refits are now started
+  from the current estimates, matched by parameter name, with a new
+  coefficient at 0; fixed shapes keep their fixed values. The first of
+  several `control$n_starts` is that start itself. Conservation of Events
+  runs as before. Single-distribution refits already started this way.
+  This applies to every path that refits a multiphase model: `hzr_stepwise()`
+  under each criterion, `hzr_bootstrap()` select mode, and the code
+  `hzr_translate_sas()` emits for a SAS stepwise job.
+
 * **`hzr_deciles()` now counts entry times and case weights, as
   `hzr_gof()` does (#491).** Each subject's expected events were its
   cumulative hazard at exit, and events were counted unweighted. A

@@ -14,11 +14,10 @@
 # the optimizer near the MLE and typically converges in a handful of
 # BFGS iterations.
 #
-# Multiphase fits: theta = NULL lets hazard() reassemble starting values
-# from the phase specs. Warm-starting the full multiphase vector is
-# intricate (per-phase layout with optional fixed shapes) and deferred
-# to a future optimisation; the Conservation-of-Events adjustment and
-# multi-start loop make re-initialisation cheap enough for v1.
+# Multiphase fits: warm-started too, by parameter name, through
+# .hzr_multiphase_warm_start(). They used to start from the phase specs'
+# default values, which is not the model being extended, and a refit then
+# ended below the base it contains, reporting converged = TRUE (#551).
 #
 # Scope for v1: **main effects only**. A term like a multi-level
 # factor or a spline that expands to several coefficients would break
@@ -417,17 +416,29 @@
     # under the likelihood while the base fit's `objective` is the SAS
     # density, so `delta_logLik` and `aic` would be differenced across two
     # estimands -- a full `$steps` table, no warning, wrong numbers.
-    .hzr_muffle_intercept_warning(do.call(hazard, c(
+    refit_args <- c(
       response_args,
       list(
         dist         = "multiphase",
         phases       = new_phases,
         weights      = weights,
         time_windows = time_windows,
-        objective    = .hzr_fit_objective(current),
-        fit          = TRUE
+        objective    = .hzr_fit_objective(current)
       ),
       extra_args
+    )
+    # Start from the model being extended, not from the phase specs' default
+    # values (#551). The candidate model at the base's estimates, with a new
+    # coefficient at 0, IS the base model, so a refit started there cannot
+    # end below the base. From the default start it did, by up to 25
+    # log-likelihood units, and reported converged = TRUE. The unfitted
+    # object gives the candidate's parameter names by the fit's own naming.
+    proto <- .hzr_muffle_intercept_warning(do.call(
+      hazard, c(refit_args, list(fit = FALSE))
+    ))
+    theta_start <- .hzr_multiphase_warm_start(current, proto)
+    .hzr_muffle_intercept_warning(do.call(hazard, c(
+      refit_args, list(theta = theta_start, fit = TRUE)
     )))
   } else {
     # Single-distribution path: mutate the global formula, warm-start
@@ -558,6 +569,37 @@
     return(unname(theta_start))
   }
   names(theta_start) <- c(names(theta_old)[seq_len(n_shape)], names_new)
+  theta_start
+}
+
+#' Warm-start theta for a multiphase refit
+#'
+#' Each parameter of the refit model that the base model also has starts at
+#' the base's estimate, matched by the fit's own name (`phase.column`, or
+#' `phase.log_mu` and the shapes); a coefficient the base does not have, the
+#' one a step adds, starts at 0. A dropped coefficient is simply absent from
+#' the refit model. Fixed shapes carry their fixed values, which the base
+#' holds unchanged. So an entry starts at a point where the refit model
+#' reproduces the base log-likelihood, and cannot end below it (#551).
+#'
+#' @param current The base fit.
+#' @param proto The refit model, unfitted (`fit = FALSE`).
+#' @return A named numeric theta for `proto`, on the fit's internal scale.
+#' @keywords internal
+#' @noRd
+.hzr_multiphase_warm_start <- function(current, proto) {
+  old_names <- .hzr_evaluate_prepare(current)$names
+  new_names <- .hzr_evaluate_prepare(proto)$names
+  theta_old <- current$fit$theta
+  if (length(theta_old) != length(old_names) || anyDuplicated(old_names) ||
+        anyDuplicated(new_names)) {
+    stop("Internal: the base fit's parameters could not be matched to the ",
+         "refit's by name (", length(theta_old), " estimates, ",
+         length(old_names), " names).", call. = FALSE)
+  }
+  theta_start <- stats::setNames(numeric(length(new_names)), new_names)
+  shared <- intersect(new_names, old_names)
+  theta_start[shared] <- unname(theta_old[match(shared, old_names)])
   theta_start
 }
 
