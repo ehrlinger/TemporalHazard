@@ -731,6 +731,7 @@
   phase_what <- character(0)
   semantic_seen <- FALSE
   statements <- list()
+  icensor_unread <- NULL
   parms_ops <- character(0)
   sel_ops <- NULL
   sel_bad <- character(0)
@@ -841,25 +842,39 @@
         # The translation used to strip a trailing comma and fit, silently
         # (#495). It now reads the operand as that lexer does: runs of
         # `[.-_A-Z0-9]`, `=`, and single other characters, where a run is a
-        # NAME only if the whole run is one (the longer rule wins). A `(`
-        # switches the lexer out of ICNS and clears the flag (hazard_l.l:56),
-        # so only the text before it is read here. A macro token counts as a
-        # name, since SAS expands it before PROC HAZARD reads the statement.
-        icns <- sub("[(].*$", "", ops_text)
+        # NAME only if the whole run is one (the longer rule wins). `)` is
+        # whitespace to the lexer (hazard_l.l:32). A `(` switches it out of
+        # ICNS into the PROC-line state and clears the flag (hazard_l.l:56),
+        # where anything but whitespace, `)` or another `(` sets it again
+        # (measured: `C3=TL()` fits, `C3=TL(X)`, `C3=TL()=` and
+        # `C3=TL() = 1` exit SYNTAX), so the text after it is checked for
+        # that and the text before it is read as ICENSOR. A macro reference
+        # is joined to the run it touches (`C&I`, `TL&I.`, `&&C3`), as SAS
+        # resolves it into one name, and counts as a name. A macro CALL
+        # (`%TRIM(TL)`) owns its `(`, so the statement is not read at all.
+        icns_all <- gsub(")", " ", ops_text, fixed = TRUE)
+        macro_call <- grepl("%[A-Z_][A-Z0-9_]*[[:space:]]*[(]", icns_all)
+        icns <- if (macro_call) "" else sub("[(].*$", "", icns_all)
+        tail <- if (macro_call || !grepl("(", icns_all, fixed = TRUE)) "" else
+          sub("^[^(]*[(]", "", icns_all)
+        tail_bad <- nzchar(gsub("[()[:space:]]", "", tail)) &&
+          !.hzr_sas_is_macro(tail)
         toks <- regmatches(icns, gregexpr(
-          "[&%][A-Z_][A-Z0-9_]*[.]?|=|[-._A-Z0-9]+|[^[:space:]]", icns))[[1L]]
+          "[-._A-Z0-9&%]+|=|[^[:space:]]", icns))[[1L]]
         is_macro_tok <- .hzr_sas_is_macro(toks)
         is_name_tok <- .hzr_sas_is_name(toks) | is_macro_tok
         err_tok <- !is_name_tok & toks != "="
         kept <- toks[!err_tok]
         kept_name <- is_name_tok[!err_tok]
-        well_formed <- !any(err_tok) && length(kept) == 3L &&
-          kept_name[[1L]] && identical(kept[[2L]], "=") && kept_name[[3L]]
+        well_formed <- !macro_call && !tail_bad && !any(err_tok) &&
+          length(kept) == 3L && kept_name[[1L]] &&
+          identical(kept[[2L]], "=") && kept_name[[3L]]
         # A macro can expand to any number of names, so a count or order
         # mismatch carries no verdict when one is present. A stray character
         # outside the macro does: PROC HAZARD meets it whatever the macro
         # expands to (r-reviewer on #546).
-        refused <- !well_formed && (any(err_tok) || !any(is_macro_tok))
+        refused <- !well_formed && !macro_call &&
+          (tail_bad || any(err_tok) || !any(is_macro_tok))
         if (refused) {
           why <- paste0("PROC HAZARD's ICENSOR is `ICENSOR count = timevar`, ",
                         "two names and nothing else (hazard_y.y:115-122; ",
@@ -887,11 +902,17 @@
               "takes ", kept[[1L]], " = ", kept[[3L]], " and cannot tell ",
               "what PROC HAZARD reads once the macro expands"))
           }
-        } else {
-          if (!refused) {
-            mapped <- mapped - 1L
-            note("ICENSOR", "expected 'ICENSOR count = timevar' operand shape")
-          }
+        } else if (!refused) {
+          # A macro hides the shape and no `count = timevar` can be read, so
+          # the fit below omits interval censoring. That is a different
+          # model, and it warns rather than leaving only a row (r-reviewer
+          # pass 2 on #546).
+          mapped <- mapped - 1L
+          icensor_unread <- stmt_text
+          note(stmt_text, paste0(
+            "a macro in this ICENSOR statement hides its shape and no ",
+            "`count = timevar` can be read, so the fit omits interval ",
+            "censoring"))
         }
       },
       LCENSOR    = statements$LCENSOR <- ops[[1L]],
@@ -1030,6 +1051,13 @@
     ))
   }
   refusal_warnings <- character(0)
+  if (!is.null(icensor_unread)) {
+    refusal_warnings <- c(refusal_warnings, paste0(
+      .hzr_sas_not_mirrored_lead, "`", icensor_unread, "` carries a macro ",
+      "this translation cannot resolve into `count = timevar`, so the fit ",
+      "below has no interval-censored rows. Resolve the macro and translate ",
+      "the job again."))
+  }
   # A phase variable that is not a NAME is refused at parse too, but it
   # translated on main, so it warns here instead of stopping above (#440).
   rejected <- c(proc_rejected, parms$rejected_parms, parms$rejected_name)

@@ -3018,7 +3018,10 @@ test_that("an ICENSOR operand PROC HAZARD cannot parse warns (U1, #495)", {
   for (ic in c("C3=TL,", "C3,=TL", ",C3=TL", "C3=TL,,", "C3=TL AGE",
                "C3 TL", "C3", "C3==TL", "C3=TL,AGE", "C,3=TL",
                # A stray comma outside a macro is met whatever it expands to.
-               "C3=&T,", "&C,=TL")) {
+               "C3=&T,", "&C,=TL",
+               # After a `(` the lexer is in the PROC-line state, where any
+               # text sets the flag again (binary: SYNTAX for each).
+               "C3=TL(X)", "C3=TL()X", "C3=TL()=", "C3=TL() = 1")) {
     job <- .p495_job(ic)
     expect_false(is.null(.u1_refusal_chunk(job)), info = ic)
     msg <- .u1_msg(job)
@@ -3031,10 +3034,36 @@ test_that("an ICENSOR operand PROC HAZARD cannot parse warns (U1, #495)", {
   # Controls: the grammar's own shape, spaced or not; a macro, which SAS
   # expands before PROC HAZARD reads it; and a `(`, which leaves the ICNS
   # lexer state (the binary fits `C3=TL()` to -635.394, the clean value).
-  for (ic in c("C3 = TL", "C3=TL", "C3 =TL", "&CNT = TL", "C3=TL()")) {
+  # `)` is whitespace to the lexer (hazard_l.l:32), and a macro reference
+  # joined to a name is one name once SAS resolves it.
+  for (ic in c("C3 = TL", "C3=TL", "C3 =TL", "&CNT = TL", "C3=TL()",
+               "&&C3 = TL", "C&I = TL&I", "C3 = TL&S")) {
     job <- .p495_job(ic)
     expect_null(.u1_refusal_chunk(job), info = ic)
     expect_identical(NROW(job$untranslated), 0L, info = ic)
+  }
+  # A lone `)` closes the %HAZARD( call, so it is tested in a bare block.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste("PROC HAZARD DATA=D; EVENT DEAD; TIME TT; ICENSOR C3=TL);",
+                   "PARMS MUC=0.01; CONSTANT AGE; RUN;"), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  expect_null(.u1_refusal_chunk(job))
+  expect_match(paste(deparse(job$calls$fit), collapse = " "), "time_lower",
+               fixed = TRUE)
+  # The joined reference is carried whole, never cut at the `&` into a
+  # different variable (r-reviewer pass 2 on #546).
+  txt <- paste(deparse(.p495_job("C3 = TL&S")$calls$fit), collapse = " ")
+  expect_match(txt, "`TL&S`", fixed = TRUE)
+  txt <- paste(deparse(.p495_job("C&I = TL&I")$calls$fit), collapse = " ")
+  expect_match(txt, "`C&I`", fixed = TRUE)
+  # A macro that hides the shape entirely leaves no ICENSOR to emit; the
+  # job warns that the fit has no interval-censored rows.
+  for (ic in c("C3 = %TRIM(TL)", "&ICSTMT")) {
+    job <- .p495_job(ic)
+    expect_match(.u1_msg(job), "no interval-censored rows", fixed = TRUE,
+                 info = ic)
+    expect_no_match(paste(deparse(job$calls$fit), collapse = " "),
+                    "time_lower", fixed = TRUE)
   }
 })
 
