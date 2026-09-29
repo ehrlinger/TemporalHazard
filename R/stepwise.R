@@ -352,7 +352,8 @@
 #'     `objective = "sas"` whose data have interval-censored rows, `logLik`
 #'     and `delta_logLik` hold PROC HAZARD's objective, not a
 #'     log-likelihood, and `aic` is computed from it; the trace's final line
-#'     says so.}
+#'     says so, and `criterion = "aic"` warns (class
+#'     `hzr_stepwise_sas_objective`) that its selections rest on it.}
 #'   \item{\code{n_rows}}{Number of rows in the fit's data after this step
 #'     (rows given weight 0 are counted).  A multiphase fit drops every row
 #'     where a variable in the model is missing, so entering a variable with
@@ -398,6 +399,21 @@ hzr_stepwise <- function(fit,
 
   if (!inherits(fit, "hazard")) {
     stop("`fit` must be a `hazard` object.", call. = FALSE)
+  }
+  # An AIC screen on a SAS objective selects on a penalised quantity that is
+  # not an AIC (#544): said once, up front, rather than only in the trace's
+  # last line.
+  if (identical(criterion, "aic") && .hzr_objective_not_loglik(fit)) {
+    warning(structure(
+      class = c("hzr_stepwise_sas_objective", "warning", "condition"),
+      list(message = paste0(
+        "criterion = \"aic\" on an objective = \"sas\" fit whose data have ",
+        "interval-censored rows: every entry and removal is decided on ",
+        "-2 * (SAS objective) + 2k, which is not an AIC, and $steps$logLik ",
+        "holds the SAS objective, not a log-likelihood. criterion = \"wald\" ",
+        "or \"score\" does not depend on it."
+      ), call = NULL)
+    ))
   }
   extra_args <- .hzr_check_forwarded_dots(list(...), "hzr_stepwise",
                                           own = names(formals(hzr_stepwise)),

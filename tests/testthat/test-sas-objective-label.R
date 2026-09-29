@@ -65,6 +65,50 @@ test_that("without interval-censored rows the SAS objective is the log-likelihoo
   expect_identical(summary(fs)$log_lik, fs$fit$objective)
 })
 
+test_that("the formula interface's interval rows are seen too (#544)", {
+  skip_on_cran()
+  d <- sas_label_data()
+  d$lo2 <- ifelse(d$st == 2, d$lo, d$tt)
+  d$hi2 <- ifelse(d$st == 0, Inf, d$tt)
+  fit <- suppressWarnings(hazard(
+    survival::Surv(lo2, hi2, type = "interval2") ~ 1, data = d,
+    dist = "multiphase", objective = "sas", fit = TRUE,
+    phases = list(early = hzr_phase("cdf", t_half = 0.8, nu = 0.4, m = -0.6),
+                  constant = hzr_phase("constant")),
+    control = list(n_starts = 1)))
+  # The premise: Surv's interval code (3) was stored as this package's 2.
+  expect_true(any(fit$data$status == 2))
+  expect_match(printed(fit), "SAS objective:", fixed = TRUE)
+  expect_identical(summary(fit)$log_lik, NA_real_)
+})
+
+test_that("an AIC screen on a SAS objective says it is not an AIC (#544)", {
+  skip_on_cran()
+  d <- sas_label_data()
+  fs <- sas_label_fit(d, "sas")
+  classes <- character()
+  withCallingHandlers(
+    suppressMessages(hzr_stepwise(fs, scope = list(constant = ~ x), data = d,
+                                  criterion = "aic", trace = FALSE)),
+    warning = function(w) {
+      classes <<- c(classes, class(w)[1L])
+      invokeRestart("muffleWarning")
+    })
+  expect_identical(sum(classes == "hzr_stepwise_sas_objective"), 1L)
+  # Known positive: a Wald screen on the same fit does not warn so.
+  expect_no_warning(
+    withCallingHandlers(
+      suppressMessages(hzr_stepwise(fs, scope = list(constant = ~ x),
+                                    data = d, criterion = "wald",
+                                    trace = FALSE)),
+      warning = function(w) {
+        if (!inherits(w, "hzr_stepwise_sas_objective")) {
+          invokeRestart("muffleWarning")
+        }
+      }),
+    class = "hzr_stepwise_sas_objective")
+})
+
 test_that("the stepwise trace labels a SAS objective as one (#556)", {
   skip_on_cran()
   d <- sas_label_data()

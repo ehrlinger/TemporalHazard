@@ -494,12 +494,16 @@ The chunk hides them because `summary()` reports the same thing.
 | `$data$x`             | Design matrix                                               |
 | `$fit$theta`          | Coefficient vector: estimates when `fit = TRUE`, the starting values when `fit = FALSE` |
 | `$fit$converged`      | `TRUE`/`FALSE` from the optimizer; `NA` when `fit = FALSE`  |
-| `$fit$objective`      | Log-likelihood at convergence; `NA` when `fit = FALSE`      |
+| `$fit$objective`      | Objective at convergence (the log-likelihood, except as noted below); `NA` when `fit = FALSE` |
 | `$legacy_args`        | Named pass-through arguments for parity                     |
 
-> **Note:** `$fit$objective` above is a *number*: the log-likelihood the
-> optimizer reached; `print()` and `summary()` label it `log-lik` and
-> `log_lik`, which are the names to prefer when writing about it. It is
+> **Note:** `$fit$objective` above is a *number*: the value the optimizer
+> reached, which is the log-likelihood; `print()` and `summary()` label it
+> `log-lik` and `log_lik`, which are the names to prefer when writing about
+> it. The exception is a fit with `objective = "sas"` whose data have
+> interval-censored rows: there the value is `PROC HAZARD`'s objective, not a
+> log-likelihood, and `print()` labels it `SAS objective`, while
+> `summary()` returns `log_lik = NA` and the value as `objective_value`. It is
 > unrelated to the `objective` *argument* of `hazard()`, which selects an
 > estimand: `"likelihood"` (the default) or `"sas"`, reproducing what
 > `PROC HAZARD` accumulates for an interval-censored row. See `?hazard`; the

@@ -14,7 +14,9 @@
   estimates is -118.94. Such a fit now prints `SAS objective:`, and
   `summary()`'s `log_lik` is `NA`, with the value in the new
   `objective_value` and its kind in `objective`. The stepwise trace reads
-  `SAS objective = ..., AIC from it = ...`. Without interval-censored rows
+  `SAS objective = ..., AIC from it = ...`, and a screen with `criterion =
+  "aic"` warns (class `hzr_stepwise_sas_objective`) that it selects on that
+  quantity. Without interval-censored rows
   the two objectives agree, and nothing changes. `logLik()` and `AIC()` have
   no method for a `hazard` fit and still stop.
 
