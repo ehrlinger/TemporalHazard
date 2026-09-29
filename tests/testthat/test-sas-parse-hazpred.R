@@ -367,3 +367,156 @@ test_that("a DO with no BY clause steps by 1, not by the /99.9 step", {
   got <- .hzr_parse_hazpred(.hzr_sas_blocks(txt)[[1L]], txt)
   expect_equal(eval(got$grid)$time, exp(-5:5))
 })
+
+test_that("a HAZPRED with no DATA=, INHAZ= or OUT= is refused, as %HAZPRED refuses it (#498)", {
+  # %HAZPRED requires all three on the PROC statement and prints "HAZPRED not
+  # attempted" when any is missing (hazpred.sas:13-33, :153-163). The block
+  # used to emit predict() anyway: over the fitting rows with no DATA=, and
+  # from `fit` with no INHAZ=.
+  translate <- function(src) {
+    f <- withr::local_tempfile(fileext = ".sas", .local_envir = parent.frame())
+    writeLines(src, f)
+    suppressWarnings(hzr_translate_sas(f))
+  }
+  fit <- paste(
+    "%HAZARD( PROC HAZARD DATA=D OUTHAZ=OUTEST CONDITION=14; EVENT DEAD;",
+    "TIME INT_DEAD; PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );",
+    sprintf(grid_step, "PRED"))
+  opts <- c(DATA = "DATA=PRED", INHAZ = "INHAZ=OUTEST", OUT = "OUT=P")
+  pred_job <- function(keep) {
+    translate(paste(fit, "%HAZPRED( PROC HAZPRED", paste(opts[keep], collapse = " "),
+                    "; TIME MONTHS; );"))
+  }
+  preds <- function(job) job$calls[grepl("^pred", names(job$calls))]
+
+  # Known positive: with all three the block predicts.
+  job <- pred_job(names(opts))
+  expect_length(preds(job), 2L)
+  for (cl in preds(job)) expect_identical(cl[[1L]], as.name("predict"))
+
+  for (drop in names(opts)) {
+    job <- pred_job(setdiff(names(opts), drop))
+    expect_length(preds(job), 2L)
+    called <- unlist(lapply(job$calls, all.names))
+    expect_false("predict" %in% called, info = drop)
+    for (cl in preds(job)) {
+      expect_identical(cl[[1L]], as.name("stop"), info = drop)
+      expect_error(eval(cl), paste0("no ", drop, "="), fixed = TRUE, info = drop)
+      expect_error(eval(cl), "HAZPRED not attempted", fixed = TRUE, info = drop)
+    }
+    row <- job$untranslated[job$untranslated$construct == paste0(drop, "="), ]
+    expect_equal(nrow(row), 1L, info = drop)
+    expect_match(row$reason, "hazpred.sas:13-33", fixed = TRUE, info = drop)
+    # The fit itself is untouched: only the HAZPRED block is refused.
+    expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"), info = drop)
+  }
+
+  # All three missing: every one is named, in one refusal.
+  job <- pred_job(character(0))
+  expect_setequal(intersect(job$untranslated$construct, paste0(names(opts), "=")),
+                  paste0(names(opts), "="))
+  expect_error(eval(preds(job)[[1L]]), "no DATA=, INHAZ= or OUT=", fixed = TRUE)
+})
+
+# Shared by the two tests below: a fit whose OUTHAZ= the HAZPRED reads.
+hp_fit <- paste(
+  "%HAZARD( PROC HAZARD DATA=D OUTHAZ=OUTEST CONDITION=14; EVENT DEAD;",
+  "TIME INT_DEAD; PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005; );",
+  sprintf(grid_step, "PRED"))
+hp_translate <- function(opts) {
+  f <- withr::local_tempfile(fileext = ".sas", .local_envir = parent.frame())
+  writeLines(paste(hp_fit, "%HAZPRED( PROC HAZPRED", opts, "; TIME MONTHS; );"), f)
+  suppressWarnings(hzr_translate_sas(f))
+}
+
+test_that("an empty or libref-only DATA=, INHAZ= or OUT= is refused (#498 review)", {
+  # `KEY '=' dsfield` (hazpred_y.y:50-52, :62-64) has no form without a NAME
+  # or LIB.MEMBER, so PROC HAZPRED stops with a syntax error
+  # (initprz.c:53-55). The value `""` passed the presence check, so these
+  # emitted predict() over a job SAS rejects.
+  cases <- c(INHAZ = "DATA=PRED OUT=P INHAZ=", OUT = "INHAZ=OUTEST DATA=PRED OUT=",
+             OUT = "DATA=PRED INHAZ=OUTEST OUT=WORK.",
+             INHAZ = "DATA=PRED INHAZ=WORK. OUT=P",
+             DATA = "INHAZ=OUTEST OUT=P DATA=WORK.")
+  for (k in seq_along(cases)) {
+    job <- hp_translate(cases[[k]])
+    info <- cases[[k]]
+    preds <- job$calls[grepl("^pred", names(job$calls))]
+    expect_length(preds, 2L)
+    expect_false("predict" %in% unlist(lapply(job$calls, all.names)), info = info)
+    row <- job$untranslated[job$untranslated$construct == paste0(names(cases)[k], "="), ]
+    expect_equal(nrow(row), 1L, info = info)
+    expect_match(row$reason, "initprz.c:53-55", fixed = TRUE, info = info)
+    expect_error(eval(preds[[1L]]), "initprz.c:53-55", fixed = TRUE, info = info)
+  }
+  # Known negatives: a LIB.MEMBER and a macro are dataset names SAS reads.
+  job <- hp_translate("DATA=PRED INHAZ=OUTEST OUT=WORK.P")
+  expect_identical(job$calls$pred[[1L]], as.name("predict"))
+  job <- hp_translate("DATA=PRED INHAZ=OUTEST OUT=&OUTDS")
+  expect_identical(job$calls$pred[[1L]], as.name("predict"))
+})
+
+test_that("a macro value is exempt only if it can expand to a dataset name (#498 review)", {
+  # A leading `.` or digit is unexpected text whatever the macro expands to
+  # (hazpred_l.l:56), so SAS stops these; any `&`/`%` used to exempt them.
+  for (o in c("DATA=PRED INHAZ=OUTEST OUT=.&X", "DATA=PRED INHAZ=1&X OUT=P")) {
+    job <- hp_translate(o)
+    expect_identical(job$calls$pred[[1L]], as.name("stop"), info = o)
+    expect_false("predict" %in% unlist(lapply(job$calls, all.names)), info = o)
+  }
+  # Known negatives: forms that can expand to a name still predict.
+  for (o in c("DATA=PRED INHAZ=OUTEST OUT=&LIB..P", "DATA=PRED INHAZ=OUTEST OUT=&OUTDS",
+              "DATA=PRED INHAZ=OUTEST OUT=%STR(P)")) {
+    job <- hp_translate(o)
+    expect_identical(job$calls$pred[[1L]], as.name("predict"), info = o)
+  }
+  # The reason quotes the value as written, not the joiner's piece of it.
+  job <- hp_translate("DATA=PRED(WHERE=(MONTHS>1)) INHAZ=OUTEST OUT=P")
+  row <- job$untranslated[job$untranslated$construct == "DATA=", ]
+  expect_match(row$reason, "DATA=PRED(WHERE=(MONTHS>1)) is not", fixed = TRUE)
+})
+
+test_that("a HAZPRED refusal claims the macro's refusal only where the macro makes it (#498 review)", {
+  # SAS expands &OPTS before %HAZPRED reads the statement, so it may supply
+  # the options: the block still stops, but not with "HAZPRED not attempted".
+  for (o in c("&OPTS", "DATA=PRED &IO", "%OPTS(1)")) {
+    job <- hp_translate(o)
+    expect_identical(job$calls$pred[[1L]], as.name("stop"), info = o)
+    m <- tryCatch(eval(job$calls$pred), error = conditionMessage)
+    expect_match(m, "may supply the missing option", fixed = TRUE, info = o)
+    expect_no_match(m, "HAZPRED not attempted", fixed = TRUE, info = o)
+  }
+  # %index(&procstmt,DATA) finds the DATA in HAZDATA, so the macro does not
+  # refuse this job for its missing DATA=.
+  job <- hp_translate("INHAZ=HAZDATA OUT=P")
+  expect_identical(job$calls$pred[[1L]], as.name("stop"))
+  m <- tryCatch(eval(job$calls$pred), error = conditionMessage)
+  expect_match(m, "substring test", fixed = TRUE)
+  expect_no_match(m, "HAZPRED not attempted", fixed = TRUE)
+  # Known positive: nothing on the statement satisfies the DATA test.
+  job <- hp_translate("INHAZ=OUTEST OUT=P")
+  m <- tryCatch(eval(job$calls$pred), error = conditionMessage)
+  expect_match(m, "HAZPRED not attempted", fixed = TRUE)
+})
+
+test_that("a stray `=` on the HAZPRED line stops the block, not only records it (#498 Copilot)", {
+  # PROC HAZPRED rejects the job with a syntax error, so predict() must not
+  # be emitted. The stray `=` was recorded, but mk() never read it.
+  for (o in c("DATA=PRED INHAZ=OUTEST OUT=P = X", "DATA=PRED INHAZ=OUTEST OUT=P =")) {
+    job <- hp_translate(o)
+    expect_false("predict" %in% unlist(lapply(job$calls, all.names)), info = o)
+    expect_identical(job$calls$pred[[1L]], as.name("stop"), info = o)
+    expect_error(eval(job$calls$pred), "stray `=`", fixed = TRUE, info = o)
+  }
+})
+
+test_that("an empty INHAZ= before another option is named, not the option after it (#498 review)", {
+  # `INHAZ= OUT=P`: PROC HAZPRED reads OUT as INHAZ's dataset name
+  # (hazpred_l.l:36, :48), and the `=` after it is a syntax error. The
+  # refusal named OUT= as missing, which the job plainly carries.
+  job <- hp_translate("DATA=PRED INHAZ= OUT=P")
+  expect_identical(job$calls$pred[[1L]], as.name("stop"))
+  expect_true("INHAZ=" %in% job$untranslated$construct)
+  expect_false("OUT=" %in% job$untranslated$construct)
+  expect_error(eval(job$calls$pred), "INHAZ= has no dataset name", fixed = TRUE)
+})
