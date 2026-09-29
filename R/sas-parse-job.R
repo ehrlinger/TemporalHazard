@@ -1635,13 +1635,34 @@
     args$fit <- FALSE
     args$control <- NULL
     spec_call <- as.call(c(head, args))
+    # PROC HAZARD refuses a job with more free parameters than events before
+    # it evaluates anything (hazrd2.c:68-69, HAZ2TRM 7104; the count is C1 +
+    # C3 over the rows, setobs.c:18). An evaluation always returns a number,
+    # so without this the chunk reported a log-likelihood for a job PROC
+    # HAZARD stops (r-reviewer pass 2 on #496). No events is one case of it.
+    counts <- Filter(Negate(is.null), list(
+      if (!is.null(statements$EVENT)) as.name(statements$EVENT),
+      if (!is.null(statements$ICENSOR)) as.name(statements$ICENSOR[[1L]])))
+    events_expr <- Reduce(function(x, y) call("+", x, y), lapply(counts,
+      function(v) bquote(sum(.(v), na.rm = TRUE))))
+    events_call <- call("with", args$data, events_expr)
+    n_free <- parms$n_free
+    guard <- bquote(if (.(events_call) < .(n_free)) {
+      stop("PROC HAZARD stops this job before evaluating it: it has ",
+           .(n_free), " free parameters and only ", .(events_call),
+           " events (hazrd2.c:68-69, termination 7104). There is no ",
+           "MAXITER=0 evaluation to report.", call. = FALSE)
+    })
     if (isFALSE(ctl$conserve)) {
-      code_body <- bquote(hzr_evaluate(.(spec_call), theta = .(args$theta)))
+      code_body <- bquote(local({
+        .(guard)
+        hzr_evaluate(.(spec_call), theta = .(args$theta))
+      }))
     } else {
       # The factor is sought under the interval term PROC HAZARD accumulates
-      # (objective = "sas"): its CoE counts an ICENSOR row's C3 as events
-      # against CF(T) - CF(CT) (setcoe_obs_loop.c:39-41, :98), which is where
-      # that objective peaks along the shift, and the default interval
+      # (objective = "sas"), whose argmax along the shift reproduces the MUE
+      # PROC HAZARD prints for an ICENSOR job (setcoe_obs_loop.c:114 counts
+      # C1 + C3 against the cumulative hazard), where the default interval
       # likelihood peaks elsewhere (r-reviewer on #496). Without ICENSOR the
       # two objectives are the same function, so one spec serves.
       coe_call <- spec_call
@@ -1649,10 +1670,11 @@
       # The search re-centres its bracket until the peak is inside it: a
       # start MU far from the CoE value (1e-15, or a late phase on a long
       # time scale) needs a shift past any fixed bracket, and optimize()
-      # returns an edge without saying so. With no events there is no peak
-      # at all, and PROC HAZARD stops (SETCOE1020, hzd_ln_A_div_B.c), so the
-      # chunk stops too instead of reporting the likelihood at the edge.
+      # returns an edge without saying so. Ten re-centrings reach a factor
+      # of about exp(300); a peak still at an edge stops the chunk rather
+      # than report the likelihood there.
       code_body <- bquote(local({
+        .(guard)
         .spec <- .(spec_call)
         .coe <- .(coe_call)
         .theta <- .(args$theta)
@@ -1670,15 +1692,13 @@
         }
         if (!is.finite(.ll(.shift))) {
           stop("hzr_evaluate() cannot evaluate this model's likelihood at ",
-               "its starting values under any common scaling of MU, so ",
-               "there is no MAXITER=0 evaluation to report.", call. = FALSE)
+               "the scaling of MU its search reached, so there is no ",
+               "MAXITER=0 evaluation to report.", call. = FALSE)
         }
         if (.edge) {
-          stop("Conservation of Events has no finite scaling here: the ",
-               "log-likelihood keeps rising as every MU moves toward ",
-               if (.shift < 0) "0" else "infinity", ". With no events PROC ",
-               "HAZARD stops too (SETCOE1020). There is no MAXITER=0 ",
-               "evaluation to report.", call. = FALSE)
+          stop("No Conservation of Events scaling of MU was found within a ",
+               "factor of exp(300) of the starting values, so there is no ",
+               "MAXITER=0 evaluation to report.", call. = FALSE)
         }
         hzr_evaluate(.spec, theta = .theta + .shift * .log_mu)
       }))

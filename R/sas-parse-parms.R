@@ -2506,6 +2506,16 @@
     phases = as.call(c(quote(list), phase_calls)),
     theta = as.call(c(quote(c), theta_blocks)),
     log_mu_mask = log_mu_mask,
+    # The free parameters PROC HAZARD counts against its events before any
+    # evaluation (hazrd2.c:68-69): every theta entry less the fixed shapes,
+    # and less a late shape a FIXGE2/FIXGAE2 constraint derives (#496).
+    n_free = length(log_mu_mask) -
+      (if (build_early) length(fixed_early) else 0L) -
+      (if (build_late) {
+        length(fixed_late) + (late_constraint != "none")
+      } else {
+        0L
+      }),
     listwise_only = setdiff(unique(phase_vars), modelled),
     selection = selection_spec,
     has_phases = length(phase_calls) > 0L,

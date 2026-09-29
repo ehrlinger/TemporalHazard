@@ -2854,18 +2854,51 @@ test_that("MAXITER=0 evaluates the log-likelihood PROC HAZARD prints (#496)", {
   expect_identical(compared, nrow(oracle))
 })
 
-test_that("MAXITER=0 with no events stops, as PROC HAZARD does (#496)", {
-  # No events: Conservation of Events has no finite factor, and PROC HAZARD
-  # stops (SETCOE1020). Searching a fixed bracket returned its edge instead,
-  # a log-likelihood near 0 that reads as a perfect fit (r-reviewer on #496).
+test_that("MAXITER=0 with fewer events than free parameters stops (#496)", {
+  # hazrd2.c:68-69 stops a job whose free parameters outnumber its events
+  # (C1 + C3, setobs.c:18) before it evaluates anything. This job has six:
+  # MUE, THALF, NU, M, AGE and MUC. Measured on the binary: with the first
+  # 5 events kept, or none, it prints "Num of parms to estimate is greater
+  # than the num of events", with and without NOCONSERVE; with 6 it prints
+  # -186.138 under NOCONSERVE. The chunk used to report a log-likelihood for
+  # the refused jobs, near 0 with no events (r-reviewer on #496).
   D <- .p496_data()
-  D$DEAD <- 0
-  job <- .p496_job(paste("PROC HAZARD DATA=D MAXITER=0; EVENT DEAD; TIME TT;",
-                         "PARMS MUE=0.2 THALF=1 NU=1 MUC=0.01; EARLY AGE;"))
+  keep <- function(k) ifelse(cumsum(D$DEAD) <= k & D$DEAD == 1, 1, 0)
+  for (proc in c("", " NOCONSERVE")) {
+    for (k in c(0, 5)) {
+      Dk <- D
+      Dk$DEAD <- keep(k)
+      job <- .p496_job(paste0("PROC HAZARD DATA=D MAXITER=0", proc,
+                              "; EVENT DEAD; TIME TT; PARMS MUE=0.2 THALF=1",
+                              " NU=1 MUC=0.01; EARLY AGE;"))
+      res <- suppressWarnings(render_sim(job, list(D = Dk)))
+      info <- paste(proc, k)
+      expect_false(res$ok, info = info)
+      expect_match(res$results[["fit"]], "6 free parameters", fixed = TRUE,
+                   info = info)
+      expect_null(res$env$fit)
+    }
+  }
+  # The boundary: six events, six free parameters, and PROC HAZARD evaluates.
+  D$DEAD <- keep(6)
+  job <- .p496_job(paste("PROC HAZARD DATA=D MAXITER=0 NOCONSERVE; EVENT DEAD;",
+                         "TIME TT; PARMS MUE=0.2 THALF=1 NU=1 MUC=0.01;",
+                         "EARLY AGE;"))
   res <- suppressWarnings(render_sim(job, list(D = D)))
-  expect_false(res$ok)
-  expect_match(res$results[["fit"]], "no finite scaling", fixed = TRUE)
-  expect_null(res$env$fit)
+  expect_true(res$ok)
+  expect_lt(abs(res$env$fit$logLik - (-186.138)), 5e-4)
+  # Fixed shapes are not counted. With all three early shapes fixed only MUE
+  # and MUC are free, and two events suffice; with THALF alone fixed there
+  # are four, and two do not (binary: -145.826 and the 7104 termination;
+  # the evaluated value differs from R's for the reason in #540).
+  fx <- "PARMS MUE=0.2 THALF=0.5 NU=1.5 M=0.5 MUC=0.01"
+  D$DEAD <- keep(2)
+  for (fix in c(" FIXTHALF FIXNU FIXM;", " FIXTHALF;")) {
+    job <- .p496_job(paste0("PROC HAZARD DATA=D MAXITER=0 NOCONSERVE; ",
+                            "EVENT DEAD; TIME TT; ", fx, fix))
+    res <- suppressWarnings(render_sim(job, list(D = D)))
+    expect_identical(res$ok, fix == " FIXTHALF FIXNU FIXM;", info = fix)
+  }
   # A model whose likelihood hzr_evaluate() cannot compute at any scaling
   # (a late phase with ALPHA=0, -Inf here; the binary prints -808.527)
   # says that, rather than blaming the events.
@@ -2875,6 +2908,17 @@ test_that("MAXITER=0 with no events stops, as PROC HAZARD does (#496)", {
   res <- suppressWarnings(render_sim(job, list(D = .p496_data())))
   expect_false(res$ok)
   expect_match(res$results[["fit"]], "cannot evaluate", fixed = TRUE)
+  # A CoE factor past the search's reach (about exp(300)) stops rather than
+  # reporting the likelihood where the search gave up. PROC HAZARD solves
+  # the factor in closed form, so this is a limit of the translation. PARMS
+  # takes no exponent (hazard_l.l:53), so 1e-140 is written out.
+  tiny <- paste0("0.", strrep("0", 139), "1")
+  job <- .p496_job(paste0("PROC HAZARD DATA=D MAXITER=0; EVENT DEAD; TIME TT;",
+                          " PARMS MUE=", tiny, " THALF=1 NU=1; EARLY AGE;"))
+  res <- suppressWarnings(render_sim(job, list(D = .p496_data())))
+  expect_false(res$ok)
+  expect_match(res$results[["fit"]], "within a factor of exp(300)",
+               fixed = TRUE)
 })
 
 test_that("MAXITER=0 warns that the chunk is an evaluation and records it (#496)", {

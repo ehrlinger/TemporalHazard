@@ -216,8 +216,8 @@
   that `PROC HAZARD` prints with and without `WEIGHT`, `LCENSOR` and
   `NOCONSERVE`. With `ICENSOR` it reproduces `MUE`, and warns that its
   log-likelihood is `hazard()`'s interval likelihood rather than the term
-  `PROC HAZARD` accumulates. With no events it stops, as `PROC HAZARD`
-  does. It is not a fit, so the job warns and gains an `$untranslated`
+  `PROC HAZARD` accumulates. With fewer events than free parameters it
+  stops, as `PROC HAZARD` does. It is not a fit, so the job warns and gains an `$untranslated`
   row. `PROC HAZARD` still steps through a `SELECTION` screen, evaluating
   each step at unfitted values; the translation does not, and says so. A value below 1 is
   read the same way, as `PROC HAZARD` truncates it to 0. A negative
