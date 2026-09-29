@@ -125,10 +125,17 @@ refused outright rather than mistranslated, emitting a
 `FAST`, `MAXVARS`, `RESTRICT`, a per-variable `MOVE=` or `ORDER=`, and a
 variable held by `/I` in one phase but movable in another. So is
 `LCENSOR` combined with `ICENSOR`, which one `time_lower` argument
-cannot express (#155). Prediction grids the parser cannot resolve are
-refused whole, and the
-[`predict()`](https://rdrr.io/r/stats/predict.html) chunks that would
-have read such a grid become a
+cannot express (#155). A job with `ICENSOR` is fitted with
+`objective = "sas"`, the interval term `PROC HAZARD` accumulates, so it
+reproduces `PROC HAZARD`'s estimates; the value it reports is then
+`PROC HAZARD`'s objective, not a log-likelihood, and a callout above the
+chunk says so (#543). Degenerate intervals are resolved as `PROC HAZARD`
+does before its fit: a lower bound equal to the time makes the row an
+exact event, and one that is missing, negative or after the time drops
+the row from the fit (not from your data frame); the status chunk warns
+with both counts. Prediction grids the parser cannot resolve are refused
+whole, and the [`predict()`](https://rdrr.io/r/stats/predict.html)
+chunks that would have read such a grid become a
 [`stop()`](https://rdrr.io/r/base/stop.html) naming it, rather than a
 `predict(newdata = )` over a name no chunk builds. An unresolved
 `INHAZ=` stops the render on purpose.

@@ -384,10 +384,8 @@
   [`hzr_evaluate()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_evaluate.md)
   at those starting values, with the same scaling, and it reproduces the
   log-likelihood and `MUE` that `PROC HAZARD` prints with and without
-  `WEIGHT`, `LCENSOR` and `NOCONSERVE`. With `ICENSOR` it reproduces
-  `MUE`, and warns that its log-likelihood is
-  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)’s
-  interval likelihood rather than the term `PROC HAZARD` accumulates.
+  `WEIGHT`, `LCENSOR` and `NOCONSERVE`, and with `ICENSOR`
+  ([\#543](https://github.com/ehrlinger/TemporalHazard/issues/543)).
   With fewer events than free parameters it stops, as `PROC HAZARD`
   does. It is not a fit, so the job warns and gains an `$untranslated`
   row. `PROC HAZARD` still steps through a `SELECTION` screen,
@@ -414,6 +412,27 @@
   `C3=TL,AGE` fits `C3` and `TL`, not a variable `TLAGE`. A later `(`
   clears `PROC HAZARD`’s syntax error, and the warning then says so
   instead.
+
+- **A translated `ICENSOR` job now fits `PROC HAZARD`’s interval
+  objective
+  ([\#543](https://github.com/ehrlinger/TemporalHazard/issues/543)).**
+  `PROC HAZARD` accumulates an interval-censored row as the
+  interval-mean hazard over (lower bound, time\], which
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  calls `objective = "sas"`, and
+  [`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
+  emitted the default interval probability instead. Measured on the
+  binary over a grid of 18 optimised fits, that moved the constant
+  phase’s `MU` by up to 21% and the reported objective by up to 291
+  units. The emitted call now passes `objective = "sas"`, which
+  reproduces `PROC HAZARD`’s estimates to the precision it prints. A
+  note above the fit says that the value it reports is `PROC HAZARD`’s
+  objective, not a log-likelihood. Degenerate intervals are resolved as
+  `PROC HAZARD` resolves them before its fit: a lower bound equal to the
+  time makes the row an exact event, and a lower bound that is missing,
+  negative or after the time drops the row. The status chunk warns with
+  the number of rows each rule touched, and the data frame itself keeps
+  every row.
 
 ## TemporalHazard 1.2.12
 

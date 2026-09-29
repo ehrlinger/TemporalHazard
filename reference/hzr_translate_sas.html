@@ -175,7 +175,15 @@ translation are refused outright rather than mistranslated, emitting a
 per-variable <code>MOVE=</code> or <code>ORDER=</code>, and a variable held by
 <code>/I</code> in one phase but movable in another. So is <code>LCENSOR</code>
 combined with <code>ICENSOR</code>, which one <code>time_lower</code> argument cannot express
-(#155). Prediction grids the parser cannot resolve are refused whole, and
+(#155). A job with <code>ICENSOR</code> is fitted with <code>objective = "sas"</code>, the
+interval term <code>PROC HAZARD</code> accumulates, so it reproduces <code>PROC HAZARD</code>'s
+estimates; the value it reports is then <code>PROC HAZARD</code>'s objective, not a
+log-likelihood, and a callout above the chunk says so (#543). Degenerate
+intervals are resolved as <code>PROC HAZARD</code> does before its fit: a lower bound
+equal to the time makes the row an exact event, and one that is missing,
+negative or after the time drops the row from the fit (not from your data
+frame); the status chunk warns with both counts. Prediction
+grids the parser cannot resolve are refused whole, and
 the <code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> chunks that would have read such a grid become a <code><a href="https://rdrr.io/r/base/stop.html" class="external-link">stop()</a></code>
 naming it, rather than a <code>predict(newdata = )</code> over a name no chunk
 builds. An unresolved <code>INHAZ=</code> stops the render on purpose.</p>
