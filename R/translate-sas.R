@@ -350,6 +350,14 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
           calls[[.hzr_next_call_name(calls, "screen_check")]] <- chk
         }
       }
+      # An ICENSOR job is fitted on PROC HAZARD's interval objective (#543).
+      # The note goes on the chunk that calls hazard(): the fit itself, or a
+      # SELECTION job's base fit, whose own slot carries the screen's note.
+      if (isTRUE(r$sas_objective)) {
+        obj_slot <- if (is.null(r$stepwise_call)) fit_slot else
+          paste0(fit_slot, "_base")
+        notes[[obj_slot]] <- .hzr_sas_objective_note()
+      }
       fits[[length(fits) + 1L]] <- list(slot = fit_slot, outhaz = r$outhaz)
     } else {
       r <- tryCatch(.hzr_parse_hazpred(b, txt), error = function(e) {
@@ -499,6 +507,21 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
 #' before the code, which is why it is a note on the chunk rather than a row
 #' in `$untranslated` (#160).
 #' @noRd
+.hzr_sas_objective_note <- function() {
+  list(
+    title = "ICENSOR: fitted on PROC HAZARD's objective, not a log-likelihood",
+    body = paste(
+      "This job has ICENSOR, so the fit below uses `objective = \"sas\"`:",
+      "the interval-censored rows enter as PROC HAZARD accumulates them, the",
+      "interval-mean hazard over (lower bound, time], rather than as the",
+      "probability of an event in the interval. That reproduces PROC",
+      "HAZARD's estimates. The value it reports as the objective is PROC",
+      "HAZARD's, not a log-likelihood, so do not compare it with a",
+      "log-likelihood from another fit or use it in a likelihood-ratio test.",
+      "See ?hazard, argument `objective`.")
+  )
+}
+
 .hzr_selection_divergence_note <- function(direction = "both") {
   # Only what this screen's direction does: a BACKWARD screen never enters,
   # and a forward-only (NOSTEPWISE) screen never removes, so neither the

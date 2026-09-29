@@ -1519,6 +1519,15 @@
   }
   args$status <- cens$status_name
   if (!is.null(cens$time_lower)) args$time_lower <- cens$time_lower
+  # An ICENSOR job is fitted on the interval term PROC HAZARD accumulates,
+  # C3 * log([CF(T) - CF(CT)] / (T - CT)) (setlik.c; see the roxygen above),
+  # not on hazard()'s default interval probability. Measured on the binary
+  # over a constructed grid (18 optimised fits), the default moved MUC by up
+  # to 21% and the objective by up to 291 units; "sas" reproduced both to
+  # printed precision (#543, maintainer's ruling 2026-09-29). The value
+  # reported is then SAS's objective, not a log-likelihood, and the
+  # translated document says so above the fit.
+  if (!is.null(statements$ICENSOR)) args$objective <- "sas"
   # Without fit = TRUE the emitted call returns an unfitted object: converged
   # is NA, objective is NA, and theta holds the SAS starting values, while
   # print.hazard() shows a populated summary that says none of that (#151).
@@ -1758,14 +1767,11 @@
         hzr_evaluate(.(spec_call), theta = .(args$theta))
       }))
     } else {
-      # The factor is sought under the interval term PROC HAZARD accumulates
-      # (objective = "sas"), whose argmax along the shift reproduces the MUE
-      # PROC HAZARD prints for an ICENSOR job (setcoe_obs_loop.c:114 counts
-      # C1 + C3 against the cumulative hazard), where the default interval
-      # likelihood peaks elsewhere (r-reviewer on #496). Without ICENSOR the
-      # two objectives are the same function, so one spec serves.
-      coe_call <- spec_call
-      if (!is.null(statements$ICENSOR)) coe_call$objective <- "sas"
+      # For an ICENSOR job the spec carries objective = "sas" (#543), whose
+      # argmax along the shift reproduces the MUE PROC HAZARD prints
+      # (setcoe_obs_loop.c:114 counts C1 + C3 against the cumulative
+      # hazard); the default interval likelihood peaks elsewhere
+      # (r-reviewer on #496).
       # The search re-centres its bracket until the peak is inside it: a
       # start MU far from the CoE value (1e-15, or a late phase on a long
       # time scale) needs a shift past any fixed bracket, and optimize()
@@ -1775,11 +1781,10 @@
       code_body <- bquote(local({
         .(guard)
         .spec <- .(spec_call)
-        .coe <- .(coe_call)
         .theta <- .(args$theta)
         .log_mu <- .(parms$log_mu_mask)
         .ll <- function(s) {
-          suppressWarnings(hzr_evaluate(.coe, theta = .theta + s * .log_mu))$logLik
+          suppressWarnings(hzr_evaluate(.spec, theta = .theta + s * .log_mu))$logLik
         }
         .shift <- 0
         for (.i in 1:10) {
@@ -1801,14 +1806,6 @@
         }
         hzr_evaluate(.spec, theta = .theta + .shift * .log_mu)
       }))
-    }
-    if (!is.null(statements$ICENSOR)) {
-      refusal_warnings <- c(refusal_warnings, paste0(
-        maxit_label, " with ICENSOR: the log-likelihood below is hazard()'s ",
-        "interval likelihood, not the interval-mean hazard term PROC HAZARD ",
-        "accumulates (see ?hazard, `objective`), so it is not the number ",
-        "PROC HAZARD prints. The parameters it is evaluated at are PROC ",
-        "HAZARD's."))
     }
   }
 
@@ -1843,6 +1840,7 @@
        stepwise_call = stepwise_call, screen_check_call = screen_check_call,
        outhaz = outhaz, untranslated = untr, tokens_seen = seen,
        tokens_mapped = mapped,
+       sas_objective = identical(args$objective, "sas"),
        # Each is a reason PROC HAZARD would refuse this job, or would fit a
        # different model from the one emitted. They are carried out rather
        # than raised here: the point is that the RENDERED document warns, so
