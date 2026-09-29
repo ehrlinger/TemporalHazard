@@ -111,16 +111,17 @@ test_that("an AIC screen of only such a candidate stops untested (#490)", {
 
 # hzr_bootstrap() runs each replicate's screen with its warnings muffled, so a
 # replicate that completed after declining an entry pooled that candidate as
-# not selected, and the warning above never reached the user. The screen's
-# result is marked here so the count is deterministic.
-.aic_below_boot <- function(fx, mark, stopped = FALSE) {
+# not selected, and the warning above never reached the user. Each replicate's
+# screen is marked with `reason` here, so the count is deterministic. The
+# up-front screen on the real data is not pooled into the reasons.
+.aic_below_boot <- function(fx, reason = NULL, stopped = FALSE) {
   orig_sw <- hzr_stepwise
   local_mocked_bindings(
     hzr_stepwise = function(...) {
       r <- orig_sw(...)
-      if (mark) {
+      if (!is.null(reason)) {
         r$criteria$uncomputable_reasons <- .hzr_merge_reasons(
-          r$criteria$uncomputable_reasons, c(loglik_below_base = 1L)
+          r$criteria$uncomputable_reasons, stats::setNames(1L, reason)
         )
         if (stopped) r$criteria$stopped_uncomputable <- TRUE
       }
@@ -145,22 +146,33 @@ test_that("hzr_bootstrap() warns about replicates that declined an entry", {
   fx <- .aic_below_fixture()
   pat <- "successful replicates completed after declining a candidate entry"
   # Known negative: unmarked replicates decline nothing and do not warn.
-  plain <- .aic_below_boot(fx, mark = FALSE)
+  plain <- .aic_below_boot(fx)
   expect_equal(plain$boot$n_success, 2L)
+  expect_length(plain$boot$uncomputable_reasons, 0L)
   expect_false(any(grepl(pat, plain$msgs, fixed = TRUE)))
 
-  marked <- .aic_below_boot(fx, mark = TRUE)
+  marked <- .aic_below_boot(fx, reason = "loglik_below_base")
   expect_equal(marked$boot$n_success, 2L)
   expect_equal(marked$boot$n_uncomputable_replicates, 0L)
-  # The up-front screen on the real data is marked too, so count >= 2.
-  expect_gte(marked$boot$uncomputable_reasons[["loglik_below_base"]], 2L)
+  expect_equal(marked$boot$uncomputable_reasons, c(loglik_below_base = 2L))
   hit <- grep(pat, marked$msgs, fixed = TRUE, value = TRUE)
   expect_length(hit, 1L)
   expect_match(hit, "^2 of 2 successful replicates")
   expect_match(hit, "below the current model's", fixed = TRUE)
 
+  # A refusal for other rows (#488) is declined the same way.
+  rows <- .aic_below_boot(fx, reason = "rows_differ")
+  hit <- grep(pat, rows$msgs, fixed = TRUE, value = TRUE)
+  expect_length(hit, 1L)
+  expect_match(hit, "different rows", fixed = TRUE)
+
+  # Another reason is not a declined entry, and does not raise this warning.
+  other <- .aic_below_boot(fx, reason = "nonfinite")
+  expect_equal(other$boot$uncomputable_reasons, c(nonfinite = 2L))
+  expect_false(any(grepl(pat, other$msgs, fixed = TRUE)))
+
   # A replicate that stopped is reported by the stop warning, not twice.
-  halted <- .aic_below_boot(fx, mark = TRUE, stopped = TRUE)
+  halted <- .aic_below_boot(fx, reason = "loglik_below_base", stopped = TRUE)
   expect_equal(halted$boot$n_uncomputable_replicates, 2L)
   expect_false(any(grepl(pat, halted$msgs, fixed = TRUE)))
   expect_true(any(grepl("2 of 2 successful replicates stopped",
