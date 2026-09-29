@@ -138,6 +138,7 @@ test_that("an interval's lower bound is not taken as an entry time", {
   st[ic] <- 2L
   fit <- hazard(
     time = avc$int_dead, status = st, time_lower = lo,
+    time_upper = avc$int_dead,
     x = as.matrix(avc[, c("age", "mal")]), dist = "weibull",
     theta = c(0.01, 0.5, 0, 0), fit = TRUE
   )
