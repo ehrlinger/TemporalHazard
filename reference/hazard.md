@@ -315,18 +315,23 @@ the data); and two made at setup, before the fit: `"g3_alpha_one"` (a g3
 phase with `alpha` fixed at 1, re-expressed as PROC HAZARD does, see
 [`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md))
 and `"g3_fixge2_alpha_start"` (a free `alpha` start moved to 2/3 under
-`constraint = "eta_gamma"`); and one made after it,
-`"g3_corner_supremum"`: a g3 phase under `constraint = "eta_gamma"`
+`constraint = "eta_gamma"`); and two made after it.
+`"g3_corner_supremum"` is a g3 phase under `constraint = "eta_gamma"`
 whose estimated `gamma` converged below 1000 although the log-likelihood
 is higher at a much larger `gamma`, with any fixed `tau` or `alpha`
 held. The estimate is then not the maximum-likelihood one, and the
 supremum may lie at `gamma = Inf`. A fixed `gamma`, and a fit with left-
-or interval-censored rows, are not examined. That record also carries
-`gain`, `gamma_hat`, and the higher point as `certificate_theta` with
-its `certificate_loglik`; the estimates are not changed. Only rows the
-likelihood reads count as observed times. A fit with any record raises
-one warning whose classes are `"hzr_"` plus each mechanism present, all
-inheriting `"hzr_boundary"`, so one handler catches the whole family.
+or interval-censored rows, are not examined. `"coe_no_events_left"` is a
+fit under Conservation of Events whose log-likelihood is higher with the
+conserved phase's scale sent to zero, where no events remain for that
+phase. Both records also carry `gain` and the higher point as
+`certificate_theta` with its `certificate_loglik` (the corner record
+adds `gamma_hat`); the estimates are not changed. A fit can carry
+several records, in no guaranteed order, so select them by `mechanism`.
+Only rows the likelihood reads count as observed times. A fit with any
+record raises one warning whose classes are `"hzr_"` plus each mechanism
+present, all inheriting `"hzr_boundary"`, so one handler catches the
+whole family.
 
 ## Details
 
@@ -712,10 +717,10 @@ summary(fit2)
 #> Coefficients:
 #>          estimate   std_error     z_stat      p_value
 #> mu    0.121938323 0.062299561  1.9572902 5.031335e-02
-#> nu    1.143693956 0.084297244 13.5673944 6.250475e-42
+#> nu    1.143693955 0.084297244 13.5673944 6.250475e-42
 #> beta1 0.001710112 0.008807807  0.1941586 8.460517e-01
 #> beta2 0.156102262 0.090593058  1.7231151 8.486772e-02
-#> beta3 0.017258366 0.362941256  0.0475514 9.620738e-01
+#> beta3 0.017258365 0.362941256  0.0475514 9.620738e-01
 
 # \donttest{
 # -- Parametric survival with Kaplan-Meier overlay -----------------

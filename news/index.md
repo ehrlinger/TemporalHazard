@@ -4,6 +4,31 @@
 
 ### Bug fixes
 
+- **A Conservation of Events fit whose likelihood is higher with the
+  conserved phase switched off is now recorded and warned about
+  ([\#261](https://github.com/ehrlinger/TemporalHazard/issues/261)).**
+  Under Conservation of Events the conserved phase’s `log_mu` is solved
+  so that it absorbs the events the other phases leave. Where the other
+  phases already account for every event there is nothing to solve, and
+  the objective fell back, with no warning, to that `log_mu`‘s starting
+  value. The objective was therefore discontinuous there, and a fit
+  could stop short of a higher likelihood: the reproduction in
+  [\#261](https://github.com/ehrlinger/TemporalHazard/issues/261)
+  reported -206.743 where -206.669 was available with the constant
+  phase’s scale at zero. PROC HAZARD stops the run at that point
+  (`SETCOE1200`, `consrv.c`). After such a fit,
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  now scores the fit’s own log-likelihood with the conserved phase’s
+  scale sent to zero, both with the other parameters held and with the
+  other phases’ scales rescaled to conserve the events again. It records
+  a finding only if one beats the reported value by more than 0.01. A
+  finding goes in `fit$fit$boundary` with mechanism
+  `"coe_no_events_left"`, carrying the higher point, and raises a
+  warning of class `hzr_coe_no_events_left`, which inherits
+  `hzr_boundary`. The estimates are unchanged. `fit$fit$boundary` can
+  hold several records, in no guaranteed order, so select them by
+  `mechanism`.
+
 - **A g3 phase under `constraint = "eta_gamma"` whose likelihood is
   higher at a much larger `gamma` is now recorded and warned about
   ([\#418](https://github.com/ehrlinger/TemporalHazard/issues/418)).**
