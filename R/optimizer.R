@@ -113,7 +113,9 @@ NULL
 #'   ended on the 1e10 clamp as not converged, with no objective, and warns
 #'   with class `hzr_infeasible_start` (#486); likewise a run that ended at a
 #'   finite log-likelihood below -1e10, with the subclass
-#'   `hzr_start_past_penalty` (#512). The multiphase path passes
+#'   `hzr_start_past_penalty` (#512). It also reports as not converged, with
+#'   class `hzr_unverified_convergence`, a stop where the score is not finite
+#'   (#518). The multiphase path passes
 #'   `FALSE`: it scores each start against the likelihood itself and records
 #'   such a start as `"infeasible"` in its `starts` table.
 #'
@@ -356,8 +358,13 @@ NULL
   # case: the test differences the log-likelihood, so a point the difference
   # needs can leave the finite region while the estimates themselves are
   # sound. Reading those as failures would condemn good fits (#351).
+  # `zeroed` marks the two cases where the wrapped gradient() above hands the
+  # optimizer zeros in place of the score: a score that errors, and an exact
+  # score with a non-finite component (#518).
   rel_gradient <- function(theta, value) {
-    na <- function(reason) list(value = NA_real_, reason = reason)
+    na <- function(reason, zeroed = FALSE) {
+      list(value = NA_real_, reason = reason, zeroed = zeroed)
+    }
     if (!all(is.finite(theta))) {
       return(na("the estimates are not all finite"))
     }
@@ -379,7 +386,8 @@ NULL
       .hzr_fd_gradient(objective, theta, sign_bounded)
     }
     if (is.null(g)) {
-      return(na("the score could not be computed at the estimates"))
+      return(na("the score could not be computed at the estimates",
+                zeroed = gradient_exact))
     }
     if (length(g) != length(theta)) {
       return(na(paste0("the score has ", length(g),
@@ -393,10 +401,10 @@ NULL
       } else {
         paste0("the log-likelihood is non-finite or past the optimizer's ",
                "penalty at a point the finite-difference score needs")
-      }))
+      }, zeroed = gradient_exact))
     }
     list(value = max(abs(g) * pmax(abs(theta), 1)) / max(abs(value), 1),
-         reason = NA_character_)
+         reason = NA_character_, zeroed = FALSE)
   }
   rel_grad <- NA_real_
   # Why the test was not run, for the NA the fit would otherwise carry alone.
@@ -446,6 +454,44 @@ NULL
           " iterations (code ", polish$code, ")"
         )
       }
+    }
+  }
+
+  # convergence 0 from optim() says only that BFGS stopped (#518). It stops
+  # on the relative change in the objective, never on the gradient, and the
+  # gradient it follows is the wrapped one above, which is zero wherever the
+  # score is not finite. So from a far start a fit could stop on those zeros
+  # (loglogistic from c(-1e5, 1): log-likelihood -4.7e6) and read as
+  # converged. Here, after any polish, a fit whose score is not finite (or
+  # errors) at the estimates is reported as not converged. A failed
+  # relative-gradient test alone is not used: no margin on it separates
+  # sound, poorly scaled fits from stuck ones, so those cases stay open
+  # under #518. The multiphase path opts out with mark_infeasible, as above.
+  if (mark_infeasible && !use_bounds && result$convergence == 0L) {
+    if (isTRUE(rel$zeroed)) {
+      unverified <- paste0(
+        if (identical(rel$reason,
+                      "the score could not be computed at the estimates")) {
+          "the score could not be computed at the estimates"
+        } else {
+          "the score is not finite at the estimates"
+        },
+        ", so the optimizer stopped on a gradient it had set to zero"
+      )
+      warning(structure(
+        class = c("hzr_unverified_convergence", "warning", "condition"),
+        list(message = paste0(
+          "The fit did not converge: ", unverified, ". The returned ",
+          "parameters are where the optimizer stopped, not a maximum of the ",
+          "likelihood. Choose starting values (`theta`) nearer the data."
+        ), call = NULL)
+      ))
+      # Not an optim() code; any non-zero code reads as not converged.
+      result$convergence <- 99L
+      result$message <- paste0(
+        if (length(result$message)) paste0(result$message, "; ") else "",
+        unverified
+      )
     }
   }
 

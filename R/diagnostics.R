@@ -1633,8 +1633,9 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   \item{n_failed}{Number of replicates that failed: the refit stopped with
 #'     an error, returned something other than a fit, returned a non-finite
 #'     objective or one at the optimizer's -1e10 sentinel (which stands in for
-#'     a likelihood that could not be evaluated), or returned a finite
-#'     objective but no parameter estimates. A single-distribution refit that
+#'     a likelihood that could not be evaluated), did not converge, or
+#'     returned a finite objective but no parameter estimates. A
+#'     single-distribution refit that
 #'     ends where the likelihood is not defined reports no objective, so it
 #'     fails as a non-finite objective, not at the sentinel (#486).}
 #'   \item{failure_reasons}{Named integer vector counting why replicates
@@ -1648,7 +1649,10 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     single-distribution refit that ends where the likelihood is not
 #'     defined, #486), or
 #'     `"objective at the optimizer's -1e10 sentinel (no log-likelihood)"`
-#'     (a refit whose reported objective is still the sentinel).
+#'     (a refit whose reported objective is still the sentinel), or
+#'     `"refit did not converge (converged = FALSE)"` (a refit that reports
+#'     `converged = FALSE`, including one stopped on a score that is not
+#'     finite, #518).
 #'     It sums to `n_failed`, and
 #'     is an empty named integer vector, never `NULL`, when none failed. When
 #'     every replicate fails, `hzr_bootstrap()` also warns, naming the most
@@ -1750,6 +1754,15 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       (is.logical(object$fit$converged) && is.na(object$fit$converged))) {
     stop("'object' has no fitted parameters. Refit with fit = TRUE.",
          call. = FALSE)
+  }
+  # Each replicate refits from the same starting values, so a fit that did
+  # not converge is likely to be reproduced, and its own estimates are not
+  # a maximum to resample around (#518).
+  if (isFALSE(object$fit$converged)) {
+    warning("hzr_bootstrap(): the fit being bootstrapped did not converge, ",
+            "so its estimates are not a maximum of the likelihood and its ",
+            "replicates refit from the same starting values. Replicates ",
+            "that do not converge are counted as failures.", call. = FALSE)
   }
 
   n_boot <- as.integer(n_boot)
@@ -2287,6 +2300,11 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       # objective to 1e10, so a fit that never had a likelihood reports
       # objective = -1e10: finite, and counted as a success before (#373).
       "objective at the optimizer's -1e10 sentinel (no log-likelihood)"
+    } else if (isFALSE(boot_fit$fit$converged)) {
+      # Replicates run with their warnings muffled, so a refit that did not
+      # converge -- including one stopped on a zeroed score (#518) -- was
+      # counted as a success and its estimates pooled.
+      "refit did not converge (converged = FALSE)"
     } else if (!is.numeric(boot_fit$fit$theta) ||
                  length(boot_fit$fit$theta) == 0L) {
       # A success with no estimates ended the run building its replicate row.

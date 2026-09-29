@@ -84,6 +84,27 @@
   warning (#513). `hzr_bootstrap()` counted such replicates as successes; they now
   fail as a non-finite objective.
 
+* **A single-distribution fit that stopped on a zeroed score no longer
+  reports `converged = TRUE` (#518).** The optimizer stops when the
+  log-likelihood stops changing, not when the gradient vanishes, and it
+  treats a score that is not finite as zero. From a far start it could stop
+  on those zeros: the loglogistic fit of `avc` from `theta = c(-1e5, 1)`
+  read as converged at log-likelihood -4727490.72, and the only warnings
+  concerned the Hessian. A fit whose score is not finite, or cannot be
+  computed, at the estimates now reports `converged = FALSE`, with a
+  warning of class `"hzr_unverified_convergence"`. The estimates,
+  log-likelihood and standard errors are still returned, as for any fit
+  that did not converge. The multiphase path is unchanged.
+  `hzr_bootstrap()` never read `converged`, and it muffles each
+  replicate's warnings, so from that start all 10 replicates counted as
+  successes, pooling a first parameter with mean -43435 where the maximum
+  is about -2.07. A replicate that does not converge now fails, with the
+  reason "refit did not converge (converged = FALSE)", and bootstrapping a
+  fit that did not converge warns. A fit that
+  stops short of the maximum with a finite score, such as the lognormal
+  from `c(1e5, 1)`, can still report `converged = TRUE`; that case remains
+  open.
+
 * **A translated `PROC HAZPRED` job now draws its bands at the level SAS
   uses: one standard error, unless `CLIMITS=` names another (#493).**
   The emitted `predict()` calls never set `level`, so they used
