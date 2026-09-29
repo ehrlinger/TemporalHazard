@@ -40,10 +40,11 @@ test_that("a maxit that is not one number of at least 1 is refused (#541)", {
   expect_true(fit_weibull(100)$fit$converged)
   # A fraction of at least 1 is truncated, as PROC HAZARD truncates MAXITER,
   # so a translated MAXITER=2.5 still runs, as maxit = 2.
-  f25 <- fit_weibull(2.5)
+  # 2.7, where rounding (3) and truncation (2) disagree.
+  f27 <- fit_weibull(2.7)
   f2 <- fit_weibull(2)
-  expect_identical(f25$fit$theta, f2$fit$theta)
-  expect_identical(f25$fit$objective, f2$fit$objective)
+  expect_identical(f27$fit$theta, f2$fit$theta)
+  expect_identical(f27$fit$objective, f2$fit$objective)
   # And 2 is not 3: the fraction was truncated, not rounded or ignored.
   expect_false(identical(fit_weibull(3)$fit$objective, f2$fit$objective))
 })

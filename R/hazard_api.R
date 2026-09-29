@@ -489,8 +489,8 @@ NULL
 #'   [stats::nlm()] under the same limit (see "Convergence"), so raising
 #'   `maxit` lets that continuation run further too. The Nelder-Mead warm-up
 #'   that a multiphase fit with fixed parameters may run first has its own
-#'   limit, which `maxit` does not change. It must be a single number of at
-#'   least 1 (a fraction is truncated, as PROC HAZARD truncates `MAXITER`):
+#'   limit, which `maxit` does not change. It must be a single finite number
+#'   of at least 1 (a fraction is truncated, as PROC HAZARD truncates `MAXITER`):
 #'   anything else stops `hazard()` at once, fitted or not (#541). A fit
 #'   with no iterations is its starting values, not an estimate; to
 #'   evaluate a model at parameters you supply, use [hzr_evaluate()].
@@ -3435,8 +3435,9 @@ vcov.hazard <- function(object, ...) {
 #' nothing, and the fit proceeds, as `stats::optim()` does for unknown
 #' `control` names. No NAME errors: an error inside a stepwise or bootstrap
 #' candidate refit would be recorded as a failed candidate, so the screen
-#' would report success having tested nothing. One VALUE does: a `maxit`
-#' below 1 (#541), refused here, where [hzr_stepwise()] validates once
+#' would report success having tested nothing. One element's VALUE does: a
+#' `maxit` that is not a single finite number of at least 1 (#541), refused
+#' here, where [hzr_stepwise()] validates once
 #' before any refit.
 #'
 #' @param control The `control` list, already known to be a list.
@@ -3511,7 +3512,7 @@ vcov.hazard <- function(object, ...) {
     # HAZARD truncates MAXITER (hazpprc.c:27), so a translated MAXITER=2.5
     # keeps its meaning.
     if (!is.numeric(m) || length(m) != 1L || !is.finite(m) || m < 1) {
-      stop("control$maxit must be a single number of at least 1 (got ",
+      stop("control$maxit must be a single finite number of at least 1 (got ",
            paste(format(m), collapse = ", "), "). A fit with no iterations ",
            "is its starting values, not an estimate: to evaluate a model at ",
            "parameters you supply, use hzr_evaluate().", call. = FALSE)
