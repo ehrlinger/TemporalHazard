@@ -318,7 +318,12 @@
   reported objective by up to 291 units. The emitted call now passes
   `objective = "sas"`, which reproduces `PROC HAZARD`'s estimates to the
   precision it prints. A note above the fit says that the value it reports
-  is `PROC HAZARD`'s objective, not a log-likelihood.
+  is `PROC HAZARD`'s objective, not a log-likelihood. Degenerate intervals
+  are resolved as `PROC HAZARD` resolves them before its fit: a lower bound
+  equal to the time makes the row an exact event, and a lower bound that is
+  missing, negative or after the time drops the row. The status chunk warns
+  with the number of rows each rule touched, and the data frame itself
+  keeps every row.
 
 # TemporalHazard 1.2.12
 

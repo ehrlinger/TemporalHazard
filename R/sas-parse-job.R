@@ -220,6 +220,8 @@
       status_name = NULL,
       time_lower = NULL,
       weights_expr = NULL,
+      keep_expr = NULL,
+      degenerate_expr = NULL,
       untranslated = .hzr_untranslated_frame(
         NA_integer_, "LCENSOR + ICENSOR",
         paste("left truncation combined with interval censoring needs a",
