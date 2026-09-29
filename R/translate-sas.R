@@ -134,7 +134,11 @@
 #' (#155). A job with `ICENSOR` is fitted with `objective = "sas"`, the
 #' interval term `PROC HAZARD` accumulates, so it reproduces `PROC HAZARD`'s
 #' estimates; the value it reports is then `PROC HAZARD`'s objective, not a
-#' log-likelihood, and a callout above the chunk says so (#543). Prediction
+#' log-likelihood, and a callout above the chunk says so (#543). Degenerate
+#' intervals are resolved as `PROC HAZARD` does before its fit: a lower bound
+#' equal to the time makes the row an exact event, and one that is missing,
+#' negative or after the time drops the row from the fit (not from your data
+#' frame); the status chunk warns with both counts. Prediction
 #' grids the parser cannot resolve are refused whole, and
 #' the `predict()` chunks that would have read such a grid become a `stop()`
 #' naming it, rather than a `predict(newdata = )` over a name no chunk

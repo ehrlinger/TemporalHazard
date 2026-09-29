@@ -184,7 +184,11 @@
 #'   may be absent if `ICENSOR` is present.
 #' @return `list(status_expr = <call>, status_name = <name|NULL>,
 #'   time_lower = <call|NULL>, weights_expr = <call|NULL>,
-#'   untranslated = <data.frame>, refused = <logical>)`. `status_expr` is
+#'   keep_expr = <call|NULL>, degenerate_expr = <call|NULL>,
+#'   untranslated = <data.frame>, refused = <logical>)`. `keep_expr` and
+#'   `degenerate_expr` are set only for an `ICENSOR` job: the rows
+#'   `readct.c` keeps, and those it turns into exact events (#543).
+#'   `status_expr` is
 #'   a `bquote()`-built call, evaluable against an environment/list holding
 #'   the named SAS variables. `time_lower` and `weights_expr`, when
 #'   non-`NULL`, are `bquote()`-built calls; `status_name` is non-`NULL` on
@@ -256,9 +260,12 @@
   if (has_icensor) {
     ctime <- as.name(statements$ICENSOR[[2L]])
     tt <- as.name(statements$TIME)
-    interval_code <- bquote(ifelse(!is.na(.(ctime)) & .(ctime) == .(tt), 1, 2))
+    # NA-safe on TIME: a missing TIME leaves the row as it was (interval,
+    # kept), for hazard() to reject with its own message, as before #543.
+    interval_code <- bquote(ifelse(!is.na(.(ctime)) & !is.na(.(tt)) &
+                                     .(ctime) == .(tt), 1, 2))
     keep_expr <- bquote(!(.(c3) > 0 & (is.na(.(ctime)) | .(ctime) < 0 |
-                                         .(ctime) > .(tt))))
+                                         (!is.na(.(tt)) & .(ctime) > .(tt)))))
   }
   expr <- if (has_event && has_icensor) {
     bquote(ifelse(.(ev) > 0, 1, ifelse(.(c3) > 0, .(interval_code), 0)))
@@ -401,7 +408,7 @@
     weights_expr = weights_expr,
     keep_expr = keep_expr,
     degenerate_expr = if (has_icensor) {
-      bquote(.(c3) > 0 & !is.na(.(ctime)) & .(ctime) == .(tt))
+      bquote(.(c3) > 0 & !is.na(.(ctime)) & !is.na(.(tt)) & .(ctime) == .(tt))
     },
     untranslated = .hzr_untranslated_frame(),
     refused = FALSE
@@ -1462,8 +1469,29 @@
   derive <- as.call(list(quote(transform), as.name(data_name),
                          cens$status_expr))
   names(derive) <- c("", "", as.character(cens$status_name))
+  # Degenerate ICENSOR bounds (readct.c, see .hzr_censor_spec()): the fit
+  # reads only the rows PROC HAZARD keeps (`args$data` below), and this
+  # column says how many rows each rule touched. The count is raised inside
+  # the transform(), so the chunk keeps its `<data> <- transform(<data>,
+  # ...)` shape, and local() binds nothing in the reader's session. The
+  # caller's data frame keeps every row.
   if (!is.null(cens$keep_expr)) {
-    derive$.hzr_keep <- cens$keep_expr
+    derive$.hzr_keep <- bquote(local({
+      .keep <- .(cens$keep_expr)
+      .n_event <- sum(.(cens$degenerate_expr))
+      .n_drop <- sum(!.keep)
+      if (.n_event > 0 || .n_drop > 0) {
+        warning("Degenerate ICENSOR intervals, resolved as PROC HAZARD ",
+                "does (readct.c): ", .n_event,
+                if (.n_event == 1) " row" else " rows",
+                " with CTIME equal to TIME fitted as exact events ",
+                "(readct.c:18-23), and ", .n_drop,
+                if (.n_drop == 1) " row" else " rows",
+                " with CTIME missing, negative or after TIME dropped from ",
+                "the fit (readct.c:9-17).", call. = FALSE)
+      }
+      .keep
+    }))
     derive$.hzr_icensor_event <- cens$degenerate_expr
   }
   status_call <- call("<-", as.name(data_name), derive)
@@ -1546,22 +1574,6 @@
   # many rows each rule touched. The caller's data frame keeps every row.
   if (!is.null(cens$keep_expr)) {
     dsym <- as.name(data_name)
-    report <- bquote({
-      .n_event <- sum(.(dsym)$.hzr_icensor_event)
-      .n_drop <- sum(!.(dsym)$.hzr_keep)
-      if (.n_event > 0 || .n_drop > 0) {
-        warning("Degenerate ICENSOR intervals, resolved as PROC HAZARD ",
-                "does (readct.c): ", .n_event,
-                if (.n_event == 1) " row" else " rows",
-                " with CTIME equal to TIME fitted as exact events ",
-                "(readct.c:18-23), and ", .n_drop,
-                if (.n_drop == 1) " row" else " rows",
-                " with CTIME missing, negative or after TIME dropped from ",
-                "the fit (readct.c:9-17).", call. = FALSE)
-      }
-    })
-    status_call <- as.call(c(as.name("{"), list(status_call),
-                             as.list(report)[-1L]))
     args$data <- bquote(.(dsym)[.(dsym)$.hzr_keep, , drop = FALSE])
   }
   args$status <- cens$status_name

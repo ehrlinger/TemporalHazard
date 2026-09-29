@@ -3191,8 +3191,8 @@ test_that("degenerate ICENSOR bounds are resolved as readct.c does, and counted 
   i <- which(D$C3 > 0)[1:3]
   out <- status_warning(D)
   expect_length(out$msgs, 1L)
-  expect_match(out$msgs, "1 row", fixed = TRUE)
-  expect_match(out$msgs, "2 rows", fixed = TRUE)
+  expect_match(out$msgs, ": 1 row with CTIME equal to TIME", fixed = TRUE)
+  expect_match(out$msgs, "and 2 rows with CTIME missing", fixed = TRUE)
   expect_match(out$msgs, "readct.c", fixed = TRUE)
   # The recoded row is an exact event, the dropped rows are gone from the
   # fit, and nothing else is.
@@ -3209,6 +3209,15 @@ test_that("degenerate ICENSOR bounds are resolved as readct.c does, and counted 
   out <- status_warning(.p543_data(5, 0.5, "none"))
   expect_length(out$msgs, 0L)
   expect_true(all(out$D$.hzr_keep))
+  # A missing TIME on an interval row is neither rule: the row is kept for
+  # hazard() to reject with its own message (r-reviewer on #543).
+  D <- .p543_data(5, 0.5, "none")
+  D$TT[which(D$C3 > 0)[1]] <- NA
+  out <- status_warning(D)
+  expect_length(out$msgs, 0L)
+  expect_true(all(out$D$.hzr_keep))
+  # The corpus oracle can still read an ICENSOR job's chunks.
+  expect_true(is.list(sas_synth_data(job)))
 })
 
 test_that("the translated document says the ICENSOR objective is not a log-likelihood (#543)", {

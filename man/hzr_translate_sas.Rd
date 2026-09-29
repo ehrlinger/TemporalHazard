@@ -108,7 +108,11 @@ combined with \code{ICENSOR}, which one \code{time_lower} argument cannot expres
 (#155). A job with \code{ICENSOR} is fitted with \code{objective = "sas"}, the
 interval term \verb{PROC HAZARD} accumulates, so it reproduces \verb{PROC HAZARD}'s
 estimates; the value it reports is then \verb{PROC HAZARD}'s objective, not a
-log-likelihood, and a callout above the chunk says so (#543). Prediction
+log-likelihood, and a callout above the chunk says so (#543). Degenerate
+intervals are resolved as \verb{PROC HAZARD} does before its fit: a lower bound
+equal to the time makes the row an exact event, and one that is missing,
+negative or after the time drops the row from the fit (not from your data
+frame); the status chunk warns with both counts. Prediction
 grids the parser cannot resolve are refused whole, and
 the \code{predict()} chunks that would have read such a grid become a \code{stop()}
 naming it, rather than a \code{predict(newdata = )} over a name no chunk
