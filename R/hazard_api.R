@@ -864,7 +864,8 @@ hazard <- function(formula = NULL,
   # `objective` is a top-level argument rather than a `control` element on
   # purpose: it changes the estimand, and burying that among convergence
   # tolerances makes it easy to miss in review.
-  if (objective == "sas" && dist != "multiphase") {
+  # identical(): this runs before `dist` is validated.
+  if (objective == "sas" && !identical(dist, "multiphase")) {
     stop("objective = \"sas\" applies only to dist = \"multiphase\": it ",
          "reproduces PROC HAZARD's interval-censored contribution, and no ",
          "other distribution here is a PROC HAZARD target. Got dist = \"",
@@ -1368,7 +1369,10 @@ hazard <- function(formula = NULL,
          ".", call. = FALSE)
   }
 
-  if (!is.character(dist) || length(dist) != 1 || !nzchar(dist)) {
+  # is.na(): nzchar(NA) is TRUE, so an NA `dist` passed and failed later on
+  # `dist != "multiphase"` with a base-R message.
+  if (!is.character(dist) || length(dist) != 1 || is.na(dist) ||
+        !nzchar(dist)) {
     stop("'dist' must be a non-empty character scalar.", call. = FALSE)
   }
 

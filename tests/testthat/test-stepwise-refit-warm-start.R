@@ -377,12 +377,32 @@ test_that("a theta forwarded to a refit is refused by name", {
 })
 
 test_that("the multiphase theta-length exemption is safe for a bad `dist`", {
-  # The exemption is read before `dist` is validated, so an NA must reach
-  # hazard()'s own message, not a base-R "missing value" error.
+  # The exemption is read before `dist` is validated, so an NA or a `dist`
+  # of the wrong length must reach hazard()'s own message, not a base-R
+  # error. An NA also passed that validation (nzchar(NA) is TRUE).
   expect_error(
     hazard(time = c(1, 2, 3), status = c(1, 0, 1),
            x = matrix(c(0.1, 0.2, 0.3), ncol = 1),
            dist = NA_character_, theta = c(0, 0, 0), fit = TRUE),
+    "'dist' must be a non-empty character scalar"
+  )
+  # objective = "sas" is checked before `dist` is validated too.
+  expect_error(
+    hazard(time = c(1, 2, 3), status = c(1, 0, 1),
+           dist = NA_character_, objective = "sas", fit = FALSE),
+    "applies only to dist"
+  )
+  expect_error(
+    hazard(time = c(1, 2, 3), status = c(1, 0, 1),
+           x = matrix(c(0.1, 0.2, 0.3), ncol = 1),
+           dist = character(0), theta = c(0, 0, 0), fit = TRUE),
+    "'dist' must be a non-empty character scalar"
+  )
+  expect_error(
+    hazard(time = c(1, 2, 3), status = c(1, 0, 1),
+           x = matrix(c(0.1, 0.2, 0.3), ncol = 1),
+           dist = c("multiphase", "weibull"), theta = c(0, 0, 0),
+           fit = TRUE),
     "'dist' must be a non-empty character scalar"
   )
 })
