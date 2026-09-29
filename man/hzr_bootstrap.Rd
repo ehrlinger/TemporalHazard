@@ -153,8 +153,11 @@ automatically, so a candidate reaching this count is one whose refit
 also failed and which therefore went untested, understating its
 selection frequency. Under \code{criterion = "aic"}, \code{rows_differ} and
 \code{loglik_below_base} mark entries a replicate declined without
-comparing them, which count as not selected; a warning gives how many
-replicates completed after doing so. Empty in refit mode.}
+comparing them. Such an entry counts as not selected unless a later
+step of the same replicate tested and entered it, so these can
+understate a selection frequency; a warning gives how many replicates
+completed after declining one. The tally counts attempts, not
+distinct candidates. Empty in refit mode.}
 \item{n_nonmonotone_replicates}{Select mode only: number of otherwise
 successful replicates in which a forward step \emph{lowered} the
 log-likelihood. Entered models are nested, so this cannot occur at the

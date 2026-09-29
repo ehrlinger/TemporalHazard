@@ -1677,8 +1677,11 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     also failed and which therefore went untested, understating its
 #'     selection frequency. Under `criterion = "aic"`, `rows_differ` and
 #'     `loglik_below_base` mark entries a replicate declined without
-#'     comparing them, which count as not selected; a warning gives how many
-#'     replicates completed after doing so. Empty in refit mode.}
+#'     comparing them. Such an entry counts as not selected unless a later
+#'     step of the same replicate tested and entered it, so these can
+#'     understate a selection frequency; a warning gives how many replicates
+#'     completed after declining one. The tally counts attempts, not
+#'     distinct candidates. Empty in refit mode.}
 #'   \item{n_nonmonotone_replicates}{Select mode only: number of otherwise
 #'     successful replicates in which a forward step *lowered* the
 #'     log-likelihood. Entered models are nested, so this cannot occur at the
@@ -2547,7 +2550,8 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   if (n_declined_reps > 0L) {
     warning(n_declined_reps, " of ", n_success, " successful replicates ",
             "completed after declining a candidate entry without testing it, ",
-            "and the candidate counts as not selected.",
+            "so unless a later step tested and entered it, it counts as not ",
+            "selected and its selection frequency may be understated.",
             .hzr_format_reasons(declined_reasons),
             " See `$uncomputable_reasons`.",
             call. = FALSE)
