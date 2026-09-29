@@ -88,10 +88,14 @@
 invisibly. The data frame has one row per risk group and columns:
 <code>group</code> (integer group index, 1 = lowest risk),
 <code>n</code> (group size),
-<code>events</code> (observed event count),
-<code>expected</code> (expected event count from model predictions),
-<code>observed_rate</code>, <code>expected_rate</code> (events / n),
-<code>chi_sq</code> (per-group (O-E)^2/E contribution),
+<code>events</code> (observed event count; weighted for a weighted fit),
+<code>expected</code> (expected event count from model predictions, net of
+any entry time, and weighted as <code>events</code> is),
+<code>observed_rate</code>, <code>expected_rate</code> (events / n; per unit of
+case weight for a weighted fit, and <code>NA</code> for a group whose weights
+sum to 0),
+<code>chi_sq</code> (per-group (O-E)^2/V contribution, where V is the Poisson
+variance of the weighted count, equal to E for an unweighted fit),
 <code>p_value</code> (1-df chi-square upper-tail p),
 <code>mean_survival</code>, <code>mean_cumhaz</code> (mean predicted values in group).
 An <code>"overall"</code> attribute contains the omnibus chi-square test

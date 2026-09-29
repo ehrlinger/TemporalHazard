@@ -52,24 +52,32 @@ A data frame with one row per risk group and columns:
 
 - events:
 
-  Observed event count in the group (all events over follow-up).
+  Observed event count in the group (all events over follow-up),
+  weighted by the case weights for a weighted fit.
 
 - expected:
 
   Expected event count: the sum of each subject's predicted cumulative
-  hazard at its own follow-up time.
+  hazard at its own follow-up time, minus its value at its entry time
+  when it has one, weighted by the case weights for a weighted fit.
 
 - observed_rate:
 
-  Observed event rate (events / n).
+  Observed event rate (events / n; for a weighted fit, events per unit
+  of case weight).
 
 - expected_rate:
 
-  Expected event rate (expected / n).
+  Expected event rate (expected / n; for a weighted fit, per unit of
+  case weight).
 
 - chi_sq:
 
-  Chi-square contribution: (events - expected)^2 / expected.
+  Chi-square contribution: (events - expected)^2 / expected. For a
+  weighted fit the denominator is the Poisson variance of the weighted
+  count, the sum of each subject's squared weight times its cumulative
+  hazard, so the statistic does not change when every weight is
+  multiplied by the same constant.
 
 - p_value:
 
@@ -81,7 +89,9 @@ A data frame with one row per risk group and columns:
 
 - mean_cumhaz:
 
-  Mean predicted cumulative hazard at follow-up in the group.
+  Mean predicted cumulative hazard at follow-up in the group:
+  unweighted, and without the entry-time correction, so for a
+  left-truncated or weighted fit it is not `expected / n`.
 
 An attribute `"overall"` is attached with the overall chi-square
 statistic, degrees of freedom, and p-value.
@@ -94,9 +104,15 @@ equal-sized risk groups. Within each group the **expected** event count
 is the sum of each subject's predicted cumulative hazard at its *own*
 follow-up time, and the **observed** count is its number of events;
 under conservation of events the group totals sum to the total observed
-events. The horizon therefore only stratifies subjects into risk groups;
-it does not restrict or exclude any subject, and the expected/observed
-totals are independent of it.
+events. A subject with an entry time (`time_lower` on a left-truncated
+fit) is at risk only after it, so it contributes its cumulative hazard
+at exit minus its value at entry. For a weighted fit both counts carry
+the case weights, since such a fit conserves weighted events. Both
+follow
+[`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md).
+The horizon therefore only stratifies subjects into risk groups; it does
+not restrict or exclude any subject, and the expected/observed totals
+are independent of it.
 
 ## See also
 
