@@ -435,9 +435,11 @@
   # with SYNTAX (tests/testthat/fixtures/paren-reset-oracle.csv); the split
   # below dropped them without a word (#461 review). A macro reference can
   # hide what an item is, not whether a `,` has an item beside it, so a
-  # macro elsewhere in the statement exempts nothing: the empty item is
-  # empty text whatever the macro expands to (#479). A statement that is a
-  # macro and nothing else is not judged. The variables that are there are
+  # macro elsewhere in the statement no longer exempts the check: no plain
+  # variable fills the empty item (#479). (A macro that expands to `;` and
+  # a comment could still absorb what follows it, which this translation
+  # does not model.) A statement that is a macro and nothing else is not
+  # judged. The variables that are there are
   # unambiguous, so it takes the #440 route, warn and fit, rather than the
   # #340 stop (U1 ruling, 2026-09-22).
   empty_item <- syntax_error(paste(
@@ -446,7 +448,11 @@
     "(yyerror.c:19)"))
   for (piece in x) {
     t <- trimws(piece)
-    if (!nzchar(t) || grepl("^,|,$|,[[:space:]]*,", t)) {
+    # A macro call's own arguments are the macro processor's, and an empty
+    # one is valid SAS (`%F(A,,B)`), so its span is set aside first.
+    t_items <- gsub("%[A-Z_][A-Z0-9_]*[[:space:]]*[(][^()]*[)]", "%CALL",
+                    t, ignore.case = TRUE)
+    if (!nzchar(t) || grepl("^,|,$|,[[:space:]]*,", t_items)) {
       shown <- if (nzchar(t)) t else "(no variable)"
       bad(shown, empty_item)
       not_a_name <- c(not_a_name, paste0(shown, ": ", empty_item))

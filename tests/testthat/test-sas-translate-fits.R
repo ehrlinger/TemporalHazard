@@ -3126,7 +3126,8 @@ test_that("a macro does not exempt an empty phase item (#479)", {
     suppressWarnings(hzr_translate_sas(f))
   }
   for (ph in c("EARLY , &X;", "EARLY SEX,, &X;", "EARLY &X, ;",
-               "EARLY &X,,AGE;", "CONSTANT SEX,, &X;")) {
+               "EARLY &X,,AGE;", "CONSTANT SEX,, &X;", "EARLY , %X;",
+               "EARLY , %F(A,B);")) {
     job <- job_for(ph)
     expect_false(is.null(.u1_refusal_chunk(job)), info = ph)
     expect_match(.u1_msg(job), "hazard_y.y:206-207", fixed = TRUE, info = ph)
@@ -3134,11 +3135,16 @@ test_that("a macro does not exempt an empty phase item (#479)", {
                       grepl("206-207", job$untranslated$reason, fixed = TRUE)),
                 info = ph)
   }
-  # Controls: a macro item, alone or beside a variable, is a whole item.
-  for (ph in c("EARLY &X;", "EARLY AGE, &X;", "EARLY &X, AGE;")) {
+  # Controls: a macro item, alone or beside a variable, is a whole item, and
+  # a macro call's own arguments, empty ones included, are the macro's.
+  for (ph in c("EARLY &X;", "EARLY AGE, &X;", "EARLY &X, AGE;",
+               "EARLY %F(A,B);", "EARLY %F(A,,B);", "EARLY %F(A, ,B), &X;")) {
     job <- job_for(ph)
     expect_null(.u1_refusal_chunk(job), info = ph)
     expect_false(any(grepl("206-207", job$untranslated$reason, fixed = TRUE)),
                  info = ph)
   }
+  # A later `(` clears the flag, and the warning says so (#461).
+  expect_match(.u1_msg(job_for("EARLY , &X; LATE LOG();")),
+               "clears its syntax-error flag", fixed = TRUE)
 })
