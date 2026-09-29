@@ -1675,7 +1675,10 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     at zero, typically strong variables. Those are refit and Wald-tested
 #'     automatically, so a candidate reaching this count is one whose refit
 #'     also failed and which therefore went untested, understating its
-#'     selection frequency. Empty in refit mode.}
+#'     selection frequency. Under `criterion = "aic"`, `rows_differ` and
+#'     `loglik_below_base` mark entries a replicate declined without
+#'     comparing them, which count as not selected; a warning gives how many
+#'     replicates completed after doing so. Empty in refit mode.}
 #'   \item{n_nonmonotone_replicates}{Select mode only: number of otherwise
 #'     successful replicates in which a forward step *lowered* the
 #'     log-likelihood. Entered models are nested, so this cannot occur at the
@@ -2184,6 +2187,12 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # replicate that converged, and every replicate runs under
   # suppressWarnings() so the step-level warning cannot reach the user.
   n_nonmonotone_reps <- 0L
+  # Completed replicates whose AIC screen declined an entry it could not
+  # compare: a refit on other rows (#488) or one that ended below its base
+  # (#490). hzr_stepwise() warns about each, but not from inside a replicate,
+  # and the candidate is pooled as not selected.
+  declined_codes <- c("rows_differ", "loglik_below_base")
+  n_declined_reps <- 0L
   # Replicates in which the score criterion declined a candidate it could not
   # score and the Wald fallback tested it instead. The fallback is a different
   # criterion, so a run where it fired everywhere selected on Wald while
@@ -2327,6 +2336,11 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
         uncomputable_reasons <- .hzr_merge_reasons(
           uncomputable_reasons, boot_fit$criteria$uncomputable_reasons
         )
+        rep_reasons <- boot_fit$criteria$uncomputable_reasons
+        if (!isTRUE(boot_fit$criteria$stopped_uncomputable) &&
+              sum(rep_reasons[names(rep_reasons) %in% declined_codes]) > 0L) {
+          n_declined_reps <- n_declined_reps + 1L
+        }
         if (isTRUE((boot_fit$criteria$n_nonmonotone_entries %||% 0L) > 0L)) {
           n_nonmonotone_reps <- n_nonmonotone_reps + 1L
         }
@@ -2522,6 +2536,16 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
             "they selected afterwards are in the pooled frequencies on the ",
             "same footing as everything else. See ",
             "`$n_nonmonotone_replicates`.", call. = FALSE)
+  }
+
+  if (n_declined_reps > 0L) {
+    declined <- uncomputable_reasons[names(uncomputable_reasons) %in%
+                                       declined_codes]
+    warning(n_declined_reps, " of ", n_success, " successful replicates ",
+            "completed after declining a candidate entry without testing it, ",
+            "and the candidate counts as not selected.",
+            .hzr_format_reasons(declined), " See `$uncomputable_reasons`.",
+            call. = FALSE)
   }
 
   if (n_wald_fallback_reps > 0L) {

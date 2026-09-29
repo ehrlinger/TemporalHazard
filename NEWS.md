@@ -15,6 +15,10 @@
   `$criteria$n_uncomputable_scores` under the reason `loglik_below_base`,
   and `hzr_stepwise()` warns that it declined it without testing it. More
   starting points or iterations may let the refit converge.
+  `hzr_bootstrap()` in select mode muffles each replicate's warnings, so it
+  now warns itself when replicates completed after declining an entry this
+  way, or for being fitted on other rows (#488): such a candidate counts as
+  not selected in the pooled frequencies.
 
 * **`hzr_stepwise()` now says when a step changes the rows the model is
   fitted on (#519).** A multiphase fit drops every row where a variable in

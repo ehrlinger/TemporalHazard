@@ -151,7 +151,10 @@ candidates whose effect is too large for the score test's approximation
 at zero, typically strong variables. Those are refit and Wald-tested
 automatically, so a candidate reaching this count is one whose refit
 also failed and which therefore went untested, understating its
-selection frequency. Empty in refit mode.}
+selection frequency. Under \code{criterion = "aic"}, \code{rows_differ} and
+\code{loglik_below_base} mark entries a replicate declined without
+comparing them, which count as not selected; a warning gives how many
+replicates completed after doing so. Empty in refit mode.}
 \item{n_nonmonotone_replicates}{Select mode only: number of otherwise
 successful replicates in which a forward step \emph{lowered} the
 log-likelihood. Entered models are nested, so this cannot occur at the

@@ -108,3 +108,61 @@ test_that("an AIC screen of only such a candidate stops untested (#490)", {
   expect_length(stop_msg, 1L)
   expect_match(stop_msg, "below the current model's", fixed = TRUE)
 })
+
+# hzr_bootstrap() runs each replicate's screen with its warnings muffled, so a
+# replicate that completed after declining an entry pooled that candidate as
+# not selected, and the warning above never reached the user. The screen's
+# result is marked here so the count is deterministic.
+.aic_below_boot <- function(fx, mark, stopped = FALSE) {
+  orig_sw <- hzr_stepwise
+  local_mocked_bindings(
+    hzr_stepwise = function(...) {
+      r <- orig_sw(...)
+      if (mark) {
+        r$criteria$uncomputable_reasons <- .hzr_merge_reasons(
+          r$criteria$uncomputable_reasons, c(loglik_below_base = 1L)
+        )
+        if (stopped) r$criteria$stopped_uncomputable <- TRUE
+      }
+      r
+    }
+  )
+  msgs <- character()
+  boot <- withCallingHandlers(
+    hzr_bootstrap(fx$fit, n_boot = 2, seed = 1,
+                  scope = list(constant = ~ mal), direction = "forward",
+                  criterion = "aic", control = fx$control),
+    warning = function(w) {
+      msgs <<- c(msgs, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
+  )
+  list(boot = boot, msgs = msgs)
+}
+
+test_that("hzr_bootstrap() warns about replicates that declined an entry", {
+  skip_on_cran()
+  fx <- .aic_below_fixture()
+  pat <- "successful replicates completed after declining a candidate entry"
+  # Known negative: unmarked replicates decline nothing and do not warn.
+  plain <- .aic_below_boot(fx, mark = FALSE)
+  expect_equal(plain$boot$n_success, 2L)
+  expect_false(any(grepl(pat, plain$msgs, fixed = TRUE)))
+
+  marked <- .aic_below_boot(fx, mark = TRUE)
+  expect_equal(marked$boot$n_success, 2L)
+  expect_equal(marked$boot$n_uncomputable_replicates, 0L)
+  # The up-front screen on the real data is marked too, so count >= 2.
+  expect_gte(marked$boot$uncomputable_reasons[["loglik_below_base"]], 2L)
+  hit <- grep(pat, marked$msgs, fixed = TRUE, value = TRUE)
+  expect_length(hit, 1L)
+  expect_match(hit, "^2 of 2 successful replicates")
+  expect_match(hit, "below the current model's", fixed = TRUE)
+
+  # A replicate that stopped is reported by the stop warning, not twice.
+  halted <- .aic_below_boot(fx, mark = TRUE, stopped = TRUE)
+  expect_equal(halted$boot$n_uncomputable_replicates, 2L)
+  expect_false(any(grepl(pat, halted$msgs, fixed = TRUE)))
+  expect_true(any(grepl("2 of 2 successful replicates stopped",
+                        halted$msgs, fixed = TRUE)))
+})
