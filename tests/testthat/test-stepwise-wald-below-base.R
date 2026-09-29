@@ -55,6 +55,7 @@ test_that("a Wald entry refuses a refit that ends below its base (#538)", {
                             candidate = low, names = nm)
   expect_true(is.na(s$score))
   expect_true(is.na(s$p_value))
+  expect_true(is.na(s$stat))
   expect_identical(s$reason, "loglik_below_base")
 
   # Optimizer noise is not a failed refit.
@@ -139,4 +140,42 @@ test_that("the score criterion's Wald fallback refuses it too (#538)", {
   declined <- grep("declined 1 candidate entry without testing", out$msgs,
                    fixed = TRUE, value = TRUE)
   expect_length(declined, 1L)
+})
+
+# The latest step decides whether an entry is listed as untested for want of
+# a variance. A variable with no variance at one step and refused below its
+# base at the next was left on that list, and warned about with the wrong
+# cause. The two steps' outcomes are marked here so the sequence is exact.
+test_that("a later below-base refusal clears an earlier variance entry", {
+  skip_on_cran()
+  fx <- .wald_below_fixture()
+  orig_fs <- .hzr_stepwise_forward_step
+  n_call <- 0L
+  local_mocked_bindings(.hzr_stepwise_forward_step = function(...) {
+    r <- orig_fs(...)
+    n_call <<- n_call + 1L
+    age <- r$all_scores$variable == "age"
+    if (n_call == 1L) {
+      # Step 1: age's Wald test had no variance; mal enters.
+      r$all_scores$score[age] <- NA_real_
+    } else {
+      # Step 2: age's refit ended below its base, and nothing enters.
+      r$all_scores$score[age] <- NA_real_
+      r$all_scores$reason[age] <- "loglik_below_base"
+      r$accepted <- FALSE
+      r$fit <- list(...)$current
+      r$n_uncomputable <- 1L
+      r$uncomputable_reasons <- c(loglik_below_base = 1L)
+    }
+    r
+  })
+  out <- .wald_below_screen(fx, scope = list(early = ~ age + mal),
+                            criterion = "wald")
+  # The sequence ran as intended: mal entered at step 1, and step 2 ran.
+  expect_equal(n_call, 2L)
+  expect_equal(out$sw$steps$variable, "mal")
+  expect_length(out$sw$criteria$wald_untested_entries, 0L)
+  expect_false(any(grepl("without a Wald test", out$msgs, fixed = TRUE)))
+  expect_true(any(grepl("declined 1 candidate entry without testing",
+                        out$msgs, fixed = TRUE)))
 })
