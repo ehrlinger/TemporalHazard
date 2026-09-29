@@ -20,6 +20,20 @@
   way, or for being fitted on other rows (#488). Unless a later step of the
   replicate tested and entered it, such a candidate counts as not selected,
   so its pooled selection frequency may be understated.
+* **`hzr_evaluate()` no longer returns a curve at a `theta` its likelihood
+  cannot evaluate, and says when its `logLik` is the SAS objective
+  (#503).** Where the log-likelihood came back as `-Inf` with a warning,
+  the `curve` asked for with `times` was still computed, and its shape
+  functions have no such guard. At a g3 `log_tau` of 800 the late phase
+  switched itself off there, so `cumulative_hazard` was finite and
+  plausible (0.019, 0.087 and 0.295 at times 0.1, 1 and 10). The curve's
+  `hazard` and `cumulative_hazard` are now `NA` wherever `logLik` is
+  `-Inf`, and the warning, class `hzr_evaluate_not_finite`, says so. A
+  model built with `objective = "sas"` scored its interval-censored rows
+  with PROC HAZARD's interval-mean-hazard term, and the result called that
+  value the log-likelihood. The result now carries `objective`, and
+  `print()` labels such a value as the SAS objective, not a
+  log-likelihood.
 
 * **`hzr_stepwise()` now says when a step changes the rows the model is
   fitted on (#519).** A multiphase fit drops every row where a variable in
