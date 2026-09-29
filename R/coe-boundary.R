@@ -57,6 +57,14 @@
   left <- .hzr_multiphase_cumhaz(time, off, phases, covariate_counts, x_list,
                                  per_phase = TRUE)[[fixmu_phase]]
   if (any(!is.finite(left)) || any(left != 0)) return(NULL)
+  # The event hazard too: a shaped phase's cumulative hazard can underflow
+  # where its hazard does not. Identical to the hazard with no such phase.
+  none <- off
+  none[[fixmu_pos]] <- -Inf
+  h_off <- .hzr_multiphase_hazard(time, off, phases, covariate_counts, x_list)
+  h_none <- .hzr_multiphase_hazard(time, none, phases, covariate_counts,
+                                   x_list)
+  if (!isTRUE(all(h_off == h_none))) return(NULL)
   candidates <- list(off)
 
   # The other phases rescaled together so the events are conserved again,

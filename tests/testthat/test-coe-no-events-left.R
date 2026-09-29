@@ -129,6 +129,26 @@ test_that("only the certificate fires, past its margin, on a converged value (#2
     pos1, phases, counts1, xl1, d$time, d$status, NULL, NULL,
     sum(d$status == 1)))
 
+  # Nor where the phase's cumulative hazard underflows to 0 but its event
+  # hazard does not: a linear predictor of 9300 leaves mu = exp(-700), whose
+  # cumulative hazard at times near 1e-30 is 0 while its hazard is not.
+  # The other phases are switched off too, so nothing masks that hazard.
+  xl2 <- list(early = NULL, constant = matrix(9300, length(d$time), 1L),
+              late = NULL)
+  th2 <- th1
+  th2[c(pos1[["early"]], pos1[["late"]])] <- -1e4
+  expect_null(.hzr_coe_boundary_record(
+    th2, value, TRUE, function(p) value + 1, "constant", pos1[["constant"]],
+    pos1, phases, counts1, xl2, d$time * 1e-30, d$status, NULL, NULL,
+    sum(d$status == 1)))
+
+  # And the converse: at very late times the same phase's hazard is lost
+  # beside the others', but its cumulative hazard is not.
+  expect_null(.hzr_coe_boundary_record(
+    th1, value, TRUE, function(p) value + 1, "constant", pos1[["constant"]],
+    pos1, phases, counts1, xl2, d$time * 1e300, d$status, NULL, NULL,
+    sum(d$status == 1)))
+
   # The held-only point is scored too: with the rescaled one refused, it
   # alone still certifies here.
   expect_false(is.null(record(held_only)))
