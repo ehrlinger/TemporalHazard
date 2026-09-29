@@ -375,3 +375,14 @@ test_that("a theta forwarded to a refit is refused by name", {
     "`theta` cannot be passed to a stepwise refit"
   )
 })
+
+test_that("the multiphase theta-length exemption is safe for a bad `dist`", {
+  # The exemption is read before `dist` is validated, so an NA must reach
+  # hazard()'s own message, not a base-R "missing value" error.
+  expect_error(
+    hazard(time = c(1, 2, 3), status = c(1, 0, 1),
+           x = matrix(c(0.1, 0.2, 0.3), ncol = 1),
+           dist = NA_character_, theta = c(0, 0, 0), fit = TRUE),
+    "'dist' must be a non-empty character scalar"
+  )
+})

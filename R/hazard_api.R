@@ -1309,7 +1309,9 @@ hazard <- function(formula = NULL,
     # (#551). An unfitted multiphase object keeps the bound it had, which
     # can refuse a theta of the right length there (#558).
     required_coef <- if (is.null(x_fit)) 0L else ncol(x_fit)
-    if (!(dist == "multiphase" && fit) && !is.null(x_fit) &&
+    # Scalar-safe: `dist` is validated further down, so an NA or a vector
+    # must not fail here with a base-R message.
+    if (!(identical(dist, "multiphase") && isTRUE(fit)) && !is.null(x_fit) &&
           length(theta) < required_coef) {
       stop("'theta' length must be >= number of required coefficients (", required_coef, ").", call. = FALSE)
     }
