@@ -279,7 +279,10 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
       # fits data SAS did not fit, so stop here -- ahead of the status chunk,
       # which writes into the same data frame. The scan resumes where the
       # last one ended, so one rewrite stops once however many fits follow.
-      dname <- if (is.null(r$call[["data"]])) NULL else as.character(r$call[["data"]])
+      # The data argument is the dataset's name, or for an ICENSOR job the
+      # rows of it PROC HAZARD keeps (`D[D$.hzr_keep, , drop = FALSE]`, #543).
+      dname <- if (is.null(r$call[["data"]])) NULL else
+        all.vars(r$call[["data"]])[[1L]]
       if (!is.null(dname) && !is.null(repeat_scan[[dname]])) {
         rs <- .hzr_rewrite_stops(substring(txt, repeat_scan[[dname]] + 1L, b$start - 1L), dname)
         for (cl in rs$calls) calls[[.hzr_next_call_name(calls, "rewrite")]] <- cl

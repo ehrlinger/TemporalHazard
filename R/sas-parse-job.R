@@ -243,12 +243,27 @@
   # interval-censored, a different likelihood branch (#157). RCENSOR adds no
   # branch of its own -- C2 > 0 is right-censoring, code 0, which is already
   # this expression's fallback. It changes the row's WEIGHT, not its status.
+  # readct.c resolves a degenerate interval before the fit, on a row with
+  # C3 > 0 (#543): CTIME == TIME makes it an exact event, C1 = C1 + C3 and
+  # C3 = CT = 0 (readct.c:18-23), and a missing, negative or greater-than-TIME
+  # CTIME deletes the row (readct.c:9-17). The status below mirrors the
+  # first; `keep_expr` mirrors the second, and the fit reads only the rows it
+  # keeps. hazard() itself refuses both shapes under objective = "sas".
+  interval_code <- 2
+  keep_expr <- NULL
+  if (has_icensor) {
+    ctime <- as.name(statements$ICENSOR[[2L]])
+    tt <- as.name(statements$TIME)
+    interval_code <- bquote(ifelse(!is.na(.(ctime)) & .(ctime) == .(tt), 1, 2))
+    keep_expr <- bquote(!(.(c3) > 0 & (is.na(.(ctime)) | .(ctime) < 0 |
+                                         .(ctime) > .(tt))))
+  }
   expr <- if (has_event && has_icensor) {
-    bquote(ifelse(.(ev) > 0, 1, ifelse(.(c3) > 0, 2, 0)))
+    bquote(ifelse(.(ev) > 0, 1, ifelse(.(c3) > 0, .(interval_code), 0)))
   } else if (has_event) {
     bquote(ifelse(.(ev) > 0, 1, 0))
   } else {
-    bquote(ifelse(.(c3) > 0, 2, 0))
+    bquote(ifelse(.(c3) > 0, .(interval_code), 0))
   }
 
   # The weight is the row's own count times the WEIGHT variable on event and
@@ -366,7 +381,6 @@
   status_name <- as.name(".hzr_status")
   time_lower <- NULL
   if (has_icensor) {
-    ctime <- as.name(statements$ICENSOR[[2L]])
     # Status-gated, not unconditional (see roxygen): interval rows get the
     # interval's lower bound (CTIME); every other row falls back to
     # hazard()'s own entry-time default (0). LCENSOR cannot be present here
@@ -383,6 +397,10 @@
     status_name = status_name,
     time_lower = time_lower,
     weights_expr = weights_expr,
+    keep_expr = keep_expr,
+    degenerate_expr = if (has_icensor) {
+      bquote(.(c3) > 0 & !is.na(.(ctime)) & .(ctime) == .(tt))
+    },
     untranslated = .hzr_untranslated_frame(),
     refused = FALSE
   )
@@ -1442,6 +1460,10 @@
   derive <- as.call(list(quote(transform), as.name(data_name),
                          cens$status_expr))
   names(derive) <- c("", "", as.character(cens$status_name))
+  if (!is.null(cens$keep_expr)) {
+    derive$.hzr_keep <- cens$keep_expr
+    derive$.hzr_icensor_event <- cens$degenerate_expr
+  }
   status_call <- call("<-", as.name(data_name), derive)
   # Variables in some fitted phase formula: hazard() drops their missing rows
   # itself. Read by the listwise guard and the column check below.
@@ -1516,6 +1538,29 @@
     # a job whose variables were all present (#396 review).
     status_call <- as.call(c(as.name("{"), as.list(present)[-1L],
                              list(status_call)))
+  }
+  # Degenerate ICENSOR bounds (readct.c, see .hzr_censor_spec()): the fit
+  # reads only the rows PROC HAZARD keeps, and the status chunk says how
+  # many rows each rule touched. The caller's data frame keeps every row.
+  if (!is.null(cens$keep_expr)) {
+    dsym <- as.name(data_name)
+    report <- bquote({
+      .n_event <- sum(.(dsym)$.hzr_icensor_event)
+      .n_drop <- sum(!.(dsym)$.hzr_keep)
+      if (.n_event > 0 || .n_drop > 0) {
+        warning("Degenerate ICENSOR intervals, resolved as PROC HAZARD ",
+                "does (readct.c): ", .n_event,
+                if (.n_event == 1) " row" else " rows",
+                " with CTIME equal to TIME fitted as exact events ",
+                "(readct.c:18-23), and ", .n_drop,
+                if (.n_drop == 1) " row" else " rows",
+                " with CTIME missing, negative or after TIME dropped from ",
+                "the fit (readct.c:9-17).", call. = FALSE)
+      }
+    })
+    status_call <- as.call(c(as.name("{"), list(status_call),
+                             as.list(report)[-1L]))
+    args$data <- bquote(.(dsym)[.(dsym)$.hzr_keep, , drop = FALSE])
   }
   args$status <- cens$status_name
   if (!is.null(cens$time_lower)) args$time_lower <- cens$time_lower

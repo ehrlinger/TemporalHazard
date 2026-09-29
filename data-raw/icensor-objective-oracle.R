@@ -32,7 +32,28 @@ parms <- c(
   "PARMS MUE=0.3 THALF=0.5 NU=1 M=1 MUC=0.005 FIXTHALF FIXNU FIXM;"
 )
 grid <- expand.grid(model = seq_along(parms), every = c(5, 3),
-                    width = c(0.5, 0.2, 0.9))
+                    width = c(0.5, 0.2, 0.9), degenerate = "none",
+                    weighted = FALSE, stringsAsFactors = FALSE)
+# Degenerate interval bounds, which readct.c resolves before the fit: on an
+# ICENSOR row (C3 > 0) a missing, negative or greater-than-TIME CTIME deletes
+# the row (readct.c:9-17), and CTIME == TIME makes it an exact event with
+# C1 = C1 + C3 (readct.c:18-23). Each case edits the first three interval
+# rows, alone and mixed, with and without WEIGHT.
+grid <- rbind(grid, expand.grid(
+  model = c(1L, 3L), every = 5, width = 0.5,
+  degenerate = c("eq", "gt", "na", "neg", "mixed"), weighted = c(FALSE, TRUE),
+  stringsAsFactors = FALSE))
+
+degenerate_rows <- function(D, how) {
+  i <- which(D$C3 > 0)[1:3]
+  switch(how,
+    none = D,
+    eq = { D$TL[i] <- D$TT[i]; D },
+    gt = { D$TL[i] <- D$TT[i] * 1.5; D },
+    na = { D$TL[i] <- NA; D },
+    neg = { D$TL[i] <- -1; D },
+    mixed = { D$TL[i] <- c(D$TT[i[1]], D$TT[i[2]] * 1.5, NA); D })
+}
 
 rows <- lapply(seq_len(nrow(grid)), function(k) {
   g <- grid[k, ]
@@ -40,8 +61,10 @@ rows <- lapply(seq_len(nrow(grid)), function(k) {
                   AGE = as.numeric(scale(a$age)))
   D$C3 <- as.numeric(seq_len(nrow(D)) %% g$every == 0 & D$DEAD == 0)
   D$TL <- ifelse(D$C3 > 0, D$TT * (1 - g$width), 0)
+  D$W <- ifelse(seq_len(nrow(D)) %% 3 == 0, 2, 1)
+  D <- degenerate_rows(D, g$degenerate)
   job <- paste("PROC HAZARD DATA=D; EVENT DEAD; TIME TT; ICENSOR C3 = TL;",
-               parms[[g$model]])
+               if (g$weighted) "WEIGHT W;", parms[[g$model]])
   ix <- sprintf("X%d", k)
   haven::write_xpt(D, file.path(work, sprintf("hzr.J543.%s.dta", ix)),
                    version = 5, name = "HZRCALL")
@@ -61,6 +84,7 @@ rows <- lapply(seq_len(nrow(grid)), function(k) {
     as.numeric(sub("^\\+7,", "", out[h[length(h)] + 2L]))
   }
   data.frame(model = g$model, every = g$every, width = g$width,
+             degenerate = g$degenerate, weighted = g$weighted,
              job = job, n_interval = sum(D$C3 > 0),
              loglik = if (length(ll) == 1L)
                as.numeric(sub("^;", "", out[ll + 1L])) else NA_real_,
@@ -76,4 +100,4 @@ writeLines(c(
   paste0("# Binary: ", sub(path.expand("~"), "~", bin, fixed = TRUE), " (",
          trimws(sub("^\\$Note:", "", version)), ")"),
   utils::capture.output(utils::write.csv(tab, row.names = FALSE))), dest)
-print(tab[, -4])
+print(tab[, names(tab) != "job"])
