@@ -2,6 +2,20 @@
 
 ## Bug fixes
 
+* **An AIC stepwise entry no longer rejects, as if tested, a candidate whose
+  refit ended below the current model (#490).** Entering a term gives a
+  model that contains the current one, so its log-likelihood cannot be lower
+  at the optimum, and a refit that ends below it did not converge, whatever
+  its `converged` flag says. Its change in AIC was scored all the same,
+  came out positive, and the candidate was rejected with no warning and
+  every counter at 0. On `avc`, with an early phase and a constant phase and
+  `n_starts = 1`, `opmos` in the constant phase refit to 11.2
+  log-likelihood units below its base and was rejected at an AIC change of
+  +24.5. Such a candidate is now refused, counted in
+  `$criteria$n_uncomputable_scores` under the reason `loglik_below_base`,
+  and `hzr_stepwise()` warns that it declined it without testing it. More
+  starting points or iterations may let the refit converge.
+
 * **`hzr_stepwise()` now says when a step changes the rows the model is
   fitted on (#519).** A multiphase fit drops every row where a variable in
   the model is missing. So entering a variable with missing values shrank
