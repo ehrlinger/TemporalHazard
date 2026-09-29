@@ -204,6 +204,22 @@
   formula. A model without covariates does not warn, and `?predict.hazard`
   documents the behaviour under `newdata`.
 
+* **A translated `MAXITER=0` job now evaluates the starting values, as
+  `PROC HAZARD` does, rather than fitting (#496).** `PROC HAZARD` skips
+  its optimizer at `MAXITER=0` and prints the log-likelihood at the
+  starting values, after Conservation of Events has scaled every `MU` by
+  one factor unless `NOCONSERVE` is given. `hzr_translate_sas()` emitted
+  `control = list(maxit = 0)`, and `hazard()` optimised anyway: one job
+  reported -198.370 with `converged = TRUE` where `PROC HAZARD` printed
+  -295.609. The chunk is now `hzr_evaluate()` at those starting values,
+  with the same scaling, and it reproduces the log-likelihood and `MUE`
+  that `PROC HAZARD` prints with and without `WEIGHT`, `LCENSOR` and
+  `NOCONSERVE`. It is not a fit, so the job warns, gains an
+  `$untranslated` row, and runs no `SELECTION` screen. A value below 1 is
+  read the same way, as `PROC HAZARD` truncates it to 0. A negative
+  `MAXITER`, which `PROC HAZARD` ignores, is no longer emitted:
+  `hazard()` had returned the starting values with `converged = TRUE`.
+
 # TemporalHazard 1.2.12
 
 ## Breaking changes

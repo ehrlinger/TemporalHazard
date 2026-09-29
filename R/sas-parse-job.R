@@ -642,6 +642,16 @@
           if (is.na(val_num)) {
             mapped <- mapped - 1L
             note("MAXITER", "non-numeric value for MAXITER")
+          } else if (val_num < 0) {
+            # hazpprc.c:23-24: a negative value never reaches the iteration
+            # limit, which keeps its default (stmtprc.c:73), so PROC HAZARD
+            # fits as though MAXITER were absent. Emitting it handed
+            # hazard() a negative maxit, and it returned the starting values
+            # with converged = TRUE (#496).
+            mapped <- mapped - 1L
+            note(paste0("MAXITER=", val), paste0(
+              "negative, so PROC HAZARD keeps its default iteration limit ",
+              "(hazpprc.c:23-24); not emitted"))
           } else {
             ctl$maxit <- val_num
           }
@@ -1567,6 +1577,74 @@
     })
   }
 
+  # MAXITER=0 (#496). PROC HAZARD sets its iteration limit to 0
+  # (hazpprc.c:20-22), as it does for any value below 1, which the
+  # assignment to an int truncates (hazpprc.c:27, common.h:27; measured on
+  # MAXITER=0.5 and .9). A job with more than one free parameter then skips
+  # the optimizer: NOOPTIM() prints the log-likelihood at the starting values
+  # (hazrd2.c:71-74, :133-145). Emitting `control = list(maxit = 0)` handed
+  # hazard() a job to optimise, and it did, reporting converged = TRUE at a
+  # likelihood PROC HAZARD never printed. The same evaluation is emitted
+  # instead, as hzr_evaluate() on the job's model at its starting values.
+  #
+  # Unless NOCONSERVE is given, Conservation of Events has run before that
+  # (setcoe(), shape.c:52; stmtprc.c:64 and :123-127 set the mode, and the
+  # listing names it, cmpmeth.c:32-38): every MU is scaled by one factor so
+  # that the predicted events equal the observed. Along that common scaling
+  # the log-likelihood is E * s - exp(s) * S plus a constant, so the factor is
+  # also where the log-likelihood peaks, and a one-dimensional maximisation
+  # over a shift of every log(MU) finds it. Measured on the binary with and
+  # without WEIGHT, LCENSOR and ICENSOR (tests/testthat/fixtures/
+  # maxiter-zero-oracle.csv); an ICENSOR job matches under objective = "sas",
+  # the interval contribution PROC HAZARD accumulates, which this translation
+  # does not emit for a fit either.
+  code_body <- as.call(c(head, args))
+  if (isTRUE(ctl$maxit < 1)) {
+    maxit_label <- paste0("MAXITER=", format(ctl$maxit))
+    note(maxit_label, paste0(
+      "PROC HAZARD evaluates the log-likelihood at the starting values ",
+      "without optimising (hazpprc.c:20-27, hazrd2.c:71-74); emitted as ",
+      "hzr_evaluate(), which is not a fit"))
+    refusal_warnings <- c(refusal_warnings, paste0(
+      maxit_label, ": PROC HAZARD does not fit this job. It evaluates the ",
+      "log-likelihood at the starting values (hazpprc.c:20-27, ",
+      "hazrd2.c:71-74, :133-145)",
+      if (!isFALSE(ctl$conserve)) {
+        paste0(", after Conservation of Events has scaled every MU by one ",
+               "factor (setcoe(), shape.c:52)")
+      },
+      ", and the chunk below does the same with hzr_evaluate(). Its result ",
+      "is not a fit: it carries no standard errors, which PROC HAZARD may ",
+      "print at those values, and predict() cannot use it",
+      if (!is.null(stepwise_call)) {
+        ". The SELECTION screen is not run: the chunk evaluates the starting model only"
+      },
+      "."))
+    if (!is.null(stepwise_call)) {
+      note("SELECTION", paste0(
+        "not run under MAXITER=0: the emitted chunk evaluates the starting ",
+        "model only"))
+      stepwise_call <- NULL
+      screen_check_call <- NULL
+    }
+    args$fit <- FALSE
+    args$control <- NULL
+    spec_call <- as.call(c(head, args))
+    if (isFALSE(ctl$conserve)) {
+      code_body <- bquote(hzr_evaluate(.(spec_call), theta = .(args$theta)))
+    } else {
+      code_body <- bquote(local({
+        .spec <- .(spec_call)
+        .theta <- .(args$theta)
+        .log_mu <- .(parms$log_mu_mask)
+        .shift <- stats::optimize(
+          function(s) hzr_evaluate(.spec, theta = .theta + s * .log_mu)$logLik,
+          c(-30, 30), maximum = TRUE, tol = 1e-10)$maximum
+        hzr_evaluate(.spec, theta = .theta + .shift * .log_mu)
+      }))
+    }
+  }
+
   # John's 2026-09-22 decision, as amended at 19:51: a refusal warns and
   # emits the fit. That holds for the refusals that reach this return, not
   # for every refusal. Six paths above return a stop() in place of the fit:
@@ -1594,7 +1672,7 @@
   # (#433 review). An earlier revision of the branch kept a stop() for those
   # three; it was replaced by this.
 
-  list(call = as.call(c(head, args)), status_call = status_call,
+  list(call = code_body, status_call = status_call,
        stepwise_call = stepwise_call, screen_check_call = screen_check_call,
        outhaz = outhaz, untranslated = untr, tokens_seen = seen,
        tokens_mapped = mapped,
