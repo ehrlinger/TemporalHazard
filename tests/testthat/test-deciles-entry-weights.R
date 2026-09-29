@@ -153,3 +153,18 @@ test_that("an interval's lower bound is not taken as an entry time", {
   expect_equal(attr(dec, "overall")$total_expected, sum(h_hi),
                tolerance = 1e-8)
 })
+
+test_that("a group whose weights sum to 0 has NA rates, not NaN", {
+  avc <- .dec_avc
+  w <- rep(1, nrow(avc))
+  w[1:3] <- 0
+  # One subject per group, so exactly the three zero-weight rows form
+  # groups with no weight.
+  dec <- hzr_deciles(.dec_weibull(avc, w), time = 12, groups = nrow(avc))
+  expect_equal(sum(dec$n), nrow(avc))
+  undefined <- is.na(dec$observed_rate)
+  expect_equal(sum(undefined), 3L)
+  expect_false(any(is.nan(dec$observed_rate)))
+  expect_false(any(is.nan(dec$expected_rate)))
+  expect_true(all(is.na(dec$expected_rate[undefined])))
+})

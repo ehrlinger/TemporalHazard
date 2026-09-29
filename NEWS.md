@@ -6,7 +6,7 @@
   `hzr_gof()` does (#491).** Each subject's expected events were its
   cumulative hazard at exit, and events were counted unweighted. A
   left-truncated subject is at risk only from its entry time, so its
-  expected count is the cumulative hazard at exit less that at entry, and a
+  expected count is the cumulative hazard at exit minus that at entry, and a
   weighted fit conserves weighted events. So a correctly specified fit
   looked badly calibrated. On `avc` with entry times for 40% of subjects, a fit
   that conserves events expected 107.7 events against 68 observed, where

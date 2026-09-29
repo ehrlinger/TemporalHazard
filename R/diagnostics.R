@@ -18,7 +18,7 @@ NULL
 #' the **observed** count is its number of events; under conservation of events
 #' the group totals sum to the total observed events. A subject with an entry
 #' time (`time_lower` on a left-truncated fit) is at risk only after it, so it
-#' contributes its cumulative hazard at exit less that at entry. For a
+#' contributes its cumulative hazard at exit minus its value at entry. For a
 #' weighted fit both counts carry the case weights, since such a fit conserves
 #' weighted events. Both follow [hzr_gof()]. The horizon therefore only
 #' stratifies subjects into risk groups; it does not restrict or exclude any
@@ -44,7 +44,7 @@ NULL
 #'   \item{events}{Observed event count in the group (all events over
 #'     follow-up), weighted by the case weights for a weighted fit.}
 #'   \item{expected}{Expected event count: the sum of each subject's predicted
-#'     cumulative hazard at its own follow-up time, less that at its entry
+#'     cumulative hazard at its own follow-up time, minus its value at its entry
 #'     time when it has one, weighted by the case weights for a weighted
 #'     fit.}
 #'   \item{observed_rate}{Observed event rate (events / n; for a weighted
@@ -222,8 +222,8 @@ hzr_deciles <- function(object, time, groups = 10L,
     result$n[g] <- ng
     result$events[g] <- obs_events
     result$expected[g] <- exp_events
-    result$observed_rate[g] <- if (ng > 0) obs_events / wg else NA_real_
-    result$expected_rate[g] <- if (ng > 0) exp_events / wg else NA_real_
+    result$observed_rate[g] <- if (wg > 0) obs_events / wg else NA_real_
+    result$expected_rate[g] <- if (wg > 0) exp_events / wg else NA_real_
     result$mean_survival[g] <- if (ng > 0) mean(survival_hor[idx]) else NA_real_
     result$mean_cumhaz[g] <- if (ng > 0) mean(cumhaz_fu[idx]) else NA_real_
 
@@ -325,10 +325,14 @@ hzr_deciles <- function(object, time, groups = 10L,
 #'   invisibly. The data frame has one row per risk group and columns:
 #'   \code{group} (integer group index, 1 = lowest risk),
 #'   \code{n} (group size),
-#'   \code{events} (observed event count),
-#'   \code{expected} (expected event count from model predictions),
-#'   \code{observed_rate}, \code{expected_rate} (events / n),
-#'   \code{chi_sq} (per-group (O-E)^2/E contribution),
+#'   \code{events} (observed event count; weighted for a weighted fit),
+#'   \code{expected} (expected event count from model predictions, net of
+#'   any entry time, and weighted as \code{events} is),
+#'   \code{observed_rate}, \code{expected_rate} (events / n; per unit of
+#'   case weight for a weighted fit, and \code{NA} for a group whose weights
+#'   sum to 0),
+#'   \code{chi_sq} (per-group (O-E)^2/V contribution, where V is the Poisson
+#'   variance of the weighted count, equal to E for an unweighted fit),
 #'   \code{p_value} (1-df chi-square upper-tail p),
 #'   \code{mean_survival}, \code{mean_cumhaz} (mean predicted values in group).
 #'   An \code{"overall"} attribute contains the omnibus chi-square test
