@@ -30,12 +30,15 @@ test_that("a maxit below 1 is refused, not fitted as a converged start (#541)", 
   expect_match(msg, "hzr_evaluate()", fixed = TRUE)
 })
 
-test_that("a maxit that is not one whole number is refused (#541)", {
-  for (m in list(0.5, 2.5, NA_real_, Inf, "a", c(10, 20), numeric(0))) {
+test_that("a maxit that is not one number of at least 1 is refused (#541)", {
+  for (m in list(0.5, NA_real_, Inf, "a", c(10, 20), numeric(0))) {
     expect_error(fit_weibull(m), "control\\$maxit", info = format(m))
   }
   # A whole number stored as a double is accepted.
   expect_true(fit_weibull(100)$fit$converged)
+  # A fraction of at least 1 is truncated, as PROC HAZARD truncates MAXITER,
+  # so a translated MAXITER=2.5 still runs, as maxit = 2.
+  expect_identical(fit_weibull(2.5)$fit$objective, fit_weibull(2)$fit$objective)
 })
 
 test_that("the refusal holds for a model that used to ignore maxit (#541)", {

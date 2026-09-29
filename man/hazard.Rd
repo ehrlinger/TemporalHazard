@@ -301,9 +301,9 @@ convergence but fails SAS's gradient test is continued with
 \code{\link[stats:nlm]{stats::nlm()}} under the same limit (see "Convergence"), so raising
 \code{maxit} lets that continuation run further too. The Nelder-Mead warm-up
 that a multiphase fit with fixed parameters may run first has its own
-limit, which \code{maxit} does not change. It must be a single whole number
-of at least 1: anything else stops \code{hazard()} at once, fitted or not
-(#541). A fit with no iterations is its starting values, not an
+limit, which \code{maxit} does not change. It must be a single number of at
+least 1 (a fraction is truncated, as PROC HAZARD truncates \code{MAXITER}):
+anything else stops \code{hazard()} at once, fitted or not (#541). A fit with no iterations is its starting values, not an
 estimate; to evaluate a model at parameters you supply, use
 \code{\link[=hzr_evaluate]{hzr_evaluate()}}.
 \item \code{n_starts}: Number of optimization starts for multiphase fits (default 5).

@@ -8,8 +8,9 @@
   with `converged = TRUE`: on the `avc` data a Weibull fit with `maxit = 0`
   reported a log-likelihood of -1425.16 as converged, where the fit reaches
   -223.55. A multiphase fit with a `cdf` and a `constant` phase ignored the
-  limit and optimised anyway. `control$maxit` must now be a single whole
-  number of at least 1, and anything else stops `hazard()`, whether or not
+  limit and optimised anyway. `control$maxit` must now be a single number
+  of at least 1 (a fraction is truncated, as PROC HAZARD truncates
+  `MAXITER`), and anything else stops `hazard()`, whether or not
   it fits, with a pointer to `hzr_evaluate()` for an evaluation at given
   values. `hzr_stepwise()` checks it once, before any refit.
 
