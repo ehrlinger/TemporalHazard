@@ -24,6 +24,23 @@
   is not examined, and nor are fits with left-censored or interval-censored
   rows, or a supremum at `gamma` = 0.
 
+* **`hzr_deciles()` now counts entry times and case weights, as
+  `hzr_gof()` does (#491).** Each subject's expected events were its
+  cumulative hazard at exit, and events were counted unweighted. A
+  left-truncated subject is at risk only from its entry time, so its
+  expected count is the cumulative hazard at exit minus that at entry, and a
+  weighted fit conserves weighted events. So a correctly specified fit
+  looked badly calibrated. On `avc` with entry times for 40% of subjects, a fit
+  that conserves events expected 107.7 events against 68 observed, where
+  `hzr_gof()` expected 68. A weighted fit reported 68 events where the
+  weighted count was 85.4. Both tallies now carry the entry-time correction
+  and the weights, the `events` column is weighted for a weighted fit, and
+  the group totals again sum to the observed events. For a weighted fit the
+  chi-square divides by the Poisson variance of the weighted count, and the
+  rates are per unit of weight, so neither changes when every weight is
+  multiplied by the same constant. A fit with neither entry times nor
+  weights is unchanged.
+
 * **An AIC stepwise entry no longer rejects, as if tested, a candidate whose
   refit ended below the current model (#490).** Entering a term gives a
   model that contains the current one, so its log-likelihood cannot be lower
@@ -42,6 +59,20 @@
   way, or for being fitted on other rows (#488). Unless a later step of the
   replicate tested and entered it, such a candidate counts as not selected,
   so its pooled selection frequency may be understated.
+* **`hzr_evaluate()` no longer returns a curve at a `theta` its likelihood
+  cannot evaluate, and says when its `logLik` is the SAS objective
+  (#503).** Where the log-likelihood came back as `-Inf` with a warning,
+  the `curve` asked for with `times` was still computed, and its shape
+  functions have no such guard. At a g3 `log_tau` of 800 the late phase
+  switched itself off there, so `cumulative_hazard` was finite and
+  plausible (0.019, 0.087 and 0.295 at times 0.1, 1 and 10). The curve's
+  `hazard` and `cumulative_hazard` are now `NA` wherever `logLik` is
+  `-Inf`, and the warning, class `hzr_evaluate_not_finite`, says so. A
+  model built with `objective = "sas"` scored its interval-censored rows
+  with PROC HAZARD's interval-mean-hazard term, and the result called that
+  value the log-likelihood. The result now carries `objective`, and
+  `print()` labels such a value as the SAS objective, not a
+  log-likelihood.
 
 * **`hzr_stepwise()` now says when a step changes the rows the model is
   fitted on (#519).** A multiphase fit drops every row where a variable in

@@ -28,18 +28,24 @@ refused for them rather than mirrored.}
 An object of class \code{hzr_evaluation}: a list with \code{theta}, the
 parameters the likelihood was evaluated at -- the vector supplied, with
 any constrained entry replaced by the value its phase derives, which is
-warned about as \code{\link[=hazard]{hazard()}} warns; \code{logLik}, the log-likelihood there;
-\code{dist}; \code{n_obs} and \code{n_events}, the rows the likelihood scored and the
+warned about as \code{\link[=hazard]{hazard()}} warns; \code{logLik}, the log-likelihood there,
+or, for a model built with \code{objective = "sas"}, that objective, which
+is not a log-likelihood wherever the data have interval-censored rows;
+\code{objective}, \code{"likelihood"} or \code{"sas"}, saying which of the two
+\code{logLik} holds; \code{dist}; \code{n_obs} and \code{n_events}, the rows the likelihood scored and the
 exact events among them (a left- or interval-censored row counts in
 \code{n_obs}, not in \code{n_events}); and, when \code{times} was given, \code{curve}, a
-data frame of \code{time}, \code{hazard} and \code{cumulative_hazard}.
+data frame of \code{time}, \code{hazard} and \code{cumulative_hazard}, which is \code{NA}
+throughout where \code{logLik} is \code{-Inf}.
 }
 \description{
-Computes a model's log-likelihood, and optionally its hazard and
-cumulative hazard, at parameters \strong{you} supply rather than at parameters
-fitted from the data. This is what a parity check needs: the likelihood at
-another program's converged estimates, evaluated by this package's own
-likelihood.
+Computes a model's objective, and optionally its hazard and cumulative
+hazard, at parameters \strong{you} supply rather than at parameters fitted from
+the data. The objective is the log-likelihood, except for a model built
+with \code{objective = "sas"} on data with interval-censored rows, where it is
+PROC HAZARD's interval-mean-hazard objective (see \code{objective} under
+Value). This is what a parity check needs: the objective at another
+program's converged estimates, evaluated by this package's own code.
 }
 \details{
 The result is not a fit and does not pretend to be one. It carries no
