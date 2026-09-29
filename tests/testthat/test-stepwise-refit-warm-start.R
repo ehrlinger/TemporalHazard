@@ -153,6 +153,14 @@ test_that("a multiphase refit is fitted from two starts, warm and default", {
   covs <- c("early.grp(264,528]", "early.grp(528,792]", "constant.age",
             "constant.mal")
   expect_equal(unname(dflt[covs]), rep(0, 4), tolerance = 0)
+  # The free shapes keep the spec's values, not the base's estimates, or the
+  # second start is nearly the first and no longer a second optimum search.
+  expect_equal(unname(dflt[c("early.log_t_half", "early.nu")]),
+               c(log(0.15), 1.4), tolerance = 1e-12)
+  expect_false(isTRUE(all.equal(
+    unname(dflt[c("early.log_t_half", "early.nu")]),
+    unname(coef(g$base)[c("early.log_t_half", "early.nu")])
+  )))
   expect_equal(dflt[["early.m"]], coef(g$base)[["early.m"]], tolerance = 0)
   # The kept fit is the better of the two, and says which it was.
   obj <- cand$fit$refit_objectives
@@ -356,20 +364,6 @@ test_that("a global covariate pool with phase formulas refits (#551)", {
   # The warm fit itself ran. A failed warm start is masked by the default
   # one, so the result alone cannot show that it was refused.
   expect_true(is.finite(cand$fit$refit_objectives[["warm"]]))
-  # Unfitted, the global lower bound on theta's length still applies.
-  expect_error(
-    hazard(
-      survival::Surv(int_dead, dead) ~ age + mal + com_iv + opmos +
-        orifice + op_age + status + inc_surg,
-      data = a, dist = "multiphase",
-      phases = list(
-        early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
-                          fixed = "shapes", formula = ~ 1),
-        constant = hzr_phase("constant", formula = ~ 1)),
-      theta = base$fit$theta, fit = FALSE
-    ),
-    "length must be >= number of required coefficients"
-  )
 })
 
 test_that("a theta forwarded to a refit is refused by name", {

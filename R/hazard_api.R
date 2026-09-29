@@ -1301,7 +1301,8 @@ hazard <- function(formula = NULL,
     # For now, assume theta length determines whether we expect x
     # Not for a multiphase fit: a phase with its own formula takes no slot
     # per global column, and the exact per-phase count is checked below
-    # (#551). An unfitted object keeps this lower bound.
+    # (#551). An unfitted multiphase object keeps the bound it had, which
+    # can refuse a theta of the right length there (#558).
     required_coef <- if (is.null(x_fit)) 0L else ncol(x_fit)
     if (!(dist == "multiphase" && fit) && !is.null(x_fit) &&
           length(theta) < required_coef) {
