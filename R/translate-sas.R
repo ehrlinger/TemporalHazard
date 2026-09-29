@@ -285,8 +285,8 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
       # last one ended, so one rewrite stops once however many fits follow.
       # The data argument is the dataset's name, or for an ICENSOR job the
       # rows of it PROC HAZARD keeps (`D[D$.hzr_keep, , drop = FALSE]`, #543).
-      dname <- if (is.null(r$call[["data"]])) NULL else
-        all.vars(r$call[["data"]])[[1L]]
+      dvars <- all.vars(r$call[["data"]])
+      dname <- if (length(dvars)) dvars[[1L]] else NULL
       if (!is.null(dname) && !is.null(repeat_scan[[dname]])) {
         rs <- .hzr_rewrite_stops(substring(txt, repeat_scan[[dname]] + 1L, b$start - 1L), dname)
         for (cl in rs$calls) calls[[.hzr_next_call_name(calls, "rewrite")]] <- cl
