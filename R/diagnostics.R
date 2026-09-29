@@ -47,16 +47,22 @@ NULL
 #'     cumulative hazard at its own follow-up time, less that at its entry
 #'     time when it has one, weighted by the case weights for a weighted
 #'     fit.}
-#'   \item{observed_rate}{Observed event rate (events / n).}
-#'   \item{expected_rate}{Expected event rate (expected / n).}
+#'   \item{observed_rate}{Observed event rate (events / n; for a weighted
+#'     fit, events per unit of case weight).}
+#'   \item{expected_rate}{Expected event rate (expected / n; for a weighted
+#'     fit, per unit of case weight).}
 #'   \item{chi_sq}{Chi-square contribution: (events - expected)^2 /
-#'     expected.}
+#'     expected. For a weighted fit the denominator is the Poisson variance
+#'     of the weighted count, the sum of each subject's squared weight times
+#'     its cumulative hazard, so the statistic does not change when every
+#'     weight is multiplied by the same constant.}
 #'   \item{p_value}{Upper-tail p-value from the chi-square test for
 #'     this group (1 df).}
 #'   \item{mean_survival}{Mean predicted survival probability at the horizon
 #'     in the group.}
 #'   \item{mean_cumhaz}{Mean predicted cumulative hazard at follow-up in the
-#'     group.}
+#'     group: unweighted, and without the entry-time correction, so for a
+#'     left-truncated or weighted fit it is not `expected / n`.}
 #' }
 #'
 #' An attribute `"overall"` is attached with the overall chi-square
@@ -160,8 +166,14 @@ hzr_deciles <- function(object, time, groups = 10L,
   # miscalibrated here (#491).
   weights <- object$data$weights
   if (is.null(weights)) weights <- rep(1, n_obs)
-  expected_i <- weights * (cumhaz_fu - .hzr_cumhaz_at_entry(object, event_time))
+  dcumhaz    <- cumhaz_fu - .hzr_cumhaz_at_entry(object, event_time)
+  expected_i <- weights * dcumhaz
   observed   <- weights * as.numeric(status == 1)
+  # The chi-square divides by the Poisson variance of the weighted count,
+  # sum(w^2 * dH), not by E: (O - E)^2 / E grows with the weights' scale, so
+  # rescaling them would move the p-value without changing the fit. With unit
+  # weights the two are the same.
+  variance_i <- weights^2 * dcumhaz
   n_included   <- n_obs
   n_excluded   <- 0L
 
@@ -202,18 +214,22 @@ hzr_deciles <- function(object, time, groups = 10L,
     ng <- length(idx)
     obs_events <- sum(observed[idx])
     exp_events <- sum(expected_i[idx])
+    var_events <- sum(variance_i[idx])
+    # Rates per unit of weight, so they do not scale with the weights either;
+    # with unit weights this is the head count.
+    wg <- sum(weights[idx])
 
     result$n[g] <- ng
     result$events[g] <- obs_events
     result$expected[g] <- exp_events
-    result$observed_rate[g] <- if (ng > 0) obs_events / ng else NA_real_
-    result$expected_rate[g] <- if (ng > 0) exp_events / ng else NA_real_
+    result$observed_rate[g] <- if (ng > 0) obs_events / wg else NA_real_
+    result$expected_rate[g] <- if (ng > 0) exp_events / wg else NA_real_
     result$mean_survival[g] <- if (ng > 0) mean(survival_hor[idx]) else NA_real_
     result$mean_cumhaz[g] <- if (ng > 0) mean(cumhaz_fu[idx]) else NA_real_
 
-    # Per-group chi-square: (O - E)^2 / E
+    # Per-group chi-square: (O - E)^2 / V, V = E for unit weights
     if (exp_events > 0) {
-      result$chi_sq[g] <- (obs_events - exp_events)^2 / exp_events
+      result$chi_sq[g] <- (obs_events - exp_events)^2 / var_events
       # Upper-tail p-value from chi-square with 1 df
       result$p_value[g] <- stats::pchisq(result$chi_sq[g], df = 1,
                                           lower.tail = FALSE)
@@ -272,10 +288,13 @@ hzr_deciles <- function(object, time, groups = 10L,
 .hzr_cumhaz_at_entry <- function(object, exit_time) {
   n <- length(exit_time)
   entry <- object$data$time_lower
+  # Only on a stored status 0/1 row is time_lower an entry time: on a left- or
+  # interval-censored row it bounds the event time instead. hzr_gof() refuses
+  # such rows, but hzr_deciles() takes a caller's `status` in their place.
   has_entry <- if (is.null(entry)) {
     rep(FALSE, n)
   } else {
-    entry > 0 & entry < exit_time
+    entry > 0 & entry < exit_time & object$data$status %in% c(0, 1)
   }
   h_entry <- rep(0, n)
   if (any(has_entry)) {

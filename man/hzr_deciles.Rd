@@ -35,16 +35,22 @@ follow-up), weighted by the case weights for a weighted fit.}
 cumulative hazard at its own follow-up time, less that at its entry
 time when it has one, weighted by the case weights for a weighted
 fit.}
-\item{observed_rate}{Observed event rate (events / n).}
-\item{expected_rate}{Expected event rate (expected / n).}
+\item{observed_rate}{Observed event rate (events / n; for a weighted
+fit, events per unit of case weight).}
+\item{expected_rate}{Expected event rate (expected / n; for a weighted
+fit, per unit of case weight).}
 \item{chi_sq}{Chi-square contribution: (events - expected)^2 /
-expected.}
+expected. For a weighted fit the denominator is the Poisson variance
+of the weighted count, the sum of each subject's squared weight times
+its cumulative hazard, so the statistic does not change when every
+weight is multiplied by the same constant.}
 \item{p_value}{Upper-tail p-value from the chi-square test for
 this group (1 df).}
 \item{mean_survival}{Mean predicted survival probability at the horizon
 in the group.}
 \item{mean_cumhaz}{Mean predicted cumulative hazard at follow-up in the
-group.}
+group: unweighted, and without the entry-time correction, so for a
+left-truncated or weighted fit it is not \code{expected / n}.}
 }
 
 An attribute \code{"overall"} is attached with the overall chi-square

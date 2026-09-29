@@ -13,8 +13,11 @@
   `hzr_gof()` expected 68. A weighted fit reported 68 events where the
   weighted count was 85.4. Both tallies now carry the entry-time correction
   and the weights, the `events` column is weighted for a weighted fit, and
-  the group totals again sum to the observed events. A fit with neither is
-  unchanged.
+  the group totals again sum to the observed events. For a weighted fit the
+  chi-square divides by the Poisson variance of the weighted count, and the
+  rates are per unit of weight, so neither changes when every weight is
+  multiplied by the same constant. A fit with neither entry times nor
+  weights is unchanged.
 
 * **`hzr_stepwise()` now says when a step changes the rows the model is
   fitted on (#519).** A multiphase fit drops every row where a variable in
