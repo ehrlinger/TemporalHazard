@@ -444,9 +444,10 @@
     # end below the base; from the phase specs' default start alone it did,
     # by up to 25 log-likelihood units, reporting converged = TRUE. But the
     # likelihood is multimodal, and the default start sometimes reaches a
-    # higher optimum than the warm one, so both are fitted. The unfitted
-    # object gives the candidate's parameter names by the fit's own naming;
-    # its warnings repeat the fits' and are dropped.
+    # higher optimum than the warm one, so both are fitted. The default start
+    # holds fixed shapes at the base's values, or it fits another model. The
+    # unfitted object gives the candidate's parameter names by the fit's own
+    # naming; its warnings repeat the fits' and are dropped.
     proto <- suppressWarnings(do.call(hazard,
                                       c(refit_args, list(fit = FALSE))))
     theta_start <- .hzr_multiphase_warm_start(current, proto)
@@ -455,7 +456,9 @@
         refit_args, list(theta = theta_start, fit = TRUE)
       ))),
       default = .hzr_refit_capture(do.call(hazard, c(
-        refit_args, list(fit = TRUE)
+        refit_args,
+        list(theta = .hzr_multiphase_default_start(current, proto),
+             fit = TRUE)
       )))
     )
   } else {
@@ -619,6 +622,34 @@
   shared <- intersect(new_names, old_names)
   theta_start[shared] <- unname(theta_old[match(shared, old_names)])
   theta_start
+}
+
+#' Default-start theta for a multiphase refit
+#'
+#' The phase specs' default starting values -- what the optimizer assembles
+#' when handed no theta -- except that every entry the refit does not search
+#' over (a fixed or derived shape) carries the base's value. A fixed entry is
+#' held at its START value, and a base fitted with a user `theta` holds it at
+#' that value rather than the spec's, so a start with the spec's value fits a
+#' different model: it won on a changed fixed shape, not on the candidate.
+#'
+#' @inheritParams .hzr_multiphase_warm_start
+#' @return A named numeric theta for `proto`, on the fit's internal scale.
+#' @keywords internal
+#' @noRd
+.hzr_multiphase_default_start <- function(current, proto) {
+  prep <- .hzr_evaluate_prepare(proto)
+  start <- unlist(lapply(names(prep$phases), function(nm) {
+    .hzr_phase_start(prep$phases[[nm]],
+                     n_covariates = prep$covariate_counts[[nm]])
+  }), use.names = FALSE)
+  names(start) <- prep$names
+  held <- prep$names[!.hzr_phase_free_mask(prep$phases,
+                                            prep$covariate_counts)]
+  old_names <- .hzr_evaluate_prepare(current)$names
+  held <- intersect(held, old_names)
+  start[held] <- unname(current$fit$theta[match(held, old_names)])
+  start
 }
 
 #' Run one refit, holding its warnings back

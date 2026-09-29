@@ -20,7 +20,11 @@
   current estimates, matched by parameter name with a new coefficient at 0,
   which cannot end below the current model, and once from the default start
   as before, because the likelihood has several optima and that start
-  sometimes reaches a higher one. `$fit$refit_start` records which start
+  sometimes reaches a higher one. The default start now holds each fixed
+  shape at the current model's value. It took the phase specification's
+  value, so a model fitted with a user `theta` that set a fixed shape was
+  refit with that shape moved, and the candidate was credited with the
+  gain. `$fit$refit_start` records which start
   won and `$fit$refit_objectives` both results. Fixed shapes keep their
   fixed values, the first of several `control$n_starts` is the start
   itself, and Conservation of Events runs as before. Single-distribution

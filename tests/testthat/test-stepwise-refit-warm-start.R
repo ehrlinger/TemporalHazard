@@ -24,9 +24,9 @@
 
 .ws_tol <- function(ll) 1e-6 * max(1, abs(ll))
 
-# Each base in the grid, with the entries to try on it. Built lazily so a
-# skipped block builds nothing.
-.ws_grid <- function() {
+# Each base in the grid, with the entries to try on it. Only the bases a
+# block names are built, so a block builds only what it uses.
+.ws_grid <- function(which = NULL) {
   a <- .ws_avc
   a284 <- stats::na.omit(a[, c("int_dead", "dead", "age", "mal")])
   a284$grp <- cut(a284$age, 3)
@@ -39,8 +39,9 @@
                            fixed = "shapes"),
          constant = hzr_phase("constant"))
   }
-  list(
-    inherits = list(
+  builders <- list(
+    inherits = function() {
+      list(
       data = a284, ctl = list(n_starts = 1L, conserve = FALSE),
       base = suppressWarnings(hazard(
                  survival::Surv(int_dead, dead) ~ grp, data = a284,
@@ -52,8 +53,10 @@
                  control = list(n_starts = 1L, conserve = FALSE),
                  fit = TRUE)),
       adds = list(c("mal", "constant"))
-    ),
-    reference_coe = list(
+      )
+    },
+    reference_coe = function() {
+      list(
       data = d_ref, ctl = list(n_starts = 1, conserve = TRUE),
       base = suppressWarnings(hazard(
                  survival::Surv(int_dead, dead) ~ 1, data = d_ref,
@@ -68,8 +71,10 @@
                  fit = TRUE)),
       adds = list(c("age", "early"), c("opmos", "early"),
                   c("age", "constant"), c("status", "constant"))
-    ),
-    intercepts = list(
+      )
+    },
+    intercepts = function() {
+      list(
       data = a, ctl = list(n_starts = 1L),
       base = suppressWarnings(hazard(
                  survival::Surv(int_dead, dead) ~ 1, data = a,
@@ -78,8 +83,10 @@
                  fit = TRUE)),
       adds = list(c("opmos", "constant"), c("age", "early"),
                   c("mal", "constant"))
-    ),
-    weighted = list(
+      )
+    },
+    weighted = function() {
+      list(
       data = a, ctl = list(n_starts = 1L),
       base = suppressWarnings(hazard(
                  survival::Surv(int_dead, dead) ~ 1, data = a,
@@ -87,8 +94,10 @@
                  control = list(n_starts = 1L),
                  fit = TRUE)),
       adds = list(c("age", "early"), c("opmos", "constant"))
-    ),
-    windows = list(
+      )
+    },
+    windows = function() {
+      list(
       data = a284, ctl = list(n_starts = 1L, conserve = FALSE),
       base = suppressWarnings(hazard(
                  survival::Surv(int_dead, dead) ~ age, data = a284,
@@ -100,8 +109,11 @@
                  control = list(n_starts = 1L, conserve = FALSE),
                  fit = TRUE)),
       adds = list(c("mal", "constant"))
-    )
+      )
+    }
   )
+  if (is.null(which)) which <- names(builders)
+  lapply(builders[which], function(build) build())
 }
 
 # Every start the multiphase optimizer is handed during `expr`, in order.
@@ -118,7 +130,7 @@
 }
 
 test_that("a multiphase refit is fitted from two starts, warm and default", {
-  g <- .ws_grid()$inherits
+  g <- .ws_grid("inherits")$inherits
   out <- .ws_starts_handed(suppressWarnings(.hzr_refit_with_scope(
     g$base, action = "add", var = "mal", phase = "constant",
     data = g$data, control = g$ctl
@@ -129,11 +141,19 @@ test_that("a multiphase refit is fitted from two starts, warm and default", {
   ev <- suppressWarnings(hzr_evaluate(cand, theta = expected))
   expect_equal(ev$logLik, g$base$fit$objective, tolerance = 1e-10)
   # Two fits: the first from exactly that start, the second from the phase
-  # specs' default (NULL: assembled inside the optimizer).
+  # specs' default values -- log(0.1) for each rate, 0 for each coefficient,
+  # the spec's free shapes -- with the fixed shape at the base's value.
   expect_length(out$seen, 2L)
   expect_equal(unname(out$seen[[1]]), unname(expected), tolerance = 0)
   expect_equal(names(out$seen[[1]]), names(expected))
-  expect_null(out$seen[[2]])
+  dflt <- out$seen[[2]]
+  expect_equal(names(dflt), names(expected))
+  expect_equal(unname(dflt[c("early.log_mu", "constant.log_mu")]),
+               rep(log(0.1), 2), tolerance = 1e-12)
+  covs <- c("early.grp(264,528]", "early.grp(528,792]", "constant.age",
+            "constant.mal")
+  expect_equal(unname(dflt[covs]), rep(0, 4), tolerance = 0)
+  expect_equal(dflt[["early.m"]], coef(g$base)[["early.m"]], tolerance = 0)
   # The kept fit is the better of the two, and says which it was.
   obj <- cand$fit$refit_objectives
   expect_named(obj, c("warm", "default"))
@@ -142,7 +162,7 @@ test_that("a multiphase refit is fitted from two starts, warm and default", {
   expect_equal(cand$fit$objective, max(obj), tolerance = 0)
 
   # A drop starts from the base's estimates with the dropped slot removed.
-  g2 <- .ws_grid()$reference_coe
+  g2 <- .ws_grid("reference_coe")$reference_coe
   out <- .ws_starts_handed(suppressWarnings(.hzr_refit_with_scope(
     g2$base, action = "drop", var = "op_age", phase = "constant",
     data = g2$data, control = g2$ctl
@@ -228,7 +248,7 @@ test_that("a drop refit cannot end below its own start (#551)", {
   skip_on_cran()
   # Without Conservation of Events, so the objective at the start is the
   # plain log-likelihood hzr_evaluate() returns.
-  grid <- .ws_grid()
+  grid <- .ws_grid(c("inherits", "windows"))
   drops <- list(list(g = grid$inherits, v = "age", phase = "constant"),
                 list(g = grid$windows, v = "age", phase = "constant"))
   for (d in drops) {
@@ -247,7 +267,7 @@ test_that("a drop refit cannot end below its own start (#551)", {
 
 test_that("fixed shapes stay fixed and start 1 is the warm start (#551)", {
   skip_on_cran()
-  g <- .ws_grid()$reference_coe
+  g <- .ws_grid("reference_coe")$reference_coe
   cand <- suppressWarnings(.hzr_refit_with_scope(
     g$base, action = "add", var = "age", phase = "early",
     data = g$data, control = list(n_starts = 3, conserve = TRUE)
@@ -273,6 +293,41 @@ test_that("fixed shapes stay fixed and start 1 is the warm start (#551)", {
   expect_equal(three$fit$starts$objective[1], one$fit$objective,
                tolerance = 1e-12)
   expect_gte(three$fit$starts$objective[1], ll0 - .ws_tol(ll0))
+})
+
+test_that("both starts hold a fixed shape at the base's value (#551)", {
+  skip_on_cran()
+  # A fixed shape is held at its start value. This base was fitted with a
+  # user theta whose t_half (0.5) differs from the spec's (0.15), so a start
+  # taking the spec's value fits another model -- one that won by about 15
+  # log-likelihood units on the moved shape, credited to the candidate.
+  a <- stats::na.omit(.ws_avc)
+  base <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = a, dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.15, nu = 1, m = 1,
+                        fixed = "shapes"),
+      constant = hzr_phase("constant")),
+    theta = c(log(0.1), log(0.5), 1, 1, log(0.1)),
+    control = list(n_starts = 1L), fit = TRUE
+  ))
+  fixed <- c("early.log_t_half", "early.nu", "early.m")
+  # The premise: the base holds t_half at 0.5, not the spec's 0.15.
+  expect_equal(coef(base)[["early.log_t_half"]], log(0.5), tolerance = 1e-12)
+  out <- .ws_starts_handed(suppressWarnings(.hzr_refit_with_scope(
+    base, action = "add", var = "age", phase = "constant", data = a,
+    control = list(n_starts = 1L)
+  )))
+  expect_length(out$seen, 2L)
+  for (s in out$seen) {
+    expect_equal(unname(s[fixed]), unname(coef(base)[fixed]), tolerance = 0)
+  }
+  cand <- out$value
+  expect_equal(unname(coef(cand)[fixed]), unname(coef(base)[fixed]),
+               tolerance = 0)
+  # age's own gain, whichever start won, is small here (0.016 on this data);
+  # the moved shape was worth about 15.
+  expect_lt(cand$fit$objective - base$fit$objective, 1)
 })
 
 test_that("a global covariate pool with phase formulas refits (#551)", {
@@ -301,10 +356,24 @@ test_that("a global covariate pool with phase formulas refits (#551)", {
   # The warm fit itself ran. A failed warm start is masked by the default
   # one, so the result alone cannot show that it was refused.
   expect_true(is.finite(cand$fit$refit_objectives[["warm"]]))
+  # Unfitted, the global lower bound on theta's length still applies.
+  expect_error(
+    hazard(
+      survival::Surv(int_dead, dead) ~ age + mal + com_iv + opmos +
+        orifice + op_age + status + inc_surg,
+      data = a, dist = "multiphase",
+      phases = list(
+        early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                          fixed = "shapes", formula = ~ 1),
+        constant = hzr_phase("constant", formula = ~ 1)),
+      theta = base$fit$theta, fit = FALSE
+    ),
+    "length must be >= number of required coefficients"
+  )
 })
 
 test_that("a theta forwarded to a refit is refused by name", {
-  g <- .ws_grid()$inherits
+  g <- .ws_grid("inherits")$inherits
   expect_error(
     .hzr_refit_with_scope(g$base, action = "add", var = "mal",
                           phase = "constant", data = g$data,
