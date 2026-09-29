@@ -138,7 +138,48 @@ test_that("only the certificate can fire, and only past its margin (#418)", {
   expect_length(sweep(FALSE), 0L)
 })
 
+test_that("the certificate moves only what the fit estimated (#418)", {
+  skip_on_cran()
+  # The same data as the known positive, which records a finding with gamma,
+  # tau and alpha as in fit_fixge2().
+  d <- corner_data(300, seed = 16)
+  fit_with <- function(fixed) {
+    suppressWarnings(hazard(
+      time = d$time, status = d$status, dist = "multiphase", fit = TRUE,
+      phases = list(late = hzr_phase("g3", tau = 1.5, gamma = 4, alpha = 0.5,
+                                     fixed = fixed,
+                                     constraint = "eta_gamma")),
+      control = list(n_starts = 1L)))
+  }
+  # A fixed gamma was never estimated: there is no gamma-hat to contradict,
+  # and a certificate at gamma = 1e4 would score another model.
+  expect_length(corner_records(fit_with(c("alpha", "gamma"))), 0L)
+  # A fixed tau stays where it was fixed, in the search and the certificate.
+  # Take the known positive's estimates with tau moved to where its own
+  # certificate put the bend, and declare tau fixed there: the corner law
+  # still beats that point, and the certificate must keep the tau.
+  fit <- fit_with("alpha")
+  free_rec <- corner_records(fit)[[1L]]
+  th <- coef(fit)
+  # Just off the bend, so a search free to move tau would move it.
+  th[["late.log_tau"]] <- free_rec$certificate_theta[["late.log_tau"]] + 0.003
+  ll <- function(p) as.numeric(hzr_evaluate(fit, p)$logLik)
+  held_tau <- .hzr_validate_phases(list(
+    late = hzr_phase("g3", tau = 1.5, gamma = 4, alpha = 0.5,
+                     fixed = c("alpha", "tau"), constraint = "eta_gamma")))
+  rec <- .hzr_g3_corner_record(
+    th, ll(th), ll, 1L, held_tau,
+    c(late = 0L), list(late = NULL), d$time, d$status, NULL,
+    rep(1, length(d$time)))
+  expect_false(is.null(rec))
+  expect_identical(rec$certificate_theta[["late.log_tau"]],
+                   th[["late.log_tau"]])
+  expect_identical(rec$certificate_theta[["late.alpha"]], 0.5)
+})
+
 test_that("only eta_gamma phases are examined (#418)", {
+  skip_on_cran()
+  # Paired with the known positive on the same data, which does record one.
   d <- corner_data(300, seed = 16)
   fit <- suppressWarnings(hazard(
     time = d$time, status = d$status, dist = "multiphase", fit = TRUE,

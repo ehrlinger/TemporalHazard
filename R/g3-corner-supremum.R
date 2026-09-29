@@ -56,7 +56,13 @@
         alpha <= 0) {
     return(NULL)
   }
-  alpha_free <- !any(c("alpha", "shapes") %in% phases[[k]]$fixed)
+  # The certificate may move only what the fit estimated. A fixed gamma was
+  # never estimated, so there is no gamma-hat to contradict; a fixed tau or
+  # alpha stays at its value, or the certificate would score another model.
+  fixed <- phases[[k]]$fixed
+  if (any(c("gamma", "shapes") %in% fixed)) return(NULL)
+  alpha_free <- !any(c("alpha", "shapes") %in% fixed)
+  tau_free <- !("tau" %in% fixed)
   w <- if (is.null(weights)) rep(1, length(time)) else weights
   entry <- .hzr_multiphase_entry(time, status, time_lower)
   if (is.null(entry)) entry <- rep(0, length(time))
@@ -111,7 +117,11 @@
   # what a finite-gamma search lacks.
   tau_hat <- exp(unname(theta[[key("log_tau")]]))
   obs <- sort(unique(time[w > 0]))
-  cand <- obs[obs > tau_hat * exp(-4) & obs < tau_hat * exp(4)]
+  cand <- if (tau_free) {
+    obs[obs > tau_hat * exp(-4) & obs < tau_hat * exp(4)]
+  } else {
+    numeric(0)
+  }
   if (length(cand) > 400L) {
     cand <- stats::quantile(cand, seq(0, 1, length.out = 400L), names = FALSE)
   }
@@ -122,15 +132,27 @@
   grid <- vapply(cand, function(tt) best_log_mu(tt, alpha), numeric(2))
   top <- utils::head(order(-grid["ll", ]), 5L)
   polished <- lapply(top, function(j) {
-    start <- c(grid["log_mu", j], log(cand[[j]]),
+    # Search vector: log_mu, then log tau and logit alpha where free.
+    unpack <- function(p) {
+      list(log_mu = p[1],
+           log_tau = if (tau_free) p[2] else unname(theta[[key("log_tau")]]),
+           alpha = if (alpha_free) stats::plogis(p[length(p)]) else alpha)
+    }
+    start <- c(grid["log_mu", j], if (tau_free) log(cand[[j]]),
                if (alpha_free) stats::qlogis(min(max(alpha, 1e-6), 1 - 1e-6)))
-    o <- stats::optim(start, function(p) {
-      -corner_ll(p[1], exp(p[2]), if (alpha_free) stats::plogis(p[3]) else alpha)
-    }, method = "Nelder-Mead", control = list(reltol = 1e-12, maxit = 2000))
-    list(par = o$par, ll = -o$value)
+    f <- function(p) {
+      u <- unpack(p)
+      -corner_ll(u$log_mu, exp(u$log_tau), u$alpha)
+    }
+    o <- if (length(start) > 1L) {
+      stats::optim(start, f, method = "Nelder-Mead",
+                   control = list(reltol = 1e-12, maxit = 2000))
+    } else {
+      list(par = start, value = f(start))
+    }
+    c(unpack(o$par), ll = -o$value)
   })
   best <- polished[[which.max(vapply(polished, `[[`, numeric(1), "ll"))]]
-  a_best <- if (alpha_free) stats::plogis(best$par[3]) else alpha
 
   # The certificate: the fit's own objective at finite gamma, with tau also
   # nudged by +-10 / gamma. At an observed time lying on tau the finite-gamma
@@ -138,13 +160,13 @@
   # which a certificate taken at tau itself misses by log(1.5).
   certs <- list()
   for (g in c(1e4, 1e6, 1e8)) {
-    for (shift in c(-10, 0, 10)) {
+    for (shift in if (tau_free) c(-10, 0, 10) else 0) {
       p <- theta
-      p[[key("log_mu")]] <- best$par[1]
-      p[[key("log_tau")]] <- best$par[2] + shift / g
+      p[[key("log_mu")]] <- best$log_mu
+      p[[key("log_tau")]] <- best$log_tau + shift / g
       p[[key("gamma")]] <- g
       p[[key("eta")]] <- 2 / g
-      p[[key("alpha")]] <- a_best
+      p[[key("alpha")]] <- best$alpha
       v <- tryCatch(objective_fn(p), error = function(e) NA_real_)
       if (length(v) == 1L && is.finite(v)) {
         certs[[length(certs) + 1L]] <- list(theta = p, ll = v)

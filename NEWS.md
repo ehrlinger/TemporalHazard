@@ -19,9 +19,10 @@
   raises a warning of class `hzr_g3_corner_supremum`, which inherits
   `hzr_boundary`. The estimates are unchanged. PROC HAZARD has no such
   check and would report the same `gamma`. On simulated data this caught
-  12 of the 14 warning-free fits that stopped short. Fits with
-  left-censored or interval-censored rows are not examined, and neither is
-  a supremum at `gamma` = 0.
+  12 of the 14 warning-free fits that stopped short. A fixed `tau` or
+  `alpha` keeps its value in the search and in the check. A fixed `gamma`
+  is not examined, and nor are fits with left-censored or interval-censored
+  rows, or a supremum at `gamma` = 0.
 
 * **An AIC stepwise entry no longer rejects, as if tested, a candidate whose
   refit ended below the current model (#490).** Entering a term gives a
