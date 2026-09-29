@@ -16,7 +16,11 @@ NULL
 #' risk groups. Within each group the **expected** event count is the sum of
 #' each subject's predicted cumulative hazard at its *own* follow-up time, and
 #' the **observed** count is its number of events; under conservation of events
-#' the group totals sum to the total observed events. The horizon therefore only
+#' the group totals sum to the total observed events. A subject with an entry
+#' time (`time_lower` on a left-truncated fit) is at risk only after it, so it
+#' contributes its cumulative hazard at exit minus its value at entry. For a
+#' weighted fit both counts carry the case weights, since such a fit conserves
+#' weighted events. Both follow [hzr_gof()]. The horizon therefore only
 #' stratifies subjects into risk groups; it does not restrict or exclude any
 #' subject, and the expected/observed totals are independent of it.
 #'
@@ -38,19 +42,27 @@ NULL
 #'     survival at \code{time}).}
 #'   \item{n}{Number of observations in the group.}
 #'   \item{events}{Observed event count in the group (all events over
-#'     follow-up).}
+#'     follow-up), weighted by the case weights for a weighted fit.}
 #'   \item{expected}{Expected event count: the sum of each subject's predicted
-#'     cumulative hazard at its own follow-up time.}
-#'   \item{observed_rate}{Observed event rate (events / n).}
-#'   \item{expected_rate}{Expected event rate (expected / n).}
+#'     cumulative hazard at its own follow-up time, minus its value at its entry
+#'     time when it has one, weighted by the case weights for a weighted
+#'     fit.}
+#'   \item{observed_rate}{Observed event rate (events / n; for a weighted
+#'     fit, events per unit of case weight).}
+#'   \item{expected_rate}{Expected event rate (expected / n; for a weighted
+#'     fit, per unit of case weight).}
 #'   \item{chi_sq}{Chi-square contribution: (events - expected)^2 /
-#'     expected.}
+#'     expected. For a weighted fit the denominator is the Poisson variance
+#'     of the weighted count, the sum of each subject's squared weight times
+#'     its cumulative hazard, so the statistic does not change when every
+#'     weight is multiplied by the same constant.}
 #'   \item{p_value}{Upper-tail p-value from the chi-square test for
 #'     this group (1 df).}
 #'   \item{mean_survival}{Mean predicted survival probability at the horizon
 #'     in the group.}
 #'   \item{mean_cumhaz}{Mean predicted cumulative hazard at follow-up in the
-#'     group.}
+#'     group: unweighted, and without the entry-time correction, so for a
+#'     left-truncated or weighted fit it is not `expected / n`.}
 #' }
 #'
 #' An attribute `"overall"` is attached with the overall chi-square
@@ -145,10 +157,23 @@ hzr_deciles <- function(object, time, groups = 10L,
     }
   }
 
-  cumhaz_fu    <- cumhaz_at(event_time)        # expected-event contribution
+  cumhaz_fu    <- cumhaz_at(event_time)        # H at each subject's exit
   cumhaz_hor   <- cumhaz_at(rep(time, n_obs))  # risk grouping at the horizon
   survival_hor <- exp(-cumhaz_hor)
-  observed     <- as.integer(status == 1)
+  # A left-truncated subject is at risk only from its entry time, and a
+  # weighted fit conserves weighted events, sum(w * H) = sum(w * d). Both
+  # tallies follow hzr_gof(), or a correctly specified fit read as
+  # miscalibrated here (#491).
+  weights <- object$data$weights
+  if (is.null(weights)) weights <- rep(1, n_obs)
+  dcumhaz    <- cumhaz_fu - .hzr_cumhaz_at_entry(object, event_time)
+  expected_i <- weights * dcumhaz
+  observed   <- weights * as.numeric(status == 1)
+  # The chi-square divides by the Poisson variance of the weighted count,
+  # sum(w^2 * dH), not by E: (O - E)^2 / E grows with the weights' scale, so
+  # rescaling them would move the p-value without changing the fit. With unit
+  # weights the two are the same.
+  variance_i <- weights^2 * dcumhaz
   n_included   <- n_obs
   n_excluded   <- 0L
 
@@ -187,20 +212,24 @@ hzr_deciles <- function(object, time, groups = 10L,
   for (g in seq_len(groups)) {
     idx <- which(group == g)
     ng <- length(idx)
-    obs_events <- sum(observed[idx] == 1)
-    exp_events <- sum(cumhaz_fu[idx])
+    obs_events <- sum(observed[idx])
+    exp_events <- sum(expected_i[idx])
+    var_events <- sum(variance_i[idx])
+    # Rates per unit of weight, so they do not scale with the weights either;
+    # with unit weights this is the head count.
+    wg <- sum(weights[idx])
 
     result$n[g] <- ng
     result$events[g] <- obs_events
     result$expected[g] <- exp_events
-    result$observed_rate[g] <- if (ng > 0) obs_events / ng else NA_real_
-    result$expected_rate[g] <- if (ng > 0) exp_events / ng else NA_real_
+    result$observed_rate[g] <- if (wg > 0) obs_events / wg else NA_real_
+    result$expected_rate[g] <- if (wg > 0) exp_events / wg else NA_real_
     result$mean_survival[g] <- if (ng > 0) mean(survival_hor[idx]) else NA_real_
     result$mean_cumhaz[g] <- if (ng > 0) mean(cumhaz_fu[idx]) else NA_real_
 
-    # Per-group chi-square: (O - E)^2 / E
+    # Per-group chi-square: (O - E)^2 / V, V = E for unit weights
     if (exp_events > 0) {
-      result$chi_sq[g] <- (obs_events - exp_events)^2 / exp_events
+      result$chi_sq[g] <- (obs_events - exp_events)^2 / var_events
       # Upper-tail p-value from chi-square with 1 df
       result$p_value[g] <- stats::pchisq(result$chi_sq[g], df = 1,
                                           lower.tail = FALSE)
@@ -229,14 +258,62 @@ hzr_deciles <- function(object, time, groups = 10L,
     p_value = overall_p,
     time = time,
     groups = groups,
-    total_events = sum(observed == 1),
-    total_expected = sum(cumhaz_fu),
+    total_events = sum(observed),
+    total_expected = sum(expected_i),
     n_included = n_included,
     n_excluded = n_excluded
   )
 
   class(result) <- c("hzr_deciles", "data.frame")
   result
+}
+
+#' Each subject's cumulative hazard at its counting-process entry time
+#'
+#' A subject with a genuine entry time (a status 0/1 row with
+#' `0 < time_lower < exit`) is at risk only after it, so its expected events
+#' are H(exit) - H(entry), the quantity a maximum likelihood fit conserves.
+#' Shared by hzr_gof() and hzr_deciles() so the two cannot disagree (#491).
+#'
+#' predict() without newdata evaluates the stored design (x, or the per-phase
+#' x_list for multiphase) at the stored time, for either interface; swapping
+#' the stored time for the entry time gives H(entry) the same way.
+#'
+#' @param object A fitted `hazard` object.
+#' @param exit_time Numeric vector of exit times, one per stored row.
+#' @return Numeric vector, one per row: H(entry), or 0 for a row with no
+#'   entry time.
+#' @keywords internal
+#' @noRd
+.hzr_cumhaz_at_entry <- function(object, exit_time) {
+  n <- length(exit_time)
+  entry <- object$data$time_lower
+  # Only on a stored status 0/1 row is time_lower an entry time: on a left- or
+  # interval-censored row it bounds the event time instead. hzr_gof() refuses
+  # such rows, but hzr_deciles() takes a caller's `status` in their place.
+  has_entry <- if (is.null(entry)) {
+    rep(FALSE, n)
+  } else {
+    entry > 0 & entry < exit_time & object$data$status %in% c(0, 1)
+  }
+  h_entry <- rep(0, n)
+  if (any(has_entry)) {
+    at_entry <- object
+    at_entry$data$time <- ifelse(has_entry, entry, exit_time)
+    tw <- object$spec$time_windows
+    if (!identical(object$spec$dist, "multiphase") && !is.null(tw) &&
+          !is.null(object$data$x) && ncol(object$data$x) > 0) {
+      # The likelihood takes H(entry) with each row's design expanded at its
+      # exit time. predict() would re-expand at the entry time, so hand it
+      # the exit-time design, already expanded, and no windows.
+      at_entry$data$x <- .hzr_expand_time_varying_design(
+        x = object$data$x, time = exit_time, time_windows = tw)
+      at_entry$spec$time_windows <- NULL
+    }
+    h_entry[has_entry] <-
+      stats::predict(at_entry, type = "cumulative_hazard")[has_entry]
+  }
+  h_entry
 }
 
 #' Print method for hzr_deciles
@@ -248,10 +325,14 @@ hzr_deciles <- function(object, time, groups = 10L,
 #'   invisibly. The data frame has one row per risk group and columns:
 #'   \code{group} (integer group index, 1 = lowest risk),
 #'   \code{n} (group size),
-#'   \code{events} (observed event count),
-#'   \code{expected} (expected event count from model predictions),
-#'   \code{observed_rate}, \code{expected_rate} (events / n),
-#'   \code{chi_sq} (per-group (O-E)^2/E contribution),
+#'   \code{events} (observed event count; weighted for a weighted fit),
+#'   \code{expected} (expected event count from model predictions, net of
+#'   any entry time, and weighted as \code{events} is),
+#'   \code{observed_rate}, \code{expected_rate} (events / n; per unit of
+#'   case weight for a weighted fit, and \code{NA} for a group whose weights
+#'   sum to 0),
+#'   \code{chi_sq} (per-group (O-E)^2/V contribution, where V is the Poisson
+#'   variance of the weighted count, equal to E for an unweighted fit),
 #'   \code{p_value} (1-df chi-square upper-tail p),
 #'   \code{mean_survival}, \code{mean_cumhaz} (mean predicted values in group).
 #'   An \code{"overall"} attribute contains the omnibus chi-square test
@@ -677,29 +758,7 @@ hzr_gof <- function(object, time_grid = NULL) {
     stop("predict() returned ", length(h_exit), " cumulative hazards for ",
          n_total, " subjects.", call. = FALSE)
   }
-  entry <- object$data$time_lower
-  has_entry <- if (is.null(entry)) {
-    rep(FALSE, n_total)
-  } else {
-    entry > 0 & entry < obs_time
-  }
-  h_entry <- rep(0, n_total)
-  if (any(has_entry)) {
-    at_entry <- object
-    at_entry$data$time <- ifelse(has_entry, entry, obs_time)
-    tw <- object$spec$time_windows
-    if (!is_multiphase && !is.null(tw) && !is.null(object$data$x) &&
-        ncol(object$data$x) > 0) {
-      # The likelihood takes H(entry) with each row's design expanded at its
-      # exit time. predict() would re-expand at the entry time, so hand it
-      # the exit-time design, already expanded, and no windows.
-      at_entry$data$x <- .hzr_expand_time_varying_design(
-        x = object$data$x, time = obs_time, time_windows = tw)
-      at_entry$spec$time_windows <- NULL
-    }
-    h_entry[has_entry] <-
-      stats::predict(at_entry, type = "cumulative_hazard")[has_entry]
-  }
+  h_entry <- .hzr_cumhaz_at_entry(object, obs_time)
 
   # A weighted fit conserves weighted events, sum(w * H) = sum(w * d), so both
   # tallies carry the case weights.
