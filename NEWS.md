@@ -2,6 +2,17 @@
 
 ## Bug fixes
 
+* **`hazard()` now refuses a `control$maxit` below 1 (#541).** It was
+  accepted without a word, and what happened depended on the model. A
+  Weibull fit or a single-phase multiphase fit returned its starting values
+  with `converged = TRUE`: on the `avc` data a Weibull fit with `maxit = 0`
+  reported a log-likelihood of -1425.16 as converged, where the fit reaches
+  -223.55. A multiphase fit with a `cdf` and a `constant` phase ignored the
+  limit and optimised anyway. `control$maxit` must now be a single whole
+  number of at least 1, and anything else stops `hazard()`, whether or not
+  it fits, with a pointer to `hzr_evaluate()` for an evaluation at given
+  values. `hzr_stepwise()` checks it once, before any refit.
+
 * **A g3 phase under `constraint = "eta_gamma"` whose likelihood is higher
   at a much larger `gamma` is now recorded and warned about (#418).** As
   `gamma` grows, this phase tends to a corner law whose log-likelihood is
