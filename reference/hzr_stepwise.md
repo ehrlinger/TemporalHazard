@@ -245,38 +245,40 @@ augmented with:
   computed for want of a variance, `wald_no_variance`; or an entry under
   `criterion = "aic"` whose fit had no finite objective, `nonfinite`, or
   was fitted on different rows from the current model because the
-  candidate is missing on some, `rows_differ`), `uncomputable_reasons`
-  (a named integer vector of *why*), `wald_untested_removals` and
-  `wald_untested_entries` (the `"var"` / `"var@phase"` tokens of
-  variables kept in, or left out, on a step whose Wald test for them
-  could not be computed; a variable tested at a later step is not
-  listed. Entries are listed under `criterion = "wald"` only: under
-  `"score"` an entry no test could reach is reported by its reason, such
-  as `fallback_no_variance`) and `stopped_uncomputable` (`TRUE` when the
-  last iteration had candidates for entry or for removal and could test
-  none of them). Read `uncomputable_reasons` before treating an unscored
-  candidate as a bad one: `information_indefinite` marks candidates
-  whose effect is too large for the score test's approximation at zero,
-  which are typically the strongest variables on offer rather than
-  degenerate ones. Candidates with that cause, or with
-  `coefficient_diverging`, are refit and tested by Wald automatically,
-  counted in `n_wald_fallbacks`. A candidate still reaches
-  `uncomputable_reasons` when that refit fails, or when its cause is any
-  other, which no refit can rescue. Read `uncomputable_reasons` for
-  which one it was in any given run. For every criterion it also carries
-  `refit_failures` (the `"var"` / `"var@phase"` tokens of candidate
-  moves whose refit errored, failed to converge, or was refused because
-  the move would not change the model – a drop that removes no design
-  column, \#320), `refit_failure_reasons` (why each one failed or was
-  refused: the refit's error message, that it did not converge, or that
-  the move changes nothing; named by the same tokens),
-  `n_refit_failures`, and `stopped_refit_failed` (`TRUE` when the run
-  ended on an iteration in which a refit failed or a move was refused. A
-  refit failure is a screen that could not test its candidates, rather
-  than one that tested them and liked none; a refusal is determinate –
-  the move was tested and would have left the model as it was. Read
-  `refit_failure_reasons` for which it was). Check it before reading a
-  zero-row `steps` as an honest null result.
+  candidate is missing on some, `rows_differ`, or whose refit ended
+  below the current model's log-likelihood, which it contains, so that
+  the refit cannot have converged, `loglik_below_base`),
+  `uncomputable_reasons` (a named integer vector of *why*),
+  `wald_untested_removals` and `wald_untested_entries` (the `"var"` /
+  `"var@phase"` tokens of variables kept in, or left out, on a step
+  whose Wald test for them could not be computed; a variable tested at a
+  later step is not listed. Entries are listed under
+  `criterion = "wald"` only: under `"score"` an entry no test could
+  reach is reported by its reason, such as `fallback_no_variance`) and
+  `stopped_uncomputable` (`TRUE` when the last iteration had candidates
+  for entry or for removal and could test none of them). Read
+  `uncomputable_reasons` before treating an unscored candidate as a bad
+  one: `information_indefinite` marks candidates whose effect is too
+  large for the score test's approximation at zero, which are typically
+  the strongest variables on offer rather than degenerate ones.
+  Candidates with that cause, or with `coefficient_diverging`, are refit
+  and tested by Wald automatically, counted in `n_wald_fallbacks`. A
+  candidate still reaches `uncomputable_reasons` when that refit fails,
+  or when its cause is any other, which no refit can rescue. Read
+  `uncomputable_reasons` for which one it was in any given run. For
+  every criterion it also carries `refit_failures` (the `"var"` /
+  `"var@phase"` tokens of candidate moves whose refit errored, failed to
+  converge, or was refused because the move would not change the model –
+  a drop that removes no design column, \#320), `refit_failure_reasons`
+  (why each one failed or was refused: the refit's error message, that
+  it did not converge, or that the move changes nothing; named by the
+  same tokens), `n_refit_failures`, and `stopped_refit_failed` (`TRUE`
+  when the run ended on an iteration in which a refit failed or a move
+  was refused. A refit failure is a screen that could not test its
+  candidates, rather than one that tested them and liked none; a refusal
+  is determinate – the move was tested and would have left the model as
+  it was. Read `refit_failure_reasons` for which it was). Check it
+  before reading a zero-row `steps` as an honest null result.
 
 - `trace_msg`:
 
