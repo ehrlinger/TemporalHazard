@@ -359,7 +359,8 @@
   # it, as the backward step counts an untested removal (#389).  A failed
   # refit also scores NA, but is reported as a refit failure.  Under AIC the
   # score needs no variance, so an NA there is a non-finite objective, unless
-  # the candidate was refused for being fitted on other rows (#488).
+  # the candidate was refused for being fitted on other rows (#488) or for a
+  # refit that ended below the current model's log-likelihood (#490).
   refit_ok <- vapply(candidate_fits, inherits, logical(1L), what = "hazard")
   unscored <- is.na(all_scores$score) & refit_ok
   n_uncomputable <- sum(unscored)

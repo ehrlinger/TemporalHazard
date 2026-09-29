@@ -1994,11 +1994,19 @@
 
   phase_calls <- list()
   theta_blocks <- list()
+  # Which theta entries are a phase's log(MU): the first of each block. The
+  # MAXITER=0 translation rescales exactly these, as PROC HAZARD's
+  # Conservation of Events does before it evaluates the start (#496).
+  log_mu_mask <- numeric(0)
+  add_block <- function(block) {
+    log_mu_mask <<- c(log_mu_mask, 1, rep(0, length(block) - 1L))
+    c(theta_blocks, block)
+  }
   if (build_early) {
     phase_calls[[length(phase_calls) + 1L]] <- .hzr_parms_phase_call(
       "cdf", early_full, phase_covars$early, fixed_early
     )
-    theta_blocks <- c(theta_blocks,
+    theta_blocks <- add_block(
       .hzr_parms_theta_block("early", mu[["MUE"]], early_full,
                              phase_covar_vals$early)
     )
@@ -2007,7 +2015,7 @@
     phase_calls[[length(phase_calls) + 1L]] <- .hzr_parms_phase_call(
       "constant", list(), phase_covars$constant, character(0)
     )
-    theta_blocks <- c(theta_blocks,
+    theta_blocks <- add_block(
       .hzr_parms_theta_block("constant", mu[["MUC"]], list(), phase_covar_vals$constant)
     )
   }
@@ -2015,7 +2023,7 @@
     phase_calls[[length(phase_calls) + 1L]] <- .hzr_parms_phase_call(
       "g3", late_full, phase_covars$late, fixed_late, late_constraint
     )
-    theta_blocks <- c(theta_blocks,
+    theta_blocks <- add_block(
       .hzr_parms_theta_block("late", mu[["MUL"]], late_full,
                              phase_covar_vals$late)
     )
@@ -2497,6 +2505,17 @@
   list(
     phases = as.call(c(quote(list), phase_calls)),
     theta = as.call(c(quote(c), theta_blocks)),
+    log_mu_mask = log_mu_mask,
+    # The free parameters PROC HAZARD counts against its events before any
+    # evaluation (hazrd2.c:68-69): every theta entry less the fixed shapes,
+    # and less a late shape a FIXGE2/FIXGAE2 constraint derives (#496).
+    n_free = length(log_mu_mask) -
+      (if (build_early) length(fixed_early) else 0L) -
+      (if (build_late) {
+        length(fixed_late) + (late_constraint != "none")
+      } else {
+        0L
+      }),
     listwise_only = setdiff(unique(phase_vars), modelled),
     selection = selection_spec,
     has_phases = length(phase_calls) > 0L,
