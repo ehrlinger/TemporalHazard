@@ -2774,3 +2774,66 @@ test_that("the SETG1 documents render past the warning (#424)", {
     if (length(rn)) expect_identical(unname(res$results[[rn]]), "ok", info = id)
   }
 })
+
+# --- ICENSOR operand syntax (#495) ------------------------------------------
+# ICENSOR is `ICENSOR count = timevar`, two names and nothing else
+# (hazard_y.y:115-122), and the ICNS lexer state has no `,` rule
+# (hazard_l.l:84, :174-178). Measured on the binary, every shape below exits
+# SYNTAX at initprz.c:77 with `PARMS MUC=0.01; CONSTANT AGE;`, and the clean
+# `ICENSOR C3 = TL` fits (-635.394). A later `(` clears the flag
+# (hazard_l.l:56): with `CONSTANT LOG();` the trailing-comma job fits to
+# -609.094, the same value as the clean one. The translation stripped a
+# trailing comma and fitted with no warning and no row.
+.p495_job <- function(icensor, phase = "CONSTANT AGE;", env = parent.frame()) {
+  f <- withr::local_tempfile(fileext = ".sas", .local_envir = env)
+  writeLines(paste0("%HAZARD( PROC HAZARD DATA=D; EVENT DEAD; TIME TT; ",
+                    "ICENSOR ", icensor, "; PARMS MUC=0.01; ", phase, " );"), f)
+  suppressWarnings(hzr_translate_sas(f))
+}
+
+test_that("an ICENSOR operand PROC HAZARD cannot parse warns (U1, #495)", {
+  for (ic in c("C3=TL,", "C3,=TL", ",C3=TL", "C3=TL,,", "C3=TL AGE",
+               "C3 TL", "C3", "C3==TL")) {
+    job <- .p495_job(ic)
+    expect_false(is.null(.u1_refusal_chunk(job)), info = ic)
+    msg <- .u1_msg(job)
+    expect_match(msg, "PROC HAZARD does not run this job", fixed = TRUE,
+                 info = ic)
+    expect_match(msg, "hazard_y.y:115-122", fixed = TRUE, info = ic)
+    expect_true(any(startsWith(job$untranslated$construct, "ICENSOR")),
+                info = ic)
+  }
+  # Controls: the grammar's own shape, spaced or not, and a macro, which
+  # SAS expands before PROC HAZARD reads it.
+  for (ic in c("C3 = TL", "C3=TL", "C3 =TL", "&CNT = TL")) {
+    job <- .p495_job(ic)
+    expect_null(.u1_refusal_chunk(job), info = ic)
+    expect_identical(NROW(job$untranslated), 0L, info = ic)
+  }
+})
+
+test_that("a stray ICENSOR comma still fits the same model (U1, #495)", {
+  e <- new.env()
+  utils::data("avc", package = "TemporalHazard", envir = e)
+  a <- e$avc[stats::complete.cases(e$avc), ]
+  D <- data.frame(TT = a$int_dead, DEAD = a$dead,
+                  AGE = as.numeric(scale(a$age)))
+  D$C3 <- as.numeric(seq_len(nrow(D)) %% 5 == 0 & D$DEAD == 0)
+  D$TL <- ifelse(D$C3 > 0, D$TT * 0.5, 0)
+  clean <- suppressWarnings(render_sim(.p495_job("C3 = TL"), list(D = D)))
+  expect_true(clean$ok)
+  for (ic in c("C3=TL,", "C3,=TL")) {
+    job <- .p495_job(ic)
+    res <- suppressWarnings(render_sim(job, list(D = D)))
+    expect_true(res$ok, info = paste(res$results, collapse = "; "))
+    # The interval-censored rows are still interval-censored.
+    expect_identical(res$env$fit$fit$theta, clean$env$fit$fit$theta, info = ic)
+    expect_true(any(res$env$fit$data$status == 2), info = ic)
+  }
+  # After a later `(` PROC HAZARD fits; the warning says the flag was
+  # cleared, not that the job is refused.
+  job <- .p495_job("C3=TL,", "CONSTANT LOG();")
+  msg <- .u1_msg(job)
+  expect_match(msg, "clears its syntax-error flag", fixed = TRUE)
+  expect_no_match(msg, "PROC HAZARD does not run this job", fixed = TRUE)
+})

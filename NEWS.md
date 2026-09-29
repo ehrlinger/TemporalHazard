@@ -204,6 +204,18 @@
   formula. A model without covariates does not warn, and `?predict.hazard`
   documents the behaviour under `newdata`.
 
+* **A translated `ICENSOR` statement that `PROC HAZARD` cannot parse now
+  warns (#495).** `ICENSOR` takes exactly `count = timevar`, and `PROC
+  HAZARD` stops with a syntax error on anything else: a comma anywhere, a
+  missing `=`, or an extra name. `hzr_translate_sas()` removed a trailing
+  comma and fitted the job without a word, and it fitted a job with a
+  missing `=` without its interval-censored rows, with only an
+  `$untranslated` row to say so. Such a job now warns that `PROC HAZARD`
+  does not run it and gains an `$untranslated` row. Where the two names
+  are still unambiguous, as with a stray comma, it fits the same model as
+  before. A later `(` clears `PROC HAZARD`'s syntax error, and the
+  warning then says so instead.
+
 # TemporalHazard 1.2.12
 
 ## Breaking changes

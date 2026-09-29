@@ -819,11 +819,32 @@
         # `ICENSOR c3var '=' ctimevar;` -- an event-COUNT variable (OBS
         # column 4, C3), not a 0/1 flag, and a second time variable (the
         # interval's lower bound), not two comma-separated bound variables.
-        # Split on "=" and tolerate a stray trailing comma; anything else is
-        # not this shape and must not be guessed at.
-        parts <- trimws(sub(",$", "", strsplit(ops_text, "=", fixed = TRUE)[[1L]]))
+        # That is the whole grammar (hazard_y.y:115-122), and the ICNS lexer
+        # state has no rule for `,` (hazard_l.l:55, :84, :174-175), so a comma
+        # anywhere, a missing `=` or an extra name is a syntax error and
+        # initprz.c:75-77 stops the job. The translation used to strip a
+        # trailing comma and fit, silently (#495). It now warns (U1) and
+        # still fits where the two names are unambiguous once the commas are
+        # set aside; any other shape is not guessed at. A macro can expand
+        # to anything, so it carries no verdict.
+        parts <- trimws(strsplit(gsub(",", "", ops_text, fixed = TRUE), "=",
+                                 fixed = TRUE)[[1L]])
         parts <- parts[nzchar(parts)]
-        if (length(parts) == 2L) {
+        well_formed <- grepl("^[^=,]+=[^=,]+$", ops_text) &&
+          length(parts) == 2L && all(.hzr_sas_is_name(parts))
+        if (!well_formed && !.hzr_sas_is_macro(ops_text)) {
+          why <- paste0("PROC HAZARD's ICENSOR is `ICENSOR count = timevar`, ",
+                        "two names and nothing else (hazard_y.y:115-122; ",
+                        "hazard_l.l has no `,` rule in the ICNS state)")
+          proc_rejected <- c(proc_rejected, paste0(
+            stmt_text, ": ", why, ", so it rejects this job with a syntax ",
+            "error"))
+          proc_what <- c(proc_what, stmt_text)
+          err_stmt <- c(err_stmt, i)
+          note(stmt_text, why)
+        }
+        if (length(parts) == 2L && all(.hzr_sas_is_name(parts) |
+                                         .hzr_sas_is_macro(parts))) {
           statements$ICENSOR <- parts
         } else {
           mapped <- mapped - 1L
