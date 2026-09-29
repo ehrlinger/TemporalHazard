@@ -39,11 +39,13 @@ data frame of \code{time}, \code{hazard} and \code{cumulative_hazard}, which is 
 throughout where \code{logLik} is \code{-Inf}.
 }
 \description{
-Computes a model's log-likelihood, and optionally its hazard and
-cumulative hazard, at parameters \strong{you} supply rather than at parameters
-fitted from the data. This is what a parity check needs: the likelihood at
-another program's converged estimates, evaluated by this package's own
-likelihood.
+Computes a model's objective, and optionally its hazard and cumulative
+hazard, at parameters \strong{you} supply rather than at parameters fitted from
+the data. The objective is the log-likelihood, except for a model built
+with \code{objective = "sas"} on data with interval-censored rows, where it is
+PROC HAZARD's interval-mean-hazard objective (see \code{objective} under
+Value). This is what a parity check needs: the objective at another
+program's converged estimates, evaluated by this package's own code.
 }
 \details{
 The result is not a fit and does not pretend to be one. It carries no

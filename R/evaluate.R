@@ -10,11 +10,13 @@
 
 #' Evaluate a hazard model at parameters you supply
 #'
-#' Computes a model's log-likelihood, and optionally its hazard and
-#' cumulative hazard, at parameters **you** supply rather than at parameters
-#' fitted from the data. This is what a parity check needs: the likelihood at
-#' another program's converged estimates, evaluated by this package's own
-#' likelihood.
+#' Computes a model's objective, and optionally its hazard and cumulative
+#' hazard, at parameters **you** supply rather than at parameters fitted from
+#' the data. The objective is the log-likelihood, except for a model built
+#' with `objective = "sas"` on data with interval-censored rows, where it is
+#' PROC HAZARD's interval-mean-hazard objective (see `objective` under
+#' Value). This is what a parity check needs: the objective at another
+#' program's converged estimates, evaluated by this package's own code.
 #'
 #' The result is not a fit and does not pretend to be one. It carries no
 #' standard errors, no convergence status and no covariance matrix, because
