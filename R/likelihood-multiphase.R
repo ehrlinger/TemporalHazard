@@ -2697,6 +2697,26 @@
       )
       if (is.finite(value_at_par)) {
         best_result$value <- value_at_par
+        # Is the likelihood higher with the conserved phase switched off
+        # (#261)? Only here, where the value IS the likelihood at the
+        # returned point; a certificate against any other value would compare
+        # two different points.
+        coe_boundary <- .hzr_coe_boundary_record(
+          theta = best_result$par, value = value_at_par,
+          converged = isTRUE(best_result$convergence == 0),
+          objective_fn = function(p) {
+            logl_fn_unwrapped(p, time, status, time_lower, time_upper, x,
+                              weights = weights)
+          },
+          fixmu_phase = fixmu_phase, fixmu_pos = fixmu_pos,
+          log_mu_positions = log_mu_positions, phases = phases,
+          covariate_counts = covariate_counts, x_list = x_list, time = time,
+          status = status, time_lower = time_lower, weights = weights,
+          total_events = total_events
+        )
+        if (!is.null(coe_boundary)) {
+          held$records <- c(held$records, list(coe_boundary))
+        }
       } else {
         # Not silent. Keeping the optimizer's value here restores exactly the
         # defect this block fixes, an objective describing a point other than

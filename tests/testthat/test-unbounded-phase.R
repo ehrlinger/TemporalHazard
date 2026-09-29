@@ -178,8 +178,11 @@ test_that("the suite's own marginal case is pinned, and it is marginal", {
                                  control = list(n_starts = 1)))
   b <- fit$fit$boundary
   expect_true(is.list(b))
-  expect_equal(b[[1L]]$phase, "a")
-  expect_equal(b[[1L]]$mechanism, "unbounded_phase")
+  # By mechanism, not position: $boundary can hold several records in no
+  # guaranteed order (this fit also carries a coe_no_events_left one, #261).
+  ub <- Filter(function(r) identical(r$mechanism, "unbounded_phase"), b)
+  expect_length(ub, 1L)
+  expect_equal(ub[[1L]]$phase, "a")
   t_half <- exp(unname(fit$fit$theta[["a.log_t_half"]]))
   ratio <- min(tt) / t_half
   expect_gt(ratio, 1)            # it does trip
