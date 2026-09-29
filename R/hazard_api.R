@@ -552,10 +552,11 @@ NULL
 #'   `fit$spec$control$conserve`: the latter says only what you asked for.
 #' - `shape_param_count`: The number of baseline parameters at the front of
 #'   `theta`: the scale and any shape parameters, so 2 for `"weibull"` and 1
-#'   for `"exponential"`. For a single-distribution model only. The fit itself does not
-#'   use it; the stepwise refit and the score test read it back from
-#'   `fit$spec$control`. A multiphase fit derives its own layout, so nothing
-#'   reads it there.
+#'   for `"exponential"`. For a single-distribution model only. The fit does
+#'   not use it: `theta` is checked against the distribution's own count, and
+#'   so are [hzr_stepwise()], its refits and its score test. Only an internal
+#'   helper that writes a SAS input deck for parity checks reads it. A
+#'   multiphase fit derives its own layout, so nothing reads it there.
 #'
 #' The elements above are accepted without a warning: `maxit` and `reltol`
 #' for every model, `shape_param_count` for a single-distribution model, and
@@ -3361,10 +3362,12 @@ vcov.hazard <- function(object, ...) {
 # The `control` elements the fitter reads, by distribution (#376), derived
 # from the code rather than the documentation: .hzr_optim_generic() reads
 # maxit and reltol; .hzr_optim_multiphase() reads and strips the multiphase
-# ones before the optimizer; shape_param_count is not read by the fitter but
-# is read back from the stored spec$control by the single-distribution
-# stepwise refit and score test (every multiphase path derives its own theta
-# layout, so on a multiphase fit nothing reads it; #405). abstol is read only by .hzr_optim_generic()'s bounded
+# ones before the optimizer; shape_param_count is not read by the fitter,
+# nor by the stepwise refit, score test or trace, which count shapes by
+# distribution as the likelihood does (#489); only the parity SAS input deck
+# (.hzr_split_theta_for_legacy()) reads it (every multiphase path derives its
+# own theta layout, so on a multiphase fit nothing reads it; #405). abstol
+# is read only by .hzr_optim_generic()'s bounded
 # (L-BFGS-B) branch, which every caller turns off (use_bounds = FALSE), so
 # no fit reads it.
 .hzr_control_names <- list(

@@ -92,7 +92,8 @@ test_that("time windows count one coefficient per covariate per window", {
 
 test_that("control$shape_param_count does not change the count the likelihood uses", {
   # The likelihood always takes the distribution's own shape parameters; the
-  # control element is read only by the stepwise refit and the score test.
+  # stepwise refit and the score test count them the same way (#489), and
+  # only the SAS parity input deck reads the control element.
   d <- tl_data()
   expect_error(
     hazard(survival::Surv(t, s) ~ x, data = d, dist = "weibull",

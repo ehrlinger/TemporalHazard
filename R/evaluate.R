@@ -255,8 +255,8 @@ hzr_evaluate <- function(object, theta, times = NULL) {
     out$phases <- phases_v
     return(out)
   }
-  # The likelihood's own count: it ignores control$shape_param_count, which
-  # only the score test and the stepwise refit read (as wald.R does). Taking
+  # The likelihood's own count: it ignores control$shape_param_count, as
+  # wald.R, the score test and the stepwise refit do (#489). Taking
   # the control count refused a fit's own theta and accepted a longer one,
   # evaluating another model's likelihood.
   out$n_par <- .hzr_shape_parameter_count(dist) +
