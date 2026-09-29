@@ -2997,3 +2997,114 @@ test_that("a negative MAXITER fits as though it were absent (#496)", {
   expect_false(identical(job$calls$fit, base$calls$fit))
   expect_true("MAXITER=0" %in% job$untranslated$construct)
 })
+
+# --- ICENSOR operand syntax (#495) ------------------------------------------
+# ICENSOR is `ICENSOR count = timevar`, two names and nothing else
+# (hazard_y.y:115-122), and the ICNS lexer state has no `,` rule
+# (hazard_l.l:84, :174-178). Measured on the binary, every shape below exits
+# SYNTAX at initprz.c:77 with `PARMS MUC=0.01; CONSTANT AGE;`, and the clean
+# `ICENSOR C3 = TL` fits (-635.394). A later `(` clears the flag
+# (hazard_l.l:56): with `CONSTANT LOG();` the trailing-comma job fits to
+# -609.094, the same value as the clean one. The translation stripped a
+# trailing comma and fitted with no warning and no row.
+.p495_job <- function(icensor, phase = "CONSTANT AGE;", env = parent.frame()) {
+  f <- withr::local_tempfile(fileext = ".sas", .local_envir = env)
+  writeLines(paste0("%HAZARD( PROC HAZARD DATA=D; EVENT DEAD; TIME TT; ",
+                    "ICENSOR ", icensor, "; PARMS MUC=0.01; ", phase, " );"), f)
+  suppressWarnings(hzr_translate_sas(f))
+}
+
+test_that("an ICENSOR operand PROC HAZARD cannot parse warns (U1, #495)", {
+  for (ic in c("C3=TL,", "C3,=TL", ",C3=TL", "C3=TL,,", "C3=TL AGE",
+               "C3 TL", "C3", "C3==TL", "C3=TL,AGE", "C,3=TL",
+               # A stray comma outside a macro is met whatever it expands to.
+               "C3=&T,", "&C,=TL",
+               # A macro call hides nothing outside itself, and a macro after
+               # a `(` hides nothing beside it (Copilot on #546).
+               "C3=TL, %TRIM(X)", "C3=TL(X,&M)",
+               # After a `(` the lexer is in the PROC-line state, where any
+               # text sets the flag again (binary: SYNTAX for each).
+               "C3=TL(X)", "C3=TL()X", "C3=TL()=", "C3=TL() = 1")) {
+    job <- .p495_job(ic)
+    expect_false(is.null(.u1_refusal_chunk(job)), info = ic)
+    msg <- .u1_msg(job)
+    expect_match(msg, "PROC HAZARD does not run this job", fixed = TRUE,
+                 info = ic)
+    expect_match(msg, "hazard_y.y:115-122", fixed = TRUE, info = ic)
+    expect_true(any(startsWith(job$untranslated$construct, "ICENSOR")),
+                info = ic)
+  }
+  # Controls: the grammar's own shape, spaced or not; a macro, which SAS
+  # expands before PROC HAZARD reads it; and a `(`, which leaves the ICNS
+  # lexer state (the binary fits `C3=TL()` to -635.394, the clean value).
+  # `)` is whitespace to the lexer (hazard_l.l:32), and a macro reference
+  # joined to a name is one name once SAS resolves it.
+  for (ic in c("C3 = TL", "C3=TL", "C3 =TL", "&CNT = TL", "C3=TL()",
+               "&&C3 = TL", "C&I = TL&I", "C3 = TL&S",
+               # A macro alone after a `(` may expand to nothing, an
+               # indirect one included.
+               "C3=TL(&M)", "C3=TL(&&M)")) {
+    job <- .p495_job(ic)
+    expect_null(.u1_refusal_chunk(job), info = ic)
+    expect_identical(NROW(job$untranslated), 0L, info = ic)
+  }
+  # A lone `)` closes the %HAZARD( call, so it is tested in a bare block.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(paste("PROC HAZARD DATA=D; EVENT DEAD; TIME TT; ICENSOR C3=TL);",
+                   "PARMS MUC=0.01; CONSTANT AGE; RUN;"), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  expect_null(.u1_refusal_chunk(job))
+  expect_match(paste(deparse(job$calls$fit), collapse = " "), "time_lower",
+               fixed = TRUE)
+  # The joined reference is carried whole, never cut at the `&` into a
+  # different variable (r-reviewer pass 2 on #546).
+  txt <- paste(deparse(.p495_job("C3 = TL&S")$calls$fit), collapse = " ")
+  expect_match(txt, "`TL&S`", fixed = TRUE)
+  txt <- paste(deparse(.p495_job("C&I = TL&I")$calls$fit), collapse = " ")
+  expect_match(txt, "`C&I`", fixed = TRUE)
+  # A macro that hides the shape entirely leaves no ICENSOR to emit; the
+  # job warns that the fit has no interval-censored rows.
+  for (ic in c("C3 = %TRIM(TL)", "&ICSTMT")) {
+    job <- .p495_job(ic)
+    expect_match(.u1_msg(job), "no interval-censored rows", fixed = TRUE,
+                 info = ic)
+    expect_no_match(paste(deparse(job$calls$fit), collapse = " "),
+                    "time_lower", fixed = TRUE)
+  }
+})
+
+test_that("a stray ICENSOR comma still fits the same model (U1, #495)", {
+  e <- new.env()
+  utils::data("avc", package = "TemporalHazard", envir = e)
+  a <- e$avc[stats::complete.cases(e$avc), ]
+  D <- data.frame(TT = a$int_dead, DEAD = a$dead,
+                  AGE = as.numeric(scale(a$age)))
+  D$C3 <- as.numeric(seq_len(nrow(D)) %% 5 == 0 & D$DEAD == 0)
+  D$TL <- ifelse(D$C3 > 0, D$TT * 0.5, 0)
+  D$C <- as.numeric(seq_len(nrow(D)) %% 7 == 0 & D$DEAD == 0)
+  # The fit takes the names PROC HAZARD's parser reads once its lexer has
+  # dropped the errors: the first NAME = NAME. Measured after a clearing `(`
+  # (`CONSTANT LOG();`): `C3=TL,AGE` and `C3=TL AGE` fit to -609.094 as
+  # `C3 = TL` does, and `C,3=TL` fits to -565.042 as `C = TL` does. Joining
+  # names across a comma fitted TLAGE and C3 (r-reviewer on #546).
+  fits <- function(ic) {
+    res <- suppressWarnings(render_sim(.p495_job(ic), list(D = D)))
+    expect_true(res$ok, info = paste(ic, paste(res$results, collapse = "; ")))
+    res$env$fit
+  }
+  clean <- list(C3 = fits("C3 = TL"), C = fits("C = TL"))
+  expect_false(identical(clean$C3$fit$theta, clean$C$fit$theta))
+  for (cs in list(c("C3=TL,", "C3"), c("C3,=TL", "C3"), c("C3=TL AGE", "C3"),
+                  c("C3=TL,AGE", "C3"), c("C,3=TL", "C"), c("C3=TL()", "C3"))) {
+    fit <- fits(cs[[1L]])
+    expect_identical(fit$fit$theta, clean[[cs[[2L]]]]$fit$theta, info = cs[[1L]])
+    # The interval-censored rows are still interval-censored.
+    expect_true(any(fit$data$status == 2), info = cs[[1L]])
+  }
+  # After a later `(` PROC HAZARD fits; the warning says the flag was
+  # cleared, not that the job is refused.
+  job <- .p495_job("C3=TL,", "CONSTANT LOG();")
+  msg <- .u1_msg(job)
+  expect_match(msg, "clears its syntax-error flag", fixed = TRUE)
+  expect_no_match(msg, "PROC HAZARD does not run this job", fixed = TRUE)
+})
