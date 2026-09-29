@@ -320,6 +320,7 @@
         stat      = NA_real_,
         stat_type = NA_character_,
         df        = NA_integer_,
+        reason    = NA_character_,
         stringsAsFactors = FALSE
       )
       next
@@ -341,6 +342,10 @@
       stat      = s$stat,
       stat_type = s$stat_type,
       df        = s$df,
+      # Why the row went unscored, when the scorer knows: read by
+      # hzr_stepwise() so a refused Wald entry is not also reported as one
+      # left untested for want of a variance (#538).
+      reason    = s$reason %||% NA_character_,
       stringsAsFactors = FALSE
     )
     # Cache the fit on the row so we can recover it for the winner
@@ -359,8 +364,9 @@
   # it, as the backward step counts an untested removal (#389).  A failed
   # refit also scores NA, but is reported as a refit failure.  Under AIC the
   # score needs no variance, so an NA there is a non-finite objective, unless
-  # the candidate was refused for being fitted on other rows (#488) or for a
-  # refit that ended below the current model's log-likelihood (#490).
+  # the candidate was refused for being fitted on other rows (#488). Under
+  # either criterion a refit that ended below the current model's
+  # log-likelihood is refused with its own reason (#490, #538).
   refit_ok <- vapply(candidate_fits, inherits, logical(1L), what = "hazard")
   unscored <- is.na(all_scores$score) & refit_ok
   n_uncomputable <- sum(unscored)
@@ -542,6 +548,13 @@
       criterion = "wald", mode = "entry", current = current, candidate = refit,
       names = fallback_coef
     )
+    if (is.na(w$score) && identical(w$reason, "loglik_below_base")) {
+      # The refit ended below the current model, which it contains, so it did
+      # not converge and its Wald test is not one (#538). It is not the
+      # variance failure below, and is not reported as that.
+      all_scores$reason[i] <- "loglik_below_base"
+      next
+    }
     if (is.na(w$score)) {
       # The refit CONVERGED -- it returned a point estimate -- but its Hessian
       # was not invertible, so there is no standard error and .hzr_wald_p()

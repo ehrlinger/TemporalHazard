@@ -243,10 +243,11 @@
 #'       computed for want of a variance, `wald_no_variance`; or an entry
 #'       under `criterion = "aic"` whose fit had no finite objective,
 #'       `nonfinite`, or was fitted on different rows from the current model
-#'       because the candidate is missing on some, `rows_differ`, or whose
-#'       refit ended below the current model's log-likelihood, which it
-#'       contains, so that the refit cannot have converged,
-#'       `loglik_below_base`),
+#'       because the candidate is missing on some, `rows_differ`; or an entry
+#'       under `criterion = "aic"` or `"wald"`, or rescued by the Wald
+#'       fallback under `"score"`, whose refit ended below the current
+#'       model's log-likelihood, which it contains, so that the refit cannot
+#'       have converged, `loglik_below_base`),
 #'       `uncomputable_reasons` (a named integer vector of *why*),
 #'       `wald_untested_removals` and `wald_untested_entries` (the
 #'       `"var"` / `"var@phase"` tokens of variables kept in, or left out,
@@ -889,9 +890,14 @@ hzr_stepwise <- function(fit,
         failed <- paste0(sc$variable, ifelse(is.na(sc$phase), "",
                                              paste0("@", sc$phase))) %in%
           (fwd$refit_failures %||% character())
+        # A refit that ended below its base is reported by its own reason
+        # and warning, not as an entry left untested for want of a variance
+        # (#538).
+        below <- (sc$reason %||% rep(NA_character_, nrow(sc))) %in%
+          "loglik_below_base"
         wald_untested_entries <- setdiff(update_untested(
-          wald_untested_entries, sc, is.na(sc$score)
-        ), wald_tokens(sc, failed))
+          wald_untested_entries, sc, is.na(sc$score) & !below
+        ), wald_tokens(sc, failed | below))
       }
       iter_refit_failures <- c(iter_refit_failures,
                                fwd$refit_failures %||% character())

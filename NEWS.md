@@ -2,6 +2,20 @@
 
 ## Bug fixes
 
+* **A Wald stepwise entry no longer tests a refit that ended below the
+  current model (#538).** The AIC fix below (#490) left two paths open.
+  Under `criterion = "wald"`, and in the Wald test that `criterion =
+  "score"` falls back on, such a refit still got a Wald p-value, from a fit
+  that did not converge. At a strict `slentry` it was rejected as if tested,
+  with every counter at 0. On `avc`, `opmos` in the constant phase refit
+  11.2 log-likelihood units below its base, got p = 0.069, and at
+  `slentry = 0.05` was rejected with no warning. The default `slentry = 0.30`
+  entered it, and the existing check on an entered model warned. Such a
+  candidate is now refused under the reason `loglik_below_base`, as under
+  AIC, and `hzr_stepwise()` warns that it declined it without testing it.
+  It is not listed in `$criteria$wald_untested_entries`, which is for
+  entries with no variance.
+
 * **An AIC stepwise entry no longer rejects, as if tested, a candidate whose
   refit ended below the current model (#490).** Entering a term gives a
   model that contains the current one, so its log-likelihood cannot be lower

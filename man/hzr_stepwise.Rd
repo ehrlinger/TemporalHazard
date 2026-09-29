@@ -199,10 +199,11 @@ a removal under any criterion, whose Wald statistic could not be
 computed for want of a variance, \code{wald_no_variance}; or an entry
 under \code{criterion = "aic"} whose fit had no finite objective,
 \code{nonfinite}, or was fitted on different rows from the current model
-because the candidate is missing on some, \code{rows_differ}, or whose
-refit ended below the current model's log-likelihood, which it
-contains, so that the refit cannot have converged,
-\code{loglik_below_base}),
+because the candidate is missing on some, \code{rows_differ}; or an entry
+under \code{criterion = "aic"} or \code{"wald"}, or rescued by the Wald
+fallback under \code{"score"}, whose refit ended below the current
+model's log-likelihood, which it contains, so that the refit cannot
+have converged, \code{loglik_below_base}),
 \code{uncomputable_reasons} (a named integer vector of \emph{why}),
 \code{wald_untested_removals} and \code{wald_untested_entries} (the
 \code{"var"} / \code{"var@phase"} tokens of variables kept in, or left out,
