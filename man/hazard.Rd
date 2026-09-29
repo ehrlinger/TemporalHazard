@@ -271,17 +271,22 @@ resolve (it can lie inside the data); and two made at setup, before the
 fit: \code{"g3_alpha_one"} (a g3 phase with \code{alpha} fixed at 1,
 re-expressed as PROC HAZARD does, see \code{\link[=hzr_phase]{hzr_phase()}}) and
 \code{"g3_fixge2_alpha_start"} (a free \code{alpha} start moved to 2/3
-under \code{constraint = "eta_gamma"}); and one made after it,
-\code{"g3_corner_supremum"}: a g3 phase under
+under \code{constraint = "eta_gamma"}); and two made after it.
+\code{"g3_corner_supremum"} is a g3 phase under
 \code{constraint = "eta_gamma"} whose estimated \code{gamma} converged
 below 1000 although the log-likelihood is higher at a much larger
 \code{gamma}, with any fixed \code{tau} or \code{alpha} held. The
 estimate is then not the maximum-likelihood one, and the supremum may lie
 at \code{gamma = Inf}. A fixed \code{gamma}, and a fit
-with left- or interval-censored rows, are not examined. That record
-also carries \code{gain}, \code{gamma_hat}, and the higher point as
-\code{certificate_theta} with its \code{certificate_loglik}; the
-estimates are not changed. Only rows the likelihood reads
+with left- or interval-censored rows, are not examined.
+\code{"coe_no_events_left"} is a fit under Conservation of Events whose
+log-likelihood is higher with the conserved phase's scale sent to zero,
+where no events remain for that phase. Both records also carry
+\code{gain} and the higher point as \code{certificate_theta} with its
+\code{certificate_loglik} (the corner record adds \code{gamma_hat}); the
+estimates are not changed. A fit can carry several records, in no
+guaranteed order, so select them by \code{mechanism}. Only rows the
+likelihood reads
 count as observed times. A fit with any record raises one warning whose
 classes are \code{"hzr_"} plus each mechanism present, all inheriting
 \code{"hzr_boundary"}, so one handler catches the whole family.
@@ -303,9 +308,9 @@ convergence but fails SAS's gradient test is continued with
 that a multiphase fit with fixed parameters may run first has its own
 limit, which \code{maxit} does not change. It must be a single number of at
 least 1 (a fraction is truncated, as PROC HAZARD truncates \code{MAXITER}):
-anything else stops \code{hazard()} at once, fitted or not (#541). A fit with no iterations is its starting values, not an
-estimate; to evaluate a model at parameters you supply, use
-\code{\link[=hzr_evaluate]{hzr_evaluate()}}.
+anything else stops \code{hazard()} at once, fitted or not (#541). A fit
+with no iterations is its starting values, not an estimate; to
+evaluate a model at parameters you supply, use \code{\link[=hzr_evaluate]{hzr_evaluate()}}.
 \item \code{n_starts}: Number of optimization starts for multiphase fits (default 5).
 Each start after the first offsets the initial values. The offsets are
 drawn from an internally seeded stream, so a multiphase fit is

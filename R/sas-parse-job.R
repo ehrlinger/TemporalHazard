@@ -184,7 +184,11 @@
 #'   may be absent if `ICENSOR` is present.
 #' @return `list(status_expr = <call>, status_name = <name|NULL>,
 #'   time_lower = <call|NULL>, weights_expr = <call|NULL>,
-#'   untranslated = <data.frame>, refused = <logical>)`. `status_expr` is
+#'   keep_expr = <call|NULL>, degenerate_expr = <call|NULL>,
+#'   untranslated = <data.frame>, refused = <logical>)`. `keep_expr` and
+#'   `degenerate_expr` are set only for an `ICENSOR` job: the rows
+#'   `readct.c` keeps, and those it turns into exact events (#543).
+#'   `status_expr` is
 #'   a `bquote()`-built call, evaluable against an environment/list holding
 #'   the named SAS variables. `time_lower` and `weights_expr`, when
 #'   non-`NULL`, are `bquote()`-built calls; `status_name` is non-`NULL` on
@@ -220,6 +224,8 @@
       status_name = NULL,
       time_lower = NULL,
       weights_expr = NULL,
+      keep_expr = NULL,
+      degenerate_expr = NULL,
       untranslated = .hzr_untranslated_frame(
         NA_integer_, "LCENSOR + ICENSOR",
         paste("left truncation combined with interval censoring needs a",
@@ -243,12 +249,30 @@
   # interval-censored, a different likelihood branch (#157). RCENSOR adds no
   # branch of its own -- C2 > 0 is right-censoring, code 0, which is already
   # this expression's fallback. It changes the row's WEIGHT, not its status.
+  # readct.c resolves a degenerate interval before the fit, on a row with
+  # C3 > 0 (#543): CTIME == TIME makes it an exact event, C1 = C1 + C3 and
+  # C3 = CT = 0 (readct.c:18-23), and a missing, negative or greater-than-TIME
+  # CTIME deletes the row (readct.c:9-17). The status below mirrors the
+  # first; `keep_expr` mirrors the second, and the fit reads only the rows it
+  # keeps. hazard() itself refuses both shapes under objective = "sas".
+  interval_code <- 2
+  keep_expr <- NULL
+  if (has_icensor) {
+    ctime <- as.name(statements$ICENSOR[[2L]])
+    tt <- as.name(statements$TIME)
+    # NA-safe on TIME: a missing TIME leaves the row as it was (interval,
+    # kept), for hazard() to reject with its own message, as before #543.
+    interval_code <- bquote(ifelse(!is.na(.(ctime)) & !is.na(.(tt)) &
+                                     .(ctime) == .(tt), 1, 2))
+    keep_expr <- bquote(!(.(c3) > 0 & (is.na(.(ctime)) | .(ctime) < 0 |
+                                         (!is.na(.(tt)) & .(ctime) > .(tt)))))
+  }
   expr <- if (has_event && has_icensor) {
-    bquote(ifelse(.(ev) > 0, 1, ifelse(.(c3) > 0, 2, 0)))
+    bquote(ifelse(.(ev) > 0, 1, ifelse(.(c3) > 0, .(interval_code), 0)))
   } else if (has_event) {
     bquote(ifelse(.(ev) > 0, 1, 0))
   } else {
-    bquote(ifelse(.(c3) > 0, 2, 0))
+    bquote(ifelse(.(c3) > 0, .(interval_code), 0))
   }
 
   # The weight is the row's own count times the WEIGHT variable on event and
@@ -366,7 +390,6 @@
   status_name <- as.name(".hzr_status")
   time_lower <- NULL
   if (has_icensor) {
-    ctime <- as.name(statements$ICENSOR[[2L]])
     # Status-gated, not unconditional (see roxygen): interval rows get the
     # interval's lower bound (CTIME); every other row falls back to
     # hazard()'s own entry-time default (0). LCENSOR cannot be present here
@@ -383,6 +406,10 @@
     status_name = status_name,
     time_lower = time_lower,
     weights_expr = weights_expr,
+    keep_expr = keep_expr,
+    degenerate_expr = if (has_icensor) {
+      bquote(.(c3) > 0 & !is.na(.(ctime)) & !is.na(.(tt)) & .(ctime) == .(tt))
+    },
     untranslated = .hzr_untranslated_frame(),
     refused = FALSE
   )
@@ -1442,6 +1469,31 @@
   derive <- as.call(list(quote(transform), as.name(data_name),
                          cens$status_expr))
   names(derive) <- c("", "", as.character(cens$status_name))
+  # Degenerate ICENSOR bounds (readct.c, see .hzr_censor_spec()): the fit
+  # reads only the rows PROC HAZARD keeps (`args$data` below), and this
+  # column says how many rows each rule touched. The count is raised inside
+  # the transform(), so the chunk keeps its `<data> <- transform(<data>,
+  # ...)` shape, and local() binds nothing in the reader's session. The
+  # caller's data frame keeps every row.
+  if (!is.null(cens$keep_expr)) {
+    derive$.hzr_keep <- bquote(local({
+      .keep <- .(cens$keep_expr)
+      .n_event <- sum(.(cens$degenerate_expr))
+      .n_drop <- sum(!.keep)
+      if (.n_event > 0 || .n_drop > 0) {
+        warning("Degenerate ICENSOR intervals, resolved as PROC HAZARD ",
+                "does (readct.c): ", .n_event,
+                if (.n_event == 1) " row" else " rows",
+                " with CTIME equal to TIME fitted as exact events ",
+                "(readct.c:18-23), and ", .n_drop,
+                if (.n_drop == 1) " row" else " rows",
+                " with CTIME missing, negative or after TIME dropped from ",
+                "the fit (readct.c:9-17).", call. = FALSE)
+      }
+      .keep
+    }))
+    derive$.hzr_icensor_event <- cens$degenerate_expr
+  }
   status_call <- call("<-", as.name(data_name), derive)
   # Variables in some fitted phase formula: hazard() drops their missing rows
   # itself. Read by the listwise guard and the column check below.
@@ -1517,8 +1569,24 @@
     status_call <- as.call(c(as.name("{"), as.list(present)[-1L],
                              list(status_call)))
   }
+  # Degenerate ICENSOR bounds (readct.c, see .hzr_censor_spec()): the fit
+  # reads only the rows PROC HAZARD keeps, and the status chunk says how
+  # many rows each rule touched. The caller's data frame keeps every row.
+  if (!is.null(cens$keep_expr)) {
+    dsym <- as.name(data_name)
+    args$data <- bquote(.(dsym)[.(dsym)$.hzr_keep, , drop = FALSE])
+  }
   args$status <- cens$status_name
   if (!is.null(cens$time_lower)) args$time_lower <- cens$time_lower
+  # An ICENSOR job is fitted on the interval term PROC HAZARD accumulates,
+  # C3 * log([CF(T) - CF(CT)] / (T - CT)) (setlik.c; see the roxygen above),
+  # not on hazard()'s default interval probability. Measured on the binary
+  # over a constructed grid (18 optimised fits), the default moved MUC by up
+  # to 21% and the objective by up to 291 units; "sas" reproduced both to
+  # printed precision (#543, maintainer's ruling 2026-09-29). The value
+  # reported is then SAS's objective, not a log-likelihood, and the
+  # translated document says so above the fit.
+  if (!is.null(statements$ICENSOR)) args$objective <- "sas"
   # Without fit = TRUE the emitted call returns an unfitted object: converged
   # is NA, objective is NA, and theta holds the SAS starting values, while
   # print.hazard() shows a populated summary that says none of that (#151).
@@ -1685,10 +1753,9 @@
   # also where the log-likelihood peaks, and a one-dimensional maximisation
   # over a shift of every log(MU) finds it. Measured on the binary with and
   # without WEIGHT, LCENSOR and ICENSOR (tests/testthat/fixtures/
-  # maxiter-zero-oracle.csv). For an ICENSOR job the parameters match; the
-  # log-likelihood matches only under objective = "sas", the interval term
-  # PROC HAZARD accumulates, which this translation does not emit for a fit
-  # either, so that job warns that its number differs.
+  # maxiter-zero-oracle.csv). An ICENSOR job's spec carries
+  # objective = "sas" (#543), so its evaluation reproduces PROC HAZARD's
+  # parameters and printed value too.
   code_body <- as.call(c(head, args))
   if (isTRUE(ctl$maxit < 1)) {
     maxit_label <- paste0("MAXITER=", format(ctl$maxit))
@@ -1758,14 +1825,11 @@
         hzr_evaluate(.(spec_call), theta = .(args$theta))
       }))
     } else {
-      # The factor is sought under the interval term PROC HAZARD accumulates
-      # (objective = "sas"), whose argmax along the shift reproduces the MUE
-      # PROC HAZARD prints for an ICENSOR job (setcoe_obs_loop.c:114 counts
-      # C1 + C3 against the cumulative hazard), where the default interval
-      # likelihood peaks elsewhere (r-reviewer on #496). Without ICENSOR the
-      # two objectives are the same function, so one spec serves.
-      coe_call <- spec_call
-      if (!is.null(statements$ICENSOR)) coe_call$objective <- "sas"
+      # For an ICENSOR job the spec carries objective = "sas" (#543), whose
+      # argmax along the shift reproduces the MUE PROC HAZARD prints
+      # (setcoe_obs_loop.c:114 counts C1 + C3 against the cumulative
+      # hazard); the default interval likelihood peaks elsewhere
+      # (r-reviewer on #496).
       # The search re-centres its bracket until the peak is inside it: a
       # start MU far from the CoE value (1e-15, or a late phase on a long
       # time scale) needs a shift past any fixed bracket, and optimize()
@@ -1775,11 +1839,10 @@
       code_body <- bquote(local({
         .(guard)
         .spec <- .(spec_call)
-        .coe <- .(coe_call)
         .theta <- .(args$theta)
         .log_mu <- .(parms$log_mu_mask)
         .ll <- function(s) {
-          suppressWarnings(hzr_evaluate(.coe, theta = .theta + s * .log_mu))$logLik
+          suppressWarnings(hzr_evaluate(.spec, theta = .theta + s * .log_mu))$logLik
         }
         .shift <- 0
         for (.i in 1:10) {
@@ -1801,14 +1864,6 @@
         }
         hzr_evaluate(.spec, theta = .theta + .shift * .log_mu)
       }))
-    }
-    if (!is.null(statements$ICENSOR)) {
-      refusal_warnings <- c(refusal_warnings, paste0(
-        maxit_label, " with ICENSOR: the log-likelihood below is hazard()'s ",
-        "interval likelihood, not the interval-mean hazard term PROC HAZARD ",
-        "accumulates (see ?hazard, `objective`), so it is not the number ",
-        "PROC HAZARD prints. The parameters it is evaluated at are PROC ",
-        "HAZARD's."))
     }
   }
 
@@ -1843,6 +1898,7 @@
        stepwise_call = stepwise_call, screen_check_call = screen_check_call,
        outhaz = outhaz, untranslated = untr, tokens_seen = seen,
        tokens_mapped = mapped,
+       sas_objective = identical(args$objective, "sas"),
        # Each is a reason PROC HAZARD would refuse this job, or would fit a
        # different model from the one emitted. They are carried out rather
        # than raised here: the point is that the RENDERED document warns, so
