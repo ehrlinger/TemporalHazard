@@ -1,7 +1,9 @@
 # control$maxit below 1 was accepted without a word (#541). On some models
 # the fit returned its starting values as `converged = TRUE`; on others the
 # limit was ignored and the model optimised anyway. Neither said anything.
-# A maxit that is not a whole number of at least 1 is now refused.
+# A maxit below 1, or one that is not a single finite number, is now
+# refused. A fraction of at least 1 is truncated, as PROC HAZARD truncates
+# MAXITER (hazpprc.c:27), so a translated MAXITER=2.5 still runs as 2.
 
 maxit_avc <- function() {
   data("avc", package = "TemporalHazard", envir = environment())
@@ -38,7 +40,12 @@ test_that("a maxit that is not one number of at least 1 is refused (#541)", {
   expect_true(fit_weibull(100)$fit$converged)
   # A fraction of at least 1 is truncated, as PROC HAZARD truncates MAXITER,
   # so a translated MAXITER=2.5 still runs, as maxit = 2.
-  expect_identical(fit_weibull(2.5)$fit$objective, fit_weibull(2)$fit$objective)
+  f25 <- fit_weibull(2.5)
+  f2 <- fit_weibull(2)
+  expect_identical(f25$fit$theta, f2$fit$theta)
+  expect_identical(f25$fit$objective, f2$fit$objective)
+  # And 2 is not 3: the fraction was truncated, not rounded or ignored.
+  expect_false(identical(fit_weibull(3)$fit$objective, f2$fit$objective))
 })
 
 test_that("the refusal holds for a model that used to ignore maxit (#541)", {
