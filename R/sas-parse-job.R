@@ -649,6 +649,10 @@
             # hazard() a negative maxit, and it returned the starting values
             # with converged = TRUE (#496).
             mapped <- mapped - 1L
+            # A repeated option overwrites the one before it, so this also
+            # clears an earlier MAXITER (measured: `MAXITER=0 MAXITER=-1`
+            # fits, `MAXITER=-1 MAXITER=0` evaluates; Copilot on #539).
+            ctl$maxit <- NULL
             note(paste0("MAXITER=", val), paste0(
               "negative, so PROC HAZARD keeps its default iteration limit ",
               "(hazpprc.c:23-24); not emitted"))
@@ -1640,11 +1644,20 @@
     # C3 over the rows, setobs.c:18). An evaluation always returns a number,
     # so without this the chunk reported a log-likelihood for a job PROC
     # HAZARD stops (r-reviewer pass 2 on #496). No events is one case of it.
+    # Counted over the rows readobs() keeps, as tally is (Copilot on #539):
+    # it drops a row whose TIME is missing or not positive (readt.c:9-15),
+    # whose count is missing or negative (readc1.c:11-16; for
+    # C3, readc3.c:10-15), or whose phase variable is missing
+    # (readobs.c:128-134).
     counts <- Filter(Negate(is.null), list(
       if (!is.null(statements$EVENT)) as.name(statements$EVENT),
       if (!is.null(statements$ICENSOR)) as.name(statements$ICENSOR[[1L]])))
+    keep <- c(list(bquote(!is.na(.(args$time)) & .(args$time) > 0)),
+              lapply(counts, function(v) bquote(!is.na(.(v)) & .(v) >= 0)),
+              lapply(phase_vars, function(v) bquote(!is.na(.(as.name(v))))))
+    keep_expr <- Reduce(function(x, y) call("&", x, y), keep)
     events_expr <- Reduce(function(x, y) call("+", x, y), lapply(counts,
-      function(v) bquote(sum(.(v), na.rm = TRUE))))
+      function(v) bquote(sum(.(v)[.(keep_expr)]))))
     events_call <- call("with", args$data, events_expr)
     n_free <- parms$n_free
     guard <- bquote(if (.(events_call) < .(n_free)) {

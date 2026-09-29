@@ -2887,6 +2887,19 @@ test_that("MAXITER=0 with fewer events than free parameters stops (#496)", {
   res <- suppressWarnings(render_sim(job, list(D = D)))
   expect_true(res$ok)
   expect_lt(abs(res$env$fit$logLik - (-186.138)), 5e-4)
+  # The count is over the rows PROC HAZARD keeps (Copilot on #539). One of
+  # the six events given TIME 0 (readt.c:12-14), or a missing phase
+  # variable (readobs.c:128-134), leaves five, and the binary stops (7104).
+  six <- which(D$DEAD == 1)[6]
+  Dt <- D
+  Dt$TT[six] <- 0
+  Da <- D
+  Da$AGE[six] <- NA
+  for (Dx in list(Dt, Da)) {
+    res <- suppressWarnings(render_sim(job, list(D = Dx)))
+    expect_false(res$ok)
+    expect_match(res$results[["fit"]], "only 5 events", fixed = TRUE)
+  }
   # Fixed shapes are not counted. With all three early shapes fixed only MUE
   # and MUC are free, and two events suffice; with THALF alone fixed there
   # are four, and two do not (binary: -145.826 and the 7104 termination;
@@ -2975,4 +2988,12 @@ test_that("a negative MAXITER fits as though it were absent (#496)", {
     expect_identical(job$untranslated$construct, trimws(m), info = m)
   }
   expect_identical(NROW(base$untranslated), 0L)
+  # A repeated option overwrites the one before it: on the binary,
+  # `MAXITER=0 MAXITER=-1` fits (-206.704) and `MAXITER=-1 MAXITER=0`
+  # evaluates (-220.995).
+  job <- .p496_job(paste0("PROC HAZARD DATA=D MAXITER=0 MAXITER=-1", rest))
+  expect_identical(job$calls$fit, base$calls$fit)
+  job <- .p496_job(paste0("PROC HAZARD DATA=D MAXITER=-1 MAXITER=0", rest))
+  expect_false(identical(job$calls$fit, base$calls$fit))
+  expect_true("MAXITER=0" %in% job$untranslated$construct)
 })
