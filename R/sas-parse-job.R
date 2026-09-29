@@ -1595,9 +1595,10 @@
   # also where the log-likelihood peaks, and a one-dimensional maximisation
   # over a shift of every log(MU) finds it. Measured on the binary with and
   # without WEIGHT, LCENSOR and ICENSOR (tests/testthat/fixtures/
-  # maxiter-zero-oracle.csv); an ICENSOR job matches under objective = "sas",
-  # the interval contribution PROC HAZARD accumulates, which this translation
-  # does not emit for a fit either.
+  # maxiter-zero-oracle.csv). For an ICENSOR job the parameters match; the
+  # log-likelihood matches only under objective = "sas", the interval term
+  # PROC HAZARD accumulates, which this translation does not emit for a fit
+  # either, so that job warns that its number differs.
   code_body <- as.call(c(head, args))
   if (isTRUE(ctl$maxit < 1)) {
     maxit_label <- paste0("MAXITER=", format(ctl$maxit))
@@ -1617,13 +1618,17 @@
       "is not a fit: it carries no standard errors, which PROC HAZARD may ",
       "print at those values, and predict() cannot use it",
       if (!is.null(stepwise_call)) {
-        ". The SELECTION screen is not run: the chunk evaluates the starting model only"
+        paste0(". The SELECTION screen is not run: PROC HAZARD still steps ",
+               "through it, evaluating each step without optimising ",
+               "(hazrd2.c:65-90), and the chunk evaluates the starting ",
+               "model only")
       },
       "."))
     if (!is.null(stepwise_call)) {
       note("SELECTION", paste0(
-        "not run under MAXITER=0: the emitted chunk evaluates the starting ",
-        "model only"))
+        "not run under MAXITER=0: PROC HAZARD steps through the screen ",
+        "without optimising (hazrd2.c:65-90); the emitted chunk evaluates ",
+        "the starting model only"))
       stepwise_call <- NULL
       screen_check_call <- NULL
     }
@@ -1633,15 +1638,58 @@
     if (isFALSE(ctl$conserve)) {
       code_body <- bquote(hzr_evaluate(.(spec_call), theta = .(args$theta)))
     } else {
+      # The factor is sought under the interval term PROC HAZARD accumulates
+      # (objective = "sas"): its CoE counts an ICENSOR row's C3 as events
+      # against CF(T) - CF(CT) (setcoe_obs_loop.c:39-41, :98), which is where
+      # that objective peaks along the shift, and the default interval
+      # likelihood peaks elsewhere (r-reviewer on #496). Without ICENSOR the
+      # two objectives are the same function, so one spec serves.
+      coe_call <- spec_call
+      if (!is.null(statements$ICENSOR)) coe_call$objective <- "sas"
+      # The search re-centres its bracket until the peak is inside it: a
+      # start MU far from the CoE value (1e-15, or a late phase on a long
+      # time scale) needs a shift past any fixed bracket, and optimize()
+      # returns an edge without saying so. With no events there is no peak
+      # at all, and PROC HAZARD stops (SETCOE1020, hzd_ln_A_div_B.c), so the
+      # chunk stops too instead of reporting the likelihood at the edge.
       code_body <- bquote(local({
         .spec <- .(spec_call)
+        .coe <- .(coe_call)
         .theta <- .(args$theta)
         .log_mu <- .(parms$log_mu_mask)
-        .shift <- stats::optimize(
-          function(s) hzr_evaluate(.spec, theta = .theta + s * .log_mu)$logLik,
-          c(-30, 30), maximum = TRUE, tol = 1e-10)$maximum
+        .ll <- function(s) {
+          suppressWarnings(hzr_evaluate(.coe, theta = .theta + s * .log_mu))$logLik
+        }
+        .shift <- 0
+        for (.i in 1:10) {
+          .at <- stats::optimize(.ll, .shift + c(-30, 30), maximum = TRUE,
+                                 tol = 1e-10)$maximum
+          .edge <- abs(.at - .shift) > 29.9
+          .shift <- .at
+          if (!.edge) break
+        }
+        if (!is.finite(.ll(.shift))) {
+          stop("hzr_evaluate() cannot evaluate this model's likelihood at ",
+               "its starting values under any common scaling of MU, so ",
+               "there is no MAXITER=0 evaluation to report.", call. = FALSE)
+        }
+        if (.edge) {
+          stop("Conservation of Events has no finite scaling here: the ",
+               "log-likelihood keeps rising as every MU moves toward ",
+               if (.shift < 0) "0" else "infinity", ". With no events PROC ",
+               "HAZARD stops too (SETCOE1020). There is no MAXITER=0 ",
+               "evaluation to report.", call. = FALSE)
+        }
         hzr_evaluate(.spec, theta = .theta + .shift * .log_mu)
       }))
+    }
+    if (!is.null(statements$ICENSOR)) {
+      refusal_warnings <- c(refusal_warnings, paste0(
+        maxit_label, " with ICENSOR: the log-likelihood below is hazard()'s ",
+        "interval likelihood, not the interval-mean hazard term PROC HAZARD ",
+        "accumulates (see ?hazard, `objective`), so it is not the number ",
+        "PROC HAZARD prints. The parameters it is evaluated at are PROC ",
+        "HAZARD's."))
     }
   }
 

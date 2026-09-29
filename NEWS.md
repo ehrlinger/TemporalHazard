@@ -214,8 +214,12 @@
   -295.609. The chunk is now `hzr_evaluate()` at those starting values,
   with the same scaling, and it reproduces the log-likelihood and `MUE`
   that `PROC HAZARD` prints with and without `WEIGHT`, `LCENSOR` and
-  `NOCONSERVE`. It is not a fit, so the job warns, gains an
-  `$untranslated` row, and runs no `SELECTION` screen. A value below 1 is
+  `NOCONSERVE`. With `ICENSOR` it reproduces `MUE`, and warns that its
+  log-likelihood is `hazard()`'s interval likelihood rather than the term
+  `PROC HAZARD` accumulates. With no events it stops, as `PROC HAZARD`
+  does. It is not a fit, so the job warns and gains an `$untranslated`
+  row. `PROC HAZARD` still steps through a `SELECTION` screen, evaluating
+  each step at unfitted values; the translation does not, and says so. A value below 1 is
   read the same way, as `PROC HAZARD` truncates it to 0. A negative
   `MAXITER`, which `PROC HAZARD` ignores, is no longer emitted:
   `hazard()` had returned the starting values with `converged = TRUE`.

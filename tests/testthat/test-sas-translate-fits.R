@@ -2802,9 +2802,9 @@ test_that("the SETG1 documents render past the warning (#424)", {
 
 # An ICENSOR job is translated onto hazard()'s default interval objective,
 # which is not the one PROC HAZARD accumulates (setlik.c; see ?hazard,
-# `objective`), for its fit as much as for this evaluation. To compare the
-# evaluation itself, those rows are re-run with objective = "sas" added to
-# the emitted hazard() call; the Conservation of Events shift is unchanged.
+# `objective`), for its fit as much as for this evaluation. The chunk as
+# emitted must still land on PROC HAZARD's parameters; its log-likelihood is
+# compared after objective = "sas" is added to every hazard() call in it.
 .p496_sas_objective <- function(x) {
   if (!is.call(x)) return(x)
   x[] <- lapply(x, .p496_sas_objective)
@@ -2816,31 +2816,65 @@ test_that("MAXITER=0 evaluates the log-likelihood PROC HAZARD prints (#496)", {
   oracle <- utils::read.csv(test_path("fixtures", "maxiter-zero-oracle.csv"),
                             comment.char = "#", stringsAsFactors = FALSE)
   # Row coverage before values: every row the binary ran is compared.
-  expect_identical(nrow(oracle), 10L)
-  expect_identical(sum(grepl("ICENSOR", oracle$job, fixed = TRUE)), 2L)
+  expect_identical(nrow(oracle), 13L)
+  icens <- grepl("ICENSOR", oracle$job, fixed = TRUE)
+  expect_identical(sum(icens), 2L)
   D <- .p496_data()
+  run <- function(job) {
+    res <- suppressWarnings(render_sim(job, list(D = D)))
+    expect_true(res$ok, info = paste(res$results, collapse = "; "))
+    res$env$fit
+  }
   compared <- 0L
   for (k in seq_len(nrow(oracle))) {
     info <- oracle$job[[k]]
     job <- .p496_job(info)
-    if (grepl("ICENSOR", info, fixed = TRUE)) {
-      job$calls$fit <- .p496_sas_objective(job$calls$fit)
-    }
-    res <- suppressWarnings(render_sim(job, list(D = D)))
-    expect_true(res$ok, info = info)
-    ev <- res$env$fit
+    ev <- run(job)
     # An evaluation, not a fit: nothing was estimated.
     expect_s3_class(ev, "hzr_evaluation")
     expect_false(inherits(ev, "hazard"), info = info)
-    # The listing prints three decimals.
-    expect_lt(abs(ev$logLik - oracle$loglik[[k]]), 5e-4)
-    # MUE after Conservation of Events, or as given under NOCONSERVE; the
-    # listing prints seven significant digits.
+    # MUE after Conservation of Events, or as given under NOCONSERVE, from
+    # the chunk as emitted; the listing prints seven significant digits.
     expect_equal(exp(ev$theta[[1L]]) / oracle$mue[[k]], 1, tolerance = 1e-6,
                  info = info)
+    if (icens[[k]]) {
+      # The emitted number is hazard()'s interval likelihood, and says so.
+      expect_gt(abs(ev$logLik - oracle$loglik[[k]]), 1)
+      expect_match(.u1_msg(job), "with ICENSOR", fixed = TRUE)
+      job$calls$fit <- .p496_sas_objective(job$calls$fit)
+      ev <- run(job)
+    } else {
+      expect_no_match(.u1_msg(job), "with ICENSOR", fixed = TRUE)
+    }
+    # To the last decimal the listing prints (two or three).
+    expect_lt(abs(ev$logLik - oracle$loglik[[k]]),
+              0.5 * 10^-oracle$loglik_decimals[[k]])
     compared <- compared + 1L
   }
   expect_identical(compared, nrow(oracle))
+})
+
+test_that("MAXITER=0 with no events stops, as PROC HAZARD does (#496)", {
+  # No events: Conservation of Events has no finite factor, and PROC HAZARD
+  # stops (SETCOE1020). Searching a fixed bracket returned its edge instead,
+  # a log-likelihood near 0 that reads as a perfect fit (r-reviewer on #496).
+  D <- .p496_data()
+  D$DEAD <- 0
+  job <- .p496_job(paste("PROC HAZARD DATA=D MAXITER=0; EVENT DEAD; TIME TT;",
+                         "PARMS MUE=0.2 THALF=1 NU=1 MUC=0.01; EARLY AGE;"))
+  res <- suppressWarnings(render_sim(job, list(D = D)))
+  expect_false(res$ok)
+  expect_match(res$results[["fit"]], "no finite scaling", fixed = TRUE)
+  expect_null(res$env$fit)
+  # A model whose likelihood hzr_evaluate() cannot compute at any scaling
+  # (a late phase with ALPHA=0, -Inf here; the binary prints -808.527)
+  # says that, rather than blaming the events.
+  job <- .p496_job(paste("PROC HAZARD DATA=D MAXITER=0; EVENT DEAD; TIME TT;",
+                         "PARMS MUE=0.2 THALF=1 NU=1 MUL=0.01 TAU=1 GAMMA=3",
+                         "ALPHA=0 ETA=3; EARLY AGE;"))
+  res <- suppressWarnings(render_sim(job, list(D = .p496_data())))
+  expect_false(res$ok)
+  expect_match(res$results[["fit"]], "cannot evaluate", fixed = TRUE)
 })
 
 test_that("MAXITER=0 warns that the chunk is an evaluation and records it (#496)", {

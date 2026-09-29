@@ -50,7 +50,12 @@ grid <- c(
   job(" NOCONSERVE", paste(B, "ICENSOR C3 = TL;", P2)),
   # A value below 1 is truncated to 0 by the assignment to an int
   # (hazpprc.c:27, common.h:27).
-  paste("PROC HAZARD DATA=D MAXITER=0.5;", B, P2)
+  paste("PROC HAZARD DATA=D MAXITER=0.5;", B, P2),
+  # A start MU far from the CoE value, and a late phase on this time scale:
+  # shifts past a fixed search bracket (r-reviewer on #496).
+  job("", paste(B, "PARMS MUE=0.000000000000001 THALF=1 NU=1 MUC=0.01; EARLY AGE;")),
+  job("", paste(B, "PARMS MUE=0.000000000000001 THALF=1 NU=1; EARLY AGE;")),
+  job("", paste(B, "PARMS MUE=0.2 THALF=1 NU=1 MUL=0.01 TAU=1 GAMMA=2 ALPHA=1 ETA=2; EARLY AGE;"))
 )
 
 rows <- lapply(seq_along(grid), function(k) {
@@ -81,6 +86,10 @@ rows <- lapply(seq_along(grid), function(k) {
   data.frame(job = grid[[k]],
              conserve = sub("^@31,", "", trimws(out[coe + 1L])),
              loglik = as.numeric(sub("^;", "", out[ll + 1L])),
+             # Decimals as printed: the listing keeps about six significant
+             # digits, so -1081.75 carries two and -295.609 three.
+             loglik_decimals = nchar(sub("^[^.]*[.]?", "",
+                                         trimws(sub("^;", "", out[ll + 1L])))),
              mue = as.numeric(sub("^\\+7,", "", out[mue + 2L])),
              stringsAsFactors = FALSE)
 })
