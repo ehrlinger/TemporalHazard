@@ -2775,6 +2775,229 @@ test_that("the SETG1 documents render past the warning (#424)", {
   }
 })
 
+# --- MAXITER=0 evaluates at the start (#496) ---------------------------------
+# hazpprc.c:20-22 sets the iteration limit to 0 and hazrd2.c:71-74 then calls
+# NOOPTIM(), which prints the log-likelihood at the starting values
+# (hazrd2.c:133-145) after Conservation of Events has rescaled them (setcoe(),
+# shape.c:52) unless NOCONSERVE is given. The translation used to emit
+# `control = list(maxit = 0)`, and hazard() optimised anyway: -198.370 with
+# converged = TRUE where the binary prints -295.609. The oracle is the binary
+# (data-raw/maxiter-zero-oracle.R).
+.p496_data <- function() {
+  e <- new.env()
+  utils::data("avc", package = "TemporalHazard", envir = e)
+  a <- e$avc[stats::complete.cases(e$avc), ]
+  D <- data.frame(TT = a$int_dead, DEAD = a$dead,
+                  AGE = as.numeric(scale(a$age)))
+  D$C3 <- as.numeric(seq_len(nrow(D)) %% 5 == 0 & D$DEAD == 0)
+  D$TL <- ifelse(D$C3 > 0, D$TT * 0.5, 0)
+  D$W <- ifelse(seq_len(nrow(D)) %% 3 == 0, 2, 1)
+  D
+}
+.p496_job <- function(sas, env = parent.frame()) {
+  f <- withr::local_tempfile(fileext = ".sas", .local_envir = env)
+  writeLines(paste0("%HAZARD( ", sas, " );"), f)
+  suppressWarnings(hzr_translate_sas(f))
+}
+
+# An ICENSOR job is translated onto hazard()'s default interval objective,
+# which is not the one PROC HAZARD accumulates (setlik.c; see ?hazard,
+# `objective`), for its fit as much as for this evaluation. The chunk as
+# emitted must still land on PROC HAZARD's parameters; its log-likelihood is
+# compared after objective = "sas" is added to every hazard() call in it.
+.p496_sas_objective <- function(x) {
+  if (!is.call(x)) return(x)
+  x[] <- lapply(x, .p496_sas_objective)
+  if (identical(x[[1L]], as.name("hazard"))) x$objective <- "sas"
+  x
+}
+
+test_that("MAXITER=0 evaluates the log-likelihood PROC HAZARD prints (#496)", {
+  oracle <- utils::read.csv(test_path("fixtures", "maxiter-zero-oracle.csv"),
+                            comment.char = "#", stringsAsFactors = FALSE)
+  # Row coverage before values: every row the binary ran is compared.
+  expect_identical(nrow(oracle), 13L)
+  icens <- grepl("ICENSOR", oracle$job, fixed = TRUE)
+  expect_identical(sum(icens), 2L)
+  D <- .p496_data()
+  run <- function(job) {
+    res <- suppressWarnings(render_sim(job, list(D = D)))
+    expect_true(res$ok, info = paste(res$results, collapse = "; "))
+    res$env$fit
+  }
+  compared <- 0L
+  for (k in seq_len(nrow(oracle))) {
+    info <- oracle$job[[k]]
+    job <- .p496_job(info)
+    ev <- run(job)
+    # An evaluation, not a fit: nothing was estimated.
+    expect_s3_class(ev, "hzr_evaluation")
+    expect_false(inherits(ev, "hazard"), info = info)
+    # MUE after Conservation of Events, or as given under NOCONSERVE, from
+    # the chunk as emitted; the listing prints seven significant digits.
+    expect_equal(exp(ev$theta[[1L]]) / oracle$mue[[k]], 1, tolerance = 1e-6,
+                 info = info)
+    if (icens[[k]]) {
+      # The emitted number is hazard()'s interval likelihood, and says so.
+      expect_gt(abs(ev$logLik - oracle$loglik[[k]]), 1)
+      expect_match(.u1_msg(job), "with ICENSOR", fixed = TRUE)
+      job$calls$fit <- .p496_sas_objective(job$calls$fit)
+      ev <- run(job)
+    } else {
+      expect_no_match(.u1_msg(job), "with ICENSOR", fixed = TRUE)
+    }
+    # To the last decimal the listing prints (two or three).
+    expect_lt(abs(ev$logLik - oracle$loglik[[k]]),
+              0.5 * 10^-oracle$loglik_decimals[[k]])
+    compared <- compared + 1L
+  }
+  expect_identical(compared, nrow(oracle))
+})
+
+test_that("MAXITER=0 with fewer events than free parameters stops (#496)", {
+  # hazrd2.c:68-69 stops a job whose free parameters outnumber its events
+  # (C1 + C3, setobs.c:18) before it evaluates anything. This job has six:
+  # MUE, THALF, NU, M, AGE and MUC. Measured on the binary: with the first
+  # 5 events kept, or none, it prints "Num of parms to estimate is greater
+  # than the num of events", with and without NOCONSERVE; with 6 it prints
+  # -186.138 under NOCONSERVE. The chunk used to report a log-likelihood for
+  # the refused jobs, near 0 with no events (r-reviewer on #496).
+  D <- .p496_data()
+  keep <- function(k) ifelse(cumsum(D$DEAD) <= k & D$DEAD == 1, 1, 0)
+  for (proc in c("", " NOCONSERVE")) {
+    for (k in c(0, 5)) {
+      Dk <- D
+      Dk$DEAD <- keep(k)
+      job <- .p496_job(paste0("PROC HAZARD DATA=D MAXITER=0", proc,
+                              "; EVENT DEAD; TIME TT; PARMS MUE=0.2 THALF=1",
+                              " NU=1 MUC=0.01; EARLY AGE;"))
+      res <- suppressWarnings(render_sim(job, list(D = Dk)))
+      info <- paste(proc, k)
+      expect_false(res$ok, info = info)
+      expect_match(res$results[["fit"]], "6 free parameters", fixed = TRUE,
+                   info = info)
+      expect_null(res$env$fit)
+    }
+  }
+  # The boundary: six events, six free parameters, and PROC HAZARD evaluates.
+  D$DEAD <- keep(6)
+  job <- .p496_job(paste("PROC HAZARD DATA=D MAXITER=0 NOCONSERVE; EVENT DEAD;",
+                         "TIME TT; PARMS MUE=0.2 THALF=1 NU=1 MUC=0.01;",
+                         "EARLY AGE;"))
+  res <- suppressWarnings(render_sim(job, list(D = D)))
+  expect_true(res$ok)
+  expect_lt(abs(res$env$fit$logLik - (-186.138)), 5e-4)
+  # The count is over the rows PROC HAZARD keeps (Copilot on #539). One of
+  # the six events given TIME 0 (readt.c:12-14), or a missing phase
+  # variable (readobs.c:128-134), leaves five, and the binary stops (7104).
+  six <- which(D$DEAD == 1)[6]
+  Dt <- D
+  Dt$TT[six] <- 0
+  Da <- D
+  Da$AGE[six] <- NA
+  for (Dx in list(Dt, Da)) {
+    res <- suppressWarnings(render_sim(job, list(D = Dx)))
+    expect_false(res$ok)
+    expect_match(res$results[["fit"]], "only 5 events", fixed = TRUE)
+  }
+  # Fixed shapes are not counted. With all three early shapes fixed only MUE
+  # and MUC are free, and two events suffice; with THALF alone fixed there
+  # are four, and two do not (binary: -145.826 and the 7104 termination;
+  # the evaluated value differs from R's for the reason in #540).
+  fx <- "PARMS MUE=0.2 THALF=0.5 NU=1.5 M=0.5 MUC=0.01"
+  D$DEAD <- keep(2)
+  for (fix in c(" FIXTHALF FIXNU FIXM;", " FIXTHALF;")) {
+    job <- .p496_job(paste0("PROC HAZARD DATA=D MAXITER=0 NOCONSERVE; ",
+                            "EVENT DEAD; TIME TT; ", fx, fix))
+    res <- suppressWarnings(render_sim(job, list(D = D)))
+    expect_identical(res$ok, fix == " FIXTHALF FIXNU FIXM;", info = fix)
+  }
+  # A model whose likelihood hzr_evaluate() cannot compute at any scaling
+  # (a late phase with ALPHA=0, -Inf here; the binary prints -808.527)
+  # says that, rather than blaming the events.
+  job <- .p496_job(paste("PROC HAZARD DATA=D MAXITER=0; EVENT DEAD; TIME TT;",
+                         "PARMS MUE=0.2 THALF=1 NU=1 MUL=0.01 TAU=1 GAMMA=3",
+                         "ALPHA=0 ETA=3; EARLY AGE;"))
+  res <- suppressWarnings(render_sim(job, list(D = .p496_data())))
+  expect_false(res$ok)
+  expect_match(res$results[["fit"]], "cannot evaluate", fixed = TRUE)
+  # A CoE factor past the search's reach (about exp(300)) stops rather than
+  # reporting the likelihood where the search gave up. PROC HAZARD solves
+  # the factor in closed form, so this is a limit of the translation. PARMS
+  # takes no exponent (hazard_l.l:53), so 1e-140 is written out.
+  tiny <- paste0("0.", strrep("0", 139), "1")
+  job <- .p496_job(paste0("PROC HAZARD DATA=D MAXITER=0; EVENT DEAD; TIME TT;",
+                          " PARMS MUE=", tiny, " THALF=1 NU=1; EARLY AGE;"))
+  res <- suppressWarnings(render_sim(job, list(D = .p496_data())))
+  expect_false(res$ok)
+  expect_match(res$results[["fit"]], "within a factor of exp(300)",
+               fixed = TRUE)
+})
+
+test_that("MAXITER=0 warns that the chunk is an evaluation and records it (#496)", {
+  sas <- paste("PROC HAZARD DATA=D MAXITER=0; EVENT DEAD; TIME TT;",
+               "PARMS MUE=0.2 THALF=1 NU=1 MUC=0.01; EARLY AGE;")
+  job <- .p496_job(sas)
+  expect_identical(job$untranslated$construct, "MAXITER=0")
+  expect_match(.u1_msg(job), "MAXITER=0", fixed = TRUE)
+  expect_match(.u1_msg(job), "hzr_evaluate()", fixed = TRUE)
+  # No hazard() fit is left for a later chunk to read as one: there is no
+  # `maxit = 0` anywhere, and the only hazard() call builds with fit = FALSE.
+  txt <- paste(deparse(job$calls$fit), collapse = " ")
+  expect_no_match(txt, "maxit", fixed = TRUE)
+  expect_match(txt, "fit = FALSE", fixed = TRUE)
+  expect_no_match(txt, "fit = TRUE", fixed = TRUE)
+  # Controls: a positive MAXITER is still a fit with that limit, and no row.
+  job <- .p496_job(sub("MAXITER=0", "MAXITER=5", sas, fixed = TRUE))
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("hazard"))
+  expect_match(paste(deparse(job$calls$fit), collapse = " "), "maxit = 5",
+               fixed = TRUE)
+  expect_identical(NROW(job$untranslated), 0L)
+})
+
+test_that("MAXITER=0 with SELECTION evaluates the start and runs no screen (#496)", {
+  sas <- paste("PROC HAZARD DATA=D MAXITER=0; EVENT DEAD; TIME TT;",
+               "PARMS MUE=0.2 THALF=1 NU=1 MUC=0.01;",
+               "SELECTION SLE=0.2; EARLY AGE, W;")
+  job <- .p496_job(sas)
+  # A screen over an evaluation would refit every candidate: no stepwise
+  # chunk, no screen check, and both constructs are recorded.
+  expect_false(any(grepl("hzr_stepwise", unlist(lapply(job$calls, deparse)),
+                         fixed = TRUE)))
+  expect_false(any(c("fit_base", "screen_check") %in% names(job$calls)))
+  expect_true(all(c("MAXITER=0", "SELECTION") %in% job$untranslated$construct))
+  expect_match(.u1_msg(job), "SELECTION screen is not run", fixed = TRUE)
+  res <- suppressWarnings(render_sim(job, list(D = .p496_data())))
+  expect_true(res$ok, info = paste(res$results, collapse = "; "))
+  expect_s3_class(res$env$fit, "hzr_evaluation")
+  # Control: without MAXITER=0 the same job is screened.
+  job <- .p496_job(sub(" MAXITER=0", "", sas, fixed = TRUE))
+  expect_true("fit_base" %in% names(job$calls))
+})
+
+test_that("a negative MAXITER fits as though it were absent (#496)", {
+  # hazpprc.c:23-24: a negative value never reaches the iteration limit, and
+  # the binary prints -206.704 for this job with MAXITER=-1, -0.5 or -5.5
+  # and without MAXITER alike. hazard(control = list(maxit = -1)) returned
+  # the starting values with converged = TRUE.
+  rest <- "; EVENT DEAD; TIME TT; PARMS MUE=0.2 THALF=1; EARLY AGE;"
+  base <- .p496_job(paste0("PROC HAZARD DATA=D", rest))
+  for (m in c(" MAXITER=-1", " MAXITER=-5.5")) {
+    job <- .p496_job(paste0("PROC HAZARD DATA=D", m, rest))
+    expect_identical(job$calls$fit, base$calls$fit, info = m)
+    expect_identical(job$untranslated$construct, trimws(m), info = m)
+  }
+  expect_identical(NROW(base$untranslated), 0L)
+  # A repeated option overwrites the one before it: on the binary,
+  # `MAXITER=0 MAXITER=-1` fits (-206.704) and `MAXITER=-1 MAXITER=0`
+  # evaluates (-220.995).
+  job <- .p496_job(paste0("PROC HAZARD DATA=D MAXITER=0 MAXITER=-1", rest))
+  expect_identical(job$calls$fit, base$calls$fit)
+  job <- .p496_job(paste0("PROC HAZARD DATA=D MAXITER=-1 MAXITER=0", rest))
+  expect_false(identical(job$calls$fit, base$calls$fit))
+  expect_true("MAXITER=0" %in% job$untranslated$construct)
+})
+
 # --- ICENSOR operand syntax (#495) ------------------------------------------
 # ICENSOR is `ICENSOR count = timevar`, two names and nothing else
 # (hazard_y.y:115-122), and the ICNS lexer state has no `,` rule

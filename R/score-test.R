@@ -1125,6 +1125,14 @@
       "summed fewer rows and its AIC could not be compared. Remove or impute",
       "the missing values before the screen, so every model uses the same rows"
     ),
+    loglik_below_base = paste(
+      "under `criterion = \"aic\"`, the candidate's refit ended with a",
+      "log-likelihood below the current model's, although the candidate",
+      "model contains the current one. That cannot happen at the optimum, so",
+      "the refit did not converge and its AIC could not be compared. More",
+      "starting points (`control$n_starts`) or iterations (`control$maxit`)",
+      "may let it converge"
+    ),
     wald_no_variance = paste(
       "the model had no usable variance for the coefficient, so its Wald",
       "test could not be computed: there was no variance matrix, the",

@@ -2,6 +2,25 @@
 
 ## Bug fixes
 
+* **An AIC stepwise entry no longer rejects, as if tested, a candidate whose
+  refit ended below the current model (#490).** Entering a term gives a
+  model that contains the current one, so its log-likelihood cannot be lower
+  at the optimum, and a refit that ends below it did not converge, whatever
+  its `converged` flag says. Its change in AIC was scored all the same,
+  came out positive, and the candidate was rejected with no warning and
+  every counter at 0. On `avc`, with an early phase and a constant phase and
+  `n_starts = 1`, `opmos` in the constant phase refit to 11.2
+  log-likelihood units below its base and was rejected at an AIC change of
+  +24.5. Such a candidate is now refused, counted in
+  `$criteria$n_uncomputable_scores` under the reason `loglik_below_base`,
+  and `hzr_stepwise()` warns that it declined it without testing it. More
+  starting points or iterations may let the refit converge.
+  `hzr_bootstrap()` in select mode muffles each replicate's warnings, so it
+  now warns itself when replicates completed after declining an entry this
+  way, or for being fitted on other rows (#488). Unless a later step of the
+  replicate tested and entered it, such a candidate counts as not selected,
+  so its pooled selection frequency may be understated.
+
 * **`hzr_stepwise()` now says when a step changes the rows the model is
   fitted on (#519).** A multiphase fit drops every row where a variable in
   the model is missing. So entering a variable with missing values shrank
@@ -203,6 +222,26 @@
   multiphase fits, whose covariates enter globally or through a phase
   formula. A model without covariates does not warn, and `?predict.hazard`
   documents the behaviour under `newdata`.
+
+* **A translated `MAXITER=0` job now evaluates the starting values, as
+  `PROC HAZARD` does, rather than fitting (#496).** `PROC HAZARD` skips
+  its optimizer at `MAXITER=0` and prints the log-likelihood at the
+  starting values, after Conservation of Events has scaled every `MU` by
+  one factor unless `NOCONSERVE` is given. `hzr_translate_sas()` emitted
+  `control = list(maxit = 0)`, and `hazard()` optimised anyway: one job
+  reported -198.370 with `converged = TRUE` where `PROC HAZARD` printed
+  -295.609. The chunk is now `hzr_evaluate()` at those starting values,
+  with the same scaling, and it reproduces the log-likelihood and `MUE`
+  that `PROC HAZARD` prints with and without `WEIGHT`, `LCENSOR` and
+  `NOCONSERVE`. With `ICENSOR` it reproduces `MUE`, and warns that its
+  log-likelihood is `hazard()`'s interval likelihood rather than the term
+  `PROC HAZARD` accumulates. With fewer events than free parameters it
+  stops, as `PROC HAZARD` does. It is not a fit, so the job warns and gains an `$untranslated`
+  row. `PROC HAZARD` still steps through a `SELECTION` screen, evaluating
+  each step at unfitted values; the translation does not, and says so. A value below 1 is
+  read the same way, as `PROC HAZARD` truncates it to 0. A negative
+  `MAXITER`, which `PROC HAZARD` ignores, is no longer emitted:
+  `hazard()` had returned the starting values with `converged = TRUE`.
 
 * **A translated `ICENSOR` statement that `PROC HAZARD` cannot parse now
   warns (#495).** `ICENSOR` takes exactly `count = timevar`, and `PROC
