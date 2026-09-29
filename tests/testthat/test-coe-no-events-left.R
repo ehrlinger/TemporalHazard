@@ -42,7 +42,7 @@ test_that("a CoE fit short of its boundary supremum is recorded and warned (#261
   again <- as.numeric(hzr_evaluate(fit, rec$certificate_theta)$logLik)
   expect_equal(again, rec$certificate_loglik, tolerance = 1e-10)
   expect_gt(again, fit$fit$objective + 0.01)
-  expect_equal(again, -206.667, tolerance = 1e-3)
+  expect_lt(abs(again - (-206.669)), 1e-3)
   # The conserved phase is switched off there; only intercepts moved.
   expect_lt(rec$certificate_theta[["constant.log_mu"]], -600)
   shapes <- setdiff(names(coef(fit)), c("early.log_mu", "constant.log_mu",
@@ -71,6 +71,9 @@ test_that("a CoE fit at its maximum carries no boundary record (#261)", {
                   constant = hzr_phase("constant")),
     fit = TRUE, control = list(n_starts = 1)))
   expect_true(fit$spec$control$conserve_applied)
+  # The check ran: it needs a converged fit and a finite objective.
+  expect_true(fit$fit$converged)
+  expect_true(is.finite(fit$fit$objective))
   expect_length(coe_records(fit), 0L)
 })
 
@@ -107,4 +110,26 @@ test_that("only the certificate fires, past its margin, on a converged value (#2
   }
   expect_gt(record(rescaled_only)$gain, record(real)$gain - 1e-12)
   expect_lt(record(held_only)$gain %||% -Inf, record(real)$gain)
+  # The held-only point is scored too: with the rescaled one refused, it
+  # alone still certifies here.
+  expect_false(is.null(record(held_only)))
+
+  # The rescaled point conserves the events on the fit's own footing:
+  # weighted, and net of entry-time cumulative hazard.
+  w <- rep(c(1, 2), length.out = length(d$time))
+  entry <- ifelse(seq_along(d$time) %% 5 == 0, d$time / 2, 0)
+  total <- sum(w[d$status == 1])
+  grab <- NULL
+  .hzr_coe_boundary_record(
+    theta, value, TRUE, function(p) {
+      if (!identical(p[pos[["early"]]], theta[pos[["early"]]])) grab <<- p
+      value - 1
+    }, "constant", pos[["constant"]], pos, phases, counts,
+    list(early = NULL, constant = NULL, late = NULL), d$time, d$status,
+    entry, w, total)
+  expect_false(is.null(grab))
+  xl <- list(early = NULL, constant = NULL, late = NULL)
+  net <- .hzr_multiphase_cumhaz(d$time, grab, phases, counts, xl) -
+    .hzr_multiphase_cumhaz(entry, grab, phases, counts, xl)
+  expect_equal(sum(w * net), total, tolerance = 1e-8)
 })

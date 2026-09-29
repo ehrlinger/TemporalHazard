@@ -90,13 +90,13 @@
     detail = paste0(
       "Conservation of Events solved phase '", fixmu_phase, "''s log_mu to ",
       "absorb the events the other phases leave, but the log-likelihood is ",
-      format(gain, digits = 3), " higher with that phase's scale sent to ",
-      "zero, so the reported estimates are not the maximum. The supremum ",
-      "lies where the other phases account for every event and none remain ",
-      "for '", fixmu_phase, "'. Past that point the conserved log_mu has ",
-      "nothing to solve for and falls back to its starting value, so the ",
-      "objective the optimizer saw was discontinuous there. Consider the ",
-      "model without phase '", fixmu_phase, "', or conserve = FALSE."
+      format(gain, digits = 3), " higher at a point with that phase's scale ",
+      "sent to zero, so the reported estimates are not the maximum. A CoE ",
+      "fit can stop short of such a point: where the other phases account ",
+      "for every event, the conserved log_mu has nothing to solve for and ",
+      "falls back to its starting value, so the objective is discontinuous ",
+      "there. Consider the model without phase '", fixmu_phase, "', or ",
+      "conserve = FALSE."
     )
   )
 }

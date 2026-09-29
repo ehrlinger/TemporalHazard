@@ -179,7 +179,7 @@ test_that("the suite's own marginal case is pinned, and it is marginal", {
   b <- fit$fit$boundary
   expect_true(is.list(b))
   # By mechanism, not position: $boundary can hold several records in no
-  # guaranteed order (this fit also carries a coe_no_events_left one, #261).
+  # guaranteed order (#261).
   ub <- Filter(function(r) identical(r$mechanism, "unbounded_phase"), b)
   expect_length(ub, 1L)
   expect_equal(ub[[1L]]$phase, "a")
