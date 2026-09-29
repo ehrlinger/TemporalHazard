@@ -121,6 +121,49 @@ test_that("a free alpha is searched inside (0, 1) and certified (#418)", {
   expect_gt(rec[[1L]]$certificate_loglik, fit$fit$objective + 0.01)
 })
 
+test_that("the search holds other phases, covariates, entry times and weights (#418)", {
+  skip_on_cran()
+  # A constant phase plus a corner-law late phase whose scale depends on x,
+  # with left truncation for 30% of rows and doubled weight on a quarter.
+  withr::local_seed(5)
+  n <- 400
+  x <- stats::rbinom(n, 1, 0.5)
+  entry <- ifelse(stats::runif(n) < 0.3, stats::runif(n, 0, 0.3), 0)
+  cumhaz <- function(t, xi) {
+    0.02 * t + 0.7 * exp(0.5 * xi) * ifelse(t <= 1, t^2, t^4)
+  }
+  e <- stats::rexp(n)
+  t <- vapply(seq_len(n), function(i) {
+    target <- e[i] + cumhaz(entry[i], x[i])
+    stats::uniroot(function(s) cumhaz(s, x[i]) - target, c(entry[i], 100))$root
+  }, numeric(1))
+  d <- data.frame(time = pmin(t, 20), status = as.numeric(t <= 20), x = x,
+                  entry = entry, w = ifelse(seq_len(n) %% 4 == 0, 2, 1))
+  # The premise: every path the search takes is exercised.
+  expect_gt(sum(d$entry > 0 & d$entry < d$time), 50)
+  expect_true(any(d$w != 1))
+  fit <- suppressWarnings(hazard(
+    time = d$time, status = d$status, time_lower = d$entry, weights = d$w,
+    dist = "multiphase", fit = TRUE, data = d,
+    phases = list(const = hzr_phase("constant"),
+                  late = hzr_phase("g3", tau = 1.5, gamma = 4, alpha = 0.5,
+                                   fixed = "alpha", constraint = "eta_gamma",
+                                   formula = ~ x)),
+    control = list(n_starts = 1L, conserve = FALSE)))
+  expect_lt(unname(coef(fit)["late.gamma"]), 1e3)
+  rec <- corner_records(fit)
+  expect_length(rec, 1L)
+  cert <- rec[[1L]]$certificate_theta
+  expect_equal(as.numeric(hzr_evaluate(fit, cert)$logLik),
+               rec[[1L]]$certificate_loglik, tolerance = 1e-10)
+  expect_gt(rec[[1L]]$certificate_loglik, fit$fit$objective + 0.01)
+  # Only the late phase's intercept, tau and gamma/eta moved: the constant
+  # phase and the covariate's coefficient are the fit's.
+  same <- setdiff(names(cert), paste0("late.", c("log_mu", "log_tau",
+                                                 "gamma", "eta")))
+  expect_identical(cert[same], coef(fit)[same])
+})
+
 test_that("only the certificate can fire, and only past its margin (#418)", {
   skip_on_cran()
   d <- corner_data(300, seed = 16)
