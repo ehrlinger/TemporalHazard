@@ -346,6 +346,15 @@
 #'     computable, regardless of the active criterion.}
 #'   \item{\code{logLik}, \code{aic}, \code{n_coef}}{Goodness-of-fit
 #'     diagnostics of the model *after* this step.}
+#'   \item{\code{n_rows}}{Number of rows in the fit's data after this step
+#'     (rows given weight 0 are counted).  A multiphase fit drops every row
+#'     where a variable in the model is missing, so entering a variable with
+#'     missing values shrinks the sample every later step is tested on, and
+#'     dropping it grows the sample back.  A step that changes the rows of
+#'     positive weight raises a warning of class `hzr_stepwise_sample_changed` naming the
+#'     step, the variable and the row counts before and after.  Which
+#'     variables enter is not changed by this: compare `n_rows` across steps
+#'     to see how many rows each test rested on.}
 #' }
 #'
 #' @examples
@@ -669,6 +678,12 @@ hzr_stepwise <- function(fit,
   # comparison, which nothing was doing: the objective was written at every
   # step and read at none.
   prev_objective <- current$fit$objective %||% NA_real_
+  # The rows the working model was fitted on. A multiphase refit drops every
+  # row where a variable in the model is missing, so entering such a variable
+  # shrinks the sample every later step is tested on, and dropping it grows
+  # the sample back. Nothing said so (#519); each step now records its row
+  # count and warns when the rows changed.
+  prev_rows <- .hzr_fit_row_mask(current)
   n_nonmonotone_entries <- 0L
   stopped_by_max_steps <- FALSE
   # Candidates whose score statistic could not be computed, summed over
@@ -714,6 +729,33 @@ hzr_stepwise <- function(fit,
   # Wald and must be labelled as such.
   record_step <- function(action, out, crit = criterion) {
     step_no <<- step_no + 1L
+    rows <- .hzr_fit_row_mask(current)
+    rows_before <- sum(prev_rows)
+    # A row of weight 0 adds nothing to the likelihood, so dropping it does
+    # not change the sample a test rests on: compare only positive-weight rows.
+    # A weight vector that does not line up with the rows compares them all.
+    w <- current$data$weights
+    counts <- if (length(w) == length(rows)) !(!is.na(w) & w <= 0) else TRUE
+    used_before <- prev_rows & counts
+    used_after  <- rows & counts
+    rows_changed <- !identical(used_after, used_before)
+    if (rows_changed) {
+      direction_txt <- if (sum(used_after) < sum(used_before)) {
+        "later steps are tested on fewer rows than earlier ones"
+      } else if (sum(used_after) > sum(used_before)) {
+        "later steps are tested on rows that earlier tests did not use"
+      } else {
+        "later steps are tested on different rows from earlier ones"
+      }
+      warning(warningCondition(paste0(
+        "Stepwise step ", step_no, " (", action, " ", out$variable,
+        ") changed the rows the model is fitted on, from ", rows_before,
+        " to ", sum(rows), ". A multiphase fit drops every row where a ",
+        "variable in the model is missing, so ", direction_txt, ". ",
+        "See `$steps$n_rows`."
+      ), class = "hzr_stepwise_sample_changed"))
+    }
+    prev_rows <<- rows
     row <- data.frame(
       step_num  = step_no,
       action    = action,
@@ -730,6 +772,7 @@ hzr_stepwise <- function(fit,
       delta_logLik = (current$fit$objective %||% NA_real_) - prev_objective,
       aic       = .hzr_aic(current),
       n_coef    = length(current$fit$theta),
+      n_rows    = sum(rows),
       stringsAsFactors = FALSE
     )
     prev_objective <<- current$fit$objective %||% NA_real_
@@ -751,6 +794,10 @@ hzr_stepwise <- function(fit,
       "Step %d: %-6s %s%s   (%s)",
       step_no, toupper(action), out$variable, phase_txt, score_fmt
     ))
+    if (rows_changed) {
+      emit(sprintf("        (rows fitted changed: %d -> %d)",
+                   rows_before, sum(rows)))
+    }
   }
 
   record_freeze <- function(var, phase_hint = NA_character_) {
@@ -771,6 +818,7 @@ hzr_stepwise <- function(fit,
       delta_logLik = 0,   # freezing changes no parameter
       aic       = .hzr_aic(current),
       n_coef    = length(current$fit$theta),
+      n_rows    = sum(prev_rows),   # nor any row
       stringsAsFactors = FALSE
     )
     steps[[length(steps) + 1L]] <<- row
@@ -982,7 +1030,7 @@ hzr_stepwise <- function(fit,
       stat = numeric(), stat_type = character(), df = integer(),
       p_value = numeric(), delta_aic = numeric(),
       logLik = numeric(), delta_logLik = numeric(),
-      aic = numeric(), n_coef = integer(),
+      aic = numeric(), n_coef = integer(), n_rows = integer(),
       stringsAsFactors = FALSE
     )
   } else {
