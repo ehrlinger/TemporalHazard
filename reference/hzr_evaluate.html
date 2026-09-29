@@ -5,15 +5,19 @@
       fontURL: "https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/output/chtml/fonts/woff-v2"
     }
   };
-</script><script src="../deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"><link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet"><script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet"><link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet"><script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Evaluate a hazard model at parameters you supply — hzr_evaluate"><meta name="description" content="Computes a model's log-likelihood, and optionally its hazard and
-cumulative hazard, at parameters you supply rather than at parameters
-fitted from the data. This is what a parity check needs: the likelihood at
-another program's converged estimates, evaluated by this package's own
-likelihood."><meta property="og:description" content="Computes a model's log-likelihood, and optionally its hazard and
-cumulative hazard, at parameters you supply rather than at parameters
-fitted from the data. This is what a parity check needs: the likelihood at
-another program's converged estimates, evaluated by this package's own
-likelihood."></head><body>
+</script><script src="../deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"><link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet"><script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet"><link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet"><script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Evaluate a hazard model at parameters you supply — hzr_evaluate"><meta name="description" content="Computes a model's objective, and optionally its hazard and cumulative
+hazard, at parameters you supply rather than at parameters fitted from
+the data. The objective is the log-likelihood, except for a model built
+with objective = &quot;sas&quot; on data with interval-censored rows, where it is
+PROC HAZARD's interval-mean-hazard objective (see objective under
+Value). This is what a parity check needs: the objective at another
+program's converged estimates, evaluated by this package's own code."><meta property="og:description" content="Computes a model's objective, and optionally its hazard and cumulative
+hazard, at parameters you supply rather than at parameters fitted from
+the data. The objective is the log-likelihood, except for a model built
+with objective = &quot;sas&quot; on data with interval-censored rows, where it is
+PROC HAZARD's interval-mean-hazard objective (see objective under
+Value). This is what a parity check needs: the objective at another
+program's converged estimates, evaluated by this package's own code."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -65,11 +69,13 @@ likelihood."></head><body>
     </div>
 
     <div class="ref-description section level2">
-    <p>Computes a model's log-likelihood, and optionally its hazard and
-cumulative hazard, at parameters <strong>you</strong> supply rather than at parameters
-fitted from the data. This is what a parity check needs: the likelihood at
-another program's converged estimates, evaluated by this package's own
-likelihood.</p>
+    <p>Computes a model's objective, and optionally its hazard and cumulative
+hazard, at parameters <strong>you</strong> supply rather than at parameters fitted from
+the data. The objective is the log-likelihood, except for a model built
+with <code>objective = "sas"</code> on data with interval-censored rows, where it is
+PROC HAZARD's interval-mean-hazard objective (see <code>objective</code> under
+Value). This is what a parity check needs: the objective at another
+program's converged estimates, evaluated by this package's own code.</p>
     </div>
 
     <div class="section level2">
@@ -109,11 +115,15 @@ refused for them rather than mirrored.</p></dd>
     <p>An object of class <code>hzr_evaluation</code>: a list with <code>theta</code>, the
 parameters the likelihood was evaluated at – the vector supplied, with
 any constrained entry replaced by the value its phase derives, which is
-warned about as <code><a href="hazard.html">hazard()</a></code> warns; <code>logLik</code>, the log-likelihood there;
-<code>dist</code>; <code>n_obs</code> and <code>n_events</code>, the rows the likelihood scored and the
+warned about as <code><a href="hazard.html">hazard()</a></code> warns; <code>logLik</code>, the log-likelihood there,
+or, for a model built with <code>objective = "sas"</code>, that objective, which
+is not a log-likelihood wherever the data have interval-censored rows;
+<code>objective</code>, <code>"likelihood"</code> or <code>"sas"</code>, saying which of the two
+<code>logLik</code> holds; <code>dist</code>; <code>n_obs</code> and <code>n_events</code>, the rows the likelihood scored and the
 exact events among them (a left- or interval-censored row counts in
 <code>n_obs</code>, not in <code>n_events</code>); and, when <code>times</code> was given, <code>curve</code>, a
-data frame of <code>time</code>, <code>hazard</code> and <code>cumulative_hazard</code>.</p>
+data frame of <code>time</code>, <code>hazard</code> and <code>cumulative_hazard</code>, which is <code>NA</code>
+throughout where <code>logLik</code> is <code>-Inf</code>.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
