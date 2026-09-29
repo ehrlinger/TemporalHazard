@@ -243,7 +243,10 @@
 #'       computed for want of a variance, `wald_no_variance`; or an entry
 #'       under `criterion = "aic"` whose fit had no finite objective,
 #'       `nonfinite`, or was fitted on different rows from the current model
-#'       because the candidate is missing on some, `rows_differ`),
+#'       because the candidate is missing on some, `rows_differ`, or whose
+#'       refit ended below the current model's log-likelihood, which it
+#'       contains, so that the refit cannot have converged,
+#'       `loglik_below_base`),
 #'       `uncomputable_reasons` (a named integer vector of *why*),
 #'       `wald_untested_removals` and `wald_untested_entries` (the
 #'       `"var"` / `"var@phase"` tokens of variables kept in, or left out,
@@ -1157,6 +1160,16 @@ hzr_stepwise <- function(fit,
             "entr", if (n_rows_differ == 1L) "y" else "ies", " without ",
             "testing them: ", .hzr_score_reason_text("rows_differ"), ". See ",
             "`$criteria$uncomputable_reasons`.", call. = FALSE)
+  }
+  # A refit that ended below its base was rejected on a dAIC it never earned:
+  # the same silent "tested and missed" as a refused entry (#490).
+  n_below_base <- sum(uncomputable_reasons[names(uncomputable_reasons) ==
+                                             "loglik_below_base"])
+  if (!stopped_uncomputable && n_below_base > 0L) {
+    warning("Stepwise selection declined ", n_below_base, " candidate ",
+            "entr", if (n_below_base == 1L) "y" else "ies", " without ",
+            "testing them: ", .hzr_score_reason_text("loglik_below_base"),
+            ". See `$criteria$uncomputable_reasons`.", call. = FALSE)
   }
   if (stopped_refit_failed) {
     warning("Stepwise selection stopped after ", nrow(steps_df),

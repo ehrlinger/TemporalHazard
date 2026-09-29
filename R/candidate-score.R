@@ -102,7 +102,8 @@
 #'   \item{names}{Echoed input.}
 #'   \item{reason}{Why `score` is `NA` when the cause is known, else `NA`:
 #'     `"rows_differ"` for an AIC entry whose candidate was fitted on other
-#'     rows than `current`.}
+#'     rows than `current`; `"loglik_below_base"` for one whose refit ended
+#'     below `current`'s log-likelihood, which it contains.}
 #' }
 #'
 #' @keywords internal
@@ -178,7 +179,18 @@
     same_rows <- identical(.hzr_fit_row_mask(current),
                            .hzr_fit_row_mask(candidate))
     if (!same_rows) reason <- "rows_differ"
-    delta   <- if (same_rows && is.finite(aic_cur) && is.finite(aic_can)) {
+    # The candidate model contains the current one, so at its optimum its
+    # log-likelihood cannot be lower. A refit that ends below it did not
+    # converge, whatever `converged` says, and its dAIC is not a test: it was
+    # rejected as if tested (#490). The tolerance is the one hzr_stepwise()
+    # applies to an entered model, so optimizer noise does not fire it.
+    ll_cur <- current$fit$objective
+    ll_can <- candidate$fit$objective
+    below_base <- same_rows && is.finite(aic_cur) && is.finite(aic_can) &&
+      ll_can < ll_cur - 1e-8 * max(1, abs(ll_cur))
+    if (below_base) reason <- "loglik_below_base"
+    delta   <- if (same_rows && !below_base &&
+                     is.finite(aic_cur) && is.finite(aic_can)) {
       aic_can - aic_cur
     } else {
       NA_real_
@@ -216,7 +228,8 @@
     p_value   = wald$p_value,
     delta_aic = delta,
     names     = names,
-    # Why `score` is NA when a cause is known (`"rows_differ"`); else NA.
+    # Why `score` is NA when a cause is known (`"rows_differ"`,
+    # `"loglik_below_base"`); else NA.
     reason    = reason
   )
 }
