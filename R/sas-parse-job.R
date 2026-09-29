@@ -819,36 +819,65 @@
         # `ICENSOR c3var '=' ctimevar;` -- an event-COUNT variable (OBS
         # column 4, C3), not a 0/1 flag, and a second time variable (the
         # interval's lower bound), not two comma-separated bound variables.
-        # That is the whole grammar (hazard_y.y:115-122), and the ICNS lexer
-        # state has no rule for `,` (hazard_l.l:55, :84, :174-175), so a comma
-        # anywhere, a missing `=` or an extra name is a syntax error and
-        # initprz.c:75-77 stops the job. The translation used to strip a
-        # trailing comma and fit, silently (#495). It now warns (U1) and
-        # still fits where the two names are unambiguous once the commas are
-        # set aside; any other shape is not guessed at. A macro can expand
-        # to anything, so it carries no verdict.
-        parts <- trimws(strsplit(gsub(",", "", ops_text, fixed = TRUE), "=",
-                                 fixed = TRUE)[[1L]])
-        parts <- parts[nzchar(parts)]
-        well_formed <- grepl("^[^=,]+=[^=,]+$", ops_text) &&
-          length(parts) == 2L && all(.hzr_sas_is_name(parts))
-        if (!well_formed && !.hzr_sas_is_macro(ops_text)) {
+        # That is the whole grammar (hazard_y.y:115-122). The ICNS lexer
+        # state returns NAME and `=` only (hazard_l.l:55, :84, :174-175);
+        # any other text or character is reported and dropped
+        # (hazard_l.l:176-179), so a comma anywhere, a missing `=` or an
+        # extra name is a syntax error and initprz.c:75-77 stops the job.
+        # The translation used to strip a trailing comma and fit, silently
+        # (#495). It now reads the operand as that lexer does: runs of
+        # `[.-_A-Z0-9]`, `=`, and single other characters, where a run is a
+        # NAME only if the whole run is one (the longer rule wins). A `(`
+        # switches the lexer out of ICNS and clears the flag (hazard_l.l:56),
+        # so only the text before it is read here. A macro token counts as a
+        # name, since SAS expands it before PROC HAZARD reads the statement.
+        icns <- sub("[(].*$", "", ops_text)
+        toks <- regmatches(icns, gregexpr(
+          "[&%][A-Z_][A-Z0-9_]*[.]?|=|[-._A-Z0-9]+|[^[:space:]]", icns))[[1L]]
+        is_macro_tok <- .hzr_sas_is_macro(toks)
+        is_name_tok <- .hzr_sas_is_name(toks) | is_macro_tok
+        err_tok <- !is_name_tok & toks != "="
+        kept <- toks[!err_tok]
+        kept_name <- is_name_tok[!err_tok]
+        well_formed <- !any(err_tok) && length(kept) == 3L &&
+          kept_name[[1L]] && identical(kept[[2L]], "=") && kept_name[[3L]]
+        # A macro can expand to any number of names, so a count or order
+        # mismatch carries no verdict when one is present. A stray character
+        # outside the macro does: PROC HAZARD meets it whatever the macro
+        # expands to (r-reviewer on #546).
+        refused <- !well_formed && (any(err_tok) || !any(is_macro_tok))
+        if (refused) {
           why <- paste0("PROC HAZARD's ICENSOR is `ICENSOR count = timevar`, ",
                         "two names and nothing else (hazard_y.y:115-122; ",
-                        "hazard_l.l has no `,` rule in the ICNS state)")
+                        "hazard_l.l:174-179)")
           proc_rejected <- c(proc_rejected, paste0(
             stmt_text, ": ", why, ", so it rejects this job with a syntax ",
             "error"))
           proc_what <- c(proc_what, stmt_text)
           err_stmt <- c(err_stmt, i)
           note(stmt_text, why)
-        }
-        if (length(parts) == 2L && all(.hzr_sas_is_name(parts) |
-                                         .hzr_sas_is_macro(parts))) {
-          statements$ICENSOR <- parts
-        } else {
+          # Refused, so not counted as mapped, as for the #431 statements.
           mapped <- mapped - 1L
-          note("ICENSOR", "expected 'ICENSOR count = timevar' operand shape")
+        }
+        # What PROC HAZARD's parser reads once its lexer has dropped the
+        # errors: the first NAME '=' NAME, whose actions fire before any
+        # later token (setvar(14), setvar(15)). Measured after a clearing
+        # `(`: `C3=TL,AGE` and `C3=TL AGE` use C3 and TL, and `C,3=TL`
+        # uses C. Anything else leaves no ICENSOR to emit.
+        if (length(kept) >= 3L && kept_name[[1L]] &&
+              identical(kept[[2L]], "=") && kept_name[[3L]]) {
+          statements$ICENSOR <- kept[c(1L, 3L)]
+          if (!well_formed && !refused) {
+            note(stmt_text, paste0(
+              "a macro in this ICENSOR statement hides its shape; the fit ",
+              "takes ", kept[[1L]], " = ", kept[[3L]], " and cannot tell ",
+              "what PROC HAZARD reads once the macro expands"))
+          }
+        } else {
+          if (!refused) {
+            mapped <- mapped - 1L
+            note("ICENSOR", "expected 'ICENSOR count = timevar' operand shape")
+          }
         }
       },
       LCENSOR    = statements$LCENSOR <- ops[[1L]],

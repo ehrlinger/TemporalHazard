@@ -2793,7 +2793,9 @@ test_that("the SETG1 documents render past the warning (#424)", {
 
 test_that("an ICENSOR operand PROC HAZARD cannot parse warns (U1, #495)", {
   for (ic in c("C3=TL,", "C3,=TL", ",C3=TL", "C3=TL,,", "C3=TL AGE",
-               "C3 TL", "C3", "C3==TL")) {
+               "C3 TL", "C3", "C3==TL", "C3=TL,AGE", "C,3=TL",
+               # A stray comma outside a macro is met whatever it expands to.
+               "C3=&T,", "&C,=TL")) {
     job <- .p495_job(ic)
     expect_false(is.null(.u1_refusal_chunk(job)), info = ic)
     msg <- .u1_msg(job)
@@ -2803,9 +2805,10 @@ test_that("an ICENSOR operand PROC HAZARD cannot parse warns (U1, #495)", {
     expect_true(any(startsWith(job$untranslated$construct, "ICENSOR")),
                 info = ic)
   }
-  # Controls: the grammar's own shape, spaced or not, and a macro, which
-  # SAS expands before PROC HAZARD reads it.
-  for (ic in c("C3 = TL", "C3=TL", "C3 =TL", "&CNT = TL")) {
+  # Controls: the grammar's own shape, spaced or not; a macro, which SAS
+  # expands before PROC HAZARD reads it; and a `(`, which leaves the ICNS
+  # lexer state (the binary fits `C3=TL()` to -635.394, the clean value).
+  for (ic in c("C3 = TL", "C3=TL", "C3 =TL", "&CNT = TL", "C3=TL()")) {
     job <- .p495_job(ic)
     expect_null(.u1_refusal_chunk(job), info = ic)
     expect_identical(NROW(job$untranslated), 0L, info = ic)
@@ -2820,15 +2823,25 @@ test_that("a stray ICENSOR comma still fits the same model (U1, #495)", {
                   AGE = as.numeric(scale(a$age)))
   D$C3 <- as.numeric(seq_len(nrow(D)) %% 5 == 0 & D$DEAD == 0)
   D$TL <- ifelse(D$C3 > 0, D$TT * 0.5, 0)
-  clean <- suppressWarnings(render_sim(.p495_job("C3 = TL"), list(D = D)))
-  expect_true(clean$ok)
-  for (ic in c("C3=TL,", "C3,=TL")) {
-    job <- .p495_job(ic)
-    res <- suppressWarnings(render_sim(job, list(D = D)))
-    expect_true(res$ok, info = paste(res$results, collapse = "; "))
+  D$C <- as.numeric(seq_len(nrow(D)) %% 7 == 0 & D$DEAD == 0)
+  # The fit takes the names PROC HAZARD's parser reads once its lexer has
+  # dropped the errors: the first NAME = NAME. Measured after a clearing `(`
+  # (`CONSTANT LOG();`): `C3=TL,AGE` and `C3=TL AGE` fit to -609.094 as
+  # `C3 = TL` does, and `C,3=TL` fits to -565.042 as `C = TL` does. Joining
+  # names across a comma fitted TLAGE and C3 (r-reviewer on #546).
+  fits <- function(ic) {
+    res <- suppressWarnings(render_sim(.p495_job(ic), list(D = D)))
+    expect_true(res$ok, info = paste(ic, paste(res$results, collapse = "; ")))
+    res$env$fit
+  }
+  clean <- list(C3 = fits("C3 = TL"), C = fits("C = TL"))
+  expect_false(identical(clean$C3$fit$theta, clean$C$fit$theta))
+  for (cs in list(c("C3=TL,", "C3"), c("C3,=TL", "C3"), c("C3=TL AGE", "C3"),
+                  c("C3=TL,AGE", "C3"), c("C,3=TL", "C"), c("C3=TL()", "C3"))) {
+    fit <- fits(cs[[1L]])
+    expect_identical(fit$fit$theta, clean[[cs[[2L]]]]$fit$theta, info = cs[[1L]])
     # The interval-censored rows are still interval-censored.
-    expect_identical(res$env$fit$fit$theta, clean$env$fit$fit$theta, info = ic)
-    expect_true(any(res$env$fit$data$status == 2), info = ic)
+    expect_true(any(fit$data$status == 2), info = cs[[1L]])
   }
   # After a later `(` PROC HAZARD fits; the warning says the flag was
   # cleared, not that the job is refused.

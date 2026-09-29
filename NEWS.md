@@ -211,10 +211,11 @@
   comma and fitted the job without a word, and it fitted a job with a
   missing `=` without its interval-censored rows, with only an
   `$untranslated` row to say so. Such a job now warns that `PROC HAZARD`
-  does not run it and gains an `$untranslated` row. Where the two names
-  are still unambiguous, as with a stray comma, it fits the same model as
-  before. A later `(` clears `PROC HAZARD`'s syntax error, and the
-  warning then says so instead.
+  does not run it and gains an `$untranslated` row. The fit uses the
+  names `PROC HAZARD`'s parser reads, the first `count = timevar` once its
+  lexer has dropped the errors, so `C3=TL,AGE` fits `C3` and `TL`, not a
+  variable `TLAGE`. A later `(` clears `PROC HAZARD`'s syntax error, and
+  the warning then says so instead.
 
 # TemporalHazard 1.2.12
 
