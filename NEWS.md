@@ -353,6 +353,8 @@
   but no plain variable fills an empty one, so these now warn and gain a
   row, as their macro-free forms already did. An empty argument inside a
   macro call, as in `%F(A,,B)`, belongs to the macro and is not flagged.
+  A quoting function such as `%STR()` passes its argument through as text,
+  so `%STR(A,,B)` is judged as `A,,B`.
 
 # TemporalHazard 1.2.12
 

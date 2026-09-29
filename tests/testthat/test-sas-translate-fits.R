@@ -3284,6 +3284,24 @@ test_that("a macro does not exempt an empty phase item (#479)", {
     expect_false(any(grepl("206-207", job$untranslated$reason, fixed = TRUE)),
                  info = ph)
   }
+  # A macro call's arguments may hold their own parentheses; the call still
+  # ends at its matching `)`, so its empty argument is not a phase item.
+  for (ph in c("EARLY %F(A,(B),,C);", "EARLY %F(A,,(B));",
+               "EARLY %F(%G(A,,B),C);")) {
+    job <- job_for(ph)
+    expect_false(any(grepl("206-207", job$untranslated$reason, fixed = TRUE)),
+                 info = ph)
+  }
+  # A quoting function is not a user macro: PROC HAZARD reads its argument
+  # as text, so `%STR(A,,B)` reaches the parser as `A,,B` and fails there.
+  for (ph in c("EARLY %STR(A,,B);", "EARLY %NRSTR(A,,B);",
+               "EARLY A, %STR(,) B;", "EARLY %BQUOTE(A,,B);")) {
+    job <- job_for(ph)
+    expect_true(any(grepl("206-207", job$untranslated$reason, fixed = TRUE)),
+                info = ph)
+  }
+  expect_false(any(grepl("206-207", job_for("EARLY %STR(A,B);")$untranslated$reason,
+                         fixed = TRUE)))
   # A later `(` clears the flag, and the warning says so (#461).
   expect_match(.u1_msg(job_for("EARLY , &X; LATE LOG();")),
                "clears its syntax-error flag", fixed = TRUE)

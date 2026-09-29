@@ -49,6 +49,32 @@
 # PROC HAZARD reads the statement: never judged as a syntax error.
 .hzr_sas_is_macro <- function(x) grepl("[&%][A-Za-z_]", x)
 
+# `x` with each macro call's argument list set aside, for the comma checks
+# (#479). A user macro's arguments are the macro processor's, and an empty
+# one is valid SAS (`%F(A,,B)`), so the whole call becomes one item. A
+# quoting function is different: SAS passes its argument through as text, so
+# `%STR(A,,B)` reaches PROC HAZARD as `A,,B` and is kept. Parentheses are
+# matched by depth, so a `(` inside the arguments does not end the call. An
+# unclosed call is left as written.
+.hzr_sas_macro_calls_set_aside <- function(x) {
+  quoting <- c("STR", "NRSTR", "QUOTE", "NRQUOTE", "BQUOTE", "NRBQUOTE")
+  repeat {
+    m <- regexpr("%[A-Za-z_][A-Za-z0-9_]*[[:space:]]*[(]", x)
+    if (m < 0L) return(x)
+    open <- m + attr(m, "match.length") - 1L
+    chars <- strsplit(substring(x, open), "", fixed = TRUE)[[1L]]
+    close <- match(0L, cumsum((chars == "(") - (chars == ")")))
+    if (is.na(close)) return(x)
+    close <- open + close - 1L
+    name <- toupper(sub("^%([A-Za-z0-9_]+).*$", "\\1",
+                        substring(x, m, open)))
+    x <- paste0(substring(x, 1L, m - 1L),
+                if (name %in% quoting) substring(x, open + 1L, close - 1L)
+                else "%CALL",
+                substring(x, close + 1L))
+  }
+}
+
 .hzr_parms_unresolved_why <- function(op) {
   if (.hzr_sas_is_macro(op)) .hzr_parms_unresolved_macro_reason else
     .hzr_parms_unresolved_reason
@@ -448,10 +474,9 @@
     "(yyerror.c:19)"))
   for (piece in x) {
     t <- trimws(piece)
-    # A macro call's own arguments are the macro processor's, and an empty
-    # one is valid SAS (`%F(A,,B)`), so its span is set aside first.
-    t_items <- gsub("%[A-Z_][A-Z0-9_]*[[:space:]]*[(][^()]*[)]", "%CALL",
-                    t, ignore.case = TRUE)
+    # A macro call's own arguments are the macro processor's, except a
+    # quoting function's, which PROC HAZARD reads as text.
+    t_items <- .hzr_sas_macro_calls_set_aside(t)
     if (!nzchar(t) || grepl("^,|,$|,[[:space:]]*,", t_items)) {
       shown <- if (nzchar(t)) t else "(no variable)"
       bad(shown, empty_item)
