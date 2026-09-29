@@ -3286,8 +3286,12 @@ test_that("a macro does not exempt an empty phase item (#479)", {
   }
   # A macro call's arguments may hold their own parentheses; the call still
   # ends at its matching `)`, so its empty argument is not a phase item.
+  # A call whose name comes from a macro variable (`%&M(...)`, which SAS
+  # rescans to `%F(...)`) is a macro call too (Copilot, #559).
   for (ph in c("EARLY %F(A,(B),,C);", "EARLY %F(A,,(B));",
-               "EARLY %F(%G(A,,B),C);")) {
+               "EARLY %F(%G(A,,B),C);", "EARLY %&M(A,,B);",
+               "EARLY %F&N(A,,B);", "EARLY %&M.X(A,,B);",
+               "EARLY %STR&X(A,,B);", "EARLY %STR (A, B);")) {
     job <- job_for(ph)
     expect_false(any(grepl("206-207", job$untranslated$reason, fixed = TRUE)),
                  info = ph)
@@ -3295,7 +3299,8 @@ test_that("a macro does not exempt an empty phase item (#479)", {
   # A quoting function is not a user macro: PROC HAZARD reads its argument
   # as text, so `%STR(A,,B)` reaches the parser as `A,,B` and fails there.
   for (ph in c("EARLY %STR(A,,B);", "EARLY %NRSTR(A,,B);",
-               "EARLY A, %STR(,) B;", "EARLY %BQUOTE(A,,B);")) {
+               "EARLY A, %STR(,) B;", "EARLY %BQUOTE(A,,B);",
+               "EARLY , %&M(A,B);")) {
     job <- job_for(ph)
     expect_true(any(grepl("206-207", job$untranslated$reason, fixed = TRUE)),
                 info = ph)

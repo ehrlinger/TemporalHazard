@@ -54,20 +54,21 @@
 # one is valid SAS (`%F(A,,B)`), so the whole call becomes one item. A
 # quoting function is different: SAS passes its argument through as text, so
 # `%STR(A,,B)` reaches PROC HAZARD as `A,,B` and is kept. Parentheses are
-# matched by depth, so a `(` inside the arguments does not end the call. An
+# matched by depth, so a `(` inside the arguments does not end the call. A
+# name built from a macro variable (`%&M(...)`, `%F&N(...)`) is a call too,
+# whose name is unknown here, so it is never read as a quoting function. An
 # unclosed call is left as written.
 .hzr_sas_macro_calls_set_aside <- function(x) {
   quoting <- c("STR", "NRSTR", "QUOTE", "NRQUOTE", "BQUOTE", "NRBQUOTE")
   repeat {
-    m <- regexpr("%[A-Za-z_][A-Za-z0-9_]*[[:space:]]*[(]", x)
+    m <- regexpr("%[A-Za-z_&][A-Za-z0-9_&.]*[[:space:]]*[(]", x)
     if (m < 0L) return(x)
     open <- m + attr(m, "match.length") - 1L
     chars <- strsplit(substring(x, open), "", fixed = TRUE)[[1L]]
     close <- match(0L, cumsum((chars == "(") - (chars == ")")))
     if (is.na(close)) return(x)
     close <- open + close - 1L
-    name <- toupper(sub("^%([A-Za-z0-9_]+).*$", "\\1",
-                        substring(x, m, open)))
+    name <- toupper(trimws(substring(x, m + 1L, open - 1L)))
     x <- paste0(substring(x, 1L, m - 1L),
                 if (name %in% quoting) substring(x, open + 1L, close - 1L)
                 else "%CALL",
