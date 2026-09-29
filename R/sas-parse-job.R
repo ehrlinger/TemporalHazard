@@ -866,7 +866,7 @@
         # them (`TL(X,&M)` keeps `X,`) sets the flag whatever they expand to
         # (Copilot on #546).
         tail_bad <- nzchar(gsub("[()[:space:]]", "",
-                                gsub("[&%][A-Z_][A-Z0-9_]*[.]?", "", tail)))
+                                gsub("(&+|%)[A-Z_][A-Z0-9_]*[.]?", "", tail)))
         toks <- regmatches(icns, gregexpr(
           "[-._A-Z0-9&%]+|=|[^[:space:]]", icns))[[1L]]
         is_macro_tok <- .hzr_sas_is_macro(toks)

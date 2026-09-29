@@ -3041,8 +3041,9 @@ test_that("an ICENSOR operand PROC HAZARD cannot parse warns (U1, #495)", {
   # joined to a name is one name once SAS resolves it.
   for (ic in c("C3 = TL", "C3=TL", "C3 =TL", "&CNT = TL", "C3=TL()",
                "&&C3 = TL", "C&I = TL&I", "C3 = TL&S",
-               # A macro alone after a `(` may expand to nothing.
-               "C3=TL(&M)")) {
+               # A macro alone after a `(` may expand to nothing, an
+               # indirect one included.
+               "C3=TL(&M)", "C3=TL(&&M)")) {
     job <- .p495_job(ic)
     expect_null(.u1_refusal_chunk(job), info = ic)
     expect_identical(NROW(job$untranslated), 0L, info = ic)
