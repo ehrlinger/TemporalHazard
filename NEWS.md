@@ -333,7 +333,9 @@
   of these comparisons is now exact, as are the event-time column and the
   columns compared with a stored frame. Under `all.equal()`'s tolerance,
   rows whose times differed only by rounding, such as `0.1 + 0.2` and `0.3`,
-  could be swapped unseen and screened as if in order.
+  could be swapped unseen and screened as if in order. A `data` with
+  duplicated column names is now refused: every check reads columns by
+  name, and of duplicates only the first is read.
 
 * **`hzr_stepwise(criterion = "aic")` no longer enters a variable on the
   strength of its missing values (#488).** A multiphase refit drops every row

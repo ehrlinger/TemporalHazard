@@ -89,7 +89,8 @@ still be swapped are then identical in everything the fit reads, and
 the screen's answer is the same.  With no column of event times, or
 tied times the other inputs cannot resolve, the order cannot be
 checked, and a warning of class \code{hzr_score_rows_unverified} says so and
-names the inputs to add.}
+names the inputs to add.  Column names must be unique: every check
+reads \code{data} by name, so a \code{data} with duplicated names is refused.}
 
 \item{direction}{Search strategy: one of \code{"both"} (default),
 \code{"forward"}, or \code{"backward"}.  Controls whether variables may only

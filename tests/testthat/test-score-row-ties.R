@@ -185,6 +185,13 @@ test_that("inputs are matched exactly, and constant or short ones handled (#515)
   expect_identical(decoy$decoy, d$dead)
   expect_error(.hzr_check_data_row_order(st_fit, decoy, score = TRUE),
                "column `dead` holds the fit's status")
+  # A decoy that shares the name, placed first, is what `data[["dead"]]`
+  # would read: duplicated names are refused outright.
+  dup_name <- cbind(d["dead"], moved_st)
+  expect_identical(sum(names(dup_name) == "dead"), 2L)
+  expect_identical(dup_name[["dead"]], d$dead)
+  expect_error(.hzr_check_data_row_order(st_fit, dup_name, score = TRUE),
+               "more than one column named `dead`")
   no_dead <- decoy[names(decoy) != "dead"]
   expect_warning(.hzr_check_data_row_order(st_fit, no_dead, score = TRUE),
                  "status (column `dead`)", fixed = TRUE,

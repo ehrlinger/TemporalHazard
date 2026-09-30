@@ -878,6 +878,21 @@
 #' @return `NULL`, invisibly; called for its error or warning.
 #' @noRd
 .hzr_check_data_row_order <- function(current, data, score = TRUE) {
+  # Every comparison below reads `data` by column name, and of duplicated
+  # names `data[[name]]` reads only the first: a second column of that name,
+  # holding the rows in another order, would never be seen (#515).
+  dup <- unique(names(data)[duplicated(names(data))])
+  if (length(dup)) {
+    stop(
+      "`data` has more than one column named ",
+      paste0("`", utils::head(dup, 5L), "`", collapse = ", "),
+      if (length(dup) > 5L) paste0(" and ", length(dup) - 5L, " more"),
+      ". hzr_stepwise() reads columns by name, so it cannot tell which one ",
+      "is meant, nor check that `data` holds the rows the model was fitted ",
+      "on in the same order. Give every column of `data` a unique name.",
+      call. = FALSE
+    )
+  }
   frame <- current$data$frame
   # A `data` that shares no column with the frame (derived candidates only)
   # leaves nothing to compare: that is no proof of order, and falls through

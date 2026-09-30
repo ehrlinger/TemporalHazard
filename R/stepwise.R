@@ -148,7 +148,8 @@
 #'   the screen's answer is the same.  With no column of event times, or
 #'   tied times the other inputs cannot resolve, the order cannot be
 #'   checked, and a warning of class `hzr_score_rows_unverified` says so and
-#'   names the inputs to add.
+#'   names the inputs to add.  Column names must be unique: every check
+#'   reads `data` by name, so a `data` with duplicated names is refused.
 #' @param direction Search strategy: one of `"both"` (default),
 #'   `"forward"`, or `"backward"`.  Controls whether variables may only
 #'   enter, only leave, or both.  See the **Selection direction and
