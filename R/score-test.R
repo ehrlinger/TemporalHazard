@@ -1324,7 +1324,8 @@
       "`criterion = \"wald\"` refits it instead"
     ),
     nuisance_singular = paste(
-      "the current model's information matrix could not be inverted, so no",
+      "the current model's information matrix could not be formed or",
+      "inverted, so no",
       "candidate could be scored at that step. `criterion = \"score\"` refits",
       "and Wald-tests each of them itself, so reaching this reason means that",
       "refit errored or did not converge -- see `refit_failures`"

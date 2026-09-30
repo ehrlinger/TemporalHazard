@@ -94,8 +94,10 @@ test_that("hazard() tells a fixed parameter's row from a failed one (#570)", {
   expect_true(all(is.na(v[fixed])))
   expect_true(all(is.finite(v[!fixed]) & v[!fixed] > 0))
   expect_lt(fit$fit$rcond, 1e-8)
-  # So the fit was examined in full, and the fixed rows do not make it NA.
-  expect_false(.hzr_is_na_scalar(fit$fit$weak))
+  # So the fit was examined in full and found clean: the fixed rows do not
+  # make it NA. (NULL exactly: a ridge would be returned before the fixed
+  # mask is read, and would not show that it was.)
+  expect_null(fit$fit$weak)
   expect_false("weak_direction_check" %in% names(fit$degraded_causes))
 })
 

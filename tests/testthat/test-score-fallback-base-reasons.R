@@ -246,6 +246,50 @@ test_that("a rescue that fails under a new reason is reported as untested (#570)
                fixed = TRUE)
 })
 
+test_that("every refitted reason reports its failed rescue (#570)", {
+  # The warning reads the fallback set, so each reason in it is covered, not
+  # only the one the test above forces. `mal` is given each reason in turn,
+  # and its refit fails.
+  d <- fb_data()
+  fit <- fb_fit(d)
+  expect_gt(length(.hzr_score_fallback_reasons), 2L)
+  for (reason in .hzr_score_fallback_reasons) {
+    orig_q <- .hzr_score_q
+    orig_r <- .hzr_refit_with_scope
+    local({
+      local_mocked_bindings(
+        .hzr_score_q = function(current, var, ...) {
+          r <- orig_q(current, var, ...)
+          if (identical(var, "mal")) {
+            r$stat <- NA_real_
+            r$p_value <- NA_real_
+            r$reason <- reason
+          }
+          r
+        },
+        .hzr_refit_with_scope = function(current, action = c("add", "drop"),
+                                         var, ...) {
+          if (identical(var, "mal")) stop("forced refit failure")
+          orig_r(current, action = action, var = var, ...)
+        }
+      )
+      w <- character()
+      sw <- withCallingHandlers(
+        hzr_stepwise(fit, scope = fb_scope, data = d, direction = "forward",
+                     criterion = "score", slentry = 0.30, max_steps = 1L,
+                     trace = FALSE),
+        warning = function(x) {
+          w <<- c(w, conditionMessage(x))
+          invokeRestart("muffleWarning")
+        }
+      )
+      expect_identical(sw$criteria$uncomputable_reasons,
+                       stats::setNames(1L, reason), label = reason)
+      expect_length(grep("NEITHER criterion", w, fixed = TRUE), 1L)
+    })
+  }
+})
+
 test_that("the two reasons' texts say the refit was tried (#570)", {
   for (r in c("nuisance_singular", "information_nonpositive")) {
     txt <- .hzr_score_reason_text(r)
