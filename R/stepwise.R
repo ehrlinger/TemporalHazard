@@ -348,13 +348,16 @@
 #'   \item{\code{p_value}, \code{delta_aic}}{Always populated when
 #'     computable, regardless of the active criterion.}
 #'   \item{\code{logLik}, \code{aic}, \code{n_coef}}{Goodness-of-fit
-#'     diagnostics of the model *after* this step. For a base fit with
-#'     `objective = "sas"` that read an interval-censored row (one of
-#'     positive weight, not dropped by a phase design), `logLik`
-#'     and `delta_logLik` hold PROC HAZARD's objective, not a
-#'     log-likelihood, and `aic` is computed from it; the trace's final line
-#'     says so, and `criterion = "aic"` warns (class
-#'     `hzr_stepwise_sas_objective`) that its selections rest on it.}
+#'     diagnostics of the model *after* this step. Under
+#'     `objective = "sas"`, on a step whose model reads an interval-censored
+#'     row (one of positive weight, not dropped by a phase design), `logLik`
+#'     holds PROC HAZARD's objective, not a log-likelihood, and `aic` is
+#'     computed from it. A step can change which rows are read (see
+#'     `n_rows`), so on a step that starts or stops reading such rows
+#'     `delta_logLik` is the difference of two different quantities. The
+#'     trace's final line labels the final model's value, and
+#'     `criterion = "aic"` warns once (class `hzr_stepwise_sas_objective`)
+#'     as soon as a step's model reads such a row.}
 #'   \item{\code{n_rows}}{Number of rows in the fit's data after this step
 #'     (rows given weight 0 are counted).  A multiphase fit drops every row
 #'     where a variable in the model is missing, so entering a variable with
