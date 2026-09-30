@@ -481,6 +481,21 @@
   the number of rows each rule touched, and the data frame itself keeps
   every row.
 
+- **A macro in a translated phase statement no longer hides an empty
+  item
+  ([\#479](https://github.com/ehrlinger/TemporalHazard/issues/479)).**
+  `PROC HAZARD` needs a variable on each side of every `,` in `EARLY`,
+  `CONSTANT` and `LATE`, and stops with a syntax error otherwise.
+  [`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
+  skipped that check for a whole statement whenever any item was a
+  macro, so `EARLY , &X;` and `EARLY SEX,, &X;` fitted with no warning
+  and no `$untranslated` row. A macro can stand for an item, but no
+  plain variable fills an empty one, so these now warn and gain a row,
+  as their macro-free forms already did. An empty argument inside a
+  macro call, as in `%F(A,,B)`, belongs to the macro and is not flagged.
+  A quoting function such as `%STR()` passes its argument through as
+  text, so `%STR(A,,B)` is judged as `A,,B`.
+
 ## TemporalHazard 1.2.12
 
 ### Breaking changes
