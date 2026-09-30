@@ -4,13 +4,13 @@
 # read FROZEN then DROP, and $scope$frozen named a variable the final model
 # did not contain (#580). A freeze now takes effect after the backward step,
 # so a variable that enters and is dropped in the same iteration is frozen
-# OUT. PROC HAZARD freezes only on an exit (its MOVE counts exits,
-# src/hazard/hazrd4.c:361-362), so it never freezes a variable in.
+# OUT. Outside NOSTEPWISE, PROC HAZARD counts only exits
+# (src/hazard/hazrd4.c:361-377), so it freezes a variable only as it leaves.
 
-fz_data <- function() {
+fz_data <- function(env = parent.frame()) {
   data(avc, package = "TemporalHazard", envir = environment())
   d <- stats::na.omit(avc)
-  set.seed(580)
+  withr::local_seed(580, .local_envir = env)
   d$noise <- stats::rnorm(nrow(d))
   d
 }

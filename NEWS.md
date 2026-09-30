@@ -15,8 +15,9 @@
   frozen out and `$scope$frozen` agrees with the final model. The final
   model is unchanged. The "Known limitation (the frozen set)" section of
   `?hzr_stepwise` is replaced by one describing the rule. PROC HAZARD's
-  MOVE rule differs again (it counts only exits, and freezes a variable
-  only out of the model); that is recorded, not adopted.
+  MOVE rule differs again (outside `NOSTEPWISE` it counts only exits, so
+  it freezes a variable only as it leaves the model); that is recorded,
+  not adopted.
 
 * **`hzr_stepwise(criterion = "score")` now refits and Wald-tests two more
   kinds of candidate it could not score (#570).** The score criterion refits

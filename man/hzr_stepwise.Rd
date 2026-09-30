@@ -420,15 +420,15 @@ Earlier versions froze such a variable as it entered and then dropped it
 anyway, so \verb{$scope$frozen} could name a variable the final model did not
 contain (#580).
 
-This is not PROC HAZARD's MOVE rule.  PROC HAZARD counts only a
-variable's exits, makes one move per step, removal first, and bars the
-variable it last moved from re-entering at once, so it only ever freezes
-a variable out of the model.  \code{max_move} counts entries and exits alike,
-which is why the SAS translator records \verb{MOVE=} rather than mapping it.
-
-This is a known limitation of this release.  The analysis, including why
-fixing it changes which variables are selected, is in
-\url{https://github.com/ehrlinger/TemporalHazard/issues/378} and
+This is not PROC HAZARD's MOVE rule.  PROC HAZARD makes one move per
+step, a removal before any entry; it counts a variable's exits (and,
+under \code{NOSTEPWISE}, its entries too), separately for each phase; and a
+variable at its limit can neither leave nor enter.  Outside \code{NOSTEPWISE}
+it therefore freezes a variable only as it leaves.  \code{max_move} counts
+entries and exits alike, by name across phases, which is why the SAS
+translator records \verb{MOVE=} rather than mapping it.  Adopting PROC
+HAZARD's rule would change which variables are selected, and is deferred;
+see \url{https://github.com/ehrlinger/TemporalHazard/issues/378} and
 \url{https://github.com/ehrlinger/TemporalHazard/issues/379}.
 }
 

@@ -319,15 +319,15 @@
 #' anyway, so `$scope$frozen` could name a variable the final model did not
 #' contain (#580).
 #'
-#' This is not PROC HAZARD's MOVE rule.  PROC HAZARD counts only a
-#' variable's exits, makes one move per step, removal first, and bars the
-#' variable it last moved from re-entering at once, so it only ever freezes
-#' a variable out of the model.  `max_move` counts entries and exits alike,
-#' which is why the SAS translator records `MOVE=` rather than mapping it.
-#'
-#' This is a known limitation of this release.  The analysis, including why
-#' fixing it changes which variables are selected, is in
-#' \url{https://github.com/ehrlinger/TemporalHazard/issues/378} and
+#' This is not PROC HAZARD's MOVE rule.  PROC HAZARD makes one move per
+#' step, a removal before any entry; it counts a variable's exits (and,
+#' under `NOSTEPWISE`, its entries too), separately for each phase; and a
+#' variable at its limit can neither leave nor enter.  Outside `NOSTEPWISE`
+#' it therefore freezes a variable only as it leaves.  `max_move` counts
+#' entries and exits alike, by name across phases, which is why the SAS
+#' translator records `MOVE=` rather than mapping it.  Adopting PROC
+#' HAZARD's rule would change which variables are selected, and is deferred;
+#' see \url{https://github.com/ehrlinger/TemporalHazard/issues/378} and
 #' \url{https://github.com/ehrlinger/TemporalHazard/issues/379}.
 #'
 #' @details
@@ -888,8 +888,10 @@ hzr_stepwise <- function(fit,
   # the trace read FROZEN then DROP, and `$scope$frozen` named a variable the
   # final model did not contain (#580). Frozen after the backward step, a
   # variable is frozen where it ends the iteration -- out, if it was
-  # dropped, as PROC HAZARD's MOVE rule freezes a variable on its exit
-  # (hazrd4.c:361-362, swvari.c:160).
+  # dropped. PROC HAZARD, outside NOSTEPWISE, freezes a variable only on
+  # its exit: it makes one move per step, removal first (stepw.c:126-144),
+  # counts deletions (hazrd4.c:361-377), and gates both directions on the
+  # count (swvarx.c:158-159, swvari.c:160).
   bump_move <- function(var) {
     move_counts[[var]] <<- (move_counts[[var]] %||% 0L) + 1L
     if (move_counts[[var]] > max_move && !var %in% c(frozen, pending_freeze)) {
