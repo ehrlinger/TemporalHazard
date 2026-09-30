@@ -601,7 +601,9 @@ hzr_phase_cumhaz <- function(time, t_half = 1, nu = 1, m = 0,
 #' 1e-10) and becomes one-sided backward if it would still reach 0.  The
 #' `log_t_half` derivative is a central difference in `log_t_half` itself,
 #' so its step is proportional to `t_half` at every scale. It is `NaN` where
-#' `t_half` is too small or too large to step. For a `"hazard"` phase far
+#' the two points of the difference cannot both be used: `t_half` too small
+#' or too large to step, or a point at which [hzr_decompos()] fails. For a
+#' `"hazard"` phase far
 #' past saturation it is unreliable and then exactly 0, because `1 - G` runs
 #' out of digits; where that starts depends on the shape (from about
 #' `t_half = exp(-25)` at `nu = 1`, `m = 1` and times of order 1).

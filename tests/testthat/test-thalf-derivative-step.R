@@ -148,7 +148,7 @@ test_that("a t_half with no room to step returns NaN, not a clean zero (#574)", 
 
 test_that("the multiphase score for log_t_half is right at the issue's point (#574)", {
   skip_if_not_installed("numDeriv")
-  set.seed(11)
+  withr::local_seed(11)
   n <- 300
   z <- rbinom(n, 1, 0.4)
   age <- round(rnorm(n), 2)

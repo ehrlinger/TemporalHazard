@@ -47,7 +47,9 @@ order), and for \code{m < 0} the step is capped at 1\% of \verb{|m|} (floored at
 1e-10) and becomes one-sided backward if it would still reach 0.  The
 \code{log_t_half} derivative is a central difference in \code{log_t_half} itself,
 so its step is proportional to \code{t_half} at every scale. It is \code{NaN} where
-\code{t_half} is too small or too large to step. For a \code{"hazard"} phase far
+the two points of the difference cannot both be used: \code{t_half} too small
+or too large to step, or a point at which \code{\link[=hzr_decompos]{hzr_decompos()}} fails. For a
+\code{"hazard"} phase far
 past saturation it is unreliable and then exactly 0, because \code{1 - G} runs
 out of digits; where that starts depends on the shape (from about
 \code{t_half = exp(-25)} at \code{nu = 1}, \code{m = 1} and times of order 1).
