@@ -453,19 +453,28 @@
 #'   `setcoe` under `LCENSOR`/`STARTTME`). Any other row has no entry
 #'   (`H(start) = 0`); see `.hzr_multiphase_entry()`. `NULL` (the default)
 #'   means no truncation.
-#' @return Updated theta vector with fixmu phase's log_mu adjusted.
+#' @param details `FALSE` (the default) returns the theta vector alone.
+#'   `TRUE` returns `list(theta, solved)`, `solved` saying whether the log_mu
+#'   was solved for, as against handed back unchanged because there was
+#'   nothing to solve.
+#' @return Updated theta vector with fixmu phase's log_mu adjusted, or the
+#'   list described under `details`.
 #' @keywords internal
 .hzr_conserve_events <- function(theta, fixmu_phase, fixmu_pos,
                                   time, status,
                                   phases, covariate_counts, x_list,
                                   total_events, weights = NULL,
-                                  time_lower = NULL) {
+                                  time_lower = NULL, details = FALSE) {
+  # `solved` is FALSE on every path that hands theta back untouched.
+  done <- function(theta, solved) {
+    if (details) list(theta = theta, solved = solved) else theta
+  }
   # An infeasible time scale has no cumulative hazard to solve against; leave
   # theta for the likelihood, which penalises it (#262).
   theta_split <- .hzr_split_theta(theta, phases, covariate_counts)
   for (nm in names(phases)) {
     pars <- .hzr_unpack_phase_theta(theta_split[[nm]], phases[[nm]])
-    if (!.hzr_phase_scale_feasible(pars, phases[[nm]]$type)) return(theta)
+    if (!.hzr_phase_scale_feasible(pars, phases[[nm]]$type)) return(done(theta, FALSE))
   }
 
   # Compute per-phase cumulative hazard contributions
@@ -494,7 +503,7 @@
   # Weighted contribution from the fixmu phase alone
   sumcj <- sum(weights * decomp[[fixmu_phase]])
 
-  if (sumcj <= 0 || !is.finite(sumcj)) return(theta)
+  if (sumcj <= 0 || !is.finite(sumcj)) return(done(theta, FALSE))
 
   # Discrepancy: how many events are unaccounted for
   devent <- total_events - sumcz
@@ -502,15 +511,15 @@
   # Events the fixmu phase should absorb
   jevent <- sumcj + devent
 
-  if (jevent <= 0 || !is.finite(jevent)) return(theta)
+  if (jevent <= 0 || !is.finite(jevent)) return(done(theta, FALSE))
 
   # Multiplicative adjustment in log scale
   lfactor <- log(jevent / sumcj)
 
-  if (!is.finite(lfactor)) return(theta)
+  if (!is.finite(lfactor)) return(done(theta, FALSE))
 
   theta[fixmu_pos] <- theta[fixmu_pos] + lfactor
-  theta
+  done(theta, TRUE)
 }
 
 
@@ -2295,19 +2304,33 @@
       }
 
       gradient_fn_pre_coe <- gradient_fn
+      # The objective above is L(phi, c(phi)): the conserved log_mu, c, is
+      # re-solved from the other parameters at every evaluation. Its gradient
+      # is the partial score plus how c moves, dL/dc * dc/dphi (#565). The
+      # CoE equation is S(phi, c) = total_events, S the weighted sum of
+      # H(stop) - H(start), so dc/dphi = -(dS/dphi) / (dS/dc). S is minus the
+      # log-likelihood of the same rows with every event read as censored,
+      # so its derivatives are the score at status 0.
       # Same formals as the base gradient_fn, sanitize included: R CMD check
       # flags local redefinitions whose formal arguments differ.
       gradient_fn <- function(theta, time, status, time_lower,
                               time_upper, x, weights = NULL,
                               sanitize = TRUE, ...) {
-        theta <- .hzr_conserve_events(
+        coe <- .hzr_conserve_events(
           theta, fixmu_phase, fixmu_pos,
           time, status, phases, covariate_counts, x_list, total_events,
-          weights = weights, time_lower = time_lower
+          weights = weights, time_lower = time_lower, details = TRUE
         )
-        gradient_fn_pre_coe(theta, time, status, time_lower,
-                            time_upper, x, weights = weights,
-                            sanitize = sanitize, ...)
+        g <- gradient_fn_pre_coe(coe$theta, time, status, time_lower,
+                                 time_upper, x, weights = weights,
+                                 sanitize = sanitize, ...)
+        # Where there was nothing to solve, c stayed where it was and does
+        # not move with phi: the partial score is the whole gradient.
+        if (!coe$solved) return(g)
+        g_s <- gradient_fn_pre_coe(coe$theta, time, 0 * status, time_lower,
+                                   time_upper, x, weights = weights,
+                                   sanitize = sanitize, ...)
+        g - g[fixmu_pos] * g_s / g_s[fixmu_pos]
       }
     } else {
       use_conserve <- FALSE
@@ -2555,9 +2578,9 @@
         control     = control,
         use_bounds  = FALSE,
         hessian_fn  = hessian_fn_mp,
-        # Under CoE gradient_fn is the partial score at the conserved theta,
-        # not the gradient of the objective being maximised.
-        gradient_exact = !(use_conserve && !is.null(fixmu_pos)),
+        # Under CoE too: gradient_fn carries the conserved log_mu's
+        # chain-rule term, so it is the gradient of the objective (#565).
+        gradient_exact = TRUE,
         sign_bounded = m_free_idx,
         # Each start is scored against the likelihood below and an
         # infeasible one recorded in `starts` (#486).
