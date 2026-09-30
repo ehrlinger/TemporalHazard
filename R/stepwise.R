@@ -136,11 +136,20 @@
 #'   shared columns with duplicate rows cannot show rows reordered among
 #'   those duplicates.  For
 #'   those the order is checked against a column of `data` holding the fit's
-#'   event times, and refused if they are out of order.  With no such
-#'   column, or when those times have ties (rows reordered within a tie
-#'   leave the column unchanged; a finer check is planned in #515), the
-#'   order cannot be checked, and a warning of class
-#'   `hzr_score_rows_unverified` says so.
+#'   event times, and refused if they are out of order.  Rows reordered
+#'   within a tie leave that column unchanged, so when the times have ties
+#'   the fit's other per-row inputs (status, interval bounds, weights and
+#'   covariate design columns) are looked for in `data` too, each under the
+#'   column it came from: the column the call named (`status = dead`,
+#'   `status = d$dead`, or the event in `Surv(time, event)`), or a
+#'   covariate's own name.  Rows reordered within a tie are refused.  The order is accepted when the inputs found
+#'   tell every row apart, or when all of them are found: rows that could
+#'   still be swapped are then identical in everything the fit reads, and
+#'   the screen's answer is the same.  With no column of event times, or
+#'   tied times the other inputs cannot resolve, the order cannot be
+#'   checked, and a warning of class `hzr_score_rows_unverified` says so and
+#'   names the inputs to add.  Column names must be unique: every check
+#'   reads `data` by name, so a `data` with duplicated names is refused.
 #' @param direction Search strategy: one of `"both"` (default),
 #'   `"forward"`, or `"backward"`.  Controls whether variables may only
 #'   enter, only leave, or both.  See the **Selection direction and
@@ -243,16 +252,17 @@
 #'       computed for want of a variance, `wald_no_variance`; or an entry
 #'       under `criterion = "aic"` whose fit had no finite objective,
 #'       `nonfinite`, or was fitted on different rows from the current model
-#'       because the candidate is missing on some, `rows_differ`, or whose
-#'       refit ended below the current model's log-likelihood, which it
-#'       contains, so that the refit cannot have converged,
-#'       `loglik_below_base`),
+#'       because the candidate is missing on some, `rows_differ`; or an entry
+#'       under `criterion = "aic"` or `"wald"`, or rescued by the Wald
+#'       fallback under `"score"`, whose refit ended below the current
+#'       model's log-likelihood, which it contains, so that the refit cannot
+#'       have converged, `loglik_below_base`),
 #'       `uncomputable_reasons` (a named integer vector of *why*),
 #'       `wald_untested_removals` and `wald_untested_entries` (the
 #'       `"var"` / `"var@phase"` tokens of variables kept in, or left out,
 #'       on a step whose Wald test for them could not be computed; a
-#'       variable tested at a later step is not listed.  Entries are listed
-#'       under `criterion = "wald"` only: under `"score"` an entry no test
+#'       variable tested, or refused as `loglik_below_base`, at a later step
+#'       is not listed.  Entries are listed under `criterion = "wald"` only: under `"score"` an entry no test
 #'       could reach is reported by its reason, such as
 #'       `fallback_no_variance`) and
 #'       `stopped_uncomputable` (`TRUE` when the last iteration had
@@ -889,9 +899,16 @@ hzr_stepwise <- function(fit,
         failed <- paste0(sc$variable, ifelse(is.na(sc$phase), "",
                                              paste0("@", sc$phase))) %in%
           (fwd$refit_failures %||% character())
+        # A refit that ended below its base is reported by its own reason
+        # and warning, not as an entry left untested for want of a variance
+        # (#538). Removed as a failed refit is, so this step's outcome also
+        # clears a variance failure recorded at an earlier step: the latest
+        # step decides.
+        below <- (sc$reason %||% rep(NA_character_, nrow(sc))) %in%
+          "loglik_below_base"
         wald_untested_entries <- setdiff(update_untested(
           wald_untested_entries, sc, is.na(sc$score)
-        ), wald_tokens(sc, failed))
+        ), wald_tokens(sc, failed | below))
       }
       iter_refit_failures <- c(iter_refit_failures,
                                fwd$refit_failures %||% character())
