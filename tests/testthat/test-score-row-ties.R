@@ -321,7 +321,7 @@ test_that("an input `data` does not hold leaves the order unverified (#515)", {
 })
 
 test_that("rows identical in every fit input may swap, and change nothing (#515)", {
-  skip_on_cran() # a multiphase fit plus four screens
+  skip_on_cran() # a multiphase fit plus six screens
   # The check accepts a `data` whose rows are the fit's rows up to swaps
   # among rows identical in time, status and weight. The property that makes
   # that safe: the screen's answer is then exactly the aligned answer.
@@ -341,7 +341,7 @@ test_that("rows identical in every fit input may swap, and change nothing (#515)
   expect_identical(sw_d[c("tt", "dead", "w")], d[c("tt", "dead", "w")],
                    ignore_attr = TRUE)
 
-  for (cr in c("score", "wald")) {
+  for (cr in c("score", "wald", "aic")) {
     a <- rt_screen(fit, d, cr)
     b <- rt_screen(fit, sw_d, cr)
     expect_identical(b$n_unverified, 0L)
