@@ -2,6 +2,27 @@
 
 ## Bug fixes
 
+* **The multiphase score was wrong for an early or late phase with a very
+  small `t_half` (#574). Fits whose search passed through such a point
+  may have been steered wrongly.** The derivative with respect to
+  `log_t_half` is taken by finite differences, and the step had a fixed
+  lower limit. Below `t_half = 1e-4` the step no longer shrank with
+  `t_half`, and below about `6e-10` it was larger than `t_half` itself. At
+  `log_t_half = -23.28` with `nu = 0.2931` and `m = 120`, the derivative
+  came back at 0.27 of its value. The error was under 1e-5 for `t_half`
+  down to about `1e-7` (`log_t_half = -16`), 0.05% at `log_t_half = -18`
+  and 3% at `-20`. The derivative is now differenced in `log_t_half`
+  itself, so the step keeps its proportion to `t_half`. Estimates with a
+  fitted `t_half` of `1e-4` or more are unaffected beyond the optimizer's
+  own tolerance. A `t_half` too small to step at all (below about
+  `3e-321`) now gives `NaN` for this derivative, where it gave a number.
+  One case is improved but not cured: for a `"hazard"` phase far past
+  saturation the phase's cumulative hazard runs out of accurate digits,
+  and the derivative is first noisy and then exactly 0. Where that starts
+  depends on the shape; at `nu = 1`, `m = 1` and times of order 1 it is
+  accurate to three digits at `t_half = exp(-25)`, wrong by up to 60% at
+  `exp(-30)` and 0 from `exp(-34)`.
+
 * **A Wald stepwise entry no longer tests a refit that ended below the
   current model (#538).** The AIC fix below (#490) left two paths open.
   Under `criterion = "wald"`, and in the Wald test that `criterion =
