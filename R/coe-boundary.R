@@ -119,9 +119,11 @@
 #' Record a conserved phase that has left the model
 #'
 #' With the gradient of the CoE objective (#565) a fit can run towards the
-#' boundary the certificate above points at, not stop short of it: the
-#' conserved phase's scale heads for zero and the phase contributes nothing
-#' the data can see. The identifiability check already warns about such a
+#' boundary the certificate above points at, where before it stopped well
+#' short: the conserved phase's scale heads for zero and the phase
+#' contributes nothing the data can see. It need not arrive. The objective
+#' is discontinuous there, and the fit can stop beside the boundary with the
+#' gradient test not met. The identifiability check already warns about such a
 #' phase, whichever phase it is. This records, in the same family as the
 #' certificate, that it is the CONSERVED one, so a reader of `$boundary`
 #' finds it under `coe_no_events_left` either way. It raises no warning of
@@ -149,9 +151,10 @@
       "Conservation of Events solved phase '", fixmu_phase, "''s log_mu to ",
       "absorb the events the other phases leave, and they leave almost ",
       "none: that phase contributes at most ", signif(share, 3), " of the ",
-      "cumulative hazard at any observed time. The estimates are on the ",
-      "boundary where the conserved phase is switched off. Consider the ",
-      "model without phase '", fixmu_phase, "', or conserve = FALSE."
+      "cumulative hazard at any observed time. The estimates are at or ",
+      "beside the boundary where the conserved phase is switched off, and ",
+      "need not be the maximum there. Consider the model without phase '",
+      fixmu_phase, "', or conserve = FALSE."
     )
   )
 }

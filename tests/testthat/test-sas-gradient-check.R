@@ -104,8 +104,7 @@ test_that("hazard() warns only on the polish's hard failures, and records every 
   f_ok <- fit_with(NA_integer_, rel = 1e-9)
   expect_output(print(f_ok), "relative 1e-09 .*; met\\)")
   expect_output(print(fit_with(1L, rel = 1e-9)), "; met, nlm code 1\\)")
-  # Code 4 whose statistic nonetheless meets the test -- possible when
-  # nlm() stops on a partial score, as under CoE -- does not warn.
+  # Code 4 whose statistic nonetheless meets the test does not warn.
   expect_no_warning(fit_with(4L, rel = 1e-9), message = "relative-gradient test")
   # An NA with no reason recorded prints the bare line it always printed,
   # with nothing dangling after it. The field is REMOVED rather than set to

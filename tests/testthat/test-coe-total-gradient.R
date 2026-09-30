@@ -115,6 +115,24 @@ test_that("the CoE gradient is the gradient of the CoE objective", {
                                phases = fixed, control = list(n_starts = 1))
   expect_true(any(inp$time_lower > 0))
   .expect_coe_gradient(inp, "left truncation")
+
+  # Weights and left truncation together.
+  inp <- .coe_optimizer_inputs(survival::Surv(start, stop, event) ~ 1, data = dl,
+                               phases = fixed, weights = w,
+                               control = list(n_starts = 1))
+  expect_true(any(inp$time_lower > 0) && !all(inp$weights == 1))
+  .expect_coe_gradient(inp, "weights and truncation")
+
+  # A derived shape, whose score is folded into its sources' afterwards.
+  tied <- list(
+    early = hzr_phase("cdf", t_half = 0.3, nu = 1, m = 1, fixed = "shapes",
+                      formula = ~ z),
+    late = hzr_phase("g3", tau = 4, gamma = 2, alpha = 1, eta = 1,
+                     constraint = "eta_gamma", formula = ~ age)
+  )
+  inp <- .coe_optimizer_inputs(survival::Surv(stop, event) ~ 1, data = d,
+                               phases = tied, control = list(n_starts = 1))
+  .expect_coe_gradient(inp, "derived shape")
 })
 
 test_that("the CoE gradient is exact whichever phase is conserved", {

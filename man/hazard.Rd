@@ -294,8 +294,9 @@ already reported the phase, so this record raises no warning of its
 own. A fit can carry several records, in no
 guaranteed order, so select them by \code{mechanism}. Only rows the
 likelihood reads
-count as observed times. A fit with any record raises one warning whose
-classes are \code{"hzr_"} plus each mechanism present, all inheriting
+count as observed times. A fit with any record that has no
+\code{warned_by} raises one warning whose classes are \code{"hzr_"}
+plus each such record's mechanism, all inheriting
 \code{"hzr_boundary"}, so one handler catches the whole family.
 }
 \description{
@@ -507,7 +508,8 @@ against them. Which route it took is recorded in
 \code{print()} and \code{summary()} show it. Under Conservation of Events the
 conserved scale is re-solved from the other parameters at every step, as
 SAS/C does, and the score used by the optimizer, the continuation and the
-test includes how that scale moves with them. A warning is raised only for code 4, the
+test includes how that scale moves with them. A fit can still end with
+the test not met, under Conservation of Events or without it. A warning is raised only for code 4, the
 iteration limit (raise \code{control$maxit}), and code 5, where the
 log-likelihood kept rising along some direction and the model may have no
 maximum. Codes 2 and 3, where SAS/C prints a caution, are recorded without
