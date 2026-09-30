@@ -130,8 +130,8 @@ column however the name was written (#438).  For multiphase
 fits, pass a named list of one-sided formulas keyed by phase, naming
 each phase once.  <code>scope</code> lists what may enter; a drop considers every
 term in the model except <code>force_in</code> and terms frozen by <code>max_move</code>
-before the iteration began (see the <strong>Known limitation (the frozen
-set)</strong> section).  A two-sided formula is an error,
+at an earlier iteration (see the <strong>The frozen set</strong> section).  A
+two-sided formula is an error,
 since its left-hand side would never be a candidate, and so is a
 non-empty <code>scope</code> under <code>direction = "backward"</code>, which does not read
 it.  An empty scope (<code>~ 1</code>, <code><a href="https://rdrr.io/r/base/character.html" class="external-link">character()</a></code>, or a list of <code>NULL</code>s and
@@ -204,10 +204,8 @@ Default <code>0.20</code> matches SAS <code>SLSTAY</code>.</p></dd>
 <dt id="arg-max-move">max_move<a class="anchor" aria-label="anchor" href="#arg-max-move"></a></dt>
 <dd><p>Per-variable oscillation cap.  When a variable has
 entered + exited more than <code>max_move</code> times it is frozen for the
-remainder of the run.  Default <code>4</code>.  In a two-way screen
-(<code>direction = "both"</code>), a variable frozen on entry can still be
-dropped in the same iteration; see the
-<strong>Known limitation (the frozen set)</strong> section.</p></dd>
+remainder of the run, in the state it ends that iteration in.  Default
+<code>4</code>.  See the <strong>The frozen set</strong> section.</p></dd>
 
 
 <dt id="arg-force-in">force_in<a class="anchor" aria-label="anchor" href="#arg-force-in"></a></dt>
@@ -285,9 +283,9 @@ not contain is recorded here and still pins nothing, because
 <code>force_in</code> only keeps a variable that is already in.  The resolved
 fields are <strong>not</strong> aligned element for element with the as-given
 ones, which stay longer by every name that resolved to nothing.
-In a two-way
-screen, <code>frozen</code> can name a variable the final model does not
-contain; see the <strong>Known limitation (the frozen set)</strong> section.
+A variable in <code>frozen</code> is in the final model if it was in the model
+when it was frozen, and out of it otherwise; see the <strong>The frozen
+set</strong> section.
 <code>unresolved</code> is a list with elements <code>force_in</code>, <code>force_out</code> and
 <code>scope</code>, each the names that could not be used and were therefore
 ignored (<code><a href="https://rdrr.io/r/base/character.html" class="external-link">character()</a></code> when none were). That is usually a name
@@ -477,9 +475,8 @@ with <code>force_in</code>.</p></dd>
 <dd><p>Two-way stepwise: on every
 iteration, whether or not a variable entered, every term in the model,
 the base model's included, is re-tested and may be dropped unless it
-is in <code>force_in</code> or was frozen by <code>max_move</code> before the iteration
-began; a variable frozen on entry can still be dropped in the same
-iteration (see the <strong>Known limitation (the frozen set)</strong> section).
+is in <code>force_in</code> or was frozen by <code>max_move</code> at an earlier iteration
+(see the <strong>The frozen set</strong> section).
 <code>scope</code> limits what may enter, not what may leave.
 This is the SAS <code>SELECTION = STEPWISE</code> strategy.  <code>max_move</code> caps how
 often a single variable may oscillate before it is frozen.</p></dd>
@@ -534,29 +531,32 @@ information-criterion search.</p></dd>
 
 </dl></div>
     <div class="section level2">
-    <h2 id="known-limitation-the-frozen-set-">Known limitation (the frozen set)<a class="anchor" aria-label="anchor" href="#known-limitation-the-frozen-set-"></a></h2>
+    <h2 id="the-frozen-set">The frozen set<a class="anchor" aria-label="anchor" href="#the-frozen-set"></a></h2>
 
 
 
-<p>In a two-way screen (<code>direction = "both"</code>), <code>$scope$frozen</code> can name a
-variable that the final model does not contain.  Each two-way iteration
-makes a forward step and then a backward step, and the sets of protected
-variables are fixed at the start of the iteration.  A variable that the
-forward step freezes can therefore still be dropped by the backward step
-that follows it, so it is reported as frozen while the final model
-excludes it.  Nothing warns when this happens.</p>
-<p>Forward-only and backward-only screens are not affected: a forward-only
-screen never makes a backward step to drop the frozen variable, and a
-backward-only screen never makes a forward step to freeze it on entry.
-In those, <code>$scope$frozen</code> and the final model agree.</p>
-<p><strong>When the two disagree, trust the final model and <code>$steps</code>.</strong>  The
-final model is what was selected, and <code>$steps</code> records both the
-<code>"frozen"</code> row and the <code>"drop"</code> that followed it.  Read <code>$scope$frozen</code>
-only as the list of variables that reached the <code>max_move</code> cap, not as a
-list of variables held in the model.</p>
-<p>This is a known limitation of this release.  The analysis, including why
-fixing it changes which variables are selected, is in
-<a href="https://github.com/ehrlinger/TemporalHazard/issues/378" class="external-link">https://github.com/ehrlinger/TemporalHazard/issues/378</a> and
+<p>A variable that has moved (entered or left) more than <code>max_move</code> times
+is frozen: it is held in the state it is in, in the model or out of it,
+for the rest of the run, and listed in <code>$scope$frozen</code>.</p>
+<p>The freeze takes effect at the end of the iteration in which the variable
+reached the cap.  A two-way iteration (<code>direction = "both"</code>) makes a
+forward step and then a backward step, so a variable that reaches the
+cap by entering and is dropped by the same iteration's backward step is
+frozen <strong>out</strong>.  Its <code>"frozen"</code> row in <code>$steps</code> follows the <code>"drop"</code>.  A
+variable is therefore in the final model exactly when it was in the model
+when it was frozen, and <code>$scope$frozen</code> agrees with the final model.</p>
+<p>Earlier versions froze such a variable as it entered and then dropped it
+anyway, so <code>$scope$frozen</code> could name a variable the final model did not
+contain (#580).</p>
+<p>This is not PROC HAZARD's MOVE rule.  PROC HAZARD makes one move per
+step, a removal before any entry; it counts a variable's exits (and,
+under <code>NOSTEPWISE</code>, its entries too), separately for each phase; and a
+variable at its limit can neither leave nor enter.  Outside <code>NOSTEPWISE</code>
+it therefore freezes a variable only as it leaves.  <code>max_move</code> counts
+entries and exits alike, by name across phases, which is why the SAS
+translator records <code>MOVE=</code> rather than mapping it.  Adopting PROC
+HAZARD's rule would change which variables are selected, and is deferred;
+see <a href="https://github.com/ehrlinger/TemporalHazard/issues/378" class="external-link">https://github.com/ehrlinger/TemporalHazard/issues/378</a> and
 <a href="https://github.com/ehrlinger/TemporalHazard/issues/379" class="external-link">https://github.com/ehrlinger/TemporalHazard/issues/379</a>.</p>
     </div>
     <div class="section level2">
