@@ -441,7 +441,10 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #' On the default grid every patient lands on a grid point, and `hzr_gof()`
 #' warns if one cannot be placed.  With a custom `time_grid`, a patient is
 #' counted in both tallies only if that time, or failing it their own
-#' follow-up time, falls on a grid point.
+#' follow-up time, falls on a grid point.  A grid such as `seq()` over the
+#' follow-up holds few exit times, so `hzr_gof()` warns with the number left
+#' out, and the totals, residual and E/O then describe only the patients
+#' counted.  Include the exit times in `time_grid` to count everyone.
 #'
 #' @param object A fitted `hazard` object (with `fit = TRUE`).
 #' @param time_grid Optional numeric vector of time points at which to
@@ -471,9 +474,12 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #'     means for a model with covariates.  For plotting; not used for
 #'     \code{cum_expected}.}
 #'   \item{cum_observed}{Cumulative observed events to this time, weighted
-#'     by the case weights for a weighted fit.}
+#'     by the case weights for a weighted fit.  With a custom
+#'     \code{time_grid}, only the patients whose exit is a grid point up to
+#'     this time are counted (see Details).}
 #'   \item{cum_expected}{Cumulative expected events: over the patients
-#'     leaving follow-up by this time, the sum of each patient's own
+#'     leaving follow-up by this time (with a custom \code{time_grid}, the
+#'     same patients as \code{cum_observed}), the sum of each patient's own
 #'     cumulative hazard at exit minus that at entry, weighted by the case
 #'     weights for a weighted fit.  With \code{time_windows}, both cumulative
 #'     hazards use the patient's covariate window at exit, as the likelihood
@@ -486,7 +492,8 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #' phase: \code{par_cumhaz_<phase>}, also at the covariate means.
 #'
 #' An attribute `"summary"` is attached with scalar diagnostics:
-#' total observed events, total expected events, and the final residual.
+#' total observed events, total expected events, the final residual, and
+#' `n_tallied`, the number of patients the two tallies cover, out of `n`.
 #'
 #' @examples
 #' \donttest{
@@ -776,12 +783,25 @@ hzr_gof <- function(object, time_grid = NULL) {
   off <- is.na(subject_grid)
   subject_grid[off] <- grid_of(obs_time[off])
   on_grid <- !is.na(subject_grid)
+  # A subject with case weight 0 adds nothing to either tally, so leaving it
+  # out loses nothing and it counts as covered.
+  covered <- on_grid | obs_weights == 0
   # On the default grid every subject should land on its Kaplan-Meier time;
-  # say so rather than drop anyone from the tallies silently.
-  if (default_grid && !all(on_grid)) {
-    warning("hzr_gof(): ", sum(!on_grid), " of ", n_total, " subjects did ",
-            "not match a Kaplan-Meier time and are left out of ",
-            "cum_observed and cum_expected.", call. = FALSE)
+  # say so rather than drop anyone from the tallies silently. A custom grid
+  # tallies only the subjects whose exit it holds, which from a seq() grid can
+  # be almost none, and the totals and E/O then describe that subset (#492).
+  if (!all(covered)) {
+    warning("hzr_gof(): ", sum(!covered), " of ", n_total, " subjects did ",
+            if (default_grid) {
+              "not match a Kaplan-Meier time"
+            } else {
+              "not exit at a time_grid point"
+            },
+            " and are left out of cum_observed and cum_expected.",
+            if (!default_grid) {
+              " To tally every subject, include their exit times in time_grid."
+            },
+            call. = FALSE)
   }
   interval_observed <- rep(0, length(time_grid))
   interval_expected <- rep(0, length(time_grid))
@@ -826,7 +846,8 @@ hzr_gof <- function(object, time_grid = NULL) {
     total_expected = cum_expected[length(cum_expected)],
     final_residual = residual[length(residual)],
     dist = object$spec$dist,
-    n = n_total
+    n = n_total,
+    n_tallied = sum(covered)
   )
 
   class(result) <- c("hzr_gof", "data.frame")
@@ -850,7 +871,9 @@ hzr_gof <- function(object, time_grid = NULL) {
 #'   for per-phase cumulative hazard contributions.
 #'   A \code{"summary"} attribute contains scalar diagnostics:
 #'   \code{total_observed}, \code{total_expected}, \code{final_residual},
-#'   \code{dist}, \code{n}.
+#'   \code{dist}, \code{n}, \code{n_tallied}.  When \code{n_tallied} is below
+#'   \code{n}, the printed totals cover only those subjects, and a note
+#'   says so.
 #' @export
 print.hzr_gof <- function(x, digits = 3, ...) {
   s <- attr(x, "summary")
@@ -861,6 +884,11 @@ print.hzr_gof <- function(x, digits = 3, ...) {
   cat("Final residual (E - O):", round(s$final_residual, digits), "\n")
   cat("Conservation ratio (E/O):",
       round(s$total_expected / max(s$total_observed, 1), digits), "\n")
+  # An object built before n_tallied was recorded has no such field.
+  if (!is.null(s$n_tallied) && s$n_tallied < s$n) {
+    cat("Note: these totals cover ", s$n_tallied, " of ", s$n, " subjects; ",
+        "the rest could not be placed on the time grid.\n", sep = "")
+  }
   cat("\nUse plot columns: time, km_surv, par_surv, cum_observed,",
       "cum_expected, residual\n")
   invisible(x)
