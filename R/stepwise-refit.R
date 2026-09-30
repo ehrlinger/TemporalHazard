@@ -57,14 +57,22 @@
 #'
 #' Under `objective = "sas"` an interval-censored row contributes PROC
 #' HAZARD's interval-mean-hazard term, so the value is not a log-likelihood
-#' wherever the data have such a row. Without one the two objectives agree.
+#' wherever the fit read such a row. Without one the two objectives agree.
+#' Only rows the likelihood read count: a row a phase design dropped
+#' (`fit$fit$rows_used`) or one of weight 0 contributes nothing.
 #' @param fit A `hazard` object.
 #' @return A single logical.
 #' @keywords internal
 #' @noRd
 .hzr_objective_not_loglik <- function(fit) {
-  identical(.hzr_fit_objective(fit), "sas") &&
-    isTRUE(any(fit$data$status == 2, na.rm = TRUE))
+  if (!identical(.hzr_fit_objective(fit), "sas")) return(FALSE)
+  status <- fit$data$status
+  read <- rep(TRUE, length(status))
+  used <- fit$fit$rows_used
+  if (length(used) == length(status)) read <- read & used
+  w <- fit$data$weights
+  if (length(w) == length(status)) read <- read & !is.na(w) & w > 0
+  isTRUE(any(status[read] == 2, na.rm = TRUE))
 }
 
 #' Why a fit cannot be refit with a mutated scope

@@ -408,11 +408,11 @@ hzr_stepwise <- function(fit,
       class = c("hzr_stepwise_sas_objective", "warning", "condition"),
       list(message = paste0(
         "criterion = \"aic\" on an objective = \"sas\" fit whose data have ",
-        "interval-censored rows: every entry and removal is decided on ",
-        "-2 * (SAS objective) + 2k, which is not an AIC, and $steps$logLik ",
-        "holds the SAS objective, not a log-likelihood. criterion = \"wald\" ",
-        "or \"score\" also rests on the SAS objective, as PROC HAZARD does, ",
-        "but does not read its value as a log-likelihood."
+        "interval-censored rows: each entry is decided on ",
+        "-2 * (SAS objective) + 2k, which is not an AIC, and each removal on ",
+        "a Wald statistic from the SAS objective's curvature. $steps$logLik ",
+        "and $steps$aic hold the SAS objective and that quantity, not a ",
+        "log-likelihood and an AIC."
       ), call = NULL)
     ))
   }

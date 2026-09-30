@@ -65,6 +65,23 @@ test_that("without interval-censored rows the SAS objective is the log-likelihoo
   expect_identical(summary(fs)$log_lik, fs$fit$objective)
 })
 
+test_that("interval rows the fit did not read do not change the label (#544)", {
+  skip_on_cran()
+  # Every interval row given weight 0: the fitted SAS objective reads none of
+  # them, so it is the log-likelihood and keeps that label.
+  d <- sas_label_data()
+  w <- ifelse(d$st == 2, 0, 1)
+  fit <- suppressWarnings(hazard(
+    time = d$tt, status = d$st, time_lower = d$lo, time_upper = d$tt,
+    weights = w, dist = "multiphase", objective = "sas", fit = TRUE,
+    phases = list(early = hzr_phase("cdf", t_half = 0.8, nu = 0.4, m = -0.6),
+                  constant = hzr_phase("constant")),
+    control = list(n_starts = 1)))
+  expect_true(any(fit$data$status == 2))
+  expect_match(printed(fit), "log-lik:", fixed = TRUE)
+  expect_identical(summary(fit)$log_lik, fit$fit$objective)
+})
+
 test_that("the formula interface's interval rows are seen too (#544)", {
   skip_on_cran()
   d <- sas_label_data()
