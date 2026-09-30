@@ -96,10 +96,12 @@
       error. `hazard()` warns about such a fit too, with the same class,
       because the standard error it reports for `mu` is `Inf`, 0 or too
       small there.
-    - `hzr_evaluate()` stops when `mu` times an observed time is too small
-      to be represented. It returned a log-likelihood that was not the
-      model's: 23084.15 where the fit's own was 22972.56, in the case
-      measured.
+    - `hzr_evaluate()` stops when `mu` times an observed time, or `mu^nu` in
+      an exact event's hazard, is too small to be represented. It returned a
+      log-likelihood that was not the model's: 23084.15 where the fit's own
+      was 22972.56, and 0.0765 below the closed form, in the cases measured.
+      Only the times each row's status and weight make the likelihood read
+      are checked.
 
 * **Multiphase stepwise refits now start from the model they extend
   (#551). Multiphase selections, and `hzr_bootstrap()` select-mode

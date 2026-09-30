@@ -211,6 +211,21 @@ hzr_evaluate <- function(object, theta, times = NULL) {
            "A covariate far from zero is the usual cause; centre or rescale ",
            "the covariates and refit.", call. = FALSE)
     }
+    # The only other place the likelihood forms mu is mu^nu, in an exact
+    # event's hazard (time^(nu - 1) and exp(eta) do not involve mu). With
+    # mu = 4e-162 and nu = 2, mu * t can be 1 while mu^nu is subnormal, and
+    # the log-likelihood came out 0.0765 low. Read only where a contributing
+    # event row forms it.
+    mu_nu <- theta[[1L]]^theta[[2L]]
+    if (any(counted & st == 1) &&
+          (!is.finite(mu_nu) || mu_nu < .Machine$double.xmin)) {
+      stop("'theta' gives Weibull scale mu = ", format(theta[[1L]]),
+           " and shape nu = ", format(theta[[2L]]), ", and mu^nu = ",
+           format(mu_nu), " cannot be represented, so the event hazard ",
+           "would be computed from lost digits. A covariate far from zero is ",
+           "the usual cause; centre or rescale the covariates and refit.",
+           call. = FALSE)
+    }
   }
 
   if (identical(dist, "multiphase")) {

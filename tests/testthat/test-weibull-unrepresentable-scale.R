@@ -415,3 +415,27 @@ test_that("the product guard reads only the times each row's status uses (#566)"
   expect_identical(ev_w(c(tm[1:5], tiny), w0), ev_w(tm, w0))
   expect_error(ev_w(c(tm[1:5], tiny), rep(1, 6)), lost, fixed = TRUE)
 })
+
+test_that("the event hazard's mu^nu is guarded too (#566, Copilot on #573)", {
+  # The likelihood forms mu in two ways: mu * time, guarded above, and mu^nu
+  # in an exact event's hazard. With mu = 4e-162 and nu = 2, mu * t is 1 but
+  # mu^nu is subnormal, and hzr_evaluate() returned -372.0158 where the
+  # closed form gives -371.9393, with no warning.
+  one_event <- function(mu, nu, t, status = 1) {
+    obj <- hazard(time = t, status = status, dist = "weibull",
+                  theta = c(mu, nu), fit = FALSE)
+    as.numeric(suppressWarnings(hzr_evaluate(obj, c(mu, nu)))$logLik)
+  }
+  closed <- function(mu, nu, t) {
+    log(nu) + nu * log(mu) + (nu - 1) * log(t) - exp(nu * (log(mu) + log(t)))
+  }
+  expect_true(4e-162^2 < .Machine$double.xmin)
+  expect_error(one_event(4e-162, 2, 2.5e161),
+               "cannot be represented, so the event hazard", fixed = TRUE)
+  # Known negative: mu^nu = 1e-200, a normal double, and the evaluation is
+  # the closed form.
+  expect_equal(one_event(1e-100, 2, 1e100), closed(1e-100, 2, 1e100),
+               tolerance = 1e-12)
+  # A right-censored row never forms the hazard, so mu^nu is not read there.
+  expect_true(is.finite(one_event(4e-162, 2, 2.5e161, status = 0)))
+})
