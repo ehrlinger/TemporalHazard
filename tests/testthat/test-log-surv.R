@@ -119,6 +119,10 @@ test_that("near t = 0, and where bt underflows, log_surv is 0, not NA (#578)", {
   expect_true(all(is.finite(d$h)))
   expect_identical(hzr_decompos(c(0, 1e-300), t_half = 1, nu = 0.5,
                                 m = 0)$log_surv, c(0, 0))
+  # Case 2L where t / rho underflows to 0: a large t_half, or a very
+  # negative m, at the time-0 entry (second review).
+  expect_identical(hzr_decompos(0, t_half = 1e16, nu = 0, m = -1)$log_surv, 0)
+  expect_identical(hzr_decompos(0, t_half = 100, nu = 0, m = -50)$log_surv, 0)
   # Case 2L at m = -1 has 1 - G = exp(-t / rho), rho = t_half / log(2): the
   # value must keep its relative accuracy as t goes to 0, not cancel away.
   # As a ratio: these values are far below any tolerance, and an absolute

@@ -118,7 +118,9 @@ NULL
     )
     rem <- exp(log_rem)
     # Where the mass itself underflows, its log is printed instead.
-    rem_text <- if (is.finite(rem) && rem > 0) {
+    rem_text <- if (!is.finite(log_rem)) {
+      "unavailable"
+    } else if (rem > 0) {
       format(rem, digits = 4)
     } else {
       paste0("exp(", format(log_rem, digits = 6), ")")

@@ -196,7 +196,12 @@
   e <- exp(-y[high])
   # -log(1 - e) = e + e^2/2 + e^3/3 + ... = e * (1 + e/2 + e^2/3 + ...)
   out[high] <- -y[high] + log1p(e / 2 + e^2 / 3)
-  rest <- !is.na(y) & !high
+  # y = 0 exactly (a time of 0, or t / rho underflowing): -log(1 - 1) is
+  # +Inf, and so is its log. hzr_log1mexp(0) is NA by design, and NA here
+  # made log(1 - G) NA where the phase has not started (found by review).
+  zero <- !is.na(y) & !high & y == 0
+  out[zero] <- Inf
+  rest <- !is.na(y) & !high & !zero
   out[rest] <- log(-hzr_log1mexp(y[rest]))
   out
 }
