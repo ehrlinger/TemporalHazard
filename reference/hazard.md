@@ -344,7 +344,12 @@ Control parameters:
   limit (see "Convergence"), so raising `maxit` lets that continuation
   run further too. The Nelder-Mead warm-up that a multiphase fit with
   fixed parameters may run first has its own limit, which `maxit` does
-  not change.
+  not change. It must be a single finite number of at least 1 (a
+  fraction is truncated, as PROC HAZARD truncates `MAXITER`): anything
+  else stops `hazard()` at once, fitted or not (#541). A fit with no
+  iterations is its starting values, not an estimate; to evaluate a
+  model at parameters you supply, use
+  [`hzr_evaluate()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_evaluate.md).
 
 - `n_starts`: Number of optimization starts for multiphase fits (default
   5). Each start after the first offsets the initial values. The offsets
@@ -454,9 +459,9 @@ name such as `n_starts_extra` cannot be read as `n_starts`, and
 - a multiphase element such as `n_starts` given to a single-distribution
   fit, and `shape_param_count` given to a multiphase one.
 
-No name in `control` is an error; a bad value for an element the fit
-reads, such as `maxit = "a"`, still stops a fit (`fit = TRUE`) where it
-is read.
+No name in `control` is an error. A bad `maxit` stops `hazard()` at once
+(see above); a bad value for another element the fit reads still stops a
+fit (`fit = TRUE`) where it is read.
 [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
 and
 [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)

@@ -397,7 +397,11 @@ convergence but fails SAS's gradient test is continued with
 <code><a href="https://rdrr.io/r/stats/nlm.html" class="external-link">stats::nlm()</a></code> under the same limit (see "Convergence"), so raising
 <code>maxit</code> lets that continuation run further too. The Nelder-Mead warm-up
 that a multiphase fit with fixed parameters may run first has its own
-limit, which <code>maxit</code> does not change.</p></li>
+limit, which <code>maxit</code> does not change. It must be a single finite number
+of at least 1 (a fraction is truncated, as PROC HAZARD truncates <code>MAXITER</code>):
+anything else stops <code>hazard()</code> at once, fitted or not (#541). A fit
+with no iterations is its starting values, not an estimate; to
+evaluate a model at parameters you supply, use <code><a href="hzr_evaluate.html">hzr_evaluate()</a></code>.</p></li>
 <li><p><code>n_starts</code>: Number of optimization starts for multiphase fits (default 5).
 Each start after the first offsets the initial values. The offsets are
 drawn from an internally seeded stream, so a multiphase fit is
@@ -482,9 +486,9 @@ parameter with <code>hzr_phase(fixed = )</code> on a multiphase phase. A
 single-distribution model has no mechanism for fixing a parameter.</p></li>
 <li><p>a multiphase element such as <code>n_starts</code> given to a single-distribution
 fit, and <code>shape_param_count</code> given to a multiphase one.</p></li>
-</ul><p>No name in <code>control</code> is an error; a bad value for an element the fit
-reads, such as <code>maxit = "a"</code>, still stops a fit (<code>fit = TRUE</code>) where it
-is read. <code><a href="hzr_stepwise.html">hzr_stepwise()</a></code> and
+</ul><p>No name in <code>control</code> is an error. A bad <code>maxit</code> stops <code>hazard()</code> at once
+(see above); a bad value for another element the fit reads still stops a
+fit (<code>fit = TRUE</code>) where it is read. <code><a href="hzr_stepwise.html">hzr_stepwise()</a></code> and
 <code><a href="hzr_bootstrap.html">hzr_bootstrap()</a></code> pass <code>control</code> to every candidate refit, and an error
 there would count as a failed candidate, so a screen would report success
 having tested nothing.</p>
