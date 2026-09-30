@@ -272,10 +272,15 @@
 #'       candidates whose effect is too large for the score test's
 #'       approximation at zero, which are typically the strongest variables
 #'       on offer rather than degenerate ones. Candidates with that cause,
-#'       or with `coefficient_diverging`, are refit and tested by Wald
-#'       automatically, counted in `n_wald_fallbacks`. A candidate still
+#'       or with `coefficient_diverging`, `information_nonpositive` or
+#'       `nuisance_singular`, are refit and tested by Wald
+#'       automatically, counted in `n_wald_fallbacks`. `nuisance_singular`
+#'       is a fault of the score test at the current model, whose
+#'       information matrix could not be formed or inverted, so it applies
+#'       to every candidate at that step and each of them is refitted. A
+#'       candidate still
 #'       reaches `uncomputable_reasons` when that refit fails, or when its
-#'       cause is any other, which no refit can rescue. Read
+#'       cause is any other, for which no refit is attempted. Read
 #'       `uncomputable_reasons` for which one it was in any given run.  For
 #'       every criterion it also carries
 #'       `refit_failures` (the `"var"` / `"var@phase"` tokens of candidate
@@ -1142,7 +1147,11 @@ hzr_stepwise <- function(fit,
   # below on information_indefinite alone would go silent the moment the
   # rescue's own failure was labelled separately -- quieter, for a case that
   # needs to be louder.
-  untested_codes <- c("information_indefinite", "fallback_no_variance")
+  # Every reason the score criterion refits for is one of these: a row still
+  # carrying it was refitted and the refit failed. The set is read from
+  # .hzr_score_fallback_reasons, not written out, so a reason added there
+  # cannot leave its failed rescue unreported here (#570).
+  untested_codes <- c(.hzr_score_fallback_reasons, "fallback_no_variance")
   n_indefinite <- sum(unname(uncomputable_reasons[untested_codes]),
                       na.rm = TRUE)
 
@@ -1167,12 +1176,13 @@ hzr_stepwise <- function(fit,
             "statistic could not be computed for them, and under ",
             "`criterion = \"score\"` they are then refit and Wald-tested ",
             "automatically -- so reaching this means that rescue did not ",
-            "produce a test either: it errored or did not converge ",
-            "(`information_indefinite`, listed in ",
-            "`$criteria$refit_failures`), or it converged but yielded no ",
+            "produce a test either: it errored or did not converge (the ",
+            "candidate keeps the score's reason, such as ",
+            "`information_indefinite` or `nuisance_singular`, and is listed ",
+            "in `$criteria$refit_failures`), or it converged but yielded no ",
             "usable variance to test with (`fallback_no_variance`, which ",
-            "leaves `refit_failures` empty). Such candidates are typically ",
-            "STRONG -- that is what drives the score's information ",
+            "leaves `refit_failures` empty). Such candidates are often ",
+            "STRONG -- a large effect is what drives the score's information ",
             "indefinite -- so the selected set may omit them. Re-running ",
             "with `criterion = \"wald\"` runs the same refit and fails the ",
             "same way. See `$criteria$uncomputable_reasons` for which ",
