@@ -23,7 +23,13 @@ summary(object, ...)
 
 ## Value
 
-An object of class `summary.hazard`.
+An object of class `summary.hazard`. Its `log_lik` is the log-likelihood
+at the estimates, and `NA` for a fit with `objective = "sas"` that read
+an interval-censored row (one of positive weight, not dropped by a phase
+design): there the fitted objective is PROC HAZARD's
+interval-mean-hazard objective, not a log-likelihood. That value is
+always in `objective_value`, and `objective` says which of the two it is
+(`"likelihood"` or `"sas"`).
 
 ## See also
 

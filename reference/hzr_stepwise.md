@@ -373,7 +373,16 @@ The `steps` data frame has columns:
 
 - `logLik`, `aic`, `n_coef`:
 
-  Goodness-of-fit diagnostics of the model *after* this step.
+  Goodness-of-fit diagnostics of the model *after* this step. Under
+  `objective = "sas"`, on a step whose model reads an interval-censored
+  row (one of positive weight, not dropped by a phase design), `logLik`
+  holds PROC HAZARD's objective, not a log-likelihood, and `aic` is
+  computed from it. A step can change which rows are read (see
+  `n_rows`), so on a step that starts or stops reading such rows
+  `delta_logLik` is the difference of two different quantities. The
+  trace's final line labels the final model's value, and
+  `criterion = "aic"` warns once (class `hzr_stepwise_sas_objective`) as
+  soon as a step's model reads such a row.
 
 - `n_rows`:
 

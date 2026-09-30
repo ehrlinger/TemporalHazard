@@ -663,18 +663,26 @@ returns a list of class `hazard`:
 | `$data$x` | Design matrix |
 | `$fit$theta` | Coefficient vector: estimates when `fit = TRUE`, the starting values when `fit = FALSE` |
 | `$fit$converged` | `TRUE`/`FALSE` from the optimizer; `NA` when `fit = FALSE` |
-| `$fit$objective` | Log-likelihood at convergence; `NA` when `fit = FALSE` |
+| `$fit$objective` | Objective at convergence (the log-likelihood, except as noted below); `NA` when `fit = FALSE` |
 | `$legacy_args` | Named pass-through arguments for parity |
 
-> **Note:** `$fit$objective` above is a *number*: the log-likelihood the
-> optimizer reached; [`print()`](https://rdrr.io/r/base/print.html) and
+> **Note:** `$fit$objective` above is a *number*: the value the
+> optimizer reached, which is the log-likelihood with the one exception
+> described below. [`print()`](https://rdrr.io/r/base/print.html) and
 > [`summary()`](https://rdrr.io/r/base/summary.html) label it `log-lik`
-> and `log_lik`, which are the names to prefer when writing about it. It
-> is unrelated to the `objective` *argument* of
+> and `log_lik`, which are the names to prefer when writing about it.
+> The exception is a fit with `objective = "sas"` that read an
+> interval-censored row (one of positive weight, not dropped by a phase
+> design): there the value is `PROC HAZARD`’s objective, not a
+> log-likelihood, and [`print()`](https://rdrr.io/r/base/print.html)
+> labels it `SAS objective`, while
+> [`summary()`](https://rdrr.io/r/base/summary.html) returns
+> `log_lik = NA` and the value as `objective_value`. The field is
+> distinct from the `objective` *argument* of
 > [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md),
-> which selects an estimand: `"likelihood"` (the default) or `"sas"`,
-> reproducing what `PROC HAZARD` accumulates for an interval-censored
-> row. See
+> which selects how it is calculated: `"likelihood"` (the default) or
+> `"sas"`, reproducing what `PROC HAZARD` accumulates for an
+> interval-censored row. See
 > [`?hazard`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md);
 > the SAS objective exists to reproduce legacy runs, not for new
 > analyses.

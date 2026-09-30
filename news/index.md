@@ -42,6 +42,39 @@
   [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
   checks it once, before any refit.
 
+- **[`print()`](https://rdrr.io/r/base/print.html),
+  [`summary()`](https://rdrr.io/r/base/summary.html) and the
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  trace no longer call an `objective = "sas"` fit’s objective a
+  log-likelihood
+  ([\#544](https://github.com/ehrlinger/TemporalHazard/issues/544),
+  [\#556](https://github.com/ehrlinger/TemporalHazard/issues/556)).**
+  Where the fit reads an interval-censored row (one of positive weight,
+  not dropped by a phase design), the objective an `objective = "sas"`
+  fit reaches is PROC HAZARD’s interval-mean-hazard objective, not a
+  log-likelihood. [`print()`](https://rdrr.io/r/base/print.html) showed
+  it as `log-lik:`, [`summary()`](https://rdrr.io/r/base/summary.html)
+  returned it as `log_lik`, and the stepwise trace’s final line as
+  `logLik = ...`, so a reader comparing it with another model’s
+  log-likelihood, or taking an LR or AIC from it, got a finite and
+  plausible wrong number. On one fit the printed `log-lik:` was -160.02,
+  where the log-likelihood at the same estimates is -118.94. Such a fit
+  now prints `SAS objective:`, and
+  [`summary()`](https://rdrr.io/r/base/summary.html)’s `log_lik` is
+  `NA`, with the value in the new `objective_value` and its kind in
+  `objective`. The stepwise trace reads
+  `SAS objective = ..., AIC from it = ...`, and a screen with
+  `criterion = "aic"` warns (class `hzr_stepwise_sas_objective`) that
+  each entry is decided on `-2 * (SAS objective) + 2k`, which is not an
+  AIC, and each removal on a Wald statistic from the SAS objective’s
+  curvature. Without interval-censored rows the two objectives agree,
+  and nothing changes. The new
+  [`summary()`](https://rdrr.io/r/base/summary.html) fields come last,
+  so no existing element moves.
+  [`logLik()`](https://rdrr.io/r/stats/logLik.html) and
+  [`AIC()`](https://rdrr.io/r/stats/AIC.html) have no method for a
+  `hazard` fit and still stop.
+
 - **Multiphase stepwise refits now start from the model they extend
   ([\#551](https://github.com/ehrlinger/TemporalHazard/issues/551)).
   Multiphase selections, and

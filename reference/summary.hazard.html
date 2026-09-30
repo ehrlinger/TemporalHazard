@@ -83,7 +83,13 @@ fit diagnostics, and coefficient-level statistics when available.</p>
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>An object of class <code>summary.hazard</code>.</p>
+    <p>An object of class <code>summary.hazard</code>. Its <code>log_lik</code> is the
+log-likelihood at the estimates, and <code>NA</code> for a fit with
+<code>objective = "sas"</code> that read an interval-censored row (one of positive
+weight, not dropped by a phase design): there the
+fitted objective is PROC HAZARD's interval-mean-hazard objective, not a
+log-likelihood. That value is always in <code>objective_value</code>, and
+<code>objective</code> says which of the two it is (<code>"likelihood"</code> or <code>"sas"</code>).</p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>

@@ -424,7 +424,16 @@ computable, regardless of the active criterion.</p></dd>
 
 <dt><code>logLik</code>, <code>aic</code>, <code>n_coef</code></dt>
 <dd><p>Goodness-of-fit
-diagnostics of the model <em>after</em> this step.</p></dd>
+diagnostics of the model <em>after</em> this step. Under
+<code>objective = "sas"</code>, on a step whose model reads an interval-censored
+row (one of positive weight, not dropped by a phase design), <code>logLik</code>
+holds PROC HAZARD's objective, not a log-likelihood, and <code>aic</code> is
+computed from it. A step can change which rows are read (see
+<code>n_rows</code>), so on a step that starts or stops reading such rows
+<code>delta_logLik</code> is the difference of two different quantities. The
+trace's final line labels the final model's value, and
+<code>criterion = "aic"</code> warns once (class <code>hzr_stepwise_sas_objective</code>)
+as soon as a step's model reads such a row.</p></dd>
 
 <dt><code>n_rows</code></dt>
 <dd><p>Number of rows in the fit's data after this step
