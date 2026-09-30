@@ -593,14 +593,14 @@ hzr_phase_cumhaz <- function(time, t_half = 1, nu = 1, m = 0,
 #'
 #' Computes \eqn{\Phi_j(t)}, \eqn{\phi_j(t)}, and their derivatives with
 #' respect to `t_half`, `nu`, and `m` using finite differences on
-#' [hzr_decompos()]: central in `t_half` and `nu`, and in `m` central except
+#' [hzr_decompos()]: central in `log_t_half` and `nu`, and in `m` central except
 #' near `m = 0`, where the stencil keeps the sign of `m`.  [hzr_decompos()]
 #' changes formula at `m = 0` and the two sides meet in a cusp, so for
 #' `m >= 0` a stencil that would reach 0 becomes one-sided forward (second
 #' order), and for `m < 0` the step is capped at 1% of `|m|` (floored at
 #' 1e-10) and becomes one-sided backward if it would still reach 0.  The
-#' `log_t_half` derivative is obtained via the chain
-#' rule: \eqn{d\Phi/d(\log t_{1/2}) = t_{1/2} \cdot d\Phi/dt_{1/2}}.
+#' `log_t_half` derivative is a central difference in `log_t_half` itself,
+#' so its step is proportional to `t_half` at every scale.
 #'
 #' @param time Numeric vector of positive times.
 #' @param t_half Positive scalar half-life.
@@ -673,29 +673,46 @@ hzr_phase_cumhaz <- function(time, t_half = 1, nu = 1, m = 0,
     )
   }
 
-  # Derivative w.r.t. t_half (then multiply by t_half for log_t_half chain rule)
-  h_th <- eps_rel * max(abs(t_half), 1e-4)
-  d_plus  <- perturb_decompos(t_half + h_th, nu, m)
-  d_minus <- perturb_decompos(t_half - h_th, nu, m)
+  # Derivative w.r.t. log_t_half, by a central difference IN log_t_half: the
+  # two points are t_half * exp(+/- h). It used to step t_half linearly by
+  # eps_rel * max(t_half, 1e-4) and multiply the slope by t_half. Below
+  # t_half = 1e-4 that floor stopped the step shrinking with t_half, and
+  # below about 6e-10 the step was larger than t_half itself, so the minus
+  # point was not positive and the difference went one-sided over a span of
+  # several times t_half: 3% off at t_half = exp(-20), a factor of 3.7 at
+  # exp(-23.28), with nu = 0.2931 and m = 120 (#574). A step in the log is
+  # proportional to t_half at every scale, as the second differences in
+  # .hzr_phase_second_derivatives() and the g3 tau derivative already are,
+  # and both points are positive, so there is no one-sided case.
+  #
+  # The step's size is the old one where the old one was sound: eps_rel in
+  # the log for t_half >= 1e-4, growing as 1e-4 / t_half below that, which is
+  # what the linear floor amounted to. It now stops growing at 120 * eps_rel
+  # (about 7e-4, reached near t_half = 8e-7). Measured against a Richardson
+  # oracle over 1096 cells, holding the step at eps_rel everywhere instead
+  # lost digits in 18 cells that agreed before: far below 1e-4 the phase is
+  # close to saturated, its values carry rounding noise, and the smaller
+  # step divides that noise by less. The cap keeps all of them.
+  #
+  # Where t_half has no bits left to move (the denormal range, or Inf) the
+  # two points coincide and the quotient would be a clean zero for a
+  # derivative that is not zero. NaN is returned there, as for g3's tau.
+  h_lt <- eps_rel * min(max(1, 1e-4 / t_half), 120)
+  th_plus  <- t_half * exp(h_lt)
+  th_minus <- t_half * exp(-h_lt)
+  d_plus  <- if (is.finite(t_half) && th_plus != th_minus) {
+    perturb_decompos(th_plus, nu, m)
+  }
+  d_minus <- if (!is.null(d_plus)) perturb_decompos(th_minus, nu, m)
   if (!is.null(d_plus) && !is.null(d_minus)) {
     e_plus  <- extract(d_plus, type)
     e_minus <- extract(d_minus, type)
-    dPhi_dt_half <- (e_plus$Phi - e_minus$Phi) / (2 * h_th)
-    dphi_dt_half <- (e_plus$phi - e_minus$phi) / (2 * h_th)
+    dPhi_dlog_thalf <- (e_plus$Phi - e_minus$Phi) / (2 * h_lt)
+    dphi_dlog_thalf <- (e_plus$phi - e_minus$phi) / (2 * h_lt)
   } else {
-    # One-sided fallback
-    if (!is.null(d_plus)) {
-      e_plus <- extract(d_plus, type)
-      dPhi_dt_half <- (e_plus$Phi - base$Phi) / h_th
-      dphi_dt_half <- (e_plus$phi - base$phi) / h_th
-    } else {
-      dPhi_dt_half <- rep(0, n)
-      dphi_dt_half <- rep(0, n)
-    }
+    dPhi_dlog_thalf <- rep(NaN, n)
+    dphi_dlog_thalf <- rep(NaN, n)
   }
-  # Chain rule: d/d(log_t_half) = t_half * d/d(t_half)
-  dPhi_dlog_thalf <- t_half * dPhi_dt_half
-  dphi_dlog_thalf <- t_half * dphi_dt_half
 
   # Derivative w.r.t. nu
   h_nu <- eps_rel * max(abs(nu), 1)
