@@ -486,3 +486,116 @@ test_that("prediction SEs: a negative variance is named, and an unused one is dr
                  "variance that cannot be represented", fixed = TRUE)
   expect_true(all(is.na(se_used)))
 })
+
+test_that("a negative variance of mu is not called an overflow at fit time (#566, Copilot on #573)", {
+  expect_false(.hzr_variance_unrepresentable(-1))
+  expect_false(.hzr_variance_unrepresentable(-1e-320))
+  # Known positive: zero and subnormal are underflow.
+  expect_true(.hzr_variance_unrepresentable(0))
+  expect_true(.hzr_variance_unrepresentable(1e-320))
+
+  d <- .w566_data(-2, 0.001)
+  real_optim <- .hzr_optim_weibull
+  testthat::local_mocked_bindings(
+    .hzr_optim_weibull = function(...) {
+      res <- real_optim(...)
+      res$vcov[1, 1] <- -abs(res$vcov[1, 1])
+      res
+    }
+  )
+  res <- .w566_fit(survival::Surv(time, dead) ~ xc, d, c(1, 0.2, 0))
+  expect_true(res$fit$fit$vcov[1, 1] < 0)
+  expect_identical(res$n_scale, 0L)
+  expect_true(is.na(res$fit$fit$se[[1]]))
+})
+
+test_that("an unusable vcov withholds SEs before any Jacobian is built (#566, Copilot on #573)", {
+  d <- .w566_data(-2, 0.001)
+  f <- .w566_fit(survival::Surv(time, dead) ~ xc, d, c(1, 0.2, 0))$fit
+  nd <- d[1:2, ]
+  n_jac <- 0L
+  real_jac <- .hzr_predict_jacobian_weibull
+  testthat::local_mocked_bindings(
+    .hzr_predict_jacobian_weibull = function(...) {
+      n_jac <<- n_jac + 1L
+      real_jac(...)
+    }
+  )
+  # Known positive: a usable vcov builds the Jacobian.
+  se_ok <- predict(f, newdata = nd, type = "cumulative_hazard",
+                   se.fit = TRUE)$se.fit
+  expect_true(all(is.finite(se_ok)))
+  expect_identical(n_jac, 1L)
+  g <- f
+  g$fit$vcov <- g$fit$vcov[1:2, 1:2]
+  expect_warning(se_bad <- predict(g, newdata = nd, type = "cumulative_hazard",
+                                   se.fit = TRUE)$se.fit,
+                 "Variance-covariance matrix is unavailable", fixed = TRUE)
+  expect_true(all(is.na(se_bad)))
+  expect_identical(n_jac, 1L)
+})
+
+test_that("decomposed SEs are screened per phase (#566, Copilot on #573)", {
+  set.seed(17)
+  df <- data.frame(time = stats::rexp(60, 0.3),
+                   status = stats::rbinom(60, 1, 0.6))
+  phases <- list(early = hzr_phase("cdf", t_half = 0.3, nu = 1, m = 1,
+                                   fixed = "shapes"),
+                 constant = hzr_phase("constant"))
+  fit <- suppressWarnings(hazard(survival::Surv(time, status) ~ 1, data = df,
+                                 dist = "multiphase", phases = phases,
+                                 fit = TRUE, control = list(n_starts = 2)))
+  k <- grep("^constant", names(fit$fit$theta))
+  expect_length(k, 1L)
+  se_by <- function(o) {
+    msg <- character(0)
+    r <- withCallingHandlers(
+      predict(o, newdata = data.frame(time = c(0.5, 1, 2)),
+              type = "cumulative_hazard", se.fit = TRUE, decompose = TRUE),
+      warning = function(w) {
+        msg <<- c(msg, conditionMessage(w))
+        invokeRestart("muffleWarning")
+      })
+    list(se = split(r$se.fit, r$component), msg = msg)
+  }
+  base <- se_by(fit)
+  expect_length(base$msg, 0L)
+  expect_true(all(is.finite(unlist(base$se)) & unlist(base$se) > 0))
+
+  bad <- fit
+  bad$fit$vcov[k, k] <- Inf
+  fx <- fit
+  fx$fit$vcov[k, ] <- NA_real_
+  fx$fit$vcov[, k] <- NA_real_
+  got <- se_by(bad)
+  # The early phase does not depend on the constant phase's parameter, so its
+  # SE is the one with that parameter fixed, and the one from the fit itself.
+  expect_equal(got$se$early, se_by(fx)$se$early, tolerance = 1e-12)
+  expect_equal(got$se$early, base$se$early, tolerance = 1e-12)
+  # The phase that depends on it, and the total, are withheld, under one
+  # warning. On main 263c7057 they were 0 and the early phase's SE, silently.
+  expect_true(all(is.na(got$se$constant)))
+  expect_true(all(is.na(got$se$total)))
+  expect_length(got$msg, 1L)
+  expect_match(got$msg, "variance that cannot be represented", fixed = TRUE)
+
+  # An unusable vcov withholds every SE before the Jacobians are built.
+  n_jac <- 0L
+  real_jac <- .hzr_predict_jacobian_multiphase
+  testthat::local_mocked_bindings(
+    .hzr_predict_jacobian_multiphase = function(...) {
+      n_jac <<- n_jac + 1L
+      real_jac(...)
+    }
+  )
+  se_by(fit)
+  expect_identical(n_jac, 1L)  # known positive
+  short <- fit
+  short$fit$vcov <- short$fit$vcov[-k, -k]
+  got <- se_by(short)
+  expect_true(all(is.na(unlist(got$se))))
+  expect_length(got$msg, 1L)
+  expect_match(got$msg, "Variance-covariance matrix is unavailable",
+               fixed = TRUE)
+  expect_identical(n_jac, 1L)
+})

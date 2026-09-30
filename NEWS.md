@@ -131,6 +131,13 @@
       error. `hazard()` warns about such a fit too, with the same class,
       because the standard error it reports for `mu` is `Inf`, 0 or too
       small there.
+    - The same screen applies to any parameter's variance, and a negative
+      variance is now named as one: `predict(se.fit = TRUE)` had reported a
+      standard error of 0 for it. Under `decompose = TRUE` each phase is
+      screened on its own parameters, so a bad variance in one phase
+      withholds that phase's and the total's standard errors, not the
+      others'. Before, a phase with an infinite variance got a standard
+      error of 0, and the total the other phases' alone, with no warning.
     - `hzr_evaluate()` stops when `mu` times an observed time, or `mu^nu` in
       an exact event's hazard, is too small to be represented. It returned a
       log-likelihood that was not the model's: 23084.15 where the fit's own

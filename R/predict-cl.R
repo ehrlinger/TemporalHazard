@@ -344,7 +344,17 @@ NULL
 #' @return Logical vector, never `NA`.
 #' @noRd
 .hzr_variance_unrepresentable <- function(d) {
-  is.nan(d) | is.infinite(d) | (!is.na(d) & d < .Machine$double.xmin)
+  # A negative variance is not an overflow or underflow; .hzr_free_vcov()
+  # names it separately.
+  is.nan(d) | is.infinite(d) |
+    (!is.na(d) & d >= 0 & d < .Machine$double.xmin)
+}
+
+#' Whether a vcov has the shape .hzr_free_vcov() can use
+#' @noRd
+.hzr_vcov_shape_ok <- function(vcov_mat, p) {
+  !is.null(vcov_mat) && is.matrix(vcov_mat) &&
+    nrow(vcov_mat) == p && ncol(vcov_mat) == p
 }
 
 #' Free-parameter vcov submatrix for the delta-method sandwich
@@ -365,9 +375,7 @@ NULL
 #' @return `list(vcov_use, free_idx)`, or `NULL` if unusable.
 #' @keywords internal
 .hzr_free_vcov <- function(vcov_mat, p, unused = integer(0)) {
-  vcov_ok <- !is.null(vcov_mat) && is.matrix(vcov_mat) &&
-               nrow(vcov_mat) == p && ncol(vcov_mat) == p
-  if (!vcov_ok) {
+  if (!.hzr_vcov_shape_ok(vcov_mat, p)) {
     warning("Variance-covariance matrix is unavailable; ",
             "standard errors and CLs will be NA.", call. = FALSE)
     return(NULL)
@@ -381,10 +389,9 @@ NULL
   # sandwich's positive term; both gave finite, wrong standard errors (#566).
   d <- diag(vcov_mat)
   unrep <- which(.hzr_variance_unrepresentable(d))
-  # A negative variance is caught by the same rule, since it is below the
-  # smallest normal double, but it is a different fault: the covariance is
-  # not positive definite (possible after the Weibull back-transform when the
-  # internal one is indefinite). Name it; main returned an SE of 0 there.
+  # A negative variance is a different fault: the covariance is not positive
+  # definite (possible after the Weibull back-transform when the internal one
+  # is indefinite). Name it; main returned an SE of 0 there.
   negative <- which(!is.na(d) & d < 0)
   if (length(setdiff(negative, unused))) {
     warning("Variance-covariance matrix has a negative variance, so it is not ",
@@ -500,14 +507,20 @@ NULL
       .hzr_predict_jacobian_numeric(diff_fn, theta)
     }
   }
-  J <- jacobian()
-  # A parameter whose Jacobian column is exactly zero on every requested row
-  # does not enter this prediction: a Weibull mu or nu for the relative
-  # hazard and linear predictor, or a coefficient whose covariate is 0 in
-  # every row of newdata. Its variance, representable or not, cannot change
-  # the standard error, so it is dropped exactly rather than withholding it.
-  unused <- which(colSums(is.na(J) | J != 0) == 0)
-  fv <- .hzr_free_vcov(object$fit$vcov, p, unused = unused)
+  # An absent or wrong-sized vcov withholds every SE; say so before paying
+  # for a Jacobian.
+  if (.hzr_vcov_shape_ok(object$fit$vcov, p)) {
+    J <- jacobian()
+    # A parameter whose Jacobian column is exactly zero on every requested
+    # row does not enter this prediction: a Weibull mu or nu for the relative
+    # hazard and linear predictor, or a coefficient whose covariate is 0 in
+    # every row of newdata. Its variance, representable or not, cannot change
+    # the standard error, so it is dropped exactly rather than withholding it.
+    unused <- which(colSums(is.na(J) | J != 0) == 0)
+    fv <- .hzr_free_vcov(object$fit$vcov, p, unused = unused)
+  } else {
+    fv <- .hzr_free_vcov(object$fit$vcov, p)
+  }
   if (is.null(fv)) {
     n <- length(target)
     fit <- if (type == "survival") exp(-target) else target
@@ -586,13 +599,16 @@ NULL
     res
   }
 
-  fv <- .hzr_free_vcov(object$fit$vcov, p)
-  if (is.null(fv)) {
-    na_cl <- lapply(components, function(cmp) {
-      n <- length(time)
-      data.frame(fit = fit_by_comp[[cmp]], se.fit = rep(NA_real_, n),
-                 lower = rep(NA_real_, n), upper = rep(NA_real_, n))
-    })
+  na_cl_of <- function(cmp) {
+    n <- length(time)
+    data.frame(fit = fit_by_comp[[cmp]], se.fit = rep(NA_real_, n),
+               lower = rep(NA_real_, n), upper = rep(NA_real_, n))
+  }
+
+  vcov_mat <- object$fit$vcov
+  if (!.hzr_vcov_shape_ok(vcov_mat, p)) {
+    .hzr_free_vcov(vcov_mat, p)  # warns
+    na_cl <- lapply(components, na_cl_of)
     names(na_cl) <- components
     return(make_long(na_cl))
   }
@@ -602,11 +618,27 @@ NULL
                                              x_list, p, per_phase = TRUE)
   J_by_comp <- c(list(total = Reduce(`+`, J_list)), J_list)
 
+  # Screen the vcov per component, against the parameters that component
+  # depends on (#566): a bad variance in one phase's block withholds that
+  # phase's SE and the total's, not every phase's. Every warning of
+  # .hzr_free_vcov() is followed by a NULL return, so catching it loses
+  # nothing; the distinct messages are raised once below.
   cl_list <- lapply(components, function(cmp) {
-    J <- J_by_comp[[cmp]][, fv$free_idx, drop = FALSE]
-    se <- .hzr_predict_se_from_jacobian(J, fv$vcov_use)
-    .hzr_predict_cl_from_se(fit_by_comp[[cmp]], se, level, "log")
+    J <- J_by_comp[[cmp]]
+    unused <- which(colSums(is.na(J) | J != 0) == 0)
+    fv <- tryCatch(.hzr_free_vcov(vcov_mat, p, unused = unused),
+                   warning = function(w) conditionMessage(w))
+    if (!is.list(fv)) {
+      return(list(cl = na_cl_of(cmp), msg = fv))
+    }
+    se <- .hzr_predict_se_from_jacobian(J[, fv$free_idx, drop = FALSE],
+                                        fv$vcov_use)
+    list(cl = .hzr_predict_cl_from_se(fit_by_comp[[cmp]], se, level, "log"),
+         msg = character(0))
   })
+  msgs <- unique(unlist(lapply(cl_list, `[[`, "msg")))
+  for (m in msgs) warning(m, call. = FALSE)
+  cl_list <- lapply(cl_list, `[[`, "cl")
   names(cl_list) <- components
   make_long(cl_list)
 }
