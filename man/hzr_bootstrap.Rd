@@ -151,9 +151,9 @@ candidates whose effect is too large for the score test's approximation
 at zero, typically strong variables. Those are refit and Wald-tested
 automatically, so a candidate reaching this count is one whose refit
 also failed and which therefore went untested, understating its
-selection frequency. Under \code{criterion = "aic"}, \code{rows_differ} and
-\code{loglik_below_base} mark entries a replicate declined without
-comparing them. Such an entry counts as not selected unless a later
+selection frequency. \code{rows_differ} (under \code{criterion = "aic"}) and
+\code{loglik_below_base} (under any criterion) mark entries a replicate
+declined without comparing them. Such an entry counts as not selected unless a later
 step of the same replicate tested and entered it, so these can
 understate a selection frequency; a warning gives how many replicates
 completed after declining one. The tally counts attempts, not

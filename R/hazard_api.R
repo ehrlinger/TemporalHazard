@@ -489,7 +489,11 @@ NULL
 #'   [stats::nlm()] under the same limit (see "Convergence"), so raising
 #'   `maxit` lets that continuation run further too. The Nelder-Mead warm-up
 #'   that a multiphase fit with fixed parameters may run first has its own
-#'   limit, which `maxit` does not change.
+#'   limit, which `maxit` does not change. It must be a single finite number
+#'   of at least 1 (a fraction is truncated, as PROC HAZARD truncates `MAXITER`):
+#'   anything else stops `hazard()` at once, fitted or not (#541). A fit
+#'   with no iterations is its starting values, not an estimate; to
+#'   evaluate a model at parameters you supply, use [hzr_evaluate()].
 #' - `n_starts`: Number of optimization starts for multiphase fits (default 5).
 #'   Each start after the first offsets the initial values. The offsets are
 #'   drawn from an internally seeded stream, so a multiphase fit is
@@ -579,9 +583,9 @@ NULL
 #' - a multiphase element such as `n_starts` given to a single-distribution
 #'   fit, and `shape_param_count` given to a multiphase one.
 #'
-#' No name in `control` is an error; a bad value for an element the fit
-#' reads, such as `maxit = "a"`, still stops a fit (`fit = TRUE`) where it
-#' is read. [hzr_stepwise()] and
+#' No name in `control` is an error. A bad `maxit` stops `hazard()` at once
+#' (see above); a bad value for another element the fit reads still stops a
+#' fit (`fit = TRUE`) where it is read. [hzr_stepwise()] and
 #' [hzr_bootstrap()] pass `control` to every candidate refit, and an error
 #' there would count as a failed candidate, so a screen would report success
 #' having tested nothing.
@@ -3467,9 +3471,12 @@ vcov.hazard <- function(object, ...) {
 #' left the fit as it would have been and said nothing (#376). Every such
 #' element now draws one warning that names it and says why it does
 #' nothing, and the fit proceeds, as `stats::optim()` does for unknown
-#' `control` names. Nothing errors: an error inside a stepwise or bootstrap
+#' `control` names. No NAME errors: an error inside a stepwise or bootstrap
 #' candidate refit would be recorded as a failed candidate, so the screen
-#' would report success having tested nothing.
+#' would report success having tested nothing. One element's VALUE does: a
+#' `maxit` that is not a single finite number of at least 1 (#541), refused
+#' here, where [hzr_stepwise()] validates once
+#' before any refit.
 #'
 #' @param control The `control` list, already known to be a list.
 #' @param dist The distribution name.
@@ -3532,7 +3539,24 @@ vcov.hazard <- function(object, ...) {
             "\" fit, ignored: ", paste(notes, collapse = "; "), ".",
             call. = FALSE)
   }
-  control[!unnamed & names_all %in% accepted]
+  control <- control[!unnamed & names_all %in% accepted]
+  # A maxit below 1 was accepted without a word (#541): some models returned
+  # their starting values as `converged = TRUE`, others ignored the limit
+  # and optimised. Refused here, where hzr_stepwise() also validates once,
+  # so the refusal is not repeated as a failed candidate on every refit.
+  if ("maxit" %in% names(control)) {
+    m <- control[["maxit"]]
+    # A fraction of at least 1 is truncated by optim() and nlm(), as PROC
+    # HAZARD truncates MAXITER (hazpprc.c:27), so a translated MAXITER=2.5
+    # keeps its meaning.
+    if (!is.numeric(m) || length(m) != 1L || !is.finite(m) || m < 1) {
+      stop("control$maxit must be a single finite number of at least 1 (got ",
+           paste(format(m), collapse = ", "), "). A fit with no iterations ",
+           "is its starting values, not an estimate: to evaluate a model at ",
+           "parameters you supply, use hzr_evaluate().", call. = FALSE)
+    }
+  }
+  control
 }
 
 #' Warn when a masked argument names both a column and a caller variable
