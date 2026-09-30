@@ -71,14 +71,19 @@ test_that("a hazard phase fitted below the observed support is recorded and warn
   # record, so they are compared against an independent calculation.
   t_half <- exp(unname(f$fit$theta[["early.log_t_half"]]))
   t_min <- min(d$t[d$t > 0])
-  want_mass <- 1 - hzr_decompos(t_min, t_half = t_half,
-                                nu = unname(f$fit$theta[["early.nu"]]),
-                                m = unname(f$fit$theta[["early.m"]]))$G
-  # ANCHOR the number to its phrase, and refuse a degenerate expectation.
-  # On this fixture t_half is driven so far below the data that 1 - G
-  # UNDERFLOWS TO EXACTLY 0, so format(want, digits = 4) is "0" -- a
-  # substring of nearly every figure in the message. An unanchored match
-  # therefore passed while a mutation reporting G instead of 1 - G survived.
+  dec <- hzr_decompos(t_min, t_half = t_half,
+                      nu = unname(f$fit$theta[["early.nu"]]),
+                      m = unname(f$fit$theta[["early.m"]]))
+  want_mass <- exp(dec$log_surv)
+  # The mass is reported from log(1 - G), not from 1 - G (#578). On this
+  # fixture it is about 2e-13: formed as 1 - G it kept three digits, and
+  # before #578 the fit sat further out, where it rounded to exactly 0 and
+  # the record printed "0". So the figure must be positive, and 1 - G formed
+  # the old way must agree with it to the digits it has.
+  expect_gt(want_mass, 0)
+  expect_equal(1 - dec$G, want_mass, tolerance = 1e-2)
+  # ANCHOR the number to its phrase. An unanchored match passed while a
+  # mutation reporting G instead of 1 - G survived.
   expect_gt(nchar(format(t_min / t_half, digits = 3)), 2L)
   expect_match(b[[1L]]$detail,
                paste0("a factor of ", format(t_min / t_half, digits = 3), "."),
@@ -154,7 +159,7 @@ test_that("summary reports the finding, and says nothing when there is none", {
   expect_false(grepl("unbounded", out2, fixed = TRUE))
 })
 
-test_that("the suite's own marginal case is pinned, and it is marginal", {
+test_that("the suite's one former trip was the clamp, and no longer trips (#578)", {
   # THE ONE FIT IN THIS PACKAGE'S SUITE THAT TRIPS. It lives in
   # test-theta-names.R, inside a blanket suppressWarnings() covering a loop
   # over three phase specs of which only this one warns, so that file needs no
@@ -176,17 +181,33 @@ test_that("the suite's own marginal case is pinned, and it is marginal", {
   fit <- suppressWarnings(hazard(time = tt, status = st, dist = "multiphase",
                                  phases = ph, fit = TRUE,
                                  control = list(n_starts = 1)))
+  # UNTIL #578 THIS FIT TRIPPED, and the trip was the defect's own work. The
+  # hazard phase's cumulative hazard was formed from 1 - G and clamped once
+  # G rounded to 1: the hazard came back near 1e290, each event added about
+  # +668 to the log-likelihood, and the optimizer converged on that at
+  # +60479.26 with 120 events, t_half at 0.133 below a first time of 0.174.
+  # With log(1 - G) carried (#578) that point no longer exists. The fit ends
+  # with the phase inside its data and an ordinary log-likelihood (-260.495
+  # when measured), so there is nothing below the support to report.
+  expect_lt(fit$fit$objective, 0)
+  expect_true(all(is.finite(predict(fit, type = "hazard"))))
   b <- fit$fit$boundary
-  expect_true(is.list(b))
   # By mechanism, not position: $boundary can hold several records in no
   # guaranteed order (#261).
-  ub <- Filter(function(r) identical(r$mechanism, "unbounded_phase"), b)
-  expect_length(ub, 1L)
-  expect_equal(ub[[1L]]$phase, "a")
+  ub <- Filter(function(r) identical(r$mechanism, "unbounded_phase"),
+               if (is.list(b)) b else list())
+  expect_length(ub, 0L)
   t_half <- exp(unname(fit$fit$theta[["a.log_t_half"]]))
-  ratio <- min(tt) / t_half
-  expect_gt(ratio, 1)            # it does trip
-  expect_lt(ratio, 2)            # and it is marginal, unlike cabgkul's 93x
+  expect_gt(t_half, min(tt))
+  # A known positive for the detector would be a fixture whose hazard phase
+  # genuinely fits below its support. None was found: nine fits of late
+  # follow-up and left-shifted Weibull data (three seeds each, hazard phase
+  # with m = 0 and m = 1, five starts) all put t_half inside the data. The
+  # fixture above ("a hazard phase fitted below the observed support") still
+  # trips, but from a start at t_min / 1000 that the optimizer does not
+  # leave: its log-likelihood is -430.69 there against -410.13 from a start
+  # inside the data. Whether the detector has a genuine case to catch is the
+  # review of #444, done separately.
 })
 
 test_that("every observed time counts, not just `time`", {

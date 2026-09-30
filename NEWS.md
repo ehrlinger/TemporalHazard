@@ -35,6 +35,19 @@
   values agree with the old ones to rounding. `G`, `g` and `h` keep their
   names and meaning.
 
+  The clamp could also create an optimum. The hazard near `1e290` added
+  about 668 to the log-likelihood per event, and a fit could converge on
+  that: one fit in this package's tests reported a log-likelihood of
+  +60479 with 120 events, with its hazard phase below the first observed
+  time, and was the one fit here that the `unbounded_phase` record (#444)
+  caught. It now ends inside its data at an ordinary log-likelihood. A
+  multiphase fit with a `"hazard"` phase that reported a positive or
+  implausibly large log-likelihood in an earlier version should be refitted.
+  The `unbounded_phase` record now reports the phase's remaining mass,
+  `1 - G(t_min)`, from `log_surv`, so a small mass is no longer printed as
+  0; where the mass itself underflows, its log is printed. Its third
+  sentence no longer states that the objective is unbounded above.
+
 * **A Wald stepwise entry no longer tests a refit that ended below the
   current model (#538).** The AIC fix below (#490) left two paths open.
   Under `criterion = "wald"`, and in the Wald test that `criterion =

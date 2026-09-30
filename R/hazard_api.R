@@ -107,12 +107,22 @@ NULL
     if (!key %in% names(theta)) next
     t_half <- exp(unname(theta[[key]]))
     if (!is.finite(t_half) || t_half >= t_min) next
-    g <- tryCatch(
+    # The remaining mass 1 - G(t_min), from log(1 - G) (#578). Formed as
+    # 1 - G it rounded to exactly 0 for a phase far below the data, and the
+    # record then printed "0" for a mass that is small but not zero.
+    log_rem <- tryCatch(
       hzr_decompos(t_min, t_half = t_half,
                    nu = unname(theta[[paste0(nm, ".nu")]]),
-                   m = unname(theta[[paste0(nm, ".m")]]))$G,
+                   m = unname(theta[[paste0(nm, ".m")]]))$log_surv,
       error = function(e) NA_real_
     )
+    rem <- exp(log_rem)
+    # Where the mass itself underflows, its log is printed instead.
+    rem_text <- if (is.finite(rem) && rem > 0) {
+      format(rem, digits = 4)
+    } else {
+      paste0("exp(", format(log_rem, digits = 6), ")")
+    }
     found[[length(found) + 1L]] <- list(
       mechanism = "unbounded_phase",
       phase = nm,
@@ -122,7 +132,7 @@ NULL
         "t_half (", format(t_half, digits = 4), ") is below the first ",
         "observed time (", format(t_min, digits = 4), "), a factor of ",
         format(t_min / t_half, digits = 3), ". Its remaining mass there, ",
-        "1 - G(t_min), is ", format(1 - g, digits = 4),
+        "1 - G(t_min), is ", rem_text,
         ". ",
         # `1e-6` IS a tuned number, and unlike the TRIGGER -- which stays a
         # plain fact with no threshold -- it decides which of three sentences
@@ -139,13 +149,17 @@ NULL
         # discriminates. Reproduced across reachable fits at 1 - G from
         # 0.0067 to 0.22; the second is a fifth of the mass remaining and no
         # runaway at all.
-        if (!is.finite(g)) {
+        if (!is.finite(log_rem)) {
           paste0("The remaining mass could not be computed, so whether ",
                  "-log(1 - G) is diverging here is NOT KNOWN.")
-        } else if (1 - g < 1e-6) {
-          paste0("G is numerically 1 across the observed range, so ",
-                 "-log(1 - G) diverges: the objective is unbounded above and ",
-                 "a reported optimum is likely a supremum rather than a fit.")
+        } else if (log_rem < log(1e-6)) {
+          # "Unbounded above" was asserted here while -log(1 - G) was
+          # formed from 1 - G and clamped, which made it so (#578). Whether
+          # the objective is unbounded without the clamp is the open
+          # question of the #444 review, so it is not asserted.
+          paste0("G is within 1e-6 of 1 at the first observed time, so ",
+                 "-log(1 - G) is large across the observed range, and a ",
+                 "reported optimum may be a supremum rather than a fit.")
         } else {
           paste0("The phase still carries mass beyond the first observation, ",
                  "so this is a fit sitting outside its data rather than one ",
