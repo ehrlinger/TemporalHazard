@@ -1103,16 +1103,19 @@ test_that("print.hzr_bootstrap reports the mode", {
     theta = c(mu = 0.01, nu = 0.5),
     fit   = TRUE
   )
-  # This screen selects nothing in all five replicates, and four of the five
-  # cannot even score a candidate -- surfaced by the uncomputable-score
-  # warning added alongside this comment. The test only ever asserted the
-  # print label, so it passed throughout. Kept as-is because the print
-  # contract is what it covers; the empty screen is tracked separately.
+  # Four of these five replicates could not score a candidate: their numeric
+  # information could not be formed, every candidate read `nuisance_singular`,
+  # and the screen stopped untested. This test recorded that with
+  # `n_uncomputable_replicates > 0`. Such candidates are now refitted and
+  # tested by Wald (#570), so no replicate stops untested and each selects.
   bs_sel <- suppressWarnings(
     hzr_bootstrap(base, n_boot = 5, seed = 42, scope = ~ age + mal)
   )
   expect_output(print(bs_sel), "stepwise selection")
-  expect_gt(bs_sel$n_uncomputable_replicates, 0L)
+  expect_identical(bs_sel$n_uncomputable_replicates, 0L)
+  selected <- bs_sel$summary[bs_sel$summary$parameter %in% c("age", "mal"), ]
+  expect_identical(nrow(selected), 2L)
+  expect_true(all(selected$n == bs_sel$n_success))
 })
 
 

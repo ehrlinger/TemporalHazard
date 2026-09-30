@@ -1227,20 +1227,44 @@
 
 # Reasons a candidate can be rescued by refitting it and testing by Wald.
 #
-# Both mean "the quadratic approximation at beta = 0 broke down", which is
-# what a LARGE true effect looks like -- so declining them is exactly backwards
-# and a refit gives the right answer. SAS's own q1.c says as much ("IT IS
-# POSSIBLE THAT THE PROGRAM WILL RETURN A NEGATIVE Q VALUE ... THE USER SHOULD
-# USE THE MORE EXPENSIVE Q2 AS AN ALTERNATIVE"); Q2 is named once in the C
-# tree and never implemented, and dqstat.c instead declines the candidate with
-# p = 1. This is that unbuilt alternative.
+# The first two mean "the quadratic approximation at beta = 0 broke down",
+# which is what a LARGE true effect looks like -- so declining them is exactly
+# backwards and a refit gives the right answer. SAS's own q1.c says as much
+# ("IT IS POSSIBLE THAT THE PROGRAM WILL RETURN A NEGATIVE Q VALUE ... THE USER
+# SHOULD USE THE MORE EXPENSIVE Q2 AS AN ALTERNATIVE"); Q2 is named once in the
+# C tree and never implemented, and dqstat.c instead declines the candidate
+# with p = 1. This is that unbuilt alternative.
 #
-# Kept deliberately narrow. The degenerate reasons -- collinear, constant,
-# non_numeric, not_single_column, nuisance_singular -- are NOT here: no refit can make those
-# candidates testable, and paying one per degenerate candidate would give back
-# the whole speed advantage the score criterion exists for.
+# The other two are faults of the score test's inputs, not of the candidate
+# (#570):
+#   information_nonpositive  the candidate's own observed information at
+#                            beta = 0 is not positive, the same breakdown one
+#                            step earlier in q1.c (its flag 2 against flag 3);
+#   nuisance_singular        the CURRENT model's information block could not
+#                            be inverted, so no candidate can be adjusted for
+#                            it. That is a base fit on a ridge, and it takes
+#                            every candidate at the step with it.
+# A refit of the extended model has its own Hessian and tests the candidate.
+# An earlier version of this comment listed nuisance_singular among the
+# reasons "no refit can make testable"; measured for #565 on a base fit up a
+# ridge, the refit gave beta 0.847 (se 0.057) against 0.841 (0.057) from an
+# independent fit. When the refit's own Hessian fails too, the row is recorded as
+# `fallback_no_variance` or as a refit failure, never as tested.
+#
+# Still kept narrow. The reasons that describe the candidate's COLUMN, or a
+# design hazard() would refuse -- collinear, constant, non_numeric,
+# not_single_column, duplicate_column, not_expandable -- are NOT here: no
+# refit can make those candidates testable, and paying one per degenerate
+# candidate would give back the whole speed advantage the score criterion
+# exists for. Nor are no_information and nonfinite, which report a likelihood
+# that could not be evaluated for the expanded model at all.
+#
+# The cost: nuisance_singular refits every candidate at its step, which is
+# what `criterion = "wald"` pays at every step.
 .hzr_score_fallback_reasons <- c("information_indefinite",
-                                 "coefficient_diverging")
+                                 "coefficient_diverging",
+                                 "nuisance_singular",
+                                 "information_nonpositive")
 
 #' One-line explanation of an unscorable candidate
 #'
@@ -1274,7 +1298,9 @@
       "the candidate's own observed information was not positive, before any",
       "adjustment for the current model. This is a different fault from",
       "collinearity: the candidate is a poor one in itself, or the fit it",
-      "would be added to is not at a maximum"
+      "would be added to is not at a maximum. `criterion = \"score\"` refits",
+      "and Wald-tests such a candidate itself, so reaching this reason means",
+      "that refit errored or did not converge -- see `refit_failures`"
     ),
     coefficient_diverging = paste(
       "the coefficient the score implies exceeds +/-50, so the fit for this",
@@ -1294,7 +1320,9 @@
     ),
     nuisance_singular = paste(
       "the current model's information matrix could not be inverted, so no",
-      "candidate could be scored at that step"
+      "candidate could be scored at that step. `criterion = \"score\"` refits",
+      "and Wald-tests each of them itself, so reaching this reason means that",
+      "refit errored or did not converge -- see `refit_failures`"
     ),
     no_information = "no observed information was available for the candidate",
     not_expandable = "the candidate could not be added to the model",

@@ -183,7 +183,20 @@ NULL
   # (2) Drop parameters that were not estimated (fixed params carry NA rows).
   d <- diag(vcov)
   keep <- which(is.finite(d) & d > 0)
-  if (length(keep) < 2L) return(looked(NULL))
+  # Too few variances to find a trade-off in: a gap, not a conclusion (#570).
+  # This point is reached only under an ill-conditioned Hessian (the rcond
+  # gate above). With two or more estimated parameters, the missing variances
+  # are ones the inversion failed on: .hzr_safe_solve() masks a non-positive
+  # variance to NA, the value a fixed row carries too. With one, a 1 x 1
+  # Hessian is ill-conditioned only when its single curvature is zero, so
+  # that parameter's variance failed as well, and it is flat on its own.
+  # Either way nothing was examined, and NULL would report a fit whose
+  # covariance failed as examined and clean.
+  if (length(keep) < 2L) {
+    return(na_because(
+      "fewer than two parameters have a finite positive variance"
+    ))
+  }
   V <- vcov[keep, keep, drop = FALSE]
   # A non-finite entry among parameters that *were* estimated is a gap: the
   # covariance exists but cannot be decomposed.

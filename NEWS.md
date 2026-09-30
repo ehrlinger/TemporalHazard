@@ -2,6 +2,33 @@
 
 ## Bug fixes
 
+* **`hzr_stepwise(criterion = "score")` now refits and Wald-tests two more
+  kinds of candidate it could not score (#570).** The score criterion refits
+  a candidate whose score test breaks down and tests it by Wald, but only for
+  two reasons. Two others were declined untested: `nuisance_singular`, where
+  the current model's information matrix cannot be inverted, and
+  `information_nonpositive`, where the candidate's own observed information
+  at zero is not positive. Neither says the candidate is unusable, and a
+  refit tests it. The first is a fault of the current fit and applies to
+  every candidate at that step, so the screen stopped having tested nothing;
+  with the second, a weaker variable could enter in the untested one's
+  place. Forced on a fit where `criterion = "wald"` enters `x1`
+  (p = 2.1e-20), the score screen entered nothing for the first and the
+  noise variable `x2` for the second; it now enters `x1` with the Wald
+  criterion's p-value. `$criteria$n_wald_fallbacks` counts these refits as
+  before. A step with a singular information matrix now refits every
+  candidate, which is what `criterion = "wald"` does at every step.
+  Candidates that are constant, non-numeric, collinear with the model, or
+  not a single column are still declined without a refit.
+
+* **A fit whose covariance mostly failed is no longer reported as examined
+  for a weakly identified direction (#570).** `fit$fit$weak` is `NULL` when
+  the check ran and found no ridge, and `NA` when it could not run. When an
+  ill-conditioned fit had a finite variance for fewer than two of its
+  parameters, there was nothing to examine, yet `weak` was `NULL` and
+  `weak_direction_check` was missing from `fit$degraded`. It is now `NA`,
+  with the cause recorded.
+
 * **A Wald stepwise entry no longer tests a refit that ended below the
   current model (#538).** The AIC fix below (#490) left two paths open.
   Under `criterion = "wald"`, and in the Wald test that `criterion =

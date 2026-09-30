@@ -272,8 +272,12 @@
 #'       candidates whose effect is too large for the score test's
 #'       approximation at zero, which are typically the strongest variables
 #'       on offer rather than degenerate ones. Candidates with that cause,
-#'       or with `coefficient_diverging`, are refit and tested by Wald
-#'       automatically, counted in `n_wald_fallbacks`. A candidate still
+#'       or with `coefficient_diverging`, `information_nonpositive` or
+#'       `nuisance_singular`, are refit and tested by Wald
+#'       automatically, counted in `n_wald_fallbacks`. `nuisance_singular`
+#'       is a fault of the current model, whose information matrix could
+#'       not be inverted, so it applies to every candidate at that step and
+#'       each of them is refitted. A candidate still
 #'       reaches `uncomputable_reasons` when that refit fails, or when its
 #'       cause is any other, which no refit can rescue. Read
 #'       `uncomputable_reasons` for which one it was in any given run.  For
