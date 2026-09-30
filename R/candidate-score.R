@@ -102,8 +102,9 @@
 #'   \item{names}{Echoed input.}
 #'   \item{reason}{Why `score` is `NA` when the cause is known, else `NA`:
 #'     `"rows_differ"` for an AIC entry whose candidate was fitted on other
-#'     rows than `current`; `"loglik_below_base"` for one whose refit ended
-#'     below `current`'s log-likelihood, which it contains.}
+#'     rows than `current`; `"loglik_below_base"` for an AIC or Wald entry
+#'     whose refit ended below `current`'s log-likelihood, which it contains
+#'     (its `p_value` and `stat` are then `NA` too).}
 #' }
 #'
 #' @keywords internal
@@ -169,26 +170,35 @@
   }
 
   reason <- NA_character_
+  below_base <- FALSE
+  if (mode == "entry") {
+    # Two log-likelihoods compare only over the same rows. A multiphase refit
+    # drops every row where the candidate is missing, so its log-likelihood
+    # sums fewer terms and a noise variable won by its NAs alone (#488).
+    same_rows <- identical(.hzr_fit_row_mask(current),
+                           .hzr_fit_row_mask(candidate))
+    # The candidate model contains the current one, so at its optimum its
+    # log-likelihood cannot be lower. A refit that ends below it did not
+    # converge, whatever `converged` says, and neither its dAIC (#490) nor its
+    # Wald test (#538) describes an optimum: it was rejected as if tested.
+    # The tolerance is the one hzr_stepwise() applies to an entered model, so
+    # optimizer noise does not fire it.
+    ll_cur <- current$fit$objective
+    ll_can <- candidate$fit$objective
+    below_base <- same_rows && isTRUE(is.finite(ll_cur)) &&
+      isTRUE(is.finite(ll_can)) &&
+      ll_can < ll_cur - 1e-8 * max(1, abs(ll_cur))
+    if (below_base) {
+      reason <- "loglik_below_base"
+      wald$p_value <- NA_real_
+      wald$stat <- NA_real_
+    }
+  }
   # AIC components
   if (criterion == "aic" && mode == "entry") {
     aic_cur <- .hzr_aic(current)
     aic_can <- .hzr_aic(candidate)
-    # Two AICs compare only over the same rows. A multiphase refit drops every
-    # row where the candidate is missing, so its log-likelihood sums fewer
-    # terms and a noise variable won by its NAs alone (#488).
-    same_rows <- identical(.hzr_fit_row_mask(current),
-                           .hzr_fit_row_mask(candidate))
     if (!same_rows) reason <- "rows_differ"
-    # The candidate model contains the current one, so at its optimum its
-    # log-likelihood cannot be lower. A refit that ends below it did not
-    # converge, whatever `converged` says, and its dAIC is not a test: it was
-    # rejected as if tested (#490). The tolerance is the one hzr_stepwise()
-    # applies to an entered model, so optimizer noise does not fire it.
-    ll_cur <- current$fit$objective
-    ll_can <- candidate$fit$objective
-    below_base <- same_rows && is.finite(aic_cur) && is.finite(aic_can) &&
-      ll_can < ll_cur - 1e-8 * max(1, abs(ll_cur))
-    if (below_base) reason <- "loglik_below_base"
     delta   <- if (same_rows && !below_base &&
                      is.finite(aic_cur) && is.finite(aic_can)) {
       aic_can - aic_cur

@@ -244,5 +244,5 @@ test_that("the bootstrap's declined-entry causes count only its replicates", {
               fixed = TRUE, value = TRUE)
   expect_length(hit, 1L)
   expect_match(hit, "^1 of 2 successful replicates")
-  expect_match(hit, "Causes: 1 x under", fixed = TRUE)
+  expect_match(hit, "Causes: 1 x the candidate's refit", fixed = TRUE)
 })

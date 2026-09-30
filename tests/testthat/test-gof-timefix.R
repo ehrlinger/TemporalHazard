@@ -85,18 +85,20 @@ test_that("a custom grid of the raw exit times still counts every event", {
   fit <- suppressWarnings(hazard(time = d$time, status = d$status,
                                  dist = "weibull", theta = c(0.5, 1),
                                  fit = TRUE))
-  g <- hzr_gof(fit, time_grid = sort(unique(d$time)))
+  expect_no_warning(g <- hzr_gof(fit, time_grid = sort(unique(d$time))))
   expect_equal(attr(g, "summary")$total_observed, sum(d$status))
   # A grid holding the raw 1 + 1e-12 but not the merged time 1: that
   # subject is still found by its raw time. The subject exiting at exactly 1
   # has no grid point and is left out, as documented for custom grids.
   grid <- sort(unique(d$time[d$time != 1]))
-  g <- hzr_gof(fit, time_grid = grid)
+  expect_warning(g <- hzr_gof(fit, time_grid = grid),
+                 paste0("^hzr_gof\\(\\): 1 of ", nrow(d), " subjects"))
   expect_equal(attr(g, "summary")$total_observed, sum(d$status) - 1)
   # A grid holding only the merged time 1 counts both near-tied subjects,
   # once each, where survfit put them; n_event agrees. Matching the custom
   # grid on raw times alone would count 1 of these 2 events.
-  g <- hzr_gof(fit, time_grid = 1)
+  expect_warning(g <- hzr_gof(fit, time_grid = 1),
+                 paste0("^hzr_gof\\(\\): ", nrow(d) - 2, " of ", nrow(d), " subjects"))
   expect_equal(attr(g, "summary")$total_observed, 2)
   expect_equal(g$n_event, 2)
 })
@@ -150,6 +152,6 @@ test_that("a supplied grid a few ulps off the exit times counts them all", {
   exits <- sort(unique(d$int_dead + 1e4))
   grid <- exits * (1 + 2 * .Machine$double.eps)   # about two ulps above
   expect_true(all(grid != exits))
-  expect_equal(attr(hzr_gof(fit, time_grid = grid), "summary")$total_observed,
-               sum(d$dead))
+  expect_no_warning(g <- hzr_gof(fit, time_grid = grid))
+  expect_equal(attr(g, "summary")$total_observed, sum(d$dead))
 })

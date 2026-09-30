@@ -2,6 +2,19 @@
 
 ## Bug fixes
 
+* **A Wald stepwise entry no longer tests a refit that ended below the
+  current model (#538).** The AIC fix below (#490) left two paths open.
+  Under `criterion = "wald"`, and in the Wald test that `criterion =
+  "score"` falls back on, such a refit still got a Wald p-value, from a fit
+  that did not converge. At a strict `slentry` it was rejected as if tested,
+  with every counter at 0. On `avc`, `opmos` in the constant phase refit
+  11.2 log-likelihood units below its base, got p = 0.069, and at
+  `slentry = 0.05` was rejected with no warning. The default `slentry = 0.30`
+  entered it, and the existing check on an entered model warned. Such a
+  candidate is now refused under the reason `loglik_below_base`, as under
+  AIC, and `hzr_stepwise()` warns that it declined it without testing it.
+  It is not listed in `$criteria$wald_untested_entries`, which is for
+  entries with no variance.
 * **A Weibull fit whose scale cannot be represented now says so, and
   `predict()` refuses it (#566).** The Weibull scale `mu` is the baseline at
   `x = 0`, so with a covariate far from zero, such as a calendar year, it
@@ -54,6 +67,18 @@
   This applies to every path that refits a multiphase model: `hzr_stepwise()`
   under each criterion, `hzr_bootstrap()` select mode, and the code
   `hzr_translate_sas()` emits for a SAS stepwise job.
+* **`hzr_gof()` with a custom `time_grid` now says how many patients its
+  totals leave out (#492).** With a custom grid, a patient is counted in
+  the observed and expected tallies only if their exit time is a grid
+  point. A grid such as `seq(0, max, length.out = 50)` holds almost none,
+  so on the `avc` data the totals covered 1 of 68 events and printed a
+  Conservation ratio of 0.227, with no warning. `hzr_gof()` now warns with
+  the number of patients left out, as it already did on the default grid.
+  The `"summary"` attribute gains `n_tallied`, the number counted, and
+  `print()` adds a note when it is below `n`. A patient with case weight 0
+  adds nothing to either tally, so one left off the grid is not reported.
+  Code that checks the summary's names, or runs with `options(warn = 2)`
+  over a custom grid, sees the change.
 
 * **A Conservation of Events fit whose likelihood is higher with the
   conserved phase switched off is now recorded and warned about (#261).**
@@ -319,10 +344,39 @@
   `data` holding the fit's event times. In the fit's order, the screen
   runs; in another order, it is refused, under every criterion. When the
   fit's times have ties, a column holding them in order cannot show that
-  rows within a tie are in order, so it is not taken as proof. With no
-  such column, or with tied times, the order cannot be checked, and the
-  screen warns once, with class `hzr_score_rows_unverified`. A check that
-  sees within ties is planned (#515).
+  rows within a tie are in order, so it is not taken as proof on its own;
+  the fit's other per-row inputs are then checked as well (#515, below).
+  With no such column, or tied times those inputs cannot resolve, the order
+  cannot be checked, and the screen warns once, with class
+  `hzr_score_rows_unverified`.
+
+* **`hzr_stepwise()` now checks row order within tied event times against
+  the fit's status, weights and covariates (#515).** Where it could only
+  check `data`'s order against a column holding the fit's event times,
+  rows reordered within a tie left that column unchanged, so tied times
+  gave the same warning whether or not the rows had moved. With discrete
+  times on `avc` (14 distinct in 305 rows), a shuffle within ties moved 289
+  rows and took every criterion's first entry to `opmos` (from `com_iv`
+  under score and AIC, from `mal` under Wald), under the same warning as
+  the aligned frame. Each other per-row input the fit stores (status,
+  interval bounds, weights, covariate design columns) is now looked for in
+  `data` under the column it came from: the one the call named
+  (`status = dead`, `status = d$dead`, or the event in `Surv(time, event)`),
+  or a covariate's own name. A column that merely holds the same values
+  does not count, so a look-alike cannot vouch for the order. The input's
+  own column holding the same values paired with the same times but in
+  another order means rows moved within a tie, and the screen is refused,
+  naming the column. The order is accepted, without a
+  warning, when the inputs found tell every row apart, or when all of them
+  are found: rows that could still be swapped are then identical in
+  everything the fit reads, and the screen's answer is unchanged. Otherwise
+  the warning remains, and now names the inputs to add to `data`. Every one
+  of these comparisons is now exact, as are the event-time column and the
+  columns compared with a stored frame. Under `all.equal()`'s tolerance,
+  rows whose times differed only by rounding, such as `0.1 + 0.2` and `0.3`,
+  could be swapped unseen and screened as if in order. A `data` with
+  duplicated column names is now refused: every check reads columns by
+  name, and of duplicates only the first is read.
 
 * **`hzr_stepwise(criterion = "aic")` no longer enters a variable on the
   strength of its missing values (#488).** A multiphase refit drops every row
