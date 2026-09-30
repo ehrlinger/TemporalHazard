@@ -827,7 +827,14 @@ NULL
 #'   where no events remain for that phase. Both records also carry
 #'   \code{gain} and the higher point as \code{certificate_theta} with its
 #'   \code{certificate_loglik} (the corner record adds \code{gamma_hat}); the
-#'   estimates are not changed. A fit can carry several records, in no
+#'   estimates are not changed. \code{"coe_no_events_left"} is also recorded
+#'   when the fit has itself reached that boundary: the conserved phase's
+#'   largest share of the cumulative hazard is below
+#'   \code{control$phase_share_tol}. That record carries \code{share} and
+#'   \code{tol} in place of the certificate fields, and
+#'   \code{warned_by = "phase_share"}: the identifiability warning has
+#'   already reported the phase, so this record raises no warning of its
+#'   own. A fit can carry several records, in no
 #'   guaranteed order, so select them by \code{mechanism}. Only rows the
 #'   likelihood reads
 #'   count as observed times. A fit with any record raises one warning whose
@@ -1782,6 +1789,12 @@ hazard <- function(formula = NULL,
       fit_state$boundary <- c(optim_held, fit_state$boundary)
       boundary_records <- fit_state$boundary
     }
+  }
+  # A record another warning has already announced is kept on $boundary and
+  # not announced again (`warned_by`, #565).
+  if (is.list(boundary_records)) {
+    boundary_records <- Filter(function(r) is.null(r$warned_by),
+                               boundary_records)
   }
   if (is.list(boundary_records) && length(boundary_records)) {
     warning(.hzr_boundary_condition(boundary_records))
