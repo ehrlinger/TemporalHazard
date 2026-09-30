@@ -77,11 +77,17 @@ a \code{data} holding only columns added after the fit shares none; and
 shared columns with duplicate rows cannot show rows reordered among
 those duplicates.  For
 those the order is checked against a column of \code{data} holding the fit's
-event times, and refused if they are out of order.  With no such
-column, or when those times have ties (rows reordered within a tie
-leave the column unchanged; a finer check is planned in #515), the
-order cannot be checked, and a warning of class
-\code{hzr_score_rows_unverified} says so.}
+event times, and refused if they are out of order.  Rows reordered
+within a tie leave that column unchanged, so when the times have ties
+the fit's other per-row inputs (status, interval bounds, weights and
+covariate design columns) are looked for in \code{data} too.  Rows reordered
+within a tie are refused.  The order is accepted when the inputs found
+tell every row apart, or when all of them are found: rows that could
+still be swapped are then identical in everything the fit reads, and
+the screen's answer is the same.  With no column of event times, or
+tied times the other inputs cannot resolve, the order cannot be
+checked, and a warning of class \code{hzr_score_rows_unverified} says so and
+names the inputs to add.}
 
 \item{direction}{Search strategy: one of \code{"both"} (default),
 \code{"forward"}, or \code{"backward"}.  Controls whether variables may only
