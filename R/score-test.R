@@ -753,6 +753,8 @@
 #' - found in order: it settles the rows it tells apart;
 #' - found only as the same (time, value) pairs in another order: the rows
 #'   were reordered within a tie, and the screen is refused;
+#' - found both ways, in different columns: which one the screen reads is
+#'   unknown, so it cannot be checked;
 #' - not found: it cannot be checked.
 #'
 #' The order is proven when the inputs found tell every row apart, or when
@@ -781,7 +783,7 @@
     look <- names(data)
     own <- inputs[[nm]]$column
     if (!is.na(own) && own %in% look) look <- own
-    in_order <- FALSE
+    in_order <- NULL
     moved <- NULL
     for (cn in look) {
       col <- data[[cn]]
@@ -790,18 +792,25 @@
       # Exact: rows that may be swapped must be identical in the input, not
       # merely within a tolerance relative to the whole column.
       if (identical(col, v)) {
-        in_order <- TRUE
-        break
-      }
-      if (is.null(moved) &&
-            identical(col[order(time, col)], v[order(time, v)])) {
+        in_order <- in_order %||% cn
+      } else if (is.null(moved) &&
+                   identical(col[order(time, col)], v[order(time, v)])) {
         moved <- cn
       }
     }
-    if (in_order) {
+    if (!is.null(in_order) && is.null(moved)) {
       found[[nm]] <- v
-    } else if (!is.null(moved)) {
+    } else if (!is.null(moved) && is.null(in_order)) {
       return(list(proven = FALSE, moved = c(moved, nm), unmatched = unmatched))
+    } else if (!is.null(moved)) {
+      # One column holds the input in order and another holds it reordered
+      # within ties. Which one the screen reads is unknown (a covariate
+      # reaches here only without a column of its own name), so neither
+      # vouches for the order.
+      unmatched <- c(unmatched, paste0(
+        nm, " (column `", in_order, "` holds it in order, but column `",
+        moved, "` holds it reordered within ties)"
+      ))
     } else {
       unmatched <- c(unmatched, nm)
     }
@@ -931,9 +940,9 @@
     paste0(
       "; column `", in_order_tied[1L], "` holds the fit's event times in ",
       "order, but those times have ties (", length(unique(time)), " distinct ",
-      "values in ", length(time), " rows), and no column of `data` holds the ",
-      "fit's ", paste(within$unmatched, collapse = ", "), " in order to tell ",
-      "the tied rows apart"
+      "values in ", length(time), " rows), and the tied rows cannot be told ",
+      "apart without the fit's ", paste(within$unmatched, collapse = "; "),
+      ", which no column of `data` confirms in order"
     )
   } else {
     ", and no column of `data` holds the fit's event times"
@@ -947,8 +956,8 @@
       "against the wrong observations. ",
       if (length(in_order_tied)) {
         paste0("Add to `data` columns holding the fit's ",
-               paste(within$unmatched, collapse = ", "), ", in the order the ",
-               "model was fitted on, to have it checked.")
+               paste(sub(" \\(.*$", "", within$unmatched), collapse = ", "),
+               ", in the order the model was fitted on, to have it checked.")
       } else if (is.data.frame(frame)) {
         paste0("Include in `data` enough of the columns given to hazard() ",
                "to tell every row apart to have it checked.")

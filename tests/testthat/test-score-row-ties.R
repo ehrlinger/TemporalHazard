@@ -137,6 +137,25 @@ test_that("inputs are matched exactly, and constant or short ones handled (#515)
                           logical(1))))
   expect_no_condition(.hzr_check_data_row_order(all_ev, no_st, score = TRUE))
 
+  # The status has no column of known name, so a look-alike can match it.
+  # With `dead` reordered within ties and a `decoy` holding the fit's status
+  # in order, which one the screen reads is unknown: not verified.
+  st_fit <- suppressWarnings(hazard(time = d$tt, status = d$dead,
+                                    dist = "weibull", theta = c(0.5, 1),
+                                    fit = TRUE))
+  sp <- rt_shuffle_within(d["tt"], seed = 568)
+  moved_st <- d[sp, ]
+  expect_false(identical(moved_st$dead, d$dead))
+  expect_error(.hzr_check_data_row_order(st_fit, moved_st, score = TRUE),
+               "column `dead` holds the fit's status")
+  decoy <- cbind(moved_st, decoy = d$dead)
+  expect_identical(decoy$decoy, d$dead)
+  expect_warning(
+    .hzr_check_data_row_order(st_fit, decoy, score = TRUE),
+    "column `decoy` holds it in order, but column `dead` holds it reordered",
+    class = "hzr_score_rows_unverified"
+  )
+
   # A phase design stored shorter than the times (rows with a missing
   # covariate dropped) cannot be compared, so it is not treated as found.
   short <- fit
