@@ -438,4 +438,11 @@ test_that("the event hazard's mu^nu is guarded too (#566, Copilot on #573)", {
                tolerance = 1e-12)
   # A right-censored row never forms the hazard, so mu^nu is not read there.
   expect_true(is.finite(one_event(4e-162, 2, 2.5e161, status = 0)))
+  # An overflowing mu^nu is not refused: hzr_evaluate() reports a likelihood
+  # that is not finite as -Inf, with a warning (test-evaluate-at-parameters.R).
+  obj <- hazard(time = 3, status = 1, dist = "weibull", theta = c(2, 1e5),
+                fit = FALSE)
+  expect_warning(ll <- hzr_evaluate(obj, c(2, 1e5))$logLik,
+                 class = "hzr_evaluate_not_finite")
+  expect_identical(as.numeric(ll), -Inf)
 })

@@ -215,10 +215,11 @@ hzr_evaluate <- function(object, theta, times = NULL) {
     # event's hazard (time^(nu - 1) and exp(eta) do not involve mu). With
     # mu = 4e-162 and nu = 2, mu * t can be 1 while mu^nu is subnormal, and
     # the log-likelihood came out 0.0765 low. Read only where a contributing
-    # event row forms it.
+    # event row forms it. As for mu * t, only the underflow is refused: an
+    # overflowing mu^nu already gives -Inf with a warning, which is this
+    # function's contract for a likelihood that is not finite.
     mu_nu <- theta[[1L]]^theta[[2L]]
-    if (any(counted & st == 1) &&
-          (!is.finite(mu_nu) || mu_nu < .Machine$double.xmin)) {
+    if (any(counted & st == 1) && mu_nu < .Machine$double.xmin) {
       stop("'theta' gives Weibull scale mu = ", format(theta[[1L]]),
            " and shape nu = ", format(theta[[2L]]), ", and mu^nu = ",
            format(mu_nu), " cannot be represented, so the event hazard ",
