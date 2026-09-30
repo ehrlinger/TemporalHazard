@@ -318,10 +318,14 @@
   rows and took every criterion's first entry to `opmos` (from `com_iv`
   under score and AIC, from `mal` under Wald), under the same warning as
   the aligned frame. Each other per-row input the fit stores (status,
-  interval bounds, weights, covariate design columns) is now looked for
-  among `data`'s columns. One found as the same values paired with the
-  same times but in another order means rows moved within a tie, and the
-  screen is refused, naming the column. The order is accepted, without a
+  interval bounds, weights, covariate design columns) is now looked for in
+  `data` under the column it came from: the one the call named
+  (`status = dead`, `status = d$dead`, or the event in `Surv(time, event)`),
+  or a covariate's own name. A column that merely holds the same values
+  does not count, so a look-alike cannot vouch for the order. The input's
+  own column holding the same values paired with the same times but in
+  another order means rows moved within a tie, and the screen is refused,
+  naming the column. The order is accepted, without a
   warning, when the inputs found tell every row apart, or when all of them
   are found: rows that could still be swapped are then identical in
   everything the fit reads, and the screen's answer is unchanged. Otherwise

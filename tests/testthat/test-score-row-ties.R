@@ -55,6 +55,36 @@ rt_shuffle_within <- function(key, seed) {
   perm
 }
 
+test_that("the column a stored input came from is read off the call (#515)", {
+  expect_identical(.hzr_call_column(quote(dead)), "dead")
+  expect_identical(.hzr_call_column(quote(d$dead)), "dead")
+  expect_identical(.hzr_call_column(quote(d[["dead"]])), "dead")
+  expect_identical(.hzr_call_column(quote(d$dead > 0)), NA_character_)
+  expect_identical(.hzr_call_column(quote(d[, "dead"])), NA_character_)
+  expect_identical(.hzr_call_column(NULL), NA_character_)
+
+  expect_identical(.hzr_status_column(quote(hazard(status = d$dead))), "dead")
+  # A stored call is match.call()'s, so its arguments are named.
+  expect_identical(
+    .hzr_status_column(quote(hazard(formula = Surv(tt, dead) ~ 1))), "dead")
+  expect_identical(
+    .hzr_status_column(quote(hazard(formula = survival::Surv(tt, dead) ~ x))),
+    "dead")
+  # Not a plain Surv(time, event): no column is claimed.
+  expect_identical(
+    .hzr_status_column(
+      quote(hazard(formula = Surv(lo, hi, type = "interval2") ~ 1))),
+    NA_character_)
+  expect_identical(.hzr_status_column(quote(hazard(formula = f))),
+                   NA_character_)
+  # And a real formula fit's stored call names it.
+  d <- rt_avc()
+  ff <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
+                                dist = "weibull", theta = c(0.5, 1),
+                                fit = TRUE))
+  expect_identical(.hzr_status_column(ff$call), "dead")
+})
+
 test_that("a stored covariate settles ties, and a moved one is refused (#515)", {
   # A vector fit with a covariate matrix and no stored frame. The check is
   # called directly: it runs once per screen, before any refit.
@@ -137,9 +167,9 @@ test_that("inputs are matched exactly, and constant or short ones handled (#515)
                           logical(1))))
   expect_no_condition(.hzr_check_data_row_order(all_ev, no_st, score = TRUE))
 
-  # The status has no column of known name, so a look-alike can match it.
-  # With `dead` reordered within ties and a `decoy` holding the fit's status
-  # in order, which one the screen reads is unknown: not verified.
+  # The status is looked for only under the column the call named
+  # (`status = d$dead`), so a look-alike column cannot vouch for it: not
+  # beside a `dead` that moved, and not in place of an absent one.
   st_fit <- suppressWarnings(hazard(time = d$tt, status = d$dead,
                                     dist = "weibull", theta = c(0.5, 1),
                                     fit = TRUE))
@@ -150,11 +180,19 @@ test_that("inputs are matched exactly, and constant or short ones handled (#515)
                "column `dead` holds the fit's status")
   decoy <- cbind(moved_st, decoy = d$dead)
   expect_identical(decoy$decoy, d$dead)
-  expect_warning(
-    .hzr_check_data_row_order(st_fit, decoy, score = TRUE),
-    "column `decoy` holds it in order, but column `dead` holds it reordered",
-    class = "hzr_score_rows_unverified"
-  )
+  expect_error(.hzr_check_data_row_order(st_fit, decoy, score = TRUE),
+               "column `dead` holds the fit's status")
+  no_dead <- decoy[names(decoy) != "dead"]
+  expect_warning(.hzr_check_data_row_order(st_fit, no_dead, score = TRUE),
+                 "status (column `dead`)", fixed = TRUE,
+                 class = "hzr_score_rows_unverified")
+  # A status computed in the call names no column, and is not looked for.
+  calc_fit <- suppressWarnings(hazard(time = d$tt, status = d$dead > 0,
+                                      dist = "weibull", theta = c(0.5, 1),
+                                      fit = TRUE))
+  expect_warning(.hzr_check_data_row_order(calc_fit, d, score = TRUE),
+                 "those times have ties",
+                 class = "hzr_score_rows_unverified")
 
   # Times that differ only by rounding: all.equal() takes them as equal, so
   # rows swapped among them passed as in order. The time column now has to
@@ -167,12 +205,12 @@ test_that("inputs are matched exactly, and constant or short ones handled (#515)
   near_fit <- suppressWarnings(hazard(time = tn, status = sn,
                                       dist = "weibull", theta = c(1, 1),
                                       fit = TRUE))
-  dn <- data.frame(t = tn, s = sn)
-  bad <- dn[order(round(dn$t, 6), -dn$s), ]
+  dn <- data.frame(t = tn, sn = sn)
+  bad <- dn[order(round(dn$t, 6), -dn$sn), ]
   expect_identical(anyDuplicated(tn), 0L)
   expect_true(isTRUE(all.equal(bad$t, tn, check.attributes = FALSE)))
   expect_false(identical(bad$t, tn))
-  expect_false(identical(bad$s, sn))
+  expect_false(identical(bad$sn, sn))
   expect_error(.hzr_check_data_row_order(near_fit, bad, score = TRUE),
                "column `t` holds the fit's event times in another order")
   # With an exact tie as well, the within-ties check is not reached either.
@@ -181,14 +219,20 @@ test_that("inputs are matched exactly, and constant or short ones handled (#515)
   tie_fit <- suppressWarnings(hazard(time = tn2, status = sn,
                                      dist = "weibull", theta = c(1, 1),
                                      fit = TRUE))
-  dn2 <- data.frame(t = tn2, s = sn)
-  bad2 <- dn2[order(round(dn2$t, 6), -dn2$s), ]
+  dn2 <- data.frame(t = tn2, sn = sn)
+  bad2 <- dn2[order(round(dn2$t, 6), -dn2$sn), ]
   expect_gt(anyDuplicated(tn2), 0L)
   expect_true(isTRUE(all.equal(bad2$t, tn2, check.attributes = FALSE)))
   expect_false(identical(bad2$t, tn2))
   expect_error(.hzr_check_data_row_order(tie_fit, bad2, score = TRUE),
                "column `t` holds the fit's event times in another order")
   expect_no_condition(.hzr_check_data_row_order(tie_fit, dn2, score = TRUE))
+  # A column merely close to the times, beside the exact one, is neither
+  # the times nor the times reordered: it is ignored, not refused.
+  close <- cbind(dn2, t_close = dn2$t * (1 + 1e-12))
+  expect_true(isTRUE(all.equal(close$t_close, tn2)))
+  expect_false(identical(close$t_close, tn2))
+  expect_no_condition(.hzr_check_data_row_order(tie_fit, close, score = TRUE))
   # The same swap against a stored frame that shares only the times.
   frame_fit <- suppressWarnings(hazard(time = tn, status = sn, data = dn,
                                        dist = "weibull", theta = c(1, 1),

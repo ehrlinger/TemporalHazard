@@ -718,13 +718,16 @@
 #'
 #' @return A list named for messages, one element per input:
 #'   `list(value, column)`, where `value` is the numeric vector and `column`
-#'   the design column's name (`NA` for the response and weights, whose
-#'   column in `data` is unknown). An input stored at another length than
-#'   `time` (a phase design after rows with a missing covariate were dropped)
-#'   keeps that length, so the caller counts it as unmatched.
+#'   the name of the column it came from: the design column's name for a
+#'   covariate, and for the status, bounds and weights the column the stored
+#'   call names (`NA` when the call computes them). An input stored at
+#'   another length than `time` (a phase design after rows with a missing
+#'   covariate were dropped) keeps that length, so the caller counts it as
+#'   unmatched.
 #' @noRd
 .hzr_fit_row_inputs <- function(current) {
   d <- current$data
+  call <- current$call
   input <- function(v, column = NA_character_) {
     if (is.null(v)) NULL else list(value = as.numeric(v), column = column)
   }
@@ -737,8 +740,10 @@
   }
   xl <- current$fit$x_list
   inputs <- c(
-    list(status = input(d$status), `time_lower` = input(d$time_lower),
-         `time_upper` = input(d$time_upper), weights = input(d$weights)),
+    list(status = input(d$status, .hzr_status_column(call)),
+         `time_lower` = input(d$time_lower, .hzr_call_column(call$time_lower)),
+         `time_upper` = input(d$time_upper, .hzr_call_column(call$time_upper)),
+         weights = input(d$weights, .hzr_call_column(call$weights))),
     cols(d$x, "covariate"),
     unlist(lapply(names(xl), function(ph) {
       cols(xl[[ph]], paste0("phase `", ph, "` covariate"))
@@ -748,17 +753,61 @@
   Filter(function(inp) length(unique(inp$value)) > 1L, inputs)
 }
 
+#' The column of `data` a stored call argument names
+#'
+#' `status = dead` names `dead`, as do `status = d$dead` and
+#' `status = d[["dead"]]`. Anything computed names no column.
+#'
+#' @param expr An argument expression from the stored call, or `NULL`.
+#' @return A single string, `NA` when no column is named.
+#' @noRd
+.hzr_call_column <- function(expr) {
+  if (is.symbol(expr)) return(as.character(expr))
+  if (is.call(expr) && length(expr) == 3L) {
+    fn <- expr[[1L]]
+    key <- expr[[3L]]
+    if (identical(fn, as.name("$")) && (is.symbol(key) || is.character(key))) {
+      return(as.character(key))
+    }
+    if (identical(fn, as.name("[[")) && is.character(key) && length(key) == 1L) {
+      return(key)
+    }
+  }
+  NA_character_
+}
+
+#' The column of `data` a fit's status came from
+#'
+#' The vector interface's `status =`, or the event of a two-argument
+#' `Surv(time, event)` on the formula interface's left-hand side.
+#'
+#' @param call The fit's stored call.
+#' @return A single string, `NA` when no column is named.
+#' @noRd
+.hzr_status_column <- function(call) {
+  if (!is.null(call$status)) return(.hzr_call_column(call$status))
+  f <- call$formula
+  if (!is.call(f) || !identical(f[[1L]], as.name("~")) || length(f) != 3L) {
+    return(NA_character_)
+  }
+  lhs <- f[[2L]]
+  surv <- is.call(lhs) &&
+    deparse(lhs[[1L]]) %in% c("Surv", "survival::Surv") &&
+    length(lhs) == 3L && is.null(names(lhs))
+  if (surv) .hzr_call_column(lhs[[3L]]) else NA_character_
+}
+
 #' Check row order within tied event times against the fit's other inputs
 #'
 #' A column of `data` equal to the fit's `time` fixes the order of rows except
-#' within a tie. Each other per-row input the fit stores is then looked for
-#' among `data`'s columns:
-#' - found in order: it settles the rows it tells apart;
-#' - found only as the same (time, value) pairs in another order: the rows
-#'   were reordered within a tie, and the screen is refused;
-#' - found both ways, in different columns: which one the screen reads is
-#'   unknown, so it cannot be checked;
-#' - not found: it cannot be checked.
+#' within a tie. Each other per-row input the fit stores is then looked for in
+#' `data` under the column it came from, and only there:
+#' - in order: it settles the rows it tells apart;
+#' - the same (time, value) pairs in another order: the rows were reordered
+#'   within a tie, and the screen is refused;
+#' - otherwise, or with no such column: it cannot be checked.
+#' A column found only by its values is not accepted, as any column that
+#' happens to hold them would then vouch for the order.
 #'
 #' The order is proven when the inputs found tell every row apart, or when
 #' every input is found. In the second case rows can differ in position only
@@ -776,46 +825,23 @@
   inputs <- .hzr_fit_row_inputs(current)
   for (nm in names(inputs)) {
     v <- inputs[[nm]]$value
-    if (length(v) != n) {
-      unmatched <- c(unmatched, nm)
+    own <- inputs[[nm]]$column
+    label <- if (is.na(own)) nm else paste0(nm, " (column `", own, "`)")
+    col <- if (!is.na(own) && own %in% names(data)) data[[own]]
+    if (length(v) != n || !(is.numeric(col) || is.logical(col)) ||
+          length(col) != n) {
+      unmatched <- c(unmatched, label)
       next
     }
-    # A covariate's own column is the one the screen reads, so when `data`
-    # has it, it alone decides: another column holding the fit's values in
-    # order must not vouch for it having moved.
-    look <- names(data)
-    own <- inputs[[nm]]$column
-    if (!is.na(own) && own %in% look) look <- own
-    in_order <- NULL
-    moved <- NULL
-    for (cn in look) {
-      col <- data[[cn]]
-      if (!(is.numeric(col) || is.logical(col)) || length(col) != n) next
-      col <- as.numeric(col)
-      # Exact: rows that may be swapped must be identical in the input, not
-      # merely within a tolerance relative to the whole column.
-      if (identical(col, v)) {
-        in_order <- in_order %||% cn
-      } else if (is.null(moved) &&
-                   identical(col[order(time, col)], v[order(time, v)])) {
-        moved <- cn
-      }
-    }
-    if (!is.null(in_order) && is.null(moved)) {
+    col <- as.numeric(col)
+    # Exact: rows that may be swapped must be identical in the input, not
+    # merely within a tolerance relative to the whole column.
+    if (identical(col, v)) {
       found[[nm]] <- v
-    } else if (!is.null(moved) && is.null(in_order)) {
-      return(list(proven = FALSE, moved = c(moved, nm), unmatched = unmatched))
-    } else if (!is.null(moved)) {
-      # One column holds the input in order and another holds it reordered
-      # within ties. Which one the screen reads is unknown (a covariate
-      # reaches here only without a column of its own name), so neither
-      # vouches for the order.
-      unmatched <- c(unmatched, paste0(
-        nm, " (column `", in_order, "` holds it in order, but column `",
-        moved, "` holds it reordered within ties)"
-      ))
+    } else if (identical(col[order(time, col)], v[order(time, v)])) {
+      return(list(proven = FALSE, moved = c(own, nm), unmatched = unmatched))
     } else {
-      unmatched <- c(unmatched, nm)
+      unmatched <- c(unmatched, label)
     }
   }
   proven <- !length(unmatched) || anyDuplicated(as.data.frame(found)) == 0L
@@ -911,7 +937,9 @@
       in_order_tied <- c(in_order_tied, nm)
       next
     }
-    if (isTRUE(all.equal(sort(as.numeric(col)), sort(time)))) {
+    # Exact as well: a column merely close to the times is not them, and
+    # must not be refused as the times in another order.
+    if (identical(sort(as.numeric(col)), sort(as.numeric(time)))) {
       permuted <- c(permuted, nm)
     }
   }
@@ -946,8 +974,8 @@
       "; column `", in_order_tied[1L], "` holds the fit's event times in ",
       "order, but those times have ties (", length(unique(time)), " distinct ",
       "values in ", length(time), " rows), and the tied rows cannot be told ",
-      "apart without the fit's ", paste(within$unmatched, collapse = "; "),
-      ", which no column of `data` confirms in order"
+      "apart without the fit's ", paste(within$unmatched, collapse = ", "),
+      ", which `data` does not hold in order under the column it came from"
     )
   } else {
     ", and no column of `data` holds the fit's event times"
@@ -960,9 +988,9 @@
       "not in the order the model was fitted on, every candidate is scored ",
       "against the wrong observations. ",
       if (length(in_order_tied)) {
-        paste0("Add to `data` columns holding the fit's ",
-               paste(sub(" \\(.*$", "", within$unmatched), collapse = ", "),
-               ", in the order the model was fitted on, to have it checked.")
+        paste0("Add those to `data`, in the order the model was fitted on ",
+               "(an input computed in the call, such as `status = x > 0`, ",
+               "has no column to look under), to have it checked.")
       } else if (is.data.frame(frame)) {
         paste0("Include in `data` enough of the columns given to hazard() ",
                "to tell every row apart to have it checked.")
