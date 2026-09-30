@@ -295,7 +295,8 @@ is tested on the current model's Wald p-value), so they read
 computable, regardless of the active criterion.}
 \item{\code{logLik}, \code{aic}, \code{n_coef}}{Goodness-of-fit
 diagnostics of the model \emph{after} this step. For a base fit with
-\code{objective = "sas"} whose data have interval-censored rows, \code{logLik}
+\code{objective = "sas"} that read an interval-censored row (one of
+positive weight, not dropped by a phase design), \code{logLik}
 and \code{delta_logLik} hold PROC HAZARD's objective, not a
 log-likelihood, and \code{aic} is computed from it; the trace's final line
 says so, and \code{criterion = "aic"} warns (class

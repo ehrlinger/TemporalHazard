@@ -82,6 +82,33 @@ test_that("interval rows the fit did not read do not change the label (#544)", {
   expect_identical(summary(fit)$log_lik, fit$fit$objective)
 })
 
+test_that("interval rows a phase design dropped do not change the label (#544)", {
+  skip_on_cran()
+  # A phase covariate missing on every interval row: the multiphase design
+  # drops those rows (fit$fit$rows_used), so the SAS objective reads none.
+  d <- sas_label_data()
+  d$z <- ifelse(d$st == 2, NA, stats::rnorm(nrow(d)))
+  fit <- suppressWarnings(hazard(
+    time = d$tt, status = d$st, time_lower = d$lo, time_upper = d$tt,
+    data = d, dist = "multiphase", objective = "sas", fit = TRUE,
+    phases = list(early = hzr_phase("cdf", t_half = 0.8, nu = 0.4, m = -0.6,
+                                    formula = ~ z),
+                  constant = hzr_phase("constant")),
+    control = list(n_starts = 1)))
+  # The premise: the rows are stored, and the fit did not read them.
+  expect_true(any(fit$data$status == 2))
+  expect_false(any(fit$fit$rows_used[fit$data$status == 2]))
+  expect_match(printed(fit), "log-lik:", fixed = TRUE)
+  expect_identical(summary(fit)$log_lik, fit$fit$objective)
+})
+
+test_that("summary()'s new fields come last (#544)", {
+  skip_on_cran()
+  s <- summary(sas_label_fit(sas_label_data(), "sas"))
+  n <- length(names(s))
+  expect_identical(names(s)[c(n - 1L, n)], c("objective", "objective_value"))
+})
+
 test_that("the formula interface's interval rows are seen too (#544)", {
   skip_on_cran()
   d <- sas_label_data()

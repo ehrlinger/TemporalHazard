@@ -349,7 +349,8 @@
 #'     computable, regardless of the active criterion.}
 #'   \item{\code{logLik}, \code{aic}, \code{n_coef}}{Goodness-of-fit
 #'     diagnostics of the model *after* this step. For a base fit with
-#'     `objective = "sas"` whose data have interval-censored rows, `logLik`
+#'     `objective = "sas"` that read an interval-censored row (one of
+#'     positive weight, not dropped by a phase design), `logLik`
 #'     and `delta_logLik` hold PROC HAZARD's objective, not a
 #'     log-likelihood, and `aic` is computed from it; the trace's final line
 #'     says so, and `criterion = "aic"` warns (class

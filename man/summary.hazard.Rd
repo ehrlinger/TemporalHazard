@@ -14,7 +14,8 @@
 \value{
 An object of class \code{summary.hazard}. Its \code{log_lik} is the
 log-likelihood at the estimates, and \code{NA} for a fit with
-\code{objective = "sas"} whose data have interval-censored rows: there the
+\code{objective = "sas"} that read an interval-censored row (one of positive
+weight, not dropped by a phase design): there the
 fitted objective is PROC HAZARD's interval-mean-hazard objective, not a
 log-likelihood. That value is always in \code{objective_value}, and
 \code{objective} says which of the two it is (\code{"likelihood"} or \code{"sas"}).

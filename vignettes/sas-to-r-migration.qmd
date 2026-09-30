@@ -500,8 +500,9 @@ The chunk hides them because `summary()` reports the same thing.
 > **Note:** `$fit$objective` above is a *number*: the value the optimizer
 > reached, which is the log-likelihood; `print()` and `summary()` label it
 > `log-lik` and `log_lik`, which are the names to prefer when writing about
-> it. The exception is a fit with `objective = "sas"` whose data have
-> interval-censored rows: there the value is `PROC HAZARD`'s objective, not a
+> it. The exception is a fit with `objective = "sas"` that read an
+> interval-censored row (one of positive weight, not dropped by a phase
+> design): there the value is `PROC HAZARD`'s objective, not a
 > log-likelihood, and `print()` labels it `SAS objective`, while
 > `summary()` returns `log_lik = NA` and the value as `objective_value`. It is
 > unrelated to the `objective` *argument* of `hazard()`, which selects an
