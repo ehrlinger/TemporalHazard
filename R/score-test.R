@@ -756,13 +756,19 @@
 #' The column of `data` a stored call argument names
 #'
 #' `status = dead` names `dead`, as do `status = d$dead` and
-#' `status = d[["dead"]]`. Anything computed names no column.
+#' `status = d[["dead"]]`. Anything computed names no column, and nor does
+#' `..2`, which is what a call forwarded through a wrapper's `...` records.
 #'
 #' @param expr An argument expression from the stored call, or `NULL`.
 #' @return A single string, `NA` when no column is named.
 #' @noRd
 .hzr_call_column <- function(expr) {
-  if (is.symbol(expr)) return(as.character(expr))
+  # `..2` is how a call made through a wrapper's `...` records an argument:
+  # it names the wrapper's argument, not a column.
+  if (is.symbol(expr)) {
+    nm <- as.character(expr)
+    return(if (grepl("^\\.\\.(\\.|[0-9]+)$", nm)) NA_character_ else nm)
+  }
   if (is.call(expr) && length(expr) == 3L) {
     fn <- expr[[1L]]
     key <- expr[[3L]]

@@ -62,6 +62,9 @@ test_that("the column a stored input came from is read off the call (#515)", {
   expect_identical(.hzr_call_column(quote(d$dead > 0)), NA_character_)
   expect_identical(.hzr_call_column(quote(d[, "dead"])), NA_character_)
   expect_identical(.hzr_call_column(NULL), NA_character_)
+  # A call made through a wrapper's `...` records `..2`, which is no column.
+  expect_identical(.hzr_call_column(quote(..2)), NA_character_)
+  expect_identical(.hzr_call_column(as.name("...")), NA_character_)
 
   expect_identical(.hzr_status_column(quote(hazard(status = d$dead))), "dead")
   # A stored call is match.call()'s, so its arguments are named.
