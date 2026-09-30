@@ -156,8 +156,9 @@ test_that("a screen over a literal `age:mal` column enters that column once (#44
 test_that("a frozen literal `age:mal` column is not re-entered (#442)", {
   skip_on_cran() # a two-way screen that oscillates
   # A noise column enters (p < slentry) and fails slstay, so it oscillates
-  # until max_move freezes it (step 6) and it is dropped in the same
-  # iteration (step 7). While it is out of the model only its FROZEN status
+  # until it reaches max_move by entering (step 5), is dropped in the same
+  # iteration (step 6), and is frozen out (step 7; #580). While it is out of
+  # the model only its FROZEN status
   # keeps it out; without that the screen re-enters it and runs to
   # max_steps.
   withr::local_seed(2L)

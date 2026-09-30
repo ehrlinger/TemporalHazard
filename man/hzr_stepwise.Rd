@@ -56,8 +56,8 @@ column however the name was written (#438).  For multiphase
 fits, pass a named list of one-sided formulas keyed by phase, naming
 each phase once.  \code{scope} lists what may enter; a drop considers every
 term in the model except \code{force_in} and terms frozen by \code{max_move}
-before the iteration began (see the \strong{Known limitation (the frozen
-set)} section).  A two-sided formula is an error,
+at an earlier iteration (see the \strong{The frozen set} section).  A
+two-sided formula is an error,
 since its left-hand side would never be a candidate, and so is a
 non-empty \code{scope} under \code{direction = "backward"}, which does not read
 it.  An empty scope (\code{~ 1}, \code{character()}, or a list of \code{NULL}s and
@@ -116,10 +116,8 @@ Default \code{0.20} matches SAS \code{SLSTAY}.}
 
 \item{max_move}{Per-variable oscillation cap.  When a variable has
 entered + exited more than \code{max_move} times it is frozen for the
-remainder of the run.  Default \code{4}.  In a two-way screen
-(\code{direction = "both"}), a variable frozen on entry can still be
-dropped in the same iteration; see the
-\strong{Known limitation (the frozen set)} section.}
+remainder of the run, in the state it ends that iteration in.  Default
+\code{4}.  See the \strong{The frozen set} section.}
 
 \item{force_in}{Character vector of variables that must remain in
 the model.  Such variables are still scored and reported in the
@@ -182,9 +180,9 @@ not contain is recorded here and still pins nothing, because
 \code{force_in} only keeps a variable that is already in.  The resolved
 fields are \strong{not} aligned element for element with the as-given
 ones, which stay longer by every name that resolved to nothing.
-In a two-way
-screen, \code{frozen} can name a variable the final model does not
-contain; see the \strong{Known limitation (the frozen set)} section.
+A variable in \code{frozen} is in the final model if it was in the model
+when it was frozen, and out of it otherwise; see the \strong{The frozen
+set} section.
 \code{unresolved} is a list with elements \code{force_in}, \code{force_out} and
 \code{scope}, each the names that could not be used and were therefore
 ignored (\code{character()} when none were). That is usually a name
@@ -349,9 +347,8 @@ with \code{force_in}.}
 \item{\code{direction = "both"} (default)}{Two-way stepwise: on every
 iteration, whether or not a variable entered, every term in the model,
 the base model's included, is re-tested and may be dropped unless it
-is in \code{force_in} or was frozen by \code{max_move} before the iteration
-began; a variable frozen on entry can still be dropped in the same
-iteration (see the \strong{Known limitation (the frozen set)} section).
+is in \code{force_in} or was frozen by \code{max_move} at an earlier iteration
+(see the \strong{The frozen set} section).
 \code{scope} limits what may enter, not what may leave.
 This is the SAS \code{SELECTION = STEPWISE} strategy.  \code{max_move} caps how
 often a single variable may oscillate before it is frozen.}
@@ -404,27 +401,30 @@ information-criterion search.}
 }
 }
 
-\section{Known limitation (the frozen set)}{
+\section{The frozen set}{
 
 
-In a two-way screen (\code{direction = "both"}), \verb{$scope$frozen} can name a
-variable that the final model does not contain.  Each two-way iteration
-makes a forward step and then a backward step, and the sets of protected
-variables are fixed at the start of the iteration.  A variable that the
-forward step freezes can therefore still be dropped by the backward step
-that follows it, so it is reported as frozen while the final model
-excludes it.  Nothing warns when this happens.
+A variable that has moved (entered or left) more than \code{max_move} times
+is frozen: it is held in the state it is in, in the model or out of it,
+for the rest of the run, and listed in \verb{$scope$frozen}.
 
-Forward-only and backward-only screens are not affected: a forward-only
-screen never makes a backward step to drop the frozen variable, and a
-backward-only screen never makes a forward step to freeze it on entry.
-In those, \verb{$scope$frozen} and the final model agree.
+The freeze takes effect at the end of the iteration in which the variable
+reached the cap.  A two-way iteration (\code{direction = "both"}) makes a
+forward step and then a backward step, so a variable that reaches the
+cap by entering and is dropped by the same iteration's backward step is
+frozen \strong{out}.  Its \code{"frozen"} row in \verb{$steps} follows the \code{"drop"}.  A
+variable is therefore in the final model exactly when it was in the model
+when it was frozen, and \verb{$scope$frozen} agrees with the final model.
 
-\strong{When the two disagree, trust the final model and \verb{$steps}.}  The
-final model is what was selected, and \verb{$steps} records both the
-\code{"frozen"} row and the \code{"drop"} that followed it.  Read \verb{$scope$frozen}
-only as the list of variables that reached the \code{max_move} cap, not as a
-list of variables held in the model.
+Earlier versions froze such a variable as it entered and then dropped it
+anyway, so \verb{$scope$frozen} could name a variable the final model did not
+contain (#580).
+
+This is not PROC HAZARD's MOVE rule.  PROC HAZARD counts only a
+variable's exits, makes one move per step, removal first, and bars the
+variable it last moved from re-entering at once, so it only ever freezes
+a variable out of the model.  \code{max_move} counts entries and exits alike,
+which is why the SAS translator records \verb{MOVE=} rather than mapping it.
 
 This is a known limitation of this release.  The analysis, including why
 fixing it changes which variables are selected, is in

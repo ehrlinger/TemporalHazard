@@ -257,7 +257,8 @@ test_that("an entry spelled `_X1` and its drop are one variable to max_move (#44
   # Once a bare "_X1" can enter, the entry carries the spelling and the drop
   # the label `` `_X1` ``. Counted under both, the variable took twice
   # max_move moves to freeze. A noise column enters (p < slentry) and fails
-  # slstay, so it oscillates: frozen at step 6, dropped at step 7, stopped.
+  # slstay, so it oscillates: its fifth entry reaches max_move, the same
+  # iteration drops it (step 6), and it is frozen out (step 7; #580).
   withr::local_seed(2L)
   d0 <- rrt_avc()
   d <- data.frame(d0, `_X1` = stats::rnorm(nrow(d0)), check.names = FALSE)
@@ -267,7 +268,7 @@ test_that("an entry spelled `_X1` and its drop are one variable to max_move (#44
                                       slentry = 0.99, slstay = 0.2,
                                       max_steps = 20L, trace = FALSE))
   expect_identical(sum(sw$steps$action == "enter"), 3L)
-  expect_identical(sw$steps$action[6L], "frozen")
+  expect_identical(sw$steps$action[6:7], c("drop", "frozen"))
   expect_identical(nrow(sw$steps), 7L)
   expect_false(sw$criteria$hit_max_steps)
   expect_identical(sw$scope$frozen, "`_X1`")
