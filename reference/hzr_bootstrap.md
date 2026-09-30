@@ -335,17 +335,16 @@ base <- hazard(
 bs_sel <- hzr_bootstrap(base, n_boot = 20, seed = 123,
                          scope = ~ age + mal,
                          slentry = 0.3, slstay = 0.2)
-#> Warning: Stepwise selection stopped because no remaining candidate could be tested for entry: its score statistic, or its Wald statistic for want of a variance, could not be computed (1 candidate score(s) were NA across the run). This is not the same as no candidate meeting `slentry` or `slstay`: the screen stopped without being able to test them. Causes: 1 x the current model's information matrix could not be inverted, so no candidate could be scored at that step.
-#> Warning: 9 of 20 successful replicates stopped because no remaining candidate could be tested -- the score statistic, or for a removal the Wald statistic, could not be computed -- rather than because no candidate met `slentry` or `slstay`. Every reported selection frequency is biased by them: a candidate they could not test for entry counts as not selected, and one they could not test for removal as selected. Causes: 10 x the current model's information matrix could not be inverted, so no candidate could be scored at that step.
+#> Warning: 9 of 20 successful replicates entered at least one variable on a Wald test rather than on the score statistic (9 candidate(s) in total), because the score could not test them. Those entries were decided by a different criterion from the rest of the run, and they are in the pooled frequencies on the same footing as everything else. See `$n_wald_fallbacks`.
 print(bs_sel)
 #> Bootstrap inference for hazard model
 #> Mode: embedded stepwise selection 
 #> Replicates: 20 successful, 0 failed
 #> 
 #>  parameter  n pct    mean     sd     min     max ci_lower ci_upper
-#>         mu 20 100  0.0004 0.0006  0.0000  0.0023   0.0000   0.0021
-#>         nu 20 100  0.2202 0.0148  0.1917  0.2458   0.1963   0.2432
-#>        mal 18  90  0.9822 0.3429  0.5118  1.6183   0.5286   1.5530
-#>        age 11  55 -0.0067 0.0030 -0.0106 -0.0022  -0.0104  -0.0025
+#>        age 20 100 -0.0067 0.0030 -0.0120 -0.0022  -0.0114  -0.0027
+#>         mu 20 100  0.0005 0.0006  0.0001  0.0023   0.0001   0.0021
+#>         nu 20 100  0.2255 0.0142  0.2041  0.2620   0.2061   0.2543
+#>        mal 19  95  0.8695 0.2897  0.4850  1.3571   0.4970   1.3289
 # }
 ```

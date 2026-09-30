@@ -273,17 +273,21 @@ augmented with:
   whose effect is too large for the score test's approximation at zero,
   which are typically the strongest variables on offer rather than
   degenerate ones. Candidates with that cause, or with
-  `coefficient_diverging`, are refit and tested by Wald automatically,
-  counted in `n_wald_fallbacks`. A candidate still reaches
+  `coefficient_diverging`, `information_nonpositive` or
+  `nuisance_singular`, are refit and tested by Wald automatically,
+  counted in `n_wald_fallbacks`. `nuisance_singular` is a fault of the
+  score test at the current model, whose information matrix could not be
+  formed or inverted, so it applies to every candidate at that step and
+  each of them is refitted. A candidate still reaches
   `uncomputable_reasons` when that refit fails, or when its cause is any
-  other, which no refit can rescue. Read `uncomputable_reasons` for
-  which one it was in any given run. For every criterion it also carries
-  `refit_failures` (the `"var"` / `"var@phase"` tokens of candidate
-  moves whose refit errored, failed to converge, or was refused because
-  the move would not change the model – a drop that removes no design
-  column, \#320), `refit_failure_reasons` (why each one failed or was
-  refused: the refit's error message, that it did not converge, or that
-  the move changes nothing; named by the same tokens),
+  other, for which no refit is attempted. Read `uncomputable_reasons`
+  for which one it was in any given run. For every criterion it also
+  carries `refit_failures` (the `"var"` / `"var@phase"` tokens of
+  candidate moves whose refit errored, failed to converge, or was
+  refused because the move would not change the model – a drop that
+  removes no design column, \#320), `refit_failure_reasons` (why each
+  one failed or was refused: the refit's error message, that it did not
+  converge, or that the move changes nothing; named by the same tokens),
   `n_refit_failures`, and `stopped_refit_failed` (`TRUE` when the run
   ended on an iteration in which a refit failed or a move was refused. A
   refit failure is a screen that could not test its candidates, rather

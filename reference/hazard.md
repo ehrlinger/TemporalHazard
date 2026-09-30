@@ -286,17 +286,19 @@ and `correlation = NA`, and `se_metric`, its standard error on the log
 scale; only a g3 shape, `gamma`, `alpha` or `eta`, is named this way);
 `NULL` when the fit was examined and is well identified; and `NA` when
 the check could not run because no usable Hessian was available, which
-includes an unfitted object and an install without the suggested
-numDeriv. Test with `is.list(fit$fit$weak)`, not `!is.null()`: the `NA`
-case has not been examined and must not be read as a clean result),
-`engine` (implementation tag, `"native-r-m2"`), and two fields recording
-what the fit did not do: `degraded`, a character vector of the steps not
-performed, in the fixed order `"fitting"`, `"standard_errors"`,
-`"conserved_phase_variance"`, `"weak_direction_check"`,
-`"boundary_check"`, `"conservation_of_events"`, and empty when nothing
-was lost; and `degraded_causes`, a character vector with the same names
-giving the reason for each.
-[`print()`](https://rdrr.io/r/base/print.html) and
+includes an unfitted object, an install without the suggested numDeriv,
+and an ill-conditioned fit in which an estimated parameter has no finite
+variance and no ridge was found among the others, since that parameter
+was not examined. Test with `is.list(fit$fit$weak)`, not `!is.null()`:
+the `NA` case has not been examined and must not be read as a clean
+result), `engine` (implementation tag, `"native-r-m2"`), and two fields
+recording what the fit did not do: `degraded`, a character vector of the
+steps not performed, in the fixed order `"fitting"`,
+`"standard_errors"`, `"conserved_phase_variance"`,
+`"weak_direction_check"`, `"boundary_check"`,
+`"conservation_of_events"`, and empty when nothing was lost; and
+`degraded_causes`, a character vector with the same names giving the
+reason for each. [`print()`](https://rdrr.io/r/base/print.html) and
 [`summary()`](https://rdrr.io/r/base/summary.html) always show them as a
 "Not done in this run" block, which reads "none" when nothing was lost.
 `fit$fit$weak` is `NA` exactly when `"weak_direction_check"` is listed.
@@ -722,10 +724,10 @@ summary(fit2)
 #> Coefficients:
 #>          estimate   std_error     z_stat      p_value
 #> mu    0.121938323 0.062299561  1.9572902 5.031335e-02
-#> nu    1.143693956 0.084297244 13.5673944 6.250475e-42
+#> nu    1.143693955 0.084297244 13.5673944 6.250475e-42
 #> beta1 0.001710112 0.008807807  0.1941586 8.460517e-01
 #> beta2 0.156102262 0.090593058  1.7231151 8.486772e-02
-#> beta3 0.017258366 0.362941256  0.0475514 9.620738e-01
+#> beta3 0.017258365 0.362941256  0.0475514 9.620738e-01
 
 # \donttest{
 # -- Parametric survival with Kaplan-Meier overlay -----------------

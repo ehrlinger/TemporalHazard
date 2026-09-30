@@ -4,6 +4,49 @@
 
 ### Bug fixes
 
+- **`hzr_stepwise(criterion = "score")` now refits and Wald-tests two
+  more kinds of candidate it could not score
+  ([\#570](https://github.com/ehrlinger/TemporalHazard/issues/570)).**
+  The score criterion refits a candidate whose score test breaks down
+  and tests it by Wald, but only for two reasons. Two others were
+  declined untested: `nuisance_singular`, where the current model’s
+  information matrix cannot be formed or inverted, and
+  `information_nonpositive`, where the candidate’s own observed
+  information at zero is not positive. Neither says the candidate is
+  unusable, and a refit tests it. The first is a fault of the score test
+  at the current fit and applies to every candidate at that step, so the
+  screen stopped having tested nothing; with the second, a weaker
+  variable could enter in the untested one’s place. It is reached by
+  ordinary fits. On `avc` with a Weibull base and the scope
+  `~ age + mal + com_iv`, the score screen entered `com_iv` and then
+  stopped, where `criterion = "wald"` enters `com_iv`, `mal` and `age`:
+  with `com_iv` in the model, the numeric information the score test
+  needs could not be formed, though the fit itself was sound. The score
+  screen now reaches the Wald selection, with four refits to Wald’s six.
+  In
+  [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
+  select mode on the same base (five replicates, scope `~ age + mal`),
+  four replicates stopped untested and `age` and `mal` were selected in
+  one and three; none stops now, and both are selected in all five.
+  `$criteria$n_wald_fallbacks` counts these refits as before. A step
+  whose information cannot be formed now refits every candidate it would
+  have scored, which is what `criterion = "wald"` does at every step. A
+  candidate that is constant, non-numeric or not a single column is
+  still declined without a refit. The warning for a candidate tested by
+  neither criterion now covers every reason that is refitted, in
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  and in
+  [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md).
+
+- **A fit whose covariance mostly failed is no longer reported as
+  examined for a weakly identified direction
+  ([\#570](https://github.com/ehrlinger/TemporalHazard/issues/570)).**
+  `fit$fit$weak` is `NULL` when the check ran and found no ridge, and
+  `NA` when it could not run. When an ill-conditioned fit had a finite
+  variance for fewer than two of its parameters, there was nothing to
+  examine, yet `weak` was `NULL` and `weak_direction_check` was missing
+  from `fit$degraded`. It is now `NA`, with the cause recorded.
+
 - **The multiphase score was wrong for an early or late phase with a
   very small `t_half`
   ([\#574](https://github.com/ehrlinger/TemporalHazard/issues/574)).
