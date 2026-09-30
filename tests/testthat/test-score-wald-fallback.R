@@ -34,12 +34,30 @@ planted <- function(seed = 11, n = 400, beta = 0.9) {
 # base fit up front (.hzr_refit_blocker(), #159), because every candidate
 # refit would fail.  Nothing about the Wald fallback depends on the
 # interface -- the score criterion sees the same fitted MLE either way.
+#
+# The early phase's shapes are FIXED (#565). With them free the base has no
+# maximum -- the data are exponential, so the early phase is unidentified --
+# and once the optimizer followed the gradient of the CoE objective it ran
+# along that ridge to a point where the base information is singular. Every
+# candidate then came back `nuisance_singular`, not x1 alone as
+# `information_indefinite`, and the two assertions below lost their meaning.
+# With the shapes fixed the base is identified and those premises hold; they
+# are asserted in `expect_planted_premises()`.
 planted_fit <- function(D) {
   suppressWarnings(hazard(
     survival::Surv(tt, ev) ~ 1, data = D, dist = "multiphase",
-    phases = list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0),
+    phases = list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0,
+                                    fixed = "shapes"),
                   const = hzr_phase("constant")),
     fit = TRUE))
+}
+
+# The base is a maximum and its nuisance block inverts, so an untestable
+# candidate is untestable because of its own information, not the base's.
+expect_planted_premises <- function(fit) {
+  expect_true(isTRUE(fit$fit$converged))
+  expect_lte(fit$fit$rel_gradient, .Machine$double.eps^(1 / 3))
+  expect_true(isTRUE(.hzr_score_nuisance(fit)$ok))
 }
 
 test_that("the score statistic itself is unchanged for an untestable candidate", {
@@ -47,9 +65,16 @@ test_that("the score statistic itself is unchanged for an untestable candidate",
   # Parity guard. The divergence from SAS is in the handling, not in Q, so
   # .hzr_score_q() must still decline x1 with the same reason as before.
   D <- planted()
-  q <- .hzr_score_q(planted_fit(D), var = "x1", phase = "const", data = D)
+  fit <- planted_fit(D)
+  expect_planted_premises(fit)
+  q <- .hzr_score_q(fit, var = "x1", phase = "const", data = D)
   expect_true(is.na(q$stat))
   expect_identical(q$reason, "information_indefinite")
+  # x1 alone: the noise candidates are scored.
+  for (v in c("x2", "x3")) {
+    expect_false(is.na(.hzr_score_q(fit, var = v, phase = "const",
+                                    data = D)$stat))
+  }
 })
 
 test_that("the planted strong effect is selected, not the noise variables", {
@@ -58,8 +83,10 @@ test_that("the planted strong effect is selected, not the noise variables", {
   # the fallback the screen entered x2 and x3 and never tested x1 -- a
   # confident, plausible, wrong selection.
   D <- planted()
+  base <- planted_fit(D)
+  expect_planted_premises(base)
   sw <- suppressWarnings(hzr_stepwise(
-    fit = planted_fit(D), scope = list(const = ~ x1 + x2 + x3),
+    fit = base, scope = list(const = ~ x1 + x2 + x3),
     data = D, direction = "both", slentry = 0.05))
 
   steps <- as.data.frame(sw)
