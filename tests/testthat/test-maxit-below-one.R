@@ -65,11 +65,15 @@ test_that("the refusal holds for a model that used to ignore maxit (#541)", {
 test_that("hzr_stepwise() refuses a bad maxit once, before any refit (#541)", {
   skip_on_cran()
   base <- fit_weibull(100)
-  expect_error(
+  screen <- function(maxit) {
     withCallingHandlers(
-      hzr_stepwise(base, scope = c("mal", "nyha"), control = list(maxit = 0)),
-      warning = function(w) invokeRestart("muffleWarning")),
-    "control\\$maxit")
+      hzr_stepwise(base, scope = c("mal", "nyha"), data = maxit_avc(),
+                   control = list(maxit = maxit), trace = FALSE),
+      warning = function(w) invokeRestart("muffleWarning"))
+  }
+  # Known positive: the same screen with a valid limit runs.
+  expect_s3_class(screen(100), "hzr_stepwise")
+  expect_error(screen(0), "control\\$maxit")
 })
 
 test_that("an unfitted specification with a bad maxit is refused too (#541)", {
