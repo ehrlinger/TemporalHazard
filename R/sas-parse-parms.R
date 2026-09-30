@@ -49,6 +49,33 @@
 # PROC HAZARD reads the statement: never judged as a syntax error.
 .hzr_sas_is_macro <- function(x) grepl("[&%][A-Za-z_]", x)
 
+# `x` with each macro call's argument list set aside, for the comma checks
+# (#479). A user macro's arguments are the macro processor's, and an empty
+# one is valid SAS (`%F(A,,B)`), so the whole call becomes one item. A
+# quoting function is different: SAS passes its argument through as text, so
+# `%STR(A,,B)` reaches PROC HAZARD as `A,,B` and is kept. Parentheses are
+# matched by depth, so a `(` inside the arguments does not end the call. A
+# name built from a macro variable (`%&M(...)`, `%F&N(...)`) is a call too,
+# whose name is unknown here, so it is never read as a quoting function. An
+# unclosed call is left as written.
+.hzr_sas_macro_calls_set_aside <- function(x) {
+  quoting <- c("STR", "NRSTR", "QUOTE", "NRQUOTE", "BQUOTE", "NRBQUOTE")
+  repeat {
+    m <- regexpr("%[A-Za-z_&][A-Za-z0-9_&.]*[[:space:]]*[(]", x)
+    if (m < 0L) return(x)
+    open <- m + attr(m, "match.length") - 1L
+    chars <- strsplit(substring(x, open), "", fixed = TRUE)[[1L]]
+    close <- match(0L, cumsum((chars == "(") - (chars == ")")))
+    if (is.na(close)) return(x)
+    close <- open + close - 1L
+    name <- toupper(trimws(substring(x, m + 1L, open - 1L)))
+    x <- paste0(substring(x, 1L, m - 1L),
+                if (name %in% quoting) substring(x, open + 1L, close - 1L)
+                else "%CALL",
+                substring(x, close + 1L))
+  }
+}
+
 .hzr_parms_unresolved_why <- function(op) {
   if (.hzr_sas_is_macro(op)) .hzr_parms_unresolved_macro_reason else
     .hzr_parms_unresolved_reason
@@ -433,18 +460,25 @@
   # (hazard_y.y:206-207), so a statement with no item, an empty item, or a
   # leading or trailing comma is a parse error. The binary refuses each
   # with SYNTAX (tests/testthat/fixtures/paren-reset-oracle.csv); the split
-  # below dropped them without a word (#461 review). Not judged where a
-  # macro reference could expand to the missing item. The variables that
-  # are there are unambiguous, so it takes the #440 route, warn and fit,
-  # rather than the #340 stop (U1 ruling, 2026-09-22).
+  # below dropped them without a word (#461 review). A macro reference can
+  # hide what an item is, not whether a `,` has an item beside it, so a
+  # macro elsewhere in the statement no longer exempts the check: no plain
+  # variable fills the empty item (#479). (A macro that expands to `;` and
+  # a comment could still absorb what follows it, which this translation
+  # does not model.) A statement that is a macro and nothing else is not
+  # judged. The variables that are there are
+  # unambiguous, so it takes the #440 route, warn and fit, rather than the
+  # #340 stop (U1 ruling, 2026-09-22).
   empty_item <- syntax_error(paste(
     "a phase statement needs at least one variable, and each `,` a variable",
     "on either side (hazard_y.y:206-207), so the parser fails",
     "(yyerror.c:19)"))
   for (piece in x) {
     t <- trimws(piece)
-    if (!.hzr_sas_is_macro(t) &&
-        (!nzchar(t) || grepl("^,|,$|,[[:space:]]*,", t))) {
+    # A macro call's own arguments are the macro processor's, except a
+    # quoting function's, which PROC HAZARD reads as text.
+    t_items <- .hzr_sas_macro_calls_set_aside(t)
+    if (!nzchar(t) || grepl("^,|,$|,[[:space:]]*,", t_items)) {
       shown <- if (nzchar(t)) t else "(no variable)"
       bad(shown, empty_item)
       not_a_name <- c(not_a_name, paste0(shown, ": ", empty_item))
