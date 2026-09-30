@@ -97,14 +97,13 @@ NULL
 #'   when it errors.  A non-NULL, non-conformant return raises a warning and
 #'   also falls back to the numerical Hessian.
 #' @param gradient_exact Logical; `TRUE` (the default) when `gradient_fn` is
-#'   the gradient of the objective being maximised. Conservation of Events
-#'   passes `FALSE`: its `gradient_fn` is the partial score at the conserved
-#'   theta, which leaves out how the conserved `log_mu` moves with the free
-#'   parameters. SAS/C's acceptance test is then computed from finite
-#'   differences of the objective itself, with the scale re-solved at every
-#'   step as SAS/C does (`setobj.c`). The `nlm()` continuation keeps the
-#'   analytic score: with finite differences it walks onto the CoE solve's
-#'   discontinuity where no events are left to conserve.
+#'   the gradient of the objective being maximised. When `FALSE`, SAS/C's
+#'   acceptance test is computed from finite differences of the objective
+#'   itself, while the `nlm()` continuation keeps `gradient_fn`. No fit in
+#'   the package passes `FALSE`: Conservation of Events did, while its
+#'   `gradient_fn` was the partial score at the conserved theta, and since
+#'   #565 that gradient carries the term for how the conserved `log_mu`
+#'   moves with the free parameters.
 #' @param sign_bounded Integer positions in `theta_start` whose
 #'   finite-difference stencil must not cross 0 (the multiphase shape `m`,
 #'   where the phase families meet in a cusp). Used only when

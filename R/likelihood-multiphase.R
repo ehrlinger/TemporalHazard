@@ -2393,9 +2393,10 @@
     theta_start_optim <- theta_start
   }
 
-  # Positions, in the optimizer's vector, of each free shape m. The
-  # finite-difference acceptance check (gradient_exact = FALSE) must not
-  # straddle m = 0, where the cdf and hazard families meet in a cusp (#251).
+  # Positions, in the optimizer's vector, of each free shape m. A
+  # finite-difference acceptance check (gradient_exact = FALSE, which no fit
+  # passes since #565) must not straddle m = 0, where the cdf and hazard
+  # families meet in a cusp (#251).
   # Taken from the layout -- log_mu, log_t_half, nu, m, then covariates --
   # not from names, which a covariate called m would collide with.
   mu_pos <- .hzr_log_mu_positions(phases, covariate_counts)

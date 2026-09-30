@@ -497,11 +497,10 @@ estimates are unreliable, while others, such as a finite-difference score
 that needed a point where the log-likelihood is not usable, say nothing
 against them. Which route it took is recorded in
 \code{fit$fit$rel_gradient_reason}, \code{NA_character_} when the test did run, and
-\code{print()} and \code{summary()} show it. Under Conservation of Events
-the analytic score omits how the conserved scale moves, so the test is
-computed from finite differences of the log-likelihood with that scale
-re-solved, as SAS/C does; the continuation still uses the analytic score,
-so a CoE fit can honestly end with the test not met. A warning is raised only for code 4, the
+\code{print()} and \code{summary()} show it. Under Conservation of Events the
+conserved scale is re-solved from the other parameters at every step, as
+SAS/C does, and the score used by the optimizer, the continuation and the
+test includes how that scale moves with them. A warning is raised only for code 4, the
 iteration limit (raise \code{control$maxit}), and code 5, where the
 log-likelihood kept rising along some direction and the model may have no
 maximum. Codes 2 and 3, where SAS/C prints a caution, are recorded without

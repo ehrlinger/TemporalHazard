@@ -2,6 +2,22 @@
 
 ## Bug fixes
 
+* **Multiphase fits under Conservation of Events could stop short of the
+  maximum and report `converged = TRUE` (#565). Multiphase estimates from
+  earlier versions, fitted with `conserve = TRUE` (the default), may be
+  wrong.** Under Conservation of Events one phase's scale is re-solved from
+  the other parameters at every step. The optimizer was given the score at
+  that solved scale without the term for how the scale moves with the other
+  parameters, so it followed a direction that was not the gradient of the
+  log-likelihood it was maximising. On the `avc` data, a two-phase model
+  with six covariates stopped at a log-likelihood of -184.462 where SAS
+  reaches -182.659. The optimizer now receives the full gradient, and that
+  fit reaches -182.659 from the default start. Refit any multiphase model
+  fitted with Conservation of Events; `conserve = FALSE` fits are not
+  affected. On that fit the relative-gradient test recorded in
+  `fit$fit$rel_gradient` had failed (0.311 against a limit of about 6e-6),
+  with no warning.
+
 * **Multiphase stepwise refits now start from the model they extend
   (#551). Multiphase selections, and `hzr_bootstrap()` select-mode
   frequencies, from earlier versions may be wrong.** Each candidate refit
