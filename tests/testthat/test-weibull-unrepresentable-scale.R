@@ -112,6 +112,35 @@ test_that("mu * time overflowing does not make the cumulative hazard Inf (#566)"
                                  se.fit = TRUE))
   expect_equal(ci$fit, truth, tolerance = 1e-10)
 
+  # With a standard error: the centred fit, rewritten exactly in raw-x
+  # coordinates, is the same model, so its predictions and their standard
+  # errors are the oracle. beta * xc = beta * x - 1000 * beta moves the
+  # intercept: log(mu_raw) = log(mu_c) - 1000 * beta / nu, about 300 here, so
+  # mu_raw and its variance are finite while mu_raw * 1e200 is not.
+  d <- .w566_data(60, -0.06)
+  ctr <- .w566_fit(survival::Surv(time, dead) ~ xc, d, c(1, 0.2, -0.06))$fit
+  raw <- .w566_fit(survival::Surv(time, dead) ~ x, d,
+                   c(exp(300), 0.2, -0.06))$fit
+  th <- unname(coef(ctr))
+  mu_raw <- exp(log(th[1]) - 1000 * th[3] / th[2])
+  jac <- rbind(c(mu_raw / th[1], mu_raw * 1000 * th[3] / th[2]^2,
+                 -mu_raw * 1000 / th[2]),
+               c(0, 1, 0), c(0, 0, 1))
+  raw$fit$theta[] <- c(mu_raw, th[2], th[3])
+  raw$fit$vcov[] <- jac %*% vcov(ctr) %*% t(jac)
+  expect_true(is.finite(mu_raw) && all(is.finite(raw$fit$vcov)))
+  expect_false(is.finite(mu_raw * 1e200))
+  ndf <- d[1:3, ]
+  ndf$time <- c(0.5, 2, 1e200)
+  ndc <- ndf
+  for (type in c("cumulative_hazard", "survival")) {
+    p_raw <- predict(raw, newdata = ndf, type = type, se.fit = TRUE)
+    p_ctr <- predict(ctr, newdata = ndc, type = type, se.fit = TRUE)
+    expect_true(all(is.finite(p_ctr$fit)) && all(is.finite(p_ctr$se.fit)))
+    expect_equal(p_raw$fit, p_ctr$fit, tolerance = 1e-8)
+    expect_equal(p_raw$se.fit, p_ctr$se.fit, tolerance = 1e-6)
+  }
+
   # Ordinary values are unchanged: the log-scale form against the power form.
   ord <- hazard(survival::Surv(int_dead, dead) ~ age, data = a,
                 dist = "weibull", theta = c(0.0123, 1.7, 0.01), fit = FALSE)
@@ -120,4 +149,32 @@ test_that("mu * time overflowing does not make the cumulative hazard Inf (#566)"
     suppressWarnings(predict(ord, newdata = nd2, type = "cumulative_hazard")),
     (0.0123 * nd2$time)^1.7 * exp(0.01 * nd2$age), tolerance = 1e-12
   )
+})
+
+
+test_that("an overflowed variance gives NA standard errors, not wrong ones (#566)", {
+  # log(mu) is about 600: mu is finite, so the fit raises no warning, but its
+  # variance carries mu^2 and is Inf. predict() read that as a fixed
+  # parameter and returned a standard error 187 times the centred fit's
+  # (16.85 against 0.0901) on main fcc6501d.
+  d <- .w566_data(115, -0.115)
+  raw <- .w566_fit(survival::Surv(time, dead) ~ x, d, c(exp(500), 0.2, -0.115))
+  ctr <- .w566_fit(survival::Surv(time, dead) ~ xc, d, c(1, 0.2, -0.115))
+  expect_identical(raw$n_scale, 0L)
+  expect_true(is.finite(coef(raw$fit)[[1]]))
+  expect_identical(unname(vcov(raw$fit)[1, 1]), Inf)
+  nd <- d[1:2, ]
+  nd$time <- c(0.5, 2)
+  p_ctr <- predict(ctr$fit, newdata = nd, type = "cumulative_hazard",
+                   se.fit = TRUE)
+  expect_warning(
+    p_raw <- predict(raw$fit, newdata = nd, type = "cumulative_hazard",
+                     se.fit = TRUE),
+    "infinite variance", fixed = TRUE
+  )
+  # The value is right; its standard error and limits are withheld.
+  expect_equal(p_raw$fit, p_ctr$fit, tolerance = 1e-3)
+  expect_true(all(is.na(p_raw$se.fit)))
+  expect_true(all(is.na(p_raw$lower)) && all(is.na(p_raw$upper)))
+  expect_true(all(is.finite(p_ctr$se.fit)))
 })

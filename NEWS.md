@@ -29,7 +29,10 @@
   still reports `converged = TRUE`: it is sound, and only its scale cannot
   be reported. Separately, a finite `mu` whose product with a large time
   overflowed gave a cumulative hazard of `Inf`; that is now computed on
-  the log scale and is finite.
+  the log scale and is finite. And where `mu` is finite but its variance
+  overflows, `predict(se.fit = TRUE)` returned a standard error 187 times
+  too large in the case measured; it now returns `NA` standard errors and
+  limits, with a warning.
 
 * **Multiphase stepwise refits now start from the model they extend
   (#551). Multiphase selections, and `hzr_bootstrap()` select-mode

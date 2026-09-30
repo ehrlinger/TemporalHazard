@@ -358,6 +358,18 @@ NULL
             "standard errors and CLs will be NA.", call. = FALSE)
     return(NULL)
   }
+  # A fixed or masked parameter carries an NA variance and is dropped from the
+  # sandwich below. An infinite variance is not that: it is a variance that
+  # overflowed, as a Weibull mu near exp(600) has (its variance carries
+  # mu^2), and dropping it would compute the standard error as if the
+  # parameter were known exactly (#566).
+  if (any(is.infinite(diag(vcov_mat)))) {
+    warning("Variance-covariance matrix has an infinite variance (a parameter ",
+            "too large for its variance to be represented); standard errors ",
+            "and CLs will be NA. Centre or rescale the covariates and refit.",
+            call. = FALSE)
+    return(NULL)
+  }
   free_idx <- which(is.finite(diag(vcov_mat)))
   if (length(free_idx) < p) {
     free_submat <- vcov_mat[free_idx, free_idx, drop = FALSE]
