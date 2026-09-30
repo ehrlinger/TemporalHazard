@@ -10,7 +10,10 @@
   Conservation ratio of 0.227, with no warning. `hzr_gof()` now warns with
   the number of patients left out, as it already did on the default grid.
   The `"summary"` attribute gains `n_tallied`, the number counted, and
-  `print()` adds a note when it is below `n`.
+  `print()` adds a note when it is below `n`. A patient with case weight 0
+  adds nothing to either tally, so one left off the grid is not reported.
+  Code that checks the summary's names, or runs with `options(warn = 2)`
+  over a custom grid, sees the change.
 
 * **A Conservation of Events fit whose likelihood is higher with the
   conserved phase switched off is now recorded and warned about (#261).**

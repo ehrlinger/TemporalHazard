@@ -37,9 +37,12 @@ covariate means for a model with covariates.  For plotting against
 means for a model with covariates.  For plotting; not used for
 \code{cum_expected}.}
 \item{cum_observed}{Cumulative observed events to this time, weighted
-by the case weights for a weighted fit.}
+by the case weights for a weighted fit.  With a custom
+\code{time_grid}, only the patients whose exit is a grid point up to
+this time are counted (see Details).}
 \item{cum_expected}{Cumulative expected events: over the patients
-leaving follow-up by this time, the sum of each patient's own
+leaving follow-up by this time (with a custom \code{time_grid}, the
+same patients as \code{cum_observed}), the sum of each patient's own
 cumulative hazard at exit minus that at entry, weighted by the case
 weights for a weighted fit.  With \code{time_windows}, both cumulative
 hazards use the patient's covariate window at exit, as the likelihood

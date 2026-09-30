@@ -28,7 +28,7 @@ test_that("n_risk at a custom time_grid is the risk set at that time", {
     e <- if (is.null(entry)) rep(0, nrow(d)) else entry
     # The grid lies between exits, so no subject is tallied (#492).
     expect_warning(g <- hzr_gof(fit, time_grid = grid),
-                   "120 of 120 subjects did not exit at a time_grid point")
+                   "^hzr_gof\\(\\): 120 of 120 subjects did not exit at a time_grid point")
     expect_equal(g$n_risk, .brute_n_risk(grid, e, d$stop))
     # On the default grid the same count is survfit's own n.risk.
     g <- hzr_gof(fit)
@@ -49,7 +49,7 @@ test_that("n_risk at a seq() grid counts the exits tied at each grid time", {
   expect_false(all(grid %in% stop_t))
   # Exits after 1 lie past the grid and are not tallied (#492).
   expect_warning(g <- hzr_gof(fit, time_grid = grid),
-                 paste0(sum(stop_t > 1), " of ", n, " subjects"))
+                 paste0("^hzr_gof\\(\\): ", sum(stop_t > 1), " of ", n, " subjects"))
   expect_equal(g$n_risk, .brute_n_risk(round(grid, 10), rep(0, n), stop_t))
   expect_gt(sum(g$n_event), 0)
 })
@@ -67,7 +67,8 @@ test_that("a seq() grid matches tied exits at large times too", {
   grid <- seq(150, 300, by = 0.1)
   snapped <- round(grid, 1)
   expect_true(any(grid != snapped & snapped %in% stop_t))
-  g <- hzr_gof(fit, time_grid = grid)
+  # Every exit is a grid point, so nothing is left out and nothing is said.
+  expect_no_warning(g <- hzr_gof(fit, time_grid = grid))
   expect_equal(g$n_risk, .brute_n_risk(snapped, rep(0, n), stop_t))
   expect_equal(sum(g$n_event), sum(status))
   expect_equal(g$cum_observed[nrow(g)], sum(status))
@@ -81,9 +82,9 @@ test_that("an unsorted or repeated time_grid is sorted and de-duplicated", {
   kt <- sort(unique(d$stop))
   # Two exit times hold 3 of the 120 subjects (#492).
   expect_warning(sorted <- hzr_gof(fit, time_grid = kt[c(5, 10)]),
-                 "117 of 120 subjects")
+                 "^hzr_gof\\(\\): 117 of 120 subjects")
   expect_warning(shuffled <- hzr_gof(fit, time_grid = kt[c(10, 5, 10)]),
-                 "117 of 120 subjects")
+                 "^hzr_gof\\(\\): 117 of 120 subjects")
   expect_equal(shuffled$time, kt[c(5, 10)])
   expect_equal(shuffled$cum_observed, sorted$cum_observed)
   expect_equal(shuffled$cum_expected, sorted$cum_expected)
@@ -149,14 +150,14 @@ test_that("a custom time_grid that misses exits says so, and print shows it (#49
   }, logical(1))
   expect_lt(sum(held), n)
   expect_warning(g <- hzr_gof(fit, time_grid = grid),
-                 paste0(n - sum(held), " of ", n, " subjects"))
+                 paste0("^hzr_gof\\(\\): ", n - sum(held), " of ", n, " subjects"))
   s <- attr(g, "summary")
   expect_identical(s$n_tallied, sum(held))
   expect_equal(s$total_observed, sum(a$dead[held]))
-  expect_output(print(g), paste0("cover ", sum(held), " of ", n, " subjects"))
+  expect_output(print(g), paste0("totals cover ", sum(held), " of ", n, " subjects"))
   # A grid that holds no exit tallies nothing, and says that too.
   expect_warning(g0 <- hzr_gof(fit, time_grid = seq(0.5, 200.5, by = 1)),
-                 paste0(n, " of ", n, " subjects"))
+                 paste0("^hzr_gof\\(\\): ", n, " of ", n, " subjects"))
   expect_identical(attr(g0, "summary")$n_tallied, 0L)
   # Known negative: a grid holding every exit is silent and covers everyone.
   expect_no_warning(g1 <- hzr_gof(fit, time_grid = sort(unique(a$int_dead))))
@@ -164,4 +165,29 @@ test_that("a custom time_grid that misses exits says so, and print shows it (#49
   expect_equal(attr(g1, "summary")$total_observed, sum(a$dead))
   out <- utils::capture.output(print(g1))
   expect_false(any(grepl("subjects", out, fixed = TRUE)))
+  # An object saved before n_tallied existed prints without the note.
+  old <- g
+  attr(old, "summary")$n_tallied <- NULL
+  expect_false(any(grepl("subjects",
+                         utils::capture.output(print(old)), fixed = TRUE)))
+})
+
+test_that("a zero-weight subject off the grid leaves nothing out (#492 review)", {
+  a <- na.omit(avc)
+  w <- rep(1, nrow(a))
+  w[1:5] <- 0
+  fit <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ age + mal, data = a, dist = "weibull",
+    theta = c(mu = 0.01, nu = 0.5, beta_age = 0, beta_mal = 0),
+    weights = w, fit = TRUE))
+  others <- sort(unique(a$int_dead[-(1:5)]))
+  # The grid holds every exit but those of the five zero-weight subjects.
+  expect_gt(sum(!a$int_dead[1:5] %in% others), 0)
+  expect_no_warning(g <- hzr_gof(fit, time_grid = others))
+  s <- attr(g, "summary")
+  expect_identical(s$n_tallied, nrow(a))
+  expect_equal(s$total_observed, sum(w * a$dead))
+  # A positive-weight subject off the grid is still reported.
+  expect_warning(hzr_gof(fit, time_grid = others[-length(others)]),
+                 "^hzr_gof\\(\\): [1-9][0-9]* of ")
 })

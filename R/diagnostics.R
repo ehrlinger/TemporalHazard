@@ -474,9 +474,12 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #'     means for a model with covariates.  For plotting; not used for
 #'     \code{cum_expected}.}
 #'   \item{cum_observed}{Cumulative observed events to this time, weighted
-#'     by the case weights for a weighted fit.}
+#'     by the case weights for a weighted fit.  With a custom
+#'     \code{time_grid}, only the patients whose exit is a grid point up to
+#'     this time are counted (see Details).}
 #'   \item{cum_expected}{Cumulative expected events: over the patients
-#'     leaving follow-up by this time, the sum of each patient's own
+#'     leaving follow-up by this time (with a custom \code{time_grid}, the
+#'     same patients as \code{cum_observed}), the sum of each patient's own
 #'     cumulative hazard at exit minus that at entry, weighted by the case
 #'     weights for a weighted fit.  With \code{time_windows}, both cumulative
 #'     hazards use the patient's covariate window at exit, as the likelihood
@@ -780,12 +783,15 @@ hzr_gof <- function(object, time_grid = NULL) {
   off <- is.na(subject_grid)
   subject_grid[off] <- grid_of(obs_time[off])
   on_grid <- !is.na(subject_grid)
+  # A subject with case weight 0 adds nothing to either tally, so leaving it
+  # out loses nothing and it counts as covered.
+  covered <- on_grid | obs_weights == 0
   # On the default grid every subject should land on its Kaplan-Meier time;
   # say so rather than drop anyone from the tallies silently. A custom grid
   # tallies only the subjects whose exit it holds, which from a seq() grid can
   # be almost none, and the totals and E/O then describe that subset (#492).
-  if (!all(on_grid)) {
-    warning("hzr_gof(): ", sum(!on_grid), " of ", n_total, " subjects did ",
+  if (!all(covered)) {
+    warning("hzr_gof(): ", sum(!covered), " of ", n_total, " subjects did ",
             if (default_grid) {
               "not match a Kaplan-Meier time"
             } else {
@@ -841,7 +847,7 @@ hzr_gof <- function(object, time_grid = NULL) {
     final_residual = residual[length(residual)],
     dist = object$spec$dist,
     n = n_total,
-    n_tallied = sum(on_grid)
+    n_tallied = sum(covered)
   )
 
   class(result) <- c("hzr_gof", "data.frame")
@@ -881,7 +887,7 @@ print.hzr_gof <- function(x, digits = 3, ...) {
   # An object built before n_tallied was recorded has no such field.
   if (!is.null(s$n_tallied) && s$n_tallied < s$n) {
     cat("Note: these totals cover ", s$n_tallied, " of ", s$n, " subjects; ",
-        "the rest exit off the time grid.\n", sep = "")
+        "the rest could not be placed on the time grid.\n", sep = "")
   }
   cat("\nUse plot columns: time, km_surv, par_surv, cum_observed,",
       "cum_expected, residual\n")
