@@ -72,16 +72,48 @@ test_that("cells that agreed before the fix still agree (#574)", {
       expect_lt(e$error, 1e-6, label = paste(type, "Phi at log_t_half =", lth))
     }
   }
+})
+
+test_that("between t_half = 1e-4 and the cap the step is the one it was (#574)", {
   # Near saturation the phase's values carry rounding noise, and a step held
   # at its ordinary size below t_half = 1e-4 divides that noise by too
-  # little: these two cells went from 3e-6 and 7e-7 to 4e-5 and 6e-5 under
-  # such a step. The step grows with 1 / t_half there, up to a cap.
-  e <- thalf_error(-14, nu = 1, m = 1, type = "hazard", what = "Phi")
-  expect_lt(e$oracle_spread, 5e-6)
-  expect_lt(e$error, 1e-5)
-  e <- thalf_error(-20, nu = 1, m = 0.5, type = "cdf", what = "Phi")
-  expect_lt(e$oracle_spread, 5e-6)
-  expect_lt(e$error, 1e-5)
+  # little: against a Richardson oracle it lost digits in 18 of 1096 cells
+  # that had agreed. So the step grows as 1e-4 / t_half there, as the old
+  # linear step did, and the result must be the old one. The reference is
+  # that old difference, written out.
+  eps_rel <- .Machine$double.eps^(1 / 3)
+  Phi <- function(th) {
+    -log(pmax(1 - hzr_decompos(thalf_times, t_half = th, nu = 1, m = 1)$G,
+              .Machine$double.xmin))
+  }
+  cells <- list(list(log_t_half = -12, tol = 5e-7),
+                list(log_t_half = -14, tol = 4e-6))
+  for (cell in cells) {
+    th <- exp(cell$log_t_half)
+    h <- eps_rel * 1e-4
+    old <- th * (Phi(th + h) - Phi(th - h)) / (2 * h)
+    got <- .hzr_phase_derivatives(thalf_times, t_half = th, nu = 1, m = 1,
+                                  type = "hazard")$dPhi_dlog_thalf
+    # The derivative is about -1 at every time here.
+    expect_gt(max(abs(old)), 0.5)
+    expect_lt(max(abs(got - old)) / max(abs(old)), cell$tol,
+              label = paste("hazard Phi at log_t_half =", cell$log_t_half))
+  }
+})
+
+test_that("a subnormal t_half is differenced over its real spacing (#574)", {
+  # For nu = 1, m = 1 and t_half far below t, the cdf density is t_half / t^2
+  # to leading order, and so is its derivative in log_t_half. Subnormal
+  # points are rounded to a coarse grid, so dividing by the nominal step put
+  # this 32% off at t_half = 1e-320. Times small enough that the density
+  # itself is still well above the smallest subnormal.
+  tt <- c(0.1, 0.5)
+  for (th in c(1e-300, 1e-318, 3e-320, 1e-320)) {
+    got <- .hzr_phase_derivatives(tt, t_half = th, nu = 1, m = 1,
+                                  type = "cdf")$dphi_dlog_thalf
+    expect_equal(got / (th / tt^2), c(1, 1), tolerance = 0.02,
+                 label = paste("t_half =", th))
+  }
 })
 
 test_that("a t_half with no room to step returns NaN, not a clean zero (#574)", {
@@ -133,5 +165,6 @@ test_that("the multiphase score for log_t_half is right at the issue's point (#5
   oracle <- numDeriv::grad(obj, theta)
   # The component #574 is about is far from zero here.
   expect_gt(abs(oracle[2]), 1)
+  expect_equal(unname(score)[2], oracle[2], tolerance = 1e-5)
   expect_equal(unname(score), oracle, tolerance = 1e-5)
 })

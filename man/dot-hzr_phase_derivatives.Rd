@@ -46,6 +46,9 @@ changes formula at \code{m = 0} and the two sides meet in a cusp, so for
 order), and for \code{m < 0} the step is capped at 1\% of \verb{|m|} (floored at
 1e-10) and becomes one-sided backward if it would still reach 0.  The
 \code{log_t_half} derivative is a central difference in \code{log_t_half} itself,
-so its step is proportional to \code{t_half} at every scale.
+so its step is proportional to \code{t_half} at every scale. It is \code{NaN} where
+\code{t_half} is too small or too large to step. It is not reliable for a
+\code{"hazard"} phase far past saturation (\code{t_half} below about \code{exp(-25)} at
+times of order 1), where \code{1 - G} has no digits left.
 }
 \keyword{internal}

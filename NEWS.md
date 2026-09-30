@@ -15,7 +15,11 @@
   itself, so the step keeps its proportion to `t_half`. Estimates with a
   fitted `t_half` of `1e-4` or more are unaffected beyond the optimizer's
   own tolerance. A `t_half` too small to step at all (below about
-  `1e-320`) now gives `NaN` for this derivative, where it gave a number.
+  `3e-321`) now gives `NaN` for this derivative, where it gave a number.
+  One case is improved but not cured: for a `"hazard"` phase with `t_half`
+  below about `exp(-25)`, at times of order 1, the phase's cumulative
+  hazard has no accurate digits left to difference, and the derivative
+  there is still unreliable.
 
 * **A Wald stepwise entry no longer tests a refit that ended below the
   current model (#538).** The AIC fix below (#490) left two paths open.

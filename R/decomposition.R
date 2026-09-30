@@ -600,7 +600,10 @@ hzr_phase_cumhaz <- function(time, t_half = 1, nu = 1, m = 0,
 #' order), and for `m < 0` the step is capped at 1% of `|m|` (floored at
 #' 1e-10) and becomes one-sided backward if it would still reach 0.  The
 #' `log_t_half` derivative is a central difference in `log_t_half` itself,
-#' so its step is proportional to `t_half` at every scale.
+#' so its step is proportional to `t_half` at every scale. It is `NaN` where
+#' `t_half` is too small or too large to step. It is not reliable for a
+#' `"hazard"` phase far past saturation (`t_half` below about `exp(-25)` at
+#' times of order 1), where `1 - G` has no digits left.
 #'
 #' @param time Numeric vector of positive times.
 #' @param t_half Positive scalar half-life.
@@ -694,21 +697,31 @@ hzr_phase_cumhaz <- function(time, t_half = 1, nu = 1, m = 0,
   # close to saturated, its values carry rounding noise, and the smaller
   # step divides that noise by less. The cap keeps all of them.
   #
-  # Where t_half has no bits left to move (the denormal range, or Inf) the
-  # two points coincide and the quotient would be a clean zero for a
-  # derivative that is not zero. NaN is returned there, as for g3's tau.
+  # The quotient divides by the log spacing of the two points as they were
+  # actually formed, not by the nominal 2 * h. They are the same to rounding
+  # until t_half is subnormal, where the points are rounded to a coarse grid:
+  # at t_half = 1e-320 the nominal divisor put the derivative 32% off.
+  # Where t_half has no bits left to move at all (below about 3e-321, or
+  # Inf) the two points coincide and the quotient would be a clean zero for
+  # a derivative that is not zero. NaN is returned there, as for g3's tau.
+  #
+  # What this does not cure: a phase so far past saturation that its values
+  # are rounding noise. For the "hazard" type, Phi = -log(1 - G) loses every
+  # digit once G rounds to 1, from about t_half = exp(-25) at times of order
+  # 1, and no step recovers a derivative from that.
   h_lt <- eps_rel * min(max(1, 1e-4 / t_half), 120)
   th_plus  <- t_half * exp(h_lt)
   th_minus <- t_half * exp(-h_lt)
-  d_plus  <- if (is.finite(t_half) && th_plus != th_minus) {
+  span <- log(th_plus) - log(th_minus)
+  d_plus  <- if (is.finite(span) && span > 0) {
     perturb_decompos(th_plus, nu, m)
   }
   d_minus <- if (!is.null(d_plus)) perturb_decompos(th_minus, nu, m)
   if (!is.null(d_plus) && !is.null(d_minus)) {
     e_plus  <- extract(d_plus, type)
     e_minus <- extract(d_minus, type)
-    dPhi_dlog_thalf <- (e_plus$Phi - e_minus$Phi) / (2 * h_lt)
-    dphi_dlog_thalf <- (e_plus$phi - e_minus$phi) / (2 * h_lt)
+    dPhi_dlog_thalf <- (e_plus$Phi - e_minus$Phi) / span
+    dphi_dlog_thalf <- (e_plus$phi - e_minus$phi) / span
   } else {
     dPhi_dlog_thalf <- rep(NaN, n)
     dphi_dlog_thalf <- rep(NaN, n)
