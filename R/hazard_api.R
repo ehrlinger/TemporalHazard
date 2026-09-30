@@ -864,7 +864,8 @@ hazard <- function(formula = NULL,
   # `objective` is a top-level argument rather than a `control` element on
   # purpose: it changes the estimand, and burying that among convergence
   # tolerances makes it easy to miss in review.
-  if (objective == "sas" && dist != "multiphase") {
+  # identical(): this runs before `dist` is validated.
+  if (objective == "sas" && !identical(dist, "multiphase")) {
     stop("objective = \"sas\" applies only to dist = \"multiphase\": it ",
          "reproduces PROC HAZARD's interval-censored contribution, and no ",
          "other distribution here is a PROC HAZARD target. Got dist = \"",
@@ -1304,8 +1305,15 @@ hazard <- function(formula = NULL,
     # If x exists, theta must include coefficients for all variates
     # theta = [shape parms ... | covariate coefficients ...]
     # For now, assume theta length determines whether we expect x
+    # Not for a multiphase fit: a phase with its own formula takes no slot
+    # per global column, and the exact per-phase count is checked below
+    # (#551). An unfitted multiphase object keeps the bound it had, which
+    # can refuse a theta of the right length there (#558).
     required_coef <- if (is.null(x_fit)) 0L else ncol(x_fit)
-    if (!is.null(x_fit) && length(theta) < required_coef) {
+    # Scalar-safe: `dist` is validated further down, so an NA or a vector
+    # must not fail here with a base-R message.
+    if (!(identical(dist, "multiphase") && isTRUE(fit)) && !is.null(x_fit) &&
+          length(theta) < required_coef) {
       stop("'theta' length must be >= number of required coefficients (", required_coef, ").", call. = FALSE)
     }
   }
@@ -1361,7 +1369,10 @@ hazard <- function(formula = NULL,
          ".", call. = FALSE)
   }
 
-  if (!is.character(dist) || length(dist) != 1 || !nzchar(dist)) {
+  # is.na(): nzchar(NA) is TRUE, so an NA `dist` passed and failed later on
+  # `dist != "multiphase"` with a base-R message.
+  if (!is.character(dist) || length(dist) != 1 || is.na(dist) ||
+        !nzchar(dist)) {
     stop("'dist' must be a non-empty character scalar.", call. = FALSE)
   }
 
