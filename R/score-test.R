@@ -1126,10 +1126,10 @@
       "the missing values before the screen, so every model uses the same rows"
     ),
     loglik_below_base = paste(
-      "under `criterion = \"aic\"`, the candidate's refit ended with a",
-      "log-likelihood below the current model's, although the candidate",
-      "model contains the current one. That cannot happen at the optimum, so",
-      "the refit did not converge and its AIC could not be compared. More",
+      "the candidate's refit ended with a log-likelihood below the current",
+      "model's, although the candidate model contains the current one. That",
+      "cannot happen at the optimum, so the refit did not converge, and",
+      "neither its AIC nor its Wald test describes a fitted model. More",
       "starting points (`control$n_starts`) or iterations (`control$maxit`)",
       "may let it converge"
     ),
