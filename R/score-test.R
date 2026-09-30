@@ -706,6 +706,98 @@
   )
 }
 
+#' The per-row inputs a fit stores, other than its event times
+#'
+#' Everything the likelihood reads row by row: the status, the interval
+#' bounds, the weights, and the covariate design columns (the global `x`, and
+#' each multiphase phase's design). An input with one value on every row is
+#' left out, since rows cannot be mismatched on it.
+#'
+#' @return A named list of numeric vectors, named for messages. An input
+#'   stored at another length than `time` (a phase design after rows with a
+#'   missing covariate were dropped) keeps that length, so the caller counts
+#'   it as unmatched.
+#' @noRd
+.hzr_fit_row_inputs <- function(current) {
+  d <- current$data
+  cols <- function(m, label) {
+    if (is.null(m) || NCOL(m) == 0L) return(list())
+    m <- as.matrix(m)
+    nm <- colnames(m) %||% paste0("V", seq_len(ncol(m)))
+    stats::setNames(lapply(seq_len(ncol(m)), function(j) as.numeric(m[, j])),
+                    paste0(label, " `", nm, "`"))
+  }
+  xl <- current$fit$x_list
+  inputs <- c(
+    list(status = d$status, `time_lower` = d$time_lower,
+         `time_upper` = d$time_upper, weights = d$weights),
+    cols(d$x, "covariate"),
+    unlist(lapply(names(xl), function(ph) {
+      cols(xl[[ph]], paste0("phase `", ph, "` covariate"))
+    }), recursive = FALSE)
+  )
+  inputs <- Filter(Negate(is.null), inputs)
+  Filter(function(v) length(unique(v)) > 1L, inputs)
+}
+
+#' Check row order within tied event times against the fit's other inputs
+#'
+#' A column of `data` equal to the fit's `time` fixes the order of rows except
+#' within a tie. Each other per-row input the fit stores is then looked for
+#' among `data`'s columns:
+#' - found in order: it settles the rows it tells apart;
+#' - found only as the same (time, value) pairs in another order: the rows
+#'   were reordered within a tie, and the screen is refused;
+#' - not found: it cannot be checked.
+#'
+#' The order is proven when the inputs found tell every row apart, or when
+#' every input is found. In the second case rows can differ in position only
+#' where they are identical in everything the likelihood reads, so the
+#' screen's answer is unchanged (#515).
+#'
+#' @param time The fit's stored event times.
+#' @return `list(proven, moved, unmatched)`: `moved` is `NULL` or
+#'   `c(column, input)`; `unmatched` names the inputs not found.
+#' @noRd
+.hzr_check_rows_within_ties <- function(current, data, time) {
+  n <- length(time)
+  found <- list(time = time)
+  unmatched <- character()
+  inputs <- .hzr_fit_row_inputs(current)
+  for (nm in names(inputs)) {
+    v <- inputs[[nm]]
+    if (length(v) != n) {
+      unmatched <- c(unmatched, nm)
+      next
+    }
+    in_order <- FALSE
+    moved <- NULL
+    for (cn in names(data)) {
+      col <- data[[cn]]
+      if (!(is.numeric(col) || is.logical(col)) || length(col) != n) next
+      col <- as.numeric(col)
+      if (isTRUE(all.equal(col, v, check.attributes = FALSE))) {
+        in_order <- TRUE
+        break
+      }
+      if (is.null(moved) &&
+            isTRUE(all.equal(col[order(time, col)], v[order(time, v)],
+                             check.attributes = FALSE))) {
+        moved <- cn
+      }
+    }
+    if (in_order) {
+      found[[nm]] <- v
+    } else if (!is.null(moved)) {
+      return(list(proven = FALSE, moved = c(moved, nm), unmatched = unmatched))
+    } else {
+      unmatched <- c(unmatched, nm)
+    }
+  }
+  proven <- !length(unmatched) || anyDuplicated(as.data.frame(found)) == 0L
+  list(proven = proven, moved = NULL, unmatched = unmatched)
+}
+
 #' Check `data`'s row order once per screen
 #'
 #' When the refits pair per-row vectors stored on the fit with `data` (the
@@ -720,8 +812,10 @@
 #' `data` through silently (#487). What the fit always stores is its response,
 #' so on that route a column of `data` holding the fit's `time` values is
 #' compared with it: in the fit's order, the rows are taken as aligned; as the
-#' same values in another order, the screen is refused. With no such column
-#' the order cannot be checked, and a classed `hzr_score_rows_unverified`
+#' same values in another order, the screen is refused. With ties in the
+#' times, `.hzr_check_rows_within_ties()` checks the fit's other per-row
+#' inputs as well (#515). With no such column, or ties it cannot resolve, the
+#' order cannot be checked, and a classed `hzr_score_rows_unverified`
 #' warning says so. Called once per screen, on the base fit only: every later
 #' step's fit is a refit on `data` itself.
 #'
@@ -778,9 +872,8 @@
     "the fit was made without `data =`, so it stores no data frame"
   }
   # With ties in the times, a column holding them in order proves nothing
-  # about the rows WITHIN a tie: reordering those leaves it identical. Such a
-  # match is not accepted; the screen warns instead. (A check that can see
-  # within ties is #515.)
+  # about the rows WITHIN a tie: reordering those leaves it identical. The
+  # fit's other per-row inputs are then checked as well (#515).
   tied <- anyDuplicated(time) > 0L
   permuted <- character()
   in_order_tied <- character()
@@ -807,12 +900,28 @@
       call. = FALSE
     )
   }
+  if (length(in_order_tied)) {
+    within <- .hzr_check_rows_within_ties(current, data, time)
+    if (!is.null(within$moved)) {
+      stop(
+        "`data` does not hold the rows the model was fitted on, in the same ",
+        "order: column `", within$moved[1L], "` holds the fit's ",
+        within$moved[2L], " in another order within tied event times. The ",
+        "screen reads each candidate from `data` row by row, so rows ",
+        "reordered within a tie are scored against the wrong observations. ",
+        "Pass the rows in the order the model was fitted on.",
+        call. = FALSE
+      )
+    }
+    if (within$proven) return(invisible(NULL))
+  }
   held <- if (length(in_order_tied)) {
     paste0(
       "; column `", in_order_tied[1L], "` holds the fit's event times in ",
       "order, but those times have ties (", length(unique(time)), " distinct ",
-      "values in ", length(time), " rows), and rows reordered within a tie ",
-      "leave it unchanged"
+      "values in ", length(time), " rows), and no column of `data` holds the ",
+      "fit's ", paste(within$unmatched, collapse = ", "), " in order to tell ",
+      "the tied rows apart"
     )
   } else {
     ", and no column of `data` holds the fit's event times"
@@ -824,7 +933,11 @@
       "test reads each candidate from `data` row by row, so if its rows are ",
       "not in the order the model was fitted on, every candidate is scored ",
       "against the wrong observations. ",
-      if (is.data.frame(frame)) {
+      if (length(in_order_tied)) {
+        paste0("Add to `data` columns holding the fit's ",
+               paste(within$unmatched, collapse = ", "), ", in the order the ",
+               "model was fitted on, to have it checked.")
+      } else if (is.data.frame(frame)) {
         paste0("Include in `data` enough of the columns given to hazard() ",
                "to tell every row apart to have it checked.")
       } else {
