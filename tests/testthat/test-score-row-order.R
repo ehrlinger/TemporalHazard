@@ -157,6 +157,12 @@ test_that("a lookup-only `data` of another length is checked by time (#487)", {
   # `tt` holds the fit's times in order: checked, and screened silently.
   r <- ro_screen_w(fit, D, sc)
   expect_identical(r$sw$steps$variable, "x1")
+  # x1 enters on its Wald-fallback refit, and that refit's better start is
+  # the default one: the warm start stops at a lower optimum with no usable
+  # variance, which left x1 untested and entered x2 (#551).
+  expect_identical(r$sw$fit$refit_start, "default")
+  expect_gt(r$sw$fit$refit_objectives[["default"]],
+            r$sw$fit$refit_objectives[["warm"]])
   expect_identical(r$n_unverified, 0L)
   # The same rows shuffled: `tt` holds the times out of order, so refused.
   expect_error(ro_screen(fit, sh, sc), "column `tt` holds the fit's event")

@@ -14,6 +14,43 @@
   it fits, with a pointer to `hzr_evaluate()` for an evaluation at given
   values. `hzr_stepwise()` checks it once, before any refit.
 
+* **Multiphase stepwise refits now start from the model they extend
+  (#551). Multiphase selections, and `hzr_bootstrap()` select-mode
+  frequencies, from earlier versions may be wrong.** Each candidate refit
+  in `hzr_stepwise()` started from the phase specifications' default
+  values, not from the current model's estimates. The candidate model
+  contains the current one, so from the current estimates, with the new
+  coefficient at 0, a refit cannot end below the current log-likelihood.
+  From the default start it often did, while reporting `converged = TRUE`.
+  On `avc` with the SAS reference base model (early and constant phases,
+  Conservation of Events), five of nine first-step candidates ended below
+  the base, `age` in the early phase by 25.1 log-likelihood units. Every
+  multiphase entry, whether scored by Wald, AIC or the score criterion's
+  Wald fallback, was therefore tested against a model not at its optimum.
+  An accepted step then carried that model forward. Each multiphase refit
+  is now fitted twice and the higher log-likelihood kept: once from the
+  current estimates, matched by parameter name with a new coefficient at 0,
+  which cannot end below the current model, and once from the default start
+  as before, because the likelihood has several optima and that start
+  sometimes reaches a higher one. The default start now holds each fixed
+  shape at the current model's value. It took the phase specification's
+  value, so a model fitted with a user `theta` that set a fixed shape was
+  refit with that shape moved, and the candidate was credited with the
+  gain. `$fit$refit_start` records which start
+  won and `$fit$refit_objectives` both results. Fixed shapes keep their
+  fixed values, the first of several `control$n_starts` is the start
+  itself, and Conservation of Events runs as before. Single-distribution
+  refits already started from the current estimates. Each candidate now
+  costs two fits. A multiphase model whose global formula lists more
+  covariates than its phase formulas use can be refit (it could not once
+  refits were given a start), and a `theta` passed to `hzr_stepwise()`
+  through `...` is refused with a message that says why. `hazard()` now
+  rejects `dist = NA` with its own message; it passed the check and
+  failed later with a base-R error.
+  This applies to every path that refits a multiphase model: `hzr_stepwise()`
+  under each criterion, `hzr_bootstrap()` select mode, and the code
+  `hzr_translate_sas()` emits for a SAS stepwise job.
+
 * **A Conservation of Events fit whose likelihood is higher with the
   conserved phase switched off is now recorded and warned about (#261).**
   Under Conservation of Events the conserved phase's `log_mu` is solved so
@@ -356,6 +393,17 @@
   missing, negative or after the time drops the row. The status chunk warns
   with the number of rows each rule touched, and the data frame itself
   keeps every row.
+* **A macro in a translated phase statement no longer hides an empty item
+  (#479).** `PROC HAZARD` needs a variable on each side of every `,` in
+  `EARLY`, `CONSTANT` and `LATE`, and stops with a syntax error otherwise.
+  `hzr_translate_sas()` skipped that check for a whole statement whenever
+  any item was a macro, so `EARLY , &X;` and `EARLY SEX,, &X;` fitted with
+  no warning and no `$untranslated` row. A macro can stand for an item,
+  but no plain variable fills an empty one, so these now warn and gain a
+  row, as their macro-free forms already did. An empty argument inside a
+  macro call, as in `%F(A,,B)`, belongs to the macro and is not flagged.
+  A quoting function such as `%STR()` passes its argument through as text,
+  so `%STR(A,,B)` is judged as `A,,B`.
 
 # TemporalHazard 1.2.12
 
