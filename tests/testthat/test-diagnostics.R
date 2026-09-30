@@ -194,7 +194,7 @@ test_that("hzr_gof returns correct structure", {
   s <- attr(gof, "summary")
   expect_true(is.list(s))
   expect_named(s, c("total_observed", "total_expected", "final_residual",
-                     "dist", "n"))
+                     "dist", "n", "n_tallied"))
 })
 
 test_that("hzr_gof cumulative observed equals total events", {
@@ -241,7 +241,9 @@ test_that("hzr_gof conservation ratio is near 1 for a converged Weibull fit", {
 test_that("hzr_gof works with custom time grid", {
   fit <- .fit_avc_weibull()
   t_grid <- seq(1, 200, by = 10)
-  gof <- hzr_gof(fit, time_grid = t_grid)
+  # No exit falls on this grid, so the tallies cover no one, and it says so.
+  expect_warning(gof <- hzr_gof(fit, time_grid = t_grid),
+                 "did not exit at a time_grid point")
 
   expect_equal(nrow(gof), length(t_grid))
   expect_equal(gof$time, t_grid)

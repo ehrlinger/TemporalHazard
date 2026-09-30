@@ -26,7 +26,9 @@ Multiphase models additionally include \code{par_cumhaz_<phase>} columns
 for per-phase cumulative hazard contributions.
 A \code{"summary"} attribute contains scalar diagnostics:
 \code{total_observed}, \code{total_expected}, \code{final_residual},
-\code{dist}, \code{n}.
+\code{dist}, \code{n}, \code{n_tallied}.  When \code{n_tallied} is below
+\code{n}, the printed totals cover only those subjects, and a note
+says so.
 }
 \description{
 Print method for hzr_gof

@@ -167,8 +167,11 @@ test_that("custom time_grid: observed and expected cover the same subjects", {
 
   nd <- avc[on_grid, c("age", "mal")]
   nd$time <- avc$int_dead[on_grid]
-  gof <- hzr_gof(fit, time_grid = grid)
+  # The rest exit off the grid and are left out, which is said (#492).
+  expect_warning(gof <- hzr_gof(fit, time_grid = grid),
+                 paste0(sum(!on_grid), " of ", nrow(avc), " subjects"))
   s <- attr(gof, "summary")
+  expect_identical(s$n_tallied, sum(on_grid))
   expect_equal(s$total_observed, sum(avc$dead[on_grid]))
   expect_equal(s$total_expected,
                sum(predict(fit, newdata = nd, type = "cumulative_hazard")),

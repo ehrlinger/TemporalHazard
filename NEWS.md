@@ -2,6 +2,16 @@
 
 ## Bug fixes
 
+* **`hzr_gof()` with a custom `time_grid` now says how many patients its
+  totals leave out (#492).** With a custom grid, a patient is counted in
+  the observed and expected tallies only if their exit time is a grid
+  point. A grid such as `seq(0, max, length.out = 50)` holds almost none,
+  so on the `avc` data the totals covered 1 of 68 events and printed a
+  Conservation ratio of 0.227, with no warning. `hzr_gof()` now warns with
+  the number of patients left out, as it already did on the default grid.
+  The `"summary"` attribute gains `n_tallied`, the number counted, and
+  `print()` adds a note when it is below `n`.
+
 * **A Conservation of Events fit whose likelihood is higher with the
   conserved phase switched off is now recorded and warned about (#261).**
   Under Conservation of Events the conserved phase's `log_mu` is solved so

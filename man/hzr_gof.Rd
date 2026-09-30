@@ -52,7 +52,8 @@ For multiphase models, additional columns are appended for each
 phase: \code{par_cumhaz_<phase>}, also at the covariate means.
 
 An attribute \code{"summary"} is attached with scalar diagnostics:
-total observed events, total expected events, and the final residual.
+total observed events, total expected events, the final residual, and
+\code{n_tallied}, the number of patients the two tallies cover, out of \code{n}.
 }
 \description{
 Compare a fitted hazard model with the data two ways: its survival curve
@@ -122,7 +123,10 @@ gives them, which merges exit times closer together than its tolerance.
 On the default grid every patient lands on a grid point, and \code{hzr_gof()}
 warns if one cannot be placed.  With a custom \code{time_grid}, a patient is
 counted in both tallies only if that time, or failing it their own
-follow-up time, falls on a grid point.
+follow-up time, falls on a grid point.  A grid such as \code{seq()} over the
+follow-up holds few exit times, so \code{hzr_gof()} warns with the number left
+out, and the totals, residual and E/O then describe only the patients
+counted.  Include the exit times in \code{time_grid} to count everyone.
 }
 \examples{
 \donttest{

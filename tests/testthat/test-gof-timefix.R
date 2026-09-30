@@ -91,12 +91,14 @@ test_that("a custom grid of the raw exit times still counts every event", {
   # subject is still found by its raw time. The subject exiting at exactly 1
   # has no grid point and is left out, as documented for custom grids.
   grid <- sort(unique(d$time[d$time != 1]))
-  g <- hzr_gof(fit, time_grid = grid)
+  expect_warning(g <- hzr_gof(fit, time_grid = grid),
+                 paste0("1 of ", nrow(d), " subjects"))
   expect_equal(attr(g, "summary")$total_observed, sum(d$status) - 1)
   # A grid holding only the merged time 1 counts both near-tied subjects,
   # once each, where survfit put them; n_event agrees. Matching the custom
   # grid on raw times alone would count 1 of these 2 events.
-  g <- hzr_gof(fit, time_grid = 1)
+  expect_warning(g <- hzr_gof(fit, time_grid = 1),
+                 paste0(nrow(d) - 2, " of ", nrow(d), " subjects"))
   expect_equal(attr(g, "summary")$total_observed, 2)
   expect_equal(g$n_event, 2)
 })
