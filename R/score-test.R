@@ -1241,9 +1241,14 @@
 #                            beta = 0 is not positive, the same breakdown one
 #                            step earlier in q1.c (its flag 2 against flag 3);
 #   nuisance_singular        the CURRENT model's information block could not
-#                            be inverted, so no candidate can be adjusted for
-#                            it. That is a base fit on a ridge, and it takes
-#                            every candidate at the step with it.
+#                            be formed or inverted, so no candidate can be
+#                            adjusted for it. That is a failure of the score
+#                            calculation at the current model, not a verdict
+#                            on the model: an ordinary, well-conditioned fit
+#                            reaches it when its numeric Hessian comes back
+#                            non-finite, as a fit on a ridge does when the
+#                            block is singular. It takes every candidate at
+#                            the step with it.
 # A refit of the extended model has its own Hessian and tests the candidate.
 # An earlier version of this comment listed nuisance_singular among the
 # reasons "no refit can make testable"; measured for #565 on a base fit up a

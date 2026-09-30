@@ -280,7 +280,7 @@
 #'       to every candidate at that step and each of them is refitted. A
 #'       candidate still
 #'       reaches `uncomputable_reasons` when that refit fails, or when its
-#'       cause is any other, which no refit can rescue. Read
+#'       cause is any other, for which no refit is attempted. Read
 #'       `uncomputable_reasons` for which one it was in any given run.  For
 #'       every criterion it also carries
 #'       `refit_failures` (the `"var"` / `"var@phase"` tokens of candidate

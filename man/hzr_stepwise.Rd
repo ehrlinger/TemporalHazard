@@ -236,7 +236,7 @@ information matrix could not be formed or inverted, so it applies
 to every candidate at that step and each of them is refitted. A
 candidate still
 reaches \code{uncomputable_reasons} when that refit fails, or when its
-cause is any other, which no refit can rescue. Read
+cause is any other, for which no refit is attempted. Read
 \code{uncomputable_reasons} for which one it was in any given run.  For
 every criterion it also carries
 \code{refit_failures} (the \code{"var"} / \code{"var@phase"} tokens of candidate
