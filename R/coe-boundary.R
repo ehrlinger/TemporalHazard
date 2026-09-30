@@ -124,10 +124,11 @@
 #' contributes nothing the data can see. It need not arrive. The objective
 #' is discontinuous there, and the fit can stop beside the boundary with the
 #' gradient test not met. The identifiability check already warns about such a
-#' phase, whichever phase it is. This records, in the same family as the
-#' certificate, that it is the CONSERVED one, so a reader of `$boundary`
-#' finds it under `coe_no_events_left` either way. It raises no warning of
-#' its own: `warned_by` names the warning that has already said so.
+#' phase, whichever phase it is. This records that it is the CONSERVED one,
+#' under a mechanism of its own, `coe_phase_vanished`: the certificate's
+#' record, `coe_no_events_left`, carries a higher point and this one does
+#' not, and one mechanism has one record shape. It raises no warning of its
+#' own: `warned_by` names the warning that has already said so.
 #'
 #' @param phase_share The frame from `.hzr_check_phase_identifiability()`.
 #' @param fixmu_phase The conserved phase.
@@ -141,7 +142,7 @@
     return(NULL)
   }
   list(
-    mechanism = "coe_no_events_left",
+    mechanism = "coe_phase_vanished",
     phase = fixmu_phase,
     parameter = "log_mu",
     share = share,

@@ -14,10 +14,10 @@ coe_repro <- function() {
          fit = TRUE, control = list(n_starts = 1))
 }
 
-coe_records <- function(fit) {
+coe_records <- function(fit, mechanism = "coe_no_events_left") {
   b <- fit$fit$boundary
   if (!is.list(b)) return(list())
-  Filter(function(r) identical(r$mechanism, "coe_no_events_left"), b)
+  Filter(function(r) identical(r$mechanism, mechanism), b)
 }
 
 # Where the fit from coe_repro() stopped until #565: an ordinary-looking
@@ -113,9 +113,12 @@ test_that("a CoE fit that reaches the boundary is recorded, and warned once (#56
   share <- fit$fit$phase_share
   expect_lt(share$share[share$phase == "constant"], 1e-5)
 
-  rec <- coe_records(fit)
+  rec <- coe_records(fit, "coe_phase_vanished")
   expect_length(rec, 1L)
+  # One mechanism, one record shape: this is not the certificate's.
+  expect_length(coe_records(fit), 0L)
   rec <- rec[[1L]]
+  expect_null(rec$certificate_theta)
   expect_identical(rec$phase, "constant")
   expect_identical(rec$parameter, "log_mu")
   expect_identical(rec$share, share$share[share$phase == "constant"])
@@ -138,14 +141,14 @@ test_that("a CoE fit that reaches the boundary is recorded, and warned once (#56
   # Without conservation no phase is the conserved one: nothing to record.
   off <- fit_with(FALSE)
   expect_false(off$fit$spec$control$conserve_applied)
-  expect_length(coe_records(off$fit), 0L)
+  expect_length(coe_records(off$fit, "coe_phase_vanished"), 0L)
 })
 
 test_that("only the conserved phase, under the threshold, is recorded (#565)", {
   shares <- data.frame(phase = c("early", "constant", "late"),
                        share = c(0.9, 4e-9, 2e-12), variation = NA_real_)
   rec <- .hzr_coe_vanished_record(shares, "constant", 1e-8)
-  expect_identical(rec$mechanism, "coe_no_events_left")
+  expect_identical(rec$mechanism, "coe_phase_vanished")
   expect_identical(rec$phase, "constant")
   expect_identical(rec$share, 4e-9)
   # Another phase being absent is the identifiability check's business.

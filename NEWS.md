@@ -22,7 +22,7 @@
   beside that point with the gradient test not met. When the conserved
   phase's share of the cumulative hazard falls below
   `control$phase_share_tol`, the identifiability warning reports the phase
-  as it did, and the fit also carries a `"coe_no_events_left"` record in
+  as it did, and the fit also carries a `"coe_phase_vanished"` record in
   `fit$fit$boundary`, with that share. The record raises no second
   warning.
 
