@@ -26,6 +26,27 @@
   `MAXITER`), and anything else stops `hazard()`, whether or not
   it fits, with a pointer to `hzr_evaluate()` for an evaluation at given
   values. `hzr_stepwise()` checks it once, before any refit.
+* **`print()`, `summary()` and the `hzr_stepwise()` trace no longer call an
+  `objective = "sas"` fit's objective a log-likelihood (#544, #556).** Where
+  the fit reads an interval-censored row (one of positive weight, not
+  dropped by a phase design), the objective an `objective = "sas"` fit
+  reaches is PROC HAZARD's interval-mean-hazard objective, not a
+  log-likelihood. `print()` showed it as `log-lik:`, `summary()` returned it
+  as `log_lik`, and the stepwise trace's final line as `logLik = ...`, so a
+  reader comparing it with another model's log-likelihood, or taking an LR
+  or AIC from it, got a finite and plausible wrong number. On one fit the
+  printed `log-lik:` was -160.02, where the log-likelihood at the same
+  estimates is -118.94. Such a fit now prints `SAS objective:`, and
+  `summary()`'s `log_lik` is `NA`, with the value in the new
+  `objective_value` and its kind in `objective`. The stepwise trace reads
+  `SAS objective = ..., AIC from it = ...`, and a screen with `criterion =
+  "aic"` warns (class `hzr_stepwise_sas_objective`) that each entry is
+  decided on `-2 * (SAS objective) + 2k`, which is not an AIC, and each
+  removal on a Wald statistic from the SAS objective's curvature. Without
+  interval-censored rows
+  the two objectives agree, and nothing changes. The new `summary()` fields
+  come last, so no existing element moves. `logLik()` and `AIC()` have
+  no method for a `hazard` fit and still stop.
 
 * **Multiphase stepwise refits now start from the model they extend
   (#551). Multiphase selections, and `hzr_bootstrap()` select-mode
