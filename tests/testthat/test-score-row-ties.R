@@ -93,6 +93,58 @@ test_that("a stored covariate settles ties, and a moved one is refused (#515)", 
   expect_error(.hzr_check_data_row_order(mp, d[perm, ], score = TRUE),
                "phase `constant` covariate `z`")
   expect_no_condition(.hzr_check_data_row_order(mp, d, score = TRUE))
+
+  # The covariate's own column decides: a second column holding the fit's
+  # values in order does not vouch for a `z` that moved.
+  d2 <- cbind(z_fit = d$z, d[perm, ])
+  expect_identical(d2$z_fit, fit$data$x[, "z"], ignore_attr = TRUE)
+  expect_error(chk(d2), "column `z` holds the fit's covariate `z`")
+})
+
+test_that("inputs are matched exactly, and constant or short ones handled (#515)", {
+  d <- rt_avc()
+  d$tt <- ceiling(d$int_dead / 12)
+  d$z <- d$age + seq_len(nrow(d)) / 1000
+  fit <- suppressWarnings(hazard(time = d$tt, status = d$dead,
+                                 x = as.matrix(d["z"]), dist = "weibull",
+                                 theta = c(0.5, 1, 0), fit = TRUE))
+  d <- d[, setdiff(names(d), "int_dead")]
+
+  # Two rows tied in time and status whose z differ by 1e-9, swapped: within
+  # all.equal()'s tolerance, but not identical, so the rows moved.
+  grp <- which(d$tt == d$tt[1L] & d$dead == d$dead[1L])
+  expect_gt(length(grp), 1L)
+  i <- grp[1L]
+  j <- grp[2L]
+  near <- fit
+  near$data$x[j, "z"] <- near$data$x[i, "z"] + 1e-9
+  e <- d
+  e$z <- near$data$x[, "z"]
+  e$z[c(i, j)] <- e$z[c(j, i)]
+  expect_true(isTRUE(all.equal(e$z, near$data$x[, "z"],
+                               check.attributes = FALSE)))
+  expect_false(identical(unname(e$z), unname(near$data$x[, "z"])))
+  expect_error(.hzr_check_data_row_order(near, e, score = TRUE),
+               "column `z` holds the fit's covariate `z`")
+
+  # An input with one value on every row cannot pair rows wrongly: all
+  # events, and no status column in `data`, is verified from the times.
+  all_ev <- suppressWarnings(hazard(time = d$tt, status = rep(1, nrow(d)),
+                                    dist = "weibull", theta = c(0.5, 1),
+                                    fit = TRUE))
+  no_st <- d[names(d) != "dead"]
+  expect_false(any(vapply(no_st, function(v) is.numeric(v) && all(v == 1),
+                          logical(1))))
+  expect_no_condition(.hzr_check_data_row_order(all_ev, no_st, score = TRUE))
+
+  # A phase design stored shorter than the times (rows with a missing
+  # covariate dropped) cannot be compared, so it is not treated as found.
+  short <- fit
+  short$data$x <- NULL
+  short$fit$x_list <- list(constant = as.matrix(d["z"])[-1L, , drop = FALSE])
+  expect_warning(.hzr_check_data_row_order(short, d, score = TRUE),
+                 "phase `constant` covariate `z`",
+                 class = "hzr_score_rows_unverified")
 })
 
 test_that("tied times with status in order are verified, not warned (#515)", {

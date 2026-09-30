@@ -713,31 +713,36 @@
 #' each multiphase phase's design). An input with one value on every row is
 #' left out, since rows cannot be mismatched on it.
 #'
-#' @return A named list of numeric vectors, named for messages. An input
-#'   stored at another length than `time` (a phase design after rows with a
-#'   missing covariate were dropped) keeps that length, so the caller counts
-#'   it as unmatched.
+#' @return A list named for messages, one element per input:
+#'   `list(value, column)`, where `value` is the numeric vector and `column`
+#'   the design column's name (`NA` for the response and weights, whose
+#'   column in `data` is unknown). An input stored at another length than
+#'   `time` (a phase design after rows with a missing covariate were dropped)
+#'   keeps that length, so the caller counts it as unmatched.
 #' @noRd
 .hzr_fit_row_inputs <- function(current) {
   d <- current$data
+  input <- function(v, column = NA_character_) {
+    if (is.null(v)) NULL else list(value = as.numeric(v), column = column)
+  }
   cols <- function(m, label) {
     if (is.null(m) || NCOL(m) == 0L) return(list())
     m <- as.matrix(m)
     nm <- colnames(m) %||% paste0("V", seq_len(ncol(m)))
-    stats::setNames(lapply(seq_len(ncol(m)), function(j) as.numeric(m[, j])),
+    stats::setNames(lapply(seq_len(ncol(m)), function(j) input(m[, j], nm[j])),
                     paste0(label, " `", nm, "`"))
   }
   xl <- current$fit$x_list
   inputs <- c(
-    list(status = d$status, `time_lower` = d$time_lower,
-         `time_upper` = d$time_upper, weights = d$weights),
+    list(status = input(d$status), `time_lower` = input(d$time_lower),
+         `time_upper` = input(d$time_upper), weights = input(d$weights)),
     cols(d$x, "covariate"),
     unlist(lapply(names(xl), function(ph) {
       cols(xl[[ph]], paste0("phase `", ph, "` covariate"))
     }), recursive = FALSE)
   )
   inputs <- Filter(Negate(is.null), inputs)
-  Filter(function(v) length(unique(v)) > 1L, inputs)
+  Filter(function(inp) length(unique(inp$value)) > 1L, inputs)
 }
 
 #' Check row order within tied event times against the fit's other inputs
@@ -765,24 +770,31 @@
   unmatched <- character()
   inputs <- .hzr_fit_row_inputs(current)
   for (nm in names(inputs)) {
-    v <- inputs[[nm]]
+    v <- inputs[[nm]]$value
     if (length(v) != n) {
       unmatched <- c(unmatched, nm)
       next
     }
+    # A covariate's own column is the one the screen reads, so when `data`
+    # has it, it alone decides: another column holding the fit's values in
+    # order must not vouch for it having moved.
+    look <- names(data)
+    own <- inputs[[nm]]$column
+    if (!is.na(own) && own %in% look) look <- own
     in_order <- FALSE
     moved <- NULL
-    for (cn in names(data)) {
+    for (cn in look) {
       col <- data[[cn]]
       if (!(is.numeric(col) || is.logical(col)) || length(col) != n) next
       col <- as.numeric(col)
-      if (isTRUE(all.equal(col, v, check.attributes = FALSE))) {
+      # Exact: rows that may be swapped must be identical in the input, not
+      # merely within a tolerance relative to the whole column.
+      if (identical(col, v)) {
         in_order <- TRUE
         break
       }
       if (is.null(moved) &&
-            isTRUE(all.equal(col[order(time, col)], v[order(time, v)],
-                             check.attributes = FALSE))) {
+            identical(col[order(time, col)], v[order(time, v)])) {
         moved <- cn
       }
     }
