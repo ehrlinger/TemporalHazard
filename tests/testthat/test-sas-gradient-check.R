@@ -202,9 +202,12 @@ test_that("with an inexact score the recorded test uses the objective's own grad
   expect_lt(abs(fit$rel_gradient / rel_gradient(fit$par) - 1), 1e-3)
 })
 
-test_that("multiphase passes gradient_exact = FALSE exactly when CoE is applied", {
+test_that("multiphase passes gradient_exact = TRUE with and without CoE (#565)", {
   # The flag is set at .hzr_optim_multiphase()'s call; spy on it there, so
-  # reverting that one line fails this test.
+  # reverting that one line fails this test. Under CoE it was FALSE while the
+  # gradient was the partial score; the gradient now carries the conserved
+  # log_mu's chain-rule term (test-coe-total-gradient.R checks it against a
+  # finite-difference oracle), so the flag is TRUE on both paths.
   set.seed(3)
   n <- 300
   tt <- c(stats::rexp(n / 2, 3), stats::rexp(n / 2, 0.15))
@@ -232,7 +235,7 @@ test_that("multiphase passes gradient_exact = FALSE exactly when CoE is applied"
   off <- fit_with(FALSE)
   expect_true(on$applied)
   expect_false(off$applied)
-  expect_true(length(on$seen) > 0 && !any(on$seen))
+  expect_true(length(on$seen) > 0 && all(on$seen))
   expect_true(length(off$seen) > 0 && all(off$seen))
 })
 
@@ -530,35 +533,12 @@ test_that("hazard() records the reason on the fit, and print()/summary() show it
                 "not evaluated at the estimates: a planted reason", fixed = TRUE)
 })
 
-test_that("a real CoE fit whose test cannot run says so, and says why (#351)", {
-  skip_on_cran()
-  # The end-to-end case the issue is about: a converged multiphase fit with
-  # Conservation of Events applied, whose acceptance test cannot be evaluated
-  # because the finite-difference score needs a point where the
-  # log-likelihood is not usable. The estimates are sound; only the test is
-  # missing, and the fit must say which of those it is rather than leaving a
-  # bare NA that reads as a failure.
-  set.seed(40)
-  n <- 40
-  tt <- stats::rexp(n) + 0.01
-  st <- stats::rbinom(n, 1, 0.75)
-  f <- suppressWarnings(hazard(
-    time = tt, status = st, dist = "multiphase",
-    phases = list(early = hzr_phase("cdf", t_half = 1, nu = 1, m = 0),
-                  const = hzr_phase("constant")),
-    fit = TRUE
-  ))
-  # Premises: without these the fixture is no longer the case under test.
-  expect_true(isTRUE(f$fit$converged))
-  expect_true(isTRUE(f$spec$control$conserve_applied))
-  expect_true(is.na(f$fit$rel_gradient))
-  expect_identical(
-    f$fit$rel_gradient_reason,
-    paste0("the log-likelihood is non-finite or past the optimizer's ",
-           "penalty at a point the finite-difference score needs")
-  )
-  out <- utils::capture.output(print(f))
-  expect_true(any(grepl("finite-difference score needs", out, fixed = TRUE)))
-  # A missing test is not a failed one.
-  expect_false(any(grepl("not met", out, fixed = TRUE)))
-})
+# An end-to-end case stood here until #565: a real Conservation of Events fit
+# (n = 40, seed 40) whose acceptance test came back NA because the
+# finite-difference score needed a point where the log-likelihood is not
+# usable. Its premise is gone. CoE fits no longer difference the
+# log-likelihood for the test; they use the exact gradient, and that fit now
+# reports a relative gradient of 0.00979, so there is no such real fit to
+# assert on. The rule itself, that an NA from the finite-difference route
+# names its reason and never reads as a failed test, is still covered by
+# the synthetic .hzr_optim_generic(gradient_exact = FALSE) test above.

@@ -746,9 +746,27 @@ test_that("a multiphase fit saved before the design was stored rebuilds it", {
   expect_identical(
     got, unname(predict(m, type = "cumulative_hazard", newdata = nd_mix))
   )
-  # Pinned from main at 4b68020 on the same object (a fitted model: 1e-4),
-  # as design columns (grpyoung 0 then 1: "old" then "young").
-  expect_equal(got, c(0.0140056, 0.320817), tolerance = 1e-4)
+  # Design columns: grpyoung 0 then 1, "old" then "young". The pin until #565
+  # was c(0.0140056, 0.320817), from main at 4b68020: that fit had stopped
+  # at a log-likelihood of -221.494 under Conservation of Events, 8.27 short
+  # of the maximum. The fit now reaches -213.221, which is what an
+  # independent fit without CoE reaches, and the two predict alike.
+  set.seed(1)
+  free <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ age + grp, data = .dp_avc,
+    dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes"),
+      constant = hzr_phase("constant")),
+    fit = TRUE, control = list(conserve = FALSE)))
+  expect_true(m$spec$control$conserve_applied)
+  expect_false(free$spec$control$conserve_applied)
+  expect_equal(m$fit$objective, free$fit$objective, tolerance = 1e-8)
+  expect_equal(
+    got, unname(predict(free, type = "cumulative_hazard", newdata = nd_mix)),
+    tolerance = 1e-5
+  )
+  expect_equal(got, c(0.1878840, 0.2206273), tolerance = 1e-4)
   # Without its data frame (a 1.0.3-era fit) nothing can be rebuilt, and
   # the refusal stands.
   leg$data$frame <- NULL
