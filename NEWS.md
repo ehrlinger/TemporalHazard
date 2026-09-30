@@ -15,6 +15,17 @@
   AIC, and `hzr_stepwise()` warns that it declined it without testing it.
   It is not listed in `$criteria$wald_untested_entries`, which is for
   entries with no variance.
+* **`hazard()` now refuses a `control$maxit` below 1 (#541).** It was
+  accepted without a word, and what happened depended on the model. A
+  Weibull fit or a single-phase multiphase fit returned its starting values
+  with `converged = TRUE`: on the `avc` data a Weibull fit with `maxit = 0`
+  reported a log-likelihood of -1425.16 as converged, where the fit reaches
+  -223.55. A multiphase fit with a `cdf` and a `constant` phase ignored the
+  limit and optimised anyway. `control$maxit` must now be a single finite
+  number of at least 1 (a fraction is truncated, as PROC HAZARD truncates
+  `MAXITER`), and anything else stops `hazard()`, whether or not
+  it fits, with a pointer to `hzr_evaluate()` for an evaluation at given
+  values. `hzr_stepwise()` checks it once, before any refit.
 
 * **Multiphase stepwise refits now start from the model they extend
   (#551). Multiphase selections, and `hzr_bootstrap()` select-mode
