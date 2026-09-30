@@ -498,7 +498,8 @@ The chunk hides them because `summary()` reports the same thing.
 | `$legacy_args`        | Named pass-through arguments for parity                     |
 
 > **Note:** `$fit$objective` above is a *number*: the value the optimizer
-> reached, which is the log-likelihood; `print()` and `summary()` label it
+> reached, which is the log-likelihood with the one exception described
+> below. `print()` and `summary()` label it
 > `log-lik` and `log_lik`, which are the names to prefer when writing about
 > it. The exception is a fit with `objective = "sas"` that read an
 > interval-censored row (one of positive weight, not dropped by a phase
