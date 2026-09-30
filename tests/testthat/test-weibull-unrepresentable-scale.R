@@ -241,23 +241,41 @@ test_that("an underflowed or NaN variance is withheld too (#566)", {
 })
 
 test_that("a subnormal mu is refused like one that reached 0 (#566)", {
-  # log(mu) is about -719: mu is near 5.7e-313, positive but subnormal, so
-  # it has lost digits. Such a value passed the positivity rule; at 4.94e-324
-  # predict() gave a cumulative hazard of 0.4888 where the centred fit gives
-  # 0.5243. The target sits mid-range, clear of both ends of the subnormals.
+  # A subnormal mu is positive, so it passed the positivity rule, but it has
+  # lost digits: at 4.94e-324 predict() gave a cumulative hazard of 0.4888
+  # where the centred fit gives 0.5243.
+  #
+  # The value is put in place, not fitted for. The subnormals span only
+  # exp(-745) to exp(-708), and a raw-covariate fit is ill-conditioned, so
+  # where it stops differs by platform: the same fit gave mu = 5.7e-313 on
+  # macOS and 2.4e-306, a normal double, on Linux.
+  sub <- 5e-313
+  expect_true(sub > 0 && sub < .Machine$double.xmin)
   d <- .w566_data(-150, 0.15)
-  res <- .w566_fit(survival::Surv(time, dead) ~ x, d, c(exp(-700), 0.2, 0.15))
-  f <- res$fit
-  mu <- unname(coef(f)[[1]])
-  expect_true(mu > 0 && mu < .Machine$double.xmin)
-  expect_identical(res$n_scale, 1L)
-  expect_match(res$msgs, "scale mu is reported as", fixed = TRUE)
+  ctr <- .w566_fit(survival::Surv(time, dead) ~ xc, d, c(1, 0.2, 0.15))$fit
   nd <- d[1:2, ]
   nd$time <- c(0.5, 2)
-  expect_error(predict(f, newdata = nd, type = "cumulative_hazard"),
-               "which cannot be represented", fixed = TRUE)
-  expect_error(hzr_evaluate(f, coef(f)), "which cannot be represented",
-               fixed = TRUE)
+  g <- ctr
+  g$fit$theta[[1]] <- sub
+  expect_error(predict(g, newdata = nd, type = "cumulative_hazard"),
+               "scale mu = 5e-313, which cannot be represented", fixed = TRUE)
+  expect_error(hzr_evaluate(ctr, c(sub, unname(coef(ctr))[2:3])),
+               "scale mu = 5e-313, which cannot be represented", fixed = TRUE)
+
+  # The fit-time warning, with the optimizer's own result carrying the
+  # subnormal scale: hazard() reads mu from what its optimizer returns.
+  real_optim <- .hzr_optim_weibull
+  testthat::local_mocked_bindings(
+    .hzr_optim_weibull = function(...) {
+      res <- real_optim(...)
+      res$par[[1]] <- sub
+      res
+    }
+  )
+  res <- .w566_fit(survival::Surv(time, dead) ~ xc, d, c(1, 0.2, 0.15))
+  expect_identical(unname(coef(res$fit)[[1]]), sub)
+  expect_identical(res$n_scale, 1L)
+  expect_match(res$msgs, "scale mu is reported as 5e-313", fixed = TRUE)
 })
 
 test_that("hzr_bootstrap() counts replicates whose mu cannot be represented (#566)", {
@@ -315,11 +333,14 @@ test_that("the rule's edges: the smallest normal double, and a subnormal nu (#56
 })
 
 test_that("hzr_evaluate() refuses a product mu * time it cannot hold (#566)", {
-  # mu is an ordinary double here (about 1e-291), so the rule on mu alone
-  # passes it, but the likelihood forms (mu * t)^nu and mu * t underflows:
-  # it is exactly 0 on some rows and subnormal on others. hzr_evaluate()
-  # returned 23084.15 at the fit's own estimates, whose log-likelihood is
-  # 22972.56, with no warning.
+  # mu is an ordinary double here, so the rule on mu alone passes it, but the
+  # likelihood forms (mu * t)^nu and mu * t underflows: it is exactly 0 on
+  # some rows and subnormal on others. On a fit of this data whose mu was
+  # about 1e-291, hzr_evaluate() returned 23084.15 at the fit's own
+  # estimates, whose log-likelihood is 22972.56, with no warning.
+  #
+  # The parameters are supplied, not fitted: the data are seeded, so which
+  # products underflow is the same on every platform.
   set.seed(4)
   n <- 500
   age <- stats::rnorm(n, 60, 10)
@@ -329,16 +350,20 @@ test_that("hzr_evaluate() refuses a product mu * time it cannot hold (#566)", {
   cc <- (stats::rexp(n) * 2)^(1 / nu)
   d <- data.frame(time = pmin(t, cc), dead = as.integer(t <= cc), age = age,
                   agec = age - 60)
-  raw <- .w566_fit(survival::Surv(time, dead) ~ age, d,
-                   c(exp(-60 * b / nu), nu, b))$fit
-  ctr <- .w566_fit(survival::Surv(time, dead) ~ agec, d, c(1, nu, b))$fit
-  mu <- unname(coef(raw)[[1]])
-  # Premise: mu itself is a normal double, and the product is not.
-  expect_true(is.finite(mu) && mu >= .Machine$double.xmin)
-  expect_gt(sum(mu * d$time < .Machine$double.xmin), 0L)
-  expect_error(hzr_evaluate(raw, coef(raw)),
-               "mu * time cannot be represented", fixed = TRUE)
-  # Known negative: the centred fit evaluates to its own log-likelihood.
-  expect_equal(as.numeric(hzr_evaluate(ctr, coef(ctr))$logLik),
-               ctr$fit$objective, tolerance = 1e-8)
+  mu <- 1e-290
+  raw <- hazard(survival::Surv(time, dead) ~ age, data = d, dist = "weibull",
+                theta = c(mu, nu, b), fit = FALSE)
+  # Premise: mu itself is a normal double, and the product is not, on some
+  # rows but not all.
+  expect_true(mu >= .Machine$double.xmin)
+  n_lost <- sum(mu * d$time < .Machine$double.xmin)
+  expect_true(n_lost > 0L && n_lost < n)
+  expect_error(hzr_evaluate(raw, c(mu, nu, b)),
+               paste0("mu * time cannot be represented for ", n_lost, " of ",
+                      n, " times"), fixed = TRUE)
+  # Known negative: the same model in centred coordinates, where mu is near
+  # 1 and no product is lost, evaluates to a finite log-likelihood.
+  ctr <- hazard(survival::Surv(time, dead) ~ agec, data = d,
+                dist = "weibull", theta = c(1, nu, b), fit = FALSE)
+  expect_true(is.finite(as.numeric(hzr_evaluate(ctr, c(1, nu, b))$logLik)))
 })
