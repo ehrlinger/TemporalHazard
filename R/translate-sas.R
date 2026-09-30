@@ -131,7 +131,15 @@
 #' per-variable `MOVE=` or `ORDER=`, and a variable held by
 #' `/I` in one phase but movable in another. So is `LCENSOR`
 #' combined with `ICENSOR`, which one `time_lower` argument cannot express
-#' (#155). Prediction grids the parser cannot resolve are refused whole, and
+#' (#155). A job with `ICENSOR` is fitted with `objective = "sas"`, the
+#' interval term `PROC HAZARD` accumulates, so it reproduces `PROC HAZARD`'s
+#' estimates; the value it reports is then `PROC HAZARD`'s objective, not a
+#' log-likelihood, and a callout above the chunk says so (#543). Degenerate
+#' intervals are resolved as `PROC HAZARD` does before its fit: a lower bound
+#' equal to the time makes the row an exact event, and one that is missing,
+#' negative or after the time drops the row from the fit (not from your data
+#' frame); the status chunk warns with both counts. Prediction
+#' grids the parser cannot resolve are refused whole, and
 #' the `predict()` chunks that would have read such a grid become a `stop()`
 #' naming it, rather than a `predict(newdata = )` over a name no chunk
 #' builds. An unresolved `INHAZ=` stops the render on purpose.
@@ -275,7 +283,10 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
       # fits data SAS did not fit, so stop here -- ahead of the status chunk,
       # which writes into the same data frame. The scan resumes where the
       # last one ended, so one rewrite stops once however many fits follow.
-      dname <- if (is.null(r$call[["data"]])) NULL else as.character(r$call[["data"]])
+      # The data argument is the dataset's name, or for an ICENSOR job the
+      # rows of it PROC HAZARD keeps (`D[D$.hzr_keep, , drop = FALSE]`, #543).
+      dvars <- all.vars(r$call[["data"]])
+      dname <- if (length(dvars)) dvars[[1L]] else NULL
       if (!is.null(dname) && !is.null(repeat_scan[[dname]])) {
         rs <- .hzr_rewrite_stops(substring(txt, repeat_scan[[dname]] + 1L, b$start - 1L), dname)
         for (cl in rs$calls) calls[[.hzr_next_call_name(calls, "rewrite")]] <- cl
@@ -349,6 +360,14 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
                                    fit_label = fit_slot)))
           calls[[.hzr_next_call_name(calls, "screen_check")]] <- chk
         }
+      }
+      # An ICENSOR job is fitted on PROC HAZARD's interval objective (#543).
+      # The note goes on the chunk that calls hazard(): the fit itself, or a
+      # SELECTION job's base fit, whose own slot carries the screen's note.
+      if (isTRUE(r$sas_objective)) {
+        obj_slot <- if (is.null(r$stepwise_call)) fit_slot else
+          paste0(fit_slot, "_base")
+        notes[[obj_slot]] <- .hzr_sas_objective_note()
       }
       fits[[length(fits) + 1L]] <- list(slot = fit_slot, outhaz = r$outhaz)
     } else {
@@ -485,6 +504,27 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
   invisible(job)
 }
 
+
+#' The callout a translated ICENSOR job carries, above its fit (#543).
+#'
+#' The fit uses `objective = "sas"`, so the value it reports is PROC HAZARD's
+#' objective rather than a log-likelihood. The reader meets this before the
+#' code, as for the SELECTION note below.
+#' @noRd
+.hzr_sas_objective_note <- function() {
+  list(
+    title = "ICENSOR: fitted on PROC HAZARD's objective, not a log-likelihood",
+    body = paste(
+      "This job has ICENSOR, so the chunk below uses `objective = \"sas\"`:",
+      "the interval-censored rows enter as PROC HAZARD accumulates them, the",
+      "interval-mean hazard over (lower bound, time], rather than as the",
+      "probability of an event in the interval. That reproduces PROC",
+      "HAZARD's estimates. The value it reports as the objective is PROC",
+      "HAZARD's, not a log-likelihood, so do not compare it with a",
+      "log-likelihood from another fit or use it in a likelihood-ratio test.",
+      "See ?hazard, argument `objective`.")
+  )
+}
 
 #' The callout a translated SELECTION job carries, above its screen.
 #'

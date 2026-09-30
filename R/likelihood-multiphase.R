@@ -2656,6 +2656,10 @@
     )
   }
 
+  # FALSE when the reported objective is not the likelihood at the returned
+  # point (the CoE recompute below could not evaluate there).
+  value_at_returned <- TRUE
+
   # Expand optimized free params back to full theta vector
   if (any_fixed) {
     best_result$par <- expand_theta(best_result$par)
@@ -2697,7 +2701,28 @@
       )
       if (is.finite(value_at_par)) {
         best_result$value <- value_at_par
+        # Is the likelihood higher with the conserved phase switched off
+        # (#261)? Only here, where the value IS the likelihood at the
+        # returned point; a certificate against any other value would compare
+        # two different points.
+        coe_boundary <- .hzr_coe_boundary_record(
+          theta = best_result$par, value = value_at_par,
+          converged = isTRUE(best_result$convergence == 0),
+          objective_fn = function(p) {
+            logl_fn_unwrapped(p, time, status, time_lower, time_upper, x,
+                              weights = weights)
+          },
+          fixmu_phase = fixmu_phase, fixmu_pos = fixmu_pos,
+          log_mu_positions = log_mu_positions, phases = phases,
+          covariate_counts = covariate_counts, x_list = x_list, time = time,
+          status = status, time_lower = time_lower, weights = weights,
+          total_events = total_events
+        )
+        if (!is.null(coe_boundary)) {
+          held$records <- c(held$records, list(coe_boundary))
+        }
       } else {
+        value_at_returned <- FALSE
         # Not silent. Keeping the optimizer's value here restores exactly the
         # defect this block fixes, an objective describing a point other than
         # the estimates, so it is said rather than left to be inferred from a
@@ -2828,6 +2853,22 @@
   } else {
     coe_reason
   }
+
+  # A FIXGE2 g3 phase that stopped short of its gamma = Inf supremum (#418).
+  # Post-fit and report-only: its records join the setup holds' channel, so
+  # hazard() puts them in $boundary and warns, and no estimate moves.
+  held$records <- c(held$records, .hzr_g3_corner_supremum(
+    theta = best_result$par,
+    # Only a value AT the returned point can be contradicted by a certificate.
+    value = if (value_at_returned) best_result$value else NA_real_,
+    converged = isTRUE(best_result$convergence == 0),
+    objective_fn = function(p) {
+      logl_fn_unwrapped(p, time, status, time_lower, time_upper, x,
+                        weights = weights)
+    },
+    phases = phases, covariate_counts = covariate_counts, x_list = x_list,
+    time = time, status = status, time_lower = time_lower, weights = weights
+  ))
 
   # Store phase metadata for downstream use (predict, summary)
   best_result$phases <- phases

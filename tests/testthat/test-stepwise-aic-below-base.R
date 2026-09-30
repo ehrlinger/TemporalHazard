@@ -68,17 +68,43 @@ test_that("an AIC entry refuses a refit that ends below its base (#490)", {
   list(sw = sw, msgs = msgs)
 }
 
+# A multiphase refit is now fitted from two starts and cannot end below its
+# base (#551), so no real refit reaches the guard end to end. The opmos refit
+# is marked as ending 11 units below its base, which is where the cold-start
+# refit ended before #551; everything downstream of the refit is real.
+.aic_below_mock <- function(env = parent.frame()) {
+  orig <- .hzr_refit_with_scope
+  local_mocked_bindings(
+    .hzr_refit_with_scope = function(current, action = c("add", "drop"), var,
+                                     phase = NULL, data, ...) {
+      r <- orig(current, action = action, var = var, phase = phase,
+                data = data, ...)
+      if (identical(action, "add") && identical(var, "opmos")) {
+        r$fit$objective <- current$fit$objective - 11
+      }
+      r
+    },
+    .env = env
+  )
+}
+
 test_that("hzr_stepwise() under AIC counts and warns about it (#490)", {
   skip_on_cran()
   fx <- .aic_below_fixture()
-  # The fixture has the property the test needs: this refit reports
-  # convergence and ends well below the model it contains.
+  .aic_below_mock()
+  # The premise: this refit reports convergence and ends well below the model
+  # it contains, and the other candidate's does not.
   cand <- suppressWarnings(.hzr_refit_with_scope(
     fx$fit, action = "add", var = "opmos", phase = "constant",
     data = fx$data, control = fx$control
   ))
   expect_true(cand$fit$converged)
   expect_lt(cand$fit$objective, fx$fit$fit$objective - 1)
+  ok <- suppressWarnings(.hzr_refit_with_scope(
+    fx$fit, action = "add", var = "age", phase = "constant",
+    data = fx$data, control = fx$control
+  ))
+  expect_gte(ok$fit$objective, fx$fit$fit$objective)
 
   out <- .aic_below_screen(fx, scope = list(constant = ~ opmos + age))
   sw <- out$sw
@@ -98,6 +124,7 @@ test_that("hzr_stepwise() under AIC counts and warns about it (#490)", {
 test_that("an AIC screen of only such a candidate stops untested (#490)", {
   skip_on_cran()
   fx <- .aic_below_fixture()
+  .aic_below_mock()
   out <- .aic_below_screen(fx, scope = list(constant = ~ opmos))
   sw <- out$sw
   expect_true(sw$criteria$stopped_uncomputable)

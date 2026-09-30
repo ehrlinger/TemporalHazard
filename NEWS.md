@@ -16,6 +16,87 @@
   It is not listed in `$criteria$wald_untested_entries`, which is for
   entries with no variance.
 
+* **Multiphase stepwise refits now start from the model they extend
+  (#551). Multiphase selections, and `hzr_bootstrap()` select-mode
+  frequencies, from earlier versions may be wrong.** Each candidate refit
+  in `hzr_stepwise()` started from the phase specifications' default
+  values, not from the current model's estimates. The candidate model
+  contains the current one, so from the current estimates, with the new
+  coefficient at 0, a refit cannot end below the current log-likelihood.
+  From the default start it often did, while reporting `converged = TRUE`.
+  On `avc` with the SAS reference base model (early and constant phases,
+  Conservation of Events), five of nine first-step candidates ended below
+  the base, `age` in the early phase by 25.1 log-likelihood units. Every
+  multiphase entry, whether scored by Wald, AIC or the score criterion's
+  Wald fallback, was therefore tested against a model not at its optimum.
+  An accepted step then carried that model forward. Each multiphase refit
+  is now fitted twice and the higher log-likelihood kept: once from the
+  current estimates, matched by parameter name with a new coefficient at 0,
+  which cannot end below the current model, and once from the default start
+  as before, because the likelihood has several optima and that start
+  sometimes reaches a higher one. The default start now holds each fixed
+  shape at the current model's value. It took the phase specification's
+  value, so a model fitted with a user `theta` that set a fixed shape was
+  refit with that shape moved, and the candidate was credited with the
+  gain. `$fit$refit_start` records which start
+  won and `$fit$refit_objectives` both results. Fixed shapes keep their
+  fixed values, the first of several `control$n_starts` is the start
+  itself, and Conservation of Events runs as before. Single-distribution
+  refits already started from the current estimates. Each candidate now
+  costs two fits. A multiphase model whose global formula lists more
+  covariates than its phase formulas use can be refit (it could not once
+  refits were given a start), and a `theta` passed to `hzr_stepwise()`
+  through `...` is refused with a message that says why. `hazard()` now
+  rejects `dist = NA` with its own message; it passed the check and
+  failed later with a base-R error.
+  This applies to every path that refits a multiphase model: `hzr_stepwise()`
+  under each criterion, `hzr_bootstrap()` select mode, and the code
+  `hzr_translate_sas()` emits for a SAS stepwise job.
+
+* **A Conservation of Events fit whose likelihood is higher with the
+  conserved phase switched off is now recorded and warned about (#261).**
+  Under Conservation of Events the conserved phase's `log_mu` is solved so
+  that it absorbs the events the other phases leave. Where the other phases
+  already account for every event there is nothing to solve, and the
+  objective fell back, with no warning, to that `log_mu`'s starting value.
+  The objective was therefore discontinuous there, and a fit could stop
+  short of a higher likelihood: the reproduction in #261 reported -206.743
+  where -206.669 was available with the constant phase's scale at zero.
+  PROC HAZARD stops the run at that point (`SETCOE1200`, `consrv.c`). After
+  such a fit, `hazard()` now scores the fit's own log-likelihood with the
+  conserved phase's scale sent to zero, both with the other parameters held
+  and with the other phases' scales rescaled to conserve the events again.
+  It records a finding only if one beats the reported value by more than
+  0.01. A finding goes in `fit$fit$boundary` with mechanism
+  `"coe_no_events_left"`, carrying the higher point, and raises a warning
+  of class `hzr_coe_no_events_left`, which inherits `hzr_boundary`. The
+  estimates are unchanged. `fit$fit$boundary` can hold several records, in
+  no guaranteed order, so select them by `mechanism`.
+
+* **A g3 phase under `constraint = "eta_gamma"` whose likelihood is higher
+  at a much larger `gamma` is now recorded and warned about (#418).** As
+  `gamma` grows, this phase tends to a corner law whose log-likelihood is
+  finite, so when the data prefer a sharp bend at `tau` the supremum can lie
+  at `gamma = Inf`. A fit could still stop at an ordinary-looking `gamma`
+  with a standard error, report `converged = TRUE`, and warn about nothing.
+  On data drawn from the corner law, a fit stopped at `gamma` = 7.5 with the
+  likelihood 2.0 units higher toward infinity. After a converged fit with
+  `gamma` below 1000, `hazard()` now searches the corner law with the other
+  phases held at their estimates. It records a finding only when the fit's
+  own log-likelihood, evaluated at `gamma` of 1e4, 1e6 or 1e8, beats the
+  reported one by more than 0.01, so a weak search can miss a case but
+  cannot report one that is not there. That proves the reported `gamma` is
+  not the maximum-likelihood estimate; it does not prove the supremum is at
+  infinity rather than at another large `gamma`. A finding goes in
+  `fit$fit$boundary` with mechanism `"g3_corner_supremum"`, carrying the
+  higher point, and raises a warning of class `hzr_g3_corner_supremum`,
+  which inherits `hzr_boundary`. The estimates are unchanged. PROC HAZARD
+  has no such check and would report the same `gamma`. On simulated data
+  this caught 12 of the 14 warning-free fits that stopped short. A fixed
+  `tau` or `alpha` keeps its value in the search and in the check. A fixed
+  `gamma` is not examined, and nor are fits with left-censored or
+  interval-censored rows, or a supremum at `gamma` = 0.
+
 * **`hzr_deciles()` now counts entry times and case weights, as
   `hzr_gof()` does (#491).** Each subject's expected events were its
   cumulative hazard at exit, and events were counted unweighted. A
@@ -278,15 +359,42 @@
   -295.609. The chunk is now `hzr_evaluate()` at those starting values,
   with the same scaling, and it reproduces the log-likelihood and `MUE`
   that `PROC HAZARD` prints with and without `WEIGHT`, `LCENSOR` and
-  `NOCONSERVE`. With `ICENSOR` it reproduces `MUE`, and warns that its
-  log-likelihood is `hazard()`'s interval likelihood rather than the term
-  `PROC HAZARD` accumulates. With fewer events than free parameters it
-  stops, as `PROC HAZARD` does. It is not a fit, so the job warns and gains an `$untranslated`
-  row. `PROC HAZARD` still steps through a `SELECTION` screen, evaluating
+  `NOCONSERVE`, and with `ICENSOR` (#543). With fewer events than free
+  parameters it stops, as `PROC HAZARD` does. It is not a fit, so the job
+  warns and gains an `$untranslated` row. `PROC HAZARD` still steps through a `SELECTION` screen, evaluating
   each step at unfitted values; the translation does not, and says so. A value below 1 is
   read the same way, as `PROC HAZARD` truncates it to 0. A negative
   `MAXITER`, which `PROC HAZARD` ignores, is no longer emitted:
   `hazard()` had returned the starting values with `converged = TRUE`.
+
+* **A translated `ICENSOR` statement that `PROC HAZARD` cannot parse now
+  warns (#495).** `ICENSOR` takes exactly `count = timevar`, and `PROC
+  HAZARD` stops with a syntax error on anything else: a comma anywhere, a
+  missing `=`, or an extra name. `hzr_translate_sas()` removed a trailing
+  comma and fitted the job without a word, and it fitted a job with a
+  missing `=` without its interval-censored rows, with only an
+  `$untranslated` row to say so. Such a job now warns that `PROC HAZARD`
+  does not run it and gains an `$untranslated` row. The fit uses the
+  names `PROC HAZARD`'s parser reads, the first `count = timevar` once its
+  lexer has dropped the errors, so `C3=TL,AGE` fits `C3` and `TL`, not a
+  variable `TLAGE`. A later `(` clears `PROC HAZARD`'s syntax error, and
+  the warning then says so instead.
+
+* **A translated `ICENSOR` job now fits `PROC HAZARD`'s interval objective
+  (#543).** `PROC HAZARD` accumulates an interval-censored row as the
+  interval-mean hazard over (lower bound, time], which `hazard()` calls
+  `objective = "sas"`, and `hzr_translate_sas()` emitted the default
+  interval probability instead. Measured on the binary over a grid of 18
+  optimised fits, that moved the constant phase's `MU` by up to 21% and the
+  reported objective by up to 291 units. The emitted call now passes
+  `objective = "sas"`, which reproduces `PROC HAZARD`'s estimates to the
+  precision it prints. A note above the fit says that the value it reports
+  is `PROC HAZARD`'s objective, not a log-likelihood. Degenerate intervals
+  are resolved as `PROC HAZARD` resolves them before its fit: a lower bound
+  equal to the time makes the row an exact event, and a lower bound that is
+  missing, negative or after the time drops the row. The status chunk warns
+  with the number of rows each rule touched, and the data frame itself
+  keeps every row.
 
 # TemporalHazard 1.2.12
 

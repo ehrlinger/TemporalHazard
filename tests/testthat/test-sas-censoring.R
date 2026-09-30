@@ -482,8 +482,11 @@ test_that("a missing or negative count stops instead of fitting as censored", {
          bad = list(list(DEAD = c(0, 1), NCENS = c(NA, 0)),
                     list(DEAD = c(0, 1), NCENS = c(-2, 0)))),
     list(st = list(TIME = "T", ICENSOR = c("C3", "CTIME")),
-         var = "C3", ok = list(C3 = c(0, 4)),
-         bad = list(list(C3 = c(0, NA)), list(C3 = c(0, -4))))
+         # The status also reads CTIME against TIME since #543 (readct.c's
+         # CTIME == TIME rule), so each frame carries both.
+         var = "C3", ok = list(C3 = c(0, 4), CTIME = c(0, 1), T = c(1, 2)),
+         bad = list(list(C3 = c(0, NA), CTIME = c(0, 1), T = c(1, 2)),
+                    list(C3 = c(0, -4), CTIME = c(0, 1), T = c(1, 2))))
   )
   for (case in cases) {
     got <- .hzr_censor_spec(case$st)

@@ -31,8 +31,51 @@ fnv_fit <- function(D) {
                           fit = TRUE))
 }
 
+# x1's score information is indefinite, so the score criterion sends it to the
+# Wald fallback. Its rescuing refit used to converge with a singular Hessian,
+# but that was the cold-started refit: since #551 the refit keeps the better
+# of two starts and has a variance. The Hessian failure is therefore made
+# here -- the x1 refit converges, keeps its estimate, and carries no variance
+# matrix -- and the premise block asserts each of those.
+fnv_no_variance <- function(env = parent.frame()) {
+  orig <- .hzr_refit_with_scope
+  local_mocked_bindings(
+    .hzr_refit_with_scope = function(current, action = c("add", "drop"), var,
+                                     phase = NULL, data, ...) {
+      r <- orig(current, action = action, var = var, phase = phase,
+                data = data, ...)
+      if (identical(action, "add") && identical(var, "x1")) {
+        r$fit$vcov <- NA
+        r$fit$se <- NA
+      }
+      r
+    },
+    .env = env
+  )
+}
+
+test_that("the fallback reaches x1, whose refit then has no variance", {
+  skip_on_cran()
+  D <- fnv_fixture()
+  # Unmocked: the score cannot test x1, so the fallback refits it, and that
+  # refit (from the better of two starts) has a variance and tests it.
+  out <- suppressWarnings(.hzr_stepwise_forward_step(
+    current = fnv_fit(D), scope = list(const = ~ x1 + x2), data = D,
+    criterion = "score", slentry = 0.05))
+  x1_row <- out$all_scores[out$all_scores$variable == "x1", ]
+  expect_true(x1_row$fallback)
+  expect_identical(x1_row$stat_type, "wald_z")
+  # With the variance removed, the same refit is the case below.
+  fnv_no_variance()
+  refit <- suppressWarnings(.hzr_refit_with_scope(
+    fnv_fit(D), action = "add", var = "x1", phase = "const", data = D))
+  expect_true(isTRUE(refit$fit$converged))
+  expect_false(is.matrix(refit$fit$vcov))
+})
+
 test_that("the rescuing refit converges but has no variance to test with", {
   skip_on_cran()
+  fnv_no_variance()
   # Pin the mechanism, not just the label. If the refit ever starts failing
   # outright, or starts producing an SE, this fixture stops exercising the
   # path the tests below describe and they would pass for a different reason.
@@ -52,6 +95,7 @@ test_that("the rescuing refit converges but has no variance to test with", {
 
 test_that("the row says the rescue failed, not just that the score did", {
   skip_on_cran()
+  fnv_no_variance()
   D <- fnv_fixture()
   out <- suppressWarnings(.hzr_stepwise_forward_step(
     current = fnv_fit(D), scope = list(const = ~ x1 + x2), data = D,
@@ -77,6 +121,7 @@ test_that("n_wald_fallbacks counts rescues, not attempts", {
   # x1 is attempted and yields no test; x2 is attempted and does. Only x2 is a
   # fallback. Miscounting here would overstate how much of the selection was
   # decided by the substituted criterion.
+  fnv_no_variance()
   D <- fnv_fixture()
   out <- suppressWarnings(.hzr_stepwise_forward_step(
     current = fnv_fit(D), scope = list(const = ~ x1 + x2), data = D,
@@ -88,6 +133,7 @@ test_that("n_wald_fallbacks counts rescues, not attempts", {
 
 test_that("a screen that tested nothing says so rather than looking clean", {
   skip_on_cran()
+  fnv_no_variance()
   D <- fnv_fixture()
   w <- testthat::capture_warnings(
     sw <- hzr_stepwise(fit = fnv_fit(D), scope = list(const = ~ x1 + x2),

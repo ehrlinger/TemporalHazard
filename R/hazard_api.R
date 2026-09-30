@@ -815,7 +815,22 @@ NULL
 #'   fit: \code{"g3_alpha_one"} (a g3 phase with \code{alpha} fixed at 1,
 #'   re-expressed as PROC HAZARD does, see [hzr_phase()]) and
 #'   \code{"g3_fixge2_alpha_start"} (a free \code{alpha} start moved to 2/3
-#'   under \code{constraint = "eta_gamma"}). Only rows the likelihood reads
+#'   under \code{constraint = "eta_gamma"}); and two made after it.
+#'   \code{"g3_corner_supremum"} is a g3 phase under
+#'   \code{constraint = "eta_gamma"} whose estimated \code{gamma} converged
+#'   below 1000 although the log-likelihood is higher at a much larger
+#'   \code{gamma}, with any fixed \code{tau} or \code{alpha} held. The
+#'   estimate is then not the maximum-likelihood one, and the supremum may lie
+#'   at \code{gamma = Inf}. A fixed \code{gamma}, and a fit
+#'   with left- or interval-censored rows, are not examined.
+#'   \code{"coe_no_events_left"} is a fit under Conservation of Events whose
+#'   log-likelihood is higher with the conserved phase's scale sent to zero,
+#'   where no events remain for that phase. Both records also carry
+#'   \code{gain} and the higher point as \code{certificate_theta} with its
+#'   \code{certificate_loglik} (the corner record adds \code{gamma_hat}); the
+#'   estimates are not changed. A fit can carry several records, in no
+#'   guaranteed order, so select them by \code{mechanism}. Only rows the
+#'   likelihood reads
 #'   count as observed times. A fit with any record raises one warning whose
 #'   classes are \code{"hzr_"} plus each mechanism present, all inheriting
 #'   \code{"hzr_boundary"}, so one handler catches the whole family.
@@ -849,7 +864,8 @@ hazard <- function(formula = NULL,
   # `objective` is a top-level argument rather than a `control` element on
   # purpose: it changes the estimand, and burying that among convergence
   # tolerances makes it easy to miss in review.
-  if (objective == "sas" && dist != "multiphase") {
+  # identical(): this runs before `dist` is validated.
+  if (objective == "sas" && !identical(dist, "multiphase")) {
     stop("objective = \"sas\" applies only to dist = \"multiphase\": it ",
          "reproduces PROC HAZARD's interval-censored contribution, and no ",
          "other distribution here is a PROC HAZARD target. Got dist = \"",
@@ -1289,8 +1305,15 @@ hazard <- function(formula = NULL,
     # If x exists, theta must include coefficients for all variates
     # theta = [shape parms ... | covariate coefficients ...]
     # For now, assume theta length determines whether we expect x
+    # Not for a multiphase fit: a phase with its own formula takes no slot
+    # per global column, and the exact per-phase count is checked below
+    # (#551). An unfitted multiphase object keeps the bound it had, which
+    # can refuse a theta of the right length there (#558).
     required_coef <- if (is.null(x_fit)) 0L else ncol(x_fit)
-    if (!is.null(x_fit) && length(theta) < required_coef) {
+    # Scalar-safe: `dist` is validated further down, so an NA or a vector
+    # must not fail here with a base-R message.
+    if (!(identical(dist, "multiphase") && isTRUE(fit)) && !is.null(x_fit) &&
+          length(theta) < required_coef) {
       stop("'theta' length must be >= number of required coefficients (", required_coef, ").", call. = FALSE)
     }
   }
@@ -1346,7 +1369,10 @@ hazard <- function(formula = NULL,
          ".", call. = FALSE)
   }
 
-  if (!is.character(dist) || length(dist) != 1 || !nzchar(dist)) {
+  # is.na(): nzchar(NA) is TRUE, so an NA `dist` passed and failed later on
+  # `dist != "multiphase"` with a base-R message.
+  if (!is.character(dist) || length(dist) != 1 || is.na(dist) ||
+        !nzchar(dist)) {
     stop("'dist' must be a non-empty character scalar.", call. = FALSE)
   }
 
