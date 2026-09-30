@@ -33,13 +33,20 @@
     - `hzr_bootstrap()` warns with the number of replicates whose `mu`
       cannot be represented; the summary of `mu` is not usable there.
     - A finite `mu` whose product with a large time overflowed gave a
-      cumulative hazard of `Inf`. That is now computed on the log scale.
+      cumulative hazard of `Inf` from `predict()`. `predict()` now computes
+      it on the log scale.
     - Where `mu` is finite but its variance overflows or underflows,
       `predict(se.fit = TRUE)` returned a wrong standard error: 187 times too
       large in one case measured, 75% too large in another. It now returns
       `NA` standard errors and limits, with a warning. A prediction that does
       not depend on `mu`, such as the linear predictor, keeps its standard
-      error.
+      error. `hazard()` warns about such a fit too, with the same class,
+      because the standard error it reports for `mu` is `Inf`, 0 or too
+      small there.
+    - `hzr_evaluate()` stops when `mu` times an observed time is too small
+      to be represented. It returned a log-likelihood that was not the
+      model's: 23084.15 where the fit's own was 22972.56, in the case
+      measured.
 
 * **Multiphase stepwise refits now start from the model they extend
   (#551). Multiphase selections, and `hzr_bootstrap()` select-mode

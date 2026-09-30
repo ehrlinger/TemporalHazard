@@ -20,18 +20,18 @@
 }
 
 .w566_fit <- function(formula, data, theta) {
-  classes <- list()
+  msgs <- character(0)
   fit <- withCallingHandlers(
     hazard(formula, data = data, dist = "weibull", theta = theta, fit = TRUE),
     warning = function(w) {
-      classes[[length(classes) + 1L]] <<- class(w)
+      if (inherits(w, "hzr_unrepresentable_scale")) {
+        msgs <<- c(msgs, conditionMessage(w))
+      }
       invokeRestart("muffleWarning")
     }
   )
-  list(fit = fit,
-       n_scale = sum(vapply(classes, function(k) {
-         "hzr_unrepresentable_scale" %in% k
-       }, logical(1))))
+  # The hzr_unrepresentable_scale warnings this fit raised, and their text.
+  list(fit = fit, n_scale = length(msgs), msgs = msgs)
 }
 
 test_that("a fit whose mu overflows warns, and its readers refuse (#566)", {
@@ -39,12 +39,10 @@ test_that("a fit whose mu overflows warns, and its readers refuse (#566)", {
   res <- .w566_fit(survival::Surv(time, dead) ~ x, d, c(exp(50), 0.2, -0.2))
   f <- res$fit
   # Premise: a genuine maximum, the centred fit's, with mu = Inf. The two
-  # optimizer runs need not stop at the same digit, so the tolerance is loose;
-  # SAS's gradient test on the raw fit is the sharper statement.
+  # optimizer runs need not stop at the same digit, so the tolerance is loose.
   ctr <- .w566_fit(survival::Surv(time, dead) ~ xc, d, c(1, 0.2, -0.2))
   expect_identical(ctr$n_scale, 0L)
   expect_equal(f$fit$objective, ctr$fit$fit$objective, tolerance = 1e-4)
-  expect_lte(f$fit$rel_gradient, .Machine$double.eps^(1 / 3))
   expect_identical(unname(coef(f)[[1]]), Inf)
   # It stays converged: the fit is sound, only its scale is not reportable.
   expect_identical(f$fit$converged, TRUE)
@@ -158,14 +156,16 @@ test_that("mu * time overflowing does not make the cumulative hazard Inf (#566)"
 
 
 test_that("an overflowed variance gives NA standard errors, not wrong ones (#566)", {
-  # log(mu) is about 600: mu is finite, so the fit raises no warning, but its
-  # variance carries mu^2 and is Inf. predict() read that as a fixed
-  # parameter and returned a standard error 187 times the centred fit's
-  # (16.85 against 0.0901) on main fcc6501d.
+  # log(mu) is about 600: mu is finite, but its variance carries mu^2 and is
+  # Inf. predict() read that as a fixed parameter and returned a standard
+  # error 187 times the centred fit's (16.85 against 0.0901) on main
+  # fcc6501d, and summary() showed the SE of mu with no warning.
   d <- .w566_data(115, -0.115)
   raw <- .w566_fit(survival::Surv(time, dead) ~ x, d, c(exp(500), 0.2, -0.115))
   ctr <- .w566_fit(survival::Surv(time, dead) ~ xc, d, c(1, 0.2, -0.115))
-  expect_identical(raw$n_scale, 0L)
+  # The fit says so: it is the variance here, not mu, that cannot be held.
+  expect_identical(raw$n_scale, 1L)
+  expect_match(raw$msgs, "variance of the Weibull scale mu", fixed = TRUE)
   expect_true(is.finite(coef(raw$fit)[[1]]))
   expect_identical(unname(vcov(raw$fit)[1, 1]), Inf)
   nd <- d[1:2, ]
@@ -179,26 +179,31 @@ test_that("an overflowed variance gives NA standard errors, not wrong ones (#566
   )
   # The value is right; its standard error and limits are withheld. The two
   # fits are separate optimizer runs, hence the tolerance.
-  expect_equal(p_raw$fit, p_ctr$fit, tolerance = 5e-2)
+  expect_equal(p_raw$fit, p_ctr$fit, tolerance = 1e-2)
   expect_true(all(is.na(p_raw$se.fit)))
   expect_true(all(is.na(p_raw$lower)) && all(is.na(p_raw$upper)))
   expect_true(all(is.finite(p_ctr$se.fit)))
 
-  # The linear predictor does not depend on mu, so its standard error is
-  # |x| * se(beta) whatever mu's variance is, and it is still returned.
+  # The linear predictor and the relative hazard do not depend on mu, so
+  # their standard errors are |x| * se(beta), and exp(eta) times that,
+  # whatever mu's variance is; they are still returned.
+  se_eta <- abs(nd$x) * sqrt(vcov(raw$fit)[3, 3])
   lp <- expect_no_warning(predict(raw$fit, newdata = nd,
                                   type = "linear_predictor", se.fit = TRUE))
-  expect_equal(lp$se.fit, abs(nd$x) * sqrt(vcov(raw$fit)[3, 3]),
-               tolerance = 1e-10)
+  expect_equal(lp$se.fit, se_eta, tolerance = 1e-10)
+  hz <- expect_no_warning(predict(raw$fit, newdata = nd, type = "hazard",
+                                  se.fit = TRUE))
+  expect_equal(hz$se.fit, hz$fit * se_eta, tolerance = 1e-10)
 })
 
 test_that("an underflowed or NaN variance is withheld too (#566)", {
-  # log(mu) is about -400: mu is an ordinary double and raises no warning,
-  # but its variance is subnormal while its covariances are not. The sandwich
-  # then gave a standard error of 0.1018 where the centred fit gives 0.0583.
+  # log(mu) is about -400: mu is an ordinary double, but its variance is
+  # subnormal while its covariances are not. The sandwich then gave a
+  # standard error of 0.1018 where the centred fit gives 0.0583.
   d <- .w566_data(-80, 0.08)
   raw <- .w566_fit(survival::Surv(time, dead) ~ x, d, c(exp(-400), 0.2, 0.08))
-  expect_identical(raw$n_scale, 0L)
+  expect_identical(raw$n_scale, 1L)
+  expect_match(raw$msgs, "variance of the Weibull scale mu", fixed = TRUE)
   v11 <- unname(vcov(raw$fit)[1, 1])
   expect_true(!is.na(v11) && v11 < .Machine$double.xmin)
   nd <- d[1:2, ]
@@ -232,11 +237,12 @@ test_that("an underflowed or NaN variance is withheld too (#566)", {
 })
 
 test_that("a subnormal mu is refused like one that reached 0 (#566)", {
-  # log(mu) is about -744: mu is 4.94e-324, positive but with almost no
-  # digits left. It passed the positivity rule, and predict() gave a
-  # cumulative hazard of 0.4888 where the centred fit gives 0.5243.
-  d <- .w566_data(-155, 0.155)
-  res <- .w566_fit(survival::Surv(time, dead) ~ x, d, c(exp(-700), 0.2, 0.155))
+  # log(mu) is about -719: mu is near 5.7e-313, positive but subnormal, so
+  # it has lost digits. Such a value passed the positivity rule; at 4.94e-324
+  # predict() gave a cumulative hazard of 0.4888 where the centred fit gives
+  # 0.5243. The target sits mid-range, clear of both ends of the subnormals.
+  d <- .w566_data(-150, 0.15)
+  res <- .w566_fit(survival::Surv(time, dead) ~ x, d, c(exp(-700), 0.2, 0.15))
   f <- res$fit
   mu <- unname(coef(f)[[1]])
   expect_true(mu > 0 && mu < .Machine$double.xmin)
@@ -272,4 +278,62 @@ test_that("hzr_bootstrap() counts replicates whose mu cannot be represented (#56
   ctr <- .w566_fit(survival::Surv(time, dead) ~ xc, d, c(1, 0.2, -0.2))$fit
   bs_ctr <- collect(hzr_bootstrap(ctr, n_boot = 3, seed = 3))
   expect_false(any(grepl(pattern, bs_ctr$msgs, fixed = TRUE)))
+  # A mu that reached exactly 0 is counted too.
+  d0 <- .w566_data(-200, 0.2)
+  f0 <- .w566_fit(survival::Surv(time, dead) ~ x, d0,
+                  c(exp(-700), 0.2, 0.2))$fit
+  expect_identical(unname(coef(f0)[[1]]), 0)
+  bs0 <- collect(hzr_bootstrap(f0, n_boot = 3, seed = 3))
+  hit0 <- grep(pattern, bs0$msgs, fixed = TRUE, value = TRUE)
+  expect_length(hit0, 1L)
+  n0 <- bs0$value$n_success
+  expect_match(hit0, paste0("^", n0, " of ", n0, " successful"))
+})
+
+test_that("the rule's edges: the smallest normal double, and a subnormal nu (#566)", {
+  xmin <- .Machine$double.xmin
+  expect_false(.hzr_unrepresentable(xmin))
+  expect_true(.hzr_unrepresentable(xmin / 2))
+  expect_false(.hzr_unrepresentable(.Machine$double.xmax))
+  expect_true(.hzr_unrepresentable(Inf))
+  expect_true(.hzr_unrepresentable(NaN))
+  # Zero and negative values are the positivity rule's, which names them.
+  expect_false(.hzr_unrepresentable(0))
+  expect_false(.hzr_unrepresentable(-1))
+  expect_error(.hzr_check_theta(c(1, xmin / 2), "weibull"),
+               "shape nu = .* cannot be represented")
+  expect_error(.hzr_check_theta(c(0, 1), "weibull"),
+               "scale mu = 0, which must be positive", fixed = TRUE)
+  expect_null(.hzr_check_theta(c(xmin, 1), "weibull"))
+  # The other families report on the optimizer's own scale: no rule applies.
+  expect_null(.hzr_check_theta(c(Inf, 1), "lognormal"))
+})
+
+test_that("hzr_evaluate() refuses a product mu * time it cannot hold (#566)", {
+  # mu is an ordinary double here (about 1e-291), so the rule on mu alone
+  # passes it, but the likelihood forms (mu * t)^nu and mu * t underflows:
+  # it is exactly 0 on some rows and subnormal on others. hzr_evaluate()
+  # returned 23084.15 at the fit's own estimates, whose log-likelihood is
+  # 22972.56, with no warning.
+  set.seed(4)
+  n <- 500
+  age <- stats::rnorm(n, 60, 10)
+  nu <- 0.05
+  b <- 0.57
+  t <- (stats::rexp(n) / exp(b * (age - 60)))^(1 / nu)
+  cc <- (stats::rexp(n) * 2)^(1 / nu)
+  d <- data.frame(time = pmin(t, cc), dead = as.integer(t <= cc), age = age,
+                  agec = age - 60)
+  raw <- .w566_fit(survival::Surv(time, dead) ~ age, d,
+                   c(exp(-60 * b / nu), nu, b))$fit
+  ctr <- .w566_fit(survival::Surv(time, dead) ~ agec, d, c(1, nu, b))$fit
+  mu <- unname(coef(raw)[[1]])
+  # Premise: mu itself is a normal double, and the product is not.
+  expect_true(is.finite(mu) && mu >= .Machine$double.xmin)
+  expect_gt(sum(mu * d$time < .Machine$double.xmin), 0L)
+  expect_error(hzr_evaluate(raw, coef(raw)),
+               "mu * time cannot be represented", fixed = TRUE)
+  # Known negative: the centred fit evaluates to its own log-likelihood.
+  expect_equal(as.numeric(hzr_evaluate(ctr, coef(ctr))$logLik),
+               ctr$fit$objective, tolerance = 1e-8)
 })

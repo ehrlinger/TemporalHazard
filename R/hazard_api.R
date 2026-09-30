@@ -1662,6 +1662,22 @@ hazard <- function(formula = NULL,
           "Centre or rescale the covariates and refit."
         ), call = NULL)
       ))
+    } else if (identical(dist, "weibull") && is.matrix(optim_result$vcov) &&
+                 .hzr_variance_unrepresentable(optim_result$vcov[1L, 1L])) {
+      # mu itself is fine, but its variance carries mu^2 and is not: Inf for
+      # mu beyond about 1e154, subnormal or 0 below about 1e-154. The standard
+      # error shown for mu was then Inf, exactly 0, or short of the truth,
+      # with nothing said.
+      warning(structure(
+        class = c("hzr_unrepresentable_scale", "warning", "condition"),
+        list(message = paste0(
+          "The variance of the Weibull scale mu cannot be represented (mu = ",
+          format(optim_result$par[[1L]]), "), usually because a covariate ",
+          "is far from zero. The standard error reported for mu cannot be ",
+          "used, and predict() will return NA standard errors. Centre or ",
+          "rescale the covariates and refit."
+        ), call = NULL)
+      ))
     }
     fit_state$se <- .hzr_safe_se_from_vcov(optim_result$vcov)
     fit_state$vcov <- optim_result$vcov

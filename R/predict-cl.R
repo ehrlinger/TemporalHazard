@@ -336,6 +336,17 @@ NULL
 # Free-parameter vcov helper (shared by aggregate and decomposed se.fit paths)
 # ---------------------------------------------------------------------------
 
+#' Which variances overflowed or underflowed (#566)
+#'
+#' `TRUE` for a variance that is `NaN`, infinite, or below the smallest normal
+#' double. `NA` is `FALSE`: that is how a fixed or masked parameter is marked.
+#' @param d Numeric vector of variances, a vcov diagonal.
+#' @return Logical vector, never `NA`.
+#' @noRd
+.hzr_variance_unrepresentable <- function(d) {
+  is.nan(d) | is.infinite(d) | (!is.na(d) & d < .Machine$double.xmin)
+}
+
 #' Free-parameter vcov submatrix for the delta-method sandwich
 #'
 #' Fixed parameters (e.g. `fixed = "shapes"`) leave NA rows/cols in the expanded
@@ -369,8 +380,7 @@ NULL
   # as if it were known exactly, and keeping a variance of 0 loses the
   # sandwich's positive term; both gave finite, wrong standard errors (#566).
   d <- diag(vcov_mat)
-  unrep <- which(is.nan(d) | is.infinite(d) |
-                   (!is.na(d) & d < .Machine$double.xmin))
+  unrep <- which(.hzr_variance_unrepresentable(d))
   if (length(setdiff(unrep, unused))) {
     warning("Variance-covariance matrix has a variance that cannot be ",
             "represented (it overflowed or underflowed, as for a parameter ",

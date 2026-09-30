@@ -174,6 +174,25 @@ hzr_evaluate <- function(object, theta, times = NULL) {
   # The likelihood's sentinel for an out-of-model theta is Inf, which would
   # be returned as the log-likelihood (#383).
   .hzr_check_theta(theta, dist)
+  # The Weibull likelihood forms (mu * t)^nu. A mu that is itself a normal
+  # double can still underflow that product, to a subnormal number or to 0,
+  # and the log-likelihood returned was then not the model's: 23084.15 where
+  # the fit's own was 22972.56 (#566). An overflowing product already gives
+  # -Inf with a warning, so only the silent side is refused here.
+  if (identical(dist, "weibull")) {
+    # Not `times`: that is this function's own argument.
+    obs_t <- c(prepared$time, prepared$time_lower, prepared$time_upper)
+    obs_t <- obs_t[is.finite(obs_t) & obs_t > 0]
+    n_lost <- sum(theta[[1L]] * obs_t < .Machine$double.xmin)
+    if (n_lost > 0L) {
+      stop("'theta' gives Weibull scale mu = ", format(theta[[1L]]),
+           ", and mu * time cannot be represented for ", n_lost, " of ",
+           length(obs_t), " times: the product is below the smallest normal ",
+           "double, so the likelihood would be computed from lost digits. ",
+           "A covariate far from zero is the usual cause; centre or rescale ",
+           "the covariates and refit.", call. = FALSE)
+    }
+  }
 
   if (identical(dist, "multiphase")) {
     # As hazard(fit = FALSE) does with a supplied theta: derive the
