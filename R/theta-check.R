@@ -25,6 +25,13 @@
 #' defined only for positive `mu` and `nu`, since the likelihood takes their
 #' logarithms, so a non-positive value is refused and named.
 #'
+#' **Finiteness (#566):** a fitted `mu` can be `Inf`. The model depends on it
+#' only through `nu * log(mu)`, and with a covariate far from zero that
+#' logarithm leaves the range a double can hold at a sound maximum. `Inf`
+#' passed the positivity rule, and `predict()` then returned survival 0 and
+#' cumulative hazard `Inf` as if they were results. A non-finite `mu` or `nu`
+#' is refused and named, ahead of positivity.
+#'
 #' @param theta The supplied parameter vector, natural scale.
 #' @param dist The distribution.
 #' @param n_coef Design columns, after any time-window expansion; `NULL`
@@ -50,6 +57,20 @@
   }
   if (!identical(dist, "weibull") || length(theta) < 2L) {
     return(invisible(NULL))
+  }
+  not_finite <- c(if (!is.finite(theta[[1L]])) {
+                    paste0("scale mu = ", format(theta[[1L]]))
+                  },
+                  if (!is.finite(theta[[2L]])) {
+                    paste0("shape nu = ", format(theta[[2L]]))
+                  })
+  if (length(not_finite)) {
+    both <- length(not_finite) == 2L
+    stop("'theta' gives Weibull ", paste(not_finite, collapse = " and "),
+         if (both) ", which must both be finite" else ", which must be finite",
+         ": the value is outside the range a double can hold. Where it came ",
+         "from a fit, a covariate far from zero is the usual cause; centre ",
+         "or rescale the covariates and refit.", call. = FALSE)
   }
   parts <- c(if (theta[[1L]] <= 0) {
                paste0("scale mu = ", format(theta[[1L]], digits = 4))

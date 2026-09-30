@@ -286,7 +286,13 @@ NULL
 #'     \exp(\eta)}, with hazard \eqn{h \propto t^{\nu - 1}}.  The single shape
 #'     \eqn{\nu} makes risk increase over time (\eqn{\nu > 1}), decrease
 #'     (\eqn{\nu < 1}), or stay flat (\eqn{\nu = 1}).  Use it as the default when
-#'     a single monotone trend describes the hazard.}
+#'     a single monotone trend describes the hazard.  The scale \eqn{\mu} is
+#'     the baseline at \eqn{\mathbf{x} = 0}, so a covariate far from zero
+#'     (a calendar year, an age in days) can push it beyond what a number
+#'     can hold: it is then reported as `Inf` or 0, with a warning of class
+#'     `"hzr_unrepresentable_scale"`, and [predict()] refuses the fit.
+#'     Centering or rescaling the covariate fixes it without changing the
+#'     model.}
 #'   \item{`"exponential"`: constant hazard}{The memoryless special case
 #'     \eqn{\nu = 1}: a time-invariant baseline rate, \eqn{H(t \mid \mathbf{x}) =
 #'     \mu t \exp(\eta)}.  Use it when the event rate does not change with
@@ -1634,6 +1640,26 @@ hazard <- function(formula = NULL,
     fit_state$par   <- optim_result$par
     fit_state$objective <- optim_result$value
     fit_state$converged <- (optim_result$convergence == 0)
+    # A Weibull fit is optimized on (nu * log(mu), log(nu)) and reports mu by
+    # exp(). With a covariate far from zero that logarithm can leave the range
+    # a double holds at a sound maximum, and mu comes back as Inf or 0 (#566).
+    # The fit is not wrong for it, so `converged` is left alone; but mu, its
+    # standard error and every prediction need a scale this object does not
+    # carry, and predict() refuses it (.hzr_check_theta()).
+    if (identical(dist, "weibull") && length(optim_result$par) >= 1L &&
+          (!is.finite(optim_result$par[[1L]]) ||
+             optim_result$par[[1L]] == 0)) {
+      warning(structure(
+        class = c("hzr_unrepresentable_scale", "warning", "condition"),
+        list(message = paste0(
+          "The Weibull scale mu is reported as ",
+          format(optim_result$par[[1L]]), ": its logarithm is outside the ",
+          "range a double can hold, usually because a covariate is far from ",
+          "zero. mu, its standard error and predictions from this fit ",
+          "cannot be used. Centre or rescale the covariates and refit."
+        ), call = NULL)
+      ))
+    }
     fit_state$se <- .hzr_safe_se_from_vcov(optim_result$vcov)
     fit_state$vcov <- optim_result$vcov
     fit_state$rcond <- optim_result$rcond
@@ -2300,6 +2326,12 @@ predict.hazard <- function(object, newdata = NULL,
     .hzr_check_theta(theta, object$spec$dist,
                      n_coef = if (is.null(x_stored)) 0L else ncol(x_stored),
                      windowed = !is.null(time_windows))
+  } else if (!identical(object$spec$dist, "multiphase")) {
+    # No stored design, so no length to check against (see above), but a
+    # Weibull scale or shape the model cannot use is refused all the same:
+    # an intercept-only fit stores no design, and its theta went unchecked
+    # (#566).
+    .hzr_check_theta(theta, object$spec$dist)
   }
 
   # The other families predict from an unfitted object perfectly well, and
@@ -2695,7 +2727,9 @@ predict.hazard <- function(object, newdata = NULL,
         if (th[1] <= 0 || th[2] <= 0) return(rep(NA_real_, length(time)))
         beta_cand <- if (length(th) > 2) th[3:length(th)] else numeric(0)
         eta_cand <- if (has_cov) as.numeric(x %*% beta_cand) else rep(0, length(time))
-        unname((th[1] * time) ^ th[2] * exp(eta_cand))
+        # On the log scale: (mu * t)^nu overflows to Inf once mu * t does,
+        # where the cumulative hazard itself is finite (#566).
+        unname(exp(th[2] * (log(th[1]) + log(time)) + eta_cand))
       }
     } else if (dist_lbl == "exponential") {
       function(th) {

@@ -2,6 +2,22 @@
 
 ## Bug fixes
 
+* **A Weibull fit whose scale cannot be represented now says so, and
+  `predict()` refuses it (#566).** The Weibull scale `mu` is the baseline at
+  `x = 0`, so with a covariate far from zero, such as a calendar year, it
+  can exceed what a number can hold at a sound fit. It was then reported as
+  `Inf` or 0. With `Inf`, `predict()` returned survival 0 and cumulative
+  hazard `Inf` with no warning, where the same model with the covariate
+  centered gave 0.217, and `hzr_gof()` reported an expected count of `Inf`.
+  `hazard()` now warns, with class `"hzr_unrepresentable_scale"`, and says to
+  centre or rescale the covariates. `predict()`, `hzr_gof()` and
+  `hzr_deciles()` stop with an error on such a fit, including an
+  intercept-only one, whose parameters were not checked before. The fit
+  still reports `converged = TRUE`: it is sound, and only its scale cannot
+  be reported. Separately, a finite `mu` whose product with a large time
+  overflowed gave a cumulative hazard of `Inf`; that is now computed on
+  the log scale and is finite.
+
 * **Multiphase stepwise refits now start from the model they extend
   (#551). Multiphase selections, and `hzr_bootstrap()` select-mode
   frequencies, from earlier versions may be wrong.** Each candidate refit

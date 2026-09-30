@@ -90,9 +90,12 @@ NULL
   J <- matrix(0, nrow = n, ncol = p)
 
   if (type %in% c("cumulative_hazard", "survival")) {
-    H <- (mu * time) ^ nu * exp(eta)
+    # On the log scale, as predict() computes H: mu * time can overflow where
+    # H is finite (#566).
+    log_mu_t <- log(mu) + log(time)
+    H <- exp(nu * log_mu_t + eta)
     J[, 1L] <- (nu / mu) * H
-    J[, 2L] <- log(mu * time) * H
+    J[, 2L] <- log_mu_t * H
     if (length(beta) > 0L && !is.null(x)) {
       J[, (n_shape + 1L):p] <- x * H
     }
