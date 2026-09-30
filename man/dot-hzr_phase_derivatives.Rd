@@ -38,7 +38,7 @@ Named list:
 }
 \description{
 Computes \eqn{\Phi_j(t)}, \eqn{\phi_j(t)}, and their derivatives with
-respect to \code{t_half}, \code{nu}, and \code{m} using finite differences on
+respect to \code{log_t_half}, \code{nu}, and \code{m} using finite differences on
 \code{\link[=hzr_decompos]{hzr_decompos()}}: central in \code{log_t_half} and \code{nu}, and in \code{m} central except
 near \code{m = 0}, where the stencil keeps the sign of \code{m}.  \code{\link[=hzr_decompos]{hzr_decompos()}}
 changes formula at \code{m = 0} and the two sides meet in a cusp, so for

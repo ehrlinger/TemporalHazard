@@ -29,7 +29,8 @@ thalf_oracle <- function(log_t_half, nu, m, type, what) {
   at <- function(d) {
     vapply(thalf_times, function(t) {
       numDeriv::grad(function(l) thalf_value(l, nu, m, type, what, t),
-                     log_t_half, method.args = list(d = d))
+                     log_t_half, method = "Richardson",
+                     method.args = list(d = d))
     }, numeric(1))
   }
   list(fine = at(1e-4), coarse = at(1e-2))
@@ -179,7 +180,7 @@ test_that("the multiphase score for log_t_half is right at the issue's point (#5
   }
   score <- seen$gradient_fn(theta, seen$time, seen$status, seen$time_lower,
                             seen$time_upper, seen$x, weights = seen$weights)
-  oracle <- numDeriv::grad(obj, theta)
+  oracle <- numDeriv::grad(obj, theta, method = "Richardson")
   # The component #574 is about is far from zero here.
   expect_gt(abs(oracle[2]), 1)
   expect_equal(unname(score)[2], oracle[2], tolerance = 1e-5)

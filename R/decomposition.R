@@ -592,7 +592,7 @@ hzr_phase_cumhaz <- function(time, t_half = 1, nu = 1, m = 0,
 #' Derivatives of phase cumulative and instantaneous hazard w.r.t. shape params
 #'
 #' Computes \eqn{\Phi_j(t)}, \eqn{\phi_j(t)}, and their derivatives with
-#' respect to `t_half`, `nu`, and `m` using finite differences on
+#' respect to `log_t_half`, `nu`, and `m` using finite differences on
 #' [hzr_decompos()]: central in `log_t_half` and `nu`, and in `m` central except
 #' near `m = 0`, where the stencil keeps the sign of `m`.  [hzr_decompos()]
 #' changes formula at `m = 0` and the two sides meet in a cusp, so for
