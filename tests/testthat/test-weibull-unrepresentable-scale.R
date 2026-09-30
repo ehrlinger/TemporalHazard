@@ -403,4 +403,15 @@ test_that("the product guard reads only the times each row's status uses (#566)"
   interval <- c(1, 0, 1, 0, 1, 2)
   expect_error(ev(status = interval, time_lower = c(rep(0, 5), tiny),
                   time_upper = tm), lost, fixed = TRUE)
+
+  # A row with weight 0 contributes nothing, whatever its time, so its time
+  # is not read either. With weight 1 the same row is refused.
+  ev_w <- function(time, weights) {
+    obj <- hazard(time = time, status = right, weights = weights,
+                  dist = "weibull", theta = c(mu, nu), fit = FALSE)
+    as.numeric(suppressWarnings(hzr_evaluate(obj, c(mu, nu)))$logLik)
+  }
+  w0 <- c(1, 1, 1, 1, 1, 0)
+  expect_identical(ev_w(c(tm[1:5], tiny), w0), ev_w(tm, w0))
+  expect_error(ev_w(c(tm[1:5], tiny), rep(1, 6)), lost, fixed = TRUE)
 })
