@@ -156,6 +156,49 @@ test_that("inputs are matched exactly, and constant or short ones handled (#515)
     class = "hzr_score_rows_unverified"
   )
 
+  # Times that differ only by rounding: all.equal() takes them as equal, so
+  # rows swapped among them passed as in order. The time column now has to
+  # match exactly, as ties are defined, and such a swap is refused.
+  set.seed(515)
+  nt <- 200L
+  # Sorted, so reordering by rounded time moves rows only within a group.
+  tn <- sort(sample(1:5, nt, TRUE)) / 10 + seq_len(nt) * 1e-14
+  sn <- stats::rbinom(nt, 1, 0.6)
+  near_fit <- suppressWarnings(hazard(time = tn, status = sn,
+                                      dist = "weibull", theta = c(1, 1),
+                                      fit = TRUE))
+  dn <- data.frame(t = tn, s = sn)
+  bad <- dn[order(round(dn$t, 6), -dn$s), ]
+  expect_identical(anyDuplicated(tn), 0L)
+  expect_true(isTRUE(all.equal(bad$t, tn, check.attributes = FALSE)))
+  expect_false(identical(bad$t, tn))
+  expect_false(identical(bad$s, sn))
+  expect_error(.hzr_check_data_row_order(near_fit, bad, score = TRUE),
+               "column `t` holds the fit's event times in another order")
+  # With an exact tie as well, the within-ties check is not reached either.
+  tn2 <- tn
+  tn2[(nt - 9L):nt] <- 0.7
+  tie_fit <- suppressWarnings(hazard(time = tn2, status = sn,
+                                     dist = "weibull", theta = c(1, 1),
+                                     fit = TRUE))
+  dn2 <- data.frame(t = tn2, s = sn)
+  bad2 <- dn2[order(round(dn2$t, 6), -dn2$s), ]
+  expect_gt(anyDuplicated(tn2), 0L)
+  expect_true(isTRUE(all.equal(bad2$t, tn2, check.attributes = FALSE)))
+  expect_false(identical(bad2$t, tn2))
+  expect_error(.hzr_check_data_row_order(tie_fit, bad2, score = TRUE),
+               "column `t` holds the fit's event times in another order")
+  expect_no_condition(.hzr_check_data_row_order(tie_fit, dn2, score = TRUE))
+  # The same swap against a stored frame that shares only the times.
+  frame_fit <- suppressWarnings(hazard(time = tn, status = sn, data = dn,
+                                       dist = "weibull", theta = c(1, 1),
+                                       fit = TRUE))
+  expect_identical(nrow(frame_fit$data$frame), nt)
+  expect_error(.hzr_check_data_row_order(frame_fit, bad["t"], score = TRUE),
+               "does not hold the rows the model was fitted on")
+  expect_no_condition(.hzr_check_data_row_order(frame_fit, dn["t"],
+                                                score = TRUE))
+
   # A phase design stored shorter than the times (rows with a missing
   # covariate dropped) cannot be compared, so it is not treated as found.
   short <- fit

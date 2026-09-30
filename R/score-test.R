@@ -682,8 +682,11 @@
     return(character())
   }
   common <- intersect(names(data), names(frame))
+  # Exact: within a tolerance, rows whose values differ only by rounding
+  # could be swapped unseen (#515).
   same <- vapply(common, function(nm) {
-    isTRUE(all.equal(data[[nm]], frame[[nm]], check.attributes = FALSE))
+    isTRUE(all.equal(data[[nm]], frame[[nm]], tolerance = 0,
+                     check.attributes = FALSE))
   }, logical(1))
   common[!same]
 }
@@ -901,7 +904,9 @@
   for (nm in names(data)) {
     col <- data[[nm]]
     if (!is.numeric(col) || length(col) != length(time)) next
-    if (isTRUE(all.equal(as.numeric(col), time, check.attributes = FALSE))) {
+    # Exact, as ties are: within all.equal()'s tolerance, rows whose times
+    # differ only by rounding would be swapped unseen, and taken as ordered.
+    if (identical(as.numeric(col), as.numeric(time))) {
       if (!tied) return(invisible(NULL))
       in_order_tied <- c(in_order_tied, nm)
       next

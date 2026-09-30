@@ -325,7 +325,11 @@
   warning, when the inputs found tell every row apart, or when all of them
   are found: rows that could still be swapped are then identical in
   everything the fit reads, and the screen's answer is unchanged. Otherwise
-  the warning remains, and now names the inputs to add to `data`.
+  the warning remains, and now names the inputs to add to `data`. Every one
+  of these comparisons is now exact, as are the event-time column and the
+  columns compared with a stored frame. Under `all.equal()`'s tolerance,
+  rows whose times differed only by rounding, such as `0.1 + 0.2` and `0.3`,
+  could be swapped unseen and screened as if in order.
 
 * **`hzr_stepwise(criterion = "aic")` no longer enters a variable on the
   strength of its missing values (#488).** A multiphase refit drops every row
