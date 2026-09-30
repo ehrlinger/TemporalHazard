@@ -239,8 +239,10 @@ the log scale; only a g3 shape, \code{gamma}, \code{alpha} or
 \code{eta}, is named this way);
 \code{NULL} when the fit was examined and is well identified; and
 \code{NA} when the check could not run because no usable Hessian was
-available, which includes an unfitted object and an install without
-the suggested \pkg{numDeriv}. Test with \code{is.list(fit$fit$weak)},
+available, which includes an unfitted object, an install without
+the suggested \pkg{numDeriv}, and an ill-conditioned fit in which an
+estimated parameter has no finite variance and no ridge was found among
+the others, since that parameter was not examined. Test with \code{is.list(fit$fit$weak)},
 not \code{!is.null()}: the \code{NA} case has not been examined and
 must not be read as a clean result),
 \code{engine} (implementation tag, \code{"native-r-m2"}), and two
