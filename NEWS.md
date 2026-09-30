@@ -2,6 +2,23 @@
 
 ## Bug fixes
 
+* **In a two-way `hzr_stepwise()` screen, a variable frozen by `max_move`
+  is now frozen in the state it ends the iteration in (#580).** A variable
+  that reached `max_move` by entering was frozen at once, but the
+  iteration's protected variables had been fixed before its forward step,
+  so the backward step that followed could still drop it: the trace read
+  `FROZEN` then `DROP`, and `$scope$frozen` named a variable the final
+  model did not contain, with no warning. It happened whenever the freeze
+  fell on an entry, which for a variable that enters and is dropped every
+  iteration is every even `max_move`, the default 4 included. The freeze
+  now takes effect at the end of the iteration, so such a variable is
+  frozen out and `$scope$frozen` agrees with the final model. The final
+  model is unchanged. The "Known limitation (the frozen set)" section of
+  `?hzr_stepwise` is replaced by one describing the rule. PROC HAZARD's
+  MOVE rule differs again (outside `NOSTEPWISE` it counts only exits, so
+  it freezes a variable only as it leaves the model); that is recorded,
+  not adopted.
+
 * **`hzr_stepwise(criterion = "score")` now refits and Wald-tests two more
   kinds of candidate it could not score (#570).** The score criterion refits
   a candidate whose score test breaks down and tests it by Wald, but only for
