@@ -119,7 +119,11 @@
   tiny <- !is.na(L) & L < log(1e-5)
   x <- exp(L[tiny])
   out[tiny] <- L[tiny] - x / 2 + x^2 / 24
-  big <- !is.na(L) & !tiny
+  # Where x overflows, G = exp(-x) is 0 and log(1 - G) is 0: a phase that
+  # has not started, as at a time near 0. hzr_log1mexp(Inf) is NA by design.
+  huge <- !is.na(L) & !tiny & !is.finite(exp(L))
+  out[huge] <- 0
+  big <- !is.na(L) & !tiny & !huge
   out[big] <- hzr_log1mexp(exp(L[big]))
   out
 }
@@ -359,7 +363,8 @@ hzr_decompos <- function(time, t_half, nu, m) {
     btnu  <- bt^(-1 / nu)
     G     <- exp(-btnu)
     g     <- G * (bt^num1) / rho
-    # -log(G) = btnu = bt^(-1/nu), carried as its log (#578).
+    # -log(G) = btnu = bt^(-1/nu), carried as its log (#578). Near t = 0,
+    # or where bt underflows, that log overflows, and log(1 - G) is 0.
     log_surv <- .hzr_log1mexp_of_log(-log(bt) / nu)
     log_g    <- -btnu + num1 * log(bt) - log(rho)
 
@@ -399,7 +404,7 @@ hzr_decompos <- function(time, t_half, nu, m) {
     # rounding. The hazard is assembled from the corrections alone.
     y        <- time / rho
     L        <- .hzr_log_neg_log1mexp(y) - log(-m)
-    log_surv <- L + .hzr_log1mexp_of_log_excess(L)
+    log_surv <- .hzr_log1mexp_of_log(L)
     log_g    <- mm1 * hzr_log1mexp(y) - y - log(-m * rho)
     log_h    <- mm1 * hzr_log1mexp(y) - log(rho) -
       .hzr_log_neg_log1mexp_excess(y) - .hzr_log1mexp_of_log_excess(L)

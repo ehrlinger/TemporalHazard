@@ -96,3 +96,70 @@ test_that("the log_t_half derivative of a saturated hazard phase is right (#578)
                  label = paste("log_t_half =", lth))
   }
 })
+
+test_that("near t = 0, and where bt underflows, log_surv is 0, not NA (#578)", {
+  # Found by review. Case 1L (m = 0) carried log(-log G) = -log(bt) / nu, and
+  # where that overflowed -- nu < 1 at the time-0 clamp, or bt underflowing
+  # to 0 for a large t_half -- log(1 - G) came back NA where it is 0: a phase
+  # that has not started. An entry time of 0 is evaluated at every row with
+  # none, so the likelihood read -Inf for every nu below about 1.
+  tt <- c(0, 1e-300, 1e-12, 1e-6)
+  shapes <- list(c(1, 1), c(0.3, 40), c(1.5, 0), c(0.5, 0), c(0.05, 0),
+                 c(1, -0.5), c(2, -5), c(0, -1), c(-1, 1), c(-1.5, 0))
+  for (sh in shapes) {
+    d <- hzr_decompos(tt, t_half = 1, nu = sh[1], m = sh[2])
+    label <- paste0("nu = ", sh[1], ", m = ", sh[2])
+    expect_true(all(is.finite(d$log_surv)), label = paste(label, "finite"))
+    expect_true(all(d$log_surv <= 0), label = paste(label, "not positive"))
+    expect_true(all(is.finite(d$h)), label = paste(label, "hazard finite"))
+  }
+  # Case 1L with bt underflowing: the phase has not started at these times.
+  d <- hzr_decompos(c(1e-3, 0.01, 0.1), t_half = 12, nu = 0.005, m = 0)
+  expect_identical(d$log_surv, c(0, 0, 0))
+  expect_true(all(is.finite(d$h)))
+  expect_identical(hzr_decompos(c(0, 1e-300), t_half = 1, nu = 0.5,
+                                m = 0)$log_surv, c(0, 0))
+  # Case 2L at m = -1 has 1 - G = exp(-t / rho), rho = t_half / log(2): the
+  # value must keep its relative accuracy as t goes to 0, not cancel away.
+  # As a ratio: these values are far below any tolerance, and an absolute
+  # comparison would pass anything.
+  small <- c(1e-12, 1e-100, 1e-300)
+  ratio <- hzr_decompos(small, t_half = 1, nu = 0, m = -1)$log_surv /
+    (-small * log(2))
+  expect_equal(ratio, c(1, 1, 1), tolerance = 1e-10)
+})
+
+test_that("a hazard phase with entry times and nu below 1 fits (#578)", {
+  skip_on_cran() # a multiphase fit
+  # Data from the phase's own model: m = 0, nu = 0.5, t_half = 2, with a
+  # fifth of the rows entering late. With log_surv NA at the entry time 0,
+  # every nu below about 1 read -Inf, and a fit stopped against that edge
+  # at nu = 0.9998 reporting convergence (found by review). Before #578 the
+  # same call reported a log-likelihood of +23295 at nu = 0.037: the clamp.
+  withr::local_seed(2)
+  n <- 400
+  nu <- 0.5
+  rho <- nu * 2 * log(2)^nu
+  tt <- (-log(1 - runif(n)))^(-nu) * rho / nu
+  cens <- runif(n, 0, 20)
+  st <- as.integer(tt <= cens)
+  tt <- pmin(tt, cens) + 1e-6
+  entry <- ifelse(runif(n) < 0.2, runif(n) * 0.5 * tt, 0)
+  d <- data.frame(start = entry, stop = tt, event = st)
+  expect_true(any(d$start > 0) && any(d$start == 0))
+  fit <- suppressWarnings(hazard(
+    survival::Surv(start, stop, event) ~ 1, data = d, dist = "multiphase",
+    phases = list(late = hzr_phase("hazard", t_half = 1, nu = 2, m = 0,
+                                   fixed = "m")),
+    fit = TRUE, control = list(n_starts = 1)
+  ))
+  expect_lt(fit$fit$objective, 0)
+  expect_lte(fit$fit$rel_gradient, .Machine$double.eps^(1 / 3))
+  nu_hat <- unname(fit$fit$theta[["late.nu"]])
+  expect_gt(nu_hat, 0.3)
+  expect_lt(nu_hat, 0.7)
+  # The likelihood is defined on the far side of nu = 1 as well.
+  p <- coef(fit)
+  p[["late.nu"]] <- 0.4
+  expect_true(is.finite(as.numeric(hzr_evaluate(fit, p)$logLik)))
+})
