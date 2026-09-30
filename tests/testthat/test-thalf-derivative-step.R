@@ -81,6 +81,13 @@ test_that("from t_half = 1e-4 down to the cap the step is the one it was (#574)"
   # that had agreed. So the step grows as 1e-4 / t_half there, as the old
   # linear step did, and the result must be the old one. The reference is
   # that old difference, written out.
+  #
+  # What no test here pins is the cap's value, 120. Halving it passes every
+  # assertion in this file. It is a measured choice, not a derived one: over
+  # the 1096-cell sweep it left no cell worse than before, and nearby values
+  # are nearly as good, so an assertion tight enough to tell 120 from 60
+  # would be asserting rounding noise. Removing the cap, or the growth below
+  # 1e-4, is caught: by the first test and by this one.
   eps_rel <- .Machine$double.eps^(1 / 3)
   Phi <- function(th) {
     -log(pmax(1 - hzr_decompos(thalf_times, t_half = th, nu = 1, m = 1)$G,
