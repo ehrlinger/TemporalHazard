@@ -290,6 +290,55 @@ test_that("every refitted reason reports its failed rescue (#570)", {
   }
 })
 
+test_that("the bootstrap counts Wald ENTRIES, not candidates Wald-tested (#570)", {
+  # With no usable nuisance block every candidate is refitted and tested, so
+  # the screen's n_wald_fallbacks is positive even when none enters. The
+  # bootstrap's count and its warning are about entries.
+  d <- fb_data()
+  fit <- fb_fit(d)
+  orig_n <- .hzr_score_nuisance
+  local_mocked_bindings(.hzr_score_nuisance = function(current) {
+    r <- orig_n(current)
+    list(inv = NULL, idx = r$idx, ok = FALSE)
+  })
+  boot <- function(slentry) {
+    w <- character()
+    bs <- withCallingHandlers(
+      hzr_bootstrap(fit, n_boot = 3, seed = 570, scope = fb_scope,
+                    direction = "forward", slentry = slentry, max_steps = 1L),
+      warning = function(x) {
+        w <<- c(w, conditionMessage(x))
+        invokeRestart("muffleWarning")
+      }
+    )
+    list(bs = bs, entered = any(grepl("entered at least one variable on a Wald",
+                                      w, fixed = TRUE)))
+  }
+  # Known positive: at an ordinary slentry each replicate enters a variable
+  # on its rescued Wald test.
+  yes <- boot(0.30)
+  expect_identical(yes$bs$n_wald_fallback_replicates, 3L)
+  expect_identical(yes$bs$n_wald_fallbacks, 3L)
+  expect_true(yes$entered)
+  # An slentry nothing can meet: every candidate is still Wald-tested, and
+  # none enters.
+  no <- boot(1e-300)
+  expect_identical(no$bs$n_success, 3L)
+  expect_identical(no$bs$n_wald_fallback_replicates, 0L)
+  expect_identical(no$bs$n_wald_fallbacks, 0L)
+  expect_false(no$entered)
+
+  # Under criterion = "wald" every entry is a Wald z by design: no fallback.
+  wald <- suppressWarnings(hzr_bootstrap(
+    fit, n_boot = 3, seed = 570, scope = fb_scope, direction = "forward",
+    criterion = "wald", slentry = 0.30, max_steps = 1L
+  ))
+  expect_identical(wald$n_success, 3L)
+  expect_gt(sum(wald$summary$n[wald$summary$parameter %in%
+                                 c("age", "mal", "com_iv")]), 0)
+  expect_identical(wald$n_wald_fallback_replicates, 0L)
+})
+
 test_that("the two reasons' texts say the refit was tried (#570)", {
   for (r in c("nuisance_singular", "information_nonpositive")) {
     txt <- .hzr_score_reason_text(r)

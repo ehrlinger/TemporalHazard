@@ -2440,7 +2440,21 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
         if (isTRUE((boot_fit$criteria$n_nonmonotone_entries %||% 0L) > 0L)) {
           n_nonmonotone_reps <- n_nonmonotone_reps + 1L
         }
-        n_fb <- boot_fit$criteria$n_wald_fallbacks %||% 0L
+        # Entries DECIDED by a Wald test, read off the accepted steps. The
+        # screen's own `n_wald_fallbacks` counts every candidate it refitted
+        # and tested, entered or not, and a step whose information cannot be
+        # formed refits all of its candidates: counting those reported an
+        # entry on a Wald test in a replicate that declined them all (#570).
+        # Under the score criterion only: with `criterion = "wald"` every
+        # entry is a Wald z by design, and none of them is a fallback.
+        rep_steps <- boot_fit$steps
+        n_fb <- if (is.data.frame(rep_steps) && nrow(rep_steps)) {
+          sum(tolower(rep_steps$action) == "enter" &
+                rep_steps$criterion %in% "score" &
+                rep_steps$stat_type %in% "wald_z")
+        } else {
+          0L
+        }
         if (n_fb > 0L) {
           n_wald_fallback_reps <- n_wald_fallback_reps + 1L
           n_wald_fallbacks <- n_wald_fallbacks + n_fb
