@@ -381,6 +381,17 @@ NULL
   # sandwich's positive term; both gave finite, wrong standard errors (#566).
   d <- diag(vcov_mat)
   unrep <- which(.hzr_variance_unrepresentable(d))
+  # A negative variance is caught by the same rule, since it is below the
+  # smallest normal double, but it is a different fault: the covariance is
+  # not positive definite (possible after the Weibull back-transform when the
+  # internal one is indefinite). Name it; main returned an SE of 0 there.
+  negative <- which(!is.na(d) & d < 0)
+  if (length(setdiff(negative, unused))) {
+    warning("Variance-covariance matrix has a negative variance, so it is not ",
+            "positive definite; standard errors and CLs will be NA.",
+            call. = FALSE)
+    return(NULL)
+  }
   if (length(setdiff(unrep, unused))) {
     warning("Variance-covariance matrix has a variance that cannot be ",
             "represented (it overflowed or underflowed, as for a parameter ",
@@ -468,15 +479,34 @@ NULL
   dist <- object$spec$dist
   target <- diff_fn(theta)
 
-  # A Weibull relative hazard and linear predictor are exp(eta) and eta: mu
-  # and nu do not enter, and their Jacobian columns are zero (see
-  # .hzr_predict_jacobian_weibull()).
-  unused <- if (dist == "weibull" &&
-                  type %in% c("hazard", "linear_predictor")) {
-    seq_len(min(2L, p))
-  } else {
-    integer(0)
+  # --- Build Jacobian of the delta-method target ---------------------------
+  # Built before the vcov is screened, so the screen knows which parameters
+  # this prediction depends on (#566).
+  jacobian <- function() {
+    if (dist == "weibull") {
+      .hzr_predict_jacobian_weibull(type, theta, time, x, p)
+    } else if (dist == "multiphase") {
+      # The analytic multiphase Jacobian is for the cumulative hazard; the
+      # instantaneous hazard has no analytic Jacobian here, so fall back to
+      # a numeric Jacobian of its evaluator. (linear_predictor is rejected
+      # upstream for multiphase.)
+      if (type == "hazard") {
+        .hzr_predict_jacobian_numeric(diff_fn, theta)
+      } else {
+        .hzr_predict_jacobian_multiphase(theta, time, phases,
+                                          cov_counts, x_list, p)
+      }
+    } else {
+      .hzr_predict_jacobian_numeric(diff_fn, theta)
+    }
   }
+  J <- jacobian()
+  # A parameter whose Jacobian column is exactly zero on every requested row
+  # does not enter this prediction: a Weibull mu or nu for the relative
+  # hazard and linear predictor, or a coefficient whose covariate is 0 in
+  # every row of newdata. Its variance, representable or not, cannot change
+  # the standard error, so it is dropped exactly rather than withholding it.
+  unused <- which(colSums(is.na(J) | J != 0) == 0)
   fv <- .hzr_free_vcov(object$fit$vcov, p, unused = unused)
   if (is.null(fv)) {
     n <- length(target)
@@ -487,24 +517,6 @@ NULL
   }
   vcov_use <- fv$vcov_use
   free_idx <- fv$free_idx
-
-  # --- Build Jacobian of the delta-method target ---------------------------
-  if (dist == "weibull") {
-    J <- .hzr_predict_jacobian_weibull(type, theta, time, x, p)
-  } else if (dist == "multiphase") {
-    # The analytic multiphase Jacobian is for the cumulative hazard; the
-    # instantaneous hazard has no analytic Jacobian here, so fall back to a
-    # numeric Jacobian of its evaluator. (linear_predictor is rejected
-    # upstream for multiphase.)
-    if (type == "hazard") {
-      J <- .hzr_predict_jacobian_numeric(diff_fn, theta)
-    } else {
-      J <- .hzr_predict_jacobian_multiphase(theta, time, phases,
-                                              cov_counts, x_list, p)
-    }
-  } else {
-    J <- .hzr_predict_jacobian_numeric(diff_fn, theta)
-  }
 
   # Restrict J to the free columns so the sandwich dimensions match.
   J <- J[, free_idx, drop = FALSE]

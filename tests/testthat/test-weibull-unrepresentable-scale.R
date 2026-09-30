@@ -446,3 +446,43 @@ test_that("the event hazard's mu^nu is guarded too (#566, Copilot on #573)", {
                  class = "hzr_evaluate_not_finite")
   expect_identical(as.numeric(ll), -Inf)
 })
+
+test_that("prediction SEs: a negative variance is named, and an unused one is dropped (#566, Copilot on #573)", {
+  data(avc, package = "TemporalHazard", envir = environment())
+  a <- stats::na.omit(avc)
+  f <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ age + mal,
+                               data = a, dist = "weibull",
+                               theta = c(0.01, 0.5, 0, 0), fit = TRUE))
+  nd <- data.frame(time = c(1, 5), age = c(60, 70), mal = c(0, 0))
+  se_of <- function(obj, newdata) {
+    predict(obj, newdata = newdata, type = "cumulative_hazard",
+            se.fit = TRUE)$se.fit
+  }
+  base_se <- se_of(f, nd)
+  expect_true(all(is.finite(base_se) & base_se > 0))
+
+  # A negative variance is not an overflow: the covariance is not positive
+  # definite. The standard error is withheld and the warning says why (on
+  # main fcc6501d it was reported as 0, with no warning).
+  neg <- f
+  neg$fit$vcov[1, 1] <- -abs(neg$fit$vcov[1, 1])
+  expect_warning(se_neg <- se_of(neg, nd), "negative variance", fixed = TRUE)
+  expect_true(all(is.na(se_neg)))
+
+  # mal is 0 in every requested row, so the prediction does not depend on its
+  # coefficient: an unrepresentable variance there is dropped exactly, and
+  # the SE equals the one with mal treated as fixed.
+  inf_mal <- f
+  inf_mal$fit$vcov[4, 4] <- Inf
+  fixed_mal <- f
+  fixed_mal$fit$vcov[4, ] <- NA_real_
+  fixed_mal$fit$vcov[, 4] <- NA_real_
+  se_inf <- expect_no_warning(se_of(inf_mal, nd))
+  expect_equal(se_inf, se_of(fixed_mal, nd), tolerance = 1e-12)
+  expect_equal(se_inf, base_se, tolerance = 1e-12)
+  # Known positive: with mal = 1 the prediction depends on it, and the SE is
+  # withheld.
+  expect_warning(se_used <- se_of(inf_mal, transform(nd, mal = 1)),
+                 "variance that cannot be represented", fixed = TRUE)
+  expect_true(all(is.na(se_used)))
+})
