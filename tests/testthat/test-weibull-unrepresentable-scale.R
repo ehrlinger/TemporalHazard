@@ -46,7 +46,10 @@ test_that("a fit whose mu overflows warns, and its readers refuse (#566)", {
   expect_identical(unname(coef(f)[[1]]), Inf)
   # It stays converged: the fit is sound, only its scale is not reportable.
   expect_identical(f$fit$converged, TRUE)
+  # One warning, and it is the one about mu: the variance of an Inf mu is
+  # NaN, which would raise the variance warning if this one did not.
   expect_identical(res$n_scale, 1L)
+  expect_match(res$msgs, "scale mu is reported as Inf", fixed = TRUE)
 
   nd <- d[1:2, ]
   nd$time <- c(0.5, 2)
@@ -73,6 +76,7 @@ test_that("a fit whose mu underflows to 0 warns too (#566)", {
   expect_identical(unname(coef(f)[[1]]), 0)
   expect_identical(f$fit$converged, TRUE)
   expect_identical(res$n_scale, 1L)
+  expect_match(res$msgs, "scale mu is reported as 0", fixed = TRUE)
   nd <- d[1:2, ]
   nd$time <- c(0.5, 2)
   expect_error(predict(f, newdata = nd, type = "survival"),
@@ -247,6 +251,7 @@ test_that("a subnormal mu is refused like one that reached 0 (#566)", {
   mu <- unname(coef(f)[[1]])
   expect_true(mu > 0 && mu < .Machine$double.xmin)
   expect_identical(res$n_scale, 1L)
+  expect_match(res$msgs, "scale mu is reported as", fixed = TRUE)
   nd <- d[1:2, ]
   nd$time <- c(0.5, 2)
   expect_error(predict(f, newdata = nd, type = "cumulative_hazard"),
