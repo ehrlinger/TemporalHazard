@@ -180,8 +180,19 @@ hzr_evaluate <- function(object, theta, times = NULL) {
   # the fit's own was 22972.56 (#566). An overflowing product already gives
   # -Inf with a warning, so only the silent side is refused here.
   if (identical(dist, "weibull")) {
-    # Not `times`: that is this function's own argument.
-    obs_t <- c(prepared$time, prepared$time_lower, prepared$time_upper)
+    # Only the times the likelihood reads for each row's status, as
+    # .hzr_logl_weibull() does: `time` for an event or right-censored row,
+    # and its entry time where time_lower is a genuine one below `time`; the
+    # upper bound for a left-censored row; both bounds for an interval. A
+    # bound a row does not use must not refuse the evaluation. (Not named
+    # `times`: that is this function's own argument.)
+    st <- prepared$status
+    tm <- prepared$time
+    lo <- if (is.null(prepared$time_lower)) tm else prepared$time_lower
+    up <- if (is.null(prepared$time_upper)) tm else prepared$time_upper
+    epoch <- st %in% c(0, 1)
+    obs_t <- c(tm[epoch], lo[epoch & lo < tm], up[st == -1],
+               lo[st == 2], up[st == 2])
     obs_t <- obs_t[is.finite(obs_t) & obs_t > 0]
     n_lost <- sum(theta[[1L]] * obs_t < .Machine$double.xmin)
     if (n_lost > 0L) {

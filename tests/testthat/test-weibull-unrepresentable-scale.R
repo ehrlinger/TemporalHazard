@@ -367,3 +367,40 @@ test_that("hzr_evaluate() refuses a product mu * time it cannot hold (#566)", {
                 dist = "weibull", theta = c(1, nu, b), fit = FALSE)
   expect_true(is.finite(as.numeric(hzr_evaluate(ctr, c(1, nu, b))$logLik)))
 })
+
+test_that("the product guard reads only the times each row's status uses (#566)", {
+  # The likelihood reads `time` on an event or right-censored row, plus its
+  # entry time when there is one; the upper bound on a left-censored row; and
+  # both bounds on an interval-censored row. A bound it does not read must
+  # not refuse the evaluation (Copilot, #573).
+  mu <- 1e-290
+  nu <- 0.5
+  tm <- c(1, 2, 3, 4, 5, 6)
+  ev <- function(...) {
+    obj <- hazard(time = tm, ..., dist = "weibull", theta = c(mu, nu),
+                  fit = FALSE)
+    as.numeric(suppressWarnings(hzr_evaluate(obj, c(mu, nu)))$logLik)
+  }
+  tiny <- 1e-100
+  expect_false(mu * tiny >= .Machine$double.xmin)
+  right <- c(1, 0, 1, 0, 1, 0)
+  reference <- ev(status = right)
+  expect_true(is.finite(reference))
+  # Unread: an upper bound on event and right-censored rows.
+  expect_identical(ev(status = right, time_upper = rep(tiny, 6)), reference)
+  # Unread: a lower bound on a left-censored row.
+  left <- c(1, 0, 1, 0, 1, -1)
+  with_lower <- ev(status = left, time_lower = c(rep(0, 5), tiny),
+                   time_upper = tm)
+  expect_identical(with_lower, ev(status = left, time_upper = tm))
+  # Read: a left-censored row's upper bound, an entry time on an event row,
+  # and either bound of an interval-censored row. One time is lost in each.
+  lost <- "mu * time cannot be represented for 1 of "
+  expect_error(ev(status = left, time_upper = c(tm[1:5], tiny)), lost,
+               fixed = TRUE)
+  expect_error(ev(status = right, time_lower = c(tiny, rep(0, 5))), lost,
+               fixed = TRUE)
+  interval <- c(1, 0, 1, 0, 1, 2)
+  expect_error(ev(status = interval, time_lower = c(rep(0, 5), tiny),
+                  time_upper = tm), lost, fixed = TRUE)
+})
