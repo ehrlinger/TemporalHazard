@@ -16,10 +16,12 @@
   fitted `t_half` of `1e-4` or more are unaffected beyond the optimizer's
   own tolerance. A `t_half` too small to step at all (below about
   `3e-321`) now gives `NaN` for this derivative, where it gave a number.
-  One case is improved but not cured: for a `"hazard"` phase with `t_half`
-  below about `exp(-25)`, at times of order 1, the phase's cumulative
-  hazard has no accurate digits left to difference, and the derivative
-  there is still unreliable.
+  One case is improved but not cured: for a `"hazard"` phase far past
+  saturation the phase's cumulative hazard runs out of accurate digits,
+  and the derivative is first noisy and then exactly 0. Where that starts
+  depends on the shape; at `nu = 1`, `m = 1` and times of order 1 it is
+  accurate to three digits at `t_half = exp(-25)`, wrong by up to 60% at
+  `exp(-30)` and 0 from `exp(-34)`.
 
 * **A Wald stepwise entry no longer tests a refit that ended below the
   current model (#538).** The AIC fix below (#490) left two paths open.

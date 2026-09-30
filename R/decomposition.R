@@ -601,9 +601,10 @@ hzr_phase_cumhaz <- function(time, t_half = 1, nu = 1, m = 0,
 #' 1e-10) and becomes one-sided backward if it would still reach 0.  The
 #' `log_t_half` derivative is a central difference in `log_t_half` itself,
 #' so its step is proportional to `t_half` at every scale. It is `NaN` where
-#' `t_half` is too small or too large to step. It is not reliable for a
-#' `"hazard"` phase far past saturation (`t_half` below about `exp(-25)` at
-#' times of order 1), where `1 - G` has no digits left.
+#' `t_half` is too small or too large to step. For a `"hazard"` phase far
+#' past saturation it is unreliable and then exactly 0, because `1 - G` runs
+#' out of digits; where that starts depends on the shape (from about
+#' `t_half = exp(-25)` at `nu = 1`, `m = 1` and times of order 1).
 #'
 #' @param time Numeric vector of positive times.
 #' @param t_half Positive scalar half-life.
@@ -701,23 +702,28 @@ hzr_phase_cumhaz <- function(time, t_half = 1, nu = 1, m = 0,
   # actually formed, not by the nominal 2 * h. They are the same to rounding
   # until t_half is subnormal, where the points are rounded to a coarse grid:
   # at t_half = 1e-320 the nominal divisor put the derivative 32% off.
-  # Where t_half has no bits left to move at all (below about 3e-321, or
-  # Inf) the two points coincide and the quotient would be a clean zero for
-  # a derivative that is not zero. NaN is returned there, as for g3's tau.
+  # Where t_half has no bits left to move at all (below about 3e-321) the
+  # two points coincide, and where the upper point overflows (t_half within
+  # a step of the largest double) the spacing is infinite. Either way the
+  # quotient would be a clean zero for a derivative that is not zero, so NaN
+  # is returned there, as for g3's tau.
   #
   # What this does not cure: a phase so far past saturation that its values
-  # are rounding noise. For the "hazard" type, Phi = -log(1 - G) loses every
-  # digit once G rounds to 1, from about t_half = exp(-25) at times of order
-  # 1, and no step recovers a derivative from that.
+  # have few digits left. For the "hazard" type Phi = -log(1 - G), and as
+  # 1 - G shrinks towards rounding the difference of two such values is
+  # first noisy and then exactly 0, once both points give the same value.
+  # Where that starts depends on the shape: at nu = 1, m = 1 and times of
+  # order 1 the derivative (-1) is good to three digits at t_half = exp(-25),
+  # wrong by up to 60% at exp(-30) and 0 from exp(-34); at nu = 2, m = 0.5
+  # it holds to five digits at exp(-38). No step recovers it; the phase's
+  # value would have to be computed without the cancellation.
   h_lt <- eps_rel * min(max(1, 1e-4 / t_half), 120)
   th_plus  <- t_half * exp(h_lt)
   th_minus <- t_half * exp(-h_lt)
   span <- log(th_plus) - log(th_minus)
-  # Coincident points need no guard: their difference is exactly 0 and the
-  # spacing is 0, so the quotient is NaN.
   d_plus  <- perturb_decompos(th_plus, nu, m)
   d_minus <- perturb_decompos(th_minus, nu, m)
-  if (!is.null(d_plus) && !is.null(d_minus)) {
+  if (is.finite(span) && span > 0 && !is.null(d_plus) && !is.null(d_minus)) {
     e_plus  <- extract(d_plus, type)
     e_minus <- extract(d_minus, type)
     dPhi_dlog_thalf <- (e_plus$Phi - e_minus$Phi) / span

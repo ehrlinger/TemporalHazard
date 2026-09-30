@@ -74,7 +74,7 @@ test_that("cells that agreed before the fix still agree (#574)", {
   }
 })
 
-test_that("between t_half = 1e-4 and the cap the step is the one it was (#574)", {
+test_that("from t_half = 1e-4 down to the cap the step is the one it was (#574)", {
   # Near saturation the phase's values carry rounding noise, and a step held
   # at its ordinary size below t_half = 1e-4 divides that noise by too
   # little: against a Richardson oracle it lost digits in 18 of 1096 cells
@@ -126,6 +126,16 @@ test_that("a t_half with no room to step returns NaN, not a clean zero (#574)", 
   # The other two derivatives do not step t_half and are unaffected.
   expect_true(all(is.finite(pd$dPhi_dnu)))
   expect_true(all(is.finite(pd$dPhi_dm)))
+  # At the largest double the upper point overflows and the spacing is
+  # infinite: a finite difference over it is 0, where just below that the
+  # derivative is as large as -0.05 at these times.
+  big <- c(1e300, 1e305, 1e307)
+  pd <- .hzr_phase_derivatives(big, t_half = .Machine$double.xmax, nu = 1,
+                               m = 1, type = "cdf")
+  expect_true(all(is.nan(pd$dPhi_dlog_thalf)))
+  below <- .hzr_phase_derivatives(big, t_half = .Machine$double.xmax * (1 - 1e-5),
+                                  nu = 1, m = 1, type = "cdf")
+  expect_lt(min(below$dPhi_dlog_thalf), -0.01)
 })
 
 test_that("the multiphase score for log_t_half is right at the issue's point (#574)", {
