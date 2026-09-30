@@ -289,7 +289,8 @@ NULL
 #'     a single monotone trend describes the hazard.  The scale \eqn{\mu} is
 #'     the baseline at \eqn{\mathbf{x} = 0}, so a covariate far from zero
 #'     (a calendar year, an age in days) can push it beyond what a number
-#'     can hold: it is then reported as `Inf` or 0, with a warning of class
+#'     can hold: it is then reported as `Inf`, as 0, or as a value too small
+#'     to keep its digits, with a warning of class
 #'     `"hzr_unrepresentable_scale"`, and [predict()] refuses the fit.
 #'     Centering or rescaling the covariate fixes it without changing the
 #'     model.}
@@ -1642,21 +1643,23 @@ hazard <- function(formula = NULL,
     fit_state$converged <- (optim_result$convergence == 0)
     # A Weibull fit is optimized on (nu * log(mu), log(nu)) and reports mu by
     # exp(). With a covariate far from zero that logarithm can leave the range
-    # a double holds at a sound maximum, and mu comes back as Inf or 0 (#566).
+    # a double holds at a sound maximum, and mu comes back as Inf, 0 or a
+    # subnormal number that has lost most of its digits (#566).
     # The fit is not wrong for it, so `converged` is left alone; but mu, its
     # standard error and every prediction need a scale this object does not
     # carry, and predict() refuses it (.hzr_check_theta()).
     if (identical(dist, "weibull") && length(optim_result$par) >= 1L &&
-          (!is.finite(optim_result$par[[1L]]) ||
+          (.hzr_unrepresentable(optim_result$par[[1L]]) ||
              optim_result$par[[1L]] == 0)) {
       warning(structure(
         class = c("hzr_unrepresentable_scale", "warning", "condition"),
         list(message = paste0(
           "The Weibull scale mu is reported as ",
-          format(optim_result$par[[1L]]), ": its logarithm is outside the ",
-          "range a double can hold, usually because a covariate is far from ",
-          "zero. mu, its standard error and predictions from this fit ",
-          "cannot be used. Centre or rescale the covariates and refit."
+          format(optim_result$par[[1L]]), ", which cannot be represented: ",
+          "its logarithm is outside the range a double holds at full ",
+          "precision, usually because a covariate is far from zero. mu, its ",
+          "standard error and predictions from this fit cannot be used. ",
+          "Centre or rescale the covariates and refit."
         ), call = NULL)
       ))
     }

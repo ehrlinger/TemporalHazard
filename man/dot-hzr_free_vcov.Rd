@@ -4,12 +4,16 @@
 \alias{.hzr_free_vcov}
 \title{Free-parameter vcov submatrix for the delta-method sandwich}
 \usage{
-.hzr_free_vcov(vcov_mat, p)
+.hzr_free_vcov(vcov_mat, p, unused = integer(0))
 }
 \arguments{
 \item{vcov_mat}{The fitted vcov (or NULL / wrong shape).}
 
 \item{p}{Length of the parameter vector.}
+
+\item{unused}{Indices of parameters the prediction does not depend on
+(an all-zero Jacobian column). One whose variance cannot be represented
+is dropped, which is exact, instead of withholding the standard error.}
 }
 \value{
 \code{list(vcov_use, free_idx)}, or \code{NULL} if unusable.

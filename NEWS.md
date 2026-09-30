@@ -15,24 +15,31 @@
   AIC, and `hzr_stepwise()` warns that it declined it without testing it.
   It is not listed in `$criteria$wald_untested_entries`, which is for
   entries with no variance.
+
 * **A Weibull fit whose scale cannot be represented now says so, and
   `predict()` refuses it (#566).** The Weibull scale `mu` is the baseline at
   `x = 0`, so with a covariate far from zero, such as a calendar year, it
-  can exceed what a number can hold at a sound fit. It was then reported as
-  `Inf` or 0. With `Inf`, `predict()` returned survival 0 and cumulative
-  hazard `Inf` with no warning, where the same model with the covariate
-  centered gave 0.217, and `hzr_gof()` reported an expected count of `Inf`.
-  `hazard()` now warns, with class `"hzr_unrepresentable_scale"`, and says to
-  centre or rescale the covariates. `predict()`, `hzr_gof()` and
-  `hzr_deciles()` stop with an error on such a fit, including an
-  intercept-only one, whose parameters were not checked before. The fit
-  still reports `converged = TRUE`: it is sound, and only its scale cannot
-  be reported. Separately, a finite `mu` whose product with a large time
-  overflowed gave a cumulative hazard of `Inf`; that is now computed on
-  the log scale and is finite. And where `mu` is finite but its variance
-  overflows, `predict(se.fit = TRUE)` returned a standard error 187 times
-  too large in the case measured; it now returns `NA` standard errors and
-  limits, with a warning.
+  can leave the range a number can hold at a sound fit. It was then reported
+  as `Inf`, as 0, or as a value so small that most of its digits were lost.
+  With `Inf`, `predict()` returned survival 0 and cumulative hazard `Inf`
+  with no warning, where the same model with the covariate centered gave
+  0.217, and `hzr_gof()` reported an expected count of `Inf`.
+    - `hazard()` now warns, with class `"hzr_unrepresentable_scale"`, and
+      says to centre or rescale the covariates. The fit still reports
+      `converged = TRUE`: it is sound, and only its scale cannot be reported.
+    - `predict()` stops with an error on such a fit, for every `type`, and so
+      do `hzr_gof()`, `hzr_deciles()` and `hzr_evaluate()`. This includes an
+      intercept-only fit, whose parameters `predict()` did not check before.
+    - `hzr_bootstrap()` warns with the number of replicates whose `mu`
+      cannot be represented; the summary of `mu` is not usable there.
+    - A finite `mu` whose product with a large time overflowed gave a
+      cumulative hazard of `Inf`. That is now computed on the log scale.
+    - Where `mu` is finite but its variance overflows or underflows,
+      `predict(se.fit = TRUE)` returned a wrong standard error: 187 times too
+      large in one case measured, 75% too large in another. It now returns
+      `NA` standard errors and limits, with a warning. A prediction that does
+      not depend on `mu`, such as the linear predictor, keeps its standard
+      error.
 
 * **Multiphase stepwise refits now start from the model they extend
   (#551). Multiphase selections, and `hzr_bootstrap()` select-mode

@@ -2266,6 +2266,10 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # off the returned objects and reported in aggregate.
   n_uncomputable_reps <- 0L
   n_wald_untested_reps <- 0L
+  # Weibull replicates whose scale mu came back as Inf, 0 or a subnormal
+  # number (#566). hazard() warns for each, but replicates run quietly, so
+  # the count is read off the estimates and reported once.
+  n_unrep_scale_reps <- 0L
   # Reasons are merged from EVERY select-mode replicate, not only the ones
   # that stopped. A replicate that finished having silently passed over a
   # candidate it could not score is the case a stopped-replicate count cannot
@@ -2412,6 +2416,12 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     }
     if (is.null(failure)) {
       n_success <- n_success + 1L
+      if (identical(object$spec$dist, "weibull")) {
+        mu_rep <- boot_fit$fit$theta[[1L]]
+        if (.hzr_unrepresentable(mu_rep) || mu_rep == 0) {
+          n_unrep_scale_reps <- n_unrep_scale_reps + 1L
+        }
+      }
       if (select_mode) {
         if (isTRUE(boot_fit$criteria$stopped_uncomputable)) {
           n_uncomputable_reps <- n_uncomputable_reps + 1L
@@ -2613,6 +2623,15 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
             "information indefinite -- so their selection frequencies are ",
             "understated rather than merely noisy. See ",
             "`$uncomputable_reasons` for which mechanism.", call. = FALSE)
+  }
+
+  if (n_unrep_scale_reps > 0L) {
+    warning(n_unrep_scale_reps, " of ", n_success, " successful replicates ",
+            "reported a Weibull scale mu that cannot be represented (Inf, 0 ",
+            "or a subnormal number), so the summary of mu is not usable; the ",
+            "other parameters are unaffected. A covariate far from zero is ",
+            "the usual cause: centre or rescale the covariates and refit.",
+            call. = FALSE)
   }
 
   if (n_wald_untested_reps > 0L) {

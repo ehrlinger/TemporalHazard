@@ -348,9 +348,12 @@ NULL
 #'
 #' @param vcov_mat The fitted vcov (or NULL / wrong shape).
 #' @param p Length of the parameter vector.
+#' @param unused Indices of parameters the prediction does not depend on
+#'   (an all-zero Jacobian column). One whose variance cannot be represented
+#'   is dropped, which is exact, instead of withholding the standard error.
 #' @return `list(vcov_use, free_idx)`, or `NULL` if unusable.
 #' @keywords internal
-.hzr_free_vcov <- function(vcov_mat, p) {
+.hzr_free_vcov <- function(vcov_mat, p, unused = integer(0)) {
   vcov_ok <- !is.null(vcov_mat) && is.matrix(vcov_mat) &&
                nrow(vcov_mat) == p && ncol(vcov_mat) == p
   if (!vcov_ok) {
@@ -359,18 +362,24 @@ NULL
     return(NULL)
   }
   # A fixed or masked parameter carries an NA variance and is dropped from the
-  # sandwich below. An infinite variance is not that: it is a variance that
-  # overflowed, as a Weibull mu near exp(600) has (its variance carries
-  # mu^2), and dropping it would compute the standard error as if the
-  # parameter were known exactly (#566).
-  if (any(is.infinite(diag(vcov_mat)))) {
-    warning("Variance-covariance matrix has an infinite variance (a parameter ",
-            "too large for its variance to be represented); standard errors ",
-            "and CLs will be NA. Centre or rescale the covariates and refit.",
-            call. = FALSE)
+  # sandwich below. A variance that overflowed or underflowed is not that. A
+  # Weibull mu's variance carries mu^2: it is Inf for mu near exp(600), and
+  # subnormal or 0 for mu near exp(-400), while its covariances are still
+  # ordinary numbers. Dropping such a parameter computed the standard error
+  # as if it were known exactly, and keeping a variance of 0 loses the
+  # sandwich's positive term; both gave finite, wrong standard errors (#566).
+  d <- diag(vcov_mat)
+  unrep <- which(is.nan(d) | is.infinite(d) |
+                   (!is.na(d) & d < .Machine$double.xmin))
+  if (length(setdiff(unrep, unused))) {
+    warning("Variance-covariance matrix has a variance that cannot be ",
+            "represented (it overflowed or underflowed, as for a parameter ",
+            "far outside the usual range); standard errors and CLs will be ",
+            "NA. Centre or rescale the covariates and refit.", call. = FALSE)
     return(NULL)
   }
-  free_idx <- which(is.finite(diag(vcov_mat)))
+  # Any left are unused by this prediction, so they drop out exactly.
+  free_idx <- setdiff(which(is.finite(d)), unrep)
   if (length(free_idx) < p) {
     free_submat <- vcov_mat[free_idx, free_idx, drop = FALSE]
     if (anyNA(free_submat)) {
@@ -449,7 +458,16 @@ NULL
   dist <- object$spec$dist
   target <- diff_fn(theta)
 
-  fv <- .hzr_free_vcov(object$fit$vcov, p)
+  # A Weibull relative hazard and linear predictor are exp(eta) and eta: mu
+  # and nu do not enter, and their Jacobian columns are zero (see
+  # .hzr_predict_jacobian_weibull()).
+  unused <- if (dist == "weibull" &&
+                  type %in% c("hazard", "linear_predictor")) {
+    seq_len(min(2L, p))
+  } else {
+    integer(0)
+  }
+  fv <- .hzr_free_vcov(object$fit$vcov, p, unused = unused)
   if (is.null(fv)) {
     n <- length(target)
     fit <- if (type == "survival") exp(-target) else target
