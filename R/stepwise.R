@@ -136,11 +136,20 @@
 #'   shared columns with duplicate rows cannot show rows reordered among
 #'   those duplicates.  For
 #'   those the order is checked against a column of `data` holding the fit's
-#'   event times, and refused if they are out of order.  With no such
-#'   column, or when those times have ties (rows reordered within a tie
-#'   leave the column unchanged; a finer check is planned in #515), the
-#'   order cannot be checked, and a warning of class
-#'   `hzr_score_rows_unverified` says so.
+#'   event times, and refused if they are out of order.  Rows reordered
+#'   within a tie leave that column unchanged, so when the times have ties
+#'   the fit's other per-row inputs (status, interval bounds, weights and
+#'   covariate design columns) are looked for in `data` too, each under the
+#'   column it came from: the column the call named (`status = dead`,
+#'   `status = d$dead`, or the event in `Surv(time, event)`), or a
+#'   covariate's own name.  Rows reordered within a tie are refused.  The order is accepted when the inputs found
+#'   tell every row apart, or when all of them are found: rows that could
+#'   still be swapped are then identical in everything the fit reads, and
+#'   the screen's answer is the same.  With no column of event times, or
+#'   tied times the other inputs cannot resolve, the order cannot be
+#'   checked, and a warning of class `hzr_score_rows_unverified` says so and
+#'   names the inputs to add.  Column names must be unique: every check
+#'   reads `data` by name, so a `data` with duplicated names is refused.
 #' @param direction Search strategy: one of `"both"` (default),
 #'   `"forward"`, or `"backward"`.  Controls whether variables may only
 #'   enter, only leave, or both.  See the **Selection direction and
@@ -243,16 +252,17 @@
 #'       computed for want of a variance, `wald_no_variance`; or an entry
 #'       under `criterion = "aic"` whose fit had no finite objective,
 #'       `nonfinite`, or was fitted on different rows from the current model
-#'       because the candidate is missing on some, `rows_differ`, or whose
-#'       refit ended below the current model's log-likelihood, which it
-#'       contains, so that the refit cannot have converged,
-#'       `loglik_below_base`),
+#'       because the candidate is missing on some, `rows_differ`; or an entry
+#'       under `criterion = "aic"` or `"wald"`, or rescued by the Wald
+#'       fallback under `"score"`, whose refit ended below the current
+#'       model's log-likelihood, which it contains, so that the refit cannot
+#'       have converged, `loglik_below_base`),
 #'       `uncomputable_reasons` (a named integer vector of *why*),
 #'       `wald_untested_removals` and `wald_untested_entries` (the
 #'       `"var"` / `"var@phase"` tokens of variables kept in, or left out,
 #'       on a step whose Wald test for them could not be computed; a
-#'       variable tested at a later step is not listed.  Entries are listed
-#'       under `criterion = "wald"` only: under `"score"` an entry no test
+#'       variable tested, or refused as `loglik_below_base`, at a later step
+#'       is not listed.  Entries are listed under `criterion = "wald"` only: under `"score"` an entry no test
 #'       could reach is reported by its reason, such as
 #'       `fallback_no_variance`) and
 #'       `stopped_uncomputable` (`TRUE` when the last iteration had
@@ -262,10 +272,15 @@
 #'       candidates whose effect is too large for the score test's
 #'       approximation at zero, which are typically the strongest variables
 #'       on offer rather than degenerate ones. Candidates with that cause,
-#'       or with `coefficient_diverging`, are refit and tested by Wald
-#'       automatically, counted in `n_wald_fallbacks`. A candidate still
+#'       or with `coefficient_diverging`, `information_nonpositive` or
+#'       `nuisance_singular`, are refit and tested by Wald
+#'       automatically, counted in `n_wald_fallbacks`. `nuisance_singular`
+#'       is a fault of the score test at the current model, whose
+#'       information matrix could not be formed or inverted, so it applies
+#'       to every candidate at that step and each of them is refitted. A
+#'       candidate still
 #'       reaches `uncomputable_reasons` when that refit fails, or when its
-#'       cause is any other, which no refit can rescue. Read
+#'       cause is any other, for which no refit is attempted. Read
 #'       `uncomputable_reasons` for which one it was in any given run.  For
 #'       every criterion it also carries
 #'       `refit_failures` (the `"var"` / `"var@phase"` tokens of candidate
@@ -348,7 +363,16 @@
 #'   \item{\code{p_value}, \code{delta_aic}}{Always populated when
 #'     computable, regardless of the active criterion.}
 #'   \item{\code{logLik}, \code{aic}, \code{n_coef}}{Goodness-of-fit
-#'     diagnostics of the model *after* this step.}
+#'     diagnostics of the model *after* this step. Under
+#'     `objective = "sas"`, on a step whose model reads an interval-censored
+#'     row (one of positive weight, not dropped by a phase design), `logLik`
+#'     holds PROC HAZARD's objective, not a log-likelihood, and `aic` is
+#'     computed from it. A step can change which rows are read (see
+#'     `n_rows`), so on a step that starts or stops reading such rows
+#'     `delta_logLik` is the difference of two different quantities. The
+#'     trace's final line labels the final model's value, and
+#'     `criterion = "aic"` warns once (class `hzr_stepwise_sas_objective`)
+#'     as soon as a step's model reads such a row.}
 #'   \item{\code{n_rows}}{Number of rows in the fit's data after this step
 #'     (rows given weight 0 are counted).  A multiphase fit drops every row
 #'     where a variable in the model is missing, so entering a variable with
@@ -395,6 +419,31 @@ hzr_stepwise <- function(fit,
   if (!inherits(fit, "hazard")) {
     stop("`fit` must be a `hazard` object.", call. = FALSE)
   }
+  # An AIC screen on a SAS objective selects on a penalised quantity that is
+  # not an AIC (#544): said once, as soon as the model in hand reads an
+  # interval row -- at entry, or after a step that restores such rows
+  # (record_step() below) -- rather than only in the trace's last line.
+  sas_aic_warned <- FALSE
+  warn_sas_aic <- function(model) {
+    if (sas_aic_warned || !identical(criterion, "aic") ||
+          !.hzr_objective_not_loglik(model)) {
+      return(invisible(FALSE))
+    }
+    sas_aic_warned <<- TRUE
+    warning(structure(
+      class = c("hzr_stepwise_sas_objective", "warning", "condition"),
+      list(message = paste0(
+        "criterion = \"aic\" on an objective = \"sas\" model that reads ",
+        "interval-censored rows: each entry is decided on ",
+        "-2 * (SAS objective) + 2k, which is not an AIC, and each removal on ",
+        "a Wald statistic from the SAS objective's curvature. $steps$logLik ",
+        "and $steps$aic hold the SAS objective and that quantity, not a ",
+        "log-likelihood and an AIC."
+      ), call = NULL)
+    ))
+    invisible(TRUE)
+  }
+  warn_sas_aic(fit)
   extra_args <- .hzr_check_forwarded_dots(list(...), "hzr_stepwise",
                                           own = names(formals(hzr_stepwise)),
                                           fit = fit)
@@ -732,6 +781,7 @@ hzr_stepwise <- function(fit,
   # Wald and must be labelled as such.
   record_step <- function(action, out, crit = criterion) {
     step_no <<- step_no + 1L
+    warn_sas_aic(current)
     rows <- .hzr_fit_row_mask(current)
     rows_before <- sum(prev_rows)
     # A row of weight 0 adds nothing to the likelihood, so dropping it does
@@ -889,9 +939,16 @@ hzr_stepwise <- function(fit,
         failed <- paste0(sc$variable, ifelse(is.na(sc$phase), "",
                                              paste0("@", sc$phase))) %in%
           (fwd$refit_failures %||% character())
+        # A refit that ended below its base is reported by its own reason
+        # and warning, not as an entry left untested for want of a variance
+        # (#538). Removed as a failed refit is, so this step's outcome also
+        # clears a variance failure recorded at an earlier step: the latest
+        # step decides.
+        below <- (sc$reason %||% rep(NA_character_, nrow(sc))) %in%
+          "loglik_below_base"
         wald_untested_entries <- setdiff(update_untested(
           wald_untested_entries, sc, is.na(sc$score)
-        ), wald_tokens(sc, failed))
+        ), wald_tokens(sc, failed | below))
       }
       iter_refit_failures <- c(iter_refit_failures,
                                fwd$refit_failures %||% character())
@@ -1017,7 +1074,15 @@ hzr_stepwise <- function(fit,
   elapsed <- difftime(Sys.time(), ts_start, units = "secs")
 
   emit("")
-  emit(sprintf("Final model: %d covariate%s, logLik = %.2f, AIC = %.2f",
+  emit(sprintf(if (.hzr_objective_not_loglik(current)) {
+                 # Not a log-likelihood under objective = "sas" with
+                 # interval-censored rows (#544, #556).
+                 paste0("Final model: %d covariate%s, SAS objective = %.2f, ",
+                        "AIC from it = %.2f (objective = \"sas\"; not a ",
+                        "log-likelihood)")
+               } else {
+                 "Final model: %d covariate%s, logLik = %.2f, AIC = %.2f"
+               },
                max(0L, length(current$fit$theta) -
                      .hzr_stepwise_shape_count(current)),
                if (length(current$fit$theta) -
@@ -1082,7 +1147,11 @@ hzr_stepwise <- function(fit,
   # below on information_indefinite alone would go silent the moment the
   # rescue's own failure was labelled separately -- quieter, for a case that
   # needs to be louder.
-  untested_codes <- c("information_indefinite", "fallback_no_variance")
+  # Every reason the score criterion refits for is one of these: a row still
+  # carrying it was refitted and the refit failed. The set is read from
+  # .hzr_score_fallback_reasons, not written out, so a reason added there
+  # cannot leave its failed rescue unreported here (#570).
+  untested_codes <- c(.hzr_score_fallback_reasons, "fallback_no_variance")
   n_indefinite <- sum(unname(uncomputable_reasons[untested_codes]),
                       na.rm = TRUE)
 
@@ -1107,12 +1176,13 @@ hzr_stepwise <- function(fit,
             "statistic could not be computed for them, and under ",
             "`criterion = \"score\"` they are then refit and Wald-tested ",
             "automatically -- so reaching this means that rescue did not ",
-            "produce a test either: it errored or did not converge ",
-            "(`information_indefinite`, listed in ",
-            "`$criteria$refit_failures`), or it converged but yielded no ",
+            "produce a test either: it errored or did not converge (the ",
+            "candidate keeps the score's reason, such as ",
+            "`information_indefinite` or `nuisance_singular`, and is listed ",
+            "in `$criteria$refit_failures`), or it converged but yielded no ",
             "usable variance to test with (`fallback_no_variance`, which ",
-            "leaves `refit_failures` empty). Such candidates are typically ",
-            "STRONG -- that is what drives the score's information ",
+            "leaves `refit_failures` empty). Such candidates are often ",
+            "STRONG -- a large effect is what drives the score's information ",
             "indefinite -- so the selected set may omit them. Re-running ",
             "with `criterion = \"wald\"` runs the same refit and fails the ",
             "same way. See `$criteria$uncomputable_reasons` for which ",

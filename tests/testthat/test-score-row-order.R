@@ -204,12 +204,13 @@ test_that("a vector fit without `data =` is not screened silently (#487)", {
   expect_false(identical(sh$int_dead, d$int_dead))
 
   # avc's times have ties (270 distinct in 305), so `int_dead` in order
-  # cannot prove the rows within a tie are in order: the screen runs, and
-  # warns that it could not verify.
+  # cannot prove the rows within a tie are in order. `dead` holds the fit's
+  # status in order too, and those are all the per-row inputs this fit has,
+  # so the order is verified and the screen runs unwarned (#515).
   expect_lt(length(unique(d$int_dead)), nrow(d))
   r <- ro_screen_w(fit, d, sc)
   expect_identical(r$sw$steps$variable, "opmos")
-  expect_identical(r$n_unverified, 1L)
+  expect_identical(r$n_unverified, 0L)
   expect_error(ro_screen(fit, sh, sc), "column `int_dead` holds the fit's")
   # The Wald criterion refits on the vector interface, whose response is the
   # fit's stored vectors, so it misread the shuffle the same way (com_iv for
@@ -308,7 +309,8 @@ test_that("tied event times do not vouch for row order (#487)", {
   # With ties in the fit's times, a column holding them in order says nothing
   # about the order of rows WITHIN a tie: such a shuffle leaves the column
   # identical. It moved 292 rows here and took the screen from com_iv to
-  # opmos, silently. The proper check is #515; until then, warn.
+  # opmos, silently. The fit's status and weights are now checked as well
+  # (#515).
   d <- ro_avc()
   d$tt <- ceiling(d$int_dead / 12)
   w <- ifelse(d$opmos > stats::median(d$opmos), 3, 1)
@@ -336,16 +338,24 @@ test_that("tied event times do not vouch for row order (#487)", {
 
   sc <- list(early = NULL, constant = ~ age + com_iv + opmos + mal + inc_surg)
   no_time <- setdiff(names(d), "int_dead")
-  for (dd in list(d[, no_time], sh[, no_time])) {
-    r <- ro_screen_w(fit, dd, sc)
-    expect_identical(r$n_unverified, 1L)
-  }
+  # In order, `data` holds the times and status but not the weights, which
+  # differ between tied rows: still unverified, and warned about.
+  expect_identical(ro_screen_w(fit, d[, no_time], sc)$n_unverified, 1L)
   suppressWarnings(expect_warning(
-    hzr_stepwise(fit, scope = sc, data = sh[, no_time], direction = "forward",
+    hzr_stepwise(fit, scope = sc, data = d[, no_time], direction = "forward",
                  criterion = "wald", max_steps = 1L, trace = FALSE),
     "those times have ties",
     class = "hzr_score_rows_unverified"
   ))
+  # The shuffle moved status with the rows: refused under both criteria.
+  expect_error(ro_screen(fit, sh[, no_time], sc),
+               "column `dead` holds the fit's status")
+  expect_error(
+    suppressWarnings(hzr_stepwise(fit, scope = sc, data = sh[, no_time],
+                                  direction = "forward", criterion = "wald",
+                                  max_steps = 1L, trace = FALSE)),
+    ro_refusal
+  )
 })
 
 test_that("a `data` sharing no column with the fit's frame is unverified (#487)", {
@@ -440,8 +450,11 @@ test_that("duplicate rows in the shared columns do not vouch for order (#487)", 
   ))
 
   # An unweighted formula fit: its refits rebuild everything from `data`, so
-  # only the score test reads the stored rows by position. Duplicates are
-  # warned about under score, and not under Wald, where order cannot matter.
+  # only the score test reads the stored rows by position. Under score the
+  # duplicates send the check to the fit's own inputs: `tt` and `dead` are
+  # all of them, both in order, so rows that could still swap are identical
+  # in everything the fit reads, and it is verified (#515). Under Wald
+  # order cannot matter.
   f4 <- data.frame(tt = ceiling(d$int_dead / 12), dead = d$dead,
                    mal = d$mal, inc_surg = d$inc_surg)
   ff <- suppressWarnings(hazard(survival::Surv(tt, dead) ~ 1, data = f4,
@@ -450,7 +463,7 @@ test_that("duplicate rows in the shared columns do not vouch for order (#487)", 
   expect_null(ff$data$weights)
   expect_gt(anyDuplicated(ff$data$frame), 0L)
   f4x <- cbind(f4, cv2 = 2 * d$com_iv, op2 = 2 * d$opmos)
-  expect_identical(ro_screen_w(ff, f4x, sc)$n_unverified, 1L)
+  expect_identical(ro_screen_w(ff, f4x, sc)$n_unverified, 0L)
   n <- 0L
   withCallingHandlers(
     hzr_stepwise(ff, scope = sc, data = f4x, direction = "forward",

@@ -489,7 +489,11 @@ NULL
 #'   [stats::nlm()] under the same limit (see "Convergence"), so raising
 #'   `maxit` lets that continuation run further too. The Nelder-Mead warm-up
 #'   that a multiphase fit with fixed parameters may run first has its own
-#'   limit, which `maxit` does not change.
+#'   limit, which `maxit` does not change. It must be a single finite number
+#'   of at least 1 (a fraction is truncated, as PROC HAZARD truncates `MAXITER`):
+#'   anything else stops `hazard()` at once, fitted or not (#541). A fit
+#'   with no iterations is its starting values, not an estimate; to
+#'   evaluate a model at parameters you supply, use [hzr_evaluate()].
 #' - `n_starts`: Number of optimization starts for multiphase fits (default 5).
 #'   Each start after the first offsets the initial values. The offsets are
 #'   drawn from an internally seeded stream, so a multiphase fit is
@@ -579,9 +583,9 @@ NULL
 #' - a multiphase element such as `n_starts` given to a single-distribution
 #'   fit, and `shape_param_count` given to a multiphase one.
 #'
-#' No name in `control` is an error; a bad value for an element the fit
-#' reads, such as `maxit = "a"`, still stops a fit (`fit = TRUE`) where it
-#' is read. [hzr_stepwise()] and
+#' No name in `control` is an error. A bad `maxit` stops `hazard()` at once
+#' (see above); a bad value for another element the fit reads still stops a
+#' fit (`fit = TRUE`) where it is read. [hzr_stepwise()] and
 #' [hzr_bootstrap()] pass `control` to every candidate refit, and an error
 #' there would count as a failed candidate, so a screen would report success
 #' having tested nothing.
@@ -783,8 +787,10 @@ NULL
 #'   \code{eta}, is named this way);
 #'   \code{NULL} when the fit was examined and is well identified; and
 #'   \code{NA} when the check could not run because no usable Hessian was
-#'   available, which includes an unfitted object and an install without
-#'   the suggested \pkg{numDeriv}. Test with \code{is.list(fit$fit$weak)},
+#'   available, which includes an unfitted object, an install without
+#'   the suggested \pkg{numDeriv}, and an ill-conditioned fit in which an
+#'   estimated parameter has no finite variance and no ridge was found among
+#'   the others, since that parameter was not examined. Test with \code{is.list(fit$fit$weak)},
 #'   not \code{!is.null()}: the \code{NA} case has not been examined and
 #'   must not be read as a clean result),
 #'   \code{engine} (implementation tag, \code{"native-r-m2"}), and two
@@ -1737,7 +1743,8 @@ hazard <- function(formula = NULL,
   }
   weak_check <- .hzr_weak_direction_impl(weak_vcov, fit_state$rcond,
                                          weak_names, theta = fit_state$par,
-                                         shape_names = weak_shapes)
+                                         shape_names = weak_shapes,
+                                         fixed_mask = masked)
   fit_state$weak <- weak_check$weak
   degraded_reasons$weak <- weak_check$reason
   if (is.list(fit_state$weak)) {
@@ -2807,7 +2814,15 @@ print.hazard <- function(x, ...) {
 
   cat("  engine:      ", x$engine, "\n")
   if (!anyNA(x$fit$objective)) {
-    cat("  log-lik:     ", format(x$fit$objective, digits = 6), "\n")
+    # Under objective = "sas" the interval-censored rows contribute PROC
+    # HAZARD's interval-mean-hazard term, so the value is not a
+    # log-likelihood there (#544).
+    if (.hzr_objective_not_loglik(x)) {
+      cat("  SAS objective:", format(x$fit$objective, digits = 6),
+          "(objective = \"sas\"; not a log-likelihood)\n")
+    } else {
+      cat("  log-lik:     ", format(x$fit$objective, digits = 6), "\n")
+    }
     cat("  converged:   ", x$fit$converged, "\n")
     cat(.hzr_format_gradient_test(x$fit$rel_gradient, x$fit$polish_code,
                                   converged = x$fit$converged,
@@ -2826,7 +2841,13 @@ print.hazard <- function(x, ...) {
 #'
 #' @param object A `hazard` object.
 #' @param ... Unused; for S3 compatibility.
-#' @return An object of class `summary.hazard`.
+#' @return An object of class `summary.hazard`. Its `log_lik` is the
+#'   log-likelihood at the estimates, and `NA` for a fit with
+#'   `objective = "sas"` that read an interval-censored row (one of positive
+#'   weight, not dropped by a phase design): there the
+#'   fitted objective is PROC HAZARD's interval-mean-hazard objective, not a
+#'   log-likelihood. That value is always in `objective_value`, and
+#'   `objective` says which of the two it is (`"likelihood"` or `"sas"`).
 #' @examples
 #' # -- Single-phase Weibull summary ------------------------------------
 #' fit <- hazard(time = rexp(30, 0.5), status = rep(1L, 30),
@@ -2915,7 +2936,13 @@ summary.hazard <- function(object, ...) {
     rel_gradient = object$fit$rel_gradient,
     rel_gradient_reason = object$fit$rel_gradient_reason,
     polish_code = object$fit$polish_code,
-    log_lik = object$fit$objective,
+    # NA where the objective is not a log-likelihood, so a reader of
+    # `$log_lik` cannot difference it against one (#544).
+    log_lik = if (.hzr_objective_not_loglik(object)) {
+      NA_real_
+    } else {
+      object$fit$objective
+    },
     counts = object$fit$counts,
     message = object$fit$message,
     coefficients = coef_table,
@@ -2926,7 +2953,10 @@ summary.hazard <- function(object, ...) {
     boundary = object$fit$boundary,
     degraded = object$degraded,
     degraded_causes = object$degraded_causes,
-    phases = object$spec$phases
+    phases = object$spec$phases,
+    # Last, so no existing element moves (#544).
+    objective = .hzr_fit_objective(object),
+    objective_value = object$fit$objective
   )
 
   class(out) <- "summary.hazard"
@@ -2983,6 +3013,10 @@ print.summary.hazard <- function(x, ...) {
   }
   if (!is.null(x$log_lik) && !is.na(x$log_lik)) {
     cat("  log-lik:     ", format(x$log_lik, digits = 6), "\n")
+  } else if (identical(x$objective, "sas") &&
+               isTRUE(is.finite(x$objective_value))) {
+    cat("  SAS objective:", format(x$objective_value, digits = 6),
+        "(objective = \"sas\"; not a log-likelihood)\n")
   }
   if (!is.null(x$rcond) && !is.na(x$rcond) && x$rcond < .hzr_rcond_tol) {
     cat("  Note: Hessian ill-conditioned (rcond = ",
@@ -3454,9 +3488,12 @@ vcov.hazard <- function(object, ...) {
 #' left the fit as it would have been and said nothing (#376). Every such
 #' element now draws one warning that names it and says why it does
 #' nothing, and the fit proceeds, as `stats::optim()` does for unknown
-#' `control` names. Nothing errors: an error inside a stepwise or bootstrap
+#' `control` names. No NAME errors: an error inside a stepwise or bootstrap
 #' candidate refit would be recorded as a failed candidate, so the screen
-#' would report success having tested nothing.
+#' would report success having tested nothing. One element's VALUE does: a
+#' `maxit` that is not a single finite number of at least 1 (#541), refused
+#' here, where [hzr_stepwise()] validates once
+#' before any refit.
 #'
 #' @param control The `control` list, already known to be a list.
 #' @param dist The distribution name.
@@ -3519,7 +3556,24 @@ vcov.hazard <- function(object, ...) {
             "\" fit, ignored: ", paste(notes, collapse = "; "), ".",
             call. = FALSE)
   }
-  control[!unnamed & names_all %in% accepted]
+  control <- control[!unnamed & names_all %in% accepted]
+  # A maxit below 1 was accepted without a word (#541): some models returned
+  # their starting values as `converged = TRUE`, others ignored the limit
+  # and optimised. Refused here, where hzr_stepwise() also validates once,
+  # so the refusal is not repeated as a failed candidate on every refit.
+  if ("maxit" %in% names(control)) {
+    m <- control[["maxit"]]
+    # A fraction of at least 1 is truncated by optim() and nlm(), as PROC
+    # HAZARD truncates MAXITER (hazpprc.c:27), so a translated MAXITER=2.5
+    # keeps its meaning.
+    if (!is.numeric(m) || length(m) != 1L || !is.finite(m) || m < 1) {
+      stop("control$maxit must be a single finite number of at least 1 (got ",
+           paste(format(m), collapse = ", "), "). A fit with no iterations ",
+           "is its starting values, not an estimate: to evaluate a model at ",
+           "parameters you supply, use hzr_evaluate().", call. = FALSE)
+    }
+  }
+  control
 }
 
 #' Warn when a masked argument names both a column and a caller variable

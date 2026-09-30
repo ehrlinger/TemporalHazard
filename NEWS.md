@@ -26,6 +26,108 @@
   `fit$fit$boundary`, with that share. The record raises no second
   warning.
 
+* **`hzr_stepwise(criterion = "score")` now refits and Wald-tests two more
+  kinds of candidate it could not score (#570).** The score criterion refits
+  a candidate whose score test breaks down and tests it by Wald, but only for
+  two reasons. Two others were declined untested: `nuisance_singular`, where
+  the current model's information matrix cannot be formed or inverted, and
+  `information_nonpositive`, where the candidate's own observed information
+  at zero is not positive. Neither says the candidate is unusable, and a
+  refit tests it. The first is a fault of the score test at the current fit
+  and applies to every candidate at that step, so the screen stopped having
+  tested nothing; with the second, a weaker variable could enter in the
+  untested one's place. It is reached by ordinary fits. On `avc` with a
+  Weibull base and the scope `~ age + mal + com_iv`, the score screen
+  entered `com_iv` and then stopped, where `criterion = "wald"` enters
+  `com_iv`, `mal` and `age`: with `com_iv` in the model, the numeric
+  information the score test needs could not be formed, though the fit
+  itself was sound. The score screen now reaches the Wald selection, with
+  four refits to Wald's six. In `hzr_bootstrap()` select mode on the same
+  base (five replicates, scope `~ age + mal`), four replicates stopped
+  untested and `age` and `mal` were selected in one and three; none stops
+  now, and both are selected in all five. `$criteria$n_wald_fallbacks`
+  counts these refits as before. A step whose information cannot be formed
+  now refits every candidate it would have scored, which is what
+  `criterion = "wald"` does at every step. A candidate that is constant,
+  non-numeric or not a single column is still declined without a refit. The
+  warning for a candidate tested by neither criterion now covers every
+  reason that is refitted, in `hzr_stepwise()` and in `hzr_bootstrap()`.
+
+* **A fit whose covariance mostly failed is no longer reported as examined
+  for a weakly identified direction (#570).** `fit$fit$weak` is `NULL` when
+  the check ran and found no ridge, and `NA` when it could not run. When an
+  ill-conditioned fit had a finite variance for fewer than two of its
+  parameters, there was nothing to examine, yet `weak` was `NULL` and
+  `weak_direction_check` was missing from `fit$degraded`. It is now `NA`,
+  with the cause recorded.
+
+* **The multiphase score was wrong for an early or late phase with a very
+  small `t_half` (#574). Fits whose search passed through such a point
+  may have been steered wrongly.** The derivative with respect to
+  `log_t_half` is taken by finite differences, and the step had a fixed
+  lower limit. Below `t_half = 1e-4` the step no longer shrank with
+  `t_half`, and below about `6e-10` it was larger than `t_half` itself. At
+  `log_t_half = -23.28` with `nu = 0.2931` and `m = 120`, the derivative
+  came back at 0.27 of its value. The error was under 1e-5 for `t_half`
+  down to about `1e-7` (`log_t_half = -16`), 0.05% at `log_t_half = -18`
+  and 3% at `-20`. The derivative is now differenced in `log_t_half`
+  itself, so the step keeps its proportion to `t_half`. Estimates with a
+  fitted `t_half` of `1e-4` or more are unaffected beyond the optimizer's
+  own tolerance. A `t_half` too small to step at all (below about
+  `3e-321`) now gives `NaN` for this derivative, where it gave a number.
+  One case is improved but not cured: for a `"hazard"` phase far past
+  saturation the phase's cumulative hazard runs out of accurate digits,
+  and the derivative is first noisy and then exactly 0. Where that starts
+  depends on the shape; at `nu = 1`, `m = 1` and times of order 1 it is
+  accurate to three digits at `t_half = exp(-25)`, wrong by up to 60% at
+  `exp(-30)` and 0 from `exp(-34)`.
+
+* **A Wald stepwise entry no longer tests a refit that ended below the
+  current model (#538).** The AIC fix below (#490) left two paths open.
+  Under `criterion = "wald"`, and in the Wald test that `criterion =
+  "score"` falls back on, such a refit still got a Wald p-value, from a fit
+  that did not converge. At a strict `slentry` it was rejected as if tested,
+  with every counter at 0. On `avc`, `opmos` in the constant phase refit
+  11.2 log-likelihood units below its base, got p = 0.069, and at
+  `slentry = 0.05` was rejected with no warning. The default `slentry = 0.30`
+  entered it, and the existing check on an entered model warned. Such a
+  candidate is now refused under the reason `loglik_below_base`, as under
+  AIC, and `hzr_stepwise()` warns that it declined it without testing it.
+  It is not listed in `$criteria$wald_untested_entries`, which is for
+  entries with no variance.
+* **`hazard()` now refuses a `control$maxit` below 1 (#541).** It was
+  accepted without a word, and what happened depended on the model. A
+  Weibull fit or a single-phase multiphase fit returned its starting values
+  with `converged = TRUE`: on the `avc` data a Weibull fit with `maxit = 0`
+  reported a log-likelihood of -1425.16 as converged, where the fit reaches
+  -223.55. A multiphase fit with a `cdf` and a `constant` phase ignored the
+  limit and optimised anyway. `control$maxit` must now be a single finite
+  number of at least 1 (a fraction is truncated, as PROC HAZARD truncates
+  `MAXITER`), and anything else stops `hazard()`, whether or not
+  it fits, with a pointer to `hzr_evaluate()` for an evaluation at given
+  values. `hzr_stepwise()` checks it once, before any refit.
+* **`print()`, `summary()` and the `hzr_stepwise()` trace no longer call an
+  `objective = "sas"` fit's objective a log-likelihood (#544, #556).** Where
+  the fit reads an interval-censored row (one of positive weight, not
+  dropped by a phase design), the objective an `objective = "sas"` fit
+  reaches is PROC HAZARD's interval-mean-hazard objective, not a
+  log-likelihood. `print()` showed it as `log-lik:`, `summary()` returned it
+  as `log_lik`, and the stepwise trace's final line as `logLik = ...`, so a
+  reader comparing it with another model's log-likelihood, or taking an LR
+  or AIC from it, got a finite and plausible wrong number. On one fit the
+  printed `log-lik:` was -160.02, where the log-likelihood at the same
+  estimates is -118.94. Such a fit now prints `SAS objective:`, and
+  `summary()`'s `log_lik` is `NA`, with the value in the new
+  `objective_value` and its kind in `objective`. The stepwise trace reads
+  `SAS objective = ..., AIC from it = ...`, and a screen with `criterion =
+  "aic"` warns (class `hzr_stepwise_sas_objective`) that each entry is
+  decided on `-2 * (SAS objective) + 2k`, which is not an AIC, and each
+  removal on a Wald statistic from the SAS objective's curvature. Without
+  interval-censored rows
+  the two objectives agree, and nothing changes. The new `summary()` fields
+  come last, so no existing element moves. `logLik()` and `AIC()` have
+  no method for a `hazard` fit and still stop.
+
 * **Multiphase stepwise refits now start from the model they extend
   (#551). Multiphase selections, and `hzr_bootstrap()` select-mode
   frequencies, from earlier versions may be wrong.** Each candidate refit
@@ -62,6 +164,18 @@
   This applies to every path that refits a multiphase model: `hzr_stepwise()`
   under each criterion, `hzr_bootstrap()` select mode, and the code
   `hzr_translate_sas()` emits for a SAS stepwise job.
+* **`hzr_gof()` with a custom `time_grid` now says how many patients its
+  totals leave out (#492).** With a custom grid, a patient is counted in
+  the observed and expected tallies only if their exit time is a grid
+  point. A grid such as `seq(0, max, length.out = 50)` holds almost none,
+  so on the `avc` data the totals covered 1 of 68 events and printed a
+  Conservation ratio of 0.227, with no warning. `hzr_gof()` now warns with
+  the number of patients left out, as it already did on the default grid.
+  The `"summary"` attribute gains `n_tallied`, the number counted, and
+  `print()` adds a note when it is below `n`. A patient with case weight 0
+  adds nothing to either tally, so one left off the grid is not reported.
+  Code that checks the summary's names, or runs with `options(warn = 2)`
+  over a custom grid, sees the change.
 
 * **A Conservation of Events fit whose likelihood is higher with the
   conserved phase switched off is now recorded and warned about (#261).**
@@ -327,10 +441,39 @@
   `data` holding the fit's event times. In the fit's order, the screen
   runs; in another order, it is refused, under every criterion. When the
   fit's times have ties, a column holding them in order cannot show that
-  rows within a tie are in order, so it is not taken as proof. With no
-  such column, or with tied times, the order cannot be checked, and the
-  screen warns once, with class `hzr_score_rows_unverified`. A check that
-  sees within ties is planned (#515).
+  rows within a tie are in order, so it is not taken as proof on its own;
+  the fit's other per-row inputs are then checked as well (#515, below).
+  With no such column, or tied times those inputs cannot resolve, the order
+  cannot be checked, and the screen warns once, with class
+  `hzr_score_rows_unverified`.
+
+* **`hzr_stepwise()` now checks row order within tied event times against
+  the fit's status, weights and covariates (#515).** Where it could only
+  check `data`'s order against a column holding the fit's event times,
+  rows reordered within a tie left that column unchanged, so tied times
+  gave the same warning whether or not the rows had moved. With discrete
+  times on `avc` (14 distinct in 305 rows), a shuffle within ties moved 289
+  rows and took every criterion's first entry to `opmos` (from `com_iv`
+  under score and AIC, from `mal` under Wald), under the same warning as
+  the aligned frame. Each other per-row input the fit stores (status,
+  interval bounds, weights, covariate design columns) is now looked for in
+  `data` under the column it came from: the one the call named
+  (`status = dead`, `status = d$dead`, or the event in `Surv(time, event)`),
+  or a covariate's own name. A column that merely holds the same values
+  does not count, so a look-alike cannot vouch for the order. The input's
+  own column holding the same values paired with the same times but in
+  another order means rows moved within a tie, and the screen is refused,
+  naming the column. The order is accepted, without a
+  warning, when the inputs found tell every row apart, or when all of them
+  are found: rows that could still be swapped are then identical in
+  everything the fit reads, and the screen's answer is unchanged. Otherwise
+  the warning remains, and now names the inputs to add to `data`. Every one
+  of these comparisons is now exact, as are the event-time column and the
+  columns compared with a stored frame. Under `all.equal()`'s tolerance,
+  rows whose times differed only by rounding, such as `0.1 + 0.2` and `0.3`,
+  could be swapped unseen and screened as if in order. A `data` with
+  duplicated column names is now refused: every check reads columns by
+  name, and of duplicates only the first is read.
 
 * **`hzr_stepwise(criterion = "aic")` no longer enters a variable on the
   strength of its missing values (#488).** A multiphase refit drops every row

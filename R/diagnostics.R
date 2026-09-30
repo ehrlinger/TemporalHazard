@@ -441,7 +441,10 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #' On the default grid every patient lands on a grid point, and `hzr_gof()`
 #' warns if one cannot be placed.  With a custom `time_grid`, a patient is
 #' counted in both tallies only if that time, or failing it their own
-#' follow-up time, falls on a grid point.
+#' follow-up time, falls on a grid point.  A grid such as `seq()` over the
+#' follow-up holds few exit times, so `hzr_gof()` warns with the number left
+#' out, and the totals, residual and E/O then describe only the patients
+#' counted.  Include the exit times in `time_grid` to count everyone.
 #'
 #' @param object A fitted `hazard` object (with `fit = TRUE`).
 #' @param time_grid Optional numeric vector of time points at which to
@@ -471,9 +474,12 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #'     means for a model with covariates.  For plotting; not used for
 #'     \code{cum_expected}.}
 #'   \item{cum_observed}{Cumulative observed events to this time, weighted
-#'     by the case weights for a weighted fit.}
+#'     by the case weights for a weighted fit.  With a custom
+#'     \code{time_grid}, only the patients whose exit is a grid point up to
+#'     this time are counted (see Details).}
 #'   \item{cum_expected}{Cumulative expected events: over the patients
-#'     leaving follow-up by this time, the sum of each patient's own
+#'     leaving follow-up by this time (with a custom \code{time_grid}, the
+#'     same patients as \code{cum_observed}), the sum of each patient's own
 #'     cumulative hazard at exit minus that at entry, weighted by the case
 #'     weights for a weighted fit.  With \code{time_windows}, both cumulative
 #'     hazards use the patient's covariate window at exit, as the likelihood
@@ -486,7 +492,8 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 #' phase: \code{par_cumhaz_<phase>}, also at the covariate means.
 #'
 #' An attribute `"summary"` is attached with scalar diagnostics:
-#' total observed events, total expected events, and the final residual.
+#' total observed events, total expected events, the final residual, and
+#' `n_tallied`, the number of patients the two tallies cover, out of `n`.
 #'
 #' @examples
 #' \donttest{
@@ -776,12 +783,25 @@ hzr_gof <- function(object, time_grid = NULL) {
   off <- is.na(subject_grid)
   subject_grid[off] <- grid_of(obs_time[off])
   on_grid <- !is.na(subject_grid)
+  # A subject with case weight 0 adds nothing to either tally, so leaving it
+  # out loses nothing and it counts as covered.
+  covered <- on_grid | obs_weights == 0
   # On the default grid every subject should land on its Kaplan-Meier time;
-  # say so rather than drop anyone from the tallies silently.
-  if (default_grid && !all(on_grid)) {
-    warning("hzr_gof(): ", sum(!on_grid), " of ", n_total, " subjects did ",
-            "not match a Kaplan-Meier time and are left out of ",
-            "cum_observed and cum_expected.", call. = FALSE)
+  # say so rather than drop anyone from the tallies silently. A custom grid
+  # tallies only the subjects whose exit it holds, which from a seq() grid can
+  # be almost none, and the totals and E/O then describe that subset (#492).
+  if (!all(covered)) {
+    warning("hzr_gof(): ", sum(!covered), " of ", n_total, " subjects did ",
+            if (default_grid) {
+              "not match a Kaplan-Meier time"
+            } else {
+              "not exit at a time_grid point"
+            },
+            " and are left out of cum_observed and cum_expected.",
+            if (!default_grid) {
+              " To tally every subject, include their exit times in time_grid."
+            },
+            call. = FALSE)
   }
   interval_observed <- rep(0, length(time_grid))
   interval_expected <- rep(0, length(time_grid))
@@ -826,7 +846,8 @@ hzr_gof <- function(object, time_grid = NULL) {
     total_expected = cum_expected[length(cum_expected)],
     final_residual = residual[length(residual)],
     dist = object$spec$dist,
-    n = n_total
+    n = n_total,
+    n_tallied = sum(covered)
   )
 
   class(result) <- c("hzr_gof", "data.frame")
@@ -850,7 +871,9 @@ hzr_gof <- function(object, time_grid = NULL) {
 #'   for per-phase cumulative hazard contributions.
 #'   A \code{"summary"} attribute contains scalar diagnostics:
 #'   \code{total_observed}, \code{total_expected}, \code{final_residual},
-#'   \code{dist}, \code{n}.
+#'   \code{dist}, \code{n}, \code{n_tallied}.  When \code{n_tallied} is below
+#'   \code{n}, the printed totals cover only those subjects, and a note
+#'   says so.
 #' @export
 print.hzr_gof <- function(x, digits = 3, ...) {
   s <- attr(x, "summary")
@@ -861,6 +884,11 @@ print.hzr_gof <- function(x, digits = 3, ...) {
   cat("Final residual (E - O):", round(s$final_residual, digits), "\n")
   cat("Conservation ratio (E/O):",
       round(s$total_expected / max(s$total_observed, 1), digits), "\n")
+  # An object built before n_tallied was recorded has no such field.
+  if (!is.null(s$n_tallied) && s$n_tallied < s$n) {
+    cat("Note: these totals cover ", s$n_tallied, " of ", s$n, " subjects; ",
+        "the rest could not be placed on the time grid.\n", sep = "")
+  }
   cat("\nUse plot columns: time, km_surv, par_surv, cum_observed,",
       "cum_expected, residual\n")
   invisible(x)
@@ -1734,9 +1762,9 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     at zero, typically strong variables. Those are refit and Wald-tested
 #'     automatically, so a candidate reaching this count is one whose refit
 #'     also failed and which therefore went untested, understating its
-#'     selection frequency. Under `criterion = "aic"`, `rows_differ` and
-#'     `loglik_below_base` mark entries a replicate declined without
-#'     comparing them. Such an entry counts as not selected unless a later
+#'     selection frequency. `rows_differ` (under `criterion = "aic"`) and
+#'     `loglik_below_base` (under any criterion) mark entries a replicate
+#'     declined without comparing them. Such an entry counts as not selected unless a later
 #'     step of the same replicate tested and entered it, so these can
 #'     understate a selection frequency; a warning gives how many replicates
 #'     completed after declining one. The tally counts attempts, not
@@ -2249,10 +2277,10 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # replicate that converged, and every replicate runs under
   # suppressWarnings() so the step-level warning cannot reach the user.
   n_nonmonotone_reps <- 0L
-  # Completed replicates whose AIC screen declined an entry it could not
+  # Completed replicates whose screen declined an entry it could not
   # compare: a refit on other rows (#488) or one that ended below its base
-  # (#490). hzr_stepwise() warns about each, but not from inside a replicate,
-  # and the candidate is pooled as not selected.
+  # (#490, #538). hzr_stepwise() warns about each, but not from inside a
+  # replicate, and the candidate is pooled as not selected.
   declined_codes <- c("rows_differ", "loglik_below_base")
   n_declined_reps <- 0L
   declined_reasons <- stats::setNames(integer(0), character(0))
@@ -2412,7 +2440,21 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
         if (isTRUE((boot_fit$criteria$n_nonmonotone_entries %||% 0L) > 0L)) {
           n_nonmonotone_reps <- n_nonmonotone_reps + 1L
         }
-        n_fb <- boot_fit$criteria$n_wald_fallbacks %||% 0L
+        # Entries DECIDED by a Wald test, read off the accepted steps. The
+        # screen's own `n_wald_fallbacks` counts every candidate it refitted
+        # and tested, entered or not, and a step whose information cannot be
+        # formed refits all of its candidates: counting those reported an
+        # entry on a Wald test in a replicate that declined them all (#570).
+        # Under the score criterion only: with `criterion = "wald"` every
+        # entry is a Wald z by design, and none of them is a fallback.
+        rep_steps <- boot_fit$steps
+        n_fb <- if (is.data.frame(rep_steps) && nrow(rep_steps)) {
+          sum(tolower(rep_steps$action) == "enter" &
+                rep_steps$criterion %in% "score" &
+                rep_steps$stat_type %in% "wald_z")
+        } else {
+          0L
+        }
         if (n_fb > 0L) {
           n_wald_fallback_reps <- n_wald_fallback_reps + 1L
           n_wald_fallbacks <- n_wald_fallbacks + n_fb
@@ -2551,14 +2593,16 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     }
   }
 
-  # Both codes mean "no criterion tested this candidate", and both are
-  # typically STRONG variables, so both belong in the warning below. They
-  # differ in mechanism: information_indefinite means the rescuing refit
-  # errored or did not converge, fallback_no_variance means it converged but
-  # yielded no standard error to test with. The previous text described every
-  # such row as a failed refit, which is wrong for the second.
+  # These codes all mean "no criterion tested this candidate", so all belong
+  # in the warning below. They differ in mechanism: a reason the score
+  # criterion refits for (.hzr_score_fallback_reasons) still on a row means
+  # the rescuing refit errored or did not converge, and fallback_no_variance
+  # means it converged but yielded no standard error to test with. The set is
+  # read, not written out: replicates run under suppressWarnings(), so a
+  # reason missing here leaves its failed rescue with no trace but a count
+  # (#570).
   n_indefinite <- sum(unname(uncomputable_reasons[
-    c("information_indefinite", "fallback_no_variance")]), na.rm = TRUE)
+    c(.hzr_score_fallback_reasons, "fallback_no_variance")]), na.rm = TRUE)
 
   if (n_uncomputable_reps > 0L) {
     warning(n_uncomputable_reps, " of ", n_success, " successful replicates ",
@@ -2578,11 +2622,12 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     warning(n_indefinite, " candidate score(s) across ", n_success,
             " replicates were tested by NEITHER criterion: the score ",
             "statistic could not be computed, and the Wald refit that would ",
-            "have rescued them either failed to converge ",
-            "(`information_indefinite`) or converged without a usable ",
+            "have rescued them either failed to converge (the candidate ",
+            "keeps the score's reason, such as `information_indefinite` or ",
+            "`nuisance_singular`) or converged without a usable ",
             "variance to test with (`fallback_no_variance`). These are ",
-            "typically STRONG candidates -- that is what drives the score's ",
-            "information indefinite -- so their selection frequencies are ",
+            "often STRONG candidates -- a large effect is what drives the ",
+            "score's information indefinite -- so their selection frequencies are ",
             "understated rather than merely noisy. See ",
             "`$uncomputable_reasons` for which mechanism.", call. = FALSE)
   }

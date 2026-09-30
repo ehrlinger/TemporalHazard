@@ -77,11 +77,20 @@ a \code{data} holding only columns added after the fit shares none; and
 shared columns with duplicate rows cannot show rows reordered among
 those duplicates.  For
 those the order is checked against a column of \code{data} holding the fit's
-event times, and refused if they are out of order.  With no such
-column, or when those times have ties (rows reordered within a tie
-leave the column unchanged; a finer check is planned in #515), the
-order cannot be checked, and a warning of class
-\code{hzr_score_rows_unverified} says so.}
+event times, and refused if they are out of order.  Rows reordered
+within a tie leave that column unchanged, so when the times have ties
+the fit's other per-row inputs (status, interval bounds, weights and
+covariate design columns) are looked for in \code{data} too, each under the
+column it came from: the column the call named (\code{status = dead},
+\code{status = d$dead}, or the event in \code{Surv(time, event)}), or a
+covariate's own name.  Rows reordered within a tie are refused.  The order is accepted when the inputs found
+tell every row apart, or when all of them are found: rows that could
+still be swapped are then identical in everything the fit reads, and
+the screen's answer is the same.  With no column of event times, or
+tied times the other inputs cannot resolve, the order cannot be
+checked, and a warning of class \code{hzr_score_rows_unverified} says so and
+names the inputs to add.  Column names must be unique: every check
+reads \code{data} by name, so a \code{data} with duplicated names is refused.}
 
 \item{direction}{Search strategy: one of \code{"both"} (default),
 \code{"forward"}, or \code{"backward"}.  Controls whether variables may only
@@ -199,16 +208,17 @@ a removal under any criterion, whose Wald statistic could not be
 computed for want of a variance, \code{wald_no_variance}; or an entry
 under \code{criterion = "aic"} whose fit had no finite objective,
 \code{nonfinite}, or was fitted on different rows from the current model
-because the candidate is missing on some, \code{rows_differ}, or whose
-refit ended below the current model's log-likelihood, which it
-contains, so that the refit cannot have converged,
-\code{loglik_below_base}),
+because the candidate is missing on some, \code{rows_differ}; or an entry
+under \code{criterion = "aic"} or \code{"wald"}, or rescued by the Wald
+fallback under \code{"score"}, whose refit ended below the current
+model's log-likelihood, which it contains, so that the refit cannot
+have converged, \code{loglik_below_base}),
 \code{uncomputable_reasons} (a named integer vector of \emph{why}),
 \code{wald_untested_removals} and \code{wald_untested_entries} (the
 \code{"var"} / \code{"var@phase"} tokens of variables kept in, or left out,
 on a step whose Wald test for them could not be computed; a
-variable tested at a later step is not listed.  Entries are listed
-under \code{criterion = "wald"} only: under \code{"score"} an entry no test
+variable tested, or refused as \code{loglik_below_base}, at a later step
+is not listed.  Entries are listed under \code{criterion = "wald"} only: under \code{"score"} an entry no test
 could reach is reported by its reason, such as
 \code{fallback_no_variance}) and
 \code{stopped_uncomputable} (\code{TRUE} when the last iteration had
@@ -218,10 +228,15 @@ an unscored candidate as a bad one: \code{information_indefinite} marks
 candidates whose effect is too large for the score test's
 approximation at zero, which are typically the strongest variables
 on offer rather than degenerate ones. Candidates with that cause,
-or with \code{coefficient_diverging}, are refit and tested by Wald
-automatically, counted in \code{n_wald_fallbacks}. A candidate still
+or with \code{coefficient_diverging}, \code{information_nonpositive} or
+\code{nuisance_singular}, are refit and tested by Wald
+automatically, counted in \code{n_wald_fallbacks}. \code{nuisance_singular}
+is a fault of the score test at the current model, whose
+information matrix could not be formed or inverted, so it applies
+to every candidate at that step and each of them is refitted. A
+candidate still
 reaches \code{uncomputable_reasons} when that refit fails, or when its
-cause is any other, which no refit can rescue. Read
+cause is any other, for which no refit is attempted. Read
 \code{uncomputable_reasons} for which one it was in any given run.  For
 every criterion it also carries
 \code{refit_failures} (the \code{"var"} / \code{"var@phase"} tokens of candidate
@@ -294,7 +309,16 @@ is tested on the current model's Wald p-value), so they read
 \item{\code{p_value}, \code{delta_aic}}{Always populated when
 computable, regardless of the active criterion.}
 \item{\code{logLik}, \code{aic}, \code{n_coef}}{Goodness-of-fit
-diagnostics of the model \emph{after} this step.}
+diagnostics of the model \emph{after} this step. Under
+\code{objective = "sas"}, on a step whose model reads an interval-censored
+row (one of positive weight, not dropped by a phase design), \code{logLik}
+holds PROC HAZARD's objective, not a log-likelihood, and \code{aic} is
+computed from it. A step can change which rows are read (see
+\code{n_rows}), so on a step that starts or stops reading such rows
+\code{delta_logLik} is the difference of two different quantities. The
+trace's final line labels the final model's value, and
+\code{criterion = "aic"} warns once (class \code{hzr_stepwise_sas_objective})
+as soon as a step's model reads such a row.}
 \item{\code{n_rows}}{Number of rows in the fit's data after this step
 (rows given weight 0 are counted).  A multiphase fit drops every row
 where a variable in the model is missing, so entering a variable with

@@ -239,8 +239,10 @@ the log scale; only a g3 shape, \code{gamma}, \code{alpha} or
 \code{eta}, is named this way);
 \code{NULL} when the fit was examined and is well identified; and
 \code{NA} when the check could not run because no usable Hessian was
-available, which includes an unfitted object and an install without
-the suggested \pkg{numDeriv}. Test with \code{is.list(fit$fit$weak)},
+available, which includes an unfitted object, an install without
+the suggested \pkg{numDeriv}, and an ill-conditioned fit in which an
+estimated parameter has no finite variance and no ridge was found among
+the others, since that parameter was not examined. Test with \code{is.list(fit$fit$weak)},
 not \code{!is.null()}: the \code{NA} case has not been examined and
 must not be read as a clean result),
 \code{engine} (implementation tag, \code{"native-r-m2"}), and two
@@ -313,7 +315,11 @@ convergence but fails SAS's gradient test is continued with
 \code{\link[stats:nlm]{stats::nlm()}} under the same limit (see "Convergence"), so raising
 \code{maxit} lets that continuation run further too. The Nelder-Mead warm-up
 that a multiphase fit with fixed parameters may run first has its own
-limit, which \code{maxit} does not change.
+limit, which \code{maxit} does not change. It must be a single finite number
+of at least 1 (a fraction is truncated, as PROC HAZARD truncates \code{MAXITER}):
+anything else stops \code{hazard()} at once, fitted or not (#541). A fit
+with no iterations is its starting values, not an estimate; to
+evaluate a model at parameters you supply, use \code{\link[=hzr_evaluate]{hzr_evaluate()}}.
 \item \code{n_starts}: Number of optimization starts for multiphase fits (default 5).
 Each start after the first offsets the initial values. The offsets are
 drawn from an internally seeded stream, so a multiphase fit is
@@ -408,9 +414,9 @@ single-distribution model has no mechanism for fixing a parameter.
 fit, and \code{shape_param_count} given to a multiphase one.
 }
 
-No name in \code{control} is an error; a bad value for an element the fit
-reads, such as \code{maxit = "a"}, still stops a fit (\code{fit = TRUE}) where it
-is read. \code{\link[=hzr_stepwise]{hzr_stepwise()}} and
+No name in \code{control} is an error. A bad \code{maxit} stops \code{hazard()} at once
+(see above); a bad value for another element the fit reads still stops a
+fit (\code{fit = TRUE}) where it is read. \code{\link[=hzr_stepwise]{hzr_stepwise()}} and
 \code{\link[=hzr_bootstrap]{hzr_bootstrap()}} pass \code{control} to every candidate refit, and an error
 there would count as a failed candidate, so a screen would report success
 having tested nothing.

@@ -682,8 +682,11 @@
     return(character())
   }
   common <- intersect(names(data), names(frame))
+  # Exact: within a tolerance, rows whose values differ only by rounding
+  # could be swapped unseen (#515).
   same <- vapply(common, function(nm) {
-    isTRUE(all.equal(data[[nm]], frame[[nm]], check.attributes = FALSE))
+    isTRUE(all.equal(data[[nm]], frame[[nm]], tolerance = 0,
+                     check.attributes = FALSE))
   }, logical(1))
   common[!same]
 }
@@ -706,6 +709,151 @@
   )
 }
 
+#' The per-row inputs a fit stores, other than its event times
+#'
+#' Everything the likelihood reads row by row: the status, the interval
+#' bounds, the weights, and the covariate design columns (the global `x`, and
+#' each multiphase phase's design). An input with one value on every row is
+#' left out, since rows cannot be mismatched on it.
+#'
+#' @return A list named for messages, one element per input:
+#'   `list(value, column)`, where `value` is the numeric vector and `column`
+#'   the name of the column it came from: the design column's name for a
+#'   covariate, and for the status, bounds and weights the column the stored
+#'   call names (`NA` when the call computes them). An input stored at
+#'   another length than `time` (a phase design after rows with a missing
+#'   covariate were dropped) keeps that length, so the caller counts it as
+#'   unmatched.
+#' @noRd
+.hzr_fit_row_inputs <- function(current) {
+  d <- current$data
+  call <- current$call
+  input <- function(v, column = NA_character_) {
+    if (is.null(v)) NULL else list(value = as.numeric(v), column = column)
+  }
+  cols <- function(m, label) {
+    if (is.null(m) || NCOL(m) == 0L) return(list())
+    m <- as.matrix(m)
+    nm <- colnames(m) %||% paste0("V", seq_len(ncol(m)))
+    stats::setNames(lapply(seq_len(ncol(m)), function(j) input(m[, j], nm[j])),
+                    paste0(label, " `", nm, "`"))
+  }
+  xl <- current$fit$x_list
+  inputs <- c(
+    list(status = input(d$status, .hzr_status_column(call)),
+         `time_lower` = input(d$time_lower, .hzr_call_column(call$time_lower)),
+         `time_upper` = input(d$time_upper, .hzr_call_column(call$time_upper)),
+         weights = input(d$weights, .hzr_call_column(call$weights))),
+    cols(d$x, "covariate"),
+    unlist(lapply(names(xl), function(ph) {
+      cols(xl[[ph]], paste0("phase `", ph, "` covariate"))
+    }), recursive = FALSE)
+  )
+  inputs <- Filter(Negate(is.null), inputs)
+  Filter(function(inp) length(unique(inp$value)) > 1L, inputs)
+}
+
+#' The column of `data` a stored call argument names
+#'
+#' `status = dead` names `dead`, as do `status = d$dead` and
+#' `status = d[["dead"]]`. Anything computed names no column, and nor does
+#' `..2`, which is what a call forwarded through a wrapper's `...` records.
+#'
+#' @param expr An argument expression from the stored call, or `NULL`.
+#' @return A single string, `NA` when no column is named.
+#' @noRd
+.hzr_call_column <- function(expr) {
+  # `..2` is how a call made through a wrapper's `...` records an argument:
+  # it names the wrapper's argument, not a column.
+  if (is.symbol(expr)) {
+    nm <- as.character(expr)
+    return(if (grepl("^\\.\\.(\\.|[0-9]+)$", nm)) NA_character_ else nm)
+  }
+  if (is.call(expr) && length(expr) == 3L) {
+    fn <- expr[[1L]]
+    key <- expr[[3L]]
+    if (identical(fn, as.name("$")) && (is.symbol(key) || is.character(key))) {
+      return(as.character(key))
+    }
+    if (identical(fn, as.name("[[")) && is.character(key) && length(key) == 1L) {
+      return(key)
+    }
+  }
+  NA_character_
+}
+
+#' The column of `data` a fit's status came from
+#'
+#' The vector interface's `status =`, or the event of a two-argument
+#' `Surv(time, event)` on the formula interface's left-hand side.
+#'
+#' @param call The fit's stored call.
+#' @return A single string, `NA` when no column is named.
+#' @noRd
+.hzr_status_column <- function(call) {
+  if (!is.null(call$status)) return(.hzr_call_column(call$status))
+  f <- call$formula
+  if (!is.call(f) || !identical(f[[1L]], as.name("~")) || length(f) != 3L) {
+    return(NA_character_)
+  }
+  lhs <- f[[2L]]
+  surv <- is.call(lhs) &&
+    deparse(lhs[[1L]]) %in% c("Surv", "survival::Surv") &&
+    length(lhs) == 3L && is.null(names(lhs))
+  if (surv) .hzr_call_column(lhs[[3L]]) else NA_character_
+}
+
+#' Check row order within tied event times against the fit's other inputs
+#'
+#' A column of `data` equal to the fit's `time` fixes the order of rows except
+#' within a tie. Each other per-row input the fit stores is then looked for in
+#' `data` under the column it came from, and only there:
+#' - in order: it settles the rows it tells apart;
+#' - the same (time, value) pairs in another order: the rows were reordered
+#'   within a tie, and the screen is refused;
+#' - otherwise, or with no such column: it cannot be checked.
+#' A column found only by its values is not accepted, as any column that
+#' happens to hold them would then vouch for the order.
+#'
+#' The order is proven when the inputs found tell every row apart, or when
+#' every input is found. In the second case rows can differ in position only
+#' where they are identical in everything the likelihood reads, so the
+#' screen's answer is unchanged (#515).
+#'
+#' @param time The fit's stored event times.
+#' @return `list(proven, moved, unmatched)`: `moved` is `NULL` or
+#'   `c(column, input)`; `unmatched` names the inputs not found.
+#' @noRd
+.hzr_check_rows_within_ties <- function(current, data, time) {
+  n <- length(time)
+  found <- list(time = time)
+  unmatched <- character()
+  inputs <- .hzr_fit_row_inputs(current)
+  for (nm in names(inputs)) {
+    v <- inputs[[nm]]$value
+    own <- inputs[[nm]]$column
+    label <- if (is.na(own)) nm else paste0(nm, " (column `", own, "`)")
+    col <- if (!is.na(own) && own %in% names(data)) data[[own]]
+    if (length(v) != n || !(is.numeric(col) || is.logical(col)) ||
+          length(col) != n) {
+      unmatched <- c(unmatched, label)
+      next
+    }
+    col <- as.numeric(col)
+    # Exact: rows that may be swapped must be identical in the input, not
+    # merely within a tolerance relative to the whole column.
+    if (identical(col, v)) {
+      found[[nm]] <- v
+    } else if (identical(col[order(time, col)], v[order(time, v)])) {
+      return(list(proven = FALSE, moved = c(own, nm), unmatched = unmatched))
+    } else {
+      unmatched <- c(unmatched, label)
+    }
+  }
+  proven <- !length(unmatched) || anyDuplicated(as.data.frame(found)) == 0L
+  list(proven = proven, moved = NULL, unmatched = unmatched)
+}
+
 #' Check `data`'s row order once per screen
 #'
 #' When the refits pair per-row vectors stored on the fit with `data` (the
@@ -720,14 +868,31 @@
 #' `data` through silently (#487). What the fit always stores is its response,
 #' so on that route a column of `data` holding the fit's `time` values is
 #' compared with it: in the fit's order, the rows are taken as aligned; as the
-#' same values in another order, the screen is refused. With no such column
-#' the order cannot be checked, and a classed `hzr_score_rows_unverified`
+#' same values in another order, the screen is refused. With ties in the
+#' times, `.hzr_check_rows_within_ties()` checks the fit's other per-row
+#' inputs as well (#515). With no such column, or ties it cannot resolve, the
+#' order cannot be checked, and a classed `hzr_score_rows_unverified`
 #' warning says so. Called once per screen, on the base fit only: every later
 #' step's fit is a refit on `data` itself.
 #'
 #' @return `NULL`, invisibly; called for its error or warning.
 #' @noRd
 .hzr_check_data_row_order <- function(current, data, score = TRUE) {
+  # Every comparison below reads `data` by column name, and of duplicated
+  # names `data[[name]]` reads only the first: a second column of that name,
+  # holding the rows in another order, would never be seen (#515).
+  dup <- unique(names(data)[duplicated(names(data))])
+  if (length(dup)) {
+    stop(
+      "`data` has more than one column named ",
+      paste0("`", utils::head(dup, 5L), "`", collapse = ", "),
+      if (length(dup) > 5L) paste0(" and ", length(dup) - 5L, " more"),
+      ". hzr_stepwise() reads columns by name, so it cannot tell which one ",
+      "is meant, nor check that `data` holds the rows the model was fitted ",
+      "on in the same order. Give every column of `data` a unique name.",
+      call. = FALSE
+    )
+  }
   frame <- current$data$frame
   # A `data` that shares no column with the frame (derived candidates only)
   # leaves nothing to compare: that is no proof of order, and falls through
@@ -778,21 +943,24 @@
     "the fit was made without `data =`, so it stores no data frame"
   }
   # With ties in the times, a column holding them in order proves nothing
-  # about the rows WITHIN a tie: reordering those leaves it identical. Such a
-  # match is not accepted; the screen warns instead. (A check that can see
-  # within ties is #515.)
+  # about the rows WITHIN a tie: reordering those leaves it identical. The
+  # fit's other per-row inputs are then checked as well (#515).
   tied <- anyDuplicated(time) > 0L
   permuted <- character()
   in_order_tied <- character()
   for (nm in names(data)) {
     col <- data[[nm]]
     if (!is.numeric(col) || length(col) != length(time)) next
-    if (isTRUE(all.equal(as.numeric(col), time, check.attributes = FALSE))) {
+    # Exact, as ties are: within all.equal()'s tolerance, rows whose times
+    # differ only by rounding would be swapped unseen, and taken as ordered.
+    if (identical(as.numeric(col), as.numeric(time))) {
       if (!tied) return(invisible(NULL))
       in_order_tied <- c(in_order_tied, nm)
       next
     }
-    if (isTRUE(all.equal(sort(as.numeric(col)), sort(time)))) {
+    # Exact as well: a column merely close to the times is not them, and
+    # must not be refused as the times in another order.
+    if (identical(sort(as.numeric(col)), sort(as.numeric(time)))) {
       permuted <- c(permuted, nm)
     }
   }
@@ -807,12 +975,28 @@
       call. = FALSE
     )
   }
+  if (length(in_order_tied)) {
+    within <- .hzr_check_rows_within_ties(current, data, time)
+    if (!is.null(within$moved)) {
+      stop(
+        "`data` does not hold the rows the model was fitted on, in the same ",
+        "order: column `", within$moved[1L], "` holds the fit's ",
+        within$moved[2L], " in another order within tied event times. The ",
+        "screen reads each candidate from `data` row by row, so rows ",
+        "reordered within a tie are scored against the wrong observations. ",
+        "Pass the rows in the order the model was fitted on.",
+        call. = FALSE
+      )
+    }
+    if (within$proven) return(invisible(NULL))
+  }
   held <- if (length(in_order_tied)) {
     paste0(
       "; column `", in_order_tied[1L], "` holds the fit's event times in ",
       "order, but those times have ties (", length(unique(time)), " distinct ",
-      "values in ", length(time), " rows), and rows reordered within a tie ",
-      "leave it unchanged"
+      "values in ", length(time), " rows), and the tied rows cannot be told ",
+      "apart without the fit's ", paste(within$unmatched, collapse = ", "),
+      ", which `data` does not hold in order under the column it came from"
     )
   } else {
     ", and no column of `data` holds the fit's event times"
@@ -824,7 +1008,11 @@
       "test reads each candidate from `data` row by row, so if its rows are ",
       "not in the order the model was fitted on, every candidate is scored ",
       "against the wrong observations. ",
-      if (is.data.frame(frame)) {
+      if (length(in_order_tied)) {
+        paste0("Add those to `data`, in the order the model was fitted on ",
+               "(an input computed in the call, such as `status = x > 0`, ",
+               "has no column to look under), to have it checked.")
+      } else if (is.data.frame(frame)) {
         paste0("Include in `data` enough of the columns given to hazard() ",
                "to tell every row apart to have it checked.")
       } else {
@@ -1039,20 +1227,54 @@
 
 # Reasons a candidate can be rescued by refitting it and testing by Wald.
 #
-# Both mean "the quadratic approximation at beta = 0 broke down", which is
-# what a LARGE true effect looks like -- so declining them is exactly backwards
-# and a refit gives the right answer. SAS's own q1.c says as much ("IT IS
-# POSSIBLE THAT THE PROGRAM WILL RETURN A NEGATIVE Q VALUE ... THE USER SHOULD
-# USE THE MORE EXPENSIVE Q2 AS AN ALTERNATIVE"); Q2 is named once in the C
-# tree and never implemented, and dqstat.c instead declines the candidate with
-# p = 1. This is that unbuilt alternative.
+# The first two mean "the quadratic approximation at beta = 0 broke down",
+# which is what a LARGE true effect looks like -- so declining them is exactly
+# backwards and a refit gives the right answer. SAS's own q1.c says as much
+# ("IT IS POSSIBLE THAT THE PROGRAM WILL RETURN A NEGATIVE Q VALUE ... THE USER
+# SHOULD USE THE MORE EXPENSIVE Q2 AS AN ALTERNATIVE"); Q2 is named once in the
+# C tree and never implemented, and dqstat.c instead declines the candidate
+# with p = 1. This is that unbuilt alternative.
 #
-# Kept deliberately narrow. The degenerate reasons -- collinear, constant,
-# non_numeric, not_single_column, nuisance_singular -- are NOT here: no refit can make those
-# candidates testable, and paying one per degenerate candidate would give back
-# the whole speed advantage the score criterion exists for.
+# The other two are faults of the score test's inputs, not of the candidate
+# (#570):
+#   information_nonpositive  the candidate's own observed information at
+#                            beta = 0 is not positive, the same breakdown one
+#                            step earlier in q1.c (its flag 2 against flag 3);
+#   nuisance_singular        the CURRENT model's information block could not
+#                            be formed or inverted, so no candidate can be
+#                            adjusted for it. That is a failure of the score
+#                            calculation at the current model, not a verdict
+#                            on the model: an ordinary, well-conditioned fit
+#                            reaches it when its numeric Hessian comes back
+#                            non-finite, as a fit on a ridge does when the
+#                            block is singular. It takes every candidate at
+#                            the step with it.
+# A refit of the extended model has its own Hessian and tests the candidate.
+# An earlier version of this comment listed nuisance_singular among the
+# reasons "no refit can make testable"; measured for #565 on a base fit up a
+# ridge, the refit gave beta 0.847 (se 0.057) against 0.841 (0.057) from an
+# independent fit. When the refit's own Hessian fails too, the row is recorded as
+# `fallback_no_variance` or as a refit failure, never as tested.
+#
+# Still kept narrow. The reasons that describe the candidate's COLUMN, or a
+# design hazard() would refuse -- collinear, constant, non_numeric,
+# not_single_column, duplicate_column, not_expandable -- are NOT here: no
+# refit can make those candidates testable, and paying one per degenerate
+# candidate would give back the whole speed advantage the score criterion
+# exists for. no_information and nonfinite are not here either. They report
+# a gradient or information that could not be computed for the expanded
+# model, and whether a refit rescues them has not been measured (#577).
+#
+# The cost: nuisance_singular refits every candidate at its step that reaches
+# the nuisance check, which is what `criterion = "wald"` pays at every step.
+# .hzr_score_q() returns that reason BEFORE it expands the candidate, so at
+# such a step a collinear, duplicate_column or not_expandable candidate is
+# refitted too, and its refit fails or yields no variance; only constant,
+# non_numeric and not_single_column are screened out ahead of it.
 .hzr_score_fallback_reasons <- c("information_indefinite",
-                                 "coefficient_diverging")
+                                 "coefficient_diverging",
+                                 "nuisance_singular",
+                                 "information_nonpositive")
 
 #' One-line explanation of an unscorable candidate
 #'
@@ -1086,7 +1308,9 @@
       "the candidate's own observed information was not positive, before any",
       "adjustment for the current model. This is a different fault from",
       "collinearity: the candidate is a poor one in itself, or the fit it",
-      "would be added to is not at a maximum"
+      "would be added to is not at a maximum. `criterion = \"score\"` refits",
+      "and Wald-tests such a candidate itself, so reaching this reason means",
+      "that refit errored or did not converge -- see `refit_failures`"
     ),
     coefficient_diverging = paste(
       "the coefficient the score implies exceeds +/-50, so the fit for this",
@@ -1105,8 +1329,11 @@
       "`criterion = \"wald\"` refits it instead"
     ),
     nuisance_singular = paste(
-      "the current model's information matrix could not be inverted, so no",
-      "candidate could be scored at that step"
+      "the current model's information matrix could not be formed or",
+      "inverted, so no",
+      "candidate could be scored at that step. `criterion = \"score\"` refits",
+      "and Wald-tests each of them itself, so reaching this reason means that",
+      "refit errored or did not converge -- see `refit_failures`"
     ),
     no_information = "no observed information was available for the candidate",
     not_expandable = "the candidate could not be added to the model",
@@ -1126,10 +1353,10 @@
       "the missing values before the screen, so every model uses the same rows"
     ),
     loglik_below_base = paste(
-      "under `criterion = \"aic\"`, the candidate's refit ended with a",
-      "log-likelihood below the current model's, although the candidate",
-      "model contains the current one. That cannot happen at the optimum, so",
-      "the refit did not converge and its AIC could not be compared. More",
+      "the candidate's refit ended with a log-likelihood below the current",
+      "model's, although the candidate model contains the current one. That",
+      "cannot happen at the optimum, so the refit did not converge, and",
+      "neither its AIC nor its Wald test describes a fitted model. More",
       "starting points (`control$n_starts`) or iterations (`control$maxit`)",
       "may let it converge"
     ),

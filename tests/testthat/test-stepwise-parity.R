@@ -229,7 +229,7 @@ test_that("score selection refits once per accepted step, not once per candidate
                  dist = "weibull", theta = c(mu = 0.01, nu = 0.5), fit = TRUE)
   scope <- ~ age + mal + com_iv
 
-  count_refits <- function(criterion) {
+  count_refits <- function(criterion, ...) {
     orig <- TemporalHazard:::.hzr_refit_with_scope
     n <- 0L
     counter <- function(...) {
@@ -242,16 +242,38 @@ test_that("score selection refits once per accepted step, not once per candidate
                                      ns = "TemporalHazard"))
     fit <- suppressWarnings(hzr_stepwise(
       base, scope = scope, data = avc, criterion = criterion,
-      direction = "forward", slentry = 0.3, slstay = 0.2, trace = FALSE
+      direction = "forward", slentry = 0.3, slstay = 0.2, trace = FALSE, ...
     ))
-    list(n = n, n_enter = sum(fit$steps$action == "enter"))
+    enter <- fit$steps[fit$steps$action == "enter", ]
+    list(n = n, n_enter = nrow(enter), entered = enter$variable,
+         # Candidates the score could not test and refitted instead, and how
+         # many of those went on to win their step.
+         n_fallback = fit$criteria$n_wald_fallbacks %||% 0L,
+         n_fallback_won = sum(enter$stat_type == "wald_z"),
+         stopped_untested = fit$criteria$stopped_uncomputable)
   }
+
+  # A step where every candidate is scored: the only refit is the winner's.
+  first <- count_refits("score", max_steps = 1L)
+  expect_identical(first$n_fallback, 0L)
+  expect_equal(first$n_enter, 1L)
+  expect_equal(first$n, first$n_enter)
 
   score <- count_refits("score")
   wald  <- count_refits("wald")
 
-  # Score refits only the winners it accepts, never the candidates it scores.
-  expect_equal(score$n, score$n_enter)
-  # And that is strictly fewer refits than Wald's per-candidate loop.
+  # One refit per accepted step, plus one for each candidate the score test
+  # could not test, which is refitted and tested by Wald. A rescued winner's
+  # refit is reused, not repeated. With no fallback this is the equality
+  # above; it used to be asserted for the whole screen, and held only because
+  # the screen stopped after `com_iv`: on this fit the numeric information
+  # cannot be formed once `com_iv` is in, every remaining candidate read
+  # `nuisance_singular`, and none was tested (#570).
+  expect_equal(score$n,
+               score$n_enter + score$n_fallback - score$n_fallback_won)
+  expect_false(score$stopped_untested)
+  # The score criterion now reaches the Wald criterion's selection,
+  expect_identical(score$entered, wald$entered)
+  # with strictly fewer refits than Wald's per-candidate loop.
   expect_lt(score$n, wald$n)
 })
