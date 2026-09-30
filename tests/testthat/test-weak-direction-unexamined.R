@@ -36,9 +36,67 @@ test_that("fewer than two finite variances is NA, with its reason (#570)", {
     .hzr_weak_direction(wd_vcov(c(NA, NA, 4)), rcond = 1e-10,
                         param_names = c("a", "b", "c")), NA)
 
-  # Two usable variances are enough to examine: that is a conclusion again.
-  expect_null(.hzr_weak_direction(wd_vcov(c(NA, 1, 4)), rcond = 1e-10,
-                                  param_names = c("a", "b", "c")))
+})
+
+test_that("NULL needs every estimated parameter to have been examined (#570)", {
+  abc <- c("a", "b", "c")
+  three <- wd_vcov(c(NA, 1, 4))
+  # `a` was estimated and its variance failed. It is dropped, nothing is
+  # found between b and c, and that is not a clean result: `a` was never
+  # looked at, and is the likeliest cause of the ill-conditioning.
+  r <- .hzr_weak_direction_impl(three, rcond = 1e-10, param_names = abc)
+  expect_identical(r$weak, NA)
+  expect_match(r$reason, "not every direction was examined", fixed = TRUE)
+  r <- .hzr_weak_direction_impl(three, rcond = 1e-10, param_names = abc,
+                                fixed_mask = c(FALSE, FALSE, FALSE))
+  expect_identical(r$weak, NA)
+
+  # The same matrix with `a` held FIXED: its NA row is by design, b and c
+  # are all there is to examine, and nothing found is a conclusion.
+  r <- .hzr_weak_direction_impl(three, rcond = 1e-10, param_names = abc,
+                                fixed_mask = c(TRUE, FALSE, FALSE))
+  expect_null(r$weak)
+  expect_true(is.na(r$reason))
+
+  # A ridge found among the examined parameters stands, whatever was dropped.
+  ridge <- matrix(NA_real_, 3, 3)
+  ridge[2:3, 2:3] <- matrix(c(1, 0.999, 0.999, 1), 2, 2)
+  w <- .hzr_weak_direction(ridge, rcond = 1e-10, param_names = abc)
+  expect_true(is.list(w))
+  expect_setequal(w$params, c("b", "c"))
+})
+
+test_that("hazard() tells a fixed parameter's row from a failed one (#570)", {
+  skip_on_cran() # a multiphase fit
+  data(avc, package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc)
+  # Shapes held fixed, so their rows are NA by design. The Hessian is
+  # reported ill-conditioned, which sends the fit through the examination.
+  orig <- .hzr_safe_solve
+  local_mocked_bindings(.hzr_safe_solve = function(H, ...) {
+    r <- orig(H, ...)
+    r$rcond <- 1e-12
+    r
+  })
+  fit <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
+    phases = list(
+      early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                           fixed = "shapes"),
+      constant = hzr_phase("constant")
+    ),
+    fit = TRUE
+  ))
+  v <- diag(fit$fit$vcov)
+  fixed <- fit$fit$fixed_mask
+  # The premise: fixed rows carry NA, and every estimated one has a variance.
+  expect_true(any(fixed))
+  expect_true(all(is.na(v[fixed])))
+  expect_true(all(is.finite(v[!fixed]) & v[!fixed] > 0))
+  expect_lt(fit$fit$rcond, 1e-8)
+  # So the fit was examined in full, and the fixed rows do not make it NA.
+  expect_false(.hzr_is_na_scalar(fit$fit$weak))
+  expect_false("weak_direction_check" %in% names(fit$degraded_causes))
 })
 
 test_that("a fit whose covariance mostly failed says it was not examined (#570)", {

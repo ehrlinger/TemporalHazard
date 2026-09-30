@@ -182,6 +182,70 @@ test_that("reasons a refit cannot rescue still cost no refit (#570)", {
                     "nuisance_singular", "information_nonpositive"))
 })
 
+test_that("a rescue that fails under a new reason is reported as untested (#570)", {
+  # The refit is what makes these candidates testable, so one whose refit
+  # fails was tested by neither criterion. The warning that says so was
+  # keyed on `information_indefinite` alone, and in hzr_bootstrap(), whose
+  # replicates run with warnings suppressed, nothing else reports it.
+  d <- fb_data()
+  fit <- fb_fit(d)
+  orig_n <- .hzr_score_nuisance
+  orig_r <- .hzr_refit_with_scope
+  local_mocked_bindings(
+    .hzr_score_nuisance = function(current) {
+      r <- orig_n(current)
+      list(inv = NULL, idx = r$idx, ok = FALSE)
+    },
+    .hzr_refit_with_scope = function(current, action = c("add", "drop"),
+                                     var, ...) {
+      if (identical(var, "mal")) stop("forced refit failure")
+      orig_r(current, action = action, var = var, ...)
+    }
+  )
+
+  w <- character()
+  sw <- withCallingHandlers(
+    hzr_stepwise(fit, scope = fb_scope, data = d, direction = "forward",
+                 criterion = "score", slentry = 0.30, max_steps = 1L,
+                 trace = FALSE),
+    warning = function(x) {
+      w <<- c(w, conditionMessage(x))
+      invokeRestart("muffleWarning")
+    }
+  )
+  # The run completed: com_iv entered on its rescued test, mal went untested.
+  expect_identical(sw$steps$variable, "com_iv")
+  expect_false(sw$criteria$stopped_uncomputable)
+  expect_identical(sw$criteria$uncomputable_reasons,
+                   c(nuisance_singular = 1L))
+  expect_true("mal" %in% sw$criteria$refit_failures)
+  expect_true(any(grepl("Wald-fallback refit failed for mal", w,
+                        fixed = TRUE)))
+  neither <- grep("NEITHER criterion", w, fixed = TRUE, value = TRUE)
+  expect_length(neither, 1L)
+  expect_match(neither, "1 candidate(s)", fixed = TRUE)
+
+  # The bootstrap: each replicate completes its one step with mal untested.
+  bw <- character()
+  bs <- withCallingHandlers(
+    hzr_bootstrap(fit, n_boot = 3, seed = 570, scope = fb_scope,
+                  direction = "forward", slentry = 0.30, max_steps = 1L),
+    warning = function(x) {
+      bw <<- c(bw, conditionMessage(x))
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_identical(bs$n_success, 3L)
+  expect_identical(bs$n_uncomputable_replicates, 0L)
+  expect_identical(bs$uncomputable_reasons[["nuisance_singular"]], 3L)
+  # The up-front screen on the data warns for itself; this is the replicates'.
+  b_neither <- grep("replicates were tested by NEITHER criterion", bw,
+                    fixed = TRUE, value = TRUE)
+  expect_length(b_neither, 1L)
+  expect_match(b_neither, "3 candidate score(s) across 3 replicates",
+               fixed = TRUE)
+})
+
 test_that("the two reasons' texts say the refit was tried (#570)", {
   for (r in c("nuisance_singular", "information_nonpositive")) {
     txt <- .hzr_score_reason_text(r)

@@ -228,8 +228,12 @@ an unscored candidate as a bad one: \code{information_indefinite} marks
 candidates whose effect is too large for the score test's
 approximation at zero, which are typically the strongest variables
 on offer rather than degenerate ones. Candidates with that cause,
-or with \code{coefficient_diverging}, are refit and tested by Wald
-automatically, counted in \code{n_wald_fallbacks}. A candidate still
+or with \code{coefficient_diverging}, \code{information_nonpositive} or
+\code{nuisance_singular}, are refit and tested by Wald
+automatically, counted in \code{n_wald_fallbacks}. \code{nuisance_singular}
+is a fault of the current model, whose information matrix could
+not be inverted, so it applies to every candidate at that step and
+each of them is refitted. A candidate still
 reaches \code{uncomputable_reasons} when that refit fails, or when its
 cause is any other, which no refit can rescue. Read
 \code{uncomputable_reasons} for which one it was in any given run.  For

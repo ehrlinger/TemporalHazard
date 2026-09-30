@@ -1112,6 +1112,7 @@ test_that("print.hzr_bootstrap reports the mode", {
     hzr_bootstrap(base, n_boot = 5, seed = 42, scope = ~ age + mal)
   )
   expect_output(print(bs_sel), "stepwise selection")
+  expect_identical(bs_sel$n_success, 5L)
   expect_identical(bs_sel$n_uncomputable_replicates, 0L)
   selected <- bs_sel$summary[bs_sel$summary$parameter %in% c("age", "mal"), ]
   expect_identical(nrow(selected), 2L)

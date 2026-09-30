@@ -2579,14 +2579,16 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     }
   }
 
-  # Both codes mean "no criterion tested this candidate", and both are
-  # typically STRONG variables, so both belong in the warning below. They
-  # differ in mechanism: information_indefinite means the rescuing refit
-  # errored or did not converge, fallback_no_variance means it converged but
-  # yielded no standard error to test with. The previous text described every
-  # such row as a failed refit, which is wrong for the second.
+  # These codes all mean "no criterion tested this candidate", so all belong
+  # in the warning below. They differ in mechanism: a reason the score
+  # criterion refits for (.hzr_score_fallback_reasons) still on a row means
+  # the rescuing refit errored or did not converge, and fallback_no_variance
+  # means it converged but yielded no standard error to test with. The set is
+  # read, not written out: replicates run under suppressWarnings(), so a
+  # reason missing here leaves its failed rescue with no trace but a count
+  # (#570).
   n_indefinite <- sum(unname(uncomputable_reasons[
-    c("information_indefinite", "fallback_no_variance")]), na.rm = TRUE)
+    c(.hzr_score_fallback_reasons, "fallback_no_variance")]), na.rm = TRUE)
 
   if (n_uncomputable_reps > 0L) {
     warning(n_uncomputable_reps, " of ", n_success, " successful replicates ",
@@ -2606,11 +2608,12 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     warning(n_indefinite, " candidate score(s) across ", n_success,
             " replicates were tested by NEITHER criterion: the score ",
             "statistic could not be computed, and the Wald refit that would ",
-            "have rescued them either failed to converge ",
-            "(`information_indefinite`) or converged without a usable ",
+            "have rescued them either failed to converge (the candidate ",
+            "keeps the score's reason, such as `information_indefinite` or ",
+            "`nuisance_singular`) or converged without a usable ",
             "variance to test with (`fallback_no_variance`). These are ",
-            "typically STRONG candidates -- that is what drives the score's ",
-            "information indefinite -- so their selection frequencies are ",
+            "often STRONG candidates -- a large effect is what drives the ",
+            "score's information indefinite -- so their selection frequencies are ",
             "understated rather than merely noisy. See ",
             "`$uncomputable_reasons` for which mechanism.", call. = FALSE)
   }

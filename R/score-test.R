@@ -1256,11 +1256,16 @@
 # not_single_column, duplicate_column, not_expandable -- are NOT here: no
 # refit can make those candidates testable, and paying one per degenerate
 # candidate would give back the whole speed advantage the score criterion
-# exists for. Nor are no_information and nonfinite, which report a likelihood
-# that could not be evaluated for the expanded model at all.
+# exists for. no_information and nonfinite are not here either. They report
+# a gradient or information that could not be computed for the expanded
+# model, and whether a refit rescues them has not been measured (#577).
 #
-# The cost: nuisance_singular refits every candidate at its step, which is
-# what `criterion = "wald"` pays at every step.
+# The cost: nuisance_singular refits every candidate at its step that reaches
+# the nuisance check, which is what `criterion = "wald"` pays at every step.
+# .hzr_score_q() returns that reason BEFORE it expands the candidate, so at
+# such a step a collinear, duplicate_column or not_expandable candidate is
+# refitted too, and its refit fails or yields no variance; only constant,
+# non_numeric and not_single_column are screened out ahead of it.
 .hzr_score_fallback_reasons <- c("information_indefinite",
                                  "coefficient_diverging",
                                  "nuisance_singular",

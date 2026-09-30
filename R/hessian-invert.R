@@ -130,6 +130,10 @@ NULL
 #' @param shape_names Names of the g3 shape parameters (\code{gamma},
 #'   \code{alpha}, \code{eta}) the single-parameter reading may name; it is
 #'   skipped when empty.
+#' @param fixed_mask Logical, \code{TRUE} for a parameter that was not
+#'   estimated, whose \code{NA} row is by design. A row that is \code{NA}
+#'   (or not finite and positive) without being fixed is a variance the
+#'   inversion failed on. Every row counts as estimated when this is absent.
 #' @return One of three values, which callers must keep distinct:
 #'   \code{NULL} when the check ran and found no ridge; \code{NA} when the
 #'   check \emph{could not} run, because no usable Hessian was available; and
@@ -159,7 +163,7 @@ NULL
                                      tol = .hzr_rcond_tol,
                                      cor_tol = .hzr_ridge_cor_tol,
                                      share = 0.9, theta = NULL,
-                                     shape_names = NULL) {
+                                     shape_names = NULL, fixed_mask = NULL) {
   na_because <- function(reason) list(weak = NA, reason = reason)
   looked <- function(weak) list(weak = weak, reason = NA_character_)
 
@@ -183,15 +187,24 @@ NULL
   # (2) Drop parameters that were not estimated (fixed params carry NA rows).
   d <- diag(vcov)
   keep <- which(is.finite(d) & d > 0)
-  # Too few variances to find a trade-off in: a gap, not a conclusion (#570).
-  # This point is reached only under an ill-conditioned Hessian (the rcond
-  # gate above). With two or more estimated parameters, the missing variances
-  # are ones the inversion failed on: .hzr_safe_solve() masks a non-positive
-  # variance to NA, the value a fixed row carries too. With one, a 1 x 1
-  # Hessian is ill-conditioned only when its single curvature is zero, so
-  # that parameter's variance failed as well, and it is flat on its own.
-  # Either way nothing was examined, and NULL would report a fit whose
-  # covariance failed as examined and clean.
+  # An ESTIMATED parameter with no usable variance is one the inversion failed
+  # on: .hzr_safe_solve() masks a non-positive variance to NA, the value a
+  # fixed row carries too, so the fixed mask is what tells them apart. With
+  # no mask every row counts as estimated, as .hzr_params_missing_variance()
+  # reads it. Such a parameter is dropped below and never examined, so a scan
+  # that then finds nothing has not shown the fit to be well identified
+  # (#570): it is the likeliest cause of the ill-conditioning that opened
+  # the gate above.
+  estimated <- if (length(fixed_mask) == length(d)) {
+    !(as.logical(fixed_mask) %in% TRUE)
+  } else {
+    rep(TRUE, length(d))
+  }
+  unexamined <- any(estimated & !(is.finite(d) & d > 0))
+  # Too few variances to find a trade-off in: a gap, not a conclusion. This
+  # point is reached only under an ill-conditioned Hessian, and a fit with
+  # one free parameter leaves before it (its 1 x 1 Hessian has rcond 1, or
+  # is not invertible at all), so the missing variances here are failed ones.
   if (length(keep) < 2L) {
     return(na_because(
       "fewer than two parameters have a finite positive variance"
@@ -309,9 +322,19 @@ NULL
   }
 
   if (is.null(found)) {
-    return(looked(.hzr_weak_single_parameter(V, theta, keep, nms, rcond,
-                                             cor_tol, shape_names)))
+    found <- .hzr_weak_single_parameter(V, theta, keep, nms, rcond, cor_tol,
+                                        shape_names)
+    # Nothing was found among the parameters that could be examined. That is
+    # a clean result only if they were all of the estimated ones.
+    if (is.null(found) && unexamined) {
+      return(na_because(paste(
+        "an estimated parameter has no finite positive variance,",
+        "so not every direction was examined"
+      )))
+    }
+    return(looked(found))
   }
+  # A ridge found among the examined parameters stands, whatever was dropped.
   found$n_directions <- length(seen)
   looked(found)
 }
@@ -380,10 +403,11 @@ NULL
                                 tol = .hzr_rcond_tol,
                                 cor_tol = .hzr_ridge_cor_tol,
                                 share = 0.9, theta = NULL,
-                                shape_names = NULL) {
+                                shape_names = NULL, fixed_mask = NULL) {
   .hzr_weak_direction_impl(vcov, rcond, param_names = param_names,
                            tol = tol, cor_tol = cor_tol, share = share,
-                           theta = theta, shape_names = shape_names)$weak
+                           theta = theta, shape_names = shape_names,
+                           fixed_mask = fixed_mask)$weak
 }
 
 #' Warning text for a detected ridge direction
