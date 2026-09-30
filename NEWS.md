@@ -9,7 +9,7 @@
   the other parameters at every step. The optimizer was given the score at
   that solved scale without the term for how the scale moves with the other
   parameters, so it followed a direction that was not the gradient of the
-  log-likelihood it was maximising. On the `avc` data, a two-phase model
+  log-likelihood it was maximizing. On the `avc` data, a two-phase model
   with six covariates stopped at a log-likelihood of -184.462 where SAS
   reaches -182.659. The optimizer now receives the full gradient, and that
   fit reaches -182.659 from the default start. Refit any multiphase model
