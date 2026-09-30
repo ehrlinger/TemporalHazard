@@ -34,4 +34,5 @@ from model), `residual` (cum_expected - cum_observed). Multiphase models
 additionally include `par_cumhaz_<phase>` columns for per-phase
 cumulative hazard contributions. A `"summary"` attribute contains scalar
 diagnostics: `total_observed`, `total_expected`, `final_residual`,
-`dist`, `n`.
+`dist`, `n`, `n_tallied`. When `n_tallied` is below `n`, the printed
+totals cover only those subjects, and a note says so.

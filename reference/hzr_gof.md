@@ -73,14 +73,16 @@ A data frame with one row per time point and columns:
 - cum_observed:
 
   Cumulative observed events to this time, weighted by the case weights
-  for a weighted fit.
+  for a weighted fit. With a custom `time_grid`, only the patients whose
+  exit is a grid point up to this time are counted (see Details).
 
 - cum_expected:
 
   Cumulative expected events: over the patients leaving follow-up by
-  this time, the sum of each patient's own cumulative hazard at exit
-  minus that at entry, weighted by the case weights for a weighted fit.
-  With `time_windows`, both cumulative hazards use the patient's
+  this time (with a custom `time_grid`, the same patients as
+  `cum_observed`), the sum of each patient's own cumulative hazard at
+  exit minus that at entry, weighted by the case weights for a weighted
+  fit. With `time_windows`, both cumulative hazards use the patient's
   covariate window at exit, as the likelihood does.
 
 - residual:
@@ -91,7 +93,8 @@ For multiphase models, additional columns are appended for each phase:
 `par_cumhaz_<phase>`, also at the covariate means.
 
 An attribute `"summary"` is attached with scalar diagnostics: total
-observed events, total expected events, and the final residual.
+observed events, total expected events, the final residual, and
+`n_tallied`, the number of patients the two tallies cover, out of `n`.
 
 ## Details
 
@@ -156,7 +159,11 @@ gives them, which merges exit times closer together than its tolerance.
 On the default grid every patient lands on a grid point, and `hzr_gof()`
 warns if one cannot be placed. With a custom `time_grid`, a patient is
 counted in both tallies only if that time, or failing it their own
-follow-up time, falls on a grid point.
+follow-up time, falls on a grid point. A grid such as
+[`seq()`](https://rdrr.io/r/base/seq.html) over the follow-up holds few
+exit times, so `hzr_gof()` warns with the number left out, and the
+totals, residual and E/O then describe only the patients counted.
+Include the exit times in `time_grid` to count everyone.
 
 ## See also
 

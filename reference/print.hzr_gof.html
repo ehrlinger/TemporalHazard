@@ -96,7 +96,9 @@ Multiphase models additionally include <code>par_cumhaz_&lt;phase&gt;</code> col
 for per-phase cumulative hazard contributions.
 A <code>"summary"</code> attribute contains scalar diagnostics:
 <code>total_observed</code>, <code>total_expected</code>, <code>final_residual</code>,
-<code>dist</code>, <code>n</code>.</p>
+<code>dist</code>, <code>n</code>, <code>n_tallied</code>.  When <code>n_tallied</code> is below
+<code>n</code>, the printed totals cover only those subjects, and a note
+says so.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
