@@ -34,6 +34,26 @@
   list(sw = sw, msgs = msgs)
 }
 
+# Since #551 a multiphase refit is fitted from two starts and cannot end
+# below its base, so no real refit reaches the guard end to end. The opmos
+# refit is marked as ending 11 units below its base, where the cold-start
+# refit ended before #551; the Wald test and everything downstream are real.
+.wald_below_mock <- function(env = parent.frame()) {
+  orig <- .hzr_refit_with_scope
+  local_mocked_bindings(
+    .hzr_refit_with_scope = function(current, action = c("add", "drop"), var,
+                                     phase = NULL, data, ...) {
+      r <- orig(current, action = action, var = var, phase = phase,
+                data = data, ...)
+      if (identical(action, "add") && identical(var, "opmos")) {
+        r$fit$objective <- current$fit$objective - 11
+      }
+      r
+    },
+    .env = env
+  )
+}
+
 test_that("a Wald entry refuses a refit that ends below its base (#538)", {
   fx <- .wald_below_fixture()
   cand <- suppressWarnings(.hzr_refit_with_scope(
@@ -74,14 +94,20 @@ test_that("a Wald entry refuses a refit that ends below its base (#538)", {
 test_that("hzr_stepwise() under Wald counts and warns about it (#538)", {
   skip_on_cran()
   fx <- .wald_below_fixture()
+  .wald_below_mock()
   cand <- suppressWarnings(.hzr_refit_with_scope(
     fx$fit, action = "add", var = "opmos", phase = "constant",
     data = fx$data, control = fx$control
   ))
-  # The fixture property: the refit reports convergence, ends well below its
-  # base, and still has a Wald p-value that misses slentry = 0.05.
+  # The premise: the refit reports convergence and ends well below its base,
+  # and the other candidate's does not.
   expect_true(cand$fit$converged)
   expect_lt(cand$fit$objective, fx$fit$fit$objective - 1)
+  ok <- suppressWarnings(.hzr_refit_with_scope(
+    fx$fit, action = "add", var = "age", phase = "constant",
+    data = fx$data, control = fx$control
+  ))
+  expect_gte(ok$fit$objective, fx$fit$fit$objective)
 
   out <- .wald_below_screen(fx, scope = list(constant = ~ opmos + age),
                             criterion = "wald", slentry = 0.05)
@@ -101,6 +127,7 @@ test_that("hzr_stepwise() under Wald counts and warns about it (#538)", {
 test_that("a Wald screen of only such a candidate stops untested (#538)", {
   skip_on_cran()
   fx <- .wald_below_fixture()
+  .wald_below_mock()
   out <- .wald_below_screen(fx, scope = list(constant = ~ opmos),
                             criterion = "wald", slentry = 0.05)
   expect_true(out$sw$criteria$stopped_uncomputable)
@@ -132,6 +159,7 @@ test_that("the score criterion's Wald fallback refuses it too (#538)", {
   expect_equal(ok$sw$criteria$n_wald_fallbacks, 1L)
   expect_length(ok$sw$criteria$uncomputable_reasons, 0L)
 
+  .wald_below_mock()
   out <- .wald_below_screen(fx, scope = list(constant = ~ opmos + age),
                             criterion = "score", slentry = 0.05)
   cr <- out$sw$criteria
