@@ -16,12 +16,24 @@
   fitted `t_half` of `1e-4` or more are unaffected beyond the optimizer's
   own tolerance. A `t_half` too small to step at all (below about
   `3e-321`) now gives `NaN` for this derivative, where it gave a number.
-  One case is improved but not cured: for a `"hazard"` phase far past
-  saturation the phase's cumulative hazard runs out of accurate digits,
-  and the derivative is first noisy and then exactly 0. Where that starts
-  depends on the shape; at `nu = 1`, `m = 1` and times of order 1 it is
-  accurate to three digits at `t_half = exp(-25)`, wrong by up to 60% at
-  `exp(-30)` and 0 from `exp(-34)`.
+  A `"hazard"` phase far past saturation was still wrong after this fix,
+  because its value was; that is #578, below.
+
+* **A `"hazard"` phase far past saturation had the wrong cumulative hazard
+  and hazard (#578). Fits with such a phase from earlier versions may be
+  wrong.** The phase's cumulative hazard, `-log(1 - G(t))`, was formed from
+  `1 - G`. As `G` neared 1 that lost its digits, and once `G` rounded to 1
+  it was clamped: the cumulative hazard came back as 708.396 (the log of
+  the smallest double) and the hazard, `g / (1 - G)`, near `1e290`, where
+  both are of order 1 to 100. At `nu = 1`, `m = 1`, `t_half = exp(-40)` and
+  `t = 1` the cumulative hazard is 40 and the hazard 1. The derivative
+  with respect to `log_t_half` was noisy from about `t_half = exp(-30)` and
+  exactly 0 from `exp(-34)` at that shape. `hzr_decompos()` now returns a
+  fourth element, `log_surv`, equal to `log(1 - G(t))` but computed from
+  each case's own log-scale terms, and the `"hazard"` phase's cumulative
+  hazard and hazard are formed from it. Where `1 - G` can be formed, the
+  values agree with the old ones to rounding. `G`, `g` and `h` keep their
+  names and meaning.
 
 * **A Wald stepwise entry no longer tests a refit that ended below the
   current model (#538).** The AIC fix below (#490) left two paths open.
