@@ -2924,12 +2924,11 @@
 
   # When the phase that check found absent is the conserved one, the fit is
   # on the CoE boundary (#565). Recorded; the check above has warned.
-  if (best_result$conserve_applied) {
-    best_result$held <- c(best_result$held, list(.hzr_coe_vanished_record(
-      best_result$phase_share, fixmu_phase, phase_share_tol
-    )))
-    best_result$held <- Filter(Negate(is.null), best_result$held)
-  }
+  # Without conservation fixmu_phase is NULL and nothing is recorded.
+  best_result$held <- c(best_result$held, list(.hzr_coe_vanished_record(
+    best_result$phase_share, fixmu_phase, phase_share_tol
+  )))
+  best_result$held <- Filter(Negate(is.null), best_result$held)
 
   best_result
 }

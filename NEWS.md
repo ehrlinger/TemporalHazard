@@ -17,6 +17,11 @@
   affected. On that fit the relative-gradient test recorded in
   `fit$fit$rel_gradient` had failed (0.311 against a limit of about 6e-6),
   with no warning.
+  A fit can now run to the point where the conserved phase has left the
+  model, where before it stopped short. The identifiability warning
+  reports that phase as it did, and the fit also carries a
+  `"coe_no_events_left"` record in `fit$fit$boundary`, with the phase's
+  largest share of the cumulative hazard.
 
 * **Multiphase stepwise refits now start from the model they extend
   (#551). Multiphase selections, and `hzr_bootstrap()` select-mode
