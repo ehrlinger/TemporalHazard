@@ -713,10 +713,10 @@ hzr_phase_cumhaz <- function(time, t_half = 1, nu = 1, m = 0,
   th_plus  <- t_half * exp(h_lt)
   th_minus <- t_half * exp(-h_lt)
   span <- log(th_plus) - log(th_minus)
-  d_plus  <- if (is.finite(span) && span > 0) {
-    perturb_decompos(th_plus, nu, m)
-  }
-  d_minus <- if (!is.null(d_plus)) perturb_decompos(th_minus, nu, m)
+  # Coincident points need no guard: their difference is exactly 0 and the
+  # spacing is 0, so the quotient is NaN.
+  d_plus  <- perturb_decompos(th_plus, nu, m)
+  d_minus <- perturb_decompos(th_minus, nu, m)
   if (!is.null(d_plus) && !is.null(d_minus)) {
     e_plus  <- extract(d_plus, type)
     e_minus <- extract(d_minus, type)
