@@ -102,6 +102,36 @@ test_that("interval rows a phase design dropped do not change the label (#544)",
   expect_identical(summary(fit)$log_lik, fit$fit$objective)
 })
 
+test_that("an AIC screen warns once a step restores interval rows (#544)", {
+  skip_on_cran()
+  # The base fit drops every interval row through a phase covariate missing
+  # on them, so it reads none; dropping that covariate restores them.
+  d <- sas_label_data()
+  withr::local_seed(1)
+  d$z <- ifelse(d$st == 2, NA, stats::rnorm(nrow(d)))
+  base <- suppressWarnings(hazard(
+    time = d$tt, status = d$st, time_lower = d$lo, time_upper = d$tt,
+    data = d, dist = "multiphase", objective = "sas", fit = TRUE,
+    phases = list(early = hzr_phase("cdf", t_half = 0.8, nu = 0.4, m = -0.6,
+                                    fixed = "shapes", formula = ~ z),
+                  constant = hzr_phase("constant")),
+    control = list(n_starts = 1)))
+  expect_false(.hzr_objective_not_loglik(base))
+  classes <- character()
+  sw <- withCallingHandlers(
+    suppressMessages(hzr_stepwise(base, data = d,
+                                  direction = "backward", criterion = "aic",
+                                  trace = FALSE)),
+    warning = function(w) {
+      classes <<- c(classes, class(w)[1L])
+      invokeRestart("muffleWarning")
+    })
+  # The premise: the screen dropped z, so the final model reads them.
+  expect_true("drop" %in% sw$steps$action)
+  expect_true(.hzr_objective_not_loglik(sw))
+  expect_identical(sum(classes == "hzr_stepwise_sas_objective"), 1L)
+})
+
 test_that("summary()'s new fields come last (#544)", {
   skip_on_cran()
   s <- summary(sas_label_fit(sas_label_data(), "sas"))

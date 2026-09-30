@@ -402,13 +402,20 @@ hzr_stepwise <- function(fit,
     stop("`fit` must be a `hazard` object.", call. = FALSE)
   }
   # An AIC screen on a SAS objective selects on a penalised quantity that is
-  # not an AIC (#544): said once, up front, rather than only in the trace's
-  # last line.
-  if (identical(criterion, "aic") && .hzr_objective_not_loglik(fit)) {
+  # not an AIC (#544): said once, as soon as the model in hand reads an
+  # interval row -- at entry, or after a step that restores such rows
+  # (record_step() below) -- rather than only in the trace's last line.
+  sas_aic_warned <- FALSE
+  warn_sas_aic <- function(model) {
+    if (sas_aic_warned || !identical(criterion, "aic") ||
+          !.hzr_objective_not_loglik(model)) {
+      return(invisible(FALSE))
+    }
+    sas_aic_warned <<- TRUE
     warning(structure(
       class = c("hzr_stepwise_sas_objective", "warning", "condition"),
       list(message = paste0(
-        "criterion = \"aic\" on an objective = \"sas\" fit whose data have ",
+        "criterion = \"aic\" on an objective = \"sas\" model that reads ",
         "interval-censored rows: each entry is decided on ",
         "-2 * (SAS objective) + 2k, which is not an AIC, and each removal on ",
         "a Wald statistic from the SAS objective's curvature. $steps$logLik ",
@@ -416,7 +423,9 @@ hzr_stepwise <- function(fit,
         "log-likelihood and an AIC."
       ), call = NULL)
     ))
+    invisible(TRUE)
   }
+  warn_sas_aic(fit)
   extra_args <- .hzr_check_forwarded_dots(list(...), "hzr_stepwise",
                                           own = names(formals(hzr_stepwise)),
                                           fit = fit)
@@ -754,6 +763,7 @@ hzr_stepwise <- function(fit,
   # Wald and must be labelled as such.
   record_step <- function(action, out, crit = criterion) {
     step_no <<- step_no + 1L
+    warn_sas_aic(current)
     rows <- .hzr_fit_row_mask(current)
     rows_before <- sum(prev_rows)
     # A row of weight 0 adds nothing to the likelihood, so dropping it does
