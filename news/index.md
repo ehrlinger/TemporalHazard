@@ -877,6 +877,24 @@
   [`lm()`](https://rdrr.io/r/stats/lm.html) does is
   [\#590](https://github.com/ehrlinger/TemporalHazard/issues/590).
 
+- **[`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
+  translated an early phase that starts at `M=0` as a different model
+  from the one `PROC HAZARD` fits
+  ([\#471](https://github.com/ehrlinger/TemporalHazard/issues/471)).**
+  For `PARMS ... M=0 NU=1`, with `M` not fixed, `SETG1` fixes `M` at 0
+  before the fit, and it does the same for a negative `NU`. The
+  translation left `M` free, so the emitted
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  call estimated a parameter `PROC HAZARD` holds, and it could reach a
+  different optimum with no warning. The translation now fixes `M` as
+  `SETG1` does, and records the rewrite in `$untranslated`. Two related
+  starting values are mirrored as well: with `NU` fixed and `M` free,
+  `SETG1` starts `M` at 1, and with `M` fixed and `NU=0` it starts `NU`
+  at 1. `M=0 NU=1`, `M=0 NU=0 FIXM` and `M=0 NU=1 FIXM` now emit the
+  same model, as they are the same job to `PROC HAZARD`. On data drawn
+  from that model, and from a start where the `HAZARD` binary converges,
+  the emitted fit reproduces its estimates.
+
 ## TemporalHazard 1.2.12
 
 ### Breaking changes
