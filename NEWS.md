@@ -696,6 +696,19 @@
   `M=0 NU=1 FIXM` now emit the same model, as they are the same job to
   `PROC HAZARD`. On data drawn from that model, and from a start where the
   `HAZARD` binary converges, the emitted fit reproduces its estimates.
+* **`hzr_translate_sas()` now mirrors `SETG1`'s other early-phase rewrites
+  (#601).** With `M<0` and `NU<0`, `SETG1` flips signs into a valid
+  model: `M`'s when `NU` is fixed, `NU`'s when `M` is fixed, and both
+  otherwise. The translation kept both negative, and the emitted
+  `hzr_phase()` call stopped with an error when the document ran. With
+  `NU=0`, a nonzero `M` and neither fixed, `SETG1` fixes `NU` at 0, and for
+  `M>0` it also flips `M`'s sign, which it does with `NU` fixed too. With
+  `M=0` and `NU=0 FIXNU` it starts `M` at 1. The translation emitted none
+  of these, so the "may not fit" and "no result" notes for those jobs
+  described a model the emitted call did not fit. It now emits the model
+  `PROC HAZARD` fits, and records each rewrite in `$untranslated`. When a
+  macro reference in `PARMS` could carry a value or flag that changes
+  `SETG1`'s case, the note says the rewrite holds only if it does not.
 
 # TemporalHazard 1.2.12
 
