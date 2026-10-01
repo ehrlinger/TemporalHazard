@@ -673,6 +673,16 @@
   macro call, as in `%F(A,,B)`, belongs to the macro and is not flagged.
   A quoting function such as `%STR()` passes its argument through as text,
   so `%STR(A,,B)` is judged as `A,,B`.
+* **`?hazard` no longer says a position-indexing helper behaves as it would
+  under `stats::lm(subset = )` (#484).** When `hazard()` drops a time-0
+  row, it builds the design on the retained rows. A term such as
+  `hf(age)`, with `hf <- function(a) a + g[seq_along(a)]` and `g` outside
+  `data`, then pairs the retained rows with the first elements of `g`.
+  Every row after the first dropped one gets the wrong value, and only the
+  drop is warned about. `lm(subset = )` evaluates its terms on every row
+  before subsetting, so the same helper pairs correctly there; the page
+  wrongly implied the two agree. The advice is unchanged: put such a vector
+  in `data`. Evaluating terms as `lm()` does is #590.
 
 # TemporalHazard 1.2.12
 
