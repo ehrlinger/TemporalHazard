@@ -119,6 +119,12 @@
     if (length(lacking)) {
       causes["standard_errors"] <- paste0("no finite positive variance for: ",
                                           paste(lacking, collapse = ", "))
+      # A Weibull mu whose scale cannot be represented (#566): say why.
+      sc <- reasons$scale
+      if (length(sc) == 1L && !is.na(sc)) {
+        causes["standard_errors"] <- paste0(causes["standard_errors"],
+                                            " (", sc, ")")
+      }
     }
   }
 
