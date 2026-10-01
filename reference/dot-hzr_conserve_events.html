@@ -76,7 +76,8 @@ log_mu so that total predicted events = total observed events.</p>
 <span>  <span class="va">x_list</span>,</span>
 <span>  <span class="va">total_events</span>,</span>
 <span>  weights <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  time_lower <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  time_lower <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  details <span class="op">=</span> <span class="cn">FALSE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -137,10 +138,18 @@ cumulative hazard, matching the multiphase likelihood (and C HAZARD
 (<code>H(start) = 0</code>); see <code>.hzr_multiphase_entry()</code>. <code>NULL</code> (the default)
 means no truncation.</p></dd>
 
+
+<dt id="arg-details">details<a class="anchor" aria-label="anchor" href="#arg-details"></a></dt>
+<dd><p><code>FALSE</code> (the default) returns the theta vector alone.
+<code>TRUE</code> returns <code>list(theta, solved)</code>, <code>solved</code> saying whether the log_mu
+was solved for, as against handed back unchanged because there was
+nothing to solve.</p></dd>
+
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>Updated theta vector with fixmu phase's log_mu adjusted.</p>
+    <p>Updated theta vector with fixmu phase's log_mu adjusted, or the
+list described under <code>details</code>.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>

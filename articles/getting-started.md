@@ -80,10 +80,10 @@ summary(fit)
 #> Coefficients:
 #>          estimate   std_error     z_stat      p_value
 #> mu    0.121938323 0.062299561  1.9572902 5.031335e-02
-#> nu    1.143693956 0.084297244 13.5673944 6.250475e-42
+#> nu    1.143693955 0.084297244 13.5673944 6.250475e-42
 #> beta1 0.001710112 0.008807807  0.1941586 8.460517e-01
 #> beta2 0.156102262 0.090593058  1.7231151 8.486772e-02
-#> beta3 0.017258366 0.362941256  0.0475514 9.620738e-01
+#> beta3 0.017258365 0.362941256  0.0475514 9.620738e-01
 ```
 
 ## Prediction workflow
@@ -277,7 +277,7 @@ summary(fit_mp)
 #>   phase 3:      late - g3 (late risk)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
-#>   gradient:     relative 4.85e-06 (SAS/C requires <= 6.06e-06; met, nlm code 1)
+#>   gradient:     relative 9.29e-07 (SAS/C requires <= 6.06e-06; met, nlm code 1)
 #>   log-lik:      -3740.52 
 #>   Not done in this run: none
 #>   evaluations: fn=5, gr=1
@@ -287,18 +287,18 @@ summary(fit_mp)
 #> 
 #>   Phase: early (cdf)
 #>               estimate  std_error    z_stat p_value
-#>   log_mu     -3.779551 0.09381236 -40.28841       0
+#>   log_mu     -3.779551 0.09381234 -40.28842       0
 #>   log_t_half -1.609438         NA        NA      NA
 #>   nu          1.000000         NA        NA      NA
 #>   m           1.000000         NA        NA      NA
 #> 
 #>   Phase: constant (constant)
-#>           estimate std_error    z_stat p_value
-#>   log_mu -7.225785 0.0931256 -77.59182       0
+#>           estimate  std_error    z_stat p_value
+#>   log_mu -7.225792 0.09312601 -77.59156       0
 #> 
 #>   Phase: late (g3)
 #>            estimate std_error    z_stat p_value
-#>   log_mu  -16.65783  0.115773 -143.8836       0
+#>   log_mu  -16.65782 0.1157719 -143.8848       0
 #>   log_tau   0.00000        NA        NA      NA
 #>   gamma     3.00000        NA        NA      NA
 #>   alpha     1.00000        NA        NA      NA

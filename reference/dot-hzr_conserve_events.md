@@ -17,7 +17,8 @@ log_mu so that total predicted events = total observed events.
   x_list,
   total_events,
   weights = NULL,
-  time_lower = NULL
+  time_lower = NULL,
+  details = FALSE
 )
 ```
 
@@ -77,9 +78,17 @@ log_mu so that total predicted events = total observed events.
   (`H(start) = 0`); see `.hzr_multiphase_entry()`. `NULL` (the default)
   means no truncation.
 
+- details:
+
+  `FALSE` (the default) returns the theta vector alone. `TRUE` returns
+  `list(theta, solved)`, `solved` saying whether the log_mu was solved
+  for, as against handed back unchanged because there was nothing to
+  solve.
+
 ## Value
 
-Updated theta vector with fixmu phase's log_mu adjusted.
+Updated theta vector with fixmu phase's log_mu adjusted, or the list
+described under `details`.
 
 ## Details
 

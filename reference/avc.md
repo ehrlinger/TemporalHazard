@@ -120,22 +120,22 @@ summary(fit)
 #>   phase 2:      constant - constant (flat rate)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
-#>   gradient:     relative 1.95e-06 (SAS/C requires <= 6.06e-06; met)
+#>   gradient:     relative 2.69e-06 (SAS/C requires <= 6.06e-06; met)
 #>   log-lik:      -211.468 
 #>   Not done in this run: none
-#>   evaluations: fn=4, gr=1
+#>   evaluations: fn=5, gr=1
 #> 
 #> Coefficients (internal scale):
 #> 
 #>   Phase: early (cdf)
 #>                estimate std_error     z_stat      p_value
-#>   log_mu     -1.4575078 0.1412503 -10.318614 5.805536e-25
-#>   log_t_half -1.7947315 0.3641649  -4.928348 8.292792e-07
-#>   nu          1.4542107 0.5504905   2.641663 8.249999e-03
-#>   m           0.9265489 0.7085935   1.307589 1.910128e-01
+#>   log_mu     -1.4575071 0.1412491 -10.318701 5.800266e-25
+#>   log_t_half -1.7947307 0.3641622  -4.928383 8.291296e-07
+#>   nu          1.4542057 0.5504477   2.641860 8.245217e-03
+#>   m           0.9265408 0.7085363   1.307683 1.909809e-01
 #> 
 #>   Phase: constant (constant)
-#>          estimate std_error    z_stat      p_value
-#>   log_mu -7.52314 0.4714417 -15.95773 2.517167e-57
+#>           estimate std_error    z_stat      p_value
+#>   log_mu -7.523149 0.4714422 -15.95774 2.516989e-57
 # }
 ```

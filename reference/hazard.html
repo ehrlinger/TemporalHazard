@@ -384,11 +384,18 @@ log-likelihood is higher with the conserved phase's scale sent to zero,
 where no events remain for that phase. Both records also carry
 <code>gain</code> and the higher point as <code>certificate_theta</code> with its
 <code>certificate_loglik</code> (the corner record adds <code>gamma_hat</code>); the
-estimates are not changed. A fit can carry several records, in no
+estimates are not changed. <code>"coe_phase_vanished"</code> is a fit under
+Conservation of Events that has itself run to that boundary, or beside
+it: the conserved phase's largest share of the cumulative hazard is
+below <code>control$phase_share_tol</code>. Its record carries <code>share</code>
+and <code>tol</code>, and <code>warned_by = "phase_share"</code>: the
+identifiability warning has already reported the phase, so this record
+raises no warning of its own. A fit can carry several records, in no
 guaranteed order, so select them by <code>mechanism</code>. Only rows the
 likelihood reads
-count as observed times. A fit with any record raises one warning whose
-classes are <code>"hzr_"</code> plus each mechanism present, all inheriting
+count as observed times. A fit with any record that has no
+<code>warned_by</code> raises one warning whose classes are <code>"hzr_"</code>
+plus each such record's mechanism, all inheriting
 <code>"hzr_boundary"</code>, so one handler catches the whole family.</p>
     </div>
     <div class="section level2">
@@ -575,11 +582,11 @@ estimates are unreliable, while others, such as a finite-difference score
 that needed a point where the log-likelihood is not usable, say nothing
 against them. Which route it took is recorded in
 <code>fit$fit$rel_gradient_reason</code>, <code>NA_character_</code> when the test did run, and
-<code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code> and <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> show it. Under Conservation of Events
-the analytic score omits how the conserved scale moves, so the test is
-computed from finite differences of the log-likelihood with that scale
-re-solved, as SAS/C does; the continuation still uses the analytic score,
-so a CoE fit can honestly end with the test not met. A warning is raised only for code 4, the
+<code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code> and <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> show it. Under Conservation of Events the
+conserved scale is re-solved from the other parameters at every step, as
+SAS/C does, and the score used by the optimizer, the continuation and the
+test includes how that scale moves with them. A fit can still end with
+the test not met, under Conservation of Events or without it. A warning is raised only for code 4, the
 iteration limit (raise <code>control$maxit</code>), and code 5, where the
 log-likelihood kept rising along some direction and the model may have no
 maximum. Codes 2 and 3, where SAS/C prints a caution, are recorded without
@@ -730,10 +737,10 @@ nonlinear temporal decomposition mixed effects model. <em>Stat Methods Med Res.<
 <span class="r-out co"><span class="r-pr">#&gt;</span> Coefficients:</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>          estimate   std_error     z_stat      p_value</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> mu    0.121938323 0.062299561  1.9572902 5.031335e-02</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> nu    1.143693956 0.084297244 13.5673944 6.250475e-42</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> nu    1.143693955 0.084297244 13.5673944 6.250475e-42</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> beta1 0.001710112 0.008807807  0.1941586 8.460517e-01</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> beta2 0.156102262 0.090593058  1.7231151 8.486772e-02</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> beta3 0.017258366 0.362941256  0.0475514 9.620738e-01</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> beta3 0.017258365 0.362941256  0.0475514 9.620738e-01</span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="co"># \donttest{</span></span></span>
 <span class="r-in"><span><span class="co"># -- Parametric survival with Kaplan-Meier overlay -----------------</span></span></span>
@@ -793,10 +800,11 @@ nonlinear temporal decomposition mixed effects model. <em>Stat Methods Med Res.<
 <span class="r-out co"><span class="r-pr">#&gt;</span>   phase 2:      late - cdf (late risk)</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   engine:       native-r-m2 </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   converged:    TRUE </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   gradient:     relative 1.66e-09 (SAS/C requires &lt;= 6.06e-06; met)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   gradient:     relative 3.74e-10 (SAS/C requires &lt;= 6.06e-06; met, nlm code 1)</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   log-lik:      -321.926 </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   Not done in this run: none</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   evaluations: fn=21, gr=6</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   evaluations: fn=26, gr=7</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   message:      continued with nlm() for 1 iterations (code 1) </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Coefficients (internal scale):</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>

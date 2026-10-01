@@ -97,24 +97,24 @@ summary(fit_mp)
 #>   phase 2:      late - cdf (late risk)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
-#>   gradient:     relative 3.78e-08 (SAS/C requires <= 6.06e-06; met, nlm code 1)
+#>   gradient:     relative 7.38e-10 (SAS/C requires <= 6.06e-06; met, nlm code 1)
 #>   log-lik:      -428.716 
 #>   Not done in this run: none
-#>   evaluations: fn=10, gr=4
-#>   message:      continued with nlm() for 2 iterations (code 1) 
+#>   evaluations: fn=15, gr=4
+#>   message:      continued with nlm() for 1 iterations (code 1) 
 #> 
 #> Coefficients (internal scale):
 #> 
 #>   Phase: early (cdf)
 #>                estimate std_error    z_stat      p_value
-#>   log_mu     -2.1153147 0.2910764 -7.267214 3.669767e-13
+#>   log_mu     -2.1153148 0.2910764 -7.267214 3.669771e-13
 #>   log_t_half -0.6931472        NA        NA           NA
 #>   nu          2.0000000        NA        NA           NA
 #>   m           0.0000000        NA        NA           NA
 #> 
 #>   Phase: late (cdf)
 #>               estimate  std_error   z_stat      p_value
-#>   log_mu     0.5511652 0.09532806 5.781773 7.391723e-09
+#>   log_mu     0.5511652 0.09532805 5.781774 7.391706e-09
 #>   log_t_half 1.6094379         NA       NA           NA
 #>   nu         1.0000000         NA       NA           NA
 #>   m          0.0000000         NA       NA           NA

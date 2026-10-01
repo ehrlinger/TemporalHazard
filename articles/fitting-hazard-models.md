@@ -231,10 +231,11 @@ summary(fit_mp)
 #>   phase 2:      constant - constant (flat rate)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
-#>   gradient:     relative 2.27e-08 (SAS/C requires <= 6.06e-06; met)
+#>   gradient:     relative 1.27e-09 (SAS/C requires <= 6.06e-06; met, nlm code 1)
 #>   log-lik:      -228.029 
 #>   Not done in this run: none
-#>   evaluations: fn=32, gr=10
+#>   evaluations: fn=26, gr=3
+#>   message:      continued with nlm() for 1 iterations (code 1) 
 #> 
 #> Coefficients (internal scale):
 #> 
@@ -247,7 +248,7 @@ summary(fit_mp)
 #> 
 #>   Phase: constant (constant)
 #>           estimate std_error    z_stat      p_value
-#>   log_mu -7.609476 0.4495827 -16.92564 2.911483e-64
+#>   log_mu -7.609476 0.4495826 -16.92564 2.911456e-64
 ```
 
 The diagnostic that matters is whether the multiphase fit actually
@@ -697,8 +698,8 @@ fit_3ph <- hazard(
   fit = TRUE, control = list(n_starts = 5, maxit = 1000)
 )
 #> Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =
-#> 6.15e-12); standard errors may be unreliable
-#> Warning: Phase 'constant' contributes at most 4.47e-11 of the cumulative hazard
+#> 1.03e-10); standard errors may be unreliable
+#> Warning: Phase 'constant' contributes at most 7.5e-10 of the cumulative hazard
 #> at any observed time. Such a phase has not started by the end of follow-up, so
 #> neither its 'mu' nor its shape is identified: the fit converges and those
 #> parameters drift freely.
@@ -708,7 +709,7 @@ fit_3ph <- hazard(
 log_mu_idx <- grep("log_mu", names(coef(fit_3ph)))
 round(exp(coef(fit_3ph)[log_mu_idx]), 6)
 #>    early.log_mu constant.log_mu     late.log_mu 
-#>        0.248868        0.000000        0.000000
+#>        0.248871        0.000000        0.000000
 ```
 
 The constant phase scale has collapsed to zero (\\\mu\\ of order

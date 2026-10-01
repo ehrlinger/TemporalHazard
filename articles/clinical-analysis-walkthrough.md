@@ -251,10 +251,11 @@ summary(fit_mp)
 #>   phase 2:      constant - constant (flat rate)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
-#>   gradient:     relative 2.27e-08 (SAS/C requires <= 6.06e-06; met)
+#>   gradient:     relative 1.27e-09 (SAS/C requires <= 6.06e-06; met, nlm code 1)
 #>   log-lik:      -228.029 
 #>   Not done in this run: none
-#>   evaluations: fn=32, gr=10
+#>   evaluations: fn=26, gr=3
+#>   message:      continued with nlm() for 1 iterations (code 1) 
 #> 
 #> Coefficients (internal scale):
 #> 
@@ -267,7 +268,7 @@ summary(fit_mp)
 #> 
 #>   Phase: constant (constant)
 #>           estimate std_error    z_stat      p_value
-#>   log_mu -7.609476 0.4495827 -16.92564 2.911483e-64
+#>   log_mu -7.609476 0.4495826 -16.92564 2.911456e-64
 ```
 
 Note the use of `fixed = "shapes"`. We fix the temporal shape parameters
@@ -470,19 +471,17 @@ fit_mv <- hazard(
   control = list(n_starts = 5, maxit = 1000)
 )
 #> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
-#> 3.68e-09); standard errors may be unreliable
-#> Warning in .hzr_safe_solve(hess_result): Hessian is not positive-definite at
-#> the optimum; standard errors may be unreliable
-#> Warning in .hzr_safe_solve(hess_result): Non-positive variance estimates; the
-#> optimum may not be a proper maximum
+#> 2.05e-13); standard errors may be unreliable
 #> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
-#> 7.81e-13); standard errors may be unreliable
-#> Warning in .hzr_safe_solve(hess_result): Hessian is not positive-definite at
-#> the optimum; standard errors may be unreliable
-#> Warning in .hzr_safe_solve(hess_result): Hessian is not positive-definite at
-#> the optimum; standard errors may be unreliable
-#> Warning in .hzr_safe_solve(hess_result): Non-positive variance estimates; the
-#> optimum may not be a proper maximum
+#> 1.17e-14); standard errors may be unreliable
+#> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
+#> 1.59e-11); standard errors may be unreliable
+#> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
+#> 1.4e-13); standard errors may be unreliable
+#> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
+#> 1.32e-12); standard errors may be unreliable
+#> Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =
+#> 8.64e-15); standard errors may be unreliable
 summary(fit_mv)
 #> Multiphase hazard model (2 phases)
 #>   observations: 305 
@@ -492,32 +491,33 @@ summary(fit_mv)
 #>   phase 2:      constant - constant (flat rate)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
-#>   gradient:     relative 0.0497 (SAS/C requires <= 6.06e-06; not met, nlm code 3)
-#>   log-lik:      -190.486 
+#>   gradient:     relative 2.17e-06 (SAS/C requires <= 6.06e-06; met, nlm code 1)
+#>   log-lik:      -189.702 
+#>   Note: Hessian ill-conditioned (rcond = 8.64e-15); standard errors may be unreliable.
 #>   Not done in this run: none
-#>   evaluations: fn=11, gr=1
-#>   message:      continued with nlm() for 59 iterations (code 3) 
+#>   evaluations: fn=10, gr=1
+#>   message:      continued with nlm() for 139 iterations (code 1) 
 #> 
 #> Coefficients (internal scale):
 #> 
 #>   Phase: early (cdf)
 #>                  estimate   std_error    z_stat      p_value
-#>   log_mu     -3.637989946 0.569514842 -6.387876 1.682061e-10
+#>   log_mu     -3.662542611 0.563739726 -6.496868 8.200933e-11
 #>   log_t_half -0.693147181          NA        NA           NA
 #>   nu          1.000000000          NA        NA           NA
 #>   m           1.000000000          NA        NA           NA
-#>   age        -0.002888002 0.001990154 -1.451145 1.467395e-01
-#>   status      0.591684485 0.154391427  3.832366 1.269166e-04
-#>   mal         0.630266086 0.270552115  2.329555 1.982967e-02
-#>   com_iv      1.207685702 0.405592627  2.977583 2.905310e-03
+#>   age        -0.002761438 0.001880896 -1.468150 1.420634e-01
+#>   status      0.617748642 0.152523571  4.050185 5.117721e-05
+#>   mal         0.486986741 0.271636473  1.792788 7.300675e-02
+#>   com_iv      1.220199927 0.401483273  3.039230 2.371839e-03
 #> 
 #>   Phase: constant (constant)
-#>              estimate   std_error     z_stat      p_value
-#>   log_mu -9.386133161 1.358334714 -6.9100297 4.845524e-12
-#>   age    -0.001308306 0.002539827 -0.5151161 6.064719e-01
-#>   status  1.022440982 0.430754737  2.3736036 1.761545e-02
-#>   mal     0.440034467 1.135105996  0.3876594 6.982681e-01
-#>   com_iv -1.635241828 1.444470115 -1.1320704 2.576048e-01
+#>               estimate    std_error       z_stat      p_value
+#>   log_mu  -9.382415139 1.320326e+00 -7.106135447 1.193373e-12
+#>   age     -0.001650775 2.498765e-03 -0.660636410 5.088455e-01
+#>   status   1.068010078 4.075660e-01  2.620459314 8.781141e-03
+#>   mal      0.583277928 1.140547e+00  0.511402043 6.090696e-01
+#>   com_iv -20.367312072 1.395749e+04 -0.001459239 9.988357e-01
 ```
 
 The coefficient table shows phase-specific covariate effects. A positive
@@ -587,35 +587,39 @@ fit_step <- hzr_stepwise(
 #> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
 #> 1.36e-14); standard errors may be unreliable
 #> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
-#> 1.67e-11); standard errors may be unreliable
+#> 5.18e-12); standard errors may be unreliable
 #> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
-#> 1.97e-11); standard errors may be unreliable
+#> 1.45e-10); standard errors may be unreliable
 #> Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =
-#> 1.54e-11); standard errors may be unreliable
+#> 4.78e-12); standard errors may be unreliable
 #> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
 #> 0); standard errors may be unreliable
 #> Warning in .hzr_safe_solve(hess_result): Hessian not invertible; standard
 #> errors unavailable
 #> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
-#> 9.72e-22); standard errors may be unreliable
+#> 2.65e-11); standard errors may be unreliable
 #> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
-#> 9.38e-11); standard errors may be unreliable
+#> 6.95e-11); standard errors may be unreliable
 #> Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =
-#> 7.8e-22); standard errors may be unreliable
+#> 2.13e-11); standard errors may be unreliable
 #> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
-#> 9.46e-11); standard errors may be unreliable
+#> 1.05e-10); standard errors may be unreliable
+#> Warning in .hzr_safe_solve(hess_result): Hessian is not positive-definite at
+#> the optimum; standard errors may be unreliable
+#> Warning in .hzr_safe_solve(hess_result): Non-positive variance estimates; the
+#> optimum may not be a proper maximum
 #> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
-#> 5.97e-11); standard errors may be unreliable
+#> 4.88e-11); standard errors may be unreliable
+#> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
+#> 5.31e-13); standard errors may be unreliable
 #> Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =
-#> 7.73e-11); standard errors may be unreliable
+#> 4.34e-13); standard errors may be unreliable
 #> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
-#> 0); standard errors may be unreliable
-#> Warning in .hzr_safe_solve(hess_result): Hessian not invertible; standard
-#> errors unavailable
+#> 4.41e-19); standard errors may be unreliable
 #> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
-#> 1.11e-41); standard errors may be unreliable
+#> 4.98e-12); standard errors may be unreliable
 #> Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =
-#> 1.1e-41); standard errors may be unreliable
+#> 4.33e-19); standard errors may be unreliable
 fit_step
 #> Stepwise selection (direction = both, criterion = wald, slentry = 0.30, slstay = 0.20)
 #> 
@@ -637,11 +641,11 @@ and p-value:
 fit_step$steps[, c("step_num", "action", "variable", "phase",
                    "p_value", "aic")]
 #>   step_num action variable    phase      p_value      aic
-#> 1        1  enter   status    early 1.967208e-09 424.9675
-#> 2        2  enter   com_iv    early 1.260359e-05 401.5605
-#> 3        3  enter   status constant 6.502167e-02 400.3834
-#> 4        4  enter      mal    early 1.093932e-01 399.8823
-#> 5        5  enter      age    early 1.174587e-01 398.2062
+#> 1        1  enter   status    early 1.967175e-09 424.9675
+#> 2        2  enter   com_iv    early 1.260360e-05 401.5605
+#> 3        3  enter   status constant 6.500216e-02 400.3834
+#> 4        4  enter      mal    early 1.094162e-01 399.8823
+#> 5        5  enter      age    early 1.174822e-01 398.2062
 ```
 
 The final model is the fit at the top of the object, reachable through
@@ -660,7 +664,7 @@ c(manual = logLik_manual, stepwise = logLik_step,
   aic_manual = 2 * n_free(fit_mv) - 2 * logLik_manual,
   aic_step   = 2 * n_free(fit_step) - 2 * logLik_step)
 #>      manual    stepwise free_manual   free_step  aic_manual    aic_step 
-#>   -190.4862   -192.1031     10.0000      7.0000    400.9724    398.2062
+#>   -189.7023   -192.1031     10.0000      7.0000    399.4047    398.2062
 ```
 
 The two models need not agree. Here stepwise enters `status` in both
@@ -817,29 +821,29 @@ print(cal)
 #> 10 groups, 68 observed events, 68 expected
 #> 
 #>  group  n events expected observed_rate expected_rate  chi_sq  p_value
-#>      1 31      0     1.18        0.0000        0.0381  1.1800 0.277000
-#>      2 30      0     1.59        0.0000        0.0531  1.5900 0.207000
-#>      3 31      1     2.49        0.0323        0.0805  0.8960 0.344000
-#>      4 30      4     3.26        0.1330        0.1090  0.1670 0.683000
-#>      5 31      2     4.97        0.0645        0.1600  1.7700 0.183000
-#>      6 30      7     6.51        0.2330        0.2170  0.0368 0.848000
-#>      7 31     16     6.23        0.5160        0.2010 15.3000 0.000091
-#>      8 30     15     8.89        0.5000        0.2960  4.2100 0.040300
-#>      9 31     11    13.20        0.3550        0.4260  0.3660 0.545000
-#>     10 30     12    19.70        0.4000        0.6560  2.9900 0.083700
+#>      1 31      0     1.23        0.0000        0.0397  1.2300 0.267000
+#>      2 30      0     1.57        0.0000        0.0525  1.5700 0.210000
+#>      3 31      2     2.58        0.0645        0.0832  0.1300 0.718000
+#>      4 30      3     3.30        0.1000        0.1100  0.0275 0.868000
+#>      5 31      3     5.20        0.0968        0.1680  0.9280 0.335000
+#>      6 30      6     6.74        0.2000        0.2250  0.0817 0.775000
+#>      7 31     13     7.55        0.4190        0.2430  3.9400 0.047100
+#>      8 30     17     7.26        0.5670        0.2420 13.1000 0.000303
+#>      9 31     12    13.30        0.3870        0.4290  0.1290 0.720000
+#>     10 30     12    19.30        0.4000        0.6420  2.7300 0.098200
 #>  mean_survival mean_cumhaz
-#>          0.942      0.0381
-#>          0.924      0.0531
-#>          0.881      0.0805
-#>          0.852      0.1090
-#>          0.795      0.1600
-#>          0.744      0.2170
-#>          0.665      0.2010
-#>          0.582      0.2960
-#>          0.496      0.4260
-#>          0.286      0.6560
+#>          0.943      0.0397
+#>          0.923      0.0525
+#>          0.881      0.0832
+#>          0.849      0.1100
+#>          0.793      0.1680
+#>          0.750      0.2250
+#>          0.673      0.2430
+#>          0.605      0.2420
+#>          0.525      0.4290
+#>          0.308      0.6420
 #> 
-#> Overall: chi-sq = 28.5 on 9 df, p = 0.000778
+#> Overall: chi-sq = 23.8 on 9 df, p = 0.00459
 ```
 
 ``` r

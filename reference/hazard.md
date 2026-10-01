@@ -328,12 +328,18 @@ fit under Conservation of Events whose log-likelihood is higher with the
 conserved phase's scale sent to zero, where no events remain for that
 phase. Both records also carry `gain` and the higher point as
 `certificate_theta` with its `certificate_loglik` (the corner record
-adds `gamma_hat`); the estimates are not changed. A fit can carry
-several records, in no guaranteed order, so select them by `mechanism`.
-Only rows the likelihood reads count as observed times. A fit with any
-record raises one warning whose classes are `"hzr_"` plus each mechanism
-present, all inheriting `"hzr_boundary"`, so one handler catches the
-whole family.
+adds `gamma_hat`); the estimates are not changed. `"coe_phase_vanished"`
+is a fit under Conservation of Events that has itself run to that
+boundary, or beside it: the conserved phase's largest share of the
+cumulative hazard is below `control$phase_share_tol`. Its record carries
+`share` and `tol`, and `warned_by = "phase_share"`: the identifiability
+warning has already reported the phase, so this record raises no warning
+of its own. A fit can carry several records, in no guaranteed order, so
+select them by `mechanism`. Only rows the likelihood reads count as
+observed times. A fit with any record that has no `warned_by` raises one
+warning whose classes are `"hzr_"` plus each such record's mechanism,
+all inheriting `"hzr_boundary"`, so one handler catches the whole
+family.
 
 ## Details
 
@@ -565,11 +571,11 @@ nothing against them. Which route it took is recorded in
 `fit$fit$rel_gradient_reason`, `NA_character_` when the test did run,
 and [`print()`](https://rdrr.io/r/base/print.html) and
 [`summary()`](https://rdrr.io/r/base/summary.html) show it. Under
-Conservation of Events the analytic score omits how the conserved scale
-moves, so the test is computed from finite differences of the
-log-likelihood with that scale re-solved, as SAS/C does; the
-continuation still uses the analytic score, so a CoE fit can honestly
-end with the test not met. A warning is raised only for code 4, the
+Conservation of Events the conserved scale is re-solved from the other
+parameters at every step, as SAS/C does, and the score used by the
+optimizer, the continuation and the test includes how that scale moves
+with them. A fit can still end with the test not met, under Conservation
+of Events or without it. A warning is raised only for code 4, the
 iteration limit (raise `control$maxit`), and code 5, where the
 log-likelihood kept rising along some direction and the model may have
 no maximum. Codes 2 and 3, where SAS/C prints a caution, are recorded
@@ -732,10 +738,10 @@ summary(fit2)
 #> Coefficients:
 #>          estimate   std_error     z_stat      p_value
 #> mu    0.121938323 0.062299561  1.9572902 5.031335e-02
-#> nu    1.143693956 0.084297244 13.5673944 6.250475e-42
+#> nu    1.143693955 0.084297244 13.5673944 6.250475e-42
 #> beta1 0.001710112 0.008807807  0.1941586 8.460517e-01
 #> beta2 0.156102262 0.090593058  1.7231151 8.486772e-02
-#> beta3 0.017258366 0.362941256  0.0475514 9.620738e-01
+#> beta3 0.017258365 0.362941256  0.0475514 9.620738e-01
 
 # \donttest{
 # -- Parametric survival with Kaplan-Meier overlay -----------------
@@ -795,10 +801,11 @@ summary(fit_mp)
 #>   phase 2:      late - cdf (late risk)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
-#>   gradient:     relative 1.66e-09 (SAS/C requires <= 6.06e-06; met)
+#>   gradient:     relative 3.74e-10 (SAS/C requires <= 6.06e-06; met, nlm code 1)
 #>   log-lik:      -321.926 
 #>   Not done in this run: none
-#>   evaluations: fn=21, gr=6
+#>   evaluations: fn=26, gr=7
+#>   message:      continued with nlm() for 1 iterations (code 1) 
 #> 
 #> Coefficients (internal scale):
 #> 

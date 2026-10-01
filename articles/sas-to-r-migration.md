@@ -590,31 +590,31 @@ summary(fit)
 #>   phase 2:      constant - constant (flat rate)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
-#>   gradient:     relative 49.6 (SAS/C requires <= 6.06e-06; not met, nlm code 2)
+#>   gradient:     relative 0.000123 (SAS/C requires <= 6.06e-06; not met, nlm code 2)
 #>   log-lik:      -160.408 
 #>   Note: Hessian ill-conditioned (rcond = 4.41e-12); standard errors may be unreliable.
 #>   Not done in this run: none
 #>   evaluations: fn=17, gr=1
-#>   message:      continued with nlm() for 1 iterations (code 2) 
+#>   message:      continued with nlm() for 2 iterations (code 2) 
 #> 
 #> Coefficients (internal scale):
 #> 
 #>   Phase: early (cdf)
 #>                   estimate    std_error    z_stat      p_value
-#>   log_mu     -1.0484675629 7.527000e-01 -1.392942 1.636373e-01
-#>   log_t_half -1.6580626653 3.631463e-01 -4.565826 4.975318e-06
-#>   nu          1.4374160000 1.770559e-01  8.118432 4.722462e-16
+#>   log_mu     -1.0484675704 7.527000e-01 -1.392942 1.636373e-01
+#>   log_t_half -1.6580626653 3.631463e-01 -4.565826 4.975321e-06
+#>   nu          1.4374160000 1.770559e-01  8.118432 4.722471e-16
 #>   m           1.0000000000           NA        NA           NA
-#>   age        -0.0320577400 9.381015e-03 -3.417300 6.324561e-04
+#>   age        -0.0320577400 9.381015e-03 -3.417300 6.324560e-04
 #>   com_iv      1.3366750000 4.173461e-01  3.202798 1.360995e-03
 #>   mal         0.6872028000 2.671643e-01  2.572210 1.010514e-02
 #>   opmos      -0.0196337700 4.367582e-03 -4.495341 6.945864e-06
-#>   op_age      0.0002086688 5.904656e-05  3.533971 4.093655e-04
+#>   op_age      0.0002086688 5.904656e-05  3.533971 4.093654e-04
 #>   status      0.5169533000 1.571565e-01  3.289417 1.003951e-03
 #> 
 #>   Phase: constant (constant)
 #>              estimate std_error    z_stat      p_value
-#>   log_mu   -14.638385 3.0330321 -4.826321 1.390786e-06
+#>   log_mu   -14.638385 3.0330322 -4.826321 1.390786e-06
 #>   inc_surg   1.375285 0.6222371  2.210226 2.708945e-02
 #>   orifice    3.117650 0.8999963  3.464070 5.320686e-04
 #>   status     1.054988 0.5030359  2.097242 3.597215e-02
