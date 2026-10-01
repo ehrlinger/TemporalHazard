@@ -47,6 +47,41 @@ coe_certificate <- function(fit, theta, value, objective_fn = NULL,
     d$time, d$status, NULL, NULL, sum(d$status == 1))
 }
 
+test_that("a fit that ends short of the boundary is recorded and warned, end to end (#261)", {
+  skip_on_cran()
+  # No real fit stops at #261's point any more (#565), so the optimizer's
+  # return is pinned there: the run is real, then its estimates are replaced
+  # by the stall point. Everything after the optimizer -- the conservation
+  # step, the certificate, the record on $boundary and hazard()'s warning --
+  # runs as in any fit. The stall point has every parameter free except the
+  # conserved constant.log_mu, the fifth.
+  orig <- .hzr_optim_generic
+  local_mocked_bindings(.hzr_optim_generic = function(...) {
+    a <- list(...)
+    r <- orig(...)
+    r$par[] <- coe_stall_theta[-5L]
+    r$value <- -a$logl_fn(r$par, a$time, a$status, a$time_lower,
+                          a$time_upper, a$x, weights = a$weights)
+    r$convergence <- 0L
+    r
+  })
+  w <- list()
+  fit <- withCallingHandlers(coe_repro(), warning = function(cnd) {
+    w[[length(w) + 1L]] <<- cnd
+    invokeRestart("muffleWarning")
+  })
+  # The premise: the fit is at the stall point.
+  expect_equal(fit$fit$objective, -206.7432, tolerance = 1e-6)
+  rec <- coe_records(fit)
+  expect_length(rec, 1L)
+  expect_identical(rec[[1L]]$phase, "constant")
+  expect_gt(rec[[1L]]$gain, 0.01)
+  cls <- vapply(w, function(cnd) inherits(cnd, "hzr_coe_no_events_left"),
+                logical(1))
+  expect_identical(sum(cls), 1L)
+  expect_true(inherits(w[[which(cls)]], "hzr_boundary"))
+})
+
 test_that("a point short of the boundary supremum is certified (#261)", {
   skip_on_cran()
   fit <- suppressWarnings(coe_repro())
